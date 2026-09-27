@@ -138,10 +138,11 @@ function postInTx(env: EngineEnv, def: DocTypeDef, actor: Actor, req: PostReques
     `INSERT INTO documents (id, doc_type, module, series_key, number, business_date, status, total_cents, summary, posted_at, posted_by, replaces_id)
      VALUES (?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?)`,
   ).run(id, def.key, def.module, def.numbering.series.key, number, ctx.businessDate, doc.totalCents, summary, ctx.at, actor.userId, replacesId);
-  def.persist(db, doc, { documentId: id, number, businessDate: ctx.businessDate });
+  const header = { documentId: id, number, businessDate: ctx.businessDate };
+  def.persist(db, doc, header);
 
   let journalNumber: string | null = null;
-  const draft = def.journal?.(doc, ctx);
+  const draft = def.journal?.(doc, ctx, header);
   if (draft) {
     journalNumber = postJournal(db, { ...draft, memo: `${number}: ${draft.memo}` }, {
       sourceType: 'document',

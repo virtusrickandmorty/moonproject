@@ -491,8 +491,10 @@ Reissue = cancel + new document in one transaction with a required reason (≥ 1
 | Quotation | QUO- | at finalise | Drafts have no number |
 | Job order | JO- | at post | |
 | Release slip | REL- | at post | |
-| Invoice record | (booklet number, typed) | at post | Validated against the **ATP booklet register** (ATP no., range from–to): in range, unique, used once; skipped-number report |
+| Invoice record | (booklet number, typed) + internal IR- | at post | Validated against the **ATP booklet register** (ATP no., range from–to): in range, unique, used once; skipped-number report. JO releases and quick sales share the IR- series and the booklet |
 | Collection (internal) | COL- | at post | Always |
+| Refund | RFD- | at post | Money given back from a customer's deposit or overpayment (COL) |
+| Deposit transfer | DXF- | at post | Moves a customer deposit from one job order to another (COL, G-28); no cash line |
 | Collection receipt | CR booklet no. (typed, booklet mode) or CR- (system-numbered mode) | at post | Booklet mode is DEFAULT (ACC-03) |
 | Credit memo | CM- | at post | Form confirmed by accountant (ACC-08) |
 | Expense voucher | EXP- | at post | |
@@ -503,6 +505,7 @@ Reissue = cancel + new document in one transaction with a required reason (≥ 1
 | Loan / loan payment | LOAN- / LPAY- | at post | |
 | Fixed asset / depreciation run / disposal | FA- / DEPR- / FAD- | at post | |
 | Inventory count | INVC- | at post | |
+| Production entry | PE- | at post | Pieces done per step and worker (PRD); posts no journal, payroll pays it (F3) |
 | Payroll run / release / CA / remittance | PAY- / POUT- / CA- / REM- | at post | |
 | VAT close / JV / opening | VATC- / JV- / OB- | at post | |
 | Journal entry | JE-YYYY- | at post | Journal numbers per year for the books |
@@ -845,8 +848,8 @@ Setup for G-01..G-12: customer "Test School" (VAT-registered, TWA goods 1%); dep
 | G-21 | Heat press ₱112,000 (VAT incl.): ₱30,000 BDO, ₱82,000 financed; residual 10,000, 60 months | Dr 1510 100,000.00; Dr 1401 12,000.00 / Cr 1111 30,000.00; Cr 2602 82,000.00. Monthly run: Dr 5302 1,500.00 / Cr 1511 1,500.00. Second run for the same month is blocked |
 | G-22 | Count: GL 1301 ₱30,000, counted ₱25,000; next count ₱42,000 | Dr 5109 5,000.00 / Cr 1301 5,000.00; then Dr 1301 17,000.00 / Cr 5109 17,000.00 |
 | G-23 | CA ₱2,000 cash; ₱1,000 deducted in payroll | Dr 1210 2,000.00 / Cr 1101 2,000.00; the run credits 1210 1,000.00; CA ledger = GL 1210 = 1,000.00 |
-| G-24 | Payroll, monthly office staff ₱15,000, cutoff 2 (F3) | Dr 6101 7,500.00; Dr 6102 820.00 / Cr 2401 1,145.00; Cr 2403 100.00; Cr 2110 7,075.00 |
-| G-25 | Payroll research examples A, B, C2 (daily MWE, weekly piece, tax path) | As in `payroll-ph-2026.md` §13–14.3 |
+| G-24 | Payroll, monthly office staff ₱15,000, cutoff 2 (F3) | Dr 6101 7,500.00; Dr 6102 820.00; Dr 6103 625.00 / Cr 2401 1,145.00; Cr 2403 100.00; Cr 2111 625.00; Cr 2110 7,075.00. The 6103/2111 pair is the 13th-month accrual (ACC-18 default "accrue every run", 7,500 / 12); with the accrual switched off the rest is unchanged |
+| G-25 | Payroll research examples A, B, C2 (daily MWE, weekly piece, tax path) | As in `docs/research/payroll-examples.md` (a copy of `payroll-ph-2026.md` §13–14.3) |
 | G-26 | VAT close: output 60,000 / input 25,000; other quarter output 20,000 / input 30,000 | Dr 2301 60,000.00 / Cr 1401 25,000.00; Cr 2302 35,000.00. Dr 2301 20,000.00; Dr 1402 10,000.00 / Cr 1401 30,000.00 |
 | G-27 | Opening: cash 20,000; BDO 150,000; AR 36,000 (opening invoice); machinery 300,000; undelivered JO with 20,000 collected; loan 200,000; equity: capital stock 250,000, retained earnings 36,000 | Dr 1101 20,000.00, 1111 150,000.00, 1201 36,000.00, 1510 300,000.00 / Cr 3900 506,000.00; Dr 3900 20,000.00 / Cr 2201 20,000.00; Dr 3900 200,000.00 / Cr 2601 200,000.00; Dr 3900 286,000.00 / Cr 3101 250,000.00, Cr 3201 36,000.00. 3900 = 0; TB 506,000.00 = 506,000.00 |
 | G-28 | Cancel JO with ₱20,000 deposit → transfer to reissued JO | Dr 2201 (old JO) 20,000.00 / Cr 2201 (new JO) 20,000.00; no cash line |

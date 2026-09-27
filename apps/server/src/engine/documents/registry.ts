@@ -87,8 +87,12 @@ export interface DocTypeDef<Input = any, Doc extends { totalCents: number } = an
   validate(doc: Doc, ctx: DocContext): Issue[];
   /** INSERT-only into the module's own tables. */
   persist(db: Db, doc: Doc, header: DocHeader): void;
-  /** PURE. Uses account role keys or user-picked master data, never hard-coded account ids. Omit for non-posting documents. */
-  journal?(doc: Doc, ctx: DocContext): JournalDraft | null;
+  /**
+   * PURE. Uses account role keys or user-picked master data, never hard-coded account ids. Omit for non-posting documents.
+   * `header` is the document being posted (its id, number and date, after persist); a preview has none yet, so a line
+   * that names the document itself (a receivable's `ref`) is left unnamed there.
+   */
+  journal?(doc: Doc, ctx: DocContext, header?: DocHeader): JournalDraft | null;
   /** Reads a posted document back from the module's tables. */
   load(db: Db, documentId: string): Doc;
   /** Turns a stored document back into form input (to prefill "Edit" = reissue). */
