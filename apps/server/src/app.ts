@@ -17,6 +17,7 @@ import { securityRoutes } from './engine/security/routes.ts';
 import { documentRoutes } from './engine/documents/routes.ts';
 import { draftRoutes } from './engine/documents/drafts.ts';
 import { hashPassword, DEFAULT_SCRYPT_N } from './engine/security/passwords.ts';
+import { webRoutes } from './platform/web.ts';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -45,6 +46,8 @@ export interface AppDeps {
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const ENGINE_MIGRATIONS = join(here, 'platform/db/migrations');
+/** The web app's build output (`vite build` in apps/web). */
+export const WEB_DIST = join(here, '../../web/dist');
 
 export interface BuildOptions {
   db: Db;
@@ -52,6 +55,8 @@ export interface BuildOptions {
   modules: ModuleDef[];
   config?: Partial<AppConfig>;
   logger?: boolean;
+  /** Folder of the built web app; defaults to apps/web/dist. */
+  webRoot?: string;
 }
 
 /** Migrates, registers modules and permissions. Separate from buildApp so tools and tests can use it. */
@@ -129,6 +134,7 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
   documentRoutes(app, deps);
   draftRoutes(app, deps);
   for (const m of registry.modules) m.routes?.(app, deps);
+  webRoutes(app, opts.webRoot ?? WEB_DIST);
 
   return { app, deps };
 }

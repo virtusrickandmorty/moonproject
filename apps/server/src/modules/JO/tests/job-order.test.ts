@@ -5,13 +5,14 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { cancelDocument, postDocument, reissueDocument } from '../../../engine/documents/lifecycle.ts';
 import { tx } from '../../../platform/db/driver.ts';
 import { stamp } from '../../../platform/clock.ts';
 import { jobOrderDoc, type JobOrderInput } from '../doctypes/job-order.ts';
-import { balanceDue } from '../public.ts';
+import { balanceDue, joLedger } from '../public.ts';
+import { postJournal, type DraftLine } from '../../../engine/ledger/post.ts';
 import { changeStage, currentStage, movesFrom, type Stage } from '../stages.ts';
 import { seedCustomers } from './cus-fixture.ts';
 
@@ -74,6 +75,34 @@ describe('Job Order golden (PLAN I2 G-01, the JO part)', () => {
     expect(balanceDue({ ...jo, invoicedCents: 5_600_000, receivableCents: 2_800_000, depositsHeldCents: 0 })).toEqual({ balanceDueCents: 2_800_000, collectedCents: 2_800_000, notInvoicedCents: 0 });
     // G-03 balance collected: GCash 10,000 + cash 17,750 + CWT 250 = Cr 1201 28,000.
     expect(balanceDue({ ...jo, invoicedCents: 5_600_000, receivableCents: 0, depositsHeldCents: 0 })).toEqual({ balanceDueCents: 0, collectedCents: 5_600_000, notInvoicedCents: 0 });
+  });
+
+  it("reads the JO's own AR and deposits from lines tagged with the JO (G-01, G-02 journals)", async () => {
+    const jo = (await post(g01(), 5_600_000)).json().id as string;
+    const other = (await post(g01(), 5_600_000)).json().id as string;
+    const party = { type: 'customer', id: c.school };
+    const journal = (id: string, lines: DraftLine[]) =>
+      tx(env.db, () => postJournal(env.db, { memo: id, lines }, { sourceType: 'test', sourceId: id, businessDate: '2026-09-28', userId: encoder.userId, at: stamp(env.clock) }));
+    const deposit = (ref: string, cents: number): DraftLine[] => [
+      { account: { cashPlace: cashPlaceId(env.db, '1101') }, debitCents: cents },
+      { account: { role: 'CUSTOMER_DEPOSITS' }, party, ref: { documentId: ref }, creditCents: cents },
+    ];
+    // G-01 DEP-RCV: Dr 1101 28,000.00 / Cr 2201 28,000.00 (party Test School, JO). Another JO's deposit stays out.
+    journal('dep-1', deposit(jo, 2_800_000));
+    journal('dep-2', deposit(other, 1_000_000));
+    expect((await status(jo)).money).toMatchObject({ receivableCents: 0, depositsHeldCents: 2_800_000, balanceDueCents: 2_800_000, collectedCents: 2_800_000 });
+    // G-02 invoice 0501 and deposit applied. Invoiced amounts come with the invoice record, so only the ledger parts are checked here.
+    const ref = { documentId: jo };
+    journal('inv-0501', [
+      { account: { role: 'AR_TRADE' }, party, ref, debitCents: 5_600_000 },
+      { account: { role: 'SALES_MTO' }, party, creditCents: 5_000_000 },
+      { account: { role: 'OUTPUT_VAT' }, party, creditCents: 600_000 },
+      { account: { role: 'CUSTOMER_DEPOSITS' }, party, ref, debitCents: 2_800_000 },
+      { account: { role: 'AR_TRADE' }, party, ref, creditCents: 2_800_000 },
+    ]);
+    expect(joLedger(env.db, jo)).toEqual({ receivableCents: 2_800_000, depositsHeldCents: 0 });
+    expect(joLedger(env.db, other)).toEqual({ receivableCents: 0, depositsHeldCents: 1_000_000 });
+    noBrokenInvariants();
   });
 });
 

@@ -1,6 +1,8 @@
 /** Read-only JO contract for other modules (COL, PRD, DASH, CAL, RPT). Callers check their own route permission. */
 import { notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
+import { resolveAccount } from '../../engine/ledger/accounts.ts';
+import { accountBalance } from '../../engine/ledger/queries.ts';
 
 export { currentStage, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
 
@@ -18,13 +20,13 @@ export function balanceDue(p: { totalCents: number; invoicedCents: number } & Jo
 }
 
 /**
- * This JO's AR and deposits, from journal lines (NR-2).
- * ENGINE REQUEST (see the JO PR): a journal line names only a customer, not a JO (G-01 wants "party Test
- * School, JO"). No document posts money for a JO before COL and the invoice record exist, so the JO's part
- * of the ledger is zero until the engine can tag a line with its JO; then this becomes one query.
+ * This JO's AR and deposits, from the journal lines that name the JO as their document reference (NR-2,
+ * G-01 "party Test School, JO"). COL and the invoice record tag their AR and deposit lines with the JO.
  */
-export function joLedger(_db: Db, _documentId: string): JoLedgerPart {
-  return { receivableCents: 0, depositsHeldCents: 0 };
+export function joLedger(db: Db, documentId: string): JoLedgerPart {
+  const balance = (role: string) => accountBalance(db, resolveAccount(db, { role }).id, { refDocId: documentId });
+  // Deposits are a credit balance; 0 - x keeps an empty balance at 0 rather than -0.
+  return { receivableCents: balance('AR_TRADE'), depositsHeldCents: 0 - balance('CUSTOMER_DEPOSITS') };
 }
 
 export function joMoney(db: Db, documentId: string) {

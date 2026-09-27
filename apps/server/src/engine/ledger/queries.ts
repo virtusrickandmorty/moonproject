@@ -1,17 +1,26 @@
 /** Balances are always computed from journal lines (NR-2). */
 import type { Db } from '../../platform/db/driver.ts';
 
-/** Debit-positive balance of one account, optionally up to a date and for one party. */
-export function accountBalance(db: Db, accountId: number, opts: { asOf?: string; party?: { type: string; id: string } } = {}): number {
+/** Debit-positive balance of one account, optionally up to a date, for one party, and for one document reference. */
+export function accountBalance(
+  db: Db,
+  accountId: number,
+  opts: { asOf?: string; party?: { type: string; id: string }; refDocId?: string } = {},
+): number {
+  // A plain equality (not "@ref IS NULL OR ...") lets SQLite seek the (account_id, ref_doc_id) index.
+  const byRef = opts.refDocId === undefined ? '' : 'AND l.ref_doc_id = @ref';
   const r = db
     .prepare(
       `SELECT COALESCE(SUM(l.debit_cents - l.credit_cents), 0) AS bal
        FROM journal_lines l JOIN journals j ON j.id = l.journal_id
        WHERE l.account_id = @acc AND j.sealed = 1
          AND (@asOf IS NULL OR j.business_date <= @asOf)
-         AND (@pt IS NULL OR (l.party_type = @pt AND l.party_id = @pid))`,
+         AND (@pt IS NULL OR (l.party_type = @pt AND l.party_id = @pid))
+         ${byRef}`,
     )
-    .get({ acc: accountId, asOf: opts.asOf ?? null, pt: opts.party?.type ?? null, pid: opts.party?.id ?? null }) as { bal: number };
+    .get({ acc: accountId, asOf: opts.asOf ?? null, pt: opts.party?.type ?? null, pid: opts.party?.id ?? null, ref: opts.refDocId ?? null }) as {
+    bal: number;
+  };
   return r.bal;
 }
 
