@@ -230,7 +230,7 @@ export function purRoutes(app: FastifyInstance, deps: AppDeps): void {
       db.prepare(`
         INSERT INTO pur_supplies (id, name, unit, category, last_purchase_cost_cents, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(id, input.name, input.unit, input.category, 0, now, now);
+      `).run(id, input.name, input.unit, input.category, input.lastPurchaseCostCents ?? 0, now, now);
 
       const after = db.prepare('SELECT * FROM pur_supplies WHERE id = ?').get(id);
       appendAudit(db, {
@@ -245,9 +245,11 @@ export function purRoutes(app: FastifyInstance, deps: AppDeps): void {
     return { id, version: 1 };
   });
 
+  const purSupplyUpdateInput = purSupplyInput.omit({ lastPurchaseCostCents: true });
+
   app.put('/api/pur/supplies/:id', { config: { permission: 'pur.supply.edit' } }, async (req) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
-    const input = purSupplyInput.parse(req.body);
+    const input = purSupplyUpdateInput.parse(req.body);
     const versionMatch = req.headers['if-match'];
     if (!versionMatch) throw preconditionRequired('Missing If-Match header');
     const expectedVersion = parseInt(versionMatch.replace(/"/g, ''), 10);
