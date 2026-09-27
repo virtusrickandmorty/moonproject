@@ -20,6 +20,8 @@ import { RunForm } from './PAY/RunForm.tsx';
 import { ReleaseForm } from './PAY/ReleaseForm.tsx';
 import { Payslips, advanceView, releaseView, runView } from './PAY/views.tsx';
 import { AdvanceForm } from './CA/AdvanceForm.tsx';
+import { StatMonthPage, StatMonths, remittanceView } from './STAT/Statutory.tsx';
+import { RemittanceForm } from './STAT/RemittanceForm.tsx';
 
 /**
  * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
@@ -33,6 +35,8 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/emp/attendance': Attendance,
   '/emp/holidays': Holidays,
   '/pay/runs/:id/payslips': Payslips,
+  '/stat': StatMonths,
+  '/stat/:month': StatMonthPage,
 };
 
 export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: FormMode }>> = {
@@ -44,6 +48,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'pay.run': RunForm,
   'pay.release': ReleaseForm,
   'ca.advance': AdvanceForm,
+  'stat.remittance': RemittanceForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView };
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView };

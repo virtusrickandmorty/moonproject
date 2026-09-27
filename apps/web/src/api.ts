@@ -119,6 +119,27 @@ export interface RunToRelease { id: string; number: string; payGroup: PayGroup; 
 export interface ReleaseRow { employeeId: string; name: string; netCents: number; releasedBy: string | null }
 export interface CaStatus { employeeId: string; name: string; outstandingCents: number; installmentCents: number; open: { documentId: string; number: string; amountCents: number; installmentCents: number; openCents: number }[] }
 export interface ActiveEmployee { id: string; code: string; name: string; costCentre: string }
+/** Statutory (STAT): the month's lists, the 1601-C worksheet and the remittance check, worked out by the server. */
+export type Scheme = 'SSS' | 'PHIC' | 'HDMF' | 'WTAX';
+export interface SchemeCheck {
+  scheme: Scheme; label: string; recordedCents: number; remittedCents: number; balanceCents: number; remittances: { id: string; number: string; amountCents: number }[];
+  cancelledAfter: { id: string; number: string; cancelledAt: string }[]; overRemitted: { employeeId: string; name: string; cents: number }[];
+}
+interface StatPerson { employeeId: string; code: string; name: string; idNo: string | null }
+export interface StatMonth {
+  month: string;
+  sss: { rows: (StatPerson & { mscCents: number; mpfMscCents: number; eeCents: number; erCents: number; ecCents: number; totalCents: number })[]; totalCents: number };
+  phic: { rows: (StatPerson & { basisCents: number; eeCents: number; erCents: number; totalCents: number })[]; totalCents: number };
+  hdmf: { rows: (StatPerson & { compensationCents: number; eeCents: number; erCents: number; totalCents: number })[]; totalCents: number };
+  tax: {
+    employees: number; totalCompensationCents: number; mweBasicCents: number; mwePremiumCents: number; thirteenthMonthCents: number; deMinimisCents: number; eeSharesCents: number;
+    otherNonTaxableCents: number; nonTaxableCents: number; taxableCents: number; noTaxWithheldCents: number; taxWithheldCents: number;
+    rows: (StatPerson & { isMwe: boolean; grossCents: number; nonTaxableCents: number; taxableCents: number; taxCents: number })[];
+  };
+  check: SchemeCheck[];
+  notDeducted: { employeeId: string; name: string; cents: number }[];
+}
+export interface RemittanceInput { scheme: Scheme; month: string; cashPlaceId: number; amountCents: number; reference: string; note?: string }
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -218,6 +239,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     runsToRelease: () => call<RunToRelease[]>('GET', '/api/pay/runs/to-release'),
     releaseStatus: (runId: string) => call<ReleaseRow[]>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/release-status`),
     caStatus: (employeeId: string) => call<CaStatus>('GET', `/api/ca/employees/${encodeURIComponent(employeeId)}`),
+    statMonths: () => call<{ month: string; check: SchemeCheck[] }[]>('GET', '/api/stat/months'),
+    statMonth: (month: string) => call<StatMonth>('GET', `/api/stat/months/${encodeURIComponent(month)}`),
+    /** D6: what of a payroll run's month is already remitted (the warning before a cancel). */
+    runRemitted: (runId: string) => call<{ month: string; remitted: { scheme: Scheme; label: string; numbers: string[] }[] }>('GET', `/api/stat/runs/${encodeURIComponent(runId)}/remitted`),
   };
 }
 
