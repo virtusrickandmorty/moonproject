@@ -39,6 +39,7 @@ CREATE TABLE cus_customer_contacts (
   phone TEXT,
   email TEXT,
   is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+  version INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL
 ) STRICT;
 CREATE INDEX cus_customer_contacts_customer ON cus_customer_contacts(customer_id, is_active);
@@ -49,6 +50,7 @@ CREATE TABLE cus_customer_phones (
   phone TEXT NOT NULL,
   label TEXT,
   is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+  version INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL
 ) STRICT;
 CREATE INDEX cus_customer_phones_customer ON cus_customer_phones(customer_id, is_active);
@@ -81,6 +83,19 @@ CREATE TABLE cus_people (
 ) STRICT;
 CREATE INDEX cus_people_customer ON cus_people(customer_id, group_id);
 
+CREATE TABLE cus_merge_relinks (
+  id TEXT PRIMARY KEY,
+  merge_audit_seq INTEGER NOT NULL REFERENCES audit_log(seq),
+  table_name TEXT NOT NULL CHECK (table_name IN ('cus_customer_contacts','cus_customer_phones','cus_groups','cus_people','cus_customers')),
+  row_id TEXT NOT NULL,
+  from_customer_id TEXT NOT NULL REFERENCES cus_customers(id),
+  to_customer_id TEXT NOT NULL REFERENCES cus_customers(id),
+  created_at TEXT NOT NULL,
+  UNIQUE (merge_audit_seq, table_name, row_id)
+) STRICT;
+CREATE TRIGGER cus_merge_relinks_no_update BEFORE UPDATE ON cus_merge_relinks
+BEGIN SELECT RAISE(ABORT, 'IMMUTABLE: merge relinks are append-only'); END;
+
 CREATE TABLE cus_sizes (
   id TEXT PRIMARY KEY,
   label TEXT NOT NULL UNIQUE COLLATE NOCASE,
@@ -101,10 +116,12 @@ CREATE TABLE cus_measure_charts (
   upper_size TEXT REFERENCES cus_sizes(id),
   lower_size TEXT REFERENCES cus_sizes(id),
   unit TEXT NOT NULL DEFAULT 'inch' CHECK (unit IN ('inch','cm')),
-  shoulder REAL, chest REAL, upper_waist REAL, collar REAL, bust_point REAL,
-  figure_point REAL, bust_distance REAL, arm_hole REAL, sleeve_hole REAL,
-  sleeve_length REAL, upper_length REAL, lower_waist REAL, hips REAL,
-  crotch REAL, thigh REAL, calf REAL, ankle REAL, lower_length REAL,
+  shoulder_hundredths INTEGER, chest_hundredths INTEGER, upper_waist_hundredths INTEGER,
+  collar_hundredths INTEGER, bust_point_hundredths INTEGER, figure_point_hundredths INTEGER,
+  bust_distance_hundredths INTEGER, arm_hole_hundredths INTEGER, sleeve_hole_hundredths INTEGER,
+  sleeve_length_hundredths INTEGER, upper_length_hundredths INTEGER, lower_waist_hundredths INTEGER,
+  hips_hundredths INTEGER, crotch_hundredths INTEGER, thigh_hundredths INTEGER,
+  calf_hundredths INTEGER, ankle_hundredths INTEGER, lower_length_hundredths INTEGER,
   remarks TEXT,
   measured_by TEXT NOT NULL REFERENCES users(id),
   measured_on TEXT NOT NULL,
@@ -123,13 +140,13 @@ WHEN OLD.status <> 'active' OR NEW.status NOT IN ('superseded','inactive') OR
   NEW.measured_by <> OLD.measured_by OR NEW.measured_on <> OLD.measured_on OR
   NEW.reason IS NOT OLD.reason OR NEW.supersedes_id IS NOT OLD.supersedes_id OR
   NEW.upper_size IS NOT OLD.upper_size OR NEW.lower_size IS NOT OLD.lower_size OR
-  NEW.shoulder IS NOT OLD.shoulder OR NEW.chest IS NOT OLD.chest OR
-  NEW.upper_waist IS NOT OLD.upper_waist OR NEW.collar IS NOT OLD.collar OR
-  NEW.bust_point IS NOT OLD.bust_point OR NEW.figure_point IS NOT OLD.figure_point OR
-  NEW.bust_distance IS NOT OLD.bust_distance OR NEW.arm_hole IS NOT OLD.arm_hole OR
-  NEW.sleeve_hole IS NOT OLD.sleeve_hole OR NEW.sleeve_length IS NOT OLD.sleeve_length OR
-  NEW.upper_length IS NOT OLD.upper_length OR NEW.lower_waist IS NOT OLD.lower_waist OR
-  NEW.hips IS NOT OLD.hips OR NEW.crotch IS NOT OLD.crotch OR NEW.thigh IS NOT OLD.thigh OR
-  NEW.calf IS NOT OLD.calf OR NEW.ankle IS NOT OLD.ankle OR NEW.lower_length IS NOT OLD.lower_length OR
+  NEW.shoulder_hundredths IS NOT OLD.shoulder_hundredths OR NEW.chest_hundredths IS NOT OLD.chest_hundredths OR
+  NEW.upper_waist_hundredths IS NOT OLD.upper_waist_hundredths OR NEW.collar_hundredths IS NOT OLD.collar_hundredths OR
+  NEW.bust_point_hundredths IS NOT OLD.bust_point_hundredths OR NEW.figure_point_hundredths IS NOT OLD.figure_point_hundredths OR
+  NEW.bust_distance_hundredths IS NOT OLD.bust_distance_hundredths OR NEW.arm_hole_hundredths IS NOT OLD.arm_hole_hundredths OR
+  NEW.sleeve_hole_hundredths IS NOT OLD.sleeve_hole_hundredths OR NEW.sleeve_length_hundredths IS NOT OLD.sleeve_length_hundredths OR
+  NEW.upper_length_hundredths IS NOT OLD.upper_length_hundredths OR NEW.lower_waist_hundredths IS NOT OLD.lower_waist_hundredths OR
+  NEW.hips_hundredths IS NOT OLD.hips_hundredths OR NEW.crotch_hundredths IS NOT OLD.crotch_hundredths OR NEW.thigh_hundredths IS NOT OLD.thigh_hundredths OR
+  NEW.calf_hundredths IS NOT OLD.calf_hundredths OR NEW.ankle_hundredths IS NOT OLD.ankle_hundredths OR NEW.lower_length_hundredths IS NOT OLD.lower_length_hundredths OR
   NEW.remarks IS NOT OLD.remarks
 BEGIN SELECT RAISE(ABORT, 'IMMUTABLE: insert a new measurement revision'); END;

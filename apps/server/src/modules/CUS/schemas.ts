@@ -17,10 +17,13 @@ export const customerInput = z.object({
   emailConsent: z.boolean().optional(),
   creditTermsDays: z.number().int().min(0).max(365).optional(),
   parentCustomerId: z.uuid().nullable().optional(),
-  legacyId: optionalText,
   notes: optionalText,
 }).strict();
 export const customerUpdate = customerInput.partial().strict();
+export const mergeInput = z.object({
+  intoCustomerId: z.uuid(),
+  reason: z.string().trim().min(10).max(500),
+}).strict();
 
 export const contactInput = z.object({
   name: z.string().trim().min(1).max(200),
@@ -49,8 +52,8 @@ export const measurements = [
 ] as const;
 export const chartInput = z.object({
   sizeMode: z.enum(['preset', 'measured']),
-  upperSize: z.string().max(30).nullable().optional(),
-  lowerSize: z.string().max(30).nullable().optional(),
+  upperSize: z.string().max(36).nullable().optional(),
+  lowerSize: z.string().max(36).nullable().optional(),
   unit: z.enum(['inch', 'cm']).optional(),
   values: z.object(Object.fromEntries(measurements.map((m) => [m, z.number().finite().positive().max(300).nullable().optional()])) as Record<(typeof measurements)[number], z.ZodOptional<z.ZodNullable<z.ZodNumber>>>).strict(),
   remarks: optionalText,
