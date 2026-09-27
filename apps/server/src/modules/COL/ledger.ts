@@ -4,6 +4,7 @@ import type { Issue } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { getCashPlace, resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
+import { joMoney } from '../JO/public.ts';
 
 export const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
 
@@ -65,4 +66,27 @@ export function depositsHeld(db: Db, customerId: string, jobOrderId: string | nu
     )
     .get(account, customerId) as { held: number };
   return r.held;
+}
+
+/**
+ * What blocks cancelling a document that put money into one pool of 2201 (a JO's deposits, or with jobOrderId null the
+ * customer's unapplied payments): `depositCents` into the pool, plus `receivableCents` paid on the same JO's receivable.
+ * Its mirror takes both back. On a JO, the cancel's settleLines then keeps deposits and the receivable at zero or more
+ * by reopening the receivable, which works while the receivable stays within what is invoiced (D6); the unapplied pool
+ * has no receivable, so it must still hold the money. When that fails, the refunds and deposit transfers that took money
+ * out of the pool are listed: cancel those first, so 2201 never goes below zero.
+ */
+export function takenOutBy(db: Db, customerId: string, jobOrderId: string | null, depositCents: number, receivableCents: number): { id: string; number: string }[] {
+  if (jobOrderId) {
+    const m = joMoney(db, jobOrderId);
+    if (m.receivableCents - m.depositsHeldCents + receivableCents + depositCents <= m.invoicedCents) return [];
+  } else if (depositCents <= depositsHeld(db, customerId, null)) return [];
+  return db
+    .prepare(
+      `SELECT d.id, d.number FROM documents d WHERE d.status = 'posted' AND d.id IN (
+         SELECT document_id FROM col_refunds WHERE customer_id = @c AND job_order_id IS @jo
+         UNION SELECT document_id FROM col_deposit_transfers WHERE customer_id = @c AND from_job_order_id IS @jo)
+       ORDER BY d.number`,
+    )
+    .all({ c: customerId, jo: jobOrderId }) as { id: string; number: string }[];
 }
