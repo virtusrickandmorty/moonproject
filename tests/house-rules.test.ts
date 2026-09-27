@@ -57,8 +57,9 @@ describe('house rules', () => {
   });
 
   it('posting rules live only in module doctypes the Claude lanes own (money rule, PLAN J1)', () => {
-    // A cheap tripwire: journal lines are only built in modules/*/doctypes and the engine.
-    const offenders = sources.filter((f) => {
+    // A cheap tripwire: journal lines are only built in modules/*/doctypes and the engine. Only the server can
+    // post, so screens that show journal lines (apps/web) are not scanned.
+    const offenders = files(join(ROOT, 'apps/server'), /\.ts$/).filter((f) => {
       const rel = relative(ROOT, f).replace(/\\/g, '/');
       if (/apps\/server\/src\/(engine|modules\/[A-Z0-9]+\/doctypes)\//.test(rel) || /\.test\.ts$/.test(rel)) return false;
       return /\bdebitCents\s*:/.test(readFileSync(f, 'utf8'));

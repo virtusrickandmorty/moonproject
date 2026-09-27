@@ -4,6 +4,7 @@
   "type": "module",
   "dependencies": {
     "@fastify/cookie": "11.1.2",
+    "@fastify/static": "10.1.5",
     "@moonproject/shared": "*",
     "better-sqlite3": "13.0.3",
     "fastify": "5.12.5",

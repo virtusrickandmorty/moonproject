@@ -43,7 +43,8 @@ export function runInvariants(db: Db): InvariantResult[] {
     .all() as { number: string; code: string }[];
   out.push(check('L3', badParty.map((r) => `Journal ${r.number} line on ${r.code} has a wrong or missing party`)));
 
-  // L4: posted money documents have one original journal; cancelled ones also one reversal netting to zero.
+  // L4: posted money documents have one original journal; cancelled ones also one reversal netting to zero
+  // per account, party and document reference.
   const l4: string[] = [];
   const docs = db
     .prepare(
@@ -60,10 +61,10 @@ export function runInvariants(db: Db): InvariantResult[] {
   }
   const notNetting = db
     .prepare(
-      `SELECT j.source_id, l.account_id, l.party_type, l.party_id, SUM(l.debit_cents - l.credit_cents) AS net
+      `SELECT j.source_id, l.account_id, l.party_type, l.party_id, l.ref_doc_id, SUM(l.debit_cents - l.credit_cents) AS net
        FROM journal_lines l JOIN journals j ON j.id = l.journal_id
        WHERE j.source_type = 'document' AND j.source_id IN (SELECT id FROM documents WHERE status = 'cancelled')
-       GROUP BY j.source_id, l.account_id, l.party_type, l.party_id HAVING net <> 0`,
+       GROUP BY j.source_id, l.account_id, l.party_type, l.party_id, l.ref_doc_id HAVING net <> 0`,
     )
     .all() as { source_id: string }[];
   for (const r of notNetting) l4.push(`Cancelled document ${r.source_id} does not net to zero`);
