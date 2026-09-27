@@ -12,6 +12,7 @@ export class ApiError extends Error {
 }
 
 export interface Me { userId: string; username: string; displayName: string; roles: string[]; permissions: string[]; mustChangePassword: boolean; csrfToken: string }
+export interface CompanyProfile { registeredName: string; tradeName: string; tin: string; registeredAddress: string; isVatRegistered: boolean; version: number; supersededAt?: string }
 export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
 export interface DocTypeInfo { key: string; module: string; title: string; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
 export interface DocHeader {
@@ -159,6 +160,12 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     me: () => call<Me>('GET', '/api/auth/me').then(keep),
     logout: () => call<unknown>('POST', '/api/auth/logout'),
     changePassword: (currentPassword: string, newPassword: string) => call<unknown>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
+    stepUp: (password: string) => call<{ ok: boolean }>('POST', '/api/auth/step-up', { password }),
+    companyProfile: () => call<CompanyProfile>('GET', '/api/prn/company-profile'),
+    companyProfileHistory: () => call<CompanyProfile[]>('GET', '/api/prn/company-profile/history'),
+    saveCompanyProfile: (value: Omit<CompanyProfile, 'version' | 'supersededAt'>, version: number) => call<CompanyProfile>('PUT', '/api/prn/company-profile', value, { 'if-match': String(version) }),
+    printDocument: (type: string, id: string, variant: 'document' | 'job_ticket' = 'document') =>
+      call<{ html: string; copyNumber: number }>('POST', `/api/prn/print/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { variant }),
     health: () => call<{ serverTime: string }>('GET', '/api/health'),
     docTypes: () => call<DocTypeInfo[]>('GET', '/api/doc-types'),
     list: (type: string, q: { status?: string; before?: string; limit?: number } = {}) =>

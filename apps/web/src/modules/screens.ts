@@ -20,6 +20,7 @@ import { RunForm } from './PAY/RunForm.tsx';
 import { ReleaseForm } from './PAY/ReleaseForm.tsx';
 import { Payslips, advanceView, releaseView, runView } from './PAY/views.tsx';
 import { AdvanceForm } from './CA/AdvanceForm.tsx';
+import { CompanyProfileScreen } from './PRN/CompanyProfile.tsx';
 
 /**
  * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
@@ -33,6 +34,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/emp/attendance': Attendance,
   '/emp/holidays': Holidays,
   '/pay/runs/:id/payslips': Payslips,
+  '/prn/company-profile': CompanyProfileScreen,
 };
 
 export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: FormMode }>> = {
