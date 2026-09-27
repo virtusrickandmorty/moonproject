@@ -3,12 +3,12 @@ import fc from 'fast-check';
 import { type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 
-const MAX_CENTS = 100_000_000_00;
+const MAX_QTY = 1_000_000;
 
 export const rrLineInput = z
   .object({
     poLineNo: z.number().int().positive(),
-    qty: z.number().int().positive().max(MAX_CENTS),
+    qty: z.number().int().positive().max(MAX_QTY),
   })
   .strict();
 export type RRLineInput = z.infer<typeof rrLineInput>;

@@ -12,14 +12,22 @@ export const poLineInput = z
     qty: z.number().int().positive().max(MAX_QTY),
     unitCostCents: z.number().int().nonnegative().max(MAX_CENTS),
   })
-  .strict();
+  .strict()
+  .refine(l => l.qty * l.unitCostCents <= MAX_CENTS, 'Line total must be safe');
 export type POLineInput = z.infer<typeof poLineInput>;
+
+function isValidDate(dateString: string) {
+  const date = new Date(dateString);
+  if (!(date instanceof Date) || isNaN(date.getTime())) return false;
+  const iso = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString();
+  return iso.startsWith(dateString);
+}
 
 export const purchaseOrderInput = z
   .object({
     supplierId: z.string().trim().min(1),
-    expectedDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD').optional(),
-    lines: z.array(poLineInput),
+    expectedDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD').refine(isValidDate, 'Must be a real date').optional(),
+    lines: z.array(poLineInput).max(200),
   })
   .strict();
 export type PurchaseOrderInput = z.infer<typeof purchaseOrderInput>;
