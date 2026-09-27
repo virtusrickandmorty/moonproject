@@ -86,4 +86,21 @@ describe('web client for payroll', () => {
     expect(rel.number).toBe('POUT-000001');
     expect(await api.runsToRelease()).toEqual([]);
   });
+
+  it('PAY-1: a period that has ended is dated its last day, and the run is booked in that month', async () => {
+    const env = await createTestEnv('2026-10-01T02:00:00Z');
+    const acct = createUser(env.db, 'acct2', ['accountant']);
+    const carla = addEmployee(env.db, 'Carla Opisina', { costCentre: 'office' });
+    addPay(env.db, carla, acct, { payType: 'monthly', payGroup: 'SEMI_MONTHLY', monthlyRateCents: 1_500_000 });
+    const api = createApi(injectFetch(env.app));
+    await api.login('acct2', PASSWORD);
+    const [period] = await api.payPeriods('SEMI_MONTHLY');
+    expect(period).toMatchObject({ periodStart: '2026-09-16', periodEnd: '2026-09-30', bookOn: '2026-09-30' });
+    const input = runInput('SEMI_MONTHLY', period!.periodStart, [], {}, {}).input;
+    expect((await api.preview('pay.run', input)).issues.map((i) => i.code)).toEqual(['BOOKED_LATER']); // undated: today, October
+    const pre = await api.preview('pay.run', input, period!.bookOn!);
+    expect(pre.issues).toEqual([]);
+    const run = await api.post('pay.run', input, pre.totalCents, key(), period!.bookOn!);
+    expect((await api.get('pay.run', run.id)).header.businessDate).toBe('2026-09-30');
+  });
 });

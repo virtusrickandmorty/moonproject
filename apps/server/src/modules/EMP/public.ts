@@ -31,3 +31,12 @@ export function employeesInGroup(db: Db, payGroup: PayGroup, from: string, to: s
   const rows = db.prepare(`${EMPLOYEE} WHERE hire_date <= ? AND (separated_on IS NULL OR separated_on >= ?) ORDER BY full_name, id`).all(to, from) as Row[];
   return rows.map(asEmployee).filter((e) => payProfileAt(db, e.id, e.separatedOn && e.separatedOn < to ? e.separatedOn : to)?.payGroup === payGroup);
 }
+
+export interface GovernmentIds { sssNo: string | null; phicNo: string | null; hdmfNo: string | null; tin: string | null }
+/** Government IDs for the statutory lists (STAT). Callers show them only to users with emp.view_ids. */
+export function governmentIds(db: Db, ids: string[]): Map<string, GovernmentIds> {
+  const rows = db
+    .prepare(`SELECT id, sss_no AS sssNo, phic_no AS phicNo, hdmf_no AS hdmfNo, tin FROM emp_employees WHERE id IN (SELECT value FROM json_each(?))`)
+    .all(JSON.stringify(ids)) as (GovernmentIds & { id: string })[];
+  return new Map(rows.map(({ id, ...g }) => [id, g]));
+}

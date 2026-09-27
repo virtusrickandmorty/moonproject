@@ -11,11 +11,25 @@ import { docPath } from '../../shell/menu.ts';
 import { GROUP_LABEL, deductionsOf, qtyText } from './run.ts';
 import type { PayRunDoc } from '../../api.ts';
 
+/** D6: a recorded run whose month is already remitted (STAT): cancelling it leaves those payables below zero. */
+function RemittedWarning({ runId }: { runId: string }) {
+  const [r, setR] = useState<Awaited<ReturnType<typeof api.runRemitted>> | null>(null);
+  useEffect(() => void api.runRemitted(runId).then(setR, () => undefined), [runId]);
+  if (!r?.remitted.length) return null;
+  return (
+    <Notice tone="warning">
+      {r.remitted.map((x) => `${x.label} (${x.numbers.join(', ')})`).join(', ')} for {r.month} {r.remitted.length === 1 ? 'is' : 'are'} already remitted. Cancelling this payroll
+      leaves {r.month} remitted for more than the payrolls show, until the payroll is recorded again; the accountant sees it on the remittance check.
+    </Notice>
+  );
+}
+
 function RunParts({ d }: { d: DocDetail }) {
   const run = d.doc as PayRunDoc | undefined;
   if (!run) return null;
   return (
     <div className="space-y-2 pt-2">
+      {d.header.status === 'posted' && <RemittedWarning runId={d.header.id} />}
       <p className="text-sm">{GROUP_LABEL[run.payGroup]} · {run.periodStart} to {run.periodEnd} · government shares for {run.contributionMonth}</p>
       <table className="w-full text-sm">
         <thead className="text-left text-slate-500"><tr><th>Employee</th><th className="text-right">Gross</th><th className="text-right">Deductions</th><th className="text-right">Net</th></tr></thead>
@@ -37,7 +51,7 @@ function RunParts({ d }: { d: DocDetail }) {
   );
 }
 
-export const runView: ViewParts = { noEdit: true, extra: (d) => <RunParts d={d} /> };
+export const runView: ViewParts = { noEdit: true, extra: (d) => <RunParts d={d} />, cancelNote: (d) => <RemittedWarning runId={d.header.id} /> };
 
 export const releaseView: ViewParts = {
   noEdit: true,
@@ -80,7 +94,7 @@ export function Payslips({ params }: { me: Me; params?: Record<string, string> }
           <section key={e.employeeId} className="break-inside-avoid space-y-2 rounded-lg bg-white p-4 text-sm ring-1 ring-slate-300">
             <div className="flex justify-between"><h2 className="font-semibold">PAYSLIP</h2><span>{p.number}</span></div>
             <p>{e.name} <span className="text-slate-500">{e.code}</span></p>
-            <p className="text-slate-600">{GROUP_LABEL[p.payGroup]} · {p.periodStart} to {p.periodEnd} · paid {p.payDate}</p>
+            <p className="text-slate-600">{GROUP_LABEL[p.payGroup]} · {p.periodStart} to {p.periodEnd} · dated {p.payDate}</p>
             <table className="w-full">
               <tbody>
                 {e.lines.map((l) => <tr key={l.lineNo}><td>{l.description}</td><td className="text-right text-slate-500">{qtyText(l.kind, l.qty)}</td><td className="text-right tabular-nums">{peso(l.amountCents)}</td></tr>)}

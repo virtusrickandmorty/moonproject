@@ -18,6 +18,14 @@ export function saleByInvoiceNumber(db: Db, invoiceNumber: string): { number: st
   return db.prepare(`${SALE} WHERE CAST(s.invoice_number AS INTEGER) = CAST(? AS INTEGER)`).get(invoiceNumber) as SaleRef | undefined;
 }
 
+/** Booklet invoice numbers quick sales used between two numbers, cancelled ones included (TAX's booklet usage report). */
+export function saleInvoiceNumbersBetween(db: Db, from: number, to: number): { n: number; number: string; status: 'posted' | 'cancelled' }[] {
+  return db
+    .prepare(`SELECT CAST(s.invoice_number AS INTEGER) AS n, d.number, d.status FROM qs_sales s JOIN documents d ON d.id = s.document_id
+              WHERE CAST(s.invoice_number AS INTEGER) BETWEEN ? AND ?`)
+    .all(from, to) as { n: number; number: string; status: 'posted' | 'cancelled' }[];
+}
+
 /** What is still owed on a quick sale: its receivable, from the journal lines that name the sale (NR-2). */
 export function saleOpenCents(db: Db, id: string): number {
   return accountBalance(db, resolveAccount(db, { role: 'AR_TRADE' }).id, { refDocId: id });
