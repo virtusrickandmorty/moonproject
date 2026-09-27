@@ -1,0 +1,34 @@
+/**
+ * The menu (PLAN H1): 9 groups, items filtered by exact permission keys. Document lists come from
+ * GET /api/doc-types, which lists only the types the user may view. Other screens go in SCREENS with the
+ * permission key their API route checks.
+ */
+import type { DocTypeInfo } from '../api.ts';
+
+export const MENU_GROUPS = ['Overview', 'Sales', 'Production', 'Purchases & Expenses', 'Money', 'People & Payroll', 'Accounting & Tax', 'Reports', 'Admin'] as const;
+export type MenuGroup = (typeof MENU_GROUPS)[number];
+export interface MenuItem { group: MenuGroup; label: string; path: string; permission?: string }
+
+const MODULES: [MenuGroup, string][] = [
+  ['Sales', 'CUS CAT QUO JO COL QS COM'],
+  ['Production', 'PRD RATE SZR'],
+  ['Purchases & Expenses', 'PUR AP EXP INV'],
+  ['Money', 'CASH EQ LOAN FA'],
+  ['People & Payroll', 'EMP PAY CA STAT'],
+  ['Accounting & Tax', 'ACC TAX'],
+  ['Reports', 'RPT'],
+  ['Admin', 'PLT SEC AUD BAK MIG'],
+];
+const groupOf = (module: string): MenuGroup => MODULES.find(([, codes]) => codes.split(' ').includes(module))?.[0] ?? 'Overview';
+
+export const SCREENS: MenuItem[] = [{ group: 'Overview', label: 'Home', path: '/' }];
+export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
+export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);
+
+export function buildMenu(docTypes: DocTypeInfo[], permissions: ReadonlySet<string>, screens = SCREENS): { group: MenuGroup; items: MenuItem[] }[] {
+  const items: MenuItem[] = [
+    ...screens.filter((s) => !s.permission || permissions.has(s.permission)),
+    ...docTypes.map((d) => ({ group: groupOf(d.module), label: plural(d.title), path: docPath(d.key) })),
+  ];
+  return MENU_GROUPS.map((group) => ({ group, items: items.filter((i) => i.group === group) })).filter((g) => g.items.length > 0);
+}
