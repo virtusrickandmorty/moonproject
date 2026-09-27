@@ -1,11 +1,24 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createTestEnv, type TestEnv } from '../../../../test/helpers.ts';
 import { verifyAuditChain } from '../../../engine/audit.ts';
+import { activeCustomers, customerTaxInfo } from '../public.ts';
 
 let env: TestEnv | undefined;
 afterEach(async () => { await env?.app.close(); env?.db.close(); env = undefined; });
 
 describe('CUS master data', () => {
+  it('exposes tax details and only active customers to sales modules', async () => {
+    env = await createTestEnv();
+    const encoder = await env.as('encoder');
+    const first = (await encoder.post('/api/cus/customers', { kind: 'organization', displayName: 'Fictional Academy',
+      registeredName: 'Fictional Academy Inc.', tin: '000-111-222', isVatRegistered: true })).json();
+    const second = (await encoder.post('/api/cus/customers', { kind: 'person', displayName: 'Sample Customer' })).json();
+    expect(customerTaxInfo(env.db, first.id)).toEqual({ tin: '000-111-222', registeredName: 'Fictional Academy Inc.', isVatRegistered: true });
+    expect(customerTaxInfo(env.db, second.id)).toEqual({ tin: null, registeredName: null, isVatRegistered: false });
+    expect(customerTaxInfo(env.db, 'missing')).toBeUndefined();
+    expect((await encoder.post(`/api/cus/customers/${second.id}/deactivate`, {}, { 'if-match': '1' })).statusCode).toBe(200);
+    expect(activeCustomers(env.db)).toEqual([{ id: first.id, name: 'Fictional Academy' }]);
+  });
   it('creates a customer, group and wearer; rejects wrong-group and stale edits', async () => {
     env = await createTestEnv();
     const encoder = await env.as('encoder');

@@ -11,6 +11,17 @@ export interface CatalogPrice {
   unitPriceCents: number;
 }
 
+/** Stable item metadata for another module's read-only validation. */
+export function catalogItemRef(db: Db, id: string): {
+  code: string; name: string; class: 'made_to_order_garment' | 'service' | 'ready_made_item';
+  unit: 'pc' | 'set'; isActive: boolean;
+} | undefined {
+  const row = db.prepare('SELECT code, name, class, unit, is_active FROM cat_items WHERE id = ?').get(id) as
+    | { code: string; name: string; class: 'made_to_order_garment' | 'service' | 'ready_made_item'; unit: 'pc' | 'set'; is_active: number }
+    | undefined;
+  return row && { code: row.code, name: row.name, class: row.class, unit: row.unit, isActive: row.is_active === 1 };
+}
+
 /** The newest eligible effective date wins; within that date the largest eligible tier wins. */
 export function lookupCatalogPrice(db: Db, itemId: string, qty: number, businessDate: string): CatalogPrice | null {
   if (!Number.isSafeInteger(qty) || qty < 1 || !z.iso.date().safeParse(businessDate).success) {

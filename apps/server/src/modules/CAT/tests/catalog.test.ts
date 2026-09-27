@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createTestEnv } from '../../../../test/helpers.ts';
 import { verifyAuditChain } from '../../../engine/audit.ts';
-import { lookupCatalogPrice, logCatalogPriceOverride, requireCatalogDiscountReason } from '../public.ts';
+import { catalogItemRef, lookupCatalogPrice, logCatalogPriceOverride, requireCatalogDiscountReason } from '../public.ts';
 
 const example = {
   code: 'DEMO-SET', name: 'Sample two-piece kit', class: 'made_to_order_garment',
@@ -9,6 +9,18 @@ const example = {
 };
 
 describe('CAT catalog and pricing', () => {
+  it('shares item class and unit without changing catalog data', async () => {
+    const env = await createTestEnv();
+    try {
+      const owner = await env.as('owner');
+      const row = (await owner.post('/api/cat/items', example)).json();
+      expect(catalogItemRef(env.db, row.id)).toEqual({ code: 'DEMO-SET', name: 'Sample two-piece kit',
+        class: 'made_to_order_garment', unit: 'set', isActive: true });
+      expect(catalogItemRef(env.db, 'missing')).toBeUndefined();
+      await owner.post(`/api/cat/items/${row.id}/deactivate`, {}, { 'if-match': '1' });
+      expect(catalogItemRef(env.db, row.id)?.isActive).toBe(false);
+    } finally { await env.app.close(); env.db.close(); }
+  });
   it('requires permissions, versions, and known IDs for item changes', async () => {
     const env = await createTestEnv();
     try {
