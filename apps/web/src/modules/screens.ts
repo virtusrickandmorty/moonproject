@@ -20,12 +20,14 @@ import { RunForm } from './PAY/RunForm.tsx';
 import { ReleaseForm } from './PAY/ReleaseForm.tsx';
 import { Payslips, advanceView, releaseView, runView } from './PAY/views.tsx';
 import { AdvanceForm } from './CA/AdvanceForm.tsx';
+import { NotificationsPage } from './DASH/Home.tsx';
 
 /**
  * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
  * items are in shell/menu.ts SCREENS.
  */
 export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo[]; params?: Record<string, string> }>> = {
+  '/dash/notifications': NotificationsPage,
   '/prd/board': ProductionBoard,
   '/prd/rates': PieceRates,
   '/emp/employees': Employees,

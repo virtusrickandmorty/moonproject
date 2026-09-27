@@ -23,6 +23,7 @@ const groupOf = (module: string): MenuGroup => MODULES.find(([, codes]) => codes
 
 export const SCREENS: MenuItem[] = [
   { group: 'Overview', label: 'Home', path: '/' },
+  { group: 'Overview', label: 'Notifications', path: '/dash/notifications', permission: 'dash.view' },
   { group: 'Production', label: 'Production board', path: '/prd/board', permission: 'prd.view' },
   { group: 'Production', label: 'Piece rates', path: '/prd/rates', permission: 'rate.view' },
   { group: 'People & Payroll', label: 'Employees', path: '/emp/employees', permission: 'emp.view' },

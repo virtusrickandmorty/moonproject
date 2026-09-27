@@ -28,6 +28,10 @@ export interface Preview { totalCents: number; summary: string; issues: Issue[];
 export interface PostResult { id: string; number: string; totalCents: number; warnings: Issue[] }
 export interface Draft { id: string; docType: string; payload: { values?: Record<string, string> }; version: number; updatedAt: string }
 export interface CashPlace { id: number; name: string; balanceCents: number | null }
+export interface DashItem { id: string; label: string; href?: string; detail?: string; amountCents?: number }
+export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string }
+export interface DashHomeData { role: string; asOf: string; widgets: DashWidget[] }
+export interface DashNotification extends DashItem { kind: string; read: boolean }
 export interface CustomerRow { id: string; code: string; display_name: string; is_active: number }
 /** GET /api/col/customers/:id/open-items: what a customer can pay on. */
 export interface OpenItems {
@@ -160,6 +164,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     logout: () => call<unknown>('POST', '/api/auth/logout'),
     changePassword: (currentPassword: string, newPassword: string) => call<unknown>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
     health: () => call<{ serverTime: string }>('GET', '/api/health'),
+    dashHome: () => call<DashHomeData>('GET', '/api/dash/home'),
+    dashNotifications: () => call<DashNotification[]>('GET', '/api/dash/notifications'),
+    dashRead: (id: string) => call<{ ok: true }>('POST', '/api/dash/notifications/read', { id }),
     docTypes: () => call<DocTypeInfo[]>('GET', '/api/doc-types'),
     list: (type: string, q: { status?: string; before?: string; limit?: number } = {}) =>
       call<DocHeader[]>('GET', doc(type, `?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`)),

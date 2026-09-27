@@ -3,6 +3,7 @@ import { conflict } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 
 export { COMPLEXITIES, listSteps, stepById, type Complexity, type Step } from './production.ts';
+export { board } from './production.ts';
 
 export interface UnpaidAssignment {
   id: string; documentId: string; jobOrderId: string; lineNo: number; stepId: number; employeeId: string; workDate: string;
