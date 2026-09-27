@@ -36,6 +36,17 @@ export interface OpenItems {
 }
 /** GET /api/col/customers/:id/refundable: money held that can be paid back. */
 export interface Refundable { customerId: string; customerName: string; unappliedCents: number; jobOrders: { id: string; number: string; status: 'posted' | 'cancelled'; depositsHeldCents: number }[] }
+/** GET /api/col/customers/:id/transferable: money held that can be moved (D5 DEP-XFER), and the JOs it can go to. */
+export interface Transferable {
+  customerId: string; customerName: string; unappliedCents: number;
+  held: { id: string; number: string; status: 'posted' | 'cancelled'; depositsHeldCents: number; replacement: { id: string; number: string } | null }[];
+  jobOrders: { id: string; number: string; dueDate: string; totalCents: number; balanceDueCents: number }[];
+}
+/** GET /api/jo/orders/:id/status, the parts the JO view shows: all derived on the server (NR-2). */
+export interface JoStatus {
+  stageLabel: string;
+  money: { totalCents: number; invoicedCents: number; receivableCents: number; depositsHeldCents: number; balanceDueCents: number; collectedCents: number };
+}
 type Checked = { summary: string; issues: Issue[]; journal?: JournalLine[] | null };
 /** POST /api/qs/sales/preview: the sale, "write these on the booklet" and its payment (null while the sale has errors). */
 export interface QsPreview { totalCents: number; booklet: { vatableSalesCents: number; vatCents: number; discountCents: number; totalCents: number }; sale: Checked; payment: Checked | null }
@@ -99,6 +110,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     customers: (search: string) => call<CustomerRow[]>('GET', `/api/cus/customers?${new URLSearchParams({ search, limit: '10' })}`),
     openItems: (customerId: string) => call<OpenItems>('GET', customer(customerId, 'open-items')),
     refundable: (customerId: string) => call<Refundable>('GET', customer(customerId, 'refundable')),
+    transferable: (customerId: string) => call<Transferable>('GET', customer(customerId, 'transferable')),
+    joStatus: (id: string) => call<JoStatus>('GET', `/api/jo/orders/${encodeURIComponent(id)}/status`),
     qsPreview: (b: QsBody) => call<QsPreview>('POST', '/api/qs/sales/preview', b),
     qsRecord: (b: QsBody, expectedTotalCents: number, key: string) => call<QsRecorded>('POST', '/api/qs/sales', { ...b, expectedTotalCents }, idem(key)),
     qsReissue: (id: string, b: QsBody, expectedTotalCents: number, reason: string, key: string) =>

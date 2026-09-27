@@ -20,7 +20,7 @@ import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
 import { jobOrderRef, jobOrdersOf, joLedger, joMoney, settleLines } from '../../JO/public.ts';
 import { saleOpenCents, saleRef } from '../../QS/public.ts';
-import { MAX_CENTS, cashPlaceIssues, depositsHeld, insertTenders, loadTenders, sumCents, tenderInput, tenderToInput, withNames, type Tender } from '../ledger.ts';
+import { MAX_CENTS, cashPlaceIssues, insertTenders, loadTenders, sumCents, takenOutBy, tenderInput, tenderToInput, withNames, type Tender } from '../ledger.ts';
 
 /** Largest difference that may go to cash short and over instead of a deposit or an unpaid balance (D4.9). */
 export const SHORT_OVER_LIMIT_CENTS = 100;
@@ -277,27 +277,16 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
   },
 
   /**
-   * Refunds that paid out this collection's deposit: cancelling the collection first would leave the deposits
-   * account owing the customer less than nothing (D6). The part an invoice record applied reopens the receivable
-   * instead (afterCancel), as long as the JO's receivable stays within what was invoiced.
+   * Refunds and deposit transfers that took out money this collection put in: cancelling the collection first would
+   * leave the deposits account owing the customer less than nothing (D6). The part an invoice record applied reopens
+   * the receivable instead (afterCancel), as long as the JO's receivable stays within what was invoiced.
    */
   dependents(db, documentId) {
     const d = collectionDoc.load(db, documentId);
-    const parts: [string | null, number, number][] = [
-      ...d.applications.filter((a) => a.toDepositCents > 0).map((a): [string, number, number] => [a.jobOrderId, a.toDepositCents, a.toReceivableCents]),
-      ...(d.unappliedCents > 0 ? [[null, d.unappliedCents, 0] as [null, number, number]] : []),
+    return [
+      ...d.applications.flatMap((a) => takenOutBy(db, d.customerId, a.jobOrderId, a.toDepositCents, a.toReceivableCents)),
+      ...(d.unappliedCents > 0 ? takenOutBy(db, d.customerId, null, d.unappliedCents, 0) : []),
     ];
-    const blocked = ([jo, cents, toReceivable]: [string | null, number, number]) => {
-      const short = cents - depositsHeld(db, d.customerId, jo);
-      if (short <= 0) return false;
-      if (!jo) return true;
-      const m = joMoney(db, jo);
-      return m.receivableCents + toReceivable + short > m.invoicedCents;
-    };
-    const refunds = db.prepare(
-      `SELECT d.id, d.number FROM col_refunds r JOIN documents d ON d.id = r.document_id WHERE r.customer_id = ? AND r.job_order_id IS ? AND d.status = 'posted' ORDER BY d.number`,
-    );
-    return parts.filter(blocked).flatMap(([jo]) => refunds.all(d.customerId, jo) as { id: string; number: string }[]);
   },
 
   afterCancel(db, documentId) {

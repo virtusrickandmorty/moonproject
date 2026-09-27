@@ -20,6 +20,16 @@ export function jobOrderRef(db: Db, id: string): JoRef | undefined {
   return db.prepare(`${JO_REF} WHERE o.document_id = ?`).get(id) as JoRef | undefined;
 }
 
+/** Where an edited job order lives on now: JO-1 edited into JO-2, then into JO-3, gives JO-3. Null when the chain ends cancelled. */
+export function liveReplacementOf(db: Db, id: string): JoRef | null {
+  const next = db.prepare(`SELECT replaced_by_id FROM documents WHERE id = ? AND doc_type = 'jo.job_order'`).pluck();
+  for (let at = next.get(id) as string | null | undefined; at; at = next.get(at) as string | null | undefined) {
+    const jo = jobOrderRef(db, at);
+    if (jo?.status === 'posted') return jo;
+  }
+  return null;
+}
+
 /**
  * Recorded (not cancelled) job orders of one customer, or of everyone, oldest due first (E5 "default: oldest due first").
  * With includeCancelled, cancelled ones too (their deposits can still be refunded, D6).
