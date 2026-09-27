@@ -166,13 +166,13 @@ export function szrRoutes(app: FastifyInstance, deps: AppDeps): void {
     const user = currentUser(req);
 
     if (input.expectedReturnDate < todayDate) {
-      throw badRequest('Expected return date cannot be before today');
+      throw new AppError('DATE_PAST', 'Expected return date cannot be before today', 400);
     }
 
     tx(db, () => {
       const cust = customerRef(db, input.customerId);
       if (!cust || !cust.is_active) {
-        throw new AppError('CUSTOMER_INACTIVE', 'Invalid or inactive customer', 400);
+        throw new AppError('CUSTOMER_INACTIVE', 'Invalid or inactive customer', 409);
       }
 
       const setRecord = db.prepare('SELECT * FROM szr_sets WHERE id = ?').get(input.setId) as any;
