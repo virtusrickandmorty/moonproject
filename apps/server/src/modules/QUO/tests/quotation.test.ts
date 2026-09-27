@@ -53,6 +53,12 @@ describe('quotation document', () => {
     const view = await encoder.get(`/api/docs/quo.quotation/${recorded.json().id}`);
     expect(view.json().doc.lines).toHaveLength(2);
     expect(view.json().input.prospectName).toBe('Fictional Club');
+    expect(() => env.db.prepare(`INSERT INTO quo_lines (document_id, line_no, item_id, price_id,
+      description, qty, unit, list_unit_price_cents, unit_price_cents, override_reason,
+      discount_cents, discount_reason, line_total_cents)
+      SELECT document_id, 99, item_id, price_id, description, qty, unit, list_unit_price_cents,
+        unit_price_cents, override_reason, discount_cents, discount_reason, line_total_cents + 1
+      FROM quo_lines WHERE document_id = ? AND line_no = 1`).run(recorded.json().id)).toThrow(/CHECK constraint failed/);
     expect((env.db.prepare('SELECT count(*) AS n FROM journals').get() as { n: number }).n).toBe(0);
     expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
   });
@@ -74,6 +80,21 @@ describe('quotation document', () => {
     expect(verifyAuditChain(env.db)).toBeNull();
   });
 
+  it('needs a session and the right quotation permissions (N-04)', async () => {
+    const tv = await env.as('tv');
+    const input = quote();
+    for (const url of ['/api/docs/quo.quotation', '/api/docs/quo.quotation/preview', '/api/docs/quo.quotation/post']) {
+      const body = url.endsWith('/post') ? { input, expectedTotalCents: 12_000 } : { input };
+      const denied = url.endsWith('/post') || url.endsWith('/preview')
+        ? await tv.post(url, body, idem()) : await tv.get(url);
+      expect(denied.statusCode, denied.body).toBe(403);
+      const anonymous = url.endsWith('/post') || url.endsWith('/preview')
+        ? await env.app.inject({ method: 'POST', url, payload: body, headers: idem() })
+        : await env.app.inject({ method: 'GET', url });
+      expect(anonymous.statusCode, anonymous.body).toBe(401);
+    }
+  });
+
   it('rejects missing prices, client totals and discounts without a reason', async () => {
     const owner = await env.as('owner');
     const unpriced = (await owner.post('/api/cat/items', {
@@ -82,7 +103,15 @@ describe('quotation document', () => {
     const noPrice = await encoder.post('/api/docs/quo.quotation/preview', { input: quote([line(1, { itemId: unpriced })]) });
     expect(noPrice.json().issues.map((i: { code: string }) => i.code)).toContain('PRICE_MISSING');
     expect((await post(quote([line(1, { itemId: unpriced })]), 0)).statusCode).toBe(422);
+    const unknown = await encoder.post('/api/docs/quo.quotation/preview',
+      { input: quote([line(1, { itemId: '00000000-0000-4000-8000-000000000001' }), line(1, { itemId: unpriced })]) });
+    expect(unknown.statusCode, unknown.body).toBe(200);
+    expect(unknown.json().issues.map((i: { code: string }) => i.code)).toEqual(['PRICE_MISSING', 'PRICE_MISSING']);
     expect((await post(quote([line(1, { discountCents: 1500 })]), 10_500)).statusCode).toBe(422);
+    const redundantOverride = quote([line(1, { overrideUnitPriceCents: 12_000 })]);
+    expect((await encoder.post('/api/docs/quo.quotation/preview', { input: redundantOverride })).json().issues)
+      .toMatchObject([{ code: 'NO_PRICE_OVERRIDE' }]);
+    expect((await post(redundantOverride, 12_000)).statusCode).toBe(422);
     for (const extra of [{ totalCents: 1 }, { date: '2026-01-01' }, { status: 'posted' }, { number: 'QUO-9' }]) {
       expect((await post(quote([line()], extra), 12_000)).statusCode).toBe(400);
     }
@@ -127,19 +156,26 @@ describe('quotation document', () => {
   });
 
   it('holds integer totals for generated quotations', () => {
-    const actor = { userId: encoder.userId, permissions: new Set(['quo.post']) };
+    const actor = { userId: encoder.userId, permissions: new Set(['quo.post', 'cat.price.override']) };
     const ctx = { db: env.db, businessDate: '2026-09-28', at: '2026-09-28T10:00:00.000+08:00',
-      userId: encoder.userId, can: (_permission: string) => false };
-    fc.assert(fc.property(quotationDoc.arbitrary(env.db), (generated) => {
-      const input = { ...generated, lines: generated.lines.map((l) => ({ ...l, itemId })) };
+      userId: encoder.userId, can: (permission: string) => actor.permissions.has(permission) };
+    fc.assert(fc.property(quotationDoc.arbitrary(env.db), fc.boolean(), (generated, override) => {
+      const input = { ...generated, lines: generated.lines.map((l, i) => ({ ...l, itemId,
+        ...(override && i === 0 ? { overrideUnitPriceCents: (l.qty >= 10 ? 10_000 : 12_000) - 500,
+          overrideReason: 'Sample negotiated price' } : {}) })) };
       const doc = quotationDoc.compute(input, ctx);
-      expect(doc.totalCents).toBe(input.lines.reduce((sum, l) => sum + l.qty * (l.qty >= 10 ? 10_000 : 12_000), 0));
+      expect(doc.totalCents).toBe(input.lines.reduce((sum, l) => sum + l.qty *
+        (l.overrideUnitPriceCents ?? (l.qty >= 10 ? 10_000 : 12_000)), 0));
       expect(quotationDoc.validate(doc, ctx)).toEqual([]);
       const recorded = postDocument({ db: env.db, clock: env.clock }, quotationDoc, actor,
         { input, expectedTotalCents: doc.totalCents });
+      const stored = quotationDoc.load(env.db, recorded.id);
+      expect(stored).toEqual(doc);
+      expect(quotationDoc.compute(quotationDoc.toInput(stored), ctx)).toEqual(stored);
       expect(recorded.journalNumber).toBeNull();
       return true;
     }), { numRuns: 40 });
     expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
   });
 });
+

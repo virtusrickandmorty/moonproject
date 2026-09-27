@@ -29,7 +29,9 @@ CREATE TABLE quo_lines (
   discount_cents INTEGER NOT NULL CHECK (discount_cents >= 0),
   discount_reason TEXT,
   line_total_cents INTEGER NOT NULL CHECK (line_total_cents >= 0),
+  CHECK (line_total_cents = qty * unit_price_cents - discount_cents),
   PRIMARY KEY (document_id, line_no)
 ) STRICT;
 CREATE TRIGGER quo_lines_no_update BEFORE UPDATE ON quo_lines
 BEGIN SELECT RAISE(ABORT, 'IMMUTABLE: cancel and reissue a quotation'); END;
+

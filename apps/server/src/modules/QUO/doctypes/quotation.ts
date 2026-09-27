@@ -66,7 +66,12 @@ export const quotationDoc: DocTypeDef<QuotationInput, Quotation> = {
 
   compute(input, ctx) {
     const lines = input.lines.map((line, i): QuotationLine => {
-      const price = lookupCatalogPrice(ctx.db, line.itemId, line.qty, ctx.businessDate);
+      let price;
+      try { price = lookupCatalogPrice(ctx.db, line.itemId, line.qty, ctx.businessDate); }
+      catch (e) {
+        if (!(e instanceof AppError && e.code === 'NOT_FOUND')) throw e;
+        price = null;
+      }
       const listUnitPriceCents = price?.unitPriceCents ?? 0;
       const unitPriceCents = line.overrideUnitPriceCents ?? listUnitPriceCents;
       const gross = unitPriceCents <= MAX_UNIT_CENTS ? line.qty * unitPriceCents : 0;
@@ -97,6 +102,9 @@ export const quotationDoc: DocTypeDef<QuotationInput, Quotation> = {
       if (line.listUnitPriceCents > MAX_UNIT_CENTS) issues.push(issue(`${field}.itemId`, 'PRICE_TOO_HIGH', 'Check this catalog price before quoting.'));
       const gross = line.qty * line.unitPriceCents;
       if (line.discountCents > gross) issues.push(issue(`${field}.discountCents`, 'DISCOUNT', 'The discount is more than this line amount.'));
+      if (line.overrideUnitPriceCents !== undefined && line.overrideUnitPriceCents === line.listUnitPriceCents) {
+        issues.push(issue(`${field}.overrideUnitPriceCents`, 'NO_PRICE_OVERRIDE', 'Remove the override price when it matches the catalog price.'));
+      }
       if (line.overrideUnitPriceCents !== undefined && line.overrideUnitPriceCents !== line.listUnitPriceCents) {
         if (!ctx.can('cat.price.override')) issues.push(issue(`${field}.overrideUnitPriceCents`, 'PRICE_OVERRIDE_PERMISSION', 'Ask someone with price override permission.'));
         if (!line.overrideReason || line.overrideReason.length < 3) issues.push(issue(`${field}.overrideReason`, 'OVERRIDE_REASON', 'Enter a reason for the price override.'));
@@ -207,3 +215,4 @@ export const quotationDoc: DocTypeDef<QuotationInput, Quotation> = {
     });
   },
 };
+
