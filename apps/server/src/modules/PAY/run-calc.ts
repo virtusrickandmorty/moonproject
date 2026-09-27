@@ -8,7 +8,7 @@
 import { divRoundHalfAway, formatPeso, type Issue } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { attendanceBetween, employeesInGroup, holidaysBetween, payProfileAt, type Employee, type Holiday, type PayGroup, type PayProfile } from '../EMP/public.ts';
-import { stepById, unpaidAssignments } from '../PRD/public.ts';
+import { pieceEarningsByDay, stepById, unpaidAssignments } from '../PRD/public.ts';
 import { jobOrderRef } from '../JO/public.ts';
 import { advanceSchedule } from '../CA/public.ts';
 import { hdmfMonthly, hdmfRateAt, phicDailyBasis, phicMonthly, phicRateAt, rulesAt, sssMonthly, sssRateAt, withholding, wtaxTableAt, type PayRules, type TaxFrequency } from './statutory.ts';
@@ -47,10 +47,27 @@ export function periodEndOf(payGroup: PayGroup, start: string): string | undefin
   return undefined;
 }
 
+const DAY = 1000; // a day's quantity (days are stored × 1000)
 /** Equivalent daily rate of monthly pay (× 12 ÷ 313 for a 6-day week, ÷ 261 for 5), for absences, premiums and overtime. */
 const edr = (p: PayProfile, days6: number, days5: number) => divRoundHalfAway(p.monthlyRateCents! * 12, p.workweekDays === 6 ? days6 : days5);
 
 interface Built { lines: RunLine[]; notes: Issue[]; daysWorked: number }
+
+const WORKED = new Set(['present', 'half_day', 'holiday_worked', 'rest_day_worked']);
+
+/**
+ * A piece worker's pay for a regular holiday not worked (F1, DOLE): the average daily earnings of the last 7 workdays
+ * before it, not below the minimum wage (payroll Example B). Workdays are days with piece work or attendance marked
+ * worked, in the 31 days before; earnings are the work and rework pieces of those days.
+ */
+function pieceHolidayRate(db: Db, employeeId: string, date: string, minimumWageCents: number): { rateCents: number; days: number } {
+  const [from, to] = [addDays(date, -31), addDays(date, -1)];
+  const earned = new Map(pieceEarningsByDay(db, employeeId, from, to).map((x) => [x.date, x.amountCents]));
+  const worked = attendanceBetween(db, from, to, employeeId).filter((d) => WORKED.has(d.status)).map((d) => d.date);
+  const days = [...new Set([...earned.keys(), ...worked])].sort().slice(-7);
+  const average = days.length ? divRoundHalfAway(days.reduce((s, d) => s + (earned.get(d) ?? 0), 0), days.length) : 0;
+  return { rateCents: Math.max(average, minimumWageCents), days: days.length };
+}
 
 /** Earning lines of one employee for the period. */
 function earnings(
@@ -76,16 +93,18 @@ function earnings(
     }
     const r: PayRules = rulesAt(db, d.date);
     const h = holidays.get(d.date);
-    const worked = d.status === 'present' || d.status === 'half_day' || d.status === 'holiday_worked' || d.status === 'rest_day_worked';
-    if (worked) daysWorked += d.status === 'half_day' ? 0.5 : 1;
+    if (WORKED.has(d.status)) daysWorked += d.status === 'half_day' ? 0.5 : 1;
     if (p.payType === 'piece') {
       if (d.otMinutes > 0) manualNeeded.add('overtime');
-      if (h?.kind === 'regular' && d.status === 'holiday_off') manualNeeded.add(`holiday pay for ${h.name}`);
+      if (h?.kind === 'regular' && d.status === 'holiday_off') {
+        const pay = pieceHolidayRate(db, e.id, d.date, r.minimumWageCents);
+        const basis = pay.rateCents === r.minimumWageCents ? 'the minimum wage' : `average of the last ${pay.days} workdays`;
+        add('holiday', `Regular holiday, not worked (${pct(r.regHolidayOffBp)} of ${basis})`, DAY, pay.rateCents, r.regHolidayOffBp, DAY);
+      }
       continue;
     }
     const monthly = p.payType === 'monthly';
     const rate = monthly ? edr(p, factors.days6, factors.days5) : p.dailyRateCents!;
-    const DAY = 1000;
     let dayBp = 10_000;
     switch (d.status) {
       case 'present':
@@ -105,14 +124,17 @@ function earnings(
       case 'holiday_off':
         if (h?.kind === 'regular' && !monthly) add('holiday', `Regular holiday, not worked (${pct(r.regHolidayOffBp)})`, DAY, rate, r.regHolidayOffBp, DAY);
         break;
+      // A day worked at a premium is a day of basic pay (the 13th-month base, PD 851) plus the premium, which is not
+      // (payroll Example A). Monthly pay already covers a holiday itself, so monthly staff get its premium only.
       case 'holiday_worked':
         dayBp = h?.kind === 'regular' ? r.regHolidayWorkedBp : r.specialWorkedBp;
-        // Monthly pay already covers the day itself, so monthly staff get the premium only.
-        add('holiday', `${h?.kind === 'regular' ? 'Regular holiday' : 'Special day'} worked (${pct(dayBp)})`, DAY, rate, monthly ? dayBp - 10_000 : dayBp, DAY);
+        if (!monthly) add('basic', 'Days worked', DAY, rate, 10_000, DAY);
+        add('holiday', `${h?.kind === 'regular' ? 'Regular holiday' : 'Special day'} worked, premium (${pct(dayBp - 10_000)})`, DAY, rate, dayBp - 10_000, DAY);
         break;
       case 'rest_day_worked':
         dayBp = h ? (h.kind === 'regular' ? r.regHolidayRestBp : r.specialRestBp) : r.restDayWorkedBp;
-        add(h ? 'holiday' : 'rest_day', h ? `Rest day on a ${h.kind === 'regular' ? 'regular holiday' : 'special day'} (${pct(dayBp)})` : `Rest day worked (${pct(dayBp)})`, DAY, rate, dayBp, DAY);
+        add('basic', monthly ? 'Rest days worked' : 'Days worked', DAY, rate, 10_000, DAY);
+        add(h ? 'holiday' : 'rest_day', `${h ? `Rest day on a ${h.kind === 'regular' ? 'regular holiday' : 'special day'}` : 'Rest day worked'}, premium (${pct(dayBp - 10_000)})`, DAY, rate, dayBp - 10_000, DAY);
         break;
       case 'rest_day':
         break;
@@ -122,7 +144,7 @@ function earnings(
       add('ot', `Overtime (${pct(otBp)} of the hourly rate)`, d.otMinutes, rate, otBp, 480); // hourly = daily ÷ 8; qty in minutes
     }
   }
-  if (manualNeeded.size) note('ADD_BY_HAND', `${e.name} is paid per piece: add ${[...manualNeeded].join(' and ')} as a manual line (piece holiday pay is the average daily earnings of the last 7 workdays, not below the minimum wage).`);
+  if (manualNeeded.size) note('ADD_BY_HAND', `${e.name} is paid per piece: add ${[...manualNeeded].join(' and ')} as a manual line.`);
 
   if (end.payType === 'monthly') {
     const half = divRoundHalfAway(end.monthlyRateCents!, 2);
@@ -200,7 +222,13 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
     const so = monthSoFar(db, e.id, month);
     const clampNote = (scheme: string, n: number) => (n < 0 && notes.push({ code: 'LESS_THAN_TAKEN', level: 'warning', message: `${e.name}: ${scheme} for ${month} is now less than earlier runs took (${formatPeso(-n)}). Tell the accountant.` }), Math.max(0, n));
     const sssDue = e.statutory.sss ? sssMonthly(sss, so.gross + gross) : { mscCents: 0, ee: 0, er: 0, ec: 0 };
-    const phicBasis = end.payType === 'monthly' ? end.monthlyRateCents! : (end.payType === 'piece' ? 0 : phicDailyBasis(phic, end.dailyRateCents!, end.workweekDays)) + (end.payType === 'piece' || end.payType === 'mixed' ? so.piece + piece : 0);
+    // PhilHealth basis: the monthly rate; the daily rate × 313/12 (261/12) plus any piece pay; for piece workers the month's
+    // piece pay, but at least the minimum wage's monthly equivalent once they earn any (payroll Example B).
+    const monthPiece = so.piece + piece;
+    const phicBasis =
+      end.payType === 'monthly' ? end.monthlyRateCents!
+      : end.payType === 'piece' ? (monthPiece > 0 ? Math.max(monthPiece, phicDailyBasis(phic, endRules.minimumWageCents, end.workweekDays)) : 0)
+      : phicDailyBasis(phic, end.dailyRateCents!, end.workweekDays) + (end.payType === 'mixed' ? monthPiece : 0);
     const phicDue = e.statutory.phic ? phicMonthly(phic, phicBasis) : { basisCents: 0, ee: 0, er: 0 };
     const hdmfDue = e.statutory.hdmf ? hdmfMonthly(hdmf, so.gross + gross) : { ee: 0, er: 0 };
     const due = { sss: clampNote('SSS', sssDue.ee - so.sssEe), phic: clampNote('PhilHealth', phicDue.ee - so.phicEe), hdmf: clampNote('Pag-IBIG', hdmfDue.ee - so.hdmfEe) };
@@ -218,7 +246,7 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
     const taxableLines = built.lines.filter((l) => l.taxable).reduce((s, l) => s + l.amountCents, 0);
     const taxable = Math.max(0, taxableLines - (end.isMwe ? 0 : ee.sss + ee.phic + ee.hdmf));
     const wtax = e.statutory.wtax ? take(withholding(table, taxable)) : 0;
-    const plan = advanceSchedule(db, e.id);
+    const plan = advanceSchedule(db, e.id, q.payDate);
     const override = q.caOverrides.get(e.id);
     const wanted = override ?? plan.installmentCents;
     const ca = Math.max(0, Math.min(wanted, left - endRules.minNetPayCents));

@@ -6,6 +6,9 @@
  *   Dr 5203 / 6102 employer shares ; Dr 5204 / 6103 13th-month accrual (ACC-18)
  *   Cr 2401 SSS (EE + ER + EC) ; 2402 PhilHealth ; 2403 Pag-IBIG ; 2310 withholding tax ; 1210 cash advances ;
  *   Cr 2111 13th month ; 2110 net pay                                                          (each per employee)
+ * Dated the day recorded, or earlier by someone who may backdate (acc.backdate): the run form dates it the period's last
+ * day when that has passed, so a Sep 16–30 run recorded on Oct 1 books September's wages, shares and 13th month in
+ * September (PAY-1). The tax table and the cash-advance plan are read on the run's date.
  * Recording marks each piece row paid by its run line (PRD public.ts, F3 "paid once"). Cancel needs the releases, and
  * later runs of the same month, cancelled first; it mirrors the journal and makes the piece rows unpaid again. Cash
  * advances come back by themselves, because the CA ledger is read from the journals (D6).
@@ -62,7 +65,7 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
   title: 'Payroll Run',
   numbering: { series: { key: 'PAY', prefix: 'PAY-' } },
   permissions: { view: 'pay.run.view', create: 'pay.run.create', post: 'pay.run.post', cancel: 'pay.run.cancel' },
-  dating: 'system',
+  dating: 'accountant_may_backdate',
   inputSchema: runInput,
 
   compute(input, ctx) {
@@ -94,8 +97,14 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
       return issues;
     }
     if (periodEnd > ctx.businessDate) {
-      error('periodStart', 'PERIOD_OPEN', `The period ends on ${periodEnd}. Work the payroll out on or after that day, once attendance is typed.`);
+      error('periodStart', 'PERIOD_OPEN', `The period ends on ${periodEnd}. A payroll is worked out and dated on or after that day, once attendance is typed.`);
       return issues;
+    }
+    if (ctx.businessDate.slice(0, 7) > periodEnd.slice(0, 7)) {
+      issues.push({
+        field: 'periodStart', code: 'BOOKED_LATER', level: 'warning',
+        message: `This payroll is dated ${ctx.businessDate}, so the pay for ${doc.periodStart} to ${periodEnd} is booked in ${ctx.businessDate.slice(0, 7)}, not ${periodEnd.slice(0, 7)}. The accountant can date it ${periodEnd}.`,
+      });
     }
     const taken = recordedRunFor(ctx.db, doc.payGroup, doc.periodStart);
     if (taken) error('periodStart', 'DUPLICATE_RUN', `${taken} already pays the ${GROUP_LABEL[doc.payGroup]} group for ${doc.periodStart} to ${periodEnd}. Cancel it first to redo it.`);
@@ -107,7 +116,7 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     (doc.advances ?? []).forEach((a, i) => {
       if (!inRun.has(a.employeeId) || seenAdv.has(a.employeeId)) return error(`advances.${i}.employeeId`, 'NOT_IN_RUN', `Cash advance ${i + 1}: pick an employee paid in this run, once.`);
       seenAdv.add(a.employeeId);
-      const owed = advanceSchedule(ctx.db, a.employeeId).outstandingCents;
+      const owed = advanceSchedule(ctx.db, a.employeeId, ctx.businessDate).outstandingCents;
       if (a.amountCents > owed) error(`advances.${i}.amountCents`, 'CA_OVER', `${doc.employees.find((e) => e.employeeId === a.employeeId)!.name} owes ${formatPeso(Math.max(0, owed))} on cash advances; the deduction cannot be more.`);
     });
     if (new Set((doc.skip ?? []).map((s) => s.employeeId)).size !== (doc.skip ?? []).length) error('skip', 'DUPLICATE', 'Someone is left out twice.');

@@ -1,0 +1,97 @@
+/**
+ * Remittance form (PLAN D5 STAT-REM, E11): what is paid (SSS, PhilHealth, Pag-IBIG or the 1601-C tax), for which
+ * month, from where, how much and the PRN or reference. The screen shows what the month's payrolls left payable, and
+ * the server's variance check (less is a partial payment; more is refused). Opened from the remittance check with the
+ * scheme, month and amount filled in.
+ */
+import { useEffect, useState } from 'react';
+import { api, ApiError, type CashPlace, type DocTypeInfo, type Preview, type SchemeCheck } from '../../api.ts';
+import { Link, navigate } from '../../router.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
+import { docPath } from '../../shell/menu.ts';
+import { Errors, useLive } from '../COL/parts.tsx';
+import { SCHEME_LABEL, SCHEME_LIST, isMonth, remittanceInput, type RemittanceValues } from './stat.ts';
+
+export function RemittanceForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
+  const q = new URLSearchParams(location.search);
+  const [v, setV] = useState<RemittanceValues>({ scheme: q.get('scheme') ?? '', month: q.get('month') ?? '', cashPlaceId: '', amount: q.get('amount') ?? '', reference: '', note: '' });
+  const [places, setPlaces] = useState<CashPlace[]>([]);
+  const [check, setCheck] = useState<SchemeCheck | null>(null);
+  const [confirm, setConfirm] = useState<Preview | null>(null);
+  const [touched, setTouched] = useState(false);
+  const [error, setError] = useState('');
+  const fail = (e: Error) => setError(e.message);
+  useEffect(() => void api.cashPlaces().then(setPlaces, fail), []);
+  useEffect(() => {
+    setCheck(null);
+    if (isMonth(v.month) && v.scheme) api.statMonth(v.month).then((m) => setCheck(m.check.find((c) => c.scheme === v.scheme) ?? null), () => undefined);
+  }, [v.month, v.scheme]);
+
+  const { input, errors } = remittanceInput(v);
+  const live = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input));
+  if (mode.kind === 'edit') {
+    return <Notice tone="info">A remittance is corrected by cancelling it and recording it again. <Link to={docPath(type.key, `/${mode.id}`)} className="underline">Back to the remittance</Link></Notice>;
+  }
+  const openConfirm = () => {
+    setTouched(true);
+    if (errors.length === 0) api.preview(type.key, input).then(setConfirm, fail);
+  };
+  const record = async (key: string) => {
+    try {
+      const r = await api.post(type.key, input, confirm!.totalCents, key);
+      navigate(docPath(type.key, `/${r.id}?recorded=1`));
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.preview(type.key, input));
+      throw e;
+    }
+  };
+  const set = (patch: Partial<RemittanceValues>) => setV({ ...v, ...patch });
+
+  return (
+    <form onSubmit={(e) => e.preventDefault()} className="max-w-2xl space-y-4">
+      <h1 className="text-2xl font-semibold">New remittance</h1>
+      {error && <Notice>{error}</Notice>}
+      <Panel title="What is paid?">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Paid to" required>
+            <select className={inputClass} value={v.scheme} onChange={(e) => set({ scheme: e.target.value })}>
+              <option value="">Pick one</option>
+              {SCHEME_LIST.map((s) => <option key={s} value={s}>{SCHEME_LABEL[s]}</option>)}
+            </select>
+          </Field>
+          <Field label="For the month" required hint="The payroll month, like 2026-09">
+            <input className={inputClass} placeholder="2026-09" value={v.month} onChange={(e) => set({ month: e.target.value.trim() })} />
+          </Field>
+        </div>
+        {check && (
+          <p className="text-sm text-slate-600">
+            The payrolls of {v.month} recorded {peso(check.recordedCents)}; {peso(check.remittedCents)} is remitted, so {peso(Math.max(0, check.balanceCents))} is left to pay.
+            {check.balanceCents > 0 && v.amount === '' && <> <button type="button" className="underline" onClick={() => set({ amount: (check.balanceCents / 100).toFixed(2) })}>Pay all of it</button></>}
+          </p>
+        )}
+      </Panel>
+      <Panel title="Where did the money come from?">
+        <div role="radiogroup" aria-label="Where did the money come from?" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {places.map((c) => (
+            <button key={c.id} type="button" role="radio" aria-checked={v.cashPlaceId === String(c.id)} onClick={() => set({ cashPlaceId: String(c.id) })}
+              className={`rounded-lg p-2 text-left text-sm ring-1 ${v.cashPlaceId === String(c.id) ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'}`}>{c.name}</button>
+          ))}
+        </div>
+      </Panel>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Amount paid" required><input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right`} value={v.amount} onChange={(e) => set({ amount: e.target.value })} /></Field>
+        <Field label="PRN, reference or receipt no." required><input className={inputClass} value={v.reference} onChange={(e) => set({ reference: e.target.value })} /></Field>
+      </div>
+      <Field label="Note"><input className={inputClass} value={v.note} onChange={(e) => set({ note: e.target.value })} /></Field>
+      {live && <p className="text-sm">{live.summary}</p>}
+      {live?.issues.map((i) => <Notice key={i.code} tone={i.level}>{i.message}</Notice>)}
+      <Errors list={errors} show={touched} />
+      <div className="flex gap-2">
+        <Button tone="primary" disabled={!type.canPost} onClick={openConfirm}>Record</Button>
+        <Button onClick={() => history.back()}>Back</Button>
+      </div>
+      {confirm && <RecordDialog type={type} preview={confirm} reason="" onRecord={record} onClose={() => setConfirm(null)} />}
+    </form>
+  );
+}
