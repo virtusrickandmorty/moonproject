@@ -11,7 +11,8 @@ import { docPath } from '../shell/menu.ts';
 import { fieldsOf, toValues } from './fields.ts';
 
 /** A module's own view parts: more detail under "What this did", and its own cancel (e.g. a quick sale and its payment). */
-export interface ViewParts { extra?: (d: DocDetail) => ReactNode; cancel?: (id: string, reason: string, key: string) => Promise<unknown> }
+/** `noEdit` hides Edit where a cancel and a new document is the way to correct (a payroll's figures depend on the state it was worked out on). */
+export interface ViewParts { extra?: (d: DocDetail) => ReactNode; cancel?: (id: string, reason: string, key: string) => Promise<unknown>; noEdit?: boolean }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo; id: string; recorded: boolean; parts?: ViewParts }) {
@@ -42,7 +43,7 @@ export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo;
         <h1 className="text-2xl font-semibold">{type.title} {h.number}</h1>
         <StatusChip status={h.status} />
         <span className="flex-1" />
-        {posted && type.canCancel && type.canPost && <Button onClick={() => navigate(docPath(type.key, `/${id}/edit`))}>Edit</Button>}
+        {posted && type.canCancel && type.canPost && !parts.noEdit && <Button onClick={() => navigate(docPath(type.key, `/${id}/edit`))}>Edit</Button>}
         {posted && type.canCancel && <Button tone="danger" onClick={() => setCancelKey(newIdempotencyKey())}>Cancel</Button>}
       </div>
       <p className="text-sm text-slate-600">

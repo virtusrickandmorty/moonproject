@@ -23,7 +23,8 @@ export type JournalLine = { accountCode: string; accountName: string } & Record<
 export interface Journal { id: string; number: string; businessDate: string; postingKind: 'original' | 'reversal'; memo: string; lines: JournalLine[] }
 /** `journals` and `journal` are present only for users with acc.journal.view. `doc` is the stored document, as the server built it. */
 export interface DocDetail { header: DocHeader; input: Record<string, unknown>; doc?: Record<string, unknown>; journals?: Journal[] }
-export interface Preview { totalCents: number; summary: string; issues: Issue[]; journal?: JournalLine[] | null }
+/** `doc` is the document as the server worked it out (the payroll form shows its lines). */
+export interface Preview { totalCents: number; summary: string; issues: Issue[]; journal?: JournalLine[] | null; doc?: unknown }
 export interface PostResult { id: string; number: string; totalCents: number; warnings: Issue[] }
 export interface Draft { id: string; docType: string; payload: { values?: Record<string, string> }; version: number; updatedAt: string }
 export interface CashPlace { id: number; name: string; balanceCents: number | null }
@@ -97,6 +98,26 @@ export interface AttendanceGrid {
   employees: { id: string; code: string; fullName: string; hireDate: string; separatedOn: string | null }[]; days: AttendanceDay[];
 }
 export type AttendanceSave = { employeeId: string; date: string; status: AttendanceStatus; otMinutes?: number; note?: string };
+/** Payroll (PAY) and cash advances (CA): every figure is worked out by the server. */
+export type PayGroup = 'WEEKLY_PIECE' | 'SEMI_DAILY' | 'SEMI_MONTHLY';
+export interface PayLine { lineNo: number; kind: string; description: string; qty: number; rateCents: number; multiplierBp: number; amountCents: number; jobOrderId?: string; reason?: string }
+export interface PayEmployee {
+  employeeId: string; code: string; name: string; costCentre: string; payType: string; isMwe: boolean; lines: PayLine[]; grossCents: number; pieceCents: number; taxableCents: number;
+  sssMscCents: number; sssEeCents: number; sssErCents: number; sssEcCents: number; phicEeCents: number; phicErCents: number; hdmfEeCents: number; hdmfErCents: number;
+  eeShortCents: number; wtaxCents: number; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
+}
+export interface ManualPayLine { employeeId: string; kind: 'allowance' | 'adjustment'; amountCents: number; reason: string }
+export interface PayRunInput { payGroup: PayGroup; periodStart: string; lines?: ManualPayLine[]; advances?: { employeeId: string; amountCents: number }[]; skip?: { employeeId: string; reason: string }[] }
+export interface PayRunDoc extends PayRunInput { periodEnd: string; contributionMonth: string; employees: PayEmployee[]; grossCents: number; netCents: number }
+export interface PayPeriod { periodStart: string; periodEnd: string; employees: number; recorded: { id: string; number: string } | null }
+export interface Payslips {
+  number: string; status: 'posted' | 'cancelled'; payDate: string; payGroup: PayGroup; periodStart: string; periodEnd: string; contributionMonth: string;
+  employees: (PayEmployee & { caBalanceAfterCents: number; ytd: { grossCents: number; wtaxCents: number } })[];
+}
+export interface RunToRelease { id: string; number: string; payGroup: PayGroup; periodStart: string; periodEnd: string; dueCents: number }
+export interface ReleaseRow { employeeId: string; name: string; netCents: number; releasedBy: string | null }
+export interface CaStatus { employeeId: string; name: string; outstandingCents: number; installmentCents: number; open: { documentId: string; number: string; amountCents: number; installmentCents: number; openCents: number }[] }
+export interface ActiveEmployee { id: string; code: string; name: string; costCentre: string }
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -188,6 +209,12 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     holidays: (year?: number) => call<{ year: number; holidays: Holiday[] }>('GET', `/api/emp/holidays${year ? `?year=${year}` : ''}`),
     addHoliday: (body: { date: string; name: string; kind: 'regular' | 'special'; source: string }) => call<Holiday>('POST', '/api/emp/holidays', body),
     deactivateHoliday: (id: number, reason: string) => call<Holiday>('POST', `/api/emp/holidays/${id}/deactivate`, { reason }),
+    activeEmployees: () => call<ActiveEmployee[]>('GET', '/api/emp/active'),
+    payPeriods: (payGroup: PayGroup) => call<PayPeriod[]>('GET', `/api/pay/periods?payGroup=${payGroup}`),
+    payslips: (runId: string) => call<Payslips>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/payslips`),
+    runsToRelease: () => call<RunToRelease[]>('GET', '/api/pay/runs/to-release'),
+    releaseStatus: (runId: string) => call<ReleaseRow[]>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/release-status`),
+    caStatus: (employeeId: string) => call<CaStatus>('GET', `/api/ca/employees/${encodeURIComponent(employeeId)}`),
   };
 }
 
