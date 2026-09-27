@@ -1,4 +1,4 @@
-# Virtus ERP
+# Moonproject
 
 Accounting-first ERP for Virtus Garments, Inc.: customers and measurements, quotations, job orders, collections,
 production and piece-rate pay, payroll, purchasing, expenses, cash and banks, and the books, on one shared ledger.

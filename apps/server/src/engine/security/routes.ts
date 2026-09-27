@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { AppError, ROLES, newId, notFound, unauthorized } from '@virtus/shared';
+import { AppError, ROLES, newId, notFound, unauthorized } from '@moonproject/shared';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
 import { appendAudit } from '../audit.ts';

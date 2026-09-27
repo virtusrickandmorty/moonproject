@@ -8,7 +8,7 @@
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { formatPeso, type Issue } from '@virtus/shared';
+import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { getCashPlace, listCashPlaces } from '../../../engine/ledger/accounts.ts';
 

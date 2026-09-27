@@ -3,7 +3,7 @@
  * response and never records twice (PLAN C5, N-02).
  */
 import { createHash } from 'node:crypto';
-import { conflict } from '@virtus/shared';
+import { conflict } from '@moonproject/shared';
 import type { Db } from '../platform/db/driver.ts';
 import { canonicalJson } from './audit.ts';
 

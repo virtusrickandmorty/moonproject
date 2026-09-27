@@ -6,7 +6,7 @@ import { buildApp, type AppDeps } from '../src/app.ts';
 import { loadModules } from '../src/modules/load.ts';
 import { hashPassword } from '../src/engine/security/passwords.ts';
 import { SESSION_COOKIE } from '../src/engine/security/sessions.ts';
-import { newId, type RoleKey } from '@virtus/shared';
+import { newId, type RoleKey } from '@moonproject/shared';
 
 export const TEST_SCRYPT_N = 2 ** 10;
 export const PASSWORD = 'correct horse battery staple';

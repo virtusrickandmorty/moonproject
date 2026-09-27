@@ -1,7 +1,7 @@
 /**
  * One lifecycle for every document (PLAN C4). Each action runs in a single BEGIN IMMEDIATE transaction.
  */
-import { AppError, conflict, forbidden, newId, notFound, type Issue } from '@virtus/shared';
+import { AppError, conflict, forbidden, newId, notFound, type Issue } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { CLOCK_TOLERANCE_MS, clockBackwardsError, stamp, today, type Clock } from '../../platform/clock.ts';

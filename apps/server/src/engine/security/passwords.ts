@@ -2,7 +2,7 @@
  * scrypt password hashing (PLAN C6): N=2^17, r=8, p=1, per-user salt, parameters stored in the hash.
  */
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { AppError } from '@virtus/shared';
+import { AppError } from '@moonproject/shared';
 
 export const DEFAULT_SCRYPT_N = 2 ** 17;
 

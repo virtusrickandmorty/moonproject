@@ -4,7 +4,7 @@
  */
 import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
-import { AppError, manilaTimestamp } from '@virtus/shared';
+import { AppError, manilaTimestamp } from '@moonproject/shared';
 import type { Db } from './platform/db/driver.ts';
 import type { Clock } from './platform/clock.ts';
 import { stamp } from './platform/clock.ts';

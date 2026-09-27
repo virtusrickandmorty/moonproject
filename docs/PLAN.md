@@ -1,4 +1,4 @@
-# Virtus ERP: the complete build plan
+# Moonproject: the complete build plan
 
 **Version 1.0, 27 Sep 2026.** Prepared for Virtus Garments, Inc. by Claude, from the owner's requirements (2 rounds of Q&A), a deep read of both old apps (Apps Script and VERSION 2) and their data, and research on the 2026 Philippine rules (BIR/EOPT, VAT, withholding, SSS/PhilHealth/Pag-IBIG, labor) and on hosting.
 
@@ -61,7 +61,7 @@ Can it be *perfect* in a week? No honest builder can promise that. What we can p
 
 ## A5. What we need from you
 **Before the build starts (about 10 minutes of your time):**
-1. Create an empty private GitHub repository for the new app (name suggestion: `virtus-erp`) and add it to this project in **Project settings → Repositories**. Say "go" in the build thread.
+1. Create an empty private GitHub repository for the new app (name suggestion: `moonproject`) and add it to this project in **Project settings → Repositories**. Say "go" in the build thread.
 2. Tell us the shop PC: Windows 10 or 11, and roughly how old it is.
 
 **During the week:** answer the decisions in Part K when you can. Each one has a safe default, so nothing waits on you. The most important are:
@@ -159,17 +159,17 @@ Go-live requires: all Must items done; the month-in-the-life golden scenario and
 ```
  SHOP LAN (works with the internet unplugged)                     OUTSIDE (optional)
  Shop PCs / phones (Chrome, Edge)  --- https://<server-LAN-IP> ---+   Owners / accountant
- (each device trusts the "Virtus ERP Local CA" once)              |   VPN app (default NetBird;
+ (each device trusts the "Moonproject Local CA" once)              |   VPN app (default NetBird;
                                                                    |   any VPN works) -> https://<VPN-IP>
  SERVER PC (Windows 10/11, SSD, UPS) ------------------------------+
-   Windows service "VirtusERP" (WinSW -> bundled node.exe, runs as a virtual service account)
+   Windows service "Moonproject" (WinSW -> bundled node.exe, runs as a virtual service account)
      HTTPS :443  UI + /api + /print  (one origin; TLS from the app's own local CA)
      HTTP  :80   redirect + CA download + "Join this PC" helper only
      127.0.0.1:8081 health + ops endpoints (loopback only)
-     SQLite  D:\VirtusERP\data\virtus.db (WAL, synchronous=FULL) + data\attachments\ (by SHA-256)
+     SQLite  D:\Moonproject\data\moonproject.db (WAL, synchronous=FULL) + data\attachments\ (by SHA-256)
      in-app scheduler: snapshots, backups, integrity checks, clock check, email outbox (never posts)
    Scheduled tasks: watchdog every 5 min; disk health weekly; time resync daily
-   Google Drive for desktop mirrors D:\VirtusERP-Backups\offsite ; USB drives A/B rotated weekly
+   Google Drive for desktop mirrors D:\Moonproject-Backups\offsite ; USB drives A/B rotated weekly
 ```
 
 ## C2. Stack (decided)
@@ -182,13 +182,13 @@ Go-live requires: all Must items done; the month-in-the-life golden scenario and
 | Web UI | **React 19 + Vite + Tailwind 4** single-page app served from the same origin; no business data in browser storage (only UI preferences) | Familiar for builders; avoids the "cached journals" failure |
 | Tests | **Vitest** (unit, golden, API via `inject()`), **fast-check** (property tests), **Playwright** (a few end-to-end flows), Windows smoke install in CI | Accounting correctness is proven, not asserted |
 | Packaging | **GitHub Actions**: Linux job runs all tests; Windows job builds the release and smoke-installs it. **Inno Setup `Setup.exe`** installs/updates/repairs; install/update logic in TypeScript (`ops.js`) run by the bundled node | Builders work in Linux containers; a real Windows runner proves each release |
-| Service | **WinSW v2.12** wraps node.exe as a Windows service (auto-start, crash restart), virtual account `NT SERVICE\VirtusERP`, watchdog scheduled task restarts a hung service | Runs without anyone logged in; NSSM is unmaintained |
+| Service | **WinSW v2.12** wraps node.exe as a Windows service (auto-start, crash restart), virtual account `NT SERVICE\Moonproject`, watchdog scheduled task restarts a hung service | Runs without anyone logged in; NSSM is unmaintained |
 | Dependencies | Exact version pins; at most about 20 direct runtime dependencies; `npm ci` only | Fewer things break over the years |
 
 ## C3. Repository layout
-One private repo `virtus-erp` on the company's GitHub (owner is admin with 2FA). npm-workspaces monorepo:
+One private repo `moonproject` on the company's GitHub (owner is admin with 2FA). npm-workspaces monorepo:
 ```
-virtus-erp/
+moonproject/
   packages/shared/src/  money.ts dates.ts ids.ts errors.ts permissions.ts
                         doctypes/<module>/<doc>.schema.ts   calc/<module>/*.ts   (pure, used by server AND web)
   apps/server/src/
@@ -198,7 +198,7 @@ virtus-erp/
                 numbering.ts audit.ts idempotency.ts permissions.ts print/ settings.ts attachments.ts outbox.ts
     modules/<CODE>/  index.ts (defineModule) doctypes/ posting/<doc>.posting.ts sql/ print/ migrations/ tests/
   apps/web/src/  shell/ components/ generic/(DocList, DocForm, DocView) modules/<CODE>/ (custom pages only)
-  ops/  src/(setup, update, rollback, uninstall, watchdog, usb, restore, fix-clock, join)  installer/VirtusERP.iss  winsw/
+  ops/  src/(setup, update, rollback, uninstall, watchdog, usb, restore, fix-clock, join)  installer/Moonproject.iss  winsw/
   tests/golden/  tests/e2e/  tests/fixtures/
   tools/ seed.ts review-pack.ts gen-permissions.ts check-titles.ts compare-blind.ts
   docs/ adr/ owner-guide/ runbooks/ STATUS.md decisions.md
@@ -877,7 +877,7 @@ Setup for G-01..G-12: customer "Test School" (VAT-registered, TWA goods 1%); dep
 # J. The build week, the team of 4 AIs, and the switch-over
 
 ## J1. Team and lanes (revised 27 Sep: all 4 AIs build)
-One private GitHub repository `virtus-erp`. Every AI works on its own branch and opens pull requests; nothing merges unless all automatic tests pass. On day 1, Claude #1 copies this plan into the repo as `docs/PLAN.md` and adds `AGENTS.md` and `CLAUDE.md` (the house rules: read `docs/PLAN.md` Parts B–D and your module's section; use the document engine; integer centavos; never edit another lane's folders; every money rule needs a golden test). Codex and Jules read `AGENTS.md` automatically.
+One private GitHub repository `moonproject`. Every AI works on its own branch and opens pull requests; nothing merges unless all automatic tests pass. On day 1, Claude #1 copies this plan into the repo as `docs/PLAN.md` and adds `AGENTS.md` and `CLAUDE.md` (the house rules: read `docs/PLAN.md` Parts B–D and your module's section; use the document engine; integer centavos; never edit another lane's folders; every money rule needs a golden test). Codex and Jules read `AGENTS.md` automatically.
 
 | Who | Where it runs | Owns (modules, see B2) |
 |---|---|---|
@@ -940,16 +940,16 @@ Install on the shop PC in practice mode as early as day 2 (Claude #1's first Win
 
 ## J6. Starter prompts (the owner copies these)
 **Claude #2 (Claude Code on the web, second account), first task:**
-> You are Builder "Claude #2: Sales, Production & Payroll" for the Virtus ERP in the `virtus-erp` repository. Read `AGENTS.md`, then `docs/PLAN.md` Parts B, C, D and E4–E7 and E11, and F. Today's task: [module, e.g. "JO – Job Orders & Release"]. Work only in your lane's folders, follow the document engine contract, write golden tests for every posting, keep the PR under about 800 lines, and open a pull request titled "[JO] ..." when all tests pass.
+> You are Builder "Claude #2: Sales, Production & Payroll" for the Moonproject in the `moonproject` repository. Read `AGENTS.md`, then `docs/PLAN.md` Parts B, C, D and E4–E7 and E11, and F. Today's task: [module, e.g. "JO – Job Orders & Release"]. Work only in your lane's folders, follow the document engine contract, write golden tests for every posting, keep the PR under about 800 lines, and open a pull request titled "[JO] ..." when all tests pass.
 
 **Codex (ChatGPT), each task:**
-> Repository `virtus-erp`. Read `AGENTS.md` and `docs/PLAN.md` Parts B, C, H and the section for [module, e.g. "E1 Customers & Measurements (CUS)"]. Build only that module in `apps/server/src/modules/CUS/` and `apps/web/src/modules/CUS/`, using the generic screens and the document engine. Do not write or change any posting rules (`*.posting.ts`). Add tests. Open a pull request titled "[CUS] ...". If a contract seems to be missing, say so in the PR instead of changing shared files.
+> Repository `moonproject`. Read `AGENTS.md` and `docs/PLAN.md` Parts B, C, H and the section for [module, e.g. "E1 Customers & Measurements (CUS)"]. Build only that module in `apps/server/src/modules/CUS/` and `apps/web/src/modules/CUS/`, using the generic screens and the document engine. Do not write or change any posting rules (`*.posting.ts`). Add tests. Open a pull request titled "[CUS] ...". If a contract seems to be missing, say so in the PR instead of changing shared files.
 
 **Jules (Gemini), each task:**
-> Repository `virtus-erp`. Read `AGENTS.md` and `docs/PLAN.md` Parts B, C, H and the section for [module, e.g. "E9 Suppliers & Purchasing (PUR)"]. Build only that module in its own folders, using the generic screens and the document engine. Do not write or change posting rules or shared contracts. Never commit real customer or employee data; use made-up examples. Add tests and open a pull request titled "[PUR] ...".
+> Repository `moonproject`. Read `AGENTS.md` and `docs/PLAN.md` Parts B, C, H and the section for [module, e.g. "E9 Suppliers & Purchasing (PUR)"]. Build only that module in its own folders, using the generic screens and the document engine. Do not write or change posting rules or shared contracts. Never commit real customer or employee data; use made-up examples. Add tests and open a pull request titled "[PUR] ...".
 
 **Review request (paste into the reviewing AI):**
-> Review pull request #[n] in `virtus-erp` against `docs/PLAN.md` (Parts B1, D and the module's section) and `AGENTS.md`. List findings as `ID | severity (blocker/major/minor) | file | expected | actual`. Blockers: any money movement without a journal, any delete or in-place edit of posted data, client-sent totals/dates trusted, a print titled Invoice or Official Receipt, a missing permission check.
+> Review pull request #[n] in `moonproject` against `docs/PLAN.md` (Parts B1, D and the module's section) and `AGENTS.md`. List findings as `ID | severity (blocker/major/minor) | file | expected | actual`. Blockers: any money movement without a journal, any delete or in-place edit of posted data, client-sent totals/dates trusted, a print titled Invoice or Official Receipt, a missing permission check.
 
 ---
 

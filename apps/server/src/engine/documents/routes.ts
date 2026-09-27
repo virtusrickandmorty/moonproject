@@ -4,7 +4,7 @@
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { AppError, forbidden, notFound } from '@virtus/shared';
+import { AppError, forbidden, notFound } from '@moonproject/shared';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
 import type { AppDeps } from '../../app.ts';

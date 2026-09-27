@@ -1,7 +1,11 @@
-# Virtus ERP: house rules for every builder (Claude #1, Claude #2, Codex, Jules)
+# Moonproject: house rules for every builder (Claude #1, Claude #2, Codex, Jules)
 
-Virtus ERP is the accounting-first ERP for Virtus Garments, Inc., a made-to-order garment shop in the Philippines.
+**Moonproject** is the accounting-first ERP for Virtus Garments, Inc., a made-to-order garment shop in the Philippines.
 It runs on one shop PC (Windows) and is used from browsers on the shop LAN.
+
+**Work only from this GitHub repository** (github.com/virtusrickandmorty/moonproject), in a fresh clone.
+Older Virtus apps (the Apps Script app, "VERSION 2" and any other "virtus erp" folders on a PC) are NOT this project:
+never read, copy or build on them. Everything you need is in this repo, mainly `docs/PLAN.md`.
 
 ## Read first
 1. This file.
@@ -29,7 +33,7 @@ Codex and Jules build screens, reports, prints and imports around them, never po
 - **Balances are computed from the ledger**, never stored (`engine/ledger/queries.ts`).
 - **Nothing is deleted, ever.** Every table gets a `BEFORE DELETE` abort trigger automatically. Master data is deactivated (`is_active = 0`).
 - **Posted documents are never edited.** Edit = cancel (mirror reversal dated today) + reissue with a new number. The engine does this.
-- **Money is integer centavos.** Columns end in `_cents`, API fields end in `Cents`. No floats. Use `@virtus/shared` money helpers (`vatFromGross`, `applyRate`, `allocate`).
+- **Money is integer centavos.** Columns end in `_cents`, API fields end in `Cents`. No floats. Use `@moonproject/shared` money helpers (`vatFromGross`, `applyRate`, `allocate`).
 - **Dates are Manila business dates** (`YYYY-MM-DD`) from the server clock (`manilaDate`). Never cut a date out of `toISOString()`. The client never sends a date, number, total, status, user or VAT figure: input schemas are `z.object({...}).strict()`.
 - **Posting names accounts by role key** (`{ role: 'AR_TRADE' }`) or by master data the user picked (`{ cashPlace: id }`, `{ accountId }` from a category). Never by a hard-coded account code or id.
 - **Permissions are exact keys** (`cash.trf.post`) checked on every route. Every route declares `config: { permission }` or the server refuses to start. No role-name checks, no admin bypass.
