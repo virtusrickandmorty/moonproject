@@ -12,9 +12,23 @@ import { quickSaleView } from './QS/QuickSaleView.tsx';
 import { EntryForm } from './PRD/EntryForm.tsx';
 import { ProductionBoard } from './PRD/Board.tsx';
 import { PieceRates } from './RATE/Rates.tsx';
+import { Employees } from './EMP/Employees.tsx';
+import { EmployeePage } from './EMP/Employee.tsx';
+import { Attendance } from './EMP/Attendance.tsx';
+import { Holidays } from './EMP/Holidays.tsx';
 
-/** Screens that are not a document list, form or view, by path (their menu items are in shell/menu.ts SCREENS). */
-export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo[] }>> = { '/prd/board': ProductionBoard, '/prd/rates': PieceRates };
+/**
+ * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
+ * items are in shell/menu.ts SCREENS.
+ */
+export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo[]; params?: Record<string, string> }>> = {
+  '/prd/board': ProductionBoard,
+  '/prd/rates': PieceRates,
+  '/emp/employees': Employees,
+  '/emp/employees/:id': EmployeePage,
+  '/emp/attendance': Attendance,
+  '/emp/holidays': Holidays,
+};
 
 export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: FormMode }>> = {
   'col.collection': CollectionForm,
