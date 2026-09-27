@@ -4,15 +4,10 @@
  * Every figure below is worked out by hand from F1 and F3. Made-up people only.
  */
 import { describe, expect, it } from 'vitest';
-import { AppError, formatPesos } from '@moonproject/shared';
-import { cashPlaceId, createTestEnv, createUser, idem, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, idem } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
-import { cancelDocument, postDocument, previewDocument } from '../../../engine/documents/lifecycle.ts';
-import type { DocTypeDef } from '../../../engine/documents/registry.ts';
-import { stamp, today } from '../../../platform/clock.ts';
+import { trialBalance } from '../../../engine/ledger/queries.ts';
 import { tx } from '../../../platform/db/driver.ts';
-import { addEmployee, addPay, type TestPay } from '../../EMP/tests/fixture.ts';
-import { saveAttendance } from '../../EMP/time.ts';
 import { advanceSchedule } from '../../CA/public.ts';
 import { advanceDoc } from '../../CA/doctypes/advance.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
@@ -22,52 +17,7 @@ import { setupLine } from '../../PRD/production.ts';
 import { unpaidAssignments } from '../../PRD/public.ts';
 import { runDoc } from '../doctypes/run.ts';
 import { releaseDoc } from '../doctypes/release.ts';
-
-/** A test world at a Manila date: users, an actor with every permission, and helpers to record through the engine. */
-async function world(date: string) {
-  const env = await createTestEnv(`${date}T02:00:00Z`); // 10:00 in Manila
-  const userId = createUser(env.db, `payroll-${date}`, ['owner']);
-  const actor = { userId, permissions: new Set(env.deps.registry.permissions().map((p) => p.key)) };
-  const e = { db: env.db, clock: env.clock };
-  const record = <I>(def: DocTypeDef<I>, input: I) => postDocument(e, def, actor, { input, expectedTotalCents: previewDocument(e, def, actor, input).totalCents });
-  const preview = <I>(def: DocTypeDef<I>, input: I) => previewDocument(e, def, actor, input);
-  const cancel = (def: DocTypeDef, id: string) => cancelDocument(e, def, actor, id, 'Recorded by mistake, redo it');
-  const who = () => ({ userId, at: stamp(env.clock), today: today(env.clock), can: () => true });
-  const attend = (days: object[]) => tx(env.db, () => saveAttendance(env.db, { days }, who()));
-  const person = (name: string, pay: TestPay, o: Parameters<typeof addEmployee>[2] = {}) => {
-    const id = addEmployee(env.db, name, o);
-    addPay(env.db, id, userId, { effectiveFrom: o.hireDate ?? '2025-01-06', ...pay });
-    return id;
-  };
-  const at = (d: string) => env.clock.set(`${d}T02:00:00Z`);
-  return { env, db: env.db, userId, actor, record, preview, cancel, attend, person, at, who };
-}
-
-/** The document's journal (original), per account: "2110 Cr 7,075.00", sorted by account code. */
-function journal(env: TestEnv, documentId: string, kind: 'original' | 'reversal' = 'original'): string[] {
-  const rows = env.db
-    .prepare(
-      `SELECT a.code, SUM(l.debit_cents) AS dr, SUM(l.credit_cents) AS cr FROM journal_lines l JOIN journals j ON j.id = l.journal_id JOIN accounts a ON a.id = l.account_id
-       WHERE j.source_type = 'document' AND j.source_id = ? AND j.posting_kind = ? GROUP BY a.code ORDER BY a.code`,
-    )
-    .all(documentId, kind) as { code: string; dr: number; cr: number }[];
-  return rows.flatMap((r) => [...(r.dr ? [`${r.code} Dr ${formatPesos(r.dr)}`] : []), ...(r.cr ? [`${r.code} Cr ${formatPesos(r.cr)}`] : [])]);
-}
-const partyBalance = (env: TestEnv, code: string, employeeId: string) =>
-  env.db
-    .prepare(`SELECT COALESCE(SUM(l.debit_cents - l.credit_cents), 0) FROM journal_lines l JOIN accounts a ON a.id = l.account_id WHERE a.code = ? AND l.party_type = 'employee' AND l.party_id = ?`)
-    .pluck()
-    .get(code, employeeId) as number;
-const codes = (issues: { code: string; level: string }[], level = 'error') => issues.filter((i) => i.level === level).map((i) => i.code);
-const fails = (fn: () => unknown, code: string) => {
-  try {
-    fn();
-  } catch (e) {
-    expect((e as AppError).code).toBe(code);
-    return (e as AppError).details;
-  }
-  throw new Error(`expected ${code}`);
-};
+import { codes, fails, journal, partyBalance, world } from './world.ts';
 
 describe('G-24: monthly office staff ₱15,000, semi-monthly (F3 example C)', () => {
   it('cutoff 1 takes PhilHealth for the month; cutoff 2 trues SSS and Pag-IBIG up to the month; the 13th month accrues each run', async () => {
@@ -163,18 +113,20 @@ describe('holidays, rest day, overtime, SIL and the tax path (F1)', () => {
     ]);
     const run = w.record(runDoc, { payGroup: 'SEMI_DAILY', periodStart: '2026-08-16' });
     const [e] = runDoc.load(w.db, run.id).employees;
+    // A day worked at a premium is a day of basic pay plus the premium (payroll Example A), so the special day and the
+    // rest day count as days worked (9.5 + 2 = 11.5) and their 30% premiums are lines of their own.
     expect(e!.lines.map((l) => [l.description, l.qty, l.amountCents])).toEqual([
-      ['Days worked', 9_500, 950_000],
-      ['Special day worked (130%)', 1_000, 130_000],
+      ['Days worked', 11_500, 1_150_000],
+      ['Special day worked, premium (30%)', 1_000, 30_000],
       ['Overtime (169% of the hourly rate)', 60, 21_125], // 130% × 130% for OT on a special day
-      ['Rest day worked (130%)', 1_000, 130_000],
+      ['Rest day worked, premium (30%)', 1_000, 30_000],
       ['Paid leave (SIL)', 1_000, 100_000],
       ['Regular holiday, not worked (100%)', 1_000, 100_000],
     ]);
     // Gross 14,311.25. SSS MSC 14,500 (725 / 1,450 / EC 10); PhilHealth on 26,083.33 (652.08 each); Pag-IBIG on 10,000 (200 each);
-    // tax on 14,311.25 − 1,577.08 = 12,734.17 → 15% over 10,417 = 347.58; 13th month on basic 9,500 + SIL 1,000 = 875.00.
+    // tax on 14,311.25 − 1,577.08 = 12,734.17 → 15% over 10,417 = 347.58; 13th month on basic 11,500 + SIL 1,000 = 1,041.67.
     expect([e!.grossCents, e!.taxableCents, e!.wtaxCents, e!.netCents]).toEqual([1_431_125, 1_273_417, 34_758, 1_238_659]);
-    expect(journal(w.env, run.id)).toEqual(['2110 Cr 12,386.59', '2111 Cr 875.00', '2310 Cr 347.58', '2401 Cr 2,185.00', '2402 Cr 1,304.16', '2403 Cr 400.00', '5202 Dr 14,311.25', '5203 Dr 2,312.08', '5204 Dr 875.00']);
+    expect(journal(w.env, run.id)).toEqual(['2110 Cr 12,386.59', '2111 Cr 1,041.67', '2310 Cr 347.58', '2401 Cr 2,185.00', '2402 Cr 1,304.16', '2403 Cr 400.00', '5202 Dr 14,311.25', '5203 Dr 2,312.08', '5204 Dr 1,041.67']);
   });
 });
 
@@ -191,23 +143,24 @@ describe('weekly piece pay (F3 example B shape), paid once, corrections next run
 
     w.at('2026-09-26');
     const r1 = w.record(runDoc, { payGroup: 'WEEKLY_PIECE', periodStart: '2026-09-21' });
-    // 30 × ₱40 = 1,200.00. SSS minimum MSC 5,000 (250 / 500 / 10); PhilHealth floor ₱10,000 (250 each); Pag-IBIG on ₱1,200 (EE 1% = 12, ER 24).
-    expect(journal(w.env, r1.id)).toEqual(['2110 Cr 688.00', '2111 Cr 100.00', '2401 Cr 760.00', '2402 Cr 500.00', '2403 Cr 36.00', '5201 Dr 1,200.00', '5203 Dr 784.00', '5204 Dr 100.00']);
+    // 30 × ₱40 = 1,200.00. SSS minimum MSC 5,000 (250 / 500 / 10); PhilHealth on the minimum wage's monthly equivalent,
+    // ₱550 × 313/12 = 14,345.83 (358.65 each, payroll Example B); Pag-IBIG on ₱1,200 (EE 1% = 12, ER 24).
+    expect(journal(w.env, r1.id)).toEqual(['2110 Cr 579.35', '2111 Cr 100.00', '2401 Cr 760.00', '2402 Cr 717.30', '2403 Cr 36.00', '5201 Dr 1,200.00', '5203 Dr 892.65', '5204 Dr 100.00']);
     const piece = w.db.prepare(`SELECT l.ref_doc_id FROM journal_lines l JOIN accounts a ON a.id = l.account_id JOIN journals j ON j.id = l.journal_id WHERE j.source_id = ? AND a.code = '5201'`).pluck().get(r1.id);
     expect(piece).toBe(jo); // piece labor tagged with its job order
     const row = w.db.prepare('SELECT id, pay_run_line_id FROM prd_assignments').get() as { id: string; pay_run_line_id: string };
     expect(w.db.prepare('SELECT assignment_id FROM pay_run_lines WHERE id = ?').pluck().get(row.pay_run_line_id)).toBe(row.id);
     expect(unpaidAssignments(w.db, '2026-12-31', eli)).toEqual([]); // N-11
-    const rel = w.record(releaseDoc, { runId: r1.id, employeeIds: [eli], tenders: [{ cashPlaceId: cash, amountCents: 68_800 }] });
+    const rel = w.record(releaseDoc, { runId: r1.id, employeeIds: [eli], tenders: [{ cashPlaceId: cash, amountCents: 57_935 }] });
 
     w.at('2026-09-28');
     w.record(entryDoc, { jobOrderId: jo, stepId: 6, rows: [{ lineNo: 1, employeeId: eli, pieces: -2, correctionOf: row.id }, { lineNo: 1, employeeId: eli, pieces: 10 }], overCapReason: over });
     w.at('2026-10-03');
     const r2 = w.record(runDoc, { payGroup: 'WEEKLY_PIECE', periodStart: '2026-09-28' });
-    // October: −2 + 10 pieces = 320.00. SSS 250 and PhilHealth 70 of 250 fit; 183.20 of employee shares is carried (EE_SHORT).
-    expect(journal(w.env, r2.id)).toEqual(['2111 Cr 26.67', '2401 Cr 760.00', '2402 Cr 320.00', '2403 Cr 6.40', '5201 Dr 320.00', '5203 Dr 766.40', '5204 Dr 26.67']);
+    // October: −2 + 10 pieces = 320.00. SSS 250 and PhilHealth 70 of 358.65 fit; 291.85 of employee shares is carried (EE_SHORT).
+    expect(journal(w.env, r2.id)).toEqual(['2111 Cr 26.67', '2401 Cr 760.00', '2402 Cr 428.65', '2403 Cr 6.40', '5201 Dr 320.00', '5203 Dr 875.05', '5204 Dr 26.67']);
     const [e2] = runDoc.load(w.db, r2.id).employees;
-    expect([e2!.eeShortCents, e2!.netCents, e2!.lines.map((l) => l.amountCents)]).toEqual([18_320, 0, [-8_000, 40_000]]);
+    expect([e2!.eeShortCents, e2!.netCents, e2!.lines.map((l) => l.amountCents)]).toEqual([29_185, 0, [-8_000, 40_000]]);
     expect(codes(w.preview(runDoc, { payGroup: 'WEEKLY_PIECE', periodStart: '2026-09-21' }).issues)).toEqual(['DUPLICATE_RUN']);
 
     // G-29: the release first, then the run; its rows are unpaid again and a new run pays them the same way.
@@ -217,7 +170,7 @@ describe('weekly piece pay (F3 example B shape), paid once, corrections next run
     expect(unpaidAssignments(w.db, '2026-12-31', eli).map((a) => a.pieces)).toEqual([30]);
     const again = w.record(runDoc, { payGroup: 'WEEKLY_PIECE', periodStart: '2026-09-21' });
     expect(journal(w.env, again.id)).toEqual(journal(w.env, r1.id));
-    expect(journal(w.env, r1.id, 'reversal')).toEqual(['2110 Dr 688.00', '2111 Dr 100.00', '2401 Dr 760.00', '2402 Dr 500.00', '2403 Dr 36.00', '5201 Cr 1,200.00', '5203 Cr 784.00', '5204 Cr 100.00']);
+    expect(journal(w.env, r1.id, 'reversal')).toEqual(['2110 Dr 579.35', '2111 Dr 100.00', '2401 Dr 760.00', '2402 Dr 717.30', '2403 Dr 36.00', '5201 Cr 1,200.00', '5203 Cr 892.65', '5204 Cr 100.00']);
     expect(runInvariants(w.db).filter((r) => !r.ok)).toEqual([]);
   });
 });
@@ -267,5 +220,65 @@ describe('run rules and the API', () => {
     const prod = await w.env.as('production');
     expect((await prod.post('/api/docs/ca.advance/preview', { input: { employeeId: ana, cashPlaceId: 1, amountCents: 100, installmentCents: 100 } })).statusCode).toBe(403);
     expect(codes(w.preview(advanceDoc, { employeeId: ana, cashPlaceId: cashPlaceId(w.db, '1101'), amountCents: 100_000, installmentCents: 200_000 }).issues)).toEqual(['INSTALLMENT']);
+  });
+});
+
+describe('PAY-1: a run is dated the last day of its period once that has passed, so its journal falls in that month', () => {
+  const g24 = ['2110 Cr 7,075.00', '2111 Cr 625.00', '2401 Cr 1,145.00', '2403 Cr 100.00', '6101 Dr 7,500.00', '6102 Dr 820.00', '6103 Dr 625.00'];
+
+  it('a Sep 16–30 run recorded on Oct 1 is dated Sep 30 by the accountant; undated it is booked in October, with a warning', async () => {
+    const w = await world('2026-09-15');
+    w.person('Carla Opisina', { payType: 'monthly', payGroup: 'SEMI_MONTHLY', monthlyRateCents: 1_500_000 }, { costCentre: 'office' });
+    w.record(runDoc, { payGroup: 'SEMI_MONTHLY', periodStart: '2026-09-01' }); // recorded on the period's last day
+    w.at('2026-10-01');
+    const input = { payGroup: 'SEMI_MONTHLY' as const, periodStart: '2026-09-16' };
+    expect(codes(w.preview(runDoc, input).issues, 'warning')).toEqual(['BOOKED_LATER']);
+    expect(codes(w.preview(runDoc, input, '2026-09-29').issues)).toEqual(['PERIOD_OPEN']);
+    expect(codes(w.preview(runDoc, input, '2026-09-30').issues, 'warning')).toEqual([]);
+
+    // The run form asks the server which date to send: the period's last day for someone who may backdate, else none.
+    const acct = await w.env.as('accountant');
+    const owner = await w.env.as('owner'); // acc.backdate is the accountant's by default
+    expect((await acct.get('/api/pay/periods?payGroup=SEMI_MONTHLY')).json().slice(0, 2)).toMatchObject([{ periodStart: '2026-09-16', bookOn: '2026-09-30' }, { periodStart: '2026-09-01', bookOn: '2026-09-15' }]);
+    expect((await owner.get('/api/pay/periods?payGroup=SEMI_MONTHLY')).json()[0]).toMatchObject({ periodStart: '2026-09-16', bookOn: null });
+    expect((await owner.post('/api/docs/pay.run/preview', { input, businessDate: '2026-09-30' })).statusCode).toBe(403);
+    const pre = (await acct.post('/api/docs/pay.run/preview', { input, businessDate: '2026-09-30' })).json();
+    const c2 = (await acct.post('/api/docs/pay.run/post', { input, expectedTotalCents: pre.totalCents, businessDate: '2026-09-30' }, idem())).json();
+    expect([c2.number, c2.businessDate]).toEqual(['PAY-000002', '2026-09-30']);
+    expect(w.db.prepare('SELECT business_date FROM journals WHERE source_id = ?').pluck().get(c2.id)).toBe('2026-09-30');
+    expect(journal(w.env, c2.id)).toEqual(g24);
+    // September carries the month's office pay and shares; nothing lands in October.
+    const tb = (asOf: string) => Object.fromEntries(trialBalance(w.db, asOf).rows.filter((r) => ['6101', '6102', '6103'].includes(r.code)).map((r) => [r.code, r.debitCents]));
+    expect(tb('2026-09-30')).toEqual({ '6101': 1_500_000, '6102': 210_500, '6103': 125_000 });
+    expect(tb('2026-10-31')).toEqual(tb('2026-09-30'));
+    expect(runInvariants(w.db).filter((r) => !r.ok)).toEqual([]);
+  });
+
+  it('the Dec 16–31 run recorded on 2 January stays in the old year: its journal is dated Dec 31 and numbered in JE-2026', async () => {
+    const w = await world('2027-01-02');
+    w.person('Carla Opisina', { payType: 'monthly', payGroup: 'SEMI_MONTHLY', monthlyRateCents: 1_500_000 }, { costCentre: 'office' });
+    const run = w.recordOn(runDoc, { payGroup: 'SEMI_MONTHLY', periodStart: '2026-12-16' }, '2026-12-31');
+    expect(w.db.prepare('SELECT number, business_date FROM journals WHERE source_id = ?').get(run.id)).toEqual({ number: 'JE-2026-000001', business_date: '2026-12-31' });
+    expect(runDoc.load(w.db, run.id).contributionMonth).toBe('2026-12');
+    expect(trialBalance(w.db, '2026-12-31').rows.find((r) => r.code === '6101')?.debitCents).toBe(750_000);
+    // A document recorded the same day without a date opens the 2027 series.
+    const ca = w.record(advanceDoc, { employeeId: w.db.prepare('SELECT id FROM emp_employees').pluck().get() as string, cashPlaceId: cashPlaceId(w.db, '1101'), amountCents: 50_000, installmentCents: 50_000 });
+    expect(w.db.prepare('SELECT number FROM journals WHERE source_id = ?').pluck().get(ca.id)).toBe('JE-2027-000001');
+    expect(runInvariants(w.db).filter((r) => !r.ok)).toEqual([]);
+  });
+
+  it('a cash advance given after the period ends is not deducted by the run dated at the period end', async () => {
+    const w = await world('2026-09-30');
+    const ana = w.person('Ana Tahi', { payType: 'daily', payGroup: 'SEMI_DAILY', dailyRateCents: 55_000, isMwe: true });
+    w.attend(['16', '17', '18', '19', '21', '22', '23', '24', '25', '26'].map((d) => ({ employeeId: ana, date: `2026-09-${d}`, status: 'present' })));
+    w.at('2026-10-01');
+    w.record(advanceDoc, { employeeId: ana, cashPlaceId: cashPlaceId(w.db, '1101'), amountCents: 200_000, installmentCents: 100_000 });
+    const input = { payGroup: 'SEMI_DAILY' as const, periodStart: '2026-09-16' };
+    expect(runDoc.compute(input, { db: w.db, businessDate: '2026-10-01', at: '', userId: w.userId, can: () => true }).employees[0]!.caCents).toBe(100_000);
+    expect(codes(w.preview(runDoc, { ...input, advances: [{ employeeId: ana, amountCents: 50_000 }] }, '2026-09-30').issues)).toEqual(['CA_OVER']);
+    const run = w.recordOn(runDoc, input, '2026-09-30');
+    expect(runDoc.load(w.db, run.id).employees[0]!.caCents).toBe(0);
+    expect(advanceSchedule(w.db, ana).outstandingCents).toBe(200_000); // deducted from the next payroll
+    expect(runInvariants(w.db).filter((r) => !r.ok)).toEqual([]);
   });
 });

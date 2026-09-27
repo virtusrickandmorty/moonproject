@@ -4,6 +4,8 @@ import { notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { today } from '../../platform/clock.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
+import { BACKDATE_PERMISSION } from '../../engine/documents/lifecycle.ts';
+import { currentUser } from '../../engine/security/routes.ts';
 import { PAY_GROUPS, employeesInGroup } from '../EMP/public.ts';
 import { runDoc } from './doctypes/run.ts';
 import { releaseStatus } from './doctypes/release.ts';
@@ -52,10 +54,15 @@ export function payRoutes(app: FastifyInstance, deps: AppDeps): void {
     return runs.map((r) => ({ ...r, dueCents: releaseStatus(db, r.id).filter((s) => !s.releasedBy).reduce((s, x) => s + x.netCents, 0) })).filter((r) => r.dueCents > 0);
   });
 
-  /** The latest periods of a pay group (ended by today), whether each is recorded, and how many it would pay. */
+  /**
+   * The latest periods of a pay group (ended by today), whether each is recorded, and how many it would pay. `bookOn` is
+   * the date the run form sends (PAY-1): the period's last day when that has passed and the user may backdate, else null
+   * (today).
+   */
   app.get('/api/pay/periods', { config: { permission: 'pay.run.create' } }, async (req) => {
     const { payGroup } = z.object({ payGroup: z.enum(PAY_GROUPS) }).strict().parse(req.query);
     const now = today(clock);
+    const backdate = currentUser(req).permissions.has(BACKDATE_PERMISSION);
     const starts: string[] = [];
     for (let d = now; starts.length < 6 && d > addDays(now, -120); d = addDays(d, -1)) {
       const end = periodEndOf(payGroup, d);
@@ -64,7 +71,10 @@ export function payRoutes(app: FastifyInstance, deps: AppDeps): void {
     const recorded = db.prepare(`SELECT d.id, d.number FROM pay_runs r JOIN documents d ON d.id = r.document_id WHERE d.status = 'posted' AND r.pay_group = ? AND r.period_start = ?`);
     return starts.map((periodStart) => {
       const periodEnd = periodEndOf(payGroup, periodStart)!;
-      return { periodStart, periodEnd, employees: employeesInGroup(db, payGroup, periodStart, periodEnd).length, recorded: (recorded.get(payGroup, periodStart) as { id: string; number: string } | undefined) ?? null };
+      return {
+        periodStart, periodEnd, employees: employeesInGroup(db, payGroup, periodStart, periodEnd).length,
+        recorded: (recorded.get(payGroup, periodStart) as { id: string; number: string } | undefined) ?? null, bookOn: backdate && periodEnd < now ? periodEnd : null,
+      };
     });
   });
 
