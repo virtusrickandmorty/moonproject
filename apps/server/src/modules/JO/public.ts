@@ -8,6 +8,23 @@ export { currentStage, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
 
 export interface JoLedgerPart { receivableCents: number; depositsHeldCents: number }
 
+export interface JoRef { id: string; number: string; status: 'posted' | 'cancelled'; customerId: string; customerName: string; dueDate: string; totalCents: number }
+
+const JO_REF = `SELECT d.id, d.number, d.status, o.customer_id AS customerId, o.customer_name AS customerName, o.due_date AS dueDate, d.total_cents AS totalCents
+  FROM jo_orders o JOIN documents d ON d.id = o.document_id`;
+
+/** One job order's header, for documents that point at it (COL applications, refunds). */
+export function jobOrderRef(db: Db, id: string): JoRef | undefined {
+  return db.prepare(`${JO_REF} WHERE o.document_id = ?`).get(id) as JoRef | undefined;
+}
+
+/** Recorded (not cancelled) job orders of one customer, or of everyone, oldest due first (E5 "default: oldest due first"). */
+export function jobOrdersOf(db: Db, customerId?: string): JoRef[] {
+  return db
+    .prepare(`${JO_REF} WHERE (@c IS NULL OR o.customer_id = @c) AND d.status = 'posted' ORDER BY o.due_date, d.number`)
+    .all({ c: customerId ?? null }) as JoRef[];
+}
+
 /**
  * Balance due (PLAN D3, H3): the un-invoiced part is a memo figure (total − invoiced); the invoiced part is
  * the JO's open AR; money received and not yet applied sits in customer deposits. So

@@ -28,6 +28,7 @@ export const DOC_TITLES = [
   'Collection Receipt',
   'Acknowledgment Receipt',
   'Credit Memo',
+  'Customer Refund',
   'Supplier Bill',
   'Supplier Payment',
   'Purchase Order',
