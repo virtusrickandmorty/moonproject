@@ -11,6 +11,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
+    "jsx": "react-jsx",
     "types": ["node"]
   },
   "include": ["packages/*/src", "apps/*/src", "apps/*/test", "tests", "tools", "vitest.config.ts"]
