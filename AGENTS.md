@@ -63,6 +63,10 @@ You get these routes for free (all under a signed-in session; changes need the `
 | `GET/POST /api/drafts`, `PUT /api/drafts/:id` (`If-Match: <version>`), `POST /api/drafts/:id/discard` | Drafts (no number, no posting) |
 Other engine routes: `/api/setup/status`, `/api/setup/first-owner`, `/api/auth/{login,logout,me,change-password,step-up}`,
 `/api/users...`, `/api/roles...` (owner, step-up), `/api/cash/places`, `/api/health`.
+Effective-dated settings: read them in posting code with `settingAt(db, key, date)` from `engine/settings.ts` (keys:
+`tax.vat_rate_bp`, `sales.deposit_vat_mode`, `col.cr_mode`, `tax.top_withholding_agent`), never from a constant.
+`GET /api/settings`; `POST /api/settings/:key` `{effectiveFrom, value, reason}` (accountant, step-up, today or later).
+Chart of accounts: `GET/POST /api/acc/accounts`, `PUT /api/acc/accounts/:id` (`If-Match`), `POST .../:id/deactivate` (step-up), `.../:id/activate`.
 Errors are `{ code, message, details? }` with a plain-English `message` you can show to staff.
 
 ## Tests (a red test blocks merge)
