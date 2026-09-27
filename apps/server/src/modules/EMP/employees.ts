@@ -250,6 +250,9 @@ export function addPayProfile(db: Db, employeeId: string, raw: unknown, who: Who
       )
       .run(employeeId, v.effectiveFrom, v.payType, v.dailyRateCents ?? null, v.monthlyRateCents ?? null, v.payGroup, v.workweekDays, +v.isMwe, v.reason, who.at, who.userId).lastInsertRowid,
   );
-  appendAudit(db, { at: who.at, userId: who.userId, action: 'emp.pay_profile.add', entityType: 'emp.employee', entityId: employeeId, data: { profileId: id, ...v } });
+  // Rates stay out of the audit log (named, not valued), since reading the log does not imply pay.view_rates (C6, N-05).
+  const { dailyRateCents, monthlyRateCents, ...rest } = v;
+  const rates = [...(dailyRateCents !== undefined ? ['dailyRateCents'] : []), ...(monthlyRateCents !== undefined ? ['monthlyRateCents'] : [])];
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'emp.pay_profile.add', entityType: 'emp.employee', entityId: employeeId, data: { profileId: id, ...rest, rates } });
   return payHistory(db, employeeId).find((p) => p.id === id)!;
 }

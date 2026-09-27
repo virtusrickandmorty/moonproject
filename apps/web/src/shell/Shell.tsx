@@ -29,7 +29,7 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
 
   return (
     <div className="min-h-screen">
-      <header className="flex flex-wrap items-center gap-3 bg-indigo-900 px-4 py-2 text-sm text-white">
+      <header className="flex flex-wrap items-center gap-3 bg-indigo-900 px-4 py-2 text-sm text-white print:hidden">
         <button type="button" className="md:hidden" onClick={() => toggle('menu')}>Menu</button>
         <Link to="/" className="font-semibold tracking-wide">MOONPROJECT</Link>
         <span className="flex-1 text-indigo-100"><ServerDate /></span>
@@ -50,7 +50,7 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
         </div>
       </header>
       <div className="flex min-h-[calc(100vh-2.5rem)]">
-        <nav className={`${open === 'menu' ? '' : 'hidden'} w-56 shrink-0 space-y-4 border-r border-slate-200 bg-white p-3 text-sm md:block`}>
+        <nav className={`${open === 'menu' ? '' : 'hidden'} w-56 shrink-0 space-y-4 border-r border-slate-200 bg-white p-3 text-sm md:block print:hidden`}>
           {menu.map((g) => (
             <div key={g.group}>
               <p className="px-2 text-xs font-semibold uppercase text-slate-500">{g.group}</p>

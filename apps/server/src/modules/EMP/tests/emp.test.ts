@@ -99,6 +99,13 @@ describe('pay profile history', () => {
     expect(seen.payHistory.map((p: { effectiveFrom: string }) => p.effectiveFrom)).toEqual(['2026-10-01', '2026-03-02']);
     expect((await enc.get(`/api/emp/employees/${a.id}`)).json()).toMatchObject({ pay: { payType: 'daily', payGroup: 'SEMI_DAILY' }, payHistory: null });
     expect(() => env.db.prepare('UPDATE emp_pay_profiles SET daily_rate_cents = 1').run()).toThrow(/IMMUTABLE/);
+    // Rates are named in the audit log, never valued (review EMP-2, C6, N-05).
+    const payAudit = env.db.prepare("SELECT data FROM audit_log WHERE action = 'emp.pay_profile.add' ORDER BY seq").pluck().all() as string[];
+    expect(payAudit.map((d) => JSON.parse(d))).toEqual([
+      expect.objectContaining({ payType: 'daily', rates: ['dailyRateCents'] }),
+      expect.objectContaining({ payType: 'mixed', rates: ['dailyRateCents'] }),
+    ]);
+    expect(payAudit.join()).not.toMatch(/55000|58000|RateCents":/);
   });
 
   it('employeesInGroup: in service during the period, by the pay group on its last day (or their last day)', () => {
@@ -178,6 +185,15 @@ describe('attendance, holidays and SIL', () => {
 
     const year = (await enc.get('/api/emp/holidays?year=2026')).json().holidays as { kind: string; isActive: boolean }[];
     expect([year.filter((h) => h.kind === 'regular').length, year.filter((h) => h.kind === 'special' && h.isActive).length, year.length]).toEqual([12, 9, 22]);
+
+    // A holiday added late over ordinary attendance is refused, naming whom to re-mark (review EMP-1).
+    await save([{ employeeId: a, date: '2026-11-27', status: 'present' }, { employeeId: old, date: '2026-11-27', status: 'rest_day' }]);
+    const late = { date: '2026-11-27', name: 'Barangay fiesta (made up)', kind: 'special', source: 'Local ordinance, to confirm (OWN-29)' };
+    const refused = (await acct2.post('/api/emp/holidays', late)).json();
+    expect([refused.code, refused.details]).toEqual(['ATTENDANCE_TYPED', { people: ['Ina Bago'] }]);
+    await save([{ employeeId: a, date: '2026-11-27', status: 'rest_day' }]);
+    expect((await acct2.post('/api/emp/holidays', late)).statusCode).toBe(200);
+    expect((await save([{ employeeId: a, date: '2026-11-27', status: 'holiday_worked' }])).json()).toEqual({ saved: 1, unchanged: 0 });
   });
 
   it('SIL: paid leave only after a year of service, 5 days a year; changing a leave day frees it', async () => {
