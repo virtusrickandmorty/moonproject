@@ -1,4 +1,5 @@
 /** PRD contract for other modules (RATE, PAY, DASH, RPT). Callers check their own route permission. */
+import { conflict } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 
 export { COMPLEXITIES, listSteps, stepById, type Complexity, type Step } from './production.ts';
@@ -22,4 +23,19 @@ export function unpaidAssignments(db: Db, upTo: string, employeeId?: string): Un
        ORDER BY a.employee_id, a.work_date, d.number, a.row_no`,
     )
     .all({ upTo, e: employeeId ?? null }) as UnpaidAssignment[];
+}
+
+/**
+ * PAY's one write into PRD (F3 "paid once"): a payroll run line pays one assignment row. Only a row still unpaid can be
+ * marked, and the unique index on pay_run_line_id keeps a run line to one row.
+ */
+export function markAssignmentPaid(db: Db, assignmentId: string, payRunLineId: string): void {
+  const r = db.prepare('UPDATE prd_assignments SET pay_run_line_id = ? WHERE id = ? AND pay_run_line_id IS NULL').run(payRunLineId, assignmentId);
+  if (r.changes !== 1) throw conflict('ALREADY_PAID', 'Some of these pieces were paid by another payroll meanwhile. Work the payroll out again.');
+}
+
+/** Cancelling a payroll run makes the rows its lines paid unpaid again, for the next run (D6, F3). */
+export function clearAssignmentsPaidBy(db: Db, payRunLineIds: string[]): number {
+  const clear = db.prepare('UPDATE prd_assignments SET pay_run_line_id = NULL WHERE pay_run_line_id = ?');
+  return payRunLineIds.reduce((n, id) => n + clear.run(id).changes, 0);
 }
