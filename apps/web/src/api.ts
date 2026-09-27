@@ -113,7 +113,8 @@ export interface PayEmployee {
 export interface ManualPayLine { employeeId: string; kind: 'allowance' | 'adjustment'; amountCents: number; reason: string }
 export interface PayRunInput { payGroup: PayGroup; periodStart: string; lines?: ManualPayLine[]; advances?: { employeeId: string; amountCents: number }[]; skip?: { employeeId: string; reason: string }[] }
 export interface PayRunDoc extends PayRunInput { periodEnd: string; contributionMonth: string; employees: PayEmployee[]; grossCents: number; netCents: number }
-export interface PayPeriod { periodStart: string; periodEnd: string; employees: number; recorded: { id: string; number: string } | null }
+/** `bookOn`: the date to give the run (the period's last day, for someone who may backdate), or null for today. */
+export interface PayPeriod { periodStart: string; periodEnd: string; employees: number; recorded: { id: string; number: string } | null; bookOn: string | null }
 export interface Payslips {
   number: string; status: 'posted' | 'cancelled'; payDate: string; payGroup: PayGroup; periodStart: string; periodEnd: string; contributionMonth: string;
   employees: (PayEmployee & { caBalanceAfterCents: number; ytd: { grossCents: number; wtaxCents: number } })[];
@@ -122,6 +123,27 @@ export interface RunToRelease { id: string; number: string; payGroup: PayGroup; 
 export interface ReleaseRow { employeeId: string; name: string; netCents: number; releasedBy: string | null }
 export interface CaStatus { employeeId: string; name: string; outstandingCents: number; installmentCents: number; open: { documentId: string; number: string; amountCents: number; installmentCents: number; openCents: number }[] }
 export interface ActiveEmployee { id: string; code: string; name: string; costCentre: string }
+/** Statutory (STAT): the month's lists, the 1601-C worksheet and the remittance check, worked out by the server. */
+export type Scheme = 'SSS' | 'PHIC' | 'HDMF' | 'WTAX';
+export interface SchemeCheck {
+  scheme: Scheme; label: string; recordedCents: number; remittedCents: number; balanceCents: number; remittances: { id: string; number: string; amountCents: number }[];
+  cancelledAfter: { id: string; number: string; cancelledAt: string }[]; overRemitted: { employeeId: string; name: string; cents: number }[];
+}
+interface StatPerson { employeeId: string; code: string; name: string; idNo: string | null }
+export interface StatMonth {
+  month: string;
+  sss: { rows: (StatPerson & { mscCents: number; mpfMscCents: number; eeCents: number; erCents: number; ecCents: number; totalCents: number })[]; totalCents: number };
+  phic: { rows: (StatPerson & { basisCents: number; eeCents: number; erCents: number; totalCents: number })[]; totalCents: number };
+  hdmf: { rows: (StatPerson & { compensationCents: number; eeCents: number; erCents: number; totalCents: number })[]; totalCents: number };
+  tax: {
+    employees: number; totalCompensationCents: number; mweBasicCents: number; mwePremiumCents: number; thirteenthMonthCents: number; deMinimisCents: number; eeSharesCents: number;
+    otherNonTaxableCents: number; nonTaxableCents: number; taxableCents: number; noTaxWithheldCents: number; taxWithheldCents: number;
+    rows: (StatPerson & { isMwe: boolean; grossCents: number; nonTaxableCents: number; taxableCents: number; taxCents: number })[];
+  };
+  check: SchemeCheck[];
+  notDeducted: { employeeId: string; name: string; cents: number }[];
+}
+export interface RemittanceInput { scheme: Scheme; month: string; cashPlaceId: number; amountCents: number; reference: string; note?: string }
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -171,8 +193,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     list: (type: string, q: { status?: string; before?: string; limit?: number } = {}) =>
       call<DocHeader[]>('GET', doc(type, `?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`)),
     get: (type: string, id: string) => call<DocDetail>('GET', one(type, id)),
-    preview: (type: string, input: unknown) => call<Preview>('POST', doc(type, '/preview'), { input }),
-    post: (type: string, input: unknown, expectedTotalCents: number, key: string) => call<PostResult>('POST', doc(type, '/post'), { input, expectedTotalCents }, idem(key)),
+    /** `businessDate` only for a type that may be backdated, by someone allowed to (the payroll run's period end). */
+    preview: (type: string, input: unknown, businessDate?: string) => call<Preview>('POST', doc(type, '/preview'), { input, ...(businessDate ? { businessDate } : {}) }),
+    post: (type: string, input: unknown, expectedTotalCents: number, key: string, businessDate?: string) =>
+      call<PostResult>('POST', doc(type, '/post'), { input, expectedTotalCents, ...(businessDate ? { businessDate } : {}) }, idem(key)),
     cancel: (type: string, id: string, reason: string, key: string) => call<unknown>('POST', one(type, id, '/cancel'), { reason }, idem(key)),
     reissue: (type: string, id: string, input: unknown, expectedTotalCents: number, reason: string, key: string) =>
       call<PostResult>('POST', one(type, id, '/reissue'), { input, expectedTotalCents, reason }, idem(key)),
@@ -222,6 +246,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     runsToRelease: () => call<RunToRelease[]>('GET', '/api/pay/runs/to-release'),
     releaseStatus: (runId: string) => call<ReleaseRow[]>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/release-status`),
     caStatus: (employeeId: string) => call<CaStatus>('GET', `/api/ca/employees/${encodeURIComponent(employeeId)}`),
+    statMonths: () => call<{ month: string; check: SchemeCheck[] }[]>('GET', '/api/stat/months'),
+    statMonth: (month: string) => call<StatMonth>('GET', `/api/stat/months/${encodeURIComponent(month)}`),
+    /** D6: what of a payroll run's month is already remitted (the warning before a cancel). */
+    runRemitted: (runId: string) => call<{ month: string; remitted: { scheme: Scheme; label: string; numbers: string[] }[] }>('GET', `/api/stat/runs/${encodeURIComponent(runId)}/remitted`),
   };
 }
 

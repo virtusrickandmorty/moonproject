@@ -27,6 +27,19 @@ export function unpaidAssignments(db: Db, upTo: string, employeeId?: string): Un
 }
 
 /**
+ * Piece earnings per day of one worker, paid or not (work and rework of recorded entries; corrections are left out,
+ * since they fix an earlier day). PAY averages them for a piece worker's regular-holiday pay (F1).
+ */
+export function pieceEarningsByDay(db: Db, employeeId: string, from: string, to: string): { date: string; amountCents: number }[] {
+  return db
+    .prepare(
+      `SELECT a.work_date AS date, SUM(a.amount_cents) AS amountCents FROM prd_assignments a JOIN documents d ON d.id = a.document_id
+       WHERE d.status = 'posted' AND a.employee_id = ? AND a.kind IN ('work', 'rework') AND a.work_date BETWEEN ? AND ? GROUP BY a.work_date ORDER BY a.work_date`,
+    )
+    .all(employeeId, from, to) as { date: string; amountCents: number }[];
+}
+
+/**
  * PAY's one write into PRD (F3 "paid once"): a payroll run line pays one assignment row. Only a row still unpaid can be
  * marked, and the unique index on pay_run_line_id keeps a run line to one row.
  */

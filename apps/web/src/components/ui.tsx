@@ -80,12 +80,13 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
 }
 
 /** Asks for a reason of at least 10 characters (cancel; edit = cancel and reissue; PLAN D6). */
-export function ReasonDialog(p: { title: string; explain: string; confirmLabel: string; danger?: boolean; onConfirm: (reason: string) => Promise<unknown> | void; onClose: () => void }) {
+export function ReasonDialog(p: { title: string; explain: string; confirmLabel: string; danger?: boolean; onConfirm: (reason: string) => Promise<unknown> | void; onClose: () => void; children?: ReactNode }) {
   const [reason, setReason] = useState('');
   const a = useAction();
   return (
     <Dialog title={p.title} onClose={p.onClose}>
       <p className="text-sm text-slate-700">{p.explain}</p>
+      {p.children}
       <Field label="Reason (at least 10 characters)" required>
         <textarea autoFocus rows={2} className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)} />
       </Field>
