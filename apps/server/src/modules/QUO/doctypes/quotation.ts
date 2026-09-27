@@ -4,7 +4,7 @@ import fc from 'fast-check';
 import { AppError, formatPeso, manilaDate, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { customerRef } from '../../CUS/public.ts';
-import { logCatalogPriceOverride, lookupCatalogPrice, requireCatalogDiscountReason } from '../../CAT/public.ts';
+import { catalogItemRef, logCatalogPriceOverride, lookupCatalogPrice, requireCatalogDiscountReason } from '../../CAT/public.ts';
 
 const MAX_UNIT_CENTS = 100_000_00;
 const MAX_TOTAL_CENTS = 100_000_000_00;
@@ -98,6 +98,8 @@ export const quotationDoc: DocTypeDef<QuotationInput, Quotation> = {
     let subtotal = 0;
     for (const line of doc.lines) {
       const field = `lines.${line.lineNo - 1}`;
+      const item = catalogItemRef(ctx.db, line.itemId);
+      if (item?.isActive && line.unit !== item.unit) issues.push(issue(`${field}.unit`, 'UNIT_MISMATCH', `Use ${item.unit} for ${item.name}.`));
       if (!line.priceId) issues.push(issue(`${field}.itemId`, 'PRICE_MISSING', 'This catalog item has no current price for the quantity.'));
       if (line.listUnitPriceCents > MAX_UNIT_CENTS) issues.push(issue(`${field}.itemId`, 'PRICE_TOO_HIGH', 'Check this catalog price before quoting.'));
       const gross = line.qty * line.unitPriceCents;

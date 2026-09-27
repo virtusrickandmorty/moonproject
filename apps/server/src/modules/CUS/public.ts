@@ -14,6 +14,20 @@ export function customerRef(db: Db, id: string): CustomerRef | undefined {
   return db.prepare('SELECT id,code,display_name,is_active,merged_into_id FROM cus_customers WHERE id = ?').get(id) as CustomerRef | undefined;
 }
 
+/** Tax details used when a sale is written into the manual invoice booklet. */
+export function customerTaxInfo(db: Db, id: string): { tin: string | null; registeredName: string | null; isVatRegistered: boolean } | undefined {
+  const row = db.prepare('SELECT tin, registered_name, is_vat_registered FROM cus_customers WHERE id = ?').get(id) as
+    | { tin: string | null; registered_name: string | null; is_vat_registered: number }
+    | undefined;
+  return row && { tin: row.tin, registeredName: row.registered_name, isVatRegistered: row.is_vat_registered === 1 };
+}
+
+/** Active, unmerged customers for customer pickers in sales documents. */
+export function activeCustomers(db: Db): { id: string; name: string }[] {
+  return db.prepare(`SELECT id, display_name AS name FROM cus_customers
+    WHERE is_active = 1 AND merged_into_id IS NULL ORDER BY display_name, id`).all() as { id: string; name: string }[];
+}
+
 export function wearerRef(db: Db, id: string): { id: string; customer_id: string; group_id: string | null; full_name: string; is_active: number } | undefined {
   return db.prepare('SELECT id,customer_id,group_id,full_name,is_active FROM cus_people WHERE id = ?').get(id) as
     | { id: string; customer_id: string; group_id: string | null; full_name: string; is_active: number }
