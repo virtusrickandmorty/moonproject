@@ -1,9 +1,9 @@
 /**
  * Collection (PLAN E5, D5 DEP-RCV / COL-RCV / COL-OVER): money in from a customer, split across cash places and
- * applied to job orders, in one journal.
+ * applied to job orders and quick sales, in one journal.
  *   Dr cash place (per tender); Dr 1410 CWT (2307); Dr 6280 (short ≤ ₱1)
  *     / Cr 1201 AR (the JO's invoiced part); Cr 2201 (the JO's un-invoiced part, a deposit);
- *       Cr 2201 (unapplied remainder, no JO); Cr 6280 (over ≤ ₱1)
+ *       Cr 1201 AR (a quick sale, QS-SALE); Cr 2201 (unapplied remainder, no JO); Cr 6280 (over ≤ ₱1)
  * AR and deposit lines name the customer and the JO (journal_lines.ref_doc_id), so each JO's balance due is read
  * from the ledger (JO public.ts). Balance rule (E5): Σ tenders + CWT = Σ applied + unapplied, give or take ₱1.
  * Deposits are recorded in downpayment VAT mode A only (settings); B and C are refused until they are built.
@@ -19,7 +19,8 @@ import { listCashPlaces } from '../../../engine/ledger/accounts.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
 import { jobOrderRef, jobOrdersOf, joLedger, joMoney, settleLines } from '../../JO/public.ts';
-import { MAX_CENTS, cashPlaceIssues, depositsHeld, insertTenders, loadTenders, sumCents, tenderInput, tenderToInput, withNames, type Tender } from '../ledger.ts';
+import { saleOpenCents, saleRef } from '../../QS/public.ts';
+import { MAX_CENTS, cashPlaceIssues, insertTenders, loadTenders, sumCents, takenOutBy, tenderInput, tenderToInput, withNames, type Tender } from '../ledger.ts';
 
 /** Largest difference that may go to cash short and over instead of a deposit or an unpaid balance (D4.9). */
 export const SHORT_OVER_LIMIT_CENTS = 100;
@@ -27,6 +28,8 @@ export const SHORT_OVER_LIMIT_CENTS = 100;
 const CWT_BP = { WC158: 100, WC160: 200 } as const;
 
 const application = z.object({ jobOrderId: z.uuid(), amountCents: z.number().int().positive().max(MAX_CENTS) }).strict();
+/** A quick sale paid (QS invoice record): what is still owed on it is its receivable, named by the sale (journal ref). */
+const saleApplication = z.object({ saleId: z.uuid(), amountCents: z.number().int().positive().max(MAX_CENTS) }).strict();
 
 export const collectionInput = z
   .object({
@@ -34,6 +37,7 @@ export const collectionInput = z
     // Typed from the ATP CR booklet, never prefilled (ACC-03 booklet mode).
     crNumber: z.string().trim().regex(/^0*[1-9]\d{0,11}$/, 'Type the number printed on the CR (digits only).'),
     applications: z.array(application).max(50),
+    sales: z.array(saleApplication).min(1).max(20).optional(),
     tenders: z.array(tenderInput).min(1).max(10),
     withholding: z
       .object({ cwtCents: z.number().int().positive().max(MAX_CENTS), atc: z.enum(['WC158', 'WC160', 'other']), certificate: z.enum(['pending', 'received']) })
@@ -46,8 +50,10 @@ export const collectionInput = z
 export type CollectionInput = z.infer<typeof collectionInput>;
 
 export interface Application extends z.infer<typeof application> { lineNo: number; jobOrderNumber: string; toReceivableCents: number; toDepositCents: number }
-export interface Collection extends Omit<CollectionInput, 'applications' | 'tenders'> {
+export interface SaleApplication extends z.infer<typeof saleApplication> { lineNo: number; saleNumber: string; invoiceNumber: string }
+export interface Collection extends Omit<CollectionInput, 'applications' | 'sales' | 'tenders'> {
   applications: Application[];
+  sales: SaleApplication[];
   tenders: Tender[];
   customerName: string;
   cwtCents: number;
@@ -74,7 +80,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
   inputSchema: collectionInput,
 
   compute(input, ctx) {
-    const { settleSmallDifference, ...rest } = input;
+    const { settleSmallDifference, sales: _, ...rest } = input;
     const cwtCents = input.withholding?.cwtCents ?? 0;
     const totalCents = sumCents(input.tenders) + cwtCents;
     // The JO's open receivable is settled first; what is left is a deposit on the JO's un-invoiced part (D3).
@@ -83,12 +89,17 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       const toReceivableCents = Math.min(a.amountCents, jo ? Math.max(0, joLedger(ctx.db, jo.id).receivableCents) : 0);
       return { ...a, lineNo: i + 1, jobOrderNumber: jo?.number ?? '?', toReceivableCents, toDepositCents: a.amountCents - toReceivableCents };
     });
-    const appliedCents = sumCents(applications);
+    const sales = (input.sales ?? []).map((a, i) => {
+      const sale = saleRef(ctx.db, a.saleId);
+      return { ...a, lineNo: i + 1, saleNumber: sale?.number ?? '?', invoiceNumber: sale?.invoiceNumber ?? '?' };
+    });
+    const appliedCents = sumCents(applications) + sumCents(sales);
     const difference = totalCents - appliedCents;
     return {
       ...rest,
       ...(settleSmallDifference ? { settleSmallDifference } : {}),
       applications,
+      sales,
       tenders: withNames(ctx.db, input.tenders),
       customerName: customerRef(ctx.db, input.customerId)?.display_name ?? '?',
       cwtCents,
@@ -130,6 +141,23 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       }
       seen.add(a.jobOrderId);
     }
+    for (const a of doc.sales) {
+      const f = `sales.${a.lineNo - 1}`;
+      const sale = saleRef(ctx.db, a.saleId);
+      if (!sale || sale.customerId !== doc.customerId) {
+        add('error', `${f}.saleId`, 'SALE', `Line ${a.lineNo}: pick one of ${doc.customerName}'s quick sales.`);
+      } else if (seen.has(sale.id)) {
+        add('error', `${f}.saleId`, 'SALE_TWICE', `Invoice no. ${sale.invoiceNumber} is listed twice. Put its whole amount on one line.`);
+      } else if (sale.status !== 'posted') {
+        add('error', `${f}.saleId`, 'SALE_CANCELLED', `Invoice no. ${sale.invoiceNumber} (${sale.number}) is cancelled, so money cannot be applied to it.`);
+      } else {
+        const open = saleOpenCents(ctx.db, sale.id);
+        if (a.amountCents > open) {
+          add('error', `${f}.amountCents`, 'OVER_BALANCE', open > 0 ? `Invoice no. ${sale.invoiceNumber} has ${formatPeso(open)} left to pay. Apply at most that.` : `Invoice no. ${sale.invoiceNumber} is fully paid.`);
+        }
+      }
+      seen.add(a.saleId);
+    }
 
     const difference = doc.totalCents - doc.appliedCents;
     if (doc.settleSmallDifference) {
@@ -167,6 +195,8 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       'INSERT INTO col_applications (document_id, line_no, job_order_id, amount_cents, to_receivable_cents, to_deposit_cents) VALUES (?, ?, ?, ?, ?, ?)',
     );
     for (const a of doc.applications) app.run(h.documentId, a.lineNo, a.jobOrderId, a.amountCents, a.toReceivableCents, a.toDepositCents);
+    const sale = db.prepare('INSERT INTO col_sale_applications (document_id, line_no, sale_id, amount_cents) VALUES (?, ?, ?, ?)');
+    for (const a of doc.sales) sale.run(h.documentId, a.lineNo, a.saleId, a.amountCents);
   },
 
   journal(doc) {
@@ -181,6 +211,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
           { account: { role: 'AR_TRADE' }, party, ref: { documentId: a.jobOrderId }, creditCents: a.toReceivableCents, memo: a.jobOrderNumber },
           { account: { role: 'CUSTOMER_DEPOSITS' }, party, ref: { documentId: a.jobOrderId }, creditCents: a.toDepositCents, memo: `Deposit for ${a.jobOrderNumber}` },
         ]),
+        ...doc.sales.map((a) => ({ account: { role: 'AR_TRADE' }, party, ref: { documentId: a.saleId }, creditCents: a.amountCents, memo: `Invoice no. ${a.invoiceNumber}` })),
         { account: { role: 'CUSTOMER_DEPOSITS' }, party, creditCents: doc.unappliedCents, memo: 'Unapplied payment' },
         { account: { role: 'CASH_SHORT_OVER' }, creditCents: Math.max(0, doc.shortOverCents), memo: 'Over' },
       ],
@@ -207,6 +238,12 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       toReceivableCents: a.to_receivable_cents,
       toDepositCents: a.to_deposit_cents,
     }));
+    const sales = (
+      db.prepare('SELECT line_no, sale_id, amount_cents FROM col_sale_applications WHERE document_id = ? ORDER BY line_no').all(documentId) as { line_no: number; sale_id: string; amount_cents: number }[]
+    ).map((a) => {
+      const sale = saleRef(db, a.sale_id);
+      return { saleId: a.sale_id, amountCents: a.amount_cents, lineNo: a.line_no, saleNumber: sale?.number ?? '?', invoiceNumber: sale?.invoiceNumber ?? '?' };
+    });
     return {
       customerId: r.customer_id,
       crNumber: r.cr_number,
@@ -214,10 +251,11 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       ...(r.settle_small_difference ? { settleSmallDifference: true } : {}),
       ...(r.note ? { note: r.note } : {}),
       applications,
+      sales,
       tenders: loadTenders(db, 'col_tenders', documentId),
       customerName: r.customer_name,
       cwtCents: r.cwt_cents,
-      appliedCents: sumCents(applications),
+      appliedCents: sumCents(applications) + sumCents(sales),
       unappliedCents: r.unapplied_cents,
       shortOverCents: r.short_over_cents,
       totalCents: r.total_cents,
@@ -230,6 +268,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       customerId,
       crNumber,
       applications: doc.applications.map(({ jobOrderId, amountCents }) => ({ jobOrderId, amountCents })),
+      ...(doc.sales.length > 0 ? { sales: doc.sales.map(({ saleId, amountCents }) => ({ saleId, amountCents })) } : {}),
       tenders: doc.tenders.map(tenderToInput),
       ...(withholding ? { withholding } : {}),
       ...(settleSmallDifference ? { settleSmallDifference } : {}),
@@ -238,27 +277,16 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
   },
 
   /**
-   * Refunds that paid out this collection's deposit: cancelling the collection first would leave the deposits
-   * account owing the customer less than nothing (D6). The part an invoice record applied reopens the receivable
-   * instead (afterCancel), as long as the JO's receivable stays within what was invoiced.
+   * Refunds and deposit transfers that took out money this collection put in: cancelling the collection first would
+   * leave the deposits account owing the customer less than nothing (D6). The part an invoice record applied reopens
+   * the receivable instead (afterCancel), as long as the JO's receivable stays within what was invoiced.
    */
   dependents(db, documentId) {
     const d = collectionDoc.load(db, documentId);
-    const parts: [string | null, number, number][] = [
-      ...d.applications.filter((a) => a.toDepositCents > 0).map((a): [string, number, number] => [a.jobOrderId, a.toDepositCents, a.toReceivableCents]),
-      ...(d.unappliedCents > 0 ? [[null, d.unappliedCents, 0] as [null, number, number]] : []),
+    return [
+      ...d.applications.flatMap((a) => takenOutBy(db, d.customerId, a.jobOrderId, a.toDepositCents, a.toReceivableCents)),
+      ...(d.unappliedCents > 0 ? takenOutBy(db, d.customerId, null, d.unappliedCents, 0) : []),
     ];
-    const blocked = ([jo, cents, toReceivable]: [string | null, number, number]) => {
-      const short = cents - depositsHeld(db, d.customerId, jo);
-      if (short <= 0) return false;
-      if (!jo) return true;
-      const m = joMoney(db, jo);
-      return m.receivableCents + toReceivable + short > m.invoicedCents;
-    };
-    const refunds = db.prepare(
-      `SELECT d.id, d.number FROM col_refunds r JOIN documents d ON d.id = r.document_id WHERE r.customer_id = ? AND r.job_order_id IS ? AND d.status = 'posted' ORDER BY d.number`,
-    );
-    return parts.filter(blocked).flatMap(([jo]) => refunds.all(d.customerId, jo) as { id: string; number: string }[]);
   },
 
   afterCancel(db, documentId) {
@@ -273,6 +301,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
     const cwt = doc.cwtCents > 0 ? ` plus ${formatPeso(doc.cwtCents)} tax withheld (2307)` : '';
     const uses = [
       ...doc.applications.map((a) => `${formatPeso(a.amountCents)} for ${a.jobOrderNumber}`),
+      ...doc.sales.map((a) => `${formatPeso(a.amountCents)} for invoice no. ${a.invoiceNumber}`),
       ...(doc.unappliedCents > 0 ? [`${formatPeso(doc.unappliedCents)} kept as deposit`] : []),
     ];
     const diff = doc.shortOverCents === 0 ? '' : ` ${formatPeso(Math.abs(doc.shortOverCents))} ${doc.shortOverCents > 0 ? 'over' : 'short'} goes to cash short and over.`;

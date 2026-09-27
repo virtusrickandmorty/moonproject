@@ -1,17 +1,21 @@
-/** Read-only JO contract for other modules (COL, PRD, DASH, CAL, RPT). Callers check their own route permission. */
+/**
+ * JO contract for other modules (COL, PRD, DASH, CAL, RPT). Callers check their own route permission. Read-only, except
+ * productionMove: the stage change PRD makes as production finishes (E7 rule 3).
+ */
 import { notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
 
-export { currentStage, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
-export { awaitingInvoice, settleLines } from './doctypes/invoice-record.ts';
+export { currentStage, productionMove, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
+export { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, awaitingInvoice, invoiceAmounts, invoiceNumberUsedBy, settleLines } from './doctypes/invoice-record.ts';
+export { lineState, type LineKind } from './doctypes/release.ts';
 
 export interface JoLedgerPart { receivableCents: number; depositsHeldCents: number }
 
-export interface JoRef { id: string; number: string; status: 'posted' | 'cancelled'; customerId: string; customerName: string; dueDate: string; totalCents: number }
+export interface JoRef { id: string; number: string; status: 'posted' | 'cancelled'; customerId: string; customerName: string; dueDate: string; priority: 'normal' | 'rush'; totalCents: number }
 
-const JO_REF = `SELECT d.id, d.number, d.status, o.customer_id AS customerId, o.customer_name AS customerName, o.due_date AS dueDate, d.total_cents AS totalCents
+const JO_REF = `SELECT d.id, d.number, d.status, o.customer_id AS customerId, o.customer_name AS customerName, o.due_date AS dueDate, o.priority, d.total_cents AS totalCents
   FROM jo_orders o JOIN documents d ON d.id = o.document_id`;
 
 /** One job order's header, for documents that point at it (COL applications, refunds). */
@@ -19,11 +23,24 @@ export function jobOrderRef(db: Db, id: string): JoRef | undefined {
   return db.prepare(`${JO_REF} WHERE o.document_id = ?`).get(id) as JoRef | undefined;
 }
 
-/** Recorded (not cancelled) job orders of one customer, or of everyone, oldest due first (E5 "default: oldest due first"). */
-export function jobOrdersOf(db: Db, customerId?: string): JoRef[] {
+/** Where an edited job order lives on now: JO-1 edited into JO-2, then into JO-3, gives JO-3. Null when the chain ends cancelled. */
+export function liveReplacementOf(db: Db, id: string): JoRef | null {
+  const next = db.prepare(`SELECT replaced_by_id FROM documents WHERE id = ? AND doc_type = 'jo.job_order'`).pluck();
+  for (let at = next.get(id) as string | null | undefined; at; at = next.get(at) as string | null | undefined) {
+    const jo = jobOrderRef(db, at);
+    if (jo?.status === 'posted') return jo;
+  }
+  return null;
+}
+
+/**
+ * Recorded (not cancelled) job orders of one customer, or of everyone, oldest due first (E5 "default: oldest due first").
+ * With includeCancelled, cancelled ones too (their deposits can still be refunded, D6).
+ */
+export function jobOrdersOf(db: Db, customerId?: string, includeCancelled = false): JoRef[] {
   return db
-    .prepare(`${JO_REF} WHERE (@c IS NULL OR o.customer_id = @c) AND d.status = 'posted' ORDER BY o.due_date, d.number`)
-    .all({ c: customerId ?? null }) as JoRef[];
+    .prepare(`${JO_REF} WHERE (@c IS NULL OR o.customer_id = @c) AND (@all OR d.status = 'posted') ORDER BY o.due_date, d.number`)
+    .all({ c: customerId ?? null, all: includeCancelled ? 1 : 0 }) as JoRef[];
 }
 
 /**

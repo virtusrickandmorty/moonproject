@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, type DocHeader, type DocTypeInfo, type Draft } from '../api.ts';
 import { Link, navigate } from '../router.tsx';
 import { Button, Notice, Panel, StatusChip, manilaTime, peso } from '../components/ui.tsx';
-import { docPath, plural } from '../shell/menu.ts';
+import { docPath, labelOf, pluralLabelOf } from '../shell/menu.ts';
 
 const PAGE = 25;
 const FILTERS = [['', 'All'], ['posted', 'Recorded'], ['cancelled', 'Cancelled']] as const;
@@ -27,8 +27,8 @@ export function DocList({ type }: { type: DocTypeInfo }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <h1 className="flex-1 text-2xl font-semibold">{plural(type.title)}</h1>
-        {type.canCreate && <Button tone="primary" onClick={() => navigate(docPath(type.key, '/new'))}>+ New {type.title}</Button>}
+        <h1 className="flex-1 text-2xl font-semibold">{pluralLabelOf(type)}</h1>
+        {type.canCreate && <Button tone="primary" onClick={() => navigate(docPath(type.key, '/new'))}>+ New {labelOf(type)}</Button>}
       </div>
       {error && <Notice>{error}</Notice>}
       {drafts.length > 0 && (

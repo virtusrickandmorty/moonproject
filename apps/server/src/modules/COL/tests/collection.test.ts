@@ -309,9 +309,24 @@ describe('API rules', () => {
       customerId: c.school,
       customerName: 'Moonlight Test School',
       jobOrders: [{ id: b, number: 'JO-000002', dueDate: '2026-10-13', totalCents: 2_000_000, balanceDueCents: 2_000_000, depositsHeldCents: 0 }],
+      quickSales: [],
       unappliedCents: 0,
     });
     expect((await encoder.get(`/api/col/customers/${newId()}/open-items`)).statusCode).toBe(404);
+  });
+
+  it('lists what can be paid back: deposits per JO, cancelled JOs included (D6), and unapplied money; refunds only', async () => {
+    const a = await jobOrder(1_000_000);
+    await jobOrder(2_000_000); // nothing held: not listed
+    await collect({ customerId: c.school, crNumber: '0403', applications: [{ jobOrderId: a, amountCents: 400_000 }], tenders: [{ cashPlaceId: CASH, amountCents: 450_000 }] }, 450_000);
+    expect((await accountant.post(`/api/docs/jo.job_order/${a}/cancel`, { reason: 'Customer called the order off' }, idem())).statusCode).toBe(200);
+    expect((await accountant.get(`/api/col/customers/${c.school}/refundable`)).json()).toEqual({
+      customerId: c.school,
+      customerName: 'Moonlight Test School',
+      jobOrders: [{ id: a, number: 'JO-000001', status: 'cancelled', depositsHeldCents: 400_000 }],
+      unappliedCents: 50_000,
+    });
+    expect((await encoder.get(`/api/col/customers/${c.school}/refundable`)).statusCode).toBe(403);
   });
 });
 
@@ -364,7 +379,10 @@ describe('property tests (PLAN I1.3)', () => {
     });
     fc.assert(
       fc.property(refundDoc.arbitrary(env.db), fc.boolean(), (input, cancel) => {
-        fc.pre(input.tenders[0]!.amountCents <= depositsHeld(env.db, input.customerId, input.jobOrderId ?? null));
+        // The inputs are drawn from what was held before the loop; refunds that are not cancelled drain it. A draw larger
+        // than what is left is skipped, not rejected with fc.pre: once a pool is empty every later draw would be rejected,
+        // and fast-check fails the run for too many pre-condition failures (seed 2000764807).
+        if (input.tenders[0]!.amountCents > depositsHeld(env.db, input.customerId, input.jobOrderId ?? null)) return;
         const p = postDocument(e, refundDoc, actor, { input, expectedTotalCents: input.tenders[0]!.amountCents });
         expect(refundDoc.toInput(refundDoc.load(env.db, p.id))).toEqual(input);
         if (cancel) cancelDocument(e, refundDoc, actor, p.id, 'Refund recorded by mistake');

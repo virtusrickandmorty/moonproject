@@ -2,22 +2,59 @@ import type { FastifyInstance } from 'fastify';
 import { notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { customerRef } from '../CUS/public.ts';
-import { jobOrdersOf, joMoney } from '../JO/public.ts';
+import { jobOrdersOf, joMoney, liveReplacementOf } from '../JO/public.ts';
+import { openSalesOf } from '../QS/public.ts';
 import { depositsHeld } from './ledger.ts';
 
 export function colRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db } = deps;
-
-  /** What a customer can pay on, for the collection form: JOs with a balance due, oldest due first, and unapplied money held. */
-  app.get<{ Params: { id: string } }>('/api/col/customers/:id/open-items', { config: { permission: 'col.create' } }, async (req) => {
-    const c = customerRef(db, req.params.id);
+  const customer = (id: string) => {
+    const c = customerRef(db, id);
     if (!c) throw notFound('The customer');
+    return c;
+  };
+
+  /**
+   * What a customer can pay on, for the collection form: JOs with a balance due, oldest due first; quick sales with
+   * money still owed, oldest first; and unapplied money held.
+   */
+  app.get<{ Params: { id: string } }>('/api/col/customers/:id/open-items', { config: { permission: 'col.create' } }, async (req) => {
+    const c = customer(req.params.id);
     const jobOrders = jobOrdersOf(db, c.id)
       .map((jo) => {
         const m = joMoney(db, jo.id);
         return { id: jo.id, number: jo.number, dueDate: jo.dueDate, totalCents: jo.totalCents, balanceDueCents: m.balanceDueCents, depositsHeldCents: m.depositsHeldCents };
       })
       .filter((jo) => jo.balanceDueCents > 0);
-    return { customerId: c.id, customerName: c.display_name, jobOrders, unappliedCents: depositsHeld(db, c.id, null) };
+    const quickSales = openSalesOf(db, c.id).map((s) => ({ id: s.id, number: s.number, invoiceNumber: s.invoiceNumber, businessDate: s.businessDate, totalCents: s.totalCents, openCents: s.openCents }));
+    return { customerId: c.id, customerName: c.display_name, jobOrders, quickSales, unappliedCents: depositsHeld(db, c.id, null) };
+  });
+
+  /** Deposits held per JO, cancelled JOs too (D6: they can still be refunded or moved). */
+  const heldPerJo = (customerId: string) =>
+    jobOrdersOf(db, customerId, true)
+      .map((jo) => ({ id: jo.id, number: jo.number, status: jo.status, depositsHeldCents: depositsHeld(db, customerId, jo.id) }))
+      .filter((jo) => jo.depositsHeldCents > 0);
+
+  /** What can be paid back to a customer, for the refund form: deposits held per JO and unapplied money. */
+  app.get<{ Params: { id: string } }>('/api/col/customers/:id/refundable', { config: { permission: 'col.refund' } }, async (req) => {
+    const c = customer(req.params.id);
+    return { customerId: c.id, customerName: c.display_name, jobOrders: heldPerJo(c.id), unappliedCents: depositsHeld(db, c.id, null) };
+  });
+
+  /**
+   * For the deposit transfer form (D5 DEP-XFER, D6): money held (per JO, with where an edited JO lives on now, and
+   * unapplied money) and the recorded JOs it can go to, those with a balance due, oldest due first.
+   */
+  app.get<{ Params: { id: string } }>('/api/col/customers/:id/transferable', { config: { permission: 'col.transfer' } }, async (req) => {
+    const c = customer(req.params.id);
+    const held = heldPerJo(c.id).map((jo) => {
+      const next = jo.status === 'cancelled' ? liveReplacementOf(db, jo.id) : null;
+      return { ...jo, replacement: next && { id: next.id, number: next.number } };
+    });
+    const jobOrders = jobOrdersOf(db, c.id)
+      .map((jo) => ({ id: jo.id, number: jo.number, dueDate: jo.dueDate, totalCents: jo.totalCents, balanceDueCents: joMoney(db, jo.id).balanceDueCents }))
+      .filter((jo) => jo.balanceDueCents > 0);
+    return { customerId: c.id, customerName: c.display_name, held, unappliedCents: depositsHeld(db, c.id, null), jobOrders };
   });
 }
