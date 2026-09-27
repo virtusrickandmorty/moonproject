@@ -1,18 +1,21 @@
-/** Read-only JO contract for other modules (COL, PRD, DASH, CAL, RPT). Callers check their own route permission. */
+/**
+ * JO contract for other modules (COL, PRD, DASH, CAL, RPT). Callers check their own route permission. Read-only, except
+ * productionMove: the stage change PRD makes as production finishes (E7 rule 3).
+ */
 import { notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
 
-export { currentStage, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
+export { currentStage, productionMove, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
 export { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, awaitingInvoice, invoiceAmounts, invoiceNumberUsedBy, settleLines } from './doctypes/invoice-record.ts';
-export type { LineKind } from './doctypes/release.ts';
+export { lineState, type LineKind } from './doctypes/release.ts';
 
 export interface JoLedgerPart { receivableCents: number; depositsHeldCents: number }
 
-export interface JoRef { id: string; number: string; status: 'posted' | 'cancelled'; customerId: string; customerName: string; dueDate: string; totalCents: number }
+export interface JoRef { id: string; number: string; status: 'posted' | 'cancelled'; customerId: string; customerName: string; dueDate: string; priority: 'normal' | 'rush'; totalCents: number }
 
-const JO_REF = `SELECT d.id, d.number, d.status, o.customer_id AS customerId, o.customer_name AS customerName, o.due_date AS dueDate, d.total_cents AS totalCents
+const JO_REF = `SELECT d.id, d.number, d.status, o.customer_id AS customerId, o.customer_name AS customerName, o.due_date AS dueDate, o.priority, d.total_cents AS totalCents
   FROM jo_orders o JOIN documents d ON d.id = o.document_id`;
 
 /** One job order's header, for documents that point at it (COL applications, refunds). */

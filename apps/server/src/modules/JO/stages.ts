@@ -65,6 +65,16 @@ export function moveTo(db: Db, documentId: string, to: Stage, reason: string, wh
   if (now !== 'cancelled' && now !== to) record(db, documentId, now, to, reason, who);
 }
 
+/**
+ * Production moves a job order as its steps finish (PLAN E7 rule 3): to Ready when every line is done, back to In
+ * production when a step is reopened or added. It never touches a job order that is being released, closed or cancelled.
+ * Call inside a transaction.
+ */
+export function productionMove(db: Db, documentId: string, to: 'in_production' | 'ready', reason: string, who: Who): void {
+  const now = currentStage(db, documentId);
+  if ((now === 'open' || now === 'in_production' || now === 'ready') && now !== to) record(db, documentId, now, to, reason, who);
+}
+
 /** Edit (cancel + reissue) keeps the job where it is on the floor: the replacement starts at the old stage. */
 export function carryStageOver(db: Db, oldId: string, newId: string): void {
   const stage = lastStage(db, oldId);
