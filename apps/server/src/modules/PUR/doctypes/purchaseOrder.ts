@@ -4,11 +4,12 @@ import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 
 const MAX_CENTS = 100_000_000_00;
+const MAX_QTY = 1_000_000;
 
 export const poLineInput = z
   .object({
     supplyId: z.string().trim().min(1),
-    qty: z.number().int().positive().max(MAX_CENTS),
+    qty: z.number().int().positive().max(MAX_QTY),
     unitCostCents: z.number().int().nonnegative().max(MAX_CENTS),
   })
   .strict();
@@ -68,6 +69,10 @@ export const purchaseOrderDoc: DocTypeDef<PurchaseOrderInput, PurchaseOrder> = {
     }
     if (doc.expectedDate && doc.expectedDate < ctx.businessDate) {
       issues.push({ field: 'expectedDate', code: 'PAST_DATE', level: 'error', message: 'Expected date cannot be in the past.' });
+    }
+
+    if (doc.totalCents > MAX_CENTS) {
+        issues.push({ field: 'lines', code: 'TOTAL_TOO_LARGE', level: 'error', message: 'Total amount exceeds safe limits.' });
     }
 
     const supplier = ctx.db.prepare('SELECT is_active FROM pur_suppliers WHERE id = ?').get(doc.supplierId) as { is_active: number } | undefined;
@@ -162,10 +167,15 @@ export const purchaseOrderDoc: DocTypeDef<PurchaseOrderInput, PurchaseOrder> = {
       unitCostCents: fc.integer({ min: 0, max: 1000000 })
     });
 
+    const dateStrArb = fc.integer({ min: 1, max: 12 }).chain(m => fc.integer({ min: 1, max: 28 }).map(d => `2030-${m.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`));
+
     return fc.record({
       supplierId: fc.constantFrom(...suppliers),
-      expectedDate: fc.option(fc.constant('2026-12-31')),
+      expectedDate: fc.option(dateStrArb, { nil: undefined }),
       lines: fc.array(lineArb, { minLength: 1, maxLength: 5 })
+    }).map((r) => {
+        if (!r.expectedDate) delete r.expectedDate;
+        return r;
     });
   },
 };
