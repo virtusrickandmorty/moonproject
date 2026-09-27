@@ -30,7 +30,9 @@ export function RunForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   }, [payGroup]);
 
   const { input, errors } = runInput(payGroup, periodStart, rows, advances, skip);
-  const live = useLive(JSON.stringify(input), !!periodStart && errors.length === 0, () => api.preview(type.key, input));
+  // PAY-1: dated the period's last day when that has passed and the user may backdate, so its pay is booked in that month.
+  const bookOn = periods?.find((p) => p.periodStart === periodStart)?.bookOn ?? undefined;
+  const live = useLive(JSON.stringify([input, bookOn]), !!periodStart && errors.length === 0, () => api.preview(type.key, input, bookOn));
   const [last, setLast] = useState<PayRunDoc | null>(null); // kept while a reason is being typed
   const [names, setNames] = useState<Record<string, string>>({});
   useEffect(() => {
@@ -53,14 +55,14 @@ export function RunForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   }
   const openConfirm = () => {
     setTouched(true);
-    if (errors.length === 0) api.preview(type.key, input).then(setConfirm, (e: Error) => setError(e.message));
+    if (errors.length === 0) api.preview(type.key, input, bookOn).then(setConfirm, (e: Error) => setError(e.message));
   };
   const record = async (key: string) => {
     try {
-      const r = await api.post(type.key, input, confirm!.totalCents, key);
+      const r = await api.post(type.key, input, confirm!.totalCents, key, bookOn);
       navigate(docPath(type.key, `/${r.id}?recorded=1`));
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.preview(type.key, input));
+      if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.preview(type.key, input, bookOn));
       throw e;
     }
   };
@@ -89,6 +91,7 @@ export function RunForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
             </select>
           </Field>
         </div>
+        {bookOn && <p className="mt-2 text-sm text-slate-600">Dated {bookOn}, the period's last day, so its pay is booked in that month.</p>}
       </Panel>
 
       <Panel title="Pay worked out by the server">

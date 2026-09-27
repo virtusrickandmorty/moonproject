@@ -80,7 +80,7 @@ export function Payslips({ params }: { me: Me; params?: Record<string, string> }
           <section key={e.employeeId} className="break-inside-avoid space-y-2 rounded-lg bg-white p-4 text-sm ring-1 ring-slate-300">
             <div className="flex justify-between"><h2 className="font-semibold">PAYSLIP</h2><span>{p.number}</span></div>
             <p>{e.name} <span className="text-slate-500">{e.code}</span></p>
-            <p className="text-slate-600">{GROUP_LABEL[p.payGroup]} · {p.periodStart} to {p.periodEnd} · paid {p.payDate}</p>
+            <p className="text-slate-600">{GROUP_LABEL[p.payGroup]} · {p.periodStart} to {p.periodEnd} · dated {p.payDate}</p>
             <table className="w-full">
               <tbody>
                 {e.lines.map((l) => <tr key={l.lineNo}><td>{l.description}</td><td className="text-right text-slate-500">{qtyText(l.kind, l.qty)}</td><td className="text-right tabular-nums">{peso(l.amountCents)}</td></tr>)}
