@@ -15,12 +15,15 @@ import type { Db } from '../../../platform/db/driver.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { DraftLine } from '../../../engine/ledger/post.ts';
 import { settingAt } from '../../../engine/settings.ts';
+import { saleByInvoiceNumber } from '../../QS/public.ts';
 import { invoicedCents, joLedger } from '../public.ts';
 import { MAX_CENTS } from './job-order.ts';
 import { releaseDoc, type LineKind, type ReleaseLine } from './release.ts';
 
-const CLASSES: LineKind[] = ['made_to_order', 'ready_made', 'service'];
-const SALES_ROLE: Record<LineKind, string> = { made_to_order: 'SALES_MTO', ready_made: 'SALES_RTW', service: 'SALES_SERVICE' };
+export const SALES_CLASSES: LineKind[] = ['made_to_order', 'ready_made', 'service'];
+export const SALES_ROLE: Record<LineKind, string> = { made_to_order: 'SALES_MTO', ready_made: 'SALES_RTW', service: 'SALES_SERVICE' };
+/** One IR- series for every invoice record: a release's (here) and a quick sale's (QS). */
+export const INVOICE_SERIES = { key: 'IR', prefix: 'IR-' };
 const MODE_WORDS = { A: 'deposit only', B: 'VAT on deposit', C: 'invoice on downpayment' } as const;
 
 export const invoiceRecordInput = z
@@ -33,19 +36,27 @@ export const invoiceRecordInput = z
   .strict();
 export type InvoiceRecordInput = z.infer<typeof invoiceRecordInput>;
 
-/** What the booklet shows and the journal posts, for a release's lines (also the "write these on the booklet" worksheet). */
-export function invoiceFigures(db: Db, jobOrderId: string, lines: readonly ReleaseLine[], date: string) {
-  const vatRateBp = settingAt(db, 'tax.vat_rate_bp', date);
+/**
+ * What the booklet shows and the journal posts for some invoiced lines (D4.1, D4.3): VAT on the whole document, sales
+ * split by line class weighted by list price, and a discount shown on the invoice as gross + 4190. Quick sales use it too.
+ */
+export function invoiceAmounts(lines: readonly { kind: LineKind; listCents: number; discountCents: number }[], vatRateBp: number) {
   const listCents = lines.reduce((s, l) => s + l.listCents, 0);
   const discountCents = lines.reduce((s, l) => s + l.discountCents, 0);
   const grossCents = listCents - discountCents;
   const { netCents, vatCents } = vatFromGross(grossCents, vatRateBp);
   const discountNetCents = vatFromGross(discountCents, vatRateBp).netCents;
-  const weights = CLASSES.map((k) => lines.filter((l) => l.kind === k).reduce((s, l) => s + l.listCents, 0));
+  const weights = SALES_CLASSES.map((k) => lines.filter((l) => l.kind === k).reduce((s, l) => s + l.listCents, 0));
   const shares = weights.some((w) => w > 0) ? allocate(netCents + discountNetCents, weights) : [0, 0, 0];
-  const salesCents = Object.fromEntries(CLASSES.map((k, i) => [k, shares[i]!])) as Record<LineKind, number>;
-  const depositAppliedCents = Math.max(0, Math.min(joLedger(db, jobOrderId).depositsHeldCents, grossCents));
-  return { vatRateBp, listCents, discountCents, grossCents, vatableSalesCents: netCents, vatCents, discountNetCents, salesCents, depositAppliedCents };
+  const salesCents = Object.fromEntries(SALES_CLASSES.map((k, i) => [k, shares[i]!])) as Record<LineKind, number>;
+  return { vatRateBp, listCents, discountCents, grossCents, vatableSalesCents: netCents, vatCents, discountNetCents, salesCents };
+}
+
+/** A release's invoice figures (also the "write these on the booklet" worksheet), with the JO's deposits it applies. */
+export function invoiceFigures(db: Db, jobOrderId: string, lines: readonly ReleaseLine[], date: string) {
+  const figures = invoiceAmounts(lines, settingAt(db, 'tax.vat_rate_bp', date));
+  const depositAppliedCents = Math.max(0, Math.min(joLedger(db, jobOrderId).depositsHeldCents, figures.grossCents));
+  return { ...figures, depositAppliedCents };
 }
 
 export interface InvoiceRecord extends InvoiceRecordInput, ReturnType<typeof invoiceFigures> {
@@ -62,17 +73,19 @@ export interface InvoiceRecord extends InvoiceRecordInput, ReturnType<typeof inv
 const releaseHeader = (db: Db, id: string) =>
   db.prepare(`SELECT d.number, d.status FROM jo_releases r JOIN documents d ON d.id = r.document_id WHERE r.document_id = ?`).get(id) as { number: string; status: string } | undefined;
 
-function invoiceUsedBy(db: Db, invoiceNumber: string) {
-  return db
+/** The document that used a booklet invoice number, cancelled ones included. Releases and quick sales share one booklet. */
+export function invoiceNumberUsedBy(db: Db, invoiceNumber: string): { number: string; status: string } | undefined {
+  const own = db
     .prepare(`SELECT d.number, d.status FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE CAST(i.invoice_number AS INTEGER) = CAST(? AS INTEGER)`)
     .get(invoiceNumber) as { number: string; status: string } | undefined;
+  return own ?? saleByInvoiceNumber(db, invoiceNumber);
 }
 
 export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
   key: 'jo.invoice_record',
   module: 'JO',
   title: 'Invoice Record',
-  numbering: { series: { key: 'IR', prefix: 'IR-' } },
+  numbering: { series: INVOICE_SERIES },
   permissions: { view: 'jo.view', create: 'jo.invoice', post: 'jo.invoice', cancel: 'jo.invoice_cancel' },
   dating: 'system',
   inputSchema: invoiceRecordInput,
@@ -109,7 +122,7 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
       .prepare(`SELECT d.number, i.invoice_number FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE i.release_id = ? AND d.status = 'posted'`)
       .get(doc.releaseId) as { number: string; invoice_number: string } | undefined;
     if (other) error('releaseId', 'ALREADY_INVOICED', `${doc.releaseNumber} already has invoice no. ${other.invoice_number} (${other.number}). Cancel that one first to record another.`);
-    const used = invoiceUsedBy(ctx.db, doc.invoiceNumber);
+    const used = invoiceNumberUsedBy(ctx.db, doc.invoiceNumber);
     if (used) {
       const how = used.status === 'cancelled' ? ' (cancelled)' : '';
       error('invoiceNumber', 'INVOICE_USED', `Invoice no. ${doc.invoiceNumber} is already used on ${used.number}${how}. Each invoice number is used once: write this sale on a new invoice and keep all copies of a spoiled one.`);
@@ -139,7 +152,7 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
       lines: [
         { account: { role: 'AR_TRADE' }, party, ref, debitCents: doc.grossCents, memo: `Invoice no. ${doc.invoiceNumber}` },
         { account: { role: 'SALES_DISCOUNTS' }, party, debitCents: doc.discountNetCents, memo: 'Discount shown on the invoice' },
-        ...CLASSES.map((k) => ({ account: { role: SALES_ROLE[k] }, party, creditCents: doc.salesCents[k] })),
+        ...SALES_CLASSES.map((k) => ({ account: { role: SALES_ROLE[k] }, party, creditCents: doc.salesCents[k] })),
         { account: { role: 'OUTPUT_VAT' }, party, creditCents: doc.vatCents },
         { account: { role: 'CUSTOMER_DEPOSITS' }, party, ref, debitCents: doc.depositAppliedCents, memo: `Deposits of ${doc.jobOrderNumber} applied` },
         { account: { role: 'AR_TRADE' }, party, ref, creditCents: doc.depositAppliedCents, memo: `Deposits of ${doc.jobOrderNumber} applied` },

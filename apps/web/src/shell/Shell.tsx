@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, type DocTypeInfo, type Me } from '../api.ts';
 import { Link, useLocation } from '../router.tsx';
 import { longDate } from '../components/ui.tsx';
-import { buildMenu, docPath } from './menu.ts';
+import { buildMenu, docPath, labelOf } from './menu.ts';
 
 function ServerDate() {
   const [date, setDate] = useState<string | null>(); // undefined while loading, null when the server is unreachable
@@ -36,7 +36,7 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
         {creatable.length > 0 && (
           <div className="relative">
             <button type="button" className="rounded-md bg-white/15 px-3 py-1 hover:bg-white/25" onClick={() => toggle('new')}>+ New</button>
-            {open === 'new' && <div className={pop}>{creatable.map((d) => <Link key={d.key} to={docPath(d.key, '/new')}>{d.title}</Link>)}</div>}
+            {open === 'new' && <div className={pop}>{creatable.map((d) => <Link key={d.key} to={docPath(d.key, '/new')}>{labelOf(d)}</Link>)}</div>}
           </div>
         )}
         <div className="relative">

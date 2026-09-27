@@ -21,12 +21,27 @@ export interface DocHeader {
 /** Read-only display of lines the server built. Declared this way so the money-rule tripwire (tests/house-rules) stays exact. */
 export type JournalLine = { accountCode: string; accountName: string } & Record<'debitCents' | 'creditCents', number>;
 export interface Journal { id: string; number: string; businessDate: string; postingKind: 'original' | 'reversal'; memo: string; lines: JournalLine[] }
-/** `journals` and `journal` are present only for users with acc.journal.view. */
-export interface DocDetail { header: DocHeader; input: Record<string, unknown>; journals?: Journal[] }
+/** `journals` and `journal` are present only for users with acc.journal.view. `doc` is the stored document, as the server built it. */
+export interface DocDetail { header: DocHeader; input: Record<string, unknown>; doc?: Record<string, unknown>; journals?: Journal[] }
 export interface Preview { totalCents: number; summary: string; issues: Issue[]; journal?: JournalLine[] | null }
 export interface PostResult { id: string; number: string; totalCents: number; warnings: Issue[] }
 export interface Draft { id: string; docType: string; payload: { values?: Record<string, string> }; version: number; updatedAt: string }
 export interface CashPlace { id: number; name: string; balanceCents: number | null }
+export interface CustomerRow { id: string; code: string; display_name: string; is_active: number }
+/** GET /api/col/customers/:id/open-items: what a customer can pay on. */
+export interface OpenItems {
+  customerId: string; customerName: string; unappliedCents: number;
+  jobOrders: { id: string; number: string; dueDate: string; totalCents: number; balanceDueCents: number; depositsHeldCents: number }[];
+  quickSales: { id: string; number: string; invoiceNumber: string; businessDate: string; totalCents: number; openCents: number }[];
+}
+/** GET /api/col/customers/:id/refundable: money held that can be paid back. */
+export interface Refundable { customerId: string; customerName: string; unappliedCents: number; jobOrders: { id: string; number: string; status: 'posted' | 'cancelled'; depositsHeldCents: number }[] }
+type Checked = { summary: string; issues: Issue[]; journal?: JournalLine[] | null };
+/** POST /api/qs/sales/preview: the sale, "write these on the booklet" and its payment (null while the sale has errors). */
+export interface QsPreview { totalCents: number; booklet: { vatableSalesCents: number; vatCents: number; discountCents: number; totalCents: number }; sale: Checked; payment: Checked | null }
+export interface QsBody { sale: unknown; payment: unknown }
+export interface QsRecorded { sale: PostResult; payment: PostResult }
+export interface SalePayment { id: string; number: string; status: 'posted' | 'cancelled'; crNumber: string; totalCents: number }
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -53,6 +68,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
   const doc = (type: string, rest = '') => `/api/docs/${encodeURIComponent(type)}${rest}`;
   const one = (type: string, id: string, rest = '') => doc(type, `/${encodeURIComponent(id)}${rest}`);
   const idem = (key: string) => ({ 'idempotency-key': key });
+  const customer = (id: string, rest: string) => `/api/col/customers/${encodeURIComponent(id)}/${rest}`;
+  const qs = (id: string, rest: string) => `/api/qs/sales/${encodeURIComponent(id)}/${rest}`;
 
   return {
     /** Called when the session ended or a new password is required, so the app can show the right screen. */
@@ -79,6 +96,15 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
       call<{ id: string; version: number }>('PUT', `/api/drafts/${encodeURIComponent(id)}`, { payload }, { 'if-match': String(version) }),
     discardDraft: (id: string) => call<unknown>('POST', `/api/drafts/${encodeURIComponent(id)}/discard`),
     cashPlaces: () => call<CashPlace[]>('GET', '/api/cash/places'),
+    customers: (search: string) => call<CustomerRow[]>('GET', `/api/cus/customers?${new URLSearchParams({ search, limit: '10' })}`),
+    openItems: (customerId: string) => call<OpenItems>('GET', customer(customerId, 'open-items')),
+    refundable: (customerId: string) => call<Refundable>('GET', customer(customerId, 'refundable')),
+    qsPreview: (b: QsBody) => call<QsPreview>('POST', '/api/qs/sales/preview', b),
+    qsRecord: (b: QsBody, expectedTotalCents: number, key: string) => call<QsRecorded>('POST', '/api/qs/sales', { ...b, expectedTotalCents }, idem(key)),
+    qsReissue: (id: string, b: QsBody, expectedTotalCents: number, reason: string, key: string) =>
+      call<QsRecorded>('POST', qs(id, 'reissue'), { ...b, expectedTotalCents, reason }, idem(key)),
+    qsCancel: (id: string, reason: string, key: string) => call<unknown>('POST', qs(id, 'cancel'), { reason }, idem(key)),
+    qsPayments: (id: string) => call<SalePayment[]>('GET', qs(id, 'payments')),
   };
 }
 

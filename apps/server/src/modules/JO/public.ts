@@ -5,7 +5,8 @@ import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
 
 export { currentStage, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
-export { awaitingInvoice, settleLines } from './doctypes/invoice-record.ts';
+export { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, awaitingInvoice, invoiceAmounts, invoiceNumberUsedBy, settleLines } from './doctypes/invoice-record.ts';
+export type { LineKind } from './doctypes/release.ts';
 
 export interface JoLedgerPart { receivableCents: number; depositsHeldCents: number }
 
@@ -19,11 +20,14 @@ export function jobOrderRef(db: Db, id: string): JoRef | undefined {
   return db.prepare(`${JO_REF} WHERE o.document_id = ?`).get(id) as JoRef | undefined;
 }
 
-/** Recorded (not cancelled) job orders of one customer, or of everyone, oldest due first (E5 "default: oldest due first"). */
-export function jobOrdersOf(db: Db, customerId?: string): JoRef[] {
+/**
+ * Recorded (not cancelled) job orders of one customer, or of everyone, oldest due first (E5 "default: oldest due first").
+ * With includeCancelled, cancelled ones too (their deposits can still be refunded, D6).
+ */
+export function jobOrdersOf(db: Db, customerId?: string, includeCancelled = false): JoRef[] {
   return db
-    .prepare(`${JO_REF} WHERE (@c IS NULL OR o.customer_id = @c) AND d.status = 'posted' ORDER BY o.due_date, d.number`)
-    .all({ c: customerId ?? null }) as JoRef[];
+    .prepare(`${JO_REF} WHERE (@c IS NULL OR o.customer_id = @c) AND (@all OR d.status = 'posted') ORDER BY o.due_date, d.number`)
+    .all({ c: customerId ?? null, all: includeCancelled ? 1 : 0 }) as JoRef[];
 }
 
 /**

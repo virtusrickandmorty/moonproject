@@ -25,10 +25,15 @@ export const SCREENS: MenuItem[] = [{ group: 'Overview', label: 'Home', path: '/
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);
 
+/** Doc types found under another name than their document title: a quick sale is an Invoice Record (PLAN H1 "quick sale"). */
+const LABELS: Record<string, [one: string, many: string]> = { 'qs.sale': ['Quick Sale', 'Quick Sales'] };
+export const labelOf = (d: Pick<DocTypeInfo, 'key' | 'title'>) => LABELS[d.key]?.[0] ?? d.title;
+export const pluralLabelOf = (d: Pick<DocTypeInfo, 'key' | 'title'>) => LABELS[d.key]?.[1] ?? plural(d.title);
+
 export function buildMenu(docTypes: DocTypeInfo[], permissions: ReadonlySet<string>, screens = SCREENS): { group: MenuGroup; items: MenuItem[] }[] {
   const items: MenuItem[] = [
     ...screens.filter((s) => !s.permission || permissions.has(s.permission)),
-    ...docTypes.map((d) => ({ group: groupOf(d.module), label: plural(d.title), path: docPath(d.key) })),
+    ...docTypes.map((d) => ({ group: groupOf(d.module), label: pluralLabelOf(d), path: docPath(d.key) })),
   ];
   return MENU_GROUPS.map((group) => ({ group, items: items.filter((i) => i.group === group) })).filter((g) => g.items.length > 0);
 }

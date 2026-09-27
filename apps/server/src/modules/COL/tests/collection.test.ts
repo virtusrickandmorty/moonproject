@@ -309,9 +309,24 @@ describe('API rules', () => {
       customerId: c.school,
       customerName: 'Moonlight Test School',
       jobOrders: [{ id: b, number: 'JO-000002', dueDate: '2026-10-13', totalCents: 2_000_000, balanceDueCents: 2_000_000, depositsHeldCents: 0 }],
+      quickSales: [],
       unappliedCents: 0,
     });
     expect((await encoder.get(`/api/col/customers/${newId()}/open-items`)).statusCode).toBe(404);
+  });
+
+  it('lists what can be paid back: deposits per JO, cancelled JOs included (D6), and unapplied money; refunds only', async () => {
+    const a = await jobOrder(1_000_000);
+    await jobOrder(2_000_000); // nothing held: not listed
+    await collect({ customerId: c.school, crNumber: '0403', applications: [{ jobOrderId: a, amountCents: 400_000 }], tenders: [{ cashPlaceId: CASH, amountCents: 450_000 }] }, 450_000);
+    expect((await accountant.post(`/api/docs/jo.job_order/${a}/cancel`, { reason: 'Customer called the order off' }, idem())).statusCode).toBe(200);
+    expect((await accountant.get(`/api/col/customers/${c.school}/refundable`)).json()).toEqual({
+      customerId: c.school,
+      customerName: 'Moonlight Test School',
+      jobOrders: [{ id: a, number: 'JO-000001', status: 'cancelled', depositsHeldCents: 400_000 }],
+      unappliedCents: 50_000,
+    });
+    expect((await encoder.get(`/api/col/customers/${c.school}/refundable`)).statusCode).toBe(403);
   });
 });
 
