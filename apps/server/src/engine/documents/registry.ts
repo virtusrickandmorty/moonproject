@@ -8,7 +8,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { z } from 'zod';
 import type fc from 'fast-check';
-import type { Issue, PermissionDef } from '@virtus/shared';
+import type { Issue, PermissionDef } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import type { JournalDraft } from '../ledger/post.ts';
 import type { SeriesDef } from '../numbering.ts';

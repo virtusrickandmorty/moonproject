@@ -1,6 +1,7 @@
 # Claude builders
 
 Read `AGENTS.md` first; it is the house rulebook for every builder, and it applies to you in full.
+Work only in a fresh clone of github.com/virtusrickandmorty/moonproject. Ignore any local folders with older Virtus apps.
 
 Claude-specific notes:
 - Claude #1 owns the engine and merges every PR. Claude #2 owns sales, production and payroll plus the web shell.

@@ -4,7 +4,7 @@
  */
 import type { Db } from '../../platform/db/driver.ts';
 import type { Registry } from '../documents/registry.ts';
-import { ROLES } from '@virtus/shared';
+import { ROLES } from '@moonproject/shared';
 
 export function syncPermissions(db: Db, registry: Registry, at: string): void {
   const insPerm = db.prepare('INSERT INTO permissions (key, module, label) VALUES (?, ?, ?)');

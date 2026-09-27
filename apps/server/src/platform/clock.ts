@@ -1,4 +1,4 @@
-import { AppError, manilaDate, manilaTimestamp } from '@virtus/shared';
+import { AppError, manilaDate, manilaTimestamp } from '@moonproject/shared';
 
 /** Everything that needs "now" takes a Clock, so tests can pin the date. */
 export interface Clock {

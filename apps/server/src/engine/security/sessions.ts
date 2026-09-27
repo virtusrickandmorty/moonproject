@@ -2,11 +2,11 @@
  * Server-side sessions, rate limits and permission lookup (PLAN C6).
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { AppError, manilaTimestamp, newId } from '@virtus/shared';
+import { AppError, manilaTimestamp, newId } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import type { Clock } from '../../platform/clock.ts';
 
-export const SESSION_COOKIE = '__Host-virtus_session';
+export const SESSION_COOKIE = '__Host-moon_session';
 export const IDLE_TIMEOUT_MS = 60 * 60_000;
 export const ABSOLUTE_TIMEOUT_MS = 12 * 3600_000;
 export const STEP_UP_WINDOW_MS = 5 * 60_000;

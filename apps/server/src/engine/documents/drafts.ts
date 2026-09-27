@@ -3,7 +3,7 @@
  */
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { AppError, conflict, forbidden, newId, notFound } from '@virtus/shared';
+import { AppError, conflict, forbidden, newId, notFound } from '@moonproject/shared';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
 import type { AppDeps } from '../../app.ts';

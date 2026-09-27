@@ -1,4 +1,4 @@
-import { AppError } from '@virtus/shared';
+import { AppError } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 
 export interface Account {

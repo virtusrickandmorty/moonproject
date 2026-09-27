@@ -9,7 +9,7 @@ import { systemClock } from './platform/clock.ts';
 import { buildApp } from './app.ts';
 import { loadModules } from './modules/load.ts';
 
-const dbFile = process.env.VIRTUS_DB ?? 'data/virtus.db';
+const dbFile = process.env.MOONPROJECT_DB ?? 'data/moonproject.db';
 mkdirSync(dirname(dbFile), { recursive: true });
 const db = openDb(dbFile);
 const { app } = buildApp({ db, clock: systemClock, modules: await loadModules(), logger: true });

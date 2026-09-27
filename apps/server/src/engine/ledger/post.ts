@@ -1,7 +1,7 @@
 /**
  * The only code that writes journals (PLAN D1). One document -> one journal, in the caller's transaction.
  */
-import { AppError, isCents, newId, yearOf } from '@virtus/shared';
+import { AppError, isCents, newId, yearOf } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { ensureSeries, allocateNumber } from '../numbering.ts';
 import { resolveAccount, type Account, type AccountRef } from './accounts.ts';
