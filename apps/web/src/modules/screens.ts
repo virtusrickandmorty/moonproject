@@ -12,9 +12,16 @@ import { quickSaleView } from './QS/QuickSaleView.tsx';
 import { EntryForm } from './PRD/EntryForm.tsx';
 import { ProductionBoard } from './PRD/Board.tsx';
 import { PieceRates } from './RATE/Rates.tsx';
+import { Customers } from './CUS/Customers.tsx';
+import { Catalog } from './CAT/Catalog.tsx';
+import { QuotationForm } from './QUO/QuotationForm.tsx';
+import { quotationView } from './QUO/QuotationView.tsx';
 
 /** Screens that are not a document list, form or view, by path (their menu items are in shell/menu.ts SCREENS). */
-export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo[] }>> = { '/prd/board': ProductionBoard, '/prd/rates': PieceRates };
+export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo[] }>> = {
+  '/prd/board': ProductionBoard, '/prd/rates': PieceRates,
+  '/cus/customers': Customers, '/cat/catalog': Catalog,
+};
 
 export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: FormMode }>> = {
   'col.collection': CollectionForm,
@@ -22,6 +29,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'col.deposit_transfer': DepositTransferForm,
   'qs.sale': QuickSaleForm,
   'prd.entry': EntryForm,
+  'quo.quotation': QuotationForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView };
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'quo.quotation': quotationView };

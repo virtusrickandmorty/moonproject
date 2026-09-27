@@ -36,6 +36,13 @@ beforeEach(async () => {
 afterEach(async () => { await env.app.close(); env.db.close(); });
 
 describe('quotation document', () => {
+  it('rejects a quoted unit that differs from the catalog item', async () => {
+    const input = quote([line(2, { unit: 'set' })]);
+    const preview = await encoder.post('/api/docs/quo.quotation/preview', { input });
+    expect(preview.statusCode).toBe(200);
+    expect(preview.json().issues).toMatchObject([{ code: 'UNIT_MISMATCH', field: 'lines.0.unit' }]);
+    expect((await post(input, 24_000)).statusCode).toBe(422);
+  });
   it('previews and records server-priced lines without a journal', async () => {
     const input = quote([line(1), line(10)], { documentDiscountCents: 1000 });
     const preview = await encoder.post('/api/docs/quo.quotation/preview', { input });
