@@ -8,7 +8,7 @@ import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
 
 export { currentStage, productionMove, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
-export { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, awaitingInvoice, invoiceAmounts, invoiceNumberUsedBy, settleLines } from './doctypes/invoice-record.ts';
+export { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, awaitingInvoice, invoiceAmounts, invoiceNumberUsedBy, invoiceNumbersBetween, settleLines } from './doctypes/invoice-record.ts';
 export { lineState, type LineKind } from './doctypes/release.ts';
 
 export interface JoLedgerPart { receivableCents: number; depositsHeldCents: number }
