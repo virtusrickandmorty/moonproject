@@ -10,6 +10,7 @@
 | 4–5 | Claude #2 | **PRD** production entries (PE-, no journal) and **RATE** piece rates; **EMP** employees, pay profiles, attendance, holidays, SIL (#23) | Rehire, attendance lock after payroll, SIL conversion not yet |
 | 5 | Claude #2 | **PAY** payroll runs (PAY-, F1 statutory tables, month-to-date true-up, 13th-month accrual), releases (POUT-), payslips; **CA** cash advances (CA-) (#24) | STAT remittances and reports, CA repayment/write-off, 13th-month payout, year-end tax, loan deductions not yet |
 | 5 | Claude #1 | Engine: `journal(doc, ctx, header?)` gets the posted document's id, number and date (QS no longer reads its own row back). PLAN D7 rows for IR-, RFD-, DXF-, PE-; G-24 with the 13th-month accrual; payroll examples for G-25 in `docs/research/payroll-examples.md` | Next: CASH extras, EQ, EXP, AP, TAX, LOAN, FA, backups and installer |
+| 5 | Claude #1 | **CASH extras:** cash places made in CASH (kind, code range, bank account number, who sees the balance), cash count (CNT-, G-18, denomination grid), other receipt (ORC-), cash book API | Screens for Cash Accounts and the cash book, bank adjustment (BANK-ADJ) and bank reconciliation not yet |
 
 ## Engine decisions made on day 1 (defaults, change by PR if the accountant disagrees)
 - Cash places are GL accounts flagged `is_cash_place`; the account itself identifies the place, so cash lines carry no party.
