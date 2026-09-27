@@ -11,9 +11,15 @@ export interface Party {
   id: string;
 }
 
+/** The document a line is for, e.g. the job order behind a deposit (PLAN D3). Balances can be read per reference. */
+export interface DocRef {
+  documentId: string;
+}
+
 export interface DraftLine {
   account: AccountRef;
   party?: Party;
+  ref?: DocRef;
   debitCents?: number;
   creditCents?: number;
   memo?: string;
@@ -35,6 +41,7 @@ export interface PostContext {
 export interface ResolvedLine {
   account: Account;
   party: Party | null;
+  ref: DocRef | null;
   debitCents: number;
   creditCents: number;
   memo: string | null;
@@ -62,7 +69,7 @@ export function resolveDraft(db: Db, draft: JournalDraft): ResolvedLine[] {
     } else if (!account.party_type && party) {
       throw new AppError('PARTY_NOT_ALLOWED', `${account.name} does not take a party.`, 500);
     }
-    lines.push({ account, party, debitCents: debit, creditCents: credit, memo: l.memo ?? null });
+    lines.push({ account, party, ref: l.ref ?? null, debitCents: debit, creditCents: credit, memo: l.memo ?? null });
   }
   const dr = lines.reduce((s, l) => s + l.debitCents, 0);
   const cr = lines.reduce((s, l) => s + l.creditCents, 0);
@@ -77,7 +84,7 @@ function insertJournal(
   ctx: PostContext,
   kind: 'original' | 'reversal',
   memo: string,
-  lines: { accountId: number; party: Party | null; debitCents: number; creditCents: number; memo: string | null }[],
+  lines: { accountId: number; party: Party | null; refDocId: string | null; debitCents: number; creditCents: number; memo: string | null }[],
   reversesId: string | null,
 ): { journalId: string; number: string } {
   if (!db.inTransaction) throw new Error('Journals are posted only inside a transaction');
@@ -90,10 +97,12 @@ function insertJournal(
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
   ).run(journalId, number, ctx.businessDate, ctx.sourceType, ctx.sourceId, kind, reversesId, memo, ctx.at, ctx.userId);
   const ins = db.prepare(
-    `INSERT INTO journal_lines (journal_id, line_no, account_id, party_type, party_id, debit_cents, credit_cents, memo)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO journal_lines (journal_id, line_no, account_id, party_type, party_id, ref_doc_id, debit_cents, credit_cents, memo)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
-  lines.forEach((l, i) => ins.run(journalId, i + 1, l.accountId, l.party?.type ?? null, l.party?.id ?? null, l.debitCents, l.creditCents, l.memo));
+  lines.forEach((l, i) =>
+    ins.run(journalId, i + 1, l.accountId, l.party?.type ?? null, l.party?.id ?? null, l.refDocId, l.debitCents, l.creditCents, l.memo),
+  );
   db.prepare('UPDATE journals SET sealed = 1 WHERE id = ?').run(journalId); // trigger checks balance
   return { journalId, number };
 }
@@ -105,7 +114,7 @@ export function postJournal(db: Db, draft: JournalDraft, ctx: PostContext): { jo
     ctx,
     'original',
     draft.memo,
-    lines.map((l) => ({ accountId: l.account.id, party: l.party, debitCents: l.debitCents, creditCents: l.creditCents, memo: l.memo })),
+    lines.map((l) => ({ accountId: l.account.id, party: l.party, refDocId: l.ref?.documentId ?? null, debitCents: l.debitCents, creditCents: l.creditCents, memo: l.memo })),
     null,
   );
 }
@@ -120,8 +129,8 @@ export function reverseJournalOf(db: Db, sourceType: string, sourceId: string, c
     .get(sourceType, sourceId) as { id: string; number: string } | undefined;
   if (!j) return null;
   const stored = db
-    .prepare('SELECT account_id, party_type, party_id, debit_cents, credit_cents, memo FROM journal_lines WHERE journal_id = ? ORDER BY line_no')
-    .all(j.id) as { account_id: number; party_type: string | null; party_id: string | null; debit_cents: number; credit_cents: number; memo: string | null }[];
+    .prepare('SELECT account_id, party_type, party_id, ref_doc_id, debit_cents, credit_cents, memo FROM journal_lines WHERE journal_id = ? ORDER BY line_no')
+    .all(j.id) as { account_id: number; party_type: string | null; party_id: string | null; ref_doc_id: string | null; debit_cents: number; credit_cents: number; memo: string | null }[];
   return insertJournal(
     db,
     ctx,
@@ -130,6 +139,7 @@ export function reverseJournalOf(db: Db, sourceType: string, sourceId: string, c
     stored.map((l) => ({
       accountId: l.account_id,
       party: l.party_type ? { type: l.party_type, id: l.party_id! } : null,
+      refDocId: l.ref_doc_id,
       debitCents: l.credit_cents,
       creditCents: l.debit_cents,
       memo: l.memo,
