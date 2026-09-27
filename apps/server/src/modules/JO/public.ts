@@ -5,6 +5,8 @@ import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
 
 export { currentStage, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
+export { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, awaitingInvoice, invoiceAmounts, invoiceNumberUsedBy, settleLines } from './doctypes/invoice-record.ts';
+export type { LineKind } from './doctypes/release.ts';
 
 export interface JoLedgerPart { receivableCents: number; depositsHeldCents: number }
 
@@ -18,11 +20,14 @@ export function jobOrderRef(db: Db, id: string): JoRef | undefined {
   return db.prepare(`${JO_REF} WHERE o.document_id = ?`).get(id) as JoRef | undefined;
 }
 
-/** Recorded (not cancelled) job orders of one customer, or of everyone, oldest due first (E5 "default: oldest due first"). */
-export function jobOrdersOf(db: Db, customerId?: string): JoRef[] {
+/**
+ * Recorded (not cancelled) job orders of one customer, or of everyone, oldest due first (E5 "default: oldest due first").
+ * With includeCancelled, cancelled ones too (their deposits can still be refunded, D6).
+ */
+export function jobOrdersOf(db: Db, customerId?: string, includeCancelled = false): JoRef[] {
   return db
-    .prepare(`${JO_REF} WHERE (@c IS NULL OR o.customer_id = @c) AND d.status = 'posted' ORDER BY o.due_date, d.number`)
-    .all({ c: customerId ?? null }) as JoRef[];
+    .prepare(`${JO_REF} WHERE (@c IS NULL OR o.customer_id = @c) AND (@all OR d.status = 'posted') ORDER BY o.due_date, d.number`)
+    .all({ c: customerId ?? null, all: includeCancelled ? 1 : 0 }) as JoRef[];
 }
 
 /**
@@ -46,6 +51,14 @@ export function joLedger(db: Db, documentId: string): JoLedgerPart {
   return { receivableCents: balance('AR_TRADE'), depositsHeldCents: 0 - balance('CUSTOMER_DEPOSITS') };
 }
 
+/** Gross of the JO's recorded (not cancelled) invoice records: its sales so far (D3 "invoiced amount"). */
+export function invoicedCents(db: Db, documentId: string): number {
+  return db
+    .prepare(`SELECT COALESCE(SUM(i.gross_cents), 0) FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE i.job_order_id = ? AND d.status = 'posted'`)
+    .pluck()
+    .get(documentId) as number;
+}
+
 export function joMoney(db: Db, documentId: string) {
   const r = db
     .prepare(
@@ -54,7 +67,7 @@ export function joMoney(db: Db, documentId: string) {
     )
     .get(documentId) as { status: string; totalCents: number; requiredDownpaymentCents: number } | undefined;
   if (!r) throw notFound('The job order');
-  const owed = { totalCents: r.status === 'cancelled' ? 0 : r.totalCents, invoicedCents: 0 }; // invoice records: JO part 2
+  const owed = { totalCents: r.status === 'cancelled' ? 0 : r.totalCents, invoicedCents: invoicedCents(db, documentId) };
   const ledger = joLedger(db, documentId);
   return { ...owed, requiredDownpaymentCents: r.requiredDownpaymentCents, ...ledger, ...balanceDue({ ...owed, ...ledger }) };
 }

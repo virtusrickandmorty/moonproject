@@ -1,7 +1,7 @@
 /**
  * Collections and refunds: goldens G-01, G-03, G-06, G-07 and G-12 (PLAN I2), cancel mirrors, E5 rules, API rules and
- * property tests. The invoice record is not built yet, so the invoiced receivable (G-02) is posted here as its journal,
- * tagged with the JO the way the invoice record will tag it.
+ * property tests. To keep these tests free of releases, the invoiced receivable (G-02) is posted here as the invoice
+ * record's journal, tagged with the JO; the invoice record itself and the D6 cancel rules are in JO/tests/release.test.ts.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
@@ -46,7 +46,7 @@ async function jobOrder(totalCents: number, customerId = c.school): Promise<stri
   return r.json().id;
 }
 
-/** Stand-in for the invoice record (INV-REC + DEP-APPLY, PLAN D5): its journal, with the AR and deposit lines tagged with the JO. */
+/** The invoice record's journal (INV-REC + DEP-APPLY, PLAN D5) without the document, AR and deposit lines tagged with the JO. */
 function invoice(jo: string, grossCents: number, depositAppliedCents = 0, customerId = c.school) {
   const party = { type: 'customer', id: customerId };
   const ref = { documentId: jo };
@@ -309,9 +309,24 @@ describe('API rules', () => {
       customerId: c.school,
       customerName: 'Moonlight Test School',
       jobOrders: [{ id: b, number: 'JO-000002', dueDate: '2026-10-13', totalCents: 2_000_000, balanceDueCents: 2_000_000, depositsHeldCents: 0 }],
+      quickSales: [],
       unappliedCents: 0,
     });
     expect((await encoder.get(`/api/col/customers/${newId()}/open-items`)).statusCode).toBe(404);
+  });
+
+  it('lists what can be paid back: deposits per JO, cancelled JOs included (D6), and unapplied money; refunds only', async () => {
+    const a = await jobOrder(1_000_000);
+    await jobOrder(2_000_000); // nothing held: not listed
+    await collect({ customerId: c.school, crNumber: '0403', applications: [{ jobOrderId: a, amountCents: 400_000 }], tenders: [{ cashPlaceId: CASH, amountCents: 450_000 }] }, 450_000);
+    expect((await accountant.post(`/api/docs/jo.job_order/${a}/cancel`, { reason: 'Customer called the order off' }, idem())).statusCode).toBe(200);
+    expect((await accountant.get(`/api/col/customers/${c.school}/refundable`)).json()).toEqual({
+      customerId: c.school,
+      customerName: 'Moonlight Test School',
+      jobOrders: [{ id: a, number: 'JO-000001', status: 'cancelled', depositsHeldCents: 400_000 }],
+      unappliedCents: 50_000,
+    });
+    expect((await encoder.get(`/api/col/customers/${c.school}/refundable`)).statusCode).toBe(403);
   });
 });
 

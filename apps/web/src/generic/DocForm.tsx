@@ -42,7 +42,7 @@ function FieldInput({ f, value, set, places }: { f: FieldSpec; value: string; se
   }
 }
 
-function RecordDialog(p: { type: DocTypeInfo; preview: Preview; original?: DocHeader; reason: string; onRecord: (key: string) => Promise<unknown>; onClose: () => void }) {
+export function RecordDialog(p: { type: DocTypeInfo; preview: Preview; original?: DocHeader; reason: string; onRecord: (key: string) => Promise<unknown>; onClose: () => void }) {
   const key = useMemo(newIdempotencyKey, [p.preview]); // same key when a click is retried, a new one after a new preview
   const a = useAction();
   const errors = p.preview.issues.filter((i) => i.level === 'error');

@@ -3,14 +3,18 @@
  * "Behind the scenes" (journal lines) only when the server sent them (acc.journal.view).
  * Cancel and Edit (= cancel and reissue) start here.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, newIdempotencyKey, type CashPlace, type DocDetail, type DocTypeInfo } from '../api.ts';
 import { Link, navigate } from '../router.tsx';
 import { Button, JournalTable, Notice, Panel, ReasonDialog, StatusChip, longDate, manilaTime, peso } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
 import { fieldsOf, toValues } from './fields.ts';
 
-export function DocView({ type, id, recorded }: { type: DocTypeInfo; id: string; recorded: boolean }) {
+/** A module's own view parts: more detail under "What this did", and its own cancel (e.g. a quick sale and its payment). */
+export interface ViewParts { extra?: (d: DocDetail) => ReactNode; cancel?: (id: string, reason: string, key: string) => Promise<unknown> }
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo; id: string; recorded: boolean; parts?: ViewParts }) {
   const fields = useMemo(() => fieldsOf(type.inputJsonSchema), [type]);
   const [d, setD] = useState<DocDetail | null>(null);
   const [places, setPlaces] = useState<CashPlace[]>([]);
@@ -27,7 +31,9 @@ export function DocView({ type, id, recorded }: { type: DocTypeInfo; id: string;
   const text = toValues(fields, d.input);
   const shown = { cashPlace: (v: string) => places.find((p) => String(p.id) === v)?.name ?? v, money: (v: string) => `₱${v}`, boolean: (v: string) => (v ? 'Yes' : 'No') } as Record<string, (v: string) => string>;
   const posted = h.status === 'posted';
-  const cancel = async (reason: string) => (await api.cancel(type.key, id, reason, cancelKey!), setCancelKey(null), navigate(docPath(type.key, `/${id}`)), await load());
+  const cancel = async (reason: string) => (
+    await (parts.cancel ? parts.cancel(id, reason, cancelKey!) : api.cancel(type.key, id, reason, cancelKey!)), setCancelKey(null), navigate(docPath(type.key, `/${id}`)), await load()
+  );
 
   return (
     <div className="max-w-3xl space-y-4">
@@ -52,11 +58,12 @@ export function DocView({ type, id, recorded }: { type: DocTypeInfo; id: string;
       <Panel title="What this did">
         <p>{h.summary}</p>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-          {fields.filter((f) => text[f.name] !== undefined).map((f) => [
+          {fields.filter((f) => text[f.name] !== undefined && !UUID.test(text[f.name]!)).map((f) => [
             <dt key={`${f.name}-t`} className="text-slate-500">{f.label}</dt>,
             <dd key={f.name}>{shown[f.kind]?.(text[f.name]!) ?? text[f.name]}</dd>,
           ])}
         </dl>
+        {parts.extra?.(d)}
       </Panel>
       {d.journals && (
         <Panel title="Behind the scenes">

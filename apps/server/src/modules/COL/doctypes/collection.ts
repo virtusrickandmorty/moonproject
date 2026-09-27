@@ -1,30 +1,35 @@
 /**
  * Collection (PLAN E5, D5 DEP-RCV / COL-RCV / COL-OVER): money in from a customer, split across cash places and
- * applied to job orders, in one journal.
+ * applied to job orders and quick sales, in one journal.
  *   Dr cash place (per tender); Dr 1410 CWT (2307); Dr 6280 (short ≤ ₱1)
  *     / Cr 1201 AR (the JO's invoiced part); Cr 2201 (the JO's un-invoiced part, a deposit);
- *       Cr 2201 (unapplied remainder, no JO); Cr 6280 (over ≤ ₱1)
+ *       Cr 1201 AR (a quick sale, QS-SALE); Cr 2201 (unapplied remainder, no JO); Cr 6280 (over ≤ ₱1)
  * AR and deposit lines name the customer and the JO (journal_lines.ref_doc_id), so each JO's balance due is read
  * from the ledger (JO public.ts). Balance rule (E5): Σ tenders + CWT = Σ applied + unapplied, give or take ₱1.
+ * Deposits are recorded in downpayment VAT mode A only (settings); B and C are refused until they are built.
+ * Cancel: the mirror, then any part of a deposit that an invoice record already applied reopens the receivable,
+ * Dr 1201 / Cr 2201 (D6), so the JO's deposits never go below zero (JO settleLines).
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { allocate, applyRate, formatPeso, vatFromGross, type Issue } from '@moonproject/shared';
+import { allocate, applyRate, formatPeso, manilaDate, vatFromGross, type Issue } from '@moonproject/shared';
 import type { Db } from '../../../platform/db/driver.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { listCashPlaces } from '../../../engine/ledger/accounts.ts';
+import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
-import { jobOrderRef, jobOrdersOf, joLedger, joMoney } from '../../JO/public.ts';
+import { jobOrderRef, jobOrdersOf, joLedger, joMoney, settleLines } from '../../JO/public.ts';
+import { saleOpenCents, saleRef } from '../../QS/public.ts';
 import { MAX_CENTS, cashPlaceIssues, depositsHeld, insertTenders, loadTenders, sumCents, tenderInput, tenderToInput, withNames, type Tender } from '../ledger.ts';
 
 /** Largest difference that may go to cash short and over instead of a deposit or an unpaid balance (D4.9). */
 export const SHORT_OVER_LIMIT_CENTS = 100;
-/** For the expected-CWT warning only, until the effective-dated VAT rate setting (ACC) exists. */
-const VAT_BP = 1200;
 /** Expected customer CWT by ATC (D4.6): WC158 goods 1%, WC160 services 2%. "other" has no expectation. */
 const CWT_BP = { WC158: 100, WC160: 200 } as const;
 
 const application = z.object({ jobOrderId: z.uuid(), amountCents: z.number().int().positive().max(MAX_CENTS) }).strict();
+/** A quick sale paid (QS invoice record): what is still owed on it is its receivable, named by the sale (journal ref). */
+const saleApplication = z.object({ saleId: z.uuid(), amountCents: z.number().int().positive().max(MAX_CENTS) }).strict();
 
 export const collectionInput = z
   .object({
@@ -32,6 +37,7 @@ export const collectionInput = z
     // Typed from the ATP CR booklet, never prefilled (ACC-03 booklet mode).
     crNumber: z.string().trim().regex(/^0*[1-9]\d{0,11}$/, 'Type the number printed on the CR (digits only).'),
     applications: z.array(application).max(50),
+    sales: z.array(saleApplication).min(1).max(20).optional(),
     tenders: z.array(tenderInput).min(1).max(10),
     withholding: z
       .object({ cwtCents: z.number().int().positive().max(MAX_CENTS), atc: z.enum(['WC158', 'WC160', 'other']), certificate: z.enum(['pending', 'received']) })
@@ -44,8 +50,10 @@ export const collectionInput = z
 export type CollectionInput = z.infer<typeof collectionInput>;
 
 export interface Application extends z.infer<typeof application> { lineNo: number; jobOrderNumber: string; toReceivableCents: number; toDepositCents: number }
-export interface Collection extends Omit<CollectionInput, 'applications' | 'tenders'> {
+export interface SaleApplication extends z.infer<typeof saleApplication> { lineNo: number; saleNumber: string; invoiceNumber: string }
+export interface Collection extends Omit<CollectionInput, 'applications' | 'sales' | 'tenders'> {
   applications: Application[];
+  sales: SaleApplication[];
   tenders: Tender[];
   customerName: string;
   cwtCents: number;
@@ -72,7 +80,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
   inputSchema: collectionInput,
 
   compute(input, ctx) {
-    const { settleSmallDifference, ...rest } = input;
+    const { settleSmallDifference, sales: _, ...rest } = input;
     const cwtCents = input.withholding?.cwtCents ?? 0;
     const totalCents = sumCents(input.tenders) + cwtCents;
     // The JO's open receivable is settled first; what is left is a deposit on the JO's un-invoiced part (D3).
@@ -81,12 +89,17 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       const toReceivableCents = Math.min(a.amountCents, jo ? Math.max(0, joLedger(ctx.db, jo.id).receivableCents) : 0);
       return { ...a, lineNo: i + 1, jobOrderNumber: jo?.number ?? '?', toReceivableCents, toDepositCents: a.amountCents - toReceivableCents };
     });
-    const appliedCents = sumCents(applications);
+    const sales = (input.sales ?? []).map((a, i) => {
+      const sale = saleRef(ctx.db, a.saleId);
+      return { ...a, lineNo: i + 1, saleNumber: sale?.number ?? '?', invoiceNumber: sale?.invoiceNumber ?? '?' };
+    });
+    const appliedCents = sumCents(applications) + sumCents(sales);
     const difference = totalCents - appliedCents;
     return {
       ...rest,
       ...(settleSmallDifference ? { settleSmallDifference } : {}),
       applications,
+      sales,
       tenders: withNames(ctx.db, input.tenders),
       customerName: customerRef(ctx.db, input.customerId)?.display_name ?? '?',
       cwtCents,
@@ -128,6 +141,23 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       }
       seen.add(a.jobOrderId);
     }
+    for (const a of doc.sales) {
+      const f = `sales.${a.lineNo - 1}`;
+      const sale = saleRef(ctx.db, a.saleId);
+      if (!sale || sale.customerId !== doc.customerId) {
+        add('error', `${f}.saleId`, 'SALE', `Line ${a.lineNo}: pick one of ${doc.customerName}'s quick sales.`);
+      } else if (seen.has(sale.id)) {
+        add('error', `${f}.saleId`, 'SALE_TWICE', `Invoice no. ${sale.invoiceNumber} is listed twice. Put its whole amount on one line.`);
+      } else if (sale.status !== 'posted') {
+        add('error', `${f}.saleId`, 'SALE_CANCELLED', `Invoice no. ${sale.invoiceNumber} (${sale.number}) is cancelled, so money cannot be applied to it.`);
+      } else {
+        const open = saleOpenCents(ctx.db, sale.id);
+        if (a.amountCents > open) {
+          add('error', `${f}.amountCents`, 'OVER_BALANCE', open > 0 ? `Invoice no. ${sale.invoiceNumber} has ${formatPeso(open)} left to pay. Apply at most that.` : `Invoice no. ${sale.invoiceNumber} is fully paid.`);
+        }
+      }
+      seen.add(a.saleId);
+    }
 
     const difference = doc.totalCents - doc.appliedCents;
     if (doc.settleSmallDifference) {
@@ -137,12 +167,16 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
     } else if (difference < 0) {
       add('error', 'applications', 'APPLIED_MORE', `You applied ${formatPeso(doc.appliedCents)} but received ${formatPeso(doc.totalCents)} (money plus tax withheld).`);
     }
+    const mode = doc.applications.some((a) => a.toDepositCents > 0) ? settingAt(ctx.db, 'sales.deposit_vat_mode', ctx.businessDate) : 'A';
+    if (mode !== 'A') {
+      add('error', 'applications', 'DEPOSIT_VAT_MODE', `Downpayment VAT mode ${mode} is in force, and this version can record downpayments only in mode A (deposit only). Mode ${mode} is not built yet: ask the accountant.`);
+    }
     if (doc.unappliedCents > 0) {
       add('warning', 'applications', 'UNAPPLIED', `${formatPeso(doc.unappliedCents)} is not applied to a job order. It is kept as ${doc.customerName}'s deposit, to apply or refund later.`);
     }
     const w = doc.withholding;
     if (w && w.atc !== 'other') {
-      const expected = applyRate(vatFromGross(doc.totalCents, VAT_BP).netCents, CWT_BP[w.atc]);
+      const expected = applyRate(vatFromGross(doc.totalCents, settingAt(ctx.db, 'tax.vat_rate_bp', ctx.businessDate)).netCents, CWT_BP[w.atc]);
       if (Math.abs(w.cwtCents - expected) > 100) {
         add('warning', 'withholding.cwtCents', 'CWT_EXPECTED', `Tax withheld under ${w.atc} is usually ${formatPeso(expected)} on this payment. Please check the 2307.`);
       }
@@ -161,6 +195,8 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       'INSERT INTO col_applications (document_id, line_no, job_order_id, amount_cents, to_receivable_cents, to_deposit_cents) VALUES (?, ?, ?, ?, ?, ?)',
     );
     for (const a of doc.applications) app.run(h.documentId, a.lineNo, a.jobOrderId, a.amountCents, a.toReceivableCents, a.toDepositCents);
+    const sale = db.prepare('INSERT INTO col_sale_applications (document_id, line_no, sale_id, amount_cents) VALUES (?, ?, ?, ?)');
+    for (const a of doc.sales) sale.run(h.documentId, a.lineNo, a.saleId, a.amountCents);
   },
 
   journal(doc) {
@@ -175,6 +211,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
           { account: { role: 'AR_TRADE' }, party, ref: { documentId: a.jobOrderId }, creditCents: a.toReceivableCents, memo: a.jobOrderNumber },
           { account: { role: 'CUSTOMER_DEPOSITS' }, party, ref: { documentId: a.jobOrderId }, creditCents: a.toDepositCents, memo: `Deposit for ${a.jobOrderNumber}` },
         ]),
+        ...doc.sales.map((a) => ({ account: { role: 'AR_TRADE' }, party, ref: { documentId: a.saleId }, creditCents: a.amountCents, memo: `Invoice no. ${a.invoiceNumber}` })),
         { account: { role: 'CUSTOMER_DEPOSITS' }, party, creditCents: doc.unappliedCents, memo: 'Unapplied payment' },
         { account: { role: 'CASH_SHORT_OVER' }, creditCents: Math.max(0, doc.shortOverCents), memo: 'Over' },
       ],
@@ -201,6 +238,12 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       toReceivableCents: a.to_receivable_cents,
       toDepositCents: a.to_deposit_cents,
     }));
+    const sales = (
+      db.prepare('SELECT line_no, sale_id, amount_cents FROM col_sale_applications WHERE document_id = ? ORDER BY line_no').all(documentId) as { line_no: number; sale_id: string; amount_cents: number }[]
+    ).map((a) => {
+      const sale = saleRef(db, a.sale_id);
+      return { saleId: a.sale_id, amountCents: a.amount_cents, lineNo: a.line_no, saleNumber: sale?.number ?? '?', invoiceNumber: sale?.invoiceNumber ?? '?' };
+    });
     return {
       customerId: r.customer_id,
       crNumber: r.cr_number,
@@ -208,10 +251,11 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       ...(r.settle_small_difference ? { settleSmallDifference: true } : {}),
       ...(r.note ? { note: r.note } : {}),
       applications,
+      sales,
       tenders: loadTenders(db, 'col_tenders', documentId),
       customerName: r.customer_name,
       cwtCents: r.cwt_cents,
-      appliedCents: sumCents(applications),
+      appliedCents: sumCents(applications) + sumCents(sales),
       unappliedCents: r.unapplied_cents,
       shortOverCents: r.short_over_cents,
       totalCents: r.total_cents,
@@ -224,6 +268,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       customerId,
       crNumber,
       applications: doc.applications.map(({ jobOrderId, amountCents }) => ({ jobOrderId, amountCents })),
+      ...(doc.sales.length > 0 ? { sales: doc.sales.map(({ saleId, amountCents }) => ({ saleId, amountCents })) } : {}),
       tenders: doc.tenders.map(tenderToInput),
       ...(withholding ? { withholding } : {}),
       ...(settleSmallDifference ? { settleSmallDifference } : {}),
@@ -233,21 +278,32 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
 
   /**
    * Refunds that paid out this collection's deposit: cancelling the collection first would leave the deposits
-   * account owing the customer less than nothing (D6). Deposits used by an invoice record will reopen the balance
-   * due instead, when the invoice record lands.
+   * account owing the customer less than nothing (D6). The part an invoice record applied reopens the receivable
+   * instead (afterCancel), as long as the JO's receivable stays within what was invoiced.
    */
   dependents(db, documentId) {
     const d = collectionDoc.load(db, documentId);
-    const parts: [string | null, number][] = [
-      ...d.applications.filter((a) => a.toDepositCents > 0).map((a): [string, number] => [a.jobOrderId, a.toDepositCents]),
-      ...(d.unappliedCents > 0 ? [[null, d.unappliedCents] as [null, number]] : []),
+    const parts: [string | null, number, number][] = [
+      ...d.applications.filter((a) => a.toDepositCents > 0).map((a): [string, number, number] => [a.jobOrderId, a.toDepositCents, a.toReceivableCents]),
+      ...(d.unappliedCents > 0 ? [[null, d.unappliedCents, 0] as [null, number, number]] : []),
     ];
+    const blocked = ([jo, cents, toReceivable]: [string | null, number, number]) => {
+      const short = cents - depositsHeld(db, d.customerId, jo);
+      if (short <= 0) return false;
+      if (!jo) return true;
+      const m = joMoney(db, jo);
+      return m.receivableCents + toReceivable + short > m.invoicedCents;
+    };
     const refunds = db.prepare(
       `SELECT d.id, d.number FROM col_refunds r JOIN documents d ON d.id = r.document_id WHERE r.customer_id = ? AND r.job_order_id IS ? AND d.status = 'posted' ORDER BY d.number`,
     );
-    return parts
-      .filter(([jo, cents]) => depositsHeld(db, d.customerId, jo) < cents)
-      .flatMap(([jo]) => refunds.all(d.customerId, jo) as { id: string; number: string }[]);
+    return parts.filter(blocked).flatMap(([jo]) => refunds.all(d.customerId, jo) as { id: string; number: string }[]);
+  },
+
+  afterCancel(db, documentId) {
+    const d = collectionDoc.load(db, documentId);
+    const settled = d.applications.map((a) => [a.jobOrderNumber, settleLines(db, d.customerId, a.jobOrderId, a.jobOrderNumber)] as const).filter(([, l]) => l.length > 0);
+    return settled.length > 0 ? { memo: `${settled.map(([n]) => n).join(', ')} receivable and deposits put back in line`, lines: settled.flatMap(([, l]) => l) } : null;
   },
 
   summary(doc) {
@@ -256,6 +312,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
     const cwt = doc.cwtCents > 0 ? ` plus ${formatPeso(doc.cwtCents)} tax withheld (2307)` : '';
     const uses = [
       ...doc.applications.map((a) => `${formatPeso(a.amountCents)} for ${a.jobOrderNumber}`),
+      ...doc.sales.map((a) => `${formatPeso(a.amountCents)} for invoice no. ${a.invoiceNumber}`),
       ...(doc.unappliedCents > 0 ? [`${formatPeso(doc.unappliedCents)} kept as deposit`] : []),
     ];
     const diff = doc.shortOverCents === 0 ? '' : ` ${formatPeso(Math.abs(doc.shortOverCents))} ${doc.shortOverCents > 0 ? 'over' : 'short'} goes to cash short and over.`;
@@ -263,6 +320,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
   },
 
   arbitrary(db) {
+    const vatBp = settingAt(db, 'tax.vat_rate_bp', manilaDate(new Date()));
     const places = listCashPlaces(db).map((c) => c.id);
     const byCustomer = new Map<string, { id: string; dueCents: number }[]>();
     for (const jo of jobOrdersOf(db)) {
@@ -283,7 +341,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
         .map(({ applications, weights, extraCents, cwtBp, cr }) => {
           const applied = sumCents(applications);
           const total = Math.max(applied + extraCents, 1_000); // every tender gets at least a centavo
-          const cwtCents = cwtBp ? applyRate(vatFromGross(total, VAT_BP).netCents, cwtBp) : 0;
+          const cwtCents = cwtBp ? applyRate(vatFromGross(total, vatBp).netCents, cwtBp) : 0;
           const amounts = allocate(total - cwtCents, weights.map(([, w]) => w));
           return {
             customerId,

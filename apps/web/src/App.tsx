@@ -8,10 +8,11 @@ import { Link, match, navigate, useLocation } from './router.tsx';
 import { Notice } from './components/ui.tsx';
 import { ChangePasswordScreen, FirstOwnerScreen, LoginScreen } from './auth/AuthScreens.tsx';
 import { Shell } from './shell/Shell.tsx';
-import { docPath } from './shell/menu.ts';
+import { docPath, labelOf } from './shell/menu.ts';
 import { DocList } from './generic/DocList.tsx';
-import { DocForm } from './generic/DocForm.tsx';
+import { DocForm, type FormMode } from './generic/DocForm.tsx';
 import { DocView } from './generic/DocView.tsx';
+import { FORMS, VIEWS } from './modules/screens.ts';
 
 type Stage = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'firstOwner' } | { kind: 'login'; message?: string } | { kind: 'ready'; me: Me; docTypes: DocTypeInfo[] };
 
@@ -40,9 +41,9 @@ export function App() {
   const typeOf = (key = '') => stage.docTypes.find((d) => d.key === key);
   const routes: [string, (p: Record<string, string>, t: DocTypeInfo) => ReactNode][] = [
     ['/docs/:type', (_, t) => <DocList key={t.key} type={t} />],
-    ['/docs/:type/new', (_, t) => <DocForm key={location} type={t} mode={{ kind: 'new', draftId: new URLSearchParams(query).get('draft') ?? undefined }} />],
-    ['/docs/:type/:id/edit', (p, t) => <DocForm key={location} type={t} mode={{ kind: 'edit', id: p.id! }} />],
-    ['/docs/:type/:id', (p, t) => <DocView key={p.id} type={t} id={p.id!} recorded={query === 'recorded=1'} />],
+    ['/docs/:type/new', (_, t) => <Form key={location} type={t} mode={{ kind: 'new', draftId: new URLSearchParams(query).get('draft') ?? undefined }} />],
+    ['/docs/:type/:id/edit', (p, t) => <Form key={location} type={t} mode={{ kind: 'edit', id: p.id! }} />],
+    ['/docs/:type/:id', (p, t) => <DocView key={p.id} type={t} id={p.id!} recorded={query === 'recorded=1'} parts={VIEWS[t.key]} />],
   ];
   let page: ReactNode = <Notice>Page not found. <Link to="/" className="underline">Go home</Link></Notice>;
   if (path === '/') page = <Home me={stage.me} docTypes={stage.docTypes} />;
@@ -58,13 +59,19 @@ export function App() {
   return <Shell me={stage.me} docTypes={stage.docTypes} onSignOut={signOut}>{page}</Shell>;
 }
 
+/** A module's own form when it has one (FORMS), else the generic form. */
+function Form({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
+  const Custom = FORMS[type.key];
+  return Custom ? <Custom type={type} mode={mode} /> : <DocForm type={type} mode={mode} />;
+}
+
 function Home({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }) {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Hello, {me.displayName}</h1>
       <div className="flex flex-wrap gap-2">
         {docTypes.filter((d) => d.canCreate).map((d) => (
-          <Link key={d.key} to={docPath(d.key, '/new')} className="rounded-lg bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200 hover:bg-indigo-50">+ New {d.title}</Link>
+          <Link key={d.key} to={docPath(d.key, '/new')} className="rounded-lg bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200 hover:bg-indigo-50">+ New {labelOf(d)}</Link>
         ))}
       </div>
       {docTypes.length === 0 && <p className="text-slate-600">Your role has no screens yet. Ask an owner.</p>}

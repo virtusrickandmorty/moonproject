@@ -20,7 +20,7 @@ export const STAGE_LABELS: Record<Stage | 'cancelled', string> = {
   cancelled: 'Cancelled',
 };
 
-/** Moves staff make by hand. Release documents (JO part 2) will move ready → partially_released → released. */
+/** Moves staff make by hand. Releases move ready → partially_released → released (and back when cancelled): moveTo. */
 const BY_HAND: Partial<Record<Stage, Stage[]>> = { open: ['in_production'], in_production: ['ready', 'open'], ready: ['in_production'], released: ['closed'] };
 const isBack = (from: Stage, to: Stage) => STAGES.indexOf(to) < STAGES.indexOf(from);
 
@@ -57,6 +57,12 @@ export function changeStage(db: Db, documentId: string, req: { from: Stage; to: 
   const reason = req.reason?.trim() ?? '';
   if (isBack(now, req.to) && reason.length < 10) throw new AppError('REASON_REQUIRED', 'Moving a job order back needs a reason of at least 10 characters.', 400);
   return record(db, documentId, now, req.to, reason || null, who);
+}
+
+/** A move made by a document (a release or its cancel), not by hand: any stage, no reason check. Call inside a transaction. */
+export function moveTo(db: Db, documentId: string, to: Stage, reason: string, who: Who): void {
+  const now = currentStage(db, documentId);
+  if (now !== 'cancelled' && now !== to) record(db, documentId, now, to, reason, who);
 }
 
 /** Edit (cancel + reissue) keeps the job where it is on the floor: the replacement starts at the old stage. */
