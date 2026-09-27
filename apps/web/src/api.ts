@@ -53,6 +53,24 @@ export interface QsPreview { totalCents: number; booklet: { vatableSalesCents: n
 export interface QsBody { sale: unknown; payment: unknown }
 export interface QsRecorded { sale: PostResult; payment: PostResult }
 export interface SalePayment { id: string; number: string; status: 'posted' | 'cancelled'; crNumber: string; totalCents: number }
+/** Production (PRD) and piece rates (RATE). */
+export interface PrdStep { id: number; code: string; name: string; seq: number; payBasis: 'piece' | 'daily' | 'piece_or_daily'; isActive: boolean; version: number }
+export interface PrdCatalogue { steps: PrdStep[]; templates: { id: number; code: string; name: string; stepIds: number[] }[]; garmentTypes: string[]; complexities: string[] }
+export type StepStatus = 'pending' | 'in_progress' | 'completed' | 'not_needed';
+export interface BoardCard {
+  jobOrderId: string; number: string; customerName: string; dueDate: string; priority: 'normal' | 'rush'; stage: string; lineNo: number; description: string;
+  qty: number; releasedQty: number; garmentType: string | null; complexity: string | null; templateId: number | null; currentStepId: number | null; ready: boolean;
+  steps: { stepId: number; status: StepStatus; pieces: number; reworkPieces: number }[] | null;
+}
+export interface PrdJob {
+  jobOrder: { id: string; number: string; status: 'posted' | 'cancelled'; customerName: string; dueDate: string; priority: string; stage: string };
+  lines: { lineNo: number; description: string; qty: number; releasedQty: number; setup: { templateId: number | null; garmentType: string; complexity: string; stepIds: number[] } | null;
+    route: (PrdStep & { status: StepStatus; pieces: number; reworkPieces: number; availablePieces: number })[] | null }[];
+}
+export interface PrdSetup { templateId?: number; stepIds: number[]; garmentType: string; complexity: string }
+export interface Worker { id: string; code: string; name: string }
+export interface PieceRate { id: number; garmentType: string; stepCode: string; complexity: string; rateCents: number; effectiveFrom: string; reason: string; createdAt: string }
+export interface RateTable { asOf: string; current: PieceRate[]; history: PieceRate[]; garmentTypes: string[] }
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -81,6 +99,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
   const idem = (key: string) => ({ 'idempotency-key': key });
   const customer = (id: string, rest: string) => `/api/col/customers/${encodeURIComponent(id)}/${rest}`;
   const qs = (id: string, rest: string) => `/api/qs/sales/${encodeURIComponent(id)}/${rest}`;
+  const prdJob = (id: string, rest = '') => `/api/prd/jobs/${encodeURIComponent(id)}${rest}`;
 
   return {
     /** Called when the session ended or a new password is required, so the app can show the right screen. */
@@ -118,6 +137,15 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
       call<QsRecorded>('POST', qs(id, 'reissue'), { ...b, expectedTotalCents, reason }, idem(key)),
     qsCancel: (id: string, reason: string, key: string) => call<unknown>('POST', qs(id, 'cancel'), { reason }, idem(key)),
     qsPayments: (id: string) => call<SalePayment[]>('GET', qs(id, 'payments')),
+    prdCatalogue: () => call<PrdCatalogue>('GET', '/api/prd/catalogue'),
+    prdBoard: () => call<BoardCard[]>('GET', '/api/prd/board'),
+    prdJob: (id: string) => call<PrdJob>('GET', prdJob(id)),
+    prdSetup: (jo: string, lineNo: number, body: PrdSetup) => call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/setup`), body),
+    prdStep: (jo: string, lineNo: number, stepId: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) =>
+      call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/steps/${stepId}/${action}`), reason ? { reason } : {}),
+    prdWorkers: () => call<Worker[]>('GET', '/api/prd/workers'),
+    rates: () => call<RateTable>('GET', '/api/rate/rates'),
+    addRate: (body: Omit<PieceRate, 'id' | 'createdAt'>) => call<PieceRate>('POST', '/api/rate/rates', body),
   };
 }
 

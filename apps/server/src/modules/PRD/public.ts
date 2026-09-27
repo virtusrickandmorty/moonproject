@@ -1,0 +1,25 @@
+/** PRD contract for other modules (RATE, PAY, DASH, RPT). Callers check their own route permission. */
+import type { Db } from '../../platform/db/driver.ts';
+
+export { COMPLEXITIES, listSteps, stepById, type Complexity, type Step } from './production.ts';
+
+export interface UnpaidAssignment {
+  id: string; documentId: string; jobOrderId: string; lineNo: number; stepId: number; employeeId: string; workDate: string;
+  kind: 'work' | 'rework' | 'correction'; pieces: number; rateCents: number; amountCents: number;
+}
+
+/**
+ * Piece work not paid yet, dated up to a day (F3 "piece assignments dated in the period and unpaid"): rows of recorded
+ * entries with no payroll run line, corrections included. A row paid by a run (pay_run_line_id) is never listed again.
+ */
+export function unpaidAssignments(db: Db, upTo: string, employeeId?: string): UnpaidAssignment[] {
+  return db
+    .prepare(
+      `SELECT a.id, a.document_id AS documentId, a.job_order_id AS jobOrderId, a.line_no AS lineNo, a.step_id AS stepId, a.employee_id AS employeeId,
+         a.work_date AS workDate, a.kind, a.pieces, a.rate_cents AS rateCents, a.amount_cents AS amountCents
+       FROM prd_assignments a JOIN documents d ON d.id = a.document_id
+       WHERE d.status = 'posted' AND a.pay_run_line_id IS NULL AND a.work_date <= @upTo AND (@e IS NULL OR a.employee_id = @e)
+       ORDER BY a.employee_id, a.work_date, d.number, a.row_no`,
+    )
+    .all({ upTo, e: employeeId ?? null }) as UnpaidAssignment[];
+}

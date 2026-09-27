@@ -24,6 +24,7 @@ export const DOC_TITLES = [
   'Quotation',
   'Job Order',
   'Release Slip',
+  'Production Entry',
   'Invoice Record',
   'Collection Receipt',
   'Acknowledgment Receipt',
