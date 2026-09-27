@@ -9,17 +9,36 @@ import { tx } from '../../platform/db/driver.ts';
 
 const auth = { config: { permission: 'mig.run' } };
 
+const uploadBody = z.object({
+  filename: z.string(),
+  csv: z.string()
+}).strict();
+
+const rowParams = z.object({
+  id: z.string()
+}).strict();
+
+const uploadParams = z.object({
+  uploadId: z.string()
+}).strict();
+
+const fixBody = z.object({
+  manualData: z.record(z.string(), z.any())
+}).strict();
+
 export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
 
   app.post('/api/mig/upload', auth, async (req) => {
     const u = currentUser(req);
-    const body = req.body as { filename: string; csv: string };
-    if (!body || typeof body.csv !== 'string' || typeof body.filename !== 'string') {
-      throw new AppError('INVALID_INPUT', 'Expected filename and csv text.', 400);
-    }
 
-    const rows = parseCSV(body.csv);
+    const parsedBody = uploadBody.safeParse(req.body);
+    if (!parsedBody.success) {
+      throw new AppError('VALIDATION', 'Invalid body.', 422, parsedBody.error.issues.map(i => ({ field: i.path.join('.'), message: i.message })));
+    }
+    const body = parsedBody.data;
+
+    const { objects: rows, lineNumbers } = parseCSV(body.csv);
     if (rows.length === 0) {
       throw new AppError('EMPTY_CSV', 'The uploaded CSV contains no data rows.', 400);
     }
@@ -27,16 +46,20 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
     const uploadId = newId();
     const now = stamp(clock);
 
+    const seenIdentifiers = new Set<string>();
+
     const parsedRows = rows.map((r, i) => {
-      const parsed = validateRow(r);
+      const parsed = validateRow(r, seenIdentifiers);
       return {
         id: newId(),
         upload_id: uploadId,
-        row_number: i + 2, // header is line 1
+        row_number: lineNumbers[i]!,
         raw_json: JSON.stringify(parsed.raw),
         row_type: parsed.rowType,
         status: parsed.status,
         issues_json: JSON.stringify(parsed.issues),
+        legacy_id: parsed.legacyId,
+        legacy_type: parsed.legacyId ? parsed.rowType : null,
         created_at: now,
       };
     });
@@ -46,11 +69,11 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
         .run(uploadId, body.filename, now, u.userId);
 
       const insert = db.prepare(
-        `INSERT INTO mig_rows (id, upload_id, row_number, raw_json, row_type, status, issues_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO mig_rows (id, upload_id, row_number, raw_json, row_type, status, issues_json, legacy_id, legacy_type, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
       for (const r of parsedRows) {
-        insert.run(r.id, r.upload_id, r.row_number, r.raw_json, r.row_type, r.status, r.issues_json, r.created_at);
+        insert.run(r.id, r.upload_id, r.row_number, r.raw_json, r.row_type, r.status, r.issues_json, r.legacy_id, r.legacy_type, r.created_at);
       }
     });
 
@@ -61,16 +84,31 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
     };
   });
 
-  app.get('/api/mig/review', auth, async (req) => {
-    // Only looking at the most recently staged upload for simplicity
-    const upload = db.prepare(`SELECT id FROM mig_uploads WHERE status = 'staged' ORDER BY uploaded_at DESC LIMIT 1`).get() as { id: string } | undefined;
-    if (!upload) return { rows: [] };
+  app.get('/api/mig/uploads', auth, async () => {
+    const uploads = db.prepare(
+      `SELECT id, filename, uploaded_at, uploaded_by, status FROM mig_uploads ORDER BY uploaded_at DESC`
+    ).all() as any[];
+
+    return {
+      uploads: uploads.map((u) => ({
+        id: u.id,
+        filename: u.filename,
+        uploadedAt: u.uploaded_at,
+        uploadedBy: u.uploaded_by,
+        status: u.status,
+      }))
+    };
+  });
+
+  app.get('/api/mig/uploads/:uploadId/review', auth, async (req) => {
+    const params = uploadParams.safeParse(req.params);
+    if (!params.success) throw new AppError('VALIDATION', 'Invalid param.', 422);
 
     const rows = db.prepare(
       `SELECT id, row_number, raw_json, row_type, status, issues_json, manual_data_json
        FROM mig_rows WHERE upload_id = ? AND status IN ('needs_review', 'accepted', 'excluded')
        ORDER BY row_number ASC`
-    ).all(upload.id) as any[];
+    ).all(params.data.uploadId) as any[];
 
     return {
       rows: rows.map((r) => ({
@@ -85,52 +123,65 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
     };
   });
 
-  app.post<{ Params: { id: string } }>('/api/mig/rows/:id/accept', auth, async (req) => {
+  app.post('/api/mig/rows/:id/accept', auth, async (req) => {
     const u = currentUser(req);
-    const rowId = req.params.id;
+    const params = rowParams.safeParse(req.params);
+    if (!params.success) throw new AppError('VALIDATION', 'Invalid param.', 422);
+
+    const rowId = params.data.id;
     const now = stamp(clock);
-    const res = db.prepare(`UPDATE mig_rows SET status = 'accepted', resolved_by = ?, resolved_at = ? WHERE id = ?`)
+
+    const res = db.prepare(`UPDATE mig_rows SET status = 'accepted', resolved_by = ?, resolved_at = ? WHERE id = ? AND status IN ('needs_review', 'excluded')`)
       .run(u.userId, now, rowId);
-    if (res.changes === 0) throw new AppError('NOT_FOUND', 'Row not found.', 404);
+    if (res.changes === 0) throw new AppError('NOT_FOUND', 'Row not found or not in a reviewable state.', 404);
     return { success: true };
   });
 
-  app.post<{ Params: { id: string } }>('/api/mig/rows/:id/fix', auth, async (req) => {
+  app.post('/api/mig/rows/:id/fix', auth, async (req) => {
     const u = currentUser(req);
-    const rowId = req.params.id;
-    const body = req.body as { manualData: any };
-    if (!body || !body.manualData) throw new AppError('INVALID_INPUT', 'Expected manualData.', 400);
+    const params = rowParams.safeParse(req.params);
+    if (!params.success) throw new AppError('VALIDATION', 'Invalid param.', 422);
 
+    const parsedBody = fixBody.safeParse(req.body);
+    if (!parsedBody.success) throw new AppError('VALIDATION', 'Invalid body.', 422);
+
+    const rowId = params.data.id;
     const now = stamp(clock);
     const res = db.prepare(
-      `UPDATE mig_rows SET status = 'accepted', manual_data_json = ?, resolved_by = ?, resolved_at = ? WHERE id = ?`
-    ).run(JSON.stringify(body.manualData), u.userId, now, rowId);
+      `UPDATE mig_rows SET status = 'accepted', manual_data_json = ?, resolved_by = ?, resolved_at = ? WHERE id = ? AND status IN ('needs_review', 'excluded')`
+    ).run(JSON.stringify(parsedBody.data.manualData), u.userId, now, rowId);
 
-    if (res.changes === 0) throw new AppError('NOT_FOUND', 'Row not found.', 404);
+    if (res.changes === 0) throw new AppError('NOT_FOUND', 'Row not found or not in a reviewable state.', 404);
     return { success: true };
   });
 
-  app.post<{ Params: { id: string } }>('/api/mig/rows/:id/exclude', auth, async (req) => {
+  app.post('/api/mig/rows/:id/exclude', auth, async (req) => {
     const u = currentUser(req);
-    const rowId = req.params.id;
+    const params = rowParams.safeParse(req.params);
+    if (!params.success) throw new AppError('VALIDATION', 'Invalid param.', 422);
+
+    const rowId = params.data.id;
     const now = stamp(clock);
-    const res = db.prepare(`UPDATE mig_rows SET status = 'excluded', resolved_by = ?, resolved_at = ? WHERE id = ?`)
+    const res = db.prepare(`UPDATE mig_rows SET status = 'excluded', resolved_by = ?, resolved_at = ? WHERE id = ? AND status IN ('needs_review', 'accepted')`)
       .run(u.userId, now, rowId);
-    if (res.changes === 0) throw new AppError('NOT_FOUND', 'Row not found.', 404);
+    if (res.changes === 0) throw new AppError('NOT_FOUND', 'Row not found or not in a reviewable state.', 404);
     return { success: true };
   });
 
-  app.post('/api/mig/dry-run', auth, async (req) => {
-    const upload = db.prepare(`SELECT id FROM mig_uploads WHERE status = 'staged' ORDER BY uploaded_at DESC LIMIT 1`).get() as { id: string } | undefined;
-    if (!upload) throw new AppError('NOT_FOUND', 'No staged upload found.', 404);
+  app.post('/api/mig/uploads/:uploadId/dry-run', auth, async (req) => {
+    const params = uploadParams.safeParse(req.params);
+    if (!params.success) throw new AppError('VALIDATION', 'Invalid param.', 422);
+    const uploadId = params.data.uploadId;
+
+    const upload = db.prepare(`SELECT id, status FROM mig_uploads WHERE id = ?`).get(uploadId) as { id: string, status: string } | undefined;
+    if (!upload) throw new AppError('NOT_FOUND', 'Upload not found.', 404);
 
     const rows = db.prepare(
       `SELECT raw_json, row_type, status, manual_data_json FROM mig_rows
        WHERE upload_id = ? AND status IN ('valid', 'accepted')`
-    ).all(upload.id) as any[];
+    ).all(uploadId) as any[];
 
-    // Ensure there are no rows that still need review
-    const pending = db.prepare(`SELECT count(*) as c FROM mig_rows WHERE upload_id = ? AND status = 'needs_review'`).get(upload.id) as { c: number };
+    const pending = db.prepare(`SELECT count(*) as c FROM mig_rows WHERE upload_id = ? AND status = 'needs_review'`).get(uploadId) as { c: number };
     if (pending.c > 0) {
       throw new AppError('PENDING_REVIEW', `There are ${pending.c} rows that still need review.`, 400);
     }
@@ -142,23 +193,34 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
 
     for (const r of rows) {
       if (r.row_type === 'customer') customers++;
-      if (r.row_type === 'employee') employees++;
+      if (r.row_type === 'employee') {
+          employees++;
+          // Sum up daily rate cents for employees if present in manual data or raw json
+          const raw = JSON.parse(r.raw_json);
+          const data = r.manual_data_json ? { ...raw, ...JSON.parse(r.manual_data_json) } : raw;
+          if (data.daily_rate_cents) measurementCellSum += Number(data.daily_rate_cents);
+      }
       if (r.row_type === 'measurement') {
         measurements++;
-        const data = JSON.parse(r.raw_json);
-        // checksum logic
+        const raw = JSON.parse(r.raw_json);
+        const data = r.manual_data_json ? { ...raw, ...JSON.parse(r.manual_data_json) } : raw;
+        const measurementFields = [
+          'shoulder', 'chest', 'upper_waist', 'collar', 'bust_point', 'figure_point',
+          'bust_distance', 'arm_hole', 'sleeve_hole', 'sleeve_length', 'upper_length',
+          'lower_waist', 'hips', 'crotch', 'thigh', 'calf', 'ankle', 'lower_length'
+        ];
         for (const [key, value] of Object.entries(data)) {
-           // We just sum numeric cells blindly for checksum purpose
-           const n = Number(value);
-           if (!isNaN(n) && key !== 'Measurement_ID' && key !== 'Row_Number') {
-             measurementCellSum += n;
+           const lowerKey = key.toLowerCase();
+           if (measurementFields.includes(lowerKey)) {
+             const n = Number(value);
+             if (!isNaN(n)) {
+               // Values in tenths according to instructions
+               measurementCellSum += Math.round(n * 10);
+             }
            }
         }
       }
     }
-
-    // Mark as dry run passed
-    db.prepare(`UPDATE mig_uploads SET status = 'dry_run_passed' WHERE id = ?`).run(upload.id);
 
     return {
       success: true,
