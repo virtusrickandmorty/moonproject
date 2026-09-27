@@ -16,6 +16,7 @@ import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
 import { salePayments } from '../../COL/public.ts';
 import { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, invoiceAmounts, invoiceNumberUsedBy, jobOrdersOf, type LineKind } from '../../JO/public.ts';
+import { bookletIssue } from '../../TAX/public.ts';
 
 export const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -33,7 +34,7 @@ const lineInput = z
 export const saleInput = z
   .object({
     customerId: z.uuid(), // "Walk-in" is a customer record too
-    // Typed from the booklet, never prefilled. The ATP booklet register check comes with TAX (D7).
+    // Typed from the booklet, never prefilled; checked against the ATP booklet register (TAX, D7).
     invoiceNumber: z.string().trim().regex(/^0*[1-9]\d{0,11}$/, 'Type the number printed on the invoice (digits only).'),
     lines: z.array(lineInput).min(1).max(30),
     note: text(500).optional(),
@@ -74,6 +75,8 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
       const how = used.status === 'cancelled' ? ' (cancelled)' : '';
       error('invoiceNumber', 'INVOICE_USED', `Invoice no. ${doc.invoiceNumber} is already used on ${used.number}${how}. Each invoice number is used once: write this sale on a new invoice and keep all copies of a spoiled one.`);
     }
+    const booklet = bookletIssue(ctx.db, 'SALES_INVOICE', doc.invoiceNumber, 'invoiceNumber');
+    if (booklet) issues.push(booklet);
     for (const l of doc.lines) if (l.amountCents < 0) error(`lines.${l.lineNo - 1}.discountCents`, 'DISCOUNT', `Line ${l.lineNo}: the discount is more than the line amount.`);
     if (doc.listCents > MAX_CENTS) error('lines', 'TOO_BIG', 'The total is over ₱100 million. Please check the quantities and prices.');
     else if (doc.grossCents <= 0) error('lines', 'NOTHING_TO_INVOICE', 'The sale comes to ₱0.00, so there is nothing to invoice.');

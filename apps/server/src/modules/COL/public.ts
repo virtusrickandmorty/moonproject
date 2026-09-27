@@ -21,3 +21,11 @@ export function salePayments(db: Db, saleId: string): SalePayment[] {
     .all(saleId) as (Omit<SalePayment, 'paysOnlyThis'> & { only: number })[];
   return rows.map(({ only, ...r }) => ({ ...r, paysOnlyThis: only === 1 }));
 }
+
+/** CR booklet numbers collections used between two numbers, cancelled ones included (TAX's booklet usage report). */
+export function crNumbersBetween(db: Db, from: number, to: number): { n: number; number: string; status: 'posted' | 'cancelled' }[] {
+  return db
+    .prepare(`SELECT CAST(c.cr_number AS INTEGER) AS n, d.number, d.status FROM col_collections c JOIN documents d ON d.id = c.document_id
+              WHERE CAST(c.cr_number AS INTEGER) BETWEEN ? AND ? ORDER BY 1`)
+    .all(from, to) as { n: number; number: string; status: 'posted' | 'cancelled' }[];
+}
