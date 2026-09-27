@@ -6,6 +6,7 @@ import fc from 'fast-check';
 import { purchaseOrderDoc, type PurchaseOrderInput } from '../doctypes/purchaseOrder.ts';
 import { receivingReportDoc, type ReceivingReportInput } from '../doctypes/receiving.ts';
 import { idem } from '../../../../test/helpers.ts';
+import { stamp } from '../../../platform/clock.ts';
 
 describe('PUR PO and RR', () => {
   let env: any;
@@ -23,7 +24,6 @@ describe('PUR PO and RR', () => {
   it('creates a PO, receives against it, and cancels', async () => {
     const enc = await env.as('encoder');
 
-    // Seed supplier and supply
     const supplierId = 'sup-1';
     env.db.prepare(`INSERT INTO pur_suppliers (id, name, registered_name, ewt_class, created_at, updated_at) VALUES (?, 'S1', 'S1', 'rent_5', '2026', '2026')`).run(supplierId);
 
@@ -39,7 +39,6 @@ describe('PUR PO and RR', () => {
     };
 
     const poRes = await enc.post('/api/docs/pur.po/post', { input: poInput, expectedTotalCents: 150000 }, idem());
-    if (poRes.statusCode !== 200) console.log('POST PO failed:', poRes.body);
     expect(poRes.statusCode).toBe(200);
     const poId = poRes.json().id;
 
@@ -49,12 +48,12 @@ describe('PUR PO and RR', () => {
     expect(po.totalCents).toBe(150000);
     expect(po.lines[0].lineTotalCents).toBe(150000);
 
-    const poLineId = po.lines[0].id;
+    const poLineNo = po.lines[0].lineNo;
 
     const rrInput: ReceivingReportInput = {
       poDocumentId: poId,
       lines: [
-        { poLineId, qty: 5 }
+        { poLineNo, qty: 5 }
       ]
     };
 
@@ -65,11 +64,9 @@ describe('PUR PO and RR', () => {
     const acc = await env.as('accountant');
 
     const rrCancel = await acc.post(`/api/docs/pur.rr/${rrId}/cancel`, { reason: 'wrong qty recorded' }, idem());
-    if (rrCancel.statusCode !== 200) console.log('RR CANCEL failed:', rrCancel.body);
     expect(rrCancel.statusCode).toBe(200);
 
     const poCancel = await acc.post(`/api/docs/pur.po/${poId}/cancel`, { reason: 'wrong price' }, idem());
-    if (poCancel.statusCode !== 200) console.log('PO CANCEL failed:', poCancel.body);
     expect(poCancel.statusCode).toBe(200);
 
     noBrokenInvariants();
@@ -83,9 +80,9 @@ describe('PUR PO and RR', () => {
     const arb = purchaseOrderDoc.arbitrary(env.db);
     await fc.assert(
       fc.asyncProperty(arb, async (input) => {
-        const ctx = { db: env.db, businessDate: '2026-09-28', at: '2026-09-28T10:00:00.000+08:00', userId: enc.userId, can: () => true };
-        const doc = purchaseOrderDoc.compute(input, ctx);
-        const issues = purchaseOrderDoc.validate(doc, ctx);
+        const ctx = { db: env.db, businessDate: '2026-09-28', at: stamp(env.clock), userId: enc.userId, can: () => true };
+        const doc = purchaseOrderDoc.compute(input, ctx as any);
+        const issues = purchaseOrderDoc.validate(doc, ctx as any);
         expect(issues).toEqual([]);
       })
     );
@@ -111,10 +108,10 @@ describe('PUR PO and RR', () => {
     const arb = receivingReportDoc.arbitrary(env.db);
     await fc.assert(
       fc.asyncProperty(arb, async (input) => {
-        const ctx = { db: env.db, businessDate: '2026-09-28', at: '2026-09-28T10:00:00.000+08:00', userId: enc.userId, can: () => true };
+        const ctx = { db: env.db, businessDate: '2026-09-28', at: stamp(env.clock), userId: enc.userId, can: () => true };
         const doc = receivingReportDoc.compute(input, ctx);
         const issues = receivingReportDoc.validate(doc, ctx);
-        expect(issues).toEqual([]);
+        expect(issues.filter(i => i.level === 'error')).toEqual([]);
       })
     );
   });

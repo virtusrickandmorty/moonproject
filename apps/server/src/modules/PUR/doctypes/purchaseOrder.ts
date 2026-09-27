@@ -1,14 +1,15 @@
 import { z } from 'zod';
 import fc from 'fast-check';
-import { formatPeso, newId, type Issue } from '@moonproject/shared';
+import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
+
+const MAX_CENTS = 100_000_000_00;
 
 export const poLineInput = z
   .object({
-    id: z.string().trim().min(1).optional(),
     supplyId: z.string().trim().min(1),
-    qty: z.number().int().positive(),
-    unitCostCents: z.number().int().nonnegative(),
+    qty: z.number().int().positive().max(MAX_CENTS),
+    unitCostCents: z.number().int().nonnegative().max(MAX_CENTS),
   })
   .strict();
 export type POLineInput = z.infer<typeof poLineInput>;
@@ -16,14 +17,14 @@ export type POLineInput = z.infer<typeof poLineInput>;
 export const purchaseOrderInput = z
   .object({
     supplierId: z.string().trim().min(1),
-    expectedDate: z.string().trim().min(10).optional(),
+    expectedDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD').optional(),
     lines: z.array(poLineInput),
   })
   .strict();
 export type PurchaseOrderInput = z.infer<typeof purchaseOrderInput>;
 
 export interface POLine extends POLineInput {
-  id: string;
+  lineNo: number;
   lineTotalCents: number;
 }
 
@@ -43,12 +44,12 @@ export const purchaseOrderDoc: DocTypeDef<PurchaseOrderInput, PurchaseOrder> = {
 
   compute(input, ctx) {
     let total = 0;
-    const computedLines = input.lines.map((line) => {
+    const computedLines = input.lines.map((line, idx) => {
       const lineTotal = line.qty * line.unitCostCents;
       total += lineTotal;
       return {
         ...line,
-        id: line.id ?? newId(),
+        lineNo: idx + 1,
         lineTotalCents: lineTotal,
       };
     });
@@ -65,6 +66,10 @@ export const purchaseOrderDoc: DocTypeDef<PurchaseOrderInput, PurchaseOrder> = {
     if (doc.lines.length === 0) {
       issues.push({ field: 'lines', code: 'NO_LINES', level: 'error', message: 'A purchase order must have at least one line.' });
     }
+    if (doc.expectedDate && doc.expectedDate < ctx.businessDate) {
+      issues.push({ field: 'expectedDate', code: 'PAST_DATE', level: 'error', message: 'Expected date cannot be in the past.' });
+    }
+
     const supplier = ctx.db.prepare('SELECT is_active FROM pur_suppliers WHERE id = ?').get(doc.supplierId) as { is_active: number } | undefined;
     if (!supplier) {
       issues.push({ field: 'supplierId', code: 'INVALID_SUPPLIER', level: 'error', message: 'Supplier not found.' });
@@ -91,10 +96,10 @@ export const purchaseOrderDoc: DocTypeDef<PurchaseOrderInput, PurchaseOrder> = {
     ).run(h.documentId, doc.supplierId, doc.expectedDate ?? null);
 
     const insertLine = db.prepare(
-      `INSERT INTO pur_po_lines (id, document_id, supply_id, qty, unit_cost_cents) VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO pur_po_lines (document_id, line_no, supply_id, qty, unit_cost_cents) VALUES (?, ?, ?, ?, ?)`
     );
     for (const line of doc.lines) {
-      insertLine.run(line.id, h.documentId, line.supplyId, line.qty, line.unitCostCents);
+      insertLine.run(h.documentId, line.lineNo, line.supplyId, line.qty, line.unitCostCents);
     }
   },
 
@@ -102,14 +107,14 @@ export const purchaseOrderDoc: DocTypeDef<PurchaseOrderInput, PurchaseOrder> = {
     const header = db.prepare('SELECT * FROM pur_purchase_orders WHERE document_id = ?').get(documentId) as any;
     if (!header) throw new Error(`PO ${documentId} not found`);
 
-    const dbLines = db.prepare('SELECT * FROM pur_po_lines WHERE document_id = ?').all(documentId) as any[];
+    const dbLines = db.prepare('SELECT * FROM pur_po_lines WHERE document_id = ? ORDER BY line_no ASC').all(documentId) as any[];
 
     let total = 0;
     const lines = dbLines.map(l => {
       const lineTotal = l.qty * l.unit_cost_cents;
       total += lineTotal;
       return {
-        id: l.id,
+        lineNo: l.line_no,
         supplyId: l.supply_id,
         qty: l.qty,
         unitCostCents: l.unit_cost_cents,
@@ -129,12 +134,22 @@ export const purchaseOrderDoc: DocTypeDef<PurchaseOrderInput, PurchaseOrder> = {
     return {
       supplierId: doc.supplierId,
       ...(doc.expectedDate ? { expectedDate: doc.expectedDate } : {}),
-      lines: doc.lines.map(l => ({ id: l.id, supplyId: l.supplyId, qty: l.qty, unitCostCents: l.unitCostCents }))
+      lines: doc.lines.map(l => ({ supplyId: l.supplyId, qty: l.qty, unitCostCents: l.unitCostCents }))
     };
   },
 
-  summary(doc) {
-    return `This will issue a purchase order for ${formatPeso(doc.totalCents)}.`;
+  dependents(db, id) {
+    return (db.prepare(`
+      SELECT d.id, d.number
+      FROM documents d
+      JOIN pur_receiving_reports rr ON rr.document_id = d.id
+      WHERE rr.po_document_id = ? AND d.status <> 'cancelled'
+    `).all(id) as { id: string, number: string }[]);
+  },
+
+  summary(doc, ctx) {
+    const sName = (ctx.db.prepare('SELECT name FROM pur_suppliers WHERE id = ?').get(doc.supplierId) as { name: string } | undefined)?.name ?? '?';
+    return `This will issue a purchase order to ${sName} for ${doc.lines.length} supply line(s) totaling ${formatPeso(doc.totalCents)}.`;
   },
 
   arbitrary(db) {
