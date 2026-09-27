@@ -109,7 +109,8 @@ export interface PayEmployee {
 export interface ManualPayLine { employeeId: string; kind: 'allowance' | 'adjustment'; amountCents: number; reason: string }
 export interface PayRunInput { payGroup: PayGroup; periodStart: string; lines?: ManualPayLine[]; advances?: { employeeId: string; amountCents: number }[]; skip?: { employeeId: string; reason: string }[] }
 export interface PayRunDoc extends PayRunInput { periodEnd: string; contributionMonth: string; employees: PayEmployee[]; grossCents: number; netCents: number }
-export interface PayPeriod { periodStart: string; periodEnd: string; employees: number; recorded: { id: string; number: string } | null }
+/** `bookOn`: the date to give the run (the period's last day, for someone who may backdate), or null for today. */
+export interface PayPeriod { periodStart: string; periodEnd: string; employees: number; recorded: { id: string; number: string } | null; bookOn: string | null }
 export interface Payslips {
   number: string; status: 'posted' | 'cancelled'; payDate: string; payGroup: PayGroup; periodStart: string; periodEnd: string; contributionMonth: string;
   employees: (PayEmployee & { caBalanceAfterCents: number; ytd: { grossCents: number; wtaxCents: number } })[];
@@ -164,8 +165,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     list: (type: string, q: { status?: string; before?: string; limit?: number } = {}) =>
       call<DocHeader[]>('GET', doc(type, `?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`)),
     get: (type: string, id: string) => call<DocDetail>('GET', one(type, id)),
-    preview: (type: string, input: unknown) => call<Preview>('POST', doc(type, '/preview'), { input }),
-    post: (type: string, input: unknown, expectedTotalCents: number, key: string) => call<PostResult>('POST', doc(type, '/post'), { input, expectedTotalCents }, idem(key)),
+    /** `businessDate` only for a type that may be backdated, by someone allowed to (the payroll run's period end). */
+    preview: (type: string, input: unknown, businessDate?: string) => call<Preview>('POST', doc(type, '/preview'), { input, ...(businessDate ? { businessDate } : {}) }),
+    post: (type: string, input: unknown, expectedTotalCents: number, key: string, businessDate?: string) =>
+      call<PostResult>('POST', doc(type, '/post'), { input, expectedTotalCents, ...(businessDate ? { businessDate } : {}) }, idem(key)),
     cancel: (type: string, id: string, reason: string, key: string) => call<unknown>('POST', one(type, id, '/cancel'), { reason }, idem(key)),
     reissue: (type: string, id: string, input: unknown, expectedTotalCents: number, reason: string, key: string) =>
       call<PostResult>('POST', one(type, id, '/reissue'), { input, expectedTotalCents, reason }, idem(key)),

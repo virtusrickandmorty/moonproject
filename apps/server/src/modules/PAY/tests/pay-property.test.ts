@@ -1,8 +1,9 @@
 /**
  * Property test (PLAN I1.3) over random attendance, piece work, cash advances, payroll runs, releases and cancels. After
- * every step: what is stored equals what was computed; each piece row is paid by at most one recorded run line and every
- * recorded piece line holds its row; nobody owes a negative cash advance or is released more than their net pay; each
- * month's SSS and Pag-IBIG employer shares equal the month's share of the pay recorded (the true-up adds up); L1–L12.
+ * every step: what is stored equals what was computed (runs sometimes dated at the period end, PAY-1); each piece row is
+ * paid by at most one recorded run line and every recorded piece line holds its row; nobody owes a negative cash advance
+ * on any day or is released more than their net pay; each month's SSS and Pag-IBIG employer shares equal the month's
+ * share of the pay recorded (the true-up adds up); L1–L12.
  */
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
@@ -23,7 +24,7 @@ import { entryDoc } from '../../PRD/doctypes/entry.ts';
 import { setupLine } from '../../PRD/production.ts';
 import { runDoc } from '../doctypes/run.ts';
 import { releaseDoc } from '../doctypes/release.ts';
-import { addDays } from '../run-calc.ts';
+import { addDays, periodEndOf } from '../run-calc.ts';
 import { hdmfMonthly, hdmfRateAt, sssMonthly, sssRateAt } from '../statutory.ts';
 
 const EXPECTED = new Set(['VALIDATION', 'HAS_DEPENDENTS', 'ALREADY_CANCELLED']);
@@ -32,7 +33,7 @@ const NOTHING = ['No period has anyone to pay', 'Nothing to release', 'prd.entry
 
 describe('payroll property test (PLAN I1.3)', () => {
   it('random time, piece work, advances, runs, releases and cancels keep payroll and the ledger consistent', async () => {
-    const stats = { runs: 0, releases: 0, cancels: 0, refused: 0 };
+    const stats = { runs: 0, backdated: 0, releases: 0, cancels: 0, refused: 0 };
     await fc.assert(
       fc.asyncProperty(fc.gen(), async (g) => {
         const t = await createTestEnv('2026-08-03T02:00:00Z'); // Monday 3 August, Manila
@@ -41,7 +42,8 @@ describe('payroll property test (PLAN I1.3)', () => {
         const actor = { userId, permissions: new Set(t.deps.registry.permissions().map((p) => p.key)) };
         const e = { db, clock: t.clock };
         const ctx = () => ({ db, businessDate: today(t.clock), at: stamp(t.clock), userId, can: () => true });
-        const record = <I>(def: DocTypeDef<I>, input: I) => postDocument(e, def, actor, { input, expectedTotalCents: previewDocument(e, def, actor, input).totalCents });
+        const record = <I>(def: DocTypeDef<I>, input: I, businessDate?: string) =>
+          postDocument(e, def, actor, { input, businessDate, expectedTotalCents: previewDocument(e, def, actor, input, businessDate).totalCents });
         const hired = '2025-01-06';
         const staff = {
           d1: addEmployee(db, 'Ana Araw'), d2: addEmployee(db, 'Ben Halo'), p1: addEmployee(db, 'Cy Piraso'), m1: addEmployee(db, 'Di Buwan', { costCentre: 'office', hireDate: '2026-08-10' }),
@@ -74,10 +76,15 @@ describe('payroll property test (PLAN I1.3)', () => {
             } else if (step === 'ca') record(advanceDoc, g(() => advanceDoc.arbitrary(db)));
             else if (step === 'run') {
               const input = g(() => runDoc.arbitrary(db));
-              const computed = runDoc.compute(input, ctx());
-              const p = record(runDoc, input);
+              // PAY-1: sometimes dated the period's last day, as the run form does for someone who may backdate.
+              const end = periodEndOf(input.payGroup, input.periodStart)!;
+              const date = end < today(t.clock) && g(() => fc.boolean()) ? end : undefined;
+              const computed = runDoc.compute(input, { ...ctx(), ...(date ? { businessDate: date } : {}) });
+              const p = record(runDoc, input, date);
               stats.runs++;
+              if (date) stats.backdated++;
               check = () => {
+                expect(p.businessDate >= end).toBe(true);
                 expect(runDoc.load(db, p.id)).toEqual(computed);
                 expect(runDoc.toInput(runDoc.load(db, p.id))).toEqual(input);
               };
@@ -126,6 +133,14 @@ describe('payroll property test (PLAN I1.3)', () => {
             )
             .all();
           expect(bad, step).toEqual([]);
+          // ... on any day either, although runs may be dated before today (PAY-1).
+          const negativeOnADay = db
+            .prepare(
+              `SELECT d.day, l.party_id FROM (SELECT DISTINCT business_date AS day FROM journals) d JOIN journal_lines l JOIN journals j ON j.id = l.journal_id JOIN accounts a ON a.id = l.account_id
+               WHERE a.code = '1210' AND j.business_date <= d.day GROUP BY d.day, l.party_id HAVING SUM(l.debit_cents - l.credit_cents) < 0`,
+            )
+            .all();
+          expect(negativeOnADay, step).toEqual([]);
           // The month-to-date true-up adds up: employer shares recorded for a month = the month's share of the pay recorded.
           const months = db
             .prepare(
