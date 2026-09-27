@@ -25,6 +25,9 @@ export const SCREENS: MenuItem[] = [
   { group: 'Overview', label: 'Home', path: '/' },
   { group: 'Production', label: 'Production board', path: '/prd/board', permission: 'prd.view' },
   { group: 'Production', label: 'Piece rates', path: '/prd/rates', permission: 'rate.view' },
+  { group: 'People & Payroll', label: 'Employees', path: '/emp/employees', permission: 'emp.view' },
+  { group: 'People & Payroll', label: 'Attendance', path: '/emp/attendance', permission: 'emp.view' },
+  { group: 'People & Payroll', label: 'Holidays', path: '/emp/holidays', permission: 'emp.view' },
 ];
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);

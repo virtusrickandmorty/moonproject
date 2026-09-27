@@ -48,9 +48,14 @@ export function App() {
   let page: ReactNode = <Notice>Page not found. <Link to="/" className="underline">Go home</Link></Notice>;
   if (path === '/') page = <Home me={stage.me} docTypes={stage.docTypes} />;
   else if (path === '/account/password') page = <ChangePasswordScreen forced={false} onDone={(me) => signedIn(me).then(() => navigate('/'))} />;
-  else if (PAGES[path]) {
-    const Page = PAGES[path];
-    page = <Page me={stage.me} docTypes={stage.docTypes} />;
+  else {
+    for (const [pattern, Page] of Object.entries(PAGES)) {
+      const params = match(pattern, path);
+      if (params) {
+        page = <Page key={path} me={stage.me} docTypes={stage.docTypes} params={params} />;
+        break;
+      }
+    }
   }
   for (const [pattern, render] of routes) {
     const m = match(pattern, path);

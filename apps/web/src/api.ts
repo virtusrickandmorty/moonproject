@@ -71,6 +71,32 @@ export interface PrdSetup { templateId?: number; stepIds: number[]; garmentType:
 export interface Worker { id: string; code: string; name: string }
 export interface PieceRate { id: number; garmentType: string; stepCode: string; complexity: string; rateCents: number; effectiveFrom: string; reason: string; createdAt: string }
 export interface RateTable { asOf: string; current: PieceRate[]; history: PieceRate[]; garmentTypes: string[] }
+/** Employees and time (EMP). Government IDs arrive masked without emp.view_ids; pay history is null without pay.view_rates. */
+export interface EmployeeRow { id: string; code: string; fullName: string; position: string | null; department: string | null; costCentre: string; isActive: boolean; hireDate: string; separatedOn: string | null }
+export interface Statutory { sss: boolean; phic: boolean; hdmf: boolean; wtax: boolean }
+export interface EmployeeRecord extends EmployeeRow {
+  separationReason: string | null; birthday: string | null; statutory: Statutory; statutoryOffReason: string | null;
+  sssNo: string | null; phicNo: string | null; hdmfNo: string | null; tin: string | null;
+  payoutMethod: 'cash' | 'bank' | 'gcash'; payoutAccount: string | null; emergencyContact: string | null; version: number;
+}
+export interface PayProfile {
+  id: number; effectiveFrom: string; payType: 'daily' | 'piece' | 'monthly' | 'mixed'; dailyRateCents: number | null; monthlyRateCents: number | null;
+  payGroup: 'WEEKLY_PIECE' | 'SEMI_DAILY' | 'SEMI_MONTHLY'; workweekDays: 5 | 6; isMwe: boolean; reason: string; createdAt: string;
+}
+export interface EmployeeDetail {
+  employee: EmployeeRecord;
+  pay: Pick<PayProfile, 'payType' | 'payGroup' | 'workweekDays' | 'effectiveFrom'> | null;
+  payHistory: PayProfile[] | null;
+  sil: { year: number; eligibleFrom: string; daysPerYear: number; used: number; left: number };
+}
+export type AttendanceStatus = 'present' | 'half_day' | 'absent' | 'rest_day' | 'leave' | 'unpaid_leave' | 'holiday_off' | 'holiday_worked' | 'rest_day_worked';
+export interface AttendanceDay { employeeId: string; date: string; status: AttendanceStatus; otMinutes: number; note: string | null }
+export interface Holiday { id: number; date: string; name: string; kind: 'regular' | 'special'; source: string; isActive: boolean; deactivatedReason: string | null }
+export interface AttendanceGrid {
+  from: string; to: string; today: string; statuses: AttendanceStatus[]; holidays: Holiday[];
+  employees: { id: string; code: string; fullName: string; hireDate: string; separatedOn: string | null }[]; days: AttendanceDay[];
+}
+export type AttendanceSave = { employeeId: string; date: string; status: AttendanceStatus; otMinutes?: number; note?: string };
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -100,6 +126,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
   const customer = (id: string, rest: string) => `/api/col/customers/${encodeURIComponent(id)}/${rest}`;
   const qs = (id: string, rest: string) => `/api/qs/sales/${encodeURIComponent(id)}/${rest}`;
   const prdJob = (id: string, rest = '') => `/api/prd/jobs/${encodeURIComponent(id)}${rest}`;
+  const emp = (id: string, rest = '') => `/api/emp/employees/${encodeURIComponent(id)}${rest}`;
+  const version = (v: number) => ({ 'if-match': String(v) });
 
   return {
     /** Called when the session ended or a new password is required, so the app can show the right screen. */
@@ -146,6 +174,20 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     prdWorkers: () => call<Worker[]>('GET', '/api/prd/workers'),
     rates: () => call<RateTable>('GET', '/api/rate/rates'),
     addRate: (body: Omit<PieceRate, 'id' | 'createdAt'>) => call<PieceRate>('POST', '/api/rate/rates', body),
+    employees: (q: { search?: string; status?: 'active' | 'separated' | 'all' } = {}) =>
+      call<EmployeeRow[]>('GET', `/api/emp/employees?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][])}`),
+    employee: (id: string) => call<EmployeeDetail>('GET', emp(id)),
+    addEmployee: (body: Record<string, unknown>) => call<EmployeeRecord>('POST', '/api/emp/employees', body),
+    updateEmployee: (id: string, v: number, body: Record<string, unknown>) => call<EmployeeRecord>('PUT', emp(id), body, version(v)),
+    separateEmployee: (id: string, v: number, body: { separatedOn: string; reason: string }) => call<EmployeeRecord>('POST', emp(id, '/separate'), body, version(v)),
+    addPay: (id: string, body: Omit<PayProfile, 'id' | 'createdAt' | 'dailyRateCents' | 'monthlyRateCents'> & { dailyRateCents?: number; monthlyRateCents?: number }) =>
+      call<PayProfile>('POST', emp(id, '/pay'), body),
+    attendance: (from: string, to: string) => call<AttendanceGrid>('GET', `/api/emp/attendance?${new URLSearchParams({ from, to })}`),
+    saveAttendance: (days: AttendanceSave[]) => call<{ saved: number; unchanged: number }>('POST', '/api/emp/attendance', { days }),
+    /** Without a year: the server's current year. */
+    holidays: (year?: number) => call<{ year: number; holidays: Holiday[] }>('GET', `/api/emp/holidays${year ? `?year=${year}` : ''}`),
+    addHoliday: (body: { date: string; name: string; kind: 'regular' | 'special'; source: string }) => call<Holiday>('POST', '/api/emp/holidays', body),
+    deactivateHoliday: (id: number, reason: string) => call<Holiday>('POST', `/api/emp/holidays/${id}/deactivate`, { reason }),
   };
 }
 
