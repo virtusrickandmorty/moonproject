@@ -21,12 +21,16 @@ const MODULES: [MenuGroup, string][] = [
 ];
 const groupOf = (module: string): MenuGroup => MODULES.find(([, codes]) => codes.split(' ').includes(module))?.[0] ?? 'Overview';
 
-export const SCREENS: MenuItem[] = [{ group: 'Overview', label: 'Home', path: '/' }];
+export const SCREENS: MenuItem[] = [
+  { group: 'Overview', label: 'Home', path: '/' },
+  { group: 'Production', label: 'Production board', path: '/prd/board', permission: 'prd.view' },
+  { group: 'Production', label: 'Piece rates', path: '/prd/rates', permission: 'rate.view' },
+];
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);
 
-/** Doc types found under another name than their document title: a quick sale is an Invoice Record (PLAN H1 "quick sale"). */
-const LABELS: Record<string, [one: string, many: string]> = { 'qs.sale': ['Quick Sale', 'Quick Sales'] };
+/** Doc types found under another name than their document title: a quick sale is an Invoice Record (PLAN H1 "quick sale"). Also plurals the rule above gets wrong. */
+const LABELS: Record<string, [one: string, many: string]> = { 'qs.sale': ['Quick Sale', 'Quick Sales'], 'prd.entry': ['Production Entry', 'Production Entries'] };
 export const labelOf = (d: Pick<DocTypeInfo, 'key' | 'title'>) => LABELS[d.key]?.[0] ?? d.title;
 export const pluralLabelOf = (d: Pick<DocTypeInfo, 'key' | 'title'>) => LABELS[d.key]?.[1] ?? plural(d.title);
 

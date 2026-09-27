@@ -12,7 +12,7 @@ import { docPath, labelOf } from './shell/menu.ts';
 import { DocList } from './generic/DocList.tsx';
 import { DocForm, type FormMode } from './generic/DocForm.tsx';
 import { DocView } from './generic/DocView.tsx';
-import { FORMS, VIEWS } from './modules/screens.ts';
+import { FORMS, PAGES, VIEWS } from './modules/screens.ts';
 
 type Stage = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'firstOwner' } | { kind: 'login'; message?: string } | { kind: 'ready'; me: Me; docTypes: DocTypeInfo[] };
 
@@ -48,6 +48,10 @@ export function App() {
   let page: ReactNode = <Notice>Page not found. <Link to="/" className="underline">Go home</Link></Notice>;
   if (path === '/') page = <Home me={stage.me} docTypes={stage.docTypes} />;
   else if (path === '/account/password') page = <ChangePasswordScreen forced={false} onDone={(me) => signedIn(me).then(() => navigate('/'))} />;
+  else if (PAGES[path]) {
+    const Page = PAGES[path];
+    page = <Page me={stage.me} docTypes={stage.docTypes} />;
+  }
   for (const [pattern, render] of routes) {
     const m = match(pattern, path);
     const t = typeOf(m?.type);
