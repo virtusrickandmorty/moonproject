@@ -36,17 +36,15 @@ export function szrRoutes(app: FastifyInstance, deps: AppDeps): void {
     const user = currentUser(req);
 
     tx(db, () => {
-      try {
-        db.prepare(`
-          INSERT INTO szr_sets (id, code, garment_type, sizes_included, status, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(id, input.code, input.garmentType, input.sizesIncluded, input.status, now, now);
-      } catch (e: any) {
-        if (e.message.includes('UNIQUE constraint failed')) {
-          throw conflict('Set code already exists');
-        }
-        throw e;
+      const existing = db.prepare('SELECT id FROM szr_sets WHERE code COLLATE NOCASE = ?').get(input.code);
+      if (existing) {
+        throw new AppError('CODE_EXISTS', 'Set code already exists', 409);
       }
+
+      db.prepare(`
+        INSERT INTO szr_sets (id, code, garment_type, sizes_included, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(id, input.code, input.garmentType, input.sizesIncluded, 'in shop', now, now);
 
       const after = db.prepare('SELECT * FROM szr_sets WHERE id = ?').get(id);
       appendAudit(db, {
@@ -65,7 +63,9 @@ export function szrRoutes(app: FastifyInstance, deps: AppDeps): void {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const input = szrSetInput.parse(req.body);
     const versionMatch = req.headers['if-match'];
-    if (!versionMatch) throw preconditionRequired('Missing If-Match header');
+    if (!versionMatch || !/^[1-9]\d*$/.test(versionMatch.replace(/"/g, ''))) {
+      throw preconditionRequired('Missing or invalid If-Match header');
+    }
     const expectedVersion = parseInt(versionMatch.replace(/"/g, ''), 10);
     const now = stamp(clock);
     const user = currentUser(req);
@@ -75,31 +75,28 @@ export function szrRoutes(app: FastifyInstance, deps: AppDeps): void {
     tx(db, () => {
       const before = db.prepare('SELECT * FROM szr_sets WHERE id = ?').get(id) as any;
       if (!before) throw notFound('Set not found');
-      if (before.status === 'inactive') throw badRequest('Cannot edit inactive set');
-      if (before.version !== expectedVersion) throw conflict('Set was modified by someone else');
+      if (before.status === 'inactive') throw new AppError('SET_INACTIVE', 'Cannot edit inactive set', 400);
+      if (before.version !== expectedVersion) throw new AppError('VERSION_CHANGED', 'Set was modified by someone else', 409);
 
-      try {
-        const result = db.prepare(`
-          UPDATE szr_sets SET
-            code = ?, garment_type = ?, sizes_included = ?, status = ?, version = version + 1, updated_at = ?
-          WHERE id = ? AND version = ?
-        `).run(
-          input.code,
-          input.garmentType,
-          input.sizesIncluded,
-          input.status,
-          now,
-          id,
-          expectedVersion
-        );
-
-        if (result.changes !== 1) throw conflict('Set was modified by someone else');
-      } catch (e: any) {
-        if (e.message.includes('UNIQUE constraint failed')) {
-          throw conflict('Set code already exists');
-        }
-        throw e;
+      const existing = db.prepare('SELECT id FROM szr_sets WHERE code COLLATE NOCASE = ? AND id != ?').get(input.code, id);
+      if (existing) {
+        throw new AppError('CODE_EXISTS', 'Set code already exists', 409);
       }
+
+      const result = db.prepare(`
+        UPDATE szr_sets SET
+          code = ?, garment_type = ?, sizes_included = ?, version = version + 1, updated_at = ?
+        WHERE id = ? AND version = ?
+      `).run(
+        input.code,
+        input.garmentType,
+        input.sizesIncluded,
+        now,
+        id,
+        expectedVersion
+      );
+
+      if (result.changes !== 1) throw new AppError('VERSION_CHANGED', 'Set was modified by someone else', 409);
       newVersion = expectedVersion + 1;
 
       const after = db.prepare('SELECT * FROM szr_sets WHERE id = ?').get(id);
@@ -118,7 +115,9 @@ export function szrRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post('/api/szr/sets/:id/deactivate', { config: { permission: 'szr.set.edit' } }, async (req) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const versionMatch = req.headers['if-match'];
-    if (!versionMatch) throw preconditionRequired('Missing If-Match header');
+    if (!versionMatch || !/^[1-9]\d*$/.test(versionMatch.replace(/"/g, ''))) {
+      throw preconditionRequired('Missing or invalid If-Match header');
+    }
     const expectedVersion = parseInt(versionMatch.replace(/"/g, ''), 10);
     const now = stamp(clock);
     const user = currentUser(req);
@@ -126,8 +125,9 @@ export function szrRoutes(app: FastifyInstance, deps: AppDeps): void {
     tx(db, () => {
       const before = db.prepare('SELECT * FROM szr_sets WHERE id = ?').get(id) as any;
       if (!before) throw notFound('Set not found');
+      if (before.status === 'lent') throw new AppError('SET_LENT', 'Cannot deactivate a lent set', 409);
       if (before.status === 'inactive') return;
-      if (before.version !== expectedVersion) throw conflict('Set was modified by someone else');
+      if (before.version !== expectedVersion) throw new AppError('VERSION_CHANGED', 'Set was modified by someone else', 409);
 
       const result = db.prepare("UPDATE szr_sets SET status = 'inactive', version = version + 1, updated_at = ? WHERE id = ? AND version = ?").run(now, id, expectedVersion);
       if (result.changes !== 1) throw conflict('Set was modified by someone else');
@@ -172,17 +172,17 @@ export function szrRoutes(app: FastifyInstance, deps: AppDeps): void {
     tx(db, () => {
       const cust = customerRef(db, input.customerId);
       if (!cust || !cust.is_active) {
-        throw badRequest('Invalid or inactive customer');
+        throw new AppError('CUSTOMER_INACTIVE', 'Invalid or inactive customer', 400);
       }
 
       const setRecord = db.prepare('SELECT * FROM szr_sets WHERE id = ?').get(input.setId) as any;
       if (!setRecord) throw notFound('Set not found');
-      if (setRecord.status !== 'in shop') throw badRequest('Set is not in shop');
+      if (setRecord.status !== 'in shop') throw new AppError('SET_NOT_IN_SHOP', 'Set is not in shop', 409);
 
       db.prepare(`
-        INSERT INTO szr_loans (id, set_id, customer_id, date_out, expected_return_date, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(id, input.setId, input.customerId, todayDate, input.expectedReturnDate, now, now);
+        INSERT INTO szr_loans (id, set_id, customer_id, date_out, expected_return_date, version, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(id, input.setId, input.customerId, todayDate, input.expectedReturnDate, 1, now, now);
 
       db.prepare("UPDATE szr_sets SET status = 'lent', version = version + 1, updated_at = ? WHERE id = ?").run(now, input.setId);
 
@@ -206,12 +206,17 @@ export function szrRoutes(app: FastifyInstance, deps: AppDeps): void {
         data: { before: setRecord, after: afterSet },
       });
     });
-    return { id };
+    return { id, version: 1 };
   });
 
   app.post('/api/szr/loans/:id/return', { config: { permission: 'szr.loan.edit' } }, async (req) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const input = szrReturnInput.parse(req.body);
+    const versionMatch = req.headers['if-match'];
+    if (!versionMatch || !/^[1-9]\d*$/.test(versionMatch.replace(/"/g, ''))) {
+      throw preconditionRequired('Missing or invalid If-Match header');
+    }
+    const expectedVersion = parseInt(versionMatch.replace(/"/g, ''), 10);
     const now = stamp(clock);
     const todayDate = today(clock);
     const user = currentUser(req);
@@ -220,12 +225,17 @@ export function szrRoutes(app: FastifyInstance, deps: AppDeps): void {
       const loanRecord = db.prepare('SELECT * FROM szr_loans WHERE id = ?').get(id) as any;
       if (!loanRecord) throw notFound('Loan not found');
       if (loanRecord.returned_date) throw badRequest('Loan is already returned');
+      if (loanRecord.version !== expectedVersion) throw new AppError('VERSION_CHANGED', 'Loan was modified by someone else', 409);
 
       const setRecord = db.prepare('SELECT * FROM szr_sets WHERE id = ?').get(loanRecord.set_id) as any;
+      if (!setRecord || setRecord.status !== 'lent') {
+        throw new AppError('SET_NOT_LENT', 'Set is not currently lent', 409);
+      }
 
-      db.prepare(`
-        UPDATE szr_loans SET returned_date = ?, condition_on_return = ?, updated_at = ? WHERE id = ?
-      `).run(todayDate, input.conditionOnReturn, now, id);
+      const result = db.prepare(`
+        UPDATE szr_loans SET returned_date = ?, condition_on_return = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?
+      `).run(todayDate, input.conditionOnReturn, now, id, expectedVersion);
+      if (result.changes !== 1) throw new AppError('VERSION_CHANGED', 'Loan was modified by someone else', 409);
 
       db.prepare(`
         UPDATE szr_sets SET status = ?, version = version + 1, updated_at = ? WHERE id = ?

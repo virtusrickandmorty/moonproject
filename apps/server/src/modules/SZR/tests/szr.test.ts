@@ -22,7 +22,6 @@ describe('SZR Sizer Tracker', () => {
       code: 'SET-A',
       garmentType: 'T-Shirt',
       sizesIncluded: 'XS, S, M, L, XL',
-      status: 'in shop',
     };
 
     const res = await api.post('/api/szr/sets', input);
@@ -44,7 +43,6 @@ describe('SZR Sizer Tracker', () => {
       code: 'SET-B',
       garmentType: 'Polo',
       sizesIncluded: 'S, M, L',
-      status: 'in shop',
     };
     const createRes = await api.post('/api/szr/sets', input);
     const { id, version } = createRes.json();
@@ -70,7 +68,7 @@ describe('SZR Sizer Tracker', () => {
 
   it('cannot edit an inactive set', async () => {
     const api = await env.as('encoder');
-    const input = { code: 'SET-C', garmentType: 'Shorts', sizesIncluded: 'M', status: 'in shop' };
+    const input = { code: 'SET-C', garmentType: 'Shorts', sizesIncluded: 'M' };
     const createRes = await api.post('/api/szr/sets', input);
     const { id, version } = createRes.json();
 
@@ -84,11 +82,11 @@ describe('SZR Sizer Tracker', () => {
     const api = await env.as('encoder');
 
     // Create customer first
-    const custId = newId();
-    env.db.prepare('INSERT INTO cus_customers (id, code, kind, display_name, registered_name, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)')
-      .run(custId, 'CUS-999', 'person', 'Test Customer', 'Test Customer', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+    const custId = (await api.post('/api/cus/customers', {
+      kind: 'person', displayName: 'Test Customer', registeredName: 'Test Customer', isVatRegistered: false
+    })).json().id;
 
-    const setInput = { code: 'SET-L', garmentType: 'Jacket', sizesIncluded: 'M', status: 'in shop' };
+    const setInput = { code: 'SET-L', garmentType: 'Jacket', sizesIncluded: 'M' };
     const createSetRes = await api.post('/api/szr/sets', setInput);
     const setId = createSetRes.json().id;
 
@@ -98,7 +96,7 @@ describe('SZR Sizer Tracker', () => {
     const loanInput = {
       setId,
       customerId: custId,
-      expectedReturnDate: expectedReturn,
+      expectedReturnDate: expectedReturn.substring(0, 10),
     };
 
     const loanRes = await api.post('/api/szr/loans', loanInput);
@@ -120,22 +118,24 @@ describe('SZR Sizer Tracker', () => {
   it('can return a loan, updating set status and recording condition', async () => {
     const api = await env.as('encoder');
 
-    const custId = newId();
-    env.db.prepare('INSERT INTO cus_customers (id, code, kind, display_name, registered_name, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)')
-      .run(custId, 'CUS-998', 'person', 'Test Customer 2', 'Test Customer 2', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+    const custId = (await api.post('/api/cus/customers', {
+      kind: 'person', displayName: 'Test Customer 2', registeredName: 'Test Customer 2', isVatRegistered: false
+    })).json().id;
 
-    const setInput = { code: 'SET-R', garmentType: 'Vest', sizesIncluded: 'M', status: 'in shop' };
+    const setInput = { code: 'SET-R', garmentType: 'Vest', sizesIncluded: 'M' };
     const setId = (await api.post('/api/szr/sets', setInput)).json().id;
 
     const expectedReturn = '2030-01-01';
-    const loanId = (await api.post('/api/szr/loans', { setId, customerId: custId, expectedReturnDate: expectedReturn })).json().id;
+    const loanRes = await api.post('/api/szr/loans', { setId, customerId: custId, expectedReturnDate: expectedReturn });
+    const loanId = loanRes.json().id;
+    const loanVersion = loanRes.json().version;
 
     // Return loan
     const returnInput = {
       status: 'in shop',
       conditionOnReturn: 'Good condition',
     };
-    const returnRes = await api.post(`/api/szr/loans/${loanId}/return`, returnInput);
+    const returnRes = await api.post(`/api/szr/loans/${loanId}/return`, returnInput, { 'if-match': `"${loanVersion || 1}"` });
     expect(returnRes.statusCode).toBe(200);
 
     // Check loan status
@@ -152,22 +152,21 @@ describe('SZR Sizer Tracker', () => {
   it('lists overdue loans correctly', async () => {
     const api = await env.as('encoder');
 
-    const custId = newId();
-    env.db.prepare('INSERT INTO cus_customers (id, code, kind, display_name, registered_name, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)')
-      .run(custId, 'CUS-997', 'person', 'Test Customer 3', 'Test Customer 3', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+    const custId = (await api.post('/api/cus/customers', {
+      kind: 'person', displayName: 'Test Customer 3', registeredName: 'Test Customer 3', isVatRegistered: false
+    })).json().id;
 
-    const setInput = { code: 'SET-O', garmentType: 'Cap', sizesIncluded: 'One Size', status: 'in shop' };
+    const setInput = { code: 'SET-O', garmentType: 'Cap', sizesIncluded: 'One Size' };
     const setId = (await api.post('/api/szr/sets', setInput)).json().id;
 
-    const todayDate = today(env.clock);
     const pastDate = '2020-01-01';
 
     // Directly insert an overdue loan (bypassing normal endpoint which prevents past dates)
     const loanId = newId();
     env.db.prepare(`
-      INSERT INTO szr_loans (id, set_id, customer_id, date_out, expected_return_date, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(loanId, setId, custId, '2019-12-01', pastDate, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
+      INSERT INTO szr_loans (id, set_id, customer_id, date_out, expected_return_date, version, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(loanId, setId, custId || 'CUS-997', '2019-12-01', pastDate, 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
     env.db.prepare("UPDATE szr_sets SET status = 'lent' WHERE id = ?").run(setId);
 
     const overdueRes = await api.get('/api/szr/loans/overdue');
@@ -185,7 +184,6 @@ describe('SZR Sizer Tracker', () => {
       code: 'SET-PROD',
       garmentType: 'T-Shirt',
       sizesIncluded: 'M',
-      status: 'in shop',
     };
 
     const res = await api.post('/api/szr/sets', setInput);
