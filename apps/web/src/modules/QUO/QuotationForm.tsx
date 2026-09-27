@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { formatPesos, parsePesos } from '@moonproject/shared';
 import { api, ApiError, type CustomerRow, type DocHeader, type DocTypeInfo, type Preview } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, peso, ReasonDialog } from '../../components/ui.tsx';
 import { navigate } from '../../router.tsx';
@@ -13,8 +14,11 @@ type Form = { customerId: string; prospectName: string; contact: string; validFo
 const blankLine = (): Line => ({ itemId: '', description: '', qty: 1, unit: 'pc', discountCents: 0 });
 const blank = (): Form => ({ customerId: '', prospectName: '', contact: '', validForDays: 15, termsText: '', notes: '',
   lines: [blankLine()], documentDiscountCents: 0, discountReason: '' });
-const cents = (value: string): number | null => /^\d+(?:\.\d{1,2})?$/.test(value) ? Math.round(Number(value) * 100) : null;
-const amount = (value: number | undefined) => value === undefined ? '' : (value / 100).toFixed(2);
+const cents = (value: string): number | null => {
+  try { const parsed = parsePesos(value); return parsed >= 0 ? parsed : null; }
+  catch { return null; }
+};
+const amount = (value: number | undefined) => value === undefined ? '' : formatPesos(value);
 function MoneyField({ value, onValue, placeholder }: { value: number | undefined; onValue: (n: number | undefined) => void; placeholder?: string }) {
   const [text, setText] = useState(amount(value));
   const sent = useRef<number | undefined>(value);

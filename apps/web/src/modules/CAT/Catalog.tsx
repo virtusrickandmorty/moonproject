@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { parsePesos } from '@moonproject/shared';
 import type { Me } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { masterRequest } from '../CUS/http.ts';
@@ -8,7 +9,10 @@ type Item = { id: string; code: string; name: string; class: 'made_to_order_garm
 type Price = { id: string; effectiveFrom: string; minQty: number; unitPriceCents: number; createdAt: string };
 type Detail = Item & { prices: Price[] };
 const classes = { made_to_order_garment: 'Made-to-order garment', service: 'Service', ready_made_item: 'Ready-made item' };
-const moneyCents = (s: string) => /^\d+(?:\.\d{1,2})?$/.test(s) ? Math.round(Number(s) * 100) : null;
+const moneyCents = (s: string) => {
+  try { const cents = parsePesos(s); return cents >= 0 ? cents : null; }
+  catch { return null; }
+};
 
 export function Catalog({ me }: { me: Me }) {
   const [rows, setRows] = useState<Item[]>([]);
