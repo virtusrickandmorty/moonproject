@@ -5,12 +5,12 @@
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { applyRate, formatPeso, manilaDate, type Issue } from '@moonproject/shared';
+import { applyRate, conflict, formatPeso, manilaDate, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { activeChart, activeWearers, customer, wearer, type Wearer } from '../cus.ts';
 import { carryStageOver } from '../stages.ts';
 
-const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
+export const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
 export const PAYMENT_TERMS = ['dp50', 'full', 'cod', 'net7', 'net15', 'net30'] as const;
 /** Downpayment asked before work starts, in basis points of the total (E4 "required downpayment"). */
 const DOWNPAYMENT_BP: Record<(typeof PAYMENT_TERMS)[number], number> = { dp50: 5000, full: 10000, cod: 0, net7: 0, net15: 0, net30: 0 };
@@ -65,7 +65,7 @@ export interface JobOrder extends Omit<JobOrderInput, 'lines'> {
   totalCents: number;
 }
 
-const addDays = (date: string, days: number) => manilaDate(new Date(Date.parse(`${date}T00:00:00+08:00`) + days * 86_400_000));
+export const addDays = (date: string, days: number) => manilaDate(new Date(Date.parse(`${date}T00:00:00+08:00`) + days * 86_400_000));
 /** SQL NULL -> field left out, as zod leaves out a missing optional field. */
 const dropNulls = (o: object, keys: string[]) => Object.fromEntries(Object.entries(o).filter(([k, v]) => v !== null || !keys.includes(k)));
 
@@ -206,7 +206,23 @@ export const jobOrderDoc: DocTypeDef<JobOrderInput, JobOrder> = {
     };
   },
 
-  relinkOnReissue: carryStageOver,
+  /** Its releases and invoice records: cancel those first (D6), invoice records before their releases. */
+  dependents(db, documentId) {
+    return db
+      .prepare(
+        `SELECT d.id, d.number FROM documents d
+         WHERE d.status = 'posted' AND d.id IN (SELECT document_id FROM jo_invoice_records WHERE job_order_id = @jo UNION SELECT document_id FROM jo_releases WHERE job_order_id = @jo)
+         ORDER BY d.doc_type = 'jo.release', d.number`,
+      )
+      .all({ jo: documentId }) as { id: string; number: string }[];
+  },
+
+  relinkOnReissue(db, oldId, newId) {
+    // The engine skips dependents on reissue when this hook exists, but a released JO still cannot be edited (D6).
+    const deps = jobOrderDoc.dependents!(db, oldId);
+    if (deps.length > 0) throw conflict('HAS_DEPENDENTS', `Cancel these first: ${deps.map((x) => x.number).join(', ')}.`, deps);
+    carryStageOver(db, oldId, newId);
+  },
 
   summary(doc) {
     const pieces = doc.lines.reduce((s, l) => s + l.qty, 0);

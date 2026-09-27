@@ -1,7 +1,7 @@
 /**
  * Collections and refunds: goldens G-01, G-03, G-06, G-07 and G-12 (PLAN I2), cancel mirrors, E5 rules, API rules and
- * property tests. The invoice record is not built yet, so the invoiced receivable (G-02) is posted here as its journal,
- * tagged with the JO the way the invoice record will tag it.
+ * property tests. To keep these tests free of releases, the invoiced receivable (G-02) is posted here as the invoice
+ * record's journal, tagged with the JO; the invoice record itself and the D6 cancel rules are in JO/tests/release.test.ts.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
@@ -46,7 +46,7 @@ async function jobOrder(totalCents: number, customerId = c.school): Promise<stri
   return r.json().id;
 }
 
-/** Stand-in for the invoice record (INV-REC + DEP-APPLY, PLAN D5): its journal, with the AR and deposit lines tagged with the JO. */
+/** The invoice record's journal (INV-REC + DEP-APPLY, PLAN D5) without the document, AR and deposit lines tagged with the JO. */
 function invoice(jo: string, grossCents: number, depositAppliedCents = 0, customerId = c.school) {
   const party = { type: 'customer', id: customerId };
   const ref = { documentId: jo };

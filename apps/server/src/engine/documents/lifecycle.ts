@@ -192,13 +192,18 @@ function cancelInTx(env: EngineEnv, def: DocTypeDef, actor: Actor, id: string, r
   const date = today(env.clock);
   const rev = reverseJournalOf(db, 'document', id, { sourceType: 'document', sourceId: id, businessDate: date, userId: actor.userId, at }, `Cancel ${d.number}: ${reason}`);
   db.prepare(`UPDATE documents SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancel_reason = ? WHERE id = ?`).run(at, actor.userId, reason, id);
+  // D6 follow-ups read the ledger after the mirror; their journal has its own source so L4 still nets the mirror.
+  const follow = def.afterCancel?.(db, id, { documentId: id, number: d.number, businessDate: date, userId: actor.userId, at });
+  const followUp = follow
+    ? postJournal(db, { ...follow, memo: `Cancel ${d.number}: ${follow.memo}` }, { sourceType: 'document-cancel', sourceId: id, businessDate: date, userId: actor.userId, at })
+    : null;
   appendAudit(db, {
     at,
     userId: actor.userId,
     action: 'document.cancel',
     entityType: def.key,
     entityId: id,
-    data: { number: d.number, reason, reversalJournal: rev?.number ?? null },
+    data: { number: d.number, reason, reversalJournal: rev?.number ?? null, ...(followUp ? { followUpJournal: followUp.number } : {}) },
   });
   return { reversalNumber: rev?.number ?? null };
 }

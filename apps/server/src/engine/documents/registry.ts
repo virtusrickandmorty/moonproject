@@ -95,6 +95,13 @@ export interface DocTypeDef<Input = any, Doc extends { totalCents: number } = an
   dependents?(db: Db, documentId: string): { id: string; number: string }[];
   /** Moves children to the replacement during reissue. */
   relinkOnReissue?(db: Db, oldId: string, newId: string): void;
+  /**
+   * Runs in the cancel transaction after the mirror and the status change, also when cancelling for a reissue.
+   * May insert into the module's own tables, like persist. A returned journal is posted in the same transaction with
+   * source_type 'document-cancel' (PLAN D6: an invoice record's payments become deposits again; a collection whose
+   * deposit an invoice already applied reopens the receivable). `header` carries the cancel date, user and time.
+   */
+  afterCancel?(db: Db, documentId: string, header: DocHeader & { userId: string; at: string }): JournalDraft | null;
   /** Plain English, e.g. "This will move ₱10,000.00 from BDO to China Bank." */
   summary(doc: Doc, ctx: DocContext): string;
   /** Random valid inputs for property tests (required, PLAN C4). */

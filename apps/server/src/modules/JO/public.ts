@@ -5,6 +5,7 @@ import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
 
 export { currentStage, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
+export { awaitingInvoice, settleLines } from './doctypes/invoice-record.ts';
 
 export interface JoLedgerPart { receivableCents: number; depositsHeldCents: number }
 
@@ -46,6 +47,14 @@ export function joLedger(db: Db, documentId: string): JoLedgerPart {
   return { receivableCents: balance('AR_TRADE'), depositsHeldCents: 0 - balance('CUSTOMER_DEPOSITS') };
 }
 
+/** Gross of the JO's recorded (not cancelled) invoice records: its sales so far (D3 "invoiced amount"). */
+export function invoicedCents(db: Db, documentId: string): number {
+  return db
+    .prepare(`SELECT COALESCE(SUM(i.gross_cents), 0) FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE i.job_order_id = ? AND d.status = 'posted'`)
+    .pluck()
+    .get(documentId) as number;
+}
+
 export function joMoney(db: Db, documentId: string) {
   const r = db
     .prepare(
@@ -54,7 +63,7 @@ export function joMoney(db: Db, documentId: string) {
     )
     .get(documentId) as { status: string; totalCents: number; requiredDownpaymentCents: number } | undefined;
   if (!r) throw notFound('The job order');
-  const owed = { totalCents: r.status === 'cancelled' ? 0 : r.totalCents, invoicedCents: 0 }; // invoice records: JO part 2
+  const owed = { totalCents: r.status === 'cancelled' ? 0 : r.totalCents, invoicedCents: invoicedCents(db, documentId) };
   const ledger = joLedger(db, documentId);
   return { ...owed, requiredDownpaymentCents: r.requiredDownpaymentCents, ...ledger, ...balanceDue({ ...owed, ...ledger }) };
 }
