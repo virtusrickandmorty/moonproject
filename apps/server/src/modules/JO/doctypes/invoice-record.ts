@@ -15,7 +15,8 @@ import type { Db } from '../../../platform/db/driver.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { DraftLine } from '../../../engine/ledger/post.ts';
 import { settingAt } from '../../../engine/settings.ts';
-import { saleByInvoiceNumber } from '../../QS/public.ts';
+import { saleByInvoiceNumber, saleInvoiceNumbersBetween } from '../../QS/public.ts';
+import { bookletIssue } from '../../TAX/public.ts';
 import { invoicedCents, joLedger } from '../public.ts';
 import { MAX_CENTS } from './job-order.ts';
 import { releaseDoc, type LineKind, type ReleaseLine } from './release.ts';
@@ -29,7 +30,7 @@ const MODE_WORDS = { A: 'deposit only', B: 'VAT on deposit', C: 'invoice on down
 export const invoiceRecordInput = z
   .object({
     releaseId: z.uuid(),
-    // Typed from the booklet, never prefilled. The ATP booklet register check comes with TAX (D7).
+    // Typed from the booklet, never prefilled; checked against the ATP booklet register (TAX, D7).
     invoiceNumber: z.string().trim().regex(/^0*[1-9]\d{0,11}$/, 'Type the number printed on the invoice (digits only).'),
     note: z.string().trim().min(1).max(500).optional(),
   })
@@ -81,6 +82,15 @@ export function invoiceNumberUsedBy(db: Db, invoiceNumber: string): { number: st
   return own ?? saleByInvoiceNumber(db, invoiceNumber);
 }
 
+/** Booklet invoice numbers used between two numbers by invoice records and quick sales, cancelled ones included (TAX). */
+export function invoiceNumbersBetween(db: Db, from: number, to: number): { n: number; number: string; status: 'posted' | 'cancelled' }[] {
+  const own = db
+    .prepare(`SELECT CAST(i.invoice_number AS INTEGER) AS n, d.number, d.status FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id
+              WHERE CAST(i.invoice_number AS INTEGER) BETWEEN ? AND ?`)
+    .all(from, to) as { n: number; number: string; status: 'posted' | 'cancelled' }[];
+  return [...own, ...saleInvoiceNumbersBetween(db, from, to)].sort((a, b) => a.n - b.n);
+}
+
 export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
   key: 'jo.invoice_record',
   module: 'JO',
@@ -127,6 +137,8 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
       const how = used.status === 'cancelled' ? ' (cancelled)' : '';
       error('invoiceNumber', 'INVOICE_USED', `Invoice no. ${doc.invoiceNumber} is already used on ${used.number}${how}. Each invoice number is used once: write this sale on a new invoice and keep all copies of a spoiled one.`);
     }
+    const booklet = bookletIssue(ctx.db, 'SALES_INVOICE', doc.invoiceNumber, 'invoiceNumber');
+    if (booklet) issues.push(booklet);
     if (rel && doc.grossCents <= 0) error('releaseId', 'NOTHING_TO_INVOICE', `${doc.releaseNumber} released nothing with a price, so there is nothing to invoice.`);
     if (doc.grossCents > MAX_CENTS) error('releaseId', 'TOO_BIG', 'The amount is over ₱100 million. Please check the job order.');
     return issues;
