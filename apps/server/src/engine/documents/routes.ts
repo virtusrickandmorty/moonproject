@@ -104,7 +104,9 @@ export function documentRoutes(app: FastifyInstance, deps: AppDeps): void {
       header: docHeaderOut(h),
       doc,
       input: d.toInput(doc),
-      journals: u.permissions.has('acc.journal.view') ? journalsForSource(db, 'document', req.params.id) : undefined,
+      journals: u.permissions.has('acc.journal.view')
+        ? [...journalsForSource(db, 'document', req.params.id), ...journalsForSource(db, 'document-cancel', req.params.id)]
+        : undefined,
     };
   });
 
