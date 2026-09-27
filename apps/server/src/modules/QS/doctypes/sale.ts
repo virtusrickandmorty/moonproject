@@ -11,7 +11,6 @@
 import { z } from 'zod';
 import fc from 'fast-check';
 import { formatPeso, type Issue } from '@moonproject/shared';
-import type { Db } from '../../../platform/db/driver.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
@@ -48,10 +47,6 @@ export interface Sale extends Omit<SaleInput, 'lines'>, ReturnType<typeof invoic
   customerName: string;
   totalCents: number;
 }
-
-/** The sale's own document id, once persist has written it (journal runs after persist in the same transaction). */
-const ownId = (db: Db, invoiceNumber: string) =>
-  db.prepare('SELECT document_id FROM qs_sales WHERE CAST(invoice_number AS INTEGER) = CAST(? AS INTEGER)').pluck().get(invoiceNumber) as string | undefined;
 
 export const saleDoc: DocTypeDef<SaleInput, Sale> = {
   key: 'qs.sale',
@@ -100,10 +95,10 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
     for (const l of doc.lines) line.run(h.documentId, l.lineNo, l.kind, l.description, l.qty, l.unitPriceCents, l.discountCents, l.amountCents);
   },
 
-  journal(doc, ctx) {
+  journal(doc, _ctx, header) {
     const party = { type: 'customer', id: doc.customerId };
-    // The receivable names the sale, so collections pay it by ref. A preview has no row yet and shows the line unnamed.
-    const self = ownId(ctx.db, doc.invoiceNumber);
+    // The receivable names the sale, so collections pay it by ref. A preview has no header yet and shows the line unnamed.
+    const self = header?.documentId;
     return {
       memo: `Quick sale to ${doc.customerName}, invoice no. ${doc.invoiceNumber}`,
       lines: [

@@ -46,7 +46,7 @@ Codex and Jules build screens, reports, prints and imports around them, never po
 Look at `apps/server/src/modules/CASH/doctypes/transfer.ts`. A doc type declares:
 `key`, `module`, `title`, `numbering.series`, `permissions {view, create, post, cancel}`, `dating`, a strict `inputSchema`,
 `compute` (pure; returns the doc with `totalCents`), `validate` (returns `Issue[]`), `persist` (INSERT into your tables),
-`journal` (pure; omit for non-posting documents), `load`, `toInput`, `summary` (plain English), `arbitrary` (fast-check generator),
+`journal(doc, ctx, header?)` (pure; omit for non-posting documents; `header` = the document's id, number and date when posting, none in a preview), `load`, `toInput`, `summary` (plain English), `arbitrary` (fast-check generator),
 and optionally `dependents` and `relinkOnReissue`.
 Register it in your module's `index.ts` with `defineModule({...})` (default export). Modules self-register; there is no central list.
 
