@@ -57,12 +57,13 @@ test('every importer route requires a session and owner permission', async () =>
 
 test('commit imports accepted master rows, reports counts, and clears staging only after verification', async () => {
   const owner = await env.as('owner');
-  expect((await owner.post('/api/auth/step-up', { password: PASSWORD })).statusCode).toBe(200);
   const upload = await owner.post('/api/mig/upload', { filename: 'buyers.csv',
     csv: 'Legacy_ID,Customer_Name\nC-100,Example Academy' });
   const id = upload.json().uploadId as string;
   const dry = await owner.post(`/api/mig/uploads/${id}/dry-run`, {});
   expect(dry.statusCode).toBe(200);
+  expect((await owner.post(`/api/mig/uploads/${id}/commit`, { expectedMeasurementCellTenths: 0 })).statusCode).toBe(403);
+  expect((await owner.post('/api/auth/step-up', { password: PASSWORD })).statusCode).toBe(200);
   const commit = await owner.post(`/api/mig/uploads/${id}/commit`, { expectedMeasurementCellTenths: dry.json().checksums.measurement.cellTenths });
   expect(commit.statusCode, commit.body).toBe(200);
   expect(commit.json().counts.customer).toEqual({ imported: 1, alreadyImported: 0 });

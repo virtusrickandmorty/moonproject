@@ -5,7 +5,7 @@ import { appendAudit } from '../../engine/audit.ts';
 import { createCustomer, createGroup, createWearer, createMeasurement } from '../CUS/public.ts';
 import { createEmployee, addPayProfile, type Who as EmployeeWho } from '../EMP/public.ts';
 import { addRate } from '../RATE/public.ts';
-import { measurementField, measurementTenths, validateRow } from './csv.ts';
+import { measurementField, measurementTenths, rateFromPesos, validateRow } from './csv.ts';
 
 type Kind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate';
 type Row = { id: string; upload_id: string; row_number: number; row_type: Kind; status: string;
@@ -143,12 +143,18 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
       const raw = data.get(row.id)!;
       const legacyId = row.legacy_id ?? first(raw, 'Employee_ID', 'Legacy_ID');
       create(row, 'employee', legacyId, () => {
-        const e = createEmployee(db, { fullName: first(raw, 'Employee_Name'), costCentre: 'production', hireDate: first(raw, 'Hire_Date') || who.today }, who);
+        const centre = first(raw, 'Cost_Centre').toLowerCase() || 'production';
+        const e = createEmployee(db, { fullName: first(raw, 'Employee_Name'), costCentre: centre, hireDate: first(raw, 'Hire_Date') || who.today }, who);
         const rate = row.rate_cents;
         const payType = first(raw, 'Pay_Type').toLowerCase() || (rate ? 'daily' : 'piece');
         const daily = payType === 'daily' || payType === 'mixed';
+        const monthlyRate = first(raw, 'Monthly_Rate');
+        const group = first(raw, 'Pay_Group') || (payType === 'monthly' ? 'SEMI_MONTHLY' : daily ? 'SEMI_DAILY' : 'WEEKLY_PIECE');
+        const workweek = Number(first(raw, 'Workweek_Days') || 6);
         addPayProfile(db, e.id, { effectiveFrom: e.hireDate, payType, ...(daily ? { dailyRateCents: rate } : {}),
-          payGroup: daily ? 'SEMI_DAILY' : 'WEEKLY_PIECE', workweekDays: 6, isMwe: false, reason: 'Confirmed legacy import pay profile' }, who);
+          ...(payType === 'monthly' ? { monthlyRateCents: rateFromPesos(monthlyRate) } : {}),
+          payGroup: group, workweekDays: workweek, isMwe: ['1', 'true', 'yes'].includes(first(raw, 'Is_MWE').toLowerCase()),
+          reason: 'Confirmed legacy import pay profile' }, who);
         return e.id;
       });
     }
