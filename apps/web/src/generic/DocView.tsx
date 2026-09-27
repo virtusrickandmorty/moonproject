@@ -12,7 +12,8 @@ import { fieldsOf, toValues } from './fields.ts';
 
 /** A module's own view parts: more detail under "What this did", and its own cancel (e.g. a quick sale and its payment). */
 /** `noEdit` hides Edit where a cancel and a new document is the way to correct (a payroll's figures depend on the state it was worked out on). */
-export interface ViewParts { extra?: (d: DocDetail) => ReactNode; cancel?: (id: string, reason: string, key: string) => Promise<unknown>; noEdit?: boolean }
+/** `cancelNote` is shown in the cancel dialog (a payroll whose month was already remitted, D6). */
+export interface ViewParts { extra?: (d: DocDetail) => ReactNode; cancel?: (id: string, reason: string, key: string) => Promise<unknown>; noEdit?: boolean; cancelNote?: (d: DocDetail) => ReactNode }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo; id: string; recorded: boolean; parts?: ViewParts }) {
@@ -85,7 +86,9 @@ export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo;
           danger
           onConfirm={cancel}
           onClose={() => setCancelKey(null)}
-        />
+        >
+          {parts.cancelNote?.(d)}
+        </ReasonDialog>
       )}
     </div>
   );

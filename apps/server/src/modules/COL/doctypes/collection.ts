@@ -20,6 +20,7 @@ import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
 import { jobOrderRef, jobOrdersOf, joLedger, joMoney, settleLines } from '../../JO/public.ts';
 import { saleOpenCents, saleRef } from '../../QS/public.ts';
+import { bookletIssue } from '../../TAX/public.ts';
 import { MAX_CENTS, cashPlaceIssues, insertTenders, loadTenders, sumCents, takenOutBy, tenderInput, tenderToInput, withNames, type Tender } from '../ledger.ts';
 
 /** Largest difference that may go to cash short and over instead of a deposit or an unpaid balance (D4.9). */
@@ -120,6 +121,8 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       const how = used.status === 'cancelled' ? ' (cancelled)' : '';
       add('error', 'crNumber', 'CR_USED', `CR ${doc.crNumber} is already used on ${used.number}${how}. Each CR number is used once: write this payment on a new CR and keep all copies of a spoiled one.`);
     }
+    const booklet = bookletIssue(ctx.db, 'CR', doc.crNumber, 'crNumber');
+    if (booklet) issues.push(booklet);
     issues.push(...cashPlaceIssues(ctx.db, doc.tenders, 'Pick where the money went.'));
     if (doc.totalCents > MAX_CENTS) add('error', 'tenders', 'TOO_BIG', 'The amount is over ₱100 million. Please check the amounts.');
 
