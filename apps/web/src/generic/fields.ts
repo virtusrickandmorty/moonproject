@@ -12,7 +12,7 @@ export interface FieldSpec { name: string; label: string; kind: FieldKind; requi
 /** What the user typed, per field; booleans are 'true' or ''. */
 export type Values = Record<string, string>;
 
-const LABELS: Record<string, string> = { fromCashPlaceId: 'Where did the money come from?', toCashPlaceId: 'Where did the money go?', cashPlaceId: 'Which cash place?' };
+const LABELS: Record<string, string> = { fromCashPlaceId: 'Where did the money come from?', toCashPlaceId: 'Where did the money go?', cashPlaceId: 'Which cash place?', crNumber: 'CR number' };
 
 export function humanize(name: string): string {
   const words = name.replace(/(CashPlaceId|Cents|Id)$/, '').replace(/([A-Z])/g, ' $1').trim().toLowerCase();
@@ -66,7 +66,8 @@ export function toValues(fields: FieldSpec[], input: Record<string, unknown>): V
   const values: Values = {};
   for (const f of fields) {
     const v = input[f.name];
-    if (v !== undefined && v !== null) values[f.name] = f.kind === 'money' ? formatPesos(v as number) : f.kind === 'boolean' ? (v ? 'true' : '') : String(v);
+    if (v === undefined || v === null || f.kind === 'unsupported') continue; // lists and groups need the module's own screen
+    values[f.name] = f.kind === 'money' ? formatPesos(v as number) : f.kind === 'boolean' ? (v ? 'true' : '') : String(v);
   }
   return values;
 }

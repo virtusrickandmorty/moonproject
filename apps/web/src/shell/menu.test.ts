@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMenu, type MenuItem } from './menu.ts';
+import { buildMenu, labelOf, type MenuItem } from './menu.ts';
 import type { DocTypeInfo } from '../api.ts';
 
 describe('menu (PLAN H1)', () => {
@@ -10,5 +10,11 @@ describe('menu (PLAN H1)', () => {
     const labels = (perms: string[]) => buildMenu(types, new Set(perms), screens).map((g) => `${g.group}: ${g.items.map((i) => i.label).join(', ')}`);
     expect(labels([])).toEqual(['Overview: Home', 'Sales: Job Orders', 'Money: Fund Transfers, Owner Money']);
     expect(labels(['sec.users.manage']).at(-1)).toBe('Admin: Users');
+  });
+
+  it('finds a quick sale under its own name, though its document title is Invoice Record', () => {
+    const types = [{ key: 'jo.invoice_record', module: 'JO', title: 'Invoice Record' }, { key: 'qs.sale', module: 'QS', title: 'Invoice Record' }] as DocTypeInfo[];
+    expect(buildMenu(types, new Set(), []).map((g) => g.items.map((i) => i.label))).toEqual([['Invoice Records', 'Quick Sales']]);
+    expect(types.map(labelOf)).toEqual(['Invoice Record', 'Quick Sale']);
   });
 });
