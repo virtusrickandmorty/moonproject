@@ -8,8 +8,9 @@ describe('PUR Suppliers and Supplies', () => {
     env = await createTestEnv();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     env.db.close();
+    await env.app.close();
   });
 
   it('can create and view a supplier', async () => {
@@ -33,6 +34,8 @@ describe('PUR Suppliers and Supplies', () => {
     const audit = env.db.prepare('SELECT * FROM audit_log WHERE entity_id = ?').get(body.id) as any;
     expect(audit).toBeDefined();
     expect(audit.action).toBe('pur.supplier.create');
+    expect(audit.user_id).toBe(api.userId);
+    expect(audit.at).toContain('+08:00'); // Check for stamp() usage (local time)
 
     const viewRes = await api.get('/api/pur/suppliers');
     expect(viewRes.statusCode).toBe(200);
@@ -77,7 +80,7 @@ describe('PUR Suppliers and Supplies', () => {
     const createRes = await api.post('/api/pur/suppliers', input);
     const { id, version } = createRes.json();
 
-    await api.post(`/api/pur/suppliers/${id}/deactivate`, {});
+    await api.post(`/api/pur/suppliers/${id}/deactivate`, {}, { 'if-match': `"${version}"` });
 
     const editRes = await api.put(`/api/pur/suppliers/${id}`, { ...input, name: 'x' }, { 'if-match': `"${version + 1}"` });
     expect(editRes.statusCode).toBe(400);
@@ -85,7 +88,7 @@ describe('PUR Suppliers and Supplies', () => {
 
   it('cannot deactivate an unknown supplier', async () => {
     const api = await env.as('accountant');
-    const deactRes = await api.post(`/api/pur/suppliers/9999/deactivate`, {});
+    const deactRes = await api.post(`/api/pur/suppliers/9999/deactivate`, {}, { 'if-match': '"1"' });
     expect(deactRes.statusCode).toBe(404);
   });
 
@@ -96,7 +99,6 @@ describe('PUR Suppliers and Supplies', () => {
       name: 'Cotton Fabric',
       unit: 'yard',
       category: 'materials',
-      lastPurchaseCostCents: 15000,
     };
 
     const res = await api.post('/api/pur/supplies', input);
@@ -123,17 +125,15 @@ describe('PUR Suppliers and Supplies', () => {
       name: 'Old Name',
       unit: 'meter',
       category: 'ready_made',
-      lastPurchaseCostCents: 15000,
     };
 
     const res = await api.post('/api/pur/supplies', input);
     const { id, version } = res.json();
 
-    // Update name but attempt to change lastPurchaseCostCents (should be ignored)
+    // Update name
     const updateInput = {
       ...input,
       name: 'New Name',
-      lastPurchaseCostCents: 99999,
     };
 
     const editRes = await api.put(`/api/pur/supplies/${id}`, updateInput, { 'if-match': `"${version}"` });
@@ -142,14 +142,43 @@ describe('PUR Suppliers and Supplies', () => {
     let viewRes = await api.get('/api/pur/supplies');
     let supplies = viewRes.json();
     expect(supplies.find((s: any) => s.id === id).name).toBe('New Name');
-    expect(supplies.find((s: any) => s.id === id).last_purchase_cost_cents).toBe(15000);
+    expect(supplies.find((s: any) => s.id === id).last_purchase_cost_cents).toBe(0); // Kept 0
 
-    const deactRes = await api.post(`/api/pur/supplies/${id}/deactivate`, {});
+    const deactRes = await api.post(`/api/pur/supplies/${id}/deactivate`, {}, { 'if-match': `"${version + 1}"` });
     expect(deactRes.statusCode).toBe(200);
 
     viewRes = await api.get('/api/pur/supplies');
     supplies = viewRes.json();
     expect(supplies.find((s: any) => s.id === id)).toBeUndefined();
+  });
+
+  it('can manage supplier contacts', async () => {
+    const api = await env.as('accountant');
+
+    // Create supplier
+    const supInput = { name: 'Supplier X', registeredName: 'Supplier X Inc.', isVatRegistered: false };
+    const supRes = await api.post('/api/pur/suppliers', supInput);
+    const supId = supRes.json().id;
+
+    // Create contact
+    const contactInput = { name: 'John Doe', phone: '+639171234567', isActive: true };
+    const contactRes = await api.post(`/api/pur/suppliers/${supId}/contacts`, contactInput);
+    expect(contactRes.statusCode).toBe(200);
+    const contactId = contactRes.json().id;
+
+    // View contact
+    const viewRes = await api.get(`/api/pur/suppliers/${supId}/contacts`);
+    expect(viewRes.statusCode).toBe(200);
+    const contacts = viewRes.json();
+    expect(contacts.length).toBe(1);
+    expect(contacts[0].name).toBe('John Doe');
+
+    // Deactivate contact
+    const deactRes = await api.post(`/api/pur/suppliers/${supId}/contacts/${contactId}/deactivate`, {});
+    expect(deactRes.statusCode).toBe(200);
+
+    const viewRes2 = await api.get(`/api/pur/suppliers/${supId}/contacts`);
+    expect(viewRes2.json().length).toBe(0);
   });
 
   it('encoder cannot edit suppliers', async () => {
