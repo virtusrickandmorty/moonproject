@@ -36,6 +36,18 @@ export function addHoliday(db: Db, raw: unknown, who: Who): Holiday {
   const v = holidayInput.parse(raw);
   const taken = holidaysBetween(db, v.date, v.date)[0];
   if (taken) throw conflict('HOLIDAY_TAKEN', `${v.date} is already ${taken.name}. Switch that one off first.`);
+  // A holiday added late (OWN-29) must not leave ordinary days on its date, or payroll would pay them as ordinary days.
+  const ordinary = db
+    .prepare(`SELECT e.full_name FROM (${LATEST}) a JOIN emp_employees e ON e.id = a.employee_id WHERE a.work_date = ? AND a.status NOT IN ('rest_day','rest_day_worked') ORDER BY e.full_name`)
+    .pluck()
+    .all(v.date) as string[];
+  if (ordinary.length) {
+    throw conflict(
+      'ATTENDANCE_TYPED',
+      `Attendance on ${v.date} is typed as an ordinary day for ${ordinary.join(', ')}. Mark those days Rest day or Rest day worked first, add the holiday, then mark them Holiday worked or Holiday off.`,
+      { people: ordinary },
+    );
+  }
   const id = Number(
     db.prepare('INSERT INTO emp_holidays (holiday_date, name, kind, source, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)').run(v.date, v.name, v.kind, v.source, who.at, who.userId).lastInsertRowid,
   );
