@@ -23,6 +23,10 @@ import { AdvanceForm } from './CA/AdvanceForm.tsx';
 import { NotificationsPage } from './DASH/Home.tsx';
 import { StatMonthPage, StatMonths, remittanceView } from './STAT/Statutory.tsx';
 import { RemittanceForm } from './STAT/RemittanceForm.tsx';
+import { CashAccounts } from './CASH/CashAccounts.tsx';
+import { CashBook } from './CASH/CashBook.tsx';
+import { CashCountForm } from './CASH/CashCountForm.tsx';
+import { cashCountView } from './CASH/CashCountView.tsx';
 
 /**
  * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
@@ -30,6 +34,8 @@ import { RemittanceForm } from './STAT/RemittanceForm.tsx';
  */
 export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo[]; params?: Record<string, string> }>> = {
   '/dash/notifications': NotificationsPage,
+  '/cash/accounts': CashAccounts,
+  '/cash/book': CashBook,
   '/prd/board': ProductionBoard,
   '/prd/rates': PieceRates,
   '/emp/employees': Employees,
@@ -42,6 +48,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
 };
 
 export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: FormMode }>> = {
+  'cash.count': CashCountForm,
   'col.collection': CollectionForm,
   'col.refund': RefundForm,
   'col.deposit_transfer': DepositTransferForm,
@@ -53,4 +60,4 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'stat.remittance': RemittanceForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView };
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView };
