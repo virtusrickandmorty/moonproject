@@ -7,7 +7,8 @@ import { clockGuard } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { requireStepUp } from '../../engine/security/sessions.ts';
 import { booklet, bookletUsage, listBooklets, registerBooklet, setBookletActive, type Who } from './booklets.ts';
-import { salesRegister, vatSummary, withholdingReceivedRegister, type RegisterRow } from './registers.ts';
+import { salesRegister, withholdingReceivedRegister, type RegisterRow } from './registers.ts';
+import { vatSummary } from './vat.ts';
 import { quarterOf, taxDeadlines, type Quarter } from './calendar.ts';
 
 export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {

@@ -68,7 +68,7 @@ describe('tax calendar', () => {
 describe('VAT of a quarter', () => {
   const account = (code: string) => env.db.prepare('SELECT id FROM accounts WHERE code = ?').pluck().get(code) as number;
 
-  it('is output VAT less VAT withheld and input VAT carried over; the 2307 still to come is shown', async () => {
+  it('is output VAT less input VAT carried over; VAT withheld still waiting for its 2307 is shown, not claimed', async () => {
     const c = seedCustomers(env.db, encoder.userId);
     // A government buyer: ₱11,200.00 (VAT ₱1,200.00), paid as ₱10,600.00 cash, 1% CWT ₱100.00 and 5% VAT withheld ₱500.00.
     const sale = await encoder.post('/api/qs/sales', {
@@ -85,13 +85,14 @@ describe('VAT of a quarter', () => {
     expect(carried.statusCode).toBe(200);
 
     const now = (await accountant.get('/api/tax/vat-summary')).json();
+    // The ₱500.00 withheld waits for its 2307, so it is not claimed yet.
     expect(now).toEqual({
-      year: 2026, quarter: 3, from: '2026-07-01', to: '2026-09-30', returnDue: '2026-10-26',
-      outputVatCents: 120_000, inputVatCents: 0, vatWithheldCents: 50_000, carryOverCents: 30_000, vatWithheldPendingCents: 50_000,
-      payableCents: 40_000, carryForwardCents: 0,
+      year: 2026, quarter: 3, from: '2026-07-01', to: '2026-09-30', returnDue: '2026-10-26', close: null,
+      outputVatCents: 120_000, inputVatCents: 0, vatWithheldCents: 0, carryOverCents: 30_000, vatWithheldPendingCents: 50_000,
+      earlierOutputVatCents: 0, earlierInputVatCents: 0, payableCents: 90_000, carryForwardCents: 0,
     });
-    // Q2 had no sales: the carry-over is its own input VAT, not yet brought forward.
-    expect((await accountant.get('/api/tax/vat-summary?year=2026&quarter=2')).json()).toMatchObject({ outputVatCents: 0, carryOverCents: 0, payableCents: 0, carryForwardCents: 0, returnDue: '2026-07-27' });
+    // Q2 had no sales: its ₱300.00 of carry-over goes forward again.
+    expect((await accountant.get('/api/tax/vat-summary?year=2026&quarter=2')).json()).toMatchObject({ outputVatCents: 0, carryOverCents: 30_000, payableCents: 0, carryForwardCents: 30_000, returnDue: '2026-07-27' });
     expect((await accountant.get('/api/tax/vat-summary?year=2026&quarter=5')).json().code).toBe('BAD_QUARTER');
     expect((await encoder.get('/api/tax/vat-summary')).statusCode).toBe(403);
   });

@@ -2,16 +2,14 @@
  * Tax registers (PLAN E12, G "Tax", L6), read from the ledger so each one ties to its GL account by construction:
  * one row per journal that touches the account in the period. A cancelled document's reversal is its own negative row
  * on the cancel date, the way it lands in that period's return, and a journal voucher on the account shows up as an
- * adjustment. Each row names the document, the number on the BIR paper form (sales invoice or CR, from
- * documents.external_number) and the customer's registered name and TIN.
+ * adjustment; the quarterly VAT close is left out. Each row names the document, the number on the BIR paper form
+ * (sales invoice or CR, from documents.external_number) and the customer's registered name and TIN.
  *   Sales register (2301 output VAT): VATable sales = the journal's revenue credits, VAT, total.
  *   Withholding received (1410 CWT and 1404 VAT withheld, the customers' 2307s): ATC and whether the 2307 is in hand.
- *   VAT summary of a quarter: output, input, withheld and carried-over VAT, and what is payable or carried forward.
  */
 import type { Db } from '../../platform/db/driver.ts';
 import { customerRef, customerTaxInfo } from '../CUS/public.ts';
 import { withholdingOf } from '../COL/public.ts';
-import { addDays, quarterRange, vatReturnDue, type Quarter } from './calendar.ts';
 
 export interface RegisterRow {
   journalId: string; journalNumber: string; date: string; posting: 'original' | 'reversal';
@@ -25,6 +23,9 @@ interface Touch {
   journalId: string; journalNumber: string; date: string; posting: 'original' | 'reversal'; sourceType: string; sourceId: string;
   docType: string | null; documentNumber: string | null; formNumber: string | null; docStatus: 'posted' | 'cancelled' | null; customerId: string | null; customers: number;
 }
+
+/** The quarterly VAT close moves balances between VAT accounts; it is not a sale or a 2307, so no register lists it. */
+const NOT_A_CLOSE = `NOT EXISTS (SELECT 1 FROM tax_vat_closes c WHERE c.document_id = j.source_id AND j.source_type = 'document')`;
 
 /**
  * Journals in [from, to] with a line on one of `roles`, with per-journal sums of `sums` (column → SQL over l and a).
@@ -41,7 +42,7 @@ function touches<K extends string>(db: Db, roles: string[], sums: Record<K, stri
          COUNT(DISTINCT CASE WHEN a.role_key IN (${marks}) THEN l.party_id END) AS customers, ${cols}
        FROM journals j JOIN journal_lines l ON l.journal_id = j.id JOIN accounts a ON a.id = l.account_id
        LEFT JOIN documents d ON d.id = j.source_id AND j.source_type IN ('document', 'document-cancel')
-       WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ?
+       WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ? AND ${NOT_A_CLOSE}
          AND EXISTS (SELECT 1 FROM journal_lines x JOIN accounts xa ON xa.id = x.account_id WHERE x.journal_id = j.id AND xa.role_key IN (${marks}))
        GROUP BY j.id ORDER BY j.business_date, j.number`,
     )
@@ -64,7 +65,7 @@ function movement(db: Db, roles: string[], from: string, to: string, side: 'cred
   return db
     .prepare(
       `SELECT COALESCE(SUM(${sign}), 0) FROM journal_lines l JOIN journals j ON j.id = l.journal_id JOIN accounts a ON a.id = l.account_id
-       WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ? AND a.role_key IN (${roles.map(() => '?').join(', ')})`,
+       WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ? AND ${NOT_A_CLOSE} AND a.role_key IN (${roles.map(() => '?').join(', ')})`,
     )
     .pluck()
     .get(from, to, ...roles) as number;
@@ -106,27 +107,3 @@ export function withholdingReceivedRegister(db: Db, from: string, to: string) {
   };
 }
 
-/**
- * VAT for one quarter (the accountant home's "VAT this quarter", PLAN E13; the figures of the quarterly VAT close,
- * research §3.8 R46): output VAT less input VAT, the VAT government buyers withheld and the input VAT carried over from
- * earlier quarters. Positive: payable with the 2550Q; negative: carried over to the next quarter. Read from the ledger,
- * so it is an estimate until the quarter's VAT close is posted. VAT withheld whose 2307 is not in hand yet is shown on
- * its own: it may be claimed only with the certificate.
- */
-export function vatSummary(db: Db, year: number, quarter: Quarter) {
-  const { from, to } = quarterRange(year, quarter);
-  const outputVatCents = movement(db, ['OUTPUT_VAT'], from, to, 'credit');
-  const inputVatCents = movement(db, ['INPUT_VAT'], from, to, 'debit');
-  const vatWithheldCents = movement(db, ['VAT_WITHHELD'], from, to, 'debit');
-  const carryOverCents = movement(db, ['INPUT_VAT_CARRYOVER'], '0000-01-01', addDays(from, -1), 'debit');
-  const pending = withholdingReceivedRegister(db, from, to).rows.filter((r) => r.posting === 'original' && r.documentStatus === 'posted' && r.certificate === 'pending');
-  const netCents = outputVatCents - inputVatCents - vatWithheldCents - carryOverCents;
-  return {
-    year, quarter, from, to, returnDue: vatReturnDue(db, year, quarter),
-    outputVatCents, inputVatCents, vatWithheldCents, carryOverCents,
-    /** VAT withheld on collections still waiting for their 2307, already inside vatWithheldCents. */
-    vatWithheldPendingCents: total(pending, (r) => r.vatWithheldCents),
-    payableCents: Math.max(netCents, 0),
-    carryForwardCents: Math.max(-netCents, 0),
-  };
-}
