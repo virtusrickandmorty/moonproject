@@ -5,22 +5,17 @@ import { appendAudit } from '../../engine/audit.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { AppError, conflict, newId, notFound } from '@moonproject/shared';
-import { chartInput, contactInput, customerInput, customerUpdate, groupInput, measurements, mergeInput, normalizePhone, personInput, personUpdate, phoneInput, sizeInput } from './schemas.ts';
-import { chartResponse, hundredthsColumn, toHundredthsInch } from './measurements.ts';
+import { contactInput, customerUpdate, groupInput, mergeInput, normalizePhone, personUpdate, phoneInput, sizeInput } from './schemas.ts';
+import { chartResponse } from './measurements.ts';
+import { auditChanges, customerFields, personalCustomerFields, validateParent, validateGroup,
+  createCustomer, createGroup, createWearer, createMeasurement } from './create.ts';
 
 type Row = Record<string, unknown>;
-const customerFields: Record<string, string> = {
-  kind: 'kind', displayName: 'display_name', registeredName: 'registered_name', tin: 'tin',
-  isVatRegistered: 'is_vat_registered', withholdingProfile: 'withholding_profile',
-  billingAddress: 'billing_address', email: 'email', emailConsent: 'email_consent',
-  creditTermsDays: 'credit_terms_days', parentCustomerId: 'parent_customer_id', notes: 'notes',
-};
 const personFields: Record<string, string> = {
   fullName: 'full_name', groupId: 'group_id', nickname: 'nickname',
   defaultJerseyName: 'default_jersey_name', defaultJerseyNumber: 'default_jersey_number',
   gender: 'gender', birthday: 'birthday',
 };
-const personalCustomerFields = new Set(['displayName', 'registeredName', 'tin', 'billingAddress', 'email', 'notes']);
 const personalPersonFields = new Set(['fullName', 'nickname', 'defaultJerseyName', 'defaultJerseyNumber', 'gender', 'birthday']);
 
 function id(req: FastifyRequest): string { return (req.params as { id: string }).id; }
@@ -53,37 +48,8 @@ function updated(db: Db, table: string, rowId: string, fields: Record<string, un
   const values = pairs.map(([key, value]) => key === 'email' && typeof value === 'string' ? value.toLowerCase() : typeof value === 'boolean' ? Number(value) : value);
   db.prepare(`UPDATE ${table} SET ${assignments}, version = version + 1, updated_at = ? WHERE id = ?`).run(...values, at, rowId);
 }
-function auditChanges(before: Row, after: Row, fields: Record<string, unknown>, map: Record<string, string>, personal: Set<string>): Record<string, unknown> {
-  const names = Object.keys(fields).filter((key) => fields[key] !== undefined);
-  const changes: Record<string, { before: unknown; after: unknown }> = {};
-  for (const key of names) {
-    if (!personal.has(key) && before[map[key]!] !== after[map[key]!]) {
-      changes[key] = { before: before[map[key]!] ?? null, after: after[map[key]!] ?? null };
-    }
-  }
-  return { fields: names, changes };
-}
 function audit(db: Db, req: FastifyRequest, at: string, action: string, kind: string, rowId: string, data: Record<string, unknown> = {}): void {
   appendAudit(db, { at, userId: currentUser(req).userId, action, entityType: kind, entityId: rowId, data });
-}
-function validateParent(db: Db, childId: string | null, parentId: string | null): void {
-  if (!parentId) return;
-  if (parentId === childId) throw conflict('PARENT_CYCLE', 'A customer cannot be its own parent.');
-  let cursor: string | null = parentId;
-  const seen = new Set<string>();
-  while (cursor) {
-    if (seen.has(cursor) || cursor === childId) throw conflict('PARENT_CYCLE', 'This parent would make a loop in the customer list.');
-    seen.add(cursor);
-    const row = get(db, 'cus_customers', cursor);
-    active(row);
-    cursor = row.parent_customer_id as string | null;
-  }
-}
-function validateGroup(db: Db, customerId: string, groupId: string | null | undefined): void {
-  if (!groupId) return;
-  const row = get(db, 'cus_groups', groupId);
-  active(row);
-  if (row.customer_id !== customerId) throw conflict('WRONG_GROUP', 'Choose a group belonging to this customer.');
 }
 function duplicates(db: Db, customerId: string | null, name: string, email: string | null): { id: string; reason: string }[] {
   const rows = db.prepare('SELECT id, display_name, email FROM cus_customers WHERE is_active = 1 AND id <> coalesce(?, \'\')').all(customerId) as { id: string; display_name: string; email: string | null }[];
@@ -129,24 +95,8 @@ export function cusRoutes(app: FastifyInstance, deps: AppDeps): void {
     return db.prepare(`SELECT * FROM cus_customers WHERE display_name LIKE ? OR code LIKE ? ORDER BY display_name, id LIMIT ? OFFSET ?`).all(`%${search}%`, `%${search}%`, limit, offset);
   });
   app.post('/api/cus/customers', { config: { permission: 'cus.manage' } }, async (req) => {
-    const input = customerInput.parse(req.body);
-    const rowId = newId(), at = timestamp();
-    return db.transaction(() => {
-      validateParent(db, rowId, input.parentCustomerId ?? null);
-      const seq = db.prepare("UPDATE cus_sequences SET next_value = next_value + 1 WHERE key = 'customer' RETURNING next_value - 1 AS n").get() as { n: number };
-      const code = `CUS-${String(seq.n).padStart(5, '0')}`;
-      db.prepare(`INSERT INTO cus_customers (id, code, kind, display_name, registered_name, tin, is_vat_registered,
-        withholding_profile, billing_address, email, email_consent, credit_terms_days, parent_customer_id,
-        legacy_id, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-        rowId, code, input.kind, input.displayName, input.registeredName ?? null, input.tin ?? null,
-        Number(input.isVatRegistered ?? false), input.withholdingProfile ?? 'none', input.billingAddress ?? null,
-        input.email?.toLowerCase() ?? null, Number(input.emailConsent ?? false), input.creditTermsDays ?? 0,
-        input.parentCustomerId ?? null, null, input.notes ?? null, at, at,
-      );
-      const created = get(db, 'cus_customers', rowId);
-      audit(db, req, at, 'cus.customer.create', 'cus_customer', rowId, auditChanges({}, created, input, customerFields, personalCustomerFields));
-      return { ...get(db, 'cus_customers', rowId), duplicateWarnings: customerWarnings(db, rowId) };
-    }).immediate();
+    const created = createCustomer(db, req.body, { userId: currentUser(req).userId, at: timestamp(), today: today(clock) });
+    return { ...get(db, 'cus_customers', created.id), duplicateWarnings: customerWarnings(db, created.id) };
   });
   app.get('/api/cus/customers/:id', { config: { permission: 'cus.view' } }, async (req) => ({
     ...get(db, 'cus_customers', id(req)),
@@ -217,15 +167,9 @@ export function cusRoutes(app: FastifyInstance, deps: AppDeps): void {
   }
 
   app.post('/api/cus/customers/:id/groups', { config: { permission: 'cus.manage' } }, async (req) => {
-    const input = groupInput.parse(req.body), customerId = id(req), rowId = newId(), at = timestamp();
-    return db.transaction(() => {
-      active(get(db, 'cus_customers', customerId));
-      const duplicate = db.prepare('SELECT id FROM cus_groups WHERE customer_id = ? AND name = ? COLLATE NOCASE AND is_active = 1').get(customerId, input.name);
-      if (duplicate) throw conflict('GROUP_EXISTS', 'This customer already has an active group with that name.');
-      db.prepare('INSERT INTO cus_groups (id,customer_id,name,created_at,updated_at) VALUES (?,?,?,?,?)').run(rowId, customerId, input.name, at, at);
-      audit(db, req, at, 'cus.group.create', 'cus_group', rowId, { customerId, fields: ['name'] });
-      return get(db, 'cus_groups', rowId);
-    }).immediate();
+    const customerId = id(req);
+    const created = createGroup(db, customerId, req.body, { userId: currentUser(req).userId, at: timestamp(), today: today(clock) });
+    return get(db, 'cus_groups', created.id);
   });
   app.put('/api/cus/groups/:id', { config: { permission: 'cus.manage' } }, async (req) => {
     const input = groupInput.parse(req.body), rowId = id(req), at = timestamp();
@@ -251,18 +195,9 @@ export function cusRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   app.post('/api/cus/customers/:id/people', { config: { permission: 'cus.manage' } }, async (req) => {
-    const input = personInput.parse(req.body), customerId = id(req), rowId = newId(), at = timestamp();
-    return db.transaction(() => {
-      active(get(db, 'cus_customers', customerId)); validateGroup(db, customerId, input.groupId);
-      db.prepare(`INSERT INTO cus_people (id,customer_id,group_id,full_name,nickname,default_jersey_name,
-        default_jersey_number,gender,birthday,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(
-        rowId, customerId, input.groupId ?? null, input.fullName, input.nickname ?? null,
-        input.defaultJerseyName ?? null, input.defaultJerseyNumber ?? null, input.gender ?? null,
-        input.birthday ?? null, at, at,
-      );
-      audit(db, req, at, 'cus.person.create', 'cus_person', rowId, { customerId, groupId: input.groupId ?? null });
-      return get(db, 'cus_people', rowId);
-    }).immediate();
+    const customerId = id(req);
+    const created = createWearer(db, customerId, req.body, { userId: currentUser(req).userId, at: timestamp(), today: today(clock) });
+    return get(db, 'cus_people', created.id);
   });
   app.put('/api/cus/people/:id', { config: { permission: 'cus.manage' } }, async (req) => {
     const input = personUpdate.parse(req.body), rowId = id(req), at = timestamp();
@@ -312,33 +247,7 @@ export function cusRoutes(app: FastifyInstance, deps: AppDeps): void {
     return (db.prepare('SELECT * FROM cus_measure_charts WHERE person_id = ? ORDER BY revision_no DESC').all(id(req)) as Row[]).map(chartResponse);
   });
   app.post('/api/cus/people/:id/measurements', { config: { permission: 'cus.measure' } }, async (req) => {
-    const input = chartInput.parse(req.body), personId = id(req), rowId = newId(), at = timestamp();
-    return db.transaction(() => {
-      active(get(db, 'cus_people', personId));
-      const prior = db.prepare('SELECT id,revision_no FROM cus_measure_charts WHERE person_id = ? ORDER BY revision_no DESC LIMIT 1').get(personId) as { id: string; revision_no: number } | undefined;
-      if (prior && !input.reason) throw new AppError('REVISION_REASON', 'Give a reason for the new measurement revision.', 400);
-      if (input.sizeMode === 'preset' && !input.upperSize && !input.lowerSize) throw new AppError('SIZE_REQUIRED', 'Choose an upper or lower size.', 400);
-      if (input.sizeMode === 'measured' && !measurements.some((m) => input.values[m] != null)) throw new AppError('MEASUREMENT_REQUIRED', 'Enter at least one measurement.', 400);
-      for (const size of [input.upperSize, input.lowerSize]) if (size) active(get(db, 'cus_sizes', size));
-      const unit = input.unit ?? 'inch';
-      const storedValues = measurements.map((m) => input.values[m] == null ? null : toHundredthsInch(input.values[m], unit));
-      const rev = (prior?.revision_no ?? 0) + 1;
-      if (prior) db.prepare("UPDATE cus_measure_charts SET status = 'superseded' WHERE id = ? AND status = 'active'").run(prior.id);
-      const cols = measurements.map(hundredthsColumn);
-      db.prepare(`INSERT INTO cus_measure_charts (id,person_id,revision_no,status,size_mode,upper_size,lower_size,unit,${cols.join(',')},remarks,measured_by,measured_on,reason,supersedes_id)
-        VALUES (${Array(8 + cols.length + 5).fill('?').join(',')})`).run(
-        rowId, personId, rev, 'active', input.sizeMode, input.upperSize ?? null, input.lowerSize ?? null, unit,
-        ...storedValues, input.remarks ?? null, currentUser(req).userId,
-        today(clock), input.reason ?? null, prior?.id ?? null,
-      );
-      audit(db, req, at, 'cus.measure.revise', 'cus_measure_chart', rowId, { personId, revision: rev, supersedesId: prior?.id ?? null });
-      const warnings = measurements.filter((m, i) => {
-        const value = storedValues[i];
-        const threshold = m === 'sleeveHole' ? 2500 : 6000;
-        return value != null && value > threshold;
-      }).map((m) => ({ field: m, message: `Check ${m}: did you enter an extra digit or mean a decimal value?` }));
-      return { ...chartResponse(get(db, 'cus_measure_charts', rowId)), warnings };
-    }).immediate();
+    return createMeasurement(db, id(req), req.body, { userId: currentUser(req).userId, at: timestamp(), today: today(clock) });
   });
   app.post('/api/cus/measurements/:id/deactivate', { config: { permission: 'cus.measure' } }, async (req) => {
     const rowId = id(req), at = timestamp();
