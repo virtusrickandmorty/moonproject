@@ -2,10 +2,10 @@
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { openDb, type Db } from '../src/platform/db/driver.ts';
 import { fixedClock } from '../src/platform/clock.ts';
-import { buildApp, type AppDeps, type BuildOptions } from '../src/app.ts';
+import { buildApp, type AppDeps } from '../src/app.ts';
 import { loadModules } from '../src/modules/load.ts';
 import { hashPassword } from '../src/engine/security/passwords.ts';
-import { PRACTICE_SESSION_COOKIE, SESSION_COOKIE } from '../src/engine/security/sessions.ts';
+import { SESSION_COOKIE } from '../src/engine/security/sessions.ts';
 import { newId, type RoleKey } from '@moonproject/shared';
 
 export const TEST_SCRYPT_N = 2 ** 10;
@@ -19,11 +19,10 @@ export interface TestEnv {
   as(role: RoleKey | RoleKey[]): Promise<Client>;
 }
 
-/** `practice` builds the practice shop's app; `practiceShop` gives the real shop a handle on one (PLAN C8). */
-export async function createTestEnv(at = '2026-09-28T02:00:00Z', extra: Pick<BuildOptions, 'practice' | 'practiceShop'> = {}): Promise<TestEnv> {
+export async function createTestEnv(at = '2026-09-28T02:00:00Z'): Promise<TestEnv> {
   const db = openDb(':memory:');
   const clock = fixedClock(at);
-  const { app, deps } = buildApp({ db, clock, modules: await loadModules(), config: { scryptN: TEST_SCRYPT_N }, ...extra });
+  const { app, deps } = buildApp({ db, clock, modules: await loadModules(), config: { scryptN: TEST_SCRYPT_N } });
   await app.ready();
   const env: TestEnv = {
     app,
@@ -67,12 +66,12 @@ export interface Client {
 export async function login(app: FastifyInstance, username: string, password: string): Promise<Client> {
   const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username, password } });
   if (res.statusCode !== 200) throw new Error(`login failed: ${res.body}`);
-  const cookie = res.cookies.find((c) => c.name === SESSION_COOKIE || c.name === PRACTICE_SESSION_COOKIE)!;
-  return clientFor(app, cookie.value, res.json().csrfToken, cookie.name);
+  const cookie = res.cookies.find((c) => c.name === SESSION_COOKIE)!;
+  return clientFor(app, cookie.value, res.json().csrfToken);
 }
 
-export async function clientFor(app: FastifyInstance, token: string, csrf: string, cookieName = SESSION_COOKIE): Promise<Client> {
-  const cookies = { [cookieName]: token };
+export async function clientFor(app: FastifyInstance, token: string, csrf: string): Promise<Client> {
+  const cookies = { [SESSION_COOKIE]: token };
   const me = await app.inject({ method: 'GET', url: '/api/auth/me', cookies });
   const send = (method: 'POST' | 'PUT') => (url: string, body?: unknown, headers: Record<string, string> = {}) =>
     app.inject({ method, url, cookies, payload: body as object, headers: { 'x-csrf-token': csrf, ...headers } });

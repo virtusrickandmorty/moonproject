@@ -88,8 +88,8 @@ describe('backup screen rules', () => {
 
   it('the menu shows Backups under Admin with the permission of the status route', () => {
     const admin = (permissions: string[]) => buildMenu([], new Set(permissions)).find((g) => g.group === 'Admin')?.items.map((i) => `${i.label} ${i.path}`);
-    expect(admin(['bak.view'])).toEqual(['Shop certificate /admin/shop-certificate', 'Practice shop /admin/practice', 'Backups /bak']);
-    expect(admin(['bak.run', 'bak.manage'])).toEqual(['Shop certificate /admin/shop-certificate', 'Practice shop /admin/practice']);
+    expect(admin(['bak.view'])).toEqual(['Shop certificate /admin/shop-certificate', 'Backups /bak']);
+    expect(admin(['bak.run', 'bak.manage'])).toEqual(['Shop certificate /admin/shop-certificate']);
   });
 });
 

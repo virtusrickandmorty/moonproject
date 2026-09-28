@@ -8,12 +8,12 @@
 1. On the **Admin** menu, choose **Opening balances**.
 2. Pick the **Cut-over date** and click **Set the cut-over date**. This is the last day your old books cover, usually a month end. The books open on this date, and every opening document is dated that day.
 3. Record your opening balances in this order:
-   - First, record your cash and bank balances using **New opening balances**.
-   - Next, record what customers owe you for work in progress using **New opening job order**.
-   - Then, record the bills you still owe using **New opening supplier bill**.
-   - After that, record your active loans using **New opening loan**.
-   - Finally, record your fixed assets using **New opening fixed asset**.
-   - For everything else on your old trial balance (like inventory, equity, or prepayments), use **New opening balances** to enter the lines.
+   - First, record your cash and bank balances using **New Opening Balances**.
+   - Next, record what customers owe you for work in progress using **New Opening Job Order**.
+   - Then, record the bills you still owe using **New Opening Supplier Bill**.
+   - After that, record your active loans using **New Opening Loan**.
+   - Finally, record your fixed assets using **New Opening Fixed Asset**.
+   - For everything else on your old trial balance (like inventory, equity, or prepayments), use **New Opening Balances** to enter the lines.
 4. Check the system's progress under **The checks**.
    - **Opening balance equity (3900)** is a temporary holding area that balances your entries while you type them in, and it must end at zero to prove you entered all your old balances completely and correctly.
    - Look at the **Trial balance on the cut-over date**. It will say "Balances" when your debits and credits match.
