@@ -222,7 +222,11 @@ export interface ActiveEmployee { id: string; code: string; name: string; costCe
 export type Scheme = 'SSS' | 'PHIC' | 'HDMF' | 'WTAX';
 export interface SchemeCheck {
   scheme: Scheme; label: string; recordedCents: number; remittedCents: number; balanceCents: number; loanRecordedCents: number; loanRemittedCents: number;
-  remittances: { id: string; number: string; amountCents: number }[];
+  /** What a remittance of the month offers now; for the withholding tax, net of year-end tax refunds. */
+  dueCents: number;
+  /** Withholding tax only: the month's year-end tax refunds, those not yet taken off, earlier months' excess taken off this month, and this month's excess for the next. */
+  refundCents: number; refundOpenCents: number; carriedInCents: number; carriedFrom: string[]; carriedOutCents: number;
+  remittances: { id: string; number: string; amountCents: number; month?: string }[];
   cancelledAfter: { id: string; number: string; cancelledAt: string }[]; overRemitted: { employeeId: string; name: string; part?: 'contribution' | 'loan'; cents: number }[];
 }
 interface StatPerson { employeeId: string; code: string; name: string; idNo: string | null }
@@ -237,7 +241,8 @@ export interface StatMonth {
   tax: {
     employees: number; totalCompensationCents: number; mweBasicCents: number; mwePremiumCents: number; thirteenthMonthCents: number; deMinimisCents: number; eeSharesCents: number;
     otherNonTaxableCents: number; nonTaxableCents: number; taxableCents: number; noTaxWithheldCents: number; taxWithheldCents: number;
-    rows: (StatPerson & { isMwe: boolean; grossCents: number; nonTaxableCents: number; taxableCents: number; taxCents: number })[];
+    yearEndRefundCents: number; refundCarriedInCents: number; refundCarriedFrom: string[]; taxToRemitCents: number; refundCarriedOutCents: number;
+    rows: (StatPerson & { isMwe: boolean; grossCents: number; nonTaxableCents: number; taxableCents: number; taxCents: number; refundCents: number })[];
   };
   check: SchemeCheck[];
   notDeducted: { employeeId: string; name: string; cents: number }[];

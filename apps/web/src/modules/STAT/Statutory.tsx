@@ -1,7 +1,9 @@
 /**
  * Government remittances (PLAN E11, F4, D5 STAT-REM): the remittance check of recent months, and one month's SSS,
  * PhilHealth and Pag-IBIG lists and 1601-C worksheet, printable. Every figure comes from the server (recorded payrolls
- * and the ledger). Government IDs show only for users with emp.view_ids.
+ * and the ledger). Government IDs show only for users with emp.view_ids. The withholding tax is net of year-end tax
+ * refunds (K23): the check says what was refunded and where the refunds are taken off, and the 1601-C worksheet shows
+ * them on their own line.
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { api, type DocDetail, type Me, type SchemeCheck, type StatMonth } from '../../api.ts';
@@ -11,7 +13,7 @@ import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { checkWords } from './stat.ts';
 
-const newRemittance = (c: SchemeCheck, month: string) => docPath('stat.remittance', `/new?scheme=${c.scheme}&month=${month}${c.balanceCents > 0 ? `&amount=${(c.balanceCents / 100).toFixed(2)}` : ''}`);
+const newRemittance = (c: SchemeCheck, month: string) => docPath('stat.remittance', `/new?scheme=${c.scheme}&month=${month}${c.dueCents > 0 ? `&amount=${(c.dueCents / 100).toFixed(2)}` : ''}`);
 
 /** The remittance check: per scheme, what the payrolls recorded, what was remitted and what is left, with D6 flags. */
 function Check({ month, check, canRecord }: { month: string; check: SchemeCheck[]; canRecord: boolean }) {
@@ -25,14 +27,20 @@ function Check({ month, check, canRecord }: { month: string; check: SchemeCheck[
             <tr key={c.scheme} className="border-t border-slate-100 align-top">
               <td className="py-1">
                 {c.label}
-                {c.remittances.map((r) => <Link key={r.id} to={docPath('stat.remittance', `/${r.id}`)} className="ml-2 text-xs underline">{r.number}</Link>)}
+                {c.remittances.map((r) => <Link key={r.id} to={docPath('stat.remittance', `/${r.id}`)} className="ml-2 text-xs underline">{r.number}{r.month ? ` (with ${r.month})` : ''}</Link>)}
+                {(c.refundCents > 0 || c.carriedInCents > 0) && (
+                  <p className="text-xs text-slate-600">
+                    {c.refundCents > 0 && `Year-end tax refunds of ${peso(c.refundCents)} are taken off the tax withheld. `}
+                    {w.text}.
+                  </p>
+                )}
                 {c.cancelledAfter.length > 0 && <p className="text-xs text-amber-800">Cancelled after it was remitted: {c.cancelledAfter.map((r) => r.number).join(', ')}.</p>}
                 {c.overRemitted.length > 0 && <p className="text-xs text-amber-800">Remitted more than the payrolls show for {c.overRemitted.map((o) => `${o.name}${o.part === 'loan' ? ' (loan)' : ''} (${peso(o.cents)})`).join(', ')}. Redo the payroll or tell the accountant.</p>}
               </td>
               <td className="text-right tabular-nums">{peso(c.recordedCents)}{c.loanRecordedCents > 0 && <p className="text-xs text-slate-500">of which loans {peso(c.loanRecordedCents)}</p>}</td>
               <td className="text-right tabular-nums">{peso(c.remittedCents)}</td>
               <td className={`text-right tabular-nums ${w.tone === 'warning' ? 'text-amber-800' : ''}`}>{peso(c.balanceCents)}</td>
-              <td className="pl-2 text-right print:hidden">{canRecord && c.balanceCents > 0 && <Link to={newRemittance(c, month)} className="underline">Record payment</Link>}</td>
+              <td className="pl-2 text-right print:hidden">{canRecord && c.dueCents > 0 && <Link to={newRemittance(c, month)} className="underline">Record payment</Link>}</td>
             </tr>
           );
         })}
@@ -91,7 +99,10 @@ export function StatMonthPage({ me, params }: { me: Me; params?: Record<string, 
     ['20', 'Other non-taxable compensation', t.otherNonTaxableCents],
     ['21', 'Total non-taxable compensation', t.nonTaxableCents],
     ['22', 'Total taxable compensation', t.taxableCents],
-    ['25', 'Total taxes withheld', t.taxWithheldCents],
+    ['25', 'Total taxes withheld (before year-end tax refunds)', t.taxWithheldCents],
+    ...(t.yearEndRefundCents > 0 ? [['26', 'Less: year-end tax refunds to employees (adjustment)', -t.yearEndRefundCents] as [string, string, number]] : []),
+    ...(t.refundCarriedInCents > 0 ? [['26', `Less: year-end tax refunds carried from ${t.refundCarriedFrom.join(', ')} (adjustment)`, -t.refundCarriedInCents] as [string, string, number]] : []),
+    ...(t.yearEndRefundCents > 0 || t.refundCarriedInCents > 0 ? [['27', 'Taxes withheld for remittance', t.taxToRemitCents] as [string, string, number]] : []),
   ];
   return (
     <div className="space-y-4">
@@ -132,9 +143,13 @@ export function StatMonthPage({ me, params }: { me: Me; params?: Record<string, 
         <table className="w-full text-sm">
           <tbody>{items.map(([n, label, c]) => <tr key={n} className="border-t border-slate-100"><td className="w-10 py-1 text-slate-500">{n}</td><td>{label}</td><td className="text-right tabular-nums">{peso(c)}</td></tr>)}</tbody>
         </table>
+        {t.refundCarriedOutCents > 0 && <p className="text-xs text-slate-600">The year-end tax refunds are {peso(t.refundCarriedOutCents)} more than this month's tax: nothing is left to remit, and the rest comes off next month's 1601-C (item 26).</p>}
         <p className="text-xs text-slate-600">Item 23 (taxable pay not subject to tax, ₱250,000 a year and below) is for the accountant: {peso(t.noTaxWithheldCents)} of this month's taxable pay had no tax withheld. Item 17 is the tax-free part of the 13th-month pays dated this month; de minimis benefits are not paid through payroll yet.</p>
-        <Table head={['Employee', 'TIN', 'Compensation', 'Non-taxable', 'Taxable', 'Tax withheld']}
-          rows={t.rows.map((r) => [`${r.name} (${r.code})${r.isMwe ? ' · MWE' : ''}`, r.idNo ?? '—', peso(r.grossCents), peso(r.nonTaxableCents), peso(r.taxableCents), peso(r.taxCents)])} />
+        <Table head={['Employee', 'TIN', 'Compensation', 'Non-taxable', 'Taxable', 'Tax withheld', ...(t.yearEndRefundCents > 0 ? ['Year-end tax refund'] : [])]}
+          rows={t.rows.map((r) => [
+            `${r.name} (${r.code})${r.isMwe ? ' · MWE' : ''}`, r.idNo ?? '—', peso(r.grossCents), peso(r.nonTaxableCents), peso(r.taxableCents), peso(r.taxCents),
+            ...(t.yearEndRefundCents > 0 ? [r.refundCents ? peso(r.refundCents) : '—'] : []),
+          ])} />
       </Panel>
     </div>
   );
@@ -144,12 +159,23 @@ export function StatMonthPage({ me, params }: { me: Me; params?: Record<string, 
 export const remittanceView: ViewParts = {
   noEdit: true,
   extra: (d: DocDetail) => {
-    const r = d.doc as { month: string; label: string; payableCents: number; penaltyCents?: number; lines: { employeeId: string; name: string; payableCents: number; amountCents: number; loanAmountCents?: number }[] } | undefined;
+    const r = d.doc as
+      | {
+          month: string; label: string; payableCents: number; penaltyCents?: number; lines: { employeeId: string; name: string; payableCents: number; amountCents: number; loanAmountCents?: number }[];
+          adjustments?: { month: string; employeeId: string; name: string; debitCents: number; creditCents: number }[];
+        }
+      | undefined;
     if (!r) return null;
     return (
       <div className="space-y-1 pt-2 text-sm">
         <p>{r.label} for <Link to={`/stat/${r.month}`} className="underline">{r.month}</Link>: {peso(r.payableCents)} was payable when this was recorded.</p>
         {r.lines.map((l) => <div key={l.employeeId} className="flex justify-between"><span>{l.name}</span><span className="tabular-nums">{peso(l.amountCents)} of {peso(l.payableCents)}{l.loanAmountCents ? ` (loans ${peso(l.loanAmountCents)})` : ''}</span></div>)}
+        {(r.adjustments ?? []).map((a) => (
+          <div key={`${a.month}|${a.employeeId}|${a.creditCents > 0}`} className="flex justify-between">
+            <span>{a.name}: {a.creditCents > 0 ? `year-end tax refund ${a.month}, taken off` : `tax withheld ${a.month}`}</span>
+            <span className="tabular-nums">{a.creditCents > 0 ? `− ${peso(a.creditCents)}` : peso(a.debitCents)}</span>
+          </div>
+        ))}
         {r.penaltyCents ? <div className="flex justify-between"><span>Late-payment penalty</span><span className="tabular-nums">{peso(r.penaltyCents)}</span></div> : null}
       </div>
     );
