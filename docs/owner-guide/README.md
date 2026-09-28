@@ -22,3 +22,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [18. BIR payments](18-bir-payments.md): Know what tax returns are due, close the VAT at the end of a quarter, and record the payments made.
 - [21. Government remittances](21-government-remittances.md): Record your monthly SSS, PhilHealth, Pag-IBIG and tax payments.
 - [22. Cash Advances](22-cash-advances.md): Give a cash advance, set payroll deduction, and pay back or write off what is owed.
+- [23. 13th-Month Pay](23-thirteenth-month.md): Work out and record the 13th-month pay, and release the net pay.
