@@ -21,6 +21,7 @@ import { RunForm } from './PAY/RunForm.tsx';
 import { ReleaseForm } from './PAY/ReleaseForm.tsx';
 import { Payslips, advanceView, releaseView, runView } from './PAY/views.tsx';
 import { AdvanceForm } from './CA/AdvanceForm.tsx';
+import { OpeningForm as OpeningCaForm } from './CA/OpeningForm.tsx';
 import { NotificationsPage } from './DASH/Home.tsx';
 import { CalendarPage } from './CAL/Calendar.tsx';
 import { Customers } from './CUS/Customers.tsx';
@@ -46,6 +47,7 @@ import { PaymentForm as SupplierPaymentForm } from './AP/PaymentForm.tsx';
 import { billView, paymentView } from './AP/views.tsx';
 import { VoucherForm } from './EXP/VoucherForm.tsx';
 import { OfficerForm, OwnerMoneyForm } from './EQ/forms.tsx';
+import { OpeningForm as OpeningOfficerForm } from './EQ/OpeningForm.tsx';
 import { VatCloseForm } from './TAX/VatCloseForm.tsx';
 import { JvForm } from './ACC/JvForm.tsx';
 import { OpeningForm } from './ACC/OpeningForm.tsx';
@@ -121,6 +123,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'pay.run': RunForm,
   'pay.release': ReleaseForm,
   'ca.advance': AdvanceForm,
+  'ca.opening': OpeningCaForm,
   'stat.remittance': RemittanceForm,
   'ap.bill': BillForm,
   'ap.payment': SupplierPaymentForm,
@@ -128,6 +131,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'exp.voucher': VoucherForm,
   'eq.owner_money': OwnerMoneyForm,
   'eq.officer': OfficerForm,
+  'eq.opening': OpeningOfficerForm,
   'acc.jv': JvForm,
   'tax.vat_close': VatCloseForm,
   'tax.bir_payment': BirPaymentForm,
