@@ -23,6 +23,7 @@ import { AdvanceForm } from './CA/AdvanceForm.tsx';
 import { StatMonthPage, StatMonths, remittanceView } from './STAT/Statutory.tsx';
 import { RemittanceForm } from './STAT/RemittanceForm.tsx';
 import { GeneralJournal, GeneralLedger, TrialBalance } from './RPT/Books.tsx';
+import { BalanceSheet, IncomeStatement } from './RPT/Statements.tsx';
 import { CashAccounts } from './CASH/CashAccounts.tsx';
 import { CashBook } from './CASH/CashBook.tsx';
 import { CashCountForm } from './CASH/CashCountForm.tsx';
@@ -54,6 +55,8 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/rpt/journal': GeneralJournal,
   '/rpt/ledger': GeneralLedger,
   '/rpt/trial-balance': TrialBalance,
+  '/rpt/income-statement': IncomeStatement,
+  '/rpt/balance-sheet': BalanceSheet,
   '/tax/sales': SalesRegister,
   '/tax/2307-received': WithholdingReceived,
   '/tax/vat': VatQuarter,

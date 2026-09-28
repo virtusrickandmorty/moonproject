@@ -39,6 +39,8 @@ export const SCREENS: MenuItem[] = [
   { group: 'Reports', label: 'General journal', path: '/rpt/journal', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'General ledger', path: '/rpt/ledger', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Trial balance', path: '/rpt/trial-balance', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'Income statement', path: '/rpt/income-statement', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'Balance sheet', path: '/rpt/balance-sheet', permission: 'rpt.books.view' },
 ];
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);
