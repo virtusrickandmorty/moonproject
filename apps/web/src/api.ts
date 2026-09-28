@@ -258,10 +258,41 @@ export interface BackupCheck {
   lastAuditAt: string | null; trialBalance: { totalDebitCents: number; totalCreditCents: number }; lastBusinessDate: string | null; postedDocuments: number;
   drill?: 'passed'; stagedId?: string; live?: { auditSeq: number; lastAuditAt: string };
 }
+/** GET /api/acc/opening: the cut-over date, 3900 (debit-positive), the trial balance on the cut-over date, every opening document, the control checks and the close. */
+export interface OpeningState {
+  cutoverDate: string | null;
+  openingEquityCents: number;
+  trialBalance: { asOf: string; totalDebitCents: number; totalCreditCents: number; balanced: boolean } | null;
+  documents: { id: string; docType: string; number: string; businessDate: string; status: 'posted' | 'cancelled'; totalCents: number; summary: string }[];
+  checks: { code: string; name: string; partyType: string; controlCents: number; partiesCents: number; ok: boolean }[];
+  /** Accounts an OB- line may open. */
+  accounts: { id: number; code: string; name: string; isCashPlace: boolean; needsStockholder: boolean }[];
+  closed: { cutoverDate: string; closedAt: string; closedBy: string; closedByName: string; totalDebitCents: number; totalCreditCents: number } | null;
+}
+/** BIR payments (BIRP-): the return, and the posted payments a worksheet counts. */
+export type BirForm = '2550Q' | '0619-E' | '1601-EQ';
+export interface BirPaymentLine { id: string; number: string; date: string; period: string; reference: string; amountCents: number; penaltyCents: number }
+/** The EWT of a period by ATC (per EWT class while the ATC is to confirm). */
+export type EwtAtcLine = EwtAtc & { baseCents: number; ewtCents: number };
+/** GET /api/tax/0619e?month=: month 1 or 2 of a quarter. */
+export interface EwtMonthWorksheet {
+  month: string; label: string; from: string; to: string; returnDue: string; atcs: EwtAtcLine[]; totals: { baseCents: number; ewtCents: number };
+  dueCents: number; payments: BirPaymentLine[]; paidCents: number; leftCents: number; checks: WorksheetCheck[];
+}
+/** GET /api/tax/1601eq?year&quarter=: the quarter less its 0619-E payments, and the QAP. */
+export interface EwtQuarterWorksheet {
+  year: number; quarter: 1 | 2 | 3 | 4; period: string; from: string; to: string; months: string[]; returnDue: string; atcs: EwtAtcLine[]; totals: { baseCents: number; ewtCents: number };
+  remittances: { month: string; label: string; payments: BirPaymentLine[]; paidCents: number }[]; remittedCents: number;
+  dueCents: number; payments: BirPaymentLine[]; paidCents: number; leftCents: number;
+  qap: (EwtAtc & { supplierId: string | null; tin: string | null; registeredName: string; baseCents: number; rateBp: number | null; ewtCents: number })[];
+  checks: WorksheetCheck[];
+}
 /** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
 export const taxRegisterPath = (register: 'sales' | 'withholding-received' | 'purchases' | 'ewt', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
 /** A quarter's tax report URL; with &format=csv the same URL downloads it for Excel. */
-export const taxQuarterPath = (report: '2307-to-issue' | '2550q', year: number, quarter: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}`;
+export const taxQuarterPath = (report: '2307-to-issue' | '2550q' | '1601eq', year: number, quarter: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}`;
+/** The 0619-E worksheet's URL (month like 2026-07); with &format=csv it downloads for Excel. */
+export const ewtMonthPath = (month: string) => `/api/tax/0619e?${new URLSearchParams({ month })}`;
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -403,6 +434,12 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     ewtRegister: (from: string, to: string) => call<EwtRegister>('GET', taxRegisterPath('ewt', from, to)),
     certificatesToIssue: (year: number, quarter: number) => call<CertificatesToIssue>('GET', taxQuarterPath('2307-to-issue', year, quarter)),
     vatWorksheet: (year: number, quarter: number) => call<VatWorksheet>('GET', taxQuarterPath('2550q', year, quarter)),
+    ewtMonthWorksheet: (month: string) => call<EwtMonthWorksheet>('GET', ewtMonthPath(month)),
+    ewtQuarterWorksheet: (year: number, quarter: number) => call<EwtQuarterWorksheet>('GET', taxQuarterPath('1601eq', year, quarter)),
+    opening: () => call<OpeningState>('GET', '/api/acc/opening'),
+    /** Both need a fresh password (step-up). */
+    setCutoverDate: (date: string) => call<OpeningState>('POST', '/api/acc/opening/cutover-date', { date }),
+    closeOpening: () => call<OpeningState>('POST', '/api/acc/opening/close', {}),
     taxCalendar: (from: string, to: string) => call<TaxDeadline[]>('GET', `/api/tax/calendar?${new URLSearchParams({ from, to })}`),
     accounts: () => call<Account[]>('GET', '/api/acc/accounts'),
     loans: (status?: 'posted' | 'cancelled') => call<LoanRow[]>('GET', `/api/loan/loans${status ? `?status=${status}` : ''}`),
