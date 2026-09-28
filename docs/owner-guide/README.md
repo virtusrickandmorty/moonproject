@@ -25,4 +25,5 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [22. Cash Advances](22-cash-advances.md): Give a cash advance, set payroll deduction, and pay back or write off what is owed.
 - [23. 13th-Month Pay](23-thirteenth-month.md): Work out and record the 13th-month pay, and release the net pay.
 - [24. Government loans](24-government-loans.md): Register and manage SSS and Pag-IBIG loans for payroll deductions.
+- [25. System Health](25-system-health.md): Monitor the health of the system.
 - [26. Sales and Collections Reports](26-sales-and-collections-reports.md): View your sales, collections, deposits, and the status of your job orders.
