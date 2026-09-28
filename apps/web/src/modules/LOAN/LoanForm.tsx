@@ -12,7 +12,7 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { Errors, useLive } from '../COL/parts.tsx';
 import { cents } from '../COL/money.ts';
-import { METHOD_WORDS, emptyLoan, emptyRowText, feeAccounts, loanInput, loanValues, scheduledPrincipal, type LoanValues, type Method } from './loan.ts';
+import { METHOD_WORDS, emptyLoan, emptyRowText, feeAccounts, loanInput, loanValues, scheduledPrincipal, type LoanValues, type Method, type RowText } from './loan.ts';
 
 type ScheduleRow = { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number };
 const SHOWN = 12;
@@ -38,7 +38,6 @@ export function LoanForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode
   const { input, errors } = loanInput(v);
   const live = useLive(JSON.stringify(input), errors.length === 0, () => r.preview(input));
   const set = (patch: Partial<LoanValues>) => setV({ ...v, ...patch });
-  const setRow = (i: number, patch: Partial<LoanValues['rows'][number]>) => set({ rows: v.rows.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
   const pickPurchase = (id: string) => {
     const p = financed.find((x) => x.id === id);
     set({ assetPurchaseId: id, kind: 'equipment', ...(p && !v.lender.trim() ? { lender: p.lender } : {}), ...(p && !v.principal.trim() ? { principal: formatPesos(p.financedCents) } : {}) });
@@ -97,34 +96,13 @@ export function LoanForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode
           )}
         </Panel>
         <Panel title="Repayment schedule">
-          <div className="space-y-1 text-sm">
-            {(Object.keys(METHOD_WORDS) as Method[]).map((m) => (
-              <label key={m} className="flex items-start gap-2">
-                <input type="radio" className="mt-1" checked={v.schedule === m} onChange={() => set({ schedule: m })} />
-                <span><span className="font-medium">{METHOD_WORDS[m][0]}</span> <span className="text-slate-500">{METHOD_WORDS[m][1]}</span></span>
-              </label>
-            ))}
-          </div>
+          <MethodPicker value={v.schedule} onChange={(schedule) => set({ schedule })} />
           {v.schedule !== 'typed' && (
             <Field label="First instalment due" hint="Empty: one month after today">
               <input type="date" className={`${inputClass} max-w-48`} value={v.firstDueDate} onChange={(e) => set({ firstDueDate: e.target.value })} />
             </Field>
           )}
-          {v.schedule === 'typed' && (
-            <div className="space-y-2">
-              {v.rows.map((row, i) => (
-                <div key={i} className="grid grid-cols-[2rem_1fr_1fr_1fr_auto] items-center gap-2">
-                  <span className="text-sm text-slate-500">{i + 1}</span>
-                  <input type="date" aria-label={`Instalment ${i + 1} due date`} className={inputClass} value={row.dueDate} onChange={(e) => setRow(i, { dueDate: e.target.value })} />
-                  <input aria-label={`Instalment ${i + 1} principal`} inputMode="decimal" placeholder="Principal" className={`${inputClass} text-right tabular-nums`} value={row.principal} onChange={(e) => setRow(i, { principal: e.target.value })} />
-                  <input aria-label={`Instalment ${i + 1} interest`} inputMode="decimal" placeholder="Interest" className={`${inputClass} text-right tabular-nums`} value={row.interest} onChange={(e) => setRow(i, { interest: e.target.value })} />
-                  <Button disabled={v.rows.length <= 1} onClick={() => set({ rows: v.rows.filter((_, j) => j !== i) })} title="Remove this instalment">✕</Button>
-                </div>
-              ))}
-              {v.rows.length < 360 && <Button onClick={() => set({ rows: [...v.rows, emptyRowText()] })}>+ Add an instalment</Button>}
-              <p className="text-sm text-slate-600">The instalments repay {peso(scheduledPrincipal(v.rows))} of principal.</p>
-            </div>
-          )}
+          {v.schedule === 'typed' && <TypedRows rows={v.rows} onChange={(rows) => set({ rows })} />}
         </Panel>
         {schedule.length > 0 && v.schedule !== 'typed' && (
           <Panel title="The schedule the server worked out">
@@ -148,6 +126,40 @@ export function LoanForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode
       </Panel>
       {r.dialog}
     </form>
+  );
+}
+
+/** How the schedule is made: worked out by the server (declining or flat) or typed from the lender's table. */
+export function MethodPicker({ value, onChange }: { value: Method; onChange: (m: Method) => void }) {
+  return (
+    <div className="space-y-1 text-sm">
+      {(Object.keys(METHOD_WORDS) as Method[]).map((m) => (
+        <label key={m} className="flex items-start gap-2">
+          <input type="radio" className="mt-1" checked={value === m} onChange={() => onChange(m)} />
+          <span><span className="font-medium">{METHOD_WORDS[m][0]}</span> <span className="text-slate-500">{METHOD_WORDS[m][1]}</span></span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+/** The instalments typed from the lender's table, with the principal they repay. */
+export function TypedRows({ rows, onChange }: { rows: RowText[]; onChange: (rows: RowText[]) => void }) {
+  const setRow = (i: number, patch: Partial<RowText>) => onChange(rows.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  return (
+    <div className="space-y-2">
+      {rows.map((row, i) => (
+        <div key={i} className="grid grid-cols-[2rem_1fr_1fr_1fr_auto] items-center gap-2">
+          <span className="text-sm text-slate-500">{i + 1}</span>
+          <input type="date" aria-label={`Instalment ${i + 1} due date`} className={inputClass} value={row.dueDate} onChange={(e) => setRow(i, { dueDate: e.target.value })} />
+          <input aria-label={`Instalment ${i + 1} principal`} inputMode="decimal" placeholder="Principal" className={`${inputClass} text-right tabular-nums`} value={row.principal} onChange={(e) => setRow(i, { principal: e.target.value })} />
+          <input aria-label={`Instalment ${i + 1} interest`} inputMode="decimal" placeholder="Interest" className={`${inputClass} text-right tabular-nums`} value={row.interest} onChange={(e) => setRow(i, { interest: e.target.value })} />
+          <Button disabled={rows.length <= 1} onClick={() => onChange(rows.filter((_, j) => j !== i))} title="Remove this instalment">✕</Button>
+        </div>
+      ))}
+      {rows.length < 360 && <Button onClick={() => onChange([...rows, emptyRowText()])}>+ Add an instalment</Button>}
+      <p className="text-sm text-slate-600">The instalments repay {peso(scheduledPrincipal(rows))} of principal.</p>
+    </div>
   );
 }
 
