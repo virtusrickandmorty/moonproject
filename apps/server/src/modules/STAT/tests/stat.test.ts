@@ -137,6 +137,27 @@ describe('STAT-REM: the remittance, its variance check and its cancel (D5)', () 
     expect(schemeCheck(w.db, 'SSS', '2026-09')).toMatchObject({ recordedCents: 756_000, remittedCents: 0, balanceCents: 756_000, remittances: [] });
     expect(runInvariants(w.db).filter((r) => !r.ok)).toEqual([]);
   });
+
+  it('STAT-1: an accountant dates it the day paid; an owner may not backdate, and never after today or before the month', async () => {
+    const w = await examples(); // today is 2026-10-05
+    const acct = await w.env.as('accountant');
+    const owner = await w.env.as('owner');
+    const input: RemittanceInput = { scheme: 'SSS', month: '2026-09', cashPlaceId: w.bdo, amountCents: 756_000, reference: 'PRN 0926-0001' };
+    const post = (as: typeof acct, businessDate: string) => as.post('/api/docs/stat.remittance/post', { input, expectedTotalCents: 756_000, businessDate }, idem());
+
+    expect((await post(owner, '2026-10-02')).statusCode).toBe(403); // records remittances, but only acc.backdate may date one earlier
+    expect((await post(acct, '2026-10-06')).json().code).toBe('BAD_DATE');
+    const early = await acct.post('/api/docs/stat.remittance/preview', { input, businessDate: '2026-08-31' });
+    expect(codes(early.json().issues)).toEqual(['MONTH']); // paid before September started
+
+    const paid = await post(acct, '2026-10-02');
+    expect(paid.statusCode, paid.body).toBe(200);
+    expect(paid.json()).toMatchObject({ number: 'REM-000001', businessDate: '2026-10-02' });
+    expect(w.db.prepare("SELECT business_date FROM journals WHERE source_type = 'document' AND source_id = ?").pluck().all(paid.json().id)).toEqual(['2026-10-02']);
+    expect(journal(w.env, paid.json().id)).toEqual(['1111 Cr 7,560.00', '2401 Dr 2,280.00 Carla Opisina', '2401 Dr 5,280.00 Dee Mataas']);
+    expect(schemeCheck(w.db, 'SSS', '2026-09')).toMatchObject({ remittedCents: 756_000, balanceCents: 0 });
+    expect(runInvariants(w.db).filter((r) => !r.ok)).toEqual([]);
+  });
 });
 
 describe('D6: cancelling a payroll run whose month was already remitted', () => {

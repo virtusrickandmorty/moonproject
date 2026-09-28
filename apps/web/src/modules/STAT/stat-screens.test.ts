@@ -6,7 +6,7 @@ import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.
 import { addEmployee, addPay } from '../../../../server/src/modules/EMP/tests/fixture.ts';
 import { createApi, newIdempotencyKey as key, type SchemeCheck } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
-import { checkWords, remittanceInput } from './stat.ts';
+import { checkWords, paidOn, remittanceInput } from './stat.ts';
 
 const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: string, init: RequestInit) => {
   const res = await app.inject({ method: init.method as 'GET', url, payload: init.body as string, headers: { ...(init.headers as object), cookie: jar.cookie } });
@@ -24,6 +24,12 @@ describe('statutory screen rules', () => {
       input: { scheme: 'SSS', month: '2026-09', cashPlaceId: 7, amountCents: 756_000, reference: 'PRN 0926-0001', note: 'Paid at BDO' },
       errors: [],
     });
+  });
+
+  it('the date paid (STAT-1): empty is today (no date sent); a typed day is sent as it is; anything else is named', () => {
+    expect(paidOn('')).toEqual({});
+    expect(paidOn(' 2026-10-02 ')).toEqual({ businessDate: '2026-10-02' });
+    expect(paidOn('2026-02-30').error).toBe('Type the date paid like 2026-10-02, or leave it empty for today.');
   });
 
   it('the check in words', () => {
@@ -73,5 +79,11 @@ describe('web client for statutory', () => {
     expect((await api.post('stat.remittance', input, pre.totalCents, key())).number).toBe('REM-000001');
     expect((await api.statMonth('2026-09')).check[0]).toMatchObject({ remittedCents: 228_000, balanceCents: 0 });
     expect(await api.runRemitted(c2.id)).toEqual({ month: '2026-09', remitted: [{ scheme: 'SSS', label: 'SSS', numbers: ['REM-000001'] }] });
+
+    // STAT-1: the accountant (acc.backdate) records PhilHealth three days after it was paid, dated the day paid.
+    expect((await api.docTypes()).find((t) => t.key === 'stat.remittance')?.dating).toBe('accountant_may_backdate');
+    const phic = { ...input, scheme: 'PHIC' as const, amountCents: 75_000, reference: 'PRN 0926-0002' };
+    const paid = await api.post('stat.remittance', phic, (await api.preview('stat.remittance', phic, '2026-10-02')).totalCents, key(), '2026-10-02');
+    expect((await api.get('stat.remittance', paid.id)).header.businessDate).toBe('2026-10-02');
   });
 });
