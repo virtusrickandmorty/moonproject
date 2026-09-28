@@ -27,3 +27,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [24. Government loans](24-government-loans.md): Register and manage SSS and Pag-IBIG loans for payroll deductions.
 - [25. System Health](25-system-health.md): Monitor the health of the system.
 - [26. Sales and Collections Reports](26-sales-and-collections-reports.md): View your sales, collections, deposits, and the status of your job orders.
+- [28. Year-end tax and 2316](28-year-end-tax.md): Add pay before Moonproject or from a previous employer, do the year-end tax adjustment on the last December payroll, and view the 2316 and alphalist.
