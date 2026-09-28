@@ -206,7 +206,12 @@ export interface VatWorksheet {
 }
 export interface SalesRegister { from: string; to: string; rows: (TaxRegisterRow & { netCents: number; vatCents: number; totalCents: number })[]; totals: { netCents: number; vatCents: number; totalCents: number }; glVatCents: number }
 export interface WithholdingRegister {
-  from: string; to: string; rows: (TaxRegisterRow & { atc: string | null; certificate: 'pending' | 'received' | null; cwtCents: number; vatWithheldCents: number })[];
+  from: string; to: string;
+  /** `lineNo` names the 2307 (an opening withholding's row, 0 for a collection's); `period` ('2026-Q2') only on an opening's. */
+  rows: (TaxRegisterRow & {
+    atc: string | null; certificate: 'pending' | 'received' | null; cwtCents: number; vatWithheldCents: number;
+    lineNo: number; receivedOn: string | null; opening: boolean; period: string | null;
+  })[];
   totals: { cwtCents: number; vatWithheldCents: number }; glCwtCents: number; glVatWithheldCents: number; pendingCount: number;
 }
 export interface TaxDeadline { form: string; title: string; period: string; periodLabel: string; periodStart: string; periodEnd: string; statutoryDate: string; dueDate: string }
@@ -456,6 +461,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     setBookletActive: (id: string, v: number, active: boolean, note: string) => call<Booklet>('POST', `/api/tax/booklets/${encodeURIComponent(id)}/${active ? 'activate' : 'retire'}`, { note }, version(v)),
     salesRegister: (from: string, to: string) => call<SalesRegister>('GET', taxRegisterPath('sales', from, to)),
     withholdingReceived: (from: string, to: string) => call<WithholdingRegister>('GET', taxRegisterPath('withholding-received', from, to)),
+    /** A customer's 2307 recorded as pending has come (tax.2307.receive); dated the server's today. */
+    mark2307Received: (documentId: string, lineNo: number) =>
+      call<{ documentId: string; number: string; lineNo: number; receivedOn: string }>('POST', '/api/tax/2307s/received', { documentId, lineNo }),
     purchasesRegister: (from: string, to: string) => call<PurchasesRegister>('GET', taxRegisterPath('purchases', from, to)),
     ewtRegister: (from: string, to: string) => call<EwtRegister>('GET', taxRegisterPath('ewt', from, to)),
     certificatesToIssue: (year: number, quarter: number) => call<CertificatesToIssue>('GET', taxQuarterPath('2307-to-issue', year, quarter)),
