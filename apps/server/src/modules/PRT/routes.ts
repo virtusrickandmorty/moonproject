@@ -26,7 +26,7 @@ const PRINTABLE: ReadonlyMap<string, readonly PrintKind[]> = new Map([
 const out = (r: Profile) => ({ registeredName: r.registered_name, tradeName: r.trade_name, tin: r.tin,
   registeredAddress: r.registered_address, isVatRegistered: !!r.is_vat_registered, version: r.version });
 
-export function prtRoutes(app: FastifyInstance, { db, clock, registry }: AppDeps): void {
+export function prtRoutes(app: FastifyInstance, { db, clock, registry, practice }: AppDeps): void {
   app.get('/api/prt/printable-types', { config: { permission: 'authenticated' } }, async (req) => {
     const user = currentUser(req);
     return [...PRINTABLE].filter(([key]) => {
@@ -97,7 +97,7 @@ export function prtRoutes(app: FastifyInstance, { db, clock, registry }: AppDeps
         const copyNumber = (db.prepare('SELECT COALESCE(MAX(copy_number), 0) + 1 AS n FROM prt_print_log WHERE document_id = ? AND print_kind = ?')
           .get(id, kind) as { n: number }).n;
         const at = stamp(clock);
-        const html = renderPrint(db, h, doc, profile, kind, user.displayName, at, copyNumber);
+        const html = renderPrint(db, h, doc, profile, kind, user.displayName, at, copyNumber, practice);
         db.prepare('INSERT INTO prt_print_log (document_id, user_id, printed_at, copy_number, print_kind) VALUES (?, ?, ?, ?, ?)')
           .run(id, user.userId, at, copyNumber, kind);
         appendAudit(db, { at, userId: user.userId, action: 'prt.print', entityType: 'document', entityId: id,

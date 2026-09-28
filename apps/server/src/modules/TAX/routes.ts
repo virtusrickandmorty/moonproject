@@ -14,6 +14,7 @@ import { vatReturnWorksheet, type WorksheetCheck } from './vat-return.ts';
 import { quarterOf, taxDeadlines, type Quarter } from './calendar.ts';
 import { ewtMonthWorksheet, ewtQuarterWorksheet, type PaymentLine } from './ewt-return.ts';
 import { parsePeriod } from './payments.ts';
+import { markReceived } from './withholding.ts';
 
 export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
@@ -87,11 +88,18 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
     const r = withholdingReceivedRegister(db, from, to);
     if (req.query.format !== 'csv') return { ...r, rows: r.rows.map((x) => ({ ...x, docTitle: title(x.docType) })) };
     return csv(reply, `2307-received-${from}-${to}`, [
-      [...HEAD, 'ATC', '2307', 'CWT', 'VAT withheld'],
-      ...r.rows.map((x) => [...lead(x), x.atc, x.certificate, csvPesos(x.cwtCents), csvPesos(x.vatWithheldCents)]),
-      ['Total', '', '', '', '', '', '', '', '', '', csvPesos(r.totals.cwtCents), csvPesos(r.totals.vatWithheldCents)],
+      [...HEAD, 'ATC', '2307', 'Received on', 'Opening 2307 for', 'CWT', 'VAT withheld'],
+      ...r.rows.map((x) => [...lead(x), x.atc, x.certificate, x.receivedOn, x.period, csvPesos(x.cwtCents), csvPesos(x.vatWithheldCents)]),
+      ['Total', '', '', '', '', '', '', '', '', '', '', '', csvPesos(r.totals.cwtCents), csvPesos(r.totals.vatWithheldCents)],
     ]);
   });
+
+  /**
+   * A customer's 2307 recorded as pending has come: { documentId, lineNo } names it (a collection's is line 0, an opening
+   * withholding's its row). Dated today; the register shows it in hand and the next VAT close claims its VAT withheld.
+   */
+  app.post('/api/tax/2307s/received', { config: { permission: 'tax.2307.receive' } }, async (req) =>
+    write(() => markReceived(db, req.body, { userId: currentUser(req).userId, at: stamp(clock), today: today(clock) })));
 
   const CLASS: Record<PurchaseClass, string> = { capital_goods: 'Capital goods', goods: 'Goods', services: 'Services' };
   const bought = (r: SupplierRow): CsvCell[] => [r.date, r.journalNumber, r.posting === 'reversal' ? 'Cancelled' : '', title(r.docType), r.documentNumber];
