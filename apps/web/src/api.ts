@@ -141,7 +141,7 @@ export interface StatMonth {
   check: SchemeCheck[];
   notDeducted: { employeeId: string; name: string; cents: number }[];
 }
-export interface RemittanceInput { scheme: Scheme; month: string; cashPlaceId: number; amountCents: number; reference: string; note?: string }
+export interface RemittanceInput { scheme: Scheme; month: string; cashPlaceId: number; amountCents: number; penaltyCents?: number; reference: string; note?: string }
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
