@@ -23,6 +23,7 @@ import { localNames } from './engine/security/tls/certs.ts';
 import { joinHandler } from './engine/security/tls/join.ts';
 import { ensureTls } from './engine/security/tls/store.ts';
 import { practiceShop, type PracticeShop } from './platform/practice/shop.ts';
+import { isCheckDue, lastSystemCheck, runSystemCheck } from './platform/health/health.ts';
 
 const dbFile = process.env.MOONPROJECT_DB ?? 'data/moonproject.db';
 mkdirSync(dirname(dbFile), { recursive: true });
@@ -113,3 +114,13 @@ const backupTick = async () => {
 };
 void backupTick();
 setInterval(() => void backupTick(), 10 * 60_000).unref();
+
+// System Health (PLAN C8): the full system check every night; the page shows the newest.
+setInterval(() => {
+  try {
+    const now = stamp(systemClock);
+    if (isCheckDue(lastSystemCheck(db)?.at ?? null, now)) runSystemCheck(db, now, { reason: 'schedule', userId: null });
+  } catch (e) {
+    app.log.error(`The nightly system check failed: ${(e as Error).message}`);
+  }
+}, 10 * 60_000).unref();
