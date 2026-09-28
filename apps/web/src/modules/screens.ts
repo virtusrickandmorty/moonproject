@@ -20,6 +20,7 @@ import { RunForm } from './PAY/RunForm.tsx';
 import { ReleaseForm } from './PAY/ReleaseForm.tsx';
 import { Payslips, advanceView, releaseView, runView } from './PAY/views.tsx';
 import { AdvanceForm } from './CA/AdvanceForm.tsx';
+import { NotificationsPage } from './DASH/Home.tsx';
 import { CompanyProfileScreen } from './PRT/CompanyProfile.tsx';
 import { StatMonthPage, StatMonths, remittanceView } from './STAT/Statutory.tsx';
 import { RemittanceForm } from './STAT/RemittanceForm.tsx';
@@ -56,6 +57,7 @@ import { inventoryCountView } from './INV/InventoryCountView.tsx';
  * items are in shell/menu.ts SCREENS.
  */
 export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo[]; params?: Record<string, string> }>> = {
+  '/dash/notifications': NotificationsPage,
   '/cash/accounts': CashAccounts,
   '/cash/book': CashBook,
   '/prd/board': ProductionBoard,

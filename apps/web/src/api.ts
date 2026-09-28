@@ -33,6 +33,10 @@ export interface Preview { totalCents: number; summary: string; issues: Issue[];
 export interface PostResult { id: string; number: string; totalCents: number; warnings: Issue[] }
 export interface Draft { id: string; docType: string; payload: { values?: Record<string, string> }; version: number; updatedAt: string }
 export interface CashPlace { id: number; name: string; balanceCents: number | null }
+export interface DashItem { id: string; label: string; href?: string; detail?: string; amountCents?: number }
+export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string }
+export interface DashHomeData { role: string; asOf: string; widgets: DashWidget[] }
+export interface DashNotification extends DashItem { kind: string; read: boolean }
 export interface CashAccount extends CashPlace { code: string; kind: 'cash' | 'checks' | 'bank' | 'ewallet'; isActive: boolean; accountNo: string | null; encoderSeesBalance?: boolean; version?: number }
 export interface CashBook { place: Pick<CashAccount, 'id' | 'code' | 'name' | 'kind'>; from: string; to: string; openingCents: number; closingCents: number; lines: { date: string; journalNumber: string; documentId: string | null; documentNumber: string | null; docType: string | null; memo: string; inCents: number; outCents: number; balanceCents: number }[] }
 export interface CustomerRow { id: string; code: string; display_name: string; is_active: number }
@@ -308,6 +312,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     printDocument: (type: string, id: string, variant: PrintVariant = 'document') =>
       call<{ html: string; copyNumber: number }>('POST', `/api/prt/print/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { variant }),
     health: () => call<{ serverTime: string }>('GET', '/api/health'),
+    dashHome: () => call<DashHomeData>('GET', '/api/dash/home'),
+    dashNotifications: () => call<DashNotification[]>('GET', '/api/dash/notifications'),
+    dashRead: (id: string) => call<{ ok: true }>('POST', '/api/dash/notifications/read', { id }),
     shopCertificate: () => call<{ ca: CertInfo | null }>('GET', '/api/system/tls'),
     docTypes: () => call<DocTypeInfo[]>('GET', '/api/doc-types'),
     report: <T>(path: string) => call<T>('GET', `/api/rpt/${path}`),
