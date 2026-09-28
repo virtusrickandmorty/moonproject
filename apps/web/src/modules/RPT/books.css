@@ -2,7 +2,8 @@
   @page { size: A4; margin: 15mm; @bottom-center { content: 'Page ' counter(page); font-size: 9pt; } }
   body { background: white !important; color: black; }
   .rpt-page { font: 9pt Arial, sans-serif; }
-  .rpt-page section { box-shadow: none; border: 0; padding: 0; break-inside: avoid; }
+  .rpt-page section { box-shadow: none; border: 0; padding: 0; }
+  .rpt-page section h2 { break-after: avoid; }
   .rpt-page table { border-collapse: collapse; width: 100%; }
   .rpt-page thead { display: table-header-group; }
   .rpt-page tr { break-inside: avoid; }

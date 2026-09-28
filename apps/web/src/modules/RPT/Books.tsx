@@ -40,7 +40,7 @@ function source(line: Pick<Line, 'documentType' | 'documentNumber' | 'sourceId' 
     : line.journalNumber;
 }
 function party(line: Pick<Line, 'partyType' | 'partyId'>) { return line.partyType ? `${line.partyType}: ${line.partyId}` : ''; }
-function balance(cents: number) { return `${peso(Math.abs(cents))} ${cents < 0 ? 'Cr' : 'Dr'}`; }
+function balance(cents: number) { return cents === 0 ? peso(0) : `${peso(Math.abs(cents))} ${cents < 0 ? 'Cr' : 'Dr'}`; }
 function Tools({ path }: { path: string }) {
   return <div className="flex gap-2 print:hidden"><a className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" href={`/api/rpt/${path}${path.includes('?') ? '&' : '?'}format=csv`}>Export CSV</a>
     <Button onClick={() => window.print()}>Print</Button></div>;

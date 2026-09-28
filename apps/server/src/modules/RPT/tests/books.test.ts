@@ -58,6 +58,14 @@ describe('RPT accounting books', () => {
     expect(csv.body).toContain('"123.45"');
     expect(csv.body).toContain('"JV-000001"');
     expect(csv.body).not.toContain('"12345"');
+    const ledgerCsv = await accountant.get(`/api/rpt/ledger?from=2026-09-28&to=2026-09-28&accountId=${account('1101')}&format=csv`);
+    expect(ledgerCsv.statusCode).toBe(200);
+    expect(ledgerCsv.body).toContain('"Closing balance"');
+    expect(ledgerCsv.body).toContain('"123.45"');
+    const tbCsv = await accountant.get('/api/rpt/trial-balance?asOf=2026-09-28&format=csv');
+    expect(tbCsv.statusCode).toBe(200);
+    expect(tbCsv.body).toContain('"Debit PHP 2026-09-28"');
+    expect(tbCsv.body).toContain('"123.45"');
     expect((await accountant.get('/api/rpt/ledger?from=2026-09-29&to=2026-09-28')).statusCode).toBe(400);
   });
 });
