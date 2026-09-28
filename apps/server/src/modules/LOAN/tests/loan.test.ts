@@ -1,6 +1,6 @@
 /**
  * Loans: golden G-20, schedules (generated and typed), the split override, cancels and edits, the loan register and
- * ledger, and property tests.
+ * ledger, equipment financing of an FA- purchase, and property tests.
  */
 import { describe, expect, it, beforeEach } from 'vitest';
 import fc from 'fast-check';
@@ -40,6 +40,93 @@ const journalOf = (documentId: string) =>
     .raw()
     .all(documentId);
 const noBrokenInvariants = () => expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
+
+/** [code, party id, debit, credit] per line of a document's original journal. */
+const partiesOf = (documentId: string) =>
+  env.db
+    .prepare(
+      `SELECT a.code, l.party_id, l.debit_cents, l.credit_cents FROM journal_lines l JOIN journals j ON j.id = l.journal_id
+       JOIN accounts a ON a.id = l.account_id WHERE j.source_id = ? AND j.posting_kind = 'original' ORDER BY l.line_no`,
+    )
+    .raw()
+    .all(documentId);
+/** 2602 owed to one party (credit balance, in centavos). */
+const owedOn2602 = (partyId: string) =>
+  env.db
+    .prepare(`SELECT COALESCE(SUM(l.credit_cents - l.debit_cents), 0) FROM journal_lines l JOIN accounts a ON a.id = l.account_id WHERE a.code = '2602' AND l.party_id = ?`)
+    .pluck()
+    .get(partyId) as number;
+/** G-21's heat press: ₱112,000.00, ₱30,000.00 from BDO and ₱82,000.00 financed by the lender, who paid the supplier. */
+async function heatPress(financedCents = 8_200_000) {
+  const supplierId = (await accountant.post('/api/pur/suppliers', { name: 'Sample Machines', registeredName: 'Sample Machines Corp.', tin: '123-456-789-000', isVatRegistered: true })).json().id;
+  const input = {
+    classCode: 'machinery', description: 'Heat press', supplierId, supplierInvoiceNo: 'SI-2001', supplierInvoiceDate: '2026-09-28', amountCents: 11_200_000,
+    residualCents: 1_000_000, cashPlaceId: BDO, paidCents: 11_200_000 - financedCents, ...(financedCents ? { financedCents, lender: 'Sample Equipment Finance' } : {}),
+  };
+  const res = await accountant.post('/api/docs/fa.buy/post', { input, expectedTotalCents: 11_200_000 }, idem());
+  expect(res.statusCode, res.body).toBe(200);
+  return res.json() as { id: string; number: string };
+}
+const financing = (assetPurchaseId: string, more: Partial<LoanInput> = {}) =>
+  ({ lender: 'Sample Equipment Finance', kind: 'equipment', assetPurchaseId, principalCents: 8_200_000, interestRateBp: 1200, termMonths: 24, schedule: 'declining', ...more }) as LoanInput & { principalCents: number };
+const issueCodes = async (input: object) => ((await accountant.post('/api/docs/loan.loan/preview', { input })).json().issues as { code: string }[]).map((i) => i.code);
+
+describe('equipment financing of an asset purchase (FA-BUY financed part)', () => {
+  it('takes the financed part over into the loan register: no cash moves, the loan is then paid like any other', async () => {
+    const fa = await heatPress();
+    expect((await accountant.get('/api/loan/financed-assets')).json()).toEqual([
+      { id: fa.id, number: 'FA-000001', status: 'posted', date: '2026-09-28', description: 'Heat press', supplierName: 'Sample Machines', lender: 'Sample Equipment Finance', financedCents: 8_200_000 },
+    ]);
+    expect((await encoder.get('/api/loan/financed-assets')).statusCode).toBe(403);
+
+    const l = await borrow(accountant, financing(fa.id, { reference: 'EF-7788' }));
+    expect(l.statusCode, l.body).toBe(200);
+    expect(l.json().summary).toBe(
+      'This will record an equipment financing of ₱82,000.00 from Sample Equipment Finance, which paid Sample Machines ₱82,000.00 for FA-000001 (Heat press), repaid in 24 instalments from 2026-10-28 (the first is ₱3,860.02).',
+    );
+    const loanId = l.json().id;
+    expect(partiesOf(loanId)).toEqual([['2602', fa.id, 8_200_000, 0], ['2602', loanId, 0, 8_200_000]]);
+    expect([owedOn2602(fa.id), owedOn2602(loanId)]).toEqual([0, 8_200_000]);
+    expect(balances(env.db)).toMatchObject({ '1111': -3_000_000, '2602': -8_200_000 }); // the asset purchase alone moved cash
+    expect((await accountant.get('/api/loan/financed-assets')).json()).toEqual([]);
+    expect((await encoder.get('/api/loan/loans')).json()).toEqual([expect.objectContaining({ number: 'LOAN-000001', assetPurchaseNumber: 'FA-000001', balanceCents: 8_200_000 })]);
+    expect((await accountant.get(`/api/docs/loan.loan/${loanId}`)).json().input).toEqual(financing(fa.id, { reference: 'EF-7788', firstDueDate: '2026-10-28' }));
+
+    const p = await pay(encoder, { loanId, instalmentNo: 1, cashPlaceId: BDO }, 386_002);
+    expect(p.statusCode, p.body).toBe(200);
+    expect(owedOn2602(loanId)).toBe(8_200_000 - (386_002 - 82_000)); // interest 1% of 82,000.00 a month
+
+    // The purchase cancels only after its financing, and the financing only after its payments.
+    expect((await cancel(accountant, 'fa.buy', fa.id)).json()).toMatchObject({ code: 'HAS_DEPENDENTS', message: 'Cancel these first: LOAN-000001.' });
+    expect((await cancel(accountant, 'loan.loan', loanId)).json()).toMatchObject({ code: 'HAS_DEPENDENTS' });
+    expect((await cancel(accountant, 'loan.payment', p.json().id)).statusCode).toBe(200);
+    expect((await cancel(accountant, 'loan.loan', loanId)).statusCode).toBe(200);
+    expect([owedOn2602(fa.id), owedOn2602(loanId)]).toEqual([8_200_000, 0]);
+    expect((await accountant.get('/api/loan/financed-assets')).json()).toHaveLength(1);
+    expect((await cancel(accountant, 'fa.buy', fa.id)).statusCode).toBe(200);
+    expect(balances(env.db)).toEqual({});
+    noBrokenInvariants();
+  });
+
+  it('checks the purchase, the amount net of fees, the kind, the lender and a second loan on the same purchase', async () => {
+    const fa = await heatPress();
+    const cashOnly = await heatPress(0);
+    expect(await issueCodes(financing(fa.id))).toEqual([]);
+    expect(await issueCodes(financing(fa.id, { cashPlaceId: BDO }))).toEqual(['PROCEEDS']);
+    expect(await issueCodes({ ...financing(fa.id), assetPurchaseId: undefined })).toEqual(['PROCEEDS']);
+    expect(await issueCodes(financing(cashOnly.id))).toEqual(['ASSET_PURCHASE']);
+    expect(await issueCodes(financing(fa.id, { principalCents: 8_300_000 }))).toEqual(['FINANCED_AMOUNT']);
+    expect(await issueCodes(financing(fa.id, { kind: 'loan' }))).toEqual(['KIND']);
+    expect(await issueCodes(financing(fa.id, { lender: 'Another Lender' }))).toEqual(['LENDER_DIFFERENT']);
+
+    // A fee the lender adds to the loan: principal 83,000.00 less 1,000.00 fees = the 82,000.00 financed.
+    const withFee = await borrow(accountant, financing(fa.id, { principalCents: 8_300_000, feeCents: 100_000 }));
+    expect(withFee.statusCode, withFee.body).toBe(200);
+    expect(partiesOf(withFee.json().id)).toEqual([['2602', fa.id, 8_200_000, 0], ['7201', null, 100_000, 0], ['2602', withFee.json().id, 0, 8_300_000]]);
+    expect(await issueCodes(financing(fa.id))).toEqual(['ALREADY_LINKED']);
+    noBrokenInvariants();
+  });
+});
 
 describe('Loan golden (PLAN I2 G-20)', () => {
   it('loan ₱500,000 with a ₱5,000 fee deducted; instalment ₱25,000 = 20,000 principal + 5,000 interest', async () => {

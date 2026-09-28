@@ -7,6 +7,8 @@ import { allocate, divRoundHalfAway, notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
+import { financedPurchases } from '../FA/public.ts';
+import { loansFinancingAsset } from './public.ts';
 
 /** Kind of loan → the liability that carries its principal (D5 LOAN-IN: 2601 or 2602). */
 export const KINDS = {
@@ -59,10 +61,13 @@ export function generateSchedule(principalCents: number, rateBp: number, months:
 export interface LoanRow {
   id: string; number: string; status: 'posted' | 'cancelled'; replacedByNumber: string | null; dateReceived: string;
   lender: string; kind: LoanKind; principalCents: number; feeCents: number; rateBp: number; termMonths: number; schedule: Method; reference: string | null;
+  /** The FA- purchase this equipment financing paid for, or null (the proceeds came in cash). */
+  assetPurchaseNumber: string | null;
 }
 const LOANS = `SELECT l.document_id AS id, d.number, d.status, r.number AS replacedByNumber, d.business_date AS dateReceived, l.lender, l.kind,
-    l.principal_cents AS principalCents, l.fee_cents AS feeCents, l.rate_bp AS rateBp, l.term_months AS termMonths, l.schedule, l.reference
-  FROM loan_loans l JOIN documents d ON d.id = l.document_id LEFT JOIN documents r ON r.id = d.replaced_by_id`;
+    l.principal_cents AS principalCents, l.fee_cents AS feeCents, l.rate_bp AS rateBp, l.term_months AS termMonths, l.schedule, l.reference,
+    fa.number AS assetPurchaseNumber
+  FROM loan_loans l JOIN documents d ON d.id = l.document_id LEFT JOIN documents r ON r.id = d.replaced_by_id LEFT JOIN documents fa ON fa.id = l.asset_purchase_id`;
 
 export const loan = (db: Db, id: string) => db.prepare(`${LOANS} WHERE l.document_id = ?`).get(id) as LoanRow | undefined;
 
@@ -130,3 +135,6 @@ export function loanLedger(db: Db, id: string) {
   let owed = 0;
   return { ...p, schedule: rows, ledger: lines.map((x) => ({ ...x, balanceCents: (owed += x.amountCents) })) };
 }
+
+/** FA- purchases with a financed part that no posted loan has taken over yet: what "Record the financing" offers. */
+export const financingToRecord = (db: Db) => financedPurchases(db).filter((p) => loansFinancingAsset(db, p.id).length === 0);
