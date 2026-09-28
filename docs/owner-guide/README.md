@@ -17,3 +17,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [13. Bills and Expenses](13-bills-and-expenses.md): Record supplier bills, payments, and expenses.
 - [15. Inventory Count](15-inventory-count.md): Count materials or ready-made goods at a month end.
 - [16. Income Statement and Balance Sheet](16-statements.md): View how much money the business made or lost, and see what the business owns and owes.
+- [20. The Practice Shop](20-practice-shop.md): Train with made-up data without touching the real books.
