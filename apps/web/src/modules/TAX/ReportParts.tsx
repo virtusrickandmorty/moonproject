@@ -1,11 +1,11 @@
-/** Parts the tax report screens share: a date range that opens on the server's today, and the register table. */
+/** Parts the tax report screens share: a date range or a quarter that opens on the server's today, the register table and the Excel link. */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { formatPesos } from '@moonproject/shared';
-import { api, type TaxRegisterRow } from '../../api.ts';
+import { api, type TaxJournalRef, type TaxRegisterRow, type TaxSupplierRow } from '../../api.ts';
 import { Button, Field, Notice, inputClass } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { cancelMark, rangeError } from './reports.ts';
+import { QUARTERS, cancelMark, excelUrl, rangeError, yearChoices, type Quarter } from './reports.ts';
 
 type Range = { from: string; to: string };
 
@@ -49,8 +49,57 @@ export function RangeForm({ r }: { r: ReturnType<typeof useRangeReport<unknown>>
   );
 }
 
+type QuarterPick = { year: number; quarter: Quarter };
+
+/** A report of one quarter: opens on `initial` of the server's today, and loads again each time the year or quarter changes. */
+export function useQuarterReport<T>(allowed: boolean, initial: (today: string) => QuarterPick, load: (year: number, quarter: Quarter) => Promise<T>) {
+  const [today, setToday] = useState('');
+  const [pick, setPick] = useState<QuarterPick | null>(null);
+  const [data, setData] = useState<T | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    if (!allowed) return;
+    api.health().then((h) => {
+      const t = h.serverTime.slice(0, 10);
+      setToday(t);
+      setPick(initial(t));
+    }, (e: Error) => setError(e.message));
+  }, [allowed]); // once, on the server's today
+  useEffect(() => {
+    if (!pick) return;
+    let current = true; // only the last answer is shown
+    setData(null);
+    setError('');
+    load(pick.year, pick.quarter).then((d) => current && setData(d), (e: Error) => current && setError(e.message));
+    return () => void (current = false);
+  }, [pick]);
+  return { today, pick, setPick, data, error };
+}
+
+export function QuarterForm({ q }: { q: ReturnType<typeof useQuarterReport<unknown>> }) {
+  const pick = q.pick;
+  if (!pick) return null;
+  return (
+    <div className="flex flex-wrap items-end gap-3 print:hidden">
+      <Field label="Year">
+        <select className={inputClass} value={pick.year} onChange={(e) => q.setPick({ ...pick, year: Number(e.target.value) })}>
+          {yearChoices(q.today).map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+      </Field>
+      <Field label="Quarter">
+        <select className={inputClass} value={pick.quarter} onChange={(e) => q.setPick({ ...pick, quarter: Number(e.target.value) as Quarter })}>
+          {QUARTERS.map((n) => <option key={n} value={n}>Q{n}</option>)}
+        </select>
+      </Field>
+    </div>
+  );
+}
+
+/** The "Download for Excel" link: the report's own URL with &format=csv. */
+export const Excel = ({ url }: { url: string }) => <a href={excelUrl(url)} className="text-sm underline print:hidden">Download for Excel</a>;
+
 /** The document a row comes from, linked; a journal with no document shows its journal number. */
-function DocumentCell({ row }: { row: TaxRegisterRow }) {
+function DocumentCell({ row }: { row: TaxJournalRef }) {
   const mark = cancelMark(row);
   return (
     <>
@@ -65,16 +114,21 @@ function DocumentCell({ row }: { row: TaxRegisterRow }) {
 export const pesos = (cents: number) => formatPesos(cents);
 export interface Column<R> { head: string; cell: (row: R) => ReactNode; total?: ReactNode; amount?: boolean }
 
-/** Date, document, booklet number, customer and TIN, then the register's own columns, and a totals row. */
-export function RegisterTable<R extends TaxRegisterRow>({ rows, columns }: { rows: R[]; columns: Column<R>[] }) {
-  const lead: Column<R>[] = [
-    { head: 'Date', cell: (r) => r.date },
-    { head: 'Document', cell: (r) => <DocumentCell row={r} /> },
-    { head: 'Booklet no.', cell: (r) => r.formNumber ?? '—' },
-    { head: 'Customer', cell: (r) => r.customerName || '—' },
-    { head: 'TIN', cell: (r) => r.tin ?? '—' },
-  ];
-  const all = [...lead, ...columns];
+/** Who a sales-side register row is for: the booklet number, the customer and their TIN. */
+export const customerColumns: Column<TaxRegisterRow>[] = [
+  { head: 'Booklet no.', cell: (r) => r.formNumber ?? '—' },
+  { head: 'Customer', cell: (r) => r.customerName || '—' },
+  { head: 'TIN', cell: (r) => r.tin ?? '—' },
+];
+/** Who a purchases-side register row is from: the supplier (or one-off payee) and their TIN. */
+export const supplierColumns: Column<TaxSupplierRow>[] = [
+  { head: 'Supplier', cell: (r) => r.supplierName || '—' },
+  { head: 'TIN', cell: (r) => r.tin ?? '—' },
+];
+
+/** Date and document, then who (`lead`), then the register's own columns, and a totals row. */
+export function RegisterTable<R extends TaxJournalRef>({ rows, lead, columns }: { rows: R[]; lead: Column<R>[]; columns: Column<R>[] }) {
+  const all: Column<R>[] = [{ head: 'Date', cell: (r) => r.date }, { head: 'Document', cell: (r) => <DocumentCell row={r} /> }, ...lead, ...columns];
   const cls = (c: Column<R>) => (c.amount ? 'whitespace-nowrap py-1 pl-3 text-right tabular-nums' : 'py-1 pr-3');
   if (rows.length === 0) return <p className="text-sm text-slate-500">Nothing in these dates.</p>;
   return (
@@ -82,15 +136,16 @@ export function RegisterTable<R extends TaxRegisterRow>({ rows, columns }: { row
       <table className="w-full text-sm">
         <thead className="text-left text-slate-500"><tr>{all.map((c) => <th key={c.head} className={c.amount ? 'pl-3 text-right' : 'pr-3'}>{c.head}</th>)}</tr></thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.journalId} className={`border-t border-slate-100 align-top ${r.posting === 'reversal' ? 'text-slate-600' : ''}`}>
+          {/* A bill with lines of two classes gives two rows of one journal. */}
+          {rows.map((r, i) => (
+            <tr key={`${r.journalId}:${i}`} className={`border-t border-slate-100 align-top ${r.posting === 'reversal' ? 'text-slate-600' : ''}`}>
               {all.map((c) => <td key={c.head} className={cls(c)}>{c.cell(r)}</td>)}
             </tr>
           ))}
         </tbody>
         <tfoot>
           <tr className="border-t border-slate-300 font-semibold">
-            <td className="py-1" colSpan={lead.length}>Total</td>
+            <td className="py-1" colSpan={all.length - columns.length}>Total</td>
             {columns.map((c) => <td key={c.head} className={cls(c)}>{c.total}</td>)}
           </tr>
         </tfoot>
