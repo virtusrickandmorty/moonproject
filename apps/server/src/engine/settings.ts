@@ -14,6 +14,12 @@ const crSignOff = z
   .object({ name: z.string().trim().min(3).max(120), date: isoDate, basis: z.string().trim().min(10).max(500) })
   .strict();
 
+/** EWT classes: the keys PUR suppliers and EXP categories store (PLAN D4.8). Their rates are the setting below. */
+export const EWT_CLASSES = ['rent_5', 'contractor_2', 'prof_ind_5', 'prof_ind_10', 'prof_firm_10', 'prof_firm_15', 'goods_1', 'services_2'] as const;
+export type EwtClass = (typeof EWT_CLASSES)[number];
+const ewtRate = z.number().int().min(0).max(5000);
+const ewtRates = z.object(Object.fromEntries(EWT_CLASSES.map((k) => [k, ewtRate])) as Record<EwtClass, typeof ewtRate>).strict();
+
 /** Every setting, with the schema its value must pass. All of them need a fresh password (step-up) to change. */
 export const SETTINGS = {
   'tax.vat_rate_bp': {
@@ -34,6 +40,10 @@ export const SETTINGS = {
   'tax.top_withholding_agent': {
     label: 'Virtus is a published Top Withholding Agent (ACC-06)',
     schema: z.boolean(),
+  },
+  'tax.ewt_rates_bp': {
+    label: 'EWT rate of each withholding class, in basis points (500 = 5%) (PLAN D4.8)',
+    schema: ewtRates,
   },
 } as const;
 
