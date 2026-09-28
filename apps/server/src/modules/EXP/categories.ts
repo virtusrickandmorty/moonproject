@@ -2,9 +2,10 @@
 import type { Db } from '../../platform/db/driver.ts';
 import type { EwtClass } from './doctypes/voucher.ts';
 
-export interface Category { id: number; accountId: number; code: string; name: string; defaultEwtClass: EwtClass | null; isActive: boolean }
+/** `purchaseClass`: what the category buys, goods or services, for the purchases register and the 2550Q. */
+export interface Category { id: number; accountId: number; code: string; name: string; defaultEwtClass: EwtClass | null; purchaseClass: 'goods' | 'services'; isActive: boolean }
 
-const SELECT = `SELECT c.id, c.account_id AS accountId, a.code, a.name, c.default_ewt_class AS defaultEwtClass,
+const SELECT = `SELECT c.id, c.account_id AS accountId, a.code, a.name, c.default_ewt_class AS defaultEwtClass, c.purchase_class AS purchaseClass,
   (c.is_active = 1 AND a.is_active = 1) AS isActive FROM exp_categories c JOIN accounts a ON a.id = c.account_id`;
 type Row = Omit<Category, 'isActive'> & { isActive: number };
 const asCategory = (r: Row): Category => ({ ...r, isActive: r.isActive === 1 });

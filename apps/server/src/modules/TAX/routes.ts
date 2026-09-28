@@ -10,6 +10,7 @@ import { booklet, bookletUsage, listBooklets, registerBooklet, setBookletActive,
 import { salesRegister, withholdingReceivedRegister, type RegisterRow } from './registers.ts';
 import { certificatesToIssue, ewtRegister, purchasesRegister, type PurchaseClass, type SupplierRow } from './purchases.ts';
 import { vatSummary } from './vat.ts';
+import { vatReturnWorksheet } from './vat-return.ts';
 import { quarterOf, taxDeadlines, type Quarter } from './calendar.ts';
 
 export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -140,6 +141,18 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get<RangeQuery>('/api/tax/calendar', { config: { permission: 'tax.calendar.view' } }, async (req) => {
     const { from, to } = range(req.query);
     return taxDeadlines(db, from, to);
+  });
+
+  /** The 2550Q worksheet of one quarter (?year=2026&quarter=3, or today's quarter): each item of the return, and the checks before filing. */
+  app.get<{ Querystring: QuarterQuery & { format?: string } }>('/api/tax/2550q', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const { year, quarter } = quarterQuery(req.query);
+    const w = vatReturnWorksheet(db, year, quarter, today(clock));
+    if (req.query.format !== 'csv') return w;
+    return csv(reply, `2550Q-worksheet-${year}-Q${quarter}`, [
+      ['Item', 'Amount', 'Tax'],
+      ...w.lines.map((l) => [l.label, l.amountCents === null ? '' : csvPesos(l.amountCents), csvPesos(l.taxCents)]),
+      ...w.checks.map((c) => [`Check: ${c.message}`, '', '']),
+    ]);
   });
 
   /** VAT of one quarter (?year=2026&quarter=3), or of today's quarter. */
