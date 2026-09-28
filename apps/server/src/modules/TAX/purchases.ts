@@ -11,8 +11,8 @@
  */
 import type { Db } from '../../platform/db/driver.ts';
 import type { EwtClass } from '../../engine/settings.ts';
-import { billTaxFacts, type BillLineKind, type BillTaxFacts } from '../AP/public.ts';
-import { voucherTaxFacts } from '../EXP/public.ts';
+import { billTaxFacts, type BillTaxFacts } from '../AP/public.ts';
+import { voucherTaxFacts, type GoodsOrServices } from '../EXP/public.ts';
 import { purchaseTaxFacts } from '../FA/public.ts';
 import { supplierTaxInfo } from '../PUR/public.ts';
 import { quarterRange, type Quarter } from './calendar.ts';
@@ -20,17 +20,15 @@ import { movement, total, touches, type Touch } from './registers.ts';
 
 export type PurchaseClass = 'capital_goods' | 'goods' | 'services';
 const CLASSES: readonly PurchaseClass[] = ['capital_goods', 'goods', 'services'];
-const BILL_LINE_CLASS: Record<BillLineKind, PurchaseClass> = { supply: 'goods', freight_in: 'goods', subcontract: 'services', category: 'services' };
 
 /**
- * The class of a purchase on the 2550Q and the SLP: capital goods (an asset bought, FA-), goods (supplies and freight-in
- * on a bill), services (subcontracting and expense categories on a bill, and every expense voucher). Null for anything
- * else on 1401, like a journal voucher: the accountant classes it.
+ * The class of a purchase on the 2550Q and the SLP: capital goods (an asset bought, FA-), else goods or services as
+ * the bill line or expense voucher says (`bought`: supplies and freight-in are goods, subcontracting is a service, an
+ * expense category says which). Null for anything else on 1401, like a journal voucher: the accountant classes it.
  */
-export function purchaseClass(docType: string | null, billLine?: BillLineKind): PurchaseClass | null {
+export function purchaseClass(docType: string | null, bought?: GoodsOrServices): PurchaseClass | null {
   if (docType === 'fa.buy') return 'capital_goods';
-  if (docType === 'exp.voucher') return 'services';
-  if (docType === 'ap.bill' && billLine) return BILL_LINE_CLASS[billLine];
+  if (docType === 'ap.bill' || docType === 'exp.voucher') return bought ?? null;
   return null;
 }
 
@@ -68,6 +66,8 @@ export interface EwtRow extends SupplierRow { ewtClass: EwtClass | null; atc: st
 /** What the posting document says beside the ledger: the payee as registered, the invoice number, a bill's lines, the EWT. */
 interface Source {
   name: string; tin: string | null; invoiceNo: string | null;
+  /** A voucher's goods or services; a bill says it per line. */
+  bought?: GoodsOrServices;
   lines?: BillTaxFacts['lines'];
   ewt?: { cls: EwtClass | null; rateBp: number; baseCents: number };
 }
@@ -84,7 +84,7 @@ function sourceOf(db: Db, t: Touch): Source {
   const bill = t.docType === 'ap.bill' ? billTaxFacts(db, t.sourceId) : undefined;
   if (bill) return { ...registered(db, bill.supplierId), invoiceNo: bill.supplierInvoiceNo, lines: bill.lines, ewt: ewt(bill) };
   const v = t.docType === 'exp.voucher' ? voucherTaxFacts(db, t.sourceId) : undefined;
-  if (v) return { ...(v.supplierId ? registered(db, v.supplierId) : { name: v.payeeName, tin: v.payeeTin }), invoiceNo: v.supplierInvoiceNo, ewt: ewt(v) };
+  if (v) return { ...(v.supplierId ? registered(db, v.supplierId) : { name: v.payeeName, tin: v.payeeTin }), invoiceNo: v.supplierInvoiceNo, bought: v.bought, ewt: ewt(v) };
   const fa = t.docType === 'fa.buy' ? purchaseTaxFacts(db, t.sourceId) : undefined;
   if (fa) return { ...registered(db, fa.supplierId), invoiceNo: fa.supplierInvoiceNo };
   return { ...(t.partyId ? registered(db, t.partyId) : { name: '', tin: null }), invoiceNo: null };
@@ -103,10 +103,10 @@ const sign = (t: Touch) => (t.posting === 'reversal' ? -1 : 1);
 /** A journal's amount before VAT and VAT by class: one class, or a bill's lines by class, the last taking what is left so they add up to the journal. */
 function byClass(t: Touch & { netCents: number; vatCents: number }, s: Source): { cls: PurchaseClass | null; netCents: number; vatCents: number }[] {
   const lines = s.lines ?? [];
-  const classes = CLASSES.filter((c) => lines.some((l) => purchaseClass(t.docType, l.kind) === c));
-  if (classes.length < 2) return [{ cls: classes[0] ?? purchaseClass(t.docType), netCents: t.netCents, vatCents: t.vatCents }];
+  const classes = CLASSES.filter((c) => lines.some((l) => purchaseClass(t.docType, l.bought) === c));
+  if (classes.length < 2) return [{ cls: classes[0] ?? purchaseClass(t.docType, s.bought), netCents: t.netCents, vatCents: t.vatCents }];
   const parts = classes.map((cls) => {
-    const of = lines.filter((l) => purchaseClass(t.docType, l.kind) === cls);
+    const of = lines.filter((l) => purchaseClass(t.docType, l.bought) === cls);
     return { cls, netCents: sign(t) * total(of, (l) => l.costCents), vatCents: sign(t) * total(of, (l) => l.vatCents) };
   });
   const last = parts.at(-1)!, rest = parts.slice(0, -1);

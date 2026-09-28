@@ -52,11 +52,9 @@ describe('the class of a purchase (2550Q and SLP)', () => {
   it('capital goods: a fixed asset bought (FA-)', () => {
     expect(purchaseClass('fa.buy')).toBe('capital_goods');
   });
-  it('goods: supplies and freight-in on a bill', () => {
-    expect([purchaseClass('ap.bill', 'supply'), purchaseClass('ap.bill', 'freight_in')]).toEqual(['goods', 'goods']);
-  });
-  it('services: subcontracting and expense categories on a bill, and every expense voucher', () => {
-    expect([purchaseClass('ap.bill', 'subcontract'), purchaseClass('ap.bill', 'category'), purchaseClass('exp.voucher')]).toEqual(['services', 'services', 'services']);
+  it('goods or services: as the bill line or the expense voucher says', () => {
+    expect([purchaseClass('ap.bill', 'goods'), purchaseClass('ap.bill', 'services'), purchaseClass('exp.voucher', 'goods'), purchaseClass('exp.voucher', 'services')])
+      .toEqual(['goods', 'services', 'goods', 'services']);
   });
   it('none for anything else on 1401 (a journal voucher): the accountant classes it', () => {
     expect([purchaseClass(null), purchaseClass('acc.jv'), purchaseClass('ap.bill')]).toEqual([null, null, null]);
@@ -73,6 +71,18 @@ describe('the ATC of an EWT class', () => {
 
 describe('purchases register', () => {
   beforeEach(() => setUp());
+  it('an expense category says goods or services (TAX-1): office supplies are goods, rent is a service, on a voucher and on a bill line', async () => {
+    const kinds = env.db.prepare(`SELECT a.code, c.purchase_class FROM exp_categories c JOIN accounts a ON a.id = c.account_id WHERE c.purchase_class = 'goods' ORDER BY a.code`).raw().all();
+    expect(kinds).toEqual([['6104', 'goods'], ['6141', 'goods'], ['6160', 'goods']]);
+    await voucher({ supplierId: fabric, categoryId: cat('6160'), amountCents: 112_000, description: 'Bond paper', supplierInvoiceNo: 'OR-9', supplierInvoiceDate: '2026-09-28' });
+    await voucher({ supplierId: lessor, categoryId: cat('6110'), amountCents: 4_000_000, description: 'September rent', supplierInvoiceNo: 'OR-10', supplierInvoiceDate: '2026-09-28' });
+    await bill(printer, 'SI-0050', '2026-09-27', [{ categoryId: cat('6160'), amountCents: 224_000 }, { categoryId: cat('6180'), amountCents: 336_000 }]);
+    const r = (await purchases('2026-09-01', '2026-09-30')).json();
+    expect(r.rows.map((x: Record<string, unknown>) => [x.supplierInvoiceNo, x.purchaseClass, x.vatCents])).toEqual([
+      ['OR-9', 'goods', 12_000], ['OR-10', 'services', 428_571], ['SI-0050', 'goods', 24_000], ['SI-0050', 'services', 36_000],
+    ]);
+    expect([r.byClass.goods.vatCents, r.byClass.services.vatCents, r.totals.vatCents, r.glVatCents]).toEqual([36_000, 464_571, 500_571, 500_571]);
+  });
 
   it('lists each purchase with the invoice number, registered name, TIN and class; a bill of two classes splits; a cancel is a negative row; totals tie to 1401', async () => {
     // A heat press, ₱112,000.00 VAT included, paid from BDO.
