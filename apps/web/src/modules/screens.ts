@@ -21,6 +21,8 @@ import { RunForm } from './PAY/RunForm.tsx';
 import { ReleaseForm } from './PAY/ReleaseForm.tsx';
 import { ThirteenthForm } from './PAY/ThirteenthForm.tsx';
 import { Payslips, advanceView, releaseView, runView, thirteenthView } from './PAY/views.tsx';
+import { Payslips, advanceView, releaseView, runView } from './PAY/views.tsx';
+import { GovLoans } from './PAY/Loans.tsx';
 import { AdvanceForm } from './CA/AdvanceForm.tsx';
 import { OpeningForm as OpeningCaForm } from './CA/OpeningForm.tsx';
 import { RepaymentForm, WriteoffForm } from './CA/SettleForms.tsx';
@@ -94,6 +96,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/pay/runs/:id/payslips': Payslips,
   '/ca/employees': CaOwed,
   '/ca/employees/:id': CaEmployeePage,
+  '/pay/loans': GovLoans,
   '/prt/company-profile': CompanyProfileScreen,
   '/stat': StatMonths,
   '/stat/:month': StatMonthPage,

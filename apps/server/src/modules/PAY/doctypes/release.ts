@@ -44,8 +44,8 @@ function runOf(db: Db, id: string): RunRow | undefined {
 }
 /** Release tables by what they pay: a payroll run's net pay, or a 13th-month pay's. */
 const TABLES = {
-  run: { head: 'pay_releases', source: 'run_id', lines: 'pay_release_lines', tenders: 'pay_release_tenders', employees: 'pay_run_employees' },
-  thirteenth: { head: 'pay_thirteenth_releases', source: 'thirteenth_id', lines: 'pay_thirteenth_release_lines', tenders: 'pay_thirteenth_release_tenders', employees: 'pay_thirteenth_employees' },
+  run: { head: 'pay_releases', source: 'run_id', lines: 'pay_release_lines', tenders: 'pay_release_tenders', employees: 'pay_run_employees', net: 'e.net_cents - e.loan_cents' },
+  thirteenth: { head: 'pay_thirteenth_releases', source: 'thirteenth_id', lines: 'pay_thirteenth_release_lines', tenders: 'pay_thirteenth_release_tenders', employees: 'pay_thirteenth_employees', net: 'e.net_cents' },
 } as const;
 
 /** Each employee of a run (or 13th-month pay) with their net pay and the release that already paid it, if any. */
@@ -53,7 +53,7 @@ export function releaseStatus(db: Db, runId: string): { employeeId: string; name
   const t = TABLES[runOf(db, runId)?.kind ?? 'run'];
   return db
     .prepare(
-      `SELECT e.employee_id AS employeeId, e.employee_name AS name, e.net_cents AS netCents,
+      `SELECT e.employee_id AS employeeId, e.employee_name AS name, ${t.net} AS netCents,
          (SELECT d.number FROM ${t.lines} l JOIN ${t.head} x ON x.document_id = l.document_id JOIN documents d ON d.id = l.document_id
           WHERE x.${t.source} = e.document_id AND l.employee_id = e.employee_id AND d.status = 'posted') AS releasedBy
        FROM ${t.employees} e WHERE e.document_id = ? ORDER BY e.rowid`,
