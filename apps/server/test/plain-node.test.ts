@@ -68,23 +68,15 @@ describe('the server on plain Node', () => {
     expect(JSON.parse(res.body.toString())).toMatchObject({ ok: true });
   }, 60_000);
 
-  it('starts in LAN mode: HTTPS through the shop CA, the "Join this PC" page (moved when its port is taken) and the practice shop', async () => {
+  it('starts in LAN mode: HTTPS through the shop CA, and the "Join this PC" page (moved when its port is taken)', async () => {
     const taken = createServer();
     await new Promise<void>((resolve) => taken.listen(0, '0.0.0.0', resolve));
     const takenPort = (taken.address() as AddressInfo).port;
-    const free = createServer();
-    await new Promise<void>((resolve) => free.listen(0, '0.0.0.0', resolve));
-    const practicePort = (free.address() as AddressInfo).port;
-    await new Promise((resolve) => free.close(resolve));
-    const [https, http, moved, practice] = await start('lan', {
-      MOONPROJECT_LISTEN: 'lan', HTTPS_PORT: '0', HTTP_PORT: String(takenPort), HTTP_FALLBACK_PORT: '0', MOONPROJECT_PRACTICE_PORT: String(practicePort),
-    }, [
+    const [https, http, moved] = await start('lan', { MOONPROJECT_LISTEN: 'lan', HTTPS_PORT: '0', HTTP_PORT: String(takenPort), HTTP_FALLBACK_PORT: '0' }, [
       /Server listening at https:\/\/[\d.]+:(\d+)/,
       /Join this PC\\?" page on port (\d+)/, // pino writes the message as JSON, so the quote comes escaped
       /Port (\d+) is taken/,
-      /practice shop is open on port (\d+)/, // its made-up data is made first, by data.ts on plain Node too
     ]).finally(() => taken.close());
-    expect(practice).toBe(practicePort);
     expect(moved).toBe(takenPort);
     expect(http).not.toBe(takenPort);
     const db = openReadonly(join(dir, 'lan', 'moonproject.db'));
@@ -96,7 +88,5 @@ describe('the server on plain Node', () => {
     const page = await fetchBytes(`http://127.0.0.1:${http}/`);
     expect(page.body.toString()).toContain('Join this PC to Moonproject');
     expect((await fetchBytes(`http://127.0.0.1:${http}/moonproject-ca.crt`)).body.equals(new X509Certificate(ca).raw)).toBe(true);
-    const practiceHealth = await fetchBytes(`https://127.0.0.1:${practice}/api/health`, ca);
-    expect(JSON.parse(practiceHealth.body.toString())).toMatchObject({ ok: true, practice: true });
-  }, 90_000);
+  }, 60_000);
 });

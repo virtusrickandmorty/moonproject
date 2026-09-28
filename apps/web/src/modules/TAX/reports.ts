@@ -60,7 +60,7 @@ export const certificateWords = (c: 'pending' | 'received' | null) => (c === 're
 
 export function pendingWords(count: number): string {
   if (count === 0) return 'No 2307 is still to come.';
-  return count === 1 ? '1 2307 is still to come.' : `${count} 2307s are still to come.`;
+  return count === 1 ? '1 collection still waits for its 2307.' : `${count} collections still wait for their 2307s.`;
 }
 
 /**

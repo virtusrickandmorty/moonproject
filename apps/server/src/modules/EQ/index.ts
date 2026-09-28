@@ -3,7 +3,6 @@ import { dirname, join } from 'node:path';
 import { defineModule } from '../../engine/documents/registry.ts';
 import { ownerMoneyDoc } from './doctypes/owner-money.ts';
 import { officerDoc } from './doctypes/officer.ts';
-import { openingOfficerDoc } from './doctypes/opening.ts';
 import { eqRoutes } from './routes.ts';
 
 export default defineModule({
@@ -23,7 +22,7 @@ export default defineModule({
     { key: 'eq.ofc.post', label: 'Record officer transactions', defaultRoles: ['encoder', 'accountant', 'owner'] },
     { key: 'eq.ofc.cancel', label: 'Cancel or edit recorded officer transactions', defaultRoles: ['accountant', 'owner'] },
   ],
-  docTypes: [ownerMoneyDoc, officerDoc, openingOfficerDoc], // eq.opening takes ACC's acc.opening.* permissions (OPENING_PERMISSIONS)
+  docTypes: [ownerMoneyDoc, officerDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: eqRoutes,
 });

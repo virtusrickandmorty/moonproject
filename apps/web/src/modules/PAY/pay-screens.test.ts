@@ -4,9 +4,9 @@ import type { FastifyInstance } from 'fastify';
 import { PASSWORD, cashPlaceId, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { addEmployee, addPay } from '../../../../server/src/modules/EMP/tests/fixture.ts';
-import { createApi, newIdempotencyKey as key, type PayEmployee, type PayRunDoc, type PayThirteenthDoc, type Payslips } from '../../api.ts';
+import { createApi, newIdempotencyKey as key, type PayEmployee, type PayRunDoc } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
-import { deductionsOf, emptyManual, qtyText, runInput, thirteenthInput, thirteenthText } from './run.ts';
+import { deductionsOf, emptyManual, qtyText, runInput } from './run.ts';
 
 const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: string, init: RequestInit) => {
   const res = await app.inject({ method: init.method as 'GET', url, payload: init.body as string, headers: { ...(init.headers as object), cookie: jar.cookie } });
@@ -39,23 +39,11 @@ describe('payroll screen rules', () => {
     expect([qtyText('basic', 9_500), qtyText('leave', 1_000), qtyText('ot', 90), qtyText('piece', -2), qtyText('salary', 1)]).toEqual(['9.5 days', '1 day', '1:30 h', '-2 pcs', '']);
   });
 
-  it('13th-month input: blank amounts are one twelfth, a changed amount needs a reason, people left out need one; the payslip line', () => {
-    expect(thirteenthInput('SEMI_MONTHLY', 2026, { e1: { amount: '', reason: '' }, e2: { amount: '12,000.50', reason: ' Rounded up (made up) ' } }, {})).toEqual({
-      input: { payGroup: 'SEMI_MONTHLY', year: 2026, amounts: [{ employeeId: 'e2', amountCents: 1_200_050, reason: 'Rounded up (made up)' }] }, errors: [],
-    });
-    expect(thirteenthInput('WEEKLY_PIECE', null, { e1: { amount: 'abc', reason: '' }, e2: { amount: '100', reason: 'no' }, e3: { amount: '5', reason: '' } }, { e3: ' x ' }).errors).toEqual([
-      'Type a changed 13th-month amount like 12,500.00, or leave it blank for one twelfth of the basic pay.', 'Say why each 13th-month amount is changed (5 characters or more).',
-      'Say why each person is left out (5 characters or more).', 'Pick the year.',
-    ]);
-    const e = { thirteenthCents: 62_500, ytd: { thirteenthCents: 1_437_500 }, thirteenthPaid: [{ number: 'TH13-000001', amountCents: 1_437_500 }] } as Payslips['employees'][number];
-    expect(thirteenthText(e)).toBe('13th month: ₱625.00 this payroll, ₱14,375.00 so far this year; paid ₱14,375.00 by TH13-000001');
-  });
-
   it('the menu shows payroll runs, releases and cash advances under People & Payroll', () => {
-    const types = [{ key: 'pay.run', module: 'PAY', title: 'Payroll Run' }, { key: 'pay.release', module: 'PAY', title: 'Payroll Release' }, { key: 'pay.thirteenth', module: 'PAY', title: '13th-Month Pay' }, { key: 'ca.advance', module: 'CA', title: 'Cash Advance' }] as never[];
+    const types = [{ key: 'pay.run', module: 'PAY', title: 'Payroll Run' }, { key: 'pay.release', module: 'PAY', title: 'Payroll Release' }, { key: 'ca.advance', module: 'CA', title: 'Cash Advance' }] as never[];
     expect(buildMenu(types, new Set(['emp.view'])).find((g) => g.group === 'People & Payroll')).toEqual({
       group: 'People & Payroll',
-      items: ['Employees', 'Attendance', 'Holidays', 'Payroll Runs', 'Payroll Releases', '13th-Month Pay', 'Cash Advances'].map((label) => expect.objectContaining({ label })),
+      items: ['Employees', 'Attendance', 'Holidays', 'Payroll Runs', 'Payroll Releases', 'Cash Advances'].map((label) => expect.objectContaining({ label })),
     });
   });
 });
@@ -114,32 +102,5 @@ describe('web client for payroll', () => {
     expect(pre.issues).toEqual([]);
     const run = await api.post('pay.run', input, pre.totalCents, key(), period!.bookOn!);
     expect((await api.get('pay.run', run.id)).header.businessDate).toBe('2026-09-30');
-  });
-
-  it('13th-month pay: the years, worked out and recorded, then released like a payroll; the payslip shows it', async () => {
-    const env = await createTestEnv('2026-11-30T02:00:00Z');
-    const acct = createUser(env.db, 'acct3', ['accountant']);
-    const carla = addEmployee(env.db, 'Carla Opisina', { costCentre: 'office' });
-    addPay(env.db, carla, acct, { payType: 'monthly', payGroup: 'SEMI_MONTHLY', monthlyRateCents: 1_500_000 });
-    const api = createApi(injectFetch(env.app));
-    await api.login('acct3', PASSWORD);
-    const runInput1 = runInput('SEMI_MONTHLY', '2026-11-16', [], {}, {}).input;
-    const run = await api.post('pay.run', runInput1, (await api.preview('pay.run', runInput1)).totalCents, key());
-    env.clock.set('2026-12-15T02:00:00Z');
-    await api.login('acct3', PASSWORD); // the session ended while the clock moved on
-
-    expect(await api.thirteenthYears()).toEqual({ years: [2026, 2025], recorded: [] });
-    const { input } = thirteenthInput('SEMI_MONTHLY', 2026, {}, {});
-    const pre = await api.preview('pay.thirteenth', input);
-    // One half-month of ₱7,500 → 625.00, as accrued by the run.
-    expect((pre.doc as PayThirteenthDoc).employees).toMatchObject([{ name: 'Carla Opisina', basicCents: 750_000, dueCents: 62_500, accruedCents: 62_500, netCents: 62_500 }]);
-    const th = await api.post('pay.thirteenth', input, pre.totalCents, key());
-    expect(th.number).toBe('TH13-000001');
-    expect((await api.thirteenthYears()).recorded).toEqual([{ payGroup: 'SEMI_MONTHLY', year: 2026, id: th.id, number: 'TH13-000001' }]);
-    expect((await api.runsToRelease()).map((r) => [r.number, r.kind, r.dueCents])).toEqual([['TH13-000001', 'thirteenth', 62_500], ['PAY-000001', 'run', expect.any(Number)]]);
-    const relInput = { runId: th.id, employeeIds: [carla], tenders: [{ cashPlaceId: cashPlaceId(env.db, '1101'), amountCents: 62_500 }] };
-    const rel = await api.post('pay.release', relInput, (await api.preview('pay.release', relInput)).totalCents, key());
-    expect(rel.number).toBe('POUT-000001');
-    expect(thirteenthText((await api.payslips(run.id)).employees[0]!)).toBe('13th month: ₱625.00 this payroll, ₱625.00 so far this year; paid ₱625.00 by TH13-000001');
   });
 });

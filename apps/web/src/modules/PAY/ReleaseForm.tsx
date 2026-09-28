@@ -65,12 +65,12 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
         <h1 className="text-2xl font-semibold">Release net pay</h1>
         {error && <Notice>{error}</Notice>}
         <Panel title="Which payroll?">
-          {runs?.length === 0 && <p className="text-sm text-slate-500">Every recorded payroll and 13th-month pay is released.</p>}
+          {runs?.length === 0 && <p className="text-sm text-slate-500">Every recorded payroll is released.</p>}
           <div role="radiogroup" aria-label="Which payroll?" className="space-y-2">
             {runs?.map((r) => (
               <button key={r.id} type="button" role="radio" aria-checked={runId === r.id} onClick={() => setRunId(r.id)}
                 className={`flex w-full justify-between rounded-lg p-3 text-left text-sm ring-1 ${runId === r.id ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'}`}>
-                <span>{r.number} · {GROUP_LABEL[r.payGroup]} · {r.kind === 'thirteenth' ? `13th month ${r.periodStart.slice(0, 4)}` : `${r.periodStart} to ${r.periodEnd}`}</span><span className="tabular-nums">{formatPesos(r.dueCents)} to release</span>
+                <span>{r.number} · {GROUP_LABEL[r.payGroup]} · {r.periodStart} to {r.periodEnd}</span><span className="tabular-nums">{formatPesos(r.dueCents)} to release</span>
               </button>
             ))}
           </div>

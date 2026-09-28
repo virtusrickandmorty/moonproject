@@ -2,8 +2,7 @@
  * The payroll screens' rules: typed manual lines and cash-advance changes to run input, and the deductions a payslip
  * lists. Pure, so they are tested without a browser; the server works everything out again.
  */
-import { formatPeso as peso } from '@moonproject/shared';
-import type { PayEmployee, PayGroup, PayRunInput, PayThirteenthInput, Payslips } from '../../api.ts';
+import type { PayEmployee, PayGroup, PayRunInput } from '../../api.ts';
 import { cents } from '../COL/money.ts';
 
 export const GROUP_LABEL: Record<PayGroup, string> = { WEEKLY_PIECE: 'Weekly (piece rate)', SEMI_DAILY: 'Semi-monthly (daily paid)', SEMI_MONTHLY: 'Semi-monthly (monthly staff)' };
@@ -58,35 +57,4 @@ export function qtyText(kind: string, qty: number): string {
   if (kind === 'ot') return `${Math.floor(qty / 60)}:${String(qty % 60).padStart(2, '0')} h`;
   if (['basic', 'leave', 'holiday', 'rest_day', 'absence'].includes(kind)) return `${qty / 1000} ${qty === 1000 ? 'day' : 'days'}`;
   return kind === 'piece' ? `${qty} pcs` : '';
-}
-
-/** A changed 13th-month amount as typed: the amount and why. */
-export interface ChangedAmount { amount: string; reason: string }
-
-/** The 13th-month form's pay group, year, changed amounts and people left out -> input, with plain errors. Blank amounts are left out. */
-export function thirteenthInput(
-  payGroup: PayGroup,
-  year: number | null,
-  amounts: Record<string, ChangedAmount>,
-  skip: Record<string, string>,
-): { input: PayThirteenthInput; errors: string[] } {
-  const errors: string[] = [];
-  const changed: NonNullable<PayThirteenthInput['amounts']> = [];
-  for (const [employeeId, a] of Object.entries(amounts)) {
-    if (!a.amount.trim() || employeeId in skip) continue;
-    const amount = cents(a.amount);
-    if (amount === undefined || amount < 0) errors.push('Type a changed 13th-month amount like 12,500.00, or leave it blank for one twelfth of the basic pay.');
-    else if (a.reason.trim().length < 5) errors.push('Say why each 13th-month amount is changed (5 characters or more).');
-    else changed.push({ employeeId, amountCents: amount, reason: a.reason.trim() });
-  }
-  const left = Object.entries(skip).map(([employeeId, reason]) => ({ employeeId, reason: reason.trim() }));
-  if (left.some((s) => s.reason.length < 5)) errors.push('Say why each person is left out (5 characters or more).');
-  if (!year) errors.push('Pick the year.');
-  return { input: { payGroup, year: year ?? 0, ...(changed.length ? { amounts: changed } : {}), ...(left.length ? { skip: left } : {}) }, errors: [...new Set(errors)] };
-}
-
-/** The payslip's 13th-month line: this payroll's accrual, the year so far, and the payout once recorded. */
-export function thirteenthText(e: Payslips['employees'][number]): string {
-  const paid = e.thirteenthPaid.map((p) => `paid ${peso(p.amountCents)} by ${p.number}`);
-  return [`13th month: ${peso(e.thirteenthCents)} this payroll, ${peso(e.ytd.thirteenthCents)} so far this year`, ...paid].join('; ');
 }

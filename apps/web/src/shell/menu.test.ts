@@ -3,10 +3,9 @@ import { buildMenu, labelOf, type MenuItem } from './menu.ts';
 import type { DocTypeInfo } from '../api.ts';
 
 describe('menu (PLAN H1)', () => {
-  it('shows Shop certificate and Practice shop in Admin to every signed-in user', () => {
+  it('shows Shop certificate in Admin to every signed-in user', () => {
     expect(buildMenu([], new Set()).find((g) => g.group === 'Admin')?.items).toEqual([
       { group: 'Admin', label: 'Shop certificate', path: '/admin/shop-certificate' },
-      { group: 'Admin', label: 'Practice shop', path: '/admin/practice' },
     ]);
   });
 

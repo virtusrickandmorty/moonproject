@@ -224,9 +224,8 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
   },
 
   /**
-   * Cancelled first: releases of this run's net pay (D6, G-29), runs recorded after it for the same contribution
-   * month that pay any of its employees, because their month-to-date shares were worked out on top of this one, and a
-   * 13th-month pay that counted its basic pay and paid its accrual.
+   * Cancelled first: releases of this run's net pay (D6, G-29), and runs recorded after it for the same contribution
+   * month that pay any of its employees, because their month-to-date shares were worked out on top of this one.
    */
   dependents(db, documentId) {
     return db
@@ -237,9 +236,6 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
          WHERE d.status = 'posted' AND d.id <> @id AND d.number > (SELECT number FROM documents WHERE id = @id)
            AND r.contribution_month = (SELECT contribution_month FROM pay_runs WHERE document_id = @id)
            AND EXISTS (SELECT 1 FROM pay_run_employees a JOIN pay_run_employees b ON b.employee_id = a.employee_id WHERE a.document_id = r.document_id AND b.document_id = @id)
-         UNION
-         SELECT d.id, d.number FROM pay_thirteenth_basis b JOIN pay_run_employees e ON e.id = b.run_employee_id JOIN pay_thirteenth_employees t ON t.id = b.thirteenth_employee_id
-           JOIN documents d ON d.id = t.document_id WHERE e.document_id = @id AND d.status = 'posted'
          ORDER BY 2`,
       )
       .all({ id: documentId }) as { id: string; number: string }[];

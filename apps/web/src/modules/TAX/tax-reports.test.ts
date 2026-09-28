@@ -45,7 +45,7 @@ describe('tax report screen rules', () => {
     expect(cancelMark({ posting: 'original', documentStatus: 'cancelled' })?.text).toBe('Cancelled later');
     expect(cancelMark({ posting: 'reversal', documentStatus: 'cancelled' })?.text).toBe('Cancelled');
     expect(['received', 'pending', null].map((c) => certificateWords(c as 'pending'))).toEqual(['In hand', 'Pending', '—']);
-    expect([0, 1, 3].map(pendingWords)).toEqual(['No 2307 is still to come.', '1 2307 is still to come.', '3 2307s are still to come.']);
+    expect([0, 1, 3].map(pendingWords)).toEqual(['No 2307 is still to come.', '1 collection still waits for its 2307.', '3 collections still wait for their 2307s.']);
     expect(ledgerWarnings([['VAT', 'output VAT', 123_750, 123_750]])).toEqual([]);
     expect(ledgerWarnings([['CWT', 'creditable withholding tax', 10_000, 10_000], ['VAT withheld', 'VAT withheld', 50_000, 60_000]])).toEqual([
       'The VAT withheld in this register (₱500.00) is not what the ledger shows on VAT withheld for these dates (₱600.00). Look at the general ledger before filing.',

@@ -88,8 +88,3 @@ export function payRulesAt(db: Db, date: string): PayRules | undefined {
   };
 }
 export const rulesAt = (db: Db, date: string): PayRules => need(payRulesAt(db, date), 'pay rules (minimum wage, holiday rates)', date);
-/** The yearly ceiling of tax-exempt 13th-month pay and other benefits in force on a date (F1, RR 11-2018: ₱90,000). */
-export function benefitCeilingAt(db: Db, date: string): number {
-  const r = need(db.prepare(latest('pay_benefit_ceilings')).get({ d: date }) as Row | undefined, 'ceiling of tax-exempt 13th-month pay', date);
-  return +r.ceiling_cents!;
-}

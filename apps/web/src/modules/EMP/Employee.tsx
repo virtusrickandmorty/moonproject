@@ -5,7 +5,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type EmployeeDetail, type EmployeeRecord, type Me, type PayProfile } from '../../api.ts';
 import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
-import { Link } from '../../router.tsx';
 import { cents } from '../COL/money.ts';
 
 const PAY_TYPE = { daily: 'Daily', piece: 'Per piece (pakyawan)', monthly: 'Monthly', mixed: 'Daily and per piece' } as const;
@@ -37,7 +36,6 @@ export function EmployeePage({ me, params }: { me: Me; params?: Record<string, s
         <p className="text-sm">{d.sil.eligibleFrom > `${d.sil.year}-12-31` ? `Paid leave starts after a year of service, on ${d.sil.eligibleFrom}.` : `${d.sil.used} of ${d.sil.daysPerYear} days used; ${d.sil.left} left.`}</p>
       </Panel>
       <Pay d={d} canSet={e.isActive && can('emp.pay') && can('pay.view_rates')} onSaved={load} />
-      {can('ca.view') && <Link to={`/ca/employees/${e.id}`} className="underline">Cash advances (what {e.fullName} owes)</Link>}
       {separating && <Separate e={e} onClose={() => setSeparating(false)} onSaved={load} />}
     </div>
   );

@@ -29,13 +29,6 @@ export function activeCustomers(db: Db): { id: string; name: string }[] {
     WHERE is_active = 1 AND merged_into_id IS NULL ORDER BY display_name, id`).all() as { id: string; name: string }[];
 }
 
-/** All customer names for historical statements, including inactive and merged records. */
-export function statementCustomers(db: Db): { id: string; name: string }[] {
-  return db.prepare('SELECT id, display_name AS name FROM cus_customers ORDER BY display_name, id')
-    .all() as { id: string; name: string }[];
-}
-
-
 /** Birthdays recorded for active people linked to active, unmerged customers. */
 export function customerBirthdays(db: Db): { id: string; customerId: string; name: string; birthday: string }[] {
   return db.prepare(`SELECT p.id, p.customer_id AS customerId, p.full_name AS name, p.birthday
