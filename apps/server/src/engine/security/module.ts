@@ -10,6 +10,7 @@ export const engineModule = defineModule({
     { key: 'acc.journal.view', label: 'See journal entries ("Behind the scenes")', defaultRoles: ['owner', 'accountant'] },
     { key: 'acc.backdate', label: 'Date an accountant document earlier than today', defaultRoles: ['accountant'] },
     { key: 'sec.practice.reset', label: 'Start the practice shop over with new made-up data', defaultRoles: ['owner'] },
+    { key: 'sec.health.view', label: 'See System Health, run the system check and download the support file', defaultRoles: ['owner', 'accountant'] },
   ],
   docTypes: [],
 });

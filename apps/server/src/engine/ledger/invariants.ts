@@ -11,6 +11,12 @@ export interface InvariantResult {
   problems: string[];
 }
 
+/** Each check's name for staff (AUD's integrity page, System Health). */
+export const INVARIANT_NAMES: Record<string, string> = {
+  L1: 'Balanced and sealed journals', L2: 'Postable journal accounts', L3: 'Matching subledger parties',
+  L4: 'Document reversals', L7: 'Gapless document numbers', L12: 'Audit chain',
+};
+
 function check(id: string, problems: string[]): InvariantResult {
   return { id, ok: problems.length === 0, problems };
 }
