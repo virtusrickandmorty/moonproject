@@ -41,7 +41,7 @@ describe('payroll screen rules', () => {
 
   it('the menu shows payroll runs, releases and cash advances under People & Payroll', () => {
     const types = [{ key: 'pay.run', module: 'PAY', title: 'Payroll Run' }, { key: 'pay.release', module: 'PAY', title: 'Payroll Release' }, { key: 'ca.advance', module: 'CA', title: 'Cash Advance' }] as never[];
-    expect(buildMenu(types, new Set(['emp.view'])).find((g) => g.group === 'People & Payroll')).toEqual({
+    expect(buildMenu(types, new Set(['emp.view'])).at(-1)).toEqual({
       group: 'People & Payroll',
       items: ['Employees', 'Attendance', 'Holidays', 'Payroll Runs', 'Payroll Releases', 'Cash Advances'].map((label) => expect.objectContaining({ label })),
     });

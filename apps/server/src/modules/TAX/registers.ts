@@ -2,8 +2,8 @@
  * Tax registers (PLAN E12, G "Tax", L6), read from the ledger so each one ties to its GL account by construction:
  * one row per journal that touches the account in the period. A cancelled document's reversal is its own negative row
  * on the cancel date, the way it lands in that period's return, and a journal voucher on the account shows up as an
- * adjustment; the quarterly VAT close and the BIR payments are left out. Each row names the document, the number on
- * the BIR paper form (sales invoice or CR, from documents.external_number) and the customer's registered name and TIN.
+ * adjustment; the quarterly VAT close is left out. Each row names the document, the number on the BIR paper form
+ * (sales invoice or CR, from documents.external_number) and the customer's registered name and TIN.
  *   Sales register (2301 output VAT): VATable sales = the journal's revenue credits, VAT, total.
  *   Withholding received (1410 CWT and 1404 VAT withheld, the customers' 2307s): ATC and whether the 2307 is in hand.
  */
@@ -26,10 +26,6 @@ export interface Touch {
 
 /** The quarterly VAT close moves balances between VAT accounts; it is not a sale or a 2307, so no register lists it. */
 const NOT_A_CLOSE = `NOT EXISTS (SELECT 1 FROM tax_vat_closes c WHERE c.document_id = j.source_id AND j.source_type = 'document')`;
-/** A BIR payment (BIRP-) pays the BIR what the withholdings left payable on 2311; it withholds nothing, so no register lists it either. */
-const NOT_A_PAYMENT = `NOT EXISTS (SELECT 1 FROM tax_bir_payments p WHERE p.document_id = j.source_id AND j.source_type = 'document')`;
-/** The journals the registers read: all but the VAT closes and the BIR payments (their cancels included). */
-export const IN_REGISTERS = `${NOT_A_CLOSE} AND ${NOT_A_PAYMENT}`;
 
 /**
  * Journals in [from, to] with a line on one of `roles`, with per-journal sums of `sums` (column → SQL over j, l and a).
@@ -46,7 +42,7 @@ export function touches<K extends string>(db: Db, roles: string[], sums: Record<
          COUNT(DISTINCT CASE WHEN a.role_key IN (${marks}) THEN l.party_id END) AS parties, ${cols}
        FROM journals j JOIN journal_lines l ON l.journal_id = j.id JOIN accounts a ON a.id = l.account_id
        LEFT JOIN documents d ON d.id = j.source_id AND j.source_type IN ('document', 'document-cancel')
-       WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ? AND ${IN_REGISTERS}
+       WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ? AND ${NOT_A_CLOSE}
          AND EXISTS (SELECT 1 FROM journal_lines x JOIN accounts xa ON xa.id = x.account_id WHERE x.journal_id = j.id AND xa.role_key IN (${marks}))
        GROUP BY j.id ORDER BY j.business_date, j.number`,
     )
@@ -69,7 +65,7 @@ export function movement(db: Db, roles: string[], from: string, to: string, side
   return db
     .prepare(
       `SELECT COALESCE(SUM(${sign}), 0) FROM journal_lines l JOIN journals j ON j.id = l.journal_id JOIN accounts a ON a.id = l.account_id
-       WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ? AND ${IN_REGISTERS} AND a.role_key IN (${roles.map(() => '?').join(', ')})`,
+       WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ? AND ${NOT_A_CLOSE} AND a.role_key IN (${roles.map(() => '?').join(', ')})`,
     )
     .pluck()
     .get(from, to, ...roles) as number;

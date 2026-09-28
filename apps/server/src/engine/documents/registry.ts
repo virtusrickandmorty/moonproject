@@ -50,16 +50,7 @@ export const DOC_TITLES = [
   'Cash Advance',
   'Remittance',
   'VAT Close',
-  'BIR Payment',
   'Opening Balances',
-  // MIG-02 part 2: each module's opening document (key <module>.opening), dated the cut-over date (ACC/public.ts).
-  'Opening Supplier Bill',
-  'Opening Loan',
-  'Opening Fixed Asset',
-  'Opening Job Order',
-  'Opening Cash Advance',
-  'Opening Officer Balance',
-  'Opening Withholding',
 ] as const;
 export type DocTitle = (typeof DOC_TITLES)[number];
 
@@ -90,13 +81,6 @@ export interface DocTypeDef<Input = any, Doc extends { totalCents: number } = an
   permissions: { view: string; create: string; post: string; cancel: string; print?: string };
   /** 'system' = always the server's Manila date (NR-7). */
   dating: 'system' | 'accountant_may_backdate';
-  /**
-   * The date of a cancel's mirror (NR-4, ACC-09): the cancel day (the default), or 'document_date' for a document that
-   * states a balance as of its own date (opening balances on the cut-over date, an inventory count on a month end). Its
-   * mirror then lands on that date, so the balance there is as if it had never been recorded, and an edit (cancel +
-   * reissue on the same date) replaces it exactly. A mirror dated in the past is backdating: it needs acc.backdate.
-   */
-  cancelOn?: 'today' | 'document_date';
   /** zod schema with .strict(). Must NOT contain date, number, totals, status, user or VAT fields (NR-6). */
   inputSchema: z.ZodType<Input>;
   /** PURE. Totals, VAT, withholding and allocations in integer centavos. */

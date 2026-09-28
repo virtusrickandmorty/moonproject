@@ -90,11 +90,8 @@ describe('tax report screen rules', () => {
 
   it('the menu shows each screen under Accounting & Tax only with the permission its route checks', () => {
     const tax = (permissions: string[]) => buildMenu([], new Set(permissions)).find((g) => g.group === 'Accounting & Tax')?.items.map((i) => `${i.label} ${i.path}`);
-    expect(tax(['tax.registers.view', 'tax.calendar.view'])).toEqual([
-      'Sales register /tax/sales', '2307s received /tax/2307-received', 'Purchases register /tax/purchases', 'EWT register /tax/ewt',
-      '2307s to issue /tax/2307-to-issue', 'VAT this quarter /tax/vat', '2550Q worksheet /tax/2550q', 'Tax calendar /tax/calendar',
-    ]);
-    expect(tax(['tax.calendar.view', 'tax.booklets.view'])).toEqual(['Tax calendar /tax/calendar', 'Booklets /tax/booklets']);
+    expect(tax(['tax.registers.view', 'tax.calendar.view'])).toEqual(['Sales register /tax/sales', '2307s received /tax/2307-received', 'VAT this quarter /tax/vat', 'Tax calendar /tax/calendar']);
+    expect(tax(['tax.calendar.view'])).toEqual(['Tax calendar /tax/calendar']);
     expect(tax([])).toBeUndefined();
   });
 });
