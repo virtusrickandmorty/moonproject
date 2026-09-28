@@ -3,7 +3,7 @@
  * each month's SSS, PhilHealth and Pag-IBIG list and 1601-C tax add up to what its payrolls credited on the ledger; the
  * check's balance is the sum of the employees' payables; every line on 2401–2403 and 2310 belongs to a month (so the
  * accounts equal the months' balances); a remittance stores what it computed and never clears more than was payable;
- * L1–L12.
+ * penalties go to 6290 only, never to a payable; L1–L12.
  */
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
@@ -28,7 +28,7 @@ const NOTHING = ['No period has anyone to pay', 'Nothing to remit'];
 
 describe('statutory property test (PLAN I1.3)', () => {
   it('random payrolls, remittances and cancels keep the lists, the remittance check and the ledger in step', async () => {
-    const stats = { runs: 0, remittances: 0, cancels: 0, refused: 0, cancelledAfterRemittance: 0 };
+    const stats = { runs: 0, remittances: 0, penalties: 0, cancels: 0, refused: 0, cancelledAfterRemittance: 0 };
     await fc.assert(
       fc.asyncProperty(fc.gen(), async (g) => {
         const t = await createTestEnv('2026-08-03T02:00:00Z'); // Monday 3 August, Manila
@@ -68,6 +68,8 @@ describe('statutory property test (PLAN I1.3)', () => {
               expect(remittanceDoc.load(db, p.id)).toEqual(computed);
               expect(remittanceDoc.toInput(remittanceDoc.load(db, p.id))).toEqual(input);
               expect(computed.lines.reduce((s, l) => s + l.amountCents, 0)).toBe(input.amountCents);
+              expect(computed.totalCents).toBe(input.amountCents + (input.penaltyCents ?? 0));
+              if (input.penaltyCents) stats.penalties++;
             } else {
               const [def, type] = step === 'cancelRun' ? [runDoc, 'pay.run'] : [remittanceDoc, 'stat.remittance'];
               const open = ids(type);
@@ -102,6 +104,10 @@ describe('statutory property test (PLAN I1.3)', () => {
               .get(SCHEME[scheme].role) as number;
             expect(gl, `${step} ${scheme}`).toBe(perAccount.get(scheme) ?? 0);
           }
+          // 6290 holds exactly the penalties of the remittances still recorded.
+          const penalties = db.prepare(`SELECT COALESCE(SUM(l.debit_cents - l.credit_cents), 0) FROM journal_lines l JOIN accounts a ON a.id = l.account_id WHERE a.role_key = 'PENALTIES'`).pluck().get();
+          const recorded = db.prepare(`SELECT COALESCE(SUM(s.penalty_cents), 0) FROM stat_remittances s JOIN documents d ON d.id = s.document_id WHERE d.status = 'posted'`).pluck().get();
+          expect(penalties, step).toBe(recorded);
         }
         stats.cancelledAfterRemittance += statMonths(db).reduce((n, m) => n + monthLists(db, m, false).check.filter((c) => c.cancelledAfter.length > 0).length, 0);
         expect(runInvariants(db).filter((r) => !r.ok)).toEqual([]);
@@ -110,5 +116,6 @@ describe('statutory property test (PLAN I1.3)', () => {
       { numRuns: 20, endOnFailure: true },
     );
     expect(stats.runs).toBeGreaterThan(0);
+    expect(stats.penalties).toBeGreaterThan(0);
   });
 });

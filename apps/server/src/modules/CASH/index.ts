@@ -4,6 +4,7 @@ import { defineModule } from '../../engine/documents/registry.ts';
 import { transferDoc } from './doctypes/transfer.ts';
 import { countDoc } from './doctypes/count.ts';
 import { otherReceiptDoc } from './doctypes/other-receipt.ts';
+import { bankAdjustmentDoc } from './doctypes/bank-adjustment.ts';
 import { cashRoutes } from './routes.ts';
 
 export default defineModule({
@@ -27,8 +28,16 @@ export default defineModule({
     { key: 'cash.orc.create', label: 'Prepare other receipts', defaultRoles: ['encoder', 'accountant', 'owner'] },
     { key: 'cash.orc.post', label: 'Record other receipts', defaultRoles: ['encoder', 'accountant', 'owner'] },
     { key: 'cash.orc.cancel', label: 'Cancel or edit recorded other receipts', defaultRoles: ['accountant', 'owner'] },
+    { key: 'cash.badj.view', label: 'View bank adjustments (bank charges and interest)', defaultRoles: ['accountant', 'owner'] },
+    { key: 'cash.badj.create', label: 'Prepare bank adjustments', defaultRoles: ['accountant', 'owner'] },
+    { key: 'cash.badj.post', label: 'Record bank adjustments', defaultRoles: ['accountant', 'owner'] },
+    { key: 'cash.badj.cancel', label: 'Cancel or edit recorded bank adjustments', defaultRoles: ['accountant', 'owner'] },
+    { key: 'cash.recon.view', label: 'See bank reconciliations', defaultRoles: ['accountant', 'owner'] },
+    { key: 'cash.recon.manage', label: 'Reconcile banks: statement lines, matching, finishing', defaultRoles: ['accountant', 'owner'] },
+    // A finished month is locked; unlocking it is the accountant's alone (no role-name checks, so its own key).
+    { key: 'cash.recon.reopen', label: 'Reopen a finished bank reconciliation, with a reason', defaultRoles: ['accountant'] },
   ],
-  docTypes: [transferDoc, countDoc, otherReceiptDoc],
+  docTypes: [transferDoc, countDoc, otherReceiptDoc, bankAdjustmentDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: cashRoutes,
 });
