@@ -46,6 +46,10 @@ import { VoucherForm } from './EXP/VoucherForm.tsx';
 import { OfficerForm, OwnerMoneyForm } from './EQ/forms.tsx';
 import { VatCloseForm } from './TAX/VatCloseForm.tsx';
 import { JvForm } from './ACC/JvForm.tsx';
+import { OpeningForm } from './ACC/OpeningForm.tsx';
+import { OpeningBalances } from './ACC/OpeningBalances.tsx';
+import { BirPaymentForm } from './TAX/BirPaymentForm.tsx';
+import { EwtMonthReturn, EwtQuarterReturn } from './TAX/EwtWorksheets.tsx';
 import { LoanForm } from './LOAN/LoanForm.tsx';
 import { OpeningForm as OpeningLoanForm } from './LOAN/OpeningForm.tsx';
 import { PaymentForm as LoanPaymentForm } from './LOAN/PaymentForm.tsx';
@@ -89,6 +93,9 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/2307-to-issue': CertificatesToIssue,
   '/tax/vat': VatQuarter,
   '/tax/2550q': VatWorksheet,
+  '/tax/0619e': EwtMonthReturn,
+  '/tax/1601eq': EwtQuarterReturn,
+  '/acc/opening': OpeningBalances,
   '/tax/calendar': TaxCalendar,
   '/admin/shop-certificate': ShopCertificate,
   '/bak': Backups,
@@ -115,6 +122,8 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'eq.officer': OfficerForm,
   'acc.jv': JvForm,
   'tax.vat_close': VatCloseForm,
+  'tax.bir_payment': BirPaymentForm,
+  'acc.opening': OpeningForm,
   'loan.loan': LoanForm,
   'loan.payment': LoanPaymentForm,
   'loan.opening': OpeningLoanForm,
