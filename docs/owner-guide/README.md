@@ -16,3 +16,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [12. Restore from a Backup](12-restore.md): Run a restore drill or perform an emergency restore.
 - [13. Bills and Expenses](13-bills-and-expenses.md): Record supplier bills, payments, and expenses.
 - [16. Income Statement and Balance Sheet](16-statements.md): View how much money the business made or lost, and see what the business owns and owes.
+- [19. Calendar and Audit Log](19-calendar-and-audit.md): View upcoming events on the calendar, track changes in the audit log, and check data integrity.
