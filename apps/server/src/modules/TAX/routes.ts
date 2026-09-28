@@ -13,7 +13,9 @@ import { vatSummary } from './vat.ts';
 import { vatReturnWorksheet, type WorksheetCheck } from './vat-return.ts';
 import { quarterOf, taxDeadlines, type Quarter } from './calendar.ts';
 import { ewtMonthWorksheet, ewtQuarterWorksheet, type PaymentLine } from './ewt-return.ts';
-import { parsePeriod } from './payments.ts';
+import { parsePeriod, periodsDue } from './payments.ts';
+import { markReceived } from './withholding.ts';
+import { addIncomeTaxSettings, incomeTaxSettingsAt, incomeTaxSettingsHistory, incomeTaxWorksheet } from './income-tax.ts';
 
 export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
@@ -87,11 +89,18 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
     const r = withholdingReceivedRegister(db, from, to);
     if (req.query.format !== 'csv') return { ...r, rows: r.rows.map((x) => ({ ...x, docTitle: title(x.docType) })) };
     return csv(reply, `2307-received-${from}-${to}`, [
-      [...HEAD, 'ATC', '2307', 'CWT', 'VAT withheld'],
-      ...r.rows.map((x) => [...lead(x), x.atc, x.certificate, csvPesos(x.cwtCents), csvPesos(x.vatWithheldCents)]),
-      ['Total', '', '', '', '', '', '', '', '', '', csvPesos(r.totals.cwtCents), csvPesos(r.totals.vatWithheldCents)],
+      [...HEAD, 'ATC', '2307', 'Received on', 'Opening 2307 for', 'CWT', 'VAT withheld'],
+      ...r.rows.map((x) => [...lead(x), x.atc, x.certificate, x.receivedOn, x.period, csvPesos(x.cwtCents), csvPesos(x.vatWithheldCents)]),
+      ['Total', '', '', '', '', '', '', '', '', '', '', '', csvPesos(r.totals.cwtCents), csvPesos(r.totals.vatWithheldCents)],
     ]);
   });
+
+  /**
+   * A customer's 2307 recorded as pending has come: { documentId, lineNo } names it (a collection's is line 0, an opening
+   * withholding's its row). Dated today; the register shows it in hand and the next VAT close claims its VAT withheld.
+   */
+  app.post('/api/tax/2307s/received', { config: { permission: 'tax.2307.receive' } }, async (req) =>
+    write(() => markReceived(db, req.body, { userId: currentUser(req).userId, at: stamp(clock), today: today(clock) })));
 
   const CLASS: Record<PurchaseClass, string> = { capital_goods: 'Capital goods', goods: 'Goods', services: 'Services' };
   const bought = (r: SupplierRow): CsvCell[] => [r.date, r.journalNumber, r.posting === 'reversal' ? 'Cancelled' : '', title(r.docType), r.documentNumber];
@@ -164,6 +173,9 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   const paidRow = (item: string, x: PaymentLine): CsvCell[] => [`${item} ${x.number} on ${x.date} (${x.reference})`, '', '', '', csvPesos(x.amountCents)];
   const amountRow = (item: string, cents: number): CsvCell[] => [item, '', '', '', csvPesos(cents)];
   const checkRows = (checks: WorksheetCheck[]): CsvCell[][] => checks.map((c) => [`Check: ${c.message}`, '', '', '', '']);
+  /** What the opening tax payables left to pay with the return (a period before the cut-over date), if anything. */
+  const openingRows = (w: { openingCents: number; openings: { number: string }[] }): CsvCell[][] =>
+    w.openingCents ? [amountRow(`Left to pay by the old books (${[...new Set(w.openings.map((o) => o.number))].join(', ')})`, w.openingCents)] : [];
 
   /** The 0619-E worksheet of month 1 or 2 of a quarter (?month=2026-07). */
   app.get<{ Querystring: { month?: string; format?: string } }>('/api/tax/0619e', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
@@ -176,6 +188,7 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
     return csv(reply, `0619-E-worksheet-${month}`, [
       HEAD_EWT,
       ...atcRows('EWT withheld', w.atcs),
+      ...openingRows(w),
       ['Total due', '', '', csvPesos(w.totals.baseCents), csvPesos(w.dueCents)],
       ...w.payments.map((x) => paidRow('Paid', x)),
       amountRow('Left to pay', w.leftCents),
@@ -192,6 +205,7 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
       HEAD_EWT,
       ...atcRows('EWT withheld in the quarter', w.atcs),
       ['Total EWT of the quarter', '', '', csvPesos(w.totals.baseCents), csvPesos(w.totals.ewtCents)],
+      ...openingRows(w),
       ...w.remittances.flatMap((r) => (r.payments.length ? r.payments.map((x) => paidRow(`Less 0619-E for ${r.label}:`, x)) : [amountRow(`Less 0619-E for ${r.label}: none recorded`, 0)])),
       amountRow('Due with the 1601-EQ', w.dueCents),
       ...w.payments.map((x) => paidRow('Paid', x)),
@@ -204,6 +218,43 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
       ['Total', '', '', csvPesos(w.totals.baseCents), '', csvPesos(w.totals.ewtCents)],
     ]);
   });
+
+  /**
+   * The 1702Q worksheet of Q1, Q2 or Q3 (?year=2026&quarter=3; left out, today's quarter, or Q3 in Q4): the year to date
+   * from the ledger in whole pesos, the tax at the regular rate or MCIT, the credits, what is left to pay, and the checks.
+   */
+  app.get<{ Querystring: QuarterQuery & { format?: string } }>('/api/tax/1702q', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const defaulted = req.query.year === undefined && req.query.quarter === undefined;
+    const { year, quarter } = quarterQuery(req.query);
+    if (quarter === 4 && !defaulted) throw badRequest('NO_Q4', `Q4 has no 1702Q: the annual income tax return (1702) covers ${year}.`);
+    const w = incomeTaxWorksheet(db, year, quarter === 4 ? 3 : quarter, today(clock));
+    if (req.query.format !== 'csv') return w;
+    const row = (item: string, cents: number | null): CsvCell[] => [item, cents === null ? '' : csvPesos(cents)];
+    return csv(reply, `1702Q-worksheet-${w.year}-Q${w.quarter}`, [
+      ['Item', 'Amount'],
+      ...w.lines.map((l) => row(l.label, l.cents)),
+      ...(w.opening ? [row(`Left to pay by the old books (${w.opening.number})`, w.openingCents)] : []),
+      row('Due with the 1702Q', w.dueCents),
+      ...w.payments.map((x) => row(`Paid with ${x.number} on ${x.date} (${x.reference})`, x.amountCents)),
+      row('Left to pay', w.leftCents),
+      row(`Rates in force on ${w.to}: regular ${w.settings.regularRateBp / 100}%, MCIT ${w.settings.mcitRateBp / 100}%, operations began ${w.settings.operationsBeganYear ?? 'not confirmed'}`, null),
+      ...w.checks.map((c) => row(`Check: ${c.message}`, null)),
+    ]);
+  });
+
+  /** The income tax settings (rates, year operations began): the version in force today and every version, newest first. */
+  app.get('/api/tax/income-tax-settings', { config: { permission: 'tax.registers.view' } }, async () => ({
+    current: incomeTaxSettingsAt(db, today(clock)), versions: incomeTaxSettingsHistory(db),
+  }));
+
+  /** A new version from today or later ({ effectiveFrom, value, reason }). Needs a fresh password, like every dated setting. */
+  app.post('/api/tax/income-tax-settings', { config: { permission: 'acc.settings.manage' } }, async (req) => {
+    requireStepUp(currentUser(req), clock);
+    return write(() => addIncomeTaxSettings(db, req.body, { userId: currentUser(req).userId, at: stamp(clock), today: today(clock) }));
+  });
+
+  /** Every return with something left to pay (a VAT close or an opening's 2550Q, EWT withheld or opened, a 1702Q), for the BIR payment form. */
+  app.get('/api/tax/payments/due', { config: { permission: 'tax.payment.create' } }, async () => periodsDue(db, today(clock)));
 
   /** VAT of one quarter (?year=2026&quarter=3), or of today's quarter. */
   app.get<{ Querystring: QuarterQuery }>('/api/tax/vat-summary', { config: { permission: 'tax.registers.view' } }, async (req) => {

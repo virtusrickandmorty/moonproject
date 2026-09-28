@@ -11,7 +11,7 @@ import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { WorksheetChecks } from './QuarterReports.tsx';
 import { Excel, QuarterForm, pesos, useQuarterReport } from './ReportParts.tsx';
-import { birPaymentPath, ewtMonthChoices, ewtMonthDefault, monthFromQuery, quarterFromQuery } from './bir.ts';
+import { birPaymentPath, ewtMonthChoices, ewtMonthDefault, monthFromQuery, openingReckoning, quarterFromQuery } from './bir.ts';
 import { atcWords, ewtClassWords, quarterTitle, rateWords, returnQuarter, yearChoices } from './reports.ts';
 
 const num = 'whitespace-nowrap py-1 pl-3 text-right tabular-nums';
@@ -41,10 +41,10 @@ function AtcTable({ atcs, totals, what }: { atcs: EwtAtcLine[]; totals: { baseCe
 
 /** Rows of [what, amount]: each payment linked to its BIRP-, the bottom line in bold. */
 type Row = { label: ReactNode; cents: number; strong?: boolean };
-const paymentRow = (lead: string, p: BirPaymentLine): Row => ({
+export const paymentRow = (lead: string, p: BirPaymentLine): Row => ({
   label: <>{lead} <Link to={docPath('tax.bir_payment', `/${p.id}`)} className="underline">{p.number}</Link> on {p.date} ({p.reference})</>, cents: -p.amountCents,
 });
-function Reckoning({ rows }: { rows: Row[] }) {
+export function Reckoning({ rows }: { rows: Row[] }) {
   return (
     <table className="w-full text-sm">
       <tbody>
@@ -57,7 +57,7 @@ function Reckoning({ rows }: { rows: Row[] }) {
 }
 
 /** "Record BIR payment" on the return and period, for someone who may record one. */
-function RecordLink({ docTypes, form, period }: { docTypes: DocTypeInfo[]; form: BirForm; period: string }) {
+export function RecordLink({ docTypes, form, period }: { docTypes: DocTypeInfo[]; form: BirForm; period: string }) {
   if (!docTypes.some((d) => d.key === 'tax.bir_payment' && d.canCreate)) return null;
   return <p><Link to={birPaymentPath(form, period)} className="inline-block rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Record BIR payment</Link></p>;
 }
@@ -115,6 +115,7 @@ export function EwtMonthReturn({ me, docTypes }: { me: Me; docTypes: DocTypeInfo
           <RecordLink docTypes={docTypes} form="0619-E" period={w.month} />
           <AtcTable atcs={w.atcs} totals={w.totals} what={w.label} />
           <Reckoning rows={[
+            ...openingReckoning(w),
             { label: 'Due with the 0619-E', cents: w.dueCents },
             ...w.payments.map((p) => paymentRow('Paid with', p)),
             { label: 'Left to pay', cents: w.leftCents, strong: true },
@@ -149,6 +150,7 @@ export function EwtQuarterReturn({ me, docTypes }: { me: Me; docTypes: DocTypeIn
             <AtcTable atcs={w.atcs} totals={w.totals} what="the quarter" />
             <Reckoning rows={[
               { label: 'EWT withheld in the quarter', cents: w.totals.ewtCents },
+              ...openingReckoning(w),
               ...w.remittances.flatMap((r) => (r.payments.length ? r.payments.map((p) => paymentRow(`Less the 0619-E for ${r.label}:`, p)) : [{ label: `Less the 0619-E for ${r.label}: none recorded`, cents: 0 }])),
               { label: 'Due with the 1601-EQ', cents: w.dueCents, strong: true },
               ...w.payments.map((p) => paymentRow('Paid with', p)),

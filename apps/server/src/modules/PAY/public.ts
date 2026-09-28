@@ -1,6 +1,8 @@
 /** PAY contract for other modules (STAT). Read-only; callers check their own route permission. */
 import type { Db } from '../../platform/db/driver.ts';
 import { sssRateAt } from './statutory.ts';
+import type { Agency, LoanKind } from './loans.ts';
+export { KIND_LABEL, LOAN_ACCOUNT, type Agency, type LoanKind } from './loans.ts';
 
 /** One employee's recorded pay for a contribution month (PAY-RUN's month M, F3), over the month's recorded runs. */
 export interface MonthPay {
@@ -76,4 +78,23 @@ export function runMonth(db: Db, runId: string): { number: string; status: 'post
   return db
     .prepare('SELECT d.number, d.status, r.contribution_month AS contributionMonth FROM pay_runs r JOIN documents d ON d.id = r.document_id WHERE r.document_id = ?')
     .get(runId) as { number: string; status: 'posted' | 'cancelled'; contributionMonth: string } | undefined;
+}
+
+/** One government loan's deductions in a contribution month, over the month's recorded runs (the SSS and Pag-IBIG loan lists). */
+export interface MonthLoan { employeeId: string; code: string; name: string; loanId: string; agency: Agency; kind: LoanKind; loanNo: string; runs: string[]; amountCents: number }
+
+export function loansOfMonth(db: Db, month: string): MonthLoan[] {
+  const rows = db
+    .prepare(
+      `SELECT e.employee_id AS employeeId, e.employee_code AS code, e.employee_name AS name, x.loan_id AS loanId, x.agency, x.kind, x.loan_no AS loanNo, d.number, x.amount_cents AS amountCents
+       FROM pay_run_loans x JOIN pay_run_employees e ON e.id = x.run_employee_id JOIN pay_runs r ON r.document_id = e.document_id JOIN documents d ON d.id = r.document_id
+       WHERE d.status = 'posted' AND r.contribution_month = ? AND x.amount_cents > 0 ORDER BY e.employee_name, e.employee_id, x.loan_no, d.number`,
+    )
+    .all(month) as (Omit<MonthLoan, 'runs'> & { number: string })[];
+  const out = new Map<string, MonthLoan>();
+  for (const { number, ...r } of rows) {
+    const m = out.get(r.loanId);
+    out.set(r.loanId, m ? { ...m, runs: [...m.runs, number], amountCents: m.amountCents + r.amountCents } : { ...r, runs: [number] });
+  }
+  return [...out.values()];
 }

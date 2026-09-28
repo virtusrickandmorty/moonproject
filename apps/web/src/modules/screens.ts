@@ -19,16 +19,24 @@ import { Attendance } from './EMP/Attendance.tsx';
 import { Holidays } from './EMP/Holidays.tsx';
 import { RunForm } from './PAY/RunForm.tsx';
 import { ReleaseForm } from './PAY/ReleaseForm.tsx';
-import { Payslips, advanceView, releaseView, runView } from './PAY/views.tsx';
+import { ThirteenthForm } from './PAY/ThirteenthForm.tsx';
+import { Payslips, advanceView, releaseView, runView, thirteenthView } from './PAY/views.tsx';
+import { GovLoans } from './PAY/Loans.tsx';
 import { AdvanceForm } from './CA/AdvanceForm.tsx';
+import { OpeningForm as OpeningCaForm } from './CA/OpeningForm.tsx';
+import { RepaymentForm, WriteoffForm } from './CA/SettleForms.tsx';
+import { CaEmployeePage, CaOwed } from './CA/Owed.tsx';
 import { NotificationsPage } from './DASH/Home.tsx';
 import { CalendarPage } from './CAL/Calendar.tsx';
 import { Customers } from './CUS/Customers.tsx';
 import { CompanyProfileScreen } from './PRT/CompanyProfile.tsx';
 import { StatMonthPage, StatMonths, remittanceView } from './STAT/Statutory.tsx';
 import { RemittanceForm } from './STAT/RemittanceForm.tsx';
+import { OpeningStatForm } from './STAT/OpeningStatForm.tsx';
 import { GeneralJournal, GeneralLedger, TrialBalance } from './RPT/Books.tsx';
 import { BalanceSheet, IncomeStatement } from './RPT/Statements.tsx';
+import { ArAging, CustomerStatement } from './RPT/Receivables.tsx';
+import { DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
 import { CashAccounts } from './CASH/CashAccounts.tsx';
 import { CashBook } from './CASH/CashBook.tsx';
 import { CashCountForm } from './CASH/CashCountForm.tsx';
@@ -41,18 +49,23 @@ import { TaxCalendar } from './TAX/TaxCalendar.tsx';
 import { VatQuarter } from './TAX/VatQuarter.tsx';
 import { ShopCertificate } from './SEC/ShopCertificate.tsx';
 import { PracticeShop } from './PLT/PracticeShop.tsx';
+import { SystemHealthPage } from './PLT/SystemHealth.tsx';
 import { BillForm } from './AP/BillForm.tsx';
 import { OpeningBillForm } from './AP/OpeningBillForm.tsx';
 import { PaymentForm as SupplierPaymentForm } from './AP/PaymentForm.tsx';
 import { billView, paymentView } from './AP/views.tsx';
 import { VoucherForm } from './EXP/VoucherForm.tsx';
 import { OfficerForm, OwnerMoneyForm } from './EQ/forms.tsx';
+import { OpeningForm as OpeningOfficerForm } from './EQ/OpeningForm.tsx';
 import { VatCloseForm } from './TAX/VatCloseForm.tsx';
 import { JvForm } from './ACC/JvForm.tsx';
 import { OpeningForm } from './ACC/OpeningForm.tsx';
 import { OpeningBalances } from './ACC/OpeningBalances.tsx';
 import { BirPaymentForm } from './TAX/BirPaymentForm.tsx';
+import { OpeningWithholdingForm } from './TAX/OpeningWithholdingForm.tsx';
+import { OpeningPayableForm } from './TAX/OpeningPayableForm.tsx';
 import { EwtMonthReturn, EwtQuarterReturn } from './TAX/EwtWorksheets.tsx';
+import { IncomeTaxReturn } from './TAX/IncomeTax.tsx';
 import { LoanForm } from './LOAN/LoanForm.tsx';
 import { OpeningForm as OpeningLoanForm } from './LOAN/OpeningForm.tsx';
 import { PaymentForm as LoanPaymentForm } from './LOAN/PaymentForm.tsx';
@@ -82,6 +95,9 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/emp/attendance': Attendance,
   '/emp/holidays': Holidays,
   '/pay/runs/:id/payslips': Payslips,
+  '/ca/employees': CaOwed,
+  '/ca/employees/:id': CaEmployeePage,
+  '/pay/loans': GovLoans,
   '/prt/company-profile': CompanyProfileScreen,
   '/stat': StatMonths,
   '/stat/:month': StatMonthPage,
@@ -93,6 +109,12 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/rpt/trial-balance': TrialBalance,
   '/rpt/income-statement': IncomeStatement,
   '/rpt/balance-sheet': BalanceSheet,
+  '/rpt/ar-aging': ArAging,
+  '/rpt/customer-statement': CustomerStatement,
+  '/rpt/deposits-held': DepositsHeld,
+  '/rpt/collections-register': CollectionsRegister,
+  '/rpt/sales-by-period': SalesByPeriod,
+  '/rpt/job-order-follow-up': JobOrderFollowUp,
   '/tax/sales': SalesRegister,
   '/tax/2307-received': WithholdingReceived,
   '/tax/purchases': PurchasesRegister,
@@ -102,10 +124,12 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/2550q': VatWorksheet,
   '/tax/0619e': EwtMonthReturn,
   '/tax/1601eq': EwtQuarterReturn,
+  '/tax/1702q': IncomeTaxReturn,
   '/acc/opening': OpeningBalances,
   '/tax/calendar': TaxCalendar,
   '/admin/shop-certificate': ShopCertificate,
   '/admin/practice': PracticeShop,
+  '/admin/health': SystemHealthPage,
   '/bak': Backups,
   '/bak/:section': Backups,
   '/aud/log': AuditLog,
@@ -122,14 +146,20 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'prd.entry': EntryForm,
   'pay.run': RunForm,
   'pay.release': ReleaseForm,
+  'pay.thirteenth': ThirteenthForm,
   'ca.advance': AdvanceForm,
+  'ca.opening': OpeningCaForm,
+  'ca.repayment': RepaymentForm,
+  'ca.writeoff': WriteoffForm,
   'stat.remittance': RemittanceForm,
+  'stat.opening': OpeningStatForm,
   'ap.bill': BillForm,
   'ap.payment': SupplierPaymentForm,
   'ap.opening': OpeningBillForm,
   'exp.voucher': VoucherForm,
   'eq.owner_money': OwnerMoneyForm,
   'eq.officer': OfficerForm,
+  'eq.opening': OpeningOfficerForm,
   'acc.jv': JvForm,
   'tax.vat_close': VatCloseForm,
   'tax.bir_payment': BirPaymentForm,
@@ -141,6 +171,8 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'fa.opening': OpeningAssetForm,
   'inv.count': InventoryCountForm,
   'jo.opening': OpeningJobOrderForm,
+  'tax.opening': OpeningWithholdingForm,
+  'tax.payable.opening': OpeningPayableForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'jo.opening': openingJobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView };
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'jo.opening': openingJobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView };

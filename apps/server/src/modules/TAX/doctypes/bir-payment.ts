@@ -6,6 +6,12 @@
  *   0619-E (month 1 or 2 of a quarter) and 1601-EQ (the quarter, less its 0619-E payments): Dr 2311 EWT payable per
  *   payee, with the party the bill or voucher credited (a supplier, or tin:… for a one-off payee), for the EWT withheld
  *   in the period and not yet paid (payments.ts). The third month of a quarter has no 0619-E: it goes on the 1601-EQ.
+ *   A return of a period before the cut-over date pays what the opening tax payable (OBTP-) left to pay with it, the
+ *   same way: a 2550Q with no VAT close pays its opening, and the payment is dated on the cut-over date or later.
+ *   1702Q (Q1 to Q3, IT-QPAY): Dr 1411 prepaid income tax, by default what the 1702Q worksheet leaves to pay
+ *   (income-tax.ts), recorded after the quarter ends. The return may say more than the books (income the ERP does not
+ *   have): more than is left needs a note saying why. A 1702Q an opening tax payable brought in (on 2320) pays 2320,
+ *   up to what the opening left; a quarter before the cut-over date with no opening is the old books' and is refused.
  *   Dr 6290 penalty (surcharge, interest, compromise; optional) / Cr cash place (both).
  * The variance check is STAT's: the same amount clears every payee; less is a partial payment, spread over the payees in
  * proportion, and the rest stays payable; more is refused. A penalty is paid on top: it is no one's payable, so it never
@@ -18,8 +24,11 @@ import type { Db } from '../../../platform/db/driver.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { DraftLine } from '../../../engine/ledger/post.ts';
 import { getCashPlace, listCashPlaces } from '../../../engine/ledger/accounts.ts';
+import { cutoverDate } from '../../ACC/public.ts';
 import { returnDue, vatReturnDue } from '../calendar.ts';
-import { BIR_FORM, BIR_FORMS, birPaymentsOf, ewtDue, parsePeriod, periodsDue, quarterPeriod, vatDue, type BirForm, type Period } from '../payments.ts';
+import { incomeTaxPosition } from '../income-tax.ts';
+import { OPENING_PAYABLE, openingsOf } from '../opening-payables.ts';
+import { BIR_FORM, BIR_FORMS, birPaymentsOf, ewtDue, ewtPaidWith, parsePeriod, periodsDue, quarterPeriod, vatDue, type BirForm, type Period } from '../payments.ts';
 
 const MAX_CENTS = 100_000_000_00;
 export const birPaymentInput = z
@@ -39,6 +48,8 @@ export interface BirPayment extends BirPaymentInput {
   periodLabel: string; cashPlaceName: string;
   /** 2550Q: the VAT close whose payable it pays. */
   vatClose: { documentId: string; number: string; date: string } | null;
+  /** 2550Q or 1702Q of a quarter before the cut-over date: the opening tax payable whose return it pays. */
+  opening: { documentId: string; number: string; date: string } | null;
   payableCents: number;
   /** 0619-E and 1601-EQ: what it clears per payee. */
   lines: BirPaymentLine[];
@@ -53,18 +64,43 @@ function periodFor(form: BirForm, period: string): Period | null {
 const thirdMonth = (form: BirForm, p: Period) => form === '0619-E' && p.month! % 3 === 0;
 
 /** What the period leaves to pay, and for EWT what the amount clears per payee (in proportion if less). */
-function due(db: Db, input: BirPaymentInput, p: Period | null): Pick<BirPayment, 'vatClose' | 'payableCents' | 'lines'> {
-  if (!p || thirdMonth(input.form, p)) return { vatClose: null, payableCents: 0, lines: [] };
+function due(db: Db, input: BirPaymentInput, p: Period | null): Pick<BirPayment, 'vatClose' | 'opening' | 'payableCents' | 'lines'> {
+  if (!p || thirdMonth(input.form, p)) return { vatClose: null, opening: null, payableCents: 0, lines: [] };
+  if (input.form === '1702Q') {
+    if (p.quarter === 4) return { vatClose: null, opening: null, payableCents: 0, lines: [] };
+    const w = incomeTaxPosition(db, p.year, p.quarter);
+    return { vatClose: null, opening: w.opening, payableCents: Math.max(w.leftCents, 0), lines: [] };
+  }
   if (input.form === '2550Q') {
     const v = vatDue(db, p.year, p.quarter);
-    return { vatClose: v.close, payableCents: Math.max(v.dueCents, 0), lines: [] };
+    return { vatClose: v.close, opening: v.opening, payableCents: Math.max(v.dueCents, 0), lines: [] };
   }
   const owed = ewtDue(db, input.form, input.period, p).filter((d) => d.dueCents > 0);
   const payableCents = owed.reduce((s, d) => s + d.dueCents, 0);
   const paid = payableCents > 0 && input.amountCents <= payableCents ? allocate(input.amountCents, owed.map((d) => d.dueCents)) : owed.map((d) => d.dueCents);
   return {
-    vatClose: null, payableCents,
+    vatClose: null, opening: null, payableCents,
     lines: owed.map((d, i) => ({ partyId: d.partyId, name: d.name, payableCents: d.dueCents, amountCents: paid[i]! })).filter((l) => l.amountCents > 0),
+  };
+}
+
+/** A 1702Q payment (tax_income_tax_payments), or undefined for the other forms. */
+function loadIncomeTax(db: Db, documentId: string): BirPayment | undefined {
+  const r = db
+    .prepare(
+      `SELECT p.*, o.number AS opening_number, o.business_date AS opening_date FROM tax_income_tax_payments p LEFT JOIN documents o ON o.id = p.opening_id WHERE p.document_id = ?`,
+    )
+    .get(documentId) as
+    | { period: string; cash_account_id: number; reference: string; opening_id: string | null; payable_cents: number; amount_cents: number; penalty_cents: number;
+        note: string | null; opening_number: string | null; opening_date: string | null }
+    | undefined;
+  if (!r) return undefined;
+  return {
+    form: '1702Q', period: r.period, cashPlaceId: r.cash_account_id, amountCents: r.amount_cents, ...(r.penalty_cents ? { penaltyCents: r.penalty_cents } : {}),
+    reference: r.reference, ...(r.note ? { note: r.note } : {}),
+    periodLabel: parsePeriod(r.period)!.label, cashPlaceName: getCashPlace(db, r.cash_account_id)?.name ?? '?',
+    vatClose: null, opening: r.opening_id ? { documentId: r.opening_id, number: r.opening_number!, date: r.opening_date! } : null,
+    payableCents: r.payable_cents, lines: [], totalCents: r.amount_cents + r.penalty_cents,
   };
 }
 
@@ -98,18 +134,41 @@ export const birPaymentDoc: DocTypeDef<BirPaymentInput, BirPayment> = {
       add('error', 'period', 'THIRD_MONTH', `${p.label} is the last month of Q${p.quarter} ${p.year}, which has no 0619-E: its EWT is paid with the 1601-EQ for the quarter.`);
       return issues;
     }
+    if (doc.form === '1702Q') {
+      if (p.quarter === 4) {
+        add('error', 'period', 'NO_Q4', `Q4 has no 1702Q: the annual income tax return (1702) covers ${p.year}.`);
+        return issues;
+      }
+      if (ctx.businessDate <= p.to) {
+        add('error', 'period', 'QUARTER_OPEN', `${p.label} ends on ${p.to}: its 1702Q is filed and paid after the quarter ends.`);
+        return issues;
+      }
+      const cutover = cutoverDate(ctx.db);
+      if (!doc.opening && cutover && p.to < cutover) {
+        add('error', 'period', 'OLD_BOOKS', `${p.label} ended before the cut-over date, ${cutover}: its 1702Q is the old books'. If it is not paid yet, record it on the opening tax payable first, then pay it here.`);
+        return issues;
+      }
+    }
     if (ctx.businessDate < p.from) add('error', 'period', 'PERIOD_AHEAD', `${p.label} had not started on ${ctx.businessDate}.`);
     const what = `the ${doc.form} for ${p.label}`;
 
-    if (doc.form === '2550Q') {
-      if (!doc.vatClose) {
+    const beforeOpening = (o: { number: string; date: string } | undefined | null) => {
+      if (o && ctx.businessDate < o.date) {
+        add('error', 'period', 'BEFORE_OPENING', `The ${doc.form} for ${p.label} came in with the opening (${o.number}) on the cut-over date, ${o.date}. Date the payment on that day or later: one paid before it belongs in the old books.`);
+      }
+    };
+    if (doc.form === '1702Q') beforeOpening(doc.opening);
+    else if (doc.form === '2550Q') {
+      if (!doc.vatClose && !doc.opening) {
         add('error', 'period', 'NOT_CLOSED', `Record the VAT close of ${p.label} first: the 2550Q pays what the close made payable.`);
         return issues;
       }
-      if (ctx.businessDate < doc.vatClose.date) {
+      if (doc.vatClose && ctx.businessDate < doc.vatClose.date) {
         add('error', 'period', 'BEFORE_CLOSE', `The VAT close of ${p.label} (${doc.vatClose.number}) is dated ${doc.vatClose.date}. Date the payment on that day or later.`);
       }
+      beforeOpening(doc.opening);
     } else {
+      beforeOpening(openingsOf(ctx.db, ewtPaidWith(doc.form, doc.period, p))[0]);
       const eq = doc.form === '0619-E' ? birPaymentsOf(ctx.db, [['1601-EQ', quarterPeriod(p.year, p.quarter)]]).find((x) => x.status === 'posted') : undefined;
       if (eq) {
         add('error', 'period', 'QUARTER_PAID', `The 1601-EQ for Q${p.quarter} ${p.year} is already paid (${eq.number}). EWT of its months left unpaid goes with it.`);
@@ -123,14 +182,31 @@ export const birPaymentDoc: DocTypeDef<BirPaymentInput, BirPayment> = {
       }
     }
 
-    if (doc.payableCents === 0) {
+    const source = doc.vatClose ? `VAT close (${doc.vatClose.number})` : `opening (${doc.opening?.number})`;
+    if (doc.form === '1702Q' && !doc.opening) {
+      // The books may have less than the return (income of the old books, the optional standard deduction): with a note.
+      const noted = 'Add a note saying why the return says more (like income before the cut-over from the old books).';
+      if (doc.amountCents > doc.payableCents && !doc.note) {
+        add('error', 'amountCents', doc.payableCents === 0 ? 'NOTHING_DUE' : 'OVER', doc.payableCents === 0
+          ? `The 1702Q worksheet leaves nothing to pay with ${what}. ${noted}`
+          : `${formatPeso(doc.payableCents)} is left to pay with ${what} by the 1702Q worksheet, ${formatPeso(doc.amountCents - doc.payableCents)} less than this. ${noted}`);
+      } else if (doc.amountCents > doc.payableCents) {
+        add('warning', 'amountCents', 'OVER_NOTED', `This is ${formatPeso(doc.amountCents - doc.payableCents)} more than the 1702Q worksheet leaves to pay with ${what}; the note says why.`);
+      } else if (doc.amountCents < doc.payableCents) {
+        add('warning', 'amountCents', 'UNDER', `${formatPeso(doc.payableCents)} is left to pay with ${what}; ${formatPeso(doc.payableCents - doc.amountCents)} stays payable after this.`);
+      }
+    } else if (doc.form === '1702Q' && doc.amountCents > doc.payableCents) {
+      add('error', 'amountCents', doc.payableCents === 0 ? 'NOTHING_DUE' : 'OVER', `${formatPeso(doc.payableCents)} is left to pay with ${what} by the ${source}. If the return says more, the accountant corrects the opening first.`);
+    } else if (doc.form === '1702Q' && doc.amountCents < doc.payableCents) {
+      add('warning', 'amountCents', 'UNDER', `${formatPeso(doc.payableCents)} is left to pay with ${what}; ${formatPeso(doc.payableCents - doc.amountCents)} stays payable after this.`);
+    } else if (doc.payableCents === 0) {
       add('error', 'period', 'NOTHING_DUE', doc.form === '2550Q'
-        ? `Nothing is left to pay with ${what}: its VAT close (${doc.vatClose!.number}) made no VAT payable, or it is all paid.`
+        ? `Nothing is left to pay with ${what}: its ${source} made no VAT payable, or it is all paid.`
         : `No EWT is left to pay with ${what}: none was withheld in it, or it is all paid.`);
     } else if (doc.amountCents > doc.payableCents) {
       const left = `${formatPeso(doc.payableCents)} is left to pay with ${what}, ${formatPeso(doc.amountCents - doc.payableCents)} less than this.`;
       add('error', 'amountCents', 'OVER', doc.form === '2550Q'
-        ? `${left} Check the amount against the VAT close (${doc.vatClose!.number}); if the return says more, the accountant corrects the books first.`
+        ? `${left} Check the amount against the ${source}; if the return says more, the accountant corrects the books first.`
         : `${left} Find the difference first (a bill or voucher not recorded yet); the accountant records any extra with a journal voucher.`);
     } else if (doc.amountCents < doc.payableCents) {
       add('warning', 'amountCents', 'UNDER', `${formatPeso(doc.payableCents)} is left to pay with ${what}; ${formatPeso(doc.payableCents - doc.amountCents)} stays payable after this.`);
@@ -144,17 +220,29 @@ export const birPaymentDoc: DocTypeDef<BirPaymentInput, BirPayment> = {
   },
 
   persist(db, doc, h) {
+    if (doc.form === '1702Q') {
+      db.prepare(
+        `INSERT INTO tax_income_tax_payments (document_id, period, cash_account_id, reference, opening_id, payable_cents, amount_cents, penalty_cents, note)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ).run(h.documentId, doc.period, doc.cashPlaceId, doc.reference, doc.opening?.documentId ?? null, doc.payableCents, doc.amountCents, doc.penaltyCents ?? 0, doc.note ?? null);
+      return;
+    }
     db.prepare(
       `INSERT INTO tax_bir_payments (document_id, form, period, cash_account_id, reference, vat_close_id, payable_cents, amount_cents, penalty_cents, note)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(h.documentId, doc.form, doc.period, doc.cashPlaceId, doc.reference, doc.vatClose?.documentId ?? null, doc.payableCents, doc.amountCents, doc.penaltyCents ?? 0, doc.note ?? null);
+    ).run(
+      h.documentId, doc.form, doc.period, doc.cashPlaceId, doc.reference, doc.vatClose?.documentId ?? doc.opening?.documentId ?? null, // a 2550Q with no close: its opening
+      doc.payableCents, doc.amountCents, doc.penaltyCents ?? 0, doc.note ?? null,
+    );
     const line = db.prepare('INSERT INTO tax_bir_payment_lines (document_id, party_id, payee_name, payable_cents, amount_cents) VALUES (?, ?, ?, ?, ?)');
     for (const l of doc.lines) line.run(h.documentId, l.partyId, l.name, l.payableCents, l.amountCents);
   },
 
   journal(doc) {
     const tag = `${doc.form} for ${doc.periodLabel}`;
-    const tax: DraftLine[] = doc.form === '2550Q'
+    const tax: DraftLine[] = doc.form === '1702Q'
+      ? [{ account: { role: doc.opening ? 'INCOME_TAX_PAYABLE' : 'PREPAID_INCOME_TAX' }, debitCents: doc.amountCents, memo: `Income tax of ${doc.periodLabel}, year to date (1702Q)` }]
+      : doc.form === '2550Q'
       ? [{ account: { role: 'VAT_PAYABLE' }, debitCents: doc.amountCents, memo: `VAT of ${doc.periodLabel} (2550Q)` }]
       : doc.lines.map((l) => ({ account: { role: 'EWT_PAYABLE' }, party: { type: 'supplier', id: l.partyId }, debitCents: l.amountCents, memo: `EWT of ${doc.periodLabel} (${doc.form})` }));
     return {
@@ -168,13 +256,16 @@ export const birPaymentDoc: DocTypeDef<BirPaymentInput, BirPayment> = {
   },
 
   load(db, documentId) {
+    const it = loadIncomeTax(db, documentId);
+    if (it) return it;
     const r = db
       .prepare(
-        `SELECT p.*, c.number AS close_number, c.business_date AS close_date FROM tax_bir_payments p LEFT JOIN documents c ON c.id = p.vat_close_id WHERE p.document_id = ?`,
+        `SELECT p.*, c.number AS close_number, c.business_date AS close_date, c.doc_type AS close_type FROM tax_bir_payments p LEFT JOIN documents c ON c.id = p.vat_close_id
+         WHERE p.document_id = ?`,
       )
       .get(documentId) as
       | { form: BirForm; period: string; cash_account_id: number; reference: string; vat_close_id: string | null; payable_cents: number; amount_cents: number;
-          penalty_cents: number; note: string | null; close_number: string | null; close_date: string | null }
+          penalty_cents: number; note: string | null; close_number: string | null; close_date: string | null; close_type: string | null }
       | undefined;
     if (!r) throw new Error(`BIR payment ${documentId} not found`);
     const lines = db
@@ -184,7 +275,9 @@ export const birPaymentDoc: DocTypeDef<BirPaymentInput, BirPayment> = {
       form: r.form, period: r.period, cashPlaceId: r.cash_account_id, amountCents: r.amount_cents, ...(r.penalty_cents ? { penaltyCents: r.penalty_cents } : {}),
       reference: r.reference, ...(r.note ? { note: r.note } : {}),
       periodLabel: parsePeriod(r.period)!.label, cashPlaceName: getCashPlace(db, r.cash_account_id)?.name ?? '?',
-      vatClose: r.vat_close_id ? { documentId: r.vat_close_id, number: r.close_number!, date: r.close_date! } : null,
+      vatClose: r.vat_close_id && r.close_type !== OPENING_PAYABLE ? { documentId: r.vat_close_id, number: r.close_number!, date: r.close_date! } : null,
+      // Stands while this payment does (its cancel waits for this one), and a return is opened once.
+      opening: r.form === '2550Q' ? (openingsOf(db, [['2550Q', r.period]]).map(({ documentId, number, date }) => ({ documentId, number, date }))[0] ?? null) : null,
       payableCents: r.payable_cents, lines, totalCents: r.amount_cents + r.penalty_cents,
     };
   },
@@ -196,7 +289,7 @@ export const birPaymentDoc: DocTypeDef<BirPaymentInput, BirPayment> = {
 
   summary(doc) {
     const n = doc.lines.length;
-    const who = doc.form === '2550Q' ? '' : `, for ${n} ${n === 1 ? 'payee' : 'payees'}`;
+    const who = doc.form === '2550Q' || doc.form === '1702Q' ? '' : `, for ${n} ${n === 1 ? 'payee' : 'payees'}`;
     const left = doc.payableCents - doc.amountCents;
     const penalty = doc.penaltyCents ? `, plus ${formatPeso(doc.penaltyCents)} surcharge, interest and compromise (${formatPeso(doc.totalCents)} in all)` : '';
     return `This will record ${formatPeso(doc.amountCents)} ${BIR_FORM[doc.form].tax} paid to the BIR with the ${doc.form} for ${doc.periodLabel} (${doc.reference}) from ${doc.cashPlaceName}${who}${penalty}.${left > 0 ? ` ${formatPeso(left)} stays payable.` : ''}`;

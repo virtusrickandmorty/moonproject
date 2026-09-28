@@ -1,8 +1,8 @@
 /**
  * Purchases and EWT registers and the 2307s to issue (PLAN E12, G "Tax"), read from the ledger the way the sales
  * register is (registers.ts): one row per journal that touches the account in the period, a cancel as its own negative
- * row on the cancel date, a journal voucher as an adjustment, the quarterly VAT close and the BIR payments left out, so
- * the totals tie to the GL movement by construction. What the ledger does not carry (the supplier's invoice number,
+ * row on the cancel date, a journal voucher as an adjustment, the quarterly VAT close, the BIR payments and the opening
+ * tax payables left out (IN_REGISTERS), so the totals tie to the GL movement by construction. What the ledger does not carry (the supplier's invoice number,
  * what a bill line bought, the EWT class, base and rate) comes from the posting document, through AP, EXP and FA public.ts.
  *   Purchases register (1401 input VAT): amount before VAT, input VAT, total and the class the 2550Q and the SLP need.
  *   A bill with lines of two classes gives one row per class.

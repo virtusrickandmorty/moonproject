@@ -27,9 +27,9 @@ function Check({ month, check, canRecord }: { month: string; check: SchemeCheck[
                 {c.label}
                 {c.remittances.map((r) => <Link key={r.id} to={docPath('stat.remittance', `/${r.id}`)} className="ml-2 text-xs underline">{r.number}</Link>)}
                 {c.cancelledAfter.length > 0 && <p className="text-xs text-amber-800">Cancelled after it was remitted: {c.cancelledAfter.map((r) => r.number).join(', ')}.</p>}
-                {c.overRemitted.length > 0 && <p className="text-xs text-amber-800">Remitted more than the payrolls show for {c.overRemitted.map((o) => `${o.name} (${peso(o.cents)})`).join(', ')}. Redo the payroll or tell the accountant.</p>}
+                {c.overRemitted.length > 0 && <p className="text-xs text-amber-800">Remitted more than the payrolls show for {c.overRemitted.map((o) => `${o.name}${o.part === 'loan' ? ' (loan)' : ''} (${peso(o.cents)})`).join(', ')}. Redo the payroll or tell the accountant.</p>}
               </td>
-              <td className="text-right tabular-nums">{peso(c.recordedCents)}</td>
+              <td className="text-right tabular-nums">{peso(c.recordedCents)}{c.loanRecordedCents > 0 && <p className="text-xs text-slate-500">of which loans {peso(c.loanRecordedCents)}</p>}</td>
               <td className="text-right tabular-nums">{peso(c.remittedCents)}</td>
               <td className={`text-right tabular-nums ${w.tone === 'warning' ? 'text-amber-800' : ''}`}>{peso(c.balanceCents)}</td>
               <td className="pl-2 text-right print:hidden">{canRecord && c.balanceCents > 0 && <Link to={newRemittance(c, month)} className="underline">Record payment</Link>}</td>
@@ -121,6 +121,12 @@ export function StatMonthPage({ me, params }: { me: Me; params?: Record<string, 
         <Table head={['Employee', 'Pag-IBIG MID', 'Compensation', 'Employee share', 'Employer share', 'Total']}
           rows={m.hdmf.rows.map((r) => [...who(r), peso(r.compensationCents), peso(r.eeCents), peso(r.erCents), peso(r.totalCents)])} foot={['Total', '', '', '', '', peso(m.hdmf.totalCents)]} />
       </Panel>
+      {([['SSS', 'SSS no.', m.sssLoans], ['Pag-IBIG', 'Pag-IBIG MID', m.hdmfLoans]] as const).map(([agency, idLabel, list]) => list.rows.length > 0 && (
+        <Panel key={agency} title={`${agency} loan amortizations ${m.month}`}>
+          <p className="text-sm text-slate-600">Deducted by the month's payrolls; paid on the same {agency} remittance as the contributions.</p>
+          <Table head={['Employee', idLabel, 'Loan', 'Loan number', 'Amount']} rows={list.rows.map((r) => [...who(r), r.kindLabel, r.loanNo, peso(r.totalCents)])} foot={['Total', '', '', '', peso(list.totalCents)]} />
+        </Panel>
+      ))}
       <Panel title={`1601-C worksheet ${m.month}`}>
         <p className="text-sm text-slate-600">{t.employees} {t.employees === 1 ? 'employee' : 'employees'} paid. Item numbers follow BIR Form 1601-C (January 2018).</p>
         <table className="w-full text-sm">
@@ -138,12 +144,12 @@ export function StatMonthPage({ me, params }: { me: Me; params?: Record<string, 
 export const remittanceView: ViewParts = {
   noEdit: true,
   extra: (d: DocDetail) => {
-    const r = d.doc as { month: string; label: string; payableCents: number; penaltyCents?: number; lines: { employeeId: string; name: string; payableCents: number; amountCents: number }[] } | undefined;
+    const r = d.doc as { month: string; label: string; payableCents: number; penaltyCents?: number; lines: { employeeId: string; name: string; payableCents: number; amountCents: number; loanAmountCents?: number }[] } | undefined;
     if (!r) return null;
     return (
       <div className="space-y-1 pt-2 text-sm">
         <p>{r.label} for <Link to={`/stat/${r.month}`} className="underline">{r.month}</Link>: {peso(r.payableCents)} was payable when this was recorded.</p>
-        {r.lines.map((l) => <div key={l.employeeId} className="flex justify-between"><span>{l.name}</span><span className="tabular-nums">{peso(l.amountCents)} of {peso(l.payableCents)}</span></div>)}
+        {r.lines.map((l) => <div key={l.employeeId} className="flex justify-between"><span>{l.name}</span><span className="tabular-nums">{peso(l.amountCents)} of {peso(l.payableCents)}{l.loanAmountCents ? ` (loans ${peso(l.loanAmountCents)})` : ''}</span></div>)}
         {r.penaltyCents ? <div className="flex justify-between"><span>Late-payment penalty</span><span className="tabular-nums">{peso(r.penaltyCents)}</span></div> : null}
       </div>
     );

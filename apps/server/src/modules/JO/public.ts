@@ -111,3 +111,78 @@ export function joMoney(db: Db, documentId: string) {
   const ledger = joLedger(db, documentId);
   return { ...owed, requiredDownpaymentCents: r.requiredDownpaymentCents, ...ledger, ...balanceDue({ ...owed, ...ledger }) };
 }
+
+/** Dated invoice records and not-yet-invoiced order amounts for read-only customer reports. */
+export function receivableSourcesAt(db: Db, asOf: string): {
+  orders: { id: string; number: string; customerId: string; customerName: string; dueDate: string; notInvoicedCents: number }[];
+  invoices: { id: string; number: string; date: string; dueDate: string; jobOrderId: string; customerId: string; customerName: string; grossCents: number; receivableCents: number }[];
+} {
+  const liveAt = "(d.cancelled_at IS NULL OR date(d.cancelled_at, '+8 hours') > @asOf)";
+  const orders = db.prepare(`SELECT d.id, d.number, o.customer_id AS customerId, o.customer_name AS customerName,
+    o.due_date AS dueDate, d.total_cents AS totalCents
+    FROM jo_orders o JOIN documents d ON d.id = o.document_id
+    WHERE d.business_date <= @asOf AND ${liveAt} ORDER BY o.customer_name, d.number`)
+    .all({ asOf }) as { id: string; number: string; customerId: string; customerName: string; dueDate: string; totalCents: number }[];
+  const invoices = db.prepare(`SELECT d.id, d.number, d.business_date AS date,
+    COALESCE(r.credit_due_date, date(d.business_date, CASE o.payment_terms
+      WHEN 'net7' THEN '+7 days' WHEN 'net15' THEN '+15 days' WHEN 'net30' THEN '+30 days' ELSE '+0 days' END)) AS dueDate,
+    i.job_order_id AS jobOrderId,
+    i.customer_id AS customerId, i.customer_name AS customerName, i.gross_cents AS grossCents,
+    i.gross_cents - i.deposit_applied_cents AS receivableCents
+    FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id
+    JOIN jo_orders o ON o.document_id = i.job_order_id
+    JOIN jo_releases r ON r.document_id = i.release_id
+    WHERE d.business_date <= @asOf AND ${liveAt} ORDER BY d.business_date, d.number`)
+    .all({ asOf }) as { id: string; number: string; date: string; dueDate: string; jobOrderId: string; customerId: string; customerName: string; grossCents: number; receivableCents: number }[];
+  const invoicedByOrder = new Map<string, number>();
+  for (const invoice of invoices) invoicedByOrder.set(invoice.jobOrderId, (invoicedByOrder.get(invoice.jobOrderId) ?? 0) + invoice.grossCents);
+  const openings = db.prepare(`SELECT o.document_id AS id, o.receivable_cents AS receivableCents
+    FROM jo_opening_orders o JOIN documents d ON d.id = o.document_id
+    WHERE d.business_date <= @asOf AND ${liveAt}`).all({ asOf }) as { id: string; receivableCents: number }[];
+  for (const opening of openings) invoicedByOrder.set(opening.id, (invoicedByOrder.get(opening.id) ?? 0) + opening.receivableCents);
+  return {
+    orders: orders.map(({ totalCents, ...order }) => ({
+      ...order, notInvoicedCents: Math.max(0, balanceDue({
+        totalCents, invoicedCents: invoicedByOrder.get(order.id) ?? 0, receivableCents: 0, depositsHeldCents: 0,
+      }).notInvoicedCents),
+    })),
+    invoices,
+  };
+}
+
+
+/** Invoice lines retain the sold descriptions and classes through the release and order. */
+export function invoiceSaleLines(db: Db) {
+  return db.prepare(`SELECT i.document_id AS id, i.customer_id AS customerId, i.customer_name AS customerName,
+    i.job_order_id AS jobOrderId, l.line_no AS lineNo, o.description, o.kind,
+    l.qty, l.amount_cents AS grossCents
+    FROM jo_invoice_records i JOIN jo_release_lines l ON l.document_id = i.release_id
+    JOIN jo_lines o ON o.document_id = i.job_order_id AND o.line_no = l.line_no
+    ORDER BY i.document_id, l.line_no`).all() as { id: string; customerId: string; customerName: string;
+      jobOrderId: string; lineNo: number; description: string; kind: string; qty: number; grossCents: number }[];
+}
+
+/** Releases with no invoice record, including the owning order for follow-up. */
+export function releasesAwaitingInvoice(db: Db, asOf: string) {
+  return db.prepare(`SELECT r.document_id AS id, d.number, d.business_date AS date,
+    r.job_order_id AS jobOrderId, j.number AS jobOrderNumber, o.customer_id AS customerId,
+    o.customer_name AS customerName, COALESCE(SUM(l.amount_cents), 0) AS releasedCents
+    FROM jo_releases r JOIN documents d ON d.id = r.document_id
+    JOIN documents j ON j.id = r.job_order_id JOIN jo_orders o ON o.document_id = j.id
+    LEFT JOIN jo_release_lines l ON l.document_id = d.id
+    WHERE d.business_date <= ? AND d.status = 'posted'
+      AND NOT EXISTS (SELECT 1 FROM jo_invoice_records i JOIN documents x ON x.id = i.document_id
+        WHERE i.release_id = d.id AND x.status = 'posted')
+    GROUP BY r.document_id ORDER BY d.business_date, d.number`).all(asOf) as {
+      id: string; number: string; date: string; jobOrderId: string; jobOrderNumber: string;
+      customerId: string; customerName: string; releasedCents: number }[];
+}
+
+/** Current stage, open money and released quantity for every live job order. */
+export function jobOrderStatusRows(db: Db) {
+  return jobOrdersOf(db).map((order) => {
+    const stage = db.prepare(`SELECT to_stage FROM jo_stage_events WHERE document_id = ? ORDER BY seq DESC LIMIT 1`)
+      .pluck().get(order.id) as string | undefined;
+    return { ...order, stage: stage ?? 'open', ...joMoney(db, order.id) };
+  });
+}

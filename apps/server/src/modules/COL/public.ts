@@ -37,3 +37,21 @@ export function withholdingOf(db: Db, documentId: string): { atc: 'WC158' | 'WC1
     | undefined;
   return r?.atc && r.certificate ? { atc: r.atc, certificate: r.certificate } : undefined;
 }
+
+/** Recorded collections and tenders, including cancellations, for dated read-only registers. */
+export function collectionsBetween(db: Db, from: string, to: string) {
+  return db.prepare(`SELECT d.id, d.number, d.business_date AS date, d.status, d.total_cents AS totalCents,
+    c.customer_id AS customerId, c.customer_name AS customerName, c.cr_number AS crNumber,
+    c.cwt_cents AS cwtCents, t.line_no AS tenderLine, t.account_id AS cashPlaceId,
+    a.name AS cashPlaceName, t.amount_cents AS tenderCents, d.posted_by AS recordedBy,
+    u.display_name AS recordedByName
+    FROM col_collections c JOIN documents d ON d.id = c.document_id
+    JOIN users u ON u.id = d.posted_by
+    LEFT JOIN col_tenders t ON t.document_id = d.id
+    LEFT JOIN accounts a ON a.id = t.account_id
+    WHERE d.business_date BETWEEN ? AND ? ORDER BY d.business_date, d.number, t.line_no`)
+    .all(from, to) as { id: string; number: string; date: string; status: string; totalCents: number;
+      customerId: string; customerName: string; crNumber: string; cwtCents: number; tenderLine: number | null;
+      cashPlaceId: number | null; cashPlaceName: string | null; tenderCents: number | null;
+      recordedBy: string; recordedByName: string }[];
+}
