@@ -47,6 +47,7 @@ import { TaxCalendar } from './TAX/TaxCalendar.tsx';
 import { VatQuarter } from './TAX/VatQuarter.tsx';
 import { ShopCertificate } from './SEC/ShopCertificate.tsx';
 import { PracticeShop } from './PLT/PracticeShop.tsx';
+import { SystemHealthPage } from './PLT/SystemHealth.tsx';
 import { BillForm } from './AP/BillForm.tsx';
 import { OpeningBillForm } from './AP/OpeningBillForm.tsx';
 import { PaymentForm as SupplierPaymentForm } from './AP/PaymentForm.tsx';
@@ -118,6 +119,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/calendar': TaxCalendar,
   '/admin/shop-certificate': ShopCertificate,
   '/admin/practice': PracticeShop,
+  '/admin/health': SystemHealthPage,
   '/bak': Backups,
   '/bak/:section': Backups,
   '/aud/log': AuditLog,

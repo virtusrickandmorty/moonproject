@@ -14,13 +14,8 @@ import { TIERS, bakSettings, keptIn, lastOkRun, runBackup } from './backup.ts';
 import { saveSettings, settingsIssues } from './settings.ts';
 import { BACKUP_FILE, cleanStaged, openBackup, pendingRestore, requestRestore, restoreDir, stage, stagedPath } from './restore.ts';
 import { copyToUsb } from './usb.ts';
+import { DRILL_EVERY_MS, STALE_MS, USB_EVERY_MS } from './public.ts';
 
-const HOUR = 3600_000;
-/** No successful backup for this long turns the status red (PLAN E13 "backup stale"). */
-const STALE_MS = 26 * HOUR;
-/** The restore drill is quarterly; USB drives are swapped weekly (PLAN C8). */
-const DRILL_EVERY_MS = 92 * 24 * HOUR;
-const USB_EVERY_MS = 8 * 24 * HOUR;
 
 const checkInput = z.object({
   source: z.enum(['local', 'offsite']),
