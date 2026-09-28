@@ -36,6 +36,7 @@ import { CertificatesToIssue, VatWorksheet } from './TAX/QuarterReports.tsx';
 import { TaxCalendar } from './TAX/TaxCalendar.tsx';
 import { VatQuarter } from './TAX/VatQuarter.tsx';
 import { BillForm } from './AP/BillForm.tsx';
+import { OpeningBillForm } from './AP/OpeningBillForm.tsx';
 import { PaymentForm as SupplierPaymentForm } from './AP/PaymentForm.tsx';
 import { billView, paymentView } from './AP/views.tsx';
 import { VoucherForm } from './EXP/VoucherForm.tsx';
@@ -101,6 +102,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'stat.remittance': RemittanceForm,
   'ap.bill': BillForm,
   'ap.payment': SupplierPaymentForm,
+  'ap.opening': OpeningBillForm,
   'exp.voucher': VoucherForm,
   'eq.owner_money': OwnerMoneyForm,
   'eq.officer': OfficerForm,
