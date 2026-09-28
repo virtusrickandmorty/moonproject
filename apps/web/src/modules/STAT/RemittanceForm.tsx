@@ -1,9 +1,9 @@
 /**
  * Remittance form (PLAN D5 STAT-REM, E11): what is paid (SSS, PhilHealth, Pag-IBIG or the 1601-C tax), for which
  * month, from where, how much and the PRN or reference. The screen shows what the month's payrolls left payable, and
- * the server's variance check (less is a partial payment; more is refused). Opened from the remittance check with the
- * scheme, month and amount filled in. Someone who may backdate (acc.backdate) also gives the date paid, when the payment
- * is recorded days later (STAT-1).
+ * the server's variance check (less is a partial payment; more is refused). A late-payment penalty is paid on top and
+ * never counts toward the payable. Opened from the remittance check with the scheme, month and amount filled in.
+ * Someone who may backdate (acc.backdate) also gives the date paid, when the payment is recorded days later (STAT-1).
  */
 import { useEffect, useState } from 'react';
 import { api, ApiError, type CashPlace, type DocTypeInfo, type Me, type Preview, type SchemeCheck } from '../../api.ts';
@@ -16,7 +16,7 @@ import { SCHEME_LABEL, SCHEME_LIST, isMonth, paidOn, remittanceInput, type Remit
 
 export function RemittanceForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me: Me }) {
   const q = new URLSearchParams(location.search);
-  const [v, setV] = useState<RemittanceValues>({ scheme: q.get('scheme') ?? '', month: q.get('month') ?? '', cashPlaceId: '', amount: q.get('amount') ?? '', reference: '', note: '' });
+  const [v, setV] = useState<RemittanceValues>({ scheme: q.get('scheme') ?? '', month: q.get('month') ?? '', cashPlaceId: '', amount: q.get('amount') ?? '', penalty: '', reference: '', note: '' });
   const [paidOnText, setPaidOnText] = useState('');
   const [places, setPlaces] = useState<CashPlace[]>([]);
   const [check, setCheck] = useState<SchemeCheck | null>(null);
@@ -85,8 +85,9 @@ export function RemittanceForm({ type, mode, me }: { type: DocTypeInfo; mode: Fo
           ))}
         </div>
       </Panel>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Amount paid" required><input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right`} value={v.amount} onChange={(e) => set({ amount: e.target.value })} /></Field>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Field label="Amount paid" required hint="For the month's contributions or tax"><input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right`} value={v.amount} onChange={(e) => set({ amount: e.target.value })} /></Field>
+        <Field label="Late-payment penalty" hint="Paid on top, if any"><input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right`} value={v.penalty} onChange={(e) => set({ penalty: e.target.value })} /></Field>
         <Field label="PRN, reference or receipt no." required><input className={inputClass} value={v.reference} onChange={(e) => set({ reference: e.target.value })} /></Field>
       </div>
       {mayBackdate && (

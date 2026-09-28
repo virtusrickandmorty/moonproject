@@ -1,11 +1,11 @@
 /**
  * Collection (PLAN E5, D5 DEP-RCV / COL-RCV / COL-OVER): money in from a customer, split across cash places and
  * applied to job orders and quick sales, in one journal.
- *   Dr cash place (per tender); Dr 1410 CWT (2307); Dr 6280 (short ≤ ₱1)
+ *   Dr cash place (per tender); Dr 1410 CWT (2307); Dr 1404 VAT withheld (government buyers, 2307); Dr 6280 (short ≤ ₱1)
  *     / Cr 1201 AR (the JO's invoiced part); Cr 2201 (the JO's un-invoiced part, a deposit);
  *       Cr 1201 AR (a quick sale, QS-SALE); Cr 2201 (unapplied remainder, no JO); Cr 6280 (over ≤ ₱1)
  * AR and deposit lines name the customer and the JO (journal_lines.ref_doc_id), so each JO's balance due is read
- * from the ledger (JO public.ts). Balance rule (E5): Σ tenders + CWT = Σ applied + unapplied, give or take ₱1.
+ * from the ledger (JO public.ts). Balance rule (E5): Σ tenders + CWT + VAT withheld = Σ applied + unapplied, give or take ₱1.
  * Deposits are recorded in downpayment VAT mode A only (settings); B and C are refused until they are built.
  * Cancel: the mirror, then any part of a deposit that an invoice record already applied reopens the receivable,
  * Dr 1201 / Cr 2201 (D6), so the JO's deposits never go below zero (JO settleLines).
@@ -27,6 +27,8 @@ import { MAX_CENTS, cashPlaceIssues, insertTenders, loadTenders, sumCents, taken
 export const SHORT_OVER_LIMIT_CENTS = 100;
 /** Expected customer CWT by ATC (D4.6): WC158 goods 1%, WC160 services 2%. "other" has no expectation. */
 const CWT_BP = { WC158: 100, WC160: 200 } as const;
+/** Expected VAT withheld by a government buyer (D4.6): 5% of the net. */
+const VAT_WITHHELD_BP = 500;
 
 const application = z.object({ jobOrderId: z.uuid(), amountCents: z.number().int().positive().max(MAX_CENTS) }).strict();
 /** A quick sale paid (QS invoice record): what is still owed on it is its receivable, named by the sale (journal ref). */
@@ -41,7 +43,12 @@ export const collectionInput = z
     sales: z.array(saleApplication).min(1).max(20).optional(),
     tenders: z.array(tenderInput).min(1).max(10),
     withholding: z
-      .object({ cwtCents: z.number().int().positive().max(MAX_CENTS), atc: z.enum(['WC158', 'WC160', 'other']), certificate: z.enum(['pending', 'received']) })
+      .object({
+        cwtCents: z.number().int().positive().max(MAX_CENTS),
+        atc: z.enum(['WC158', 'WC160', 'other']),
+        certificate: z.enum(['pending', 'received']),
+        vatWithheldCents: z.number().int().positive().max(MAX_CENTS).optional(), // government buyers, on the same 2307 (D4.6)
+      })
       .strict()
       .optional(),
     settleSmallDifference: z.boolean().optional(), // a difference up to ₱1.00 goes to cash short and over (D4.9)
@@ -58,6 +65,7 @@ export interface Collection extends Omit<CollectionInput, 'applications' | 'sale
   tenders: Tender[];
   customerName: string;
   cwtCents: number;
+  vatWithheldCents: number;
   appliedCents: number;
   unappliedCents: number;
   /** + over (kept), − short (absorbed). */
@@ -83,7 +91,8 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
   compute(input, ctx) {
     const { settleSmallDifference, sales: _, ...rest } = input;
     const cwtCents = input.withholding?.cwtCents ?? 0;
-    const totalCents = sumCents(input.tenders) + cwtCents;
+    const vatWithheldCents = input.withholding?.vatWithheldCents ?? 0;
+    const totalCents = sumCents(input.tenders) + cwtCents + vatWithheldCents;
     // The JO's open receivable is settled first; what is left is a deposit on the JO's un-invoiced part (D3).
     const applications = input.applications.map((a, i) => {
       const jo = jobOrderRef(ctx.db, a.jobOrderId);
@@ -104,6 +113,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       tenders: withNames(ctx.db, input.tenders),
       customerName: customerRef(ctx.db, input.customerId)?.display_name ?? '?',
       cwtCents,
+      vatWithheldCents,
       appliedCents,
       unappliedCents: settleSmallDifference ? 0 : Math.max(0, difference),
       shortOverCents: settleSmallDifference ? difference : 0,
@@ -178,10 +188,17 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       add('warning', 'applications', 'UNAPPLIED', `${formatPeso(doc.unappliedCents)} is not applied to a job order. It is kept as ${doc.customerName}'s deposit, to apply or refund later.`);
     }
     const w = doc.withholding;
+    const netCents = () => vatFromGross(doc.totalCents, settingAt(ctx.db, 'tax.vat_rate_bp', ctx.businessDate)).netCents;
     if (w && w.atc !== 'other') {
-      const expected = applyRate(vatFromGross(doc.totalCents, settingAt(ctx.db, 'tax.vat_rate_bp', ctx.businessDate)).netCents, CWT_BP[w.atc]);
+      const expected = applyRate(netCents(), CWT_BP[w.atc]);
       if (Math.abs(w.cwtCents - expected) > 100) {
         add('warning', 'withholding.cwtCents', 'CWT_EXPECTED', `Tax withheld under ${w.atc} is usually ${formatPeso(expected)} on this payment. Please check the 2307.`);
+      }
+    }
+    if (doc.vatWithheldCents > 0) {
+      const expected = applyRate(netCents(), VAT_WITHHELD_BP);
+      if (Math.abs(doc.vatWithheldCents - expected) > 100) {
+        add('warning', 'withholding.vatWithheldCents', 'VAT_WITHHELD_EXPECTED', `VAT withheld by a government buyer is usually 5% of the amount before VAT, ${formatPeso(expected)} on this payment. Please check the 2307.`);
       }
     }
     return issues;
@@ -190,9 +207,9 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
   persist(db, doc, h) {
     const w = doc.withholding;
     db.prepare(
-      `INSERT INTO col_collections (document_id, customer_id, customer_name, cr_number, cwt_cents, cwt_atc, cert_2307, unapplied_cents, short_over_cents, settle_small_difference, note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(h.documentId, doc.customerId, doc.customerName, doc.crNumber, doc.cwtCents, w?.atc ?? null, w?.certificate ?? null, doc.unappliedCents, doc.shortOverCents, doc.settleSmallDifference ? 1 : 0, doc.note ?? null);
+      `INSERT INTO col_collections (document_id, customer_id, customer_name, cr_number, cwt_cents, cwt_atc, cert_2307, vat_withheld_cents, unapplied_cents, short_over_cents, settle_small_difference, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(h.documentId, doc.customerId, doc.customerName, doc.crNumber, doc.cwtCents, w?.atc ?? null, w?.certificate ?? null, doc.vatWithheldCents, doc.unappliedCents, doc.shortOverCents, doc.settleSmallDifference ? 1 : 0, doc.note ?? null);
     insertTenders(db, 'col_tenders', h.documentId, doc.tenders);
     const app = db.prepare(
       'INSERT INTO col_applications (document_id, line_no, job_order_id, amount_cents, to_receivable_cents, to_deposit_cents) VALUES (?, ?, ?, ?, ?, ?)',
@@ -209,6 +226,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       lines: [
         ...doc.tenders.map((t) => ({ account: { cashPlace: t.cashPlaceId }, debitCents: t.amountCents, ...(t.reference ? { memo: t.reference } : {}) })),
         { account: { role: 'CWT' }, party, debitCents: doc.cwtCents, memo: `2307 ${doc.withholding?.atc ?? ''}`.trim() },
+        { account: { role: 'VAT_WITHHELD' }, party, debitCents: doc.vatWithheldCents, memo: '2307 VAT withheld' },
         { account: { role: 'CASH_SHORT_OVER' }, debitCents: Math.max(0, -doc.shortOverCents), memo: 'Short' },
         ...doc.applications.flatMap((a) => [
           { account: { role: 'AR_TRADE' }, party, ref: { documentId: a.jobOrderId }, creditCents: a.toReceivableCents, memo: a.jobOrderNumber },
@@ -226,7 +244,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       .prepare(`SELECT c.*, d.total_cents FROM col_collections c JOIN documents d ON d.id = c.document_id WHERE c.document_id = ?`)
       .get(documentId) as
       | { customer_id: string; customer_name: string; cr_number: string; cwt_cents: number; cwt_atc: 'WC158' | 'WC160' | 'other' | null; cert_2307: 'pending' | 'received' | null;
-          unapplied_cents: number; short_over_cents: number; settle_small_difference: number; note: string | null; total_cents: number }
+          vat_withheld_cents: number; unapplied_cents: number; short_over_cents: number; settle_small_difference: number; note: string | null; total_cents: number }
       | undefined;
     if (!r) throw new Error(`Collection ${documentId} not found`);
     const applications = (
@@ -250,7 +268,9 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
     return {
       customerId: r.customer_id,
       crNumber: r.cr_number,
-      ...(r.cwt_atc && r.cert_2307 ? { withholding: { cwtCents: r.cwt_cents, atc: r.cwt_atc, certificate: r.cert_2307 } } : {}),
+      ...(r.cwt_atc && r.cert_2307
+        ? { withholding: { cwtCents: r.cwt_cents, atc: r.cwt_atc, certificate: r.cert_2307, ...(r.vat_withheld_cents > 0 ? { vatWithheldCents: r.vat_withheld_cents } : {}) } }
+        : {}),
       ...(r.settle_small_difference ? { settleSmallDifference: true } : {}),
       ...(r.note ? { note: r.note } : {}),
       applications,
@@ -258,6 +278,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       tenders: loadTenders(db, 'col_tenders', documentId),
       customerName: r.customer_name,
       cwtCents: r.cwt_cents,
+      vatWithheldCents: r.vat_withheld_cents,
       appliedCents: sumCents(applications) + sumCents(sales),
       unappliedCents: r.unapplied_cents,
       shortOverCents: r.short_over_cents,
@@ -301,7 +322,8 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
   summary(doc) {
     const cash = sumCents(doc.tenders);
     const where = doc.tenders.length === 1 ? ` in ${doc.tenders[0]!.cashPlaceName}` : ` (${doc.tenders.map((t) => `${formatPeso(t.amountCents)} in ${t.cashPlaceName}`).join(', ')})`;
-    const cwt = doc.cwtCents > 0 ? ` plus ${formatPeso(doc.cwtCents)} tax withheld (2307)` : '';
+    const vat = doc.vatWithheldCents > 0 ? ` and ${formatPeso(doc.vatWithheldCents)} VAT withheld` : '';
+    const cwt = doc.cwtCents > 0 ? ` plus ${formatPeso(doc.cwtCents)} tax withheld${vat} (2307)` : '';
     const uses = [
       ...doc.applications.map((a) => `${formatPeso(a.amountCents)} for ${a.jobOrderNumber}`),
       ...doc.sales.map((a) => `${formatPeso(a.amountCents)} for invoice no. ${a.invoiceNumber}`),
@@ -328,19 +350,24 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
           weights: fc.array(fc.tuple(fc.constantFrom(...places), fc.integer({ min: 1, max: 5 })), { minLength: 1, maxLength: 3 }),
           extraCents: fc.integer({ min: 0, max: 300_000 }), // received beyond the applied amount: kept as deposit
           cwtBp: fc.constantFrom(0, 100, 200),
+          government: fc.boolean(), // also withholds 5% VAT (D4.6), only ever next to CWT
           cr: fc.integer({ min: 1, max: 99_999_999 }),
         })
-        .map(({ applications, weights, extraCents, cwtBp, cr }) => {
+        .map(({ applications, weights, extraCents, cwtBp, government, cr }) => {
           const applied = sumCents(applications);
           const total = Math.max(applied + extraCents, 1_000); // every tender gets at least a centavo
-          const cwtCents = cwtBp ? applyRate(vatFromGross(total, vatBp).netCents, cwtBp) : 0;
-          const amounts = allocate(total - cwtCents, weights.map(([, w]) => w));
+          const netCents = vatFromGross(total, vatBp).netCents;
+          const cwtCents = cwtBp ? applyRate(netCents, cwtBp) : 0;
+          const vatWithheldCents = cwtCents > 0 && government ? applyRate(netCents, VAT_WITHHELD_BP) : 0;
+          const amounts = allocate(total - cwtCents - vatWithheldCents, weights.map(([, w]) => w));
           return {
             customerId,
             crNumber: String(cr).padStart(6, '0'),
             applications,
             tenders: weights.map(([cashPlaceId], i) => ({ cashPlaceId, amountCents: amounts[i]! })),
-            ...(cwtCents > 0 ? { withholding: { cwtCents, atc: cwtBp === 100 ? ('WC158' as const) : ('WC160' as const), certificate: 'pending' as const } } : {}),
+            ...(cwtCents > 0
+              ? { withholding: { cwtCents, atc: cwtBp === 100 ? ('WC158' as const) : ('WC160' as const), certificate: 'pending' as const, ...(vatWithheldCents > 0 ? { vatWithheldCents } : {}) } }
+              : {}),
           };
         });
     });

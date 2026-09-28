@@ -16,13 +16,17 @@ const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: 
 };
 
 describe('statutory screen rules', () => {
-  it('remittance input: each missing part named; a complete form becomes the input', () => {
-    expect(remittanceInput({ scheme: '', month: '2026-9', cashPlaceId: '', amount: '0', reference: ' x ', note: '' }).errors).toEqual([
-      'Pick what is being paid.', 'Pick the month paid for.', 'Pick where the money came from.', 'Type the amount paid, like 7,560.00', 'Type the PRN, payment reference or receipt number.',
+  it('remittance input: each missing part named; a complete form becomes the input; a blank penalty is none', () => {
+    expect(remittanceInput({ scheme: '', month: '2026-9', cashPlaceId: '', amount: '0', penalty: 'two fifty', reference: ' x ', note: '' }).errors).toEqual([
+      'Pick what is being paid.', 'Pick the month paid for.', 'Pick where the money came from.', 'Type the amount paid, like 7,560.00',
+      'Type the penalty like 250.00, or leave it blank.', 'Type the PRN, payment reference or receipt number.',
     ]);
-    expect(remittanceInput({ scheme: 'SSS', month: '2026-09', cashPlaceId: '7', amount: '7,560.00', reference: ' PRN 0926-0001 ', note: ' Paid at BDO ' })).toEqual({
+    expect(remittanceInput({ scheme: 'SSS', month: '2026-09', cashPlaceId: '7', amount: '7,560.00', penalty: ' ', reference: ' PRN 0926-0001 ', note: ' Paid at BDO ' })).toEqual({
       input: { scheme: 'SSS', month: '2026-09', cashPlaceId: 7, amountCents: 756_000, reference: 'PRN 0926-0001', note: 'Paid at BDO' },
       errors: [],
+    });
+    expect(remittanceInput({ scheme: 'SSS', month: '2026-09', cashPlaceId: '7', amount: '7,560.00', penalty: '250.00', reference: 'PRN 0926-0001', note: '' }).input).toEqual({
+      scheme: 'SSS', month: '2026-09', cashPlaceId: 7, amountCents: 756_000, penaltyCents: 25_000, reference: 'PRN 0926-0001',
     });
   });
 
@@ -73,9 +77,10 @@ describe('web client for statutory', () => {
     expect(sep.sss.rows.map((r) => [r.name, r.mscCents, r.totalCents])).toEqual([['Carla Opisina', 1_500_000, 228_000]]);
     expect([sep.tax.totalCompensationCents, sep.tax.eeSharesCents, sep.tax.taxableCents]).toEqual([1_500_000, 132_500, 1_367_500]);
 
-    const input = remittanceInput({ scheme: 'SSS', month: '2026-09', cashPlaceId: String(cashPlaceId(env.db, '1111')), amount: '2,280.00', reference: 'PRN 0926-0001', note: '' }).input;
+    // Paid late, with a ₱250.00 penalty on top: the total covers both, the check counts only the SSS part.
+    const input = remittanceInput({ scheme: 'SSS', month: '2026-09', cashPlaceId: String(cashPlaceId(env.db, '1111')), amount: '2,280.00', penalty: '250.00', reference: 'PRN 0926-0001', note: '' }).input;
     const pre = await api.preview('stat.remittance', input);
-    expect([pre.totalCents, pre.issues]).toEqual([228_000, []]);
+    expect([pre.totalCents, pre.issues]).toEqual([253_000, []]);
     expect((await api.post('stat.remittance', input, pre.totalCents, key())).number).toBe('REM-000001');
     expect((await api.statMonth('2026-09')).check[0]).toMatchObject({ remittedCents: 228_000, balanceCents: 0 });
     expect(await api.runRemitted(c2.id)).toEqual({ month: '2026-09', remitted: [{ scheme: 'SSS', label: 'SSS', numbers: ['REM-000001'] }] });
