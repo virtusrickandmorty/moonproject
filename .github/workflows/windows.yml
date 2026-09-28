@@ -1,0 +1,51 @@
+name: Windows installer
+# Builds Moonproject-Setup.exe (PLAN C6, C8) and proves it on a clean Windows machine: install, service account,
+# "Join this PC", HTTPS through the shop CA, update in place, uninstall keeping the data. The installer is kept as a
+# downloadable artifact of each run.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'ops/**'
+      - '.github/workflows/windows.yml'
+      - 'apps/server/src/main.ts'
+      - 'apps/server/src/app.ts'
+      - 'apps/server/src/engine/security/tls/**'
+      - 'packages/shared/**'
+      - 'package-lock.json'
+jobs:
+  setup:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      MOONPROJECT_VERSION: 0.1.${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @moonproject/web
+      - run: node ops/windows/stage.mjs
+      - name: Build Moonproject-Setup.exe
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; if ($LASTEXITCODE) { exit $LASTEXITCODE } }
+          & $iscc ops\windows\moonproject.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Install, check and uninstall
+        shell: pwsh
+        run: ops\windows\smoke.ps1
+      - name: Service logs
+        if: failure()
+        shell: pwsh
+        run: Get-ChildItem "$env:ProgramData\Moonproject\logs" -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.Name)"; Get-Content $_.FullName -Tail 60 }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Moonproject-Setup-${{ env.MOONPROJECT_VERSION }}
+          path: ops/windows/out/Moonproject-Setup.exe
+          if-no-files-found: error

@@ -8,6 +8,7 @@
  */
 import { mkdirSync } from 'node:fs';
 import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import type { Server as HttpsServer } from 'node:https';
 import { dirname } from 'node:path';
 import { openDb } from './platform/db/driver.ts';
@@ -40,7 +41,7 @@ if (tls) {
   const join = createServer(joinHandler({ caPem: () => tls!.ca.certPem, httpsPort, fallbackHost: () => localNames().ips.find((ip) => ip !== '127.0.0.1') ?? 'localhost' }));
   // Another program on port 80 only loses the join page: the app keeps running over HTTPS.
   join.on('error', (e) => app.log.error(`The "Join this PC" page could not start: ${e.message}`));
-  join.listen(Number(process.env.HTTP_PORT ?? 80), '0.0.0.0');
+  join.listen(Number(process.env.HTTP_PORT ?? 80), '0.0.0.0', () => app.log.info(`"Join this PC" page on port ${(join.address() as AddressInfo).port}`));
   app.log.info(`Shop certificate code (SHA-256): ${tls.ca.fingerprint256}. Devices join at http://${tls.server.ips.find((ip) => ip !== '127.0.0.1') ?? 'localhost'}/`);
   // A new address (another Wi-Fi, the VPN coming up) or a certificate near its end: a new certificate, no restart.
   setInterval(() => {
