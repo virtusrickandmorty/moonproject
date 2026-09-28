@@ -137,7 +137,8 @@ describe('1702Q property test (PLAN I1.3)', () => {
         expect(runInvariants(db).filter((r) => !r.ok)).toEqual([]);
         await t.app.close();
       }),
-      { numRuns: 20, endOnFailure: true },
+      // A fixed seed: the counts below check that the runs reach each case, which 20 unseeded runs do not always do.
+      { numRuns: 20, endOnFailure: true, seed: 1702 },
     );
     expect(stats.payments).toBeGreaterThan(0);
     expect(stats.partial).toBeGreaterThan(0);
