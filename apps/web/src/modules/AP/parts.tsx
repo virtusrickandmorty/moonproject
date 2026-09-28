@@ -29,17 +29,16 @@ export type MoneyFormState = ReturnType<typeof useMoneyForm>;
 /**
  * Title, the edit gate (reason first, NR-4), the form's fields, Record with the server's confirm dialog, and "So far":
  * the total, `figures` from the document the server worked out, the summary and the checks. `adjust` drops the checks
- * an edit's original causes (see forReplacement). The client sends only the input and the total the user confirmed,
- * and `businessDate` for a type that may be backdated (an opening supplier bill, on the cut-over date).
+ * an edit's original causes (see forReplacement). The client sends only the input and the total the user confirmed.
  */
 export function MoneyForm(p: {
   type: DocTypeInfo; f: MoneyFormState; title: string; input: unknown; errors: string[]; children: ReactNode;
-  figures?: (doc: never) => [string, number, string?][]; adjust?: (preview: Preview, originalNumber: string) => Preview; businessDate?: string;
+  figures?: (doc: never) => [string, number, string?][]; adjust?: (preview: Preview, originalNumber: string) => Preview;
 }) {
-  const { type, f, input, errors, businessDate } = p;
+  const { type, f, input, errors } = p;
   const adjust = (r: Preview) => (f.original && p.adjust ? p.adjust(r, f.original.number) : r);
-  const preview = () => api.preview(type.key, input, businessDate).then(adjust);
-  const live = useLive(JSON.stringify([input, f.original?.id, businessDate]), errors.length === 0, preview);
+  const preview = () => api.preview(type.key, input).then(adjust);
+  const live = useLive(JSON.stringify([input, f.original?.id]), errors.length === 0, preview);
   if (f.original && !f.reason) return <EditGate original={f.original} typeKey={type.key} onReason={f.setReason} />;
 
   const openConfirm = () => {
@@ -48,9 +47,7 @@ export function MoneyForm(p: {
   };
   const record = async (key: string) => {
     try {
-      const r = f.original
-        ? await api.reissue(type.key, f.original.id, input, f.confirm!.totalCents, f.reason, key, businessDate)
-        : await api.post(type.key, input, f.confirm!.totalCents, key, businessDate);
+      const r = f.original ? await api.reissue(type.key, f.original.id, input, f.confirm!.totalCents, f.reason, key) : await api.post(type.key, input, f.confirm!.totalCents, key);
       navigate(docPath(type.key, `/${r.id}?recorded=1`));
     } catch (e) {
       // The server's total differs from what the user confirmed: show the new preview and ask again.

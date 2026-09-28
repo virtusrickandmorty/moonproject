@@ -6,7 +6,6 @@ import { notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
-import { JO_DOC_TYPES_SQL } from './stages.ts';
 
 export { currentStage, productionMove, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
 export { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, awaitingInvoice, invoiceAmounts, invoiceNumberUsedBy, invoiceNumbersBetween, settleLines } from './doctypes/invoice-record.ts';
@@ -26,7 +25,7 @@ export function jobOrderRef(db: Db, id: string): JoRef | undefined {
 
 /** Where an edited job order lives on now: JO-1 edited into JO-2, then into JO-3, gives JO-3. Null when the chain ends cancelled. */
 export function liveReplacementOf(db: Db, id: string): JoRef | null {
-  const next = db.prepare(`SELECT replaced_by_id FROM documents WHERE id = ? AND ${JO_DOC_TYPES_SQL}`).pluck();
+  const next = db.prepare(`SELECT replaced_by_id FROM documents WHERE id = ? AND doc_type = 'jo.job_order'`).pluck();
   for (let at = next.get(id) as string | null | undefined; at; at = next.get(at) as string | null | undefined) {
     const jo = jobOrderRef(db, at);
     if (jo?.status === 'posted') return jo;
@@ -55,14 +54,6 @@ export function activeJobOrders(db: Db): (JoRef & { stage: 'open' | 'in_producti
     ORDER BY o.due_date, d.number`).all() as (JoRef & { stage: 'open' | 'in_production' | 'ready' | 'partially_released' | 'released' })[];
 }
 
-/** Recorded release slips in a date range, for the calendar. */
-export function releasesBetween(db: Db, from: string, to: string): { id: string; number: string; date: string; jobOrderId: string }[] {
-  return db.prepare(`SELECT d.id, d.number, d.business_date AS date, r.job_order_id AS jobOrderId
-    FROM jo_releases r JOIN documents d ON d.id = r.document_id
-    WHERE d.status = 'posted' AND d.business_date BETWEEN ? AND ? ORDER BY d.business_date, d.number`)
-    .all(from, to) as { id: string; number: string; date: string; jobOrderId: string }[];
-}
-
 /**
  * Balance due (PLAN D3, H3): the un-invoiced part is a memo figure (total − invoiced); the invoiced part is
  * the JO's open AR; money received and not yet applied sits in customer deposits. So
@@ -84,19 +75,12 @@ export function joLedger(db: Db, documentId: string): JoLedgerPart {
   return { receivableCents: balance('AR_TRADE'), depositsHeldCents: 0 - balance('CUSTOMER_DEPOSITS') };
 }
 
-/**
- * Gross of the JO's recorded (not cancelled) invoice records: its sales so far (D3 "invoiced amount"). An opening job
- * order adds what was invoiced before the cut-over date and not yet paid (its receivable), so its receivable stays
- * within what is invoiced, as every JO's does (settleLines).
- */
+/** Gross of the JO's recorded (not cancelled) invoice records: its sales so far (D3 "invoiced amount"). */
 export function invoicedCents(db: Db, documentId: string): number {
   return db
-    .prepare(
-      `SELECT (SELECT COALESCE(SUM(i.gross_cents), 0) FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE i.job_order_id = @jo AND d.status = 'posted')
-            + (SELECT COALESCE(SUM(o.receivable_cents), 0) FROM jo_opening_orders o JOIN documents d ON d.id = o.document_id WHERE o.document_id = @jo AND d.status = 'posted')`,
-    )
+    .prepare(`SELECT COALESCE(SUM(i.gross_cents), 0) FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE i.job_order_id = ? AND d.status = 'posted'`)
     .pluck()
-    .get({ jo: documentId }) as number;
+    .get(documentId) as number;
 }
 
 export function joMoney(db: Db, documentId: string) {

@@ -6,7 +6,6 @@
 import { z } from 'zod';
 import fc from 'fast-check';
 import { applyRate, conflict, formatPeso, manilaDate, type Issue } from '@moonproject/shared';
-import type { Db } from '../../../platform/db/driver.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { activeChart, activeWearers, customer, wearer, type Wearer } from '../cus.ts';
 import { carryStageOver } from '../stages.ts';
@@ -31,7 +30,7 @@ const rosterRow = z
   })
   .strict();
 
-export const lineInput = z
+const lineInput = z
   .object({
     kind: z.enum(['made_to_order', 'service', 'ready_made']),
     description: text(200),
@@ -68,108 +67,7 @@ export interface JobOrder extends Omit<JobOrderInput, 'lines'> {
 
 export const addDays = (date: string, days: number) => manilaDate(new Date(Date.parse(`${date}T00:00:00+08:00`) + days * 86_400_000));
 /** SQL NULL -> field left out, as zod leaves out a missing optional field. */
-export const dropNulls = (o: object, keys: string[]) => Object.fromEntries(Object.entries(o).filter(([k, v]) => v !== null || !keys.includes(k)));
-
-/*
- * The lines of a job order, shared with the opening job order (opening.ts): both keep them in jo_lines and jo_roster,
- * so production, releases and invoice records read them the same way.
- */
-
-export function computeLines(db: Db, lines: readonly z.infer<typeof lineInput>[]): JoLine[] {
-  return lines.map((l, i) => ({
-    ...l,
-    lineNo: i + 1,
-    lineTotalCents: l.qty * l.unitPriceCents - l.discountCents,
-    roster: l.roster.map((r, j) => {
-      const w = r.personId ? wearer(db, r.personId) : undefined;
-      const chart = w && r.sizeMode === 'measured' ? activeChart(db, w.id) : undefined;
-      return {
-        ...r,
-        ...(r.jerseyName ? { jerseyName: r.jerseyName.toUpperCase() } : {}),
-        rowNo: j + 1,
-        wearerName: w?.name ?? r.name ?? '',
-        groupId: w?.groupId ?? null,
-        chartId: chart?.id ?? null,
-        chartRevision: chart?.revision ?? null,
-      };
-    }),
-  }));
-}
-
-export const linesTotal = (lines: readonly JoLine[]) => lines.reduce((s, l) => s + l.lineTotalCents, 0);
-
-/** Each line's discount and roster (wearers of this customer, sizes, measurements). */
-export function lineIssues(db: Db, doc: { customerId: string; customerName: string; lines: readonly JoLine[] }): Issue[] {
-  const issues: Issue[] = [];
-  const error = (field: string, code: string, message: string) => issues.push({ field, code, level: 'error', message });
-  for (const l of doc.lines) {
-    const at = `lines.${l.lineNo - 1}`;
-    if (l.lineTotalCents < 0) error(`${at}.discountCents`, 'DISCOUNT', `Line ${l.lineNo}: the discount is more than the line amount.`);
-    const pieces = l.roster.reduce((s, r) => s + r.qty, 0);
-    if (l.roster.length > 0 && pieces !== l.qty) error(`${at}.roster`, 'ROSTER_QTY', `Line ${l.lineNo} is for ${l.qty} pieces but the roster lists ${pieces}.`);
-    const seen = new Set<string>();
-    for (const r of l.roster) {
-      const [f, where] = [`${at}.roster.${r.rowNo - 1}`, `Line ${l.lineNo}, row ${r.rowNo}`];
-      if (!r.personId === !r.name) {
-        error(`${f}.personId`, 'WEARER', `${where}: pick a wearer from the list or type a one-off name.`);
-        continue;
-      }
-      const w = r.personId ? wearer(db, r.personId) : undefined;
-      if (r.personId && (!w?.active || w.customerId !== doc.customerId)) error(`${f}.personId`, 'WEARER', `${where}: pick one of ${doc.customerName}'s active wearers.`);
-      if (w && seen.has(w.id)) issues.push({ field: `${f}.personId`, code: 'WEARER_TWICE', level: 'warning', message: `${where}: ${w.name} is already on this line.` });
-      if (w) seen.add(w.id);
-      if (r.sizeMode === 'preset' && !r.size) error(`${f}.size`, 'SIZE', `${where}: pick a size.`);
-      if (r.sizeMode === 'measured' && !r.chartId) error(`${f}.sizeMode`, 'NOT_MEASURED', `${where}: ${r.wearerName || 'this wearer'} has no measurements on file. Measure first or pick a size.`);
-    }
-  }
-  return issues;
-}
-
-export function persistLines(db: Db, documentId: string, lines: readonly JoLine[]): void {
-  const line = db.prepare(
-    'INSERT INTO jo_lines (document_id, line_no, kind, description, qty, unit_price_cents, discount_cents, line_total_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-  );
-  const row = db.prepare(
-    `INSERT INTO jo_roster (document_id, line_no, row_no, person_id, group_id, wearer_name, size_mode, size, chart_id, chart_revision, jersey_name, jersey_number, qty, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  );
-  for (const l of lines) {
-    line.run(documentId, l.lineNo, l.kind, l.description, l.qty, l.unitPriceCents, l.discountCents, l.lineTotalCents);
-    for (const r of l.roster) {
-      row.run(documentId, l.lineNo, r.rowNo, r.personId ?? null, r.groupId, r.wearerName, r.sizeMode, r.size ?? null, r.chartId, r.chartRevision, r.jerseyName ?? null, r.jerseyNumber ?? null, r.qty, r.notes ?? null);
-    }
-  }
-}
-
-export function loadLines(db: Db, documentId: string): JoLine[] {
-  const rows = db
-    .prepare(
-      `SELECT line_no AS lineNo, person_id AS personId, CASE WHEN person_id IS NULL THEN wearer_name END AS name, size_mode AS sizeMode, size,
-         jersey_name AS jerseyName, jersey_number AS jerseyNumber, qty, notes, row_no AS rowNo, wearer_name AS wearerName, group_id AS groupId,
-         chart_id AS chartId, chart_revision AS chartRevision
-       FROM jo_roster WHERE document_id = ? ORDER BY line_no, row_no`,
-    )
-    .all(documentId) as { lineNo: number }[];
-  const lines = db
-    .prepare(
-      `SELECT kind, description, qty, unit_price_cents AS unitPriceCents, discount_cents AS discountCents, line_no AS lineNo, line_total_cents AS lineTotalCents
-       FROM jo_lines WHERE document_id = ? ORDER BY line_no`,
-    )
-    .all(documentId) as Omit<JoLine, 'roster'>[];
-  const roster = (lineNo: number) =>
-    rows.filter((r) => r.lineNo === lineNo).map(({ lineNo: _, ...r }) => dropNulls(r, ['personId', 'name', 'size', 'jerseyName', 'jerseyNumber', 'notes']) as unknown as RosterRow);
-  return lines.map((l) => ({ ...l, roster: roster(l.lineNo) }));
-}
-
-export const linesToInput = (lines: readonly JoLine[]) =>
-  lines.map(({ kind, description, qty, unitPriceCents, discountCents, roster }) => ({
-    kind,
-    description,
-    qty,
-    unitPriceCents,
-    discountCents,
-    roster: roster.map(({ rowNo: _r, wearerName: _w, groupId: _g, chartId: _c, chartRevision: _v, ...r }) => r),
-  }));
+const dropNulls = (o: object, keys: string[]) => Object.fromEntries(Object.entries(o).filter(([k, v]) => v !== null || !keys.includes(k)));
 
 export const jobOrderDoc: DocTypeDef<JobOrderInput, JobOrder> = {
   key: 'jo.job_order',
@@ -181,8 +79,25 @@ export const jobOrderDoc: DocTypeDef<JobOrderInput, JobOrder> = {
   inputSchema: jobOrderInput,
 
   compute(input, ctx) {
-    const lines = computeLines(ctx.db, input.lines);
-    const totalCents = linesTotal(lines);
+    const lines = input.lines.map((l, i) => ({
+      ...l,
+      lineNo: i + 1,
+      lineTotalCents: l.qty * l.unitPriceCents - l.discountCents,
+      roster: l.roster.map((r, j) => {
+        const w = r.personId ? wearer(ctx.db, r.personId) : undefined;
+        const chart = w && r.sizeMode === 'measured' ? activeChart(ctx.db, w.id) : undefined;
+        return {
+          ...r,
+          ...(r.jerseyName ? { jerseyName: r.jerseyName.toUpperCase() } : {}),
+          rowNo: j + 1,
+          wearerName: w?.name ?? r.name ?? '',
+          groupId: w?.groupId ?? null,
+          chartId: chart?.id ?? null,
+          chartRevision: chart?.revision ?? null,
+        };
+      }),
+    }));
+    const totalCents = lines.reduce((s, l) => s + l.lineTotalCents, 0);
     return {
       ...input,
       lines,
@@ -199,7 +114,26 @@ export const jobOrderDoc: DocTypeDef<JobOrderInput, JobOrder> = {
     const c = customer(ctx.db, doc.customerId);
     if (!c?.active) error('customerId', 'CUSTOMER', c ? `${c.name} is inactive. Pick an active customer.` : 'Pick a customer.');
     if (doc.totalCents > MAX_CENTS) error('lines', 'TOO_BIG', 'The total is over ₱100 million. Please check the quantities and prices.');
-    issues.push(...lineIssues(ctx.db, doc));
+    for (const l of doc.lines) {
+      const at = `lines.${l.lineNo - 1}`;
+      if (l.lineTotalCents < 0) error(`${at}.discountCents`, 'DISCOUNT', `Line ${l.lineNo}: the discount is more than the line amount.`);
+      const pieces = l.roster.reduce((s, r) => s + r.qty, 0);
+      if (l.roster.length > 0 && pieces !== l.qty) error(`${at}.roster`, 'ROSTER_QTY', `Line ${l.lineNo} is for ${l.qty} pieces but the roster lists ${pieces}.`);
+      const seen = new Set<string>();
+      for (const r of l.roster) {
+        const [f, where] = [`${at}.roster.${r.rowNo - 1}`, `Line ${l.lineNo}, row ${r.rowNo}`];
+        if (!r.personId === !r.name) {
+          error(`${f}.personId`, 'WEARER', `${where}: pick a wearer from the list or type a one-off name.`);
+          continue;
+        }
+        const w = r.personId ? wearer(ctx.db, r.personId) : undefined;
+        if (r.personId && (!w?.active || w.customerId !== doc.customerId)) error(`${f}.personId`, 'WEARER', `${where}: pick one of ${doc.customerName}'s active wearers.`);
+        if (w && seen.has(w.id)) issues.push({ field: `${f}.personId`, code: 'WEARER_TWICE', level: 'warning', message: `${where}: ${w.name} is already on this line.` });
+        if (w) seen.add(w.id);
+        if (r.sizeMode === 'preset' && !r.size) error(`${f}.size`, 'SIZE', `${where}: pick a size.`);
+        if (r.sizeMode === 'measured' && !r.chartId) error(`${f}.sizeMode`, 'NOT_MEASURED', `${where}: ${r.wearerName || 'this wearer'} has no measurements on file. Measure first or pick a size.`);
+      }
+    }
     return issues;
   },
 
@@ -208,7 +142,19 @@ export const jobOrderDoc: DocTypeDef<JobOrderInput, JobOrder> = {
       `INSERT INTO jo_orders (document_id, customer_id, customer_name, contact, due_date, priority, payment_terms, required_dp_cents, notes)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(h.documentId, doc.customerId, doc.customerName, doc.contact ?? null, doc.dueDate, doc.priority, doc.paymentTerms, doc.requiredDownpaymentCents, doc.notes ?? null);
-    persistLines(db, h.documentId, doc.lines);
+    const line = db.prepare(
+      'INSERT INTO jo_lines (document_id, line_no, kind, description, qty, unit_price_cents, discount_cents, line_total_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+    );
+    const row = db.prepare(
+      `INSERT INTO jo_roster (document_id, line_no, row_no, person_id, group_id, wearer_name, size_mode, size, chart_id, chart_revision, jersey_name, jersey_number, qty, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const l of doc.lines) {
+      line.run(h.documentId, l.lineNo, l.kind, l.description, l.qty, l.unitPriceCents, l.discountCents, l.lineTotalCents);
+      for (const r of l.roster) {
+        row.run(h.documentId, l.lineNo, r.rowNo, r.personId ?? null, r.groupId, r.wearerName, r.sizeMode, r.size ?? null, r.chartId, r.chartRevision, r.jerseyName ?? null, r.jerseyNumber ?? null, r.qty, r.notes ?? null);
+      }
+    }
   },
 
   load(db, documentId) {
@@ -221,7 +167,23 @@ export const jobOrderDoc: DocTypeDef<JobOrderInput, JobOrder> = {
       )
       .get(documentId) as object | undefined;
     if (!o) throw new Error(`Job order ${documentId} not found`);
-    return { ...(dropNulls(o, ['contact', 'notes']) as Omit<JobOrder, 'lines'>), lines: loadLines(db, documentId) };
+    const rows = db
+      .prepare(
+        `SELECT line_no AS lineNo, person_id AS personId, CASE WHEN person_id IS NULL THEN wearer_name END AS name, size_mode AS sizeMode, size,
+           jersey_name AS jerseyName, jersey_number AS jerseyNumber, qty, notes, row_no AS rowNo, wearer_name AS wearerName, group_id AS groupId,
+           chart_id AS chartId, chart_revision AS chartRevision
+         FROM jo_roster WHERE document_id = ? ORDER BY line_no, row_no`,
+      )
+      .all(documentId) as { lineNo: number }[];
+    const lines = db
+      .prepare(
+        `SELECT kind, description, qty, unit_price_cents AS unitPriceCents, discount_cents AS discountCents, line_no AS lineNo, line_total_cents AS lineTotalCents
+         FROM jo_lines WHERE document_id = ? ORDER BY line_no`,
+      )
+      .all(documentId) as Omit<JoLine, 'roster'>[];
+    const roster = (lineNo: number) =>
+      rows.filter((r) => r.lineNo === lineNo).map(({ lineNo: _, ...r }) => dropNulls(r, ['personId', 'name', 'size', 'jerseyName', 'jerseyNumber', 'notes']) as unknown as RosterRow);
+    return { ...(dropNulls(o, ['contact', 'notes']) as Omit<JobOrder, 'lines'>), lines: lines.map((l) => ({ ...l, roster: roster(l.lineNo) })) };
   },
 
   toInput(doc) {
@@ -233,7 +195,14 @@ export const jobOrderDoc: DocTypeDef<JobOrderInput, JobOrder> = {
       priority,
       paymentTerms,
       ...(notes ? { notes } : {}),
-      lines: linesToInput(doc.lines),
+      lines: doc.lines.map(({ kind, description, qty, unitPriceCents, discountCents, roster }) => ({
+        kind,
+        description,
+        qty,
+        unitPriceCents,
+        discountCents,
+        roster: roster.map(({ rowNo: _r, wearerName: _w, groupId: _g, chartId: _c, chartRevision: _v, ...r }) => r),
+      })),
     };
   },
 

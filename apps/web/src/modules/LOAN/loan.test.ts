@@ -1,7 +1,7 @@
 /** The loan screens' rules: the yearly rate as a percent, the loan and loan payment inputs, the fee accounts offered. */
 import { describe, expect, it } from 'vitest';
 import type { Account } from '../../api.ts';
-import { bpToPercent, emptyLoan, emptyOpening, feeAccounts, loanInput, loanValues, openingInput, openingValues, paymentInput, percentToBp, scheduledPrincipal, type LoanValues, type OpeningValues } from './loan.ts';
+import { bpToPercent, emptyLoan, feeAccounts, loanInput, loanValues, paymentInput, percentToBp, scheduledPrincipal, type LoanValues } from './loan.ts';
 
 const loan = (patch: Partial<LoanValues>): LoanValues => ({ ...emptyLoan(), ...patch });
 const bank = loan({ lender: ' Sample Bank ', reference: 'PN-1', cashPlaceId: '6', principal: '500,000', fee: '5,000', rate: '12', term: '24', firstDueDate: '2026-10-28' });
@@ -70,45 +70,6 @@ describe('loan form', () => {
     const a = (id: number, type: Account['type'], more: Partial<Account> = {}): Account => ({ id, code: String(id), name: `A${id}`, type, partyType: null, isHeader: false, isCashPlace: false, isReserved: false, isActive: true, ...more });
     const accounts = [a(1, 'expense'), a(2, 'asset', { partyType: 'free' }), a(3, 'asset', { partyType: 'supplier' }), a(4, 'asset', { isCashPlace: true }), a(5, 'expense', { isHeader: true }), a(6, 'expense', { isActive: false }), a(7, 'liability')];
     expect(feeAccounts(accounts).map((x) => x.id)).toEqual([1, 2]);
-  });
-});
-
-describe('opening loan form', () => {
-  const opening = (patch: Partial<OpeningValues>): OpeningValues => ({ ...emptyOpening(), ...patch });
-  const bank = opening({ lender: ' Sample Bank ', reference: 'PN 2025-014', original: '1,000,000', dateReceived: '2025-10-15', owed: '738,900', rate: '12', monthsLeft: '13', nextDueDate: '2026-10-15' });
-
-  it('sends the loan as received, what is still owed, and the next due date of a generated schedule', () => {
-    expect(openingInput(bank)).toEqual({
-      input: {
-        lender: 'Sample Bank', kind: 'loan', originalPrincipalCents: 100_000_000, dateReceived: '2025-10-15', principalCents: 73_890_000, interestRateBp: 1200, monthsLeft: 13,
-        schedule: 'declining', nextDueDate: '2026-10-15', reference: 'PN 2025-014',
-      },
-      errors: [],
-    });
-  });
-
-  it('sends typed rows that must repay what is still owed; names every typing slip', () => {
-    const rows = [{ dueDate: '2026-10-01', principal: '40,000', interest: '1,600' }, { dueDate: '', principal: '', interest: '' }, { dueDate: '2026-11-01', principal: '40,000', interest: '1,200' }];
-    const typed = opening({ lender: 'Sample Equipment Finance', kind: 'equipment', original: '240,000', dateReceived: '2026-03-01', owed: '80,000', rate: '12', monthsLeft: '2', schedule: 'typed', rows });
-    expect(openingInput(typed).input).toMatchObject({ kind: 'equipment', principalCents: 8_000_000, rows: [{ dueDate: '2026-10-01', principalCents: 4_000_000, interestCents: 160_000 }, { dueDate: '2026-11-01', principalCents: 4_000_000, interestCents: 120_000 }] });
-    expect(openingInput(typed).errors).toEqual([]);
-    expect(openingInput({ ...typed, owed: '90,000' }).errors).toEqual(['The instalments repay ₱80,000.00 of principal, not the ₱90,000.00 still owed.']);
-    expect(openingInput(opening({ original: 'x', owed: '5', rate: '12.345', monthsLeft: '0' })).errors).toEqual([
-      'Type the lender’s name.',
-      'Type the loan as received (principal) like 1,000,000.00',
-      'Pick the date the loan was received.',
-      'Type the yearly interest rate like 12 or 10.5 (0 if none).',
-      'Type the months left, from 1 to 360.',
-      'Pick when the next instalment falls due.',
-    ]);
-    expect(openingInput({ ...bank, owed: '1,000,000.01' }).errors).toEqual(['The principal still owed cannot be more than the loan as received.']);
-  });
-
-  it('prefills an edit from the stored input, generated or typed', () => {
-    const generated = openingInput(bank).input as Parameters<typeof openingValues>[0];
-    expect(openingInput(openingValues(generated))).toEqual({ input: generated, errors: [] });
-    const typed = { lender: 'Sample Equipment Finance', kind: 'equipment' as const, originalPrincipalCents: 24_000_000, dateReceived: '2026-03-01', principalCents: 4_000_000, interestRateBp: 0, monthsLeft: 1, schedule: 'typed' as const, rows: [{ dueDate: '2026-10-01', principalCents: 4_000_000, interestCents: 0 }], note: 'Last instalment' };
-    expect(openingInput(openingValues(typed))).toEqual({ input: typed, errors: [] });
   });
 });
 

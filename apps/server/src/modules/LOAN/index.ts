@@ -2,7 +2,6 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { defineModule } from '../../engine/documents/registry.ts';
 import { loanDoc } from './doctypes/loan.ts';
-import { openingLoanDoc } from './doctypes/opening.ts';
 import { paymentDoc } from './doctypes/payment.ts';
 import { loanRoutes } from './routes.ts';
 
@@ -22,7 +21,7 @@ export default defineModule({
     { key: 'loan.pay.post', label: 'Record loan payments', defaultRoles: ['encoder', 'accountant', 'owner'] },
     { key: 'loan.pay.cancel', label: 'Cancel or edit recorded loan payments', defaultRoles: ['accountant', 'owner'] },
   ],
-  docTypes: [loanDoc, paymentDoc, openingLoanDoc], // loan.opening: permissions acc.opening.* (declared by ACC)
+  docTypes: [loanDoc, paymentDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: loanRoutes,
 });

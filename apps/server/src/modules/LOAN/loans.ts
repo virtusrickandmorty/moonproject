@@ -1,8 +1,7 @@
 /**
- * The loan register, repayment schedules and the loan ledger (PLAN E10). A loan is its LOAN- document, or the OBLN- of a
- * loan opened at the cut-over (doctypes/opening.ts): the document id is the loan's id and the party id on 2601/2602
- * (party type loan). A LOAN-'s date is the date received. What is still owed comes from the ledger (NR-2); schedule rows
- * are written once with the loan and never change.
+ * The loan register, repayment schedules and the loan ledger (PLAN E10). A loan is its LOAN- document: the document id
+ * is the loan's id and the party id on 2601/2602 (party type loan), and its date is the date received. What is still owed
+ * comes from the ledger (NR-2); schedule rows are written once with the loan and never change.
  */
 import { allocate, divRoundHalfAway, notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
@@ -64,17 +63,11 @@ export interface LoanRow {
   lender: string; kind: LoanKind; principalCents: number; feeCents: number; rateBp: number; termMonths: number; schedule: Method; reference: string | null;
   /** The FA- purchase this equipment financing paid for, or null (the proceeds came in cash). */
   assetPurchaseNumber: string | null;
-  /**
-   * An opening loan (OBLN-, received before the cut-over): the principal still owed on the cut-over date, the date of its
-   * document. Null for a LOAN-. Its dateReceived and principalCents are the loan's original ones.
-   */
-  owedAtCutoverCents: number | null;
 }
-const LOANS = `SELECT l.document_id AS id, d.number, d.status, r.number AS replacedByNumber, COALESCE(o.date_received, d.business_date) AS dateReceived, l.lender, l.kind,
-    COALESCE(o.original_principal_cents, l.principal_cents) AS principalCents, l.fee_cents AS feeCents, l.rate_bp AS rateBp, l.term_months AS termMonths, l.schedule, l.reference,
-    fa.number AS assetPurchaseNumber, CASE WHEN o.document_id IS NULL THEN NULL ELSE l.principal_cents END AS owedAtCutoverCents
-  FROM loan_loans l JOIN documents d ON d.id = l.document_id LEFT JOIN documents r ON r.id = d.replaced_by_id LEFT JOIN documents fa ON fa.id = l.asset_purchase_id
-  LEFT JOIN loan_openings o ON o.document_id = l.document_id`;
+const LOANS = `SELECT l.document_id AS id, d.number, d.status, r.number AS replacedByNumber, d.business_date AS dateReceived, l.lender, l.kind,
+    l.principal_cents AS principalCents, l.fee_cents AS feeCents, l.rate_bp AS rateBp, l.term_months AS termMonths, l.schedule, l.reference,
+    fa.number AS assetPurchaseNumber
+  FROM loan_loans l JOIN documents d ON d.id = l.document_id LEFT JOIN documents r ON r.id = d.replaced_by_id LEFT JOIN documents fa ON fa.id = l.asset_purchase_id`;
 
 export const loan = (db: Db, id: string) => db.prepare(`${LOANS} WHERE l.document_id = ?`).get(id) as LoanRow | undefined;
 
@@ -109,8 +102,7 @@ function position(db: Db, l: LoanRow) {
   return {
     ...l,
     instalments: rows.length,
-    // An opening loan's principal repaid before the cut-over counts as paid, so balance = principal − paid for both.
-    principalPaidCents: paid.principal + (l.owedAtCutoverCents === null ? 0 : l.principalCents - l.owedAtCutoverCents),
+    principalPaidCents: paid.principal,
     interestPaidCents: paid.interest,
     balanceCents,
     nextDue: next ? { instalmentNo: next.instalmentNo, dueDate: next.dueDate, principalCents: next.principalCents, interestCents: next.interestCents } : null,

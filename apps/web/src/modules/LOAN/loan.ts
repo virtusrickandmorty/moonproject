@@ -1,7 +1,7 @@
 /**
- * The loan screens' rules (PLAN D5 LOAN-IN, LOAN-PAY, E10, D8 "Cut-over"): the loan form's typed values to input (where
- * the proceeds went, the yearly rate as a percent, a generated or typed schedule), the opening loan's, and the loan
- * payment's. Pure, so they are tested without a browser; the server works out the schedule and checks everything again.
+ * The loan screens' rules (PLAN D5 LOAN-IN, LOAN-PAY, E10): the loan form's typed values to input (where the proceeds
+ * went, the yearly rate as a percent, a generated or typed schedule), and the loan payment's. Pure, so they are tested
+ * without a browser; the server works out the schedule and checks everything again.
  */
 import { formatPeso, formatPesos, isBusinessDate } from '@moonproject/shared';
 import type { Account } from '../../api.ts';
@@ -39,26 +39,13 @@ export const emptyLoan = (): LoanValues => ({
 /** Principal the typed schedule repays; unreadable amounts count as nothing. */
 export const scheduledPrincipal = (rows: RowText[]) => rows.reduce((s, r) => s + Math.max(cents(r.principal) ?? 0, 0), 0);
 
-/** The typed instalments (blank lines left out) as input rows, with their typing slips. */
-function typedRows(text: RowText[]) {
-  const filled = text.filter((r) => r.dueDate || r.principal.trim() || r.interest.trim());
-  const errors = filled.length === 0 ? ['Type the instalments from the lender’s table.'] : [];
-  filled.forEach((r, i) => {
-    const p = cents(r.principal), n = cents(r.interest);
-    if (!isBusinessDate(r.dueDate)) errors.push(`Instalment ${i + 1}: pick the due date.`);
-    if (p === undefined || p < 0 || n === undefined || n < 0) errors.push(`Instalment ${i + 1}: type the principal and interest like 12,500.00`);
-  });
-  const rows = filled.map((r) => ({ dueDate: r.dueDate, principalCents: cents(r.principal) ?? 0, interestCents: cents(r.interest) ?? 0 }));
-  return { rows, errors, repaid: scheduledPrincipal(filled) };
-}
-
 /** The loan form's values -> loan input, with plain errors. */
 export function loanInput(v: LoanValues): { input: Record<string, unknown>; errors: string[] } {
   const principal = cents(v.principal);
   const fee = cents(v.fee);
   const rateBp = percentToBp(v.rate);
   const term = /^\d+$/.test(v.term.trim()) ? Number(v.term) : 0;
-  const typed = typedRows(v.rows);
+  const rows = v.rows.filter((r) => r.dueDate || r.principal.trim() || r.interest.trim());
   const errors = [
     ...(v.lender.trim().length >= 2 ? [] : ['Type the lender’s name.']),
     ...(v.proceeds === 'cash' && !v.cashPlaceId ? ['Pick where the loan money arrived.'] : []),
@@ -70,15 +57,22 @@ export function loanInput(v: LoanValues): { input: Record<string, unknown>; erro
     ...(v.schedule !== 'typed' && v.firstDueDate && !isBusinessDate(v.firstDueDate) ? ['Type the first due date like 2026-10-28, or leave it empty.'] : []),
   ];
   if (v.schedule === 'typed') {
-    errors.push(...typed.errors);
-    if (principal && typed.rows.length > 0 && typed.repaid !== principal) errors.push(`The instalments repay ${formatPeso(typed.repaid)} of principal, not ${formatPeso(principal)}.`);
+    if (rows.length === 0) errors.push('Type the instalments from the lender’s table.');
+    rows.forEach((r, i) => {
+      const p = cents(r.principal), n = cents(r.interest);
+      if (!isBusinessDate(r.dueDate)) errors.push(`Instalment ${i + 1}: pick the due date.`);
+      if (p === undefined || p < 0 || n === undefined || n < 0) errors.push(`Instalment ${i + 1}: type the principal and interest like 12,500.00`);
+    });
+    if (principal && rows.length > 0 && scheduledPrincipal(rows) !== principal) errors.push(`The instalments repay ${formatPeso(scheduledPrincipal(rows))} of principal, not ${formatPeso(principal)}.`);
   }
   const input = {
     lender: v.lender.trim(), kind: v.kind,
     ...(v.proceeds === 'cash' ? { cashPlaceId: Number(v.cashPlaceId) } : { assetPurchaseId: v.assetPurchaseId }),
     principalCents: principal ?? 0, ...(fee ? { feeCents: fee, ...(v.feeAccountId ? { feeAccountId: Number(v.feeAccountId) } : {}) } : {}),
     interestRateBp: rateBp ?? 0, termMonths: term, schedule: v.schedule,
-    ...(v.schedule === 'typed' ? { rows: typed.rows } : v.firstDueDate ? { firstDueDate: v.firstDueDate } : {}),
+    ...(v.schedule === 'typed'
+      ? { rows: rows.map((r) => ({ dueDate: r.dueDate, principalCents: cents(r.principal) ?? 0, interestCents: cents(r.interest) ?? 0 })) }
+      : v.firstDueDate ? { firstDueDate: v.firstDueDate } : {}),
     ...(v.reference.trim() ? { reference: v.reference.trim() } : {}), ...(v.note.trim() ? { note: v.note.trim() } : {}),
   };
   return { input, errors };
@@ -93,53 +87,6 @@ export const loanValues = (s: StoredLoan): LoanValues => ({
   lender: s.lender, reference: s.reference ?? '', kind: s.kind, proceeds: s.assetPurchaseId ? 'asset' : 'cash', cashPlaceId: s.cashPlaceId ? String(s.cashPlaceId) : '', assetPurchaseId: s.assetPurchaseId ?? '',
   principal: formatPesos(s.principalCents), fee: s.feeCents ? formatPesos(s.feeCents) : '', feeAccountId: s.feeAccountId ? String(s.feeAccountId) : '', rate: bpToPercent(s.interestRateBp),
   term: String(s.termMonths), schedule: s.schedule, firstDueDate: s.firstDueDate ?? '', note: s.note ?? '',
-  rows: s.rows?.map((r) => ({ dueDate: r.dueDate, principal: formatPesos(r.principalCents), interest: formatPesos(r.interestCents) })) ?? [emptyRowText()],
-});
-
-export interface OpeningValues {
-  lender: string; reference: string; kind: 'loan' | 'equipment'; original: string; dateReceived: string; owed: string; rate: string; monthsLeft: string;
-  schedule: Method; nextDueDate: string; rows: RowText[]; note: string;
-}
-export const emptyOpening = (): OpeningValues => ({
-  lender: '', reference: '', kind: 'loan', original: '', dateReceived: '', owed: '', rate: '', monthsLeft: '', schedule: 'declining', nextDueDate: '', rows: [emptyRowText()], note: '',
-});
-
-/** The opening loan form's values -> input: the loan as received, the principal still owed at the cut-over, the rest of the schedule. */
-export function openingInput(v: OpeningValues): { input: Record<string, unknown>; errors: string[] } {
-  const original = cents(v.original);
-  const owed = cents(v.owed);
-  const rateBp = percentToBp(v.rate);
-  const months = /^\d+$/.test(v.monthsLeft.trim()) ? Number(v.monthsLeft) : 0;
-  const typed = typedRows(v.rows);
-  const errors = [
-    ...(v.lender.trim().length >= 2 ? [] : ['Type the lender’s name.']),
-    ...(original && original > 0 ? [] : ['Type the loan as received (principal) like 1,000,000.00']),
-    ...(isBusinessDate(v.dateReceived) ? [] : ['Pick the date the loan was received.']),
-    ...(owed && owed > 0 ? [] : ['Type the principal still owed on the cut-over date like 738,900.00']),
-    ...(original && owed && owed > original ? ['The principal still owed cannot be more than the loan as received.'] : []),
-    ...(rateBp === undefined ? ['Type the yearly interest rate like 12 or 10.5 (0 if none).'] : []),
-    ...(months >= 1 && months <= 360 ? [] : ['Type the months left, from 1 to 360.']),
-    ...(v.schedule !== 'typed' && !isBusinessDate(v.nextDueDate) ? ['Pick when the next instalment falls due.'] : []),
-    ...(v.schedule === 'typed' ? typed.errors : []),
-    ...(v.schedule === 'typed' && owed && typed.rows.length > 0 && typed.repaid !== owed ? [`The instalments repay ${formatPeso(typed.repaid)} of principal, not the ${formatPeso(owed)} still owed.`] : []),
-  ];
-  const input = {
-    lender: v.lender.trim(), kind: v.kind, originalPrincipalCents: original ?? 0, dateReceived: v.dateReceived, principalCents: owed ?? 0,
-    interestRateBp: rateBp ?? 0, monthsLeft: months, schedule: v.schedule,
-    ...(v.schedule === 'typed' ? { rows: typed.rows } : { nextDueDate: v.nextDueDate }),
-    ...(v.reference.trim() ? { reference: v.reference.trim() } : {}), ...(v.note.trim() ? { note: v.note.trim() } : {}),
-  };
-  return { input, errors };
-}
-
-type StoredOpening = {
-  lender: string; kind: 'loan' | 'equipment'; originalPrincipalCents: number; dateReceived: string; principalCents: number; interestRateBp: number; monthsLeft: number;
-  schedule: Method; nextDueDate?: string; rows?: { dueDate: string; principalCents: number; interestCents: number }[]; reference?: string; note?: string;
-};
-/** Stored input -> the opening form's values, to prefill an edit. */
-export const openingValues = (s: StoredOpening): OpeningValues => ({
-  lender: s.lender, reference: s.reference ?? '', kind: s.kind, original: formatPesos(s.originalPrincipalCents), dateReceived: s.dateReceived, owed: formatPesos(s.principalCents),
-  rate: bpToPercent(s.interestRateBp), monthsLeft: String(s.monthsLeft), schedule: s.schedule, nextDueDate: s.nextDueDate ?? '', note: s.note ?? '',
   rows: s.rows?.map((r) => ({ dueDate: r.dueDate, principal: formatPesos(r.principalCents), interest: formatPesos(r.interestCents) })) ?? [emptyRowText()],
 });
 

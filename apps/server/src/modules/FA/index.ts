@@ -4,7 +4,6 @@ import { defineModule } from '../../engine/documents/registry.ts';
 import { buyDoc } from './doctypes/buy.ts';
 import { depreciationDoc } from './doctypes/depreciation.ts';
 import { disposalDoc } from './doctypes/disposal.ts';
-import { openingAssetDoc } from './doctypes/opening.ts';
 import { faRoutes } from './routes.ts';
 
 export default defineModule({
@@ -25,8 +24,7 @@ export default defineModule({
     { key: 'fa.disp.post', label: 'Record asset disposals', defaultRoles: ['accountant', 'owner'] },
     { key: 'fa.disp.cancel', label: 'Cancel or edit recorded asset disposals', defaultRoles: ['accountant', 'owner'] },
   ],
-  // fa.opening (OBFA-) uses the acc.opening.* keys ACC declares, like every opening document (ACC/public.ts).
-  docTypes: [buyDoc, depreciationDoc, disposalDoc, openingAssetDoc],
+  docTypes: [buyDoc, depreciationDoc, disposalDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: faRoutes,
 });
