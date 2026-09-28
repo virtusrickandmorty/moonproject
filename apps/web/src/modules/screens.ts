@@ -22,6 +22,7 @@ import { Payslips, advanceView, releaseView, runView } from './PAY/views.tsx';
 import { AdvanceForm } from './CA/AdvanceForm.tsx';
 import { StatMonthPage, StatMonths, remittanceView } from './STAT/Statutory.tsx';
 import { RemittanceForm } from './STAT/RemittanceForm.tsx';
+import { GeneralJournal, GeneralLedger, TrialBalance } from './RPT/Books.tsx';
 
 /**
  * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
@@ -37,6 +38,9 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/pay/runs/:id/payslips': Payslips,
   '/stat': StatMonths,
   '/stat/:month': StatMonthPage,
+  '/rpt/journal': GeneralJournal,
+  '/rpt/ledger': GeneralLedger,
+  '/rpt/trial-balance': TrialBalance,
 };
 
 export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: FormMode }>> = {
