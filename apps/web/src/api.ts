@@ -142,6 +142,23 @@ export interface StatMonth {
   notDeducted: { employeeId: string; name: string; cents: number }[];
 }
 export interface RemittanceInput { scheme: Scheme; month: string; cashPlaceId: number; amountCents: number; penaltyCents?: number; reference: string; note?: string }
+/** Tax registers (TAX): one row per journal on the account, read from the ledger. A cancel is its own negative row (posting 'reversal'). */
+export interface TaxRegisterRow {
+  journalId: string; journalNumber: string; date: string; posting: 'original' | 'reversal'; documentId: string | null; docType: string | null; docTitle: string;
+  documentNumber: string | null; formNumber: string | null; documentStatus: 'posted' | 'cancelled' | null; customerId: string | null; customerName: string; tin: string | null;
+}
+export interface SalesRegister { from: string; to: string; rows: (TaxRegisterRow & { netCents: number; vatCents: number; totalCents: number })[]; totals: { netCents: number; vatCents: number; totalCents: number }; glVatCents: number }
+export interface WithholdingRegister {
+  from: string; to: string; rows: (TaxRegisterRow & { atc: string | null; certificate: 'pending' | 'received' | null; cwtCents: number; vatWithheldCents: number })[];
+  totals: { cwtCents: number; vatWithheldCents: number }; glCwtCents: number; glVatWithheldCents: number; pendingCount: number;
+}
+export interface TaxDeadline { form: string; title: string; period: string; periodLabel: string; periodStart: string; periodEnd: string; statutoryDate: string; dueDate: string }
+export interface VatSummary {
+  year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string; returnDue: string; outputVatCents: number; inputVatCents: number; vatWithheldCents: number;
+  carryOverCents: number; vatWithheldPendingCents: number; payableCents: number; carryForwardCents: number;
+}
+/** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
+export const taxRegisterPath = (register: 'sales' | 'withholding-received', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -251,6 +268,12 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     statMonth: (month: string) => call<StatMonth>('GET', `/api/stat/months/${encodeURIComponent(month)}`),
     /** D6: what of a payroll run's month is already remitted (the warning before a cancel). */
     runRemitted: (runId: string) => call<{ month: string; remitted: { scheme: Scheme; label: string; numbers: string[] }[] }>('GET', `/api/stat/runs/${encodeURIComponent(runId)}/remitted`),
+    salesRegister: (from: string, to: string) => call<SalesRegister>('GET', taxRegisterPath('sales', from, to)),
+    withholdingReceived: (from: string, to: string) => call<WithholdingRegister>('GET', taxRegisterPath('withholding-received', from, to)),
+    taxCalendar: (from: string, to: string) => call<TaxDeadline[]>('GET', `/api/tax/calendar?${new URLSearchParams({ from, to })}`),
+    /** Without a year and quarter: the quarter of the server's date. */
+    vatSummary: (year?: number, quarter?: number) =>
+      call<VatSummary>('GET', `/api/tax/vat-summary${year ? `?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}` : ''}`),
   };
 }
 
