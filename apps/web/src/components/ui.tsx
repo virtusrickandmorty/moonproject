@@ -1,7 +1,7 @@
 /** Small shared building blocks. Tailwind only; no component library. */
 import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { formatPeso } from '@moonproject/shared';
-import type { JournalLine } from '../api.ts';
+import type { CashPlace, JournalLine } from '../api.ts';
 
 export const peso = (cents: number) => formatPeso(cents);
 
@@ -119,5 +119,20 @@ export function JournalTable({ lines }: { lines: JournalLine[] }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+/** A big button per cash place (PLAN H2 "money questions"), with its balance when the user may see it. */
+export function CashPlaceButtons({ label, places, value, onChange }: { label: string; places: CashPlace[]; value: string; onChange: (id: string) => void }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {places.map((c) => (
+        <button key={c.id} type="button" role="radio" aria-checked={value === String(c.id)} onClick={() => onChange(String(c.id))}
+          className={`rounded-lg p-2 text-left text-sm ring-1 ${value === String(c.id) ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'}`}>
+          {c.name}
+          {c.balanceCents !== null && <span className="block text-xs opacity-75">{peso(c.balanceCents)}</span>}
+        </button>
+      ))}
+    </div>
   );
 }

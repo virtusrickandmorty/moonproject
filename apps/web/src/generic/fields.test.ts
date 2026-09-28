@@ -19,6 +19,8 @@ describe('generic form fields', () => {
     ]);
     expect(humanize('customerGroupId')).toBe('Customer group');
     expect(fieldsOf({ properties: { kind: { enum: ['a', 'b'], title: 'Kind of thing' } } })[0]).toMatchObject({ label: 'Kind of thing', kind: 'choice', options: ['a', 'b'] });
+    // A lone cashPlaceId (a loan's proceeds, a loan payment) is a cash place too, not a number to type.
+    expect(fieldsOf({ properties: { cashPlaceId: int, instalmentNo: int } }).map((f) => `${f.label} | ${f.kind}`)).toEqual(['Which cash place? | cashPlace', 'Instalment no | integer']);
   });
 
   it('turns typed pesos into integer centavos, flags typing slips, and prefills an edit', () => {

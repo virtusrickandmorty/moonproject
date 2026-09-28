@@ -1,16 +1,17 @@
 /**
  * VAT of a quarter (PLAN E13 "VAT this quarter"): output VAT less input VAT, the VAT government buyers withheld and the
  * input VAT carried over, then what is payable with the 2550Q or carried over. Opens on today's quarter. The server reads
- * the ledger, so the figures are an estimate until the quarter's VAT close is recorded; then it names the close.
+ * the ledger, so the figures are an estimate until the quarter's VAT close is recorded; then it names the close. A quarter
+ * that has ended with no close links to the VAT close form, for whoever may close.
  */
 import { useEffect, useState } from 'react';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { api, type Me, type VatSummary } from '../../api.ts';
+import { api, type DocTypeInfo, type Me, type VatSummary } from '../../api.ts';
 import { Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
-import { QUARTERS, quarterOf, quarterTitle, vatBottomLine, withheldPendingWords, yearChoices, type Quarter } from './reports.ts';
+import { QUARTERS, closeLink, quarterOf, quarterTitle, vatBottomLine, vatLines, yearChoices, type Quarter } from './reports.ts';
 
-export function VatQuarter({ me }: { me: Me }) {
+export function VatQuarter({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }) {
   const allowed = me.permissions.includes('tax.registers.view');
   const [today, setToday] = useState('');
   const [pick, setPick] = useState<{ year: number; quarter: Quarter } | null>(null);
@@ -33,14 +34,8 @@ export function VatQuarter({ me }: { me: Me }) {
     return () => void (current = false);
   }, [pick]);
   if (!allowed) return <Notice>You cannot view the VAT of a quarter.</Notice>;
-  const lines: [string, number, string | null][] = v
-    ? [
-      ['Output VAT on sales', v.outputVatCents, null],
-      ['Less input VAT on purchases', v.inputVatCents, null],
-      ['Less VAT withheld by government buyers', v.vatWithheldCents, withheldPendingWords(v.vatWithheldPendingCents)],
-      ['Less input VAT carried over from earlier quarters', v.carryOverCents, null],
-    ]
-    : [];
+  const lines = v ? vatLines(v) : [];
+  const close = v && docTypes.some((d) => d.key === 'tax.vat_close' && d.canCreate) ? closeLink(v, today) : null;
   return (
     <div className="max-w-3xl space-y-4">
       <h1 className="text-2xl font-semibold">VAT this quarter</h1>
@@ -65,6 +60,7 @@ export function VatQuarter({ me }: { me: Me }) {
           {v.close
             ? <Notice tone="info">Closed by <Link to={docPath('tax.vat_close', `/${v.close.documentId}`)} className="underline">{v.close.number}</Link> on {v.close.date}.</Notice>
             : <Notice tone="info">This is an estimate from the books until the quarter's VAT close is recorded.</Notice>}
+          {close && <p><Link to={close} className="inline-block rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Close the VAT of Q{v.quarter} {v.year}</Link></p>}
           <table className="w-full text-sm">
             <tbody>
               {lines.map(([label, cents, note]) => (

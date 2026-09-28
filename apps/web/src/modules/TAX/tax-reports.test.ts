@@ -7,8 +7,8 @@ import { seedCustomers } from '../../../../server/src/modules/JO/tests/cus-fixtu
 import { createApi, newIdempotencyKey as key, taxRegisterPath } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
 import {
-  cancelMark, certificateWords, excelUrl, ledgerWarnings, movedFrom, nextSixtyDays, pendingWords, quarterRange, quarterSoFar, quarterTitle, rangeError,
-  vatBottomLine, withheldPendingWords, yearChoices,
+  cancelMark, certificateWords, closeDate, closeLink, excelUrl, lastEndedQuarter, ledgerWarnings, movedFrom, nextSixtyDays, pendingWords, quarterRange, quarterSoFar,
+  quarterTitle, rangeError, vatBottomLine, vatLines, withheldPendingWords, yearChoices,
 } from './reports.ts';
 
 const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: string, init: RequestInit) => {
@@ -64,6 +64,28 @@ describe('tax report screen rules', () => {
     expect(vatBottomLine({ payableCents: 0, carryForwardCents: 0, returnDue: '2026-10-26' })).toBe('VAT payable ₱0.00 with the 2550Q, due 2026-10-26');
     expect(withheldPendingWords(0)).toBeNull();
     expect(withheldPendingWords(50_000)).toBe('Not counted: ₱500.00 more still waits for its 2307. It is claimed in the quarter the certificate comes.');
+    // The VAT close's preview has no due date: its plain summary gives it.
+    expect(vatBottomLine({ payableCents: 120_000, carryForwardCents: 0 })).toBe('VAT payable ₱1,200.00 with the 2550Q');
+    expect(vatLines({ outputVatCents: 120_000, inputVatCents: 20_000, vatWithheldCents: 5_000, carryOverCents: 0, vatWithheldPendingCents: 2_500 })).toEqual([
+      ['Output VAT on sales', 120_000, null],
+      ['Less input VAT on purchases', 20_000, null],
+      ['Less VAT withheld by government buyers', 5_000, 'Not counted: ₱25.00 more still waits for its 2307. It is claimed in the quarter the certificate comes.'],
+      ['Less input VAT carried over from earlier quarters', 0, null],
+    ]);
+  });
+
+  it('the VAT close opens on the quarter before today, is offered once a quarter ends unclosed, and is dated on its last day', () => {
+    expect(lastEndedQuarter('2026-09-28')).toEqual({ year: 2026, quarter: 2 });
+    expect(lastEndedQuarter('2026-01-05')).toEqual({ year: 2025, quarter: 4 });
+    const q2 = { year: 2026, quarter: 2 as const, to: '2026-06-30', close: null };
+    expect(closeLink(q2, '2026-09-28')).toBe('/docs/tax.vat_close/new?year=2026&quarter=2');
+    expect(closeLink(q2, '2026-06-30')).toBeNull(); // the quarter's last day: not ended yet
+    expect(closeLink(q2, '')).toBeNull(); // the server date is not known yet
+    expect(closeLink({ ...q2, close: { documentId: 'd', number: 'VATC-000001', date: '2026-06-30' } }, '2026-09-28')).toBeNull();
+    expect(closeDate('2026-06-30', '2026-09-28', true, true)).toBe('2026-06-30');
+    expect(closeDate('2026-06-30', '2026-09-28', true, false)).toBeUndefined(); // today
+    expect(closeDate('2026-06-30', '2026-09-28', false, true)).toBeUndefined(); // may not backdate: today
+    expect(closeDate('2026-09-30', '2026-09-28', true, true)).toBeUndefined(); // not ended: the server says so
   });
 
   it('the menu shows each screen under Accounting & Tax only with the permission its route checks', () => {

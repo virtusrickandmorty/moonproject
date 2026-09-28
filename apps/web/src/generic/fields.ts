@@ -1,7 +1,7 @@
 /**
  * Turns a doc type's input JSON schema (from GET /api/doc-types) into form fields, and typed text into
  * input and back. Pure, so it is tested without a browser.
- * Conventions: *CashPlaceId = a cash place picked with big buttons (PLAN H2), *Cents = a peso amount.
+ * Conventions: cashPlaceId or *CashPlaceId = a cash place picked with big buttons (PLAN H2), *Cents = a peso amount.
  * A schema field's `title` (zod .meta({ title })) overrides the label.
  */
 import { formatPesos, parsePesos } from '@moonproject/shared';
@@ -21,7 +21,7 @@ export function humanize(name: string): string {
 
 function kindOf(name: string, s: JsonSchema): FieldKind {
   if (s.enum) return 'choice';
-  if (s.type === 'integer') return name.endsWith('CashPlaceId') ? 'cashPlace' : name.endsWith('Cents') ? 'money' : 'integer';
+  if (s.type === 'integer') return /^cashPlaceId$|CashPlaceId$/.test(name) ? 'cashPlace' : name.endsWith('Cents') ? 'money' : 'integer';
   if (s.type === 'boolean') return 'boolean';
   if (s.type === 'string') return (s.maxLength ?? Infinity) > 200 ? 'longText' : 'text';
   return 'unsupported';
