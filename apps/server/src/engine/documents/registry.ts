@@ -95,6 +95,11 @@ export interface DocTypeDef<Input = any, Doc extends { totalCents: number } = an
    * that names the document itself (a receivable's `ref`) is left unnamed there.
    */
   journal?(doc: Doc, ctx: DocContext, header?: DocHeader): JournalDraft | null;
+  /**
+   * The number of the BIR paper form this document records (a sales invoice or collection receipt from an ATP
+   * booklet). The engine stores it on documents.external_number, where the tax registers read it (PLAN E12).
+   */
+  externalNumber?(doc: Doc): string | null;
   /** Reads a posted document back from the module's tables. */
   load(db: Db, documentId: string): Doc;
   /** Turns a stored document back into form input (to prefill "Edit" = reissue). */

@@ -150,5 +150,6 @@ function docHeaderOut(r: Record<string, unknown>) {
     cancelReason: r.cancel_reason ?? null,
     replacesId: r.replaces_id ?? null,
     replacedById: r.replaced_by_id ?? null,
+    externalNumber: r.external_number ?? null,
   };
 }

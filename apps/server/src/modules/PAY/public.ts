@@ -15,19 +15,26 @@ export interface MonthPay {
   mweBasicCents: number; mwePremiumCents: number;
 }
 
-type Row = Record<string, any>;
+/** One employee's line of a recorded run, with the run's number and, for an MWE, the exempt basic and premium pay. */
+interface RunEmployeeRow {
+  number: string; employee_id: string; employee_code: string; employee_name: string; is_mwe: 0 | 1;
+  gross_cents: number; taxable_cents: number; wtax_cents: number; sss_msc_cents: number; phic_basis_cents: number; ee_short_cents: number;
+  sss_ee_cents: number; sss_er_cents: number; sss_ec_cents: number; phic_ee_cents: number; phic_er_cents: number; hdmf_ee_cents: number; hdmf_er_cents: number;
+  mwe_basic: number; mwe_premium: number;
+}
 
 /** Per employee, the month's recorded (not cancelled) runs added up, by name. */
 export function payOfMonth(db: Db, month: string): MonthPay[] {
   const rows = db
     .prepare(
-      `SELECT e.*, d.number,
+      `SELECT d.number, e.employee_id, e.employee_code, e.employee_name, e.is_mwe, e.gross_cents, e.taxable_cents, e.wtax_cents, e.sss_msc_cents,
+         e.phic_basis_cents, e.ee_short_cents, e.sss_ee_cents, e.sss_er_cents, e.sss_ec_cents, e.phic_ee_cents, e.phic_er_cents, e.hdmf_ee_cents, e.hdmf_er_cents,
          (SELECT COALESCE(SUM(l.amount_cents), 0) FROM pay_run_lines l WHERE l.run_employee_id = e.id AND l.taxable = 0 AND l.kind IN ('basic', 'leave', 'salary', 'absence', 'piece')) AS mwe_basic,
          (SELECT COALESCE(SUM(l.amount_cents), 0) FROM pay_run_lines l WHERE l.run_employee_id = e.id AND l.taxable = 0 AND l.kind IN ('holiday', 'rest_day', 'ot')) AS mwe_premium
        FROM pay_run_employees e JOIN pay_runs r ON r.document_id = e.document_id JOIN documents d ON d.id = r.document_id
        WHERE d.status = 'posted' AND r.contribution_month = ? ORDER BY e.employee_name, e.employee_id, d.number`,
     )
-    .all(month) as Row[];
+    .all(month) as RunEmployeeRow[];
   if (!rows.length) return [];
   const regularMax = sssRateAt(db, `${month}-01`).regularMaxCents;
   const out = new Map<string, MonthPay>();

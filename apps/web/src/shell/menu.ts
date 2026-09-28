@@ -31,6 +31,9 @@ export const SCREENS: MenuItem[] = [
   { group: 'People & Payroll', label: 'Attendance', path: '/emp/attendance', permission: 'emp.view' },
   { group: 'People & Payroll', label: 'Holidays', path: '/emp/holidays', permission: 'emp.view' },
   { group: 'People & Payroll', label: 'Government remittances', path: '/stat', permission: 'stat.view' },
+  { group: 'Reports', label: 'General journal', path: '/rpt/journal', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'General ledger', path: '/rpt/ledger', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'Trial balance', path: '/rpt/trial-balance', permission: 'rpt.books.view' },
 ];
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);
