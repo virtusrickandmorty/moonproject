@@ -66,19 +66,20 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind): { title: Do
   throw new Error(`Unsupported print type ${h.doc_type}`);
 }
 
+/** `practice`: printed in the practice shop (PLAN C8), so every copy says it is not a real document. */
 export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profile, kind: PrintKind,
-  printedBy: string, printedAt: string, copyNumber: number): string {
+  printedBy: string, printedAt: string, copyNumber: number, practice = false): string {
   const p = content(db, h, doc, kind);
   if (!DOC_TITLES.includes(p.title)) throw new Error('Print title is not allowed');
   const title = p.title.toUpperCase();
-  const one = `<article class="copy"><header><div class="company"><strong>${escape(profile.registered_name)}</strong><br>TIN ${escape(profile.tin)}<br>${escape(profile.registered_address)}</div><h1>${escape(title)}</h1>${h.status === 'cancelled' ? '<p class="cancelled">CANCELLED</p>' : ''}${p.subtitle ? `<p class="subtitle">${escape(p.subtitle)}</p>` : ''}${p.legend ? '<p class="legend"><strong>THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.</strong></p>' : ''}</header>` +
+  const one = `<article class="copy"><header><div class="company"><strong>${escape(profile.registered_name)}</strong><br>TIN ${escape(profile.tin)}<br>${escape(profile.registered_address)}</div><h1>${escape(title)}</h1>${practice ? '<p class="practice">PRACTICE ONLY · NOT A REAL DOCUMENT</p>' : ''}${h.status === 'cancelled' ? '<p class="cancelled">CANCELLED</p>' : ''}${p.subtitle ? `<p class="subtitle">${escape(p.subtitle)}</p>` : ''}${p.legend ? '<p class="legend"><strong>THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.</strong></p>' : ''}</header>` +
     `<div class="meta"><span>Document no. <b>${escape(h.number)}</b></span><span>Business date <b>${escape(h.business_date)}</b></span></div>` +
     `<main>${p.body}</main><footer><span>Printed by ${escape(printedBy)} at ${escape(printedAt)}</span><span>${copyNumber > 1 ? `REPRINT no. ${copyNumber - 1}` : 'Original print'} · Copy ${copyNumber}</span></footer></article>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escape(title)} ${escape(h.number)}</title><style>
     @page{size:A4;margin:12mm}*{box-sizing:border-box}body{font:11pt Arial,sans-serif;color:#111;margin:0}.sheet{min-height:273mm}
     .sheet.two-up{display:grid;grid-template-rows:1fr 1fr;gap:0}.copy{padding:5mm 2mm;display:flex;flex-direction:column;break-inside:avoid}
     .two-up .copy{height:136mm}.two-up .copy:first-child{border-bottom:1px dashed #777}
-    header{text-align:center}.company{line-height:1.35}h1{font-size:18pt;margin:6mm 0 1mm}.cancelled{font-size:18pt;font-weight:900;letter-spacing:2mm;color:#a00;border:2px solid #a00;margin:2mm auto;padding:1mm 3mm;width:max-content}.subtitle{margin:0 0 2mm}.legend{font-size:9pt;margin:2mm 0 4mm;font-weight:bold}
+    header{text-align:center}.company{line-height:1.35}h1{font-size:18pt;margin:6mm 0 1mm}.cancelled{font-size:18pt;font-weight:900;letter-spacing:2mm;color:#a00;border:2px solid #a00;margin:2mm auto;padding:1mm 3mm;width:max-content}.subtitle{margin:0 0 2mm}.practice{font-size:14pt;font-weight:900;letter-spacing:1mm;color:#a60;border:2px dashed #a60;margin:2mm auto;padding:1mm 3mm;width:max-content}.legend{font-size:9pt;margin:2mm 0 4mm;font-weight:bold}
     .meta{display:flex;justify-content:space-between;border-block:1px solid #777;padding:2mm 0;margin:2mm 0 4mm}main{flex:1}main p{margin:2mm 0}
     table{width:100%;border-collapse:collapse;margin:3mm 0}th,td{border:1px solid #aaa;padding:1.5mm;text-align:left}th{background:#eee}h2{font-size:12pt;margin:4mm 0 1mm}h3{font-size:10pt;margin:2mm 0}ul{margin:1mm 0 2mm;columns:2}li{list-style:none;margin:1mm 0}
     footer{display:flex;justify-content:space-between;font-size:8pt;border-top:1px solid #777;padding-top:2mm;margin-top:3mm}

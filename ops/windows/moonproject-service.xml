@@ -6,7 +6,7 @@
 <service>
   <id>Moonproject</id>
   <name>Moonproject</name>
-  <description>Moonproject ERP server for Virtus Garments, Inc. (HTTPS on port 443, the "Join this PC" page on port 80)</description>
+  <description>Moonproject ERP server for Virtus Garments, Inc. (HTTPS on port 443, the "Join this PC" page on port 80, the practice shop on port 8443)</description>
   <executable>%BASE%\..\node\node.exe</executable>
   <arguments>--disable-warning=ExperimentalWarning apps\server\src\main.ts</arguments>
   <workingdirectory>%BASE%\..\app</workingdirectory>
@@ -14,6 +14,7 @@
   <env name="MOONPROJECT_LISTEN" value="lan"/>
   <env name="MOONPROJECT_DB" value="%ProgramData%\Moonproject\data\moonproject.db"/>
   <env name="MOONPROJECT_BACKUP_DIR" value="%ProgramData%\Moonproject\backups"/>
+  <env name="MOONPROJECT_PRACTICE_PORT" value="8443"/>
   <startmode>Automatic</startmode>
   <onfailure action="restart" delay="5 sec"/>
   <onfailure action="restart" delay="30 sec"/>

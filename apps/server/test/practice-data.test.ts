@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
-import { createPracticeData } from '../scripts/practice-data.ts';
+import { createPracticeData } from '../src/platform/practice/data.ts';
 import { runInvariants } from '../src/engine/ledger/invariants.ts';
 
 describe('practice data', () => {
