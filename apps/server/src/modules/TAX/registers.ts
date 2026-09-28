@@ -6,12 +6,10 @@
  * the BIR paper form (sales invoice or CR, from documents.external_number) and the customer's registered name and TIN.
  *   Sales register (2301 output VAT): VATable sales = the journal's revenue credits, VAT, total.
  *   Withholding received (1410 CWT and 1404 VAT withheld, the customers' 2307s): ATC and whether the 2307 is in hand.
- *   An opening withholding (OBWT-) is one row per 2307 it brings in, marked as opening, with the quarter it covers.
  */
 import type { Db } from '../../platform/db/driver.ts';
 import { customerRef, customerTaxInfo } from '../CUS/public.ts';
 import { withholdingOf } from '../COL/public.ts';
-import { OPENING_WITHHOLDING, openingLines, receivedOn } from './withholding.ts';
 
 export interface RegisterRow {
   journalId: string; journalNumber: string; date: string; posting: 'original' | 'reversal';
@@ -19,13 +17,7 @@ export interface RegisterRow {
   customerId: string | null; customerName: string; tin: string | null;
 }
 export interface SalesRow extends RegisterRow { netCents: number; vatCents: number; totalCents: number }
-export interface WithholdingRow extends RegisterRow {
-  atc: string | null; certificate: 'pending' | 'received' | null; cwtCents: number; vatWithheldCents: number;
-  /** Which 2307 of the document (the opening's row; 0 for a collection's) and, if it came after it was recorded, when. */
-  lineNo: number; receivedOn: string | null;
-  /** An opening withholding's 2307, from before the cut-over date, and the quarter it covers ('2026-Q2'). */
-  opening: boolean; period: string | null;
-}
+export interface WithholdingRow extends RegisterRow { atc: string | null; certificate: 'pending' | 'received' | null; cwtCents: number; vatWithheldCents: number }
 
 export interface Touch {
   journalId: string; journalNumber: string; date: string; posting: 'original' | 'reversal'; sourceType: string; sourceId: string;
@@ -100,42 +92,21 @@ export function salesRegister(db: Db, from: string, to: string) {
   };
 }
 
-/** The 2307's status now: as recorded, or received once a pending one was marked received. */
-const status = (recorded: 'pending' | 'received', on: string | null) => (on ? 'received' : recorded);
-
-/**
- * Withholding received: every journal on 1410 CWT or 1404 VAT withheld, with the 2307's ATC and whether it is in hand.
- * An opening withholding's journal is split into its rows, one per 2307 and customer (its reversal the same, negative).
- */
+/** Withholding received: every journal on 1410 CWT or 1404 VAT withheld, with the 2307's ATC and whether it is in hand. */
 export function withholdingReceivedRegister(db: Db, from: string, to: string) {
   const rows: WithholdingRow[] = touches(db, ['CWT', 'VAT_WITHHELD'], {
     cwtCents: `CASE WHEN a.role_key = 'CWT' THEN l.debit_cents - l.credit_cents ELSE 0 END`,
     vatWithheldCents: `CASE WHEN a.role_key = 'VAT_WITHHELD' THEN l.debit_cents - l.credit_cents ELSE 0 END`,
-  }, from, to).flatMap((t): WithholdingRow[] => {
-    if (t.docType === OPENING_WITHHOLDING && t.sourceType === 'document') {
-      const sign = t.posting === 'reversal' ? -1 : 1;
-      return openingLines(db, t.sourceId).map((l) => {
-        const on = l.certificate === 'pending' ? receivedOn(db, t.sourceId, l.lineNo) : null;
-        return {
-          ...base(db, { ...t, partyId: l.customerId, parties: 1 }), atc: l.atc, certificate: status(l.certificate, on),
-          cwtCents: sign * l.cwtCents || 0, vatWithheldCents: sign * l.vatWithheldCents || 0,
-          lineNo: l.lineNo, receivedOn: on, opening: true, period: `${l.year}-Q${l.quarter}`,
-        };
-      });
-    }
+  }, from, to).map((t) => {
     const w = t.docType === 'col.collection' ? withholdingOf(db, t.sourceId) : undefined;
-    const on = w?.certificate === 'pending' ? receivedOn(db, t.sourceId, 0) : null;
-    return [{
-      ...base(db, t), atc: w?.atc ?? null, certificate: w ? status(w.certificate, on) : null, cwtCents: t.cwtCents, vatWithheldCents: t.vatWithheldCents,
-      lineNo: 0, receivedOn: on, opening: false, period: null,
-    }];
+    return { ...base(db, t), atc: w?.atc ?? null, certificate: w?.certificate ?? null, cwtCents: t.cwtCents, vatWithheldCents: t.vatWithheldCents };
   });
   return {
     from, to, rows,
     totals: { cwtCents: total(rows, (r) => r.cwtCents), vatWithheldCents: total(rows, (r) => r.vatWithheldCents) },
     glCwtCents: movement(db, ['CWT'], from, to, 'debit'),
     glVatWithheldCents: movement(db, ['VAT_WITHHELD'], from, to, 'debit'),
-    /** 2307s of collections and openings still standing that are not in hand yet, for the follow-up list. */
+    /** Collections still standing whose 2307 is not in hand yet, for the follow-up list. */
     pendingCount: rows.filter((r) => r.posting === 'original' && r.documentStatus === 'posted' && r.certificate === 'pending').length,
   };
 }

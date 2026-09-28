@@ -14,7 +14,7 @@
 5. Type a **Title** and select a **Date** and **Time (optional)**.
 6. You can also pick a **Find customer (optional)** and a **Job order (optional)**, and type **Notes (optional)** if needed.
 7. Click **Save event**.
-8. To change an event, click on it in the calendar.
+8. To change an event, click **Manage** on the event in the calendar.
 9. To move the event, pick a new **Move to date** and **Time**, then click **Move**.
 10. To cancel an event, type a **Cancellation reason** and click **Cancel event**.
 

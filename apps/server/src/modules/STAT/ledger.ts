@@ -1,10 +1,9 @@
 /**
  * The statutory payables of a contribution month, read from the ledger (PLAN D1, E11). A payroll run credits SSS,
- * PhilHealth, Pag-IBIG and withholding tax per employee, tagged with its month M (PAY-RUN); an opening statutory
- * payable (OBST-, stat.opening) credits the same accounts for a month on or before the cut-over date; a remittance
- * (REM-) debits the same month. So the month's payable per employee is the net of the journals of its runs, its
- * openings and its remittances, reversals included: positive is still to remit, negative is remitted more than the
- * payrolls and openings now show (a run cancelled after its month was remitted, PLAN D6).
+ * PhilHealth, Pag-IBIG and withholding tax per employee, tagged with its month M (PAY-RUN); a remittance (REM-) debits
+ * the same month. So the month's payable per employee is the net of the journals of its runs and its remittances,
+ * reversals included: positive is still to remit, negative is remitted more than the payrolls now show (a run cancelled
+ * after its month was remitted, PLAN D6).
  */
 import type { Db } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
@@ -21,11 +20,6 @@ export const SCHEME: Record<Scheme, { role: string; label: string; tag: string }
   WTAX: { role: 'WTC_PAYABLE', label: 'Withholding tax (1601-C)', tag: 'Withholding tax' },
 };
 export const isMonth = (s: string) => /^\d{4}-(0[1-9]|1[0-2])$/.test(s);
-
-/** Opening statutory payables (OBST-, stat.opening) of a contribution month: their journals credit it like a run's. */
-function openingsOfMonth(db: Db, month: string): { id: string }[] {
-  return db.prepare('SELECT document_id AS id FROM stat_openings WHERE month = ?').all(month) as { id: string }[];
-}
 
 export interface Remittance { id: string; number: string; status: 'posted' | 'cancelled'; postedAt: string; amountCents: number }
 /** The remittances of a scheme and month, recorded or cancelled, oldest first. */
@@ -52,7 +46,7 @@ function netBySource(db: Db, scheme: Scheme, sourceIds: string[]): { sourceId: s
 /** The month's payable per employee (see the top of this file). */
 export function payableByEmployee(db: Db, scheme: Scheme, month: string): Map<string, number> {
   const out = new Map<string, number>();
-  const ids = [...runsOfMonth(db, month).map((r) => r.id), ...openingsOfMonth(db, month).map((r) => r.id), ...remittancesOf(db, scheme, month).map((r) => r.id)];
+  const ids = [...runsOfMonth(db, month).map((r) => r.id), ...remittancesOf(db, scheme, month).map((r) => r.id)];
   for (const x of netBySource(db, scheme, ids)) out.set(x.employeeId, (out.get(x.employeeId) ?? 0) + x.cents);
   return out;
 }
@@ -71,10 +65,9 @@ export interface SchemeCheck {
 /** The remittance check of a month for one scheme (D5 STAT-REM "payable for month M vs amount paid"). */
 export function schemeCheck(db: Db, scheme: Scheme, month: string): SchemeCheck {
   const runs = runsOfMonth(db, month);
-  const openings = openingsOfMonth(db, month);
   const rems = remittancesOf(db, scheme, month);
-  const net = netBySource(db, scheme, [...runs.map((r) => r.id), ...openings.map((o) => o.id), ...rems.map((r) => r.id)]);
-  const runIds = new Set([...runs.map((r) => r.id), ...openings.map((o) => o.id)]);
+  const net = netBySource(db, scheme, [...runs.map((r) => r.id), ...rems.map((r) => r.id)]);
+  const runIds = new Set(runs.map((r) => r.id));
   const sum = (f: (x: (typeof net)[number]) => boolean) => net.filter(f).reduce((s, x) => s + x.cents, 0);
   const recorded = sum((x) => runIds.has(x.sourceId));
   const remitted = 0 - sum((x) => !runIds.has(x.sourceId));
@@ -118,9 +111,8 @@ export function remittedForRun(db: Db, runId: string, month: string): { scheme: 
   });
 }
 
-/** Months with payrolls, opening statutory payables or remittances, newest first. */
+/** Months with payrolls or remittances, newest first. */
 export function statMonths(db: Db): string[] {
-  const open = db.prepare('SELECT DISTINCT month FROM stat_openings').pluck().all() as string[];
   const rem = db.prepare('SELECT DISTINCT month FROM stat_remittances').pluck().all() as string[];
-  return [...new Set([...payrollMonths(db), ...open, ...rem])].sort().reverse();
+  return [...new Set([...payrollMonths(db), ...rem])].sort().reverse();
 }
