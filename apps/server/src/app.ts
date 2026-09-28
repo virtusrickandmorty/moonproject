@@ -21,6 +21,8 @@ import { draftRoutes } from './engine/documents/drafts.ts';
 import { hashPassword, DEFAULT_SCRYPT_N } from './engine/security/passwords.ts';
 import { webRoutes } from './platform/web.ts';
 import { practiceRoutes, type PracticeControl } from './platform/practice/routes.ts';
+import { healthRoutes } from './platform/health/routes.ts';
+import type { Host } from './platform/health/health.ts';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -69,6 +71,8 @@ export interface BuildOptions {
   practice?: boolean;
   /** The real shop's handle on the practice shop beside it, for its Practice shop page; absent when practice mode is off. */
   practiceShop?: PracticeControl;
+  /** The PC System Health reports on (tests give their own); the real one by default. */
+  host?: Host;
 }
 
 /** Migrates, registers modules and permissions. Separate from buildApp so tools and tests can use it. */
@@ -156,6 +160,7 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
   documentRoutes(app, deps);
   draftRoutes(app, deps);
   practiceRoutes(app, deps, opts.practiceShop);
+  healthRoutes(app, deps, { ...(opts.practiceShop ? { practiceShop: opts.practiceShop } : {}), ...(opts.host ? { host: opts.host } : {}) });
   for (const m of registry.modules) m.routes?.(app, deps);
   webRoutes(app, opts.webRoot ?? WEB_DIST);
 
