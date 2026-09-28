@@ -15,6 +15,7 @@ import { quarterOf, taxDeadlines, type Quarter } from './calendar.ts';
 import { ewtMonthWorksheet, ewtQuarterWorksheet, type PaymentLine } from './ewt-return.ts';
 import { parsePeriod, periodsDue } from './payments.ts';
 import { markReceived } from './withholding.ts';
+import { addIncomeTaxSettings, incomeTaxSettingsAt, incomeTaxSettingsHistory, incomeTaxWorksheet } from './income-tax.ts';
 
 export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
@@ -218,8 +219,42 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
     ]);
   });
 
-  /** Every return with something left to pay (a VAT close or an opening's 2550Q, EWT withheld or opened), for the BIR payment form. */
-  app.get('/api/tax/payments/due', { config: { permission: 'tax.payment.create' } }, async () => periodsDue(db));
+  /**
+   * The 1702Q worksheet of Q1, Q2 or Q3 (?year=2026&quarter=3; left out, today's quarter, or Q3 in Q4): the year to date
+   * from the ledger in whole pesos, the tax at the regular rate or MCIT, the credits, what is left to pay, and the checks.
+   */
+  app.get<{ Querystring: QuarterQuery & { format?: string } }>('/api/tax/1702q', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const defaulted = req.query.year === undefined && req.query.quarter === undefined;
+    const { year, quarter } = quarterQuery(req.query);
+    if (quarter === 4 && !defaulted) throw badRequest('NO_Q4', `Q4 has no 1702Q: the annual income tax return (1702) covers ${year}.`);
+    const w = incomeTaxWorksheet(db, year, quarter === 4 ? 3 : quarter, today(clock));
+    if (req.query.format !== 'csv') return w;
+    const row = (item: string, cents: number | null): CsvCell[] => [item, cents === null ? '' : csvPesos(cents)];
+    return csv(reply, `1702Q-worksheet-${w.year}-Q${w.quarter}`, [
+      ['Item', 'Amount'],
+      ...w.lines.map((l) => row(l.label, l.cents)),
+      ...(w.opening ? [row(`Left to pay by the old books (${w.opening.number})`, w.openingCents)] : []),
+      row('Due with the 1702Q', w.dueCents),
+      ...w.payments.map((x) => row(`Paid with ${x.number} on ${x.date} (${x.reference})`, x.amountCents)),
+      row('Left to pay', w.leftCents),
+      row(`Rates in force on ${w.to}: regular ${w.settings.regularRateBp / 100}%, MCIT ${w.settings.mcitRateBp / 100}%, operations began ${w.settings.operationsBeganYear ?? 'not confirmed'}`, null),
+      ...w.checks.map((c) => row(`Check: ${c.message}`, null)),
+    ]);
+  });
+
+  /** The income tax settings (rates, year operations began): the version in force today and every version, newest first. */
+  app.get('/api/tax/income-tax-settings', { config: { permission: 'tax.registers.view' } }, async () => ({
+    current: incomeTaxSettingsAt(db, today(clock)), versions: incomeTaxSettingsHistory(db),
+  }));
+
+  /** A new version from today or later ({ effectiveFrom, value, reason }). Needs a fresh password, like every dated setting. */
+  app.post('/api/tax/income-tax-settings', { config: { permission: 'acc.settings.manage' } }, async (req) => {
+    requireStepUp(currentUser(req), clock);
+    return write(() => addIncomeTaxSettings(db, req.body, { userId: currentUser(req).userId, at: stamp(clock), today: today(clock) }));
+  });
+
+  /** Every return with something left to pay (a VAT close or an opening's 2550Q, EWT withheld or opened, a 1702Q), for the BIR payment form. */
+  app.get('/api/tax/payments/due', { config: { permission: 'tax.payment.create' } }, async () => periodsDue(db, today(clock)));
 
   /** VAT of one quarter (?year=2026&quarter=3), or of today's quarter. */
   app.get<{ Querystring: QuarterQuery }>('/api/tax/vat-summary', { config: { permission: 'tax.registers.view' } }, async (req) => {

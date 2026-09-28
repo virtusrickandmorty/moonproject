@@ -2,7 +2,8 @@
  * Opening tax payables (OBTP-, doctypes/opening-payable.ts) as the BIR payments and the EWT worksheets read them: what
  * the old books left to pay with a return of a period before the cut-over date, read from the posted openings' rows.
  * A 2550Q, 0619-E or 1601-EQ is then paid with a BIR payment like any other (payments.ts adds these to what the period
- * leaves to pay); a 1702Q or 1702 stays on 2320 income tax payable until a payment for it is built. The opening's
+ * leaves to pay); a 1702Q too, from 2320 (income-tax.ts); a 1702 stays on 2320 income tax payable until the year-end
+ * settlement is built. The opening's
  * journal is dated the cut-over date but is no tax withheld or VAT of that date's period: the registers leave it out
  * (registers.ts IN_REGISTERS), so the worksheets, the QAP and the 2307s to issue never count it.
  */
