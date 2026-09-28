@@ -3,6 +3,12 @@ import { buildMenu, labelOf, type MenuItem } from './menu.ts';
 import type { DocTypeInfo } from '../api.ts';
 
 describe('menu (PLAN H1)', () => {
+  it('shows Shop certificate in Admin to every signed-in user', () => {
+    expect(buildMenu([], new Set()).find((g) => g.group === 'Admin')?.items).toEqual([
+      { group: 'Admin', label: 'Shop certificate', path: '/admin/shop-certificate' },
+    ]);
+  });
+
   it('groups document lists by module in H1 order and shows other screens only with their exact permission', () => {
     const dt = (key: string, module: string, title: string) => ({ key, module, title }) as DocTypeInfo;
     const types = [dt('cash.transfer', 'CASH', 'Fund Transfer'), dt('jo.order', 'JO', 'Job Order'), dt('eq.money', 'EQ', 'Owner Money')];
