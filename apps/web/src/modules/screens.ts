@@ -45,7 +45,8 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/stat/:month': StatMonthPage,
 };
 
-export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: FormMode }>> = {
+/** A module's own form; `me` lets it offer what only some users may do (the remittance's date paid, for acc.backdate). */
+export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: FormMode; me: Me }>> = {
   'cash.count': CashCountForm,
   'col.collection': CollectionForm,
   'col.refund': RefundForm,
