@@ -46,6 +46,15 @@ export function receivingReport(db: Db, id: string): ReceivingReport | undefined
     .get(id) as ReceivingReport | undefined;
 }
 
+/** A purchase order (PO-) and its supplier, for a supplier advance paid on it (AP, read-only). */
+export interface PurchaseOrderRef { id: string; number: string; status: 'posted' | 'cancelled'; supplierId: string }
+
+export function purchaseOrder(db: Db, id: string): PurchaseOrderRef | undefined {
+  return db
+    .prepare('SELECT d.id, d.number, d.status, po.supplier_id AS supplierId FROM pur_purchase_orders po JOIN documents d ON d.id = po.document_id WHERE po.document_id = ?')
+    .get(id) as PurchaseOrderRef | undefined;
+}
+
 /** Read-only names for purchase order printouts. Callers enforce their own view permission. */
 export function purchaseOrderNames(db: Db, supplierId: string, supplyIds: string[]) {
   const supplier = db.prepare('SELECT name, registered_name FROM pur_suppliers WHERE id = ?').get(supplierId) as

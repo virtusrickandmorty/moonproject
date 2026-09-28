@@ -35,6 +35,8 @@ export const DOC_TITLES = [
   'Deposit Transfer',
   'Supplier Bill',
   'Supplier Payment',
+  'Supplier Advance',
+  'Supplier Advance Return',
   'Purchase Order',
   'Receiving Report',
   'Owner Money',

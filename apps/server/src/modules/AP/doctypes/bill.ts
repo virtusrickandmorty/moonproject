@@ -6,7 +6,12 @@
  * D4.2), spread over the lines by largest remainder, claimed only for a VAT-registered supplier with a TIN on file (the
  * invoice number and date are always typed, D4.7). EWT is credited now, at accrual (D4.8), on NET for a VAT-registered
  * supplier and on G otherwise (D4.5), at the supplier's usual class; only the accountant may pick another.
- * What is still owed is read from the ledger, so a bill with payments cancels only after them.
+ * Advances (PLAN D5 SUP-ADV): the bill takes the supplier's open advances (SADV-), oldest first up to what it owes
+ * unless it names them, in its own journal: Dr 2101 AP (ref = the bill) / Cr 1230 (ref = the advance) per advance.
+ * An advance that withheld EWT covered that part of the income already, so the bill leaves the base it withheld on
+ * out of its own EWT base: EWT is never withheld twice on the same payment.
+ * What is still owed is read from the ledger, so a bill with payments cancels only after them, and an advance only
+ * after the bills that apply it (D6).
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -16,7 +21,7 @@ import { EWT_CLASSES, settingAt, type EwtClass } from '../../../engine/settings.
 import type { Db } from '../../../platform/db/driver.ts';
 import { TWA_ONLY, appliedEwtClass, category, listCategories } from '../../EXP/public.ts';
 import { activeSupplierIds, activeSupplyIds, receivingReport, supplier, supply } from '../../PUR/public.ts';
-import { paymentsOnBill } from '../ledger.ts';
+import { advance, openAdvances, openOnAdvance, paymentsOnBill, type AdvanceRow } from '../ledger.ts';
 
 export const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
 export const EWT_PERMISSION = 'ap.bill.ewt';
@@ -37,6 +42,9 @@ const lineInput = z
   .strict();
 type LineInput = z.infer<typeof lineInput>;
 
+/** An advance applied on the bill: that much of it goes against what the bill owes. */
+const advanceApplied = z.object({ advanceId: z.string().trim().min(1).max(80), amountCents: z.number().int().positive().max(MAX_CENTS) }).strict();
+
 export const billInput = z
   .object({
     supplierId: z.string().trim().min(1).max(80),
@@ -46,6 +54,7 @@ export const billInput = z
     receivingReportId: z.string().trim().min(1).max(80).optional(),
     lines: z.array(lineInput).min(1).max(50),
     ewtClass: z.enum([...EWT_CLASSES, 'none']).optional(), // left out: the supplier's usual class
+    advances: z.array(advanceApplied).max(20).optional(), // left out: the supplier's open advances, oldest first, up to what the bill owes
     note: z.string().trim().min(1).max(500).optional(),
   })
   .strict();
@@ -53,8 +62,12 @@ export type BillInput = z.infer<typeof billInput>;
 
 export interface BillLine extends LineInput { lineNo: number; name: string; costRole: string | null; accountId: number | null; vatCents: number; costCents: number }
 interface Figures { vatRateBp: number; inputVatCents: number; appliedEwtClass: EwtClass | null; ewtRateBp: number; ewtBaseCents: number; ewtCents: number }
-export interface Bill extends Omit<BillInput, 'lines'>, Figures {
+/** An advance applied on the bill, with the part of the bill's EWT base it already withheld on. */
+export interface BillAdvance { lineNo: number; advanceId: string; advanceNumber: string; amountCents: number; coveredBaseCents: number }
+export interface Bill extends Omit<BillInput, 'lines' | 'advances'>, Figures {
   lines: BillLine[]; dueDate: string; totalCents: number; payableCents: number;
+  /** The advances applied, their total, and what the bill still owes after them (never below zero once valid). */
+  advances: BillAdvance[]; advanceCents: number; owedCents: number;
   supplierName: string; supplierTin: string | null; vatRegistered: boolean; usualEwtClass: EwtClass | null; receivingReportNumber: string | null;
 }
 
@@ -67,12 +80,58 @@ function target(db: Db, l: LineInput): Pick<BillLine, 'name' | 'costRole' | 'acc
   return l.purchase ? { name: PURCHASE[l.purchase].name, costRole: PURCHASE[l.purchase].role, accountId: null } : { name: '?', costRole: null, accountId: null };
 }
 
+/**
+ * The part of a bill's EWT base that `amountCents` of an advance already withheld on: its share of the advance's own
+ * base (none when the advance withheld nothing). BigInt: base × amount can pass 2^53.
+ */
+export function coveredBase(a: Pick<AdvanceRow, 'amountCents' | 'ewtBaseCents' | 'ewtCents'>, amountCents: number): number {
+  if (a.ewtCents === 0) return 0;
+  const [base, x, of] = [BigInt(a.ewtBaseCents), BigInt(amountCents), BigInt(a.amountCents)];
+  return Number((2n * base * x + of) / (2n * of));
+}
+
+type Applied = { advanceId: string; amountCents: number; advance: AdvanceRow | undefined };
+
+/**
+ * The EWT and what is owed with these advances applied: the bill's full base (NET or G) less what the advances
+ * already withheld on, at the bill's rate. What is owed falls by at most one centavo for each centavo more applied,
+ * so the largest amount that keeps it at zero or above can be found by halving.
+ */
+function withAdvances(G: number, fullBaseCents: number, cls: EwtClass | null, rateBp: number, apps: Applied[]) {
+  const covered = apps.map((a) => (a.advance ? coveredBase(a.advance, a.amountCents) : 0));
+  const ewtBaseCents = cls ? Math.max(0, fullBaseCents - covered.reduce((s, c) => s + c, 0)) : 0;
+  const ewtCents = cls ? applyRate(ewtBaseCents, rateBp) : 0;
+  return { covered, ewtBaseCents, ewtCents, owedCents: G - ewtCents - apps.reduce((s, a) => s + a.amountCents, 0) };
+}
+
+/** Left out of the input: the supplier's open advances, oldest first, each as far as the bill still owes something. */
+function defaultAdvances(db: Db, supplierId: string, G: number, fullBaseCents: number, cls: EwtClass | null, rateBp: number): Applied[] {
+  const apps: Applied[] = [];
+  for (const a of openAdvances(db, supplierId)) {
+    const owedWith = (x: number) => withAdvances(G, fullBaseCents, cls, rateBp, [...apps, { advanceId: a.id, amountCents: x, advance: a }]).owedCents;
+    let x = Math.min(a.openCents, G - apps.reduce((s, y) => s + y.amountCents, 0));
+    if (x <= 0) break;
+    if (owedWith(x) < 0) {
+      let [lo, hi] = [0, x]; // owedWith(lo) >= 0 > owedWith(hi)
+      while (hi - lo > 1) {
+        const mid = Math.floor((lo + hi) / 2);
+        if (owedWith(mid) >= 0) lo = mid;
+        else hi = mid;
+      }
+      x = lo;
+    }
+    if (x > 0) apps.push({ advanceId: a.id, amountCents: x, advance: a });
+  }
+  return apps;
+}
+
 /** The names around the figures (worked out in compute, stored for load). */
-function withNames(db: Db, input: BillInput, lines: BillLine[], vatRegistered: boolean, f: Figures): Bill {
+function withNames(db: Db, input: BillInput, lines: BillLine[], vatRegistered: boolean, f: Figures, advances: BillAdvance[]): Bill {
   const sup = supplier(db, input.supplierId);
   const G = lines.reduce((s, l) => s + l.amountCents, 0);
+  const advanceCents = advances.reduce((s, a) => s + a.amountCents, 0);
   return {
-    ...input, ...f, lines, totalCents: G, payableCents: G - f.ewtCents,
+    ...input, ...f, lines, totalCents: G, payableCents: G - f.ewtCents, advances, advanceCents, owedCents: G - f.ewtCents - advanceCents,
     dueDate: input.dueDate ?? addDays(input.supplierInvoiceDate, sup?.paymentTermsDays ?? 0),
     supplierName: sup?.name ?? '?', supplierTin: sup?.tin || null, vatRegistered, usualEwtClass: sup?.ewtClass ?? null,
     receivingReportNumber: input.receivingReportId ? (receivingReport(db, input.receivingReportId)?.number ?? '?') : null,
@@ -102,8 +161,13 @@ export const billDoc: DocTypeDef<BillInput, Bill> = {
     const lines = input.lines.map((l, i) => ({ ...l, lineNo: i + 1, ...target(ctx.db, l), vatCents: lineVat[i]!, costCents: l.amountCents - lineVat[i]! }));
     const applied = appliedEwtClass(ctx.db, input.ewtClass, sup?.ewtClass ?? null, ctx.businessDate);
     const ewtRateBp = applied ? settingAt(ctx.db, 'tax.ewt_rates_bp', ctx.businessDate)[applied] : 0; // the rate on the accrual date
-    const ewt = { appliedEwtClass: applied, ewtRateBp, ewtBaseCents: applied ? netCents : 0, ewtCents: applied ? applyRate(netCents, ewtRateBp) : 0 };
-    return withNames(ctx.db, input, lines, vatRegistered, { vatRateBp, inputVatCents, ...ewt });
+    const apps: Applied[] = input.advances
+      ? input.advances.map((a) => ({ ...a, advance: advance(ctx.db, a.advanceId) }))
+      : sup ? defaultAdvances(ctx.db, sup.id, G, netCents, applied, ewtRateBp) : [];
+    const w = withAdvances(G, netCents, applied, ewtRateBp, apps);
+    const ewt = { appliedEwtClass: applied, ewtRateBp, ewtBaseCents: w.ewtBaseCents, ewtCents: w.ewtCents };
+    const advances = apps.map((a, i) => ({ lineNo: i + 1, advanceId: a.advanceId, advanceNumber: a.advance?.number ?? '?', amountCents: a.amountCents, coveredBaseCents: w.covered[i]! }));
+    return withNames(ctx.db, input, lines, vatRegistered, { vatRateBp, inputVatCents, ...ewt }, advances);
   },
 
   validate(doc, ctx) {
@@ -147,6 +211,21 @@ export const billDoc: DocTypeDef<BillInput, Bill> = {
       const was = usual ? `${pct(settingAt(ctx.db, 'tax.ewt_rates_bp', ctx.businessDate)[usual])} (${usual})` : 'none';
       add('warning', 'ewtClass', 'EWT_DIFFERENT', `The usual EWT for this supplier is ${was}. Please check.`);
     }
+    const seen = new Set<string>();
+    doc.advances.forEach((x, i) => {
+      const a = advance(ctx.db, x.advanceId);
+      const f = `advances.${i}.advanceId`;
+      if (!a) return add('error', f, 'ADVANCE', `Advance line ${x.lineNo}: pick a recorded supplier advance.`);
+      if (a.supplierId !== doc.supplierId) return add('error', f, 'ADVANCE_SUPPLIER', `${a.number} is an advance to another supplier.`);
+      if (a.status !== 'posted') return add('error', f, 'ADVANCE_CANCELLED', `${a.number} was cancelled.`);
+      if (seen.has(a.id)) return add('error', f, 'ADVANCE_TWICE', `${a.number} is on this bill twice.`);
+      seen.add(a.id);
+      const open = openOnAdvance(ctx.db, a.id);
+      if (x.amountCents > open) add('error', `advances.${i}.amountCents`, 'ADVANCE_MORE_THAN_OPEN', open > 0 ? `Only ${formatPeso(open)} is still open on ${a.number}.` : `Nothing is open on ${a.number}.`);
+    });
+    if (doc.owedCents < 0) {
+      add('error', 'advances', 'ADVANCES_MORE_THAN_BILL', `The advances applied (${formatPeso(doc.advanceCents)}) are more than this bill leaves owed (${formatPeso(doc.payableCents)}).`);
+    }
     return issues;
   },
 
@@ -164,17 +243,24 @@ export const billDoc: DocTypeDef<BillInput, Bill> = {
     for (const l of doc.lines) {
       ins.run(h.documentId, l.lineNo, l.supplyId ?? null, l.categoryId ?? null, l.purchase ?? null, l.costRole, l.accountId, l.description ?? null, l.amountCents, l.vatCents);
     }
+    const adv = db.prepare('INSERT INTO ap_bill_advances (document_id, line_no, advance_id, amount_cents, covered_base_cents) VALUES (?, ?, ?, ?, ?)');
+    for (const a of doc.advances) adv.run(h.documentId, a.lineNo, a.advanceId, a.amountCents, a.coveredBaseCents);
   },
 
   journal(doc, _ctx, header) {
     const party = { type: 'supplier', id: doc.supplierId };
+    const bill = header ? { ref: { documentId: header.documentId } } : {};
     return {
       memo: `${doc.supplierName} invoice no. ${doc.supplierInvoiceNo}`,
       lines: [
         ...doc.lines.map((l) => ({ account: l.accountId ? { accountId: l.accountId } : { role: l.costRole! }, debitCents: l.costCents, memo: l.description ?? l.name })),
         { account: { role: 'INPUT_VAT' }, party, debitCents: doc.inputVatCents, memo: `Invoice no. ${doc.supplierInvoiceNo}` },
         { account: { role: 'EWT_PAYABLE' }, party, creditCents: doc.ewtCents, memo: `EWT ${doc.appliedEwtClass}` },
-        { account: { role: 'AP' }, party, ...(header ? { ref: { documentId: header.documentId } } : {}), creditCents: doc.payableCents, memo: `Due ${doc.dueDate}` },
+        { account: { role: 'AP' }, party, ...bill, creditCents: doc.payableCents, memo: `Due ${doc.dueDate}` },
+        ...doc.advances.flatMap((a) => [
+          { account: { role: 'AP' }, party, ...bill, debitCents: a.amountCents, memo: `${a.advanceNumber} applied` },
+          { account: { role: 'SUPPLIER_ADVANCES' }, party, ref: { documentId: a.advanceId }, creditCents: a.amountCents, memo: `${a.advanceNumber} applied` },
+        ]),
       ],
     };
   },
@@ -199,14 +285,20 @@ export const billDoc: DocTypeDef<BillInput, Bill> = {
     });
     const { vatRegistered, vatRateBp, inputVatCents, appliedEwtClass, ewtRateBp, ewtBaseCents, ewtCents, ...input } = dropNulls(b);
     const figures = { vatRateBp, inputVatCents, appliedEwtClass: b.appliedEwtClass, ewtRateBp, ewtBaseCents, ewtCents };
-    return withNames(db, { ...(input as unknown as BillInput), ewtClass: b.appliedEwtClass ?? 'none' }, lines, vatRegistered === 1, figures);
+    const advances = db
+      .prepare(`SELECT x.line_no AS lineNo, x.advance_id AS advanceId, d.number AS advanceNumber, x.amount_cents AS amountCents, x.covered_base_cents AS coveredBaseCents
+         FROM ap_bill_advances x JOIN documents d ON d.id = x.advance_id WHERE x.document_id = ? ORDER BY x.line_no`)
+      .all(documentId) as BillAdvance[];
+    const stored: BillInput = { ...(input as unknown as BillInput), ewtClass: (b.appliedEwtClass as EwtClass | null) ?? 'none', advances: advances.map(({ advanceId, amountCents }) => ({ advanceId, amountCents })) };
+    return withNames(db, stored, lines, vatRegistered === 1, figures, advances);
   },
 
   toInput(doc) {
     const strip = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
     const { supplierId, supplierInvoiceNo, supplierInvoiceDate, dueDate, receivingReportId, ewtClass, note } = doc;
     const lines = doc.lines.map(({ supplyId, categoryId, purchase, description, amountCents }) => strip({ supplyId, categoryId, purchase, description, amountCents }));
-    return strip({ supplierId, supplierInvoiceNo, supplierInvoiceDate, dueDate, receivingReportId, lines, ewtClass, note });
+    const advances = doc.advances.map(({ advanceId, amountCents }) => ({ advanceId, amountCents })); // named, so an edit applies the same ones
+    return strip({ supplierId, supplierInvoiceNo, supplierInvoiceDate, dueDate, receivingReportId, lines, ewtClass, advances, note });
   },
 
   dependents: (db, documentId) => paymentsOnBill(db, documentId),
@@ -214,7 +306,10 @@ export const billDoc: DocTypeDef<BillInput, Bill> = {
   summary(doc) {
     const vat = doc.inputVatCents > 0 ? ` with ${formatPeso(doc.inputVatCents)} input VAT` : '';
     const ewt = doc.ewtCents > 0 ? `; ${formatPeso(doc.ewtCents)} is withheld (EWT ${pct(doc.ewtRateBp)}), so ${formatPeso(doc.payableCents)} is owed` : '';
-    return `This will record ${formatPeso(doc.totalCents)} billed by ${doc.supplierName} on invoice no. ${doc.supplierInvoiceNo} of ${doc.supplierInvoiceDate}${vat}${ewt}, due ${doc.dueDate}.`;
+    const adv = doc.advanceCents > 0
+      ? `; ${formatPeso(doc.advanceCents)} of ${doc.advances.map((a) => a.advanceNumber).join(', ')} is applied, so ${formatPeso(doc.owedCents)} is still owed`
+      : '';
+    return `This will record ${formatPeso(doc.totalCents)} billed by ${doc.supplierName} on invoice no. ${doc.supplierInvoiceNo} of ${doc.supplierInvoiceDate}${vat}${ewt}${adv}, due ${doc.dueDate}.`;
   },
 
   /** Needs active suppliers (each with a TIN) and supplies on file. Invoices dated in 2025; EWT classes that need no TWA status. */

@@ -11,7 +11,7 @@
  */
 import type { Db } from '../../platform/db/driver.ts';
 import type { EwtClass } from '../../engine/settings.ts';
-import { billTaxFacts, type BillTaxFacts } from '../AP/public.ts';
+import { advanceTaxFacts, billTaxFacts, type BillTaxFacts } from '../AP/public.ts';
 import { voucherTaxFacts, type GoodsOrServices } from '../EXP/public.ts';
 import { purchaseTaxFacts } from '../FA/public.ts';
 import { supplierTaxInfo } from '../PUR/public.ts';
@@ -85,6 +85,9 @@ function sourceOf(db: Db, t: Touch): Source {
   if (bill) return { ...registered(db, bill.supplierId), invoiceNo: bill.supplierInvoiceNo, lines: bill.lines, ewt: ewt(bill) };
   const v = t.docType === 'exp.voucher' ? voucherTaxFacts(db, t.sourceId) : undefined;
   if (v) return { ...(v.supplierId ? registered(db, v.supplierId) : { name: v.payeeName, tin: v.payeeTin }), invoiceNo: v.supplierInvoiceNo, bought: v.bought, ewt: ewt(v) };
+  // A supplier advance withholds when it is paid (EWT is due on payment or accrual, whichever comes first); the bill that applies it leaves that base out.
+  const adv = t.docType === 'ap.advance' ? advanceTaxFacts(db, t.sourceId) : undefined;
+  if (adv) return { ...registered(db, adv.supplierId), invoiceNo: null, ewt: ewt(adv) };
   const fa = t.docType === 'fa.buy' ? purchaseTaxFacts(db, t.sourceId) : undefined;
   if (fa) return { ...registered(db, fa.supplierId), invoiceNo: fa.supplierInvoiceNo };
   return { ...(t.partyId ? registered(db, t.partyId) : { name: '', tin: null }), invoiceNo: null };

@@ -276,11 +276,24 @@ export interface SheetSupply {
 }
 export interface CountSheet { category: 'materials' | 'ready_made'; date: string; supplies: SheetSupply[] }
 export interface ExpCategory { id: number; code: string; name: string; defaultEwtClass: string | null }
-/** GET /api/ap/suppliers/:id: a supplier's bills, with what is still owed on each (from the ledger). */
+/**
+ * GET /api/ap/suppliers/:id: a supplier's bills (with the advances applied on each and what is still owed), payments and
+ * advances (with what is still open on each), the AP balance (2101) and the advances open (1230), all from the ledger.
+ */
 export interface ApLedger {
-  supplierId: string; supplierName: string; balanceCents: number;
-  bills: { id: string; number: string; status: 'posted' | 'cancelled'; supplierInvoiceNo: string; dueDate: string; payableCents: number; owedCents: number }[];
+  supplierId: string; supplierName: string; balanceCents: number; advancesCents: number;
+  bills: {
+    id: string; docType?: 'ap.bill' | 'ap.opening'; number: string; status: 'posted' | 'cancelled'; date?: string; supplierInvoiceNo: string; dueDate: string; payableCents: number; owedCents: number;
+    advanceCents?: number; paidCents?: number;
+  }[];
+  payments?: { id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; bills: { billNumber: string; amountCents: number }[] }[];
+  advances: {
+    id: string; number: string; status: 'posted' | 'cancelled'; date: string; purchaseOrderNumber: string | null; amountCents: number; ewtCents: number; cashCents: number;
+    appliedCents: number; returnedCents: number; openCents: number; bills: { billId: string; billNumber: string; amountCents: number }[]; returns: { id: string; number: string; amountCents: number }[];
+  }[];
 }
+/** GET /api/ap/suppliers: every supplier with something owed or an advance open; `netCents` = owed less the advances. */
+export interface ApBalance { supplierId: string; supplierName: string; balanceCents: number; advancesCents: number; netCents: number }
 /** GET /api/acc/opening, what an opening document's form needs: the cut-over date it is dated, and the close once done. */
 export type OpeningStatus = Pick<OpeningState, 'cutoverDate' | 'closed'>;
 export interface EqPerson { id: string; name: string; isStockholder: boolean; isOfficer: boolean; position: string | null }
@@ -508,6 +521,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     countSheet: (category: string, date: string) => call<CountSheet>('GET', `/api/inv/count-sheet?${new URLSearchParams({ category, date, format: 'json' })}`),
     expCategories: () => call<ExpCategory[]>('GET', '/api/exp/categories'),
     apLedger: (supplierId: string) => call<ApLedger>('GET', `/api/ap/suppliers/${encodeURIComponent(supplierId)}`),
+    apBalances: () => call<ApBalance[]>('GET', '/api/ap/suppliers'),
     eqPeople: () => call<EqPerson[]>('GET', '/api/eq/people'),
     /** What an officer owes the company and is owed (needs eq.ledger.view). */
     officerBalances: (personId: string) => call<{ dueFromCents: number; dueToCents: number }>('GET', `/api/eq/people/${encodeURIComponent(personId)}/ledger`),
