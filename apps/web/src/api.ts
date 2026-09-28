@@ -354,6 +354,26 @@ export interface BackupStatus {
 }
 export interface BackupMade { file: string; tier: BackupTier; bytes: number; offsite: boolean; offsiteError: string | null }
 export interface BackupFile { source: BackupSource; file: string; at: string; tier: BackupTier; bytes: number }
+/** The old-data importer (PLAN E13 MIG-01), as /api/mig reports it. */
+export type MigRowType = 'customer' | 'measurement' | 'employee' | 'piece_rate' | 'unknown';
+export type MigRowStatus = 'valid' | 'needs_review' | 'accepted' | 'merged' | 'excluded';
+export interface MigUpload { id: string; filename: string; uploadedAt: string; uploadedBy: string; status: 'staged' | 'dry_run_passed' | 'committed' }
+export interface MigUploaded { uploadId: string; totalRows: number; needsReview: number }
+/** A row of the review: the old sheet's cells (`raw`), the problems in the server's words, and the fix if one was made. */
+export interface MigRow {
+  id: string; rowNumber: number; rowType: MigRowType; status: MigRowStatus; raw: Record<string, string>; issues: string[];
+  manualData: Record<string, string | number> | null; legacyId: string | null; rateCents: number | null; mergeIntoRowId: string | null;
+}
+export interface DryRunResult {
+  success: true;
+  counts: { customers: number; measurements: number; employees: number; pieceRates: number; excluded: number; merged: number; total: number };
+  checksums: {
+    customer: { sha256: string }; measurement: { sha256: string; cellTenths: number }; employee: { sha256: string; rateCents: number }; pieceRate: { sha256: string; rateCents: number };
+  };
+}
+export type MigCommitKind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate';
+/** What a commit made. `excluded` and `merged` are only in the answer to the commit itself, not in the later look-up. */
+export interface MigCommitResult { counts: Record<MigCommitKind, { imported: number; alreadyImported: number }>; measurementCellTenths: number; excluded?: number; merged?: number }
 /** What a backup holds, found by opening it with a recovery key. A restore check adds `stagedId` and the live data's audit head. */
 export interface BackupCheck {
   file: string; madeAt: string | null; tier: BackupTier | null; sidecar: 'matches' | 'missing'; toApply: string[]; audit: { seq: number } | null;
@@ -616,6 +636,21 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     bakBackups: () => call<BackupFile[]>('GET', '/api/bak/backups'),
     bakCheck: (b: { source: BackupSource; file: string; key: string; purpose: 'drill' | 'restore' }) => call<BackupCheck>('POST', '/api/bak/restore/check', b),
     bakApply: (stagedId: string) => call<{ file: string; restartNeeded: boolean; message: string }>('POST', '/api/bak/restore/apply', { stagedId }),
+    migUploads: () => call<{ uploads: MigUpload[] }>('GET', '/api/mig/uploads').then((r) => r.uploads),
+    /** The kind is not sent: the server reads it from the columns. */
+    migUpload: (filename: string, csv: string) => call<MigUploaded>('POST', '/api/mig/upload', { filename, csv }),
+    migReview: (uploadId: string) => call<{ rows: MigRow[] }>('GET', `/api/mig/uploads/${encodeURIComponent(uploadId)}/review`).then((r) => r.rows),
+    migAccept: (rowId: string) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/accept`, {}),
+    migFix: (rowId: string, manualData: Record<string, string | number>) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/fix`, { manualData }),
+    migMerge: (rowId: string, mergeIntoRowId: string) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/merge`, { mergeIntoRowId }),
+    /** The reason is sent for the day the server keeps it; today the server ignores it. */
+    migExclude: (rowId: string, reason: string) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/exclude`, { reason }),
+    migDryRun: (uploadId: string) => call<DryRunResult>('POST', `/api/mig/uploads/${encodeURIComponent(uploadId)}/dry-run`, {}),
+    /** Needs a fresh password (step-up) and mig.commit. */
+    migCommit: (uploadId: string, expectedMeasurementCellTenths: number) => call<MigCommitResult>('POST', `/api/mig/uploads/${encodeURIComponent(uploadId)}/commit`, { expectedMeasurementCellTenths }),
+    migCommitted: (uploadId: string) => call<{ counts: MigCommitResult['counts']; checksums: { measurementCellTenths: number }; clearedAt: string | null }>('GET', `/api/mig/uploads/${encodeURIComponent(uploadId)}/commit`),
+    /** Needs a fresh password (step-up) and mig.commit. */
+    migClearStaging: (uploadId: string) => call<{ success: true; rowsCleared: number }>('POST', `/api/mig/uploads/${encodeURIComponent(uploadId)}/clear-staging`, {}),
   };
 }
 
