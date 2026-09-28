@@ -93,3 +93,9 @@ export function benefitCeilingAt(db: Db, date: string): number {
   const r = need(db.prepare(latest('pay_benefit_ceilings')).get({ d: date }) as Row | undefined, 'ceiling of tax-exempt 13th-month pay', date);
   return +r.ceiling_cents!;
 }
+/** The annual tax table on compensation in force on a date (RR 11-2018; the year-end adjustment uses 31 December). */
+export function annualTableAt(db: Db, date: string): Bracket[] {
+  const from = db.prepare('SELECT MAX(effective_from) FROM pay_wtax_annual WHERE effective_from <= ?').pluck().get(date) as string | null;
+  need(from ?? undefined, 'annual tax table', date);
+  return db.prepare('SELECT over_cents AS overCents, base_cents AS baseCents, rate_bp AS rateBp FROM pay_wtax_annual WHERE effective_from = ? ORDER BY over_cents').all(from) as Bracket[];
+}

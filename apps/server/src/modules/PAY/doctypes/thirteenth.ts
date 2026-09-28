@@ -24,6 +24,7 @@ import { lastAuditAt } from '../../../engine/audit.ts';
 import type { Db } from '../../../platform/db/driver.ts';
 import { PAY_GROUPS, employeesInGroup, type PayGroup } from '../../EMP/public.ts';
 import { benefitCeilingAt, withholding, wtaxTableAt } from '../statutory.ts';
+import { yearEndDoneBy } from '../year-end.ts';
 
 const MAX_CENTS = 10_000_000_00;
 const reason = z.string().trim().min(5).max(200);
@@ -194,6 +195,10 @@ export const thirteenthDoc: DocTypeDef<ThirteenthInput, Thirteenth> = {
         issues.push({ field: 'amounts', code: 'BELOW_DUE', level: 'warning', message: `${e.name}: ${formatPeso(e.amountCents)} is less than one twelfth of the basic pay, ${formatPeso(e.dueCents)} (PD 851).` });
       }
     }
+    for (const e of doc.employees) {
+      const done = yearEndDoneBy(ctx.db, e.employeeId, +ctx.businessDate.slice(0, 4));
+      if (done) issues.push({ field: 'year', code: 'AFTER_YEAR_END', level: 'warning', message: `${done} already did ${e.name}'s year-end tax adjustment without this 13th-month pay. Cancel ${done} and work it out again after this.` });
+    }
     if (ctx.businessDate > `${doc.year}-12-24`) issues.push({ field: 'year', code: 'LATE', level: 'warning', message: `The 13th month is due by ${doc.year}-12-24 (PD 851).` });
     return [...issues, ...(notesOf.get(doc) ?? [])];
   },
@@ -251,11 +256,19 @@ export const thirteenthDoc: DocTypeDef<ThirteenthInput, Thirteenth> = {
     return { payGroup, year, ...(amounts?.length ? { amounts } : {}), ...(skip?.length ? { skip } : {}) };
   },
 
-  /** Its releases are cancelled first (D6, G-29). */
+  /** Its releases are cancelled first (D6, G-29), and year-end runs recorded after it that counted it in an employee's year. */
   dependents(db, documentId) {
     return db
-      .prepare(`SELECT d.id, d.number FROM pay_thirteenth_releases r JOIN documents d ON d.id = r.document_id WHERE r.thirteenth_id = ? AND d.status = 'posted' ORDER BY d.number`)
-      .all(documentId) as { id: string; number: string }[];
+      .prepare(
+        `SELECT d.id, d.number FROM pay_thirteenth_releases r JOIN documents d ON d.id = r.document_id WHERE r.thirteenth_id = @id AND d.status = 'posted'
+         UNION
+         SELECT d.id, d.number FROM pay_run_year_end y JOIN pay_run_employees e ON e.id = y.run_employee_id JOIN documents d ON d.id = e.document_id
+           JOIN documents t ON t.id = @id
+         WHERE d.status = 'posted' AND d.rowid > t.rowid AND y.year = CAST(substr(t.business_date, 1, 4) AS INTEGER)
+           AND EXISTS (SELECT 1 FROM pay_thirteenth_employees x WHERE x.document_id = @id AND x.employee_id = e.employee_id)
+         ORDER BY 2`,
+      )
+      .all({ id: documentId }) as { id: string; number: string }[];
   },
 
   summary(doc) {

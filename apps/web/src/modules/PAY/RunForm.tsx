@@ -2,18 +2,19 @@
  * Payroll run form (PLAN E11, F3, H5 "weekly piece payroll for 8 workers ≤ 5 min"): pick the pay group and the period,
  * and the server works out every line from attendance, pay, piece work, holidays, government shares and cash advances.
  * Staff may add manual lines, change this run's cash-advance deduction, change or skip a government loan deduction with a
- * note, or leave someone out, with a reason.
+ * note, or leave someone out, with a reason. On a period ending in December the accountant may tick the year-end tax
+ * adjustment: the preview then shows each employee's refund or deficiency.
  */
 import { useEffect, useState } from 'react';
-import { api, ApiError, type DocTypeInfo, type PayGroup, type PayPeriod, type PayRunDoc, type Preview } from '../../api.ts';
+import { api, ApiError, type DocTypeInfo, type Me, type PayGroup, type PayPeriod, type PayRunDoc, type Preview } from '../../api.ts';
 import { Link, navigate } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, useLive } from '../COL/parts.tsx';
-import { GROUP_LABEL, emptyManual, loanLabel, qtyText, runInput, type LoanRow, type ManualRow } from './run.ts';
+import { GROUP_LABEL, emptyManual, endsInDecember, loanLabel, qtyText, runInput, yearEndText, type LoanRow, type ManualRow } from './run.ts';
 
-export function RunForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
+export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me?: Me }) {
   const [payGroup, setPayGroup] = useState<PayGroup>('SEMI_DAILY');
   const [periods, setPeriods] = useState<PayPeriod[] | null>(null);
   const [periodStart, setPeriodStart] = useState('');
@@ -21,6 +22,7 @@ export function RunForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   const [advances, setAdvances] = useState<Record<string, string>>({});
   const [skip, setSkip] = useState<Record<string, string>>({});
   const [loanRows, setLoanRows] = useState<Record<string, LoanRow>>({});
+  const [yearEnd, setYearEnd] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Preview | null>(null);
   const [touched, setTouched] = useState(false);
@@ -31,9 +33,11 @@ export function RunForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
     api.payPeriods(payGroup).then((p) => (setPeriods(p), setPeriodStart(p.find((x) => !x.recorded)?.periodStart ?? '')), (e: Error) => setError(e.message));
   }, [payGroup]);
 
-  const { input, errors } = runInput(payGroup, periodStart, rows, advances, skip, loanRows);
+  const period = periods?.find((p) => p.periodStart === periodStart);
+  const canYearEnd = endsInDecember(period?.periodEnd) && !!me?.permissions.includes('pay.yearend.run');
+  const { input, errors } = runInput(payGroup, periodStart, rows, advances, skip, loanRows, yearEnd && canYearEnd);
   // PAY-1: dated the period's last day when that has passed and the user may backdate, so its pay is booked in that month.
-  const bookOn = periods?.find((p) => p.periodStart === periodStart)?.bookOn ?? undefined;
+  const bookOn = period?.bookOn ?? undefined;
   const live = useLive(JSON.stringify([input, bookOn]), !!periodStart && errors.length === 0, () => api.preview(type.key, input, bookOn));
   const [last, setLast] = useState<PayRunDoc | null>(null); // kept while a reason is being typed
   const [names, setNames] = useState<Record<string, string>>({});
@@ -94,6 +98,15 @@ export function RunForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
           </Field>
         </div>
         {bookOn && <p className="mt-2 text-sm text-slate-600">Dated {bookOn}, the period's last day, so its pay is booked in that month.</p>}
+        {canYearEnd && (
+          <label className="mt-2 flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-1" checked={yearEnd} onChange={(e) => setYearEnd(e.target.checked)} />
+            <span>
+              <b>Year-end tax adjustment</b> on this payroll: each employee's tax is the year's tax less what was withheld this year (pay before Moonproject and a
+              previous employer's included). An excess is refunded with net pay; a deficiency is withheld as far as the pay allows. Tick it on each employee's last payroll of the year.
+            </span>
+          </label>
+        )}
       </Panel>
 
       <Panel title="Pay worked out by the server">
@@ -112,7 +125,7 @@ export function RunForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
                     <td className="text-right tabular-nums">{peso(e.sssEeCents)}</td>
                     <td className="text-right tabular-nums">{peso(e.phicEeCents)}</td>
                     <td className="text-right tabular-nums">{peso(e.hdmfEeCents)}</td>
-                    <td className="text-right tabular-nums">{peso(e.wtaxCents)}</td>
+                    <td className="text-right tabular-nums">{peso(e.wtaxCents)}{e.yearEnd && <span className="block text-xs text-slate-600">{yearEndText(e)}</span>}</td>
                     <td className="text-right tabular-nums">{peso(e.loanCents ?? 0)}</td>
                     <td className="text-right">
                       <input aria-label={`${e.name} cash-advance deduction`} inputMode="decimal" placeholder={(e.caCents / 100).toFixed(2)} className="w-24 rounded border border-slate-300 px-1 text-right"
