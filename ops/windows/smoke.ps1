@@ -37,10 +37,17 @@ Write-Host "Service $($svc.State), start mode $($svc.StartMode), account $($svc.
 if ($svc.StartName -ne 'NT SERVICE\Moonproject') { throw "The service runs as $($svc.StartName)" }
 WaitForService
 
-# A PC joins: the page over HTTP, the CA download, then HTTPS with only the shop CA trusted.
-$page = Invoke-WebRequest 'http://127.0.0.1/' -MaximumRedirection 0
-if ($page.Content -notmatch 'Join this PC to Moonproject') { throw "The join page is wrong: $($page.StatusCode) $($page.Content.Substring(0, [Math]::Min(200, $page.Content.Length)))" }
-Invoke-WebRequest 'http://127.0.0.1/moonproject-ca.crt' -MaximumRedirection 0 -OutFile 'ca.crt'
+# A PC joins: the page over HTTP (port 80, or 8080 when another program has 80, as on the CI machine), the CA
+# download, then HTTPS with only the shop CA trusted.
+$joinPort = $null
+for ($i = 0; $i -lt 30 -and -not $joinPort; $i++) {
+  if ((Get-Content (Join-Path $data 'logs\moonproject-service.out.log') -Raw -ErrorAction SilentlyContinue) -match 'page on port (\d+)') { $joinPort = $Matches[1] } else { Start-Sleep -Seconds 2 }
+}
+if (-not $joinPort) { throw 'The "Join this PC" page did not start' }
+Write-Host "Join page on port $joinPort"
+$page = Invoke-WebRequest "http://127.0.0.1:$joinPort/" -MaximumRedirection 0
+if ([string]$page.Content -notmatch 'Join this PC to Moonproject') { throw "The join page is wrong: $($page.StatusCode)" }
+Invoke-WebRequest "http://127.0.0.1:$joinPort/moonproject-ca.crt" -MaximumRedirection 0 -OutFile 'ca.crt'
 $ca = Import-Certificate -FilePath 'ca.crt' -CertStoreLocation 'Cert:\LocalMachine\Root'
 Write-Host "Shop CA $($ca.Thumbprint) trusted"
 $h = WaitForHealth 'https://localhost/api/health'

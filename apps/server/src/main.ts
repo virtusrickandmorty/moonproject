@@ -2,8 +2,8 @@
  * Starts the server.
  *   Development (the default): plain HTTP on 127.0.0.1:3000 (PORT), reachable from this PC only.
  *   LAN mode (MOONPROJECT_LISTEN=lan, set by the Windows service): HTTPS on every address, port 443 (HTTPS_PORT),
- *   with the app's own CA and server certificate (PLAN C6); plain HTTP on port 80 (HTTP_PORT) serves only the
- *   "Join this PC" page and the CA download. The certificate is renewed without a restart when this PC's addresses
+ *   with the app's own CA and server certificate (PLAN C6); plain HTTP on port 80 (HTTP_PORT, or 8080 when another
+ *   program has 80: HTTP_FALLBACK_PORT) serves only the "Join this PC" page and the CA download. The certificate is renewed without a restart when this PC's addresses
  *   change or it nears its end.
  */
 import { mkdirSync } from 'node:fs';
@@ -39,10 +39,29 @@ if (tls) {
   const httpsPort = Number(process.env.HTTPS_PORT ?? 443);
   await app.listen({ host: '0.0.0.0', port: httpsPort });
   const join = createServer(joinHandler({ caPem: () => tls!.ca.certPem, httpsPort, fallbackHost: () => localNames().ips.find((ip) => ip !== '127.0.0.1') ?? 'localhost' }));
-  // Another program on port 80 only loses the join page: the app keeps running over HTTPS.
-  join.on('error', (e) => app.log.error(`The "Join this PC" page could not start: ${e.message}`));
-  join.listen(Number(process.env.HTTP_PORT ?? 80), '0.0.0.0', () => app.log.info(`"Join this PC" page on port ${(join.address() as AddressInfo).port}`));
-  app.log.info(`Shop certificate code (SHA-256): ${tls.ca.fingerprint256}. Devices join at http://${tls.server.ips.find((ip) => ip !== '127.0.0.1') ?? 'localhost'}/`);
+  app.log.info(`Shop certificate code (SHA-256): ${tls.ca.fingerprint256}`);
+  // Port 80 may belong to another program (IIS and other Windows web services share it through http.sys): the page
+  // then moves to port 8080, which the installer opens too. Without either, the app keeps running over HTTPS.
+  const joinPorts = [Number(process.env.HTTP_PORT ?? 80), Number(process.env.HTTP_FALLBACK_PORT ?? 8080)];
+  const listenJoin = (i: number) => {
+    const failed = (e: Error) => {
+      if (i + 1 < joinPorts.length) {
+        app.log.warn(`Port ${joinPorts[i]} is taken (${e.message}); the "Join this PC" page moves to port ${joinPorts[i + 1]}`);
+        listenJoin(i + 1);
+      } else {
+        app.log.error(`The "Join this PC" page could not start: ${e.message}`);
+      }
+    };
+    join.once('error', failed);
+    join.listen(joinPorts[i], '0.0.0.0', () => {
+      join.off('error', failed);
+      join.on('error', (e) => app.log.error(`"Join this PC" page: ${e.message}`));
+      const port = (join.address() as AddressInfo).port;
+      const ip = tls!.server.ips.find((a) => a !== '127.0.0.1') ?? 'localhost';
+      app.log.info(`Devices join at http://${ip}${port === 80 ? '' : `:${port}`}/ ("Join this PC" page on port ${port})`);
+    });
+  };
+  listenJoin(0);
   // A new address (another Wi-Fi, the VPN coming up) or a certificate near its end: a new certificate, no restart.
   setInterval(() => {
     try {

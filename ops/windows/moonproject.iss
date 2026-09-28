@@ -57,9 +57,10 @@ Filename: "{sys}\sc.exe"; Parameters: "config Moonproject obj= ""NT SERVICE\Moon
 Filename: "{sys}\icacls.exe"; Parameters: """{#Data}"" /inheritance:r /grant:r ""*S-1-5-18:(OI)(CI)F"" ""*S-1-5-32-544:(OI)(CI)F"" ""NT SERVICE\Moonproject:(OI)(CI)M"" /C /Q"; Flags: runhidden waituntilterminated; StatusMsg: "Protecting the data folder..."
 Filename: "{sys}\icacls.exe"; Parameters: """{#Data}\*"" /reset /T /C /Q"; Flags: runhidden waituntilterminated
 Filename: "{sys}\icacls.exe"; Parameters: """{app}"" /grant ""NT SERVICE\Moonproject:(OI)(CI)RX"" /C /Q"; Flags: runhidden waituntilterminated
-; Open ports 443 (the app) and 80 (the "Join this PC" page) on private and domain networks only, never on public Wi-Fi.
+; Open ports 443 (the app) and 80 (the "Join this PC" page; 8080 when another program has 80) on private and domain
+; networks only, never on public Wi-Fi.
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Moonproject"""; Flags: runhidden waituntilterminated
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Moonproject"" dir=in action=allow protocol=TCP localport=443,80 profile=private,domain"; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Moonproject"" dir=in action=allow protocol=TCP localport=443,80,8080 profile=private,domain"; Flags: runhidden waituntilterminated
 Filename: "{sys}\tzutil.exe"; Parameters: "/s ""Singapore Standard Time"""; Tasks: timezone; Flags: runhidden waituntilterminated
 Filename: "{#Svc}"; Parameters: "start"; Flags: runhidden waituntilterminated; StatusMsg: "Starting Moonproject..."
 Filename: "http://localhost/"; Description: "Open the ""Join this PC"" page"; Flags: postinstall shellexec nowait skipifsilent

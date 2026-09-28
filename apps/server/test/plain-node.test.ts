@@ -7,8 +7,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { X509Certificate } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { get as httpGet } from 'node:http';
+import { createServer, get as httpGet } from 'node:http';
 import { get as httpsGet } from 'node:https';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,11 +68,17 @@ describe('the server on plain Node', () => {
     expect(JSON.parse(res.body.toString())).toMatchObject({ ok: true });
   }, 60_000);
 
-  it('starts in LAN mode: HTTPS through the shop CA, and the "Join this PC" page', async () => {
-    const [https, http] = await start('lan', { MOONPROJECT_LISTEN: 'lan', HTTPS_PORT: '0', HTTP_PORT: '0' }, [
+  it('starts in LAN mode: HTTPS through the shop CA, and the "Join this PC" page (moved when its port is taken)', async () => {
+    const taken = createServer();
+    await new Promise<void>((resolve) => taken.listen(0, '0.0.0.0', resolve));
+    const takenPort = (taken.address() as AddressInfo).port;
+    const [https, http, moved] = await start('lan', { MOONPROJECT_LISTEN: 'lan', HTTPS_PORT: '0', HTTP_PORT: String(takenPort), HTTP_FALLBACK_PORT: '0' }, [
       /Server listening at https:\/\/[\d.]+:(\d+)/,
       /Join this PC\\?" page on port (\d+)/, // pino writes the message as JSON, so the quote comes escaped
-    ]);
+      /Port (\d+) is taken/,
+    ]).finally(() => taken.close());
+    expect(moved).toBe(takenPort);
+    expect(http).not.toBe(takenPort);
     const db = openReadonly(join(dir, 'lan', 'moonproject.db'));
     const { cert_pem: ca } = db.prepare("SELECT cert_pem FROM tls_certificates WHERE kind = 'ca'").get() as { cert_pem: string };
     db.close();
