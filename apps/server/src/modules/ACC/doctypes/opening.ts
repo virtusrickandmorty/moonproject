@@ -9,12 +9,13 @@
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { allocate, conflict, formatPeso, type Issue } from '@moonproject/shared';
+import { allocate, formatPeso, type Issue } from '@moonproject/shared';
 import type { Db } from '../../../platform/db/driver.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { getAccount, type Account } from '../../../engine/ledger/accounts.ts';
 import { person } from '../../EQ/public.ts';
-import { closedOn, cutoverDate, openingAccountRefusal, openingClose } from '../opening.ts';
+import { openingAccountRefusal } from '../opening.ts';
+import { assertOpeningOpen, OPENING_PERMISSIONS, openingIssues } from '../public.ts';
 
 const MAX_CENTS = 100_000_000_00; // ₱100 million per line: a typo guard, not a business limit
 
@@ -69,7 +70,7 @@ export const openingDoc: DocTypeDef<OpeningInput, Opening> = {
   module: 'ACC',
   title: 'Opening Balances',
   numbering: { series: { key: 'OB', prefix: 'OB-' } },
-  permissions: { view: 'acc.opening.view', create: 'acc.opening.create', post: 'acc.opening.post', cancel: 'acc.opening.cancel' },
+  permissions: OPENING_PERMISSIONS,
   dating: 'accountant_may_backdate',
   cancelOn: 'document_date',
   inputSchema: openingInput,
@@ -86,13 +87,7 @@ export const openingDoc: DocTypeDef<OpeningInput, Opening> = {
   validate(doc, ctx) {
     const issues: Issue[] = [];
     const err = (field: string, code: string, message: string) => issues.push({ field, code, level: 'error', message });
-    const closed = openingClose(ctx.db);
-    const cutover = cutoverDate(ctx.db);
-    if (closed) err('businessDate', 'OPENING_CLOSED', `The opening was closed on ${closedOn(closed)}. Correct balances with a journal voucher.`);
-    else if (!cutover) err('businessDate', 'NO_CUTOVER', 'Set the cut-over date first.');
-    else if (ctx.businessDate !== cutover) {
-      err('businessDate', 'NOT_CUTOVER_DATE', `Opening balances are dated the cut-over date, ${cutover}, not ${ctx.businessDate}.`);
-    }
+    issues.push(...openingIssues(ctx.db, ctx.businessDate));
     for (const l of doc.lines) {
       const f = `lines.${l.lineNo - 1}`;
       if ((l.debitCents ?? 0) > 0 === (l.creditCents ?? 0) > 0) {
@@ -183,8 +178,7 @@ export const openingDoc: DocTypeDef<OpeningInput, Opening> = {
 
   /** Runs in the cancel transaction: throwing rolls the cancel back, so a closed opening keeps its OB- documents. */
   afterCancel(db) {
-    const closed = openingClose(db);
-    if (closed) throw conflict('OPENING_CLOSED', `The opening was closed on ${closedOn(closed)}. Correct balances with a journal voucher.`);
+    assertOpeningOpen(db);
     return null;
   },
 

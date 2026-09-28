@@ -17,6 +17,8 @@ import { resolveAccount, type Account } from '../../engine/ledger/accounts.ts';
 import { accountBalance, trialBalance } from '../../engine/ledger/queries.ts';
 
 export const OPENING_DOC_TYPE = 'acc.opening';
+/** Every opening document: OB- and each module's own (part 2), whose keys end in ".opening". */
+export const OPENING_DOC_TYPES_SQL = `doc_type LIKE '%.opening'`;
 
 /**
  * Accounts whose opening balance comes from the documents that keep its detail (part 2, PLAN D8 steps 2 and 3), so the
@@ -148,12 +150,13 @@ export function openingState(db: Db) {
     trialBalance: tb && date
       ? { asOf: date, totalDebitCents: tb.totalDebitCents, totalCreditCents: tb.totalCreditCents, balanced: tb.totalDebitCents === tb.totalCreditCents }
       : null,
+    /** OB- and every module's opening document (part 2). */
     documents: db
       .prepare(
-        `SELECT id, number, business_date AS businessDate, status, total_cents AS totalCents, summary
-         FROM documents WHERE doc_type = ? ORDER BY number`,
+        `SELECT id, doc_type AS docType, number, business_date AS businessDate, status, total_cents AS totalCents, summary
+         FROM documents WHERE ${OPENING_DOC_TYPES_SQL} ORDER BY doc_type, number`,
       )
-      .all(OPENING_DOC_TYPE) as { id: string; number: string; businessDate: string; status: string; totalCents: number; summary: string }[],
+      .all() as { id: string; docType: string; number: string; businessDate: string; status: string; totalCents: number; summary: string }[],
     checks: controlChecks(db, date),
     /** Accounts an OB- line may open, for the screen's picker. */
     accounts: (db.prepare('SELECT * FROM accounts ORDER BY sort_order, code').all() as Account[])
@@ -182,8 +185,8 @@ export function openingRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (closed) throw conflict('OPENING_CLOSED', `The opening was closed on ${closedOn(closed)}. The cut-over date no longer changes.`);
       const before = cutoverDate(db);
       if (before === date) throw conflict('NO_CHANGE', `The cut-over date is already ${date}.`);
-      // Every OB- is dated the cut-over date, so the date moves only when none is left on the old one.
-      const posted = db.prepare(`SELECT number FROM documents WHERE doc_type = ? AND status = 'posted' ORDER BY number`).pluck().all(OPENING_DOC_TYPE) as string[];
+      // Every opening document is dated the cut-over date, so the date moves only when none is left on the old one.
+      const posted = db.prepare(`SELECT number FROM documents WHERE ${OPENING_DOC_TYPES_SQL} AND status = 'posted' ORDER BY number`).pluck().all() as string[];
       if (posted.length > 0) {
         const [is, them] = posted.length === 1 ? ['is', 'it'] : ['are', 'them'];
         throw conflict('OPENING_POSTED', `${posted.join(', ')} ${is} dated ${before}. Cancel ${them} before moving the cut-over date.`);
@@ -212,6 +215,11 @@ export function openingRoutes(app: FastifyInstance, deps: AppDeps): void {
         );
       }
       if (!s.trialBalance.balanced) throw conflict('TB_UNBALANCED', `The trial balance on ${s.cutoverDate} does not balance.`);
+      const untied = s.checks.filter((c) => !c.ok);
+      if (untied.length > 0) {
+        const names = untied.map((c) => `${c.code} ${c.name}`).join(', ');
+        throw conflict('CONTROL_NOT_TIED', `The balance by customer, supplier or person does not add up to the account total for ${names}.`);
+      }
       db.prepare('INSERT INTO acc_opening_closes (id, cutover_date, closed_at, closed_by, total_debit_cents, total_credit_cents) VALUES (1, ?, ?, ?, ?, ?)').run(
         s.cutoverDate, at, u.userId, s.trialBalance.totalDebitCents, s.trialBalance.totalCreditCents,
       );

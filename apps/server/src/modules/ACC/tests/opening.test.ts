@@ -11,6 +11,7 @@ import { cancelDocument, postDocument } from '../../../engine/documents/lifecycl
 import { stamp } from '../../../platform/clock.ts';
 import { openingDoc } from '../doctypes/opening.ts';
 import { DOCUMENT_OWNED_ROLES } from '../opening.ts';
+import { assertOpeningOpen, openingIssues } from '../public.ts';
 
 const CUTOVER = '2026-09-27'; // the day before the test clock's 2026-09-28
 
@@ -241,6 +242,22 @@ describe('opening balances (D5 "OB-*", D8)', () => {
     expect(moved.json()).toMatchObject({ code: 'OPENING_POSTED', message: 'OB-000001 is dated 2026-09-27. Cancel it before moving the cut-over date.' });
     await accountant.post(`/api/docs/acc.opening/${res.json().id}/cancel`, { reason: 'Cut-over moved to the earlier Sunday' }, idem());
     expect((await setCutover('2026-09-20')).json().cutoverDate).toBe('2026-09-20');
+  });
+
+  it("counts each module's opening document (part 2): listed with OB-, and it holds the cut-over date too", async () => {
+    await setCutover(CUTOVER);
+    expect(openingIssues(env.db, CUTOVER)).toEqual([]);
+    expect(openingIssues(env.db, '2026-09-20').map((i) => i.code)).toEqual(['NOT_CUTOVER_DATE']);
+    // A supplier bill open at the cut-over date, as AP's own opening document will record it.
+    const user = env.db.prepare('SELECT id FROM users ORDER BY id LIMIT 1').pluck().get() as string;
+    env.db.prepare(
+      `INSERT INTO documents (id, doc_type, module, series_key, number, business_date, status, total_cents, summary, posted_at, posted_by)
+       VALUES ('ap-open-1', 'ap.opening', 'AP', 'ap.opening', 'OBAP-000001', ?, 'posted', 500000, 'Opening bill', ?, ?)`,
+    ).run(CUTOVER, stamp(env.clock), user);
+    expect((await state()).documents).toMatchObject([{ docType: 'ap.opening', number: 'OBAP-000001', status: 'posted' }]);
+    const moved = await setCutover('2026-09-20');
+    expect(moved.json()).toMatchObject({ code: 'OPENING_POSTED', message: 'OBAP-000001 is dated 2026-09-27. Cancel it before moving the cut-over date.' });
+    expect(() => assertOpeningOpen(env.db)).not.toThrow();
   });
 
   it('property: the journal always balances with its 3900 line, stores what was computed and cancels to zero', async () => {

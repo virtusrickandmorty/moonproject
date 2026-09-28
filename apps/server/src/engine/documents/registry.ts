@@ -52,6 +52,14 @@ export const DOC_TITLES = [
   'VAT Close',
   'BIR Payment',
   'Opening Balances',
+  // MIG-02 part 2: each module's opening document (key <module>.opening), dated the cut-over date (ACC/public.ts).
+  'Opening Supplier Bill',
+  'Opening Loan',
+  'Opening Fixed Asset',
+  'Opening Job Order',
+  'Opening Cash Advance',
+  'Opening Officer Balance',
+  'Opening Withholding',
 ] as const;
 export type DocTitle = (typeof DOC_TITLES)[number];
 
