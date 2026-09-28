@@ -1,12 +1,14 @@
 /**
  * One employee (PLAN E11): the record and its edits (If-Match), the statutory switches, government IDs (only with
- * emp.view_ids), separation, paid leave (SIL) this year, and the pay history with a new pay from a date (pay.view_rates).
+ * emp.view_ids), separation, paid leave (SIL) this year, the pay history with a new pay from a date (pay.view_rates), and
+ * the employee's government loans (pay.loans.view).
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type EmployeeDetail, type EmployeeRecord, type Me, type PayProfile } from '../../api.ts';
 import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { cents } from '../COL/money.ts';
+import { EmployeeLoans } from '../PAY/Loans.tsx';
 
 const PAY_TYPE = { daily: 'Daily', piece: 'Per piece (pakyawan)', monthly: 'Monthly', mixed: 'Daily and per piece' } as const;
 const PAY_GROUP = { WEEKLY_PIECE: 'Weekly (piece rate)', SEMI_DAILY: 'Semi-monthly (daily paid)', SEMI_MONTHLY: 'Semi-monthly (monthly staff)' } as const;
@@ -38,6 +40,7 @@ export function EmployeePage({ me, params }: { me: Me; params?: Record<string, s
       </Panel>
       <Pay d={d} canSet={e.isActive && can('emp.pay') && can('pay.view_rates')} onSaved={load} />
       {can('ca.view') && <Link to={`/ca/employees/${e.id}`} className="underline">Cash advances (what {e.fullName} owes)</Link>}
+      {can('pay.loans.view') && <EmployeeLoans me={me} employeeId={e.id} active={e.isActive} />}
       {separating && <Separate e={e} onClose={() => setSeparating(false)} onSaved={load} />}
     </div>
   );

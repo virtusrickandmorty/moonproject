@@ -10,10 +10,8 @@
  * remittance check and a remittance (REM-) of that month see it and pay it. One posted per contribution month. The ACC
  * opening contract (ACC/public.ts): dated the cut-over date, cancelled on it too while the opening is open. Cancel is
  * blocked while a remittance stands on a scheme this document credited for its month (ledger.ts remittancesOf).
- * A remittance of the loan amortizations (2404, 2405) does not exist yet: STAT's remittance document only pays SSS,
- * PhilHealth, Pag-IBIG and withholding tax (see the STAT ledger SCHEMES). Recording an opening loan amortization here
- * still opens the correct liability (D9 L3 ties it to the employee subledger); the accountant clears it with a journal
- * voucher until a loan-amortization remittance is built.
+ * Its SSS and Pag-IBIG loan amortizations (2404, 2405) are the loan part of that month's SSS and Pag-IBIG payable, and
+ * the same remittance pays them (ledger.ts schemeAccounts).
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -159,11 +157,11 @@ export const openingStatDoc: DocTypeDef<OpeningStatInput, OpeningStat> = {
 
   /** Cancel is blocked while a posted remittance stands on a scheme this opening credited, for its month. */
   dependents(db, documentId) {
-    const row = db.prepare(`SELECT month, sss_cents AS sss, phic_cents AS phic, hdmf_cents AS hdmf, wtax_cents AS wtax FROM stat_openings WHERE document_id = ?`).get(documentId) as
-      | { month: string; sss: number; phic: number; hdmf: number; wtax: number }
-      | undefined;
+    const row = db
+      .prepare(`SELECT month, sss_cents + sss_loan_cents AS sss, phic_cents AS phic, hdmf_cents + hdmf_loan_cents AS hdmf, wtax_cents AS wtax FROM stat_openings WHERE document_id = ?`)
+      .get(documentId) as { month: string; sss: number; phic: number; hdmf: number; wtax: number } | undefined;
     if (!row) return [];
-    const credited: Record<Scheme, number> = { SSS: row.sss, PHIC: row.phic, HDMF: row.hdmf, WTAX: row.wtax };
+    const credited: Record<Scheme, number> = { SSS: row.sss, PHIC: row.phic, HDMF: row.hdmf, WTAX: row.wtax }; // loans are paid on the agency's remittance
     const schemes = (Object.keys(credited) as Scheme[]).filter((s) => credited[s] > 0);
     return schemes.flatMap((s) => remittancesOf(db, s, row.month).filter((r) => r.status === 'posted').map((r) => ({ id: r.id, number: r.number })));
   },

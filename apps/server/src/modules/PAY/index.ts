@@ -23,6 +23,8 @@ export default defineModule({
     { key: 'pay.thirteenth.create', label: 'Work out 13th-month pay (preview)', defaultRoles: ['accountant'] },
     { key: 'pay.thirteenth.post', label: 'Record 13th-month pay', defaultRoles: ['accountant'] },
     { key: 'pay.thirteenth.cancel', label: 'Cancel recorded 13th-month pay', defaultRoles: ['accountant'] },
+    { key: 'pay.loans.view', label: 'View employees’ SSS and Pag-IBIG loans', defaultRoles: ['accountant', 'owner'] },
+    { key: 'pay.loans.manage', label: 'Register, change and stop employees’ SSS and Pag-IBIG loans', defaultRoles: ['accountant', 'owner'] },
   ],
   docTypes: [runDoc, releaseDoc, thirteenthDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),

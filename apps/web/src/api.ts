@@ -132,10 +132,23 @@ export interface PayLine { lineNo: number; kind: string; description: string; qt
 export interface PayEmployee {
   employeeId: string; code: string; name: string; costCentre: string; payType: string; isMwe: boolean; lines: PayLine[]; grossCents: number; pieceCents: number; taxableCents: number;
   sssMscCents: number; sssEeCents: number; sssErCents: number; sssEcCents: number; phicEeCents: number; phicErCents: number; hdmfEeCents: number; hdmfErCents: number;
-  eeShortCents: number; wtaxCents: number; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
+  eeShortCents: number; wtaxCents: number; loanCents?: number; loans?: PayLoan[]; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
 }
+/** Government loans (PAY): SSS salary and calamity loans, Pag-IBIG multi-purpose and calamity loans. */
+export type LoanKind = 'SSS_SALARY' | 'SSS_CALAMITY' | 'HDMF_MPL' | 'HDMF_CALAMITY';
+/** One loan's deduction on a run: the plan or the amount typed, what net pay allowed, and what is left of the loan after it. */
+export interface PayLoan { loanId: string; agency: 'SSS' | 'HDMF'; kind: LoanKind; loanNo: string; dueCents: number; amountCents: number; overrideCents: number | null; reason?: string; balanceAfterCents: number }
+export interface GovLoan {
+  id: string; employeeId: string; employeeName: string; employeeCode: string; kind: LoanKind; agency: 'SSS' | 'HDMF'; loanNo: string; amortizationCents: number;
+  firstMonth: string; lastMonth: string; stoppedFrom: string | null; stopReason: string | null; note: string | null; version: number;
+  scheduledCents: number; deductedCents: number; leftCents: number; lastDeductedMonth: string | null; status: 'not_started' | 'running' | 'ended' | 'stopped';
+}
+export interface GovLoanInput { employeeId: string; kind: LoanKind; loanNo: string; amortizationCents: number; firstMonth: string; lastMonth: string; note?: string }
 export interface ManualPayLine { employeeId: string; kind: 'allowance' | 'adjustment'; amountCents: number; reason: string }
-export interface PayRunInput { payGroup: PayGroup; periodStart: string; lines?: ManualPayLine[]; advances?: { employeeId: string; amountCents: number }[]; skip?: { employeeId: string; reason: string }[] }
+export interface PayRunInput {
+  payGroup: PayGroup; periodStart: string; lines?: ManualPayLine[]; advances?: { employeeId: string; amountCents: number }[]; skip?: { employeeId: string; reason: string }[];
+  loans?: { loanId: string; amountCents: number; reason: string }[];
+}
 export interface PayRunDoc extends PayRunInput { periodEnd: string; contributionMonth: string; employees: PayEmployee[]; grossCents: number; netCents: number }
 /** `bookOn`: the date to give the run (the period's last day, for someone who may backdate), or null for today. */
 export interface PayPeriod { periodStart: string; periodEnd: string; employees: number; recorded: { id: string; number: string } | null; bookOn: string | null }
@@ -168,15 +181,19 @@ export interface ActiveEmployee { id: string; code: string; name: string; costCe
 /** Statutory (STAT): the month's lists, the 1601-C worksheet and the remittance check, worked out by the server. */
 export type Scheme = 'SSS' | 'PHIC' | 'HDMF' | 'WTAX';
 export interface SchemeCheck {
-  scheme: Scheme; label: string; recordedCents: number; remittedCents: number; balanceCents: number; remittances: { id: string; number: string; amountCents: number }[];
-  cancelledAfter: { id: string; number: string; cancelledAt: string }[]; overRemitted: { employeeId: string; name: string; cents: number }[];
+  scheme: Scheme; label: string; recordedCents: number; remittedCents: number; balanceCents: number; loanRecordedCents: number; loanRemittedCents: number;
+  remittances: { id: string; number: string; amountCents: number }[];
+  cancelledAfter: { id: string; number: string; cancelledAt: string }[]; overRemitted: { employeeId: string; name: string; part?: 'contribution' | 'loan'; cents: number }[];
 }
 interface StatPerson { employeeId: string; code: string; name: string; idNo: string | null }
+export interface StatLoanRow extends StatPerson { loanNo: string; kind: LoanKind; kindLabel: string; totalCents: number }
 export interface StatMonth {
   month: string;
   sss: { rows: (StatPerson & { mscCents: number; mpfMscCents: number; eeCents: number; erCents: number; ecCents: number; totalCents: number })[]; totalCents: number };
   phic: { rows: (StatPerson & { basisCents: number; eeCents: number; erCents: number; totalCents: number })[]; totalCents: number };
   hdmf: { rows: (StatPerson & { compensationCents: number; eeCents: number; erCents: number; totalCents: number })[]; totalCents: number };
+  sssLoans: { rows: StatLoanRow[]; totalCents: number };
+  hdmfLoans: { rows: StatLoanRow[]; totalCents: number };
   tax: {
     employees: number; totalCompensationCents: number; mweBasicCents: number; mwePremiumCents: number; thirteenthMonthCents: number; deMinimisCents: number; eeSharesCents: number;
     otherNonTaxableCents: number; nonTaxableCents: number; taxableCents: number; noTaxWithheldCents: number; taxWithheldCents: number;
@@ -315,27 +332,42 @@ export interface OpeningState {
   closed: { cutoverDate: string; closedAt: string; closedBy: string; closedByName: string; totalDebitCents: number; totalCreditCents: number } | null;
 }
 /** BIR payments (BIRP-): the return, and the posted payments a worksheet counts. */
-export type BirForm = '2550Q' | '0619-E' | '1601-EQ';
+export type BirForm = '2550Q' | '0619-E' | '1601-EQ' | '1702Q';
 export interface BirPaymentLine { id: string; number: string; date: string; period: string; reference: string; amountCents: number; penaltyCents: number }
 /** The EWT of a period by ATC (per EWT class while the ATC is to confirm). */
 export type EwtAtcLine = EwtAtc & { baseCents: number; ewtCents: number };
 /** GET /api/tax/0619e?month=: month 1 or 2 of a quarter. */
-export interface EwtMonthWorksheet {
+/** What the opening tax payables (OBTP-) left to pay with a return of a period before the cut-over date. */
+export interface OpenedReturns { openingCents: number; openings: { documentId: string; number: string; form: string; period: string }[] }
+export interface EwtMonthWorksheet extends OpenedReturns {
   month: string; label: string; from: string; to: string; returnDue: string; atcs: EwtAtcLine[]; totals: { baseCents: number; ewtCents: number };
   dueCents: number; payments: BirPaymentLine[]; paidCents: number; leftCents: number; checks: WorksheetCheck[];
 }
 /** GET /api/tax/1601eq?year&quarter=: the quarter less its 0619-E payments, and the QAP. */
-export interface EwtQuarterWorksheet {
+export interface EwtQuarterWorksheet extends OpenedReturns {
   year: number; quarter: 1 | 2 | 3 | 4; period: string; from: string; to: string; months: string[]; returnDue: string; atcs: EwtAtcLine[]; totals: { baseCents: number; ewtCents: number };
   remittances: { month: string; label: string; payments: BirPaymentLine[]; paidCents: number }[]; remittedCents: number;
   dueCents: number; payments: BirPaymentLine[]; paidCents: number; leftCents: number;
   qap: (EwtAtc & { supplierId: string | null; tin: string | null; registeredName: string; baseCents: number; rateBp: number | null; ewtCents: number })[];
   checks: WorksheetCheck[];
 }
+/** The income tax settings (dated): the regular rate, the MCIT rate, and the year operations began (MCIT from its 4th year after). */
+export interface IncomeTaxSettingsValue { regularRateBp: number; mcitRateBp: number; operationsBeganYear: number | null }
+export interface IncomeTaxSettings extends IncomeTaxSettingsValue { id: number; effectiveFrom: string; reason: string; createdAt: string; createdBy: string | null; confirmed: boolean }
+/** GET /api/tax/1702q?year&quarter=: the year to date in whole pesos, the tax, the credits, and what is left to pay. */
+export interface IncomeTaxWorksheet {
+  year: number; quarter: 1 | 2 | 3; period: string; from: string; to: string; returnDue: string | null;
+  settings: IncomeTaxSettings; mcitApplies: boolean | null; basis: 'regular' | 'mcit';
+  lines: { key: string; label: string; cents: number }[];
+  taxDueCents: number; payableCents: number;
+  opening: { documentId: string; number: string; date: string } | null; openingCents: number;
+  dueCents: number; payments: BirPaymentLine[]; paidCents: number; leftCents: number;
+  checks: WorksheetCheck[];
+}
 /** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
 export const taxRegisterPath = (register: 'sales' | 'withholding-received' | 'purchases' | 'ewt', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
 /** A quarter's tax report URL; with &format=csv the same URL downloads it for Excel. */
-export const taxQuarterPath = (report: '2307-to-issue' | '2550q' | '1601eq', year: number, quarter: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}`;
+export const taxQuarterPath = (report: '2307-to-issue' | '2550q' | '1601eq' | '1702q', year: number, quarter: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}`;
 /** The 0619-E worksheet's URL (month like 2026-07); with &format=csv it downloads for Excel. */
 export const ewtMonthPath = (month: string) => `/api/tax/0619e?${new URLSearchParams({ month })}`;
 
@@ -470,6 +502,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     runsToRelease: () => call<RunToRelease[]>('GET', '/api/pay/runs/to-release'),
     thirteenthYears: () => call<ThirteenthYears>('GET', '/api/pay/thirteenth/years'),
     releaseStatus: (runId: string) => call<ReleaseRow[]>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/release-status`),
+    govLoans: (q: { employeeId?: string; status?: 'open' | 'all' } = {}) => call<GovLoan[]>('GET', `/api/pay/loans?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][])}`),
+    addGovLoan: (body: GovLoanInput) => call<GovLoan>('POST', '/api/pay/loans', body),
+    updateGovLoan: (id: string, v: number, body: Partial<Omit<GovLoanInput, 'employeeId' | 'kind'>>) => call<GovLoan>('PUT', `/api/pay/loans/${encodeURIComponent(id)}`, body, version(v)),
+    stopGovLoan: (id: string, v: number, body: { fromMonth: string; reason: string }) => call<GovLoan>('POST', `/api/pay/loans/${encodeURIComponent(id)}/stop`, body, version(v)),
     caStatus: (employeeId: string) => call<CaStatus>('GET', `/api/ca/employees/${encodeURIComponent(employeeId)}`),
     /** Who owes on cash advances today, separated employees included. */
     caOwing: () => call<CaOwing[]>('GET', '/api/ca/employees'),
@@ -503,7 +539,13 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     vatWorksheet: (year: number, quarter: number) => call<VatWorksheet>('GET', taxQuarterPath('2550q', year, quarter)),
     ewtMonthWorksheet: (month: string) => call<EwtMonthWorksheet>('GET', ewtMonthPath(month)),
     ewtQuarterWorksheet: (year: number, quarter: number) => call<EwtQuarterWorksheet>('GET', taxQuarterPath('1601eq', year, quarter)),
+    incomeTaxWorksheet: (year: number, quarter: number) => call<IncomeTaxWorksheet>('GET', taxQuarterPath('1702q', year, quarter)),
+    incomeTaxSettings: () => call<{ current: IncomeTaxSettings; versions: IncomeTaxSettings[] }>('GET', '/api/tax/income-tax-settings'),
+    /** A new version from today or later (acc.settings.manage); needs a fresh password (step-up). */
+    addIncomeTaxSettings: (body: { effectiveFrom: string; value: IncomeTaxSettingsValue; reason: string }) => call<IncomeTaxSettings>('POST', '/api/tax/income-tax-settings', body),
     opening: () => call<OpeningState>('GET', '/api/acc/opening'),
+    /** Every return with something left to pay (GET /api/tax/payments/due): a VAT close or an opening's 2550Q, EWT withheld or opened. */
+    taxPaymentsDue: () => call<{ form: BirForm; period: string; payableCents: number }[]>('GET', '/api/tax/payments/due'),
     /** Both need a fresh password (step-up). */
     setCutoverDate: (date: string) => call<OpeningState>('POST', '/api/acc/opening/cutover-date', { date }),
     closeOpening: () => call<OpeningState>('POST', '/api/acc/opening/close', {}),
