@@ -1,7 +1,7 @@
 /** Small shared building blocks. Tailwind only; no component library. */
-import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useState, type ButtonHTMLAttributes, type FormEvent, type ReactNode } from 'react';
 import { formatPeso } from '@moonproject/shared';
-import type { CashPlace, JournalLine } from '../api.ts';
+import { api, type CashPlace, type JournalLine } from '../api.ts';
 
 export const peso = (cents: number) => formatPeso(cents);
 
@@ -76,6 +76,39 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * The password again, before a change that needs a fresh one (step-up, PLAN C6). `ask(title, then)` opens the prompt;
+ * `then` runs once the server accepts the password, which is sent once and never kept.
+ */
+export function usePasswordPrompt() {
+  const [asked, setAsked] = useState<{ title: string; then: () => void } | null>(null);
+  const dialog = asked && <PasswordDialog title={asked.title} onClose={() => setAsked(null)} onDone={() => (setAsked(null), asked.then())} />;
+  return { dialog, ask: (title: string, then: () => void) => setAsked({ title, then }) };
+}
+
+function PasswordDialog({ title, onDone, onClose }: { title: string; onDone: () => void; onClose: () => void }) {
+  const [password, setPassword] = useState('');
+  const a = useAction();
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (password) void a.run(async () => (await api.stepUp(password), onDone()));
+  };
+  return (
+    <Dialog title={title} onClose={onClose}>
+      <form className="space-y-4" onSubmit={submit}>
+        <Field label="Enter your password again to continue" required>
+          <input autoFocus type="password" autoComplete="current-password" className={inputClass} value={password} onChange={(e) => setPassword(e.target.value)} />
+        </Field>
+        {a.error && <Notice>{a.error}</Notice>}
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Go back</Button>
+          <Button type="submit" tone="primary" disabled={!password || a.busy}>Continue</Button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 

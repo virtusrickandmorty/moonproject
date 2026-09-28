@@ -6,11 +6,14 @@ import type { AppDeps } from '../../app.ts';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { currentUser } from '../../engine/security/routes.ts';
-import { stamp } from '../../platform/clock.ts';
+import { requireStepUp } from '../../engine/security/sessions.ts';
+import { stamp, today } from '../../platform/clock.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { duplicateKeys, measurementField, measurementFields, measurementTenths, parseCSV, validateRow, type ParsedRow, type RowType } from './csv.ts';
+import { commitUpload } from './commit.ts';
 
 const auth = { config: { permission: 'mig.run' } };
+const commitAuth = { config: { permission: 'mig.commit' } };
 const uploadBody = z.object({ filename: z.string().min(1), csv: z.string().min(1) }).strict();
 const rowParams = z.object({ id: z.string().min(1) }).strict();
 const uploadParams = z.object({ uploadId: z.string().min(1) }).strict();
@@ -141,7 +144,6 @@ function hash(rows: Record<string, string>[]): string {
 
 export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
-
   app.post('/api/mig/upload', auth, async req => {
     const user = currentUser(req);
     const body = validation(uploadBody, req.body);
@@ -314,5 +316,42 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
       pieceRate: { sha256: hash(normalized.piece_rate), rateCents: pieceRateCents },
       measurementCellSum: measurementCellTenths, employeeRateCents, pieceRateCents,
     } };
+  });
+
+  app.post('/api/mig/uploads/:uploadId/commit', commitAuth, async req => {
+    const user = currentUser(req);
+    requireStepUp(user, clock);
+    const { uploadId } = validation(uploadParams, req.params);
+    const { expectedMeasurementCellTenths } = validation(z.object({ expectedMeasurementCellTenths: z.number().int().nonnegative().safe() }).strict(), req.body);
+    return commitUpload(db, uploadId, expectedMeasurementCellTenths, {
+      userId: user.userId, at: stamp(clock), today: today(clock), can: permission => user.permissions.has(permission),
+    });
+  });
+
+  app.get('/api/mig/uploads/:uploadId/commit', auth, async req => {
+    const { uploadId } = validation(uploadParams, req.params);
+    const row = db.prepare('SELECT status, counts_json, checksums_json, cleared_at FROM mig_uploads WHERE id = ?').get(uploadId) as
+      { status: string; counts_json: string | null; checksums_json: string | null; cleared_at: string | null } | undefined;
+    if (!row) throw new AppError('NOT_FOUND', 'Upload not found.', 404);
+    if (row.status !== 'committed') throw new AppError('CONFLICT', 'Upload has not been committed.', 409);
+    return { counts: JSON.parse(row.counts_json ?? '{}'), checksums: JSON.parse(row.checksums_json ?? '{}'), clearedAt: row.cleared_at };
+  });
+
+  app.post('/api/mig/uploads/:uploadId/clear-staging', commitAuth, async req => {
+    const user = currentUser(req);
+    requireStepUp(user, clock);
+    const { uploadId } = validation(uploadParams, req.params);
+    return tx(db, () => {
+      const row = db.prepare('SELECT status, cleared_at FROM mig_uploads WHERE id = ?').get(uploadId) as { status: string; cleared_at: string | null } | undefined;
+      if (!row) throw new AppError('NOT_FOUND', 'Upload not found.', 404);
+      if (row.status !== 'committed') throw new AppError('CONFLICT', 'Commit and verify the upload before clearing staging values.', 409);
+      if (row.cleared_at) throw new AppError('CONFLICT', 'Staging values were already cleared.', 409);
+      const at = stamp(clock);
+      const changed = db.prepare("UPDATE mig_rows SET raw_json = '{}', manual_data_json = NULL, issues_json = '[]', legacy_id = NULL, legacy_type = NULL, rate_cents = NULL WHERE upload_id = ?").run(uploadId).changes;
+      db.prepare('UPDATE mig_uploads SET filename = ?, cleared_at = ?, cleared_by = ? WHERE id = ?').run('cleared', at, user.userId, uploadId);
+      appendAudit(db, { at, userId: user.userId, action: 'mig.clear_staging', entityType: 'mig_uploads', entityId: uploadId,
+        data: { rowsCleared: changed, before: { clearedAt: null }, after: { clearedAt: at } } });
+      return { success: true, rowsCleared: changed };
+    });
   });
 }
