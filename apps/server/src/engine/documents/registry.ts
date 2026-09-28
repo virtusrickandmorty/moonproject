@@ -48,6 +48,8 @@ export const DOC_TITLES = [
   'Payroll Run',
   'Payroll Release',
   'Cash Advance',
+  'Cash Advance Repayment',
+  'Cash Advance Write-off',
   'Remittance',
   'VAT Close',
   'BIR Payment',

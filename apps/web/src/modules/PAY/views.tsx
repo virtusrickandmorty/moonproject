@@ -69,8 +69,13 @@ export const releaseView: ViewParts = {
 
 export const advanceView: ViewParts = {
   extra: (d) => {
-    const a = d.doc as { employeeName: string; cashPlaceName: string; installmentCents: number } | undefined;
-    return a ? <p className="pt-2 text-sm">Given to {a.employeeName} from {a.cashPlaceName}; {peso(a.installmentCents)} is deducted each payroll until repaid.</p> : null;
+    const a = d.doc as { employeeId: string; employeeName: string; cashPlaceName: string; installmentCents: number } | undefined;
+    return a ? (
+      <p className="pt-2 text-sm">
+        Given to {a.employeeName} from {a.cashPlaceName}; {peso(a.installmentCents)} is deducted each payroll until repaid.{' '}
+        <Link to={`/ca/employees/${a.employeeId}`} className="underline">What {a.employeeName} owes</Link>
+      </p>
+    ) : null;
   },
 };
 
