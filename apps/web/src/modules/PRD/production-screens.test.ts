@@ -49,10 +49,10 @@ describe('production screen rules', () => {
 
   it('the menu shows the board and piece rates under Production, by permission', () => {
     const labels = (perms: string[]) => buildMenu([], new Set(perms)).map((g) => `${g.group}: ${g.items.map((i) => i.label).join(', ')}`);
-    expect(labels(['prd.view', 'rate.view'])).toEqual(['Overview: Home', 'Production: Production board, Piece rates']);
-    expect(labels(['rate.view'])).toEqual(['Overview: Home', 'Production: Piece rates']);
+    expect(labels(['prd.view', 'rate.view'])).toEqual(['Overview: Home', 'Production: Production board, Piece rates', 'Admin: Shop certificate, Practice shop']);
+    expect(labels(['rate.view'])).toEqual(['Overview: Home', 'Production: Piece rates', 'Admin: Shop certificate, Practice shop']);
     const entries = buildMenu([{ key: 'prd.entry', module: 'PRD', title: 'Production Entry' } as never], new Set());
-    expect(entries.at(-1)!.items.map((i) => i.label)).toEqual(['Production Entries']);
+    expect(entries.find((g) => g.group === 'Production')!.items.map((i) => i.label)).toEqual(['Production Entries']);
   });
 });
 

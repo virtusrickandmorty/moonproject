@@ -8,17 +8,21 @@ import { AppError, manilaTimestamp } from '@moonproject/shared';
 import type { Db } from './platform/db/driver.ts';
 import type { Clock } from './platform/clock.ts';
 import { stamp } from './platform/clock.ts';
+import { APP_VERSION } from './platform/version.ts';
 import { migrate, type MigrationSource } from './platform/db/migrate.ts';
 import { Registry, type ModuleDef } from './engine/documents/registry.ts';
 import { engineModule } from './engine/security/module.ts';
 import { syncPermissions } from './engine/security/permissions-sync.ts';
-import { SESSION_COOKIE, loadSession, type SessionUser } from './engine/security/sessions.ts';
+import { PRACTICE_SESSION_COOKIE, SESSION_COOKIE, loadSession, type SessionUser } from './engine/security/sessions.ts';
 import { securityRoutes } from './engine/security/routes.ts';
 import { tlsRoutes } from './engine/security/tls/routes.ts';
 import { documentRoutes } from './engine/documents/routes.ts';
 import { draftRoutes } from './engine/documents/drafts.ts';
 import { hashPassword, DEFAULT_SCRYPT_N } from './engine/security/passwords.ts';
 import { webRoutes } from './platform/web.ts';
+import { practiceRoutes, type PracticeControl } from './platform/practice/routes.ts';
+import { healthRoutes } from './platform/health/routes.ts';
+import type { Host } from './platform/health/health.ts';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -43,6 +47,9 @@ export interface AppDeps {
   config: AppConfig;
   /** Used to spend the same time on unknown usernames. */
   dummyHash: string;
+  /** True in the practice shop (PLAN C8): made-up data, its own sign-in cookie, no backups, "PRACTICE" on printouts. */
+  practice: boolean;
+  sessionCookie: string;
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -60,6 +67,12 @@ export interface BuildOptions {
   webRoot?: string;
   /** Serve HTTPS with this server certificate (LAN mode, PLAN C6); plain HTTP otherwise, for development on 127.0.0.1. */
   https?: { key: string; cert: string };
+  /** This app is the practice shop (PLAN C8, platform/practice/shop.ts). */
+  practice?: boolean;
+  /** The real shop's handle on the practice shop beside it, for its Practice shop page; absent when practice mode is off. */
+  practiceShop?: PracticeControl;
+  /** The PC System Health reports on (tests give their own); the real one by default. */
+  host?: Host;
 }
 
 /** Migrates, registers modules and permissions. Separate from buildApp so tools and tests can use it. */
@@ -85,6 +98,8 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
     registry,
     config: { scryptN },
     dummyHash: hashPassword('dummy-password-for-timing', scryptN),
+    practice: opts.practice ?? false,
+    sessionCookie: opts.practice ? PRACTICE_SESSION_COOKIE : SESSION_COOKIE,
   };
 
   const base = { logger: opts.logger ?? false, bodyLimit: 1024 * 1024 };
@@ -102,6 +117,10 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
   app.addHook('preHandler', async (req) => {
     const perm = req.routeOptions.config.permission;
     if (!perm) throw new AppError('NOT_FOUND', 'Not found.', 404);
+    // A practice backup or restore would write into the real shop's backup and restore folders.
+    if (deps.practice && req.url.startsWith('/api/bak/')) {
+      throw new AppError('PRACTICE', 'Backups and restores are not part of the practice shop. The real shop backs itself up.', 403);
+    }
     const unsafe = req.method !== 'GET' && req.method !== 'HEAD';
     // Origin check on every state-changing request (CSRF, PLAN C6).
     const origin = req.headers.origin;
@@ -109,7 +128,7 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
       throw new AppError('BAD_ORIGIN', 'Request blocked (wrong origin).', 403);
     }
     if (perm === 'public') return;
-    req.user = loadSession(deps.db, deps.clock, req.cookies[SESSION_COOKIE]);
+    req.user = loadSession(deps.db, deps.clock, req.cookies[deps.sessionCookie]);
     if (!req.user) throw new AppError('AUTH_REQUIRED', 'Please sign in again.', 401);
     if (unsafe && req.headers['x-csrf-token'] !== req.user.csrfToken) {
       throw new AppError('CSRF', 'Request blocked. Reload the page and try again.', 403);
@@ -133,11 +152,15 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
     return reply.code(500).send({ code: 'INTERNAL', message: 'Something went wrong. Nothing was recorded. Please try again or tell an owner.' });
   });
 
-  app.get('/api/health', { config: { permission: 'public' } }, async () => ({ ok: true, serverTime: stamp(deps.clock) }));
+  app.get('/api/health', { config: { permission: 'public' } }, async () => ({
+    ok: true, version: APP_VERSION, serverTime: stamp(deps.clock), ...(deps.practice ? { practice: true } : {}),
+  }));
   securityRoutes(app, deps);
   tlsRoutes(app, deps);
   documentRoutes(app, deps);
   draftRoutes(app, deps);
+  practiceRoutes(app, deps, opts.practiceShop);
+  healthRoutes(app, deps, { ...(opts.practiceShop ? { practiceShop: opts.practiceShop } : {}), ...(opts.host ? { host: opts.host } : {}) });
   for (const m of registry.modules) m.routes?.(app, deps);
   webRoutes(app, opts.webRoot ?? WEB_DIST);
 

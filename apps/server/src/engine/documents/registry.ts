@@ -47,7 +47,10 @@ export const DOC_TITLES = [
   'Inventory Count',
   'Payroll Run',
   'Payroll Release',
+  '13th-Month Pay',
   'Cash Advance',
+  'Cash Advance Repayment',
+  'Cash Advance Write-off',
   'Remittance',
   'VAT Close',
   'BIR Payment',
@@ -60,6 +63,8 @@ export const DOC_TITLES = [
   'Opening Cash Advance',
   'Opening Officer Balance',
   'Opening Withholding',
+  'Opening Statutory Payable',
+  'Opening Tax Payable',
 ] as const;
 export type DocTitle = (typeof DOC_TITLES)[number];
 

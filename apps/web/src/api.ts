@@ -12,6 +12,21 @@ export class ApiError extends Error {
 }
 
 export interface Me { userId: string; username: string; displayName: string; roles: string[]; permissions: string[]; mustChangePassword: boolean; csrfToken: string }
+export interface AuditLogRow { seq: number; at: string; userId: string | null; userName: string | null; action: string; entityType: string; entityId: string | null; data: Record<string, unknown> }
+export interface AuditLogPage { rows: AuditLogRow[]; nextBefore: number | null }
+export interface IntegrityReport { audit: { ok: boolean; brokenAt: number | null; count: number; newestAt: string | null; message: string }; checks: { id: string; name: string; ok: boolean; problems: string[]; message: string }[] }
+/** Public certificate details returned to a signed-in user; no private key is sent. */
+/** System Health (PLAN C8), as GET /api/system/health reports it. */
+export type HealthLight = 'green' | 'amber' | 'red' | 'grey';
+export interface SystemHealth {
+  at: string;
+  overall: Exclude<HealthLight, 'grey'>;
+  lights: { key: string; label: string; light: HealthLight; message: string }[];
+  lastCheck: { at: string; reason: 'schedule' | 'button'; ok: boolean } | null;
+}
+/** The practice shop (PLAN C8), as GET /api/system/practice reports it. */
+export interface PracticeStatus { state: 'off' | 'here' | 'preparing' | 'ready' | 'failed'; port: number | null; preparedAt: string | null; days: number | null; message: string | null }
+export interface CertInfo { fingerprint256: string; fingerprint1: string; notAfter: string; ips: string[]; dnsNames: string[] }
 export interface CompanyProfile { registeredName: string; tradeName: string; tin: string; registeredAddress: string; isVatRegistered: boolean; version: number; supersededAt?: string }
 export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; const?: unknown; anyOf?: JsonSchema[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
 export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
@@ -31,6 +46,14 @@ export interface Preview { totalCents: number; summary: string; issues: Issue[];
 export interface PostResult { id: string; number: string; totalCents: number; warnings: Issue[] }
 export interface Draft { id: string; docType: string; payload: { values?: Record<string, string> }; version: number; updatedAt: string }
 export interface CashPlace { id: number; name: string; balanceCents: number | null }
+export interface DashItem { id: string; label: string; href?: string; detail?: string; amountCents?: number }
+export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string }
+export interface DashHomeData { role: string; asOf: string; widgets: DashWidget[] }
+export interface DashNotification extends DashItem { kind: string; read: boolean }
+export type CalKind = 'event' | 'job_due' | 'release' | 'holiday' | 'tax' | 'customer_birthday' | 'employee_birthday';
+export interface CalItem { id: string; date: string; kind: CalKind; title: string; href: string; time?: string | null; notes?: string | null; rush?: boolean }
+export interface CalEvent { id: string; eventId: string; seq: number; action: 'create' | 'move' | 'cancel'; title: string; date: string; time: string | null; customerId: string | null; jobOrderId: string | null; notes: string | null; reason: string | null; createdAt: string; createdBy: string }
+export interface CalEventInput { title: string; date: string; time?: string | null; customerId?: string | null; jobOrderId?: string | null; notes?: string | null }
 export interface CashAccount extends CashPlace { code: string; kind: 'cash' | 'checks' | 'bank' | 'ewallet'; isActive: boolean; accountNo: string | null; encoderSeesBalance?: boolean; version?: number }
 export interface CashBook { place: Pick<CashAccount, 'id' | 'code' | 'name' | 'kind'>; from: string; to: string; openingCents: number; closingCents: number; lines: { date: string; journalNumber: string; documentId: string | null; documentNumber: string | null; docType: string | null; memo: string; inCents: number; outCents: number; balanceCents: number }[] }
 export interface CustomerRow { id: string; code: string; display_name: string; is_active: number }
@@ -118,11 +141,29 @@ export interface PayRunDoc extends PayRunInput { periodEnd: string; contribution
 export interface PayPeriod { periodStart: string; periodEnd: string; employees: number; recorded: { id: string; number: string } | null; bookOn: string | null }
 export interface Payslips {
   number: string; status: 'posted' | 'cancelled'; payDate: string; payGroup: PayGroup; periodStart: string; periodEnd: string; contributionMonth: string;
-  employees: (PayEmployee & { caBalanceAfterCents: number; ytd: { grossCents: number; wtaxCents: number } })[];
+  employees: (PayEmployee & {
+    caBalanceAfterCents: number; ytd: { grossCents: number; wtaxCents: number; thirteenthCents: number };
+    /** The year's 13th-month pay recorded for the employee (TH13-). */
+    thirteenthPaid: { id: string; number: string; amountCents: number }[];
+  })[];
 }
-export interface RunToRelease { id: string; number: string; payGroup: PayGroup; periodStart: string; periodEnd: string; dueCents: number }
+/** 13th-month pay (TH13-): one twelfth of the year's basic pay beside what the runs accrued on 2111. */
+export interface PayThirteenthInput { payGroup: PayGroup; year: number; amounts?: { employeeId: string; amountCents: number; reason: string }[]; skip?: { employeeId: string; reason: string }[] }
+export interface PayThirteenthEmployee {
+  employeeId: string; code: string; name: string; costCentre: string; basicCents: number; earlierBasicCents: number; dueCents: number; accruedCents: number; amountCents: number; reason?: string;
+  otherBenefitsCents: number; taxableCents: number; wtaxCents: number; netCents: number; basis: string[];
+}
+export interface PayThirteenthDoc extends PayThirteenthInput { employees: PayThirteenthEmployee[]; netCents: number; totalCents: number }
+export interface ThirteenthYears { years: number[]; recorded: { payGroup: PayGroup; year: number; id: string; number: string }[] }
+/** A recorded payroll run, or 13th-month pay (its period is the year), with net pay still to release. */
+export interface RunToRelease { id: string; number: string; kind: 'run' | 'thirteenth'; payGroup: PayGroup; periodStart: string; periodEnd: string; dueCents: number }
 export interface ReleaseRow { employeeId: string; name: string; netCents: number; releasedBy: string | null }
-export interface CaStatus { employeeId: string; name: string; outstandingCents: number; installmentCents: number; open: { documentId: string; number: string; amountCents: number; installmentCents: number; openCents: number }[] }
+export interface CaStatus {
+  employeeId: string; name: string; active: boolean; outstandingCents: number; installmentCents: number; open: { documentId: string; number: string; amountCents: number; installmentCents: number; openCents: number }[];
+  /** Repayments (CAR-) and write-offs (CAW-) still recorded, oldest first, with what was owed right after each. */
+  settlements: { documentId: string; number: string; kind: 'repayment' | 'writeoff'; businessDate: string; amountCents: number; balanceAfterCents: number }[];
+}
+export interface CaOwing { employeeId: string; name: string; owedCents: number }
 export interface ActiveEmployee { id: string; code: string; name: string; costCentre: string }
 /** Statutory (STAT): the month's lists, the 1601-C worksheet and the remittance check, worked out by the server. */
 export type Scheme = 'SSS' | 'PHIC' | 'HDMF' | 'WTAX';
@@ -153,6 +194,9 @@ export interface BookletUsage {
 }
 export interface BookletInput { kind: BookletKind; atpNo: string; printer?: string; serialFrom: number; serialTo: number; receivedOn: string; note?: string }
 export interface RemittanceInput { scheme: Scheme; month: string; cashPlaceId: number; amountCents: number; penaltyCents?: number; reference: string; note?: string }
+/** Opening statutory payable (OBST-, stat.opening, PLAN D8 step 3): per employee, what is still to remit for a contribution month. */
+export interface OpeningStatEmployee { employeeId: string; sssCents?: number; phicCents?: number; hdmfCents?: number; wtaxCents?: number; sssLoanCents?: number; hdmfLoanCents?: number }
+export interface OpeningStatInput { month: string; employees: OpeningStatEmployee[] }
 /** Tax registers (TAX): one row per journal on the account, read from the ledger. A cancel is its own negative row (posting 'reversal'). */
 export interface TaxJournalRef {
   journalId: string; journalNumber: string; date: string; posting: 'original' | 'reversal'; documentId: string | null; docType: string | null; docTitle: string;
@@ -188,7 +232,12 @@ export interface VatWorksheet {
 }
 export interface SalesRegister { from: string; to: string; rows: (TaxRegisterRow & { netCents: number; vatCents: number; totalCents: number })[]; totals: { netCents: number; vatCents: number; totalCents: number }; glVatCents: number }
 export interface WithholdingRegister {
-  from: string; to: string; rows: (TaxRegisterRow & { atc: string | null; certificate: 'pending' | 'received' | null; cwtCents: number; vatWithheldCents: number })[];
+  from: string; to: string;
+  /** `lineNo` names the 2307 (an opening withholding's row, 0 for a collection's); `period` ('2026-Q2') only on an opening's. */
+  rows: (TaxRegisterRow & {
+    atc: string | null; certificate: 'pending' | 'received' | null; cwtCents: number; vatWithheldCents: number;
+    lineNo: number; receivedOn: string | null; opening: boolean; period: string | null;
+  })[];
   totals: { cwtCents: number; vatWithheldCents: number }; glCwtCents: number; glVatWithheldCents: number; pendingCount: number;
 }
 export interface TaxDeadline { form: string; title: string; period: string; periodLabel: string; periodStart: string; periodEnd: string; statutoryDate: string; dueDate: string }
@@ -215,6 +264,8 @@ export interface ApLedger {
   supplierId: string; supplierName: string; balanceCents: number;
   bills: { id: string; number: string; status: 'posted' | 'cancelled'; supplierInvoiceNo: string; dueDate: string; payableCents: number; owedCents: number }[];
 }
+/** GET /api/acc/opening, what an opening document's form needs: the cut-over date it is dated, and the close once done. */
+export type OpeningStatus = Pick<OpeningState, 'cutoverDate' | 'closed'>;
 export interface EqPerson { id: string; name: string; isStockholder: boolean; isOfficer: boolean; position: string | null }
 export interface Setting { key: string; label: string; current: unknown }
 
@@ -252,10 +303,41 @@ export interface BackupCheck {
   lastAuditAt: string | null; trialBalance: { totalDebitCents: number; totalCreditCents: number }; lastBusinessDate: string | null; postedDocuments: number;
   drill?: 'passed'; stagedId?: string; live?: { auditSeq: number; lastAuditAt: string };
 }
+/** GET /api/acc/opening: the cut-over date, 3900 (debit-positive), the trial balance on the cut-over date, every opening document, the control checks and the close. */
+export interface OpeningState {
+  cutoverDate: string | null;
+  openingEquityCents: number;
+  trialBalance: { asOf: string; totalDebitCents: number; totalCreditCents: number; balanced: boolean } | null;
+  documents: { id: string; docType: string; number: string; businessDate: string; status: 'posted' | 'cancelled'; totalCents: number; summary: string }[];
+  checks: { code: string; name: string; partyType: string; controlCents: number; partiesCents: number; ok: boolean }[];
+  /** Accounts an OB- line may open. */
+  accounts: { id: number; code: string; name: string; isCashPlace: boolean; needsStockholder: boolean }[];
+  closed: { cutoverDate: string; closedAt: string; closedBy: string; closedByName: string; totalDebitCents: number; totalCreditCents: number } | null;
+}
+/** BIR payments (BIRP-): the return, and the posted payments a worksheet counts. */
+export type BirForm = '2550Q' | '0619-E' | '1601-EQ';
+export interface BirPaymentLine { id: string; number: string; date: string; period: string; reference: string; amountCents: number; penaltyCents: number }
+/** The EWT of a period by ATC (per EWT class while the ATC is to confirm). */
+export type EwtAtcLine = EwtAtc & { baseCents: number; ewtCents: number };
+/** GET /api/tax/0619e?month=: month 1 or 2 of a quarter. */
+export interface EwtMonthWorksheet {
+  month: string; label: string; from: string; to: string; returnDue: string; atcs: EwtAtcLine[]; totals: { baseCents: number; ewtCents: number };
+  dueCents: number; payments: BirPaymentLine[]; paidCents: number; leftCents: number; checks: WorksheetCheck[];
+}
+/** GET /api/tax/1601eq?year&quarter=: the quarter less its 0619-E payments, and the QAP. */
+export interface EwtQuarterWorksheet {
+  year: number; quarter: 1 | 2 | 3 | 4; period: string; from: string; to: string; months: string[]; returnDue: string; atcs: EwtAtcLine[]; totals: { baseCents: number; ewtCents: number };
+  remittances: { month: string; label: string; payments: BirPaymentLine[]; paidCents: number }[]; remittedCents: number;
+  dueCents: number; payments: BirPaymentLine[]; paidCents: number; leftCents: number;
+  qap: (EwtAtc & { supplierId: string | null; tin: string | null; registeredName: string; baseCents: number; rateBp: number | null; ewtCents: number })[];
+  checks: WorksheetCheck[];
+}
 /** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
 export const taxRegisterPath = (register: 'sales' | 'withholding-received' | 'purchases' | 'ewt', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
 /** A quarter's tax report URL; with &format=csv the same URL downloads it for Excel. */
-export const taxQuarterPath = (report: '2307-to-issue' | '2550q', year: number, quarter: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}`;
+export const taxQuarterPath = (report: '2307-to-issue' | '2550q' | '1601eq', year: number, quarter: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}`;
+/** The 0619-E worksheet's URL (month like 2026-07); with &format=csv it downloads for Excel. */
+export const ewtMonthPath = (month: string) => `/api/tax/0619e?${new URLSearchParams({ month })}`;
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -305,9 +387,27 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     printableTypes: () => call<PrintableType[]>('GET', '/api/prt/printable-types'),
     printDocument: (type: string, id: string, variant: PrintVariant = 'document') =>
       call<{ html: string; copyNumber: number }>('POST', `/api/prt/print/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { variant }),
-    health: () => call<{ serverTime: string }>('GET', '/api/health'),
+    /** practice: this is the practice shop (PLAN C8). */
+    health: () => call<{ serverTime: string; practice?: boolean }>('GET', '/api/health'),
+    dashHome: () => call<DashHomeData>('GET', '/api/dash/home'),
+    dashNotifications: () => call<DashNotification[]>('GET', '/api/dash/notifications'),
+    dashRead: (id: string) => call<{ ok: true }>('POST', '/api/dash/notifications/read', { id }),
+    calItems: (from: string, to: string) => call<CalItem[]>('GET', `/api/cal?${new URLSearchParams({ from, to })}`),
+    calCreate: (body: CalEventInput) => call<CalEvent>('POST', '/api/cal/events', body),
+    calMove: (id: string, date: string, time?: string | null) => call<CalEvent>('POST', `/api/cal/events/${encodeURIComponent(id)}/move`, { date, time }),
+    calCancel: (id: string, reason: string) => call<CalEvent>('POST', `/api/cal/events/${encodeURIComponent(id)}/cancel`, { reason }),
+    calHistory: (id: string) => call<CalEvent[]>('GET', `/api/cal/events/${encodeURIComponent(id)}/history`),
+    shopCertificate: () => call<{ ca: CertInfo | null }>('GET', '/api/system/tls'),
+    systemHealth: () => call<SystemHealth>('GET', '/api/system/health'),
+    systemCheck: () => call<SystemHealth>('POST', '/api/system/health/check'),
+    practice: () => call<PracticeStatus>('GET', '/api/system/practice'),
+    /** Needs a fresh password (step-up). */
+    practiceReset: () => call<PracticeStatus>('POST', '/api/system/practice/reset'),
     docTypes: () => call<DocTypeInfo[]>('GET', '/api/doc-types'),
     report: <T>(path: string) => call<T>('GET', `/api/rpt/${path}`),
+    auditLog: (query: string) => call<AuditLogPage>('GET', `/api/aud/log?${query}`),
+    auditUsers: () => call<{ id: string; name: string }[]>('GET', '/api/aud/users'),
+    auditIntegrity: () => call<IntegrityReport>('GET', '/api/aud/integrity'),
     list: (type: string, q: { status?: string; before?: string; limit?: number } = {}) =>
       call<DocHeader[]>('GET', doc(type, `?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`)),
     get: (type: string, id: string) => call<DocDetail>('GET', one(type, id)),
@@ -368,8 +468,13 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     payPeriods: (payGroup: PayGroup) => call<PayPeriod[]>('GET', `/api/pay/periods?payGroup=${payGroup}`),
     payslips: (runId: string) => call<Payslips>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/payslips`),
     runsToRelease: () => call<RunToRelease[]>('GET', '/api/pay/runs/to-release'),
+    thirteenthYears: () => call<ThirteenthYears>('GET', '/api/pay/thirteenth/years'),
     releaseStatus: (runId: string) => call<ReleaseRow[]>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/release-status`),
     caStatus: (employeeId: string) => call<CaStatus>('GET', `/api/ca/employees/${encodeURIComponent(employeeId)}`),
+    /** Who owes on cash advances today, separated employees included. */
+    caOwing: () => call<CaOwing[]>('GET', '/api/ca/employees'),
+    /** The operating expense accounts a write-off may be charged to (ca.writeoff). */
+    caWriteoffAccounts: () => call<{ id: number; code: string; name: string }[]>('GET', '/api/ca/writeoff-accounts'),
     statMonths: () => call<{ month: string; check: SchemeCheck[] }[]>('GET', '/api/stat/months'),
     statMonth: (month: string) => call<StatMonth>('GET', `/api/stat/months/${encodeURIComponent(month)}`),
     /** D6: what of a payroll run's month is already remitted (the warning before a cancel). */
@@ -389,10 +494,19 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     setBookletActive: (id: string, v: number, active: boolean, note: string) => call<Booklet>('POST', `/api/tax/booklets/${encodeURIComponent(id)}/${active ? 'activate' : 'retire'}`, { note }, version(v)),
     salesRegister: (from: string, to: string) => call<SalesRegister>('GET', taxRegisterPath('sales', from, to)),
     withholdingReceived: (from: string, to: string) => call<WithholdingRegister>('GET', taxRegisterPath('withholding-received', from, to)),
+    /** A customer's 2307 recorded as pending has come (tax.2307.receive); dated the server's today. */
+    mark2307Received: (documentId: string, lineNo: number) =>
+      call<{ documentId: string; number: string; lineNo: number; receivedOn: string }>('POST', '/api/tax/2307s/received', { documentId, lineNo }),
     purchasesRegister: (from: string, to: string) => call<PurchasesRegister>('GET', taxRegisterPath('purchases', from, to)),
     ewtRegister: (from: string, to: string) => call<EwtRegister>('GET', taxRegisterPath('ewt', from, to)),
     certificatesToIssue: (year: number, quarter: number) => call<CertificatesToIssue>('GET', taxQuarterPath('2307-to-issue', year, quarter)),
     vatWorksheet: (year: number, quarter: number) => call<VatWorksheet>('GET', taxQuarterPath('2550q', year, quarter)),
+    ewtMonthWorksheet: (month: string) => call<EwtMonthWorksheet>('GET', ewtMonthPath(month)),
+    ewtQuarterWorksheet: (year: number, quarter: number) => call<EwtQuarterWorksheet>('GET', taxQuarterPath('1601eq', year, quarter)),
+    opening: () => call<OpeningState>('GET', '/api/acc/opening'),
+    /** Both need a fresh password (step-up). */
+    setCutoverDate: (date: string) => call<OpeningState>('POST', '/api/acc/opening/cutover-date', { date }),
+    closeOpening: () => call<OpeningState>('POST', '/api/acc/opening/close', {}),
     taxCalendar: (from: string, to: string) => call<TaxDeadline[]>('GET', `/api/tax/calendar?${new URLSearchParams({ from, to })}`),
     accounts: () => call<Account[]>('GET', '/api/acc/accounts'),
     loans: (status?: 'posted' | 'cancelled') => call<LoanRow[]>('GET', `/api/loan/loans${status ? `?status=${status}` : ''}`),

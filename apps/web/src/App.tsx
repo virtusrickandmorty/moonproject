@@ -13,10 +13,22 @@ import { DocList } from './generic/DocList.tsx';
 import { DocForm, type FormMode } from './generic/DocForm.tsx';
 import { DocView } from './generic/DocView.tsx';
 import { FORMS, PAGES, VIEWS } from './modules/screens.ts';
+import { DashHome } from './modules/DASH/Home.tsx';
+import { PracticeBanner } from './modules/PLT/PracticeBanner.tsx';
 
 type Stage = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'firstOwner' } | { kind: 'login'; message?: string } | { kind: 'ready'; me: Me; docTypes: DocTypeInfo[] };
 
+/** The practice banner sits above everything, the sign-in page included (PLAN C8). */
 export function App() {
+  return (
+    <>
+      <PracticeBanner />
+      <Stages />
+    </>
+  );
+}
+
+function Stages() {
   const [stage, setStage] = useState<Stage>({ kind: 'loading' });
   const location = useLocation();
   const signedIn = useCallback(async (me: Me) => setStage({ kind: 'ready', me, docTypes: me.mustChangePassword ? [] : await api.docTypes() }), []);
@@ -78,6 +90,7 @@ function Home({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }) {
   return (
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Hello, {me.displayName}</h1>
+      {me.permissions.includes('dash.view') && <DashHome />}
       <div className="flex flex-wrap gap-2">
         {docTypes.filter((d) => d.canCreate).map((d) => (
           <Link key={d.key} to={docPath(d.key, '/new')} className="rounded-lg bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200 hover:bg-indigo-50">+ New {labelOf(d)}</Link>

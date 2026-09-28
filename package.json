@@ -14,6 +14,7 @@
     "test": "vitest run",
     "check": "npm run typecheck && npm test",
     "dev:server": "tsx apps/server/src/main.ts",
+    "practice-data": "tsx apps/server/src/platform/practice/data.ts",
     "restore": "tsx apps/server/src/modules/BAK/cli.ts"
   },
   "devDependencies": {
