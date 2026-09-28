@@ -203,6 +203,12 @@ export interface VatSummary {
 /** Money out (AP, EXP, EQ). Suppliers and supplies are PUR's own rows (GET /api/pur/suppliers, /api/pur/supplies). */
 export interface SupplierRow { id: string; name: string; tin: string | null; is_vat_registered: number; ewt_class: string | null; payment_terms_days: number | null }
 export interface SupplyRow { id: string; name: string; category: 'materials' | 'ready_made' }
+/** GET /api/inv/count-sheet?format=json: the active supplies of a category and the cost each is valued at on the count date. */
+export interface SheetSupply {
+  supplyId: string; name: string; unit: 'yard' | 'meter' | 'kg' | 'roll' | 'pc'; milliUnits: boolean;
+  defaultCostCents: number; costSource: 'bill' | 'po' | 'catalogue'; costSourceNumber: string | null;
+}
+export interface CountSheet { category: 'materials' | 'ready_made'; date: string; supplies: SheetSupply[] }
 export interface ExpCategory { id: number; code: string; name: string; defaultEwtClass: string | null }
 /** GET /api/ap/suppliers/:id: a supplier's bills, with what is still owed on each (from the ledger). */
 export interface ApLedger {
@@ -371,6 +377,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     settings: () => call<Setting[]>('GET', '/api/settings'),
     suppliers: () => call<SupplierRow[]>('GET', '/api/pur/suppliers'),
     supplies: () => call<SupplyRow[]>('GET', '/api/pur/supplies'),
+    countSheet: (category: string, date: string) => call<CountSheet>('GET', `/api/inv/count-sheet?${new URLSearchParams({ category, date, format: 'json' })}`),
     expCategories: () => call<ExpCategory[]>('GET', '/api/exp/categories'),
     apLedger: (supplierId: string) => call<ApLedger>('GET', `/api/ap/suppliers/${encodeURIComponent(supplierId)}`),
     eqPeople: () => call<EqPerson[]>('GET', '/api/eq/people'),
