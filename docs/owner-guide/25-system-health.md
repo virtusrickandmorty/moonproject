@@ -2,7 +2,7 @@
 
 **What it is for:** Monitor the health of the system and see if anything needs your attention to keep the shop's books safe.
 
-**Before you start:** You must have the `sec.health.view` permission (which is normally given to the owner) to open the **System health** screen.
+**Before you start:** You must have the `sec.health.view` permission (which is normally given to the owner and accountant) to open the **System health** screen.
 
 ### Steps
 1. On the **Admin** menu, click **System health**.
