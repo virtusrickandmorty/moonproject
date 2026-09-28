@@ -14,7 +14,7 @@ export class ApiError extends Error {
 export interface Me { userId: string; username: string; displayName: string; roles: string[]; permissions: string[]; mustChangePassword: boolean; csrfToken: string }
 export interface CompanyProfile { registeredName: string; tradeName: string; tin: string; registeredAddress: string; isVatRegistered: boolean; version: number; supersededAt?: string }
 export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
-export interface DocTypeInfo { key: string; module: string; title: string; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
+export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
 export type PrintVariant = 'document' | 'job_ticket';
 export interface PrintableType { key: string; variants: PrintVariant[] }
 export interface DocHeader {
@@ -144,7 +144,36 @@ export interface StatMonth {
   check: SchemeCheck[];
   notDeducted: { employeeId: string; name: string; cents: number }[];
 }
+export type BookletKind = 'SALES_INVOICE' | 'CR';
+export interface Booklet { id: string; kind: BookletKind; atpNo: string; printer: string | null; serialFrom: number; serialTo: number; receivedOn: string; note: string | null; isActive: boolean; version: number }
+export interface BookletUsage {
+  booklet: Booklet; usedCount: number; cancelledCount: number; lastUsed: number | null; leftCount: number;
+  skipped: number[]; skippedCount: number;
+  used: { n: number; number: string; status: 'posted' | 'cancelled'; documentId: string | null; docType: string | null }[];
+}
+export interface BookletInput { kind: BookletKind; atpNo: string; printer?: string; serialFrom: number; serialTo: number; receivedOn: string; note?: string }
 export interface RemittanceInput { scheme: Scheme; month: string; cashPlaceId: number; amountCents: number; penaltyCents?: number; reference: string; note?: string }
+/** Tax registers (TAX): one row per journal on the account, read from the ledger. A cancel is its own negative row (posting 'reversal'). */
+export interface TaxRegisterRow {
+  journalId: string; journalNumber: string; date: string; posting: 'original' | 'reversal'; documentId: string | null; docType: string | null; docTitle: string;
+  documentNumber: string | null; formNumber: string | null; documentStatus: 'posted' | 'cancelled' | null; customerId: string | null; customerName: string; tin: string | null;
+}
+export interface SalesRegister { from: string; to: string; rows: (TaxRegisterRow & { netCents: number; vatCents: number; totalCents: number })[]; totals: { netCents: number; vatCents: number; totalCents: number }; glVatCents: number }
+export interface WithholdingRegister {
+  from: string; to: string; rows: (TaxRegisterRow & { atc: string | null; certificate: 'pending' | 'received' | null; cwtCents: number; vatWithheldCents: number })[];
+  totals: { cwtCents: number; vatWithheldCents: number }; glCwtCents: number; glVatWithheldCents: number; pendingCount: number;
+}
+export interface TaxDeadline { form: string; title: string; period: string; periodLabel: string; periodStart: string; periodEnd: string; statutoryDate: string; dueDate: string }
+export interface VatSummary {
+  year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string; returnDue: string; outputVatCents: number; inputVatCents: number; vatWithheldCents: number;
+  carryOverCents: number; vatWithheldPendingCents: number; payableCents: number; carryForwardCents: number;
+  /** Output and input VAT dated in earlier quarters but not closed with them, included above. */
+  earlierOutputVatCents: number; earlierInputVatCents: number;
+  /** The quarter's posted VAT close (VATC-), if any. */
+  close: { documentId: string; number: string; date: string } | null;
+}
+/** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
+export const taxRegisterPath = (register: 'sales' | 'withholding-received', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -186,7 +215,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     me: () => call<Me>('GET', '/api/auth/me').then(keep),
     logout: () => call<unknown>('POST', '/api/auth/logout'),
     changePassword: (currentPassword: string, newPassword: string) => call<unknown>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
-    stepUp: (password: string) => call<{ ok: boolean }>('POST', '/api/auth/step-up', { password }),
+    stepUp: (password: string) => call<{ ok: true }>('POST', '/api/auth/step-up', { password }),
     companyProfile: () => call<CompanyProfile>('GET', '/api/prt/company-profile'),
     companyProfileHistory: () => call<CompanyProfile[]>('GET', '/api/prt/company-profile/history'),
     saveCompanyProfile: (value: Omit<CompanyProfile, 'version' | 'supersededAt'>, version: number) => call<CompanyProfile>('PUT', '/api/prt/company-profile', value, { 'if-match': String(version) }),
@@ -195,6 +224,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
       call<{ html: string; copyNumber: number }>('POST', `/api/prt/print/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { variant }),
     health: () => call<{ serverTime: string }>('GET', '/api/health'),
     docTypes: () => call<DocTypeInfo[]>('GET', '/api/doc-types'),
+    report: <T>(path: string) => call<T>('GET', `/api/rpt/${path}`),
     list: (type: string, q: { status?: string; before?: string; limit?: number } = {}) =>
       call<DocHeader[]>('GET', doc(type, `?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`)),
     get: (type: string, id: string) => call<DocDetail>('GET', one(type, id)),
@@ -260,6 +290,16 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     statMonth: (month: string) => call<StatMonth>('GET', `/api/stat/months/${encodeURIComponent(month)}`),
     /** D6: what of a payroll run's month is already remitted (the warning before a cancel). */
     runRemitted: (runId: string) => call<{ month: string; remitted: { scheme: Scheme; label: string; numbers: string[] }[] }>('GET', `/api/stat/runs/${encodeURIComponent(runId)}/remitted`),
+    booklets: () => call<BookletUsage[]>('GET', '/api/tax/booklets'),
+    booklet: (id: string) => call<BookletUsage>('GET', `/api/tax/booklets/${encodeURIComponent(id)}`),
+    registerBooklet: (body: BookletInput) => call<Booklet>('POST', '/api/tax/booklets', body),
+    setBookletActive: (id: string, v: number, active: boolean, note: string) => call<Booklet>('POST', `/api/tax/booklets/${encodeURIComponent(id)}/${active ? 'activate' : 'retire'}`, { note }, version(v)),
+    salesRegister: (from: string, to: string) => call<SalesRegister>('GET', taxRegisterPath('sales', from, to)),
+    withholdingReceived: (from: string, to: string) => call<WithholdingRegister>('GET', taxRegisterPath('withholding-received', from, to)),
+    taxCalendar: (from: string, to: string) => call<TaxDeadline[]>('GET', `/api/tax/calendar?${new URLSearchParams({ from, to })}`),
+    /** Without a year and quarter: the quarter of the server's date. */
+    vatSummary: (year?: number, quarter?: number) =>
+      call<VatSummary>('GET', `/api/tax/vat-summary${year ? `?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}` : ''}`),
   };
 }
 

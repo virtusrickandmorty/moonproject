@@ -5,7 +5,7 @@
  */
 import type { DocTypeInfo } from '../api.ts';
 
-export const MENU_GROUPS = ['Overview', 'Sales', 'Production', 'Purchases & Expenses', 'Money', 'People & Payroll', 'Accounting & Tax', 'Reports', 'Admin'] as const;
+export const MENU_GROUPS = ['Overview', 'Sales', 'Production', 'Purchases & Expenses', 'Money', 'People & Payroll', 'Accounting & Tax', 'Tax', 'Reports', 'Admin'] as const;
 export type MenuGroup = (typeof MENU_GROUPS)[number];
 export interface MenuItem { group: MenuGroup; label: string; path: string; permission?: string }
 
@@ -32,6 +32,14 @@ export const SCREENS: MenuItem[] = [
   { group: 'People & Payroll', label: 'Holidays', path: '/emp/holidays', permission: 'emp.view' },
   { group: 'Admin', label: 'Company print details', path: '/prt/company-profile', permission: 'prt.profile.manage' },
   { group: 'People & Payroll', label: 'Government remittances', path: '/stat', permission: 'stat.view' },
+  { group: 'Tax', label: 'Booklets', path: '/tax/booklets', permission: 'tax.booklets.view' },
+  { group: 'Accounting & Tax', label: 'Sales register', path: '/tax/sales', permission: 'tax.registers.view' },
+  { group: 'Accounting & Tax', label: '2307s received', path: '/tax/2307-received', permission: 'tax.registers.view' },
+  { group: 'Accounting & Tax', label: 'VAT this quarter', path: '/tax/vat', permission: 'tax.registers.view' },
+  { group: 'Accounting & Tax', label: 'Tax calendar', path: '/tax/calendar', permission: 'tax.calendar.view' },
+  { group: 'Reports', label: 'General journal', path: '/rpt/journal', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'General ledger', path: '/rpt/ledger', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'Trial balance', path: '/rpt/trial-balance', permission: 'rpt.books.view' },
 ];
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);

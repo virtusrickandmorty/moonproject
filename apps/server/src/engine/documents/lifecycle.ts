@@ -135,9 +135,9 @@ function postInTx(env: EngineEnv, def: DocTypeDef, actor: Actor, req: PostReques
   const id = newId();
   const summary = def.summary(doc, ctx);
   db.prepare(
-    `INSERT INTO documents (id, doc_type, module, series_key, number, business_date, status, total_cents, summary, posted_at, posted_by, replaces_id)
-     VALUES (?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?)`,
-  ).run(id, def.key, def.module, def.numbering.series.key, number, ctx.businessDate, doc.totalCents, summary, ctx.at, actor.userId, replacesId);
+    `INSERT INTO documents (id, doc_type, module, series_key, number, external_number, business_date, status, total_cents, summary, posted_at, posted_by, replaces_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?)`,
+  ).run(id, def.key, def.module, def.numbering.series.key, number, def.externalNumber?.(doc) ?? null, ctx.businessDate, doc.totalCents, summary, ctx.at, actor.userId, replacesId);
   const header = { documentId: id, number, businessDate: ctx.businessDate };
   def.persist(db, doc, header);
 

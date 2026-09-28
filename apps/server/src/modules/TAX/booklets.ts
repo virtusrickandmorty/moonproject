@@ -8,8 +8,8 @@ import { z } from 'zod';
 import { AppError, badRequest, conflict, isBusinessDate, newId, notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { crNumbersBetween } from '../COL/public.ts';
-import { invoiceNumbersBetween } from '../JO/public.ts';
+import { collectionDoc, crNumbersBetween } from '../COL/public.ts';
+import { INVOICE_SERIES, invoiceNumbersBetween } from '../JO/public.ts';
 import { BOOKLET_KINDS, type BookletKind } from './check.ts';
 
 const serial = z.number().int().min(1).max(999_999_999_999);
@@ -82,7 +82,7 @@ export interface BookletUsage {
   usedCount: number; cancelledCount: number; lastUsed: number | null; leftCount: number;
   /** Numbers below the last one used that no document took (the skipped-number report), at most 200 listed. */
   skipped: number[]; skippedCount: number;
-  used: { n: number; number: string; status: 'posted' | 'cancelled' }[];
+  used: { n: number; number: string; status: 'posted' | 'cancelled'; documentId: string | null; docType: string | null }[];
 }
 
 /** What a booklet's numbers were used for, from the documents that typed them (JO and QS invoices, COL receipts). */
@@ -99,8 +99,16 @@ export function bookletUsage(db: Db, b: Booklet, withLines = false): BookletUsag
       if (skipped.length < MAX_LISTED) skipped.push(n);
     }
   }
+  // The public JO/COL contracts supply the document number. Resolve its engine header here so the register can link
+  // to the exact record without reading another module's tables or changing its posting code.
+  const series = b.kind === 'SALES_INVOICE' ? INVOICE_SERIES.key : collectionDoc.numbering.series.key;
+  const findDocument = db.prepare('SELECT id, doc_type AS docType FROM documents WHERE series_key = ? AND number = ?');
+  const lines = withLines ? used.map((u) => {
+    const d = findDocument.get(series, u.number) as { id: string; docType: string } | undefined;
+    return { ...u, documentId: d?.id ?? null, docType: d?.docType ?? null };
+  }) : [];
   return {
     booklet: b, usedCount: taken.size, cancelledCount: used.filter((u) => u.status === 'cancelled').length, lastUsed,
-    leftCount: b.serialTo - (lastUsed ?? b.serialFrom - 1), skipped, skippedCount, used: withLines ? used : [],
+    leftCount: b.serialTo - (lastUsed ?? b.serialFrom - 1), skipped, skippedCount, used: lines,
   };
 }

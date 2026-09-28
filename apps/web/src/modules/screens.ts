@@ -23,10 +23,15 @@ import { AdvanceForm } from './CA/AdvanceForm.tsx';
 import { CompanyProfileScreen } from './PRT/CompanyProfile.tsx';
 import { StatMonthPage, StatMonths, remittanceView } from './STAT/Statutory.tsx';
 import { RemittanceForm } from './STAT/RemittanceForm.tsx';
+import { GeneralJournal, GeneralLedger, TrialBalance } from './RPT/Books.tsx';
 import { CashAccounts } from './CASH/CashAccounts.tsx';
 import { CashBook } from './CASH/CashBook.tsx';
 import { CashCountForm } from './CASH/CashCountForm.tsx';
 import { cashCountView } from './CASH/CashCountView.tsx';
+import { Booklets, BookletPage, RegisterBooklet } from './TAX/Booklets.tsx';
+import { SalesRegister, WithholdingReceived } from './TAX/Registers.tsx';
+import { TaxCalendar } from './TAX/TaxCalendar.tsx';
+import { VatQuarter } from './TAX/VatQuarter.tsx';
 
 /**
  * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
@@ -45,9 +50,20 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/prt/company-profile': CompanyProfileScreen,
   '/stat': StatMonths,
   '/stat/:month': StatMonthPage,
+  '/tax/booklets': Booklets,
+  '/tax/booklets/new': RegisterBooklet,
+  '/tax/booklets/:id': BookletPage,
+  '/rpt/journal': GeneralJournal,
+  '/rpt/ledger': GeneralLedger,
+  '/rpt/trial-balance': TrialBalance,
+  '/tax/sales': SalesRegister,
+  '/tax/2307-received': WithholdingReceived,
+  '/tax/vat': VatQuarter,
+  '/tax/calendar': TaxCalendar,
 };
 
-export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: FormMode }>> = {
+/** A module's own form; `me` lets it offer what only some users may do (the remittance's date paid, for acc.backdate). */
+export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: FormMode; me: Me }>> = {
   'cash.count': CashCountForm,
   'col.collection': CollectionForm,
   'col.refund': RefundForm,

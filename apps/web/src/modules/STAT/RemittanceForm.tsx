@@ -3,19 +3,21 @@
  * month, from where, how much and the PRN or reference. The screen shows what the month's payrolls left payable, and
  * the server's variance check (less is a partial payment; more is refused). A late-payment penalty is paid on top and
  * never counts toward the payable. Opened from the remittance check with the scheme, month and amount filled in.
+ * Someone who may backdate (acc.backdate) also gives the date paid, when the payment is recorded days later (STAT-1).
  */
 import { useEffect, useState } from 'react';
-import { api, ApiError, type CashPlace, type DocTypeInfo, type Preview, type SchemeCheck } from '../../api.ts';
+import { api, ApiError, type CashPlace, type DocTypeInfo, type Me, type Preview, type SchemeCheck } from '../../api.ts';
 import { Link, navigate } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, useLive } from '../COL/parts.tsx';
-import { SCHEME_LABEL, SCHEME_LIST, isMonth, remittanceInput, type RemittanceValues } from './stat.ts';
+import { SCHEME_LABEL, SCHEME_LIST, isMonth, paidOn, remittanceInput, type RemittanceValues } from './stat.ts';
 
-export function RemittanceForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
+export function RemittanceForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me: Me }) {
   const q = new URLSearchParams(location.search);
   const [v, setV] = useState<RemittanceValues>({ scheme: q.get('scheme') ?? '', month: q.get('month') ?? '', cashPlaceId: '', amount: q.get('amount') ?? '', penalty: '', reference: '', note: '' });
+  const [paidOnText, setPaidOnText] = useState('');
   const [places, setPlaces] = useState<CashPlace[]>([]);
   const [check, setCheck] = useState<SchemeCheck | null>(null);
   const [confirm, setConfirm] = useState<Preview | null>(null);
@@ -28,21 +30,25 @@ export function RemittanceForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     if (isMonth(v.month) && v.scheme) api.statMonth(v.month).then((m) => setCheck(m.check.find((c) => c.scheme === v.scheme) ?? null), () => undefined);
   }, [v.month, v.scheme]);
 
-  const { input, errors } = remittanceInput(v);
-  const live = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input));
+  const mayBackdate = type.dating === 'accountant_may_backdate' && me.permissions.includes('acc.backdate');
+  const date = mayBackdate ? paidOn(paidOnText) : {};
+  const typed = remittanceInput(v);
+  const { input } = typed;
+  const errors = date.error ? [...typed.errors, date.error] : typed.errors;
+  const live = useLive(JSON.stringify([input, date.businessDate]), errors.length === 0, () => api.preview(type.key, input, date.businessDate));
   if (mode.kind === 'edit') {
     return <Notice tone="info">A remittance is corrected by cancelling it and recording it again. <Link to={docPath(type.key, `/${mode.id}`)} className="underline">Back to the remittance</Link></Notice>;
   }
   const openConfirm = () => {
     setTouched(true);
-    if (errors.length === 0) api.preview(type.key, input).then(setConfirm, fail);
+    if (errors.length === 0) api.preview(type.key, input, date.businessDate).then(setConfirm, fail);
   };
   const record = async (key: string) => {
     try {
-      const r = await api.post(type.key, input, confirm!.totalCents, key);
+      const r = await api.post(type.key, input, confirm!.totalCents, key, date.businessDate);
       navigate(docPath(type.key, `/${r.id}?recorded=1`));
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.preview(type.key, input));
+      if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.preview(type.key, input, date.businessDate));
       throw e;
     }
   };
@@ -84,8 +90,13 @@ export function RemittanceForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
         <Field label="Late-payment penalty" hint="Paid on top, if any"><input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right`} value={v.penalty} onChange={(e) => set({ penalty: e.target.value })} /></Field>
         <Field label="PRN, reference or receipt no." required><input className={inputClass} value={v.reference} onChange={(e) => set({ reference: e.target.value })} /></Field>
       </div>
+      {mayBackdate && (
+        <Field label="Date paid" hint="Leave empty for today. If the payment is recorded later, give the day the money left.">
+          <input type="date" className={inputClass} value={paidOnText} onChange={(e) => setPaidOnText(e.target.value)} />
+        </Field>
+      )}
       <Field label="Note"><input className={inputClass} value={v.note} onChange={(e) => set({ note: e.target.value })} /></Field>
-      {live && <p className="text-sm">{live.summary}</p>}
+      {live && <p className="text-sm">{live.summary}{date.businessDate && ` Dated ${date.businessDate}, the day paid.`}</p>}
       {live?.issues.map((i) => <Notice key={i.code} tone={i.level}>{i.message}</Notice>)}
       <Errors list={errors} show={touched} />
       <div className="flex gap-2">
