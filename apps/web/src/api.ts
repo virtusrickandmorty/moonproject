@@ -127,7 +127,8 @@ export interface EmployeeDetail {
   employee: EmployeeRecord;
   pay: Pick<PayProfile, 'payType' | 'payGroup' | 'workweekDays' | 'effectiveFrom'> | null;
   payHistory: PayProfile[] | null;
-  sil: { year: number; eligibleFrom: string; daysPerYear: number; used: number; left: number };
+  /** used: days of leave taken; paid: unused days paid in cash by a payroll (final pay, December). */
+  sil: { year: number; eligibleFrom: string; daysPerYear: number; used: number; paid: number; left: number };
 }
 export type AttendanceStatus = 'present' | 'half_day' | 'absent' | 'rest_day' | 'leave' | 'unpaid_leave' | 'holiday_off' | 'holiday_worked' | 'rest_day_worked';
 export interface AttendanceDay { employeeId: string; date: string; status: AttendanceStatus; otMinutes: number; note: string | null }
@@ -135,7 +136,10 @@ export interface Holiday { id: number; date: string; name: string; kind: 'regula
 export interface AttendanceGrid {
   from: string; to: string; today: string; statuses: AttendanceStatus[]; holidays: Holiday[];
   employees: { id: string; code: string; fullName: string; hireDate: string; separatedOn: string | null }[]; days: AttendanceDay[];
+  /** Days recorded payroll runs paid: locked until the run is cancelled. */
+  paid: PaidDays[];
 }
+export interface PaidDays { employeeId: string; from: string; to: string; number: string }
 export type AttendanceSave = { employeeId: string; date: string; status: AttendanceStatus; otMinutes?: number; note?: string };
 /** Payroll (PAY) and cash advances (CA): every figure is worked out by the server. */
 export type PayGroup = 'WEEKLY_PIECE' | 'SEMI_DAILY' | 'SEMI_MONTHLY';
@@ -146,6 +150,8 @@ export interface PayEmployee {
   eeShortCents: number; wtaxCents: number; loanCents?: number; loans?: PayLoan[]; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
   /** Tax withheld earlier in the year and refunded on this run (year-end adjustment); net pay includes it. */
   wtaxRefundCents?: number; yearEnd?: PayYearEnd;
+  /** Separated within the run's period: this run is their final pay; what they still owe after it. */
+  final?: { separatedOn: string; caLeftCents: number; loansLeftCents: number };
 }
 /** One employee's year-end tax adjustment on a run: the annual tax less what the year withheld before; a deficiency (withheld, short) or a refund. */
 export interface PayYearEnd {
@@ -187,7 +193,7 @@ export interface GovLoanInput { employeeId: string; kind: LoanKind; loanNo: stri
 export interface ManualPayLine { employeeId: string; kind: 'allowance' | 'adjustment'; amountCents: number; reason: string }
 export interface PayRunInput {
   payGroup: PayGroup; periodStart: string; lines?: ManualPayLine[]; advances?: { employeeId: string; amountCents: number }[]; skip?: { employeeId: string; reason: string }[];
-  loans?: { loanId: string; amountCents: number; reason: string }[]; yearEnd?: boolean;
+  loans?: { loanId: string; amountCents: number; reason: string }[]; yearEnd?: boolean; unusedLeave?: boolean;
 }
 export interface PayRunDoc extends PayRunInput { periodEnd: string; contributionMonth: string; employees: PayEmployee[]; grossCents: number; netCents: number }
 /** `bookOn`: the date to give the run (the period's last day, for someone who may backdate), or null for today. */
@@ -201,7 +207,11 @@ export interface Payslips {
   })[];
 }
 /** 13th-month pay (TH13-): one twelfth of the year's basic pay beside what the runs accrued on 2111. */
-export interface PayThirteenthInput { payGroup: PayGroup; year: number; amounts?: { employeeId: string; amountCents: number; reason: string }[]; skip?: { employeeId: string; reason: string }[] }
+export interface PayThirteenthInput {
+  payGroup: PayGroup; year: number; amounts?: { employeeId: string; amountCents: number; reason: string }[]; skip?: { employeeId: string; reason: string }[];
+  /** One separated employee alone (their 13th month on separation). */
+  employeeId?: string;
+}
 export interface PayThirteenthEmployee {
   employeeId: string; code: string; name: string; costCentre: string; basicCents: number; earlierBasicCents: number; dueCents: number; accruedCents: number; amountCents: number; reason?: string;
   otherBenefitsCents: number; taxableCents: number; wtaxCents: number; netCents: number; basis: string[];

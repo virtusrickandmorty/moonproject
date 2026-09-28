@@ -3,7 +3,8 @@
  * and the server works out every line from attendance, pay, piece work, holidays, government shares and cash advances.
  * Staff may add manual lines, change this run's cash-advance deduction, change or skip a government loan deduction with a
  * note, or leave someone out, with a reason. On a period ending in December the accountant may tick the year-end tax
- * adjustment: the preview then shows each employee's refund or deficiency.
+ * adjustment: the preview then shows each employee's refund or deficiency, and "Pay unused leave" (SIL days left, in
+ * cash). An employee separated within the period gets their final pay, marked with a badge.
  */
 import { useEffect, useState } from 'react';
 import { api, ApiError, type DocTypeInfo, type Me, type PayGroup, type PayPeriod, type PayRunDoc, type Preview } from '../../api.ts';
@@ -12,7 +13,8 @@ import { Button, Field, Notice, Panel, inputClass, peso } from '../../components
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, useLive } from '../COL/parts.tsx';
-import { GROUP_LABEL, emptyManual, endsInDecember, loanLabel, qtyText, runInput, yearEndText, type LoanRow, type ManualRow } from './run.ts';
+import { GROUP_LABEL, emptyManual, endsInDecember, finalPayText, loanLabel, qtyText, runInput, yearEndText, type LoanRow, type ManualRow } from './run.ts';
+import { FinalBadge } from './views.tsx';
 
 export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me?: Me }) {
   const [payGroup, setPayGroup] = useState<PayGroup>('SEMI_DAILY');
@@ -23,6 +25,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
   const [skip, setSkip] = useState<Record<string, string>>({});
   const [loanRows, setLoanRows] = useState<Record<string, LoanRow>>({});
   const [yearEnd, setYearEnd] = useState(false);
+  const [unusedLeave, setUnusedLeave] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Preview | null>(null);
   const [touched, setTouched] = useState(false);
@@ -35,7 +38,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
 
   const period = periods?.find((p) => p.periodStart === periodStart);
   const canYearEnd = endsInDecember(period?.periodEnd) && !!me?.permissions.includes('pay.yearend.run');
-  const { input, errors } = runInput(payGroup, periodStart, rows, advances, skip, loanRows, yearEnd && canYearEnd);
+  const { input, errors } = runInput(payGroup, periodStart, rows, advances, skip, loanRows, yearEnd && canYearEnd, unusedLeave && canYearEnd);
   // PAY-1: dated the period's last day when that has passed and the user may backdate, so its pay is booked in that month.
   const bookOn = period?.bookOn ?? undefined;
   const live = useLive(JSON.stringify([input, bookOn]), !!periodStart && errors.length === 0, () => api.preview(type.key, input, bookOn));
@@ -107,6 +110,15 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
             </span>
           </label>
         )}
+        {canYearEnd && (
+          <label className="mt-2 flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-1" checked={unusedLeave} onChange={(e) => setUnusedLeave(e.target.checked)} />
+            <span>
+              <b>Pay unused leave</b> on this payroll: each employee's service incentive leave (SIL) days left this year are paid in cash at the daily rate, up to 10 days a year
+              tax-free (de minimis). Paid days are used up. Someone who left gets theirs on their final pay without this.
+            </span>
+          </label>
+        )}
       </Panel>
 
       <Panel title="Pay worked out by the server">
@@ -120,7 +132,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
               <tbody>
                 {people.map((e) => [
                   <tr key={e.employeeId} className="border-t border-slate-100">
-                    <td className="py-1"><button type="button" className="text-left underline" onClick={() => setOpen(open === e.employeeId ? null : e.employeeId)}>{e.name}</button></td>
+                    <td className="py-1"><button type="button" className="text-left underline" onClick={() => setOpen(open === e.employeeId ? null : e.employeeId)}>{e.name}</button>{e.final && <FinalBadge />}</td>
                     <td className="text-right tabular-nums">{peso(e.grossCents)}</td>
                     <td className="text-right tabular-nums">{peso(e.sssEeCents)}</td>
                     <td className="text-right tabular-nums">{peso(e.phicEeCents)}</td>
@@ -148,6 +160,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
                               value={loanRows[l.loanId]?.reason ?? ''} onChange={(x) => setLoanRows({ ...loanRows, [l.loanId]: { amount: loanRows[l.loanId]?.amount ?? '', reason: x.target.value } })} />
                           </div>
                         ))}
+                        {e.final && <div className="mt-1 font-medium">{finalPayText(e)}. The whole cash advance is deducted as far as the pay allows.</div>}
                         <div className="mt-1 text-slate-600">Employer shares: SSS {peso(e.sssErCents + e.sssEcCents)}, PhilHealth {peso(e.phicErCents)}, Pag-IBIG {peso(e.hdmfErCents)} · 13th month {peso(e.thirteenthCents)}</div>
                       </td>
                     </tr>

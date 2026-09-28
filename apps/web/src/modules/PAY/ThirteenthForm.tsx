@@ -1,7 +1,8 @@
 /**
  * 13th-month pay form (PLAN D5 TH13-PAY, E11): pick the pay group and the year, and the server works out one twelfth of
  * each employee's basic pay from the recorded payroll runs, beside what the runs accrued. Staff may change an amount or
- * leave someone out, with a reason. Its net pay is then released like a payroll (POUT-).
+ * leave someone out, with a reason. Its net pay is then released like a payroll (POUT-). On separation it may be for one
+ * separated employee alone, after their final pay.
  */
 import { useEffect, useState } from 'react';
 import { api, ApiError, type DocTypeInfo, type PayGroup, type PayThirteenthDoc, type Preview, type ThirteenthYears } from '../../api.ts';
@@ -18,13 +19,14 @@ export function ThirteenthForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
   const [year, setYear] = useState<number | null>(null);
   const [amounts, setAmounts] = useState<Record<string, ChangedAmount>>({});
   const [skip, setSkip] = useState<Record<string, string>>({});
+  const [one, setOne] = useState(''); // one separated employee alone
   const [confirm, setConfirm] = useState<Preview | null>(null);
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => void api.thirteenthYears().then((y) => (setYears(y), setYear(y.years[0] ?? null)), (e: Error) => setError(e.message)), []);
-  const recorded = years?.recorded.find((r) => r.payGroup === payGroup && r.year === year);
-  const { input, errors } = thirteenthInput(payGroup, year, amounts, skip);
+  const recorded = one ? undefined : years?.recorded.find((r) => r.payGroup === payGroup && r.year === year);
+  const { input, errors } = thirteenthInput(payGroup, year, amounts, skip, one);
   const live = useLive(JSON.stringify(input), !!year && !recorded && errors.length === 0, () => api.preview(type.key, input));
   const [last, setLast] = useState<PayThirteenthDoc | null>(null); // kept while a reason is being typed
   const [names, setNames] = useState<Record<string, string>>({});
@@ -34,7 +36,8 @@ export function ThirteenthForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     setLast(doc);
     setNames((n) => ({ ...n, ...Object.fromEntries(doc.employees.map((e) => [e.employeeId, e.name])) }));
   }, [live]);
-  useEffect(() => (setLast(null), setAmounts({}), setSkip({})), [payGroup, year]);
+  useEffect(() => (setLast(null), setAmounts({}), setSkip({})), [payGroup, year, one]);
+  useEffect(() => setOne(''), [payGroup, year]);
 
   if (mode.kind === 'edit') {
     return (
@@ -77,6 +80,12 @@ export function ThirteenthForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
             </select>
           </Field>
         </div>
+        <Field label="For" hint="On separation, after the final pay: one employee who left, alone.">
+          <select className={inputClass} value={one} onChange={(e) => setOne(e.target.value)}>
+            <option value="">The whole pay group</option>
+            {Object.entries(names).map(([id, name]) => <option key={id} value={id}>{name} alone (separated)</option>)}
+          </select>
+        </Field>
         {recorded && (
           <Notice tone="info">
             <Link to={docPath(type.key, `/${recorded.id}`)} className="underline">{recorded.number}</Link> already pays this group's {year} 13th month. Cancel it first to redo it.

@@ -70,7 +70,7 @@ const employee = (id: string) => ({ type: 'employee', id });
 // Rows straight from SQLite, read field by field in load().
 type DbRow = Record<string, any>;
 
-/** A stored year-end adjustment row as the run employee's `yearEnd`. */
+/** A stored final pay row as the run employee's `final`. */
 const finalOf = (f: DbRow | undefined): { final?: FinalPay } =>
   f ? { final: { separatedOn: f.separated_on, caLeftCents: f.ca_left_cents, loansLeftCents: f.loans_left_cents } } : {};
 
@@ -80,6 +80,7 @@ function servedIn(db: Parameters<typeof employeesInGroup>[0], employeeId: string
   return { from: e.hireDate > from ? e.hireDate : from, to: e.separatedOn && e.separatedOn < to ? e.separatedOn : to };
 }
 
+/** A stored year-end adjustment row as the run employee's `yearEnd`. */
 const yearEndOf = (y: DbRow | undefined): { yearEnd?: YearEnd } =>
   y
     ? {
