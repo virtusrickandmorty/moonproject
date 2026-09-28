@@ -144,7 +144,36 @@ export interface PayEmployee {
   employeeId: string; code: string; name: string; costCentre: string; payType: string; isMwe: boolean; lines: PayLine[]; grossCents: number; pieceCents: number; taxableCents: number;
   sssMscCents: number; sssEeCents: number; sssErCents: number; sssEcCents: number; phicEeCents: number; phicErCents: number; hdmfEeCents: number; hdmfErCents: number;
   eeShortCents: number; wtaxCents: number; loanCents?: number; loans?: PayLoan[]; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
+  /** Tax withheld earlier in the year and refunded on this run (year-end adjustment); net pay includes it. */
+  wtaxRefundCents?: number; yearEnd?: PayYearEnd;
 }
+/** One employee's year-end tax adjustment on a run: the annual tax less what the year withheld before; a deficiency (withheld, short) or a refund. */
+export interface PayYearEnd {
+  year: number; taxableCents: number; benefitsTaxableCents: number; annualTaxCents: number; withheldBeforeCents: number;
+  deficiencyCents: number; withheldCents: number; shortCents: number; refundCents: number;
+}
+/** Pay before Moonproject (this shop's, 'before') or a previous employer's ('previous'), per employee and year; the parts add up to the gross. */
+export interface PriorPay {
+  id: string; employeeId: string; employeeName: string; year: number; source: 'before' | 'previous'; employerName: string | null; employerTin: string | null;
+  grossCents: number; benefitsCents: number; deMinimisCents: number; sssCents: number; phicCents: number; hdmfCents: number; otherNontaxCents: number;
+  taxableCents: number; wtaxCents: number; note: string | null; version: number;
+}
+export type PriorAmounts = Pick<PriorPay, 'grossCents' | 'benefitsCents' | 'deMinimisCents' | 'sssCents' | 'phicCents' | 'hdmfCents' | 'otherNontaxCents' | 'taxableCents' | 'wtaxCents'>;
+/** BIR 2316 figures (IV-A items 19–28, IV-B items 29–52). */
+export interface Figures2316 {
+  i29BasicSmwCents: number; i30HolidayMweCents: number; i31OvertimeMweCents: number; i32NightMweCents: number; i33HazardMweCents: number;
+  i34BenefitsCents: number; i35DeMinimisCents: number; i36SharesCents: number; i37OtherNonTaxableCents: number; i38NonTaxableCents: number;
+  i39BasicCents: number; i48TaxableBenefitsCents: number; i50OvertimeCents: number; i51OtherCents: number; i52TaxableCents: number;
+  i19GrossCents: number; i20NonTaxableCents: number; i21TaxableCents: number; i22PreviousTaxableCents: number; i23GrossTaxableCents: number; i24TaxDueCents: number;
+  i25aPresentWithheldCents: number; i25bPreviousWithheldCents: number; i26WithheldCents: number; withheldJanNovCents: number; withheldDecemberCents: number; refundedCents: number;
+}
+export interface Data2316 {
+  year: number; employeeId: string; code: string; name: string; tin: string | null; isMwe: boolean; periodFrom: string; periodTo: string; separatedOn: string | null;
+  smw: { perDayCents: number; factor: number; perMonthCents: number; perYearCents: number } | null; previousEmployer: { name: string | null; tin: string | null } | null;
+  figures: Figures2316; yearEnd: { number: string; id: string; deficiencyCents: number; withheldCents: number; refundCents: number } | null; substitutedFiling: boolean; runs: number;
+}
+/** The 1604-C alphalist URL; with &format=csv (and &schedule=1 or 2) it downloads for the BIR data entry. */
+export const alphalistPath = (year: number) => `/api/pay/alphalist?${new URLSearchParams({ year: String(year) })}`;
 /** Government loans (PAY): SSS salary and calamity loans, Pag-IBIG multi-purpose and calamity loans. */
 export type LoanKind = 'SSS_SALARY' | 'SSS_CALAMITY' | 'HDMF_MPL' | 'HDMF_CALAMITY';
 /** One loan's deduction on a run: the plan or the amount typed, what net pay allowed, and what is left of the loan after it. */
@@ -158,7 +187,7 @@ export interface GovLoanInput { employeeId: string; kind: LoanKind; loanNo: stri
 export interface ManualPayLine { employeeId: string; kind: 'allowance' | 'adjustment'; amountCents: number; reason: string }
 export interface PayRunInput {
   payGroup: PayGroup; periodStart: string; lines?: ManualPayLine[]; advances?: { employeeId: string; amountCents: number }[]; skip?: { employeeId: string; reason: string }[];
-  loans?: { loanId: string; amountCents: number; reason: string }[];
+  loans?: { loanId: string; amountCents: number; reason: string }[]; yearEnd?: boolean;
 }
 export interface PayRunDoc extends PayRunInput { periodEnd: string; contributionMonth: string; employees: PayEmployee[]; grossCents: number; netCents: number }
 /** `bookOn`: the date to give the run (the period's last day, for someone who may backdate), or null for today. */
@@ -519,6 +548,14 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     addGovLoan: (body: GovLoanInput) => call<GovLoan>('POST', '/api/pay/loans', body),
     updateGovLoan: (id: string, v: number, body: Partial<Omit<GovLoanInput, 'employeeId' | 'kind'>>) => call<GovLoan>('PUT', `/api/pay/loans/${encodeURIComponent(id)}`, body, version(v)),
     stopGovLoan: (id: string, v: number, body: { fromMonth: string; reason: string }) => call<GovLoan>('POST', `/api/pay/loans/${encodeURIComponent(id)}/stop`, body, version(v)),
+    priorPay: (q: { employeeId?: string; year?: number } = {}) =>
+      call<PriorPay[]>('GET', `/api/pay/prior?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))}`),
+    addPriorPay: (body: PriorAmounts & { employeeId: string; year: number; source: 'before' | 'previous'; employerName?: string; employerTin?: string; note?: string }) =>
+      call<PriorPay>('POST', '/api/pay/prior', body),
+    updatePriorPay: (id: string, v: number, body: Partial<PriorAmounts & { employerName: string | null; employerTin: string | null; note: string | null }>) =>
+      call<PriorPay>('PUT', `/api/pay/prior/${encodeURIComponent(id)}`, body, version(v)),
+    all2316: (year: number) => call<Data2316[]>('GET', `/api/pay/2316?year=${year}`),
+    one2316: (year: number, employeeId: string) => call<Data2316>('GET', `/api/pay/2316?${new URLSearchParams({ year: String(year), employeeId })}`),
     caStatus: (employeeId: string) => call<CaStatus>('GET', `/api/ca/employees/${encodeURIComponent(employeeId)}`),
     /** Who owes on cash advances today, separated employees included. */
     caOwing: () => call<CaOwing[]>('GET', '/api/ca/employees'),

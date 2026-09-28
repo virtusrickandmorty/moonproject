@@ -44,7 +44,7 @@ function runOf(db: Db, id: string): RunRow | undefined {
 }
 /** Release tables by what they pay: a payroll run's net pay, or a 13th-month pay's. */
 const TABLES = {
-  run: { head: 'pay_releases', source: 'run_id', lines: 'pay_release_lines', tenders: 'pay_release_tenders', employees: 'pay_run_employees', net: 'e.net_cents - e.loan_cents' },
+  run: { head: 'pay_releases', source: 'run_id', lines: 'pay_release_lines', tenders: 'pay_release_tenders', employees: 'pay_run_employees', net: 'e.net_cents - e.loan_cents + e.wtax_refund_cents' },
   thirteenth: { head: 'pay_thirteenth_releases', source: 'thirteenth_id', lines: 'pay_thirteenth_release_lines', tenders: 'pay_thirteenth_release_tenders', employees: 'pay_thirteenth_employees', net: 'e.net_cents' },
 } as const;
 

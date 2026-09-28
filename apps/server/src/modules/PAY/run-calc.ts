@@ -4,7 +4,8 @@
  * rates, overtime), the half-month salary of monthly staff, unpaid piece work up to the period end (PRD), and manual
  * lines; then SSS, PhilHealth and Pag-IBIG for the contribution month as a month-to-date true-up, withholding tax for
  * the period, government loan amortizations (once a month, loans.ts), the cash-advance instalment, net pay and the
- * 13th-month accrual. Warnings go with the result.
+ * 13th-month accrual. On a year-end run the tax is the year-end adjustment instead (year-end.ts): a deficiency withheld,
+ * or an excess refunded (net pay more by it). Warnings go with the result.
  */
 import { divRoundHalfAway, formatPeso, type Issue } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
@@ -14,6 +15,7 @@ import { jobOrderRef } from '../JO/public.ts';
 import { advanceSchedule } from '../CA/public.ts';
 import { govLoan, loanInMonth, loansOf, type Agency, type LoanKind } from './loans.ts';
 import { hdmfMonthly, hdmfRateAt, phicDailyBasis, phicMonthly, phicRateAt, rulesAt, sssMonthly, sssRateAt, withholding, wtaxTableAt, type PayRules, type TaxFrequency } from './statutory.ts';
+import { addLine, figures, yearParts } from './year-end.ts';
 
 export type LineKind = 'basic' | 'leave' | 'holiday' | 'rest_day' | 'ot' | 'salary' | 'absence' | 'piece' | 'allowance' | 'adjustment';
 export interface RunLine {
@@ -25,6 +27,18 @@ export interface RunEmployee {
   grossCents: number; pieceCents: number; taxableCents: number; sssMscCents: number; sssEeCents: number; sssErCents: number; sssEcCents: number;
   phicBasisCents: number; phicEeCents: number; phicErCents: number; hdmfEeCents: number; hdmfErCents: number; eeShortCents: number;
   wtaxCents: number; loanCents: number; loans: RunLoan[]; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
+  /** Tax withheld earlier in the year and refunded on this run (the year-end adjustment's excess); net pay includes it. */
+  wtaxRefundCents: number; yearEnd?: YearEnd;
+}
+/**
+ * One employee's year-end tax adjustment on a run (year-end.ts): the year's taxable compensation (a previous employer's
+ * included) and the part of it from 13th-month pay and other benefits above the ceiling, the annual tax, what the year
+ * withheld before this run, and the difference: a deficiency (withheld on this run as far as net pay allows; the rest
+ * is `shortCents`) or a refund.
+ */
+export interface YearEnd {
+  year: number; taxableCents: number; benefitsTaxableCents: number; annualTaxCents: number; withheldBeforeCents: number;
+  deficiencyCents: number; withheldCents: number; shortCents: number; refundCents: number;
 }
 /** One government loan's deduction on a run: the plan or the amount typed (with its note), what net pay allowed, what is left. */
 export interface RunLoan {
@@ -205,6 +219,8 @@ function monthSoFar(db: Db, employeeId: string, month: string) {
 export interface RunRequest {
   payGroup: PayGroup; periodStart: string; periodEnd: string; payDate: string; manual: ManualLine[]; caOverrides: Map<string, number>; skipped: Set<string>;
   loanOverrides?: Map<string, LoanOverride>;
+  /** The year-end tax adjustment of every employee in the run, instead of the period's table (a period ending in December). */
+  yearEnd?: boolean;
 }
 
 /**
@@ -262,7 +278,32 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
     if (short > 0) notes.push({ code: 'EE_SHORT', level: 'warning', message: `${e.name}: the pay does not cover ${formatPeso(short)} of government shares; the next run this month takes it.` });
     const taxableLines = built.lines.filter((l) => l.taxable).reduce((s, l) => s + l.amountCents, 0);
     const taxable = Math.max(0, taxableLines - (end.isMwe ? 0 : ee.sss + ee.phic + ee.hdmf));
-    const wtax = e.statutory.wtax ? take(withholding(table, taxable)) : 0;
+    let wtax = 0;
+    let refund = 0;
+    let yearEnd: YearEnd | undefined;
+    if (e.statutory.wtax && q.yearEnd) {
+      // Year-end adjustment (RR 11-2018): the annual tax on the year's pay with this run, less what the year withheld
+      // before it. A deficiency is withheld here as far as the pay allows (after the shares, before loans and the cash
+      // advance, F3); an excess is refunded on this run.
+      const year = +q.periodEnd.slice(0, 4);
+      const parts = yearParts(db, e.id, year);
+      const before = figures(parts, end.isMwe);
+      const comp = { ...parts.comp };
+      for (const l of built.lines) addLine(comp, l);
+      if (!end.isMwe) comp.sharesCents += ee.sss + ee.phic + ee.hdmf;
+      const f = figures({ ...parts, comp }, end.isMwe);
+      const deficiency = Math.max(0, f.i24TaxDueCents - before.i26WithheldCents);
+      wtax = take(deficiency);
+      refund = Math.max(0, before.i26WithheldCents - f.i24TaxDueCents);
+      yearEnd = {
+        year, taxableCents: f.i23GrossTaxableCents, benefitsTaxableCents: f.i48TaxableBenefitsCents, annualTaxCents: f.i24TaxDueCents, withheldBeforeCents: before.i26WithheldCents,
+        deficiencyCents: deficiency, withheldCents: wtax, shortCents: deficiency - wtax, refundCents: refund,
+      };
+      if (wtax < deficiency) {
+        notes.push({ code: 'YEAR_END_SHORT', level: 'warning', message: `${e.name}: the pay covers ${formatPeso(wtax)} of the ${formatPeso(deficiency)} tax still due for ${year}; ${formatPeso(deficiency - wtax)} is not withheld. Collect it from ${e.name} and tell the accountant.` });
+      }
+    } else if (e.statutory.wtax) wtax = take(withholding(table, taxable));
+    else if (q.yearEnd) notes.push({ code: 'YEAR_END_NO_WTAX', level: 'warning', message: `${e.name}: withholding tax is switched off, so no year-end tax adjustment is worked out.` });
     // Government loans (F3: after tax, before the cash advance): the month's amortization, never more than is left of
     // the loan, nor than the pay left after shares and tax; less is deducted with a warning, the rest stays owed.
     const loans: RunLoan[] = [];
@@ -306,7 +347,7 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
       phicBasisCents: phicDue.basisCents, phicEeCents: ee.phic, phicErCents: clampNote('PhilHealth (employer)', phicDue.er - so.phicEr),
       hdmfEeCents: ee.hdmf, hdmfErCents: clampNote('Pag-IBIG (employer)', hdmfDue.er - so.hdmfEr), eeShortCents: short,
       wtaxCents: wtax, loanCents, loans, caCents: ca, caOverrideCents: override ?? null, thirteenthCents: endRules.accrue13th ? Math.max(0, divRoundHalfAway(base13, 12)) : 0,
-      netCents: gross - ee.sss - ee.phic - ee.hdmf - wtax - loanCents - ca,
+      netCents: gross - ee.sss - ee.phic - ee.hdmf - wtax - loanCents - ca + refund, wtaxRefundCents: refund, ...(yearEnd ? { yearEnd } : {}),
     });
   }
   return { employees, notes };
