@@ -15,6 +15,7 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [11. Backups](11-backups.md): Set up folders and recovery keys, and copy backups to a USB drive.
 - [12. Restore from a Backup](12-restore.md): Run a restore drill or perform an emergency restore.
 - [13. Bills and Expenses](13-bills-and-expenses.md): Record supplier bills, payments, and expenses.
+- [14. Installing Moonproject](14-install.md): Install Moonproject on the shop's server PC.
 - [15. Inventory Count](15-inventory-count.md): Count materials or ready-made goods at a month end.
 - [16. Income Statement and Balance Sheet](16-statements.md): View how much money the business made or lost, and see what the business owns and owes.
 - [17. Opening balances](17-opening-balances.md): Set the cut-over date, record starting balances, and close the opening.
