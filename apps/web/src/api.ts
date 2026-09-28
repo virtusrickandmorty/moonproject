@@ -185,6 +185,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     changePassword: (currentPassword: string, newPassword: string) => call<unknown>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
     health: () => call<{ serverTime: string }>('GET', '/api/health'),
     docTypes: () => call<DocTypeInfo[]>('GET', '/api/doc-types'),
+    report: <T>(path: string) => call<T>('GET', `/api/rpt/${path}`),
     list: (type: string, q: { status?: string; before?: string; limit?: number } = {}) =>
       call<DocHeader[]>('GET', doc(type, `?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`)),
     get: (type: string, id: string) => call<DocDetail>('GET', one(type, id)),
