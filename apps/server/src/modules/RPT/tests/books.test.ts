@@ -12,9 +12,10 @@ beforeEach(async () => {
   encoder = await env.as('encoder');
 });
 
-async function record(date: string, debitCode: string, creditCode: string, cents: number) {
-  const input = { memo: `Book test entry for ${date}`, ...(date < '2026-09-28' ? { lateReason: 'Late test entry for accounting books' } : {}),
-    lines: [{ accountId: account(debitCode), debitCents: cents }, { accountId: account(creditCode), creditCents: cents }] };
+async function record(date: string, debitCode: string, creditCode: string, cents: number, memo = `Book test entry for ${date}`, lineMemo?: string) {
+  const input = { memo, ...(date < '2026-09-28' ? { lateReason: 'Late test entry for accounting books' } : {}),
+    lines: [{ accountId: account(debitCode), debitCents: cents, ...(lineMemo ? { memo: lineMemo } : {}) },
+      { accountId: account(creditCode), creditCents: cents }] };
   const res = await accountant.post('/api/docs/acc.jv/post', { input, businessDate: date, expectedTotalCents: cents }, idem());
   expect(res.statusCode, res.body).toBe(200);
   return res.json() as { id: string; number: string };
@@ -67,5 +68,19 @@ describe('RPT accounting books', () => {
     expect(tbCsv.body).toContain('"Debit PHP 2026-09-28"');
     expect(tbCsv.body).toContain('"123.45"');
     expect((await accountant.get('/api/rpt/ledger?from=2026-09-29&to=2026-09-28')).statusCode).toBe(400);
+  });
+
+  it('exports a formula-like memo as text while keeping negative balances numeric', async () => {
+    const formula = '=HYPERLINK("https://example.invalid", "Open")';
+    await record('2026-09-28', '7103', '1101', 15_000, formula, formula);
+
+    const journalCsv = await accountant.get('/api/rpt/journal?from=2026-09-28&to=2026-09-28&format=csv');
+    expect(journalCsv.statusCode).toBe(200);
+    expect(journalCsv.body).toContain('"\'=HYPERLINK(""https://example.invalid"", ""Open"")"');
+
+    const ledgerCsv = await accountant.get(`/api/rpt/ledger?from=2026-09-28&to=2026-09-28&accountId=${account('1101')}&format=csv`);
+    expect(ledgerCsv.statusCode).toBe(200);
+    expect(ledgerCsv.body).toContain('"-150.00"');
+    expect(ledgerCsv.body).not.toContain('"\'-150.00"');
   });
 });

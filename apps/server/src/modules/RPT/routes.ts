@@ -18,7 +18,11 @@ function range(q: Record<string, unknown>) {
   return { from, to };
 }
 function csv(rows: (string | number | null)[][]): string {
-  return '\uFEFF' + rows.map((row) => row.map((cell) => `"${String(cell ?? '').replaceAll('"', '""')}"`).join(',')).join('\r\n') + '\r\n';
+  return '\uFEFF' + rows.map((row) => row.map((cell) => {
+    const value = String(cell ?? '');
+    const safe = /^[=+\-@\t\r]/.test(value) && !/^-?\d+(\.\d+)?$/.test(value) ? `'${value}` : value;
+    return `"${safe.replaceAll('"', '""')}"`;
+  }).join(',')).join('\r\n') + '\r\n';
 }
 function pesos(cents: number | null): string { return cents === null ? '' : (cents / 100).toFixed(2); }
 function sendCsv(reply: { header: (name: string, value: string) => unknown; type: (value: string) => unknown }, name: string, rows: (string | number | null)[][]) {
