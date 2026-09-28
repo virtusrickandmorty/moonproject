@@ -27,7 +27,8 @@ describe('year-end adjustment property test (PLAN I1.3)', () => {
           mwe: fc.boolean(),
           before: fc.option(fc.record({ taxableCents: pesos(1_500_000), wtaxCents: pesos(400_000), sssCents: pesos(20_000), benefitsCents: pesos(90_000) }), { nil: undefined }),
           previous: fc.option(fc.record({ taxableCents: pesos(500_000), wtaxCents: pesos(100_000), benefitsCents: pesos(60_000) }), { nil: undefined }),
-          thirteenthCents: fc.option(pesos(150_000), { nil: undefined }),
+          // A 13th-month pay of nothing is refused (NOTHING), so a recorded one is at least 1 centavo.
+          thirteenthCents: fc.option(fc.integer({ min: 1, max: 150_000_00 }), { nil: undefined }),
           allowanceCents: fc.option(fc.integer({ min: 1, max: 5_000_000 }), { nil: undefined }),
         }),
         async (p) => {
