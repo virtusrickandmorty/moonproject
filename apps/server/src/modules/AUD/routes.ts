@@ -5,6 +5,7 @@ import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
 import type { AppDeps } from '../../app.ts';
 import { appendAudit, verifyAuditChain } from '../../engine/audit.ts';
+import { clockGuard } from '../../engine/documents/lifecycle.ts';
 import { runInvariants } from '../../engine/ledger/invariants.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 
@@ -76,7 +77,9 @@ export function audRoutes(app: FastifyInstance, { db, clock }: AppDeps): void {
     const q = req.query as Record<string, unknown>;
     const filters = auditFilters(q);
     if (q.format !== 'csv') return auditPage(db, filters);
+    // Like every write, the export's audit row needs a clock that has not gone backwards.
     const result = tx(db, () => {
+      clockGuard({ db, clock });
       const page = auditPage(db, filters);
       appendAudit(db, { at: stamp(clock), userId: currentUser(req).userId, action: 'audit.export', entityType: 'audit_log',
         data: { filters } });
