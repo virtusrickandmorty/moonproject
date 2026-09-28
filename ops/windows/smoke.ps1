@@ -17,17 +17,30 @@ function WaitForHealth([string]$url) {
   throw "No answer from $url"
 }
 
+function WaitForService {
+  for ($i = 0; $i -lt 30; $i++) {
+    $s = Get-Service 'Moonproject' -ErrorAction SilentlyContinue
+    if ($s -and $s.Status -eq 'Running' -and (Get-NetTCPConnection -State Listen -LocalPort 443 -ErrorAction SilentlyContinue)) { return }
+    Start-Sleep -Seconds 2
+  }
+  throw "The service is not serving on port 443 (status: $($s.Status))"
+}
+
+# Anything already on the ports would answer instead of Moonproject.
+Get-NetTCPConnection -State Listen -LocalPort 80, 443 -ErrorAction SilentlyContinue |
+  ForEach-Object { Write-Host "Before install, port $($_.LocalPort) is used by $((Get-Process -Id $_.OwningProcess).ProcessName)" }
+
 Install 'setup-1.log'
 $svc = Get-CimInstance Win32_Service -Filter "Name='Moonproject'"
 if (-not $svc) { throw 'The service is not installed' }
 Write-Host "Service $($svc.State), start mode $($svc.StartMode), account $($svc.StartName)"
 if ($svc.StartName -ne 'NT SERVICE\Moonproject') { throw "The service runs as $($svc.StartName)" }
+WaitForService
 
 # A PC joins: the page over HTTP, the CA download, then HTTPS with only the shop CA trusted.
-for ($i = 0; $i -lt 60; $i++) { try { if ((Invoke-WebRequest 'http://localhost/' -TimeoutSec 5).StatusCode -eq 200) { break } } catch { Start-Sleep -Seconds 2 } }
-$page = (Invoke-WebRequest 'http://localhost/').Content
-if ($page -notmatch 'Join this PC to Moonproject') { throw 'The join page is wrong' }
-Invoke-WebRequest 'http://localhost/moonproject-ca.crt' -OutFile 'ca.crt'
+$page = Invoke-WebRequest 'http://127.0.0.1/' -MaximumRedirection 0
+if ($page.Content -notmatch 'Join this PC to Moonproject') { throw "The join page is wrong: $($page.StatusCode) $($page.Content.Substring(0, [Math]::Min(200, $page.Content.Length)))" }
+Invoke-WebRequest 'http://127.0.0.1/moonproject-ca.crt' -MaximumRedirection 0 -OutFile 'ca.crt'
 $ca = Import-Certificate -FilePath 'ca.crt' -CertStoreLocation 'Cert:\LocalMachine\Root'
 Write-Host "Shop CA $($ca.Thumbprint) trusted"
 $h = WaitForHealth 'https://localhost/api/health'
@@ -42,6 +55,7 @@ if ($who -match 'Users|Everyone') { throw 'The data folder is open to ordinary u
 
 # An update in place: the service comes back on the same database and CA.
 Install 'setup-2.log'
+WaitForService
 WaitForHealth 'https://localhost/api/health' | Out-Null
 Write-Host 'Updated in place'
 

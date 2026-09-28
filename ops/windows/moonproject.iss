@@ -52,8 +52,11 @@ Filename: "{#Svc}"; Parameters: "uninstall"; Flags: runhidden waituntilterminate
 Filename: "{#Svc}"; Parameters: "install"; Flags: runhidden waituntilterminated; StatusMsg: "Registering the Moonproject service..."
 Filename: "{sys}\sc.exe"; Parameters: "config Moonproject obj= ""NT SERVICE\Moonproject"""; Flags: runhidden waituntilterminated
 ; Only the service, SYSTEM and Administrators may open the data folder (the database holds the shop's certificate key).
-Filename: "{sys}\icacls.exe"; Parameters: """{#Data}"" /inheritance:r /grant:r ""*S-1-5-18:(OI)(CI)F"" ""*S-1-5-32-544:(OI)(CI)F"" ""NT SERVICE\Moonproject:(OI)(CI)M"" /T /C /Q"; Flags: runhidden waituntilterminated; StatusMsg: "Protecting the data folder..."
-Filename: "{sys}\icacls.exe"; Parameters: """{app}"" /grant ""NT SERVICE\Moonproject:(OI)(CI)RX"" /T /C /Q"; Flags: runhidden waituntilterminated
+; The rights are set on the folder alone and everything inside inherits them; set file by file, the folder-only flags
+; would leave a file with no rights at all.
+Filename: "{sys}\icacls.exe"; Parameters: """{#Data}"" /inheritance:r /grant:r ""*S-1-5-18:(OI)(CI)F"" ""*S-1-5-32-544:(OI)(CI)F"" ""NT SERVICE\Moonproject:(OI)(CI)M"" /C /Q"; Flags: runhidden waituntilterminated; StatusMsg: "Protecting the data folder..."
+Filename: "{sys}\icacls.exe"; Parameters: """{#Data}\*"" /reset /T /C /Q"; Flags: runhidden waituntilterminated
+Filename: "{sys}\icacls.exe"; Parameters: """{app}"" /grant ""NT SERVICE\Moonproject:(OI)(CI)RX"" /C /Q"; Flags: runhidden waituntilterminated
 ; Open ports 443 (the app) and 80 (the "Join this PC" page) on private and domain networks only, never on public Wi-Fi.
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Moonproject"""; Flags: runhidden waituntilterminated
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Moonproject"" dir=in action=allow protocol=TCP localport=443,80 profile=private,domain"; Flags: runhidden waituntilterminated

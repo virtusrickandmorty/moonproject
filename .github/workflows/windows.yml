@@ -43,7 +43,11 @@ jobs:
       - name: Service logs
         if: failure()
         shell: pwsh
-        run: Get-ChildItem "$env:ProgramData\Moonproject\logs" -ErrorAction SilentlyContinue | ForEach-Object { "== $($_.Name)"; Get-Content $_.FullName -Tail 60 }
+        run: |
+          Get-ChildItem "$env:ProgramData\Moonproject\logs" -ErrorAction SilentlyContinue | ForEach-Object {
+            "== $($_.Name)"
+            try { Get-Content $_.FullName -Tail 60 -ErrorAction Stop } catch { "(not readable: $($_.Exception.Message))"; icacls $_.TargetObject }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: Moonproject-Setup-${{ env.MOONPROJECT_VERSION }}
