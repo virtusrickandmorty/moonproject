@@ -22,3 +22,19 @@ export function tx<T>(db: Db, fn: () => T): T {
   if (db.inTransaction) return fn();
   return db.transaction(fn).immediate();
 }
+
+/**
+ * Copies the live database to `file` with SQLite's online backup API (PLAN C8): a consistent snapshot while the app
+ * keeps working. The copy is switched out of WAL so it is one self-contained file.
+ */
+export async function snapshotTo(db: Db, file: string): Promise<void> {
+  await db.backup(file);
+  const copy = new Database(file);
+  copy.pragma('journal_mode = DELETE');
+  copy.close();
+}
+
+/** Opens a database copy read-only (a backup being checked or restored), never the live file. */
+export function openReadonly(file: string): Db {
+  return new Database(file, { readonly: true, fileMustExist: true });
+}
