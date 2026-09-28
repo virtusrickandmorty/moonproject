@@ -1,6 +1,7 @@
 name: Windows installer
 # Builds Moonproject-Setup.exe (PLAN C6, C8) and proves it on a clean Windows machine: install, service account,
-# "Join this PC", HTTPS through the shop CA, update in place, uninstall keeping the data. The installer is kept as a
+# "Join this PC", HTTPS through the shop CA, update in place with a copy of the database first, an update that cannot
+# start going back by itself, uninstall keeping the data. The installer is kept as a
 # downloadable artifact of each run.
 on:
   workflow_dispatch:
@@ -37,7 +38,16 @@ jobs:
           if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; if ($LASTEXITCODE) { exit $LASTEXITCODE } }
           & $iscc ops\windows\moonproject.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Install, check and uninstall
+      - name: Build a Setup.exe that cannot start (the smoke test's update must go back from it)
+        shell: pwsh
+        env:
+          MOONPROJECT_VERSION: 0.1.${{ github.run_number }}-broken
+        run: |
+          $main = 'ops\windows\out\stage\app\apps\server\src\main.ts'
+          Set-Content $main ("throw new Error('A build that cannot start, for the smoke test');`n" + (Get-Content $main -Raw)) -NoNewline
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /FMoonproject-Setup-broken ops\windows\moonproject.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Install, check, update, fail an update, uninstall
         shell: pwsh
         run: ops\windows\smoke.ps1
       - name: Service logs
