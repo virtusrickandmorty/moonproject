@@ -71,6 +71,17 @@ export interface Transferable {
   held: { id: string; number: string; status: 'posted' | 'cancelled'; depositsHeldCents: number; replacement: { id: string; number: string } | null }[];
   jobOrders: { id: string; number: string; dueDate: string; totalCents: number; balanceDueCents: number }[];
 }
+/** GET /api/col/customers/:id/invoices: a customer's recorded invoices, for the credit memo, write-off and 2307 forms. */
+export interface CustomerInvoices {
+  customerId: string; customerName: string;
+  invoices: { id: string; kind: 'jo.invoice_record' | 'qs.sale'; number: string; invoiceNumber: string; businessDate: string; jobOrderNumber: string | null;
+    grossCents: number; vatCents: number; owedCents: number; creditableCents: number; writtenOff: string | null }[];
+}
+/** GET /api/col/customers/:id/forfeitable: job orders with a deposit held, for the deposit forfeit form. */
+export interface Forfeitable {
+  customerId: string; customerName: string;
+  jobOrders: { id: string; number: string; status: 'posted' | 'cancelled'; depositsHeldCents: number; stageLabel: string; blocked: string | null }[];
+}
 /** GET /api/jo/orders/:id/status, the parts the JO view shows: all derived on the server (NR-2). */
 export interface JoStatus {
   stageLabel: string;
@@ -453,6 +464,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     openItems: (customerId: string) => call<OpenItems>('GET', customer(customerId, 'open-items')),
     refundable: (customerId: string) => call<Refundable>('GET', customer(customerId, 'refundable')),
     transferable: (customerId: string) => call<Transferable>('GET', customer(customerId, 'transferable')),
+    customerInvoices: (customerId: string) => call<CustomerInvoices>('GET', customer(customerId, 'invoices')),
+    forfeitable: (customerId: string) => call<Forfeitable>('GET', customer(customerId, 'forfeitable')),
     joStatus: (id: string) => call<JoStatus>('GET', `/api/jo/orders/${encodeURIComponent(id)}/status`),
     qsPreview: (b: QsBody) => call<QsPreview>('POST', '/api/qs/sales/preview', b),
     qsRecord: (b: QsBody, expectedTotalCents: number, key: string) => call<QsRecorded>('POST', '/api/qs/sales', { ...b, expectedTotalCents }, idem(key)),

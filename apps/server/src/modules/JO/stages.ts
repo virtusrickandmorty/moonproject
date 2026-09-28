@@ -42,11 +42,37 @@ export function movesFrom(stage: Stage | 'cancelled') {
   return (stage === 'cancelled' ? [] : (BY_HAND[stage] ?? [])).map((to) => ({ to, label: STAGE_LABELS[to], needsReason: isBack(stage as Stage, to) }));
 }
 
-function record(db: Db, documentId: string, from: Stage, to: Stage, reason: string | null, who: Who) {
+function record(db: Db, documentId: string, from: Stage, to: Stage, reason: string | null, who: Who, abandoned = false) {
   const seq = ((db.prepare('SELECT MAX(seq) AS n FROM jo_stage_events WHERE document_id = ?').get(documentId) as { n: number | null }).n ?? 0) + 1;
-  db.prepare('INSERT INTO jo_stage_events (document_id, seq, from_stage, to_stage, reason, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)').run(documentId, seq, from, to, reason, who.at, who.userId);
-  appendAudit(db, { at: who.at, userId: who.userId, action: 'jo.stage', entityType: 'jo.job_order', entityId: documentId, data: { seq, from, to, reason } });
+  db.prepare('INSERT INTO jo_stage_events (document_id, seq, from_stage, to_stage, reason, at, user_id, abandoned) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(documentId, seq, from, to, reason, who.at, who.userId, abandoned ? 1 : 0);
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'jo.stage', entityType: 'jo.job_order', entityId: documentId, data: { seq, from, to, reason, ...(abandoned ? { abandoned } : {}) } });
   return { stage: to, seq };
+}
+
+/** The customer abandoned the job order (PLAN D5 DEP-FORFEIT): its latest stage event is a close marked abandoned. */
+export function isAbandoned(db: Db, documentId: string): boolean {
+  return db.prepare('SELECT abandoned FROM jo_stage_events WHERE document_id = ? ORDER BY seq DESC LIMIT 1').pluck().get(documentId) === 1;
+}
+
+/**
+ * A deposit forfeit closes the job order as abandoned, from any stage but Released or Closed. Nothing more is released
+ * on it (the release refuses it, owner override included), so nothing more is invoiced either: the forfeit is refused
+ * while a release still waits for its invoice. Returns false when there was nothing to mark (a cancelled job order).
+ * Call inside a transaction.
+ */
+export function abandon(db: Db, documentId: string, reason: string, who: Who): boolean {
+  const now = currentStage(db, documentId);
+  if (now === 'cancelled' || now === 'released' || now === 'closed') return false;
+  record(db, documentId, now, 'closed', reason, who, true);
+  return true;
+}
+
+/** Cancelling the forfeit puts an abandoned job order back on the stage it was abandoned from. Call inside a transaction. */
+export function unabandon(db: Db, documentId: string, reason: string, who: Who): void {
+  if (currentStage(db, documentId) === 'cancelled' || !isAbandoned(db, documentId)) return;
+  const back = db.prepare('SELECT from_stage FROM jo_stage_events WHERE document_id = ? ORDER BY seq DESC LIMIT 1').pluck().get(documentId) as Stage;
+  record(db, documentId, 'closed', back, reason, who);
 }
 
 /** `from` is the stage the user saw, so a double click or a stale screen changes nothing. Call inside a transaction. */
@@ -91,10 +117,12 @@ export function carryStageOver(db: Db, oldId: string, newId: string): void {
 }
 
 export function stageHistory(db: Db, documentId: string) {
-  return db
-    .prepare(
-      `SELECT e.seq, e.from_stage AS fromStage, e.to_stage AS toStage, e.reason, e.at, u.display_name AS byName
-       FROM jo_stage_events e JOIN users u ON u.id = e.user_id WHERE e.document_id = ? ORDER BY e.seq`,
-    )
-    .all(documentId) as { seq: number; fromStage: Stage; toStage: Stage; reason: string | null; at: string; byName: string }[];
+  return (
+    db
+      .prepare(
+        `SELECT e.seq, e.from_stage AS fromStage, e.to_stage AS toStage, e.reason, e.at, u.display_name AS byName, e.abandoned
+         FROM jo_stage_events e JOIN users u ON u.id = e.user_id WHERE e.document_id = ? ORDER BY e.seq`,
+      )
+      .all(documentId) as { seq: number; fromStage: Stage; toStage: Stage; reason: string | null; at: string; byName: string; abandoned: number }[]
+  ).map(({ abandoned, ...e }) => ({ ...e, ...(abandoned ? { abandoned: true } : {}) }));
 }

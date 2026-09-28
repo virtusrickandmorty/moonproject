@@ -16,6 +16,7 @@ import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { DraftLine } from '../../../engine/ledger/post.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { saleByInvoiceNumber, saleInvoiceNumbersBetween } from '../../QS/public.ts';
+import { creditsOn } from '../../COL/public.ts';
 import { bookletIssue } from '../../TAX/public.ts';
 import { invoicedCents, joLedger } from '../public.ts';
 import { MAX_CENTS } from './job-order.ts';
@@ -172,6 +173,9 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
       ],
     };
   },
+
+  /** What COL recorded on this invoice (credit memos, write-offs, 2307s received with no cash): cancel those first. */
+  dependents: (db, documentId) => creditsOn(db, documentId),
 
   afterCancel(db, documentId) {
     const d = invoiceRecordDoc.load(db, documentId);

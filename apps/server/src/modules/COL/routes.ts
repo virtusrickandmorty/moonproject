@@ -2,9 +2,10 @@ import type { FastifyInstance } from 'fastify';
 import { notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { customerRef } from '../CUS/public.ts';
-import { jobOrdersOf, joMoney, liveReplacementOf } from '../JO/public.ts';
+import { STAGE_LABELS, awaitingInvoice, currentStage, isAbandoned, jobOrdersOf, joMoney, liveReplacementOf } from '../JO/public.ts';
 import { openSalesOf } from '../QS/public.ts';
 import { depositsHeld } from './ledger.ts';
+import { invoicesOf, memosOn, owedCents, writeOffsOn } from './credits.ts';
 
 export function colRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db } = deps;
@@ -40,6 +41,36 @@ export function colRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get<{ Params: { id: string } }>('/api/col/customers/:id/refundable', { config: { permission: 'col.refund' } }, async (req) => {
     const c = customer(req.params.id);
     return { customerId: c.id, customerName: c.display_name, jobOrders: heldPerJo(c.id), unappliedCents: depositsHeld(db, c.id, null) };
+  });
+
+  /**
+   * A customer's recorded invoices (release invoices and quick sales) for the credit memo, write-off and 2307 forms: what
+   * each still owes, what credit memos left of it, and its write-off if any.
+   */
+  app.get<{ Params: { id: string } }>('/api/col/customers/:id/invoices', { config: { permission: 'col.view' } }, async (req) => {
+    const c = customer(req.params.id);
+    const invoices = invoicesOf(db, c.id).map((i) => ({
+      id: i.id, kind: i.kind, number: i.number, invoiceNumber: i.invoiceNumber, businessDate: i.businessDate, jobOrderNumber: i.jobOrderNumber,
+      grossCents: i.grossCents, vatCents: i.vatCents, owedCents: owedCents(db, i), creditableCents: i.grossCents - memosOn(db, i.id).amountCents,
+      writtenOff: writeOffsOn(db, i.arRefId).find((w) => w.invoiceId === i.id)?.number ?? null,
+    }));
+    return { customerId: c.id, customerName: c.display_name, invoices };
+  });
+
+  /**
+   * For the deposit forfeit form (D5 DEP-FORFEIT): job orders with a deposit held, cancelled ones too (D6), with their
+   * stage, and whether one can be forfeited (not released, no release waiting for its invoice).
+   */
+  app.get<{ Params: { id: string } }>('/api/col/customers/:id/forfeitable', { config: { permission: 'col.forfeit' } }, async (req) => {
+    const c = customer(req.params.id);
+    const jobOrders = heldPerJo(c.id).map((jo) => {
+      const stage = currentStage(db, jo.id);
+      const abandoned = stage === 'closed' && isAbandoned(db, jo.id);
+      const blocked = (stage === 'released' || stage === 'closed') && !abandoned ? 'Released to the customer: refund or move its money instead.'
+        : awaitingInvoice(db, jo.id).length > 0 ? 'A release still waits for its invoice.' : null;
+      return { ...jo, stageLabel: abandoned ? 'Abandoned' : STAGE_LABELS[stage], blocked };
+    });
+    return { customerId: c.id, customerName: c.display_name, jobOrders };
   });
 
   /**
