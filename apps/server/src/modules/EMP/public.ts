@@ -1,4 +1,4 @@
-/** EMP contract for other modules (PRD, PAY, CAL, DASH). Read-only; callers check their own route permission. */
+/** EMP contract for other modules (PRD, PAY, CAL, DASH, MIG). Includes import creates; callers check their own route permission. */
 import type { Db } from '../../platform/db/driver.ts';
 import { payProfileAt, type PayGroup } from './employees.ts';
 export { createEmployee, addPayProfile, type Who } from './employees.ts';

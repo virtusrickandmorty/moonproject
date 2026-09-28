@@ -55,6 +55,36 @@ test('every importer route requires a session and owner permission', async () =>
   }
 });
 
+test('commit and clear-staging require mig.commit and step-up, regardless of role name', async () => {
+  const isolated = await createTestEnv();
+  try {
+    const owner = await isolated.as('owner');
+    const encoder = await isolated.as('encoder');
+    const upload = await owner.post('/api/mig/upload', { filename: 'buyers.csv',
+      csv: 'Legacy_ID,Customer_Name\nC-PERM,Example Customer' });
+    const id = upload.json().uploadId as string;
+    const commitUrl = `/api/mig/uploads/${id}/commit`;
+    const clearUrl = `/api/mig/uploads/${id}/clear-staging`;
+    const now = '2026-09-28T10:00:00+08:00';
+    isolated.db.prepare("UPDATE role_permissions SET granted = 0, updated_at = ? WHERE role_key = 'owner' AND permission_key = 'mig.commit'").run(now);
+    await owner.post('/api/auth/step-up', { password: PASSWORD });
+    expect((await owner.post(commitUrl, { expectedMeasurementCellTenths: 0 })).statusCode).toBe(403);
+    expect((await owner.post(clearUrl, {})).statusCode).toBe(403);
+
+    isolated.db.prepare(`INSERT INTO role_permissions (role_key, permission_key, granted, updated_at) VALUES ('encoder', 'mig.commit', 1, ?)
+      ON CONFLICT (role_key, permission_key) DO UPDATE SET granted = 1, updated_at = excluded.updated_at`).run(now);
+    expect((await encoder.post(commitUrl, { expectedMeasurementCellTenths: 0 })).statusCode).toBe(403);
+    expect((await encoder.post(clearUrl, {})).statusCode).toBe(403);
+    await encoder.post('/api/auth/step-up', { password: PASSWORD });
+    const committed = await encoder.post(commitUrl, { expectedMeasurementCellTenths: 0 });
+    expect(committed.statusCode, committed.body).toBe(200);
+    expect((await encoder.post(clearUrl, {})).statusCode).toBe(200);
+  } finally {
+    await isolated.app.close();
+    isolated.db.close();
+  }
+});
+
 test('commit imports accepted master rows, reports counts, and clears staging only after verification', async () => {
   const owner = await env.as('owner');
   const upload = await owner.post('/api/mig/upload', { filename: 'buyers.csv',
@@ -67,6 +97,8 @@ test('commit imports accepted master rows, reports counts, and clears staging on
   const commit = await owner.post(`/api/mig/uploads/${id}/commit`, { expectedMeasurementCellTenths: dry.json().checksums.measurement.cellTenths });
   expect(commit.statusCode, commit.body).toBe(200);
   expect(commit.json().counts.customer).toEqual({ imported: 1, alreadyImported: 0 });
+  const customer = env.db.prepare("SELECT legacy_id FROM cus_customers WHERE display_name = 'Example Academy'").get() as { legacy_id: string };
+  expect(customer.legacy_id).toBe('C-100');
   expect((env.db.prepare('SELECT count(*) FROM cus_customers').pluck().get() as number)).toBeGreaterThan(0);
   expect((await owner.get(`/api/mig/uploads/${id}/commit`)).json().counts).toEqual(commit.json().counts);
   expect((await owner.post(`/api/mig/uploads/${id}/clear-staging`, {})).statusCode).toBe(200);

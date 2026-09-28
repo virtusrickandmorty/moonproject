@@ -97,7 +97,7 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
         ...(first(raw, 'Registered_Name') ? { registeredName: first(raw, 'Registered_Name') } : {}),
         ...(first(raw, 'TIN') ? { tin: first(raw, 'TIN') } : {}),
         ...(first(raw, 'Email') ? { email: first(raw, 'Email') } : {}),
-      }, who).id);
+      }, who, legacyId).id);
       customerBySource.set(legacyId, id);
       customerBySource.set(first(raw, 'Customer_Name', 'Registered_Name').toLowerCase(), id);
     }

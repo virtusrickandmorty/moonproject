@@ -13,6 +13,7 @@ import { duplicateKeys, measurementField, measurementFields, measurementTenths, 
 import { commitUpload } from './commit.ts';
 
 const auth = { config: { permission: 'mig.run' } };
+const commitAuth = { config: { permission: 'mig.commit' } };
 const uploadBody = z.object({ filename: z.string().min(1), csv: z.string().min(1) }).strict();
 const rowParams = z.object({ id: z.string().min(1) }).strict();
 const uploadParams = z.object({ uploadId: z.string().min(1) }).strict();
@@ -143,13 +144,6 @@ function hash(rows: Record<string, string>[]): string {
 
 export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
-  const ownerStepUp = (req: Parameters<typeof currentUser>[0]) => {
-    const user = currentUser(req);
-    if (!user.roles.includes('owner')) throw new AppError('FORBIDDEN', 'Only an owner can complete this action.', 403);
-    requireStepUp(user, clock);
-    return user;
-  };
-
   app.post('/api/mig/upload', auth, async req => {
     const user = currentUser(req);
     const body = validation(uploadBody, req.body);
@@ -324,8 +318,9 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
     } };
   });
 
-  app.post('/api/mig/uploads/:uploadId/commit', auth, async req => {
-    const user = ownerStepUp(req);
+  app.post('/api/mig/uploads/:uploadId/commit', commitAuth, async req => {
+    const user = currentUser(req);
+    requireStepUp(user, clock);
     const { uploadId } = validation(uploadParams, req.params);
     const { expectedMeasurementCellTenths } = validation(z.object({ expectedMeasurementCellTenths: z.number().int().nonnegative().safe() }).strict(), req.body);
     return commitUpload(db, uploadId, expectedMeasurementCellTenths, {
@@ -342,8 +337,9 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
     return { counts: JSON.parse(row.counts_json ?? '{}'), checksums: JSON.parse(row.checksums_json ?? '{}'), clearedAt: row.cleared_at };
   });
 
-  app.post('/api/mig/uploads/:uploadId/clear-staging', auth, async req => {
-    const user = ownerStepUp(req);
+  app.post('/api/mig/uploads/:uploadId/clear-staging', commitAuth, async req => {
+    const user = currentUser(req);
+    requireStepUp(user, clock);
     const { uploadId } = validation(uploadParams, req.params);
     return tx(db, () => {
       const row = db.prepare('SELECT status, cleared_at FROM mig_uploads WHERE id = ?').get(uploadId) as { status: string; cleared_at: string | null } | undefined;
