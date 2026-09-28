@@ -4,7 +4,8 @@
  *   Dr 15x0 cost (NET with a valid VAT invoice, else G) ; Dr 1401 input VAT / Cr cash place ; Cr 2101 AP ; Cr 2602 financing
  * Capital-goods input VAT is claimed in full now, at the rate in force on the supplier's invoice date (D4.2), for a
  * VAT-registered supplier with the invoice number, date and TIN (D4.7). The FA- document id is the asset's party id,
- * the financing's (until LOAN keeps a loan register) and the ref of the amount owed, so a preview shows them unnamed.
+ * the financing's (until a LOAN- document takes the financing over into the loan register) and the ref of the amount
+ * owed, so a preview shows them unnamed. A purchase cancels only after its depreciation, retirement and loan are cancelled.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -15,6 +16,7 @@ import { settingAt } from '../../../engine/settings.ts';
 import type { Db } from '../../../platform/db/driver.ts';
 import { assetClass, assetParty, listClasses } from '../assets.ts';
 import { activeSupplierIds, supplier } from '../pur.ts';
+import { loansFinancingAsset } from '../../LOAN/public.ts';
 
 const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
 const part = z.number().int().positive().max(MAX_CENTS).optional();
@@ -150,7 +152,7 @@ export const buyDoc: DocTypeDef<BuyInput, Buy> = {
 
   /** Its depreciation runs and its disposal are cancelled first, so the asset's accounts come back to zero. */
   dependents(db, documentId) {
-    return db
+    const own = db
       .prepare(
         `SELECT d.id, d.number FROM fa_depreciation_lines l JOIN documents d ON d.id = l.document_id WHERE l.asset_id = @id AND d.status = 'posted'
          UNION
@@ -158,6 +160,7 @@ export const buyDoc: DocTypeDef<BuyInput, Buy> = {
          ORDER BY 2`,
       )
       .all({ id: documentId }) as { id: string; number: string }[];
+    return [...own, ...loansFinancingAsset(db, documentId)];
   },
 
   summary(doc) {
