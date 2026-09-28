@@ -63,7 +63,7 @@ describe('tax report screen rules', () => {
     expect(vatBottomLine({ payableCents: 0, carryForwardCents: 25_000, returnDue: '2026-10-26' })).toBe('Carried over to next quarter: ₱250.00');
     expect(vatBottomLine({ payableCents: 0, carryForwardCents: 0, returnDue: '2026-10-26' })).toBe('VAT payable ₱0.00 with the 2550Q, due 2026-10-26');
     expect(withheldPendingWords(0)).toBeNull();
-    expect(withheldPendingWords(50_000)).toBe('₱500.00 of it still waits for its 2307; it may be claimed only with the certificate in hand.');
+    expect(withheldPendingWords(50_000)).toBe('Not counted: ₱500.00 more still waits for its 2307. It is claimed in the quarter the certificate comes.');
   });
 
   it('the menu shows each screen under Accounting & Tax only with the permission its route checks', () => {
@@ -112,8 +112,8 @@ describe('web client for the tax reports', () => {
     expect((await acctFetch(excelUrl(taxRegisterPath('withholding-received', from, to)), { method: 'GET', headers: {} })).status).toBe(200);
 
     const vat = await acct.vatSummary(2026, 3);
-    expect(vat).toMatchObject({ year: 2026, quarter: 3, returnDue: '2026-10-26', outputVatCents: 120_000, inputVatCents: 0, vatWithheldCents: 50_000, vatWithheldPendingCents: 50_000, carryOverCents: 0 });
-    expect(vatBottomLine(vat)).toBe('VAT payable ₱700.00 with the 2550Q, due 2026-10-26');
+    expect(vat).toMatchObject({ year: 2026, quarter: 3, returnDue: '2026-10-26', outputVatCents: 120_000, inputVatCents: 0, vatWithheldCents: 0, vatWithheldPendingCents: 50_000, carryOverCents: 0, close: null });
+    expect(vatBottomLine(vat)).toBe('VAT payable ₱1,200.00 with the 2550Q, due 2026-10-26');
     expect(await acct.vatSummary()).toEqual(vat); // no year and quarter: today's quarter
     expect(vatBottomLine(await acct.vatSummary(2026, 2))).toBe('VAT payable ₱0.00 with the 2550Q, due 2026-07-27');
 

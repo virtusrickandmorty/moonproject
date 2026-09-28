@@ -156,6 +156,10 @@ export interface TaxDeadline { form: string; title: string; period: string; peri
 export interface VatSummary {
   year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string; returnDue: string; outputVatCents: number; inputVatCents: number; vatWithheldCents: number;
   carryOverCents: number; vatWithheldPendingCents: number; payableCents: number; carryForwardCents: number;
+  /** Output and input VAT dated in earlier quarters but not closed with them, included above. */
+  earlierOutputVatCents: number; earlierInputVatCents: number;
+  /** The quarter's posted VAT close (VATC-), if any. */
+  close: { documentId: string; number: string; date: string } | null;
 }
 /** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
 export const taxRegisterPath = (register: 'sales' | 'withholding-received', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;

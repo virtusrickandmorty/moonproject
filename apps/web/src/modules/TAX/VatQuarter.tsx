@@ -1,9 +1,11 @@
 /**
  * VAT of a quarter (PLAN E13 "VAT this quarter"): output VAT less input VAT, the VAT government buyers withheld and the
  * input VAT carried over, then what is payable with the 2550Q or carried over. Opens on today's quarter. The server reads
- * the ledger, so the figures are an estimate until the quarter's VAT close is recorded.
+ * the ledger, so the figures are an estimate until the quarter's VAT close is recorded; then it names the close.
  */
 import { useEffect, useState } from 'react';
+import { Link } from '../../router.tsx';
+import { docPath } from '../../shell/menu.ts';
 import { api, type Me, type VatSummary } from '../../api.ts';
 import { Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { QUARTERS, quarterOf, quarterTitle, vatBottomLine, withheldPendingWords, yearChoices, type Quarter } from './reports.ts';
@@ -60,7 +62,9 @@ export function VatQuarter({ me }: { me: Me }) {
       {!v && !error && <p className="text-slate-500">Loading…</p>}
       {v && (
         <Panel title={quarterTitle(v.year, v.quarter, today)}>
-          <Notice tone="info">This is an estimate from the books until the quarter's VAT close is recorded.</Notice>
+          {v.close
+            ? <Notice tone="info">Closed by <Link to={docPath('tax.vat_close', `/${v.close.documentId}`)} className="underline">{v.close.number}</Link> on {v.close.date}.</Notice>
+            : <Notice tone="info">This is an estimate from the books until the quarter's VAT close is recorded.</Notice>}
           <table className="w-full text-sm">
             <tbody>
               {lines.map(([label, cents, note]) => (

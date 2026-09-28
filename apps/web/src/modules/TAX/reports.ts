@@ -87,6 +87,6 @@ export function vatBottomLine(v: Pick<VatSummary, 'payableCents' | 'carryForward
   return v.carryForwardCents > 0 ? `Carried over to next quarter: ${formatPeso(v.carryForwardCents)}` : `VAT payable ${formatPeso(v.payableCents)} with the 2550Q, due ${v.returnDue}`;
 }
 
-/** The part of VAT withheld that may be claimed only once the buyer's 2307 is in hand. */
+/** VAT withheld whose 2307 is not in hand: not counted above; it is claimed in the quarter the certificate comes. */
 export const withheldPendingWords = (cents: number) =>
-  (cents > 0 ? `${formatPeso(cents)} of it still waits for its 2307; it may be claimed only with the certificate in hand.` : null);
+  (cents > 0 ? `Not counted: ${formatPeso(cents)} more still waits for its 2307. It is claimed in the quarter the certificate comes.` : null);
