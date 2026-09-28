@@ -8,7 +8,9 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { requireStepUp } from '../../engine/security/sessions.ts';
 import { booklet, bookletUsage, listBooklets, registerBooklet, setBookletActive, type Who } from './booklets.ts';
 import { salesRegister, withholdingReceivedRegister, type RegisterRow } from './registers.ts';
+import { certificatesToIssue, ewtRegister, purchasesRegister, type PurchaseClass, type SupplierRow } from './purchases.ts';
 import { vatSummary } from './vat.ts';
+import { vatReturnWorksheet } from './vat-return.ts';
 import { quarterOf, taxDeadlines, type Quarter } from './calendar.ts';
 
 export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -51,6 +53,13 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (Number(q.to.slice(0, 4)) - Number(q.from.slice(0, 4)) > 5) throw badRequest('BAD_RANGE', 'Pick at most five years at a time.');
     return { from: q.from, to: q.to };
   };
+  type QuarterQuery = { year?: string; quarter?: string };
+  /** ?year=2026&quarter=3, or today's quarter when both are left out. */
+  const quarterQuery = ({ year: y, quarter: q }: QuarterQuery): { year: number; quarter: Quarter } => {
+    if (y === undefined && q === undefined) return quarterOf(today(clock));
+    if (!/^\d{4}$/.test(y ?? '') || !/^[1-4]$/.test(q ?? '')) throw badRequest('BAD_QUARTER', 'Pick a year and a quarter, like 2026 and 3.');
+    return { year: Number(y), quarter: Number(q) as Quarter };
+  };
   const title = (docType: string | null) => (docType ? (deps.registry.docType(docType)?.title ?? docType) : 'Journal');
   const lead = (r: RegisterRow): CsvCell[] => [r.date, r.journalNumber, r.posting === 'reversal' ? 'Cancelled' : '', title(r.docType), r.documentNumber, r.formNumber, r.customerName, r.tin];
   const HEAD = ['Date', 'Journal', 'Cancel', 'Document', 'Number', 'Form no.', 'Customer', 'TIN'];
@@ -82,20 +91,73 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
     ]);
   });
 
+  const CLASS: Record<PurchaseClass, string> = { capital_goods: 'Capital goods', goods: 'Goods', services: 'Services' };
+  const bought = (r: SupplierRow): CsvCell[] => [r.date, r.journalNumber, r.posting === 'reversal' ? 'Cancelled' : '', title(r.docType), r.documentNumber];
+  const atcCell = (r: { ewtClass: string | null; atc: string | null; atcChoices: string[] }) => r.atc ?? (r.ewtClass ? `ATC to confirm (${r.atcChoices.join(' or ')})` : '');
+
+  app.get<RangeQuery>('/api/tax/registers/purchases', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const { from, to } = range(req.query);
+    const r = purchasesRegister(db, from, to);
+    if (req.query.format !== 'csv') return { ...r, rows: r.rows.map((x) => ({ ...x, docTitle: title(x.docType) })) };
+    return csv(reply, `purchases-register-${from}-${to}`, [
+      ['Date', 'Journal', 'Cancel', 'Document', 'Number', 'Supplier invoice', 'Supplier', 'TIN', 'Class', 'Amount before VAT', 'Input VAT', 'Total'],
+      ...r.rows.map((x) => [
+        ...bought(x), x.supplierInvoiceNo, x.supplierName, x.tin, x.purchaseClass ? CLASS[x.purchaseClass] : 'To classify',
+        csvPesos(x.netCents), csvPesos(x.vatCents), csvPesos(x.totalCents),
+      ]),
+      ['Total', '', '', '', '', '', '', '', '', csvPesos(r.totals.netCents), csvPesos(r.totals.vatCents), csvPesos(r.totals.totalCents)],
+    ]);
+  });
+
+  app.get<RangeQuery>('/api/tax/registers/ewt', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const { from, to } = range(req.query);
+    const r = ewtRegister(db, from, to);
+    if (req.query.format !== 'csv') return { ...r, rows: r.rows.map((x) => ({ ...x, docTitle: title(x.docType) })) };
+    return csv(reply, `ewt-register-${from}-${to}`, [
+      ['Date', 'Journal', 'Cancel', 'Document', 'Number', 'Supplier', 'TIN', 'EWT class', 'ATC', 'Base', 'Rate', 'EWT'],
+      ...r.rows.map((x) => [
+        ...bought(x), x.supplierName, x.tin, x.ewtClass, atcCell(x),
+        x.baseCents === null ? '' : csvPesos(x.baseCents), x.rateBp === null ? '' : `${x.rateBp / 100}%`, csvPesos(x.ewtCents),
+      ]),
+      ['Total', '', '', '', '', '', '', '', '', csvPesos(r.totals.baseCents), '', csvPesos(r.totals.ewtCents)],
+    ]);
+  });
+
+  /** The 2307s to issue for a quarter (?year=2026&quarter=3, or today's quarter): per supplier and ATC, each month's base and EWT. */
+  app.get<{ Querystring: QuarterQuery & { format?: string } }>('/api/tax/2307-to-issue', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const { year, quarter } = quarterQuery(req.query);
+    const r = certificatesToIssue(db, year, quarter);
+    if (req.query.format !== 'csv') return r;
+    return csv(reply, `2307-to-issue-${year}-Q${quarter}`, [
+      ['Supplier', 'TIN', 'EWT class', 'ATC', ...r.months.flatMap((m) => [`${m} base`, `${m} EWT`]), 'Quarter base', 'Quarter EWT'],
+      ...r.lines.map((l) => [
+        l.supplierName, l.tin, l.ewtClass, atcCell(l), ...l.months.flatMap((m) => [csvPesos(m.baseCents), csvPesos(m.ewtCents)]), csvPesos(l.baseCents), csvPesos(l.ewtCents),
+      ]),
+      ['Total', '', '', '', ...r.months.flatMap(() => ['', '']), csvPesos(r.totals.baseCents), csvPesos(r.totals.ewtCents)],
+    ]);
+  });
+
   /** Tax deadlines due in a range (the calendar, and the accountant home's next 30 days). */
   app.get<RangeQuery>('/api/tax/calendar', { config: { permission: 'tax.calendar.view' } }, async (req) => {
     const { from, to } = range(req.query);
     return taxDeadlines(db, from, to);
   });
 
+  /** The 2550Q worksheet of one quarter (?year=2026&quarter=3, or today's quarter): each item of the return, and the checks before filing. */
+  app.get<{ Querystring: QuarterQuery & { format?: string } }>('/api/tax/2550q', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const { year, quarter } = quarterQuery(req.query);
+    const w = vatReturnWorksheet(db, year, quarter, today(clock));
+    if (req.query.format !== 'csv') return w;
+    return csv(reply, `2550Q-worksheet-${year}-Q${quarter}`, [
+      ['Item', 'Amount', 'Tax'],
+      ...w.lines.map((l) => [l.label, l.amountCents === null ? '' : csvPesos(l.amountCents), csvPesos(l.taxCents)]),
+      ...w.checks.map((c) => [`Check: ${c.message}`, '', '']),
+    ]);
+  });
+
   /** VAT of one quarter (?year=2026&quarter=3), or of today's quarter. */
-  app.get<{ Querystring: { year?: string; quarter?: string } }>('/api/tax/vat-summary', { config: { permission: 'tax.registers.view' } }, async (req) => {
-    const { year: y, quarter: q } = req.query;
-    if (y === undefined && q === undefined) {
-      const now = quarterOf(today(clock));
-      return vatSummary(db, now.year, now.quarter);
-    }
-    if (!/^\d{4}$/.test(y ?? '') || !/^[1-4]$/.test(q ?? '')) throw badRequest('BAD_QUARTER', 'Pick a year and a quarter, like 2026 and 3.');
-    return vatSummary(db, Number(y), Number(q) as Quarter);
+  app.get<{ Querystring: QuarterQuery }>('/api/tax/vat-summary', { config: { permission: 'tax.registers.view' } }, async (req) => {
+    const { year, quarter } = quarterQuery(req.query);
+    return vatSummary(db, year, quarter);
   });
 }

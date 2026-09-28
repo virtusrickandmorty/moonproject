@@ -20,6 +20,7 @@ import { RunForm } from './PAY/RunForm.tsx';
 import { ReleaseForm } from './PAY/ReleaseForm.tsx';
 import { Payslips, advanceView, releaseView, runView } from './PAY/views.tsx';
 import { AdvanceForm } from './CA/AdvanceForm.tsx';
+import { CompanyProfileScreen } from './PRT/CompanyProfile.tsx';
 import { StatMonthPage, StatMonths, remittanceView } from './STAT/Statutory.tsx';
 import { RemittanceForm } from './STAT/RemittanceForm.tsx';
 import { GeneralJournal, GeneralLedger, TrialBalance } from './RPT/Books.tsx';
@@ -27,14 +28,22 @@ import { CashAccounts } from './CASH/CashAccounts.tsx';
 import { CashBook } from './CASH/CashBook.tsx';
 import { CashCountForm } from './CASH/CashCountForm.tsx';
 import { cashCountView } from './CASH/CashCountView.tsx';
+import { Booklets, BookletPage, RegisterBooklet } from './TAX/Booklets.tsx';
 import { SalesRegister, WithholdingReceived } from './TAX/Registers.tsx';
 import { TaxCalendar } from './TAX/TaxCalendar.tsx';
 import { VatQuarter } from './TAX/VatQuarter.tsx';
 import { BillForm } from './AP/BillForm.tsx';
-import { PaymentForm } from './AP/PaymentForm.tsx';
+import { PaymentForm as SupplierPaymentForm } from './AP/PaymentForm.tsx';
 import { billView, paymentView } from './AP/views.tsx';
 import { VoucherForm } from './EXP/VoucherForm.tsx';
 import { OfficerForm, OwnerMoneyForm } from './EQ/forms.tsx';
+import { VatCloseForm } from './TAX/VatCloseForm.tsx';
+import { JvForm } from './ACC/JvForm.tsx';
+import { LoanForm } from './LOAN/LoanForm.tsx';
+import { PaymentForm as LoanPaymentForm } from './LOAN/PaymentForm.tsx';
+import { loanView } from './LOAN/views.tsx';
+import { BuyForm } from './FA/BuyForm.tsx';
+import { Backups } from './BAK/Backups.tsx';
 
 /**
  * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
@@ -50,8 +59,12 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/emp/attendance': Attendance,
   '/emp/holidays': Holidays,
   '/pay/runs/:id/payslips': Payslips,
+  '/prt/company-profile': CompanyProfileScreen,
   '/stat': StatMonths,
   '/stat/:month': StatMonthPage,
+  '/tax/booklets': Booklets,
+  '/tax/booklets/new': RegisterBooklet,
+  '/tax/booklets/:id': BookletPage,
   '/rpt/journal': GeneralJournal,
   '/rpt/ledger': GeneralLedger,
   '/rpt/trial-balance': TrialBalance,
@@ -59,6 +72,8 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/2307-received': WithholdingReceived,
   '/tax/vat': VatQuarter,
   '/tax/calendar': TaxCalendar,
+  '/bak': Backups,
+  '/bak/:section': Backups,
 };
 
 /** A module's own form; `me` lets it offer what only some users may do (the remittance's date paid, for acc.backdate). */
@@ -74,10 +89,15 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'ca.advance': AdvanceForm,
   'stat.remittance': RemittanceForm,
   'ap.bill': BillForm,
-  'ap.payment': PaymentForm,
+  'ap.payment': SupplierPaymentForm,
   'exp.voucher': VoucherForm,
   'eq.owner_money': OwnerMoneyForm,
   'eq.officer': OfficerForm,
+  'acc.jv': JvForm,
+  'tax.vat_close': VatCloseForm,
+  'loan.loan': LoanForm,
+  'loan.payment': LoanPaymentForm,
+  'fa.buy': BuyForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView };
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView };
