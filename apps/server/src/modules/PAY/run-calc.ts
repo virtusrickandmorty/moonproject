@@ -6,21 +6,27 @@
  * the period, government loan amortizations (once a month, loans.ts), the cash-advance instalment, net pay and the
  * 13th-month accrual. On a year-end run the tax is the year-end adjustment instead (year-end.ts): a deficiency withheld,
  * or an excess refunded (net pay more by it). Warnings go with the result.
+ * Unused SIL (F1, Labor Code Art. 95) is paid in cash on an employee's final pay, and on a December run with "Pay unused
+ * leave": the days left × the daily rate absences use; de minimis up to 10 days a year (RR 11-2018), taxable above;
+ * not 13th-month basic. An employee separated within the period gets their final pay: the unused leave, the year-end
+ * tax adjustment whatever the month, and the whole cash advance as far as the pay allows; government loans left are
+ * warned, not deducted.
  */
 import { divRoundHalfAway, formatPeso, type Issue } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
-import { attendanceBetween, employeesInGroup, holidaysBetween, payProfileAt, type Employee, type Holiday, type PayGroup, type PayProfile } from '../EMP/public.ts';
+import { attendanceBetween, employeesInGroup, holidaysBetween, payProfileAt, silOf, type Employee, type Holiday, type PayGroup, type PayProfile } from '../EMP/public.ts';
 import { pieceEarningsByDay, stepById, unpaidAssignments } from '../PRD/public.ts';
 import { jobOrderRef } from '../JO/public.ts';
 import { advanceSchedule } from '../CA/public.ts';
-import { govLoan, loanInMonth, loansOf, type Agency, type LoanKind } from './loans.ts';
+import { KIND_LABEL, govLoan, loanInMonth, loansOf, runsIn, type Agency, type LoanKind } from './loans.ts';
 import { hdmfMonthly, hdmfRateAt, phicDailyBasis, phicMonthly, phicRateAt, rulesAt, sssMonthly, sssRateAt, withholding, wtaxTableAt, type PayRules, type TaxFrequency } from './statutory.ts';
 import { addLine, figures, yearParts } from './year-end.ts';
 
-export type LineKind = 'basic' | 'leave' | 'holiday' | 'rest_day' | 'ot' | 'salary' | 'absence' | 'piece' | 'allowance' | 'adjustment';
+/** 'unused_leave' is unused SIL paid in cash; stored as a 'leave' line marked in pay_run_unused_leave (migration 0005). */
+export type LineKind = 'basic' | 'leave' | 'holiday' | 'rest_day' | 'ot' | 'salary' | 'absence' | 'piece' | 'allowance' | 'adjustment' | 'unused_leave';
 export interface RunLine {
   lineNo: number; kind: LineKind; description: string; qty: number; rateCents: number; multiplierBp: number; amountCents: number;
-  taxable: boolean; thirteenthBase: boolean; assignmentId?: string; jobOrderId?: string; reason?: string;
+  taxable: boolean; thirteenthBase: boolean; assignmentId?: string; jobOrderId?: string; reason?: string; leaveYear?: number;
 }
 export interface RunEmployee {
   employeeId: string; code: string; name: string; costCentre: 'production' | 'office'; payType: PayProfile['payType']; isMwe: boolean; lines: RunLine[];
@@ -28,8 +34,10 @@ export interface RunEmployee {
   phicBasisCents: number; phicEeCents: number; phicErCents: number; hdmfEeCents: number; hdmfErCents: number; eeShortCents: number;
   wtaxCents: number; loanCents: number; loans: RunLoan[]; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
   /** Tax withheld earlier in the year and refunded on this run (the year-end adjustment's excess); net pay includes it. */
-  wtaxRefundCents: number; yearEnd?: YearEnd;
+  wtaxRefundCents: number; yearEnd?: YearEnd; final?: FinalPay;
 }
+/** An employee separated within the run's period: this run is their final pay. What they still owe after it. */
+export interface FinalPay { separatedOn: string; caLeftCents: number; loansLeftCents: number }
 /**
  * One employee's year-end tax adjustment on a run (year-end.ts): the year's taxable compensation (a previous employer's
  * included) and the part of it from 13th-month pay and other benefits above the ceiling, the annual tax, what the year
@@ -52,6 +60,8 @@ const ALWAYS_TAXABLE = new Set<LineKind>(['allowance', 'adjustment']); // an MWE
 export const TAX_FREQUENCY: Record<PayGroup, Exclude<TaxFrequency, 'monthly'>> = { WEEKLY_PIECE: 'weekly', SEMI_DAILY: 'semi_monthly', SEMI_MONTHLY: 'semi_monthly' };
 
 const pct = (bp: number) => `${bp / 100}%`;
+/** Monetized unused leave up to 10 days a year is a de minimis benefit (RR 11-2018): not taxable up to that. */
+export const DE_MINIMIS_LEAVE_DAYS = 10;
 export const addDays = (d: string, n: number) => {
   const [y, m, day] = d.split('-').map(Number);
   const t = new Date(Date.UTC(y!, m! - 1, day! + n));
@@ -88,6 +98,32 @@ function pieceHolidayRate(db: Db, employeeId: string, date: string, minimumWageC
   const days = [...new Set([...earned.keys(), ...worked])].sort().slice(-7);
   const average = days.length ? divRoundHalfAway(days.reduce((s, d) => s + (earned.get(d) ?? 0), 0), days.length) : 0;
   return { rateCents: Math.max(average, minimumWageCents), days: days.length };
+}
+
+/**
+ * Unused SIL of the year of `to` paid in cash: the days left once the employee is eligible on `to`, at the daily rate
+ * absences use (monthly pay's equivalent daily rate; a piece worker's average daily pay of the last 7 workdays, not
+ * below the minimum wage, as for a holiday). The first 10 days of the year paid in cash are de minimis, the rest taxable.
+ */
+function unusedLeave(db: Db, employeeId: string, to: string, p: PayProfile, factors: { days6: number; days5: number }): RunLine[] {
+  const year = +to.slice(0, 4);
+  const sil = silOf(db, employeeId, year);
+  if (to < sil.eligibleFrom || sil.left === 0) return [];
+  let rate = p.dailyRateCents ?? 0;
+  let basis = '';
+  if (p.payType === 'monthly') rate = edr(p, factors.days6, factors.days5);
+  else if (p.payType === 'piece') {
+    const min = rulesAt(db, to).minimumWageCents;
+    const pay = pieceHolidayRate(db, employeeId, addDays(to, 1), min);
+    rate = pay.rateCents;
+    basis = pay.rateCents === min ? ' at the minimum wage' : ` at the average of the last ${pay.days} workdays`;
+  }
+  const exempt = Math.min(sil.left, Math.max(0, DE_MINIMIS_LEAVE_DAYS - sil.paid));
+  const line = (days: number, taxable: boolean, more: string): RunLine => ({
+    lineNo: 0, kind: 'unused_leave', description: `Unused leave (SIL) ${year}${basis}${more}`, qty: days * DAY, rateCents: rate, multiplierBp: 10_000, amountCents: rate * days,
+    taxable, thirteenthBase: false, leaveYear: year,
+  });
+  return [...(exempt ? [line(exempt, false, '')] : []), ...(sil.left > exempt ? [line(sil.left - exempt, true, `, above the ${DE_MINIMIS_LEAVE_DAYS} de minimis days`)] : [])];
 }
 
 /** Earning lines of one employee for the period. */
@@ -221,6 +257,8 @@ export interface RunRequest {
   loanOverrides?: Map<string, LoanOverride>;
   /** The year-end tax adjustment of every employee in the run, instead of the period's table (a period ending in December). */
   yearEnd?: boolean;
+  /** Pay every employee's unused SIL days of the year in cash (a period ending in December). */
+  unusedLeave?: boolean;
 }
 
 /**
@@ -248,6 +286,13 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
     const end = payProfileAt(db, e.id, to)!; // employeesInGroup found it
     const built = earnings(db, e, { start: q.periodStart, end: q.periodEnd }, from, to, end, holidays, q.manual.filter((m) => m.employeeId === e.id), phic);
     notes.push(...built.notes);
+    // Separated within the period: this run is the final pay (F3 "separation").
+    const final = !!e.separatedOn && e.separatedOn >= q.periodStart && e.separatedOn <= q.periodEnd;
+    if (final) notes.push({ code: 'FINAL_PAY', level: 'warning', message: `${e.name} left on ${e.separatedOn}: this is the final pay, with unused leave, the year-end tax adjustment and the cash advance still owed.` });
+    if (final || q.unusedLeave) {
+      built.lines.push(...unusedLeave(db, e.id, to, end, phic));
+      built.lines.forEach((l, i) => (l.lineNo = i + 1));
+    }
     const gross = built.lines.reduce((s, l) => s + l.amountCents, 0);
     const piece = built.lines.filter((l) => l.kind === 'piece').reduce((s, l) => s + l.amountCents, 0);
 
@@ -281,7 +326,7 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
     let wtax = 0;
     let refund = 0;
     let yearEnd: YearEnd | undefined;
-    if (e.statutory.wtax && q.yearEnd) {
+    if (e.statutory.wtax && (q.yearEnd || final)) {
       // Year-end adjustment (RR 11-2018): the annual tax on the year's pay with this run, less what the year withheld
       // before it. A deficiency is withheld here as far as the pay allows (after the shares, before loans and the cash
       // advance, F3); an excess is refunded on this run.
@@ -303,7 +348,7 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
         notes.push({ code: 'YEAR_END_SHORT', level: 'warning', message: `${e.name}: the pay covers ${formatPeso(wtax)} of the ${formatPeso(deficiency)} tax still due for ${year}; ${formatPeso(deficiency - wtax)} is not withheld. Collect it from ${e.name} and tell the accountant.` });
       }
     } else if (e.statutory.wtax) wtax = take(withholding(table, taxable));
-    else if (q.yearEnd) notes.push({ code: 'YEAR_END_NO_WTAX', level: 'warning', message: `${e.name}: withholding tax is switched off, so no year-end tax adjustment is worked out.` });
+    else if (q.yearEnd || final) notes.push({ code: 'YEAR_END_NO_WTAX', level: 'warning', message: `${e.name}: withholding tax is switched off, so no year-end tax adjustment is worked out.` });
     // Government loans (F3: after tax, before the cash advance): the month's amortization, never more than is left of
     // the loan, nor than the pay left after shares and tax; less is deducted with a warning, the rest stays owed.
     const loans: RunLoan[] = [];
@@ -326,10 +371,27 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
     const loanCents = loans.reduce((s, l) => s + l.amountCents, 0);
     const plan = advanceSchedule(db, e.id, q.payDate);
     const override = q.caOverrides.get(e.id);
-    const wanted = override ?? plan.installmentCents;
-    const ca = Math.max(0, Math.min(wanted, left - endRules.minNetPayCents));
-    if (ca < wanted) notes.push({ code: 'CA_REDUCED', level: 'warning', message: `${e.name}: the cash-advance deduction is ${formatPeso(ca)} instead of ${formatPeso(wanted)}, so net pay stays at least ${formatPeso(endRules.minNetPayCents)}.` });
+    // A final pay deducts all that is owed, down to nothing left of the pay (the minimum net pay is for pay between
+    // paydays); the tax refund is not used (pay_run_employees.net_cents, before the refund, stays at least zero).
+    const wanted = override ?? (final ? Math.max(0, plan.outstandingCents) : plan.installmentCents);
+    const ca = Math.max(0, Math.min(wanted, final ? left : left - endRules.minNetPayCents));
+    if (ca < wanted && !final) notes.push({ code: 'CA_REDUCED', level: 'warning', message: `${e.name}: the cash-advance deduction is ${formatPeso(ca)} instead of ${formatPeso(wanted)}, so net pay stays at least ${formatPeso(endRules.minNetPayCents)}.` });
     left -= ca;
+    let finalPay: FinalPay | undefined;
+    if (final) {
+      const caLeft = Math.max(0, plan.outstandingCents - ca);
+      if (caLeft > 0) notes.push({ code: 'CA_LEFT', level: 'warning', message: `${e.name}: ${formatPeso(caLeft)} of cash advances is still owed after the final pay. Collect it (cash repayment) or have the accountant write it off.` });
+      // Government loans are not deducted beyond the month's amortization: the employee settles the rest with SSS or Pag-IBIG.
+      let loansLeft = 0;
+      for (const l of loansOf(db, e.id)) {
+        if (runsIn(l, month) === 'stopped') continue;
+        const owed = loans.find((x) => x.loanId === l.id)?.balanceAfterCents ?? loanInMonth(db, l, month).leftCents;
+        if (owed <= 0) continue;
+        loansLeft += owed;
+        notes.push({ code: 'LOAN_LEFT', level: 'warning', message: `${e.name}: ${formatPeso(owed)} is left of ${KIND_LABEL[l.kind]} ${l.loanNo}, not deducted from the final pay. Tell ${l.agency === 'SSS' ? 'SSS' : 'Pag-IBIG'} of the separation.` });
+      }
+      finalPay = { separatedOn: e.separatedOn!, caLeftCents: caLeft, loansLeftCents: loansLeft };
+    }
 
     // Minimum wage (ACC-06b default: warn only).
     const smw = endRules.minimumWageCents;
@@ -347,7 +409,7 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
       phicBasisCents: phicDue.basisCents, phicEeCents: ee.phic, phicErCents: clampNote('PhilHealth (employer)', phicDue.er - so.phicEr),
       hdmfEeCents: ee.hdmf, hdmfErCents: clampNote('Pag-IBIG (employer)', hdmfDue.er - so.hdmfEr), eeShortCents: short,
       wtaxCents: wtax, loanCents, loans, caCents: ca, caOverrideCents: override ?? null, thirteenthCents: endRules.accrue13th ? Math.max(0, divRoundHalfAway(base13, 12)) : 0,
-      netCents: gross - ee.sss - ee.phic - ee.hdmf - wtax - loanCents - ca + refund, wtaxRefundCents: refund, ...(yearEnd ? { yearEnd } : {}),
+      netCents: gross - ee.sss - ee.phic - ee.hdmf - wtax - loanCents - ca + refund, wtaxRefundCents: refund, ...(yearEnd ? { yearEnd } : {}), ...(finalPay ? { final: finalPay } : {}),
     });
   }
   return { employees, notes };

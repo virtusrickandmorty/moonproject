@@ -36,6 +36,7 @@ export function addHoliday(db: Db, raw: unknown, who: Who): Holiday {
   const v = holidayInput.parse(raw);
   const taken = holidaysBetween(db, v.date, v.date)[0];
   if (taken) throw conflict('HOLIDAY_TAKEN', `${v.date} is already ${taken.name}. Switch that one off first.`);
+  notPaid(db, v.date);
   // A holiday added late (OWN-29) must not leave ordinary days on its date, or payroll would pay them as ordinary days.
   const ordinary = db
     .prepare(`SELECT e.full_name FROM (${LATEST}) a JOIN emp_employees e ON e.id = a.employee_id WHERE a.work_date = ? AND a.status NOT IN ('rest_day','rest_day_worked') ORDER BY e.full_name`)
@@ -60,6 +61,7 @@ export function deactivateHoliday(db: Db, id: number, raw: unknown, who: Who): H
   const h = db.prepare(`${HOLIDAY} WHERE id = ?`).get(id) as (Omit<Holiday, 'isActive'> & { isActive: number }) | undefined;
   if (!h) throw notFound('The holiday');
   if (!h.isActive) throw conflict('ALREADY_OFF', `${h.name} (${h.date}) is already switched off.`);
+  notPaid(db, h.date);
   const marked = db.prepare(`SELECT COUNT(*) FROM (${LATEST}) WHERE work_date = ? AND status IN ('holiday_off','holiday_worked')`).pluck().get(h.date) as number;
   if (marked > 0) throw conflict('HOLIDAY_USED', `Attendance on ${h.date} is marked as a holiday for ${marked} ${marked === 1 ? 'person' : 'people'}. Change those days first.`);
   db.prepare('UPDATE emp_holidays SET is_active = 0, deactivated_reason = ? WHERE id = ?').run(reason, id);
@@ -82,19 +84,62 @@ export function attendanceBetween(db: Db, from: string, to: string, employeeId?:
     .all({ from, to, e: employeeId ?? null }) as AttendanceDay[];
 }
 
+/** Days of employees paid by recorded payroll runs: attendance on them is locked until the run is cancelled (F3). */
+export interface PaidDays { employeeId: string; from: string; to: string; number: string }
+const PAID = `SELECT p.employee_id AS employeeId, p.from_date AS "from", p.to_date AS "to", d.number FROM emp_paid_days p JOIN documents d ON d.id = p.document_id
+  WHERE d.status = 'posted'`;
+
+/** Paid days overlapping a range (both included), for one employee or all, by employee and date. */
+export const paidDaysBetween = (db: Db, from: string, to: string, employeeId?: string): PaidDays[] =>
+  db.prepare(`${PAID} AND p.from_date <= @to AND p.to_date >= @from AND (@e IS NULL OR p.employee_id = @e) ORDER BY p.employee_id, p.from_date, d.number`)
+    .all({ from, to, e: employeeId ?? null }) as PaidDays[];
+
+/** The recorded payroll run that paid an employee's day, if one stands. */
+export const paidBy = (db: Db, employeeId: string, day: string): string | undefined => paidDaysBetween(db, day, day, employeeId)[0]?.number;
+
+/** A holiday changes the pay of its date, so it is added or switched off only while no recorded payroll paid that date. */
+function notPaid(db: Db, day: string) {
+  const runs = [...new Set(paidDaysBetween(db, day, day).map((p) => p.number))];
+  if (runs.length) throw conflict('HOLIDAY_PAID', `${day} is paid by ${runs.join(', ')}. Cancel ${runs.length === 1 ? 'it' : 'them'} first to change the holiday.`, { runs });
+}
+
+/** Records the days a payroll run being recorded pays an employee (PAY run persist, through public.ts). */
+export function markPaidDays(db: Db, v: { documentId: string; employeeId: string; from: string; to: string }): void {
+  db.prepare('INSERT INTO emp_paid_days (document_id, employee_id, from_date, to_date) VALUES (?, ?, ?, ?)').run(v.documentId, v.employeeId, v.from, v.to);
+}
+
 export const addDays = (d: string, n: number) => manilaDate(new Date(Date.parse(`${d}T00:00:00+08:00`) + n * 86_400_000));
 export function checkRange(from: string, to: string) {
   if (to < from) throw badRequest('BAD_RANGE', 'The end date is before the start date.');
   if (addDays(from, MAX_RANGE_DAYS - 1) < to) throw badRequest('BAD_RANGE', `Show at most ${MAX_RANGE_DAYS} days at a time.`);
 }
 
-/** SIL for a year (PLAN E11): 5 days once the employee has worked a year; days taken are "leave" in attendance. */
+/**
+ * SIL for a year (PLAN E11): 5 days once the employee has worked a year; days taken are "leave" in attendance, and days
+ * left unused may be paid in cash by a payroll run (final pay, or December's "Pay unused leave"): `paid`. Both use them up.
+ */
 export function silOf(db: Db, employeeId: string, year: number) {
   const e = employeeRecord(db, employeeId);
   if (!e) throw notFound('The employee');
   const eligibleFrom = `${Number(e.hireDate.slice(0, 4)) + 1}${e.hireDate.slice(4)}`.replace(/-02-29$/, '-03-01');
   const used = db.prepare(`SELECT COUNT(*) FROM (${LATEST}) WHERE employee_id = ? AND status = 'leave' AND work_date BETWEEN ? AND ?`).pluck().get(employeeId, `${year}-01-01`, `${year}-12-31`) as number;
-  return { year, eligibleFrom, daysPerYear: SIL_DAYS, used, left: eligibleFrom <= `${year}-12-31` ? Math.max(0, SIL_DAYS - used) : 0 };
+  const paid = silPaidBy(db, employeeId, year).reduce((s, p) => s + p.days, 0);
+  return { year, eligibleFrom, daysPerYear: SIL_DAYS, used, paid, left: eligibleFrom <= `${year}-12-31` ? Math.max(0, SIL_DAYS - used - paid) : 0 };
+}
+
+/** Unused SIL of a year paid in cash by recorded payroll runs, by run number. */
+export const silPaidBy = (db: Db, employeeId: string, year: number): { number: string; days: number }[] =>
+  db.prepare(`SELECT d.number, s.days FROM emp_sil_paid s JOIN documents d ON d.id = s.document_id WHERE d.status = 'posted' AND s.employee_id = ? AND s.year = ? ORDER BY d.number`)
+    .all(employeeId, year) as { number: string; days: number }[];
+
+/** Records unused SIL days a payroll run being recorded pays in cash (PAY run persist); never more than are left. */
+export function markSilPaid(db: Db, v: { documentId: string; employeeId: string; year: number; days: number }): void {
+  const sil = silOf(db, v.employeeId, v.year);
+  if (v.days > sil.left) {
+    const by = silPaidBy(db, v.employeeId, v.year).map((p) => p.number);
+    throw conflict('SIL_PAID', `Only ${sil.left} of the ${v.year} leave (SIL) days are left${by.length ? `; ${by.join(', ')} already paid the rest` : ''}. Work the payroll out again.`);
+  }
+  db.prepare('INSERT INTO emp_sil_paid (document_id, employee_id, year, days) VALUES (?, ?, ?, ?)').run(v.documentId, v.employeeId, v.year, v.days);
 }
 
 const day = z.object({ employeeId: z.uuid(), date, status: z.enum(ATTENDANCE), otMinutes: z.number().int().min(0).max(960).optional(), note: z.string().trim().max(200).optional() }).strict();
@@ -108,7 +153,8 @@ const LABEL: Record<AttendanceStatus, string> = {
 /**
  * Saves grid cells. Every cell is checked first and nothing is saved if one is wrong: the day must be within the
  * employee's service and not in the future; holidays take the holiday statuses; overtime goes only with a worked day;
- * SIL needs a year of service and at most 5 days a year. Unchanged cells are skipped. Call inside a transaction.
+ * SIL needs a year of service and at most 5 days a year (days paid in cash count); a day a recorded payroll paid is
+ * locked until that payroll is cancelled. Unchanged cells are skipped. Call inside a transaction.
  */
 export function saveAttendance(db: Db, raw: unknown, who: Who): { saved: number; unchanged: number } {
   const { days } = attendanceInput.parse(raw);
@@ -135,14 +181,16 @@ export function saveAttendance(db: Db, raw: unknown, who: Who): { saved: number;
     if (ot > 0 && !WITH_OT.has(d.status)) add('OT', `${at}: overtime goes only with a worked day.`, `${f}.otMinutes`);
     const was = current.get(d.employeeId, d.date) as { status: AttendanceStatus; otMinutes: number; note: string | null } | undefined;
     if (was && was.status === d.status && was.otMinutes === ot && (was.note ?? undefined) === d.note) return;
+    const run = paidBy(db, d.employeeId, d.date);
+    if (run) return add('PAID', `${at} is paid by ${run}. Cancel ${run} first to change it.`);
     if (d.status === 'leave' || was?.status === 'leave') {
       const year = Number(d.date.slice(0, 4));
       const key = `${d.employeeId}|${year}`;
       const sil = silOf(db, d.employeeId, year);
-      const n = (silTaken.get(key) ?? sil.used) + (d.status === 'leave' ? 1 : 0) - (was?.status === 'leave' ? 1 : 0);
+      const n = (silTaken.get(key) ?? sil.used + sil.paid) + (d.status === 'leave' ? 1 : 0) - (was?.status === 'leave' ? 1 : 0);
       silTaken.set(key, n);
       if (d.status === 'leave' && d.date < sil.eligibleFrom) add('SIL_NOT_YET', `${at}: paid leave (SIL) starts after a year of service, on ${sil.eligibleFrom}. Mark it Unpaid leave.`, `${f}.status`);
-      else if (d.status === 'leave' && n > SIL_DAYS) add('SIL_USED', `${at}: ${e.fullName} has no paid leave (SIL) left in ${year} (${SIL_DAYS} days a year). Mark it Unpaid leave.`, `${f}.status`);
+      else if (d.status === 'leave' && n > SIL_DAYS) add('SIL_USED', `${at}: ${e.fullName} has no paid leave (SIL) left in ${year} (${SIL_DAYS} days a year${sil.paid ? `, ${sil.paid} of them paid in cash` : ''}). Mark it Unpaid leave.`, `${f}.status`);
     }
     const seq = ((db.prepare('SELECT MAX(seq) FROM emp_attendance WHERE employee_id = ? AND work_date = ?').pluck().get(d.employeeId, d.date) as number | null) ?? 0) + 1;
     changed.push({ ...d, otMinutes: ot, seq });
