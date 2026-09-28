@@ -1,6 +1,8 @@
 /**
  * Remittance (REM-, PLAN D5 STAT-REM, E11): paying SSS, PhilHealth, Pag-IBIG or the BIR (1601-C) what the payrolls of
- * one contribution month left payable, with the PRN, payment reference or receipt number. Dated the day paid.
+ * one contribution month left payable, with the PRN, payment reference or receipt number. Dated the day paid: today, or
+ * earlier by someone who may backdate (acc.backdate), since bank and online payments are often seen days later and the
+ * cash book should show the day the money left (STAT-1).
  *   Dr 2401 SSS / 2402 PhilHealth / 2403 Pag-IBIG / 2310 withholding tax (per employee, month M); Dr 6290 late-payment
  *   penalty (optional) / Cr cash place (both)
  * The variance check compares the amount paid with the month's payable (ledger.ts): the same amount clears every
@@ -52,7 +54,7 @@ export const remittanceDoc: DocTypeDef<RemittanceInput, Remittance> = {
   title: 'Remittance',
   numbering: { series: { key: 'REM', prefix: 'REM-' } },
   permissions: { view: 'stat.rem.view', create: 'stat.rem.post', post: 'stat.rem.post', cancel: 'stat.rem.cancel' },
-  dating: 'system',
+  dating: 'accountant_may_backdate',
   inputSchema: remittanceInput,
 
   compute(input, ctx) {
