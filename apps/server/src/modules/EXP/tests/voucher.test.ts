@@ -216,8 +216,10 @@ describe('property tests (PLAN I1.3)', () => {
           try {
             p = postDocument(e, voucherDoc, actor, { input, expectedTotalCents: input.amountCents });
           } catch (err) {
-            // A receipt number this payee already used is refused whole (the shrinker loves receipt no. 1).
-            expect(codes(((err as AppError).details ?? []) as { code: string }[])).toEqual(['DUPLICATE_RECEIPT']);
+            // A receipt number this payee already used is refused whole (the shrinker loves receipt no. 1). Warnings
+            // such as an unusual EWT class come back with it; only the duplicate may block.
+            const issues = ((err as AppError).details ?? []) as { level: string; code: string }[];
+            expect(codes(issues.filter((i) => i.level === 'error'))).toEqual(['DUPLICATE_RECEIPT']);
             expect(env.db.prepare('SELECT COUNT(*) FROM documents').pluck().get()).toBe(before);
             continue;
           }
