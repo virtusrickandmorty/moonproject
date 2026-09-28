@@ -1,6 +1,6 @@
 /**
- * Collections and refunds: goldens G-01, G-03, G-06, G-07 and G-12 (PLAN I2), cancel mirrors, E5 rules, API rules and
- * property tests. To keep these tests free of releases, the invoiced receivable (G-02) is posted here as the invoice
+ * Collections and refunds: goldens G-01, G-03, G-06, G-07 and G-12 (PLAN I2), a government buyer's VAT withheld (D4.6),
+ * cancel mirrors, E5 rules, API rules and property tests. To keep these tests free of releases, the invoiced receivable (G-02) is posted here as the invoice
  * record's journal, tagged with the JO; the invoice record itself and the D6 cancel rules are in JO/tests/release.test.ts.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -44,6 +44,15 @@ async function jobOrder(totalCents: number, customerId = c.school): Promise<stri
   const r = await encoder.post('/api/docs/jo.job_order/post', { input: { customerId, dueInDays: 15, priority: 'normal', paymentTerms: 'dp50', lines }, expectedTotalCents: totalCents }, idem());
   expect(r.statusCode).toBe(200);
   return r.json().id;
+}
+
+/** A made-up government buyer: withholds 1% or 2% CWT and 5% VAT on its 2307s (D4.6). */
+function governmentBuyer(): string {
+  const id = newId();
+  env.db
+    .prepare(`INSERT INTO cus_customers (id, code, kind, display_name, withholding_profile, created_at, updated_at) VALUES (?, 'CUS-G1', 'organization', 'Moonlight City Hall', 'government', ?, ?)`)
+    .run(id, stamp(env.clock), stamp(env.clock));
+  return id;
 }
 
 /** The invoice record's journal (INV-REC + DEP-APPLY, PLAN D5) without the document, AR and deposit lines tagged with the JO. */
@@ -223,6 +232,51 @@ describe('collection goldens (PLAN I2)', () => {
     expect([net('1121'), net('1101')]).toEqual([0, 1_000_000]);
     noBrokenInvariants();
   });
+
+  it('COL-RCV, government buyer: cash 10,600 + 1% CWT 100 + 5% VAT withheld 500 clears an ₱11,200 invoice; cancel mirrors it', async () => {
+    const lgu = governmentBuyer();
+    const jo = await jobOrder(1_120_000, lgu);
+    invoice(jo, 1_120_000, 0, lgu); // VAT 1,200.00, net 10,000.00; open AR 11,200.00
+    const input = {
+      customerId: lgu,
+      crNumber: '0107',
+      applications: [{ jobOrderId: jo, amountCents: 1_120_000 }],
+      tenders: [{ cashPlaceId: CASH, amountCents: 1_060_000 }],
+      withholding: { cwtCents: 10_000, atc: 'WC158', certificate: 'pending', vatWithheldCents: 50_000 },
+    };
+    const pre = (await encoder.post(`${COL}/preview`, { input })).json();
+    expect(pre.issues).toEqual([]); // 1% and 5% of NET(11,200) = 10,000: as expected
+    expect(pre.totalCents).toBe(1_120_000); // Σ tenders + CWT + VAT withheld = Σ applied
+    expect(pre.summary).toBe(
+      'This will record ₱10,600.00 received from Moonlight City Hall in Cash on hand (main cash box) plus ₱100.00 tax withheld and ₱500.00 VAT withheld (2307), CR 0107: ₱11,200.00 for JO-000001.',
+    );
+    const res = await collect(input, 1_120_000);
+    expect(res.statusCode).toBe(200);
+    const { id } = res.json();
+    expect(linesOf(id)).toEqual([
+      ['1101', null, null, 1_060_000, 0],
+      ['1410', lgu, null, 10_000, 0],
+      ['1404', lgu, null, 50_000, 0],
+      ['1201', lgu, jo, 0, 1_120_000],
+    ]);
+    expect(joLedger(env.db, jo)).toEqual({ receivableCents: 0, depositsHeldCents: 0 });
+    expect(env.db.prepare('SELECT cwt_cents, vat_withheld_cents FROM col_collections WHERE document_id = ?').raw().get(id)).toEqual([10_000, 50_000]);
+    expect((await encoder.get(`${COL}/${id}`)).json().input).toEqual(input);
+
+    env.clock.advance(24 * 3600_000);
+    encoder = await env.as('encoder');
+    expect((await encoder.post(`${COL}/${id}/cancel`, { reason: 'Recorded against the wrong invoice' }, idem())).statusCode).toBe(200);
+    expect(linesOf(id, 'reversal')).toEqual([
+      ['1101', null, null, 0, 1_060_000],
+      ['1410', lgu, null, 0, 10_000],
+      ['1404', lgu, null, 0, 50_000],
+      ['1201', lgu, jo, 1_120_000, 0],
+    ]);
+    expect(joLedger(env.db, jo)).toEqual({ receivableCents: 1_120_000, depositsHeldCents: 0 });
+    const net = (code: string) => env.db.prepare('SELECT SUM(l.debit_cents - l.credit_cents) FROM journal_lines l JOIN accounts a ON a.id = l.account_id WHERE a.code = ?').pluck().get(code);
+    expect([net('1404'), net('1410'), net('1101')]).toEqual([0, 0, 0]);
+    noBrokenInvariants();
+  });
 });
 
 describe('collection rules (PLAN E5, D4)', () => {
@@ -266,6 +320,27 @@ describe('collection rules (PLAN E5, D4)', () => {
     expect(await issues(w(50_000))).toEqual(['CWT_EXPECTED']);
     expect(await issues(w(50_000, 'WC160'))).toEqual([]);
     expect(await issues(w(12_345, 'other'))).toEqual([]);
+  });
+
+  it('warns when the VAT withheld is off 5% of the net by more than ₱1.00, and takes it only with CWT on the same 2307 (D4.6)', async () => {
+    const jo = await jobOrder(1_120_000);
+    const w = (vatWithheldCents: number) => ({
+      ...pay(jo, 1_120_000),
+      tenders: [{ cashPlaceId: CASH, amountCents: 1_120_000 - 10_000 - vatWithheldCents }],
+      withholding: { cwtCents: 10_000, atc: 'WC158' as const, certificate: 'received' as const, vatWithheldCents },
+    });
+    expect(await issues(w(50_000))).toEqual([]);
+    expect(await issues(w(50_100))).toEqual([]); // ₱1.00 off: fine
+    expect(await issues(w(49_899))).toEqual(['VAT_WITHHELD_EXPECTED']);
+    expect(await issues(w(100_000))).toEqual(['VAT_WITHHELD_EXPECTED']);
+    // The rule counts it: received (tenders + CWT + VAT withheld) a centavo below what is applied is refused.
+    expect(await issues({ ...w(50_000), tenders: [{ cashPlaceId: CASH, amountCents: 1_059_999 }] })).toEqual(['APPLIED_MORE']);
+    for (const withholding of [{ vatWithheldCents: 50_000 }, { ...w(50_000).withholding, vatWithheldCents: 0 }, { ...w(50_000).withholding, cwtCents: 0 }]) {
+      expect((await collect({ ...w(50_000), withholding }, 1_120_000)).statusCode, JSON.stringify(withholding)).toBe(400);
+    }
+    // The table refuses VAT withheld without CWT too.
+    expect(() => env.db.prepare(`INSERT INTO col_collections (document_id, customer_id, customer_name, cr_number, cwt_cents, vat_withheld_cents, unapplied_cents, short_over_cents, settle_small_difference)
+      VALUES (?, ?, 'x', '9999', 0, 500, 0, 0, 0)`).run(newId(), c.school)).toThrow(/CHECK constraint failed: vat_withheld_cents/);
   });
 
   it('refunds a cancelled JO’s deposit, with a warning when the money came with a 2307 (ACC-14)', async () => {
@@ -332,6 +407,7 @@ describe('API rules', () => {
 
 describe('property tests (PLAN I1.3)', () => {
   it('random collections: stored = computed, the balance rule holds, refunds and cancels net to zero, nothing goes negative', async () => {
+    let withVat = 0;
     const jos = [await jobOrder(9_000_000_000), await jobOrder(9_000_000_000), await jobOrder(9_000_000_000, c.other)];
     invoice(jos[0]!, 4_000_000_000);
     const actor = { userId: accountant.userId, permissions: new Set(['col.create', 'col.post', 'col.cancel', 'col.refund']) };
@@ -344,7 +420,10 @@ describe('property tests (PLAN I1.3)', () => {
         for (const [raw, what] of ops) {
           const input = { ...raw, crNumber: nextCr() };
           const expected = collectionDoc.compute(input, ctx());
+          // COL-RCV: Σ tenders + CWT + VAT withheld = Σ applied + unapplied (+ short/over).
+          expect(expected.totalCents).toBe(input.tenders.reduce((s, t) => s + t.amountCents, 0) + expected.cwtCents + expected.vatWithheldCents);
           expect(expected.totalCents).toBe(expected.appliedCents + expected.unappliedCents + expected.shortOverCents);
+          if (expected.vatWithheldCents > 0) withVat++;
           const p = postDocument(e, collectionDoc, actor, { input, expectedTotalCents: expected.totalCents });
           expect(collectionDoc.load(env.db, p.id)).toEqual(expected);
           expect(collectionDoc.toInput(expected)).toEqual(input);
@@ -357,16 +436,23 @@ describe('property tests (PLAN I1.3)', () => {
             if (refundId) cancelDocument(e, refundDoc, actor, refundId, 'Refund recorded by mistake');
             cancelDocument(e, collectionDoc, actor, p.id, 'Recorded twice by mistake');
           } else if (what === 'reissue') {
-            const tenders = [{ cashPlaceId: BDO, amountCents: expected.totalCents - expected.cwtCents }];
+            const tenders = [{ cashPlaceId: BDO, amountCents: expected.totalCents - expected.cwtCents - expected.vatWithheldCents }];
             reissueDocument(e, collectionDoc, actor, p.id, { input: { ...input, crNumber: nextCr(), tenders }, expectedTotalCents: expected.totalCents, reason: 'Money went to BDO instead' });
           }
         }
         expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
         for (const jo of jos) expect(Math.min(joLedger(env.db, jo).receivableCents, joLedger(env.db, jo).depositsHeldCents)).toBeGreaterThanOrEqual(0);
         for (const customer of [c.school, c.other]) expect(depositsHeld(env.db, customer, null)).toBeGreaterThanOrEqual(0);
+        // 1410 and 1404 hold exactly what the recorded collections withheld: cancels and reissues take theirs back.
+        const held = (role: string) =>
+          env.db.prepare('SELECT COALESCE(SUM(l.debit_cents - l.credit_cents), 0) FROM journal_lines l JOIN accounts a ON a.id = l.account_id WHERE a.role_key = ?').pluck().get(role);
+        const stored = (col: string) =>
+          env.db.prepare(`SELECT COALESCE(SUM(c.${col}), 0) FROM col_collections c JOIN documents d ON d.id = c.document_id WHERE d.status = 'posted'`).pluck().get();
+        expect([held('CWT'), held('VAT_WITHHELD')]).toEqual([stored('cwt_cents'), stored('vat_withheld_cents')]);
       }),
       { numRuns: 25 },
     );
+    expect(withVat).toBeGreaterThan(0);
   });
 
   it('random refunds of money held post balanced and cancel to zero', async () => {

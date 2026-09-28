@@ -1,11 +1,13 @@
 /**
  * Remittance (REM-, PLAN D5 STAT-REM, E11): paying SSS, PhilHealth, Pag-IBIG or the BIR (1601-C) what the payrolls of
  * one contribution month left payable, with the PRN, payment reference or receipt number. Dated the day paid.
- *   Dr 2401 SSS / 2402 PhilHealth / 2403 Pag-IBIG / 2310 withholding tax (per employee, month M) / Cr cash place
+ *   Dr 2401 SSS / 2402 PhilHealth / 2403 Pag-IBIG / 2310 withholding tax (per employee, month M); Dr 6290 late-payment
+ *   penalty (optional) / Cr cash place (both)
  * The variance check compares the amount paid with the month's payable (ledger.ts): the same amount clears every
  * employee's share; less is a partial payment, spread over the employees in proportion, and the rest stays payable;
  * more is refused, since the payrolls do not show it. A month remitted more than its payrolls now show (a run cancelled
- * after remittance, D6) is warned about. Cancel mirrors it.
+ * after remittance, D6) is warned about. A penalty is paid on top: it is no one's payable, so it never enters the check
+ * or the employees' lines. Cancel mirrors it.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -21,7 +23,8 @@ export const remittanceInput = z
     scheme: z.enum(SCHEMES),
     month: z.string().refine(isMonth, 'Use a month like 2026-09.'), // the contribution month paid for, not the document's date
     cashPlaceId: z.number().int().positive(),
-    amountCents: z.number().int().positive().max(MAX_CENTS),
+    amountCents: z.number().int().positive().max(MAX_CENTS), // what clears the month's payable
+    penaltyCents: z.number().int().positive().max(MAX_CENTS).optional(), // late-payment penalty paid with it (6290)
     reference: z.string().trim().min(3).max(60), // PRN, payment reference or receipt number
     note: z.string().trim().min(1).max(300).optional(),
   })
@@ -55,7 +58,7 @@ export const remittanceDoc: DocTypeDef<RemittanceInput, Remittance> = {
   compute(input, ctx) {
     return {
       ...input, label: SCHEME[input.scheme].label, cashPlaceName: getCashPlace(ctx.db, input.cashPlaceId)?.name ?? '?',
-      ...linesFor(ctx.db, input.scheme, input.month, input.amountCents), totalCents: input.amountCents,
+      ...linesFor(ctx.db, input.scheme, input.month, input.amountCents), totalCents: input.amountCents + (input.penaltyCents ?? 0),
     };
   },
 
@@ -81,8 +84,8 @@ export const remittanceDoc: DocTypeDef<RemittanceInput, Remittance> = {
   },
 
   persist(db, doc, h) {
-    db.prepare('INSERT INTO stat_remittances (document_id, scheme, month, cash_account_id, reference, payable_cents, amount_cents, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-      h.documentId, doc.scheme, doc.month, doc.cashPlaceId, doc.reference, doc.payableCents, doc.amountCents, doc.note ?? null,
+    db.prepare('INSERT INTO stat_remittances (document_id, scheme, month, cash_account_id, reference, payable_cents, amount_cents, penalty_cents, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+      h.documentId, doc.scheme, doc.month, doc.cashPlaceId, doc.reference, doc.payableCents, doc.amountCents, doc.penaltyCents ?? 0, doc.note ?? null,
     );
     const line = db.prepare('INSERT INTO stat_remittance_lines (document_id, employee_id, employee_name, payable_cents, amount_cents) VALUES (?, ?, ?, ?, ?)');
     for (const l of doc.lines) line.run(h.documentId, l.employeeId, l.name, l.payableCents, l.amountCents);
@@ -94,37 +97,40 @@ export const remittanceDoc: DocTypeDef<RemittanceInput, Remittance> = {
       memo: `${doc.label} remittance for ${doc.month} (${doc.reference})`,
       lines: [
         ...doc.lines.map((l) => ({ account: { role: SCHEME[doc.scheme].role }, party: { type: 'employee', id: l.employeeId }, debitCents: l.amountCents, memo: tag })),
-        { account: { cashPlace: doc.cashPlaceId }, creditCents: doc.amountCents, memo: doc.reference },
+        { account: { role: 'PENALTIES' }, debitCents: doc.penaltyCents ?? 0, memo: `Late payment, ${tag}` },
+        { account: { cashPlace: doc.cashPlaceId }, creditCents: doc.totalCents, memo: doc.reference },
       ],
     };
   },
 
   load(db, documentId) {
     const r = db.prepare('SELECT * FROM stat_remittances WHERE document_id = ?').get(documentId) as
-      | { scheme: Scheme; month: string; cash_account_id: number; reference: string; payable_cents: number; amount_cents: number; note: string | null }
+      | { scheme: Scheme; month: string; cash_account_id: number; reference: string; payable_cents: number; amount_cents: number; penalty_cents: number; note: string | null }
       | undefined;
     if (!r) throw new Error(`Remittance ${documentId} not found`);
     const lines = db
       .prepare('SELECT employee_id AS employeeId, employee_name AS name, payable_cents AS payableCents, amount_cents AS amountCents FROM stat_remittance_lines WHERE document_id = ? ORDER BY rowid')
       .all(documentId) as RemittanceLine[];
     return {
-      scheme: r.scheme, month: r.month, cashPlaceId: r.cash_account_id, amountCents: r.amount_cents, reference: r.reference, ...(r.note ? { note: r.note } : {}),
-      label: SCHEME[r.scheme].label, cashPlaceName: getCashPlace(db, r.cash_account_id)?.name ?? '?', payableCents: r.payable_cents, lines, totalCents: r.amount_cents,
+      scheme: r.scheme, month: r.month, cashPlaceId: r.cash_account_id, amountCents: r.amount_cents, ...(r.penalty_cents ? { penaltyCents: r.penalty_cents } : {}),
+      reference: r.reference, ...(r.note ? { note: r.note } : {}),
+      label: SCHEME[r.scheme].label, cashPlaceName: getCashPlace(db, r.cash_account_id)?.name ?? '?', payableCents: r.payable_cents, lines, totalCents: r.amount_cents + r.penalty_cents,
     };
   },
 
   toInput(doc) {
-    const { scheme, month, cashPlaceId, amountCents, reference, note } = doc;
-    return { scheme, month, cashPlaceId, amountCents, reference, ...(note ? { note } : {}) };
+    const { scheme, month, cashPlaceId, amountCents, penaltyCents, reference, note } = doc;
+    return { scheme, month, cashPlaceId, amountCents, ...(penaltyCents ? { penaltyCents } : {}), reference, ...(note ? { note } : {}) };
   },
 
   summary(doc) {
     const n = doc.lines.length;
     const left = doc.payableCents - doc.amountCents;
-    return `This will record ${formatPeso(doc.amountCents)} paid to ${doc.label} for ${doc.month} (${doc.reference}) from ${doc.cashPlaceName}, for ${n} ${n === 1 ? 'employee' : 'employees'}.${left > 0 ? ` ${formatPeso(left)} stays payable.` : ''}`;
+    const penalty = doc.penaltyCents ? `, plus ${formatPeso(doc.penaltyCents)} late-payment penalty (${formatPeso(doc.totalCents)} in all)` : '';
+    return `This will record ${formatPeso(doc.amountCents)} paid to ${doc.label} for ${doc.month} (${doc.reference}) from ${doc.cashPlaceName}, for ${n} ${n === 1 ? 'employee' : 'employees'}${penalty}.${left > 0 ? ` ${formatPeso(left)} stays payable.` : ''}`;
   },
 
-  /** A scheme and month with something payable, paid in full or in part from one cash place. */
+  /** A scheme and month with something payable, paid in full or in part from one cash place, sometimes with a penalty. */
   arbitrary(db) {
     const due = statMonths(db).flatMap((month) =>
       SCHEMES.map((scheme) => ({ scheme, month, payable: [...payableByEmployee(db, scheme, month).values()].filter((c) => c > 0).reduce((s, c) => s + c, 0) })).filter((x) => x.payable > 0),
@@ -132,9 +138,14 @@ export const remittanceDoc: DocTypeDef<RemittanceInput, Remittance> = {
     if (!due.length) throw new Error('Nothing to remit');
     const places = listCashPlaces(db).map((c) => c.id);
     return fc
-      .record({ d: fc.constantFrom(...due), cashPlaceId: fc.constantFrom(...places), part: fc.boolean(), prn: fc.integer({ min: 100_000, max: 999_999 }) })
-      .chain(({ d, cashPlaceId, part, prn }) =>
-        (part ? fc.integer({ min: 1, max: d.payable }) : fc.constant(d.payable)).map((amountCents) => ({ scheme: d.scheme, month: d.month, cashPlaceId, amountCents, reference: `PRN ${prn}` })),
+      .record({
+        d: fc.constantFrom(...due), cashPlaceId: fc.constantFrom(...places), part: fc.boolean(), prn: fc.integer({ min: 100_000, max: 999_999 }),
+        penaltyCents: fc.option(fc.integer({ min: 1, max: 500_000 }), { nil: undefined }),
+      })
+      .chain(({ d, cashPlaceId, part, prn, penaltyCents }) =>
+        (part ? fc.integer({ min: 1, max: d.payable }) : fc.constant(d.payable)).map((amountCents) => ({
+          scheme: d.scheme, month: d.month, cashPlaceId, amountCents, ...(penaltyCents ? { penaltyCents } : {}), reference: `PRN ${prn}`,
+        })),
       );
   },
 };

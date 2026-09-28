@@ -134,16 +134,17 @@ export function StatMonthPage({ me, params }: { me: Me; params?: Record<string, 
   );
 }
 
-/** A remittance's view: what it cleared for each employee against what was payable. */
+/** A remittance's view: what it cleared for each employee against what was payable, and any penalty paid with it. */
 export const remittanceView: ViewParts = {
   noEdit: true,
   extra: (d: DocDetail) => {
-    const r = d.doc as { month: string; label: string; payableCents: number; lines: { employeeId: string; name: string; payableCents: number; amountCents: number }[] } | undefined;
+    const r = d.doc as { month: string; label: string; payableCents: number; penaltyCents?: number; lines: { employeeId: string; name: string; payableCents: number; amountCents: number }[] } | undefined;
     if (!r) return null;
     return (
       <div className="space-y-1 pt-2 text-sm">
         <p>{r.label} for <Link to={`/stat/${r.month}`} className="underline">{r.month}</Link>: {peso(r.payableCents)} was payable when this was recorded.</p>
         {r.lines.map((l) => <div key={l.employeeId} className="flex justify-between"><span>{l.name}</span><span className="tabular-nums">{peso(l.amountCents)} of {peso(l.payableCents)}</span></div>)}
+        {r.penaltyCents ? <div className="flex justify-between"><span>Late-payment penalty</span><span className="tabular-nums">{peso(r.penaltyCents)}</span></div> : null}
       </div>
     );
   },
