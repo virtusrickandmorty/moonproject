@@ -11,3 +11,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [7. Cash Accounts and Count](07-cash-count.md): Add cash places and record physical cash counts.
 - [8. Cash Book](08-cash-book.md): View the daily money movements and running balances of a cash place.
 - [9. Books and Reports](09-books.md): View and export the general journal, general ledger, and trial balance.
+- [17. Opening balances](17-opening-balances.md): Set the cut-over date, record starting balances, and close the opening.
