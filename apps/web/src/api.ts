@@ -161,6 +161,18 @@ export interface VatSummary {
   /** The quarter's posted VAT close (VATC-), if any. */
   close: { documentId: string; number: string; date: string } | null;
 }
+/** Money out (AP, EXP, EQ). Suppliers and supplies are PUR's own rows (GET /api/pur/suppliers, /api/pur/supplies). */
+export interface SupplierRow { id: string; name: string; tin: string | null; is_vat_registered: number; ewt_class: string | null; payment_terms_days: number | null }
+export interface SupplyRow { id: string; name: string; category: 'materials' | 'ready_made' }
+export interface ExpCategory { id: number; code: string; name: string; defaultEwtClass: string | null }
+/** GET /api/ap/suppliers/:id: a supplier's bills, with what is still owed on each (from the ledger). */
+export interface ApLedger {
+  supplierId: string; supplierName: string; balanceCents: number;
+  bills: { id: string; number: string; status: 'posted' | 'cancelled'; supplierInvoiceNo: string; dueDate: string; payableCents: number; owedCents: number }[];
+}
+export interface EqPerson { id: string; name: string; isStockholder: boolean; isOfficer: boolean; position: string | null }
+export interface Setting { key: string; label: string; current: unknown }
+
 /** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
 export const taxRegisterPath = (register: 'sales' | 'withholding-received', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
 
@@ -272,6 +284,14 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     statMonth: (month: string) => call<StatMonth>('GET', `/api/stat/months/${encodeURIComponent(month)}`),
     /** D6: what of a payroll run's month is already remitted (the warning before a cancel). */
     runRemitted: (runId: string) => call<{ month: string; remitted: { scheme: Scheme; label: string; numbers: string[] }[] }>('GET', `/api/stat/runs/${encodeURIComponent(runId)}/remitted`),
+    settings: () => call<Setting[]>('GET', '/api/settings'),
+    suppliers: () => call<SupplierRow[]>('GET', '/api/pur/suppliers'),
+    supplies: () => call<SupplyRow[]>('GET', '/api/pur/supplies'),
+    expCategories: () => call<ExpCategory[]>('GET', '/api/exp/categories'),
+    apLedger: (supplierId: string) => call<ApLedger>('GET', `/api/ap/suppliers/${encodeURIComponent(supplierId)}`),
+    eqPeople: () => call<EqPerson[]>('GET', '/api/eq/people'),
+    /** What an officer owes the company and is owed (needs eq.ledger.view). */
+    officerBalances: (personId: string) => call<{ dueFromCents: number; dueToCents: number }>('GET', `/api/eq/people/${encodeURIComponent(personId)}/ledger`),
     salesRegister: (from: string, to: string) => call<SalesRegister>('GET', taxRegisterPath('sales', from, to)),
     withholdingReceived: (from: string, to: string) => call<WithholdingRegister>('GET', taxRegisterPath('withholding-received', from, to)),
     taxCalendar: (from: string, to: string) => call<TaxDeadline[]>('GET', `/api/tax/calendar?${new URLSearchParams({ from, to })}`),
