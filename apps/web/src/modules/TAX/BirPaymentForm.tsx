@@ -16,7 +16,7 @@ import { docPath } from '../../shell/menu.ts';
 import { Errors, useLive } from '../COL/parts.tsx';
 import { paidOn } from '../STAT/stat.ts';
 import {
-  BIR_FORMS, BIR_FORM_WORDS, amountText, birPaymentInput, defaultPeriod, ewtMonthChoices, isBirForm, leftToPay, paysMonth, periodOf, periodParts, quarterOfPeriod,
+  BIR_FORMS, BIR_FORM_WORDS, amountText, birPaymentInput, defaultPeriod, ewtMonthChoices, isBirForm, leftToPay, leftWithDue, paysMonth, periodOf, periodParts, quarterOfPeriod,
   worksheetPath, type BirPaymentInput, type BirValues,
 } from './bir.ts';
 import { QUARTERS, yearChoices } from './reports.ts';
@@ -24,6 +24,7 @@ import { QUARTERS, yearChoices } from './reports.ts';
 interface BirPaymentDoc {
   periodLabel: string; payableCents: number; totalCents: number;
   vatClose: { documentId: string; number: string; date: string } | null;
+  opening: { documentId: string; number: string; date: string } | null;
   lines: { partyId: string; name: string; payableCents: number; amountCents: number }[];
 }
 
@@ -61,9 +62,13 @@ export function BirPaymentForm({ type, mode, me }: { type: DocTypeInfo; mode: Fo
     let stale = false;
     const { year, quarter } = paysMonth(form) ? { year: 0, quarter: 1 } : quarterOfPeriod(period);
     const worksheet = form === '0619-E' ? api.ewtMonthWorksheet(period) : form === '1601-EQ' ? api.ewtQuarterWorksheet(year, quarter) : api.vatWorksheet(year, quarter);
-    worksheet.then((w) => {
+    // A 2550Q of a quarter before the cut-over has no VAT close here: what its opening left comes with the returns due.
+    const cents = worksheet.then(async (w) => {
+      const fromWorksheet = leftToPay(form, w);
+      return form === '2550Q' && fromWorksheet === 0 ? leftWithDue(form, period, fromWorksheet, await api.taxPaymentsDue()) : fromWorksheet;
+    });
+    cents.then((cents) => {
       if (stale) return;
-      const cents = leftToPay(form, w);
       setLeft(cents);
       if (!amountTyped.current) setV((old) => ({ ...old, amount: amountText(cents) }));
     }, () => undefined); // the worksheet is a convenience: the preview still says what is left
@@ -140,6 +145,7 @@ export function BirPaymentForm({ type, mode, me }: { type: DocTypeInfo; mode: Fo
             <p className="text-sm text-slate-600">
               Left to pay with this return: {peso(doc.payableCents)}.
               {doc.vatClose && <> From the VAT close <Link to={docPath('tax.vat_close', `/${doc.vatClose.documentId}`)} className="underline">{doc.vatClose.number}</Link> of {doc.vatClose.date}.</>}
+              {doc.opening && <> From the old books: the opening <Link to={docPath('tax.payable.opening', `/${doc.opening.documentId}`)} className="underline">{doc.opening.number}</Link> of {doc.opening.date}.</>}
             </p>
           )}
           {doc && doc.lines.length > 0 && (
