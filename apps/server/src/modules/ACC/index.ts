@@ -2,6 +2,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { defineModule } from '../../engine/documents/registry.ts';
 import { jvDoc } from './doctypes/jv.ts';
+import { openingDoc } from './doctypes/opening.ts';
+import { openingRoutes } from './opening.ts';
 import { accRoutes } from './routes.ts';
 
 export default defineModule({
@@ -14,8 +16,15 @@ export default defineModule({
     { key: 'acc.jv.post', label: 'Record journal vouchers', defaultRoles: ['accountant'] },
     { key: 'acc.jv.cancel', label: 'Cancel or edit recorded journal vouchers', defaultRoles: ['accountant'] },
     { key: 'acc.settings.manage', label: 'Change dated settings (VAT rate, deposit VAT mode, CR mode, TWA)', defaultRoles: ['accountant', 'owner'] },
+    { key: 'acc.opening.view', label: 'See the opening balances and the cut-over checks', defaultRoles: ['accountant', 'owner'] },
+    { key: 'acc.opening.create', label: 'Prepare opening balances', defaultRoles: ['accountant'] },
+    { key: 'acc.opening.post', label: 'Record opening balances, set the cut-over date and close the opening', defaultRoles: ['accountant'] },
+    { key: 'acc.opening.cancel', label: 'Cancel or edit recorded opening balances before the close', defaultRoles: ['accountant'] },
   ],
-  docTypes: [jvDoc],
+  docTypes: [jvDoc, openingDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
-  routes: accRoutes,
+  routes(app, deps) {
+    accRoutes(app, deps);
+    openingRoutes(app, deps);
+  },
 });
