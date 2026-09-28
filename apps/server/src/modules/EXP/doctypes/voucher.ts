@@ -16,12 +16,11 @@ import { EWT_CLASSES, settingAt, type EwtClass } from '../../../engine/settings.
 import type { Db } from '../../../platform/db/driver.ts';
 import { category, listCategories } from '../categories.ts';
 import { supplier } from '../pur.ts';
+import { TWA_ONLY, appliedEwtClass } from '../public.ts';
 
 const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
 
 export type { EwtClass };
-/** Withheld only when Virtus is a published Top Withholding Agent (setting tax.top_withholding_agent). */
-const TWA_ONLY: ReadonlySet<string> = new Set(['goods_1', 'services_2']);
 
 const tin = z.string().trim().regex(/^\d{3}-\d{3}-\d{3}-\d{3}(\d{2})?$/, 'Type the TIN like 123-456-789-000.');
 const receiptDate = z.string().refine(isBusinessDate, 'Use a date like 2026-09-28.').refine((d) => d >= '2000-01-01', 'Check the year.');
@@ -72,8 +71,7 @@ function computeVoucher(db: Db, input: VoucherInput, businessDate: string): Vouc
   const { netCents, vatCents } = vatRegistered ? vatFromGross(G, vatRateBp) : { netCents: G, vatCents: 0 };
   const vatClaimed = vatRegistered && Boolean(input.supplierInvoiceNo && input.supplierInvoiceDate && payeeTin);
   const usual = sup?.ewtClass ?? cat?.defaultEwtClass ?? null;
-  const twa = settingAt(db, 'tax.top_withholding_agent', businessDate);
-  const applied = input.ewtClass === 'none' ? null : (input.ewtClass ?? (usual && (twa || !TWA_ONLY.has(usual)) ? usual : null));
+  const applied = appliedEwtClass(db, input.ewtClass, usual, businessDate);
   const ewtRateBp = applied ? settingAt(db, 'tax.ewt_rates_bp', businessDate)[applied] : 0; // the rate in force on the payment date
   const ewtCents = applied ? applyRate(netCents, ewtRateBp) : 0;
   return {
