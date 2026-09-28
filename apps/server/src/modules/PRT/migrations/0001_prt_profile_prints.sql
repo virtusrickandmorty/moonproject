@@ -1,4 +1,4 @@
-CREATE TABLE prn_company_profile (
+CREATE TABLE prt_company_profile (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   registered_name TEXT NOT NULL,
   trade_name TEXT NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE prn_company_profile (
   updated_by TEXT NOT NULL REFERENCES users(id)
 ) STRICT;
 
-CREATE TABLE prn_company_profile_history (
+CREATE TABLE prt_company_profile_history (
   id INTEGER PRIMARY KEY,
   registered_name TEXT NOT NULL,
   trade_name TEXT NOT NULL,
@@ -21,10 +21,10 @@ CREATE TABLE prn_company_profile_history (
   superseded_at TEXT NOT NULL,
   superseded_by TEXT NOT NULL REFERENCES users(id)
 ) STRICT;
-CREATE TRIGGER prn_company_profile_history_no_update BEFORE UPDATE ON prn_company_profile_history
+CREATE TRIGGER prt_company_profile_history_no_update BEFORE UPDATE ON prt_company_profile_history
 BEGIN SELECT RAISE(ABORT, 'IMMUTABLE: company profile history is append-only'); END;
 
-CREATE TABLE prn_print_log (
+CREATE TABLE prt_print_log (
   id INTEGER PRIMARY KEY,
   document_id TEXT NOT NULL REFERENCES documents(id),
   user_id TEXT NOT NULL REFERENCES users(id),
@@ -33,5 +33,5 @@ CREATE TABLE prn_print_log (
   print_kind TEXT NOT NULL CHECK (print_kind IN ('document', 'job_ticket')),
   UNIQUE (document_id, print_kind, copy_number)
 ) STRICT;
-CREATE TRIGGER prn_print_log_no_update BEFORE UPDATE ON prn_print_log
+CREATE TRIGGER prt_print_log_no_update BEFORE UPDATE ON prt_print_log
 BEGIN SELECT RAISE(ABORT, 'IMMUTABLE: print log is append-only'); END;

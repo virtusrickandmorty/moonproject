@@ -30,7 +30,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'People & Payroll', label: 'Employees', path: '/emp/employees', permission: 'emp.view' },
   { group: 'People & Payroll', label: 'Attendance', path: '/emp/attendance', permission: 'emp.view' },
   { group: 'People & Payroll', label: 'Holidays', path: '/emp/holidays', permission: 'emp.view' },
-  { group: 'Admin', label: 'Company print details', path: '/prn/company-profile', permission: 'prn.profile.manage' },
+  { group: 'Admin', label: 'Company print details', path: '/prt/company-profile', permission: 'prt.profile.manage' },
   { group: 'People & Payroll', label: 'Government remittances', path: '/stat', permission: 'stat.view' },
 ];
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;

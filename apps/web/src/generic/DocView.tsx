@@ -4,7 +4,7 @@
  * Cancel and Edit (= cancel and reissue) start here.
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, newIdempotencyKey, type CashPlace, type DocDetail, type DocTypeInfo } from '../api.ts';
+import { api, newIdempotencyKey, type CashPlace, type DocDetail, type DocTypeInfo, type PrintVariant } from '../api.ts';
 import { Link, navigate } from '../router.tsx';
 import { Button, JournalTable, Notice, Panel, ReasonDialog, StatusChip, longDate, manilaTime, peso } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
@@ -22,11 +22,19 @@ export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo;
   const [places, setPlaces] = useState<CashPlace[]>([]);
   const [error, setError] = useState('');
   const [printError, setPrintError] = useState('');
+  const [printVariants, setPrintVariants] = useState<PrintVariant[]>([]);
   const [cancelKey, setCancelKey] = useState<string | null>(null); // one Idempotency-Key per cancel dialog
 
   const load = useCallback(() => api.get(type.key, id).then(setD, (e: Error) => setError(e.message)), [type.key, id]);
   useEffect(() => void load(), [load]);
   useEffect(() => void (fields.some((f) => f.kind === 'cashPlace') && api.cashPlaces().then(setPlaces, () => undefined)), [fields]);
+  useEffect(() => {
+    let active = true;
+    api.printableTypes().then((types) => {
+      if (active) setPrintVariants(types.find((item) => item.key === type.key)?.variants ?? []);
+    }, () => { if (active) setPrintVariants([]); });
+    return () => { active = false; };
+  }, [type.key]);
 
   if (error) return <Notice>{error}</Notice>;
   if (!d) return <p className="text-slate-500">Loading…</p>;
@@ -34,8 +42,7 @@ export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo;
   const text = toValues(fields, d.input);
   const shown = { cashPlace: (v: string) => places.find((p) => String(p.id) === v)?.name ?? v, money: (v: string) => `₱${v}`, boolean: (v: string) => (v ? 'Yes' : 'No') } as Record<string, (v: string) => string>;
   const posted = h.status === 'posted';
-  const printable = ['quo.quotation', 'jo.job_order', 'jo.release', 'pur.po'].includes(type.key);
-  const print = async (variant: 'document' | 'job_ticket' = 'document') => {
+  const print = async (variant: PrintVariant = 'document') => {
     const page = window.open('', '_blank');
     if (!page) { setPrintError('Allow a new window to print this document.'); return; }
     try {
@@ -55,8 +62,8 @@ export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo;
         <h1 className="text-2xl font-semibold">{type.title} {h.number}</h1>
         <StatusChip status={h.status} />
         <span className="flex-1" />
-        {printable && <Button onClick={() => void print()}>Print</Button>}
-        {type.key === 'jo.job_order' && <Button onClick={() => void print('job_ticket')}>Print job ticket</Button>}
+        {printVariants.includes('document') && <Button onClick={() => void print()}>Print</Button>}
+        {printVariants.includes('job_ticket') && <Button onClick={() => void print('job_ticket')}>Print job ticket</Button>}
         {posted && type.canCancel && type.canPost && !parts.noEdit && <Button onClick={() => navigate(docPath(type.key, `/${id}/edit`))}>Edit</Button>}
         {posted && type.canCancel && <Button tone="danger" onClick={() => setCancelKey(newIdempotencyKey())}>Cancel</Button>}
       </div>
