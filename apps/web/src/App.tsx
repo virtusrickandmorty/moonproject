@@ -42,8 +42,8 @@ export function App() {
   const typeOf = (key = '') => stage.docTypes.find((d) => d.key === key);
   const routes: [string, (p: Record<string, string>, t: DocTypeInfo) => ReactNode][] = [
     ['/docs/:type', (_, t) => <DocList key={t.key} type={t} />],
-    ['/docs/:type/new', (_, t) => <Form key={location} type={t} mode={{ kind: 'new', draftId: new URLSearchParams(query).get('draft') ?? undefined }} />],
-    ['/docs/:type/:id/edit', (p, t) => <Form key={location} type={t} mode={{ kind: 'edit', id: p.id! }} />],
+    ['/docs/:type/new', (_, t) => <Form key={location} type={t} me={stage.me} mode={{ kind: 'new', draftId: new URLSearchParams(query).get('draft') ?? undefined }} />],
+    ['/docs/:type/:id/edit', (p, t) => <Form key={location} type={t} me={stage.me} mode={{ kind: 'edit', id: p.id! }} />],
     ['/docs/:type/:id', (p, t) => <DocView key={p.id} type={t} id={p.id!} recorded={query === 'recorded=1'} parts={VIEWS[t.key]} />],
   ];
   let page: ReactNode = <Notice>Page not found. <Link to="/" className="underline">Go home</Link></Notice>;
@@ -70,9 +70,9 @@ export function App() {
 }
 
 /** A module's own form when it has one (FORMS), else the generic form. */
-function Form({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
+function Form({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me: Me }) {
   const Custom = FORMS[type.key];
-  return Custom ? <Custom type={type} mode={mode} /> : <DocForm type={type} mode={mode} />;
+  return Custom ? <Custom type={type} mode={mode} me={me} /> : <DocForm type={type} mode={mode} />;
 }
 
 function Home({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }) {

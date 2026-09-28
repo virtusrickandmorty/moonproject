@@ -92,7 +92,7 @@ These are stated calmly. None is an emergency today, but each needs the accounta
 | NR-4 | Edit of a posted document = cancel (mirror reversal dated today) + reissue (new number), linked, with reason and user | Silent in-place edits and cascades |
 | NR-5 | Gapless numbering per series, allocated inside the posting transaction; never reused | max+1 IDs, collisions, reuse after delete |
 | NR-6 | The server recomputes every total, VAT and withholding; client-sent totals, dates, numbers and statuses are rejected | Server trusted client totals, VAT %, dates |
-| NR-7 | Document dates = server date in Asia/Manila; only accountant JVs may be backdated | UTC date bugs, client-chosen dates |
+| NR-7 | Document dates = server date in Asia/Manila; only documents of a type marked `accountant_may_backdate` (JV, payroll run, remittance, bank adjustment, depreciation run) may be backdated, and only by someone with `acc.backdate`, never to a future date | UTC date bugs, client-chosen dates |
 | NR-8 | Accounts are fixed lists: cash places and expense categories are picked, never typed | "BDO" under two names; 19% in "Others" |
 | NR-9 | Correct treatments: CWT is an asset, loan principal is a liability, equipment is capitalised and depreciated, inventory at cost, owner money is equity or a liability, profit is revenue − costs (never a plug) | Old apps got each of these wrong |
 | NR-10 | Server-side authentication and exact permission keys on every route; no hardcoded passwords; no "admin" by name; strong password hashing; login rate limits; uploads served only after a permission check | Browser-only auth, hardcoded password, unsalted hashes, open uploads |
