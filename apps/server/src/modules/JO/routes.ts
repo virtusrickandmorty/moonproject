@@ -8,7 +8,7 @@ import { clockGuard, postDocument, previewDocument, type Actor } from '../../eng
 import { findIdempotent, requestHash, storeIdempotent } from '../../engine/idempotency.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { activeChart, activeWearers } from './cus.ts';
-import { STAGES, STAGE_LABELS, changeStage, currentStage, movesFrom, stageHistory } from './stages.ts';
+import { STAGES, STAGE_LABELS, changeStage, currentStage, isAbandoned, movesFrom, stageHistory } from './stages.ts';
 import { joMoney } from './public.ts';
 import { lineState, releaseDoc, type Release } from './doctypes/release.ts';
 import { awaitingInvoice, invoiceFigures, invoiceRecordDoc, invoiceRecordInput } from './doctypes/invoice-record.ts';
@@ -26,7 +26,9 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
     const stage = currentStage(db, req.params.id);
     const money = joMoney(db, req.params.id);
     const lines = lineState(db, req.params.id).map(({ lineNo, description, qty, releasedQty }) => ({ lineNo, description, qty, releasedQty, leftQty: qty - releasedQty }));
-    return { stage, stageLabel: STAGE_LABELS[stage], moves: movesFrom(stage), history: stageHistory(db, req.params.id), money, lines, awaitingInvoice: awaitingInvoice(db, req.params.id) };
+    // An abandoned job order is closed; its label says why (D5 DEP-FORFEIT).
+    const stageLabel = stage === 'closed' && isAbandoned(db, req.params.id) ? 'Abandoned (deposit forfeited)' : STAGE_LABELS[stage];
+    return { stage, stageLabel, moves: movesFrom(stage), history: stageHistory(db, req.params.id), money, lines, awaitingInvoice: awaitingInvoice(db, req.params.id) };
   });
 
   /** The release as it would be recorded, and "write these on the booklet": the invoice figures for what is released (D4.4). */

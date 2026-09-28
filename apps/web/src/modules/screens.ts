@@ -6,6 +6,7 @@ import type { ViewParts } from '../generic/DocView.tsx';
 import { CollectionForm } from './COL/CollectionForm.tsx';
 import { DepositTransferForm } from './COL/DepositTransferForm.tsx';
 import { RefundForm } from './COL/RefundForm.tsx';
+import { CreditMemoForm, CwtOnlyForm, ForfeitForm, WriteOffForm, creditMemoView, cwtOnlyView, forfeitView, writeOffView } from './COL/CreditForms.tsx';
 import { jobOrderView, openingJobOrderView } from './JO/JobOrderView.tsx';
 import { OpeningJobOrderForm } from './JO/OpeningForm.tsx';
 import { QuickSaleForm } from './QS/QuickSaleForm.tsx';
@@ -22,6 +23,7 @@ import { ReleaseForm } from './PAY/ReleaseForm.tsx';
 import { ThirteenthForm } from './PAY/ThirteenthForm.tsx';
 import { Payslips, advanceView, releaseView, runView, thirteenthView } from './PAY/views.tsx';
 import { GovLoans } from './PAY/Loans.tsx';
+import { Sheet2316, YearEndPage } from './PAY/YearEnd.tsx';
 import { AdvanceForm } from './CA/AdvanceForm.tsx';
 import { OpeningForm as OpeningCaForm } from './CA/OpeningForm.tsx';
 import { RepaymentForm, WriteoffForm } from './CA/SettleForms.tsx';
@@ -98,6 +100,8 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/ca/employees': CaOwed,
   '/ca/employees/:id': CaEmployeePage,
   '/pay/loans': GovLoans,
+  '/pay/2316': YearEndPage,
+  '/pay/2316/:year/:employeeId': Sheet2316,
   '/prt/company-profile': CompanyProfileScreen,
   '/stat': StatMonths,
   '/stat/:month': StatMonthPage,
@@ -142,6 +146,10 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'col.collection': CollectionForm,
   'col.refund': RefundForm,
   'col.deposit_transfer': DepositTransferForm,
+  'col.cwt_only': CwtOnlyForm,
+  'col.forfeit': ForfeitForm,
+  'col.credit_memo': CreditMemoForm,
+  'col.write_off': WriteOffForm,
   'qs.sale': QuickSaleForm,
   'prd.entry': EntryForm,
   'pay.run': RunForm,
@@ -175,4 +183,5 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'tax.payable.opening': OpeningPayableForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'jo.opening': openingJobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView };
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'jo.opening': openingJobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView,
+  'col.cwt_only': cwtOnlyView, 'col.forfeit': forfeitView, 'col.credit_memo': creditMemoView, 'col.write_off': writeOffView };

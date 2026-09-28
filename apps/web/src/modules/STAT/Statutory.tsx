@@ -132,7 +132,7 @@ export function StatMonthPage({ me, params }: { me: Me; params?: Record<string, 
         <table className="w-full text-sm">
           <tbody>{items.map(([n, label, c]) => <tr key={n} className="border-t border-slate-100"><td className="w-10 py-1 text-slate-500">{n}</td><td>{label}</td><td className="text-right tabular-nums">{peso(c)}</td></tr>)}</tbody>
         </table>
-        <p className="text-xs text-slate-600">Item 23 (taxable pay not subject to tax, ₱250,000 a year and below) is for the accountant: {peso(t.noTaxWithheldCents)} of this month's taxable pay had no tax withheld. 13th month pay and de minimis benefits are not paid through payroll yet.</p>
+        <p className="text-xs text-slate-600">Item 23 (taxable pay not subject to tax, ₱250,000 a year and below) is for the accountant: {peso(t.noTaxWithheldCents)} of this month's taxable pay had no tax withheld. Item 17 is the tax-free part of the 13th-month pays dated this month; de minimis benefits are not paid through payroll yet.</p>
         <Table head={['Employee', 'TIN', 'Compensation', 'Non-taxable', 'Taxable', 'Tax withheld']}
           rows={t.rows.map((r) => [`${r.name} (${r.code})${r.isMwe ? ' · MWE' : ''}`, r.idNo ?? '—', peso(r.grossCents), peso(r.nonTaxableCents), peso(r.taxableCents), peso(r.taxCents)])} />
       </Panel>

@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { badRequest, notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { currentUser } from '../../engine/security/routes.ts';
-import { runMonth } from '../PAY/public.ts';
+import { runMonth, thirteenthMonth } from '../PAY/public.ts';
 import { SCHEMES, isMonth, remittedForRun, schemeCheck, statMonths } from './ledger.ts';
 import { monthLists } from './lists.ts';
 
@@ -25,5 +25,12 @@ export function statRoutes(app: FastifyInstance, deps: AppDeps): void {
     const run = runMonth(db, req.params.id);
     if (!run) throw notFound('The payroll run');
     return { month: run.contributionMonth, remitted: run.status === 'posted' ? remittedForRun(db, req.params.id, run.contributionMonth) : [] };
+  });
+
+  /** D6: what of a 13th-month pay's own month is already remitted, for the warning on its screen before a cancel. */
+  app.get<{ Params: { id: string } }>('/api/stat/thirteenths/:id/remitted', { config: { permission: 'pay.thirteenth.view' } }, async (req) => {
+    const t = thirteenthMonth(db, req.params.id);
+    if (!t) throw notFound('The 13th-month pay');
+    return { month: t.month, remitted: t.status === 'posted' ? remittedForRun(db, req.params.id, t.month) : [] };
   });
 }

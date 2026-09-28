@@ -73,8 +73,8 @@ export function depositsHeld(db: Db, customerId: string, jobOrderId: string | nu
  * customer's unapplied payments): `depositCents` into the pool, plus `receivableCents` paid on the same JO's receivable.
  * Its mirror takes both back. On a JO, the cancel's settleLines then keeps deposits and the receivable at zero or more
  * by reopening the receivable, which works while the receivable stays within what is invoiced (D6); the unapplied pool
- * has no receivable, so it must still hold the money. When that fails, the refunds and deposit transfers that took money
- * out of the pool are listed: cancel those first, so 2201 never goes below zero.
+ * has no receivable, so it must still hold the money. When that fails, the refunds, deposit transfers and deposit
+ * forfeits that took money out of the pool are listed: cancel those first, so 2201 never goes below zero.
  */
 export function takenOutBy(db: Db, customerId: string, jobOrderId: string | null, depositCents: number, receivableCents: number): { id: string; number: string }[] {
   if (jobOrderId) {
@@ -85,7 +85,8 @@ export function takenOutBy(db: Db, customerId: string, jobOrderId: string | null
     .prepare(
       `SELECT d.id, d.number FROM documents d WHERE d.status = 'posted' AND d.id IN (
          SELECT document_id FROM col_refunds WHERE customer_id = @c AND job_order_id IS @jo
-         UNION SELECT document_id FROM col_deposit_transfers WHERE customer_id = @c AND from_job_order_id IS @jo)
+         UNION SELECT document_id FROM col_deposit_transfers WHERE customer_id = @c AND from_job_order_id IS @jo
+         UNION SELECT document_id FROM col_forfeits WHERE customer_id = @c AND job_order_id IS @jo)
        ORDER BY d.number`,
     )
     .all({ c: customerId, jo: jobOrderId }) as { id: string; number: string }[];

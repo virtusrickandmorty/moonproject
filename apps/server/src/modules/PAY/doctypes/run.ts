@@ -13,6 +13,11 @@
  * Recording marks each piece row paid by its run line (PRD public.ts, F3 "paid once"). Cancel needs the releases, and
  * later runs of the same month, cancelled first; it mirrors the journal and makes the piece rows unpaid again. Cash
  * advances come back by themselves, because the CA ledger is read from the journals (D6).
+ * Year-end tax adjustment (F3, RR 11-2018): the accountant ticks it on a run whose period ends in December; each
+ * employee's tax on it is the annual tax less what the year withheld before (run-calc.ts, year-end.ts). An excess is
+ * refunded on the run: Dr 2310 withholding tax / Cr 2110 net pay for that employee (paid out with the release), so the
+ * month's 2310 to remit on the 1601-C is less by it. One adjustment per employee and year while it stands; runs of the
+ * year recorded before it wait for it to be cancelled first.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -23,8 +28,9 @@ import { lastAuditAt } from '../../../engine/audit.ts';
 import { PAY_GROUPS, employeesInGroup, type PayGroup } from '../../EMP/public.ts';
 import { advanceSchedule } from '../../CA/public.ts';
 import { clearAssignmentsPaidBy, markAssignmentPaid } from '../../PRD/public.ts';
-import { TAX_FREQUENCY, periodEndOf, workOut, type RunEmployee, type RunLine, type RunLoan } from '../run-calc.ts';
+import { TAX_FREQUENCY, periodEndOf, workOut, type RunEmployee, type RunLine, type RunLoan, type YearEnd } from '../run-calc.ts';
 import { KIND_LABEL, LOAN_ACCOUNT, govLoan, loanInMonth, type Agency } from '../loans.ts';
+import { yearEndDoneBy } from '../year-end.ts';
 
 const MAX_CENTS = 1_000_000_00;
 const reason = z.string().trim().min(5).max(200);
@@ -40,6 +46,7 @@ export const runInput = z
     skip: z.array(z.object({ employeeId: z.uuid(), reason }).strict()).max(200).optional(),
     // This run's government loan deduction, typed instead of the plan (0 skips the month), with a note.
     loans: z.array(z.object({ loanId: z.uuid(), amountCents: z.number().int().min(0).max(MAX_CENTS), reason }).strict()).max(200).optional(),
+    yearEnd: z.boolean().optional(), // the year-end tax adjustment of everyone in the run (a period ending in December)
   })
   .strict();
 export type RunInput = z.infer<typeof runInput>;
@@ -55,6 +62,17 @@ const GROUP_LABEL: Record<PayGroup, string> = { WEEKLY_PIECE: 'weekly piece-rate
 const employee = (id: string) => ({ type: 'employee', id });
 // Rows straight from SQLite, read field by field in load().
 type DbRow = Record<string, any>;
+
+/** A stored year-end adjustment row as the run employee's `yearEnd`. */
+const yearEndOf = (y: DbRow | undefined): { yearEnd?: YearEnd } =>
+  y
+    ? {
+        yearEnd: {
+          year: y.year, taxableCents: y.taxable_cents, benefitsTaxableCents: y.benefits_taxable_cents, annualTaxCents: y.annual_tax_cents, withheldBeforeCents: y.withheld_before_cents,
+          deficiencyCents: y.deficiency_cents, withheldCents: y.withheld_cents, shortCents: y.deficiency_cents - y.withheld_cents, refundCents: y.refund_cents,
+        },
+      }
+    : {};
 
 function recordedRunFor(db: Parameters<typeof employeesInGroup>[0], payGroup: string, periodStart: string) {
   return db
@@ -81,7 +99,7 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
         worked = workOut(ctx.db, {
           payGroup: input.payGroup, periodStart: input.periodStart, periodEnd, payDate: ctx.businessDate, manual: input.lines ?? [],
           caOverrides: new Map((input.advances ?? []).map((a) => [a.employeeId, a.amountCents])), skipped: new Set((input.skip ?? []).map((s) => s.employeeId)),
-          loanOverrides: new Map((input.loans ?? []).map((l) => [l.loanId, { amountCents: l.amountCents, reason: l.reason }])),
+          loanOverrides: new Map((input.loans ?? []).map((l) => [l.loanId, { amountCents: l.amountCents, reason: l.reason }])), yearEnd: input.yearEnd === true,
         });
       } catch (e) {
         worked.notes.push({ code: 'SETTINGS', level: 'error', message: (e as Error).message });
@@ -110,6 +128,18 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
         field: 'periodStart', code: 'BOOKED_LATER', level: 'warning',
         message: `This payroll is dated ${ctx.businessDate}, so the pay for ${doc.periodStart} to ${periodEnd} is booked in ${ctx.businessDate.slice(0, 7)}, not ${periodEnd.slice(0, 7)}. The accountant can date it ${periodEnd}.`,
       });
+    }
+    const year = +periodEnd.slice(0, 4);
+    if (doc.yearEnd && !ctx.can('pay.yearend.run')) error('yearEnd', 'YEAR_END_ACCOUNTANT', 'Only the accountant does the year-end tax adjustment (pay.yearend.run).');
+    if (doc.yearEnd && periodEnd.slice(5, 7) !== '12') {
+      error('yearEnd', 'YEAR_END_NOT_DECEMBER', `The year-end tax adjustment goes on the last payroll of the year, whose period ends in December; this one ends on ${periodEnd}.`);
+    }
+    for (const e of doc.employees) {
+      const done = yearEndDoneBy(ctx.db, e.employeeId, year);
+      if (done && doc.yearEnd && e.yearEnd) error('yearEnd', 'YEAR_END_DONE', `${done} already did ${e.name}'s ${year} year-end tax adjustment. Cancel it first to redo it, or leave ${e.name} out.`);
+      else if (done) {
+        issues.push({ field: 'yearEnd', code: 'AFTER_YEAR_END', level: 'warning', message: `${done} already did ${e.name}'s ${year} year-end tax adjustment; the tax of this payroll is not in it. Cancel ${done} and redo it on this payroll.` });
+      }
     }
     const taken = recordedRunFor(ctx.db, doc.payGroup, doc.periodStart);
     if (taken) error('periodStart', 'DUPLICATE_RUN', `${taken} already pays the ${GROUP_LABEL[doc.payGroup]} group for ${doc.periodStart} to ${periodEnd}. Cancel it first to redo it.`);
@@ -146,14 +176,18 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
   },
 
   persist(db, doc, h) {
-    db.prepare('INSERT INTO pay_runs (document_id, pay_group, period_start, period_end, contribution_month, tax_frequency, gross_cents, net_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-      h.documentId, doc.payGroup, doc.periodStart, doc.periodEnd, doc.contributionMonth, doc.taxFrequency, doc.grossCents, doc.netCents,
+    db.prepare('INSERT INTO pay_runs (document_id, pay_group, period_start, period_end, contribution_month, tax_frequency, gross_cents, net_cents, year_end) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+      h.documentId, doc.payGroup, doc.periodStart, doc.periodEnd, doc.contributionMonth, doc.taxFrequency, doc.grossCents, doc.netCents, +(doc.yearEnd === true),
     );
     const emp = db.prepare(
       `INSERT INTO pay_run_employees (id, document_id, employee_id, employee_code, employee_name, cost_centre, pay_type, is_mwe, gross_cents, piece_cents, taxable_cents,
          sss_msc_cents, sss_ee_cents, sss_er_cents, sss_ec_cents, phic_basis_cents, phic_ee_cents, phic_er_cents, hdmf_ee_cents, hdmf_er_cents, ee_short_cents,
-         wtax_cents, ca_cents, ca_override_cents, thirteenth_cents, net_cents, loan_cents)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         wtax_cents, ca_cents, ca_override_cents, thirteenth_cents, net_cents, loan_cents, wtax_refund_cents)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    const yearEnd = db.prepare(
+      `INSERT INTO pay_run_year_end (run_employee_id, year, taxable_cents, benefits_taxable_cents, annual_tax_cents, withheld_before_cents, deficiency_cents, withheld_cents, refund_cents)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const loan = db.prepare(
       `INSERT INTO pay_run_loans (run_employee_id, loan_id, agency, kind, loan_no, due_cents, amount_cents, override_cents, reason, balance_after_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -166,7 +200,9 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
       const id = newId();
       emp.run(id, h.documentId, e.employeeId, e.code, e.name, e.costCentre, e.payType, +e.isMwe, e.grossCents, e.pieceCents, e.taxableCents, e.sssMscCents, e.sssEeCents,
         e.sssErCents, e.sssEcCents, e.phicBasisCents, e.phicEeCents, e.phicErCents, e.hdmfEeCents, e.hdmfErCents, e.eeShortCents, e.wtaxCents, e.caCents, e.caOverrideCents,
-        e.thirteenthCents, e.netCents + e.loanCents, e.loanCents); // net_cents is before government loans (migration 0003)
+        e.thirteenthCents, e.netCents + e.loanCents - e.wtaxRefundCents, e.loanCents, e.wtaxRefundCents); // net_cents: before loans and the refund (migrations 0003, 0004)
+      const y = e.yearEnd;
+      if (y) yearEnd.run(id, y.year, y.taxableCents, y.benefitsTaxableCents, y.annualTaxCents, y.withheldBeforeCents, y.deficiencyCents, y.withheldCents, y.refundCents);
       for (const l of e.loans) loan.run(id, l.loanId, l.agency, l.kind, l.loanNo, l.dueCents, l.amountCents, l.overrideCents, l.reason ?? null, l.balanceAfterCents);
       for (const l of e.lines) {
         const lineId = newId();
@@ -202,6 +238,7 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
       credit('PHIC_PAYABLE', e.phicEeCents + e.phicErCents, `PhilHealth ${month}`);
       credit('HDMF_PAYABLE', e.hdmfEeCents + e.hdmfErCents, `Pag-IBIG ${month}`);
       credit('WTC_PAYABLE', e.wtaxCents, `Withholding tax ${month}`);
+      if (e.wtaxRefundCents > 0) lines.push({ account: { role: 'WTC_PAYABLE' }, party: employee(e.employeeId), debitCents: e.wtaxRefundCents, memo: `Year-end tax refund ${month}` });
       for (const agency of ['SSS', 'HDMF'] as Agency[]) {
         credit(LOAN_ACCOUNT[agency].role, e.loans.filter((l) => l.agency === agency).reduce((s, l) => s + l.amountCents, 0), `${LOAN_ACCOUNT[agency].tag} ${month}`);
       }
@@ -216,11 +253,12 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
 
   load(db, documentId) {
     const r = db.prepare('SELECT * FROM pay_runs WHERE document_id = ?').get(documentId) as
-      | { pay_group: PayGroup; period_start: string; period_end: string; contribution_month: string; tax_frequency: 'weekly' | 'semi_monthly'; gross_cents: number; net_cents: number }
+      | { pay_group: PayGroup; period_start: string; period_end: string; contribution_month: string; tax_frequency: 'weekly' | 'semi_monthly'; gross_cents: number; net_cents: number; year_end: 0 | 1 }
       | undefined;
     if (!r) throw new Error(`Payroll run ${documentId} not found`);
     const lineRows = db.prepare('SELECT * FROM pay_run_lines WHERE run_employee_id = ? ORDER BY line_no');
     const loanRows = db.prepare('SELECT * FROM pay_run_loans WHERE run_employee_id = ? ORDER BY rowid');
+    const yearEndRow = db.prepare('SELECT * FROM pay_run_year_end WHERE run_employee_id = ?');
     const employees: RunEmployee[] = (db.prepare('SELECT * FROM pay_run_employees WHERE document_id = ? ORDER BY rowid').all(documentId) as DbRow[]).map((e) => ({
       employeeId: e.employee_id, code: e.employee_code, name: e.employee_name, costCentre: e.cost_centre, payType: e.pay_type, isMwe: e.is_mwe === 1,
       lines: (lineRows.all(e.id) as DbRow[]).map(
@@ -239,7 +277,8 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
           ...(l.reason ? { reason: l.reason } : {}), balanceAfterCents: l.balance_after_cents,
         }),
       ),
-      caCents: e.ca_cents, caOverrideCents: e.ca_override_cents, thirteenthCents: e.thirteenth_cents, netCents: e.net_cents - e.loan_cents,
+      caCents: e.ca_cents, caOverrideCents: e.ca_override_cents, thirteenthCents: e.thirteenth_cents, netCents: e.net_cents - e.loan_cents + e.wtax_refund_cents,
+      wtaxRefundCents: e.wtax_refund_cents, ...yearEndOf(yearEndRow.get(e.id) as DbRow | undefined),
     }));
     const lines = employees.flatMap((e) => e.lines.filter((l) => l.kind === 'allowance' || l.kind === 'adjustment').map((l) => ({ employeeId: e.employeeId, kind: l.kind as 'allowance' | 'adjustment', amountCents: l.amountCents, reason: l.reason! })));
     const advances = employees.filter((e) => e.caOverrideCents !== null).map((e) => ({ employeeId: e.employeeId, amountCents: e.caOverrideCents! }));
@@ -247,19 +286,24 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     const loans = employees.flatMap((e) => e.loans.filter((l) => l.overrideCents !== null).map((l) => ({ loanId: l.loanId, amountCents: l.overrideCents!, reason: l.reason! })));
     return {
       payGroup: r.pay_group, periodStart: r.period_start, ...(lines.length ? { lines } : {}), ...(advances.length ? { advances } : {}), ...(skip.length ? { skip } : {}), ...(loans.length ? { loans } : {}),
+      ...(r.year_end === 1 ? { yearEnd: true } : {}),
       periodEnd: r.period_end, contributionMonth: r.contribution_month, taxFrequency: r.tax_frequency, employees, grossCents: r.gross_cents, netCents: r.net_cents, totalCents: r.gross_cents,
     };
   },
 
   toInput(doc) {
-    const { payGroup, periodStart, lines, advances, skip, loans } = doc;
-    return { payGroup, periodStart, ...(lines?.length ? { lines } : {}), ...(advances?.length ? { advances } : {}), ...(skip?.length ? { skip } : {}), ...(loans?.length ? { loans } : {}) };
+    const { payGroup, periodStart, lines, advances, skip, loans, yearEnd } = doc;
+    return {
+      payGroup, periodStart, ...(lines?.length ? { lines } : {}), ...(advances?.length ? { advances } : {}), ...(skip?.length ? { skip } : {}), ...(loans?.length ? { loans } : {}),
+      ...(yearEnd ? { yearEnd } : {}),
+    };
   },
 
   /**
    * Cancelled first: releases of this run's net pay (D6, G-29), runs recorded after it for the same contribution
-   * month that pay any of its employees, because their month-to-date shares were worked out on top of this one, and a
-   * 13th-month pay that counted its basic pay and paid its accrual.
+   * month that pay any of its employees, because their month-to-date shares were worked out on top of this one, a
+   * 13th-month pay that counted its basic pay and paid its accrual, and a year-end run of the same year recorded after it
+   * that adjusted any of its employees' tax on top of it.
    */
   dependents(db, documentId) {
     return db
@@ -273,6 +317,11 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
          UNION
          SELECT d.id, d.number FROM pay_thirteenth_basis b JOIN pay_run_employees e ON e.id = b.run_employee_id JOIN pay_thirteenth_employees t ON t.id = b.thirteenth_employee_id
            JOIN documents d ON d.id = t.document_id WHERE e.document_id = @id AND d.status = 'posted'
+         UNION
+         SELECT d.id, d.number FROM pay_run_year_end y JOIN pay_run_employees a ON a.id = y.run_employee_id JOIN documents d ON d.id = a.document_id
+         WHERE d.status = 'posted' AND d.id <> @id AND d.number > (SELECT number FROM documents WHERE id = @id)
+           AND y.year = (SELECT CAST(substr(period_end, 1, 4) AS INTEGER) FROM pay_runs WHERE document_id = @id)
+           AND EXISTS (SELECT 1 FROM pay_run_employees b WHERE b.document_id = @id AND b.employee_id = a.employee_id)
          ORDER BY 2`,
       )
       .all({ id: documentId }) as { id: string; number: string }[];
@@ -290,7 +339,9 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
 
   summary(doc) {
     const n = doc.employees.length;
-    return `This will record the ${GROUP_LABEL[doc.payGroup]} payroll for ${doc.periodStart} to ${doc.periodEnd}: ${n} ${n === 1 ? 'employee' : 'employees'}, gross pay ${formatPeso(doc.grossCents)}, net pay ${formatPeso(doc.netCents)} to be released.`;
+    const refunds = doc.employees.reduce((s, e) => s + e.wtaxRefundCents, 0);
+    const yearEnd = doc.yearEnd ? ` It does the ${doc.periodEnd.slice(0, 4)} year-end tax adjustment${refunds ? `, refunding ${formatPeso(refunds)} of tax withheld` : ''}.` : '';
+    return `This will record the ${GROUP_LABEL[doc.payGroup]} payroll for ${doc.periodStart} to ${doc.periodEnd}: ${n} ${n === 1 ? 'employee' : 'employees'}, gross pay ${formatPeso(doc.grossCents)}, net pay ${formatPeso(doc.netCents)} to be released.${yearEnd}`;
   },
 
   /** A group and period that has ended (by the last recorded activity) with someone to pay, a manual line now and then. */

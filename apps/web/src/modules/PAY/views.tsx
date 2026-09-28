@@ -8,7 +8,7 @@ import { Button, Notice, peso } from '../../components/ui.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { GROUP_LABEL, deductionsOf, loansLeft, qtyText, thirteenthText } from './run.ts';
+import { GROUP_LABEL, deductionsOf, loansLeft, qtyText, thirteenthText, yearEndDetail, yearEndText } from './run.ts';
 import type { PayRunDoc, PayThirteenthDoc } from '../../api.ts';
 
 /** D6: a recorded run whose month is already remitted (STAT): cancelling it leaves those payables below zero. */
@@ -30,14 +30,22 @@ function RunParts({ d }: { d: DocDetail }) {
   return (
     <div className="space-y-2 pt-2">
       {d.header.status === 'posted' && <RemittedWarning runId={d.header.id} />}
-      <p className="text-sm">{GROUP_LABEL[run.payGroup]} · {run.periodStart} to {run.periodEnd} · government shares for {run.contributionMonth}</p>
+      <p className="text-sm">
+        {GROUP_LABEL[run.payGroup]} · {run.periodStart} to {run.periodEnd} · government shares for {run.contributionMonth}
+        {run.yearEnd && ` · with the ${run.periodEnd.slice(0, 4)} year-end tax adjustment`}
+      </p>
       <table className="w-full text-sm">
-        <thead className="text-left text-slate-500"><tr><th>Employee</th><th className="text-right">Gross</th><th className="text-right">Deductions</th><th className="text-right">Net</th></tr></thead>
+        <thead className="text-left text-slate-500">
+          <tr><th>Employee</th><th className="text-right">Gross</th><th className="text-right">Deductions</th>{run.yearEnd && <th className="text-right">Tax refund</th>}<th className="text-right">Net</th>{run.yearEnd && <th className="pl-3">Year-end tax</th>}</tr>
+        </thead>
         <tbody>
           {run.employees.map((e) => (
             <tr key={e.employeeId} className="border-t border-slate-100">
               <td className="py-1">{e.name}</td><td className="text-right tabular-nums">{peso(e.grossCents)}</td>
-              <td className="text-right tabular-nums">{peso(e.grossCents - e.netCents)}</td><td className="text-right tabular-nums">{peso(e.netCents)}</td>
+              <td className="text-right tabular-nums">{peso(e.grossCents - e.netCents + (e.wtaxRefundCents ?? 0))}</td>
+              {run.yearEnd && <td className="text-right tabular-nums">{peso(e.wtaxRefundCents ?? 0)}</td>}
+              <td className="text-right tabular-nums">{peso(e.netCents)}</td>
+              {run.yearEnd && <td className="pl-3 text-xs">{yearEndText(e) || 'Withholding tax is off'}</td>}
             </tr>
           ))}
         </tbody>
@@ -137,6 +145,7 @@ export function Payslips({ params }: { me: Me; params?: Record<string, string> }
                 {e.lines.map((l) => <tr key={l.lineNo}><td>{l.description}</td><td className="text-right text-slate-500">{qtyText(l.kind, l.qty)}</td><td className="text-right tabular-nums">{peso(l.amountCents)}</td></tr>)}
                 <tr className="border-t font-medium"><td colSpan={2}>Gross pay</td><td className="text-right tabular-nums">{peso(e.grossCents)}</td></tr>
                 {deductionsOf(e).map(([label, c]) => <tr key={label}><td colSpan={2}>Less {label}</td><td className="text-right tabular-nums">{peso(-c)}</td></tr>)}
+                {(e.wtaxRefundCents ?? 0) > 0 && <tr><td colSpan={2}>Add year-end tax refund</td><td className="text-right tabular-nums">{peso(e.wtaxRefundCents!)}</td></tr>}
                 <tr className="border-t text-base font-semibold"><td colSpan={2}>Net pay</td><td className="text-right tabular-nums">{peso(e.netCents)}</td></tr>
               </tbody>
             </table>
@@ -146,6 +155,7 @@ export function Payslips({ params }: { me: Me; params?: Record<string, string> }
             </p>
             {loansLeft(e).map(([label, c]) => <p key={label} className="text-xs text-slate-600">{label}: {peso(c)} left</p>)}
             <p className="text-xs text-slate-600">{thirteenthText(e)}</p>
+            {e.yearEnd && <p className="text-xs text-slate-600">{yearEndDetail(e)}</p>}
             <p className="pt-4 text-xs">Received by: ______________________ Date: __________</p>
           </section>
         ))}

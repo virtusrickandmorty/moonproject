@@ -18,9 +18,10 @@ import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { listCashPlaces } from '../../../engine/ledger/accounts.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
-import { jobOrderRef, jobOrdersOf, joLedger, joMoney, settleLines } from '../../JO/public.ts';
+import { isAbandoned, jobOrderRef, jobOrdersOf, joLedger, joMoney, settleLines } from '../../JO/public.ts';
 import { saleOpenCents, saleRef } from '../../QS/public.ts';
 import { bookletIssue } from '../../TAX/public.ts';
+import { writeOffsOn } from '../credits.ts';
 import { MAX_CENTS, cashPlaceIssues, insertTenders, loadTenders, sumCents, takenOutBy, tenderInput, tenderToInput, withNames, type Tender } from '../ledger.ts';
 
 /** Largest difference that may go to cash short and over instead of a deposit or an unpaid balance (D4.9). */
@@ -149,8 +150,14 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
         add('error', `${f}.jobOrderId`, 'JO_CANCELLED', `${jo.number} is cancelled, so money cannot be applied to it.`);
       } else {
         const due = joMoney(ctx.db, jo.id).balanceDueCents;
-        if (a.amountCents > due) {
+        const off = writeOffsOn(ctx.db, jo.id)[0];
+        if (a.amountCents > due && off) {
+          add('error', `${f}.amountCents`, 'WRITTEN_OFF', `An invoice of ${jo.number} was written off as a bad debt (${off.number}). To take payment on it, the accountant cancels the write-off first.`);
+        } else if (a.amountCents > due) {
           add('error', `${f}.amountCents`, 'OVER_BALANCE', due > 0 ? `${jo.number} has ${formatPeso(due)} left to pay. Apply at most that; the rest is kept as a deposit.` : `${jo.number} is fully paid.`);
+        }
+        if (a.toDepositCents > 0 && isAbandoned(ctx.db, jo.id)) {
+          add('error', `${f}.jobOrderId`, 'JO_ABANDONED', `${jo.number} was abandoned and its deposit forfeited, so no new deposit is taken on it.`);
         }
       }
       seen.add(a.jobOrderId);
@@ -164,6 +171,9 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
         add('error', `${f}.saleId`, 'SALE_TWICE', `Invoice no. ${sale.invoiceNumber} is listed twice. Put its whole amount on one line.`);
       } else if (sale.status !== 'posted') {
         add('error', `${f}.saleId`, 'SALE_CANCELLED', `Invoice no. ${sale.invoiceNumber} (${sale.number}) is cancelled, so money cannot be applied to it.`);
+      } else if (writeOffsOn(ctx.db, sale.id).length > 0) {
+        const off = writeOffsOn(ctx.db, sale.id)[0]!;
+        add('error', `${f}.saleId`, 'WRITTEN_OFF', `Invoice no. ${sale.invoiceNumber} was written off as a bad debt (${off.number}). To take payment on it, the accountant cancels the write-off first.`);
       } else {
         const open = saleOpenCents(ctx.db, sale.id);
         if (a.amountCents > open) {
