@@ -168,6 +168,9 @@ export interface BookletUsage {
 }
 export interface BookletInput { kind: BookletKind; atpNo: string; printer?: string; serialFrom: number; serialTo: number; receivedOn: string; note?: string }
 export interface RemittanceInput { scheme: Scheme; month: string; cashPlaceId: number; amountCents: number; penaltyCents?: number; reference: string; note?: string }
+/** Opening statutory payable (OBST-, stat.opening, PLAN D8 step 3): per employee, what is still to remit for a contribution month. */
+export interface OpeningStatEmployee { employeeId: string; sssCents?: number; phicCents?: number; hdmfCents?: number; wtaxCents?: number; sssLoanCents?: number; hdmfLoanCents?: number }
+export interface OpeningStatInput { month: string; employees: OpeningStatEmployee[] }
 /** Tax registers (TAX): one row per journal on the account, read from the ledger. A cancel is its own negative row (posting 'reversal'). */
 export interface TaxJournalRef {
   journalId: string; journalNumber: string; date: string; posting: 'original' | 'reversal'; documentId: string | null; docType: string | null; docTitle: string;

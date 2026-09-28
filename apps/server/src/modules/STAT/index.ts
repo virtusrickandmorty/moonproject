@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { defineModule } from '../../engine/documents/registry.ts';
+import { openingStatDoc } from './doctypes/opening.ts';
 import { remittanceDoc } from './doctypes/remittance.ts';
 import { statRoutes } from './routes.ts';
 
@@ -14,7 +15,7 @@ export default defineModule({
     { key: 'stat.rem.post', label: 'Record government remittances (SSS, PhilHealth, Pag-IBIG, 1601-C)', defaultRoles: ['accountant', 'owner'] },
     { key: 'stat.rem.cancel', label: 'Cancel recorded government remittances', defaultRoles: ['accountant', 'owner'] },
   ],
-  docTypes: [remittanceDoc],
+  docTypes: [remittanceDoc, openingStatDoc], // stat.opening takes ACC's acc.opening.* permissions (OPENING_PERMISSIONS)
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: statRoutes,
 });

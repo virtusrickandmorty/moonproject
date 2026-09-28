@@ -28,6 +28,7 @@ import { Customers } from './CUS/Customers.tsx';
 import { CompanyProfileScreen } from './PRT/CompanyProfile.tsx';
 import { StatMonthPage, StatMonths, remittanceView } from './STAT/Statutory.tsx';
 import { RemittanceForm } from './STAT/RemittanceForm.tsx';
+import { OpeningStatForm } from './STAT/OpeningStatForm.tsx';
 import { GeneralJournal, GeneralLedger, TrialBalance } from './RPT/Books.tsx';
 import { BalanceSheet, IncomeStatement } from './RPT/Statements.tsx';
 import { CashAccounts } from './CASH/CashAccounts.tsx';
@@ -127,6 +128,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'ca.advance': AdvanceForm,
   'ca.opening': OpeningCaForm,
   'stat.remittance': RemittanceForm,
+  'stat.opening': OpeningStatForm,
   'ap.bill': BillForm,
   'ap.payment': SupplierPaymentForm,
   'ap.opening': OpeningBillForm,
