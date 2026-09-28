@@ -22,6 +22,8 @@ import { ReleaseForm } from './PAY/ReleaseForm.tsx';
 import { Payslips, advanceView, releaseView, runView } from './PAY/views.tsx';
 import { AdvanceForm } from './CA/AdvanceForm.tsx';
 import { OpeningForm as OpeningCaForm } from './CA/OpeningForm.tsx';
+import { RepaymentForm, WriteoffForm } from './CA/SettleForms.tsx';
+import { CaEmployeePage, CaOwed } from './CA/Owed.tsx';
 import { NotificationsPage } from './DASH/Home.tsx';
 import { CalendarPage } from './CAL/Calendar.tsx';
 import { Customers } from './CUS/Customers.tsx';
@@ -86,6 +88,8 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/emp/attendance': Attendance,
   '/emp/holidays': Holidays,
   '/pay/runs/:id/payslips': Payslips,
+  '/ca/employees': CaOwed,
+  '/ca/employees/:id': CaEmployeePage,
   '/prt/company-profile': CompanyProfileScreen,
   '/stat': StatMonths,
   '/stat/:month': StatMonthPage,
@@ -128,6 +132,8 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'pay.release': ReleaseForm,
   'ca.advance': AdvanceForm,
   'ca.opening': OpeningCaForm,
+  'ca.repayment': RepaymentForm,
+  'ca.writeoff': WriteoffForm,
   'stat.remittance': RemittanceForm,
   'stat.opening': OpeningStatForm,
   'ap.bill': BillForm,

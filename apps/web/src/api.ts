@@ -137,7 +137,12 @@ export interface Payslips {
 }
 export interface RunToRelease { id: string; number: string; payGroup: PayGroup; periodStart: string; periodEnd: string; dueCents: number }
 export interface ReleaseRow { employeeId: string; name: string; netCents: number; releasedBy: string | null }
-export interface CaStatus { employeeId: string; name: string; outstandingCents: number; installmentCents: number; open: { documentId: string; number: string; amountCents: number; installmentCents: number; openCents: number }[] }
+export interface CaStatus {
+  employeeId: string; name: string; active: boolean; outstandingCents: number; installmentCents: number; open: { documentId: string; number: string; amountCents: number; installmentCents: number; openCents: number }[];
+  /** Repayments (CAR-) and write-offs (CAW-) still recorded, oldest first, with what was owed right after each. */
+  settlements: { documentId: string; number: string; kind: 'repayment' | 'writeoff'; businessDate: string; amountCents: number; balanceAfterCents: number }[];
+}
+export interface CaOwing { employeeId: string; name: string; owedCents: number }
 export interface ActiveEmployee { id: string; code: string; name: string; costCentre: string }
 /** Statutory (STAT): the month's lists, the 1601-C worksheet and the remittance check, worked out by the server. */
 export type Scheme = 'SSS' | 'PHIC' | 'HDMF' | 'WTAX';
@@ -442,6 +447,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     runsToRelease: () => call<RunToRelease[]>('GET', '/api/pay/runs/to-release'),
     releaseStatus: (runId: string) => call<ReleaseRow[]>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/release-status`),
     caStatus: (employeeId: string) => call<CaStatus>('GET', `/api/ca/employees/${encodeURIComponent(employeeId)}`),
+    /** Who owes on cash advances today, separated employees included. */
+    caOwing: () => call<CaOwing[]>('GET', '/api/ca/employees'),
+    /** The operating expense accounts a write-off may be charged to (ca.writeoff). */
+    caWriteoffAccounts: () => call<{ id: number; code: string; name: string }[]>('GET', '/api/ca/writeoff-accounts'),
     statMonths: () => call<{ month: string; check: SchemeCheck[] }[]>('GET', '/api/stat/months'),
     statMonth: (month: string) => call<StatMonth>('GET', `/api/stat/months/${encodeURIComponent(month)}`),
     /** D6: what of a payroll run's month is already remitted (the warning before a cancel). */
