@@ -2,12 +2,13 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { badRequest, csvPesos, isBusinessDate, notFound, toCsv, type CsvCell } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { tx } from '../../platform/db/driver.ts';
-import { stamp } from '../../platform/clock.ts';
+import { stamp, today } from '../../platform/clock.ts';
 import { clockGuard } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { requireStepUp } from '../../engine/security/sessions.ts';
 import { booklet, bookletUsage, listBooklets, registerBooklet, setBookletActive, type Who } from './booklets.ts';
-import { salesRegister, withholdingReceivedRegister, type RegisterRow } from './registers.ts';
+import { salesRegister, vatSummary, withholdingReceivedRegister, type RegisterRow } from './registers.ts';
+import { quarterOf, taxDeadlines, type Quarter } from './calendar.ts';
 
 export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
@@ -46,6 +47,7 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   const range = (q: RangeQuery['Querystring']) => {
     if (!q.from || !q.to || !isBusinessDate(q.from) || !isBusinessDate(q.to)) throw badRequest('BAD_DATE', 'Pick the first and last dates, like 2026-07-01 and 2026-09-30.');
     if (q.to < q.from) throw badRequest('BAD_RANGE', 'The last date is before the first.');
+    if (Number(q.to.slice(0, 4)) - Number(q.from.slice(0, 4)) > 5) throw badRequest('BAD_RANGE', 'Pick at most five years at a time.');
     return { from: q.from, to: q.to };
   };
   const title = (docType: string | null) => (docType ? (deps.registry.docType(docType)?.title ?? docType) : 'Journal');
@@ -77,5 +79,22 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
       ...r.rows.map((x) => [...lead(x), x.atc, x.certificate, csvPesos(x.cwtCents), csvPesos(x.vatWithheldCents)]),
       ['Total', '', '', '', '', '', '', '', '', '', csvPesos(r.totals.cwtCents), csvPesos(r.totals.vatWithheldCents)],
     ]);
+  });
+
+  /** Tax deadlines due in a range (the calendar, and the accountant home's next 30 days). */
+  app.get<RangeQuery>('/api/tax/calendar', { config: { permission: 'tax.calendar.view' } }, async (req) => {
+    const { from, to } = range(req.query);
+    return taxDeadlines(db, from, to);
+  });
+
+  /** VAT of one quarter (?year=2026&quarter=3), or of today's quarter. */
+  app.get<{ Querystring: { year?: string; quarter?: string } }>('/api/tax/vat-summary', { config: { permission: 'tax.registers.view' } }, async (req) => {
+    const { year: y, quarter: q } = req.query;
+    if (y === undefined && q === undefined) {
+      const now = quarterOf(today(clock));
+      return vatSummary(db, now.year, now.quarter);
+    }
+    if (!/^\d{4}$/.test(y ?? '') || !/^[1-4]$/.test(q ?? '')) throw badRequest('BAD_QUARTER', 'Pick a year and a quarter, like 2026 and 3.');
+    return vatSummary(db, Number(y), Number(q) as Quarter);
   });
 }
