@@ -52,6 +52,8 @@ export const SCREENS: MenuItem[] = [
   { group: 'Reports', label: 'Balance sheet', path: '/rpt/balance-sheet', permission: 'rpt.books.view' },
   { group: 'Admin', label: 'Backups', path: '/bak', permission: 'bak.view' },
   { group: 'Admin', label: 'Opening balances', path: '/acc/opening', permission: 'acc.opening.view' },
+  { group: 'Admin', label: 'Audit log', path: '/aud/log', permission: 'aud.log.view' },
+  { group: 'Admin', label: 'Integrity check', path: '/aud/integrity', permission: 'aud.integrity.view' },
 ];
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);
