@@ -39,7 +39,7 @@ describe('opening supplier bill screen rules', () => {
     expect(openingDateProblem(undefined)).toBe('Loading the cut-over date…');
     expect(openingDateProblem({ cutoverDate: null, closed: null })).toBe('Set the cut-over date on the opening balances screen first.');
     expect(openingDateProblem({ cutoverDate: '2026-09-27', closed: null })).toBeNull();
-    const closed = { cutoverDate: '2026-09-27', closedAt: '2026-10-02T09:00:00.000+08:00', closedByName: 'Sample Accountant' };
+    const closed = { cutoverDate: '2026-09-27', closedAt: '2026-10-02T09:00:00.000+08:00', closedBy: 'u1', closedByName: 'Sample Accountant', totalDebitCents: 0, totalCreditCents: 0 };
     expect(openingDateProblem({ cutoverDate: '2026-09-27', closed })).toBe('The opening was closed on 2026-10-02. Correct balances with a journal voucher.');
   });
 });
