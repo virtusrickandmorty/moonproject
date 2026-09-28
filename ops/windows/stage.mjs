@@ -4,6 +4,7 @@
  *   app/                the server source (Node runs it directly, stripping the types), the built web app, and the
  *                       production node_modules; the @moonproject/shared link is made by the installer (see the .iss)
  *   service/            WinSW, the Windows service wrapper, with moonproject-service.xml
+ * Setup also carries update.mjs, which it runs on an update (backup first, roll back if the new version fails).
  * Run on Windows after `npm ci` and the web build: `node ops/windows/stage.mjs`.
  */
 import { execFileSync } from 'node:child_process';
@@ -43,6 +44,8 @@ if (!winsw.ok) throw new Error(`WinSW download failed: ${winsw.status}`);
 writeFileSync(join(out, 'service', 'moonproject-service.exe'), Buffer.from(await winsw.arrayBuffer()));
 cpSync(join(repo, 'ops', 'windows', 'moonproject-service.xml'), join(out, 'service', 'moonproject-service.xml'));
 
-const version = process.env.MOONPROJECT_VERSION ?? 'dev';
+const version = process.env.MOONPROJECT_VERSION || '0.0.0-dev'; // the same default as moonproject.iss
 writeFileSync(join(out, 'VERSION.txt'), `Moonproject ${version}\nNode ${process.version}\n`);
+// The server reports it on /api/health (apps/server/src/platform/version.ts); an update checks it (update.mjs).
+writeFileSync(join(app, 'version.json'), `${JSON.stringify({ version })}\n`);
 console.log(`Staged ${version} in ${out}`);
