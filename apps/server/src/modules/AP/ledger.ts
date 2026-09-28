@@ -9,11 +9,12 @@ const apAccount = (db: Db) => resolveAccount(db, { role: 'AP' }).id;
 /** What is still owed on a bill: its 2101 credit less the payments applied to it (zero once cancelled). */
 export const owedOnBill = (db: Db, billId: string): number => -accountBalance(db, apAccount(db), { refDocId: billId });
 
+/** A recorded bill: a BILL- (ap.bill), or an OBAP- (ap.opening) open on the cut-over date, whose figures are what was still owed then. */
 export interface BillRow {
-  id: string; number: string; status: string; date: string; supplierId: string; supplierInvoiceNo: string; supplierInvoiceDate: string; dueDate: string;
+  id: string; docType: 'ap.bill' | 'ap.opening'; number: string; status: string; date: string; supplierId: string; supplierInvoiceNo: string; supplierInvoiceDate: string; dueDate: string;
   grossCents: number; ewtCents: number; payableCents: number;
 }
-const BILLS = `SELECT d.id, d.number, d.status, d.business_date AS date, b.supplier_id AS supplierId, b.supplier_invoice_no AS supplierInvoiceNo,
+const BILLS = `SELECT d.id, d.doc_type AS docType, d.number, d.status, d.business_date AS date, b.supplier_id AS supplierId, b.supplier_invoice_no AS supplierInvoiceNo,
   b.supplier_invoice_date AS supplierInvoiceDate, b.due_date AS dueDate, b.gross_cents AS grossCents, b.ewt_cents AS ewtCents, b.payable_cents AS payableCents
   FROM ap_bills b JOIN documents d ON d.id = b.document_id`;
 
