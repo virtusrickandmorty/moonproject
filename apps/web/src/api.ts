@@ -172,6 +172,26 @@ export interface VatSummary {
   /** The quarter's posted VAT close (VATC-), if any. */
   close: { documentId: string; number: string; date: string } | null;
 }
+/** Backups (BAK). The status's `runs` are the server's bak_runs rows as stored. */
+export type BackupTier = 'snapshot' | 'daily' | 'monthly' | 'yearly';
+export type BackupSource = 'local' | 'offsite';
+export interface BackupSettings { backupDir: string; offsiteDir: string | null; recipients: string[]; version: number }
+export interface BackupRun {
+  id: string; started_at: string; finished_at: string; reason: 'schedule' | 'manual' | 'pre_update'; tier: BackupTier; status: 'ok' | 'failed';
+  file: string | null; bytes: number | null; offsite: number; error: string | null;
+}
+export interface BackupStatus {
+  settings: BackupSettings; issues: Issue[]; lastOk: { at: string; file: string; tier: BackupTier } | null; stale: boolean; kept: Record<BackupTier, number>;
+  lastOffsiteAt: string | null; lastDrillAt: string | null; usb: Record<'A' | 'B', string | null>; pendingRestore: { id: string; file: string; requestedAt: string } | null; runs: BackupRun[];
+}
+export interface BackupMade { file: string; tier: BackupTier; bytes: number; offsite: boolean; offsiteError: string | null }
+export interface BackupFile { source: BackupSource; file: string; at: string; tier: BackupTier; bytes: number }
+/** What a backup holds, found by opening it with a recovery key. A restore check adds `stagedId` and the live data's audit head. */
+export interface BackupCheck {
+  file: string; madeAt: string | null; tier: BackupTier | null; sidecar: 'matches' | 'missing'; toApply: string[]; audit: { seq: number } | null;
+  lastAuditAt: string | null; trialBalance: { totalDebitCents: number; totalCreditCents: number }; lastBusinessDate: string | null; postedDocuments: number;
+  drill?: 'passed'; stagedId?: string; live?: { auditSeq: number; lastAuditAt: string };
+}
 /** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
 export const taxRegisterPath = (register: 'sales' | 'withholding-received', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
 
@@ -215,6 +235,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     me: () => call<Me>('GET', '/api/auth/me').then(keep),
     logout: () => call<unknown>('POST', '/api/auth/logout'),
     changePassword: (currentPassword: string, newPassword: string) => call<unknown>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
+    /** The password again, for changes that need a fresh one (good for 5 minutes). */
     stepUp: (password: string) => call<{ ok: true }>('POST', '/api/auth/step-up', { password }),
     companyProfile: () => call<CompanyProfile>('GET', '/api/prt/company-profile'),
     companyProfileHistory: () => call<CompanyProfile[]>('GET', '/api/prt/company-profile/history'),
@@ -300,6 +321,14 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** Without a year and quarter: the quarter of the server's date. */
     vatSummary: (year?: number, quarter?: number) =>
       call<VatSummary>('GET', `/api/tax/vat-summary${year ? `?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}` : ''}`),
+    bakStatus: () => call<BackupStatus>('GET', '/api/bak/status'),
+    bakRun: () => call<BackupMade>('POST', '/api/bak/run', {}),
+    /** Only the two public keys (age1…) are sent; the secret keys stay in the browser. */
+    bakSaveSettings: (v: number, body: Omit<BackupSettings, 'version'>) => call<BackupSettings>('PUT', '/api/bak/settings', body, version(v)),
+    bakUsb: (drive: 'A' | 'B', dir: string) => call<{ drive: 'A' | 'B'; copied: number; onDrive: number }>('POST', '/api/bak/usb', { drive, dir }),
+    bakBackups: () => call<BackupFile[]>('GET', '/api/bak/backups'),
+    bakCheck: (b: { source: BackupSource; file: string; key: string; purpose: 'drill' | 'restore' }) => call<BackupCheck>('POST', '/api/bak/restore/check', b),
+    bakApply: (stagedId: string) => call<{ file: string; restartNeeded: boolean; message: string }>('POST', '/api/bak/restore/apply', { stagedId }),
   };
 }
 
