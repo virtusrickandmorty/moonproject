@@ -12,17 +12,14 @@ import { applyRate, formatPeso, isBusinessDate, vatFromGross, type Issue } from 
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { getCashPlace, listCashPlaces } from '../../../engine/ledger/accounts.ts';
 import type { DraftLine } from '../../../engine/ledger/post.ts';
-import { settingAt } from '../../../engine/settings.ts';
+import { EWT_CLASSES, settingAt, type EwtClass } from '../../../engine/settings.ts';
 import type { Db } from '../../../platform/db/driver.ts';
 import { category, listCategories } from '../categories.ts';
 import { supplier } from '../pur.ts';
 
 const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
 
-/** EWT classes (same keys as PUR suppliers) and their rates in basis points (D4.8). */
-export const EWT_RATES_BP = { rent_5: 500, contractor_2: 200, prof_ind_5: 500, prof_ind_10: 1000, prof_firm_10: 1000, prof_firm_15: 1500, goods_1: 100, services_2: 200 } as const;
-export type EwtClass = keyof typeof EWT_RATES_BP;
-const EWT_CLASSES = Object.keys(EWT_RATES_BP) as EwtClass[];
+export type { EwtClass };
 /** Withheld only when Virtus is a published Top Withholding Agent (setting tax.top_withholding_agent). */
 const TWA_ONLY: ReadonlySet<string> = new Set(['goods_1', 'services_2']);
 
@@ -77,7 +74,7 @@ function computeVoucher(db: Db, input: VoucherInput, businessDate: string): Vouc
   const usual = sup?.ewtClass ?? cat?.defaultEwtClass ?? null;
   const twa = settingAt(db, 'tax.top_withholding_agent', businessDate);
   const applied = input.ewtClass === 'none' ? null : (input.ewtClass ?? (usual && (twa || !TWA_ONLY.has(usual)) ? usual : null));
-  const ewtRateBp = applied ? EWT_RATES_BP[applied] : 0;
+  const ewtRateBp = applied ? settingAt(db, 'tax.ewt_rates_bp', businessDate)[applied] : 0; // the rate in force on the payment date
   const ewtCents = applied ? applyRate(netCents, ewtRateBp) : 0;
   return {
     ...input,
@@ -140,7 +137,7 @@ export const voucherDoc: DocTypeDef<VoucherInput, Voucher> = {
       add('warning', 'supplierInvoiceNo', 'NO_INPUT_VAT', 'No input VAT: that needs the receipt number, its date and the payee’s TIN. The full amount goes to the expense.');
     }
     if (doc.ewtClass !== undefined && doc.usualEwtClass && doc.appliedEwtClass !== doc.usualEwtClass) {
-      add('warning', 'ewtClass', 'EWT_DIFFERENT', `The usual EWT here is ${pct(EWT_RATES_BP[doc.usualEwtClass])} (${doc.usualEwtClass}). Please check.`);
+      add('warning', 'ewtClass', 'EWT_DIFFERENT', `The usual EWT here is ${pct(settingAt(ctx.db, 'tax.ewt_rates_bp', ctx.businessDate)[doc.usualEwtClass])} (${doc.usualEwtClass}). Please check.`);
     }
     return issues;
   },
