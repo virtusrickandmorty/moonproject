@@ -30,6 +30,7 @@ import { RemittanceForm } from './STAT/RemittanceForm.tsx';
 import { GeneralJournal, GeneralLedger, TrialBalance } from './RPT/Books.tsx';
 import { BalanceSheet, IncomeStatement } from './RPT/Statements.tsx';
 import { ArAging, CustomerStatement } from './RPT/Receivables.tsx';
+import { DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
 import { CashAccounts } from './CASH/CashAccounts.tsx';
 import { CashBook } from './CASH/CashBook.tsx';
 import { CashCountForm } from './CASH/CashCountForm.tsx';
@@ -95,6 +96,10 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/rpt/balance-sheet': BalanceSheet,
   '/rpt/ar-aging': ArAging,
   '/rpt/customer-statement': CustomerStatement,
+  '/rpt/deposits-held': DepositsHeld,
+  '/rpt/collections-register': CollectionsRegister,
+  '/rpt/sales-by-period': SalesByPeriod,
+  '/rpt/job-order-follow-up': JobOrderFollowUp,
   '/tax/sales': SalesRegister,
   '/tax/2307-received': WithholdingReceived,
   '/tax/purchases': PurchasesRegister,
