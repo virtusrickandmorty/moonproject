@@ -11,7 +11,9 @@ import { cashBook, createPlace, place, placesFor, seesBalance, updatePlaceSettin
 import { bankAdjustmentDoc } from './doctypes/bank-adjustment.ts';
 import * as recon from './recon.ts';
 
-const adjustBody = z.object({ statementLineIds: z.array(z.number().int().positive()).min(1).max(50), input: z.unknown(), expectedTotalCents: z.number().int() }).strict();
+const adjustBody = z
+  .object({ statementLineIds: z.array(z.number().int().positive()).min(1).max(50), input: z.unknown(), expectedTotalCents: z.number().int(), businessDate: z.string().optional() })
+  .strict();
 
 export function cashRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
@@ -81,7 +83,7 @@ export function cashRoutes(app: FastifyInstance, deps: AppDeps): void {
     const body = adjustBody.parse(req.body);
     seeRecon(req);
     return idempotent(req, reply, () => {
-      const posted = postDocument({ db, clock }, bankAdjustmentDoc, { userId: u.userId, permissions: u.permissions }, { input: body.input, expectedTotalCents: body.expectedTotalCents });
+      const posted = postDocument({ db, clock }, bankAdjustmentDoc, { userId: u.userId, permissions: u.permissions }, { input: body.input, expectedTotalCents: body.expectedTotalCents, ...(body.businessDate ? { businessDate: body.businessDate } : {}) });
       const matchNo = recon.matchAdjustment(db, req.params.id, posted.id, body.statementLineIds, who(req));
       return { ...posted, matchNo };
     });

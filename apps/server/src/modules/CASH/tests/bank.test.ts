@@ -138,6 +138,24 @@ describe('Bank reconciliation (E10)', () => {
     expect((await accountant.post(`/api/cash/recons/${id}/reopen`, { reason: 'The bank sent a corrected statement' })).json().code).toBe('LATER_MONTH');
   });
 
+  it('CASH-1: the accountant dates a charge seen in October on its statement day in September; others may not backdate', async () => {
+    await trf(CASH, BDO, 100_000);
+    const id = (await accountant.post('/api/cash/recons', { bankId: BDO, month: '2026-09', endingBalanceCents: 85_000 })).json().id;
+    const rep = (await accountant.post(`/api/cash/recons/${id}/lines`, { lines: [{ date: '2026-09-28', description: 'Deposit', amountCents: 100_000 }, { date: '2026-09-30', description: 'Checkbook', amountCents: -15_000 }] })).json() as Report;
+    await accountant.post(`/api/cash/recons/${id}/match`, { statementLineIds: [stmt(rep, 'Deposit')], journalLineIds: [book(rep, 'TRF-000001')] });
+    env.clock.advance(4 * 24 * 3600_000); // 2026-10-02
+    accountant = await env.as('accountant');
+    const adjust = (who: Client) =>
+      who.post(`/api/cash/recons/${id}/adjust`, { statementLineIds: [stmt(rep, 'Checkbook')], input: { ...charge150(), description: 'Checkbook' }, expectedTotalCents: 15_000, businessDate: '2026-09-30' }, idem());
+    expect((await adjust(await env.as('owner'))).statusCode).toBe(403); // acc.backdate is the accountant's
+    const c = await adjust(accountant);
+    expect(c.statusCode, c.body).toBe(200);
+    expect(c.json().businessDate).toBe('2026-09-30');
+    expect(env.db.prepare("SELECT business_date FROM journals WHERE source_type = 'document' AND source_id = ?").pluck().all(c.json().id)).toEqual(['2026-09-30']);
+    expect((await accountant.post(`/api/cash/recons/${id}/finish`)).json()).toMatchObject({ status: 'finished', bookBalanceCents: 85_000, recordedAfterMonthCents: 0, differenceCents: 0 });
+    noBrokenInvariants();
+  });
+
   it('matches only equal totals, clears a cancelled entry against its mirror, unmatches and voids', async () => {
     const t = (await trf(CASH, BDO, 20_000)).json();
     await accountant.post(`/api/docs/cash.transfer/${t.id}/cancel`, { reason: 'Deposit slip was never used' }, idem());
