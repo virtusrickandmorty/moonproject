@@ -27,6 +27,7 @@ import { CashAccounts } from './CASH/CashAccounts.tsx';
 import { CashBook } from './CASH/CashBook.tsx';
 import { CashCountForm } from './CASH/CashCountForm.tsx';
 import { cashCountView } from './CASH/CashCountView.tsx';
+import { Booklets, BookletPage, RegisterBooklet } from './TAX/Booklets.tsx';
 import { SalesRegister, WithholdingReceived } from './TAX/Registers.tsx';
 import { TaxCalendar } from './TAX/TaxCalendar.tsx';
 import { VatQuarter } from './TAX/VatQuarter.tsx';
@@ -47,6 +48,9 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/pay/runs/:id/payslips': Payslips,
   '/stat': StatMonths,
   '/stat/:month': StatMonthPage,
+  '/tax/booklets': Booklets,
+  '/tax/booklets/new': RegisterBooklet,
+  '/tax/booklets/:id': BookletPage,
   '/rpt/journal': GeneralJournal,
   '/rpt/ledger': GeneralLedger,
   '/rpt/trial-balance': TrialBalance,
