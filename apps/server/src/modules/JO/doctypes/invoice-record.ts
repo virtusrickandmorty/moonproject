@@ -99,6 +99,7 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
   permissions: { view: 'jo.view', create: 'jo.invoice', post: 'jo.invoice', cancel: 'jo.invoice_cancel' },
   dating: 'system',
   inputSchema: invoiceRecordInput,
+  externalNumber: (doc) => doc.invoiceNumber,
 
   compute(input, ctx) {
     const header = releaseHeader(ctx.db, input.releaseId);

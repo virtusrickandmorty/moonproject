@@ -2,7 +2,7 @@
  * The statutory screens' rules: the remittance form's typed values to input, and the check's plain words. Pure, so they
  * are tested without a browser; the server works everything out again.
  */
-import { formatPeso } from '@moonproject/shared';
+import { formatPeso, isBusinessDate } from '@moonproject/shared';
 import type { RemittanceInput, Scheme, SchemeCheck } from '../../api.ts';
 import { cents } from '../COL/money.ts';
 
@@ -31,6 +31,16 @@ export function remittanceInput(v: RemittanceValues): { input: RemittanceInput; 
     },
     errors,
   };
+}
+
+/**
+ * The date paid (STAT-1), offered only to someone who may backdate (acc.backdate): empty is today, so the client sends
+ * no date; the server refuses a day after today.
+ */
+export function paidOn(value: string): { businessDate?: string; error?: string } {
+  const v = value.trim();
+  if (!v) return {};
+  return isBusinessDate(v) ? { businessDate: v } : { error: 'Type the date paid like 2026-10-02, or leave it empty for today.' };
 }
 
 /** One line of the remittance check: "Remitted in full", "₱2,280.00 to remit", or "Remitted ₱3,770.00 more than the payrolls show". */

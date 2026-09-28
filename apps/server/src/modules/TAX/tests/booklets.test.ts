@@ -120,4 +120,13 @@ describe('chart', () => {
     expect(resolveAccount(env.db, { role: 'PENALTIES' }).code).toBe('6290');
     expect(() => env.db.prepare(`UPDATE accounts SET role_key = 'OTHER' WHERE code = '6290'`).run()).toThrow(/IMMUTABLE/);
   });
+
+  it('other income (7100 to 7103) is credit-normal revenue, and account types stay locked', () => {
+    const kinds = env.db.prepare(`SELECT code, type, normal_side FROM accounts WHERE code BETWEEN '7100' AND '7202' ORDER BY code`).raw().all();
+    expect(kinds).toEqual([
+      ['7100', 'revenue', 'credit'], ['7101', 'revenue', 'credit'], ['7102', 'revenue', 'credit'], ['7103', 'revenue', 'credit'],
+      ['7200', 'expense', 'debit'], ['7201', 'expense', 'debit'], ['7202', 'expense', 'debit'],
+    ]);
+    expect(() => env.db.prepare(`UPDATE accounts SET type = 'expense' WHERE code = '7101'`).run()).toThrow(/IMMUTABLE/);
+  });
 });
