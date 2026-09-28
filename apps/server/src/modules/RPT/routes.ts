@@ -3,6 +3,8 @@ import { AppError, csvPesos, toCsv, type CsvCell } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { comparativeTrialBalance, generalJournal, generalLedger, ledgerAccounts } from './books.ts';
 import { balanceSheet, incomeStatement, type StatementSection } from './statements.ts';
+import { arAging, customerStatement } from './receivables.ts';
+import { statementCustomers } from '../CUS/public.ts';
 
 function date(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new AppError('BAD_DATE', 'Use a date in YYYY-MM-DD format.', 400);
@@ -38,6 +40,46 @@ function sectionRows(s: StatementSection): CsvCell[][] {
 const STATEMENT_HEAD = ['Section', 'Account', 'Line', 'Amount PHP'];
 
 export function rptRoutes(app: FastifyInstance, { db }: AppDeps): void {
+  app.get('/api/rpt/customers', { config: { permission: 'rpt.books.view' } }, async () => statementCustomers(db));
+  app.get('/api/rpt/ar-aging', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
+    const q = req.query as Record<string, unknown>;
+    const result = arAging(db, date(q.asOf));
+    if (q.format !== 'csv') return result;
+    const rows: CsvCell[][] = [['Customer', 'Document', 'Job order', 'Date', 'Due date', 'Current PHP',
+      '1-30 PHP', '31-60 PHP', '61-90 PHP', 'Over 90 PHP', 'Total PHP']];
+    for (const r of result.rows) rows.push([r.customerName, r.documentNumber, r.jobOrderNumber, r.date, r.dueDate,
+      csvPesos(r.buckets.current), csvPesos(r.buckets.days1to30), csvPesos(r.buckets.days31to60),
+      csvPesos(r.buckets.days61to90), csvPesos(r.buckets.over90), csvPesos(r.totalCents)]);
+    rows.push(['TOTAL', '', '', '', '', csvPesos(result.buckets.current), csvPesos(result.buckets.days1to30),
+      csvPesos(result.buckets.days31to60), csvPesos(result.buckets.days61to90), csvPesos(result.buckets.over90),
+      csvPesos(result.totalCents)]);
+    rows.push([]);
+    rows.push(['Uninvoiced job orders (memo, excluded from AR total)', 'Job order', 'Due date', 'Amount PHP']);
+    for (const r of result.memo) rows.push([r.customerName, r.jobOrderNumber, r.dueDate, csvPesos(r.notInvoicedCents)]);
+    rows.push(['MEMO TOTAL', '', '', csvPesos(result.memoTotalCents)]);
+    return sendCsv(reply, `ar-aging-${result.asOf}`, rows);
+  });
+  app.get('/api/rpt/customer-statement', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
+    const q = req.query as Record<string, unknown>;
+    const { from, to } = range(q);
+    if (typeof q.customerId !== 'string' || !q.customerId) throw new AppError('BAD_CUSTOMER', 'Choose a customer.', 400);
+    const result = customerStatement(db, q.customerId, from, to);
+    if (!result) throw new AppError('BAD_CUSTOMER', 'Choose a customer from the list.', 400);
+    if (q.format !== 'csv') return result;
+    const rows: CsvCell[][] = [['Customer', result.customerName], ['From', from], ['To', to], [],
+      ['Date', 'Document', 'Memo', 'Debit PHP', 'Credit PHP', 'Balance PHP'],
+      ['', 'Opening balance', '', '', '', csvPesos(result.openingBalanceCents)]];
+    for (const line of result.lines) rows.push([line.businessDate, line.documentNumber ?? line.journalNumber,
+      line.memo, csvPesos(line.debitCents), csvPesos(line.creditCents), csvPesos(line.runningBalanceCents)]);
+    rows.push(['', 'Closing balance', '', '', '', csvPesos(result.closingBalanceCents)]);
+    rows.push([]);
+    rows.push(['Date', 'Deposit document', 'Memo', 'Received PHP', 'Applied PHP', 'Held PHP']);
+    rows.push(['', 'Opening deposits held', '', '', '', csvPesos(result.openingDepositsHeldCents)]);
+    for (const line of result.depositLines) rows.push([line.businessDate, line.documentNumber ?? line.journalNumber,
+      line.memo, csvPesos(line.creditCents), csvPesos(line.debitCents), csvPesos(line.runningHeldCents)]);
+    rows.push(['', 'Deposits held', '', '', '', csvPesos(result.depositsHeldCents)]);
+    return sendCsv(reply, `customer-statement-${from}-${to}`, rows);
+  });
   app.get('/api/rpt/accounts', { config: { permission: 'rpt.books.view' } }, async () => ledgerAccounts(db));
   app.get('/api/rpt/journal', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
