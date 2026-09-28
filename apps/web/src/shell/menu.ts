@@ -5,7 +5,7 @@
  */
 import type { DocTypeInfo } from '../api.ts';
 
-export const MENU_GROUPS = ['Overview', 'Sales', 'Production', 'Purchases & Expenses', 'Money', 'People & Payroll', 'Accounting & Tax', 'Tax', 'Reports', 'Admin'] as const;
+export const MENU_GROUPS = ['Overview', 'Sales', 'Production', 'Purchases & Expenses', 'Money', 'People & Payroll', 'Accounting & Tax', 'Reports', 'Admin'] as const;
 export type MenuGroup = (typeof MENU_GROUPS)[number];
 export interface MenuItem { group: MenuGroup; label: string; path: string; permission?: string }
 
@@ -33,14 +33,20 @@ export const SCREENS: MenuItem[] = [
   { group: 'People & Payroll', label: 'Holidays', path: '/emp/holidays', permission: 'emp.view' },
   { group: 'Admin', label: 'Company print details', path: '/prt/company-profile', permission: 'prt.profile.manage' },
   { group: 'People & Payroll', label: 'Government remittances', path: '/stat', permission: 'stat.view' },
-  { group: 'Tax', label: 'Booklets', path: '/tax/booklets', permission: 'tax.booklets.view' },
   { group: 'Accounting & Tax', label: 'Sales register', path: '/tax/sales', permission: 'tax.registers.view' },
   { group: 'Accounting & Tax', label: '2307s received', path: '/tax/2307-received', permission: 'tax.registers.view' },
+  { group: 'Accounting & Tax', label: 'Purchases register', path: '/tax/purchases', permission: 'tax.registers.view' },
+  { group: 'Accounting & Tax', label: 'EWT register', path: '/tax/ewt', permission: 'tax.registers.view' },
+  { group: 'Accounting & Tax', label: '2307s to issue', path: '/tax/2307-to-issue', permission: 'tax.registers.view' },
   { group: 'Accounting & Tax', label: 'VAT this quarter', path: '/tax/vat', permission: 'tax.registers.view' },
+  { group: 'Accounting & Tax', label: '2550Q worksheet', path: '/tax/2550q', permission: 'tax.registers.view' },
   { group: 'Accounting & Tax', label: 'Tax calendar', path: '/tax/calendar', permission: 'tax.calendar.view' },
+  { group: 'Accounting & Tax', label: 'Booklets', path: '/tax/booklets', permission: 'tax.booklets.view' },
   { group: 'Reports', label: 'General journal', path: '/rpt/journal', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'General ledger', path: '/rpt/ledger', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Trial balance', path: '/rpt/trial-balance', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'Income statement', path: '/rpt/income-statement', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'Balance sheet', path: '/rpt/balance-sheet', permission: 'rpt.books.view' },
   { group: 'Admin', label: 'Backups', path: '/bak', permission: 'bak.view' },
 ];
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;

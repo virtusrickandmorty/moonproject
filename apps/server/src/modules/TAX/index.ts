@@ -3,20 +3,25 @@ import { dirname, join } from 'node:path';
 import { defineModule } from '../../engine/documents/registry.ts';
 import { taxRoutes } from './routes.ts';
 import { vatCloseDoc } from './doctypes/vat-close.ts';
+import { birPaymentDoc } from './doctypes/bir-payment.ts';
 
 export default defineModule({
   code: 'TAX',
   name: 'Tax Compliance',
   permissions: [
     { key: 'tax.booklets.view', label: 'See the invoice and receipt booklet register and what each number was used for', defaultRoles: ['encoder', 'accountant', 'owner'] },
-    { key: 'tax.registers.view', label: 'See and export the tax registers (sales, purchases, EWT, the 2307s received and to issue), the VAT of a quarter and the 2550Q worksheet', defaultRoles: ['accountant', 'owner'] },
+    { key: 'tax.registers.view', label: 'See and export the tax registers (sales, purchases, EWT, the 2307s received and to issue), the VAT of a quarter and the 2550Q, 0619-E and 1601-EQ worksheets', defaultRoles: ['accountant', 'owner'] },
     { key: 'tax.calendar.view', label: 'See the tax calendar: which BIR returns are due and when', defaultRoles: ['accountant', 'owner'] },
     { key: 'tax.vatc.view', label: 'See the quarterly VAT closes', defaultRoles: ['accountant', 'owner'] },
     { key: 'tax.vatc.post', label: "Close a quarter's VAT (2550Q): output less input VAT into VAT payable or carry-over", defaultRoles: ['accountant'] },
     { key: 'tax.vatc.cancel', label: 'Cancel a quarterly VAT close', defaultRoles: ['accountant'] },
     { key: 'tax.booklets.manage', label: 'Register, retire and switch back on invoice and receipt booklets', defaultRoles: ['accountant', 'owner'] },
+    { key: 'tax.payment.view', label: 'See the BIR payments (2550Q VAT, 0619-E and 1601-EQ EWT)', defaultRoles: ['accountant', 'owner'] },
+    { key: 'tax.payment.create', label: 'Prepare a BIR payment and see what the return leaves to pay', defaultRoles: ['accountant', 'owner'] },
+    { key: 'tax.payment.post', label: 'Record a BIR payment: VAT or EWT paid with a return, and any penalty', defaultRoles: ['accountant', 'owner'] },
+    { key: 'tax.payment.cancel', label: 'Cancel a recorded BIR payment', defaultRoles: ['accountant', 'owner'] },
   ],
-  docTypes: [vatCloseDoc],
+  docTypes: [vatCloseDoc, birPaymentDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: taxRoutes,
 });

@@ -158,9 +158,37 @@ export interface BookletUsage {
 export interface BookletInput { kind: BookletKind; atpNo: string; printer?: string; serialFrom: number; serialTo: number; receivedOn: string; note?: string }
 export interface RemittanceInput { scheme: Scheme; month: string; cashPlaceId: number; amountCents: number; penaltyCents?: number; reference: string; note?: string }
 /** Tax registers (TAX): one row per journal on the account, read from the ledger. A cancel is its own negative row (posting 'reversal'). */
-export interface TaxRegisterRow {
+export interface TaxJournalRef {
   journalId: string; journalNumber: string; date: string; posting: 'original' | 'reversal'; documentId: string | null; docType: string | null; docTitle: string;
-  documentNumber: string | null; formNumber: string | null; documentStatus: 'posted' | 'cancelled' | null; customerId: string | null; customerName: string; tin: string | null;
+  documentNumber: string | null; documentStatus: 'posted' | 'cancelled' | null;
+}
+export interface TaxRegisterRow extends TaxJournalRef { formNumber: string | null; customerId: string | null; customerName: string; tin: string | null }
+/** A purchases or EWT register row: the supplier on the ledger lines ("… and others" on a JV naming several), or a one-off payee. */
+export interface TaxSupplierRow extends TaxJournalRef { supplierId: string | null; supplierName: string; tin: string | null }
+export type PurchaseClass = 'capital_goods' | 'goods' | 'services';
+export interface PurchaseSums { netCents: number; vatCents: number; totalCents: number }
+/** GET /api/tax/registers/purchases: a bill with lines of two classes gives two rows with the same journal; `purchaseClass` null = to classify. */
+export interface PurchasesRegister {
+  from: string; to: string; rows: (TaxSupplierRow & PurchaseSums & { supplierInvoiceNo: string | null; purchaseClass: PurchaseClass | null })[];
+  totals: PurchaseSums; byClass: Record<PurchaseClass | 'unclassified', PurchaseSums>; glVatCents: number;
+}
+/** An EWT class and its ATC; `atc` null with `atcChoices` = the ATC to confirm (individual or company). */
+export interface EwtAtc { ewtClass: string | null; atc: string | null; atcChoices: string[] }
+export interface EwtRegister {
+  from: string; to: string; rows: (TaxSupplierRow & EwtAtc & { baseCents: number | null; rateBp: number | null; ewtCents: number })[];
+  totals: { baseCents: number; ewtCents: number }; glEwtCents: number; atcToConfirmCount: number;
+}
+/** GET /api/tax/2307-to-issue: one line per supplier and ATC; `months` are "2026-07", "2026-08", "2026-09". */
+export interface CertificatesToIssue {
+  year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string; months: string[];
+  lines: (EwtAtc & { supplierId: string | null; supplierName: string; tin: string | null; months: { month: string; baseCents: number; ewtCents: number }[]; baseCents: number; ewtCents: number })[];
+  totals: { baseCents: number; ewtCents: number };
+}
+/** GET /api/tax/2550q: each item of the return (amount null where the form has none) and the checks before filing. */
+export interface WorksheetCheck { code: string; level: 'error' | 'warning' | 'info'; message: string }
+export interface VatWorksheet {
+  year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string; returnDue: string; close: { documentId: string; number: string; date: string } | null;
+  lines: { key: string; label: string; amountCents: number | null; taxCents: number }[]; checks: WorksheetCheck[];
 }
 export interface SalesRegister { from: string; to: string; rows: (TaxRegisterRow & { netCents: number; vatCents: number; totalCents: number })[]; totals: { netCents: number; vatCents: number; totalCents: number }; glVatCents: number }
 export interface WithholdingRegister {
@@ -179,6 +207,12 @@ export interface VatSummary {
 /** Money out (AP, EXP, EQ). Suppliers and supplies are PUR's own rows (GET /api/pur/suppliers, /api/pur/supplies). */
 export interface SupplierRow { id: string; name: string; tin: string | null; is_vat_registered: number; ewt_class: string | null; payment_terms_days: number | null }
 export interface SupplyRow { id: string; name: string; category: 'materials' | 'ready_made' }
+/** GET /api/inv/count-sheet?format=json: the active supplies of a category and the cost each is valued at on the count date. */
+export interface SheetSupply {
+  supplyId: string; name: string; unit: 'yard' | 'meter' | 'kg' | 'roll' | 'pc'; milliUnits: boolean;
+  defaultCostCents: number; costSource: 'bill' | 'po' | 'catalogue'; costSourceNumber: string | null;
+}
+export interface CountSheet { category: 'materials' | 'ready_made'; date: string; supplies: SheetSupply[] }
 export interface ExpCategory { id: number; code: string; name: string; defaultEwtClass: string | null }
 /** GET /api/ap/suppliers/:id: a supplier's bills, with what is still owed on each (from the ledger). */
 export interface ApLedger {
@@ -223,7 +257,9 @@ export interface BackupCheck {
   drill?: 'passed'; stagedId?: string; live?: { auditSeq: number; lastAuditAt: string };
 }
 /** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
-export const taxRegisterPath = (register: 'sales' | 'withholding-received', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
+export const taxRegisterPath = (register: 'sales' | 'withholding-received' | 'purchases' | 'ewt', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
+/** A quarter's tax report URL; with &format=csv the same URL downloads it for Excel. */
+export const taxQuarterPath = (report: '2307-to-issue' | '2550q', year: number, quarter: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}`;
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -348,6 +384,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     settings: () => call<Setting[]>('GET', '/api/settings'),
     suppliers: () => call<SupplierRow[]>('GET', '/api/pur/suppliers'),
     supplies: () => call<SupplyRow[]>('GET', '/api/pur/supplies'),
+    countSheet: (category: string, date: string) => call<CountSheet>('GET', `/api/inv/count-sheet?${new URLSearchParams({ category, date, format: 'json' })}`),
     expCategories: () => call<ExpCategory[]>('GET', '/api/exp/categories'),
     apLedger: (supplierId: string) => call<ApLedger>('GET', `/api/ap/suppliers/${encodeURIComponent(supplierId)}`),
     eqPeople: () => call<EqPerson[]>('GET', '/api/eq/people'),
@@ -359,6 +396,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     setBookletActive: (id: string, v: number, active: boolean, note: string) => call<Booklet>('POST', `/api/tax/booklets/${encodeURIComponent(id)}/${active ? 'activate' : 'retire'}`, { note }, version(v)),
     salesRegister: (from: string, to: string) => call<SalesRegister>('GET', taxRegisterPath('sales', from, to)),
     withholdingReceived: (from: string, to: string) => call<WithholdingRegister>('GET', taxRegisterPath('withholding-received', from, to)),
+    purchasesRegister: (from: string, to: string) => call<PurchasesRegister>('GET', taxRegisterPath('purchases', from, to)),
+    ewtRegister: (from: string, to: string) => call<EwtRegister>('GET', taxRegisterPath('ewt', from, to)),
+    certificatesToIssue: (year: number, quarter: number) => call<CertificatesToIssue>('GET', taxQuarterPath('2307-to-issue', year, quarter)),
+    vatWorksheet: (year: number, quarter: number) => call<VatWorksheet>('GET', taxQuarterPath('2550q', year, quarter)),
     taxCalendar: (from: string, to: string) => call<TaxDeadline[]>('GET', `/api/tax/calendar?${new URLSearchParams({ from, to })}`),
     accounts: () => call<Account[]>('GET', '/api/acc/accounts'),
     loans: (status?: 'posted' | 'cancelled') => call<LoanRow[]>('GET', `/api/loan/loans${status ? `?status=${status}` : ''}`),

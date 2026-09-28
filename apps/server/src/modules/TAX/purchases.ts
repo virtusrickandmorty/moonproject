@@ -1,9 +1,9 @@
 /**
  * Purchases and EWT registers and the 2307s to issue (PLAN E12, G "Tax"), read from the ledger the way the sales
  * register is (registers.ts): one row per journal that touches the account in the period, a cancel as its own negative
- * row on the cancel date, a journal voucher as an adjustment, the quarterly VAT close left out, so the totals tie to
- * the GL movement by construction. What the ledger does not carry (the supplier's invoice number, what a bill line
- * bought, the EWT class, base and rate) comes from the posting document, through AP, EXP and FA public.ts.
+ * row on the cancel date, a journal voucher as an adjustment, the quarterly VAT close and the BIR payments left out, so
+ * the totals tie to the GL movement by construction. What the ledger does not carry (the supplier's invoice number,
+ * what a bill line bought, the EWT class, base and rate) comes from the posting document, through AP, EXP and FA public.ts.
  *   Purchases register (1401 input VAT): amount before VAT, input VAT, total and the class the 2550Q and the SLP need.
  *   A bill with lines of two classes gives one row per class.
  *   EWT register (2311 EWT payable): EWT class, ATC, base, rate and EWT.
@@ -164,6 +164,8 @@ export function ewtRegister(db: Db, from: string, to: string) {
 
 export interface CertificateLine {
   supplierId: string | null; supplierName: string; tin: string | null; ewtClass: EwtClass | null; atc: string | null; atcChoices: string[];
+  /** The rate withheld at, when every withholding on the line used the same one (the QAP shows it); else null. */
+  rateBp: number | null;
   months: { month: string; baseCents: number; ewtCents: number }[]; baseCents: number; ewtCents: number;
 }
 
@@ -176,12 +178,14 @@ export function certificatesToIssue(db: Db, year: number, quarter: Quarter) {
   const { from, to } = quarterRange(year, quarter);
   const months = [1, 2, 3].map((i) => `${year}-${String(3 * quarter - 3 + i).padStart(2, '0')}`);
   const lines = new Map<string, CertificateLine>();
+  const rates = new Map<string, Set<number>>();
   for (const r of ewtRegister(db, from, to).rows) {
     const key = JSON.stringify([r.supplierId, r.atc ?? r.ewtClass]);
     const line = lines.get(key) ?? {
-      supplierId: r.supplierId, supplierName: r.supplierName, tin: r.tin, ewtClass: r.ewtClass, atc: r.atc, atcChoices: r.atcChoices,
+      supplierId: r.supplierId, supplierName: r.supplierName, tin: r.tin, ewtClass: r.ewtClass, atc: r.atc, atcChoices: r.atcChoices, rateBp: null,
       months: months.map((month) => ({ month, baseCents: 0, ewtCents: 0 })), baseCents: 0, ewtCents: 0,
     };
+    if (r.rateBp !== null) rates.set(key, (rates.get(key) ?? new Set()).add(r.rateBp));
     const m = line.months[months.indexOf(r.date.slice(0, 7))]!;
     m.baseCents += r.baseCents ?? 0;
     m.ewtCents += r.ewtCents;
@@ -189,6 +193,7 @@ export function certificatesToIssue(db: Db, year: number, quarter: Quarter) {
     line.ewtCents += r.ewtCents;
     lines.set(key, line);
   }
+  for (const [key, line] of lines) if (rates.get(key)?.size === 1) line.rateBp = [...rates.get(key)!][0]!;
   const rows = [...lines.values()]
     .filter((l) => l.baseCents !== 0 || l.ewtCents !== 0)
     .sort((a, b) => a.supplierName.localeCompare(b.supplierName) || (a.atc ?? a.ewtClass ?? '').localeCompare(b.atc ?? b.ewtClass ?? ''));
