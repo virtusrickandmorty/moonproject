@@ -23,7 +23,7 @@ export const TIERS = ['snapshot', 'daily', 'monthly', 'yearly'] as const;
 export type Tier = (typeof TIERS)[number];
 export type Reason = 'schedule' | 'manual' | 'pre_update';
 const RANK: Record<Tier, number> = { snapshot: 0, daily: 1, monthly: 2, yearly: 3 };
-const PREFIX = 'moonproject-';
+export const PREFIX = 'moonproject-';
 
 /** Recovery public keys are age X25519 recipients: "age1" and 58 bech32 characters. */
 export const AGE_RECIPIENT = /^age1[02-9ac-hj-np-z]{58}$/;
@@ -88,7 +88,7 @@ export function keptIn(dir: string): Sidecar[] {
     });
 }
 
-function rotate(dir: string, at: string): void {
+export function rotate(dir: string, at: string): void {
   for (const file of toRotate(keptIn(dir), at)) {
     rmSync(join(dir, file), { force: true });
     rmSync(join(dir, file.replace(/\.db\.gz\.age$/, '.json')), { force: true });
@@ -96,7 +96,7 @@ function rotate(dir: string, at: string): void {
 }
 
 /** Checks a database copy; throws BACKUP_CHECK with what failed. */
-function check(file: string): Pick<Sidecar, 'migrations' | 'audit' | 'trialBalance'> {
+export function checkCopy(file: string): Pick<Sidecar, 'migrations' | 'audit' | 'trialBalance'> {
   const copy = openReadonly(file);
   try {
     const integrity = copy.pragma('integrity_check', { simple: true });
@@ -137,7 +137,7 @@ export async function makeBackup(db: Db, settings: BakSettings, at: string): Pro
   const tmp = join(dir, `.${base}-${newId()}.db`);
   try {
     await snapshotTo(db, tmp);
-    const facts = check(tmp);
+    const facts = checkCopy(tmp);
     const plain = readFileSync(tmp);
     const gz = gzipSync(plain);
     const file = `${base}.db.gz.age`;

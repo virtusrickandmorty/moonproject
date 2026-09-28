@@ -10,6 +10,7 @@ export default defineModule({
     { key: 'bak.view', label: 'See the backup status: when the last backup was made and where copies are', defaultRoles: ['accountant', 'owner'] },
     { key: 'bak.run', label: 'Make a backup now', defaultRoles: ['accountant', 'owner'] },
     { key: 'bak.manage', label: 'Set the backup folders and the two recovery keys', defaultRoles: ['owner'] },
+    { key: 'bak.restore', label: 'Restore a backup, and run the quarterly restore drill', defaultRoles: ['owner'] },
   ],
   docTypes: [],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),

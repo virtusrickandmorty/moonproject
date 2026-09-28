@@ -93,7 +93,8 @@ describe('backups', () => {
     expect(keptIn(join(dir, 'drive')).map((k) => k.tier)).toEqual(['yearly']);
 
     const status = (await owner.get('/api/bak/status')).json();
-    expect(status).toMatchObject({ stale: false, kept: { snapshot: 1, daily: 0, monthly: 0, yearly: 1 }, lastOk: { tier: 'snapshot' }, issues: [] });
+    expect(status).toMatchObject({ stale: false, kept: { snapshot: 1, daily: 0, monthly: 0, yearly: 1 }, lastOk: { tier: 'snapshot' } });
+    expect(status.issues.map((i: { code: string }) => i.code)).toEqual(['DRILL_DUE', 'USB_OVERDUE']);
     expect(status.lastOffsiteAt).toBe(s.at);
   });
 
