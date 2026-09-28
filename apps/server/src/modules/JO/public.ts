@@ -6,6 +6,7 @@ import { notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
+import { JO_DOC_TYPES_SQL } from './stages.ts';
 
 export { currentStage, productionMove, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
 export { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, awaitingInvoice, invoiceAmounts, invoiceNumberUsedBy, invoiceNumbersBetween, settleLines } from './doctypes/invoice-record.ts';
@@ -25,7 +26,7 @@ export function jobOrderRef(db: Db, id: string): JoRef | undefined {
 
 /** Where an edited job order lives on now: JO-1 edited into JO-2, then into JO-3, gives JO-3. Null when the chain ends cancelled. */
 export function liveReplacementOf(db: Db, id: string): JoRef | null {
-  const next = db.prepare(`SELECT replaced_by_id FROM documents WHERE id = ? AND doc_type = 'jo.job_order'`).pluck();
+  const next = db.prepare(`SELECT replaced_by_id FROM documents WHERE id = ? AND ${JO_DOC_TYPES_SQL}`).pluck();
   for (let at = next.get(id) as string | null | undefined; at; at = next.get(at) as string | null | undefined) {
     const jo = jobOrderRef(db, at);
     if (jo?.status === 'posted') return jo;
@@ -75,12 +76,19 @@ export function joLedger(db: Db, documentId: string): JoLedgerPart {
   return { receivableCents: balance('AR_TRADE'), depositsHeldCents: 0 - balance('CUSTOMER_DEPOSITS') };
 }
 
-/** Gross of the JO's recorded (not cancelled) invoice records: its sales so far (D3 "invoiced amount"). */
+/**
+ * Gross of the JO's recorded (not cancelled) invoice records: its sales so far (D3 "invoiced amount"). An opening job
+ * order adds what was invoiced before the cut-over date and not yet paid (its receivable), so its receivable stays
+ * within what is invoiced, as every JO's does (settleLines).
+ */
 export function invoicedCents(db: Db, documentId: string): number {
   return db
-    .prepare(`SELECT COALESCE(SUM(i.gross_cents), 0) FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE i.job_order_id = ? AND d.status = 'posted'`)
+    .prepare(
+      `SELECT (SELECT COALESCE(SUM(i.gross_cents), 0) FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE i.job_order_id = @jo AND d.status = 'posted')
+            + (SELECT COALESCE(SUM(o.receivable_cents), 0) FROM jo_opening_orders o JOIN documents d ON d.id = o.document_id WHERE o.document_id = @jo AND d.status = 'posted')`,
+    )
     .pluck()
-    .get(documentId) as number;
+    .get({ jo: documentId }) as number;
 }
 
 export function joMoney(db: Db, documentId: string) {

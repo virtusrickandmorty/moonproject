@@ -4,6 +4,7 @@ import { defineModule } from '../../engine/documents/registry.ts';
 import { jobOrderDoc } from './doctypes/job-order.ts';
 import { releaseDoc } from './doctypes/release.ts';
 import { invoiceRecordDoc } from './doctypes/invoice-record.ts';
+import { openingJobOrderDoc } from './doctypes/opening.ts';
 import { joRoutes } from './routes.ts';
 
 export default defineModule({
@@ -21,7 +22,7 @@ export default defineModule({
     { key: 'jo.invoice', label: 'Record the manual invoices written at release (invoice records)', defaultRoles: ['encoder', 'accountant', 'owner'] },
     { key: 'jo.invoice_cancel', label: 'Cancel or edit recorded invoice records', defaultRoles: ['accountant', 'owner'] },
   ],
-  docTypes: [jobOrderDoc, releaseDoc, invoiceRecordDoc],
+  docTypes: [jobOrderDoc, releaseDoc, invoiceRecordDoc, openingJobOrderDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: joRoutes,
 });
