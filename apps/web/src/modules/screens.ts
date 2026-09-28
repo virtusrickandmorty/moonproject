@@ -30,6 +30,7 @@ import { cashCountView } from './CASH/CashCountView.tsx';
 import { SalesRegister, WithholdingReceived } from './TAX/Registers.tsx';
 import { TaxCalendar } from './TAX/TaxCalendar.tsx';
 import { VatQuarter } from './TAX/VatQuarter.tsx';
+import { Backups } from './BAK/Backups.tsx';
 
 /**
  * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
@@ -54,6 +55,8 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/2307-received': WithholdingReceived,
   '/tax/vat': VatQuarter,
   '/tax/calendar': TaxCalendar,
+  '/bak': Backups,
+  '/bak/:section': Backups,
 };
 
 /** A module's own form; `me` lets it offer what only some users may do (the remittance's date paid, for acc.backdate). */
