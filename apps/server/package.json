@@ -8,7 +8,6 @@
     "@moonproject/shared": "*",
     "age-encryption": "0.3.1",
     "better-sqlite3": "13.0.3",
-    "fast-check": "4.10.2",
     "fastify": "5.12.5",
     "zod": "4.6.5"
   }

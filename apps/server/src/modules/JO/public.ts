@@ -43,17 +43,6 @@ export function jobOrdersOf(db: Db, customerId?: string, includeCancelled = fals
     .all({ c: customerId ?? null, all: includeCancelled ? 1 : 0 }) as JoRef[];
 }
 
-/** Active orders and their current stages for read-only dashboards, fetched without one query per old order. */
-export function activeJobOrders(db: Db): (JoRef & { stage: 'open' | 'in_production' | 'ready' | 'partially_released' | 'released' })[] {
-  return db.prepare(`SELECT d.id, d.number, d.status, o.customer_id AS customerId, o.customer_name AS customerName,
-      o.due_date AS dueDate, o.priority, d.total_cents AS totalCents, COALESCE(s.to_stage, 'open') AS stage
-    FROM jo_orders o JOIN documents d ON d.id = o.document_id
-    LEFT JOIN jo_stage_events s ON s.document_id = o.document_id
-      AND s.seq = (SELECT MAX(seq) FROM jo_stage_events WHERE document_id = o.document_id)
-    WHERE d.status = 'posted' AND COALESCE(s.to_stage, 'open') <> 'closed'
-    ORDER BY o.due_date, d.number`).all() as (JoRef & { stage: 'open' | 'in_production' | 'ready' | 'partially_released' | 'released' })[];
-}
-
 /**
  * Balance due (PLAN D3, H3): the un-invoiced part is a memo figure (total − invoiced); the invoiced part is
  * the JO's open AR; money received and not yet applied sits in customer deposits. So

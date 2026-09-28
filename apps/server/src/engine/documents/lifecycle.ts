@@ -190,8 +190,7 @@ function cancelInTx(env: EngineEnv, def: DocTypeDef, actor: Actor, id: string, r
     throw conflict('HAS_DEPENDENTS', `Cancel these first: ${deps.map((x) => x.number).join(', ')}.`, deps);
   }
   const at = stamp(env.clock);
-  const date = def.cancelOn === 'document_date' ? d.business_date : today(env.clock);
-  if (date < today(env.clock)) need(actor, BACKDATE_PERMISSION);
+  const date = today(env.clock);
   const rev = reverseJournalOf(db, 'document', id, { sourceType: 'document', sourceId: id, businessDate: date, userId: actor.userId, at }, `Cancel ${d.number}: ${reason}`);
   db.prepare(`UPDATE documents SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancel_reason = ? WHERE id = ?`).run(at, actor.userId, reason, id);
   // D6 follow-ups read the ledger after the mirror; their journal has its own source so L4 still nets the mirror.

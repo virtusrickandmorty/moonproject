@@ -1,8 +1,7 @@
 import type { FastifyInstance } from 'fastify';
-import { AppError, csvPesos, toCsv, type CsvCell } from '@moonproject/shared';
+import { AppError } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { comparativeTrialBalance, generalJournal, generalLedger, ledgerAccounts } from './books.ts';
-import { balanceSheet, incomeStatement, type StatementSection } from './statements.ts';
 
 function date(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new AppError('BAD_DATE', 'Use a date in YYYY-MM-DD format.', 400);
@@ -18,24 +17,19 @@ function range(q: Record<string, unknown>) {
   if (from > to) throw new AppError('BAD_RANGE', 'The first date must be on or before the last date.', 400);
   return { from, to };
 }
-function pesos(cents: number | null): string { return cents === null ? '' : csvPesos(cents); }
-function sendCsv(reply: { header: (name: string, value: string) => unknown; type: (value: string) => unknown }, name: string, rows: CsvCell[][]) {
+function csv(rows: (string | number | null)[][]): string {
+  return '\uFEFF' + rows.map((row) => row.map((cell) => {
+    const value = String(cell ?? '');
+    const safe = /^[=+\-@\t\r]/.test(value) && !/^-?\d+(\.\d+)?$/.test(value) ? `'${value}` : value;
+    return `"${safe.replaceAll('"', '""')}"`;
+  }).join(',')).join('\r\n') + '\r\n';
+}
+function pesos(cents: number | null): string { return cents === null ? '' : (cents / 100).toFixed(2); }
+function sendCsv(reply: { header: (name: string, value: string) => unknown; type: (value: string) => unknown }, name: string, rows: (string | number | null)[][]) {
   reply.header('Content-Disposition', `attachment; filename="${name}.csv"`);
   reply.type('text/csv; charset=utf-8');
-  return toCsv(rows);
+  return csv(rows);
 }
-/** A statement section as printed: each header, its accounts and subtotal, then the section total. */
-function sectionRows(s: StatementSection): CsvCell[][] {
-  const rows: CsvCell[][] = [[s.title, '', s.title, '']];
-  for (const g of s.groups) {
-    if (g.code) rows.push([s.title, g.code, g.name, '']);
-    for (const l of g.lines) rows.push([s.title, l.code ?? '', l.name, csvPesos(l.amountCents)]);
-    if (g.code) rows.push([s.title, '', `Total ${g.name}`, csvPesos(g.totalCents)]);
-  }
-  rows.push([s.title, '', `Total ${s.title.toLowerCase()}`, csvPesos(s.totalCents)]);
-  return rows;
-}
-const STATEMENT_HEAD = ['Section', 'Account', 'Line', 'Amount PHP'];
 
 export function rptRoutes(app: FastifyInstance, { db }: AppDeps): void {
   app.get('/api/rpt/accounts', { config: { permission: 'rpt.books.view' } }, async () => ledgerAccounts(db));
@@ -44,7 +38,7 @@ export function rptRoutes(app: FastifyInstance, { db }: AppDeps): void {
     const { from, to } = range(q);
     const result = generalJournal(db, from, to);
     if (q.format !== 'csv') return result;
-    const rows: CsvCell[][] = [['Date', 'Journal', 'Document type', 'Document', 'Posting', 'Account', 'Account name', 'Party type', 'Party ID', 'Debit PHP', 'Credit PHP', 'Memo']];
+    const rows: (string | number | null)[][] = [['Date', 'Journal', 'Document type', 'Document', 'Posting', 'Account', 'Account name', 'Party type', 'Party ID', 'Debit PHP', 'Credit PHP', 'Memo']];
     for (const j of result.journals) for (const l of j.lines) rows.push([j.businessDate, j.journalNumber, j.documentType, j.documentNumber,
       j.postingKind, l.accountCode, l.accountName, l.partyType, l.partyId, pesos(l.debitCents), pesos(l.creditCents), l.memo ?? j.journalMemo]);
     rows.push(['TOTAL', '', '', '', '', '', '', '', '', pesos(result.totalDebitCents), pesos(result.totalCreditCents), '']);
@@ -58,7 +52,7 @@ export function rptRoutes(app: FastifyInstance, { db }: AppDeps): void {
       throw new AppError('BAD_ACCOUNT', 'Choose an account from the list.', 400);
     const result = generalLedger(db, from, to, id);
     if (q.format !== 'csv') return result;
-    const rows: CsvCell[][] = [['Account', 'Account name', 'Date', 'Journal', 'Document type', 'Document', 'Party type', 'Party ID', 'Debit PHP', 'Credit PHP', 'Balance PHP', 'Memo']];
+    const rows: (string | number | null)[][] = [['Account', 'Account name', 'Date', 'Journal', 'Document type', 'Document', 'Party type', 'Party ID', 'Debit PHP', 'Credit PHP', 'Balance PHP', 'Memo']];
     for (const a of result.accounts) {
       rows.push([a.code, a.name, from, '', '', '', '', '', '', '', pesos(a.openingBalanceCents), 'Opening balance']);
       for (const l of a.lines) rows.push([a.code, a.name, l.businessDate, l.journalNumber, l.documentType, l.documentNumber,
@@ -73,33 +67,11 @@ export function rptRoutes(app: FastifyInstance, { db }: AppDeps): void {
     const compareTo = q.compareTo === undefined || q.compareTo === '' ? undefined : date(q.compareTo);
     const result = comparativeTrialBalance(db, asOf, compareTo);
     if (q.format !== 'csv') return result;
-    const rows: CsvCell[][] = [['Account', 'Account name', `Debit PHP ${asOf}`, `Credit PHP ${asOf}`,
+    const rows: (string | number | null)[][] = [['Account', 'Account name', `Debit PHP ${asOf}`, `Credit PHP ${asOf}`,
       `Debit PHP ${compareTo ?? ''}`, `Credit PHP ${compareTo ?? ''}`]];
     for (const a of result.rows) rows.push([a.code, a.name, pesos(a.debitCents), pesos(a.creditCents),
       compareTo ? pesos(a.compareDebitCents) : '', compareTo ? pesos(a.compareCreditCents) : '']);
     rows.push(['TOTAL', '', pesos(result.totalDebitCents), pesos(result.totalCreditCents), pesos(result.compareTotalDebitCents), pesos(result.compareTotalCreditCents)]);
     return sendCsv(reply, `trial-balance-${asOf}`, rows);
-  });
-  app.get('/api/rpt/income-statement', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
-    const q = req.query as Record<string, unknown>;
-    const { from, to } = range(q);
-    const result = incomeStatement(db, from, to);
-    if (q.format !== 'csv') return result;
-    const [revenue, costOfSales, operatingExpenses, other, incomeTax] = result.sections as [StatementSection, StatementSection, StatementSection, StatementSection, StatementSection];
-    const rows: CsvCell[][] = [STATEMENT_HEAD, ...sectionRows(revenue), ...sectionRows(costOfSales),
-      ['Gross profit', '', 'Gross profit', csvPesos(result.grossProfitCents)],
-      ...sectionRows(operatingExpenses), ...sectionRows(other),
-      ['Income before tax', '', 'Income before tax', csvPesos(result.incomeBeforeTaxCents)],
-      ...sectionRows(incomeTax), ['Net income', '', 'Net income', csvPesos(result.netIncomeCents)]];
-    return sendCsv(reply, `income-statement-${from}-${to}`, rows);
-  });
-  app.get('/api/rpt/balance-sheet', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
-    const q = req.query as Record<string, unknown>;
-    const result = balanceSheet(db, date(q.asOf));
-    if (q.format !== 'csv') return result;
-    const rows: CsvCell[][] = [STATEMENT_HEAD, ...result.sections.flatMap(sectionRows),
-      ['Check', '', 'Total liabilities and equity', csvPesos(result.totalLiabilitiesAndEquityCents)],
-      ['Check', '', 'Total assets less liabilities and equity', csvPesos(result.differenceCents)]];
-    return sendCsv(reply, `balance-sheet-${result.asOf}`, rows);
   });
 }

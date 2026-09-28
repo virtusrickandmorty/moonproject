@@ -2,44 +2,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createTestEnv, type TestEnv } from '../../../../test/helpers.ts';
 import { verifyAuditChain } from '../../../engine/audit.ts';
 import { activeCustomers, customerTaxInfo } from '../public.ts';
-import { createCustomer, createMeasurement } from '../create.ts';
 
 let env: TestEnv | undefined;
 afterEach(async () => { await env?.app.close(); env?.db.close(); env = undefined; });
 
 describe('CUS master data', () => {
-  it('shares customer audit, parent-loop, and preset-size rules across routes and import creates', async () => {
-    env = await createTestEnv();
-    const encoder = await env.as('encoder');
-    const who = { userId: encoder.userId, at: '2026-09-28T10:00:00+08:00', today: '2026-09-28' };
-    const viaRoute = await encoder.post('/api/cus/customers', { kind: 'organization', displayName: 'Example Route', isVatRegistered: true });
-    expect(viaRoute.statusCode).toBe(200);
-    const viaCreate = createCustomer(env.db, { kind: 'organization', displayName: 'Example Import', isVatRegistered: true }, who, 'OLD-100');
-    const audits = env.db.prepare("SELECT data FROM audit_log WHERE action = 'cus.customer.create' AND entity_id IN (?, ?) ORDER BY seq")
-      .all(viaRoute.json().id, viaCreate.id) as { data: string }[];
-    expect(audits.map(a => JSON.parse(a.data))).toEqual([
-      { fields: ['kind', 'displayName', 'isVatRegistered'], changes: { kind: { before: null, after: 'organization' }, isVatRegistered: { before: null, after: 1 } } },
-      { fields: ['kind', 'displayName', 'isVatRegistered'], changes: { kind: { before: null, after: 'organization' }, isVatRegistered: { before: null, after: 1 } } },
-    ]);
-    expect(env.db.prepare('SELECT legacy_id FROM cus_customers WHERE id = ?').pluck().get(viaCreate.id)).toBe('OLD-100');
-
-    const other = createCustomer(env.db, { kind: 'organization', displayName: 'Example Parent' }, who);
-    env.db.prepare('UPDATE cus_customers SET parent_customer_id = ? WHERE id = ?').run(other.id, viaCreate.id);
-    env.db.prepare('UPDATE cus_customers SET parent_customer_id = ? WHERE id = ?').run(viaCreate.id, other.id);
-    expect((await encoder.post('/api/cus/customers', { kind: 'organization', displayName: 'Example Child', parentCustomerId: viaCreate.id })).json().code).toBe('PARENT_CYCLE');
-    expect(() => createCustomer(env!.db, { kind: 'organization', displayName: 'Another Child', parentCustomerId: viaCreate.id }, who)).toThrow('loop');
-
-    const wearer = (await encoder.post(`/api/cus/customers/${viaRoute.json().id}/people`, { fullName: 'Example Wearer' })).json();
-    const preset = { sizeMode: 'preset', values: {} };
-    expect((await encoder.post(`/api/cus/people/${wearer.id}/measurements`, preset)).json().code).toBe('SIZE_REQUIRED');
-    expect(() => createMeasurement(env!.db, wearer.id, preset, who)).toThrow('Choose an upper or lower size.');
-    const owner = await env.as('owner');
-    const size = (await owner.post('/api/cus/sizes', { label: 'Example Size', category: 'adult' })).json();
-    await owner.post(`/api/cus/sizes/${size.id}/deactivate`, {});
-    const inactive = { sizeMode: 'preset', upperSize: size.id, values: {} };
-    expect((await encoder.post(`/api/cus/people/${wearer.id}/measurements`, inactive)).json().code).toBe('INACTIVE');
-    expect(() => createMeasurement(env!.db, wearer.id, inactive, who)).toThrow('inactive');
-  });
   it('exposes tax details and only active customers to sales modules', async () => {
     env = await createTestEnv();
     const encoder = await env.as('encoder');

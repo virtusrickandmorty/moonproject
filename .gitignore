@@ -6,4 +6,3 @@ dist/
 data/
 coverage/
 .env
-ops/windows/out/

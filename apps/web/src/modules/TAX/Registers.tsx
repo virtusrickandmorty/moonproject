@@ -5,8 +5,10 @@
  */
 import { api, taxRegisterPath, type Me } from '../../api.ts';
 import { Notice, Panel } from '../../components/ui.tsx';
-import { Excel, RangeForm, RegisterTable, customerColumns, pesos, useRangeReport } from './ReportParts.tsx';
-import { certificateWords, ledgerWarnings, pendingWords, quarterSoFar } from './reports.ts';
+import { RangeForm, RegisterTable, pesos, useRangeReport } from './ReportParts.tsx';
+import { certificateWords, excelUrl, ledgerWarnings, pendingWords, quarterSoFar } from './reports.ts';
+
+const Excel = ({ url }: { url: string }) => <a href={excelUrl(url)} className="text-sm underline print:hidden">Download for Excel</a>;
 
 export function SalesRegister({ me }: { me: Me }) {
   const allowed = me.permissions.includes('tax.registers.view');
@@ -22,7 +24,7 @@ export function SalesRegister({ me }: { me: Me }) {
       {d && (
         <Panel title={`${d.from} to ${d.to}`}>
           {ledgerWarnings([['VAT', 'output VAT', d.totals.vatCents, d.glVatCents]]).map((w) => <Notice key={w} tone="warning">{w}</Notice>)}
-          <RegisterTable rows={d.rows} lead={customerColumns} columns={[
+          <RegisterTable rows={d.rows} columns={[
             { head: 'VATable sales', amount: true, cell: (x) => pesos(x.netCents), total: pesos(d.totals.netCents) },
             { head: 'VAT', amount: true, cell: (x) => pesos(x.vatCents), total: pesos(d.totals.vatCents) },
             { head: 'Total', amount: true, cell: (x) => pesos(x.totalCents), total: pesos(d.totals.totalCents) },
@@ -52,7 +54,7 @@ export function WithholdingReceived({ me }: { me: Me }) {
             ['VAT withheld', 'VAT withheld', d.totals.vatWithheldCents, d.glVatWithheldCents],
           ]).map((w) => <Notice key={w} tone="warning">{w}</Notice>)}
           <p className="text-sm">{pendingWords(d.pendingCount)}</p>
-          <RegisterTable rows={d.rows} lead={customerColumns} columns={[
+          <RegisterTable rows={d.rows} columns={[
             { head: 'ATC', cell: (x) => x.atc ?? '—' },
             { head: '2307', cell: (x) => certificateWords(x.certificate) },
             { head: 'CWT', amount: true, cell: (x) => pesos(x.cwtCents), total: pesos(d.totals.cwtCents) },

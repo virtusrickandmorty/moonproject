@@ -17,7 +17,7 @@ export function requestHost(header: string | undefined): string | null {
   return m ? m[1]!.toLowerCase() : null;
 }
 
-function page(caPem: string, httpsUrl: string, onServer: boolean, joinPort: number): string {
+function page(caPem: string, httpsUrl: string, onServer: boolean): string {
   const ca = certInfo(caPem);
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Join this PC to Moonproject</title>
@@ -30,7 +30,7 @@ h2{font-size:1.1rem;margin-top:1.5rem}li{margin:.3rem 0}</style></head><body>
 <h2>1. Download the shop's certificate</h2>
 <p><a class="button" href="${CA_FILE}">Download the certificate</a></p>
 <h2>2. Check the code</h2>
-<p>${onServer ? 'This is the server PC. This is the true code; compare it with what each device shows.' : `On the server PC, open <b>http://localhost${joinPort === 80 ? '' : `:${joinPort}`}/</b> and check that it shows the same code. If it does not, stop and tell an owner.`}</p>
+<p>${onServer ? 'This is the server PC. This is the true code; compare it with what each device shows.' : 'On the server PC, open <b>http://localhost/</b> and check that it shows the same code. If it does not, stop and tell an owner.'}</p>
 <code>${esc(ca.fingerprint256)}</code>
 <p>Windows shows a shorter code called the thumbprint:</p><code>${esc(ca.fingerprint1.replace(/:/g, ''))}</code>
 <h2>3. Install it</h2>
@@ -61,7 +61,7 @@ export function joinHandler(o: { caPem: () => string; httpsPort: number; fallbac
     } else if (path === '/' || path === '/join') {
       const onServer = req.socket.remoteAddress === '127.0.0.1' || req.socket.remoteAddress === '::1' || req.socket.remoteAddress === '::ffff:127.0.0.1';
       res.writeHead(200, { ...common, 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'" })
-        .end(req.method === 'HEAD' ? undefined : page(o.caPem(), httpsUrl, onServer, req.socket.localPort ?? 80));
+        .end(req.method === 'HEAD' ? undefined : page(o.caPem(), httpsUrl, onServer));
     } else {
       res.writeHead(301, { ...common, Location: `${httpsUrl}${req.url?.startsWith('/') ? req.url : '/'}` }).end();
     }

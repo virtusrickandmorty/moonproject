@@ -2,15 +2,14 @@
  * Every error the API returns has a stable code and a plain-English message for staff.
  */
 export class AppError extends Error {
-  readonly code: string;
-  readonly status: number;
-  readonly details?: unknown;
-  constructor(code: string, message: string, status = 400, details?: unknown) {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly status = 400,
+    public readonly details?: unknown,
+  ) {
     super(message);
     this.name = 'AppError';
-    this.code = code;
-    this.status = status;
-    this.details = details;
   }
 }
 

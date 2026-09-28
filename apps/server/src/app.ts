@@ -8,7 +8,6 @@ import { AppError, manilaTimestamp } from '@moonproject/shared';
 import type { Db } from './platform/db/driver.ts';
 import type { Clock } from './platform/clock.ts';
 import { stamp } from './platform/clock.ts';
-import { APP_VERSION } from './platform/version.ts';
 import { migrate, type MigrationSource } from './platform/db/migrate.ts';
 import { Registry, type ModuleDef } from './engine/documents/registry.ts';
 import { engineModule } from './engine/security/module.ts';
@@ -134,7 +133,7 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
     return reply.code(500).send({ code: 'INTERNAL', message: 'Something went wrong. Nothing was recorded. Please try again or tell an owner.' });
   });
 
-  app.get('/api/health', { config: { permission: 'public' } }, async () => ({ ok: true, version: APP_VERSION, serverTime: stamp(deps.clock) }));
+  app.get('/api/health', { config: { permission: 'public' } }, async () => ({ ok: true, serverTime: stamp(deps.clock) }));
   securityRoutes(app, deps);
   tlsRoutes(app, deps);
   documentRoutes(app, deps);

@@ -134,19 +134,16 @@ export const vatCloseDoc: DocTypeDef<VatCloseInput, VatClose> = {
 
   toInput: ({ year, quarter, note }) => ({ year, quarter, ...(note ? { note } : {}) }),
 
-  /** A later quarter's close carried this one's result forward, and a 2550Q payment paid what it made payable: cancel them first. */
+  /** A later quarter's close carried this one's result forward: cancel it first. */
   dependents(db, documentId) {
     const r = db.prepare('SELECT year, quarter FROM tax_vat_closes WHERE document_id = ?').get(documentId) as { year: number; quarter: number } | undefined;
     if (!r) return [];
     return db
       .prepare(
         `SELECT d.id, d.number FROM tax_vat_closes c JOIN documents d ON d.id = c.document_id
-         WHERE d.status = 'posted' AND c.year * 4 + c.quarter > @key
-         UNION ALL
-         SELECT d.id, d.number FROM tax_bir_payments p JOIN documents d ON d.id = p.document_id
-         WHERE d.status = 'posted' AND p.vat_close_id = @id ORDER BY 2`,
+         WHERE d.status = 'posted' AND c.year * 4 + c.quarter > ? ORDER BY c.year, c.quarter`,
       )
-      .all({ key: r.year * 4 + r.quarter, id: documentId }) as { id: string; number: string }[];
+      .all(r.year * 4 + r.quarter) as { id: string; number: string }[];
   },
 
   summary(doc, ctx) {
