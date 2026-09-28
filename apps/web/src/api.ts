@@ -124,10 +124,23 @@ export interface PayLine { lineNo: number; kind: string; description: string; qt
 export interface PayEmployee {
   employeeId: string; code: string; name: string; costCentre: string; payType: string; isMwe: boolean; lines: PayLine[]; grossCents: number; pieceCents: number; taxableCents: number;
   sssMscCents: number; sssEeCents: number; sssErCents: number; sssEcCents: number; phicEeCents: number; phicErCents: number; hdmfEeCents: number; hdmfErCents: number;
-  eeShortCents: number; wtaxCents: number; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
+  eeShortCents: number; wtaxCents: number; loanCents?: number; loans?: PayLoan[]; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
 }
+/** Government loans (PAY): SSS salary and calamity loans, Pag-IBIG multi-purpose and calamity loans. */
+export type LoanKind = 'SSS_SALARY' | 'SSS_CALAMITY' | 'HDMF_MPL' | 'HDMF_CALAMITY';
+/** One loan's deduction on a run: the plan or the amount typed, what net pay allowed, and what is left of the loan after it. */
+export interface PayLoan { loanId: string; agency: 'SSS' | 'HDMF'; kind: LoanKind; loanNo: string; dueCents: number; amountCents: number; overrideCents: number | null; reason?: string; balanceAfterCents: number }
+export interface GovLoan {
+  id: string; employeeId: string; employeeName: string; employeeCode: string; kind: LoanKind; agency: 'SSS' | 'HDMF'; loanNo: string; amortizationCents: number;
+  firstMonth: string; lastMonth: string; stoppedFrom: string | null; stopReason: string | null; note: string | null; version: number;
+  scheduledCents: number; deductedCents: number; leftCents: number; lastDeductedMonth: string | null; status: 'not_started' | 'running' | 'ended' | 'stopped';
+}
+export interface GovLoanInput { employeeId: string; kind: LoanKind; loanNo: string; amortizationCents: number; firstMonth: string; lastMonth: string; note?: string }
 export interface ManualPayLine { employeeId: string; kind: 'allowance' | 'adjustment'; amountCents: number; reason: string }
-export interface PayRunInput { payGroup: PayGroup; periodStart: string; lines?: ManualPayLine[]; advances?: { employeeId: string; amountCents: number }[]; skip?: { employeeId: string; reason: string }[] }
+export interface PayRunInput {
+  payGroup: PayGroup; periodStart: string; lines?: ManualPayLine[]; advances?: { employeeId: string; amountCents: number }[]; skip?: { employeeId: string; reason: string }[];
+  loans?: { loanId: string; amountCents: number; reason: string }[];
+}
 export interface PayRunDoc extends PayRunInput { periodEnd: string; contributionMonth: string; employees: PayEmployee[]; grossCents: number; netCents: number }
 /** `bookOn`: the date to give the run (the period's last day, for someone who may backdate), or null for today. */
 export interface PayPeriod { periodStart: string; periodEnd: string; employees: number; recorded: { id: string; number: string } | null; bookOn: string | null }
@@ -142,15 +155,19 @@ export interface ActiveEmployee { id: string; code: string; name: string; costCe
 /** Statutory (STAT): the month's lists, the 1601-C worksheet and the remittance check, worked out by the server. */
 export type Scheme = 'SSS' | 'PHIC' | 'HDMF' | 'WTAX';
 export interface SchemeCheck {
-  scheme: Scheme; label: string; recordedCents: number; remittedCents: number; balanceCents: number; remittances: { id: string; number: string; amountCents: number }[];
-  cancelledAfter: { id: string; number: string; cancelledAt: string }[]; overRemitted: { employeeId: string; name: string; cents: number }[];
+  scheme: Scheme; label: string; recordedCents: number; remittedCents: number; balanceCents: number; loanRecordedCents: number; loanRemittedCents: number;
+  remittances: { id: string; number: string; amountCents: number }[];
+  cancelledAfter: { id: string; number: string; cancelledAt: string }[]; overRemitted: { employeeId: string; name: string; part?: 'contribution' | 'loan'; cents: number }[];
 }
 interface StatPerson { employeeId: string; code: string; name: string; idNo: string | null }
+export interface StatLoanRow extends StatPerson { loanNo: string; kind: LoanKind; kindLabel: string; totalCents: number }
 export interface StatMonth {
   month: string;
   sss: { rows: (StatPerson & { mscCents: number; mpfMscCents: number; eeCents: number; erCents: number; ecCents: number; totalCents: number })[]; totalCents: number };
   phic: { rows: (StatPerson & { basisCents: number; eeCents: number; erCents: number; totalCents: number })[]; totalCents: number };
   hdmf: { rows: (StatPerson & { compensationCents: number; eeCents: number; erCents: number; totalCents: number })[]; totalCents: number };
+  sssLoans: { rows: StatLoanRow[]; totalCents: number };
+  hdmfLoans: { rows: StatLoanRow[]; totalCents: number };
   tax: {
     employees: number; totalCompensationCents: number; mweBasicCents: number; mwePremiumCents: number; thirteenthMonthCents: number; deMinimisCents: number; eeSharesCents: number;
     otherNonTaxableCents: number; nonTaxableCents: number; taxableCents: number; noTaxWithheldCents: number; taxWithheldCents: number;
@@ -433,6 +450,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     payslips: (runId: string) => call<Payslips>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/payslips`),
     runsToRelease: () => call<RunToRelease[]>('GET', '/api/pay/runs/to-release'),
     releaseStatus: (runId: string) => call<ReleaseRow[]>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/release-status`),
+    govLoans: (q: { employeeId?: string; status?: 'open' | 'all' } = {}) => call<GovLoan[]>('GET', `/api/pay/loans?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][])}`),
+    addGovLoan: (body: GovLoanInput) => call<GovLoan>('POST', '/api/pay/loans', body),
+    updateGovLoan: (id: string, v: number, body: Partial<Omit<GovLoanInput, 'employeeId' | 'kind'>>) => call<GovLoan>('PUT', `/api/pay/loans/${encodeURIComponent(id)}`, body, version(v)),
+    stopGovLoan: (id: string, v: number, body: { fromMonth: string; reason: string }) => call<GovLoan>('POST', `/api/pay/loans/${encodeURIComponent(id)}/stop`, body, version(v)),
     caStatus: (employeeId: string) => call<CaStatus>('GET', `/api/ca/employees/${encodeURIComponent(employeeId)}`),
     statMonths: () => call<{ month: string; check: SchemeCheck[] }[]>('GET', '/api/stat/months'),
     statMonth: (month: string) => call<StatMonth>('GET', `/api/stat/months/${encodeURIComponent(month)}`),

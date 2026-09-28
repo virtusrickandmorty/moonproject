@@ -2,22 +2,24 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
-import { today } from '../../platform/clock.ts';
+import { stamp, today } from '../../platform/clock.ts';
+import { tx } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
-import { BACKDATE_PERMISSION } from '../../engine/documents/lifecycle.ts';
+import { BACKDATE_PERMISSION, clockGuard } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { PAY_GROUPS, employeesInGroup } from '../EMP/public.ts';
 import { runDoc } from './doctypes/run.ts';
 import { releaseStatus } from './doctypes/release.ts';
 import { addDays, periodEndOf } from './run-calc.ts';
+import { listLoans, registerLoan, stopLoan, updateLoan, withTotals } from './loans.ts';
 import { hdmfRateAt, payRulesAt, phicRateAt, sssRateAt, wtaxTableAt } from './statutory.ts';
 
 export function payRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
 
   /**
-   * Payslips of a run (F4): per employee the earning lines, deductions, net pay, the cash-advance balance after the run,
-   * and year-to-date gross pay and tax from recorded runs up to this one.
+   * Payslips of a run (F4): per employee the earning lines, deductions (each government loan with what is left of it),
+   * net pay, the cash-advance balance after the run, and year-to-date gross pay and tax from recorded runs up to this one.
    */
   app.get<{ Params: { id: string } }>('/api/pay/runs/:id/payslips', { config: { permission: 'pay.run.view' } }, async (req) => {
     const head = db.prepare(`SELECT d.number, d.status, d.business_date AS payDate, d.posted_at AS postedAt FROM documents d WHERE d.id = ? AND d.doc_type = 'pay.run'`).get(req.params.id) as
@@ -42,6 +44,21 @@ export function payRoutes(app: FastifyInstance, deps: AppDeps): void {
       })),
     };
   });
+
+  /** Government loans (loans.ts): the register with what payroll deducted and what is left; `status=all` includes ended and stopped ones. */
+  app.get('/api/pay/loans', { config: { permission: 'pay.loans.view' } }, async (req) => {
+    const q = z.object({ employeeId: z.uuid().optional(), status: z.enum(['open', 'all']).optional() }).strict().parse(req.query);
+    return listLoans(db, q, today(clock));
+  });
+  const who = (req: Parameters<typeof currentUser>[0]) => ({ userId: currentUser(req).userId, at: stamp(clock), today: today(clock) });
+  const write = <T extends Parameters<typeof withTotals>[1]>(fn: () => T) => tx(db, () => (clockGuard({ db, clock }), withTotals(db, fn(), today(clock))));
+  app.post('/api/pay/loans', { config: { permission: 'pay.loans.manage' } }, async (req) => write(() => registerLoan(db, req.body, who(req))));
+  app.put<{ Params: { id: string } }>('/api/pay/loans/:id', { config: { permission: 'pay.loans.manage' } }, async (req) =>
+    write(() => updateLoan(db, req.params.id, req.headers['if-match'], req.body, who(req))),
+  );
+  app.post<{ Params: { id: string } }>('/api/pay/loans/:id/stop', { config: { permission: 'pay.loans.manage' } }, async (req) =>
+    write(() => stopLoan(db, req.params.id, req.headers['if-match'], req.body, who(req))),
+  );
 
   /** Who in a run still has net pay to release (the release form). */
   app.get<{ Params: { id: string } }>('/api/pay/runs/:id/release-status', { config: { permission: 'pay.release.post' } }, async (req) => releaseStatus(db, req.params.id));

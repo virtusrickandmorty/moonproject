@@ -20,6 +20,7 @@ import { Holidays } from './EMP/Holidays.tsx';
 import { RunForm } from './PAY/RunForm.tsx';
 import { ReleaseForm } from './PAY/ReleaseForm.tsx';
 import { Payslips, advanceView, releaseView, runView } from './PAY/views.tsx';
+import { GovLoans } from './PAY/Loans.tsx';
 import { AdvanceForm } from './CA/AdvanceForm.tsx';
 import { NotificationsPage } from './DASH/Home.tsx';
 import { CalendarPage } from './CAL/Calendar.tsx';
@@ -82,6 +83,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/emp/attendance': Attendance,
   '/emp/holidays': Holidays,
   '/pay/runs/:id/payslips': Payslips,
+  '/pay/loans': GovLoans,
   '/prt/company-profile': CompanyProfileScreen,
   '/stat': StatMonths,
   '/stat/:month': StatMonthPage,

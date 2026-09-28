@@ -1,7 +1,8 @@
 /**
  * Payroll run form (PLAN E11, F3, H5 "weekly piece payroll for 8 workers ≤ 5 min"): pick the pay group and the period,
  * and the server works out every line from attendance, pay, piece work, holidays, government shares and cash advances.
- * Staff may add manual lines, change this run's cash-advance deduction, or leave someone out, with a reason.
+ * Staff may add manual lines, change this run's cash-advance deduction, change or skip a government loan deduction with a
+ * note, or leave someone out, with a reason.
  */
 import { useEffect, useState } from 'react';
 import { api, ApiError, type DocTypeInfo, type PayGroup, type PayPeriod, type PayRunDoc, type Preview } from '../../api.ts';
@@ -10,7 +11,7 @@ import { Button, Field, Notice, Panel, inputClass, peso } from '../../components
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, useLive } from '../COL/parts.tsx';
-import { GROUP_LABEL, emptyManual, qtyText, runInput, type ManualRow } from './run.ts';
+import { GROUP_LABEL, emptyManual, loanLabel, qtyText, runInput, type LoanRow, type ManualRow } from './run.ts';
 
 export function RunForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   const [payGroup, setPayGroup] = useState<PayGroup>('SEMI_DAILY');
@@ -19,6 +20,7 @@ export function RunForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   const [rows, setRows] = useState<ManualRow[]>([]);
   const [advances, setAdvances] = useState<Record<string, string>>({});
   const [skip, setSkip] = useState<Record<string, string>>({});
+  const [loanRows, setLoanRows] = useState<Record<string, LoanRow>>({});
   const [open, setOpen] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Preview | null>(null);
   const [touched, setTouched] = useState(false);
@@ -29,7 +31,7 @@ export function RunForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
     api.payPeriods(payGroup).then((p) => (setPeriods(p), setPeriodStart(p.find((x) => !x.recorded)?.periodStart ?? '')), (e: Error) => setError(e.message));
   }, [payGroup]);
 
-  const { input, errors } = runInput(payGroup, periodStart, rows, advances, skip);
+  const { input, errors } = runInput(payGroup, periodStart, rows, advances, skip, loanRows);
   // PAY-1: dated the period's last day when that has passed and the user may backdate, so its pay is booked in that month.
   const bookOn = periods?.find((p) => p.periodStart === periodStart)?.bookOn ?? undefined;
   const live = useLive(JSON.stringify([input, bookOn]), !!periodStart && errors.length === 0, () => api.preview(type.key, input, bookOn));
@@ -76,7 +78,7 @@ export function RunForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
       <Panel title="Which payroll?">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Pay group" required>
-            <select className={inputClass} value={payGroup} onChange={(e) => (setPayGroup(e.target.value as PayGroup), setAdvances({}), setSkip({}), setRows([]))}>
+            <select className={inputClass} value={payGroup} onChange={(e) => (setPayGroup(e.target.value as PayGroup), setAdvances({}), setSkip({}), setRows([]), setLoanRows({}))}>
               {Object.entries(GROUP_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
           </Field>
@@ -100,7 +102,7 @@ export function RunForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="text-left text-slate-500">
-                <tr><th>Employee</th><th className="text-right">Gross</th><th className="text-right">SSS</th><th className="text-right">PhilHealth</th><th className="text-right">Pag-IBIG</th><th className="text-right">Tax</th><th className="text-right">Cash advance</th><th className="text-right">Net</th><th /></tr>
+                <tr><th>Employee</th><th className="text-right">Gross</th><th className="text-right">SSS</th><th className="text-right">PhilHealth</th><th className="text-right">Pag-IBIG</th><th className="text-right">Tax</th><th className="text-right">Gov't loans</th><th className="text-right">Cash advance</th><th className="text-right">Net</th><th /></tr>
               </thead>
               <tbody>
                 {people.map((e) => [
@@ -111,6 +113,7 @@ export function RunForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
                     <td className="text-right tabular-nums">{peso(e.phicEeCents)}</td>
                     <td className="text-right tabular-nums">{peso(e.hdmfEeCents)}</td>
                     <td className="text-right tabular-nums">{peso(e.wtaxCents)}</td>
+                    <td className="text-right tabular-nums">{peso(e.loanCents ?? 0)}</td>
                     <td className="text-right">
                       <input aria-label={`${e.name} cash-advance deduction`} inputMode="decimal" placeholder={(e.caCents / 100).toFixed(2)} className="w-24 rounded border border-slate-300 px-1 text-right"
                         value={advances[e.employeeId] ?? ''} onChange={(x) => setAdvances({ ...advances, [e.employeeId]: x.target.value })} />
@@ -120,16 +123,25 @@ export function RunForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
                   </tr>,
                   open === e.employeeId && (
                     <tr key={`${e.employeeId}-lines`}>
-                      <td colSpan={9} className="bg-slate-50 px-3 py-2 text-xs">
+                      <td colSpan={10} className="bg-slate-50 px-3 py-2 text-xs">
                         {e.lines.map((l) => <div key={l.lineNo} className="flex justify-between"><span>{l.description} {qtyText(l.kind, l.qty)}</span><span className="tabular-nums">{peso(l.amountCents)}</span></div>)}
                         {e.lines.length === 0 && 'No earnings in this period.'}
+                        {(e.loans ?? []).map((l) => (
+                          <div key={l.loanId} className="mt-1 flex flex-wrap items-center gap-2">
+                            <span>{loanLabel(l)}: {peso(l.amountCents)}{l.amountCents < l.dueCents ? ` of ${peso(l.dueCents)} (the pay allows no more)` : ''}, {peso(l.balanceAfterCents)} left</span>
+                            <input aria-label={`${loanLabel(l)} deduction`} inputMode="decimal" placeholder="Change (0 skips)" className="w-32 rounded border border-slate-300 px-1 text-right"
+                              value={loanRows[l.loanId]?.amount ?? ''} onChange={(x) => setLoanRows({ ...loanRows, [l.loanId]: { reason: loanRows[l.loanId]?.reason ?? '', amount: x.target.value } })} />
+                            <input aria-label={`${loanLabel(l)} note`} placeholder="Why" className="w-64 rounded border border-slate-300 px-1"
+                              value={loanRows[l.loanId]?.reason ?? ''} onChange={(x) => setLoanRows({ ...loanRows, [l.loanId]: { amount: loanRows[l.loanId]?.amount ?? '', reason: x.target.value } })} />
+                          </div>
+                        ))}
                         <div className="mt-1 text-slate-600">Employer shares: SSS {peso(e.sssErCents + e.sssEcCents)}, PhilHealth {peso(e.phicErCents)}, Pag-IBIG {peso(e.hdmfErCents)} · 13th month {peso(e.thirteenthCents)}</div>
                       </td>
                     </tr>
                   ),
                 ])}
               </tbody>
-              <tfoot><tr className="border-t border-slate-300 font-semibold"><td className="py-1">Total</td><td className="text-right tabular-nums">{peso(run.grossCents)}</td><td colSpan={5} /><td className="text-right tabular-nums">{peso(run.netCents)}</td><td /></tr></tfoot>
+              <tfoot><tr className="border-t border-slate-300 font-semibold"><td className="py-1">Total</td><td className="text-right tabular-nums">{peso(run.grossCents)}</td><td colSpan={6} /><td className="text-right tabular-nums">{peso(run.netCents)}</td><td /></tr></tfoot>
             </table>
           </div>
         )}

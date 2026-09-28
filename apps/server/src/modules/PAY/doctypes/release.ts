@@ -37,7 +37,7 @@ const runOf = (db: Db, id: string) =>
 export function releaseStatus(db: Db, runId: string): { employeeId: string; name: string; netCents: number; releasedBy: string | null }[] {
   return db
     .prepare(
-      `SELECT e.employee_id AS employeeId, e.employee_name AS name, e.net_cents AS netCents,
+      `SELECT e.employee_id AS employeeId, e.employee_name AS name, e.net_cents - e.loan_cents AS netCents, -- net pay after government loans (migration 0003)
          (SELECT d.number FROM pay_release_lines l JOIN pay_releases x ON x.document_id = l.document_id JOIN documents d ON d.id = l.document_id
           WHERE x.run_id = e.document_id AND l.employee_id = e.employee_id AND d.status = 'posted') AS releasedBy
        FROM pay_run_employees e WHERE e.document_id = ? ORDER BY e.rowid`,

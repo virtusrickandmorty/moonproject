@@ -17,6 +17,8 @@ export default defineModule({
     { key: 'pay.release.view', label: 'View payroll releases', defaultRoles: ['accountant', 'owner'] },
     { key: 'pay.release.post', label: 'Release net pay (pay out a payroll)', defaultRoles: ['accountant', 'owner'] },
     { key: 'pay.release.cancel', label: 'Cancel recorded payroll releases', defaultRoles: ['accountant', 'owner'] },
+    { key: 'pay.loans.view', label: 'View employees’ SSS and Pag-IBIG loans', defaultRoles: ['accountant', 'owner'] },
+    { key: 'pay.loans.manage', label: 'Register, change and stop employees’ SSS and Pag-IBIG loans', defaultRoles: ['accountant', 'owner'] },
   ],
   docTypes: [runDoc, releaseDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),

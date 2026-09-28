@@ -8,7 +8,7 @@ import { Button, Notice, peso } from '../../components/ui.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { GROUP_LABEL, deductionsOf, qtyText } from './run.ts';
+import { GROUP_LABEL, deductionsOf, loansLeft, qtyText } from './run.ts';
 import type { PayRunDoc } from '../../api.ts';
 
 /** D6: a recorded run whose month is already remitted (STAT): cancelling it leaves those payables below zero. */
@@ -107,6 +107,7 @@ export function Payslips({ params }: { me: Me; params?: Record<string, string> }
               Cash advance still owed {peso(e.caBalanceAfterCents)} · Year to date: gross {peso(e.ytd.grossCents)}, tax {peso(e.ytd.wtaxCents)}
               {e.eeShortCents > 0 && ` · ${peso(e.eeShortCents)} of government shares carried to the next payroll`}
             </p>
+            {loansLeft(e).map(([label, c]) => <p key={label} className="text-xs text-slate-600">{label}: {peso(c)} left</p>)}
             <p className="pt-4 text-xs">Received by: ______________________ Date: __________</p>
           </section>
         ))}
