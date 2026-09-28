@@ -87,6 +87,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
   permissions: { view: 'col.view', create: 'col.create', post: 'col.post', cancel: 'col.cancel' },
   dating: 'system',
   inputSchema: collectionInput,
+  externalNumber: (doc) => doc.crNumber,
 
   compute(input, ctx) {
     const { settleSmallDifference, sales: _, ...rest } = input;

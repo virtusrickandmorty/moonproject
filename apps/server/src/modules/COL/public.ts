@@ -29,3 +29,11 @@ export function crNumbersBetween(db: Db, from: number, to: number): { n: number;
               WHERE CAST(c.cr_number AS INTEGER) BETWEEN ? AND ? ORDER BY 1`)
     .all(from, to) as { n: number; number: string; status: 'posted' | 'cancelled' }[];
 }
+
+/** What a collection's 2307 says (ATC and whether the certificate is in hand), for the tax registers; undefined if none. */
+export function withholdingOf(db: Db, documentId: string): { atc: 'WC158' | 'WC160' | 'other'; certificate: 'pending' | 'received' } | undefined {
+  const r = db.prepare('SELECT cwt_atc AS atc, cert_2307 AS certificate FROM col_collections WHERE document_id = ?').get(documentId) as
+    | { atc: 'WC158' | 'WC160' | 'other' | null; certificate: 'pending' | 'received' | null }
+    | undefined;
+  return r?.atc && r.certificate ? { atc: r.atc, certificate: r.certificate } : undefined;
+}
