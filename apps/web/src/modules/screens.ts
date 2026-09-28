@@ -46,6 +46,7 @@ import { LoanForm } from './LOAN/LoanForm.tsx';
 import { PaymentForm as LoanPaymentForm } from './LOAN/PaymentForm.tsx';
 import { loanView } from './LOAN/views.tsx';
 import { BuyForm } from './FA/BuyForm.tsx';
+import { OpeningForm as OpeningAssetForm } from './FA/OpeningForm.tsx';
 import { Backups } from './BAK/Backups.tsx';
 import { InventoryCountForm } from './INV/InventoryCountForm.tsx';
 import { inventoryCountView } from './INV/InventoryCountView.tsx';
@@ -109,6 +110,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'loan.loan': LoanForm,
   'loan.payment': LoanPaymentForm,
   'fa.buy': BuyForm,
+  'fa.opening': OpeningAssetForm,
   'inv.count': InventoryCountForm,
 };
 

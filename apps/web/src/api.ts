@@ -232,6 +232,8 @@ export interface LoanRow {
 export interface FinancedPurchase { id: string; number: string; date: string; description: string; supplierName: string; lender: string; financedCents: number }
 export interface AssetClass { code: string; name: string; defaultLifeMonths: number | null }
 export interface AssetRow { id: string; number: string; description: string; className: string; status: 'in service' | 'fully depreciated' | 'disposed' | 'cancelled' }
+/** The opening balances (ACC, MIG-02): the cut-over date every opening document is dated, and the close once signed off. */
+export interface OpeningStatus { cutoverDate: string | null; closed: { cutoverDate: string; closedAt: string; closedByName: string } | null }
 /** Backups (BAK). The status's `runs` are the server's bak_runs rows as stored. */
 export type BackupTier = 'snapshot' | 'daily' | 'monthly' | 'yearly';
 export type BackupSource = 'local' | 'offsite';
@@ -399,6 +401,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     financedAssets: () => call<FinancedPurchase[]>('GET', '/api/loan/financed-assets'),
     assetClasses: () => call<AssetClass[]>('GET', '/api/fa/classes'),
     assets: () => call<AssetRow[]>('GET', '/api/fa/assets'),
+    openingStatus: () => call<OpeningStatus>('GET', '/api/acc/opening'),
     /** Without a year and quarter: the quarter of the server's date. */
     vatSummary: (year?: number, quarter?: number) =>
       call<VatSummary>('GET', `/api/tax/vat-summary${year ? `?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}` : ''}`),
