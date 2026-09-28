@@ -21,8 +21,9 @@ export interface LoanListRow extends Person { loanNo: string; kind: LoanKind; ki
 export interface TaxRow extends Person { isMwe: boolean; grossCents: number; nonTaxableCents: number; taxableCents: number; taxCents: number }
 
 /**
- * The 1601-C worksheet (BIR Form 1601-C, 2018 version, items 14–25) for the month. Items 17 (13th month and other
- * benefits) and 18 (de minimis) are zero: payroll runs pay neither yet. Item 23 (taxable pay not subject to tax, ₱250,000
+ * The 1601-C worksheet (BIR Form 1601-C, 2018 version, items 14–25) for the month. Item 17 (13th month and other
+ * benefits) is the part of the month's 13th-month pays within the ceiling; item 18 (de minimis) is zero: payroll runs
+ * pay none yet. Item 23 (taxable pay not subject to tax, ₱250,000
  * a year and below) is the accountant's call; `noTaxWithheldCents` is the taxable pay of employees with no tax
  * withheld this month, as a starting point.
  */
@@ -76,29 +77,30 @@ export function monthLists(db: Db, month: string, canSeeIds: boolean): MonthList
   // 1601-C: for an MWE the exempt part is the minimum wage and the holiday, rest-day and overtime pay (items 15–16); for
   // anyone else it is the employee shares taken off taxable pay (item 19). Anything left over (a negative adjustment of
   // an MWE) is item 20, so that 14 − 21 = 22 always.
-  // The 13th-month excess above the ceiling is added to the employee's taxable pay and tax withheld (WTAX only, not gross
-  // compensation reporting, which 13th-month pay does not build yet, PAY/doctypes/thirteenth.ts).
+  // A 13th-month pay dated in the month is in the employee's compensation: its part within the ceiling is item 17, the
+  // excess is taxable pay, and its tax is withheld tax (PAY/doctypes/thirteenth.ts).
   const th13ByEmployee = new Map(th13.map((t) => [t.employeeId, t]));
   const rows = pay.map((p): TaxRow => {
     const t = th13ByEmployee.get(p.employeeId);
-    return { ...person(p, 'tin'), isMwe: p.isMwe, grossCents: p.grossCents + (t?.taxableCents ?? 0), nonTaxableCents: p.grossCents - p.taxableCents, taxableCents: p.taxableCents + (t?.taxableCents ?? 0), taxCents: p.wtaxCents + (t?.wtaxCents ?? 0) };
+    return { ...person(p, 'tin'), isMwe: p.isMwe, grossCents: p.grossCents + (t?.amountCents ?? 0), nonTaxableCents: p.grossCents - p.taxableCents + (t ? t.amountCents - t.taxableCents : 0), taxableCents: p.taxableCents + (t?.taxableCents ?? 0), taxCents: p.wtaxCents + (t?.wtaxCents ?? 0) };
   });
   const th13Only = th13.filter((t) => !pay.some((p) => p.employeeId === t.employeeId));
   const th13OnlyRows = th13Only.map((t): TaxRow => ({
     employeeId: t.employeeId, code: t.code, name: t.name, idNo: ids.get(t.employeeId)?.tin ?? null,
-    isMwe: false, grossCents: t.taxableCents, nonTaxableCents: 0, taxableCents: t.taxableCents, taxCents: t.wtaxCents,
+    isMwe: false, grossCents: t.amountCents, nonTaxableCents: t.amountCents - t.taxableCents, taxableCents: t.taxableCents, taxCents: t.wtaxCents,
   }));
   const allRows = [...rows, ...th13OnlyRows];
+  const th13AmountCents = th13.reduce((s, t) => s + t.amountCents, 0);
   const th13TaxableCents = th13.reduce((s, t) => s + t.taxableCents, 0);
   const th13WtaxCents = th13.reduce((s, t) => s + t.wtaxCents, 0);
   const sum = (f: (p: MonthPay) => number, which = pay) => which.reduce((s, p) => s + f(p), 0);
   const mwe = pay.filter((p) => p.isMwe);
   const others = pay.filter((p) => !p.isMwe);
   const tax: Worksheet1601C = {
-    employees: allRows.length, totalCompensationCents: sum((p) => p.grossCents) + th13TaxableCents, mweBasicCents: sum((p) => p.mweBasicCents, mwe), mwePremiumCents: sum((p) => p.mwePremiumCents, mwe),
-    thirteenthMonthCents: 0, deMinimisCents: 0, eeSharesCents: sum((p) => p.grossCents - p.taxableCents, others),
+    employees: allRows.length, totalCompensationCents: sum((p) => p.grossCents) + th13AmountCents, mweBasicCents: sum((p) => p.mweBasicCents, mwe), mwePremiumCents: sum((p) => p.mwePremiumCents, mwe),
+    thirteenthMonthCents: th13AmountCents - th13TaxableCents, deMinimisCents: 0, eeSharesCents: sum((p) => p.grossCents - p.taxableCents, others),
     otherNonTaxableCents: sum((p) => p.grossCents - p.taxableCents - p.mweBasicCents - p.mwePremiumCents, mwe),
-    nonTaxableCents: sum((p) => p.grossCents - p.taxableCents), taxableCents: sum((p) => p.taxableCents) + th13TaxableCents,
+    nonTaxableCents: sum((p) => p.grossCents - p.taxableCents) + th13AmountCents - th13TaxableCents, taxableCents: sum((p) => p.taxableCents) + th13TaxableCents,
     noTaxWithheldCents: sum((p) => p.taxableCents, others.filter((p) => p.wtaxCents === 0)), taxWithheldCents: sum((p) => p.wtaxCents) + th13WtaxCents, rows: allRows,
   };
   return {

@@ -102,13 +102,14 @@ export function thirteenthMonth(db: Db, id: string): { number: string; status: '
     .get(id) as { number: string; status: 'posted' | 'cancelled'; month: string } | undefined;
 }
 
-export interface ThirteenthMonthTax { employeeId: string; code: string; name: string; taxableCents: number; wtaxCents: number }
+/** amountCents is the 13th-month pay; taxableCents its part above the ceiling (the rest is 1601-C item 17). */
+export interface ThirteenthMonthTax { employeeId: string; code: string; name: string; amountCents: number; taxableCents: number; wtaxCents: number }
 
 /** Per employee, the withholding tax a month's recorded (posted) 13th-month pays credited to 2310 (STAT's 1601-C list and remittance). */
 export function thirteenthTaxOfMonth(db: Db, month: string): ThirteenthMonthTax[] {
   return db
     .prepare(
-      `SELECT e.employee_id AS employeeId, e.employee_code AS code, e.employee_name AS name, SUM(e.taxable_cents) AS taxableCents, SUM(e.wtax_cents) AS wtaxCents
+      `SELECT e.employee_id AS employeeId, e.employee_code AS code, e.employee_name AS name, SUM(e.amount_cents) AS amountCents, SUM(e.taxable_cents) AS taxableCents, SUM(e.wtax_cents) AS wtaxCents
        FROM pay_thirteenth_employees e JOIN documents d ON d.id = e.document_id
        WHERE d.status = 'posted' AND substr(d.business_date, 1, 7) = ? GROUP BY e.employee_id, e.employee_code, e.employee_name`,
     )

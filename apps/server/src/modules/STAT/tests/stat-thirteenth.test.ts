@@ -57,6 +57,7 @@ describe('K20: the 13th-month pay in the withholding-tax remittance', () => {
     const before = monthLists(w.db, '2026-12', false);
     expect(before.tax.taxWithheldCents).toBe(runsWtaxCents + th13WtaxCents);
     expect(before.tax.totalCompensationCents - before.tax.nonTaxableCents).toBe(before.tax.taxableCents);
+    expect(before.tax.thirteenthMonthCents).toBe(9_000_000); // item 17: the ₱90,000.00 within the ceiling
     const miaRow = before.tax.rows.find((r) => r.employeeId === mia)!;
     expect(miaRow.taxCents).toBe(runsWtaxCents + th13WtaxCents);
 
