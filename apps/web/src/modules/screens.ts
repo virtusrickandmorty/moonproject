@@ -32,10 +32,15 @@ import { Booklets, BookletPage, RegisterBooklet } from './TAX/Booklets.tsx';
 import { SalesRegister, WithholdingReceived } from './TAX/Registers.tsx';
 import { TaxCalendar } from './TAX/TaxCalendar.tsx';
 import { VatQuarter } from './TAX/VatQuarter.tsx';
+import { BillForm } from './AP/BillForm.tsx';
+import { PaymentForm as SupplierPaymentForm } from './AP/PaymentForm.tsx';
+import { billView, paymentView } from './AP/views.tsx';
+import { VoucherForm } from './EXP/VoucherForm.tsx';
+import { OfficerForm, OwnerMoneyForm } from './EQ/forms.tsx';
 import { VatCloseForm } from './TAX/VatCloseForm.tsx';
 import { JvForm } from './ACC/JvForm.tsx';
 import { LoanForm } from './LOAN/LoanForm.tsx';
-import { PaymentForm } from './LOAN/PaymentForm.tsx';
+import { PaymentForm as LoanPaymentForm } from './LOAN/PaymentForm.tsx';
 import { loanView } from './LOAN/views.tsx';
 import { BuyForm } from './FA/BuyForm.tsx';
 import { Backups } from './BAK/Backups.tsx';
@@ -83,11 +88,16 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'pay.release': ReleaseForm,
   'ca.advance': AdvanceForm,
   'stat.remittance': RemittanceForm,
+  'ap.bill': BillForm,
+  'ap.payment': SupplierPaymentForm,
+  'exp.voucher': VoucherForm,
+  'eq.owner_money': OwnerMoneyForm,
+  'eq.officer': OfficerForm,
   'acc.jv': JvForm,
   'tax.vat_close': VatCloseForm,
   'loan.loan': LoanForm,
-  'loan.payment': PaymentForm,
+  'loan.payment': LoanPaymentForm,
   'fa.buy': BuyForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'loan.loan': loanView };
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView };
