@@ -10,8 +10,10 @@ import { booklet, bookletUsage, listBooklets, registerBooklet, setBookletActive,
 import { salesRegister, withholdingReceivedRegister, type RegisterRow } from './registers.ts';
 import { certificatesToIssue, ewtRegister, purchasesRegister, type PurchaseClass, type SupplierRow } from './purchases.ts';
 import { vatSummary } from './vat.ts';
-import { vatReturnWorksheet } from './vat-return.ts';
+import { vatReturnWorksheet, type WorksheetCheck } from './vat-return.ts';
 import { quarterOf, taxDeadlines, type Quarter } from './calendar.ts';
+import { ewtMonthWorksheet, ewtQuarterWorksheet, type PaymentLine } from './ewt-return.ts';
+import { parsePeriod } from './payments.ts';
 
 export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
@@ -152,6 +154,54 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
       ['Item', 'Amount', 'Tax'],
       ...w.lines.map((l) => [l.label, l.amountCents === null ? '' : csvPesos(l.amountCents), csvPesos(l.taxCents)]),
       ...w.checks.map((c) => [`Check: ${c.message}`, '', '']),
+    ]);
+  });
+
+  // 0619-E and 1601-EQ worksheets: the EWT by ATC, the BIR payments made for it and what is left.
+  const HEAD_EWT = ['Item', 'ATC', 'EWT class', 'Base', 'EWT'];
+  const atcRows = (item: string, rows: { atc: string | null; ewtClass: string | null; atcChoices: string[]; baseCents: number; ewtCents: number }[]): CsvCell[][] =>
+    rows.map((l) => [item, atcCell(l) || 'To classify', l.ewtClass, csvPesos(l.baseCents), csvPesos(l.ewtCents)]);
+  const paidRow = (item: string, x: PaymentLine): CsvCell[] => [`${item} ${x.number} on ${x.date} (${x.reference})`, '', '', '', csvPesos(x.amountCents)];
+  const amountRow = (item: string, cents: number): CsvCell[] => [item, '', '', '', csvPesos(cents)];
+  const checkRows = (checks: WorksheetCheck[]): CsvCell[][] => checks.map((c) => [`Check: ${c.message}`, '', '', '', '']);
+
+  /** The 0619-E worksheet of month 1 or 2 of a quarter (?month=2026-07). */
+  app.get<{ Querystring: { month?: string; format?: string } }>('/api/tax/0619e', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const month = req.query.month ?? '';
+    const p = parsePeriod(month);
+    if (!p || p.kind !== 'month') throw badRequest('BAD_MONTH', 'Pick a month, like 2026-07.');
+    if (p.month! % 3 === 0) throw badRequest('THIRD_MONTH', `${p.label} is the last month of a quarter, which has no 0619-E: its EWT goes on the 1601-EQ.`);
+    const w = ewtMonthWorksheet(db, month, today(clock));
+    if (req.query.format !== 'csv') return w;
+    return csv(reply, `0619-E-worksheet-${month}`, [
+      HEAD_EWT,
+      ...atcRows('EWT withheld', w.atcs),
+      ['Total due', '', '', csvPesos(w.totals.baseCents), csvPesos(w.dueCents)],
+      ...w.payments.map((x) => paidRow('Paid', x)),
+      amountRow('Left to pay', w.leftCents),
+      ...checkRows(w.checks),
+    ]);
+  });
+
+  /** The 1601-EQ worksheet of a quarter (?year=2026&quarter=3, or today's quarter), with the QAP. */
+  app.get<{ Querystring: QuarterQuery & { format?: string } }>('/api/tax/1601eq', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const { year, quarter } = quarterQuery(req.query);
+    const w = ewtQuarterWorksheet(db, year, quarter, today(clock));
+    if (req.query.format !== 'csv') return w;
+    return csv(reply, `1601-EQ-worksheet-${year}-Q${quarter}`, [
+      HEAD_EWT,
+      ...atcRows('EWT withheld in the quarter', w.atcs),
+      ['Total EWT of the quarter', '', '', csvPesos(w.totals.baseCents), csvPesos(w.totals.ewtCents)],
+      ...w.remittances.flatMap((r) => (r.payments.length ? r.payments.map((x) => paidRow(`Less 0619-E for ${r.label}:`, x)) : [amountRow(`Less 0619-E for ${r.label}: none recorded`, 0)])),
+      amountRow('Due with the 1601-EQ', w.dueCents),
+      ...w.payments.map((x) => paidRow('Paid', x)),
+      amountRow('Left to pay', w.leftCents),
+      ...checkRows(w.checks),
+      [],
+      ['QAP'],
+      ['TIN', 'Registered name', 'ATC', 'Base', 'Rate', 'EWT withheld'],
+      ...w.qap.map((l) => [l.tin, l.registeredName, atcCell(l) || 'To classify', csvPesos(l.baseCents), l.rateBp === null ? '' : `${l.rateBp / 100}%`, csvPesos(l.ewtCents)]),
+      ['Total', '', '', csvPesos(w.totals.baseCents), '', csvPesos(w.totals.ewtCents)],
     ]);
   });
 

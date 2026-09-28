@@ -124,6 +124,14 @@ export type Quarter = 1 | 2 | 3 | 4;
 /** First and last day of quarter q of year y. */
 export const quarterRange = (y: number, q: Quarter) => ({ from: ymd(y, 3 * q - 2, 1), to: monthEnd(y, 3 * q) });
 
+/** First and last day of month m (1-12) of year y, and its name ("July 2026"). */
+export const monthRange = (y: number, m: number) => ({ from: ymd(y, m, 1), to: monthEnd(y, m), label: `${MONTHS[m - 1]} ${y}` });
+
+/** When one return for one period is due, after weekends and holidays (period as the calendar writes it: 2026-07, 2026-Q3). */
+export function returnDue(db: Db, form: TaxForm, period: string, periodEnd: string): string | null {
+  return taxDeadlines(db, periodEnd, addDays(periodEnd, 120)).find((d) => d.form === form && d.period === period)?.dueDate ?? null;
+}
+
 /** The quarter that holds a date. */
 export function quarterOf(date: string): { year: number; quarter: Quarter } {
   return { year: Number(date.slice(0, 4)), quarter: Math.ceil(Number(date.slice(5, 7)) / 3) as Quarter };
