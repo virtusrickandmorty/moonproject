@@ -8,11 +8,14 @@
  * SSS and Pag-IBIG also have a loan part: the runs (and openings) credit 2404 / 2405 with the month's loan
  * amortizations ("SSS loan 2026-10"), and the same remittance pays them, so an agency's payable is its contributions
  * plus its loans.
+ * A posted 13th-month pay (TH13-, pay.thirteenth) also credits 2310 for its own month M (its document date), on the
+ * part of the year's 13th-month pay above the ₱90,000 ceiling; it counts in month M's withholding-tax payable like a
+ * run or an opening does.
  */
 import type { Db } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { employee } from '../EMP/public.ts';
-import { LOAN_ACCOUNT, payrollMonths, runsOfMonth } from '../PAY/public.ts';
+import { LOAN_ACCOUNT, payrollMonths, runsOfMonth, thirteenthMonths, thirteenthsOfMonth } from '../PAY/public.ts';
 
 export const SCHEMES = ['SSS', 'PHIC', 'HDMF', 'WTAX'] as const;
 export type Scheme = (typeof SCHEMES)[number];
@@ -64,7 +67,12 @@ function netBySource(db: Db, scheme: Scheme, sourceIds: string[]): { sourceId: s
   ).map(({ accountId, ...x }) => ({ ...x, part: partOf.get(accountId)! }));
 }
 
-const sourcesOf = (db: Db, scheme: Scheme, month: string) => [...runsOfMonth(db, month).map((r) => r.id), ...openingsOfMonth(db, month).map((r) => r.id), ...remittancesOf(db, scheme, month).map((r) => r.id)];
+const sourcesOf = (db: Db, scheme: Scheme, month: string) => [
+  ...runsOfMonth(db, month).map((r) => r.id),
+  ...openingsOfMonth(db, month).map((r) => r.id),
+  ...thirteenthsOfMonth(db, month).map((r) => r.id),
+  ...remittancesOf(db, scheme, month).map((r) => r.id),
+];
 
 /** The month's payable per employee, contributions and loans together (see the top of this file). */
 export function payableByEmployee(db: Db, scheme: Scheme, month: string): Map<string, number> {
@@ -100,9 +108,10 @@ export interface SchemeCheck {
 export function schemeCheck(db: Db, scheme: Scheme, month: string): SchemeCheck {
   const runs = runsOfMonth(db, month);
   const openings = openingsOfMonth(db, month);
+  const thirteenths = thirteenthsOfMonth(db, month);
   const rems = remittancesOf(db, scheme, month);
-  const net = netBySource(db, scheme, [...runs.map((r) => r.id), ...openings.map((o) => o.id), ...rems.map((r) => r.id)]);
-  const runIds = new Set([...runs.map((r) => r.id), ...openings.map((o) => o.id)]);
+  const net = netBySource(db, scheme, [...runs.map((r) => r.id), ...openings.map((o) => o.id), ...thirteenths.map((t) => t.id), ...rems.map((r) => r.id)]);
+  const runIds = new Set([...runs.map((r) => r.id), ...openings.map((o) => o.id), ...thirteenths.map((t) => t.id)]);
   const sum = (f: (x: (typeof net)[number]) => boolean) => net.filter(f).reduce((s, x) => s + x.cents, 0);
   const recorded = sum((x) => runIds.has(x.sourceId));
   const remitted = 0 - sum((x) => !runIds.has(x.sourceId));
@@ -140,20 +149,21 @@ export function schemeCheck(db: Db, scheme: Scheme, month: string): SchemeCheck 
 }
 
 /**
- * D6: the schemes a recorded payroll run credited whose month is already remitted. Cancelling the run would leave those
- * payables below zero (remitted more than the payrolls then show), so the run's screen warns before the cancel.
+ * D6: the schemes a recorded document (a payroll run for its contribution month, or a 13th-month pay for its own
+ * document month) credited whose month is already remitted. Cancelling it would leave those payables below zero
+ * (remitted more than the payrolls and 13th-month pays then show), so the document's screen warns before the cancel.
  */
-export function remittedForRun(db: Db, runId: string, month: string): { scheme: Scheme; label: string; numbers: string[] }[] {
+export function remittedForRun(db: Db, documentId: string, month: string): { scheme: Scheme; label: string; numbers: string[] }[] {
   return SCHEMES.flatMap((scheme) => {
     const numbers = remittancesOf(db, scheme, month).filter((r) => r.status === 'posted').map((r) => r.number);
-    const credited = netBySource(db, scheme, [runId]).reduce((s, x) => s + x.cents, 0) > 0;
+    const credited = netBySource(db, scheme, [documentId]).reduce((s, x) => s + x.cents, 0) > 0;
     return numbers.length && credited ? [{ scheme, label: SCHEME[scheme].label, numbers }] : [];
   });
 }
 
-/** Months with payrolls, opening statutory payables or remittances, newest first. */
+/** Months with payrolls, 13th-month pays, opening statutory payables or remittances, newest first. */
 export function statMonths(db: Db): string[] {
   const open = db.prepare('SELECT DISTINCT month FROM stat_openings').pluck().all() as string[];
   const rem = db.prepare('SELECT DISTINCT month FROM stat_remittances').pluck().all() as string[];
-  return [...new Set([...payrollMonths(db), ...open, ...rem])].sort().reverse();
+  return [...new Set([...payrollMonths(db), ...thirteenthMonths(db), ...open, ...rem])].sort().reverse();
 }

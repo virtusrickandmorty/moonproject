@@ -73,11 +73,45 @@ export function runsOfMonth(db: Db, month: string): MonthRun[] {
 /** Contribution months that have a recorded or cancelled run, newest first. */
 export const payrollMonths = (db: Db): string[] => db.prepare('SELECT DISTINCT contribution_month FROM pay_runs ORDER BY 1 DESC').pluck().all() as string[];
 
+/** Months (by their own document date) with a recorded or cancelled 13th-month pay, newest first. */
+export const thirteenthMonths = (db: Db): string[] =>
+  db.prepare(`SELECT DISTINCT substr(d.business_date, 1, 7) AS month FROM pay_thirteenths t JOIN documents d ON d.id = t.document_id ORDER BY 1 DESC`).pluck().all() as string[];
+
 /** A run's contribution month, or undefined if the id is not a payroll run. */
 export function runMonth(db: Db, runId: string): { number: string; status: 'posted' | 'cancelled'; contributionMonth: string } | undefined {
   return db
     .prepare('SELECT d.number, d.status, r.contribution_month AS contributionMonth FROM pay_runs r JOIN documents d ON d.id = r.document_id WHERE r.document_id = ?')
     .get(runId) as { number: string; status: 'posted' | 'cancelled'; contributionMonth: string } | undefined;
+}
+
+/** 13th-month pays (TH13-, pay.thirteenth) dated in a month, recorded or cancelled (their journals carry the month's withholding tax, 2310). */
+export function thirteenthsOfMonth(db: Db, month: string): MonthRun[] {
+  return db
+    .prepare(
+      `SELECT d.id, d.number, d.status, d.posted_at AS postedAt, d.cancelled_at AS cancelledAt FROM pay_thirteenths t JOIN documents d ON d.id = t.document_id
+       WHERE substr(d.business_date, 1, 7) = ? ORDER BY d.number`,
+    )
+    .all(month) as MonthRun[];
+}
+
+/** A 13th-month pay's own month (its document date), or undefined if the id is not one. */
+export function thirteenthMonth(db: Db, id: string): { number: string; status: 'posted' | 'cancelled'; month: string } | undefined {
+  return db
+    .prepare(`SELECT d.number, d.status, substr(d.business_date, 1, 7) AS month FROM pay_thirteenths t JOIN documents d ON d.id = t.document_id WHERE t.document_id = ?`)
+    .get(id) as { number: string; status: 'posted' | 'cancelled'; month: string } | undefined;
+}
+
+export interface ThirteenthMonthTax { employeeId: string; code: string; name: string; taxableCents: number; wtaxCents: number }
+
+/** Per employee, the withholding tax a month's recorded (posted) 13th-month pays credited to 2310 (STAT's 1601-C list and remittance). */
+export function thirteenthTaxOfMonth(db: Db, month: string): ThirteenthMonthTax[] {
+  return db
+    .prepare(
+      `SELECT e.employee_id AS employeeId, e.employee_code AS code, e.employee_name AS name, SUM(e.taxable_cents) AS taxableCents, SUM(e.wtax_cents) AS wtaxCents
+       FROM pay_thirteenth_employees e JOIN documents d ON d.id = e.document_id
+       WHERE d.status = 'posted' AND substr(d.business_date, 1, 7) = ? GROUP BY e.employee_id, e.employee_code, e.employee_name`,
+    )
+    .all(month) as ThirteenthMonthTax[];
 }
 
 /** One government loan's deductions in a contribution month, over the month's recorded runs (the SSS and Pag-IBIG loan lists). */
