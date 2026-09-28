@@ -30,6 +30,8 @@ import { CashCountForm } from './CASH/CashCountForm.tsx';
 import { cashCountView } from './CASH/CashCountView.tsx';
 import { Booklets, BookletPage, RegisterBooklet } from './TAX/Booklets.tsx';
 import { SalesRegister, WithholdingReceived } from './TAX/Registers.tsx';
+import { EwtRegister, PurchasesRegister } from './TAX/SupplierRegisters.tsx';
+import { CertificatesToIssue, VatWorksheet } from './TAX/QuarterReports.tsx';
 import { TaxCalendar } from './TAX/TaxCalendar.tsx';
 import { VatQuarter } from './TAX/VatQuarter.tsx';
 import { BillForm } from './AP/BillForm.tsx';
@@ -70,7 +72,11 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/rpt/trial-balance': TrialBalance,
   '/tax/sales': SalesRegister,
   '/tax/2307-received': WithholdingReceived,
+  '/tax/purchases': PurchasesRegister,
+  '/tax/ewt': EwtRegister,
+  '/tax/2307-to-issue': CertificatesToIssue,
   '/tax/vat': VatQuarter,
+  '/tax/2550q': VatWorksheet,
   '/tax/calendar': TaxCalendar,
   '/bak': Backups,
   '/bak/:section': Backups,
