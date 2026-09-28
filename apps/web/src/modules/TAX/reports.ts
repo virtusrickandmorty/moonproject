@@ -77,6 +77,12 @@ export function ledgerWarnings(checks: [what: string, account: string, registerC
 /** "moved from 2026-10-10" when a weekend or a holiday moved the due date; nothing when it did not. */
 export const movedFrom = (d: Pick<TaxDeadline, 'statutoryDate' | 'dueDate'>) => (d.statutoryDate === d.dueDate ? null : `moved from ${d.statutoryDate}`);
 
+/** The worksheet a calendar row opens: the 1702Q of its quarter; none for the others. */
+export function worksheetOfDeadline(d: Pick<TaxDeadline, 'form' | 'period'>): string | null {
+  const m = /^(\d{4})-Q([1-3])$/.exec(d.period);
+  return d.form === '1702Q' && m ? `/tax/1702q?${new URLSearchParams({ year: m[1]!, quarter: m[2]! })}` : null;
+}
+
 /** "Q3 2026 (July to September), so far" while the quarter runs. */
 export function quarterTitle(year: number, quarter: Quarter, today: string): string {
   const { from, to } = quarterRange(year, quarter);

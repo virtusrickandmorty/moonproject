@@ -20,6 +20,8 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [16. Income Statement and Balance Sheet](16-statements.md): View how much money the business made or lost, and see what the business owns and owes.
 - [17. Opening balances](17-opening-balances.md): Set the cut-over date, record starting balances, and close the opening.
 - [18. BIR payments](18-bir-payments.md): Know what tax returns are due, close the VAT at the end of a quarter, and record the payments made.
+- [20. The Practice Shop](20-practice-shop.md): Train with made-up data without touching the real books.
 - [21. Government remittances](21-government-remittances.md): Record your monthly SSS, PhilHealth, Pag-IBIG and tax payments.
 - [22. Cash Advances](22-cash-advances.md): Give a cash advance, set payroll deduction, and pay back or write off what is owed.
+- [23. 13th-Month Pay](23-thirteenth-month.md): Work out and record the 13th-month pay, and release the net pay.
 - [24. Government loans](24-government-loans.md): Register and manage SSS and Pag-IBIG loans for payroll deductions.
