@@ -6,10 +6,12 @@
  * documents.external_number) and the customer's registered name and TIN.
  *   Sales register (2301 output VAT): VATable sales = the journal's revenue credits, VAT, total.
  *   Withholding received (1410 CWT and 1404 VAT withheld, the customers' 2307s): ATC and whether the 2307 is in hand.
+ *   VAT summary of a quarter: output, input, withheld and carried-over VAT, and what is payable or carried forward.
  */
 import type { Db } from '../../platform/db/driver.ts';
 import { customerRef, customerTaxInfo } from '../CUS/public.ts';
 import { withholdingOf } from '../COL/public.ts';
+import { addDays, quarterRange, vatReturnDue, type Quarter } from './calendar.ts';
 
 export interface RegisterRow {
   journalId: string; journalNumber: string; date: string; posting: 'original' | 'reversal';
@@ -101,5 +103,30 @@ export function withholdingReceivedRegister(db: Db, from: string, to: string) {
     glVatWithheldCents: movement(db, ['VAT_WITHHELD'], from, to, 'debit'),
     /** Collections still standing whose 2307 is not in hand yet, for the follow-up list. */
     pendingCount: rows.filter((r) => r.posting === 'original' && r.documentStatus === 'posted' && r.certificate === 'pending').length,
+  };
+}
+
+/**
+ * VAT for one quarter (the accountant home's "VAT this quarter", PLAN E13; the figures of the quarterly VAT close,
+ * research §3.8 R46): output VAT less input VAT, the VAT government buyers withheld and the input VAT carried over from
+ * earlier quarters. Positive: payable with the 2550Q; negative: carried over to the next quarter. Read from the ledger,
+ * so it is an estimate until the quarter's VAT close is posted. VAT withheld whose 2307 is not in hand yet is shown on
+ * its own: it may be claimed only with the certificate.
+ */
+export function vatSummary(db: Db, year: number, quarter: Quarter) {
+  const { from, to } = quarterRange(year, quarter);
+  const outputVatCents = movement(db, ['OUTPUT_VAT'], from, to, 'credit');
+  const inputVatCents = movement(db, ['INPUT_VAT'], from, to, 'debit');
+  const vatWithheldCents = movement(db, ['VAT_WITHHELD'], from, to, 'debit');
+  const carryOverCents = movement(db, ['INPUT_VAT_CARRYOVER'], '0000-01-01', addDays(from, -1), 'debit');
+  const pending = withholdingReceivedRegister(db, from, to).rows.filter((r) => r.posting === 'original' && r.documentStatus === 'posted' && r.certificate === 'pending');
+  const netCents = outputVatCents - inputVatCents - vatWithheldCents - carryOverCents;
+  return {
+    year, quarter, from, to, returnDue: vatReturnDue(db, year, quarter),
+    outputVatCents, inputVatCents, vatWithheldCents, carryOverCents,
+    /** VAT withheld on collections still waiting for their 2307, already inside vatWithheldCents. */
+    vatWithheldPendingCents: total(pending, (r) => r.vatWithheldCents),
+    payableCents: Math.max(netCents, 0),
+    carryForwardCents: Math.max(-netCents, 0),
   };
 }
