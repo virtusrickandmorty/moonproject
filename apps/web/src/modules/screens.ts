@@ -26,6 +26,7 @@ import { CashAccounts } from './CASH/CashAccounts.tsx';
 import { CashBook } from './CASH/CashBook.tsx';
 import { CashCountForm } from './CASH/CashCountForm.tsx';
 import { cashCountView } from './CASH/CashCountView.tsx';
+import { Booklets, BookletPage, RegisterBooklet } from './TAX/Booklets.tsx';
 
 /**
  * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
@@ -43,6 +44,9 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/pay/runs/:id/payslips': Payslips,
   '/stat': StatMonths,
   '/stat/:month': StatMonthPage,
+  '/tax/booklets': Booklets,
+  '/tax/booklets/new': RegisterBooklet,
+  '/tax/booklets/:id': BookletPage,
 };
 
 export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: FormMode }>> = {
