@@ -55,6 +55,14 @@ export function activeJobOrders(db: Db): (JoRef & { stage: 'open' | 'in_producti
     ORDER BY o.due_date, d.number`).all() as (JoRef & { stage: 'open' | 'in_production' | 'ready' | 'partially_released' | 'released' })[];
 }
 
+/** Recorded release slips in a date range, for the calendar. */
+export function releasesBetween(db: Db, from: string, to: string): { id: string; number: string; date: string; jobOrderId: string }[] {
+  return db.prepare(`SELECT d.id, d.number, d.business_date AS date, r.job_order_id AS jobOrderId
+    FROM jo_releases r JOIN documents d ON d.id = r.document_id
+    WHERE d.status = 'posted' AND d.business_date BETWEEN ? AND ? ORDER BY d.business_date, d.number`)
+    .all(from, to) as { id: string; number: string; date: string; jobOrderId: string }[];
+}
+
 /**
  * Balance due (PLAN D3, H3): the un-invoiced part is a memo figure (total − invoiced); the invoiced part is
  * the JO's open AR; money received and not yet applied sits in customer deposits. So
