@@ -221,6 +221,8 @@ export interface ApLedger {
   supplierId: string; supplierName: string; balanceCents: number;
   bills: { id: string; number: string; status: 'posted' | 'cancelled'; supplierInvoiceNo: string; dueDate: string; payableCents: number; owedCents: number }[];
 }
+/** GET /api/acc/opening, what an opening document's form needs: the cut-over date it is dated, and the close once done. */
+export interface OpeningStatus { cutoverDate: string | null; closed: { cutoverDate: string; closedAt: string; closedByName: string } | null }
 export interface EqPerson { id: string; name: string; isStockholder: boolean; isOfficer: boolean; position: string | null }
 export interface Setting { key: string; label: string; current: unknown }
 
@@ -390,6 +392,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     countSheet: (category: string, date: string) => call<CountSheet>('GET', `/api/inv/count-sheet?${new URLSearchParams({ category, date, format: 'json' })}`),
     expCategories: () => call<ExpCategory[]>('GET', '/api/exp/categories'),
     apLedger: (supplierId: string) => call<ApLedger>('GET', `/api/ap/suppliers/${encodeURIComponent(supplierId)}`),
+    /** The cut-over date and the close of the opening (needs acc.opening.view). */
+    opening: () => call<OpeningStatus>('GET', '/api/acc/opening'),
     eqPeople: () => call<EqPerson[]>('GET', '/api/eq/people'),
     /** What an officer owes the company and is owed (needs eq.ledger.view). */
     officerBalances: (personId: string) => call<{ dueFromCents: number; dueToCents: number }>('GET', `/api/eq/people/${encodeURIComponent(personId)}/ledger`),
