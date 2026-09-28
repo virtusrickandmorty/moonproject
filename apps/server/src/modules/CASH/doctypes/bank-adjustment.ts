@@ -3,7 +3,8 @@
  *   charge:   Dr 6230 bank charges / Cr bank
  *   interest: Dr bank (net) ; Dr 8103 final tax on interest (tax.interest_final_tax_bp of the gross) / Cr 7101 (gross)
  * Only for banks. Usually made from the bank reconciliation, which matches it to the statement lines it explains;
- * while it is matched there it cannot be cancelled.
+ * while it is matched there it cannot be cancelled. The accountant may date it the day on the statement (acc.backdate),
+ * so a charge or interest seen only on next month's statement still lands in its own month and year (CASH-1).
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -40,7 +41,7 @@ export const bankAdjustmentDoc: DocTypeDef<BankAdjustmentInput, BankAdjustment> 
   title: 'Bank Adjustment',
   numbering: { series: { key: 'BADJ', prefix: 'BADJ-' } },
   permissions: { view: 'cash.badj.view', create: 'cash.badj.create', post: 'cash.badj.post', cancel: 'cash.badj.cancel' },
-  dating: 'system',
+  dating: 'accountant_may_backdate',
   inputSchema: bankAdjustmentInput,
 
   compute(input, ctx) {
