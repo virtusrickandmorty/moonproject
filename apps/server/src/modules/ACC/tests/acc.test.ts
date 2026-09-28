@@ -37,6 +37,7 @@ describe('effective-dated settings (E12, D4.2)', () => {
       'sales.deposit_vat_mode': 'A',
       'col.cr_mode': { mode: 'booklet' },
       'tax.top_withholding_agent': false,
+      'tax.ewt_rates_bp': { rent_5: 500, contractor_2: 200, prof_ind_5: 500, prof_ind_10: 1000, prof_firm_10: 1000, prof_firm_15: 1500, goods_1: 100, services_2: 200 },
       'tax.interest_final_tax_bp': 2000,
     });
   });

@@ -34,7 +34,7 @@ const collectionFor = (sale: { id: string; customerId: string; totalCents: numbe
 
 /** A walk-in pays the whole sale at once: change is given back, never kept as a deposit. */
 function receivedIssue(p: Payment, totalCents: number): Issue | null {
-  const received = p.tenders.reduce((s, t) => s + t.amountCents, 0) + (p.withholding?.cwtCents ?? 0);
+  const received = p.tenders.reduce((s, t) => s + t.amountCents, 0) + (p.withholding?.cwtCents ?? 0) + (p.withholding?.vatWithheldCents ?? 0);
   if (received === totalCents) return null;
   const message = `The money received (${formatPeso(received)}) must equal the sale total (${formatPeso(totalCents)}). Give change for the rest.`;
   return { field: 'payment.tenders', code: 'RECEIVED', level: 'error', message };

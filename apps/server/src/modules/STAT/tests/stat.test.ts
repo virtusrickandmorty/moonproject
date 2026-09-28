@@ -2,7 +2,7 @@
  * Statutory (PLAN E11, F4, D5 STAT-REM, D6): the monthly SSS, PhilHealth and Pag-IBIG lists and the 1601-C worksheet
  * built from payroll research examples A (August, a daily MWE), C and C2 (September, office staff at ₱15,000 and
  * ₱35,000; docs/research/payroll-examples.md), the remittance golden with its variance check, partial payment and cancel,
- * and the D6 warning when a run of a remitted month is cancelled. Made-up people only.
+ * a late remittance with its penalty, and the D6 warning when a run of a remitted month is cancelled. Made-up people only.
  */
 import { describe, expect, it } from 'vitest';
 import { formatPesos } from '@moonproject/shared';
@@ -135,6 +135,36 @@ describe('STAT-REM: the remittance, its variance check and its cancel (D5)', () 
     w.cancel(remittanceDoc, sss.id);
     expect(journal(w.env, sss.id, 'reversal')).toEqual(['1111 Dr 7,560.00', '2401 Cr 2,280.00 Carla Opisina', '2401 Cr 5,280.00 Dee Mataas']);
     expect(schemeCheck(w.db, 'SSS', '2026-09')).toMatchObject({ recordedCents: 756_000, remittedCents: 0, balanceCents: 756_000, remittances: [] });
+    expect(runInvariants(w.db).filter((r) => !r.ok)).toEqual([]);
+  });
+});
+
+describe('STAT-REM with a late-payment penalty (D5 "6290 penalties")', () => {
+  it('SSS for September paid late with a ₱250.00 penalty: Dr 6290 in the same journal, the cash covers both, the payables untouched; cancel mirrors it', async () => {
+    const w = await examples();
+    const input: RemittanceInput = { scheme: 'SSS', month: '2026-09', cashPlaceId: w.bdo, amountCents: 756_000, penaltyCents: 25_000, reference: 'PRN 0926-0001' };
+    const pre = w.preview(remittanceDoc, input);
+    expect([codes(pre.issues), codes(pre.issues, 'warning'), pre.totalCents]).toEqual([[], [], 781_000]);
+    expect(pre.summary).toBe('This will record ₱7,560.00 paid to SSS for 2026-09 (PRN 0926-0001) from Cash in bank – BDO, for 2 employees, plus ₱250.00 late-payment penalty (₱7,810.00 in all).');
+
+    const rem = w.record(remittanceDoc, input);
+    expect(rem).toMatchObject({ number: 'REM-000001', totalCents: 781_000 });
+    expect(journal(w.env, rem.id)).toEqual(['1111 Cr 7,810.00', '2401 Dr 2,280.00 Carla Opisina', '2401 Dr 5,280.00 Dee Mataas', '6290 Dr 250.00']);
+    expect(remittanceDoc.load(w.db, rem.id)).toMatchObject({ amountCents: 756_000, penaltyCents: 25_000, payableCents: 756_000, totalCents: 781_000 });
+    expect(remittanceDoc.toInput(remittanceDoc.load(w.db, rem.id))).toEqual(input);
+    // The penalty is no one's payable: the check and the employees' shares see only the 7,560.00.
+    expect(schemeCheck(w.db, 'SSS', '2026-09')).toMatchObject({ recordedCents: 756_000, remittedCents: 756_000, balanceCents: 0, remittances: [{ number: 'REM-000001', amountCents: 756_000 }] });
+    expect([...payableByEmployee(w.db, 'SSS', '2026-09').values()]).toEqual([0, 0]);
+    // A penalty does not make room for more than the payable, and a remittance still needs an amount for the month.
+    expect(codes(w.preview(remittanceDoc, { ...input, scheme: 'HDMF', amountCents: 80_001 }).issues)).toEqual(['OVER']);
+    fails(() => w.preview(remittanceDoc, { ...input, scheme: 'HDMF', amountCents: 0 }), 'INVALID_INPUT');
+    fails(() => w.preview(remittanceDoc, { ...input, scheme: 'HDMF', amountCents: 80_000, penaltyCents: 0 }), 'INVALID_INPUT');
+
+    w.cancel(remittanceDoc, rem.id);
+    expect(journal(w.env, rem.id, 'reversal')).toEqual(['1111 Dr 7,810.00', '2401 Cr 2,280.00 Carla Opisina', '2401 Cr 5,280.00 Dee Mataas', '6290 Cr 250.00']);
+    expect(schemeCheck(w.db, 'SSS', '2026-09')).toMatchObject({ remittedCents: 0, balanceCents: 756_000, remittances: [] });
+    const net = (code: string) => w.db.prepare('SELECT COALESCE(SUM(l.debit_cents - l.credit_cents), 0) FROM journal_lines l JOIN accounts a ON a.id = l.account_id WHERE a.code = ?').pluck().get(code);
+    expect([net('6290'), net('1111')]).toEqual([0, 0]);
     expect(runInvariants(w.db).filter((r) => !r.ok)).toEqual([]);
   });
 });
