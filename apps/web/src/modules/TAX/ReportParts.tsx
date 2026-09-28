@@ -76,7 +76,7 @@ export function useQuarterReport<T>(allowed: boolean, initial: (today: string) =
   return { today, pick, setPick, data, error };
 }
 
-export function QuarterForm({ q }: { q: ReturnType<typeof useQuarterReport<unknown>> }) {
+export function QuarterForm({ q, quarters = QUARTERS }: { q: ReturnType<typeof useQuarterReport<unknown>>; quarters?: Quarter[] }) {
   const pick = q.pick;
   if (!pick) return null;
   return (
@@ -88,7 +88,7 @@ export function QuarterForm({ q }: { q: ReturnType<typeof useQuarterReport<unkno
       </Field>
       <Field label="Quarter">
         <select className={inputClass} value={pick.quarter} onChange={(e) => q.setPick({ ...pick, quarter: Number(e.target.value) as Quarter })}>
-          {QUARTERS.map((n) => <option key={n} value={n}>Q{n}</option>)}
+          {quarters.map((n) => <option key={n} value={n}>Q{n}</option>)}
         </select>
       </Field>
     </div>

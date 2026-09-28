@@ -41,10 +41,10 @@ function AtcTable({ atcs, totals, what }: { atcs: EwtAtcLine[]; totals: { baseCe
 
 /** Rows of [what, amount]: each payment linked to its BIRP-, the bottom line in bold. */
 type Row = { label: ReactNode; cents: number; strong?: boolean };
-const paymentRow = (lead: string, p: BirPaymentLine): Row => ({
+export const paymentRow = (lead: string, p: BirPaymentLine): Row => ({
   label: <>{lead} <Link to={docPath('tax.bir_payment', `/${p.id}`)} className="underline">{p.number}</Link> on {p.date} ({p.reference})</>, cents: -p.amountCents,
 });
-function Reckoning({ rows }: { rows: Row[] }) {
+export function Reckoning({ rows }: { rows: Row[] }) {
   return (
     <table className="w-full text-sm">
       <tbody>
@@ -57,7 +57,7 @@ function Reckoning({ rows }: { rows: Row[] }) {
 }
 
 /** "Record BIR payment" on the return and period, for someone who may record one. */
-function RecordLink({ docTypes, form, period }: { docTypes: DocTypeInfo[]; form: BirForm; period: string }) {
+export function RecordLink({ docTypes, form, period }: { docTypes: DocTypeInfo[]; form: BirForm; period: string }) {
   if (!docTypes.some((d) => d.key === 'tax.bir_payment' && d.canCreate)) return null;
   return <p><Link to={birPaymentPath(form, period)} className="inline-block rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Record BIR payment</Link></p>;
 }
