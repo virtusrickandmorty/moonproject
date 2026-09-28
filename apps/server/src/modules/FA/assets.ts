@@ -1,6 +1,7 @@
 /**
- * Asset classes and the asset register (PLAN E10). An asset is its FA- document: that id is its party id on 15x0 and
- * 15x1. Accumulated depreciation comes from the ledger (NR-2); the status comes from the documents, never stored.
+ * Asset classes and the asset register (PLAN E10). An asset is its FA- purchase or its OBFA- opening document (an asset
+ * owned before the cut-over date): that id is its party id on 15x0 and 15x1. Accumulated depreciation comes from the
+ * ledger (NR-2); the status comes from the documents, never stored.
  */
 import { divRoundHalfAway } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
@@ -22,20 +23,28 @@ export function assetClass(db: Db, code: string): AssetClass | undefined {
 
 export const assetParty = (id: string) => ({ type: 'asset', id });
 
-/** `disposal` is the number of the recorded (not cancelled) disposal, if any. */
+/**
+ * `disposal` is the number of the recorded (not cancelled) disposal, if any. `openedOn` is the cut-over date of an
+ * opening asset (OBFA-) and `openingAccumulatedCents` the old books' accumulated depreciation on it; both null for a purchase.
+ */
 export interface Asset {
   id: string; number: string; docStatus: 'posted' | 'cancelled'; classCode: string; description: string; location: string | null; acquiredOn: string;
-  costCents: number; residualCents: number; lifeMonths: number; disposal: string | null;
+  costCents: number; residualCents: number; lifeMonths: number; disposal: string | null; openedOn: string | null; openingAccumulatedCents: number | null;
 }
 
+/** Purchases and opening assets alike (the fa_all_* views of migration 0002). */
 const ASSET_SELECT = `SELECT a.document_id AS id, d.number, d.status AS docStatus, a.class_code AS classCode, a.description, a.location,
   a.acquired_on AS acquiredOn, a.cost_cents AS costCents, a.residual_cents AS residualCents, a.life_months AS lifeMonths,
-  (SELECT dd.number FROM fa_disposals x JOIN documents dd ON dd.id = x.document_id WHERE x.asset_id = a.document_id AND dd.status = 'posted') AS disposal
-  FROM fa_assets a JOIN documents d ON d.id = a.document_id`;
+  (SELECT dd.number FROM fa_all_disposals x JOIN documents dd ON dd.id = x.document_id WHERE x.asset_id = a.document_id AND dd.status = 'posted') AS disposal,
+  CASE WHEN a.opening_accumulated_cents IS NULL THEN NULL ELSE d.business_date END AS openedOn, a.opening_accumulated_cents AS openingAccumulatedCents
+  FROM fa_all_assets a JOIN documents d ON d.id = a.document_id`;
 
 export function asset(db: Db, id: string): Asset | undefined {
   return db.prepare(`${ASSET_SELECT} WHERE a.document_id = ?`).get(id) as Asset | undefined;
 }
+
+/** An OBFA- opening asset (its run lines and disposal go to the fa_opening_* tables), not an FA- purchase. */
+export const isOpeningAsset = (db: Db, id: string) => db.prepare('SELECT 1 FROM fa_opening_assets WHERE document_id = ?').get(id) !== undefined;
 
 /** Recorded assets not disposed of, oldest first: the ones a depreciation run looks at. */
 export function assetsInService(db: Db): Asset[] {
@@ -63,6 +72,45 @@ export function straightLine(a: Pick<Asset, 'costCents' | 'residualCents' | 'lif
   return divRoundHalfAway((a.costCents - a.residualCents) * Math.max(0, Math.min(months, a.lifeMonths)), a.lifeMonths);
 }
 
+type Life = Pick<Asset, 'acquiredOn' | 'costCents' | 'residualCents' | 'lifeMonths'>;
+
+/**
+ * An asset owned before the cut-over (fa.opening), on the cut-over date: its months in service up to the cut-over month
+ * (counted like a purchase's; that month is not depreciated again), the straight-line figure for them, what is left to
+ * depreciate, and the months of its life left after the cut-over month (at least one: what is left of an asset whose
+ * life ran out before the cut-over comes off in the first run after it).
+ */
+export function atCutover(a: Life, cutoverDate: string, accumulatedCents: number) {
+  const months = monthsInService(a.acquiredOn, cutoverDate.slice(0, 7));
+  const straightLineCents = straightLine(a, months);
+  return {
+    months, straightLineCents, onStraightLine: accumulatedCents === straightLineCents,
+    leftCents: a.costCents - a.residualCents - accumulatedCents, monthsLeft: Math.max(a.lifeMonths - months, 1),
+  };
+}
+
+/**
+ * The accumulated depreciation an asset should have at the end of `month` (YYYY-MM); a run charges the step up to it.
+ * A purchase follows the straight line. An opening asset keeps the old books' figure through the cut-over month; after
+ * it, it follows the straight line when the old books were on it, else what was left at the cut-over is spread evenly
+ * over the months of life left. Either way the charges add up to exactly cost − residual and stop there.
+ */
+export function scheduledCents(a: Life & Pick<Asset, 'openedOn' | 'openingAccumulatedCents'>, month: string): number {
+  const months = monthsInService(a.acquiredOn, month);
+  if (a.openedOn === null || a.openingAccumulatedCents === null) return straightLine(a, months);
+  const c = atCutover(a, a.openedOn, a.openingAccumulatedCents);
+  if (months <= c.months) return a.openingAccumulatedCents;
+  if (c.onStraightLine) return straightLine(a, months);
+  return a.openingAccumulatedCents + divRoundHalfAway(c.leftCents * Math.min(months - c.months, c.monthsLeft), c.monthsLeft);
+}
+
+/** A month's charge: the straight line's, or for an opening asset off it, what was left at the cut-over over the months left. */
+export function monthlyChargeCents(a: Life & Pick<Asset, 'openedOn' | 'openingAccumulatedCents'>): number {
+  if (a.openedOn === null || a.openingAccumulatedCents === null) return straightLine(a, 1);
+  const c = atCutover(a, a.openedOn, a.openingAccumulatedCents);
+  return c.onStraightLine ? straightLine(a, 1) : divRoundHalfAway(c.leftCents, c.monthsLeft);
+}
+
 export type AssetStatus = 'in service' | 'fully depreciated' | 'disposed' | 'cancelled';
 
 export interface RegisterRow extends Omit<Asset, 'docStatus'> { className: string; status: AssetStatus; monthlyChargeCents: number; accumulatedCents: number; bookValueCents: number }
@@ -76,6 +124,6 @@ export function assetRegister(db: Db): RegisterRow[] {
     const status: AssetStatus =
       docStatus === 'cancelled' ? 'cancelled' : a.disposal ? 'disposed' : acc >= a.costCents - a.residualCents ? 'fully depreciated' : 'in service';
     const bookValueCents = status === 'disposed' || status === 'cancelled' ? 0 : a.costCents - acc;
-    return { ...a, className: classes.get(a.classCode)?.name ?? '?', status, monthlyChargeCents: straightLine(a, 1), accumulatedCents: acc, bookValueCents };
+    return { ...a, className: classes.get(a.classCode)?.name ?? '?', status, monthlyChargeCents: monthlyChargeCents(a), accumulatedCents: acc, bookValueCents };
   });
 }

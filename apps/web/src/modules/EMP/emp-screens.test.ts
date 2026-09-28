@@ -51,8 +51,8 @@ describe('attendance grid rules', () => {
 
   it('the menu shows Employees, Attendance and Holidays under People & Payroll with emp.view', () => {
     const labels = (perms: string[]) => buildMenu([], new Set(perms)).map((g) => `${g.group}: ${g.items.map((i) => i.label).join(', ')}`);
-    expect(labels(['emp.view'])).toEqual(['Overview: Home', 'People & Payroll: Employees, Attendance, Holidays']);
-    expect(labels([])).toEqual(['Overview: Home']);
+    expect(labels(['emp.view'])).toEqual(['Overview: Home', 'People & Payroll: Employees, Attendance, Holidays', 'Admin: Shop certificate']);
+    expect(labels([])).toEqual(['Overview: Home', 'Admin: Shop certificate']);
   });
 });
 

@@ -1,6 +1,7 @@
 /** Read-only CUS contract for other modules. Callers must enforce their own route permission. */
 import type { Db } from '../../platform/db/driver.ts';
 import { chartResponse } from './measurements.ts';
+export { createCustomer, createGroup, createWearer, createMeasurement } from './create.ts';
 
 export interface CustomerRef {
   id: string;
@@ -26,6 +27,14 @@ export function customerTaxInfo(db: Db, id: string): { tin: string | null; regis
 export function activeCustomers(db: Db): { id: string; name: string }[] {
   return db.prepare(`SELECT id, display_name AS name FROM cus_customers
     WHERE is_active = 1 AND merged_into_id IS NULL ORDER BY display_name, id`).all() as { id: string; name: string }[];
+}
+
+/** Birthdays recorded for active people linked to active, unmerged customers. */
+export function customerBirthdays(db: Db): { id: string; customerId: string; name: string; birthday: string }[] {
+  return db.prepare(`SELECT p.id, p.customer_id AS customerId, p.full_name AS name, p.birthday
+    FROM cus_people p JOIN cus_customers c ON c.id = p.customer_id
+    WHERE p.is_active = 1 AND c.is_active = 1 AND c.merged_into_id IS NULL AND p.birthday IS NOT NULL
+    ORDER BY p.full_name, p.id`).all() as { id: string; customerId: string; name: string; birthday: string }[];
 }
 
 export function wearerRef(db: Db, id: string): { id: string; customer_id: string; group_id: string | null; full_name: string; is_active: number } | undefined {

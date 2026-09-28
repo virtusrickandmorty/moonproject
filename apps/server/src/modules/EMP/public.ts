@@ -1,6 +1,7 @@
-/** EMP contract for other modules (PRD, PAY, CAL, DASH). Read-only; callers check their own route permission. */
+/** EMP contract for other modules (PRD, PAY, CAL, DASH, MIG). Includes import creates; callers check their own route permission. */
 import type { Db } from '../../platform/db/driver.ts';
 import { payProfileAt, type PayGroup } from './employees.ts';
+export { createEmployee, addPayProfile, type Who } from './employees.ts';
 
 export { PAY_GROUPS, PAY_TYPES, payProfileAt, type PayGroup, type PayProfile, type PayType } from './employees.ts';
 export { attendanceBetween, holidaysBetween, type AttendanceDay, type AttendanceStatus, type Holiday } from './time.ts';
@@ -22,6 +23,13 @@ export function employee(db: Db, id: string): Employee | undefined {
 
 /** Employees not separated, by name. */
 export const activeEmployees = (db: Db): Employee[] => (db.prepare(`${EMPLOYEE} WHERE is_active = 1 ORDER BY full_name, id`).all() as Row[]).map(asEmployee);
+
+/** Recorded birthdays of active employees, without pay or government IDs. */
+export function employeeBirthdays(db: Db): { id: string; name: string; birthday: string }[] {
+  return db.prepare(`SELECT id, full_name AS name, birthday FROM emp_employees
+    WHERE is_active = 1 AND birthday IS NOT NULL ORDER BY full_name, id`)
+    .all() as { id: string; name: string; birthday: string }[];
+}
 
 /**
  * Who a payroll run covers (F2, F3): employees in service on some day of the period whose pay on its last day (or their
