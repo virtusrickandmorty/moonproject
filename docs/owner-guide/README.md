@@ -27,3 +27,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [24. Government loans](24-government-loans.md): Register and manage SSS and Pag-IBIG loans for payroll deductions.
 - [25. System Health](25-system-health.md): Monitor the health of the system.
 - [26. Sales and Collections Reports](26-sales-and-collections-reports.md): View your sales, collections, deposits, and the status of your job orders.
+- [29. VAT each quarter](29-vat-each-quarter.md): Check the tax registers, preview the VAT for the quarter, and close the VAT.
