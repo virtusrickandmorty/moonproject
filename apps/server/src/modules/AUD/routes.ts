@@ -6,7 +6,7 @@ import { stamp } from '../../platform/clock.ts';
 import type { AppDeps } from '../../app.ts';
 import { appendAudit, verifyAuditChain } from '../../engine/audit.ts';
 import { clockGuard } from '../../engine/documents/lifecycle.ts';
-import { runInvariants } from '../../engine/ledger/invariants.ts';
+import { INVARIANT_NAMES, runInvariants } from '../../engine/ledger/invariants.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 
 type Filters = { from?: string; to?: string; userId?: string; action?: string; entityType?: string; entityId?: string; before?: number; limit: number };
@@ -64,10 +64,7 @@ export function auditPage(db: Db, f: Filters) {
   return { rows: page, nextBefore: rows.length > f.limit ? page.at(-1)!.seq : null };
 }
 
-const NAMES: Record<string, string> = {
-  L1: 'Balanced and sealed journals', L2: 'Postable journal accounts', L3: 'Matching subledger parties',
-  L4: 'Document reversals', L7: 'Gapless document numbers', L12: 'Audit chain',
-};
+const NAMES = INVARIANT_NAMES;
 
 export function audRoutes(app: FastifyInstance, { db, clock }: AppDeps): void {
   app.get('/api/aud/users', { config: { permission: 'aud.log.view' } }, async () =>

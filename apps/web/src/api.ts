@@ -16,6 +16,14 @@ export interface AuditLogRow { seq: number; at: string; userId: string | null; u
 export interface AuditLogPage { rows: AuditLogRow[]; nextBefore: number | null }
 export interface IntegrityReport { audit: { ok: boolean; brokenAt: number | null; count: number; newestAt: string | null; message: string }; checks: { id: string; name: string; ok: boolean; problems: string[]; message: string }[] }
 /** Public certificate details returned to a signed-in user; no private key is sent. */
+/** System Health (PLAN C8), as GET /api/system/health reports it. */
+export type HealthLight = 'green' | 'amber' | 'red' | 'grey';
+export interface SystemHealth {
+  at: string;
+  overall: Exclude<HealthLight, 'grey'>;
+  lights: { key: string; label: string; light: HealthLight; message: string }[];
+  lastCheck: { at: string; reason: 'schedule' | 'button'; ok: boolean } | null;
+}
 /** The practice shop (PLAN C8), as GET /api/system/practice reports it. */
 export interface PracticeStatus { state: 'off' | 'here' | 'preparing' | 'ready' | 'failed'; port: number | null; preparedAt: string | null; days: number | null; message: string | null }
 export interface CertInfo { fingerprint256: string; fingerprint1: string; notAfter: string; ips: string[]; dnsNames: string[] }
@@ -390,6 +398,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     calCancel: (id: string, reason: string) => call<CalEvent>('POST', `/api/cal/events/${encodeURIComponent(id)}/cancel`, { reason }),
     calHistory: (id: string) => call<CalEvent[]>('GET', `/api/cal/events/${encodeURIComponent(id)}/history`),
     shopCertificate: () => call<{ ca: CertInfo | null }>('GET', '/api/system/tls'),
+    systemHealth: () => call<SystemHealth>('GET', '/api/system/health'),
+    systemCheck: () => call<SystemHealth>('POST', '/api/system/health/check'),
     practice: () => call<PracticeStatus>('GET', '/api/system/practice'),
     /** Needs a fresh password (step-up). */
     practiceReset: () => call<PracticeStatus>('POST', '/api/system/practice/reset'),

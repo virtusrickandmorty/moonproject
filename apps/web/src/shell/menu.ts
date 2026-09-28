@@ -56,6 +56,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Reports', label: 'Balance sheet', path: '/rpt/balance-sheet', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'AR aging', path: '/rpt/ar-aging', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Customer statement', path: '/rpt/customer-statement', permission: 'rpt.books.view' },
+  { group: 'Admin', label: 'System health', path: '/admin/health', permission: 'sec.health.view' },
   { group: 'Admin', label: 'Backups', path: '/bak', permission: 'bak.view' },
   { group: 'Admin', label: 'Opening balances', path: '/acc/opening', permission: 'acc.opening.view' },
   { group: 'Admin', label: 'Audit log', path: '/aud/log', permission: 'aud.log.view' },
