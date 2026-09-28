@@ -131,9 +131,22 @@ export interface PayRunDoc extends PayRunInput { periodEnd: string; contribution
 export interface PayPeriod { periodStart: string; periodEnd: string; employees: number; recorded: { id: string; number: string } | null; bookOn: string | null }
 export interface Payslips {
   number: string; status: 'posted' | 'cancelled'; payDate: string; payGroup: PayGroup; periodStart: string; periodEnd: string; contributionMonth: string;
-  employees: (PayEmployee & { caBalanceAfterCents: number; ytd: { grossCents: number; wtaxCents: number } })[];
+  employees: (PayEmployee & {
+    caBalanceAfterCents: number; ytd: { grossCents: number; wtaxCents: number; thirteenthCents: number };
+    /** The year's 13th-month pay recorded for the employee (TH13-). */
+    thirteenthPaid: { id: string; number: string; amountCents: number }[];
+  })[];
 }
-export interface RunToRelease { id: string; number: string; payGroup: PayGroup; periodStart: string; periodEnd: string; dueCents: number }
+/** 13th-month pay (TH13-): one twelfth of the year's basic pay beside what the runs accrued on 2111. */
+export interface PayThirteenthInput { payGroup: PayGroup; year: number; amounts?: { employeeId: string; amountCents: number; reason: string }[]; skip?: { employeeId: string; reason: string }[] }
+export interface PayThirteenthEmployee {
+  employeeId: string; code: string; name: string; costCentre: string; basicCents: number; earlierBasicCents: number; dueCents: number; accruedCents: number; amountCents: number; reason?: string;
+  otherBenefitsCents: number; taxableCents: number; wtaxCents: number; netCents: number; basis: string[];
+}
+export interface PayThirteenthDoc extends PayThirteenthInput { employees: PayThirteenthEmployee[]; netCents: number; totalCents: number }
+export interface ThirteenthYears { years: number[]; recorded: { payGroup: PayGroup; year: number; id: string; number: string }[] }
+/** A recorded payroll run, or 13th-month pay (its period is the year), with net pay still to release. */
+export interface RunToRelease { id: string; number: string; kind: 'run' | 'thirteenth'; payGroup: PayGroup; periodStart: string; periodEnd: string; dueCents: number }
 export interface ReleaseRow { employeeId: string; name: string; netCents: number; releasedBy: string | null }
 export interface CaStatus { employeeId: string; name: string; outstandingCents: number; installmentCents: number; open: { documentId: string; number: string; amountCents: number; installmentCents: number; openCents: number }[] }
 export interface ActiveEmployee { id: string; code: string; name: string; costCentre: string }
@@ -426,6 +439,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     payPeriods: (payGroup: PayGroup) => call<PayPeriod[]>('GET', `/api/pay/periods?payGroup=${payGroup}`),
     payslips: (runId: string) => call<Payslips>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/payslips`),
     runsToRelease: () => call<RunToRelease[]>('GET', '/api/pay/runs/to-release'),
+    thirteenthYears: () => call<ThirteenthYears>('GET', '/api/pay/thirteenth/years'),
     releaseStatus: (runId: string) => call<ReleaseRow[]>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/release-status`),
     caStatus: (employeeId: string) => call<CaStatus>('GET', `/api/ca/employees/${encodeURIComponent(employeeId)}`),
     statMonths: () => call<{ month: string; check: SchemeCheck[] }[]>('GET', '/api/stat/months'),

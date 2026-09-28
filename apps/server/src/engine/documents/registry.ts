@@ -47,6 +47,7 @@ export const DOC_TITLES = [
   'Inventory Count',
   'Payroll Run',
   'Payroll Release',
+  '13th-Month Pay',
   'Cash Advance',
   'Remittance',
   'VAT Close',

@@ -19,7 +19,8 @@ import { Attendance } from './EMP/Attendance.tsx';
 import { Holidays } from './EMP/Holidays.tsx';
 import { RunForm } from './PAY/RunForm.tsx';
 import { ReleaseForm } from './PAY/ReleaseForm.tsx';
-import { Payslips, advanceView, releaseView, runView } from './PAY/views.tsx';
+import { ThirteenthForm } from './PAY/ThirteenthForm.tsx';
+import { Payslips, advanceView, releaseView, runView, thirteenthView } from './PAY/views.tsx';
 import { AdvanceForm } from './CA/AdvanceForm.tsx';
 import { NotificationsPage } from './DASH/Home.tsx';
 import { CalendarPage } from './CAL/Calendar.tsx';
@@ -120,6 +121,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'prd.entry': EntryForm,
   'pay.run': RunForm,
   'pay.release': ReleaseForm,
+  'pay.thirteenth': ThirteenthForm,
   'ca.advance': AdvanceForm,
   'stat.remittance': RemittanceForm,
   'ap.bill': BillForm,
@@ -141,4 +143,4 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'jo.opening': OpeningJobOrderForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'jo.opening': openingJobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView };
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'jo.opening': openingJobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView };
