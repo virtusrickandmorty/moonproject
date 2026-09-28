@@ -7,7 +7,7 @@ import type { SessionUser } from '../../engine/security/sessions.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { placesFor } from '../CASH/public.ts';
-import { currentStage, jobOrdersOf, joMoney } from '../JO/public.ts';
+import { activeJobOrders, joMoney } from '../JO/public.ts';
 import { board } from '../PRD/public.ts';
 
 const day = (date: string) => new Date(`${date}T00:00:00Z`);
@@ -58,12 +58,11 @@ export function home(db: Db, clock: Clock, registry: Registry, user: SessionUser
   const date = today(clock);
   const role = roleOf(user);
   const widgets: DashWidget[] = [];
-  const orders = can('jo.view') ? jobOrdersOf(db) : [];
+  const orders = can('jo.view') ? activeJobOrders(db) : [];
   const item = (jo: (typeof orders)[number], amountCents?: number): DashItem => ({
     id: jo.id, label: `${jo.number} · ${jo.customerName}`, href: `/docs/jo.job_order/${jo.id}`,
     detail: `Due ${jo.dueDate}`, ...(amountCents === undefined ? {} : { amountCents }),
   });
-  const stage = (id: string) => currentStage(db, id);
   const addOrders = (key: string, title: string, filtered: typeof orders, withBalance = false) =>
     widgets.push({ key, title, items: filtered.slice(0, 20).map((jo) => item(jo, withBalance ? joMoney(db, jo.id).balanceDueCents : undefined)) });
 
@@ -83,7 +82,7 @@ export function home(db: Db, clock: Clock, registry: Registry, user: SessionUser
     if (can('jo.view')) {
       const weekEnd = addDays(date, 7 - (day(date).getUTCDay() || 7));
       addOrders('due', 'Job orders due this week', orders.filter((jo) => jo.dueDate >= date && jo.dueDate <= weekEnd));
-      addOrders('ready', 'Ready for release', orders.filter((jo) => stage(jo.id) === 'ready'));
+      addOrders('ready', 'Ready for release', orders.filter((jo) => jo.stage === 'ready'));
     }
     if (can('jo.view') && can('col.view')) addOrders('collectibles', 'Collectibles', orders.filter((jo) => joMoney(db, jo.id).balanceDueCents > 0), true);
   }
@@ -122,10 +121,10 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
   const out: Omit<DashNotification, 'read'>[] = [];
   const push = (kind: string, id: string, label: string, href?: string, detail?: string, amountCents?: number) =>
     out.push({ kind, id: `${kind}:${id}`, label, ...(href ? { href } : {}), ...(detail ? { detail } : {}), ...(amountCents === undefined ? {} : { amountCents }) });
-  // Keep the per-order stage and ledger reads bounded on each home and notification request.
-  if (can('jo.view')) for (const jo of jobOrdersOf(db).slice(0, 100)) {
-    const stage = currentStage(db, jo.id);
-    if (stage !== 'closed' && stage !== 'released' && stage !== 'partially_released') {
+  // Closed orders are excluded by JO's batch stage read before any balance-due lookup.
+  if (can('jo.view')) for (const jo of activeJobOrders(db)) {
+    const stage = jo.stage;
+    if (stage !== 'released' && stage !== 'partially_released') {
       if (jo.dueDate < date) push('jo-overdue', jo.id, `${jo.number} is overdue`, `/docs/jo.job_order/${jo.id}`, `Due ${jo.dueDate}`);
       else if (jo.dueDate <= addDays(date, 3)) push('jo-due', jo.id, `${jo.number} is due soon`, `/docs/jo.job_order/${jo.id}`, `Due ${jo.dueDate}`);
     }

@@ -168,7 +168,7 @@ describe('DASH role homes and notifications', () => {
     env.db.close();
   });
 
-  it('bounds job-order notice work on each read', async () => {
+  it('ignores old closed orders without hiding notices for later open orders', async () => {
     const env = await createTestEnv();
     const encoder = await env.as('encoder');
     const customer = seedCustomers(env.db, encoder.userId).school;
@@ -181,15 +181,25 @@ describe('DASH role homes and notifications', () => {
       FROM documents WHERE id = ?`);
     const copyOrder = env.db.prepare(`INSERT INTO jo_orders
       (document_id, customer_id, customer_name, contact, due_date, priority, payment_terms, required_dp_cents, notes)
-      SELECT ?, customer_id, customer_name, contact, due_date, priority, payment_terms, required_dp_cents, notes
+      SELECT ?, customer_id, customer_name, contact, ?, priority, payment_terms, required_dp_cents, notes
       FROM jo_orders WHERE document_id = ?`);
-    for (let n = 2; n <= 101; n++) {
+    const closeOrder = env.db.prepare(`INSERT INTO jo_stage_events (document_id, seq, from_stage, to_stage, at, user_id)
+      VALUES (?, 1, 'open', 'closed', ?, ?)`);
+    const dueDate = env.db.prepare('SELECT due_date FROM jo_orders WHERE document_id = ?').pluck().get(first) as string;
+    let oldClosedId = '';
+    for (let n = 2; n <= 202; n++) {
       const id = newId();
       copyDoc.run(id, `JO-${String(n).padStart(6, '0')}`, first);
-      copyOrder.run(id, first);
+      const closed = n <= 101;
+      copyOrder.run(id, closed ? '2026-01-01' : dueDate, first);
+      if (closed) closeOrder.run(id, stamp(env.clock), encoder.userId);
+      if (n === 2) oldClosedId = id;
     }
-    const notices = (await encoder.get('/api/dash/notifications')).json() as { kind: string }[];
-    expect(notices.filter((n) => n.kind === 'jo-due')).toHaveLength(100);
+    const notices = (await encoder.get('/api/dash/notifications')).json() as { kind: string; id: string }[];
+    expect(notices.filter((n) => n.kind === 'jo-due')).toHaveLength(102);
+    expect(notices.some((n) => n.id.startsWith('jo-overdue:'))).toBe(false);
+    const collectibles = (await encoder.get('/api/dash/home')).json().widgets.find((w: { key: string }) => w.key === 'collectibles');
+    expect(collectibles.items).not.toContainEqual(expect.objectContaining({ id: oldClosedId }));
     env.db.close();
   });
 });
