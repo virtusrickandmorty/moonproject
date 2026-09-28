@@ -37,3 +37,12 @@ export function openSalesOf(db: Db, customerId: string): (SaleRef & { openCents:
     .map((s) => ({ ...s, openCents: saleOpenCents(db, s.id) }))
     .filter((s) => s.openCents > 0);
 }
+
+/** Sold quick-sale lines for read-only sales analysis. */
+export function quickSaleLines(db: Db) {
+  return db.prepare(`SELECT s.document_id AS id, s.customer_id AS customerId, s.customer_name AS customerName,
+    l.line_no AS lineNo, l.description, l.kind, l.qty, l.amount_cents AS grossCents
+    FROM qs_sales s JOIN qs_sale_lines l ON l.document_id = s.document_id
+    ORDER BY s.document_id, l.line_no`).all() as { id: string; customerId: string; customerName: string;
+      lineNo: number; description: string; kind: string; qty: number; grossCents: number }[];
+}
