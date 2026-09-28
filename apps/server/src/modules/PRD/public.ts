@@ -3,7 +3,6 @@ import { conflict } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 
 export { COMPLEXITIES, listSteps, stepById, type Complexity, type Step } from './production.ts';
-export { board } from './production.ts';
 import { lineRoute } from './production.ts';
 
 /** Current route names and status for a production job ticket. */

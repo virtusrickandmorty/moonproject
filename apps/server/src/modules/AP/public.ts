@@ -1,9 +1,7 @@
-/** What other modules may read from AP (read-only): a supplier bill's tax facts, for the TAX registers; a supply's latest billed unit cost, for INV. */
-import { divRoundHalfAway } from '@moonproject/shared';
+/** What other modules may read from AP (read-only): a supplier bill's tax facts, for the TAX registers. */
 import type { Db } from '../../platform/db/driver.ts';
 import type { EwtClass } from '../../engine/settings.ts';
 import { categoryPurchaseClass, type GoodsOrServices } from '../EXP/public.ts';
-import { receivedQty, type PurchaseCost } from '../PUR/public.ts';
 
 /** What a bill line bought: a supply on file, freight-in, subcontracted production, or an expense category. */
 export type BillLineKind = 'supply' | 'freight_in' | 'subcontract' | 'category';
@@ -37,26 +35,4 @@ export function billTaxFacts(db: Db, documentId: string): BillTaxFacts | undefin
     bought: l.kind === 'category' ? (categoryPurchaseClass(db, categoryId!) ?? 'services') : l.kind === 'subcontract' ? ('services' as const) : ('goods' as const),
   }));
   return { ...b, lines };
-}
-
-/**
- * The cost before VAT of one unit of a supply on the newest posted supplier bill that can tell it, invoiced on or before
- * `asOf` (read-only, for the inventory count's default cost, ACC-13). A bill line has no quantity, so the unit cost is the
- * bill's cost for the supply (what the journal debited) over the quantity its receiving report received; a bill without
- * a receiving report of that supply is passed over.
- */
-export function latestBillUnitCost(db: Db, supplyId: string, asOf: string): PurchaseCost | undefined {
-  const bills = db
-    .prepare(
-      `SELECT b.document_id AS documentId, d.number, b.supplier_invoice_date AS date, b.receiving_report_id AS rrId, SUM(l.amount_cents - l.vat_cents) AS costCents
-       FROM ap_bill_lines l JOIN ap_bills b ON b.document_id = l.document_id JOIN documents d ON d.id = b.document_id
-       WHERE l.supply_id = ? AND d.status = 'posted' AND b.supplier_invoice_date <= ? AND b.receiving_report_id IS NOT NULL
-       GROUP BY b.document_id ORDER BY b.supplier_invoice_date DESC, d.posted_at DESC, d.number DESC`,
-    )
-    .all(supplyId, asOf) as { documentId: string; number: string; date: string; rrId: string; costCents: number }[];
-  for (const b of bills) {
-    const qty = receivedQty(db, b.rrId, supplyId);
-    if (qty > 0) return { unitCostCents: divRoundHalfAway(b.costCents, qty), documentId: b.documentId, number: b.number, date: b.date };
-  }
-  return undefined;
 }
