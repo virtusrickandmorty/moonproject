@@ -1,0 +1,28 @@
+<!--
+  The Moonproject Windows service (WinSW 2.12, PLAN C6, C8). The installer registers it, then switches it to the
+  virtual account NT SERVICE\Moonproject, which alone (with SYSTEM and Administrators) may open the data folder.
+  It restarts by itself if the server stops; a restore finishes on that restart.
+-->
+<service>
+  <id>Moonproject</id>
+  <name>Moonproject</name>
+  <description>Moonproject ERP server for Virtus Garments, Inc. (HTTPS on port 443, the "Join this PC" page on port 80)</description>
+  <executable>%BASE%\..\node\node.exe</executable>
+  <arguments>--disable-warning=ExperimentalWarning apps\server\src\main.ts</arguments>
+  <workingdirectory>%BASE%\..\app</workingdirectory>
+  <env name="NODE_ENV" value="production"/>
+  <env name="MOONPROJECT_LISTEN" value="lan"/>
+  <env name="MOONPROJECT_DB" value="%ProgramData%\Moonproject\data\moonproject.db"/>
+  <env name="MOONPROJECT_BACKUP_DIR" value="%ProgramData%\Moonproject\backups"/>
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="5 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="restart" delay="2 min"/>
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>30 sec</stoptimeout>
+  <logpath>%ProgramData%\Moonproject\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+</service>

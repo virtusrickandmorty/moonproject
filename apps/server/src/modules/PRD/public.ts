@@ -3,6 +3,13 @@ import { conflict } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 
 export { COMPLEXITIES, listSteps, stepById, type Complexity, type Step } from './production.ts';
+export { board } from './production.ts';
+import { lineRoute } from './production.ts';
+
+/** Current route names and status for a production job ticket. */
+export function jobTicketRoute(db: Db, jobOrderId: string, lineNo: number) {
+  return lineRoute(db, jobOrderId, lineNo)?.map(({ name, status }) => ({ name, status })) ?? [];
+}
 
 export interface UnpaidAssignment {
   id: string; documentId: string; jobOrderId: string; lineNo: number; stepId: number; employeeId: string; workDate: string;
