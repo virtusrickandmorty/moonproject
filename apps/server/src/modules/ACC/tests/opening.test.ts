@@ -219,15 +219,15 @@ describe('opening balances (D5 "OB-*", D8)', () => {
     expect((await owner.get('/api/acc/opening')).statusCode).toBe(200);
   });
 
-  it('cancels with a mirror dated the cancel day while the opening is open', async () => {
+  it('cancels with a mirror on the cut-over date while the opening is open', async () => {
     await setCutover(CUTOVER);
     const res = await ob([{ accountId: id('1111'), debitCents: 2_500_000 }], 2_500_000);
     const cancel = await accountant.post(`/api/docs/acc.opening/${res.json().id}/cancel`, { reason: 'Bank balance was from the wrong statement' }, idem());
     expect(cancel.statusCode).toBe(200);
     expect(journalOf(res.json().id, 'reversal')).toEqual([
-      { code: '1111', party: null, dr: 0, cr: 2_500_000, date: '2026-09-28' },
-      { code: '3900', party: null, dr: 2_500_000, cr: 0, date: '2026-09-28' },
-    ]);
+      { code: '1111', party: null, dr: 0, cr: 2_500_000, date: '2026-09-27' },
+      { code: '3900', party: null, dr: 2_500_000, cr: 0, date: '2026-09-27' },
+    ]); // the cut-over date, so the opening there is as if it had never been recorded
     expect(balances(env.db)).toEqual({});
     expect((await state()).documents).toMatchObject([{ number: 'OB-000001', status: 'cancelled' }]);
     noBrokenInvariants();

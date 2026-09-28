@@ -110,7 +110,7 @@ describe('Inventory count golden (PLAN I2 G-22)', () => {
     noBrokenInvariants();
   });
 
-  it('cancel mirrors the adjustment on the cancel day, latest count first (D6); then the earlier one', async () => {
+  it('cancel mirrors the adjustment on the count date, latest count first (D6); a past count date needs acc.backdate', async () => {
     await openMaterials();
     const aug = (await count(accountant, august, 2_500_000, '2026-08-31')).json().id as string;
     const sep = (await count(accountant, september, 4_200_000)).json().id as string;
@@ -122,8 +122,10 @@ describe('Inventory count golden (PLAN I2 G-22)', () => {
     await nextDay(); // 1 October
     expect((await cancel(accountant, sep)).statusCode).toBe(200);
     expect(journalOf(sep, 'reversal')).toEqual([['1301', 0, 1_700_000], ['5109', 1_700_000, 0]]);
-    expect(reversalDate(sep)).toBe('2026-10-01');
-    expect((await cancel(owner, aug)).statusCode).toBe(200);
+    expect(reversalDate(sep)).toBe('2026-09-30');
+    expect((await cancel(owner, aug)).statusCode).toBe(403); // a mirror on 31 August is backdating
+    expect((await cancel(accountant, aug)).statusCode).toBe(200);
+    expect(reversalDate(aug)).toBe('2026-08-31');
     expect(journalOf(aug, 'reversal')).toEqual([['5109', 0, 500_000], ['1301', 500_000, 0]]);
     expect(balances(env.db)).toEqual({ '1301': 3_000_000, '3900': -3_000_000 });
     noBrokenInvariants();
@@ -136,9 +138,10 @@ describe('Inventory count golden (PLAN I2 G-22)', () => {
     const fixed: CountInput = { category: 'materials', lines: [{ supplyId: twill, qty: 205_000 }, { supplyId: thread, qty: 20 }] }; // ₱25,600.00
     const r = await accountant.post(`/api/docs/inv.count/${aug}/reissue`, { input: fixed, expectedTotalCents: 2_560_000, reason: 'Five yards were on the cutting table', businessDate: '2026-08-31' }, idem());
     expect(r.json()).toMatchObject({ number: 'INVC-000002', businessDate: '2026-08-31' });
-    // The books on 31 August still hold the first count (its mirror is dated 1 October), so the replacement adds ₱600.00.
-    expect(journalOf(r.json().id)).toEqual([['1301', 60_000, 0], ['5109', 0, 60_000]]);
+    // The first count comes off on 31 August too, so the replacement counts against the books without it (₱30,000.00).
+    expect(journalOf(r.json().id)).toEqual([['5109', 440_000, 0], ['1301', 0, 440_000]]);
     expect(accountBalance(env.db, accountId('1301'), { asOf: '2026-08-31' })).toBe(2_560_000);
+    expect(accountBalance(env.db, accountId('1301'))).toBe(2_560_000); // and still after the edit day
     noBrokenInvariants();
   });
 });

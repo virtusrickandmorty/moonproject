@@ -32,5 +32,5 @@
 - Cash places are GL accounts flagged `is_cash_place`; the account itself identifies the place, so cash lines carry no party.
 - Every document gets an internal gapless number from its series. Booklet numbers (sales invoice, CR) are stored by the module that takes them (JO, QS, COL) and checked in its `validate` against the TAX booklet register (TAX/public.ts `bookletIssue`); no engine hook was needed.
 - Journal numbers are `JE-YYYY-NNNNNN`, one series per year (PLAN D7).
-- Cancel reversals are dated the cancel date (ACC-09 default).
+- Cancel reversals are dated the cancel date (ACC-09 default). A document that states a balance as of its own date (OB- opening balances, INVC- inventory counts) is mirrored on that date instead (`cancelOn: 'document_date'`), which needs `acc.backdate`, so an edit replaces it exactly.
 - `stages` (for JO) is not in the engine yet. Effective-dated settings arrived on day 2 (`engine/settings.ts`).

@@ -5,8 +5,9 @@
  * value less the inventory account's balance on the count date:
  *   increase: Dr 1301/1302 / Cr 5109 inventory change        decrease: Dr 5109 / Cr 1301/1302
  * A count dated after the month end is dated the month's last day by the accountant (acc.backdate). One posted count per
- * category and date; a count equal to the books is refused (nothing to adjust). Cancel mirrors, dated the cancel day
- * (ACC-09), and only the latest count of a category comes off (D6): cancel later counts first.
+ * category and date; a count equal to the books is refused (nothing to adjust). Cancel mirrors it on the count date
+ * (cancelOn), so an edit counts against the books as they were without it; only the latest count of a category comes
+ * off (D6): cancel later counts first.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -64,6 +65,7 @@ export const countDoc: DocTypeDef<CountInput, InvCount> = {
   numbering: { series: { key: 'INVC', prefix: 'INVC-' } },
   permissions: { view: 'inv.count.view', create: 'inv.count.create', post: 'inv.count.post', cancel: 'inv.count.cancel' },
   dating: 'accountant_may_backdate',
+  cancelOn: 'document_date',
   inputSchema: countInput,
 
   compute(input, ctx) {

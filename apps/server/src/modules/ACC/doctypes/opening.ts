@@ -4,7 +4,8 @@
  * Accountant only; always dated the cut-over date (backdated), and refused once the opening is closed.
  *   Dr/Cr the typed lines; Dr or Cr 3900 opening balance equity for the difference, on the side that balances it.
  * A cash line alone is Dr cash / Cr 3900; the equity breakdown is Dr 3900 / Cr capital stock, APIC, retained earnings.
- * Cancel mirrors (engine default, dated the cancel day), only while the opening is open.
+ * Cancel mirrors it on the cut-over date too (cancelOn), so the opening there is as if it had never been recorded;
+ * only while the opening is open.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -70,6 +71,7 @@ export const openingDoc: DocTypeDef<OpeningInput, Opening> = {
   numbering: { series: { key: 'OB', prefix: 'OB-' } },
   permissions: { view: 'acc.opening.view', create: 'acc.opening.create', post: 'acc.opening.post', cancel: 'acc.opening.cancel' },
   dating: 'accountant_may_backdate',
+  cancelOn: 'document_date',
   inputSchema: openingInput,
 
   compute(input, ctx) {
