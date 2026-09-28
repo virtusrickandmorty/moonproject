@@ -1,4 +1,4 @@
-/** What other modules may read from EXP: the expense categories, and the EWT rule that vouchers and AP bills share. */
+/** What other modules may read from EXP: the expense categories, the EWT rule that vouchers and AP bills share, and a voucher's tax facts. */
 import type { Db } from '../../platform/db/driver.ts';
 import { settingAt, type EwtClass } from '../../engine/settings.ts';
 
@@ -15,4 +15,19 @@ export function appliedEwtClass(db: Db, picked: EwtClass | 'none' | undefined, u
   if (picked === 'none') return null;
   if (picked) return picked;
   return usual && (!TWA_ONLY.has(usual) || settingAt(db, 'tax.top_withholding_agent', date)) ? usual : null;
+}
+
+/** An expense voucher's payee (a supplier on file, or a one-off payee as typed), receipt number and EWT, for the TAX registers. */
+export interface VoucherTaxFacts {
+  supplierId: string | null; payeeName: string; payeeTin: string | null; supplierInvoiceNo: string | null;
+  ewtClass: EwtClass | null; ewtRateBp: number; ewtBaseCents: number; ewtCents: number;
+}
+
+export function voucherTaxFacts(db: Db, documentId: string): VoucherTaxFacts | undefined {
+  return db
+    .prepare(
+      `SELECT supplier_id AS supplierId, payee_name AS payeeName, payee_tin AS payeeTin, supplier_invoice_no AS supplierInvoiceNo, ewt_class AS ewtClass,
+         ewt_rate_bp AS ewtRateBp, ewt_base_cents AS ewtBaseCents, ewt_cents AS ewtCents FROM exp_vouchers WHERE document_id = ?`,
+    )
+    .get(documentId) as VoucherTaxFacts | undefined;
 }

@@ -19,27 +19,27 @@ export interface RegisterRow {
 export interface SalesRow extends RegisterRow { netCents: number; vatCents: number; totalCents: number }
 export interface WithholdingRow extends RegisterRow { atc: string | null; certificate: 'pending' | 'received' | null; cwtCents: number; vatWithheldCents: number }
 
-interface Touch {
+export interface Touch {
   journalId: string; journalNumber: string; date: string; posting: 'original' | 'reversal'; sourceType: string; sourceId: string;
-  docType: string | null; documentNumber: string | null; formNumber: string | null; docStatus: 'posted' | 'cancelled' | null; customerId: string | null; customers: number;
+  docType: string | null; documentNumber: string | null; formNumber: string | null; docStatus: 'posted' | 'cancelled' | null; partyId: string | null; parties: number;
 }
 
 /** The quarterly VAT close moves balances between VAT accounts; it is not a sale or a 2307, so no register lists it. */
 const NOT_A_CLOSE = `NOT EXISTS (SELECT 1 FROM tax_vat_closes c WHERE c.document_id = j.source_id AND j.source_type = 'document')`;
 
 /**
- * Journals in [from, to] with a line on one of `roles`, with per-journal sums of `sums` (column → SQL over l and a).
- * Only sealed journals count. The customer is the party on those lines (several on one JV: the first, flagged).
+ * Journals in [from, to] with a line on one of `roles`, with per-journal sums of `sums` (column → SQL over j, l and a).
+ * Only sealed journals count. The party (customer or supplier) is the one on those lines (several on one JV: the first, flagged).
  */
-function touches<K extends string>(db: Db, roles: string[], sums: Record<K, string>, from: string, to: string): (Touch & Record<K, number>)[] {
+export function touches<K extends string>(db: Db, roles: string[], sums: Record<K, string>, from: string, to: string): (Touch & Record<K, number>)[] {
   const marks = roles.map(() => '?').join(', ');
   const cols = Object.entries<string>(sums).map(([k, expr]) => `SUM(${expr}) AS ${k}`).join(', ');
   return db
     .prepare(
       `SELECT j.id AS journalId, j.number AS journalNumber, j.business_date AS date, j.posting_kind AS posting, j.source_type AS sourceType,
          j.source_id AS sourceId, d.doc_type AS docType, d.number AS documentNumber, d.external_number AS formNumber, d.status AS docStatus,
-         MIN(CASE WHEN a.role_key IN (${marks}) THEN l.party_id END) AS customerId,
-         COUNT(DISTINCT CASE WHEN a.role_key IN (${marks}) THEN l.party_id END) AS customers, ${cols}
+         MIN(CASE WHEN a.role_key IN (${marks}) THEN l.party_id END) AS partyId,
+         COUNT(DISTINCT CASE WHEN a.role_key IN (${marks}) THEN l.party_id END) AS parties, ${cols}
        FROM journals j JOIN journal_lines l ON l.journal_id = j.id JOIN accounts a ON a.id = l.account_id
        LEFT JOIN documents d ON d.id = j.source_id AND j.source_type IN ('document', 'document-cancel')
        WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ? AND ${NOT_A_CLOSE}
@@ -50,17 +50,17 @@ function touches<K extends string>(db: Db, roles: string[], sums: Record<K, stri
 }
 
 function base(db: Db, t: Touch): RegisterRow {
-  const tax = t.customerId ? customerTaxInfo(db, t.customerId) : undefined;
-  const name = t.customerId ? (tax?.registeredName ?? customerRef(db, t.customerId)?.display_name ?? '?') : '';
+  const tax = t.partyId ? customerTaxInfo(db, t.partyId) : undefined;
+  const name = t.partyId ? (tax?.registeredName ?? customerRef(db, t.partyId)?.display_name ?? '?') : '';
   return {
     journalId: t.journalId, journalNumber: t.journalNumber, date: t.date, posting: t.posting,
     documentId: t.docType ? t.sourceId : null, docType: t.docType, documentNumber: t.documentNumber, formNumber: t.formNumber, documentStatus: t.docStatus,
-    customerId: t.customerId, customerName: t.customers > 1 ? `${name} and others` : name, tin: tax?.tin ?? null,
+    customerId: t.partyId, customerName: t.parties > 1 ? `${name} and others` : name, tin: tax?.tin ?? null,
   };
 }
 
 /** The GL movement of the accounts with these roles in [from, to] (credit − debit, or debit − credit). */
-function movement(db: Db, roles: string[], from: string, to: string, side: 'credit' | 'debit'): number {
+export function movement(db: Db, roles: string[], from: string, to: string, side: 'credit' | 'debit'): number {
   const sign = side === 'credit' ? 'l.credit_cents - l.debit_cents' : 'l.debit_cents - l.credit_cents';
   return db
     .prepare(
@@ -71,7 +71,7 @@ function movement(db: Db, roles: string[], from: string, to: string, side: 'cred
     .get(from, to, ...roles) as number;
 }
 
-const total = <T>(rows: T[], f: (r: T) => number) => rows.reduce((s, r) => s + f(r), 0);
+export const total = <T>(rows: T[], f: (r: T) => number) => rows.reduce((s, r) => s + f(r), 0);
 
 /** Sales register: every journal on 2301 output VAT, with VATable sales (revenue credits), VAT and total. */
 export function salesRegister(db: Db, from: string, to: string) {
