@@ -41,6 +41,9 @@ import { ArAging, CustomerStatement } from './RPT/Receivables.tsx';
 import { DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
 import { CashAccounts } from './CASH/CashAccounts.tsx';
 import { CashBook } from './CASH/CashBook.tsx';
+import { BankRecon, BankReconWork } from './CASH/BankRecon.tsx';
+import { BankAdjustmentForm } from './CASH/BankAdjustmentForm.tsx';
+import { bankAdjustmentView } from './CASH/BankAdjustmentView.tsx';
 import { CashCountForm } from './CASH/CashCountForm.tsx';
 import { cashCountView } from './CASH/CashCountView.tsx';
 import { Booklets, BookletPage, RegisterBooklet } from './TAX/Booklets.tsx';
@@ -90,6 +93,8 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/cus': Customers,
   '/cash/accounts': CashAccounts,
   '/cash/book': CashBook,
+  '/cash/recon': BankRecon,
+  '/cash/recon/:id': BankReconWork,
   '/prd/board': ProductionBoard,
   '/prd/rates': PieceRates,
   '/emp/employees': Employees,
@@ -143,6 +148,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
 /** A module's own form; `me` lets it offer what only some users may do (the remittance's date paid, for acc.backdate). */
 export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: FormMode; me: Me }>> = {
   'cash.count': CashCountForm,
+  'cash.bank_adj': BankAdjustmentForm,
   'col.collection': CollectionForm,
   'col.refund': RefundForm,
   'col.deposit_transfer': DepositTransferForm,
@@ -183,5 +189,5 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'tax.payable.opening': OpeningPayableForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'jo.opening': openingJobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView,
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'jo.opening': openingJobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'cash.bank_adj': bankAdjustmentView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView,
   'col.cwt_only': cwtOnlyView, 'col.forfeit': forfeitView, 'col.credit_memo': creditMemoView, 'col.write_off': writeOffView };

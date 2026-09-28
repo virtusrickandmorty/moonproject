@@ -56,6 +56,15 @@ export interface CalEvent { id: string; eventId: string; seq: number; action: 'c
 export interface CalEventInput { title: string; date: string; time?: string | null; customerId?: string | null; jobOrderId?: string | null; notes?: string | null }
 export interface CashAccount extends CashPlace { code: string; kind: 'cash' | 'checks' | 'bank' | 'ewallet'; isActive: boolean; accountNo: string | null; encoderSeesBalance?: boolean; version?: number }
 export interface CashBook { place: Pick<CashAccount, 'id' | 'code' | 'name' | 'kind'>; from: string; to: string; openingCents: number; closingCents: number; lines: { date: string; journalNumber: string; documentId: string | null; documentNumber: string | null; docType: string | null; memo: string; inCents: number; outCents: number; balanceCents: number }[] }
+/** Bank reconciliation (E10): one per bank and statement month. Every figure is worked out by the server. */
+export interface ReconRow { id: string; bankId: number; bankName: string; month: string; status: 'open' | 'finished'; bankBalanceCents: number; createdAt: string; createdByName: string | null; finishedAt: string | null; finishedByName: string | null }
+export interface ReconBookLine { journalLineId: number; date: string; journalNumber: string; documentNumber: string | null; memo: string; amountCents: number; matchNo: number | null; state: 'cleared' | 'outstanding' | 'later' }
+export interface ReconStatementLine { id: number; date: string; description: string; amountCents: number; voided: boolean; matchNo: number | null }
+export interface ReconReport {
+  id: string; bankId: number; bankName: string; month: string; status: 'open' | 'finished'; finishedAt: string | null; reopenedAt: string | null; reopenReason: string | null;
+  statementLines: ReconStatementLine[]; bookLines: ReconBookLine[]; bookBalanceCents: number; depositsInTransitCents: number; outstandingPaymentsCents: number;
+  recordedAfterMonthCents: number; adjustedBookCents: number; bankBalanceCents: number; unmatchedStatementCount: number; unmatchedStatementCents: number; differenceCents: number;
+}
 export interface CustomerRow { id: string; code: string; display_name: string; is_active: number }
 /** GET /api/col/customers/:id/open-items: what a customer can pay on. */
 export interface OpenItems {
@@ -501,6 +510,15 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     updateCashPlace: (id: number, version: number, body: { accountNo?: string | null; encoderSeesBalance?: boolean }) =>
       call<CashAccount>('PUT', `/api/cash/places/${id}/settings`, body, { 'if-match': String(version) }),
     cashBook: (id: number, from: string, to: string) => call<CashBook>('GET', `/api/cash/places/${id}/book?${new URLSearchParams({ from, to })}`),
+    cashRecons: () => call<ReconRow[]>('GET', '/api/cash/recons'),
+    cashRecon: (id: string) => call<ReconReport>('GET', `/api/cash/recons/${id}`),
+    startCashRecon: (bankId: number, month: string, endingBalanceCents: number) => call<ReconReport>('POST', '/api/cash/recons', { bankId, month, endingBalanceCents }),
+    setReconEnding: (id: string, endingBalanceCents: number) => call<ReconReport>('PUT', `/api/cash/recons/${id}`, { endingBalanceCents }),
+    addReconLines: (id: string, lines: { date: string; description: string; amountCents: number }[]) => call<ReconReport>('POST', `/api/cash/recons/${id}/lines`, { lines }),
+    voidReconLine: (id: string, lineId: number) => call<ReconReport>('POST', `/api/cash/recons/${id}/lines/${lineId}/void`, {}),
+    matchRecon: (id: string, statementLineIds: number[], journalLineIds: number[]) => call<ReconReport>('POST', `/api/cash/recons/${id}/match`, { statementLineIds, journalLineIds }),
+    unmatchRecon: (id: string, matchNo: number) => call<ReconReport>('POST', `/api/cash/recons/${id}/unmatch`, { matchNo }),
+    finishRecon: (id: string) => call<ReconReport>('POST', `/api/cash/recons/${id}/finish`, {}),
     customer: (id: string) => call<CustomerRow>('GET', `/api/cus/customers/${encodeURIComponent(id)}`),
     customers: (search: string) => call<CustomerRow[]>('GET', `/api/cus/customers?${new URLSearchParams({ search, limit: '10' })}`),
     openItems: (customerId: string) => call<OpenItems>('GET', customer(customerId, 'open-items')),

@@ -24,6 +24,7 @@ const groupOf = (module: string): MenuGroup => MODULES.find(([, codes]) => codes
 export const SCREENS: MenuItem[] = [
   { group: 'Money', label: 'Cash Accounts', path: '/cash/accounts', permission: 'cash.places.view' },
   { group: 'Money', label: 'Cash book', path: '/cash/book', permission: 'cash.book.view' },
+  { group: 'Money', label: 'Bank reconciliation', path: '/cash/recon', permission: 'cash.recon.view' },
   { group: 'Overview', label: 'Home', path: '/' },
   { group: 'Overview', label: 'Notifications', path: '/dash/notifications', permission: 'dash.view' },
   { group: 'Overview', label: 'Calendar', path: '/cal', permission: 'cal.view' },
