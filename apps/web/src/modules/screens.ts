@@ -6,7 +6,8 @@ import type { ViewParts } from '../generic/DocView.tsx';
 import { CollectionForm } from './COL/CollectionForm.tsx';
 import { DepositTransferForm } from './COL/DepositTransferForm.tsx';
 import { RefundForm } from './COL/RefundForm.tsx';
-import { jobOrderView } from './JO/JobOrderView.tsx';
+import { jobOrderView, openingJobOrderView } from './JO/JobOrderView.tsx';
+import { OpeningJobOrderForm } from './JO/OpeningForm.tsx';
 import { QuickSaleForm } from './QS/QuickSaleForm.tsx';
 import { quickSaleView } from './QS/QuickSaleView.tsx';
 import { EntryForm } from './PRD/EntryForm.tsx';
@@ -110,6 +111,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'loan.payment': LoanPaymentForm,
   'fa.buy': BuyForm,
   'inv.count': InventoryCountForm,
+  'jo.opening': OpeningJobOrderForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'inv.count': inventoryCountView };
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'jo.opening': openingJobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'inv.count': inventoryCountView };
