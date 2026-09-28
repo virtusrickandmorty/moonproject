@@ -7,7 +7,6 @@ import { appendAudit } from '../audit.ts';
 import type { AppDeps } from '../../app.ts';
 import { checkPasswordPolicy, hashPassword, verifyPassword } from './passwords.ts';
 import {
-  SESSION_COOKIE,
   checkRateLimit,
   createSession,
   markStepUp,
@@ -38,7 +37,7 @@ export function securityRoutes(app: FastifyInstance, deps: AppDeps): void {
     appendAudit(db, { at: stamp(clock), userId, action, entityType, entityId, data });
 
   const setCookie = (reply: import('fastify').FastifyReply, token: string) =>
-    reply.setCookie(SESSION_COOKIE, token, { path: '/', httpOnly: true, secure: true, sameSite: 'strict' });
+    reply.setCookie(deps.sessionCookie, token, { path: '/', httpOnly: true, secure: true, sameSite: 'strict' });
 
   app.get('/api/setup/status', { config: { permission: 'public' } }, async () => {
     const n = (db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n;
@@ -93,7 +92,7 @@ export function securityRoutes(app: FastifyInstance, deps: AppDeps): void {
       revokeSession(db, clock, u.sessionId);
       audit(u.userId, 'auth.logout', 'user', u.userId);
     });
-    reply.clearCookie(SESSION_COOKIE, { path: '/' });
+    reply.clearCookie(deps.sessionCookie, { path: '/' });
     return { ok: true };
   });
 

@@ -60,10 +60,10 @@ Filename: "{sys}\sc.exe"; Parameters: "config Moonproject obj= ""NT SERVICE\Moon
 Filename: "{sys}\icacls.exe"; Parameters: """{#Data}"" /inheritance:r /grant:r ""*S-1-5-18:(OI)(CI)F"" ""*S-1-5-32-544:(OI)(CI)F"" ""NT SERVICE\Moonproject:(OI)(CI)M"" /C /Q"; Flags: runhidden waituntilterminated; StatusMsg: "Protecting the data folder..."
 Filename: "{sys}\icacls.exe"; Parameters: """{#Data}\*"" /reset /T /C /Q"; Flags: runhidden waituntilterminated
 Filename: "{sys}\icacls.exe"; Parameters: """{app}"" /grant ""NT SERVICE\Moonproject:(OI)(CI)RX"" /C /Q"; Flags: runhidden waituntilterminated
-; Open ports 443 (the app) and 80 (the "Join this PC" page; 8080 when another program has 80) on private and domain
+; Open ports 443 (the app), 80 (the "Join this PC" page; 8080 when another program has 80) and 8443 (the practice shop) on private and domain
 ; networks only, never on public Wi-Fi.
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Moonproject"""; Flags: runhidden waituntilterminated
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Moonproject"" dir=in action=allow protocol=TCP localport=443,80,8080 profile=private,domain"; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Moonproject"" dir=in action=allow protocol=TCP localport=443,80,8080,8443 profile=private,domain"; Flags: runhidden waituntilterminated
 Filename: "{sys}\tzutil.exe"; Parameters: "/s ""Singapore Standard Time"""; Tasks: timezone; Flags: runhidden waituntilterminated
 Filename: "{#Svc}"; Parameters: "start"; Flags: runhidden waituntilterminated; StatusMsg: "Starting Moonproject..."
 Filename: "{tmp}\node.exe"; Parameters: "--disable-warning=ExperimentalWarning ""{tmp}\update.mjs"" after --app ""{app}"" --data ""{#Data}"" --wait {param:HEALTHWAIT|180}"; Check: Updating; Flags: runhidden waituntilterminated; StatusMsg: "Checking that the new version started..."
@@ -99,7 +99,7 @@ begin
   IsUpdate := FileExists(ExpandConstant('{app}\node\node.exe'));
   if not IsUpdate then
     exit;
-  if not FileCopy(ExpandConstant('{app}\node\node.exe'), ExpandConstant('{tmp}\node.exe'), False) then
+  if not CopyFile(ExpandConstant('{app}\node\node.exe'), ExpandConstant('{tmp}\node.exe'), False) then
   begin
     Result := 'Setup could not prepare the update (copying node.exe failed). Nothing was changed.';
     exit;
