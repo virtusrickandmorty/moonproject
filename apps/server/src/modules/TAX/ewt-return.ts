@@ -3,12 +3,15 @@
  * worksheets, the 2307s to issue and the ledger always agree; the BIR payments (BIRP-) already made for it; and what is
  * left. The 1601-EQ takes off the 0619-E payments of months 1 and 2 and adds the QAP: per payee the TIN, registered
  * name, ATC, base, rate and EWT withheld, built on the 2307s to issue. A cancelled payment is not counted.
+ * A period before the cut-over date adds what the opening tax payables (OBTP-) left to pay with its return: the old
+ * books prepared it, so it is no EWT withheld here (the ATCs, the totals and the QAP leave it out), only more to pay.
  * The items carry no line numbers: the accountant checks them against the form in use.
  */
 import type { Db } from '../../platform/db/driver.ts';
 import type { EwtClass } from '../../engine/settings.ts';
 import { quarterRange, returnDue, type Quarter } from './calendar.ts';
-import { birPaymentsOf, monthsOf, parsePeriod, quarterPeriod, type BirForm } from './payments.ts';
+import { openedByParty, openingsOf } from './opening-payables.ts';
+import { birPaymentsOf, ewtPaidWith, monthsOf, parsePeriod, quarterPeriod, type BirForm } from './payments.ts';
 import { certificatesToIssue, ewtRegister } from './purchases.ts';
 import { total } from './registers.ts';
 import type { WorksheetCheck } from './vat-return.ts';
@@ -37,6 +40,14 @@ function paid(db: Db, keys: [BirForm, string][]): PaymentLine[] {
     .map(({ id, number, date, period, reference, amountCents, penaltyCents }) => ({ id, number, date, period, reference, amountCents, penaltyCents }));
 }
 
+/** What the posted openings left to pay with these returns, and which openings they are. */
+function opened(db: Db, keys: [BirForm, string][]) {
+  return {
+    openingCents: total([...openedByParty(db, keys).values()], (c) => c),
+    openings: openingsOf(db, keys).map(({ documentId, number, form, period }) => ({ documentId, number, form, period })),
+  };
+}
+
 /** The checks before filing; `payees` (the QAP) only for the 1601-EQ. */
 function checksOf(rows: AtcLine[], register: ReturnType<typeof ewtRegister>, openUntil: string, today: string, what: string, payees: { tin: string | null }[] = []): WorksheetCheck[] {
   const checks: WorksheetCheck[] = [];
@@ -55,12 +66,15 @@ export function ewtMonthWorksheet(db: Db, month: string, today: string) {
   const register = ewtRegister(db, p.from, p.to);
   const atcs = byAtc(register.rows);
   const payments = paid(db, [['0619-E', month]]);
-  const dueCents = register.totals.ewtCents;
+  const { openingCents, openings } = opened(db, [['0619-E', month]]);
+  const dueCents = register.totals.ewtCents + openingCents;
   const paidCents = total(payments, (x) => x.amountCents);
   return {
     month, label: p.label, from: p.from, to: p.to, returnDue: returnDue(db, '0619-E', month, p.to),
     atcs, totals: { baseCents: register.totals.baseCents, ewtCents: register.totals.ewtCents },
-    /** The EWT withheld in the month is what the 0619-E pays. */
+    /** A month before the cut-over date: what the old books left to pay with its 0619-E. */
+    openingCents, openings,
+    /** The EWT withheld in the month (and what the opening left) is what the 0619-E pays. */
     dueCents, payments, paidCents, leftCents: dueCents - paidCents,
     checks: checksOf(atcs, register, p.to, today, p.label),
   };
@@ -78,7 +92,9 @@ export function ewtQuarterWorksheet(db: Db, year: number, quarter: Quarter, toda
     return { month, label: parsePeriod(month)!.label, payments, paidCents: total(payments, (x) => x.amountCents) };
   });
   const remittedCents = total(remittances, (r) => r.paidCents);
-  const dueCents = certificates.totals.ewtCents - remittedCents;
+  // The openings of the quarter's 0619-E months count too, as their payments do (payments.ts ewtPaidWith).
+  const { openingCents, openings } = opened(db, ewtPaidWith('1601-EQ', period, parsePeriod(period)!));
+  const dueCents = certificates.totals.ewtCents + openingCents - remittedCents;
   const payments = paid(db, [['1601-EQ', period]]);
   const paidCents = total(payments, (x) => x.amountCents);
   const qap = certificates.lines.map((l) => ({
@@ -89,9 +105,11 @@ export function ewtQuarterWorksheet(db: Db, year: number, quarter: Quarter, toda
   return {
     year, quarter, period, from, to, months: certificates.months, returnDue: returnDue(db, '1601-EQ', period, to),
     atcs, totals: certificates.totals,
+    /** A quarter before the cut-over date: what the old books left to pay with its 1601-EQ and its 0619-Es. */
+    openingCents, openings,
     /** The 0619-E payments of months 1 and 2, taken off the quarter's EWT. */
     remittances, remittedCents,
-    /** What the 1601-EQ pays: the quarter's EWT less the 0619-E payments; then the 1601-EQ payments made and what is left. */
+    /** What the 1601-EQ pays: the quarter's EWT and what the openings left, less the 0619-E payments; then the 1601-EQ payments made and what is left. */
     dueCents, payments, paidCents, leftCents: dueCents - paidCents,
     qap, checks,
   };

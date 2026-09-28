@@ -3,7 +3,8 @@
  * during the period: earnings from attendance (days × the daily rate of that day, holidays and rest days at the DOLE
  * rates, overtime), the half-month salary of monthly staff, unpaid piece work up to the period end (PRD), and manual
  * lines; then SSS, PhilHealth and Pag-IBIG for the contribution month as a month-to-date true-up, withholding tax for
- * the period, the cash-advance instalment, net pay and the 13th-month accrual. Warnings go with the result.
+ * the period, government loan amortizations (once a month, loans.ts), the cash-advance instalment, net pay and the
+ * 13th-month accrual. Warnings go with the result.
  */
 import { divRoundHalfAway, formatPeso, type Issue } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
@@ -11,6 +12,7 @@ import { attendanceBetween, employeesInGroup, holidaysBetween, payProfileAt, typ
 import { pieceEarningsByDay, stepById, unpaidAssignments } from '../PRD/public.ts';
 import { jobOrderRef } from '../JO/public.ts';
 import { advanceSchedule } from '../CA/public.ts';
+import { govLoan, loanInMonth, loansOf, type Agency, type LoanKind } from './loans.ts';
 import { hdmfMonthly, hdmfRateAt, phicDailyBasis, phicMonthly, phicRateAt, rulesAt, sssMonthly, sssRateAt, withholding, wtaxTableAt, type PayRules, type TaxFrequency } from './statutory.ts';
 
 export type LineKind = 'basic' | 'leave' | 'holiday' | 'rest_day' | 'ot' | 'salary' | 'absence' | 'piece' | 'allowance' | 'adjustment';
@@ -22,8 +24,13 @@ export interface RunEmployee {
   employeeId: string; code: string; name: string; costCentre: 'production' | 'office'; payType: PayProfile['payType']; isMwe: boolean; lines: RunLine[];
   grossCents: number; pieceCents: number; taxableCents: number; sssMscCents: number; sssEeCents: number; sssErCents: number; sssEcCents: number;
   phicBasisCents: number; phicEeCents: number; phicErCents: number; hdmfEeCents: number; hdmfErCents: number; eeShortCents: number;
-  wtaxCents: number; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
+  wtaxCents: number; loanCents: number; loans: RunLoan[]; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
 }
+/** One government loan's deduction on a run: the plan or the amount typed (with its note), what net pay allowed, what is left. */
+export interface RunLoan {
+  loanId: string; agency: Agency; kind: LoanKind; loanNo: string; dueCents: number; amountCents: number; overrideCents: number | null; reason?: string; balanceAfterCents: number;
+}
+export interface LoanOverride { amountCents: number; reason: string }
 export interface ManualLine { employeeId: string; kind: 'allowance' | 'adjustment'; amountCents: number; reason: string }
 
 const THIRTEENTH_BASE = new Set<LineKind>(['basic', 'leave', 'salary', 'absence', 'piece']); // basic pay only (PD 851)
@@ -195,7 +202,17 @@ function monthSoFar(db: Db, employeeId: string, month: string) {
     .get(employeeId, month) as Record<'gross' | 'piece' | 'sssEe' | 'sssEr' | 'sssEc' | 'phicEe' | 'phicEr' | 'hdmfEe' | 'hdmfEr', number>;
 }
 
-export interface RunRequest { payGroup: PayGroup; periodStart: string; periodEnd: string; payDate: string; manual: ManualLine[]; caOverrides: Map<string, number>; skipped: Set<string> }
+export interface RunRequest {
+  payGroup: PayGroup; periodStart: string; periodEnd: string; payDate: string; manual: ManualLine[]; caOverrides: Map<string, number>; skipped: Set<string>;
+  loanOverrides?: Map<string, LoanOverride>;
+}
+
+/**
+ * Government loans are deducted by default on runs whose period ends on or after the 16th of the contribution month:
+ * the pay group's first such run takes the month's amortization; a later one only if no recorded run of the month
+ * dealt with the loan yet (the employee was left out of the first one, say). A ₱0 typed on a run skips the month.
+ */
+export const takesLoans = (periodEnd: string) => periodEnd.slice(8) >= '16';
 
 /** Works out the whole run. Employees skipped on purpose are left out; their piece work stays unpaid. */
 export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; notes: Issue[] } {
@@ -246,6 +263,26 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
     const taxableLines = built.lines.filter((l) => l.taxable).reduce((s, l) => s + l.amountCents, 0);
     const taxable = Math.max(0, taxableLines - (end.isMwe ? 0 : ee.sss + ee.phic + ee.hdmf));
     const wtax = e.statutory.wtax ? take(withholding(table, taxable)) : 0;
+    // Government loans (F3: after tax, before the cash advance): the month's amortization, never more than is left of
+    // the loan, nor than the pay left after shares and tax; less is deducted with a warning, the rest stays owed.
+    const loans: RunLoan[] = [];
+    const typed = new Map([...(q.loanOverrides ?? [])].filter(([id]) => govLoan(db, id)?.employeeId === e.id));
+    for (const l of loansOf(db, e.id)) {
+      const o = typed.get(l.id);
+      const at = loanInMonth(db, l, month);
+      const planned = at.state === 'running' && !at.handled && takesLoans(q.periodEnd) ? Math.min(l.amortizationCents, at.leftCents) : 0;
+      if (!o && planned === 0) continue;
+      const due = o ? o.amountCents : planned;
+      const amount = take(Math.min(due, at.leftCents));
+      if (amount < due) {
+        notes.push({ code: 'LOAN_REDUCED', level: 'warning', message: `${e.name}: the pay covers ${formatPeso(amount)} of the ${formatPeso(due)} due on ${l.agency === 'SSS' ? 'SSS' : 'Pag-IBIG'} loan ${l.loanNo}; the rest stays owed on the loan.` });
+      }
+      loans.push({
+        loanId: l.id, agency: l.agency, kind: l.kind, loanNo: l.loanNo, dueCents: due, amountCents: amount, overrideCents: o ? o.amountCents : null,
+        ...(o ? { reason: o.reason } : {}), balanceAfterCents: at.leftCents - amount,
+      });
+    }
+    const loanCents = loans.reduce((s, l) => s + l.amountCents, 0);
     const plan = advanceSchedule(db, e.id, q.payDate);
     const override = q.caOverrides.get(e.id);
     const wanted = override ?? plan.installmentCents;
@@ -268,8 +305,8 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
       sssErCents: clampNote('SSS (employer)', sssDue.er - so.sssEr), sssEcCents: clampNote('SSS EC', sssDue.ec - so.sssEc),
       phicBasisCents: phicDue.basisCents, phicEeCents: ee.phic, phicErCents: clampNote('PhilHealth (employer)', phicDue.er - so.phicEr),
       hdmfEeCents: ee.hdmf, hdmfErCents: clampNote('Pag-IBIG (employer)', hdmfDue.er - so.hdmfEr), eeShortCents: short,
-      wtaxCents: wtax, caCents: ca, caOverrideCents: override ?? null, thirteenthCents: endRules.accrue13th ? Math.max(0, divRoundHalfAway(base13, 12)) : 0,
-      netCents: gross - ee.sss - ee.phic - ee.hdmf - wtax - ca,
+      wtaxCents: wtax, loanCents, loans, caCents: ca, caOverrideCents: override ?? null, thirteenthCents: endRules.accrue13th ? Math.max(0, divRoundHalfAway(base13, 12)) : 0,
+      netCents: gross - ee.sss - ee.phic - ee.hdmf - wtax - loanCents - ca,
     });
   }
   return { employees, notes };

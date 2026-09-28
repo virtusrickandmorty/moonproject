@@ -102,36 +102,37 @@ describe('opening statutory payable golden (PLAN D8 step 3, E11)', () => {
     expect((await accountant.get(`/api/docs/stat.opening/${id}`)).json().input).toEqual(i);
     expect(openingStatDoc.toInput(openingStatDoc.load(env.db, id))).toEqual(i);
 
-    // The month's payable per scheme, read from the ledger, matches what was recorded.
-    expect(schemeCheck(env.db, 'SSS', '2026-08')).toMatchObject({ recordedCents: 439_000, remittedCents: 0, balanceCents: 439_000 });
+    // The month's payable per scheme, read from the ledger, matches what was recorded; SSS and Pag-IBIG include Ben's loans.
+    expect(schemeCheck(env.db, 'SSS', '2026-08')).toMatchObject({ recordedCents: 489_000, remittedCents: 0, balanceCents: 489_000, loanRecordedCents: 50_000 });
     expect(schemeCheck(env.db, 'PHIC', '2026-08')).toMatchObject({ recordedCents: 71_730, balanceCents: 71_730 });
-    expect(schemeCheck(env.db, 'HDMF', '2026-08')).toMatchObject({ recordedCents: 40_000, balanceCents: 40_000 });
+    expect(schemeCheck(env.db, 'HDMF', '2026-08')).toMatchObject({ recordedCents: 70_000, balanceCents: 70_000, loanRecordedCents: 30_000 });
     expect(schemeCheck(env.db, 'WTAX', '2026-08')).toMatchObject({ recordedCents: 170_115, balanceCents: 170_115 });
     expect(payableByEmployee(env.db, 'SSS', '2026-08').get(ana)).toBe(211_000);
-    expect(payableByEmployee(env.db, 'SSS', '2026-08').get(ben)).toBe(228_000);
+    expect(payableByEmployee(env.db, 'SSS', '2026-08').get(ben)).toBe(278_000);
     noBrokenInvariants();
   });
 
-  it('a remittance after the cut-over paying it exactly, with the variance check clean', async () => {
+  it('a remittance after the cut-over paying it exactly, loan amortizations with the contributions, with the variance check clean', async () => {
     await setCutover();
     await open(input());
 
-    // SSS: Ana 2,110.00 + Ben 2,280.00 = 4,390.00; PhilHealth: Ana 717.30; paid to the peso, in full.
-    const sss = await accountant.post('/api/docs/stat.remittance/post', { input: { scheme: 'SSS', month: '2026-08', cashPlaceId: BDO, amountCents: 439_000, reference: 'PRN 0826-0001' }, expectedTotalCents: 439_000 }, idem());
+    // SSS: Ana 2,110.00 + Ben 2,280.00 = 4,390.00, and Ben's SSS loan 500.00 on the same remittance; paid in full.
+    const sss = await accountant.post('/api/docs/stat.remittance/post', { input: { scheme: 'SSS', month: '2026-08', cashPlaceId: BDO, amountCents: 489_000, reference: 'PRN 0826-0001' }, expectedTotalCents: 489_000 }, idem());
     expect(sss.statusCode).toBe(200);
-    expect(journal(sss.json().id)).toEqual(['1111 Cr 4,390.00', '2401 Dr 2,110.00 Ana Araw', '2401 Dr 2,280.00 Ben Halo']);
-    expect(schemeCheck(env.db, 'SSS', '2026-08')).toMatchObject({ recordedCents: 439_000, remittedCents: 439_000, balanceCents: 0, overRemitted: [] });
+    expect(journal(sss.json().id)).toEqual(['1111 Cr 4,890.00', '2401 Dr 2,110.00 Ana Araw', '2401 Dr 2,280.00 Ben Halo', '2404 Dr 500.00 Ben Halo']);
+    expect(schemeCheck(env.db, 'SSS', '2026-08')).toMatchObject({ recordedCents: 489_000, remittedCents: 489_000, balanceCents: 0, loanRecordedCents: 50_000, loanRemittedCents: 50_000, overRemitted: [] });
 
     const phic = await accountant.post('/api/docs/stat.remittance/post', { input: { scheme: 'PHIC', month: '2026-08', cashPlaceId: BDO, amountCents: 71_730, reference: 'PRN 0826-0002' }, expectedTotalCents: 71_730 }, idem());
     expect(phic.json().warnings).toEqual([]);
     expect(schemeCheck(env.db, 'PHIC', '2026-08')).toMatchObject({ recordedCents: 71_730, remittedCents: 71_730, balanceCents: 0 });
 
-    // Withholding tax and Pag-IBIG, same story.
-    await accountant.post('/api/docs/stat.remittance/post', { input: { scheme: 'HDMF', month: '2026-08', cashPlaceId: BDO, amountCents: 40_000, reference: 'PRN 0826-0003' }, expectedTotalCents: 40_000 }, idem());
+    // Pag-IBIG with Ben's loan (400.00 + 300.00), and withholding tax, same story.
+    const hdmf = await accountant.post('/api/docs/stat.remittance/post', { input: { scheme: 'HDMF', month: '2026-08', cashPlaceId: BDO, amountCents: 70_000, reference: 'PRN 0826-0003' }, expectedTotalCents: 70_000 }, idem());
+    expect(journal(hdmf.json().id)).toEqual(['1111 Cr 700.00', '2403 Dr 400.00 Ana Araw', '2405 Dr 300.00 Ben Halo']);
     const tax = await accountant.post('/api/docs/stat.remittance/post', { input: { scheme: 'WTAX', month: '2026-08', cashPlaceId: BDO, amountCents: 170_115, reference: 'eFPS 0826-0004' }, expectedTotalCents: 170_115 }, idem());
     expect(journal(tax.json().id)).toEqual(['1111 Cr 1,701.15', '2310 Dr 1,701.15 Cy Buwan']);
 
-    // Nothing at all is left to remit for the month; the loan amortizations opened here have no remittance document yet.
+    // Nothing at all is left to remit for the month, loans included.
     for (const scheme of ['SSS', 'PHIC', 'HDMF', 'WTAX'] as const) expect(schemeCheck(env.db, scheme, '2026-08').balanceCents).toBe(0);
     noBrokenInvariants();
   });
@@ -142,7 +143,7 @@ describe('opening statutory payable golden (PLAN D8 step 3, E11)', () => {
     const julId = (await open(input({ month: '2026-07', employees: [{ employeeId: ana, sssCents: 100_000 }] }))).json().id as string;
     expect(augId).not.toBe(julId);
 
-    expect(schemeCheck(env.db, 'SSS', '2026-08').recordedCents).toBe(439_000);
+    expect(schemeCheck(env.db, 'SSS', '2026-08').recordedCents).toBe(489_000);
     expect(schemeCheck(env.db, 'SSS', '2026-07').recordedCents).toBe(100_000);
     expect((await accountant.get('/api/stat/months')).json().map((m: { month: string }) => m.month)).toEqual(['2026-08', '2026-07']);
     expect(statMonths(env.db)).toEqual(['2026-08', '2026-07']);
@@ -173,6 +174,17 @@ describe('opening statutory payable golden (PLAN D8 step 3, E11)', () => {
 });
 
 describe('refusals', () => {
+  it('an opening with only a Pag-IBIG loan cannot be cancelled while the Pag-IBIG remittance that paid it stands', async () => {
+    await setCutover();
+    const id = (await open(input({ employees: [{ employeeId: ben, hdmfLoanCents: 30_000 }] }))).json().id as string;
+    const rem = (await accountant.post('/api/docs/stat.remittance/post', { input: { scheme: 'HDMF', month: '2026-08', cashPlaceId: BDO, amountCents: 30_000, reference: 'PRN 0826-0003' }, expectedTotalCents: 30_000 }, idem())).json();
+    expect(journal(rem.id)).toEqual(['1111 Cr 300.00', '2405 Dr 300.00 Ben Halo']);
+    const blocked = await cancel(accountant, 'stat.opening', id);
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json()).toMatchObject({ code: 'HAS_DEPENDENTS', message: `Cancel these first: ${rem.number}.` });
+    noBrokenInvariants();
+  });
+
   it('without a cut-over date, on another date, once the opening is closed, a month after the cut-over, and a second one for the same month', async () => {
     expect(await errors(input())).toEqual(['NO_CUTOVER']);
     await setCutover();

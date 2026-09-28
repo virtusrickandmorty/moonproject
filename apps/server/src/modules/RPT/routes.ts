@@ -5,6 +5,7 @@ import { comparativeTrialBalance, generalJournal, generalLedger, ledgerAccounts 
 import { balanceSheet, incomeStatement, type StatementSection } from './statements.ts';
 import { arAging, customerStatement } from './receivables.ts';
 import { statementCustomers } from '../CUS/public.ts';
+import { collectionsRegister, depositsHeld, jobOrderFollowUp, salesByPeriod } from './sales-collections.ts';
 
 function date(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new AppError('BAD_DATE', 'Use a date in YYYY-MM-DD format.', 400);
@@ -40,6 +41,51 @@ function sectionRows(s: StatementSection): CsvCell[][] {
 const STATEMENT_HEAD = ['Section', 'Account', 'Line', 'Amount PHP'];
 
 export function rptRoutes(app: FastifyInstance, { db }: AppDeps): void {
+  app.get('/api/rpt/deposits-held', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
+    const q = req.query as Record<string, unknown>;
+    const result = depositsHeld(db, date(q.asOf));
+    if (q.format !== 'csv') return result;
+    return sendCsv(reply, `deposits-held-${result.asOf}`, [
+      ['Customer', 'Job order', 'Deposits held PHP', 'Document link'],
+      ...result.rows.map((r): CsvCell[] => [r.customerName, r.jobOrderNumber, csvPesos(r.heldCents), r.documentPath]),
+      ['TOTAL', '', csvPesos(result.totalCents), ''],
+    ]);
+  });
+  app.get('/api/rpt/collections-register', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
+    const q = req.query as Record<string, unknown>;
+    const { from, to } = range(q); const result = collectionsRegister(db, from, to);
+    if (q.format !== 'csv') return result;
+    return sendCsv(reply, `collections-register-${from}-${to}`, [
+      ['Date', 'Collection', 'Customer', 'Cash place', 'Tender PHP', 'CWT PHP', 'Recorded by', 'Status', 'Document link'],
+      ...result.rows.map((r): CsvCell[] => [r.date, r.number, r.customerName, r.cashPlaceName ?? '',
+        csvPesos(r.tenderCents ?? 0), csvPesos(r.cwtCents), r.recordedByName, r.status, r.documentPath]),
+      ['TOTAL', '', '', '', csvPesos(result.tenderCents), '', '', '', ''],
+    ]);
+  });
+  app.get('/api/rpt/sales-by-period', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
+    const q = req.query as Record<string, unknown>;
+    const { from, to } = range(q); const result = salesByPeriod(db, from, to);
+    if (q.format !== 'csv') return result;
+    return sendCsv(reply, `sales-by-period-${from}-${to}`, [
+      ['Date', 'Document', 'Customer', 'Item', 'Class', 'Garment type', 'Quantity', 'Net sales PHP', 'Document link'],
+      ...result.rows.map((r): CsvCell[] => [r.date, r.number, r.customerName, r.description, r.kind,
+        r.garmentType, r.qty, csvPesos(r.salesCents), r.documentPath]),
+      ['TOTAL', '', '', '', '', '', '', csvPesos(result.totalCents), ''],
+    ]);
+  });
+  app.get('/api/rpt/job-order-follow-up', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
+    const q = req.query as Record<string, unknown>;
+    const result = jobOrderFollowUp(db);
+    if (q.format !== 'csv') return result;
+    return sendCsv(reply, 'job-order-follow-up', [
+      ['Job order', 'Customer', 'Status', 'Due date', 'Balance PHP', 'Document link'],
+      ...result.rows.map((r): CsvCell[] => [r.number, r.customerName, r.stage, r.dueDate,
+        csvPesos(r.balanceDueCents), r.documentPath]), [],
+      ['Release to invoice', 'Job order', 'Customer', 'Date', 'Released PHP', 'Document link'],
+      ...result.awaitingInvoice.map((r): CsvCell[] => [r.number, r.jobOrderNumber, r.customerName, r.date,
+        csvPesos(r.releasedCents), r.documentPath]),
+    ]);
+  });
   app.get('/api/rpt/customers', { config: { permission: 'rpt.books.view' } }, async () => statementCustomers(db));
   app.get('/api/rpt/ar-aging', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;

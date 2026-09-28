@@ -21,6 +21,7 @@ import { RunForm } from './PAY/RunForm.tsx';
 import { ReleaseForm } from './PAY/ReleaseForm.tsx';
 import { ThirteenthForm } from './PAY/ThirteenthForm.tsx';
 import { Payslips, advanceView, releaseView, runView, thirteenthView } from './PAY/views.tsx';
+import { GovLoans } from './PAY/Loans.tsx';
 import { AdvanceForm } from './CA/AdvanceForm.tsx';
 import { OpeningForm as OpeningCaForm } from './CA/OpeningForm.tsx';
 import { RepaymentForm, WriteoffForm } from './CA/SettleForms.tsx';
@@ -35,6 +36,7 @@ import { OpeningStatForm } from './STAT/OpeningStatForm.tsx';
 import { GeneralJournal, GeneralLedger, TrialBalance } from './RPT/Books.tsx';
 import { BalanceSheet, IncomeStatement } from './RPT/Statements.tsx';
 import { ArAging, CustomerStatement } from './RPT/Receivables.tsx';
+import { DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
 import { CashAccounts } from './CASH/CashAccounts.tsx';
 import { CashBook } from './CASH/CashBook.tsx';
 import { CashCountForm } from './CASH/CashCountForm.tsx';
@@ -61,6 +63,7 @@ import { OpeningForm } from './ACC/OpeningForm.tsx';
 import { OpeningBalances } from './ACC/OpeningBalances.tsx';
 import { BirPaymentForm } from './TAX/BirPaymentForm.tsx';
 import { OpeningWithholdingForm } from './TAX/OpeningWithholdingForm.tsx';
+import { OpeningPayableForm } from './TAX/OpeningPayableForm.tsx';
 import { EwtMonthReturn, EwtQuarterReturn } from './TAX/EwtWorksheets.tsx';
 import { LoanForm } from './LOAN/LoanForm.tsx';
 import { OpeningForm as OpeningLoanForm } from './LOAN/OpeningForm.tsx';
@@ -93,6 +96,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/pay/runs/:id/payslips': Payslips,
   '/ca/employees': CaOwed,
   '/ca/employees/:id': CaEmployeePage,
+  '/pay/loans': GovLoans,
   '/prt/company-profile': CompanyProfileScreen,
   '/stat': StatMonths,
   '/stat/:month': StatMonthPage,
@@ -106,6 +110,10 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/rpt/balance-sheet': BalanceSheet,
   '/rpt/ar-aging': ArAging,
   '/rpt/customer-statement': CustomerStatement,
+  '/rpt/deposits-held': DepositsHeld,
+  '/rpt/collections-register': CollectionsRegister,
+  '/rpt/sales-by-period': SalesByPeriod,
+  '/rpt/job-order-follow-up': JobOrderFollowUp,
   '/tax/sales': SalesRegister,
   '/tax/2307-received': WithholdingReceived,
   '/tax/purchases': PurchasesRegister,
@@ -162,6 +170,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'inv.count': InventoryCountForm,
   'jo.opening': OpeningJobOrderForm,
   'tax.opening': OpeningWithholdingForm,
+  'tax.payable.opening': OpeningPayableForm,
 };
 
 export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'jo.opening': openingJobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView };
