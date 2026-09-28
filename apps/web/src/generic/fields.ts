@@ -2,13 +2,14 @@
  * Turns a doc type's input JSON schema (from GET /api/doc-types) into form fields, and typed text into
  * input and back. Pure, so it is tested without a browser.
  * Conventions: cashPlaceId or *CashPlaceId = a cash place picked with big buttons (PLAN H2), *Cents = a peso amount.
- * A schema field's `title` (zod .meta({ title })) overrides the label.
+ * A schema field's `title` (zod .meta({ title })) overrides the label. A union of literals (`anyOf` of consts, e.g. a
+ * VAT close's quarter 1 to 4) is a choice like an enum.
  */
 import { formatPesos, parsePesos } from '@moonproject/shared';
 import type { JsonSchema } from '../api.ts';
 
 export type FieldKind = 'cashPlace' | 'money' | 'integer' | 'text' | 'longText' | 'boolean' | 'choice' | 'unsupported';
-export interface FieldSpec { name: string; label: string; kind: FieldKind; required: boolean; options?: string[] }
+export interface FieldSpec { name: string; label: string; kind: FieldKind; required: boolean; options?: string[]; numeric?: boolean }
 /** What the user typed, per field; booleans are 'true' or ''. */
 export type Values = Record<string, string>;
 
@@ -19,8 +20,15 @@ export function humanize(name: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/** The values of an enum, or of a union of literals; undefined for anything else. */
+function choices(s: JsonSchema): unknown[] | undefined {
+  if (s.enum) return s.enum;
+  if (s.anyOf?.length && s.anyOf.every((m) => m.const !== undefined)) return s.anyOf.map((m) => m.const);
+  return undefined;
+}
+
 function kindOf(name: string, s: JsonSchema): FieldKind {
-  if (s.enum) return 'choice';
+  if (choices(s)) return 'choice';
   if (s.type === 'integer') return /^cashPlaceId$|CashPlaceId$/.test(name) ? 'cashPlace' : name.endsWith('Cents') ? 'money' : 'integer';
   if (s.type === 'boolean') return 'boolean';
   if (s.type === 'string') return (s.maxLength ?? Infinity) > 200 ? 'longText' : 'text';
@@ -29,13 +37,16 @@ function kindOf(name: string, s: JsonSchema): FieldKind {
 
 export function fieldsOf(schema: JsonSchema): FieldSpec[] {
   const required = new Set(schema.required ?? []);
-  return Object.entries(schema.properties ?? {}).map(([name, s]) => ({
-    name,
-    label: s.title ?? LABELS[name] ?? humanize(name),
-    kind: kindOf(name, s),
-    required: required.has(name),
-    ...(s.enum ? { options: s.enum.map(String) } : {}),
-  }));
+  return Object.entries(schema.properties ?? {}).map(([name, s]) => {
+    const options = choices(s);
+    return {
+      name,
+      label: s.title ?? LABELS[name] ?? humanize(name),
+      kind: kindOf(name, s),
+      required: required.has(name),
+      ...(options ? { options: options.map(String), ...(options.every((o) => typeof o === 'number') ? { numeric: true } : {}) } : {}),
+    };
+  });
 }
 
 /** Typed text -> input for the server. The server re-checks everything; this only catches typing slips. */
@@ -53,6 +64,8 @@ export function toInput(fields: FieldSpec[], values: Values): { input: Record<st
       } catch {
         errors[f.name] = 'Type an amount like 1,250.00';
       }
+    } else if (f.kind === 'choice' && f.numeric) {
+      input[f.name] = Number(raw);
     } else if (f.kind === 'integer' || f.kind === 'cashPlace') {
       if (/^-?\d+$/.test(raw)) input[f.name] = Number(raw);
       else errors[f.name] = 'Type a whole number.';

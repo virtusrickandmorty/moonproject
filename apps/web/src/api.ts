@@ -13,7 +13,7 @@ export class ApiError extends Error {
 
 export interface Me { userId: string; username: string; displayName: string; roles: string[]; permissions: string[]; mustChangePassword: boolean; csrfToken: string }
 export interface CompanyProfile { registeredName: string; tradeName: string; tin: string; registeredAddress: string; isVatRegistered: boolean; version: number; supersededAt?: string }
-export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
+export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; const?: unknown; anyOf?: JsonSchema[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
 export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
 export type PrintVariant = 'document' | 'job_ticket';
 export interface PrintableType { key: string; variants: PrintVariant[] }
