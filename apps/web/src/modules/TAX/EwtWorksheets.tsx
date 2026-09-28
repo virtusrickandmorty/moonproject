@@ -11,7 +11,7 @@ import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { WorksheetChecks } from './QuarterReports.tsx';
 import { Excel, QuarterForm, pesos, useQuarterReport } from './ReportParts.tsx';
-import { birPaymentPath, ewtMonthChoices, ewtMonthDefault, monthFromQuery, quarterFromQuery } from './bir.ts';
+import { birPaymentPath, ewtMonthChoices, ewtMonthDefault, monthFromQuery, openingReckoning, quarterFromQuery } from './bir.ts';
 import { atcWords, ewtClassWords, quarterTitle, rateWords, returnQuarter, yearChoices } from './reports.ts';
 
 const num = 'whitespace-nowrap py-1 pl-3 text-right tabular-nums';
@@ -115,6 +115,7 @@ export function EwtMonthReturn({ me, docTypes }: { me: Me; docTypes: DocTypeInfo
           <RecordLink docTypes={docTypes} form="0619-E" period={w.month} />
           <AtcTable atcs={w.atcs} totals={w.totals} what={w.label} />
           <Reckoning rows={[
+            ...openingReckoning(w),
             { label: 'Due with the 0619-E', cents: w.dueCents },
             ...w.payments.map((p) => paymentRow('Paid with', p)),
             { label: 'Left to pay', cents: w.leftCents, strong: true },
@@ -149,6 +150,7 @@ export function EwtQuarterReturn({ me, docTypes }: { me: Me; docTypes: DocTypeIn
             <AtcTable atcs={w.atcs} totals={w.totals} what="the quarter" />
             <Reckoning rows={[
               { label: 'EWT withheld in the quarter', cents: w.totals.ewtCents },
+              ...openingReckoning(w),
               ...w.remittances.flatMap((r) => (r.payments.length ? r.payments.map((p) => paymentRow(`Less the 0619-E for ${r.label}:`, p)) : [{ label: `Less the 0619-E for ${r.label}: none recorded`, cents: 0 }])),
               { label: 'Due with the 1601-EQ', cents: w.dueCents, strong: true },
               ...w.payments.map((p) => paymentRow('Paid with', p)),

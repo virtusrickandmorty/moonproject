@@ -13,7 +13,7 @@ import { vatSummary } from './vat.ts';
 import { vatReturnWorksheet, type WorksheetCheck } from './vat-return.ts';
 import { quarterOf, taxDeadlines, type Quarter } from './calendar.ts';
 import { ewtMonthWorksheet, ewtQuarterWorksheet, type PaymentLine } from './ewt-return.ts';
-import { parsePeriod } from './payments.ts';
+import { parsePeriod, periodsDue } from './payments.ts';
 import { markReceived } from './withholding.ts';
 
 export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -172,6 +172,9 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   const paidRow = (item: string, x: PaymentLine): CsvCell[] => [`${item} ${x.number} on ${x.date} (${x.reference})`, '', '', '', csvPesos(x.amountCents)];
   const amountRow = (item: string, cents: number): CsvCell[] => [item, '', '', '', csvPesos(cents)];
   const checkRows = (checks: WorksheetCheck[]): CsvCell[][] => checks.map((c) => [`Check: ${c.message}`, '', '', '', '']);
+  /** What the opening tax payables left to pay with the return (a period before the cut-over date), if anything. */
+  const openingRows = (w: { openingCents: number; openings: { number: string }[] }): CsvCell[][] =>
+    w.openingCents ? [amountRow(`Left to pay by the old books (${[...new Set(w.openings.map((o) => o.number))].join(', ')})`, w.openingCents)] : [];
 
   /** The 0619-E worksheet of month 1 or 2 of a quarter (?month=2026-07). */
   app.get<{ Querystring: { month?: string; format?: string } }>('/api/tax/0619e', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
@@ -184,6 +187,7 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
     return csv(reply, `0619-E-worksheet-${month}`, [
       HEAD_EWT,
       ...atcRows('EWT withheld', w.atcs),
+      ...openingRows(w),
       ['Total due', '', '', csvPesos(w.totals.baseCents), csvPesos(w.dueCents)],
       ...w.payments.map((x) => paidRow('Paid', x)),
       amountRow('Left to pay', w.leftCents),
@@ -200,6 +204,7 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
       HEAD_EWT,
       ...atcRows('EWT withheld in the quarter', w.atcs),
       ['Total EWT of the quarter', '', '', csvPesos(w.totals.baseCents), csvPesos(w.totals.ewtCents)],
+      ...openingRows(w),
       ...w.remittances.flatMap((r) => (r.payments.length ? r.payments.map((x) => paidRow(`Less 0619-E for ${r.label}:`, x)) : [amountRow(`Less 0619-E for ${r.label}: none recorded`, 0)])),
       amountRow('Due with the 1601-EQ', w.dueCents),
       ...w.payments.map((x) => paidRow('Paid', x)),
@@ -212,6 +217,9 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
       ['Total', '', '', csvPesos(w.totals.baseCents), '', csvPesos(w.totals.ewtCents)],
     ]);
   });
+
+  /** Every return with something left to pay (a VAT close or an opening's 2550Q, EWT withheld or opened), for the BIR payment form. */
+  app.get('/api/tax/payments/due', { config: { permission: 'tax.payment.create' } }, async () => periodsDue(db));
 
   /** VAT of one quarter (?year=2026&quarter=3), or of today's quarter. */
   app.get<{ Querystring: QuarterQuery }>('/api/tax/vat-summary', { config: { permission: 'tax.registers.view' } }, async (req) => {

@@ -5,6 +5,7 @@ import { taxRoutes } from './routes.ts';
 import { vatCloseDoc } from './doctypes/vat-close.ts';
 import { birPaymentDoc } from './doctypes/bir-payment.ts';
 import { openingWithholdingDoc } from './doctypes/opening.ts';
+import { openingPayableDoc } from './doctypes/opening-payable.ts';
 
 export default defineModule({
   code: 'TAX',
@@ -23,7 +24,8 @@ export default defineModule({
     { key: 'tax.payment.cancel', label: 'Cancel a recorded BIR payment', defaultRoles: ['accountant', 'owner'] },
     { key: 'tax.2307.receive', label: "Mark a customer's 2307 received when it comes after the collection or the opening", defaultRoles: ['accountant', 'owner'] },
   ],
-  docTypes: [vatCloseDoc, birPaymentDoc, openingWithholdingDoc], // tax.opening takes ACC's acc.opening.* permissions (OPENING_PERMISSIONS)
+  // tax.opening and tax.payable.opening take ACC's acc.opening.* permissions (OPENING_PERMISSIONS)
+  docTypes: [vatCloseDoc, birPaymentDoc, openingWithholdingDoc, openingPayableDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: taxRoutes,
 });

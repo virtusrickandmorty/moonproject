@@ -8,11 +8,15 @@
  * cancel on its cancel date, journal vouchers; never a BIR payment. What was paid is read from the payments' journals,
  * reversals included, so a cancelled payment counts for nothing. A payee below zero was paid for more than is now
  * withheld (a bill cancelled after its EWT was paid, D6).
+ * A return of a period before the cut-over date also pays what a posted opening tax payable (OBTP-) left to pay with it
+ * (opening-payables.ts): a 2550Q the opening's amount, an EWT return the opening's amount per supplier, over the same
+ * returns its payments are counted on (a 1601-EQ: the openings of its 0619-E months too).
  */
 import type { Db } from '../../platform/db/driver.ts';
 import { voucherTaxFacts } from '../EXP/public.ts';
 import { supplierTaxInfo } from '../PUR/public.ts';
 import { monthRange, quarterRange, type Quarter } from './calendar.ts';
+import { openedByParty, openedReturns, openingsOf } from './opening-payables.ts';
 import { IN_REGISTERS } from './registers.ts';
 
 export const BIR_FORMS = ['2550Q', '0619-E', '1601-EQ'] as const;
@@ -105,28 +109,35 @@ export function ewtPaidWith(form: '0619-E' | '1601-EQ', period: string, p: Perio
   return [['0619-E', m1!], ['0619-E', m2!], ['1601-EQ', period]];
 }
 
-export interface PayeeDue { partyId: string; name: string; withheldCents: number; paidCents: number; dueCents: number }
+export interface PayeeDue { partyId: string; name: string; withheldCents: number; openingCents: number; paidCents: number; dueCents: number }
 
-/** Per payee: EWT withheld in the period, paid for it with the BIR, and left (withheld − paid), by name; payees at zero left out. */
+/**
+ * Per payee: EWT withheld in the period, left to pay by the old books (openings), paid for it with the BIR, and left
+ * (withheld + opening − paid), by name; payees at zero left out.
+ */
 export function ewtDue(db: Db, form: '0619-E' | '1601-EQ', period: string, p: Period): PayeeDue[] {
   const withheld = withheldByPayee(db, p.from, p.to);
-  const paid = paidByParty(db, 'EWT_PAYABLE', ewtPaidWith(form, period, p));
-  return [...new Set([...withheld.keys(), ...paid.keys()])]
+  const keys = ewtPaidWith(form, period, p);
+  const opened = openedByParty(db, keys);
+  const paid = paidByParty(db, 'EWT_PAYABLE', keys);
+  return [...new Set([...withheld.keys(), ...opened.keys(), ...paid.keys()])]
     .map((partyId) => {
-      const [w, x] = [withheld.get(partyId) ?? 0, paid.get(partyId) ?? 0];
-      return { partyId, name: payeeOf(db, partyId).name, withheldCents: w, paidCents: x, dueCents: w - x };
+      const [w, o, x] = [withheld.get(partyId) ?? 0, opened.get(partyId) ?? 0, paid.get(partyId) ?? 0];
+      return { partyId, name: payeeOf(db, partyId).name, withheldCents: w, openingCents: o, paidCents: x, dueCents: w + o - x };
     })
-    .filter((d) => d.withheldCents !== 0 || d.paidCents !== 0)
+    .filter((d) => d.withheldCents !== 0 || d.openingCents !== 0 || d.paidCents !== 0)
     .sort((a, b) => a.name.localeCompare(b.name) || a.partyId.localeCompare(b.partyId));
 }
 
 export interface VatDue {
   close: { documentId: string; number: string; date: string } | null;
-  /** What the close credited to 2302, paid with the quarter's 2550Q payments, and left. */
-  closedCents: number; paidCents: number; dueCents: number;
+  /** A quarter before the cut-over date: the opening tax payable that brought in its 2550Q. */
+  opening: { documentId: string; number: string; date: string } | null;
+  /** What the close credited to 2302, what the opening did, paid with the quarter's 2550Q payments, and left. */
+  closedCents: number; openingCents: number; paidCents: number; dueCents: number;
 }
 
-/** The VAT a quarter's posted close made payable, and what its 2550Q payments paid of it. */
+/** The VAT a quarter's posted close (or its opening) made payable, and what its 2550Q payments paid of it. */
 export function vatDue(db: Db, year: number, quarter: Quarter): VatDue {
   const close = db
     .prepare(
@@ -134,23 +145,34 @@ export function vatDue(db: Db, year: number, quarter: Quarter): VatDue {
        WHERE c.year = ? AND c.quarter = ? AND d.status = 'posted'`,
     )
     .get(year, quarter) as { documentId: string; number: string; date: string; payable: number } | undefined;
-  const paidCents = [...paidByParty(db, 'VAT_PAYABLE', [['2550Q', quarterPeriod(year, quarter)]]).values()].reduce((s, c) => s + c, 0);
+  const key: [BirForm, string][] = [['2550Q', quarterPeriod(year, quarter)]];
+  const paidCents = [...paidByParty(db, 'VAT_PAYABLE', key).values()].reduce((s, c) => s + c, 0);
   const closedCents = close?.payable ?? 0;
-  return { close: close ? { documentId: close.documentId, number: close.number, date: close.date } : null, closedCents, paidCents, dueCents: closedCents - paidCents };
+  const opening = openingsOf(db, key)[0];
+  const openingCents = openedByParty(db, key).get('') ?? 0;
+  return {
+    close: close ? { documentId: close.documentId, number: close.number, date: close.date } : null,
+    opening: opening ? { documentId: opening.documentId, number: opening.number, date: opening.date } : null,
+    closedCents, openingCents, paidCents, dueCents: closedCents + openingCents - paidCents,
+  };
 }
 
 /**
  * Every return with something left to pay, for the property test's generator and a "to pay" list: the quarters closed
- * with VAT payable, and the months (0619-E) and quarters (1601-EQ) with EWT withheld, as far as the ledger goes.
+ * with VAT payable, and the months (0619-E) and quarters (1601-EQ) with EWT withheld, as far as the ledger goes; and the
+ * returns the openings brought in.
  */
 export function periodsDue(db: Db): { form: BirForm; period: string; payableCents: number }[] {
   const out: { form: BirForm; period: string; payableCents: number }[] = [];
+  const opened = openedReturns(db);
   const closed = db
     .prepare(`SELECT c.year, c.quarter FROM tax_vat_closes c JOIN documents d ON d.id = c.document_id WHERE d.status = 'posted' ORDER BY 1, 2`)
     .all() as { year: number; quarter: Quarter }[];
-  for (const c of closed) {
-    const due = vatDue(db, c.year, c.quarter).dueCents;
-    if (due > 0) out.push({ form: '2550Q', period: quarterPeriod(c.year, c.quarter), payableCents: due });
+  const quarters = new Set([...closed.map((c) => quarterPeriod(c.year, c.quarter)), ...opened.filter((o) => o.form === '2550Q').map((o) => o.period)]);
+  for (const period of [...quarters].sort()) {
+    const p = parsePeriod(period)!;
+    const due = vatDue(db, p.year, p.quarter).dueCents;
+    if (due > 0) out.push({ form: '2550Q', period, payableCents: due });
   }
   const months = db
     .prepare(
@@ -159,8 +181,11 @@ export function periodsDue(db: Db): { form: BirForm; period: string; payableCent
     )
     .pluck()
     .all() as string[];
+  for (const o of opened) if (o.form === '0619-E' && !months.includes(o.period)) months.push(o.period);
+  const quarterOfMonth = (m: string) => quarterPeriod(Number(m.slice(0, 4)), Math.ceil(Number(m.slice(5)) / 3) as Quarter);
+  const ewtQuarters = new Set([...months.map(quarterOfMonth), ...opened.filter((o) => o.form === '1601-EQ').map((o) => o.period)]);
   const positive = (xs: PayeeDue[]) => xs.filter((d) => d.dueCents > 0).reduce((s, d) => s + d.dueCents, 0);
-  for (const period of [...months, ...new Set(months.map((m) => quarterPeriod(Number(m.slice(0, 4)), Math.ceil(Number(m.slice(5)) / 3) as Quarter)))]) {
+  for (const period of [...months.sort(), ...[...ewtQuarters].sort()]) {
     const p = parsePeriod(period)!;
     const form = p.kind === 'month' ? '0619-E' : '1601-EQ';
     if (form === '0619-E' && (p.month! % 3 === 0 || birPaymentsOf(db, [['1601-EQ', quarterPeriod(p.year, p.quarter)]]).some((x) => x.status === 'posted'))) continue;

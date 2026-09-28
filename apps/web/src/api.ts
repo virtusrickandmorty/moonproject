@@ -320,12 +320,14 @@ export interface BirPaymentLine { id: string; number: string; date: string; peri
 /** The EWT of a period by ATC (per EWT class while the ATC is to confirm). */
 export type EwtAtcLine = EwtAtc & { baseCents: number; ewtCents: number };
 /** GET /api/tax/0619e?month=: month 1 or 2 of a quarter. */
-export interface EwtMonthWorksheet {
+/** What the opening tax payables (OBTP-) left to pay with a return of a period before the cut-over date. */
+export interface OpenedReturns { openingCents: number; openings: { documentId: string; number: string; form: string; period: string }[] }
+export interface EwtMonthWorksheet extends OpenedReturns {
   month: string; label: string; from: string; to: string; returnDue: string; atcs: EwtAtcLine[]; totals: { baseCents: number; ewtCents: number };
   dueCents: number; payments: BirPaymentLine[]; paidCents: number; leftCents: number; checks: WorksheetCheck[];
 }
 /** GET /api/tax/1601eq?year&quarter=: the quarter less its 0619-E payments, and the QAP. */
-export interface EwtQuarterWorksheet {
+export interface EwtQuarterWorksheet extends OpenedReturns {
   year: number; quarter: 1 | 2 | 3 | 4; period: string; from: string; to: string; months: string[]; returnDue: string; atcs: EwtAtcLine[]; totals: { baseCents: number; ewtCents: number };
   remittances: { month: string; label: string; payments: BirPaymentLine[]; paidCents: number }[]; remittedCents: number;
   dueCents: number; payments: BirPaymentLine[]; paidCents: number; leftCents: number;
@@ -504,6 +506,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     ewtMonthWorksheet: (month: string) => call<EwtMonthWorksheet>('GET', ewtMonthPath(month)),
     ewtQuarterWorksheet: (year: number, quarter: number) => call<EwtQuarterWorksheet>('GET', taxQuarterPath('1601eq', year, quarter)),
     opening: () => call<OpeningState>('GET', '/api/acc/opening'),
+    /** Every return with something left to pay (GET /api/tax/payments/due): a VAT close or an opening's 2550Q, EWT withheld or opened. */
+    taxPaymentsDue: () => call<{ form: BirForm; period: string; payableCents: number }[]>('GET', '/api/tax/payments/due'),
     /** Both need a fresh password (step-up). */
     setCutoverDate: (date: string) => call<OpeningState>('POST', '/api/acc/opening/cutover-date', { date }),
     closeOpening: () => call<OpeningState>('POST', '/api/acc/opening/close', {}),

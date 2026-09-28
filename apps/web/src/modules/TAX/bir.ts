@@ -4,7 +4,7 @@
  * on. Pure, so they are tested without a browser; the server checks the period and the amount again.
  */
 import { formatPesos } from '@moonproject/shared';
-import type { BirForm, EwtMonthWorksheet, EwtQuarterWorksheet, VatWorksheet } from '../../api.ts';
+import type { BirForm, EwtMonthWorksheet, EwtQuarterWorksheet, OpenedReturns, VatWorksheet } from '../../api.ts';
 import { cents } from '../COL/money.ts';
 import { lastEndedQuarter, monthName, type Quarter } from './reports.ts';
 
@@ -85,6 +85,19 @@ export function leftToPay(form: BirForm, w: EwtMonthWorksheet | EwtQuarterWorksh
   const cents = form === '2550Q' ? ((w as VatWorksheet).lines.find((l) => l.key === 'payable')?.taxCents ?? 0) : (w as EwtMonthWorksheet).leftCents;
   return Math.max(cents, 0);
 }
+
+/**
+ * The 2550Q of a quarter before the cut-over date has no VAT close here, so its worksheet leaves nothing: what the
+ * opening left comes from the server's list of returns with something left to pay.
+ */
+export function leftWithDue(form: BirForm, period: string, fromWorksheet: number, due: { form: BirForm; period: string; payableCents: number }[]): number {
+  if (form !== '2550Q' || fromWorksheet > 0) return fromWorksheet;
+  return due.find((d) => d.form === form && d.period === period)?.payableCents ?? 0;
+}
+
+/** A worksheet's line for what the old books left to pay with the return (none when nothing was opened). */
+export const openingReckoning = (w: OpenedReturns): { label: string; cents: number }[] =>
+  w.openingCents ? [{ label: `Left to pay by the old books (${[...new Set(w.openings.map((o) => o.number))].join(', ')})`, cents: w.openingCents }] : [];
 
 /** The amount box's default: what is left, or blank when nothing is. */
 export const amountText = (cents: number) => (cents > 0 ? formatPesos(cents) : '');

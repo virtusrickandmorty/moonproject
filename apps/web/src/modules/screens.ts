@@ -61,6 +61,7 @@ import { OpeningForm } from './ACC/OpeningForm.tsx';
 import { OpeningBalances } from './ACC/OpeningBalances.tsx';
 import { BirPaymentForm } from './TAX/BirPaymentForm.tsx';
 import { OpeningWithholdingForm } from './TAX/OpeningWithholdingForm.tsx';
+import { OpeningPayableForm } from './TAX/OpeningPayableForm.tsx';
 import { EwtMonthReturn, EwtQuarterReturn } from './TAX/EwtWorksheets.tsx';
 import { LoanForm } from './LOAN/LoanForm.tsx';
 import { OpeningForm as OpeningLoanForm } from './LOAN/OpeningForm.tsx';
@@ -162,6 +163,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'inv.count': InventoryCountForm,
   'jo.opening': OpeningJobOrderForm,
   'tax.opening': OpeningWithholdingForm,
+  'tax.payable.opening': OpeningPayableForm,
 };
 
 export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'jo.opening': openingJobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView };
