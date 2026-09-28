@@ -1,6 +1,8 @@
 /**
- * A disposable training shop. All master records and documents are made through
+ * A disposable training shop (PLAN C8 "Practice mode"). All master records and documents are made through
  * the same HTTP routes used by staff; reads below are only for safety and reports.
+ *   npm run practice-data -- --db <path> --days 60 [--start 2026-09-01]
+ * The shop PC's practice mode (shop.ts) runs this file in a child process to build its practice database.
  */
 import { randomBytes, randomUUID } from 'node:crypto';
 import { existsSync, statSync } from 'node:fs';
@@ -8,15 +10,16 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { manilaDate } from '@moonproject/shared';
-import { buildApp } from '../src/app.ts';
-import { fixedClock, today } from '../src/platform/clock.ts';
-import { openDb, type Db } from '../src/platform/db/driver.ts';
-import { loadModules } from '../src/modules/load.ts';
-import { runInvariants } from '../src/engine/ledger/invariants.ts';
-import { SESSION_COOKIE } from '../src/engine/security/sessions.ts';
+import { buildApp } from '../../app.ts';
+import { fixedClock, today } from '../clock.ts';
+import { openDb, type Db } from '../db/driver.ts';
+import { loadModules } from '../../modules/load.ts';
+import { runInvariants } from '../../engine/ledger/invariants.ts';
+import { SESSION_COOKIE } from '../../engine/security/sessions.ts';
 
 const DAY_MS = 86_400_000;
-const START = Date.parse('2026-09-01T02:00:00Z'); // 10 a.m. in Manila
+/** The made-up users' passwords are random and thrown away, so a cheap hash keeps the build quick (the cost is in each hash). */
+const PRACTICE_SCRYPT_N = 2 ** 10;
 const ROLES = ['owner', 'accountant', 'encoder', 'production'] as const;
 type Role = typeof ROLES[number];
 type Json = Record<string, any>;
@@ -92,8 +95,11 @@ function quarter(date: string): { year: number; quarter: number } {
  * Creates a standalone database. A populated or otherwise nonempty file is
  * rejected before app startup can run migrations against it.
  */
-export async function createPracticeData(dbPath: string, days: number): Promise<PracticeSummary> {
+export async function createPracticeData(dbPath: string, days: number, start = '2026-09-01'): Promise<PracticeSummary> {
   if (!Number.isSafeInteger(days) || days < 1 || days > 366) throw new Error('--days must be an integer from 1 to 366.');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || Number.isNaN(Date.parse(`${start}T00:00:00Z`))) throw new Error('--start must be a date like 2026-09-01.');
+  const START = Date.parse(`${start}T02:00:00Z`); // 10 a.m. in Manila on the first day
+  const hired = manilaDate(new Date(START - 31 * DAY_MS)); // the made-up employees started a month before
   if (!dbPath || dbPath === ':memory:') throw new Error('--db must name a new database file.');
   const file = resolve(dbPath);
   if (existsSync(file) && statSync(file).size > 0) throw new Error(`Refusing ${file}: the file is not empty and may already contain documents.`);
@@ -101,7 +107,7 @@ export async function createPracticeData(dbPath: string, days: number): Promise<
   const clock = fixedClock(new Date(START).toISOString());
   let app: FastifyInstance | undefined;
   try {
-    const built = buildApp({ db, clock, modules: await loadModules() });
+    const built = buildApp({ db, clock, modules: await loadModules(), config: { scryptN: PRACTICE_SCRYPT_N } });
     app = built.app;
     await app.ready();
     if ((db.prepare('SELECT COUNT(*) AS n FROM documents').get() as { n: number }).n !== 0) throw new Error('Refusing a database that already has documents.');
@@ -156,7 +162,7 @@ export async function createPracticeData(dbPath: string, days: number): Promise<
       garmentType: null, unit: 'pc', setComponents: 1,
     }), 'create catalogue item').id as string;
     ok(await owner.post(`/api/cat/items/${item}/prices`, {
-      effectiveFrom: '2026-09-01', minQty: 1, unitPriceCents: 10_000,
+      effectiveFrom: start, minQty: 1, unitPriceCents: 10_000,
     }, { 'if-match': '1' }), 'price catalogue item');
     const customers: string[] = [];
     for (let n = 1; n <= 4; n++) {
@@ -177,18 +183,18 @@ export async function createPracticeData(dbPath: string, days: number): Promise<
     }
     const office = ok(await owner.post('/api/emp/employees', {
       fullName: 'Practice Office Employee', costCentre: 'office',
-      hireDate: '2026-08-01', position: 'Practice clerk',
+      hireDate: hired, position: 'Practice clerk',
     }), 'create office employee').id as string;
     const sewer = ok(await owner.post('/api/emp/employees', {
       fullName: 'Practice Production Employee', costCentre: 'production',
-      hireDate: '2026-08-01', position: 'Practice sewer',
+      hireDate: hired, position: 'Practice sewer',
     }), 'create production employee').id as string;
     ok(await owner.post(`/api/emp/employees/${office}/pay`, {
-      effectiveFrom: '2026-08-01', payType: 'monthly', monthlyRateCents: 1_500_000,
+      effectiveFrom: hired, payType: 'monthly', monthlyRateCents: 1_500_000,
       payGroup: 'SEMI_MONTHLY', workweekDays: 6, isMwe: false, reason: 'Made-up practice rate',
     }), 'office pay profile');
     ok(await owner.post(`/api/emp/employees/${sewer}/pay`, {
-      effectiveFrom: '2026-08-01', payType: 'piece',
+      effectiveFrom: hired, payType: 'piece',
       payGroup: 'WEEKLY_PIECE', workweekDays: 6, isMwe: false, reason: 'Made-up practice rate',
     }), 'production pay profile');
     const categoryId = (db.prepare(`SELECT c.id FROM exp_categories c JOIN accounts a ON a.id = c.account_id WHERE a.code = '6990'`).get() as { id: number }).id;
@@ -318,24 +324,32 @@ export async function createPracticeData(dbPath: string, days: number): Promise<
   }
 }
 
-function args(argv: string[]): { db: string; days: number } {
+const USAGE = 'Usage: npm run practice-data -- --db <path> --days 60 [--start 2026-09-01] [--quiet]';
+
+function args(argv: string[]): { db: string; days: number; start?: string; quiet: boolean } {
   let db = '';
   let days = 60;
+  let start: string | undefined;
+  let quiet = false;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--db') db = argv[++i] ?? '';
     else if (argv[i] === '--days') days = Number(argv[++i]);
-    else throw new Error('Usage: npm run practice-data -- --db <path> --days 60');
+    else if (argv[i] === '--start') start = argv[++i];
+    else if (argv[i] === '--quiet') quiet = true; // the shop's practice mode: no passwords in the service log
+    else throw new Error(USAGE);
   }
-  if (!db) throw new Error('Usage: npm run practice-data -- --db <path> --days 60');
-  return { db, days };
+  if (!db) throw new Error(USAGE);
+  return { db, days, start, quiet };
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const { db, days } = args(process.argv.slice(2));
-  createPracticeData(db, days)
+  const { db, days, start, quiet } = args(process.argv.slice(2));
+  createPracticeData(db, days, start)
     .then((summary) => {
-      console.log('Practice data created. Save these passwords for training:');
-      for (const role of ROLES) console.log(`  practice-${role}: ${summary.passwords[role]}`);
+      if (!quiet) {
+        console.log('Practice data created. Save these passwords for training:');
+        for (const role of ROLES) console.log(`  practice-${role}: ${summary.passwords[role]}`);
+      }
       console.log('Documents:', summary.documents);
       console.log('Cash position (centavos):', summary.cashPlaces);
       console.log('Invariants: clean');
