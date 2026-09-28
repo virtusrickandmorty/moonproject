@@ -1,10 +1,10 @@
 /**
- * Rules of the money-out screens (supplier bills and payments; expense vouchers share the EWT words): typed rows ->
- * server input. Pure, so they are tested without a browser. The server works out VAT, EWT and every total, and checks
- * everything again.
+ * Rules of the money-out screens (supplier bills, opening supplier bills and payments; expense vouchers share the EWT
+ * words): typed rows -> server input. Pure, so they are tested without a browser. The server works out VAT, EWT and
+ * every total, and checks everything again.
  */
-import { formatPesos, type Issue } from '@moonproject/shared';
-import type { ApLedger, Preview, Setting } from '../../api.ts';
+import { formatPesos, isBusinessDate, type Issue } from '@moonproject/shared';
+import type { ApLedger, OpeningStatus, Preview, Setting } from '../../api.ts';
 import { cents, tendersToInput, type TenderInput, type TenderRow } from '../COL/money.ts';
 
 /** The EWT classes (the server's EWT_CLASSES) in words. Their rates are a dated setting, so they come from the server. */
@@ -75,6 +75,40 @@ export const billFigures = (d: { inputVatCents: number; appliedEwtClass: string 
 
 export const voucherFigures = (d: { expenseCents: number; inputVatCents: number; appliedEwtClass: string | null; ewtRateBp: number; ewtCents: number; cashCents: number }): [string, number][] =>
   [['Expense', d.expenseCents], ['Input VAT', d.inputVatCents], ewtFigure(d), ['Paid out', d.cashCents]];
+
+/**
+ * An opening supplier bill (OBAP-, PLAN D8 step 3): a bill of the old books still unpaid on the cut-over date, with what
+ * was still owed on it then. No lines, VAT or EWT: those were in the old books.
+ */
+export interface OpeningBillInput { supplierId: string; supplierInvoiceNo: string; supplierInvoiceDate: string; dueDate: string; owedCents: number; note?: string }
+export interface OpeningBillValues { supplierId: string; invoiceNo: string; invoiceDate: string; dueDate: string; owed: string; note: string }
+
+export function openingBillInput(v: OpeningBillValues): { input: OpeningBillInput; errors: string[] } {
+  const owed = cents(v.owed);
+  const errors = [
+    ...(v.supplierId ? [] : ['Pick the supplier.']),
+    ...(v.invoiceNo.trim() ? [] : ['Type the number on the supplier’s invoice.']),
+    ...(isBusinessDate(v.invoiceDate) ? [] : ['Pick the date on the supplier’s invoice.']),
+    ...(isBusinessDate(v.dueDate) ? [] : ['Pick the due date.']),
+    ...(owed !== undefined && owed > 0 ? [] : ['Type what was still owed on the cut-over date, like 1,250.00']),
+  ];
+  const input = {
+    supplierId: v.supplierId, supplierInvoiceNo: v.invoiceNo.trim(), supplierInvoiceDate: v.invoiceDate, dueDate: v.dueDate, owedCents: owed ?? 0,
+    ...(v.note.trim() ? { note: v.note.trim() } : {}),
+  };
+  return { input, errors };
+}
+
+export const openingBillValues = (i: OpeningBillInput): OpeningBillValues => ({
+  supplierId: i.supplierId, invoiceNo: i.supplierInvoiceNo, invoiceDate: i.supplierInvoiceDate, dueDate: i.dueDate, owed: formatPesos(i.owedCents), note: i.note ?? '',
+});
+
+/** Why no opening document can be recorded now, or null: the date is loading, not set yet, or the opening is closed. */
+export function openingDateProblem(o: OpeningStatus | undefined): string | null {
+  if (!o) return 'Loading the cut-over date…';
+  if (o.closed) return `The opening was closed on ${o.closed.closedAt.slice(0, 10)}. Correct balances with a journal voucher.`;
+  return o.cutoverDate ? null : 'Set the cut-over date on the opening balances screen first.';
+}
 
 /** A bill that can be paid; `owedCents` counts back what the payment being edited paid on it (it is cancelled first). */
 export interface OpenBill { id: string; label: string; owedCents: number }

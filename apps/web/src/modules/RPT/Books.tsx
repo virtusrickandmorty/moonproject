@@ -17,12 +17,12 @@ type TbResult = { asOf: string; compareTo: string | null; rows: { accountId: num
   debitCents: number; creditCents: number; compareDebitCents: number; compareCreditCents: number }[];
   totalDebitCents: number; totalCreditCents: number; compareTotalDebitCents: number | null; compareTotalCreditCents: number | null };
 
-function useToday() {
+export function useToday() {
   const [today, setToday] = useState('');
   useEffect(() => { void api.health().then((r) => setToday(r.serverTime.slice(0, 10))); }, []);
   return today;
 }
-function useReport<T>(path: string | null) {
+export function useReport<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -41,16 +41,16 @@ function source(line: Pick<Line, 'documentType' | 'documentNumber' | 'sourceId' 
 }
 function party(line: Pick<Line, 'partyType' | 'partyId'>) { return line.partyType ? `${line.partyType}: ${line.partyId}` : ''; }
 function balance(cents: number) { return cents === 0 ? peso(0) : `${peso(Math.abs(cents))} ${cents < 0 ? 'Cr' : 'Dr'}`; }
-function Tools({ path }: { path: string }) {
+export function Tools({ path }: { path: string }) {
   return <div className="flex gap-2 print:hidden"><a className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" href={`/api/rpt/${path}${path.includes('?') ? '&' : '?'}format=csv`}>Export CSV</a>
     <Button onClick={() => window.print()}>Print</Button></div>;
 }
-function BookTitle({ title, dates }: { title: string; dates: string }) {
+export function BookTitle({ title, dates }: { title: string; dates: string }) {
   return <div className="rpt-heading"><h1 className="text-2xl font-semibold">{title}</h1><p>{dates}</p></div>;
 }
-const th = 'border-b border-slate-300 px-2 py-2 text-left';
-const td = 'border-b border-slate-100 px-2 py-2 align-top';
-const money = `${td} whitespace-nowrap text-right tabular-nums`;
+export const th = 'border-b border-slate-300 px-2 py-2 text-left';
+export const td = 'border-b border-slate-100 px-2 py-2 align-top';
+export const money = `${td} whitespace-nowrap text-right tabular-nums`;
 
 export function GeneralJournal({ me }: { me: Me }) {
   const today = useToday();
