@@ -14,6 +14,7 @@ import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { DraftLine } from '../../../engine/ledger/post.ts';
 import { quarterRange, vatReturnDue, type Quarter } from '../calendar.ts';
+import { openingsOf } from '../opening-payables.ts';
 import { vatPosition, type PartyAmount, type VatPosition } from '../vat.ts';
 
 export const vatCloseInput = z
@@ -79,6 +80,9 @@ export const vatCloseDoc: DocTypeDef<VatCloseInput, VatClose> = {
     const later = closes.find((c) => c !== same);
     if (same) issues.push({ field: 'quarter', code: 'CLOSED_ALREADY', level: 'error', message: `${q} is already closed by ${same.number}. Cancel that one first to close it again.` });
     else if (later) issues.push({ field: 'quarter', code: 'LATER_CLOSED', level: 'error', message: `${quarterName(later)} is already closed (${later.number}). Quarters close in order: cancel it first.` });
+    // The old books' unpaid 2550Q of this quarter came in at the cut-over (OBTP-): its VAT payable is there already.
+    const opened = openingsOf(ctx.db, [['2550Q', `${doc.year}-Q${doc.quarter}`]])[0];
+    if (opened) issues.push({ field: 'quarter', code: 'OPENED_AT_CUTOVER', level: 'error', message: `${q}'s 2550Q was brought in from the old books by ${opened.number}. Its VAT payable is there already, so there is nothing to close here.` });
     if (doc.totalCents === 0) issues.push({ field: 'quarter', code: 'NOTHING_TO_CLOSE', level: 'error', message: `${q} has no VAT to close.` });
     if (doc.vatWithheldPendingCents > 0) {
       issues.push({ field: 'quarter', code: 'PENDING_2307', level: 'warning', message: `${formatPeso(doc.vatWithheldPendingCents)} of VAT withheld still waits for its 2307. It stays for the quarter the certificate comes.` });

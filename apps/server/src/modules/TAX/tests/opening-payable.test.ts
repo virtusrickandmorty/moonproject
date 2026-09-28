@@ -382,6 +382,22 @@ describe('refusals', () => {
     expect(refused.json().message).toBe('Row 2: the 2550Q for Q2 2026 is on OBTP-000001 already. Put all of a return on one row.');
   });
 
+  it('a quarter whose 2550Q was opened here cannot also be closed here', async () => {
+    await setCutover();
+    expect((await open(obtp([vatQ2()]))).statusCode).toBe(200);
+    // Output VAT of Q2 left in these books by a journal voucher: closing Q2 would make its VAT payable twice.
+    const customer = seedCustomers(env.db, encoder.userId).school;
+    const account = (code: string) => env.db.prepare('SELECT id FROM accounts WHERE code = ?').pluck().get(code) as number;
+    const jv = await accountant.post('/api/docs/acc.jv/post', {
+      input: { memo: 'Output VAT of a June sale', lateReason: 'Found in the June folder', lines: [{ accountId: account('1101'), debitCents: 12_000 }, { accountId: account('2301'), party: { type: 'customer', id: customer }, creditCents: 12_000 }] },
+      expectedTotalCents: 12_000, businessDate: '2026-06-30',
+    }, idem());
+    expect(jv.statusCode, jv.body).toBe(200);
+    expect((await accountant.post('/api/docs/tax.vat_close/preview', { input: { year: 2026, quarter: 2 } })).json().issues).toEqual([
+      expect.objectContaining({ code: 'OPENED_AT_CUTOVER', level: 'error', message: "Q2 2026's 2550Q was brought in from the old books by OBTP-000001. Its VAT payable is there already, so there is nothing to close here." }),
+    ]);
+  });
+
   it('a quarter with a VAT close here, a supplier twice or not active; the input, and who may record and view', async () => {
     await setCutover();
     // Output VAT of Q1 recorded here by a journal voucher, and Q1 closed in these books.

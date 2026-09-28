@@ -21,7 +21,6 @@ import { RunForm } from './PAY/RunForm.tsx';
 import { ReleaseForm } from './PAY/ReleaseForm.tsx';
 import { ThirteenthForm } from './PAY/ThirteenthForm.tsx';
 import { Payslips, advanceView, releaseView, runView, thirteenthView } from './PAY/views.tsx';
-import { Payslips, advanceView, releaseView, runView } from './PAY/views.tsx';
 import { GovLoans } from './PAY/Loans.tsx';
 import { AdvanceForm } from './CA/AdvanceForm.tsx';
 import { OpeningForm as OpeningCaForm } from './CA/OpeningForm.tsx';
