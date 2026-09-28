@@ -50,6 +50,7 @@ export const DOC_TITLES = [
   'Cash Advance',
   'Remittance',
   'VAT Close',
+  'BIR Payment',
   'Opening Balances',
 ] as const;
 export type DocTitle = (typeof DOC_TITLES)[number];

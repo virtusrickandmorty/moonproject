@@ -198,12 +198,12 @@ describe('2307s to issue', () => {
     expect(r).toMatchObject({ year: 2026, quarter: 3, from: '2026-07-01', to: '2026-09-30', months: ['2026-07', '2026-08', '2026-09'] });
     expect(r.lines).toEqual([
       {
-        supplierId: auditor, supplierName: 'Sample Audit Firm', tin: '555-666-777-000', ewtClass: 'prof_firm_10', atc: 'WC010', atcChoices: ['WC010'],
+        supplierId: auditor, supplierName: 'Sample Audit Firm', tin: '555-666-777-000', ewtClass: 'prof_firm_10', atc: 'WC010', atcChoices: ['WC010'], rateBp: 1_000,
         months: [{ month: '2026-07', baseCents: 0, ewtCents: 0 }, { month: '2026-08', baseCents: 0, ewtCents: 0 }, { month: '2026-09', baseCents: 1_000_000, ewtCents: 100_000 }],
         baseCents: 1_000_000, ewtCents: 100_000,
       },
       {
-        supplierId: lessor, supplierName: 'Sample Lessor Corp.', tin: '333-444-555-000', ewtClass: 'rent_5', atc: null, atcChoices: ['WI100', 'WC100'],
+        supplierId: lessor, supplierName: 'Sample Lessor Corp.', tin: '333-444-555-000', ewtClass: 'rent_5', atc: null, atcChoices: ['WI100', 'WC100'], rateBp: 500,
         months: [{ month: '2026-07', baseCents: 3_571_429, ewtCents: 178_571 }, { month: '2026-08', baseCents: 3_571_429, ewtCents: 178_571 }, { month: '2026-09', baseCents: 0, ewtCents: 0 }],
         baseCents: 7_142_858, ewtCents: 357_142,
       },
