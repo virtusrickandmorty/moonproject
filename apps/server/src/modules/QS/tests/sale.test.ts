@@ -100,6 +100,25 @@ describe('quick sale golden (PLAN I2)', () => {
     ]);
     noBrokenInvariants();
   });
+
+  it('counts VAT withheld by a government buyer with the CWT as received (D4.6)', async () => {
+    const lines = [{ kind: 'ready_made', description: 'Plain white shirt', qty: 40, unitPriceCents: 28_000, discountCents: 0 }];
+    const withholding = { cwtCents: 10_000, atc: 'WC158', certificate: 'pending' };
+    const payment = { ...cash(1_060_000, '0704'), withholding: { ...withholding, vatWithheldCents: 50_000 } };
+    const codes = async (pay: object) => ((await encoder.post('/api/qs/sales/preview', { sale: sale({ lines }), payment: pay })).json().payment.issues as { code: string }[]).map((i) => i.code);
+    expect(await codes(payment)).toEqual([]);
+    expect(await codes({ ...payment, withholding })).toContain('RECEIVED'); // ₱500.00 short without the VAT withheld
+    const res = await record(sale({ lines }), payment, 1_120_000);
+    expect(res.statusCode, res.body).toBe(200);
+    const { sale: s, payment: p } = res.json();
+    expect(linesOf(p.id)).toEqual([
+      ['1101', null, null, 1_060_000, 0],
+      ['1410', c.school, null, 10_000, 0],
+      ['1404', c.school, null, 50_000, 0],
+      ['1201', c.school, s.id, 0, 1_120_000],
+    ]);
+    noBrokenInvariants();
+  });
 });
 
 describe('cancel and edit (E6, D6)', () => {

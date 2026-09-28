@@ -121,6 +121,22 @@ describe('VAT and EWT rules (PLAN D4)', () => {
     noBrokenInvariants();
   });
 
+  it('reads the EWT rate from dated settings on the payment date; posted vouchers keep the rate they used', async () => {
+    const rates = (await encoder.get('/api/settings')).json().find((s: { key: string }) => s.key === 'tax.ewt_rates_bp').current;
+    setting('tax.ewt_rates_bp', '2026-09-29', { ...rates, rent_5: 1000 });
+    const before = await post(encoder, g13());
+    expect(journalOf(before.json().id)).toContainEqual(['2311', 'supplier', 'tin:123456789000', 0, 178_571]); // 5% of NET ₱35,714.29
+    env.clock.advance(24 * 3600_000);
+    encoder = await env.as('encoder');
+    const after = await post(encoder, { ...g13(), supplierInvoiceNo: 'SI-0103' });
+    expect(after.json().warnings).toEqual([]);
+    expect(journalOf(after.json().id)).toContainEqual(['2311', 'supplier', 'tin:123456789000', 0, 357_143]); // 10% from 29 September
+    expect((await encoder.get(`/api/docs/exp.voucher/${before.json().id}`)).json()).toMatchObject({ doc: { ewtRateBp: 500, ewtCents: 178_571 } });
+    const warned = await encoder.post('/api/docs/exp.voucher/preview', { input: { ...g13(), ewtClass: 'none' } });
+    expect(warned.json().issues.find((w: { code: string }) => w.code === 'EWT_DIFFERENT').message).toBe('The usual EWT here is 10% (rent_5). Please check.');
+    noBrokenInvariants();
+  });
+
   it('no input VAT without the full receipt; the EWT base is still NET for a VAT-registered payee', async () => {
     const { supplierInvoiceNo: _, ...noNumber } = g13();
     const res = await post(encoder, noNumber);

@@ -29,6 +29,8 @@ export interface Preview { totalCents: number; summary: string; issues: Issue[];
 export interface PostResult { id: string; number: string; totalCents: number; warnings: Issue[] }
 export interface Draft { id: string; docType: string; payload: { values?: Record<string, string> }; version: number; updatedAt: string }
 export interface CashPlace { id: number; name: string; balanceCents: number | null }
+export interface CashAccount extends CashPlace { code: string; kind: 'cash' | 'checks' | 'bank' | 'ewallet'; isActive: boolean; accountNo: string | null; encoderSeesBalance?: boolean; version?: number }
+export interface CashBook { place: Pick<CashAccount, 'id' | 'code' | 'name' | 'kind'>; from: string; to: string; openingCents: number; closingCents: number; lines: { date: string; journalNumber: string; documentId: string | null; documentNumber: string | null; docType: string | null; memo: string; inCents: number; outCents: number; balanceCents: number }[] }
 export interface CustomerRow { id: string; code: string; display_name: string; is_active: number }
 /** GET /api/col/customers/:id/open-items: what a customer can pay on. */
 export interface OpenItems {
@@ -140,7 +142,7 @@ export interface StatMonth {
   check: SchemeCheck[];
   notDeducted: { employeeId: string; name: string; cents: number }[];
 }
-export interface RemittanceInput { scheme: Scheme; month: string; cashPlaceId: number; amountCents: number; reference: string; note?: string }
+export interface RemittanceInput { scheme: Scheme; month: string; cashPlaceId: number; amountCents: number; penaltyCents?: number; reference: string; note?: string }
 
 type Fetch = (url: string, init: RequestInit) => Promise<Response>;
 
@@ -206,6 +208,11 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
       call<{ id: string; version: number }>('PUT', `/api/drafts/${encodeURIComponent(id)}`, { payload }, { 'if-match': String(version) }),
     discardDraft: (id: string) => call<unknown>('POST', `/api/drafts/${encodeURIComponent(id)}/discard`),
     cashPlaces: () => call<CashPlace[]>('GET', '/api/cash/places'),
+    cashAccounts: () => call<CashAccount[]>('GET', '/api/cash/places'),
+    addCashPlace: (body: { name: string; kind: CashAccount['kind']; accountNo?: string; encoderSeesBalance: boolean }) => call<CashAccount>('POST', '/api/cash/places', body),
+    updateCashPlace: (id: number, version: number, body: { accountNo?: string | null; encoderSeesBalance?: boolean }) =>
+      call<CashAccount>('PUT', `/api/cash/places/${id}/settings`, body, { 'if-match': String(version) }),
+    cashBook: (id: number, from: string, to: string) => call<CashBook>('GET', `/api/cash/places/${id}/book?${new URLSearchParams({ from, to })}`),
     customers: (search: string) => call<CustomerRow[]>('GET', `/api/cus/customers?${new URLSearchParams({ search, limit: '10' })}`),
     openItems: (customerId: string) => call<OpenItems>('GET', customer(customerId, 'open-items')),
     refundable: (customerId: string) => call<Refundable>('GET', customer(customerId, 'refundable')),

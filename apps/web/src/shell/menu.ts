@@ -22,6 +22,8 @@ const MODULES: [MenuGroup, string][] = [
 const groupOf = (module: string): MenuGroup => MODULES.find(([, codes]) => codes.split(' ').includes(module))?.[0] ?? 'Overview';
 
 export const SCREENS: MenuItem[] = [
+  { group: 'Money', label: 'Cash Accounts', path: '/cash/accounts', permission: 'cash.places.view' },
+  { group: 'Money', label: 'Cash book', path: '/cash/book', permission: 'cash.book.view' },
   { group: 'Overview', label: 'Home', path: '/' },
   { group: 'Production', label: 'Production board', path: '/prd/board', permission: 'prd.view' },
   { group: 'Production', label: 'Piece rates', path: '/prd/rates', permission: 'rate.view' },
