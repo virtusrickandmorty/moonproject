@@ -18,3 +18,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [15. Inventory Count](15-inventory-count.md): Count materials or ready-made goods at a month end.
 - [16. Income Statement and Balance Sheet](16-statements.md): View how much money the business made or lost, and see what the business owns and owes.
 - [17. Opening balances](17-opening-balances.md): Set the cut-over date, record starting balances, and close the opening.
+- [23. 13th-Month Pay](23-thirteenth-month.md): Work out and record the 13th-month pay, and release the net pay.
