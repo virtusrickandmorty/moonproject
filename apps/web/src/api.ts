@@ -16,6 +16,8 @@ export interface AuditLogRow { seq: number; at: string; userId: string | null; u
 export interface AuditLogPage { rows: AuditLogRow[]; nextBefore: number | null }
 export interface IntegrityReport { audit: { ok: boolean; brokenAt: number | null; count: number; newestAt: string | null; message: string }; checks: { id: string; name: string; ok: boolean; problems: string[]; message: string }[] }
 /** Public certificate details returned to a signed-in user; no private key is sent. */
+/** The practice shop (PLAN C8), as GET /api/system/practice reports it. */
+export interface PracticeStatus { state: 'off' | 'here' | 'preparing' | 'ready' | 'failed'; port: number | null; preparedAt: string | null; days: number | null; message: string | null }
 export interface CertInfo { fingerprint256: string; fingerprint1: string; notAfter: string; ips: string[]; dnsNames: string[] }
 export interface CompanyProfile { registeredName: string; tradeName: string; tin: string; registeredAddress: string; isVatRegistered: boolean; version: number; supersededAt?: string }
 export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; const?: unknown; anyOf?: JsonSchema[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
@@ -351,7 +353,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     printableTypes: () => call<PrintableType[]>('GET', '/api/prt/printable-types'),
     printDocument: (type: string, id: string, variant: PrintVariant = 'document') =>
       call<{ html: string; copyNumber: number }>('POST', `/api/prt/print/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { variant }),
-    health: () => call<{ serverTime: string }>('GET', '/api/health'),
+    /** practice: this is the practice shop (PLAN C8). */
+    health: () => call<{ serverTime: string; practice?: boolean }>('GET', '/api/health'),
     dashHome: () => call<DashHomeData>('GET', '/api/dash/home'),
     dashNotifications: () => call<DashNotification[]>('GET', '/api/dash/notifications'),
     dashRead: (id: string) => call<{ ok: true }>('POST', '/api/dash/notifications/read', { id }),
@@ -361,6 +364,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     calCancel: (id: string, reason: string) => call<CalEvent>('POST', `/api/cal/events/${encodeURIComponent(id)}/cancel`, { reason }),
     calHistory: (id: string) => call<CalEvent[]>('GET', `/api/cal/events/${encodeURIComponent(id)}/history`),
     shopCertificate: () => call<{ ca: CertInfo | null }>('GET', '/api/system/tls'),
+    practice: () => call<PracticeStatus>('GET', '/api/system/practice'),
+    /** Needs a fresh password (step-up). */
+    practiceReset: () => call<PracticeStatus>('POST', '/api/system/practice/reset'),
     docTypes: () => call<DocTypeInfo[]>('GET', '/api/doc-types'),
     report: <T>(path: string) => call<T>('GET', `/api/rpt/${path}`),
     auditLog: (query: string) => call<AuditLogPage>('GET', `/api/aud/log?${query}`),

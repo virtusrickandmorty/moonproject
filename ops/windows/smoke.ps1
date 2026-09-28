@@ -66,6 +66,11 @@ Write-Host "HTTPS by name: $($h.serverTime), version $($h.version)"
 if ($h.version -ne $version) { throw "The server says it is $($h.version), not $version" }
 $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -match '^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)' } | Select-Object -First 1).IPAddress
 if ($ip) { WaitForHealth "https://$ip/api/health" | Out-Null; Write-Host "HTTPS by address $ip" }
+# Practice mode: a made-up shop on port 8443 with its own database; the first start makes its data.
+$p = WaitForHealth 'https://localhost:8443/api/health'
+if (-not $p.practice) { throw 'Port 8443 is not the practice shop' }
+if (-not (Test-Path (Join-Path $data 'data\practice\practice.db'))) { throw 'The practice database is not in ProgramData\Moonproject\data\practice' }
+Write-Host 'Practice shop on port 8443'
 
 if (-not (Test-Path (Join-Path $data 'data\moonproject.db'))) { throw 'The database is not in ProgramData\Moonproject\data' }
 $who = (Get-Acl (Join-Path $data 'data')).Access | ForEach-Object { $_.IdentityReference.Value }
@@ -81,6 +86,7 @@ $u = LastUpdate 'updated'
 if (-not (Test-Path $u.copy)) { throw "The copy from before the update is missing: $($u.copy)" }
 if (-not (Test-Path (Join-Path $program 'previous\app\apps\server\src\main.ts'))) { throw 'The previous program was not kept' }
 Write-Host "Updated in place; the database was copied to $($u.copy)"
+if (-not (WaitForHealth 'https://localhost:8443/api/health').practice) { throw 'The practice shop did not come back after the update' }
 
 # An update to a build that cannot start: Setup puts the previous program and the database back by itself.
 Install $broken 'setup-3.log' @('/HEALTHWAIT=45')
