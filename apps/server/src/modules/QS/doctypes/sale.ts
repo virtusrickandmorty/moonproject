@@ -14,7 +14,7 @@ import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
-import { salePayments } from '../../COL/public.ts';
+import { creditsOn, salePayments } from '../../COL/public.ts';
 import { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, invoiceAmounts, invoiceNumberUsedBy, jobOrdersOf, type LineKind } from '../../JO/public.ts';
 import { bookletIssue } from '../../TAX/public.ts';
 
@@ -148,8 +148,14 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
     ...(note ? { note } : {}),
   }),
 
-  /** Its payments: cancel them first (the QS action cancels the sale's own payment with it). */
-  dependents: (db, documentId) => salePayments(db, documentId).filter((p) => p.status === 'posted').map(({ id, number }) => ({ id, number })),
+  /**
+   * Its payments: cancel them first (the QS action cancels the sale's own payment with it). Also what COL recorded on it
+   * as an invoice (credit memos, write-offs, 2307s received with no cash).
+   */
+  dependents: (db, documentId) => [
+    ...salePayments(db, documentId).filter((p) => p.status === 'posted').map(({ id, number }) => ({ id, number })),
+    ...creditsOn(db, documentId),
+  ],
 
   summary(doc) {
     const what = doc.lines.length === 1 ? doc.lines[0]!.description : `${doc.lines.length} lines`;

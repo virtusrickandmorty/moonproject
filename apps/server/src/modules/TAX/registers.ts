@@ -24,7 +24,7 @@ export interface WithholdingRow extends RegisterRow {
   atc: string | null; certificate: 'pending' | 'received' | null; cwtCents: number; vatWithheldCents: number;
   /** Which 2307 of the document (the opening's row; 0 for a collection's) and, if it came after it was recorded, when. */
   lineNo: number; receivedOn: string | null;
-  /** An opening withholding's 2307, from before the cut-over date, and the quarter it covers ('2026-Q2'). */
+  /** An opening withholding's 2307, from before the cut-over date; the quarter it or a 2307 received with no cash covers ('2026-Q2'). */
   opening: boolean; period: string | null;
 }
 
@@ -129,11 +129,11 @@ export function withholdingReceivedRegister(db: Db, from: string, to: string) {
         };
       });
     }
-    const w = t.docType === 'col.collection' ? withholdingOf(db, t.sourceId) : undefined;
+    const w = t.docType === 'col.collection' || t.docType === 'col.cwt_only' ? withholdingOf(db, t.sourceId) : undefined;
     const on = w?.certificate === 'pending' ? receivedOn(db, t.sourceId, 0) : null;
     return [{
       ...base(db, t), atc: w?.atc ?? null, certificate: w ? status(w.certificate, on) : null, cwtCents: t.cwtCents, vatWithheldCents: t.vatWithheldCents,
-      lineNo: 0, receivedOn: on, opening: false, period: null,
+      lineNo: 0, receivedOn: on, opening: false, period: w?.period ?? null,
     }];
   });
   return {

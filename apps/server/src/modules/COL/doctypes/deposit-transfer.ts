@@ -13,7 +13,7 @@ import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
-import { jobOrderRef, jobOrdersOf, joLedger, joMoney, settleLines } from '../../JO/public.ts';
+import { isAbandoned, jobOrderRef, jobOrdersOf, joLedger, joMoney, settleLines } from '../../JO/public.ts';
 import { MAX_CENTS, depositsHeld, takenOutBy } from '../ledger.ts';
 
 export const depositTransferInput = z
@@ -75,6 +75,7 @@ export const depositTransferDoc: DocTypeDef<DepositTransferInput, DepositTransfe
     } else {
       const due = joMoney(ctx.db, to.id).balanceDueCents;
       if (doc.amountCents > due) add('error', 'amountCents', 'OVER_BALANCE', due > 0 ? `${to.number} has ${formatPeso(due)} left to pay. Move at most that.` : `${to.number} is fully paid.`);
+      if (doc.toDepositCents > 0 && isAbandoned(ctx.db, to.id)) add('error', 'toJobOrderId', 'JO_ABANDONED', `${to.number} was abandoned and its deposit forfeited, so no new deposit is taken on it.`);
     }
     const held = depositsHeld(ctx.db, doc.customerId, doc.fromJobOrderId ?? null);
     const what = from ? `for ${from.number}` : `as ${doc.customerName}'s unapplied payments`;

@@ -6,9 +6,10 @@ import { notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
+import { invoiceCreditsAt } from '../COL/public.ts';
 import { JO_DOC_TYPES_SQL } from './stages.ts';
 
-export { currentStage, productionMove, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
+export { abandon, currentStage, isAbandoned, productionMove, unabandon, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
 export { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, awaitingInvoice, invoiceAmounts, invoiceNumberUsedBy, invoiceNumbersBetween, settleLines } from './doctypes/invoice-record.ts';
 export { lineState, type LineKind } from './doctypes/release.ts';
 
@@ -112,7 +113,32 @@ export function joMoney(db: Db, documentId: string) {
   return { ...owed, requiredDownpaymentCents: r.requiredDownpaymentCents, ...ledger, ...balanceDue({ ...owed, ...ledger }) };
 }
 
-/** Dated invoice records and not-yet-invoiced order amounts for read-only customer reports. */
+/** A release's invoice record as other documents see it (COL credit memos, write-offs, 2307s received on it). */
+export interface InvoiceRecordRef {
+  id: string; number: string; status: 'posted' | 'cancelled'; businessDate: string; invoiceNumber: string; customerId: string; customerName: string;
+  jobOrderId: string; jobOrderNumber: string; grossCents: number; vatCents: number; vatRateBp: number; depositAppliedCents: number;
+}
+const INVOICE_REF = `SELECT d.id, d.number, d.status, d.business_date AS businessDate, i.invoice_number AS invoiceNumber, i.customer_id AS customerId,
+  i.customer_name AS customerName, i.job_order_id AS jobOrderId, j.number AS jobOrderNumber, i.gross_cents AS grossCents, i.vat_cents AS vatCents,
+  i.vat_rate_bp AS vatRateBp, i.deposit_applied_cents AS depositAppliedCents
+  FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id JOIN documents j ON j.id = i.job_order_id`;
+
+export function invoiceRecordRef(db: Db, id: string): InvoiceRecordRef | undefined {
+  return db.prepare(`${INVOICE_REF} WHERE i.document_id = ?`).get(id) as InvoiceRecordRef | undefined;
+}
+
+/** Recorded (not cancelled) invoice records of one job order, of one customer's job orders, or all, oldest first. */
+export function invoiceRecordsOf(db: Db, of: { jobOrderId: string } | { customerId: string } | 'all'): InvoiceRecordRef[] {
+  const [where, id] = of === 'all' ? ['1', null] : 'jobOrderId' in of ? ['i.job_order_id = @id', of.jobOrderId] : ['i.customer_id = @id', of.customerId];
+  return db.prepare(`${INVOICE_REF} WHERE ${where} AND d.status = 'posted' ORDER BY d.business_date, d.number`).all(id === null ? {} : { id }) as InvoiceRecordRef[];
+}
+
+/**
+ * Dated invoice records and not-yet-invoiced order amounts for read-only customer reports. An invoice's receivable is
+ * its gross less the deposits it applied and what COL credited on it by that date (the part of a credit memo that
+ * reduced the receivable, a bad debt write-off, a 2307 received with no cash), so the aging never shows a credited
+ * invoice as owing.
+ */
 export function receivableSourcesAt(db: Db, asOf: string): {
   orders: { id: string; number: string; customerId: string; customerName: string; dueDate: string; notInvoicedCents: number }[];
   invoices: { id: string; number: string; date: string; dueDate: string; jobOrderId: string; customerId: string; customerName: string; grossCents: number; receivableCents: number }[];
@@ -134,6 +160,8 @@ export function receivableSourcesAt(db: Db, asOf: string): {
     JOIN jo_releases r ON r.document_id = i.release_id
     WHERE d.business_date <= @asOf AND ${liveAt} ORDER BY d.business_date, d.number`)
     .all({ asOf }) as { id: string; number: string; date: string; dueDate: string; jobOrderId: string; customerId: string; customerName: string; grossCents: number; receivableCents: number }[];
+  const credited = invoiceCreditsAt(db, asOf);
+  for (const invoice of invoices) invoice.receivableCents = Math.max(0, invoice.receivableCents - (credited.get(invoice.id) ?? 0));
   const invoicedByOrder = new Map<string, number>();
   for (const invoice of invoices) invoicedByOrder.set(invoice.jobOrderId, (invoicedByOrder.get(invoice.jobOrderId) ?? 0) + invoice.grossCents);
   const openings = db.prepare(`SELECT o.document_id AS id, o.receivable_cents AS receivableCents

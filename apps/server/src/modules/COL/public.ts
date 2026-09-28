@@ -2,6 +2,7 @@
 import type { Db } from '../../platform/db/driver.ts';
 
 export { collectionDoc, collectionInput, type CollectionInput } from './doctypes/collection.ts';
+export { creditsOn, invoiceCreditsAt } from './credits.ts';
 
 export interface SalePayment { id: string; number: string; status: 'posted' | 'cancelled'; crNumber: string; totalCents: number; paysOnlyThis: boolean }
 
@@ -30,12 +31,19 @@ export function crNumbersBetween(db: Db, from: number, to: number): { n: number;
     .all(from, to) as { n: number; number: string; status: 'posted' | 'cancelled' }[];
 }
 
-/** What a collection's 2307 says (ATC and whether the certificate is in hand), for the tax registers; undefined if none. */
-export function withholdingOf(db: Db, documentId: string): { atc: 'WC158' | 'WC160' | 'other'; certificate: 'pending' | 'received' } | undefined {
+/**
+ * What a collection's 2307, or a 2307 received with no cash (CWT-ONLY), says (ATC and whether the certificate is in hand;
+ * the latter always is, with the quarter it covers, '2026-Q3'), for the tax registers; undefined if none.
+ */
+export function withholdingOf(db: Db, documentId: string): { atc: 'WC158' | 'WC160' | 'other'; certificate: 'pending' | 'received'; period?: string } | undefined {
   const r = db.prepare('SELECT cwt_atc AS atc, cert_2307 AS certificate FROM col_collections WHERE document_id = ?').get(documentId) as
     | { atc: 'WC158' | 'WC160' | 'other' | null; certificate: 'pending' | 'received' | null }
     | undefined;
-  return r?.atc && r.certificate ? { atc: r.atc, certificate: r.certificate } : undefined;
+  if (r) return r.atc && r.certificate ? { atc: r.atc, certificate: r.certificate } : undefined;
+  const c = db.prepare(`SELECT atc, period_year || '-Q' || period_quarter AS period FROM col_cwt_only WHERE document_id = ?`).get(documentId) as
+    | { atc: 'WC158' | 'WC160' | 'other'; period: string }
+    | undefined;
+  return c && { atc: c.atc, certificate: 'received', period: c.period };
 }
 
 /** Recorded collections and tenders, including cancellations, for dated read-only registers. */

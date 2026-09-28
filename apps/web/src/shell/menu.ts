@@ -72,7 +72,7 @@ export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);
 
 /** Doc types found under another name than their document title: a quick sale is an Invoice Record (PLAN H1 "quick sale"). Also plurals the rule above gets wrong. */
-const LABELS: Record<string, [one: string, many: string]> = { 'qs.sale': ['Quick Sale', 'Quick Sales'], 'prd.entry': ['Production Entry', 'Production Entries'], 'pay.thirteenth': ['13th-Month Pay', '13th-Month Pay'] };
+const LABELS: Record<string, [one: string, many: string]> = { 'qs.sale': ['Quick Sale', 'Quick Sales'], 'prd.entry': ['Production Entry', 'Production Entries'], 'pay.thirteenth': ['13th-Month Pay', '13th-Month Pay'], 'col.cwt_only': ['2307 Received', '2307s Received'] };
 export const labelOf = (d: Pick<DocTypeInfo, 'key' | 'title'>) => LABELS[d.key]?.[0] ?? d.title;
 export const pluralLabelOf = (d: Pick<DocTypeInfo, 'key' | 'title'>) => LABELS[d.key]?.[1] ?? plural(d.title);
 

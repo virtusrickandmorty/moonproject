@@ -11,7 +11,7 @@ import { divRoundHalfAway, formatPeso, type Issue } from '@moonproject/shared';
 import type { Db } from '../../../platform/db/driver.ts';
 import type { DocHeader, DocTypeDef } from '../../../engine/documents/registry.ts';
 import { jobOrderRef, jobOrdersOf, joMoney } from '../public.ts';
-import { STAGE_LABELS, currentStage, moveTo } from '../stages.ts';
+import { STAGE_LABELS, currentStage, isAbandoned, moveTo } from '../stages.ts';
 import { addDays } from './job-order.ts';
 
 export const ID_SEEN = ['government_id', 'school_id', 'company_id', 'other_id', 'none'] as const;
@@ -101,6 +101,7 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
     const jo = jobOrderRef(ctx.db, doc.jobOrderId);
     if (!jo) return [{ field: 'jobOrderId', code: 'JOB_ORDER', level: 'error', message: 'Pick a job order.' }];
     if (jo.status !== 'posted') return [{ field: 'jobOrderId', code: 'JO_CANCELLED', level: 'error', message: `${jo.number} is cancelled, so nothing can be released from it.` }];
+    if (isAbandoned(ctx.db, jo.id)) return [{ field: 'jobOrderId', code: 'JO_ABANDONED', level: 'error', message: `${jo.number} was abandoned and its deposit forfeited, so nothing more is released from it. Cancel the forfeit first if the customer came back.` }];
 
     const state = new Map(lineState(ctx.db, jo.id).map((l) => [l.lineNo, l]));
     const seen = new Set<number>();
