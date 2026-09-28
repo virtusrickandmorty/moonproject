@@ -31,6 +31,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'People & Payroll', label: 'Employees', path: '/emp/employees', permission: 'emp.view' },
   { group: 'People & Payroll', label: 'Attendance', path: '/emp/attendance', permission: 'emp.view' },
   { group: 'People & Payroll', label: 'Holidays', path: '/emp/holidays', permission: 'emp.view' },
+  { group: 'Admin', label: 'Company print details', path: '/prt/company-profile', permission: 'prt.profile.manage' },
   { group: 'People & Payroll', label: 'Government remittances', path: '/stat', permission: 'stat.view' },
   { group: 'Tax', label: 'Booklets', path: '/tax/booklets', permission: 'tax.booklets.view' },
   { group: 'Accounting & Tax', label: 'Sales register', path: '/tax/sales', permission: 'tax.registers.view' },
@@ -40,6 +41,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Reports', label: 'General journal', path: '/rpt/journal', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'General ledger', path: '/rpt/ledger', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Trial balance', path: '/rpt/trial-balance', permission: 'rpt.books.view' },
+  { group: 'Admin', label: 'Backups', path: '/bak', permission: 'bak.view' },
 ];
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);

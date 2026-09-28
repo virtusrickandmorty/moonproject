@@ -12,8 +12,11 @@ export class ApiError extends Error {
 }
 
 export interface Me { userId: string; username: string; displayName: string; roles: string[]; permissions: string[]; mustChangePassword: boolean; csrfToken: string }
-export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
+export interface CompanyProfile { registeredName: string; tradeName: string; tin: string; registeredAddress: string; isVatRegistered: boolean; version: number; supersededAt?: string }
+export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; const?: unknown; anyOf?: JsonSchema[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
 export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
+export type PrintVariant = 'document' | 'job_ticket';
+export interface PrintableType { key: string; variants: PrintVariant[] }
 export interface DocHeader {
   id: string; number: string; businessDate: string; status: 'posted' | 'cancelled'; totalCents: number; summary: string; postedAt: string;
   cancelledAt: string | null; cancelReason: string | null; replacesId: string | null; replacedById: string | null;
@@ -173,6 +176,52 @@ export interface VatSummary {
   /** The quarter's posted VAT close (VATC-), if any. */
   close: { documentId: string; number: string; date: string } | null;
 }
+/** Money out (AP, EXP, EQ). Suppliers and supplies are PUR's own rows (GET /api/pur/suppliers, /api/pur/supplies). */
+export interface SupplierRow { id: string; name: string; tin: string | null; is_vat_registered: number; ewt_class: string | null; payment_terms_days: number | null }
+export interface SupplyRow { id: string; name: string; category: 'materials' | 'ready_made' }
+export interface ExpCategory { id: number; code: string; name: string; defaultEwtClass: string | null }
+/** GET /api/ap/suppliers/:id: a supplier's bills, with what is still owed on each (from the ledger). */
+export interface ApLedger {
+  supplierId: string; supplierName: string; balanceCents: number;
+  bills: { id: string; number: string; status: 'posted' | 'cancelled'; supplierInvoiceNo: string; dueDate: string; payableCents: number; owedCents: number }[];
+}
+export interface EqPerson { id: string; name: string; isStockholder: boolean; isOfficer: boolean; position: string | null }
+export interface Setting { key: string; label: string; current: unknown }
+
+/** Chart of accounts (ACC), for pickers. `partyType`: the subledger a line on the account names; 'free' takes any, or none. */
+export type PartyType = 'customer' | 'supplier' | 'employee' | 'officer' | 'stockholder' | 'loan' | 'asset' | 'free';
+export interface Account { id: number; code: string; name: string; type: 'asset' | 'liability' | 'equity' | 'revenue' | 'expense'; partyType: PartyType | null; isHeader: boolean; isCashPlace: boolean; isReserved: boolean; isActive: boolean }
+/** GET /api/pur/suppliers (the same rows as SupplierRow). */
+export type Supplier = SupplierRow;
+/** The loan register (LOAN): what is owed comes from the ledger; `nextDue` is null once paid off or cancelled. */
+export interface LoanRow {
+  id: string; number: string; status: 'posted' | 'cancelled'; lender: string; kind: 'loan' | 'equipment'; principalCents: number; balanceCents: number; instalments: number;
+  nextDue: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number } | null;
+}
+/** An FA- purchase whose financed part no loan has taken over yet. */
+export interface FinancedPurchase { id: string; number: string; date: string; description: string; supplierName: string; lender: string; financedCents: number }
+export interface AssetClass { code: string; name: string; defaultLifeMonths: number | null }
+export interface AssetRow { id: string; number: string; description: string; className: string; status: 'in service' | 'fully depreciated' | 'disposed' | 'cancelled' }
+/** Backups (BAK). The status's `runs` are the server's bak_runs rows as stored. */
+export type BackupTier = 'snapshot' | 'daily' | 'monthly' | 'yearly';
+export type BackupSource = 'local' | 'offsite';
+export interface BackupSettings { backupDir: string; offsiteDir: string | null; recipients: string[]; version: number }
+export interface BackupRun {
+  id: string; started_at: string; finished_at: string; reason: 'schedule' | 'manual' | 'pre_update'; tier: BackupTier; status: 'ok' | 'failed';
+  file: string | null; bytes: number | null; offsite: number; error: string | null;
+}
+export interface BackupStatus {
+  settings: BackupSettings; issues: Issue[]; lastOk: { at: string; file: string; tier: BackupTier } | null; stale: boolean; kept: Record<BackupTier, number>;
+  lastOffsiteAt: string | null; lastDrillAt: string | null; usb: Record<'A' | 'B', string | null>; pendingRestore: { id: string; file: string; requestedAt: string } | null; runs: BackupRun[];
+}
+export interface BackupMade { file: string; tier: BackupTier; bytes: number; offsite: boolean; offsiteError: string | null }
+export interface BackupFile { source: BackupSource; file: string; at: string; tier: BackupTier; bytes: number }
+/** What a backup holds, found by opening it with a recovery key. A restore check adds `stagedId` and the live data's audit head. */
+export interface BackupCheck {
+  file: string; madeAt: string | null; tier: BackupTier | null; sidecar: 'matches' | 'missing'; toApply: string[]; audit: { seq: number } | null;
+  lastAuditAt: string | null; trialBalance: { totalDebitCents: number; totalCreditCents: number }; lastBusinessDate: string | null; postedDocuments: number;
+  drill?: 'passed'; stagedId?: string; live?: { auditSeq: number; lastAuditAt: string };
+}
 /** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
 export const taxRegisterPath = (register: 'sales' | 'withholding-received', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
 
@@ -216,7 +265,14 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     me: () => call<Me>('GET', '/api/auth/me').then(keep),
     logout: () => call<unknown>('POST', '/api/auth/logout'),
     changePassword: (currentPassword: string, newPassword: string) => call<unknown>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
+    /** The password again, for changes that need a fresh one (good for 5 minutes). */
     stepUp: (password: string) => call<{ ok: true }>('POST', '/api/auth/step-up', { password }),
+    companyProfile: () => call<CompanyProfile>('GET', '/api/prt/company-profile'),
+    companyProfileHistory: () => call<CompanyProfile[]>('GET', '/api/prt/company-profile/history'),
+    saveCompanyProfile: (value: Omit<CompanyProfile, 'version' | 'supersededAt'>, version: number) => call<CompanyProfile>('PUT', '/api/prt/company-profile', value, { 'if-match': String(version) }),
+    printableTypes: () => call<PrintableType[]>('GET', '/api/prt/printable-types'),
+    printDocument: (type: string, id: string, variant: PrintVariant = 'document') =>
+      call<{ html: string; copyNumber: number }>('POST', `/api/prt/print/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { variant }),
     health: () => call<{ serverTime: string }>('GET', '/api/health'),
     dashHome: () => call<DashHomeData>('GET', '/api/dash/home'),
     dashNotifications: () => call<DashNotification[]>('GET', '/api/dash/notifications'),
@@ -231,8 +287,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     post: (type: string, input: unknown, expectedTotalCents: number, key: string, businessDate?: string) =>
       call<PostResult>('POST', doc(type, '/post'), { input, expectedTotalCents, ...(businessDate ? { businessDate } : {}) }, idem(key)),
     cancel: (type: string, id: string, reason: string, key: string) => call<unknown>('POST', one(type, id, '/cancel'), { reason }, idem(key)),
-    reissue: (type: string, id: string, input: unknown, expectedTotalCents: number, reason: string, key: string) =>
-      call<PostResult>('POST', one(type, id, '/reissue'), { input, expectedTotalCents, reason }, idem(key)),
+    reissue: (type: string, id: string, input: unknown, expectedTotalCents: number, reason: string, key: string, businessDate?: string) =>
+      call<PostResult>('POST', one(type, id, '/reissue'), { input, expectedTotalCents, reason, ...(businessDate ? { businessDate } : {}) }, idem(key)),
     drafts: (type: string) => call<Draft[]>('GET', `/api/drafts?type=${encodeURIComponent(type)}`),
     createDraft: (docType: string, payload: Draft['payload']) => call<{ id: string; version: number }>('POST', '/api/drafts', { docType, payload }),
     saveDraft: (id: string, version: number, payload: Draft['payload']) =>
@@ -244,6 +300,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     updateCashPlace: (id: number, version: number, body: { accountNo?: string | null; encoderSeesBalance?: boolean }) =>
       call<CashAccount>('PUT', `/api/cash/places/${id}/settings`, body, { 'if-match': String(version) }),
     cashBook: (id: number, from: string, to: string) => call<CashBook>('GET', `/api/cash/places/${id}/book?${new URLSearchParams({ from, to })}`),
+    customer: (id: string) => call<CustomerRow>('GET', `/api/cus/customers/${encodeURIComponent(id)}`),
     customers: (search: string) => call<CustomerRow[]>('GET', `/api/cus/customers?${new URLSearchParams({ search, limit: '10' })}`),
     openItems: (customerId: string) => call<OpenItems>('GET', customer(customerId, 'open-items')),
     refundable: (customerId: string) => call<Refundable>('GET', customer(customerId, 'refundable')),
@@ -288,6 +345,14 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     statMonth: (month: string) => call<StatMonth>('GET', `/api/stat/months/${encodeURIComponent(month)}`),
     /** D6: what of a payroll run's month is already remitted (the warning before a cancel). */
     runRemitted: (runId: string) => call<{ month: string; remitted: { scheme: Scheme; label: string; numbers: string[] }[] }>('GET', `/api/stat/runs/${encodeURIComponent(runId)}/remitted`),
+    settings: () => call<Setting[]>('GET', '/api/settings'),
+    suppliers: () => call<SupplierRow[]>('GET', '/api/pur/suppliers'),
+    supplies: () => call<SupplyRow[]>('GET', '/api/pur/supplies'),
+    expCategories: () => call<ExpCategory[]>('GET', '/api/exp/categories'),
+    apLedger: (supplierId: string) => call<ApLedger>('GET', `/api/ap/suppliers/${encodeURIComponent(supplierId)}`),
+    eqPeople: () => call<EqPerson[]>('GET', '/api/eq/people'),
+    /** What an officer owes the company and is owed (needs eq.ledger.view). */
+    officerBalances: (personId: string) => call<{ dueFromCents: number; dueToCents: number }>('GET', `/api/eq/people/${encodeURIComponent(personId)}/ledger`),
     booklets: () => call<BookletUsage[]>('GET', '/api/tax/booklets'),
     booklet: (id: string) => call<BookletUsage>('GET', `/api/tax/booklets/${encodeURIComponent(id)}`),
     registerBooklet: (body: BookletInput) => call<Booklet>('POST', '/api/tax/booklets', body),
@@ -295,9 +360,22 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     salesRegister: (from: string, to: string) => call<SalesRegister>('GET', taxRegisterPath('sales', from, to)),
     withholdingReceived: (from: string, to: string) => call<WithholdingRegister>('GET', taxRegisterPath('withholding-received', from, to)),
     taxCalendar: (from: string, to: string) => call<TaxDeadline[]>('GET', `/api/tax/calendar?${new URLSearchParams({ from, to })}`),
+    accounts: () => call<Account[]>('GET', '/api/acc/accounts'),
+    loans: (status?: 'posted' | 'cancelled') => call<LoanRow[]>('GET', `/api/loan/loans${status ? `?status=${status}` : ''}`),
+    financedAssets: () => call<FinancedPurchase[]>('GET', '/api/loan/financed-assets'),
+    assetClasses: () => call<AssetClass[]>('GET', '/api/fa/classes'),
+    assets: () => call<AssetRow[]>('GET', '/api/fa/assets'),
     /** Without a year and quarter: the quarter of the server's date. */
     vatSummary: (year?: number, quarter?: number) =>
       call<VatSummary>('GET', `/api/tax/vat-summary${year ? `?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}` : ''}`),
+    bakStatus: () => call<BackupStatus>('GET', '/api/bak/status'),
+    bakRun: () => call<BackupMade>('POST', '/api/bak/run', {}),
+    /** Only the two public keys (age1…) are sent; the secret keys stay in the browser. */
+    bakSaveSettings: (v: number, body: Omit<BackupSettings, 'version'>) => call<BackupSettings>('PUT', '/api/bak/settings', body, version(v)),
+    bakUsb: (drive: 'A' | 'B', dir: string) => call<{ drive: 'A' | 'B'; copied: number; onDrive: number }>('POST', '/api/bak/usb', { drive, dir }),
+    bakBackups: () => call<BackupFile[]>('GET', '/api/bak/backups'),
+    bakCheck: (b: { source: BackupSource; file: string; key: string; purpose: 'drill' | 'restore' }) => call<BackupCheck>('POST', '/api/bak/restore/check', b),
+    bakApply: (stagedId: string) => call<{ file: string; restartNeeded: boolean; message: string }>('POST', '/api/bak/restore/apply', { stagedId }),
   };
 }
 

@@ -1,7 +1,7 @@
 /** Small shared building blocks. Tailwind only; no component library. */
-import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from 'react';
+import { useEffect, useState, type ButtonHTMLAttributes, type FormEvent, type ReactNode } from 'react';
 import { formatPeso } from '@moonproject/shared';
-import type { JournalLine } from '../api.ts';
+import { api, type CashPlace, type JournalLine } from '../api.ts';
 
 export const peso = (cents: number) => formatPeso(cents);
 
@@ -79,6 +79,39 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
   );
 }
 
+/**
+ * The password again, before a change that needs a fresh one (step-up, PLAN C6). `ask(title, then)` opens the prompt;
+ * `then` runs once the server accepts the password, which is sent once and never kept.
+ */
+export function usePasswordPrompt() {
+  const [asked, setAsked] = useState<{ title: string; then: () => void } | null>(null);
+  const dialog = asked && <PasswordDialog title={asked.title} onClose={() => setAsked(null)} onDone={() => (setAsked(null), asked.then())} />;
+  return { dialog, ask: (title: string, then: () => void) => setAsked({ title, then }) };
+}
+
+function PasswordDialog({ title, onDone, onClose }: { title: string; onDone: () => void; onClose: () => void }) {
+  const [password, setPassword] = useState('');
+  const a = useAction();
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (password) void a.run(async () => (await api.stepUp(password), onDone()));
+  };
+  return (
+    <Dialog title={title} onClose={onClose}>
+      <form className="space-y-4" onSubmit={submit}>
+        <Field label="Enter your password again to continue" required>
+          <input autoFocus type="password" autoComplete="current-password" className={inputClass} value={password} onChange={(e) => setPassword(e.target.value)} />
+        </Field>
+        {a.error && <Notice>{a.error}</Notice>}
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Go back</Button>
+          <Button type="submit" tone="primary" disabled={!password || a.busy}>Continue</Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
 /** Asks for a reason of at least 10 characters (cancel; edit = cancel and reissue; PLAN D6). */
 export function ReasonDialog(p: { title: string; explain: string; confirmLabel: string; danger?: boolean; onConfirm: (reason: string) => Promise<unknown> | void; onClose: () => void; children?: ReactNode }) {
   const [reason, setReason] = useState('');
@@ -119,5 +152,20 @@ export function JournalTable({ lines }: { lines: JournalLine[] }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+/** A big button per cash place (PLAN H2 "money questions"), with its balance when the user may see it. */
+export function CashPlaceButtons({ label, places, value, onChange }: { label: string; places: CashPlace[]; value: string; onChange: (id: string) => void }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+      {places.map((c) => (
+        <button key={c.id} type="button" role="radio" aria-checked={value === String(c.id)} onClick={() => onChange(String(c.id))}
+          className={`rounded-lg p-2 text-left text-sm ring-1 ${value === String(c.id) ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'}`}>
+          {c.name}
+          {c.balanceCents !== null && <span className="block text-xs opacity-75">{peso(c.balanceCents)}</span>}
+        </button>
+      ))}
+    </div>
   );
 }
