@@ -95,6 +95,21 @@ describe('purchases and the straight line', () => {
     noBrokenInvariants();
   });
 
+  it('a run after month end is dated the month\'s last day by the accountant, so the charge falls in that month', async () => {
+    await buy(heatPress());
+    await goTo('2026-10-02T02:00:00Z');
+    const late = await run('2026-09');
+    expect(errorCodes(late)).toEqual(['WRONG_MONTH']);
+    expect(late.json().message).toBe('The charge for September 2026 belongs in September 2026. The accountant dates this run 2026-09-30.');
+    const input = { month: '2026-09' };
+    const pre = (await acc.post('/api/docs/fa.depreciation/preview', { input, businessDate: '2026-09-30' })).json();
+    const sep = await acc.post('/api/docs/fa.depreciation/post', { input, expectedTotalCents: pre.totalCents, businessDate: '2026-09-30' }, idem());
+    expect(sep.statusCode, sep.body).toBe(200);
+    expect(env.db.prepare(`SELECT business_date FROM journals WHERE source_id = ?`).pluck().get(sep.json().id)).toBe('2026-09-30');
+    expect((await run('2026-10')).json().totalCents).toBe(150_000);
+    noBrokenInvariants();
+  });
+
   it('reads the VAT rate in force on the supplier invoice date', async () => {
     env.db
       .prepare('INSERT INTO settings (key, effective_from, value_json, reason, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?)')

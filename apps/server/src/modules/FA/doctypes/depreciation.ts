@@ -5,6 +5,8 @@
  * (assets.ts straightLine), so a month's charge is (cost − residual) ÷ life to the centavo, a missed month is caught up,
  * and the asset stops at its residual value. Runs go month by month, one per month (unique per asset and month).
  * Cancel needs later runs of its assets, and their disposals, cancelled first: only the latest charge comes off.
+ * A run is dated in the month it depreciates, so the charge falls in that month's books: run it by the month's last
+ * day, or after month end the accountant dates it the month's last day (acc.backdate).
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -23,6 +25,12 @@ export interface DepreciationLine {
 }
 export interface Depreciation extends DepreciationInput { lines: DepreciationLine[]; totalCents: number }
 
+/** "2026-02" -> "2026-02-28". */
+export const lastDayOf = (m: string) => {
+  const [y, mo] = m.split('-').map(Number) as [number, number];
+  return `${m}-${String(new Date(Date.UTC(y, mo, 0)).getUTCDate()).padStart(2, '0')}`;
+};
+
 /** "2026-09" -> "September 2026". */
 export const monthLabel = (m: string) => new Date(`${m}-01T00:00:00Z`).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
@@ -32,7 +40,7 @@ export const depreciationDoc: DocTypeDef<DepreciationInput, Depreciation> = {
   title: 'Depreciation Run',
   numbering: { series: { key: 'DEPR', prefix: 'DEPR-' } },
   permissions: { view: 'fa.depr.view', create: 'fa.depr.create', post: 'fa.depr.post', cancel: 'fa.depr.cancel' },
-  dating: 'system',
+  dating: 'accountant_may_backdate',
   inputSchema: depreciationInput,
 
   compute(input, ctx) {
@@ -57,6 +65,9 @@ export const depreciationDoc: DocTypeDef<DepreciationInput, Depreciation> = {
     if (doc.month > ctx.businessDate.slice(0, 7)) error('FUTURE_MONTH', 'Depreciation runs for this month or an earlier one.');
     else if (latest && latest.month === doc.month) error('ALREADY_RUN', `Depreciation for ${monthLabel(doc.month)} is already recorded on ${latest.number}.`);
     else if (latest && latest.month > doc.month) error('OUT_OF_ORDER', `Depreciation already ran for ${monthLabel(latest.month)} (${latest.number}). Runs go month by month.`);
+    else if (ctx.businessDate.slice(0, 7) !== doc.month) {
+      error('WRONG_MONTH', `The charge for ${monthLabel(doc.month)} belongs in ${monthLabel(doc.month)}. The accountant dates this run ${lastDayOf(doc.month)}.`);
+    }
     else if (doc.lines.length === 0) error('NOTHING_TO_CHARGE', `No asset has depreciation to charge for ${monthLabel(doc.month)}.`);
     return issues;
   },
