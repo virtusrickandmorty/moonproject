@@ -57,10 +57,13 @@ export function arAging(db: Db, asOf: string) {
         date: invoice.date, dueDate, buckets: amounts, totalCents: amount });
     }
     if (remaining !== 0) {
-      const amounts = empty(); amounts.current = remaining;
+      // A receivable with no invoice record behind it (an old job order opened at the cut-over, OBJO-) ages from the
+      // job order's due date; a credit balance or AR on no job order stays current.
+      const dueDate = order && remaining > 0 ? order.dueDate : '';
+      const amounts = empty(); amounts[dueDate ? ageBucket(asOf, dueDate) : 'current'] = remaining;
       rows.push({ customerId: customerId ?? null, customerName, documentId: order?.id ?? null,
         documentNumber: order?.number ?? 'Unallocated AR', documentType: order ? 'jo.job_order' : null,
-        jobOrderNumber: order?.number ?? '', date: '', dueDate: '', buckets: amounts, totalCents: remaining });
+        jobOrderNumber: order?.number ?? '', date: '', dueDate, buckets: amounts, totalCents: remaining });
     }
   }
   rows.sort((a, b) => a.customerName.localeCompare(b.customerName) || a.dueDate.localeCompare(b.dueDate) || a.documentNumber.localeCompare(b.documentNumber));

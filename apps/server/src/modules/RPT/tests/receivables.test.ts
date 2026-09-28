@@ -81,6 +81,29 @@ describe('customer receivables reports', () => {
     expect(aging.json().totalCents).toBe(ar.debitCents - ar.creditCents);
   });
 
+  it("ages an old job order's receivable opened at the cut-over from its due date", async () => {
+    env = await createTestEnv();
+    const owner = await env.as('owner');
+    shop(env.db, owner.userId);
+    const db = env.db;
+    const at = '2026-09-28T10:00:00+08:00';
+    db.prepare(`INSERT INTO documents (id, doc_type, module, series_key, number, business_date, status, total_cents, summary, posted_at, posted_by)
+      VALUES ('jo-old', 'jo.opening', 'JO', 'OBJO', 'OBJO-000001', '2026-09-01', 'posted', 7000, 'Made-up opening', ?, ?)`).run(at, owner.userId);
+    db.prepare(`INSERT INTO jo_orders (document_id, customer_id, customer_name, due_date, priority, payment_terms, required_dp_cents)
+      VALUES ('jo-old', 'c-two', 'Sample Club', '2026-07-15', 'normal', 'net15', 0)`).run();
+    const role = (r: string) => (db.prepare('SELECT id FROM accounts WHERE role_key = ?').get(r) as { id: number }).id;
+    db.prepare(`INSERT INTO journals (id, number, business_date, source_type, source_id, posting_kind, memo, created_at, created_by)
+      VALUES ('j-old', 'j-old', '2026-09-01', 'document', 'jo-old', 'original', 'Made-up opening', ?, ?)`).run(at, owner.userId);
+    db.prepare(`INSERT INTO journal_lines (journal_id, line_no, account_id, party_type, party_id, debit_cents, credit_cents, ref_doc_id)
+      VALUES ('j-old', 1, ?, 'customer', 'c-two', 7000, 0, 'jo-old')`).run(role('AR_TRADE'));
+    db.prepare(`INSERT INTO journal_lines (journal_id, line_no, account_id, debit_cents, credit_cents) VALUES ('j-old', 2, ?, 0, 7000)`).run(role('OPENING_EQUITY'));
+    db.prepare("UPDATE journals SET sealed = 1 WHERE id = 'j-old'").run();
+    const aging = (await owner.get('/api/rpt/ar-aging?asOf=2026-09-28')).json();
+    const old = aging.rows.find((r: { documentNumber: string }) => r.documentNumber === 'OBJO-000001');
+    expect(old).toMatchObject({ dueDate: '2026-07-15', totalCents: 7000, buckets: { days61to90: 7000, current: 0 } });
+    expect(aging.buckets.current).toBe(3000);
+  });
+
   it('shows opening, document movements, running balance and held deposits; exports CSV', async () => {
     env = await createTestEnv();
     const owner = await env.as('owner');
