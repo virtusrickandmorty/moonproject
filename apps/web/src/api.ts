@@ -12,8 +12,11 @@ export class ApiError extends Error {
 }
 
 export interface Me { userId: string; username: string; displayName: string; roles: string[]; permissions: string[]; mustChangePassword: boolean; csrfToken: string }
+export interface CompanyProfile { registeredName: string; tradeName: string; tin: string; registeredAddress: string; isVatRegistered: boolean; version: number; supersededAt?: string }
 export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
 export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
+export type PrintVariant = 'document' | 'job_ticket';
+export interface PrintableType { key: string; variants: PrintVariant[] }
 export interface DocHeader {
   id: string; number: string; businessDate: string; status: 'posted' | 'cancelled'; totalCents: number; summary: string; postedAt: string;
   cancelledAt: string | null; cancelReason: string | null; replacesId: string | null; replacedById: string | null;
@@ -213,6 +216,12 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     logout: () => call<unknown>('POST', '/api/auth/logout'),
     changePassword: (currentPassword: string, newPassword: string) => call<unknown>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
     stepUp: (password: string) => call<{ ok: true }>('POST', '/api/auth/step-up', { password }),
+    companyProfile: () => call<CompanyProfile>('GET', '/api/prt/company-profile'),
+    companyProfileHistory: () => call<CompanyProfile[]>('GET', '/api/prt/company-profile/history'),
+    saveCompanyProfile: (value: Omit<CompanyProfile, 'version' | 'supersededAt'>, version: number) => call<CompanyProfile>('PUT', '/api/prt/company-profile', value, { 'if-match': String(version) }),
+    printableTypes: () => call<PrintableType[]>('GET', '/api/prt/printable-types'),
+    printDocument: (type: string, id: string, variant: PrintVariant = 'document') =>
+      call<{ html: string; copyNumber: number }>('POST', `/api/prt/print/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { variant }),
     health: () => call<{ serverTime: string }>('GET', '/api/health'),
     docTypes: () => call<DocTypeInfo[]>('GET', '/api/doc-types'),
     report: <T>(path: string) => call<T>('GET', `/api/rpt/${path}`),

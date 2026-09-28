@@ -30,6 +30,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'People & Payroll', label: 'Employees', path: '/emp/employees', permission: 'emp.view' },
   { group: 'People & Payroll', label: 'Attendance', path: '/emp/attendance', permission: 'emp.view' },
   { group: 'People & Payroll', label: 'Holidays', path: '/emp/holidays', permission: 'emp.view' },
+  { group: 'Admin', label: 'Company print details', path: '/prt/company-profile', permission: 'prt.profile.manage' },
   { group: 'People & Payroll', label: 'Government remittances', path: '/stat', permission: 'stat.view' },
   { group: 'Tax', label: 'Booklets', path: '/tax/booklets', permission: 'tax.booklets.view' },
   { group: 'Accounting & Tax', label: 'Sales register', path: '/tax/sales', permission: 'tax.registers.view' },
