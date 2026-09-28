@@ -2,7 +2,7 @@
  * Opening tax payable (OBTP-, PLAN D8 "Cut-over" step 3, MIG-02 part 2): the BIR returns of periods before the cut-over
  * date prepared from the old books and not yet paid. Dr 3900 / Cr 2302, 2311 per supplier or 2320, dated the cut-over
  * date. The BIR payment of that form and period pays exactly what the opening left; the registers, the worksheets' EWT
- * and VAT, the QAP and the 2307s to issue never count it. A 1702Q stays on 2320. Cancelled on the cut-over date while
+ * and VAT, the QAP and the 2307s to issue never count it. A 1702 stays on 2320 (a 1702Q is paid from it: income-tax.test.ts). Cancelled on the cut-over date while
  * the opening is open and no BIR payment stands on it; the refusals; a property test; runInvariants (L3) and the EWT
  * register tied to the GL (L6).
  */
@@ -263,7 +263,7 @@ describe('opening tax payable goldens (PLAN D8 step 3)', () => {
     noBrokenInvariants();
   });
 
-  it('a 1702Q stays on 2320: no BIR payment pays income tax yet', async () => {
+  it('a 1702 stays on 2320; the 1702Q is due with a BIR payment of that quarter', async () => {
     await setCutover();
     const res = await open(obtp([vatQ2(), itQ2(), { form: '1702', period: '2025', amountCents: 4_200_000 }]));
     expect(res.statusCode, res.body).toBe(200);
@@ -277,9 +277,8 @@ describe('opening tax payable goldens (PLAN D8 step 3)', () => {
     expect((await preview(obtp([vatQ2(), ewtQ2(), itQ2()]))).json().summary).toBe(
       'This will record 3 BIR returns of the old books not yet paid as open on the cut-over date 2026-09-27: ₱84,000.00 VAT (2550Q), ₱9,200.00 EWT (1601-EQ) of 3 suppliers and ₱15,000.00 income tax (1702Q).',
     );
-    expect(periodsDue(env.db)).toEqual([{ form: '2550Q', period: '2026-Q2', payableCents: 8_400_000 }]);
-    const refused = await accountant.post('/api/docs/tax.bir_payment/preview', { input: birp({ form: '1702Q' as never, period: '2026-Q2', amountCents: 1_500_000 }) });
-    expect(refused.json().code).toBe('INVALID_INPUT');
+    expect(periodsDue(env.db)).toEqual([{ form: '2550Q', period: '2026-Q2', payableCents: 8_400_000 }, { form: '1702Q', period: '2026-Q2', payableCents: 1_500_000 }]);
+    expect((await payPreview(birp({ form: '1702Q', period: '2026-Q2', amountCents: 1_500_000 }))).doc).toMatchObject({ payableCents: 1_500_000, opening: { documentId: id } });
     expect(balances(env.db)['2320']).toBe(-5_700_000);
     noBrokenInvariants();
   });

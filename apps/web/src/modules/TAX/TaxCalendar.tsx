@@ -5,9 +5,10 @@
  */
 import { api, type Me } from '../../api.ts';
 import { Notice, Panel } from '../../components/ui.tsx';
+import { Link } from '../../router.tsx';
 import { weekday } from '../EMP/time.ts';
 import { RangeForm, useRangeReport } from './ReportParts.tsx';
-import { movedFrom, nextSixtyDays } from './reports.ts';
+import { movedFrom, nextSixtyDays, worksheetOfDeadline } from './reports.ts';
 
 export function TaxCalendar({ me }: { me: Me }) {
   const allowed = me.permissions.includes('tax.calendar.view');
@@ -36,7 +37,9 @@ export function TaxCalendar({ me }: { me: Me }) {
                         {weekday(x.dueDate)} {x.dueDate}
                         {movedFrom(x) && <span className="block text-xs text-slate-500">{movedFrom(x)}</span>}
                       </td>
-                      <td className="whitespace-nowrap py-1 pr-3 font-medium">{x.form}</td>
+                      <td className="whitespace-nowrap py-1 pr-3 font-medium">
+                        {worksheetOfDeadline(x) ? <Link to={worksheetOfDeadline(x)!} className="underline">{x.form}</Link> : x.form}
+                      </td>
                       <td className="py-1 pr-3">{x.title}</td>
                       <td className="py-1">{x.periodLabel}</td>
                     </tr>

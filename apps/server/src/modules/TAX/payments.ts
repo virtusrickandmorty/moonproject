@@ -11,22 +11,33 @@
  * A return of a period before the cut-over date also pays what a posted opening tax payable (OBTP-) left to pay with it
  * (opening-payables.ts): a 2550Q the opening's amount, an EWT return the opening's amount per supplier, over the same
  * returns its payments are counted on (a 1601-EQ: the openings of its 0619-E months too).
+ *   1702Q, Q1 to Q3: what the 1702Q worksheet leaves to pay (income-tax.ts), or what its opening left on 2320. Its
+ *   payments are kept in tax_income_tax_payments (0006); the reads here take both tables.
  */
 import type { Db } from '../../platform/db/driver.ts';
 import { voucherTaxFacts } from '../EXP/public.ts';
 import { supplierTaxInfo } from '../PUR/public.ts';
+import { cutoverDate } from '../ACC/public.ts';
 import { monthRange, quarterRange, type Quarter } from './calendar.ts';
+import { incomeTaxPosition } from './income-tax.ts';
 import { openedByParty, openedReturns, openingsOf } from './opening-payables.ts';
 import { IN_REGISTERS } from './registers.ts';
 
-export const BIR_FORMS = ['2550Q', '0619-E', '1601-EQ'] as const;
+export const BIR_FORMS = ['2550Q', '0619-E', '1601-EQ', '1702Q'] as const;
 export type BirForm = (typeof BIR_FORMS)[number];
-/** The payable each return clears, the tax it names, and whether it pays a month or a quarter. */
-export const BIR_FORM: Record<BirForm, { role: 'VAT_PAYABLE' | 'EWT_PAYABLE'; tax: 'VAT' | 'EWT'; period: 'month' | 'quarter' }> = {
+/**
+ * The account each return's payment debits, the tax it names, and whether it pays a month or a quarter. A 1702Q
+ * prepays the year's income tax (1411); one an opening tax payable brought in pays 2320 instead (bir-payment.ts).
+ */
+export const BIR_FORM: Record<BirForm, { role: 'VAT_PAYABLE' | 'EWT_PAYABLE' | 'PREPAID_INCOME_TAX'; tax: 'VAT' | 'EWT' | 'income tax'; period: 'month' | 'quarter' }> = {
   '2550Q': { role: 'VAT_PAYABLE', tax: 'VAT', period: 'quarter' },
   '0619-E': { role: 'EWT_PAYABLE', tax: 'EWT', period: 'month' },
   '1601-EQ': { role: 'EWT_PAYABLE', tax: 'EWT', period: 'quarter' },
+  '1702Q': { role: 'PREPAID_INCOME_TAX', tax: 'income tax', period: 'quarter' },
 };
+/** Every BIR payment's form and period: the VAT and EWT ones (0003) and the 1702Q ones (0006). */
+const PAYMENT_ROWS = `(SELECT document_id, form, period, reference, amount_cents, penalty_cents FROM tax_bir_payments
+  UNION ALL SELECT document_id, '1702Q', period, reference, amount_cents, penalty_cents FROM tax_income_tax_payments)`;
 
 export interface Period { kind: 'month' | 'quarter'; year: number; quarter: Quarter; /** 1-12, for a month. */ month: number | null; from: string; to: string; label: string }
 
@@ -54,25 +65,24 @@ export function birPaymentsOf(db: Db, keys: [BirForm, string][]): BirPaymentRef[
   return db
     .prepare(
       `SELECT d.id, d.number, d.status, d.business_date AS date, p.form, p.period, p.reference, p.amount_cents AS amountCents, p.penalty_cents AS penaltyCents
-       FROM tax_bir_payments p JOIN documents d ON d.id = p.document_id
+       FROM ${PAYMENT_ROWS} p JOIN documents d ON d.id = p.document_id
        WHERE p.form || ' ' || p.period IN (SELECT value FROM json_each(?)) ORDER BY d.number`,
     )
     .all(JSON.stringify(keys.map(([f, p]) => `${f} ${p}`))) as BirPaymentRef[];
 }
 
 /** Net debit per party on the payable, over the journals of the BIR payments of these forms and periods (cancels net to zero). */
-function paidByParty(db: Db, role: BirPaymentRole, keys: [BirForm, string][]): Map<string, number> {
+function paidByParty(db: Db, role: 'VAT_PAYABLE' | 'EWT_PAYABLE', keys: [BirForm, string][]): Map<string, number> {
   const rows = db
     .prepare(
       `SELECT COALESCE(l.party_id, '') AS partyId, SUM(l.debit_cents - l.credit_cents) AS cents
        FROM journal_lines l JOIN journals j ON j.id = l.journal_id JOIN accounts a ON a.id = l.account_id
-       JOIN tax_bir_payments p ON p.document_id = j.source_id AND j.source_type = 'document'
+       JOIN ${PAYMENT_ROWS} p ON p.document_id = j.source_id AND j.source_type = 'document'
        WHERE j.sealed = 1 AND a.role_key = ? AND p.form || ' ' || p.period IN (SELECT value FROM json_each(?)) GROUP BY 1`,
     )
     .all(role, JSON.stringify(keys.map(([f, p]) => `${f} ${p}`))) as { partyId: string; cents: number }[];
   return new Map(rows.map((r) => [r.partyId, r.cents]));
 }
-type BirPaymentRole = (typeof BIR_FORM)[BirForm]['role'];
 
 /** EWT withheld in [from, to] per payee: the net credit on 2311 of the journals the EWT register reads. */
 function withheldByPayee(db: Db, from: string, to: string): Map<string, number> {
@@ -159,10 +169,11 @@ export function vatDue(db: Db, year: number, quarter: Quarter): VatDue {
 
 /**
  * Every return with something left to pay, for the property test's generator and a "to pay" list: the quarters closed
- * with VAT payable, and the months (0619-E) and quarters (1601-EQ) with EWT withheld, as far as the ledger goes; and the
- * returns the openings brought in.
+ * with VAT payable, and the months (0619-E) and quarters (1601-EQ) with EWT withheld, as far as the ledger goes; the
+ * 1702Q of each quarter (Q1 to Q3) ended before `today` (by default the last day with a journal) and on or after the
+ * cut-over date that its worksheet leaves something to pay; and the returns the openings brought in.
  */
-export function periodsDue(db: Db): { form: BirForm; period: string; payableCents: number }[] {
+export function periodsDue(db: Db, today?: string): { form: BirForm; period: string; payableCents: number }[] {
   const out: { form: BirForm; period: string; payableCents: number }[] = [];
   const opened = openedReturns(db);
   const closed = db
@@ -192,5 +203,32 @@ export function periodsDue(db: Db): { form: BirForm; period: string; payableCent
     const due = positive(ewtDue(db, form, period, p));
     if (due > 0) out.push({ form, period, payableCents: due });
   }
+  out.push(...incomeTaxDue(db, opened, today));
   return out;
+}
+
+/** The 1702Qs with something left to pay (periodsDue). */
+function incomeTaxDue(db: Db, opened: { form: string; period: string }[], today?: string): { form: BirForm; period: string; payableCents: number }[] {
+  const span = db
+    .prepare(
+      `SELECT MIN(j.business_date) AS first, MAX(j.business_date) AS last FROM journals j
+       WHERE j.sealed = 1 AND EXISTS (SELECT 1 FROM journal_lines l JOIN accounts a ON a.id = l.account_id WHERE l.journal_id = j.id AND substr(a.code, 1, 1) BETWEEN '4' AND '8')`,
+    )
+    .get() as { first: string | null; last: string | null };
+  const until = today ?? span.last;
+  const cutover = cutoverDate(db);
+  const periods = new Set(opened.filter((o) => o.form === '1702Q').map((o) => o.period));
+  if (span.first && until) {
+    for (let y = Number(span.first.slice(0, 4)); y <= Number(until.slice(0, 4)); y++) {
+      for (const q of [1, 2, 3] as Quarter[]) {
+        const { to } = quarterRange(y, q);
+        if (to < until && (!cutover || to >= cutover)) periods.add(quarterPeriod(y, q));
+      }
+    }
+  }
+  return [...periods].sort().flatMap((period) => {
+    const p = parsePeriod(period)!;
+    const left = incomeTaxPosition(db, p.year, p.quarter).leftCents;
+    return left > 0 ? [{ form: '1702Q' as const, period, payableCents: left }] : [];
+  });
 }

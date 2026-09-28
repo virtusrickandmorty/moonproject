@@ -284,7 +284,7 @@ export interface OpeningState {
   closed: { cutoverDate: string; closedAt: string; closedBy: string; closedByName: string; totalDebitCents: number; totalCreditCents: number } | null;
 }
 /** BIR payments (BIRP-): the return, and the posted payments a worksheet counts. */
-export type BirForm = '2550Q' | '0619-E' | '1601-EQ';
+export type BirForm = '2550Q' | '0619-E' | '1601-EQ' | '1702Q';
 export interface BirPaymentLine { id: string; number: string; date: string; period: string; reference: string; amountCents: number; penaltyCents: number }
 /** The EWT of a period by ATC (per EWT class while the ATC is to confirm). */
 export type EwtAtcLine = EwtAtc & { baseCents: number; ewtCents: number };
@@ -303,10 +303,23 @@ export interface EwtQuarterWorksheet extends OpenedReturns {
   qap: (EwtAtc & { supplierId: string | null; tin: string | null; registeredName: string; baseCents: number; rateBp: number | null; ewtCents: number })[];
   checks: WorksheetCheck[];
 }
+/** The income tax settings (dated): the regular rate, the MCIT rate, and the year operations began (MCIT from its 4th year after). */
+export interface IncomeTaxSettingsValue { regularRateBp: number; mcitRateBp: number; operationsBeganYear: number | null }
+export interface IncomeTaxSettings extends IncomeTaxSettingsValue { id: number; effectiveFrom: string; reason: string; createdAt: string; createdBy: string | null; confirmed: boolean }
+/** GET /api/tax/1702q?year&quarter=: the year to date in whole pesos, the tax, the credits, and what is left to pay. */
+export interface IncomeTaxWorksheet {
+  year: number; quarter: 1 | 2 | 3; period: string; from: string; to: string; returnDue: string | null;
+  settings: IncomeTaxSettings; mcitApplies: boolean | null; basis: 'regular' | 'mcit';
+  lines: { key: string; label: string; cents: number }[];
+  taxDueCents: number; payableCents: number;
+  opening: { documentId: string; number: string; date: string } | null; openingCents: number;
+  dueCents: number; payments: BirPaymentLine[]; paidCents: number; leftCents: number;
+  checks: WorksheetCheck[];
+}
 /** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
 export const taxRegisterPath = (register: 'sales' | 'withholding-received' | 'purchases' | 'ewt', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
 /** A quarter's tax report URL; with &format=csv the same URL downloads it for Excel. */
-export const taxQuarterPath = (report: '2307-to-issue' | '2550q' | '1601eq', year: number, quarter: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}`;
+export const taxQuarterPath = (report: '2307-to-issue' | '2550q' | '1601eq' | '1702q', year: number, quarter: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}`;
 /** The 0619-E worksheet's URL (month like 2026-07); with &format=csv it downloads for Excel. */
 export const ewtMonthPath = (month: string) => `/api/tax/0619e?${new URLSearchParams({ month })}`;
 
@@ -463,6 +476,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     vatWorksheet: (year: number, quarter: number) => call<VatWorksheet>('GET', taxQuarterPath('2550q', year, quarter)),
     ewtMonthWorksheet: (month: string) => call<EwtMonthWorksheet>('GET', ewtMonthPath(month)),
     ewtQuarterWorksheet: (year: number, quarter: number) => call<EwtQuarterWorksheet>('GET', taxQuarterPath('1601eq', year, quarter)),
+    incomeTaxWorksheet: (year: number, quarter: number) => call<IncomeTaxWorksheet>('GET', taxQuarterPath('1702q', year, quarter)),
+    incomeTaxSettings: () => call<{ current: IncomeTaxSettings; versions: IncomeTaxSettings[] }>('GET', '/api/tax/income-tax-settings'),
+    /** A new version from today or later (acc.settings.manage); needs a fresh password (step-up). */
+    addIncomeTaxSettings: (body: { effectiveFrom: string; value: IncomeTaxSettingsValue; reason: string }) => call<IncomeTaxSettings>('POST', '/api/tax/income-tax-settings', body),
     opening: () => call<OpeningState>('GET', '/api/acc/opening'),
     /** Every return with something left to pay (GET /api/tax/payments/due): a VAT close or an opening's 2550Q, EWT withheld or opened. */
     taxPaymentsDue: () => call<{ form: BirForm; period: string; payableCents: number }[]>('GET', '/api/tax/payments/due'),

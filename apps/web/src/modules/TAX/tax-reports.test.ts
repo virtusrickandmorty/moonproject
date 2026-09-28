@@ -93,7 +93,7 @@ describe('tax report screen rules', () => {
     expect(tax(['tax.registers.view', 'tax.calendar.view'])).toEqual([
       'Sales register /tax/sales', '2307s received /tax/2307-received', 'Purchases register /tax/purchases', 'EWT register /tax/ewt',
       '2307s to issue /tax/2307-to-issue', 'VAT this quarter /tax/vat', '2550Q worksheet /tax/2550q', '0619-E (monthly EWT) /tax/0619e', '1601-EQ (quarterly EWT) /tax/1601eq',
-      'Tax calendar /tax/calendar',
+      '1702Q worksheet /tax/1702q', 'Tax calendar /tax/calendar',
     ]);
     expect(tax(['tax.calendar.view', 'tax.booklets.view'])).toEqual(['Tax calendar /tax/calendar', 'Booklets /tax/booklets']);
     expect(tax([])).toBeUndefined();

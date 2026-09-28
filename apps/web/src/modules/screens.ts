@@ -54,6 +54,7 @@ import { BirPaymentForm } from './TAX/BirPaymentForm.tsx';
 import { OpeningWithholdingForm } from './TAX/OpeningWithholdingForm.tsx';
 import { OpeningPayableForm } from './TAX/OpeningPayableForm.tsx';
 import { EwtMonthReturn, EwtQuarterReturn } from './TAX/EwtWorksheets.tsx';
+import { IncomeTaxReturn } from './TAX/IncomeTax.tsx';
 import { LoanForm } from './LOAN/LoanForm.tsx';
 import { OpeningForm as OpeningLoanForm } from './LOAN/OpeningForm.tsx';
 import { PaymentForm as LoanPaymentForm } from './LOAN/PaymentForm.tsx';
@@ -103,6 +104,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/2550q': VatWorksheet,
   '/tax/0619e': EwtMonthReturn,
   '/tax/1601eq': EwtQuarterReturn,
+  '/tax/1702q': IncomeTaxReturn,
   '/acc/opening': OpeningBalances,
   '/tax/calendar': TaxCalendar,
   '/admin/shop-certificate': ShopCertificate,
