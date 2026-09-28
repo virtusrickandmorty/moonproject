@@ -102,7 +102,7 @@ describe('tax screens, part 2: rules', () => {
 
   it('puts every tax screen, the booklets included, under Accounting & Tax (PLAN H1) with the permission its route checks', () => {
     const groups = buildMenu([], new Set(['tax.registers.view', 'tax.calendar.view', 'tax.booklets.view']));
-    expect(groups.map((g) => g.group)).toEqual(['Overview', 'Accounting & Tax', 'Admin']); // no separate Tax group; Admin has the Shop certificate for everyone
+    expect(groups.map((g) => g.group)).toEqual(['Overview', 'Accounting & Tax']); // no separate Tax group
     const tax = groups[1]!.items;
     expect(tax.map((i) => i.label).at(-1)).toBe('Booklets');
     expect(tax.slice(2, 7).map((i) => `${i.label} ${i.path}`)).toEqual([

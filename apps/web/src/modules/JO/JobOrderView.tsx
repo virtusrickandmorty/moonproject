@@ -12,7 +12,7 @@ import { Figures } from '../COL/parts.tsx';
 
 const action = 'rounded-md bg-white px-3 py-1 text-sm ring-1 ring-slate-300 hover:bg-indigo-50';
 
-function JoMoney({ d, typeKey }: { d: DocDetail; typeKey: string }) {
+function JoMoney({ d }: { d: DocDetail }) {
   const { id, status, replacesId } = d.header;
   const [s, setS] = useState<JoStatus | null>(null);
   const [before, setBefore] = useState<{ number: string; heldCents: number } | null>(null);
@@ -20,7 +20,7 @@ function JoMoney({ d, typeKey }: { d: DocDetail; typeKey: string }) {
   useEffect(() => {
     api.joStatus(id).then(setS, () => undefined);
     api.docTypes().then((ts) => setCan({ move: !!ts.find((t) => t.key === 'col.deposit_transfer')?.canCreate, refund: !!ts.find((t) => t.key === 'col.refund')?.canCreate }), () => undefined);
-    if (replacesId) Promise.all([api.get(typeKey, replacesId), api.joStatus(replacesId)]).then(([old, os]) => setBefore({ number: old.header.number, heldCents: os.money.depositsHeldCents }), () => undefined);
+    if (replacesId) Promise.all([api.get('jo.job_order', replacesId), api.joStatus(replacesId)]).then(([old, os]) => setBefore({ number: old.header.number, heldCents: os.money.depositsHeldCents }), () => undefined);
   }, [id, status]);
   if (!s) return null;
   const m = s.money;
@@ -47,6 +47,4 @@ function JoMoney({ d, typeKey }: { d: DocDetail; typeKey: string }) {
   );
 }
 
-export const jobOrderView: ViewParts = { extra: (d) => <JoMoney d={d} typeKey="jo.job_order" /> };
-/** An opening job order (OBJO-, PLAN D8 step 2) is a job order too: the same money on its view. */
-export const openingJobOrderView: ViewParts = { extra: (d) => <JoMoney d={d} typeKey="jo.opening" /> };
+export const jobOrderView: ViewParts = { extra: (d) => <JoMoney d={d} /> };

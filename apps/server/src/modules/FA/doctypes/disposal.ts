@@ -4,14 +4,13 @@
  * Only a retirement for now (nothing received, so no gain): a sale of an asset needs an invoice record for the output
  * VAT (D5), which Moonproject does not record yet, so a sale is refused. Run the month's depreciation first; the
  * figures are the ledger's on the day of the disposal. Cancel mirrors it and puts the asset back in service.
- * An opening asset (OBFA-) is disposed of the same way; its disposal is kept in fa_opening_disposals.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
 import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { Db } from '../../../platform/db/driver.ts';
-import { accumulatedCents, asset, assetClass, assetParty, assetsInService, isOpeningAsset } from '../assets.ts';
+import { accumulatedCents, asset, assetClass, assetParty, assetsInService } from '../assets.ts';
 
 export const disposalInput = z
   .object({
@@ -62,9 +61,8 @@ export const disposalDoc: DocTypeDef<DisposalInput, Disposal> = {
   },
 
   persist(db, doc, h) {
-    const table = isOpeningAsset(db, doc.assetId) ? 'fa_opening_disposals' : 'fa_disposals';
     db.prepare(
-      `INSERT INTO ${table} (document_id, asset_id, kind, reason, cost_cents, accumulated_cents, proceeds_cents, gain_cents, loss_cents)
+      `INSERT INTO fa_disposals (document_id, asset_id, kind, reason, cost_cents, accumulated_cents, proceeds_cents, gain_cents, loss_cents)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(h.documentId, doc.assetId, doc.kind, doc.reason, doc.costCents, doc.accumulatedCents, doc.proceedsCents, doc.gainCents, doc.lossCents);
   },
@@ -87,7 +85,7 @@ export const disposalDoc: DocTypeDef<DisposalInput, Disposal> = {
     const r = db
       .prepare(
         `SELECT asset_id AS assetId, kind, reason, cost_cents AS costCents, accumulated_cents AS accumulatedCents, proceeds_cents AS proceedsCents,
-           gain_cents AS gainCents, loss_cents AS lossCents FROM fa_all_disposals WHERE document_id = ?`,
+           gain_cents AS gainCents, loss_cents AS lossCents FROM fa_disposals WHERE document_id = ?`,
       )
       .get(documentId) as (DisposalInput & Figures) | undefined;
     if (!r) throw new Error(`Disposal ${documentId} not found`);

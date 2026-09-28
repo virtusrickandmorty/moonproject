@@ -24,13 +24,6 @@ export function employee(db: Db, id: string): Employee | undefined {
 /** Employees not separated, by name. */
 export const activeEmployees = (db: Db): Employee[] => (db.prepare(`${EMPLOYEE} WHERE is_active = 1 ORDER BY full_name, id`).all() as Row[]).map(asEmployee);
 
-/** Recorded birthdays of active employees, without pay or government IDs. */
-export function employeeBirthdays(db: Db): { id: string; name: string; birthday: string }[] {
-  return db.prepare(`SELECT id, full_name AS name, birthday FROM emp_employees
-    WHERE is_active = 1 AND birthday IS NOT NULL ORDER BY full_name, id`)
-    .all() as { id: string; name: string; birthday: string }[];
-}
-
 /**
  * Who a payroll run covers (F2, F3): employees in service on some day of the period whose pay on its last day (or their
  * last day, if they left during it) is in the pay group. A worker who left keeps being listed for the period they worked.

@@ -29,11 +29,8 @@ export interface Who { userId: string; at: string }
 const lastStage = (db: Db, documentId: string) =>
   (db.prepare('SELECT to_stage FROM jo_stage_events WHERE document_id = ? ORDER BY seq DESC LIMIT 1').get(documentId) as { to_stage: Stage } | undefined)?.to_stage;
 
-/** Documents that are job orders: one taken in Moonproject, or one taken before the cut-over date (opening.ts). */
-export const JO_DOC_TYPES_SQL = `doc_type IN ('jo.job_order', 'jo.opening')`;
-
 export function currentStage(db: Db, documentId: string): Stage | 'cancelled' {
-  const d = db.prepare(`SELECT status FROM documents WHERE id = ? AND ${JO_DOC_TYPES_SQL}`).get(documentId) as { status: string } | undefined;
+  const d = db.prepare(`SELECT status FROM documents WHERE id = ? AND doc_type = 'jo.job_order'`).get(documentId) as { status: string } | undefined;
   if (!d) throw notFound('The job order');
   return d.status === 'cancelled' ? 'cancelled' : (lastStage(db, documentId) ?? 'open');
 }
@@ -78,14 +75,10 @@ export function productionMove(db: Db, documentId: string, to: 'in_production' |
   if ((now === 'open' || now === 'in_production' || now === 'ready') && now !== to) record(db, documentId, now, to, reason, who);
 }
 
-/**
- * Edit (cancel + reissue) keeps the job where it is on the floor: the replacement starts at the old stage. Only a job
- * still on the floor carries over, onto a replacement with no stage of its own yet (an opening job order with nothing
- * left to release starts Released).
- */
+/** Edit (cancel + reissue) keeps the job where it is on the floor: the replacement starts at the old stage. */
 export function carryStageOver(db: Db, oldId: string, newId: string): void {
   const stage = lastStage(db, oldId);
-  if ((stage !== 'in_production' && stage !== 'ready') || lastStage(db, newId)) return;
+  if (!stage || stage === 'open') return;
   const old = db.prepare('SELECT number, cancelled_by, cancelled_at FROM documents WHERE id = ?').get(oldId) as { number: string; cancelled_by: string; cancelled_at: string };
   record(db, newId, 'open', stage, `Carried over from ${old.number}`, { userId: old.cancelled_by, at: old.cancelled_at });
 }

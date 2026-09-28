@@ -11,7 +11,7 @@ import { createApi, newIdempotencyKey as key } from '../api.ts';
 import { withoutOriginal } from '../generic/record.tsx';
 import { emptyRow, entryDate, jvInput, postable } from './ACC/jv.ts';
 import { closeDate, closeLink } from './TAX/reports.ts';
-import { emptyLoan, emptyOpening, loanInput, openingInput, paymentInput } from './LOAN/loan.ts';
+import { emptyLoan, loanInput, paymentInput } from './LOAN/loan.ts';
 import { buyInput, emptyBuy } from './FA/buy.ts';
 
 const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: string, init: RequestInit) => {
@@ -91,31 +91,6 @@ describe('accountant screens with the real server', () => {
     expect(pre.issues.map((i) => i.code)).toEqual(['PAID']);
     expect(withoutOriginal(pre.issues, lpay.number)).toEqual([]);
     expect((await api.reissue('loan.payment', lpay.id, moved, pre.totalCents, 'Paid from China Bank, not BDO', key())).number).toBe('LPAY-000002');
-    expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
-  });
-
-  it('opening loan on the cut-over date, then paid like any loan', async () => {
-    const env = await createTestEnv(); // today is 2026-09-28
-    const setup = await env.as('accountant');
-    await setup.post('/api/auth/step-up', { password: PASSWORD });
-    await setup.post('/api/acc/opening/cutover-date', { date: '2026-09-27' });
-    createUser(env.db, 'acct1', ['accountant']);
-    const api = createApi(injectFetch(env.app));
-    await api.login('acct1', PASSWORD);
-    const { cutoverDate } = await api.opening();
-    expect(cutoverDate).toBe('2026-09-27');
-
-    const ob = openingInput({ ...emptyOpening(), lender: 'Sample Bank', original: '1,000,000', dateReceived: '2025-10-15', owed: '738,900', rate: '12', monthsLeft: '13', nextDueDate: '2026-10-15' });
-    expect(ob.errors).toEqual([]);
-    const p = await api.preview('loan.opening', ob.input, cutoverDate!);
-    expect(p.issues).toEqual([]);
-    const doc = await api.post('loan.opening', ob.input, p.totalCents, key(), cutoverDate!);
-    expect((await api.get('loan.opening', doc.id)).header).toMatchObject({ number: 'OBLN-000001', businessDate: '2026-09-27', totalCents: 73_890_000 });
-    const loan = (await api.loans('posted')).find((l) => l.id === doc.id)!;
-    expect(loan).toMatchObject({ principalCents: 100_000_000, balanceCents: 73_890_000, nextDue: { instalmentNo: 1, principalCents: 5_350_731, interestCents: 738_900 } });
-    const pay = paymentInput({ loanId: loan.id, instalmentNo: 1, cashPlaceId: String(cashPlaceId(env.db, '1111')), differs: false, principal: '', interest: '', note: '' });
-    const pre = await api.preview('loan.payment', pay.input);
-    expect((await api.post('loan.payment', pay.input, pre.totalCents, key())).number).toBe('LPAY-000001');
     expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
   });
 });

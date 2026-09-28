@@ -3,19 +3,11 @@ import { conflict } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 
 export { COMPLEXITIES, listSteps, stepById, type Complexity, type Step } from './production.ts';
-export { board } from './production.ts';
 import { lineRoute } from './production.ts';
 
 /** Current route names and status for a production job ticket. */
 export function jobTicketRoute(db: Db, jobOrderId: string, lineNo: number) {
   return lineRoute(db, jobOrderId, lineNo)?.map(({ name, status }) => ({ name, status })) ?? [];
-}
-
-/** Recorded (not cancelled) production entries of one job order, e.g. to block cancelling an opening job order (JO). */
-export function entriesOf(db: Db, jobOrderId: string): { id: string; number: string }[] {
-  return db
-    .prepare(`SELECT d.id, d.number FROM prd_entries e JOIN documents d ON d.id = e.document_id WHERE e.job_order_id = ? AND d.status = 'posted' ORDER BY d.number`)
-    .all(jobOrderId) as { id: string; number: string }[];
 }
 
 export interface UnpaidAssignment {

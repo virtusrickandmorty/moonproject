@@ -29,14 +29,6 @@ export function activeCustomers(db: Db): { id: string; name: string }[] {
     WHERE is_active = 1 AND merged_into_id IS NULL ORDER BY display_name, id`).all() as { id: string; name: string }[];
 }
 
-/** Birthdays recorded for active people linked to active, unmerged customers. */
-export function customerBirthdays(db: Db): { id: string; customerId: string; name: string; birthday: string }[] {
-  return db.prepare(`SELECT p.id, p.customer_id AS customerId, p.full_name AS name, p.birthday
-    FROM cus_people p JOIN cus_customers c ON c.id = p.customer_id
-    WHERE p.is_active = 1 AND c.is_active = 1 AND c.merged_into_id IS NULL AND p.birthday IS NOT NULL
-    ORDER BY p.full_name, p.id`).all() as { id: string; customerId: string; name: string; birthday: string }[];
-}
-
 export function wearerRef(db: Db, id: string): { id: string; customer_id: string; group_id: string | null; full_name: string; is_active: number } | undefined {
   return db.prepare('SELECT id,customer_id,group_id,full_name,is_active FROM cus_people WHERE id = ?').get(id) as
     | { id: string; customer_id: string; group_id: string | null; full_name: string; is_active: number }
