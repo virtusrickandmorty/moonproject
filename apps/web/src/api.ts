@@ -12,6 +12,9 @@ export class ApiError extends Error {
 }
 
 export interface Me { userId: string; username: string; displayName: string; roles: string[]; permissions: string[]; mustChangePassword: boolean; csrfToken: string }
+export interface AuditLogRow { seq: number; at: string; userId: string | null; userName: string | null; action: string; entityType: string; entityId: string | null; data: Record<string, unknown> }
+export interface AuditLogPage { rows: AuditLogRow[]; nextBefore: number | null }
+export interface IntegrityReport { audit: { ok: boolean; brokenAt: number | null; count: number; newestAt: string | null; message: string }; checks: { id: string; name: string; ok: boolean; problems: string[]; message: string }[] }
 /** Public certificate details returned to a signed-in user; no private key is sent. */
 export interface CertInfo { fingerprint256: string; fingerprint1: string; notAfter: string; ips: string[]; dnsNames: string[] }
 export interface CompanyProfile { registeredName: string; tradeName: string; tin: string; registeredAddress: string; isVatRegistered: boolean; version: number; supersededAt?: string }
@@ -318,6 +321,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     shopCertificate: () => call<{ ca: CertInfo | null }>('GET', '/api/system/tls'),
     docTypes: () => call<DocTypeInfo[]>('GET', '/api/doc-types'),
     report: <T>(path: string) => call<T>('GET', `/api/rpt/${path}`),
+    auditLog: (query: string) => call<AuditLogPage>('GET', `/api/aud/log?${query}`),
+    auditUsers: () => call<{ id: string; name: string }[]>('GET', '/api/aud/users'),
+    auditIntegrity: () => call<IntegrityReport>('GET', '/api/aud/integrity'),
     list: (type: string, q: { status?: string; before?: string; limit?: number } = {}) =>
       call<DocHeader[]>('GET', doc(type, `?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`)),
     get: (type: string, id: string) => call<DocDetail>('GET', one(type, id)),

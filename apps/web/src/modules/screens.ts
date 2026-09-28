@@ -49,6 +49,8 @@ import { PaymentForm as LoanPaymentForm } from './LOAN/PaymentForm.tsx';
 import { loanView } from './LOAN/views.tsx';
 import { BuyForm } from './FA/BuyForm.tsx';
 import { Backups } from './BAK/Backups.tsx';
+import { AuditLog } from './AUD/AuditLog.tsx';
+import { IntegrityCheck } from './AUD/IntegrityCheck.tsx';
 import { InventoryCountForm } from './INV/InventoryCountForm.tsx';
 import { inventoryCountView } from './INV/InventoryCountView.tsx';
 
@@ -89,6 +91,8 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/admin/shop-certificate': ShopCertificate,
   '/bak': Backups,
   '/bak/:section': Backups,
+  '/aud/log': AuditLog,
+  '/aud/integrity': IntegrityCheck,
 };
 
 /** A module's own form; `me` lets it offer what only some users may do (the remittance's date paid, for acc.backdate). */
