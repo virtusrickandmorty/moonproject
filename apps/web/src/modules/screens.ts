@@ -36,6 +36,7 @@ import { EwtRegister, PurchasesRegister } from './TAX/SupplierRegisters.tsx';
 import { CertificatesToIssue, VatWorksheet } from './TAX/QuarterReports.tsx';
 import { TaxCalendar } from './TAX/TaxCalendar.tsx';
 import { VatQuarter } from './TAX/VatQuarter.tsx';
+import { ShopCertificate } from './SEC/ShopCertificate.tsx';
 import { BillForm } from './AP/BillForm.tsx';
 import { PaymentForm as SupplierPaymentForm } from './AP/PaymentForm.tsx';
 import { billView, paymentView } from './AP/views.tsx';
@@ -85,6 +86,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/vat': VatQuarter,
   '/tax/2550q': VatWorksheet,
   '/tax/calendar': TaxCalendar,
+  '/admin/shop-certificate': ShopCertificate,
   '/bak': Backups,
   '/bak/:section': Backups,
 };
