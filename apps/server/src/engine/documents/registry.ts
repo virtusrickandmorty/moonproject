@@ -60,6 +60,8 @@ export const DOC_TITLES = [
   'Opening Cash Advance',
   'Opening Officer Balance',
   'Opening Withholding',
+  'Opening Statutory Payable',
+  'Opening Tax Payable',
 ] as const;
 export type DocTitle = (typeof DOC_TITLES)[number];
 

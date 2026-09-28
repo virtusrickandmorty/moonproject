@@ -4,6 +4,8 @@
  * Straight line: after n months in service an asset's accumulated depreciation is (cost − residual) × n ÷ life
  * (assets.ts straightLine), so a month's charge is (cost − residual) ÷ life to the centavo, a missed month is caught up,
  * and the asset stops at its residual value. Runs go month by month, one per month (unique per asset and month).
+ * An opening asset (OBFA-) is not charged up to its cut-over month; after it, what the old books left is charged
+ * (assets.ts scheduledCents), and its lines are kept in fa_opening_depreciation_lines.
  * Cancel needs later runs of its assets, and their disposals, cancelled first: only the latest charge comes off.
  * A run is dated in the month it depreciates, so the charge falls in that month's books: run it by the month's last
  * day, or after month end the accountant dates it the month's last day (acc.backdate).
@@ -12,7 +14,7 @@ import { z } from 'zod';
 import fc from 'fast-check';
 import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
-import { accumulatedCents, assetClass, assetParty, assetsInService, monthsInService, straightLine } from '../assets.ts';
+import { accumulatedCents, assetClass, assetParty, assetsInService, isOpeningAsset, monthsInService, scheduledCents } from '../assets.ts';
 
 export const depreciationInput = z
   .object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Use a month like 2026-09.') }) // the month depreciated, not the document's date
@@ -47,7 +49,7 @@ export const depreciationDoc: DocTypeDef<DepreciationInput, Depreciation> = {
     const lines: DepreciationLine[] = [];
     for (const a of assetsInService(ctx.db)) {
       const monthsElapsed = monthsInService(a.acquiredOn, input.month);
-      const target = straightLine(a, monthsElapsed);
+      const target = scheduledCents(a, input.month);
       const chargeCents = target - accumulatedCents(ctx.db, a);
       if (monthsElapsed < 1 || chargeCents <= 0) continue;
       const cls = assetClass(ctx.db, a.classCode)!;
@@ -74,8 +76,9 @@ export const depreciationDoc: DocTypeDef<DepreciationInput, Depreciation> = {
 
   persist(db, doc, h) {
     db.prepare('INSERT INTO fa_depreciation_runs (document_id, month) VALUES (?, ?)').run(h.documentId, doc.month);
-    const line = db.prepare('INSERT INTO fa_depreciation_lines (document_id, asset_id, month, months_elapsed, charge_cents, accumulated_cents) VALUES (?, ?, ?, ?, ?, ?)');
-    for (const l of doc.lines) line.run(h.documentId, l.assetId, doc.month, l.monthsElapsed, l.chargeCents, l.accumulatedCents);
+    const insert = (table: string) => db.prepare(`INSERT INTO ${table} (document_id, asset_id, month, months_elapsed, charge_cents, accumulated_cents) VALUES (?, ?, ?, ?, ?, ?)`);
+    const [line, openingLine] = [insert('fa_depreciation_lines'), insert('fa_opening_depreciation_lines')];
+    for (const l of doc.lines) (isOpeningAsset(db, l.assetId) ? openingLine : line).run(h.documentId, l.assetId, doc.month, l.monthsElapsed, l.chargeCents, l.accumulatedCents);
   },
 
   journal(doc) {
@@ -95,7 +98,7 @@ export const depreciationDoc: DocTypeDef<DepreciationInput, Depreciation> = {
       .prepare(
         `SELECT l.asset_id AS assetId, d.number AS assetNumber, a.description, c.expense_role AS expenseRole, c.accum_role AS accumRole,
            l.months_elapsed AS monthsElapsed, l.charge_cents AS chargeCents, l.accumulated_cents AS accumulatedCents
-         FROM fa_depreciation_lines l JOIN fa_assets a ON a.document_id = l.asset_id JOIN documents d ON d.id = a.document_id
+         FROM fa_all_depreciation_lines l JOIN fa_all_assets a ON a.document_id = l.asset_id JOIN documents d ON d.id = a.document_id
          JOIN fa_classes c ON c.code = a.class_code WHERE l.document_id = ? ORDER BY a.acquired_on, d.number`,
       )
       .all(documentId) as DepreciationLine[];
@@ -114,10 +117,10 @@ export const depreciationDoc: DocTypeDef<DepreciationInput, Depreciation> = {
       .prepare(
         `SELECT d.id, d.number FROM fa_depreciation_runs r JOIN documents d ON d.id = r.document_id
          WHERE d.status = 'posted' AND r.month > (SELECT month FROM fa_depreciation_runs WHERE document_id = @id)
-           AND EXISTS (SELECT 1 FROM fa_depreciation_lines a JOIN fa_depreciation_lines b ON b.asset_id = a.asset_id WHERE a.document_id = r.document_id AND b.document_id = @id)
+           AND EXISTS (SELECT 1 FROM fa_all_depreciation_lines a JOIN fa_all_depreciation_lines b ON b.asset_id = a.asset_id WHERE a.document_id = r.document_id AND b.document_id = @id)
          UNION
-         SELECT d.id, d.number FROM fa_disposals x JOIN documents d ON d.id = x.document_id
-         WHERE d.status = 'posted' AND x.asset_id IN (SELECT asset_id FROM fa_depreciation_lines WHERE document_id = @id)
+         SELECT d.id, d.number FROM fa_all_disposals x JOIN documents d ON d.id = x.document_id
+         WHERE d.status = 'posted' AND x.asset_id IN (SELECT asset_id FROM fa_all_depreciation_lines WHERE document_id = @id)
          ORDER BY 2`,
       )
       .all({ id: documentId }) as { id: string; number: string }[];

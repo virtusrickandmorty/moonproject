@@ -37,6 +37,12 @@ export function Customers({ me }: { me: Me }) {
     catch (e) { setError((e as Error).message); }
   };
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('customer');
+    if (id) void open(id);
+  // A linked customer is opened once when this screen mounts.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const refreshed = async () => { await load(); if (selected) await open(selected.id); };
   return <div className="max-w-5xl space-y-4">
     <div className="flex items-center gap-3"><h1 className="flex-1 text-2xl font-semibold">Customers</h1>
