@@ -1,6 +1,6 @@
 /**
  * Collection form (PLAN E5, H2): the customer, what they pay on (job orders and quick sales still owed, oldest due first),
- * where the money went (split tenders), tax withheld (2307) and the CR booklet number. The server computes every split;
+ * where the money went (split tenders), tax withheld (2307, with VAT withheld by government buyers) and the CR booklet number. The server computes every split;
  * this screen only sends what was typed. Also the Edit of a recorded collection (cancel + reissue, NR-4).
  */
 import { useEffect, useMemo, useState } from 'react';
@@ -16,7 +16,7 @@ import { CustomerPicker, EditGate, Errors, Figures, TenderRows, useLive, type Pi
 /** Something the customer can pay on; `due` already counts back what the collection being edited paid on it. */
 interface Item { key: string; label: string; date: string; due: number; ref: { jobOrderId: string } | { saleId: string } }
 type Stored = { customerId: string; crNumber: string; applications: { jobOrderId: string; amountCents: number }[]; sales?: { saleId: string; amountCents: number }[]; tenders: TenderInput[];
-  withholding?: { cwtCents: number; atc: string; certificate: string }; settleSmallDifference?: boolean; note?: string };
+  withholding?: { cwtCents: number; atc: string; certificate: string; vatWithheldCents?: number }; settleSmallDifference?: boolean; note?: string };
 type StoredDoc = { customerName: string; applications: { jobOrderId: string; jobOrderNumber: string }[]; sales: { saleId: string; saleNumber: string; invoiceNumber: string }[] };
 
 function itemsOf(open: OpenItems, original?: { input: Stored; doc: StoredDoc }): Item[] {
@@ -51,7 +51,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
   const [reason, setReason] = useState('');
   const [crNumber, setCr] = useState('');
   const [tenders, setTenders] = useState<TenderRow[]>([emptyTender()]);
-  const [cwt, setCwt] = useState({ amount: '', atc: '', certificate: 'pending' });
+  const [cwt, setCwt] = useState({ amount: '', atc: '', certificate: 'pending', vat: '' });
   const [typed, setTyped] = useState<Record<string, string> | null>(null); // null = apply oldest first
   const [settle, setSettle] = useState(false);
   const [note, setNote] = useState('');
@@ -69,7 +69,8 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
       setOriginal({ header: d.header, input, doc });
       setCustomer({ id: input.customerId, name: doc.customerName });
       setTenders(tendersToRows(input.tenders));
-      if (input.withholding) setCwt({ amount: formatPesos(input.withholding.cwtCents), atc: input.withholding.atc, certificate: input.withholding.certificate });
+      const w = input.withholding;
+      if (w) setCwt({ amount: formatPesos(w.cwtCents), atc: w.atc, certificate: w.certificate, vat: w.vatWithheldCents ? formatPesos(w.vatWithheldCents) : '' });
       setTyped(Object.fromEntries([...input.applications.map((a) => [`jo:${a.jobOrderId}`, formatPesos(a.amountCents)]), ...(input.sales ?? []).map((a) => [`qs:${a.saleId}`, formatPesos(a.amountCents)])]));
       setSettle(!!input.settleSmallDifference);
       setNote(input.note ?? '');
@@ -84,7 +85,8 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
   const items = useMemo(() => (open ? itemsOf(open, original?.input.customerId === open.customerId ? original : undefined) : []), [open, original]);
   const pay = tendersToInput(tenders);
   const cwtCents = cents(cwt.amount);
-  const received = sum(pay.tenders.map((t) => t.amountCents)) + (cwtCents ?? 0);
+  const vatWithheldCents = cents(cwt.vat);
+  const received = sum(pay.tenders.map((t) => t.amountCents)) + (cwtCents ?? 0) + (vatWithheldCents ?? 0);
   const auto = oldestFirst(received, items.map((i) => i.due));
   const amountOf = (i: Item, n: number) => (typed ? cents(typed[i.key] ?? '') : auto[n]);
   const amounts = items.map(amountOf);
@@ -95,6 +97,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     ...(/^\d+$/.test(crNumber.trim()) ? [] : ['Type the CR number from the booklet (digits only).']),
     ...pay.errors,
     ...(cwtCents === undefined ? ['Type the tax withheld like 250.00'] : cwtCents > 0 && !cwt.atc ? ['Pick the kind of tax withheld (ATC).'] : []),
+    ...(vatWithheldCents === undefined ? ['Type the VAT withheld like 500.00'] : vatWithheldCents > 0 && !cwtCents ? ['VAT withheld comes with tax withheld on the same 2307: type that amount too.'] : []),
     ...items.filter((_, n) => amounts[n] === undefined || amounts[n]! < 0).map((i) => `${i.label}: type an amount like 1,250.00`),
   ];
   const input = {
@@ -105,7 +108,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
       ? { sales: items.flatMap((i, n) => ('saleId' in i.ref && amounts[n]! > 0 ? [{ saleId: i.ref.saleId, amountCents: amounts[n]! }] : [])) }
       : {}),
     tenders: pay.tenders,
-    ...(cwtCents ? { withholding: { cwtCents, atc: cwt.atc, certificate: cwt.certificate } } : {}),
+    ...(cwtCents ? { withholding: { cwtCents, atc: cwt.atc, certificate: cwt.certificate, ...(vatWithheldCents ? { vatWithheldCents } : {}) } } : {}),
     ...(settle ? { settleSmallDifference: true } : {}),
     ...(note.trim() ? { note: note.trim() } : {}),
   };
@@ -143,7 +146,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
           <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" />
         </Panel>
         <Panel title="Tax withheld by the customer (2307)">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-4">
             <Field label="Amount withheld" hint="As written on the 2307">
               <input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={cwt.amount} onChange={(e) => setCwt({ ...cwt, amount: e.target.value })} />
             </Field>
@@ -160,6 +163,9 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
                 <option value="pending">Still to get</option>
                 <option value="received">Received</option>
               </select>
+            </Field>
+            <Field label="VAT withheld" hint="Government buyers, 5%">
+              <input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={cwt.vat} onChange={(e) => setCwt({ ...cwt, vat: e.target.value })} />
             </Field>
           </div>
         </Panel>

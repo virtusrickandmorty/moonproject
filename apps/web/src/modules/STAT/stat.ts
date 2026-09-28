@@ -10,20 +10,25 @@ export const SCHEME_LABEL: Record<Scheme, string> = { SSS: 'SSS', PHIC: 'PhilHea
 export const SCHEME_LIST = Object.keys(SCHEME_LABEL) as Scheme[];
 export const isMonth = (s: string) => /^\d{4}-(0[1-9]|1[0-2])$/.test(s);
 
-export interface RemittanceValues { scheme: string; month: string; cashPlaceId: string; amount: string; reference: string; note: string }
+export interface RemittanceValues { scheme: string; month: string; cashPlaceId: string; amount: string; penalty: string; reference: string; note: string }
 
-/** The form's values -> remittance input, with plain errors. */
+/** The form's values -> remittance input, with plain errors. A blank penalty is none. */
 export function remittanceInput(v: RemittanceValues): { input: RemittanceInput; errors: string[] } {
   const amount = cents(v.amount);
+  const penalty = cents(v.penalty);
   const errors = [
     ...(SCHEME_LIST.includes(v.scheme as Scheme) ? [] : ['Pick what is being paid.']),
     ...(isMonth(v.month) ? [] : ['Pick the month paid for.']),
     ...(v.cashPlaceId ? [] : ['Pick where the money came from.']),
     ...(amount && amount > 0 ? [] : ['Type the amount paid, like 7,560.00']),
+    ...(penalty === undefined || penalty < 0 ? ['Type the penalty like 250.00, or leave it blank.'] : []),
     ...(v.reference.trim().length >= 3 ? [] : ['Type the PRN, payment reference or receipt number.']),
   ];
   return {
-    input: { scheme: v.scheme as Scheme, month: v.month, cashPlaceId: Number(v.cashPlaceId), amountCents: amount ?? 0, reference: v.reference.trim(), ...(v.note.trim() ? { note: v.note.trim() } : {}) },
+    input: {
+      scheme: v.scheme as Scheme, month: v.month, cashPlaceId: Number(v.cashPlaceId), amountCents: amount ?? 0, ...(penalty ? { penaltyCents: penalty } : {}),
+      reference: v.reference.trim(), ...(v.note.trim() ? { note: v.note.trim() } : {}),
+    },
     errors,
   };
 }
