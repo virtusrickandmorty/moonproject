@@ -77,6 +77,12 @@ import { OpeningForm as OpeningAssetForm } from './FA/OpeningForm.tsx';
 import { Backups } from './BAK/Backups.tsx';
 import { AuditLog } from './AUD/AuditLog.tsx';
 import { IntegrityCheck } from './AUD/IntegrityCheck.tsx';
+import { Suppliers } from './PUR/Suppliers.tsx';
+import { SupplierPage } from './PUR/Supplier.tsx';
+import { Supplies } from './PUR/Supplies.tsx';
+import { PoForm } from './PUR/PoForm.tsx';
+import { RrForm } from './PUR/RrForm.tsx';
+import { purchaseOrderView, receivingReportView } from './PUR/views.tsx';
 import { InventoryCountForm } from './INV/InventoryCountForm.tsx';
 import { inventoryCountView } from './INV/InventoryCountView.tsx';
 
@@ -92,6 +98,10 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/cash/book': CashBook,
   '/prd/board': ProductionBoard,
   '/prd/rates': PieceRates,
+  '/pur/suppliers': Suppliers,
+  '/pur/suppliers/new': SupplierPage,
+  '/pur/suppliers/:id': SupplierPage,
+  '/pur/supplies': Supplies,
   '/emp/employees': Employees,
   '/emp/employees/:id': EmployeePage,
   '/emp/attendance': Attendance,
@@ -178,10 +188,13 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'fa.buy': BuyForm,
   'fa.opening': OpeningAssetForm,
   'inv.count': InventoryCountForm,
+  'pur.po': PoForm,
+  'pur.rr': RrForm,
   'jo.opening': OpeningJobOrderForm,
   'tax.opening': OpeningWithholdingForm,
   'tax.payable.opening': OpeningPayableForm,
 };
 
 export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'jo.opening': openingJobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView,
+  'pur.po': purchaseOrderView, 'pur.rr': receivingReportView,
   'col.cwt_only': cwtOnlyView, 'col.forfeit': forfeitView, 'col.credit_memo': creditMemoView, 'col.write_off': writeOffView };
