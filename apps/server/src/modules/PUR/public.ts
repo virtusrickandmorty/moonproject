@@ -15,6 +15,11 @@ export function supplier(db: Db, id: string): Supplier | undefined {
   };
 }
 
+/** The name and TIN a supplier is registered with at the BIR, for the tax registers and the 2307 (read-only). */
+export function supplierTaxInfo(db: Db, id: string): { registeredName: string; tin: string | null } | undefined {
+  return db.prepare('SELECT registered_name AS registeredName, tin FROM pur_suppliers WHERE id = ?').get(id) as { registeredName: string; tin: string | null } | undefined;
+}
+
 export const activeSupplierIds = (db: Db): string[] => db.prepare('SELECT id FROM pur_suppliers WHERE is_active = 1 ORDER BY id').pluck().all() as string[];
 
 export interface Supply { id: string; name: string; category: 'materials' | 'ready_made'; isActive: boolean }
@@ -39,4 +44,15 @@ export function receivingReport(db: Db, id: string): ReceivingReport | undefined
        JOIN documents pd ON pd.id = r.po_document_id WHERE r.document_id = ?`,
     )
     .get(id) as ReceivingReport | undefined;
+}
+
+/** Read-only names for purchase order printouts. Callers enforce their own view permission. */
+export function purchaseOrderNames(db: Db, supplierId: string, supplyIds: string[]) {
+  const supplier = db.prepare('SELECT name, registered_name FROM pur_suppliers WHERE id = ?').get(supplierId) as
+    { name: string; registered_name: string } | undefined;
+  const supply = db.prepare('SELECT name, unit FROM pur_supplies WHERE id = ?');
+  return {
+    supplierName: supplier?.registered_name || supplier?.name || 'Unknown supplier',
+    supplies: Object.fromEntries(supplyIds.map((id) => [id, supply.get(id) as { name: string; unit: string } | undefined])),
+  };
 }

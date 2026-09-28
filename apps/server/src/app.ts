@@ -14,6 +14,7 @@ import { engineModule } from './engine/security/module.ts';
 import { syncPermissions } from './engine/security/permissions-sync.ts';
 import { SESSION_COOKIE, loadSession, type SessionUser } from './engine/security/sessions.ts';
 import { securityRoutes } from './engine/security/routes.ts';
+import { tlsRoutes } from './engine/security/tls/routes.ts';
 import { documentRoutes } from './engine/documents/routes.ts';
 import { draftRoutes } from './engine/documents/drafts.ts';
 import { hashPassword, DEFAULT_SCRYPT_N } from './engine/security/passwords.ts';
@@ -57,6 +58,8 @@ export interface BuildOptions {
   logger?: boolean;
   /** Folder of the built web app; defaults to apps/web/dist. */
   webRoot?: string;
+  /** Serve HTTPS with this server certificate (LAN mode, PLAN C6); plain HTTP otherwise, for development on 127.0.0.1. */
+  https?: { key: string; cert: string };
 }
 
 /** Migrates, registers modules and permissions. Separate from buildApp so tools and tests can use it. */
@@ -84,7 +87,8 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
     dummyHash: hashPassword('dummy-password-for-timing', scryptN),
   };
 
-  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 1024 * 1024 });
+  const base = { logger: opts.logger ?? false, bodyLimit: 1024 * 1024 };
+  const app = (opts.https ? Fastify({ ...base, https: opts.https }) : Fastify(base)) as unknown as FastifyInstance;
   app.register(cookie);
   app.decorateRequest('user', null);
 
@@ -131,6 +135,7 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
 
   app.get('/api/health', { config: { permission: 'public' } }, async () => ({ ok: true, serverTime: stamp(deps.clock) }));
   securityRoutes(app, deps);
+  tlsRoutes(app, deps);
   documentRoutes(app, deps);
   draftRoutes(app, deps);
   for (const m of registry.modules) m.routes?.(app, deps);

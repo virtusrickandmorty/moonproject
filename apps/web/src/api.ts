@@ -12,8 +12,11 @@ export class ApiError extends Error {
 }
 
 export interface Me { userId: string; username: string; displayName: string; roles: string[]; permissions: string[]; mustChangePassword: boolean; csrfToken: string }
+export interface CompanyProfile { registeredName: string; tradeName: string; tin: string; registeredAddress: string; isVatRegistered: boolean; version: number; supersededAt?: string }
 export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
 export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
+export type PrintVariant = 'document' | 'job_ticket';
+export interface PrintableType { key: string; variants: PrintVariant[] }
 export interface DocHeader {
   id: string; number: string; businessDate: string; status: 'posted' | 'cancelled'; totalCents: number; summary: string; postedAt: string;
   cancelledAt: string | null; cancelReason: string | null; replacesId: string | null; replacedById: string | null;
@@ -141,6 +144,14 @@ export interface StatMonth {
   check: SchemeCheck[];
   notDeducted: { employeeId: string; name: string; cents: number }[];
 }
+export type BookletKind = 'SALES_INVOICE' | 'CR';
+export interface Booklet { id: string; kind: BookletKind; atpNo: string; printer: string | null; serialFrom: number; serialTo: number; receivedOn: string; note: string | null; isActive: boolean; version: number }
+export interface BookletUsage {
+  booklet: Booklet; usedCount: number; cancelledCount: number; lastUsed: number | null; leftCount: number;
+  skipped: number[]; skippedCount: number;
+  used: { n: number; number: string; status: 'posted' | 'cancelled'; documentId: string | null; docType: string | null }[];
+}
+export interface BookletInput { kind: BookletKind; atpNo: string; printer?: string; serialFrom: number; serialTo: number; receivedOn: string; note?: string }
 export interface RemittanceInput { scheme: Scheme; month: string; cashPlaceId: number; amountCents: number; penaltyCents?: number; reference: string; note?: string }
 /** Tax registers (TAX): one row per journal on the account, read from the ledger. A cancel is its own negative row (posting 'reversal'). */
 export interface TaxRegisterRow {
@@ -225,7 +236,13 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     logout: () => call<unknown>('POST', '/api/auth/logout'),
     changePassword: (currentPassword: string, newPassword: string) => call<unknown>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
     /** The password again, for changes that need a fresh one (good for 5 minutes). */
-    stepUp: (password: string) => call<unknown>('POST', '/api/auth/step-up', { password }),
+    stepUp: (password: string) => call<{ ok: true }>('POST', '/api/auth/step-up', { password }),
+    companyProfile: () => call<CompanyProfile>('GET', '/api/prt/company-profile'),
+    companyProfileHistory: () => call<CompanyProfile[]>('GET', '/api/prt/company-profile/history'),
+    saveCompanyProfile: (value: Omit<CompanyProfile, 'version' | 'supersededAt'>, version: number) => call<CompanyProfile>('PUT', '/api/prt/company-profile', value, { 'if-match': String(version) }),
+    printableTypes: () => call<PrintableType[]>('GET', '/api/prt/printable-types'),
+    printDocument: (type: string, id: string, variant: PrintVariant = 'document') =>
+      call<{ html: string; copyNumber: number }>('POST', `/api/prt/print/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { variant }),
     health: () => call<{ serverTime: string }>('GET', '/api/health'),
     docTypes: () => call<DocTypeInfo[]>('GET', '/api/doc-types'),
     report: <T>(path: string) => call<T>('GET', `/api/rpt/${path}`),
@@ -294,6 +311,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     statMonth: (month: string) => call<StatMonth>('GET', `/api/stat/months/${encodeURIComponent(month)}`),
     /** D6: what of a payroll run's month is already remitted (the warning before a cancel). */
     runRemitted: (runId: string) => call<{ month: string; remitted: { scheme: Scheme; label: string; numbers: string[] }[] }>('GET', `/api/stat/runs/${encodeURIComponent(runId)}/remitted`),
+    booklets: () => call<BookletUsage[]>('GET', '/api/tax/booklets'),
+    booklet: (id: string) => call<BookletUsage>('GET', `/api/tax/booklets/${encodeURIComponent(id)}`),
+    registerBooklet: (body: BookletInput) => call<Booklet>('POST', '/api/tax/booklets', body),
+    setBookletActive: (id: string, v: number, active: boolean, note: string) => call<Booklet>('POST', `/api/tax/booklets/${encodeURIComponent(id)}/${active ? 'activate' : 'retire'}`, { note }, version(v)),
     salesRegister: (from: string, to: string) => call<SalesRegister>('GET', taxRegisterPath('sales', from, to)),
     withholdingReceived: (from: string, to: string) => call<WithholdingRegister>('GET', taxRegisterPath('withholding-received', from, to)),
     taxCalendar: (from: string, to: string) => call<TaxDeadline[]>('GET', `/api/tax/calendar?${new URLSearchParams({ from, to })}`),
