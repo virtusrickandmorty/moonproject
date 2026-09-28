@@ -11,3 +11,5 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [7. Cash Accounts and Count](07-cash-count.md): Add cash places and record physical cash counts.
 - [8. Cash Book](08-cash-book.md): View the daily money movements and running balances of a cash place.
 - [9. Books and Reports](09-books.md): View and export the general journal, general ledger, and trial balance.
+- [11. Backups](11-backups.md): Set up folders and recovery keys, and copy backups to a USB drive.
+- [12. Restore from a Backup](12-restore.md): Run a restore drill or perform an emergency restore.
