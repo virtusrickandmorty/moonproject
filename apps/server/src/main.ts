@@ -9,11 +9,18 @@ import { stamp, systemClock } from './platform/clock.ts';
 import { buildApp } from './app.ts';
 import { loadModules } from './modules/load.ts';
 import { bakSettings, isDue, lastOkRun, runBackup } from './modules/BAK/backup.ts';
+import { applyPendingRestore, recordRestored } from './modules/BAK/restore.ts';
 
 const dbFile = process.env.MOONPROJECT_DB ?? 'data/moonproject.db';
 mkdirSync(dirname(dbFile), { recursive: true });
+// A restore asked for from the backup page is finished here, before the database is opened.
+const restored = applyPendingRestore(dbFile, stamp(systemClock));
 const db = openDb(dbFile);
 const { app } = buildApp({ db, clock: systemClock, modules: await loadModules(), logger: true });
+if (restored) {
+  recordRestored(db, restored, stamp(systemClock), 'start');
+  app.log.warn(`Restored ${restored.file}. The database it replaced is kept as ${restored.previous}.`);
+}
 await app.listen({ host: '127.0.0.1', port: Number(process.env.PORT ?? 3000) });
 
 // Backups (PLAN C8): one at start if none today, then every 2 hours from 07:00 to 21:00 Manila. A failed run is

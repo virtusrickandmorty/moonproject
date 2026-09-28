@@ -13,7 +13,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm test",
-    "dev:server": "tsx apps/server/src/main.ts"
+    "dev:server": "tsx apps/server/src/main.ts",
+    "restore": "tsx apps/server/src/modules/BAK/cli.ts"
   },
   "devDependencies": {
     "@types/better-sqlite3": "9.6.0",
