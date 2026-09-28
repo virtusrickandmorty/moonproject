@@ -14,3 +14,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [10. Joining a phone or PC](10-join-a-device.md): Safely start using Moonproject on a new device.
 - [11. Backups](11-backups.md): Set up folders and recovery keys, and copy backups to a USB drive.
 - [12. Restore from a Backup](12-restore.md): Run a restore drill or perform an emergency restore.
+- [13. Bills and Expenses](13-bills-and-expenses.md): Record supplier bills, payments, and expenses.
