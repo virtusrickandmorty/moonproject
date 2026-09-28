@@ -22,7 +22,7 @@ export function OpeningForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
   const r = useRecord(type, mode, (d) => setV(openingValues(d.input as Parameters<typeof openingValues>[0])));
   useEffect(() => {
     api.assetClasses().then(setClasses, r.fail);
-    api.openingStatus().then(setOpening, r.fail);
+    api.opening().then(setOpening, r.fail);
   }, []);
 
   const cutover = opening?.cutoverDate ?? undefined;

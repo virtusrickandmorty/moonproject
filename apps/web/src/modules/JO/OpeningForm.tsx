@@ -4,7 +4,7 @@
  * what was invoiced and not yet paid; it is recorded on the cut-over date. Also its Edit (cancel + reissue, NR-4).
  */
 import { useEffect, useState } from 'react';
-import { api, type DocTypeInfo, type OpeningState } from '../../api.ts';
+import { api, type DocTypeInfo, type OpeningStatus } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
@@ -17,12 +17,12 @@ const money = `${inputClass} text-right tabular-nums`;
 export function OpeningJobOrderForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   const [v, setV] = useState<OpeningValues>(emptyOpening);
   const [customer, setCustomer] = useState<Picked | null>(null);
-  const [opening, setOpening] = useState<OpeningState | null>(null);
+  const [opening, setOpening] = useState<OpeningStatus | null>(null);
   const r = useRecord(type, mode, (d) => {
     setV(openingValues(d.input as unknown as OpeningInput));
     setCustomer({ id: (d.input as { customerId: string }).customerId, name: (d.doc as { customerName?: string } | undefined)?.customerName ?? 'Customer on file' });
   });
-  useEffect(() => void api.accOpening().then(setOpening, r.fail), []);
+  useEffect(() => void api.opening().then(setOpening, r.fail), []);
 
   const set = (patch: Partial<OpeningValues>) => setV((old) => ({ ...old, ...patch }));
   const setLine = (i: number, patch: Partial<OpeningLineRow>) => set({ lines: v.lines.map((x, j) => (j === i ? { ...x, ...patch } : x)) });

@@ -56,11 +56,11 @@ describe('opening fixed-asset form', () => {
     createUser(env.db, 'acct1', ['accountant']);
     const api = createApi(injectFetch(env.app));
     await api.login('acct1', PASSWORD);
-    expect(await api.openingStatus()).toMatchObject({ cutoverDate: null, closed: null });
+    expect(await api.opening()).toMatchObject({ cutoverDate: null, closed: null });
     const acc = await env.as('accountant');
     await acc.post('/api/auth/step-up', { password: PASSWORD });
     await acc.post('/api/acc/opening/cutover-date', { date: '2026-09-27' });
-    const { cutoverDate } = await api.openingStatus();
+    const { cutoverDate } = await api.opening();
     expect(cutoverDate).toBe('2026-09-27');
 
     const { input, errors } = openingInput(press, cutoverDate!);

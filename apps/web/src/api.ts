@@ -59,8 +59,6 @@ export interface JoStatus {
   stageLabel: string;
   money: { totalCents: number; invoicedCents: number; receivableCents: number; depositsHeldCents: number; balanceDueCents: number; collectedCents: number };
 }
-/** GET /api/acc/opening, the part an opening document's form needs: the date it is recorded on, and whether the opening is closed. */
-export interface OpeningState { cutoverDate: string | null; closed: { cutoverDate: string; closedAt: string; closedByName: string } | null }
 type Checked = { summary: string; issues: Issue[]; journal?: JournalLine[] | null };
 /** POST /api/qs/sales/preview: the sale, "write these on the booklet" and its payment (null while the sale has errors). */
 export interface QsPreview { totalCents: number; booklet: { vatableSalesCents: number; vatCents: number; discountCents: number; totalCents: number }; sale: Checked; payment: Checked | null }
@@ -238,14 +236,10 @@ export interface LoanRow {
   id: string; number: string; status: 'posted' | 'cancelled'; lender: string; kind: 'loan' | 'equipment'; principalCents: number; balanceCents: number; instalments: number;
   nextDue: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number } | null;
 }
-/** GET /api/acc/opening, the parts the opening documents' forms use. */
-export interface OpeningStatus { cutoverDate: string | null; closed: { cutoverDate: string; closedAt: string } | null }
 /** An FA- purchase whose financed part no loan has taken over yet. */
 export interface FinancedPurchase { id: string; number: string; date: string; description: string; supplierName: string; lender: string; financedCents: number }
 export interface AssetClass { code: string; name: string; defaultLifeMonths: number | null }
 export interface AssetRow { id: string; number: string; description: string; className: string; status: 'in service' | 'fully depreciated' | 'disposed' | 'cancelled' }
-/** The opening balances (ACC, MIG-02): the cut-over date every opening document is dated, and the close once signed off. */
-export interface OpeningStatus { cutoverDate: string | null; closed: { cutoverDate: string; closedAt: string; closedByName: string } | null }
 /** Backups (BAK). The status's `runs` are the server's bak_runs rows as stored. */
 export type BackupTier = 'snapshot' | 'daily' | 'monthly' | 'yearly';
 export type BackupSource = 'local' | 'offsite';
@@ -353,7 +347,6 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     refundable: (customerId: string) => call<Refundable>('GET', customer(customerId, 'refundable')),
     transferable: (customerId: string) => call<Transferable>('GET', customer(customerId, 'transferable')),
     joStatus: (id: string) => call<JoStatus>('GET', `/api/jo/orders/${encodeURIComponent(id)}/status`),
-    accOpening: () => call<OpeningState>('GET', '/api/acc/opening'),
     qsPreview: (b: QsBody) => call<QsPreview>('POST', '/api/qs/sales/preview', b),
     qsRecord: (b: QsBody, expectedTotalCents: number, key: string) => call<QsRecorded>('POST', '/api/qs/sales', { ...b, expectedTotalCents }, idem(key)),
     qsReissue: (id: string, b: QsBody, expectedTotalCents: number, reason: string, key: string) =>
@@ -416,13 +409,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     vatWorksheet: (year: number, quarter: number) => call<VatWorksheet>('GET', taxQuarterPath('2550q', year, quarter)),
     taxCalendar: (from: string, to: string) => call<TaxDeadline[]>('GET', `/api/tax/calendar?${new URLSearchParams({ from, to })}`),
     accounts: () => call<Account[]>('GET', '/api/acc/accounts'),
-    /** The opening (ACC): the cut-over date every opening document is dated, and whether the accountant closed it. */
-    opening: () => call<OpeningStatus>('GET', '/api/acc/opening'),
     loans: (status?: 'posted' | 'cancelled') => call<LoanRow[]>('GET', `/api/loan/loans${status ? `?status=${status}` : ''}`),
     financedAssets: () => call<FinancedPurchase[]>('GET', '/api/loan/financed-assets'),
     assetClasses: () => call<AssetClass[]>('GET', '/api/fa/classes'),
     assets: () => call<AssetRow[]>('GET', '/api/fa/assets'),
-    openingStatus: () => call<OpeningStatus>('GET', '/api/acc/opening'),
     /** Without a year and quarter: the quarter of the server's date. */
     vatSummary: (year?: number, quarter?: number) =>
       call<VatSummary>('GET', `/api/tax/vat-summary${year ? `?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}` : ''}`),
