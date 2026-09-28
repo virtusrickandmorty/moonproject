@@ -44,6 +44,8 @@ import { PaymentForm as LoanPaymentForm } from './LOAN/PaymentForm.tsx';
 import { loanView } from './LOAN/views.tsx';
 import { BuyForm } from './FA/BuyForm.tsx';
 import { Backups } from './BAK/Backups.tsx';
+import { InventoryCountForm } from './INV/InventoryCountForm.tsx';
+import { inventoryCountView } from './INV/InventoryCountView.tsx';
 
 /**
  * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
@@ -98,6 +100,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'loan.loan': LoanForm,
   'loan.payment': LoanPaymentForm,
   'fa.buy': BuyForm,
+  'inv.count': InventoryCountForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView };
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'inv.count': inventoryCountView };
