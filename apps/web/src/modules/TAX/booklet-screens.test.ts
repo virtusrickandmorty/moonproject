@@ -26,7 +26,7 @@ const sample: BookletUsage = {
 
 describe('booklet screens', () => {
   it('shows a permission-filtered Tax menu and all three paths', () => {
-    expect(buildMenu([], new Set(['tax.booklets.view'])).at(-1)).toMatchObject({ group: 'Tax', items: [{ label: 'Booklets', path: '/tax/booklets' }] });
+    expect(buildMenu([], new Set(['tax.booklets.view'])).find((g) => g.group === 'Tax')).toMatchObject({ group: 'Tax', items: [{ label: 'Booklets', path: '/tax/booklets' }] });
     expect(buildMenu([], new Set()).some((g) => g.group === 'Tax')).toBe(false);
     expect(['/tax/booklets', '/tax/booklets/new', '/tax/booklets/:id'].every((path) => path in PAGES)).toBe(true);
   });

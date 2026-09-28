@@ -46,10 +46,10 @@ describe('statutory screen rules', () => {
 
   it('the menu shows Government remittances to those with stat.view, next to the Remittances list', () => {
     const types = [{ key: 'stat.remittance', module: 'STAT', title: 'Remittance' }] as never[];
-    expect(buildMenu(types, new Set(['stat.view'])).at(-1)).toEqual({
+    expect(buildMenu(types, new Set(['stat.view'])).find((g) => g.group === 'People & Payroll')).toEqual({
       group: 'People & Payroll', items: ['Government remittances', 'Remittances'].map((label) => expect.objectContaining({ label })),
     });
-    expect(buildMenu(types, new Set()).at(-1)!.items.map((i) => i.label)).toEqual(['Remittances']);
+    expect(buildMenu(types, new Set()).find((g) => g.group === 'People & Payroll')!.items.map((i) => i.label)).toEqual(['Remittances']);
   });
 });
 

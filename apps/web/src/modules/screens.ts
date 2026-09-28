@@ -31,6 +31,7 @@ import { Booklets, BookletPage, RegisterBooklet } from './TAX/Booklets.tsx';
 import { SalesRegister, WithholdingReceived } from './TAX/Registers.tsx';
 import { TaxCalendar } from './TAX/TaxCalendar.tsx';
 import { VatQuarter } from './TAX/VatQuarter.tsx';
+import { ShopCertificate } from './SEC/ShopCertificate.tsx';
 
 /**
  * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
@@ -58,6 +59,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/2307-received': WithholdingReceived,
   '/tax/vat': VatQuarter,
   '/tax/calendar': TaxCalendar,
+  '/admin/shop-certificate': ShopCertificate,
 };
 
 /** A module's own form; `me` lets it offer what only some users may do (the remittance's date paid, for acc.backdate). */
