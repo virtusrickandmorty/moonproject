@@ -35,6 +35,10 @@ export const SETTINGS = {
     label: 'Virtus is a published Top Withholding Agent (ACC-06)',
     schema: z.boolean(),
   },
+  'tax.interest_final_tax_bp': {
+    label: 'Final tax the bank withholds on interest, in basis points (2000 = 20%, PLAN D5 BANK-ADJ)',
+    schema: z.number().int().min(0).max(5000),
+  },
 } as const;
 
 export type SettingKey = keyof typeof SETTINGS;

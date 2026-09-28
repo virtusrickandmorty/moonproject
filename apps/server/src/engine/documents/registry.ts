@@ -19,6 +19,7 @@ export const DOC_TITLES = [
   'Fund Transfer',
   'Cash Count',
   'Other Receipt',
+  'Bank Adjustment',
   'Expense Voucher',
   'Journal Voucher',
   'Quotation',

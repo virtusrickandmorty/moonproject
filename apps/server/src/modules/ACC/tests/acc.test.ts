@@ -37,6 +37,7 @@ describe('effective-dated settings (E12, D4.2)', () => {
       'sales.deposit_vat_mode': 'A',
       'col.cr_mode': { mode: 'booklet' },
       'tax.top_withholding_agent': false,
+      'tax.interest_final_tax_bp': 2000,
     });
   });
 
