@@ -13,7 +13,7 @@ export class ApiError extends Error {
 
 export interface Me { userId: string; username: string; displayName: string; roles: string[]; permissions: string[]; mustChangePassword: boolean; csrfToken: string }
 export interface CompanyProfile { registeredName: string; tradeName: string; tin: string; registeredAddress: string; isVatRegistered: boolean; version: number; supersededAt?: string }
-export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
+export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; const?: unknown; anyOf?: JsonSchema[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
 export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
 export type PrintVariant = 'document' | 'job_ticket';
 export interface PrintableType { key: string; variants: PrintVariant[] }
@@ -172,6 +172,21 @@ export interface VatSummary {
   /** The quarter's posted VAT close (VATC-), if any. */
   close: { documentId: string; number: string; date: string } | null;
 }
+/** Chart of accounts (ACC), for pickers. `partyType`: the subledger a line on the account names; 'free' takes any, or none. */
+export type PartyType = 'customer' | 'supplier' | 'employee' | 'officer' | 'stockholder' | 'loan' | 'asset' | 'free';
+export interface Account { id: number; code: string; name: string; type: 'asset' | 'liability' | 'equity' | 'revenue' | 'expense'; partyType: PartyType | null; isHeader: boolean; isCashPlace: boolean; isReserved: boolean; isActive: boolean }
+/** GET /api/pur/suppliers: the active suppliers, as stored. */
+export interface Supplier { id: string; name: string; tin: string | null; is_vat_registered: number }
+export interface EqPerson { id: string; name: string; isStockholder: boolean; isOfficer: boolean }
+/** The loan register (LOAN): what is owed comes from the ledger; `nextDue` is null once paid off or cancelled. */
+export interface LoanRow {
+  id: string; number: string; status: 'posted' | 'cancelled'; lender: string; kind: 'loan' | 'equipment'; principalCents: number; balanceCents: number; instalments: number;
+  nextDue: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number } | null;
+}
+/** An FA- purchase whose financed part no loan has taken over yet. */
+export interface FinancedPurchase { id: string; number: string; date: string; description: string; supplierName: string; lender: string; financedCents: number }
+export interface AssetClass { code: string; name: string; defaultLifeMonths: number | null }
+export interface AssetRow { id: string; number: string; description: string; className: string; status: 'in service' | 'fully depreciated' | 'disposed' | 'cancelled' }
 /** Backups (BAK). The status's `runs` are the server's bak_runs rows as stored. */
 export type BackupTier = 'snapshot' | 'daily' | 'monthly' | 'yearly';
 export type BackupSource = 'local' | 'offsite';
@@ -254,8 +269,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     post: (type: string, input: unknown, expectedTotalCents: number, key: string, businessDate?: string) =>
       call<PostResult>('POST', doc(type, '/post'), { input, expectedTotalCents, ...(businessDate ? { businessDate } : {}) }, idem(key)),
     cancel: (type: string, id: string, reason: string, key: string) => call<unknown>('POST', one(type, id, '/cancel'), { reason }, idem(key)),
-    reissue: (type: string, id: string, input: unknown, expectedTotalCents: number, reason: string, key: string) =>
-      call<PostResult>('POST', one(type, id, '/reissue'), { input, expectedTotalCents, reason }, idem(key)),
+    reissue: (type: string, id: string, input: unknown, expectedTotalCents: number, reason: string, key: string, businessDate?: string) =>
+      call<PostResult>('POST', one(type, id, '/reissue'), { input, expectedTotalCents, reason, ...(businessDate ? { businessDate } : {}) }, idem(key)),
     drafts: (type: string) => call<Draft[]>('GET', `/api/drafts?type=${encodeURIComponent(type)}`),
     createDraft: (docType: string, payload: Draft['payload']) => call<{ id: string; version: number }>('POST', '/api/drafts', { docType, payload }),
     saveDraft: (id: string, version: number, payload: Draft['payload']) =>
@@ -267,6 +282,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     updateCashPlace: (id: number, version: number, body: { accountNo?: string | null; encoderSeesBalance?: boolean }) =>
       call<CashAccount>('PUT', `/api/cash/places/${id}/settings`, body, { 'if-match': String(version) }),
     cashBook: (id: number, from: string, to: string) => call<CashBook>('GET', `/api/cash/places/${id}/book?${new URLSearchParams({ from, to })}`),
+    customer: (id: string) => call<CustomerRow>('GET', `/api/cus/customers/${encodeURIComponent(id)}`),
     customers: (search: string) => call<CustomerRow[]>('GET', `/api/cus/customers?${new URLSearchParams({ search, limit: '10' })}`),
     openItems: (customerId: string) => call<OpenItems>('GET', customer(customerId, 'open-items')),
     refundable: (customerId: string) => call<Refundable>('GET', customer(customerId, 'refundable')),
@@ -318,6 +334,13 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     salesRegister: (from: string, to: string) => call<SalesRegister>('GET', taxRegisterPath('sales', from, to)),
     withholdingReceived: (from: string, to: string) => call<WithholdingRegister>('GET', taxRegisterPath('withholding-received', from, to)),
     taxCalendar: (from: string, to: string) => call<TaxDeadline[]>('GET', `/api/tax/calendar?${new URLSearchParams({ from, to })}`),
+    accounts: () => call<Account[]>('GET', '/api/acc/accounts'),
+    suppliers: () => call<Supplier[]>('GET', '/api/pur/suppliers'),
+    eqPeople: () => call<EqPerson[]>('GET', '/api/eq/people'),
+    loans: (status?: 'posted' | 'cancelled') => call<LoanRow[]>('GET', `/api/loan/loans${status ? `?status=${status}` : ''}`),
+    financedAssets: () => call<FinancedPurchase[]>('GET', '/api/loan/financed-assets'),
+    assetClasses: () => call<AssetClass[]>('GET', '/api/fa/classes'),
+    assets: () => call<AssetRow[]>('GET', '/api/fa/assets'),
     /** Without a year and quarter: the quarter of the server's date. */
     vatSummary: (year?: number, quarter?: number) =>
       call<VatSummary>('GET', `/api/tax/vat-summary${year ? `?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}` : ''}`),

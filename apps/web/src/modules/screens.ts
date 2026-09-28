@@ -32,6 +32,12 @@ import { Booklets, BookletPage, RegisterBooklet } from './TAX/Booklets.tsx';
 import { SalesRegister, WithholdingReceived } from './TAX/Registers.tsx';
 import { TaxCalendar } from './TAX/TaxCalendar.tsx';
 import { VatQuarter } from './TAX/VatQuarter.tsx';
+import { VatCloseForm } from './TAX/VatCloseForm.tsx';
+import { JvForm } from './ACC/JvForm.tsx';
+import { LoanForm } from './LOAN/LoanForm.tsx';
+import { PaymentForm } from './LOAN/PaymentForm.tsx';
+import { loanView } from './LOAN/views.tsx';
+import { BuyForm } from './FA/BuyForm.tsx';
 import { Backups } from './BAK/Backups.tsx';
 
 /**
@@ -77,6 +83,11 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'pay.release': ReleaseForm,
   'ca.advance': AdvanceForm,
   'stat.remittance': RemittanceForm,
+  'acc.jv': JvForm,
+  'tax.vat_close': VatCloseForm,
+  'loan.loan': LoanForm,
+  'loan.payment': PaymentForm,
+  'fa.buy': BuyForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView };
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'loan.loan': loanView };
