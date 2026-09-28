@@ -43,6 +43,7 @@ import { OfficerForm, OwnerMoneyForm } from './EQ/forms.tsx';
 import { VatCloseForm } from './TAX/VatCloseForm.tsx';
 import { JvForm } from './ACC/JvForm.tsx';
 import { LoanForm } from './LOAN/LoanForm.tsx';
+import { OpeningForm as OpeningLoanForm } from './LOAN/OpeningForm.tsx';
 import { PaymentForm as LoanPaymentForm } from './LOAN/PaymentForm.tsx';
 import { loanView } from './LOAN/views.tsx';
 import { BuyForm } from './FA/BuyForm.tsx';
@@ -108,8 +109,9 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'tax.vat_close': VatCloseForm,
   'loan.loan': LoanForm,
   'loan.payment': LoanPaymentForm,
+  'loan.opening': OpeningLoanForm,
   'fa.buy': BuyForm,
   'inv.count': InventoryCountForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'inv.count': inventoryCountView };
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView };

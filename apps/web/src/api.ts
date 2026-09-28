@@ -228,6 +228,8 @@ export interface LoanRow {
   id: string; number: string; status: 'posted' | 'cancelled'; lender: string; kind: 'loan' | 'equipment'; principalCents: number; balanceCents: number; instalments: number;
   nextDue: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number } | null;
 }
+/** GET /api/acc/opening, the parts the opening documents' forms use. */
+export interface OpeningStatus { cutoverDate: string | null; closed: { cutoverDate: string; closedAt: string } | null }
 /** An FA- purchase whose financed part no loan has taken over yet. */
 export interface FinancedPurchase { id: string; number: string; date: string; description: string; supplierName: string; lender: string; financedCents: number }
 export interface AssetClass { code: string; name: string; defaultLifeMonths: number | null }
@@ -395,6 +397,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     vatWorksheet: (year: number, quarter: number) => call<VatWorksheet>('GET', taxQuarterPath('2550q', year, quarter)),
     taxCalendar: (from: string, to: string) => call<TaxDeadline[]>('GET', `/api/tax/calendar?${new URLSearchParams({ from, to })}`),
     accounts: () => call<Account[]>('GET', '/api/acc/accounts'),
+    /** The opening (ACC): the cut-over date every opening document is dated, and whether the accountant closed it. */
+    opening: () => call<OpeningStatus>('GET', '/api/acc/opening'),
     loans: (status?: 'posted' | 'cancelled') => call<LoanRow[]>('GET', `/api/loan/loans${status ? `?status=${status}` : ''}`),
     financedAssets: () => call<FinancedPurchase[]>('GET', '/api/loan/financed-assets'),
     assetClasses: () => call<AssetClass[]>('GET', '/api/fa/classes'),
