@@ -57,6 +57,7 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
   permissions: { view: 'qs.view', create: 'qs.create', post: 'qs.post', cancel: 'qs.cancel' },
   dating: 'system',
   inputSchema: saleInput,
+  externalNumber: (doc) => doc.invoiceNumber,
 
   compute(input, ctx) {
     const lines = input.lines.map((l, i) => ({ ...l, lineNo: i + 1, listCents: l.qty * l.unitPriceCents, amountCents: l.qty * l.unitPriceCents - l.discountCents }));
