@@ -12,7 +12,7 @@ export default defineModule({
   name: 'Tax Compliance',
   permissions: [
     { key: 'tax.booklets.view', label: 'See the invoice and receipt booklet register and what each number was used for', defaultRoles: ['encoder', 'accountant', 'owner'] },
-    { key: 'tax.registers.view', label: 'See and export the tax registers (sales, purchases, EWT, the 2307s received and to issue), the VAT of a quarter and the 2550Q, 0619-E, 1601-EQ and 1702Q worksheets, and the income tax settings', defaultRoles: ['accountant', 'owner'] },
+    { key: 'tax.registers.view', label: 'See and export the tax registers (sales, purchases, EWT, the 2307s received and to issue), the SLSP and SAWT data, the VAT of a quarter and the 2550Q, 0619-E, 1601-EQ and 1702Q worksheets, and the income tax settings', defaultRoles: ['accountant', 'owner'] },
     { key: 'tax.calendar.view', label: 'See the tax calendar: which BIR returns are due and when', defaultRoles: ['accountant', 'owner'] },
     { key: 'tax.vatc.view', label: 'See the quarterly VAT closes', defaultRoles: ['accountant', 'owner'] },
     { key: 'tax.vatc.post', label: "Close a quarter's VAT (2550Q): output less input VAT into VAT payable or carry-over", defaultRoles: ['accountant'] },
@@ -22,6 +22,7 @@ export default defineModule({
     { key: 'tax.payment.create', label: 'Prepare a BIR payment and see what the return leaves to pay', defaultRoles: ['accountant', 'owner'] },
     { key: 'tax.payment.post', label: 'Record a BIR payment: VAT, EWT or income tax paid with a return, and any penalty', defaultRoles: ['accountant', 'owner'] },
     { key: 'tax.payment.cancel', label: 'Cancel a recorded BIR payment', defaultRoles: ['accountant', 'owner'] },
+    { key: 'tax.slsp.classify', label: 'Mark a sale with no output VAT (a journal voucher) zero-rated, exempt or not a sale, for the SLSP', defaultRoles: ['accountant'] },
     { key: 'tax.2307.receive', label: "Mark a customer's 2307 received when it comes after the collection or the opening", defaultRoles: ['accountant', 'owner'] },
   ],
   // tax.opening and tax.payable.opening take ACC's acc.opening.* permissions (OPENING_PERMISSIONS)

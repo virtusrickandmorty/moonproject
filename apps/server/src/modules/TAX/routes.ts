@@ -16,6 +16,7 @@ import { ewtMonthWorksheet, ewtQuarterWorksheet, type PaymentLine } from './ewt-
 import { parsePeriod, periodsDue } from './payments.ts';
 import { markReceived } from './withholding.ts';
 import { addIncomeTaxSettings, incomeTaxSettingsAt, incomeTaxSettingsHistory, incomeTaxWorksheet } from './income-tax.ts';
+import { classifySale, sawt, slspPurchases, slspSales, type Tie } from './slsp.ts';
 
 export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
@@ -239,6 +240,77 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
       row('Left to pay', w.leftCents),
       row(`Rates in force on ${w.to}: regular ${w.settings.regularRateBp / 100}%, MCIT ${w.settings.mcitRateBp / 100}%, operations began ${w.settings.operationsBeganYear ?? 'not confirmed'}`, null),
       ...w.checks.map((c) => row(`Check: ${c.message}`, null)),
+    ]);
+  });
+
+  // SLSP and SAWT data of a quarter (?year=2026&quarter=3, or today's quarter): the columns in the BIR data-entry order
+  // as best known (the accountant checks them against the current RELIEF and SAWT formats, ACC-25), then the ERP's own
+  // columns, a total row, and how the totals tie to the registers and the books.
+  const taxableMonth = (to: string) => `${to.slice(5, 7)}/${to.slice(8, 10)}/${to.slice(0, 4)}`;
+  const tieRows = (ties: Tie[], width: number): CsvCell[][] => [
+    [], ['Tie to the registers and the books', 'List', 'Books', 'Difference'],
+    ...ties.map((t) => [t.label, csvPesos(t.listCents), csvPesos(t.bookCents), csvPesos(t.differenceCents), ...Array<string>(Math.max(width - 4, 0)).fill('')]),
+  ];
+  const NAMES = ['TIN', 'Registered name', 'Last name', 'First name', 'Middle name', 'Address 1', 'Address 2'];
+
+  app.get<{ Querystring: QuarterQuery & { format?: string } }>('/api/tax/slsp/sales', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const { year, quarter } = quarterQuery(req.query);
+    const r = slspSales(db, year, quarter, today(clock));
+    if (req.query.format !== 'csv') return { ...r, noVatSales: r.noVatSales.map((x) => ({ ...x, docTitle: title(x.docType) })) };
+    const head = ['Taxable month', ...NAMES, 'Exempt sales', 'Zero-rated sales', 'Taxable sales', 'Output tax', 'Gross taxable sales', 'Still to classify', 'Customers', 'Flag'];
+    return csv(reply, `slsp-sales-${year}-Q${quarter}`, [
+      head,
+      ...r.rows.map((x) => [
+        taxableMonth(r.to), x.tin, x.registeredName, '', '', '', x.address, '', csvPesos(x.exemptCents), csvPesos(x.zeroRatedCents), csvPesos(x.vatableCents),
+        csvPesos(x.outputTaxCents), csvPesos(x.grossTaxableCents), csvPesos(x.toClassifyCents), x.customers, x.tin ? '' : 'No TIN',
+      ]),
+      ['Total', '', '', '', '', '', '', '', csvPesos(r.totals.exemptCents), csvPesos(r.totals.zeroRatedCents), csvPesos(r.totals.vatableCents),
+        csvPesos(r.totals.outputTaxCents), csvPesos(r.totals.grossTaxableCents), csvPesos(r.totals.toClassifyCents), '', ''],
+      ...tieRows(r.ties, head.length),
+    ]);
+  });
+
+  /** A sale with no output VAT (a journal voucher) is zero-rated, exempt or not a sale: { journalId, saleClass, reason }. Posts nothing. */
+  app.post('/api/tax/slsp/sale-class', { config: { permission: 'tax.slsp.classify' } }, async (req) =>
+    write(() => classifySale(db, req.body, { userId: currentUser(req).userId, at: stamp(clock) })));
+
+  app.get<{ Querystring: QuarterQuery & { format?: string } }>('/api/tax/slsp/purchases', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const { year, quarter } = quarterQuery(req.query);
+    const r = slspPurchases(db, year, quarter, today(clock));
+    if (req.query.format !== 'csv') return r;
+    const head = ['Taxable month', ...NAMES, 'Exempt purchases', 'Zero-rated purchases', 'Services', 'Capital goods', 'Goods other than capital goods', 'Input tax',
+      'Gross taxable purchases', 'Still to classify', 'Flag'];
+    const t = r.totals;
+    return csv(reply, `slsp-purchases-${year}-Q${quarter}`, [
+      head,
+      ...r.rows.map((x) => [
+        taxableMonth(r.to), x.tin, x.registeredName, '', '', '', x.address, '', csvPesos(x.exemptCents), csvPesos(x.zeroRatedCents), csvPesos(x.servicesCents),
+        csvPesos(x.capitalGoodsCents), csvPesos(x.goodsCents), csvPesos(x.inputTaxCents), csvPesos(x.grossTaxableCents), csvPesos(x.toClassifyCents), x.tin ? '' : 'No TIN',
+      ]),
+      ['Total', '', '', '', '', '', '', '', csvPesos(t.exemptCents), csvPesos(t.zeroRatedCents), csvPesos(t.servicesCents), csvPesos(t.capitalGoodsCents),
+        csvPesos(t.goodsCents), csvPesos(t.inputTaxCents), csvPesos(t.grossTaxableCents), csvPesos(t.toClassifyCents), ''],
+      ...tieRows(r.ties, head.length),
+    ]);
+  });
+
+  app.get<{ Querystring: QuarterQuery & { format?: string } }>('/api/tax/sawt', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const { year, quarter } = quarterQuery(req.query);
+    const r = sawt(db, year, quarter, today(clock));
+    if (req.query.format !== 'csv') return r;
+    const head = ['Seq. no.', 'TIN', 'Registered name', 'Last name', 'First name', 'Middle name', 'ATC', 'Nature of income payment', 'Tax rate', 'Income payment',
+      'Tax withheld', 'VAT withheld', '2307', 'Opening 2307 for', 'Documents', 'Flag'];
+    const rate = (bp: number | null) => (bp === null ? '' : `${bp / 100}%`);
+    const flag = (x: (typeof r.rows)[number]) =>
+      [x.certificate === 'pending' ? '2307 pending' : '', x.certificate === null ? 'No 2307 recorded' : '', x.tin ? '' : 'No TIN'].filter(Boolean).join('; ');
+    return csv(reply, `sawt-${year}-Q${quarter}`, [
+      head,
+      ...r.rows.map((x, i) => [
+        i + 1, x.tin, x.registeredName, '', '', '', x.atc === 'other' ? '' : x.atc, x.nature, rate(x.rateBp),
+        x.incomePaymentCents === null ? '' : csvPesos(x.incomePaymentCents), csvPesos(x.cwtCents), csvPesos(x.vatWithheldCents),
+        x.certificate === 'received' ? 'In hand' : x.certificate === 'pending' ? 'Pending' : '', x.period, x.documents.join(' '), flag(x),
+      ]),
+      ['Total', '', '', '', '', '', '', '', '', csvPesos(r.totals.incomePaymentCents), csvPesos(r.totals.cwtCents), csvPesos(r.totals.vatWithheldCents), '', '', '', ''],
+      ...tieRows(r.ties, head.length),
     ]);
   });
 
