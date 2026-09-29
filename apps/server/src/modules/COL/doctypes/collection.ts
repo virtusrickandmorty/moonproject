@@ -6,9 +6,11 @@
  *       Cr 1201 AR (a quick sale, QS-SALE); Cr 2201 (unapplied remainder, no JO); Cr 6280 (over ≤ ₱1)
  * AR and deposit lines name the customer and the JO (journal_lines.ref_doc_id), so each JO's balance due is read
  * from the ledger (JO public.ts). Balance rule (E5): Σ tenders + CWT + VAT withheld = Σ applied + unapplied, give or take ₱1.
- * Deposits are recorded in downpayment VAT mode A only (settings); B and C are refused until they are built.
+ * Downpayment VAT modes (D3, deposit-vat.ts; the job order's mode, which its first downpayment fixes): in mode B each
+ * deposit also posts Dr 2209 / Cr 2301 VAT(deposit) (DEP-VAT), on the customer and the JO; in mode C the downpayment is
+ * invoiced (JO downpayment invoice) and the collection pays that receivable; money taken first waits for its invoice.
  * Cancel: the mirror, then any part of a deposit that an invoice record already applied reopens the receivable,
- * Dr 1201 / Cr 2201 (D6), so the JO's deposits never go below zero (JO settleLines).
+ * Dr 1201 / Cr 2201 (D6), so the JO's deposits never go below zero, and 2209 follows (settleJobOrder).
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -18,10 +20,11 @@ import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { listCashPlaces } from '../../../engine/ledger/accounts.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
-import { isAbandoned, jobOrderRef, jobOrdersOf, joLedger, joMoney, settleLines } from '../../JO/public.ts';
+import { isAbandoned, jobOrderRef, jobOrdersOf, joLedger, joMoney } from '../../JO/public.ts';
 import { saleOpenCents, saleRef } from '../../QS/public.ts';
 import { bookletIssue } from '../../TAX/public.ts';
 import { writeOffsOn } from '../credits.ts';
+import { depositModeOn, depositVatLines, depositVatRowsOf, modeKeptIssue, recordDepositVat, settleJobOrder, vatOnDeposit, vatRow, type DepositMode } from './deposit-vat.ts';
 import { MAX_CENTS, cashPlaceIssues, insertTenders, loadTenders, sumCents, takenOutBy, tenderInput, tenderToInput, withNames, type Tender } from '../ledger.ts';
 
 /** Largest difference that may go to cash short and over instead of a deposit or an unpaid balance (D4.9). */
@@ -58,7 +61,11 @@ export const collectionInput = z
   .strict();
 export type CollectionInput = z.infer<typeof collectionInput>;
 
-export interface Application extends z.infer<typeof application> { lineNo: number; jobOrderNumber: string; toReceivableCents: number; toDepositCents: number }
+export interface Application extends z.infer<typeof application> {
+  lineNo: number; jobOrderNumber: string; toReceivableCents: number; toDepositCents: number;
+  /** The JO's downpayment VAT mode, and in mode B the VAT on the deposit (DEP-VAT) with its VATable amount. */
+  depositVatMode: DepositMode; depositVatCents: number; depositBaseCents: number;
+}
 export interface SaleApplication extends z.infer<typeof saleApplication> { lineNo: number; saleNumber: string; invoiceNumber: string }
 export interface Collection extends Omit<CollectionInput, 'applications' | 'sales' | 'tenders'> {
   applications: Application[];
@@ -99,7 +106,14 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
     const applications = input.applications.map((a, i) => {
       const jo = jobOrderRef(ctx.db, a.jobOrderId);
       const toReceivableCents = Math.min(a.amountCents, jo ? Math.max(0, joLedger(ctx.db, jo.id).receivableCents) : 0);
-      return { ...a, lineNo: i + 1, jobOrderNumber: jo?.number ?? '?', toReceivableCents, toDepositCents: a.amountCents - toReceivableCents };
+      const toDepositCents = a.amountCents - toReceivableCents;
+      // No deposit, no mode to keep (load reads it back from the deposit's row).
+      const depositVatMode: DepositMode = jo && toDepositCents > 0 ? depositModeOn(ctx.db, jo.id, ctx.businessDate).mode : 'A';
+      const vat = depositVatMode === 'B' && toDepositCents > 0 ? vatOnDeposit(ctx.db, toDepositCents, ctx.businessDate) : { vatCents: 0, baseCents: 0 };
+      return {
+        ...a, lineNo: i + 1, jobOrderNumber: jo?.number ?? '?', toReceivableCents, toDepositCents,
+        depositVatMode, depositVatCents: vat.vatCents, depositBaseCents: vat.baseCents,
+      };
     });
     const sales = (input.sales ?? []).map((a, i) => {
       const sale = saleRef(ctx.db, a.saleId);
@@ -159,6 +173,13 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
         if (a.toDepositCents > 0 && isAbandoned(ctx.db, jo.id)) {
           add('error', `${f}.jobOrderId`, 'JO_ABANDONED', `${jo.number} was abandoned and its deposit forfeited, so no new deposit is taken on it.`);
         }
+        if (a.toDepositCents > 0) {
+          const kept = modeKeptIssue(depositModeOn(ctx.db, jo.id, ctx.businessDate), jo.number, `${f}.jobOrderId`);
+          if (kept) issues.push(kept);
+          if (a.depositVatMode === 'C') {
+            add('warning', `${f}.amountCents`, 'DP_INVOICE_NEEDED', `${formatPeso(a.toDepositCents)} of this is a downpayment on ${jo.number} not yet invoiced. In mode C (invoice on downpayment) write it on a sales invoice and record it as ${jo.number}'s downpayment invoice.`);
+          }
+        }
       }
       seen.add(a.jobOrderId);
     }
@@ -190,10 +211,6 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       }
     } else if (difference < 0) {
       add('error', 'applications', 'APPLIED_MORE', `You applied ${formatPeso(doc.appliedCents)} but received ${formatPeso(doc.totalCents)} (money plus tax withheld).`);
-    }
-    const mode = doc.applications.some((a) => a.toDepositCents > 0) ? settingAt(ctx.db, 'sales.deposit_vat_mode', ctx.businessDate) : 'A';
-    if (mode !== 'A') {
-      add('error', 'applications', 'DEPOSIT_VAT_MODE', `Downpayment VAT mode ${mode} is in force, and this version can record downpayments only in mode A (deposit only). Mode ${mode} is not built yet: ask the accountant.`);
     }
     if (doc.unappliedCents > 0) {
       add('warning', 'applications', 'UNAPPLIED', `${formatPeso(doc.unappliedCents)} is not applied to a job order. It is kept as ${doc.customerName}'s deposit, to apply or refund later.`);
@@ -228,6 +245,11 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
     for (const a of doc.applications) app.run(h.documentId, a.lineNo, a.jobOrderId, a.amountCents, a.toReceivableCents, a.toDepositCents);
     const sale = db.prepare('INSERT INTO col_sale_applications (document_id, line_no, sale_id, amount_cents) VALUES (?, ?, ?, ?)');
     for (const a of doc.sales) sale.run(h.documentId, a.lineNo, a.saleId, a.amountCents);
+    // Every deposit on a JO, whatever its mode: the JO's first one fixes its mode (deposit-vat.ts).
+    recordDepositVat(db, h.documentId, 'original', doc.applications.filter((a) => a.toDepositCents > 0).map((a) => vatRow({
+      jobOrderId: a.jobOrderId, customerId: doc.customerId, mode: a.depositVatMode, depositCents: a.toDepositCents,
+      depositVatCents: a.depositVatCents, depositBaseCents: a.depositBaseCents, registerBaseCents: a.depositBaseCents,
+    })));
   },
 
   journal(doc) {
@@ -246,6 +268,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
         ...doc.sales.map((a) => ({ account: { role: 'AR_TRADE' }, party, ref: { documentId: a.saleId }, creditCents: a.amountCents, memo: `Invoice no. ${a.invoiceNumber}` })),
         { account: { role: 'CUSTOMER_DEPOSITS' }, party, creditCents: doc.unappliedCents, memo: 'Unapplied payment' },
         { account: { role: 'CASH_SHORT_OVER' }, creditCents: Math.max(0, doc.shortOverCents), memo: 'Over' },
+        ...doc.applications.flatMap((a) => depositVatLines(doc.customerId, a.jobOrderId, a.jobOrderNumber, a.depositVatCents)), // DEP-VAT (mode B)
       ],
     };
   },
@@ -258,6 +281,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
           vat_withheld_cents: number; unapplied_cents: number; short_over_cents: number; settle_small_difference: number; note: string | null; total_cents: number }
       | undefined;
     if (!r) throw new Error(`Collection ${documentId} not found`);
+    const vat = new Map(depositVatRowsOf(db, documentId).map((v) => [v.jobOrderId, v]));
     const applications = (
       db
         .prepare('SELECT line_no, job_order_id, amount_cents, to_receivable_cents, to_deposit_cents FROM col_applications WHERE document_id = ? ORDER BY line_no')
@@ -269,6 +293,10 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       jobOrderNumber: jobOrderRef(db, a.job_order_id)?.number ?? '?',
       toReceivableCents: a.to_receivable_cents,
       toDepositCents: a.to_deposit_cents,
+      // Recorded before these rows existed, or with no deposit: mode A.
+      depositVatMode: vat.get(a.job_order_id)?.mode ?? 'A',
+      depositVatCents: vat.get(a.job_order_id)?.depositVatCents ?? 0,
+      depositBaseCents: vat.get(a.job_order_id)?.depositBaseCents ?? 0,
     }));
     const sales = (
       db.prepare('SELECT line_no, sale_id, amount_cents FROM col_sale_applications WHERE document_id = ? ORDER BY line_no').all(documentId) as { line_no: number; sale_id: string; amount_cents: number }[]
@@ -326,7 +354,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
 
   afterCancel(db, documentId) {
     const d = collectionDoc.load(db, documentId);
-    const settled = d.applications.map((a) => [a.jobOrderNumber, settleLines(db, d.customerId, a.jobOrderId, a.jobOrderNumber)] as const).filter(([, l]) => l.length > 0);
+    const settled = d.applications.map((a) => [a.jobOrderNumber, settleJobOrder(db, documentId, d.customerId, a.jobOrderId, a.jobOrderNumber)] as const).filter(([, l]) => l.length > 0);
     return settled.length > 0 ? { memo: `${settled.map(([n]) => n).join(', ')} receivable and deposits put back in line`, lines: settled.flatMap(([, l]) => l) } : null;
   },
 

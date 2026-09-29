@@ -43,7 +43,7 @@ function scenario(): string {
     out.push('');
   }
   const left = [...new Set(STEPS.filter((s) => s.notInPack).map((s) => s.notInPack!))];
-  out.push('## Not in this scenario', '', ...left.map((l) => `- ${l}`), '');
+  if (left.length > 0) out.push('## Not in this scenario', '', ...left.map((l) => `- ${l}`), '');
   return out.join('\n');
 }
 

@@ -1,17 +1,17 @@
 /**
  * The month in the life (PLAN I2 G-30, I1 item 8): one fresh shop, driven only through the HTTP API with a moving clock.
- * The opening balances of G-27 on the cut-over date (31 August 2026), then G-01 to G-24 in order on fixed dates in
- * September 2026, a month that ends a quarter, then the month-end: the depreciation run, a cash count, the government
- * remittances, the EWT return, the VAT close and its 2550Q payment.
+ * The opening balances of G-27 on the cut-over date (31 August 2026), then G-01 to G-24 on fixed dates in September
+ * 2026, a month that ends a quarter, then the month-end: the depreciation run, a cash count, the government
+ * remittances, the EWT return, the VAT close and its 2550Q payment. G-04 and G-05 (G-01/G-02 in downpayment VAT modes B
+ * and C) come on 24 and 25 September, each on a job order of its own, with the accountant switching the mode for the day
+ * and back to mode A after: so the documents of G-06 to G-24 keep their numbers.
  *
  * Each step is data (its reference, date and the facts a person would type, in plain words) plus the API calls that
  * record it. The data is what `tools/blind-pack.ts` hands the blind reviewers; the calls are what the month test and
  * `tools/compare-blind.ts` run. The expected journals are not here: they are worked out by hand in the test.
  *
- * Two goldens cannot be recorded as the PLAN words them, and the step says so instead of changing posting code:
- *   G-04 and G-05 (downpayment VAT modes B and C) are refused: this version records downpayments and invoices only in
- *   mode A. The month tries each and checks the refusal. They are not in the blind pack.
- *   The third month of a quarter has no 0619-E (D5 EWT-REM; bir-payment.ts): September's EWT is paid with the 1601-EQ.
+ * One step cannot be recorded as the PLAN words it, and the step says so instead of changing posting code:
+ *   the third month of a quarter has no 0619-E (D5 EWT-REM; bir-payment.ts): September's EWT is paid with the 1601-EQ.
  * Two goldens read the books as they are on the day, so their figures follow the month and not the stand-alone golden:
  *   G-18 counts the cash box ₱50.00 short of whatever the ledger says, and G-22 counts ₱25,000.00 of materials against
  *   a ledger of zero (G-27 opens no inventory, and one count per month end is allowed).
@@ -318,46 +318,17 @@ export const STEPS: Step[] = [
     },
   },
   {
-    refs: [],
-    date: '2026-09-03',
-    title: 'G-04 Downpayment in mode B (refused: mode B is not built)',
-    facts: [],
-    notInPack: 'G-04 and G-05 (downpayment VAT modes B and C) are not in this scenario: this version records downpayments only in mode A.',
-    async run(m) {
-      await m.on(this.date);
-      await m.stepUp();
-      await m.call('/api/settings/sales.deposit_vat_mode', { effectiveFrom: this.date, value: 'B', reason: 'Accountant tries mode B for the month test' });
-      m.ids.jo2 = await jobOrder(m, [{ qty: 20, unitPriceCents: 280_000 }]);
-      const dp = { customerId: m.ids[SCHOOL], crNumber: '0103', applications: [{ jobOrderId: m.ids.jo2, amountCents: 2_800_000 }], tenders: [{ cashPlaceId: m.places['1101'], amountCents: 2_800_000 }] };
-      await m.refused('G-04', 'col.collection', dp, 'DEPOSIT_VAT_MODE', 'enc');
-    },
-  },
-  {
-    refs: [],
-    date: '2026-09-04',
-    title: 'G-05 Downpayment in mode C (refused: mode C is not built); back to mode A from 5 September',
-    facts: [],
-    notInPack: 'G-04 and G-05 (downpayment VAT modes B and C) are not in this scenario: this version records downpayments only in mode A.',
-    async run(m) {
-      await m.on(this.date);
-      await m.stepUp();
-      await m.call('/api/settings/sales.deposit_vat_mode', { effectiveFrom: this.date, value: 'C', reason: 'Accountant tries mode C for the month test' });
-      const dp = { customerId: m.ids[SCHOOL], crNumber: '0103', applications: [{ jobOrderId: m.ids.jo2, amountCents: 2_800_000 }], tenders: [{ cashPlaceId: m.places['1101'], amountCents: 2_800_000 }] };
-      await m.refused('G-05', 'col.collection', dp, 'DEPOSIT_VAT_MODE', 'enc');
-      await m.call('/api/settings/sales.deposit_vat_mode', { effectiveFrom: '2026-09-05', value: 'A', reason: 'Back to deposit only (mode A), the default' });
-    },
-  },
-  {
     refs: ['G-06a', 'G-06'],
     date: '2026-09-07',
     title: 'G-06 One collection for an invoiced and an un-invoiced job order',
     facts: [
-      `JO-000002 for ${SCHOOL} (taken 3 September): 20 jersey sets × ₱2,800.00 = ₱56,000.00, not invoiced. JO-000003: 1 set at ₱10,000.00 (no journals).`,
+      `JO-000002 for ${SCHOOL}: 20 jersey sets × ₱2,800.00 = ₱56,000.00, not invoiced. JO-000003: 1 set at ₱10,000.00 (no journals).`,
       'G-06a: JO-000003 released on credit with invoice no. 0502 (₱10,000.00, made-to-order).',
       'G-06 collection, CR 0103: ₱25,000.00 (cash on hand ₱5,000.00 + BDO ₱20,000.00): ₱10,000.00 to invoice 0502 (JO-000003) and ₱15,000.00 to JO-000002 (not invoiced).',
     ],
     async run(m) {
       await m.on(this.date);
+      m.ids.jo2 = await jobOrder(m, [{ qty: 20, unitPriceCents: 280_000 }]);
       m.ids.jo3 = await jobOrder(m, [{ qty: 1, unitPriceCents: 1_000_000 }]);
       await releaseWithInvoice(m, 'G-06a', m.ids.jo3, 1, '0502', 1_000_000);
       await collection(m, 'G-06', {
@@ -563,6 +534,47 @@ export const STEPS: Step[] = [
     },
   },
   {
+    refs: ['G-04a', 'G-04b'],
+    date: '2026-09-24',
+    title: 'G-04 Downpayment and release in downpayment VAT mode B',
+    facts: [
+      'Settings: from 2026-09-24 the downpayment VAT mode is B (VAT on deposit), set by the accountant.',
+      `JO-000008 for ${SCHOOL}: 20 made-to-order team jersey sets × ₱2,800.00 = ₱56,000.00 (no journal).`,
+      'G-04a collection, CR 0109: downpayment ₱28,000.00 in cash on hand, applied to JO-000008 (not yet invoiced).',
+      'G-04b: all 20 pieces of JO-000008 released on credit with manual invoice no. 0508 (₱56,000.00, VAT-inclusive, one made-to-order line). The ₱28,000.00 deposit is applied.',
+    ],
+    async run(m) {
+      await m.on(this.date);
+      await m.stepUp();
+      await m.call('/api/settings/sales.deposit_vat_mode', { effectiveFrom: this.date, value: 'B', reason: 'Accountant sets mode B for the month test' });
+      m.ids.jo8 = await jobOrder(m, [{ qty: 20, unitPriceCents: 280_000 }]);
+      await collection(m, 'G-04a', { customerId: m.ids[SCHOOL], crNumber: '0109', applications: [{ jobOrderId: m.ids.jo8, amountCents: 2_800_000 }], tenders: [{ cashPlaceId: m.places['1101'], amountCents: 2_800_000 }] }, 2_800_000);
+      await releaseWithInvoice(m, 'G-04b', m.ids.jo8, 20, '0508', 5_600_000);
+    },
+  },
+  {
+    refs: ['G-05a', 'G-05b', 'G-05c'],
+    date: '2026-09-25',
+    title: 'G-05 Downpayment invoice, collection and release in downpayment VAT mode C; back to mode A from 26 September',
+    facts: [
+      'Settings: from 2026-09-25 the downpayment VAT mode is C (invoice on downpayment); from 2026-09-26 it is A (deposit only) again.',
+      `JO-000009 for ${SCHOOL}: 20 made-to-order team jersey sets × ₱2,800.00 = ₱56,000.00 (no journal).`,
+      'G-05a: the ₱28,000.00 downpayment of JO-000009 is invoiced when received, on manual invoice no. 0509 (a downpayment invoice record).',
+      'G-05b collection, CR 0110: ₱28,000.00 in cash on hand, applied to JO-000009 (it pays invoice 0509). No tax withheld.',
+      'G-05c: all 20 pieces of JO-000009 released on credit with manual invoice no. 0510 for the balance: the ₱56,000.00 sale less the ₱28,000.00 downpayment invoiced on 0509.',
+    ],
+    async run(m) {
+      await m.on(this.date);
+      await m.stepUp();
+      await m.call('/api/settings/sales.deposit_vat_mode', { effectiveFrom: this.date, value: 'C', reason: 'Accountant sets mode C for the month test' });
+      m.ids.jo9 = await jobOrder(m, [{ qty: 20, unitPriceCents: 280_000 }]);
+      await m.post('G-05a', 'jo.dp_invoice', { jobOrderId: m.ids.jo9, invoiceNumber: '0509', amountCents: 2_800_000 }, { who: 'enc', total: 2_800_000 });
+      await collection(m, 'G-05b', { customerId: m.ids[SCHOOL], crNumber: '0110', applications: [{ jobOrderId: m.ids.jo9, amountCents: 2_800_000 }], tenders: [{ cashPlaceId: m.places['1101'], amountCents: 2_800_000 }] }, 2_800_000);
+      await releaseWithInvoice(m, 'G-05c', m.ids.jo9, 20, '0510', 5_600_000);
+      await m.call('/api/settings/sales.deposit_vat_mode', { effectiveFrom: '2026-09-26', value: 'A', reason: 'Back to deposit only (mode A), the default' });
+    },
+  },
+  {
     refs: ['G-23'],
     date: '2026-09-25',
     title: 'G-23 cash advance',
@@ -610,7 +622,7 @@ export const STEPS: Step[] = [
     title: 'Month-end',
     facts: [
       'M-01 depreciation run for September 2026 (both machines).',
-      'M-02 cash count of cash on hand: ₱69,470.21 counted (69 × ₱1,000, 4 × ₱100, 1 × ₱50, 1 × ₱20, 4 × 5 centavos, 1 × 1 centavo).',
+      'M-02 cash count of cash on hand: ₱125,470.21 counted (125 × ₱1,000, 4 × ₱100, 1 × ₱50, 1 × ₱20, 4 × 5 centavos, 1 × 1 centavo).',
       'M-03 remittance from BDO: SSS contributions for September 2026, the full amount (no withholding tax on compensation was withheld, so there is no 1601-C).',
       'M-04 remittance from BDO: PhilHealth contributions for September 2026, the full amount.',
       'M-05 remittance from BDO: Pag-IBIG contributions for September 2026, the full amount.',
@@ -621,8 +633,8 @@ export const STEPS: Step[] = [
     async run(m) {
       await m.on(this.date);
       await m.post('M-01', 'fa.depreciation', { month: '2026-09' });
-      const lines = [[100_000, 69], [10_000, 4], [5_000, 1], [2_000, 1], [5, 4], [1, 1]].map(([denominationCents, qty]) => ({ denominationCents, qty }));
-      await m.post('M-02', 'cash.count', { cashPlaceId: m.places['1101'], lines }, { total: 6_947_021 });
+      const lines = [[100_000, 125], [10_000, 4], [5_000, 1], [2_000, 1], [5, 4], [1, 1]].map(([denominationCents, qty]) => ({ denominationCents, qty }));
+      await m.post('M-02', 'cash.count', { cashPlaceId: m.places['1101'], lines }, { total: 12_547_021 });
       // The amounts on the SSS, PhilHealth and Pag-IBIG forms: the month's contributions of both payrolls (worked in the test).
       for (const [ref, scheme, amountCents] of [['M-03', 'SSS', 311_500], ['M-04', 'PHIC', 146_730], ['M-05', 'HDMF', 62_688]] as const) {
         await m.post(ref, 'stat.remittance', { scheme, month: '2026-09', cashPlaceId: m.places['1111'], amountCents, reference: `PRN-${scheme}-2026-09` }, { total: amountCents });
@@ -630,7 +642,7 @@ export const STEPS: Step[] = [
       await m.refused('0619-E', 'tax.bir_payment', { form: '0619-E', period: '2026-09', cashPlaceId: m.places['1111'], amountCents: 378_571, reference: 'EFPS-0619E-2026-09' }, 'THIRD_MONTH');
       await m.post('M-06', 'tax.bir_payment', { form: '1601-EQ', period: '2026-Q3', cashPlaceId: m.places['1111'], amountCents: 378_571, reference: 'EFPS-1601EQ-2026-Q3' }, { total: 378_571 });
       await m.post('M-07', 'tax.vat_close', { year: 2026, quarter: 3 });
-      await m.post('M-08', 'tax.bir_payment', { form: '2550Q', period: '2026-Q3', cashPlaceId: m.places['1111'], amountCents: 356_608, reference: 'EFPS-2550Q-2026-Q3' }, { total: 356_608 });
+      await m.post('M-08', 'tax.bir_payment', { form: '2550Q', period: '2026-Q3', cashPlaceId: m.places['1111'], amountCents: 1_556_608, reference: 'EFPS-2550Q-2026-Q3' }, { total: 1_556_608 });
     },
   },
 ];

@@ -3,8 +3,7 @@ import { z } from 'zod';
 import type { Issue } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { getCashPlace, resolveAccount } from '../../engine/ledger/accounts.ts';
-import { accountBalance } from '../../engine/ledger/queries.ts';
-import { joMoney } from '../JO/public.ts';
+import { joLedger, joMoney } from '../JO/public.ts';
 
 export const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
 
@@ -53,11 +52,12 @@ export const tenderToInput = ({ cashPlaceId, amountCents, reference }: Tender): 
 
 /**
  * Money held for a customer in 2201 (a credit balance): the deposits of one job order, or, with jobOrderId null,
- * the customer's unapplied payments (lines with no document reference).
+ * the customer's unapplied payments (lines with no document reference). A job order's is money only: in downpayment VAT
+ * mode C, the NET of downpayments invoiced ahead also sits in 2201 until the release invoice (JO joLedger).
  */
 export function depositsHeld(db: Db, customerId: string, jobOrderId: string | null): number {
+  if (jobOrderId) return joLedger(db, jobOrderId).depositsHeldCents;
   const account = resolveAccount(db, { role: 'CUSTOMER_DEPOSITS' }).id;
-  if (jobOrderId) return 0 - accountBalance(db, account, { party: { type: 'customer', id: customerId }, refDocId: jobOrderId });
   // accountBalance has no "no reference" filter, so unapplied payments are read here (engine tables may be read directly).
   const r = db
     .prepare(

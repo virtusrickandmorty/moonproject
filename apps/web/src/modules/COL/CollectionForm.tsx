@@ -12,6 +12,7 @@ import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { cents, emptyTender, oldestFirst, sum, tendersToInput, tendersToRows, type TenderInput, type TenderRow } from './money.ts';
 import { CustomerPicker, EditGate, Errors, Figures, TenderRows, useLive, type Picked } from './parts.tsx';
+import { collectionPreset } from '../JO/forms.ts';
 
 /** Something the customer can pay on; `due` already counts back what the collection being edited paid on it. */
 interface Item { key: string; label: string; date: string; due: number; ref: { jobOrderId: string } | { saleId: string } }
@@ -60,8 +61,19 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
   const [error, setError] = useState('');
   const fail = (e: Error) => setError(e.message);
 
+  // From a job order's view: its customer, and the downpayment still asked or the balance due, paid on that job order.
+  const [preset, setPreset] = useState<{ key: string; cents: number } | null>(null);
   useEffect(() => {
     api.cashPlaces().then(setPlaces, fail);
+    const q = new URLSearchParams(location.search);
+    const jo = q.get('jo');
+    if (mode.kind === 'new' && jo) {
+      api.joStatus(jo).then((s) => {
+        const p = collectionPreset(s, q.get('for') === 'downpayment');
+        setCustomer(p.customer);
+        setPreset({ key: p.key, cents: p.cents });
+      }, fail);
+    }
     if (mode.kind !== 'edit') return;
     api.get(type.key, mode.id).then((d) => {
       const input = d.input as Stored;
@@ -83,6 +95,13 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
   }, [customer?.id]);
 
   const items = useMemo(() => (open ? itemsOf(open, original?.input.customerId === open.customerId ? original : undefined) : []), [open, original]);
+  useEffect(() => {
+    if (!preset || !open || !items.some((i) => i.key === preset.key)) return;
+    const amount = preset.cents > 0 ? formatPesos(preset.cents) : '';
+    setTyped(Object.fromEntries(items.map((i) => [i.key, i.key === preset.key ? amount : ''])));
+    setTenders([{ ...emptyTender(), amount }]);
+    setPreset(null);
+  }, [preset, open, items]);
   const pay = tendersToInput(tenders);
   const cwtCents = cents(cwt.amount);
   const vatWithheldCents = cents(cwt.vat);

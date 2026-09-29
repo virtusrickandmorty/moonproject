@@ -34,6 +34,8 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get('/api/prd/board', { config: { permission: 'prd.view' } }, async () => board(db));
 
+  app.get('/api/prd/tv', { config: { permission: 'prd.tv' } }, async () => ({ cards: board(db), steps: listSteps(db) }));
+
   /** One job order's production: each line's setup and route, with the pieces each step may still take (E7 rules 1–2). */
   app.get<{ Params: { jo: string } }>('/api/prd/jobs/:jo', { config: { permission: 'prd.view' } }, async (req) => {
     const jo = jobOrderRef(db, req.params.jo);

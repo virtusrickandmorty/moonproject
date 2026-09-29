@@ -37,3 +37,10 @@ export function voucherTaxFacts(db: Db, documentId: string): VoucherTaxFacts | u
     )
     .get(documentId) as VoucherTaxFacts | undefined;
 }
+
+/** Monthly expense totals used by the control report's Miscellaneous threshold. */
+export function monthlyMiscException(db: Db, month: string) {
+  return db.prepare(`SELECT SUM(CASE WHEN a.code='6990' THEN l.debit_cents-l.credit_cents ELSE 0 END) AS miscCents,
+    SUM(l.debit_cents-l.credit_cents) AS totalCents FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.id=l.account_id
+    WHERE j.sealed=1 AND j.business_date LIKE ? AND a.type='expense'`).get(`${month}-%`) as {miscCents:number|null;totalCents:number|null};
+}
