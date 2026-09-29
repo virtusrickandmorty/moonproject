@@ -500,6 +500,17 @@ export interface OpeningState {
   accounts: { id: number; code: string; name: string; isCashPlace: boolean; needsStockholder: boolean }[];
   closed: { cutoverDate: string; closedAt: string; closedBy: string; closedByName: string; totalDebitCents: number; totalCreditCents: number } | null;
 }
+/** GET /api/acc/month-end?month=: the month-end checklist (PLAN D8), each item read from the app. */
+export type MonthEndState = 'done' | 'not_done' | 'not_needed';
+export interface MonthEndItem { key: string; title: string; state: MonthEndState; detail: string; href: string; linkLabel: string; rows: { label: string; state: MonthEndState; detail: string }[] }
+export interface MonthEndSignoff { id: number; month: string; signedAt: string; signedBy: string; signedByName: string; note: string }
+export interface MonthEndChecklist {
+  month: string; asOf: string; over: boolean; canSignOff: boolean; items: MonthEndItem[];
+  signoff: (MonthEndSignoff & { items: { key: string; state: MonthEndState; detail: string }[] }) | null;
+  earlierSignoffs: MonthEndSignoff[];
+  /** Documents dated in the month that were recorded or cancelled after the newest sign-off; null while the month is not signed. */
+  changedAfterSignoff: { count: number; documents: { number: string; title: string; date: string; action: 'recorded' | 'cancelled'; at: string }[] } | null;
+}
 /** BIR payments (BIRP-): the return, and the posted payments a worksheet counts. */
 export type BirForm = '2550Q' | '0619-E' | '1601-EQ' | '1702Q' | '1702';
 export interface BirPaymentLine { id: string; number: string; date: string; period: string; reference: string; amountCents: number; penaltyCents: number }
@@ -807,6 +818,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** A year's deduction method from today or later (acc.settings.manage); needs a fresh password (step-up). */
     addIncomeTaxDeduction: (body: { year: number; method: DeductionMethod; effectiveFrom: string; reason: string }) => call<DeductionSetting>('POST', '/api/tax/income-tax-deductions', body),
     opening: () => call<OpeningState>('GET', '/api/acc/opening'),
+    monthEnd: (month?: string) => call<MonthEndChecklist>('GET', `/api/acc/month-end${month ? `?${new URLSearchParams({ month })}` : ''}`),
+    /** The accountant's sign-off of a month that has ended; needs a fresh password (step-up). */
+    signOffMonth: (month: string, note: string) => call<MonthEndChecklist>('POST', '/api/acc/month-end/sign-off', { month, note }),
     /** Every return with something left to pay (GET /api/tax/payments/due): a VAT close or an opening's 2550Q, EWT withheld or opened. */
     taxPaymentsDue: () => call<{ form: BirForm; period: string; payableCents: number }[]>('GET', '/api/tax/payments/due'),
     /** Both need a fresh password (step-up). */
