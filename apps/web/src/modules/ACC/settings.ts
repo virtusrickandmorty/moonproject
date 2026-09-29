@@ -51,6 +51,7 @@ const ewt = (v: unknown) => v as Record<string, number>;
 const KINDS: Record<string, Kind> = {
   'tax.vat_rate_bp': percent('VAT rate', 50),
   'tax.interest_final_tax_bp': percent('Final tax on bank interest', 50),
+  'tax.dividend_final_tax_bp': percent('Final tax on dividends to individual stockholders', 50),
   'sales.deposit_vat_mode': single('Downpayment VAT', (v) => DEPOSIT_MODES[String(v)] ?? String(v), {
     toForm: (v) => ({ choice: String(v) }),
     fromForm: (f) => (f.choice && f.choice in DEPOSIT_MODES ? { value: f.choice, errors: [] } : { errors: ['Choose A, B or C.'] }),

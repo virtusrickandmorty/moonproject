@@ -16,13 +16,20 @@ const fields = {
   isOfficer: z.boolean(),
   position: z.string().trim().min(1).max(60).nullable(), // officer title, e.g. President, Treasurer
   shares: z.number().int().min(0).max(1_000_000_000).nullable(), // if known
+  tin: z.string().trim().regex(/^\d{3}-\d{3}-\d{3}-\d{3}(\d{2})?$/, 'Type the TIN like 123-456-789-000.').nullable(), // for the 1601-FQ and 1604-F
+  holderKind: z.enum(['individual', 'corporation']), // a resident citizen (10% final tax on dividends) or a domestic corporation (none)
 };
-export const personInput = z.object(fields).partial({ position: true, shares: true }).strict();
+export const personInput = z.object(fields).partial({ position: true, shares: true, tin: true, holderKind: true }).strict();
 export const personUpdate = z.object(fields).partial().strict();
 
-export interface Person { id: string; name: string; isStockholder: boolean; isOfficer: boolean; position: string | null; shares: number | null; isActive: boolean; version: number; updatedAt: string }
+export type HolderKind = 'individual' | 'corporation';
+export interface Person {
+  id: string; name: string; isStockholder: boolean; isOfficer: boolean; position: string | null; shares: number | null;
+  tin: string | null; holderKind: HolderKind; isActive: boolean; version: number; updatedAt: string;
+}
 
-const SELECT = `SELECT id, name, is_stockholder AS isStockholder, is_officer AS isOfficer, position, shares, is_active AS isActive, version, updated_at AS updatedAt FROM eq_people`;
+const SELECT = `SELECT id, name, is_stockholder AS isStockholder, is_officer AS isOfficer, position, shares, tin, holder_kind AS holderKind,
+  is_active AS isActive, version, updated_at AS updatedAt FROM eq_people`;
 const asPerson = (r: Record<keyof Person, unknown>) => ({ ...r, isStockholder: r.isStockholder === 1, isOfficer: r.isOfficer === 1, isActive: r.isActive === 1 }) as Person;
 
 export function person(db: Db, id: string): Person | undefined {
@@ -57,12 +64,13 @@ export function createPerson(db: Db, raw: unknown, who: Who): Person {
   const v = personInput.parse(raw);
   checkRoles(v);
   const id = newId();
-  db.prepare('INSERT INTO eq_people (id, name, is_stockholder, is_officer, position, shares, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(id, v.name, +v.isStockholder, +v.isOfficer, v.position ?? null, v.shares ?? null, who.at, who.at);
+  db.prepare('INSERT INTO eq_people (id, name, is_stockholder, is_officer, position, shares, tin, holder_kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(id, v.name, +v.isStockholder, +v.isOfficer, v.position ?? null, v.shares ?? null, v.tin ?? null, v.holderKind ?? 'individual', who.at, who.at);
   appendAudit(db, { at: who.at, userId: who.userId, action: 'eq.person.create', entityType: 'eq.person', entityId: id, data: v });
   return mustGet(db, id);
 }
 
-const COLUMN = { name: 'name', isStockholder: 'is_stockholder', isOfficer: 'is_officer', position: 'position', shares: 'shares' } as const;
+const COLUMN = { name: 'name', isStockholder: 'is_stockholder', isOfficer: 'is_officer', position: 'position', shares: 'shares', tin: 'tin', holderKind: 'holder_kind' } as const;
 
 /** Edits an active person (If-Match). Call inside a transaction. */
 export function updatePerson(db: Db, id: string, ifMatch: unknown, raw: unknown, who: Who): Person {
@@ -105,6 +113,42 @@ export function officerBalances(db: Db, personId: string): { dueFromCents: numbe
     dueFromCents: accountBalance(db, resolveAccount(db, { role: 'DUE_FROM_OFFICERS' }).id, { party }),
     dueToCents: 0 - accountBalance(db, resolveAccount(db, { role: 'DUE_TO_OFFICERS' }).id, { party }),
   };
+}
+
+/** What the company owes a stockholder in declared dividends not yet paid (2503, as a positive amount). */
+export function dividendsPayable(db: Db, personId: string): number {
+  return 0 - accountBalance(db, resolveAccount(db, { role: 'DIVIDENDS_PAYABLE' }).id, { party: { type: 'stockholder', id: personId } });
+}
+
+export interface Holding { personId: string; shares: number }
+
+/**
+ * Who held how many shares at the end of a day (a dividend's record date), rebuilt from the register's audit rows: the
+ * shares and stockholder tick a person was added with, then each edit, in order, up to that day (Manila dates, the audit
+ * rows' timestamps carry +08:00). Stockholders with no shares, or none typed, are left out; the caller warns about the
+ * latter from the register. Oldest person first.
+ */
+export function holdingsOn(db: Db, date: string): Holding[] {
+  const rows = db
+    .prepare(
+      `SELECT entity_id AS id, action, data FROM audit_log WHERE entity_type = 'eq.person' AND action IN ('eq.person.create', 'eq.person.update')
+       AND substr(at, 1, 10) <= ? ORDER BY seq`,
+    )
+    .all(date) as { id: string; action: string; data: string }[];
+  const state = new Map<string, { shares: number | null; isStockholder: boolean }>();
+  for (const r of rows) {
+    const d = JSON.parse(r.data) as Record<string, unknown>;
+    if (r.action === 'eq.person.create') {
+      state.set(r.id, { shares: typeof d.shares === 'number' ? d.shares : null, isStockholder: d.isStockholder === true });
+      continue;
+    }
+    const s = state.get(r.id);
+    if (!s) continue;
+    const after = (k: string) => (d[k] as { after?: unknown } | undefined)?.after;
+    if (d.shares !== undefined) s.shares = typeof after('shares') === 'number' ? (after('shares') as number) : null;
+    if (d.isStockholder !== undefined) s.isStockholder = after('isStockholder') === true;
+  }
+  return [...state].filter(([, s]) => s.isStockholder && (s.shares ?? 0) > 0).map(([personId, s]) => ({ personId, shares: s.shares! }));
 }
 
 /** The unpaid part of a stockholder's subscription (3103, debit balance). */

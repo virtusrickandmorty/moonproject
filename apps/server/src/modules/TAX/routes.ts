@@ -11,9 +11,10 @@ import { salesRegister, withholdingReceivedRegister, type RegisterRow } from './
 import { certificatesToIssue, ewtRegister, purchasesRegister, type PurchaseClass, type SupplierRow } from './purchases.ts';
 import { vatSummary } from './vat.ts';
 import { vatReturnWorksheet, type WorksheetCheck } from './vat-return.ts';
-import { quarterOf, taxDeadlines, type Quarter } from './calendar.ts';
+import { quarterOf, returnDue, taxDeadlines, type Quarter } from './calendar.ts';
 import { ewtMonthWorksheet, ewtQuarterWorksheet, type PaymentLine } from './ewt-return.ts';
 import { parsePeriod, periodsDue } from './payments.ts';
+import { finalTaxList } from './final-tax.ts';
 import { markReceived } from './withholding.ts';
 import { addIncomeTaxSettings, incomeTaxSettingsAt, incomeTaxSettingsHistory, incomeTaxWorksheet } from './income-tax.ts';
 import { addDeductionSetting, annualIncomeTaxWorksheet, deductionAt, deductionHistory } from './annual-income-tax.ts';
@@ -402,7 +403,29 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
     ]);
   });
 
-  /** Every return with something left to pay (a VAT close or an opening's 2550Q, EWT withheld or opened, a 1702Q or a 1702), for the BIR payment form. */
+  /**
+   * The final tax withheld per stockholder, with TIN (PLAN D5 DIV): a quarter (?year=2026&quarter=3, the 1601-FQ) or a
+   * year (?year=2026, the 1604-F alphalist), with what the books hold on 2312 and what the 1601-FQ payments paid.
+   */
+  app.get<{ Querystring: QuarterQuery & { format?: string } }>('/api/tax/final-tax', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const q = req.query;
+    const w = q.year !== undefined && q.quarter === undefined && /^\d{4}$/.test(q.year) ? finalTaxList(db, Number(q.year), null) : (() => {
+      const { year, quarter } = quarterQuery(q);
+      return finalTaxList(db, year, quarter);
+    })();
+    const due = w.quarter ? returnDue(db, '1601-FQ', w.period, w.to) : returnDue(db, '1604-F', w.period, w.to);
+    if (req.query.format !== 'csv') return { ...w, dueDate: due };
+    const kind = (k: string) => (k === 'individual' ? 'Individual' : 'Domestic corporation');
+    return csv(reply, `${w.quarter ? '1601-FQ' : '1604-F'}-final-tax-${w.period}`, [
+      ['Date', 'Declaration', 'Board resolution', 'Stockholder', 'TIN', 'Kind', 'Shares', 'Dividend', 'Rate', 'Final tax', 'Net paid or payable'],
+      ...w.rows.map((r) => [r.date, r.number, r.resolutionNumber, r.name, r.tin ?? 'No TIN', kind(r.holderKind), r.shares, csvPesos(r.grossCents), `${r.taxRateBp / 100}%`, csvPesos(r.taxCents), csvPesos(r.netCents)]),
+      ['Total', '', '', '', '', '', '', csvPesos(w.totals.grossCents), '', csvPesos(w.totals.taxCents), csvPesos(w.totals.netCents)],
+      ['Books (2312)', '', '', '', '', '', '', '', '', csvPesos(w.withheldCents), ''],
+      ...(w.quarter ? [['Paid with the 1601-FQ', '', '', '', '', '', '', '', '', csvPesos(w.paidCents), ''], ['Left to pay', '', '', '', '', '', '', '', '', csvPesos(w.leftCents), '']] : []),
+    ]);
+  });
+
+  /** Every return with something left to pay (a VAT close or an opening's 2550Q, EWT withheld or opened, a 1702Q or a 1702, a 1601-FQ), for the BIR payment form. */
   app.get('/api/tax/payments/due', { config: { permission: 'tax.payment.create' } }, async () => periodsDue(db, today(clock)));
 
   /** VAT of one quarter (?year=2026&quarter=3), or of today's quarter. */
