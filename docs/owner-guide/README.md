@@ -33,5 +33,12 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [30. Suppliers and Purchase Orders](30-suppliers-and-purchase-orders.md): Manage suppliers and your supplies list, make purchase orders, and receive goods.
 - [32. Bank reconciliation](32-bank-reconciliation.md): Check that your bank accounts match your real bank statements.
 - [33. Month-end checklist](33-month-end-checklist.md): View the status of month-end tasks and sign off the month.
+- [34. Government upload files](34-government-upload-files.md): Download the SSS, PhilHealth and Pag-IBIG files for a month, check the exposure report, and upload files to the agencies.
 - [35. Users, Roles and Passwords](35-users-roles-passwords.md): Manage staff logins, permissions, and passwords.
 - [36. Fixed assets, loans and owners](36-fixed-assets-loans-owners.md): See your fixed assets, your loans, and the people who own or run the business.
+- [39. Switch-over day](39-switch-over-day.md): Plan and execute the move from the old apps to Moonproject.
+- [41. Production Board and Piece Rates](41-production-board-and-piece-rates.md): View the production board, record pieces done, and manage piece rates.
+- [42. Employees, Attendance and Holidays](42-employees-attendance-holidays.md): Add employees, set their pay rates, record daily attendance, and manage holidays.
+- [43. Home, Search and TV Board](43-home-search-tv-board.md): See your daily alerts, find records quickly, and view the production status.
+- [45. Sizer Tracker](45-sizer-tracker.md): See what sizer sets are in the shop, which ones are lent, and record returns.
+- [46. Selling a fixed asset](46-selling-a-fixed-asset.md): Record taking a fixed asset off the books by selling or retiring it.
