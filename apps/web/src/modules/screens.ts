@@ -102,6 +102,8 @@ import { OpeningForm as OpeningLoanForm } from './LOAN/OpeningForm.tsx';
 import { PaymentForm as LoanPaymentForm } from './LOAN/PaymentForm.tsx';
 import { loanView } from './LOAN/views.tsx';
 import { BuyForm } from './FA/BuyForm.tsx';
+import { DepreciationForm } from './FA/DepreciationForm.tsx';
+import { DisposalForm } from './FA/DisposalForm.tsx';
 import { AssetPage, Assets } from './FA/Assets.tsx';
 import { PersonPage, People } from './EQ/People.tsx';
 import { LoanPage, Loans } from './LOAN/Loans.tsx';
@@ -280,6 +282,8 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'loan.payment': LoanPaymentForm,
   'loan.opening': OpeningLoanForm,
   'fa.buy': BuyForm,
+  'fa.disposal': DisposalForm,
+  'fa.depreciation': DepreciationForm,
   'fa.opening': OpeningAssetForm,
   'inv.count': InventoryCountForm,
   'pur.po': PoForm,
