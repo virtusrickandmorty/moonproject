@@ -15,7 +15,7 @@ test('customer emails: off until configured; the owner saves the settings with a
   await page.getByLabel('Send emails to customers who agreed to them').uncheck();
 
   // Saved with sending off: no network is used.
-  await page.getByLabel('Mail server', { exact: true }).fill('smtp.example.test');
+  await page.getByLabel(/^Mail server/).fill('smtp.example.test');
   await page.getByLabel('User name').fill('shop@example.test');
   await page.getByLabel('Sender name').fill('Virtus Garments');
   await page.getByLabel('Sender address').fill('shop@example.test');
