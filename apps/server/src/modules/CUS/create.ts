@@ -3,7 +3,7 @@ import { AppError, conflict, newId, notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { chartInput, customerInput, groupInput, personInput, measurements } from './schemas.ts';
+import { chartInput, customerInput, groupInput, normalizePhone, personInput, phoneInput, measurements } from './schemas.ts';
 import { chartResponse, hundredthsColumn, toHundredthsInch } from './measurements.ts';
 
 type Who = { userId: string; at: string; today: string };
@@ -71,6 +71,18 @@ export function createCustomer(db: Db, raw: unknown, who: Who, legacyId?: string
     appendAudit(db, { at: who.at, userId: who.userId, action: 'cus.customer.create', entityType: 'cus_customer', entityId: id,
       data: auditChanges({}, created, v, customerFields, personalCustomerFields) });
     return { id, code };
+  });
+}
+
+/** Adds a phone number to a customer, in the +63 form the phone screens keep. Joins the caller's transaction; the number stays out of the audit log. */
+export function addCustomerPhone(db: Db, customerId: string, raw: unknown, who: Who): { id: string } {
+  const v = phoneInput.parse(raw);
+  return tx(db, () => {
+    activeId(db, 'cus_customers', customerId);
+    const id = newId();
+    db.prepare('INSERT INTO cus_customer_phones (id,customer_id,phone,label,created_at) VALUES (?,?,?,?,?)').run(id, customerId, normalizePhone(v.phone), v.label ?? null, who.at);
+    appendAudit(db, { at: who.at, userId: who.userId, action: 'cus.phone.create', entityType: 'cus_phone', entityId: id, data: { customerId } });
+    return { id };
   });
 }
 
