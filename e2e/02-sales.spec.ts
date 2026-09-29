@@ -2,6 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { OWNER, serverDate, signIn } from './shop';
 
 const CUSTOMER = 'Harbor Rowing Club';
+/** A 1×1 PNG: the design picture attached to the job order. */
+const PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
 /** The "So far" / money figures: the amount shown beside a label. */
 const figure = (page: Page, label: string) => page.locator('dt', { hasText: new RegExp(`^${label}$`) }).first().locator('xpath=following-sibling::dd[1]');
@@ -49,6 +51,16 @@ test('sales: a customer, a job order with a deposit, a collection, a release wit
   await page.getByRole('button', { name: 'Record', exact: true }).click();
   await page.getByRole('dialog', { name: 'Record this Job Order?' }).getByRole('button', { name: 'Record', exact: true }).click();
   await expect(page.getByText('Recorded as JO-000001.')).toBeVisible();
+
+  // A picture of the design, attached to the job order; it opens with the session, as the picture it is.
+  const attachments = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Attachments' }) });
+  await expect(attachments.getByText('No files attached.')).toBeVisible();
+  await attachments.getByLabel('Add a file').setInputFiles({ name: 'jersey design.png', mimeType: 'image/png', buffer: Buffer.from(PIXEL_PNG, 'base64') });
+  const picture = attachments.getByRole('link', { name: 'jersey design.png' });
+  await expect(picture).toBeVisible();
+  await expect(attachments.getByText(/PNG picture · 1 KB · added by /)).toBeVisible();
+  const opened = await page.request.get((await picture.getAttribute('href'))!);
+  expect([opened.status(), opened.headers()['content-type'], opened.headers()['x-content-type-options']]).toEqual([200, 'image/png', 'nosniff']);
 
   // The deposit, then the rest: each collection opens filled for this job order.
   await collect(page, 'Take the downpayment', '3,000.00', '401');
