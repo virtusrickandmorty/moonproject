@@ -57,10 +57,12 @@ function staged(db: Db, uploadId: string): void {
   if (!upload) throw new AppError('NOT_FOUND', 'Upload not found.', 404);
   if (upload.status !== 'staged') throw new AppError('CONFLICT', 'Upload is no longer staged.', 409);
 }
+/** A row as the audit log keeps it: daily and piece rates named, not valued, since reading the log does not imply pay.view_rates (C6, N-05). */
 function state(row: MigRow): Record<string, unknown> {
+  const manual = row.manual_data_json ? JSON.parse(row.manual_data_json) as ManualData : null;
   return {
-    status: row.status, manualData: row.manual_data_json ? JSON.parse(row.manual_data_json) : null,
-    rateCents: row.rate_cents, legacyId: row.legacy_id, mergeIntoRowId: row.merge_into_row_id,
+    status: row.status, manualData: manual && (manual.rateCents === undefined ? manual : { ...manual, rateCents: 'set' }),
+    rate: row.rate_cents !== null, legacyId: row.legacy_id, mergeIntoRowId: row.merge_into_row_id,
     resolvedBy: row.resolved_by, resolvedAt: row.resolved_at,
   };
 }
