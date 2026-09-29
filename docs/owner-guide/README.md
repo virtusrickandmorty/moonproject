@@ -35,4 +35,9 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [33. Month-end checklist](33-month-end-checklist.md): View the status of month-end tasks and sign off the month.
 - [35. Users, Roles and Passwords](35-users-roles-passwords.md): Manage staff logins, permissions, and passwords.
 - [36. Fixed assets, loans and owners](36-fixed-assets-loans-owners.md): See your fixed assets, your loans, and the people who own or run the business.
+- [39. The calendar](39-calendar.md): View the shop's tax deadlines, loan payments, and holidays.
+- [41. The shop certificate](41-shop-certificate.md): Secure the server connection with devices on the local network.
+- [42. Integrity check](42-integrity-check.md): Verify the database is intact and its balances are correct.
+- [43. Audit log](43-audit-log.md): Track user logins, setting changes, and sensitive actions.
 - [44. Company Print Details and Printer Test Pack](44-print-details-and-printer-test.md): Set the company's registered name, TIN, and address, and test the shop printers.
+- [46. The sizer loan tracker](46-sizer-loan-tracker.md): Loan out and return sizer sets to help customers choose their sizes.
