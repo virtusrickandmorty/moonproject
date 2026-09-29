@@ -33,3 +33,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [30. Suppliers and Purchase Orders](30-suppliers-and-purchase-orders.md): Manage suppliers and your supplies list, make purchase orders, and receive goods.
 - [32. Bank reconciliation](32-bank-reconciliation.md): Check that your bank accounts match your real bank statements.
 - [33. Month-end checklist](33-month-end-checklist.md): View the status of month-end tasks and sign off the month.
+- [37. Job Orders, Release Slips and Invoices](37-job-orders-release-invoices.md): Record a customer's order, track what they owe, release goods, and issue invoices.
