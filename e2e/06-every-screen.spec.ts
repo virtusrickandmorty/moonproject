@@ -156,7 +156,7 @@ async function fillIn(page: Page, today: string): Promise<string[]> {
   const main = page.locator('main');
   const asksForId: string[] = [];
   const sides: Record<string, number> = {};
-  for (let pass = 0; pass < 4; pass++) {
+  for (let pass = 0; pass < 6; pass++) {
     for (const k of Object.keys(sides)) sides[k] = 0;
     for (const select of await main.locator('select:visible').all()) {
       if ((await select.isDisabled()) || (await select.inputValue()) !== '') continue;
@@ -183,8 +183,13 @@ async function fillIn(page: Page, today: string): Promise<string[]> {
       }
       if (wrongSide || info.value !== '' || /owed to the supplier|financed by a lender/i.test(info.label)) continue; // optional shares of a payment stay empty
       if (/^[1-9]\d*\.\d\d$/.test(info.hint)) continue; // the amount the server suggests: changing it would ask for a reason
-      if (isSearch(info.hint) || isSearch(info.label)) await pickFirst(input);
-      else await input.fill(info.type === 'date' ? today : typedFor(info.label || info.hint, info.type, info.mode));
+      if (isSearch(info.hint) || isSearch(info.label)) {
+        // A pick loads what was picked and redraws the form (a release's lines appear above "Claimed by"), so the boxes
+        // listed before it are stale: start the next pass on the redrawn form rather than typing into a moved box.
+        await pickFirst(input);
+        await page.waitForLoadState('networkidle').catch(() => undefined);
+        break;
+      } else await input.fill(info.type === 'date' ? today : typedFor(info.label || info.hint, info.type, info.mode));
     }
   }
   return asksForId;

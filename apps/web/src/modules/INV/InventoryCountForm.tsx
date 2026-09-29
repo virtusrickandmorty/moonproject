@@ -135,6 +135,7 @@ export function InventoryCountForm({ type, mode, me }: { type: DocTypeInfo; mode
               <Field label="Count date"><p className="py-2 text-sm">{date || '…'}</p></Field>
             )}
           </div>
+          {!type.canPost && !offMonthEnd && <Notice tone="info">The accountant or an owner records the count. Save it as a draft for them.</Notice>}
           {offMonthEnd && (
             <Notice tone="info">Inventory is counted at a month end and today is not one. Save the count as a draft; the accountant records it dated {defaultCountDate(today)}.</Notice>
           )}
