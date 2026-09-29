@@ -5,7 +5,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { jobTicketRoute } from '../PRD/public.ts';
 import { purchaseOrderNames } from '../PUR/public.ts';
 
-export type PrintKind = 'document' | 'job_ticket';
+export type PrintKind = 'document' | 'job_ticket' | 'thermal';
 export interface Profile {
   registered_name: string; trade_name: string; tin: string; registered_address: string;
   is_vat_registered: number; version: number;
@@ -19,7 +19,8 @@ const money = (n: number) => formatPeso(n);
 const lineTable = (headings: string[], rows: unknown[][]) => `<table><thead><tr>${headings.map((h) => `<th>${escape(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map(cell).join('')}</tr>`).join('')}</tbody></table>`;
 const field = (name: string, value: unknown) => value ? `<p><b>${escape(name)}:</b> ${escape(value)}</p>` : '';
 
-function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind): { title: DocTitle; subtitle: string; legend: boolean; body: string; twoUp: boolean } {
+type PrintTitle = DocTitle | 'Payment Voucher' | 'Payslip' | 'Cash Advance Slip' | 'Inventory Count Sheet';
+function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind): { title: PrintTitle; subtitle: string; legend: boolean; body: string; twoUp: boolean } {
   if (h.doc_type === 'quo.quotation') return {
     title: 'Quotation', subtitle: '', legend: true, twoUp: false,
     body: field('Customer', doc.customerName) + field('Valid until', doc.validUntil) +
@@ -63,6 +64,40 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind): { title: Do
         field('Total', money(doc.totalCents)),
     };
   }
+  if (h.doc_type === 'col.collection') return {
+    title: 'Collection Receipt', subtitle: kind === 'thermal' ? 'Customer copy' : '', legend: true, twoUp: kind !== 'thermal',
+    body: field('Customer', doc.customerName) +
+      lineTable(['Applied to', 'Amount'], [...doc.applications.map((x: any) => [x.jobOrderNumber, money(x.amountCents)]), ...doc.sales.map((x: any) => [x.invoiceNumber, money(x.amountCents)])]) +
+      field('Amount received', money(doc.totalCents)) + field('CWT withheld', money(doc.cwtCents)) + field('VAT withheld', money(doc.vatWithheldCents)) + field('Unapplied', money(doc.unappliedCents)) + field('Notes', doc.note),
+  };
+  if (h.doc_type === 'col.credit_memo') return {
+    title: 'Credit Memo', subtitle: '', legend: true, twoUp: false,
+    body: field('Customer', doc.customerName) + field('Related document', doc.invoice?.invoiceNumber ?? doc.invoice?.number) +
+      field('Kind', doc.kind) + field('Reason', doc.reason) + field('Net', money(doc.netCents)) + field('VAT', money(doc.vatCents)) + field('Total credit', money(doc.totalCents)),
+  };
+  if (h.doc_type === 'ap.payment') return {
+    title: 'Payment Voucher', subtitle: '', legend: true, twoUp: true,
+    body: field('Supplier', doc.supplierName) + lineTable(['Supplier bill', 'Supplier document', 'Amount'], doc.bills.map((x: any) => [x.billNumber, x.supplierInvoiceNo, money(x.amountCents)])) +
+      lineTable(['Paid from', 'Reference', 'Amount'], doc.tenders.map((x: any) => [x.cashPlaceName, x.reference, money(x.amountCents)])) + field('Bank fee', money(doc.feeCents)) + field('Total paid', money(doc.totalCents)) + field('Notes', doc.note),
+  };
+  if (h.doc_type === 'exp.voucher') return {
+    title: 'Expense Voucher', subtitle: '', legend: false, twoUp: false,
+    body: field('Payee', doc.payee?.name) + field('Category', doc.categoryName) + field('Description', doc.description) + field('Paid from', doc.cashPlaceName) +
+      field('Gross', money(doc.totalCents)) + field('Input VAT', money(doc.inputVatCents)) + field('EWT', money(doc.ewtCents)) + field('Cash paid', money(doc.cashCents)),
+  };
+  if (h.doc_type === 'cash.transfer') return { title: 'Fund Transfer', subtitle: 'Fund transfer slip', legend: false, twoUp: false,
+    body: field('From', doc.fromName) + field('To', doc.toName) + field('Amount sent', money(doc.amountSentCents)) + field('Amount received', money(doc.amountReceivedCents)) + field('Fee', money(doc.feeCents)) + field('Notes', doc.note) };
+  if (h.doc_type === 'cash.count') return { title: 'Cash Count', subtitle: 'Cash count sheet', legend: false, twoUp: false,
+    body: field('Cash account', doc.placeName) + lineTable(['Denomination', 'Quantity', 'Amount'], doc.lines.map((x: any) => [money(x.denominationCents), x.qty, money(x.amountCents)])) +
+      field('Counted', money(doc.countedCents)) + field('Ledger', money(doc.ledgerCents)) + field('Difference', money(doc.differenceCents)) };
+  if (h.doc_type === 'acc.jv') return { title: 'Journal Voucher', subtitle: '', legend: false, twoUp: false,
+    body: field('Memo', doc.memo) + lineTable(['Account', 'Party', 'Debit', 'Credit', 'Memo'], doc.lines.map((x: any) => [`${x.accountCode} ${x.accountName}`, x.party ? `${x.party.type}: ${x.party.id}` : '', x.debitCents ? money(x.debitCents) : '', x.creditCents ? money(x.creditCents) : '', x.memo])) + field('Total', money(doc.totalCents)) };
+  if (h.doc_type === 'pay.run') return { title: 'Payslip', subtitle: `${doc.periodStart} to ${doc.periodEnd}`, legend: false, twoUp: true,
+    body: doc.employees.map((e: any) => `<section class="payslip">${field('Employee', `${e.code} · ${e.name}`)}${lineTable(['Earning / deduction', 'Amount'], e.lines.map((x: any) => [x.description, money(x.amountCents)]))}${field('Gross pay', money(e.grossCents))}${field('SSS', money(e.sssEeCents))}${field('PhilHealth', money(e.phicEeCents))}${field('Pag-IBIG', money(e.hdmfEeCents))}${field('Withholding tax', money(e.wtaxCents))}${field('Cash advance', money(e.caCents))}${field('Net pay', money(e.netCents))}</section>`).join('') };
+  if (h.doc_type === 'ca.advance') return { title: 'Cash Advance Slip', subtitle: '', legend: false, twoUp: true,
+    body: field('Employee', doc.employeeName) + field('Paid from', doc.cashPlaceName) + field('Amount', money(doc.amountCents)) + field('Payroll instalment', money(doc.installmentCents)) + field('Notes', doc.note) };
+  if (h.doc_type === 'inv.count') return { title: 'Inventory Count Sheet', subtitle: doc.category, legend: false, twoUp: false,
+    body: field('Count date', doc.countDate) + lineTable(['Supply', 'Unit', 'Quantity', 'Unit cost', 'Value'], doc.lines.map((x: any) => [x.name, x.unit, x.qty, money(x.unitCostCents), money(x.valueCents)])) + field('Counted value', money(doc.countedCents)) + field('Ledger value', money(doc.ledgerCents)) + field('Adjustment', money(doc.adjustmentCents)) };
   throw new Error(`Unsupported print type ${h.doc_type}`);
 }
 
@@ -70,13 +105,14 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind): { title: Do
 export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profile, kind: PrintKind,
   printedBy: string, printedAt: string, copyNumber: number, practice = false): string {
   const p = content(db, h, doc, kind);
-  if (!DOC_TITLES.includes(p.title)) throw new Error('Print title is not allowed');
+  const catalogueTitles: readonly string[] = ['Payment Voucher', 'Payslip', 'Cash Advance Slip', 'Inventory Count Sheet'];
+  if (!(DOC_TITLES as readonly string[]).includes(p.title) && !catalogueTitles.includes(p.title)) throw new Error('Print title is not allowed');
   const title = p.title.toUpperCase();
   const one = `<article class="copy"><header><div class="company"><strong>${escape(profile.registered_name)}</strong><br>TIN ${escape(profile.tin)}<br>${escape(profile.registered_address)}</div><h1>${escape(title)}</h1>${practice ? '<p class="practice">PRACTICE ONLY · NOT A REAL DOCUMENT</p>' : ''}${h.status === 'cancelled' ? '<p class="cancelled">CANCELLED</p>' : ''}${p.subtitle ? `<p class="subtitle">${escape(p.subtitle)}</p>` : ''}${p.legend ? '<p class="legend"><strong>THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.</strong></p>' : ''}</header>` +
     `<div class="meta"><span>Document no. <b>${escape(h.number)}</b></span><span>Business date <b>${escape(h.business_date)}</b></span></div>` +
     `<main>${p.body}</main><footer><span>Printed by ${escape(printedBy)} at ${escape(printedAt)}</span><span>${copyNumber > 1 ? `REPRINT no. ${copyNumber - 1}` : 'Original print'} · Copy ${copyNumber}</span></footer></article>`;
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escape(title)} ${escape(h.number)}</title><style>
-    @page{size:A4;margin:12mm}*{box-sizing:border-box}body{font:11pt Arial,sans-serif;color:#111;margin:0}.sheet{min-height:273mm}
+    @page{size:${kind === 'thermal' ? '80mm auto' : 'A4'};margin:${kind === 'thermal' ? '4mm' : '12mm'}}*{box-sizing:border-box}body{font:11pt Arial,sans-serif;color:#111;margin:0}.sheet{min-height:${kind === 'thermal' ? 'auto' : '273mm'}
     .sheet.two-up{display:grid;grid-template-rows:1fr 1fr;gap:0}.copy{padding:5mm 2mm;display:flex;flex-direction:column;break-inside:avoid}
     .two-up .copy{height:136mm}.two-up .copy:first-child{border-bottom:1px dashed #777}
     header{text-align:center}.company{line-height:1.35}h1{font-size:18pt;margin:6mm 0 1mm}.cancelled{font-size:18pt;font-weight:900;letter-spacing:2mm;color:#a00;border:2px solid #a00;margin:2mm auto;padding:1mm 3mm;width:max-content}.subtitle{margin:0 0 2mm}.practice{font-size:14pt;font-weight:900;letter-spacing:1mm;color:#a60;border:2px dashed #a60;margin:2mm auto;padding:1mm 3mm;width:max-content}.legend{font-size:9pt;margin:2mm 0 4mm;font-weight:bold}

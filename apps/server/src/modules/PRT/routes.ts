@@ -7,6 +7,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { requireStepUp } from '../../engine/security/sessions.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
+import { settingAt } from '../../engine/settings.ts';
 import { renderPrint, type Profile, type PrintHeader, type PrintKind } from './print.ts';
 
 const profileInput = z.object({
@@ -16,12 +17,22 @@ const profileInput = z.object({
   registeredAddress: z.string().trim().min(1).max(500),
   isVatRegistered: z.boolean(),
 }).strict();
-const printInput = z.object({ variant: z.enum(['document', 'job_ticket']).default('document') }).strict();
+const printInput = z.object({ variant: z.enum(['document', 'job_ticket', 'thermal']).default('document'), employeeId: z.string().uuid().optional() }).strict();
 const PRINTABLE: ReadonlyMap<string, readonly PrintKind[]> = new Map([
   ['quo.quotation', ['document']],
   ['jo.job_order', ['document', 'job_ticket']],
   ['jo.release', ['document']],
   ['pur.po', ['document']],
+  ['col.collection', ['document', 'thermal']],
+  ['col.credit_memo', ['document']],
+  ['ap.payment', ['document']],
+  ['exp.voucher', ['document']],
+  ['cash.transfer', ['document']],
+  ['cash.count', ['document']],
+  ['acc.jv', ['document']],
+  ['pay.run', ['document']],
+  ['ca.advance', ['document']],
+  ['inv.count', ['document']],
 ]);
 const out = (r: Profile) => ({ registeredName: r.registered_name, tradeName: r.trade_name, tin: r.tin,
   registeredAddress: r.registered_address, isVatRegistered: !!r.is_vat_registered, version: r.version });
@@ -84,16 +95,24 @@ export function prtRoutes(app: FastifyInstance, { db, clock, registry, practice 
     { config: { permission: 'authenticated' } }, async (req) => {
       const user = currentUser(req);
       const { type, id } = req.params;
-      const kind = printInput.parse(req.body ?? {}).variant as PrintKind;
+      const input = printInput.parse(req.body ?? {});
+      const kind = input.variant as PrintKind;
       const def = registry.docType(type);
       if (!def || !PRINTABLE.get(type)?.includes(kind)) throw notFound('That printout');
       if (!user.permissions.has(def.permissions.view)) throw forbidden(def.permissions.view);
       return tx(db, () => {
         const h = db.prepare('SELECT id, number, business_date, doc_type, status FROM documents WHERE id = ? AND doc_type = ?').get(id, type) as PrintHeader | undefined;
         if (!h) throw notFound('The document');
+        if (type === 'col.collection' && settingAt(db, 'col.cr_mode', h.business_date).mode !== 'system') {
+          throw conflict('BOOKLET_CR_NOT_PRINTABLE', 'Collection receipts cannot be printed in booklet mode. Use the pre-printed receipt booklet.');
+        }
         const profile = db.prepare('SELECT * FROM prt_company_profile WHERE id = 1').get() as Profile | undefined;
         if (!profile) throw conflict('COMPANY_PROFILE_REQUIRED', 'An owner must complete the company profile before printing.');
-        const doc = def.load(db, id);
+        const loaded: any = def.load(db, id);
+        const doc = type === 'pay.run' && input.employeeId
+          ? { ...loaded, employees: loaded.employees.filter((e: any) => e.employeeId === input.employeeId) }
+          : loaded;
+        if (type === 'pay.run' && input.employeeId && doc.employees.length === 0) throw notFound('That employee on this payroll run');
         const copyNumber = (db.prepare('SELECT COALESCE(MAX(copy_number), 0) + 1 AS n FROM prt_print_log WHERE document_id = ? AND print_kind = ?')
           .get(id, kind) as { n: number }).n;
         const at = stamp(clock);

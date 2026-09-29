@@ -87,11 +87,35 @@ describe('print base', () => {
     const listed = (await encoder.get('/api/prt/printable-types')).json() as { key: string; variants: string[] }[];
     const viewable = (await encoder.get('/api/doc-types')).json() as { key: string }[];
     expect(listed).toContainEqual({ key: 'jo.job_order', variants: ['document', 'job_ticket'] });
-    expect(listed.map((item) => item.key)).not.toContain('cash.transfer');
+    expect(listed).toContainEqual({ key: 'cash.transfer', variants: ['document'] });
     expect(listed.every((item) => viewable.some((type) => type.key === item.key))).toBe(true);
     const production = await env.as('production');
     const productionKeys = ((await production.get('/api/prt/printable-types')).json() as { key: string }[]).map((item) => item.key);
     expect(productionKeys).not.toContain('quo.quotation');
+  });
+
+  it('renders the remaining document printouts with their catalogue title, paper layout, escaping and reprint mark', () => {
+    const cases: [string, unknown, string, boolean, boolean][] = [
+      ['col.collection', { customerName: '<Buyer>', applications: [], sales: [], totalCents: 100, cwtCents: 0, vatWithheldCents: 0, unappliedCents: 0 }, 'COLLECTION RECEIPT', true, true],
+      ['col.credit_memo', { customerName: '<Buyer>', invoice: { number: 'IR-1' }, kind: 'allowance', reason: '<late>', netCents: 90, vatCents: 10, totalCents: 100 }, 'CREDIT MEMO', true, false],
+      ['ap.payment', { supplierName: '<Supplier>', bills: [], tenders: [], feeCents: 0, totalCents: 100 }, 'PAYMENT VOUCHER', true, true],
+      ['exp.voucher', { payee: { name: '<Payee>' }, categoryName: 'Rent', description: '<office>', cashPlaceName: 'Bank', totalCents: 100, inputVatCents: 0, ewtCents: 0, cashCents: 100 }, 'EXPENSE VOUCHER', false, false],
+      ['cash.transfer', { fromName: '<Bank>', toName: 'Cash', amountSentCents: 100, amountReceivedCents: 100, feeCents: 0 }, 'FUND TRANSFER', false, false],
+      ['cash.count', { placeName: '<Till>', lines: [], countedCents: 100, ledgerCents: 100, differenceCents: 0 }, 'CASH COUNT', false, false],
+      ['acc.jv', { memo: '<Accrual>', lines: [], totalCents: 100 }, 'JOURNAL VOUCHER', false, false],
+      ['pay.run', { periodStart: '2026-09-01', periodEnd: '2026-09-15', employees: [{ code: 'E1', name: '<Worker>', lines: [], grossCents: 100, sssEeCents: 0, phicEeCents: 0, hdmfEeCents: 0, wtaxCents: 0, caCents: 0, netCents: 100 }] }, 'PAYSLIP', false, true],
+      ['ca.advance', { employeeName: '<Worker>', cashPlaceName: 'Cash', amountCents: 100, installmentCents: 50 }, 'CASH ADVANCE SLIP', false, true],
+      ['inv.count', { category: 'materials', countDate: '2026-09-28', lines: [], countedCents: 100, ledgerCents: 100, adjustmentCents: 0 }, 'INVENTORY COUNT SHEET', false, false],
+    ];
+    for (const [type, doc, title, legend, twoUp] of cases) {
+      const html = renderPrint(env.db, header(type), doc, profile, 'document', '<Owner>', '2026-09-28T10:00:00+08:00', 2);
+      expect(html).toContain(`<h1>${title}</h1>`);
+      expect(html.includes('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.')).toBe(legend);
+      expect(html).toContain('&lt;');
+      expect(html).not.toContain('<Owner>');
+      expect(html).toContain('REPRINT no. 1');
+      expect(html.includes('sheet two-up')).toBe(twoUp);
+    }
   });
 
   it('increments the reprint counter and returns 403 when the user cannot view the document', async () => {
