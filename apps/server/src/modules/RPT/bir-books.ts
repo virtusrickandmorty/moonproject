@@ -28,13 +28,13 @@ export function paginate<T>(rows: T[], amounts: (row: T) => Amounts, size = PAGE
 
 type RawLine = { journalId: string; journalNumber: string; date: string; posting: string; sourceId: string; docType: string | null;
   documentNumber: string | null; externalNumber: string | null; memo: string; accountCode: string; accountName: string;
-  accountType: string; roleKey: string | null; isCash: number; partyType: string | null; partyId: string | null; debitCents: number; creditCents: number };
+  accountType: string; roleKey: string | null; isCash: number; partyType: string | null; partyId: string | null; debit: number; credit: number };
 const ledgerLines = (db: Db, from: string, to: string) => db.prepare(`SELECT j.id AS journalId, j.number AS journalNumber,
   j.business_date AS date, j.posting_kind AS posting, j.source_id AS sourceId, d.doc_type AS docType,
   d.number AS documentNumber, d.external_number AS externalNumber, COALESCE(l.memo,j.memo) AS memo,
   a.code AS accountCode, a.name AS accountName, a.type AS accountType, a.role_key AS roleKey,
   a.is_cash_place AS isCash, l.party_type AS partyType, l.party_id AS partyId,
-  l.debit_cents AS debitCents, l.credit_cents AS creditCents
+  l.debit_cents AS debit, l.credit_cents AS credit
   FROM journals j JOIN journal_lines l ON l.journal_id=j.id JOIN accounts a ON a.id=l.account_id
   LEFT JOIN documents d ON d.id=j.source_id AND j.source_type IN ('document','document-cancel')
   WHERE j.sealed=1 AND j.business_date BETWEEN ? AND ? ORDER BY j.business_date,j.number,l.line_no`).all(from, to) as RawLine[];
@@ -51,7 +51,7 @@ const grouped = (lines: RawLine[]) => {
   for (const line of lines) out.set(line.journalId, [...(out.get(line.journalId) ?? []), line]);
   return [...out.values()];
 };
-const signed = (l: RawLine, side: 'debit' | 'credit') => side === 'debit' ? l.debitCents - l.creditCents : l.creditCents - l.debitCents;
+const signed = (l: RawLine, side: 'debit' | 'credit') => side === 'debit' ? l.debit - l.credit : l.credit - l.debit;
 const sum = (lines: RawLine[], f: (l: RawLine) => number) => lines.reduce((n, l) => n + f(l), 0);
 
 export interface CashBookRow { journalId: string; date: string; documentNumber: string; formOrReference: string | null; party: string; posting: string;
@@ -64,7 +64,7 @@ const cashAmounts = (r: CashBookRow): Amounts => ({ cashCents: r.cashCents, rece
 
 export function cashJournal(db: Db, from: string, to: string, kind: 'receipts' | 'disbursements') {
   const side = kind === 'receipts' ? 'credit' : 'debit';
-  const rows = grouped(ledgerLines(db, from, to)).filter((j) => j.some((l) => l.isCash === 1 && (kind === 'receipts' ? l.debitCents : l.creditCents))).map((j): CashBookRow => {
+  const rows = grouped(ledgerLines(db, from, to)).filter((j) => j.some((l) => l.isCash === 1 && (kind === 'receipts' ? l.debit : l.credit))).map((j): CashBookRow => {
     const first = j[0]!; const others = j.filter((l) => !l.isCash); const amount = (role: string) => sum(others.filter((l) => l.roleKey === role), (l) => signed(l, side));
     const known = (l: RawLine) => kind === 'receipts' ? l.roleKey === 'AR_TRADE' || l.roleKey === 'CUSTOMER_DEPOSITS' || l.roleKey === 'OUTPUT_VAT' || l.accountType === 'revenue'
       : l.roleKey === 'AP' || l.roleKey === 'INPUT_VAT' || l.roleKey === 'EWT_PAYABLE' || l.roleKey === 'PAYROLL_PAYABLE' || l.accountType === 'expense';
@@ -107,9 +107,9 @@ export function purchaseBook(db: Db, from: string, to: string) {
     return { journalId: j.journalId, date: j.date, documentNumber: j.documentNumber, supplierInvoiceNumber: facts?.supplierInvoiceNo ?? null,
       supplier: tax?.registeredName ?? (facts ? supplier(db, facts.supplierId)?.name : undefined) ?? partyName(db, journal), tin: tax?.tin ?? null, posting: j.posting,
       capitalGoodsCents: 0, goodsCents: of('goods'), servicesCents: of('services'),
-      inputVatCents: sum(journal.filter((l) => l.roleKey === 'INPUT_VAT'), (l) => l.debitCents - l.creditCents),
-      ewtCents: sum(journal.filter((l) => l.roleKey === 'EWT_PAYABLE'), (l) => l.creditCents - l.debitCents),
-      payableCents: sum(journal.filter((l) => l.roleKey === 'AP'), (l) => l.creditCents - l.debitCents) };
+      inputVatCents: sum(journal.filter((l) => l.roleKey === 'INPUT_VAT'), (l) => l.debit - l.credit),
+      ewtCents: sum(journal.filter((l) => l.roleKey === 'EWT_PAYABLE'), (l) => l.credit - l.debit),
+      payableCents: sum(journal.filter((l) => l.roleKey === 'AP'), (l) => l.credit - l.debit) };
   });
   const amounts = (r: typeof rows[number]) => ({ capitalGoodsCents: r.capitalGoodsCents, goodsCents: r.goodsCents, servicesCents: r.servicesCents,
     inputVatCents: r.inputVatCents, ewtCents: r.ewtCents, payableCents: r.payableCents });
@@ -117,19 +117,21 @@ export function purchaseBook(db: Db, from: string, to: string) {
 }
 
 export function birGeneralJournal(db: Db, from: string, to: string) {
-  const result = generalJournal(db, from, to); const amounts = (j: typeof result.journals[number]) => ({ debitCents: j.lines.reduce((n, l) => n + l.debitCents, 0), creditCents: j.lines.reduce((n, l) => n + l.creditCents, 0) });
+  const result = generalJournal(db, from, to); const amounts = (j: typeof result.journals[number]) => ({ debitTotalCents: j.lines.reduce((n, l) => n + l.debitCents, 0), creditTotalCents: j.lines.reduce((n, l) => n + l.creditCents, 0) });
   return { ...result, book: 'general-journal', pages: paginate(result.journals, amounts) };
 }
 export function birGeneralLedger(db: Db, from: string, to: string, accountId?: number) {
   const result = generalLedger(db, from, to, accountId);
-  return { ...result, book: 'general-ledger', accounts: result.accounts.map((a) => ({ ...a, pages: paginate(a.lines, (l) => ({ debitCents: l.debitCents, creditCents: l.creditCents })) })) };
+  return { ...result, book: 'general-ledger', accounts: result.accounts.map((a) => ({ ...a, pages: paginate(a.lines, (l) => ({ debitTotalCents: l.debitCents, creditTotalCents: l.creditCents })) })) };
 }
 
 const validDate = (v: unknown) => {
-  const d = typeof v === 'string' ? new Date(`${v}T00:00:00Z`) : new Date(NaN);
-  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(d.valueOf()) || d.toISOString().slice(0, 10) !== v)
+  const [y, m, d] = typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v.split('-').map(Number) : [NaN, NaN, NaN];
+  const day = new Date(Date.UTC(y!, m! - 1, d!));
+  if (Number.isNaN(day.valueOf()) || day.getUTCFullYear() !== y || day.getUTCMonth() !== m! - 1 || day.getUTCDate() !== d) {
     throw new AppError('BAD_DATE', 'Use a valid date in YYYY-MM-DD format.', 400);
-  return v;
+  }
+  return v as string;
 };
 const csv = (reply: { header: (n: string, v: string) => unknown; type: (v: string) => unknown }, name: string, rows: CsvCell[][]) => {
   reply.header('Content-Disposition', `attachment; filename="${name}.csv"`); reply.type('text/csv; charset=utf-8'); return toCsv(rows);
