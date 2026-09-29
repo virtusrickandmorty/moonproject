@@ -8,7 +8,7 @@
 1. On the **Accounting & Tax** menu, click **Month-end checklist**.
 2. Pick the **Month** you want to look at.
 3. Check the list of items. Click the blue links on the right of each item to open the screen that does it.
-4. Once everything is done, the accountant types a **Note** and clicks **Sign off the month**.
+4. Once everything is done, the accountant types a **Note** (between 5 and 500 characters) and clicks **Sign off the month**. The system will ask for your password to confirm. Note that a month can only be signed off after its last day; before that, the screen will say it has not ended yet. Only the accountant can see and use the sign-off form.
 
 ### What the system does for you
 The system automatically checks the records for that month and updates the status of each item. An item can show as **Done**, **Not done**, or **Not needed**.
@@ -22,7 +22,7 @@ The items it checks are:
 - **Inventory count:** Checks the physical count of materials or goods (click **Open inventory count**).
 - **Government remittances of the month:** Checks if SSS, PhilHealth, and Pag-IBIG payments are recorded (click **Open government remittances**).
 - **0619-E (monthly EWT) / 1601-EQ (quarterly EWT):** Checks the withholding tax returns (click **Open 0619-E worksheet** or **Open 1601-EQ worksheet**).
-- **Quarter's VAT close:** Closes the VAT at the end of a quarter (click **Open VAT close** or **Open VAT this quarter**).
+- **Quarter's VAT close:** Checks that the VAT close is recorded at the end of a quarter (click **Open VAT close** or **Open VAT this quarter**).
 - **Exceptions inbox reviewed:** Checks that you have no unread warnings in your inbox (click **Open the exceptions inbox**).
 - **Drafts older than 3 days:** Checks for any old unfinished work (click **Open home**).
 
