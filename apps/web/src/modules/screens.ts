@@ -108,6 +108,7 @@ import { LoanPage, Loans } from './LOAN/Loans.tsx';
 import { SizerSets } from './SZR/Sizers.tsx';
 import { OpeningForm as OpeningAssetForm } from './FA/OpeningForm.tsx';
 import { Backups } from './BAK/Backups.tsx';
+import { Communications } from './COM/Communications.tsx';
 import { ImportOldData } from './MIG/Importer.tsx';
 import { ImportUpload } from './MIG/Upload.tsx';
 import { AuditLog } from './AUD/AuditLog.tsx';
@@ -220,6 +221,8 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/admin/roles': Roles,
   '/acc/chart': ChartOfAccounts,
   '/acc/settings': Settings,
+  '/com': Communications,
+  '/com/:section': Communications,
   '/bak': Backups,
   '/bak/:section': Backups,
   '/mig': ImportOldData,

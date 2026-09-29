@@ -112,6 +112,8 @@ export const SCREENS: MenuItem[] = [
   { group: 'Reports', label: 'Exceptions', path: '/rpt/exceptions', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Sign-in history', path: '/rpt/sign-ins', permission: 'rpt.books.view' },
   { group: 'Admin', label: 'Backups', path: '/bak', permission: 'bak.view' },
+  { group: 'Sales', label: 'Customer emails', path: '/com', permission: 'com.outbox.view' },
+  { group: 'Admin', label: 'Customer email settings', path: '/com/settings', permission: 'com.settings.manage' },
   { group: 'Admin', label: 'Opening balances', path: '/acc/opening', permission: 'acc.opening.view' },
   { group: 'Admin', label: 'Import old data', path: '/mig', permission: 'mig.run' },
   { group: 'Admin', label: 'Audit log', path: '/aud/log', permission: 'aud.log.view' },

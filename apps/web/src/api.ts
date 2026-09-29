@@ -568,6 +568,16 @@ export interface BackupStatus {
 }
 export interface BackupMade { file: string; tier: BackupTier; bytes: number; offsite: boolean; offsiteError: string | null }
 export interface BackupFile { source: BackupSource; file: string; at: string; tier: BackupTier; bytes: number }
+/** Customer emails (COM). The App Password is write-only: the server says only whether one is saved. */
+export type EmailTemplate = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement';
+export interface EmailSettings { sendingOn: boolean; host: string; port: number; user: string; senderName: string; senderAddress: string; version: number; appPasswordSet: boolean; missing: string[] }
+export interface EmailSettingsInput { sendingOn: boolean; host: string; port: number; user: string; senderName: string; senderAddress: string; appPassword?: string }
+export interface OutboxRow {
+  id: string; template: EmailTemplate; customerId: string; customerName: string; toAddress: string; documentId: string | null; documentNumber: string | null;
+  periodFrom: string | null; periodTo: string | null; subject: string; body: string; attachmentName: string | null; status: 'queued' | 'sent' | 'failed';
+  attempts: number; nextAttemptAt: string; lastError: string | null; createdAt: string; sentAt: string | null;
+}
+export interface Outbox { rows: OutboxRow[]; counts: Record<'queued' | 'sent' | 'failed', number> }
 /** The old-data importer (PLAN E13 MIG-01), as /api/mig reports it. */
 export type MigRowType = 'customer' | 'measurement' | 'employee' | 'piece_rate' | 'unknown';
 export type MigRowStatus = 'valid' | 'needs_review' | 'accepted' | 'merged' | 'excluded';
@@ -1001,6 +1011,13 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     bakCheck: (b: { source: BackupSource; file: string; key: string; purpose: 'drill' | 'restore' }) => call<BackupCheck>('POST', '/api/bak/restore/check', b),
     bakApply: (stagedId: string) => call<{ file: string; restartNeeded: boolean; restarting: boolean; message: string }>('POST', '/api/bak/restore/apply', { stagedId }),
     bakRestored: () => call<{ restored: { file: string; at: string } | null }>('GET', '/api/bak/restored').then((r) => r.restored),
+    comSettings: () => call<EmailSettings>('GET', '/api/com/settings'),
+    /** Needs a fresh password (step-up). Leave `appPassword` out to keep the saved one. */
+    comSaveSettings: (v: number, body: EmailSettingsInput) => call<EmailSettings>('PUT', '/api/com/settings', body, version(v)),
+    comTestEmail: () => call<{ ok: true; message: string }>('POST', '/api/com/test-email', {}),
+    comOutbox: (status?: OutboxRow['status']) => call<Outbox>('GET', `/api/com/outbox${status ? `?status=${status}` : ''}`),
+    comResend: (id: string) => call<{ success: true }>('POST', `/api/com/outbox/${encodeURIComponent(id)}/resend`, {}),
+    comEmailStatement: (b: { customerId: string; from: string; to: string }) => call<{ id: string }>('POST', '/api/com/statements', b),
     migUploads: () => call<{ uploads: MigUpload[] }>('GET', '/api/mig/uploads').then((r) => r.uploads),
     /** The kind is not sent: the server reads it from the columns. */
     migUpload: (filename: string, csv: string) => call<MigUploaded>('POST', '/api/mig/upload', { filename, csv }),
