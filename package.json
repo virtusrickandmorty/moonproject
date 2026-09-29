@@ -15,7 +15,9 @@
     "check": "npm run typecheck && npm test",
     "dev:server": "tsx apps/server/src/main.ts",
     "practice-data": "tsx apps/server/src/platform/practice/data.ts",
-    "restore": "tsx apps/server/src/modules/BAK/cli.ts"
+    "restore": "tsx apps/server/src/modules/BAK/cli.ts",
+    "blind-pack": "tsx tools/blind-pack.ts",
+    "compare-blind": "tsx tools/compare-blind.ts"
   },
   "devDependencies": {
     "@types/better-sqlite3": "9.6.0",

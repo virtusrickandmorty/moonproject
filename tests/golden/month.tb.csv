@@ -1,0 +1,38 @@
+account_code,account_name,debit,credit
+1101,Cash on hand (main cash box),69470.21,0.00
+1102,Petty cash fund,1800.00,0.00
+1111,Cash in bank – BDO,712224.74,0.00
+1112,Cash in bank – China Bank,9975.00,0.00
+1121,E-wallet – GCash,10000.00,0.00
+1201,Accounts receivable – trade,80800.00,0.00
+1210,Advances to employees (cash advances),1000.00,0.00
+1301,Materials and supplies inventory,25000.00,0.00
+1410,Creditable withholding tax (customers' 2307),1250.00,0.00
+1510,Machinery and production equipment,400000.00,0.00
+1511,Accumulated depreciation – machinery,0.00,6500.00
+2101,Accounts payable,0.00,6200.00
+2111,13th-month pay payable,0.00,1708.33
+2201,Customer deposits and unapplied payments,0.00,35000.00
+2501,Due to officers and stockholders,0.00,100000.00
+2601,Loans payable,0.00,680000.00
+2602,Equipment financing payable,0.00,82000.00
+3101,Capital stock,0.00,250000.00
+3201,Retained earnings,0.00,36000.00
+4101,Sales – made-to-order garments,0.00,226785.71
+4103,Service income – repairs and alterations,0.00,312.50
+4190,Sales discounts,5000.00,0.00
+4191,Sales returns and allowances,5000.00,0.00
+5101,Purchases – materials and supplies,10000.00,0.00
+5109,Inventory change (count adjustment),0.00,25000.00
+5202,Direct labor – daily production staff,5671.88,0.00
+5203,Direct labor – employer contributions,1032.09,0.00
+5204,Direct labor – 13th month and benefits,458.33,0.00
+5302,Depreciation – production equipment,6500.00,0.00
+6101,Salaries – office and sales,15000.00,0.00
+6102,Employer contributions – office,2105.00,0.00
+6103,13th month and benefits – office,1250.00,0.00
+6110,Rent,75714.29,0.00
+6140,Transportation and travel,200.00,0.00
+6230,Bank and e-wallet charges,25.00,0.00
+6280,Cash short and over,30.00,0.00
+7201,Interest expense and financing charges,10000.00,0.00
