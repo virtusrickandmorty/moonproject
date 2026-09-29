@@ -148,7 +148,7 @@ export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profi
 export function render2307(profile: Profile, year: number, quarter: number, certificates: Certificate2307[], testPrint = false, practice = false): string {
   const first = 3 * quarter - 2;
   const from = `${year}-${String(first).padStart(2, '0')}-01`;
-  const to = new Date(Date.UTC(year, first + 2, 0)).toISOString().slice(0, 10);
+  const to = `${year}-${String(first + 2).padStart(2, '0')}-${new Date(Date.UTC(year, first + 2, 0)).getUTCDate()}`;
   const months = [0, 1, 2].map((i) => new Date(Date.UTC(year, first - 1 + i, 1)).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' }));
   const pages = certificates.map((c) => `<article class="certificate">${testPrint ? '<div class="test-print">TEST PRINT, NOT A REAL DOCUMENT</div>' : ''}
     <header><div class="form">BIR FORM NO. 2307</div><h1>CERTIFICATE OF CREDITABLE TAX WITHHELD AT SOURCE</h1><p>For the period ${from} to ${to}</p>${practice ? '<p class="practice">PRACTICE ONLY · NOT A REAL DOCUMENT</p>' : ''}</header>
