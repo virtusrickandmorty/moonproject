@@ -38,6 +38,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Admin', label: 'Shop certificate', path: '/admin/shop-certificate' },
   { group: 'Admin', label: 'Practice shop', path: '/admin/practice' },
   { group: 'Production', label: 'Production board', path: '/prd/board', permission: 'prd.view' },
+  { group: 'Production', label: 'TV board', path: '/prd/tv', permission: 'prd.tv' },
   { group: 'Production', label: 'Piece rates', path: '/prd/rates', permission: 'rate.view' },
   { group: 'Production', label: 'Sizer sets', path: '/szr/sets', permission: 'szr.loan.view' },
   { group: 'People & Payroll', label: 'Employees', path: '/emp/employees', permission: 'emp.view' },

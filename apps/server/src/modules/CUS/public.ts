@@ -29,6 +29,21 @@ export function activeCustomers(db: Db): { id: string; name: string }[] {
     WHERE is_active = 1 AND merged_into_id IS NULL ORDER BY display_name, id`).all() as { id: string; name: string }[];
 }
 
+/** Name matches for permission-filtered navigation search. */
+export function searchCustomers(db: Db, query: string, limit = 20): { id: string; name: string }[] {
+  return db.prepare(`SELECT id, display_name AS name FROM cus_customers
+    WHERE merged_into_id IS NULL AND display_name LIKE ? COLLATE NOCASE ORDER BY display_name LIMIT ?`)
+    .all(`%${query}%`, limit) as { id: string; name: string }[];
+}
+
+/** Wearer matches include their owning customer so the customer screen can open the right record. */
+export function searchWearers(db: Db, query: string, limit = 20): { id: string; customerId: string; name: string }[] {
+  return db.prepare(`SELECT p.id, p.customer_id AS customerId, p.full_name AS name FROM cus_people p
+    JOIN cus_customers c ON c.id = p.customer_id WHERE p.is_active = 1 AND c.merged_into_id IS NULL
+      AND p.full_name LIKE ? COLLATE NOCASE ORDER BY p.full_name LIMIT ?`)
+    .all(`%${query}%`, limit) as { id: string; customerId: string; name: string }[];
+}
+
 /** All customer names for historical statements, including inactive and merged records. */
 export function statementCustomers(db: Db): { id: string; name: string }[] {
   return db.prepare('SELECT id, display_name AS name FROM cus_customers ORDER BY display_name, id')

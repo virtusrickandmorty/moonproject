@@ -46,6 +46,11 @@ export function jobOrdersOf(db: Db, customerId?: string, includeCancelled = fals
     .all({ c: customerId ?? null, all: includeCancelled ? 1 : 0 }) as JoRef[];
 }
 
+export function searchJobOrders(db: Db, compactQuery: string, limit = 20): JoRef[] {
+  return db.prepare(`${JO_REF} WHERE replace(replace(lower(d.number), '-', ''), ' ', '') LIKE ?
+    ORDER BY d.business_date DESC, d.number DESC LIMIT ?`).all(`%${compactQuery}%`, limit) as JoRef[];
+}
+
 /** Active orders and their current stages for read-only dashboards, fetched without one query per old order. */
 export function activeJobOrders(db: Db): (JoRef & { stage: 'open' | 'in_production' | 'ready' | 'partially_released' | 'released' })[] {
   return db.prepare(`SELECT d.id, d.number, d.status, o.customer_id AS customerId, o.customer_name AS customerName,
