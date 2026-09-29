@@ -32,6 +32,31 @@ describe('company profile', () => {
 });
 
 describe('print base', () => {
+  it('renders the complete owner-only test pack without writing any table', async () => {
+    const tableCounts = () => Object.fromEntries((env.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[])
+      .map(({ name }) => [name, (env.db.prepare(`SELECT COUNT(*) AS n FROM "${name}"`).get() as { n: number }).n]));
+    const before = tableCounts();
+    const response = await owner.get('/api/prt/test-pack');
+    expect(response.statusCode, response.body).toBe(200);
+    const pack = response.json() as { prints: { id: string; label: string; paper: string; html: string }[]; notBuilt: string[] };
+    expect(pack.prints).toHaveLength(16);
+    expect(new Set(pack.prints.map((p) => p.id)).size).toBe(pack.prints.length);
+    for (const item of pack.prints) {
+      expect(item.html, item.id).toContain('TEST PRINT, NOT A REAL DOCUMENT');
+      expect(item.html, item.id).toContain('TEST-000000');
+      expect(item.html, item.id).toMatch(/<h1>(QUOTATION|JOB ORDER|JOB TICKET|RELEASE SLIP|COLLECTION RECEIPT|CREDIT MEMO|PURCHASE ORDER|PAYMENT VOUCHER|EXPENSE VOUCHER|FUND TRANSFER|CASH COUNT|JOURNAL VOUCHER|PAYSLIP|CASH ADVANCE SLIP|INVENTORY COUNT SHEET)<\/h1>/);
+    }
+    const publicPrints = ['quotation', 'job-order', 'release-slip', 'collection-a4', 'collection-80mm', 'credit-memo', 'purchase-order', 'payment-voucher'];
+    for (const item of pack.prints) expect(item.html.includes('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.')).toBe(publicPrints.includes(item.id));
+    expect(pack.prints.find((p) => p.id === 'collection-80mm')?.html).toContain('@page{size:80mm auto');
+    expect(pack.prints.filter((p) => p.paper === 'A4 2-up').every((p) => p.html.includes('sheet two-up'))).toBe(true);
+    expect(pack.notBuilt).toEqual(['Statement of Account', 'Sizing Profile', 'Fixed Asset Schedule / books layouts']);
+    expect(tableCounts()).toEqual(before);
+    for (const role of ['encoder', 'accountant', 'production', 'tv'] as const) {
+      expect((await (await env.as(role)).get('/api/prt/test-pack')).statusCode).toBe(403);
+    }
+  });
+
   it('places the legend on public printouts and omits it on the production ticket', () => {
     const quote = { customerName: 'Sample Buyer', validUntil: '2026-10-13', totalCents: 10000, documentDiscountCents: 0,
       lines: [{ description: 'Sample item', qty: 1, unit: 'pc', unitPriceCents: 10000, discountCents: 0, lineTotalCents: 10000 }] };

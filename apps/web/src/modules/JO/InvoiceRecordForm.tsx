@@ -4,13 +4,13 @@
  * release already has its invoice. Also its Edit (cancel and reissue with a new booklet number, NR-4).
  */
 import { useEffect, useState } from 'react';
-import { api, type BookletFigures, type DocTypeInfo, type Preview, type ReleaseInvoiceInfo, type ReleasePick } from '../../api.ts';
+import { api, type BookletShown, type DocTypeInfo, type Preview, type ReleaseInvoiceInfo, type ReleasePick } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { Errors, useLive } from '../COL/parts.tsx';
 import { Booklet, ReleasePicker } from './parts.tsx';
-import { invoiceInput } from './forms.ts';
+import { invoiceBooklet, invoiceInput } from './forms.ts';
 
 type Stored = { releaseId: string; invoiceNumber: string; note?: string };
 
@@ -40,7 +40,9 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
   const r = info?.release ?? null;
   const typed = invoiceInput({ releaseId: r?.id ?? '', invoiceNumber, note });
   const live = useLive<Preview | null>(JSON.stringify(typed.input), typed.errors.length === 0, () => rec.preview(typed.input));
-  const figures = (live?.doc as (BookletFigures & { depositAppliedCents: number }) | undefined) ?? (info ? { ...info.booklet, depositAppliedCents: info.depositAppliedCents } : null);
+  // The preview's own figures once it answers; until then the release's. In mode C both show the sale less the downpayments invoiced.
+  const doc = live?.doc as Parameters<typeof invoiceBooklet>[0] & { depositAppliedCents: number } | undefined;
+  const figures: (BookletShown & { depositAppliedCents: number }) | null = doc ? { ...invoiceBooklet(doc), depositAppliedCents: doc.depositAppliedCents } : info ? { ...info.booklet, depositAppliedCents: info.depositAppliedCents } : null;
   const ownInvoice = r?.invoice && rec.original && r.invoice.id === rec.original.id; // the record being edited
   const blocked = r?.status === 'cancelled'
     ? `${r.number} is cancelled. Record the invoice for the release that replaced it.`

@@ -18,6 +18,7 @@ import { conflict, notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { customerRef, customerTaxInfo } from '../CUS/public.ts';
+import { assetSaleTaxFacts } from '../FA/public.ts';
 import { supplierTaxInfo } from '../PUR/public.ts';
 import { quarterRange, type Quarter } from './calendar.ts';
 import { purchasesRegister, type PurchaseClass } from './purchases.ts';
@@ -121,8 +122,9 @@ export function slspSales(db: Db, year: number, quarter: Quarter, today: string)
   const lines = new Map<string, SlspSalesRow>();
   const members = new Map<string, Set<string>>();
   const noTinVatRegistered = new Set<string>();
-  const line = (customerId: string | null) => {
-    const who = customerId ? customerName(db, customerId) : { name: '', tin: null, vatRegistered: false };
+  /** `typed`: a buyer typed on an asset sale (FA), who is no customer; its party id is the sale. */
+  const line = (customerId: string | null, typed?: { name: string; tin: string | null }) => {
+    const who = customerId ? (typed ? { ...typed, vatRegistered: false } : customerName(db, customerId)) : { name: '', tin: null, vatRegistered: false };
     const key = who.tin && customerId ? customerId : '';
     if (!who.tin && who.vatRegistered) noTinVatRegistered.add(who.name);
     members.set(key, (members.get(key) ?? new Set()).add(customerId ?? ''));
@@ -134,7 +136,8 @@ export function slspSales(db: Db, year: number, quarter: Quarter, today: string)
     return l;
   };
   for (const r of register.rows) {
-    const l = line(r.customerId);
+    const typed = r.docType === 'fa.disposal' && r.customerId && !customerRef(db, r.customerId) ? { name: r.customerName, tin: r.tin } : undefined;
+    const l = line(r.customerId, typed);
     l.vatableCents += r.netCents;
     l.outputTaxCents += r.vatCents;
     l.grossTaxableCents += r.totalCents;
@@ -155,12 +158,15 @@ export function slspSales(db: Db, year: number, quarter: Quarter, today: string)
     outputTaxCents: sum((r) => r.outputTaxCents), grossTaxableCents: sum((r) => r.grossTaxableCents), toClassifyCents: sum((r) => r.toClassifyCents),
   };
   const otherIncomeCents = total(noVat.filter((x) => !x.sale || x.saleClass === 'not_a_sale'), (x) => x.amountCents);
+  // An asset sold (FA) is a VATable sale of its NET, but only its gain is revenue in the books: the rest ties to the asset's accounts.
+  const assetSalesNotRevenueCents = total(register.rows.filter((r) => r.docType === 'fa.disposal' && r.documentId), (r) =>
+    r.netCents - (r.posting === 'reversal' ? -1 : 1) * (assetSaleTaxFacts(db, r.documentId!)?.gainCents ?? 0));
   const ties = [
     tie('vatable', 'VATable sales = sales register', totals.vatableCents, register.totals.netCents),
     tie('output_register', 'Output tax = sales register', totals.outputTaxCents, register.totals.vatCents),
     tie('output_gl', 'Output tax = 2301 output VAT in the books', totals.outputTaxCents, register.glVatCents),
     tie('revenue_gl', 'Sales (all columns and to classify) and other income without VAT = revenue accounts in the books',
-      totals.vatableCents + totals.zeroRatedCents + totals.exemptCents + totals.toClassifyCents + otherIncomeCents, revenueMovement(db, from, to)),
+      totals.vatableCents + totals.zeroRatedCents + totals.exemptCents + totals.toClassifyCents + otherIncomeCents, revenueMovement(db, from, to) + assetSalesNotRevenueCents),
   ];
   const [checks, check] = checker();
   tiedCheck(check, ties, 'SLSP of sales');

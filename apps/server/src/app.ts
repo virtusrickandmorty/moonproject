@@ -99,6 +99,15 @@ export function prepareDatabase(db: Db, clock: Clock, modules: ModuleDef[]): Reg
   return registry;
 }
 
+/** The host of an Origin header; null when it is not a URL ("null" from a sandboxed page), which never matches. */
+function originHost(origin: string): string | null {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return null;
+  }
+}
+
 export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppDeps } {
   const registry = prepareDatabase(opts.db, opts.clock, opts.modules);
   const scryptN = opts.config?.scryptN ?? DEFAULT_SCRYPT_N;
@@ -128,8 +137,9 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
   app.addHook('preHandler', async (req) => {
     const perm = req.routeOptions.config.permission;
     if (!perm) throw new AppError('NOT_FOUND', 'Not found.', 404);
-    // A practice backup or restore would write into the real shop's backup and restore folders.
-    if (deps.practice && req.url.startsWith('/api/bak/')) {
+    // A practice backup or restore would write into the real shop's backup and restore folders. The route matched, not
+    // the address as typed: /api/%62ak/... reaches the same routes.
+    if (deps.practice && req.routeOptions.url?.startsWith('/api/bak/')) {
       throw new AppError('PRACTICE', 'Backups and restores are not part of the practice shop. The real shop backs itself up.', 403);
     }
     const unsafe = req.method !== 'GET' && req.method !== 'HEAD';
@@ -139,7 +149,7 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
     }
     // Origin check on every state-changing request (CSRF, PLAN C6).
     const origin = req.headers.origin;
-    if (unsafe && origin && new URL(origin).host !== req.headers.host) {
+    if (unsafe && origin && originHost(origin) !== req.headers.host) {
       throw new AppError('BAD_ORIGIN', 'Request blocked (wrong origin).', 403);
     }
     if (perm === 'public') return;
@@ -154,6 +164,14 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
     if (perm !== 'authenticated' && !req.user.permissions.has(perm)) {
       throw new AppError('FORBIDDEN', 'You do not have permission to do this. Ask an owner.', 403, { permission: perm });
     }
+  });
+
+  // Never inside another site's page (clickjacking), and no guessing of content types.
+  app.addHook('onSend', async (_req, reply) => {
+    reply.header('X-Frame-Options', 'DENY');
+    reply.header('Content-Security-Policy', "frame-ancestors 'none'");
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('Referrer-Policy', 'same-origin');
   });
 
   app.setErrorHandler((err, req, reply) => {
