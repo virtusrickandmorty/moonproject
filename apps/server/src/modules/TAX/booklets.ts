@@ -10,6 +10,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { collectionDoc, crNumbersBetween } from '../COL/public.ts';
 import { INVOICE_SERIES, invoiceNumbersBetween } from '../JO/public.ts';
+import { ASSET_SALE_SERIES } from '../FA/public.ts';
 import { BOOKLET_KINDS, type BookletKind } from './check.ts';
 
 const serial = z.number().int().min(1).max(999_999_999_999);
@@ -85,7 +86,7 @@ export interface BookletUsage {
   used: { n: number; number: string; status: 'posted' | 'cancelled'; documentId: string | null; docType: string | null }[];
 }
 
-/** What a booklet's numbers were used for, from the documents that typed them (JO and QS invoices, COL receipts). */
+/** What a booklet's numbers were used for, from the documents that typed them (JO, QS and asset-sale invoices, COL receipts). */
 export function bookletUsage(db: Db, b: Booklet, withLines = false): BookletUsage {
   const used = b.kind === 'SALES_INVOICE' ? invoiceNumbersBetween(db, b.serialFrom, b.serialTo) : crNumbersBetween(db, b.serialFrom, b.serialTo);
   const taken = new Set(used.map((u) => u.n));
@@ -101,8 +102,9 @@ export function bookletUsage(db: Db, b: Booklet, withLines = false): BookletUsag
   }
   // The public JO/COL contracts supply the document number. Resolve its engine header here so the register can link
   // to the exact record without reading another module's tables or changing its posting code.
-  const series = b.kind === 'SALES_INVOICE' ? INVOICE_SERIES.key : collectionDoc.numbering.series.key;
-  const findDocument = db.prepare('SELECT id, doc_type AS docType FROM documents WHERE series_key = ? AND number = ?');
+  // An asset sold on the invoice booklet (FA) keeps its FAD- number.
+  const series = JSON.stringify(b.kind === 'SALES_INVOICE' ? [INVOICE_SERIES.key, ASSET_SALE_SERIES] : [collectionDoc.numbering.series.key]);
+  const findDocument = db.prepare('SELECT id, doc_type AS docType FROM documents WHERE series_key IN (SELECT value FROM json_each(?)) AND number = ?');
   const lines = withLines ? used.map((u) => {
     const d = findDocument.get(series, u.number) as { id: string; docType: string } | undefined;
     return { ...u, documentId: d?.id ?? null, docType: d?.docType ?? null };

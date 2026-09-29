@@ -21,6 +21,7 @@ import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { DraftLine } from '../../../engine/ledger/post.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { saleByInvoiceNumber, saleInvoiceNumbersBetween } from '../../QS/public.ts';
+import { assetSaleByInvoiceNumber, assetSaleInvoiceNumbersBetween } from '../../FA/public.ts';
 import { creditsOn, depositModeOn, depositVatLines, depositVatRowsOf, invoiceDeposits, modeKeptIssue, recordDepositVat, settleJobOrder, vatRow } from '../../COL/public.ts';
 import { bookletIssue } from '../../TAX/public.ts';
 import { dpInvoiceUsedBy, dpInvoiceNumbersBetween } from './dp-invoice.ts';
@@ -99,21 +100,21 @@ export interface InvoiceRecord extends InvoiceRecordInput, ReturnType<typeof inv
 const releaseHeader = (db: Db, id: string) =>
   db.prepare(`SELECT d.number, d.status FROM jo_releases r JOIN documents d ON d.id = r.document_id WHERE r.document_id = ?`).get(id) as { number: string; status: string } | undefined;
 
-/** The document that used a booklet invoice number, cancelled ones included. Releases and quick sales share one booklet. */
+/** The document that used a booklet invoice number, cancelled ones included. Releases, quick sales and asset sales (FA) share one booklet. */
 export function invoiceNumberUsedBy(db: Db, invoiceNumber: string): { number: string; status: string } | undefined {
   const own = db
     .prepare(`SELECT d.number, d.status FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE CAST(i.invoice_number AS INTEGER) = CAST(? AS INTEGER)`)
     .get(invoiceNumber) as { number: string; status: string } | undefined;
-  return own ?? dpInvoiceUsedBy(db, invoiceNumber) ?? saleByInvoiceNumber(db, invoiceNumber);
+  return own ?? dpInvoiceUsedBy(db, invoiceNumber) ?? saleByInvoiceNumber(db, invoiceNumber) ?? assetSaleByInvoiceNumber(db, invoiceNumber);
 }
 
-/** Booklet invoice numbers used between two numbers by invoice records and quick sales, cancelled ones included (TAX). */
+/** Booklet invoice numbers used between two numbers by invoice records, quick sales and asset sales, cancelled ones included (TAX). */
 export function invoiceNumbersBetween(db: Db, from: number, to: number): { n: number; number: string; status: 'posted' | 'cancelled' }[] {
   const own = db
     .prepare(`SELECT CAST(i.invoice_number AS INTEGER) AS n, d.number, d.status FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id
               WHERE CAST(i.invoice_number AS INTEGER) BETWEEN ? AND ?`)
     .all(from, to) as { n: number; number: string; status: 'posted' | 'cancelled' }[];
-  return [...own, ...dpInvoiceNumbersBetween(db, from, to), ...saleInvoiceNumbersBetween(db, from, to)].sort((a, b) => a.n - b.n);
+  return [...own, ...dpInvoiceNumbersBetween(db, from, to), ...saleInvoiceNumbersBetween(db, from, to), ...assetSaleInvoiceNumbersBetween(db, from, to)].sort((a, b) => a.n - b.n);
 }
 
 export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
