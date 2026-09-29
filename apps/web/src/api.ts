@@ -727,6 +727,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     saveCompanyProfile: (value: Omit<CompanyProfile, 'version' | 'supersededAt'>, version: number) => call<CompanyProfile>('PUT', '/api/prt/company-profile', value, { 'if-match': String(version) }),
     printableTypes: () => call<PrintableType[]>('GET', '/api/prt/printable-types'),
     printerTestPack: () => call<PrinterTestPack>('GET', '/api/prt/test-pack'),
+    print2307: (year: number, quarter: number, supplierId?: string) => call<{ html: string; pages: number }>('GET',
+      `/api/prt/2307?${new URLSearchParams({ year: String(year), quarter: String(quarter), ...(supplierId ? { supplierId } : {}) })}`),
     printDocument: (type: string, id: string, variant: PrintVariant = 'document') =>
       call<{ html: string; copyNumber: number }>('POST', `/api/prt/print/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { variant }),
     /** practice: this is the practice shop (PLAN C8). */

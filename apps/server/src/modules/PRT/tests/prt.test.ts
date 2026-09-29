@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createTestEnv, idem, PASSWORD, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { formatPeso } from '@moonproject/shared';
+import { cashPlaceId, createTestEnv, idem, PASSWORD, type Client, type TestEnv } from '../../../../test/helpers.ts';
 import { renderPrint, type PrintHeader, type Profile } from '../print.ts';
 
 let env: TestEnv;
@@ -32,6 +33,34 @@ describe('company profile', () => {
 });
 
 describe('print base', () => {
+  it('prints the 2307 list figures by supplier, omits suppliers with no withholding, and keeps the list permission', async () => {
+    await owner.post('/api/auth/step-up', { password: PASSWORD });
+    await owner.put('/api/prt/company-profile', value, { 'if-match': '0' });
+    const supplier = async (name: string, tin: string, ewtClass?: string) => (await owner.post('/api/pur/suppliers', {
+      name, registeredName: `${name} Corporation`, tin, isVatRegistered: false, ...(ewtClass ? { ewtClass } : {}),
+    })).json().id as string;
+    const printer = await supplier('Sample Printer', '111-222-333-000', 'contractor_2');
+    const auditor = await supplier('Sample Auditor', '222-333-444-000', 'prof_firm_10');
+    const empty = await supplier('Sample Empty', '333-444-555-000');
+    const categoryId = env.db.prepare("SELECT c.id FROM exp_categories c JOIN accounts a ON a.id = c.account_id WHERE a.code = '6190'").pluck().get() as number;
+    const cashPlace = cashPlaceId(env.db, '1111');
+    for (const [supplierId, amountCents, description] of [[printer, 500_000, 'Sample printing'], [auditor, 1_120_000, 'Sample audit']] as const) {
+      const response = await owner.post('/api/docs/exp.voucher/post', { input: { supplierId, categoryId, cashPlaceId: cashPlace, amountCents, description }, expectedTotalCents: amountCents }, idem());
+      expect(response.statusCode, response.body).toBe(200);
+    }
+    const list = (await owner.get('/api/tax/2307-to-issue?year=2026&quarter=3')).json();
+    const all = await owner.get('/api/prt/2307?year=2026&quarter=3');
+    expect(all.statusCode, all.body).toBe(200);
+    expect(all.json().pages).toBe(2);
+    for (const line of list.lines) {
+      expect(all.json().html).toContain(line.supplierName);
+      expect(all.json().html).toContain(formatPeso(line.baseCents));
+      expect(all.json().html).toContain(formatPeso(line.ewtCents));
+    }
+    expect((await owner.get(`/api/prt/2307?year=2026&quarter=3&supplierId=${empty}`)).json().pages).toBe(0);
+    expect((await encoder.get('/api/prt/2307?year=2026&quarter=3')).statusCode).toBe(403);
+  });
+
   it('renders the complete owner-only test pack without writing any table', async () => {
     const tableCounts = () => Object.fromEntries((env.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[])
       .map(({ name }) => [name, (env.db.prepare(`SELECT COUNT(*) AS n FROM "${name}"`).get() as { n: number }).n]));
@@ -39,17 +68,18 @@ describe('print base', () => {
     const response = await owner.get('/api/prt/test-pack');
     expect(response.statusCode, response.body).toBe(200);
     const pack = response.json() as { prints: { id: string; label: string; paper: string; html: string }[]; notBuilt: string[] };
-    expect(pack.prints).toHaveLength(16);
+    expect(pack.prints).toHaveLength(17);
     expect(new Set(pack.prints.map((p) => p.id)).size).toBe(pack.prints.length);
     for (const item of pack.prints) {
       expect(item.html, item.id).toContain('TEST PRINT, NOT A REAL DOCUMENT');
-      expect(item.html, item.id).toContain('TEST-000000');
-      expect(item.html, item.id).toMatch(/<h1>(QUOTATION|JOB ORDER|JOB TICKET|RELEASE SLIP|COLLECTION RECEIPT|CREDIT MEMO|PURCHASE ORDER|PAYMENT VOUCHER|EXPENSE VOUCHER|FUND TRANSFER|CASH COUNT|JOURNAL VOUCHER|PAYSLIP|CASH ADVANCE SLIP|INVENTORY COUNT SHEET)<\/h1>/);
+      if (item.id !== 'bir-2307') expect(item.html, item.id).toContain('TEST-000000');
+      expect(item.html, item.id).toMatch(/<h1>(QUOTATION|JOB ORDER|JOB TICKET|RELEASE SLIP|COLLECTION RECEIPT|CREDIT MEMO|PURCHASE ORDER|PAYMENT VOUCHER|EXPENSE VOUCHER|FUND TRANSFER|CASH COUNT|JOURNAL VOUCHER|PAYSLIP|CASH ADVANCE SLIP|INVENTORY COUNT SHEET|CERTIFICATE OF CREDITABLE TAX WITHHELD AT SOURCE)<\/h1>/);
     }
     const publicPrints = ['quotation', 'job-order', 'release-slip', 'collection-a4', 'collection-80mm', 'credit-memo', 'purchase-order', 'payment-voucher'];
     for (const item of pack.prints) expect(item.html.includes('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.')).toBe(publicPrints.includes(item.id));
     expect(pack.prints.find((p) => p.id === 'collection-80mm')?.html).toContain('@page{size:80mm auto');
     expect(pack.prints.filter((p) => p.paper === 'A4 2-up').every((p) => p.html.includes('sheet two-up'))).toBe(true);
+    expect(pack.prints.find((p) => p.id === 'bir-2307')?.html).toContain('Sample Supplier Corporation');
     expect(pack.notBuilt).toEqual(['Statement of Account', 'Sizing Profile', 'Fixed Asset Schedule / books layouts']);
     expect(tableCounts()).toEqual(before);
     for (const role of ['encoder', 'accountant', 'production', 'tv'] as const) {

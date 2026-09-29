@@ -8,7 +8,8 @@ import { requireStepUp } from '../../engine/security/sessions.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
 import { settingAt } from '../../engine/settings.ts';
-import { renderPrint, type Profile, type PrintHeader, type PrintKind } from './print.ts';
+import { certificatesToIssue } from '../TAX/public.ts';
+import { render2307, renderPrint, type Certificate2307, type Profile, type PrintHeader, type PrintKind } from './print.ts';
 
 const profileInput = z.object({
   registeredName: z.string().trim().min(1).max(200),
@@ -70,11 +71,35 @@ const NOT_BUILT = ['Statement of Account', 'Sizing Profile', 'Fixed Asset Schedu
 
 export function prtRoutes(app: FastifyInstance, { db, clock, registry, practice }: AppDeps): void {
   app.get('/api/prt/test-pack', { config: { permission: 'prt.test_pack' } }, async () => ({
-    prints: TEST_PRINTS.map((item) => ({ id: item.id, label: item.label, paper: item.paper,
+    prints: [...TEST_PRINTS.map((item) => ({ id: item.id, label: item.label, paper: item.paper,
       html: renderPrint(db, testHeader(item.type), item.doc, TEST_PROFILE, item.kind, 'Sample Owner',
-        '2026-09-28T10:00:00+08:00', 1, false, true) })),
+        '2026-09-28T10:00:00+08:00', 1, false, true) })), { id: 'bir-2307', label: 'BIR Form 2307', paper: 'A4',
+      html: render2307(TEST_PROFILE, 2026, 3, [{ supplierName: 'Sample Supplier Corporation', tin: '111-222-333-000', address: null,
+        lines: [{ atc: 'WC120', months: [{ month: '2026-07', baseCents: 500_000 }, { month: '2026-08', baseCents: 750_000 }, { month: '2026-09', baseCents: 250_000 }], baseCents: 1_500_000, ewtCents: 30_000 }] }], true) }],
     notBuilt: NOT_BUILT,
   }));
+
+  app.get<{ Querystring: { year?: string; quarter?: string; supplierId?: string } }>('/api/prt/2307',
+    { config: { permission: 'tax.registers.view' } }, async (req) => {
+      const { year: rawYear, quarter: rawQuarter, supplierId } = req.query;
+      if (!/^\d{4}$/.test(rawYear ?? '') || !/^[1-4]$/.test(rawQuarter ?? '')) {
+        throw new AppError('BAD_QUARTER', 'Pick a year and a quarter, like 2026 and 3.', 400);
+      }
+      const year = Number(rawYear), quarter = Number(rawQuarter) as 1 | 2 | 3 | 4;
+      const report = certificatesToIssue(db, year, quarter);
+      const lines = supplierId === undefined ? report.lines : report.lines.filter((line) => line.supplierId === supplierId);
+      const grouped = new Map<string, Certificate2307>();
+      for (const line of lines) {
+        const key = line.supplierId ?? `tin:${line.tin ?? line.supplierName}`;
+        const certificate = grouped.get(key) ?? { supplierName: line.supplierName, tin: line.tin, address: null, lines: [] };
+        certificate.lines.push({ atc: line.atc ?? `To confirm (${line.atcChoices.join(' or ')})`,
+          months: line.months.map((m) => ({ month: m.month, baseCents: m.baseCents })), baseCents: line.baseCents, ewtCents: line.ewtCents });
+        grouped.set(key, certificate);
+      }
+      const profile = db.prepare('SELECT * FROM prt_company_profile WHERE id = 1').get() as Profile | undefined;
+      if (!profile) throw conflict('COMPANY_PROFILE_REQUIRED', 'An owner must complete the company profile before printing.');
+      return { html: render2307(profile, year, quarter, [...grouped.values()]), pages: grouped.size };
+    });
   app.get('/api/prt/printable-types', { config: { permission: 'authenticated' } }, async (req) => {
     const user = currentUser(req);
     return [...PRINTABLE].filter(([key]) => {
