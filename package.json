@@ -15,9 +15,11 @@
     "check": "npm run typecheck && npm test",
     "dev:server": "tsx apps/server/src/main.ts",
     "practice-data": "tsx apps/server/src/platform/practice/data.ts",
-    "restore": "tsx apps/server/src/modules/BAK/cli.ts"
+    "restore": "tsx apps/server/src/modules/BAK/cli.ts",
+    "e2e": "npm run build -w @moonproject/web && playwright test -c e2e/playwright.config.ts"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/better-sqlite3": "9.6.0",
     "@types/node": "22.20.4",
     "tsx": "4.23.15",
