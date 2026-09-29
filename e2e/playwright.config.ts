@@ -33,8 +33,8 @@ export default defineConfig({
     launchOptions: executablePath ? { executablePath } : {},
   },
   projects: [
-    { name: 'chromium', testMatch: /0[1-5]-.*\.spec\.ts/, use: { browserName: 'chromium' } },
-    { name: 'practice', testMatch: /06-.*\.spec\.ts/, use: { browserName: 'chromium', baseURL: `http://127.0.0.1:${PRACTICE_PORT}`, actionTimeout: 10_000 } },
+    { name: 'chromium', testIgnore: /06-every-screen\.spec\.ts/, use: { browserName: 'chromium' } },
+    { name: 'practice', testMatch: /06-every-screen\.spec\.ts/, use: { browserName: 'chromium', baseURL: `http://127.0.0.1:${PRACTICE_PORT}`, actionTimeout: 10_000 } },
   ],
   webServer: [
     {

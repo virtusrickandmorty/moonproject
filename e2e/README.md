@@ -9,6 +9,7 @@ button names), never by CSS classes. The specs share one shop and run in file or
 - `03-quick-sale`: a customer, a quick sale with its collection.
 - `04-payroll`: an employee, a week of attendance, the run, its release, the payslip.
 - `05-backups`: recovery keys, back up now, restore drill.
+- `07-customer-emails`: customer emails stay off until the owner sets them up; the outbox and the statement's email button.
 
 - `06-every-screen`: runs on the practice shop's made-up data (`serve-practice.ts`, its own server on `E2E_PRACTICE_PORT`, 3198; `practice-work.ts` adds the open work a trainee would start with). Each default role (owner, accountant, encoder, production, tv) signs in and opens every menu item: no error message, no blank page, no console error, no 403, 404 or 500. Then each "+ New" form is filled from what the screen offers (no id to type) and pressed Record until its preview opens. It also checks the role sees no menu item it lacks the permission for.
 
