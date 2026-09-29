@@ -84,3 +84,14 @@ export function customerContact(db: Db, id: string): { id: string; code: string;
   }
   return row && { id: row.id, code: row.code, name: row.display_name, email: row.email?.trim() || null, emailConsent: row.email_consent === 1 };
 }
+
+/** The current wearer chart exactly as shown on the customer screen, with names for a sizing-profile print. */
+export function sizingProfile(db: Db, personId: string): Record<string, unknown> | undefined {
+  const row = db.prepare(`SELECT m.*, p.full_name AS wearer_name, c.display_name AS customer_name,
+    g.name AS group_name, upper.label AS upper_size_label, lower.label AS lower_size_label
+    FROM cus_measure_charts m JOIN cus_people p ON p.id = m.person_id
+    JOIN cus_customers c ON c.id = p.customer_id LEFT JOIN cus_groups g ON g.id = p.group_id
+    LEFT JOIN cus_sizes upper ON upper.id = m.upper_size LEFT JOIN cus_sizes lower ON lower.id = m.lower_size
+    WHERE p.id = ? AND m.status = 'active'`).get(personId) as Record<string, unknown> | undefined;
+  return row ? chartResponse(row) : undefined;
+}
