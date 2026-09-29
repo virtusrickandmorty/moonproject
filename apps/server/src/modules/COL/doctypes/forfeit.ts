@@ -4,6 +4,10 @@
  *   Dr 2201 customer deposits (customer, the JO) / Cr 7103 other income (the amount, or its NET when VATable)
  *                                                / Cr 2301 output VAT (customer), 12/112 of it, only when VATable
  * VATable or not is the accountant's dated setting col.forfeit_vatable (ACC-15; default no, and the preview flags it).
+ * Downpayment VAT (D3, deposit-vat.ts): in mode B the output VAT recognised on the forfeited deposits (2209) leaves with
+ * them, Dr 2301 / Cr 2209: VATable, the forfeit books its own VAT instead; not VATable, it is taken back. In mode C a
+ * downpayment already invoiced can be forfeited after the money held: its NET leaves 2201 for other income, and its VAT
+ * stays booked, as the invoice was issued.
  * A recorded job order is marked abandoned (a stage event: Closed, abandoned): nothing more is released on it, and no
  * new deposit is taken; with no release waiting for its invoice (refused otherwise), nothing more is invoiced either. A
  * cancelled job order's deposit can be forfeited too (D6). One recorded forfeit per job order. Cancel mirrors and puts
@@ -15,6 +19,7 @@ import { formatPeso, vatFromGross, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { abandon, awaitingInvoice, currentStage, isAbandoned, jobOrderRef, jobOrdersOf, unabandon } from '../../JO/public.ts';
+import { depositVatLines, depositVatRowsOf, dpHeld, recordDepositVat, shareOf, vatLeaving, vatRow } from './deposit-vat.ts';
 import { MAX_CENTS, depositsHeld } from '../ledger.ts';
 
 export const forfeitInput = z
@@ -35,6 +40,12 @@ export interface Forfeit extends ForfeitInput {
   vatRateBp: number;
   vatCents: number;
   incomeCents: number;
+  /** Mode B: the job order's 2209 that leaves with the forfeited deposit, and its VATable amount. */
+  depositVatCents: number;
+  depositBaseCents: number;
+  /** Mode C: the part of the amount that is a downpayment already invoiced, and the VAT that invoice booked on it. */
+  dpForfeitedCents: number;
+  dpVatCents: number;
   totalCents: number;
 }
 
@@ -54,17 +65,28 @@ export const forfeitDoc: DocTypeDef<ForfeitInput, Forfeit> = {
     const jo = jobOrderRef(ctx.db, input.jobOrderId);
     const vatable = settingAt(ctx.db, 'col.forfeit_vatable', ctx.businessDate);
     const vatRateBp = vatable ? settingAt(ctx.db, 'tax.vat_rate_bp', ctx.businessDate) : 0;
-    const vatCents = vatable ? vatFromGross(input.amountCents, vatRateBp).vatCents : 0;
+    const money = jo ? depositsHeld(ctx.db, jo.customerId, jo.id) : 0;
+    const dp = jo ? dpHeld(ctx.db, jo.id) : { grossCents: 0, vatCents: 0, netCents: 0 };
+    // Money held first, then downpayments already invoiced (mode C).
+    const moneyCents = Math.max(0, Math.min(input.amountCents, money));
+    const dpForfeitedCents = Math.max(0, Math.min(input.amountCents - moneyCents, dp.grossCents));
+    const dpVatCents = shareOf(dp.vatCents, dpForfeitedCents, dp.grossCents);
+    const vatCents = vatable ? vatFromGross(moneyCents, vatRateBp).vatCents : 0;
+    const out = jo ? vatLeaving(ctx.db, jo.id, moneyCents) : { vatCents: 0, baseCents: 0 };
     return {
       ...input,
       jobOrderNumber: jo?.number ?? '?',
       customerId: jo?.customerId ?? '',
       customerName: jo?.customerName ?? '?',
-      heldCents: jo ? depositsHeld(ctx.db, jo.customerId, jo.id) : 0,
+      heldCents: money + dp.grossCents,
       vatable,
       vatRateBp,
       vatCents,
-      incomeCents: input.amountCents - vatCents,
+      incomeCents: input.amountCents - vatCents - dpVatCents,
+      depositVatCents: out.vatCents,
+      depositBaseCents: out.baseCents,
+      dpForfeitedCents,
+      dpVatCents,
       totalCents: input.amountCents,
     };
   },
@@ -101,6 +123,15 @@ export const forfeitDoc: DocTypeDef<ForfeitInput, Forfeit> = {
     db.prepare(
       'INSERT INTO col_forfeits (document_id, customer_id, customer_name, job_order_id, vatable, vat_rate_bp, vat_cents, marked_abandoned, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
     ).run(h.documentId, doc.customerId, doc.customerName, doc.jobOrderId, doc.vatable ? 1 : 0, doc.vatRateBp, doc.vatCents, marked ? 1 : 0, doc.reason);
+    if (doc.depositVatCents || doc.depositBaseCents || doc.dpForfeitedCents) {
+      recordDepositVat(db, h.documentId, 'original', [vatRow({
+        jobOrderId: doc.jobOrderId, customerId: doc.customerId, mode: doc.dpForfeitedCents ? 'C' : 'B', depositCents: -(doc.amountCents - doc.dpForfeitedCents),
+        depositVatCents: -doc.depositVatCents, depositBaseCents: -doc.depositBaseCents, dpInvoicedCents: -doc.dpForfeitedCents, dpVatCents: -doc.dpVatCents,
+        // The sales register counts other income as VATable sales on a journal with output VAT. What the deposit's VAT or the
+        // downpayment invoice already reported is not reported again, and a forfeit that is not VATable is no VATable sale.
+        registerBaseCents: -doc.depositBaseCents - (doc.dpForfeitedCents - doc.dpVatCents) - (doc.vatable ? 0 : doc.amountCents - doc.dpForfeitedCents),
+      })]);
+    }
   },
 
   journal(doc) {
@@ -108,9 +139,10 @@ export const forfeitDoc: DocTypeDef<ForfeitInput, Forfeit> = {
     return {
       memo: `Deposit of ${doc.jobOrderNumber} forfeited: ${doc.customerName} abandoned the order`,
       lines: [
-        { account: { role: 'CUSTOMER_DEPOSITS' }, party, ref: { documentId: doc.jobOrderId }, debitCents: doc.amountCents, memo: `Deposit for ${doc.jobOrderNumber}` },
+        { account: { role: 'CUSTOMER_DEPOSITS' }, party, ref: { documentId: doc.jobOrderId }, debitCents: doc.amountCents - doc.dpVatCents, memo: `Deposit for ${doc.jobOrderNumber}` },
         { account: { role: 'OTHER_INCOME' }, creditCents: doc.incomeCents, memo: `Forfeited deposit, ${doc.jobOrderNumber}` },
         { account: { role: 'OUTPUT_VAT' }, party, creditCents: doc.vatCents, memo: `VAT on the forfeited deposit (ACC-15)` },
+        ...depositVatLines(doc.customerId, doc.jobOrderId, doc.jobOrderNumber, -doc.depositVatCents),
       ],
     };
   },
@@ -126,6 +158,7 @@ export const forfeitDoc: DocTypeDef<ForfeitInput, Forfeit> = {
       .prepare('SELECT f.*, d.total_cents FROM col_forfeits f JOIN documents d ON d.id = f.document_id WHERE f.document_id = ?')
       .get(documentId) as { job_order_id: string; customer_id: string; customer_name: string; vatable: number; vat_rate_bp: number; vat_cents: number; reason: string; total_cents: number } | undefined;
     if (!r) throw new Error(`Forfeit ${documentId} not found`);
+    const vat = depositVatRowsOf(db, documentId)[0];
     return {
       jobOrderId: r.job_order_id,
       amountCents: r.total_cents,
@@ -137,7 +170,11 @@ export const forfeitDoc: DocTypeDef<ForfeitInput, Forfeit> = {
       vatable: r.vatable === 1,
       vatRateBp: r.vat_rate_bp,
       vatCents: r.vat_cents,
-      incomeCents: r.total_cents - r.vat_cents,
+      incomeCents: r.total_cents - r.vat_cents + (vat?.dpVatCents ?? 0),
+      depositVatCents: 0 - (vat?.depositVatCents ?? 0),
+      depositBaseCents: 0 - (vat?.depositBaseCents ?? 0),
+      dpForfeitedCents: 0 - (vat?.dpInvoicedCents ?? 0),
+      dpVatCents: 0 - (vat?.dpVatCents ?? 0),
       totalCents: r.total_cents,
     };
   },

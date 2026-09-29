@@ -4,6 +4,9 @@
  *   Dr 2201 customer deposits (customer, + the JO when it is a JO's deposit) / Cr cash place (per tender)
  * A deposit that came with tax withheld (2307) is refunded in cash only; the withheld part stays and the accountant
  * is warned (ACC-14 default).
+ * Downpayment VAT (D3, deposit-vat.ts): the output VAT recognised on the job order's deposits (2209, mode B) leaves with
+ * the refunded share of them, Dr 2301 / Cr 2209, in the refund's quarter. In mode C only money held is refunded: a
+ * downpayment already invoiced needs its downpayment invoice cancelled first.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -12,6 +15,7 @@ import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { listCashPlaces } from '../../../engine/ledger/accounts.ts';
 import { customerRef } from '../../CUS/public.ts';
 import { jobOrderRef } from '../../JO/public.ts';
+import { depositVatLines, depositVatRowsOf, recordDepositVat, vatLeaving, vatRow } from './deposit-vat.ts';
 import { cashPlaceIssues, depositsHeld, insertTenders, loadTenders, sumCents, tenderInput, tenderToInput, withNames, type Tender } from '../ledger.ts';
 
 export const refundInput = z
@@ -28,6 +32,9 @@ export interface Refund extends Omit<RefundInput, 'tenders'> {
   tenders: Tender[];
   customerName: string;
   jobOrderNumber: string | null;
+  /** Mode B: the job order's 2209 that leaves with the refunded deposit, and its VATable amount. */
+  depositVatCents: number;
+  depositBaseCents: number;
   totalCents: number;
 }
 
@@ -41,12 +48,16 @@ export const refundDoc: DocTypeDef<RefundInput, Refund> = {
   inputSchema: refundInput,
 
   compute(input, ctx) {
+    const totalCents = sumCents(input.tenders);
+    const out = input.jobOrderId ? vatLeaving(ctx.db, input.jobOrderId, totalCents) : { vatCents: 0, baseCents: 0 };
     return {
       ...input,
       tenders: withNames(ctx.db, input.tenders),
       customerName: customerRef(ctx.db, input.customerId)?.display_name ?? '?',
       jobOrderNumber: input.jobOrderId ? (jobOrderRef(ctx.db, input.jobOrderId)?.number ?? '?') : null,
-      totalCents: sumCents(input.tenders),
+      depositVatCents: out.vatCents,
+      depositBaseCents: out.baseCents,
+      totalCents,
     };
   },
 
@@ -80,6 +91,12 @@ export const refundDoc: DocTypeDef<RefundInput, Refund> = {
       h.documentId, doc.customerId, doc.customerName, doc.jobOrderId ?? null, doc.reason,
     );
     insertTenders(db, 'col_refund_tenders', h.documentId, doc.tenders);
+    if (doc.jobOrderId && (doc.depositVatCents || doc.depositBaseCents)) {
+      recordDepositVat(db, h.documentId, 'original', [vatRow({
+        jobOrderId: doc.jobOrderId, customerId: doc.customerId, mode: 'B', depositCents: -doc.totalCents,
+        depositVatCents: -doc.depositVatCents, depositBaseCents: -doc.depositBaseCents, registerBaseCents: -doc.depositBaseCents,
+      })]);
+    }
   },
 
   journal(doc) {
@@ -94,6 +111,7 @@ export const refundDoc: DocTypeDef<RefundInput, Refund> = {
           memo: doc.jobOrderNumber ? `Deposit for ${doc.jobOrderNumber}` : 'Unapplied payments',
         },
         ...doc.tenders.map((t) => ({ account: { cashPlace: t.cashPlaceId }, creditCents: t.amountCents, ...(t.reference ? { memo: t.reference } : {}) })),
+        ...(doc.jobOrderId ? depositVatLines(doc.customerId, doc.jobOrderId, doc.jobOrderNumber ?? '?', -doc.depositVatCents) : []),
       ],
     };
   },
@@ -103,6 +121,7 @@ export const refundDoc: DocTypeDef<RefundInput, Refund> = {
       .prepare('SELECT r.customer_id, r.customer_name, r.job_order_id, r.reason, d.total_cents FROM col_refunds r JOIN documents d ON d.id = r.document_id WHERE r.document_id = ?')
       .get(documentId) as { customer_id: string; customer_name: string; job_order_id: string | null; reason: string; total_cents: number } | undefined;
     if (!r) throw new Error(`Refund ${documentId} not found`);
+    const vat = depositVatRowsOf(db, documentId)[0];
     return {
       customerId: r.customer_id,
       ...(r.job_order_id ? { jobOrderId: r.job_order_id } : {}),
@@ -110,6 +129,8 @@ export const refundDoc: DocTypeDef<RefundInput, Refund> = {
       tenders: loadTenders(db, 'col_refund_tenders', documentId),
       customerName: r.customer_name,
       jobOrderNumber: r.job_order_id ? (jobOrderRef(db, r.job_order_id)?.number ?? '?') : null,
+      depositVatCents: 0 - (vat?.depositVatCents ?? 0),
+      depositBaseCents: 0 - (vat?.depositBaseCents ?? 0),
       totalCents: r.total_cents,
     };
   },
@@ -121,7 +142,8 @@ export const refundDoc: DocTypeDef<RefundInput, Refund> = {
   summary(doc) {
     const from = doc.tenders.length === 1 ? ` from ${doc.tenders[0]!.cashPlaceName}` : ` (${doc.tenders.map((t) => `${formatPeso(t.amountCents)} from ${t.cashPlaceName}`).join(', ')})`;
     const what = doc.jobOrderNumber ? `deposit for ${doc.jobOrderNumber}` : 'unapplied payments';
-    return `This will pay back ${formatPeso(doc.totalCents)} to ${doc.customerName}${from}: ${what}.`;
+    const vat = doc.depositVatCents > 0 ? ` The ${formatPeso(doc.depositVatCents)} output VAT booked on it (mode B) is taken back.` : '';
+    return `This will pay back ${formatPeso(doc.totalCents)} to ${doc.customerName}${from}: ${what}.${vat}`;
   },
 
   arbitrary(db) {
