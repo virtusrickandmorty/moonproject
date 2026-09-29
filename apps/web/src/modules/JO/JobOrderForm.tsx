@@ -12,11 +12,13 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { CustomerPicker, Errors, Figures, useLive, type Picked } from '../COL/parts.tsx';
 import { KINDS } from '../QS/lines.ts';
+import { jobOrderPrefill, type QuotationDoc } from '../QUO/quotation.ts';
+import { itemClasses } from '../QUO/QuotationView.tsx';
 import { TERMS } from './opening.ts';
 import { parseRosterPaste } from './roster.ts';
 import {
   KIND_OF_CLASS, emptyJo, emptyJoLine, fromWearer, joInput, joValues, lineQty, oneOff, priceChanged,
-  type JoDoc, type JoInput, type JoLineRow, type JoValues, type RosterEdit,
+  valuesFromQuotation, type JoDoc, type JoInput, type JoLineRow, type JoValues, type RosterEdit,
 } from './forms.ts';
 
 const money = `${inputClass} text-right tabular-nums`;
@@ -165,6 +167,20 @@ export function JobOrderForm({ type, mode }: { type: DocTypeInfo; mode: FormMode
         setV({ ...emptyJo(), ...(d.payload.form as JoValues) });
       }, r.fail);
   }, [type.key, mode.kind === 'new' ? mode.draftId : '']);
+  /** "Make a job order" on a quotation (?fromQuotation=<id>): its customer, lines, quantities and prices, and its number in the notes; everything can still be changed. */
+  useEffect(() => {
+    const id = new URLSearchParams(location.search).get('fromQuotation');
+    if (mode.kind !== 'new' || mode.draftId || !id) return;
+    api.get('quo.quotation', id).then(async (d) => {
+      const number = d.header.number;
+      if (d.header.status !== 'posted') throw new Error(`${number} is cancelled, so no job order is made from it.`);
+      const lines = (d.input.lines ?? []) as { itemId: string }[];
+      const prefill = jobOrderPrefill(d, await itemClasses(lines.map((l) => l.itemId)));
+      if (!prefill) throw new Error(`${number} is for a prospect. A job order needs a customer: add them under Customers, then edit the quotation to pick that customer.`);
+      setV(valuesFromQuotation(prefill, (d.doc as unknown as QuotationDoc).customerName));
+      setSaved(`Filled from quotation ${number}: the customer, lines, quantities and prices as quoted. Change anything you need, pick the payment terms and due days, then record.`);
+    }, r.fail);
+  }, []);
   useEffect(() => {
     setPeople(null);
     if (v.customer) api.joWearers(v.customer.id).then(setPeople, r.fail);
