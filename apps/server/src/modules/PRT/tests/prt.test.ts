@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestEnv, idem, PASSWORD, type Client, type TestEnv } from '../../../../test/helpers.ts';
-import { renderPrint, type PrintHeader, type Profile } from '../print.ts';
+import { renderPrint, renderReportPrint, printLineTable, printMoney, type PrintHeader, type Profile } from '../print.ts';
 
 let env: TestEnv;
 let owner: Client;
@@ -39,22 +39,42 @@ describe('print base', () => {
     const response = await owner.get('/api/prt/test-pack');
     expect(response.statusCode, response.body).toBe(200);
     const pack = response.json() as { prints: { id: string; label: string; paper: string; html: string }[]; notBuilt: string[] };
-    expect(pack.prints).toHaveLength(16);
+    expect(pack.prints).toHaveLength(19);
     expect(new Set(pack.prints.map((p) => p.id)).size).toBe(pack.prints.length);
     for (const item of pack.prints) {
       expect(item.html, item.id).toContain('TEST PRINT, NOT A REAL DOCUMENT');
-      expect(item.html, item.id).toContain('TEST-000000');
-      expect(item.html, item.id).toMatch(/<h1>(QUOTATION|JOB ORDER|JOB TICKET|RELEASE SLIP|COLLECTION RECEIPT|CREDIT MEMO|PURCHASE ORDER|PAYMENT VOUCHER|EXPENSE VOUCHER|FUND TRANSFER|CASH COUNT|JOURNAL VOUCHER|PAYSLIP|CASH ADVANCE SLIP|INVENTORY COUNT SHEET)<\/h1>/);
+      if (!['statement-of-account', 'sizing-profile', 'fixed-asset-schedule'].includes(item.id)) expect(item.html, item.id).toContain('TEST-000000');
+      expect(item.html, item.id).toMatch(/<h1>(QUOTATION|JOB ORDER|JOB TICKET|RELEASE SLIP|COLLECTION RECEIPT|CREDIT MEMO|PURCHASE ORDER|PAYMENT VOUCHER|EXPENSE VOUCHER|FUND TRANSFER|CASH COUNT|JOURNAL VOUCHER|PAYSLIP|CASH ADVANCE SLIP|INVENTORY COUNT SHEET|STATEMENT OF ACCOUNT|SIZING PROFILE|FIXED ASSET SCHEDULE)<\/h1>/);
     }
-    const publicPrints = ['quotation', 'job-order', 'release-slip', 'collection-a4', 'collection-80mm', 'credit-memo', 'purchase-order', 'payment-voucher'];
+    const publicPrints = ['quotation', 'job-order', 'release-slip', 'collection-a4', 'collection-80mm', 'credit-memo', 'purchase-order', 'payment-voucher', 'statement-of-account'];
     for (const item of pack.prints) expect(item.html.includes('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.')).toBe(publicPrints.includes(item.id));
     expect(pack.prints.find((p) => p.id === 'collection-80mm')?.html).toContain('@page{size:80mm auto');
     expect(pack.prints.filter((p) => p.paper === 'A4 2-up').every((p) => p.html.includes('sheet two-up'))).toBe(true);
-    expect(pack.notBuilt).toEqual(['Statement of Account', 'Sizing Profile', 'Fixed Asset Schedule / books layouts']);
+    expect(pack.notBuilt).toEqual(['Books layouts']);
     expect(tableCounts()).toEqual(before);
     for (const role of ['encoder', 'accountant', 'production', 'tv'] as const) {
       expect((await (await env.as(role)).get('/api/prt/test-pack')).statusCode).toBe(403);
     }
+  });
+
+  it('renders report figures, exact catalogue titles and the statement-only legend', async () => {
+    const body = printLineTable(['Description', 'Amount'], [['Made-up balance', printMoney(12345)]]);
+    for (const [title, legend] of [['Statement of Account', true], ['Sizing Profile', false], ['Fixed Asset Schedule', false]] as const) {
+      const html = renderReportPrint(title, body, profile, '2026-09-28', 'Example Owner', '2026-09-28T10:00:00+08:00', legend);
+      expect(html).toContain(`<h1>${title.toUpperCase()}</h1>`);
+      expect(html).toContain('<td>₱123.45</td>');
+      expect(html.includes('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.')).toBe(legend);
+      expect(html).toContain(value.registeredName);
+      expect(html).toContain('Date <b>2026-09-28</b>');
+      expect(html).toContain('Printed by Example Owner at');
+    }
+  });
+
+  it('denies report prints to a role without each screen permission', async () => {
+    const tv = await env.as('tv');
+    expect((await tv.post('/api/prt/reports/statement', { customerId: 'sample', from: '2026-09-01', to: '2026-09-28' })).statusCode).toBe(403);
+    expect((await tv.post('/api/prt/reports/sizing-profile', { personId: 'sample' })).statusCode).toBe(403);
+    expect((await tv.post('/api/prt/reports/fixed-assets', { asOf: '2026-09-28' })).statusCode).toBe(403);
   });
 
   it('places the legend on public printouts and omits it on the production ticket', () => {

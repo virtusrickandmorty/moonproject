@@ -12,6 +12,18 @@ export class ApiError extends Error {
 }
 
 export interface Me { userId: string; username: string; displayName: string; roles: string[]; permissions: string[]; mustChangePassword: boolean; csrfToken: string }
+export interface GoLiveAnswer { id: number; answer: string; decidedBy: string; decidedOn: string; note: string; recordedAt: string; recordedByName: string }
+export interface GoLiveDecision { id: string; group: 'accountant' | 'owner' | 'co-owners'; question: string; defaultAnswer: string; when: string; history: GoLiveAnswer[]; setting: null | { key: string; value: unknown; words: string; matches: boolean | null } }
+export interface GoLiveRegister { asOf: string; open: number; rows: GoLiveDecision[] }
+export async function openServerPrint(me: Me, path: string, body: unknown): Promise<void> {
+  const preview = window.open('', '_blank');
+  const response = await fetch(path, { method: 'POST', credentials: 'same-origin',
+    headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken }, body: JSON.stringify(body) });
+  const data = await response.json().catch(() => null) as { html?: string; message?: string } | null;
+  if (!response.ok || !data?.html) { preview?.close(); throw new Error(data?.message ?? 'Could not prepare this printout.'); }
+  if (!preview) throw new Error('Allow pop-ups for this site, then try Print again.');
+  preview.document.open(); preview.document.write(data.html); preview.document.close();
+}
 export interface AuditLogRow { seq: number; at: string; userId: string | null; userName: string | null; action: string; entityType: string; entityId: string | null; data: Record<string, unknown> }
 export interface AuditLogPage { rows: AuditLogRow[]; nextBefore: number | null }
 export interface IntegrityReport { audit: { ok: boolean; brokenAt: number | null; count: number; newestAt: string | null; message: string }; checks: { id: string; name: string; ok: boolean; problems: string[]; message: string }[] }
@@ -52,6 +64,16 @@ export interface CashPlace { id: number; name: string; balanceCents: number | nu
 export interface DashItem { id: string; label: string; href?: string; detail?: string; amountCents?: number }
 export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string }
 export interface DashHomeData { role: string; asOf: string; widgets: DashWidget[] }
+export interface DashOwnerHealth {
+  asOf: string;
+  periods: { label: string; from: string; to: string; salesCents: number; vatCents: number; collectionsCents: number; payrollCents: number }[];
+  cashPlaces: { id: number; name: string; balanceCents: number }[];
+  receivables: { totalCents: number; over30Cents: number; over60Cents: number; over90Cents: number };
+  payables: { totalCents: number; dueNext7DaysCents: number };
+  jobs: { open: number; dueThisWeek: number; late: number };
+  depositsHeldCents: number;
+  taxDeadlines: { form: string; periodLabel: string; dueDate: string }[];
+}
 export interface DashNotification extends DashItem { kind: string; read: boolean }
 export type CalKind = 'event' | 'job_due' | 'release' | 'holiday' | 'tax' | 'customer_birthday' | 'employee_birthday';
 export interface CalItem { id: string; date: string; kind: CalKind; title: string; href: string; time?: string | null; notes?: string | null; rush?: boolean }
@@ -565,6 +587,16 @@ export interface BackupStatus {
 }
 export interface BackupMade { file: string; tier: BackupTier; bytes: number; offsite: boolean; offsiteError: string | null }
 export interface BackupFile { source: BackupSource; file: string; at: string; tier: BackupTier; bytes: number }
+/** Customer emails (COM). The App Password is write-only: the server says only whether one is saved. */
+export type EmailTemplate = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement';
+export interface EmailSettings { sendingOn: boolean; host: string; port: number; user: string; senderName: string; senderAddress: string; version: number; appPasswordSet: boolean; missing: string[] }
+export interface EmailSettingsInput { sendingOn: boolean; host: string; port: number; user: string; senderName: string; senderAddress: string; appPassword?: string }
+export interface OutboxRow {
+  id: string; template: EmailTemplate; customerId: string; customerName: string; toAddress: string; documentId: string | null; documentNumber: string | null;
+  periodFrom: string | null; periodTo: string | null; subject: string; body: string; attachmentName: string | null; status: 'queued' | 'sent' | 'failed';
+  attempts: number; nextAttemptAt: string; lastError: string | null; createdAt: string; sentAt: string | null;
+}
+export interface Outbox { rows: OutboxRow[]; counts: Record<'queued' | 'sent' | 'failed', number> }
 /** The old-data importer (PLAN E13 MIG-01), as /api/mig reports it. */
 export type MigRowType = 'customer' | 'measurement' | 'employee' | 'piece_rate' | 'unknown';
 export type MigRowStatus = 'valid' | 'needs_review' | 'accepted' | 'merged' | 'excluded';
@@ -732,6 +764,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** practice: this is the practice shop (PLAN C8). */
     health: () => call<{ serverTime: string; practice?: boolean }>('GET', '/api/health'),
     dashHome: () => call<DashHomeData>('GET', '/api/dash/home'),
+    dashOwnerHealth: () => call<DashOwnerHealth>('GET', '/api/dash/owner-health'),
     dashNotifications: () => call<DashNotification[]>('GET', '/api/dash/notifications'),
     dashRead: (id: string) => call<{ ok: true }>('POST', '/api/dash/notifications/read', { id }),
     calItems: (from: string, to: string) => call<CalItem[]>('GET', `/api/cal?${new URLSearchParams({ from, to })}`),
@@ -954,6 +987,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     addIncomeTaxDeduction: (body: { year: number; method: DeductionMethod; effectiveFrom: string; reason: string }) => call<DeductionSetting>('POST', '/api/tax/income-tax-deductions', body),
     opening: () => call<OpeningState>('GET', '/api/acc/opening'),
     monthEnd: (month?: string) => call<MonthEndChecklist>('GET', `/api/acc/month-end${month ? `?${new URLSearchParams({ month })}` : ''}`),
+    goLiveDecisions: () => call<GoLiveRegister>('GET', '/api/acc/go-live-decisions'),
+    recordGoLiveAnswer: (body: { decisionId: string; answer: string; decidedBy: string; decidedOn: string; note: string }) => call<GoLiveRegister>('POST', '/api/acc/go-live-decisions/answers', body),
     /** The accountant's sign-off of a month that has ended; needs a fresh password (step-up). */
     signOffMonth: (month: string, note: string) => call<MonthEndChecklist>('POST', '/api/acc/month-end/sign-off', { month, note }),
     /** Every return with something left to pay (GET /api/tax/payments/due): a VAT close or an opening's 2550Q, EWT withheld or opened. */
@@ -996,6 +1031,13 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     bakCheck: (b: { source: BackupSource; file: string; key: string; purpose: 'drill' | 'restore' }) => call<BackupCheck>('POST', '/api/bak/restore/check', b),
     bakApply: (stagedId: string) => call<{ file: string; restartNeeded: boolean; restarting: boolean; message: string }>('POST', '/api/bak/restore/apply', { stagedId }),
     bakRestored: () => call<{ restored: { file: string; at: string } | null }>('GET', '/api/bak/restored').then((r) => r.restored),
+    comSettings: () => call<EmailSettings>('GET', '/api/com/settings'),
+    /** Needs a fresh password (step-up). Leave `appPassword` out to keep the saved one. */
+    comSaveSettings: (v: number, body: EmailSettingsInput) => call<EmailSettings>('PUT', '/api/com/settings', body, version(v)),
+    comTestEmail: () => call<{ ok: true; message: string }>('POST', '/api/com/test-email', {}),
+    comOutbox: (status?: OutboxRow['status']) => call<Outbox>('GET', `/api/com/outbox${status ? `?status=${status}` : ''}`),
+    comResend: (id: string) => call<{ success: true }>('POST', `/api/com/outbox/${encodeURIComponent(id)}/resend`, {}),
+    comEmailStatement: (b: { customerId: string; from: string; to: string }) => call<{ id: string }>('POST', '/api/com/statements', b),
     migUploads: () => call<{ uploads: MigUpload[] }>('GET', '/api/mig/uploads').then((r) => r.uploads),
     /** The kind is not sent: the server reads it from the columns. */
     migUpload: (filename: string, csv: string) => call<MigUploaded>('POST', '/api/mig/upload', { filename, csv }),

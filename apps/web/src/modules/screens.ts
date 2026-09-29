@@ -48,6 +48,7 @@ import { OpeningStatForm } from './STAT/OpeningStatForm.tsx';
 import { GeneralJournal, GeneralLedger, TrialBalance } from './RPT/Books.tsx';
 import { BirBooks } from './RPT/BirBooks.tsx';
 import { BalanceSheet, IncomeStatement } from './RPT/Statements.tsx';
+import { CashFlow } from './RPT/CashFlow.tsx';
 import { ArAging, CustomerStatement } from './RPT/Receivables.tsx';
 import { DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
 import { PayrollRegister, PieceWork, LaborCost, ThirteenthRegister, ProductionStatus, Throughput, WorkerOutput, LeadTime, LateJobs, JobMargin } from './RPT/PayrollProduction.tsx';
@@ -88,6 +89,7 @@ import { Settings } from './ACC/Settings.tsx';
 import { Users } from './SEC/Users.tsx';
 import { Roles } from './SEC/Roles.tsx';
 import { MonthEnd } from './ACC/MonthEnd.tsx';
+import { GoLiveDecisions } from './ACC/GoLiveDecisions.tsx';
 import { BirPaymentForm } from './TAX/BirPaymentForm.tsx';
 import { OpeningWithholdingForm } from './TAX/OpeningWithholdingForm.tsx';
 import { OpeningPayableForm } from './TAX/OpeningPayableForm.tsx';
@@ -100,12 +102,15 @@ import { OpeningForm as OpeningLoanForm } from './LOAN/OpeningForm.tsx';
 import { PaymentForm as LoanPaymentForm } from './LOAN/PaymentForm.tsx';
 import { loanView } from './LOAN/views.tsx';
 import { BuyForm } from './FA/BuyForm.tsx';
+import { DepreciationForm } from './FA/DepreciationForm.tsx';
+import { DisposalForm } from './FA/DisposalForm.tsx';
 import { AssetPage, Assets } from './FA/Assets.tsx';
 import { PersonPage, People } from './EQ/People.tsx';
 import { LoanPage, Loans } from './LOAN/Loans.tsx';
 import { SizerSets } from './SZR/Sizers.tsx';
 import { OpeningForm as OpeningAssetForm } from './FA/OpeningForm.tsx';
 import { Backups } from './BAK/Backups.tsx';
+import { Communications } from './COM/Communications.tsx';
 import { ImportOldData } from './MIG/Importer.tsx';
 import { ImportUpload } from './MIG/Upload.tsx';
 import { AuditLog } from './AUD/AuditLog.tsx';
@@ -163,6 +168,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/rpt/trial-balance': TrialBalance,
   '/rpt/income-statement': IncomeStatement,
   '/rpt/balance-sheet': BalanceSheet,
+  '/rpt/cash-flow': CashFlow,
   '/rpt/ar-aging': ArAging,
   '/rpt/customer-statement': CustomerStatement,
   '/rpt/deposits-held': DepositsHeld,
@@ -208,6 +214,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/1604e': EwtAnnualReturnPage,
   '/acc/opening': OpeningBalances,
   '/acc/month-end': MonthEnd,
+  '/acc/go-live-decisions': GoLiveDecisions,
   '/tax/calendar': TaxCalendar,
   '/admin/shop-certificate': ShopCertificate,
   '/admin/practice': PracticeShop,
@@ -216,6 +223,8 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/admin/roles': Roles,
   '/acc/chart': ChartOfAccounts,
   '/acc/settings': Settings,
+  '/com': Communications,
+  '/com/:section': Communications,
   '/bak': Backups,
   '/bak/:section': Backups,
   '/mig': ImportOldData,
@@ -273,6 +282,8 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'loan.payment': LoanPaymentForm,
   'loan.opening': OpeningLoanForm,
   'fa.buy': BuyForm,
+  'fa.disposal': DisposalForm,
+  'fa.depreciation': DepreciationForm,
   'fa.opening': OpeningAssetForm,
   'inv.count': InventoryCountForm,
   'pur.po': PoForm,

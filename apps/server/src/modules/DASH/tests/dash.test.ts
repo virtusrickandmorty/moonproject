@@ -5,6 +5,14 @@ import { tx } from '../../../platform/db/driver.ts';
 import { stamp, today } from '../../../platform/clock.ts';
 import { postJournal } from '../../../engine/ledger/post.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
+import { ownerHealth } from '../health.ts';
+import { arAging, apAging, cashPosition, collectionsRegister, depositsHeld, payrollRegister, productionTiming } from '../../RPT/public.ts';
+import { salesRegister, taxDeadlines } from '../../TAX/public.ts';
+
+const addDays = (date: string, days: number) => {
+  const value = new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000);
+  return `${value.getUTCFullYear()}-${String(value.getUTCMonth() + 1).padStart(2, '0')}-${String(value.getUTCDate()).padStart(2, '0')}`;
+};
 
 async function jobOrder(env: Awaited<ReturnType<typeof createTestEnv>>, customerId: string, dueInDays = 15) {
   const encoder = await env.as('encoder');
@@ -30,6 +38,50 @@ describe('DASH role homes and notifications', () => {
     expect(homes[1]!.widgets.map((w) => w.key)).toEqual(['drafts', 'exceptions']);
     expect(homes[2]!.widgets.map((w) => w.key)).toEqual(['overdue-collectibles', 'cash', 'sales', 'collections', 'cancellations']);
     expect(homes[3]!.widgets.map((w) => w.key)).toEqual(['production']);
+    expect((await owner.get('/api/dash/owner-health')).statusCode).toBe(200);
+    for (const client of [encoder, accountant, production]) expect((await client.get('/api/dash/owner-health')).statusCode).toBe(403);
+    env.db.close();
+  });
+
+  it('builds every owner health figure from its report calculation', async () => {
+    const env = await createTestEnv();
+    const owner = await env.as('owner');
+    const customerId = seedCustomers(env.db, owner.userId).school;
+    await jobOrder(env, customerId, 2);
+    const place = (await owner.post('/api/cash/places', { name: 'Sample cash box', kind: 'cash', encoderSeesBalance: true })).json() as { id: number };
+    tx(env.db, () => postJournal(env.db, { memo: 'Made-up cash balance', lines: [
+      { account: { cashPlace: place.id }, debitCents: 12_345 },
+      { account: { role: 'CASH_SHORT_OVER' }, creditCents: 12_345 },
+    ] }, { sourceType: 'test', sourceId: newId(), businessDate: today(env.clock), userId: owner.userId, at: stamp(env.clock) }));
+
+    const date = today(env.clock);
+    const result = ownerHealth(env.db, date);
+    for (const period of result.periods) {
+      const sales = salesRegister(env.db, period.from, period.to);
+      expect(period).toMatchObject({
+        salesCents: sales.totals.netCents,
+        vatCents: sales.totals.vatCents,
+        collectionsCents: collectionsRegister(env.db, period.from, period.to).tenderCents,
+        payrollCents: payrollRegister(env.db, period.from.slice(0, 7)).totals.grossCents,
+      });
+    }
+    expect(result.cashPlaces).toEqual(cashPosition(env.db, date).rows);
+    const ar = arAging(env.db, date);
+    expect(result.receivables).toEqual({ totalCents: ar.totalCents,
+      over30Cents: ar.buckets.days31to60 + ar.buckets.days61to90 + ar.buckets.over90,
+      over60Cents: ar.buckets.days61to90 + ar.buckets.over90, over90Cents: ar.buckets.over90 });
+    const ap = apAging(env.db, date);
+    expect(result.payables).toEqual({ totalCents: ap.totalCents, dueNext7DaysCents: ap.rows
+      .filter((row) => row.dueDate >= date && row.dueDate <= addDays(date, 7)).reduce((sum, row) => sum + row.balanceCents, 0) });
+    const jobs = productionTiming(env.db, date);
+    const weekEnd = addDays(date, 7 - (new Date(`${date}T00:00:00Z`).getUTCDay() || 7));
+    const openJobs = jobs.rows.filter((row) => row.releaseDate === null);
+    expect(result.jobs).toEqual({ open: openJobs.length,
+      dueThisWeek: openJobs.filter((row) => String(row.dueDate) >= date && String(row.dueDate) <= weekEnd).length,
+      late: jobs.late.length });
+    expect(result.depositsHeldCents).toBe(depositsHeld(env.db, date).totalCents);
+    expect(result.taxDeadlines).toEqual(taxDeadlines(env.db, date, addDays(date, 120)).slice(0, 6));
+    expect((await owner.get('/api/dash/owner-health')).json()).toEqual(result);
     env.db.close();
   });
 
