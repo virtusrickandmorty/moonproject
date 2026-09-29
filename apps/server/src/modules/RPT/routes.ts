@@ -7,6 +7,7 @@ import { arAging, customerStatement } from './receivables.ts';
 import { statementCustomers } from '../CUS/public.ts';
 import { collectionsRegister, depositsHeld, jobOrderFollowUp, salesByPeriod } from './sales-collections.ts';
 import { birBookRoutes } from './bir-books.ts';
+import { payrollProductionRoutes } from './payroll-production-routes.ts';
 
 function date(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new AppError('BAD_DATE', 'Use a date in YYYY-MM-DD format.', 400);
@@ -41,8 +42,10 @@ function sectionRows(s: StatementSection): CsvCell[][] {
 }
 const STATEMENT_HEAD = ['Section', 'Account', 'Line', 'Amount PHP'];
 
-export function rptRoutes(app: FastifyInstance, { db }: AppDeps): void {
-  birBookRoutes(app, { db } as AppDeps);
+export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
+  const { db } = deps;
+  birBookRoutes(app, deps);
+  payrollProductionRoutes(app, deps);
   app.get('/api/rpt/deposits-held', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const result = depositsHeld(db, date(q.asOf));

@@ -240,3 +240,14 @@ export function jobOrderStatusRows(db: Db) {
     return { ...order, stage: stage ?? 'open', ...joMoney(db, order.id) };
   });
 }
+
+
+/** Dates and release state needed by RPT's production timing reports. */
+export function productionOrderRows(db: Db) {
+  return db.prepare(`SELECT d.id,d.number,d.business_date AS orderDate,o.customer_name AS customerName,o.due_date AS dueDate,
+    COALESCE(s.to_stage,'open') AS stage,MIN(rd.business_date) AS releaseDate
+    FROM jo_orders o JOIN documents d ON d.id=o.document_id
+    LEFT JOIN jo_stage_events s ON s.document_id=d.id AND s.seq=(SELECT MAX(seq) FROM jo_stage_events WHERE document_id=d.id)
+    LEFT JOIN jo_releases r ON r.job_order_id=d.id LEFT JOIN documents rd ON rd.id=r.document_id AND rd.status='posted'
+    WHERE d.status='posted' GROUP BY d.id ORDER BY d.number`).all() as Array<Record<string, string | null>>;
+}
