@@ -41,7 +41,7 @@ export function onTheBooks(rows: AssetRow[]) {
   return { count: live.length, costCents: sum('costCents'), accumulatedCents: sum('accumulatedCents'), bookValueCents: sum('bookValueCents') };
 }
 
-/** The disposal dialog's reason -> input. Only a retirement can be recorded for now (a sale needs an invoice record). */
+/** A retirement's reason -> input (a sale's input is saleInput in sale.ts). */
 export function disposalInput(assetId: string, reason: string) {
   const errors = reason.trim().length >= 5 ? [] : ['Say why it is being taken off the books (at least 5 characters).'];
   return { input: { assetId, kind: 'retirement', reason: reason.trim() }, errors };
