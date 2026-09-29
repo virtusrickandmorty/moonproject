@@ -14,7 +14,7 @@ import fc from 'fast-check';
 import { formatPeso, isBusinessDate, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { Db } from '../../../platform/db/driver.ts';
-import { assertOpeningOpen, cutoverDate, OPENING_PERMISSIONS, openingIssues } from '../../ACC/public.ts';
+import { assertOpeningOpen, cutoverDate, duplicateOpeningIssue, OPENING_PERMISSIONS, openingIssues } from '../../ACC/public.ts';
 import { assetClass, assetParty, atCutover, lastMonthCharged, listClasses, monthlyChargeCents, monthsInService, straightLine } from '../assets.ts';
 import { monthLabel } from './depreciation.ts';
 
@@ -88,6 +88,14 @@ export const openingAssetDoc: DocTypeDef<OpeningAssetInput, OpeningAsset> = {
       add('error', 'accumulatedCents', 'ACCUMULATED', `The accumulated depreciation cannot be more than the cost less the residual value, ${formatPeso(depreciable)}.`);
     }
     if (issues.some((i) => i.level === 'error')) return issues;
+    const earlier = ctx.db
+      .prepare(
+        `SELECT d.number FROM fa_opening_assets o JOIN documents d ON d.id = o.document_id
+         WHERE d.status = 'posted' AND lower(o.description) = lower(?) AND o.acquired_on = ? AND o.cost_cents = ? ORDER BY d.number LIMIT 1`,
+      )
+      .pluck()
+      .get(doc.description, doc.acquiredOn, doc.costCents) as string | undefined;
+    issues.push(...duplicateOpeningIssue('description', earlier, `this asset (${doc.description}, ${doc.acquiredOn}, ${formatPeso(doc.costCents)})`));
     if (cls?.defaultLifeMonths && doc.life !== cls.defaultLifeMonths) {
       add('warning', 'lifeMonths', 'LIFE_DIFFERENT', `The usual life of ${cls.name.toLowerCase()} is ${cls.defaultLifeMonths} months. Please check.`);
     }
