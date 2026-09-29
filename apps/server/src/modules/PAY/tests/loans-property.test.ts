@@ -128,7 +128,7 @@ describe('government loans property test (PLAN I1.3)', () => {
       }),
       { numRuns: 15, endOnFailure: true },
     );
-    // Expecting these stats to be greater than 0 randomly fails in CI if fast-check misses
-    // generating instances that trigger the assertions, removing them to avoid flakiness.
+    expect(stats.runs).toBeGreaterThan(0);
+    expect(stats.withLoans).toBeGreaterThan(0);
   });
 });
