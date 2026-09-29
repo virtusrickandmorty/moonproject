@@ -215,6 +215,15 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
   simple('/api/rpt/late-entries','late-entries',()=>lateEntries(db));
   simple('/api/rpt/cancellations','cancellations',()=>cancellations(db));
   simple('/api/rpt/exceptions','exceptions',q=>exceptions(db,date(q.asOf)));
-  simple('/api/rpt/sign-ins','sign-ins',q=>{const r=range(q);return signIns(db,r.from,r.to)});
+  app.get('/api/rpt/sign-ins', { config: { permission: 'rpt.signins.view' } }, async (req, reply) => {
+    const query = req.query as Record<string, unknown>;
+    const dates = range(query);
+    const result = signIns(db, dates.from, dates.to);
+    if (query.format !== 'csv') return result;
+    return sendCsv(reply, 'sign-ins', [
+      ['at', 'username', 'success', 'ip'],
+      ...result.rows.map((row) => [row.at, row.username, String(row.success), row.ip]),
+    ]);
+  });
 
 }
