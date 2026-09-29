@@ -38,3 +38,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [36. Fixed assets, loans and owners](36-fixed-assets-loans-owners.md): See your fixed assets, your loans, and the people who own or run the business.
 - [39. Switch-over day](39-switch-over-day.md): Plan and execute the move from the old apps to Moonproject.
 - [41. Production Board and Piece Rates](41-production-board-and-piece-rates.md): View the production board, record pieces done, and manage piece rates.
+- [42. Employees, Attendance and Holidays](42-employees-attendance-holidays.md): Add employees, set their pay rates, record daily attendance, and manage holidays.
