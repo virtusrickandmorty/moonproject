@@ -8,6 +8,7 @@ import { cwtOnlyDoc } from './doctypes/cwt-only.ts';
 import { forfeitDoc } from './doctypes/forfeit.ts';
 import { creditMemoDoc } from './doctypes/credit-memo.ts';
 import { writeOffDoc } from './doctypes/write-off.ts';
+import { allowanceDoc } from './doctypes/allowance.ts';
 import { colRoutes } from './routes.ts';
 
 export default defineModule({
@@ -24,8 +25,9 @@ export default defineModule({
     { key: 'col.forfeit', label: 'Keep the deposit of a job order the customer abandoned (forfeit), and cancel it', defaultRoles: ['accountant', 'owner'] },
     { key: 'col.credit_memo', label: 'Record credit memos (returns and allowances on an invoice), and cancel them', defaultRoles: ['accountant'] },
     { key: 'col.write_off', label: 'Write off what an invoice still owes as a bad debt, and cancel it', defaultRoles: ['accountant'] },
+    { key: 'col.allowance', label: 'Record the allowance for credit losses from the AR aging, and cancel it', defaultRoles: ['accountant'] },
   ],
-  docTypes: [collectionDoc, refundDoc, depositTransferDoc, cwtOnlyDoc, forfeitDoc, creditMemoDoc, writeOffDoc],
+  docTypes: [collectionDoc, refundDoc, depositTransferDoc, cwtOnlyDoc, forfeitDoc, creditMemoDoc, writeOffDoc, allowanceDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: colRoutes,
 });

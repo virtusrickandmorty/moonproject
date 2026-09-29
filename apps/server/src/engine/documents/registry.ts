@@ -34,6 +34,7 @@ export const DOC_TITLES = [
   '2307 Received',
   'Deposit Forfeit',
   'Bad Debt Write-off',
+  'Allowance for Credit Losses',
   'Customer Refund',
   'Deposit Transfer',
   'Supplier Bill',
