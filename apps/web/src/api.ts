@@ -402,6 +402,12 @@ export interface VatWorksheet {
   year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string; returnDue: string; close: { documentId: string; number: string; date: string } | null;
   lines: { key: string; label: string; amountCents: number | null; taxCents: number }[]; checks: WorksheetCheck[];
 }
+/** GET /api/tax/uncollected-vat (ACC-26): whether the claim is on, the invoices that may be claimed, and the add-backs due. */
+export interface UncollectedVat {
+  enabled: boolean;
+  claimable: { invoiceId: string; invoiceNumber: string; number: string; customerName: string; dueDate: string | null; owedCents: number; vatCents: number }[];
+  addBacksDue: { claimId: string; claimNumber: string; invoiceId: string; invoiceNumber: string; customerName: string; paidCents: number; vatCents: number }[];
+}
 /** SLSP and SAWT data of a quarter: each figure tied to its register or the books, with the difference (0 when they agree). */
 export interface TaxTie { key: string; label: string; listCents: number; bookCents: number; differenceCents: number }
 export type SaleClass = 'zero_rated' | 'exempt' | 'not_a_sale';
@@ -989,6 +995,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     ewtRegister: (from: string, to: string) => call<EwtRegister>('GET', taxRegisterPath('ewt', from, to)),
     certificatesToIssue: (year: number, quarter: number) => call<CertificatesToIssue>('GET', taxQuarterPath('2307-to-issue', year, quarter)),
     vatWorksheet: (year: number, quarter: number) => call<VatWorksheet>('GET', taxQuarterPath('2550q', year, quarter)),
+    uncollectedVat: () => call<UncollectedVat>('GET', '/api/tax/uncollected-vat'),
     slspSales: (year: number, quarter: number) => call<SlspSales>('GET', taxQuarterPath('slsp/sales', year, quarter)),
     slspPurchases: (year: number, quarter: number) => call<SlspPurchases>('GET', taxQuarterPath('slsp/purchases', year, quarter)),
     sawt: (year: number, quarter: number) => call<Sawt>('GET', taxQuarterPath('sawt', year, quarter)),

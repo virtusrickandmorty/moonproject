@@ -8,6 +8,7 @@ import { openingWithholdingDoc } from './doctypes/opening.ts';
 import { openingPayableDoc } from './doctypes/opening-payable.ts';
 import { incomeTaxProvisionDoc } from './doctypes/income-tax-provision.ts';
 import { incomeTaxSettlementDoc } from './doctypes/income-tax-settlement.ts';
+import { uncollectedVatDoc, uncollectedVatRecoveryDoc } from './doctypes/uncollected-vat.ts';
 
 export default defineModule({
   code: 'TAX',
@@ -28,10 +29,13 @@ export default defineModule({
     { key: 'tax.income_tax.post', label: "Provide a year's income tax (Dr income tax, Cr income tax payable) and settle it against the 1702Q payments and 2307s", defaultRoles: ['accountant'] },
     { key: 'tax.income_tax.cancel', label: "Cancel a year's income tax provision or settlement", defaultRoles: ['accountant'] },
     { key: 'tax.slsp.classify', label: 'Mark a sale with no output VAT (a journal voucher) zero-rated, exempt or not a sale, for the SLSP', defaultRoles: ['accountant'] },
+    { key: 'tax.uncollected.view', label: 'See the claims of output VAT on uncollected receivables and their add-backs', defaultRoles: ['accountant', 'owner'] },
+    { key: 'tax.uncollected.post', label: 'Claim output VAT on an uncollected receivable once its time to pay has passed (Dr 2301, Cr 2303), and add it back when paid', defaultRoles: ['accountant'] },
+    { key: 'tax.uncollected.cancel', label: 'Cancel a claim of output VAT on an uncollected receivable, or its add-back', defaultRoles: ['accountant'] },
     { key: 'tax.2307.receive', label: "Mark a customer's 2307 received when it comes after the collection or the opening", defaultRoles: ['accountant', 'owner'] },
   ],
   // tax.opening and tax.payable.opening take ACC's acc.opening.* permissions (OPENING_PERMISSIONS)
-  docTypes: [vatCloseDoc, birPaymentDoc, openingWithholdingDoc, openingPayableDoc, incomeTaxProvisionDoc, incomeTaxSettlementDoc],
+  docTypes: [vatCloseDoc, birPaymentDoc, openingWithholdingDoc, openingPayableDoc, incomeTaxProvisionDoc, incomeTaxSettlementDoc, uncollectedVatDoc, uncollectedVatRecoveryDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: taxRoutes,
 });

@@ -49,6 +49,10 @@ export const SETTINGS = {
     label: 'A forfeited customer deposit is VATable: 12/112 of it goes to output VAT (ACC-15; default no)',
     schema: z.boolean(),
   },
+  'tax.uncollected_vat_credit': {
+    label: 'Claim output VAT on uncollected receivables once the agreed time to pay has passed (EOPT, RMC 65-2024) (ACC-26; default no)',
+    schema: z.boolean(),
+  },
   'tax.interest_final_tax_bp': {
     label: 'Final tax the bank withholds on interest, in basis points (2000 = 20%, PLAN D5 BANK-ADJ)',
     schema: z.number().int().min(0).max(5000),
