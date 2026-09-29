@@ -33,6 +33,7 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/prd/catalogue', { config: { permission: 'prd.view' } }, async () => ({ steps: listSteps(db), templates: listTemplates(db), garmentTypes: garmentTypes(db), complexities: COMPLEXITIES }));
 
   app.get('/api/prd/board', { config: { permission: 'prd.view' } }, async () => board(db));
+  app.get('/api/prd/tv', { config: { permission: 'prd.tv' } }, async () => ({ steps: listSteps(db), cards: board(db) }));
 
   /** One job order's production: each line's setup and route, with the pieces each step may still take (E7 rules 1–2). */
   app.get<{ Params: { jo: string } }>('/api/prd/jobs/:jo', { config: { permission: 'prd.view' } }, async (req) => {

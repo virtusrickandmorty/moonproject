@@ -9,6 +9,7 @@ export default defineModule({
   name: 'Production',
   permissions: [
     { key: 'prd.view', label: 'View the production board and production entries', defaultRoles: ['encoder', 'accountant', 'owner', 'production'] },
+    { key: 'prd.tv', label: 'View the production TV board', defaultRoles: ['production', 'accountant', 'owner'] },
     { key: 'prd.assign', label: 'Record and cancel workers’ pieces (production entries)', defaultRoles: ['encoder', 'accountant', 'owner', 'production'] },
     { key: 'prd.progress', label: 'Set a line’s route, and mark steps completed, not needed or reopened', defaultRoles: ['encoder', 'accountant', 'owner', 'production'] },
     { key: 'prd.steps', label: 'Rename production steps and switch them on or off', defaultRoles: ['accountant', 'owner'] },

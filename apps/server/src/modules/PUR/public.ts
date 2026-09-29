@@ -22,6 +22,11 @@ export function supplierTaxInfo(db: Db, id: string): { registeredName: string; t
 
 export const activeSupplierIds = (db: Db): string[] => db.prepare('SELECT id FROM pur_suppliers WHERE is_active = 1 ORDER BY id').pluck().all() as string[];
 
+export function searchSuppliers(db: Db, query: string, limit = 20): { id: string; name: string }[] {
+  return db.prepare(`SELECT id, name FROM pur_suppliers WHERE lower(replace(name, ' ', '')) LIKE @q ORDER BY name LIMIT @limit`)
+    .all({ q: `%${query.toLowerCase().replaceAll(' ', '')}%`, limit }) as { id: string; name: string }[];
+}
+
 export interface Supply { id: string; name: string; category: 'materials' | 'ready_made'; isActive: boolean }
 
 export function supply(db: Db, id: string): Supply | undefined {

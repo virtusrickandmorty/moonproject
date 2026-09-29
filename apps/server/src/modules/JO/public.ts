@@ -45,6 +45,15 @@ export function jobOrdersOf(db: Db, customerId?: string, includeCancelled = fals
     .all({ c: customerId ?? null, all: includeCancelled ? 1 : 0 }) as JoRef[];
 }
 
+export function searchJobOrders(db: Db): Pick<JoRef, 'id' | 'number' | 'customerName'>[] {
+  return db.prepare(`${JO_REF} ORDER BY d.number DESC`).all() as Pick<JoRef, 'id' | 'number' | 'customerName'>[];
+}
+
+export function searchInvoiceNumbers(db: Db): { id: string; number: string; externalNumber: string }[] {
+  return db.prepare(`SELECT d.id, d.number, i.invoice_number AS externalNumber FROM jo_invoice_records i
+    JOIN documents d ON d.id = i.document_id ORDER BY d.number DESC`).all() as { id: string; number: string; externalNumber: string }[];
+}
+
 /** Active orders and their current stages for read-only dashboards, fetched without one query per old order. */
 export function activeJobOrders(db: Db): (JoRef & { stage: 'open' | 'in_production' | 'ready' | 'partially_released' | 'released' })[] {
   return db.prepare(`SELECT d.id, d.number, d.status, o.customer_id AS customerId, o.customer_name AS customerName,

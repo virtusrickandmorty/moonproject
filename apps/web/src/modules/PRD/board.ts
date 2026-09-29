@@ -7,6 +7,9 @@ import { cents } from '../COL/money.ts';
 
 export type Column = { key: string; title: string; cards: BoardCard[] };
 
+/** The TV identifies individual customers without displaying their names. */
+export const customerInitials = (name: string) => name.trim().split(/\s+/).filter(Boolean).map((part) => part[0]!.toUpperCase()).join('').slice(0, 4);
+
 /** "Needs a route", a column per step in canonical order, then "Ready"; only the columns that have cards, so the board stays narrow. */
 export function columns(steps: PrdStep[], cards: BoardCard[]): Column[] {
   return [

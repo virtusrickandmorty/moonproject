@@ -31,6 +31,11 @@ export function crNumbersBetween(db: Db, from: number, to: number): { n: number;
     .all(from, to) as { n: number; number: string; status: 'posted' | 'cancelled' }[];
 }
 
+export function searchCrNumbers(db: Db): { id: string; number: string; externalNumber: string }[] {
+  return db.prepare(`SELECT d.id, d.number, c.cr_number AS externalNumber FROM col_collections c
+    JOIN documents d ON d.id = c.document_id ORDER BY d.number DESC`).all() as { id: string; number: string; externalNumber: string }[];
+}
+
 /**
  * What a collection's 2307, or a 2307 received with no cash (CWT-ONLY), says (ATC and whether the certificate is in hand;
  * the latter always is, with the quarter it covers, '2026-Q3'), for the tax registers; undefined if none.

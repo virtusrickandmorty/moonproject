@@ -7,7 +7,7 @@ import { seedCustomers } from '../../../../server/src/modules/JO/tests/cus-fixtu
 import { seedEmployees } from '../../../../server/src/modules/PRD/tests/emp-fixture.ts';
 import { createApi, newIdempotencyKey as key, type BoardCard, type PrdStep } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
-import { columns, emptyRow, filterCards, rowsToInput } from './board.ts';
+import { columns, customerInitials, emptyRow, filterCards, rowsToInput } from './board.ts';
 
 const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: string, init: RequestInit) => {
   const res = await app.inject({ method: init.method as 'GET', url, payload: init.body as string, headers: { ...(init.headers as object), cookie: jar.cookie } });
@@ -17,6 +17,10 @@ const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: 
 };
 
 describe('production screen rules', () => {
+  it('uses initials rather than an individual customer name on the TV', () => {
+    expect(customerInitials('Alex Rivera Santos')).toBe('ARS');
+    expect(customerInitials('  jean   de la cruz ')).toBe('JDLC');
+  });
   const step = (id: number, name: string, isActive = true) => ({ id, code: name.toUpperCase(), name, seq: id * 10, payBasis: 'daily', isActive, version: 1 }) as PrdStep;
   const card = (n: string, extra: Partial<BoardCard>) => ({ jobOrderId: n, number: n, customerName: 'C', dueDate: '2026-10-01', priority: 'normal', stage: 'open', lineNo: 1, description: 'Shirt', qty: 10, releasedQty: 0, garmentType: null, complexity: null, templateId: null, currentStepId: null, ready: false, steps: null, ...extra }) as BoardCard;
 

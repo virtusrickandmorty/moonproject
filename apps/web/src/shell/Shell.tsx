@@ -4,6 +4,7 @@ import { api, type DocTypeInfo, type Me } from '../api.ts';
 import { Link, useLocation } from '../router.tsx';
 import { longDate } from '../components/ui.tsx';
 import { buildMenu, docPath, labelOf } from './menu.ts';
+import { GlobalSearch } from './GlobalSearch.tsx';
 
 function ServerDate() {
   const [date, setDate] = useState<string | null>(); // undefined while loading, null when the server is unreachable
@@ -32,7 +33,8 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
       <header className="flex flex-wrap items-center gap-3 bg-indigo-900 px-4 py-2 text-sm text-white print:hidden">
         <button type="button" className="md:hidden" onClick={() => toggle('menu')}>Menu</button>
         <Link to="/" className="font-semibold tracking-wide">MOONPROJECT</Link>
-        <span className="flex-1 text-indigo-100"><ServerDate /></span>
+        <span className="hidden flex-1 text-indigo-100 lg:block"><ServerDate /></span>
+        {me.permissions.includes('nav.search') && <GlobalSearch />}
         {creatable.length > 0 && (
           <div className="relative">
             <button type="button" className="rounded-md bg-white/15 px-3 py-1 hover:bg-white/25" onClick={() => toggle('new')}>+ New</button>

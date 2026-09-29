@@ -24,6 +24,12 @@ export function employee(db: Db, id: string): Employee | undefined {
 /** Employees not separated, by name. */
 export const activeEmployees = (db: Db): Employee[] => (db.prepare(`${EMPLOYEE} WHERE is_active = 1 ORDER BY full_name, id`).all() as Row[]).map(asEmployee);
 
+export function searchEmployees(db: Db, query: string, limit = 20): { id: string; name: string; code: string }[] {
+  return db.prepare(`SELECT id, full_name AS name, code FROM emp_employees
+    WHERE lower(replace(full_name, ' ', '')) LIKE @q OR lower(replace(code, ' ', '')) LIKE @q ORDER BY full_name LIMIT @limit`)
+    .all({ q: `%${query.toLowerCase().replaceAll(' ', '')}%`, limit }) as { id: string; name: string; code: string }[];
+}
+
 /** Recorded birthdays of active employees, without pay or government IDs. */
 export function employeeBirthdays(db: Db): { id: string; name: string; birthday: string }[] {
   return db.prepare(`SELECT id, full_name AS name, birthday FROM emp_employees
