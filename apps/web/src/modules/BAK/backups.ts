@@ -37,7 +37,7 @@ export function staleWords(s: Pick<BackupStatus, 'lastOk' | 'stale'>, now: strin
   return s.lastOk ? `Backups are stale: the last good backup was ${agoWords(s.lastOk.at, now)}.` : 'Backups are stale: no backup has worked yet.';
 }
 
-export const pendingRestoreWords = (p: { file: string }) => `Restart Moonproject to finish the restore of ${p.file}.`;
+export const pendingRestoreWords = (p: { file: string }) => `Moonproject restarts by itself to finish the restore of ${p.file}. If it has not within a few minutes, restart this PC.`;
 
 const REASONS: Record<BackupRun['reason'], string> = { schedule: 'Scheduled', manual: 'Back up now', pre_update: 'Before an update' };
 
@@ -90,3 +90,6 @@ export function lostWords(c: Pick<BackupCheck, 'audit' | 'live' | 'madeAt' | 'la
   const n = lostEntries(c);
   return `Everything recorded after ${after ? manilaTime(after) : 'this backup was made'} will be lost: ${count(n, 'audit entry', 'audit entries')} in the live data ${n === 1 ? 'is' : 'are'} newer than this backup.`;
 }
+
+/** What an owner is told at the first sign-in after a restore. */
+export const restoredWords = (r: { file: string; at: string }) => `Restored from ${r.file} at ${manilaTime(r.at)}.`;

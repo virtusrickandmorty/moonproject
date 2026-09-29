@@ -104,7 +104,7 @@ describe('tax screens, part 2: rules', () => {
     const groups = buildMenu([], new Set(['tax.registers.view', 'tax.calendar.view', 'tax.booklets.view']));
     expect(groups.map((g) => g.group)).toEqual(['Overview', 'Accounting & Tax', 'Admin']); // no separate Tax group; Admin has the Shop certificate for everyone
     const tax = groups[1]!.items;
-    expect(tax.map((i) => i.label).at(-1)).toBe('Booklets');
+    expect(tax.map((i) => i.label).slice(-2)).toEqual(['Booklets', 'Settings']);
     expect(tax.slice(2, 7).map((i) => `${i.label} ${i.path}`)).toEqual([
       'Purchases register /tax/purchases', 'EWT register /tax/ewt', '2307s to issue /tax/2307-to-issue', 'VAT this quarter /tax/vat', '2550Q worksheet /tax/2550q',
     ]);

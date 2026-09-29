@@ -12,6 +12,9 @@ import { MoneyForm, PlacePicker, useList, useMoneyForm } from '../AP/parts.tsx';
 import { forReplacement } from '../AP/payables.ts';
 import { OFFICER_KINDS, classificationsFor, emptyEq, eqValues, officerInput, ownerMoneyInput, personLabel, type EqValues } from './eq.ts';
 
+/** The person a form was opened for, from a person's page (?person=<id>); the pick list still decides if it is valid. */
+const askedPerson = () => new URLSearchParams(location.search).get('person') ?? '';
+
 function PersonSelect({ people, v, set }: { people: EqPerson[]; v: EqValues; set: (p: Partial<EqValues>) => void }) {
   return (
     <select aria-label="Person" className={inputClass} value={v.personId} onChange={(e) => set({ personId: e.target.value })}>
@@ -30,7 +33,7 @@ type Parsed = Parameters<typeof eqValues>[0];
 export function OwnerMoneyForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me: Me }) {
   const people = useList(api.eqPeople);
   const places = useList<CashPlace>(api.cashPlaces);
-  const [v, setV] = useState(emptyEq('advance'));
+  const [v, setV] = useState(() => ({ ...emptyEq('advance'), personId: askedPerson() }));
   const f = useMoneyForm(type, mode, (d) => setV(eqValues(d.input as Parsed)));
   const set = (patch: Partial<EqValues>) => setV({ ...v, ...patch });
   const canClassify = me.permissions.includes('eq.own.classify');
@@ -66,7 +69,7 @@ export function OwnerMoneyForm({ type, mode, me }: { type: DocTypeInfo; mode: Fo
 export function OfficerForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me: Me }) {
   const people = useList(api.eqPeople);
   const places = useList<CashPlace>(api.cashPlaces);
-  const [v, setV] = useState(emptyEq(''));
+  const [v, setV] = useState(() => ({ ...emptyEq(''), personId: askedPerson() }));
   const [orig, setOrig] = useState<Parsed>();
   const [owed, setOwed] = useState<{ dueFromCents: number; dueToCents: number } | null>(null);
   const f = useMoneyForm(type, mode, (d) => (setOrig(d.input as Parsed), setV(eqValues(d.input as Parsed))));

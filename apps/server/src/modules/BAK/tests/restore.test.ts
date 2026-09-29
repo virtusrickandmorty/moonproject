@@ -107,7 +107,10 @@ describe('restore', () => {
 
     await stepUp(owner);
     const applied = await owner.post('/api/bak/restore/apply', { stagedId });
-    expect(applied.json()).toMatchObject({ file: backup, restartNeeded: true });
+    expect(applied.json()).toMatchObject({ file: backup, restartNeeded: true, restarting: true });
+    // Moonproject restarts by itself once no request is running (platform/restart.ts); until then nothing is recorded.
+    expect(env.deps.restart.reason).toBe(`restore of ${backup}`);
+    expect((await jv('Cash while restarting', 1_000)).json().code).toBe('RESTARTING');
     expect((await owner.get('/api/bak/status')).json().pendingRestore).toMatchObject({ id: stagedId, file: backup });
 
     // The next start (main.ts) finishes it.
