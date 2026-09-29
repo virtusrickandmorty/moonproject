@@ -8,6 +8,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { customerRef } from '../CUS/public.ts';
+import { sizerBoard } from './overview.ts';
 import { szrSetInput, szrLoanInput, szrReturnInput } from './schemas.ts';
 
 const preconditionRequired = (msg: string) => new AppError('PRECONDITION_REQUIRED', msg, 428);
@@ -17,6 +18,9 @@ const conflict = (msg: string) => new AppError('CONFLICT', msg, 409);
 
 export function szrRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
+
+  /** The screen's board: every set with who has it, the overdue ones and the last returns (customer names included). */
+  app.get('/api/szr/overview', { config: { permission: 'szr.loan.view' } }, async () => sizerBoard(db, today(clock)));
 
   app.get('/api/szr/sets', { config: { permission: 'szr.set.view' } }, async (req) => {
     return db.prepare("SELECT * FROM szr_sets WHERE status != 'inactive' ORDER BY code").all();

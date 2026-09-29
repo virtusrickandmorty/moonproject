@@ -26,8 +26,8 @@ const sample: BookletUsage = {
 
 describe('booklet screens', () => {
   it('shows Booklets under Accounting & Tax only with its permission, and all three paths', () => {
-    expect(buildMenu([], new Set(['tax.booklets.view'])).find((g) => g.group === 'Accounting & Tax')).toMatchObject({ group: 'Accounting & Tax', items: [{ label: 'Booklets', path: '/tax/booklets' }] });
-    expect(buildMenu([], new Set()).some((g) => g.group === 'Accounting & Tax')).toBe(false);
+    expect(buildMenu([], new Set(['tax.booklets.view'])).find((g) => g.group === 'Accounting & Tax')).toMatchObject({ group: 'Accounting & Tax', items: [{ label: 'Booklets', path: '/tax/booklets' }, { label: 'Settings' }] }); // Settings is for every signed-in user
+    expect(buildMenu([], new Set()).find((g) => g.group === 'Accounting & Tax')?.items.map((i) => i.label)).toEqual(['Settings']);
     expect(['/tax/booklets', '/tax/booklets/new', '/tax/booklets/:id'].every((path) => path in PAGES)).toBe(true);
   });
 
