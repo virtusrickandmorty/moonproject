@@ -42,6 +42,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'People & Payroll', label: '2316 and alphalist', path: '/pay/2316', permission: 'pay.yearend.view' },
   { group: 'Admin', label: 'Company print details', path: '/prt/company-profile', permission: 'prt.profile.manage' },
   { group: 'People & Payroll', label: 'Government remittances', path: '/stat', permission: 'stat.view' },
+  { group: 'People & Payroll', label: 'Statutory exposure', path: '/stat/exposure', permission: 'stat.view' },
   { group: 'People & Payroll', label: 'Cash advances owed', path: '/ca/employees', permission: 'ca.view' },
   { group: 'Purchases & Expenses', label: 'Payables by supplier', path: '/ap/suppliers', permission: 'ap.ledger.view' },
   { group: 'Accounting & Tax', label: 'Sales register', path: '/tax/sales', permission: 'tax.registers.view' },

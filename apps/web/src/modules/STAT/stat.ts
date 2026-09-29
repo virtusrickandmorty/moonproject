@@ -3,7 +3,7 @@
  * are tested without a browser; the server works everything out again.
  */
 import { formatPeso, isBusinessDate } from '@moonproject/shared';
-import type { RemittanceInput, Scheme, SchemeCheck } from '../../api.ts';
+import type { ExposureLine, RemittanceInput, Scheme, SchemeCheck, UploadScheme } from '../../api.ts';
 import { cents } from '../COL/money.ts';
 
 export const SCHEME_LABEL: Record<Scheme, string> = { SSS: 'SSS', PHIC: 'PhilHealth', HDMF: 'Pag-IBIG', WTAX: 'Withholding tax (1601-C)' };
@@ -59,3 +59,16 @@ export function checkWords(c: SchemeCheck): { text: string; tone: 'success' | 'w
   if (c.balanceCents > 0) return { text: `${formatPeso(c.balanceCents)} to remit${c.refundOpenCents > 0 ? `, after ${formatPeso(c.refundOpenCents)} of year-end tax refunds` : ''}`, tone: 'info' };
   return { text: `Remitted ${formatPeso(-c.balanceCents)} more than the payrolls show`, tone: 'warning' };
 }
+
+/** The agencies' upload files, in the order the screen offers them. */
+export const UPLOAD_LIST: { scheme: UploadScheme; label: string; layout: string }[] = [
+  { scheme: 'SSS', label: 'SSS', layout: 'R3 / e-collection contribution list' },
+  { scheme: 'PHIC', label: 'PhilHealth', layout: 'RF-1 / EPRS contribution list' },
+  { scheme: 'HDMF', label: 'Pag-IBIG', layout: 'MCRF / eSRS contribution list' },
+];
+
+/** The upload files carry ID numbers, so they are for whoever has both permissions (the server refuses anyone else). */
+export const canDownloadUploads = (permissions: readonly string[]) => permissions.includes('stat.upload') && permissions.includes('emp.view_ids');
+
+/** One exposure line's months in words: "2 months: 2026-06, 2026-07". */
+export const exposureMonths = (l: Pick<ExposureLine, 'months'>) => `${l.months.length} ${l.months.length === 1 ? 'month' : 'months'}: ${l.months.map((m) => m.month).join(', ')}`;
