@@ -5,7 +5,7 @@ import { AppError, csvPesos, toCsv, type CsvCell } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { customerRef, customerTaxInfo } from '../CUS/public.ts';
 import { supplier, supplierTaxInfo } from '../PUR/public.ts';
-import { purchasesRegister } from '../TAX/purchases.ts';
+import { purchasesRegister, salesRegister } from '../TAX/public.ts';
 import { billTaxFacts } from '../AP/public.ts';
 import { generalJournal, generalLedger } from './books.ts';
 
@@ -81,15 +81,19 @@ export function cashJournal(db: Db, from: string, to: string, kind: 'receipts' |
   return { book: kind, from, to, pages: paginate(rows, cashAmounts), totals };
 }
 
+/** Invoices on the sales journal: release invoice records, downpayment invoices (mode C) and quick sales. */
+const SALES_BOOK_TYPES = new Set(['jo.invoice_record', 'jo.dp_invoice', 'qs.sale']);
+
+/**
+ * Sales journal: the sales register's rows for invoices (TAX registers.ts), so VATable sales and VAT are the figures the
+ * 2550Q reports, with a cancelled invoice as its own reversal row. In downpayment VAT mode C a release invoice shows the
+ * sale less the downpayment already invoiced; in mode B, the VAT not already booked on its deposits.
+ */
 export function salesBook(db: Db, from: string, to: string) {
-  const rows = grouped(ledgerLines(db, from, to)).filter((j) => ['jo.invoice_record', 'qs.sale'].includes(j[0]?.docType ?? '')).map((j) => {
-    const x = j[0]!, sign = x.posting === 'reversal' ? -1 : 1; const tax = j.find((l) => l.partyType === 'customer' && l.partyId)?.partyId;
-    const vatCents = sum(j.filter((l) => l.roleKey === 'OUTPUT_VAT'), (l) => l.creditCents - l.debitCents);
-    const totalCents = sign * Math.abs(sum(j.filter((l) => l.accountType === 'revenue'), (l) => l.creditCents - l.debitCents) + vatCents);
-    return { journalId: x.journalId, date: x.date, invoiceNumber: x.externalNumber, documentNumber: x.documentNumber ?? x.journalNumber,
-      customer: partyName(db, j), tin: tax ? customerTaxInfo(db, tax)?.tin ?? null : null, posting: x.posting,
-      vatableCents: totalCents - vatCents, zeroRatedCents: 0, exemptCents: 0, vatCents, totalCents };
-  });
+  const rows = salesRegister(db, from, to).rows.filter((r) => SALES_BOOK_TYPES.has(r.docType ?? '')).map((r) => ({
+    journalId: r.journalId, date: r.date, invoiceNumber: r.formNumber, documentNumber: r.documentNumber ?? r.journalNumber,
+    customer: r.customerName, tin: r.tin, posting: r.posting, vatableCents: r.netCents, zeroRatedCents: 0, exemptCents: 0, vatCents: r.vatCents, totalCents: r.totalCents,
+  }));
   const amounts = (r: typeof rows[number]) => ({ vatableCents: r.vatableCents, zeroRatedCents: r.zeroRatedCents, exemptCents: r.exemptCents, vatCents: r.vatCents, totalCents: r.totalCents });
   return { book: 'sales', from, to, pages: paginate(rows, amounts), totals: rows.reduce((a, r) => add(a, amounts(r)), {} as Amounts) };
 }
