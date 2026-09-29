@@ -30,9 +30,9 @@ export interface CertInfo { fingerprint256: string; fingerprint1: string; notAft
 /** Where a phone or another PC joins (GET /api/system/tls): `urls` is empty while the "Join this PC" page is not running. */
 export interface JoinAddress { pcName: string; addresses: { ip: string; kind: 'lan' | 'vpn' }[]; port: number | null; urls: string[] }
 export interface CompanyProfile { registeredName: string; tradeName: string; tin: string; registeredAddress: string; isVatRegistered: boolean; version: number; supersededAt?: string }
-export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; const?: unknown; anyOf?: JsonSchema[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
+export interface JsonSchema { type?: string; format?: string; title?: string; enum?: unknown[]; const?: unknown; anyOf?: JsonSchema[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
 export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
-export type PrintVariant = 'document' | 'job_ticket';
+export type PrintVariant = 'document' | 'job_ticket' | 'thermal';
 export interface PrintableType { key: string; variants: PrintVariant[] }
 export interface DocHeader {
   id: string; number: string; businessDate: string; status: 'posted' | 'cancelled'; totalCents: number; summary: string; postedAt: string;
@@ -46,7 +46,7 @@ export interface DocDetail { header: DocHeader; input: Record<string, unknown>; 
 /** `doc` is the document as the server worked it out (the payroll form shows its lines). */
 export interface Preview { totalCents: number; summary: string; issues: Issue[]; journal?: JournalLine[] | null; doc?: unknown }
 export interface PostResult { id: string; number: string; totalCents: number; warnings: Issue[] }
-export interface Draft { id: string; docType: string; payload: { values?: Record<string, string> }; version: number; updatedAt: string }
+export interface Draft { id: string; docType: string; payload: { values?: Record<string, string>; form?: unknown }; version: number; updatedAt: string }
 export interface CashPlace { id: number; name: string; balanceCents: number | null }
 export interface DashItem { id: string; label: string; href?: string; detail?: string; amountCents?: number }
 export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string }
@@ -95,9 +95,53 @@ export interface Forfeitable {
 }
 /** GET /api/jo/orders/:id/status, the parts the JO view shows: all derived on the server (NR-2). */
 export interface JoStatus {
+  jobOrder: { id: string; number: string; docType: string; status: 'posted' | 'cancelled'; customerId: string; customerName: string; dueDate: string };
+  stage: string;
   stageLabel: string;
-  money: { totalCents: number; invoicedCents: number; receivableCents: number; depositsHeldCents: number; balanceDueCents: number; collectedCents: number };
+  money: { totalCents: number; invoicedCents: number; receivableCents: number; depositsHeldCents: number; balanceDueCents: number; collectedCents: number; requiredDownpaymentCents: number };
+  lines: { lineNo: number; description: string; qty: number; releasedQty: number; leftQty: number }[];
+  awaitingInvoice: { id: string; number: string; businessDate: string; totalCents: number }[];
+  depositVat: JoDepositVat;
+  dpInvoices: DpInvoiceRow[];
 }
+/** The job order's downpayment VAT mode today (COL): its own once a downpayment fixed it, else the setting in force. `kept` is the server's sentence naming the document that fixed a mode other than the setting. */
+export interface JoDepositVat { mode: 'A' | 'B' | 'C'; words: string; setting: 'A' | 'B' | 'C'; settingWords: string; lockedBy: string | null; kept: string | null }
+/** A downpayment invoice (mode C) with the number printed on the booklet. */
+export interface DpInvoiceRow { id: string; number: string; status: 'posted' | 'cancelled'; invoiceNumber: string; amountCents: number; vatCents: number }
+/** GET /api/jo/orders/:id/dp-info: what the downpayment invoice form shows for a job order; `refusal` is the server's words when it takes no downpayment invoice. */
+export interface DpInfo {
+  jobOrder: { id: string; number: string; customerName: string; totalCents: number };
+  requiredDownpaymentCents: number; dpInvoicedCents: number; notInvoicedCents: number; depositsHeldCents: number;
+  depositVat: JoDepositVat; dpInvoices: DpInvoiceRow[]; refusal: string | null;
+}
+/** GET /api/jo/pick/orders: job orders to pick on the release form. */
+export interface JoPick { id: string; number: string; customerName: string; dueDate: string; stageLabel: string; leftPieces: number; balanceDueCents: number }
+/** GET /api/jo/pick/releases: releases to pick on the invoice record form, with the invoice already recorded for each. */
+export interface ReleasePick {
+  id: string; number: string; date: string; status: 'posted' | 'cancelled'; totalCents: number; jobOrderId: string; jobOrderNumber: string; customerName: string;
+  invoice: { id: string; number: string; invoiceNumber: string } | null;
+}
+/** "Write these on the booklet" for a release (D4.4). */
+export interface BookletFigures {
+  vatRateBp: number; listCents: number; discountCents: number; grossCents: number; vatableSalesCents: number; vatCents: number;
+  /** Mode C: downpayments already invoiced that this invoice takes into sales; gross, VATable sales and VAT above are what the booklet shows after them. */
+  downpaymentsInvoicedCents?: number;
+  /** Mode B: the VAT of this sale already booked on the deposits it applies. */
+  depositVatMode?: 'A' | 'B' | 'C'; depositVatCents?: number;
+}
+/** What the booklet panel needs: the three figures; the rest is shown when the server sent it. */
+export type BookletShown = Pick<BookletFigures, 'grossCents' | 'vatableSalesCents' | 'vatCents'> & Partial<BookletFigures>;
+/** GET /api/jo/releases/:id/invoice-info. */
+export interface ReleaseInvoiceInfo { release: ReleasePick; lines: { lineNo: number; qty: number; description: string; amountCents: number }[]; booklet: BookletFigures; depositAppliedCents: number }
+/** POST /api/jo/releases/preview: the release as it would be recorded and its invoice figures. */
+export interface ReleasePreview { release: Preview & { doc: { balanceDueCents: number; totalCents: number; creditDueDate?: string } }; booklet: BookletFigures; depositAppliedCents: number }
+export interface ReleaseBody { release: unknown; invoice: { invoiceNumber: string; note?: string } | null }
+/** GET /api/jo/customers/:id/wearers: a customer's groups and active wearers with the size on file. */
+export interface WearerPick { personId: string; wearerName: string; groupId: string | null; sizeMode: 'preset' | 'measured'; size?: string; jerseyName?: string; jerseyNumber?: string }
+export interface CustomerWearers { groups: { id: string; name: string }[]; wearers: WearerPick[] }
+/** The catalog as GET /api/cat/items returns it (active items), and a tier price (GET /api/cat/items/:id/price). */
+export interface CatItem { id: string; code: string; name: string; class: 'made_to_order_garment' | 'service' | 'ready_made_item'; unit: 'pc' | 'set' }
+export interface CatPrice { itemId: string; minQty: number; unitPriceCents: number; effectiveFrom: string }
 type Checked = { summary: string; issues: Issue[]; journal?: JournalLine[] | null };
 /** POST /api/qs/sales/preview: the sale, "write these on the booklet" and its payment (null while the sale has errors). */
 export interface QsPreview { totalCents: number; booklet: { vatableSalesCents: number; vatCents: number; discountCents: number; totalCents: number }; sale: Checked; payment: Checked | null }
@@ -113,6 +157,7 @@ export interface BoardCard {
   qty: number; releasedQty: number; garmentType: string | null; complexity: string | null; templateId: number | null; currentStepId: number | null; ready: boolean;
   steps: { stepId: number; status: StepStatus; pieces: number; reworkPieces: number }[] | null;
 }
+export interface NavResult { kind: 'Customer' | 'Wearer' | 'Job order' | 'Document' | 'Supplier' | 'Employee'; id: string; label: string; detail?: string; href: string }
 export interface PrdJob {
   jobOrder: { id: string; number: string; status: 'posted' | 'cancelled'; customerName: string; dueDate: string; priority: string; stage: string };
   lines: { lineNo: number; description: string; qty: number; releasedQty: number; setup: { templateId: number | null; garmentType: string; complexity: string; stepIds: number[] } | null;
@@ -741,6 +786,19 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     customerInvoices: (customerId: string) => call<CustomerInvoices>('GET', customer(customerId, 'invoices')),
     forfeitable: (customerId: string) => call<Forfeitable>('GET', customer(customerId, 'forfeitable')),
     joStatus: (id: string) => call<JoStatus>('GET', `/api/jo/orders/${encodeURIComponent(id)}/status`),
+    joDpInfo: (id: string) => call<DpInfo>('GET', `/api/jo/orders/${encodeURIComponent(id)}/dp-info`),
+    joPickOrders: (q: string) => call<JoPick[]>('GET', `/api/jo/pick/orders?${new URLSearchParams({ q })}`),
+    joPickReleases: (q: string) => call<ReleasePick[]>('GET', `/api/jo/pick/releases?${new URLSearchParams({ q })}`),
+    joReleaseInfo: (id: string) => call<ReleaseInvoiceInfo>('GET', `/api/jo/releases/${encodeURIComponent(id)}/invoice-info`),
+    joWearers: (customerId: string) => call<CustomerWearers>('GET', `/api/jo/customers/${encodeURIComponent(customerId)}/wearers`),
+    joReleasePreview: (release: unknown) => call<ReleasePreview>('POST', '/api/jo/releases/preview', { release }),
+    /** The release (REL-) and, unless the invoice is to follow (invoice: null), its invoice record, in one transaction. */
+    joRelease: (b: ReleaseBody, expectedTotalCents: number, key: string) =>
+      call<{ release: PostResult; invoiceRecord: PostResult | null }>('POST', '/api/jo/releases', { ...b, expectedTotalCents }, idem(key)),
+    addCustomer: (b: { kind: 'person' | 'organization'; displayName: string }) => call<CustomerRow & { duplicateWarnings: { id: string; reason: string }[] }>('POST', '/api/cus/customers', b),
+    catItems: (search: string) => call<CatItem[]>('GET', `/api/cat/items?${new URLSearchParams({ search, active: '1', limit: '10' })}`),
+    catPrice: (itemId: string, qty: number) => call<CatPrice>('GET', `/api/cat/items/${encodeURIComponent(itemId)}/price?${new URLSearchParams({ qty: String(qty) })}`),
+    cusSizes: () => call<{ id: string; label: string; is_active: number }[]>('GET', '/api/cus/sizes'),
     qsPreview: (b: QsBody) => call<QsPreview>('POST', '/api/qs/sales/preview', b),
     qsRecord: (b: QsBody, expectedTotalCents: number, key: string) => call<QsRecorded>('POST', '/api/qs/sales', { ...b, expectedTotalCents }, idem(key)),
     qsReissue: (id: string, b: QsBody, expectedTotalCents: number, reason: string, key: string) =>
@@ -749,6 +807,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     qsPayments: (id: string) => call<SalePayment[]>('GET', qs(id, 'payments')),
     prdCatalogue: () => call<PrdCatalogue>('GET', '/api/prd/catalogue'),
     prdBoard: () => call<BoardCard[]>('GET', '/api/prd/board'),
+    prdTv: () => call<{ cards: BoardCard[]; steps: PrdStep[] }>('GET', '/api/prd/tv'),
+    navSearch: (q: string) => call<NavResult[]>('GET', `/api/nav/search?${new URLSearchParams({ q })}`),
     prdJob: (id: string) => call<PrdJob>('GET', prdJob(id)),
     prdSetup: (jo: string, lineNo: number, body: PrdSetup) => call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/setup`), body),
     prdStep: (jo: string, lineNo: number, stepId: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) =>

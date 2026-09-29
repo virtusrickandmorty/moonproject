@@ -34,3 +34,27 @@ export function activeChart(db: Db, personId: string): { id: string; revision: n
     | { id: string; revision: number }
     | undefined;
 }
+
+/** A customer's active wearers with their group and size on file (the active chart), for the job order form's roster. */
+export interface WearerPick { personId: string; wearerName: string; groupId: string | null; sizeMode: 'preset' | 'measured'; size?: string; jerseyName?: string; jerseyNumber?: string }
+
+export function customerWearers(db: Db, customerId: string): { groups: { id: string; name: string }[]; wearers: WearerPick[] } {
+  const groups = db.prepare('SELECT id, name FROM cus_groups WHERE customer_id = ? AND is_active = 1 ORDER BY name, id').all(customerId) as { id: string; name: string }[];
+  const rows = db
+    .prepare(
+      `SELECT p.id AS personId, p.full_name AS wearerName, p.group_id AS groupId, p.default_jersey_name AS jerseyName, p.default_jersey_number AS jerseyNumber,
+         c.size_mode AS chartMode, c.upper_size AS size
+       FROM cus_people p LEFT JOIN cus_measure_charts c ON c.person_id = p.id AND c.status = 'active'
+       WHERE p.customer_id = ? AND p.is_active = 1 ORDER BY p.full_name, p.id`,
+    )
+    .all(customerId) as { personId: string; wearerName: string; groupId: string | null; jerseyName: string | null; jerseyNumber: string | null; chartMode: string | null; size: string | null }[];
+  // Measured on file: the job order links the chart. A preset size on file is filled in; no chart: staff pick a size.
+  const wearers = rows.map(({ chartMode, size, jerseyName, jerseyNumber, ...w }): WearerPick => ({
+    ...w,
+    sizeMode: chartMode === 'measured' ? 'measured' : 'preset',
+    ...(chartMode === 'preset' && size ? { size } : {}),
+    ...(jerseyName ? { jerseyName: jerseyName.toUpperCase() } : {}),
+    ...(jerseyNumber ? { jerseyNumber } : {}),
+  }));
+  return { groups, wearers };
+}

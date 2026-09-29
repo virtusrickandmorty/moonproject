@@ -26,6 +26,11 @@ export function employee(db: Db, id: string): Employee | undefined {
 /** Employees not separated, by name. */
 export const activeEmployees = (db: Db): Employee[] => (db.prepare(`${EMPLOYEE} WHERE is_active = 1 ORDER BY full_name, id`).all() as Row[]).map(asEmployee);
 
+export function searchEmployees(db: Db, query: string, limit = 20): Employee[] {
+  return (db.prepare(`${EMPLOYEE} WHERE full_name LIKE ? COLLATE NOCASE OR code LIKE ? COLLATE NOCASE
+    ORDER BY full_name, id LIMIT ?`).all(`%${query}%`, `%${query}%`, limit) as Row[]).map(asEmployee);
+}
+
 /** Recorded birthdays of active employees, without pay or government IDs. */
 export function employeeBirthdays(db: Db): { id: string; name: string; birthday: string }[] {
   return db.prepare(`SELECT id, full_name AS name, birthday FROM emp_employees

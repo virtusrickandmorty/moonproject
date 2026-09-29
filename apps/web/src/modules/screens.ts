@@ -7,12 +7,17 @@ import { CollectionForm } from './COL/CollectionForm.tsx';
 import { DepositTransferForm } from './COL/DepositTransferForm.tsx';
 import { RefundForm } from './COL/RefundForm.tsx';
 import { CreditMemoForm, CwtOnlyForm, ForfeitForm, WriteOffForm, creditMemoView, cwtOnlyView, forfeitView, writeOffView } from './COL/CreditForms.tsx';
-import { jobOrderView, openingJobOrderView } from './JO/JobOrderView.tsx';
+import { dpInvoiceView, invoiceRecordView, jobOrderView, openingJobOrderView, releaseView as joReleaseView } from './JO/JobOrderView.tsx';
+import { JobOrderForm } from './JO/JobOrderForm.tsx';
+import { ReleaseForm as JoReleaseForm } from './JO/ReleaseForm.tsx';
+import { InvoiceRecordForm } from './JO/InvoiceRecordForm.tsx';
+import { DpInvoiceForm } from './JO/DpInvoiceForm.tsx';
 import { OpeningJobOrderForm } from './JO/OpeningForm.tsx';
 import { QuickSaleForm } from './QS/QuickSaleForm.tsx';
 import { quickSaleView } from './QS/QuickSaleView.tsx';
 import { EntryForm } from './PRD/EntryForm.tsx';
 import { ProductionBoard } from './PRD/Board.tsx';
+import { TvBoard } from './PRD/TvBoard.tsx';
 import { PieceRates } from './RATE/Rates.tsx';
 import { Employees } from './EMP/Employees.tsx';
 import { EmployeePage } from './EMP/Employee.tsx';
@@ -28,6 +33,9 @@ import { AdvanceForm } from './CA/AdvanceForm.tsx';
 import { OpeningForm as OpeningCaForm } from './CA/OpeningForm.tsx';
 import { RepaymentForm, WriteoffForm } from './CA/SettleForms.tsx';
 import { CaEmployeePage, CaOwed } from './CA/Owed.tsx';
+import { Catalog } from './CAT/Catalog.tsx';
+import { QuotationForm } from './QUO/QuotationForm.tsx';
+import { quotationView } from './QUO/QuotationView.tsx';
 import { NotificationsPage } from './DASH/Home.tsx';
 import { CalendarPage } from './CAL/Calendar.tsx';
 import { Customers } from './CUS/Customers.tsx';
@@ -37,9 +45,12 @@ import { StatMonthPage, StatMonths, remittanceView } from './STAT/Statutory.tsx'
 import { RemittanceForm } from './STAT/RemittanceForm.tsx';
 import { OpeningStatForm } from './STAT/OpeningStatForm.tsx';
 import { GeneralJournal, GeneralLedger, TrialBalance } from './RPT/Books.tsx';
+import { BirBooks } from './RPT/BirBooks.tsx';
 import { BalanceSheet, IncomeStatement } from './RPT/Statements.tsx';
 import { ArAging, CustomerStatement } from './RPT/Receivables.tsx';
 import { DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
+import { PayrollRegister, PieceWork, LaborCost, ThirteenthRegister, ProductionStatus, Throughput, WorkerOutput, LeadTime, LateJobs, JobMargin } from './RPT/PayrollProduction.tsx';
+import { ApAging, Purchases, PurchaseOrders, ReceivedNotBilled, CashPosition, Transfers, CashCounts, Assets as AssetSchedule, LateEntries, Cancellations, Exceptions, SignIns } from './RPT/Operations.tsx';
 import { CashAccounts } from './CASH/CashAccounts.tsx';
 import { CashBook } from './CASH/CashBook.tsx';
 import { BankRecon, BankReconWork } from './CASH/BankRecon.tsx';
@@ -115,11 +126,13 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/dash/notifications': NotificationsPage,
   '/cal': CalendarPage,
   '/cus': Customers,
+  '/cat': Catalog,
   '/cash/accounts': CashAccounts,
   '/cash/book': CashBook,
   '/cash/recon': BankRecon,
   '/cash/recon/:id': BankReconWork,
   '/prd/board': ProductionBoard,
+  '/prd/tv': TvBoard,
   '/prd/rates': PieceRates,
   '/pur/suppliers': Suppliers,
   '/pur/suppliers/new': SupplierPage,
@@ -143,6 +156,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/booklets/new': RegisterBooklet,
   '/tax/booklets/:id': BookletPage,
   '/rpt/journal': GeneralJournal,
+  '/rpt/bir-books': BirBooks,
   '/rpt/ledger': GeneralLedger,
   '/rpt/trial-balance': TrialBalance,
   '/rpt/income-statement': IncomeStatement,
@@ -153,6 +167,28 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/rpt/collections-register': CollectionsRegister,
   '/rpt/sales-by-period': SalesByPeriod,
   '/rpt/job-order-follow-up': JobOrderFollowUp,
+  '/rpt/payroll-register': PayrollRegister,
+  '/rpt/piece-work': PieceWork,
+  '/rpt/labor-cost': LaborCost,
+  '/rpt/thirteenth-register': ThirteenthRegister,
+  '/rpt/production-status': ProductionStatus,
+  '/rpt/throughput': Throughput,
+  '/rpt/worker-output': WorkerOutput,
+  '/rpt/lead-time': LeadTime,
+  '/rpt/late-jobs': LateJobs,
+  '/rpt/job-margin': JobMargin,
+  '/rpt/ap-aging': ApAging,
+  '/rpt/purchases': Purchases,
+  '/rpt/purchase-orders': PurchaseOrders,
+  '/rpt/received-not-billed': ReceivedNotBilled,
+  '/rpt/cash-position': CashPosition,
+  '/rpt/transfers': Transfers,
+  '/rpt/cash-counts': CashCounts,
+  '/rpt/assets': AssetSchedule,
+  '/rpt/late-entries': LateEntries,
+  '/rpt/cancellations': Cancellations,
+  '/rpt/exceptions': Exceptions,
+  '/rpt/sign-ins': SignIns,
   '/tax/sales': SalesRegister,
   '/tax/2307-received': WithholdingReceived,
   '/tax/purchases': PurchasesRegister,
@@ -207,6 +243,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'col.credit_memo': CreditMemoForm,
   'col.write_off': WriteOffForm,
   'qs.sale': QuickSaleForm,
+  'quo.quotation': QuotationForm,
   'prd.entry': EntryForm,
   'pay.run': RunForm,
   'pay.release': ReleaseForm,
@@ -238,6 +275,10 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'inv.count': InventoryCountForm,
   'pur.po': PoForm,
   'pur.rr': RrForm,
+  'jo.job_order': JobOrderForm,
+  'jo.release': JoReleaseForm,
+  'jo.invoice_record': InvoiceRecordForm,
+  'jo.dp_invoice': DpInvoiceForm,
   'jo.opening': OpeningJobOrderForm,
   'tax.opening': OpeningWithholdingForm,
   'tax.payable.opening': OpeningPayableForm,
@@ -245,6 +286,6 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'tax.it_settlement': YearEndTaxForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'jo.opening': openingJobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'cash.bank_adj': bankAdjustmentView, 'ap.bill': billView, 'ap.payment': paymentView, 'ap.advance': supplierAdvanceView, 'ap.advance_return': advanceReturnView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView,
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'quo.quotation': quotationView(() => 'jo.job_order' in FORMS), 'jo.opening': openingJobOrderView, 'jo.release': joReleaseView, 'jo.invoice_record': invoiceRecordView, 'jo.dp_invoice': dpInvoiceView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'cash.bank_adj': bankAdjustmentView, 'ap.bill': billView, 'ap.payment': paymentView, 'ap.advance': supplierAdvanceView, 'ap.advance_return': advanceReturnView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView,
   'pur.po': purchaseOrderView, 'pur.rr': receivingReportView,
   'col.cwt_only': cwtOnlyView, 'col.forfeit': forfeitView, 'col.credit_memo': creditMemoView, 'col.write_off': writeOffView };

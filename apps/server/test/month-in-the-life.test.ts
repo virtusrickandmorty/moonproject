@@ -1,6 +1,7 @@
 /**
  * Month in the life (PLAN I2 G-30) and the blind recompute (PLAN I1 item 8). The month is `tools/month-scenario.ts`: G-27's
- * opening on 2026-08-31, G-01 to G-24 in September 2026, then the month-end, all through the HTTP API.
+ * opening on 2026-08-31, G-01 to G-24 in September 2026 (G-04 and G-05, downpayment VAT modes B and C, on 24 and 25
+ * September, each on its own job order), then the month-end, all through the HTTP API.
  *
  * The journals below are worked out by hand from the goldens in PLAN I2 and the rules of Part D, never copied from the
  * app. The test reads this block: each journal the app posts must be exactly its line here (account, amount, and the
@@ -9,6 +10,11 @@
  *
  * Figures worked out (D4.1 VAT = round(G × 12/112), D4.5 withholding on NET, F1/F3 payroll):
  *   VAT of ₱10,000.00 = 1,071.43, net 8,928.57; of ₱56,000.00 = 6,000.00; of ₱112,000.00 = 12,000.00; of ₱350.00 = 37.50.
+ *   G-04 (mode B, D3): VAT of the ₱28,000.00 downpayment = 3,000.00 on 2209, recognised in 2301 now (DEP-VAT); the invoice of
+ *         ₱56,000.00 books 6,000.00 and takes the 3,000.00 back out of 2209 (DEP-VAT-REV): 2301 +6,000.00, 2209 = 0.
+ *   G-05 (mode C, D3): the downpayment invoice 0509: 28,000.00 = net 25,000.00 (to 2201 until release) + VAT 3,000.00;
+ *         the balance invoice 0510 shows 56,000.00 − 28,000.00 = 28,000.00 = net 25,000.00 + VAT 3,000.00, and the
+ *         downpayment's 25,000.00 leaves 2201 for 4101 (DEP-APPLY): sales 50,000.00, 2301 +6,000.00, 2201 = 0, AR 28,000.00.
  *   G-10: list 56,000.00 → net 50,000.00; invoice 50,400.00 → VAT 5,400.00, net 45,000.00; discount 50,000.00 − 45,000.00.
  *   G-13: VAT of 40,000.00 = 4,285.71, net 35,714.29, EWT 5% = 1,785.71. G-14: non-VAT, EWT 5% of the gross = 2,000.00.
  *   G-18: cash on hand in the ledger on 21 September = 20,000.00 − 2,000.00 + 28,000.00 + 17,750.00 + 5,000.00
@@ -22,12 +28,13 @@
  *         EC 10); PhilHealth 5% of 550 × 313/12 = 717.29 → 358.65 each; Pag-IBIG 2% of 5,671.88 = 113.44 each; MWE: no
  *         tax; CA 1,000.00; 13th 5,500 / 12 = 458.33; net 5,671.88 − 275 − 358.65 − 113.44 − 1,000 = 3,924.79.
  *   M-01: heat press (100,000.00 − 10,000.00) / 60 = 1,500.00; embroidery machine 295,000.00 / 59 months left = 5,000.00.
- *   M-02: cash on hand = 82,450.00 − 2,000.00 (G-23) − 7,075.00 − 3,924.79 (S-03, S-04) = 69,450.21; counted 69,470.21.
+ *   M-02: cash on hand = 82,450.00 + 28,000.00 (G-04a) + 28,000.00 (G-05b) − 2,000.00 (G-23) − 7,075.00 − 3,924.79 (S-03, S-04)
+ *         = 125,450.21; counted 125,470.21.
  *   M-03..M-05: SSS 1,135 + 1,145 + 835 = 3,115.00; PhilHealth 750 + 717.30 = 1,467.30; Pag-IBIG 300 + 100 + 226.88 = 626.88.
  *   M-06: EWT of Q3 = 1,785.71 + 2,000.00 = 3,785.71 (the 1601-EQ: September has no 0619-E).
- *   M-07: output VAT Test School 6,000.00 + 3 × 1,071.43 + 37.50 + 5,400.00 − 600.00 = 14,051.79; Sample City Hall 12,000.00;
- *         input VAT 4,285.71 + 1,200.00 + 12,000.00 = 17,485.71; VAT withheld 5,000.00 (2307 in hand);
- *         payable 26,051.79 − 17,485.71 − 5,000.00 = 3,566.08.
+ *   M-07: output VAT Test School 6,000.00 + 3 × 1,071.43 + 37.50 + 5,400.00 − 600.00 + 6,000.00 (G-04) + 6,000.00 (G-05)
+ *         = 26,051.79; Sample City Hall 12,000.00; input VAT 4,285.71 + 1,200.00 + 12,000.00 = 17,485.71; VAT withheld
+ *         5,000.00 (2307 in hand); payable 38,051.79 − 17,485.71 − 5,000.00 = 15,566.08.
  *
  * BEGIN JOURNALS
  * G-27a OB-000001     2026-08-31  Dr 1101 20,000.00 · Dr 1111 150,000.00 · Cr 3900 170,000.00
@@ -74,6 +81,15 @@
  * G-20b LPAY-000001   2026-09-23  Dr 2601 20,000.00 (Sample Bank loan) · Dr 7201 5,000.00 · Cr 1111 25,000.00
  * G-21  FA-000001     2026-09-23  Dr 1510 100,000.00 (Heat press) · Dr 1401 12,000.00 (Sample Machines) · Cr 1111 30,000.00
  *                                 · Cr 2602 82,000.00 (Heat press financing)
+ * G-04a COL-000009    2026-09-24  Dr 1101 28,000.00 · Cr 2201 28,000.00 (Test School) · Dr 2209 3,000.00 (Test School)
+ *                                 · Cr 2301 3,000.00 (Test School)
+ * G-04b IR-000008     2026-09-24  Dr 1201 56,000.00 (Test School) · Cr 4101 50,000.00 · Cr 2301 6,000.00 (Test School)
+ *                                 · Dr 2201 28,000.00 (Test School) · Cr 1201 28,000.00 (Test School)
+ *                                 · Dr 2301 3,000.00 (Test School) · Cr 2209 3,000.00 (Test School)
+ * G-05a IR-000009     2026-09-25  Dr 1201 28,000.00 (Test School) · Cr 2201 25,000.00 (Test School) · Cr 2301 3,000.00 (Test School)
+ * G-05b COL-000010    2026-09-25  Dr 1101 28,000.00 · Cr 1201 28,000.00 (Test School)
+ * G-05c IR-000010     2026-09-25  Dr 1201 28,000.00 (Test School) · Cr 4101 25,000.00 · Cr 2301 3,000.00 (Test School)
+ *                                 · Dr 2201 25,000.00 (Test School) · Cr 4101 25,000.00
  * G-23  CA-000001     2026-09-25  Dr 1210 2,000.00 (Ana Tahi) · Cr 1101 2,000.00
  * G-22  INVC-000001   2026-09-30  Dr 1301 25,000.00 · Cr 5109 25,000.00
  * G-24  PAY-000002    2026-09-30  Dr 6101 7,500.00 · Dr 6102 820.00 · Dr 6103 625.00 · Cr 2401 1,145.00 (Carla Opisina)
@@ -89,10 +105,10 @@
  * M-04  REM-000002    2026-09-30  Dr 2402 750.00 (Carla Opisina) · Dr 2402 717.30 (Ana Tahi) · Cr 1111 1,467.30
  * M-05  REM-000003    2026-09-30  Dr 2403 400.00 (Carla Opisina) · Dr 2403 226.88 (Ana Tahi) · Cr 1111 626.88
  * M-06  BIRP-000001   2026-09-30  Dr 2311 1,785.71 (Sample Lessor Corp.) · Dr 2311 2,000.00 (Sample Landlord) · Cr 1111 3,785.71
- * M-07  VATC-000001   2026-09-30  Dr 2301 14,051.79 (Test School) · Dr 2301 12,000.00 (Sample City Hall) · Cr 1401 4,285.71 (Sample Lessor Corp.)
+ * M-07  VATC-000001   2026-09-30  Dr 2301 26,051.79 (Test School) · Dr 2301 12,000.00 (Sample City Hall) · Cr 1401 4,285.71 (Sample Lessor Corp.)
  *                                 · Cr 1401 1,200.00 (Sample Fabric Trading) · Cr 1401 12,000.00 (Sample Machines)
- *                                 · Cr 1404 5,000.00 (Sample City Hall) · Cr 2302 3,566.08
- * M-08  BIRP-000002   2026-09-30  Dr 2302 3,566.08 · Cr 1111 3,566.08
+ *                                 · Cr 1404 5,000.00 (Sample City Hall) · Cr 2302 15,566.08
+ * M-08  BIRP-000002   2026-09-30  Dr 2302 15,566.08 · Cr 1111 15,566.08
  * END JOURNALS
  */
 import { execFileSync } from 'node:child_process';
@@ -167,7 +183,7 @@ describe('month in the life (PLAN I2 G-30)', () => {
     const tb = readTb();
     expect(tb.map((r) => [r.code, r.debitCents, r.creditCents])).toEqual(fromHand);
     const total = (k: 'debitCents' | 'creditCents') => tb.reduce((s, r) => s + r[k], 0);
-    expect([total('debitCents'), total('creditCents')]).toEqual([144_950_654, 144_950_654]);
+    expect([total('debitCents'), total('creditCents')]).toEqual([154_950_654, 154_950_654]);
   });
 
   it('records every document of the month with the journal worked out by hand, dated as planned', async () => {
@@ -191,15 +207,26 @@ describe('month in the life (PLAN I2 G-30)', () => {
     expect((await m.get('/api/acc/opening')).closed).toMatchObject({ cutoverDate: '2026-08-31', totalDebitCents: 50_600_000, totalCreditCents: 50_600_000 });
   });
 
-  it('refuses G-04 and G-05 (downpayment VAT modes B and C are not built) and the 0619-E of a third month, posting nothing', () => {
-    expect(m.refusals.map((r) => [r.step, r.code])).toEqual([['G-04', 'DEPOSIT_VAT_MODE'], ['G-05', 'DEPOSIT_VAT_MODE'], ['0619-E', 'THIRD_MONTH']]);
-    expect(m.refusals[2]!.message).toBe('September 2026 is the last month of Q3 2026, which has no 0619-E: its EWT is paid with the 1601-EQ for the quarter.');
+  it('refuses the 0619-E of a third month, posting nothing', () => {
+    expect(m.refusals.map((r) => [r.step, r.code])).toEqual([['0619-E', 'THIRD_MONTH']]);
+    expect(m.refusals[0]!.message).toBe('September 2026 is the last month of Q3 2026, which has no 0619-E: its EWT is paid with the 1601-EQ for the quarter.');
+  });
+
+  it('G-04 and G-05 end as PLAN I2 says: each job order owes 28,000.00, 2209 and their deposits are zero, and the sales register ties to 2301', async () => {
+    for (const jo of [m.ids.jo8!, m.ids.jo9!]) {
+      expect((await m.get(`/api/jo/orders/${jo}/status`)).money).toMatchObject({ totalCents: 5_600_000, invoicedCents: 5_600_000, receivableCents: 2_800_000, depositsHeldCents: 0, balanceDueCents: 2_800_000 });
+    }
+    const tb = await m.get(`/api/rpt/trial-balance?asOf=2026-09-25`);
+    expect(tb.rows.find((r: TbRow) => r.code === '2209')).toBeUndefined();
+    // Before the VAT close: G-04 and G-05 each add 6,000.00 of output VAT and 50,000.00 of VATable sales.
+    const register = await m.get('/api/tax/registers/sales?from=2026-09-24&to=2026-09-25');
+    expect([register.totals.netCents, register.totals.vatCents, register.glVatCents]).toEqual([10_000_000, 1_200_000, 1_200_000]);
   });
 
   it('ends on the trial balance of tests/golden/month.tb.csv, to the centavo, account names included', async () => {
     const tb = await m.get(`/api/rpt/trial-balance?asOf=${MONTH_END}`);
     expect(tb.rows.map((r: TbRow) => ({ code: r.code, name: r.name, debitCents: r.debitCents, creditCents: r.creditCents }))).toEqual(readTb());
-    expect([tb.totalDebitCents, tb.totalCreditCents]).toEqual([144_950_654, 144_950_654]);
+    expect([tb.totalDebitCents, tb.totalCreditCents]).toEqual([154_950_654, 154_950_654]);
   });
 
   it('keeps every D9 invariant', () => {
@@ -229,7 +256,7 @@ describe('month in the life (PLAN I2 G-30)', () => {
     const assets = await m.get<{ costCents: number; accumulatedCents: number }[]>('/api/fa/assets');
     expect([sum(assets, (a) => a.costCents), sum(assets, (a) => a.accumulatedCents)]).toEqual([bal('1510'), -bal('1511')]);
     // What the month leaves open, as worked out by hand.
-    expect([bal('1201'), bal('2201'), bal('2101'), bal('1210'), bal('2601'), bal('2602'), bal('1511')]).toEqual([8_080_000, -3_500_000, -620_000, 100_000, -68_000_000, -8_200_000, -650_000]);
+    expect([bal('1201'), bal('2201'), bal('2101'), bal('1210'), bal('2601'), bal('2602'), bal('1511')]).toEqual([13_680_000, -3_500_000, -620_000, 100_000, -68_000_000, -8_200_000, -650_000]);
   });
 });
 

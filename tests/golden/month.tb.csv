@@ -1,10 +1,10 @@
 account_code,account_name,debit,credit
-1101,Cash on hand (main cash box),69470.21,0.00
+1101,Cash on hand (main cash box),125470.21,0.00
 1102,Petty cash fund,1800.00,0.00
-1111,Cash in bank – BDO,712224.74,0.00
+1111,Cash in bank – BDO,700224.74,0.00
 1112,Cash in bank – China Bank,9975.00,0.00
 1121,E-wallet – GCash,10000.00,0.00
-1201,Accounts receivable – trade,80800.00,0.00
+1201,Accounts receivable – trade,136800.00,0.00
 1210,Advances to employees (cash advances),1000.00,0.00
 1301,Materials and supplies inventory,25000.00,0.00
 1410,Creditable withholding tax (customers' 2307),1250.00,0.00
@@ -18,7 +18,7 @@ account_code,account_name,debit,credit
 2602,Equipment financing payable,0.00,82000.00
 3101,Capital stock,0.00,250000.00
 3201,Retained earnings,0.00,36000.00
-4101,Sales – made-to-order garments,0.00,226785.71
+4101,Sales – made-to-order garments,0.00,326785.71
 4103,Service income – repairs and alterations,0.00,312.50
 4190,Sales discounts,5000.00,0.00
 4191,Sales returns and allowances,5000.00,0.00

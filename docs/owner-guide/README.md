@@ -1,7 +1,6 @@
 # Owner Guides
 
 Welcome to the Moonproject guides. These short guides show you step-by-step how to do your daily tasks in the system.
-
 - [1. New Customer and Measurements](01-new-customer.md): Add a customer and their measurements.
 - [2. Job Order and Downpayment](02-job-order.md): Take a job order with a downpayment.
 - [3. Release and Invoice](03-release-and-invoice.md): Release an order and type the booklet invoice number (what to write on the booklet).
@@ -31,4 +30,7 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [28. Year-end tax and 2316](28-year-end-tax.md): Do the year-end adjustment, check substituted filing, and download the 2316 and alphalist.
 - [29. VAT each quarter](29-vat-each-quarter.md): Check the VAT registers, mark 2307s received, preview the quarter's VAT, and close the VAT.
 - [30. Suppliers and Purchase Orders](30-suppliers-and-purchase-orders.md): Manage suppliers and your supplies list, make purchase orders, and receive goods.
+- [32. Bank reconciliation](32-bank-reconciliation.md): Check that your bank accounts match your real bank statements.
+- [33. Month-end checklist](33-month-end-checklist.md): View the status of month-end tasks and sign off the month.
 - [35. Users, Roles and Passwords](35-users-roles-passwords.md): Manage staff logins, permissions, and passwords.
+- [36. Fixed assets, loans and owners](36-fixed-assets-loans-owners.md): See your fixed assets, your loans, and the people who own or run the business.
