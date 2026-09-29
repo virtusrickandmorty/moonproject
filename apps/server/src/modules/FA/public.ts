@@ -39,3 +39,4 @@ export function depreciationOfMonth(db: Db, month: string): { run: { id: string;
   return { run: run ?? null, assetsToCharge };
 }
 export { assetsInService, accumulatedCents, straightLine, monthsInService } from './assets.ts';
+export { DISPOSAL_SERIES, assetSale, assetSaleByInvoiceNumber, assetSaleInvoiceNumbersBetween, type AssetSale } from './sales.ts';

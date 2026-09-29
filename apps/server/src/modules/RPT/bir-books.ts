@@ -81,8 +81,11 @@ export function cashJournal(db: Db, from: string, to: string, kind: 'receipts' |
   return { book: kind, from, to, pages: paginate(rows, cashAmounts), totals };
 }
 
-/** Invoices on the sales journal: release invoice records, downpayment invoices (mode C) and quick sales. */
-const SALES_BOOK_TYPES = new Set(['jo.invoice_record', 'jo.dp_invoice', 'qs.sale']);
+/**
+ * Invoices on the sales journal: release invoice records, downpayment invoices (mode C), quick sales and asset sales
+ * (fa.disposal: only a sale is on the sales register, a retirement posts no output VAT and stays out).
+ */
+const SALES_BOOK_TYPES = new Set(['jo.invoice_record', 'jo.dp_invoice', 'qs.sale', 'fa.disposal']);
 
 /**
  * Sales journal: the sales register's rows for invoices (TAX registers.ts), so VATable sales and VAT are the figures the

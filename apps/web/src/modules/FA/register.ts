@@ -4,6 +4,7 @@
  */
 import type { AssetPage, AssetRow, AssetStatus, DepreciationGaps } from '../../api.ts';
 import { monthLabel } from '../TAX/bir.ts';
+import { cents } from '../COL/money.ts';
 
 export const STATUS_WORDS: Record<AssetStatus, string> = { 'in service': 'In service', 'fully depreciated': 'Fully depreciated', disposed: 'Disposed of', cancelled: 'Cancelled' };
 export const STATUSES = Object.keys(STATUS_WORDS) as AssetStatus[];
@@ -41,10 +42,55 @@ export function onTheBooks(rows: AssetRow[]) {
   return { count: live.length, costCents: sum('costCents'), accumulatedCents: sum('accumulatedCents'), bookValueCents: sum('bookValueCents') };
 }
 
-/** The disposal dialog's reason -> input. Only a retirement can be recorded for now (a sale needs an invoice record). */
+const REASON_ERROR = 'Say why it is being taken off the books (at least 5 characters).';
+
+/** The disposal dialog's reason -> the input of a retirement (nothing received for the asset). */
 export function disposalInput(assetId: string, reason: string) {
-  const errors = reason.trim().length >= 5 ? [] : ['Say why it is being taken off the books (at least 5 characters).'];
+  const errors = reason.trim().length >= 5 ? [] : [REASON_ERROR];
   return { input: { assetId, kind: 'retirement', reason: reason.trim() }, errors };
+}
+
+/** A sale as typed (PLAN D5 FA-DISP): the buyer picked or typed, the booklet invoice, the price VAT included, where it was paid. */
+export interface SaleValues {
+  reason: string; buyer: 'customer' | 'typed'; customer: { id: string; name: string } | null; buyerName: string; buyerAddress: string; buyerTin: string;
+  invoiceNumber: string; price: string; cashPlaceId: string;
+}
+export const emptySale = (): SaleValues => ({ reason: '', buyer: 'customer', customer: null, buyerName: '', buyerAddress: '', buyerTin: '', invoiceNumber: '', price: '', cashPlaceId: '' });
+
+/** The sale's values -> input, and every slip to fix before the server is asked. The server checks everything again. */
+export function saleInput(assetId: string, v: SaleValues) {
+  const errors: string[] = [];
+  if (v.reason.trim().length < 5) errors.push(REASON_ERROR);
+  const typed = { buyerName: v.buyerName.trim(), buyerAddress: v.buyerAddress.trim(), buyerTin: v.buyerTin.trim() };
+  const buyer = v.buyer === 'customer' ? (v.customer ? { customerId: v.customer.id } : null) : typed;
+  if (!buyer) errors.push('Pick the buyer from the customers.');
+  else if (v.buyer === 'typed') {
+    if (typed.buyerName.length < 2) errors.push('Type the buyer’s name as it goes on the invoice.');
+    if (typed.buyerAddress.length < 5) errors.push('Type the buyer’s address.');
+    if (!/^\d{3}-\d{3}-\d{3}-\d{3}(\d{2})?$/.test(typed.buyerTin)) errors.push('Type the buyer’s TIN like 123-456-789-000.');
+  }
+  const invoiceNumber = v.invoiceNumber.trim();
+  if (!/^0*[1-9]\d{0,11}$/.test(invoiceNumber)) errors.push('Type the invoice number from the booklet (digits only).');
+  const price = cents(v.price);
+  if (!price || price < 0) errors.push('Type the price the buyer paid, VAT included, like 33,600.00');
+  if (!v.cashPlaceId) errors.push('Pick where the buyer paid.');
+  const input = { assetId, kind: 'sale', reason: v.reason.trim(), ...buyer, invoiceNumber, ...(price && price > 0 ? { priceCents: price } : {}), ...(v.cashPlaceId ? { cashPlaceId: Number(v.cashPlaceId) } : {}) };
+  return { input, errors };
+}
+
+/** What the server worked out for a disposal (its preview's doc), as the dialog shows it before saving. */
+export interface DisposalFigures {
+  bookValueCents: number; gainCents: number; lossCents: number;
+  sale: { grossCents: number; vatCents: number; vatableSalesCents: number } | null;
+}
+
+/** Book value and the gain or loss; for a sale, "write these on the booklet" (VATable sales, VAT, total) like the quick sale form. */
+export function disposalFigures(d: DisposalFigures) {
+  const result: [string, number][] = d.gainCents > 0 ? [['Gain on the sale', d.gainCents]] : d.lossCents > 0 ? [[d.sale ? 'Loss on the sale' : 'Loss (the book value)', d.lossCents]] : [];
+  return {
+    result: [['Book value today', d.bookValueCents] as [string, number], ...result],
+    booklet: d.sale ? ([['VATable sales', d.sale.vatableSalesCents], ['VAT', d.sale.vatCents], ['Total', d.sale.grossCents]] as [string, number][]) : null,
+  };
 }
 
 /** Whether a disposal or a run may still be recorded for this asset. */

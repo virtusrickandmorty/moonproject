@@ -121,20 +121,21 @@ export function slspSales(db: Db, year: number, quarter: Quarter, today: string)
   const lines = new Map<string, SlspSalesRow>();
   const members = new Map<string, Set<string>>();
   const noTinVatRegistered = new Set<string>();
-  const line = (customerId: string | null) => {
-    const who = customerId ? customerName(db, customerId) : { name: '', tin: null, vatRegistered: false };
-    const key = who.tin && customerId ? customerId : '';
+  // A buyer typed on an asset sale (FA) has no customer record: the register row names them, keyed by their TIN.
+  const line = (customerId: string | null, typed?: { name: string; tin: string | null }) => {
+    const who = typed ? { ...typed, vatRegistered: false } : customerId ? customerName(db, customerId) : { name: '', tin: null, vatRegistered: false };
+    const key = who.tin && (customerId ?? typed) ? (customerId ?? `tin:${who.tin}`) : '';
     if (!who.tin && who.vatRegistered) noTinVatRegistered.add(who.name);
     members.set(key, (members.get(key) ?? new Set()).add(customerId ?? ''));
     const l = lines.get(key) ?? {
-      customerId: key ? customerId : null, tin: key ? who.tin : null, registeredName: key ? who.name : 'Walk-in and other customers without a TIN', address: null,
+      customerId: key && customerId ? customerId : null, tin: key ? who.tin : null, registeredName: key ? who.name : 'Walk-in and other customers without a TIN', address: null,
       exemptCents: 0, zeroRatedCents: 0, vatableCents: 0, outputTaxCents: 0, grossTaxableCents: 0, toClassifyCents: 0, customers: 0,
     };
     lines.set(key, l);
     return l;
   };
   for (const r of register.rows) {
-    const l = line(r.customerId);
+    const l = line(r.customerId, r.docType === 'fa.disposal' && !r.customerId ? { name: r.customerName, tin: r.tin } : undefined);
     l.vatableCents += r.netCents;
     l.outputTaxCents += r.vatCents;
     l.grossTaxableCents += r.totalCents;
@@ -148,7 +149,7 @@ export function slspSales(db: Db, year: number, quarter: Quarter, today: string)
   for (const [key, l] of lines) l.customers = members.get(key)!.size;
   const rows = [...lines.values()]
     .filter((l) => l.exemptCents || l.zeroRatedCents || l.vatableCents || l.outputTaxCents || l.toClassifyCents)
-    .sort((a, b) => Number(!a.customerId) - Number(!b.customerId) || a.registeredName.localeCompare(b.registeredName));
+    .sort((a, b) => Number(!a.tin) - Number(!b.tin) || a.registeredName.localeCompare(b.registeredName));
   const sum = (f: (r: SlspSalesRow) => number) => total(rows, f);
   const totals = {
     exemptCents: sum((r) => r.exemptCents), zeroRatedCents: sum((r) => r.zeroRatedCents), vatableCents: sum((r) => r.vatableCents),
@@ -160,14 +161,14 @@ export function slspSales(db: Db, year: number, quarter: Quarter, today: string)
     tie('output_register', 'Output tax = sales register', totals.outputTaxCents, register.totals.vatCents),
     tie('output_gl', 'Output tax = 2301 output VAT in the books', totals.outputTaxCents, register.glVatCents),
     tie('revenue_gl', 'Sales (all columns and to classify) and other income without VAT = revenue accounts in the books',
-      totals.vatableCents + totals.zeroRatedCents + totals.exemptCents + totals.toClassifyCents + otherIncomeCents, revenueMovement(db, from, to)),
+      totals.vatableCents + totals.zeroRatedCents + totals.exemptCents + totals.toClassifyCents + otherIncomeCents, revenueMovement(db, from, to) + register.assetSalesNotRevenueCents),
   ];
   const [checks, check] = checker();
   tiedCheck(check, ties, 'SLSP of sales');
   check(totals.toClassifyCents !== 0, 'TO_CLASSIFY', 'warning', 'Some sales carry no output VAT (journal vouchers): mark each zero-rated, exempt or not a sale.');
   check(noTinVatRegistered.size > 0, 'NO_TIN', 'warning',
     `VAT-registered customers with no TIN on file are in the line without a TIN: ${[...noTinVatRegistered].sort().join(', ')}. Add their TIN so they get their own row.`);
-  check(rows.some((r) => !r.customerId), 'WALK_IN', 'info', 'Customers without a TIN (walk-in sales) are summed on one line with no TIN.');
+  check(rows.some((r) => !r.tin), 'WALK_IN', 'info', 'Customers without a TIN (walk-in sales) are summed on one line with no TIN.');
   check(rows.length > 0, 'NO_ADDRESS', 'info', 'The ERP gives no addresses to the tax lists yet: type each address in the BIR form.');
   check(today <= to, 'PERIOD_OPEN', 'info', 'The quarter has not ended: these figures still change.');
   return { year, quarter, from, to, rows, totals, otherIncomeCents, ties, checks, noVatSales: noVat.filter((x) => x.sale) };

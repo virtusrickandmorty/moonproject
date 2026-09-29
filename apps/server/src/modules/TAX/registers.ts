@@ -9,12 +9,15 @@
  *   Sales register (2301 output VAT): VATable sales = the journal's revenue credits, VAT, total. With downpayment VAT
  *   modes B and C (PLAN D3) the VAT on a downpayment is booked before the sale: the VATable amount behind it comes with
  *   it (COL registerBaseOf: + on the collection or downpayment invoice, − on the release invoice that books the rest).
+ *   An asset sale (FA, fa.disposal of kind sale) is a VATable sale at its NET, to the buyer on its invoice (a customer or
+ *   a buyer typed on the sale); its journal credits revenue only with the gain (7102), so the rest of the NET comes with it.
  *   Withholding received (1410 CWT and 1404 VAT withheld, the customers' 2307s): ATC and whether the 2307 is in hand.
  *   An opening withholding (OBWT-) is one row per 2307 it brings in, marked as opening, with the quarter it covers.
  */
 import type { Db } from '../../platform/db/driver.ts';
 import { customerRef, customerTaxInfo } from '../CUS/public.ts';
 import { registerBaseOf, registerBaseSources, withholdingOf } from '../COL/public.ts';
+import { assetSale } from '../FA/public.ts';
 import { OPENING_WITHHOLDING, openingLines, receivedOn } from './withholding.ts';
 
 export interface RegisterRow {
@@ -103,11 +106,19 @@ export const total = <T>(rows: T[], f: (r: T) => number) => rows.reduce((s, r) =
  * VATable amount whose VAT rounded to nothing (a few centavos) has no 2301 line: its journal is listed too, VAT 0.00.
  */
 export function salesRegister(db: Db, from: string, to: string) {
+  let assetSalesNotRevenueCents = 0;
   const rows: SalesRow[] = touches(db, ['OUTPUT_VAT'], {
     vatCents: `CASE WHEN a.role_key = 'OUTPUT_VAT' THEN l.credit_cents - l.debit_cents ELSE 0 END`,
     netCents: `CASE WHEN a.type = 'revenue' THEN l.credit_cents - l.debit_cents ELSE 0 END`,
     vatLines: `CASE WHEN a.role_key = 'OUTPUT_VAT' THEN 1 ELSE 0 END`,
   }, from, to, registerBaseSources(db)).map((t) => {
+    const sale = t.docType === 'fa.disposal' && t.sourceType === 'document' ? assetSale(db, t.sourceId) : undefined;
+    if (sale) {
+      const netCents = (t.posting === 'reversal' ? -1 : 1) * sale.netCents;
+      assetSalesNotRevenueCents += netCents - t.netCents;
+      const buyer = { customerId: sale.customerId, customerName: sale.buyerName, tin: sale.buyerTin };
+      return { ...base(db, t), ...buyer, netCents, vatCents: t.vatCents, totalCents: netCents + t.vatCents, vatLines: t.vatLines };
+    }
     const netCents = t.netCents + registerBaseOf(db, t.sourceType, t.sourceId, t.posting);
     return { ...base(db, t), netCents, vatCents: t.vatCents, totalCents: netCents + t.vatCents, vatLines: t.vatLines };
   }).filter((r) => r.vatLines > 0 || r.netCents !== 0).map(({ vatLines: _, ...r }) => r);
@@ -117,6 +128,8 @@ export function salesRegister(db: Db, from: string, to: string) {
     totals: { netCents: total(rows, (r) => r.netCents), vatCents, totalCents: total(rows, (r) => r.totalCents) },
     /** 2301's movement in the period; equal to the VAT total, or the register is missing something. */
     glVatCents: movement(db, ['OUTPUT_VAT'], from, to, 'credit'),
+    /** What asset sales add to VATable sales beyond the revenue they book (their NET less the gain): the SLSP ties revenue with it. */
+    assetSalesNotRevenueCents,
   };
 }
 

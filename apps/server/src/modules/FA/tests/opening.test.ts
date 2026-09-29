@@ -161,7 +161,7 @@ describe('golden: a disposal', () => {
     const { id } = (await open(heatPress())).json();
     await goTo('2026-10-20T02:00:00Z');
     const oct = (await run('2026-10')).json();
-    expect(errorCodes(await post('disposal', { assetId: id, kind: 'sale', reason: 'Sold to another shop' }, 10_000_000))).toEqual(['SALE_NEEDS_INVOICE']);
+    expect(errorCodes(await post('disposal', { assetId: id, kind: 'sale', reason: 'Sold to another shop' }, 0))).toEqual(['BUYER', 'INVOICE', 'PRICE', 'CASH_PLACE']);
     const fad = await post('disposal', { assetId: id, kind: 'retirement', reason: 'Heating plate cracked, scrapped' }, 10_000_000);
     expect(fad.statusCode, fad.body).toBe(200);
     expect(fad.json()).toMatchObject({
