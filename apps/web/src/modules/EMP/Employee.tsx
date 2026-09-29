@@ -37,7 +37,7 @@ export function EmployeePage({ me, params }: { me: Me; params?: Record<string, s
       {!e.isActive && <Notice tone="info">Separated on {e.separatedOn}: {e.separationReason}</Notice>}
       <Record e={e} editable={e.isActive && can('emp.manage')} idsVisible={can('emp.view_ids')} onSaved={load} />
       <Panel title={`Paid leave (SIL) ${d.sil.year}`}>
-        <p className="text-sm">{d.sil.eligibleFrom > `${d.sil.year}-12-31` ? `Paid leave starts after a year of service, on ${d.sil.eligibleFrom}.` : `${d.sil.used} of ${d.sil.daysPerYear} days used; ${d.sil.left} left.`}</p>
+        <p className="text-sm">{d.sil.eligibleFrom > `${d.sil.year}-12-31` ? `Paid leave starts after a year of service, on ${d.sil.eligibleFrom}.` : `${d.sil.used} of ${d.sil.daysPerYear} days used${d.sil.paid ? `, ${d.sil.paid} paid in cash` : ''}; ${d.sil.left} left.`}</p>
       </Panel>
       <Pay d={d} canSet={e.isActive && can('emp.pay') && can('pay.view_rates')} onSaved={load} />
       {can('ca.view') && <Link to={`/ca/employees/${e.id}`} className="underline">Cash advances (what {e.fullName} owes)</Link>}

@@ -115,7 +115,7 @@ export function payRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/pay/thirteenth/years', { config: { permission: 'pay.thirteenth.create' } }, async () => {
     const year = +today(clock).slice(0, 4);
     const recorded = db
-      .prepare(`SELECT t.pay_group AS payGroup, t.year, d.id, d.number FROM pay_thirteenths t JOIN documents d ON d.id = t.document_id WHERE d.status = 'posted' AND t.year >= ? ORDER BY t.year DESC, d.number`)
+      .prepare(`SELECT t.pay_group AS payGroup, t.year, d.id, d.number FROM pay_thirteenths t JOIN documents d ON d.id = t.document_id WHERE d.status = 'posted' AND t.year >= ? AND t.separated_employee_id IS NULL ORDER BY t.year DESC, d.number`)
       .all(year - 1) as { payGroup: string; year: number; id: string; number: string }[];
     return { years: [year, year - 1], recorded };
   });
