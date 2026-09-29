@@ -15,6 +15,29 @@ export const KINDS: { kind: MigKind; label: string; columns: string; holds: stri
   { kind: 'employee', label: 'Employees', columns: 'Employee_ID, Employee_Name, Daily_Rate', holds: 'employees and their daily rates' },
   { kind: 'piece_rate', label: 'Piece rates', columns: 'Garment_Type, Operation, Rate', holds: 'the piece-rate list' },
 ];
+
+/**
+ * The old Google sheet's own tabs, downloaded as they are (File > Download > Comma-separated values, one tab at a time).
+ * The server renames their columns to the importer's own (MIG/sheet.ts `sheetTabOf`, same rules); no renaming by hand.
+ */
+export type SheetTabKey = 'customers' | 'sizes' | 'employees';
+export const SHEET_TABS: Record<SheetTabKey, { name: string; kind: MigKind; columns: string; notKept?: string }> = {
+  customers: { name: 'Customers', kind: 'customer', columns: 'Customer ID, Name, Email Address, Contact No., Address' },
+  sizes: { name: 'Customer Sizes', kind: 'measurement', columns: 'Size ID, Customer ID, Customer Name, Upper Size, Shoulder to Lower Length (with Sleeve Height), Lower Size, Remarks' },
+  employees: { name: 'Employees', kind: 'employee', columns: 'Employee ID, Name, Job Title, Salary Category, Status, Date Employed',
+    notKept: 'Date of Birth, Gender, Address and Contact No.' },
+};
+const SHEET_KIND_TAB: Partial<Record<MigKind, SheetTabKey>> = { customer: 'customers', measurement: 'sizes', employee: 'employees' };
+const normHeader = (h: string) => h.trim().toLowerCase().replace(/\s+/g, ' ');
+/** Which tab of the old sheet a file's columns are, or null (MIG/sheet.ts `sheetTabOf`, same order). */
+export function sheetTabOf(headers: string[]): SheetTabKey | null {
+  const has = new Set(headers.map(normHeader));
+  if (has.has('employee id')) return 'employees';
+  if (has.has('size id')) return 'sizes';
+  if (has.has('customer id') && has.has('name')) return 'customers';
+  return null;
+}
+const tabWords = (tab: SheetTabKey): string => `the ${SHEET_TABS[tab].name} tab of the old sheet`;
 export const kindLabel = (kind: MigRowType): string => KINDS.find((k) => k.kind === kind)?.label ?? 'Unknown';
 const ROW_WORDS: Record<MigRowType, string> = { customer: 'Customer', measurement: 'Measurements', employee: 'Employee', piece_rate: 'Piece rate', unknown: 'Unknown' };
 export const rowTypeWords = (t: MigRowType): string => ROW_WORDS[t];
@@ -61,6 +84,8 @@ export function headerOf(csv: string): string[] {
 
 /** What the server will read a file with these columns as (MIG/csv.ts `rowTypeOf`, same order). */
 export function kindOfHeader(headers: string[]): MigRowType {
+  const tab = sheetTabOf(headers);
+  if (tab) return SHEET_TABS[tab].kind;
   const has = (k: string) => headers.includes(k);
   if (has('Measurement_ID') || headers.some((h) => measurementKey(h))) return 'measurement';
   if (has('Employee_ID') || has('Employee_Name') || has('Daily_Rate') || has('Pay_Type')) return 'employee';
@@ -74,11 +99,31 @@ export function fileProblem(kind: MigKind | '', filename: string, csv: string): 
   if (!kind) return 'Pick what the file holds.';
   if (!filename) return 'Pick the CSV file.';
   if (!cleanCsv(csv).trim()) return 'The file is empty.';
-  const found = kindOfHeader(headerOf(csv));
+  const headers = headerOf(csv);
+  const found = kindOfHeader(headers);
   const wanted = KINDS.find((k) => k.kind === kind)!;
-  if (found === 'unknown') return `Moonproject cannot tell what this file holds from its first line. ${wanted.label} need these columns: ${wanted.columns}.`;
-  if (found !== kind) return `This file looks like ${kindLabel(found).toLowerCase()}, not ${wanted.label.toLowerCase()}. Pick ${kindLabel(found)}, or choose another file.`;
+  const tab = sheetTabOf(headers);
+  if (found === 'unknown') {
+    const own = SHEET_KIND_TAB[kind];
+    return `Moonproject cannot tell what this file holds from its first line. ${wanted.label} need these columns: ${wanted.columns}.${own ? ` The old sheet's ${SHEET_TABS[own].name} tab has: ${SHEET_TABS[own].columns}.` : ''}`;
+  }
+  if (found !== kind) return `This file looks like ${tab ? `${tabWords(tab)} (${kindLabel(found).toLowerCase()})` : kindLabel(found).toLowerCase()}, not ${wanted.label.toLowerCase()}. Pick ${kindLabel(found)}, or choose another file.`;
   return null;
+}
+
+/** What to tell the owner about a file that is a tab of the old sheet: which one, and what is left out. Null for any other file. */
+export function fileNote(csv: string): string | null {
+  const tab = sheetTabOf(headerOf(csv));
+  if (!tab) return null;
+  const { notKept } = SHEET_TABS[tab];
+  return `This looks like ${tabWords(tab)}. It is read as it is, with no renaming.${notKept ? ` Its ${notKept} are not brought in.` : ''}`;
+}
+
+/** Said on the review screen when it lists employees from the old sheet: what the plan does not keep is not staged or imported. */
+export function notKeptNote(rows: Pick<MigRow, 'rowType' | 'raw'>[]): string | null {
+  if (!rows.some((r) => r.rowType === 'employee' && r.raw.Salary_Category !== undefined)) return null;
+  return `The old sheet's ${SHEET_TABS.employees.notKept} are not brought in: Moonproject does not keep them, so they were left out when the file was uploaded. `
+    + 'Every employee waits here until you confirm the pay: type the rate for daily and monthly pay, and choose a pay type where the Salary Category is blank.';
 }
 
 /** The body of POST /api/mig/upload. The kind is not sent: the server reads it from the columns. */
@@ -145,7 +190,7 @@ export function rowTitle(row: MigRow): string {
   if (row.rowType === 'employee') return `${text(m.employeeName) || raw.Employee_Name || 'No name'}${id}`;
   if (row.rowType === 'piece_rate') return `${text(m.garmentType) || raw.Garment_Type || '?'}, ${text(m.operation) || raw.Operation || '?'}`;
   if (row.rowType === 'measurement') {
-    const who = raw.Wearer_Name || raw.Person_Name || raw.Full_Name || raw.Name;
+    const who = raw.Wearer_Name || raw.Person_Name || raw.Full_Name || raw.Name || raw.Customer_Name;
     return `${who ?? 'Measurements'}${id}`;
   }
   return 'Unknown row';
@@ -201,7 +246,9 @@ export const FIX_FIELDS: Record<MigKind, FixField[]> = {
   employee: [
     { key: 'employeeName', label: 'Employee name', kind: 'text' },
     { key: 'legacyId', label: 'Legacy ID', kind: 'text' },
-    { key: 'rateCents', label: 'Daily rate (pesos)', kind: 'peso' },
+    { key: 'payType', label: 'Pay type', kind: 'text', hint: 'daily, piece or monthly. Piece pay has no rate here: the piece-rate list has it.' },
+    { key: 'rateCents', label: 'Rate (pesos)', kind: 'peso', hint: 'The daily rate for daily pay; the monthly rate for monthly pay.' },
+    { key: 'hireDate', label: 'Hire date', kind: 'text', hint: 'Like 2026-02-11.' },
   ],
   piece_rate: [
     { key: 'garmentType', label: 'Garment type', kind: 'text' },
@@ -222,6 +269,8 @@ export function currentValue(row: MigRow, key: string): string {
   if (key === 'customerName') return raw.Customer_Name ?? '';
   if (key === 'registeredName') return raw.Registered_Name ?? '';
   if (key === 'employeeName') return raw.Employee_Name ?? '';
+  if (key === 'payType') return raw.Pay_Type ?? '';
+  if (key === 'hireDate') return raw.Hire_Date ?? '';
   if (key === 'garmentType') return raw.Garment_Type ?? '';
   if (key === 'operation') return raw.Operation ?? '';
   const header = Object.keys(raw).find((h) => measurementKey(h) === key);
@@ -250,7 +299,7 @@ export function fixBody(row: MigRow, edits: Record<string, string>): FixResult {
     } else if (f.kind === 'tenths') {
       if (!/^(\d+(\.\d)?|-)$/.test(text)) return { ok: false, message: `${f.label}: type a number to one decimal place such as 15.2, or - for no measurement.` };
       manualData[f.key] = text;
-    } else manualData[f.key] = text;
+    } else manualData[f.key] = f.key === 'payType' ? text.toLowerCase() : text;
   }
   if (manualData.groupLegacyId && !manualData.customerLegacyId) return { ok: false, message: 'Type the customer\'s legacy ID with the group.' };
   if (needsCustomer(row) && !manualData.customerLegacyId) return { ok: false, message: 'This measurement is not assigned to a customer yet. Type the customer\'s legacy ID.' };

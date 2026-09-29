@@ -4,12 +4,13 @@ import type { FastifyInstance } from 'fastify';
 import { PASSWORD, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { measurementFields, rowTypeOf } from '../../../../server/src/modules/MIG/csv.ts';
+import { fromSheetRow, sheetTabOf as serverSheetTabOf } from '../../../../server/src/modules/MIG/sheet.ts';
 import { createApi, type DryRunResult, type MigRow } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
 import {
   FIX_FIELDS, KINDS, MEASUREMENT_FIELDS, blockingIssues, canCommit, cellSumWords, cleanCsv, clearedWords, commitLines, commitRequest, countsAddUp, countsWords,
-  currentValue, dryRunAddsUp, dryRunChecks, dryRunLines, filterCount, filterRows, fileProblem, fixBody, fixStart, headerOf, isOpen, isSurvivor, issueWords, kindOfHeader,
-  measurementKey, mergeCandidates, reviewDone, rowButtons, rowCounts, rowStatusWords, rowTitle, startFilter, uploadRequest, uploadStatusWords,
+  currentValue, dryRunAddsUp, dryRunChecks, dryRunLines, filterCount, filterRows, fileProblem, fixBody, fixStart, headerOf, isOpen, isSurvivor, issueWords, kindOfHeader, sheetTabOf,
+  fileNote, measurementKey, mergeCandidates, notKeptNote, reviewDone, rowButtons, rowCounts, rowStatusWords, rowTitle, startFilter, uploadRequest, uploadStatusWords,
 } from './importer.ts';
 
 const row = (r: Partial<MigRow> & { id: string }): MigRow => ({
@@ -142,10 +143,10 @@ describe('a fix', () => {
 
   it('turns pesos into centavos and refuses what the server would', () => {
     const e = mig('employee', { raw: { Employee_ID: 'E21', Employee_Name: 'Second Worker', Daily_Rate: 'abc' }, legacyId: 'E21', rateCents: null });
-    expect(fixStart(e)).toEqual({ employeeName: 'Second Worker', legacyId: 'E21', rateCents: '' });
+    expect(fixStart(e)).toEqual({ employeeName: 'Second Worker', legacyId: 'E21', payType: '', rateCents: '', hireDate: '' });
     expect(fixBody(e, { rateCents: '₱1,610.50' })).toEqual({ ok: true, manualData: { rateCents: 161050 } });
-    expect(fixBody(e, { rateCents: '610.555' })).toEqual({ ok: false, message: 'Daily rate (pesos): type a peso amount such as 650.50.' });
-    expect(fixBody(e, { rateCents: '-5' })).toEqual({ ok: false, message: 'Daily rate (pesos) cannot be negative.' });
+    expect(fixBody(e, { rateCents: '610.555' })).toEqual({ ok: false, message: 'Rate (pesos): type a peso amount such as 650.50.' });
+    expect(fixBody(e, { rateCents: '-5' })).toEqual({ ok: false, message: 'Rate (pesos) cannot be negative.' });
     const p = mig('piece_rate', { raw: { Garment_Type: 'Jersey', Operation: 'Hem', Rate: '15.25' }, rateCents: 1525 });
     expect(currentValue(p, 'rateCents')).toBe('15.25');
     expect(fixBody(p, { ...fixStart(p), rateCents: '15.25' })).toMatchObject({ ok: false });
@@ -170,6 +171,55 @@ describe('a fix', () => {
     const assigned = mig('measurement', { raw: { Measurement_ID: 'M1', Customer_Name: 'Sample Athletics' }, legacyId: 'M1' });
     expect(fixBody(assigned, { groupLegacyId: 'Varsity' })).toEqual({ ok: false, message: 'Type the customer\'s legacy ID with the group.' });
     expect(FIX_FIELDS.measurement.filter((f) => f.kind === 'tenths')).toHaveLength(18);
+  });
+});
+
+describe("the old sheet's tabs, as downloaded", () => {
+  const customers = 'Customer ID,Name,Email Address,Contact No.,Address,Date Encoded,Encoded By,Date Updated,Updated By\nC-1,Example Academy,,0917 123 4567,1 Sample St.,2026-02-11,Staff,,';
+  const sizes = 'Size ID,Customer ID,Customer Name,Upper Size,Shoulder,Sleeve Height,Lower Size,Remarks,Date Encoded,Encoded By\nS-1,C-1,Example Academy,M,15.2,20.1,32,,2026-02-11,Staff';
+  const employees = 'Employee ID,Name,Date of Birth,Gender,Address,Contact No.,Job Title,Salary Category,Status,Date Employed,Date Encoded,Encoded By,Date Updated,Updated By\nE-1,Example Worker,1990-01-02,F,1 Sample Rd.,0917,Cutter,Daily,Active,2026-02-11 17:57,2026-02-11,Staff,,';
+
+  it('says which tab a file looks like, and reads the kind the way the server does', () => {
+    const tabs = [[customers, 'customers', 'customer'], [sizes, 'sizes', 'measurement'], [employees, 'employees', 'employee']] as const;
+    for (const [csv, tab, kind] of tabs) {
+      const headers = headerOf(csv);
+      expect(sheetTabOf(headers)).toBe(tab);
+      expect(serverSheetTabOf(headers)).toBe(tab);
+      expect(kindOfHeader(headers)).toBe(kind);
+      expect(rowTypeOf(fromSheetRow(Object.fromEntries(headers.map((h) => [h, 'x'])), tab))).toBe(kind);
+    }
+    expect(sheetTabOf(['Legacy_ID', 'Customer_Name'])).toBeNull();
+    expect(fileNote(customers)).toBe('This looks like the Customers tab of the old sheet. It is read as it is, with no renaming.');
+    expect(fileNote(sizes)).toBe('This looks like the Customer Sizes tab of the old sheet. It is read as it is, with no renaming.');
+    expect(fileNote(employees)).toBe('This looks like the Employees tab of the old sheet. It is read as it is, with no renaming. Its Date of Birth, Gender, Address and Contact No. are not brought in.');
+    expect(fileNote('Legacy_ID,Customer_Name\nC1,x')).toBeNull();
+  });
+
+  it('accepts each tab for its own kind and stops it under another', () => {
+    expect(fileProblem('customer', 'Customers.csv', customers)).toBeNull();
+    expect(fileProblem('measurement', 'Customer Sizes.csv', sizes)).toBeNull();
+    expect(fileProblem('employee', 'Employees.csv', employees)).toBeNull();
+    expect(fileProblem('customer', 'Employees.csv', employees)).toBe('This file looks like the Employees tab of the old sheet (employees), not customers. Pick Employees, or choose another file.');
+    expect(fileProblem('employee', 'Customer Sizes.csv', sizes)).toBe('This file looks like the Customer Sizes tab of the old sheet (measurements), not employees. Pick Measurements, or choose another file.');
+  });
+
+  it("lists the sheet's own column names when a file is not recognised", () => {
+    expect(fileProblem('customer', 'x.csv', 'Foo,Bar\n1,2')).toBe('Moonproject cannot tell what this file holds from its first line. Customers need these columns: Legacy_ID, Customer_Name (also Registered_Name, TIN, Email). '
+      + "The old sheet's Customers tab has: Customer ID, Name, Email Address, Contact No., Address.");
+    expect(fileProblem('measurement', 'x.csv', 'Foo,Bar\n1,2')).toContain("The old sheet's Customer Sizes tab has: Size ID, Customer ID, Customer Name, Upper Size, Shoulder to Lower Length (with Sleeve Height), Lower Size, Remarks.");
+    expect(fileProblem('employee', 'x.csv', 'Foo,Bar\n1,2')).toContain("The old sheet's Employees tab has: Employee ID, Name, Job Title, Salary Category, Status, Date Employed.");
+  });
+
+  it('says on the review screen what an employee row does not keep, and lets the owner choose the pay type and hire date', () => {
+    const e = row({ id: 'e', rowType: 'employee', raw: { Employee_ID: 'E-4', Employee_Name: 'Example Director', Position: 'Board Member', Hire_Date: '2025-01-15', Salary_Category: '', Pay_Type: '', Status: 'Active' }, legacyId: 'E-4',
+      issues: ['Salary Category is blank. Use Fix to choose the pay type.'] });
+    expect(notKeptNote([e])).toContain("The old sheet's Date of Birth, Gender, Address and Contact No. are not brought in");
+    expect(notKeptNote([row({ id: 'n', rowType: 'employee', raw: { Employee_ID: 'E1', Employee_Name: 'Importer File' } })])).toBeNull();
+    expect(notKeptNote([row({ id: 'c', rowType: 'customer' })])).toBeNull();
+    expect(rowButtons(e, [e])).toMatchObject({ accept: false, fix: true });
+    expect(fixStart(e)).toMatchObject({ payType: '', hireDate: '2025-01-15' });
+    expect(fixBody(e, { payType: 'Piece' })).toEqual({ ok: true, manualData: { payType: 'piece' } });
+    expect(rowTitle(row({ id: 'm', rowType: 'measurement', raw: { Measurement_ID: 'S-1', Customer_Name: 'Example Academy' }, legacyId: 'S-1' }))).toBe('Example Academy (S-1)');
   });
 });
 

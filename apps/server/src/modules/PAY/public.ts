@@ -142,8 +142,35 @@ export function loansOfMonth(db: Db, month: string): MonthLoan[] {
   return [...out.values()];
 }
 
-/** Immutable payroll snapshots for RPT. Amounts are the figures sealed with each recorded run. */
-export function payrollReportRows(db: Db) {
+/** Immutable payroll snapshots used by RPT's register; every amount comes from the recorded run and payslip. */
+export interface PayrollReportRow {
+  documentId: string;
+  number: string;
+  businessDate: string;
+  status: 'posted';
+  periodStart: string;
+  periodEnd: string;
+  contributionMonth: string;
+  runEmployeeId: string;
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  grossCents: number;
+  sssEeCents: number;
+  sssErCents: number;
+  sssEcCents: number;
+  phicEeCents: number;
+  phicErCents: number;
+  hdmfEeCents: number;
+  hdmfErCents: number;
+  taxCents: number;
+  caCents: number;
+  loanCents: number;
+  accruedCents: number;
+  netCents: number;
+}
+
+export function payrollReportRows(db: Db): PayrollReportRow[] {
   return db.prepare(`SELECT d.id AS documentId, d.number, d.business_date AS businessDate, d.status,
     r.period_start AS periodStart, r.period_end AS periodEnd, r.contribution_month AS contributionMonth,
     e.id AS runEmployeeId, e.employee_id AS employeeId, e.employee_code AS employeeCode, e.employee_name AS employeeName,
@@ -151,9 +178,10 @@ export function payrollReportRows(db: Db) {
     e.sss_ec_cents AS sssEcCents, e.phic_ee_cents AS phicEeCents, e.phic_er_cents AS phicErCents,
     e.hdmf_ee_cents AS hdmfEeCents, e.hdmf_er_cents AS hdmfErCents, e.wtax_cents AS taxCents,
     e.ca_cents AS caCents, COALESCE((SELECT SUM(x.amount_cents) FROM pay_run_loans x WHERE x.run_employee_id=e.id),0) AS loanCents,
-    e.thirteenth_cents AS accruedCents, e.net_cents AS netCents
+    e.thirteenth_cents AS accruedCents,
+    e.net_cents - e.loan_cents + e.wtax_refund_cents AS netCents
     FROM pay_run_employees e JOIN pay_runs r ON r.document_id=e.document_id JOIN documents d ON d.id=r.document_id
-    WHERE d.status='posted' ORDER BY d.business_date,d.number,e.employee_name`) .all() as Array<Record<string, string | number>>;
+    WHERE d.status='posted' ORDER BY d.business_date,d.number,e.employee_name`).all() as PayrollReportRow[];
 }
 
 /** Recorded earning lines, including their JO tags, for payroll reports. */

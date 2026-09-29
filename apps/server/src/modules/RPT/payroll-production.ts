@@ -18,7 +18,7 @@ const group = (rows: AnyRow[], keys: string[], totals: string[]) => {
 };
 
 export function payrollRegister(db: Db, month: string, runId?: string) {
-  const all = payrollReportRows(db) as AnyRow[];
+  const all = payrollReportRows(db) as unknown as AnyRow[];
   const rows = all.filter((r) => runId ? r.documentId === runId : r.contributionMonth === month).map((r) => ({ ...r,
     employeeSharesCents: Number(r.sssEeCents)+Number(r.phicEeCents)+Number(r.hdmfEeCents),
     employerSharesCents: Number(r.sssErCents)+Number(r.sssEcCents)+Number(r.phicErCents)+Number(r.hdmfErCents),
@@ -28,7 +28,7 @@ export function payrollRegister(db: Db, month: string, runId?: string) {
 }
 
 export function pieceWork(db: Db, from: string, to: string) {
-  const runs = new Map((payrollReportRows(db) as AnyRow[]).map((r) => [String(r.documentId), r]));
+  const runs = new Map((payrollReportRows(db) as unknown as AnyRow[]).map((r) => [String(r.documentId), r]));
   const lines = (payrollEarningRows(db) as AnyRow[]).filter((r) => r.kind === 'piece' && (() => { const x=runs.get(String(r.documentId)); return x && x.periodEnd! >= from && x.periodStart! <= to; })());
   return { from, to, byEmployee: group(lines,['employeeId','employeeCode','employeeName'],['qty','amountCents']),
     byJobOrder: group(lines.filter((r)=>r.jobOrderId!==null),['jobOrderId'],['qty','amountCents']).map((r)=>({ ...r, documentType:'jo.job_order', documentPath:documentPath('jo.job_order',String(r.jobOrderId)) })) };

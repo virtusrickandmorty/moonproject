@@ -6,7 +6,8 @@
  * settlements (ITS-) are left out. Each row
  * names the document, the number on the BIR paper form (sales invoice or CR, from documents.external_number) and the
  * customer's registered name and TIN.
- *   Sales register (2301 output VAT): VATable sales = the journal's revenue credits, VAT, total. With downpayment VAT
+ *   Sales register (2301 output VAT): VATable sales = the journal's revenue credits (for an asset sold, FA: the NET on
+ *   its invoice, since only its gain is revenue), VAT, total. With downpayment VAT
  *   modes B and C (PLAN D3) the VAT on a downpayment is booked before the sale: the VATable amount behind it comes with
  *   it (COL registerBaseOf: + on the collection or downpayment invoice, − on the release invoice that books the rest).
  *   Withholding received (1410 CWT and 1404 VAT withheld, the customers' 2307s): ATC and whether the 2307 is in hand.
@@ -15,6 +16,7 @@
 import type { Db } from '../../platform/db/driver.ts';
 import { customerRef, customerTaxInfo } from '../CUS/public.ts';
 import { registerBaseOf, registerBaseSources, withholdingOf } from '../COL/public.ts';
+import { assetSaleTaxFacts } from '../FA/public.ts';
 import { OPENING_WITHHOLDING, openingLines, receivedOn } from './withholding.ts';
 
 export interface RegisterRow {
@@ -99,6 +101,17 @@ export function movement(db: Db, roles: string[], from: string, to: string, side
 export const total = <T>(rows: T[], f: (r: T) => number) => rows.reduce((s, r) => s + f(r), 0);
 
 /**
+ * An asset sold (FA, fa.disposal of kind 'sale'): its VATable sales are the NET written on the booklet, not the revenue
+ * credits of its journal (only the gain is revenue); negative on its mirror. A buyer typed on the sale, not a customer,
+ * is named as recorded (2301 then carries the sale itself as its party).
+ */
+function assetSaleRow(db: Db, t: Touch, asset: NonNullable<ReturnType<typeof assetSaleTaxFacts>>): RegisterRow & { netCents: number } {
+  const netCents = (t.posting === 'reversal' ? -1 : 1) * asset.netCents;
+  const row = base(db, t);
+  return asset.customerId ? { ...row, netCents } : { ...row, customerName: asset.buyerName, tin: asset.buyerTin, netCents };
+}
+
+/**
  * Sales register: every journal on 2301 output VAT, with VATable sales (revenue credits), VAT and total. A downpayment's
  * VATable amount whose VAT rounded to nothing (a few centavos) has no 2301 line: its journal is listed too, VAT 0.00.
  */
@@ -108,8 +121,9 @@ export function salesRegister(db: Db, from: string, to: string) {
     netCents: `CASE WHEN a.type = 'revenue' THEN l.credit_cents - l.debit_cents ELSE 0 END`,
     vatLines: `CASE WHEN a.role_key = 'OUTPUT_VAT' THEN 1 ELSE 0 END`,
   }, from, to, registerBaseSources(db)).map((t) => {
-    const netCents = t.netCents + registerBaseOf(db, t.sourceType, t.sourceId, t.posting);
-    return { ...base(db, t), netCents, vatCents: t.vatCents, totalCents: netCents + t.vatCents, vatLines: t.vatLines };
+    const asset = t.docType === 'fa.disposal' ? assetSaleTaxFacts(db, t.sourceId) : undefined;
+    const row = asset ? assetSaleRow(db, t, asset) : { ...base(db, t), netCents: t.netCents + registerBaseOf(db, t.sourceType, t.sourceId, t.posting) };
+    return { ...row, vatCents: t.vatCents, totalCents: row.netCents + t.vatCents, vatLines: t.vatLines };
   }).filter((r) => r.vatLines > 0 || r.netCents !== 0).map(({ vatLines: _, ...r }) => r);
   const vatCents = total(rows, (r) => r.vatCents);
   return {

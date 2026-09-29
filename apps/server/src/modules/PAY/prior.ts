@@ -34,6 +34,13 @@ const COLUMN: Record<keyof z.infer<typeof priorUpdate>, string> = {
 
 export interface Who { userId: string; at: string; today: string }
 
+/** Pay amounts stay out of the audit log (named, not valued), since reading the log does not imply pay.view_rates (C6, N-05). */
+const isAmount = (k: string) => (AMOUNTS as readonly string[]).includes(k);
+function withoutAmounts<T extends Record<string, unknown>>(row: T) {
+  const kept = Object.fromEntries(Object.entries(row).filter(([k]) => !isAmount(k)));
+  return { kept, amounts: Object.keys(row).filter(isAmount) };
+}
+
 function mustGet(db: Db, id: string): PriorPay {
   const p = priorRows(db, { id })[0];
   if (!p) throw notFound('That pay before Moonproject');
@@ -68,11 +75,12 @@ export function addPrior(db: Db, raw: unknown, who: Who): PriorPay {
     `INSERT INTO pay_prior_pay (id, employee_id, year, source, employer_name, employer_tin, gross_cents, benefits_cents, de_minimis_cents, sss_cents, phic_cents, hdmf_cents,
        other_nontax_cents, taxable_cents, wtax_cents, note, created_at, created_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(id, v.employeeId, v.year, v.source, row.employerName, row.employerTin, ...AMOUNTS.map((k) => v[k]), row.note, who.at, who.userId, who.at);
-  appendAudit(db, { at: who.at, userId: who.userId, action: 'pay.prior.add', entityType: 'pay.prior', entityId: id, data: row });
+  const { kept, amounts } = withoutAmounts(row);
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'pay.prior.add', entityType: 'pay.prior', entityId: id, data: { ...kept, amounts } });
   return mustGet(db, id);
 }
 
-/** Changes one row (If-Match), with before and after values in the audit log. */
+/** Changes one row (If-Match), with before and after values in the audit log (amounts named only). */
 export function updatePrior(db: Db, id: string, ifMatch: unknown, raw: unknown, who: Who): PriorPay {
   const v = priorUpdate.parse(raw);
   const before = mustGet(db, id);
@@ -87,7 +95,7 @@ export function updatePrior(db: Db, id: string, ifMatch: unknown, raw: unknown, 
   db.prepare(`UPDATE pay_prior_pay SET ${keys.map((k) => `${COLUMN[k]} = ?`).join(', ')}, version = version + 1, updated_at = ? WHERE id = ?`).run(...keys.map((k) => changes[k] ?? null), who.at, id);
   appendAudit(db, {
     at: who.at, userId: who.userId, action: 'pay.prior.update', entityType: 'pay.prior', entityId: id,
-    data: { changes: Object.fromEntries(keys.map((k) => [k, { before: before[k], after: changes[k] }])) },
+    data: { changes: Object.fromEntries(keys.filter((k) => !isAmount(k)).map((k) => [k, { before: before[k], after: changes[k] }])), amounts: keys.filter(isAmount) },
   });
   return mustGet(db, id);
 }

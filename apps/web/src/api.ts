@@ -34,6 +34,7 @@ export interface JsonSchema { type?: string; format?: string; title?: string; en
 export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
 export type PrintVariant = 'document' | 'job_ticket' | 'thermal';
 export interface PrintableType { key: string; variants: PrintVariant[] }
+export interface PrinterTestPack { prints: { id: string; label: string; paper: string; html: string }[]; notBuilt: string[] }
 export interface DocHeader {
   id: string; number: string; businessDate: string; status: 'posted' | 'cancelled'; totalCents: number; summary: string; postedAt: string;
   cancelledAt: string | null; cancelReason: string | null; replacesId: string | null; replacedById: string | null;
@@ -725,6 +726,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     companyProfileHistory: () => call<CompanyProfile[]>('GET', '/api/prt/company-profile/history'),
     saveCompanyProfile: (value: Omit<CompanyProfile, 'version' | 'supersededAt'>, version: number) => call<CompanyProfile>('PUT', '/api/prt/company-profile', value, { 'if-match': String(version) }),
     printableTypes: () => call<PrintableType[]>('GET', '/api/prt/printable-types'),
+    printerTestPack: () => call<PrinterTestPack>('GET', '/api/prt/test-pack'),
     printDocument: (type: string, id: string, variant: PrintVariant = 'document') =>
       call<{ html: string; copyNumber: number }>('POST', `/api/prt/print/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { variant }),
     /** practice: this is the practice shop (PLAN C8). */
