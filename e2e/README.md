@@ -4,7 +4,7 @@
 (`serve.ts`), and drives Chromium as staff do. The tests find things by the words on the screen (labels, headings,
 button names), never by CSS classes. The specs share one shop and run in file order, so run the whole suite, not one file.
 
-- `01-first-run`: the first owner, sign out, sign in.
+- `01-first-run`: the first owner, sign out, sign in; then the owner adds a staff user with a role, who signs in and changes the password at first sign-in.
 - `02-sales`: waiting for screens (see the note in the file).
 - `03-quick-sale`: a customer, a quick sale with its collection.
 - `04-payroll`: an employee, a week of attendance, the run, its release, the payslip.
