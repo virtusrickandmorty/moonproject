@@ -6,13 +6,12 @@
  * them on their own line.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { api, type DocDetail, type EmployerNumberRow, type Me, type SchemeCheck, type StatMonth, type UploadScheme } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { api, type DocDetail, type Me, type SchemeCheck, type StatMonth } from '../../api.ts';
+import { Button, Notice, Panel, peso } from '../../components/ui.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { useStepUpAction } from '../TAX/StepUp.tsx';
-import { UPLOAD_LIST, canDownloadUploads, checkWords } from './stat.ts';
+import { checkWords } from './stat.ts';
 
 const newRemittance = (c: SchemeCheck, month: string) => docPath('stat.remittance', `/new?scheme=${c.scheme}&month=${month}${c.dueCents > 0 ? `&amount=${(c.dueCents / 100).toFixed(2)}` : ''}`);
 
@@ -61,7 +60,6 @@ export function StatMonths({ me }: { me: Me }) {
     <div className="max-w-4xl space-y-4">
       <h1 className="text-2xl font-semibold">Government remittances</h1>
       <p className="text-sm text-slate-600">What each month's payrolls owe SSS, PhilHealth, Pag-IBIG and the BIR (1601-C), what was paid, and what is left.</p>
-      <Link to="/stat/exposure" className="text-sm underline">Statutory exposure: months paid with no contribution recorded</Link>
       {months.length === 0 && <p className="text-slate-500">No payroll is recorded yet.</p>}
       {months.map((m) => (
         <Panel key={m.month} title={m.month}>
@@ -80,79 +78,6 @@ const Table = ({ head, rows, foot }: { head: string[]; rows: ReactNode[][]; foot
     {foot && <tfoot><tr className="border-t border-slate-300 font-semibold">{foot.map((c, j) => <td key={j} className={j > 1 ? 'text-right tabular-nums' : 'py-1'}>{c}</td>)}</tr></tfoot>}
   </table>
 );
-
-/** Hands a downloaded file to the browser to save. Nothing is kept in the browser. */
-function saveFile(f: { filename: string; blob: Blob }) {
-  const url = URL.createObjectURL(f.blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = f.filename;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-/**
- * The month's upload files for the agencies' websites, from the same figures as the lists above. A file is refused in
- * plain words when the employer's number is not set or an employee has no ID number. The accountant checks each column
- * against the agency's current template before the first upload.
- */
-function UploadFiles({ me, m }: { me: Me; m: StatMonth }) {
-  const [numbers, setNumbers] = useState<EmployerNumberRow[]>([]);
-  const [typed, setTyped] = useState<Partial<Record<UploadScheme, string>>>({});
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState('');
-  const step = useStepUpAction('saving the employer number');
-  const load = () => api.statEmployerNumbers().then(setNumbers, (e: Error) => setError(e.message));
-  useEffect(() => void load(), []);
-  const lists = { SSS: m.sss, PHIC: m.phic, HDMF: m.hdmf };
-  const download = async (scheme: UploadScheme) => {
-    setBusy(scheme);
-    setError('');
-    try { saveFile(await api.statUpload(m.month, scheme)); } catch (e) { setError((e as Error).message); }
-    setBusy('');
-  };
-  const save = (scheme: UploadScheme) => step.run(async () => {
-    await api.setEmployerNumber(scheme, (typed[scheme] ?? '').trim());
-    setTyped((t) => ({ ...t, [scheme]: undefined }));
-    await load();
-  });
-  return (
-    <Panel title={`Files for the agencies ${m.month}`}>
-      <p className="text-sm text-slate-600">One file for each agency, with the same employees and totals as the lists above. Upload it on the agency's website. Check the columns against the agency's current template first; loan amortizations are not in these files.</p>
-      {error && <Notice>{error}</Notice>}
-      {step.error && <Notice>{step.error}</Notice>}
-      <table className="w-full text-sm">
-        <tbody>
-          {UPLOAD_LIST.map((u) => {
-            const list = lists[u.scheme];
-            const n = numbers.find((x) => x.scheme === u.scheme);
-            return (
-              <tr key={u.scheme} className="border-t border-slate-100 align-top">
-                <td className="py-2">
-                  <p className="font-medium">{u.label}</p>
-                  <p className="text-xs text-slate-600">{u.layout}: {list.rows.length} {list.rows.length === 1 ? 'employee' : 'employees'}, {peso(list.totalCents)}</p>
-                </td>
-                <td className="py-2">
-                  {n?.number ? <p className="text-xs text-slate-600">{n.employerLabel}: {n.number}</p> : <p className="text-xs text-amber-800">{n?.employerLabel ?? 'Employer number'} not set.</p>}
-                  {me.permissions.includes('stat.agency.manage') && (
-                    <form className="mt-1 flex items-end gap-2" onSubmit={(e) => { e.preventDefault(); void save(u.scheme); }}>
-                      <Field label={n?.number ? 'Change the number' : 'Type the number'}><input className={inputClass} value={typed[u.scheme] ?? ''} onChange={(e) => setTyped((t) => ({ ...t, [u.scheme]: e.target.value }))} /></Field>
-                      <Button type="submit" disabled={!(typed[u.scheme] ?? '').trim() || step.busy}>Save</Button>
-                    </form>
-                  )}
-                </td>
-                <td className="py-2 text-right"><Button tone="primary" disabled={list.rows.length === 0 || busy !== ''} onClick={() => void download(u.scheme)}>Download {u.label} file</Button></td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-      {step.dialog}
-    </Panel>
-  );
-}
 
 /** One month: the check, the three contribution lists and the 1601-C worksheet. */
 export function StatMonthPage({ me, params }: { me: Me; params?: Record<string, string> }) {
@@ -207,7 +132,6 @@ export function StatMonthPage({ me, params }: { me: Me; params?: Record<string, 
         <Table head={['Employee', 'Pag-IBIG MID', 'Compensation', 'Employee share', 'Employer share', 'Total']}
           rows={m.hdmf.rows.map((r) => [...who(r), peso(r.compensationCents), peso(r.eeCents), peso(r.erCents), peso(r.totalCents)])} foot={['Total', '', '', '', '', peso(m.hdmf.totalCents)]} />
       </Panel>
-      {canDownloadUploads(me.permissions) && <div className="print:hidden"><UploadFiles me={me} m={m} /></div>}
       {([['SSS', 'SSS no.', m.sssLoans], ['Pag-IBIG', 'Pag-IBIG MID', m.hdmfLoans]] as const).map(([agency, idLabel, list]) => list.rows.length > 0 && (
         <Panel key={agency} title={`${agency} loan amortizations ${m.month}`}>
           <p className="text-sm text-slate-600">Deducted by the month's payrolls; paid on the same {agency} remittance as the contributions.</p>

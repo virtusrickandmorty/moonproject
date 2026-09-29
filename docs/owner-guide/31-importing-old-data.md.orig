@@ -6,7 +6,7 @@
 
 ### Steps
 1. On the **Admin** menu, choose **Import old data**.
-2. Click on an existing upload, or use **Upload a file from the old sheet** to start a new one. Under **What is in the file?**, pick what the file holds, choose the **CSV file**, and click **Upload and stage the rows**. The system reads the file but does not import anything yet.
+2. Click on an existing upload, or use **Upload a file from the old sheet** to start a new one. Pick what the file holds, choose the **CSV file**, and click **Upload and stage the rows**. The system reads the file but does not import anything yet.
 3. Review the staged rows. Each row must be checked:
    - If the row is good, click **Accept**.
    - If there is a problem, click **Fix**, type the correction, and click **Save the fix and accept**.
@@ -16,9 +16,8 @@
    - Click **Run the dry run**.
    - The system checks what would go in. It gives you the total counts and the sum of the measurement cells.
    - Compare these totals to your old Google sheet. If they do not match, stop and fix the problems.
-5. Once the dry run totals are correct, look at the **Commit** section. This is only offered after the dry run, and only an owner can commit.
-   - Click **Commit the import**.
-   - A "Commit the import?" box opens, showing the measurement cell total again. Click **Commit the import** again to proceed, or click **Go back** if you need to recheck. The system may ask for your password again. The system then brings the rows into your live database.
+5. Once the dry run totals are correct, look at the **Commit** section.
+   - Click **Commit the import**. The system brings the rows into your live database.
 6. After you check the imported records, you must clean up.
    - Look at the **Clear the staged values** section.
    - Click **Clear the staged values** and then **Clear them**. This wipes the temporary staging area.

@@ -1,7 +1,6 @@
 /** PAY contract for other modules (STAT). Read-only; callers check their own route permission. */
 import type { Db } from '../../platform/db/driver.ts';
 import { sssRateAt } from './statutory.ts';
-export { hdmfMonthly, hdmfRateAt, phicMonthly, phicRateAt, sssMonthly, sssRateAt } from './statutory.ts';
 import type { Agency, LoanKind } from './loans.ts';
 export { KIND_LABEL, LOAN_ACCOUNT, type Agency, type LoanKind } from './loans.ts';
 
