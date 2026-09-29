@@ -70,7 +70,7 @@ export function cashJournal(db: Db, from: string, to: string, kind: 'receipts' |
       : l.roleKey === 'AP' || l.roleKey === 'INPUT_VAT' || l.roleKey === 'EWT_PAYABLE' || l.roleKey === 'PAYROLL_PAYABLE' || l.accountType === 'expense';
     return { journalId: first.journalId, date: first.date, documentNumber: first.documentNumber ?? first.journalNumber,
       formOrReference: first.externalNumber, party: partyName(db, j), posting: first.posting,
-      cashCents: sum(j.filter((l) => l.isCash === 1), (l) => signed(l, kind === 'receipts' ? 'debit' : 'credit')),
+      cashCents: sum(j.filter((l) => l.isCash === 1), (l) => kind === 'receipts' ? l.debit : l.credit),
       receivablesCents: amount('AR_TRADE'), depositsCents: amount('CUSTOMER_DEPOSITS'), vatCents: amount('OUTPUT_VAT'),
       salesIncomeCents: sum(others.filter((l) => l.accountType === 'revenue'), (l) => signed(l, side)), payablesCents: amount('AP'),
       expensesCents: sum(others.filter((l) => l.accountType === 'expense'), (l) => signed(l, side)), inputVatCents: amount('INPUT_VAT'),
