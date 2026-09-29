@@ -71,6 +71,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Reports', label: 'Job order follow-up', path: '/rpt/job-order-follow-up', permission: 'rpt.books.view' },
   { group: 'Admin', label: 'Backups', path: '/bak', permission: 'bak.view' },
   { group: 'Admin', label: 'Opening balances', path: '/acc/opening', permission: 'acc.opening.view' },
+  { group: 'Admin', label: 'Import old data', path: '/mig', permission: 'mig.run' },
   { group: 'Admin', label: 'Audit log', path: '/aud/log', permission: 'aud.log.view' },
   { group: 'Admin', label: 'Integrity check', path: '/aud/integrity', permission: 'aud.integrity.view' },
 ];

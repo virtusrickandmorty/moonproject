@@ -80,6 +80,8 @@ import { loanView } from './LOAN/views.tsx';
 import { BuyForm } from './FA/BuyForm.tsx';
 import { OpeningForm as OpeningAssetForm } from './FA/OpeningForm.tsx';
 import { Backups } from './BAK/Backups.tsx';
+import { ImportOldData } from './MIG/Importer.tsx';
+import { ImportUpload } from './MIG/Upload.tsx';
 import { AuditLog } from './AUD/AuditLog.tsx';
 import { IntegrityCheck } from './AUD/IntegrityCheck.tsx';
 import { Suppliers } from './PUR/Suppliers.tsx';
@@ -153,6 +155,8 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/admin/health': SystemHealthPage,
   '/bak': Backups,
   '/bak/:section': Backups,
+  '/mig': ImportOldData,
+  '/mig/:uploadId': ImportUpload,
   '/aud/log': AuditLog,
   '/aud/integrity': IntegrityCheck,
   '/ap/suppliers': ApBalances,
