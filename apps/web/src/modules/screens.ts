@@ -40,6 +40,7 @@ import { NotificationsPage } from './DASH/Home.tsx';
 import { CalendarPage } from './CAL/Calendar.tsx';
 import { Customers } from './CUS/Customers.tsx';
 import { CompanyProfileScreen } from './PRT/CompanyProfile.tsx';
+import { PrinterTestPackScreen } from './PRT/PrinterTestPack.tsx';
 import { StatExposure } from './STAT/Exposure.tsx';
 import { StatMonthPage, StatMonths, remittanceView } from './STAT/Statutory.tsx';
 import { RemittanceForm } from './STAT/RemittanceForm.tsx';
@@ -149,6 +150,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/pay/2316': YearEndPage,
   '/pay/2316/:year/:employeeId': Sheet2316,
   '/prt/company-profile': CompanyProfileScreen,
+  '/prt/test-pack': PrinterTestPackScreen,
   '/stat': StatMonths,
   '/stat/exposure': StatExposure,
   '/stat/:month': StatMonthPage,
