@@ -7,43 +7,46 @@
 ### Steps
 
 **Making a job order:**
-1. On the **Sales** menu, click **Job orders**.
-2. Click **New Job Order**.
-3. Pick the customer from the list or click **+ New customer** to add a walk-in.
-4. Under **What they ordered**, click **+ Add a line** to add more lines. Type to search the price list, and pick the item.
-5. Fill in the pieces. If you have a list of wearers, click **+ One-off name** or **Paste from Excel** to add them with their sizes.
-6. Under **Terms**, type the **Due in (days)** and pick the **Payment terms**.
-7. Check the **Total** and **Downpayment asked** under **So far**, then click **Record**.
+1. Open **Job Orders** under **Sales**, then use the new button on that list. The form's heading is **New job order**.
+2. In the **Customer** panel, pick the customer from the list or click **+ New customer**. If it's a new customer, type **New customer's name**, pick **Kind of customer** (**Team, school or company** or **Person**) and click **Add customer** (or **Never mind**).
+3. Under **What is made**, click **+ Add a line** to add more lines. Type to search the price list, and pick the item.
+4. Fill in the pieces. If you have a list of wearers, use the **Wearer**, **Size**, **Jersey name**, **Measured** options. Click **Add a wearer…**, **Pull a whole group…**, or **Paste from Excel** and click **Add these**. For a single name, type in the box with the hint "One-off name".
+5. Under **Terms**, type the **Due in (days)** and pick the **Payment terms**.
+6. Check the **Total** and **Downpayment asked** under **So far**, then click **Record**.
 
 **Taking the downpayment:**
 1. Open the job order.
-2. Click the **Take the downpayment** button. It opens the collection screen already filled with the downpayment asked.
-3. Finish recording the collection.
+2. If a downpayment is still asked and you have permission, click the **Take the downpayment** button. (In mode C, the button opens the downpayment invoice form first, then the collection follows).
+3. If only a balance remains, click **Take a payment** instead.
+4. Finish recording the collection.
 
 **Changing a job order:**
 1. Open the job order you want to change.
-2. Click **Edit**. The system will cancel the old job order and open a new one with the same details.
+2. Check the label on the job order screen for a cancellation or reissue option. (If **Edit** is not on the screen, do not write it).
 3. Make your changes and click **Record**.
 4. If there were deposits, you will see a notice to move them to the replacement job order.
 
 **The release slip:**
-1. Open the job order, or click **Release** from the **Sales** menu.
-2. Click the **Release** button.
-3. Under **What is left to release**, tick the lines and pieces that are going out now.
-4. Type the **Claimed by** name and pick the **ID seen**.
-5. If the job is not paid in full, type **Pay within (days)** to give credit. If it is going out before it is ready, type the **Owner's reason to release it now**.
-6. Click **Record**.
+1. Open the job order and click **Release**, or open **Release Slips** from the **Sales** menu. The form is **New release slip**.
+2. Under **What is left to release**, tick the lines and pieces that are going out now.
+3. Under **Who claimed it**, type the **Claimed by** name and pick the **ID seen**. Only the kind of ID is kept, never its number.
+4. Under **Not ready yet**, if it is going out before it is ready, type the **Owner's reason to release it now**.
+5. Under **Still to be paid**, if the job is not paid in full, you will be asked **Why it goes out before it is paid**. Type **Pay within (days)** to give credit.
+6. Under **Invoice**, type the **Invoice number (from the booklet)**, or tick "Invoice to follow".
+7. Click **Record**. In the **Record this release?** box, click **Record** again (or **Go back**).
 
 **Recording the booklet invoice:**
-1. If the invoice was not recorded with the release, click **Invoice record** from the **Sales** menu, or click **Record invoice** on the job order.
-2. Pick the release.
+1. If the invoice was not recorded with the release, click **Invoice Records** from the **Sales** menu, or click **Record invoice** on the job order.
+2. Pick the release by its number (for example REL-000012).
 3. Under **Write these on the booklet**, copy the **VATable sales**, **VAT**, and **Total** exactly as shown to your physical booklet.
-4. Type the **Invoice number (from the booklet)** you just wrote.
+4. Type the **Invoice number (from the booklet)** you just wrote. You can also fill the **Note** box.
 5. Click **Record**.
 
 ### What the system does for you
 The system keeps track of the **Balance due** (what the customer still owes) on the job order. It only lets you release what is left, and knows if the invoice is to follow. When a job order is cancelled and reissued, any money already collected is kept as deposits held until you move it or pay it back.
 
 ### Common mistakes and how to fix them
+- **Mistake:** You cannot add wearers because you forgot the customer.
+- **Fix:** The app shows **Pick the customer first.** Pick the customer before you add wearers.
 - **Mistake:** You made a mistake on a recorded release slip.
 - **Fix:** You cannot edit a release slip. You must cancel the wrong release slip and record a new one with the right details.
