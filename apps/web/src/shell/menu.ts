@@ -110,7 +110,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Reports', label: 'Late entries', path: '/rpt/late-entries', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Cancellations and reissues', path: '/rpt/cancellations', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Exceptions', path: '/rpt/exceptions', permission: 'rpt.books.view' },
-  { group: 'Reports', label: 'Sign-in history', path: '/rpt/sign-ins', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'Sign-in history', path: '/rpt/sign-ins', permission: 'rpt.signins.view' },
   { group: 'Admin', label: 'Backups', path: '/bak', permission: 'bak.view' },
   { group: 'Sales', label: 'Customer emails', path: '/com', permission: 'com.outbox.view' },
   { group: 'Admin', label: 'Customer email settings', path: '/com/settings', permission: 'com.settings.manage' },
