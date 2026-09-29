@@ -14,10 +14,10 @@
 5. Click **Save**.
 
 #### Adding or changing a price
-1. On the **Price list** screen, click the name of the item.
+1. On the **Price list** screen, click the name of the active item. (You must have permission to manage prices, and the item must be active, or this panel will not appear.)
 2. Under **New effective-dated price**, check the **Effective from** date.
 3. Type the **Minimum quantity** and the **Price per unit**.
-4. Click **Save**.
+4. Click **Save price**.
 
 #### Making a quotation
 1. On the **Sales** menu, click **Quotations**, then click **+ New quotation**.
@@ -41,10 +41,10 @@
 
 ### What the system does for you
 When you add a new price, the system keeps the old prices in the **Price history**. Old quotations will still show the old price, but new quotations will use the new price if the date and quantity match.
-When you make a job order from a quotation, it says "Filled from quotation" and brings over the exact items, quantities, and prices, so you do not have to type them again.
+When you make a job order from a quotation, it says "Filled from quotation" and brings over the exact items, quantities, and prices, so you do not have to type them again. However, you will still need to pick the payment terms and due days before you record.
 
 ### Common mistakes and how to fix them
 - **Mistake:** You want to change the class or unit of an item, but the fields are locked.
-- **Fix:** If an item has prices, its class, garment type, and unit cannot change. Click **Deactivate**, then click **+ New item** to make a fresh one.
+- **Fix:** If an item has prices, its class, garment type, and unit cannot change. Click **Deactivate**, then confirm by clicking **Deactivate** in the "Deactivate <item>?" box (which warns that an item cannot be turned back on). Then click **+ New item** to make a fresh one.
 - **Mistake:** You cannot click **Make a job order** on a quotation.
 - **Fix:** The quotation might be for a prospect. A job order needs a real customer. Go to Customers and add them, then go back to the quotation, click **Edit**, and pick that customer.
