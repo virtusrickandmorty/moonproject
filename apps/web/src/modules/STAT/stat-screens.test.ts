@@ -4,9 +4,9 @@ import type { FastifyInstance } from 'fastify';
 import { PASSWORD, cashPlaceId, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { addEmployee, addPay } from '../../../../server/src/modules/EMP/tests/fixture.ts';
-import { createApi, newIdempotencyKey as key, type SchemeCheck } from '../../api.ts';
+import { ApiError, createApi, newIdempotencyKey as key, type SchemeCheck } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
-import { checkWords, paidOn, remittanceInput } from './stat.ts';
+import { canDownloadUploads, checkWords, exposureMonths, paidOn, remittanceInput, UPLOAD_LIST } from './stat.ts';
 
 const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: string, init: RequestInit) => {
   const res = await app.inject({ method: init.method as 'GET', url, payload: init.body as string, headers: { ...(init.headers as object), cookie: jar.cookie } });
@@ -64,12 +64,69 @@ describe('statutory screen rules', () => {
     ]);
   });
 
-  it('the menu shows Government remittances to those with stat.view, next to the Remittances list', () => {
+  it('the menu shows Government remittances and Statutory exposure to those with stat.view, next to the Remittances list', () => {
     const types = [{ key: 'stat.remittance', module: 'STAT', title: 'Remittance' }] as never[];
     expect(buildMenu(types, new Set(['stat.view'])).find((g) => g.group === 'People & Payroll')).toEqual({
-      group: 'People & Payroll', items: ['Government remittances', 'Remittances'].map((label) => expect.objectContaining({ label })),
+      group: 'People & Payroll', items: ['Government remittances', 'Statutory exposure', 'Remittances'].map((label) => expect.objectContaining({ label })),
     });
     expect(buildMenu(types, new Set()).find((g) => g.group === 'People & Payroll')!.items.map((i) => i.label)).toEqual(['Remittances']);
+  });
+});
+
+describe('agency upload and exposure screen rules', () => {
+  it('the files are offered for the three agencies, and downloaded only with stat.upload and emp.view_ids', () => {
+    expect(UPLOAD_LIST.map((u) => u.scheme)).toEqual(['SSS', 'PHIC', 'HDMF']);
+    expect(canDownloadUploads(['stat.view', 'stat.upload', 'emp.view_ids'])).toBe(true);
+    expect(canDownloadUploads(['stat.view', 'stat.upload'])).toBe(false);
+    expect(canDownloadUploads(['stat.view', 'emp.view_ids'])).toBe(false);
+  });
+
+  it('an exposure line names its months', () => {
+    const m = (month: string) => ({ month, grossCents: 0, eeCents: 0, erCents: 0, ecCents: 0, totalCents: 0, monthsLate: 0, penaltyCents: 0 });
+    expect(exposureMonths({ months: [m('2026-07')] })).toBe('1 month: 2026-07');
+    expect(exposureMonths({ months: [m('2026-06'), m('2026-07')] })).toBe('2 months: 2026-06, 2026-07');
+  });
+});
+
+describe('web client for the agency files and the exposure report', () => {
+  it('a file is refused in plain words until the employer number and the ID are there, then downloads; the report needs the cut-over date', async () => {
+    const env = await createTestEnv('2026-09-15T02:00:00Z');
+    const acct = createUser(env.db, 'acct2', ['accountant']);
+    const carla = addEmployee(env.db, 'Carla Opisina', { costCentre: 'office' });
+    addPay(env.db, carla, acct, { payType: 'monthly', payGroup: 'SEMI_MONTHLY', monthlyRateCents: 1_500_000 });
+    const api = createApi(injectFetch(env.app));
+    await api.login('acct2', PASSWORD);
+    const run = async (periodStart: string) => {
+      const input = { payGroup: 'SEMI_MONTHLY' as const, periodStart };
+      return api.post('pay.run', input, (await api.preview('pay.run', input)).totalCents, key());
+    };
+    await run('2026-09-01');
+    env.clock.set('2026-09-30T02:00:00Z');
+    await api.login('acct2', PASSWORD);
+    await run('2026-09-16');
+    env.clock.set('2026-10-05T02:00:00Z');
+    await api.login('acct2', PASSWORD);
+
+    const refusal = (p: Promise<unknown>) => p.then(() => null, (e: ApiError) => e);
+    expect(await refusal(api.statUpload('2026-09', 'SSS'))).toMatchObject({ code: 'EMPLOYER_NUMBER_MISSING', status: 422 });
+    expect(await refusal(api.setEmployerNumber('SSS', '03-9999999-9'))).toMatchObject({ code: 'STEP_UP_REQUIRED' });
+    await api.stepUp(PASSWORD);
+    expect(await api.setEmployerNumber('SSS', '03-9999999-9')).toMatchObject({ changed: true });
+    expect((await api.statEmployerNumbers()).map((n) => [n.scheme, n.number])).toEqual([['SSS', '03-9999999-9'], ['PHIC', null], ['HDMF', null]]);
+    const noId = await refusal(api.statUpload('2026-09', 'SSS'));
+    expect(noId).toMatchObject({ code: 'ID_NUMBER_MISSING', status: 422 });
+    expect(noId!.message).toContain('Carla Opisina');
+
+    env.db.prepare(`UPDATE emp_employees SET sss_no = '34-0000001-1' WHERE id = ?`).run(carla);
+    const file = await api.statUpload('2026-09', 'SSS');
+    expect(file.filename).toBe('SSS-2026-09.csv');
+    const text = await file.blob.text();
+    expect(text).toContain('"03-9999999-9","092026","34-0000001-1","Carla Opisina","15000.00","0.00","750.00","1500.00","30.00","2280.00"');
+
+    // No cut-over date yet: the report says so and lists nothing.
+    const exposure = await api.statExposure();
+    expect(exposure).toMatchObject({ cutoverDate: null, lines: [] });
+    expect(exposure.notes[0]).toContain('cut-over date');
   });
 });
 

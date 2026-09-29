@@ -32,6 +32,7 @@ import { NotificationsPage } from './DASH/Home.tsx';
 import { CalendarPage } from './CAL/Calendar.tsx';
 import { Customers } from './CUS/Customers.tsx';
 import { CompanyProfileScreen } from './PRT/CompanyProfile.tsx';
+import { StatExposure } from './STAT/Exposure.tsx';
 import { StatMonthPage, StatMonths, remittanceView } from './STAT/Statutory.tsx';
 import { RemittanceForm } from './STAT/RemittanceForm.tsx';
 import { OpeningStatForm } from './STAT/OpeningStatForm.tsx';
@@ -70,6 +71,11 @@ import { VatCloseForm } from './TAX/VatCloseForm.tsx';
 import { JvForm } from './ACC/JvForm.tsx';
 import { OpeningForm } from './ACC/OpeningForm.tsx';
 import { OpeningBalances } from './ACC/OpeningBalances.tsx';
+import { ChartOfAccounts } from './ACC/ChartOfAccounts.tsx';
+import { Settings } from './ACC/Settings.tsx';
+import { Users } from './SEC/Users.tsx';
+import { Roles } from './SEC/Roles.tsx';
+import { MonthEnd } from './ACC/MonthEnd.tsx';
 import { BirPaymentForm } from './TAX/BirPaymentForm.tsx';
 import { OpeningWithholdingForm } from './TAX/OpeningWithholdingForm.tsx';
 import { OpeningPayableForm } from './TAX/OpeningPayableForm.tsx';
@@ -82,6 +88,10 @@ import { OpeningForm as OpeningLoanForm } from './LOAN/OpeningForm.tsx';
 import { PaymentForm as LoanPaymentForm } from './LOAN/PaymentForm.tsx';
 import { loanView } from './LOAN/views.tsx';
 import { BuyForm } from './FA/BuyForm.tsx';
+import { AssetPage, Assets } from './FA/Assets.tsx';
+import { PersonPage, People } from './EQ/People.tsx';
+import { LoanPage, Loans } from './LOAN/Loans.tsx';
+import { SizerSets } from './SZR/Sizers.tsx';
 import { OpeningForm as OpeningAssetForm } from './FA/OpeningForm.tsx';
 import { Backups } from './BAK/Backups.tsx';
 import { ImportOldData } from './MIG/Importer.tsx';
@@ -127,6 +137,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/pay/2316/:year/:employeeId': Sheet2316,
   '/prt/company-profile': CompanyProfileScreen,
   '/stat': StatMonths,
+  '/stat/exposure': StatExposure,
   '/stat/:month': StatMonthPage,
   '/tax/booklets': Booklets,
   '/tax/booklets/new': RegisterBooklet,
@@ -158,10 +169,15 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/1702rt': AnnualIncomeTaxReturn,
   '/tax/1604e': EwtAnnualReturnPage,
   '/acc/opening': OpeningBalances,
+  '/acc/month-end': MonthEnd,
   '/tax/calendar': TaxCalendar,
   '/admin/shop-certificate': ShopCertificate,
   '/admin/practice': PracticeShop,
   '/admin/health': SystemHealthPage,
+  '/admin/users': Users,
+  '/admin/roles': Roles,
+  '/acc/chart': ChartOfAccounts,
+  '/acc/settings': Settings,
   '/bak': Backups,
   '/bak/:section': Backups,
   '/mig': ImportOldData,
@@ -170,6 +186,13 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/aud/integrity': IntegrityCheck,
   '/ap/suppliers': ApBalances,
   '/ap/suppliers/:id': ApSupplierPage,
+  '/fa/assets': Assets,
+  '/fa/assets/:id': AssetPage,
+  '/eq/people': People,
+  '/eq/people/:id': PersonPage,
+  '/loan/loans': Loans,
+  '/loan/loans/:id': LoanPage,
+  '/szr/sets': SizerSets,
 };
 
 /** A module's own form; `me` lets it offer what only some users may do (the remittance's date paid, for acc.backdate). */

@@ -9,6 +9,10 @@ import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { placesFor } from '../CASH/public.ts';
 import { activeJobOrders, joMoney } from '../JO/public.ts';
 import { board } from '../PRD/public.ts';
+import { redLightNotices, type Host } from '../../platform/health/health.ts';
+
+/** Where the app runs, for the System Health notifications: the practice shop has no backups to warn about. */
+export interface HomeContext { practice?: boolean; host?: Host }
 
 const day = (date: string) => new Date(`${date}T00:00:00Z`);
 const dateOf = (date: Date) => `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
@@ -53,7 +57,7 @@ function roleOf(user: SessionUser): 'owner' | 'accountant' | 'production' | 'enc
   return 'encoder';
 }
 
-export function home(db: Db, clock: Clock, registry: Registry, user: SessionUser) {
+export function home(db: Db, clock: Clock, registry: Registry, user: SessionUser, where: HomeContext = {}) {
   const can = (key: string) => user.permissions.has(key);
   const date = today(clock);
   const role = roleOf(user);
@@ -75,7 +79,7 @@ export function home(db: Db, clock: Clock, registry: Registry, user: SessionUser
     }).map((d) => ({ id: d.id, label: registry.docType(d.docType)!.title, detail: `Updated ${d.updatedAt.slice(0, 10)}`, href: `/docs/${d.docType}/new?draft=${d.id}` })) });
   }
   if (role === 'accountant') {
-    widgets.push({ key: 'exceptions', title: 'Exceptions inbox', items: notifications(db, clock, registry, user)
+    widgets.push({ key: 'exceptions', title: 'Exceptions inbox', items: notifications(db, clock, registry, user, where)
       .filter((n) => !n.read).slice(0, 20).map(({ id, label, href, detail, amountCents }) => ({ id, label, href, detail, amountCents })) });
   }
   if (role === 'encoder') {
@@ -115,7 +119,7 @@ export function home(db: Db, clock: Clock, registry: Registry, user: SessionUser
   return { role, asOf: date, widgets };
 }
 
-export function notifications(db: Db, clock: Clock, registry: Registry, user: SessionUser): DashNotification[] {
+export function notifications(db: Db, clock: Clock, registry: Registry, user: SessionUser, where: HomeContext = {}): DashNotification[] {
   const can = (key: string) => user.permissions.has(key);
   const date = today(clock);
   const out: Omit<DashNotification, 'read'>[] = [];
@@ -151,6 +155,9 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
       push('cancel', `${change.id}:${change.at}`, `${change.number} was cancelled`, `/docs/${change.docType}/${change.id}`, change.reason);
       if (change.replacedById) push('reissue', `${change.id}:${change.replacedById}`, `${change.number} was reissued`, `/docs/${change.docType}/${change.replacedById}`, change.reason);
     }
+  }
+  if (can('sec.health.view') && where.host) {
+    for (const n of redLightNotices(db, clock, { practice: where.practice ?? false, host: where.host })) push('health-red', n.id, n.label, '/admin/health', n.detail);
   }
   const reads = new Set((db.prepare('SELECT notification_key FROM dash_notification_reads WHERE user_id = ?').all(user.userId) as { notification_key: string }[]).map((r) => r.notification_key));
   return out.map((n) => ({ ...n, read: reads.has(n.id) }));

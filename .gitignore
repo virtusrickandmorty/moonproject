@@ -7,3 +7,5 @@ data/
 coverage/
 .env
 ops/windows/out/
+test-results/
+playwright-report/

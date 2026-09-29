@@ -121,7 +121,10 @@ export function bakRoutes(app: FastifyInstance, deps: AppDeps): void {
     }
   });
 
-  /** Restores the checked copy: it is swapped in when Moonproject next starts. The owner, with a fresh password. */
+  /**
+   * Restores the checked copy: Moonproject restarts by itself once no request is running, and the start swaps the copy
+   * in. Until then nothing more can be recorded. The owner, with a fresh password.
+   */
   app.post('/api/bak/restore/apply', { config: { permission: 'bak.restore' } }, async (req: FastifyRequest) => {
     const user = currentUser(req);
     requireStepUp(user, clock);
@@ -129,7 +132,25 @@ export function bakRoutes(app: FastifyInstance, deps: AppDeps): void {
     const at = now();
     const s = requestRestore(dir(), stagedId, at);
     tx(db, () => appendAudit(db, { at, userId: user.userId, action: 'bak.restore', entityType: 'bak.backup', entityId: s.file, data: { stagedId, madeAt: s.facts.madeAt } }));
-    return { file: s.file, restartNeeded: true, message: 'Restart Moonproject to finish. Everyone should save their work and sign out first; the current data is kept next to the restored one.' };
+    deps.restart.request(`restore of ${s.file}`);
+    return {
+      file: s.file, restartNeeded: true, restarting: true,
+      message: 'Moonproject restarts by itself within a minute to finish the restore, then everyone signs in again. Nothing more can be recorded until then; the current data is kept next to the restored one.',
+    };
+  });
+
+  /**
+   * The last restore, shown to an owner at their first sign-in after it ("Restored from <backup> at <time>"): only in
+   * the first session they opened since, so it is not shown again at the sign-in after.
+   */
+  app.get('/api/bak/restored', { config: { permission: 'bak.restore' } }, async (req: FastifyRequest) => {
+    const last = db.prepare(`SELECT at, entity_id AS file FROM audit_log WHERE action = 'bak.restored' ORDER BY seq DESC LIMIT 1`).get() as
+      | { at: string; file: string }
+      | undefined;
+    if (!last) return { restored: null };
+    const user = currentUser(req);
+    const first = db.prepare('SELECT id FROM sessions WHERE user_id = ? AND created_at >= ? ORDER BY created_at, rowid LIMIT 1').pluck().get(user.userId, last.at);
+    return { restored: first === user.sessionId ? { file: last.file, at: last.at } : null };
   });
 
   /** Copies the backups to USB drive A or B. */

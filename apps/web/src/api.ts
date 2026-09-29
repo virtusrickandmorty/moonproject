@@ -27,6 +27,8 @@ export interface SystemHealth {
 /** The practice shop (PLAN C8), as GET /api/system/practice reports it. */
 export interface PracticeStatus { state: 'off' | 'here' | 'preparing' | 'ready' | 'failed'; port: number | null; preparedAt: string | null; days: number | null; message: string | null }
 export interface CertInfo { fingerprint256: string; fingerprint1: string; notAfter: string; ips: string[]; dnsNames: string[] }
+/** Where a phone or another PC joins (GET /api/system/tls): `urls` is empty while the "Join this PC" page is not running. */
+export interface JoinAddress { pcName: string; addresses: { ip: string; kind: 'lan' | 'vpn' }[]; port: number | null; urls: string[] }
 export interface CompanyProfile { registeredName: string; tradeName: string; tin: string; registeredAddress: string; isVatRegistered: boolean; version: number; supersededAt?: string }
 export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; const?: unknown; anyOf?: JsonSchema[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
 export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
@@ -266,6 +268,22 @@ export interface StatMonth {
   check: SchemeCheck[];
   notDeducted: { employeeId: string; name: string; cents: number }[];
 }
+/** The agencies that take an upload file (STAT), and the employer's number at each. */
+export type UploadScheme = 'SSS' | 'PHIC' | 'HDMF';
+export interface EmployerNumberRow { scheme: UploadScheme; label: string; employerLabel: string; number: string | null; since: string | null }
+/** The exposure report (ACC-05): months since the cut-over with pay but no contribution recorded, with estimates. Posts nothing. */
+export interface ExposureMonth { month: string; grossCents: number; eeCents: number; erCents: number; ecCents: number; totalCents: number; monthsLate: number; penaltyCents: number }
+export interface ExposureLine {
+  employeeId: string; code: string; name: string; scheme: UploadScheme; label: string; switchedOff: boolean;
+  months: ExposureMonth[]; eeCents: number; erCents: number; ecCents: number; totalCents: number; penaltyCents: number;
+}
+export interface Exposure {
+  asOf: string; cutoverDate: string | null; from: string | null; to: string | null;
+  rates: { scheme: UploadScheme; label: string; monthlyBp: number | null; source: string | null }[];
+  lines: ExposureLine[];
+  totals: { scheme: UploadScheme; label: string; employees: number; months: number; eeCents: number; erCents: number; ecCents: number; totalCents: number; penaltyCents: number }[];
+  notes: string[];
+}
 export type BookletKind = 'SALES_INVOICE' | 'CR';
 export interface Booklet { id: string; kind: BookletKind; atpNo: string; printer: string | null; serialFrom: number; serialTo: number; receivedOn: string; note: string | null; isActive: boolean; version: number }
 export interface BookletUsage {
@@ -417,7 +435,18 @@ export interface ApBalance { supplierId: string; supplierName: string; balanceCe
 /** GET /api/acc/opening, what an opening document's form needs: the cut-over date it is dated, and the close once done. */
 export type OpeningStatus = Pick<OpeningState, 'cutoverDate' | 'closed'>;
 export interface EqPerson { id: string; name: string; isStockholder: boolean; isOfficer: boolean; position: string | null }
-export interface Setting { key: string; label: string; current: unknown }
+/** GET /api/settings: each dated setting with the value in force today and every version, newest first. */
+export interface SettingVersion { id: number; key: string; effectiveFrom: string; value: unknown; reason: string; createdAt: string; createdBy: string | null }
+export interface Setting { key: string; label: string; current: unknown; versions: SettingVersion[] }
+/** Users and roles (SEC, owner only): GET /api/users and GET /api/roles. */
+export interface UserRow { id: string; username: string; displayName: string; isActive: boolean; mustChangePassword: boolean; roles: string[] }
+export interface RoleGrid { roles: string[]; permissions: { key: string; module: string; label: string; roles: string[] }[] }
+/** The chart of accounts as GET /api/acc/accounts returns it, in code order. `balanceCents` is debit-positive. */
+export interface CoaAccount {
+  id: number; code: string; name: string; type: Account['type']; normalSide: 'debit' | 'credit'; roleKey: string | null; partyType: PartyType | null;
+  isHeader: boolean; isCashPlace: boolean; isReserved: boolean; isActive: boolean; version: number; balanceCents: number;
+}
+export interface NewAccountBody { code: string; name: string; type: Account['type']; normalSide?: 'debit' | 'credit'; partyType?: PartyType }
 
 /** Chart of accounts (ACC), for pickers. `partyType`: the subledger a line on the account names; 'free' takes any, or none. */
 export type PartyType = 'customer' | 'supplier' | 'employee' | 'officer' | 'stockholder' | 'loan' | 'asset' | 'free';
@@ -427,12 +456,55 @@ export type Supplier = SupplierRow;
 /** The loan register (LOAN): what is owed comes from the ledger; `nextDue` is null once paid off or cancelled. */
 export interface LoanRow {
   id: string; number: string; status: 'posted' | 'cancelled'; lender: string; kind: 'loan' | 'equipment'; principalCents: number; balanceCents: number; instalments: number;
+  dateReceived?: string; rateBp?: number; termMonths?: number; principalPaidCents?: number; interestPaidCents?: number; reference?: string | null;
   nextDue: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number } | null;
 }
 /** An FA- purchase whose financed part no loan has taken over yet. */
 export interface FinancedPurchase { id: string; number: string; date: string; description: string; supplierName: string; lender: string; financedCents: number }
 export interface AssetClass { code: string; name: string; defaultLifeMonths: number | null }
-export interface AssetRow { id: string; number: string; description: string; className: string; status: 'in service' | 'fully depreciated' | 'disposed' | 'cancelled' }
+export type AssetStatus = 'in service' | 'fully depreciated' | 'disposed' | 'cancelled';
+/** GET /api/fa/assets: the register; every figure but the description and class comes from the ledger and the documents. */
+export interface AssetRow {
+  id: string; number: string; description: string; className: string; status: AssetStatus;
+  acquiredOn?: string; costCents?: number; residualCents?: number; lifeMonths?: number; monthlyChargeCents?: number; accumulatedCents?: number; bookValueCents?: number; location?: string | null;
+}
+/** GET /api/fa/assets/:id: the register row with its depreciation from the recorded runs, its documents and the months with no charge. */
+export interface AssetPage extends Required<AssetRow> {
+  disposal: string | null;
+  depreciation: { month: string; documentId: string; documentNumber: string; chargeCents: number; accumulatedCents: number }[];
+  missingMonths: string[];
+  documents: { docType: string; id: string; number: string; date: string; status: 'posted' | 'cancelled' }[];
+}
+/** GET /api/fa/depreciation-gaps: months before this one in which an asset in service was not charged. */
+export interface DepreciationGaps { thisMonth: string; lastRunMonth: string | null; months: string[] }
+
+/** GET /api/eq/people?all=1: the register of stockholders and officers. */
+export interface EqPersonRecord extends EqPerson { shares: number | null; isActive: boolean; version: number }
+/** GET /api/eq/balances: what each person owes the company, is owed, and still owes on a stock subscription. */
+export interface EqBalance { personId: string; dueFromCents: number; dueToCents: number; unpaidSubscriptionCents: number }
+/** GET /api/eq/people/:id/owner-money and /officer-transactions: `kind` is the classification, or taken | returned | repaid_to_officer; `note` the note or purpose. */
+export interface EqDocument { id: string; number: string; date: string; status: 'posted' | 'cancelled'; amountCents: number; accountName: string; kind: string; note: string | null }
+/** GET /api/eq/people/:id/ledger: `netCents` is what they owe the company less what it owes them; amounts on lines are debit-positive. */
+export interface EqLedger {
+  person: EqPersonRecord; dueFromCents: number; dueToCents: number; netCents: number;
+  lines: { date: string; journalNumber: string; documentNumber: string | null; accountCode: string; accountName: string; memo: string; amountCents: number; netCents: number }[];
+}
+
+/** GET /api/loan/loans/:id: the register row with its schedule (and the payment on each paid instalment) and the loan ledger. */
+export interface LoanDetail extends LoanRow {
+  schedule: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number; paidBy: string | null }[];
+  ledger: { date: string; journalNumber: string; documentNumber: string | null; memo: string; amountCents: number; balanceCents: number }[];
+}
+/** GET /api/loan/loans/:id/payments. */
+export interface LoanPayment { id: string; number: string; date: string; status: 'posted' | 'cancelled'; instalmentNo: number; principalCents: number; interestCents: number; totalCents: number; note: string | null }
+/** GET /api/loan/late: an instalment past its due date with no recorded payment. */
+export interface LateInstalment { loanId: string; loanNumber: string; lender: string; instalmentNo: number; dueDate: string; principalCents: number; interestCents: number; daysLate: number }
+
+/** GET /api/szr/overview (PLAN E8): every set with who has it, the overdue ones and the last returns. */
+export interface SizerHolder { loanId: string; loanVersion: number; customerId: string; customerName: string; dateOut: string; expectedReturnDate: string; daysOverdue: number }
+export interface SizerSet { id: string; code: string; garmentType: string; sizesIncluded: string; status: 'in shop' | 'lent' | 'lost or damaged'; holder: SizerHolder | null }
+export interface SizerReturned { loanId: string; setCode: string; garmentType: string; customerName: string; dateOut: string; expectedReturnDate: string; returnedDate: string; conditionOnReturn: string }
+export interface SizerBoard { today: string; sets: SizerSet[]; overdue: SizerSet[]; returned: SizerReturned[] }
 /** Backups (BAK). The status's `runs` are the server's bak_runs rows as stored. */
 export type BackupTier = 'snapshot' | 'daily' | 'monthly' | 'yearly';
 export type BackupSource = 'local' | 'offsite';
@@ -483,6 +555,17 @@ export interface OpeningState {
   /** Accounts an OB- line may open. */
   accounts: { id: number; code: string; name: string; isCashPlace: boolean; needsStockholder: boolean }[];
   closed: { cutoverDate: string; closedAt: string; closedBy: string; closedByName: string; totalDebitCents: number; totalCreditCents: number } | null;
+}
+/** GET /api/acc/month-end?month=: the month-end checklist (PLAN D8), each item read from the app. */
+export type MonthEndState = 'done' | 'not_done' | 'not_needed';
+export interface MonthEndItem { key: string; title: string; state: MonthEndState; detail: string; href: string; linkLabel: string; rows: { label: string; state: MonthEndState; detail: string }[] }
+export interface MonthEndSignoff { id: number; month: string; signedAt: string; signedBy: string; signedByName: string; note: string }
+export interface MonthEndChecklist {
+  month: string; asOf: string; over: boolean; canSignOff: boolean; items: MonthEndItem[];
+  signoff: (MonthEndSignoff & { items: { key: string; state: MonthEndState; detail: string }[] }) | null;
+  earlierSignoffs: MonthEndSignoff[];
+  /** Documents dated in the month that were recorded or cancelled after the newest sign-off; null while the month is not signed. */
+  changedAfterSignoff: { count: number; documents: { number: string; title: string; date: string; action: 'recorded' | 'cancelled'; at: string }[] } | null;
 }
 /** BIR payments (BIRP-): the return, and the posted payments a worksheet counts. */
 export type BirForm = '2550Q' | '0619-E' | '1601-EQ' | '1702Q' | '1702';
@@ -609,7 +692,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     calMove: (id: string, date: string, time?: string | null) => call<CalEvent>('POST', `/api/cal/events/${encodeURIComponent(id)}/move`, { date, time }),
     calCancel: (id: string, reason: string) => call<CalEvent>('POST', `/api/cal/events/${encodeURIComponent(id)}/cancel`, { reason }),
     calHistory: (id: string) => call<CalEvent[]>('GET', `/api/cal/events/${encodeURIComponent(id)}/history`),
-    shopCertificate: () => call<{ ca: CertInfo | null }>('GET', '/api/system/tls'),
+    shopCertificate: () => call<{ ca: CertInfo | null; join?: JoinAddress }>('GET', '/api/system/tls'),
     systemHealth: () => call<SystemHealth>('GET', '/api/system/health'),
     systemCheck: () => call<SystemHealth>('POST', '/api/system/health/check'),
     practice: () => call<PracticeStatus>('GET', '/api/system/practice'),
@@ -712,9 +795,44 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     caWriteoffAccounts: () => call<{ id: number; code: string; name: string }[]>('GET', '/api/ca/writeoff-accounts'),
     statMonths: () => call<{ month: string; check: SchemeCheck[] }[]>('GET', '/api/stat/months'),
     statMonth: (month: string) => call<StatMonth>('GET', `/api/stat/months/${encodeURIComponent(month)}`),
+    statExposure: () => call<Exposure>('GET', '/api/stat/exposure'),
+    statEmployerNumbers: () => call<EmployerNumberRow[]>('GET', '/api/stat/employer-numbers'),
+    /** Needs a fresh password (step-up). */
+    setEmployerNumber: (scheme: UploadScheme, number: string) => call<{ scheme: UploadScheme; number: string; changed: boolean }>('PUT', `/api/stat/employer-numbers/${scheme}`, { number }),
+    /** An agency upload file (CSV) for a month: the bytes and the file's name, or the server's plain refusal (a missing ID number names the employee). */
+    statUpload: async (month: string, scheme: UploadScheme): Promise<{ filename: string; blob: Blob }> => {
+      let res: Response;
+      try {
+        res = await fetchImpl(`/api/stat/months/${encodeURIComponent(month)}/upload/${scheme.toLowerCase()}`, { method: 'GET', headers: {}, credentials: 'same-origin' });
+      } catch {
+        throw new ApiError('OFFLINE', 'Cannot reach the server. Check the connection and try again.', 0);
+      }
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { code?: string; message?: string; details?: unknown } | null;
+        throw new ApiError(data?.code ?? `HTTP_${res.status}`, data?.message ?? 'Something went wrong. Please try again.', res.status, data?.details);
+      }
+      return { filename: /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? `${scheme}-${month}.csv`, blob: await res.blob() };
+    },
     /** D6: what of a payroll run's month is already remitted (the warning before a cancel). */
     runRemitted: (runId: string) => call<{ month: string; remitted: { scheme: Scheme; label: string; numbers: string[] }[] }>('GET', `/api/stat/runs/${encodeURIComponent(runId)}/remitted`),
     settings: () => call<Setting[]>('GET', '/api/settings'),
+    /** A new version from today or later (acc.settings.manage); needs a fresh password (step-up). */
+    addSetting: (key: string, body: { effectiveFrom: string; value: unknown; reason: string }) => call<SettingVersion>('POST', `/api/settings/${encodeURIComponent(key)}`, body),
+    /** Users and roles (sec.users.manage). Every change but the two reads needs a fresh password (step-up). */
+    users: () => call<UserRow[]>('GET', '/api/users'),
+    addUser: (body: { username: string; displayName: string; roles: string[]; temporaryPassword: string }) => call<{ id: string }>('POST', '/api/users', body),
+    setUserRoles: (id: string, roles: string[]) => call<{ ok: true }>('POST', `/api/users/${encodeURIComponent(id)}/roles`, { roles }),
+    resetUserPassword: (id: string, temporaryPassword: string) => call<{ ok: true }>('POST', `/api/users/${encodeURIComponent(id)}/reset-password`, { temporaryPassword }),
+    setUserActive: (id: string, active: boolean) => call<{ ok: true }>('POST', `/api/users/${encodeURIComponent(id)}/active`, { active }),
+    roles: () => call<RoleGrid>('GET', '/api/roles'),
+    setRolePermission: (role: string, permissionKey: string, granted: boolean) =>
+      call<{ ok: true }>('POST', `/api/roles/${encodeURIComponent(role)}/permissions`, { permissionKey, granted }),
+    /** The chart of accounts (acc.coa.view); changes need acc.coa.manage, `v` is the account's version (If-Match). Deactivating needs a fresh password. */
+    coaAccounts: () => call<CoaAccount[]>('GET', '/api/acc/accounts'),
+    addAccount: (body: NewAccountBody) => call<CoaAccount>('POST', '/api/acc/accounts', body),
+    renameAccount: (id: number, v: number, name: string) => call<CoaAccount>('PUT', `/api/acc/accounts/${id}`, { name }, version(v)),
+    deactivateAccount: (id: number, v: number) => call<CoaAccount>('POST', `/api/acc/accounts/${id}/deactivate`, undefined, version(v)),
+    activateAccount: (id: number, v: number) => call<CoaAccount>('POST', `/api/acc/accounts/${id}/activate`, undefined, version(v)),
     suppliers: () => call<SupplierRow[]>('GET', '/api/pur/suppliers'),
     supplies: () => call<SupplyRow[]>('GET', '/api/pur/supplies'),
     supplierList: (status: PurStatus) => call<SupplierRecord[]>('GET', `/api/pur/suppliers?status=${status}`),
@@ -773,6 +891,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** A year's deduction method from today or later (acc.settings.manage); needs a fresh password (step-up). */
     addIncomeTaxDeduction: (body: { year: number; method: DeductionMethod; effectiveFrom: string; reason: string }) => call<DeductionSetting>('POST', '/api/tax/income-tax-deductions', body),
     opening: () => call<OpeningState>('GET', '/api/acc/opening'),
+    monthEnd: (month?: string) => call<MonthEndChecklist>('GET', `/api/acc/month-end${month ? `?${new URLSearchParams({ month })}` : ''}`),
+    /** The accountant's sign-off of a month that has ended; needs a fresh password (step-up). */
+    signOffMonth: (month: string, note: string) => call<MonthEndChecklist>('POST', '/api/acc/month-end/sign-off', { month, note }),
     /** Every return with something left to pay (GET /api/tax/payments/due): a VAT close or an opening's 2550Q, EWT withheld or opened. */
     taxPaymentsDue: () => call<{ form: BirForm; period: string; payableCents: number }[]>('GET', '/api/tax/payments/due'),
     /** Both need a fresh password (step-up). */
@@ -784,6 +905,23 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     financedAssets: () => call<FinancedPurchase[]>('GET', '/api/loan/financed-assets'),
     assetClasses: () => call<AssetClass[]>('GET', '/api/fa/classes'),
     assets: () => call<AssetRow[]>('GET', '/api/fa/assets'),
+    asset: (id: string) => call<AssetPage>('GET', `/api/fa/assets/${encodeURIComponent(id)}`),
+    depreciationGaps: () => call<DepreciationGaps>('GET', '/api/fa/depreciation-gaps'),
+    /** The whole register, switched-off people included. */
+    eqRegister: () => call<EqPersonRecord[]>('GET', '/api/eq/people?all=1'),
+    eqBalances: () => call<EqBalance[]>('GET', '/api/eq/balances'),
+    eqLedger: (personId: string) => call<EqLedger>('GET', `/api/eq/people/${encodeURIComponent(personId)}/ledger`),
+    eqOwnerMoney: (personId: string) => call<EqDocument[]>('GET', `/api/eq/people/${encodeURIComponent(personId)}/owner-money`),
+    eqOfficerTransactions: (personId: string) => call<EqDocument[]>('GET', `/api/eq/people/${encodeURIComponent(personId)}/officer-transactions`),
+    loan: (id: string) => call<LoanDetail>('GET', `/api/loan/loans/${encodeURIComponent(id)}`),
+    loanPayments: (id: string) => call<LoanPayment[]>('GET', `/api/loan/loans/${encodeURIComponent(id)}/payments`),
+    loansLate: () => call<LateInstalment[]>('GET', '/api/loan/late'),
+    sizerBoard: () => call<SizerBoard>('GET', '/api/szr/overview'),
+    /** Lend a set that is in the shop to a customer; the date out is the server's today. */
+    sizerLend: (body: { setId: string; customerId: string; expectedReturnDate: string }) => call<{ id: string; version: number }>('POST', '/api/szr/loans', body),
+    /** Take a set back, with the loan's version (If-Match); it is back in the shop, or lost or damaged. */
+    sizerReturn: (loanId: string, v: number, body: { status: 'in shop' | 'lost or damaged'; conditionOnReturn: string }) =>
+      call<{ success: true }>('POST', `/api/szr/loans/${encodeURIComponent(loanId)}/return`, body, version(v)),
     /** Without a year and quarter: the quarter of the server's date. */
     vatSummary: (year?: number, quarter?: number) =>
       call<VatSummary>('GET', `/api/tax/vat-summary${year ? `?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}` : ''}`),
@@ -794,7 +932,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     bakUsb: (drive: 'A' | 'B', dir: string) => call<{ drive: 'A' | 'B'; copied: number; onDrive: number }>('POST', '/api/bak/usb', { drive, dir }),
     bakBackups: () => call<BackupFile[]>('GET', '/api/bak/backups'),
     bakCheck: (b: { source: BackupSource; file: string; key: string; purpose: 'drill' | 'restore' }) => call<BackupCheck>('POST', '/api/bak/restore/check', b),
-    bakApply: (stagedId: string) => call<{ file: string; restartNeeded: boolean; message: string }>('POST', '/api/bak/restore/apply', { stagedId }),
+    bakApply: (stagedId: string) => call<{ file: string; restartNeeded: boolean; restarting: boolean; message: string }>('POST', '/api/bak/restore/apply', { stagedId }),
+    bakRestored: () => call<{ restored: { file: string; at: string } | null }>('GET', '/api/bak/restored').then((r) => r.restored),
     migUploads: () => call<{ uploads: MigUpload[] }>('GET', '/api/mig/uploads').then((r) => r.uploads),
     /** The kind is not sent: the server reads it from the columns. */
     migUpload: (filename: string, csv: string) => call<MigUploaded>('POST', '/api/mig/upload', { filename, csv }),
