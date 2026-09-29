@@ -24,6 +24,7 @@ import { joinHandler } from './engine/security/tls/join.ts';
 import { ensureTls } from './engine/security/tls/store.ts';
 import { practiceShop, type PracticeShop } from './platform/practice/shop.ts';
 import { isCheckDue, lastSystemCheck, runSystemCheck } from './platform/health/health.ts';
+import { RESTART_EXIT_CODE } from './platform/restart.ts';
 
 const dbFile = process.env.MOONPROJECT_DB ?? 'data/moonproject.db';
 mkdirSync(dirname(dbFile), { recursive: true });
@@ -43,9 +44,26 @@ if (practicePort) {
     log: { info: (m) => app.log.info(m), error: (m) => app.log.error(m) },
   });
 }
+let joinPort: number | null = null;
 const { app } = buildApp({
   db, clock: systemClock, modules, logger: true, ...(practice ? { practiceShop: practice } : {}),
   ...(tls ? { https: { key: tls.server.keyPem, cert: tls.server.certPem } } : {}),
+  network: { joinPort: () => joinPort },
+  // After a restore (PLAN C8): exit once no request is running; the Windows service starts Moonproject again, and the
+  // start above swaps the restored copy in. Run by hand (development), start it again yourself.
+  onRestart: (reason) => {
+    app.log.warn(`Restarting to finish the ${reason}`);
+    setTimeout(() => process.exit(RESTART_EXIT_CODE), 15_000).unref(); // a connection that will not close
+    void (async () => {
+      try {
+        await practice?.stop();
+        await app.close();
+        db.close();
+      } finally {
+        process.exit(RESTART_EXIT_CODE);
+      }
+    })();
+  },
 });
 if (restored) {
   recordRestored(db, restored, stamp(systemClock), 'start');
@@ -73,6 +91,7 @@ if (tls) {
       join.off('error', failed);
       join.on('error', (e) => app.log.error(`"Join this PC" page: ${e.message}`));
       const port = (join.address() as AddressInfo).port;
+      joinPort = port;
       const ip = tls!.server.ips.find((a) => a !== '127.0.0.1') ?? 'localhost';
       app.log.info(`Devices join at http://${ip}${port === 80 ? '' : `:${port}`}/ ("Join this PC" page on port ${port})`);
     });

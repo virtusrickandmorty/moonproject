@@ -27,6 +27,8 @@ export interface SystemHealth {
 /** The practice shop (PLAN C8), as GET /api/system/practice reports it. */
 export interface PracticeStatus { state: 'off' | 'here' | 'preparing' | 'ready' | 'failed'; port: number | null; preparedAt: string | null; days: number | null; message: string | null }
 export interface CertInfo { fingerprint256: string; fingerprint1: string; notAfter: string; ips: string[]; dnsNames: string[] }
+/** Where a phone or another PC joins (GET /api/system/tls): `urls` is empty while the "Join this PC" page is not running. */
+export interface JoinAddress { pcName: string; addresses: { ip: string; kind: 'lan' | 'vpn' }[]; port: number | null; urls: string[] }
 export interface CompanyProfile { registeredName: string; tradeName: string; tin: string; registeredAddress: string; isVatRegistered: boolean; version: number; supersededAt?: string }
 export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; const?: unknown; anyOf?: JsonSchema[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
 export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
@@ -609,7 +611,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     calMove: (id: string, date: string, time?: string | null) => call<CalEvent>('POST', `/api/cal/events/${encodeURIComponent(id)}/move`, { date, time }),
     calCancel: (id: string, reason: string) => call<CalEvent>('POST', `/api/cal/events/${encodeURIComponent(id)}/cancel`, { reason }),
     calHistory: (id: string) => call<CalEvent[]>('GET', `/api/cal/events/${encodeURIComponent(id)}/history`),
-    shopCertificate: () => call<{ ca: CertInfo | null }>('GET', '/api/system/tls'),
+    shopCertificate: () => call<{ ca: CertInfo | null; join?: JoinAddress }>('GET', '/api/system/tls'),
     systemHealth: () => call<SystemHealth>('GET', '/api/system/health'),
     systemCheck: () => call<SystemHealth>('POST', '/api/system/health/check'),
     practice: () => call<PracticeStatus>('GET', '/api/system/practice'),
@@ -794,7 +796,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     bakUsb: (drive: 'A' | 'B', dir: string) => call<{ drive: 'A' | 'B'; copied: number; onDrive: number }>('POST', '/api/bak/usb', { drive, dir }),
     bakBackups: () => call<BackupFile[]>('GET', '/api/bak/backups'),
     bakCheck: (b: { source: BackupSource; file: string; key: string; purpose: 'drill' | 'restore' }) => call<BackupCheck>('POST', '/api/bak/restore/check', b),
-    bakApply: (stagedId: string) => call<{ file: string; restartNeeded: boolean; message: string }>('POST', '/api/bak/restore/apply', { stagedId }),
+    bakApply: (stagedId: string) => call<{ file: string; restartNeeded: boolean; restarting: boolean; message: string }>('POST', '/api/bak/restore/apply', { stagedId }),
+    bakRestored: () => call<{ restored: { file: string; at: string } | null }>('GET', '/api/bak/restored').then((r) => r.restored),
     migUploads: () => call<{ uploads: MigUpload[] }>('GET', '/api/mig/uploads').then((r) => r.uploads),
     /** The kind is not sent: the server reads it from the columns. */
     migUpload: (filename: string, csv: string) => call<MigUploaded>('POST', '/api/mig/upload', { filename, csv }),

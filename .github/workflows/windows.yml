@@ -1,8 +1,8 @@
 name: Windows installer
 # Builds Moonproject-Setup.exe (PLAN C6, C8) and proves it on a clean Windows machine: install, service account,
 # "Join this PC", HTTPS through the shop CA, update in place with a copy of the database first, an update that cannot
-# start going back by itself, uninstall keeping the data. The installer is kept as a
-# downloadable artifact of each run.
+# start going back by itself, the watchdog task (installed, restarting a service stopped by force, gone after
+# uninstall), uninstall keeping the data. The installer is kept as a downloadable artifact of each run.
 on:
   workflow_dispatch:
   push:
@@ -13,6 +13,7 @@ on:
       - '.github/workflows/windows.yml'
       - 'apps/server/src/main.ts'
       - 'apps/server/src/app.ts'
+      - 'apps/server/src/platform/restart.ts'
       - 'apps/server/src/engine/security/tls/**'
       - 'packages/shared/**'
       - 'package-lock.json'
@@ -47,7 +48,7 @@ jobs:
           Set-Content $main ("throw new Error('A build that cannot start, for the smoke test');`n" + (Get-Content $main -Raw)) -NoNewline
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /FMoonproject-Setup-broken ops\windows\moonproject.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-      - name: Install, check, update, fail an update, uninstall
+      - name: Install, check, watchdog, update, fail an update, uninstall
         shell: pwsh
         run: ops\windows\smoke.ps1
       - name: Service logs
