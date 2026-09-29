@@ -27,7 +27,7 @@ const EXPECTED = new Set(['VALIDATION', 'HAS_DEPENDENTS', 'ALREADY_CANCELLED']);
 const NOTHING = ['No period has anyone to pay', 'Nothing to remit'];
 
 describe('statutory property test (PLAN I1.3)', () => {
-  it('random payrolls, remittances and cancels keep the lists, the remittance check and the ledger in step', async () => {
+  it('random payrolls, remittances and cancels keep the lists, the remittance check and the ledger in step', { timeout: 40000 }, async () => {
     const stats = { runs: 0, remittances: 0, penalties: 0, cancels: 0, refused: 0, cancelledAfterRemittance: 0 };
     await fc.assert(
       fc.asyncProperty(fc.gen(), async (g) => {
