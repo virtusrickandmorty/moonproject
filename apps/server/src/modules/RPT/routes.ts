@@ -11,6 +11,7 @@ import { payrollProductionRoutes } from './payroll-production-routes.ts';
 import { apAging, purchases, purchaseOrders, receivedNotBilled } from './suppliers.ts';
 import { cashPosition, transfers, cashCounts, assetSchedule } from './cash-assets.ts';
 import { lateEntries, cancellations, exceptions, signIns } from './control.ts';
+import { cashFlowStatement } from './cash-flow.ts';
 
 function date(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new AppError('BAD_DATE', 'Use a date in YYYY-MM-DD format.', 400);
@@ -197,6 +198,18 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
       ['Check', '', 'Total liabilities and equity', csvPesos(result.totalLiabilitiesAndEquityCents)],
       ['Check', '', 'Total assets less liabilities and equity', csvPesos(result.differenceCents)]];
     return sendCsv(reply, `balance-sheet-${result.asOf}`, rows);
+  });
+  app.get('/api/rpt/cash-flow', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
+    const q = req.query as Record<string, unknown>; const { from, to } = range(q); const result = cashFlowStatement(db, from, to);
+    if (q.format !== 'csv') return result;
+    const rows: CsvCell[][] = [['Section', 'Line', 'Amount PHP'], ['Opening', 'Opening cash', csvPesos(result.openingCashCents)]];
+    for (const section of result.sections) {
+      for (const line of section.lines) rows.push([section.title, line.name, csvPesos(line.amountCents)]);
+      rows.push([section.title, `Net cash from ${section.title.toLowerCase()}`, csvPesos(section.totalCents)]);
+    }
+    rows.push(['Change', 'Net change in cash', csvPesos(result.netChangeCents)], ['Closing', 'Closing cash', csvPesos(result.closingCashCents)],
+      ['Check', 'Cash accounts on balance sheet', csvPesos(result.balanceSheetCashCents)], ['Check', 'Difference', csvPesos(result.checkDifferenceCents)]);
+    return sendCsv(reply, `cash-flow-${from}-${to}`, rows);
   });
   const simple = (url: string, name: string, get: (q: Record<string, unknown>) => Record<string, unknown>) =>
     app.get(url, { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
