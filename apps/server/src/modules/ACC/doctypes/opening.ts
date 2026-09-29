@@ -15,7 +15,7 @@ import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { getAccount, type Account } from '../../../engine/ledger/accounts.ts';
 import { person } from '../../EQ/public.ts';
 import { openingAccountRefusal } from '../opening.ts';
-import { assertOpeningOpen, OPENING_PERMISSIONS, openingIssues } from '../public.ts';
+import { assertOpeningOpen, duplicateOpeningIssue, OPENING_PERMISSIONS, openingIssues } from '../public.ts';
 
 const MAX_CENTS = 100_000_000_00; // ₱100 million per line: a typo guard, not a business limit
 
@@ -88,6 +88,13 @@ export const openingDoc: DocTypeDef<OpeningInput, Opening> = {
     const issues: Issue[] = [];
     const err = (field: string, code: string, message: string) => issues.push({ field, code, level: 'error', message });
     issues.push(...openingIssues(ctx.db, ctx.businessDate));
+    // The same cash place and amount already opened by an OB-: typed twice, or two real counts that look alike.
+    const earlier = ctx.db
+      .prepare(
+        `SELECT d.number FROM acc_opening_lines l JOIN documents d ON d.id = l.document_id
+         WHERE d.doc_type = 'acc.opening' AND d.status = 'posted' AND l.account_id = ? AND l.debit_cents = ? AND l.credit_cents = ? ORDER BY d.number LIMIT 1`,
+      )
+      .pluck();
     for (const l of doc.lines) {
       const f = `lines.${l.lineNo - 1}`;
       if ((l.debitCents ?? 0) > 0 === (l.creditCents ?? 0) > 0) {
@@ -99,6 +106,10 @@ export const openingDoc: DocTypeDef<OpeningInput, Opening> = {
         continue;
       }
       const refusal = openingAccountRefusal(a);
+      if (a.is_cash_place && !refusal) {
+        const number = earlier.get(l.accountId, l.debitCents ?? 0, l.creditCents ?? 0) as string | undefined;
+        issues.push(...duplicateOpeningIssue(`${f}.accountId`, number, `${formatPeso(l.debitCents ?? l.creditCents ?? 0)} in ${a.name} (${a.code})`));
+      }
       if (refusal) err(`${f}.accountId`, refusal.code, `Line ${l.lineNo}: ${refusal.message}`);
       else if (a.party_type === 'stockholder') {
         const p = l.stockholderId ? person(ctx.db, l.stockholderId) : undefined;

@@ -28,6 +28,15 @@ export function openingIssues(db: Db, businessDate: string): Issue[] {
   return [];
 }
 
+/**
+ * The warning every opening document gives when a posted, not cancelled document of its own type already records the
+ * same key figures (`number` is that document). A warning, not an error: two real rows can look alike.
+ */
+export function duplicateOpeningIssue(field: string, number: string | undefined, what: string): Issue[] {
+  if (!number) return [];
+  return [{ field, code: 'DUPLICATE_OPENING', level: 'warning', message: `${number} already records ${what}. Record it again only if there really are two.` }];
+}
+
 /** For an opening document's afterCancel: throwing rolls the cancel back once the opening is closed. */
 export function assertOpeningOpen(db: Db): void {
   const closed = openingClose(db);
