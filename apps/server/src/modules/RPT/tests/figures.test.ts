@@ -120,6 +120,13 @@ describe('RPT report figures', () => {
       const screen = (await owner.get(`/api/rpt/bir-books/${book}?from=${from}&to=${to}`)).json();
       const ledgerCash = env.db.prepare(`SELECT COALESCE(SUM(l.${side}),0) FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.id=l.account_id WHERE j.business_date BETWEEN ? AND ? AND j.sealed=1 AND a.is_cash_place=1`).pluck().get(from, to);
       expect(screen.totals.cashCents).toBe(ledgerCash);
+      // Every row balances: its cash equals its other columns (the fund transfer's sending place is a sundry line).
+      type Row = Record<string, number> & { documentNumber: string; sundry: { amountCents: number }[] };
+      const columns = book === 'cash-receipts' ? ['receivablesCents', 'depositsCents', 'vatCents', 'salesIncomeCents']
+        : ['payablesCents', 'expensesCents', 'inputVatCents', 'ewtCents', 'salariesPayableCents'];
+      for (const row of screen.pages.flatMap((p: { rows: Row[] }) => p.rows) as Row[]) {
+        expect(row.cashCents, row.documentNumber).toBe(columns.reduce((n, c) => n + row[c]!, 0) + row.sundry.reduce((n, x) => n + x.amountCents, 0));
+      }
       expect(screen.pages.length).toBeGreaterThan(1);
       for (let page = 1; page < screen.pages.length; page++) expect(screen.pages[page].broughtForward).toEqual(screen.pages[page - 1].carriedForward);
       expect(csvTotal((await owner.get(`/api/rpt/bir-books/${book}?from=${from}&to=${to}&format=csv`)).body, 'cashCents')).toBe(screen.totals.cashCents);

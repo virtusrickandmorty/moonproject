@@ -8,19 +8,21 @@ import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 let env: TestEnv; let accountant: Client; let encoder: Client;
 const account = (code: string) => env.db.prepare('SELECT id FROM accounts WHERE code=?').pluck().get(code) as number;
 
+let customerId: string;
+const jv = async (date: string, memo: string, lines: { code: string; debitCents?: number; creditCents?: number }[]) => {
+  const total = lines.reduce((sum, line) => sum + (line.debitCents ?? 0), 0);
+  const r = await accountant.post('/api/docs/acc.jv/post', { input: { memo, lateReason: 'Cash flow report made-up month',
+    lines: lines.map(({ code, ...amount }) => {
+      const partyType = env.db.prepare('SELECT party_type FROM accounts WHERE code=?').pluck().get(code) as string | null;
+      return { accountId: account(code), ...amount, ...(partyType && partyType !== 'free'
+        ? { party: { type: partyType, id: partyType === 'customer' ? customerId : `sample-${partyType}` } } : {}) };
+    }) }, businessDate: date, expectedTotalCents: total }, idem());
+  expect(r.statusCode, r.body).toBe(200);
+};
+
 beforeEach(async () => {
   env = await createTestEnv(); accountant = await env.as('accountant'); encoder = await env.as('encoder');
-  const customerId = seedCustomers(env.db, encoder.userId).school;
-  const jv = async (date: string, memo: string, lines: { code: string; debitCents?: number; creditCents?: number }[]) => {
-    const total = lines.reduce((sum, line) => sum + (line.debitCents ?? 0), 0);
-    const r = await accountant.post('/api/docs/acc.jv/post', { input: { memo, lateReason: 'Cash flow report made-up month',
-      lines: lines.map(({ code, ...amount }) => {
-        const partyType = env.db.prepare('SELECT party_type FROM accounts WHERE code=?').pluck().get(code) as string | null;
-        return { accountId: account(code), ...amount, ...(partyType && partyType !== 'free'
-          ? { party: { type: partyType, id: partyType === 'customer' ? customerId : `sample-${partyType}` } } : {}) };
-      }) }, businessDate: date, expectedTotalCents: total }, idem());
-    expect(r.statusCode, r.body).toBe(200);
-  };
+  customerId = seedCustomers(env.db, encoder.userId).school;
   await jv('2026-08-31', 'Opening cash', [{ code: '1101', debitCents: 10_000_000 }, { code: '3900', creditCents: 10_000_000 }]);
   // Downpayment and paid release invoice: collections 20,000 + 30,000.
   await jv('2026-09-02', 'Customer downpayment', [{ code: '1101', debitCents: 2_000_000 }, { code: '2201', creditCents: 2_000_000 }]);
@@ -64,5 +66,19 @@ describe('statement of cash flows', () => {
     expect(csv.body).toContain('"Check","Difference","0.00"');
     expect((await encoder.get('/api/rpt/cash-flow?from=2026-09-01&to=2026-09-30')).statusCode).toBe(403);
     expect((await encoder.get('/api/rpt/cash-flow?from=2026-09-01&to=2026-09-30&format=csv')).statusCode).toBe(403);
+  });
+
+  it('counts opening balances in the opening cash, not as owners’ money, and cash in transit as cash', async () => {
+    const both = cashFlowStatement(env.db, '2026-08-01', '2026-09-30');
+    expect(both).toMatchObject({ openingCashCents: 10_000_000, netChangeCents: 7_000_000, closingCashCents: 17_000_000, balanced: true });
+    expect(both.sections.find((s) => s.key === 'financing')!.lines.find((l) => l.key === 'ownerMoneyIn')!.amountCents).toBe(4_000_000);
+    // Sent from the cash box on the 20th, in the bank on the 21st: no flow in either period, and each period still checks.
+    await jv('2026-09-20', 'Cash sent to the bank', [{ code: '1190', debitCents: 300_000 }, { code: '1101', creditCents: 300_000 }]);
+    await jv('2026-09-21', 'Cash received in the bank', [{ code: '1111', debitCents: 300_000 }, { code: '1190', creditCents: 300_000 }]);
+    for (const [from, to] of [['2026-09-01', '2026-09-20'], ['2026-09-21', '2026-09-28']] as const) {
+      const flow = cashFlowStatement(env.db, from, to);
+      expect(flow.balanced, from).toBe(true);
+      expect(flow.sections.flatMap((s) => s.lines).some((l) => Math.abs(l.amountCents) === 300_000), from).toBe(false);
+    }
   });
 });

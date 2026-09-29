@@ -36,10 +36,8 @@
  *     short of the 114,680.00 the books hold (99,680.00 + 15,000.00).
  *   October's inventory count (2026-10-31): materials 2,500 yd × 120.00 + 900 cones × 50.00 = 345,000.00 against 342,750.00 in
  *     the books, 2,250.00 more; ready-made 138 × 350.00 = 48,300.00 against 48,600.00, 300.00 less.
- *   Depreciation: the old books were on the straight line through September but not through the cut-over month (October), so the
- *     opening sets what is left over the months of life left after October: 166,500.00 ÷ 36 = 4,625.00; 110,700.00 ÷ 40 = 2,767.50;
- *     40,000.00 ÷ 19 = 2,105.26. October itself is not charged (the app treats the cut-over month as already charged); November
- *     charges 4,625.00 + 2,767.50 + 2,105.26 = 9,497.76.
+ *   Depreciation: the old books were on the straight line through September, the month before the cut-over (dated the 1st), so
+ *     October and November each charge the straight line: 4,500.00 + 2,700.00 + 2,000.00 = 9,200.00.
  */
 import { beforeAll, describe, expect, it } from 'vitest';
 import { PASSWORD, balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from './helpers.ts';
@@ -259,8 +257,8 @@ describe('cut-over day, 2026-10-01: the opening (J4 step 3, D8)', () => {
       expect(journalOf(r.id)).toEqual([
         [acc[0], r.id, input.costCents, 0], [acc[1], r.id, 0, input.accumulatedCents], ['3900', null, 0, input.costCents - input.accumulatedCents],
       ]);
-      // Off the straight line at the cut-over month: the app says so, and the accountant proceeds.
-      expect(r.warnings.map((w) => w.code)).toEqual(['NOT_STRAIGHT_LINE']);
+      // On the straight line through September, the last month the old books charged: no warning.
+      expect(r.warnings).toEqual([]);
     }
     [opened.faEmbroidery, opened.faSewing, opened.faComputers] = docs as [Recorded, Recorded, Recorded];
     expect(assetInputs().reduce((s, a) => s + a.costCents, 0)).toBe(55_311_890);
@@ -419,12 +417,12 @@ describe('where staff will look for each open item (J4 step 3 results)', () => {
     expect(level).toBe(4_120_741);
   });
 
-  it('the asset register lists each old asset with its dates, life and book value; charges start after the cut-over month', async () => {
+  it('the asset register lists each old asset with its dates, life and book value; charges start with the cut-over month', async () => {
     const register = await get(accountant, '/api/fa/assets');
     expect(register.map((a: Record<string, unknown>) => [a.number, a.description, a.acquiredOn, a.costCents, a.lifeMonths, a.openedOn, a.accumulatedCents, a.bookValueCents, a.monthlyChargeCents])).toEqual([
-      ['OBFA-000001', 'Embroidery machine', '2024-11-05', 30_000_000, 60, CUTOVER, 10_350_000, 19_650_000, 462_500],
-      ['OBFA-000002', 'Sewing machines and cutting table', '2025-03-10', 18_000_000, 60, CUTOVER, 5_130_000, 12_870_000, 276_750],
-      ['OBFA-000003', 'Office computers and printer', '2025-06-20', 7_311_890, 36, CUTOVER, 3_200_000, 4_111_890, 210_526],
+      ['OBFA-000001', 'Embroidery machine', '2024-11-05', 30_000_000, 60, CUTOVER, 10_350_000, 19_650_000, 450_000],
+      ['OBFA-000002', 'Sewing machines and cutting table', '2025-03-10', 18_000_000, 60, CUTOVER, 5_130_000, 12_870_000, 270_000],
+      ['OBFA-000003', 'Office computers and printer', '2025-06-20', 7_311_890, 36, CUTOVER, 3_200_000, 4_111_890, 200_000],
     ]);
     expect(register.reduce((s: number, a: { costCents: number }) => s + a.costCents, 0)).toBe(55_311_890);
   });
@@ -603,17 +601,13 @@ describe('the first month end: inventory count and the first depreciation run', 
   });
 
   /**
-   * REAL ERROR for Claude #1 (not fixed here): the old books were on the straight line through 30 September (the accumulated
-   * figures typed at the opening are exactly that), so October's own charge is still owed on 31 October: 4,500.00 on the
-   * embroidery machine ((300,000 − 30,000) ÷ 60), 2,700.00 on the sewing machines ((180,000 − 18,000) ÷ 60) and 2,000.00 on the
-   * computers ((73,118.90 − 1,118.90) ÷ 36) = 9,200.00. The app counts the cut-over month as already charged by the old books
-   * (FA assets.ts atCutover: "that month is not depreciated again"), so on a cut-over dated the 1st the October run says
-   * NOTHING_TO_CHARGE, October's 9,200.00 is never charged in October, and the opening's summary calls the 24 months
-   * through October "in service" as if the old books had charged them. (The 166,500.00 etc. left is spread over the
-   * months of life left, so the totals still end at the residual value; only the timing is wrong.) It.fails until fixed; the
-   * November figures in the next test follow today's behaviour and move with the fix.
+   * The old books were on the straight line through 30 September (the accumulated figures typed at the opening are exactly
+   * that), so October's own charge is owed on 31 October: 4,500.00 on the embroidery machine ((300,000 − 30,000) ÷ 60),
+   * 2,700.00 on the sewing machines ((180,000 − 18,000) ÷ 60) and 2,000.00 on the computers ((73,118.90 − 1,118.90) ÷ 36)
+   * = 9,200.00. (Found by this test when the app took the cut-over month as charged by the old books; fixed in FA assets.ts
+   * lastMonthCharged.)
    */
-  it.fails('October, the cut-over month, charges 9,200.00 on the straight line when the old books stopped at 30 September', async () => {
+  it('October, the cut-over month, charges 9,200.00 on the straight line when the old books stopped at 30 September', async () => {
     const r = await accountant.post('/api/docs/fa.depreciation/post', { input: { month: '2026-10' }, expectedTotalCents: 920_000 }, idem());
     expect(r.statusCode, r.body).toBe(200);
     expect(sorted(journalOf(r.json().id))).toEqual(
@@ -625,24 +619,24 @@ describe('the first month end: inventory count and the first depreciation run', 
     );
   });
 
-  it('the first depreciation run (November) charges what the opening left over the months of life left, to the centavo', async () => {
+  it('the second depreciation run (November) goes on along the straight line, to the centavo', async () => {
     await goTo('2026-11-30T02:00:00Z');
     const pre = await accountant.post('/api/docs/fa.depreciation/preview', { input: { month: '2026-11' } });
-    expect(pre.json()).toMatchObject({ totalCents: 949_776, summary: 'This will charge ₱9,497.76 depreciation for November 2026 on 3 assets.' });
-    const r = await accountant.post('/api/docs/fa.depreciation/post', { input: { month: '2026-11' }, expectedTotalCents: 949_776 }, idem());
+    expect(pre.json()).toMatchObject({ totalCents: 920_000, summary: 'This will charge ₱9,200.00 depreciation for November 2026 on 3 assets.' });
+    const r = await accountant.post('/api/docs/fa.depreciation/post', { input: { month: '2026-11' }, expectedTotalCents: 920_000 }, idem());
     expect(r.statusCode, r.body).toBe(200);
-    expect(r.json()).toMatchObject({ number: 'DEPR-000001', businessDate: '2026-11-30' });
+    expect(r.json()).toMatchObject({ number: 'DEPR-000002', businessDate: '2026-11-30' });
     expect(sorted(journalOf(r.json().id))).toEqual(
       sorted([
-        ['5302', null, 462_500, 0], ['1511', opened.faEmbroidery!.id, 0, 462_500],
-        ['5302', null, 276_750, 0], ['1511', opened.faSewing!.id, 0, 276_750],
-        ['6210', null, 210_526, 0], ['1521', opened.faComputers!.id, 0, 210_526],
+        ['5302', null, 450_000, 0], ['1511', opened.faEmbroidery!.id, 0, 450_000],
+        ['5302', null, 270_000, 0], ['1511', opened.faSewing!.id, 0, 270_000],
+        ['6210', null, 200_000, 0], ['1521', opened.faComputers!.id, 0, 200_000],
       ]),
     );
     expect(journalDates(r.json().id)).toEqual(['2026-11-30']);
     const register = await get(accountant, '/api/fa/assets');
     expect(register.map((a: { accumulatedCents: number; bookValueCents: number }) => [a.accumulatedCents, a.bookValueCents])).toEqual([
-      [10_812_500, 19_187_500], [5_406_750, 12_593_250], [3_410_526, 3_901_364],
+      [11_250_000, 18_750_000], [5_670_000, 12_330_000], [3_600_000, 3_711_890],
     ]);
     const again = await accountant.post('/api/docs/fa.depreciation/preview', { input: { month: '2026-11' } });
     expect(again.json().issues.map((i: { code: string }) => i.code)).toEqual(['ALREADY_RUN']); // one run a month

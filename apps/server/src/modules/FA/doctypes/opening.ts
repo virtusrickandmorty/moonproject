@@ -2,9 +2,10 @@
  * Opening Fixed Asset (OBFA-, PLAN D8 "Cut-over" step 3, E10, MIG-02 part 2): an asset the shop owned before the
  * cut-over date, put in the register with its cost and the accumulated depreciation of the old books on that date.
  *   Dr 15x0 cost (per asset) / Cr 15x1 accumulated depreciation (per asset) ; Cr 3900 opening balance equity (book value)
- * From then on it is like an asset bought: the register shows it with its book value, depreciation runs after the
- * cut-over month charge it (on the straight line when the old books were on it, else what is left spread evenly over the
- * months of life left: assets.ts scheduledCents), and a disposal takes it off. The OBFA- document id is the asset's
+ * From then on it is like an asset bought: the register shows it with its book value, depreciation runs after the last
+ * month the old books charged (the month before a cut-over dated the 1st, else the cut-over month) charge it (on the
+ * straight line when the old books were on it, else what is left spread evenly over the months of life left:
+ * assets.ts scheduledCents), and a disposal takes it off. The OBFA- document id is the asset's
  * party id. Like every opening document (ACC/public.ts): accountant only, dated the cut-over date, cancelled on it
  * while the opening is open, and only after its depreciation runs and its disposal are cancelled.
  */
@@ -14,7 +15,7 @@ import { formatPeso, isBusinessDate, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { Db } from '../../../platform/db/driver.ts';
 import { assertOpeningOpen, cutoverDate, OPENING_PERMISSIONS, openingIssues } from '../../ACC/public.ts';
-import { assetClass, assetParty, atCutover, listClasses, monthlyChargeCents, monthsInService, straightLine } from '../assets.ts';
+import { assetClass, assetParty, atCutover, lastMonthCharged, listClasses, monthlyChargeCents, monthsInService, straightLine } from '../assets.ts';
 import { monthLabel } from './depreciation.ts';
 
 const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
@@ -48,7 +49,7 @@ function withFigures(db: Db, input: OpeningAssetInput, cutover: string): Opening
   const life = input.lifeMonths ?? cls?.defaultLifeMonths ?? 0;
   const a = { acquiredOn: input.acquiredOn, costCents: input.costCents, residualCents: input.residualCents, lifeMonths: life };
   // Without a life there is no straight line yet; validate asks for one.
-  const c = life > 0 ? atCutover(a, cutover, input.accumulatedCents) : { months: monthsInService(input.acquiredOn, cutover.slice(0, 7)), straightLineCents: 0, leftCents: 0, monthsLeft: 0 };
+  const c = life > 0 ? atCutover(a, cutover, input.accumulatedCents) : { months: monthsInService(input.acquiredOn, lastMonthCharged(cutover)), straightLineCents: 0, leftCents: 0, monthsLeft: 0 };
   return {
     ...input, totalCents: input.costCents, className: cls?.name ?? '?', costRole: cls?.costRole ?? '?', accumRole: cls?.accumRole ?? '?', life,
     bookValueCents: input.costCents - input.accumulatedCents, monthsInService: c.months, straightLineCents: c.straightLineCents, leftCents: c.leftCents, monthsLeft: c.monthsLeft,
@@ -91,7 +92,7 @@ export const openingAssetDoc: DocTypeDef<OpeningAssetInput, OpeningAsset> = {
       add('warning', 'lifeMonths', 'LIFE_DIFFERENT', `The usual life of ${cls.name.toLowerCase()} is ${cls.defaultLifeMonths} months. Please check.`);
     }
     if (doc.leftCents > 0 && doc.monthsInService >= doc.life) {
-      add('warning', 'accumulatedCents', 'LIFE_ENDED', `Its ${months(doc.life)} of life ended by the cut-over, so the first depreciation run after ${monthLabel(ctx.businessDate.slice(0, 7))} charges the ${formatPeso(doc.leftCents)} left.`);
+      add('warning', 'accumulatedCents', 'LIFE_ENDED', `Its ${months(doc.life)} of life ended by the cut-over, so the next depreciation run charges the ${formatPeso(doc.leftCents)} left.`);
     } else if (doc.leftCents > 0 && doc.accumulatedCents !== doc.straightLineCents) {
       add(
         'warning', 'accumulatedCents', 'NOT_STRAIGHT_LINE',
@@ -157,7 +158,7 @@ export const openingAssetDoc: DocTypeDef<OpeningAssetInput, OpeningAsset> = {
   },
 
   summary(doc, ctx) {
-    const after = monthLabel(ctx.businessDate.slice(0, 7));
+    const after = monthLabel(lastMonthCharged(ctx.businessDate));
     const plan =
       doc.life === 0 ? 'Type its useful life to see how it depreciates.'
       : doc.leftCents <= 0 ? 'It is fully depreciated.'
@@ -183,7 +184,7 @@ export const openingAssetDoc: DocTypeDef<OpeningAssetInput, OpeningAsset> = {
         const asset = { costCents, residualCents, lifeMonths };
         const depreciable = costCents - residualCents;
         const accumulatedCents =
-          old === 'straight line' ? straightLine(asset, monthsInService(acquiredOn, cutover.slice(0, 7)))
+          old === 'straight line' ? straightLine(asset, monthsInService(acquiredOn, lastMonthCharged(cutover)))
           : old === 'none' ? 0
           : old === 'full' ? depreciable
           : Math.floor((depreciable * old) / 1000);
