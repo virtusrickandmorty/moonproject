@@ -33,7 +33,7 @@
 5. If you see a red line, stop and call your accountant.
 
 ### What the system does for you
-The system keeps everything organized. The calendar reminds you of important dates. The audit log saves a secure record of every action. The integrity check constantly checks the database to make sure no records have been tampered with or corrupted.
+The system keeps everything organized. The calendar reminds you of important dates. The audit log saves a secure record of every action. The integrity check runs when you open the page or click **Check again** to make sure no records have been tampered with or corrupted.
 
 ### Common mistakes and how to fix them
 - **Mistake:** You clicked on an event on the calendar to fix a typo in the title or notes, but there is no save button.
