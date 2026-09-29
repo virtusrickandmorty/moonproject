@@ -28,3 +28,10 @@ export function fixLink(key: string, light: HealthLight, permissions: string[]):
   if (!f || light === 'green' || light === 'grey') return null;
   return !f.permission || permissions.includes(f.permission) ? { path: f.path, label: f.label } : null;
 }
+
+/** The Home dot's words: the worst light, and that it opens System Health. */
+export const HOME_DOT: Record<Exclude<HealthLight, 'grey'>, string> = {
+  green: 'System health: everything is in order',
+  amber: 'System health: something needs doing soon',
+  red: 'System health: something needs doing now',
+};

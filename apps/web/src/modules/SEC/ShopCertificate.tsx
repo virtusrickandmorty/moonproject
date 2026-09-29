@@ -1,17 +1,18 @@
 import { useEffect, useState } from 'react';
-import { api, type CertInfo } from '../../api.ts';
+import { api, type CertInfo, type JoinAddress } from '../../api.ts';
 import { Notice, Panel } from '../../components/ui.tsx';
-import { groupFingerprint256 } from './fingerprint.ts';
+import { addressKind, groupFingerprint256 } from './fingerprint.ts';
 
 export function ShopCertificate() {
   const [ca, setCa] = useState<CertInfo | null>(null);
+  const [join, setJoin] = useState<JoinAddress>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     let active = true;
     api.shopCertificate().then(
-      (data) => { if (active) { setCa(data.ca); setLoading(false); } },
+      (data) => { if (active) { setCa(data.ca); setJoin(data.join); setLoading(false); } },
       (e: Error) => { if (active) { setError(e.message); setLoading(false); } },
     );
     return () => { active = false; };
@@ -35,8 +36,17 @@ export function ShopCertificate() {
           </p>
         </div>
         <p className="border-t border-slate-200 pt-3 text-sm text-slate-700">
-          Each phone or PC joins once: open http://&lt;address&gt;/ on it (the address of this PC, without https) and check that its page shows this same code.
+          Each phone or PC joins once: open the address below on it (http, not https) and check that its page shows this same code.
         </p>
       </Panel>)}
+    {!loading && !error && ca && join && <Panel title="The address to join">
+      <p className="text-sm text-slate-600">This PC is called <span className="font-medium text-slate-900">{join.pcName}</span>. On a phone or another PC, type:</p>
+      {join.urls.length ? <ul className="space-y-1">
+        {join.urls.map((url, i) => <li key={url} className="text-sm">
+          <span className="break-all font-mono text-lg font-semibold text-slate-900">{url}</span>
+          <span className="ml-2 text-slate-600">{addressKind(join.addresses[i]!.kind)}</span>
+        </li>)}
+      </ul> : <Notice tone="warning">{join.addresses.length ? 'The "Join this PC" page is not running. Restart Moonproject, or see its log.' : 'This PC has no network address. Connect it to the shop network.'}</Notice>}
+    </Panel>}
   </div>;
 }
