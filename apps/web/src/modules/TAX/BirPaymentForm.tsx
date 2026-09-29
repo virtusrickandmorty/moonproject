@@ -1,6 +1,6 @@
 /**
- * BIR payment form (BIRP-, PLAN D5 VAT-PAY, EWT-REM and IT-QPAY, E12): the return paid (2550Q, 0619-E, 1601-EQ or 1702Q), the quarter
- * or month it pays, where the money came from, the amount (by default what the worksheet leaves to pay), any penalty
+ * BIR payment form (BIRP-, PLAN D5 VAT-PAY, EWT-REM, IT-QPAY and IT-SETTLE, E12): the return paid (2550Q, 0619-E, 1601-EQ,
+ * 1702Q or the annual 1702), the quarter, month or year it pays, where the money came from, the amount (by default what the worksheet leaves to pay), any penalty
  * paid on top and the eFPS, eBIRForms or bank reference. The server's preview shows what the period leaves to pay and,
  * for EWT, what the amount clears per payee. Opened from a worksheet with the return and period filled in. Someone who
  * may backdate (acc.backdate) gives the date paid. A 1702Q may pay more than its worksheet leaves (the return has income the
@@ -17,7 +17,7 @@ import { docPath } from '../../shell/menu.ts';
 import { Errors, useLive } from '../COL/parts.tsx';
 import { paidOn } from '../STAT/stat.ts';
 import {
-  BIR_FORMS, BIR_FORM_WORDS, amountText, birPaymentInput, defaultPeriod, ewtMonthChoices, isBirForm, leftToPay, leftWithDue, paysMonth, periodOf, periodParts, quarterOfPeriod,
+  BIR_FORMS, BIR_FORM_WORDS, amountText, birPaymentInput, defaultPeriod, ewtMonthChoices, isBirForm, leftToPay, leftWithDue, paysMonth, paysYear, periodOf, periodParts, quarterOfPeriod,
   quartersOf, worksheetPath, type BirPaymentInput, type BirValues,
 } from './bir.ts';
 import { yearChoices } from './reports.ts';
@@ -61,9 +61,9 @@ export function BirPaymentForm({ type, mode, me }: { type: DocTypeInfo; mode: Fo
     setLeft(null);
     if (!form || !period) return;
     let stale = false;
-    const { year, quarter } = paysMonth(form) ? { year: 0, quarter: 1 } : quarterOfPeriod(period);
+    const { year, quarter } = paysMonth(form) || paysYear(form) ? { year: Number(period.slice(0, 4)), quarter: 1 } : quarterOfPeriod(period);
     const worksheet = form === '0619-E' ? api.ewtMonthWorksheet(period) : form === '1601-EQ' ? api.ewtQuarterWorksheet(year, quarter)
-      : form === '1702Q' ? api.incomeTaxWorksheet(year, quarter) : api.vatWorksheet(year, quarter);
+      : form === '1702Q' ? api.incomeTaxWorksheet(year, quarter) : form === '1702' ? api.annualIncomeTaxWorksheet(year) : api.vatWorksheet(year, quarter);
     // A 2550Q of a quarter before the cut-over has no VAT close here: what its opening left comes with the returns due.
     const cents = worksheet.then(async (w) => {
       const fromWorksheet = leftToPay(form, w);
@@ -109,14 +109,16 @@ export function BirPaymentForm({ type, mode, me }: { type: DocTypeInfo; mode: Fo
               {years.map((y) => <option key={y} value={y}>{y}</option>)}
             </select>
           </Field>
-          <Field label={form && paysMonth(form) ? 'Month' : 'Quarter'} required hint={form && paysMonth(form) ? 'The third month of a quarter goes on the 1601-EQ' : undefined}>
-            <select className={inputClass} value={v.part} onChange={(e) => set({ part: e.target.value })}>
-              <option value="" />
-              {form && paysMonth(form)
-                ? ewtMonthChoices.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)
-                : quartersOf(form).map((q) => <option key={q} value={q}>Q{q}</option>)}
-            </select>
-          </Field>
+          {!paysYear(form) && (
+            <Field label={form && paysMonth(form) ? 'Month' : 'Quarter'} required hint={form && paysMonth(form) ? 'The third month of a quarter goes on the 1601-EQ' : undefined}>
+              <select className={inputClass} value={v.part} onChange={(e) => set({ part: e.target.value })}>
+                <option value="" />
+                {form && paysMonth(form)
+                  ? ewtMonthChoices.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)
+                  : quartersOf(form).map((q) => <option key={q} value={q}>Q{q}</option>)}
+              </select>
+            </Field>
+          )}
         </div>
         {left !== null && form && !r.original && (
           <p className="text-sm text-slate-600">

@@ -190,6 +190,11 @@ export function separateEmployee(db: Db, id: string, ifMatch: unknown, raw: unkn
   if (v.separatedOn > who.today) throw badRequest('BAD_DATE', 'Record the separation on or after the last day worked.');
   const later = db.prepare('SELECT MAX(work_date) FROM emp_attendance WHERE employee_id = ?').pluck().get(id) as string | null;
   if (later && later > v.separatedOn) throw conflict('HAS_ATTENDANCE', `Attendance is recorded up to ${later}, after that last day.`);
+  // A recorded payroll that paid days after the last day paid them wrongly (EMP 0002 emp_paid_days): it is cancelled first.
+  const paid = db
+    .prepare(`SELECT d.number, p.to_date AS toDate FROM emp_paid_days p JOIN documents d ON d.id = p.document_id WHERE d.status = 'posted' AND p.employee_id = ? AND p.to_date > ? ORDER BY p.to_date DESC, d.number LIMIT 1`)
+    .get(id, v.separatedOn) as { number: string; toDate: string } | undefined;
+  if (paid) throw conflict('PAID_AFTER', `${paid.number} paid ${e.fullName} up to ${paid.toDate}, after that last day. Cancel it first, then record the separation and work the payroll out again.`);
   db.prepare('UPDATE emp_employees SET is_active = 0, separated_on = ?, separation_reason = ?, version = version + 1, updated_at = ? WHERE id = ?').run(v.separatedOn, v.reason, who.at, id);
   appendAudit(db, { at: who.at, userId: who.userId, action: 'emp.employee.separate', entityType: 'emp.employee', entityId: id, data: v });
   return mustGet(db, id);

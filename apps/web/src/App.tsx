@@ -15,6 +15,8 @@ import { DocView } from './generic/DocView.tsx';
 import { FORMS, PAGES, VIEWS } from './modules/screens.ts';
 import { DashHome } from './modules/DASH/Home.tsx';
 import { PracticeBanner } from './modules/PLT/PracticeBanner.tsx';
+import { HealthDot } from './modules/PLT/HealthDot.tsx';
+import { RestoredNotice } from './modules/BAK/RestoredNotice.tsx';
 
 type Stage = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'firstOwner' } | { kind: 'login'; message?: string } | { kind: 'ready'; me: Me; docTypes: DocTypeInfo[] };
 
@@ -77,7 +79,7 @@ function Stages() {
       break;
     }
   }
-  return <Shell me={stage.me} docTypes={stage.docTypes} onSignOut={signOut}>{page}</Shell>;
+  return <Shell me={stage.me} docTypes={stage.docTypes} onSignOut={signOut}><RestoredNotice me={stage.me} />{page}</Shell>;
 }
 
 /** A module's own form when it has one (FORMS), else the generic form. */
@@ -89,7 +91,10 @@ function Form({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me: Me })
 function Home({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }) {
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Hello, {me.displayName}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Hello, {me.displayName}</h1>
+        {me.permissions.includes('sec.health.view') && <HealthDot />}
+      </div>
       {me.permissions.includes('dash.view') && <DashHome />}
       <div className="flex flex-wrap gap-2">
         {docTypes.filter((d) => d.canCreate).map((d) => (

@@ -8,8 +8,11 @@ import { Button, Notice, peso } from '../../components/ui.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { GROUP_LABEL, deductionsOf, loansLeft, qtyText, thirteenthText, yearEndDetail, yearEndText } from './run.ts';
+import { GROUP_LABEL, deductionsOf, finalPayText, loansLeft, qtyText, thirteenthText, yearEndDetail, yearEndText } from './run.ts';
 import type { PayRunDoc, PayThirteenthDoc } from '../../api.ts';
+
+/** The "Final pay" badge of an employee separated within the run's period. */
+export const FinalBadge = () => <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-900">Final pay</span>;
 
 /** D6: a recorded run whose month is already remitted (STAT): cancelling it leaves those payables below zero. */
 function RemittedWarning({ runId }: { runId: string }) {
@@ -33,6 +36,7 @@ function RunParts({ d }: { d: DocDetail }) {
       <p className="text-sm">
         {GROUP_LABEL[run.payGroup]} · {run.periodStart} to {run.periodEnd} · government shares for {run.contributionMonth}
         {run.yearEnd && ` · with the ${run.periodEnd.slice(0, 4)} year-end tax adjustment`}
+        {run.unusedLeave && ' · unused leave paid in cash'}
       </p>
       <table className="w-full text-sm">
         <thead className="text-left text-slate-500">
@@ -41,7 +45,12 @@ function RunParts({ d }: { d: DocDetail }) {
         <tbody>
           {run.employees.map((e) => (
             <tr key={e.employeeId} className="border-t border-slate-100">
-              <td className="py-1">{e.name}</td><td className="text-right tabular-nums">{peso(e.grossCents)}</td>
+              <td className="py-1">
+                {e.name}{e.final && <FinalBadge />}
+                {e.lines.filter((l) => l.kind === 'unused_leave').map((l) => <span key={l.lineNo} className="block text-xs text-slate-600">{l.description}: {qtyText(l.kind, l.qty)}, {peso(l.amountCents)}</span>)}
+                {e.final && <span className="block text-xs text-slate-600">{finalPayText(e)}{e.yearEnd && ` · year-end tax: ${yearEndText(e)}`}</span>}
+              </td>
+              <td className="text-right tabular-nums">{peso(e.grossCents)}</td>
               <td className="text-right tabular-nums">{peso(e.grossCents - e.netCents + (e.wtaxRefundCents ?? 0))}</td>
               {run.yearEnd && <td className="text-right tabular-nums">{peso(e.wtaxRefundCents ?? 0)}</td>}
               <td className="text-right tabular-nums">{peso(e.netCents)}</td>
@@ -137,7 +146,7 @@ export function Payslips({ params }: { me: Me; params?: Record<string, string> }
       <div className="grid gap-4 md:grid-cols-2 print:grid-cols-2 print:gap-2">
         {p.employees.map((e) => (
           <section key={e.employeeId} className="break-inside-avoid space-y-2 rounded-lg bg-white p-4 text-sm ring-1 ring-slate-300">
-            <div className="flex justify-between"><h2 className="font-semibold">PAYSLIP</h2><span>{p.number}</span></div>
+            <div className="flex justify-between"><h2 className="font-semibold">PAYSLIP{e.final && <FinalBadge />}</h2><span>{p.number}</span></div>
             <p>{e.name} <span className="text-slate-500">{e.code}</span></p>
             <p className="text-slate-600">{GROUP_LABEL[p.payGroup]} · {p.periodStart} to {p.periodEnd} · dated {p.payDate}</p>
             <table className="w-full">
@@ -156,6 +165,7 @@ export function Payslips({ params }: { me: Me; params?: Record<string, string> }
             {loansLeft(e).map(([label, c]) => <p key={label} className="text-xs text-slate-600">{label}: {peso(c)} left</p>)}
             <p className="text-xs text-slate-600">{thirteenthText(e)}</p>
             {e.yearEnd && <p className="text-xs text-slate-600">{yearEndDetail(e)}</p>}
+            {e.final && <p className="text-xs font-medium text-slate-700">{finalPayText(e)}. The 13th month on separation is paid on its own (13th-month pay for this employee).</p>}
             <p className="pt-4 text-xs">Received by: ______________________ Date: __________</p>
           </section>
         ))}

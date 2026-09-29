@@ -67,7 +67,7 @@ describe('Supplier bill and payment golden (PLAN I2 G-15)', () => {
     expect(ap).toMatchObject({ supplierName: 'Sample Fabric Trading', balanceCents: 620_000 });
     expect(ap.bills).toMatchObject([{ number: 'BILL-000001', supplierInvoiceNo: 'SI-7788', dueDate: '2026-10-25', payableCents: 1_120_000, paidCents: 500_000, owedCents: 620_000 }]);
     expect(ap.payments).toMatchObject([{ number: 'SPAY-000001', totalCents: 500_000, bills: [{ billNumber: 'BILL-000001', amountCents: 500_000 }] }]);
-    expect((await encoder.get('/api/ap/suppliers')).json()).toEqual([{ supplierId: fabric, supplierName: 'Sample Fabric Trading', balanceCents: 620_000 }]);
+    expect((await encoder.get('/api/ap/suppliers')).json()).toEqual([{ supplierId: fabric, supplierName: 'Sample Fabric Trading', balanceCents: 620_000, advancesCents: 0, netCents: 620_000 }]);
     expect((await (await env.as('tv')).get('/api/ap/suppliers')).statusCode).toBe(403);
     noBrokenInvariants();
   });
@@ -103,7 +103,7 @@ describe('cancel and edit (NR-4)', () => {
     const r = await accountant.post(`/api/docs/ap.bill/${first}/reissue`, { input, expectedTotalCents: 1_176_000, reason: 'Supplier corrected the invoice' }, idem());
     expect(r.json()).toMatchObject({ number: 'BILL-000002' });
     expect(balances(env.db)).toEqual({ '5101': 1_050_000, '1401': 126_000, '2101': -1_176_000 });
-    expect((await accountant.get(`/api/docs/ap.bill/${r.json().id}`)).json().input).toEqual({ ...input, dueDate: '2026-10-25', ewtClass: 'none' });
+    expect((await accountant.get(`/api/docs/ap.bill/${r.json().id}`)).json().input).toEqual({ ...input, dueDate: '2026-10-25', ewtClass: 'none', advances: [] });
     noBrokenInvariants();
   });
 });

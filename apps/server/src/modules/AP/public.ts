@@ -1,4 +1,7 @@
-/** What other modules may read from AP (read-only): a supplier bill's tax facts, for the TAX registers; a supply's latest billed unit cost, for INV. */
+/**
+ * What other modules may read from AP (read-only): a supplier bill's and a supplier advance's tax facts, for the TAX
+ * registers; a supply's latest billed unit cost, for INV.
+ */
 import { divRoundHalfAway } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import type { EwtClass } from '../../engine/settings.ts';
@@ -37,6 +40,18 @@ export function billTaxFacts(db: Db, documentId: string): BillTaxFacts | undefin
     bought: l.kind === 'category' ? (categoryPurchaseClass(db, categoryId!) ?? 'services') : l.kind === 'subcontract' ? ('services' as const) : ('goods' as const),
   }));
   return { ...b, lines };
+}
+
+/**
+ * A supplier advance's EWT (SADV-, PLAN D5 SUP-ADV): withheld when the advance was paid, on its amount (NET for a
+ * VAT-registered supplier, else G). No input VAT: that comes with the supplier's invoice, on the bill.
+ */
+export interface AdvanceTaxFacts { supplierId: string; ewtClass: EwtClass | null; ewtRateBp: number; ewtBaseCents: number; ewtCents: number }
+
+export function advanceTaxFacts(db: Db, documentId: string): AdvanceTaxFacts | undefined {
+  return db
+    .prepare('SELECT supplier_id AS supplierId, ewt_class AS ewtClass, ewt_rate_bp AS ewtRateBp, ewt_base_cents AS ewtBaseCents, ewt_cents AS ewtCents FROM ap_advances WHERE document_id = ?')
+    .get(documentId) as AdvanceTaxFacts | undefined;
 }
 
 /**

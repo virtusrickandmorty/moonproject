@@ -1,6 +1,7 @@
 /** PAY contract for other modules (STAT). Read-only; callers check their own route permission. */
 import type { Db } from '../../platform/db/driver.ts';
 import { sssRateAt } from './statutory.ts';
+export { hdmfMonthly, hdmfRateAt, phicMonthly, phicRateAt, sssMonthly, sssRateAt } from './statutory.ts';
 import type { Agency, LoanKind } from './loans.ts';
 export { KIND_LABEL, LOAN_ACCOUNT, type Agency, type LoanKind } from './loans.ts';
 
@@ -16,6 +17,8 @@ export interface MonthPay {
   eeShortCents: number;
   /** A minimum wage earner's tax-exempt pay (F1): basic pay (the SMW part), and holiday, rest-day and overtime pay. */
   mweBasicCents: number; mwePremiumCents: number;
+  /** Unused leave paid in cash up to the de minimis days (RR 11-2018): not taxable, and not an employee share. */
+  deMinimisCents: number;
 }
 
 /** One employee's line of a recorded run, with the run's number and, for an MWE, the exempt basic and premium pay. */
@@ -23,7 +26,7 @@ interface RunEmployeeRow {
   number: string; employee_id: string; employee_code: string; employee_name: string; is_mwe: 0 | 1;
   gross_cents: number; taxable_cents: number; wtax_cents: number; wtax_refund_cents: number; sss_msc_cents: number; phic_basis_cents: number; ee_short_cents: number;
   sss_ee_cents: number; sss_er_cents: number; sss_ec_cents: number; phic_ee_cents: number; phic_er_cents: number; hdmf_ee_cents: number; hdmf_er_cents: number;
-  mwe_basic: number; mwe_premium: number;
+  mwe_basic: number; mwe_premium: number; de_minimis: number;
 }
 
 /** Per employee, the month's recorded (not cancelled) runs added up, by name. */
@@ -32,8 +35,10 @@ export function payOfMonth(db: Db, month: string): MonthPay[] {
     .prepare(
       `SELECT d.number, e.employee_id, e.employee_code, e.employee_name, e.is_mwe, e.gross_cents, e.taxable_cents, e.wtax_cents, e.wtax_refund_cents, e.sss_msc_cents,
          e.phic_basis_cents, e.ee_short_cents, e.sss_ee_cents, e.sss_er_cents, e.sss_ec_cents, e.phic_ee_cents, e.phic_er_cents, e.hdmf_ee_cents, e.hdmf_er_cents,
-         (SELECT COALESCE(SUM(l.amount_cents), 0) FROM pay_run_lines l WHERE l.run_employee_id = e.id AND l.taxable = 0 AND l.kind IN ('basic', 'leave', 'salary', 'absence', 'piece')) AS mwe_basic,
-         (SELECT COALESCE(SUM(l.amount_cents), 0) FROM pay_run_lines l WHERE l.run_employee_id = e.id AND l.taxable = 0 AND l.kind IN ('holiday', 'rest_day', 'ot')) AS mwe_premium
+         (SELECT COALESCE(SUM(l.amount_cents), 0) FROM pay_run_lines l WHERE l.run_employee_id = e.id AND l.taxable = 0 AND l.kind IN ('basic', 'leave', 'salary', 'absence', 'piece')
+            AND l.id NOT IN (SELECT run_line_id FROM pay_run_unused_leave)) AS mwe_basic,
+         (SELECT COALESCE(SUM(l.amount_cents), 0) FROM pay_run_lines l WHERE l.run_employee_id = e.id AND l.taxable = 0 AND l.kind IN ('holiday', 'rest_day', 'ot')) AS mwe_premium,
+         (SELECT COALESCE(SUM(l.amount_cents), 0) FROM pay_run_lines l JOIN pay_run_unused_leave u ON u.run_line_id = l.id WHERE l.run_employee_id = e.id AND l.taxable = 0) AS de_minimis
        FROM pay_run_employees e JOIN pay_runs r ON r.document_id = e.document_id JOIN documents d ON d.id = r.document_id
        WHERE d.status = 'posted' AND r.contribution_month = ? ORDER BY e.employee_name, e.employee_id, d.number`,
     )
@@ -45,6 +50,7 @@ export function payOfMonth(db: Db, month: string): MonthPay[] {
     const m = out.get(r.employee_id) ?? {
       employeeId: r.employee_id, code: r.employee_code, name: r.employee_name, isMwe: false, runs: [], grossCents: 0, taxableCents: 0, wtaxCents: 0, wtaxRefundCents: 0, sssMscCents: 0, sssMpfMscCents: 0,
       phicBasisCents: 0, sssEeCents: 0, sssErCents: 0, sssEcCents: 0, phicEeCents: 0, phicErCents: 0, hdmfEeCents: 0, hdmfErCents: 0, eeShortCents: 0, mweBasicCents: 0, mwePremiumCents: 0,
+      deMinimisCents: 0,
     };
     out.set(r.employee_id, {
       ...m, code: r.employee_code, name: r.employee_name, isMwe: r.is_mwe === 1, runs: [...m.runs, r.number],
@@ -54,6 +60,7 @@ export function payOfMonth(db: Db, month: string): MonthPay[] {
       sssEeCents: m.sssEeCents + r.sss_ee_cents, sssErCents: m.sssErCents + r.sss_er_cents, sssEcCents: m.sssEcCents + r.sss_ec_cents,
       phicEeCents: m.phicEeCents + r.phic_ee_cents, phicErCents: m.phicErCents + r.phic_er_cents, hdmfEeCents: m.hdmfEeCents + r.hdmf_ee_cents, hdmfErCents: m.hdmfErCents + r.hdmf_er_cents,
       mweBasicCents: m.mweBasicCents + (r.is_mwe === 1 ? r.mwe_basic : 0), mwePremiumCents: m.mwePremiumCents + (r.is_mwe === 1 ? r.mwe_premium : 0),
+      deMinimisCents: m.deMinimisCents + r.de_minimis,
     });
   }
   return [...out.values()];

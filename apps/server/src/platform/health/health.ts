@@ -222,6 +222,15 @@ export function overallLight(lights: HealthLight[]): Exclude<Light, 'grey'> {
   return 'green';
 }
 
+/**
+ * The red lights now, for the notification each makes (the owner's and accountant's Home). Keyed by light and day, so
+ * a light still red tomorrow comes back after it was marked read.
+ */
+export function redLightNotices(db: Db, clock: Clock, o: { practice: boolean; host: Host }) {
+  const f = gatherFacts(db, clock, o);
+  return healthLights(f).filter((l) => l.light === 'red').map((l) => ({ id: `${l.key}:${f.now.slice(0, 10)}`, label: `System Health: ${l.label} is red`, detail: l.message }));
+}
+
 /** A path in an error message may hold a Windows user's name: the support file carries none. */
 const noPaths = (s: string) => s.replace(/[A-Za-z]:\\[^\s'"]*/g, '<path>').replace(/(?:\/[\w.@-]+){2,}\/?/g, '<path>');
 

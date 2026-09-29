@@ -20,7 +20,7 @@ export interface TestEnv {
 }
 
 /** `practice` builds the practice shop's app; `practiceShop` gives the real shop a handle on one (PLAN C8). */
-export async function createTestEnv(at = '2026-09-28T02:00:00Z', extra: Pick<BuildOptions, 'practice' | 'practiceShop' | 'host'> = {}): Promise<TestEnv> {
+export async function createTestEnv(at = '2026-09-28T02:00:00Z', extra: Pick<BuildOptions, 'practice' | 'practiceShop' | 'host' | 'onRestart' | 'network'> = {}): Promise<TestEnv> {
   const db = openDb(':memory:');
   const clock = fixedClock(at);
   const { app, deps } = buildApp({ db, clock, modules: await loadModules(), config: { scryptN: TEST_SCRYPT_N }, ...extra });

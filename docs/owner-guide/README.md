@@ -27,6 +27,7 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [24. Government loans](24-government-loans.md): Register and manage SSS and Pag-IBIG loans for payroll deductions.
 - [25. System Health](25-system-health.md): Monitor the health of the system.
 - [26. Sales and Collections Reports](26-sales-and-collections-reports.md): View your sales, collections, deposits, and the status of your job orders.
-- [27. Credits and Write-Offs](27-credits-and-write-offs.md): Apply a customer's overpayment to another job order, or write off a small balance.
-- [28. Year-End Tax](28-year-end-tax.md): Generate the 2316s and the alphalist, and record the 1702Q income tax payment.
-- [29. VAT each quarter](29-vat-each-quarter.md): Check the tax registers, preview the VAT for the quarter, and close the VAT.
+- [27. Credits and Write-offs](27-credits-and-write-offs.md): Record a 2307, forfeit a deposit, post a credit memo, or write off a bad debt.
+- [28. Year-end tax and 2316](28-year-end-tax.md): Do the year-end adjustment, check substituted filing, and download the 2316 and alphalist.
+- [29. VAT each quarter](29-vat-each-quarter.md): Check the VAT registers, mark 2307s received, preview the quarter's VAT, and close the VAT.
+- [30. Suppliers and Purchase Orders](30-suppliers-and-purchase-orders.md): Manage suppliers and your supplies list, make purchase orders, and receive goods.

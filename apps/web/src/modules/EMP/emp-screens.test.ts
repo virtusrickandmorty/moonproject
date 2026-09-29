@@ -5,7 +5,7 @@ import { PASSWORD, createTestEnv, createUser } from '../../../../server/test/hel
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { createApi, type AttendanceDay } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
-import { changedCells, datesBetween, halfMonthOf, otMinutes, otText, statusesFor, weekday } from './time.ts';
+import { changedCells, datesBetween, halfMonthOf, otMinutes, otText, paidBy, statusesFor, weekday } from './time.ts';
 
 const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: string, init: RequestInit) => {
   const res = await app.inject({ method: init.method as 'GET', url, payload: init.body as string, headers: { ...(init.headers as object), cookie: jar.cookie } });
@@ -15,6 +15,11 @@ const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: 
 };
 
 describe('attendance grid rules', () => {
+  it('a day a recorded payroll paid is locked, with the run number', () => {
+    const paid = [{ employeeId: 'e1', from: '2026-09-01', to: '2026-09-10', number: 'PAY-000004' }];
+    expect([paidBy(paid, 'e1', '2026-09-01'), paidBy(paid, 'e1', '2026-09-10'), paidBy(paid, 'e1', '2026-09-11'), paidBy(paid, 'e2', '2026-09-05')]).toEqual(['PAY-000004', 'PAY-000004', undefined, undefined]);
+  });
+
   it('half-month periods, the days in them, weekdays', () => {
     expect(halfMonthOf('2026-09-28')).toEqual({ from: '2026-09-16', to: '2026-09-30' });
     expect(halfMonthOf('2026-02-03')).toEqual({ from: '2026-02-01', to: '2026-02-15' });
@@ -51,8 +56,8 @@ describe('attendance grid rules', () => {
 
   it('the menu shows Employees, Attendance and Holidays under People & Payroll with emp.view', () => {
     const labels = (perms: string[]) => buildMenu([], new Set(perms)).map((g) => `${g.group}: ${g.items.map((i) => i.label).join(', ')}`);
-    expect(labels(['emp.view'])).toEqual(['Overview: Home', 'People & Payroll: Employees, Attendance, Holidays', 'Admin: Shop certificate, Practice shop']);
-    expect(labels([])).toEqual(['Overview: Home', 'Admin: Shop certificate, Practice shop']);
+    expect(labels(['emp.view'])).toEqual(['Overview: Home', 'People & Payroll: Employees, Attendance, Holidays', 'Accounting & Tax: Settings', 'Admin: Shop certificate, Practice shop']);
+    expect(labels([])).toEqual(['Overview: Home', 'Accounting & Tax: Settings', 'Admin: Shop certificate, Practice shop']);
   });
 });
 

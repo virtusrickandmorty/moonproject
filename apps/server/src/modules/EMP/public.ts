@@ -5,6 +5,8 @@ export { createEmployee, addPayProfile, type Who } from './employees.ts';
 
 export { PAY_GROUPS, PAY_TYPES, payProfileAt, type PayGroup, type PayProfile, type PayType } from './employees.ts';
 export { attendanceBetween, holidaysBetween, type AttendanceDay, type AttendanceStatus, type Holiday } from './time.ts';
+// Payroll's marks (F3): the days a recorded run paid (attendance locked) and unused SIL paid in cash (used up).
+export { SIL_DAYS, markPaidDays, markSilPaid, paidDaysBetween, silOf, silPaidBy, type PaidDays } from './time.ts';
 
 /** What other modules see of an employee: no government IDs, contact details or pay. */
 export interface Employee {

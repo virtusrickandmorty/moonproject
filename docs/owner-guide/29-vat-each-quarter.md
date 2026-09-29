@@ -12,7 +12,7 @@
 2. **Mark the 2307s received:**
    - On the **Accounting & Tax** menu, click **2307s received**.
    - Find the physical 2307 certificate from your customer.
-   - Click **Mark received** next to the matching row. This opens a "Mark the 2307 received" box.
+   - Click **Mark received** next to the matching row. The button shows only on rows still open. This opens a "Mark the 2307 received" box.
    - Check the row details carefully. Click its **Mark received** button to confirm. Or click **Back** to cancel. The box says it cannot be undone. Its VAT withheld will be claimed at the next VAT close.
 3. **View the VAT for the quarter:**
    - On the **Accounting & Tax** menu, click **VAT this quarter**.
@@ -24,7 +24,7 @@
 5. **Close the VAT (at quarter end):**
    - Once the quarter ends and is not closed, a link appears. Click **Close the VAT of Q...** on the **VAT this quarter** screen, or **Record the VAT close of Q...** on the worksheet.
    - On the **Close the VAT of a quarter** screen, pick the **Year** and **Quarter**. The system shows a preview.
-   - You can optionally type a **Note** (like the eFPS reference).
+   - You can optionally type a **Note** (for example, the 2550Q reference).
    - If you may back-date, you can choose the **Date of the close** (the quarter's last day or today). Everyone else will just see it is dated today.
    - Click **Record**. Close the quarters in order. If a later quarter is already closed, the app refuses. Cancel the later close first.
 6. **Pay the 2550Q:**

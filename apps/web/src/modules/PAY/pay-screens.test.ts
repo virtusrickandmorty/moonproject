@@ -6,7 +6,7 @@ import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.
 import { addEmployee, addPay } from '../../../../server/src/modules/EMP/tests/fixture.ts';
 import { createApi, newIdempotencyKey as key, type PayEmployee, type PayRunDoc, type PayThirteenthDoc, type Payslips } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
-import { deductionsOf, emptyManual, qtyText, runInput, thirteenthInput, thirteenthText } from './run.ts';
+import { deductionsOf, emptyManual, finalPayText, qtyText, runInput, thirteenthInput, thirteenthText } from './run.ts';
 
 const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: string, init: RequestInit) => {
   const res = await app.inject({ method: init.method as 'GET', url, payload: init.body as string, headers: { ...(init.headers as object), cookie: jar.cookie } });
@@ -16,6 +16,17 @@ const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: 
 };
 
 describe('payroll screen rules', () => {
+  it('final pay and unused leave: the tick goes into the input; the badge text; days of unused leave; one separated employee’s 13th month', () => {
+    expect(runInput('SEMI_DAILY', '2026-12-16', [], {}, {}, {}, false, true).input).toEqual({ payGroup: 'SEMI_DAILY', periodStart: '2026-12-16', unusedLeave: true });
+    expect(finalPayText({})).toBe('');
+    expect(finalPayText({ final: { separatedOn: '2026-09-10', caLeftCents: 317_452, loansLeftCents: 1_650_000 } })).toBe(
+      'Final pay: left on 2026-09-10; ₱3,174.52 of cash advances still owed; ₱16,500.00 of government loans left (not deducted)',
+    );
+    expect(finalPayText({ final: { separatedOn: '2026-09-10', caLeftCents: 0, loansLeftCents: 0 } })).toBe('Final pay: left on 2026-09-10');
+    expect(qtyText('unused_leave', 3000)).toBe('3 days');
+    expect(thirteenthInput('SEMI_MONTHLY', 2026, {}, {}, 'e1').input).toEqual({ payGroup: 'SEMI_MONTHLY', year: 2026, employeeId: 'e1' });
+  });
+
   it('run input: blank rows left out, allowances above zero, adjustments either way, reasons; deductions and people left out', () => {
     const rows = [emptyManual(), { employeeId: 'e1', kind: 'allowance' as const, amount: '250', reason: ' Rice allowance ' }, { employeeId: 'e2', kind: 'adjustment' as const, amount: '-100.50', reason: 'Short last week' }];
     expect(runInput('SEMI_DAILY', '2026-09-16', rows, { e1: '', e2: '0' }, {})).toEqual({

@@ -27,6 +27,8 @@ export interface SystemHealth {
 /** The practice shop (PLAN C8), as GET /api/system/practice reports it. */
 export interface PracticeStatus { state: 'off' | 'here' | 'preparing' | 'ready' | 'failed'; port: number | null; preparedAt: string | null; days: number | null; message: string | null }
 export interface CertInfo { fingerprint256: string; fingerprint1: string; notAfter: string; ips: string[]; dnsNames: string[] }
+/** Where a phone or another PC joins (GET /api/system/tls): `urls` is empty while the "Join this PC" page is not running. */
+export interface JoinAddress { pcName: string; addresses: { ip: string; kind: 'lan' | 'vpn' }[]; port: number | null; urls: string[] }
 export interface CompanyProfile { registeredName: string; tradeName: string; tin: string; registeredAddress: string; isVatRegistered: boolean; version: number; supersededAt?: string }
 export interface JsonSchema { type?: string; title?: string; enum?: unknown[]; const?: unknown; anyOf?: JsonSchema[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
 export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
@@ -56,6 +58,15 @@ export interface CalEvent { id: string; eventId: string; seq: number; action: 'c
 export interface CalEventInput { title: string; date: string; time?: string | null; customerId?: string | null; jobOrderId?: string | null; notes?: string | null }
 export interface CashAccount extends CashPlace { code: string; kind: 'cash' | 'checks' | 'bank' | 'ewallet'; isActive: boolean; accountNo: string | null; encoderSeesBalance?: boolean; version?: number }
 export interface CashBook { place: Pick<CashAccount, 'id' | 'code' | 'name' | 'kind'>; from: string; to: string; openingCents: number; closingCents: number; lines: { date: string; journalNumber: string; documentId: string | null; documentNumber: string | null; docType: string | null; memo: string; inCents: number; outCents: number; balanceCents: number }[] }
+/** Bank reconciliation (E10): one per bank and statement month. Every figure is worked out by the server. */
+export interface ReconRow { id: string; bankId: number; bankName: string; month: string; status: 'open' | 'finished'; bankBalanceCents: number; createdAt: string; createdByName: string | null; finishedAt: string | null; finishedByName: string | null }
+export interface ReconBookLine { journalLineId: number; date: string; journalNumber: string; documentNumber: string | null; memo: string; amountCents: number; matchNo: number | null; state: 'cleared' | 'outstanding' | 'later' }
+export interface ReconStatementLine { id: number; date: string; description: string; amountCents: number; voided: boolean; matchNo: number | null }
+export interface ReconReport {
+  id: string; bankId: number; bankName: string; month: string; status: 'open' | 'finished'; finishedAt: string | null; reopenedAt: string | null; reopenReason: string | null;
+  statementLines: ReconStatementLine[]; bookLines: ReconBookLine[]; bookBalanceCents: number; depositsInTransitCents: number; outstandingPaymentsCents: number;
+  recordedAfterMonthCents: number; adjustedBookCents: number; bankBalanceCents: number; unmatchedStatementCount: number; unmatchedStatementCents: number; differenceCents: number;
+}
 export interface CustomerRow { id: string; code: string; display_name: string; is_active: number }
 /** GET /api/col/customers/:id/open-items: what a customer can pay on. */
 export interface OpenItems {
@@ -127,7 +138,8 @@ export interface EmployeeDetail {
   employee: EmployeeRecord;
   pay: Pick<PayProfile, 'payType' | 'payGroup' | 'workweekDays' | 'effectiveFrom'> | null;
   payHistory: PayProfile[] | null;
-  sil: { year: number; eligibleFrom: string; daysPerYear: number; used: number; left: number };
+  /** used: days of leave taken; paid: unused days paid in cash by a payroll (final pay, December). */
+  sil: { year: number; eligibleFrom: string; daysPerYear: number; used: number; paid: number; left: number };
 }
 export type AttendanceStatus = 'present' | 'half_day' | 'absent' | 'rest_day' | 'leave' | 'unpaid_leave' | 'holiday_off' | 'holiday_worked' | 'rest_day_worked';
 export interface AttendanceDay { employeeId: string; date: string; status: AttendanceStatus; otMinutes: number; note: string | null }
@@ -135,7 +147,10 @@ export interface Holiday { id: number; date: string; name: string; kind: 'regula
 export interface AttendanceGrid {
   from: string; to: string; today: string; statuses: AttendanceStatus[]; holidays: Holiday[];
   employees: { id: string; code: string; fullName: string; hireDate: string; separatedOn: string | null }[]; days: AttendanceDay[];
+  /** Days recorded payroll runs paid: locked until the run is cancelled. */
+  paid: PaidDays[];
 }
+export interface PaidDays { employeeId: string; from: string; to: string; number: string }
 export type AttendanceSave = { employeeId: string; date: string; status: AttendanceStatus; otMinutes?: number; note?: string };
 /** Payroll (PAY) and cash advances (CA): every figure is worked out by the server. */
 export type PayGroup = 'WEEKLY_PIECE' | 'SEMI_DAILY' | 'SEMI_MONTHLY';
@@ -146,6 +161,8 @@ export interface PayEmployee {
   eeShortCents: number; wtaxCents: number; loanCents?: number; loans?: PayLoan[]; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
   /** Tax withheld earlier in the year and refunded on this run (year-end adjustment); net pay includes it. */
   wtaxRefundCents?: number; yearEnd?: PayYearEnd;
+  /** Separated within the run's period: this run is their final pay; what they still owe after it. */
+  final?: { separatedOn: string; caLeftCents: number; loansLeftCents: number };
 }
 /** One employee's year-end tax adjustment on a run: the annual tax less what the year withheld before; a deficiency (withheld, short) or a refund. */
 export interface PayYearEnd {
@@ -187,7 +204,7 @@ export interface GovLoanInput { employeeId: string; kind: LoanKind; loanNo: stri
 export interface ManualPayLine { employeeId: string; kind: 'allowance' | 'adjustment'; amountCents: number; reason: string }
 export interface PayRunInput {
   payGroup: PayGroup; periodStart: string; lines?: ManualPayLine[]; advances?: { employeeId: string; amountCents: number }[]; skip?: { employeeId: string; reason: string }[];
-  loans?: { loanId: string; amountCents: number; reason: string }[]; yearEnd?: boolean;
+  loans?: { loanId: string; amountCents: number; reason: string }[]; yearEnd?: boolean; unusedLeave?: boolean;
 }
 export interface PayRunDoc extends PayRunInput { periodEnd: string; contributionMonth: string; employees: PayEmployee[]; grossCents: number; netCents: number }
 /** `bookOn`: the date to give the run (the period's last day, for someone who may backdate), or null for today. */
@@ -201,7 +218,11 @@ export interface Payslips {
   })[];
 }
 /** 13th-month pay (TH13-): one twelfth of the year's basic pay beside what the runs accrued on 2111. */
-export interface PayThirteenthInput { payGroup: PayGroup; year: number; amounts?: { employeeId: string; amountCents: number; reason: string }[]; skip?: { employeeId: string; reason: string }[] }
+export interface PayThirteenthInput {
+  payGroup: PayGroup; year: number; amounts?: { employeeId: string; amountCents: number; reason: string }[]; skip?: { employeeId: string; reason: string }[];
+  /** One separated employee alone (their 13th month on separation). */
+  employeeId?: string;
+}
 export interface PayThirteenthEmployee {
   employeeId: string; code: string; name: string; costCentre: string; basicCents: number; earlierBasicCents: number; dueCents: number; accruedCents: number; amountCents: number; reason?: string;
   otherBenefitsCents: number; taxableCents: number; wtaxCents: number; netCents: number; basis: string[];
@@ -222,7 +243,11 @@ export interface ActiveEmployee { id: string; code: string; name: string; costCe
 export type Scheme = 'SSS' | 'PHIC' | 'HDMF' | 'WTAX';
 export interface SchemeCheck {
   scheme: Scheme; label: string; recordedCents: number; remittedCents: number; balanceCents: number; loanRecordedCents: number; loanRemittedCents: number;
-  remittances: { id: string; number: string; amountCents: number }[];
+  /** What a remittance of the month offers now; for the withholding tax, net of year-end tax refunds. */
+  dueCents: number;
+  /** Withholding tax only: the month's year-end tax refunds, those not yet taken off, earlier months' excess taken off this month, and this month's excess for the next. */
+  refundCents: number; refundOpenCents: number; carriedInCents: number; carriedFrom: string[]; carriedOutCents: number;
+  remittances: { id: string; number: string; amountCents: number; month?: string }[];
   cancelledAfter: { id: string; number: string; cancelledAt: string }[]; overRemitted: { employeeId: string; name: string; part?: 'contribution' | 'loan'; cents: number }[];
 }
 interface StatPerson { employeeId: string; code: string; name: string; idNo: string | null }
@@ -237,10 +262,27 @@ export interface StatMonth {
   tax: {
     employees: number; totalCompensationCents: number; mweBasicCents: number; mwePremiumCents: number; thirteenthMonthCents: number; deMinimisCents: number; eeSharesCents: number;
     otherNonTaxableCents: number; nonTaxableCents: number; taxableCents: number; noTaxWithheldCents: number; taxWithheldCents: number;
-    rows: (StatPerson & { isMwe: boolean; grossCents: number; nonTaxableCents: number; taxableCents: number; taxCents: number })[];
+    yearEndRefundCents: number; refundCarriedInCents: number; refundCarriedFrom: string[]; taxToRemitCents: number; refundCarriedOutCents: number;
+    rows: (StatPerson & { isMwe: boolean; grossCents: number; nonTaxableCents: number; taxableCents: number; taxCents: number; refundCents: number })[];
   };
   check: SchemeCheck[];
   notDeducted: { employeeId: string; name: string; cents: number }[];
+}
+/** The agencies that take an upload file (STAT), and the employer's number at each. */
+export type UploadScheme = 'SSS' | 'PHIC' | 'HDMF';
+export interface EmployerNumberRow { scheme: UploadScheme; label: string; employerLabel: string; number: string | null; since: string | null }
+/** The exposure report (ACC-05): months since the cut-over with pay but no contribution recorded, with estimates. Posts nothing. */
+export interface ExposureMonth { month: string; grossCents: number; eeCents: number; erCents: number; ecCents: number; totalCents: number; monthsLate: number; penaltyCents: number }
+export interface ExposureLine {
+  employeeId: string; code: string; name: string; scheme: UploadScheme; label: string; switchedOff: boolean;
+  months: ExposureMonth[]; eeCents: number; erCents: number; ecCents: number; totalCents: number; penaltyCents: number;
+}
+export interface Exposure {
+  asOf: string; cutoverDate: string | null; from: string | null; to: string | null;
+  rates: { scheme: UploadScheme; label: string; monthlyBp: number | null; source: string | null }[];
+  lines: ExposureLine[];
+  totals: { scheme: UploadScheme; label: string; employees: number; months: number; eeCents: number; erCents: number; ecCents: number; totalCents: number; penaltyCents: number }[];
+  notes: string[];
 }
 export type BookletKind = 'SALES_INVOICE' | 'CR';
 export interface Booklet { id: string; kind: BookletKind; atpNo: string; printer: string | null; serialFrom: number; serialTo: number; receivedOn: string; note: string | null; isActive: boolean; version: number }
@@ -287,6 +329,42 @@ export interface VatWorksheet {
   year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string; returnDue: string; close: { documentId: string; number: string; date: string } | null;
   lines: { key: string; label: string; amountCents: number | null; taxCents: number }[]; checks: WorksheetCheck[];
 }
+/** SLSP and SAWT data of a quarter: each figure tied to its register or the books, with the difference (0 when they agree). */
+export interface TaxTie { key: string; label: string; listCents: number; bookCents: number; differenceCents: number }
+export type SaleClass = 'zero_rated' | 'exempt' | 'not_a_sale';
+/** GET /api/tax/slsp/sales: one row per customer with a TIN, the customers without one on one line (customerId null). */
+export interface SlspSales {
+  year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string;
+  rows: {
+    customerId: string | null; tin: string | null; registeredName: string; address: string | null; exemptCents: number; zeroRatedCents: number;
+    vatableCents: number; outputTaxCents: number; grossTaxableCents: number; toClassifyCents: number; customers: number;
+  }[];
+  totals: { exemptCents: number; zeroRatedCents: number; vatableCents: number; outputTaxCents: number; grossTaxableCents: number; toClassifyCents: number };
+  otherIncomeCents: number; ties: TaxTie[]; checks: WorksheetCheck[];
+  /** Sales with no output VAT (journal vouchers) and the accountant's class of each; null = to classify. */
+  noVatSales: (TaxJournalRef & { customerId: string | null; customerName: string; tin: string | null; amountCents: number; sale: boolean; saleClass: SaleClass | null })[];
+}
+/** GET /api/tax/slsp/purchases: one row per supplier (or one-off payee), by class. */
+export interface SlspPurchases {
+  year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string;
+  rows: {
+    supplierId: string | null; tin: string | null; registeredName: string; address: string | null; exemptCents: number; zeroRatedCents: number; servicesCents: number;
+    capitalGoodsCents: number; goodsCents: number; toClassifyCents: number; inputTaxCents: number; grossTaxableCents: number;
+  }[];
+  totals: { exemptCents: number; zeroRatedCents: number; servicesCents: number; capitalGoodsCents: number; goodsCents: number; toClassifyCents: number; inputTaxCents: number; grossTaxableCents: number };
+  ties: TaxTie[]; checks: WorksheetCheck[];
+}
+/** GET /api/tax/sawt: one row per customer, ATC and 2307 status; `certificate` null = no 2307 recorded (a journal voucher). */
+export interface Sawt {
+  year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string;
+  rows: {
+    customerId: string | null; tin: string | null; registeredName: string; atc: string | null; nature: string | null; rateBp: number | null;
+    incomePaymentCents: number | null; cwtCents: number; vatWithheldCents: number; certificate: 'received' | 'pending' | null; period: string | null; documents: string[];
+  }[];
+  totals: { cwtCents: number; vatWithheldCents: number; incomePaymentCents: number };
+  inHand: { cwtCents: number; vatWithheldCents: number }; pending: { cwtCents: number; vatWithheldCents: number };
+  ties: TaxTie[]; checks: WorksheetCheck[];
+}
 export interface SalesRegister { from: string; to: string; rows: (TaxRegisterRow & { netCents: number; vatCents: number; totalCents: number })[]; totals: { netCents: number; vatCents: number; totalCents: number }; glVatCents: number }
 export interface WithholdingRegister {
   from: string; to: string;
@@ -309,6 +387,26 @@ export interface VatSummary {
 /** Money out (AP, EXP, EQ). Suppliers and supplies are PUR's own rows (GET /api/pur/suppliers, /api/pur/supplies). */
 export interface SupplierRow { id: string; name: string; tin: string | null; is_vat_registered: number; ewt_class: string | null; payment_terms_days: number | null }
 export interface SupplyRow { id: string; name: string; category: 'materials' | 'ready_made' }
+/** Suppliers and the supplies catalogue as PUR keeps them (GET /api/pur/suppliers?status=, /api/pur/supplies?status=): the whole row, with its version for If-Match. */
+export type PurStatus = 'active' | 'inactive' | 'all';
+export interface SupplierRecord extends SupplierRow { registered_name: string; sworn_declaration_until: string | null; legacy_id: string | null; is_active: number; version: number }
+export interface SupplierBody {
+  name: string; registeredName: string; tin: string | null; isVatRegistered: boolean; ewtClass: string | null; swornDeclarationUntil: string | null; paymentTermsDays: number | null; legacyId: string | null;
+}
+export interface SupplierContact { id: string; supplier_id: string; name: string; role: string | null; phone: string | null; email: string | null }
+export interface ContactBody { name: string; role: string | null; phone: string | null; email: string | null }
+export type SupplyUnit = 'yard' | 'meter' | 'kg' | 'roll' | 'pc';
+export interface SupplyRecord extends SupplyRow { unit: SupplyUnit; last_purchase_cost_cents: number; is_active: number; version: number }
+export interface SupplyBody { name: string; unit: SupplyUnit; category: 'materials' | 'ready_made' }
+/** A purchase order line with what posted receiving reports have received (GET /api/pur/purchase-orders/:id and /open). */
+export interface PoLineStatus { lineNo: number; supplyId: string; supplyName: string; unit: SupplyUnit; orderedQty: number; receivedQty: number; remainingQty: number; unitCostCents: number }
+export interface PoStatus { id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; expectedDate: string | null; supplierId: string; supplierName: string; lines: PoLineStatus[] }
+export interface RrDetail {
+  id: string; number: string; status: 'posted' | 'cancelled'; date: string; poId: string; poNumber: string; supplierId: string; supplierName: string;
+  lines: { lineNo: number; poLineNo: number; supplyId: string; supplyName: string; unit: SupplyUnit; qty: number }[];
+}
+export interface SupplierPo { id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; expectedDate: string | null; fullyReceived: boolean }
+export interface SupplierRr { id: string; number: string; status: 'posted' | 'cancelled'; date: string; poId: string; poNumber: string }
 /** GET /api/inv/count-sheet?format=json: the active supplies of a category and the cost each is valued at on the count date. */
 export interface SheetSupply {
   supplyId: string; name: string; unit: 'yard' | 'meter' | 'kg' | 'roll' | 'pc'; milliUnits: boolean;
@@ -316,15 +414,39 @@ export interface SheetSupply {
 }
 export interface CountSheet { category: 'materials' | 'ready_made'; date: string; supplies: SheetSupply[] }
 export interface ExpCategory { id: number; code: string; name: string; defaultEwtClass: string | null }
-/** GET /api/ap/suppliers/:id: a supplier's bills, with what is still owed on each (from the ledger). */
+/**
+ * GET /api/ap/suppliers/:id: a supplier's bills (with the advances applied on each and what is still owed), payments and
+ * advances (with what is still open on each), the AP balance (2101) and the advances open (1230), all from the ledger.
+ */
 export interface ApLedger {
-  supplierId: string; supplierName: string; balanceCents: number;
-  bills: { id: string; number: string; status: 'posted' | 'cancelled'; supplierInvoiceNo: string; dueDate: string; payableCents: number; owedCents: number }[];
+  supplierId: string; supplierName: string; balanceCents: number; advancesCents: number;
+  bills: {
+    id: string; docType?: 'ap.bill' | 'ap.opening'; number: string; status: 'posted' | 'cancelled'; date?: string; supplierInvoiceNo: string; dueDate: string; payableCents: number; owedCents: number;
+    advanceCents?: number; paidCents?: number;
+  }[];
+  payments?: { id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; bills: { billNumber: string; amountCents: number }[] }[];
+  advances: {
+    id: string; number: string; status: 'posted' | 'cancelled'; date: string; purchaseOrderNumber: string | null; amountCents: number; ewtCents: number; cashCents: number;
+    appliedCents: number; returnedCents: number; openCents: number; bills: { billId: string; billNumber: string; amountCents: number }[]; returns: { id: string; number: string; amountCents: number }[];
+  }[];
 }
+/** GET /api/ap/suppliers: every supplier with something owed or an advance open; `netCents` = owed less the advances. */
+export interface ApBalance { supplierId: string; supplierName: string; balanceCents: number; advancesCents: number; netCents: number }
 /** GET /api/acc/opening, what an opening document's form needs: the cut-over date it is dated, and the close once done. */
 export type OpeningStatus = Pick<OpeningState, 'cutoverDate' | 'closed'>;
 export interface EqPerson { id: string; name: string; isStockholder: boolean; isOfficer: boolean; position: string | null }
-export interface Setting { key: string; label: string; current: unknown }
+/** GET /api/settings: each dated setting with the value in force today and every version, newest first. */
+export interface SettingVersion { id: number; key: string; effectiveFrom: string; value: unknown; reason: string; createdAt: string; createdBy: string | null }
+export interface Setting { key: string; label: string; current: unknown; versions: SettingVersion[] }
+/** Users and roles (SEC, owner only): GET /api/users and GET /api/roles. */
+export interface UserRow { id: string; username: string; displayName: string; isActive: boolean; mustChangePassword: boolean; roles: string[] }
+export interface RoleGrid { roles: string[]; permissions: { key: string; module: string; label: string; roles: string[] }[] }
+/** The chart of accounts as GET /api/acc/accounts returns it, in code order. `balanceCents` is debit-positive. */
+export interface CoaAccount {
+  id: number; code: string; name: string; type: Account['type']; normalSide: 'debit' | 'credit'; roleKey: string | null; partyType: PartyType | null;
+  isHeader: boolean; isCashPlace: boolean; isReserved: boolean; isActive: boolean; version: number; balanceCents: number;
+}
+export interface NewAccountBody { code: string; name: string; type: Account['type']; normalSide?: 'debit' | 'credit'; partyType?: PartyType }
 
 /** Chart of accounts (ACC), for pickers. `partyType`: the subledger a line on the account names; 'free' takes any, or none. */
 export type PartyType = 'customer' | 'supplier' | 'employee' | 'officer' | 'stockholder' | 'loan' | 'asset' | 'free';
@@ -334,12 +456,55 @@ export type Supplier = SupplierRow;
 /** The loan register (LOAN): what is owed comes from the ledger; `nextDue` is null once paid off or cancelled. */
 export interface LoanRow {
   id: string; number: string; status: 'posted' | 'cancelled'; lender: string; kind: 'loan' | 'equipment'; principalCents: number; balanceCents: number; instalments: number;
+  dateReceived?: string; rateBp?: number; termMonths?: number; principalPaidCents?: number; interestPaidCents?: number; reference?: string | null;
   nextDue: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number } | null;
 }
 /** An FA- purchase whose financed part no loan has taken over yet. */
 export interface FinancedPurchase { id: string; number: string; date: string; description: string; supplierName: string; lender: string; financedCents: number }
 export interface AssetClass { code: string; name: string; defaultLifeMonths: number | null }
-export interface AssetRow { id: string; number: string; description: string; className: string; status: 'in service' | 'fully depreciated' | 'disposed' | 'cancelled' }
+export type AssetStatus = 'in service' | 'fully depreciated' | 'disposed' | 'cancelled';
+/** GET /api/fa/assets: the register; every figure but the description and class comes from the ledger and the documents. */
+export interface AssetRow {
+  id: string; number: string; description: string; className: string; status: AssetStatus;
+  acquiredOn?: string; costCents?: number; residualCents?: number; lifeMonths?: number; monthlyChargeCents?: number; accumulatedCents?: number; bookValueCents?: number; location?: string | null;
+}
+/** GET /api/fa/assets/:id: the register row with its depreciation from the recorded runs, its documents and the months with no charge. */
+export interface AssetPage extends Required<AssetRow> {
+  disposal: string | null;
+  depreciation: { month: string; documentId: string; documentNumber: string; chargeCents: number; accumulatedCents: number }[];
+  missingMonths: string[];
+  documents: { docType: string; id: string; number: string; date: string; status: 'posted' | 'cancelled' }[];
+}
+/** GET /api/fa/depreciation-gaps: months before this one in which an asset in service was not charged. */
+export interface DepreciationGaps { thisMonth: string; lastRunMonth: string | null; months: string[] }
+
+/** GET /api/eq/people?all=1: the register of stockholders and officers. */
+export interface EqPersonRecord extends EqPerson { shares: number | null; isActive: boolean; version: number }
+/** GET /api/eq/balances: what each person owes the company, is owed, and still owes on a stock subscription. */
+export interface EqBalance { personId: string; dueFromCents: number; dueToCents: number; unpaidSubscriptionCents: number }
+/** GET /api/eq/people/:id/owner-money and /officer-transactions: `kind` is the classification, or taken | returned | repaid_to_officer; `note` the note or purpose. */
+export interface EqDocument { id: string; number: string; date: string; status: 'posted' | 'cancelled'; amountCents: number; accountName: string; kind: string; note: string | null }
+/** GET /api/eq/people/:id/ledger: `netCents` is what they owe the company less what it owes them; amounts on lines are debit-positive. */
+export interface EqLedger {
+  person: EqPersonRecord; dueFromCents: number; dueToCents: number; netCents: number;
+  lines: { date: string; journalNumber: string; documentNumber: string | null; accountCode: string; accountName: string; memo: string; amountCents: number; netCents: number }[];
+}
+
+/** GET /api/loan/loans/:id: the register row with its schedule (and the payment on each paid instalment) and the loan ledger. */
+export interface LoanDetail extends LoanRow {
+  schedule: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number; paidBy: string | null }[];
+  ledger: { date: string; journalNumber: string; documentNumber: string | null; memo: string; amountCents: number; balanceCents: number }[];
+}
+/** GET /api/loan/loans/:id/payments. */
+export interface LoanPayment { id: string; number: string; date: string; status: 'posted' | 'cancelled'; instalmentNo: number; principalCents: number; interestCents: number; totalCents: number; note: string | null }
+/** GET /api/loan/late: an instalment past its due date with no recorded payment. */
+export interface LateInstalment { loanId: string; loanNumber: string; lender: string; instalmentNo: number; dueDate: string; principalCents: number; interestCents: number; daysLate: number }
+
+/** GET /api/szr/overview (PLAN E8): every set with who has it, the overdue ones and the last returns. */
+export interface SizerHolder { loanId: string; loanVersion: number; customerId: string; customerName: string; dateOut: string; expectedReturnDate: string; daysOverdue: number }
+export interface SizerSet { id: string; code: string; garmentType: string; sizesIncluded: string; status: 'in shop' | 'lent' | 'lost or damaged'; holder: SizerHolder | null }
+export interface SizerReturned { loanId: string; setCode: string; garmentType: string; customerName: string; dateOut: string; expectedReturnDate: string; returnedDate: string; conditionOnReturn: string }
+export interface SizerBoard { today: string; sets: SizerSet[]; overdue: SizerSet[]; returned: SizerReturned[] }
 /** Backups (BAK). The status's `runs` are the server's bak_runs rows as stored. */
 export type BackupTier = 'snapshot' | 'daily' | 'monthly' | 'yearly';
 export type BackupSource = 'local' | 'offsite';
@@ -354,6 +519,26 @@ export interface BackupStatus {
 }
 export interface BackupMade { file: string; tier: BackupTier; bytes: number; offsite: boolean; offsiteError: string | null }
 export interface BackupFile { source: BackupSource; file: string; at: string; tier: BackupTier; bytes: number }
+/** The old-data importer (PLAN E13 MIG-01), as /api/mig reports it. */
+export type MigRowType = 'customer' | 'measurement' | 'employee' | 'piece_rate' | 'unknown';
+export type MigRowStatus = 'valid' | 'needs_review' | 'accepted' | 'merged' | 'excluded';
+export interface MigUpload { id: string; filename: string; uploadedAt: string; uploadedBy: string; status: 'staged' | 'dry_run_passed' | 'committed' }
+export interface MigUploaded { uploadId: string; totalRows: number; needsReview: number }
+/** A row of the review: the old sheet's cells (`raw`), the problems in the server's words, and the fix if one was made. */
+export interface MigRow {
+  id: string; rowNumber: number; rowType: MigRowType; status: MigRowStatus; raw: Record<string, string>; issues: string[];
+  manualData: Record<string, string | number> | null; legacyId: string | null; rateCents: number | null; mergeIntoRowId: string | null;
+}
+export interface DryRunResult {
+  success: true;
+  counts: { customers: number; measurements: number; employees: number; pieceRates: number; excluded: number; merged: number; total: number };
+  checksums: {
+    customer: { sha256: string }; measurement: { sha256: string; cellTenths: number }; employee: { sha256: string; rateCents: number }; pieceRate: { sha256: string; rateCents: number };
+  };
+}
+export type MigCommitKind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate';
+/** What a commit made. `excluded` and `merged` are only in the answer to the commit itself, not in the later look-up. */
+export interface MigCommitResult { counts: Record<MigCommitKind, { imported: number; alreadyImported: number }>; measurementCellTenths: number; excluded?: number; merged?: number }
 /** What a backup holds, found by opening it with a recovery key. A restore check adds `stagedId` and the live data's audit head. */
 export interface BackupCheck {
   file: string; madeAt: string | null; tier: BackupTier | null; sidecar: 'matches' | 'missing'; toApply: string[]; audit: { seq: number } | null;
@@ -371,8 +556,19 @@ export interface OpeningState {
   accounts: { id: number; code: string; name: string; isCashPlace: boolean; needsStockholder: boolean }[];
   closed: { cutoverDate: string; closedAt: string; closedBy: string; closedByName: string; totalDebitCents: number; totalCreditCents: number } | null;
 }
+/** GET /api/acc/month-end?month=: the month-end checklist (PLAN D8), each item read from the app. */
+export type MonthEndState = 'done' | 'not_done' | 'not_needed';
+export interface MonthEndItem { key: string; title: string; state: MonthEndState; detail: string; href: string; linkLabel: string; rows: { label: string; state: MonthEndState; detail: string }[] }
+export interface MonthEndSignoff { id: number; month: string; signedAt: string; signedBy: string; signedByName: string; note: string }
+export interface MonthEndChecklist {
+  month: string; asOf: string; over: boolean; canSignOff: boolean; items: MonthEndItem[];
+  signoff: (MonthEndSignoff & { items: { key: string; state: MonthEndState; detail: string }[] }) | null;
+  earlierSignoffs: MonthEndSignoff[];
+  /** Documents dated in the month that were recorded or cancelled after the newest sign-off; null while the month is not signed. */
+  changedAfterSignoff: { count: number; documents: { number: string; title: string; date: string; action: 'recorded' | 'cancelled'; at: string }[] } | null;
+}
 /** BIR payments (BIRP-): the return, and the posted payments a worksheet counts. */
-export type BirForm = '2550Q' | '0619-E' | '1601-EQ' | '1702Q';
+export type BirForm = '2550Q' | '0619-E' | '1601-EQ' | '1702Q' | '1702';
 export interface BirPaymentLine { id: string; number: string; date: string; period: string; reference: string; amountCents: number; penaltyCents: number }
 /** The EWT of a period by ATC (per EWT class while the ATC is to confirm). */
 export type EwtAtcLine = EwtAtc & { baseCents: number; ewtCents: number };
@@ -404,10 +600,37 @@ export interface IncomeTaxWorksheet {
   dueCents: number; payments: BirPaymentLine[]; paidCents: number; leftCents: number;
   checks: WorksheetCheck[];
 }
+/** The deductions a year's 1702-RT takes (dated, per year): itemized by default until the accountant confirms, or the 40% OSD. */
+export type DeductionMethod = 'itemized' | 'osd';
+export interface DeductionSetting {
+  id: number | null; year: number; method: DeductionMethod; effectiveFrom: string | null; reason: string | null; createdAt: string | null; createdBy: string | null; confirmed: boolean;
+}
+type DocRef = { documentId: string; number: string; date: string };
+/** GET /api/tax/1702rt?year=: the year in whole pesos, the tax, the credits, payable or carried over; the provision, settlement and 1702 payments. */
+export interface AnnualIncomeTaxWorksheet {
+  year: number; from: string; to: string; returnDue: string | null;
+  settings: IncomeTaxSettings; mcitApplies: boolean | null; basis: 'regular' | 'mcit'; deduction: DeductionSetting;
+  lines: { key: string; label: string; cents: number }[];
+  itemizedDeductionsCents: number; osdCents: number; taxDueCents: number; payableCents: number; provisionCents: number;
+  quarterlyPayments: BirPaymentLine[];
+  provision: (DocRef & { amountCents: number }) | null; settlement: (DocRef & { payableCents: number; carryOverCents: number }) | null; opening: DocRef | null;
+  dueCents: number; payments: BirPaymentLine[]; paidCents: number; leftCents: number;
+  checks: WorksheetCheck[];
+}
+/** GET /api/tax/1604e?year=: the alphalist per payee and ATC, and its tie-out to the four quarters. */
+export interface EwtAnnualReturn {
+  year: number; from: string; to: string; returnDue: string | null;
+  alphalist: (EwtAtc & { supplierId: string | null; tin: string | null; registeredName: string; rateBp: number | null; quarters: [number, number, number, number]; baseCents: number; ewtCents: number })[];
+  totals: { baseCents: number; ewtCents: number };
+  quarters: { quarter: 1 | 2 | 3 | 4; period: string; qapCents: number; worksheetCents: number; registerCents: number; glCents: number; tied: boolean; dueCents: number; remittedCents: number; paidCents: number; leftCents: number }[];
+  quartersCents: number; registerCents: number; glCents: number; tied: boolean; checks: WorksheetCheck[];
+}
+/** A year's annual report URL; with &format=csv the same URL downloads it for Excel. */
+export const taxYearPath = (report: '1702rt' | '1604e', year: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year) })}`;
 /** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
 export const taxRegisterPath = (register: 'sales' | 'withholding-received' | 'purchases' | 'ewt', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
 /** A quarter's tax report URL; with &format=csv the same URL downloads it for Excel. */
-export const taxQuarterPath = (report: '2307-to-issue' | '2550q' | '1601eq' | '1702q', year: number, quarter: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}`;
+export const taxQuarterPath = (report: '2307-to-issue' | '2550q' | '1601eq' | '1702q' | 'slsp/sales' | 'slsp/purchases' | 'sawt', year: number, quarter: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}`;
 /** The 0619-E worksheet's URL (month like 2026-07); with &format=csv it downloads for Excel. */
 export const ewtMonthPath = (month: string) => `/api/tax/0619e?${new URLSearchParams({ month })}`;
 
@@ -469,7 +692,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     calMove: (id: string, date: string, time?: string | null) => call<CalEvent>('POST', `/api/cal/events/${encodeURIComponent(id)}/move`, { date, time }),
     calCancel: (id: string, reason: string) => call<CalEvent>('POST', `/api/cal/events/${encodeURIComponent(id)}/cancel`, { reason }),
     calHistory: (id: string) => call<CalEvent[]>('GET', `/api/cal/events/${encodeURIComponent(id)}/history`),
-    shopCertificate: () => call<{ ca: CertInfo | null }>('GET', '/api/system/tls'),
+    shopCertificate: () => call<{ ca: CertInfo | null; join?: JoinAddress }>('GET', '/api/system/tls'),
     systemHealth: () => call<SystemHealth>('GET', '/api/system/health'),
     systemCheck: () => call<SystemHealth>('POST', '/api/system/health/check'),
     practice: () => call<PracticeStatus>('GET', '/api/system/practice'),
@@ -501,6 +724,15 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     updateCashPlace: (id: number, version: number, body: { accountNo?: string | null; encoderSeesBalance?: boolean }) =>
       call<CashAccount>('PUT', `/api/cash/places/${id}/settings`, body, { 'if-match': String(version) }),
     cashBook: (id: number, from: string, to: string) => call<CashBook>('GET', `/api/cash/places/${id}/book?${new URLSearchParams({ from, to })}`),
+    cashRecons: () => call<ReconRow[]>('GET', '/api/cash/recons'),
+    cashRecon: (id: string) => call<ReconReport>('GET', `/api/cash/recons/${id}`),
+    startCashRecon: (bankId: number, month: string, endingBalanceCents: number) => call<ReconReport>('POST', '/api/cash/recons', { bankId, month, endingBalanceCents }),
+    setReconEnding: (id: string, endingBalanceCents: number) => call<ReconReport>('PUT', `/api/cash/recons/${id}`, { endingBalanceCents }),
+    addReconLines: (id: string, lines: { date: string; description: string; amountCents: number }[]) => call<ReconReport>('POST', `/api/cash/recons/${id}/lines`, { lines }),
+    voidReconLine: (id: string, lineId: number) => call<ReconReport>('POST', `/api/cash/recons/${id}/lines/${lineId}/void`, {}),
+    matchRecon: (id: string, statementLineIds: number[], journalLineIds: number[]) => call<ReconReport>('POST', `/api/cash/recons/${id}/match`, { statementLineIds, journalLineIds }),
+    unmatchRecon: (id: string, matchNo: number) => call<ReconReport>('POST', `/api/cash/recons/${id}/unmatch`, { matchNo }),
+    finishRecon: (id: string) => call<ReconReport>('POST', `/api/cash/recons/${id}/finish`, {}),
     customer: (id: string) => call<CustomerRow>('GET', `/api/cus/customers/${encodeURIComponent(id)}`),
     customers: (search: string) => call<CustomerRow[]>('GET', `/api/cus/customers?${new URLSearchParams({ search, limit: '10' })}`),
     openItems: (customerId: string) => call<OpenItems>('GET', customer(customerId, 'open-items')),
@@ -563,14 +795,68 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     caWriteoffAccounts: () => call<{ id: number; code: string; name: string }[]>('GET', '/api/ca/writeoff-accounts'),
     statMonths: () => call<{ month: string; check: SchemeCheck[] }[]>('GET', '/api/stat/months'),
     statMonth: (month: string) => call<StatMonth>('GET', `/api/stat/months/${encodeURIComponent(month)}`),
+    statExposure: () => call<Exposure>('GET', '/api/stat/exposure'),
+    statEmployerNumbers: () => call<EmployerNumberRow[]>('GET', '/api/stat/employer-numbers'),
+    /** Needs a fresh password (step-up). */
+    setEmployerNumber: (scheme: UploadScheme, number: string) => call<{ scheme: UploadScheme; number: string; changed: boolean }>('PUT', `/api/stat/employer-numbers/${scheme}`, { number }),
+    /** An agency upload file (CSV) for a month: the bytes and the file's name, or the server's plain refusal (a missing ID number names the employee). */
+    statUpload: async (month: string, scheme: UploadScheme): Promise<{ filename: string; blob: Blob }> => {
+      let res: Response;
+      try {
+        res = await fetchImpl(`/api/stat/months/${encodeURIComponent(month)}/upload/${scheme.toLowerCase()}`, { method: 'GET', headers: {}, credentials: 'same-origin' });
+      } catch {
+        throw new ApiError('OFFLINE', 'Cannot reach the server. Check the connection and try again.', 0);
+      }
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { code?: string; message?: string; details?: unknown } | null;
+        throw new ApiError(data?.code ?? `HTTP_${res.status}`, data?.message ?? 'Something went wrong. Please try again.', res.status, data?.details);
+      }
+      return { filename: /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? `${scheme}-${month}.csv`, blob: await res.blob() };
+    },
     /** D6: what of a payroll run's month is already remitted (the warning before a cancel). */
     runRemitted: (runId: string) => call<{ month: string; remitted: { scheme: Scheme; label: string; numbers: string[] }[] }>('GET', `/api/stat/runs/${encodeURIComponent(runId)}/remitted`),
     settings: () => call<Setting[]>('GET', '/api/settings'),
+    /** A new version from today or later (acc.settings.manage); needs a fresh password (step-up). */
+    addSetting: (key: string, body: { effectiveFrom: string; value: unknown; reason: string }) => call<SettingVersion>('POST', `/api/settings/${encodeURIComponent(key)}`, body),
+    /** Users and roles (sec.users.manage). Every change but the two reads needs a fresh password (step-up). */
+    users: () => call<UserRow[]>('GET', '/api/users'),
+    addUser: (body: { username: string; displayName: string; roles: string[]; temporaryPassword: string }) => call<{ id: string }>('POST', '/api/users', body),
+    setUserRoles: (id: string, roles: string[]) => call<{ ok: true }>('POST', `/api/users/${encodeURIComponent(id)}/roles`, { roles }),
+    resetUserPassword: (id: string, temporaryPassword: string) => call<{ ok: true }>('POST', `/api/users/${encodeURIComponent(id)}/reset-password`, { temporaryPassword }),
+    setUserActive: (id: string, active: boolean) => call<{ ok: true }>('POST', `/api/users/${encodeURIComponent(id)}/active`, { active }),
+    roles: () => call<RoleGrid>('GET', '/api/roles'),
+    setRolePermission: (role: string, permissionKey: string, granted: boolean) =>
+      call<{ ok: true }>('POST', `/api/roles/${encodeURIComponent(role)}/permissions`, { permissionKey, granted }),
+    /** The chart of accounts (acc.coa.view); changes need acc.coa.manage, `v` is the account's version (If-Match). Deactivating needs a fresh password. */
+    coaAccounts: () => call<CoaAccount[]>('GET', '/api/acc/accounts'),
+    addAccount: (body: NewAccountBody) => call<CoaAccount>('POST', '/api/acc/accounts', body),
+    renameAccount: (id: number, v: number, name: string) => call<CoaAccount>('PUT', `/api/acc/accounts/${id}`, { name }, version(v)),
+    deactivateAccount: (id: number, v: number) => call<CoaAccount>('POST', `/api/acc/accounts/${id}/deactivate`, undefined, version(v)),
+    activateAccount: (id: number, v: number) => call<CoaAccount>('POST', `/api/acc/accounts/${id}/activate`, undefined, version(v)),
     suppliers: () => call<SupplierRow[]>('GET', '/api/pur/suppliers'),
     supplies: () => call<SupplyRow[]>('GET', '/api/pur/supplies'),
+    supplierList: (status: PurStatus) => call<SupplierRecord[]>('GET', `/api/pur/suppliers?status=${status}`),
+    supplier: (id: string) => call<SupplierRecord>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}`),
+    addSupplier: (body: SupplierBody) => call<{ id: string; version: number }>('POST', '/api/pur/suppliers', body),
+    updateSupplier: (id: string, v: number, body: SupplierBody) => call<{ success: true; version: number }>('PUT', `/api/pur/suppliers/${encodeURIComponent(id)}`, body, version(v)),
+    deactivateSupplier: (id: string, v: number) => call<{ success: true }>('POST', `/api/pur/suppliers/${encodeURIComponent(id)}/deactivate`, undefined, version(v)),
+    supplierContacts: (id: string) => call<SupplierContact[]>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}/contacts`),
+    addSupplierContact: (id: string, body: ContactBody) => call<{ id: string }>('POST', `/api/pur/suppliers/${encodeURIComponent(id)}/contacts`, body),
+    deactivateSupplierContact: (supplierId: string, id: string) => call<{ success: true }>('POST', `/api/pur/suppliers/${encodeURIComponent(supplierId)}/contacts/${encodeURIComponent(id)}/deactivate`),
+    supplierPurchaseOrders: (id: string) => call<SupplierPo[]>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}/purchase-orders`),
+    supplierReceivingReports: (id: string) => call<SupplierRr[]>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}/receiving-reports`),
+    supplyList: (status: PurStatus) => call<SupplyRecord[]>('GET', `/api/pur/supplies?status=${status}`),
+    addSupply: (body: SupplyBody) => call<{ id: string; version: number }>('POST', '/api/pur/supplies', body),
+    updateSupply: (id: string, v: number, body: SupplyBody) => call<{ success: true; version: number }>('PUT', `/api/pur/supplies/${encodeURIComponent(id)}`, body, version(v)),
+    deactivateSupply: (id: string, v: number) => call<{ success: true }>('POST', `/api/pur/supplies/${encodeURIComponent(id)}/deactivate`, undefined, version(v)),
+    /** Posted purchase orders with something still to receive (pur.rr.create), for the receiving form. */
+    openPurchaseOrders: () => call<PoStatus[]>('GET', '/api/pur/purchase-orders/open'),
+    purchaseOrder: (id: string) => call<PoStatus>('GET', `/api/pur/purchase-orders/${encodeURIComponent(id)}`),
+    receivingReport: (id: string) => call<RrDetail>('GET', `/api/pur/receiving-reports/${encodeURIComponent(id)}`),
     countSheet: (category: string, date: string) => call<CountSheet>('GET', `/api/inv/count-sheet?${new URLSearchParams({ category, date, format: 'json' })}`),
     expCategories: () => call<ExpCategory[]>('GET', '/api/exp/categories'),
     apLedger: (supplierId: string) => call<ApLedger>('GET', `/api/ap/suppliers/${encodeURIComponent(supplierId)}`),
+    apBalances: () => call<ApBalance[]>('GET', '/api/ap/suppliers'),
     eqPeople: () => call<EqPerson[]>('GET', '/api/eq/people'),
     /** What an officer owes the company and is owed (needs eq.ledger.view). */
     officerBalances: (personId: string) => call<{ dueFromCents: number; dueToCents: number }>('GET', `/api/eq/people/${encodeURIComponent(personId)}/ledger`),
@@ -587,13 +873,27 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     ewtRegister: (from: string, to: string) => call<EwtRegister>('GET', taxRegisterPath('ewt', from, to)),
     certificatesToIssue: (year: number, quarter: number) => call<CertificatesToIssue>('GET', taxQuarterPath('2307-to-issue', year, quarter)),
     vatWorksheet: (year: number, quarter: number) => call<VatWorksheet>('GET', taxQuarterPath('2550q', year, quarter)),
+    slspSales: (year: number, quarter: number) => call<SlspSales>('GET', taxQuarterPath('slsp/sales', year, quarter)),
+    slspPurchases: (year: number, quarter: number) => call<SlspPurchases>('GET', taxQuarterPath('slsp/purchases', year, quarter)),
+    sawt: (year: number, quarter: number) => call<Sawt>('GET', taxQuarterPath('sawt', year, quarter)),
+    /** A sale with no output VAT is zero-rated, exempt or not a sale (tax.slsp.classify); posts nothing. */
+    classifySale: (journalId: string, saleClass: SaleClass, reason: string) =>
+      call<{ journalId: string; number: string; saleClass: SaleClass }>('POST', '/api/tax/slsp/sale-class', { journalId, saleClass, reason }),
     ewtMonthWorksheet: (month: string) => call<EwtMonthWorksheet>('GET', ewtMonthPath(month)),
     ewtQuarterWorksheet: (year: number, quarter: number) => call<EwtQuarterWorksheet>('GET', taxQuarterPath('1601eq', year, quarter)),
     incomeTaxWorksheet: (year: number, quarter: number) => call<IncomeTaxWorksheet>('GET', taxQuarterPath('1702q', year, quarter)),
     incomeTaxSettings: () => call<{ current: IncomeTaxSettings; versions: IncomeTaxSettings[] }>('GET', '/api/tax/income-tax-settings'),
     /** A new version from today or later (acc.settings.manage); needs a fresh password (step-up). */
     addIncomeTaxSettings: (body: { effectiveFrom: string; value: IncomeTaxSettingsValue; reason: string }) => call<IncomeTaxSettings>('POST', '/api/tax/income-tax-settings', body),
+    annualIncomeTaxWorksheet: (year: number) => call<AnnualIncomeTaxWorksheet>('GET', taxYearPath('1702rt', year)),
+    ewtAnnualReturn: (year: number) => call<EwtAnnualReturn>('GET', taxYearPath('1604e', year)),
+    incomeTaxDeductions: (year: number) => call<{ year: number; current: DeductionSetting; versions: DeductionSetting[] }>('GET', `/api/tax/income-tax-deductions?${new URLSearchParams({ year: String(year) })}`),
+    /** A year's deduction method from today or later (acc.settings.manage); needs a fresh password (step-up). */
+    addIncomeTaxDeduction: (body: { year: number; method: DeductionMethod; effectiveFrom: string; reason: string }) => call<DeductionSetting>('POST', '/api/tax/income-tax-deductions', body),
     opening: () => call<OpeningState>('GET', '/api/acc/opening'),
+    monthEnd: (month?: string) => call<MonthEndChecklist>('GET', `/api/acc/month-end${month ? `?${new URLSearchParams({ month })}` : ''}`),
+    /** The accountant's sign-off of a month that has ended; needs a fresh password (step-up). */
+    signOffMonth: (month: string, note: string) => call<MonthEndChecklist>('POST', '/api/acc/month-end/sign-off', { month, note }),
     /** Every return with something left to pay (GET /api/tax/payments/due): a VAT close or an opening's 2550Q, EWT withheld or opened. */
     taxPaymentsDue: () => call<{ form: BirForm; period: string; payableCents: number }[]>('GET', '/api/tax/payments/due'),
     /** Both need a fresh password (step-up). */
@@ -605,6 +905,23 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     financedAssets: () => call<FinancedPurchase[]>('GET', '/api/loan/financed-assets'),
     assetClasses: () => call<AssetClass[]>('GET', '/api/fa/classes'),
     assets: () => call<AssetRow[]>('GET', '/api/fa/assets'),
+    asset: (id: string) => call<AssetPage>('GET', `/api/fa/assets/${encodeURIComponent(id)}`),
+    depreciationGaps: () => call<DepreciationGaps>('GET', '/api/fa/depreciation-gaps'),
+    /** The whole register, switched-off people included. */
+    eqRegister: () => call<EqPersonRecord[]>('GET', '/api/eq/people?all=1'),
+    eqBalances: () => call<EqBalance[]>('GET', '/api/eq/balances'),
+    eqLedger: (personId: string) => call<EqLedger>('GET', `/api/eq/people/${encodeURIComponent(personId)}/ledger`),
+    eqOwnerMoney: (personId: string) => call<EqDocument[]>('GET', `/api/eq/people/${encodeURIComponent(personId)}/owner-money`),
+    eqOfficerTransactions: (personId: string) => call<EqDocument[]>('GET', `/api/eq/people/${encodeURIComponent(personId)}/officer-transactions`),
+    loan: (id: string) => call<LoanDetail>('GET', `/api/loan/loans/${encodeURIComponent(id)}`),
+    loanPayments: (id: string) => call<LoanPayment[]>('GET', `/api/loan/loans/${encodeURIComponent(id)}/payments`),
+    loansLate: () => call<LateInstalment[]>('GET', '/api/loan/late'),
+    sizerBoard: () => call<SizerBoard>('GET', '/api/szr/overview'),
+    /** Lend a set that is in the shop to a customer; the date out is the server's today. */
+    sizerLend: (body: { setId: string; customerId: string; expectedReturnDate: string }) => call<{ id: string; version: number }>('POST', '/api/szr/loans', body),
+    /** Take a set back, with the loan's version (If-Match); it is back in the shop, or lost or damaged. */
+    sizerReturn: (loanId: string, v: number, body: { status: 'in shop' | 'lost or damaged'; conditionOnReturn: string }) =>
+      call<{ success: true }>('POST', `/api/szr/loans/${encodeURIComponent(loanId)}/return`, body, version(v)),
     /** Without a year and quarter: the quarter of the server's date. */
     vatSummary: (year?: number, quarter?: number) =>
       call<VatSummary>('GET', `/api/tax/vat-summary${year ? `?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}` : ''}`),
@@ -615,7 +932,23 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     bakUsb: (drive: 'A' | 'B', dir: string) => call<{ drive: 'A' | 'B'; copied: number; onDrive: number }>('POST', '/api/bak/usb', { drive, dir }),
     bakBackups: () => call<BackupFile[]>('GET', '/api/bak/backups'),
     bakCheck: (b: { source: BackupSource; file: string; key: string; purpose: 'drill' | 'restore' }) => call<BackupCheck>('POST', '/api/bak/restore/check', b),
-    bakApply: (stagedId: string) => call<{ file: string; restartNeeded: boolean; message: string }>('POST', '/api/bak/restore/apply', { stagedId }),
+    bakApply: (stagedId: string) => call<{ file: string; restartNeeded: boolean; restarting: boolean; message: string }>('POST', '/api/bak/restore/apply', { stagedId }),
+    bakRestored: () => call<{ restored: { file: string; at: string } | null }>('GET', '/api/bak/restored').then((r) => r.restored),
+    migUploads: () => call<{ uploads: MigUpload[] }>('GET', '/api/mig/uploads').then((r) => r.uploads),
+    /** The kind is not sent: the server reads it from the columns. */
+    migUpload: (filename: string, csv: string) => call<MigUploaded>('POST', '/api/mig/upload', { filename, csv }),
+    migReview: (uploadId: string) => call<{ rows: MigRow[] }>('GET', `/api/mig/uploads/${encodeURIComponent(uploadId)}/review`).then((r) => r.rows),
+    migAccept: (rowId: string) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/accept`, {}),
+    migFix: (rowId: string, manualData: Record<string, string | number>) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/fix`, { manualData }),
+    migMerge: (rowId: string, mergeIntoRowId: string) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/merge`, { mergeIntoRowId }),
+    /** The reason is sent for the day the server keeps it; today the server ignores it. */
+    migExclude: (rowId: string, reason: string) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/exclude`, { reason }),
+    migDryRun: (uploadId: string) => call<DryRunResult>('POST', `/api/mig/uploads/${encodeURIComponent(uploadId)}/dry-run`, {}),
+    /** Needs a fresh password (step-up) and mig.commit. */
+    migCommit: (uploadId: string, expectedMeasurementCellTenths: number) => call<MigCommitResult>('POST', `/api/mig/uploads/${encodeURIComponent(uploadId)}/commit`, { expectedMeasurementCellTenths }),
+    migCommitted: (uploadId: string) => call<{ counts: MigCommitResult['counts']; checksums: { measurementCellTenths: number }; clearedAt: string | null }>('GET', `/api/mig/uploads/${encodeURIComponent(uploadId)}/commit`),
+    /** Needs a fresh password (step-up) and mig.commit. */
+    migClearStaging: (uploadId: string) => call<{ success: true; rowsCleared: number }>('POST', `/api/mig/uploads/${encodeURIComponent(uploadId)}/clear-staging`, {}),
   };
 }
 

@@ -22,7 +22,9 @@ import { hashPassword, DEFAULT_SCRYPT_N } from './engine/security/passwords.ts';
 import { webRoutes } from './platform/web.ts';
 import { practiceRoutes, type PracticeControl } from './platform/practice/routes.ts';
 import { healthRoutes } from './platform/health/routes.ts';
-import type { Host } from './platform/health/health.ts';
+import { realHost, type Host } from './platform/health/health.ts';
+import { idleRestarter, type Restarter } from './platform/restart.ts';
+import type { Network } from './engine/security/tls/routes.ts';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -50,6 +52,10 @@ export interface AppDeps {
   /** True in the practice shop (PLAN C8): made-up data, its own sign-in cookie, no backups, "PRACTICE" on printouts. */
   practice: boolean;
   sessionCookie: string;
+  /** The PC System Health reports on. */
+  host: Host;
+  /** Restarts the server once no request is running (after a restore, PLAN C8). */
+  restart: Restarter;
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -73,6 +79,10 @@ export interface BuildOptions {
   practiceShop?: PracticeControl;
   /** The PC System Health reports on (tests give their own); the real one by default. */
   host?: Host;
+  /** Called once a restart asked for (after a restore) can happen: main.ts exits so the service starts it again. */
+  onRestart?: (reason: string) => void;
+  /** This PC's name and addresses for the join address on the System pages (tests give their own). */
+  network?: Partial<Network>;
 }
 
 /** Migrates, registers modules and permissions. Separate from buildApp so tools and tests can use it. */
@@ -92,6 +102,8 @@ export function prepareDatabase(db: Db, clock: Clock, modules: ModuleDef[]): Reg
 export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppDeps } {
   const registry = prepareDatabase(opts.db, opts.clock, opts.modules);
   const scryptN = opts.config?.scryptN ?? DEFAULT_SCRYPT_N;
+  const base = { logger: opts.logger ?? false, bodyLimit: 1024 * 1024 };
+  const app = (opts.https ? Fastify({ ...base, https: opts.https }) : Fastify(base)) as unknown as FastifyInstance;
   const deps: AppDeps = {
     db: opts.db,
     clock: opts.clock,
@@ -100,10 +112,9 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
     dummyHash: hashPassword('dummy-password-for-timing', scryptN),
     practice: opts.practice ?? false,
     sessionCookie: opts.practice ? PRACTICE_SESSION_COOKIE : SESSION_COOKIE,
+    host: opts.host ?? realHost,
+    restart: idleRestarter(app, opts.onRestart ?? ((reason) => app.log.warn(`Restart needed: ${reason}`))),
   };
-
-  const base = { logger: opts.logger ?? false, bodyLimit: 1024 * 1024 };
-  const app = (opts.https ? Fastify({ ...base, https: opts.https }) : Fastify(base)) as unknown as FastifyInstance;
   app.register(cookie);
   app.decorateRequest('user', null);
 
@@ -122,6 +133,10 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
       throw new AppError('PRACTICE', 'Backups and restores are not part of the practice shop. The real shop backs itself up.', 403);
     }
     const unsafe = req.method !== 'GET' && req.method !== 'HEAD';
+    // A restore is about to be swapped in: anything recorded now would be lost with the database it replaces.
+    if (unsafe && deps.restart.reason) {
+      throw new AppError('RESTARTING', 'Moonproject is restarting to finish a restore. Nothing was recorded. Wait a minute, then reload the page.', 503);
+    }
     // Origin check on every state-changing request (CSRF, PLAN C6).
     const origin = req.headers.origin;
     if (unsafe && origin && new URL(origin).host !== req.headers.host) {
@@ -156,11 +171,11 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
     ok: true, version: APP_VERSION, serverTime: stamp(deps.clock), ...(deps.practice ? { practice: true } : {}),
   }));
   securityRoutes(app, deps);
-  tlsRoutes(app, deps);
+  tlsRoutes(app, deps, opts.network);
   documentRoutes(app, deps);
   draftRoutes(app, deps);
   practiceRoutes(app, deps, opts.practiceShop);
-  healthRoutes(app, deps, { ...(opts.practiceShop ? { practiceShop: opts.practiceShop } : {}), ...(opts.host ? { host: opts.host } : {}) });
+  healthRoutes(app, deps, opts.practiceShop ? { practiceShop: opts.practiceShop } : {});
   for (const m of registry.modules) m.routes?.(app, deps);
   webRoutes(app, opts.webRoot ?? WEB_DIST);
 

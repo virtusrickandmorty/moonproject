@@ -20,7 +20,7 @@ const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: 
 
 const rates = { rent_5: 500, contractor_2: 200, prof_ind_5: 500, prof_ind_10: 1000, prof_firm_10: 1000, prof_firm_15: 1500, goods_1: 100, services_2: 200 };
 const ledger = (bills: Partial<ApLedger['bills'][number]>[]): ApLedger => ({
-  supplierId: 's1', supplierName: 'Sample Fabric Trading', balanceCents: 0,
+  supplierId: 's1', supplierName: 'Sample Fabric Trading', balanceCents: 0, advancesCents: 0, advances: [],
   bills: bills.map((b, i) => ({ id: `b${i}`, number: `BILL-00000${i + 1}`, status: 'posted', supplierInvoiceNo: `SI-${i}`, dueDate: '2026-10-25', payableCents: 0, owedCents: 0, ...b })),
 });
 
@@ -30,7 +30,7 @@ describe('money-out screen rules', () => {
     expect(ewtLabel('prof_firm_15', rates)).toBe('Professional fees, firm (higher rate) 15%');
     expect(ewtLabel('goods_1', null)).toBe('Goods (Top Withholding Agent only)');
     expect([null, 'none'].map((c) => ewtLabel(c, rates))).toEqual(['No EWT', 'No EWT']);
-    expect(ewtRates([{ key: 'tax.ewt_rates_bp', label: '', current: rates }])).toBe(rates);
+    expect(ewtRates([{ key: 'tax.ewt_rates_bp', label: '', current: rates, versions: [] }])).toBe(rates);
     expect(ewtRates([])).toBeNull();
     const choices = ewtChoices('contractor_2', rates);
     expect(choices.slice(0, 3)).toEqual([['', 'Usual: Contractors and printers 2%'], ['none', 'No EWT'], ['rent_5', 'Rent 5%']]);
