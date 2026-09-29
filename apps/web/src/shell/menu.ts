@@ -70,6 +70,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Accounting & Tax', label: 'Tax calendar', path: '/tax/calendar', permission: 'tax.calendar.view' },
   { group: 'Accounting & Tax', label: 'Booklets', path: '/tax/booklets', permission: 'tax.booklets.view' },
   { group: 'Reports', label: 'General journal', path: '/rpt/journal', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'BIR books', path: '/rpt/bir-books', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'General ledger', path: '/rpt/ledger', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Trial balance', path: '/rpt/trial-balance', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Income statement', path: '/rpt/income-statement', permission: 'rpt.books.view' },

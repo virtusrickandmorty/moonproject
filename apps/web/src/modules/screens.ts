@@ -44,6 +44,7 @@ import { StatMonthPage, StatMonths, remittanceView } from './STAT/Statutory.tsx'
 import { RemittanceForm } from './STAT/RemittanceForm.tsx';
 import { OpeningStatForm } from './STAT/OpeningStatForm.tsx';
 import { GeneralJournal, GeneralLedger, TrialBalance } from './RPT/Books.tsx';
+import { BirBooks } from './RPT/BirBooks.tsx';
 import { BalanceSheet, IncomeStatement } from './RPT/Statements.tsx';
 import { ArAging, CustomerStatement } from './RPT/Receivables.tsx';
 import { DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
@@ -152,6 +153,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/booklets/new': RegisterBooklet,
   '/tax/booklets/:id': BookletPage,
   '/rpt/journal': GeneralJournal,
+  '/rpt/bir-books': BirBooks,
   '/rpt/ledger': GeneralLedger,
   '/rpt/trial-balance': TrialBalance,
   '/rpt/income-statement': IncomeStatement,
