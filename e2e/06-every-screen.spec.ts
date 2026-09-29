@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { SCREENS } from '../apps/web/src/shell/menu';
 import { openWork, signInApi } from './practice-work';
 
 interface Who { role: string; username: string; name: string }
@@ -154,7 +155,9 @@ async function pickFirst(input: Locator) {
 async function fillIn(page: Page, today: string): Promise<string[]> {
   const main = page.locator('main');
   const asksForId: string[] = [];
+  const sides: Record<string, number> = {};
   for (let pass = 0; pass < 4; pass++) {
+    for (const k of Object.keys(sides)) sides[k] = 0;
     for (const select of await main.locator('select:visible').all()) {
       if ((await select.isDisabled()) || (await select.inputValue()) !== '') continue;
       const values = await select.locator('option').evaluateAll((os) => (os as HTMLOptionElement[]).filter((o) => !o.disabled && o.value !== '').map((o) => o.value));
@@ -173,7 +176,13 @@ async function fillIn(page: Page, today: string): Promise<string[]> {
       });
       if (info.off || ['checkbox', 'radio', 'file', 'hidden', 'password', 'button', 'search'].includes(info.type)) continue;
       if (/(^|\s)(id|uuid)(\s|$)|\bid\b\)?$/i.test(info.label) || /^[0-9a-f]{8}-/.test(info.value)) asksForId.push(info.label);
-      if (info.value !== '' || /owed to the supplier|financed by a lender/i.test(info.label)) continue; // optional shares of a payment stay empty
+      let wrongSide = false;
+      if (info.hint === 'Debit' || info.hint === 'Credit') { // a journal line has one or the other: the first line a debit, the second a credit
+        const seen = (sides[info.hint] = (sides[info.hint] ?? 0) + 1);
+        wrongSide = info.hint === 'Debit' ? seen !== 1 : seen !== 2;
+      }
+      if (wrongSide || info.value !== '' || /owed to the supplier|financed by a lender/i.test(info.label)) continue; // optional shares of a payment stay empty
+      if (/^[1-9]\d*\.\d\d$/.test(info.hint)) continue; // the amount the server suggests: changing it would ask for a reason
       if (isSearch(info.hint) || isSearch(info.label)) await pickFirst(input);
       else await input.fill(info.type === 'date' ? today : typedFor(info.label || info.hint, info.type, info.mode));
     }
@@ -201,7 +210,6 @@ async function checkNewForm(page: Page, href: string, today: string, take: () =>
   await page.goto(href);
   const opened = [...(await trouble(page)).filter((p) => !STATE_OF_THE_BOOKS.test(p)), ...take()];
   if (opened.length) return opened;
-  if (process.env.E2E_DUMP) console.log(href, '\n', await page.locator('main').evaluate((m) => [...m.querySelectorAll('h1,h2,label,input,select,textarea,button,[role=radio]')].map((el) => { const e = el as HTMLInputElement; return `${el.tagName.toLowerCase()}${e.type ? '[' + e.type + ']' : ''} ${(e.labels?.[0]?.textContent ?? el.getAttribute('aria-label') ?? el.textContent ?? '').trim().slice(0, 60)}${e.placeholder ? ' ph=' + e.placeholder : ''}${e.disabled ? ' DISABLED' : ''}`; }).join('\n'))); // TEMP
   const problems = (await fillIn(page, today)).map((label) => `asks for an id: "${label}"`);
   await page.waitForTimeout(600); // the live totals
   let { refused, dialog } = await openPreview(page);
@@ -217,6 +225,7 @@ async function checkNewForm(page: Page, href: string, today: string, take: () =>
   }
   if (!(await dialog.count())) {
     const said = (await page.locator('main').locator('.text-red-700, .text-red-800, [role=alert]').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+    if (said.some((t) => /cut-over date/.test(t))) return problems; // an opening form says the cut-over date comes first
     return [...problems, `no preview${said.length ? `: ${said.join(' | ')}` : ''}`];
   }
   // The preview is there. What it says about the made-up figures typed in (a payment that does not match its bills) is the server's rule, not the screen's.
@@ -239,8 +248,15 @@ for (const who of ROLES) {
     const note = (where: string, lines: string[]) => lines.forEach((l) => report.push(`${where}: ${l}`));
 
     const links = await menuLinks(page);
+    // A role sees no menu item for a screen it has no permission for: each one it sees is checked against what the server says it may do.
+    const me = await page.evaluate(() => fetch('/api/auth/me').then((r) => r.json() as Promise<{ permissions: string[] }>));
+    for (const item of SCREENS) {
+      const shown = links.some((l) => l.href === item.path);
+      if (shown && item.permission && !me.permissions.includes(item.permission)) note(`${item.label} (${item.path})`, [`shown, but ${who.role} lacks ${item.permission}`]);
+    }
+
     console.log(`${who.role} sees ${links.length} menu items`);
-    for (const link of process.env.E2E_SKIP_MENU ? [] : links) { // TEMP
+    for (const link of links) {
       await page.locator(`nav a[href="${link.href}"]`).click();
       note(`${link.label} (${link.href})`, [...(await trouble(page)), ...seen.take()]);
     }
@@ -250,7 +266,7 @@ for (const who of ROLES) {
     const forms = await newForms(page);
     console.log(`${who.role} is offered ${forms.length} New forms`);
     const today = (await (await page.request.get('/api/health')).json() as { serverTime: string }).serverTime.slice(0, 10);
-    for (const form of forms.filter((f) => !process.env.E2E_ONLY || process.env.E2E_ONLY.split(',').includes(f.href))) { // TEMP
+    for (const form of forms) {
       const where = `New ${form.label} (${form.href})`;
       note(where, await checkNewForm(page, form.href, today, seen.take).catch((e: Error) => [`the test could not go on: ${e.message.split('\n')[0]}`]));
     }

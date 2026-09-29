@@ -10,5 +10,7 @@ button names), never by CSS classes. The specs share one shop and run in file or
 - `04-payroll`: an employee, a week of attendance, the run, its release, the payslip.
 - `05-backups`: recovery keys, back up now, restore drill.
 
+- `06-every-screen`: runs on the practice shop's made-up data (`serve-practice.ts`, its own server on `E2E_PRACTICE_PORT`, 3198; `practice-work.ts` adds the open work a trainee would start with). Each default role (owner, accountant, encoder, production, tv) signs in and opens every menu item: no error message, no blank page, no console error, no 403, 404 or 500. Then each "+ New" form is filled from what the screen offers (no id to type) and pressed Record until its preview opens. It also checks the role sees no menu item it lacks the permission for.
+
 First time on a PC: `npx playwright install chromium`. Where Chromium is already installed, point `E2E_CHROMIUM` at it.
 `E2E_PORT` changes the port (3199).
