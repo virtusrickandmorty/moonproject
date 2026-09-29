@@ -1,33 +1,62 @@
 /** PRD contract for other modules (RATE, PAY, DASH, RPT). Callers check their own route permission. */
-import { conflict } from '@moonproject/shared';
-import type { Db } from '../../platform/db/driver.ts';
+import { conflict } from "@moonproject/shared";
+import type { Db } from "../../platform/db/driver.ts";
 
-export { COMPLEXITIES, listSteps, stepById, type Complexity, type Step } from './production.ts';
-export { board } from './production.ts';
-import { lineRoute } from './production.ts';
+export {
+  COMPLEXITIES,
+  listSteps,
+  stepById,
+  type Complexity,
+  type Step,
+} from "./production.ts";
+export { board } from "./production.ts";
+import { lineRoute } from "./production.ts";
 
 /** Current route names and status for a production job ticket. */
 export function jobTicketRoute(db: Db, jobOrderId: string, lineNo: number) {
-  return lineRoute(db, jobOrderId, lineNo)?.map(({ name, status }) => ({ name, status })) ?? [];
+  return (
+    lineRoute(db, jobOrderId, lineNo)?.map(({ name, status }) => ({
+      name,
+      status,
+    })) ?? []
+  );
 }
 
 /** Recorded (not cancelled) production entries of one job order, e.g. to block cancelling an opening job order (JO). */
-export function entriesOf(db: Db, jobOrderId: string): { id: string; number: string }[] {
+export function entriesOf(
+  db: Db,
+  jobOrderId: string,
+): { id: string; number: string }[] {
   return db
-    .prepare(`SELECT d.id, d.number FROM prd_entries e JOIN documents d ON d.id = e.document_id WHERE e.job_order_id = ? AND d.status = 'posted' ORDER BY d.number`)
+    .prepare(
+      `SELECT d.id, d.number FROM prd_entries e JOIN documents d ON d.id = e.document_id WHERE e.job_order_id = ? AND d.status = 'posted' ORDER BY d.number`,
+    )
     .all(jobOrderId) as { id: string; number: string }[];
 }
 
 export interface UnpaidAssignment {
-  id: string; documentId: string; jobOrderId: string; lineNo: number; stepId: number; employeeId: string; workDate: string;
-  kind: 'work' | 'rework' | 'correction'; pieces: number; rateCents: number; amountCents: number;
+  id: string;
+  documentId: string;
+  jobOrderId: string;
+  lineNo: number;
+  stepId: number;
+  employeeId: string;
+  workDate: string;
+  kind: "work" | "rework" | "correction";
+  pieces: number;
+  rateCents: number;
+  amountCents: number;
 }
 
 /**
  * Piece work not paid yet, dated up to a day (F3 "piece assignments dated in the period and unpaid"): rows of recorded
  * entries with no payroll run line, corrections included. A row paid by a run (pay_run_line_id) is never listed again.
  */
-export function unpaidAssignments(db: Db, upTo: string, employeeId?: string): UnpaidAssignment[] {
+export function unpaidAssignments(
+  db: Db,
+  upTo: string,
+  employeeId?: string,
+): UnpaidAssignment[] {
   return db
     .prepare(
       `SELECT a.id, a.document_id AS documentId, a.job_order_id AS jobOrderId, a.line_no AS lineNo, a.step_id AS stepId, a.employee_id AS employeeId,
@@ -43,7 +72,12 @@ export function unpaidAssignments(db: Db, upTo: string, employeeId?: string): Un
  * Piece earnings per day of one worker, paid or not (work and rework of recorded entries; corrections are left out,
  * since they fix an earlier day). PAY averages them for a piece worker's regular-holiday pay (F1).
  */
-export function pieceEarningsByDay(db: Db, employeeId: string, from: string, to: string): { date: string; amountCents: number }[] {
+export function pieceEarningsByDay(
+  db: Db,
+  employeeId: string,
+  from: string,
+  to: string,
+): { date: string; amountCents: number }[] {
   return db
     .prepare(
       `SELECT a.work_date AS date, SUM(a.amount_cents) AS amountCents FROM prd_assignments a JOIN documents d ON d.id = a.document_id
@@ -56,23 +90,44 @@ export function pieceEarningsByDay(db: Db, employeeId: string, from: string, to:
  * PAY's one write into PRD (F3 "paid once"): a payroll run line pays one assignment row. Only a row still unpaid can be
  * marked, and the unique index on pay_run_line_id keeps a run line to one row.
  */
-export function markAssignmentPaid(db: Db, assignmentId: string, payRunLineId: string): void {
-  const r = db.prepare('UPDATE prd_assignments SET pay_run_line_id = ? WHERE id = ? AND pay_run_line_id IS NULL').run(payRunLineId, assignmentId);
-  if (r.changes !== 1) throw conflict('ALREADY_PAID', 'Some of these pieces were paid by another payroll meanwhile. Work the payroll out again.');
+export function markAssignmentPaid(
+  db: Db,
+  assignmentId: string,
+  payRunLineId: string,
+): void {
+  const r = db
+    .prepare(
+      "UPDATE prd_assignments SET pay_run_line_id = ? WHERE id = ? AND pay_run_line_id IS NULL",
+    )
+    .run(payRunLineId, assignmentId);
+  if (r.changes !== 1)
+    throw conflict(
+      "ALREADY_PAID",
+      "Some of these pieces were paid by another payroll meanwhile. Work the payroll out again.",
+    );
 }
 
 /** Cancelling a payroll run makes the rows its lines paid unpaid again, for the next run (D6, F3). */
-export function clearAssignmentsPaidBy(db: Db, payRunLineIds: string[]): number {
-  const clear = db.prepare('UPDATE prd_assignments SET pay_run_line_id = NULL WHERE pay_run_line_id = ?');
+export function clearAssignmentsPaidBy(
+  db: Db,
+  payRunLineIds: string[],
+): number {
+  const clear = db.prepare(
+    "UPDATE prd_assignments SET pay_run_line_id = NULL WHERE pay_run_line_id = ?",
+  );
   return payRunLineIds.reduce((n, id) => n + clear.run(id).changes, 0);
 }
 
 /** Recorded production assignment snapshots for read-only operational reports. */
 export function productionReportRows(db: Db, from: string, to: string) {
-  return db.prepare(`SELECT a.document_id AS documentId,d.number,a.job_order_id AS jobOrderId,j.number AS jobOrderNumber,
+  return db
+    .prepare(
+      `SELECT a.document_id AS documentId,d.number,a.job_order_id AS jobOrderId,j.number AS jobOrderNumber,
     a.line_no AS lineNo,a.step_id AS stepId,s.code AS stepCode,s.name AS stepName,a.employee_id AS employeeId,
     a.work_date AS workDate,a.kind,a.pieces,a.amount_cents AS amountCents
     FROM prd_assignments a JOIN documents d ON d.id=a.document_id JOIN documents j ON j.id=a.job_order_id
     JOIN prd_steps s ON s.id=a.step_id WHERE d.status='posted' AND a.work_date BETWEEN ? AND ?
-    ORDER BY a.work_date,d.number,a.row_no`).all(from,to) as Array<Record<string, string | number>>;
+    ORDER BY a.work_date,d.number,a.row_no`,
+    )
+    .all(from, to) as Array<Record<string, string | number>>;
 }

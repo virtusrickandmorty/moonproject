@@ -1,8 +1,126 @@
-import type { Db } from '../../platform/db/driver.ts';
-import { releasesAwaitingInvoice } from '../JO/public.ts';
-import { cashReportData } from '../CASH/public.ts';
-import { monthlyMiscException } from '../EXP/public.ts';
-export function lateEntries(db:Db){return {rows:db.prepare(`SELECT d.id,d.number,d.doc_type AS docType,d.business_date AS businessDate,d.posted_at AS madeAt,d.summary FROM documents d WHERE d.doc_type IN ('acc.jv','acc.opening') AND d.business_date<date(d.posted_at,'+8 hours') ORDER BY d.posted_at DESC`).all().map((r:any)=>({...r,documentPath:`/docs/${r.docType}/${r.id}`}))};}
-export function cancellations(db:Db){return {rows:db.prepare(`SELECT id,number,doc_type AS docType,business_date AS businessDate,cancelled_at AS cancelledAt,cancel_reason AS reason,replaced_by_id AS replacementId FROM documents WHERE status='cancelled' ORDER BY cancelled_at DESC`).all().map((r:any)=>({...r,documentPath:`/docs/${r.docType}/${r.id}`,replacementPath:r.replacementId?`/docs/${r.docType}/${r.replacementId}`:null}))};}
-export function exceptions(db:Db,asOf:string){const rows:any[]=[];for(const r of releasesAwaitingInvoice(db,asOf))rows.push({kind:'Released without invoice record',detail:r.number,amountCents:r.releasedCents,documentPath:`/docs/jo.release/${r.id}`});for(const r of cashReportData(db,asOf).filter(x=>x.balanceCents<0))rows.push({kind:'Cash place below zero',detail:r.name,amountCents:r.balanceCents,documentPath:'/cash/accounts'});for(const r of db.prepare(`SELECT id,doc_type AS docType,updated_at AS updatedAt FROM drafts WHERE status='open' AND date(updated_at,'+8 hours')<date(?,'-3 days')`).all(asOf) as any[])rows.push({kind:'Draft older than 3 days',detail:r.updatedAt,amountCents:null,documentPath:`/docs/${r.docType}/drafts/${r.id}`});const spend=monthlyMiscException(db,asOf.slice(0,7));if((spend.miscCents??0)*10>(spend.totalCents??0))rows.push({kind:'Misc expenses above 10%',detail:asOf.slice(0,7),amountCents:spend.miscCents,documentPath:'/rpt/purchases'});return {asOf,rows};}
-export function signIns(db:Db,from:string,to:string){return {from,to,rows:db.prepare(`SELECT l.at,l.username,l.success,l.ip FROM login_attempts l WHERE date(l.at,'+8 hours') BETWEEN ? AND ? ORDER BY l.at DESC`).all(from,to)};}
+import type { Db } from "../../platform/db/driver.ts";
+import { releasesAwaitingInvoice } from "../JO/public.ts";
+import { cashReportData } from "../CASH/public.ts";
+import { monthlyMiscException } from "../EXP/public.ts";
+
+interface LateEntryRow {
+  id: string;
+  number: string;
+  docType: string;
+  businessDate: string;
+  madeAt: string;
+  summary: string;
+}
+
+interface CancellationRow {
+  id: string;
+  number: string;
+  docType: string;
+  businessDate: string;
+  cancelledAt: string;
+  reason: string;
+  replacementId: string | null;
+}
+
+interface ExceptionRow {
+  kind: string;
+  detail: string;
+  amountCents: number | null;
+  documentPath: string;
+}
+
+interface StaleDraftRow {
+  id: string;
+  docType: string;
+  updatedAt: string;
+}
+
+export interface SignInRow {
+  at: string;
+  username: string;
+  success: number;
+  ip: string;
+}
+/** Backdated accounting entries, compared with each document's recorded timestamp. */
+export function lateEntries(db: Db) {
+  return {
+    rows: (
+      db
+        .prepare(
+          `SELECT d.id,d.number,d.doc_type AS docType,d.business_date AS businessDate,d.posted_at AS madeAt,d.summary FROM documents d WHERE d.doc_type IN ('acc.jv','acc.opening') AND d.business_date<date(d.posted_at,'+8 hours') ORDER BY d.posted_at DESC`,
+        )
+        .all() as LateEntryRow[]
+    ).map((row) => ({
+      ...row,
+      documentPath: `/docs/${row.docType}/${row.id}`,
+    })),
+  };
+}
+/** Cancelled documents and replacement links, read from immutable document headers. */
+export function cancellations(db: Db) {
+  return {
+    rows: (
+      db
+        .prepare(
+          `SELECT id,number,doc_type AS docType,business_date AS businessDate,cancelled_at AS cancelledAt,cancel_reason AS reason,replaced_by_id AS replacementId FROM documents WHERE status='cancelled' ORDER BY cancelled_at DESC`,
+        )
+        .all() as CancellationRow[]
+    ).map((row) => ({
+      ...row,
+      documentPath: `/docs/${row.docType}/${row.id}`,
+      replacementPath: row.replacementId
+        ? `/docs/${row.docType}/${row.replacementId}`
+        : null,
+    })),
+  };
+}
+/** Operational exceptions assembled from posted JOs, cash ledger balances, drafts and expenses. */
+export function exceptions(db: Db, asOf: string) {
+  const rows: ExceptionRow[] = [];
+  for (const r of releasesAwaitingInvoice(db, asOf))
+    rows.push({
+      kind: "Released without invoice record",
+      detail: r.number,
+      amountCents: r.releasedCents,
+      documentPath: `/docs/jo.release/${r.id}`,
+    });
+  for (const r of cashReportData(db, asOf).filter((x) => x.balanceCents < 0))
+    rows.push({
+      kind: "Cash place below zero",
+      detail: r.name,
+      amountCents: r.balanceCents,
+      documentPath: "/cash/accounts",
+    });
+  for (const r of db
+    .prepare(
+      `SELECT id,doc_type AS docType,updated_at AS updatedAt FROM drafts WHERE status='open' AND date(updated_at,'+8 hours')<date(?,'-3 days')`,
+    )
+    .all(asOf) as StaleDraftRow[])
+    rows.push({
+      kind: "Draft older than 3 days",
+      detail: r.updatedAt,
+      amountCents: null,
+      documentPath: `/docs/${r.docType}/drafts/${r.id}`,
+    });
+  const spend = monthlyMiscException(db, asOf.slice(0, 7));
+  if ((spend.miscCents ?? 0) * 10 > (spend.totalCents ?? 0))
+    rows.push({
+      kind: "Misc expenses above 10%",
+      detail: asOf.slice(0, 7),
+      amountCents: spend.miscCents,
+      documentPath: "/rpt/purchases",
+    });
+  return { asOf, rows };
+}
+/** Successful and failed sign-ins from the security login-attempt log. */
+export function signIns(db: Db, from: string, to: string) {
+  return {
+    from,
+    to,
+    rows: db
+      .prepare(
+        `SELECT l.at,l.username,l.success,l.ip FROM login_attempts l WHERE date(l.at,'+8 hours') BETWEEN ? AND ? ORDER BY l.at DESC`,
+      )
+      .all(from, to) as SignInRow[],
+  };
+}

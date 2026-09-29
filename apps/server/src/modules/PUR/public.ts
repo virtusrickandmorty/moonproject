@@ -1,47 +1,125 @@
 /** What other modules may read from PUR (read-only): suppliers, supplies and receiving reports. */
-import type { Db } from '../../platform/db/driver.ts';
-import type { EwtClass } from '../../engine/settings.ts';
+import type { Db } from "../../platform/db/driver.ts";
+import type { EwtClass } from "../../engine/settings.ts";
 
 export interface Supplier {
-  id: string; name: string; tin: string | null; isVatRegistered: boolean; ewtClass: EwtClass | null; paymentTermsDays: number | null; isActive: boolean;
+  id: string;
+  name: string;
+  tin: string | null;
+  isVatRegistered: boolean;
+  ewtClass: EwtClass | null;
+  paymentTermsDays: number | null;
+  isActive: boolean;
 }
 
 export function supplier(db: Db, id: string): Supplier | undefined {
-  const r = db.prepare('SELECT id, name, tin, is_vat_registered, ewt_class, payment_terms_days, is_active FROM pur_suppliers WHERE id = ?').get(id) as
-    | { id: string; name: string; tin: string | null; is_vat_registered: number; ewt_class: EwtClass | null; payment_terms_days: number | null; is_active: number }
+  const r = db
+    .prepare(
+      "SELECT id, name, tin, is_vat_registered, ewt_class, payment_terms_days, is_active FROM pur_suppliers WHERE id = ?",
+    )
+    .get(id) as
+    | {
+        id: string;
+        name: string;
+        tin: string | null;
+        is_vat_registered: number;
+        ewt_class: EwtClass | null;
+        payment_terms_days: number | null;
+        is_active: number;
+      }
     | undefined;
-  return r && {
-    id: r.id, name: r.name, tin: r.tin, isVatRegistered: r.is_vat_registered === 1, ewtClass: r.ewt_class, paymentTermsDays: r.payment_terms_days, isActive: r.is_active === 1,
-  };
+  return (
+    r && {
+      id: r.id,
+      name: r.name,
+      tin: r.tin,
+      isVatRegistered: r.is_vat_registered === 1,
+      ewtClass: r.ewt_class,
+      paymentTermsDays: r.payment_terms_days,
+      isActive: r.is_active === 1,
+    }
+  );
 }
 
 /** The name and TIN a supplier is registered with at the BIR, for the tax registers and the 2307 (read-only). */
-export function supplierTaxInfo(db: Db, id: string): { registeredName: string; tin: string | null } | undefined {
-  return db.prepare('SELECT registered_name AS registeredName, tin FROM pur_suppliers WHERE id = ?').get(id) as { registeredName: string; tin: string | null } | undefined;
+export function supplierTaxInfo(
+  db: Db,
+  id: string,
+): { registeredName: string; tin: string | null } | undefined {
+  return db
+    .prepare(
+      "SELECT registered_name AS registeredName, tin FROM pur_suppliers WHERE id = ?",
+    )
+    .get(id) as { registeredName: string; tin: string | null } | undefined;
 }
 
-export const activeSupplierIds = (db: Db): string[] => db.prepare('SELECT id FROM pur_suppliers WHERE is_active = 1 ORDER BY id').pluck().all() as string[];
+export const activeSupplierIds = (db: Db): string[] =>
+  db
+    .prepare("SELECT id FROM pur_suppliers WHERE is_active = 1 ORDER BY id")
+    .pluck()
+    .all() as string[];
 
-export function searchSuppliers(db: Db, query: string, limit = 20): { id: string; name: string }[] {
-  return db.prepare('SELECT id, name FROM pur_suppliers WHERE name LIKE ? COLLATE NOCASE ORDER BY name LIMIT ?')
+export function searchSuppliers(
+  db: Db,
+  query: string,
+  limit = 20,
+): { id: string; name: string }[] {
+  return db
+    .prepare(
+      "SELECT id, name FROM pur_suppliers WHERE name LIKE ? COLLATE NOCASE ORDER BY name LIMIT ?",
+    )
     .all(`%${query}%`, limit) as { id: string; name: string }[];
 }
 
-export interface Supply { id: string; name: string; category: 'materials' | 'ready_made'; isActive: boolean }
-
-export function supply(db: Db, id: string): Supply | undefined {
-  const r = db.prepare('SELECT id, name, category, is_active FROM pur_supplies WHERE id = ?').get(id) as
-    | { id: string; name: string; category: Supply['category']; is_active: number }
-    | undefined;
-  return r && { id: r.id, name: r.name, category: r.category, isActive: r.is_active === 1 };
+export interface Supply {
+  id: string;
+  name: string;
+  category: "materials" | "ready_made";
+  isActive: boolean;
 }
 
-export const activeSupplyIds = (db: Db): string[] => db.prepare('SELECT id FROM pur_supplies WHERE is_active = 1 ORDER BY id').pluck().all() as string[];
+export function supply(db: Db, id: string): Supply | undefined {
+  const r = db
+    .prepare(
+      "SELECT id, name, category, is_active FROM pur_supplies WHERE id = ?",
+    )
+    .get(id) as
+    | {
+        id: string;
+        name: string;
+        category: Supply["category"];
+        is_active: number;
+      }
+    | undefined;
+  return (
+    r && {
+      id: r.id,
+      name: r.name,
+      category: r.category,
+      isActive: r.is_active === 1,
+    }
+  );
+}
+
+export const activeSupplyIds = (db: Db): string[] =>
+  db
+    .prepare("SELECT id FROM pur_supplies WHERE is_active = 1 ORDER BY id")
+    .pluck()
+    .all() as string[];
 
 /** A receiving report (RR-) with the supplier of its purchase order. */
-export interface ReceivingReport { id: string; number: string; status: 'posted' | 'cancelled'; supplierId: string; poNumber: string }
+export interface ReceivingReport {
+  id: string;
+  number: string;
+  status: "posted" | "cancelled";
+  supplierId: string;
+  poNumber: string;
+}
 
-export function receivingReport(db: Db, id: string): ReceivingReport | undefined {
+export function receivingReport(
+  db: Db,
+  id: string,
+): ReceivingReport | undefined {
   return db
     .prepare(
       `SELECT d.id, d.number, d.status, po.supplier_id AS supplierId, pd.number AS poNumber FROM pur_receiving_reports r
@@ -52,51 +130,111 @@ export function receivingReport(db: Db, id: string): ReceivingReport | undefined
 }
 
 /** A purchase order (PO-) and its supplier, for a supplier advance paid on it (AP, read-only). */
-export interface PurchaseOrderRef { id: string; number: string; status: 'posted' | 'cancelled'; supplierId: string }
+export interface PurchaseOrderRef {
+  id: string;
+  number: string;
+  status: "posted" | "cancelled";
+  supplierId: string;
+}
 
-export function purchaseOrder(db: Db, id: string): PurchaseOrderRef | undefined {
+export function purchaseOrder(
+  db: Db,
+  id: string,
+): PurchaseOrderRef | undefined {
   return db
-    .prepare('SELECT d.id, d.number, d.status, po.supplier_id AS supplierId FROM pur_purchase_orders po JOIN documents d ON d.id = po.document_id WHERE po.document_id = ?')
+    .prepare(
+      "SELECT d.id, d.number, d.status, po.supplier_id AS supplierId FROM pur_purchase_orders po JOIN documents d ON d.id = po.document_id WHERE po.document_id = ?",
+    )
     .get(id) as PurchaseOrderRef | undefined;
 }
 
 /** Read-only names for purchase order printouts. Callers enforce their own view permission. */
-export function purchaseOrderNames(db: Db, supplierId: string, supplyIds: string[]) {
-  const supplier = db.prepare('SELECT name, registered_name FROM pur_suppliers WHERE id = ?').get(supplierId) as
-    { name: string; registered_name: string } | undefined;
-  const supply = db.prepare('SELECT name, unit FROM pur_supplies WHERE id = ?');
+export function purchaseOrderNames(
+  db: Db,
+  supplierId: string,
+  supplyIds: string[],
+) {
+  const supplier = db
+    .prepare("SELECT name, registered_name FROM pur_suppliers WHERE id = ?")
+    .get(supplierId) as { name: string; registered_name: string } | undefined;
+  const supply = db.prepare("SELECT name, unit FROM pur_supplies WHERE id = ?");
   return {
-    supplierName: supplier?.registered_name || supplier?.name || 'Unknown supplier',
-    supplies: Object.fromEntries(supplyIds.map((id) => [id, supply.get(id) as { name: string; unit: string } | undefined])),
+    supplierName:
+      supplier?.registered_name || supplier?.name || "Unknown supplier",
+    supplies: Object.fromEntries(
+      supplyIds.map((id) => [
+        id,
+        supply.get(id) as { name: string; unit: string } | undefined,
+      ]),
+    ),
   };
 }
 
 /** The units supplies are bought and counted in (pur_supplies.unit). */
-export type SupplyUnit = 'yard' | 'meter' | 'kg' | 'roll' | 'pc';
+export type SupplyUnit = "yard" | "meter" | "kg" | "roll" | "pc";
 
 /** A supply as the inventory count needs it: its unit and the last purchase cost kept on the catalogue (read-only). */
-export interface CountableSupply extends Supply { unit: SupplyUnit; lastPurchaseCostCents: number }
+export interface CountableSupply extends Supply {
+  unit: SupplyUnit;
+  lastPurchaseCostCents: number;
+}
 
-type CountableRow = { id: string; name: string; category: Supply['category']; is_active: number; unit: SupplyUnit; last_purchase_cost_cents: number };
+type CountableRow = {
+  id: string;
+  name: string;
+  category: Supply["category"];
+  is_active: number;
+  unit: SupplyUnit;
+  last_purchase_cost_cents: number;
+};
 const countable = (r: CountableRow): CountableSupply => ({
-  id: r.id, name: r.name, category: r.category, isActive: r.is_active === 1, unit: r.unit, lastPurchaseCostCents: r.last_purchase_cost_cents,
+  id: r.id,
+  name: r.name,
+  category: r.category,
+  isActive: r.is_active === 1,
+  unit: r.unit,
+  lastPurchaseCostCents: r.last_purchase_cost_cents,
 });
-const COUNTABLE = 'SELECT id, name, category, is_active, unit, last_purchase_cost_cents FROM pur_supplies';
+const COUNTABLE =
+  "SELECT id, name, category, is_active, unit, last_purchase_cost_cents FROM pur_supplies";
 
-export function countableSupply(db: Db, id: string): CountableSupply | undefined {
-  const r = db.prepare(`${COUNTABLE} WHERE id = ?`).get(id) as CountableRow | undefined;
+export function countableSupply(
+  db: Db,
+  id: string,
+): CountableSupply | undefined {
+  const r = db.prepare(`${COUNTABLE} WHERE id = ?`).get(id) as
+    | CountableRow
+    | undefined;
   return r && countable(r);
 }
 
 /** Every active supply of one category, by name (the count sheet). */
-export const activeSuppliesOf = (db: Db, category: Supply['category']): CountableSupply[] =>
-  (db.prepare(`${COUNTABLE} WHERE is_active = 1 AND category = ? ORDER BY name, id`).all(category) as CountableRow[]).map(countable);
+export const activeSuppliesOf = (
+  db: Db,
+  category: Supply["category"],
+): CountableSupply[] =>
+  (
+    db
+      .prepare(
+        `${COUNTABLE} WHERE is_active = 1 AND category = ? ORDER BY name, id`,
+      )
+      .all(category) as CountableRow[]
+  ).map(countable);
 
 /** A unit cost and the purchase document it came from. */
-export interface PurchaseCost { unitCostCents: number; documentId: string; number: string; date: string }
+export interface PurchaseCost {
+  unitCostCents: number;
+  documentId: string;
+  number: string;
+  date: string;
+}
 
 /** The unit cost on the newest posted purchase order line for a supply, the order dated on or before `asOf` (read-only). */
-export function latestPoUnitCost(db: Db, supplyId: string, asOf: string): PurchaseCost | undefined {
+export function latestPoUnitCost(
+  db: Db,
+  supplyId: string,
+  asOf: string,
+): PurchaseCost | undefined {
   return db
     .prepare(
       `SELECT l.unit_cost_cents AS unitCostCents, d.id AS documentId, d.number, d.business_date AS date
@@ -108,7 +246,11 @@ export function latestPoUnitCost(db: Db, supplyId: string, asOf: string): Purcha
 }
 
 /** How much of a supply one receiving report received, in the purchase order's units (read-only). */
-export const receivedQty = (db: Db, receivingReportId: string, supplyId: string): number =>
+export const receivedQty = (
+  db: Db,
+  receivingReportId: string,
+  supplyId: string,
+): number =>
   db
     .prepare(
       `SELECT COALESCE(SUM(r.qty), 0) FROM pur_rr_lines r JOIN pur_po_lines p ON p.document_id = r.po_document_id AND p.line_no = r.po_line_no
@@ -118,8 +260,30 @@ export const receivedQty = (db: Db, receivingReportId: string, supplyId: string)
     .get(receivingReportId, supplyId) as number;
 
 export function purchaseOrdersForReport(db: Db) {
-  return db.prepare(`SELECT d.id,d.number,d.business_date AS date,d.status,p.supplier_id AS supplierId,d.total_cents AS totalCents FROM pur_purchase_orders p JOIN documents d ON d.id=p.document_id ORDER BY d.business_date DESC,d.number`).all() as {id:string;number:string;date:string;status:string;supplierId:string;totalCents:number}[];
+  return db
+    .prepare(
+      `SELECT d.id,d.number,d.business_date AS date,d.status,p.supplier_id AS supplierId,d.total_cents AS totalCents FROM pur_purchase_orders p JOIN documents d ON d.id=p.document_id ORDER BY d.business_date DESC,d.number`,
+    )
+    .all() as {
+    id: string;
+    number: string;
+    date: string;
+    status: string;
+    supplierId: string;
+    totalCents: number;
+  }[];
 }
 export function receivedNotBilledForReport(db: Db) {
-  return db.prepare(`SELECT d.id,d.number,d.business_date AS date,p.supplier_id AS supplierId,pd.number AS poNumber,d.total_cents AS totalCents FROM pur_receiving_reports r JOIN documents d ON d.id=r.document_id JOIN pur_purchase_orders p ON p.document_id=r.po_document_id JOIN documents pd ON pd.id=p.document_id LEFT JOIN ap_bills b ON b.receiving_report_id=d.id LEFT JOIN documents bd ON bd.id=b.document_id AND bd.status='posted' WHERE d.status='posted' AND bd.id IS NULL ORDER BY d.business_date,d.number`).all() as {id:string;number:string;date:string;supplierId:string;poNumber:string;totalCents:number}[];
+  return db
+    .prepare(
+      `SELECT d.id,d.number,d.business_date AS date,p.supplier_id AS supplierId,pd.number AS poNumber,d.total_cents AS totalCents FROM pur_receiving_reports r JOIN documents d ON d.id=r.document_id JOIN pur_purchase_orders p ON p.document_id=r.po_document_id JOIN documents pd ON pd.id=p.document_id LEFT JOIN ap_bills b ON b.receiving_report_id=d.id LEFT JOIN documents bd ON bd.id=b.document_id AND bd.status='posted' WHERE d.status='posted' AND bd.id IS NULL ORDER BY d.business_date,d.number`,
+    )
+    .all() as {
+    id: string;
+    number: string;
+    date: string;
+    supplierId: string;
+    poNumber: string;
+    totalCents: number;
+  }[];
 }
