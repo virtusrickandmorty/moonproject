@@ -4,7 +4,7 @@ import type { MigRow } from '../../api.ts';
 import { Button, Field, Notice, ReasonDialog, inputClass, useAction } from '../../components/ui.tsx';
 import {
   STATUS_FILTERS, countsAddUp, countsWords, filterCount, filterRows, fixBody, fixFieldsOf, fixStart, issueWords, mergeCandidates, rowButtons, rowFields,
-  rowStatusWords, rowTitle, rowTypeWords, type RowCounts, type StatusFilter,
+  rowStatusWords, sheetNotes, rowTitle, rowTypeWords, type RowCounts, type StatusFilter,
 } from './importer.ts';
 
 export interface RowDoers {
@@ -35,7 +35,14 @@ function FixForm({ row, onSave, onClose }: { row: MigRow; onSave: (manualData: R
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {fixFieldsOf(row).map((f) => (
           <Field key={f.key} label={f.label} hint={f.hint}>
-            <input className={inputClass} inputMode={f.kind === 'text' ? undefined : 'decimal'} value={edits[f.key] ?? ''} onChange={(e) => setEdits({ ...edits, [f.key]: e.target.value })} />
+            {f.kind === 'choice' ? (
+              <select className={inputClass} value={edits[f.key] ?? ''} onChange={(e) => setEdits({ ...edits, [f.key]: e.target.value })}>
+                <option value="">Choose…</option>
+                {f.choices?.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            ) : (
+              <input className={inputClass} inputMode={f.kind === 'text' ? undefined : 'decimal'} value={edits[f.key] ?? ''} onChange={(e) => setEdits({ ...edits, [f.key]: e.target.value })} />
+            )}
           </Field>
         ))}
       </div>
@@ -130,6 +137,7 @@ export function Review({ rows, filter, onFilter, reasons, doers, counts }: { row
         {countsAddUp(counts) ? countsWords(counts) : 'The counts do not add up. Reload the page.'} Showing {shown.length}.
       </p>
       <p className="text-xs text-slate-500">Rows with nothing wrong are not listed. They go in as they are, and the dry run counts them.</p>
+      {sheetNotes(rows).map((note) => <p key={note} className="text-sm text-slate-600">{note}</p>)}
       {shown.length === 0 ? <p className="text-sm text-slate-500">No rows here.</p> : (
         <ul className="space-y-2">{shown.map((r) => <RowCard key={r.id} row={r} all={rows} reason={reasons[r.id]} doers={doers} />)}</ul>
       )}

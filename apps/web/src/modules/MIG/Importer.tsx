@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { api, type Me, type MigUpload } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, manilaTime, useAction } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
-import { KINDS, fileProblem, isOpen, uploadRequest, uploadStatusWords, type MigKind } from './importer.ts';
+import { KINDS, SHEET_TABS, fileLooksLike, fileProblem, isOpen, sheetTabOf, headerOf, uploadRequest, uploadStatusWords, type MigKind } from './importer.ts';
 
 function UploadForm() {
   const [kind, setKind] = useState<MigKind | ''>('');
@@ -17,7 +17,13 @@ function UploadForm() {
   const pick = async (f: File | undefined) => {
     setReadError('');
     if (!f) return setFile(null);
-    try { setFile({ name: f.name, csv: await f.text() }); } catch { setFile(null); setReadError('The file could not be read.'); }
+    try {
+      const csv = await f.text();
+      setFile({ name: f.name, csv });
+      // A tab downloaded from the old sheet says what it holds: pick it for the owner if nothing is picked yet.
+      const tab = sheetTabOf(headerOf(csv));
+      if (tab) setKind((k) => k || SHEET_TABS[tab].kind);
+    } catch { setFile(null); setReadError('The file could not be read.'); }
   };
   const submit = () => file && send.run(async () => {
     const r = await api.migUpload(file.name, uploadRequest(file.name, file.csv).csv);
@@ -26,7 +32,7 @@ function UploadForm() {
   const wanted = KINDS.find((k) => k.kind === kind);
   return (
     <Panel title="Upload a file from the old sheet">
-      <p className="text-sm text-slate-600">Save each tab of the old Google sheet as a CSV file and upload one file at a time. The rows are only staged: you review them before anything goes in.</p>
+      <p className="text-sm text-slate-600">Download each tab of the old Google sheet as a CSV file (File, Download, Comma-separated values) and upload one file at a time, as it is: no renaming of columns is needed. The rows are only staged: you review them before anything goes in.</p>
       <div className="max-w-xl space-y-3">
         <fieldset className="space-y-1 text-sm">
           <legend className="font-medium">What is in the file?</legend>
@@ -41,6 +47,7 @@ function UploadForm() {
           <input type="file" accept=".csv,text/csv" className={inputClass} onChange={(e) => void pick(e.target.files?.[0])} />
         </Field>
         {readError && <Notice>{readError}</Notice>}
+        {file && fileLooksLike(file.csv) && <p className="text-sm text-slate-700">This file looks like {fileLooksLike(file.csv)}.</p>}
         {file && problem && <Notice tone="warning">{problem}</Notice>}
         <Button tone="primary" disabled={!!problem || send.busy} onClick={() => void submit()}>{send.busy ? 'Uploading…' : 'Upload and stage the rows'}</Button>
         {send.error && <Notice>{send.error}</Notice>}

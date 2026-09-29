@@ -113,7 +113,7 @@ test('one failing row rolls back all creates, maps, and commit audit', async () 
   const owner = await env.as('owner');
   await owner.post('/api/auth/step-up', { password: PASSWORD });
   const upload = await owner.post('/api/mig/upload', { filename: 'buyers.csv',
-    csv: 'Legacy_ID,Customer_Name,Email\nC-201,Good Example,good@example.test\nC-202,Bad Example,not-an-email' });
+    csv: `Legacy_ID,Customer_Name,Email\nC-201,Good Example,good@example.test\nC-202,${'Long Example '.repeat(20)},bad@example.test` });
   const id = upload.json().uploadId as string;
   const dry = await owner.post(`/api/mig/uploads/${id}/dry-run`, {});
   expect(dry.statusCode).toBe(200);

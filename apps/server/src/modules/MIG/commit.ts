@@ -2,10 +2,10 @@ import { AppError } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { createCustomer, createGroup, createWearer, createMeasurement } from '../CUS/public.ts';
+import { addCustomerPhone, customerRef, createCustomer, createGroup, createWearer, createMeasurement } from '../CUS/public.ts';
 import { createEmployee, addPayProfile, type Who as EmployeeWho } from '../EMP/public.ts';
 import { addRate } from '../RATE/public.ts';
-import { measurementField, measurementTenths, rateFromPesos, validateRow } from './csv.ts';
+import { applyManual, measurementField, measurementNote, measurementTenths, sheetDate, sheetPhones, validateRow } from './csv.ts';
 
 type Kind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate';
 type Row = { id: string; upload_id: string; row_number: number; row_type: Kind; status: string;
@@ -22,30 +22,8 @@ const mapped = (db: Db, kind: Kind, legacyId: string): string | undefined =>
 const putMap = (db: Db, kind: Kind, legacyId: string, newId: string, uploadId: string): void => {
   db.prepare('INSERT INTO mig_legacy_map (legacy_kind,legacy_id,new_id,upload_id) VALUES (?,?,?,?)').run(kind, legacyId, newId, uploadId);
 };
-const rawFor = (row: Row): Record<string, string> => {
-  const raw = JSON.parse(row.raw_json) as Record<string, string>;
-  const manual = row.manual_data_json ? JSON.parse(row.manual_data_json) as Record<string, string | number> : {};
-  if (row.row_type === 'customer') {
-    if (manual.customerName) raw.Customer_Name = String(manual.customerName);
-    if (manual.registeredName) raw.Registered_Name = String(manual.registeredName);
-    if (manual.legacyId) raw.Legacy_ID = String(manual.legacyId);
-  } else if (row.row_type === 'measurement') {
-    if (manual.customerLegacyId) { raw.Customer_ID = String(manual.customerLegacyId); raw.Customer_Name = String(manual.customerLegacyId); raw.Source = 'ASSIGNED'; }
-    if (manual.groupLegacyId) { raw.Group_ID = String(manual.groupLegacyId); raw.Group_Name = String(manual.groupLegacyId); raw.Source = 'ASSIGNED'; }
-    for (const [key, value] of Object.entries(manual)) if (measurementField(key)) {
-      const oldKey = Object.keys(raw).find(k => measurementField(k) === key);
-      raw[oldKey ?? key] = String(value);
-    }
-  } else if (row.row_type === 'employee') {
-    if (manual.employeeName) raw.Employee_Name = String(manual.employeeName);
-    if (manual.rateCents !== undefined) raw.Daily_Rate = (Number(manual.rateCents) / 100).toFixed(2);
-  } else if (row.row_type === 'piece_rate') {
-    if (manual.garmentType) raw.Garment_Type = String(manual.garmentType);
-    if (manual.operation) raw.Operation = String(manual.operation);
-    if (manual.rateCents !== undefined) raw.Rate = (Number(manual.rateCents) / 100).toFixed(2);
-  }
-  return raw;
-};
+const rawFor = (row: Row): Record<string, string> => applyManual(row.row_type, JSON.parse(row.raw_json) as Record<string, string>,
+  row.manual_data_json ? JSON.parse(row.manual_data_json) as Record<string, string | number> : {});
 
 /** All module creates and map writes join this one immediate transaction. */
 export function commitUpload(db: Db, uploadId: string, expectedCellTenths: number, who: Who) {
@@ -91,13 +69,18 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
     for (const row of customerRows) {
       const raw = data.get(row.id)!;
       const legacyId = row.legacy_id ?? first(raw, 'Legacy_ID', 'Customer_ID');
-      const id = create(row, 'customer', legacyId, () => createCustomer(db, {
-        kind: first(raw, 'Kind').toLowerCase() === 'person' ? 'person' : 'organization',
-        displayName: first(raw, 'Customer_Name', 'Registered_Name'),
-        ...(first(raw, 'Registered_Name') ? { registeredName: first(raw, 'Registered_Name') } : {}),
-        ...(first(raw, 'TIN') ? { tin: first(raw, 'TIN') } : {}),
-        ...(first(raw, 'Email') ? { email: first(raw, 'Email') } : {}),
-      }, who, legacyId).id);
+      const id = create(row, 'customer', legacyId, () => {
+        const created = createCustomer(db, {
+          kind: first(raw, 'Kind').toLowerCase() === 'person' ? 'person' : 'organization',
+          displayName: first(raw, 'Customer_Name', 'Registered_Name'),
+          ...(first(raw, 'Registered_Name') ? { registeredName: first(raw, 'Registered_Name') } : {}),
+          ...(first(raw, 'TIN') ? { tin: first(raw, 'TIN') } : {}),
+          ...(first(raw, 'Email') ? { email: first(raw, 'Email') } : {}),
+          ...(first(raw, 'Billing_Address') ? { billingAddress: first(raw, 'Billing_Address') } : {}),
+        }, who, legacyId);
+        for (const phone of sheetPhones(first(raw, 'Phone'))) addCustomerPhone(db, created.id, phone, who);
+        return created.id;
+      });
       customerBySource.set(legacyId, id);
       customerBySource.set(first(raw, 'Customer_Name', 'Registered_Name').toLowerCase(), id);
     }
@@ -117,7 +100,8 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
       if (!customerId) error(`Row ${row.row_number} (measurement): customer ${sourceCustomer || '(missing)'} has no imported legacy mapping.`);
       const groupName = first(raw, 'Group_Name', 'Group');
       const groupKey = first(raw, 'Group_ID') || `${sourceCustomer}:${groupName.toLowerCase()}`;
-      const wearerName = first(raw, 'Wearer_Name', 'Person_Name', 'Full_Name', 'Name');
+      // The old sheet keeps sizes per customer: with no wearer named, the customer is the wearer.
+      const wearerName = first(raw, 'Wearer_Name', 'Person_Name', 'Full_Name', 'Name') || (customerId ? customerRef(db, customerId)?.display_name ?? '' : '');
       if (!wearerName) error(`Row ${row.row_number} (measurement): wearer name is missing.`);
       const wearerKey = first(raw, 'Wearer_ID', 'Person_ID') || `${sourceCustomer}:${groupKey}:${wearerName.toLowerCase()}`;
       return { row, raw, customerId: customerId!, groupName, groupKey, wearerName, wearerKey };
@@ -136,23 +120,25 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
         const field = measurementField(key);
         if (field) { const tenths = measurementTenths(value); if (tenths !== null) values[field.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())] = tenths / 10; }
       }
+      const remarks = measurementNote(raw);
       create(row, 'measurement', row.legacy_id ?? first(raw, 'Measurement_ID'), () => createMeasurement(db, wearerId,
-        { sizeMode: 'measured', unit: 'inch', values, reason: 'Imported legacy measurement revision' }, who).id);
+        { sizeMode: 'measured', unit: 'inch', values, ...(remarks ? { remarks } : {}), reason: 'Imported legacy measurement revision' }, who).id);
     }
     for (const row of active.filter(r => r.row_type === 'employee')) {
       const raw = data.get(row.id)!;
       const legacyId = row.legacy_id ?? first(raw, 'Employee_ID', 'Legacy_ID');
       create(row, 'employee', legacyId, () => {
         const centre = first(raw, 'Cost_Centre').toLowerCase() || 'production';
-        const e = createEmployee(db, { fullName: first(raw, 'Employee_Name'), costCentre: centre, hireDate: first(raw, 'Hire_Date') || who.today }, who);
+        const position = first(raw, 'Position');
+        const e = createEmployee(db, { fullName: first(raw, 'Employee_Name'), costCentre: centre,
+          hireDate: sheetDate(first(raw, 'Hire_Date')) ?? who.today, ...(position ? { position } : {}) }, who);
         const rate = row.rate_cents;
         const payType = first(raw, 'Pay_Type').toLowerCase() || (rate ? 'daily' : 'piece');
         const daily = payType === 'daily' || payType === 'mixed';
-        const monthlyRate = first(raw, 'Monthly_Rate');
         const group = first(raw, 'Pay_Group') || (payType === 'monthly' ? 'SEMI_MONTHLY' : daily ? 'SEMI_DAILY' : 'WEEKLY_PIECE');
         const workweek = Number(first(raw, 'Workweek_Days') || 6);
         addPayProfile(db, e.id, { effectiveFrom: e.hireDate, payType, ...(daily ? { dailyRateCents: rate } : {}),
-          ...(payType === 'monthly' ? { monthlyRateCents: rateFromPesos(monthlyRate) } : {}),
+          ...(payType === 'monthly' ? { monthlyRateCents: rate } : {}),
           payGroup: group, workweekDays: workweek, isMwe: ['1', 'true', 'yes'].includes(first(raw, 'Is_MWE').toLowerCase()),
           reason: 'Confirmed legacy import pay profile' }, who);
         return e.id;

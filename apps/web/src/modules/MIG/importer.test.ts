@@ -3,13 +3,13 @@ import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { PASSWORD, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
-import { measurementFields, rowTypeOf } from '../../../../server/src/modules/MIG/csv.ts';
+import { measurementFields, rowTypeOf, sheetTabOf as serverSheetTab } from '../../../../server/src/modules/MIG/csv.ts';
 import { createApi, type DryRunResult, type MigRow } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
 import {
   FIX_FIELDS, KINDS, MEASUREMENT_FIELDS, blockingIssues, canCommit, cellSumWords, cleanCsv, clearedWords, commitLines, commitRequest, countsAddUp, countsWords,
-  currentValue, dryRunAddsUp, dryRunChecks, dryRunLines, filterCount, filterRows, fileProblem, fixBody, fixStart, headerOf, isOpen, isSurvivor, issueWords, kindOfHeader,
-  measurementKey, mergeCandidates, reviewDone, rowButtons, rowCounts, rowStatusWords, rowTitle, startFilter, uploadRequest, uploadStatusWords,
+  currentValue, dryRunAddsUp, dryRunChecks, dryRunLines, filterCount, filterRows, fileLooksLike, fileProblem, fixBody, fixStart, headerOf, isOpen, isSurvivor, issueWords, kindOfHeader,
+  measurementKey, mergeCandidates, reviewDone, rowButtons, rowCounts, rowStatusWords, rowTitle, sheetNotes, sheetTabOf, startFilter, uploadRequest, uploadStatusWords,
 } from './importer.ts';
 
 const row = (r: Partial<MigRow> & { id: string }): MigRow => ({
@@ -48,6 +48,35 @@ describe('what the file holds', () => {
       'Moonproject cannot tell what this file holds from its first line. Piece rates need these columns: Garment_Type, Operation, Rate.');
   });
 
+  it('knows the old sheet\'s tabs as downloaded, says which tab a file looks like, and names the sheet\'s columns', () => {
+    const customers = 'Customer ID,Name,Email Address,Contact No.,Address,Date Encoded,Encoded By,Date Updated,Updated By\nC-1,Example Shop,,,,,,,';
+    const sizes = 'Size ID,Customer ID,Customer Name,Upper Size,Shoulder,Sleeve Height,Lower Size,Lower Length,Remarks,Date Encoded,Encoded By\nS-1,C-1,Example Shop,M,15.5,,,,,,';
+    const staff = 'Employee ID,Name,Date of Birth,Gender,Address,Contact No.,Job Title,Salary Category,Status,Date Employed\nE-1,Example Worker,,,,,,Daily,Active,2026-02-11';
+    for (const csv of [customers, sizes, staff, 'Legacy_ID,Customer_Name\nC1,x', 'Name,Address\nx,y']) {
+      const h = headerOf(csv);
+      expect(sheetTabOf(h)).toBe(serverSheetTab(h));
+      expect(kindOfHeader(h)).toBe(rowTypeOf(Object.fromEntries(h.map((k) => [k, '']))));
+    }
+    expect([customers, sizes, staff].map(fileLooksLike)).toEqual([
+      'the Customers tab of the old sheet', 'the Customer Sizes tab of the old sheet', 'the Employees tab of the old sheet']);
+    expect(fileLooksLike('Legacy_ID,Customer_Name\nC1,x')).toBeNull();
+    expect([fileProblem('customer', 'Customers.csv', customers), fileProblem('measurement', 'Sizes.csv', sizes), fileProblem('employee', 'Employees.csv', staff)])
+      .toEqual([null, null, null]);
+    expect(fileProblem('customer', 'Employees.csv', staff)).toBe('This file looks like the Employees tab of the old sheet, not customers. Pick Employees, or choose another file.');
+    expect(fileProblem('customer', 'x.csv', 'Foo,Bar\n1,2')).toContain('Customers tab as downloaded (Customer ID, Name, Email Address, Contact No., Address)');
+    expect(fileProblem('employee', 'x.csv', 'Foo,Bar\n1,2')).toContain('Employees tab as downloaded (Employee ID, Name, Job Title, Salary Category, Status, Date Employed)');
+    const worker = row({ id: 'e', rowType: 'employee', raw: { Sheet_Tab: 'Employees', Employee_Name: 'Example Worker' } });
+    expect(sheetNotes([worker]).join(' ')).toContain('Date of Birth, Gender, Address and Contact No. are not kept');
+    expect(sheetNotes([row({ id: 'c' })])).toEqual([]);
+    expect(issueWords('Employee status "Resigned" requires owner confirmation.')).toBe(
+      'The old sheet says this employee is "Resigned", not Active. Exclude the row to leave them out, or accept it to add them as working.');
+    expect(blockingIssues(['Employee status "Resigned" requires owner confirmation.', 'Salary Category is blank: choose the pay type.']))
+      .toEqual(['Salary Category is blank: choose the pay type.']);
+    expect(currentValue(row({ id: 'p', rowType: 'employee', raw: { Pay_Type: 'piece' } }), 'payType')).toBe('piece');
+    expect(fixBody(row({ id: 'q', rowType: 'employee', raw: {} }), { payType: 'monthly', rateCents: '18,000' }))
+      .toEqual({ ok: true, manualData: { payType: 'monthly', rateCents: 1800000 } });
+  });
+
   it('says where an upload stands', () => {
     expect(['staged', 'dry_run_passed', 'committed'].map((s) => uploadStatusWords(s as 'staged'))).toEqual(['Waiting for review', 'Waiting for review', 'Imported']);
     expect(isOpen({ status: 'staged' })).toBe(true);
@@ -60,7 +89,7 @@ describe('a row: status, problems and buttons', () => {
     expect(['needs_review', 'accepted', 'excluded', 'merged', 'valid'].map((s) => rowStatusWords(s as 'valid'))).toEqual(
       ['Needs review', 'Accepted', 'Excluded', 'Merged into another row', 'Nothing wrong']);
     expect(issueWords(dupIssue(7, 'abc-123'))).toBe('Possible duplicate of row 7. Merge the two, or leave one out.');
-    expect(issueWords('Employee rate or missing rate requires owner confirmation.')).toBe('The owner must confirm this employee\'s daily rate before it goes in.');
+    expect(issueWords('Employee rate or missing rate requires owner confirmation.')).toBe('The owner must confirm this employee\'s pay type and rate before it goes in.');
     expect(issueWords('Piece rate seed requires owner confirmation.')).toBe('The owner must confirm this piece rate before it goes in.');
     expect(issueWords('Customer is missing a legacy ID.')).toBe('Customer is missing a legacy ID.');
   });
@@ -134,7 +163,7 @@ describe('a fix', () => {
 
   it('starts from what the row has and sends only what was changed, in the server\'s names', () => {
     const c = mig('customer', { raw: { Customer_Name: 'Sample Buyer', Registered_Name: 'Sample Buyer Inc.' }, legacyId: null, issues: ['Customer is missing a legacy ID.'] });
-    expect(fixStart(c)).toEqual({ customerName: 'Sample Buyer', registeredName: 'Sample Buyer Inc.', legacyId: '' });
+    expect(fixStart(c)).toEqual({ customerName: 'Sample Buyer', registeredName: 'Sample Buyer Inc.', legacyId: '', email: '', phone: '' });
     expect(fixBody(c, { ...fixStart(c), legacyId: ' C13 ' })).toEqual({ ok: true, manualData: { legacyId: 'C13' } });
     expect(fixBody(c, { customerName: 'Sample Buyer Co.' })).toEqual({ ok: true, manualData: { customerName: 'Sample Buyer Co.' } });
     expect(fixBody(c, fixStart(c))).toEqual({ ok: false, message: 'Nothing was changed. Change a field, or go back and accept the row as it is.' });
@@ -142,10 +171,10 @@ describe('a fix', () => {
 
   it('turns pesos into centavos and refuses what the server would', () => {
     const e = mig('employee', { raw: { Employee_ID: 'E21', Employee_Name: 'Second Worker', Daily_Rate: 'abc' }, legacyId: 'E21', rateCents: null });
-    expect(fixStart(e)).toEqual({ employeeName: 'Second Worker', legacyId: 'E21', rateCents: '' });
+    expect(fixStart(e)).toEqual({ employeeName: 'Second Worker', legacyId: 'E21', payType: '', rateCents: '', hireDate: '' });
     expect(fixBody(e, { rateCents: '₱1,610.50' })).toEqual({ ok: true, manualData: { rateCents: 161050 } });
-    expect(fixBody(e, { rateCents: '610.555' })).toEqual({ ok: false, message: 'Daily rate (pesos): type a peso amount such as 650.50.' });
-    expect(fixBody(e, { rateCents: '-5' })).toEqual({ ok: false, message: 'Daily rate (pesos) cannot be negative.' });
+    expect(fixBody(e, { rateCents: '610.555' })).toEqual({ ok: false, message: 'Rate (pesos): type a peso amount such as 650.50.' });
+    expect(fixBody(e, { rateCents: '-5' })).toEqual({ ok: false, message: 'Rate (pesos) cannot be negative.' });
     const p = mig('piece_rate', { raw: { Garment_Type: 'Jersey', Operation: 'Hem', Rate: '15.25' }, rateCents: 1525 });
     expect(currentValue(p, 'rateCents')).toBe('15.25');
     expect(fixBody(p, { ...fixStart(p), rateCents: '15.25' })).toMatchObject({ ok: false });
@@ -193,7 +222,7 @@ describe('dry run and commit in words', () => {
     expect(cellSumWords(673)).toBe('67.3');
     expect(cellSumWords(5)).toBe('0.5');
     expect(dryRunChecks(dry).slice(0, 3)).toEqual([
-      ['Measurement cells add up to', '30,122.0'], ['Employee daily rates add up to', '₱1,211.00'], ['Piece rates add up to', '₱15.25'],
+      ['Measurement cells add up to', '30,122.0'], ['Employee rates add up to', '₱1,211.00'], ['Piece rates add up to', '₱15.25'],
     ]);
     expect(dryRunChecks(dry)[3]).toEqual(['Customers, fingerprint', 'aaaaaaaaaaaa']);
   });
@@ -331,9 +360,9 @@ describe('web client for the importer screens', () => {
     let rows = await owner.migReview(staff.uploadId);
     expect(rows.map((r) => rowButtons(r, rows).accept)).toEqual([true, false, true]); // E21 has a rate the server cannot read
     expect(rows.map((r) => r.issues.map(issueWords))).toEqual([
-      ['The owner must confirm this employee\'s daily rate before it goes in.'],
-      ['Daily rate must be a non-negative peso amount exact to the centavo.', 'The owner must confirm this employee\'s daily rate before it goes in.'],
-      ['The owner must confirm this employee\'s daily rate before it goes in.'],
+      ['The owner must confirm this employee\'s pay type and rate before it goes in.'],
+      ['Daily rate must be a non-negative peso amount exact to the centavo.', 'The owner must confirm this employee\'s pay type and rate before it goes in.'],
+      ['The owner must confirm this employee\'s pay type and rate before it goes in.'],
     ]);
     const [e20, e21, e22] = rows as [MigRow, MigRow, MigRow];
     await owner.migAccept(e20.id);
@@ -349,7 +378,7 @@ describe('web client for the importer screens', () => {
     const staffDry = await owner.migDryRun(staff.uploadId);
     expect(staffDry.counts).toMatchObject({ employees: 2, excluded: 1, total: 3 });
     expect(dryRunAddsUp(staffDry)).toBe(true);
-    expect(dryRunChecks(staffDry)[1]).toEqual(['Employee daily rates add up to', '₱1,211.00']);
+    expect(dryRunChecks(staffDry)[1]).toEqual(['Employee rates add up to', '₱1,211.00']);
 
     const sizes = await owner.migUpload('sizes.csv', 'Measurement_ID,Customer_Name,Source,Shoulder,Sleeve Height,Upper Waist,Chest\nM20,MANUAL,MANUAL,15.25,20.1,32.0,-');
     const [m20] = await owner.migReview(sizes.uploadId) as [MigRow];

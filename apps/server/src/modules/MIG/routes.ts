@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { AppError, formatPesos, newId } from '@moonproject/shared';
+import { AppError, isBusinessDate, newId } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
@@ -9,7 +9,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { requireStepUp } from '../../engine/security/sessions.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { tx } from '../../platform/db/driver.ts';
-import { duplicateKeys, measurementField, measurementFields, measurementTenths, parseCSV, validateRow, type ParsedRow, type RowType } from './csv.ts';
+import { applyManual, duplicateKeys, fromSheet, measurementField, measurementFields, measurementTenths, needsCustomer, parseCSV, validateRow, type ParsedRow, type RowType } from './csv.ts';
 import { commitUpload } from './commit.ts';
 
 const auth = { config: { permission: 'mig.run' } };
@@ -24,9 +24,13 @@ const measureValue = z.string().refine(s => {
 }, 'Measurement must be exact to tenths.');
 const measureOverrides = Object.fromEntries(measurementFields.map(f => [f, measureValue.optional()])) as Record<typeof measurementFields[number], z.ZodOptional<typeof measureValue>>;
 const manualSchemas = {
-  customer: z.object({ customerName: z.string().trim().min(1).optional(), registeredName: z.string().trim().min(1).optional(), legacyId: legacyId.optional() }).strict(),
-  measurement: z.object({ customerLegacyId: legacyId.optional(), groupLegacyId: legacyId.optional(), ...measureOverrides }).strict(),
-  employee: z.object({ employeeName: z.string().trim().min(1).optional(), legacyId: legacyId.optional(), rateCents: moneyCents.optional() }).strict(),
+  // "-" clears an old value that cannot be kept (a phone or email the old sheet got wrong).
+  customer: z.object({ customerName: z.string().trim().min(1).optional(), registeredName: z.string().trim().min(1).optional(), legacyId: legacyId.optional(),
+    email: z.union([z.literal('-'), z.email()]).optional(), phone: z.string().trim().min(1).max(100).optional() }).strict(),
+  measurement: z.object({ customerLegacyId: legacyId.optional(), groupLegacyId: legacyId.optional(),
+    wearerName: z.string().trim().min(1).max(200).optional(), ...measureOverrides }).strict(),
+  employee: z.object({ employeeName: z.string().trim().min(1).optional(), legacyId: legacyId.optional(), rateCents: moneyCents.optional(),
+    payType: z.enum(['daily', 'piece', 'monthly']).optional(), hireDate: z.string().refine(isBusinessDate, 'Use a date like 2026-02-11.').optional() }).strict(),
   piece_rate: z.object({ garmentType: z.string().trim().min(1).optional(), operation: z.string().trim().min(1).optional(), rateCents: moneyCents.optional() }).strict(),
 };
 type ManualData = Record<string, string | number>;
@@ -67,29 +71,7 @@ function manualFor(row: MigRow): ManualData {
   return row.manual_data_json ? JSON.parse(row.manual_data_json) as ManualData : {};
 }
 function effective(row: MigRow, manual: ManualData = manualFor(row)): Record<string, string> {
-  const raw = { ...JSON.parse(row.raw_json) as Record<string, string> };
-  if (row.row_type === 'customer') {
-    if (manual.customerName) raw.Customer_Name = String(manual.customerName);
-    if (manual.registeredName) raw.Registered_Name = String(manual.registeredName);
-    if (manual.legacyId) raw.Legacy_ID = String(manual.legacyId);
-  } else if (row.row_type === 'measurement') {
-    if (manual.customerLegacyId) { raw.Customer_Name = String(manual.customerLegacyId); raw.Source = 'ASSIGNED'; }
-    if (manual.groupLegacyId) { raw.Group_Name = String(manual.groupLegacyId); raw.Source = 'ASSIGNED'; }
-    for (const field of measurementFields) {
-      if (manual[field] === undefined) continue;
-      const oldKey = Object.keys(raw).find(key => measurementField(key) === field);
-      raw[oldKey ?? field] = String(manual[field]);
-    }
-  } else if (row.row_type === 'employee') {
-    if (manual.employeeName) raw.Employee_Name = String(manual.employeeName);
-    if (manual.legacyId) raw.Employee_ID = String(manual.legacyId);
-    if (manual.rateCents !== undefined) raw.Daily_Rate = formatPesos(Number(manual.rateCents));
-  } else if (row.row_type === 'piece_rate') {
-    if (manual.garmentType) raw.Garment_Type = String(manual.garmentType);
-    if (manual.operation) raw.Operation = String(manual.operation);
-    if (manual.rateCents !== undefined) raw.Rate = formatPesos(Number(manual.rateCents));
-  }
-  return raw;
+  return applyManual(row.row_type, JSON.parse(row.raw_json) as Record<string, string>, manual);
 }
 function parseManual(row: MigRow, input: unknown): ManualData {
   const schema = manualSchemas[row.row_type as keyof typeof manualSchemas];
@@ -108,8 +90,7 @@ function parseManual(row: MigRow, input: unknown): ManualData {
 function assignmentValid(db: Db, row: MigRow, manual: ManualData): void {
   if (row.row_type !== 'measurement') return;
   const raw = JSON.parse(row.raw_json) as Record<string, string>;
-  const isManual = raw.Source === 'MANUAL' || raw.Customer_Name === 'MANUAL' || (!raw.Customer_Name && !raw.Group_Name);
-  if (isManual && !manual.customerLegacyId) invalid('Assign this MANUAL measurement to a staged customer.');
+  if (needsCustomer(raw) && !manual.customerLegacyId) invalid('Assign this MANUAL measurement to a staged customer.');
   if (manual.customerLegacyId) {
     const customer = db.prepare(`SELECT r.id FROM mig_rows r JOIN mig_uploads u ON u.id = r.upload_id
       WHERE r.row_type = 'customer' AND r.legacy_id = ? AND r.status NOT IN ('excluded', 'merged')
@@ -152,7 +133,7 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (!csv!.objects.length) throw new AppError('EMPTY_CSV', 'The uploaded CSV contains no data rows.', 400);
     const uploadId = newId();
     const at = stamp(clock);
-    const parsedRows = csv!.objects.map((raw, i) => ({ id: newId(), rowNumber: csv!.lineNumbers[i]!, parsed: validateRow(raw) }));
+    const parsedRows = csv!.objects.map((raw, i) => ({ id: newId(), rowNumber: csv!.lineNumbers[i]!, parsed: validateRow(fromSheet(raw)) }));
     if (parsedRows.some(r => r.parsed.rowType === 'unknown')) invalid('The CSV file type is not recognised.');
     // Flag every member of each duplicate set and name the other source row in its issue.
     const byKey = new Map<string, typeof parsedRows>();

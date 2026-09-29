@@ -1,7 +1,8 @@
 /** Read-only CUS contract for other modules. Callers must enforce their own route permission. */
 import type { Db } from '../../platform/db/driver.ts';
 import { chartResponse } from './measurements.ts';
-export { createCustomer, createGroup, createWearer, createMeasurement } from './create.ts';
+export { createCustomer, addCustomerPhone, createGroup, createWearer, createMeasurement } from './create.ts';
+export { normalizePhone } from './schemas.ts';
 
 export interface CustomerRef {
   id: string;
