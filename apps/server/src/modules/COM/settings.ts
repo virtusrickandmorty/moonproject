@@ -11,6 +11,7 @@ import { conflict, newId } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { scanEdges } from '../JO/public.ts';
+import { payrollScanEdge } from '../PAY/public.ts';
 
 export interface ComSettings {
   sendingOn: boolean; host: string; port: number; user: string; senderName: string; senderAddress: string; version: number;
@@ -75,14 +76,16 @@ export function missingForSending(s: Omit<ComSettings, 'version'>, passwordSet: 
   ];
 }
 
-export const CURSORS = ['job_order_created', 'job_order_ready', 'release'] as const;
-export function setCursors(db: Db, at: string): void {
+export const CURSORS = ['job_order_created', 'job_order_ready', 'release', 'payroll_release'] as const;
+/** Puts every scan at the newest row (turning sending on), or with `onlyMissing` just the ones that have no place yet (a scan added by an update). */
+export function setCursors(db: Db, at: string, onlyMissing = false): void {
   const edges = scanEdges(db);
   const put = db.prepare(`INSERT INTO com_cursors (key, last_rowid, updated_at) VALUES (?, ?, ?)
-    ON CONFLICT (key) DO UPDATE SET last_rowid = excluded.last_rowid, updated_at = excluded.updated_at`);
+    ON CONFLICT (key) DO ${onlyMissing ? 'NOTHING' : 'UPDATE SET last_rowid = excluded.last_rowid, updated_at = excluded.updated_at'}`);
   put.run('job_order_created', edges.jobOrders, at);
   put.run('job_order_ready', edges.stages, at);
   put.run('release', edges.releases, at);
+  put.run('payroll_release', payrollScanEdge(db), at);
 }
 
 export function saveSettings(db: Db, raw: unknown, ifMatch: string | undefined, who: { userId: string; at: string }): ComSettings {

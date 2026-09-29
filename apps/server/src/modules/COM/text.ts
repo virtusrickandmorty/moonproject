@@ -22,8 +22,11 @@ export function assertAllowedWording(m: { subject: string; body: string; attachm
 /** Text typed by staff (a name, an item), safe to put in a message. */
 export const plain = (text: string): string => FORBIDDEN_WORDS.reduce((t, rule) => t.replace(new RegExp(rule.source, 'gi'), '…'), text).replace(/\s+/g, ' ').trim();
 
-export type Template = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement';
-export const TEMPLATES: readonly Template[] = ['job_order_created', 'job_order_ready', 'claimed', 'statement'];
+export type Template = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement' | 'payslip';
+export const TEMPLATES: readonly Template[] = ['job_order_created', 'job_order_ready', 'claimed', 'statement', 'payslip'];
+/** A customer email goes to a customer; a payslip email goes to an employee. The outbox screen filters by this. */
+export type Kind = 'customer' | 'payslip';
+export const kindOf = (template: Template): Kind => (template === 'payslip' ? 'payslip' : 'customer');
 export interface Message { subject: string; body: string }
 
 const hello = (name: string) => `Hello ${plain(name)},`;
@@ -80,6 +83,33 @@ export function statementMessage(company: string, p: { customerName: string; fro
       `Attached (${p.fileName}) is your statement of account from ${p.from} to ${p.to}. Open it in your web browser.`,
       `Balance you owe us on ${p.to}: ${formatPeso(p.closingBalanceCents)}${p.depositsHeldCents > 0 ? `\nDeposits we are holding for you: ${formatPeso(p.depositsHeldCents)}` : ''}`,
       'If anything here does not match your records, please reply to this email.',
+      sign(company),
+    ]),
+  };
+}
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/** "16 to 30 September 2026", "28 September to 4 October 2026" or "28 December 2026 to 3 January 2027" from two business dates. */
+export function periodWords(from: string, to: string): string {
+  const part = (d: string) => ({ y: d.slice(0, 4), m: MONTHS[Number(d.slice(5, 7)) - 1]!, d: String(Number(d.slice(8, 10))) });
+  const a = part(from), b = part(to);
+  if (a.y !== b.y) return `${a.d} ${a.m} ${a.y} to ${b.d} ${b.m} ${b.y}`;
+  if (a.m !== b.m) return `${a.d} ${a.m} to ${b.d} ${b.m} ${b.y}`;
+  return `${a.d} to ${b.d} ${b.m} ${b.y}`;
+}
+
+/**
+ * The payslip email. It says who it is for, the pay period and that the payslip is attached: no pay figure, not even the
+ * net pay, is in the subject or the text. The figures are in the attached payslip only.
+ */
+export function payslipMessage(company: string, p: { employeeName: string; from: string; to: string; fileName: string }): Message {
+  const period = periodWords(p.from, p.to);
+  return {
+    subject: `Payslip for ${period}`,
+    body: wrap(company, [
+      hello(p.employeeName),
+      `Attached (${p.fileName}) is your payslip for ${period}. Open it in your web browser. It has your pay and deductions for the period.`,
+      'Please keep it private. If anything on it looks wrong, tell the office and do not reply with your pay details.',
       sign(company),
     ]),
   };
