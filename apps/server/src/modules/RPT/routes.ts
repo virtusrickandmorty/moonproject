@@ -6,6 +6,7 @@ import { balanceSheet, incomeStatement, type StatementSection } from './statemen
 import { arAging, customerStatement } from './receivables.ts';
 import { statementCustomers } from '../CUS/public.ts';
 import { collectionsRegister, depositsHeld, jobOrderFollowUp, salesByPeriod } from './sales-collections.ts';
+import { assetSchedule, cashReports, controlReports, supplierReports } from './operations.ts';
 
 function date(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new AppError('BAD_DATE', 'Use a date in YYYY-MM-DD format.', 400);
@@ -41,6 +42,23 @@ function sectionRows(s: StatementSection): CsvCell[][] {
 const STATEMENT_HEAD = ['Section', 'Account', 'Line', 'Amount PHP'];
 
 export function rptRoutes(app: FastifyInstance, { db }: AppDeps): void {
+  const simple = (path: string, get: (q: Record<string, unknown>) => { rows: Record<string, unknown>[] }, columns: [string,string][]) =>
+    app.get(`/api/rpt/${path}`, { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
+      const q=req.query as Record<string,unknown>; const result=get(q); if(q.format!=='csv') return result;
+      return sendCsv(reply,path,[columns.map(c=>c[0]),...result.rows.map(r=>columns.map(c=>c[1].endsWith('Cents')?pesos(r[c[1]] as number):String(r[c[1]]??'')))]);
+    });
+  simple('ap-aging',q=>supplierReports.aging(db,date(q.asOf)) as never,[['Supplier','supplierName'],['Document','number'],['Due date','dueDate'],['Balance PHP','balanceCents']]);
+  simple('purchases',q=>{const x=range(q);return supplierReports.purchases(db,x.from,x.to) as never},[['Date','date'],['Document','number'],['Supplier','supplierName'],['Category','category'],['Amount PHP','amountCents']]);
+  simple('purchase-orders',()=>supplierReports.orders(db) as never,[['Date','date'],['Document','number'],['Supplier','supplierName'],['Status','status'],['Total PHP','totalCents']]);
+  simple('received-not-billed',()=>supplierReports.unbilled(db) as never,[['Date','date'],['Receiving report','number'],['Purchase order','poNumber'],['Supplier','supplierName'],['Amount PHP','amountCents']]);
+  simple('cash-position',q=>cashReports.position(db,date(q.asOf)) as never,[['Code','code'],['Cash place','name'],['Balance PHP','balanceCents']]);
+  simple('transfers',q=>{const x=range(q);return cashReports.transfers(db,x.from,x.to) as never},[['Date','date'],['Document','number'],['From','fromPlace'],['To','toPlace'],['Sent PHP','sentCents'],['Received PHP','receivedCents'],['Fee PHP','feeCents']]);
+  simple('cash-counts',q=>{const x=range(q);return cashReports.counts(db,x.from,x.to) as never},[['Date','date'],['Document','number'],['Cash place','cashPlace'],['Ledger PHP','ledgerCents'],['Counted PHP','countedCents'],['Difference PHP','differenceCents']]);
+  simple('asset-schedule',q=>assetSchedule(db,date(q.asOf)) as never,[['Asset','number'],['Description','description'],['Class','className'],['Cost PHP','costCents'],['Accumulated PHP','accumulatedCents'],['Book value PHP','bookValueCents'],['Monthly charge PHP','monthlyChargeCents']]);
+  simple('late-entries',()=>controlReports.late(db) as never,[['Date','date'],['Document','number'],['Type','docType'],['Recorded at','recordedAt'],['Recorded by','recordedBy']]);
+  simple('cancellations-reissues',()=>controlReports.lifecycle(db) as never,[['Date','date'],['Document','number'],['Type','docType'],['Reason','reason'],['Replacement','replacementNumber']]);
+  simple('exceptions',q=>controlReports.exceptions(db,date(q.asOf)) as never,[['Exception','kind'],['Record','number'],['Amount PHP','amountCents']]);
+  simple('sign-in-history',q=>{const x=range(q);return controlReports.signins(db,x.from,x.to) as never},[['At','at'],['Username','username'],['IP address','ip'],['Successful','success']]);
   app.get('/api/rpt/deposits-held', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const result = depositsHeld(db, date(q.asOf));

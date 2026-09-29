@@ -64,6 +64,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Reports', label: 'Collections register', path: '/rpt/collections-register', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Sales by period', path: '/rpt/sales-by-period', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Job order follow-up', path: '/rpt/job-order-follow-up', permission: 'rpt.books.view' },
+  ...[['AP aging','ap-aging'],['Purchases by supplier/category','purchases'],['Purchase orders by status','purchase-orders'],['Received but not billed','received-not-billed'],['Cash position','cash-position'],['Transfers','transfers'],['Cash counts','cash-counts'],['Fixed-asset schedule','asset-schedule'],['Late entries','late-entries'],['Cancellations and reissues','cancellations-reissues'],['Exceptions','exceptions'],['Sign-in history','sign-in-history']].map(([label,path]) => ({ group: 'Reports' as const, label: label!, path: `/rpt/${path}`, permission: 'rpt.books.view' })),
   { group: 'Admin', label: 'Backups', path: '/bak', permission: 'bak.view' },
   { group: 'Admin', label: 'Opening balances', path: '/acc/opening', permission: 'acc.opening.view' },
   { group: 'Admin', label: 'Audit log', path: '/aud/log', permission: 'aud.log.view' },

@@ -39,6 +39,7 @@ import { GeneralJournal, GeneralLedger, TrialBalance } from './RPT/Books.tsx';
 import { BalanceSheet, IncomeStatement } from './RPT/Statements.tsx';
 import { ArAging, CustomerStatement } from './RPT/Receivables.tsx';
 import { DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
+import { ApAging, AssetSchedule, Cancellations, CashCounts, CashPosition, Exceptions, LateEntries, PurchaseOrders, Purchases, ReceivedNotBilled, SignIns, Transfers } from './RPT/Operations.tsx';
 import { CashAccounts } from './CASH/CashAccounts.tsx';
 import { CashBook } from './CASH/CashBook.tsx';
 import { CashCountForm } from './CASH/CashCountForm.tsx';
@@ -119,6 +120,10 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/rpt/collections-register': CollectionsRegister,
   '/rpt/sales-by-period': SalesByPeriod,
   '/rpt/job-order-follow-up': JobOrderFollowUp,
+  '/rpt/ap-aging': ApAging, '/rpt/purchases': Purchases, '/rpt/purchase-orders': PurchaseOrders,
+  '/rpt/received-not-billed': ReceivedNotBilled, '/rpt/cash-position': CashPosition, '/rpt/transfers': Transfers,
+  '/rpt/cash-counts': CashCounts, '/rpt/asset-schedule': AssetSchedule, '/rpt/late-entries': LateEntries,
+  '/rpt/cancellations-reissues': Cancellations, '/rpt/exceptions': Exceptions, '/rpt/sign-in-history': SignIns,
   '/tax/sales': SalesRegister,
   '/tax/2307-received': WithholdingReceived,
   '/tax/purchases': PurchasesRegister,
