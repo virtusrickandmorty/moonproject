@@ -266,6 +266,22 @@ export interface StatMonth {
   check: SchemeCheck[];
   notDeducted: { employeeId: string; name: string; cents: number }[];
 }
+/** The agencies that take an upload file (STAT), and the employer's number at each. */
+export type UploadScheme = 'SSS' | 'PHIC' | 'HDMF';
+export interface EmployerNumberRow { scheme: UploadScheme; label: string; employerLabel: string; number: string | null; since: string | null }
+/** The exposure report (ACC-05): months since the cut-over with pay but no contribution recorded, with estimates. Posts nothing. */
+export interface ExposureMonth { month: string; grossCents: number; eeCents: number; erCents: number; ecCents: number; totalCents: number; monthsLate: number; penaltyCents: number }
+export interface ExposureLine {
+  employeeId: string; code: string; name: string; scheme: UploadScheme; label: string; switchedOff: boolean;
+  months: ExposureMonth[]; eeCents: number; erCents: number; ecCents: number; totalCents: number; penaltyCents: number;
+}
+export interface Exposure {
+  asOf: string; cutoverDate: string | null; from: string | null; to: string | null;
+  rates: { scheme: UploadScheme; label: string; monthlyBp: number | null; source: string | null }[];
+  lines: ExposureLine[];
+  totals: { scheme: UploadScheme; label: string; employees: number; months: number; eeCents: number; erCents: number; ecCents: number; totalCents: number; penaltyCents: number }[];
+  notes: string[];
+}
 export type BookletKind = 'SALES_INVOICE' | 'CR';
 export interface Booklet { id: string; kind: BookletKind; atpNo: string; printer: string | null; serialFrom: number; serialTo: number; receivedOn: string; note: string | null; isActive: boolean; version: number }
 export interface BookletUsage {
@@ -712,6 +728,24 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     caWriteoffAccounts: () => call<{ id: number; code: string; name: string }[]>('GET', '/api/ca/writeoff-accounts'),
     statMonths: () => call<{ month: string; check: SchemeCheck[] }[]>('GET', '/api/stat/months'),
     statMonth: (month: string) => call<StatMonth>('GET', `/api/stat/months/${encodeURIComponent(month)}`),
+    statExposure: () => call<Exposure>('GET', '/api/stat/exposure'),
+    statEmployerNumbers: () => call<EmployerNumberRow[]>('GET', '/api/stat/employer-numbers'),
+    /** Needs a fresh password (step-up). */
+    setEmployerNumber: (scheme: UploadScheme, number: string) => call<{ scheme: UploadScheme; number: string; changed: boolean }>('PUT', `/api/stat/employer-numbers/${scheme}`, { number }),
+    /** An agency upload file (CSV) for a month: the bytes and the file's name, or the server's plain refusal (a missing ID number names the employee). */
+    statUpload: async (month: string, scheme: UploadScheme): Promise<{ filename: string; blob: Blob }> => {
+      let res: Response;
+      try {
+        res = await fetchImpl(`/api/stat/months/${encodeURIComponent(month)}/upload/${scheme.toLowerCase()}`, { method: 'GET', headers: {}, credentials: 'same-origin' });
+      } catch {
+        throw new ApiError('OFFLINE', 'Cannot reach the server. Check the connection and try again.', 0);
+      }
+      if (!res.ok) {
+        const data = (await res.json().catch(() => null)) as { code?: string; message?: string; details?: unknown } | null;
+        throw new ApiError(data?.code ?? `HTTP_${res.status}`, data?.message ?? 'Something went wrong. Please try again.', res.status, data?.details);
+      }
+      return { filename: /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? `${scheme}-${month}.csv`, blob: await res.blob() };
+    },
     /** D6: what of a payroll run's month is already remitted (the warning before a cancel). */
     runRemitted: (runId: string) => call<{ month: string; remitted: { scheme: Scheme; label: string; numbers: string[] }[] }>('GET', `/api/stat/runs/${encodeURIComponent(runId)}/remitted`),
     settings: () => call<Setting[]>('GET', '/api/settings'),
