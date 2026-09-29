@@ -17,9 +17,11 @@
     "practice-data": "tsx apps/server/src/platform/practice/data.ts",
     "restore": "tsx apps/server/src/modules/BAK/cli.ts",
     "blind-pack": "tsx tools/blind-pack.ts",
-    "compare-blind": "tsx tools/compare-blind.ts"
+    "compare-blind": "tsx tools/compare-blind.ts",
+    "e2e": "npm run build -w @moonproject/web && playwright test -c e2e/playwright.config.ts"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/better-sqlite3": "9.6.0",
     "@types/node": "22.20.4",
     "tsx": "4.23.15",
