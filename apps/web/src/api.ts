@@ -427,12 +427,55 @@ export type Supplier = SupplierRow;
 /** The loan register (LOAN): what is owed comes from the ledger; `nextDue` is null once paid off or cancelled. */
 export interface LoanRow {
   id: string; number: string; status: 'posted' | 'cancelled'; lender: string; kind: 'loan' | 'equipment'; principalCents: number; balanceCents: number; instalments: number;
+  dateReceived?: string; rateBp?: number; termMonths?: number; principalPaidCents?: number; interestPaidCents?: number; reference?: string | null;
   nextDue: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number } | null;
 }
 /** An FA- purchase whose financed part no loan has taken over yet. */
 export interface FinancedPurchase { id: string; number: string; date: string; description: string; supplierName: string; lender: string; financedCents: number }
 export interface AssetClass { code: string; name: string; defaultLifeMonths: number | null }
-export interface AssetRow { id: string; number: string; description: string; className: string; status: 'in service' | 'fully depreciated' | 'disposed' | 'cancelled' }
+export type AssetStatus = 'in service' | 'fully depreciated' | 'disposed' | 'cancelled';
+/** GET /api/fa/assets: the register; every figure but the description and class comes from the ledger and the documents. */
+export interface AssetRow {
+  id: string; number: string; description: string; className: string; status: AssetStatus;
+  acquiredOn?: string; costCents?: number; residualCents?: number; lifeMonths?: number; monthlyChargeCents?: number; accumulatedCents?: number; bookValueCents?: number; location?: string | null;
+}
+/** GET /api/fa/assets/:id: the register row with its depreciation from the recorded runs, its documents and the months with no charge. */
+export interface AssetPage extends Required<AssetRow> {
+  disposal: string | null;
+  depreciation: { month: string; documentId: string; documentNumber: string; chargeCents: number; accumulatedCents: number }[];
+  missingMonths: string[];
+  documents: { docType: string; id: string; number: string; date: string; status: 'posted' | 'cancelled' }[];
+}
+/** GET /api/fa/depreciation-gaps: months before this one in which an asset in service was not charged. */
+export interface DepreciationGaps { thisMonth: string; lastRunMonth: string | null; months: string[] }
+
+/** GET /api/eq/people?all=1: the register of stockholders and officers. */
+export interface EqPersonRecord extends EqPerson { shares: number | null; isActive: boolean; version: number }
+/** GET /api/eq/balances: what each person owes the company, is owed, and still owes on a stock subscription. */
+export interface EqBalance { personId: string; dueFromCents: number; dueToCents: number; unpaidSubscriptionCents: number }
+/** GET /api/eq/people/:id/owner-money and /officer-transactions: `kind` is the classification, or taken | returned | repaid_to_officer; `note` the note or purpose. */
+export interface EqDocument { id: string; number: string; date: string; status: 'posted' | 'cancelled'; amountCents: number; accountName: string; kind: string; note: string | null }
+/** GET /api/eq/people/:id/ledger: `netCents` is what they owe the company less what it owes them; amounts on lines are debit-positive. */
+export interface EqLedger {
+  person: EqPersonRecord; dueFromCents: number; dueToCents: number; netCents: number;
+  lines: { date: string; journalNumber: string; documentNumber: string | null; accountCode: string; accountName: string; memo: string; amountCents: number; netCents: number }[];
+}
+
+/** GET /api/loan/loans/:id: the register row with its schedule (and the payment on each paid instalment) and the loan ledger. */
+export interface LoanDetail extends LoanRow {
+  schedule: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number; paidBy: string | null }[];
+  ledger: { date: string; journalNumber: string; documentNumber: string | null; memo: string; amountCents: number; balanceCents: number }[];
+}
+/** GET /api/loan/loans/:id/payments. */
+export interface LoanPayment { id: string; number: string; date: string; status: 'posted' | 'cancelled'; instalmentNo: number; principalCents: number; interestCents: number; totalCents: number; note: string | null }
+/** GET /api/loan/late: an instalment past its due date with no recorded payment. */
+export interface LateInstalment { loanId: string; loanNumber: string; lender: string; instalmentNo: number; dueDate: string; principalCents: number; interestCents: number; daysLate: number }
+
+/** GET /api/szr/overview (PLAN E8): every set with who has it, the overdue ones and the last returns. */
+export interface SizerHolder { loanId: string; loanVersion: number; customerId: string; customerName: string; dateOut: string; expectedReturnDate: string; daysOverdue: number }
+export interface SizerSet { id: string; code: string; garmentType: string; sizesIncluded: string; status: 'in shop' | 'lent' | 'lost or damaged'; holder: SizerHolder | null }
+export interface SizerReturned { loanId: string; setCode: string; garmentType: string; customerName: string; dateOut: string; expectedReturnDate: string; returnedDate: string; conditionOnReturn: string }
+export interface SizerBoard { today: string; sets: SizerSet[]; overdue: SizerSet[]; returned: SizerReturned[] }
 /** Backups (BAK). The status's `runs` are the server's bak_runs rows as stored. */
 export type BackupTier = 'snapshot' | 'daily' | 'monthly' | 'yearly';
 export type BackupSource = 'local' | 'offsite';
@@ -784,6 +827,23 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     financedAssets: () => call<FinancedPurchase[]>('GET', '/api/loan/financed-assets'),
     assetClasses: () => call<AssetClass[]>('GET', '/api/fa/classes'),
     assets: () => call<AssetRow[]>('GET', '/api/fa/assets'),
+    asset: (id: string) => call<AssetPage>('GET', `/api/fa/assets/${encodeURIComponent(id)}`),
+    depreciationGaps: () => call<DepreciationGaps>('GET', '/api/fa/depreciation-gaps'),
+    /** The whole register, switched-off people included. */
+    eqRegister: () => call<EqPersonRecord[]>('GET', '/api/eq/people?all=1'),
+    eqBalances: () => call<EqBalance[]>('GET', '/api/eq/balances'),
+    eqLedger: (personId: string) => call<EqLedger>('GET', `/api/eq/people/${encodeURIComponent(personId)}/ledger`),
+    eqOwnerMoney: (personId: string) => call<EqDocument[]>('GET', `/api/eq/people/${encodeURIComponent(personId)}/owner-money`),
+    eqOfficerTransactions: (personId: string) => call<EqDocument[]>('GET', `/api/eq/people/${encodeURIComponent(personId)}/officer-transactions`),
+    loan: (id: string) => call<LoanDetail>('GET', `/api/loan/loans/${encodeURIComponent(id)}`),
+    loanPayments: (id: string) => call<LoanPayment[]>('GET', `/api/loan/loans/${encodeURIComponent(id)}/payments`),
+    loansLate: () => call<LateInstalment[]>('GET', '/api/loan/late'),
+    sizerBoard: () => call<SizerBoard>('GET', '/api/szr/overview'),
+    /** Lend a set that is in the shop to a customer; the date out is the server's today. */
+    sizerLend: (body: { setId: string; customerId: string; expectedReturnDate: string }) => call<{ id: string; version: number }>('POST', '/api/szr/loans', body),
+    /** Take a set back, with the loan's version (If-Match); it is back in the shop, or lost or damaged. */
+    sizerReturn: (loanId: string, v: number, body: { status: 'in shop' | 'lost or damaged'; conditionOnReturn: string }) =>
+      call<{ success: true }>('POST', `/api/szr/loans/${encodeURIComponent(loanId)}/return`, body, version(v)),
     /** Without a year and quarter: the quarter of the server's date. */
     vatSummary: (year?: number, quarter?: number) =>
       call<VatSummary>('GET', `/api/tax/vat-summary${year ? `?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}` : ''}`),
