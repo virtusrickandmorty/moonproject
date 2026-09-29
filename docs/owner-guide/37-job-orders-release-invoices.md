@@ -22,7 +22,7 @@
 
 **Changing a job order:**
 1. Open the job order you want to change.
-2. Click **Edit** (or **Cancel** if you only want to cancel it). **Edit** will cancel the old job order and open a new one with the same details.
+2. Click **Edit** (or **Cancel** if you only want to cancel it). **Edit** first opens a box "Edit <number>" that says "A recorded document is never changed. <number> will be cancelled and a new one issued with a new number. Nothing changes until you record the replacement." You type a reason and click **Continue to edit**. **Cancel** opens a box "Cancel <number>?" that asks for a reason, then **Cancel document**.
 3. Make your changes and click **Record**.
 4. If there were deposits, you will see a notice to move them to the replacement job order.
 

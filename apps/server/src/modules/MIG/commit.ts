@@ -2,10 +2,10 @@ import { AppError } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { createCustomer, createGroup, createWearer, createMeasurement } from '../CUS/public.ts';
+import { addCustomerPhone, createCustomer, createGroup, createWearer, createMeasurement, customerRef, normalizePhone } from '../CUS/public.ts';
 import { createEmployee, addPayProfile, type Who as EmployeeWho } from '../EMP/public.ts';
 import { addRate } from '../RATE/public.ts';
-import { measurementField, measurementTenths, rateFromPesos, validateRow } from './csv.ts';
+import { applyEmployeeFix, measurementField, measurementTenths, rateFromPesos, validateRow } from './csv.ts';
 
 type Kind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate';
 type Row = { id: string; upload_id: string; row_number: number; row_type: Kind; status: string;
@@ -37,8 +37,7 @@ const rawFor = (row: Row): Record<string, string> => {
       raw[oldKey ?? key] = String(value);
     }
   } else if (row.row_type === 'employee') {
-    if (manual.employeeName) raw.Employee_Name = String(manual.employeeName);
-    if (manual.rateCents !== undefined) raw.Daily_Rate = (Number(manual.rateCents) / 100).toFixed(2);
+    applyEmployeeFix(raw, manual);
   } else if (row.row_type === 'piece_rate') {
     if (manual.garmentType) raw.Garment_Type = String(manual.garmentType);
     if (manual.operation) raw.Operation = String(manual.operation);
@@ -46,6 +45,21 @@ const rawFor = (row: Row): Record<string, string> => {
   }
   return raw;
 };
+
+/** The numbers in a phone cell (several may share it, split by / , or ;): those Moonproject can read, and those it cannot. */
+function phoneNumbers(cell: string): { readable: string[]; unreadable: string[] } {
+  const out: { readable: string[]; unreadable: string[] } = { readable: [], unreadable: [] };
+  for (const part of cell.split(/[/,;]/).map(p => p.trim()).filter(Boolean)) {
+    try { normalizePhone(part); out.readable.push(part); } catch { out.unreadable.push(part); }
+  }
+  return out;
+}
+/** A measurement's note: the sizes and remarks the old sheet held beside the cells ("-" means none). */
+function measurementNote(raw: Record<string, string>): string {
+  const part = (label: string, value: string) => (value && value !== '-' ? `${label}: ${value}` : '');
+  return [part('Upper size', first(raw, 'Upper_Size')), part('Lower size', first(raw, 'Lower_Size')), part('Remarks', first(raw, 'Remarks'))]
+    .filter(Boolean).join('. ').slice(0, 500);
+}
 
 /** All module creates and map writes join this one immediate transaction. */
 export function commitUpload(db: Db, uploadId: string, expectedCellTenths: number, who: Who) {
@@ -91,13 +105,21 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
     for (const row of customerRows) {
       const raw = data.get(row.id)!;
       const legacyId = row.legacy_id ?? first(raw, 'Legacy_ID', 'Customer_ID');
-      const id = create(row, 'customer', legacyId, () => createCustomer(db, {
-        kind: first(raw, 'Kind').toLowerCase() === 'person' ? 'person' : 'organization',
-        displayName: first(raw, 'Customer_Name', 'Registered_Name'),
-        ...(first(raw, 'Registered_Name') ? { registeredName: first(raw, 'Registered_Name') } : {}),
-        ...(first(raw, 'TIN') ? { tin: first(raw, 'TIN') } : {}),
-        ...(first(raw, 'Email') ? { email: first(raw, 'Email') } : {}),
-      }, who, legacyId).id);
+      const phones = phoneNumbers(first(raw, 'Phone'));
+      const notes = [first(raw, 'Notes'), phones.unreadable.length ? `Phone in the old sheet: ${phones.unreadable.join(', ')}` : ''].filter(Boolean).join('. ');
+      const id = create(row, 'customer', legacyId, () => {
+        const created = createCustomer(db, {
+          kind: first(raw, 'Kind').toLowerCase() === 'person' ? 'person' : 'organization',
+          displayName: first(raw, 'Customer_Name', 'Registered_Name'),
+          ...(first(raw, 'Registered_Name') ? { registeredName: first(raw, 'Registered_Name') } : {}),
+          ...(first(raw, 'TIN') ? { tin: first(raw, 'TIN') } : {}),
+          ...(first(raw, 'Email') ? { email: first(raw, 'Email') } : {}),
+          ...(first(raw, 'Address') ? { billingAddress: first(raw, 'Address') } : {}),
+          ...(notes ? { notes } : {}),
+        }, who, legacyId);
+        for (const phone of phones.readable) addCustomerPhone(db, created.id, { phone }, who);
+        return created.id;
+      });
       customerBySource.set(legacyId, id);
       customerBySource.set(first(raw, 'Customer_Name', 'Registered_Name').toLowerCase(), id);
     }
@@ -117,7 +139,8 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
       if (!customerId) error(`Row ${row.row_number} (measurement): customer ${sourceCustomer || '(missing)'} has no imported legacy mapping.`);
       const groupName = first(raw, 'Group_Name', 'Group');
       const groupKey = first(raw, 'Group_ID') || `${sourceCustomer}:${groupName.toLowerCase()}`;
-      const wearerName = first(raw, 'Wearer_Name', 'Person_Name', 'Full_Name', 'Name');
+      // A sheet row names no wearer: the measurements are the customer's own.
+      const wearerName = first(raw, 'Wearer_Name', 'Person_Name', 'Full_Name', 'Name') || customerRef(db, customerId!)?.display_name || '';
       if (!wearerName) error(`Row ${row.row_number} (measurement): wearer name is missing.`);
       const wearerKey = first(raw, 'Wearer_ID', 'Person_ID') || `${sourceCustomer}:${groupKey}:${wearerName.toLowerCase()}`;
       return { row, raw, customerId: customerId!, groupName, groupKey, wearerName, wearerKey };
@@ -137,14 +160,15 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
         if (field) { const tenths = measurementTenths(value); if (tenths !== null) values[field.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())] = tenths / 10; }
       }
       create(row, 'measurement', row.legacy_id ?? first(raw, 'Measurement_ID'), () => createMeasurement(db, wearerId,
-        { sizeMode: 'measured', unit: 'inch', values, reason: 'Imported legacy measurement revision' }, who).id);
+        { sizeMode: 'measured', unit: 'inch', values, ...(measurementNote(raw) ? { remarks: measurementNote(raw) } : {}), reason: 'Imported legacy measurement revision' }, who).id);
     }
     for (const row of active.filter(r => r.row_type === 'employee')) {
       const raw = data.get(row.id)!;
       const legacyId = row.legacy_id ?? first(raw, 'Employee_ID', 'Legacy_ID');
       create(row, 'employee', legacyId, () => {
         const centre = first(raw, 'Cost_Centre').toLowerCase() || 'production';
-        const e = createEmployee(db, { fullName: first(raw, 'Employee_Name'), costCentre: centre, hireDate: first(raw, 'Hire_Date') || who.today }, who);
+        const e = createEmployee(db, { fullName: first(raw, 'Employee_Name'), costCentre: centre, hireDate: first(raw, 'Hire_Date') || who.today,
+          ...(first(raw, 'Position', 'Job_Title') ? { position: first(raw, 'Position', 'Job_Title').slice(0, 60) } : {}) }, who);
         const rate = row.rate_cents;
         const payType = first(raw, 'Pay_Type').toLowerCase() || (rate ? 'daily' : 'piece');
         const daily = payType === 'daily' || payType === 'mixed';
