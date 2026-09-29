@@ -209,6 +209,11 @@ export interface EmployeeDetail {
   /** used: days of leave taken; paid: unused days paid in cash by a payroll (final pay, December). */
   sil: { year: number; eligibleFrom: string; daysPerYear: number; used: number; paid: number; left: number };
 }
+export interface LeaveBalances {
+  year: number;
+  rows: { employeeId: string; code: string; fullName: string; hireDate: string; separatedOn: string | null; eligibleFrom: string; earned: number; used: number; paid: number; left: number }[];
+  totals: { earned: number; used: number; paid: number; left: number };
+}
 export type AttendanceStatus = 'present' | 'half_day' | 'absent' | 'rest_day' | 'leave' | 'unpaid_leave' | 'holiday_off' | 'holiday_worked' | 'rest_day_worked';
 export interface AttendanceDay { employeeId: string; date: string; status: AttendanceStatus; otMinutes: number; note: string | null }
 export interface Holiday { id: number; date: string; name: string; kind: 'regular' | 'special'; source: string; isActive: boolean; deactivatedReason: string | null }
@@ -609,11 +614,22 @@ export interface MigRow {
 }
 export interface DryRunResult {
   success: true;
-  counts: { customers: number; measurements: number; employees: number; pieceRates: number; excluded: number; merged: number; total: number };
+  counts: {
+    customers: number; measurements: number; employees: number; pieceRates: number; excluded: number; merged: number; total: number;
+    /** What the bulk choices for MANUAL size rows will make: customers, groups, and wearers. */
+    newCustomers?: number; newGroups?: number; wearers?: number;
+  };
   checksums: {
     customer: { sha256: string }; measurement: { sha256: string; cellTenths: number }; employee: { sha256: string; rateCents: number }; pieceRate: { sha256: string; rateCents: number };
   };
 }
+/** A MANUAL size row's one customer with the same name, offered to accept. */
+export interface MigSizeSuggestion { rowId: string; customerId: string; code: string; name: string }
+/** Where MANUAL size rows are put in bulk: each its own customer, or wearers of one customer (in a group of it, or a new group). */
+export type MigAssignBody = { rowIds: string[]; mode: 'own' } | { rowIds: string[]; mode: 'under'; customerId: string; groupId?: string; newGroupName?: string };
+export interface MigAssigned { success: true; assigned: number; skipped: { rowId: string; rowNumber: number; reason: string }[] }
+export interface MigEmployeeFix { rowId: string; payType?: 'daily' | 'piece' | 'monthly'; rateCents?: number }
+export interface CustomerGroup { id: string; name: string; is_active: number }
 export type MigCommitKind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate';
 /** What a commit made. `excluded` and `merged` are only in the answer to the commit itself, not in the later look-up. */
 export interface MigCommitResult { counts: Record<MigCommitKind, { imported: number; alreadyImported: number }>; measurementCellTenths: number; excluded?: number; merged?: number }
@@ -759,6 +775,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     saveCompanyProfile: (value: Omit<CompanyProfile, 'version' | 'supersededAt'>, version: number) => call<CompanyProfile>('PUT', '/api/prt/company-profile', value, { 'if-match': String(version) }),
     printableTypes: () => call<PrintableType[]>('GET', '/api/prt/printable-types'),
     printerTestPack: () => call<PrinterTestPack>('GET', '/api/prt/test-pack'),
+    print2307: (year: number, quarter: number, supplierId?: string) => call<{ html: string; pages: number }>('GET',
+      `/api/prt/2307?${new URLSearchParams({ year: String(year), quarter: String(quarter), ...(supplierId ? { supplierId } : {}) })}`),
     printDocument: (type: string, id: string, variant: PrintVariant = 'document') =>
       call<{ html: string; copyNumber: number }>('POST', `/api/prt/print/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { variant }),
     /** practice: this is the practice shop (PLAN C8). */
@@ -814,6 +832,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     unmatchRecon: (id: string, matchNo: number) => call<ReconReport>('POST', `/api/cash/recons/${id}/unmatch`, { matchNo }),
     finishRecon: (id: string) => call<ReconReport>('POST', `/api/cash/recons/${id}/finish`, {}),
     customer: (id: string) => call<CustomerRow>('GET', `/api/cus/customers/${encodeURIComponent(id)}`),
+    /** The active groups of a customer, for a picker. */
+    customerGroups: (id: string) => call<{ groups: CustomerGroup[] }>('GET', `/api/cus/customers/${encodeURIComponent(id)}`).then((r) => r.groups.filter((g) => g.is_active === 1)),
     customers: (search: string) => call<CustomerRow[]>('GET', `/api/cus/customers?${new URLSearchParams({ search, limit: '10' })}`),
     openItems: (customerId: string) => call<OpenItems>('GET', customer(customerId, 'open-items')),
     refundable: (customerId: string) => call<Refundable>('GET', customer(customerId, 'refundable')),
@@ -854,6 +874,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     employees: (q: { search?: string; status?: 'active' | 'separated' | 'all' } = {}) =>
       call<EmployeeRow[]>('GET', `/api/emp/employees?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][])}`),
     employee: (id: string) => call<EmployeeDetail>('GET', emp(id)),
+    leaveBalances: (year?: number) => call<LeaveBalances>('GET', `/api/emp/leave-balances${year ? `?year=${year}` : ''}`),
     addEmployee: (body: Record<string, unknown>) => call<EmployeeRecord>('POST', '/api/emp/employees', body),
     updateEmployee: (id: string, v: number, body: Record<string, unknown>) => call<EmployeeRecord>('PUT', emp(id), body, version(v)),
     separateEmployee: (id: string, v: number, body: { separatedOn: string; reason: string }) => call<EmployeeRecord>('POST', emp(id, '/separate'), body, version(v)),
@@ -1044,6 +1065,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     migReview: (uploadId: string) => call<{ rows: MigRow[] }>('GET', `/api/mig/uploads/${encodeURIComponent(uploadId)}/review`).then((r) => r.rows),
     migAccept: (rowId: string) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/accept`, {}),
     migFix: (rowId: string, manualData: Record<string, string | number>) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/fix`, { manualData }),
+    migSizeSuggestions: (uploadId: string) => call<{ suggestions: MigSizeSuggestion[] }>('GET', `/api/mig/uploads/${encodeURIComponent(uploadId)}/size-suggestions`).then((r) => r.suggestions),
+    migAssignSizes: (uploadId: string, body: MigAssignBody) => call<MigAssigned>('POST', `/api/mig/uploads/${encodeURIComponent(uploadId)}/assign-sizes`, body),
+    /** All or nothing: if any row is refused, none is saved and the message names each one. */
+    migFixEmployees: (uploadId: string, fixes: MigEmployeeFix[]) => call<{ success: true; saved: number }>('POST', `/api/mig/uploads/${encodeURIComponent(uploadId)}/fix-employees`, { fixes }),
     migMerge: (rowId: string, mergeIntoRowId: string) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/merge`, { mergeIntoRowId }),
     /** The reason is sent for the day the server keeps it; today the server ignores it. */
     migExclude: (rowId: string, reason: string) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/exclude`, { reason }),

@@ -23,6 +23,7 @@ import { Employees } from './EMP/Employees.tsx';
 import { EmployeePage } from './EMP/Employee.tsx';
 import { Attendance } from './EMP/Attendance.tsx';
 import { Holidays } from './EMP/Holidays.tsx';
+import { LeaveBalances } from './EMP/LeaveBalances.tsx';
 import { RunForm } from './PAY/RunForm.tsx';
 import { ReleaseForm } from './PAY/ReleaseForm.tsx';
 import { ThirteenthForm } from './PAY/ThirteenthForm.tsx';
@@ -145,6 +146,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/pur/suppliers/:id': SupplierPage,
   '/pur/supplies': Supplies,
   '/emp/employees': Employees,
+  '/emp/leave-balances': LeaveBalances,
   '/emp/employees/:id': EmployeePage,
   '/emp/attendance': Attendance,
   '/emp/holidays': Holidays,

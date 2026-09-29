@@ -10,6 +10,13 @@ export interface Profile {
   registered_name: string; trade_name: string; tin: string; registered_address: string;
   is_vat_registered: number; version: number;
 }
+
+export interface Certificate2307 {
+  supplierName: string;
+  tin: string | null;
+  address: string | null;
+  lines: { atc: string; months: { month: string; baseCents: number }[]; baseCents: number; ewtCents: number }[];
+}
 export interface PrintHeader { id: string; number: string; business_date: string; doc_type: string; status: 'posted' | 'cancelled' }
 
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, (c) =>
@@ -19,7 +26,7 @@ const money = (n: number) => formatPeso(n);
 const lineTable = (headings: string[], rows: unknown[][]) => `<table><thead><tr>${headings.map((h) => `<th>${escape(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map(cell).join('')}</tr>`).join('')}</tbody></table>`;
 const field = (name: string, value: unknown) => value ? `<p><b>${escape(name)}:</b> ${escape(value)}</p>` : '';
 
-type PrintTitle = DocTitle | 'Payment Voucher' | 'Payslip' | 'Cash Advance Slip' | 'Inventory Count Sheet';
+type PrintTitle = DocTitle | 'Payment Voucher' | 'Payslip' | 'Cash Advance Slip' | 'Inventory Count Sheet' | 'Certificate of Creditable Tax Withheld at Source';
 export type ReportPrintTitle = 'Statement of Account' | 'Sizing Profile' | 'Fixed Asset Schedule';
 export const REPORT_PRINT_TITLES: readonly ReportPrintTitle[] = ['Statement of Account', 'Sizing Profile', 'Fixed Asset Schedule'];
 function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind): { title: PrintTitle; subtitle: string; legend: boolean; body: string; twoUp: boolean } {
@@ -118,7 +125,7 @@ export const printMoney = money;
 export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profile, kind: PrintKind,
   printedBy: string, printedAt: string, copyNumber: number, practice = false, testPrint = false): string {
   const p = content(db, h, doc, kind);
-  const catalogueTitles: readonly string[] = ['Payment Voucher', 'Payslip', 'Cash Advance Slip', 'Inventory Count Sheet'];
+  const catalogueTitles: readonly string[] = ['Payment Voucher', 'Payslip', 'Cash Advance Slip', 'Inventory Count Sheet', 'Certificate of Creditable Tax Withheld at Source'];
   if (!(DOC_TITLES as readonly string[]).includes(p.title) && !catalogueTitles.includes(p.title)) throw new Error('Print title is not allowed');
   const title = p.title.toUpperCase();
   const one = `<article class="copy">${testPrint ? '<div class="test-print">TEST PRINT, NOT A REAL DOCUMENT</div>' : ''}<header><div class="company"><strong>${escape(profile.registered_name)}</strong><br>TIN ${escape(profile.tin)}<br>${escape(profile.registered_address)}</div><h1>${escape(title)}</h1>${practice ? '<p class="practice">PRACTICE ONLY · NOT A REAL DOCUMENT</p>' : ''}${h.status === 'cancelled' ? '<p class="cancelled">CANCELLED</p>' : ''}${p.subtitle ? `<p class="subtitle">${escape(p.subtitle)}</p>` : ''}${p.legend ? '<p class="legend"><strong>THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.</strong></p>' : ''}</header>` +
@@ -135,4 +142,29 @@ export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profi
     @media screen{body{background:#ddd;padding:12mm}.sheet{background:white;width:210mm;margin:auto;padding:12mm;box-shadow:0 2px 12px #777}.two-up .copy{height:125mm}}
     @media print{.sheet{page-break-after:always}}
   </style></head><body><div class="sheet${p.twoUp ? ' two-up' : ''}">${p.twoUp ? one + one : one}</div></body></html>`;
+}
+
+/** One BIR Form 2307-style A4 page per supplier; figures are passed straight from TAX's 2307-to-issue report. */
+export function render2307(profile: Profile, year: number, quarter: number, certificates: Certificate2307[], testPrint = false, practice = false): string {
+  const first = 3 * quarter - 2;
+  const from = `${year}-${String(first).padStart(2, '0')}-01`;
+  const to = `${year}-${String(first + 2).padStart(2, '0')}-${new Date(Date.UTC(year, first + 2, 0)).getUTCDate()}`;
+  const months = [0, 1, 2].map((i) => new Date(Date.UTC(year, first - 1 + i, 1)).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' }));
+  const pages = certificates.map((c) => `<article class="certificate">${testPrint ? '<div class="test-print">TEST PRINT, NOT A REAL DOCUMENT</div>' : ''}
+    <header><div class="form">BIR FORM NO. 2307</div><h1>CERTIFICATE OF CREDITABLE TAX WITHHELD AT SOURCE</h1><p>For the period ${from} to ${to}</p>${practice ? '<p class="practice">PRACTICE ONLY · NOT A REAL DOCUMENT</p>' : ''}</header>
+    <h2>PART I — PAYEE INFORMATION</h2>
+    <div class="party"><p><b>Registered name:</b> ${escape(c.supplierName)}</p><p><b>TIN:</b> ${escape(c.tin ?? '')}</p><p><b>Registered address:</b> ${escape(c.address ?? '')}</p></div>
+    <h2>PART I — PAYOR INFORMATION</h2>
+    <div class="party"><p><b>Registered name:</b> ${escape(profile.registered_name)}</p><p><b>TIN:</b> ${escape(profile.tin)}</p><p><b>Registered address:</b> ${escape(profile.registered_address)}</p></div>
+    <h2>PART II — DETAILS OF MONTHLY INCOME PAYMENTS AND TAX WITHHELD</h2>
+    ${lineTable(['ATC', ...months, 'Quarter total', 'Tax withheld'], c.lines.map((line) => [line.atc, ...line.months.map((m) => money(m.baseCents)), money(line.baseCents), money(line.ewtCents)]))}
+    <div class="signatures"><p>Payor / Authorized representative<br><span></span><small>Signature over printed name</small></p><p>Payee / Authorized representative<br><span></span><small>Signature over printed name</small></p></div>
+  </article>`).join('');
+  const title = 'Certificate of Creditable Tax Withheld at Source';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${title} · ${year} Q${quarter}</title><style>
+    @page{size:A4;margin:12mm}*{box-sizing:border-box}body{font:10pt Arial,sans-serif;color:#111;margin:0}.certificate{position:relative;min-height:273mm;page-break-after:always;padding:2mm}.certificate:last-child{page-break-after:auto}.test-print{position:absolute;z-index:5;top:45%;left:5%;width:90%;transform:rotate(-28deg);border:3px solid #b00;color:#b00;font-size:20pt;font-weight:900;text-align:center;opacity:.32;padding:3mm}
+    header{text-align:center}.form{font-weight:bold;text-align:right}h1{font-size:16pt;margin:4mm 0 1mm}h2{font-size:10pt;background:#ddd;border:1px solid #555;padding:1.5mm;margin:5mm 0 0}.practice{font-size:14pt;font-weight:900;letter-spacing:1mm;color:#a60;border:2px dashed #a60;margin:2mm auto;padding:1mm 3mm;width:max-content}.party{border:1px solid #777;border-top:0;padding:2mm}.party p{margin:1.5mm 0;min-height:5mm}
+    table{width:100%;border-collapse:collapse;margin-top:2mm}th,td{border:1px solid #777;padding:2mm;text-align:right}th:first-child,td:first-child{text-align:left}.signatures{display:grid;grid-template-columns:1fr 1fr;gap:20mm;margin-top:30mm;text-align:center}.signatures span{display:block;border-bottom:1px solid #111;height:14mm}.signatures small{display:block;margin-top:1mm}
+    @media screen{body{background:#ddd;padding:12mm}.certificate{background:white;width:210mm;margin:0 auto 8mm;padding:12mm;box-shadow:0 2px 12px #777}}
+  </style></head><body>${pages}</body></html>`;
 }
