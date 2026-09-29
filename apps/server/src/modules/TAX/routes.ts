@@ -16,6 +16,8 @@ import { ewtMonthWorksheet, ewtQuarterWorksheet, type PaymentLine } from './ewt-
 import { parsePeriod, periodsDue } from './payments.ts';
 import { markReceived } from './withholding.ts';
 import { addIncomeTaxSettings, incomeTaxSettingsAt, incomeTaxSettingsHistory, incomeTaxWorksheet } from './income-tax.ts';
+import { addDeductionSetting, annualIncomeTaxWorksheet, deductionAt, deductionHistory } from './annual-income-tax.ts';
+import { ewtAnnualReturn } from './ewt-annual.ts';
 
 export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
@@ -253,7 +255,82 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
     return write(() => addIncomeTaxSettings(db, req.body, { userId: currentUser(req).userId, at: stamp(clock), today: today(clock) }));
   });
 
-  /** Every return with something left to pay (a VAT close or an opening's 2550Q, EWT withheld or opened, a 1702Q), for the BIR payment form. */
+  type YearQuery = { year?: string; format?: string };
+  /** ?year=2026, or last year when left out (the annual returns are filed early the next year). */
+  const yearQuery = ({ year }: YearQuery): number => {
+    if (year === undefined) return Number(today(clock).slice(0, 4)) - 1;
+    if (!/^\d{4}$/.test(year)) throw badRequest('BAD_YEAR', 'Pick a year, like 2026.');
+    return Number(year);
+  };
+
+  /**
+   * The 1702-RT worksheet of a year (?year=2026, or last year): the year from the ledger in whole pesos, the deductions
+   * (itemized or the 40% optional standard deduction), the tax at the regular rate or MCIT, the credits, what is payable
+   * or carried over; the provision, the settlement and the 1702 payments; and the checks.
+   */
+  app.get<{ Querystring: YearQuery }>('/api/tax/1702rt', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const year = yearQuery(req.query);
+    const w = annualIncomeTaxWorksheet(db, year, today(clock));
+    if (req.query.format !== 'csv') return w;
+    const row = (item: string, cents: number | null): CsvCell[] => [item, cents === null ? '' : csvPesos(cents)];
+    const ref = (what: string, d: { number: string; date: string } | null) => (d ? `${what} ${d.number} on ${d.date}` : `${what}: not recorded`);
+    return csv(reply, `1702-RT-worksheet-${year}`, [
+      ['Item', 'Amount'],
+      ...w.lines.map((l) => row(l.label, l.cents)),
+      row(ref('Provision', w.provision), w.provision?.amountCents ?? null),
+      row(ref('Settlement', w.settlement), w.settlement?.payableCents ?? null),
+      ...(w.opening ? [row(`Left to pay by the old books (${w.opening.number})`, w.dueCents)] : []),
+      row('Due with the 1702', w.dueCents),
+      ...w.payments.map((x) => row(`Paid with ${x.number} on ${x.date} (${x.reference})`, x.amountCents)),
+      row('Left to pay', w.leftCents),
+      row(`Rates in force on ${w.to}: regular ${w.settings.regularRateBp / 100}%, MCIT ${w.settings.mcitRateBp / 100}%, operations began ${w.settings.operationsBeganYear ?? 'not confirmed'}`, null),
+      row(`Deductions: ${w.deduction.method === 'osd' ? 'optional standard deduction (40%)' : 'itemized'}${w.deduction.confirmed ? '' : ', the default, not confirmed'}`, null),
+      ...w.checks.map((c) => row(`Check: ${c.message}`, null)),
+    ]);
+  });
+
+  /** The deduction method of a year (?year=2026, or last year): the version in force today and every version, newest first. */
+  app.get<{ Querystring: YearQuery }>('/api/tax/income-tax-deductions', { config: { permission: 'tax.registers.view' } }, async (req) => {
+    const year = yearQuery(req.query);
+    return { year, current: deductionAt(db, year, today(clock)), versions: deductionHistory(db, year) };
+  });
+
+  /** A new version for a year from today or later ({ year, method, effectiveFrom, reason }), with a fresh password. */
+  app.post('/api/tax/income-tax-deductions', { config: { permission: 'acc.settings.manage' } }, async (req) => {
+    requireStepUp(currentUser(req), clock);
+    return write(() => addDeductionSetting(db, req.body, { userId: currentUser(req).userId, at: stamp(clock), today: today(clock) }));
+  });
+
+  /**
+   * The 1604-E data of a year (?year=2026, or last year): the alphalist (EWT per payee and ATC, per quarter and for the
+   * year) and its tie-out to the four quarters' QAP, 1601-EQ worksheets, EWT register and books, with what each quarter
+   * paid and left.
+   */
+  app.get<{ Querystring: YearQuery }>('/api/tax/1604e', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const year = yearQuery(req.query);
+    const r = ewtAnnualReturn(db, year, today(clock));
+    if (req.query.format !== 'csv') return r;
+    const ewt = (cents: number) => csvPesos(cents);
+    return csv(reply, `1604-E-${year}`, [
+      ['Alphalist of payees'],
+      ['TIN', 'Registered name', 'ATC', 'Rate', 'Q1 EWT', 'Q2 EWT', 'Q3 EWT', 'Q4 EWT', 'Base', 'EWT withheld'],
+      ...r.alphalist.map((p) => [
+        p.tin, p.registeredName, atcCell(p) || 'To classify', p.rateBp === null ? '' : `${p.rateBp / 100}%`, ...p.quarters.map(ewt), ewt(p.baseCents), ewt(p.ewtCents),
+      ]),
+      ['Total', '', '', '', '', '', '', '', ewt(r.totals.baseCents), ewt(r.totals.ewtCents)],
+      [],
+      ['Tie-out to the quarters'],
+      ['Quarter', 'QAP', '1601-EQ worksheet', 'EWT register', 'Books (2311)', 'Tied', 'Due', 'Paid with the 0619-E', 'Paid with the 1601-EQ', 'Left to pay'],
+      ...r.quarters.map((q) => [
+        `Q${q.quarter} ${year}`, ewt(q.qapCents), ewt(q.worksheetCents), ewt(q.registerCents), ewt(q.glCents), q.tied ? 'Yes' : 'No',
+        ewt(q.dueCents), ewt(q.remittedCents), ewt(q.paidCents), ewt(q.leftCents),
+      ]),
+      [`Year ${year}`, ewt(r.quartersCents), '', ewt(r.registerCents), ewt(r.glCents), r.tied ? 'Yes' : 'No'],
+      ...r.checks.map((c) => [`Check: ${c.message}`]),
+    ]);
+  });
+
+  /** Every return with something left to pay (a VAT close or an opening's 2550Q, EWT withheld or opened, a 1702Q or a 1702), for the BIR payment form. */
   app.get('/api/tax/payments/due', { config: { permission: 'tax.payment.create' } }, async () => periodsDue(db, today(clock)));
 
   /** VAT of one quarter (?year=2026&quarter=3), or of today's quarter. */

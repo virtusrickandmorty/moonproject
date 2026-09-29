@@ -11,7 +11,8 @@
  *   Income tax: the regular rate on taxable income, or the MCIT rate on total gross income where MCIT applies (from
  *   the 4th taxable year after the year operations began), whichever is higher.
  *   Less the tax paid for the earlier quarters of the year (their 1702Q payments, and what 1411 prepaid income tax got
- *   from an opening balance or a journal voucher dated in the year so far) and less the creditable withholding tax of
+ *   from an opening balance or a journal voucher dated in the year so far, and the overpayment last year's settlement
+ *   carried over) and less the creditable withholding tax of
  *   the year so far backed by a customer's 2307 in hand (1410; one still pending is not claimed). What is left is due
  *   with this 1702Q; below zero it is an excess credit the next quarter's return takes off again.
  * Every amount on the worksheet is in whole pesos (PLAN D4 rule 10), each ledger figure rounded half away from zero.
@@ -100,7 +101,7 @@ export const mcitApplies = (s: Pick<IncomeTaxSettingsValue, 'operationsBeganYear
 /** Centavos rounded half away from zero to whole pesos (still in centavos). */
 export const wholePesos = (cents: number) => divRoundHalfAway(cents, 100) * 100 || 0; // never -0
 /** A rate on a whole-peso amount, in whole pesos. */
-const taxOn = (cents: number, bp: number) => applyRate(cents / 100, bp) * 100;
+export const taxOn = (cents: number, bp: number) => applyRate(cents / 100, bp) * 100;
 
 export type IncomeTaxKey =
   | 'sales' | 'cost_of_sales' | 'gross_income' | 'other_income' | 'total_gross_income' | 'deductions' | 'taxable_income'
@@ -109,7 +110,7 @@ export interface IncomeTaxLine { key: IncomeTaxKey; label: string; cents: number
 export interface PaymentRef { id: string; number: string; date: string; period: string; reference: string; amountCents: number; penaltyCents: number }
 
 /** Debit-positive movement in [from, to] of the income statement accounts, by what the 1702Q does with them. */
-function ledgerYearToDate(db: Db, from: string, to: string) {
+export function ledgerYearToDate(db: Db, from: string, to: string) {
   return db
     .prepare(
       `SELECT
@@ -126,34 +127,54 @@ function ledgerYearToDate(db: Db, from: string, to: string) {
     .get(from, to) as { sales: number; costOfSales: number; otherIncome: number; deductions: number; penalties: number; interest: number };
 }
 
-/** 1411 prepaid income tax put in by anything but a 1702Q payment (an opening balance, a journal voucher), dated in [from, to]. */
-function otherPrepaid(db: Db, from: string, to: string): number {
+/**
+ * 1411 prepaid income tax put in by anything but a 1702Q payment (an opening balance, a journal voucher), dated in
+ * [from, to]. The year-end settlement (ITS-) is left out too: it applies the year's 1411 against its income tax and
+ * carries an overpayment over, which the next year takes off as last year's excess credits (carriedOverInto).
+ */
+export function otherPrepaid(db: Db, from: string, to: string): number {
   return db
     .prepare(
       `SELECT COALESCE(SUM(l.debit_cents - l.credit_cents), 0) FROM journal_lines l JOIN journals j ON j.id = l.journal_id JOIN accounts a ON a.id = l.account_id
        WHERE j.sealed = 1 AND a.role_key = 'PREPAID_INCOME_TAX' AND j.business_date BETWEEN ? AND ?
-         AND NOT EXISTS (SELECT 1 FROM tax_income_tax_payments p WHERE p.document_id = j.source_id AND j.source_type IN ('document', 'document-cancel'))`,
+         AND NOT EXISTS (SELECT 1 FROM tax_income_tax_payments p WHERE p.document_id = j.source_id AND j.source_type IN ('document', 'document-cancel'))
+         AND NOT EXISTS (SELECT 1 FROM tax_income_tax_settlements s WHERE s.document_id = j.source_id AND j.source_type IN ('document', 'document-cancel'))`,
     )
     .pluck()
     .get(from, to) as number;
 }
 
+/** The overpayment the year before's posted settlement carried over to `year` (1411), in centavos; 0 if none. */
+export function carriedOverInto(db: Db, year: number): number {
+  return db
+    .prepare(
+      `SELECT COALESCE(SUM(s.carry_over_cents), 0) FROM tax_income_tax_settlements s JOIN documents d ON d.id = s.document_id
+       WHERE d.status = 'posted' AND s.year = ?`,
+    )
+    .pluck()
+    .get(year - 1) as number;
+}
+
 /**
  * CWT of the year up to the quarter's end, from the 2307s-received register: a collection's by its date, an opening
- * withholding's (OBWT-, dated the cut-over date) by the quarter its 2307 covers. In hand, or still pending.
+ * withholding's (OBWT-, dated the cut-over date) by the quarter its 2307 covers. In hand (also per customer, for the
+ * year-end settlement's 1410 lines), or still pending.
  */
-function cwtOfYear(db: Db, year: number, quarter: Quarter, to: string): { inHandCents: number; pendingCents: number } {
+export function cwtOfYear(db: Db, year: number, quarter: Quarter, to: string): { inHandCents: number; pendingCents: number; byCustomer: Map<string, number> } {
   let [inHandCents, pendingCents] = [0, 0];
+  const byCustomer = new Map<string, number>();
   for (const r of withholdingReceivedRegister(db, `${year}-01-01`, `${year + 1}-12-31`).rows) {
     const inYear = r.opening ? r.period !== null && Number(r.period.slice(0, 4)) === year && Number(r.period.slice(6)) <= quarter : r.date <= to;
     if (!inYear || !r.cwtCents) continue;
-    if (r.certificate === 'received') inHandCents += r.cwtCents;
-    else if (r.certificate === 'pending') pendingCents += r.cwtCents;
+    if (r.certificate === 'received') {
+      inHandCents += r.cwtCents;
+      if (r.customerId) byCustomer.set(r.customerId, (byCustomer.get(r.customerId) ?? 0) + r.cwtCents);
+    } else if (r.certificate === 'pending') pendingCents += r.cwtCents;
   }
-  return { inHandCents, pendingCents };
+  return { inHandCents, pendingCents, byCustomer };
 }
 
-const posted = (db: Db, keys: [BirForm, string][]): PaymentRef[] =>
+export const posted = (db: Db, keys: [BirForm, string][]): PaymentRef[] =>
   birPaymentsOf(db, keys)
     .filter((p) => p.status === 'posted')
     .map(({ id, number, date, period, reference, amountCents, penaltyCents }) => ({ id, number, date, period, reference, amountCents, penaltyCents }));
@@ -185,7 +206,7 @@ export function incomeTaxPosition(db: Db, year: number, quarter: Quarter) {
   const earlier = ([1, 2, 3] as Quarter[]).filter((q) => q < quarter).map((q): [BirForm, string] => ['1702Q', quarterPeriod(year, q)]);
   const priorPayments = earlier.length ? posted(db, earlier) : [];
   const priorPaid = wholePesos(priorPayments.reduce((s, p) => s + p.amountCents, 0));
-  const priorPrepaid = wholePesos(otherPrepaid(db, from, to));
+  const priorPrepaid = wholePesos(otherPrepaid(db, from, to) + carriedOverInto(db, year));
   const cwt = cwtOfYear(db, year, quarter, to);
   const cwtInHand = wholePesos(cwt.inHandCents);
   const payable = taxDue - priorPaid - priorPrepaid - cwtInHand;
@@ -212,7 +233,7 @@ export function incomeTaxPosition(db: Db, year: number, quarter: Quarter) {
     { key: 'mcit', label: `Minimum corporate income tax (${pct(settings.mcitRateBp)} of total gross income)${applies ? '' : applies === false ? ', does not apply yet' : ', year operations began not confirmed'}`, cents: mcit },
     { key: 'tax_due', label: `Income tax due (${basis === 'mcit' ? 'MCIT, the higher' : 'regular rate'})`, cents: taxDue },
     { key: 'prior_payments', label: 'Less: paid with the 1702Q of the earlier quarters', cents: priorPaid },
-    { key: 'prior_prepaid', label: 'Less: other prepaid income tax this year (1411 opening balance or journal vouchers)', cents: priorPrepaid },
+    { key: 'prior_prepaid', label: 'Less: excess credits carried over from last year and other prepaid income tax this year (1411)', cents: priorPrepaid },
     { key: 'cwt', label: 'Less: creditable tax withheld by customers, 2307s in hand (1410)', cents: cwtInHand },
     { key: 'payable', label: payable < 0 ? 'Excess credits (nothing to pay)' : 'Tax payable with this return', cents: payable },
   ];

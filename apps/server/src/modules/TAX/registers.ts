@@ -2,7 +2,8 @@
  * Tax registers (PLAN E12, G "Tax", L6), read from the ledger so each one ties to its GL account by construction:
  * one row per journal that touches the account in the period. A cancelled document's reversal is its own negative row
  * on the cancel date, the way it lands in that period's return, and a journal voucher on the account shows up as an
- * adjustment; the quarterly VAT close, the BIR payments and the opening tax payables (OBTP-) are left out. Each row
+ * adjustment; the quarterly VAT close, the BIR payments, the opening tax payables (OBTP-) and the year-end income tax
+ * settlements (ITS-) are left out. Each row
  * names the document, the number on the BIR paper form (sales invoice or CR, from documents.external_number) and the
  * customer's registered name and TIN.
  *   Sales register (2301 output VAT): VATable sales = the journal's revenue credits, VAT, total.
@@ -42,8 +43,10 @@ const NOT_A_PAYMENT = `NOT EXISTS (SELECT 1 FROM tax_bir_payments p WHERE p.docu
  * old books: it is no tax withheld or VAT of any period here, so no register lists it either.
  */
 const NOT_AN_OPENING_PAYABLE = `NOT EXISTS (SELECT 1 FROM tax_opening_payables o WHERE o.document_id = j.source_id AND j.source_type = 'document')`;
-/** The journals the registers read: all but the VAT closes, the BIR payments and the opening tax payables (their cancels included). */
-export const IN_REGISTERS = `${NOT_A_CLOSE} AND ${NOT_A_PAYMENT} AND ${NOT_AN_OPENING_PAYABLE}`;
+/** The year-end income tax settlement (ITS-) applies the 2307s in hand (1410) against the year's tax: no 2307 received, so no register lists it. */
+const NOT_A_SETTLEMENT = `NOT EXISTS (SELECT 1 FROM tax_income_tax_settlements s WHERE s.document_id = j.source_id AND j.source_type = 'document')`;
+/** The journals the registers read: all but the VAT closes, the BIR payments, the opening tax payables and the income tax settlements (their cancels included). */
+export const IN_REGISTERS = `${NOT_A_CLOSE} AND ${NOT_A_PAYMENT} AND ${NOT_AN_OPENING_PAYABLE} AND ${NOT_A_SETTLEMENT}`;
 
 /**
  * Journals in [from, to] with a line on one of `roles`, with per-journal sums of `sums` (column → SQL over j, l and a).
