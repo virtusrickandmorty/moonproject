@@ -278,6 +278,8 @@ describe('comparative statement columns', () => {
     expect(compared.sections.map((s) => s.compareAmountCents)).toEqual(previous.sections.map((s) => s.totalCents));
     expect(compared.netIncome).toMatchObject({ compareAmountCents: 15_000, differenceCents: 12_000, percentChange: 80 });
     const expenses = compared.sections[2]!.groups.flatMap((g) => g.lines);
+    const codes = expenses.flatMap((l) => (l.code ? [l.code] : []));
+    expect(codes).toEqual([...codes].sort()); // an account only in the other month keeps its place in the chart
     expect(expenses.find((l) => l.code === '6110')).toMatchObject({ amountCents: 0, compareAmountCents: 5_000, differenceCents: -5_000, percentChange: -100 });
     expect(expenses.find((l) => l.code === '6160')).toMatchObject({ amountCents: 3_000, compareAmountCents: 0, differenceCents: 3_000, percentChange: null });
     const csv = await accountant.get('/api/rpt/income-statement?from=2026-09-01&to=2026-09-30&compare=previous_month&format=csv');

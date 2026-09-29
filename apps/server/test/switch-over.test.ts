@@ -678,6 +678,7 @@ describe('recording the opening twice (D8: the wizard will not close until 3900 
   });
 
   it('the same balances typed again as a new document are recorded a second time: cash doubles and 3900 shows it', async () => {
+    expect(await issueCodes('acc.opening', { lines: cashLines() }, 'warning')).toEqual(['DUPLICATE_OPENING', 'DUPLICATE_OPENING']);
     const dup = await post('acc.opening', { lines: cashLines() }, 138_612_075);
     expect(dup.statusCode, dup.body).toBe(200);
     expect(dup.json().number).toBe('OB-000002');
@@ -686,7 +687,7 @@ describe('recording the opening twice (D8: the wizard will not close until 3900 
     opened.dupCash = dup.json();
   });
 
-  it('a job order, a supplier bill or a statutory month typed twice is refused by number; a loan, asset, advance, officer or 2307 is not', async () => {
+  it('a job order, a supplier bill or a statutory month typed twice is refused by number; a loan, asset, advance, officer or 2307 is only warned about', async () => {
     const jo = joInput({ customerId: c.school, oldNumber: 'JO 1150', receivableCents: 1_500_000, oldInvoices: '0412, 0413' });
     opened.jo = await record('jo.opening', jo, 1_500_000);
     expect(await issueCodes('jo.opening', jo)).toEqual(['OLD_NUMBER_USED']);
@@ -705,6 +706,8 @@ describe('recording the opening twice (D8: the wizard will not close until 3900 
     for (const [type, input, total] of unguarded) {
       expect(await issueCodes(type, input), type).toEqual([]);
       const first = await record(type, input, total);
+      // Typed again: a warning names the first document, and the second may still be recorded.
+      expect(await issueCodes(type, input, 'warning'), type).toContain('DUPLICATE_OPENING');
       const second = await record(type, input, total);
       expect([type, first.number === second.number], type).toEqual([type, false]);
       opened[`${type}#2`] = second;

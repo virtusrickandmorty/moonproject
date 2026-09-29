@@ -59,7 +59,7 @@ export const openingCaDoc: DocTypeDef<OpeningCaInput, OpeningCa> = {
       )
       .pluck()
       .get(doc.employeeId, doc.owedCents) as string | undefined;
-    issues.push(...duplicateOpeningIssue('employeeId', earlier, `this cash advance (${doc.employeeName}, ${formatPeso(doc.owedCents)})`));
+    issues.push(...duplicateOpeningIssue(ctx.db, 'employeeId', earlier, `this cash advance (${doc.employeeName}, ${formatPeso(doc.owedCents)})`));
     return issues;
   },
 

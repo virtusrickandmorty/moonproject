@@ -30,10 +30,11 @@ export function openingIssues(db: Db, businessDate: string): Issue[] {
 
 /**
  * The warning every opening document gives when a posted, not cancelled document of its own type already records the
- * same key figures (`number` is that document). A warning, not an error: two real rows can look alike.
+ * same key figures (`number` is that document). A warning, not an error: two real rows can look alike. Once the opening
+ * is closed, OPENING_CLOSED is the only thing worth saying.
  */
-export function duplicateOpeningIssue(field: string, number: string | undefined, what: string): Issue[] {
-  if (!number) return [];
+export function duplicateOpeningIssue(db: Db, field: string, number: string | undefined, what: string): Issue[] {
+  if (!number || openingClose(db)) return [];
   return [{ field, code: 'DUPLICATE_OPENING', level: 'warning', message: `${number} already records ${what}. Record it again only if there really are two.` }];
 }
 

@@ -51,9 +51,9 @@ function sectionRows(s: StatementSection, comparative = false): CsvCell[][] {
   for (const g of s.groups) {
     if (g.code) rows.push([s.title, g.code, g.name, ...blanks]);
     for (const l of g.lines) rows.push([s.title, l.code ?? '', l.name, ...values(l.amountCents, l.compareAmountCents)]);
-    if (g.code) rows.push([s.title, '', `Total ${g.name}`, ...values(g.totalCents, (g as typeof g & { compareAmountCents?: number }).compareAmountCents)]);
+    if (g.code) rows.push([s.title, '', `Total ${g.name}`, ...values(g.totalCents, g.compareAmountCents)]);
   }
-  rows.push([s.title, '', `Total ${s.title.toLowerCase()}`, ...values(s.totalCents, (s as typeof s & { compareAmountCents?: number }).compareAmountCents)]);
+  rows.push([s.title, '', `Total ${s.title.toLowerCase()}`, ...values(s.totalCents, s.compareAmountCents)]);
   return rows;
 }
 const STATEMENT_HEAD = ['Section', 'Account', 'Line', 'Amount PHP'];

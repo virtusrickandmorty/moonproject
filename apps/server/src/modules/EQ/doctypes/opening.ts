@@ -58,7 +58,7 @@ export const openingOfficerDoc: DocTypeDef<OpeningOfficerInput, OpeningOfficer> 
       .prepare(`SELECT d.number FROM eq_opening_balances b JOIN documents d ON d.id = b.document_id WHERE d.status = 'posted' AND b.person_id = ? AND b.amount_cents = ? ORDER BY d.number LIMIT 1`)
       .pluck()
       .get(doc.personId, doc.amountCents) as string | undefined;
-    issues.push(...duplicateOpeningIssue('personId', earlier, `this officer balance (${doc.personName}, ${formatPeso(doc.amountCents)})`));
+    issues.push(...duplicateOpeningIssue(ctx.db, 'personId', earlier, `this officer balance (${doc.personName}, ${formatPeso(doc.amountCents)})`));
     return issues;
   },
 

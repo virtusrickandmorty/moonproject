@@ -11,11 +11,12 @@ type ChartRow = { id: number; code: string; name: string; isHeader: number; role
 type Movement = { netCents: number; lineCount: number };
 
 /** One amount on the side of its section: a contra account (accumulated depreciation, sales discounts) is negative. */
-export type StatementLine = { accountId: number | null; code: string | null; name: string; amountCents: number; computed: boolean;
-  compareAmountCents?: number; differenceCents?: number; percentChange?: number | null };
+/** With a comparison (compareSections): the other period's amount, the difference, and the change in percent (null from zero). */
+export type Compared = { compareAmountCents?: number; differenceCents?: number; percentChange?: number | null };
+export type StatementLine = Compared & { accountId: number | null; code: string | null; name: string; amountCents: number; computed: boolean };
 /** The accounts under one header account (1100, 4100, ...) with their subtotal; no header when only x000 is above them. */
-export type StatementGroup = { code: string | null; name: string | null; lines: StatementLine[]; totalCents: number };
-export type StatementSection = { key: string; title: string; side: Side; groups: StatementGroup[]; totalCents: number };
+export type StatementGroup = Compared & { code: string | null; name: string | null; lines: StatementLine[]; totalCents: number };
+export type StatementSection = Compared & { key: string; title: string; side: Side; groups: StatementGroup[]; totalCents: number };
 
 export type Comparison = 'previous_month' | 'last_year';
 
@@ -38,15 +39,29 @@ const comparisonValues = (amountCents: number, compareAmountCents: number) => ({
   differenceCents: amountCents - compareAmountCents,
   percentChange: compareAmountCents === 0 ? null : (amountCents - compareAmountCents) / Math.abs(compareAmountCents) * 100 });
 
+/** The keys of both periods: this period's in its order, and one only in the other period put before the first coded key above it. */
+function mergedKeys<T>(current: T[], other: T[], key: (item: T) => string, code: (item: T) => string | null): string[] {
+  const keys = current.map(key);
+  const codes = new Map([...current, ...other].map((item) => [key(item), code(item)]));
+  for (const item of other) {
+    const k = key(item);
+    if (keys.includes(k)) continue;
+    const c = code(item);
+    const at = c === null ? -1 : keys.findIndex((x) => { const xc = codes.get(x); return xc != null && xc > c; });
+    if (at < 0) keys.push(k); else keys.splice(at, 0, k);
+  }
+  return keys;
+}
+
 /** Merge two independently calculated statements without losing accounts present in only one period. */
 export function compareSections(current: StatementSection[], other: StatementSection[]): StatementSection[] {
   return current.map((section, sectionIndex) => {
     const compared = other[sectionIndex]!;
-    const groupKeys = [...new Set([...section.groups, ...compared.groups].map((g) => g.code ?? ''))];
+    const groupKeys = mergedKeys(section.groups, compared.groups, (g) => g.code ?? '', (g) => g.code ?? g.lines[0]?.code ?? null);
     const groups = groupKeys.map((key) => {
       const group = section.groups.find((g) => (g.code ?? '') === key);
       const otherGroup = compared.groups.find((g) => (g.code ?? '') === key);
-      const lineKeys = [...new Set([...(group?.lines ?? []), ...(otherGroup?.lines ?? [])].map((l) => `${l.accountId ?? ''}:${l.code ?? ''}:${l.name}`))];
+      const lineKeys = mergedKeys(group?.lines ?? [], otherGroup?.lines ?? [], (l) => `${l.accountId ?? ''}:${l.code ?? ''}:${l.name}`, (l) => l.code);
       const lines = lineKeys.map((lineKey) => {
         const find = (lines: StatementLine[]) => lines.find((l) => `${l.accountId ?? ''}:${l.code ?? ''}:${l.name}` === lineKey);
         const line = find(group?.lines ?? []) ?? find(otherGroup?.lines ?? [])!;

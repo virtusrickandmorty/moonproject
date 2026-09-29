@@ -52,6 +52,9 @@ describe('print base', () => {
     const all = await owner.get('/api/prt/2307?year=2026&quarter=3');
     expect(all.statusCode, all.body).toBe(200);
     expect(all.json().pages).toBe(2);
+    expect(all.json().html).toContain('For the period 2026-07-01 to 2026-09-30');
+    expect(all.json().html).toContain('<th>July</th><th>August</th><th>September</th>');
+    expect(all.json().html).not.toContain('PRACTICE ONLY');
     for (const line of list.lines) {
       expect(all.json().html).toContain(line.supplierName);
       expect(all.json().html).toContain(formatPeso(line.baseCents));

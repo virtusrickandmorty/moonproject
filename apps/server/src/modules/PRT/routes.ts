@@ -123,7 +123,7 @@ export function prtRoutes(app: FastifyInstance, { db, clock, registry, practice 
       }
       const profile = db.prepare('SELECT * FROM prt_company_profile WHERE id = 1').get() as Profile | undefined;
       if (!profile) throw conflict('COMPANY_PROFILE_REQUIRED', 'An owner must complete the company profile before printing.');
-      return { html: render2307(profile, year, quarter, [...grouped.values()]), pages: grouped.size };
+      return { html: render2307(profile, year, quarter, [...grouped.values()], false, practice), pages: grouped.size };
     });
   app.get('/api/prt/printable-types', { config: { permission: 'authenticated' } }, async (req) => {
     const user = currentUser(req);

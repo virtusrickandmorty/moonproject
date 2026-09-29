@@ -121,7 +121,7 @@ export const openingWithholdingDoc: DocTypeDef<OpeningWithholdingInput, OpeningW
       if (on) add('warning', `rows.${i}.customerId`, 'SAME_2307', `${n}: ${r.customerName} has a ${r.atc} 2307 for ${quarterName(r)} on ${on} already. Record each certificate once.`);
       seen.add(key);
       const dup = same.get(r.customerId, r.year, r.quarter, r.cwtCents, r.vatWithheldCents) as string | undefined;
-      issues.push(...duplicateOpeningIssue(`rows.${i}.customerId`, dup, `this 2307 (${r.customerName}, ${quarterName(r)}, ${formatPeso(r.cwtCents + r.vatWithheldCents)})`));
+      issues.push(...duplicateOpeningIssue(ctx.db, `rows.${i}.customerId`, dup, `this 2307 (${r.customerName}, ${quarterName(r)}, ${formatPeso(r.cwtCents + r.vatWithheldCents)})`));
     });
     return issues;
   },

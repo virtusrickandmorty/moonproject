@@ -92,7 +92,7 @@ export const openingLoanDoc: DocTypeDef<OpeningLoanInput, OpeningLoan> = {
       )
       .pluck()
       .get(doc.lender, doc.principalCents) as string | undefined;
-    issues.push(...duplicateOpeningIssue('lender', earlier, `this loan (${doc.lender}, ${formatPeso(doc.principalCents)} still owed)`));
+    issues.push(...duplicateOpeningIssue(ctx.db, 'lender', earlier, `this loan (${doc.lender}, ${formatPeso(doc.principalCents)} still owed)`));
     return issues;
   },
 

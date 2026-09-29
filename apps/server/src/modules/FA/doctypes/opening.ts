@@ -95,7 +95,7 @@ export const openingAssetDoc: DocTypeDef<OpeningAssetInput, OpeningAsset> = {
       )
       .pluck()
       .get(doc.description, doc.acquiredOn, doc.costCents) as string | undefined;
-    issues.push(...duplicateOpeningIssue('description', earlier, `this asset (${doc.description}, ${doc.acquiredOn}, ${formatPeso(doc.costCents)})`));
+    issues.push(...duplicateOpeningIssue(ctx.db, 'description', earlier, `this asset (${doc.description}, ${doc.acquiredOn}, ${formatPeso(doc.costCents)})`));
     if (cls?.defaultLifeMonths && doc.life !== cls.defaultLifeMonths) {
       add('warning', 'lifeMonths', 'LIFE_DIFFERENT', `The usual life of ${cls.name.toLowerCase()} is ${cls.defaultLifeMonths} months. Please check.`);
     }

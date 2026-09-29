@@ -108,7 +108,7 @@ export const openingDoc: DocTypeDef<OpeningInput, Opening> = {
       const refusal = openingAccountRefusal(a);
       if (a.is_cash_place && !refusal) {
         const number = earlier.get(l.accountId, l.debitCents ?? 0, l.creditCents ?? 0) as string | undefined;
-        issues.push(...duplicateOpeningIssue(`${f}.accountId`, number, `${formatPeso(l.debitCents ?? l.creditCents ?? 0)} in ${a.name} (${a.code})`));
+        issues.push(...duplicateOpeningIssue(ctx.db, `${f}.accountId`, number, `${formatPeso(l.debitCents ?? l.creditCents ?? 0)} in ${a.name} (${a.code})`));
       }
       if (refusal) err(`${f}.accountId`, refusal.code, `Line ${l.lineNo}: ${refusal.message}`);
       else if (a.party_type === 'stockholder') {
