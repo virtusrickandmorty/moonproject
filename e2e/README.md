@@ -9,6 +9,7 @@ button names), never by CSS classes. The specs share one shop and run in file or
 - `03-quick-sale`: a customer, a quick sale with its collection.
 - `04-payroll`: an employee, a week of attendance, the run, its release, the payslip.
 - `05-backups`: recovery keys, back up now, restore drill.
+- `06-import-bulk`: the old sheet's tabs through the importer: customers, then sizes typed with no customer (a suggestion accepted, wearers under one customer and a new group, one made its own customer), then employees' pay types and rates in one table, then the same files again with nothing made twice.
 
 First time on a PC: `npx playwright install chromium`. Where Chromium is already installed, point `E2E_CHROMIUM` at it.
 `E2E_PORT` changes the port (3199).
