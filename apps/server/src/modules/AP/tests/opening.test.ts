@@ -139,7 +139,7 @@ describe('opening supplier bill golden (PLAN D8 step 3)', () => {
       }),
     ]);
     expect(ap.payments).toMatchObject([{ number: 'SPAY-000001', totalCents: 10_000_000, bills: [{ billNumber: 'OBAP-000001', amountCents: 10_000_000 }] }]);
-    expect((await encoder.get('/api/ap/suppliers')).json()).toEqual([{ supplierId: equipment, supplierName: 'Sample Equipment Supply', balanceCents: 28_561_110 }]);
+    expect((await encoder.get('/api/ap/suppliers')).json()).toEqual([{ supplierId: equipment, supplierName: 'Sample Equipment Supply', balanceCents: 28_561_110, advancesCents: 0, netCents: 28_561_110 }]);
 
     const ewt = (await accountant.get('/api/tax/registers/ewt?from=2026-01-01&to=2026-12-31')).json();
     expect(ewt.rows.map((r: { documentNumber: string }) => r.documentNumber)).toEqual(['BILL-000001']);

@@ -55,7 +55,10 @@ import { SystemHealthPage } from './PLT/SystemHealth.tsx';
 import { BillForm } from './AP/BillForm.tsx';
 import { OpeningBillForm } from './AP/OpeningBillForm.tsx';
 import { PaymentForm as SupplierPaymentForm } from './AP/PaymentForm.tsx';
-import { billView, paymentView } from './AP/views.tsx';
+import { AdvanceForm as SupplierAdvanceForm } from './AP/AdvanceForm.tsx';
+import { AdvanceReturnForm } from './AP/AdvanceReturnForm.tsx';
+import { ApBalances, ApSupplierPage } from './AP/Suppliers.tsx';
+import { advanceReturnView, advanceView as supplierAdvanceView, billView, paymentView } from './AP/views.tsx';
 import { VoucherForm } from './EXP/VoucherForm.tsx';
 import { OfficerForm, OwnerMoneyForm } from './EQ/forms.tsx';
 import { OpeningForm as OpeningOfficerForm } from './EQ/OpeningForm.tsx';
@@ -138,6 +141,8 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/bak/:section': Backups,
   '/aud/log': AuditLog,
   '/aud/integrity': IntegrityCheck,
+  '/ap/suppliers': ApBalances,
+  '/ap/suppliers/:id': ApSupplierPage,
 };
 
 /** A module's own form; `me` lets it offer what only some users may do (the remittance's date paid, for acc.backdate). */
@@ -164,6 +169,8 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'ap.bill': BillForm,
   'ap.payment': SupplierPaymentForm,
   'ap.opening': OpeningBillForm,
+  'ap.advance': SupplierAdvanceForm,
+  'ap.advance_return': AdvanceReturnForm,
   'exp.voucher': VoucherForm,
   'eq.owner_money': OwnerMoneyForm,
   'eq.officer': OfficerForm,
@@ -183,5 +190,5 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'tax.payable.opening': OpeningPayableForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'jo.opening': openingJobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView,
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'jo.opening': openingJobOrderView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'ap.bill': billView, 'ap.payment': paymentView, 'ap.advance': supplierAdvanceView, 'ap.advance_return': advanceReturnView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView,
   'col.cwt_only': cwtOnlyView, 'col.forfeit': forfeitView, 'col.credit_memo': creditMemoView, 'col.write_off': writeOffView };
