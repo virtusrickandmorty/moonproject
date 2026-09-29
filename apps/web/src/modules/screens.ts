@@ -49,6 +49,7 @@ import { BalanceSheet, IncomeStatement } from './RPT/Statements.tsx';
 import { ArAging, CustomerStatement } from './RPT/Receivables.tsx';
 import { DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
 import { PayrollRegister, PieceWork, LaborCost, ThirteenthRegister, ProductionStatus, Throughput, WorkerOutput, LeadTime, LateJobs, JobMargin } from './RPT/PayrollProduction.tsx';
+import { ApAging, Purchases, PurchaseOrders, ReceivedNotBilled, CashPosition, Transfers, CashCounts, Assets as AssetSchedule, LateEntries, Cancellations, Exceptions, SignIns } from './RPT/Operations.tsx';
 import { CashAccounts } from './CASH/CashAccounts.tsx';
 import { CashBook } from './CASH/CashBook.tsx';
 import { BankRecon, BankReconWork } from './CASH/BankRecon.tsx';
@@ -175,6 +176,18 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/rpt/lead-time': LeadTime,
   '/rpt/late-jobs': LateJobs,
   '/rpt/job-margin': JobMargin,
+  '/rpt/ap-aging': ApAging,
+  '/rpt/purchases': Purchases,
+  '/rpt/purchase-orders': PurchaseOrders,
+  '/rpt/received-not-billed': ReceivedNotBilled,
+  '/rpt/cash-position': CashPosition,
+  '/rpt/transfers': Transfers,
+  '/rpt/cash-counts': CashCounts,
+  '/rpt/assets': AssetSchedule,
+  '/rpt/late-entries': LateEntries,
+  '/rpt/cancellations': Cancellations,
+  '/rpt/exceptions': Exceptions,
+  '/rpt/sign-ins': SignIns,
   '/tax/sales': SalesRegister,
   '/tax/2307-received': WithholdingReceived,
   '/tax/purchases': PurchasesRegister,
