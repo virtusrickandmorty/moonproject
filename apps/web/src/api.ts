@@ -433,7 +433,18 @@ export interface ApBalance { supplierId: string; supplierName: string; balanceCe
 /** GET /api/acc/opening, what an opening document's form needs: the cut-over date it is dated, and the close once done. */
 export type OpeningStatus = Pick<OpeningState, 'cutoverDate' | 'closed'>;
 export interface EqPerson { id: string; name: string; isStockholder: boolean; isOfficer: boolean; position: string | null }
-export interface Setting { key: string; label: string; current: unknown }
+/** GET /api/settings: each dated setting with the value in force today and every version, newest first. */
+export interface SettingVersion { id: number; key: string; effectiveFrom: string; value: unknown; reason: string; createdAt: string; createdBy: string | null }
+export interface Setting { key: string; label: string; current: unknown; versions: SettingVersion[] }
+/** Users and roles (SEC, owner only): GET /api/users and GET /api/roles. */
+export interface UserRow { id: string; username: string; displayName: string; isActive: boolean; mustChangePassword: boolean; roles: string[] }
+export interface RoleGrid { roles: string[]; permissions: { key: string; module: string; label: string; roles: string[] }[] }
+/** The chart of accounts as GET /api/acc/accounts returns it, in code order. `balanceCents` is debit-positive. */
+export interface CoaAccount {
+  id: number; code: string; name: string; type: Account['type']; normalSide: 'debit' | 'credit'; roleKey: string | null; partyType: PartyType | null;
+  isHeader: boolean; isCashPlace: boolean; isReserved: boolean; isActive: boolean; version: number; balanceCents: number;
+}
+export interface NewAccountBody { code: string; name: string; type: Account['type']; normalSide?: 'debit' | 'credit'; partyType?: PartyType }
 
 /** Chart of accounts (ACC), for pickers. `partyType`: the subledger a line on the account names; 'free' takes any, or none. */
 export type PartyType = 'customer' | 'supplier' | 'employee' | 'officer' | 'stockholder' | 'loan' | 'asset' | 'free';
@@ -760,6 +771,23 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** D6: what of a payroll run's month is already remitted (the warning before a cancel). */
     runRemitted: (runId: string) => call<{ month: string; remitted: { scheme: Scheme; label: string; numbers: string[] }[] }>('GET', `/api/stat/runs/${encodeURIComponent(runId)}/remitted`),
     settings: () => call<Setting[]>('GET', '/api/settings'),
+    /** A new version from today or later (acc.settings.manage); needs a fresh password (step-up). */
+    addSetting: (key: string, body: { effectiveFrom: string; value: unknown; reason: string }) => call<SettingVersion>('POST', `/api/settings/${encodeURIComponent(key)}`, body),
+    /** Users and roles (sec.users.manage). Every change but the two reads needs a fresh password (step-up). */
+    users: () => call<UserRow[]>('GET', '/api/users'),
+    addUser: (body: { username: string; displayName: string; roles: string[]; temporaryPassword: string }) => call<{ id: string }>('POST', '/api/users', body),
+    setUserRoles: (id: string, roles: string[]) => call<{ ok: true }>('POST', `/api/users/${encodeURIComponent(id)}/roles`, { roles }),
+    resetUserPassword: (id: string, temporaryPassword: string) => call<{ ok: true }>('POST', `/api/users/${encodeURIComponent(id)}/reset-password`, { temporaryPassword }),
+    setUserActive: (id: string, active: boolean) => call<{ ok: true }>('POST', `/api/users/${encodeURIComponent(id)}/active`, { active }),
+    roles: () => call<RoleGrid>('GET', '/api/roles'),
+    setRolePermission: (role: string, permissionKey: string, granted: boolean) =>
+      call<{ ok: true }>('POST', `/api/roles/${encodeURIComponent(role)}/permissions`, { permissionKey, granted }),
+    /** The chart of accounts (acc.coa.view); changes need acc.coa.manage, `v` is the account's version (If-Match). Deactivating needs a fresh password. */
+    coaAccounts: () => call<CoaAccount[]>('GET', '/api/acc/accounts'),
+    addAccount: (body: NewAccountBody) => call<CoaAccount>('POST', '/api/acc/accounts', body),
+    renameAccount: (id: number, v: number, name: string) => call<CoaAccount>('PUT', `/api/acc/accounts/${id}`, { name }, version(v)),
+    deactivateAccount: (id: number, v: number) => call<CoaAccount>('POST', `/api/acc/accounts/${id}/deactivate`, undefined, version(v)),
+    activateAccount: (id: number, v: number) => call<CoaAccount>('POST', `/api/acc/accounts/${id}/activate`, undefined, version(v)),
     suppliers: () => call<SupplierRow[]>('GET', '/api/pur/suppliers'),
     supplies: () => call<SupplyRow[]>('GET', '/api/pur/supplies'),
     supplierList: (status: PurStatus) => call<SupplierRecord[]>('GET', `/api/pur/suppliers?status=${status}`),
