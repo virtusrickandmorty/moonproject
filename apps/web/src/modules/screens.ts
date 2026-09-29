@@ -70,6 +70,10 @@ import { VatCloseForm } from './TAX/VatCloseForm.tsx';
 import { JvForm } from './ACC/JvForm.tsx';
 import { OpeningForm } from './ACC/OpeningForm.tsx';
 import { OpeningBalances } from './ACC/OpeningBalances.tsx';
+import { ChartOfAccounts } from './ACC/ChartOfAccounts.tsx';
+import { Settings } from './ACC/Settings.tsx';
+import { Users } from './SEC/Users.tsx';
+import { Roles } from './SEC/Roles.tsx';
 import { BirPaymentForm } from './TAX/BirPaymentForm.tsx';
 import { OpeningWithholdingForm } from './TAX/OpeningWithholdingForm.tsx';
 import { OpeningPayableForm } from './TAX/OpeningPayableForm.tsx';
@@ -162,6 +166,10 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/admin/shop-certificate': ShopCertificate,
   '/admin/practice': PracticeShop,
   '/admin/health': SystemHealthPage,
+  '/admin/users': Users,
+  '/admin/roles': Roles,
+  '/acc/chart': ChartOfAccounts,
+  '/acc/settings': Settings,
   '/bak': Backups,
   '/bak/:section': Backups,
   '/mig': ImportOldData,
