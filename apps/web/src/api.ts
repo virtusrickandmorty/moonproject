@@ -324,6 +324,26 @@ export interface VatSummary {
 /** Money out (AP, EXP, EQ). Suppliers and supplies are PUR's own rows (GET /api/pur/suppliers, /api/pur/supplies). */
 export interface SupplierRow { id: string; name: string; tin: string | null; is_vat_registered: number; ewt_class: string | null; payment_terms_days: number | null }
 export interface SupplyRow { id: string; name: string; category: 'materials' | 'ready_made' }
+/** Suppliers and the supplies catalogue as PUR keeps them (GET /api/pur/suppliers?status=, /api/pur/supplies?status=): the whole row, with its version for If-Match. */
+export type PurStatus = 'active' | 'inactive' | 'all';
+export interface SupplierRecord extends SupplierRow { registered_name: string; sworn_declaration_until: string | null; legacy_id: string | null; is_active: number; version: number }
+export interface SupplierBody {
+  name: string; registeredName: string; tin: string | null; isVatRegistered: boolean; ewtClass: string | null; swornDeclarationUntil: string | null; paymentTermsDays: number | null; legacyId: string | null;
+}
+export interface SupplierContact { id: string; supplier_id: string; name: string; role: string | null; phone: string | null; email: string | null }
+export interface ContactBody { name: string; role: string | null; phone: string | null; email: string | null }
+export type SupplyUnit = 'yard' | 'meter' | 'kg' | 'roll' | 'pc';
+export interface SupplyRecord extends SupplyRow { unit: SupplyUnit; last_purchase_cost_cents: number; is_active: number; version: number }
+export interface SupplyBody { name: string; unit: SupplyUnit; category: 'materials' | 'ready_made' }
+/** A purchase order line with what posted receiving reports have received (GET /api/pur/purchase-orders/:id and /open). */
+export interface PoLineStatus { lineNo: number; supplyId: string; supplyName: string; unit: SupplyUnit; orderedQty: number; receivedQty: number; remainingQty: number; unitCostCents: number }
+export interface PoStatus { id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; expectedDate: string | null; supplierId: string; supplierName: string; lines: PoLineStatus[] }
+export interface RrDetail {
+  id: string; number: string; status: 'posted' | 'cancelled'; date: string; poId: string; poNumber: string; supplierId: string; supplierName: string;
+  lines: { lineNo: number; poLineNo: number; supplyId: string; supplyName: string; unit: SupplyUnit; qty: number }[];
+}
+export interface SupplierPo { id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; expectedDate: string | null; fullyReceived: boolean }
+export interface SupplierRr { id: string; number: string; status: 'posted' | 'cancelled'; date: string; poId: string; poNumber: string }
 /** GET /api/inv/count-sheet?format=json: the active supplies of a category and the cost each is valued at on the count date. */
 export interface SheetSupply {
   supplyId: string; name: string; unit: 'yard' | 'meter' | 'kg' | 'roll' | 'pc'; milliUnits: boolean;
@@ -623,6 +643,24 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     settings: () => call<Setting[]>('GET', '/api/settings'),
     suppliers: () => call<SupplierRow[]>('GET', '/api/pur/suppliers'),
     supplies: () => call<SupplyRow[]>('GET', '/api/pur/supplies'),
+    supplierList: (status: PurStatus) => call<SupplierRecord[]>('GET', `/api/pur/suppliers?status=${status}`),
+    supplier: (id: string) => call<SupplierRecord>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}`),
+    addSupplier: (body: SupplierBody) => call<{ id: string; version: number }>('POST', '/api/pur/suppliers', body),
+    updateSupplier: (id: string, v: number, body: SupplierBody) => call<{ success: true; version: number }>('PUT', `/api/pur/suppliers/${encodeURIComponent(id)}`, body, version(v)),
+    deactivateSupplier: (id: string, v: number) => call<{ success: true }>('POST', `/api/pur/suppliers/${encodeURIComponent(id)}/deactivate`, undefined, version(v)),
+    supplierContacts: (id: string) => call<SupplierContact[]>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}/contacts`),
+    addSupplierContact: (id: string, body: ContactBody) => call<{ id: string }>('POST', `/api/pur/suppliers/${encodeURIComponent(id)}/contacts`, body),
+    deactivateSupplierContact: (supplierId: string, id: string) => call<{ success: true }>('POST', `/api/pur/suppliers/${encodeURIComponent(supplierId)}/contacts/${encodeURIComponent(id)}/deactivate`),
+    supplierPurchaseOrders: (id: string) => call<SupplierPo[]>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}/purchase-orders`),
+    supplierReceivingReports: (id: string) => call<SupplierRr[]>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}/receiving-reports`),
+    supplyList: (status: PurStatus) => call<SupplyRecord[]>('GET', `/api/pur/supplies?status=${status}`),
+    addSupply: (body: SupplyBody) => call<{ id: string; version: number }>('POST', '/api/pur/supplies', body),
+    updateSupply: (id: string, v: number, body: SupplyBody) => call<{ success: true; version: number }>('PUT', `/api/pur/supplies/${encodeURIComponent(id)}`, body, version(v)),
+    deactivateSupply: (id: string, v: number) => call<{ success: true }>('POST', `/api/pur/supplies/${encodeURIComponent(id)}/deactivate`, undefined, version(v)),
+    /** Posted purchase orders with something still to receive (pur.rr.create), for the receiving form. */
+    openPurchaseOrders: () => call<PoStatus[]>('GET', '/api/pur/purchase-orders/open'),
+    purchaseOrder: (id: string) => call<PoStatus>('GET', `/api/pur/purchase-orders/${encodeURIComponent(id)}`),
+    receivingReport: (id: string) => call<RrDetail>('GET', `/api/pur/receiving-reports/${encodeURIComponent(id)}`),
     countSheet: (category: string, date: string) => call<CountSheet>('GET', `/api/inv/count-sheet?${new URLSearchParams({ category, date, format: 'json' })}`),
     expCategories: () => call<ExpCategory[]>('GET', '/api/exp/categories'),
     apLedger: (supplierId: string) => call<ApLedger>('GET', `/api/ap/suppliers/${encodeURIComponent(supplierId)}`),

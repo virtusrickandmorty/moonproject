@@ -28,6 +28,8 @@ export const SCREENS: MenuItem[] = [
   { group: 'Overview', label: 'Notifications', path: '/dash/notifications', permission: 'dash.view' },
   { group: 'Overview', label: 'Calendar', path: '/cal', permission: 'cal.view' },
   { group: 'Sales', label: 'Customers', path: '/cus', permission: 'cus.view' },
+  { group: 'Purchases & Expenses', label: 'Suppliers', path: '/pur/suppliers', permission: 'pur.supplier.view' },
+  { group: 'Purchases & Expenses', label: 'Supplies', path: '/pur/supplies', permission: 'pur.supply.view' },
   { group: 'Admin', label: 'Shop certificate', path: '/admin/shop-certificate' },
   { group: 'Admin', label: 'Practice shop', path: '/admin/practice' },
   { group: 'Production', label: 'Production board', path: '/prd/board', permission: 'prd.view' },
