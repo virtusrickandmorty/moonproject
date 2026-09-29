@@ -22,17 +22,17 @@
 
 **Changing a job order:**
 1. Open the job order you want to change.
-2. Check the label on the job order screen for a cancellation or reissue option. (If **Edit** is not on the screen, do not write it).
+2. Click **Edit** (or **Cancel** if you only want to cancel it). **Edit** will cancel the old job order and open a new one with the same details.
 3. Make your changes and click **Record**.
 4. If there were deposits, you will see a notice to move them to the replacement job order.
 
 **The release slip:**
-1. Open the job order and click **Release**, or open **Release Slips** from the **Sales** menu. The form is **New release slip**.
-2. Under **What is left to release**, tick the lines and pieces that are going out now.
+1. Open the job order and click **Release**, or open **Release Slips** from the **Sales** menu. The form is **New release slip**. It starts with a **Job order** panel.
+2. Under **What goes out**, tick the lines and pieces that are going out now.
 3. Under **Who claimed it**, type the **Claimed by** name and pick the **ID seen**. Only the kind of ID is kept, never its number.
 4. Under **Not ready yet**, if it is going out before it is ready, type the **Owner's reason to release it now**.
 5. Under **Still to be paid**, if the job is not paid in full, you will be asked **Why it goes out before it is paid**. Type **Pay within (days)** to give credit.
-6. Under **Invoice**, type the **Invoice number (from the booklet)**, or tick "Invoice to follow".
+6. Under **Invoice**, type the **Invoice number (from the booklet)**, or tick **Invoice to follow (the booklet is not at hand)**.
 7. Click **Record**. In the **Record this release?** box, click **Record** again (or **Go back**).
 
 **Recording the booklet invoice:**

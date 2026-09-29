@@ -129,6 +129,6 @@ describe('government loans property test (PLAN I1.3)', () => {
       { numRuns: 15, endOnFailure: true },
     );
     expect(stats.runs).toBeGreaterThan(0);
-    expect(stats.withLoans).toBeGreaterThanOrEqual(0);
+    expect(stats.withLoans).toBeGreaterThan(0);
   });
 });
