@@ -60,7 +60,25 @@ export interface DocDetail { header: DocHeader; input: Record<string, unknown>; 
 export interface Preview { totalCents: number; summary: string; issues: Issue[]; journal?: JournalLine[] | null; doc?: unknown }
 export interface PostResult { id: string; number: string; totalCents: number; warnings: Issue[] }
 export interface Draft { id: string; docType: string; payload: { values?: Record<string, string>; form?: unknown }; version: number; updatedAt: string }
-export interface CashPlace { id: number; name: string; balanceCents: number | null }
+export interface CashPlace { id: number; name: string; balanceCents: number | null; kind?: 'cash' | 'checks' | 'bank' | 'ewallet' }
+/** Customer checks (COL): the checks-on-hand list, checks at the bank, and the post-dated checks memo list (ACC-23). */
+export interface CheckOnHand {
+  collectionId: string; collectionNumber: string; lineNo: number; receivedOn: string; days: number; customerId: string; customerName: string;
+  cashPlaceId: number; cashPlaceName: string; checkNumber: string; bank: string; checkDate: string; amountCents: number;
+  returned: { id: string; number: string; date: string } | null;
+}
+export interface ChecksOnHand { asOf: string; checks: CheckOnHand[]; totalCents: number; ledgerCents: number | null }
+export interface CheckAtBank {
+  collectionId: string; collectionNumber: string; lineNo: number; customerName: string; cashPlaceName: string; checkNumber: string; bank: string; checkDate: string;
+  amountCents: number; deposit: { id: string; number: string; date: string };
+}
+export interface PostDatedCheck {
+  id: string; customerId: string; customerName: string; bank: string; checkNumber: string; checkDate: string; amountCents: number; note: string | null;
+  createdAt: string; createdBy: string; jobOrders: { id: string; number: string }[]; status: 'waiting' | 'due' | 'used' | 'voided';
+  usedBy: { id: string; number: string } | null; voided: { reason: string; at: string } | null;
+}
+export interface NewPostDatedCheck { customerId: string; bank: string; checkNumber: string; checkDate: string; amountCents: number; jobOrderIds: string[]; note?: string }
+export type CheckRef = { collectionId: string; lineNo: number };
 export interface DashItem { id: string; label: string; href?: string; detail?: string; amountCents?: number }
 export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string }
 export interface DashHomeData { role: string; asOf: string; widgets: DashWidget[] }
@@ -836,6 +854,18 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     customerGroups: (id: string) => call<{ groups: CustomerGroup[] }>('GET', `/api/cus/customers/${encodeURIComponent(id)}`).then((r) => r.groups.filter((g) => g.is_active === 1)),
     customers: (search: string) => call<CustomerRow[]>('GET', `/api/cus/customers?${new URLSearchParams({ search, limit: '10' })}`),
     openItems: (customerId: string) => call<OpenItems>('GET', customer(customerId, 'open-items')),
+    checksOnHand: () => call<ChecksOnHand>('GET', '/api/col/checks'),
+    checksAtBank: () => call<CheckAtBank[]>('GET', '/api/col/checks/at-bank'),
+    checkDepositPreview: (checks: CheckRef[], toCashPlaceId: number) => call<Preview>('POST', '/api/col/checks/deposit/preview', { checks, toCashPlaceId }),
+    /** One fund transfer from Checks on hand to the bank for the ticked checks, which are then marked deposited. */
+    checkDeposit: (checks: CheckRef[], toCashPlaceId: number, expectedTotalCents: number, key: string) =>
+      call<{ transfer: PostResult; count: number }>('POST', '/api/col/checks/deposit', { checks, toCashPlaceId, expectedTotalCents }, idem(key)),
+    checkReturn: (b: CheckRef & { chargeCents?: number; reason: string; cancelCollection: boolean }, key: string) =>
+      call<{ transfer: PostResult; charge: PostResult | null; cancelled: boolean; summary: string }>('POST', '/api/col/checks/return', b, idem(key)),
+    pdcs: () => call<PostDatedCheck[]>('GET', '/api/col/pdcs'),
+    pdc: (id: string) => call<PostDatedCheck>('GET', `/api/col/pdcs/${encodeURIComponent(id)}`),
+    addPdc: (b: NewPostDatedCheck) => call<PostDatedCheck>('POST', '/api/col/pdcs', b),
+    voidPdc: (id: string, reason: string) => call<PostDatedCheck>('POST', `/api/col/pdcs/${encodeURIComponent(id)}/void`, { reason }),
     refundable: (customerId: string) => call<Refundable>('GET', customer(customerId, 'refundable')),
     transferable: (customerId: string) => call<Transferable>('GET', customer(customerId, 'transferable')),
     customerInvoices: (customerId: string) => call<CustomerInvoices>('GET', customer(customerId, 'invoices')),
