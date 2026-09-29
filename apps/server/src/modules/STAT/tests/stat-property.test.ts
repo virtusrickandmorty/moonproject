@@ -67,7 +67,8 @@ describe('statutory property test (PLAN I1.3)', () => {
               stats.remittances++;
               expect(remittanceDoc.load(db, p.id)).toEqual(computed);
               expect(remittanceDoc.toInput(remittanceDoc.load(db, p.id))).toEqual(input);
-              expect(computed.lines.reduce((s, l) => s + l.amountCents, 0)).toBe(input.amountCents);
+              // The employees' debits less any year-end refunds taken off (credits) are the amount paid.
+              expect(computed.lines.reduce((s, l) => s + l.amountCents, 0) + computed.adjustments.reduce((s, a) => s + a.debitCents - a.creditCents, 0)).toBe(input.amountCents);
               expect(computed.totalCents).toBe(input.amountCents + (input.penaltyCents ?? 0));
               if (input.penaltyCents) stats.penalties++;
             } else {
@@ -87,7 +88,7 @@ describe('statutory property test (PLAN I1.3)', () => {
           const perAccount = new Map<string, number>();
           for (const month of statMonths(db)) {
             const lists = monthLists(db, month, false);
-            const totals = [lists.sss.totalCents, lists.phic.totalCents, lists.hdmf.totalCents, lists.tax.taxWithheldCents];
+            const totals = [lists.sss.totalCents, lists.phic.totalCents, lists.hdmf.totalCents, lists.tax.taxWithheldCents - lists.tax.yearEndRefundCents];
             expect(lists.check.map((c) => c.recordedCents), `${step} ${month}`).toEqual(totals);
             expect(lists.tax.totalCompensationCents - lists.tax.nonTaxableCents).toBe(lists.tax.taxableCents);
             for (const c of lists.check) {

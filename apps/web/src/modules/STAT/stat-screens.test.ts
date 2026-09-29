@@ -44,6 +44,26 @@ describe('statutory screen rules', () => {
     ]);
   });
 
+  it('the withholding-tax check words year-end tax refunds as refunds, never as a payroll cancelled after it was remitted (K23)', () => {
+    const none = { dueCents: 0, refundCents: 0, refundOpenCents: 0, carriedInCents: 0, carriedFrom: [], carriedOutCents: 0 };
+    const c = (x: Partial<SchemeCheck>) => ({ ...none, ...x }) as SchemeCheck;
+    expect([
+      // December: 7,090.00 owed, a 910.00 refund still to take off → 6,180.00 to remit.
+      c({ recordedCents: 618_000, remittedCents: 0, balanceCents: 618_000, dueCents: 618_000, refundCents: 134_245, refundOpenCents: 91_000 }),
+      // December: refunds 820.00 more than the tax → nothing to remit, carried to January.
+      c({ recordedCents: -82_000, remittedCents: 0, balanceCents: -82_000, refundCents: 834_245, refundOpenCents: 791_000, carriedOutCents: 82_000 }),
+      // January: 2,014.80 withheld less December's 820.00.
+      c({ recordedCents: 201_480, remittedCents: 0, balanceCents: 201_480, dueCents: 119_480, carriedInCents: 82_000, carriedFrom: ['2026-12'] }),
+      // December once January's remittance took its refunds off.
+      c({ recordedCents: -82_000, remittedCents: -82_000, balanceCents: 0, refundCents: 834_245 }),
+    ].map((x) => checkWords(x))).toEqual([
+      { text: '₱6,180.00 to remit, after ₱910.00 of year-end tax refunds', tone: 'info' },
+      { text: "Nothing to remit: ₱820.00 of year-end tax refunds above the month's tax come off the next month's remittance", tone: 'info' },
+      { text: '₱1,194.80 to remit: ₱2,014.80 less ₱820.00 of year-end tax refunds carried from 2026-12', tone: 'info' },
+      { text: 'Remitted in full', tone: 'success' },
+    ]);
+  });
+
   it('the menu shows Government remittances to those with stat.view, next to the Remittances list', () => {
     const types = [{ key: 'stat.remittance', module: 'STAT', title: 'Remittance' }] as never[];
     expect(buildMenu(types, new Set(['stat.view'])).find((g) => g.group === 'People & Payroll')).toEqual({
