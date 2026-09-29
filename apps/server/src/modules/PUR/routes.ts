@@ -8,17 +8,23 @@ import { appendAudit } from '../../engine/audit.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
+import { purLookupRoutes } from './lookups.ts';
 
 const preconditionRequired = (msg: string) => new AppError('PRECONDITION_REQUIRED', msg, 428);
 const badRequest = (msg: string) => new AppError('BAD_REQUEST', msg, 400);
 const notFound = (msg: string) => new AppError('NOT_FOUND', msg, 404);
 const conflict = (msg: string) => new AppError('CONFLICT', msg, 409);
 
+/** `?status=` on the master lists: active (the default, as before), inactive or all. */
+const listStatus = (query: unknown) => z.object({ status: z.enum(['active', 'inactive', 'all']).default('active') }).parse(query).status;
+const statusWhere = (status: 'active' | 'inactive' | 'all') => (status === 'all' ? '' : `WHERE is_active = ${status === 'active' ? 1 : 0}`);
+
 export function purRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
+  purLookupRoutes(app, deps);
 
   app.get('/api/pur/suppliers', { config: { permission: 'pur.supplier.view' } }, async (req) => {
-    return db.prepare('SELECT * FROM pur_suppliers WHERE is_active = 1 ORDER BY name').all();
+    return db.prepare(`SELECT * FROM pur_suppliers ${statusWhere(listStatus(req.query))} ORDER BY name`).all();
   });
 
   app.get('/api/pur/suppliers/:id', { config: { permission: 'pur.supplier.view' } }, async (req) => {
@@ -217,7 +223,7 @@ export function purRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   app.get('/api/pur/supplies', { config: { permission: 'pur.supply.view' } }, async (req) => {
-    return db.prepare('SELECT * FROM pur_supplies WHERE is_active = 1 ORDER BY name').all();
+    return db.prepare(`SELECT * FROM pur_supplies ${statusWhere(listStatus(req.query))} ORDER BY name`).all();
   });
 
   app.post('/api/pur/supplies', { config: { permission: 'pur.supply.edit' } }, async (req) => {

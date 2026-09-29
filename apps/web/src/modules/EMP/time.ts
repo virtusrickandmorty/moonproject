@@ -2,7 +2,7 @@
  * The attendance grid's rules (PLAN E11): the pay period shown by default, the days in it, which statuses a day takes,
  * overtime typed in hours, and the cells that changed. Pure, so it is tested without a browser; the server checks again.
  */
-import type { AttendanceDay, AttendanceSave, AttendanceStatus } from '../../api.ts';
+import type { AttendanceDay, AttendanceSave, AttendanceStatus, PaidDays } from '../../api.ts';
 
 export const STATUS_LABEL: Record<AttendanceStatus, string> = {
   present: 'Present', half_day: 'Half day', absent: 'Absent', rest_day: 'Rest day', leave: 'Leave (SIL)', unpaid_leave: 'Unpaid leave',
@@ -79,3 +79,7 @@ export function changedCells(saved: AttendanceDay[], cells: Record<string, Cell>
   days.sort((a, b) => a.date.localeCompare(b.date) || a.employeeId.localeCompare(b.employeeId));
   return { days, errors };
 }
+
+/** The recorded payroll run that paid an employee's day (the cell is locked until it is cancelled), if any. */
+export const paidBy = (paid: PaidDays[], employeeId: string, date: string): string | undefined =>
+  paid.find((p) => p.employeeId === employeeId && p.from <= date && date <= p.to)?.number;

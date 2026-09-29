@@ -263,7 +263,7 @@ describe('opening tax payable goldens (PLAN D8 step 3)', () => {
     noBrokenInvariants();
   });
 
-  it('a 1702 stays on 2320; the 1702Q is due with a BIR payment of that quarter', async () => {
+  it('the 1702Q and the 1702 the old books left are each due with a BIR payment of that return, from 2320', async () => {
     await setCutover();
     const res = await open(obtp([vatQ2(), itQ2(), { form: '1702', period: '2025', amountCents: 4_200_000 }]));
     expect(res.statusCode, res.body).toBe(200);
@@ -277,9 +277,18 @@ describe('opening tax payable goldens (PLAN D8 step 3)', () => {
     expect((await preview(obtp([vatQ2(), ewtQ2(), itQ2()]))).json().summary).toBe(
       'This will record 3 BIR returns of the old books not yet paid as open on the cut-over date 2026-09-27: ₱84,000.00 VAT (2550Q), ₱9,200.00 EWT (1601-EQ) of 3 suppliers and ₱15,000.00 income tax (1702Q).',
     );
-    expect(periodsDue(env.db)).toEqual([{ form: '2550Q', period: '2026-Q2', payableCents: 8_400_000 }, { form: '1702Q', period: '2026-Q2', payableCents: 1_500_000 }]);
+    expect(periodsDue(env.db)).toEqual([
+      { form: '2550Q', period: '2026-Q2', payableCents: 8_400_000 }, { form: '1702Q', period: '2026-Q2', payableCents: 1_500_000 }, { form: '1702', period: '2025', payableCents: 4_200_000 },
+    ]);
     expect((await payPreview(birp({ form: '1702Q', period: '2026-Q2', amountCents: 1_500_000 }))).doc).toMatchObject({ payableCents: 1_500_000, opening: { documentId: id } });
     expect(balances(env.db)['2320']).toBe(-5_700_000);
+    // The 1702 of 2025 pays 2320 up to what the opening left, and the opening stands while it does.
+    expect((await payPreview(birp({ form: '1702', period: '2025', amountCents: 4_200_001 }))).issues.map((i: { code: string }) => i.code)).toContain('OVER');
+    const annual = await pay(birp({ form: '1702', period: '2025', amountCents: 4_200_000 }));
+    expect(journalOf(annual.id).map((l) => [l[0], l[2], l[3]])).toEqual([['2320', 4_200_000, 0], ['1111', 0, 4_200_000]]);
+    expect(balances(env.db)['2320']).toBe(-1_500_000);
+    expect(periodsDue(env.db).map((d) => d.form)).toEqual(['2550Q', '1702Q']);
+    expect((await cancel('tax.payable.opening', id)).json().message).toBe(`Cancel these first: ${annual.number}.`);
     noBrokenInvariants();
   });
 

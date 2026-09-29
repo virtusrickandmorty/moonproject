@@ -202,7 +202,7 @@ describe('attendance, holidays and SIL', () => {
     expect((await save(week)).json().saved).toBe(5);
     expect(await codes([{ employeeId: old, date: '2026-09-26', status: 'leave' }])).toEqual(['SIL_USED']);
     expect((await save([{ employeeId: old, date: '2026-09-25', status: 'present' }, { employeeId: old, date: '2026-09-26', status: 'leave' }])).json().saved).toBe(2);
-    expect((await acct.get(`/api/emp/employees/${old}`)).json().sil).toEqual({ year: 2026, eligibleFrom: '2021-05-04', daysPerYear: 5, used: 5, left: 0 });
+    expect((await acct.get(`/api/emp/employees/${old}`)).json().sil).toEqual({ year: 2026, eligibleFrom: '2021-05-04', daysPerYear: 5, used: 5, paid: 0, left: 0 });
     expect((await acct.get(`/api/emp/employees/${a}`)).json().sil).toMatchObject({ eligibleFrom: '2027-02-02', used: 0, left: 0 });
     expect((await save([{ employeeId: a, date: '2026-09-21', status: 'unpaid_leave' }])).json()).toEqual({ saved: 1, unchanged: 0 });
   });

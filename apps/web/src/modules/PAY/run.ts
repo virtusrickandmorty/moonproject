@@ -24,6 +24,7 @@ export function runInput(
   skip: Record<string, string>,
   loanRows: Record<string, LoanRow> = {},
   yearEnd = false,
+  unusedLeave = false,
 ): { input: PayRunInput; errors: string[] } {
   const errors: string[] = [];
   const lines: NonNullable<PayRunInput['lines']> = [];
@@ -58,7 +59,7 @@ export function runInput(
   return {
     input: {
       payGroup, periodStart, ...(lines.length ? { lines } : {}), ...(deductions.length ? { advances: deductions } : {}), ...(left.length ? { skip: left } : {}), ...(loans.length ? { loans } : {}),
-      ...(yearEnd ? { yearEnd } : {}),
+      ...(yearEnd ? { yearEnd } : {}), ...(unusedLeave ? { unusedLeave } : {}),
     },
     errors,
   };
@@ -83,6 +84,19 @@ export function yearEndDetail(e: Pick<PayEmployee, 'yearEnd'>): string {
   const y = e.yearEnd;
   if (!y) return '';
   return `Year-end tax ${y.year}: taxable ${peso(y.taxableCents)}, tax due ${peso(y.annualTaxCents)}, withheld before ${peso(y.withheldBeforeCents)}. ${yearEndText(e)}.`;
+}
+
+/**
+ * A final pay in words (run view, payslip): "Final pay: left on 2026-09-10; ₱3,174.52 of cash advances still owed;
+ * ₱16,500.00 of government loans left (not deducted)". Empty when the run is not the employee's final pay.
+ */
+export function finalPayText(e: Pick<PayEmployee, 'final'>): string {
+  const f = e.final;
+  if (!f) return '';
+  return [
+    `Final pay: left on ${f.separatedOn}`, ...(f.caLeftCents ? [`${peso(f.caLeftCents)} of cash advances still owed`] : []),
+    ...(f.loansLeftCents ? [`${peso(f.loansLeftCents)} of government loans left (not deducted)`] : []),
+  ].join('; ');
 }
 
 /** A loan's name on a payslip: "SSS salary loan 0301-555-01". */
@@ -119,7 +133,7 @@ export function loanInput(v: { employeeId: string; kind: LoanKind; loanNo: strin
 /** "10 days", "1:30 h" or "30" for a line's quantity (days are stored × 1000, overtime in minutes). */
 export function qtyText(kind: string, qty: number): string {
   if (kind === 'ot') return `${Math.floor(qty / 60)}:${String(qty % 60).padStart(2, '0')} h`;
-  if (['basic', 'leave', 'holiday', 'rest_day', 'absence'].includes(kind)) return `${qty / 1000} ${qty === 1000 ? 'day' : 'days'}`;
+  if (['basic', 'leave', 'holiday', 'rest_day', 'absence', 'unused_leave'].includes(kind)) return `${qty / 1000} ${qty === 1000 ? 'day' : 'days'}`;
   return kind === 'piece' ? `${qty} pcs` : '';
 }
 
@@ -132,6 +146,7 @@ export function thirteenthInput(
   year: number | null,
   amounts: Record<string, ChangedAmount>,
   skip: Record<string, string>,
+  employeeId = '',
 ): { input: PayThirteenthInput; errors: string[] } {
   const errors: string[] = [];
   const changed: NonNullable<PayThirteenthInput['amounts']> = [];
@@ -145,7 +160,10 @@ export function thirteenthInput(
   const left = Object.entries(skip).map(([employeeId, reason]) => ({ employeeId, reason: reason.trim() }));
   if (left.some((s) => s.reason.length < 5)) errors.push('Say why each person is left out (5 characters or more).');
   if (!year) errors.push('Pick the year.');
-  return { input: { payGroup, year: year ?? 0, ...(changed.length ? { amounts: changed } : {}), ...(left.length ? { skip: left } : {}) }, errors: [...new Set(errors)] };
+  return {
+    input: { payGroup, year: year ?? 0, ...(changed.length ? { amounts: changed } : {}), ...(left.length ? { skip: left } : {}), ...(employeeId ? { employeeId } : {}) },
+    errors: [...new Set(errors)],
+  };
 }
 
 /** The payslip's 13th-month line: this payroll's accrual, the year so far, and the payout once recorded. */

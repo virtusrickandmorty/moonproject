@@ -4,6 +4,7 @@
  * the server's variance check (less is a partial payment; more is refused). A late-payment penalty is paid on top and
  * never counts toward the payable. Opened from the remittance check with the scheme, month and amount filled in.
  * Someone who may backdate (acc.backdate) also gives the date paid, when the payment is recorded days later (STAT-1).
+ * The withholding tax is paid net of year-end tax refunds (K23): the screen says so, and what is left is the net.
  */
 import { useEffect, useState } from 'react';
 import { api, ApiError, type CashPlace, type DocTypeInfo, type Me, type Preview, type SchemeCheck } from '../../api.ts';
@@ -72,8 +73,10 @@ export function RemittanceForm({ type, mode, me }: { type: DocTypeInfo; mode: Fo
         </div>
         {check && (
           <p className="text-sm text-slate-600">
-            The payrolls of {v.month} recorded {peso(check.recordedCents)}; {peso(check.remittedCents)} is remitted, so {peso(Math.max(0, check.balanceCents))} is left to pay.
-            {check.balanceCents > 0 && v.amount === '' && <> <button type="button" className="underline" onClick={() => set({ amount: (check.balanceCents / 100).toFixed(2) })}>Pay all of it</button></>}
+            The payrolls of {v.month} recorded {peso(check.recordedCents)}{check.refundCents > 0 && `, after ${peso(check.refundCents)} of year-end tax refunds`}; {peso(check.remittedCents)} is remitted
+            {check.carriedInCents > 0 && `, and ${peso(check.carriedInCents)} of year-end tax refunds of ${check.carriedFrom.join(', ')} come off this payment`}, so {peso(check.dueCents)} is left to pay.
+            {check.carriedOutCents > 0 && ` The refunds are ${peso(check.carriedOutCents)} more than the month's tax: that comes off the next month's payment.`}
+            {check.dueCents > 0 && v.amount === '' && <> <button type="button" className="underline" onClick={() => set({ amount: (check.dueCents / 100).toFixed(2) })}>Pay all of it</button></>}
           </p>
         )}
       </Panel>

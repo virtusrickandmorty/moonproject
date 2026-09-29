@@ -57,9 +57,13 @@ function openRecon(db: Db, id: string): Recon {
 }
 const audit = (db: Db, who: Who, action: string, id: string, data: Record<string, unknown>) => appendAudit(db, { at: who.at, userId: who.userId, action, entityType: 'cash.recon', entityId: id, data });
 
+/** Every reconciliation, newest month first, with who started and who finished it (read-only; for the reconciliation screen). */
 export const listRecons = (db: Db) =>
-  db.prepare(`SELECT r.id, r.account_id AS bankId, a.name AS bankName, r.month, r.status, r.ending_balance_cents AS bankBalanceCents
-    FROM cash_recons r JOIN accounts a ON a.id = r.account_id ORDER BY r.month DESC, a.code`).all() as { id: string; bankId: number; bankName: string; month: string; status: string; bankBalanceCents: number }[];
+  db.prepare(`SELECT r.id, r.account_id AS bankId, a.name AS bankName, r.month, r.status, r.ending_balance_cents AS bankBalanceCents,
+      r.created_at AS createdAt, cu.display_name AS createdByName, r.finished_at AS finishedAt, fu.display_name AS finishedByName
+    FROM cash_recons r JOIN accounts a ON a.id = r.account_id
+      LEFT JOIN users cu ON cu.id = r.created_by LEFT JOIN users fu ON fu.id = r.finished_by
+    ORDER BY r.month DESC, a.code`).all() as { id: string; bankId: number; bankName: string; month: string; status: string; bankBalanceCents: number; createdAt: string; createdByName: string | null; finishedAt: string | null; finishedByName: string | null }[];
 
 /** Starts the reconciliation of a bank's statement month, after the bank's latest one is finished. Call inside a transaction. */
 export function createRecon(db: Db, raw: unknown, who: Who, today: string) {

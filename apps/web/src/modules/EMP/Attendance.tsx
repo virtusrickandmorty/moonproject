@@ -1,11 +1,12 @@
 /**
  * Attendance (PLAN E11): a day grid per pay period, one row per employee in service. Each cell takes a status and,
  * on a worked day, overtime in hours. Holidays show their name and take the holiday statuses. Only changed cells are sent.
+ * Days a recorded payroll paid are locked (shown with the run's number) until that payroll is cancelled.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type AttendanceGrid, type AttendanceStatus, type Me } from '../../api.ts';
 import { Button, Notice, useAction } from '../../components/ui.tsx';
-import { STATUS_LABEL, STATUS_MARK, cellKey, cellsOf, changedCells, datesBetween, halfMonthOf, plusDays, statusesFor, weekday, type Cell } from './time.ts';
+import { STATUS_LABEL, STATUS_MARK, cellKey, cellsOf, changedCells, datesBetween, halfMonthOf, paidBy, plusDays, statusesFor, weekday, type Cell } from './time.ts';
 
 export function Attendance({ me }: { me: Me }) {
   const [range, setRange] = useState<{ from: string; to: string } | null>(null);
@@ -51,6 +52,11 @@ export function Attendance({ me }: { me: Me }) {
       <p className="text-sm text-slate-600">
         {Object.entries(STATUS_MARK).map(([k, m]) => `${m} ${STATUS_LABEL[k as AttendanceStatus]}`).join(' · ')}. Overtime in hours (1.5 or 1:30) on worked days.
       </p>
+      {grid.paid.length > 0 && (
+        <Notice tone="info">
+          Shaded days with a lock are paid by {[...new Set(grid.paid.map((p) => p.number))].join(', ')}: they cannot be changed until that payroll is cancelled.
+        </Notice>
+      )}
       {grid.holidays.length > 0 && <Notice tone="info">Holidays: {grid.holidays.map((h) => `${h.date} ${h.name} (${h.kind})`).join('; ')}</Notice>}
       <div className="overflow-x-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
         <table className="text-xs">
@@ -71,6 +77,14 @@ export function Attendance({ me }: { me: Me }) {
                   const c = cells[key] ?? { status: '', ot: '' };
                   const off = d < e.hireDate || (e.separatedOn !== null && d > e.separatedOn) || d > grid.today;
                   if (off) return <td key={d} className="bg-slate-100" />;
+                  const run = paidBy(grid.paid, e.id, d);
+                  if (run) {
+                    return (
+                      <td key={d} title={`Paid by ${run}`} aria-label={`${e.fullName} ${d} paid by ${run}`} className="bg-slate-100 p-0.5 text-center text-slate-600">
+                        {c.status ? STATUS_MARK[c.status] : '–'} 🔒{c.ot && <span className="block">{c.ot} h</span>}
+                      </td>
+                    );
+                  }
                   return (
                     <td key={d} className={`p-0.5 ${holiday[d] ? 'bg-amber-50' : ''}`}>
                       <select aria-label={`${e.fullName} ${d}`} disabled={!editable} className="w-14 rounded border border-slate-300 bg-white text-xs" value={c.status} onChange={(x) => set(key, { status: x.target.value as Cell['status'] })}>

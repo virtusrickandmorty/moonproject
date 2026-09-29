@@ -38,6 +38,8 @@ export const DOC_TITLES = [
   'Deposit Transfer',
   'Supplier Bill',
   'Supplier Payment',
+  'Supplier Advance',
+  'Supplier Advance Return',
   'Purchase Order',
   'Receiving Report',
   'Owner Money',
@@ -68,6 +70,8 @@ export const DOC_TITLES = [
   'Opening Withholding',
   'Opening Statutory Payable',
   'Opening Tax Payable',
+  'Income Tax Provision',
+  'Income Tax Settlement',
 ] as const;
 export type DocTitle = (typeof DOC_TITLES)[number];
 

@@ -8,7 +8,7 @@ import { clockGuard } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { activeEmployees } from './public.ts';
 import { addPayProfile, createEmployee, employeeRecord, listEmployees, masked, payHistory, payProfileAt, separateEmployee, updateEmployee, type Who } from './employees.ts';
-import { ATTENDANCE, addHoliday, attendanceBetween, checkRange, deactivateHoliday, holidaysBetween, holidaysOf, saveAttendance, silOf } from './time.ts';
+import { ATTENDANCE, addHoliday, attendanceBetween, checkRange, deactivateHoliday, holidaysBetween, holidaysOf, paidDaysBetween, saveAttendance, silOf } from './time.ts';
 
 const dateQ = z.string().refine(isBusinessDate);
 
@@ -59,7 +59,10 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
     return write(() => addPayProfile(db, req.params.id, req.body, who(req)));
   });
 
-  /** The attendance grid: employees in service in the range, the holidays in it, and each typed day (at most 31 days). */
+  /**
+   * The attendance grid: employees in service in the range, the holidays in it, each typed day (at most 31 days), and the
+   * days recorded payroll runs paid (locked until the run is cancelled).
+   */
   app.get('/api/emp/attendance', { config: { permission: 'emp.view' } }, async (req) => {
     const q = z.object({ from: dateQ, to: dateQ }).strict().safeParse(req.query);
     if (!q.success) throw badRequest('BAD_DATE', 'Pick the dates to show, like 2026-09-16 to 2026-09-30.');
@@ -68,7 +71,7 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
     const employees = listEmployees(db, { search: '', status: 'all' })
       .filter((e) => e.hireDate <= to && (!e.separatedOn || e.separatedOn >= from))
       .map(({ id, code, fullName, hireDate, separatedOn }) => ({ id, code, fullName, hireDate, separatedOn }));
-    return { from, to, today: today(clock), statuses: ATTENDANCE, holidays: holidaysBetween(db, from, to), employees, days: attendanceBetween(db, from, to) };
+    return { from, to, today: today(clock), statuses: ATTENDANCE, holidays: holidaysBetween(db, from, to), employees, days: attendanceBetween(db, from, to), paid: paidDaysBetween(db, from, to) };
   });
 
   app.post('/api/emp/attendance', { config: { permission: 'emp.attendance' } }, async (req) => write(() => saveAttendance(db, req.body, who(req))));

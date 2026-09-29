@@ -9,7 +9,8 @@
  * ledger.ts folds its journal into the same month as the payroll runs' (openingsOfMonth), so the month's payable, the
  * remittance check and a remittance (REM-) of that month see it and pay it. One posted per contribution month. The ACC
  * opening contract (ACC/public.ts): dated the cut-over date, cancelled on it too while the opening is open. Cancel is
- * blocked while a remittance stands on a scheme this document credited for its month (ledger.ts remittancesOf).
+ * blocked while a remittance stands on a scheme this document credited for its month (ledger.ts remittancesFor: its own,
+ * or a later month's withholding-tax remittance that settled it).
  * Its SSS and Pag-IBIG loan amortizations (2404, 2405) are the loan part of that month's SSS and Pag-IBIG payable, and
  * the same remittance pays them (ledger.ts schemeAccounts).
  */
@@ -21,7 +22,7 @@ import type { DraftLine } from '../../../engine/ledger/post.ts';
 import type { Db } from '../../../platform/db/driver.ts';
 import { assertOpeningOpen, OPENING_PERMISSIONS, openingIssues } from '../../ACC/public.ts';
 import { activeEmployees, employee } from '../../EMP/public.ts';
-import { isMonth, remittancesOf, type Scheme } from '../ledger.ts';
+import { isMonth, remittancesFor, type Scheme } from '../ledger.ts';
 
 const MAX_CENTS = 5_000_000_00;
 const amount = z.number().int().positive().max(MAX_CENTS);
@@ -163,7 +164,7 @@ export const openingStatDoc: DocTypeDef<OpeningStatInput, OpeningStat> = {
     if (!row) return [];
     const credited: Record<Scheme, number> = { SSS: row.sss, PHIC: row.phic, HDMF: row.hdmf, WTAX: row.wtax }; // loans are paid on the agency's remittance
     const schemes = (Object.keys(credited) as Scheme[]).filter((s) => credited[s] > 0);
-    return schemes.flatMap((s) => remittancesOf(db, s, row.month).filter((r) => r.status === 'posted').map((r) => ({ id: r.id, number: r.number })));
+    return schemes.flatMap((s) => remittancesFor(db, s, row.month).filter((r) => r.status === 'posted').map((r) => ({ id: r.id, number: r.number })));
   },
 
   /** Runs in the cancel transaction: throwing rolls the cancel back once the opening is closed. */

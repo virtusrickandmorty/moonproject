@@ -20,7 +20,7 @@ const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: 
 
 const rates = { rent_5: 500, contractor_2: 200, prof_ind_5: 500, prof_ind_10: 1000, prof_firm_10: 1000, prof_firm_15: 1500, goods_1: 100, services_2: 200 };
 const ledger = (bills: Partial<ApLedger['bills'][number]>[]): ApLedger => ({
-  supplierId: 's1', supplierName: 'Sample Fabric Trading', balanceCents: 0,
+  supplierId: 's1', supplierName: 'Sample Fabric Trading', balanceCents: 0, advancesCents: 0, advances: [],
   bills: bills.map((b, i) => ({ id: `b${i}`, number: `BILL-00000${i + 1}`, status: 'posted', supplierInvoiceNo: `SI-${i}`, dueDate: '2026-10-25', payableCents: 0, owedCents: 0, ...b })),
 });
 

@@ -12,6 +12,8 @@
  * that year's payout) are counted too, so their accrual is paid, not written back. Staff may leave someone out or
  * change an amount, with a reason, as a payroll run allows. Dated the day recorded. Cancel needs its releases cancelled
  * first; payroll runs it counted wait for it (run.ts dependents).
+ * On separation (PD 851) it may be for one separated employee of the group alone (`employeeId`), after their final pay,
+ * once per employee and year; the group's own 13th-month pay later finds nothing left to pay them.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -34,6 +36,7 @@ export const thirteenthInput = z
     year: z.number().int().min(2000).max(2100), // the year paid (this year, or last year early in January)
     amounts: z.array(z.object({ employeeId: z.uuid(), amountCents: z.number().int().min(0).max(MAX_CENTS), reason }).strict()).max(200).optional(),
     skip: z.array(z.object({ employeeId: z.uuid(), reason }).strict()).max(200).optional(),
+    employeeId: z.uuid().optional(), // one separated employee alone (their 13th month on separation)
   })
   .strict();
 export type ThirteenthInput = z.infer<typeof thirteenthInput>;
@@ -56,13 +59,20 @@ const GROUP_LABEL: Record<PayGroup, string> = { WEEKLY_PIECE: 'weekly piece-rate
 const employee = (id: string) => ({ type: 'employee', id });
 type DbRow = Record<string, any>;
 
-/** The recorded 13th-month pay of a group and year, if any. */
+/** The recorded 13th-month pay of a group and year (the whole group's), if any. */
 function recordedFor(db: Db, payGroup: string, year: number) {
   return db
-    .prepare(`SELECT d.number FROM pay_thirteenths t JOIN documents d ON d.id = t.document_id WHERE d.status = 'posted' AND t.pay_group = ? AND t.year = ?`)
+    .prepare(`SELECT d.number FROM pay_thirteenths t JOIN documents d ON d.id = t.document_id WHERE d.status = 'posted' AND t.pay_group = ? AND t.year = ? AND t.separated_employee_id IS NULL`)
     .pluck()
     .get(payGroup, year) as string | undefined;
 }
+
+/** A recorded 13th-month pay of a year for one separated employee alone, if any. */
+const separationPaidFor = (db: Db, employeeId: string, year: number) =>
+  db
+    .prepare(`SELECT d.number FROM pay_thirteenths t JOIN documents d ON d.id = t.document_id WHERE d.status = 'posted' AND t.separated_employee_id = ? AND t.year = ?`)
+    .pluck()
+    .get(employeeId, year) as string | undefined;
 
 /** Recorded payroll-run rows of an employee up to a date that no recorded 13th-month pay counted yet, with their basic pay. */
 function uncounted(db: Db, employeeId: string, upTo: string) {
@@ -132,7 +142,7 @@ export const thirteenthDoc: DocTypeDef<ThirteenthInput, Thirteenth> = {
         const ceiling = benefitCeilingAt(ctx.db, ctx.businessDate);
         const month = ctx.businessDate.slice(0, 7);
         for (const e of employeesInGroup(ctx.db, input.payGroup, `${input.year}-01-01`, upTo)) {
-          if (skipped.has(e.id)) continue;
+          if (skipped.has(e.id) || (input.employeeId && e.id !== input.employeeId)) continue;
           const rows = uncounted(ctx.db, e.id, upTo);
           const basic = rows.reduce((s, r) => s + r.basic, 0);
           const earlier = rows.filter((r) => r.periodEnd < `${input.year}-01-01`).reduce((s, r) => s + r.basic, 0);
@@ -175,9 +185,14 @@ export const thirteenthDoc: DocTypeDef<ThirteenthInput, Thirteenth> = {
       error('year', 'YEAR', `Pay the 13th month of ${ctx.businessDate.slice(0, 4)}, or of ${+ctx.businessDate.slice(0, 4) - 1} early in the new year.`);
       return issues;
     }
-    const taken = recordedFor(ctx.db, doc.payGroup, doc.year);
-    if (taken) error('year', 'DUPLICATE', `${taken} already pays the ${doc.year} 13th month of the ${GROUP_LABEL[doc.payGroup]} group. Cancel it first to redo it.`);
-    const inGroup = new Set(employeesInGroup(ctx.db, doc.payGroup, `${doc.year}-01-01`, `${doc.year}-12-31` < ctx.businessDate ? `${doc.year}-12-31` : ctx.businessDate).map((e) => e.id));
+    const group = employeesInGroup(ctx.db, doc.payGroup, `${doc.year}-01-01`, `${doc.year}-12-31` < ctx.businessDate ? `${doc.year}-12-31` : ctx.businessDate);
+    const one = doc.employeeId ? group.find((e) => e.id === doc.employeeId) : undefined;
+    const taken = doc.employeeId ? separationPaidFor(ctx.db, doc.employeeId, doc.year) : recordedFor(ctx.db, doc.payGroup, doc.year);
+    if (taken) error('year', 'DUPLICATE', `${taken} already pays the ${doc.year} 13th month of ${one ? one.name : `the ${GROUP_LABEL[doc.payGroup]} group`}. Cancel it first to redo it.`);
+    if (doc.employeeId && !one?.separatedOn) {
+      error('employeeId', 'NOT_SEPARATED', one ? `${one.name} is not separated: their 13th month is paid with the group's.` : `That employee is not in the ${GROUP_LABEL[doc.payGroup]} group in ${doc.year}.`);
+    }
+    const inGroup = new Set(group.filter((e) => !doc.employeeId || e.id === doc.employeeId).map((e) => e.id));
     const skipped = new Set<string>();
     (doc.skip ?? []).forEach((s, i) => {
       if (!inGroup.has(s.employeeId) || skipped.has(s.employeeId)) error(`skip.${i}.employeeId`, 'NOT_IN_RUN', `Left out ${i + 1}: pick someone in this pay group, once.`);
@@ -196,15 +211,18 @@ export const thirteenthDoc: DocTypeDef<ThirteenthInput, Thirteenth> = {
       }
     }
     for (const e of doc.employees) {
+      // Only a taxable part changes the year's tax (an exempt 13th month under the ceiling leaves the adjustment as it is).
       const done = yearEndDoneBy(ctx.db, e.employeeId, +ctx.businessDate.slice(0, 4));
-      if (done) issues.push({ field: 'year', code: 'AFTER_YEAR_END', level: 'warning', message: `${done} already did ${e.name}'s year-end tax adjustment without this 13th-month pay. Cancel ${done} and work it out again after this.` });
+      if (done && e.taxableCents > 0) issues.push({ field: 'year', code: 'AFTER_YEAR_END', level: 'warning', message: `${done} already did ${e.name}'s year-end tax adjustment without this 13th-month pay. Cancel ${done} and work it out again after this.` });
     }
     if (ctx.businessDate > `${doc.year}-12-24`) issues.push({ field: 'year', code: 'LATE', level: 'warning', message: `The 13th month is due by ${doc.year}-12-24 (PD 851).` });
     return [...issues, ...(notesOf.get(doc) ?? [])];
   },
 
   persist(db, doc, h) {
-    db.prepare('INSERT INTO pay_thirteenths (document_id, pay_group, year, total_cents, net_cents) VALUES (?, ?, ?, ?, ?)').run(h.documentId, doc.payGroup, doc.year, doc.totalCents, doc.netCents);
+    db.prepare('INSERT INTO pay_thirteenths (document_id, pay_group, year, total_cents, net_cents, separated_employee_id) VALUES (?, ?, ?, ?, ?, ?)').run(
+      h.documentId, doc.payGroup, doc.year, doc.totalCents, doc.netCents, doc.employeeId ?? null,
+    );
     const emp = db.prepare(
       `INSERT INTO pay_thirteenth_employees (id, document_id, employee_id, employee_code, employee_name, cost_centre, basic_cents, earlier_basic_cents, due_cents, accrued_cents,
          amount_cents, reason, other_benefits_cents, taxable_cents, wtax_cents, net_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -238,7 +256,9 @@ export const thirteenthDoc: DocTypeDef<ThirteenthInput, Thirteenth> = {
   },
 
   load(db, documentId) {
-    const t = db.prepare('SELECT * FROM pay_thirteenths WHERE document_id = ?').get(documentId) as { pay_group: PayGroup; year: number; total_cents: number; net_cents: number } | undefined;
+    const t = db.prepare('SELECT * FROM pay_thirteenths WHERE document_id = ?').get(documentId) as
+      | { pay_group: PayGroup; year: number; total_cents: number; net_cents: number; separated_employee_id: string | null }
+      | undefined;
     if (!t) throw new Error(`13th-month pay ${documentId} not found`);
     const basis = db.prepare('SELECT run_employee_id FROM pay_thirteenth_basis WHERE thirteenth_employee_id = ? ORDER BY rowid').pluck();
     const employees: ThirteenthEmployee[] = (db.prepare('SELECT * FROM pay_thirteenth_employees WHERE document_id = ? ORDER BY rowid').all(documentId) as DbRow[]).map((e) => ({
@@ -248,12 +268,15 @@ export const thirteenthDoc: DocTypeDef<ThirteenthInput, Thirteenth> = {
     }));
     const amounts = employees.filter((e) => e.reason).map((e) => ({ employeeId: e.employeeId, amountCents: e.amountCents, reason: e.reason! }));
     const skip = db.prepare('SELECT employee_id AS employeeId, reason FROM pay_thirteenth_skips WHERE document_id = ? ORDER BY rowid').all(documentId) as { employeeId: string; reason: string }[];
-    return { payGroup: t.pay_group, year: t.year, ...(amounts.length ? { amounts } : {}), ...(skip.length ? { skip } : {}), employees, netCents: t.net_cents, totalCents: t.total_cents };
+    return {
+      payGroup: t.pay_group, year: t.year, ...(amounts.length ? { amounts } : {}), ...(skip.length ? { skip } : {}), ...(t.separated_employee_id ? { employeeId: t.separated_employee_id } : {}),
+      employees, netCents: t.net_cents, totalCents: t.total_cents,
+    };
   },
 
   toInput(doc) {
-    const { payGroup, year, amounts, skip } = doc;
-    return { payGroup, year, ...(amounts?.length ? { amounts } : {}), ...(skip?.length ? { skip } : {}) };
+    const { payGroup, year, amounts, skip, employeeId } = doc;
+    return { payGroup, year, ...(amounts?.length ? { amounts } : {}), ...(skip?.length ? { skip } : {}), ...(employeeId ? { employeeId } : {}) };
   },
 
   /** Its releases are cancelled first (D6, G-29), and year-end runs recorded after it that counted it in an employee's year. */
@@ -273,6 +296,7 @@ export const thirteenthDoc: DocTypeDef<ThirteenthInput, Thirteenth> = {
 
   summary(doc) {
     const n = doc.employees.length;
+    if (doc.employeeId) return `This will record the ${doc.year} 13th-month pay of ${doc.employees[0]?.name ?? 'the separated employee'} on separation: ${formatPeso(doc.totalCents)}, net pay ${formatPeso(doc.netCents)} to be released.`;
     return `This will record the ${doc.year} 13th-month pay of the ${GROUP_LABEL[doc.payGroup]} group: ${n} ${n === 1 ? 'employee' : 'employees'}, ${formatPeso(doc.totalCents)}, net pay ${formatPeso(doc.netCents)} to be released.`;
   },
 
