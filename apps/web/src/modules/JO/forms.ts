@@ -4,8 +4,7 @@
  * tested without a browser; the server works out every figure and checks everything again.
  */
 import { formatPesos } from '@moonproject/shared';
-import type { BookletFigures, BookletShown, CatItem, DpInfo, JoDepositVat, JoStatus, WearerPick } from '../../api.ts';
-import type { jobOrderPrefill } from '../QUO/quotation.ts';
+import type { CatItem, JoStatus, WearerPick } from '../../api.ts';
 import { cents } from '../COL/money.ts';
 import type { Kind } from '../QS/lines.ts';
 import type { Terms } from './opening.ts';
@@ -123,26 +122,6 @@ export function joValues(i: JoInput, doc?: JoDoc): JoValues {
   };
 }
 
-/** What `jobOrderPrefill` (QUO) makes from a quotation: the customer, the lines as quoted and the quotation number in the notes. */
-export type QuotationPrefill = NonNullable<ReturnType<typeof jobOrderPrefill>>;
-
-/**
- * "Make a job order" (PLAN E3): the form's starting values from a quotation. The customer, the lines with quantities and
- * prices as quoted and the quotation number in the notes are filled; staff still choose the due days and the payment terms
- * and may change anything before recording. The price is the quoted one (no list tier price is looked up over it).
- */
-export function valuesFromQuotation(p: QuotationPrefill, customerName: string): JoValues {
-  return {
-    ...emptyJo(),
-    customer: { id: p.customerId, name: customerName },
-    contact: p.contact ?? '',
-    notes: p.notes,
-    lines: p.lines.map((l) => ({
-      ...emptyJoLine(), kind: l.kind, description: l.description, qty: String(l.qty), price: formatPesos(l.unitPriceCents), discount: l.discountCents ? formatPesos(l.discountCents) : '',
-    })),
-  };
-}
-
 /* ---------- Release slip ---------- */
 
 export const ID_SEEN = [
@@ -213,47 +192,11 @@ export function invoiceInput(v: { releaseId: string; invoiceNumber: string; note
   return { input: { releaseId: v.releaseId, invoiceNumber: v.invoiceNumber.trim(), ...optional('note', v.note) }, errors };
 }
 
-/* ---------- Downpayment invoice (mode C) ---------- */
-
-/** What the downpayment invoice form fills from its preview: the invoice's own figures. */
-export interface DpPreviewDoc { amountCents: number; vatableSalesCents: number; vatCents: number; depositAppliedCents: number; mode: 'A' | 'B' | 'C' }
-
-export function dpInvoiceInput(v: { jobOrderId: string; invoiceNumber: string; amount: string; note: string }): { input: { jobOrderId: string; invoiceNumber: string; amountCents: number; note?: string }; errors: string[] } {
-  const errors: string[] = [];
-  if (!v.jobOrderId) errors.push('Pick the job order by its number or customer.');
-  if (!/^\d+$/.test(v.invoiceNumber.trim())) errors.push('Type the invoice number from the booklet (digits only).');
-  const amount = cents(v.amount);
-  if (amount === undefined || amount <= 0) errors.push('Type the downpayment as an amount like 3,000.00');
-  return { input: { jobOrderId: v.jobOrderId, invoiceNumber: v.invoiceNumber.trim(), amountCents: amount ?? 0, ...optional('note', v.note) }, errors };
-}
-
-/** The amount the form starts with: the downpayment asked less what is already invoiced, never more than the job order has left to invoice. */
-export const dpStartCents = (i: Pick<DpInfo, 'requiredDownpaymentCents' | 'dpInvoicedCents' | 'notInvoicedCents'>) =>
-  Math.max(0, Math.min(i.requiredDownpaymentCents - i.dpInvoicedCents, i.notInvoicedCents));
-
-/** The money already held that the invoice applies, and what is left to collect (the invoice less that). */
-export const dpSplit = (amountCents: number, depositAppliedCents: number) => ({ appliedCents: depositAppliedCents, leftToCollectCents: Math.max(0, amountCents - depositAppliedCents) });
-
-/** "Write these on the booklet" for a downpayment invoice: the whole amount, VATable sales and VAT. */
-export const dpBooklet = (d: DpPreviewDoc): BookletShown => ({ grossCents: d.amountCents, vatableSalesCents: d.vatableSalesCents, vatCents: d.vatCents });
-
-/** The mode in words, as the job order view and the forms say it: "Mode C: invoice on downpayment". */
-export const modeText = (d: Pick<JoDepositVat, 'mode' | 'words'>) => `Mode ${d.mode}: ${d.words}`;
-
-/** An invoice record's own figures (its preview or stored document) as the booklet shows them: in mode C the sale less the downpayments invoiced. */
-export function invoiceBooklet(d: { vatRateBp: number; listCents: number; discountCents: number; dpAppliedCents: number; depositVatMode: 'A' | 'B' | 'C'; depositVatCents: number;
-  booklet: { grossCents: number; vatableSalesCents: number; vatCents: number } }): BookletFigures {
-  return { vatRateBp: d.vatRateBp, listCents: d.listCents, discountCents: d.discountCents, ...d.booklet, downpaymentsInvoicedCents: d.dpAppliedCents, depositVatMode: d.depositVatMode, depositVatCents: d.depositVatCents };
-}
-
 /* ---------- From the job order's view ---------- */
 
 export interface JoAction { label: string; to: string; primary?: boolean }
 /** What the user may start from a job order's view (doc types they may create). */
-export interface JoCan { collect: boolean; release: boolean; invoice: boolean; dpInvoice?: boolean }
-
-/** Downpayments invoiced on the job order so far (recorded invoices only). */
-export const dpInvoicedCents = (s: Pick<JoStatus, 'dpInvoices'>) => s.dpInvoices.filter((i) => i.status === 'posted').reduce((sum, i) => sum + i.amountCents, 0);
+export interface JoCan { collect: boolean; release: boolean; invoice: boolean }
 
 /** The buttons on a recorded job order's view, each opening its form already filled for this job order. */
 export function joActions(s: JoStatus, can: JoCan): JoAction[] {
@@ -262,11 +205,7 @@ export function joActions(s: JoStatus, can: JoCan): JoAction[] {
   const m = s.money;
   const out: JoAction[] = [];
   if (can.collect && m.balanceDueCents > 0) {
-    if (m.requiredDownpaymentCents > m.collectedCents) {
-      // Mode C: the downpayment is invoiced on the booklet first; the collection form follows (until the downpayment is invoiced, then it opens directly).
-      const invoiceFirst = !!can.dpInvoice && s.depositVat.mode === 'C' && dpInvoicedCents(s) < m.requiredDownpaymentCents;
-      out.push({ label: 'Take the downpayment', to: invoiceFirst ? `/docs/jo.dp_invoice/new?jo=${id}` : `/docs/col.collection/new?jo=${id}&for=downpayment`, primary: true });
-    }
+    if (m.requiredDownpaymentCents > m.collectedCents) out.push({ label: 'Take the downpayment', to: `/docs/col.collection/new?jo=${id}&for=downpayment`, primary: true });
     out.push({ label: 'Take a payment', to: `/docs/col.collection/new?jo=${id}` });
   }
   if (can.release && s.lines.some((l) => l.leftQty > 0)) out.push({ label: 'Release', to: `/docs/jo.release/new?jo=${id}` });

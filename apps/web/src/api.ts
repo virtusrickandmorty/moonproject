@@ -101,18 +101,6 @@ export interface JoStatus {
   money: { totalCents: number; invoicedCents: number; receivableCents: number; depositsHeldCents: number; balanceDueCents: number; collectedCents: number; requiredDownpaymentCents: number };
   lines: { lineNo: number; description: string; qty: number; releasedQty: number; leftQty: number }[];
   awaitingInvoice: { id: string; number: string; businessDate: string; totalCents: number }[];
-  depositVat: JoDepositVat;
-  dpInvoices: DpInvoiceRow[];
-}
-/** The job order's downpayment VAT mode today (COL): its own once a downpayment fixed it, else the setting in force. `kept` is the server's sentence naming the document that fixed a mode other than the setting. */
-export interface JoDepositVat { mode: 'A' | 'B' | 'C'; words: string; setting: 'A' | 'B' | 'C'; settingWords: string; lockedBy: string | null; kept: string | null }
-/** A downpayment invoice (mode C) with the number printed on the booklet. */
-export interface DpInvoiceRow { id: string; number: string; status: 'posted' | 'cancelled'; invoiceNumber: string; amountCents: number; vatCents: number }
-/** GET /api/jo/orders/:id/dp-info: what the downpayment invoice form shows for a job order; `refusal` is the server's words when it takes no downpayment invoice. */
-export interface DpInfo {
-  jobOrder: { id: string; number: string; customerName: string; totalCents: number };
-  requiredDownpaymentCents: number; dpInvoicedCents: number; notInvoicedCents: number; depositsHeldCents: number;
-  depositVat: JoDepositVat; dpInvoices: DpInvoiceRow[]; refusal: string | null;
 }
 /** GET /api/jo/pick/orders: job orders to pick on the release form. */
 export interface JoPick { id: string; number: string; customerName: string; dueDate: string; stageLabel: string; leftPieces: number; balanceDueCents: number }
@@ -122,15 +110,7 @@ export interface ReleasePick {
   invoice: { id: string; number: string; invoiceNumber: string } | null;
 }
 /** "Write these on the booklet" for a release (D4.4). */
-export interface BookletFigures {
-  vatRateBp: number; listCents: number; discountCents: number; grossCents: number; vatableSalesCents: number; vatCents: number;
-  /** Mode C: downpayments already invoiced that this invoice takes into sales; gross, VATable sales and VAT above are what the booklet shows after them. */
-  downpaymentsInvoicedCents?: number;
-  /** Mode B: the VAT of this sale already booked on the deposits it applies. */
-  depositVatMode?: 'A' | 'B' | 'C'; depositVatCents?: number;
-}
-/** What the booklet panel needs: the three figures; the rest is shown when the server sent it. */
-export type BookletShown = Pick<BookletFigures, 'grossCents' | 'vatableSalesCents' | 'vatCents'> & Partial<BookletFigures>;
+export interface BookletFigures { vatRateBp: number; listCents: number; discountCents: number; grossCents: number; vatableSalesCents: number; vatCents: number }
 /** GET /api/jo/releases/:id/invoice-info. */
 export interface ReleaseInvoiceInfo { release: ReleasePick; lines: { lineNo: number; qty: number; description: string; amountCents: number }[]; booklet: BookletFigures; depositAppliedCents: number }
 /** POST /api/jo/releases/preview: the release as it would be recorded and its invoice figures. */
@@ -786,7 +766,6 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     customerInvoices: (customerId: string) => call<CustomerInvoices>('GET', customer(customerId, 'invoices')),
     forfeitable: (customerId: string) => call<Forfeitable>('GET', customer(customerId, 'forfeitable')),
     joStatus: (id: string) => call<JoStatus>('GET', `/api/jo/orders/${encodeURIComponent(id)}/status`),
-    joDpInfo: (id: string) => call<DpInfo>('GET', `/api/jo/orders/${encodeURIComponent(id)}/dp-info`),
     joPickOrders: (q: string) => call<JoPick[]>('GET', `/api/jo/pick/orders?${new URLSearchParams({ q })}`),
     joPickReleases: (q: string) => call<ReleasePick[]>('GET', `/api/jo/pick/releases?${new URLSearchParams({ q })}`),
     joReleaseInfo: (id: string) => call<ReleaseInvoiceInfo>('GET', `/api/jo/releases/${encodeURIComponent(id)}/invoice-info`),

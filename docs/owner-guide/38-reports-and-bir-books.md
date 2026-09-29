@@ -5,14 +5,18 @@
 **Before you start:** Know what you are looking for. You will often need to put in a date, a month, a year, or a "From" and "To" date range.
 
 ### Steps
-1. Open the report you want under **Reports**.
-2. Pick the dates. The box each report asks for is different. For example, some ask for **As of** (like **AR aging** or **Fixed-asset schedule**), some ask for **From** and **To**. The **Customer statement** also needs a customer first.
-3. Click the **Show** button to load the numbers.
+1. Open the report you want under **Reports**. It loads automatically (using this month, or today for reports asking for **As of**).
+2. If you want a different date, pick the dates.
+   - **Late entries** and **Cancellations and reissues** do not have date boxes and no **Show** button.
+   - **AP aging**, **Cash position**, **Fixed-asset schedule**, and **Exceptions** use **As of**.
+   - **Purchases by supplier/category**, **Transfers report**, **Cash counts**, and **Sign-in history** use **From** and **To**.
+   - The **Customer statement** also needs a customer first.
+3. Click the **Show** button to reload the numbers with your new dates.
 
 To open the BIR books:
-1. Open **BIR books** under **Reports**.
+1. Open **BIR books** under **Reports**. It starts with the **From** and **To** dates filled in from the first of this month to today.
 2. From the **Book** box, pick **Cash receipts journal**, **Cash disbursements journal**, **Sales journal**, **Purchase journal**, **General journal**, or **General ledger**.
-3. Fill in the **From** and **To** dates.
+3. If you want a different range, fill in the **From** and **To** dates.
 4. Click the **Show** button. (The button stays off until both dates are filled and **From** is not after **To**).
 
 ### What the system does for you
@@ -25,13 +29,13 @@ To answer everyday questions:
 - **What are the fixed assets worth?** Look at the **Fixed-asset schedule**.
 - **Payroll and production:** Check the **Payroll register** for pay details. Use the **Production status counts**, **Production throughput**, **Worker output**, **Late job orders**, and **Job order lead time** to see how the shop floor is moving.
 
-To stay in control, look at these each week:
-- **Late entries:** Shows documents added long after they happened, so you can stop people recording things late.
-- **Cancellations and reissues:** Highlights documents that were stopped or redone, to help you catch mistakes or misuse.
-- **Exceptions:** Shows odd things the system found, so you can fix them.
+Control reports:
+- **Late entries:** Lists documents added long after they happened.
+- **Cancellations and reissues:** Lists documents that were stopped or redone.
+- **Exceptions:** Lists odd things the system found.
 
 For the accountant and taxes:
-The BIR books screen shows pages with **Brought forward** and **Carried forward** totals automatically calculated at the top and bottom of each page. You can click the **Print** button for physical copies, or click **Export CSV** to download a spreadsheet file to send to the accountant.
+The BIR books screen shows pages each headed with a page number like **Page 1**, **Page 2**, and so on. **Brought forward** shows from page 2, and **Carried forward** shows at the foot of every page. You can click the **Print** button for physical copies, or click **Export CSV** to download a spreadsheet file to send to the accountant.
 
 ### Common mistakes and how to fix them
 - **Mistake:** You cannot see the **Reports** menu or the specific report you need.

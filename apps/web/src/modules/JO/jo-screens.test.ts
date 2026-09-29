@@ -51,8 +51,6 @@ const status = (over: Partial<JoStatus> = {}, money: Partial<JoStatus['money']> 
   money: { totalCents: 600_000, invoicedCents: 0, receivableCents: 0, depositsHeldCents: 0, balanceDueCents: 600_000, collectedCents: 0, requiredDownpaymentCents: 300_000, ...money },
   lines: [{ lineNo: 1, description: 'Team jersey set', qty: 4, releasedQty: 0, leftQty: 4 }],
   awaitingInvoice: [],
-  depositVat: { mode: 'A', words: 'deposit only', setting: 'A', settingWords: 'deposit only', lockedBy: null, kept: null },
-  dpInvoices: [],
   ...over,
 });
 

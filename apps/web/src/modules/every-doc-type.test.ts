@@ -13,7 +13,9 @@ import { FORMS, VIEWS } from './screens.ts';
  * Types that have no usable screen YET, each with the reason. The test fails if a name stays here after its form exists,
  * so this list only shrinks.
  */
-const EXPECTED_MISSING: Record<string, string> = {};
+const EXPECTED_MISSING: Record<string, string> = {
+  'jo.dp_invoice': 'the downpayment invoice (downpayment VAT mode C) picks its job order by id: it needs its own form',
+};
 
 /**
  * What the general form cannot fill: a list or group (`unsupported`), or a reference to another document by its id, which
