@@ -80,7 +80,9 @@ export function InventoryCountForm({ type, mode, me }: { type: DocTypeInfo; mode
   ];
   const businessDate = mayBackdate ? date : undefined; // everyone else counts on the day
   const input = { category, lines: count.lines, ...(note.trim() ? { note: note.trim() } : {}) };
-  const live = useLive(JSON.stringify([input, businessDate]), !!sheet && errors.length === 0, () => api.preview(type.key, input, businessDate));
+  // Off a month end, someone who may not backdate is told so in the notice above and saves a draft; the server's "not a month end" needs no second telling.
+  const offMonthEnd = !mayBackdate && !!today && monthEndOf(today) !== today;
+  const live = useLive(JSON.stringify([input, businessDate]), !!sheet && errors.length === 0 && count.lines.length > 0 && !offMonthEnd, () => api.preview(type.key, input, businessDate));
   const figured = live?.doc as Figured | undefined;
   const leftOut = sheet ? Object.keys(typed).filter((id) => typed[id]!.qty.trim() && !sheet.some((s) => s.supplyId === id)).length : 0;
 
@@ -133,7 +135,7 @@ export function InventoryCountForm({ type, mode, me }: { type: DocTypeInfo; mode
               <Field label="Count date"><p className="py-2 text-sm">{date || '…'}</p></Field>
             )}
           </div>
-          {!mayBackdate && today && monthEndOf(today) !== today && (
+          {offMonthEnd && (
             <Notice tone="info">Inventory is counted at a month end and today is not one. Save the count as a draft; the accountant records it dated {defaultCountDate(today)}.</Notice>
           )}
           {isBusinessDate(date) && <a className="text-sm underline" href={countSheetCsvUrl(category, date)} download>Print the count sheet (CSV)</a>}
