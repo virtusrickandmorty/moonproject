@@ -12,7 +12,9 @@
  * (opening-payables.ts): a 2550Q the opening's amount, an EWT return the opening's amount per supplier, over the same
  * returns its payments are counted on (a 1601-EQ: the openings of its 0619-E months too).
  *   1702Q, Q1 to Q3: what the 1702Q worksheet leaves to pay (income-tax.ts), or what its opening left on 2320. Its
- *   payments are kept in tax_income_tax_payments (0006); the reads here take both tables.
+ *   payments are kept in tax_income_tax_payments (0006); the reads here take all three tables.
+ *   1702, a year (the annual return): what the year's posted income tax settlement (ITS-) left on 2320, or for a year
+ *   before the cut-over date what its opening left, less the year's 1702 payments (tax_income_tax_annual_payments, 0008).
  */
 import type { Db } from '../../platform/db/driver.ts';
 import { voucherTaxFacts } from '../EXP/public.ts';
@@ -23,26 +25,31 @@ import { incomeTaxPosition } from './income-tax.ts';
 import { openedByParty, openedReturns, openingsOf } from './opening-payables.ts';
 import { IN_REGISTERS } from './registers.ts';
 
-export const BIR_FORMS = ['2550Q', '0619-E', '1601-EQ', '1702Q'] as const;
+export const BIR_FORMS = ['2550Q', '0619-E', '1601-EQ', '1702Q', '1702'] as const;
 export type BirForm = (typeof BIR_FORMS)[number];
 /**
- * The account each return's payment debits, the tax it names, and whether it pays a month or a quarter. A 1702Q
- * prepays the year's income tax (1411); one an opening tax payable brought in pays 2320 instead (bir-payment.ts).
+ * The account each return's payment debits, the tax it names, and whether it pays a month, a quarter or a year. A 1702Q
+ * prepays the year's income tax (1411); one an opening tax payable brought in pays 2320 instead (bir-payment.ts). A
+ * 1702 pays what the year-end settlement (or an opening) left on 2320.
  */
-export const BIR_FORM: Record<BirForm, { role: 'VAT_PAYABLE' | 'EWT_PAYABLE' | 'PREPAID_INCOME_TAX'; tax: 'VAT' | 'EWT' | 'income tax'; period: 'month' | 'quarter' }> = {
+export const BIR_FORM: Record<BirForm, { role: 'VAT_PAYABLE' | 'EWT_PAYABLE' | 'PREPAID_INCOME_TAX' | 'INCOME_TAX_PAYABLE'; tax: 'VAT' | 'EWT' | 'income tax'; period: 'month' | 'quarter' | 'year' }> = {
   '2550Q': { role: 'VAT_PAYABLE', tax: 'VAT', period: 'quarter' },
   '0619-E': { role: 'EWT_PAYABLE', tax: 'EWT', period: 'month' },
   '1601-EQ': { role: 'EWT_PAYABLE', tax: 'EWT', period: 'quarter' },
   '1702Q': { role: 'PREPAID_INCOME_TAX', tax: 'income tax', period: 'quarter' },
+  '1702': { role: 'INCOME_TAX_PAYABLE', tax: 'income tax', period: 'year' },
 };
-/** Every BIR payment's form and period: the VAT and EWT ones (0003) and the 1702Q ones (0006). */
+/** Every BIR payment's form and period: the VAT and EWT ones (0003), the 1702Q ones (0006) and the 1702 ones (0008). */
 const PAYMENT_ROWS = `(SELECT document_id, form, period, reference, amount_cents, penalty_cents FROM tax_bir_payments
-  UNION ALL SELECT document_id, '1702Q', period, reference, amount_cents, penalty_cents FROM tax_income_tax_payments)`;
+  UNION ALL SELECT document_id, '1702Q', period, reference, amount_cents, penalty_cents FROM tax_income_tax_payments
+  UNION ALL SELECT document_id, '1702', period, reference, amount_cents, penalty_cents FROM tax_income_tax_annual_payments)`;
 
-export interface Period { kind: 'month' | 'quarter'; year: number; quarter: Quarter; /** 1-12, for a month. */ month: number | null; from: string; to: string; label: string }
+/** A month, a quarter or a year (a year's quarter is its Q4, where its return falls). */
+export interface Period { kind: 'month' | 'quarter' | 'year'; year: number; quarter: Quarter; /** 1-12, for a month. */ month: number | null; from: string; to: string; label: string }
 
-/** A month (2026-07, "July 2026") or a quarter (2026-Q3, "Q3 2026"), or null. */
+/** A month (2026-07, "July 2026"), a quarter (2026-Q3, "Q3 2026") or a year (2026, "2026"), or null. */
 export function parsePeriod(period: string): Period | null {
+  if (/^\d{4}$/.test(period)) return { kind: 'year', year: Number(period), quarter: 4, month: null, from: `${period}-01-01`, to: `${period}-12-31`, label: period };
   const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(period);
   if (m) {
     const [year, month] = [Number(m[1]), Number(m[2])];
@@ -204,7 +211,43 @@ export function periodsDue(db: Db, today?: string): { form: BirForm; period: str
     if (due > 0) out.push({ form, period, payableCents: due });
   }
   out.push(...incomeTaxDue(db, opened, today));
+  const years = new Set([
+    ...(db.prepare(`SELECT DISTINCT CAST(s.year AS TEXT) FROM tax_income_tax_settlements s JOIN documents d ON d.id = s.document_id WHERE d.status = 'posted'`).pluck().all() as string[]),
+    ...opened.filter((o) => o.form === '1702').map((o) => o.period),
+  ]);
+  for (const period of [...years].sort()) {
+    const left = annualIncomeTaxDue(db, Number(period)).leftCents;
+    if (left > 0) out.push({ form: '1702', period, payableCents: left });
+  }
   return out;
+}
+
+export interface AnnualDue {
+  /** The year's posted income tax settlement, whose payable the 1702 pays. */
+  settlement: { documentId: string; number: string; date: string } | null;
+  /** A year before the cut-over date: the opening tax payable that brought in its 1702. */
+  opening: { documentId: string; number: string; date: string } | null;
+  /** What the settlement (or the opening) left to pay on 2320, paid with the year's 1702 payments, and left. */
+  dueCents: number; paidCents: number; leftCents: number;
+}
+
+/** What the annual return (1702) of a year leaves to pay: from its posted settlement or its opening, less its payments. */
+export function annualIncomeTaxDue(db: Db, year: number): AnnualDue {
+  const s = db
+    .prepare(
+      `SELECT d.id AS documentId, d.number, d.business_date AS date, s.payable_cents AS payable FROM tax_income_tax_settlements s JOIN documents d ON d.id = s.document_id
+       WHERE s.year = ? AND d.status = 'posted'`,
+    )
+    .get(year) as { documentId: string; number: string; date: string; payable: number } | undefined;
+  const key: [BirForm, string][] = [['1702', String(year)]];
+  const o = openingsOf(db, key)[0];
+  const dueCents = s ? Math.max(s.payable, 0) : o ? (openedByParty(db, key).get('') ?? 0) : 0;
+  const paidCents = birPaymentsOf(db, key).filter((p) => p.status === 'posted').reduce((sum, p) => sum + p.amountCents, 0);
+  return {
+    settlement: s ? { documentId: s.documentId, number: s.number, date: s.date } : null,
+    opening: o ? { documentId: o.documentId, number: o.number, date: o.date } : null,
+    dueCents, paidCents, leftCents: dueCents - paidCents,
+  };
 }
 
 /** The 1702Qs with something left to pay (periodsDue). */
@@ -217,6 +260,8 @@ function incomeTaxDue(db: Db, opened: { form: string; period: string }[], today?
     .get() as { first: string | null; last: string | null };
   const until = today ?? span.last;
   const cutover = cutoverDate(db);
+  // A settled year's credits are applied: what is left goes with its 1702.
+  const settled = new Set(db.prepare(`SELECT s.year FROM tax_income_tax_settlements s JOIN documents d ON d.id = s.document_id WHERE d.status = 'posted'`).pluck().all() as number[]);
   const periods = new Set(opened.filter((o) => o.form === '1702Q').map((o) => o.period));
   if (span.first && until) {
     for (let y = Number(span.first.slice(0, 4)); y <= Number(until.slice(0, 4)); y++) {
@@ -228,6 +273,7 @@ function incomeTaxDue(db: Db, opened: { form: string; period: string }[], today?
   }
   return [...periods].sort().flatMap((period) => {
     const p = parsePeriod(period)!;
+    if (settled.has(p.year)) return [];
     const left = incomeTaxPosition(db, p.year, p.quarter).leftCents;
     return left > 0 ? [{ form: '1702Q' as const, period, payableCents: left }] : [];
   });

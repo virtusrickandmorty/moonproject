@@ -41,7 +41,7 @@ describe('1702Q screen rules', () => {
   it('links the worksheet, the form and the calendar; the menu lists the worksheet; the screen is routed', () => {
     expect(worksheetPath('1702Q', '2026-Q3')).toBe('/tax/1702q?year=2026&quarter=3');
     expect(worksheetOfDeadline({ form: '1702Q', period: '2026-Q3' })).toBe('/tax/1702q?year=2026&quarter=3');
-    expect([worksheetOfDeadline({ form: '2550Q', period: '2026-Q3' }), worksheetOfDeadline({ form: '1702-RT', period: '2026' })]).toEqual([null, null]);
+    expect([worksheetOfDeadline({ form: '2550Q', period: '2026-Q3' }), worksheetOfDeadline({ form: '1702-RT', period: '2026' })]).toEqual([null, '/tax/1702rt?year=2026']);
     expect(excelUrl(taxQuarterPath('1702q', 2026, 3))).toBe('/api/tax/1702q?year=2026&quarter=3&format=csv');
     expect(leftToPay('1702Q', { leftCents: 7_500_000 } as IncomeTaxWorksheet)).toBe(7_500_000);
     expect(leftToPay('1702Q', { leftCents: -150_000 } as IncomeTaxWorksheet)).toBe(0);

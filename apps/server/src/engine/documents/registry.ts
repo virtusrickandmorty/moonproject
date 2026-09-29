@@ -68,6 +68,8 @@ export const DOC_TITLES = [
   'Opening Withholding',
   'Opening Statutory Payable',
   'Opening Tax Payable',
+  'Income Tax Provision',
+  'Income Tax Settlement',
 ] as const;
 export type DocTitle = (typeof DOC_TITLES)[number];
 

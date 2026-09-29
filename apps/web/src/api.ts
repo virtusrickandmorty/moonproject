@@ -372,7 +372,7 @@ export interface OpeningState {
   closed: { cutoverDate: string; closedAt: string; closedBy: string; closedByName: string; totalDebitCents: number; totalCreditCents: number } | null;
 }
 /** BIR payments (BIRP-): the return, and the posted payments a worksheet counts. */
-export type BirForm = '2550Q' | '0619-E' | '1601-EQ' | '1702Q';
+export type BirForm = '2550Q' | '0619-E' | '1601-EQ' | '1702Q' | '1702';
 export interface BirPaymentLine { id: string; number: string; date: string; period: string; reference: string; amountCents: number; penaltyCents: number }
 /** The EWT of a period by ATC (per EWT class while the ATC is to confirm). */
 export type EwtAtcLine = EwtAtc & { baseCents: number; ewtCents: number };
@@ -404,6 +404,33 @@ export interface IncomeTaxWorksheet {
   dueCents: number; payments: BirPaymentLine[]; paidCents: number; leftCents: number;
   checks: WorksheetCheck[];
 }
+/** The deductions a year's 1702-RT takes (dated, per year): itemized by default until the accountant confirms, or the 40% OSD. */
+export type DeductionMethod = 'itemized' | 'osd';
+export interface DeductionSetting {
+  id: number | null; year: number; method: DeductionMethod; effectiveFrom: string | null; reason: string | null; createdAt: string | null; createdBy: string | null; confirmed: boolean;
+}
+type DocRef = { documentId: string; number: string; date: string };
+/** GET /api/tax/1702rt?year=: the year in whole pesos, the tax, the credits, payable or carried over; the provision, settlement and 1702 payments. */
+export interface AnnualIncomeTaxWorksheet {
+  year: number; from: string; to: string; returnDue: string | null;
+  settings: IncomeTaxSettings; mcitApplies: boolean | null; basis: 'regular' | 'mcit'; deduction: DeductionSetting;
+  lines: { key: string; label: string; cents: number }[];
+  itemizedDeductionsCents: number; osdCents: number; taxDueCents: number; payableCents: number; provisionCents: number;
+  quarterlyPayments: BirPaymentLine[];
+  provision: (DocRef & { amountCents: number }) | null; settlement: (DocRef & { payableCents: number; carryOverCents: number }) | null; opening: DocRef | null;
+  dueCents: number; payments: BirPaymentLine[]; paidCents: number; leftCents: number;
+  checks: WorksheetCheck[];
+}
+/** GET /api/tax/1604e?year=: the alphalist per payee and ATC, and its tie-out to the four quarters. */
+export interface EwtAnnualReturn {
+  year: number; from: string; to: string; returnDue: string | null;
+  alphalist: (EwtAtc & { supplierId: string | null; tin: string | null; registeredName: string; rateBp: number | null; quarters: [number, number, number, number]; baseCents: number; ewtCents: number })[];
+  totals: { baseCents: number; ewtCents: number };
+  quarters: { quarter: 1 | 2 | 3 | 4; period: string; qapCents: number; worksheetCents: number; registerCents: number; glCents: number; tied: boolean; dueCents: number; remittedCents: number; paidCents: number; leftCents: number }[];
+  quartersCents: number; registerCents: number; glCents: number; tied: boolean; checks: WorksheetCheck[];
+}
+/** A year's annual report URL; with &format=csv the same URL downloads it for Excel. */
+export const taxYearPath = (report: '1702rt' | '1604e', year: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year) })}`;
 /** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
 export const taxRegisterPath = (register: 'sales' | 'withholding-received' | 'purchases' | 'ewt', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
 /** A quarter's tax report URL; with &format=csv the same URL downloads it for Excel. */
@@ -593,6 +620,11 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     incomeTaxSettings: () => call<{ current: IncomeTaxSettings; versions: IncomeTaxSettings[] }>('GET', '/api/tax/income-tax-settings'),
     /** A new version from today or later (acc.settings.manage); needs a fresh password (step-up). */
     addIncomeTaxSettings: (body: { effectiveFrom: string; value: IncomeTaxSettingsValue; reason: string }) => call<IncomeTaxSettings>('POST', '/api/tax/income-tax-settings', body),
+    annualIncomeTaxWorksheet: (year: number) => call<AnnualIncomeTaxWorksheet>('GET', taxYearPath('1702rt', year)),
+    ewtAnnualReturn: (year: number) => call<EwtAnnualReturn>('GET', taxYearPath('1604e', year)),
+    incomeTaxDeductions: (year: number) => call<{ year: number; current: DeductionSetting; versions: DeductionSetting[] }>('GET', `/api/tax/income-tax-deductions?${new URLSearchParams({ year: String(year) })}`),
+    /** A year's deduction method from today or later (acc.settings.manage); needs a fresh password (step-up). */
+    addIncomeTaxDeduction: (body: { year: number; method: DeductionMethod; effectiveFrom: string; reason: string }) => call<DeductionSetting>('POST', '/api/tax/income-tax-deductions', body),
     opening: () => call<OpeningState>('GET', '/api/acc/opening'),
     /** Every return with something left to pay (GET /api/tax/payments/due): a VAT close or an opening's 2550Q, EWT withheld or opened. */
     taxPaymentsDue: () => call<{ form: BirForm; period: string; payableCents: number }[]>('GET', '/api/tax/payments/due'),

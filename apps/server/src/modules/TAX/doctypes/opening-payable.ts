@@ -6,8 +6,7 @@
  *   supplier (0619-E, 1601-EQ), Cr 2320 income tax payable (1702Q, 1702); each line tagged with its form and period.
  * Afterwards the BIR payment (BIRP-) of that form and period pays what the opening left (payments.ts): a 2550Q with no
  * VAT close pays its opening; an EWT return pays it per supplier, and a 0619-E left unpaid goes on its quarter's 1601-EQ.
- * A 1702Q is paid the same way, from 2320 (Dr 2320, income-tax.ts); no payment pays a 1702 yet: it stays on 2320
- * until the year-end settlement (IT-SETTLE) is built. The opening is no tax withheld or VAT of any period: the registers, worksheets, QAP and 2307s to issue leave it out (registers.ts IN_REGISTERS).
+ * A 1702Q is paid the same way, from 2320 (Dr 2320, income-tax.ts), and so is a 1702 (the BIR payment's form 1702). The opening is no tax withheld or VAT of any period: the registers, worksheets, QAP and 2307s to issue leave it out (registers.ts IN_REGISTERS).
  * A 2550Q, 1702Q or 1702 is of a period that ended before the cut-over date (VAT and income tax become payable at the
  * period's end). A 0619-E or 1601-EQ is of a period that began before it: EWT is payable when withheld, so the month or
  * quarter the cut-over falls in brings in what the old books withheld before it; what is withheld after it adds on.
@@ -94,7 +93,6 @@ function build(rows: OpeningPayableRow[], note: string | null | undefined): Open
 
 /** The BIR payments that would pay a return: its own, and for a 0619-E also its quarter's 1601-EQ (which takes it if unpaid). */
 function paymentKeys(form: OpeningForm, period: string): [BirForm, string][] {
-  if (form === '1702') return [];
   if (form !== '0619-E') return [[form, period]];
   const p = parsePeriod(period);
   return p ? [['0619-E', period], ['1601-EQ', quarterPeriod(p.year, p.quarter)]] : [];
