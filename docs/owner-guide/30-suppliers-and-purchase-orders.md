@@ -18,12 +18,12 @@
 **To add or change supplier contacts:**
 1. Open a supplier from the **Suppliers** list.
 2. Go down to **Contacts**.
-3. Fill in the name, role, phone, and email, then click **Add contact**.
+3. Fill in the name, role, Mobile, and Email, then click **Add contact**.
 
 **To keep your supplies list:**
 1. On the **Purchases & Expenses** menu, click **Supplies**.
 2. Click **+ New supply** to add a new item you buy.
-3. Fill in the details, then save it. You can also click **Change** on a supply to fix its details.
+3. Type its **Name**, pick its **Unit** and **Kind**, then click **Add supply** or **Save changes**. You can also click **Change** on a supply to fix its details.
 
 **To make a purchase order:**
 1. On the **Purchases & Expenses** menu, click **Purchase Orders**.
