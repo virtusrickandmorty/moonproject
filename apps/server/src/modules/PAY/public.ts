@@ -140,3 +140,33 @@ export function loansOfMonth(db: Db, month: string): MonthLoan[] {
   }
   return [...out.values()];
 }
+
+/** Immutable payroll snapshots for RPT. Amounts are the figures sealed with each recorded run. */
+export function payrollReportRows(db: Db) {
+  return db.prepare(`SELECT d.id AS documentId, d.number, d.business_date AS businessDate, d.status,
+    r.period_start AS periodStart, r.period_end AS periodEnd, r.contribution_month AS contributionMonth,
+    e.id AS runEmployeeId, e.employee_id AS employeeId, e.employee_code AS employeeCode, e.employee_name AS employeeName,
+    e.gross_cents AS grossCents, e.sss_ee_cents AS sssEeCents, e.sss_er_cents AS sssErCents,
+    e.sss_ec_cents AS sssEcCents, e.phic_ee_cents AS phicEeCents, e.phic_er_cents AS phicErCents,
+    e.hdmf_ee_cents AS hdmfEeCents, e.hdmf_er_cents AS hdmfErCents, e.wtax_cents AS taxCents,
+    e.ca_cents AS caCents, COALESCE((SELECT SUM(x.amount_cents) FROM pay_run_loans x WHERE x.run_employee_id=e.id),0) AS loanCents,
+    e.thirteenth_cents AS accruedCents, e.net_cents AS netCents
+    FROM pay_run_employees e JOIN pay_runs r ON r.document_id=e.document_id JOIN documents d ON d.id=r.document_id
+    WHERE d.status='posted' ORDER BY d.business_date,d.number,e.employee_name`) .all() as Array<Record<string, string | number>>;
+}
+
+/** Recorded earning lines, including their JO tags, for payroll reports. */
+export function payrollEarningRows(db: Db) {
+  return db.prepare(`SELECT e.document_id AS documentId,r.period_start AS periodStart,r.period_end AS periodEnd,e.employee_id AS employeeId,e.employee_code AS employeeCode,e.employee_name AS employeeName,
+    l.kind,l.description,l.qty,l.amount_cents AS amountCents,l.job_order_id AS jobOrderId
+    FROM pay_run_lines l JOIN pay_run_employees e ON e.id=l.run_employee_id JOIN pay_runs r ON r.document_id=e.document_id JOIN documents d ON d.id=e.document_id
+    WHERE d.status='posted' ORDER BY e.document_id,e.employee_name,l.line_no`).all() as Array<Record<string, string | number | null>>;
+}
+
+/** Recorded 13th-month snapshots for a year. */
+export function thirteenthReportRows(db: Db, year: number) {
+  return db.prepare(`SELECT d.id AS documentId,d.number,e.employee_id AS employeeId,e.employee_code AS employeeCode,e.employee_name AS employeeName,
+    e.due_cents AS dueCents,e.accrued_cents AS accruedCents,e.amount_cents AS paidCents,e.taxable_cents AS taxableCents
+    FROM pay_thirteenth_employees e JOIN pay_thirteenths t ON t.document_id=e.document_id JOIN documents d ON d.id=e.document_id
+    WHERE d.status='posted' AND t.year=? ORDER BY e.employee_name,d.number`).all(year) as Array<Record<string, string | number>>;
+}
