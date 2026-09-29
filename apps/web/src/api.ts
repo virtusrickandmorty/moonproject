@@ -187,6 +187,11 @@ export interface EmployeeDetail {
   /** used: days of leave taken; paid: unused days paid in cash by a payroll (final pay, December). */
   sil: { year: number; eligibleFrom: string; daysPerYear: number; used: number; paid: number; left: number };
 }
+export interface LeaveBalances {
+  year: number;
+  rows: { employeeId: string; code: string; fullName: string; hireDate: string; separatedOn: string | null; eligibleFrom: string; earned: number; used: number; paid: number; left: number }[];
+  totals: { earned: number; used: number; paid: number; left: number };
+}
 export type AttendanceStatus = 'present' | 'half_day' | 'absent' | 'rest_day' | 'leave' | 'unpaid_leave' | 'holiday_off' | 'holiday_worked' | 'rest_day_worked';
 export interface AttendanceDay { employeeId: string; date: string; status: AttendanceStatus; otMinutes: number; note: string | null }
 export interface Holiday { id: number; date: string; name: string; kind: 'regular' | 'special'; source: string; isActive: boolean; deactivatedReason: string | null }
@@ -821,6 +826,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     employees: (q: { search?: string; status?: 'active' | 'separated' | 'all' } = {}) =>
       call<EmployeeRow[]>('GET', `/api/emp/employees?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][])}`),
     employee: (id: string) => call<EmployeeDetail>('GET', emp(id)),
+    leaveBalances: (year?: number) => call<LeaveBalances>('GET', `/api/emp/leave-balances${year ? `?year=${year}` : ''}`),
     addEmployee: (body: Record<string, unknown>) => call<EmployeeRecord>('POST', '/api/emp/employees', body),
     updateEmployee: (id: string, v: number, body: Record<string, unknown>) => call<EmployeeRecord>('PUT', emp(id), body, version(v)),
     separateEmployee: (id: string, v: number, body: { separatedOn: string; reason: string }) => call<EmployeeRecord>('POST', emp(id, '/separate'), body, version(v)),

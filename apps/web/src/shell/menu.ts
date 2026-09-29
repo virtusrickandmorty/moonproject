@@ -42,6 +42,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Production', label: 'Piece rates', path: '/prd/rates', permission: 'rate.view' },
   { group: 'Production', label: 'Sizer sets', path: '/szr/sets', permission: 'szr.loan.view' },
   { group: 'People & Payroll', label: 'Employees', path: '/emp/employees', permission: 'emp.view' },
+  { group: 'People & Payroll', label: 'Leave balances', path: '/emp/leave-balances', permission: 'emp.view' },
   { group: 'People & Payroll', label: 'Attendance', path: '/emp/attendance', permission: 'emp.view' },
   { group: 'People & Payroll', label: 'Holidays', path: '/emp/holidays', permission: 'emp.view' },
   { group: 'People & Payroll', label: 'Government loans', path: '/pay/loans', permission: 'pay.loans.view' },

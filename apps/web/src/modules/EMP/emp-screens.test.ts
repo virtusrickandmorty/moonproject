@@ -54,9 +54,9 @@ describe('attendance grid rules', () => {
     ]);
   });
 
-  it('the menu shows Employees, Attendance and Holidays under People & Payroll with emp.view', () => {
+  it('the menu shows Employees, leave balances, Attendance and Holidays under People & Payroll with emp.view', () => {
     const labels = (perms: string[]) => buildMenu([], new Set(perms)).map((g) => `${g.group}: ${g.items.map((i) => i.label).join(', ')}`);
-    expect(labels(['emp.view'])).toEqual(['Overview: Home', 'People & Payroll: Employees, Attendance, Holidays', 'Accounting & Tax: Settings', 'Admin: Shop certificate, Practice shop']);
+    expect(labels(['emp.view'])).toEqual(['Overview: Home', 'People & Payroll: Employees, Leave balances, Attendance, Holidays', 'Accounting & Tax: Settings', 'Admin: Shop certificate, Practice shop']);
     expect(labels([])).toEqual(['Overview: Home', 'Accounting & Tax: Settings', 'Admin: Shop certificate, Practice shop']);
   });
 });

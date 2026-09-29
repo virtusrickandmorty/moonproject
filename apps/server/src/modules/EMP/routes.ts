@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { badRequest, forbidden, isBusinessDate, notFound } from '@moonproject/shared';
+import { badRequest, forbidden, isBusinessDate, notFound, toCsv, type CsvCell } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
@@ -9,6 +9,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { activeEmployees } from './public.ts';
 import { addPayProfile, createEmployee, employeeRecord, listEmployees, masked, payHistory, payProfileAt, separateEmployee, updateEmployee, type Who } from './employees.ts';
 import { ATTENDANCE, addHoliday, attendanceBetween, checkRange, deactivateHoliday, holidaysBetween, holidaysOf, paidDaysBetween, saveAttendance, silOf } from './time.ts';
+import { leaveBalances } from './leave-balances.ts';
 
 const dateQ = z.string().refine(isBusinessDate);
 
@@ -24,6 +25,20 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/emp/employees', { config: { permission: 'emp.view' } }, async (req) => {
     const q = z.object({ search: z.string().max(100).optional(), status: z.enum(['active', 'separated', 'all']).optional() }).strict().parse(req.query);
     return listEmployees(db, { search: q.search?.trim() ?? '', status: q.status ?? 'active' });
+  });
+
+  app.get('/api/emp/leave-balances', { config: { permission: 'emp.view' } }, async (req, reply) => {
+    const q = z.object({ year: z.coerce.number().int().min(2000).max(2100).optional(), format: z.literal('csv').optional() }).strict().parse(req.query);
+    const year = q.year ?? Number(today(clock).slice(0, 4));
+    const result = leaveBalances(db, year);
+    if (q.format !== 'csv') return result;
+    reply.header('Content-Disposition', `attachment; filename="leave-balances-${year}.csv"`);
+    reply.type('text/csv; charset=utf-8');
+    return toCsv([
+      ['Employee code', 'Employee', 'Hired', 'Separated', 'SIL earned', 'Days used', 'Paid in cash', 'Left'],
+      ...result.rows.map((r): CsvCell[] => [r.code, r.fullName, r.hireDate, r.separatedOn ?? '', r.earned, r.used, r.paid, r.left]),
+      ['TOTAL', '', '', '', result.totals.earned, result.totals.used, result.totals.paid, result.totals.left],
+    ]);
   });
 
   /**
