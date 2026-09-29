@@ -47,6 +47,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'People & Payroll', label: 'Government loans', path: '/pay/loans', permission: 'pay.loans.view' },
   { group: 'People & Payroll', label: '2316 and alphalist', path: '/pay/2316', permission: 'pay.yearend.view' },
   { group: 'Admin', label: 'Company print details', path: '/prt/company-profile', permission: 'prt.profile.manage' },
+  { group: 'Admin', label: 'Printer test pack', path: '/prt/test-pack', permission: 'prt.test_pack' },
   { group: 'People & Payroll', label: 'Government remittances', path: '/stat', permission: 'stat.view' },
   { group: 'People & Payroll', label: 'Statutory exposure', path: '/stat/exposure', permission: 'stat.view' },
   { group: 'People & Payroll', label: 'Cash advances owed', path: '/ca/employees', permission: 'ca.view' },
