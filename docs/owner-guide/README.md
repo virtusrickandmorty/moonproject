@@ -29,3 +29,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [26. Sales and Collections Reports](26-sales-and-collections-reports.md): View your sales, collections, deposits, and the status of your job orders.
 - [27. Credits and Write-offs](27-credits-and-write-offs.md): Record a 2307, forfeit a deposit, post a credit memo, or write off a bad debt.
 - [28. Year-end tax and 2316](28-year-end-tax.md): Do the year-end adjustment, check substituted filing, and download the 2316 and alphalist.
+- [32. Bank reconciliation](32-bank-reconciliation.md): Check that your bank accounts match your real bank statements.
