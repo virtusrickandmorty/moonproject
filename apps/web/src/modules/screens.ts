@@ -13,6 +13,7 @@ import { QuickSaleForm } from './QS/QuickSaleForm.tsx';
 import { quickSaleView } from './QS/QuickSaleView.tsx';
 import { EntryForm } from './PRD/EntryForm.tsx';
 import { ProductionBoard } from './PRD/Board.tsx';
+import { TvBoard } from './PRD/TvBoard.tsx';
 import { PieceRates } from './RATE/Rates.tsx';
 import { Employees } from './EMP/Employees.tsx';
 import { EmployeePage } from './EMP/Employee.tsx';
@@ -91,6 +92,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/cash/accounts': CashAccounts,
   '/cash/book': CashBook,
   '/prd/board': ProductionBoard,
+  '/prd/tv': TvBoard,
   '/prd/rates': PieceRates,
   '/emp/employees': Employees,
   '/emp/employees/:id': EmployeePage,

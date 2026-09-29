@@ -102,6 +102,7 @@ export interface BoardCard {
   qty: number; releasedQty: number; garmentType: string | null; complexity: string | null; templateId: number | null; currentStepId: number | null; ready: boolean;
   steps: { stepId: number; status: StepStatus; pieces: number; reworkPieces: number }[] | null;
 }
+export interface NavResult { kind: 'Customer' | 'Wearer' | 'Job order' | 'Document' | 'Supplier' | 'Employee'; id: string; label: string; detail?: string; href: string }
 export interface PrdJob {
   jobOrder: { id: string; number: string; status: 'posted' | 'cancelled'; customerName: string; dueDate: string; priority: string; stage: string };
   lines: { lineNo: number; description: string; qty: number; releasedQty: number; setup: { templateId: number | null; garmentType: string; complexity: string; stepIds: number[] } | null;
@@ -517,6 +518,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     qsPayments: (id: string) => call<SalePayment[]>('GET', qs(id, 'payments')),
     prdCatalogue: () => call<PrdCatalogue>('GET', '/api/prd/catalogue'),
     prdBoard: () => call<BoardCard[]>('GET', '/api/prd/board'),
+    prdTv: () => call<{ cards: BoardCard[]; steps: PrdStep[] }>('GET', '/api/prd/tv'),
+    navSearch: (q: string) => call<NavResult[]>('GET', `/api/nav/search?${new URLSearchParams({ q })}`),
     prdJob: (id: string) => call<PrdJob>('GET', prdJob(id)),
     prdSetup: (jo: string, lineNo: number, body: PrdSetup) => call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/setup`), body),
     prdStep: (jo: string, lineNo: number, stepId: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) =>
