@@ -19,14 +19,14 @@
    - Pick the **Year** and **Quarter** to see a preview of the VAT payable or carried over.
 4. **Check the 2550Q worksheet:**
    - Go to the **2550Q worksheet** on the **Accounting & Tax** menu to see the exact **Item**, **Amount**, and **Tax** figures for the BIR form.
-   - Look for the line **Purchases still to classify (journal vouchers on input VAT)**. The accountant must classify these into capital goods, goods, or services. Our advice is not to file until these are classified.
+   - Look for the line **Purchases still to classify (journal vouchers on input VAT)**. Ask your accountant to classify them into capital goods, goods, or services before you file.
    - The system will also warn you to "Record the VAT close of this quarter before filing, so the books show the same figures."
 5. **Close the VAT (at quarter end):**
    - Once the quarter ends and is not closed, a link appears. Click **Close the VAT of Q...** on the **VAT this quarter** screen, or **Record the VAT close of Q...** on the worksheet.
    - On the **Close the VAT of a quarter** screen, pick the **Year** and **Quarter**. The system shows a preview.
    - You can optionally type a **Note** (like the eFPS reference).
    - If you may back-date, you can choose the **Date of the close** (the quarter's last day or today). Everyone else will just see it is dated today.
-   - Click **Record**. Quarters close in order, so you cannot close this quarter if an earlier one is open.
+   - Click **Record**. Close the quarters in order. If a later quarter is already closed, the app refuses. Cancel the later close first.
 6. **Pay the 2550Q:**
    - After filing, record the payment. See [18. BIR payments](18-bir-payments.md) for how to do this.
 
