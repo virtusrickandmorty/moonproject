@@ -30,3 +30,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [27. Credits and Write-offs](27-credits-and-write-offs.md): Record a 2307, forfeit a deposit, post a credit memo, or write off a bad debt.
 - [28. Year-end tax and 2316](28-year-end-tax.md): Do the year-end adjustment, check substituted filing, and download the 2316 and alphalist.
 - [30. Suppliers and Purchase Orders](30-suppliers-and-purchase-orders.md): Manage suppliers and your supplies list, make purchase orders, and receive goods.
+- [33. Month-end checklist](33-month-end-checklist.md): View the status of month-end tasks and sign off the month.
