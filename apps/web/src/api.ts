@@ -52,6 +52,16 @@ export interface CashPlace { id: number; name: string; balanceCents: number | nu
 export interface DashItem { id: string; label: string; href?: string; detail?: string; amountCents?: number }
 export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string }
 export interface DashHomeData { role: string; asOf: string; widgets: DashWidget[] }
+export interface DashOwnerHealth {
+  asOf: string;
+  periods: { label: string; from: string; to: string; salesCents: number; vatCents: number; collectionsCents: number; payrollCents: number }[];
+  cashPlaces: { id: number; name: string; balanceCents: number }[];
+  receivables: { totalCents: number; over30Cents: number; over60Cents: number; over90Cents: number };
+  payables: { totalCents: number; dueNext7DaysCents: number };
+  jobs: { open: number; dueThisWeek: number; late: number };
+  depositsHeldCents: number;
+  taxDeadlines: { form: string; periodLabel: string; dueDate: string }[];
+}
 export interface DashNotification extends DashItem { kind: string; read: boolean }
 export type CalKind = 'event' | 'job_due' | 'release' | 'holiday' | 'tax' | 'customer_birthday' | 'employee_birthday';
 export interface CalItem { id: string; date: string; kind: CalKind; title: string; href: string; time?: string | null; notes?: string | null; rush?: boolean }
@@ -732,6 +742,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** practice: this is the practice shop (PLAN C8). */
     health: () => call<{ serverTime: string; practice?: boolean }>('GET', '/api/health'),
     dashHome: () => call<DashHomeData>('GET', '/api/dash/home'),
+    dashOwnerHealth: () => call<DashOwnerHealth>('GET', '/api/dash/owner-health'),
     dashNotifications: () => call<DashNotification[]>('GET', '/api/dash/notifications'),
     dashRead: (id: string) => call<{ ok: true }>('POST', '/api/dash/notifications/read', { id }),
     calItems: (from: string, to: string) => call<CalItem[]>('GET', `/api/cal?${new URLSearchParams({ from, to })}`),
