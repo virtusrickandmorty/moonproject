@@ -609,11 +609,22 @@ export interface MigRow {
 }
 export interface DryRunResult {
   success: true;
-  counts: { customers: number; measurements: number; employees: number; pieceRates: number; excluded: number; merged: number; total: number };
+  counts: {
+    customers: number; measurements: number; employees: number; pieceRates: number; excluded: number; merged: number; total: number;
+    /** What the bulk choices for MANUAL size rows will make: customers, groups, and wearers. */
+    newCustomers?: number; newGroups?: number; wearers?: number;
+  };
   checksums: {
     customer: { sha256: string }; measurement: { sha256: string; cellTenths: number }; employee: { sha256: string; rateCents: number }; pieceRate: { sha256: string; rateCents: number };
   };
 }
+/** A MANUAL size row's one customer with the same name, offered to accept. */
+export interface MigSizeSuggestion { rowId: string; customerId: string; code: string; name: string }
+/** Where MANUAL size rows are put in bulk: each its own customer, or wearers of one customer (in a group of it, or a new group). */
+export type MigAssignBody = { rowIds: string[]; mode: 'own' } | { rowIds: string[]; mode: 'under'; customerId: string; groupId?: string; newGroupName?: string };
+export interface MigAssigned { success: true; assigned: number; skipped: { rowId: string; rowNumber: number; reason: string }[] }
+export interface MigEmployeeFix { rowId: string; payType?: 'daily' | 'piece' | 'monthly'; rateCents?: number }
+export interface CustomerGroup { id: string; name: string; is_active: number }
 export type MigCommitKind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate';
 /** What a commit made. `excluded` and `merged` are only in the answer to the commit itself, not in the later look-up. */
 export interface MigCommitResult { counts: Record<MigCommitKind, { imported: number; alreadyImported: number }>; measurementCellTenths: number; excluded?: number; merged?: number }
@@ -814,6 +825,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     unmatchRecon: (id: string, matchNo: number) => call<ReconReport>('POST', `/api/cash/recons/${id}/unmatch`, { matchNo }),
     finishRecon: (id: string) => call<ReconReport>('POST', `/api/cash/recons/${id}/finish`, {}),
     customer: (id: string) => call<CustomerRow>('GET', `/api/cus/customers/${encodeURIComponent(id)}`),
+    /** The active groups of a customer, for a picker. */
+    customerGroups: (id: string) => call<{ groups: CustomerGroup[] }>('GET', `/api/cus/customers/${encodeURIComponent(id)}`).then((r) => r.groups.filter((g) => g.is_active === 1)),
     customers: (search: string) => call<CustomerRow[]>('GET', `/api/cus/customers?${new URLSearchParams({ search, limit: '10' })}`),
     openItems: (customerId: string) => call<OpenItems>('GET', customer(customerId, 'open-items')),
     refundable: (customerId: string) => call<Refundable>('GET', customer(customerId, 'refundable')),
@@ -1044,6 +1057,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     migReview: (uploadId: string) => call<{ rows: MigRow[] }>('GET', `/api/mig/uploads/${encodeURIComponent(uploadId)}/review`).then((r) => r.rows),
     migAccept: (rowId: string) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/accept`, {}),
     migFix: (rowId: string, manualData: Record<string, string | number>) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/fix`, { manualData }),
+    migSizeSuggestions: (uploadId: string) => call<{ suggestions: MigSizeSuggestion[] }>('GET', `/api/mig/uploads/${encodeURIComponent(uploadId)}/size-suggestions`).then((r) => r.suggestions),
+    migAssignSizes: (uploadId: string, body: MigAssignBody) => call<MigAssigned>('POST', `/api/mig/uploads/${encodeURIComponent(uploadId)}/assign-sizes`, body),
+    /** All or nothing: if any row is refused, none is saved and the message names each one. */
+    migFixEmployees: (uploadId: string, fixes: MigEmployeeFix[]) => call<{ success: true; saved: number }>('POST', `/api/mig/uploads/${encodeURIComponent(uploadId)}/fix-employees`, { fixes }),
     migMerge: (rowId: string, mergeIntoRowId: string) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/merge`, { mergeIntoRowId }),
     /** The reason is sent for the day the server keeps it; today the server ignores it. */
     migExclude: (rowId: string, reason: string) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/exclude`, { reason }),
