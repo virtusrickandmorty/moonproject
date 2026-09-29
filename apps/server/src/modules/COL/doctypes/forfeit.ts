@@ -7,7 +7,7 @@
  * Downpayment VAT (D3, deposit-vat.ts): in mode B the output VAT recognised on the forfeited deposits (2209) leaves with
  * them, Dr 2301 / Cr 2209: VATable, the forfeit books its own VAT instead; not VATable, it is taken back. In mode C a
  * downpayment already invoiced can be forfeited after the money held: its NET leaves 2201 for other income, and its VAT
- * stays booked, as the invoice was issued.
+ * stays booked, as the invoice was issued. Only the part of the downpayment invoices the customer paid can be forfeited.
  * A recorded job order is marked abandoned (a stage event: Closed, abandoned): nothing more is released on it, and no
  * new deposit is taken; with no release waiting for its invoice (refused otherwise), nothing more is invoiced either. A
  * cancelled job order's deposit can be forfeited too (D6). One recorded forfeit per job order. Cancel mirrors and puts
@@ -18,7 +18,7 @@ import fc from 'fast-check';
 import { formatPeso, vatFromGross, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { settingAt } from '../../../engine/settings.ts';
-import { abandon, awaitingInvoice, currentStage, isAbandoned, jobOrderRef, jobOrdersOf, unabandon } from '../../JO/public.ts';
+import { abandon, awaitingInvoice, currentStage, isAbandoned, jobOrderRef, jobOrdersOf, joLedger, unabandon } from '../../JO/public.ts';
 import { depositVatLines, depositVatRowsOf, dpHeld, recordDepositVat, shareOf, vatLeaving, vatRow } from './deposit-vat.ts';
 import { MAX_CENTS, depositsHeld } from '../ledger.ts';
 
@@ -69,7 +69,9 @@ export const forfeitDoc: DocTypeDef<ForfeitInput, Forfeit> = {
     const dp = jo ? dpHeld(ctx.db, jo.id) : { grossCents: 0, vatCents: 0, netCents: 0 };
     // Money held first, then downpayments already invoiced (mode C).
     const moneyCents = Math.max(0, Math.min(input.amountCents, money));
-    const dpForfeitedCents = Math.max(0, Math.min(input.amountCents - moneyCents, dp.grossCents));
+    // Only what the customer paid of them: a downpayment invoice still unpaid is cancelled, not forfeited.
+    const dpPaidCents = jo ? Math.max(0, dp.grossCents - Math.max(0, joLedger(ctx.db, jo.id).receivableCents)) : 0;
+    const dpForfeitedCents = Math.max(0, Math.min(input.amountCents - moneyCents, dpPaidCents));
     const dpVatCents = shareOf(dp.vatCents, dpForfeitedCents, dp.grossCents);
     const vatCents = vatable ? vatFromGross(moneyCents, vatRateBp).vatCents : 0;
     const out = jo ? vatLeaving(ctx.db, jo.id, moneyCents) : { vatCents: 0, baseCents: 0 };
@@ -78,7 +80,7 @@ export const forfeitDoc: DocTypeDef<ForfeitInput, Forfeit> = {
       jobOrderNumber: jo?.number ?? '?',
       customerId: jo?.customerId ?? '',
       customerName: jo?.customerName ?? '?',
-      heldCents: money + dp.grossCents,
+      heldCents: money + dpPaidCents,
       vatable,
       vatRateBp,
       vatCents,

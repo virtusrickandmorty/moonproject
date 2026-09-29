@@ -9,7 +9,7 @@
  * doctypes/deposit-vat.ts); a job order that started in mode A or B takes no downpayment invoice. At most what is not yet
  * invoiced of the job order. Its amounts are kept in col_deposit_vat (the downpayment held, NET_dp in 2201).
  * Cancel: the mirror, then settleJobOrder (D6): a downpayment already paid becomes money held for the job order again,
- * Dr 1201 / Cr 2201. Refused while a release invoice took it into sales: cancel that first.
+ * Dr 1201 / Cr 2201. Refused while a release invoice or a forfeit took it out of 2201: cancel that first.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -17,9 +17,9 @@ import { formatPeso, vatFromGross, type Issue } from '@moonproject/shared';
 import type { Db } from '../../../platform/db/driver.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { settingAt } from '../../../engine/settings.ts';
-import { MODE_WORDS, depositModeOn, dpHeld, lockedMode, modeKeptIssue, recordDepositVat, settleJobOrder, vatRow } from '../../COL/public.ts';
+import { MODE_WORDS, depositModeOn, dpHeld, dpTakenBy, lockedMode, modeKeptIssue, recordDepositVat, settleJobOrder, vatRow } from '../../COL/public.ts';
 import { bookletIssue } from '../../TAX/public.ts';
-import { invoiceNumberUsedBy, invoiceRecordsOf, invoicedCents, isAbandoned, jobOrderRef, jobOrdersOf, joLedger } from '../public.ts';
+import { invoiceNumberUsedBy, invoicedCents, isAbandoned, jobOrderRef, jobOrdersOf, joLedger } from '../public.ts';
 import { MAX_CENTS } from './job-order.ts';
 
 export const dpInvoiceInput = z
@@ -151,10 +151,10 @@ export const dpInvoiceDoc: DocTypeDef<DpInvoiceInput, DpInvoice> = {
     };
   },
 
-  /** A release invoice that took this downpayment into sales: cancel it first, or 2201 would owe less than nothing. */
+  /** A release invoice that took this downpayment into sales, or a forfeit that took it: cancel it first, or 2201 would owe less than nothing. */
   dependents(db, documentId) {
     const d = dpInvoiceDoc.load(db, documentId);
-    return dpHeld(db, d.jobOrderId).grossCents < d.amountCents ? invoiceRecordsOf(db, { jobOrderId: d.jobOrderId }).map(({ id, number }) => ({ id, number })) : [];
+    return dpHeld(db, d.jobOrderId).grossCents < d.amountCents ? dpTakenBy(db, d.jobOrderId) : [];
   },
 
   afterCancel(db, documentId) {

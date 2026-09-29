@@ -236,7 +236,7 @@ describe('Quotation screens against the doc type', () => {
   it('opens the Job Order form when it is registered, and otherwise the job order list with a notice; expiry only warns', () => {
     expect(jobOrderTarget(true, 'abc-1', 'QUO-000001')).toBe('/docs/jo.job_order/new?fromQuotation=abc-1');
     expect(jobOrderTarget(false, 'abc-1', 'QUO-000001')).toBe('/docs/jo.job_order?from-quotation=QUO-000001');
-    expect('jo.job_order' in FORMS).toBe(false); // when the job order screens register their form, this flips and the button follows
+    expect('jo.job_order' in FORMS).toBe(true); // the job order screens registered their form, so the button opens it
     expect(JOB_ORDER_LATER('QUO-000001')).toBe('QUO-000001 is ready to become a job order, but the job order form comes with the job order screens. Nothing was changed on the quotation.');
     const jo = { ...quoType, key: 'jo.job_order', title: 'Job Order' };
     expect(html(DocList, { type: jo, notice: JOB_ORDER_LATER('QUO-000001') })).toContain('comes with the job order screens');

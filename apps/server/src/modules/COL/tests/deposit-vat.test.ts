@@ -384,12 +384,20 @@ describe('mode C golden (PLAN I2 G-05)', () => {
       ['1201', c.school, jo, 0, 1_000_000],
     ]);
     expect(joMoney(env.db, jo)).toMatchObject({ receivableCents: 1_800_000, depositsHeldCents: 0, balanceDueCents: 4_600_000 });
-    await collect(jo, 1_800_000);
     const input = { jobOrderId: jo, amountCents: 2_800_000, reason: 'Customer stopped answering; terms keep the deposit' };
+    // Only the ₱10,000.00 paid of the downpayment invoice can be forfeited while ₱18,000.00 of it is unpaid.
+    const unpaid = await owner.post('/api/docs/col.forfeit/post', { input, expectedTotalCents: 2_800_000 }, idem());
+    expect(unpaid.statusCode).not.toBe(200);
+    expect(unpaid.body).toContain('Only ₱10,000.00 is held for JO-000001.');
+    await collect(jo, 1_800_000);
     const f = await owner.post('/api/docs/col.forfeit/post', { input, expectedTotalCents: 2_800_000 }, idem());
     expect(f.statusCode, f.body).toBe(200);
     expect(linesOf(f.json().id)).toEqual([['2201', c.school, jo, 2_500_000, 0], ['7103', null, null, 0, 2_500_000]]);
     expect([gl(env.db, 'OUTPUT_VAT'), gl(env.db, 'CUSTOMER_DEPOSITS'), dpHeld(env.db, jo).grossCents]).toEqual([-300_000, 0, 0]);
+    // The forfeit took the downpayment out of 2201: the DP invoice waits for it to be cancelled first.
+    const blocked = await cancel('jo.dp_invoice', dp.id, owner);
+    expect(blocked.statusCode).not.toBe(200);
+    expect(blocked.body).toContain('DFF-000001');
     expect((await cancel('col.forfeit', f.json().id, owner)).statusCode).toBe(200);
     expect(dpHeld(env.db, jo)).toEqual({ grossCents: 2_800_000, vatCents: 300_000, netCents: 2_500_000 });
     noBrokenInvariants();

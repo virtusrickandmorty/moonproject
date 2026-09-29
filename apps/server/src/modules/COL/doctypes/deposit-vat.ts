@@ -196,6 +196,14 @@ export function dpAppliedByInvoice(db: Db): Map<string, number> {
   return new Map(rows.map((r) => [r.id, r.cents]));
 }
 
+/** Recorded documents that took downpayments invoiced on the job order out of 2201 (release invoices, a forfeit). */
+export function dpTakenBy(db: Db, jobOrderId: string): { id: string; number: string }[] {
+  return db
+    .prepare(`SELECT DISTINCT d.id, d.number FROM col_deposit_vat v JOIN documents d ON d.id = v.document_id
+              WHERE v.job_order_id = ? AND v.posting = 'original' AND v.dp_invoiced_cents < 0 AND d.status = 'posted' ORDER BY d.number`)
+    .all(jobOrderId) as { id: string; number: string }[];
+}
+
 /** A document's own rows, in order (for loading it back). */
 export function depositVatRowsOf(db: Db, documentId: string): DepositVatRow[] {
   return db
