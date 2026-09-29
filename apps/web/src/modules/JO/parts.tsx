@@ -1,6 +1,6 @@
 /** Pieces the release slip and invoice record forms share: pick a job order or a release by its number, and the booklet figures. */
 import { useEffect, useState } from 'react';
-import { api, type BookletFigures, type JoPick, type ReleasePick } from '../../api.ts';
+import { api, type BookletShown, type JoPick, type ReleasePick } from '../../api.ts';
 import { Button, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { Figures } from '../COL/parts.tsx';
 
@@ -68,16 +68,29 @@ export function ReleasePicker({ value, onChange, preset = '' }: { value: Release
   );
 }
 
-/** "Write these on the booklet" (D4.4). */
-export function Booklet({ b, depositAppliedCents }: { b: BookletFigures; depositAppliedCents?: number }) {
+/**
+ * "Write these on the booklet" (D4.4). In mode C, when downpayments were invoiced, the sale less "Less downpayments invoiced" is
+ * what the balance invoice shows (the server sends those figures); in mode B, the VAT already booked on the deposits is said.
+ */
+export function Booklet({ b, depositAppliedCents }: { b: BookletShown; depositAppliedCents?: number }) {
+  const dp = b.downpaymentsInvoicedCents ?? 0;
   return (
     <Panel title="Write these on the booklet">
+      {dp > 0 && (
+        <>
+          <Figures items={[['Sale', b.grossCents + dp], ['Less downpayments invoiced', dp]]} />
+          <p className="text-sm text-slate-600">Downpayment VAT mode C: the downpayments were invoiced when they were received, so this invoice shows the sale less them.</p>
+        </>
+      )}
       <Figures items={[
         ['VATable sales', b.vatableSalesCents],
         ['VAT', b.vatCents],
         ...(b.discountCents ? [['Discount', b.discountCents] as [string, number]] : []),
         ['Total', b.grossCents, 'font-semibold'],
       ]} />
+      {b.depositVatMode === 'B' && !!b.depositVatCents && b.depositVatCents > 0 && (
+        <p className="text-sm text-slate-600">Downpayment VAT mode B: {peso(b.depositVatCents)} of this VAT was already booked as output VAT on the deposits.</p>
+      )}
       {!!depositAppliedCents && <p className="text-sm text-slate-600">Deposits applied: {peso(depositAppliedCents)}; left to collect: {peso(b.grossCents - depositAppliedCents)}.</p>}
     </Panel>
   );

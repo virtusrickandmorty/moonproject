@@ -5,7 +5,7 @@
 button names), never by CSS classes. The specs share one shop and run in file order, so run the whole suite, not one file.
 
 - `01-first-run`: the first owner, sign out, sign in; then the owner adds a staff user with a role, who signs in and changes the password at first sign-in.
-- `02-sales`: a job order with the customer added on the form, its downpayment and the rest, a release with the invoice to follow, the invoice record; balance due zero and nothing in AR aging.
+- `02-sales`: a job order with the customer added on the form, its downpayment and the rest, a release with the invoice to follow, the invoice record; balance due zero and nothing in AR aging. Then downpayment VAT mode C (the downpayment invoice, its collection, the release with the balance invoice) and a job order made from a quotation.
 - `03-quick-sale`: a customer, a quick sale with its collection.
 - `04-payroll`: an employee, a week of attendance, the run, its release, the payslip.
 - `05-backups`: recovery keys, back up now, restore drill.
