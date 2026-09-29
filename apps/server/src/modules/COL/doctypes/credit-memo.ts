@@ -14,7 +14,7 @@ import { z } from 'zod';
 import fc from 'fast-check';
 import { formatPeso, vatFromGross, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
-import { settleLines } from '../../JO/public.ts';
+import { settleJobOrder } from './deposit-vat.ts';
 import { MAX_CENTS, takenOutBy } from '../ledger.ts';
 import { allInvoices, invoiceOf, invoiceWords, memosOn, owedCents, writeOffsOn, type Invoice } from '../credits.ts';
 
@@ -176,7 +176,7 @@ export const creditMemoDoc: DocTypeDef<CreditMemoInput, CreditMemo> = {
 
   afterCancel(db, documentId) {
     const d = creditMemoDoc.load(db, documentId);
-    const lines = d.jobOrderId ? settleLines(db, d.customerId, d.jobOrderId, d.invoice.jobOrderNumber ?? '?') : [];
+    const lines = d.jobOrderId ? settleJobOrder(db, documentId, d.customerId, d.jobOrderId, d.invoice.jobOrderNumber ?? '?') : [];
     return lines.length > 0 ? { memo: `${d.invoice.jobOrderNumber} receivable and deposits put back in line`, lines } : null;
   },
 

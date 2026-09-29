@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { AppError, formatPesos, newId } from '@moonproject/shared';
+import { AppError, formatPesos, isBusinessDate, newId } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
@@ -9,7 +9,8 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { requireStepUp } from '../../engine/security/sessions.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { tx } from '../../platform/db/driver.ts';
-import { duplicateKeys, measurementField, measurementFields, measurementTenths, parseCSV, validateRow, type ParsedRow, type RowType } from './csv.ts';
+import { applyEmployeeFix, duplicateKeys, isManualMeasurement, measurementField, measurementFields, measurementTenths, parseCSV, validateRow, type ParsedRow, type RowType } from './csv.ts';
+import { fromSheetRow, sheetTabOf } from './sheet.ts';
 import { commitUpload } from './commit.ts';
 
 const auth = { config: { permission: 'mig.run' } };
@@ -26,7 +27,11 @@ const measureOverrides = Object.fromEntries(measurementFields.map(f => [f, measu
 const manualSchemas = {
   customer: z.object({ customerName: z.string().trim().min(1).optional(), registeredName: z.string().trim().min(1).optional(), legacyId: legacyId.optional() }).strict(),
   measurement: z.object({ customerLegacyId: legacyId.optional(), groupLegacyId: legacyId.optional(), ...measureOverrides }).strict(),
-  employee: z.object({ employeeName: z.string().trim().min(1).optional(), legacyId: legacyId.optional(), rateCents: moneyCents.optional() }).strict(),
+  employee: z.object({
+    employeeName: z.string().trim().min(1).optional(), legacyId: legacyId.optional(), rateCents: moneyCents.optional(),
+    payType: z.enum(['daily', 'piece', 'monthly', 'mixed']).optional(),
+    hireDate: z.string().trim().refine(isBusinessDate, 'Use a date like 2026-02-11.').optional(),
+  }).strict(),
   piece_rate: z.object({ garmentType: z.string().trim().min(1).optional(), operation: z.string().trim().min(1).optional(), rateCents: moneyCents.optional() }).strict(),
 };
 type ManualData = Record<string, string | number>;
@@ -52,10 +57,12 @@ function staged(db: Db, uploadId: string): void {
   if (!upload) throw new AppError('NOT_FOUND', 'Upload not found.', 404);
   if (upload.status !== 'staged') throw new AppError('CONFLICT', 'Upload is no longer staged.', 409);
 }
+/** A row as the audit log keeps it: daily and piece rates named, not valued, since reading the log does not imply pay.view_rates (C6, N-05). */
 function state(row: MigRow): Record<string, unknown> {
+  const manual = row.manual_data_json ? JSON.parse(row.manual_data_json) as ManualData : null;
   return {
-    status: row.status, manualData: row.manual_data_json ? JSON.parse(row.manual_data_json) : null,
-    rateCents: row.rate_cents, legacyId: row.legacy_id, mergeIntoRowId: row.merge_into_row_id,
+    status: row.status, manualData: manual && (manual.rateCents === undefined ? manual : { ...manual, rateCents: 'set' }),
+    rate: row.rate_cents !== null, legacyId: row.legacy_id, mergeIntoRowId: row.merge_into_row_id,
     resolvedBy: row.resolved_by, resolvedAt: row.resolved_at,
   };
 }
@@ -81,9 +88,7 @@ function effective(row: MigRow, manual: ManualData = manualFor(row)): Record<str
       raw[oldKey ?? field] = String(manual[field]);
     }
   } else if (row.row_type === 'employee') {
-    if (manual.employeeName) raw.Employee_Name = String(manual.employeeName);
-    if (manual.legacyId) raw.Employee_ID = String(manual.legacyId);
-    if (manual.rateCents !== undefined) raw.Daily_Rate = formatPesos(Number(manual.rateCents));
+    applyEmployeeFix(raw, manual);
   } else if (row.row_type === 'piece_rate') {
     if (manual.garmentType) raw.Garment_Type = String(manual.garmentType);
     if (manual.operation) raw.Operation = String(manual.operation);
@@ -108,8 +113,7 @@ function parseManual(row: MigRow, input: unknown): ManualData {
 function assignmentValid(db: Db, row: MigRow, manual: ManualData): void {
   if (row.row_type !== 'measurement') return;
   const raw = JSON.parse(row.raw_json) as Record<string, string>;
-  const isManual = raw.Source === 'MANUAL' || raw.Customer_Name === 'MANUAL' || (!raw.Customer_Name && !raw.Group_Name);
-  if (isManual && !manual.customerLegacyId) invalid('Assign this MANUAL measurement to a staged customer.');
+  if (isManualMeasurement(raw) && !manual.customerLegacyId) invalid('Assign this MANUAL measurement to a staged customer.');
   if (manual.customerLegacyId) {
     const customer = db.prepare(`SELECT r.id FROM mig_rows r JOIN mig_uploads u ON u.id = r.upload_id
       WHERE r.row_type = 'customer' AND r.legacy_id = ? AND r.status NOT IN ('excluded', 'merged')
@@ -152,7 +156,9 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (!csv!.objects.length) throw new AppError('EMPTY_CSV', 'The uploaded CSV contains no data rows.', 400);
     const uploadId = newId();
     const at = stamp(clock);
-    const parsedRows = csv!.objects.map((raw, i) => ({ id: newId(), rowNumber: csv!.lineNumbers[i]!, parsed: validateRow(raw) }));
+    // A tab of the old sheet, downloaded as it is, is renamed to the importer's columns here; an importer file passes through.
+    const tab = sheetTabOf(Object.keys(csv!.objects[0]!));
+    const parsedRows = csv!.objects.map((raw, i) => ({ id: newId(), rowNumber: csv!.lineNumbers[i]!, parsed: validateRow(tab ? fromSheetRow(raw, tab) : raw) }));
     if (parsedRows.some(r => r.parsed.rowType === 'unknown')) invalid('The CSV file type is not recognised.');
     // Flag every member of each duplicate set and name the other source row in its issue.
     const byKey = new Map<string, typeof parsedRows>();

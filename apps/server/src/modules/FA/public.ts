@@ -38,3 +38,5 @@ export function depreciationOfMonth(db: Db, month: string): { run: { id: string;
   const assetsToCharge = assetsInService(db).filter((a) => monthsInService(a.acquiredOn, month) >= 1 && scheduledCents(a, month) - accumulatedCents(db, a) > 0).length;
   return { run: run ?? null, assetsToCharge };
 }
+export { assetsInService, accumulatedCents, straightLine, monthsInService } from './assets.ts';
+export { ASSET_SALE_SERIES, assetSaleByInvoiceNumber, assetSaleInvoiceNumbersBetween, assetSaleTaxFacts, type AssetSaleTaxFacts } from './sales.ts';

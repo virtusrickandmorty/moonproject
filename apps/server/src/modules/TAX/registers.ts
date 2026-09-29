@@ -6,13 +6,17 @@
  * settlements (ITS-) are left out. Each row
  * names the document, the number on the BIR paper form (sales invoice or CR, from documents.external_number) and the
  * customer's registered name and TIN.
- *   Sales register (2301 output VAT): VATable sales = the journal's revenue credits, VAT, total.
+ *   Sales register (2301 output VAT): VATable sales = the journal's revenue credits (for an asset sold, FA: the NET on
+ *   its invoice, since only its gain is revenue), VAT, total. With downpayment VAT
+ *   modes B and C (PLAN D3) the VAT on a downpayment is booked before the sale: the VATable amount behind it comes with
+ *   it (COL registerBaseOf: + on the collection or downpayment invoice, − on the release invoice that books the rest).
  *   Withholding received (1410 CWT and 1404 VAT withheld, the customers' 2307s): ATC and whether the 2307 is in hand.
  *   An opening withholding (OBWT-) is one row per 2307 it brings in, marked as opening, with the quarter it covers.
  */
 import type { Db } from '../../platform/db/driver.ts';
 import { customerRef, customerTaxInfo } from '../CUS/public.ts';
-import { withholdingOf } from '../COL/public.ts';
+import { registerBaseOf, registerBaseSources, withholdingOf } from '../COL/public.ts';
+import { assetSaleTaxFacts } from '../FA/public.ts';
 import { OPENING_WITHHOLDING, openingLines, receivedOn } from './withholding.ts';
 
 export interface RegisterRow {
@@ -51,23 +55,25 @@ export const IN_REGISTERS = `${NOT_A_CLOSE} AND ${NOT_A_PAYMENT} AND ${NOT_AN_OP
 /**
  * Journals in [from, to] with a line on one of `roles`, with per-journal sums of `sums` (column → SQL over j, l and a).
  * Only sealed journals count. The party (customer or supplier) is the one on those lines (several on one JV: the first, flagged).
+ * `alsoSources`: journals of these documents are listed too, with no line on `roles` (their party is then the customer on them).
  */
-export function touches<K extends string>(db: Db, roles: string[], sums: Record<K, string>, from: string, to: string): (Touch & Record<K, number>)[] {
+export function touches<K extends string>(db: Db, roles: string[], sums: Record<K, string>, from: string, to: string, alsoSources: string[] = []): (Touch & Record<K, number>)[] {
   const marks = roles.map(() => '?').join(', ');
   const cols = Object.entries<string>(sums).map(([k, expr]) => `SUM(${expr}) AS ${k}`).join(', ');
   return db
     .prepare(
       `SELECT j.id AS journalId, j.number AS journalNumber, j.business_date AS date, j.posting_kind AS posting, j.source_type AS sourceType,
          j.source_id AS sourceId, d.doc_type AS docType, d.number AS documentNumber, d.external_number AS formNumber, d.status AS docStatus,
-         MIN(CASE WHEN a.role_key IN (${marks}) THEN l.party_id END) AS partyId,
+         COALESCE(MIN(CASE WHEN a.role_key IN (${marks}) THEN l.party_id END), MIN(CASE WHEN l.party_type = 'customer' THEN l.party_id END)) AS partyId,
          COUNT(DISTINCT CASE WHEN a.role_key IN (${marks}) THEN l.party_id END) AS parties, ${cols}
        FROM journals j JOIN journal_lines l ON l.journal_id = j.id JOIN accounts a ON a.id = l.account_id
        LEFT JOIN documents d ON d.id = j.source_id AND j.source_type IN ('document', 'document-cancel')
        WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ? AND ${IN_REGISTERS}
-         AND EXISTS (SELECT 1 FROM journal_lines x JOIN accounts xa ON xa.id = x.account_id WHERE x.journal_id = j.id AND xa.role_key IN (${marks}))
+         AND (EXISTS (SELECT 1 FROM journal_lines x JOIN accounts xa ON xa.id = x.account_id WHERE x.journal_id = j.id AND xa.role_key IN (${marks}))
+           OR j.source_id IN (SELECT value FROM json_each(?)))
        GROUP BY j.id ORDER BY j.business_date, j.number`,
     )
-    .all(...roles, ...roles, from, to, ...roles) as (Touch & Record<K, number>)[];
+    .all(...roles, ...roles, from, to, ...roles, JSON.stringify(alsoSources)) as (Touch & Record<K, number>)[];
 }
 
 function base(db: Db, t: Touch): RegisterRow {
@@ -94,12 +100,31 @@ export function movement(db: Db, roles: string[], from: string, to: string, side
 
 export const total = <T>(rows: T[], f: (r: T) => number) => rows.reduce((s, r) => s + f(r), 0);
 
-/** Sales register: every journal on 2301 output VAT, with VATable sales (revenue credits), VAT and total. */
+/**
+ * An asset sold (FA, fa.disposal of kind 'sale'): its VATable sales are the NET written on the booklet, not the revenue
+ * credits of its journal (only the gain is revenue); negative on its mirror. A buyer typed on the sale, not a customer,
+ * is named as recorded (2301 then carries the sale itself as its party).
+ */
+function assetSaleRow(db: Db, t: Touch, asset: NonNullable<ReturnType<typeof assetSaleTaxFacts>>): RegisterRow & { netCents: number } {
+  const netCents = (t.posting === 'reversal' ? -1 : 1) * asset.netCents;
+  const row = base(db, t);
+  return asset.customerId ? { ...row, netCents } : { ...row, customerName: asset.buyerName, tin: asset.buyerTin, netCents };
+}
+
+/**
+ * Sales register: every journal on 2301 output VAT, with VATable sales (revenue credits), VAT and total. A downpayment's
+ * VATable amount whose VAT rounded to nothing (a few centavos) has no 2301 line: its journal is listed too, VAT 0.00.
+ */
 export function salesRegister(db: Db, from: string, to: string) {
   const rows: SalesRow[] = touches(db, ['OUTPUT_VAT'], {
     vatCents: `CASE WHEN a.role_key = 'OUTPUT_VAT' THEN l.credit_cents - l.debit_cents ELSE 0 END`,
     netCents: `CASE WHEN a.type = 'revenue' THEN l.credit_cents - l.debit_cents ELSE 0 END`,
-  }, from, to).map((t) => ({ ...base(db, t), netCents: t.netCents, vatCents: t.vatCents, totalCents: t.netCents + t.vatCents }));
+    vatLines: `CASE WHEN a.role_key = 'OUTPUT_VAT' THEN 1 ELSE 0 END`,
+  }, from, to, registerBaseSources(db)).map((t) => {
+    const asset = t.docType === 'fa.disposal' ? assetSaleTaxFacts(db, t.sourceId) : undefined;
+    const row = asset ? assetSaleRow(db, t, asset) : { ...base(db, t), netCents: t.netCents + registerBaseOf(db, t.sourceType, t.sourceId, t.posting) };
+    return { ...row, vatCents: t.vatCents, totalCents: row.netCents + t.vatCents, vatLines: t.vatLines };
+  }).filter((r) => r.vatLines > 0 || r.netCents !== 0).map(({ vatLines: _, ...r }) => r);
   const vatCents = total(rows, (r) => r.vatCents);
   return {
     from, to, rows,

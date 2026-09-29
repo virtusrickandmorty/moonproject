@@ -1,24 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { formatPesos, parsePesos } from '@moonproject/shared';
 import { api, ApiError, type CustomerRow, type DocHeader, type DocTypeInfo, type Preview } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, peso, ReasonDialog } from '../../components/ui.tsx';
 import { navigate } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
+import { amount, blank, blankLine, cents, isReady, toInput, valuesOfInput, type Form, type Line, type QuotationDoc } from './quotation.ts';
 
 type Item = { id: string; code: string; name: string; unit: 'pc' | 'set'; is_active: number };
-type Line = { itemId: string; description: string; qty: number; unit: 'pc' | 'set'; discountCents: number;
-  discountReason?: string; overrideUnitPriceCents?: number; overrideReason?: string };
-type Form = { customerId: string; prospectName: string; contact: string; validForDays: number; termsText: string; notes: string;
-  lines: Line[]; documentDiscountCents: number; discountReason: string };
-const blankLine = (): Line => ({ itemId: '', description: '', qty: 1, unit: 'pc', discountCents: 0 });
-const blank = (): Form => ({ customerId: '', prospectName: '', contact: '', validForDays: 15, termsText: '', notes: '',
-  lines: [blankLine()], documentDiscountCents: 0, discountReason: '' });
-const cents = (value: string): number | null => {
-  try { const parsed = parsePesos(value); return parsed >= 0 ? parsed : null; }
-  catch { return null; }
-};
-const amount = (value: number | undefined) => value === undefined ? '' : formatPesos(value);
 function MoneyField({ value, onValue, placeholder }: { value: number | undefined; onValue: (n: number | undefined) => void; placeholder?: string }) {
   const [text, setText] = useState(amount(value));
   const sent = useRef<number | undefined>(value);
@@ -30,20 +18,6 @@ function MoneyField({ value, onValue, placeholder }: { value: number | undefined
     else { const n = cents(next); if (n !== null) { sent.current = n; onValue(n); } }
   }} />;
 }
-const optional = (value: string) => value.trim() || undefined;
-const toInput = (v: Form) => ({
-  ...(v.customerId ? { customerId: v.customerId } : { prospectName: v.prospectName.trim() }),
-  ...(optional(v.contact) ? { contact: optional(v.contact) } : {}), validForDays: v.validForDays,
-  ...(optional(v.termsText) ? { termsText: optional(v.termsText) } : {}),
-  ...(optional(v.notes) ? { notes: optional(v.notes) } : {}),
-  lines: v.lines.map((l) => ({ itemId: l.itemId, description: l.description.trim(), qty: l.qty, unit: l.unit,
-    discountCents: l.discountCents,
-    ...(l.discountReason ? { discountReason: l.discountReason.trim() } : {}),
-    ...(l.overrideUnitPriceCents !== undefined ? { overrideUnitPriceCents: l.overrideUnitPriceCents } : {}),
-    ...(l.overrideReason ? { overrideReason: l.overrideReason.trim() } : {}) })),
-  documentDiscountCents: v.documentDiscountCents,
-  ...(optional(v.discountReason) ? { discountReason: optional(v.discountReason) } : {}),
-});
 
 export function QuotationForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   const [v, setV] = useState<Form>(blank);
@@ -56,19 +30,15 @@ export function QuotationForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
   const [preview, setPreview] = useState<Preview | null>(null);
   const [confirm, setConfirm] = useState<Preview | null>(null);
   const [error, setError] = useState('');
+  const [saved, setSaved] = useState('');
   const [draft, setDraft] = useState<{ id: string; version: number } | null>(null);
   const input = useMemo(() => toInput(v), [v]);
-  const ready = v.lines.length > 0 && v.lines.every((l) => l.itemId && l.description.trim() && l.qty >= 1) &&
-    Boolean(v.customerId) !== Boolean(v.prospectName.trim()) && v.validForDays >= 1;
+  const ready = isReady(v);
 
   useEffect(() => {
     if (mode.kind === 'edit') api.get(type.key, mode.id).then((d) => {
       setOriginal(d.header);
-      const x = d.input as Record<string, unknown>;
-      setV({ customerId: String(x.customerId ?? ''), prospectName: String(x.prospectName ?? ''), contact: String(x.contact ?? ''),
-        validForDays: Number(x.validForDays ?? 15), termsText: String(x.termsText ?? ''), notes: String(x.notes ?? ''),
-        lines: (x.lines as Line[]).map((l) => ({ ...l })), documentDiscountCents: Number(x.documentDiscountCents ?? 0),
-        discountReason: String(x.discountReason ?? '') });
+      setV(valuesOfInput(d.input));
     }, (e: Error) => setError(e.message));
     else if (mode.draftId) api.drafts(type.key).then((ds) => {
       const d = ds.find((x) => x.id === mode.draftId);
@@ -105,7 +75,7 @@ export function QuotationForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
     try {
       const payload = { values: v as unknown as Record<string, string> };
       const d = draft ? await api.saveDraft(draft.id, draft.version, payload) : await api.createDraft(type.key, payload);
-      setDraft(d); setError('Draft saved. It has no quotation number yet.');
+      setDraft(d); setError(''); setSaved('Draft saved. It has no quotation number yet. Open it again from the quotation list.');
     } catch (e) { setError((e as Error).message); }
   };
   if (mode.kind === 'edit' && original && !reason) return <ReasonDialog title={`Edit ${original.number}`}
@@ -113,7 +83,7 @@ export function QuotationForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
     confirmLabel="Continue to edit" onConfirm={setReason} onClose={() => navigate(docPath(type.key, `/${original.id}`))} />;
 
   return <div className="max-w-5xl space-y-4"><h1 className="text-2xl font-semibold">{original ? `Edit ${original.number}` : 'New quotation'}</h1>
-    {error && <Notice>{error}</Notice>}{original && <Notice tone="info">Recording will cancel {original.number} and issue a replacement. Reason: {reason}</Notice>}
+    {error && <Notice>{error}</Notice>}{saved && <Notice tone="success">{saved}</Notice>}{original && <Notice tone="info">Recording will cancel {original.number} and issue a replacement. Reason: {reason}</Notice>}
     <Panel title="Customer or prospect"><div className="grid gap-3 sm:grid-cols-2">
       <Field label="Search customers"><input className={inputClass} value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} /></Field>
       <Field label="Customer"><select className={inputClass} value={v.customerId} onChange={(e) => setV({ ...v, customerId: e.target.value, prospectName: '' })}>
@@ -147,9 +117,14 @@ export function QuotationForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
       <Field label="Terms"><textarea className={inputClass} value={v.termsText} onChange={(e) => setV({ ...v, termsText: e.target.value })} /></Field>
       <Field label="Notes"><textarea className={inputClass} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field></div></Panel>
     {preview && <Panel title="So far"><p className="text-2xl font-semibold">{peso(preview.totalCents)}</p><p>{preview.summary}</p>
+      {(preview.doc as QuotationDoc | undefined)?.lines && <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left text-slate-500">
+        <th>Item</th><th>Qty</th><th className="text-right">Price each</th><th className="text-right">Line total</th></tr></thead><tbody>
+        {(preview.doc as QuotationDoc).lines.map((l) => <tr key={l.lineNo} className="border-t"><td className="py-1">{l.description}</td><td>{l.qty} {l.unit}</td>
+          <td className="text-right tabular-nums">{peso(l.unitPriceCents)}{l.unitPriceCents !== l.listUnitPriceCents && <span className="block text-xs text-slate-500">list {peso(l.listUnitPriceCents)}</span>}</td>
+          <td className="text-right tabular-nums">{peso(l.lineTotalCents)}</td></tr>)}</tbody></table></div>}
       {preview.issues.map((x) => <Notice key={x.code + x.field} tone={x.level}>{x.message}</Notice>)}</Panel>}
     <div className="flex gap-2"><Button tone="primary" disabled={!ready || !type.canPost} onClick={() => void openConfirm()}>Record</Button>
-      {mode.kind === 'new' && <Button onClick={() => void saveDraft()}>Save draft</Button>}
+      {mode.kind === 'new' && <Button disabled={!type.canCreate} onClick={() => void saveDraft()}>Save draft</Button>}
       <Button onClick={() => navigate(docPath(type.key))}>Back</Button></div>
     {confirm && <RecordDialog type={type} preview={confirm} original={original ?? undefined} reason={reason} onRecord={record} onClose={() => setConfirm(null)} />}
   </div>;

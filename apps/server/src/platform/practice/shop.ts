@@ -89,6 +89,16 @@ export function copySignIns(real: Db, practice: Db): number {
   });
 }
 
+/**
+ * Copies the real shop's sign-ins again before each practice sign-in: a new user, a new password, a user switched off.
+ * The route matched, not the address as typed: /api/auth/login?x reaches the same route.
+ */
+export function syncSignInsOnLogin(app: FastifyInstance, real: Db, practice: Db): void {
+  app.addHook('onRequest', async (req) => {
+    if (req.method === 'POST' && req.routeOptions.url === '/api/auth/login') copySignIns(real, practice);
+  });
+}
+
 /** The first made-up day, so that the last one is yesterday (Manila) and today is the practice shop's own. */
 export function practiceStart(today: string, days: number): string {
   return manilaDate(new Date(Date.parse(`${today}T04:00:00Z`) - days * DAY_MS));
@@ -150,9 +160,7 @@ export function practiceShop(o: PracticeOptions): PracticeShop {
     try {
       const built = buildApp({ db: practiceDb, clock: o.clock, modules: o.modules, practice: true, ...(https ? { https } : {}) });
       copySignIns(o.realDb, practiceDb);
-      built.app.addHook('onRequest', async (req) => {
-        if (req.method === 'POST' && req.url === '/api/auth/login') copySignIns(o.realDb, practiceDb); // a new user, a new password
-      });
+      syncSignInsOnLogin(built.app, o.realDb, practiceDb);
       await built.app.listen({ host: o.host, port: o.port });
       port = (built.app.server.address() as AddressInfo).port;
       app = built.app;

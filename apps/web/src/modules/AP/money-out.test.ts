@@ -30,7 +30,7 @@ describe('money-out screen rules', () => {
     expect(ewtLabel('prof_firm_15', rates)).toBe('Professional fees, firm (higher rate) 15%');
     expect(ewtLabel('goods_1', null)).toBe('Goods (Top Withholding Agent only)');
     expect([null, 'none'].map((c) => ewtLabel(c, rates))).toEqual(['No EWT', 'No EWT']);
-    expect(ewtRates([{ key: 'tax.ewt_rates_bp', label: '', current: rates }])).toBe(rates);
+    expect(ewtRates([{ key: 'tax.ewt_rates_bp', label: '', current: rates, versions: [] }])).toBe(rates);
     expect(ewtRates([])).toBeNull();
     const choices = ewtChoices('contractor_2', rates);
     expect(choices.slice(0, 3)).toEqual([['', 'Usual: Contractors and printers 2%'], ['none', 'No EWT'], ['rent_5', 'Rent 5%']]);

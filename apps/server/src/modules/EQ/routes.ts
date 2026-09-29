@@ -6,6 +6,7 @@ import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
 import { clockGuard } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
+import { allBalances, officerTransactionsOf, ownerMoneyOf } from './register.ts';
 import { createPerson, listPeople, officerBalances, officerLedger, person, setPersonActive, updatePerson, type Who } from './people.ts';
 
 export function eqRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -40,4 +41,13 @@ export function eqRoutes(app: FastifyInstance, deps: AppDeps): void {
     const b = officerBalances(db, p.id);
     return { person: p, ...b, netCents: b.dueFromCents - b.dueToCents, lines: officerLedger(db, p.id) };
   });
+
+  /** What every person owes the company, is owed and still has to pay on a subscription, from the ledger. */
+  app.get('/api/eq/balances', { config: { permission: 'eq.ledger.view' } }, async () => allBalances(db));
+
+  /** One person's owner money documents. */
+  app.get<{ Params: { id: string } }>('/api/eq/people/:id/owner-money', { config: { permission: 'eq.own.view' } }, async (req) => ownerMoneyOf(db, req.params.id));
+
+  /** One person's officer money out and back. */
+  app.get<{ Params: { id: string } }>('/api/eq/people/:id/officer-transactions', { config: { permission: 'eq.ofc.view' } }, async (req) => officerTransactionsOf(db, req.params.id));
 }

@@ -13,7 +13,8 @@ import { RecordDialog, type FormMode } from './DocForm.tsx';
 
 interface Asked { preview: Preview; input: unknown; businessDate?: string }
 
-export function useRecord(type: DocTypeInfo, mode: FormMode, prefill: (d: DocDetail) => void) {
+/** `onRecorded` runs after the server recorded it and before the view opens (e.g. discard the form's draft). */
+export function useRecord(type: DocTypeInfo, mode: FormMode, prefill: (d: DocDetail) => void, onRecorded?: () => Promise<unknown>) {
   const [original, setOriginal] = useState<DocHeader>();
   const [reason, setReason] = useState('');
   const [asked, setAsked] = useState<Asked | null>(null);
@@ -43,6 +44,7 @@ export function useRecord(type: DocTypeInfo, mode: FormMode, prefill: (d: DocDet
       const r = original
         ? await api.reissue(type.key, original.id, input, shown.totalCents, reason, key, businessDate)
         : await api.post(type.key, input, shown.totalCents, key, businessDate);
+      await onRecorded?.().catch(() => undefined);
       navigate(docPath(type.key, `/${r.id}?recorded=1`));
     } catch (e) {
       if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setAsked({ ...asked!, preview: await preview(input, businessDate) });

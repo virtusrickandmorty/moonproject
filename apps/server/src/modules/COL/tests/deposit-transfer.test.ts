@@ -207,10 +207,15 @@ describe('deposit transfer rules (PLAN D5, D6)', () => {
     await cancel('jo.job_order', jo2, encoder);
     expect(await codes(move({}))).toEqual(['JO_CANCELLED', 'JO_OPEN']);
 
-    // Deposits are kept in downpayment VAT mode A only, like collections and invoice records.
+    // A JO with no downpayment yet takes the mode of the JO the money comes from (it was received under it), with a
+    // warning when another mode is in force; from unapplied payments, the mode in force (COL doctypes/deposit-vat.ts).
     tx(env.db, () => addSettingVersion(env.db, { key: 'sales.deposit_vat_mode', effectiveFrom: today(env.clock), value: 'B', reason: 'Accountant decision for the test', userId: accountant.userId, at: stamp(env.clock), today: today(env.clock) }));
     const jo3 = await jobOrder([1_000_000]);
-    expect(await codes(move({ toJobOrderId: jo3 }))).toEqual(['JO_OPEN', 'DEPOSIT_VAT_MODE']);
+    expect(await codes(move({ toJobOrderId: jo3 }))).toEqual(['JO_OPEN', 'DEPOSIT_VAT_MODE_KEPT']);
+    expect((await encoder.post(`${DXF}/preview`, { input: move({ toJobOrderId: jo3 }) })).json().issues[1].message).toBe(
+      'JO-000005 has its money from a job order in mode A (deposit only), so it stays in mode A although mode B (VAT on deposit) is in force now. A job order never mixes the two.',
+    );
+    expect(await codes({ customerId: c.school, toJobOrderId: jo3, amountCents: 300_000 })).toEqual([]);
   });
 });
 

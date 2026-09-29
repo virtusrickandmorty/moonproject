@@ -6,6 +6,11 @@ import { balanceSheet, incomeStatement, type StatementSection } from './statemen
 import { arAging, customerStatement } from './receivables.ts';
 import { statementCustomers } from '../CUS/public.ts';
 import { collectionsRegister, depositsHeld, jobOrderFollowUp, salesByPeriod } from './sales-collections.ts';
+import { birBookRoutes } from './bir-books.ts';
+import { payrollProductionRoutes } from './payroll-production-routes.ts';
+import { apAging, purchases, purchaseOrders, receivedNotBilled } from './suppliers.ts';
+import { cashPosition, transfers, cashCounts, assetSchedule } from './cash-assets.ts';
+import { lateEntries, cancellations, exceptions, signIns } from './control.ts';
 
 function date(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new AppError('BAD_DATE', 'Use a date in YYYY-MM-DD format.', 400);
@@ -40,7 +45,10 @@ function sectionRows(s: StatementSection): CsvCell[][] {
 }
 const STATEMENT_HEAD = ['Section', 'Account', 'Line', 'Amount PHP'];
 
-export function rptRoutes(app: FastifyInstance, { db }: AppDeps): void {
+export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
+  const { db } = deps;
+  birBookRoutes(app, deps);
+  payrollProductionRoutes(app, deps);
   app.get('/api/rpt/deposits-held', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const result = depositsHeld(db, date(q.asOf));
@@ -190,4 +198,32 @@ export function rptRoutes(app: FastifyInstance, { db }: AppDeps): void {
       ['Check', '', 'Total assets less liabilities and equity', csvPesos(result.differenceCents)]];
     return sendCsv(reply, `balance-sheet-${result.asOf}`, rows);
   });
+  const simple = (url: string, name: string, get: (q: Record<string, unknown>) => Record<string, unknown>) =>
+    app.get(url, { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
+      const q=req.query as Record<string,unknown>, result=get(q); if(q.format!=='csv') return result;
+      const rows=(result.rows??[]) as Record<string,unknown>[]; const keys=[...new Set(rows.flatMap(Object.keys))];
+      return sendCsv(reply,name,[keys,...rows.map(r=>keys.map(k=>k.endsWith('Cents')&&typeof r[k]==='number'?csvPesos(r[k] as number):String(r[k]??'')))]);
+    });
+  simple('/api/rpt/ap-aging','ap-aging',q=>apAging(db,date(q.asOf)));
+  simple('/api/rpt/purchases','purchases',q=>{const r=range(q);return purchases(db,r.from,r.to)});
+  simple('/api/rpt/purchase-orders','purchase-orders',()=>purchaseOrders(db));
+  simple('/api/rpt/received-not-billed','received-not-billed',()=>receivedNotBilled(db));
+  simple('/api/rpt/cash-position','cash-position',q=>cashPosition(db,date(q.asOf)));
+  simple('/api/rpt/transfers','transfers',q=>{const r=range(q);return transfers(db,r.from,r.to)});
+  simple('/api/rpt/cash-counts','cash-counts',q=>{const r=range(q);return cashCounts(db,r.from,r.to)});
+  simple('/api/rpt/assets','fixed-assets',q=>assetSchedule(db,date(q.asOf)));
+  simple('/api/rpt/late-entries','late-entries',()=>lateEntries(db));
+  simple('/api/rpt/cancellations','cancellations',()=>cancellations(db));
+  simple('/api/rpt/exceptions','exceptions',q=>exceptions(db,date(q.asOf)));
+  app.get('/api/rpt/sign-ins', { config: { permission: 'rpt.signins.view' } }, async (req, reply) => {
+    const query = req.query as Record<string, unknown>;
+    const dates = range(query);
+    const result = signIns(db, dates.from, dates.to);
+    if (query.format !== 'csv') return result;
+    return sendCsv(reply, 'sign-ins', [
+      ['at', 'username', 'success', 'ip'],
+      ...result.rows.map((row) => [row.at, row.username, String(row.success), row.ip]),
+    ]);
+  });
+
 }

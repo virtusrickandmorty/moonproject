@@ -66,3 +66,13 @@ export function clearAssignmentsPaidBy(db: Db, payRunLineIds: string[]): number 
   const clear = db.prepare('UPDATE prd_assignments SET pay_run_line_id = NULL WHERE pay_run_line_id = ?');
   return payRunLineIds.reduce((n, id) => n + clear.run(id).changes, 0);
 }
+
+/** Recorded production assignment snapshots for read-only operational reports. */
+export function productionReportRows(db: Db, from: string, to: string) {
+  return db.prepare(`SELECT a.document_id AS documentId,d.number,a.job_order_id AS jobOrderId,j.number AS jobOrderNumber,
+    a.line_no AS lineNo,a.step_id AS stepId,s.code AS stepCode,s.name AS stepName,a.employee_id AS employeeId,
+    a.work_date AS workDate,a.kind,a.pieces,a.amount_cents AS amountCents
+    FROM prd_assignments a JOIN documents d ON d.id=a.document_id JOIN documents j ON j.id=a.job_order_id
+    JOIN prd_steps s ON s.id=a.step_id WHERE d.status='posted' AND a.work_date BETWEEN ? AND ?
+    ORDER BY a.work_date,d.number,a.row_no`).all(from,to) as Array<Record<string, string | number>>;
+}

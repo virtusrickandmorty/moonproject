@@ -32,6 +32,31 @@ describe('company profile', () => {
 });
 
 describe('print base', () => {
+  it('renders the complete owner-only test pack without writing any table', async () => {
+    const tableCounts = () => Object.fromEntries((env.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[])
+      .map(({ name }) => [name, (env.db.prepare(`SELECT COUNT(*) AS n FROM "${name}"`).get() as { n: number }).n]));
+    const before = tableCounts();
+    const response = await owner.get('/api/prt/test-pack');
+    expect(response.statusCode, response.body).toBe(200);
+    const pack = response.json() as { prints: { id: string; label: string; paper: string; html: string }[]; notBuilt: string[] };
+    expect(pack.prints).toHaveLength(16);
+    expect(new Set(pack.prints.map((p) => p.id)).size).toBe(pack.prints.length);
+    for (const item of pack.prints) {
+      expect(item.html, item.id).toContain('TEST PRINT, NOT A REAL DOCUMENT');
+      expect(item.html, item.id).toContain('TEST-000000');
+      expect(item.html, item.id).toMatch(/<h1>(QUOTATION|JOB ORDER|JOB TICKET|RELEASE SLIP|COLLECTION RECEIPT|CREDIT MEMO|PURCHASE ORDER|PAYMENT VOUCHER|EXPENSE VOUCHER|FUND TRANSFER|CASH COUNT|JOURNAL VOUCHER|PAYSLIP|CASH ADVANCE SLIP|INVENTORY COUNT SHEET)<\/h1>/);
+    }
+    const publicPrints = ['quotation', 'job-order', 'release-slip', 'collection-a4', 'collection-80mm', 'credit-memo', 'purchase-order', 'payment-voucher'];
+    for (const item of pack.prints) expect(item.html.includes('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.')).toBe(publicPrints.includes(item.id));
+    expect(pack.prints.find((p) => p.id === 'collection-80mm')?.html).toContain('@page{size:80mm auto');
+    expect(pack.prints.filter((p) => p.paper === 'A4 2-up').every((p) => p.html.includes('sheet two-up'))).toBe(true);
+    expect(pack.notBuilt).toEqual(['Statement of Account', 'Sizing Profile', 'Fixed Asset Schedule / books layouts']);
+    expect(tableCounts()).toEqual(before);
+    for (const role of ['encoder', 'accountant', 'production', 'tv'] as const) {
+      expect((await (await env.as(role)).get('/api/prt/test-pack')).statusCode).toBe(403);
+    }
+  });
+
   it('places the legend on public printouts and omits it on the production ticket', () => {
     const quote = { customerName: 'Sample Buyer', validUntil: '2026-10-13', totalCents: 10000, documentDiscountCents: 0,
       lines: [{ description: 'Sample item', qty: 1, unit: 'pc', unitPriceCents: 10000, discountCents: 0, lineTotalCents: 10000 }] };
@@ -87,11 +112,35 @@ describe('print base', () => {
     const listed = (await encoder.get('/api/prt/printable-types')).json() as { key: string; variants: string[] }[];
     const viewable = (await encoder.get('/api/doc-types')).json() as { key: string }[];
     expect(listed).toContainEqual({ key: 'jo.job_order', variants: ['document', 'job_ticket'] });
-    expect(listed.map((item) => item.key)).not.toContain('cash.transfer');
+    expect(listed).toContainEqual({ key: 'cash.transfer', variants: ['document'] });
     expect(listed.every((item) => viewable.some((type) => type.key === item.key))).toBe(true);
     const production = await env.as('production');
     const productionKeys = ((await production.get('/api/prt/printable-types')).json() as { key: string }[]).map((item) => item.key);
     expect(productionKeys).not.toContain('quo.quotation');
+  });
+
+  it('renders the remaining document printouts with their catalogue title, paper layout, escaping and reprint mark', () => {
+    const cases: [string, unknown, string, boolean, boolean][] = [
+      ['col.collection', { customerName: '<Buyer>', applications: [], sales: [], totalCents: 100, cwtCents: 0, vatWithheldCents: 0, unappliedCents: 0 }, 'COLLECTION RECEIPT', true, true],
+      ['col.credit_memo', { customerName: '<Buyer>', invoice: { number: 'IR-1' }, kind: 'allowance', reason: '<late>', netCents: 90, vatCents: 10, totalCents: 100 }, 'CREDIT MEMO', true, false],
+      ['ap.payment', { supplierName: '<Supplier>', bills: [], tenders: [], feeCents: 0, totalCents: 100 }, 'PAYMENT VOUCHER', true, true],
+      ['exp.voucher', { payee: { name: '<Payee>' }, categoryName: 'Rent', description: '<office>', cashPlaceName: 'Bank', totalCents: 100, inputVatCents: 0, ewtCents: 0, cashCents: 100 }, 'EXPENSE VOUCHER', false, false],
+      ['cash.transfer', { fromName: '<Bank>', toName: 'Cash', amountSentCents: 100, amountReceivedCents: 100, feeCents: 0 }, 'FUND TRANSFER', false, false],
+      ['cash.count', { placeName: '<Till>', lines: [], countedCents: 100, ledgerCents: 100, differenceCents: 0 }, 'CASH COUNT', false, false],
+      ['acc.jv', { memo: '<Accrual>', lines: [], totalCents: 100 }, 'JOURNAL VOUCHER', false, false],
+      ['pay.run', { periodStart: '2026-09-01', periodEnd: '2026-09-15', employees: [{ code: 'E1', name: '<Worker>', lines: [], grossCents: 100, sssEeCents: 0, phicEeCents: 0, hdmfEeCents: 0, wtaxCents: 0, caCents: 0, netCents: 100 }] }, 'PAYSLIP', false, true],
+      ['ca.advance', { employeeName: '<Worker>', cashPlaceName: 'Cash', amountCents: 100, installmentCents: 50 }, 'CASH ADVANCE SLIP', false, true],
+      ['inv.count', { category: 'materials', countDate: '2026-09-28', lines: [], countedCents: 100, ledgerCents: 100, adjustmentCents: 0 }, 'INVENTORY COUNT SHEET', false, false],
+    ];
+    for (const [type, doc, title, legend, twoUp] of cases) {
+      const html = renderPrint(env.db, header(type), doc, profile, 'document', '<Owner>', '2026-09-28T10:00:00+08:00', 2);
+      expect(html).toContain(`<h1>${title}</h1>`);
+      expect(html.includes('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.')).toBe(legend);
+      expect(html).toContain('&lt;');
+      expect(html).not.toContain('<Owner>');
+      expect(html).toContain('REPRINT no. 1');
+      expect(html.includes('sheet two-up')).toBe(twoUp);
+    }
   });
 
   it('increments the reprint counter and returns 403 when the user cannot view the document', async () => {

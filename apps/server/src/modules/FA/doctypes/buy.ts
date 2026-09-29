@@ -150,13 +150,15 @@ export const buyDoc: DocTypeDef<BuyInput, Buy> = {
 
   toInput: (doc) => Object.fromEntries(Object.keys(buyInput.shape).flatMap((k) => (doc[k as keyof BuyInput] === undefined ? [] : [[k, doc[k as keyof BuyInput]]]))) as BuyInput,
 
-  /** Its depreciation runs and its disposal are cancelled first, so the asset's accounts come back to zero. */
+  /** Its depreciation runs and its disposal (a retirement or a sale) are cancelled first, so the asset's accounts come back to zero. */
   dependents(db, documentId) {
     const own = db
       .prepare(
         `SELECT d.id, d.number FROM fa_depreciation_lines l JOIN documents d ON d.id = l.document_id WHERE l.asset_id = @id AND d.status = 'posted'
          UNION
          SELECT d.id, d.number FROM fa_disposals x JOIN documents d ON d.id = x.document_id WHERE x.asset_id = @id AND d.status = 'posted'
+         UNION
+         SELECT d.id, d.number FROM fa_asset_sales x JOIN documents d ON d.id = x.document_id WHERE x.asset_id = @id AND d.status = 'posted'
          ORDER BY 2`,
       )
       .all({ id: documentId }) as { id: string; number: string }[];

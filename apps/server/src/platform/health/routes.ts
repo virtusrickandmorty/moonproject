@@ -7,11 +7,10 @@ import type { AppDeps } from '../../app.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { stamp, today } from '../clock.ts';
 import type { PracticeControl } from '../practice/routes.ts';
-import { gatherFacts, healthLights, overallLight, realHost, runSystemCheck, supportFile, type Host, type HealthFacts } from './health.ts';
+import { gatherFacts, healthLights, overallLight, runSystemCheck, supportFile, type HealthFacts } from './health.ts';
 
-export function healthRoutes(app: FastifyInstance, deps: AppDeps, o: { practiceShop?: PracticeControl; host?: Host } = {}): void {
-  const { db, clock } = deps;
-  const host = o.host ?? realHost;
+export function healthRoutes(app: FastifyInstance, deps: AppDeps, o: { practiceShop?: PracticeControl } = {}): void {
+  const { db, clock, host } = deps;
   const facts = () => gatherFacts(db, clock, { practice: deps.practice, host, ...(o.practiceShop ? { practiceShop: o.practiceShop } : {}) });
   const report = (f: HealthFacts) => {
     const lights = healthLights(f);

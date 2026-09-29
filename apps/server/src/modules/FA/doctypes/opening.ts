@@ -143,6 +143,8 @@ export const openingAssetDoc: DocTypeDef<OpeningAssetInput, OpeningAsset> = {
         `SELECT d.id, d.number FROM fa_opening_depreciation_lines l JOIN documents d ON d.id = l.document_id WHERE l.asset_id = @id AND d.status = 'posted'
          UNION
          SELECT d.id, d.number FROM fa_opening_disposals x JOIN documents d ON d.id = x.document_id WHERE x.asset_id = @id AND d.status = 'posted'
+         UNION
+         SELECT d.id, d.number FROM fa_asset_sales x JOIN documents d ON d.id = x.document_id WHERE x.asset_id = @id AND d.status = 'posted'
          ORDER BY 2`,
       )
       .all({ id: documentId }) as { id: string; number: string }[];

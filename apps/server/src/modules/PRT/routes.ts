@@ -7,6 +7,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { requireStepUp } from '../../engine/security/sessions.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
+import { settingAt } from '../../engine/settings.ts';
 import { renderPrint, type Profile, type PrintHeader, type PrintKind } from './print.ts';
 
 const profileInput = z.object({
@@ -16,17 +17,64 @@ const profileInput = z.object({
   registeredAddress: z.string().trim().min(1).max(500),
   isVatRegistered: z.boolean(),
 }).strict();
-const printInput = z.object({ variant: z.enum(['document', 'job_ticket']).default('document') }).strict();
+const printInput = z.object({ variant: z.enum(['document', 'job_ticket', 'thermal']).default('document'), employeeId: z.string().uuid().optional() }).strict();
 const PRINTABLE: ReadonlyMap<string, readonly PrintKind[]> = new Map([
   ['quo.quotation', ['document']],
   ['jo.job_order', ['document', 'job_ticket']],
   ['jo.release', ['document']],
   ['pur.po', ['document']],
+  ['col.collection', ['document', 'thermal']],
+  ['col.credit_memo', ['document']],
+  ['ap.payment', ['document']],
+  ['exp.voucher', ['document']],
+  ['cash.transfer', ['document']],
+  ['cash.count', ['document']],
+  ['acc.jv', ['document']],
+  ['pay.run', ['document']],
+  ['ca.advance', ['document']],
+  ['inv.count', ['document']],
 ]);
 const out = (r: Profile) => ({ registeredName: r.registered_name, tradeName: r.trade_name, tin: r.tin,
   registeredAddress: r.registered_address, isVatRegistered: !!r.is_vat_registered, version: r.version });
 
+const TEST_PROFILE: Profile = { registered_name: 'Sample Garments Company', trade_name: 'Sample Garments',
+  tin: '000-000-000-000', registered_address: '123 Sample Street, Manila', is_vat_registered: 1, version: 1 };
+const testHeader = (type: string): PrintHeader => ({ id: '00000000-0000-4000-8000-000000000000', number: 'TEST-000000',
+  business_date: '2026-09-28', doc_type: type, status: 'posted' });
+const quote = { customerName: 'Sample Customer', validUntil: '2026-10-13', documentDiscountCents: 5000, totalCents: 107000,
+  lines: [{ description: 'Sample uniform', qty: 2, unit: 'pc', unitPriceCents: 56000, discountCents: 0, lineTotalCents: 112000 }] };
+const job = { customerName: 'Sample Customer', dueDate: '2026-10-13', priority: 'normal', totalCents: 112000,
+  requiredDownpaymentCents: 56000, paymentTerms: '50% downpayment', lines: [{ lineNo: 1, description: 'Sample uniform', qty: 2,
+    unitPriceCents: 56000, discountCents: 0, lineTotalCents: 112000, roster: [{ wearerName: 'Sample Wearer', size: 'M', jerseyName: 'SAMPLE', jerseyNumber: '10', qty: 2 }] }] };
+/** A journal voucher line for the sample print only (the house rule keeps posting lines in doctypes). */
+const jvLine = (...[accountCode, accountName, debitCents, creditCents]: [string, string, number, number]) => ({ accountCode, accountName, debitCents, creditCents });
+const TEST_PRINTS: readonly { id: string; label: string; paper: string; type: string; kind: PrintKind; doc: unknown }[] = [
+  { id: 'quotation', label: 'Quotation', paper: 'A4', type: 'quo.quotation', kind: 'document', doc: quote },
+  { id: 'job-order', label: 'Job Order (customer copy)', paper: 'A4', type: 'jo.job_order', kind: 'document', doc: job },
+  { id: 'job-ticket', label: 'Job Ticket', paper: 'A4', type: 'jo.job_order', kind: 'job_ticket', doc: job },
+  { id: 'release-slip', label: 'Release Slip', paper: 'A4 2-up', type: 'jo.release', kind: 'document', doc: { jobOrderNumber: 'TEST-JO-000000', customerName: 'Sample Customer', lines: [{ description: 'Sample uniform', qty: 2 }], claimedBy: 'Sample Customer', idSeen: 'Sample ID', balanceDueCents: 56000 } },
+  { id: 'collection-a4', label: 'Collection Receipt', paper: 'A4 2-up', type: 'col.collection', kind: 'document', doc: { customerName: 'Sample Customer', applications: [{ jobOrderNumber: 'TEST-JO-000000', amountCents: 56000 }], sales: [], totalCents: 56000, cwtCents: 0, vatWithheldCents: 0, unappliedCents: 0, note: 'Sample payment' } },
+  { id: 'collection-80mm', label: 'Collection Receipt', paper: '80 mm', type: 'col.collection', kind: 'thermal', doc: { customerName: 'Sample Customer', applications: [{ jobOrderNumber: 'TEST-JO-000000', amountCents: 56000 }], sales: [], totalCents: 56000, cwtCents: 0, vatWithheldCents: 0, unappliedCents: 0 } },
+  { id: 'credit-memo', label: 'Credit Memo', paper: 'A4', type: 'col.credit_memo', kind: 'document', doc: { customerName: 'Sample Customer', invoice: { number: 'TEST-IR-000000' }, kind: 'allowance', reason: 'Sample adjustment', netCents: 10000, vatCents: 1200, totalCents: 11200 } },
+  { id: 'purchase-order', label: 'Purchase Order', paper: 'A4', type: 'pur.po', kind: 'document', doc: { supplierId: 'sample', expectedDate: '2026-10-13', totalCents: 25000, lines: [{ supplyId: 'sample', qty: 5, unitCostCents: 5000, lineTotalCents: 25000 }] } },
+  { id: 'payment-voucher', label: 'Payment Voucher', paper: 'A4 2-up', type: 'ap.payment', kind: 'document', doc: { supplierName: 'Sample Supplier', bills: [{ billNumber: 'TEST-BILL', supplierInvoiceNo: 'SAMPLE-1', amountCents: 25000 }], tenders: [{ cashPlaceName: 'Sample Bank', reference: 'TEST', amountCents: 25000 }], feeCents: 0, totalCents: 25000 } },
+  { id: 'expense-voucher', label: 'Expense Voucher', paper: 'A4', type: 'exp.voucher', kind: 'document', doc: { payee: { name: 'Sample Payee' }, categoryName: 'Sample expense', description: 'Sample supplies', cashPlaceName: 'Sample Cash', totalCents: 11200, inputVatCents: 1200, ewtCents: 0, cashCents: 11200 } },
+  { id: 'fund-transfer', label: 'Fund Transfer Slip', paper: 'A4', type: 'cash.transfer', kind: 'document', doc: { fromName: 'Sample Bank', toName: 'Sample Cash', amountSentCents: 100000, amountReceivedCents: 99000, feeCents: 1000, note: 'Sample transfer' } },
+  { id: 'cash-count', label: 'Cash Count Sheet', paper: 'A4', type: 'cash.count', kind: 'document', doc: { placeName: 'Sample Cash', lines: [{ denominationCents: 100000, qty: 2, amountCents: 200000 }], countedCents: 200000, ledgerCents: 200000, differenceCents: 0 } },
+  { id: 'journal-voucher', label: 'Journal Voucher', paper: 'A4', type: 'acc.jv', kind: 'document', doc: { memo: 'Sample entry', lines: [jvLine('1000', 'Sample debit', 10000, 0), jvLine('2000', 'Sample credit', 0, 10000)], totalCents: 10000 } },
+  { id: 'payslip', label: 'Payslip', paper: 'A4 2-up', type: 'pay.run', kind: 'document', doc: { periodStart: '2026-09-01', periodEnd: '2026-09-15', employees: [{ code: 'SAMPLE', name: 'Sample Worker', lines: [{ description: 'Basic pay', amountCents: 100000 }], grossCents: 100000, sssEeCents: 5000, phicEeCents: 2500, hdmfEeCents: 2000, wtaxCents: 0, caCents: 0, netCents: 90500 }] } },
+  { id: 'cash-advance', label: 'Cash Advance Slip', paper: 'A4 2-up', type: 'ca.advance', kind: 'document', doc: { employeeName: 'Sample Worker', cashPlaceName: 'Sample Cash', amountCents: 20000, installmentCents: 5000, note: 'Sample only' } },
+  { id: 'count-sheet', label: 'Inventory Count Sheet', paper: 'A4', type: 'inv.count', kind: 'document', doc: { category: 'Sample materials', countDate: '2026-09-28', lines: [{ name: 'Sample cloth', unit: 'metre', qty: 10, unitCostCents: 10000, valueCents: 100000 }], countedCents: 100000, ledgerCents: 90000, adjustmentCents: 10000 } },
+];
+const NOT_BUILT = ['Statement of Account', 'Sizing Profile', 'Fixed Asset Schedule / books layouts'];
+
 export function prtRoutes(app: FastifyInstance, { db, clock, registry, practice }: AppDeps): void {
+  app.get('/api/prt/test-pack', { config: { permission: 'prt.test_pack' } }, async () => ({
+    prints: TEST_PRINTS.map((item) => ({ id: item.id, label: item.label, paper: item.paper,
+      html: renderPrint(db, testHeader(item.type), item.doc, TEST_PROFILE, item.kind, 'Sample Owner',
+        '2026-09-28T10:00:00+08:00', 1, false, true) })),
+    notBuilt: NOT_BUILT,
+  }));
   app.get('/api/prt/printable-types', { config: { permission: 'authenticated' } }, async (req) => {
     const user = currentUser(req);
     return [...PRINTABLE].filter(([key]) => {
@@ -84,16 +132,24 @@ export function prtRoutes(app: FastifyInstance, { db, clock, registry, practice 
     { config: { permission: 'authenticated' } }, async (req) => {
       const user = currentUser(req);
       const { type, id } = req.params;
-      const kind = printInput.parse(req.body ?? {}).variant as PrintKind;
+      const input = printInput.parse(req.body ?? {});
+      const kind = input.variant as PrintKind;
       const def = registry.docType(type);
       if (!def || !PRINTABLE.get(type)?.includes(kind)) throw notFound('That printout');
       if (!user.permissions.has(def.permissions.view)) throw forbidden(def.permissions.view);
       return tx(db, () => {
         const h = db.prepare('SELECT id, number, business_date, doc_type, status FROM documents WHERE id = ? AND doc_type = ?').get(id, type) as PrintHeader | undefined;
         if (!h) throw notFound('The document');
+        if (type === 'col.collection' && settingAt(db, 'col.cr_mode', h.business_date).mode !== 'system') {
+          throw conflict('BOOKLET_CR_NOT_PRINTABLE', 'Collection receipts cannot be printed in booklet mode. Use the pre-printed receipt booklet.');
+        }
         const profile = db.prepare('SELECT * FROM prt_company_profile WHERE id = 1').get() as Profile | undefined;
         if (!profile) throw conflict('COMPANY_PROFILE_REQUIRED', 'An owner must complete the company profile before printing.');
-        const doc = def.load(db, id);
+        const loaded: any = def.load(db, id);
+        const doc = type === 'pay.run' && input.employeeId
+          ? { ...loaded, employees: loaded.employees.filter((e: any) => e.employeeId === input.employeeId) }
+          : loaded;
+        if (type === 'pay.run' && input.employeeId && doc.employees.length === 0) throw notFound('That employee on this payroll run');
         const copyNumber = (db.prepare('SELECT COALESCE(MAX(copy_number), 0) + 1 AS n FROM prt_print_log WHERE document_id = ? AND print_kind = ?')
           .get(id, kind) as { n: number }).n;
         const at = stamp(clock);
