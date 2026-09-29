@@ -40,3 +40,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [41. Production Board and Piece Rates](41-production-board-and-piece-rates.md): View the production board, record pieces done, and manage piece rates.
 - [42. Employees, Attendance and Holidays](42-employees-attendance-holidays.md): Add employees, set their pay rates, record daily attendance, and manage holidays.
 - [43. Home, Search and TV Board](43-home-search-tv-board.md): See your daily alerts, find records quickly, and view the production status.
+- [46. Selling a fixed asset](46-selling-a-fixed-asset.md): Record taking a fixed asset off the books by selling or retiring it.
