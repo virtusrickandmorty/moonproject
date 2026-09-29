@@ -12,6 +12,9 @@ export class ApiError extends Error {
 }
 
 export interface Me { userId: string; username: string; displayName: string; roles: string[]; permissions: string[]; mustChangePassword: boolean; csrfToken: string }
+export interface GoLiveAnswer { id: number; answer: string; decidedBy: string; decidedOn: string; note: string; recordedAt: string; recordedByName: string }
+export interface GoLiveDecision { id: string; group: 'accountant' | 'owner' | 'co-owners'; question: string; defaultAnswer: string; when: string; history: GoLiveAnswer[]; setting: null | { key: string; value: unknown; words: string; matches: boolean | null } }
+export interface GoLiveRegister { asOf: string; open: number; rows: GoLiveDecision[] }
 export interface AuditLogRow { seq: number; at: string; userId: string | null; userName: string | null; action: string; entityType: string; entityId: string | null; data: Record<string, unknown> }
 export interface AuditLogPage { rows: AuditLogRow[]; nextBefore: number | null }
 export interface IntegrityReport { audit: { ok: boolean; brokenAt: number | null; count: number; newestAt: string | null; message: string }; checks: { id: string; name: string; ok: boolean; problems: string[]; message: string }[] }
@@ -952,6 +955,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     addIncomeTaxDeduction: (body: { year: number; method: DeductionMethod; effectiveFrom: string; reason: string }) => call<DeductionSetting>('POST', '/api/tax/income-tax-deductions', body),
     opening: () => call<OpeningState>('GET', '/api/acc/opening'),
     monthEnd: (month?: string) => call<MonthEndChecklist>('GET', `/api/acc/month-end${month ? `?${new URLSearchParams({ month })}` : ''}`),
+    goLiveDecisions: () => call<GoLiveRegister>('GET', '/api/acc/go-live-decisions'),
+    recordGoLiveAnswer: (body: { decisionId: string; answer: string; decidedBy: string; decidedOn: string; note: string }) => call<GoLiveRegister>('POST', '/api/acc/go-live-decisions/answers', body),
     /** The accountant's sign-off of a month that has ended; needs a fresh password (step-up). */
     signOffMonth: (month: string, note: string) => call<MonthEndChecklist>('POST', '/api/acc/month-end/sign-off', { month, note }),
     /** Every return with something left to pay (GET /api/tax/payments/due): a VAT close or an opening's 2550Q, EWT withheld or opened. */

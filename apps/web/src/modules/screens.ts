@@ -87,6 +87,7 @@ import { Settings } from './ACC/Settings.tsx';
 import { Users } from './SEC/Users.tsx';
 import { Roles } from './SEC/Roles.tsx';
 import { MonthEnd } from './ACC/MonthEnd.tsx';
+import { GoLiveDecisions } from './ACC/GoLiveDecisions.tsx';
 import { BirPaymentForm } from './TAX/BirPaymentForm.tsx';
 import { OpeningWithholdingForm } from './TAX/OpeningWithholdingForm.tsx';
 import { OpeningPayableForm } from './TAX/OpeningPayableForm.tsx';
@@ -206,6 +207,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/1604e': EwtAnnualReturnPage,
   '/acc/opening': OpeningBalances,
   '/acc/month-end': MonthEnd,
+  '/acc/go-live-decisions': GoLiveDecisions,
   '/tax/calendar': TaxCalendar,
   '/admin/shop-certificate': ShopCertificate,
   '/admin/practice': PracticeShop,
