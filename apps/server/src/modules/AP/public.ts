@@ -4,6 +4,22 @@ import type { Db } from '../../platform/db/driver.ts';
 import type { EwtClass } from '../../engine/settings.ts';
 import { categoryPurchaseClass, type GoodsOrServices } from '../EXP/public.ts';
 import { receivedQty, type PurchaseCost } from '../PUR/public.ts';
+export { supplierBalances, supplierLedger } from './ledger.ts';
+
+export function payableAgingAt(db: Db, asOf: string) {
+  return db.prepare(`SELECT d.id,d.number,d.doc_type AS docType,d.business_date AS date,b.due_date AS dueDate,b.supplier_id AS supplierId,
+    SUM(l.credit_cents-l.debit_cents) AS balanceCents FROM ap_bills b JOIN documents d ON d.id=b.document_id
+    JOIN journal_lines l ON l.ref_doc_id=d.id JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.id=l.account_id AND a.role_key='AP'
+    WHERE j.sealed=1 AND j.business_date<=? GROUP BY d.id HAVING balanceCents<>0 ORDER BY b.due_date,d.number`).all(asOf) as
+    {id:string;number:string;docType:string;date:string;dueDate:string;supplierId:string;balanceCents:number}[];
+}
+export function purchasesForReport(db: Db, from: string, to: string) {
+  return db.prepare(`SELECT d.id,d.number,d.business_date AS date,b.supplier_id AS supplierId,a.name AS category,
+    SUM(l.debit_cents-l.credit_cents) AS amountCents FROM ap_bills b JOIN documents d ON d.id=b.document_id
+    JOIN journals j ON j.source_id=d.id AND j.posting_kind='original' JOIN journal_lines l ON l.journal_id=j.id JOIN accounts a ON a.id=l.account_id
+    WHERE d.status='posted' AND d.business_date BETWEEN ? AND ? AND l.debit_cents>0 GROUP BY d.id,a.id ORDER BY d.business_date,d.number,a.code`).all(from,to) as
+    {id:string;number:string;date:string;supplierId:string;category:string;amountCents:number}[];
+}
 
 /** What a bill line bought: a supply on file, freight-in, subcontracted production, or an expense category. */
 export type BillLineKind = 'supply' | 'freight_in' | 'subcontract' | 'category';

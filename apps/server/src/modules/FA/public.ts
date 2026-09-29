@@ -25,3 +25,5 @@ export function purchaseTaxFacts(db: Db, id: string): { supplierId: string; supp
     | { supplierId: string; supplierInvoiceNo: string | null }
     | undefined;
 }
+
+export { assetsInService, accumulatedCents, straightLine, monthsInService } from './assets.ts';
