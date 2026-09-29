@@ -18,7 +18,7 @@ To view the exposure report:
 ### What the system does for you
 The system automatically creates the exact file formats each agency needs (the R3 / e-collection contribution list for SSS, RF-1 / EPRS contribution list for PhilHealth, and MCRF / eSRS contribution list for Pag-IBIG). It adds up the monthly compensation, employee share, and employer share for every employee paid in that month.
 
-The Statutory exposure report lists all employees who were paid in a past month but have no contribution recorded. It shows the months, the compensation, what the shares should have been, and estimates the late penalty. Nothing is recorded or posted here; the accountant uses this to decide if they need to catch up on past missed contributions. You can print it by clicking the **Print** button.
+The Statutory exposure report lists all employees who were paid in a past month but have no contribution recorded. It shows the months, the compensation, what the shares should have been, and estimates the late penalty. The **Statutory exposure** screen has a **By scheme** panel and a **By employee** panel, with the pay, the shares, months late and the penalty. It posts nothing. You can print it by clicking the **Print** button.
 
 ### Common mistakes and how to fix them
 - **Mistake:** A button to download a file is disabled, or a whole section is missing.
