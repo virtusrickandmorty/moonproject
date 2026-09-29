@@ -119,6 +119,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Admin', label: 'Import old data', path: '/mig', permission: 'mig.run' },
   { group: 'Admin', label: 'Audit log', path: '/aud/log', permission: 'aud.log.view' },
   { group: 'Admin', label: 'Integrity check', path: '/aud/integrity', permission: 'aud.integrity.view' },
+  { group: 'Admin', label: 'Nightly checks', path: '/aud/nightly', permission: 'aud.integrity.view' },
 ];
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);
