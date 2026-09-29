@@ -12,6 +12,15 @@ export class ApiError extends Error {
 }
 
 export interface Me { userId: string; username: string; displayName: string; roles: string[]; permissions: string[]; mustChangePassword: boolean; csrfToken: string }
+export async function openServerPrint(me: Me, path: string, body: unknown): Promise<void> {
+  const preview = window.open('', '_blank');
+  const response = await fetch(path, { method: 'POST', credentials: 'same-origin',
+    headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken }, body: JSON.stringify(body) });
+  const data = await response.json().catch(() => null) as { html?: string; message?: string } | null;
+  if (!response.ok || !data?.html) { preview?.close(); throw new Error(data?.message ?? 'Could not prepare this printout.'); }
+  if (!preview) throw new Error('Allow pop-ups for this site, then try Print again.');
+  preview.document.open(); preview.document.write(data.html); preview.document.close();
+}
 export interface AuditLogRow { seq: number; at: string; userId: string | null; userName: string | null; action: string; entityType: string; entityId: string | null; data: Record<string, unknown> }
 export interface AuditLogPage { rows: AuditLogRow[]; nextBefore: number | null }
 export interface IntegrityReport { audit: { ok: boolean; brokenAt: number | null; count: number; newestAt: string | null; message: string }; checks: { id: string; name: string; ok: boolean; problems: string[]; message: string }[] }

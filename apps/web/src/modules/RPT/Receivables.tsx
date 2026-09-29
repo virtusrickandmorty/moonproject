@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, type Me } from '../../api.ts';
+import { api, openServerPrint, type Me } from '../../api.ts';
 import { Link } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { BookTitle, Tools, money, td, th, useReport, useToday } from './Books.tsx';
@@ -78,6 +78,8 @@ export function CustomerStatement({ me }: { me: Me }) {
       <Button tone="primary" disabled={!customerId || !from || !to || from > to}
         onClick={() => setApplied(new URLSearchParams({ customerId, from, to }).toString())}>Show</Button>
       {path && <Tools path={path} />}</div>
+    {data && <div className="print:hidden"><Button onClick={() => void openServerPrint(me, '/api/prt/reports/statement',
+      { customerId: data.customerId, from: data.from, to: data.to })}>Print statement of account</Button></div>}
     {error && <Notice>{error}</Notice>}{!data && !error && applied && <p>Loading…</p>}
     {data && <><Panel title={data.customerName}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
       {['Date', 'Document', 'Memo', 'Debit', 'Credit', 'Balance'].map((name) => <th className={th} key={name}>{name}</th>)}
