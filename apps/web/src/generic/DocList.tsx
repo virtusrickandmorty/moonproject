@@ -8,7 +8,8 @@ import { docPath, labelOf, pluralLabelOf } from '../shell/menu.ts';
 const PAGE = 25;
 const FILTERS = [['', 'All'], ['posted', 'Recorded'], ['cancelled', 'Cancelled']] as const;
 
-export function DocList({ type }: { type: DocTypeInfo }) {
+/** `notice`: a line a screen that sent the user here wants shown (a quotation that could not open the Job Order form yet). */
+export function DocList({ type, notice }: { type: DocTypeInfo; notice?: string }) {
   const [status, setStatus] = useState('');
   const [rows, setRows] = useState<DocHeader[]>([]);
   const [more, setMore] = useState(false);
@@ -30,6 +31,7 @@ export function DocList({ type }: { type: DocTypeInfo }) {
         <h1 className="flex-1 text-2xl font-semibold">{pluralLabelOf(type)}</h1>
         {type.canCreate && <Button tone="primary" onClick={() => navigate(docPath(type.key, '/new'))}>+ New {labelOf(type)}</Button>}
       </div>
+      {notice && <Notice tone="info">{notice}</Notice>}
       {error && <Notice>{error}</Notice>}
       {drafts.length > 0 && (
         <Panel title="Your drafts (not recorded yet)">

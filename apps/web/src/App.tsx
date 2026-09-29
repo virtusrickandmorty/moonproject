@@ -13,6 +13,7 @@ import { DocList } from './generic/DocList.tsx';
 import { DocForm, type FormMode } from './generic/DocForm.tsx';
 import { DocView } from './generic/DocView.tsx';
 import { FORMS, PAGES, VIEWS } from './modules/screens.ts';
+import { JOB_ORDER_LATER } from './modules/QUO/quotation.ts';
 import { DashHome } from './modules/DASH/Home.tsx';
 import { PracticeBanner } from './modules/PLT/PracticeBanner.tsx';
 import { HealthDot } from './modules/PLT/HealthDot.tsx';
@@ -52,9 +53,10 @@ function Stages() {
 
   const signOut = () => void api.logout().catch(() => undefined).then(() => setStage({ kind: 'login', message: 'You are signed out.' }));
   const [path = '/', query = ''] = location.split('?');
+  const fromQuotation = new URLSearchParams(query).get('from-quotation');
   const typeOf = (key = '') => stage.docTypes.find((d) => d.key === key);
   const routes: [string, (p: Record<string, string>, t: DocTypeInfo) => ReactNode][] = [
-    ['/docs/:type', (_, t) => <DocList key={t.key} type={t} />],
+    ['/docs/:type', (_, t) => <DocList key={t.key} type={t} notice={fromQuotation && t.key === 'jo.job_order' ? JOB_ORDER_LATER(fromQuotation) : undefined} />],
     ['/docs/:type/new', (_, t) => <Form key={location} type={t} me={stage.me} mode={{ kind: 'new', draftId: new URLSearchParams(query).get('draft') ?? undefined }} />],
     ['/docs/:type/:id/edit', (p, t) => <Form key={location} type={t} me={stage.me} mode={{ kind: 'edit', id: p.id! }} />],
     ['/docs/:type/:id', (p, t) => <DocView key={p.id} type={t} id={p.id!} recorded={query === 'recorded=1'} parts={VIEWS[t.key]} />],
