@@ -25,6 +25,8 @@ export const SCREENS: MenuItem[] = [
   { group: 'Money', label: 'Cash Accounts', path: '/cash/accounts', permission: 'cash.places.view' },
   { group: 'Money', label: 'Cash book', path: '/cash/book', permission: 'cash.book.view' },
   { group: 'Money', label: 'Bank reconciliation', path: '/cash/recon', permission: 'cash.recon.view' },
+  { group: 'Money', label: 'Checks on hand', path: '/col/checks', permission: 'col.checks.view' },
+  { group: 'Sales', label: 'Post-dated checks', path: '/col/pdcs', permission: 'col.checks.view' },
   { group: 'Money', label: 'Owners and officers', path: '/eq/people', permission: 'eq.people.view' },
   { group: 'Money', label: 'Loans', path: '/loan/loans', permission: 'loan.loans.view' },
   { group: 'Money', label: 'Fixed assets', path: '/fa/assets', permission: 'fa.assets.view' },

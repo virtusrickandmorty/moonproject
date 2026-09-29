@@ -159,7 +159,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     ...(cwtCents ? { withholding: { cwtCents, atc: cwt.atc, certificate: cwt.certificate, ...(vatWithheldCents ? { vatWithheldCents } : {}) } } : {}),
     ...(settle ? { settleSmallDifference: true } : {}),
     ...(note.trim() ? { note: note.trim() } : {}),
-    ...(pdc ? { postDatedCheckId: pdc.id } : {}),
+    ...(pdc ? { postDatedCheckId: pdc.id } : original?.input.postDatedCheckId ? { postDatedCheckId: original.input.postDatedCheckId } : {}), // an edit keeps its post-dated check
   };
   const live = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input));
 
