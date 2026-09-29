@@ -33,4 +33,6 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [30. Suppliers and Purchase Orders](30-suppliers-and-purchase-orders.md): Manage suppliers and your supplies list, make purchase orders, and receive goods.
 - [32. Bank reconciliation](32-bank-reconciliation.md): Check that your bank accounts match your real bank statements.
 - [33. Month-end checklist](33-month-end-checklist.md): View the status of month-end tasks and sign off the month.
+- [35. Users, Roles and Passwords](35-users-roles-passwords.md): Manage staff logins, permissions, and passwords.
+- [36. Fixed assets, loans and owners](36-fixed-assets-loans-owners.md): See your fixed assets, your loans, and the people who own or run the business.
 - [38. Reports and BIR books](38-reports-and-bir-books.md): View lists and summaries of the shop's data, and print out the BIR books for tax records.

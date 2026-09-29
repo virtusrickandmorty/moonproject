@@ -7,10 +7,11 @@ import { CollectionForm } from './COL/CollectionForm.tsx';
 import { DepositTransferForm } from './COL/DepositTransferForm.tsx';
 import { RefundForm } from './COL/RefundForm.tsx';
 import { CreditMemoForm, CwtOnlyForm, ForfeitForm, WriteOffForm, creditMemoView, cwtOnlyView, forfeitView, writeOffView } from './COL/CreditForms.tsx';
-import { invoiceRecordView, jobOrderView, openingJobOrderView, releaseView as joReleaseView } from './JO/JobOrderView.tsx';
+import { dpInvoiceView, invoiceRecordView, jobOrderView, openingJobOrderView, releaseView as joReleaseView } from './JO/JobOrderView.tsx';
 import { JobOrderForm } from './JO/JobOrderForm.tsx';
 import { ReleaseForm as JoReleaseForm } from './JO/ReleaseForm.tsx';
 import { InvoiceRecordForm } from './JO/InvoiceRecordForm.tsx';
+import { DpInvoiceForm } from './JO/DpInvoiceForm.tsx';
 import { OpeningJobOrderForm } from './JO/OpeningForm.tsx';
 import { QuickSaleForm } from './QS/QuickSaleForm.tsx';
 import { quickSaleView } from './QS/QuickSaleView.tsx';
@@ -277,6 +278,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'jo.job_order': JobOrderForm,
   'jo.release': JoReleaseForm,
   'jo.invoice_record': InvoiceRecordForm,
+  'jo.dp_invoice': DpInvoiceForm,
   'jo.opening': OpeningJobOrderForm,
   'tax.opening': OpeningWithholdingForm,
   'tax.payable.opening': OpeningPayableForm,
@@ -284,6 +286,6 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'tax.it_settlement': YearEndTaxForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'quo.quotation': quotationView(() => 'jo.job_order' in FORMS), 'jo.opening': openingJobOrderView, 'jo.release': joReleaseView, 'jo.invoice_record': invoiceRecordView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'cash.bank_adj': bankAdjustmentView, 'ap.bill': billView, 'ap.payment': paymentView, 'ap.advance': supplierAdvanceView, 'ap.advance_return': advanceReturnView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView,
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'quo.quotation': quotationView(() => 'jo.job_order' in FORMS), 'jo.opening': openingJobOrderView, 'jo.release': joReleaseView, 'jo.invoice_record': invoiceRecordView, 'jo.dp_invoice': dpInvoiceView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'cash.bank_adj': bankAdjustmentView, 'ap.bill': billView, 'ap.payment': paymentView, 'ap.advance': supplierAdvanceView, 'ap.advance_return': advanceReturnView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView,
   'pur.po': purchaseOrderView, 'pur.rr': receivingReportView,
   'col.cwt_only': cwtOnlyView, 'col.forfeit': forfeitView, 'col.credit_memo': creditMemoView, 'col.write_off': writeOffView };

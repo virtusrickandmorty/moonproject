@@ -2,14 +2,16 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AppError, notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
-import { tx } from '../../platform/db/driver.ts';
+import { tx, type Db } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { clockGuard, postDocument, previewDocument, type Actor } from '../../engine/documents/lifecycle.ts';
 import { findIdempotent, requestHash, storeIdempotent } from '../../engine/idempotency.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { activeChart, activeWearers, customerWearers } from './cus.ts';
 import { STAGES, STAGE_LABELS, changeStage, currentStage, isAbandoned, movesFrom, stageHistory } from './stages.ts';
+import { MODE_WORDS, depositModeOn, modeKeptIssue } from '../COL/public.ts';
 import { jobOrderRef, jobOrdersOf, joMoney } from './public.ts';
+import { dpInvoiceDoc } from './doctypes/dp-invoice.ts';
 import { lineState, releaseDoc, type Release } from './doctypes/release.ts';
 import { awaitingInvoice, invoiceFigures, invoiceRecordDoc, invoiceRecordInput } from './doctypes/invoice-record.ts';
 
@@ -35,8 +37,26 @@ const releasePick = ({ invoiceId, invoiceRecordNumber, invoiceNumber, ...r }: Re
 /** "Write these on the booklet" (D4.4): in downpayment VAT mode C the booklet shows the sale less the downpayments already invoiced (D3). */
 const bookletOf = (f: ReturnType<typeof invoiceFigures>) => ({
   vatRateBp: f.vatRateBp, listCents: f.listCents, discountCents: f.discountCents, discountNetCents: f.discountNetCents, salesCents: f.salesCents,
-  ...f.booklet, downpaymentsInvoicedCents: f.dpAppliedCents,
+  ...f.booklet, downpaymentsInvoicedCents: f.dpAppliedCents, depositVatMode: f.depositVatMode, depositVatCents: f.depositVatCents,
 });
+
+/** The downpayment invoices of a job order with their booklet numbers, cancelled ones marked (read-only). */
+const dpInvoicesOf = (db: Db, jobOrderId: string) =>
+  db
+    .prepare(
+      `SELECT d.id, d.number, d.status, i.invoice_number AS invoiceNumber, i.gross_cents AS amountCents, i.vat_cents AS vatCents
+       FROM jo_dp_invoices i JOIN documents d ON d.id = i.document_id WHERE i.job_order_id = ? ORDER BY d.number`,
+    )
+    .all(jobOrderId) as { id: string; number: string; status: 'posted' | 'cancelled'; invoiceNumber: string; amountCents: number; vatCents: number }[];
+
+/** The job order's downpayment VAT mode today, the setting in force, and (in words) why the job order keeps a mode other than the setting (read-only, COL). */
+function depositVatOf(db: Db, jo: { id: string; number: string }, date: string) {
+  const m = depositModeOn(db, jo.id, date);
+  return { mode: m.mode, words: MODE_WORDS[m.mode], setting: m.setting, settingWords: MODE_WORDS[m.setting], lockedBy: m.lockedBy, kept: modeKeptIssue(m, jo.number, 'jobOrderId')?.message ?? null };
+}
+
+/** The refusals of the downpayment invoice that do not depend on what is typed: the job order is cancelled, abandoned or not in mode C (the server's own words). */
+const JOB_ORDER_REFUSALS = new Set(['JOB_ORDER', 'JO_CANCELLED', 'JO_ABANDONED', 'DEPOSIT_VAT_MODE']);
 
 export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
@@ -51,7 +71,35 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
     const jo = jobOrderRef(db, req.params.id)!;
     const docType = db.prepare('SELECT doc_type FROM documents WHERE id = ?').pluck().get(jo.id) as string;
     const jobOrder = { id: jo.id, number: jo.number, docType, status: jo.status, customerId: jo.customerId, customerName: jo.customerName, dueDate: jo.dueDate };
-    return { jobOrder, stage, stageLabel, moves: movesFrom(stage), history: stageHistory(db, req.params.id), money, lines, awaitingInvoice: awaitingInvoice(db, req.params.id) };
+    return {
+      jobOrder, stage, stageLabel, moves: movesFrom(stage), history: stageHistory(db, req.params.id), money, lines, awaitingInvoice: awaitingInvoice(db, req.params.id),
+      depositVat: depositVatOf(db, jo, today(clock)), dpInvoices: dpInvoicesOf(db, req.params.id),
+    };
+  });
+
+  /**
+   * What the downpayment invoice form shows for one job order (read-only): the downpayment asked, what is already invoiced,
+   * the money already held that the invoice applies, and the server's own refusal when the job order cannot take a
+   * downpayment invoice (cancelled, abandoned, or not in downpayment VAT mode C).
+   */
+  app.get<{ Params: { id: string } }>('/api/jo/orders/:id/dp-info', { config: { permission: 'jo.invoice' } }, async (req) => {
+    const jo = jobOrderRef(db, req.params.id);
+    if (!jo) throw notFound('The job order');
+    const money = joMoney(db, jo.id);
+    const dpInvoices = dpInvoicesOf(db, jo.id);
+    const dpInvoicedCents = dpInvoices.filter((i) => i.status === 'posted').reduce((s, i) => s + i.amountCents, 0);
+    const probe = previewDocument({ db, clock }, dpInvoiceDoc, actorOf(req), { jobOrderId: jo.id, invoiceNumber: '1', amountCents: 1 });
+    const refusal = probe.issues.find((i) => i.level === 'error' && JOB_ORDER_REFUSALS.has(i.code));
+    return {
+      jobOrder: { id: jo.id, number: jo.number, customerName: jo.customerName, totalCents: jo.totalCents },
+      requiredDownpaymentCents: money.requiredDownpaymentCents,
+      dpInvoicedCents,
+      notInvoicedCents: money.notInvoicedCents,
+      depositsHeldCents: money.depositsHeldCents,
+      depositVat: depositVatOf(db, jo, today(clock)),
+      dpInvoices,
+      refusal: refusal?.message ?? null,
+    };
   });
 
   /**
