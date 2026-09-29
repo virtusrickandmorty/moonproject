@@ -23,7 +23,11 @@ const checkInput = z.object({
   key: z.string().max(200),
   purpose: z.enum(['drill', 'restore']),
 }).strict();
-const usbInput = z.object({ drive: z.enum(['A', 'B']), dir: z.string().trim().min(1).max(260) }).strict();
+/** A folder on this PC: a network folder (\\server\share) would send the PC's Windows sign-in, and the backups, to that server. */
+const usbInput = z.object({
+  drive: z.enum(['A', 'B']),
+  dir: z.string().trim().min(1).max(260).refine((d) => !/^[\\/]{2}/.test(d), 'Pick the USB drive plugged into this PC, like E:\\Moonproject, not a network folder.'),
+}).strict();
 
 export function bakRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock, registry } = deps;
