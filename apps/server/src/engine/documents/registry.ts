@@ -149,6 +149,27 @@ export interface DocTypeDef<Input = any, Doc extends { totalCents: number } = an
   arbitrary(db: Db): fc.Arbitrary<Input>;
 }
 
+/**
+ * What a notice is asked about: a document about to be recorded (its computed doc; no number yet) or cancelled (its id).
+ * `businessDate` is the document's own date, also on a cancel, whose mirror is dated the cancel day (ACC-09).
+ */
+export interface NoticeTarget {
+  docType: string;
+  action: 'post' | 'cancel';
+  businessDate: string;
+  /** The doc type posts a journal (a quotation or a purchase order does not). */
+  posts: boolean;
+  /** On post: the computed document. */
+  doc?: unknown;
+  /** On cancel: the document being cancelled. */
+  documentId?: string;
+}
+/**
+ * A read-only check a module runs on every doc type, after validate (e.g. TAX's filed-period warning, ACC-22). It only
+ * ever warns: the engine turns whatever it returns into warnings, so a notice never blocks a record or a cancel.
+ */
+export type NoticeFn = (db: Db, target: NoticeTarget) => Issue[];
+
 export interface ModuleDef {
   /** Module code, same as its folder name, e.g. "CASH". */
   code: string;
@@ -159,6 +180,8 @@ export interface ModuleDef {
   migrationsDir?: string;
   /** Extra routes (lookups, reports). Every route must declare config.permission. */
   routes?(app: FastifyInstance, deps: AppDeps): void;
+  /** Notices this module adds to every doc type's preview, record and cancel (warnings only). */
+  notices?: NoticeFn[];
 }
 
 export function defineModule(m: ModuleDef): ModuleDef {
@@ -188,6 +211,11 @@ export class Registry {
 
   docTypes(): DocTypeDef[] {
     return [...this.types.values()];
+  }
+
+  /** Every module's notices, in module order. */
+  notices(): NoticeFn[] {
+    return this.modules.flatMap((m) => m.notices ?? []);
   }
 
   permissions(): (PermissionDef & { module: string })[] {

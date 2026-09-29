@@ -8,6 +8,7 @@ import { openingWithholdingDoc } from './doctypes/opening.ts';
 import { openingPayableDoc } from './doctypes/opening-payable.ts';
 import { incomeTaxProvisionDoc } from './doctypes/income-tax-provision.ts';
 import { incomeTaxSettlementDoc } from './doctypes/income-tax-settlement.ts';
+import { filedPeriodNotice } from './filed.ts';
 
 export default defineModule({
   code: 'TAX',
@@ -34,4 +35,6 @@ export default defineModule({
   docTypes: [vatCloseDoc, birPaymentDoc, openingWithholdingDoc, openingPayableDoc, incomeTaxProvisionDoc, incomeTaxSettlementDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: taxRoutes,
+  // ACC-09, ACC-22: every document dated in a filed period warns on record and on cancel.
+  notices: [filedPeriodNotice],
 });

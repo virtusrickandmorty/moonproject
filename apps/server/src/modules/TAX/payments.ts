@@ -40,7 +40,7 @@ export const BIR_FORM: Record<BirForm, { role: 'VAT_PAYABLE' | 'EWT_PAYABLE' | '
   '1702': { role: 'INCOME_TAX_PAYABLE', tax: 'income tax', period: 'year' },
 };
 /** Every BIR payment's form and period: the VAT and EWT ones (0003), the 1702Q ones (0006) and the 1702 ones (0008). */
-const PAYMENT_ROWS = `(SELECT document_id, form, period, reference, amount_cents, penalty_cents FROM tax_bir_payments
+export const PAYMENT_ROWS = `(SELECT document_id, form, period, reference, amount_cents, penalty_cents FROM tax_bir_payments
   UNION ALL SELECT document_id, '1702Q', period, reference, amount_cents, penalty_cents FROM tax_income_tax_payments
   UNION ALL SELECT document_id, '1702', period, reference, amount_cents, penalty_cents FROM tax_income_tax_annual_payments)`;
 
