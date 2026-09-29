@@ -35,3 +35,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [33. Month-end checklist](33-month-end-checklist.md): View the status of month-end tasks and sign off the month.
 - [35. Users, Roles and Passwords](35-users-roles-passwords.md): Manage staff logins, permissions, and passwords.
 - [36. Fixed assets, loans and owners](36-fixed-assets-loans-owners.md): See your fixed assets, your loans, and the people who own or run the business.
+- [39. Switch-over day](39-switch-over-day.md): Plan and execute the move from the old apps to Moonproject.
