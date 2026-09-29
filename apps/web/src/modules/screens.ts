@@ -50,6 +50,7 @@ import { Booklets, BookletPage, RegisterBooklet } from './TAX/Booklets.tsx';
 import { SalesRegister, WithholdingReceived } from './TAX/Registers.tsx';
 import { EwtRegister, PurchasesRegister } from './TAX/SupplierRegisters.tsx';
 import { CertificatesToIssue, VatWorksheet } from './TAX/QuarterReports.tsx';
+import { Sawt, SlspPurchases, SlspSales } from './TAX/SlspSawt.tsx';
 import { TaxCalendar } from './TAX/TaxCalendar.tsx';
 import { VatQuarter } from './TAX/VatQuarter.tsx';
 import { ShopCertificate } from './SEC/ShopCertificate.tsx';
@@ -148,6 +149,9 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/2307-to-issue': CertificatesToIssue,
   '/tax/vat': VatQuarter,
   '/tax/2550q': VatWorksheet,
+  '/tax/slsp-sales': SlspSales,
+  '/tax/slsp-purchases': SlspPurchases,
+  '/tax/sawt': Sawt,
   '/tax/0619e': EwtMonthReturn,
   '/tax/1601eq': EwtQuarterReturn,
   '/tax/1702q': IncomeTaxReturn,

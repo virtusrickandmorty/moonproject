@@ -311,6 +311,42 @@ export interface VatWorksheet {
   year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string; returnDue: string; close: { documentId: string; number: string; date: string } | null;
   lines: { key: string; label: string; amountCents: number | null; taxCents: number }[]; checks: WorksheetCheck[];
 }
+/** SLSP and SAWT data of a quarter: each figure tied to its register or the books, with the difference (0 when they agree). */
+export interface TaxTie { key: string; label: string; listCents: number; bookCents: number; differenceCents: number }
+export type SaleClass = 'zero_rated' | 'exempt' | 'not_a_sale';
+/** GET /api/tax/slsp/sales: one row per customer with a TIN, the customers without one on one line (customerId null). */
+export interface SlspSales {
+  year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string;
+  rows: {
+    customerId: string | null; tin: string | null; registeredName: string; address: string | null; exemptCents: number; zeroRatedCents: number;
+    vatableCents: number; outputTaxCents: number; grossTaxableCents: number; toClassifyCents: number; customers: number;
+  }[];
+  totals: { exemptCents: number; zeroRatedCents: number; vatableCents: number; outputTaxCents: number; grossTaxableCents: number; toClassifyCents: number };
+  otherIncomeCents: number; ties: TaxTie[]; checks: WorksheetCheck[];
+  /** Sales with no output VAT (journal vouchers) and the accountant's class of each; null = to classify. */
+  noVatSales: (TaxJournalRef & { customerId: string | null; customerName: string; tin: string | null; amountCents: number; sale: boolean; saleClass: SaleClass | null })[];
+}
+/** GET /api/tax/slsp/purchases: one row per supplier (or one-off payee), by class. */
+export interface SlspPurchases {
+  year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string;
+  rows: {
+    supplierId: string | null; tin: string | null; registeredName: string; address: string | null; exemptCents: number; zeroRatedCents: number; servicesCents: number;
+    capitalGoodsCents: number; goodsCents: number; toClassifyCents: number; inputTaxCents: number; grossTaxableCents: number;
+  }[];
+  totals: { exemptCents: number; zeroRatedCents: number; servicesCents: number; capitalGoodsCents: number; goodsCents: number; toClassifyCents: number; inputTaxCents: number; grossTaxableCents: number };
+  ties: TaxTie[]; checks: WorksheetCheck[];
+}
+/** GET /api/tax/sawt: one row per customer, ATC and 2307 status; `certificate` null = no 2307 recorded (a journal voucher). */
+export interface Sawt {
+  year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string;
+  rows: {
+    customerId: string | null; tin: string | null; registeredName: string; atc: string | null; nature: string | null; rateBp: number | null;
+    incomePaymentCents: number | null; cwtCents: number; vatWithheldCents: number; certificate: 'received' | 'pending' | null; period: string | null; documents: string[];
+  }[];
+  totals: { cwtCents: number; vatWithheldCents: number; incomePaymentCents: number };
+  inHand: { cwtCents: number; vatWithheldCents: number }; pending: { cwtCents: number; vatWithheldCents: number };
+  ties: TaxTie[]; checks: WorksheetCheck[];
+}
 export interface SalesRegister { from: string; to: string; rows: (TaxRegisterRow & { netCents: number; vatCents: number; totalCents: number })[]; totals: { netCents: number; vatCents: number; totalCents: number }; glVatCents: number }
 export interface WithholdingRegister {
   from: string; to: string;
@@ -511,7 +547,7 @@ export const taxYearPath = (report: '1702rt' | '1604e', year: number) => `/api/t
 /** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
 export const taxRegisterPath = (register: 'sales' | 'withholding-received' | 'purchases' | 'ewt', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
 /** A quarter's tax report URL; with &format=csv the same URL downloads it for Excel. */
-export const taxQuarterPath = (report: '2307-to-issue' | '2550q' | '1601eq' | '1702q', year: number, quarter: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}`;
+export const taxQuarterPath = (report: '2307-to-issue' | '2550q' | '1601eq' | '1702q' | 'slsp/sales' | 'slsp/purchases' | 'sawt', year: number, quarter: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}`;
 /** The 0619-E worksheet's URL (month like 2026-07); with &format=csv it downloads for Excel. */
 export const ewtMonthPath = (month: string) => `/api/tax/0619e?${new URLSearchParams({ month })}`;
 
@@ -719,6 +755,12 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     ewtRegister: (from: string, to: string) => call<EwtRegister>('GET', taxRegisterPath('ewt', from, to)),
     certificatesToIssue: (year: number, quarter: number) => call<CertificatesToIssue>('GET', taxQuarterPath('2307-to-issue', year, quarter)),
     vatWorksheet: (year: number, quarter: number) => call<VatWorksheet>('GET', taxQuarterPath('2550q', year, quarter)),
+    slspSales: (year: number, quarter: number) => call<SlspSales>('GET', taxQuarterPath('slsp/sales', year, quarter)),
+    slspPurchases: (year: number, quarter: number) => call<SlspPurchases>('GET', taxQuarterPath('slsp/purchases', year, quarter)),
+    sawt: (year: number, quarter: number) => call<Sawt>('GET', taxQuarterPath('sawt', year, quarter)),
+    /** A sale with no output VAT is zero-rated, exempt or not a sale (tax.slsp.classify); posts nothing. */
+    classifySale: (journalId: string, saleClass: SaleClass, reason: string) =>
+      call<{ journalId: string; number: string; saleClass: SaleClass }>('POST', '/api/tax/slsp/sale-class', { journalId, saleClass, reason }),
     ewtMonthWorksheet: (month: string) => call<EwtMonthWorksheet>('GET', ewtMonthPath(month)),
     ewtQuarterWorksheet: (year: number, quarter: number) => call<EwtQuarterWorksheet>('GET', taxQuarterPath('1601eq', year, quarter)),
     incomeTaxWorksheet: (year: number, quarter: number) => call<IncomeTaxWorksheet>('GET', taxQuarterPath('1702q', year, quarter)),
