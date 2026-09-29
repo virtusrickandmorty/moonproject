@@ -31,13 +31,20 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
     return { stage, stageLabel, moves: movesFrom(stage), history: stageHistory(db, req.params.id), money, lines, awaitingInvoice: awaitingInvoice(db, req.params.id) };
   });
 
-  /** The release as it would be recorded, and "write these on the booklet": the invoice figures for what is released (D4.4). */
+  /**
+   * The release as it would be recorded, and "write these on the booklet": the invoice figures for what is released
+   * (D4.4). In downpayment VAT mode C the booklet shows the sale less the downpayments already invoiced (D3).
+   */
   app.post('/api/jo/releases/preview', { config: { permission: 'jo.release' } }, async (req) => {
     const body = z.object({ release: z.unknown() }).strict().parse(req.body);
     const release = previewDocument({ db, clock }, releaseDoc, actorOf(req), body.release);
     const r = release.doc as Release;
-    const { depositAppliedCents, ...booklet } = invoiceFigures(db, r.jobOrderId, r.lines, today(clock));
-    return { release: { ...release, journal: undefined }, booklet, depositAppliedCents };
+    const f = invoiceFigures(db, r.jobOrderId, r.lines, today(clock));
+    const booklet = {
+      vatRateBp: f.vatRateBp, listCents: f.listCents, discountCents: f.discountCents, discountNetCents: f.discountNetCents, salesCents: f.salesCents,
+      ...f.booklet, downpaymentsInvoicedCents: f.dpAppliedCents,
+    };
+    return { release: { ...release, journal: undefined }, booklet, depositAppliedCents: f.depositAppliedCents };
   });
 
   /** Records the release (REL-) and, unless the invoice is to follow, its invoice record, in one transaction. */

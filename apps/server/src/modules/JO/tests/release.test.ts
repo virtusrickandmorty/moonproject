@@ -1,6 +1,6 @@
 /**
  * Release and invoice record: goldens G-02, G-09 (invoice part) and G-10 (PLAN I2), partial release, the D3 release
- * gate, settings (VAT rate, deposit VAT mode A only), D6 cancel rules for invoice records and collections, API rules
+ * gate, settings (VAT rate, deposit VAT mode: the JO's own; modes B and C in COL deposit-vat.test.ts), D6 cancel rules for invoice records and collections, API rules
  * and a property test over random releases, invoices, collections and cancels.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -265,20 +265,33 @@ describe('settings: VAT rate and deposit VAT mode (D3, D4.2)', () => {
     expect(invoiceRecordDoc.load(env.db, tomorrow10).vatRateBp).toBe(1000);
   });
 
-  it('refuses invoice records and downpayments in modes B and C until they are built', async () => {
-    const jo = await g01();
+  it('modes B and C: a JO with no downpayment is invoiced as the plain sale; a JO keeps its first downpayment’s mode, with a warning', async () => {
+    const [plain, early] = [await g01(), await g01()];
+    await collect(early, 2_800_000); // taken in mode A: the JO stays in mode A (COL doctypes/deposit-vat.ts)
+    let n = 1200;
     for (const mode of ['B', 'C']) {
       setting('sales.deposit_vat_mode', mode);
-      const res = await release({ release: releaseAll(jo), invoice: { invoiceNumber: '1201' } }, 5_600_000);
-      expect(res.json()).toMatchObject({ code: 'VALIDATION' });
-      expect(res.json().details).toEqual([expect.objectContaining({ code: 'DEPOSIT_VAT_MODE' })]);
-      expect(res.json().message).toMatch(new RegExp(`^Downpayment VAT mode ${mode} \\(.+\\) is in force, and this version can record invoices only in mode A`));
-      const dp = { customerId: c.school, crNumber: '1201', applications: [{ jobOrderId: jo, amountCents: 100 }], tenders: [{ cashPlaceId: CASH, amountCents: 100 }] };
-      const col = await encoder.post('/api/docs/col.collection/post', { input: dp, expectedTotalCents: 100 }, idem());
-      expect(col.json().message).toBe(`Downpayment VAT mode ${mode} is in force, and this version can record downpayments only in mode A (deposit only). Mode ${mode} is not built yet: ask the accountant.`);
+      const jo = mode === 'B' ? plain : await g01();
+      const res = await release({ release: releaseAll(jo), invoice: { invoiceNumber: String(++n) } }, 5_600_000);
+      expect(res.statusCode, res.body).toBe(200);
+      const ir = res.json().invoiceRecord;
+      expect(ir.warnings).toEqual([]);
+      expect(invoiceRecordDoc.load(env.db, ir.id)).toMatchObject({ depositVatMode: mode, depositAppliedCents: 0, depositVatCents: 0, dpAppliedCents: 0 });
+      expect(linesOf(ir.id)).toEqual([['1201', c.school, jo, 5_600_000, 0], ['4101', c.school, null, 0, 5_000_000], ['2301', c.school, null, 0, 600_000]]);
     }
-    setting('sales.deposit_vat_mode', 'A');
-    expect((await release({ release: releaseAll(jo), invoice: { invoiceNumber: '1201' } }, 5_600_000)).statusCode).toBe(200);
+    const res = await release({ release: releaseAll(early), invoice: { invoiceNumber: String(++n) } }, 5_600_000);
+    expect(res.statusCode, res.body).toBe(200);
+    const ir = res.json().invoiceRecord;
+    expect(ir.warnings).toEqual([expect.objectContaining({
+      code: 'DEPOSIT_VAT_MODE_KEPT',
+      message: 'JO-000002 took its first downpayment on COL-000001 in mode A (deposit only), so it stays in mode A although mode C (invoice on downpayment) is in force now. A job order never mixes the two.',
+    })]);
+    expect(invoiceRecordDoc.load(env.db, ir.id).depositVatMode).toBe('A');
+    expect(linesOf(ir.id)).toEqual([
+      ['1201', c.school, early, 5_600_000, 0], ['4101', c.school, null, 0, 5_000_000], ['2301', c.school, null, 0, 600_000],
+      ['2201', c.school, early, 2_800_000, 0], ['1201', c.school, early, 0, 2_800_000],
+    ]);
+    noBrokenInvariants();
   });
 });
 

@@ -6,12 +6,13 @@ import { notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
-import { invoiceCreditsAt } from '../COL/public.ts';
+import { dpAppliedByInvoice, dpHeld, invoiceCreditsAt } from '../COL/public.ts';
 import { JO_DOC_TYPES_SQL } from './stages.ts';
 
 export { abandon, currentStage, isAbandoned, productionMove, unabandon, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
 export { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, awaitingInvoice, invoiceAmounts, invoiceNumberUsedBy, invoiceNumbersBetween, settleLines } from './doctypes/invoice-record.ts';
 export { lineState, type LineKind } from './doctypes/release.ts';
+export { dpInvoiceNumbersBetween, dpInvoiceUsedBy } from './doctypes/dp-invoice.ts';
 
 export interface JoLedgerPart { receivableCents: number; depositsHeldCents: number }
 
@@ -78,26 +79,38 @@ export function balanceDue(p: { totalCents: number; invoicedCents: number } & Jo
 /**
  * This JO's AR and deposits, from the journal lines that name the JO as their document reference (NR-2,
  * G-01 "party Test School, JO"). COL and the invoice record tag their AR and deposit lines with the JO.
+ * Deposits held are money: in downpayment VAT mode C, 2201 also holds the NET of downpayments invoiced and not yet
+ * released (COL dpHeld), which is not money the customer paid in advance but a sale invoiced ahead, so it is left out.
  */
 export function joLedger(db: Db, documentId: string): JoLedgerPart {
   const balance = (role: string) => accountBalance(db, resolveAccount(db, { role }).id, { refDocId: documentId });
   // Deposits are a credit balance; 0 - x keeps an empty balance at 0 rather than -0.
-  return { receivableCents: balance('AR_TRADE'), depositsHeldCents: 0 - balance('CUSTOMER_DEPOSITS') };
+  return { receivableCents: balance('AR_TRADE'), depositsHeldCents: 0 - balance('CUSTOMER_DEPOSITS') - dpHeld(db, documentId).netCents };
 }
 
 /**
  * Gross of the JO's recorded (not cancelled) invoice records: its sales so far (D3 "invoiced amount"). An opening job
  * order adds what was invoiced before the cut-over date and not yet paid (its receivable), so its receivable stays
- * within what is invoiced, as every JO's does (settleLines).
+ * within what is invoiced, as every JO's does (settleLines). In mode C it adds the downpayments invoiced and not yet
+ * released (a release invoice's gross already counts the downpayment it takes into sales).
  */
 export function invoicedCents(db: Db, documentId: string): number {
-  return db
+  const own = db
     .prepare(
       `SELECT (SELECT COALESCE(SUM(i.gross_cents), 0) FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE i.job_order_id = @jo AND d.status = 'posted')
             + (SELECT COALESCE(SUM(o.receivable_cents), 0) FROM jo_opening_orders o JOIN documents d ON d.id = o.document_id WHERE o.document_id = @jo AND d.status = 'posted')`,
     )
     .pluck()
     .get({ jo: documentId }) as number;
+  return own + dpHeld(db, documentId).grossCents;
+}
+
+/** The recorded opening job order's number when it brought deposits from the old books (they count as mode A, COL). */
+export function openingDepositOn(db: Db, documentId: string): string | undefined {
+  return db
+    .prepare(`SELECT d.number FROM jo_opening_orders o JOIN documents d ON d.id = o.document_id WHERE o.document_id = ? AND o.deposits_cents > 0 AND d.status = 'posted'`)
+    .pluck()
+    .get(documentId) as string | undefined;
 }
 
 export function joMoney(db: Db, documentId: string) {
@@ -168,6 +181,14 @@ export function receivableSourcesAt(db: Db, asOf: string): {
     FROM jo_opening_orders o JOIN documents d ON d.id = o.document_id
     WHERE d.business_date <= @asOf AND ${liveAt}`).all({ asOf }) as { id: string; receivableCents: number }[];
   for (const opening of openings) invoicedByOrder.set(opening.id, (invoicedByOrder.get(opening.id) ?? 0) + opening.receivableCents);
+  // Mode C: a downpayment invoice counts as invoiced until the release invoice that takes it into sales, whose gross
+  // already includes it. Its receivable stays on the job order's row of the aging, which the collection pays.
+  const dpInvoices = db.prepare(`SELECT i.job_order_id AS id, i.gross_cents AS grossCents
+    FROM jo_dp_invoices i JOIN documents d ON d.id = i.document_id
+    WHERE d.business_date <= @asOf AND ${liveAt}`).all({ asOf }) as { id: string; grossCents: number }[];
+  for (const dp of dpInvoices) invoicedByOrder.set(dp.id, (invoicedByOrder.get(dp.id) ?? 0) + dp.grossCents);
+  const dpApplied = dpAppliedByInvoice(db);
+  for (const invoice of invoices) invoicedByOrder.set(invoice.jobOrderId, (invoicedByOrder.get(invoice.jobOrderId) ?? 0) - (dpApplied.get(invoice.id) ?? 0));
   return {
     orders: orders.map(({ totalCents, ...order }) => ({
       ...order, notInvoicedCents: Math.max(0, balanceDue({

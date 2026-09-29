@@ -49,7 +49,7 @@ They give no journals: working those out is your task. Rows marked "—" record 
 
 | doc_ref | Document and facts |
 |---|---|
-| — | JO-000002 for Test School (taken 3 September): 20 jersey sets × ₱2,800.00 = ₱56,000.00, not invoiced. JO-000003: 1 set at ₱10,000.00 (no journals). |
+| — | JO-000002 for Test School: 20 jersey sets × ₱2,800.00 = ₱56,000.00, not invoiced. JO-000003: 1 set at ₱10,000.00 (no journals). |
 | G-06a | G-06a: JO-000003 released on credit with invoice no. 0502 (₱10,000.00, made-to-order). |
 | G-06 | G-06 collection, CR 0103: ₱25,000.00 (cash on hand ₱5,000.00 + BDO ₱20,000.00): ₱10,000.00 to invoice 0502 (JO-000003) and ₱15,000.00 to JO-000002 (not invoiced). |
 
@@ -149,6 +149,25 @@ They give no journals: working those out is your task. Rows marked "—" record 
 | G-20b | G-20b loan payment: instalment 1 of the Sample Bank loan, ₱25,000.00 from BDO (paid early). |
 | G-21 | G-21 fixed asset "Heat press" (machinery) from Sample Machines, invoice SI-2001 of 2026-09-23: ₱112,000.00 VAT-inclusive (VAT ₱12,000.00 shown); ₱30,000.00 paid from BDO, ₱82,000.00 financed by Sample Equipment Finance ("Heat press financing"), who paid the supplier. Residual ₱10,000.00, life 60 months; the month bought is its first month of depreciation. |
 
+## 2026-09-24: G-04 Downpayment and release in downpayment VAT mode B
+
+| doc_ref | Document and facts |
+|---|---|
+| — | Settings: from 2026-09-24 the downpayment VAT mode is B (VAT on deposit), set by the accountant. |
+| — | JO-000008 for Test School: 20 made-to-order team jersey sets × ₱2,800.00 = ₱56,000.00 (no journal). |
+| G-04a | G-04a collection, CR 0109: downpayment ₱28,000.00 in cash on hand, applied to JO-000008 (not yet invoiced). |
+| G-04b | G-04b: all 20 pieces of JO-000008 released on credit with manual invoice no. 0508 (₱56,000.00, VAT-inclusive, one made-to-order line). The ₱28,000.00 deposit is applied. |
+
+## 2026-09-25: G-05 Downpayment invoice, collection and release in downpayment VAT mode C; back to mode A from 26 September
+
+| doc_ref | Document and facts |
+|---|---|
+| — | Settings: from 2026-09-25 the downpayment VAT mode is C (invoice on downpayment); from 2026-09-26 it is A (deposit only) again. |
+| — | JO-000009 for Test School: 20 made-to-order team jersey sets × ₱2,800.00 = ₱56,000.00 (no journal). |
+| G-05a | G-05a: the ₱28,000.00 downpayment of JO-000009 is invoiced when received, on manual invoice no. 0509 (a downpayment invoice record). |
+| G-05b | G-05b collection, CR 0110: ₱28,000.00 in cash on hand, applied to JO-000009 (it pays invoice 0509). No tax withheld. |
+| G-05c | G-05c: all 20 pieces of JO-000009 released on credit with manual invoice no. 0510 for the balance: the ₱56,000.00 sale less the ₱28,000.00 downpayment invoiced on 0509. |
+
 ## 2026-09-25: G-23 cash advance
 
 | doc_ref | Document and facts |
@@ -176,14 +195,10 @@ They give no journals: working those out is your task. Rows marked "—" record 
 | doc_ref | Document and facts |
 |---|---|
 | M-01 | M-01 depreciation run for September 2026 (both machines). |
-| M-02 | M-02 cash count of cash on hand: ₱69,470.21 counted (69 × ₱1,000, 4 × ₱100, 1 × ₱50, 1 × ₱20, 4 × 5 centavos, 1 × 1 centavo). |
+| M-02 | M-02 cash count of cash on hand: ₱125,470.21 counted (125 × ₱1,000, 4 × ₱100, 1 × ₱50, 1 × ₱20, 4 × 5 centavos, 1 × 1 centavo). |
 | M-03 | M-03 remittance from BDO: SSS contributions for September 2026, the full amount (no withholding tax on compensation was withheld, so there is no 1601-C). |
 | M-04 | M-04 remittance from BDO: PhilHealth contributions for September 2026, the full amount. |
 | M-05 | M-05 remittance from BDO: Pag-IBIG contributions for September 2026, the full amount. |
 | M-06 | M-06 BIR payment from BDO: the 1601-EQ for Q3 2026, all EWT withheld in the quarter. (September is the third month of the quarter, which has no 0619-E.) |
 | M-07 | M-07 VAT close of Q3 2026 by the accountant (the 2307 for the VAT withheld is in hand; nothing carried over from before). |
 | M-08 | M-08 BIR payment from BDO: the 2550Q for Q3 2026, all the VAT payable. |
-
-## Not in this scenario
-
-- G-04 and G-05 (downpayment VAT modes B and C) are not in this scenario: this version records downpayments only in mode A.

@@ -3,6 +3,10 @@ import type { Db } from '../../platform/db/driver.ts';
 
 export { collectionDoc, collectionInput, type CollectionInput } from './doctypes/collection.ts';
 export { creditsOn, invoiceCreditsAt } from './credits.ts';
+export {
+  MODE_WORDS, depositModeOn, depositVatRowsOf, dpAppliedByInvoice, dpHeld, invoiceDeposits, lockedMode, modeKeptIssue, recordDepositVat,
+  registerBaseOf, registerBaseSources, settleJobOrder, shareOf, vatRow, depositVatLines, type DepositMode, type DepositVatRow,
+} from './doctypes/deposit-vat.ts';
 
 export interface SalePayment { id: string; number: string; status: 'posted' | 'cancelled'; crNumber: string; totalCents: number; paysOnlyThis: boolean }
 
