@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { api, type Me, type MigUpload } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, manilaTime, useAction } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
-import { KINDS, fileProblem, isOpen, uploadRequest, uploadStatusWords, type MigKind } from './importer.ts';
+import { KINDS, fileNote, fileProblem, isOpen, uploadRequest, uploadStatusWords, type MigKind } from './importer.ts';
 
 function UploadForm() {
   const [kind, setKind] = useState<MigKind | ''>('');
@@ -26,7 +26,7 @@ function UploadForm() {
   const wanted = KINDS.find((k) => k.kind === kind);
   return (
     <Panel title="Upload a file from the old sheet">
-      <p className="text-sm text-slate-600">Save each tab of the old Google sheet as a CSV file and upload one file at a time. The rows are only staged: you review them before anything goes in.</p>
+      <p className="text-sm text-slate-600">In the old Google sheet, open a tab and choose File, Download, Comma-separated values (.csv). Upload one tab at a time, as downloaded: the columns need no renaming. The Labor Rates tab is not needed, because the piece-rate list is already in place. The rows are only staged: you review them before anything goes in.</p>
       <div className="max-w-xl space-y-3">
         <fieldset className="space-y-1 text-sm">
           <legend className="font-medium">What is in the file?</legend>
@@ -42,6 +42,7 @@ function UploadForm() {
         </Field>
         {readError && <Notice>{readError}</Notice>}
         {file && problem && <Notice tone="warning">{problem}</Notice>}
+        {file && !problem && fileNote(file.csv) && <Notice tone="info">{fileNote(file.csv)}</Notice>}
         <Button tone="primary" disabled={!!problem || send.busy} onClick={() => void submit()}>{send.busy ? 'Uploading…' : 'Upload and stage the rows'}</Button>
         {send.error && <Notice>{send.error}</Notice>}
       </div>
