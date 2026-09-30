@@ -45,16 +45,16 @@ export const yearEndDoneBy = (db: Db, employeeId: string, year: number) =>
 
 /**
  * Payroll pay by 2316 part. Taxable lines: basic pay (with holiday and rest-day pay), overtime, other (allowances,
- * adjustments, night differential, and unused leave paid in cash above the de minimis days); an MWE's exempt lines:
- * minimum wage, holiday and rest-day pay, overtime, night differential (item 32); de minimis: unused leave paid in cash up to 10 days a year (anyone's). Shares: a non-MWE's
+ * adjustments, and unused leave paid in cash above the de minimis days); an MWE's exempt lines: minimum wage, holiday and
+ * rest-day pay, overtime; de minimis: unused leave paid in cash up to 10 days a year (anyone's). Shares: a non-MWE's
  * employee shares (they come off taxable pay). Tax: withheld, refunded, and the part withheld on December payrolls.
  */
 export interface Comp {
-  grossCents: number; mweBasicCents: number; mweHolidayCents: number; mweOtCents: number; mweNightCents: number; basicCents: number; otCents: number; otherCents: number;
+  grossCents: number; mweBasicCents: number; mweHolidayCents: number; mweOtCents: number; basicCents: number; otCents: number; otherCents: number;
   deMinimisCents: number; sharesCents: number; wtaxCents: number; refundCents: number; decWtaxCents: number;
 }
 export const noComp = (): Comp => ({
-  grossCents: 0, mweBasicCents: 0, mweHolidayCents: 0, mweOtCents: 0, mweNightCents: 0, basicCents: 0, otCents: 0, otherCents: 0, deMinimisCents: 0, sharesCents: 0, wtaxCents: 0, refundCents: 0, decWtaxCents: 0,
+  grossCents: 0, mweBasicCents: 0, mweHolidayCents: 0, mweOtCents: 0, basicCents: 0, otCents: 0, otherCents: 0, deMinimisCents: 0, sharesCents: 0, wtaxCents: 0, refundCents: 0, decWtaxCents: 0,
 });
 
 /** Adds one run line of an employee to their year. */
@@ -62,10 +62,6 @@ export function addLine(c: Comp, l: { kind: string; taxable: boolean; amountCent
   c.grossCents += l.amountCents;
   if (l.kind === 'unused_leave') {
     c[l.taxable ? 'otherCents' : 'deMinimisCents'] += l.amountCents;
-    return;
-  }
-  if (l.kind === 'night') {
-    c[l.taxable ? 'otherCents' : 'mweNightCents'] += l.amountCents;
     return;
   }
   const ot = l.kind === 'ot';
@@ -84,8 +80,8 @@ function runsOfYear(db: Db, employeeId: string, year: number): { comp: Comp; run
     )
     .all(employeeId, String(year)) as { id: string; isMwe: 0 | 1; shares: number; wtax: number; refund: number; periodEnd: string }[];
   const lines = db.prepare(
-    `SELECT CASE WHEN u.run_line_id IS NOT NULL THEN 'unused_leave' WHEN n.run_line_id IS NOT NULL THEN 'night' ELSE l.kind END AS kind, l.taxable, l.amount_cents AS amountCents
-     FROM pay_run_lines l LEFT JOIN pay_run_unused_leave u ON u.run_line_id = l.id LEFT JOIN pay_run_night_diff n ON n.run_line_id = l.id WHERE l.run_employee_id = ?`,
+    `SELECT CASE WHEN u.run_line_id IS NULL THEN l.kind ELSE 'unused_leave' END AS kind, l.taxable, l.amount_cents AS amountCents
+     FROM pay_run_lines l LEFT JOIN pay_run_unused_leave u ON u.run_line_id = l.id WHERE l.run_employee_id = ?`,
   );
   for (const r of rows) {
     for (const l of lines.all(r.id) as { kind: string; taxable: 0 | 1; amountCents: number }[]) addLine(comp, { ...l, taxable: l.taxable === 1 });
@@ -148,7 +144,7 @@ export function figures(p: Omit<YearParts, 'runs' | 'lastIsMwe'>, isMwe: boolean
   const benefitsTaxable = Math.min(benefits, Math.max(0, previous.benefitsCents + benefits - p.ceilingCents));
   const f = {
     i29BasicSmwCents: c.mweBasicCents + (isMwe ? before.otherNontaxCents : 0), i30HolidayMweCents: c.mweHolidayCents, i31OvertimeMweCents: c.mweOtCents,
-    i32NightMweCents: c.mweNightCents, i33HazardMweCents: 0, i34BenefitsCents: benefits - benefitsTaxable, i35DeMinimisCents: before.deMinimisCents + c.deMinimisCents,
+    i32NightMweCents: 0, i33HazardMweCents: 0, i34BenefitsCents: benefits - benefitsTaxable, i35DeMinimisCents: before.deMinimisCents + c.deMinimisCents,
     i36SharesCents: c.sharesCents + before.sssCents + before.phicCents + before.hdmfCents, i37OtherNonTaxableCents: isMwe ? 0 : before.otherNontaxCents,
     i39BasicCents: c.basicCents - c.sharesCents + before.taxableCents, i48TaxableBenefitsCents: benefitsTaxable, i50OvertimeCents: c.otCents, i51OtherCents: c.otherCents,
   };

@@ -23,7 +23,7 @@ export function invRoutes(app: FastifyInstance, deps: AppDeps): void {
     reply.type('text/csv; charset=utf-8');
     return toCsv([
       ['Supply', 'Unit', 'Cost per unit', 'Cost from', 'Quantity counted'],
-      ...rows.map((r) => [r.name, r.unit, csvPesos(r.defaultCostCents), r.costSourceNumber ? `${r.costSourceNumber} · ${r.costSourceDate}` : 'Catalogue', '']),
+      ...rows.map((r) => [r.name, r.unit, csvPesos(r.defaultCostCents), r.costSourceNumber ?? 'Catalogue', '']),
     ]);
   });
 }

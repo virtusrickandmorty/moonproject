@@ -130,9 +130,9 @@ export function loanInput(v: { employeeId: string; kind: LoanKind; loanNo: strin
   };
 }
 
-/** "10 days", "1:30 h" or "30" for a line's quantity (days are stored × 1000, overtime and night differential in minutes). */
+/** "10 days", "1:30 h" or "30" for a line's quantity (days are stored × 1000, overtime in minutes). */
 export function qtyText(kind: string, qty: number): string {
-  if (kind === 'ot' || kind === 'night') return `${Math.floor(qty / 60)}:${String(qty % 60).padStart(2, '0')} h`;
+  if (kind === 'ot') return `${Math.floor(qty / 60)}:${String(qty % 60).padStart(2, '0')} h`;
   if (['basic', 'leave', 'holiday', 'rest_day', 'absence', 'unused_leave'].includes(kind)) return `${qty / 1000} ${qty === 1000 ? 'day' : 'days'}`;
   return kind === 'piece' ? `${qty} pcs` : '';
 }

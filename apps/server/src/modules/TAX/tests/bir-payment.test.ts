@@ -26,12 +26,8 @@ const posted = (res: { statusCode: number; body: string; json(): { id: string } 
 const newSupplier = async (s: Record<string, unknown>) => (await accountant.post('/api/pur/suppliers', { isVatRegistered: true, ...s })).json().id as string;
 const bill = async (supplierId: string, supplierInvoiceNo: string, supplierInvoiceDate: string, lines: { amountCents: number; [k: string]: unknown }[]) =>
   posted(await encoder.post('/api/docs/ap.bill/post', { input: { supplierId, supplierInvoiceNo, supplierInvoiceDate, lines }, expectedTotalCents: lines.reduce((s, l) => s + l.amountCents, 0) }, idem()));
-const voucher = async (input: { amountCents: number; [k: string]: unknown }) => {
-  // Paid from BDO: what leaves it is the receipt less any EWT, which the server works out (preview).
-  const base = { ...input, tenders: [{ cashPlaceId: BDO, amountCents: 1 }] };
-  const cash = (await accountant.post('/api/docs/exp.voucher/preview', { input: base })).json().doc.cashCents as number;
-  return posted(await accountant.post('/api/docs/exp.voucher/post', { input: { ...input, tenders: [{ cashPlaceId: BDO, amountCents: cash }] }, expectedTotalCents: input.amountCents }, idem()));
-};
+const voucher = async (input: { amountCents: number; [k: string]: unknown }) =>
+  posted(await accountant.post('/api/docs/exp.voucher/post', { input: { cashPlaceId: BDO, ...input }, expectedTotalCents: input.amountCents }, idem()));
 const rent = (day: string) => voucher({ supplierId: lessor, categoryId: cat('6110'), amountCents: 4_000_000, description: `Rent paid ${day}`, supplierInvoiceNo: `OR-${day}`, supplierInvoiceDate: day });
 /** Moves the clock; yesterday's sessions have timed out. */
 const goTo = async (date: string) => {

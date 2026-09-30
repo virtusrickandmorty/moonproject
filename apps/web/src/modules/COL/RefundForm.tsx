@@ -30,7 +30,7 @@ export function RefundForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }
   const fail = (e: Error) => setError(e.message);
 
   useEffect(() => {
-    api.cashPlaces().then((all) => setPlaces(all.filter((p) => p.kind !== 'checks')), fail); // customer checks are deposited, never paid out
+    api.cashPlaces().then(setPlaces, fail);
     if (mode.kind !== 'edit') return;
     api.get(type.key, mode.id).then((d) => {
       const input = d.input as Stored;

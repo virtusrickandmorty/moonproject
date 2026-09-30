@@ -12,7 +12,7 @@ import fc from 'fast-check';
 import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { Db } from '../../../platform/db/driver.ts';
-import { assertOpeningOpen, duplicateOpeningIssue, OPENING_PERMISSIONS, openingIssues } from '../../ACC/public.ts';
+import { assertOpeningOpen, OPENING_PERMISSIONS, openingIssues } from '../../ACC/public.ts';
 import { listPeople, officerBalances, person } from '../people.ts';
 
 const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
@@ -54,11 +54,6 @@ export const openingOfficerDoc: DocTypeDef<OpeningOfficerInput, OpeningOfficer> 
     const p = person(ctx.db, doc.personId);
     if (!p?.isActive) err('personId', 'PERSON', 'Pick the officer from the register of stockholders and officers.');
     else if (!p.isOfficer) err('personId', 'NOT_OFFICER', `${p.name} is not an officer in the register, so no officer balance opens for them.`);
-    const earlier = ctx.db
-      .prepare(`SELECT d.number FROM eq_opening_balances b JOIN documents d ON d.id = b.document_id WHERE d.status = 'posted' AND b.person_id = ? AND b.amount_cents = ? ORDER BY d.number LIMIT 1`)
-      .pluck()
-      .get(doc.personId, doc.amountCents) as string | undefined;
-    issues.push(...duplicateOpeningIssue(ctx.db, 'personId', earlier, `this officer balance (${doc.personName}, ${formatPeso(doc.amountCents)})`));
     return issues;
   },
 

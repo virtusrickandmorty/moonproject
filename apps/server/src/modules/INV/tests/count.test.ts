@@ -271,7 +271,7 @@ describe('default cost: the latest purchase cost on the count date (ACC-13)', ()
     ].join('\r\n') + '\r\n');
 
     const json = (await encoder.get('/api/inv/count-sheet?category=ready_made&format=json&date=2026-08-31')).json();
-    expect(json).toEqual({ category: 'ready_made', date: '2026-08-31', supplies: [{ supplyId: polo, name: 'Polo shirt, ready-made', unit: 'pc', milliUnits: false, defaultCostCents: 35_000, costSource: 'catalogue', costSourceNumber: null, costSourceDate: null }] });
+    expect(json).toEqual({ category: 'ready_made', date: '2026-08-31', supplies: [{ supplyId: polo, name: 'Polo shirt, ready-made', unit: 'pc', milliUnits: false, defaultCostCents: 35_000, costSource: 'catalogue', costSourceNumber: null }] });
     expect((await encoder.get('/api/inv/count-sheet?category=fabric')).json().code).toBe('BAD_CATEGORY');
     expect((await encoder.get('/api/inv/count-sheet?category=materials&date=2026-10-01')).json().code).toBe('BAD_DATE');
     expect((await (await env.as('tv')).get('/api/inv/count-sheet?category=materials')).statusCode).toBe(403);

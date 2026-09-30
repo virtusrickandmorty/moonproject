@@ -65,15 +65,12 @@ const cashAmounts = (r: CashBookRow): Amounts => ({ cashCents: r.cashCents, rece
 export function cashJournal(db: Db, from: string, to: string, kind: 'receipts' | 'disbursements') {
   const side = kind === 'receipts' ? 'credit' : 'debit';
   const rows = grouped(ledgerLines(db, from, to)).filter((j) => j.some((l) => l.isCash === 1 && (kind === 'receipts' ? l.debit : l.credit))).map((j): CashBookRow => {
-    // The cash column is the cash coming in (receipts) or going out (disbursements); cash moving the other way in the same
-    // journal, such as the sending place of a fund transfer, is a sundry line, so every row still balances.
-    const first = j[0]!; const onBookSide = (l: RawLine) => l.isCash === 1 && (kind === 'receipts' ? l.debit : l.credit) > 0;
-    const others = j.filter((l) => !onBookSide(l)); const amount = (role: string) => sum(others.filter((l) => l.roleKey === role), (l) => signed(l, side));
+    const first = j[0]!; const others = j.filter((l) => !l.isCash); const amount = (role: string) => sum(others.filter((l) => l.roleKey === role), (l) => signed(l, side));
     const known = (l: RawLine) => kind === 'receipts' ? l.roleKey === 'AR_TRADE' || l.roleKey === 'CUSTOMER_DEPOSITS' || l.roleKey === 'OUTPUT_VAT' || l.accountType === 'revenue'
       : l.roleKey === 'AP' || l.roleKey === 'INPUT_VAT' || l.roleKey === 'EWT_PAYABLE' || l.roleKey === 'PAYROLL_PAYABLE' || l.accountType === 'expense';
     return { journalId: first.journalId, date: first.date, documentNumber: first.documentNumber ?? first.journalNumber,
       formOrReference: first.externalNumber, party: partyName(db, j), posting: first.posting,
-      cashCents: sum(j.filter(onBookSide), (l) => kind === 'receipts' ? l.debit : l.credit),
+      cashCents: sum(j.filter((l) => l.isCash === 1), (l) => signed(l, kind === 'receipts' ? 'debit' : 'credit')),
       receivablesCents: amount('AR_TRADE'), depositsCents: amount('CUSTOMER_DEPOSITS'), vatCents: amount('OUTPUT_VAT'),
       salesIncomeCents: sum(others.filter((l) => l.accountType === 'revenue'), (l) => signed(l, side)), payablesCents: amount('AP'),
       expensesCents: sum(others.filter((l) => l.accountType === 'expense'), (l) => signed(l, side)), inputVatCents: amount('INPUT_VAT'),

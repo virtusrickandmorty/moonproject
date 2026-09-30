@@ -6,11 +6,9 @@ import { STAGE_LABELS, awaitingInvoice, currentStage, isAbandoned, jobOrdersOf, 
 import { openSalesOf } from '../QS/public.ts';
 import { depositsHeld } from './ledger.ts';
 import { invoicesOf, memosOn, owedCents, writeOffsOn } from './credits.ts';
-import { checkRoutes } from './check-routes.ts';
 
 export function colRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db } = deps;
-  checkRoutes(app, deps);
   const customer = (id: string) => {
     const c = customerRef(db, id);
     if (!c) throw notFound('The customer');

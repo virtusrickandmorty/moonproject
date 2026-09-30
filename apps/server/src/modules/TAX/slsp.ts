@@ -6,9 +6,8 @@
  *   can only come in on a journal voucher crediting sales: the accountant marks it zero-rated, exempt or not a sale
  *   (tax_sale_classes); until then it is "to classify". Revenue with no VAT on the other-income accounts (interest,
  *   gains, other income) is no sale either. So the list, plus other income, adds up to the revenue accounts' movement.
- *   SLSP purchases: one row per supplier from the purchases register (1401), by class. Purchases with no input VAT (a
- *   supplier that is not VAT-registered, or no valid VAT invoice) come from their own register and go in the exempt
- *   column; the ERP cannot tell a zero-rated purchase apart, so that column is nothing.
+ *   SLSP purchases: one row per supplier from the purchases register (1401), by class. Purchases with no input VAT are
+ *   not tracked, so exempt and zero-rated purchases are nothing.
  *   SAWT: one row per customer, ATC and 2307 status from the 2307s-received register (1410 CWT, 1404 VAT withheld), an
  *   opening 2307 also by the quarter it covers. The income payment is worked back from the tax at the ATC's rate: the
  *   ledger does not carry the base printed on the 2307.
@@ -22,7 +21,7 @@ import { customerRef, customerTaxInfo } from '../CUS/public.ts';
 import { assetSaleTaxFacts } from '../FA/public.ts';
 import { supplierTaxInfo } from '../PUR/public.ts';
 import { quarterRange, type Quarter } from './calendar.ts';
-import { noVatPurchasesRegister, purchasesRegister, type PurchaseClass } from './purchases.ts';
+import { purchasesRegister, type PurchaseClass } from './purchases.ts';
 import { IN_REGISTERS, salesRegister, total, withholdingReceivedRegister } from './registers.ts';
 import type { WorksheetCheck } from './vat-return.ts';
 
@@ -193,36 +192,29 @@ const COLUMN: Record<PurchaseClass, 'servicesCents' | 'capitalGoodsCents' | 'goo
 export function slspPurchases(db: Db, year: number, quarter: Quarter, today: string) {
   const { from, to } = quarterRange(year, quarter);
   const register = purchasesRegister(db, from, to);
-  const noVat = noVatPurchasesRegister(db, from, to);
   const lines = new Map<string, SlspPurchasesRow>();
-  const line = (r: { supplierId: string | null; tin: string | null; supplierName: string }) => {
+  for (const r of register.rows) {
     const key = r.supplierId ?? '';
     const l = lines.get(key) ?? {
       supplierId: r.supplierId, tin: r.tin, registeredName: (r.supplierId ? supplierTaxInfo(db, r.supplierId)?.registeredName : undefined) ?? r.supplierName, address: null,
       exemptCents: 0, zeroRatedCents: 0, servicesCents: 0, capitalGoodsCents: 0, goodsCents: 0, toClassifyCents: 0, inputTaxCents: 0, grossTaxableCents: 0,
     };
-    lines.set(key, l);
-    return l;
-  };
-  for (const r of register.rows) {
-    const l = line(r);
     if (r.purchaseClass) l[COLUMN[r.purchaseClass]] += r.netCents;
     else l.toClassifyCents += r.netCents;
     l.inputTaxCents += r.vatCents;
     l.grossTaxableCents += r.totalCents;
+    lines.set(key, l);
   }
-  for (const r of noVat.rows) line(r).exemptCents += r.amountCents;
   const rows = [...lines.values()]
-    .filter((l) => l.exemptCents || l.servicesCents || l.capitalGoodsCents || l.goodsCents || l.toClassifyCents || l.inputTaxCents)
+    .filter((l) => l.servicesCents || l.capitalGoodsCents || l.goodsCents || l.toClassifyCents || l.inputTaxCents)
     .sort((a, b) => a.registeredName.localeCompare(b.registeredName) || (a.tin ?? '').localeCompare(b.tin ?? ''));
   const sum = (f: (r: SlspPurchasesRow) => number) => total(rows, f);
   const totals = {
-    exemptCents: sum((r) => r.exemptCents), zeroRatedCents: 0, servicesCents: sum((r) => r.servicesCents), capitalGoodsCents: sum((r) => r.capitalGoodsCents), goodsCents: sum((r) => r.goodsCents),
+    exemptCents: 0, zeroRatedCents: 0, servicesCents: sum((r) => r.servicesCents), capitalGoodsCents: sum((r) => r.capitalGoodsCents), goodsCents: sum((r) => r.goodsCents),
     toClassifyCents: sum((r) => r.toClassifyCents), inputTaxCents: sum((r) => r.inputTaxCents), grossTaxableCents: sum((r) => r.grossTaxableCents),
   };
   const c = register.byClass;
   const ties = [
-    tie('exempt', 'Exempt (no input VAT) = purchases with no input VAT', totals.exemptCents, noVat.totals.amountCents),
     tie('services', 'Services = purchases register', totals.servicesCents, c.services.netCents),
     tie('capital_goods', 'Capital goods = purchases register', totals.capitalGoodsCents, c.capital_goods.netCents),
     tie('goods', 'Goods other than capital goods = purchases register', totals.goodsCents, c.goods.netCents),
@@ -235,11 +227,10 @@ export function slspPurchases(db: Db, year: number, quarter: Quarter, today: str
   tiedCheck(check, ties, 'SLSP of purchases');
   check(totals.toClassifyCents !== 0 || c.unclassified.vatCents !== 0, 'TO_CLASSIFY', 'warning', 'Some input VAT came from journal vouchers: put each under services, capital goods or other goods.');
   check(noTin.length > 0, 'NO_TIN', 'warning', `Some suppliers have no TIN on file (${noTin.map((r) => r.registeredName || 'journal voucher with no supplier').join(', ')}): input VAT needs the supplier's TIN.`);
-  check(totals.exemptCents !== 0, 'NO_INPUT_VAT', 'info',
-    'Purchases with no input VAT (suppliers that are not VAT-registered, or no valid VAT invoice) are in the exempt column. The ERP cannot tell a zero-rated purchase apart: move any the accountant finds.');
+  check(true, 'NOT_TRACKED', 'info', 'Purchases with no input VAT are not tracked, so exempt and zero-rated purchases show nothing: add any the accountant reports.');
   check(rows.length > 0, 'NO_ADDRESS', 'info', 'The ERP gives no addresses to the tax lists yet: type each address in the BIR form.');
   check(today <= to, 'PERIOD_OPEN', 'info', 'The quarter has not ended: these figures still change.');
-  return { year, quarter, from, to, rows, totals, ties, checks, noVatByClass: noVat.byClass };
+  return { year, quarter, from, to, rows, totals, ties, checks };
 }
 export type SlspPurchases = ReturnType<typeof slspPurchases>;
 

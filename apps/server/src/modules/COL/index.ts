@@ -8,9 +8,7 @@ import { cwtOnlyDoc } from './doctypes/cwt-only.ts';
 import { forfeitDoc } from './doctypes/forfeit.ts';
 import { creditMemoDoc } from './doctypes/credit-memo.ts';
 import { writeOffDoc } from './doctypes/write-off.ts';
-import { allowanceDoc } from './doctypes/allowance.ts';
 import { colRoutes } from './routes.ts';
-import { checkTransferDependents } from './checks.ts';
 
 export default defineModule({
   code: 'COL',
@@ -26,15 +24,8 @@ export default defineModule({
     { key: 'col.forfeit', label: 'Keep the deposit of a job order the customer abandoned (forfeit), and cancel it', defaultRoles: ['accountant', 'owner'] },
     { key: 'col.credit_memo', label: 'Record credit memos (returns and allowances on an invoice), and cancel them', defaultRoles: ['accountant'] },
     { key: 'col.write_off', label: 'Write off what an invoice still owes as a bad debt, and cancel it', defaultRoles: ['accountant'] },
-    { key: 'col.checks.view', label: 'See customer checks on hand and the post-dated checks list', defaultRoles: ['encoder', 'accountant', 'owner'] },
-    { key: 'col.pdc.manage', label: 'Add post-dated checks to the list and void them', defaultRoles: ['encoder', 'accountant', 'owner'] },
-    { key: 'col.checks.deposit', label: 'Deposit customer checks on hand to a bank (also needs cash.trf.post)', defaultRoles: ['encoder', 'accountant', 'owner'] },
-    { key: 'col.checks.return', label: 'Record a customer check the bank returned, with its charge (also needs cash.trf.post, cash.badj.post and col.cancel)', defaultRoles: ['accountant', 'owner'] },
-    { key: 'col.allowance', label: 'Record the allowance for credit losses from the AR aging, and cancel it', defaultRoles: ['accountant'] },
   ],
-  docTypes: [collectionDoc, refundDoc, depositTransferDoc, cwtOnlyDoc, forfeitDoc, creditMemoDoc, writeOffDoc, allowanceDoc],
+  docTypes: [collectionDoc, refundDoc, depositTransferDoc, cwtOnlyDoc, forfeitDoc, creditMemoDoc, writeOffDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: colRoutes,
-  // A check's deposit and return transfers (CASH) are undone in the order the check moved (checks.ts).
-  dependents: [checkTransferDependents],
 });

@@ -11,16 +11,6 @@ export function CompanyProfileScreen() {
   const [loaded, setLoaded] = useState(false);
   const [saved, setSaved] = useState(false);
   const a = useAction();
-  const [paper, setPaper] = useState<'a4' | 'long'>('a4');
-  const [paperSaved, setPaperSaved] = useState(false);
-  const p = useAction();
-  useEffect(() => { void api.looseLeafSettings().then((r) => setPaper(r.looseLeafPaper), () => undefined); }, []);
-  const savePaper = () => p.run(async () => {
-    await api.stepUp(password);
-    setPaper((await api.saveLooseLeafPaper(paper)).looseLeafPaper);
-    setPassword('');
-    setPaperSaved(true);
-  });
   useEffect(() => {
     Promise.all([api.companyProfile(), api.companyProfileHistory()])
       .then(([p, h]) => { setProfile(p); setHistory(h); setLoaded(true); })
@@ -49,17 +39,6 @@ export function CompanyProfileScreen() {
         {a.error && <Notice>{a.error}</Notice>}
         {saved && <Notice tone="success">Company print details saved.</Notice>}
         <Button tone="primary" disabled={a.busy || !password || !profile.registeredName || !profile.tradeName || !profile.tin || !profile.registeredAddress} onClick={() => void save()}>Save details</Button>
-      </div>
-    </Panel>
-    <Panel title="Loose-leaf books of accounts">
-      <div className="space-y-3">
-        <p className="text-sm text-slate-600">Paper for the loose-leaf print of the BIR books (Reports, BIR books, Print loose-leaf).</p>
-        <Field label="Paper"><select className={inputClass} value={paper} onChange={(e) => { setPaper(e.target.value as 'a4' | 'long'); setPaperSaved(false); }}>
-          <option value="a4">A4 portrait</option><option value="long">Long bond paper (8.5 × 13 in)</option></select></Field>
-        <Field label="Your password to confirm this change" required><input type="password" autoComplete="current-password" className={inputClass} value={password} onChange={(e) => setPassword(e.target.value)} /></Field>
-        {p.error && <Notice>{p.error}</Notice>}
-        {paperSaved && <Notice tone="success">Loose-leaf paper saved.</Notice>}
-        <Button disabled={p.busy || !password} onClick={() => void savePaper()}>Save paper</Button>
       </div>
     </Panel>
     <Panel title="Earlier versions">

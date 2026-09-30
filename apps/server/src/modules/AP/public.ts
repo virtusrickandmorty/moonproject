@@ -5,8 +5,8 @@
 import { divRoundHalfAway } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import type { EwtClass } from '../../engine/settings.ts';
-import { categoryIsPurchase, categoryPurchaseClass, type GoodsOrServices } from '../EXP/public.ts';
-import { latestPoUnitCost, receivedQty, type CountableSupply, type PurchaseCost } from '../PUR/public.ts';
+import { categoryPurchaseClass, type GoodsOrServices } from '../EXP/public.ts';
+import { receivedQty, type PurchaseCost } from '../PUR/public.ts';
 export { supplierBalances, supplierLedger } from './ledger.ts';
 
 export function payableAgingAt(db: Db, asOf: string) {
@@ -32,10 +32,9 @@ export interface BillTaxFacts {
   ewtClass: EwtClass | null; ewtRateBp: number; ewtBaseCents: number; ewtCents: number;
   /**
    * Per line: what it bought, and whether that is goods or services (supplies and freight-in are goods, subcontracting
-   * is a service, an expense category says which), its cost before VAT (what the journal debits) and its share of the input VAT,
-   * and whether it buys anything (an expense category of taxes, licenses or penalties does not).
+   * is a service, an expense category says which), its cost before VAT (what the journal debits) and its share of the input VAT.
    */
-  lines: { kind: BillLineKind; bought: GoodsOrServices; isPurchase: boolean; costCents: number; vatCents: number }[];
+  lines: { kind: BillLineKind; bought: GoodsOrServices; costCents: number; vatCents: number }[];
 }
 
 export function billTaxFacts(db: Db, documentId: string): BillTaxFacts | undefined {
@@ -51,10 +50,9 @@ export function billTaxFacts(db: Db, documentId: string): BillTaxFacts | undefin
       `SELECT CASE WHEN supply_id IS NOT NULL THEN 'supply' WHEN category_id IS NOT NULL THEN 'category' ELSE purchase END AS kind, category_id AS categoryId,
          amount_cents - vat_cents AS costCents, vat_cents AS vatCents FROM ap_bill_lines WHERE document_id = ? ORDER BY line_no`,
     )
-    .all(documentId) as (Omit<BillTaxFacts['lines'][number], 'bought' | 'isPurchase'> & { categoryId: number | null })[];
+    .all(documentId) as (Omit<BillTaxFacts['lines'][number], 'bought'> & { categoryId: number | null })[];
   const lines = rows.map(({ categoryId, ...l }) => ({
     ...l,
-    isPurchase: categoryId === null || categoryIsPurchase(db, categoryId),
     bought: l.kind === 'category' ? (categoryPurchaseClass(db, categoryId!) ?? 'services') : l.kind === 'subcontract' ? ('services' as const) : ('goods' as const),
   }));
   return { ...b, lines };
@@ -92,19 +90,4 @@ export function latestBillUnitCost(db: Db, supplyId: string, asOf: string): Purc
     if (qty > 0) return { unitCostCents: divRoundHalfAway(b.costCents, qty), documentId: b.documentId, number: b.number, date: b.date };
   }
   return undefined;
-}
-
-export type PurchaseCostSource = 'bill' | 'po' | 'catalogue';
-export interface LatestPurchaseCost { unitCostCents: number; source: PurchaseCostSource; sourceNumber: string | null; sourceDate: string | null }
-
-/**
- * The one rule for a supply's latest purchase cost (INV count valuation, PUR supplies list): the newest bill, then the
- * newest PO line, then the imported catalogue figure. Here and not in PUR so PUR's contract does not import AP's.
- */
-export function latestPurchaseCost(db: Db, supply: CountableSupply, asOf: string): LatestPurchaseCost {
-  const bill = latestBillUnitCost(db, supply.id, asOf);
-  if (bill) return { unitCostCents: bill.unitCostCents, source: 'bill', sourceNumber: bill.number, sourceDate: bill.date };
-  const po = latestPoUnitCost(db, supply.id, asOf);
-  if (po) return { unitCostCents: po.unitCostCents, source: 'po', sourceNumber: po.number, sourceDate: po.date };
-  return { unitCostCents: supply.lastPurchaseCostCents, source: 'catalogue', sourceNumber: null, sourceDate: null };
 }

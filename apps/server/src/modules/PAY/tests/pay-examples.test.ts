@@ -2,11 +2,8 @@
  * G-25: the payroll research examples A, B, C and C2 (docs/research/payroll-examples.md, a copy of payroll-ph-2026.md
  * §13–14.3) run through PAY to the centavo. Where PAY differs from an example, the difference is written here as a
  * DECISION, flagged for the accountant. Made-up people; the piece rates are the example's illustrative ones.
- * Then the F1 holiday rules beyond the examples, worked out by hand: night differential, and the day-before rule for
- * an unworked regular holiday; with property tests of both.
  */
 import { describe, expect, it } from 'vitest';
-import fc from 'fast-check';
 import { applyRate } from '@moonproject/shared';
 import { cashPlaceId } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
@@ -18,9 +15,7 @@ import { jobOrderDoc } from '../../JO/doctypes/job-order.ts';
 import { entryDoc } from '../../PRD/doctypes/entry.ts';
 import { setupLine } from '../../PRD/production.ts';
 import { runDoc } from '../doctypes/run.ts';
-import { holidaysBetween } from '../../EMP/public.ts';
-import { addDays, periodEndOf, workOut, type RunEmployee, type RunRequest } from '../run-calc.ts';
-import { figures as form2316, yearParts } from '../year-end.ts';
+import type { RunEmployee } from '../run-calc.ts';
 import { sssMonthly, sssRateAt } from '../statutory.ts';
 import { codes, journal, partyBalance, world } from './world.ts';
 
@@ -68,8 +63,8 @@ describe('Example A: daily-paid sewer at ₱550 (an MWE), semi-monthly, August 2
       ['Overtime (125% of the hourly rate)', 120, 17_188], // 550 / 8 × 125% × 2 h = 171.875
       ['Regular holiday, not worked (100%)', 1_000, 55_000],
     ]);
-    // Aug 31 is paid because Aug 29, the last workday before it, was worked (Aug 30 is Sunday, a rest day with nothing
-    // typed): the day-before rule below.
+    // DECISION (accountant, #24 decision 6): holiday eligibility (present on the workday before) is not checked; "Holiday
+    // off" on a regular holiday pays 100% as typed. The example pays Aug 31 because Aug 29 was worked, as here.
     // Gross 7,486.88; month-to-date 14,086.88 → SSS MSC 14,000 (+375 / +750 / EC +0); PhilHealth already taken;
     // Pag-IBIG +68 each; CA 500. Net 7,486.88 − 375 − 68 − 500 = 6,543.88; 13th month (6,050 + 550) / 12 = 550.00.
     expect(figures(only(w.db, c2.id))).toEqual([748_688, 37_500, 75_000, 0, 0, 0, 6_800, 6_800, 0, 50_000, 654_388, 55_000]);
@@ -239,173 +234,5 @@ describe('Example C2: ₱35,000 a month, semi-monthly: the tax path (INCREMENTAL
     // month. The monthly-table check (1,701.30) and the annual one (1,701.25 a month, ₱1.20 more by December) belong to
     // the year-end adjustment, which is not built yet; LAST_RUN_ONLY is not built.
     clean(w.db);
-  });
-});
-
-describe('night differential (F1): 10% of the hourly rate for work between 10 PM and 6 AM, of the day’s rate', () => {
-  it('₱1,000/day, not an MWE, 16–31 August: ordinary days, a special day and a regular holiday; an MWE’s is exempt', async () => {
-    const w = await world('2026-08-31');
-    const ana = w.person('Ana Tahi', { payType: 'daily', payGroup: 'SEMI_DAILY', dailyRateCents: 55_000, isMwe: true });
-    const ben = w.person('Ben Gabi', { payType: 'daily', payGroup: 'SEMI_DAILY', dailyRateCents: 100_000 });
-    const day = (d: string, status = 'present', more: { otMinutes?: number; nightMinutes?: number } = {}) => ({ employeeId: ben, date: `2026-08-${d}`, status, ...more });
-    w.attend([
-      day('17', 'present', { nightMinutes: 480 }), day('18', 'present', { otMinutes: 120, nightMinutes: 180 }), ...['19', '20', '22', '24', '25', '26', '27', '28', '29'].map((d) => day(d)),
-      day('21', 'holiday_worked', { nightMinutes: 120 }), day('31', 'holiday_worked', { nightMinutes: 240 }),
-      { employeeId: ana, date: '2026-08-17', status: 'present', nightMinutes: 480 }, ...['18', '19', '20', '22'].map((d) => ({ employeeId: ana, date: `2026-08-${d}`, status: 'present' })),
-    ]);
-    const run = w.record(runDoc, { payGroup: 'SEMI_DAILY', periodStart: '2026-08-16' });
-    expect(codes(run.warnings, 'warning')).toEqual([]);
-    const [a, b] = runDoc.load(w.db, run.id).employees;
-    // Ben's hourly rate is 1,000 / 8 = 125.00.
-    //   Aug 17 and 18, ordinary days: 8 h + 3 h = 11 h at 10% × 125 = 12.50 an hour → 137.50 (660 minutes).
-    //   Aug 18 overtime: 2 h at 125% × 125 = 312.50; its night hours are paid at the day's 10% (see the PR's list).
-    //   Aug 21, special day worked (130%): 2 h at 10% × 130% = 13% × 125 = 16.25 an hour → 32.50; premium 30% = 300.00.
-    //   Aug 31, regular holiday worked (200%): 4 h at 10% × 200% = 20% × 125 = 25.00 an hour → 100.00; premium 100% = 1,000.00.
-    //   Days worked: 13 × 1,000 = 13,000.00 (Aug 17–22, 24–29, 31). Gross 14,882.50.
-    expect(b!.lines.map((l) => [l.kind, l.description, l.qty, l.amountCents])).toEqual([
-      ['basic', 'Days worked', 13_000, 1_300_000],
-      ['night', 'Night differential (10% of the hourly rate)', 660, 13_750],
-      ['ot', 'Overtime (125% of the hourly rate)', 120, 31_250],
-      ['holiday', 'Special day worked, premium (30%)', 1_000, 30_000],
-      ['night', 'Night differential (13% of the hourly rate)', 120, 3_250],
-      ['holiday', 'Regular holiday worked, premium (100%)', 1_000, 100_000],
-      ['night', 'Night differential (20% of the hourly rate)', 240, 10_000],
-    ]);
-    expect([b!.grossCents, b!.lines.filter((l) => l.kind === 'night').every((l) => l.taxable && !l.thirteenthBase)]).toEqual([1_488_250, true]);
-    // Stored as 'ot' lines (0001's kinds) marked in pay_run_night_diff (0006), and loaded back as night differential.
-    expect(w.db.prepare(`SELECT l.kind, COUNT(*) FROM pay_run_night_diff n JOIN pay_run_lines l ON l.id = n.run_line_id GROUP BY l.kind`).raw().all()).toEqual([['ot', 4]]);
-
-    // Ana, ₱550 an MWE, 5 days (2,750.00) with 8 h at night on Aug 17: 10% × 550 / 8 × 8 = 55.00, tax-exempt (RR 11-2018)
-    // like her minimum wage; on the 2316 it is item 32.
-    expect(a!.lines.map((l) => [l.description, l.amountCents, l.taxable])).toEqual([['Days worked', 275_000, false], ['Night differential (10% of the hourly rate)', 5_500, false]]);
-    expect([a!.grossCents, a!.taxableCents]).toEqual([280_500, 0]);
-    const f = form2316(yearParts(w.db, ana, 2026), true);
-    expect([f.i29BasicSmwCents, f.i32NightMweCents, f.i38NonTaxableCents - f.i36SharesCents]).toEqual([275_000, 5_500, 280_500]);
-    clean(w.db);
-  });
-});
-
-describe('the day before an unworked regular holiday (F1, DOLE): present or on paid leave on the last workday', () => {
-  it('₱600/day, 1–15 April 2026: Maundy Thursday and Good Friday in a row, Black Saturday (special), Araw ng Kagitingan', async () => {
-    const w = await world('2026-04-15');
-    const pay = { payType: 'daily' as const, payGroup: 'SEMI_DAILY' as const, dailyRateCents: 60_000 };
-    const cy = w.person('Cy Una', pay);
-    const di = w.person('Di Liban', pay);
-    const ed = w.person('Ed Pasok', pay);
-    const fe = w.person('Fe Lima', { ...pay, workweekDays: 5 });
-    const days = (employeeId: string, marks: Record<string, string>) => Object.entries(marks).map(([d, status]) => ({ employeeId, date: `2026-04-${d}`, status }));
-    const worked = Object.fromEntries(['06', '07', '10', '11', '13', '14', '15'].map((d) => [d, 'present']));
-    w.attend([
-      ...days(cy, { '01': 'present', '02': 'holiday_off', '03': 'holiday_off', '04': 'holiday_off', ...worked, '08': 'present', '09': 'holiday_off' }),
-      ...days(di, { '01': 'absent', '02': 'holiday_off', '03': 'holiday_off', ...worked, '08': 'leave', '09': 'holiday_off' }),
-      ...days(ed, { '01': 'absent', '02': 'holiday_worked', '03': 'holiday_off', ...worked, '08': 'unpaid_leave', '09': 'holiday_off' }),
-      ...days(fe, { '01': 'present', '02': 'holiday_off', '03': 'holiday_off', '06': 'present', '07': 'present', '09': 'holiday_off' }),
-    ]);
-    const run = w.record(runDoc, { payGroup: 'SEMI_DAILY', periodStart: '2026-04-01' });
-    const [c, d, e, f] = runDoc.load(w.db, run.id).employees;
-    const lines = (x: RunEmployee | undefined) => x!.lines.map((l) => [l.description, l.qty, l.amountCents]);
-    // Cy worked Wed Apr 1: Apr 2 is paid, and Apr 3 too (going back past Apr 2, a holiday off, to Apr 1). Apr 4 is a
-    // special day: no work, no pay. Apr 9 is paid (Apr 8 worked). 9 days × 600 = 5,400 + 3 holidays × 600 = 1,800 → 7,200.
-    expect(lines(c)).toEqual([['Days worked', 9_000, 540_000], ['Regular holiday, not worked (100%)', 3_000, 180_000]]);
-    // Di was absent Apr 1: neither Apr 2 nor Apr 3 is paid (two holidays in a row go by the workday before the first),
-    // each a ₱0 line with the reason. Apr 8 on paid leave (SIL): Apr 9 is paid. 7 days 4,200 + SIL 600 + Apr 9 600 → 5,400.
-    const absent = 'not paid: absent on 2026-04-01, the last workday before it';
-    expect(lines(d)).toEqual([
-      [`Regular holiday 2026-04-02 (Maundy Thursday), ${absent}`, 1_000, 0], [`Regular holiday 2026-04-03 (Good Friday), ${absent}`, 1_000, 0],
-      ['Days worked', 7_000, 420_000], ['Paid leave (SIL)', 1_000, 60_000], ['Regular holiday, not worked (100%)', 1_000, 60_000],
-    ]);
-    // Ed was absent Apr 1 but worked Apr 2 (200%: a day of basic pay + the 100% premium), so Apr 3 is paid. Unpaid leave on
-    // Apr 8: Apr 9 is not. 8 days 4,800 + premium 600 + Apr 3 600 → 6,000.
-    expect(lines(e)).toEqual([
-      ['Days worked', 8_000, 480_000], ['Regular holiday worked, premium (100%)', 1_000, 60_000], ['Regular holiday, not worked (100%)', 1_000, 60_000],
-      ['Regular holiday 2026-04-09 (Araw ng Kagitingan), not paid: on unpaid leave on 2026-04-08, the last workday before it', 1_000, 0],
-    ]);
-    // Fe (5-day week) has nothing typed on Wed Apr 8, a workday: Apr 9 is not paid until it is typed. 3 days 1,800 + 2 × 600 → 3,000.
-    expect(lines(f)).toEqual([
-      ['Days worked', 3_000, 180_000], ['Regular holiday, not worked (100%)', 2_000, 120_000],
-      ['Regular holiday 2026-04-09 (Araw ng Kagitingan), not paid: nothing is typed on 2026-04-08, the last workday before it (type that day, then work the payroll out again)', 1_000, 0],
-    ]);
-    expect([c, d, e, f].map((x) => x!.grossCents)).toEqual([720_000, 540_000, 600_000, 300_000]);
-    expect(codes(run.warnings, 'warning')).toEqual(['HOLIDAY_NOT_PAID', 'HOLIDAY_NOT_PAID', 'HOLIDAY_NOT_PAID', 'HOLIDAY_NOT_PAID']);
-    expect(run.warnings.find((i) => i.code === 'HOLIDAY_NOT_PAID')!.message).toBe(`Di Liban: Maundy Thursday (2026-04-02) is not paid, ${absent.slice('not paid: '.length)}.`);
-    clean(w.db);
-  });
-});
-
-describe('property: night minutes and the day before a holiday (PLAN I1.3)', () => {
-  const REGULAR = ['2026-01-01', '2026-03-20', '2026-04-02', '2026-04-03', '2026-04-09', '2026-05-01', '2026-05-27', '2026-06-12', '2026-08-31', '2026-11-30', '2026-12-25', '2026-12-30'];
-  const request = (payGroup: RunRequest['payGroup'], periodStart: string): RunRequest => {
-    const periodEnd = periodEndOf(payGroup, periodStart)!;
-    return { payGroup, periodStart, periodEnd, payDate: periodEnd, manual: [], caOverrides: new Map(), skipped: new Set() };
-  };
-  const one = (db: Db, q: RunRequest) => workOut(db, q).employees[0]!;
-  const withoutNight = (e: RunEmployee) => e.lines.filter((l) => l.kind !== 'night').map(({ lineNo: _, ...l }) => l);
-
-  it('pay never goes down when night minutes are added, and only night differential lines change', async () => {
-    await fc.assert(
-      fc.asyncProperty(fc.gen(), async (g) => {
-        const w = await world('2026-09-30');
-        const payType = g(() => fc.constantFrom('daily', 'mixed', 'monthly', 'piece') as fc.Arbitrary<'daily' | 'mixed' | 'monthly' | 'piece'>);
-        const payGroup = payType === 'monthly' ? 'SEMI_MONTHLY' : 'SEMI_DAILY';
-        const rate = payType === 'monthly' ? { monthlyRateCents: g(() => fc.integer({ min: 1_000_000, max: 8_000_000 })) } : payType === 'piece' ? {} : { dailyRateCents: g(() => fc.integer({ min: 55_000, max: 250_000 })) };
-        const isMwe = g(() => fc.boolean());
-        const id = w.person('Gi Gabi', { payType, payGroup, ...rate, isMwe, workweekDays: g(() => fc.constantFrom(5 as const, 6 as const)) });
-        const q = request(payGroup, '2026-08-16'); // Aug 21 special, Aug 31 regular
-        const holidays = new Set(holidaysBetween(w.db, q.periodStart, q.periodEnd).map((h) => h.date));
-        const days = Array.from({ length: 16 }, (_, i) => addDays(q.periodStart, i)).map((date) => {
-          const status = g(() => fc.constantFrom(...(holidays.has(date) ? ['holiday_off', 'holiday_worked', 'rest_day', 'rest_day_worked'] : ['present', 'present', 'half_day', 'absent', 'rest_day', 'unpaid_leave', 'rest_day_worked'])));
-          const otMinutes = ['present', 'holiday_worked', 'rest_day_worked'].includes(status) ? g(() => fc.constantFrom(0, 60, 150)) : 0;
-          return { employeeId: id, date, status, ...(otMinutes ? { otMinutes } : {}) };
-        });
-        w.attend(days);
-        const before = one(w.db, q);
-        const night = days.filter((d) => ['present', 'half_day', 'holiday_worked', 'rest_day_worked'].includes(d.status)).map((d) => ({ ...d, nightMinutes: g(() => fc.integer({ min: 0, max: 480 })) }));
-        if (night.length) w.attend(night);
-        const after = one(w.db, q);
-        expect(withoutNight(after)).toEqual(withoutNight(before));
-        expect(after.grossCents).toBeGreaterThanOrEqual(before.grossCents);
-        const minutes = night.reduce((s, d) => s + d.nightMinutes, 0);
-        // Paid per piece: night differential is added by hand (no hourly rate), so the pay stays as it was.
-        if (payType !== 'piece' && minutes > 0) expect(after.grossCents).toBeGreaterThan(before.grossCents);
-        if (isMwe) expect(after.taxableCents).toBe(before.taxableCents); // exempt for a minimum wage earner
-        await w.env.app.close();
-      }),
-      { numRuns: 25 },
-    );
-  });
-
-  it('an unworked regular holiday after an absence (past rest days) pays nothing; after a day worked it pays a day', async () => {
-    await fc.assert(
-      fc.asyncProperty(fc.gen(), async (g) => {
-        const holiday = g(() => fc.constantFrom(...REGULAR));
-        const gap = g(() => fc.integer({ min: 0, max: 3 })); // rest days typed between the last workday and the holiday
-        const last = addDays(holiday, -gap - 1);
-        const w = await world('2026-12-31');
-        if (holidaysBetween(w.db, last, last).length) {
-          await w.env.app.close();
-          fc.pre(false); // the last workday cannot be a holiday for this test (absence is not a holiday status)
-        }
-        const payType = g(() => fc.constantFrom('daily', 'mixed', 'piece') as fc.Arbitrary<'daily' | 'mixed' | 'piece'>);
-        const dailyRateCents = g(() => fc.integer({ min: 55_000, max: 250_000 }));
-        const id = w.person('Hu Liban', { payType, payGroup: 'SEMI_DAILY', ...(payType === 'piece' ? {} : { dailyRateCents }), workweekDays: g(() => fc.constantFrom(5 as const, 6 as const)) });
-        const mark = (date: string, status: string) => w.attend([{ employeeId: id, date, status }]);
-        const why = g(() => fc.constantFrom('absent', 'unpaid_leave'));
-        w.attend([{ employeeId: id, date: last, status: why }, ...Array.from({ length: gap }, (_, i) => ({ employeeId: id, date: addDays(last, i + 1), status: 'rest_day' })), { employeeId: id, date: holiday, status: 'holiday_off' }]);
-        const q = request('SEMI_DAILY', `${holiday.slice(0, 8)}${holiday.slice(8) <= '15' ? '01' : '16'}`);
-        const off = workOut(w.db, q);
-        const line = off.employees[0]!.lines.find((l) => l.description.startsWith(`Regular holiday ${holiday} (`))!;
-        expect([line.amountCents, line.description.includes(why === 'absent' ? `absent on ${last}` : `on unpaid leave on ${last}`)]).toEqual([0, true]);
-        expect(off.notes.map((n) => n.code)).toContain('HOLIDAY_NOT_PAID');
-        mark(holiday, 'rest_day');
-        expect(off.employees[0]!.grossCents).toBe(one(w.db, q).grossCents); // the same as not a holiday at all
-        // The contrast: worked on the last workday, the holiday pays a day (a piece worker with no piece work: the minimum wage).
-        mark(last, 'present');
-        const restDay = one(w.db, q).grossCents;
-        mark(holiday, 'holiday_off');
-        expect(one(w.db, q).grossCents - restDay).toBe(payType === 'piece' ? 55_000 : dailyRateCents);
-        await w.env.app.close();
-      }),
-      { numRuns: 30 },
-    );
   });
 });

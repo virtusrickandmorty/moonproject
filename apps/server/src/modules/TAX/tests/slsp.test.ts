@@ -199,7 +199,7 @@ describe('SLSP: purchases', () => {
     expect(r.totals).toEqual({ exemptCents: 0, zeroRatedCents: 0, servicesCents: 500_000, capitalGoodsCents: 10_000_000, goodsCents: 1_000_000, toClassifyCents: 0, inputTaxCents: 1_420_000, grossTaxableCents: 12_920_000 });
     noDifference(r);
     expect(r.ties.find((t: { key: string }) => t.key === 'input_gl')).toMatchObject({ listCents: 1_420_000, bookCents: 1_420_000 });
-    expect(codes(r)).toEqual(['TO_CLASSIFY', 'NO_TIN', 'NO_ADDRESS', 'PERIOD_OPEN']);
+    expect(codes(r)).toEqual(['TO_CLASSIFY', 'NO_TIN', 'NOT_TRACKED', 'NO_ADDRESS', 'PERIOD_OPEN']);
 
     const lines = (await accountant.get('/api/tax/slsp/purchases?year=2026&quarter=3&format=csv')).body.split('\r\n');
     expect(lines[0]).toBe('﻿"Taxable month","TIN","Registered name","Last name","First name","Middle name","Address 1","Address 2","Exempt purchases","Zero-rated purchases","Services","Capital goods","Goods other than capital goods","Input tax","Gross taxable purchases","Still to classify","Flag"');

@@ -204,8 +204,7 @@ describe('property test (PLAN I1.3)', () => {
       fc.property(fc.array(fc.tuple(openings, fc.boolean()), { minLength: 1, maxLength: 8 }), (ops) => {
         for (const [input, doCancel] of ops) {
           const doc = openingCaDoc.compute(input, ctx());
-          // Random rows repeat an employee and amount now and then: only the duplicate warning may show.
-          expect(openingCaDoc.validate(doc, ctx()).filter((i) => i.code !== 'DUPLICATE_OPENING')).toEqual([]);
+          expect(openingCaDoc.validate(doc, ctx())).toEqual([]);
           const lines = resolveDraft(env.db, openingCaDoc.journal!(doc, ctx())!);
           expect(lines.map((l) => [l.account.role_key, l.debitCents, l.creditCents])).toEqual([
             ['EMP_ADVANCES', input.owedCents, 0],

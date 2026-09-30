@@ -53,7 +53,7 @@ describe('golden: owner money, a sale, a purchase, an expense and a depreciation
       lines: [{ supplyId: cloth, amountCents: 1_120_000 }] }, expectedTotalCents: 1_120_000 }, idem()));
     // Expense (G-13): rent ₱40,000.00 from BDO, EWT 5% (Dr 6110 35,714.29, Dr 1401 4,285.71 / Cr 2311 1,785.71, Cr 1111).
     const rent = env.db.prepare('SELECT c.id FROM exp_categories c JOIN accounts a ON a.id = c.account_id WHERE a.code = ?').pluck().get('6110');
-    await ok(encoder.post('/api/docs/exp.voucher/post', { input: { categoryId: rent, tenders: [{ cashPlaceId: BDO, amountCents: 3_821_429 }], amountCents: 4_000_000, description: 'September rent',
+    await ok(encoder.post('/api/docs/exp.voucher/post', { input: { categoryId: rent, cashPlaceId: BDO, amountCents: 4_000_000, description: 'September rent',
       payeeName: 'Sample Lessor Corp.', payeeVatRegistered: true, payeeTin: '123-456-789-000', supplierInvoiceNo: 'SI-0101', supplierInvoiceDate: '2026-09-28' },
       expectedTotalCents: 4_000_000 }, idem()));
     // Asset (G-21): heat press ₱112,000.00, ₱30,000.00 from BDO, ₱82,000.00 financed; September run Dr 5302 / Cr 1511 1,500.00.
@@ -253,54 +253,6 @@ describe('property: the balance sheet always balances', () => {
       ),
       { numRuns: 40 },
     );
-    noBrokenInvariants();
-  });
-});
-
-describe('comparative statement columns', () => {
-  const jv = async (date: string, debit: string, credit: string, cents: number) => {
-    const input = { memo: `Comparative statement entry for ${date}`, lateReason: 'Earlier period used for comparative statement testing',
-      lines: [{ accountId: account(debit), debitCents: cents }, { accountId: account(credit), creditCents: cents }] };
-    await ok(accountant.post('/api/docs/acc.jv/post', { input, businessDate: date, expectedTotalCents: cents }, idem()));
-  };
-
-  it('matches two standalone monthly statements, including differences, percentages and one-period lines', async () => {
-    await jv('2026-08-15', '1101', '7103', 20_000);
-    await jv('2026-08-20', '6110', '1101', 5_000);
-    await jv('2026-09-15', '1101', '7103', 30_000);
-    await jv('2026-09-20', '6160', '1101', 3_000);
-    const current = (await accountant.get('/api/rpt/income-statement?from=2026-09-01&to=2026-09-30')).json() as ReturnType<typeof incomeStatement>;
-    const previous = (await accountant.get('/api/rpt/income-statement?from=2026-08-01&to=2026-08-31')).json() as ReturnType<typeof incomeStatement>;
-    const compared = (await accountant.get('/api/rpt/income-statement?from=2026-09-01&to=2026-09-30&compare=previous_month')).json() as
-      ReturnType<typeof incomeStatement> & { comparison: { from: string; to: string }; netIncome: { compareAmountCents: number; differenceCents: number; percentChange: number | null } };
-    expect(compared.comparison).toMatchObject({ from: previous.from, to: previous.to });
-    expect(compared.sections.map((s) => s.totalCents)).toEqual(current.sections.map((s) => s.totalCents));
-    expect(compared.sections.map((s) => s.compareAmountCents)).toEqual(previous.sections.map((s) => s.totalCents));
-    expect(compared.netIncome).toMatchObject({ compareAmountCents: 15_000, differenceCents: 12_000, percentChange: 80 });
-    const expenses = compared.sections[2]!.groups.flatMap((g) => g.lines);
-    const codes = expenses.flatMap((l) => (l.code ? [l.code] : []));
-    expect(codes).toEqual([...codes].sort()); // an account only in the other month keeps its place in the chart
-    expect(expenses.find((l) => l.code === '6110')).toMatchObject({ amountCents: 0, compareAmountCents: 5_000, differenceCents: -5_000, percentChange: -100 });
-    expect(expenses.find((l) => l.code === '6160')).toMatchObject({ amountCents: 3_000, compareAmountCents: 0, differenceCents: 3_000, percentChange: null });
-    const csv = await accountant.get('/api/rpt/income-statement?from=2026-09-01&to=2026-09-30&compare=previous_month&format=csv');
-    expect(csv.body).toContain('"2026-09-01 to 2026-09-30 PHP","2026-08-01 to 2026-08-31 PHP","Difference PHP","Difference %"');
-    expect(csv.body).toContain('"Operating expenses","6160","Office supplies","30.00","0.00","30.00",""');
-  });
-
-  it('matches two standalone as-of statements and balances both columns', async () => {
-    await jv('2026-08-15', '1101', '3104', 20_000);
-    await jv('2026-09-15', '1111', '3104', 30_000);
-    const current = (await accountant.get('/api/rpt/balance-sheet?asOf=2026-09-30')).json() as ReturnType<typeof balanceSheet>;
-    const previous = (await accountant.get('/api/rpt/balance-sheet?asOf=2026-08-31')).json() as ReturnType<typeof balanceSheet>;
-    const compared = (await accountant.get('/api/rpt/balance-sheet?asOf=2026-09-30&compare=previous_month')).json() as ReturnType<typeof balanceSheet> &
-      { sections: (StatementSection & { compareAmountCents: number })[]; comparison: { asOf: string }; comparisonBalanced: boolean };
-    expect(compared.comparison.asOf).toBe(previous.asOf);
-    expect(compared.sections.map((s) => s.totalCents)).toEqual(current.sections.map((s) => s.totalCents));
-    expect(compared.sections.map((s) => s.compareAmountCents)).toEqual(previous.sections.map((s) => s.totalCents));
-    expect(compared.balanced).toBe(true);
-    expect(compared.comparisonBalanced).toBe(true);
-    const csv = await accountant.get('/api/rpt/balance-sheet?asOf=2026-09-30&compare=previous_month&format=csv');
-    expect(csv.body).toContain('"2026-09-30 PHP","2026-08-31 PHP","Difference PHP","Difference %"');
     noBrokenInvariants();
   });
 });

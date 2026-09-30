@@ -2,9 +2,7 @@
  * Financial statements (PLAN G "Books & statements", D1.7) from sealed journal lines only. Codes decide the statement:
  * 1xxx assets, 2xxx liabilities and 3xxx equity go to the balance sheet; 4xxx to 8xxx to the income statement. The
  * year-end close is virtual: 3290 current-year earnings and the earlier years' earnings not yet closed to retained
- * earnings are computed here and never posted, so total assets always equal total liabilities and equity. 3210 dividends
- * declared is closed the same way: it shows the dividends declared in the year, and those of earlier years not yet
- * closed to retained earnings (by a journal voucher Dr 3201 / Cr 3210) are a computed line beside retained earnings.
+ * earnings are computed here and never posted, so total assets always equal total liabilities and equity.
  */
 import type { Db } from '../../platform/db/driver.ts';
 
@@ -13,68 +11,10 @@ type ChartRow = { id: number; code: string; name: string; isHeader: number; role
 type Movement = { netCents: number; lineCount: number };
 
 /** One amount on the side of its section: a contra account (accumulated depreciation, sales discounts) is negative. */
-/** With a comparison (compareSections): the other period's amount, the difference, and the change in percent (null from zero). */
-export type Compared = { compareAmountCents?: number; differenceCents?: number; percentChange?: number | null };
-export type StatementLine = Compared & { accountId: number | null; code: string | null; name: string; amountCents: number; computed: boolean };
+export type StatementLine = { accountId: number | null; code: string | null; name: string; amountCents: number; computed: boolean };
 /** The accounts under one header account (1100, 4100, ...) with their subtotal; no header when only x000 is above them. */
-export type StatementGroup = Compared & { code: string | null; name: string | null; lines: StatementLine[]; totalCents: number };
-export type StatementSection = Compared & { key: string; title: string; side: Side; groups: StatementGroup[]; totalCents: number };
-
-export type Comparison = 'previous_month' | 'last_year';
-
-const parts = (date: string) => date.split('-').map(Number) as [number, number, number];
-const daysInMonth = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
-const shifted = (date: string, years: number, months: number) => {
-  const [year, month, day] = parts(date);
-  const index = year * 12 + month - 1 + years * 12 + months;
-  const shiftedYear = Math.floor(index / 12); const shiftedMonth = index % 12 + 1;
-  const targetDay = day === daysInMonth(year, month) ? daysInMonth(shiftedYear, shiftedMonth) : Math.min(day, daysInMonth(shiftedYear, shiftedMonth));
-  return `${shiftedYear}-${String(shiftedMonth).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
-};
-
-export function comparisonDates(compare: Comparison, from: string, to?: string) {
-  const years = compare === 'last_year' ? -1 : 0; const months = compare === 'previous_month' ? -1 : 0;
-  return { from: shifted(from, years, months), ...(to === undefined ? {} : { to: shifted(to, years, months) }) };
-}
-
-const comparisonValues = (amountCents: number, compareAmountCents: number) => ({ amountCents, compareAmountCents,
-  differenceCents: amountCents - compareAmountCents,
-  percentChange: compareAmountCents === 0 ? null : (amountCents - compareAmountCents) / Math.abs(compareAmountCents) * 100 });
-
-/** The keys of both periods: this period's in its order, and one only in the other period put before the first coded key above it. */
-function mergedKeys<T>(current: T[], other: T[], key: (item: T) => string, code: (item: T) => string | null): string[] {
-  const keys = current.map(key);
-  const codes = new Map([...current, ...other].map((item) => [key(item), code(item)]));
-  for (const item of other) {
-    const k = key(item);
-    if (keys.includes(k)) continue;
-    const c = code(item);
-    const at = c === null ? -1 : keys.findIndex((x) => { const xc = codes.get(x); return xc != null && xc > c; });
-    if (at < 0) keys.push(k); else keys.splice(at, 0, k);
-  }
-  return keys;
-}
-
-/** Merge two independently calculated statements without losing accounts present in only one period. */
-export function compareSections(current: StatementSection[], other: StatementSection[]): StatementSection[] {
-  return current.map((section, sectionIndex) => {
-    const compared = other[sectionIndex]!;
-    const groupKeys = mergedKeys(section.groups, compared.groups, (g) => g.code ?? '', (g) => g.code ?? g.lines[0]?.code ?? null);
-    const groups = groupKeys.map((key) => {
-      const group = section.groups.find((g) => (g.code ?? '') === key);
-      const otherGroup = compared.groups.find((g) => (g.code ?? '') === key);
-      const lineKeys = mergedKeys(group?.lines ?? [], otherGroup?.lines ?? [], (l) => `${l.accountId ?? ''}:${l.code ?? ''}:${l.name}`, (l) => l.code);
-      const lines = lineKeys.map((lineKey) => {
-        const find = (lines: StatementLine[]) => lines.find((l) => `${l.accountId ?? ''}:${l.code ?? ''}:${l.name}` === lineKey);
-        const line = find(group?.lines ?? []) ?? find(otherGroup?.lines ?? [])!;
-        return { ...line, ...comparisonValues(find(group?.lines ?? [])?.amountCents ?? 0, find(otherGroup?.lines ?? [])?.amountCents ?? 0) };
-      });
-      const sample = group ?? otherGroup!;
-      return { ...sample, lines, ...comparisonValues(group?.totalCents ?? 0, otherGroup?.totalCents ?? 0) };
-    });
-    return { ...section, groups, ...comparisonValues(section.totalCents, compared.totalCents) };
-  });
-}
+export type StatementGroup = { code: string | null; name: string | null; lines: StatementLine[]; totalCents: number };
+export type StatementSection = { key: string; title: string; side: Side; groups: StatementGroup[]; totalCents: number };
 
 const IS_SECTIONS = [
   { digit: '4', key: 'revenue', title: 'Revenue', side: 'credit' },
@@ -163,8 +103,7 @@ export function incomeStatement(db: Db, from: string, to: string) {
 /**
  * Assets, liabilities and equity as of a date; accounts with a zero balance are left out (so 3900 opening balance equity
  * shows only while it is not zero). Equity adds the current-year earnings (1 January of the asOf year to asOf) on 3290
- * and the earlier years' earnings (every income and expense before that 1 January) under retained earnings; 3210
- * dividends declared shows the year's, and the earlier years' dividends go under retained earnings too (when not zero).
+ * and the earlier years' earnings (every income and expense before that 1 January) under retained earnings.
  */
 export function balanceSheet(db: Db, asOf: string) {
   const accounts = chart(db);
@@ -174,19 +113,15 @@ export function balanceSheet(db: Db, asOf: string) {
   const yearStart = `${year}-01-01`;
   const currentYearEarningsCents = netIncome(db, accounts, yearStart, asOf);
   const earlierYearsEarningsCents = netIncome(db, accounts, null, `${year - 1}-12-31`);
-  const dividends = accounts.find((a) => a.roleKey === 'DIVIDENDS_DECLARED');
-  // Credit-positive, like the equity section: dividends declared before 1 January and not closed to 3201.
-  const earlierYearsDividendsCents = dividends ? 0 - (movements(db, null, `${year - 1}-12-31`).get(dividends.id)?.netCents ?? 0) : 0;
   const currentYear = accounts.find((a) => a.roleKey === 'CURRENT_YEAR_EARNINGS');
   const retained = accounts.find((a) => a.roleKey === 'RETAINED_EARNINGS') ?? currentYear;
   const entry = (a: ChartRow, side: Side, amountCents: number, computed = false): Entry => ({ accountId: a.id, code: a.code, name: a.name,
     amountCents, computed, sortOrder: a.sortOrder, groupCode: headerOf(a.code, headers)?.code ?? null });
 
-  const balanceOf = (a: ChartRow) => (balances.get(a.id)?.netCents ?? 0) + (a.id === dividends?.id ? earlierYearsDividendsCents : 0);
   const sections = BS_SECTIONS.map((def) => {
     const entries = accounts
-      .filter((a) => a.isHeader === 0 && a.code[0] === def.digit && a.id !== currentYear?.id && balanceOf(a) !== 0)
-      .map((a) => entry(a, def.side, signed(def.side, balanceOf(a))));
+      .filter((a) => a.isHeader === 0 && a.code[0] === def.digit && a.id !== currentYear?.id && (balances.get(a.id)?.netCents ?? 0) !== 0)
+      .map((a) => entry(a, def.side, signed(def.side, balances.get(a.id)!.netCents)));
     if (def.key === 'equity') {
       // 3290 is never posted; anything that reached it anyway stays in the total so the check still holds.
       const posted = currentYear ? -(balances.get(currentYear.id)?.netCents ?? 0) : 0;
@@ -195,20 +130,12 @@ export function balanceSheet(db: Db, asOf: string) {
         : { accountId: null, code: null, name: 'Current-year earnings', amountCents: currentYearEarningsCents, computed: true, sortOrder: Number.MAX_SAFE_INTEGER, groupCode: null });
       entries.push({ accountId: null, code: null, name: 'Earlier years’ earnings not yet closed to retained earnings', amountCents: earlierYearsEarningsCents,
         computed: true, sortOrder: (retained?.sortOrder ?? Number.MAX_SAFE_INTEGER) + 0.5, groupCode: retained ? (headerOf(retained.code, headers)?.code ?? null) : null });
-      if (earlierYearsDividendsCents !== 0) {
-        entries.push({ accountId: null, code: null, name: 'Earlier years’ dividends not yet closed to retained earnings', amountCents: earlierYearsDividendsCents,
-          computed: true, sortOrder: (retained?.sortOrder ?? Number.MAX_SAFE_INTEGER) + 0.6, groupCode: retained ? (headerOf(retained.code, headers)?.code ?? null) : null });
-      }
     }
     return section(def, entries, headers);
   });
   const [totalAssetsCents, totalLiabilitiesCents, totalEquityCents] = sections.map((s) => s.totalCents) as [number, number, number];
   const totalLiabilitiesAndEquityCents = totalLiabilitiesCents + totalEquityCents;
-  // Trade receivables less the allowance for credit losses (1201 − 1209); the two lines also sit under Receivables.
-  const roleBalance = (role: string) => { const a = accounts.find((x) => x.roleKey === role); return a ? (balances.get(a.id)?.netCents ?? 0) : 0; };
-  const tradeCents = roleBalance('AR_TRADE'); const allowanceCents = -roleBalance('AR_ALLOWANCE');
-  const receivables = { tradeCents, allowanceCents, netCents: tradeCents - allowanceCents };
-  return { asOf, yearStart, sections, receivables, currentYearEarningsCents, earlierYearsEarningsCents, earlierYearsDividendsCents, totalAssetsCents, totalLiabilitiesCents,
+  return { asOf, yearStart, sections, currentYearEarningsCents, earlierYearsEarningsCents, totalAssetsCents, totalLiabilitiesCents,
     totalEquityCents, totalLiabilitiesAndEquityCents, differenceCents: totalAssetsCents - totalLiabilitiesAndEquityCents,
     balanced: totalAssetsCents === totalLiabilitiesAndEquityCents };
 }

@@ -22,32 +22,21 @@ export function appliedEwtClass(db: Db, picked: EwtClass | 'none' | undefined, u
   return usual && (!TWA_ONLY.has(usual) || settingAt(db, 'tax.top_withholding_agent', date)) ? usual : null;
 }
 
-/**
- * An expense voucher's payee (a supplier on file, or a one-off payee as typed; `taxPartyId` is the party on its tax
- * lines), receipt number, what it bought and EWT, for the TAX registers; its amount and input VAT, and whether its
- * category buys anything (not taxes, licenses or penalties, migration 0003), for the purchases with no input VAT.
- */
+/** An expense voucher's payee (a supplier on file, or a one-off payee as typed), receipt number, what it bought and EWT, for the TAX registers. */
 export interface VoucherTaxFacts {
-  supplierId: string | null; payeeName: string; payeeTin: string | null; taxPartyId: string | null; supplierInvoiceNo: string | null; bought: GoodsOrServices;
-  isPurchase: boolean; grossCents: number; inputVatCents: number;
+  supplierId: string | null; payeeName: string; payeeTin: string | null; supplierInvoiceNo: string | null; bought: GoodsOrServices;
   ewtClass: EwtClass | null; ewtRateBp: number; ewtBaseCents: number; ewtCents: number;
 }
 
 export function voucherTaxFacts(db: Db, documentId: string): VoucherTaxFacts | undefined {
-  const r = db
+  return db
     .prepare(
-      `SELECT v.supplier_id AS supplierId, v.payee_name AS payeeName, v.payee_tin AS payeeTin, v.tax_party_id AS taxPartyId, v.supplier_invoice_no AS supplierInvoiceNo,
-         c.purchase_class AS bought, c.is_purchase AS isPurchase, v.gross_cents AS grossCents, v.input_vat_cents AS inputVatCents,
-         v.ewt_class AS ewtClass, v.ewt_rate_bp AS ewtRateBp, v.ewt_base_cents AS ewtBaseCents, v.ewt_cents AS ewtCents
+      `SELECT v.supplier_id AS supplierId, v.payee_name AS payeeName, v.payee_tin AS payeeTin, v.supplier_invoice_no AS supplierInvoiceNo,
+         c.purchase_class AS bought, v.ewt_class AS ewtClass, v.ewt_rate_bp AS ewtRateBp, v.ewt_base_cents AS ewtBaseCents, v.ewt_cents AS ewtCents
        FROM exp_vouchers v JOIN exp_categories c ON c.id = v.category_id WHERE v.document_id = ?`,
     )
-    .get(documentId) as (Omit<VoucherTaxFacts, 'isPurchase'> & { isPurchase: number }) | undefined;
-  return r && { ...r, isPurchase: r.isPurchase === 1 };
+    .get(documentId) as VoucherTaxFacts | undefined;
 }
-
-/** Whether an expense category buys goods or services (not taxes, licenses or penalties paid the government). */
-export const categoryIsPurchase = (db: Db, categoryId: number): boolean =>
-  (db.prepare('SELECT is_purchase FROM exp_categories WHERE id = ?').pluck().get(categoryId) as number | undefined) !== 0;
 
 /** Monthly expense totals used by the control report's Miscellaneous threshold. */
 export function monthlyMiscException(db: Db, month: string) {

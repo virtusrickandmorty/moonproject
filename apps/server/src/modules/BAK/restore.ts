@@ -4,8 +4,6 @@
  * are brought up to date first), and pass the same checks as a new backup. Restoring swaps the staged copy in at the
  * next start; the database it replaces is kept next to it (before-restore-….db). The quarterly drill is the same
  * check without the swap. The secret key is used in memory only: never stored, logged or audited.
- * Each attachment row's file must be in the backup's attachments folder and open to its SHA-256 (a drill reports any
- * missing or changed one); a restore puts those files back in the attachments folder beside the database.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -16,8 +14,7 @@ import { Decrypter } from 'age-encryption';
 import { AppError, badRequest, newId } from '@moonproject/shared';
 import { openDb, openReadonly, type Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { attachedFiles, sha256Hex, storeFile } from '../../engine/attachments.ts';
-import { ATTACHMENTS, checkCopy, type Sidecar } from './backup.ts';
+import { checkCopy, type Sidecar } from './backup.ts';
 
 /** A recovery secret key: "AGE-SECRET-KEY-1" and 58 bech32 characters, as printed at setup. */
 export const AGE_IDENTITY = /^AGE-SECRET-KEY-1[02-9AC-HJ-NP-Z]{58}$/;
@@ -60,37 +57,6 @@ export interface BackupFacts {
   lastBusinessDate: string | null;
   postedDocuments: number;
   users: number;
-  /** The copy's attachment files: how many, and any not in the backup (`missing`) or not matching their SHA-256 (`changed`). */
-  attachments: { files: number; bytes: number; missing: string[]; changed: string[] };
-}
-
-/**
- * Opens each file the copy's attachment rows name from `folder` (the backup's attachments folder) and checks its SHA-256.
- * With `restoreTo`, the good ones are put in that attachments folder (content-addressed: one already there is kept).
- */
-async function checkAttachments(copy: Db, folder: string, d: Decrypter, restoreTo?: string): Promise<BackupFacts['attachments']> {
-  const files = attachedFiles(copy);
-  const there = existsSync(folder) ? readdirSync(folder) : [];
-  const r: BackupFacts['attachments'] = { files: files.length, bytes: 0, missing: [], changed: [] };
-  for (const f of files) {
-    r.bytes += f.bytes;
-    const candidates = there.filter((x) => x.startsWith(`${f.sha256}.`) && x.endsWith('.age'));
-    let found = false;
-    for (const c of candidates) {
-      let plain: Uint8Array;
-      try {
-        plain = await d.decrypt(readFileSync(join(folder, c)));
-      } catch {
-        continue; // encrypted to other recovery keys, or damaged
-      }
-      if (sha256Hex(plain) !== f.sha256) continue;
-      found = true;
-      if (restoreTo) storeFile(restoreTo, plain, f.sha256);
-      break;
-    }
-    if (!found) (candidates.length ? r.changed : r.missing).push(f.sha256);
-  }
-  return r;
 }
 
 /**
@@ -99,7 +65,6 @@ async function checkAttachments(copy: Db, folder: string, d: Decrypter, restoreT
  */
 export async function openBackup(
   encryptedFile: string, secretKey: string, stagedFile: string, appMigrations: Migration[], prepare: (copy: Db) => void,
-  opts: { restoreAttachmentsTo?: string } = {},
 ): Promise<BackupFacts> {
   const key = secretKey.trim();
   if (!AGE_IDENTITY.test(key)) throw badRequest('BAD_KEY', 'A recovery key starts with AGE-SECRET-KEY-1 and has 74 characters. Check it and type it again.');
@@ -149,7 +114,6 @@ export async function openBackup(
         lastBusinessDate: one<string | null>('SELECT MAX(business_date) FROM journals WHERE sealed = 1') ?? null,
         postedDocuments: one<number>(`SELECT COUNT(*) FROM documents WHERE status = 'posted'`),
         users: one<number>('SELECT COUNT(*) FROM users'),
-        attachments: await checkAttachments(ro, join(dirname(encryptedFile), ATTACHMENTS), d, opts.restoreAttachmentsTo),
       };
     } finally {
       ro.close();
@@ -158,15 +122,6 @@ export async function openBackup(
     rmSync(stagedFile, { force: true });
     throw e;
   }
-}
-
-/** What a drill reports when attachment files are missing from the backup or changed; null when all are there. */
-export function attachmentProblems(a: BackupFacts['attachments']): string | null {
-  const parts = [
-    a.missing.length ? `${a.missing.length} missing (${a.missing.join(', ')})` : '',
-    a.changed.length ? `${a.changed.length} changed or unreadable (${a.changed.join(', ')})` : '',
-  ].filter(Boolean);
-  return parts.length ? `The backup's attached files do not all check out: ${parts.join('; ')}.` : null;
 }
 
 /** A checked copy waiting to be restored. */

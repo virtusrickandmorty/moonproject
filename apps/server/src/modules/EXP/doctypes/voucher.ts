@@ -1,24 +1,24 @@
 /**
- * Expense Voucher (PLAN D5 "EXP-PAY", E9; goldens G-13, G-14, G-16). Something paid now from one to four cash places.
- *   Dr category account (NET with a valid VAT receipt, else G) ; Dr 1401 input VAT / Cr 2311 EWT ; Cr each cash place (its tender)
- * The tenders add up to what is paid out, G − EWT.
+ * Expense Voucher (PLAN D5 "EXP-PAY", E9; goldens G-13, G-14, G-16). Something paid now from one cash place.
+ *   Dr category account (NET with a valid VAT receipt, else G) ; Dr 1401 input VAT / Cr 2311 EWT ; Cr cash place (G − EWT)
  * VAT comes from the gross at the rate in force on the receipt date (D4.1, D4.2), claimed only for a VAT-registered payee
  * with the receipt number, date and TIN (D4.7). EWT is withheld now, at accrual (D4.8), on NET for a VAT-registered payee
  * and on G otherwise (D4.5). The class is the one staff pick, else the supplier's, else the category's usual one.
- * Petty cash expenses simply pick the petty cash fund (alone, or as one tender next to another place).
+ * Petty cash expenses simply pick the petty cash fund.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { allocate, applyRate, formatPeso, isBusinessDate, vatFromGross, type Issue } from '@moonproject/shared';
+import { applyRate, formatPeso, isBusinessDate, vatFromGross, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
-import { listCashPlaces } from '../../../engine/ledger/accounts.ts';
+import { getCashPlace, listCashPlaces } from '../../../engine/ledger/accounts.ts';
 import type { DraftLine } from '../../../engine/ledger/post.ts';
 import { EWT_CLASSES, settingAt, type EwtClass } from '../../../engine/settings.ts';
 import type { Db } from '../../../platform/db/driver.ts';
 import { category, listCategories } from '../categories.ts';
 import { supplier } from '../pur.ts';
 import { TWA_ONLY, appliedEwtClass } from '../public.ts';
-import { MAX_CENTS, MAX_TENDERS, cashPlaceIssues, insertTenders, loadTenders, sumCents, tenderInput, tenderToInput, withNames, type Tender } from '../tenders.ts';
+
+const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
 
 export type { EwtClass };
 
@@ -28,8 +28,8 @@ const receiptDate = z.string().refine(isBusinessDate, 'Use a date like 2026-09-2
 export const voucherInput = z
   .object({
     categoryId: z.number().int().positive(),
+    cashPlaceId: z.number().int().positive(),
     amountCents: z.number().int().positive().max(MAX_CENTS), // what the receipt says, VAT included
-    tenders: z.array(tenderInput).min(1).max(MAX_TENDERS), // the cash places it was paid from: the receipt less any EWT withheld
     description: z.string().trim().min(3).max(200),
     supplierId: z.string().trim().min(1).max(80).optional(), // a supplier on file, or ...
     payeeName: z.string().trim().min(2).max(120).optional(), // ... a one-off payee, with:
@@ -42,11 +42,11 @@ export const voucherInput = z
   .strict();
 export type VoucherInput = z.infer<typeof voucherInput>;
 
-export interface Voucher extends Omit<VoucherInput, 'tenders'> {
-  tenders: Tender[];
+export interface Voucher extends VoucherInput {
   totalCents: number;
   categoryName: string;
   expenseAccountId: number;
+  cashPlaceName: string;
   payee: { name: string; tin: string | null; vatRegistered: boolean; taxPartyId: string | null };
   usualEwtClass: EwtClass | null;
   vatRateBp: number;
@@ -74,13 +74,12 @@ function computeVoucher(db: Db, input: VoucherInput, businessDate: string): Vouc
   const applied = appliedEwtClass(db, input.ewtClass, usual, businessDate);
   const ewtRateBp = applied ? settingAt(db, 'tax.ewt_rates_bp', businessDate)[applied] : 0; // the rate in force on the payment date
   const ewtCents = applied ? applyRate(netCents, ewtRateBp) : 0;
-  const { tenders: _tenders, ...rest } = input;
   return {
-    ...rest,
+    ...input,
     totalCents: G,
     categoryName: cat?.name ?? '?',
     expenseAccountId: cat?.accountId ?? 0,
-    tenders: withNames(db, input.tenders),
+    cashPlaceName: getCashPlace(db, input.cashPlaceId)?.name ?? '?',
     payee: { name: sup?.name ?? input.payeeName ?? '?', tin: payeeTin, vatRegistered, taxPartyId },
     usualEwtClass: usual,
     vatRateBp,
@@ -114,12 +113,7 @@ export const voucherDoc: DocTypeDef<VoucherInput, Voucher> = {
     const issues: Issue[] = [];
     const add = (level: Issue['level'], field: string, code: string, message: string) => issues.push({ field, code, level, message });
     if (!category(ctx.db, doc.categoryId)?.isActive) add('error', 'categoryId', 'CATEGORY', 'Pick what the money was spent on.');
-    issues.push(...cashPlaceIssues(ctx.db, doc.tenders));
-    const paid = sumCents(doc.tenders);
-    if (paid !== doc.cashCents) {
-      const ewt = doc.ewtCents > 0 ? ` (the receipt ${formatPeso(doc.amountCents)} less ${formatPeso(doc.ewtCents)} withheld)` : '';
-      add('error', 'tenders', 'TENDERS', `The money paid out (${formatPeso(paid)}) must be ${formatPeso(doc.cashCents)}${ewt}.`);
-    }
+    if (!getCashPlace(ctx.db, doc.cashPlaceId)?.isActive) add('error', 'cashPlaceId', 'CASH_PLACE', 'Pick where the money came from.');
     if (Boolean(doc.supplierId) === Boolean(doc.payeeName)) add('error', 'payeeName', 'PAYEE', 'Pick a supplier on file or type the payee’s name (one, not both).');
     if (doc.supplierId && !supplier(ctx.db, doc.supplierId)?.isActive) add('error', 'supplierId', 'SUPPLIER', 'Pick an active supplier.');
     if (doc.supplierId && (doc.payeeTin || doc.payeeVatRegistered)) {
@@ -148,16 +142,15 @@ export const voucherDoc: DocTypeDef<VoucherInput, Voucher> = {
 
   persist(db, doc, h) {
     db.prepare(
-      `INSERT INTO exp_vouchers (document_id, category_id, expense_account_id, supplier_id, payee_name, payee_tin, payee_vat_registered,
+      `INSERT INTO exp_vouchers (document_id, category_id, expense_account_id, cash_account_id, supplier_id, payee_name, payee_tin, payee_vat_registered,
          tax_party_id, description, supplier_invoice_no, supplier_invoice_date, gross_cents, vat_rate_bp, expense_cents, input_vat_cents,
          ewt_class, ewt_rate_bp, ewt_base_cents, ewt_cents, cash_cents)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
-      h.documentId, doc.categoryId, doc.expenseAccountId, doc.supplierId ?? null, doc.payee.name, doc.payee.tin, +doc.payee.vatRegistered,
+      h.documentId, doc.categoryId, doc.expenseAccountId, doc.cashPlaceId, doc.supplierId ?? null, doc.payee.name, doc.payee.tin, +doc.payee.vatRegistered,
       doc.payee.taxPartyId, doc.description, doc.supplierInvoiceNo ?? null, doc.supplierInvoiceDate ?? null, doc.amountCents, doc.vatRateBp, doc.expenseCents,
       doc.inputVatCents, doc.appliedEwtClass, doc.ewtRateBp, doc.ewtBaseCents, doc.ewtCents, doc.cashCents,
     );
-    insertTenders(db, h.documentId, doc.tenders);
   },
 
   journal(doc) {
@@ -165,7 +158,7 @@ export const voucherDoc: DocTypeDef<VoucherInput, Voucher> = {
     const lines: DraftLine[] = [{ account: { accountId: doc.expenseAccountId }, debitCents: doc.expenseCents, memo: doc.description }];
     if (party && doc.inputVatCents > 0) lines.push({ account: { role: 'INPUT_VAT' }, party, debitCents: doc.inputVatCents, memo: `Receipt no. ${doc.supplierInvoiceNo}` });
     if (party && doc.ewtCents > 0) lines.push({ account: { role: 'EWT_PAYABLE' }, party, creditCents: doc.ewtCents, memo: `EWT ${doc.appliedEwtClass}` });
-    for (const t of doc.tenders) lines.push({ account: { cashPlace: t.cashPlaceId }, creditCents: t.amountCents, ...(t.reference ? { memo: t.reference } : {}) });
+    lines.push({ account: { cashPlace: doc.cashPlaceId }, creditCents: doc.cashCents });
     return { memo: `${doc.categoryName}: ${doc.payee.name}`, lines };
   },
 
@@ -174,10 +167,9 @@ export const voucherDoc: DocTypeDef<VoucherInput, Voucher> = {
     if (!r) throw new Error(`Expense voucher ${documentId} not found`);
     const s = (k: string) => r[k] as string | null;
     const n = (k: string) => r[k] as number;
-    const tenders = loadTenders(db, documentId);
     const input: VoucherInput = {
       categoryId: n('category_id'),
-      tenders: tenders.map(tenderToInput),
+      cashPlaceId: n('cash_account_id'),
       amountCents: n('gross_cents'),
       description: s('description')!,
       ...(s('supplier_id') ? { supplierId: s('supplier_id')! } : { payeeName: s('payee_name')!, payeeVatRegistered: n('payee_vat_registered') === 1, ...(s('payee_tin') ? { payeeTin: s('payee_tin')! } : {}) }),
@@ -186,13 +178,12 @@ export const voucherDoc: DocTypeDef<VoucherInput, Voucher> = {
       ewtClass: (s('ewt_class') as EwtClass | null) ?? 'none',
     };
     const cat = category(db, input.categoryId);
-    const { tenders: _tenders, ...rest } = input;
     return {
-      ...rest,
-      tenders,
+      ...input,
       totalCents: input.amountCents,
       categoryName: cat?.name ?? '?',
       expenseAccountId: n('expense_account_id'),
+      cashPlaceName: getCashPlace(db, input.cashPlaceId)?.name ?? '?',
       payee: { name: s('payee_name')!, tin: s('payee_tin'), vatRegistered: n('payee_vat_registered') === 1, taxPartyId: s('tax_party_id') },
       usualEwtClass: (input.supplierId ? supplier(db, input.supplierId)?.ewtClass : null) ?? cat?.defaultEwtClass ?? null,
       vatRateBp: n('vat_rate_bp'),
@@ -208,48 +199,37 @@ export const voucherDoc: DocTypeDef<VoucherInput, Voucher> = {
   },
 
   toInput(doc) {
-    const { categoryId, tenders, amountCents, description, supplierId, payeeName, payeeVatRegistered, payeeTin, supplierInvoiceNo, supplierInvoiceDate, ewtClass } = doc;
+    const { categoryId, cashPlaceId, amountCents, description, supplierId, payeeName, payeeVatRegistered, payeeTin, supplierInvoiceNo, supplierInvoiceDate, ewtClass } = doc;
     const payee = supplierId ? { supplierId } : { payeeName, payeeVatRegistered, payeeTin };
-    const input = { categoryId, tenders: tenders.map(tenderToInput), amountCents, description, ...payee, supplierInvoiceNo, supplierInvoiceDate, ewtClass };
+    const input = { categoryId, cashPlaceId, amountCents, description, ...payee, supplierInvoiceNo, supplierInvoiceDate, ewtClass };
     return Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) as VoucherInput;
   },
 
   summary(doc) {
     const vat = doc.inputVatCents > 0 ? `, with ${formatPeso(doc.inputVatCents)} input VAT` : '';
     const ewt = doc.ewtCents > 0 ? `; ${formatPeso(doc.ewtCents)} is withheld (EWT ${pct(doc.ewtRateBp)}), so ${formatPeso(doc.cashCents)} is paid out` : '';
-    const from = doc.tenders.length === 1 ? doc.tenders[0]!.cashPlaceName : doc.tenders.map((t) => `${t.cashPlaceName} (${formatPeso(t.amountCents)})`).join(' and ');
-    return `This will record ${formatPeso(doc.amountCents)} for ${doc.categoryName} paid to ${doc.payee.name} from ${from}${vat}${ewt}.`;
+    return `This will record ${formatPeso(doc.amountCents)} for ${doc.categoryName} paid to ${doc.payee.name} from ${doc.cashPlaceName}${vat}${ewt}.`;
   },
 
-  /**
-   * One-off payees with a TIN; EWT classes that need no Top Withholding Agent status; receipts dated in 2025; paid from one to
-   * four cash places. The payout is worked out at the newest rates on file (the tests have no rate dated after today), and
-   * every tender gets at least a centavo.
-   */
+  /** One-off payees with a TIN; EWT classes that need no Top Withholding Agent status; receipts dated in 2025. */
   arbitrary(db) {
     const noTwa = [undefined, 'none', ...EWT_CLASSES.filter((c) => !TWA_ONLY.has(c))] as const;
     return fc
       .record({
         categoryId: fc.constantFrom(...listCategories(db).map((c) => c.id)),
-        places: fc.array(fc.tuple(fc.constantFrom(...listCashPlaces(db).map((c) => c.id)), fc.integer({ min: 1, max: 5 }), fc.boolean()), { minLength: 1, maxLength: MAX_TENDERS }),
+        cashPlaceId: fc.constantFrom(...listCashPlaces(db).map((c) => c.id)),
         amountCents: fc.integer({ min: 1, max: 5_000_000_00 }),
         payeeVatRegistered: fc.boolean(),
         payeeTin: fc.constantFrom('111-222-333-000', '444-555-666-00000', '777-888-999-001'),
         receipt: fc.option(fc.record({ no: fc.integer({ min: 1, max: 999_999_999 }), month: fc.integer({ min: 1, max: 12 }), day: fc.integer({ min: 1, max: 28 }) }), { nil: undefined }),
         ewtClass: fc.constantFrom(...noTwa),
       })
-      .map(({ receipt, ewtClass, places, ...r }): VoucherInput => {
-        const base = {
-          ...r,
-          description: 'Random expense',
-          payeeName: 'Sample Payee',
-          ...(receipt ? { supplierInvoiceNo: String(receipt.no), supplierInvoiceDate: `2025-${String(receipt.month).padStart(2, '0')}-${String(receipt.day).padStart(2, '0')}` } : {}),
-          ...(ewtClass ? { ewtClass } : {}),
-        };
-        const { cashCents } = computeVoucher(db, { ...base, tenders: [{ cashPlaceId: places[0]![0], amountCents: 1 }] }, '9999-12-31');
-        const used = places.slice(0, Math.min(places.length, cashCents));
-        const extra = allocate(cashCents - used.length, used.map(([, w]) => w));
-        return { ...base, tenders: used.map(([cashPlaceId, , ref], i) => ({ cashPlaceId, amountCents: 1 + extra[i]!, ...(ref ? { reference: `REF-${i + 1}` } : {}) })) };
-      });
+      .map(({ receipt, ewtClass, ...r }): VoucherInput => ({
+        ...r,
+        description: 'Random expense',
+        payeeName: 'Sample Payee',
+        ...(receipt ? { supplierInvoiceNo: String(receipt.no), supplierInvoiceDate: `2025-${String(receipt.month).padStart(2, '0')}-${String(receipt.day).padStart(2, '0')}` } : {}),
+        ...(ewtClass ? { ewtClass } : {}),
+      }));
   },
 };

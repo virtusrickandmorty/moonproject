@@ -16,14 +16,12 @@ import { FORMS, VIEWS } from './screens.ts';
 const EXPECTED_MISSING: Record<string, string> = {};
 
 /**
- * What the general form cannot fill: a list or group (`unsupported`), or a reference to another record by its id, which a
- * person cannot type: format uuid, or a text field named like an id (`assetId`, `loanId`; a cash place's number is picked by
- * button, so an integer `...Id` is fine). The general form's own field kinds are decided by fieldsOf, the code it draws with.
+ * What the general form cannot fill: a list or group (`unsupported`), or a reference to another document by its id, which
+ * a person cannot type (format uuid). The general form's own field kinds are decided by fieldsOf, the code it draws with.
  */
 function unfillable(schema: JsonSchema): string[] {
   const kinds = new Map(fieldsOf(schema).map((f) => [f.name, f.kind]));
-  const isId = (name: string) => schema.properties?.[name]?.format === 'uuid' || (schema.properties?.[name]?.type === 'string' && /Id$/.test(name));
-  return (schema.required ?? []).filter((name) => kinds.get(name) === 'unsupported' || isId(name) || !kinds.has(name));
+  return (schema.required ?? []).filter((name) => kinds.get(name) === 'unsupported' || schema.properties?.[name]?.format === 'uuid' || !kinds.has(name));
 }
 
 const missingScreens = (types: DocTypeInfo[]) =>
@@ -46,10 +44,8 @@ describe('every document type has a usable screen', () => {
     const list: JsonSchema = { type: 'object', properties: { lines: { type: 'array' } }, required: ['lines'] };
     const reference: JsonSchema = { type: 'object', properties: { releaseId: { type: 'string', format: 'uuid' } }, required: ['releaseId'] };
     const optionalList: JsonSchema = { type: 'object', properties: { note: { type: 'string' }, lines: { type: 'array' } }, required: ['note'] };
-    const textId: JsonSchema = { type: 'object', properties: { assetId: { type: 'string' }, reason: { type: 'string' } }, required: ['assetId', 'reason'] };
-    const cashPlace: JsonSchema = { type: 'object', properties: { fromCashPlaceId: { type: 'integer' }, amountCents: { type: 'integer' } }, required: ['fromCashPlaceId', 'amountCents'] };
-    expect(missingScreens([type('x.simple', simple), type('x.optional_list', optionalList), type('x.cash_place', cashPlace)])).toEqual([]);
-    expect(missingScreens([type('x.list', list), type('x.reference', reference), type('x.text_id', textId)])).toEqual(['x.list', 'x.reference', 'x.text_id']);
+    expect(missingScreens([type('x.simple', simple), type('x.optional_list', optionalList)])).toEqual([]);
+    expect(missingScreens([type('x.list', list), type('x.reference', reference)])).toEqual(['x.list', 'x.reference']);
     expect(missingScreens([type('cash.count', list)])).toEqual([]); // cash.count has a registered form
   });
 

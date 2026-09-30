@@ -6,15 +6,11 @@
  *      sidecar JSON with the checks, the SHA-256 of the plain copy, the migrations and the audit chain's head;
  *   4. copies daily, monthly and yearly backups to the off-site folder (Google Drive for desktop);
  *   5. rotates: snapshots kept 48 hours, dailies 30, monthlies 24, yearlies forever.
- * Attachments (engine/attachments.ts) are backed up beside the copies, in the backup folder's attachments folder: each
- * file once, encrypted to the recovery keys and named by its SHA-256 and the keys (<sha256>.<keys>.age), so a run adds
- * only the files attached since the last one. They are never rotated away: attachment rows are never deleted, and every
- * backup's database names every file it had. New recovery keys encrypt them all again, once.
  * A copy that fails a check is never kept. The tier is the widest period with no backup yet: the first backup of the
  * year is yearly, the first of a month monthly, the first of a day daily, the rest snapshots.
  */
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { Encrypter } from 'age-encryption';
@@ -22,7 +18,6 @@ import { AppError, newId } from '@moonproject/shared';
 import { openReadonly, snapshotTo, type Db } from '../../platform/db/driver.ts';
 import { runInvariants } from '../../engine/ledger/invariants.ts';
 import { verifyAuditChain } from '../../engine/audit.ts';
-import { attachedFiles, attachmentsDir, readStored, sha256Hex, writeWhole } from '../../engine/attachments.ts';
 
 export const TIERS = ['snapshot', 'daily', 'monthly', 'yearly'] as const;
 export type Tier = (typeof TIERS)[number];
@@ -56,65 +51,6 @@ export interface Sidecar {
   audit: { seq: number; hash: string } | null;
   trialBalance: { totalDebitCents: number; totalCreditCents: number };
   checks: { integrity: 'ok'; invariants: 'ok'; auditChain: 'ok' };
-  /** The attachment files this copy names (absent on backups made before attachments). */
-  attachments?: AttachmentsBackedUp;
-}
-
-export interface AttachmentsBackedUp {
-  files: number;
-  bytes: number;
-  /** Encrypted by this run: the files attached since the last backup. */
-  newFiles: number;
-  newBytes: number;
-  /** Files a row names that are not in the attachments folder (or no longer match their SHA-256): not backed up. */
-  missing: string[];
-}
-
-/** The backup folder's attachments folder. */
-export const ATTACHMENTS = 'attachments';
-/** The recovery keys a file was encrypted to, in its name: new keys make new copies, never unreadable ones. */
-export const encryptedName = (sha256: string, recipients: string[]) => `${sha256}.${sha256Hex(Buffer.from([...recipients].sort().join('\n'))).slice(0, 12)}.age`;
-
-/** Encrypts into `dir`/attachments each file the copy names that is not there yet for these keys. */
-async function backUpAttachments(copyFile: string, liveDir: string, dir: string, recipients: string[]): Promise<AttachmentsBackedUp> {
-  const copy = openReadonly(copyFile);
-  let files: { sha256: string; bytes: number }[];
-  try {
-    files = attachedFiles(copy);
-  } finally {
-    copy.close();
-  }
-  const r: AttachmentsBackedUp = { files: files.length, bytes: 0, newFiles: 0, newBytes: 0, missing: [] };
-  for (const f of files) {
-    r.bytes += f.bytes;
-    const target = join(dir, ATTACHMENTS, encryptedName(f.sha256, recipients));
-    if (existsSync(target)) continue;
-    const plain = readStored(liveDir, f.sha256);
-    if (!plain) {
-      r.missing.push(f.sha256);
-      continue;
-    }
-    writeWhole(target, await encrypt(plain, recipients));
-    r.newFiles++;
-    r.newBytes += statSync(target).size;
-  }
-  return r;
-}
-
-/** Copies the encrypted attachments `to` lacks (off-site, USB). Each lands whole, before any backup that names it. */
-export function copyAttachments(from: string, to: string): number {
-  const src = join(from, ATTACHMENTS);
-  if (!existsSync(src)) return 0;
-  const dst = join(to, ATTACHMENTS);
-  mkdirSync(dst, { recursive: true });
-  let copied = 0;
-  for (const f of readdirSync(src).filter((x) => x.endsWith('.age'))) {
-    if (existsSync(join(dst, f))) continue;
-    copyFileSync(join(src, f), join(dst, `${f}.tmp`));
-    renameSync(join(dst, `${f}.tmp`), join(dst, f));
-    copied++;
-  }
-  return copied;
 }
 
 /** The tier of a backup made at `at` (Manila timestamp), given the backups kept so far. */
@@ -186,10 +122,7 @@ async function encrypt(data: Uint8Array, recipients: string[]): Promise<Uint8Arr
   return e.encrypt(data);
 }
 
-export interface BackupResult {
-  file: string; tier: Tier; bytes: number; sha256: string; offsite: boolean; offsiteError: string | null;
-  attachments: AttachmentsBackedUp; attachmentsError: string | null;
-}
+export interface BackupResult { file: string; tier: Tier; bytes: number; sha256: string; offsite: boolean; offsiteError: string | null }
 
 /**
  * Makes one backup into settings.backupDir. `at` is the Manila timestamp of the run; it names the file
@@ -207,15 +140,11 @@ export async function makeBackup(db: Db, settings: BakSettings, at: string): Pro
     const facts = checkCopy(tmp);
     const plain = readFileSync(tmp);
     const gz = gzipSync(plain);
-    const attachments = await backUpAttachments(tmp, attachmentsDir(db), dir, settings.recipients);
-    const attachmentsError = attachments.missing.length
-      ? `${attachments.missing.length} attached file(s) are missing or damaged in the attachments folder and were not backed up: ${attachments.missing.join(', ')}.`
-      : null;
     const file = `${base}.db.gz.age`;
     writeFileSync(join(dir, file), await encrypt(gz, settings.recipients));
     const sidecar: Sidecar = {
       app: 'moonproject', file, tier, at, bytes: statSync(join(dir, file)).size, sha256: createHash('sha256').update(plain).digest('hex'),
-      gzipBytes: gz.length, recipients: settings.recipients, ...facts, checks: { integrity: 'ok', invariants: 'ok', auditChain: 'ok' }, attachments,
+      gzipBytes: gz.length, recipients: settings.recipients, ...facts, checks: { integrity: 'ok', invariants: 'ok', auditChain: 'ok' },
     };
     writeFileSync(join(dir, `${base}.json`), `${JSON.stringify(sidecar, null, 2)}\n`);
     rotate(dir, at);
@@ -226,7 +155,6 @@ export async function makeBackup(db: Db, settings: BakSettings, at: string): Pro
     if (settings.offsiteDir && tier !== 'snapshot') {
       try {
         mkdirSync(settings.offsiteDir, { recursive: true });
-        copyAttachments(dir, settings.offsiteDir);
         copyFileSync(join(dir, file), join(settings.offsiteDir, file));
         copyFileSync(join(dir, `${base}.json`), join(settings.offsiteDir, `${base}.json`));
         rotate(settings.offsiteDir, at);
@@ -235,7 +163,7 @@ export async function makeBackup(db: Db, settings: BakSettings, at: string): Pro
         offsiteError = `The off-site copy failed: ${(e as Error).message}`;
       }
     }
-    return { file, tier, bytes: sidecar.bytes, sha256: sidecar.sha256, offsite, offsiteError, attachments, attachmentsError };
+    return { file, tier, bytes: sidecar.bytes, sha256: sidecar.sha256, offsite, offsiteError };
   } finally {
     rmSync(tmp, { force: true });
     rmSync(`${tmp}-journal`, { force: true });
@@ -256,7 +184,7 @@ export async function runBackup(db: Db, opts: { reason: Reason; userId: string |
     ).run(newId(), startedAt, opts.stamp(), opts.reason, r.tier, r.status, r.file ?? null, r.bytes ?? null, r.sha256 ?? null, +r.offsite, r.error ?? null, opts.userId);
   try {
     const result = await makeBackup(db, settings, startedAt);
-    log({ ...result, status: 'ok', error: [result.attachmentsError, result.offsiteError].filter(Boolean).join(' ') || null });
+    log({ ...result, status: 'ok', error: result.offsiteError });
     return { ok: true, result };
   } catch (e) {
     const code = e instanceof AppError ? e.code : 'BACKUP_FAILED';

@@ -8,21 +8,17 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { requireStepUp } from '../../engine/security/sessions.ts';
 import { booklet, bookletUsage, listBooklets, registerBooklet, setBookletActive, type Who } from './booklets.ts';
 import { salesRegister, withholdingReceivedRegister, type RegisterRow } from './registers.ts';
-import { certificatesToIssue, ewtRegister, noVatPurchasesRegister, purchasesRegister, type PurchaseClass, type SupplierRow } from './purchases.ts';
-import { addBacksDue, claimCandidates } from './uncollected-vat.ts';
-import { settingAt } from '../../engine/settings.ts';
+import { certificatesToIssue, ewtRegister, purchasesRegister, type PurchaseClass, type SupplierRow } from './purchases.ts';
 import { vatSummary } from './vat.ts';
 import { vatReturnWorksheet, type WorksheetCheck } from './vat-return.ts';
-import { quarterOf, returnDue, taxDeadlines, type Quarter } from './calendar.ts';
+import { quarterOf, taxDeadlines, type Quarter } from './calendar.ts';
 import { ewtMonthWorksheet, ewtQuarterWorksheet, type PaymentLine } from './ewt-return.ts';
 import { parsePeriod, periodsDue } from './payments.ts';
-import { finalTaxList } from './final-tax.ts';
 import { markReceived } from './withholding.ts';
 import { addIncomeTaxSettings, incomeTaxSettingsAt, incomeTaxSettingsHistory, incomeTaxWorksheet } from './income-tax.ts';
 import { addDeductionSetting, annualIncomeTaxWorksheet, deductionAt, deductionHistory } from './annual-income-tax.ts';
 import { ewtAnnualReturn } from './ewt-annual.ts';
 import { classifySale, sawt, slspPurchases, slspSales, type Tie } from './slsp.ts';
-import { changesAfterFiling } from './filed.ts';
 
 export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
@@ -125,27 +121,6 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
       ]),
       ['Total', '', '', '', '', '', '', '', '', csvPesos(r.totals.netCents), csvPesos(r.totals.vatCents), csvPesos(r.totals.totalCents)],
     ]);
-  });
-
-  /** Purchases with no input VAT (bills, vouchers and assets bought): the SLP's exempt column and the 2550Q's purchases with no input tax. */
-  app.get<RangeQuery>('/api/tax/registers/purchases-no-vat', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
-    const { from, to } = range(req.query);
-    const r = noVatPurchasesRegister(db, from, to);
-    if (req.query.format !== 'csv') return { ...r, rows: r.rows.map((x) => ({ ...x, docTitle: title(x.docType) })) };
-    return csv(reply, `purchases-no-vat-${from}-${to}`, [
-      ['Date', 'Journal', 'Cancel', 'Document', 'Number', 'Supplier invoice', 'Supplier', 'TIN', 'Class', 'Amount'],
-      ...r.rows.map((x) => [...bought(x), x.supplierInvoiceNo, x.supplierName, x.tin, CLASS[x.purchaseClass], csvPesos(x.amountCents)]),
-      ['Total', '', '', '', '', '', '', '', '', csvPesos(r.totals.amountCents)],
-    ]);
-  });
-
-  /**
-   * Output VAT on uncollected receivables (ACC-27): whether the accountant turned the claim on, the invoices whose time
-   * to pay ended in an earlier quarter (claimable), and the claims whose customer has paid since (add-backs to record).
-   */
-  app.get('/api/tax/uncollected-vat', { config: { permission: 'tax.uncollected.view' } }, async () => {
-    const on = today(clock);
-    return { enabled: settingAt(db, 'tax.uncollected_vat_credit', on), claimable: claimCandidates(db, on), addBacksDue: addBacksDue(db, on) };
   });
 
   app.get<RangeQuery>('/api/tax/registers/ewt', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
@@ -427,44 +402,12 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
     ]);
   });
 
-  /**
-   * The final tax withheld per stockholder, with TIN (PLAN D5 DIV): a quarter (?year=2026&quarter=3, the 1601-FQ) or a
-   * year (?year=2026, the 1604-F alphalist), with what the books hold on 2312 and what the 1601-FQ payments paid.
-   */
-  app.get<{ Querystring: QuarterQuery & { format?: string } }>('/api/tax/final-tax', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
-    const q = req.query;
-    const w = q.year !== undefined && q.quarter === undefined && /^\d{4}$/.test(q.year) ? finalTaxList(db, Number(q.year), null) : (() => {
-      const { year, quarter } = quarterQuery(q);
-      return finalTaxList(db, year, quarter);
-    })();
-    const due = w.quarter ? returnDue(db, '1601-FQ', w.period, w.to) : returnDue(db, '1604-F', w.period, w.to);
-    if (req.query.format !== 'csv') return { ...w, dueDate: due };
-    const kind = (k: string) => (k === 'individual' ? 'Individual' : 'Domestic corporation');
-    return csv(reply, `${w.quarter ? '1601-FQ' : '1604-F'}-final-tax-${w.period}`, [
-      ['Date', 'Declaration', 'Board resolution', 'Stockholder', 'TIN', 'Kind', 'Shares', 'Dividend', 'Rate', 'Final tax', 'Net paid or payable'],
-      ...w.rows.map((r) => [r.date, r.number, r.resolutionNumber, r.name, r.tin ?? 'No TIN', kind(r.holderKind), r.shares, csvPesos(r.grossCents), `${r.taxRateBp / 100}%`, csvPesos(r.taxCents), csvPesos(r.netCents)]),
-      ['Total', '', '', '', '', '', '', csvPesos(w.totals.grossCents), '', csvPesos(w.totals.taxCents), csvPesos(w.totals.netCents)],
-      ['Books (2312)', '', '', '', '', '', '', '', '', csvPesos(w.withheldCents), ''],
-      ...(w.quarter ? [['Paid with the 1601-FQ', '', '', '', '', '', '', '', '', csvPesos(w.paidCents), ''], ['Left to pay', '', '', '', '', '', '', '', '', csvPesos(w.leftCents), '']] : []),
-    ]);
-  });
-
-  /** Every return with something left to pay (a VAT close or an opening's 2550Q, EWT withheld or opened, a 1702Q or a 1702, a 1601-FQ), for the BIR payment form. */
+  /** Every return with something left to pay (a VAT close or an opening's 2550Q, EWT withheld or opened, a 1702Q or a 1702), for the BIR payment form. */
   app.get('/api/tax/payments/due', { config: { permission: 'tax.payment.create' } }, async () => periodsDue(db, today(clock)));
 
   /** VAT of one quarter (?year=2026&quarter=3), or of today's quarter. */
   app.get<{ Querystring: QuarterQuery }>('/api/tax/vat-summary', { config: { permission: 'tax.registers.view' } }, async (req) => {
     const { year, quarter } = quarterQuery(req.query);
     return vatSummary(db, year, quarter);
-  });
-
-  /** ACC-22: documents dated in a filed period recorded or cancelled after the return's payment was recorded (?format=csv). */
-  app.get<{ Querystring: { format?: string } }>('/api/tax/changes-after-filing', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
-    const rows = changesAfterFiling(db).map((r) => ({ ...r, docTitle: title(r.docType) }));
-    if (req.query.format !== 'csv') return { rows };
-    return csv(reply, `changes-after-filing-${today(clock)}`, [
-      ['Date', 'Document', 'Number', 'What happened', 'Who', 'When', 'Return', 'Period', 'Paid with', 'Payment recorded'],
-      ...rows.map((r) => [r.date, r.docTitle, r.number, r.what === 'recorded' ? 'Recorded' : 'Cancelled', r.userName, r.at, r.form, r.periodLabel, r.paymentNumber, r.paymentRecordedAt]),
-    ]);
   });
 }

@@ -13,7 +13,7 @@ import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { Db } from '../../../platform/db/driver.ts';
 import { resolveAccount } from '../../../engine/ledger/accounts.ts';
-import { assertOpeningOpen, duplicateOpeningIssue, OPENING_PERMISSIONS, openingIssues } from '../../ACC/public.ts';
+import { assertOpeningOpen, OPENING_PERMISSIONS, openingIssues } from '../../ACC/public.ts';
 import { activeEmployees, employee } from '../../EMP/public.ts';
 import { caBalance } from '../public.ts';
 
@@ -52,14 +52,6 @@ export const openingCaDoc: DocTypeDef<OpeningCaInput, OpeningCa> = {
     issues.push(...openingIssues(ctx.db, ctx.businessDate));
     if (!employee(ctx.db, doc.employeeId)?.active) err('employeeId', 'EMPLOYEE', 'Pick an active employee.');
     if (doc.installmentCents > doc.owedCents) err('installmentCents', 'INSTALLMENT', 'The deduction per payroll cannot be more than what is owed.');
-    const earlier = ctx.db
-      .prepare(
-        `SELECT d.number FROM ca_advances c JOIN documents d ON d.id = c.document_id
-         WHERE d.doc_type = 'ca.opening' AND d.status = 'posted' AND c.employee_id = ? AND c.amount_cents = ? ORDER BY d.number LIMIT 1`,
-      )
-      .pluck()
-      .get(doc.employeeId, doc.owedCents) as string | undefined;
-    issues.push(...duplicateOpeningIssue(ctx.db, 'employeeId', earlier, `this cash advance (${doc.employeeName}, ${formatPeso(doc.owedCents)})`));
     return issues;
   },
 

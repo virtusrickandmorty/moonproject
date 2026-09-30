@@ -9,7 +9,6 @@ import {
   contactToInput, emptyContactForm, emptyPoRow, emptySupplierForm, filterSupplies, filterSuppliers, overReceived, poRowTotal, poToInput, qtyWords, receiveAllLeft, rrRows,
   rrToInput, supplierToForm, supplierToInput, supplyToInput, wholeQty,
 } from './purchasing.ts';
-import { costSource } from './Supplies.tsx';
 
 const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: string, init: RequestInit) => {
   const res = await app.inject({ method: init.method as 'GET', url, payload: init.body as string, headers: { ...(init.headers as object), cookie: jar.cookie } });
@@ -49,7 +48,6 @@ describe('supplier form rules', () => {
     expect(filterSuppliers(rows, '456-789').map((r) => r.id)).toEqual(['s1']);
     expect(filterSuppliers(rows, '  ').length).toBe(2);
     expect(filterSupplies([{ name: 'Cotton twill' }, { name: 'Poly thread' }] as SupplyRecord[], 'THREAD').map((r) => r.name)).toEqual(['Poly thread']);
-    expect(costSource({ purchase_cost_source: 'bill', purchase_cost_source_number: 'BILL-000004', purchase_cost_source_date: '2026-09-29' } as SupplyRecord)).toBe('Bill BILL-000004 · 2026-09-29');
   });
 
   it('a contact needs a name and a sensible email; the phone is left to the server, which normalizes it', () => {

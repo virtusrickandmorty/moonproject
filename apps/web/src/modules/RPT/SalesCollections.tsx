@@ -48,33 +48,6 @@ function DepositsBody({ path }: { path: string | null }) {
     rows={data.rows.map((r) => [r.customerName, document(r), peso(r.heldCents)])} /></Panel> : path && <Loading error={error} />;
 }
 
-type Crossing = { quarterEnd: string; rows: { customerName: string; jobOrderNumber: string; depositDocumentId: string;
-  depositDocumentType: string; depositDocumentNumber: string; depositDate: string; quarterReceived: string; amountCents: number;
-  heldAtQuarterEndCents: number; quarterApplied: string | null; mode: string; outputVatCents: number }[];
-  totals: { amountCents: number; heldAtQuarterEndCents: number; outputVatCents: number } };
-export function DepositsCrossingQuarter({ me }: { me: Me }) {
-  const today = useToday(); const [quarter, setQuarter] = useState(''); const [applied, setApplied] = useState('');
-  useEffect(() => { if (today && !quarter) setQuarter(`${today.slice(0, 4)}-Q${Math.ceil(Number(today.slice(5, 7)) / 3)}`); }, [today, quarter]);
-  useEffect(() => { if (quarter && !applied) setApplied(quarter); }, [quarter, applied]);
-  const path = applied ? `deposits-crossing-quarter?quarter=${applied}` : null;
-  if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
-  return <article className="rpt-page space-y-4"><BookTitle title="Deposits crossing a VAT quarter" dates={applied || 'Choose a quarter'} />
-    <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="Quarter"><input className={inputClass} pattern="[0-9]{4}-Q[1-4]"
-      value={quarter} onChange={(e) => setQuarter(e.target.value.toUpperCase())} placeholder="2026-Q3" /></Field>
-      <Button tone="primary" disabled={!/^\d{4}-Q[1-4]$/.test(quarter)} onClick={() => setApplied(quarter)}>Show</Button>
-      {path && <Tools path={path} />}</div><CrossingBody path={path} /></article>;
-}
-function CrossingBody({ path }: { path: string | null }) {
-  const { data, error } = useReport<Crossing>(path);
-  return data ? <Panel title={`Held at ${data.quarterEnd}: ${peso(data.totals.heldAtQuarterEndCents)}`}><Table
-    headings={['Customer', 'Job order', 'Deposit', 'Date', 'Quarter received', 'Amount', 'Held at quarter end', 'Quarter applied', 'Mode', 'Output VAT declared']}
-    rows={[...data.rows.map((r) => [r.customerName, r.jobOrderNumber,
-      document({ id: r.depositDocumentId, number: r.depositDocumentNumber, documentType: r.depositDocumentType }), r.depositDate,
-      r.quarterReceived, peso(r.amountCents), peso(r.heldAtQuarterEndCents), r.quarterApplied ?? 'Still held', r.mode, peso(r.outputVatCents)]),
-    ['TOTAL', '', '', '', '', peso(data.totals.amountCents), peso(data.totals.heldAtQuarterEndCents), '', '', peso(data.totals.outputVatCents)]]} /></Panel>
-    : path && <Loading error={error} />;
-}
-
 type Collections = { rows: (Doc & { date: string; customerName: string; cashPlaceName: string | null;
   tenderCents: number | null; cwtCents: number; recordedByName: string; status: string })[];
   byCashPlace: { cashPlaceName: string; tenderCents: number }[];

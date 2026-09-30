@@ -1,12 +1,12 @@
 /**
  * USB copies (PLAN C8): two drives, A and B, swapped weekly; one stays away from the shop. Each copy adds the daily,
- * monthly and yearly backups the drive lacks, with their sidecars and the encrypted attachments, then rotates the drive like the backup folder.
+ * monthly and yearly backups the drive lacks, with their sidecars, then rotates the drive like the backup folder.
  * The drive remembers its letter in moonproject-usb.json, so drive A is never mistaken for drive B.
  */
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { AppError } from '@moonproject/shared';
-import { copyAttachments, keptIn, rotate } from './backup.ts';
+import { keptIn, rotate } from './backup.ts';
 
 export type Drive = 'A' | 'B';
 const LABEL = 'moonproject-usb.json';
@@ -20,7 +20,6 @@ export function copyToUsb(backupDir: string, dir: string, drive: Drive, at: stri
   } else {
     writeFileSync(labelFile, `${JSON.stringify({ app: 'moonproject', drive, since: at }, null, 2)}\n`);
   }
-  copyAttachments(backupDir, dir); // before the backups that name them
   const there = new Set(keptIn(dir).map((k) => k.file));
   let copied = 0;
   for (const k of keptIn(backupDir).filter((x) => x.tier !== 'snapshot' && !there.has(x.file))) {

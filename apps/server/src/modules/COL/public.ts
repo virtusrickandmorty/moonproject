@@ -50,14 +50,6 @@ export function withholdingOf(db: Db, documentId: string): { atc: 'WC158' | 'WC1
   return c && { atc: c.atc, certificate: 'received', period: c.period };
 }
 
-/** Posted collections dated on or before `onOrBefore` whose 2307 was recorded as pending, oldest first (TAX knows which came since). */
-export function pendingCertificates(db: Db, onOrBefore: string): { id: string; number: string; date: string; customerName: string }[] {
-  return db.prepare(`SELECT d.id, d.number, d.business_date AS date, c.customer_name AS customerName
-    FROM col_collections c JOIN documents d ON d.id = c.document_id
-    WHERE d.status = 'posted' AND c.cwt_cents > 0 AND c.cert_2307 = 'pending' AND d.business_date <= ?
-    ORDER BY d.business_date, d.number`).all(onOrBefore) as { id: string; number: string; date: string; customerName: string }[];
-}
-
 /** Recorded collections and tenders, including cancellations, for dated read-only registers. */
 export function collectionsBetween(db: Db, from: string, to: string) {
   return db.prepare(`SELECT d.id, d.number, d.business_date AS date, d.status, d.total_cents AS totalCents,

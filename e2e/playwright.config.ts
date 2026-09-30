@@ -10,8 +10,6 @@ import { defineConfig } from '@playwright/test';
 /** One temporary folder for the whole run: the workers, the server and the teardown all inherit it. */
 process.env.E2E_DIR ??= mkdtempSync(join(tmpdir(), 'moonproject-e2e-'));
 const PORT = Number(process.env.E2E_PORT ?? 3199);
-/** The practice shop (06-every-screen): its own server, on made-up data, beside the empty shop the other specs share. */
-const PRACTICE_PORT = Number(process.env.E2E_PRACTICE_PORT ?? 3198);
 /** Where Chromium is already installed (a container), otherwise Playwright's own copy (`npx playwright install chromium`). */
 const executablePath = process.env.E2E_CHROMIUM || undefined;
 
@@ -32,30 +30,15 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     launchOptions: executablePath ? { executablePath } : {},
   },
-  projects: [
-    { name: 'chromium', testIgnore: /06-every-screen\.spec\.ts/, use: { browserName: 'chromium' } },
-    { name: 'practice', testMatch: /06-every-screen\.spec\.ts/, use: { browserName: 'chromium', baseURL: `http://127.0.0.1:${PRACTICE_PORT}`, actionTimeout: 10_000 } },
-  ],
-  webServer: [
-    {
-      command: 'npx tsx e2e/serve.ts',
-      cwd: '..',
-      url: `http://127.0.0.1:${PORT}/api/health`,
-      env: { PORT: String(PORT), E2E_DIR: process.env.E2E_DIR },
-      reuseExistingServer: false,
-      timeout: 60_000,
-      stdout: 'ignore',
-      stderr: 'pipe',
-    },
-    {
-      command: 'npx tsx e2e/serve-practice.ts',
-      cwd: '..',
-      url: `http://127.0.0.1:${PRACTICE_PORT}/api/health`,
-      env: { PORT: String(PRACTICE_PORT), E2E_DIR: process.env.E2E_DIR },
-      reuseExistingServer: false,
-      timeout: 240_000, // making 30 days of made-up data comes first
-      stdout: 'ignore',
-      stderr: 'pipe',
-    },
-  ],
+  projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
+  webServer: {
+    command: 'npx tsx e2e/serve.ts',
+    cwd: '..',
+    url: `http://127.0.0.1:${PORT}/api/health`,
+    env: { PORT: String(PORT), E2E_DIR: process.env.E2E_DIR },
+    reuseExistingServer: false,
+    timeout: 60_000,
+    stdout: 'ignore',
+    stderr: 'pipe',
+  },
 });

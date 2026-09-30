@@ -3,9 +3,9 @@
  * before filing. Both open on the quarter whose returns are due now (returnQuarter) and download for Excel. The server
  * reads every figure from the ledger, the same place as the VAT close, so the worksheet, the close and the books agree.
  */
-import { Fragment, useState } from 'react';
+import { Fragment } from 'react';
 import { api, taxQuarterPath, type CertificatesToIssue as Certificates, type DocTypeInfo, type Me, type VatWorksheet as Worksheet } from '../../api.ts';
-import { Button, Notice, Panel } from '../../components/ui.tsx';
+import { Notice, Panel } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Excel, QuarterForm, pesos, useQuarterReport } from './ReportParts.tsx';
@@ -14,16 +14,7 @@ import { atcWords, checkTone, ewtClassWords, isWorksheetTotal, monthName, quarte
 const num = 'whitespace-nowrap py-1 pl-3 text-right tabular-nums';
 
 /** One row per supplier and ATC: each month's base and EWT, and the quarter's. */
-const open2307 = async (year: number, quarter: number, supplierId?: string) => {
-  const page = window.open('', '_blank');
-  if (!page) throw new Error('Allow a new window to print the 2307.');
-  try {
-    const { html } = await api.print2307(year, quarter, supplierId);
-    page.document.open(); page.document.write(html); page.document.close();
-  } catch (e) { page.close(); throw e; }
-};
-
-export function CertificateTable({ c, onError }: { c: Certificates; onError?: (message: string) => void }) {
+export function CertificateTable({ c }: { c: Certificates }) {
   if (c.lines.length === 0) return <p className="text-sm text-slate-500">No tax was withheld from a supplier in this quarter, so there is no 2307 to issue.</p>;
   const periods = [...c.months.map(monthName), 'Quarter'];
   return (
@@ -31,7 +22,7 @@ export function CertificateTable({ c, onError }: { c: Certificates; onError?: (m
       <table className="w-full text-sm">
         <thead className="text-left text-slate-500">
           <tr>
-            {['Supplier', 'TIN', 'ATC', 'Print'].map((h) => <th key={h} rowSpan={2} className="pr-3 align-bottom">{h}</th>)}
+            {['Supplier', 'TIN', 'ATC'].map((h) => <th key={h} rowSpan={2} className="pr-3 align-bottom">{h}</th>)}
             {periods.map((p) => <th key={p} colSpan={2} className="pl-3 text-center">{p}</th>)}
           </tr>
           <tr>{periods.map((p) => <Fragment key={p}><th className="pl-3 text-right">Base</th><th className="pl-3 text-right">EWT</th></Fragment>)}</tr>
@@ -42,7 +33,6 @@ export function CertificateTable({ c, onError }: { c: Certificates; onError?: (m
               <td className="py-1 pr-3">{l.supplierName || '—'}</td>
               <td className="py-1 pr-3">{l.tin ?? '—'}</td>
               <td className="py-1 pr-3">{atcWords(l)}<span className="block text-xs text-slate-500">{ewtClassWords(l.ewtClass)}</span></td>
-              <td className="py-1 pr-3"><Button disabled={!l.supplierId} onClick={() => void open2307(c.year, c.quarter, l.supplierId ?? undefined).catch((e: Error) => onError?.(e.message))}>Print 2307</Button></td>
               {l.months.map((m) => <Fragment key={m.month}><td className={num}>{pesos(m.baseCents)}</td><td className={num}>{pesos(m.ewtCents)}</td></Fragment>)}
               <td className={`${num} font-semibold`}>{pesos(l.baseCents)}</td>
               <td className={`${num} font-semibold`}>{pesos(l.ewtCents)}</td>
@@ -51,7 +41,7 @@ export function CertificateTable({ c, onError }: { c: Certificates; onError?: (m
         </tbody>
         <tfoot>
           <tr className="border-t border-slate-300 font-semibold">
-            <td className="py-1" colSpan={4 + 2 * c.months.length}>Total</td>
+            <td className="py-1" colSpan={3 + 2 * c.months.length}>Total</td>
             <td className={num}>{pesos(c.totals.baseCents)}</td>
             <td className={num}>{pesos(c.totals.ewtCents)}</td>
           </tr>
@@ -64,7 +54,6 @@ export function CertificateTable({ c, onError }: { c: Certificates; onError?: (m
 export function CertificatesToIssue({ me }: { me: Me }) {
   const allowed = me.permissions.includes('tax.registers.view');
   const q = useQuarterReport(allowed, returnQuarter, api.certificatesToIssue);
-  const [printError, setPrintError] = useState('');
   if (!allowed) return <Notice>You cannot view the tax registers.</Notice>;
   const c = q.data;
   return (
@@ -76,12 +65,10 @@ export function CertificatesToIssue({ me }: { me: Me }) {
       </p>
       <QuarterForm q={q} />
       {q.error && <Notice>{q.error}</Notice>}
-      {printError && <Notice>{printError}</Notice>}
       {!c && !q.error && q.pick && <p className="text-slate-500">Loading…</p>}
       {c && (
         <Panel title={quarterTitle(c.year, c.quarter, q.today)}>
-          {c.lines.length > 0 && <Button tone="primary" onClick={() => void open2307(c.year, c.quarter).catch((e: Error) => setPrintError(e.message))}>Print all for this quarter</Button>}
-          <CertificateTable c={c} onError={setPrintError} />
+          <CertificateTable c={c} />
           <Excel url={taxQuarterPath('2307-to-issue', c.year, c.quarter)} />
         </Panel>
       )}

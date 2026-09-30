@@ -15,9 +15,6 @@ export type AttendanceStatus = (typeof ATTENDANCE)[number];
 const ON_HOLIDAY = new Set<AttendanceStatus>(['holiday_off', 'holiday_worked', 'rest_day', 'rest_day_worked']);
 const OFF_HOLIDAY = new Set<AttendanceStatus>(['present', 'half_day', 'absent', 'rest_day', 'leave', 'unpaid_leave', 'rest_day_worked']);
 const WITH_OT = new Set<AttendanceStatus>(['present', 'holiday_worked', 'rest_day_worked']);
-/** Night minutes (work between 10 PM and 6 AM, F1 night differential) go with any worked day, a half day included. */
-const WITH_NIGHT = new Set<AttendanceStatus>(['present', 'half_day', 'holiday_worked', 'rest_day_worked']);
-export const MAX_NIGHT_MINUTES = 480; // 10 PM to 6 AM
 export const SIL_DAYS = 5; // a year, after one year of service (Labor Code Art. 95)
 const MAX_RANGE_DAYS = 31;
 
@@ -72,16 +69,16 @@ export function deactivateHoliday(db: Db, id: number, raw: unknown, who: Who): H
   return { ...asHoliday(h), isActive: false, deactivatedReason: reason };
 }
 
-export interface AttendanceDay { employeeId: string; date: string; status: AttendanceStatus; otMinutes: number; nightMinutes: number; note: string | null }
+export interface AttendanceDay { employeeId: string; date: string; status: AttendanceStatus; otMinutes: number; note: string | null }
 /** The latest row of every employee-day. */
-const LATEST = `SELECT a.employee_id, a.work_date, a.status, a.ot_minutes, a.night_minutes, a.note FROM emp_attendance a
+const LATEST = `SELECT a.employee_id, a.work_date, a.status, a.ot_minutes, a.note FROM emp_attendance a
   WHERE a.seq = (SELECT MAX(x.seq) FROM emp_attendance x WHERE x.employee_id = a.employee_id AND x.work_date = a.work_date)`;
 
 /** Attendance from one date to another (both included), for one employee or all. */
 export function attendanceBetween(db: Db, from: string, to: string, employeeId?: string): AttendanceDay[] {
   return db
     .prepare(
-      `SELECT employee_id AS employeeId, work_date AS date, status, ot_minutes AS otMinutes, night_minutes AS nightMinutes, note FROM (${LATEST})
+      `SELECT employee_id AS employeeId, work_date AS date, status, ot_minutes AS otMinutes, note FROM (${LATEST})
        WHERE work_date BETWEEN @from AND @to AND (@e IS NULL OR employee_id = @e) ORDER BY employee_id, work_date`,
     )
     .all({ from, to, e: employeeId ?? null }) as AttendanceDay[];
@@ -145,8 +142,7 @@ export function markSilPaid(db: Db, v: { documentId: string; employeeId: string;
   db.prepare('INSERT INTO emp_sil_paid (document_id, employee_id, year, days) VALUES (?, ?, ?, ?)').run(v.documentId, v.employeeId, v.year, v.days);
 }
 
-const day = z.object({ employeeId: z.uuid(), date, status: z.enum(ATTENDANCE), otMinutes: z.number().int().min(0).max(960).optional(),
-  nightMinutes: z.number().int().min(0).max(MAX_NIGHT_MINUTES).optional(), note: z.string().trim().max(200).optional() }).strict();
+const day = z.object({ employeeId: z.uuid(), date, status: z.enum(ATTENDANCE), otMinutes: z.number().int().min(0).max(960).optional(), note: z.string().trim().max(200).optional() }).strict();
 export const attendanceInput = z.object({ days: z.array(day).min(1).max(1000) }).strict();
 
 const LABEL: Record<AttendanceStatus, string> = {
@@ -156,7 +152,7 @@ const LABEL: Record<AttendanceStatus, string> = {
 
 /**
  * Saves grid cells. Every cell is checked first and nothing is saved if one is wrong: the day must be within the
- * employee's service and not in the future; holidays take the holiday statuses; overtime and night minutes go only with a worked day;
+ * employee's service and not in the future; holidays take the holiday statuses; overtime goes only with a worked day;
  * SIL needs a year of service and at most 5 days a year (days paid in cash count); a day a recorded payroll paid is
  * locked until that payroll is cancelled. Unchanged cells are skipped. Call inside a transaction.
  */
@@ -164,9 +160,9 @@ export function saveAttendance(db: Db, raw: unknown, who: Who): { saved: number;
   const { days } = attendanceInput.parse(raw);
   const issues: Issue[] = [];
   const seen = new Set<string>();
-  const current = db.prepare(`SELECT status, ot_minutes AS otMinutes, night_minutes AS nightMinutes, note FROM (${LATEST}) WHERE employee_id = ? AND work_date = ?`);
+  const current = db.prepare(`SELECT status, ot_minutes AS otMinutes, note FROM (${LATEST}) WHERE employee_id = ? AND work_date = ?`);
   const silTaken = new Map<string, number>(); // employee|year -> SIL days after this save
-  const changed: (z.infer<typeof day> & { otMinutes: number; nightMinutes: number; seq: number })[] = [];
+  const changed: (z.infer<typeof day> & { otMinutes: number; seq: number })[] = [];
   days.forEach((d, i) => {
     const f = `days.${i}`;
     const add = (code: string, message: string, field = f) => issues.push({ field, code, message, level: 'error' });
@@ -183,10 +179,8 @@ export function saveAttendance(db: Db, raw: unknown, who: Who): { saved: number;
     if (!holiday && !OFF_HOLIDAY.has(d.status)) add('NOT_HOLIDAY', `${at} is not a holiday on the calendar, so it cannot be ${LABEL[d.status]}.`, `${f}.status`);
     const ot = d.otMinutes ?? 0;
     if (ot > 0 && !WITH_OT.has(d.status)) add('OT', `${at}: overtime goes only with a worked day.`, `${f}.otMinutes`);
-    const night = d.nightMinutes ?? 0;
-    if (night > 0 && !WITH_NIGHT.has(d.status)) add('NIGHT', `${at}: night hours go only with a worked day.`, `${f}.nightMinutes`);
-    const was = current.get(d.employeeId, d.date) as { status: AttendanceStatus; otMinutes: number; nightMinutes: number; note: string | null } | undefined;
-    if (was && was.status === d.status && was.otMinutes === ot && was.nightMinutes === night && (was.note ?? undefined) === d.note) return;
+    const was = current.get(d.employeeId, d.date) as { status: AttendanceStatus; otMinutes: number; note: string | null } | undefined;
+    if (was && was.status === d.status && was.otMinutes === ot && (was.note ?? undefined) === d.note) return;
     const run = paidBy(db, d.employeeId, d.date);
     if (run) return add('PAID', `${at} is paid by ${run}. Cancel ${run} first to change it.`);
     if (d.status === 'leave' || was?.status === 'leave') {
@@ -199,15 +193,15 @@ export function saveAttendance(db: Db, raw: unknown, who: Who): { saved: number;
       else if (d.status === 'leave' && n > SIL_DAYS) add('SIL_USED', `${at}: ${e.fullName} has no paid leave (SIL) left in ${year} (${SIL_DAYS} days a year${sil.paid ? `, ${sil.paid} of them paid in cash` : ''}). Mark it Unpaid leave.`, `${f}.status`);
     }
     const seq = ((db.prepare('SELECT MAX(seq) FROM emp_attendance WHERE employee_id = ? AND work_date = ?').pluck().get(d.employeeId, d.date) as number | null) ?? 0) + 1;
-    changed.push({ ...d, otMinutes: ot, nightMinutes: night, seq });
+    changed.push({ ...d, otMinutes: ot, seq });
   });
   if (issues.length) throw new AppError('VALIDATION', issues[0]!.message, 422, issues);
-  const ins = db.prepare('INSERT INTO emp_attendance (employee_id, work_date, seq, status, ot_minutes, night_minutes, note, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-  for (const d of changed) ins.run(d.employeeId, d.date, d.seq, d.status, d.otMinutes, d.nightMinutes, d.note ?? null, who.at, who.userId);
+  const ins = db.prepare('INSERT INTO emp_attendance (employee_id, work_date, seq, status, ot_minutes, note, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  for (const d of changed) ins.run(d.employeeId, d.date, d.seq, d.status, d.otMinutes, d.note ?? null, who.at, who.userId);
   if (changed.length) {
     appendAudit(db, {
       at: who.at, userId: who.userId, action: 'emp.attendance.save', entityType: 'emp.attendance', entityId: null,
-      data: { days: changed.map(({ employeeId, date: d, status, otMinutes, nightMinutes }) => ({ employeeId, date: d, status, otMinutes, ...(nightMinutes ? { nightMinutes } : {}) })) },
+      data: { days: changed.map(({ employeeId, date: d, status, otMinutes }) => ({ employeeId, date: d, status, otMinutes })) },
     });
   }
   return { saved: changed.length, unchanged: days.length - changed.length };

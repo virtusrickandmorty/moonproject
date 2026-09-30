@@ -12,9 +12,7 @@ export interface JvRow { accountId: string; party: string; partyName: string; de
 export const emptyRow = (): JvRow => ({ accountId: '', party: '', partyName: '', debit: '', credit: '', memo: '' });
 
 export interface JvLineInput { accountId: number; party?: { type: PartyType; id: string }; debitCents?: number; creditCents?: number; memo?: string }
-export interface JvInput { memo: string; lines: JvLineInput[]; lateReason?: string; reverseNextMonth?: boolean; reversalOf?: string }
-/** An accrual to reverse on the first day of next month, or the reversal of one (the JV it reverses). */
-export interface JvReversing { reverseNextMonth?: boolean; reversalOf?: string }
+export interface JvInput { memo: string; lines: JvLineInput[]; lateReason?: string }
 
 /** Accounts a line may use: active, not headings. Reserved ones are hidden from encoders only, so the accountant sees them. */
 export const postable = (accounts: Account[]) => accounts.filter((a) => a.isActive && !a.isHeader);
@@ -40,7 +38,7 @@ export function balanceWords(difference: number): string {
 }
 
 /** Typed memo and rows -> input, with plain errors. Blank rows are left out; a party goes only on an account that takes one. */
-export function jvInput(memo: string, rows: JvRow[], accounts: Account[], lateReason?: string, reversing: JvReversing = {}): { input: JvInput; errors: string[] } {
+export function jvInput(memo: string, rows: JvRow[], accounts: Account[], lateReason?: string): { input: JvInput; errors: string[] } {
   const errors: string[] = [];
   const lines: JvLineInput[] = [];
   if (memo.trim().length < 5) errors.push('Say what the entry is for (5 letters or more).');
@@ -63,8 +61,7 @@ export function jvInput(memo: string, rows: JvRow[], accounts: Account[], lateRe
   if (lines.length < 2) errors.push('Enter at least two lines.');
   const { difference } = totals(rows);
   if (difference !== 0) errors.push(`Debits and credits must be equal. ${balanceWords(difference)}.`);
-  const reverse = reversing.reversalOf ? { reversalOf: reversing.reversalOf } : reversing.reverseNextMonth ? { reverseNextMonth: true } : {};
-  return { input: { memo: memo.trim(), lines, ...(lateReason?.trim() ? { lateReason: lateReason.trim() } : {}), ...reverse }, errors };
+  return { input: { memo: memo.trim(), lines, ...(lateReason?.trim() ? { lateReason: lateReason.trim() } : {}) }, errors };
 }
 
 /** Stored lines -> typed rows, to prefill an edit. */

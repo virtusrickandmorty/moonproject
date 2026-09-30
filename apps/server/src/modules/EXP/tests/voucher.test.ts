@@ -23,19 +23,8 @@ beforeEach(async () => {
 });
 
 const cat = (code: string) => env.db.prepare('SELECT c.id FROM exp_categories c JOIN accounts a ON a.id = c.account_id WHERE a.code = ?').pluck().get(code) as number;
-/**
- * The goldens below say "paid from BDO" with `cashPlaceId`: the whole payout from that one place. The payout (the receipt less
- * any EWT) is what the server's preview works out, so the figures asserted stay the goldens', not this helper's.
- */
-const oneTender = async (c: Client, input: { amountCents: number; cashPlaceId?: number; [k: string]: unknown }) => {
-  const { cashPlaceId, ...rest } = input;
-  if (cashPlaceId === undefined) return input;
-  const pre = await c.post('/api/docs/exp.voucher/preview', { input: { ...rest, tenders: [{ cashPlaceId, amountCents: 1 }] } });
-  const cash = (pre.json().doc?.cashCents as number | undefined) ?? input.amountCents;
-  return { ...rest, tenders: [{ cashPlaceId, amountCents: cash }] };
-};
-const post = async (c: Client, input: { amountCents: number; [k: string]: unknown }, headers = idem()) =>
-  c.post('/api/docs/exp.voucher/post', { input: await oneTender(c, input), expectedTotalCents: input.amountCents }, headers);
+const post = (c: Client, input: { amountCents: number; [k: string]: unknown }, headers = idem()) =>
+  c.post('/api/docs/exp.voucher/post', { input, expectedTotalCents: input.amountCents }, headers);
 /** The original journal of a document: [code, party type, party id, debit, credit] per line. */
 const journalOf = (documentId: string) =>
   env.db
@@ -66,7 +55,7 @@ const g13 = () => ({
 
 describe('Expense voucher goldens (PLAN I2)', () => {
   it('G-13: rent 40,000.00 to a VAT-registered lessor from BDO, EWT 5% on NET', async () => {
-    const pre = await encoder.post('/api/docs/exp.voucher/preview', { input: await oneTender(encoder, g13()) });
+    const pre = await encoder.post('/api/docs/exp.voucher/preview', { input: g13() });
     expect(pre.json().summary).toBe(
       'This will record ₱40,000.00 for Rent paid to Sample Lessor Corp. from Cash in bank – BDO, with ₱4,285.71 input VAT; ₱1,785.71 is withheld (EWT 5%), so ₱38,214.29 is paid out.',
     );
@@ -143,7 +132,7 @@ describe('VAT and EWT rules (PLAN D4)', () => {
     expect(after.json().warnings).toEqual([]);
     expect(journalOf(after.json().id)).toContainEqual(['2311', 'supplier', 'tin:123456789000', 0, 357_143]); // 10% from 29 September
     expect((await encoder.get(`/api/docs/exp.voucher/${before.json().id}`)).json()).toMatchObject({ doc: { ewtRateBp: 500, ewtCents: 178_571 } });
-    const warned = await encoder.post('/api/docs/exp.voucher/preview', { input: await oneTender(encoder, { ...g13(), ewtClass: 'none' }) });
+    const warned = await encoder.post('/api/docs/exp.voucher/preview', { input: { ...g13(), ewtClass: 'none' } });
     expect(warned.json().issues.find((w: { code: string }) => w.code === 'EWT_DIFFERENT').message).toBe('The usual EWT here is 10% (rent_5). Please check.');
     noBrokenInvariants();
   });
@@ -205,13 +194,12 @@ describe('cancel and edit (NR-4)', () => {
   it('edit = cancel + new number: paid from the cash box, not petty cash', async () => {
     const input = { categoryId: cat('6140'), cashPlaceId: PETTY, amountCents: 20_000, description: 'Tricycle to the fabric store', payeeName: 'Tricycle driver' };
     const first = (await post(encoder, input)).json();
-    const r = await accountant.post(`/api/docs/exp.voucher/${first.id}/reissue`, { input: { ...(await oneTender(accountant, input)), tenders: [{ cashPlaceId: CASH, amountCents: 20_000 }] }, expectedTotalCents: 20_000, reason: 'Paid from the cash box' }, idem());
+    const r = await accountant.post(`/api/docs/exp.voucher/${first.id}/reissue`, { input: { ...input, cashPlaceId: CASH }, expectedTotalCents: 20_000, reason: 'Paid from the cash box' }, idem());
     expect(r.json().number).toBe('EXP-000002');
     expect(balances(env.db)).toEqual({ '6140': 20_000, '1101': -20_000 });
     const view = (await accountant.get(`/api/docs/exp.voucher/${first.id}`)).json();
     expect(view.header).toMatchObject({ status: 'cancelled', replacedById: r.json().id });
-    const { cashPlaceId: _p, ...noPlace } = input;
-    expect(view.input).toEqual({ ...noPlace, tenders: [{ cashPlaceId: PETTY, amountCents: 20_000 }], payeeVatRegistered: false, ewtClass: 'none' });
+    expect(view.input).toEqual({ ...input, payeeVatRegistered: false, ewtClass: 'none' });
     noBrokenInvariants();
   });
 });
@@ -241,7 +229,7 @@ describe('property tests (PLAN I1.3)', () => {
           expect(v.cashCents).toBe(input.amountCents - v.ewtCents);
           if (then === 'cancel') cancelDocument(e, voucherDoc, actor, p.id, 'Recorded twice by mistake');
           if (then === 'reissue') {
-            reissueDocument(e, voucherDoc, actor, p.id, { input: { ...voucherDoc.toInput(v), tenders: [{ cashPlaceId: PETTY, amountCents: v.cashCents }] }, expectedTotalCents: input.amountCents, reason: 'Paid from petty cash instead' });
+            reissueDocument(e, voucherDoc, actor, p.id, { input: { ...voucherDoc.toInput(v), cashPlaceId: PETTY }, expectedTotalCents: input.amountCents, reason: 'Paid from petty cash instead' });
           }
         }
         expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);

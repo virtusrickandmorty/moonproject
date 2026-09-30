@@ -12,7 +12,6 @@ import { newId } from '@moonproject/shared';
 import { openDb } from '../../platform/db/driver.ts';
 import { stamp, systemClock } from '../../platform/clock.ts';
 import { prepareDatabase } from '../../app.ts';
-import { attachmentsBeside } from '../../engine/attachments.ts';
 import { loadModules } from '../load.ts';
 import { applyPendingRestore, openBackup, recordRestored, requestRestore, restoreDir, stage, stagedPath } from './restore.ts';
 
@@ -35,8 +34,7 @@ rl.close();
 const dir = restoreDir(dbFile);
 const id = newId();
 try {
-  const facts = await openBackup(file, key, stagedPath(dir, id), migrations, (copy) => prepareDatabase(copy, systemClock, modules),
-    { restoreAttachmentsTo: attachmentsBeside(dbFile) });
+  const facts = await openBackup(file, key, stagedPath(dir, id), migrations, (copy) => prepareDatabase(copy, systemClock, modules));
   const at = stamp(systemClock);
   stage(dir, { id, file: file.split(/[\\/]/).pop()!, at, userId: null, facts });
   requestRestore(dir, id, at);
@@ -45,9 +43,6 @@ try {
   recordRestored(db, r, at, 'command line');
   db.close();
   console.log(`Restored the backup made ${facts.madeAt ?? '(date unknown: no sidecar)'}: ${facts.postedDocuments} posted documents, books up to ${facts.lastBusinessDate ?? 'no entries'}.`);
-  if (facts.attachments.missing.length || facts.attachments.changed.length) {
-    console.warn(`Attached files not in the backup or changed, not restored: ${[...facts.attachments.missing, ...facts.attachments.changed].join(', ')}`);
-  }
   console.log(`The database it replaced, if any, is kept as ${r.previous}. Start Moonproject now.`);
 } catch (e) {
   console.error(`Not restored: ${(e as Error).message}`);

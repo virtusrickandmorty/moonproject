@@ -7,10 +7,6 @@
  *   + other income not subject to final tax (7xxx revenue accounts but 7101 interest income, which the bank's final
  *     tax already covers) = total gross income
  *   − deductions (itemized: 6xxx operating expenses but 6290 penalties, which are not deductible, and 7xxx expenses)
- *   Bad debts (ACC-26): a provision is not deductible, only an actual write-off is. So the itemized deductions add back
- *   the 6270 the allowance moved (journals that touch 1209 allowance for credit losses: the allowance document) and
- *   deduct what was written off against the allowance (1209 debited in journals that credit 1201: the write-off, net
- *   of its recovery, which is its cancel). A direct write-off is already on 6270 and stays deducted.
  *   = taxable income (a loss if below zero).
  *   Income tax: the regular rate on taxable income, or the MCIT rate on total gross income where MCIT applies (from
  *   the 4th taxable year after the year operations began), whichever is higher.
@@ -108,7 +104,7 @@ export const wholePesos = (cents: number) => divRoundHalfAway(cents, 100) * 100 
 export const taxOn = (cents: number, bp: number) => applyRate(cents / 100, bp) * 100;
 
 export type IncomeTaxKey =
-  | 'sales' | 'cost_of_sales' | 'gross_income' | 'other_income' | 'total_gross_income' | BadDebtKey | 'deductions' | 'taxable_income'
+  | 'sales' | 'cost_of_sales' | 'gross_income' | 'other_income' | 'total_gross_income' | 'deductions' | 'taxable_income'
   | 'regular_tax' | 'mcit' | 'tax_due' | 'prior_payments' | 'prior_prepaid' | 'cwt' | 'payable';
 export interface IncomeTaxLine { key: IncomeTaxKey; label: string; cents: number }
 export interface PaymentRef { id: string; number: string; date: string; period: string; reference: string; amountCents: number; penaltyCents: number }
@@ -129,40 +125,6 @@ export function ledgerYearToDate(db: Db, from: string, to: string) {
        WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ?`,
     )
     .get(from, to) as { sales: number; costOfSales: number; otherIncome: number; deductions: number; penalties: number; interest: number };
-}
-
-/**
- * The bad-debt figures income tax treats apart (ACC-26), dated in [from, to], debit-positive: the provision (6270 on
- * journals that also touch 1209, so the allowance going up or down) and the write-offs against the allowance (1209 on
- * journals that also touch 1201; a recovery, which reverses one, counts below zero).
- */
-export function badDebtsForTax(db: Db, from: string, to: string): { provisionCents: number; writtenOffCents: number } {
-  const touches = (role: string) => `EXISTS (SELECT 1 FROM journal_lines x JOIN accounts xa ON xa.id = x.account_id WHERE x.journal_id = j.id AND xa.role_key = '${role}')`;
-  return db
-    .prepare(
-      `SELECT
-         COALESCE(SUM(CASE WHEN a.role_key = 'BAD_DEBTS' AND ${touches('AR_ALLOWANCE')} THEN l.debit_cents - l.credit_cents END), 0) AS provisionCents,
-         COALESCE(SUM(CASE WHEN a.role_key = 'AR_ALLOWANCE' AND ${touches('AR_TRADE')} THEN l.debit_cents - l.credit_cents END), 0) AS writtenOffCents
-       FROM journal_lines l JOIN journals j ON j.id = l.journal_id JOIN accounts a ON a.id = l.account_id
-       WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ? AND a.role_key IN ('BAD_DEBTS', 'AR_ALLOWANCE')`,
-    )
-    .get(from, to) as { provisionCents: number; writtenOffCents: number };
-}
-
-export type BadDebtKey = 'expenses_per_books' | 'bad_debt_provision' | 'bad_debt_written_off';
-/**
- * The itemized deductions in whole pesos: the expenses in the books, less the provision, plus the write-offs against the
- * allowance; with the lines that show it when either is not zero (none otherwise, so the return reads as before).
- */
-export function itemizedDeductions(ytd: { deductions: number }, bad: { provisionCents: number; writtenOffCents: number }) {
-  const [books, provision, writtenOff] = [wholePesos(ytd.deductions), wholePesos(bad.provisionCents), wholePesos(bad.writtenOffCents)];
-  const cents = books - provision + writtenOff;
-  const lines: { key: BadDebtKey; label: string; cents: number }[] = provision === 0 && writtenOff === 0 ? [] : [
-    { key: 'expenses_per_books', label: 'Operating and other expenses in the books', cents: books },
-    { key: 'bad_debt_provision', label: 'Less: provision for credit losses in the books, not deductible (6270 against 1209)', cents: provision },
-    { key: 'bad_debt_written_off', label: 'Add: bad debts actually written off against the allowance (1209), net of recoveries', cents: writtenOff },
-  ];
-  return { cents, lines, provisionCents: provision, writtenOffCents: writtenOff };
 }
 
 /**
@@ -233,8 +195,7 @@ export function incomeTaxPosition(db: Db, year: number, quarter: Quarter) {
   const grossIncome = sales - costOfSales;
   const otherIncome = wholePesos(ytd.otherIncome);
   const totalGrossIncome = grossIncome + otherIncome;
-  const itemized = itemizedDeductions(ytd, badDebtsForTax(db, from, to));
-  const deductions = itemized.cents;
+  const deductions = wholePesos(ytd.deductions);
   const taxableIncome = totalGrossIncome - deductions;
   const regularTax = taxableIncome > 0 ? taxOn(taxableIncome, settings.regularRateBp) : 0;
   const mcit = totalGrossIncome > 0 ? taxOn(totalGrossIncome, settings.mcitRateBp) : 0;
@@ -266,7 +227,6 @@ export function incomeTaxPosition(db: Db, year: number, quarter: Quarter) {
     { key: 'gross_income', label: 'Gross income from operations', cents: grossIncome },
     { key: 'other_income', label: 'Add: other income not subject to final tax', cents: otherIncome },
     { key: 'total_gross_income', label: 'Total gross income', cents: totalGrossIncome },
-    ...itemized.lines,
     { key: 'deductions', label: 'Less: deductions (itemized: operating and other expenses)', cents: deductions },
     { key: 'taxable_income', label: taxableIncome < 0 ? 'Net loss' : 'Taxable income', cents: taxableIncome },
     { key: 'regular_tax', label: `Income tax at the regular rate (${pct(settings.regularRateBp)} of taxable income)`, cents: regularTax },
@@ -287,8 +247,6 @@ export function incomeTaxPosition(db: Db, year: number, quarter: Quarter) {
     priorPayments, priorPaidCents: priorPaid, priorPrepaidCents: priorPrepaid, cwtCents: cwtInHand, cwtPendingCents: cwt.pendingCents, payableCents: payable,
     /** Left out, for the checks: 6290 penalties (not deductible) and 7101 interest income (under final tax), unrounded. */
     penaltiesCents: ytd.penalties, interestIncomeCents: ytd.interest,
-    /** Bad debts treated apart (whole pesos): the provision added back, the write-offs against the allowance deducted. */
-    badDebtProvisionCents: itemized.provisionCents, badDebtsWrittenOffCents: itemized.writtenOffCents,
     /** A quarter before the cut-over date the old books filed: the opening tax payable that brought in its 1702Q. */
     opening: opening ? { documentId: opening.documentId, number: opening.number, date: opening.date } : null, openingCents,
     /** Due with this 1702Q (never below zero), the payments made with it, and what is left. */
@@ -296,8 +254,6 @@ export function incomeTaxPosition(db: Db, year: number, quarter: Quarter) {
   };
 }
 export type IncomeTaxPosition = ReturnType<typeof incomeTaxPosition>;
-
-export const BAD_DEBTS_NOTE = 'The provision for credit losses is not deductible, so it is added back; the bad debts written off against the allowance are deducted instead. Deduct a write-off only when it meets the legal requirements (a valid debt from the business, found worthless and written off in the books within the year): check each one.';
 
 /** The 1702Q worksheet (GET /api/tax/1702q): the position, its due date and the checks before filing. */
 export function incomeTaxWorksheet(db: Db, year: number, quarter: Quarter, today: string) {
@@ -320,7 +276,6 @@ export function incomeTaxWorksheet(db: Db, year: number, quarter: Quarter, today
   check(w.cwtPendingCents > 0, 'PENDING_2307', 'warning', 'Some tax withheld by customers still waits for its 2307, so it is not claimed on this return.');
   check(w.penaltiesCents !== 0, 'PENALTIES', 'info', 'Penalties and surcharges (6290) are not deductible: they are left out of the deductions.');
   check(w.interestIncomeCents !== 0, 'INTEREST', 'info', 'Interest income (7101) is under the final tax the bank withheld: it is left out of gross income.');
-  check(w.badDebtProvisionCents !== 0 || w.badDebtsWrittenOffCents !== 0, 'BAD_DEBTS', 'info', BAD_DEBTS_NOTE);
   check(w.payableCents < 0, 'EXCESS', 'info', 'The credits are more than the tax due: nothing is payable, and the next quarter’s return takes them off again.');
   check(today <= w.to, 'QUARTER_OPEN', 'info', 'The quarter has not ended: these figures still change.');
   return { ...w, returnDue: returnDue(db, '1702Q', w.period, w.to), checks };

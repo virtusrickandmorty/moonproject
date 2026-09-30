@@ -59,7 +59,7 @@ export function ImportUpload({ me, params }: { me: Me; params?: Record<string, s
       {!upload && !error && <p className="text-slate-500">Loading…</p>}
       {rows && !done && (
         <>
-          <Review uploadId={id} rows={rows} onChanged={changed} filter={filter} onFilter={setFilter} reasons={reasons} doers={doers} counts={counts} />
+          <Review rows={rows} filter={filter} onFilter={setFilter} reasons={reasons} doers={doers} counts={counts} />
           <DryRun uploadId={id} counts={counts} dry={dry} onDry={setDry} />
           <Commit uploadId={id} counts={counts} dry={dry} mayCommit={mayCommit} onCommitted={(result) => { setDone({ result, clearedAt: null }); setRows(null); }} />
         </>

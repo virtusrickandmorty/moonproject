@@ -12,8 +12,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { requireStepUp } from '../../engine/security/sessions.ts';
 import { TIERS, bakSettings, keptIn, lastOkRun, runBackup } from './backup.ts';
 import { saveSettings, settingsIssues } from './settings.ts';
-import { attachmentsDir } from '../../engine/attachments.ts';
-import { BACKUP_FILE, attachmentProblems, cleanStaged, openBackup, pendingRestore, requestRestore, restoreDir, stage, stagedPath } from './restore.ts';
+import { BACKUP_FILE, cleanStaged, openBackup, pendingRestore, requestRestore, restoreDir, stage, stagedPath } from './restore.ts';
 import { copyToUsb } from './usb.ts';
 import { DRILL_EVERY_MS, STALE_MS, USB_EVERY_MS } from './public.ts';
 
@@ -111,15 +110,7 @@ export function bakRoutes(app: FastifyInstance, deps: AppDeps): void {
       });
     try {
       const facts = await openBackup(join(folder, input.file), input.key, staged, migrations(), (copy) =>
-        prepareDatabase(copy, clock, registry.modules.filter((m) => m !== engineModule)),
-      // A restore puts the backup's attached files back beside the database now: named by their SHA-256, they never
-      // replace another file, so nothing changes for the live data until the restore itself.
-      input.purpose === 'restore' ? { restoreAttachmentsTo: attachmentsDir(db) } : {});
-      const problem = attachmentProblems(facts.attachments);
-      if (problem && input.purpose === 'drill') {
-        rmSync(staged, { force: true });
-        throw new AppError('ATTACHMENTS_BAD', problem, 422, facts.attachments);
-      }
+        prepareDatabase(copy, clock, registry.modules.filter((m) => m !== engineModule)));
       log('ok', null, facts);
       const live = db.prepare('SELECT seq, at FROM audit_log ORDER BY seq DESC LIMIT 1').get() as { seq: number; at: string };
       if (input.purpose === 'drill') {

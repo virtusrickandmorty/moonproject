@@ -19,16 +19,3 @@ export function remittanceChecks(db: Db, month: string): RemittanceCheck[] {
     return { ...base, state: 'done', detail: numbers.length ? `Remitted (${numbers.join(', ')}).` : 'Nothing left to remit.' };
   });
 }
-
-/** A withholding-tax remittance (REM-, scheme WTAX): the payment of one month's 1601-C. */
-export interface WtaxRemittance { documentId: string; number: string; month: string; paidOn: string; recordedAt: string; recordedBy: string }
-
-/** The recorded, not cancelled 1601-C remittances, oldest recorded first (TAX's filed returns, ACC-22). Read-only. */
-export function wtaxRemittances(db: Db): WtaxRemittance[] {
-  return db
-    .prepare(
-      `SELECT d.id AS documentId, d.number, r.month, d.business_date AS paidOn, d.posted_at AS recordedAt, d.posted_by AS recordedBy
-       FROM stat_remittances r JOIN documents d ON d.id = r.document_id WHERE r.scheme = 'WTAX' AND d.status = 'posted' ORDER BY d.posted_at, d.number`,
-    )
-    .all() as WtaxRemittance[];
-}

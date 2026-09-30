@@ -1,8 +1,7 @@
 /** The supplies catalogue (PLAN E9): the list with search and status, add, change (If-Match) and deactivate, for pur.supply.edit. */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type PurStatus, type SupplyRecord } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
-import { Link } from '../../router.tsx';
+import { Button, Field, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
 import { CATEGORY_WORDS, UNIT_WORDS, emptySupplyForm, filterSupplies, supplyToForm, supplyToInput, type SupplyForm } from './purchasing.ts';
 
 export function Supplies({ me }: { me: Me }) {
@@ -33,12 +32,11 @@ export function Supplies({ me }: { me: Me }) {
       {(error || a.error) && <Notice>{error || a.error}</Notice>}
       {shown && (
         <table className="w-full rounded-lg bg-white text-sm shadow-sm ring-1 ring-slate-200 [&_td]:px-2 [&_td]:py-2 [&_th]:px-2 [&_th]:py-2">
-          <thead className="text-left text-slate-500"><tr><th>Name</th><th>Unit</th><th>Kind</th><th className="text-right">Last purchase cost</th><th>Status</th><th /></tr></thead>
+          <thead className="text-left text-slate-500"><tr><th>Name</th><th>Unit</th><th>Kind</th><th>Status</th><th /></tr></thead>
           <tbody>
             {shown.map((s) => (
               <tr key={s.id} className={`border-t border-slate-100 ${s.is_active ? '' : 'text-slate-500'}`}>
-                <td><Link to={`/pur/supplies/${s.id}`} className="underline">{s.name}</Link></td><td>{UNIT_WORDS[s.unit]}</td><td>{CATEGORY_WORDS[s.category]}</td>
-                <td className="text-right tabular-nums">{peso(s.purchase_cost_cents)}<div className="text-xs text-slate-500">{costSource(s)}</div></td>
+                <td>{s.name}</td><td>{UNIT_WORDS[s.unit]}</td><td>{CATEGORY_WORDS[s.category]}</td>
                 <td>{s.is_active ? 'Active' : 'Inactive'}</td>
                 <td className="space-x-2 text-right">
                   {canEdit && s.is_active === 1 && <Button onClick={() => setEditing(s)}>Change</Button>}
@@ -53,10 +51,6 @@ export function Supplies({ me }: { me: Me }) {
     </div>
   );
 }
-
-export const costSource = (s: SupplyRecord) => s.purchase_cost_source_number
-  ? `${s.purchase_cost_source === 'bill' ? 'Bill' : 'PO'} ${s.purchase_cost_source_number} · ${s.purchase_cost_source_date}`
-  : 'Catalogue figure';
 
 function SupplyEditor({ row, onClose, onSaved }: { row: SupplyRecord | null; onClose: () => void; onSaved: () => unknown }) {
   const [v, setV] = useState<SupplyForm>(row ? supplyToForm(row) : emptySupplyForm());

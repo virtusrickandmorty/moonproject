@@ -2,24 +2,22 @@
  * Collection form (PLAN E5, H2): the customer, what they pay on (job orders and quick sales still owed, oldest due first),
  * where the money went (split tenders), tax withheld (2307, with VAT withheld by government buyers) and the CR booklet number. The server computes every split;
  * this screen only sends what was typed. Also the Edit of a recorded collection (cancel + reissue, NR-4).
- * A check put in Checks on hand carries its number, bank and date; `?pdc=<id>` fills the form from a post-dated check
- * that is due (ACC-23): its customer, the check in Checks on hand, and its amount on its job orders, oldest due first.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
-import { api, ApiError, type CashPlace, type DocHeader, type DocTypeInfo, type OpenItems, type PostDatedCheck, type Preview } from '../../api.ts';
+import { api, ApiError, type CashPlace, type DocHeader, type DocTypeInfo, type OpenItems, type Preview } from '../../api.ts';
 import { navigate } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { cents, checkPlaceIds, emptyTender, oldestFirst, sum, tendersToInput, tendersToRows, type TenderInput, type TenderRow } from './money.ts';
+import { cents, emptyTender, oldestFirst, sum, tendersToInput, tendersToRows, type TenderInput, type TenderRow } from './money.ts';
 import { CustomerPicker, EditGate, Errors, Figures, TenderRows, useLive, type Picked } from './parts.tsx';
 import { collectionPreset } from '../JO/forms.ts';
 
 /** Something the customer can pay on; `due` already counts back what the collection being edited paid on it. */
 interface Item { key: string; label: string; date: string; due: number; ref: { jobOrderId: string } | { saleId: string } }
 type Stored = { customerId: string; crNumber: string; applications: { jobOrderId: string; amountCents: number }[]; sales?: { saleId: string; amountCents: number }[]; tenders: TenderInput[];
-  withholding?: { cwtCents: number; atc: string; certificate: string; vatWithheldCents?: number }; settleSmallDifference?: boolean; note?: string; postDatedCheckId?: string };
+  withholding?: { cwtCents: number; atc: string; certificate: string; vatWithheldCents?: number }; settleSmallDifference?: boolean; note?: string };
 type StoredDoc = { customerName: string; applications: { jobOrderId: string; jobOrderNumber: string }[]; sales: { saleId: string; saleNumber: string; invoiceNumber: string }[] };
 
 function itemsOf(open: OpenItems, original?: { input: Stored; doc: StoredDoc }): Item[] {
@@ -65,19 +63,9 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
 
   // From a job order's view: its customer, and the downpayment still asked or the balance due, paid on that job order.
   const [preset, setPreset] = useState<{ key: string; cents: number } | null>(null);
-  // From the post-dated checks list: the check, due today or earlier.
-  const [pdc, setPdc] = useState<PostDatedCheck | null>(null);
   useEffect(() => {
     api.cashPlaces().then(setPlaces, fail);
     const q = new URLSearchParams(location.search);
-    const pdcId = q.get('pdc');
-    if (mode.kind === 'new' && pdcId) {
-      api.pdc(pdcId).then((p) => {
-        setPdc(p);
-        setCustomer({ id: p.customerId, name: p.customerName });
-        setNote(`Post-dated check no. ${p.checkNumber} (${p.bank}) dated ${p.checkDate}`);
-      }, fail);
-    }
     const jo = q.get('jo');
     if (mode.kind === 'new' && jo) {
       api.joStatus(jo).then((s) => {
@@ -106,13 +94,6 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     if (customer) api.openItems(customer.id).then(setOpen, fail);
   }, [customer?.id]);
 
-  // The check goes to Checks on hand with its details once the cash places are known.
-  const checksPlace = places.find((p) => p.kind === 'checks');
-  useEffect(() => {
-    if (!pdc || !checksPlace) return;
-    setTenders([{ cashPlaceId: String(checksPlace.id), amount: formatPesos(pdc.amountCents), reference: '', checkNumber: pdc.checkNumber, bank: pdc.bank, checkDate: pdc.checkDate }]);
-  }, [pdc?.id, checksPlace?.id]);
-
   const items = useMemo(() => (open ? itemsOf(open, original?.input.customerId === open.customerId ? original : undefined) : []), [open, original]);
   useEffect(() => {
     if (!preset || !open || !items.some((i) => i.key === preset.key)) return;
@@ -121,17 +102,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     setTenders([{ ...emptyTender(), amount }]);
     setPreset(null);
   }, [preset, open, items]);
-  // The check's amount goes to the job orders it is for, oldest due first; anything left is kept as a deposit.
-  useEffect(() => {
-    if (!pdc || !open || original) return;
-    const mine = items.filter((i) => 'jobOrderId' in i.ref && pdc.jobOrders.some((j) => 'jobOrderId' in i.ref && j.id === i.ref.jobOrderId));
-    const paid = oldestFirst(pdc.amountCents, mine.map((i) => i.due));
-    setTyped(Object.fromEntries(items.map((i) => {
-      const n = mine.indexOf(i);
-      return [i.key, n >= 0 && paid[n]! > 0 ? formatPesos(paid[n]!) : ''];
-    })));
-  }, [pdc?.id, open, items]);
-  const pay = tendersToInput(tenders, undefined, checkPlaceIds(places));
+  const pay = tendersToInput(tenders);
   const cwtCents = cents(cwt.amount);
   const vatWithheldCents = cents(cwt.vat);
   const received = sum(pay.tenders.map((t) => t.amountCents)) + (cwtCents ?? 0) + (vatWithheldCents ?? 0);
@@ -159,7 +130,6 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     ...(cwtCents ? { withholding: { cwtCents, atc: cwt.atc, certificate: cwt.certificate, ...(vatWithheldCents ? { vatWithheldCents } : {}) } } : {}),
     ...(settle ? { settleSmallDifference: true } : {}),
     ...(note.trim() ? { note: note.trim() } : {}),
-    ...(pdc ? { postDatedCheckId: pdc.id } : original?.input.postDatedCheckId ? { postDatedCheckId: original.input.postDatedCheckId } : {}), // an edit keeps its post-dated check
   };
   const live = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input));
 
@@ -183,7 +153,6 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className="grid gap-4 lg:grid-cols-[1fr_20rem]">
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">{original ? `Edit ${original.header.number}` : 'New collection'}</h1>
-        {pdc && <Notice tone="info">Filled from post-dated check no. {pdc.checkNumber} of {pdc.bank}, {formatPesos(pdc.amountCents)} dated {pdc.checkDate}. Recording it takes it off the post-dated checks list.</Notice>}
         {original && <Notice tone="info">When you record, {original.header.number} is cancelled and the replacement gets a new number. Reason: {reason}</Notice>}
         {error && <Notice>{error}</Notice>}
         <Panel title="Who paid">

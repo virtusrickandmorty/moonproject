@@ -201,8 +201,7 @@ describe('property test (PLAN I1.3)', () => {
       fc.property(fc.array(fc.tuple(openings, fc.boolean()), { minLength: 1, maxLength: 8 }), (ops) => {
         for (const [input, doCancel] of ops) {
           const doc = openingOfficerDoc.compute(input, ctx());
-          // Random rows repeat an officer and amount now and then: only the duplicate warning may show.
-          expect(openingOfficerDoc.validate(doc, ctx()).filter((i) => i.code !== 'DUPLICATE_OPENING')).toEqual([]);
+          expect(openingOfficerDoc.validate(doc, ctx())).toEqual([]);
           const lines = resolveDraft(env.db, openingOfficerDoc.journal!(doc, ctx())!);
           const expected =
             input.direction === 'owes_shop'

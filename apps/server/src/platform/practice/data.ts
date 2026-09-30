@@ -264,7 +264,7 @@ export async function createPracticeData(dbPath: string, days: number, start = '
         tenders: [{ cashPlaceId: bank, amountCents: 50_000 }],
       });
       await record(encoder, 'exp.voucher', {
-        categoryId, tenders: [{ cashPlaceId: till, amountCents: 25_000 }], amountCents: 25_000,
+        categoryId, cashPlaceId: till, amountCents: 25_000,
         description: 'Practice shop supplies and utilities', supplierId: utility,
         supplierInvoiceNo: `UTIL-${serial}`, supplierInvoiceDate: date,
       });
@@ -290,9 +290,7 @@ export async function createPracticeData(dbPath: string, days: number, start = '
         const slips = ok(await accountant.get(`/api/pay/runs/${run.id}/payslips`), 'payroll slips');
         const people = slips.employees as { employeeId: string; netCents: number }[];
         const total = people.reduce((sum, person) => sum + person.netCents, 0);
-        // Paid from the till when it holds enough; otherwise the run waits for its release, as payroll does when the cash
-        // is not in yet (a practice shop started near a month end has only a day's takings in the till).
-        if (total > 0 && total <= cashBalance(db, till)) await record(accountant, 'pay.release', {
+        if (total > 0) await record(accountant, 'pay.release', {
           runId: run.id, employeeIds: people.map((person) => person.employeeId),
           tenders: [{ cashPlaceId: till, amountCents: total }],
         });

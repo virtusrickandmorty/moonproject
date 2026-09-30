@@ -7,8 +7,6 @@
  * Downpayment VAT (D3, deposit-vat.ts): the output VAT recognised on the job order's deposits (2209, mode B) leaves with
  * the refunded share of them, Dr 2301 / Cr 2209, in the refund's quarter. In mode C only money held is refunded: a
  * downpayment already invoiced needs its downpayment invoice cancelled first.
- * A refund is never paid out of Checks on hand: the customer checks there are deposited first (checks.ts), so that
- * place always holds exactly the checks on its list.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -18,7 +16,6 @@ import { listCashPlaces } from '../../../engine/ledger/accounts.ts';
 import { customerRef } from '../../CUS/public.ts';
 import { jobOrderRef } from '../../JO/public.ts';
 import { depositVatLines, depositVatRowsOf, recordDepositVat, vatLeaving, vatRow } from './deposit-vat.ts';
-import { checkPlaceIds } from '../checks.ts';
 import { cashPlaceIssues, depositsHeld, insertTenders, loadTenders, sumCents, tenderInput, tenderToInput, withNames, type Tender } from '../ledger.ts';
 
 export const refundInput = z
@@ -71,10 +68,6 @@ export const refundDoc: DocTypeDef<RefundInput, Refund> = {
     const jo = doc.jobOrderId ? jobOrderRef(ctx.db, doc.jobOrderId) : undefined;
     if (doc.jobOrderId && jo?.customerId !== doc.customerId) add('error', 'jobOrderId', 'JOB_ORDER', `Pick one of ${doc.customerName}'s job orders.`);
     issues.push(...cashPlaceIssues(ctx.db, doc.tenders, 'Pick where the money came from.'));
-    const checks = checkPlaceIds(ctx.db);
-    for (const t of doc.tenders.filter((x) => checks.has(x.cashPlaceId))) {
-      add('error', `tenders.${t.lineNo - 1}.cashPlaceId`, 'CHECKS_PLACE', `A refund is not paid out of ${t.cashPlaceName}: deposit the checks first, then pay from cash or the bank.`);
-    }
 
     const held = depositsHeld(ctx.db, doc.customerId, doc.jobOrderId ?? null);
     const what = jo ? `for ${jo.number}` : `as ${doc.customerName}'s unapplied payments`;
@@ -154,8 +147,7 @@ export const refundDoc: DocTypeDef<RefundInput, Refund> = {
   },
 
   arbitrary(db) {
-    const checks = checkPlaceIds(db);
-    const places = listCashPlaces(db).map((c) => c.id).filter((id) => !checks.has(id));
+    const places = listCashPlaces(db).map((c) => c.id);
     const held = (
       db
         .prepare(

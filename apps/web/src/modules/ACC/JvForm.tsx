@@ -2,11 +2,10 @@
  * Journal voucher form (PLAN D5 JV, E12): the one document where the accountant picks accounts. Lines of account, the
  * party the account asks for, debit or credit and a memo, with a running "debits − credits" that must be zero. Someone
  * who may backdate (acc.backdate) gives the entry date; an earlier day is a late entry and needs a reason.
- * Also the Edit of a recorded voucher (cancel + reissue, NR-4). An accrual may be marked to reverse on the first day of
- * next month; "Reverse" in Reversals due opens this form at ?reverse=<id> with the reversal filled in and dated that day.
+ * Also the Edit of a recorded voucher (cancel + reissue, NR-4).
  */
 import { useEffect, useMemo, useState } from 'react';
-import { api, type Account, type DocTypeInfo, type JvReversal, type Me, type PartyType } from '../../api.ts';
+import { api, type Account, type DocTypeInfo, type Me, type PartyType } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord, useToday } from '../../generic/record.tsx';
@@ -37,29 +36,16 @@ export function JvForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; 
   const [rows, setRows] = useState<JvRow[]>([emptyRow(), emptyRow()]);
   const [dateText, setDateText] = useState('');
   const [reason, setReason] = useState('');
-  const [reverseNextMonth, setReverseNextMonth] = useState(false);
-  /** The JV this one reverses and the day it is dated. */
-  const [reversal, setReversal] = useState<{ id: string; number: string; date: string } | null>(null);
   const today = useToday();
-  const fill = (lines: JvLineInput[]) => {
-    setRows(rowsFromInput(lines));
-    lines.forEach((l, i) => l.party?.type === 'customer' && api.customer(l.party.id).then((c) => setRows((old) => old.map((x, j) => (j === i ? { ...x, partyName: c.display_name } : x))), () => undefined));
-  };
   const r = useRecord(type, mode, (d) => {
-    const input = d.input as { memo: string; lines: JvLineInput[]; lateReason?: string; reverseNextMonth?: boolean; reversalOf?: string };
-    const doc = d.doc as { reverses?: { number: string } | null };
+    const input = d.input as { memo: string; lines: JvLineInput[]; lateReason?: string };
     setMemo(input.memo);
-    fill(input.lines);
-    // A late entry is reissued on its own date, with its reason; a reversal on its reversal day; anything else on today.
+    setRows(rowsFromInput(input.lines));
+    // A late entry is reissued on its own date, with its reason; anything else on today.
     if (input.lateReason) (setDateText(d.header.businessDate), setReason(input.lateReason));
-    setReverseNextMonth(!!input.reverseNextMonth);
-    if (input.reversalOf) setReversal({ id: input.reversalOf, number: doc.reverses?.number ?? '', date: d.header.businessDate });
+    input.lines.forEach((l, i) => l.party?.type === 'customer' && api.customer(l.party.id).then((c) => setRows((old) => old.map((x, j) => (j === i ? { ...x, partyName: c.display_name } : x))), () => undefined));
   });
   useEffect(() => void api.accounts().then(setAccounts, r.fail), []);
-  const reverseOf = mode.kind === 'new' ? new URLSearchParams(location.search).get('reverse') : null;
-  useEffect(() => {
-    if (reverseOf) api.jvReversal(reverseOf).then((x: JvReversal) => (setMemo(x.input.memo), fill(x.input.lines), setReversal({ id: x.input.reversalOf, number: x.original.number, date: x.businessDate })), r.fail);
-  }, [reverseOf]);
 
   const usable = useMemo(() => postable(accounts), [accounts]);
   const accountOf = (row: JvRow) => accounts.find((a) => String(a.id) === row.accountId);
@@ -69,9 +55,8 @@ export function JvForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; 
   }, [needed.join()]);
 
   const mayBackdate = type.dating === 'accountant_may_backdate' && me.permissions.includes('acc.backdate');
-  // A reversal is dated its original's reversal day, which is never a late entry.
-  const date = reversal ? { businessDate: reversal.date !== today ? reversal.date : undefined, late: false, error: undefined } : mayBackdate ? entryDate(dateText, today, reason) : { late: false };
-  const typed = jvInput(memo, rows, accounts, date.late ? reason : undefined, reversal ? { reversalOf: reversal.id } : { reverseNextMonth });
+  const date = mayBackdate ? entryDate(dateText, today, reason) : { late: false };
+  const typed = jvInput(memo, rows, accounts, date.late ? reason : undefined);
   const errors = date.error ? [...typed.errors, date.error] : typed.errors;
   const { input } = typed;
   const sums = totals(rows);
@@ -125,15 +110,7 @@ export function JvForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; 
           })}
           {rows.length < 100 && <Button onClick={() => setRows([...rows, emptyRow()])}>+ Add a line</Button>}
         </Panel>
-        {reversal ? (
-          <Notice tone="info">This reverses {reversal.number || 'an accrual'}: its lines with debits and credits swapped, dated {reversal.date}. Record it as it is.</Notice>
-        ) : (
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={reverseNextMonth} onChange={(e) => setReverseNextMonth(e.target.checked)} />
-            Reverse on the first day of next month (an accrual). It shows in Reversals due from that day.
-          </label>
-        )}
-        {mayBackdate && !reversal && (
+        {mayBackdate && (
           <div className="grid gap-3 sm:grid-cols-[12rem_1fr]">
             <Field label="Date of the entry" hint="Empty is today">
               <input type="date" max={today || undefined} className={inputClass} value={dateText} onChange={(e) => setDateText(e.target.value)} />

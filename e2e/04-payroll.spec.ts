@@ -44,14 +44,8 @@ test('payroll: an employee, a week of attendance, the run, its release and the p
   await page.getByLabel('Pay group *').selectOption({ label: 'Weekly (piece rate)' });
   await page.getByLabel('Daily rate *').fill('700');
   await page.getByLabel(/^Why/).fill('First pay of a new tailor');
-  await page.getByRole('button', { name: 'Save pay', exact: true }).click();
+  await page.getByRole('button', { name: 'Save pay' }).click();
   await expect(page.getByText(/^Daily, Weekly \(piece rate\), 6-day week, since /)).toBeVisible();
-
-  // Where the payslip is emailed, and the tick that she agreed: kept on the employee record (no mail server here, so nothing is sent).
-  await page.getByLabel('Email address').fill('erin@example.test');
-  await page.getByLabel(/agrees to get payslips by email/).check();
-  await page.getByRole('button', { name: 'Save payslip email' }).click();
-  await expect(page.getByText('Saved.', { exact: true })).toBeVisible();
 
   // Attendance for Monday to Saturday.
   await page.getByRole('link', { name: 'Attendance', exact: true }).click();

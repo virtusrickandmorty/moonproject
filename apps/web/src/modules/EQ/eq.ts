@@ -53,12 +53,6 @@ export function officerInput(v: EqValues) {
   return { input: { ...base, kind: v.kind, purpose: v.note.trim() }, errors };
 }
 
-/** A dividend paid to a stockholder (DIVP-): who, from where, how much, and a note such as the check number. */
-export function dividendPaymentInput(v: EqValues) {
-  const { base, errors } = checked({ ...v, kind: 'dividend' }, 'stockholder', 'where the money came from');
-  return { input: { ...base, ...(v.note.trim() ? { note: v.note.trim() } : {}) }, errors };
-}
-
 /** A recorded owner money or officer transaction's input -> typed values, to prefill an edit. */
 export const eqValues = (i: { personId: string; cashPlaceId: number; amountCents: number; classification?: string; kind?: string; parValueCents?: number; note?: string; purpose?: string }): EqValues => ({
   personId: i.personId, kind: i.classification ?? i.kind ?? '', cashPlaceId: String(i.cashPlaceId), amount: formatPesos(i.amountCents),

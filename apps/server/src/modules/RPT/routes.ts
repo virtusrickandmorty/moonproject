@@ -2,16 +2,15 @@ import type { FastifyInstance } from 'fastify';
 import { AppError, csvPesos, toCsv, type CsvCell } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { comparativeTrialBalance, generalJournal, generalLedger, ledgerAccounts } from './books.ts';
-import { balanceSheet, compareSections, comparisonDates, incomeStatement, type Comparison, type StatementSection } from './statements.ts';
+import { balanceSheet, incomeStatement, type StatementSection } from './statements.ts';
 import { arAging, customerStatement } from './receivables.ts';
 import { statementCustomers } from '../CUS/public.ts';
-import { collectionsRegister, depositsCrossingQuarter, depositsHeld, jobOrderFollowUp, salesByPeriod } from './sales-collections.ts';
+import { collectionsRegister, depositsHeld, jobOrderFollowUp, salesByPeriod } from './sales-collections.ts';
 import { birBookRoutes } from './bir-books.ts';
 import { payrollProductionRoutes } from './payroll-production-routes.ts';
 import { apAging, purchases, purchaseOrders, receivedNotBilled } from './suppliers.ts';
 import { cashPosition, transfers, cashCounts, assetSchedule } from './cash-assets.ts';
 import { lateEntries, cancellations, exceptions, signIns } from './control.ts';
-import { cashFlowStatement } from './cash-flow.ts';
 
 function date(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new AppError('BAD_DATE', 'Use a date in YYYY-MM-DD format.', 400);
@@ -27,14 +26,6 @@ function range(q: Record<string, unknown>) {
   if (from > to) throw new AppError('BAD_RANGE', 'The first date must be on or before the last date.', 400);
   return { from, to };
 }
-function comparison(value: unknown): Comparison | undefined {
-  if (value === undefined || value === '' || value === 'none') return undefined;
-  if (value !== 'previous_month' && value !== 'last_year') throw new AppError('BAD_COMPARISON', 'Choose no comparison, previous month, or same period last year.', 400);
-  return value;
-}
-const comparedAmount = (amountCents: number, compareAmountCents: number) => ({ amountCents, compareAmountCents,
-  differenceCents: amountCents - compareAmountCents,
-  percentChange: compareAmountCents === 0 ? null : (amountCents - compareAmountCents) / Math.abs(compareAmountCents) * 100 });
 function pesos(cents: number | null): string { return cents === null ? '' : csvPesos(cents); }
 function sendCsv(reply: { header: (name: string, value: string) => unknown; type: (value: string) => unknown }, name: string, rows: CsvCell[][]) {
   reply.header('Content-Disposition', `attachment; filename="${name}.csv"`);
@@ -42,18 +33,14 @@ function sendCsv(reply: { header: (name: string, value: string) => unknown; type
   return toCsv(rows);
 }
 /** A statement section as printed: each header, its accounts and subtotal, then the section total. */
-function sectionRows(s: StatementSection, comparative = false): CsvCell[][] {
-  const values = (amount: number, compareAmount?: number): CsvCell[] => comparative
-    ? [csvPesos(amount), csvPesos(compareAmount ?? 0), csvPesos(amount - (compareAmount ?? 0)), compareAmount === 0 ? '' : ((amount - (compareAmount ?? 0)) / Math.abs(compareAmount ?? 0) * 100).toFixed(2)]
-    : [csvPesos(amount)];
-  const blanks = comparative ? ['', '', '', ''] : [''];
-  const rows: CsvCell[][] = [[s.title, '', s.title, ...blanks]];
+function sectionRows(s: StatementSection): CsvCell[][] {
+  const rows: CsvCell[][] = [[s.title, '', s.title, '']];
   for (const g of s.groups) {
-    if (g.code) rows.push([s.title, g.code, g.name, ...blanks]);
-    for (const l of g.lines) rows.push([s.title, l.code ?? '', l.name, ...values(l.amountCents, l.compareAmountCents)]);
-    if (g.code) rows.push([s.title, '', `Total ${g.name}`, ...values(g.totalCents, g.compareAmountCents)]);
+    if (g.code) rows.push([s.title, g.code, g.name, '']);
+    for (const l of g.lines) rows.push([s.title, l.code ?? '', l.name, csvPesos(l.amountCents)]);
+    if (g.code) rows.push([s.title, '', `Total ${g.name}`, csvPesos(g.totalCents)]);
   }
-  rows.push([s.title, '', `Total ${s.title.toLowerCase()}`, ...values(s.totalCents, s.compareAmountCents)]);
+  rows.push([s.title, '', `Total ${s.title.toLowerCase()}`, csvPesos(s.totalCents)]);
   return rows;
 }
 const STATEMENT_HEAD = ['Section', 'Account', 'Line', 'Amount PHP'];
@@ -70,21 +57,6 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
       ['Customer', 'Job order', 'Deposits held PHP', 'Document link'],
       ...result.rows.map((r): CsvCell[] => [r.customerName, r.jobOrderNumber, csvPesos(r.heldCents), r.documentPath]),
       ['TOTAL', '', csvPesos(result.totalCents), ''],
-    ]);
-  });
-  app.get('/api/rpt/deposits-crossing-quarter', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
-    const q = req.query as Record<string, unknown>;
-    if (typeof q.quarter !== 'string' || !/^\d{4}-Q[1-4]$/.test(q.quarter))
-      throw new AppError('BAD_QUARTER', 'Choose a quarter in YYYY-Q1 format.', 400);
-    const [year, quarter] = q.quarter.replace('Q', '').split('-').map(Number) as [number, number];
-    const result = depositsCrossingQuarter(db, year, quarter);
-    if (q.format !== 'csv') return result;
-    return sendCsv(reply, `deposits-crossing-${q.quarter}`, [
-      ['Customer', 'Job order', 'Deposit document', 'Deposit date', 'Quarter received', 'Amount PHP', 'Held at quarter end PHP', 'Quarter applied', 'Deposit VAT mode', 'Output VAT declared PHP', 'Document link'],
-      ...result.rows.map((r): CsvCell[] => [r.customerName, r.jobOrderNumber, r.depositDocumentNumber, r.depositDate,
-        r.quarterReceived, csvPesos(r.amountCents), csvPesos(r.heldAtQuarterEndCents), r.quarterApplied ?? '', r.mode,
-        csvPesos(r.outputVatCents), r.depositDocumentPath]),
-      ['TOTAL', '', '', '', '', csvPesos(result.totals.amountCents), csvPesos(result.totals.heldAtQuarterEndCents), '', '', csvPesos(result.totals.outputVatCents), ''],
     ]);
   });
   app.get('/api/rpt/collections-register', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
@@ -135,9 +107,6 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
     rows.push(['TOTAL', '', '', '', '', csvPesos(result.buckets.current), csvPesos(result.buckets.days1to30),
       csvPesos(result.buckets.days31to60), csvPesos(result.buckets.days61to90), csvPesos(result.buckets.over90),
       csvPesos(result.totalCents)]);
-    for (const r of result.allowance) rows.push([r.customerName, 'Less allowance for credit losses', '', '', '', '', '', '', '', '', csvPesos(-r.allowanceCents)]);
-    rows.push(['LESS ALLOWANCE FOR CREDIT LOSSES', '', '', '', '', '', '', '', '', '', csvPesos(-result.allowanceCents)]);
-    rows.push(['NET RECEIVABLES', '', '', '', '', '', '', '', '', '', csvPesos(result.netCents)]);
     rows.push([]);
     rows.push(['Uninvoiced job orders (memo, excluded from AR total)', 'Job order', 'Due date', 'Amount PHP']);
     for (const r of result.memo) rows.push([r.customerName, r.jobOrderNumber, r.dueDate, csvPesos(r.notInvoicedCents)]);
@@ -210,58 +179,24 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/rpt/income-statement', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const { from, to } = range(q);
-    const compare = comparison(q.compare);
-    const current = incomeStatement(db, from, to);
-    const otherDates = compare ? comparisonDates(compare, from, to) as { from: string; to: string } : undefined;
-    const otherStatement = otherDates ? incomeStatement(db, otherDates.from, otherDates.to) : undefined;
-    const result = otherStatement ? { ...current, sections: compareSections(current.sections, otherStatement.sections), comparison: { kind: compare, ...otherDates },
-      grossProfit: comparedAmount(current.grossProfitCents, otherStatement.grossProfitCents),
-      incomeBeforeTax: comparedAmount(current.incomeBeforeTaxCents, otherStatement.incomeBeforeTaxCents),
-      netIncome: comparedAmount(current.netIncomeCents, otherStatement.netIncomeCents) } : current;
+    const result = incomeStatement(db, from, to);
     if (q.format !== 'csv') return result;
     const [revenue, costOfSales, operatingExpenses, other, incomeTax] = result.sections as [StatementSection, StatementSection, StatementSection, StatementSection, StatementSection];
-    const head = compare ? ['Section', 'Account', 'Line', `${from} to ${to} PHP`, `${otherDates!.from} to ${otherDates!.to} PHP`, 'Difference PHP', 'Difference %'] : STATEMENT_HEAD;
-    const totals = (label: string, value: number, compared?: ReturnType<typeof comparedAmount>): CsvCell[] => compare
-      ? [label, '', label, csvPesos(value), csvPesos(compared!.compareAmountCents), csvPesos(compared!.differenceCents), compared!.percentChange === null ? '' : compared!.percentChange.toFixed(2)]
-      : [label, '', label, csvPesos(value)];
-    const rows: CsvCell[][] = [head, ...sectionRows(revenue, !!compare), ...sectionRows(costOfSales, !!compare),
-      totals('Gross profit', result.grossProfitCents, 'grossProfit' in result ? result.grossProfit : undefined),
-      ...sectionRows(operatingExpenses, !!compare), ...sectionRows(other, !!compare),
-      totals('Income before tax', result.incomeBeforeTaxCents, 'incomeBeforeTax' in result ? result.incomeBeforeTax : undefined),
-      ...sectionRows(incomeTax, !!compare), totals('Net income', result.netIncomeCents, 'netIncome' in result ? result.netIncome : undefined)];
+    const rows: CsvCell[][] = [STATEMENT_HEAD, ...sectionRows(revenue), ...sectionRows(costOfSales),
+      ['Gross profit', '', 'Gross profit', csvPesos(result.grossProfitCents)],
+      ...sectionRows(operatingExpenses), ...sectionRows(other),
+      ['Income before tax', '', 'Income before tax', csvPesos(result.incomeBeforeTaxCents)],
+      ...sectionRows(incomeTax), ['Net income', '', 'Net income', csvPesos(result.netIncomeCents)]];
     return sendCsv(reply, `income-statement-${from}-${to}`, rows);
   });
   app.get('/api/rpt/balance-sheet', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
-    const asOf = date(q.asOf); const compare = comparison(q.compare);
-    const current = balanceSheet(db, asOf);
-    const compareAsOf = compare ? comparisonDates(compare, asOf).from : undefined;
-    const other = compareAsOf ? balanceSheet(db, compareAsOf) : undefined;
-    const result = other ? { ...current, sections: compareSections(current.sections, other.sections), comparison: { kind: compare, asOf: compareAsOf },
-      totalAssets: comparedAmount(current.totalAssetsCents, other.totalAssetsCents),
-      totalLiabilitiesAndEquity: comparedAmount(current.totalLiabilitiesAndEquityCents, other.totalLiabilitiesAndEquityCents), comparisonBalanced: other.balanced } : current;
+    const result = balanceSheet(db, date(q.asOf));
     if (q.format !== 'csv') return result;
-    const head = compare ? ['Section', 'Account', 'Line', `${asOf} PHP`, `${compareAsOf} PHP`, 'Difference PHP', 'Difference %'] : STATEMENT_HEAD;
-    const check = (label: string, currentAmount: number, otherAmount: number): CsvCell[] => compare
-      ? ['Check', '', label, csvPesos(currentAmount), csvPesos(otherAmount), csvPesos(currentAmount - otherAmount), otherAmount === 0 ? '' : ((currentAmount - otherAmount) / Math.abs(otherAmount) * 100).toFixed(2)]
-      : ['Check', '', label, csvPesos(currentAmount)];
-    const rows: CsvCell[][] = [head, ...result.sections.flatMap((s) => sectionRows(s, !!compare)),
-      check('Trade receivables less the allowance for credit losses', result.receivables.netCents, other?.receivables.netCents ?? 0),
-      check('Total liabilities and equity', result.totalLiabilitiesAndEquityCents, other?.totalLiabilitiesAndEquityCents ?? 0),
-      check('Total assets less liabilities and equity', result.differenceCents, other?.differenceCents ?? 0)];
+    const rows: CsvCell[][] = [STATEMENT_HEAD, ...result.sections.flatMap(sectionRows),
+      ['Check', '', 'Total liabilities and equity', csvPesos(result.totalLiabilitiesAndEquityCents)],
+      ['Check', '', 'Total assets less liabilities and equity', csvPesos(result.differenceCents)]];
     return sendCsv(reply, `balance-sheet-${result.asOf}`, rows);
-  });
-  app.get('/api/rpt/cash-flow', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
-    const q = req.query as Record<string, unknown>; const { from, to } = range(q); const result = cashFlowStatement(db, from, to);
-    if (q.format !== 'csv') return result;
-    const rows: CsvCell[][] = [['Section', 'Line', 'Amount PHP'], ['Opening', 'Opening cash', csvPesos(result.openingCashCents)]];
-    for (const section of result.sections) {
-      for (const line of section.lines) rows.push([section.title, line.name, csvPesos(line.amountCents)]);
-      rows.push([section.title, `Net cash from ${section.title.toLowerCase()}`, csvPesos(section.totalCents)]);
-    }
-    rows.push(['Change', 'Net change in cash', csvPesos(result.netChangeCents)], ['Closing', 'Closing cash', csvPesos(result.closingCashCents)],
-      ['Check', 'Cash accounts on balance sheet', csvPesos(result.balanceSheetCashCents)], ['Check', 'Difference', csvPesos(result.checkDifferenceCents)]);
-    return sendCsv(reply, `cash-flow-${from}-${to}`, rows);
   });
   const simple = (url: string, name: string, get: (q: Record<string, unknown>) => Record<string, unknown>) =>
     app.get(url, { config: { permission: 'rpt.books.view' } }, async (req, reply) => {

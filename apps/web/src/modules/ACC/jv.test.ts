@@ -82,12 +82,4 @@ describe('journal voucher form', () => {
     expect(entryDate('2026-10-01', '2026-09-28', '').error).toBe('The date cannot be after today.');
     expect(entryDate('15/06/2026', '2026-09-28', '').error).toBe('Type the date like 2026-09-15, or leave it empty for today.');
   });
-  it('marks an accrual to reverse next month, or a reversal of one; a reversal is never itself marked', () => {
-    const rows = [row({ accountId: '40', debit: '100.00' }), row({ accountId: '30', credit: '100.00' })];
-    expect(jvInput('Accrual of power', rows, ACCOUNTS, undefined, { reverseNextMonth: true }).input).toMatchObject({ reverseNextMonth: true });
-    expect(jvInput('Accrual of power', rows, ACCOUNTS).input).not.toHaveProperty('reverseNextMonth');
-    const reversal = jvInput('Reversal of JV-000001', rows, ACCOUNTS, undefined, { reversalOf: 'jv-1', reverseNextMonth: true }).input;
-    expect(reversal).toMatchObject({ reversalOf: 'jv-1' });
-    expect(reversal).not.toHaveProperty('reverseNextMonth');
-  });
 });

@@ -21,10 +21,6 @@ describe('generic form fields', () => {
     expect(fieldsOf({ properties: { kind: { enum: ['a', 'b'], title: 'Kind of thing' } } })[0]).toMatchObject({ label: 'Kind of thing', kind: 'choice', options: ['a', 'b'] });
     // A lone cashPlaceId (a loan's proceeds, a loan payment) is a cash place too, not a number to type.
     expect(fieldsOf({ properties: { cashPlaceId: int, instalmentNo: int } }).map((f) => `${f.label} | ${f.kind}`)).toEqual(['Which cash place? | cashPlace', 'Instalment no | integer']);
-    // A date (a dividend's record date) is picked from a calendar and sent as typed, YYYY-MM-DD.
-    const [d] = fieldsOf({ properties: { recordDate: { type: 'string', format: 'date' } }, required: ['recordDate'] });
-    expect(d).toMatchObject({ label: 'Record date', kind: 'date' });
-    expect(toInput([d!], { recordDate: '2026-09-30' })).toEqual({ input: { recordDate: '2026-09-30' }, errors: {} });
   });
 
   it('reads a union of literals as a choice and keeps numbers as numbers (the VAT close quarter)', () => {

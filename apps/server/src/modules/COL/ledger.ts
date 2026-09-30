@@ -20,7 +20,7 @@ export interface Tender extends TenderInput { lineNo: number; cashPlaceName: str
 
 export const sumCents = (rows: readonly { amountCents: number }[]) => rows.reduce((s, r) => s + r.amountCents, 0);
 
-export function withNames<T extends TenderInput>(db: Db, tenders: readonly T[]): (T & Omit<Tender, keyof TenderInput>)[] {
+export function withNames(db: Db, tenders: readonly TenderInput[]): Tender[] {
   return tenders.map((t, i) => ({ ...t, lineNo: i + 1, cashPlaceName: getCashPlace(db, t.cashPlaceId)?.name ?? '?' }));
 }
 

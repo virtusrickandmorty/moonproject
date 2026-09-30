@@ -1,8 +1,8 @@
 /**
  * The attendance grid's rules (PLAN E11): the pay period shown by default, the days in it, which statuses a day takes,
- * overtime and night hours typed in hours, holidays filled in from the calendar, and the cells that changed. Pure, so it is tested without a browser; the server checks again.
+ * overtime typed in hours, and the cells that changed. Pure, so it is tested without a browser; the server checks again.
  */
-import type { AttendanceDay, AttendanceGrid, AttendanceSave, AttendanceStatus, PaidDays } from '../../api.ts';
+import type { AttendanceDay, AttendanceSave, AttendanceStatus, PaidDays } from '../../api.ts';
 
 export const STATUS_LABEL: Record<AttendanceStatus, string> = {
   present: 'Present', half_day: 'Half day', absent: 'Absent', rest_day: 'Rest day', leave: 'Leave (SIL)', unpaid_leave: 'Unpaid leave',
@@ -15,9 +15,6 @@ export const STATUS_MARK: Record<AttendanceStatus, string> = {
 const ON_HOLIDAY: AttendanceStatus[] = ['holiday_off', 'holiday_worked', 'rest_day', 'rest_day_worked'];
 const OFF_HOLIDAY: AttendanceStatus[] = ['present', 'half_day', 'absent', 'rest_day', 'leave', 'unpaid_leave', 'rest_day_worked'];
 const WITH_OT = new Set<AttendanceStatus>(['present', 'holiday_worked', 'rest_day_worked']);
-/** Night hours (worked between 10 PM and 6 AM, paid the night differential) go with any worked day, at most 8. */
-export const WITH_NIGHT = new Set<AttendanceStatus>(['present', 'half_day', 'holiday_worked', 'rest_day_worked']);
-const MAX_NIGHT_MINUTES = 480;
 export const statusesFor = (holiday: boolean) => (holiday ? ON_HOLIDAY : OFF_HOLIDAY);
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -53,30 +50,10 @@ export function otMinutes(text: string): number | undefined {
 }
 export const otText = (minutes: number) => (minutes ? (minutes % 60 ? `${Math.floor(minutes / 60)}:${pad(minutes % 60)}` : String(minutes / 60)) : '');
 
-export interface Cell { status: AttendanceStatus | ''; ot: string; night: string }
+export interface Cell { status: AttendanceStatus | ''; ot: string }
 export const cellKey = (employeeId: string, date: string) => `${employeeId}|${date}`;
 export function cellsOf(days: AttendanceDay[]): Record<string, Cell> {
-  return Object.fromEntries(days.map((d) => [cellKey(d.employeeId, d.date), { status: d.status, ot: otText(d.otMinutes), night: otText(d.nightMinutes) }]));
-}
-
-/**
- * The grid's cells as saved, with "Holiday off" filled in from the holiday calendar for everyone in service on a holiday
- * with nothing typed yet (not a future day, not a day a payroll paid). Filled cells are changes like any other: the
- * encoder changes those who worked to "Holiday worked" and saves. `filled` counts them.
- */
-export function startCells(grid: AttendanceGrid): { cells: Record<string, Cell>; filled: number } {
-  const cells = cellsOf(grid.days);
-  let filled = 0;
-  for (const h of grid.holidays) {
-    if (h.date < grid.from || h.date > grid.to || h.date > grid.today) continue;
-    for (const e of grid.employees) {
-      const key = cellKey(e.id, h.date);
-      if (cells[key] || h.date < e.hireDate || (e.separatedOn !== null && h.date > e.separatedOn) || paidBy(grid.paid, e.id, h.date)) continue;
-      cells[key] = { status: 'holiday_off', ot: '', night: '' };
-      filled++;
-    }
-  }
-  return { cells, filled };
+  return Object.fromEntries(days.map((d) => [cellKey(d.employeeId, d.date), { status: d.status, ot: otText(d.otMinutes) }]));
 }
 
 /** The cells that differ from what the server has, as the save input, with plain errors for cells that cannot be saved. */
@@ -86,22 +63,18 @@ export function changedCells(saved: AttendanceDay[], cells: Record<string, Cell>
   const errors: string[] = [];
   for (const [key, c] of Object.entries(cells)) {
     const before = was[key];
-    if ((before?.status ?? '') === c.status && (before?.ot ?? '') === c.ot.trim() && (before?.night ?? '') === c.night.trim()) continue;
+    if ((before?.status ?? '') === c.status && (before?.ot ?? '') === c.ot.trim()) continue;
     const [employeeId, date] = key.split('|') as [string, string];
     const at = `${names[employeeId] ?? 'Someone'} on ${date}`;
     if (!c.status) {
       if (before) errors.push(`${at}: pick a status (a typed day cannot be left blank).`);
-      else if (c.ot.trim() || c.night.trim()) errors.push(`${at}: pick a status for the overtime or night hours.`);
+      else if (c.ot.trim()) errors.push(`${at}: pick a status for the overtime.`);
       continue;
     }
     const ot = otMinutes(c.ot);
-    const night = otMinutes(c.night);
     if (ot === undefined) errors.push(`${at}: type overtime in hours, like 1.5 or 1:30.`);
     else if (ot > 0 && !WITH_OT.has(c.status)) errors.push(`${at}: overtime goes only with a worked day.`);
-    else if (night === undefined) errors.push(`${at}: type night hours in hours, like 1.5 or 1:30.`);
-    else if (night > 0 && !WITH_NIGHT.has(c.status)) errors.push(`${at}: night hours go only with a worked day.`);
-    else if (night > MAX_NIGHT_MINUTES) errors.push(`${at}: night hours are at most 8 (10 PM to 6 AM).`);
-    else days.push({ employeeId, date, status: c.status, ...(ot ? { otMinutes: ot } : {}), ...(night ? { nightMinutes: night } : {}) });
+    else days.push({ employeeId, date, status: c.status, ...(ot ? { otMinutes: ot } : {}) });
   }
   days.sort((a, b) => a.date.localeCompare(b.date) || a.employeeId.localeCompare(b.employeeId));
   return { days, errors };

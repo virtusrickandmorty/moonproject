@@ -24,7 +24,6 @@ describe('payroll screen rules', () => {
     );
     expect(finalPayText({ final: { separatedOn: '2026-09-10', caLeftCents: 0, loansLeftCents: 0 } })).toBe('Final pay: left on 2026-09-10');
     expect(qtyText('unused_leave', 3000)).toBe('3 days');
-    expect(qtyText('night', 150)).toBe('2:30 h'); // night differential, in minutes like overtime
     expect(thirteenthInput('SEMI_MONTHLY', 2026, {}, {}, 'e1').input).toEqual({ payGroup: 'SEMI_MONTHLY', year: 2026, employeeId: 'e1' });
   });
 
@@ -67,7 +66,7 @@ describe('payroll screen rules', () => {
     const types = [{ key: 'pay.run', module: 'PAY', title: 'Payroll Run' }, { key: 'pay.release', module: 'PAY', title: 'Payroll Release' }, { key: 'pay.thirteenth', module: 'PAY', title: '13th-Month Pay' }, { key: 'ca.advance', module: 'CA', title: 'Cash Advance' }] as never[];
     expect(buildMenu(types, new Set(['emp.view'])).find((g) => g.group === 'People & Payroll')).toEqual({
       group: 'People & Payroll',
-      items: ['Employees', 'Leave balances', 'Attendance', 'Holidays', 'Payroll Runs', 'Payroll Releases', '13th-Month Pay', 'Cash Advances'].map((label) => expect.objectContaining({ label })),
+      items: ['Employees', 'Attendance', 'Holidays', 'Payroll Runs', 'Payroll Releases', '13th-Month Pay', 'Cash Advances'].map((label) => expect.objectContaining({ label })),
     });
   });
 });

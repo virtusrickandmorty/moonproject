@@ -343,7 +343,6 @@ The app does not depend on any VPN. The shop works over the LAN with or without 
 | 2209 | Output VAT recognised on deposits (contra; used only in deposit-VAT mode B) | DEPOSIT_VAT | customer |
 | 2301 | Output VAT – current quarter | OUTPUT_VAT | customer |
 | 2302 | VAT payable (after quarterly close) | VAT_PAYABLE | — |
-| 2303 | Output VAT deferred on uncollected receivables (EOPT, ACC-27) | OUTPUT_VAT_DEFERRED | customer (+ invoice) |
 | 2310 | Withholding tax on compensation payable | WTC_PAYABLE | employee |
 | 2311 | Expanded withholding tax payable | EWT_PAYABLE | supplier (+ ATC) |
 | 2320 | Income tax payable | INCOME_TAX_PAYABLE | — |
@@ -420,7 +419,6 @@ Notation: "Cash X" = the GL account of the cash place chosen on the tender line 
 | CM-ALLOW | Credit memo (return/allowance), accountant-confirmed form | 4191 (NET); 2301 (VAT) | 1201 (or 2201 if already paid) | Quarter of the CM carries the VAT reduction |
 | QS-SALE | Quick sale: invoice record + collection in one action | as INV-REC then COL-RCV | | Two linked documents, one screen |
 | BAD-DEBT | Accountant write-off | 6270 (or 1209 via allowance) | 1201 | Accountant only |
-| BAD-ALLOW | Allowance for credit losses (accountant), when ACC-26 picks the allowance method: the allowance needed at a date, suggested from the AR aging by a rate per age bucket | 6270 (increase) or 1209 (decrease), per customer | 1209 (increase) or 6270 (decrease) | Posts the change from the 1209 balance. Under the allowance method BAD-DEBT is Dr 1209 / Cr 1201 and needs enough allowance. Income tax adds the provision back and deducts the write-offs |
 
 ### Purchases and expenses (periodic inventory)
 | Code | Trigger | Debit | Credit | Notes |
@@ -467,8 +465,6 @@ Notation: "Cash X" = the GL account of the cash place chosen on the tender line 
 |---|---|---|---|---|
 | VAT-CLOSE | Quarterly VAT close (2550Q), accountant | 2301 (quarter output); 1402 (if input > output) | 1401 (quarter input); 2302 (payable) | Uses 1402/1404 carry-overs |
 | VAT-PAY | VAT payment | 2302 | Cash X | |
-| UVAT | Output VAT on an uncollected receivable (accountant; setting ACC-27 on; the quarter after the agreed time to pay ends; RMC 65-2024 requisites) | 2301 (party customer) | 2303 (party customer + invoice) | VAT × owed ÷ gross of the invoice |
-| UVATR | Add-back when the customer pays (proposed on the 2550Q worksheet) | 2303 (party customer + invoice) | 2301 (party customer) | The claim's VAT on what was paid since |
 | IT-QPAY / IT-PROV / IT-SETTLE | Income tax quarterly payment / year-end provision / settlement | 1411 / 8101 / 2320 | Cash X / 2320 / 1411, 1410 (only CWT backed by 2307s received), Cash X | Accountant |
 | JV | Journal voucher (only place accounts are chosen freely) | any postable | any postable | Accountant only; may be backdated; filed-period warning |
 | OB-* | Opening balances wizard (cut-over date) | per section | 3900 | See D8 |
@@ -993,8 +989,6 @@ Each item has a DEFAULT the build uses until answered. "When" = latest point the
 | ACC-23 | Post-dated checks: record when the check date arrives (memo list until then)? | Yes | Before go-live |
 | ACC-24 | Any government customers (5% VAT withholding)? | Supported; none assumed | Before go-live |
 | ACC-25 | SLSP submission format/threshold; SAWT preparation | Registers + CSV data | First quarter-end |
-| ACC-26 | Bad debts: direct write-off to expense (6270), or an allowance for credit losses (1209) provided from the AR aging with written-off invoices charged against it? For income tax only an actual write-off is deductible either way. | Direct write-off | Before go-live |
-| ACC-27 | Claim output VAT on uncollected receivables (EOPT, RMC 65-2024) in the quarter after a credit sale's agreed time to pay ends, and add it back when paid? | Off until the accountant decides | Before go-live |
 
 ## K2. Owner (OWN)
 | ID | Question | Default | When |

@@ -16,8 +16,6 @@
  *   left to pay, or for a year before the cut-over date what its opening tax payable left, less the year's earlier 1702
  *   payments; dated on the settlement's (or the opening's) date or later. Once a year is settled, its 1702Qs are paid
  *   with the 1702 instead.
- *   1601-FQ (a quarter, PLAN D5 DIV): Dr 2312 final withholding tax payable, up to the final tax withheld in the quarter
- *   (the dividend declarations dated in it) less the quarter's earlier 1601-FQ payments (payments.ts finalTaxDue).
  *   Dr 6290 penalty (surcharge, interest, compromise; optional) / Cr cash place (both).
  * The variance check is STAT's: the same amount clears every payee; less is a partial payment, spread over the payees in
  * proportion, and the rest stays payable; more is refused. A penalty is paid on top: it is no one's payable, so it never
@@ -35,9 +33,7 @@ import { returnDue, vatReturnDue } from '../calendar.ts';
 import { incomeTaxPosition } from '../income-tax.ts';
 import { settlementOf } from '../annual-income-tax.ts';
 import { OPENING_PAYABLE, openingsOf } from '../opening-payables.ts';
-import {
-  BIR_FORM, BIR_FORMS, annualIncomeTaxDue, birPaymentsOf, ewtDue, ewtPaidWith, finalTaxDue, parsePeriod, periodsDue, quarterPeriod, vatDue, type BirForm, type Period,
-} from '../payments.ts';
+import { BIR_FORM, BIR_FORMS, annualIncomeTaxDue, birPaymentsOf, ewtDue, ewtPaidWith, parsePeriod, periodsDue, quarterPeriod, vatDue, type BirForm, type Period } from '../payments.ts';
 
 const MAX_CENTS = 100_000_000_00;
 export const birPaymentInput = z
@@ -86,9 +82,6 @@ function due(db: Db, input: BirPaymentInput, p: Period | null): Pick<BirPayment,
     const w = incomeTaxPosition(db, p.year, p.quarter);
     return { vatClose: null, opening: w.opening, settlement: null, payableCents: Math.max(w.leftCents, 0), lines: [] };
   }
-  if (input.form === '1601-FQ') {
-    return { vatClose: null, opening: null, settlement: null, payableCents: Math.max(finalTaxDue(db, p.year, p.quarter).leftCents, 0), lines: [] };
-  }
   if (input.form === '2550Q') {
     const v = vatDue(db, p.year, p.quarter);
     return { vatClose: v.close, opening: v.opening, settlement: null, payableCents: Math.max(v.dueCents, 0), lines: [] };
@@ -121,20 +114,6 @@ function loadAnnual(db: Db, documentId: string): BirPayment | undefined {
     opening: r.opening_id ? { documentId: r.opening_id, number: r.opening_number!, date: r.opening_date! } : null,
     settlement: r.settlement_id ? { documentId: r.settlement_id, number: r.settlement_number!, date: r.settlement_date! } : null,
     payableCents: r.payable_cents, lines: [], totalCents: r.amount_cents + r.penalty_cents,
-  };
-}
-
-/** A 1601-FQ payment (tax_final_tax_payments), or undefined for the other forms. */
-function loadFinalTax(db: Db, documentId: string): BirPayment | undefined {
-  const r = db.prepare('SELECT * FROM tax_final_tax_payments WHERE document_id = ?').get(documentId) as
-    | { period: string; cash_account_id: number; reference: string; payable_cents: number; amount_cents: number; penalty_cents: number; note: string | null }
-    | undefined;
-  if (!r) return undefined;
-  return {
-    form: '1601-FQ', period: r.period, cashPlaceId: r.cash_account_id, amountCents: r.amount_cents, ...(r.penalty_cents ? { penaltyCents: r.penalty_cents } : {}),
-    reference: r.reference, ...(r.note ? { note: r.note } : {}),
-    periodLabel: parsePeriod(r.period)!.label, cashPlaceName: getCashPlace(db, r.cash_account_id)?.name ?? '?',
-    vatClose: null, opening: null, settlement: null, payableCents: r.payable_cents, lines: [], totalCents: r.amount_cents + r.penalty_cents,
   };
 }
 
@@ -231,9 +210,7 @@ export const birPaymentDoc: DocTypeDef<BirPaymentInput, BirPayment> = {
       }
     };
     if (doc.form === '1702Q' || doc.form === '1702') beforeOpening(doc.opening);
-    else if (doc.form === '1601-FQ') {
-      if (ctx.businessDate <= p.to) add('warning', 'period', 'PERIOD_OPEN', `${p.label} has not ended: final tax withheld later in it stays payable.`);
-    } else if (doc.form === '2550Q') {
+    else if (doc.form === '2550Q') {
       if (!doc.vatClose && !doc.opening) {
         add('error', 'period', 'NOT_CLOSED', `Record the VAT close of ${p.label} first: the 2550Q pays what the close made payable.`);
         return issues;
@@ -278,13 +255,12 @@ export const birPaymentDoc: DocTypeDef<BirPaymentInput, BirPayment> = {
       add('error', 'period', 'NOTHING_DUE', doc.form === '2550Q'
         ? `Nothing is left to pay with ${what}: its ${source} made no VAT payable, or it is all paid.`
         : doc.form === '1702' ? `Nothing is left to pay with ${what}: its ${source} left no income tax payable, or it is all paid.`
-        : doc.form === '1601-FQ' ? `No final tax is left to pay with ${what}: no dividend declared in it withheld any, or it is all paid.`
         : `No EWT is left to pay with ${what}: none was withheld in it, or it is all paid.`);
     } else if (doc.amountCents > doc.payableCents) {
       const left = `${formatPeso(doc.payableCents)} is left to pay with ${what}, ${formatPeso(doc.amountCents - doc.payableCents)} less than this.`;
       add('error', 'amountCents', 'OVER', doc.form === '2550Q' || doc.form === '1702'
         ? `${left} Check the amount against the ${source}; if the return says more, the accountant corrects the books first.`
-        : `${left} Find the difference first (a ${doc.form === '1601-FQ' ? 'dividend declaration' : 'bill or voucher'} not recorded yet); the accountant records any extra with a journal voucher.`);
+        : `${left} Find the difference first (a bill or voucher not recorded yet); the accountant records any extra with a journal voucher.`);
     } else if (doc.amountCents < doc.payableCents) {
       add('warning', 'amountCents', 'UNDER', `${formatPeso(doc.payableCents)} is left to pay with ${what}; ${formatPeso(doc.payableCents - doc.amountCents)} stays payable after this.`);
     }
@@ -297,12 +273,6 @@ export const birPaymentDoc: DocTypeDef<BirPaymentInput, BirPayment> = {
   },
 
   persist(db, doc, h) {
-    if (doc.form === '1601-FQ') {
-      db.prepare(
-        `INSERT INTO tax_final_tax_payments (document_id, period, cash_account_id, reference, payable_cents, amount_cents, penalty_cents, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(h.documentId, doc.period, doc.cashPlaceId, doc.reference, doc.payableCents, doc.amountCents, doc.penaltyCents ?? 0, doc.note ?? null);
-      return;
-    }
     if (doc.form === '1702') {
       db.prepare(
         `INSERT INTO tax_income_tax_annual_payments (document_id, period, cash_account_id, reference, settlement_id, opening_id, payable_cents, amount_cents, penalty_cents, note)
@@ -331,9 +301,7 @@ export const birPaymentDoc: DocTypeDef<BirPaymentInput, BirPayment> = {
 
   journal(doc) {
     const tag = `${doc.form} for ${doc.periodLabel}`;
-    const tax: DraftLine[] = doc.form === '1601-FQ'
-      ? [{ account: { role: 'FINAL_TAX_PAYABLE' }, debitCents: doc.amountCents, memo: `Final tax withheld in ${doc.periodLabel} (1601-FQ)` }]
-      : doc.form === '1702'
+    const tax: DraftLine[] = doc.form === '1702'
       ? [{ account: { role: 'INCOME_TAX_PAYABLE' }, debitCents: doc.amountCents, memo: `Income tax of ${doc.periodLabel} (1702)` }]
       : doc.form === '1702Q'
       ? [{ account: { role: doc.opening ? 'INCOME_TAX_PAYABLE' : 'PREPAID_INCOME_TAX' }, debitCents: doc.amountCents, memo: `Income tax of ${doc.periodLabel}, year to date (1702Q)` }]
@@ -351,7 +319,7 @@ export const birPaymentDoc: DocTypeDef<BirPaymentInput, BirPayment> = {
   },
 
   load(db, documentId) {
-    const annual = loadAnnual(db, documentId) ?? loadFinalTax(db, documentId);
+    const annual = loadAnnual(db, documentId);
     if (annual) return annual;
     const it = loadIncomeTax(db, documentId);
     if (it) return it;
@@ -386,7 +354,7 @@ export const birPaymentDoc: DocTypeDef<BirPaymentInput, BirPayment> = {
 
   summary(doc) {
     const n = doc.lines.length;
-    const who = doc.form === '2550Q' || doc.form === '1702Q' || doc.form === '1702' || doc.form === '1601-FQ' ? '' : `, for ${n} ${n === 1 ? 'payee' : 'payees'}`;
+    const who = doc.form === '2550Q' || doc.form === '1702Q' || doc.form === '1702' ? '' : `, for ${n} ${n === 1 ? 'payee' : 'payees'}`;
     const left = doc.payableCents - doc.amountCents;
     const penalty = doc.penaltyCents ? `, plus ${formatPeso(doc.penaltyCents)} surcharge, interest and compromise (${formatPeso(doc.totalCents)} in all)` : '';
     return `This will record ${formatPeso(doc.amountCents)} ${BIR_FORM[doc.form].tax} paid to the BIR with the ${doc.form} for ${doc.periodLabel} (${doc.reference}) from ${doc.cashPlaceName}${who}${penalty}.${left > 0 ? ` ${formatPeso(left)} stays payable.` : ''}`;

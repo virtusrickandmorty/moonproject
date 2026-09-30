@@ -4,8 +4,6 @@ import { sssRateAt } from './statutory.ts';
 export { hdmfMonthly, hdmfRateAt, phicMonthly, phicRateAt, sssMonthly, sssRateAt } from './statutory.ts';
 import type { Agency, LoanKind } from './loans.ts';
 export { KIND_LABEL, LOAN_ACCOUNT, type Agency, type LoanKind } from './loans.ts';
-// Last, after loans.ts: the run's doc type reaches STAT (via TAX), which reads LOAN_ACCOUNT from here as it loads.
-import { runDoc } from './doctypes/run.ts';
 
 /** One employee's recorded pay for a contribution month (PAY-RUN's month M, F3), over the month's recorded runs. */
 export interface MonthPay {
@@ -201,36 +199,3 @@ export function thirteenthReportRows(db: Db, year: number) {
     FROM pay_thirteenth_employees e JOIN pay_thirteenths t ON t.document_id=e.document_id JOIN documents d ON d.id=e.document_id
     WHERE d.status='posted' AND t.year=? ORDER BY e.employee_name,d.number`).all(year) as Array<Record<string, string | number>>;
 }
-
-/**
- * COM's timed scan (PLAN E14) reads payroll releases after the place it last reached (a documents row id), so no posting
- * code has a hook. Row ids only grow (nothing is deleted), so one is a safe place to resume from.
- */
-export interface PayrollRelease {
-  id: string; number: string; runId: string; runNumber: string; periodStart: string; periodEnd: string;
-  /** The employees whose net pay this release paid. Never amounts. */
-  employeeIds: string[];
-}
-/** The newest documents row id now: where a scan starts when it is switched on, so nothing already released is emailed. */
-export const payrollScanEdge = (db: Db): number => db.prepare('SELECT COALESCE(MAX(rowid), 0) FROM documents').pluck().get() as number;
-
-/** Releases of a payroll run recorded after `after` (a documents row id) that are still recorded. A cancelled one has no one to pay; recording it again is a new release. */
-export function payrollReleasesAfter(db: Db, after: number, limit: number): { items: PayrollRelease[]; next: number } {
-  const raw = db
-    .prepare(
-      `SELECT d.rowid AS cursor, d.id, d.number, d.status, r.run_id AS runId, rd.number AS runNumber, p.period_start AS periodStart, p.period_end AS periodEnd
-       FROM documents d JOIN pay_releases r ON r.document_id = d.id JOIN pay_runs p ON p.document_id = r.run_id JOIN documents rd ON rd.id = r.run_id
-       WHERE d.rowid > ? AND d.doc_type = 'pay.release' ORDER BY d.rowid LIMIT ?`,
-    )
-    .all(after, limit) as (PayrollRelease & { cursor: number; status: string })[];
-  const who = db.prepare('SELECT employee_id FROM pay_release_lines WHERE document_id = ? ORDER BY rowid').pluck();
-  const items = raw.filter((r) => r.status === 'posted').map(({ cursor: _c, status: _s, ...rel }) => ({ ...rel, employeeIds: who.all(rel.id) as string[] }));
-  return { items, next: raw.length < limit ? payrollScanEdge(db) : raw[raw.length - 1]!.cursor };
-}
-
-/** Is this payroll release still recorded (not cancelled)? Read again when its emails are sent. */
-export const payrollReleaseStands = (db: Db, releaseId: string): boolean =>
-  db.prepare(`SELECT 1 FROM documents WHERE id = ? AND doc_type = 'pay.release' AND status = 'posted'`).get(releaseId) !== undefined;
-
-/** A recorded run as stored, for the payslip print (PRT). Callers keep to the one employee they are allowed to send. */
-export const payrollRunDoc = (db: Db, runId: string) => runDoc.load(db, runId);

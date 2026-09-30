@@ -75,24 +75,13 @@ export function straightLine(a: Pick<Asset, 'costCents' | 'residualCents' | 'lif
 type Life = Pick<Asset, 'acquiredOn' | 'costCents' | 'residualCents' | 'lifeMonths'>;
 
 /**
- * The last month the old books charged for an opening asset. They charge at each month's end, so an opening dated the
- * 1st (the usual cut-over) carries the old books up to the month before, and that month's own charge is still owed; an
- * opening dated any other day is taken to carry the cut-over month too.
- */
-export function lastMonthCharged(cutoverDate: string): string {
-  const y = Number(cutoverDate.slice(0, 4)), m = Number(cutoverDate.slice(5, 7));
-  if (cutoverDate.slice(8, 10) !== '01') return cutoverDate.slice(0, 7);
-  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
-}
-
-/**
- * An asset owned before the cut-over (fa.opening), on the cut-over date: its months in service up to the last month the
- * old books charged (counted like a purchase's; those months are not depreciated again), the straight-line figure for
- * them, what is left to depreciate, and the months of its life left after that month (at least one: what is left of an
- * asset whose life ran out before the cut-over comes off in the first run after it).
+ * An asset owned before the cut-over (fa.opening), on the cut-over date: its months in service up to the cut-over month
+ * (counted like a purchase's; that month is not depreciated again), the straight-line figure for them, what is left to
+ * depreciate, and the months of its life left after the cut-over month (at least one: what is left of an asset whose
+ * life ran out before the cut-over comes off in the first run after it).
  */
 export function atCutover(a: Life, cutoverDate: string, accumulatedCents: number) {
-  const months = monthsInService(a.acquiredOn, lastMonthCharged(cutoverDate));
+  const months = monthsInService(a.acquiredOn, cutoverDate.slice(0, 7));
   const straightLineCents = straightLine(a, months);
   return {
     months, straightLineCents, onStraightLine: accumulatedCents === straightLineCents,
@@ -102,8 +91,8 @@ export function atCutover(a: Life, cutoverDate: string, accumulatedCents: number
 
 /**
  * The accumulated depreciation an asset should have at the end of `month` (YYYY-MM); a run charges the step up to it.
- * A purchase follows the straight line. An opening asset keeps the old books' figure through the last month they charged;
- * after it, it follows the straight line when the old books were on it, else what was left at the cut-over is spread evenly
+ * A purchase follows the straight line. An opening asset keeps the old books' figure through the cut-over month; after
+ * it, it follows the straight line when the old books were on it, else what was left at the cut-over is spread evenly
  * over the months of life left. Either way the charges add up to exactly cost − residual and stop there.
  */
 export function scheduledCents(a: Life & Pick<Asset, 'openedOn' | 'openingAccumulatedCents'>, month: string): number {
