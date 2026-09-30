@@ -3,13 +3,15 @@
  * The App Password is typed here and sent once; it is never shown again, only "saved".
  */
 import { Fragment, useEffect, useState } from 'react';
-import { api, type EmailKind, type EmailSettings, type Me, type Outbox, type OutboxRow } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, manilaTime, useAction, usePasswordPrompt } from '../../components/ui.tsx';
+import { api, type BulkStatements, type EmailKind, type EmailSettings, type Me, type Outbox, type OutboxRow } from '../../api.ts';
+import { Button, Field, Notice, Panel, inputClass, manilaTime, peso, useAction, usePasswordPrompt } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
+import { useToday } from '../RPT/Books.tsx';
 import { KIND_WORDS, PORT_HINT, STATUS_WORDS, TEMPLATE_WORDS, documentWords, progressWords } from './com.ts';
 
 const TABS = [
   { section: '', label: 'Outbox', permission: 'com.outbox.view', denied: 'You cannot see the customer emails.' },
+  { section: 'statements', label: 'Email statements', permission: 'com.statement.send', denied: 'Only owners and the accountant can email statements.' },
   { section: 'settings', label: 'Settings', permission: 'com.settings.manage', denied: 'Only an owner can change the email settings.' },
 ];
 
@@ -20,6 +22,7 @@ export function Communications({ me, params }: { me: Me; params?: Record<string,
   let page = <Notice>Page not found.</Notice>;
   if (tab && !allowed(tab.permission)) page = <Notice>{tab.denied}</Notice>;
   else if (section === '') page = <OutboxTab canResend={allowed('com.outbox.resend')} />;
+  else if (section === 'statements') page = <BulkStatementsTab />;
   else if (section === 'settings') page = <SettingsTab />;
   return (
     <div className="space-y-4">
@@ -32,6 +35,47 @@ export function Communications({ me, params }: { me: Me; params?: Record<string,
       {page}
     </div>
   );
+}
+
+function BulkStatementsTab() {
+  const today = useToday();
+  const [date, setDate] = useState('');
+  const [data, setData] = useState<BulkStatements | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const load = useAction();
+  const send = useAction();
+  const [done, setDone] = useState('');
+  useEffect(() => { if (today && !date) setDate(today); }, [today, date]);
+  const show = () => load.run(async () => {
+    const next = await api.comBulkStatements(date);
+    setData(next); setSelected(new Set(next.eligible.map((row) => row.customerId))); setDone('');
+  });
+  const toggle = (id: string) => setSelected((old) => {
+    const next = new Set(old); if (next.has(id)) next.delete(id); else next.add(id); return next;
+  });
+  const queue = () => send.run(async () => {
+    const result = await api.comSendBulkStatements(date, [...selected]);
+    setDone(result.queued ? `${result.queued} statement email${result.queued === 1 ? '' : 's'} queued.` : 'No new statement emails were queued.');
+    setData(await api.comBulkStatements(date));
+  });
+  return <div className="space-y-4">
+    <Panel title="Email statements for a date">
+      <p className="text-sm text-slate-600">Customers with a balance, an email address and consent are ticked. Each customer can be queued only once for this statement date.</p>
+      <div className="flex flex-wrap items-end gap-3"><Field label="Statement date"><input type="date" className={inputClass} value={date} max={today} onChange={(e) => { setDate(e.target.value); setData(null); setDone(''); }} /></Field>
+        <Button disabled={!date || load.busy} onClick={() => void show()}>Show customers</Button></div>
+      {(load.error || send.error) && <Notice>{load.error || send.error}</Notice>}{done && <Notice tone="success">{done}</Notice>}
+    </Panel>
+    {data && <><Panel title={`Ready to email (${data.eligible.length})`}>
+      {data.eligible.length === 0 ? <p className="text-sm text-slate-500">No customers are ready.</p> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="pr-3">Send</th><th className="pr-3">Customer</th><th className="pr-3">Email</th><th className="pr-3 text-right">Balance</th><th>Last statement emailed</th></tr></thead><tbody>
+        {data.eligible.map((row) => <tr className="border-t border-slate-100" key={row.customerId}><td className="py-2 pr-3"><input aria-label={`Email ${row.customerName}`} type="checkbox" checked={selected.has(row.customerId)} onChange={() => toggle(row.customerId)} /></td><td className="pr-3">{row.customerName}</td><td className="pr-3">{row.email}</td><td className="pr-3 text-right">{peso(row.balanceCents)}</td><td>{row.lastStatementEmailedAt ? manilaTime(row.lastStatementEmailedAt) : 'Never'}</td></tr>)}
+      </tbody></table></div>}
+      <Button tone="primary" disabled={selected.size === 0 || send.busy} onClick={() => void queue()}>{send.busy ? 'Queuing…' : `Send ${selected.size} statement${selected.size === 1 ? '' : 's'}`}</Button>
+    </Panel><Panel title={`Cannot email (${data.excluded.length})`}>
+      {data.excluded.length === 0 ? <p className="text-sm text-slate-500">None.</p> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="pr-3">Customer</th><th className="pr-3 text-right">Balance</th><th>Reason</th></tr></thead><tbody>
+        {data.excluded.map((row) => <tr className="border-t border-slate-100" key={row.customerId}><td className="py-2 pr-3">{row.customerName}</td><td className="pr-3 text-right">{peso(row.balanceCents)}</td><td>{row.reason}</td></tr>)}
+      </tbody></table></div>}
+    </Panel></>}
+  </div>;
 }
 
 function OutboxTab({ canResend }: { canResend: boolean }) {

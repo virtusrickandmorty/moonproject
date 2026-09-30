@@ -205,7 +205,7 @@ describe('the Home line and the nights kept', () => {
 
   it('shows nothing before any night has run', async () => {
     const s = (await owner.get('/api/aud/nightly/status')).json();
-    expect(s).toEqual({ night: null, foundCount: 0, found: [] });
+    expect(s).toEqual({ night: null, ranAt: null, foundCount: 0, found: [], integrity: null });
     expect(nightlyLine(s)).toBeNull();
     expect((await owner.get('/api/aud/nightly')).json()).toEqual({ rows: [], nextBefore: null });
   });

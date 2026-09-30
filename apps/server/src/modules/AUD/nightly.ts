@@ -231,9 +231,11 @@ export function nightlyRuns(db: Db, today: string, o: { before?: string; limit: 
 
 /** What the owner's and accountant's Home shows: the newest night, and which checks found something. */
 export function nightlyStatus(db: Db) {
-  const run = db.prepare('SELECT id, night, found_count AS foundCount FROM aud_nightly_runs ORDER BY night DESC LIMIT 1').get() as { id: string; night: string; foundCount: number } | undefined;
-  if (!run) return { night: null, foundCount: 0, found: [] as { key: string; label: string; foundCount: number }[] };
+  const run = db.prepare('SELECT id, night, ran_at AS ranAt, found_count AS foundCount FROM aud_nightly_runs ORDER BY night DESC LIMIT 1').get() as { id: string; night: string; ranAt: string; foundCount: number } | undefined;
+  if (!run) return { night: null, ranAt: null, foundCount: 0, found: [] as { key: string; label: string; foundCount: number }[], integrity: null };
   const found = (db.prepare('SELECT check_key AS key, found_count AS foundCount FROM aud_nightly_checks WHERE run_id = ? AND passed = 0').all(run.id) as { key: string; foundCount: number }[])
     .map((c) => ({ ...c, label: labelOf.get(c.key)?.label ?? c.key }));
-  return { night: run.night, foundCount: run.foundCount, found };
+  const integrity = db.prepare("SELECT passed, found_count AS foundCount FROM aud_nightly_checks WHERE run_id = ? AND check_key = 'integrity'").get(run.id) as { passed: number; foundCount: number } | undefined;
+  return { night: run.night, ranAt: run.ranAt, foundCount: run.foundCount, found,
+    integrity: integrity ? { ranAt: run.ranAt, passed: integrity.passed === 1, foundCount: integrity.foundCount } : null };
 }

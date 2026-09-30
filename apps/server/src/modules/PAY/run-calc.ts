@@ -1,10 +1,11 @@
 /**
  * The payroll run algorithm (PLAN F3), server-side and deterministic. For each employee of the pay group in service
  * during the period: earnings from attendance (days × the daily rate of that day, holidays and rest days at the DOLE
- * rates, overtime, night differential; an unworked regular holiday only after a workday present or on paid leave), the
- * half-month salary of monthly staff, unpaid piece work up to the period end (PRD), and manual lines; then SSS,
- * PhilHealth and Pag-IBIG for the contribution month as a month-to-date true-up, withholding tax for the period,
- * government loan amortizations (once a month, loans.ts), the cash-advance instalment, net pay and the 13th-month accrual.
+ * rates, overtime, night differential, on overtime of the overtime rate; an unworked regular holiday only after a
+ * workday present or on paid leave), the half-month salary of monthly staff, unpaid piece work up to the period end
+ * (PRD), and manual lines; then SSS, PhilHealth and Pag-IBIG for the contribution month as a month-to-date true-up,
+ * withholding tax for the period, government loan amortizations (once a month, loans.ts), the cash-advance instalment,
+ * net pay and the 13th-month accrual.
  * On a year-end run the tax is the year-end adjustment instead (year-end.ts): a deficiency withheld, or an excess refunded
  * (net pay more by it). Warnings go with the result.
  * Unused SIL (F1, Labor Code Art. 95) is paid in cash on an employee's final pay, and on a December run with "Pay unused
@@ -243,14 +244,19 @@ function earnings(
       case 'rest_day':
         break;
     }
-    if (d.otMinutes > 0) {
-      const otBp = d.status === 'present' ? r.otOrdinaryBp : divRoundHalfAway(dayBp * r.otPremiumBp, 10_000);
-      add('ot', `Overtime (${pct(otBp)} of the hourly rate)`, d.otMinutes, rate, otBp, 480); // hourly = daily ÷ 8; qty in minutes
-    }
-    // Night differential (F1): 10% of the day's hourly rate, so on a holiday or rest day 10% of its premium rate.
-    if (d.nightMinutes > 0) {
+    const otBp = d.status === 'present' ? r.otOrdinaryBp : divRoundHalfAway(dayBp * r.otPremiumBp, 10_000);
+    if (d.otMinutes > 0) add('ot', `Overtime (${pct(otBp)} of the hourly rate)`, d.otMinutes, rate, otBp, 480); // hourly = daily ÷ 8; qty in minutes
+    // Night differential (F1): 10% of the day's hourly rate, so on a holiday or rest day 10% of its premium rate; night
+    // minutes that were also overtime get 10% of that day's overtime hourly rate instead (DOLE Handbook on Workers'
+    // Statutory Monetary Benefits). Saving attendance keeps them within the overtime and the night minutes.
+    const nightOt = Math.min(d.nightOtMinutes, d.otMinutes, d.nightMinutes);
+    if (d.nightMinutes > nightOt) {
       const nightBp = divRoundHalfAway(dayBp * r.nightDiffBp, 10_000);
-      add('night', `Night differential (${pct(nightBp)} of the hourly rate)`, d.nightMinutes, rate, nightBp, 480);
+      add('night', `Night differential (${pct(nightBp)} of the hourly rate)`, d.nightMinutes - nightOt, rate, nightBp, 480);
+    }
+    if (nightOt > 0) {
+      const nightOtBp = divRoundHalfAway(otBp * r.nightDiffBp, 10_000);
+      add('night', `Night differential on overtime (${pct(nightOtBp)} of the hourly rate)`, nightOt, rate, nightOtBp, 480);
     }
   }
   if (manualNeeded.size) note('ADD_BY_HAND', `${e.name} is paid per piece: add ${[...manualNeeded].join(' and ')} as a manual line.`);
