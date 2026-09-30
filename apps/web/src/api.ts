@@ -15,6 +15,17 @@ export interface Me { userId: string; username: string; displayName: string; rol
 export interface GoLiveAnswer { id: number; answer: string; decidedBy: string; decidedOn: string; note: string; recordedAt: string; recordedByName: string }
 export interface GoLiveDecision { id: string; group: 'accountant' | 'owner' | 'co-owners'; question: string; defaultAnswer: string; when: string; history: GoLiveAnswer[]; setting: null | { key: string; value: unknown; words: string; matches: boolean | null } }
 export interface GoLiveRegister { asOf: string; open: number; rows: GoLiveDecision[] }
+/** GET /api/docs/:type/:id/cancel-preview: what cancelling would warn about (e.g. a filed period), before the reason is asked. */
+export interface CancelPreview { number: string; businessDate: string; cancelDate: string; issues: Issue[] }
+/** A journal voucher marked to reverse whose reversal day has come (GET /api/acc/jv/reversals-due). */
+export interface ReversalDue { documentId: string; number: string; date: string; memo: string; reverseOn: string; totalCents: number }
+/** GET /api/acc/jv/:id/reversal: the reversal's form input (lines swapped) and its date. */
+export interface JvReversal { businessDate: string; original: { documentId: string; number: string; date: string }; input: { memo: string; lines: { accountId: number; party?: { type: PartyType; id: string }; debitCents?: number; creditCents?: number; memo?: string }[]; reversalOf: string } }
+/** GET /api/tax/changes-after-filing (ACC-22): one document recorded or cancelled after a return of its period was paid. */
+export interface ChangeAfterFiling {
+  date: string; documentId: string; docType: string; docTitle: string; number: string; what: 'recorded' | 'cancelled'; userName: string; at: string;
+  form: string; period: string; periodLabel: string; paymentNumber: string; paymentRecordedAt: string;
+}
 export async function openServerPrint(me: Me, path: string, body: unknown): Promise<void> {
   const preview = window.open('', '_blank');
   const response = await fetch(path, { method: 'POST', credentials: 'same-origin',
@@ -24,9 +35,36 @@ export async function openServerPrint(me: Me, path: string, body: unknown): Prom
   if (!preview) throw new Error('Allow pop-ups for this site, then try Print again.');
   preview.document.open(); preview.document.write(data.html); preview.document.close();
 }
+export interface BookPrintResult { html: string; firstPage: number; lastPage: number; pageCount: number; replacedPages: [number, number] | null; warnings: string[] }
+/**
+ * Loose-leaf print of a BIR book. The server numbers the pages and refuses to reprint a range without a yes: `ask` shows its
+ * message (which pages to replace) and returns whether to go ahead. Resolves to null when the user said no.
+ */
+export async function openBookPrint(me: Me, book: string, from: string, to: string, ask: (message: string) => boolean): Promise<BookPrintResult | null> {
+  const preview = window.open('', '_blank');
+  const send = async (confirmReprint: boolean) => {
+    const response = await fetch(`/api/prt/books/${encodeURIComponent(book)}/print`, { method: 'POST', credentials: 'same-origin',
+      headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken }, body: JSON.stringify({ from, to, ...(confirmReprint ? { confirmReprint } : {}) }) });
+    return { response, data: await response.json().catch(() => null) as (BookPrintResult & { code?: string; message?: string }) | null };
+  };
+  let { response, data } = await send(false);
+  if (response.status === 409 && data?.code === 'ALREADY_PRINTED') {
+    if (!ask(data.message ?? 'This range was already printed. Print it again?')) { preview?.close(); return null; }
+    ({ response, data } = await send(true));
+  }
+  if (!response.ok || !data?.html) { preview?.close(); throw new Error(data?.message ?? 'Could not prepare this printout.'); }
+  if (!preview) throw new Error('Allow pop-ups for this site, then try Print loose-leaf again. The pages were numbered.');
+  preview.document.open(); preview.document.write(data.html); preview.document.close();
+  preview.onload = () => preview.print();
+  return data;
+}
 export interface AuditLogRow { seq: number; at: string; userId: string | null; userName: string | null; action: string; entityType: string; entityId: string | null; data: Record<string, unknown> }
 export interface AuditLogPage { rows: AuditLogRow[]; nextBefore: number | null }
 export interface IntegrityReport { audit: { ok: boolean; brokenAt: number | null; count: number; newestAt: string | null; message: string }; checks: { id: string; name: string; ok: boolean; problems: string[]; message: string }[] }
+export interface NightlyCheck { key: string; label: string; reportPath: string; passed: boolean; foundCount: number; findings: { detail: string; path: string | null }[] }
+export interface NightlyNight { night: string; coversFrom: string; ranAt: string; foundCount: number; checks: NightlyCheck[] }
+export interface NightlyRunNow { at: string; from: string; to: string; foundCount: number; checks: NightlyCheck[] }
+export interface NightlyStatus { night: string | null; foundCount: number; found: { key: string; label: string; foundCount: number }[] }
 /** Public certificate details returned to a signed-in user; no private key is sent. */
 /** System Health (PLAN C8), as GET /api/system/health reports it. */
 export type HealthLight = 'green' | 'amber' | 'red' | 'grey';
@@ -59,8 +97,34 @@ export interface DocDetail { header: DocHeader; input: Record<string, unknown>; 
 /** `doc` is the document as the server worked it out (the payroll form shows its lines). */
 export interface Preview { totalCents: number; summary: string; issues: Issue[]; journal?: JournalLine[] | null; doc?: unknown }
 export interface PostResult { id: string; number: string; totalCents: number; warnings: Issue[] }
+/** A file attached to a document (engine/attachments.ts). A removed one stays listed, with who removed it and why. */
+export interface Attachment {
+  id: string; fileName: string; contentType: 'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf'; bytes: number; sha256: string;
+  addedAt: string; addedByName: string; removedAt: string | null; removedByName: string | null; removedReason: string | null;
+}
+/** Opens an attachment in a new tab (the session cookie goes with it; a PDF downloads). */
+export const attachmentUrl = (type: string, id: string, attachmentId: string) =>
+  `/api/docs/${encodeURIComponent(type)}/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}`;
 export interface Draft { id: string; docType: string; payload: { values?: Record<string, string>; form?: unknown }; version: number; updatedAt: string }
-export interface CashPlace { id: number; name: string; balanceCents: number | null }
+export interface CashPlace { id: number; name: string; balanceCents: number | null; kind?: 'cash' | 'checks' | 'bank' | 'ewallet' }
+/** Customer checks (COL): the checks-on-hand list, checks at the bank, and the post-dated checks memo list (ACC-23). */
+export interface CheckOnHand {
+  collectionId: string; collectionNumber: string; lineNo: number; receivedOn: string; days: number; customerId: string; customerName: string;
+  cashPlaceId: number; cashPlaceName: string; checkNumber: string; bank: string; checkDate: string; amountCents: number;
+  returned: { id: string; number: string; date: string } | null;
+}
+export interface ChecksOnHand { asOf: string; checks: CheckOnHand[]; totalCents: number; ledgerCents: number | null }
+export interface CheckAtBank {
+  collectionId: string; collectionNumber: string; lineNo: number; customerName: string; cashPlaceName: string; checkNumber: string; bank: string; checkDate: string;
+  amountCents: number; deposit: { id: string; number: string; date: string };
+}
+export interface PostDatedCheck {
+  id: string; customerId: string; customerName: string; bank: string; checkNumber: string; checkDate: string; amountCents: number; note: string | null;
+  createdAt: string; createdBy: string; jobOrders: { id: string; number: string }[]; status: 'waiting' | 'due' | 'used' | 'voided';
+  usedBy: { id: string; number: string } | null; voided: { reason: string; at: string } | null;
+}
+export interface NewPostDatedCheck { customerId: string; bank: string; checkNumber: string; checkDate: string; amountCents: number; jobOrderIds: string[]; note?: string }
+export type CheckRef = { collectionId: string; lineNo: number };
 export interface DashItem { id: string; label: string; href?: string; detail?: string; amountCents?: number }
 export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string }
 export interface DashHomeData { role: string; asOf: string; widgets: DashWidget[] }
@@ -208,6 +272,8 @@ export interface EmployeeDetail {
   payHistory: PayProfile[] | null;
   /** used: days of leave taken; paid: unused days paid in cash by a payroll (final pay, December). */
   sil: { year: number; eligibleFrom: string; daysPerYear: number; used: number; paid: number; left: number };
+  /** Where the payslip is emailed and whether the employee agreed. Only for whoever sets up payroll (emp.pay); null for others. */
+  payslipEmail: { email: string | null; consent: boolean } | null;
 }
 export interface LeaveBalances {
   year: number;
@@ -402,6 +468,12 @@ export interface VatWorksheet {
   year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string; returnDue: string; close: { documentId: string; number: string; date: string } | null;
   lines: { key: string; label: string; amountCents: number | null; taxCents: number }[]; checks: WorksheetCheck[];
 }
+/** GET /api/tax/uncollected-vat (ACC-27): whether the claim is on, the invoices that may be claimed, and the add-backs due. */
+export interface UncollectedVat {
+  enabled: boolean;
+  claimable: { invoiceId: string; invoiceNumber: string; number: string; customerName: string; dueDate: string | null; owedCents: number; vatCents: number }[];
+  addBacksDue: { claimId: string; claimNumber: string; invoiceId: string; invoiceNumber: string; customerName: string; paidCents: number; vatCents: number }[];
+}
 /** SLSP and SAWT data of a quarter: each figure tied to its register or the books, with the difference (0 when they agree). */
 export interface TaxTie { key: string; label: string; listCents: number; bookCents: number; differenceCents: number }
 export type SaleClass = 'zero_rated' | 'exempt' | 'not_a_sale';
@@ -593,11 +665,13 @@ export interface BackupStatus {
 export interface BackupMade { file: string; tier: BackupTier; bytes: number; offsite: boolean; offsiteError: string | null }
 export interface BackupFile { source: BackupSource; file: string; at: string; tier: BackupTier; bytes: number }
 /** Customer emails (COM). The App Password is write-only: the server says only whether one is saved. */
-export type EmailTemplate = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement';
+export type EmailTemplate = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement' | 'payslip';
+/** Customer emails, or payslip emails to employees (a payslip row shows the recipient and the pay period, never an amount). */
+export type EmailKind = 'customer' | 'payslip';
 export interface EmailSettings { sendingOn: boolean; host: string; port: number; user: string; senderName: string; senderAddress: string; version: number; appPasswordSet: boolean; missing: string[] }
 export interface EmailSettingsInput { sendingOn: boolean; host: string; port: number; user: string; senderName: string; senderAddress: string; appPassword?: string }
 export interface OutboxRow {
-  id: string; template: EmailTemplate; customerId: string; customerName: string; toAddress: string; documentId: string | null; documentNumber: string | null;
+  id: string; template: EmailTemplate; kind: EmailKind; customerId: string | null; employeeId: string | null; customerName: string; toAddress: string; documentId: string | null; documentNumber: string | null;
   periodFrom: string | null; periodTo: string | null; subject: string; body: string; attachmentName: string | null; status: 'queued' | 'sent' | 'failed';
   attempts: number; nextAttemptAt: string; lastError: string | null; createdAt: string; sentAt: string | null;
 }
@@ -638,6 +712,8 @@ export interface BackupCheck {
   file: string; madeAt: string | null; tier: BackupTier | null; sidecar: 'matches' | 'missing'; toApply: string[]; audit: { seq: number } | null;
   lastAuditAt: string | null; trialBalance: { totalDebitCents: number; totalCreditCents: number }; lastBusinessDate: string | null; postedDocuments: number;
   drill?: 'passed'; stagedId?: string; live?: { auditSeq: number; lastAuditAt: string };
+  /** The attached files the copy names; `missing` and `changed` ones are not in the backup as they were. */
+  attachments?: { files: number; bytes: number; missing: string[]; changed: string[] };
 }
 /** GET /api/acc/opening: the cut-over date, 3900 (debit-positive), the trial balance on the cut-over date, every opening document, the control checks and the close. */
 export interface OpeningState {
@@ -734,12 +810,14 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
   let csrf = '';
   let onSignedOut: (e: ApiError) => void = () => {};
 
+  /** A Blob body (an attachment) is sent as it is; anything else as JSON. */
   async function call<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
     if (method !== 'GET') headers['x-csrf-token'] = csrf;
-    if (body !== undefined) headers['content-type'] = 'application/json';
+    const raw = typeof Blob !== 'undefined' && body instanceof Blob;
+    if (body !== undefined) headers['content-type'] = raw ? 'application/octet-stream' : 'application/json';
     let res: Response;
     try {
-      res = await fetchImpl(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: 'same-origin' });
+      res = await fetchImpl(path, { method, headers, body: body === undefined ? undefined : raw ? body : JSON.stringify(body), credentials: 'same-origin' });
     } catch {
       throw new ApiError('OFFLINE', 'Cannot reach the server. Check the connection and try again. Nothing was recorded.', 0);
     }
@@ -773,6 +851,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     companyProfile: () => call<CompanyProfile>('GET', '/api/prt/company-profile'),
     companyProfileHistory: () => call<CompanyProfile[]>('GET', '/api/prt/company-profile/history'),
     saveCompanyProfile: (value: Omit<CompanyProfile, 'version' | 'supersededAt'>, version: number) => call<CompanyProfile>('PUT', '/api/prt/company-profile', value, { 'if-match': String(version) }),
+    looseLeafSettings: () => call<{ looseLeafPaper: 'a4' | 'long' }>('GET', '/api/prt/settings'),
+    saveLooseLeafPaper: (paper: 'a4' | 'long') => call<{ looseLeafPaper: 'a4' | 'long' }>('PUT', '/api/prt/settings/loose-leaf-paper', { paper }),
+    bookPrintStatus: (year: number) => call<{ year: number; books: { book: string; title: string; lastPage: number }[] }>('GET', `/api/prt/books/status?year=${year}`),
     printableTypes: () => call<PrintableType[]>('GET', '/api/prt/printable-types'),
     printerTestPack: () => call<PrinterTestPack>('GET', '/api/prt/test-pack'),
     print2307: (year: number, quarter: number, supplierId?: string) => call<{ html: string; pages: number }>('GET',
@@ -797,9 +878,17 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** Needs a fresh password (step-up). */
     practiceReset: () => call<PracticeStatus>('POST', '/api/system/practice/reset'),
     docTypes: () => call<DocTypeInfo[]>('GET', '/api/doc-types'),
+    attachments: (type: string, id: string) => call<Attachment[]>('GET', one(type, id, '/attachments')),
+    /** Needs the doc type's create permission; works on a recorded or cancelled document. */
+    addAttachment: (type: string, id: string, file: File) => call<Attachment>('POST', one(type, id, '/attachments'), file, { 'x-file-name': encodeURIComponent(file.name) }),
+    removeAttachment: (type: string, id: string, attachmentId: string, reason: string) =>
+      call<Attachment>('POST', one(type, id, `/attachments/${encodeURIComponent(attachmentId)}/remove`), { reason }),
     report: <T>(path: string) => call<T>('GET', `/api/rpt/${path}`),
     auditLog: (query: string) => call<AuditLogPage>('GET', `/api/aud/log?${query}`),
     auditUsers: () => call<{ id: string; name: string }[]>('GET', '/api/aud/users'),
+    nightlyChecks: (before?: string) => call<{ rows: NightlyNight[]; nextBefore: string | null }>('GET', `/api/aud/nightly${before ? `?before=${before}` : ''}`),
+    nightlyStatus: () => call<NightlyStatus>('GET', '/api/aud/nightly/status'),
+    nightlyRunNow: () => call<NightlyRunNow>('POST', '/api/aud/nightly/run', {}),
     auditIntegrity: () => call<IntegrityReport>('GET', '/api/aud/integrity'),
     list: (type: string, q: { status?: string; before?: string; limit?: number } = {}) =>
       call<DocHeader[]>('GET', doc(type, `?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`)),
@@ -808,6 +897,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     preview: (type: string, input: unknown, businessDate?: string) => call<Preview>('POST', doc(type, '/preview'), { input, ...(businessDate ? { businessDate } : {}) }),
     post: (type: string, input: unknown, expectedTotalCents: number, key: string, businessDate?: string) =>
       call<PostResult>('POST', doc(type, '/post'), { input, expectedTotalCents, ...(businessDate ? { businessDate } : {}) }, idem(key)),
+    cancelPreview: (type: string, id: string) => call<CancelPreview>('GET', one(type, id, '/cancel-preview')),
     cancel: (type: string, id: string, reason: string, key: string) => call<unknown>('POST', one(type, id, '/cancel'), { reason }, idem(key)),
     reissue: (type: string, id: string, input: unknown, expectedTotalCents: number, reason: string, key: string, businessDate?: string) =>
       call<PostResult>('POST', one(type, id, '/reissue'), { input, expectedTotalCents, reason, ...(businessDate ? { businessDate } : {}) }, idem(key)),
@@ -836,6 +926,18 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     customerGroups: (id: string) => call<{ groups: CustomerGroup[] }>('GET', `/api/cus/customers/${encodeURIComponent(id)}`).then((r) => r.groups.filter((g) => g.is_active === 1)),
     customers: (search: string) => call<CustomerRow[]>('GET', `/api/cus/customers?${new URLSearchParams({ search, limit: '10' })}`),
     openItems: (customerId: string) => call<OpenItems>('GET', customer(customerId, 'open-items')),
+    checksOnHand: () => call<ChecksOnHand>('GET', '/api/col/checks'),
+    checksAtBank: () => call<CheckAtBank[]>('GET', '/api/col/checks/at-bank'),
+    checkDepositPreview: (checks: CheckRef[], toCashPlaceId: number) => call<Preview>('POST', '/api/col/checks/deposit/preview', { checks, toCashPlaceId }),
+    /** One fund transfer from Checks on hand to the bank for the ticked checks, which are then marked deposited. */
+    checkDeposit: (checks: CheckRef[], toCashPlaceId: number, expectedTotalCents: number, key: string) =>
+      call<{ transfer: PostResult; count: number }>('POST', '/api/col/checks/deposit', { checks, toCashPlaceId, expectedTotalCents }, idem(key)),
+    checkReturn: (b: CheckRef & { chargeCents?: number; reason: string; cancelCollection: boolean }, key: string) =>
+      call<{ transfer: PostResult; charge: PostResult | null; cancelled: boolean; summary: string }>('POST', '/api/col/checks/return', b, idem(key)),
+    pdcs: () => call<PostDatedCheck[]>('GET', '/api/col/pdcs'),
+    pdc: (id: string) => call<PostDatedCheck>('GET', `/api/col/pdcs/${encodeURIComponent(id)}`),
+    addPdc: (b: NewPostDatedCheck) => call<PostDatedCheck>('POST', '/api/col/pdcs', b),
+    voidPdc: (id: string, reason: string) => call<PostDatedCheck>('POST', `/api/col/pdcs/${encodeURIComponent(id)}/void`, { reason }),
     refundable: (customerId: string) => call<Refundable>('GET', customer(customerId, 'refundable')),
     transferable: (customerId: string) => call<Transferable>('GET', customer(customerId, 'transferable')),
     customerInvoices: (customerId: string) => call<CustomerInvoices>('GET', customer(customerId, 'invoices')),
@@ -877,6 +979,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     leaveBalances: (year?: number) => call<LeaveBalances>('GET', `/api/emp/leave-balances${year ? `?year=${year}` : ''}`),
     addEmployee: (body: Record<string, unknown>) => call<EmployeeRecord>('POST', '/api/emp/employees', body),
     updateEmployee: (id: string, v: number, body: Record<string, unknown>) => call<EmployeeRecord>('PUT', emp(id), body, version(v)),
+    savePayslipEmail: (id: string, v: number, body: { email: string | null; consent: boolean }) => call<{ email: string | null; consent: boolean }>('PUT', emp(id, '/payslip-email'), body, version(v)),
     separateEmployee: (id: string, v: number, body: { separatedOn: string; reason: string }) => call<EmployeeRecord>('POST', emp(id, '/separate'), body, version(v)),
     addPay: (id: string, body: Omit<PayProfile, 'id' | 'createdAt' | 'dailyRateCents' | 'monthlyRateCents'> & { dailyRateCents?: number; monthlyRateCents?: number }) =>
       call<PayProfile>('POST', emp(id, '/pay'), body),
@@ -989,6 +1092,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     ewtRegister: (from: string, to: string) => call<EwtRegister>('GET', taxRegisterPath('ewt', from, to)),
     certificatesToIssue: (year: number, quarter: number) => call<CertificatesToIssue>('GET', taxQuarterPath('2307-to-issue', year, quarter)),
     vatWorksheet: (year: number, quarter: number) => call<VatWorksheet>('GET', taxQuarterPath('2550q', year, quarter)),
+    uncollectedVat: () => call<UncollectedVat>('GET', '/api/tax/uncollected-vat'),
     slspSales: (year: number, quarter: number) => call<SlspSales>('GET', taxQuarterPath('slsp/sales', year, quarter)),
     slspPurchases: (year: number, quarter: number) => call<SlspPurchases>('GET', taxQuarterPath('slsp/purchases', year, quarter)),
     sawt: (year: number, quarter: number) => call<Sawt>('GET', taxQuarterPath('sawt', year, quarter)),
@@ -1009,6 +1113,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     opening: () => call<OpeningState>('GET', '/api/acc/opening'),
     monthEnd: (month?: string) => call<MonthEndChecklist>('GET', `/api/acc/month-end${month ? `?${new URLSearchParams({ month })}` : ''}`),
     goLiveDecisions: () => call<GoLiveRegister>('GET', '/api/acc/go-live-decisions'),
+    reversalsDue: () => call<ReversalDue[]>('GET', '/api/acc/jv/reversals-due'),
+    jvReversal: (id: string) => call<JvReversal>('GET', `/api/acc/jv/${encodeURIComponent(id)}/reversal`),
+    changesAfterFiling: () => call<{ rows: ChangeAfterFiling[] }>('GET', '/api/tax/changes-after-filing'),
     recordGoLiveAnswer: (body: { decisionId: string; answer: string; decidedBy: string; decidedOn: string; note: string }) => call<GoLiveRegister>('POST', '/api/acc/go-live-decisions/answers', body),
     /** The accountant's sign-off of a month that has ended; needs a fresh password (step-up). */
     signOffMonth: (month: string, note: string) => call<MonthEndChecklist>('POST', '/api/acc/month-end/sign-off', { month, note }),
@@ -1056,7 +1163,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** Needs a fresh password (step-up). Leave `appPassword` out to keep the saved one. */
     comSaveSettings: (v: number, body: EmailSettingsInput) => call<EmailSettings>('PUT', '/api/com/settings', body, version(v)),
     comTestEmail: () => call<{ ok: true; message: string }>('POST', '/api/com/test-email', {}),
-    comOutbox: (status?: OutboxRow['status']) => call<Outbox>('GET', `/api/com/outbox${status ? `?status=${status}` : ''}`),
+    comOutbox: (status?: OutboxRow['status'], kind?: EmailKind) => call<Outbox>('GET', `/api/com/outbox${status || kind ? `?${new URLSearchParams({ ...(status ? { status } : {}), ...(kind ? { kind } : {}) })}` : ''}`),
     comResend: (id: string) => call<{ success: true }>('POST', `/api/com/outbox/${encodeURIComponent(id)}/resend`, {}),
     comEmailStatement: (b: { customerId: string; from: string; to: string }) => call<{ id: string }>('POST', '/api/com/statements', b),
     migUploads: () => call<{ uploads: MigUpload[] }>('GET', '/api/mig/uploads').then((r) => r.uploads),

@@ -133,7 +133,16 @@ describe('web client for employees and time', () => {
     const seen = await enc.employee(e.id);
     expect([seen.employee.sssNo, seen.payHistory, seen.pay?.payType, seen.sil.used]).toEqual(['••••67-8', null, 'daily', 1]);
     await expect(enc.addPay(e.id, { effectiveFrom: '2026-10-01', payType: 'daily', dailyRateCents: 60_000, payGroup: 'SEMI_DAILY', workweekDays: 6, isMwe: false, reason: 'Raise after review' })).rejects.toMatchObject({ status: 403 });
-    const sep = await acct.separateEmployee(e.id, 2, { separatedOn: '2026-09-28', reason: 'Resigned (made up)' });
+    // The payslip email: seen and changed only with emp.pay (an encoder sees nothing of it and cannot change it).
+    expect((await acct.employee(e.id)).payslipEmail).toEqual({ email: null, consent: false });
+    expect(seen.payslipEmail).toBeNull();
+    await expect(acct.savePayslipEmail(e.id, 2, { email: 'lia@example.test', consent: true })).resolves.toEqual({ email: 'lia@example.test', consent: true });
+    await expect(acct.savePayslipEmail(e.id, 2, { email: 'lia@example.test', consent: false })).rejects.toMatchObject({ code: 'VERSION_CHANGED' });
+    await expect(acct.savePayslipEmail(e.id, 3, { email: null, consent: true })).rejects.toMatchObject({ status: 400 });
+    await expect(enc.savePayslipEmail(e.id, 3, { email: 'x@example.test', consent: true })).rejects.toMatchObject({ status: 403 });
+    expect((await acct.employee(e.id)).payslipEmail).toEqual({ email: 'lia@example.test', consent: true });
+
+    const sep = await acct.separateEmployee(e.id, 3, { separatedOn: '2026-09-28', reason: 'Resigned (made up)' });
     expect(sep.isActive).toBe(false);
   });
 });

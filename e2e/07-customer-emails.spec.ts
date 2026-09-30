@@ -32,4 +32,11 @@ test('customer emails: off until configured; the owner saves the settings with a
   await page.getByRole('link', { name: 'Customer emails', exact: true }).click();
   await expect(page.getByText('No emails here yet.')).toBeVisible();
   await expect(page.getByText(/Only customers who agreed to emails/)).toBeVisible();
+
+  // The same screen shows payslip emails, and filters by kind.
+  await page.getByRole('button', { name: 'Payslip emails' }).click();
+  await expect(page.getByRole('heading', { name: 'Payslip emails', exact: true })).toBeVisible();
+  await expect(page.getByText('No emails here yet.')).toBeVisible();
+  await page.getByRole('button', { name: 'Customer emails', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Customer emails', exact: true })).toBeVisible();
 });

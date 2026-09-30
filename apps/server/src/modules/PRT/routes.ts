@@ -13,6 +13,7 @@ import { certificatesToIssue } from '../TAX/public.ts';
 import { customerStatement } from '../RPT/receivables.ts';
 import { assetSchedule } from '../RPT/cash-assets.ts';
 import { sizingProfile } from '../CUS/public.ts';
+import { bookPrintRoutes, testBookPrints } from './book-routes.ts';
 import { render2307, renderPrint, renderReportPrint, printField, printLineTable, printMoney, type Certificate2307, type Profile, type PrintHeader, type PrintKind } from './print.ts';
 
 const profileInput = z.object({
@@ -74,7 +75,7 @@ const TEST_PRINTS: readonly { id: string; label: string; paper: string; type: st
   { id: 'cash-advance', label: 'Cash Advance Slip', paper: 'A4 2-up', type: 'ca.advance', kind: 'document', doc: { employeeName: 'Sample Worker', cashPlaceName: 'Sample Cash', amountCents: 20000, installmentCents: 5000, note: 'Sample only' } },
   { id: 'count-sheet', label: 'Inventory Count Sheet', paper: 'A4', type: 'inv.count', kind: 'document', doc: { category: 'Sample materials', countDate: '2026-09-28', lines: [{ name: 'Sample cloth', unit: 'metre', qty: 10, unitCostCents: 10000, valueCents: 100000 }], countedCents: 100000, ledgerCents: 90000, adjustmentCents: 10000 } },
 ];
-const NOT_BUILT = ['Books layouts'];
+const NOT_BUILT: string[] = [];
 const testReport = (id: string, label: string, body: string, legend = false) => ({ id, label, paper: 'A4',
   html: renderReportPrint(label as 'Statement of Account' | 'Sizing Profile' | 'Fixed Asset Schedule', body,
     TEST_PROFILE, '2026-09-28', 'Sample Owner', '2026-09-28T10:00:00+08:00', legend).replace('<article>', '<article><div class="test-print">TEST PRINT, NOT A REAL DOCUMENT</div>') });
@@ -87,7 +88,9 @@ const TEST_REPORTS = [
     printLineTable(['Code', 'Asset', 'Cost', 'Book value'], [['FA-SAMPLE', 'Sample sewing machine', printMoney(500000), printMoney(450000)]])),
 ];
 
-export function prtRoutes(app: FastifyInstance, { db, clock, registry, practice }: AppDeps): void {
+export function prtRoutes(app: FastifyInstance, deps: AppDeps): void {
+  const { db, clock, registry, practice } = deps;
+  bookPrintRoutes(app, deps);
   const report = (title: 'Statement of Account' | 'Sizing Profile' | 'Fixed Asset Schedule', body: string,
     user: ReturnType<typeof currentUser>, legend = false) => {
     const profile = db.prepare('SELECT * FROM prt_company_profile WHERE id = 1').get() as Profile | undefined;
@@ -100,7 +103,7 @@ export function prtRoutes(app: FastifyInstance, { db, clock, registry, practice 
       html: renderPrint(db, testHeader(item.type), item.doc, TEST_PROFILE, item.kind, 'Sample Owner',
         '2026-09-28T10:00:00+08:00', 1, false, true) })), { id: 'bir-2307', label: 'BIR Form 2307', paper: 'A4',
       html: render2307(TEST_PROFILE, 2026, 3, [{ supplierName: 'Sample Supplier Corporation', tin: '111-222-333-000', address: null,
-        lines: [{ atc: 'WC120', months: [{ month: '2026-07', baseCents: 500_000 }, { month: '2026-08', baseCents: 750_000 }, { month: '2026-09', baseCents: 250_000 }], baseCents: 1_500_000, ewtCents: 30_000 }] }], true) }, ...TEST_REPORTS],
+        lines: [{ atc: 'WC120', months: [{ month: '2026-07', baseCents: 500_000 }, { month: '2026-08', baseCents: 750_000 }, { month: '2026-09', baseCents: 250_000 }], baseCents: 1_500_000, ewtCents: 30_000 }] }], true) }, ...TEST_REPORTS, ...testBookPrints(TEST_PROFILE)],
     notBuilt: NOT_BUILT,
   }));
 

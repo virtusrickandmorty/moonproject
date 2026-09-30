@@ -71,19 +71,28 @@ describe('print base', () => {
     const response = await owner.get('/api/prt/test-pack');
     expect(response.statusCode, response.body).toBe(200);
     const pack = response.json() as { prints: { id: string; label: string; paper: string; html: string }[]; notBuilt: string[] };
-    expect(pack.prints).toHaveLength(20);
+    expect(pack.prints).toHaveLength(26);
     expect(new Set(pack.prints.map((p) => p.id)).size).toBe(pack.prints.length);
     for (const item of pack.prints) {
       expect(item.html, item.id).toContain('TEST PRINT, NOT A REAL DOCUMENT');
-      if (!['statement-of-account', 'sizing-profile', 'fixed-asset-schedule', 'bir-2307'].includes(item.id)) expect(item.html, item.id).toContain('TEST-000000');
-      expect(item.html, item.id).toMatch(/<h1>(QUOTATION|JOB ORDER|JOB TICKET|RELEASE SLIP|COLLECTION RECEIPT|CREDIT MEMO|PURCHASE ORDER|PAYMENT VOUCHER|EXPENSE VOUCHER|FUND TRANSFER|CASH COUNT|JOURNAL VOUCHER|PAYSLIP|CASH ADVANCE SLIP|INVENTORY COUNT SHEET|STATEMENT OF ACCOUNT|SIZING PROFILE|FIXED ASSET SCHEDULE|CERTIFICATE OF CREDITABLE TAX WITHHELD AT SOURCE)<\/h1>/);
+      if (!['statement-of-account', 'sizing-profile', 'fixed-asset-schedule', 'bir-2307'].includes(item.id) && !item.id.startsWith('book-')) expect(item.html, item.id).toContain('TEST-000000');
+      expect(item.html, item.id).toMatch(/<h1>(QUOTATION|JOB ORDER|JOB TICKET|RELEASE SLIP|COLLECTION RECEIPT|CREDIT MEMO|PURCHASE ORDER|PAYMENT VOUCHER|EXPENSE VOUCHER|FUND TRANSFER|CASH COUNT|JOURNAL VOUCHER|PAYSLIP|CASH ADVANCE SLIP|INVENTORY COUNT SHEET|STATEMENT OF ACCOUNT|SIZING PROFILE|FIXED ASSET SCHEDULE|CERTIFICATE OF CREDITABLE TAX WITHHELD AT SOURCE|CASH RECEIPTS JOURNAL|CASH DISBURSEMENTS JOURNAL|SALES JOURNAL|PURCHASE JOURNAL|GENERAL JOURNAL|GENERAL LEDGER)<\/h1>/);
     }
     const publicPrints = ['quotation', 'job-order', 'release-slip', 'collection-a4', 'collection-80mm', 'credit-memo', 'purchase-order', 'payment-voucher', 'statement-of-account'];
     for (const item of pack.prints) expect(item.html.includes('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.')).toBe(publicPrints.includes(item.id));
     expect(pack.prints.find((p) => p.id === 'collection-80mm')?.html).toContain('@page{size:80mm auto');
     expect(pack.prints.filter((p) => p.paper === 'A4 2-up').every((p) => p.html.includes('sheet two-up'))).toBe(true);
     expect(pack.prints.find((p) => p.id === 'bir-2307')?.html).toContain('Sample Supplier Corporation');
-    expect(pack.notBuilt).toEqual(['Books layouts']);
+    expect(pack.notBuilt).toEqual([]);
+    const books = pack.prints.filter((p) => p.id.startsWith('book-'));
+    expect(books.map((p) => p.id)).toEqual(['book-cash-receipts', 'book-cash-disbursements', 'book-sales', 'book-purchases', 'book-general-journal', 'book-general-ledger']);
+    for (const item of books) {
+      expect(item.html, item.id).toContain('Sample Garments Company');
+      expect(item.html, item.id).toContain('Page 1');
+      expect(item.html, item.id).toContain('Total for');
+      expect(item.html, item.id).toContain('Prepared by');
+    }
+    expect(books[0]!.html).toContain('1,792.00');
     expect(tableCounts()).toEqual(before);
     for (const role of ['encoder', 'accountant', 'production', 'tv'] as const) {
       expect((await (await env.as(role)).get('/api/prt/test-pack')).statusCode).toBe(403);

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { api, type DashHomeData, type DashItem, type DashNotification, type DashOwnerHealth } from '../../api.ts';
+import { api, type DashHomeData, type DashItem, type DashNotification, type DashOwnerHealth, type NightlyStatus } from '../../api.ts';
 import { Link } from '../../router.tsx';
 import { Notice, Panel, peso } from '../../components/ui.tsx';
+import { nightlyLine } from '../AUD/nightly.ts';
 
 function Item({ item, action, muted = false }: { item: DashItem; action?: React.ReactNode; muted?: boolean }) {
   const title = item.href ? <Link to={item.href} className="font-medium text-indigo-700 hover:underline">{item.label}</Link> : <span className="font-medium">{item.label}</span>;
@@ -85,6 +86,15 @@ function OwnerHealth() {
   </Panel>;
 }
 
+/** The red line on the owner's and accountant's Home when last night's checks found anything (AUD). */
+function NightlyLine() {
+  const [status, setStatus] = useState<NightlyStatus | null>(null);
+  useEffect(() => { void api.nightlyStatus().then(setStatus, () => setStatus(null)); }, []);
+  const line = status && nightlyLine(status);
+  if (!line) return null;
+  return <Link to="/aud/nightly" role="status" className="block rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-800 ring-1 ring-red-200 hover:bg-red-100">{line} See Nightly checks.</Link>;
+}
+
 export function DashHome() {
   const [home, setHome] = useState<DashHomeData | null>(null);
   const [error, setError] = useState('');
@@ -92,6 +102,7 @@ export function DashHome() {
   return <div className="space-y-4">
     {error && <Notice>{error}</Notice>}
     {!home && !error && <p className="text-sm text-slate-500">Loading your home…</p>}
+    {(home?.role === 'owner' || home?.role === 'accountant') && <NightlyLine />}
     {home?.role === 'owner' && <OwnerHealth />}
     {home && <div className="grid gap-4 lg:grid-cols-2">
       {home.widgets.map((widget) => <Panel key={widget.key} title={widget.title}>

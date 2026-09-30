@@ -7,6 +7,7 @@ import { monthEndRoutes } from './month-end.ts';
 import { openingRoutes } from './opening.ts';
 import { accRoutes } from './routes.ts';
 import { goLiveRoutes } from './go-live.ts';
+import { reversalRoutes } from './doctypes/jv-reversals.ts';
 
 export default defineModule({
   code: 'ACC',
@@ -34,5 +35,6 @@ export default defineModule({
     openingRoutes(app, deps);
     monthEndRoutes(app, deps);
     goLiveRoutes(app, deps);
+    reversalRoutes(app, deps);
   },
 });

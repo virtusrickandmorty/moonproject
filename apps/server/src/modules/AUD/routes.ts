@@ -2,12 +2,13 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { AppError, toCsv, type CsvCell } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { tx } from '../../platform/db/driver.ts';
-import { stamp } from '../../platform/clock.ts';
+import { stamp, today } from '../../platform/clock.ts';
 import type { AppDeps } from '../../app.ts';
 import { appendAudit, verifyAuditChain } from '../../engine/audit.ts';
 import { clockGuard } from '../../engine/documents/lifecycle.ts';
 import { INVARIANT_NAMES, runInvariants } from '../../engine/ledger/invariants.ts';
 import { currentUser } from '../../engine/security/routes.ts';
+import { addDays, lastNight, nightlyRuns, nightlyStatus, runChecks } from './nightly.ts';
 
 type Filters = { from?: string; to?: string; userId?: string; action?: string; entityType?: string; entityId?: string; before?: number; limit: number };
 type RawRow = { seq: number; at: string; user_id: string | null; user_name: string | null; action: string; entity_type: string; entity_id: string | null; data: string };
@@ -66,7 +67,7 @@ export function auditPage(db: Db, f: Filters) {
 
 const NAMES = INVARIANT_NAMES;
 
-export function audRoutes(app: FastifyInstance, { db, clock }: AppDeps): void {
+export function audRoutes(app: FastifyInstance, { db, clock, registry, practice }: AppDeps): void {
   app.get('/api/aud/users', { config: { permission: 'aud.log.view' } }, async () =>
     db.prepare('SELECT id, display_name AS name FROM users ORDER BY display_name, id').all() as { id: string; name: string }[]);
 
@@ -98,5 +99,24 @@ export function audRoutes(app: FastifyInstance, { db, clock }: AppDeps): void {
     const checks = runInvariants(db).map((r) => ({ ...r, name: NAMES[r.id] ?? r.id,
       message: r.ok ? `${NAMES[r.id] ?? r.id}: passed.` : `${NAMES[r.id] ?? r.id}: ${r.problems.join('; ')}` }));
     return { audit, checks };
+  });
+
+  // Nightly checks: the nights kept, what the Home line shows, and "Run the checks now" (reads only, stores nothing).
+  const nightly = { db, clock, practice, titleOf: (type: string) => registry.docType(type)?.title ?? type };
+  app.get('/api/aud/nightly', { config: { permission: 'aud.integrity.view' } }, async (req: FastifyRequest) => {
+    const q = req.query as Record<string, unknown>;
+    return nightlyRuns(db, today(clock), {
+      ...(q.before === undefined ? {} : { before: date(q.before) }),
+      limit: q.limit === undefined ? 30 : Math.min(positiveInteger(q.limit, 'limit'), 100),
+    });
+  });
+  app.get('/api/aud/nightly/status', { config: { permission: 'aud.integrity.view' } }, async () => nightlyStatus(db));
+  app.post('/api/aud/nightly/run', { config: { permission: 'aud.nightly.run' } }, async () => {
+    // From the day after the last night checked through today, so the day's entries so far are in it.
+    const to = today(clock);
+    const last = lastNight(db);
+    const from = last !== undefined && addDays(last, 1) <= to ? addDays(last, 1) : to;
+    const checks = runChecks(nightly, from, to);
+    return { at: stamp(clock), from, to, foundCount: checks.reduce((n, c) => n + c.foundCount, 0), checks };
   });
 }

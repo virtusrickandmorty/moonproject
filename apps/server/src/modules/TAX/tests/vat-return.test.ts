@@ -68,9 +68,11 @@ describe('2550Q worksheet', () => {
     const w = (await worksheet(2026, 3)).json();
     expect([w.from, w.to, w.returnDue, w.close]).toEqual(['2026-07-01', '2026-09-30', '2026-10-26', null]);
     expect(items(w)).toEqual({
-      vatable_sales: [1_500_000, 180_000], zero_rated_sales: [0, 0], exempt_sales: [0, 0], output_tax: [1_500_000, 180_000],
-      input_carried_over: [null, 30_000], capital_goods: [0, 0], goods: [100_000, 12_000], services: [0, 0], to_classify: [0, 40_000],
-      input_tax: [100_000, 82_000], net_vat: [null, 98_000], vat_withheld: [null, 25_000], payable: [null, 73_000], carry_forward: [null, 0],
+      vatable_sales: [1_500_000, 180_000], zero_rated_sales: [0, 0], exempt_sales: [0, 0],
+      uncollected_receivables: [null, 0], recovered_receivables: [null, 0], output_tax: [1_500_000, 180_000],
+      input_carried_over: [null, 30_000], capital_goods: [0, 0], goods: [100_000, 12_000], services: [0, 0],
+      no_input_capital_goods: [0, 0], no_input_goods: [0, 0], no_input_services: [0, 0], no_input_tax: [0, 0], to_classify: [0, 40_000],
+      input_tax: [100_000, 82_000], total_purchases: [100_000, 0], net_vat: [null, 98_000], vat_withheld: [null, 25_000], payable: [null, 73_000], carry_forward: [null, 0],
     });
     const summary = (await accountant.get('/api/tax/vat-summary?year=2026&quarter=3')).json();
     expect([summary.outputVatCents, summary.inputVatCents + summary.carryOverCents, summary.payableCents]).toEqual([180_000, 82_000, 73_000]);

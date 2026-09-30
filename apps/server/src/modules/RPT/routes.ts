@@ -120,6 +120,9 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
     rows.push(['TOTAL', '', '', '', '', csvPesos(result.buckets.current), csvPesos(result.buckets.days1to30),
       csvPesos(result.buckets.days31to60), csvPesos(result.buckets.days61to90), csvPesos(result.buckets.over90),
       csvPesos(result.totalCents)]);
+    for (const r of result.allowance) rows.push([r.customerName, 'Less allowance for credit losses', '', '', '', '', '', '', '', '', csvPesos(-r.allowanceCents)]);
+    rows.push(['LESS ALLOWANCE FOR CREDIT LOSSES', '', '', '', '', '', '', '', '', '', csvPesos(-result.allowanceCents)]);
+    rows.push(['NET RECEIVABLES', '', '', '', '', '', '', '', '', '', csvPesos(result.netCents)]);
     rows.push([]);
     rows.push(['Uninvoiced job orders (memo, excluded from AR total)', 'Job order', 'Due date', 'Amount PHP']);
     for (const r of result.memo) rows.push([r.customerName, r.jobOrderNumber, r.dueDate, csvPesos(r.notInvoicedCents)]);
@@ -228,6 +231,7 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
       ? ['Check', '', label, csvPesos(currentAmount), csvPesos(otherAmount), csvPesos(currentAmount - otherAmount), otherAmount === 0 ? '' : ((currentAmount - otherAmount) / Math.abs(otherAmount) * 100).toFixed(2)]
       : ['Check', '', label, csvPesos(currentAmount)];
     const rows: CsvCell[][] = [head, ...result.sections.flatMap((s) => sectionRows(s, !!compare)),
+      check('Trade receivables less the allowance for credit losses', result.receivables.netCents, other?.receivables.netCents ?? 0),
       check('Total liabilities and equity', result.totalLiabilitiesAndEquityCents, other?.totalLiabilitiesAndEquityCents ?? 0),
       check('Total assets less liabilities and equity', result.differenceCents, other?.differenceCents ?? 0)];
     return sendCsv(reply, `balance-sheet-${result.asOf}`, rows);
