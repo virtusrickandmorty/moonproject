@@ -9,7 +9,8 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { purLookupRoutes } from './lookups.ts';
-import { countableSupply, latestPurchaseCost } from './public.ts';
+import { latestPurchaseCost } from '../AP/public.ts';
+import { countableSupply } from './public.ts';
 
 const costFields = (cost: ReturnType<typeof latestPurchaseCost>) => ({
   purchase_cost_cents: cost.unitCostCents,

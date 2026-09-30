@@ -6,7 +6,7 @@ import { divRoundHalfAway } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import type { EwtClass } from '../../engine/settings.ts';
 import { categoryIsPurchase, categoryPurchaseClass, type GoodsOrServices } from '../EXP/public.ts';
-import { receivedQty, type PurchaseCost } from '../PUR/public.ts';
+import { latestPoUnitCost, receivedQty, type CountableSupply, type PurchaseCost } from '../PUR/public.ts';
 export { supplierBalances, supplierLedger } from './ledger.ts';
 
 export function payableAgingAt(db: Db, asOf: string) {
@@ -92,4 +92,19 @@ export function latestBillUnitCost(db: Db, supplyId: string, asOf: string): Purc
     if (qty > 0) return { unitCostCents: divRoundHalfAway(b.costCents, qty), documentId: b.documentId, number: b.number, date: b.date };
   }
   return undefined;
+}
+
+export type PurchaseCostSource = 'bill' | 'po' | 'catalogue';
+export interface LatestPurchaseCost { unitCostCents: number; source: PurchaseCostSource; sourceNumber: string | null; sourceDate: string | null }
+
+/**
+ * The one rule for a supply's latest purchase cost (INV count valuation, PUR supplies list): the newest bill, then the
+ * newest PO line, then the imported catalogue figure. Here and not in PUR so PUR's contract does not import AP's.
+ */
+export function latestPurchaseCost(db: Db, supply: CountableSupply, asOf: string): LatestPurchaseCost {
+  const bill = latestBillUnitCost(db, supply.id, asOf);
+  if (bill) return { unitCostCents: bill.unitCostCents, source: 'bill', sourceNumber: bill.number, sourceDate: bill.date };
+  const po = latestPoUnitCost(db, supply.id, asOf);
+  if (po) return { unitCostCents: po.unitCostCents, source: 'po', sourceNumber: po.number, sourceDate: po.date };
+  return { unitCostCents: supply.lastPurchaseCostCents, source: 'catalogue', sourceNumber: null, sourceDate: null };
 }

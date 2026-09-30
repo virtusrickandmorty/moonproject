@@ -558,7 +558,7 @@ export interface SupplierRr { id: string; number: string; status: 'posted' | 'ca
 /** GET /api/inv/count-sheet?format=json: the active supplies of a category and the cost each is valued at on the count date. */
 export interface SheetSupply {
   supplyId: string; name: string; unit: 'yard' | 'meter' | 'kg' | 'roll' | 'pc'; milliUnits: boolean;
-  defaultCostCents: number; costSource: 'bill' | 'po' | 'catalogue'; costSourceNumber: string | null;
+  defaultCostCents: number; costSource: 'bill' | 'po' | 'catalogue'; costSourceNumber: string | null; costSourceDate: string | null;
 }
 export interface CountSheet { category: 'materials' | 'ready_made'; date: string; supplies: SheetSupply[] }
 export interface ExpCategory { id: number; code: string; name: string; defaultEwtClass: string | null }

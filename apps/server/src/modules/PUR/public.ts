@@ -1,7 +1,6 @@
 /** What other modules may read from PUR (read-only): suppliers, supplies and receiving reports. */
 import type { Db } from '../../platform/db/driver.ts';
 import type { EwtClass } from '../../engine/settings.ts';
-import { latestBillUnitCost } from '../AP/public.ts';
 
 export interface Supplier {
   id: string; name: string; tin: string | null; isVatRegistered: boolean; ewtClass: EwtClass | null; paymentTermsDays: number | null; isActive: boolean;
@@ -95,18 +94,6 @@ export const activeSuppliesOf = (db: Db, category: Supply['category']): Countabl
 
 /** A unit cost and the purchase document it came from. */
 export interface PurchaseCost { unitCostCents: number; documentId: string; number: string; date: string }
-
-export type PurchaseCostSource = 'bill' | 'po' | 'catalogue';
-export interface LatestPurchaseCost { unitCostCents: number; source: PurchaseCostSource; sourceNumber: string | null; sourceDate: string | null }
-
-/** The single read rule for a supply's cost: newest bill, then newest PO line, then its imported catalogue figure. */
-export function latestPurchaseCost(db: Db, supply: CountableSupply, asOf: string): LatestPurchaseCost {
-  const bill = latestBillUnitCost(db, supply.id, asOf);
-  if (bill) return { unitCostCents: bill.unitCostCents, source: 'bill', sourceNumber: bill.number, sourceDate: bill.date };
-  const po = latestPoUnitCost(db, supply.id, asOf);
-  if (po) return { unitCostCents: po.unitCostCents, source: 'po', sourceNumber: po.number, sourceDate: po.date };
-  return { unitCostCents: supply.lastPurchaseCostCents, source: 'catalogue', sourceNumber: null, sourceDate: null };
-}
 
 /** The unit cost on the newest posted purchase order line for a supply, the order dated on or before `asOf` (read-only). */
 export function latestPoUnitCost(db: Db, supplyId: string, asOf: string): PurchaseCost | undefined {

@@ -3,7 +3,6 @@ import { badRequest, csvPesos, isBusinessDate, toCsv } from '@moonproject/shared
 import type { AppDeps } from '../../app.ts';
 import { today } from '../../platform/clock.ts';
 import { CATEGORIES, countSheet, type Category } from './costs.ts';
-import { countableSupply, latestPurchaseCost } from '../PUR/public.ts';
 
 export function invRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
@@ -24,12 +23,7 @@ export function invRoutes(app: FastifyInstance, deps: AppDeps): void {
     reply.type('text/csv; charset=utf-8');
     return toCsv([
       ['Supply', 'Unit', 'Cost per unit', 'Cost from', 'Quantity counted'],
-      ...rows.map((r) => {
-        const supply = countableSupply(db, r.supplyId)!;
-        const cost = latestPurchaseCost(db, supply, date);
-        const source = cost.sourceNumber ? `${cost.sourceNumber} · ${cost.sourceDate}` : 'Catalogue';
-        return [r.name, r.unit, csvPesos(r.defaultCostCents), source, ''];
-      }),
+      ...rows.map((r) => [r.name, r.unit, csvPesos(r.defaultCostCents), r.costSourceNumber ? `${r.costSourceNumber} · ${r.costSourceDate}` : 'Catalogue', '']),
     ]);
   });
 }

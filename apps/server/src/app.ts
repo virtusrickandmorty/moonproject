@@ -15,7 +15,7 @@ import { engineModule } from './engine/security/module.ts';
 import { syncPermissions } from './engine/security/permissions-sync.ts';
 import { PRACTICE_SESSION_COOKIE, SESSION_COOKIE, loadSession, type SessionUser } from './engine/security/sessions.ts';
 import { securityRoutes } from './engine/security/routes.ts';
-import { tlsRoutes } from './engine/security/tls/routes.ts';
+import { networkOf, tlsRoutes } from './engine/security/tls/routes.ts';
 import { documentRoutes } from './engine/documents/routes.ts';
 import { draftRoutes } from './engine/documents/drafts.ts';
 import { attachmentRoutes } from './engine/attachments.ts';
@@ -57,6 +57,8 @@ export interface AppDeps {
   host: Host;
   /** Restarts the server once no request is running (after a restore, PLAN C8). */
   restart: Restarter;
+  /** This PC's name, addresses and join page (tests give their own). */
+  network: Network;
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -124,6 +126,7 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
     sessionCookie: opts.practice ? PRACTICE_SESSION_COOKIE : SESSION_COOKIE,
     host: opts.host ?? realHost,
     restart: idleRestarter(app, opts.onRestart ?? ((reason) => app.log.warn(`Restart needed: ${reason}`))),
+    network: networkOf(opts.network),
   };
   app.register(cookie);
   app.decorateRequest('user', null);
@@ -191,7 +194,7 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
     ok: true, version: APP_VERSION, serverTime: stamp(deps.clock), ...(deps.practice ? { practice: true } : {}),
   }));
   securityRoutes(app, deps);
-  tlsRoutes(app, deps, opts.network);
+  tlsRoutes(app, deps);
   documentRoutes(app, deps);
   draftRoutes(app, deps);
   attachmentRoutes(app, deps);

@@ -119,7 +119,7 @@ describe('sales and collections reports', () => {
     expect(report.json().totals.heldAtQuarterEndCents).toBe(31200);
     expect(report.json().totals.heldAtQuarterEndCents).toBe((await owner.get('/api/rpt/deposits-held?asOf=2026-09-30')).json().totalCents);
     const csv = await owner.get('/api/rpt/deposits-crossing-quarter?quarter=2026-Q3&format=csv');
-    expect(csv.statusCode, csv.body).toBe(200); expect(csv.body).toContain('112.00,100.00,,C,12.00');
+    expect(csv.statusCode, csv.body).toBe(200); expect(csv.body).toContain('"112.00","100.00","","C","12.00"');
     expect((await (await env.as('encoder')).get('/api/rpt/deposits-crossing-quarter?quarter=2026-Q3')).statusCode).toBe(403);
   });
 

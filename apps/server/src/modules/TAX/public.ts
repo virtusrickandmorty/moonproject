@@ -2,13 +2,14 @@
 export { BOOKLET_KINDS, bookletIssue, type BookletKind } from './check.ts';
 export { taxDeadlines } from './calendar.ts';
 import type { Db } from '../../platform/db/driver.ts';
+import { filedReturns } from './filed.ts';
 
-/** Tax periods that already have a live BIR payment, for deadline notices. */
+/**
+ * "form:period" of every return already paid or remitted (filedReturns: the BIR payments and the 1601-C remittances),
+ * in the tax calendar's names, where the annual return is 1702-RT. For the deadline notices on the home page.
+ */
 export function paidTaxPeriods(db: Db): Set<string> {
-  const rows = db.prepare(`SELECT p.form, p.period FROM tax_bir_payments p JOIN documents d ON d.id = p.document_id WHERE d.status = 'posted'
-    UNION ALL SELECT '1702Q', p.period FROM tax_income_tax_payments p JOIN documents d ON d.id = p.document_id WHERE d.status = 'posted'
-    UNION ALL SELECT '1702-RT', p.period FROM tax_income_tax_annual_payments p JOIN documents d ON d.id = p.document_id WHERE d.status = 'posted'`).all() as { form: string; period: string }[];
-  return new Set(rows.map((row) => `${row.form}:${row.period}`));
+  return new Set(filedReturns(db).map((r) => `${r.form === '1702' ? '1702-RT' : r.form}:${r.period}`));
 }
 
 /** Whether a pending certificate on a collection/opening was later marked received. */

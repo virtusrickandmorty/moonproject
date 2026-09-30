@@ -211,7 +211,7 @@ describe('DASH role homes and notifications', () => {
     const [owner, accountant, encoder, production] = await Promise.all([env.as('owner'), env.as('accountant'), env.as('encoder'), env.as('production')]);
     appendAudit(env.db, { at: stamp(env.clock), userId: accountant.userId, action: 'acc.setting.add', entityType: 'setting', entityId: 'col.cr_mode' });
     const ownerNotices = (await owner.get('/api/dash/notifications')).json();
-    expect(ownerNotices).toContainEqual(expect.objectContaining({ kind: 'step-up-action', label: expect.stringContaining('acc.setting.add'), href: '/aud/log' }));
+    expect(ownerNotices).toContainEqual(expect.objectContaining({ kind: 'step-up-action', label: expect.stringContaining('changed a setting'), detail: expect.stringContaining('col.cr_mode'), href: '/aud/log' }));
     for (const client of [accountant, encoder, production]) expect((await client.get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'step-up-action' }));
     env.clock.advance(15 * 86_400_000);
     expect((await owner.get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'step-up-action' }));

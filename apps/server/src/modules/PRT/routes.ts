@@ -4,6 +4,7 @@ import { AppError, conflict, forbidden, notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { currentUser } from '../../engine/security/routes.ts';
+import { printLinkBase } from '../../engine/security/tls/routes.ts';
 import { requireStepUp } from '../../engine/security/sessions.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
@@ -228,10 +229,7 @@ export function prtRoutes(app: FastifyInstance, deps: AppDeps): void {
       const def = registry.docType(type);
       if (!def || !PRINTABLE.get(type)?.includes(kind)) throw notFound('That printout');
       if (!user.permissions.has(def.permissions.view)) throw forbidden(def.permissions.view);
-      const tls = await app.inject({ method: 'GET', url: '/api/system/tls', headers: { cookie: req.headers.cookie ?? '' } });
-      const join = tls.statusCode === 200 ? (tls.json() as { join?: { addresses: { kind: 'lan' | 'vpn' }[]; urls: string[] } }).join : undefined;
-      const lan = join?.addresses.findIndex((address) => address.kind === 'lan') ?? -1;
-      const joinBase = join?.urls[lan >= 0 ? lan : 0];
+      const joinBase = printLinkBase(db, deps.network);
       return tx(db, () => {
         const h = db.prepare('SELECT id, number, business_date, doc_type, status FROM documents WHERE id = ? AND doc_type = ?').get(id, type) as PrintHeader | undefined;
         if (!h) throw notFound('The document');

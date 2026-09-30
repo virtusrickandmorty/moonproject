@@ -166,13 +166,15 @@ describe('PUR Suppliers and Supplies', () => {
     const po = await encoder.post('/api/docs/pur.po/post', {
       input: { supplierId, lines: [{ supplyId, qty: 100, unitCostCents: 11_500 }] }, expectedTotalCents: 1_150_000,
     }, idem());
-    expect(await listed()).toMatchObject({ purchase_cost_cents: 11_500, purchase_cost_source: 'po', purchase_cost_source_number: 'PO-000001', purchase_cost_source_date: '2026-09-30' });
+    expect(await listed()).toMatchObject({ purchase_cost_cents: 11_500, purchase_cost_source: 'po', purchase_cost_source_number: 'PO-000001', purchase_cost_source_date: '2026-09-28' });
     const rr = await encoder.post('/api/docs/pur.rr/post', { input: { poDocumentId: po.json().id, lines: [{ poLineNo: 1, qty: 80 }] }, expectedTotalCents: 0 }, idem());
-    await encoder.post('/api/docs/ap.bill/post', {
-      input: { supplierId, supplierInvoiceNo: 'SI-101', supplierInvoiceDate: '2026-09-30', receivingReportId: rr.json().id, lines: [{ supplyId, amountCents: 1_120_000 }] },
+    expect(rr.statusCode, rr.body).toBe(200);
+    const bill = await encoder.post('/api/docs/ap.bill/post', {
+      input: { supplierId, supplierInvoiceNo: 'SI-101', supplierInvoiceDate: '2026-09-28', receivingReportId: rr.json().id, lines: [{ supplyId, amountCents: 1_120_000 }] },
       expectedTotalCents: 1_120_000,
     }, idem());
-    expect(await listed()).toMatchObject({ purchase_cost_cents: 12_500, purchase_cost_source: 'bill', purchase_cost_source_number: 'BILL-000001', purchase_cost_source_date: '2026-09-30' });
+    expect(bill.statusCode, bill.body).toBe(200);
+    expect(await listed()).toMatchObject({ purchase_cost_cents: 12_500, purchase_cost_source: 'bill', purchase_cost_source_number: 'BILL-000001', purchase_cost_source_date: '2026-09-28' });
     expect((await accountant.get(`/api/pur/supplies/${supplyId}`)).json()).toMatchObject(await listed());
   });
 
