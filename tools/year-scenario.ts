@@ -142,6 +142,13 @@ async function post(y: Year, ref: string, type: string, input: object, who: 'acc
   return y.m.record(ref, type, res);
 }
 
+/** An expense voucher paid from one cash place: what leaves it is the receipt less any EWT, so the preview says how much. */
+async function voucher(y: Year, ref: string, place: string, input: { amountCents: number } & Record<string, unknown>) {
+  const cashPlaceId = y.place(place);
+  const cash = (await y.m.call('/api/docs/exp.voucher/preview', { input: { ...input, tenders: [{ cashPlaceId, amountCents: 1 }] } }, 'enc')).doc.cashCents as number;
+  return post(y, ref, 'exp.voucher', { ...input, tenders: [{ cashPlaceId, amountCents: cash }] }, 'enc', input.amountCents);
+}
+
 async function jobOrder(y: Year, customer: string, lines: { qty: number; unitPriceCents: number; description: string }[], paymentTerms: string) {
   const input = { customerId: y.id(customer), dueInDays: 20, priority: 'normal', paymentTerms, lines: lines.map((l) => ({ kind: 'made_to_order', discountCents: 0, roster: [], ...l })) };
   const total = lines.reduce((s, l) => s + l.qty * l.unitPriceCents, 0);
@@ -382,15 +389,15 @@ function monthEvents(ym: string): Event[] {
   on(c1[3]!, 20, 'Cutting (piece work)', (y) =>
     post(y, `${ym} PE cut`, 'prd.entry', { jobOrderId: y.jo[ym]!, stepId: 4, rows: [{ lineNo: 1, employeeId: y.id(CUTTER), pieces: 150, rateCents: 4_000, rateReason: 'Shop rate for cutting a jersey set' }] }, 'enc', 600_000).then(() => undefined));
   on(12, 10, 'Tricycle from petty cash', (y) =>
-    post(y, `${ym} TRIKE`, 'exp.voucher', { categoryId: y.m.categories['6140']!, cashPlaceId: y.place('1102'), amountCents: 30_000, description: 'Tricycle to the fabric store', payeeName: 'Tricycle driver' }, 'enc', 30_000).then(() => undefined));
+    voucher(y, `${ym} TRIKE`, '1102', { categoryId: y.m.categories['6140']!, amountCents: 30_000, description: 'Tricycle to the fabric store', payeeName: 'Tricycle driver' }).then(() => undefined));
   on(14, 10, 'Subcontract bill', async (y) => {
     y.m.ids[`embroidery ${ym}`] = (await post(y, `${ym} EMB`, 'ap.bill', { supplierId: y.id(EMBROIDERY), supplierInvoiceNo: `EW-${ym}`, supplierInvoiceDate: `${ym}-14`, lines: [{ purchase: 'subcontract', description: 'Logo embroidery', amountCents: 1_120_000 }] }, 'enc')).id;
   });
   on(15, 10, 'Electricity', (y) =>
-    post(y, `${ym} POWER`, 'exp.voucher', {
-      categoryId: y.m.categories['6120']!, cashPlaceId: y.place('1111'), amountCents: 896_000, description: `Electricity ${ym}`, payeeName: POWER, payeeVatRegistered: true,
+    voucher(y, `${ym} POWER`, '1111', {
+      categoryId: y.m.categories['6120']!, amountCents: 896_000, description: `Electricity ${ym}`, payeeName: POWER, payeeVatRegistered: true,
       payeeTin: '222-333-888-000', supplierInvoiceNo: `PW-${ym}`, supplierInvoiceDate: `${ym}-15`,
-    }, 'enc', 896_000).then(() => undefined));
+    }).then(() => undefined));
   on(15, 50, 'Payroll 1–15', (y) => payroll(y, ym, 1));
   on(c2[1]!, 20, 'Sewing (piece work)', (y) =>
     post(y, `${ym} PE sew`, 'prd.entry', {
