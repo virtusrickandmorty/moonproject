@@ -7,7 +7,7 @@ import { stamp, today } from '../../platform/clock.ts';
 import { clockGuard } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { activeEmployees } from './public.ts';
-import { addPayProfile, createEmployee, employeeRecord, listEmployees, masked, payHistory, payProfileAt, separateEmployee, updateEmployee, type Who } from './employees.ts';
+import { addPayProfile, createEmployee, employeeRecord, listEmployees, masked, payHistory, payProfileAt, payslipEmailOf, separateEmployee, setPayslipEmail, updateEmployee, type Who } from './employees.ts';
 import { ATTENDANCE, addHoliday, attendanceBetween, checkRange, deactivateHoliday, holidaysBetween, holidaysOf, paidDaysBetween, saveAttendance, silOf } from './time.ts';
 import { leaveBalances } from './leave-balances.ts';
 
@@ -55,6 +55,8 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
       pay: pay && { payType: pay.payType, payGroup: pay.payGroup, workweekDays: pay.workweekDays, effectiveFrom: pay.effectiveFrom },
       payHistory: can(req, 'pay.view_rates') ? payHistory(db, e.id) : null,
       sil: silOf(db, e.id, Number(now.slice(0, 4))),
+      // Where the payslip is emailed: shown only to whoever sets up payroll (emp.pay).
+      payslipEmail: can(req, 'emp.pay') ? payslipEmailOf(db, e.id) ?? null : null,
     };
   });
 
@@ -73,6 +75,11 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (!can(req, 'pay.view_rates')) throw forbidden('pay.view_rates');
     return write(() => addPayProfile(db, req.params.id, req.body, who(req)));
   });
+
+  /** The payslip email address and consent: only emp.pay changes them (and the function checks it again). Audited by name. */
+  app.put<{ Params: { id: string } }>('/api/emp/employees/:id/payslip-email', { config: { permission: 'emp.pay' } }, async (req) =>
+    write(() => setPayslipEmail(db, req.params.id, req.headers['if-match'], req.body, who(req))),
+  );
 
   /**
    * The attendance grid: employees in service in the range, the holidays in it, each typed day (at most 31 days), and the

@@ -25,6 +25,8 @@ export const SCREENS: MenuItem[] = [
   { group: 'Money', label: 'Cash Accounts', path: '/cash/accounts', permission: 'cash.places.view' },
   { group: 'Money', label: 'Cash book', path: '/cash/book', permission: 'cash.book.view' },
   { group: 'Money', label: 'Bank reconciliation', path: '/cash/recon', permission: 'cash.recon.view' },
+  { group: 'Money', label: 'Checks on hand', path: '/col/checks', permission: 'col.checks.view' },
+  { group: 'Sales', label: 'Post-dated checks', path: '/col/pdcs', permission: 'col.checks.view' },
   { group: 'Money', label: 'Owners and officers', path: '/eq/people', permission: 'eq.people.view' },
   { group: 'Money', label: 'Loans', path: '/loan/loans', permission: 'loan.loans.view' },
   { group: 'Money', label: 'Fixed assets', path: '/fa/assets', permission: 'fa.assets.view' },
@@ -55,6 +57,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Purchases & Expenses', label: 'Payables by supplier', path: '/ap/suppliers', permission: 'ap.ledger.view' },
   { group: 'Accounting & Tax', label: 'Month-end checklist', path: '/acc/month-end', permission: 'acc.monthend.view' },
   { group: 'Accounting & Tax', label: 'Go-live decisions', path: '/acc/go-live-decisions', permission: 'acc.golive.view' },
+  { group: 'Accounting & Tax', label: 'Reversals due', path: '/acc/reversals-due', permission: 'acc.jv.create' },
   { group: 'Accounting & Tax', label: 'Sales register', path: '/tax/sales', permission: 'tax.registers.view' },
   { group: 'Accounting & Tax', label: '2307s received', path: '/tax/2307-received', permission: 'tax.registers.view' },
   { group: 'Accounting & Tax', label: 'Purchases register', path: '/tax/purchases', permission: 'tax.registers.view' },
@@ -109,6 +112,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Reports', label: 'Cash counts', path: '/rpt/cash-counts', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Fixed-asset schedule', path: '/rpt/assets', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Late entries', path: '/rpt/late-entries', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'Changes after filing', path: '/tax/changes-after-filing', permission: 'tax.registers.view' },
   { group: 'Reports', label: 'Cancellations and reissues', path: '/rpt/cancellations', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Exceptions', path: '/rpt/exceptions', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Sign-in history', path: '/rpt/sign-ins', permission: 'rpt.signins.view' },
@@ -119,6 +123,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Admin', label: 'Import old data', path: '/mig', permission: 'mig.run' },
   { group: 'Admin', label: 'Audit log', path: '/aud/log', permission: 'aud.log.view' },
   { group: 'Admin', label: 'Integrity check', path: '/aud/integrity', permission: 'aud.integrity.view' },
+  { group: 'Admin', label: 'Nightly checks', path: '/aud/nightly', permission: 'aud.integrity.view' },
 ];
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);

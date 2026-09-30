@@ -20,11 +20,11 @@ export function financedPurchase(db: Db, id: string): FinancedPurchase | undefin
 /** Posted FA- purchases with a financed part, oldest first. */
 export const financedPurchases = (db: Db): FinancedPurchase[] => (db.prepare(`${SELECT} AND d.status = 'posted' ORDER BY d.number`).all() as Row[]).map((r) => named(db, r));
 
-/** An FA- purchase's supplier and invoice number, for the TAX purchases register. */
-export function purchaseTaxFacts(db: Db, id: string): { supplierId: string; supplierInvoiceNo: string | null } | undefined {
-  return db.prepare('SELECT supplier_id AS supplierId, supplier_invoice_no AS supplierInvoiceNo FROM fa_assets WHERE document_id = ?').get(id) as
-    | { supplierId: string; supplierInvoiceNo: string | null }
-    | undefined;
+/** An FA- purchase's supplier, invoice number, amount and input VAT, for the TAX purchases registers (with and without input VAT). */
+export function purchaseTaxFacts(db: Db, id: string): { supplierId: string; supplierInvoiceNo: string | null; grossCents: number; inputVatCents: number } | undefined {
+  return db
+    .prepare('SELECT supplier_id AS supplierId, supplier_invoice_no AS supplierInvoiceNo, gross_cents AS grossCents, input_vat_cents AS inputVatCents FROM fa_assets WHERE document_id = ?')
+    .get(id) as { supplierId: string; supplierInvoiceNo: string | null; grossCents: number; inputVatCents: number } | undefined;
 }
 
 /**

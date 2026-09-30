@@ -34,11 +34,16 @@ export function Attendance({ me }: { me: Me }) {
   const names = Object.fromEntries(grid.employees.map((e) => [e.id, e.fullName]));
   const pending = changedCells(grid.days, cells, names);
   const shift = (dir: 1 | -1) => setRange(halfMonthOf(plusDays(dir === 1 ? grid.to : grid.from, dir)));
-  const set = (key: string, c: Partial<Cell>) => setCells({ ...cells, [key]: { status: '', ot: '', ...cells[key], ...c } });
+  const set = (key: string, c: Partial<Cell>) => {
+    setDone('');
+    setCells({ ...cells, [key]: { status: '', ot: '', ...cells[key], ...c } });
+  };
+  // "Saved" shows once the grid is read back, and the cells stay shut until then, so nothing typed meanwhile is lost.
   const save = async () => {
+    setDone('');
     const r = await api.saveAttendance(pending.days);
-    setDone(`Saved ${r.saved} ${r.saved === 1 ? 'day' : 'days'}.`);
     await load(range);
+    setDone(`Saved ${r.saved} ${r.saved === 1 ? 'day' : 'days'}.`);
   };
 
   return (
@@ -87,12 +92,12 @@ export function Attendance({ me }: { me: Me }) {
                   }
                   return (
                     <td key={d} className={`p-0.5 ${holiday[d] ? 'bg-amber-50' : ''}`}>
-                      <select aria-label={`${e.fullName} ${d}`} disabled={!editable} className="w-14 rounded border border-slate-300 bg-white text-xs" value={c.status} onChange={(x) => set(key, { status: x.target.value as Cell['status'] })}>
+                      <select aria-label={`${e.fullName} ${d}`} disabled={!editable || a.busy} className="w-14 rounded border border-slate-300 bg-white text-xs" value={c.status} onChange={(x) => set(key, { status: x.target.value as Cell['status'] })}>
                         <option value="" />
                         {statusesFor(!!holiday[d]).map((s) => <option key={s} value={s} title={STATUS_LABEL[s]}>{STATUS_MARK[s]}</option>)}
                       </select>
                       {['present', 'holiday_worked', 'rest_day_worked'].includes(c.status) && (
-                        <input aria-label={`${e.fullName} ${d} overtime`} placeholder="OT" disabled={!editable} className="mt-0.5 block w-14 rounded border border-slate-300 px-1 text-xs" value={c.ot} onChange={(x) => set(key, { ot: x.target.value })} />
+                        <input aria-label={`${e.fullName} ${d} overtime`} placeholder="OT" disabled={!editable || a.busy} className="mt-0.5 block w-14 rounded border border-slate-300 px-1 text-xs" value={c.ot} onChange={(x) => set(key, { ot: x.target.value })} />
                       )}
                     </td>
                   );
