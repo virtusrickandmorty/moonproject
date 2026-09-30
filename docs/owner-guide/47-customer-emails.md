@@ -29,4 +29,4 @@ The system automatically creates and queues emails for "Order received", "Ready 
 
 ### Common mistakes and how to fix them
 - **Mistake:** You fixed a typo in the customer's email address and expect a queued email to go to the new address.
-- **Fix:** An email keeps the address it had when it was queued, which you can see under the customer's name in the outbox. The **Send again** button tries that same queued address. You must cancel the transaction and redo it so a new email is queued with the updated address.
+- **Fix:** An email keeps the address it had when it was queued, which you can see under the customer's name in the outbox. The **Send again** button tries that same queued address.
