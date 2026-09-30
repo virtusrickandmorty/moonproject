@@ -72,6 +72,57 @@ function madeUpShop(userId: string) {
 }
 
 describe('sales and collections reports', () => {
+  it('lists only deposits crossing the chosen VAT quarter in every deposit VAT mode', async () => {
+    env = await createTestEnv(); const owner = await env.as('owner'); const db = env.db;
+    const at = '2026-09-28T10:00:00+08:00';
+    db.prepare(`INSERT INTO cus_customers (id, code, kind, display_name, credit_terms_days, created_at, updated_at)
+      VALUES ('c-cross', 'CROSS', 'organization', 'Quarter Crossing Club', 15, ?, ?)`).run(at, at);
+    const depositAccount = (db.prepare(`SELECT id FROM accounts WHERE role_key = 'CUSTOMER_DEPOSITS'`).pluck().get() as number);
+    const arAccount = (db.prepare(`SELECT id FROM accounts WHERE role_key = 'AR_TRADE'`).pluck().get() as number);
+    let sequence = 0;
+    const document = (id: string, type: string, date: string, total: number) => db.prepare(`INSERT INTO documents
+      (id, doc_type, module, series_key, number, business_date, status, total_cents, summary, posted_at, posted_by)
+      VALUES (?, ?, 'COL', ?, ?, ?, 'posted', ?, 'Made-up quarter deposit', ?, ?)`).run(id, type, type, id.toUpperCase(), date, total, at, owner.userId);
+    const order = (id: string) => {
+      document(id, 'jo.job_order', '2026-04-01', 50000);
+      db.prepare(`INSERT INTO jo_orders (document_id, customer_id, customer_name, due_date, priority, payment_terms, required_dp_cents)
+        VALUES (?, 'c-cross', 'Quarter Crossing Club', '2026-12-01', 'normal', 'net15', 0)`).run(id);
+    };
+    const movement = (id: string, jo: string, date: string, mode: 'A' | 'B' | 'C', deposit: number, vat = 0, dp = 0, dpVat = 0) => {
+      document(id, mode === 'C' && dp > 0 ? 'jo.dp_invoice' : 'col.collection', date, Math.max(Math.abs(deposit), Math.abs(dp)));
+      db.prepare(`INSERT INTO journals (id, number, business_date, source_type, source_id, posting_kind, memo, created_at, created_by)
+        VALUES (?, ?, ?, 'document', ?, 'original', 'Made-up deposit', ?, ?)`).run(`j-${id}`, `J-${++sequence}`, date, id, at, owner.userId);
+      const credit = Math.max(0, mode === 'C' ? dp - dpVat : deposit); const debit = Math.max(0, -(mode === 'C' ? dp - dpVat : deposit));
+      db.prepare(`INSERT INTO journal_lines (journal_id, line_no, account_id, party_type, party_id, debit_cents, credit_cents, ref_doc_id)
+        VALUES (?, 1, ?, 'customer', 'c-cross', ?, ?, ?)`).run(`j-${id}`, depositAccount, debit, credit, jo);
+      db.prepare(`INSERT INTO journal_lines (journal_id, line_no, account_id, party_type, party_id, debit_cents, credit_cents, ref_doc_id)
+        VALUES (?, 2, ?, 'customer', 'c-cross', ?, ?, ?)`).run(`j-${id}`, arAccount, credit, debit, jo);
+      db.prepare('UPDATE journals SET sealed = 1 WHERE id = ?').run(`j-${id}`);
+      db.prepare(`INSERT INTO col_deposit_vat (document_id, posting, line_no, job_order_id, customer_id, mode,
+        deposit_cents, deposit_vat_cents, deposit_base_cents, dp_invoiced_cents, dp_vat_cents, register_base_cents)
+        VALUES (?, 'original', 1, ?, 'c-cross', ?, ?, ?, 0, ?, ?, 0)`).run(id, jo, mode, deposit, vat, dp, dpVat);
+    };
+    for (const id of ['jo-a', 'jo-b', 'jo-c', 'jo-same']) order(id);
+    movement('dep-a', 'jo-a', '2026-06-20', 'A', 10000);
+    movement('dep-b', 'jo-b', '2026-08-10', 'B', 11200, 1200);
+    movement('dep-c', 'jo-c', '2026-09-10', 'C', 0, 0, 11200, 1200);
+    movement('dep-same', 'jo-same', '2026-07-10', 'A', 5000);
+    movement('apply-same', 'jo-same', '2026-09-15', 'A', -5000);
+    movement('apply-a', 'jo-a', '2026-10-10', 'A', -10000);
+
+    const report = await owner.get('/api/rpt/deposits-crossing-quarter?quarter=2026-Q3');
+    expect(report.statusCode, report.body).toBe(200);
+    expect(report.json().rows.map((r: { mode: string; amountCents: number; heldAtQuarterEndCents: number; outputVatCents: number; quarterApplied: string | null }) =>
+      [r.mode, r.amountCents, r.heldAtQuarterEndCents, r.outputVatCents, r.quarterApplied])).toEqual([
+      ['A', 10000, 10000, 0, '2026-Q4'], ['B', 11200, 11200, 1200, null], ['C', 11200, 10000, 1200, null],
+    ]);
+    expect(report.json().totals.heldAtQuarterEndCents).toBe(31200);
+    expect(report.json().totals.heldAtQuarterEndCents).toBe((await owner.get('/api/rpt/deposits-held?asOf=2026-09-30')).json().totalCents);
+    const csv = await owner.get('/api/rpt/deposits-crossing-quarter?quarter=2026-Q3&format=csv');
+    expect(csv.statusCode, csv.body).toBe(200); expect(csv.body).toContain('"112.00","100.00","","C","12.00"');
+    expect((await (await env.as('encoder')).get('/api/rpt/deposits-crossing-quarter?quarter=2026-Q3')).statusCode).toBe(403);
+  });
+
   it('shows deposits, collections, sales, and job follow-up tied to the trial balance', async () => {
     env = await createTestEnv(); const owner = await env.as('owner'); const codes = madeUpShop(owner.userId);
     const get = (name: string) => owner.get(`/api/rpt/${name}`);

@@ -12,6 +12,7 @@ type ComparedTotal = { amountCents: number; compareAmountCents: number; differen
 type IncomeStatementResult = { from: string; to: string; sections: Section[]; grossProfitCents: number; incomeBeforeTaxCents: number; netIncomeCents: number;
   comparison?: { kind: string; from: string; to: string }; grossProfit?: ComparedTotal; incomeBeforeTax?: ComparedTotal; netIncome?: ComparedTotal };
 type BalanceSheetResult = { asOf: string; yearStart: string; sections: Section[]; currentYearEarningsCents: number; earlierYearsEarningsCents: number;
+  receivables: { tradeCents: number; allowanceCents: number; netCents: number };
   totalAssetsCents: number; totalLiabilitiesCents: number; totalEquityCents: number; totalLiabilitiesAndEquityCents: number; differenceCents: number; balanced: boolean;
   comparison?: { kind: string; asOf: string }; totalLiabilitiesAndEquity?: ComparedTotal; comparisonBalanced?: boolean };
 
@@ -109,6 +110,7 @@ export function BalanceSheet({ me }: { me: Me }) {
       <tbody><Total label="Total liabilities and equity" cents={data.totalLiabilitiesAndEquityCents} compared={data.totalLiabilitiesAndEquity} strong /></tbody>
     </Statement>
     <p className="text-xs text-slate-600">Current-year earnings are the net income from {data.yearStart} to {data.asOf}; earlier years’ earnings are every income and expense before {data.yearStart}. Both are computed, never posted.
-      {data.balanced && ' Total assets equal total liabilities and equity.'}</p></Panel>}
+      {data.balanced && ' Total assets equal total liabilities and equity.'}
+      {data.receivables.allowanceCents !== 0 && ` Trade receivables of ${peso(data.receivables.tradeCents)} less the allowance for credit losses of ${peso(data.receivables.allowanceCents)}: ${peso(data.receivables.netCents)} expected to be collected.`}</p></Panel>}
   </article>;
 }

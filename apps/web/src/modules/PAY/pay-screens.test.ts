@@ -24,6 +24,7 @@ describe('payroll screen rules', () => {
     );
     expect(finalPayText({ final: { separatedOn: '2026-09-10', caLeftCents: 0, loansLeftCents: 0 } })).toBe('Final pay: left on 2026-09-10');
     expect(qtyText('unused_leave', 3000)).toBe('3 days');
+    expect(qtyText('night', 150)).toBe('2:30 h'); // night differential, in minutes like overtime
     expect(thirteenthInput('SEMI_MONTHLY', 2026, {}, {}, 'e1').input).toEqual({ payGroup: 'SEMI_MONTHLY', year: 2026, employeeId: 'e1' });
   });
 

@@ -20,6 +20,7 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [16. Income Statement and Balance Sheet](16-statements.md): View how much money the business made or lost, and see what the business owns and owes.
 - [17. Opening balances](17-opening-balances.md): Set the cut-over date, record starting balances, and close the opening.
 - [18. BIR payments](18-bir-payments.md): Know what tax returns are due, close the VAT at the end of a quarter, and record the payments made.
+- [19. Calendar and Audit Log](19-calendar-and-audit.md): View upcoming events on the calendar, track changes in the audit log, and check data integrity.
 - [20. The Practice Shop](20-practice-shop.md): Train with made-up data without touching the real books.
 - [21. Government remittances](21-government-remittances.md): Record your monthly SSS, PhilHealth, Pag-IBIG and tax payments.
 - [22. Cash Advances](22-cash-advances.md): Give a cash advance, set payroll deduction, and pay back or write off what is owed.
@@ -31,14 +32,23 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [28. Year-end tax and 2316](28-year-end-tax.md): Do the year-end adjustment, check substituted filing, and download the 2316 and alphalist.
 - [29. VAT each quarter](29-vat-each-quarter.md): Check the VAT registers, mark 2307s received, preview the quarter's VAT, and close the VAT.
 - [30. Suppliers and Purchase Orders](30-suppliers-and-purchase-orders.md): Manage suppliers and your supplies list, make purchase orders, and receive goods.
+- [31. Importing the old data](31-importing-old-data.md): Bring your records from the old Google sheet.
 - [32. Bank reconciliation](32-bank-reconciliation.md): Check that your bank accounts match your real bank statements.
 - [33. Month-end checklist](33-month-end-checklist.md): View the status of month-end tasks and sign off the month.
 - [34. Government upload files](34-government-upload-files.md): Download the SSS, PhilHealth and Pag-IBIG files for a month, check the exposure report, and upload files to the agencies.
 - [35. Users, Roles and Passwords](35-users-roles-passwords.md): Manage staff logins, permissions, and passwords.
 - [36. Fixed assets, loans and owners](36-fixed-assets-loans-owners.md): See your fixed assets, your loans, and the people who own or run the business.
+- [37. Job Orders, Release Slips and Invoices](37-job-orders-release-invoices.md): Record a customer's order, track what they owe, release goods, and issue invoices.
+- [38. Reports and BIR books](38-reports-and-bir-books.md): View lists and summaries of the shop's data, and print out the BIR books for tax records.
 - [39. Switch-over day](39-switch-over-day.md): Plan and execute the move from the old apps to Moonproject.
+- [40. Price List and Quotations](40-price-list-and-quotations.md): Add items to the price list, make quotations, and turn them into job orders.
 - [41. Production Board and Piece Rates](41-production-board-and-piece-rates.md): View the production board, record pieces done, and manage piece rates.
 - [42. Employees, Attendance and Holidays](42-employees-attendance-holidays.md): Add employees, set their pay rates, record daily attendance, and manage holidays.
 - [43. Home, Search and TV Board](43-home-search-tv-board.md): See your daily alerts, find records quickly, and view the production status.
+- [44. Company Print Details and Printer Test Pack](44-print-details-and-printer-test.md): Set the company's registered name, TIN, and address, and test the shop printers.
+- [45. Sizer Tracker](45-sizer-tracker.md): See what sizer sets are in the shop, which ones are lent, and record returns.
 - [46. Selling a fixed asset](46-selling-a-fixed-asset.md): Record taking a fixed asset off the books by selling or retiring it.
 - [48. Go-live decisions](48-go-live-decisions.md): Answer questions before switch-over.
+- [49. Cash flow statement](49-cash-flow-statement.md): View where your cash came from and where it went.
+- [50. Printing statements and schedules](50-printing-statements-and-schedules.md): Print a customer's statement of account, a wearer's sizing profile, or the fixed asset schedule.
+- [51. Depreciation run and retiring an asset](51-depreciation-and-retiring-assets.md): Run the month's depreciation and record taking an asset off the books.

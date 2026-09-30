@@ -5,7 +5,7 @@ import { comparativeTrialBalance, generalJournal, generalLedger, ledgerAccounts 
 import { balanceSheet, compareSections, comparisonDates, incomeStatement, type Comparison, type StatementSection } from './statements.ts';
 import { arAging, customerStatement } from './receivables.ts';
 import { statementCustomers } from '../CUS/public.ts';
-import { collectionsRegister, depositsHeld, jobOrderFollowUp, salesByPeriod } from './sales-collections.ts';
+import { collectionsRegister, depositsCrossingQuarter, depositsHeld, jobOrderFollowUp, salesByPeriod } from './sales-collections.ts';
 import { birBookRoutes } from './bir-books.ts';
 import { payrollProductionRoutes } from './payroll-production-routes.ts';
 import { apAging, purchases, purchaseOrders, receivedNotBilled } from './suppliers.ts';
@@ -72,6 +72,21 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
       ['TOTAL', '', csvPesos(result.totalCents), ''],
     ]);
   });
+  app.get('/api/rpt/deposits-crossing-quarter', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
+    const q = req.query as Record<string, unknown>;
+    if (typeof q.quarter !== 'string' || !/^\d{4}-Q[1-4]$/.test(q.quarter))
+      throw new AppError('BAD_QUARTER', 'Choose a quarter in YYYY-Q1 format.', 400);
+    const [year, quarter] = q.quarter.replace('Q', '').split('-').map(Number) as [number, number];
+    const result = depositsCrossingQuarter(db, year, quarter);
+    if (q.format !== 'csv') return result;
+    return sendCsv(reply, `deposits-crossing-${q.quarter}`, [
+      ['Customer', 'Job order', 'Deposit document', 'Deposit date', 'Quarter received', 'Amount PHP', 'Held at quarter end PHP', 'Quarter applied', 'Deposit VAT mode', 'Output VAT declared PHP', 'Document link'],
+      ...result.rows.map((r): CsvCell[] => [r.customerName, r.jobOrderNumber, r.depositDocumentNumber, r.depositDate,
+        r.quarterReceived, csvPesos(r.amountCents), csvPesos(r.heldAtQuarterEndCents), r.quarterApplied ?? '', r.mode,
+        csvPesos(r.outputVatCents), r.depositDocumentPath]),
+      ['TOTAL', '', '', '', '', csvPesos(result.totals.amountCents), csvPesos(result.totals.heldAtQuarterEndCents), '', '', csvPesos(result.totals.outputVatCents), ''],
+    ]);
+  });
   app.get('/api/rpt/collections-register', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const { from, to } = range(q); const result = collectionsRegister(db, from, to);
@@ -120,6 +135,9 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
     rows.push(['TOTAL', '', '', '', '', csvPesos(result.buckets.current), csvPesos(result.buckets.days1to30),
       csvPesos(result.buckets.days31to60), csvPesos(result.buckets.days61to90), csvPesos(result.buckets.over90),
       csvPesos(result.totalCents)]);
+    for (const r of result.allowance) rows.push([r.customerName, 'Less allowance for credit losses', '', '', '', '', '', '', '', '', csvPesos(-r.allowanceCents)]);
+    rows.push(['LESS ALLOWANCE FOR CREDIT LOSSES', '', '', '', '', '', '', '', '', '', csvPesos(-result.allowanceCents)]);
+    rows.push(['NET RECEIVABLES', '', '', '', '', '', '', '', '', '', csvPesos(result.netCents)]);
     rows.push([]);
     rows.push(['Uninvoiced job orders (memo, excluded from AR total)', 'Job order', 'Due date', 'Amount PHP']);
     for (const r of result.memo) rows.push([r.customerName, r.jobOrderNumber, r.dueDate, csvPesos(r.notInvoicedCents)]);
@@ -228,6 +246,7 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
       ? ['Check', '', label, csvPesos(currentAmount), csvPesos(otherAmount), csvPesos(currentAmount - otherAmount), otherAmount === 0 ? '' : ((currentAmount - otherAmount) / Math.abs(otherAmount) * 100).toFixed(2)]
       : ['Check', '', label, csvPesos(currentAmount)];
     const rows: CsvCell[][] = [head, ...result.sections.flatMap((s) => sectionRows(s, !!compare)),
+      check('Trade receivables less the allowance for credit losses', result.receivables.netCents, other?.receivables.netCents ?? 0),
       check('Total liabilities and equity', result.totalLiabilitiesAndEquityCents, other?.totalLiabilitiesAndEquityCents ?? 0),
       check('Total assets less liabilities and equity', result.differenceCents, other?.differenceCents ?? 0)];
     return sendCsv(reply, `balance-sheet-${result.asOf}`, rows);
