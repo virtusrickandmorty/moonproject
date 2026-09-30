@@ -7,11 +7,12 @@
 ### Steps
 1. Open the report you want under **Reports**. It loads automatically (using this month, or today for reports asking for **As of**).
 2. If you want a different date, pick the dates.
-   - **Late entries** and **Cancellations and reissues** do not have date boxes and no **Show** button.
+   - **Purchase orders by status**, **Received but not billed**, **Late entries** and **Cancellations and reissues** do not have date boxes and no **Show** button.
    - **AP aging**, **Cash position**, **Fixed-asset schedule**, and **Exceptions** use **As of**.
    - **Purchases by supplier/category**, **Transfers report**, **Cash counts**, and **Sign-in history** use **From** and **To**.
    - The **Customer statement** also needs a customer first.
 3. Click the **Show** button to reload the numbers with your new dates.
+4. To keep a copy, click **Print**, or click **Export CSV** to download a spreadsheet file.
 
 To open the BIR books:
 1. Open **BIR books** under **Reports**. It starts with the **From** and **To** dates filled in from the first of this month to today.
@@ -30,12 +31,12 @@ To answer everyday questions:
 - **Payroll and production:** Check the **Payroll register** for pay details. Use the **Production status counts**, **Production throughput**, **Worker output**, **Late job orders**, and **Job order lead time** to see how the shop floor is moving.
 
 Control reports:
-- **Late entries:** Lists documents added long after they happened.
-- **Cancellations and reissues:** Lists documents that were stopped or redone.
-- **Exceptions:** Lists odd things the system found.
+- **Late entries:** Lists journal vouchers and opening entries that were made on a later day than their date.
+- **Cancellations and reissues:** Lists documents that were cancelled or reissued.
+- **Exceptions:** Lists things to look at: a release with no invoice record, a cash place below zero, a draft older than 3 days, and miscellaneous expenses above 10% for the month.
 
 For the accountant and taxes:
-The BIR books screen shows pages each headed with a page number like **Page 1**, **Page 2**, and so on. **Brought forward** shows from page 2, and **Carried forward** shows at the foot of every page. You can click the **Print** button for physical copies, or click **Export CSV** to download a spreadsheet file to send to the accountant.
+The BIR books screen shows pages each headed with a page number like **Page 1**, **Page 2**, and so on. **Brought forward** shows from page 2, and **Carried forward** shows at the foot of every page. You can click the **Print** button for a copy, or click **Export CSV** to download a spreadsheet file to send to the accountant. To print pages for the binder, click **Print loose-leaf** (it needs **From** and **To** in the same year). The screen shows the last page printed for that year, so the next print carries on from there.
 
 ### Common mistakes and how to fix them
 - **Mistake:** You cannot see the **Reports** menu or the specific report you need.

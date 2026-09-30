@@ -23,6 +23,7 @@ import { localNames } from './engine/security/tls/certs.ts';
 import { joinHandler } from './engine/security/tls/join.ts';
 import { ensureTls } from './engine/security/tls/store.ts';
 import { practiceShop, type PracticeShop } from './platform/practice/shop.ts';
+import { nightlyTick } from './modules/AUD/nightly.ts';
 import { isCheckDue, lastSystemCheck, runSystemCheck } from './platform/health/health.ts';
 import { RESTART_EXIT_CODE } from './platform/restart.ts';
 
@@ -45,7 +46,7 @@ if (practicePort) {
   });
 }
 let joinPort: number | null = null;
-const { app } = buildApp({
+const { app, deps } = buildApp({
   db, clock: systemClock, modules, logger: true, ...(practice ? { practiceShop: practice } : {}),
   ...(tls ? { https: { key: tls.server.keyPem, cert: tls.server.certPem } } : {}),
   network: { joinPort: () => joinPort },
@@ -131,8 +132,19 @@ const backupTick = async () => {
     backingUp = false;
   }
 };
-void backupTick();
+// Nightly checks (PLAN E13): at 02:00 Manila by this PC's clock, or at the next start when the PC was off. The start
+// waits for its backup first, so the "last backup" check does not judge a backup that is about to be made.
+const nightlyChecks = () => {
+  try {
+    const ran = nightlyTick({ db, clock: systemClock, practice: false, titleOf: (type) => deps.registry.docType(type)?.title ?? type });
+    if (ran) app.log.info(`Nightly checks for ${ran.night}: ${ran.checks.filter((c) => !c.passed).length} of ${ran.checks.length} found something`);
+  } catch (e) {
+    app.log.error(`The nightly checks failed: ${(e as Error).message}`);
+  }
+};
+void backupTick().finally(nightlyChecks);
 setInterval(() => void backupTick(), 10 * 60_000).unref();
+setInterval(nightlyChecks, 60_000).unref();
 
 // System Health (PLAN C8): the full system check every night; the page shows the newest.
 setInterval(() => {
