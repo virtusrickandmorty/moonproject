@@ -1,10 +1,11 @@
 /** PAY contract for other modules (STAT). Read-only; callers check their own route permission. */
 import type { Db } from '../../platform/db/driver.ts';
 import { sssRateAt } from './statutory.ts';
-import { runDoc } from './doctypes/run.ts';
 export { hdmfMonthly, hdmfRateAt, phicMonthly, phicRateAt, sssMonthly, sssRateAt } from './statutory.ts';
 import type { Agency, LoanKind } from './loans.ts';
 export { KIND_LABEL, LOAN_ACCOUNT, type Agency, type LoanKind } from './loans.ts';
+// Last, after loans.ts: the run's doc type reaches STAT (via TAX), which reads LOAN_ACCOUNT from here as it loads.
+import { runDoc } from './doctypes/run.ts';
 
 /** One employee's recorded pay for a contribution month (PAY-RUN's month M, F3), over the month's recorded runs. */
 export interface MonthPay {

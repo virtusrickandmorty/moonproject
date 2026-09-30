@@ -175,6 +175,9 @@ const OPEN_TO_SIGNED_IN = ['GET /api/system/tls', 'GET /api/system/practice', 'G
 const DOC_TYPE_ROUTES = [
   'GET /api/doc-types', 'GET /api/docs/:type', 'GET /api/docs/:type/:id', 'POST /api/docs/:type/preview', 'POST /api/docs/:type/post', 'POST /api/docs/:type/:id/cancel',
   'POST /api/docs/:type/:id/reissue', 'GET /api/drafts', 'POST /api/drafts', 'PUT /api/drafts/:id', 'POST /api/drafts/:id/discard', 'GET /api/prt/printable-types', 'POST /api/prt/print/:type/:id',
+  // The cancel dialog's warnings and the attachments panel check the doc type's own view, cancel or create permission.
+  'GET /api/docs/:type/:id/cancel-preview', 'GET /api/docs/:type/:id/attachments', 'POST /api/docs/:type/:id/attachments', 'GET /api/docs/:type/:id/attachments/:attachmentId',
+  'POST /api/docs/:type/:id/attachments/:attachmentId/remove',
 ];
 
 const label = (r: { method: string; url: string }) => `${r.method} ${r.url}`;
@@ -237,7 +240,7 @@ describe('every route, every role (C6: a permission checked on every route)', ()
     expect(called).toBe(keyed().length * ROLES.length);
     expect(wrong).toEqual([]);
     // A change with an empty body should do nothing. These read-only checks answer 200 and write nothing of business data.
-    expect([...new Set(doneSomething)].sort()).toEqual(['POST /api/system/health/check']);
+    expect([...new Set(doneSomething)].sort()).toEqual(['POST /api/aud/nightly/run', 'POST /api/system/health/check']);
   });
 
   it('a role with the permission still needs the fresh password where a route says so, and 403 STEP_UP_REQUIRED is not FORBIDDEN', async () => {
