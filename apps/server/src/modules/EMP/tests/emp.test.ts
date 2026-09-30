@@ -142,8 +142,8 @@ describe('attendance, holidays and SIL', () => {
     expect((await save([{ employeeId: a, date: '2026-09-24', status: 'present', otMinutes: 90 }, { employeeId: old, date: '2026-09-24', status: 'absent', note: 'Sick' }])).json()).toEqual({ saved: 1, unchanged: 1 });
     expect(attendanceBetween(env.db, '2026-09-24', '2026-09-24')).toEqual(
       expect.arrayContaining([
-        { employeeId: a, date: '2026-09-24', status: 'present', otMinutes: 90, note: null },
-        { employeeId: old, date: '2026-09-24', status: 'absent', otMinutes: 0, note: 'Sick' },
+        { employeeId: a, date: '2026-09-24', status: 'present', otMinutes: 90, nightMinutes: 0, note: null },
+        { employeeId: old, date: '2026-09-24', status: 'absent', otMinutes: 0, nightMinutes: 0, note: 'Sick' },
       ]),
     );
     const bad = await save([{ employeeId: a, date: '2026-09-25', status: 'present' }, { employeeId: a, date: '2026-09-29', status: 'present' }]);
@@ -161,6 +161,17 @@ describe('attendance, holidays and SIL', () => {
     expect(grid.days).toHaveLength(2);
     expect((await enc.get('/api/emp/attendance?from=2026-09-01&to=2026-10-02')).json().code).toBe('BAD_RANGE');
     expect((await enc.post('/api/emp/attendance', { days: [{ employeeId: a, date: '2026-09-24', status: 'present', ratePerDay: 1 }] })).statusCode).toBe(400);
+  });
+
+  it('night minutes (10 PM to 6 AM, F1 night differential) go beside overtime on a worked day, at most 8 hours', async () => {
+    expect((await save([{ employeeId: a, date: '2026-09-23', status: 'half_day', nightMinutes: 240 }, { employeeId: old, date: '2026-09-23', status: 'present', otMinutes: 60, nightMinutes: 480 }])).json()).toEqual({ saved: 2, unchanged: 0 });
+    expect(attendanceBetween(env.db, '2026-09-23', '2026-09-23').map((d) => [d.status, d.otMinutes, d.nightMinutes])).toEqual(expect.arrayContaining([['half_day', 0, 240], ['present', 60, 480]]));
+    // A change of the night minutes alone is a change; the same again is skipped.
+    expect((await save([{ employeeId: a, date: '2026-09-23', status: 'half_day', nightMinutes: 180 }, { employeeId: old, date: '2026-09-23', status: 'present', otMinutes: 60, nightMinutes: 480 }])).json()).toEqual({ saved: 1, unchanged: 1 });
+    expect(await codes([{ employeeId: a, date: '2026-09-22', status: 'absent', nightMinutes: 60 }, { employeeId: old, date: '2026-09-22', status: 'rest_day', nightMinutes: 30 }])).toEqual(['NIGHT', 'NIGHT']);
+    expect((await save([{ employeeId: a, date: '2026-09-22', status: 'present', nightMinutes: 481 }])).statusCode).toBe(400);
+    // The table refuses them too (migration 0003).
+    expect(() => env.db.prepare(`INSERT INTO emp_attendance (employee_id, work_date, seq, status, ot_minutes, night_minutes, at, user_id) VALUES (?, '2026-09-21', 1, 'absent', 0, 60, 'x', ?)`).run(a, createUser(env.db, 'typist', ['encoder']))).toThrow(/CHECK/);
   });
 
   it('holidays take the holiday statuses, other days never do; switching a holiday off is refused while attendance marks it', async () => {
