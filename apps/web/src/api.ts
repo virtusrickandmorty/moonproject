@@ -469,7 +469,10 @@ export interface SupplierBody {
 export interface SupplierContact { id: string; supplier_id: string; name: string; role: string | null; phone: string | null; email: string | null }
 export interface ContactBody { name: string; role: string | null; phone: string | null; email: string | null }
 export type SupplyUnit = 'yard' | 'meter' | 'kg' | 'roll' | 'pc';
-export interface SupplyRecord extends SupplyRow { unit: SupplyUnit; last_purchase_cost_cents: number; is_active: number; version: number }
+export interface SupplyRecord extends SupplyRow {
+  unit: SupplyUnit; is_active: number; version: number; purchase_cost_cents: number; purchase_cost_source: 'bill' | 'po' | 'catalogue';
+  purchase_cost_source_number: string | null; purchase_cost_source_date: string | null;
+}
 export interface SupplyBody { name: string; unit: SupplyUnit; category: 'materials' | 'ready_made' }
 /** A purchase order line with what posted receiving reports have received (GET /api/pur/purchase-orders/:id and /open). */
 export interface PoLineStatus { lineNo: number; supplyId: string; supplyName: string; unit: SupplyUnit; orderedQty: number; receivedQty: number; remainingQty: number; unitCostCents: number }
@@ -962,6 +965,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     supplierPurchaseOrders: (id: string) => call<SupplierPo[]>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}/purchase-orders`),
     supplierReceivingReports: (id: string) => call<SupplierRr[]>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}/receiving-reports`),
     supplyList: (status: PurStatus) => call<SupplyRecord[]>('GET', `/api/pur/supplies?status=${status}`),
+    supply: (id: string) => call<SupplyRecord>('GET', `/api/pur/supplies/${encodeURIComponent(id)}`),
     addSupply: (body: SupplyBody) => call<{ id: string; version: number }>('POST', '/api/pur/supplies', body),
     updateSupply: (id: string, v: number, body: SupplyBody) => call<{ success: true; version: number }>('PUT', `/api/pur/supplies/${encodeURIComponent(id)}`, body, version(v)),
     deactivateSupply: (id: string, v: number) => call<{ success: true }>('POST', `/api/pur/supplies/${encodeURIComponent(id)}/deactivate`, undefined, version(v)),

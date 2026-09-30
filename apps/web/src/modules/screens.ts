@@ -119,6 +119,7 @@ import { IntegrityCheck } from './AUD/IntegrityCheck.tsx';
 import { Suppliers } from './PUR/Suppliers.tsx';
 import { SupplierPage } from './PUR/Supplier.tsx';
 import { Supplies } from './PUR/Supplies.tsx';
+import { SupplyPage } from './PUR/Supply.tsx';
 import { PoForm } from './PUR/PoForm.tsx';
 import { RrForm } from './PUR/RrForm.tsx';
 import { purchaseOrderView, receivingReportView } from './PUR/views.tsx';
@@ -145,6 +146,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/pur/suppliers/new': SupplierPage,
   '/pur/suppliers/:id': SupplierPage,
   '/pur/supplies': Supplies,
+  '/pur/supplies/:id': SupplyPage,
   '/emp/employees': Employees,
   '/emp/leave-balances': LeaveBalances,
   '/emp/employees/:id': EmployeePage,

@@ -4,8 +4,7 @@
  */
 import { divRoundHalfAway } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
-import { latestBillUnitCost } from '../AP/public.ts';
-import { activeSuppliesOf, latestPoUnitCost, type CountableSupply, type SupplyUnit } from '../PUR/public.ts';
+import { activeSuppliesOf, latestPurchaseCost, type CountableSupply, type PurchaseCostSource, type SupplyUnit } from '../PUR/public.ts';
 
 export const CATEGORIES = ['materials', 'ready_made'] as const;
 export type Category = (typeof CATEGORIES)[number];
@@ -20,15 +19,12 @@ export const qtyScale = (unit: SupplyUnit) => (MILLI_UNITS.has(unit) ? 1000 : 1)
 /** Quantity × cost per unit, rounded to the centavo per line. */
 export const lineValue = (qty: number, unitCostCents: number, unit: SupplyUnit) => divRoundHalfAway(qty * unitCostCents, qtyScale(unit));
 
-export type CostSource = 'bill' | 'po' | 'catalogue';
+export type CostSource = PurchaseCostSource;
 export interface DefaultCost { unitCostCents: number; source: CostSource; sourceNumber: string | null }
 
 export function defaultCost(db: Db, s: CountableSupply, asOf: string): DefaultCost {
-  const bill = latestBillUnitCost(db, s.id, asOf);
-  if (bill) return { unitCostCents: bill.unitCostCents, source: 'bill', sourceNumber: bill.number };
-  const po = latestPoUnitCost(db, s.id, asOf);
-  if (po) return { unitCostCents: po.unitCostCents, source: 'po', sourceNumber: po.number };
-  return { unitCostCents: s.lastPurchaseCostCents, source: 'catalogue', sourceNumber: null };
+  const cost = latestPurchaseCost(db, s, asOf);
+  return { unitCostCents: cost.unitCostCents, source: cost.source, sourceNumber: cost.sourceNumber };
 }
 
 /** "2026-02-14" -> "2026-02-28". */
