@@ -2,22 +2,22 @@
 
 **What it is for:** Record a customer's order for team jerseys or services, track what they owe, release the finished goods to them, and issue the booklet invoice.
 
-**Before you start:** Know the customer's name, what they are ordering from the price list, their wearers and sizes, and when it is due. When releasing, you need the printed release slip and to see their ID.
+**Before you start:** Know the customer's name, what they are ordering from the price list, their wearers and sizes, and when it is due. When releasing, you need to see the ID of the person who claims the order.
 
 ### Steps
 
 **Making a job order:**
-1. Open **Job Orders** under **Sales**, then use the new button on that list. The form's heading is **New job order**.
+1. Open **Job Orders** under **Sales**, then click **+ New Job Order**. The form's heading is **New job order**.
 2. In the **Customer** panel, pick the customer from the list or click **+ New customer**. If it's a new customer, type **New customer's name**, pick **Kind of customer** (**Team, school or company** or **Person**) and click **Add customer** (or **Never mind**).
-3. Under **What is made**, click **+ Add a line** to add more lines. Type to search the price list, and pick the item.
-4. Fill in the pieces. If you have a list of wearers, use the **Wearer**, **Size**, **Jersey name**, **Measured** options. Click **Add a wearer…**, **Pull a whole group…**, or **Paste from Excel** and click **Add these**. For a single name, type in the box with the hint "One-off name".
+3. Under **What is made**, click **+ Add a line** to add more lines. Type at least two letters to search the price list, and pick the item. The price fills in from the price list for that number of pieces; you can type a different price.
+4. Fill in the pieces. If you have a list of wearers, open **Wearers** on the line. Use the **Add a wearer…** or **Pull a whole group…** drop-down, or click **Paste from Excel**, paste the rows, and click **Add these**. For a name that is not on file, click **+ One-off name** and type it in. For each wearer pick the **Size** (or **Measured** for a wearer on file) and type the **Jersey name**, **No.** and **Qty**. Once wearers are listed, the pieces follow them.
 5. Under **Terms**, type the **Due in (days)** and pick the **Payment terms**.
-6. Check the **Total** and **Downpayment asked** under **So far**, then click **Record**.
+6. Check the **Total** and **Downpayment asked** under **So far**, then click **Record**. If you are not ready, click **Save draft** instead: a draft has no number and records nothing until you press **Record**.
 
 **Taking the downpayment:**
 1. Open the job order.
 2. If a downpayment is still asked and you have permission, click the **Take the downpayment** button. (In mode C, the button opens the downpayment invoice form first, then the collection follows).
-3. If only a balance remains, click **Take a payment** instead.
+3. To take any other payment on the order, click **Take a payment** instead.
 4. Finish recording the collection.
 
 **Changing a job order:**
@@ -30,14 +30,14 @@
 1. Open the job order and click **Release**, or open **Release Slips** from the **Sales** menu. The form is **New release slip**. It starts with a **Job order** panel.
 2. Under **What goes out**, tick the lines and pieces that are going out now.
 3. Under **Who claimed it**, type the **Claimed by** name and pick the **ID seen**. Only the kind of ID is kept, never its number.
-4. Under **Not ready yet**, if it is going out before it is ready, type the **Owner's reason to release it now**.
-5. Under **Still to be paid**, if the job is not paid in full, you will be asked **Why it goes out before it is paid**. Type **Pay within (days)** to give credit.
+4. Under **Not ready yet** (shown only when the job order is not ready for release), the owner types the **Owner's reason to release it now** (at least 10 characters). Anyone else must first mark the order ready, or ask the owner.
+5. Under **Still to be paid**, if the job is not paid in full, only the owner or the accountant can release it. They type **Why it goes out before it is paid** and **Pay within (days)** to give credit. Anyone else must take the payment first.
 6. Under **Invoice**, type the **Invoice number (from the booklet)**, or tick **Invoice to follow (the booklet is not at hand)**.
 7. Click **Record**. In the **Record this release?** box, click **Record** again (or **Go back**).
 
 **Recording the booklet invoice:**
 1. If the invoice was not recorded with the release, click **Invoice Records** from the **Sales** menu, or click **Record invoice** on the job order.
-2. Pick the release by its number (for example REL-000012).
+2. Pick the release by its number (it starts with REL-).
 3. Under **Write these on the booklet**, copy the **VATable sales**, **VAT**, and **Total** exactly as shown to your physical booklet.
 4. Type the **Invoice number (from the booklet)** you just wrote. You can also fill the **Note** box.
 5. Click **Record**.
@@ -49,4 +49,4 @@ The system keeps track of the **Balance due** (what the customer still owes) on 
 - **Mistake:** You cannot add wearers because you forgot the customer.
 - **Fix:** The app shows **Pick the customer first.** Pick the customer before you add wearers.
 - **Mistake:** You made a mistake on a recorded release slip.
-- **Fix:** You cannot edit a release slip. You must cancel the wrong release slip and record a new one with the right details.
+- **Fix:** You cannot edit a release slip. Cancel its invoice record first (if it has one), then cancel the wrong release slip and record a new one with the right details.

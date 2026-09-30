@@ -15,34 +15,43 @@
  *   payments are kept in tax_income_tax_payments (0006); the reads here take all three tables.
  *   1702, a year (the annual return): what the year's posted income tax settlement (ITS-) left on 2320, or for a year
  *   before the cut-over date what its opening left, less the year's 1702 payments (tax_income_tax_annual_payments, 0008).
+ *   1601-FQ, a quarter: the final tax withheld in the quarter (the net credit on 2312 of every journal dated in it but
+ *   the BIR payments': the dividend declarations, whose cancel mirrors them on their own date, and journal vouchers),
+ *   less the quarter's 1601-FQ payments (tax_final_tax_payments, 0009).
  */
 import type { Db } from '../../platform/db/driver.ts';
 import { voucherTaxFacts } from '../EXP/public.ts';
 import { supplierTaxInfo } from '../PUR/public.ts';
 import { cutoverDate } from '../ACC/public.ts';
-import { monthRange, quarterRange, type Quarter } from './calendar.ts';
+import { finalTaxQuarters, monthRange, quarterRange, type Quarter } from './calendar.ts';
 import { incomeTaxPosition } from './income-tax.ts';
 import { openedByParty, openedReturns, openingsOf } from './opening-payables.ts';
 import { IN_REGISTERS } from './registers.ts';
 
-export const BIR_FORMS = ['2550Q', '0619-E', '1601-EQ', '1702Q', '1702'] as const;
+export const BIR_FORMS = ['2550Q', '0619-E', '1601-EQ', '1702Q', '1702', '1601-FQ'] as const;
 export type BirForm = (typeof BIR_FORMS)[number];
 /**
  * The account each return's payment debits, the tax it names, and whether it pays a month, a quarter or a year. A 1702Q
  * prepays the year's income tax (1411); one an opening tax payable brought in pays 2320 instead (bir-payment.ts). A
  * 1702 pays what the year-end settlement (or an opening) left on 2320.
  */
-export const BIR_FORM: Record<BirForm, { role: 'VAT_PAYABLE' | 'EWT_PAYABLE' | 'PREPAID_INCOME_TAX' | 'INCOME_TAX_PAYABLE'; tax: 'VAT' | 'EWT' | 'income tax'; period: 'month' | 'quarter' | 'year' }> = {
+export const BIR_FORM: Record<BirForm, { role: PayableRole | 'PREPAID_INCOME_TAX' | 'INCOME_TAX_PAYABLE'; tax: 'VAT' | 'EWT' | 'income tax' | 'final tax'; period: 'month' | 'quarter' | 'year' }> = {
   '2550Q': { role: 'VAT_PAYABLE', tax: 'VAT', period: 'quarter' },
   '0619-E': { role: 'EWT_PAYABLE', tax: 'EWT', period: 'month' },
   '1601-EQ': { role: 'EWT_PAYABLE', tax: 'EWT', period: 'quarter' },
   '1702Q': { role: 'PREPAID_INCOME_TAX', tax: 'income tax', period: 'quarter' },
   '1702': { role: 'INCOME_TAX_PAYABLE', tax: 'income tax', period: 'year' },
+  '1601-FQ': { role: 'FINAL_TAX_PAYABLE', tax: 'final tax', period: 'quarter' },
 };
-/** Every BIR payment's form and period: the VAT and EWT ones (0003), the 1702Q ones (0006) and the 1702 ones (0008). */
-const PAYMENT_ROWS = `(SELECT document_id, form, period, reference, amount_cents, penalty_cents FROM tax_bir_payments
+type PayableRole = 'VAT_PAYABLE' | 'EWT_PAYABLE' | 'FINAL_TAX_PAYABLE';
+/**
+ * Every BIR payment's form and period: the VAT and EWT ones (0003), the 1702Q ones (0006), the 1702 ones (0008) and
+ * the 1601-FQ ones (0009).
+ */
+export const PAYMENT_ROWS = `(SELECT document_id, form, period, reference, amount_cents, penalty_cents FROM tax_bir_payments
   UNION ALL SELECT document_id, '1702Q', period, reference, amount_cents, penalty_cents FROM tax_income_tax_payments
-  UNION ALL SELECT document_id, '1702', period, reference, amount_cents, penalty_cents FROM tax_income_tax_annual_payments)`;
+  UNION ALL SELECT document_id, '1702', period, reference, amount_cents, penalty_cents FROM tax_income_tax_annual_payments
+  UNION ALL SELECT document_id, '1601-FQ', period, reference, amount_cents, penalty_cents FROM tax_final_tax_payments)`;
 
 /** A month, a quarter or a year (a year's quarter is its Q4, where its return falls). */
 export interface Period { kind: 'month' | 'quarter' | 'year'; year: number; quarter: Quarter; /** 1-12, for a month. */ month: number | null; from: string; to: string; label: string }
@@ -79,7 +88,7 @@ export function birPaymentsOf(db: Db, keys: [BirForm, string][]): BirPaymentRef[
 }
 
 /** Net debit per party on the payable, over the journals of the BIR payments of these forms and periods (cancels net to zero). */
-function paidByParty(db: Db, role: 'VAT_PAYABLE' | 'EWT_PAYABLE', keys: [BirForm, string][]): Map<string, number> {
+function paidByParty(db: Db, role: PayableRole, keys: [BirForm, string][]): Map<string, number> {
   const rows = db
     .prepare(
       `SELECT COALESCE(l.party_id, '') AS partyId, SUM(l.debit_cents - l.credit_cents) AS cents
@@ -174,11 +183,36 @@ export function vatDue(db: Db, year: number, quarter: Quarter): VatDue {
   };
 }
 
+export interface FinalTaxDue {
+  year: number; quarter: Quarter; period: string;
+  /** Withheld in the quarter (2312), paid with its 1601-FQ payments, and left. */
+  withheldCents: number; paidCents: number; leftCents: number;
+  payments: BirPaymentRef[];
+}
+
+/** The final tax a quarter withheld on 2312 and what its 1601-FQ payments paid of it. */
+export function finalTaxDue(db: Db, year: number, quarter: Quarter): FinalTaxDue {
+  const { from, to } = quarterRange(year, quarter);
+  const period = quarterPeriod(year, quarter);
+  const withheldCents = db
+    .prepare(
+      `SELECT COALESCE(SUM(l.credit_cents - l.debit_cents), 0) FROM journal_lines l JOIN journals j ON j.id = l.journal_id JOIN accounts a ON a.id = l.account_id
+       WHERE j.sealed = 1 AND a.role_key = 'FINAL_TAX_PAYABLE' AND j.business_date BETWEEN ? AND ?
+       AND NOT EXISTS (SELECT 1 FROM ${PAYMENT_ROWS} p WHERE p.document_id = j.source_id AND j.source_type = 'document')`,
+    )
+    .pluck()
+    .get(from, to) as number;
+  const key: [BirForm, string][] = [['1601-FQ', period]];
+  const paidCents = [...paidByParty(db, 'FINAL_TAX_PAYABLE', key).values()].reduce((s, c) => s + c, 0);
+  return { year, quarter, period, withheldCents, paidCents, leftCents: withheldCents - paidCents, payments: birPaymentsOf(db, key) };
+}
+
 /**
  * Every return with something left to pay, for the property test's generator and a "to pay" list: the quarters closed
  * with VAT payable, and the months (0619-E) and quarters (1601-EQ) with EWT withheld, as far as the ledger goes; the
  * 1702Q of each quarter (Q1 to Q3) ended before `today` (by default the last day with a journal) and on or after the
- * cut-over date that its worksheet leaves something to pay; and the returns the openings brought in.
+ * cut-over date that its worksheet leaves something to pay; the quarters with final tax withheld (1601-FQ); and the
+ * returns the openings brought in.
  */
 export function periodsDue(db: Db, today?: string): { form: BirForm; period: string; payableCents: number }[] {
   const out: { form: BirForm; period: string; payableCents: number }[] = [];
@@ -209,6 +243,11 @@ export function periodsDue(db: Db, today?: string): { form: BirForm; period: str
     if (form === '0619-E' && (p.month! % 3 === 0 || birPaymentsOf(db, [['1601-EQ', quarterPeriod(p.year, p.quarter)]]).some((x) => x.status === 'posted'))) continue;
     const due = positive(ewtDue(db, form, period, p));
     if (due > 0) out.push({ form, period, payableCents: due });
+  }
+  for (const period of finalTaxQuarters(db)) {
+    const p = parsePeriod(period)!;
+    const left = finalTaxDue(db, p.year, p.quarter).leftCents;
+    if (left > 0) out.push({ form: '1601-FQ', period, payableCents: left });
   }
   out.push(...incomeTaxDue(db, opened, today));
   const years = new Set([

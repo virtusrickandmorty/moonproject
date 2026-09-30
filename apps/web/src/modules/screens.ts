@@ -6,6 +6,7 @@ import type { ViewParts } from '../generic/DocView.tsx';
 import { CollectionForm } from './COL/CollectionForm.tsx';
 import { DepositTransferForm } from './COL/DepositTransferForm.tsx';
 import { RefundForm } from './COL/RefundForm.tsx';
+import { ChecksOnHand, PostDatedChecks } from './COL/Checks.tsx';
 import { CreditMemoForm, CwtOnlyForm, ForfeitForm, WriteOffForm, creditMemoView, cwtOnlyView, forfeitView, writeOffView } from './COL/CreditForms.tsx';
 import { dpInvoiceView, invoiceRecordView, jobOrderView, openingJobOrderView, releaseView as joReleaseView } from './JO/JobOrderView.tsx';
 import { JobOrderForm } from './JO/JobOrderForm.tsx';
@@ -23,6 +24,7 @@ import { Employees } from './EMP/Employees.tsx';
 import { EmployeePage } from './EMP/Employee.tsx';
 import { Attendance } from './EMP/Attendance.tsx';
 import { Holidays } from './EMP/Holidays.tsx';
+import { LeaveBalances } from './EMP/LeaveBalances.tsx';
 import { RunForm } from './PAY/RunForm.tsx';
 import { ReleaseForm } from './PAY/ReleaseForm.tsx';
 import { ThirteenthForm } from './PAY/ThirteenthForm.tsx';
@@ -48,8 +50,9 @@ import { OpeningStatForm } from './STAT/OpeningStatForm.tsx';
 import { GeneralJournal, GeneralLedger, TrialBalance } from './RPT/Books.tsx';
 import { BirBooks } from './RPT/BirBooks.tsx';
 import { BalanceSheet, IncomeStatement } from './RPT/Statements.tsx';
+import { CashFlow } from './RPT/CashFlow.tsx';
 import { ArAging, CustomerStatement } from './RPT/Receivables.tsx';
-import { DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
+import { DepositsCrossingQuarter, DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
 import { PayrollRegister, PieceWork, LaborCost, ThirteenthRegister, ProductionStatus, Throughput, WorkerOutput, LeadTime, LateJobs, JobMargin } from './RPT/PayrollProduction.tsx';
 import { ApAging, Purchases, PurchaseOrders, ReceivedNotBilled, CashPosition, Transfers, CashCounts, Assets as AssetSchedule, LateEntries, Cancellations, Exceptions, SignIns } from './RPT/Operations.tsx';
 import { CashAccounts } from './CASH/CashAccounts.tsx';
@@ -77,9 +80,10 @@ import { AdvanceReturnForm } from './AP/AdvanceReturnForm.tsx';
 import { ApBalances, ApSupplierPage } from './AP/Suppliers.tsx';
 import { advanceReturnView, advanceView as supplierAdvanceView, billView, paymentView } from './AP/views.tsx';
 import { VoucherForm } from './EXP/VoucherForm.tsx';
-import { OfficerForm, OwnerMoneyForm } from './EQ/forms.tsx';
+import { DividendPaymentForm, OfficerForm, OwnerMoneyForm } from './EQ/forms.tsx';
 import { OpeningForm as OpeningOfficerForm } from './EQ/OpeningForm.tsx';
 import { VatCloseForm } from './TAX/VatCloseForm.tsx';
+import { UncollectedVatForm, UncollectedVatRecoveryForm } from './TAX/UncollectedVatForm.tsx';
 import { JvForm } from './ACC/JvForm.tsx';
 import { OpeningForm } from './ACC/OpeningForm.tsx';
 import { OpeningBalances } from './ACC/OpeningBalances.tsx';
@@ -88,6 +92,9 @@ import { Settings } from './ACC/Settings.tsx';
 import { Users } from './SEC/Users.tsx';
 import { Roles } from './SEC/Roles.tsx';
 import { MonthEnd } from './ACC/MonthEnd.tsx';
+import { GoLiveDecisions } from './ACC/GoLiveDecisions.tsx';
+import { ReversalsDue } from './ACC/ReversalsDue.tsx';
+import { ChangesAfterFiling } from './TAX/ChangesAfterFiling.tsx';
 import { BirPaymentForm } from './TAX/BirPaymentForm.tsx';
 import { OpeningWithholdingForm } from './TAX/OpeningWithholdingForm.tsx';
 import { OpeningPayableForm } from './TAX/OpeningPayableForm.tsx';
@@ -100,19 +107,24 @@ import { OpeningForm as OpeningLoanForm } from './LOAN/OpeningForm.tsx';
 import { PaymentForm as LoanPaymentForm } from './LOAN/PaymentForm.tsx';
 import { loanView } from './LOAN/views.tsx';
 import { BuyForm } from './FA/BuyForm.tsx';
+import { DepreciationForm } from './FA/DepreciationForm.tsx';
+import { DisposalForm } from './FA/DisposalForm.tsx';
 import { AssetPage, Assets } from './FA/Assets.tsx';
 import { PersonPage, People } from './EQ/People.tsx';
 import { LoanPage, Loans } from './LOAN/Loans.tsx';
 import { SizerSets } from './SZR/Sizers.tsx';
 import { OpeningForm as OpeningAssetForm } from './FA/OpeningForm.tsx';
 import { Backups } from './BAK/Backups.tsx';
+import { Communications } from './COM/Communications.tsx';
 import { ImportOldData } from './MIG/Importer.tsx';
 import { ImportUpload } from './MIG/Upload.tsx';
 import { AuditLog } from './AUD/AuditLog.tsx';
 import { IntegrityCheck } from './AUD/IntegrityCheck.tsx';
+import { NightlyChecks } from './AUD/NightlyChecks.tsx';
 import { Suppliers } from './PUR/Suppliers.tsx';
 import { SupplierPage } from './PUR/Supplier.tsx';
 import { Supplies } from './PUR/Supplies.tsx';
+import { SupplyPage } from './PUR/Supply.tsx';
 import { PoForm } from './PUR/PoForm.tsx';
 import { RrForm } from './PUR/RrForm.tsx';
 import { purchaseOrderView, receivingReportView } from './PUR/views.tsx';
@@ -139,7 +151,9 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/pur/suppliers/new': SupplierPage,
   '/pur/suppliers/:id': SupplierPage,
   '/pur/supplies': Supplies,
+  '/pur/supplies/:id': SupplyPage,
   '/emp/employees': Employees,
+  '/emp/leave-balances': LeaveBalances,
   '/emp/employees/:id': EmployeePage,
   '/emp/attendance': Attendance,
   '/emp/holidays': Holidays,
@@ -157,15 +171,19 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/booklets': Booklets,
   '/tax/booklets/new': RegisterBooklet,
   '/tax/booklets/:id': BookletPage,
+  '/col/checks': ChecksOnHand,
+  '/col/pdcs': PostDatedChecks,
   '/rpt/journal': GeneralJournal,
   '/rpt/bir-books': BirBooks,
   '/rpt/ledger': GeneralLedger,
   '/rpt/trial-balance': TrialBalance,
   '/rpt/income-statement': IncomeStatement,
   '/rpt/balance-sheet': BalanceSheet,
+  '/rpt/cash-flow': CashFlow,
   '/rpt/ar-aging': ArAging,
   '/rpt/customer-statement': CustomerStatement,
   '/rpt/deposits-held': DepositsHeld,
+  '/rpt/deposits-crossing-quarter': DepositsCrossingQuarter,
   '/rpt/collections-register': CollectionsRegister,
   '/rpt/sales-by-period': SalesByPeriod,
   '/rpt/job-order-follow-up': JobOrderFollowUp,
@@ -208,6 +226,9 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/1604e': EwtAnnualReturnPage,
   '/acc/opening': OpeningBalances,
   '/acc/month-end': MonthEnd,
+  '/acc/go-live-decisions': GoLiveDecisions,
+  '/acc/reversals-due': ReversalsDue,
+  '/tax/changes-after-filing': ChangesAfterFiling,
   '/tax/calendar': TaxCalendar,
   '/admin/shop-certificate': ShopCertificate,
   '/admin/practice': PracticeShop,
@@ -216,12 +237,15 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/admin/roles': Roles,
   '/acc/chart': ChartOfAccounts,
   '/acc/settings': Settings,
+  '/com': Communications,
+  '/com/:section': Communications,
   '/bak': Backups,
   '/bak/:section': Backups,
   '/mig': ImportOldData,
   '/mig/:uploadId': ImportUpload,
   '/aud/log': AuditLog,
   '/aud/integrity': IntegrityCheck,
+  '/aud/nightly': NightlyChecks,
   '/ap/suppliers': ApBalances,
   '/ap/suppliers/:id': ApSupplierPage,
   '/fa/assets': Assets,
@@ -264,15 +288,20 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'exp.voucher': VoucherForm,
   'eq.owner_money': OwnerMoneyForm,
   'eq.officer': OfficerForm,
+  'eq.dividend_payment': DividendPaymentForm,
   'eq.opening': OpeningOfficerForm,
   'acc.jv': JvForm,
   'tax.vat_close': VatCloseForm,
+  'tax.uncollected_vat': UncollectedVatForm,
+  'tax.uncollected_vat_recovery': UncollectedVatRecoveryForm,
   'tax.bir_payment': BirPaymentForm,
   'acc.opening': OpeningForm,
   'loan.loan': LoanForm,
   'loan.payment': LoanPaymentForm,
   'loan.opening': OpeningLoanForm,
   'fa.buy': BuyForm,
+  'fa.disposal': DisposalForm,
+  'fa.depreciation': DepreciationForm,
   'fa.opening': OpeningAssetForm,
   'inv.count': InventoryCountForm,
   'pur.po': PoForm,

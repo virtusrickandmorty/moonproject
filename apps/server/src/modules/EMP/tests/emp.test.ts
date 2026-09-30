@@ -5,6 +5,8 @@ import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { activeEmployees, attendanceBetween, employeesInGroup, holidaysBetween, payProfileAt } from '../public.ts';
 import { activeEmployees as prdWorkers } from '../../PRD/emp.ts';
 import { addEmployee, addPay } from './fixture.ts';
+import { leaveBalances } from '../leave-balances.ts';
+import { silOf } from '../time.ts';
 
 let env: TestEnv;
 let owner: Client;
@@ -140,8 +142,8 @@ describe('attendance, holidays and SIL', () => {
     expect((await save([{ employeeId: a, date: '2026-09-24', status: 'present', otMinutes: 90 }, { employeeId: old, date: '2026-09-24', status: 'absent', note: 'Sick' }])).json()).toEqual({ saved: 1, unchanged: 1 });
     expect(attendanceBetween(env.db, '2026-09-24', '2026-09-24')).toEqual(
       expect.arrayContaining([
-        { employeeId: a, date: '2026-09-24', status: 'present', otMinutes: 90, note: null },
-        { employeeId: old, date: '2026-09-24', status: 'absent', otMinutes: 0, note: 'Sick' },
+        { employeeId: a, date: '2026-09-24', status: 'present', otMinutes: 90, nightMinutes: 0, note: null },
+        { employeeId: old, date: '2026-09-24', status: 'absent', otMinutes: 0, nightMinutes: 0, note: 'Sick' },
       ]),
     );
     const bad = await save([{ employeeId: a, date: '2026-09-25', status: 'present' }, { employeeId: a, date: '2026-09-29', status: 'present' }]);
@@ -159,6 +161,17 @@ describe('attendance, holidays and SIL', () => {
     expect(grid.days).toHaveLength(2);
     expect((await enc.get('/api/emp/attendance?from=2026-09-01&to=2026-10-02')).json().code).toBe('BAD_RANGE');
     expect((await enc.post('/api/emp/attendance', { days: [{ employeeId: a, date: '2026-09-24', status: 'present', ratePerDay: 1 }] })).statusCode).toBe(400);
+  });
+
+  it('night minutes (10 PM to 6 AM, F1 night differential) go beside overtime on a worked day, at most 8 hours', async () => {
+    expect((await save([{ employeeId: a, date: '2026-09-23', status: 'half_day', nightMinutes: 240 }, { employeeId: old, date: '2026-09-23', status: 'present', otMinutes: 60, nightMinutes: 480 }])).json()).toEqual({ saved: 2, unchanged: 0 });
+    expect(attendanceBetween(env.db, '2026-09-23', '2026-09-23').map((d) => [d.status, d.otMinutes, d.nightMinutes])).toEqual(expect.arrayContaining([['half_day', 0, 240], ['present', 60, 480]]));
+    // A change of the night minutes alone is a change; the same again is skipped.
+    expect((await save([{ employeeId: a, date: '2026-09-23', status: 'half_day', nightMinutes: 180 }, { employeeId: old, date: '2026-09-23', status: 'present', otMinutes: 60, nightMinutes: 480 }])).json()).toEqual({ saved: 1, unchanged: 1 });
+    expect(await codes([{ employeeId: a, date: '2026-09-22', status: 'absent', nightMinutes: 60 }, { employeeId: old, date: '2026-09-22', status: 'rest_day', nightMinutes: 30 }])).toEqual(['NIGHT', 'NIGHT']);
+    expect((await save([{ employeeId: a, date: '2026-09-22', status: 'present', nightMinutes: 481 }])).statusCode).toBe(400);
+    // The table refuses them too (migration 0004).
+    expect(() => env.db.prepare(`INSERT INTO emp_attendance (employee_id, work_date, seq, status, ot_minutes, night_minutes, at, user_id) VALUES (?, '2026-09-21', 1, 'absent', 0, 60, 'x', ?)`).run(a, createUser(env.db, 'typist', ['encoder']))).toThrow(/CHECK/);
   });
 
   it('holidays take the holiday statuses, other days never do; switching a holiday off is refused while attendance marks it', async () => {
@@ -216,6 +229,50 @@ describe('attendance, holidays and SIL', () => {
     expect((await enc.post('/api/emp/holidays', { date: '2026-12-04', name: 'Fiesta', kind: 'special', source: 'Local ordinance (made up)' })).statusCode).toBe(403);
     expect((await owner.get('/api/emp/active')).json().map((e: { name: string }) => e.name)).toEqual(['Ina Bago', 'Jo Matagal']);
     expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
+  });
+});
+
+describe('leave balances list', () => {
+  it('equals silOf for every employee in service in the year, including a mid-year leaver and a new hire', async () => {
+    const longServing = addEmployee(env.db, 'Ari Matagal', { hireDate: '2020-04-06' });
+    const left = addEmployee(env.db, 'Belen Umalis', { hireDate: '2021-01-11', separatedOn: '2026-06-30' });
+    const hired = addEmployee(env.db, 'Cora Bago', { hireDate: '2026-03-02' });
+    const beforeYear = addEmployee(env.db, 'Dina Dati', { hireDate: '2020-01-06', separatedOn: '2025-12-31' });
+    const afterYear = addEmployee(env.db, 'Ena Bukas', { hireDate: '2027-01-04' });
+    const saved = await enc.post('/api/emp/attendance', { days: [
+      { employeeId: longServing, date: '2026-03-03', status: 'leave' },
+      { employeeId: longServing, date: '2026-04-06', status: 'leave' },
+      { employeeId: left, date: '2026-02-02', status: 'leave' },
+    ] });
+    expect(saved.statusCode, saved.body).toBe(200);
+
+    const result = leaveBalances(env.db, 2026);
+    expect(result.rows.map((r) => r.fullName)).toEqual(['Ari Matagal', 'Cora Bago', 'Belen Umalis']);
+    expect(result.rows.map((r) => r.employeeId)).not.toContain(beforeYear);
+    expect(result.rows.map((r) => r.employeeId)).not.toContain(afterYear);
+    for (const row of result.rows) {
+      const sil = silOf(env.db, row.employeeId, 2026);
+      expect(row).toMatchObject({ eligibleFrom: sil.eligibleFrom, earned: sil.eligibleFrom <= '2026-12-31' ? sil.daysPerYear : 0, used: sil.used, paid: sil.paid, left: sil.left });
+    }
+    expect(result.rows.find((r) => r.employeeId === left)).toMatchObject({ separatedOn: '2026-06-30', earned: 5, used: 1, left: 4 });
+    expect(result.rows.find((r) => r.employeeId === hired)).toMatchObject({ earned: 0, used: 0, paid: 0, left: 0 });
+    expect(result.totals).toEqual({ earned: 10, used: 3, paid: 0, left: 7 });
+  });
+
+  it('uses employee-list permission and exports the same totals to CSV', async () => {
+    const worker = addEmployee(env.db, 'Fely Halimbawa', { hireDate: '2020-05-04' });
+    expect((await enc.post('/api/emp/attendance', { days: [{ employeeId: worker, date: '2026-08-03', status: 'leave' }] })).statusCode).toBe(200);
+    const denied = await (await env.as('production')).get('/api/emp/leave-balances?year=2026');
+    expect(denied.statusCode).toBe(403);
+
+    const json = await enc.get('/api/emp/leave-balances?year=2026');
+    expect(json.statusCode, json.body).toBe(200);
+    expect(json.json().totals).toEqual({ earned: 5, used: 1, paid: 0, left: 4 });
+    const csv = await enc.get('/api/emp/leave-balances?year=2026&format=csv');
+    expect(csv.statusCode, csv.body).toBe(200);
+    expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.headers['content-disposition']).toBe('attachment; filename="leave-balances-2026.csv"');
+    expect(csv.body).toContain('"TOTAL","","","","5","1","0","4"');
   });
 });
 

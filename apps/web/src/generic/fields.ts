@@ -3,12 +3,13 @@
  * input and back. Pure, so it is tested without a browser.
  * Conventions: cashPlaceId or *CashPlaceId = a cash place picked with big buttons (PLAN H2), *Cents = a peso amount.
  * A schema field's `title` (zod .meta({ title })) overrides the label. A union of literals (`anyOf` of consts, e.g. a
- * VAT close's quarter 1 to 4) is a choice like an enum.
+ * VAT close's quarter 1 to 4) is a choice like an enum. A string with format "date" (zod .meta({ format: 'date' })) is
+ * a date picked from a calendar.
  */
 import { formatPesos, parsePesos } from '@moonproject/shared';
 import type { JsonSchema } from '../api.ts';
 
-export type FieldKind = 'cashPlace' | 'money' | 'integer' | 'text' | 'longText' | 'boolean' | 'choice' | 'unsupported';
+export type FieldKind = 'cashPlace' | 'money' | 'integer' | 'date' | 'text' | 'longText' | 'boolean' | 'choice' | 'unsupported';
 export interface FieldSpec { name: string; label: string; kind: FieldKind; required: boolean; options?: string[]; numeric?: boolean }
 /** What the user typed, per field; booleans are 'true' or ''. */
 export type Values = Record<string, string>;
@@ -31,7 +32,7 @@ function kindOf(name: string, s: JsonSchema): FieldKind {
   if (choices(s)) return 'choice';
   if (s.type === 'integer') return /^cashPlaceId$|CashPlaceId$/.test(name) ? 'cashPlace' : name.endsWith('Cents') ? 'money' : 'integer';
   if (s.type === 'boolean') return 'boolean';
-  if (s.type === 'string') return (s.maxLength ?? Infinity) > 200 ? 'longText' : 'text';
+  if (s.type === 'string') return s.format === 'date' ? 'date' : (s.maxLength ?? Infinity) > 200 ? 'longText' : 'text';
   return 'unsupported';
 }
 

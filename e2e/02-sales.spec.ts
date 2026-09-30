@@ -2,6 +2,8 @@ import { expect, test, type Page } from '@playwright/test';
 import { OWNER, serverDate, signIn } from './shop';
 
 const CUSTOMER = 'Harbor Rowing Club';
+/** A 1×1 PNG: the design picture attached to the job order. */
+const PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
 /** The "So far" / money figures: the amount shown beside a label. */
 const figure = (page: Page, label: string) => page.locator('dt', { hasText: new RegExp(`^${label}$`) }).first().locator('xpath=following-sibling::dd[1]');
@@ -49,6 +51,20 @@ test('sales: a customer, a job order with a deposit, a collection, a release wit
   await page.getByRole('button', { name: 'Record', exact: true }).click();
   await page.getByRole('dialog', { name: 'Record this Job Order?' }).getByRole('button', { name: 'Record', exact: true }).click();
   await expect(page.getByText('Recorded as JO-000001.')).toBeVisible();
+
+  // A picture of the design, attached to the job order; it opens with the session, as the picture it is.
+  const attachments = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Attachments' }) });
+  await expect(attachments.getByText('No files attached.')).toBeVisible();
+  await attachments.getByLabel('Add a file').setInputFiles({ name: 'jersey design.png', mimeType: 'image/png', buffer: Buffer.from(PIXEL_PNG, 'base64') });
+  const picture = attachments.getByRole('link', { name: 'jersey design.png' });
+  await expect(picture).toBeVisible();
+  await expect(attachments.getByText(/PNG picture · 1 KB · added by /)).toBeVisible();
+  // Fetched by the signed-in page itself: the session cookie is Secure, and only the browser sends it on http://127.0.0.1.
+  const opened = await page.evaluate(async (href) => {
+    const r = await fetch(href, { credentials: 'same-origin' });
+    return [r.status, r.headers.get('content-type'), r.headers.get('x-content-type-options'), (await r.arrayBuffer()).byteLength];
+  }, (await picture.getAttribute('href'))!);
+  expect(opened).toEqual([200, 'image/png', 'nosniff', Buffer.from(PIXEL_PNG, 'base64').length]);
 
   // The deposit, then the rest: each collection opens filled for this job order.
   await collect(page, 'Take the downpayment', '3,000.00', '401');
@@ -224,4 +240,57 @@ test('sales: a job order made from a quotation is filled from it and can be chan
   await page.getByRole('dialog', { name: 'Record this Job Order?' }).getByRole('button', { name: 'Record', exact: true }).click();
   await expect(page.getByText('Recorded as JO-000003.')).toBeVisible();
   await expect(page.getByText('From quotation QUO-000001. Sample notes')).toBeVisible();
+});
+
+test('sales: a job order paid by check, then the check deposited from Checks on hand', async ({ page }) => {
+  await signIn(page);
+  const today = await serverDate(page);
+
+  // A job order paid in full by one check.
+  await page.getByRole('link', { name: 'Job Orders', exact: true }).click();
+  await page.getByRole('button', { name: '+ New Job Order' }).click();
+  await page.getByLabel('Customer', { exact: true }).fill('Harbor');
+  await page.getByRole('button', { name: /^Harbor Rowing Club/ }).click();
+  await page.getByLabel('Line 1 description').fill('Rowing cap');
+  await page.getByLabel('Line 1 pieces').fill('5');
+  await page.getByLabel('Line 1 price each').fill('500.00');
+  await page.getByLabel('Payment terms').selectOption({ label: '50% downpayment' });
+  await page.getByRole('button', { name: 'Record', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Record this Job Order?' }).getByRole('button', { name: 'Record', exact: true }).click();
+  await expect(page.getByText('Recorded as JO-000004.')).toBeVisible();
+
+  // The collection: the check goes to Checks on hand, with its number, bank and date.
+  await page.getByRole('link', { name: 'Take the downpayment' }).click();
+  await expect(page.getByRole('heading', { name: 'New collection' })).toBeVisible();
+  await page.getByLabel(/^Pay now on JO-000004/).fill('2,500.00');
+  await page.getByLabel('Amount', { exact: true }).fill('2,500.00');
+  await page.getByRole('radio', { name: /Checks on hand/ }).click();
+  await page.getByLabel('Check number').fill('000777');
+  await page.getByLabel('Bank of the check').fill('Sample Savings Bank');
+  await page.getByLabel('Date on the check').fill(today);
+  await page.getByLabel('CR number (from the booklet)').fill('405');
+  await page.getByRole('button', { name: 'Record', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Record', exact: true }).click();
+  await expect(page.getByText(/^Recorded as COL-/)).toBeVisible();
+  await openJobOrder(page, 'JO-000004');
+  await expect(figure(page, 'Balance due')).toHaveText('₱0.00');
+
+  // Checks on hand lists it, and the books agree; tick it and deposit it to the bank: one fund transfer.
+  await page.getByRole('link', { name: 'Checks on hand', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Checks on hand' })).toBeVisible();
+  const row = page.getByRole('row').filter({ hasText: '000777' });
+  await expect(row).toContainText('Sample Savings Bank');
+  await expect(row).toContainText('₱2,500.00');
+  await expect(figure(page, 'Total of the list')).toHaveText('₱2,500.00');
+  await expect(figure(page, 'Checks on hand in the books')).toHaveText('₱2,500.00');
+  await page.getByLabel('Deposit check no. 000777').check();
+  await page.getByLabel('Deposit to bank').selectOption({ index: 1 });
+  await page.getByRole('button', { name: 'Deposit the ticked checks' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Record this deposit?' });
+  await expect(dialog.getByText(/^This will move ₱2,500\.00 from Checks on hand/)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Record', exact: true }).click();
+  await expect(page.getByText(/^Deposited 1 check: recorded as TRF-/)).toBeVisible();
+  await expect(page.getByText('No customer check is on hand.')).toBeVisible();
+  await expect(figure(page, 'Total of the list')).toHaveText('₱0.00');
+  await expect(figure(page, 'Checks on hand in the books')).toHaveText('₱0.00');
 });

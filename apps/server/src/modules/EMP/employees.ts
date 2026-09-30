@@ -178,6 +178,44 @@ export function updateEmployee(db: Db, id: string, ifMatch: unknown, raw: unknow
   return after;
 }
 
+/** Where a payslip is emailed, and whether the employee agreed to get it. Set only with emp.pay (setPayslipEmail). */
+export const EMAIL = /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/;
+export const payslipEmailInput = z
+  .object({
+    email: z.string().trim().max(254).regex(EMAIL, 'That is not an email address.').nullable(),
+    consent: z.boolean(),
+  })
+  .strict()
+  .refine((v) => !v.consent || v.email !== null, { message: 'Type the email address before ticking that the employee agrees to get payslips by email.', path: ['email'] });
+
+export interface PayslipEmail { email: string | null; consent: boolean }
+export function payslipEmailOf(db: Db, id: string): PayslipEmail | undefined {
+  const r = db.prepare('SELECT payslip_email AS email, payslip_email_consent AS consent FROM emp_employees WHERE id = ?').get(id) as { email: string | null; consent: number } | undefined;
+  return r && { email: r.email?.trim() || null, consent: r.consent === 1 };
+}
+
+/**
+ * The employee's payslip email address and consent (If-Match). Only with emp.pay, checked here as well as on the route,
+ * and even for a separated employee (a last payslip may still be owed). The audit row names what changed and says whether
+ * consent is now on; it never carries the address.
+ */
+export function setPayslipEmail(db: Db, id: string, ifMatch: unknown, raw: unknown, who: Who): PayslipEmail {
+  if (!who.can('emp.pay')) throw forbidden('emp.pay');
+  const v = payslipEmailInput.parse(raw);
+  const e = mustGet(db, id);
+  checkVersion(ifMatch, e.version);
+  const before = payslipEmailOf(db, id)!;
+  const addressChanged = v.email !== before.email;
+  const consentChanged = v.consent !== before.consent;
+  if (!addressChanged && !consentChanged) throw badRequest('NO_CHANGES', 'Enter a change before saving.');
+  db.prepare('UPDATE emp_employees SET payslip_email = ?, payslip_email_consent = ?, version = version + 1, updated_at = ? WHERE id = ?').run(v.email, +v.consent, who.at, id);
+  appendAudit(db, {
+    at: who.at, userId: who.userId, action: 'emp.payslip_email', entityType: 'emp.employee', entityId: id,
+    data: { fields: [...(addressChanged ? ['payslipEmail'] : []), ...(consentChanged ? ['payslipEmailConsent'] : [])], addressNow: v.email === null ? 'none' : 'set', consentBefore: before.consent, consentNow: v.consent },
+  });
+  return { email: v.email, consent: v.consent };
+}
+
 export const separationInput = z.object({ separatedOn: date, reason: z.string().trim().min(10).max(300) }).strict();
 
 /** Records a separation (the last day worked and why). Payroll still pays what is owed up to that day. */
