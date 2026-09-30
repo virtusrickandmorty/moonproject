@@ -70,7 +70,7 @@ export function UncollectedVatForm({ type, mode }: { type: DocTypeInfo; mode: Fo
       {r.top}
       {list && !list.enabled && <Notice tone="warning">The claim is off. The accountant turns it on in the settings (ACC-27) after deciding Virtus claims it.</Notice>}
       <Panel title="Invoices whose agreed time to pay ended in an earlier quarter">
-        {list && list.claimable.length === 0 && !invoiceId && <p className="text-slate-500">None still owes.</p>}
+        {list && list.claimable.length === 0 && !invoiceId && <Notice tone="info">No invoice can be claimed: none whose agreed time to pay ended in an earlier quarter still owes.</Notice>}
         {list?.claimable.map((i) => (
           <label key={i.invoiceId} className="flex items-center gap-2 py-1 text-sm">
             <input type="radio" checked={invoiceId === i.invoiceId} onChange={() => setInvoiceId(i.invoiceId)} />
@@ -114,7 +114,7 @@ export function UncollectedVatRecoveryForm({ type, mode }: { type: DocTypeInfo; 
       <h1 className="text-2xl font-semibold">{r.title('Add back output VAT: the customer paid')}</h1>
       {r.top}
       <Panel title="Claims whose customer has paid since">
-        {list && list.addBacksDue.length === 0 && !claimId && <p className="text-slate-500">No add-back is due.</p>}
+        {list && list.addBacksDue.length === 0 && !claimId && <Notice tone="info">No add-back is due: no customer has paid on a claimed invoice since its claim.</Notice>}
         {list?.addBacksDue.map((a) => (
           <label key={a.claimId} className="flex items-center gap-2 py-1 text-sm">
             <input type="radio" checked={claimId === a.claimId} onChange={() => setClaimId(a.claimId)} />

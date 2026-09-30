@@ -25,7 +25,8 @@ import { retainedEarningsAt, type RetainedEarnings } from '../dividends.ts';
 import { finalTaxDue } from '../../TAX/public.ts';
 
 const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
-const date = z.string().refine(isBusinessDate, 'Use a date like 2026-09-15.');
+// format "date": the generic form picks it from a calendar.
+const date = z.string().refine(isBusinessDate, 'Use a date like 2026-09-15.').meta({ format: 'date' });
 
 export const dividendInput = z
   .object({
