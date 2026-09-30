@@ -177,11 +177,11 @@ export function DashHome() {
     {home?.role === 'owner' && <OwnerHealth />}
     {home?.showCharts && <OwnerCharts />}
     {home && <div className="grid gap-4 lg:grid-cols-2">
-      {home.widgets.map((widget) => <Panel key={widget.key} title={widget.title}>
+      {home.widgets.map((widget) => <div key={widget.key} className={widget.tone === 'danger' ? 'rounded-lg bg-red-50 text-red-900 ring-2 ring-red-300 [&>section]:bg-red-50' : ''}><Panel title={widget.title}>
         {widget.amountCents !== undefined && <p className="text-2xl font-semibold tabular-nums">{peso(widget.amountCents)}</p>}
         {widget.items && (widget.items.length ? <ul>{widget.items.map((row) => <Item key={row.id} item={row} />)}</ul> : <p className="text-sm text-slate-500">Nothing here right now.</p>)}
-        {widget.href && <Link to={widget.href} className="text-sm text-indigo-700 hover:underline">Open board</Link>}
-      </Panel>)}
+        {widget.href && <Link to={widget.href} className="text-sm text-indigo-700 hover:underline">Open {widget.title.toLowerCase()}</Link>}
+      </Panel></div>)}
     </div>}
     <Notifications />
   </div>;

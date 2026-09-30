@@ -97,12 +97,14 @@ export function comRoutes(app: FastifyInstance, deps: AppDeps): void {
         email: contact?.email ?? null, reason, lastStatementEmailedAt: last.sentAt };
     }).sort((a, b) => a.customerName.localeCompare(b.customerName));
   };
-  const queueStatement = (customerId: string, from: string, to: string, userId: string, at: string) => {
+  // `once`: the bulk send queues one statement per customer and statement date (pressing Send twice queues nothing more);
+  // the statement screen's button may send one again, as it always could.
+  const queueStatement = (customerId: string, from: string, to: string, userId: string, at: string, once = false) => {
     const statement = customerStatement(db, customerId, from, to);
     if (!statement) return { ok: false as const, reason: 'no_customer' as const };
     const recipientId = customerContact(db, customerId)?.id ?? customerId;
     return enqueue(db, {
-      template: 'statement', customerId, period: { from, to }, userId, at, dedupeKey: `statement:${to}:${recipientId}`,
+      template: 'statement', customerId, period: { from, to }, userId, at, ...(once ? { dedupeKey: `statement:${to}:${recipientId}` } : {}),
       build: (company, customerName) => {
         const file = `statement-of-account-${from}-to-${to}.html`;
         return { ...statementMessage(company, { customerName, from, to, closingBalanceCents: statement.closingBalanceCents,
@@ -130,7 +132,7 @@ export function comRoutes(app: FastifyInstance, deps: AppDeps): void {
       let queued = 0;
       for (const customerId of new Set(customerIds)) {
         if (!allowed.has(customerId)) continue;
-        const result = queueStatement(customerId, from, date, user.userId, at);
+        const result = queueStatement(customerId, from, date, user.userId, at, true);
         if (!result.ok) continue;
         queued++;
         appendAudit(db, { at, userId: user.userId, action: 'com.statement_queued', entityType: 'com.outbox', entityId: result.id,

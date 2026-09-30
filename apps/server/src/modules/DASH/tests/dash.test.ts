@@ -9,7 +9,7 @@ import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import { ownerHealth } from '../health.ts';
 import { ownerCharts } from '../charts.ts';
 import { arAging, apAging, cashPosition, collectionsRegister, depositsHeld, incomeStatement, payrollRegister, productionTiming } from '../../RPT/public.ts';
-import { salesRegister, taxDeadlines } from '../../TAX/public.ts';
+import { salesRegister, taxDeadlines, vatSummary } from '../../TAX/public.ts';
 
 const addDays = (date: string, days: number) => {
   const value = new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000);
@@ -72,11 +72,42 @@ describe('DASH role homes and notifications', () => {
     }));
     expect(homes.map((h) => h.role)).toEqual(['encoder', 'accountant', 'owner', 'production']);
     expect(homes[0]!.widgets.map((w) => w.key)).toEqual(['drafts', 'due', 'ready', 'collectibles', 'production']);
-    expect(homes[1]!.widgets.map((w) => w.key)).toEqual(['drafts', 'exceptions']);
-    expect(homes[2]!.widgets.map((w) => w.key)).toEqual(['overdue-collectibles', 'cash', 'sales', 'collections', 'cancellations']);
+    expect(homes[1]!.widgets.map((w) => w.key)).toEqual(['drafts', 'exceptions', 'vat-quarter', 'month-end', 'integrity']);
+    expect(homes[2]!.widgets.map((w) => w.key)).toEqual(['vat-quarter', 'month-end', 'integrity', 'overdue-collectibles', 'cash', 'sales', 'collections', 'cancellations']);
     expect(homes[3]!.widgets.map((w) => w.key)).toEqual(['production']);
     expect((await owner.get('/api/dash/owner-health')).statusCode).toBe(200);
     for (const client of [encoder, accountant, production]) expect((await client.get('/api/dash/owner-health')).statusCode).toBe(403);
+    env.db.close();
+  });
+
+  it('uses the VAT worksheet, month-end checklist and AUD results for accounting widgets', async () => {
+    const env = await createTestEnv();
+    const accountant = await env.as('accountant');
+    const home = (await accountant.get('/api/dash/home')).json();
+    const vat = vatSummary(env.db, 2026, 3);
+    expect(home.widgets.find((w: { key: string }) => w.key === 'vat-quarter').items).toEqual([
+      { id: 'output', label: 'Output VAT', amountCents: vat.outputVatCents },
+      { id: 'input', label: 'Input VAT', amountCents: vat.inputVatCents },
+      { id: 'payable', label: 'VAT payable so far', amountCents: vat.payableCents },
+    ]);
+    const checklist = (await accountant.get('/api/acc/month-end?month=2026-08')).json();
+    const done = checklist.items.filter((item: { state: string }) => item.state === 'done').length;
+    expect(home.widgets.find((w: { key: string }) => w.key === 'month-end').items[0].label).toBe(`${done} of ${checklist.items.length} steps done`);
+
+    env.db.prepare("INSERT INTO aud_nightly_runs (id, night, covers_from, ran_at, found_count) VALUES ('dash-run', '2026-09-27', '2026-09-27', '2026-09-28T02:00:00.000+08:00', 1)").run();
+    env.db.prepare("INSERT INTO aud_nightly_checks (run_id, check_key, passed, found_count) VALUES ('dash-run', 'integrity', 0, 1)").run();
+    const failed = (await accountant.get('/api/dash/home')).json().widgets.find((w: { key: string }) => w.key === 'integrity');
+    expect(failed).toMatchObject({ tone: 'danger', items: [
+      { label: 'Last nightly check', detail: expect.stringContaining('1 found') },
+      { label: 'Last integrity check', detail: expect.stringContaining('1 found') },
+    ] });
+
+    for (const permission of ['tax.registers.view', 'acc.monthend.view', 'aud.integrity.view']) {
+      env.db.prepare("UPDATE role_permissions SET granted = 0 WHERE role_key = 'accountant' AND permission_key = ?").run(permission);
+    }
+    const hidden = (await (await env.as('accountant')).get('/api/dash/home')).json();
+    expect(hidden.widgets.map((w: { key: string }) => w.key)).not.toEqual(expect.arrayContaining(['vat-quarter', 'month-end', 'integrity']));
+    expect((await (await env.as('encoder')).get('/api/dash/home')).json().widgets.map((w: { key: string }) => w.key)).not.toEqual(expect.arrayContaining(['vat-quarter', 'month-end', 'integrity']));
     env.db.close();
   });
 

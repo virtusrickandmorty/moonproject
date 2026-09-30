@@ -266,8 +266,8 @@ describe('the queue: one email per template', () => {
     expect(row.subject).toBe('Virtus Garments, Inc.: your statement of account, 2026-09-01 to 2026-09-28');
     await run();
     expect(mail.sent.at(-1)!.attachment).toMatchObject({ filename: row.attachment_name, contentType: 'text/html; charset=utf-8' });
-    // One statement per customer and statement date, whichever statement screen queued it.
-    expect((await accountant.post('/api/com/statements', { customerId: c.school, from: '2026-09-01', to: '2026-09-28' })).statusCode).toBe(409);
+    // Anyone may send it again later: a statement is not once-only.
+    expect((await accountant.post('/api/com/statements', { customerId: c.school, from: '2026-09-01', to: '2026-09-28' })).statusCode).toBe(200);
   });
 
   it('the statement button is refused for an encoder, bad dates and a customer who did not agree', async () => {
