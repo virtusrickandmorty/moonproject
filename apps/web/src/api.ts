@@ -86,6 +86,14 @@ export interface DocDetail { header: DocHeader; input: Record<string, unknown>; 
 /** `doc` is the document as the server worked it out (the payroll form shows its lines). */
 export interface Preview { totalCents: number; summary: string; issues: Issue[]; journal?: JournalLine[] | null; doc?: unknown }
 export interface PostResult { id: string; number: string; totalCents: number; warnings: Issue[] }
+/** A file attached to a document (engine/attachments.ts). A removed one stays listed, with who removed it and why. */
+export interface Attachment {
+  id: string; fileName: string; contentType: 'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf'; bytes: number; sha256: string;
+  addedAt: string; addedByName: string; removedAt: string | null; removedByName: string | null; removedReason: string | null;
+}
+/** Opens an attachment in a new tab (the session cookie goes with it; a PDF downloads). */
+export const attachmentUrl = (type: string, id: string, attachmentId: string) =>
+  `/api/docs/${encodeURIComponent(type)}/${encodeURIComponent(id)}/attachments/${encodeURIComponent(attachmentId)}`;
 export interface Draft { id: string; docType: string; payload: { values?: Record<string, string>; form?: unknown }; version: number; updatedAt: string }
 export interface CashPlace { id: number; name: string; balanceCents: number | null }
 export interface DashItem { id: string; label: string; href?: string; detail?: string; amountCents?: number }
@@ -669,6 +677,8 @@ export interface BackupCheck {
   file: string; madeAt: string | null; tier: BackupTier | null; sidecar: 'matches' | 'missing'; toApply: string[]; audit: { seq: number } | null;
   lastAuditAt: string | null; trialBalance: { totalDebitCents: number; totalCreditCents: number }; lastBusinessDate: string | null; postedDocuments: number;
   drill?: 'passed'; stagedId?: string; live?: { auditSeq: number; lastAuditAt: string };
+  /** The attached files the copy names; `missing` and `changed` ones are not in the backup as they were. */
+  attachments?: { files: number; bytes: number; missing: string[]; changed: string[] };
 }
 /** GET /api/acc/opening: the cut-over date, 3900 (debit-positive), the trial balance on the cut-over date, every opening document, the control checks and the close. */
 export interface OpeningState {
@@ -765,12 +775,14 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
   let csrf = '';
   let onSignedOut: (e: ApiError) => void = () => {};
 
+  /** A Blob body (an attachment) is sent as it is; anything else as JSON. */
   async function call<T>(method: 'GET' | 'POST' | 'PUT', path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
     if (method !== 'GET') headers['x-csrf-token'] = csrf;
-    if (body !== undefined) headers['content-type'] = 'application/json';
+    const raw = typeof Blob !== 'undefined' && body instanceof Blob;
+    if (body !== undefined) headers['content-type'] = raw ? 'application/octet-stream' : 'application/json';
     let res: Response;
     try {
-      res = await fetchImpl(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: 'same-origin' });
+      res = await fetchImpl(path, { method, headers, body: body === undefined ? undefined : raw ? body : JSON.stringify(body), credentials: 'same-origin' });
     } catch {
       throw new ApiError('OFFLINE', 'Cannot reach the server. Check the connection and try again. Nothing was recorded.', 0);
     }
@@ -831,6 +843,11 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** Needs a fresh password (step-up). */
     practiceReset: () => call<PracticeStatus>('POST', '/api/system/practice/reset'),
     docTypes: () => call<DocTypeInfo[]>('GET', '/api/doc-types'),
+    attachments: (type: string, id: string) => call<Attachment[]>('GET', one(type, id, '/attachments')),
+    /** Needs the doc type's create permission; works on a recorded or cancelled document. */
+    addAttachment: (type: string, id: string, file: File) => call<Attachment>('POST', one(type, id, '/attachments'), file, { 'x-file-name': encodeURIComponent(file.name) }),
+    removeAttachment: (type: string, id: string, attachmentId: string, reason: string) =>
+      call<Attachment>('POST', one(type, id, `/attachments/${encodeURIComponent(attachmentId)}/remove`), { reason }),
     report: <T>(path: string) => call<T>('GET', `/api/rpt/${path}`),
     auditLog: (query: string) => call<AuditLogPage>('GET', `/api/aud/log?${query}`),
     auditUsers: () => call<{ id: string; name: string }[]>('GET', '/api/aud/users'),

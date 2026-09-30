@@ -1,7 +1,7 @@
 /**
  * Generic view for any doc type (PLAN H2): status, "What this did" in plain words for everyone, and
  * "Behind the scenes" (journal lines) only when the server sent them (acc.journal.view).
- * Cancel and Edit (= cancel and reissue) start here.
+ * Cancel and Edit (= cancel and reissue) start here. Every document has its Attachments panel.
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, newIdempotencyKey, type CashPlace, type DocDetail, type DocTypeInfo, type PrintVariant } from '../api.ts';
@@ -9,6 +9,7 @@ import { Link, navigate } from '../router.tsx';
 import { Button, JournalTable, Notice, Panel, ReasonDialog, StatusChip, longDate, manilaTime, peso } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
 import { fieldsOf, toValues } from './fields.ts';
+import { AttachmentsPanel } from './Attachments.tsx';
 
 /** A module's own view parts: more detail under "What this did", and its own cancel (e.g. a quick sale and its payment). */
 /** `noEdit` hides Edit where a cancel and a new document is the way to correct (a payroll's figures depend on the state it was worked out on). */
@@ -89,6 +90,7 @@ export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo;
         </dl>
         {parts.extra?.(d)}
       </Panel>
+      <AttachmentsPanel type={type} id={id} />
       {d.journals && (
         <Panel title="Behind the scenes">
           {d.journals.map((j) => (

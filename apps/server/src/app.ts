@@ -18,6 +18,7 @@ import { securityRoutes } from './engine/security/routes.ts';
 import { tlsRoutes } from './engine/security/tls/routes.ts';
 import { documentRoutes } from './engine/documents/routes.ts';
 import { draftRoutes } from './engine/documents/drafts.ts';
+import { attachmentRoutes } from './engine/attachments.ts';
 import { hashPassword, DEFAULT_SCRYPT_N } from './engine/security/passwords.ts';
 import { webRoutes } from './platform/web.ts';
 import { practiceRoutes, type PracticeControl } from './platform/practice/routes.ts';
@@ -169,7 +170,8 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
   // Never inside another site's page (clickjacking), and no guessing of content types.
   app.addHook('onSend', async (_req, reply) => {
     reply.header('X-Frame-Options', 'DENY');
-    reply.header('Content-Security-Policy', "frame-ancestors 'none'");
+    // An attachment sets its own, stricter one (sandbox, engine/attachments.ts).
+    if (!reply.hasHeader('Content-Security-Policy')) reply.header('Content-Security-Policy', "frame-ancestors 'none'");
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'same-origin');
   });
@@ -192,6 +194,7 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
   tlsRoutes(app, deps, opts.network);
   documentRoutes(app, deps);
   draftRoutes(app, deps);
+  attachmentRoutes(app, deps);
   practiceRoutes(app, deps, opts.practiceShop);
   healthRoutes(app, deps, opts.practiceShop ? { practiceShop: opts.practiceShop } : {});
   for (const m of registry.modules) m.routes?.(app, deps);
