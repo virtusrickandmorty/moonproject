@@ -24,6 +24,29 @@ export async function openServerPrint(me: Me, path: string, body: unknown): Prom
   if (!preview) throw new Error('Allow pop-ups for this site, then try Print again.');
   preview.document.open(); preview.document.write(data.html); preview.document.close();
 }
+export interface BookPrintResult { html: string; firstPage: number; lastPage: number; pageCount: number; replacedPages: [number, number] | null; warnings: string[] }
+/**
+ * Loose-leaf print of a BIR book. The server numbers the pages and refuses to reprint a range without a yes: `ask` shows its
+ * message (which pages to replace) and returns whether to go ahead. Resolves to null when the user said no.
+ */
+export async function openBookPrint(me: Me, book: string, from: string, to: string, ask: (message: string) => boolean): Promise<BookPrintResult | null> {
+  const preview = window.open('', '_blank');
+  const send = async (confirmReprint: boolean) => {
+    const response = await fetch(`/api/prt/books/${encodeURIComponent(book)}/print`, { method: 'POST', credentials: 'same-origin',
+      headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken }, body: JSON.stringify({ from, to, ...(confirmReprint ? { confirmReprint } : {}) }) });
+    return { response, data: await response.json().catch(() => null) as (BookPrintResult & { code?: string; message?: string }) | null };
+  };
+  let { response, data } = await send(false);
+  if (response.status === 409 && data?.code === 'ALREADY_PRINTED') {
+    if (!ask(data.message ?? 'This range was already printed. Print it again?')) { preview?.close(); return null; }
+    ({ response, data } = await send(true));
+  }
+  if (!response.ok || !data?.html) { preview?.close(); throw new Error(data?.message ?? 'Could not prepare this printout.'); }
+  if (!preview) throw new Error('Allow pop-ups for this site, then try Print loose-leaf again. The pages were numbered.');
+  preview.document.open(); preview.document.write(data.html); preview.document.close();
+  preview.onload = () => preview.print();
+  return data;
+}
 export interface AuditLogRow { seq: number; at: string; userId: string | null; userName: string | null; action: string; entityType: string; entityId: string | null; data: Record<string, unknown> }
 export interface AuditLogPage { rows: AuditLogRow[]; nextBefore: number | null }
 export interface IntegrityReport { audit: { ok: boolean; brokenAt: number | null; count: number; newestAt: string | null; message: string }; checks: { id: string; name: string; ok: boolean; problems: string[]; message: string }[] }
@@ -773,6 +796,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     companyProfile: () => call<CompanyProfile>('GET', '/api/prt/company-profile'),
     companyProfileHistory: () => call<CompanyProfile[]>('GET', '/api/prt/company-profile/history'),
     saveCompanyProfile: (value: Omit<CompanyProfile, 'version' | 'supersededAt'>, version: number) => call<CompanyProfile>('PUT', '/api/prt/company-profile', value, { 'if-match': String(version) }),
+    looseLeafSettings: () => call<{ looseLeafPaper: 'a4' | 'long' }>('GET', '/api/prt/settings'),
+    saveLooseLeafPaper: (paper: 'a4' | 'long') => call<{ looseLeafPaper: 'a4' | 'long' }>('PUT', '/api/prt/settings/loose-leaf-paper', { paper }),
+    bookPrintStatus: (year: number) => call<{ year: number; books: { book: string; title: string; lastPage: number }[] }>('GET', `/api/prt/books/status?year=${year}`),
     printableTypes: () => call<PrintableType[]>('GET', '/api/prt/printable-types'),
     printerTestPack: () => call<PrinterTestPack>('GET', '/api/prt/test-pack'),
     print2307: (year: number, quarter: number, supplierId?: string) => call<{ html: string; pages: number }>('GET',
