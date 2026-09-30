@@ -40,7 +40,7 @@ export function CustomerPicker({ value, onChange }: { value: Picked | null; onCh
 }
 
 /** One row per tender: a big button per cash place (PLAN H2 "money questions"), the amount and a reference. */
-export function TenderRows(p: { rows: TenderRow[]; onChange: (rows: TenderRow[]) => void; places: CashPlace[]; question: string; amountHint?: string }) {
+export function TenderRows(p: { rows: TenderRow[]; onChange: (rows: TenderRow[]) => void; places: CashPlace[]; question: string; amountHint?: string; max?: number }) {
   const set = (i: number, patch: Partial<TenderRow>) => p.onChange(p.rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   return (
     <div className="space-y-3">
@@ -68,7 +68,7 @@ export function TenderRows(p: { rows: TenderRow[]; onChange: (rows: TenderRow[])
           </div>
         </div>
       ))}
-      {p.rows.length < 5 && <Button onClick={() => p.onChange([...p.rows, emptyTender()])}>+ Split the payment</Button>}
+      {p.rows.length < (p.max ?? 5) && <Button onClick={() => p.onChange([...p.rows, emptyTender()])}>+ Split the payment</Button>}
     </div>
   );
 }
