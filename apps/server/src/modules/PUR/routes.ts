@@ -7,8 +7,16 @@ import { AppError } from '@moonproject/shared';
 import { appendAudit } from '../../engine/audit.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { tx } from '../../platform/db/driver.ts';
-import { stamp } from '../../platform/clock.ts';
+import { stamp, today } from '../../platform/clock.ts';
 import { purLookupRoutes } from './lookups.ts';
+import { countableSupply, latestPurchaseCost } from './public.ts';
+
+const costFields = (cost: ReturnType<typeof latestPurchaseCost>) => ({
+  purchase_cost_cents: cost.unitCostCents,
+  purchase_cost_source: cost.source,
+  purchase_cost_source_number: cost.sourceNumber,
+  purchase_cost_source_date: cost.sourceDate,
+});
 
 const preconditionRequired = (msg: string) => new AppError('PRECONDITION_REQUIRED', msg, 428);
 const badRequest = (msg: string) => new AppError('BAD_REQUEST', msg, 400);
@@ -223,7 +231,17 @@ export function purRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   app.get('/api/pur/supplies', { config: { permission: 'pur.supply.view' } }, async (req) => {
-    return db.prepare(`SELECT * FROM pur_supplies ${statusWhere(listStatus(req.query))} ORDER BY name`).all();
+    const rows = db.prepare(`SELECT id, name, unit, category, is_active, version FROM pur_supplies ${statusWhere(listStatus(req.query))} ORDER BY name`).all() as Record<string, unknown>[];
+    const asOf = today(clock);
+    return rows.map((row) => ({ ...row, ...costFields(latestPurchaseCost(db, countableSupply(db, row.id as string)!, asOf)) }));
+  });
+
+  app.get('/api/pur/supplies/:id', { config: { permission: 'pur.supply.view' } }, async (req) => {
+    const { id } = z.object({ id: z.string() }).parse(req.params);
+    const row = db.prepare('SELECT id, name, unit, category, is_active, version FROM pur_supplies WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    const supply = countableSupply(db, id);
+    if (!row || !supply) throw notFound('Supply not found');
+    return { ...row, ...costFields(latestPurchaseCost(db, supply, today(clock))) };
   });
 
   app.post('/api/pur/supplies', { config: { permission: 'pur.supply.edit' } }, async (req) => {
