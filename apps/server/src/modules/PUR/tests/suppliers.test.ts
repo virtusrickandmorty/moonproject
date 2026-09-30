@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createTestEnv, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, idem, type TestEnv } from '../../../../test/helpers.ts';
 
 describe('PUR Suppliers and Supplies', () => {
   let env: TestEnv;
@@ -142,7 +142,7 @@ describe('PUR Suppliers and Supplies', () => {
     let viewRes = await api.get('/api/pur/supplies');
     let supplies = viewRes.json();
     expect(supplies.find((s: any) => s.id === id).name).toBe('New Name');
-    expect(supplies.find((s: any) => s.id === id).last_purchase_cost_cents).toBe(0); // Kept 0
+    expect(supplies.find((s: any) => s.id === id).purchase_cost_cents).toBe(0);
 
     const deactRes = await api.post(`/api/pur/supplies/${id}/deactivate`, {}, { 'if-match': `"${version + 1}"` });
     expect(deactRes.statusCode).toBe(200);
@@ -150,6 +150,32 @@ describe('PUR Suppliers and Supplies', () => {
     viewRes = await api.get('/api/pur/supplies');
     supplies = viewRes.json();
     expect(supplies.find((s: any) => s.id === id)).toBeUndefined();
+  });
+
+  it('lists the newest bill cost, then the PO cost, then the stored catalogue cost, with its source', async () => {
+    const accountant = await env.as('accountant');
+    const encoder = await env.as('encoder');
+    const supplierId = (await accountant.post('/api/pur/suppliers', {
+      name: 'Sample Cloth Trading', registeredName: 'Sample Cloth Trading Inc.', tin: '111-222-333-000', isVatRegistered: true,
+    })).json().id as string;
+    const supplyId = (await accountant.post('/api/pur/supplies', { name: 'Sample canvas', unit: 'yard', category: 'materials' })).json().id as string;
+    env.db.prepare('UPDATE pur_supplies SET last_purchase_cost_cents = 12000 WHERE id = ?').run(supplyId);
+    const listed = async () => (await accountant.get('/api/pur/supplies')).json().find((s: any) => s.id === supplyId);
+
+    expect(await listed()).toMatchObject({ purchase_cost_cents: 12_000, purchase_cost_source: 'catalogue', purchase_cost_source_number: null, purchase_cost_source_date: null });
+    const po = await encoder.post('/api/docs/pur.po/post', {
+      input: { supplierId, lines: [{ supplyId, qty: 100, unitCostCents: 11_500 }] }, expectedTotalCents: 1_150_000,
+    }, idem());
+    expect(await listed()).toMatchObject({ purchase_cost_cents: 11_500, purchase_cost_source: 'po', purchase_cost_source_number: 'PO-000001', purchase_cost_source_date: '2026-09-28' });
+    const rr = await encoder.post('/api/docs/pur.rr/post', { input: { poDocumentId: po.json().id, lines: [{ poLineNo: 1, qty: 80 }] }, expectedTotalCents: 0 }, idem());
+    expect(rr.statusCode, rr.body).toBe(200);
+    const bill = await encoder.post('/api/docs/ap.bill/post', {
+      input: { supplierId, supplierInvoiceNo: 'SI-101', supplierInvoiceDate: '2026-09-28', receivingReportId: rr.json().id, lines: [{ supplyId, amountCents: 1_120_000 }] },
+      expectedTotalCents: 1_120_000,
+    }, idem());
+    expect(bill.statusCode, bill.body).toBe(200);
+    expect(await listed()).toMatchObject({ purchase_cost_cents: 12_500, purchase_cost_source: 'bill', purchase_cost_source_number: 'BILL-000001', purchase_cost_source_date: '2026-09-28' });
+    expect((await accountant.get(`/api/pur/supplies/${supplyId}`)).json()).toMatchObject(await listed());
   });
 
   it('can manage supplier contacts', async () => {

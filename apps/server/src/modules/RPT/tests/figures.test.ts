@@ -66,7 +66,7 @@ describe('RPT report figures', () => {
     const category = (code: string) => env!.db.prepare('SELECT c.id FROM exp_categories c JOIN accounts a ON a.id=c.account_id WHERE a.code=?').pluck().get(code) as number;
     const rent = category('6110');
     const transport = category('6140');
-    w.record(voucherDoc, { categoryId: rent, cashPlaceId: bdo, amountCents: 400_000, description: 'Sample workshop rent', payeeName: 'Sample Landlord', payeeVatRegistered: false, payeeTin: '987-654-321-000', supplierInvoiceNo: 'C22-RENT', supplierInvoiceDate: to });
+    w.record(voucherDoc, { categoryId: rent, tenders: [{ cashPlaceId: bdo, amountCents: 380_000 }], amountCents: 400_000, description: 'Sample workshop rent', payeeName: 'Sample Landlord', payeeVatRegistered: false, payeeTin: '987-654-321-000', supplierInvoiceNo: 'C22-RENT', supplierInvoiceDate: to });
     w.record(transferDoc, { fromCashPlaceId: bdo, toCashPlaceId: china, amountSentCents: 100_000, amountReceivedCents: 99_500 });
 
     const assetSupplier = (await owner.post('/api/pur/suppliers', { name: 'Sample Machine Shop', registeredName: 'Sample Machine Shop Inc.', tin: '222-333-444-000', isVatRegistered: true })).json().id as string;
@@ -80,7 +80,7 @@ describe('RPT report figures', () => {
     // More than one loose-leaf page proves brought/carried totals, while still using ordinary posted documents.
     for (let n = 0; n < 20; n++) {
       w.record(otherReceiptDoc, { cashPlaceId: cash, category: 'other_income', receivedFrom: `Sample buyer ${n + 1}`, description: 'Sample scrap', amountCents: 100 });
-      w.record(voucherDoc, { categoryId: transport, cashPlaceId: petty, amountCents: 100, description: `Sample sundry ${n + 1}`, payeeName: `Sample payee ${n + 1}`, payeeVatRegistered: false });
+      w.record(voucherDoc, { categoryId: transport, tenders: [{ cashPlaceId: petty, amountCents: 100 }], amountCents: 100, description: `Sample sundry ${n + 1}`, payeeName: `Sample payee ${n + 1}`, payeeVatRegistered: false });
     }
     const counted = gl(env.db, '1101');
     w.record(countDoc, { cashPlaceId: cash, lines: [{ denominationCents: 100, qty: counted / 100 }] });

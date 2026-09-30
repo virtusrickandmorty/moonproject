@@ -40,6 +40,9 @@ describe('effective-dated settings (E12, D4.2)', () => {
       'col.forfeit_vatable': false,
       'tax.ewt_rates_bp': { rent_5: 500, contractor_2: 200, prof_ind_5: 500, prof_ind_10: 1000, prof_firm_10: 1000, prof_firm_15: 1500, goods_1: 100, services_2: 200 },
       'tax.interest_final_tax_bp': 2000,
+      'acc.bad_debt_method': 'direct',
+      'tax.uncollected_vat_credit': false,
+      'tax.dividend_final_tax_bp': 1000,
     });
   });
 

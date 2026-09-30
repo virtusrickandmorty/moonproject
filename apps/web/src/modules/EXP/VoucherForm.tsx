@@ -3,14 +3,18 @@
  * who was paid (a supplier on file or someone else), the receipt (its number, date and the payee's TIN claim the input
  * VAT), the EWT and the cash place it came from (petty cash is one of them). The server works out VAT, EWT and what is
  * paid out. Also the Edit of a recorded voucher (NR-4).
+ * The money can come from up to four cash places, each with its amount and a reference; one cash place typed without an
+ * amount pays whatever the server says is paid out (the receipt less the EWT).
  */
 import { useState } from 'react';
 import { api, type CashPlace, type DocTypeInfo } from '../../api.ts';
 import { Field, Panel, inputClass } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
-import { MoneyForm, PlacePicker, SupplierSelect, useEwtRates, useList, useMoneyForm } from '../AP/parts.tsx';
+import { formatPesos } from '@moonproject/shared';
+import { TenderRows } from '../COL/parts.tsx';
+import { MoneyForm, SupplierSelect, useEwtRates, useList, useMoneyForm } from '../AP/parts.tsx';
 import { ewtChoices, forReplacement, voucherFigures } from '../AP/payables.ts';
-import { emptyVoucher, voucherInput, voucherValues, type VoucherInput, type VoucherValues } from './voucher.ts';
+import { MAX_TENDERS, emptyVoucher, voucherInput, voucherValues, type VoucherInput, type VoucherValues } from './voucher.ts';
 
 export function VoucherForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   const categories = useList(api.expCategories);
@@ -19,12 +23,15 @@ export function VoucherForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
   const rates = useEwtRates();
   const [v, setV] = useState<VoucherValues>(emptyVoucher);
   const f = useMoneyForm(type, mode, (d) => setV(voucherValues(d.input as unknown as VoucherInput)));
-  const set = (patch: Partial<VoucherValues>) => setV({ ...v, ...patch });
-  const { input, errors } = voucherInput(v);
+  // Any change to the receipt makes the server's last payout figure stale until the next live preview.
+  const set = (patch: Partial<VoucherValues>) => (setV({ ...v, ...patch }), setCashCents(undefined));
+  const [cashCents, setCashCents] = useState<number>();
+  const { input, errors } = voucherInput(v, cashCents);
   const usual = (v.payee === 'supplier' ? suppliers.find((s) => s.id === v.supplierId)?.ewt_class : null) ?? categories.find((c) => String(c.id) === v.categoryId)?.defaultEwtClass ?? null;
 
   return (
-    <MoneyForm type={type} f={f} title="New expense voucher" input={input} errors={errors} figures={voucherFigures} adjust={(p, n) => forReplacement(p, n)}>
+    <MoneyForm type={type} f={f} title="New expense voucher" input={input} errors={errors} figures={voucherFigures} adjust={(p, n) => forReplacement(p, n)}
+      onLive={(p) => setCashCents((p.doc as { cashCents: number }).cashCents)}>
       <Panel title="What was it for?">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Expense" required>
@@ -68,7 +75,9 @@ export function VoucherForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
         </Field>
       </Panel>
       <Panel title="Where did the money come from?">
-        <PlacePicker places={places} value={v.cashPlaceId} onChange={(cashPlaceId) => set({ cashPlaceId })} question="Where did the money come from?" />
+        <TenderRows rows={v.tenders} onChange={(tenders) => setV({ ...v, tenders })} places={places} question="Where did the money come from?" max={MAX_TENDERS}
+          amountHint={cashCents ? formatPesos(cashCents) : undefined} />
+        <p className="text-sm text-slate-500">The amounts add up to what is paid out: the receipt less any EWT withheld.</p>
       </Panel>
     </MoneyForm>
   );
