@@ -129,6 +129,7 @@ Notation: "Cash X" = the GL account of the cash place chosen on the tender line 
 | CM-ALLOW | Credit memo (return/allowance), accountant-confirmed form | 4191 (NET); 2301 (VAT) | 1201 (or 2201 if already paid) | Quarter of the CM carries the VAT reduction |
 | QS-SALE | Quick sale: invoice record + collection in one action | as INV-REC then COL-RCV | | Two linked documents, one screen |
 | BAD-DEBT | Accountant write-off | 6270 (or 1209 via allowance) | 1201 | Accountant only |
+| BAD-ALLOW | Allowance for credit losses (accountant), when ACC-26 picks the allowance method: the allowance needed at a date, suggested from the AR aging by a rate per age bucket | 6270 (increase) or 1209 (decrease), per customer | 1209 (increase) or 6270 (decrease) | Posts the change from the 1209 balance. Under the allowance method BAD-DEBT is Dr 1209 / Cr 1201 and needs enough allowance. Income tax adds the provision back and deducts the write-offs |
 
 ### Purchases and expenses (periodic inventory)
 | Code | Trigger | Debit | Credit | Notes |

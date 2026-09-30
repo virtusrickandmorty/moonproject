@@ -8,6 +8,7 @@ import { cwtOnlyDoc } from './doctypes/cwt-only.ts';
 import { forfeitDoc } from './doctypes/forfeit.ts';
 import { creditMemoDoc } from './doctypes/credit-memo.ts';
 import { writeOffDoc } from './doctypes/write-off.ts';
+import { allowanceDoc } from './doctypes/allowance.ts';
 import { colRoutes } from './routes.ts';
 
 export default defineModule({
@@ -28,8 +29,9 @@ export default defineModule({
     { key: 'col.pdc.manage', label: 'Add post-dated checks to the list and void them', defaultRoles: ['encoder', 'accountant', 'owner'] },
     { key: 'col.checks.deposit', label: 'Deposit customer checks on hand to a bank (also needs cash.trf.post)', defaultRoles: ['encoder', 'accountant', 'owner'] },
     { key: 'col.checks.return', label: 'Record a customer check the bank returned, with its charge (also needs cash.trf.post, cash.badj.post and col.cancel)', defaultRoles: ['accountant', 'owner'] },
+    { key: 'col.allowance', label: 'Record the allowance for credit losses from the AR aging, and cancel it', defaultRoles: ['accountant'] },
   ],
-  docTypes: [collectionDoc, refundDoc, depositTransferDoc, cwtOnlyDoc, forfeitDoc, creditMemoDoc, writeOffDoc],
+  docTypes: [collectionDoc, refundDoc, depositTransferDoc, cwtOnlyDoc, forfeitDoc, creditMemoDoc, writeOffDoc, allowanceDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: colRoutes,
 });

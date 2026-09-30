@@ -49,6 +49,10 @@ export const SETTINGS = {
     label: 'A forfeited customer deposit is VATable: 12/112 of it goes to output VAT (ACC-15; default no)',
     schema: z.boolean(),
   },
+  'acc.bad_debt_method': {
+    label: 'Bad debts: written off directly to 6270, or provided for on 1209 and written off against it (ACC-26; default direct)',
+    schema: z.enum(['direct', 'allowance']),
+  },
   'tax.interest_final_tax_bp': {
     label: 'Final tax the bank withholds on interest, in basis points (2000 = 20%, PLAN D5 BANK-ADJ)',
     schema: z.number().int().min(0).max(5000),
