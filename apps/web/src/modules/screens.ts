@@ -52,7 +52,7 @@ import { BirBooks } from './RPT/BirBooks.tsx';
 import { BalanceSheet, IncomeStatement } from './RPT/Statements.tsx';
 import { CashFlow } from './RPT/CashFlow.tsx';
 import { ArAging, CustomerStatement } from './RPT/Receivables.tsx';
-import { DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
+import { DepositsCrossingQuarter, DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
 import { PayrollRegister, PieceWork, LaborCost, ThirteenthRegister, ProductionStatus, Throughput, WorkerOutput, LeadTime, LateJobs, JobMargin } from './RPT/PayrollProduction.tsx';
 import { ApAging, Purchases, PurchaseOrders, ReceivedNotBilled, CashPosition, Transfers, CashCounts, Assets as AssetSchedule, LateEntries, Cancellations, Exceptions, SignIns } from './RPT/Operations.tsx';
 import { CashAccounts } from './CASH/CashAccounts.tsx';
@@ -124,6 +124,7 @@ import { NightlyChecks } from './AUD/NightlyChecks.tsx';
 import { Suppliers } from './PUR/Suppliers.tsx';
 import { SupplierPage } from './PUR/Supplier.tsx';
 import { Supplies } from './PUR/Supplies.tsx';
+import { SupplyPage } from './PUR/Supply.tsx';
 import { PoForm } from './PUR/PoForm.tsx';
 import { RrForm } from './PUR/RrForm.tsx';
 import { purchaseOrderView, receivingReportView } from './PUR/views.tsx';
@@ -150,6 +151,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/pur/suppliers/new': SupplierPage,
   '/pur/suppliers/:id': SupplierPage,
   '/pur/supplies': Supplies,
+  '/pur/supplies/:id': SupplyPage,
   '/emp/employees': Employees,
   '/emp/leave-balances': LeaveBalances,
   '/emp/employees/:id': EmployeePage,
@@ -181,6 +183,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/rpt/ar-aging': ArAging,
   '/rpt/customer-statement': CustomerStatement,
   '/rpt/deposits-held': DepositsHeld,
+  '/rpt/deposits-crossing-quarter': DepositsCrossingQuarter,
   '/rpt/collections-register': CollectionsRegister,
   '/rpt/sales-by-period': SalesByPeriod,
   '/rpt/job-order-follow-up': JobOrderFollowUp,

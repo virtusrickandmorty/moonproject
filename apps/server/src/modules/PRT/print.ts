@@ -1,5 +1,6 @@
 /** Server-rendered, escaped print views. No journal entries are created here. */
 import { formatPeso } from '@moonproject/shared';
+import qrcode from 'qrcode-generator';
 import { DOC_TITLES, type DocTitle } from '../../engine/documents/registry.ts';
 import type { Db } from '../../platform/db/driver.ts';
 import { jobTicketRoute } from '../PRD/public.ts';
@@ -26,10 +27,24 @@ const money = (n: number) => formatPeso(n);
 const lineTable = (headings: string[], rows: unknown[][]) => `<table><thead><tr>${headings.map((h) => `<th>${escape(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map(cell).join('')}</tr>`).join('')}</tbody></table>`;
 const field = (name: string, value: unknown) => value ? `<p><b>${escape(name)}:</b> ${escape(value)}</p>` : '';
 
+/** An inline SVG around the matrix made by qrcode-generator; printing never fetches an image or calls the internet. */
+export function jobOrderQr(jobOrderId: string, jobOrderNumber: string, joinBase?: string): string {
+  const value = joinBase ? new URL(`/docs/jo.job_order/${encodeURIComponent(jobOrderId)}`, joinBase).href : jobOrderNumber;
+  const qr = qrcode(0, 'M');
+  qr.addData(value);
+  qr.make();
+  const modules = qr.getModuleCount(), quiet = 4, size = modules + quiet * 2;
+  const path: string[] = [];
+  for (let row = 0; row < modules; row++) for (let column = 0; column < modules; column++) {
+    if (qr.isDark(row, column)) path.push(`M${column + quiet} ${row + quiet}h1v1h-1z`);
+  }
+  return `<figure class="job-qr"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" role="img" aria-label="Open job order ${escape(jobOrderNumber)}"><path fill="#fff" d="M0 0h${size}v${size}H0z"/><path fill="#000" d="${path.join('')}"/></svg><figcaption>${escape(jobOrderNumber)}</figcaption></figure>`;
+}
+
 type PrintTitle = DocTitle | 'Payment Voucher' | 'Payslip' | 'Cash Advance Slip' | 'Inventory Count Sheet' | 'Certificate of Creditable Tax Withheld at Source';
 export type ReportPrintTitle = 'Statement of Account' | 'Sizing Profile' | 'Fixed Asset Schedule';
 export const REPORT_PRINT_TITLES: readonly ReportPrintTitle[] = ['Statement of Account', 'Sizing Profile', 'Fixed Asset Schedule'];
-function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind): { title: PrintTitle; subtitle: string; legend: boolean; body: string; twoUp: boolean } {
+function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: string): { title: PrintTitle; subtitle: string; legend: boolean; body: string; twoUp: boolean } {
   if (h.doc_type === 'quo.quotation') return {
     title: 'Quotation', subtitle: '', legend: true, twoUp: false,
     body: field('Customer', doc.customerName) + field('Valid until', doc.validUntil) +
@@ -42,7 +57,7 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind): { title: Pr
   if (h.doc_type === 'jo.job_order') {
     if (kind === 'job_ticket') return {
       title: 'Job Ticket', subtitle: 'Production copy', legend: false, twoUp: false,
-      body: field('Customer', doc.customerName) + field('Due date', doc.dueDate) + field('Priority', doc.priority) +
+      body: jobOrderQr(h.id, h.number, joinBase) + field('Customer', doc.customerName) + field('Due date', doc.dueDate) + field('Priority', doc.priority) +
         doc.lines.map((l: any) => `<section class="job-line"><h2>${escape(l.description)} · ${escape(l.qty)} pieces</h2>` +
           lineTable(['Wearer', 'Size', 'Jersey name', 'Jersey no.', 'Qty'], l.roster.map((r: any) => [r.wearerName, r.size ?? (r.sizeMode === 'measured' ? 'Measured' : ''), r.jerseyName, r.jerseyNumber, r.qty])) +
           `<h3>Route checklist</h3><ul>${jobTicketRoute(db, h.id, l.lineNo).map((s) => `<li>☐ ${escape(s.name)} — ${escape(s.status)}</li>`).join('')}</ul></section>`).join('') +
@@ -58,7 +73,7 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind): { title: Pr
   }
   if (h.doc_type === 'jo.release') return {
     title: 'Release Slip', subtitle: '', legend: true, twoUp: true,
-    body: field('Job order', doc.jobOrderNumber) + field('Customer', doc.customerName) +
+    body: jobOrderQr(doc.jobOrderId, doc.jobOrderNumber, joinBase) + field('Job order', doc.jobOrderNumber) + field('Customer', doc.customerName) +
       lineTable(['Description', 'Qty'], doc.lines.map((l: any) => [l.description, l.qty])) +
       field('Claimed by', doc.claimedBy) + field('ID type seen', doc.idSeen) +
       field('Balance due at release', money(doc.balanceDueCents)) + field('Credit note', doc.creditNote) +
@@ -123,8 +138,8 @@ export const printMoney = money;
 
 /** `practice`: printed in the practice shop (PLAN C8), so every copy says it is not a real document. */
 export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profile, kind: PrintKind,
-  printedBy: string, printedAt: string, copyNumber: number, practice = false, testPrint = false): string {
-  const p = content(db, h, doc, kind);
+  printedBy: string, printedAt: string, copyNumber: number, practice = false, testPrint = false, joinBase?: string): string {
+  const p = content(db, h, doc, kind, joinBase);
   const catalogueTitles: readonly string[] = ['Payment Voucher', 'Payslip', 'Cash Advance Slip', 'Inventory Count Sheet', 'Certificate of Creditable Tax Withheld at Source'];
   if (!(DOC_TITLES as readonly string[]).includes(p.title) && !catalogueTitles.includes(p.title)) throw new Error('Print title is not allowed');
   const title = p.title.toUpperCase();
@@ -137,7 +152,7 @@ export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profi
     .two-up .copy{height:136mm}.two-up .copy:first-child{border-bottom:1px dashed #777}
     header{text-align:center}.company{line-height:1.35}h1{font-size:18pt;margin:6mm 0 1mm}.cancelled{font-size:18pt;font-weight:900;letter-spacing:2mm;color:#a00;border:2px solid #a00;margin:2mm auto;padding:1mm 3mm;width:max-content}.subtitle{margin:0 0 2mm}.practice{font-size:14pt;font-weight:900;letter-spacing:1mm;color:#a60;border:2px dashed #a60;margin:2mm auto;padding:1mm 3mm;width:max-content}.legend{font-size:9pt;margin:2mm 0 4mm;font-weight:bold}
     .meta{display:flex;justify-content:space-between;border-block:1px solid #777;padding:2mm 0;margin:2mm 0 4mm}main{flex:1}main p{margin:2mm 0}
-    table{width:100%;border-collapse:collapse;margin:3mm 0}th,td{border:1px solid #aaa;padding:1.5mm;text-align:left}th{background:#eee}h2{font-size:12pt;margin:4mm 0 1mm}h3{font-size:10pt;margin:2mm 0}ul{margin:1mm 0 2mm;columns:2}li{list-style:none;margin:1mm 0}
+    table{width:100%;border-collapse:collapse;margin:3mm 0}th,td{border:1px solid #aaa;padding:1.5mm;text-align:left}th{background:#eee}h2{font-size:12pt;margin:4mm 0 1mm}h3{font-size:10pt;margin:2mm 0}ul{margin:1mm 0 2mm;columns:2}li{list-style:none;margin:1mm 0}.job-qr{float:right;width:25mm;margin:0 0 3mm 5mm;text-align:center}.job-qr svg{display:block;width:25mm;height:25mm;shape-rendering:crispEdges}.job-qr figcaption{font-size:8pt;font-weight:bold;margin-top:1mm}
     footer{display:flex;justify-content:space-between;font-size:8pt;border-top:1px solid #777;padding-top:2mm;margin-top:3mm}
     @media screen{body{background:#ddd;padding:12mm}.sheet{background:white;width:210mm;margin:auto;padding:12mm;box-shadow:0 2px 12px #777}.two-up .copy{height:125mm}}
     @media print{.sheet{page-break-after:always}}
