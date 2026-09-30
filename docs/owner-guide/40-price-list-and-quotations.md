@@ -20,7 +20,7 @@
 4. Click **Save price**.
 
 #### Making a quotation
-1. On the **Sales** menu, click **Quotations**, then click **+ New quotation**.
+1. On the **Sales** menu, click **Quotations**, then click **+ New Quotation**.
 2. Pick the **Customer** from the list, or type a **Prospect name**.
 3. Type who the **Contact** person is, and how many days it is **Valid for days**.
 4. Under **Items**, pick a **Catalog item** for the first line.

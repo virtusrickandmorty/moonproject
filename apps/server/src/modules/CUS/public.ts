@@ -70,28 +70,3 @@ export function activeMeasurements(db: Db, personId: string): Record<string, unk
   const row = db.prepare("SELECT * FROM cus_measure_charts WHERE person_id = ? AND status = 'active'").get(personId) as Record<string, unknown> | undefined;
   return row ? chartResponse(row) : undefined;
 }
-
-/**
- * Who may be emailed about this customer (COM, PLAN E14): the address on the customer record and the consent flag.
- * A merged customer is followed to the record it was merged into. Read-only.
- */
-export function customerContact(db: Db, id: string): { id: string; code: string; name: string; email: string | null; emailConsent: boolean } | undefined {
-  let row = db.prepare('SELECT id, code, display_name, email, email_consent, merged_into_id FROM cus_customers WHERE id = ?').get(id) as
-    | { id: string; code: string; display_name: string; email: string | null; email_consent: number; merged_into_id: string | null }
-    | undefined;
-  if (row?.merged_into_id) {
-    row = db.prepare('SELECT id, code, display_name, email, email_consent, merged_into_id FROM cus_customers WHERE id = ?').get(row.merged_into_id) as typeof row;
-  }
-  return row && { id: row.id, code: row.code, name: row.display_name, email: row.email?.trim() || null, emailConsent: row.email_consent === 1 };
-}
-
-/** The current wearer chart exactly as shown on the customer screen, with names for a sizing-profile print. */
-export function sizingProfile(db: Db, personId: string): Record<string, unknown> | undefined {
-  const row = db.prepare(`SELECT m.*, p.full_name AS wearer_name, c.display_name AS customer_name,
-    g.name AS group_name, upper.label AS upper_size_label, lower.label AS lower_size_label
-    FROM cus_measure_charts m JOIN cus_people p ON p.id = m.person_id
-    JOIN cus_customers c ON c.id = p.customer_id LEFT JOIN cus_groups g ON g.id = p.group_id
-    LEFT JOIN cus_sizes upper ON upper.id = m.upper_size LEFT JOIN cus_sizes lower ON lower.id = m.lower_size
-    WHERE p.id = ? AND m.status = 'active'`).get(personId) as Record<string, unknown> | undefined;
-  return row ? chartResponse(row) : undefined;
-}

@@ -11,68 +11,10 @@ type ChartRow = { id: number; code: string; name: string; isHeader: number; role
 type Movement = { netCents: number; lineCount: number };
 
 /** One amount on the side of its section: a contra account (accumulated depreciation, sales discounts) is negative. */
-/** With a comparison (compareSections): the other period's amount, the difference, and the change in percent (null from zero). */
-export type Compared = { compareAmountCents?: number; differenceCents?: number; percentChange?: number | null };
-export type StatementLine = Compared & { accountId: number | null; code: string | null; name: string; amountCents: number; computed: boolean };
+export type StatementLine = { accountId: number | null; code: string | null; name: string; amountCents: number; computed: boolean };
 /** The accounts under one header account (1100, 4100, ...) with their subtotal; no header when only x000 is above them. */
-export type StatementGroup = Compared & { code: string | null; name: string | null; lines: StatementLine[]; totalCents: number };
-export type StatementSection = Compared & { key: string; title: string; side: Side; groups: StatementGroup[]; totalCents: number };
-
-export type Comparison = 'previous_month' | 'last_year';
-
-const parts = (date: string) => date.split('-').map(Number) as [number, number, number];
-const daysInMonth = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
-const shifted = (date: string, years: number, months: number) => {
-  const [year, month, day] = parts(date);
-  const index = year * 12 + month - 1 + years * 12 + months;
-  const shiftedYear = Math.floor(index / 12); const shiftedMonth = index % 12 + 1;
-  const targetDay = day === daysInMonth(year, month) ? daysInMonth(shiftedYear, shiftedMonth) : Math.min(day, daysInMonth(shiftedYear, shiftedMonth));
-  return `${shiftedYear}-${String(shiftedMonth).padStart(2, '0')}-${String(targetDay).padStart(2, '0')}`;
-};
-
-export function comparisonDates(compare: Comparison, from: string, to?: string) {
-  const years = compare === 'last_year' ? -1 : 0; const months = compare === 'previous_month' ? -1 : 0;
-  return { from: shifted(from, years, months), ...(to === undefined ? {} : { to: shifted(to, years, months) }) };
-}
-
-const comparisonValues = (amountCents: number, compareAmountCents: number) => ({ amountCents, compareAmountCents,
-  differenceCents: amountCents - compareAmountCents,
-  percentChange: compareAmountCents === 0 ? null : (amountCents - compareAmountCents) / Math.abs(compareAmountCents) * 100 });
-
-/** The keys of both periods: this period's in its order, and one only in the other period put before the first coded key above it. */
-function mergedKeys<T>(current: T[], other: T[], key: (item: T) => string, code: (item: T) => string | null): string[] {
-  const keys = current.map(key);
-  const codes = new Map([...current, ...other].map((item) => [key(item), code(item)]));
-  for (const item of other) {
-    const k = key(item);
-    if (keys.includes(k)) continue;
-    const c = code(item);
-    const at = c === null ? -1 : keys.findIndex((x) => { const xc = codes.get(x); return xc != null && xc > c; });
-    if (at < 0) keys.push(k); else keys.splice(at, 0, k);
-  }
-  return keys;
-}
-
-/** Merge two independently calculated statements without losing accounts present in only one period. */
-export function compareSections(current: StatementSection[], other: StatementSection[]): StatementSection[] {
-  return current.map((section, sectionIndex) => {
-    const compared = other[sectionIndex]!;
-    const groupKeys = mergedKeys(section.groups, compared.groups, (g) => g.code ?? '', (g) => g.code ?? g.lines[0]?.code ?? null);
-    const groups = groupKeys.map((key) => {
-      const group = section.groups.find((g) => (g.code ?? '') === key);
-      const otherGroup = compared.groups.find((g) => (g.code ?? '') === key);
-      const lineKeys = mergedKeys(group?.lines ?? [], otherGroup?.lines ?? [], (l) => `${l.accountId ?? ''}:${l.code ?? ''}:${l.name}`, (l) => l.code);
-      const lines = lineKeys.map((lineKey) => {
-        const find = (lines: StatementLine[]) => lines.find((l) => `${l.accountId ?? ''}:${l.code ?? ''}:${l.name}` === lineKey);
-        const line = find(group?.lines ?? []) ?? find(otherGroup?.lines ?? [])!;
-        return { ...line, ...comparisonValues(find(group?.lines ?? [])?.amountCents ?? 0, find(otherGroup?.lines ?? [])?.amountCents ?? 0) };
-      });
-      const sample = group ?? otherGroup!;
-      return { ...sample, lines, ...comparisonValues(group?.totalCents ?? 0, otherGroup?.totalCents ?? 0) };
-    });
-    return { ...section, groups, ...comparisonValues(section.totalCents, compared.totalCents) };
-  });
-}
+export type StatementGroup = { code: string | null; name: string | null; lines: StatementLine[]; totalCents: number };
+export type StatementSection = { key: string; title: string; side: Side; groups: StatementGroup[]; totalCents: number };
 
 const IS_SECTIONS = [
   { digit: '4', key: 'revenue', title: 'Revenue', side: 'credit' },

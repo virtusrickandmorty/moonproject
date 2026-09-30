@@ -66,7 +66,7 @@ describe('payroll screen rules', () => {
     const types = [{ key: 'pay.run', module: 'PAY', title: 'Payroll Run' }, { key: 'pay.release', module: 'PAY', title: 'Payroll Release' }, { key: 'pay.thirteenth', module: 'PAY', title: '13th-Month Pay' }, { key: 'ca.advance', module: 'CA', title: 'Cash Advance' }] as never[];
     expect(buildMenu(types, new Set(['emp.view'])).find((g) => g.group === 'People & Payroll')).toEqual({
       group: 'People & Payroll',
-      items: ['Employees', 'Leave balances', 'Attendance', 'Holidays', 'Payroll Runs', 'Payroll Releases', '13th-Month Pay', 'Cash Advances'].map((label) => expect.objectContaining({ label })),
+      items: ['Employees', 'Attendance', 'Holidays', 'Payroll Runs', 'Payroll Releases', '13th-Month Pay', 'Cash Advances'].map((label) => expect.objectContaining({ label })),
     });
   });
 });

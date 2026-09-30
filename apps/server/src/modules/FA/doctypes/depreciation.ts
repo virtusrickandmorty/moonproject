@@ -4,8 +4,7 @@
  * Straight line: after n months in service an asset's accumulated depreciation is (cost − residual) × n ÷ life
  * (assets.ts straightLine), so a month's charge is (cost − residual) ÷ life to the centavo, a missed month is caught up,
  * and the asset stops at its residual value. Runs go month by month, one per month (unique per asset and month).
- * An opening asset (OBFA-) is not charged up to the last month the old books charged (assets.ts lastMonthCharged: the
- * month before a cut-over dated the 1st, else the cut-over month); after it, what the old books left is charged
+ * An opening asset (OBFA-) is not charged up to its cut-over month; after it, what the old books left is charged
  * (assets.ts scheduledCents), and its lines are kept in fa_opening_depreciation_lines.
  * Cancel needs later runs of its assets, and their disposals, cancelled first: only the latest charge comes off.
  * A run is dated in the month it depreciates, so the charge falls in that month's books: run it by the month's last

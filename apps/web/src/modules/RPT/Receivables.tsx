@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, openServerPrint, type Me } from '../../api.ts';
+import { api, type Me } from '../../api.ts';
 import { Link } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { BookTitle, Tools, money, td, th, useReport, useToday } from './Books.tsx';
@@ -59,19 +59,6 @@ export function ArAging({ me }: { me: Me }) {
   </article>;
 }
 
-/** "Email this statement": queues it for the customer's address on file, if they agreed to emails (COM). */
-function EmailStatement(p: { customerId: string; from: string; to: string }) {
-  const [message, setMessage] = useState(''); const [failed, setFailed] = useState(false); const [busy, setBusy] = useState(false);
-  const send = async () => {
-    setBusy(true); setMessage('');
-    try { await api.comEmailStatement(p); setFailed(false); setMessage('Queued. It goes out with the next batch: see Customer emails.'); }
-    catch (e) { setFailed(true); setMessage((e as Error).message); }
-    setBusy(false);
-  };
-  return <><Button disabled={busy} onClick={() => void send()}>Email this statement</Button>
-    {message && <Notice tone={failed ? 'error' : 'success'}>{message}</Notice>}</>;
-}
-
 export function CustomerStatement({ me }: { me: Me }) {
   const today = useToday(); const [from, setFrom] = useState(''); const [to, setTo] = useState('');
   const [customerId, setCustomerId] = useState(''); const [applied, setApplied] = useState('');
@@ -90,10 +77,7 @@ export function CustomerStatement({ me }: { me: Me }) {
       <Field label="To"><input type="date" className={inputClass} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
       <Button tone="primary" disabled={!customerId || !from || !to || from > to}
         onClick={() => setApplied(new URLSearchParams({ customerId, from, to }).toString())}>Show</Button>
-      {path && <Tools path={path} />}
-      {data && me.permissions.includes('com.statement.send') && <EmailStatement customerId={data.customerId} from={data.from} to={data.to} />}</div>
-    {data && <div className="print:hidden"><Button onClick={() => void openServerPrint(me, '/api/prt/reports/statement',
-      { customerId: data.customerId, from: data.from, to: data.to })}>Print statement of account</Button></div>}
+      {path && <Tools path={path} />}</div>
     {error && <Notice>{error}</Notice>}{!data && !error && applied && <p>Loading…</p>}
     {data && <><Panel title={data.customerName}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
       {['Date', 'Document', 'Memo', 'Debit', 'Credit', 'Balance'].map((name) => <th className={th} key={name}>{name}</th>)}

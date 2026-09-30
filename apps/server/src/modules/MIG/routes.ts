@@ -9,11 +9,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { requireStepUp } from '../../engine/security/sessions.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { tx } from '../../platform/db/driver.ts';
-import { activeCustomers, createGroup, createWearer, customerRef } from '../CUS/public.ts';
-import {
-  applyEmployeeFix, applyMeasurementAssignment, duplicateKeys, isManualMeasurement, manualName, measurementField, measurementFields, measurementTenths, nameKey,
-  parseCSV, validateRow, type ManualData, type ParsedRow, type RowType,
-} from './csv.ts';
+import { applyEmployeeFix, duplicateKeys, isManualMeasurement, measurementField, measurementFields, measurementTenths, parseCSV, validateRow, type ParsedRow, type RowType } from './csv.ts';
 import { fromSheetRow, sheetTabOf } from './sheet.ts';
 import { commitUpload } from './commit.ts';
 
@@ -30,13 +26,7 @@ const measureValue = z.string().refine(s => {
 const measureOverrides = Object.fromEntries(measurementFields.map(f => [f, measureValue.optional()])) as Record<typeof measurementFields[number], z.ZodOptional<typeof measureValue>>;
 const manualSchemas = {
   customer: z.object({ customerName: z.string().trim().min(1).optional(), registeredName: z.string().trim().min(1).optional(), legacyId: legacyId.optional() }).strict(),
-  measurement: z.object({
-    customerLegacyId: legacyId.optional(), groupLegacyId: legacyId.optional(),
-    // A customer already in Moonproject, or a new person-customer; a group of that customer, or a new one; the wearer's name.
-    customerId: z.uuid().optional(), newCustomer: z.literal(true).optional(), groupId: z.uuid().optional(),
-    newGroupName: z.string().trim().min(1).max(200).optional(), wearerName: z.string().trim().min(1).max(200).optional(),
-    ...measureOverrides,
-  }).strict(),
+  measurement: z.object({ customerLegacyId: legacyId.optional(), groupLegacyId: legacyId.optional(), ...measureOverrides }).strict(),
   employee: z.object({
     employeeName: z.string().trim().min(1).optional(), legacyId: legacyId.optional(), rateCents: moneyCents.optional(),
     payType: z.enum(['daily', 'piece', 'monthly', 'mixed']).optional(),
@@ -44,15 +34,7 @@ const manualSchemas = {
   }).strict(),
   piece_rate: z.object({ garmentType: z.string().trim().min(1).optional(), operation: z.string().trim().min(1).optional(), rateCents: moneyCents.optional() }).strict(),
 };
-const bulkAssignBody = z.object({
-  rowIds: z.array(z.string().min(1)).min(1).max(500), mode: z.enum(['own', 'under']),
-  customerId: z.uuid().optional(), groupId: z.uuid().optional(), newGroupName: z.string().trim().min(1).max(200).optional(),
-}).strict();
-const employeeFixesBody = z.object({
-  fixes: z.array(z.object({
-    rowId: z.string().min(1), rateCents: moneyCents.optional(), payType: z.enum(['daily', 'piece', 'monthly', 'mixed']).optional(),
-  }).strict().refine(f => f.rateCents !== undefined || f.payType !== undefined, 'Type a rate or choose a pay type.')).min(1).max(500),
-}).strict();
+type ManualData = Record<string, string | number>;
 type MigRow = {
   id: string; upload_id: string; row_number: number; raw_json: string; row_type: RowType;
   status: string; issues_json: string; manual_data_json: string | null; legacy_id: string | null;
@@ -79,8 +61,7 @@ function staged(db: Db, uploadId: string): void {
 function state(row: MigRow): Record<string, unknown> {
   const manual = row.manual_data_json ? JSON.parse(row.manual_data_json) as ManualData : null;
   return {
-    // Rates and the names of people and groups are named, not valued: the audit log is not a place to read them.
-    status: row.status, manualData: manual && Object.fromEntries(Object.entries(manual).map(([k, v]) => [k, ['rateCents', 'wearerName', 'newGroupName'].includes(k) ? 'set' : v])),
+    status: row.status, manualData: manual && (manual.rateCents === undefined ? manual : { ...manual, rateCents: 'set' }),
     rate: row.rate_cents !== null, legacyId: row.legacy_id, mergeIntoRowId: row.merge_into_row_id,
     resolvedBy: row.resolved_by, resolvedAt: row.resolved_at,
   };
@@ -99,7 +80,8 @@ function effective(row: MigRow, manual: ManualData = manualFor(row)): Record<str
     if (manual.registeredName) raw.Registered_Name = String(manual.registeredName);
     if (manual.legacyId) raw.Legacy_ID = String(manual.legacyId);
   } else if (row.row_type === 'measurement') {
-    applyMeasurementAssignment(raw, manual);
+    if (manual.customerLegacyId) { raw.Customer_Name = String(manual.customerLegacyId); raw.Source = 'ASSIGNED'; }
+    if (manual.groupLegacyId) { raw.Group_Name = String(manual.groupLegacyId); raw.Source = 'ASSIGNED'; }
     for (const field of measurementFields) {
       if (manual[field] === undefined) continue;
       const oldKey = Object.keys(raw).find(key => measurementField(key) === field);
@@ -121,40 +103,17 @@ function parseManual(row: MigRow, input: unknown): ManualData {
   if (!result.success) throw new AppError('VALIDATION', 'Invalid manual data.', 422,
     result.error.issues.map(i => ({ field: i.path.join('.'), message: i.message })));
   const parsed = result.data as ManualData;
-  if (row.row_type === 'measurement') {
-    // A customer assignment must resolve to a staged customer ID in this upload, or to a customer already in Moonproject.
+  if (row.row_type === 'measurement' && (parsed.customerLegacyId || parsed.groupLegacyId)) {
+    // A customer assignment must resolve to a staged customer ID in this upload.
     // Group labels are retained for the future commit, under that customer.
-    const customers = ['customerLegacyId', 'customerId', 'newCustomer'].filter(k => parsed[k]);
-    if (customers.length > 1) invalid('Choose one customer for the measurements.');
-    if ((parsed.groupLegacyId || parsed.groupId || parsed.newGroupName) && !parsed.customerLegacyId && !parsed.customerId) invalid('Choose a customer before assigning a group.');
-    if (parsed.groupId && parsed.newGroupName) invalid('Choose an existing group or a new group, not both.');
-    if (parsed.newCustomer && !parsed.wearerName) invalid('A new customer needs the name from the sheet.');
+    if (!parsed.customerLegacyId) invalid('Choose a staged customer before assigning a group.');
   }
   return parsed;
 }
-type By = { userId: string; at: string };
-/** Runs a CUS create and takes it back, so the review asks CUS itself whether the group would be accepted. Returns the refusal in words, or null. */
-function refusedByCus(db: Db, attempt: () => unknown): string | null {
-  db.exec('SAVEPOINT mig_probe');
-  try { attempt(); return null; }
-  catch (cause) { return cause instanceof Error ? cause.message : String(cause); }
-  finally { db.exec('ROLLBACK TO mig_probe'); db.exec('RELEASE mig_probe'); }
-}
-/** The customer and group a bulk choice names must be usable now: an active customer, and a group that customer can hold. */
-function targetUsable(db: Db, manual: ManualData, by: By): void {
-  if (!manual.customerId) return;
-  const customer = customerRef(db, String(manual.customerId));
-  if (!customer || customer.is_active !== 1 || customer.merged_into_id) invalid('That customer is not an active customer.');
-  const who = { userId: by.userId, at: by.at, today: by.at.slice(0, 10) };
-  const customerId = String(manual.customerId);
-  const refusal = manual.groupId ? refusedByCus(db, () => createWearer(db, customerId, { fullName: 'Probe', groupId: String(manual.groupId) }, who))
-    : manual.newGroupName ? refusedByCus(db, () => createGroup(db, customerId, { name: String(manual.newGroupName) }, who)) : null;
-  if (refusal) invalid(refusal);
-}
-function assignmentValid(db: Db, row: MigRow, manual: ManualData, by: By): void {
+function assignmentValid(db: Db, row: MigRow, manual: ManualData): void {
   if (row.row_type !== 'measurement') return;
   const raw = JSON.parse(row.raw_json) as Record<string, string>;
-  if (isManualMeasurement(raw) && !manual.customerLegacyId && !manual.customerId && !manual.newCustomer) invalid('Assign this MANUAL measurement to a staged customer.');
+  if (isManualMeasurement(raw) && !manual.customerLegacyId) invalid('Assign this MANUAL measurement to a staged customer.');
   if (manual.customerLegacyId) {
     const customer = db.prepare(`SELECT r.id FROM mig_rows r JOIN mig_uploads u ON u.id = r.upload_id
       WHERE r.row_type = 'customer' AND r.legacy_id = ? AND r.status NOT IN ('excluded', 'merged')
@@ -162,7 +121,6 @@ function assignmentValid(db: Db, row: MigRow, manual: ManualData, by: By): void 
       .get(manual.customerLegacyId);
     if (!customer) invalid('Customer legacy ID is not an active staged customer in this upload.');
   }
-  targetUsable(db, manual, by);
 }
 function activeDuplicates(db: Db, row: MigRow, parsed: ParsedRow): string[] {
   const keys = new Set(duplicateKeys(parsed));
@@ -171,8 +129,8 @@ function activeDuplicates(db: Db, row: MigRow, parsed: ParsedRow): string[] {
     .all(row.upload_id, row.id) as MigRow[];
   return others.filter(other => duplicateKeys(validateRow(effective(other))).some(key => keys.has(key))).map(other => other.id);
 }
-function validateDecision(db: Db, row: MigRow, manual: ManualData, by: By): ParsedRow {
-  assignmentValid(db, row, manual, by);
+function validateDecision(db: Db, row: MigRow, manual: ManualData): ParsedRow {
+  assignmentValid(db, row, manual);
   const parsed = validateRow(effective(row, manual));
   const blocking = parsed.issues.filter(issue => !issue.includes('requires owner confirmation') && !issue.includes('seed requires owner confirmation'));
   if (blocking.length) invalid(blocking.join(' '));
@@ -250,7 +208,7 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
     tx(db, () => {
       const before = getRow(db, id); staged(db, before.upload_id);
       if (before.status !== 'needs_review') throw new AppError('CONFLICT', 'Row is not awaiting review.', 409);
-      const parsed = validateDecision(db, before, manualFor(before), { userId: user.userId, at });
+      const parsed = validateDecision(db, before, manualFor(before));
       db.prepare(`UPDATE mig_rows SET status = 'accepted', rate_cents = ?, legacy_id = ?, legacy_type = ?, resolved_by = ?, resolved_at = ? WHERE id = ?`)
         .run(parsed.rateCents, parsed.legacyId, parsed.legacyId ? parsed.rowType : null, user.userId, at, id);
       auditRow(db, user.userId, at, 'accept', before);
@@ -267,7 +225,7 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
       const before = getRow(db, id); staged(db, before.upload_id);
       if (before.status !== 'needs_review') throw new AppError('CONFLICT', 'Row is not awaiting review.', 409);
       const manual = parseManual(before, body.manualData);
-      const parsed = validateDecision(db, before, manual, { userId: user.userId, at });
+      const parsed = validateDecision(db, before, manual);
       db.prepare(`UPDATE mig_rows SET status = 'accepted', manual_data_json = ?, rate_cents = ?, legacy_id = ?, legacy_type = ?, resolved_by = ?, resolved_at = ? WHERE id = ?`)
         .run(JSON.stringify(manual), parsed.rateCents, parsed.legacyId, parsed.legacyId ? parsed.rowType : null, user.userId, at, id);
       auditRow(db, user.userId, at, 'fix', before);
@@ -314,122 +272,14 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
     return { success: true };
   });
 
-  /**
-   * The MANUAL size rows of the sheet, put in bulk: each its own customer (a person named as in the sheet), or all of them as wearers
-   * of one customer, in one of its groups or a new group. A row that cannot take it is skipped and said so; the rest are saved.
-   * The rows are accepted like a Fix does, so the dry run and the commit see them as before.
-   */
-  app.post('/api/mig/uploads/:uploadId/assign-sizes', auth, async req => {
-    const user = currentUser(req);
-    const { uploadId } = validation(uploadParams, req.params);
-    const body = validation(bulkAssignBody, req.body);
-    if (body.mode === 'own' && (body.customerId || body.groupId || body.newGroupName)) invalid('Making each row its own customer takes no customer or group.');
-    if (body.mode === 'under' && !body.customerId) invalid('Choose the customer the wearers belong to.');
-    if (body.groupId && body.newGroupName) invalid('Choose an existing group or a new group, not both.');
-    const at = stamp(clock);
-    const by = { userId: user.userId, at };
-    return tx(db, () => {
-      staged(db, uploadId);
-      const target: ManualData = body.mode === 'own' ? { newCustomer: true }
-        : { customerId: body.customerId!, ...(body.groupId ? { groupId: body.groupId } : {}), ...(body.newGroupName ? { newGroupName: body.newGroupName } : {}) };
-      targetUsable(db, target, by); // a customer or group that cannot be used stops the whole request, not row by row
-      const skipped: { rowId: string; rowNumber: number; reason: string }[] = [];
-      let assigned = 0;
-      for (const rowId of [...new Set(body.rowIds)]) {
-        const before = getRow(db, rowId);
-        const skip = (reason: string) => { skipped.push({ rowId, rowNumber: before.row_number, reason }); };
-        if (before.upload_id !== uploadId) invalid('A row is not in this upload.');
-        if (before.row_type !== 'measurement' || before.status !== 'needs_review') { skip('This row is not waiting for review as a measurement row.'); continue; }
-        const raw = JSON.parse(before.raw_json) as Record<string, string>;
-        if (!isManualMeasurement(raw)) { skip('This row already names its customer.'); continue; }
-        const name = manualName(raw);
-        if (!name) { skip('This row has no name to use for the customer or wearer.'); continue; }
-        const manual: ManualData = { ...target, wearerName: name };
-        try {
-          const parsed = validateDecision(db, before, manual, by);
-          db.prepare(`UPDATE mig_rows SET status = 'accepted', manual_data_json = ?, rate_cents = ?, legacy_id = ?, legacy_type = ?, resolved_by = ?, resolved_at = ? WHERE id = ?`)
-            .run(JSON.stringify(manual), parsed.rateCents, parsed.legacyId, parsed.legacyId ? parsed.rowType : null, user.userId, at, rowId);
-          auditRow(db, user.userId, at, 'assign', before);
-          assigned++;
-        } catch (cause) {
-          if (!(cause instanceof AppError)) throw cause;
-          skip(cause.message);
-        }
-      }
-      return { success: true, assigned, skipped };
-    });
-  });
-
-  /** For each MANUAL size row waiting for review: the one customer whose name is the same, ignoring case, spaces and punctuation. Two or none: no suggestion. */
-  app.get('/api/mig/uploads/:uploadId/size-suggestions', auth, async req => {
-    const { uploadId } = validation(uploadParams, req.params);
-    staged(db, uploadId);
-    const byName = new Map<string, { id: string; name: string }[]>();
-    for (const customer of activeCustomers(db)) {
-      const key = nameKey(customer.name);
-      if (key) byName.set(key, [...(byName.get(key) ?? []), customer]);
-    }
-    const rows = db.prepare(`SELECT * FROM mig_rows WHERE upload_id = ? AND row_type = 'measurement' AND status = 'needs_review' ORDER BY row_number, id`).all(uploadId) as MigRow[];
-    const suggestions: { rowId: string; customerId: string; code: string; name: string }[] = [];
-    for (const row of rows) {
-      const raw = JSON.parse(row.raw_json) as Record<string, string>;
-      if (!isManualMeasurement(raw)) continue;
-      const matches = byName.get(nameKey(manualName(raw))) ?? [];
-      if (matches.length === 1) suggestions.push({ rowId: row.id, customerId: matches[0]!.id, code: customerRef(db, matches[0]!.id)?.code ?? '', name: matches[0]!.name });
-    }
-    return { suggestions };
-  });
-
-  /**
-   * Employees' missing pay types and rates, typed in one table and saved together. Every row is checked as a Fix would check it;
-   * if any row is refused nothing is saved and each refusal is named. The rows are accepted, as a Fix accepts them.
-   */
-  app.post('/api/mig/uploads/:uploadId/fix-employees', auth, async req => {
-    const user = currentUser(req);
-    const { uploadId } = validation(uploadParams, req.params);
-    const { fixes } = validation(employeeFixesBody, req.body);
-    const at = stamp(clock);
-    const by = { userId: user.userId, at };
-    return tx(db, () => {
-      staged(db, uploadId);
-      const checked: { before: MigRow; manual: ManualData; parsed: ParsedRow }[] = [];
-      const refused: { rowId: string; rowNumber: number; message: string }[] = [];
-      for (const fix of fixes) {
-        const before = getRow(db, fix.rowId);
-        const refuse = (message: string) => { refused.push({ rowId: fix.rowId, rowNumber: before.row_number, message }); };
-        if (before.upload_id !== uploadId || before.row_type !== 'employee') { refuse('This is not an employee row of this upload.'); continue; }
-        if (before.status !== 'needs_review') { refuse('This row is not awaiting review.'); continue; }
-        const { rowId: _rowId, ...typed } = fix;
-        const manual: ManualData = typed;
-        const payType = String(manual.payType ?? (JSON.parse(before.raw_json) as Record<string, string>).Pay_Type ?? '').toLowerCase();
-        if (payType === 'piece' && manual.rateCents !== undefined) { refuse('Piece pay has no rate here: the piece-rate list has it. Clear the rate, or choose daily or monthly pay.'); continue; }
-        try { checked.push({ before, manual, parsed: validateDecision(db, before, manual, by) }); }
-        catch (cause) { if (!(cause instanceof AppError)) throw cause; refuse(cause.message); }
-      }
-      if (refused.length) throw new AppError('VALIDATION', `${refused.length === 1 ? 'One row cannot' : `${refused.length} rows cannot`} be saved, so nothing was saved: ${
-        refused.map(r => `row ${r.rowNumber}: ${r.message}`).join(' ')}`, 422, refused);
-      for (const { before, manual, parsed } of checked) {
-        db.prepare(`UPDATE mig_rows SET status = 'accepted', manual_data_json = ?, rate_cents = ?, legacy_id = ?, legacy_type = ?, resolved_by = ?, resolved_at = ? WHERE id = ?`)
-          .run(JSON.stringify(manual), parsed.rateCents, parsed.legacyId, parsed.legacyId ? parsed.rowType : null, user.userId, at, before.id);
-        auditRow(db, user.userId, at, 'fix', before);
-      }
-      return { success: true, saved: checked.length };
-    });
-  });
-
   app.post('/api/mig/uploads/:uploadId/dry-run', auth, async req => {
-    const user = currentUser(req);
     const { uploadId } = validation(uploadParams, req.params);
     staged(db, uploadId);
-    const by = { userId: user.userId, at: stamp(clock) };
     const rows = db.prepare('SELECT * FROM mig_rows WHERE upload_id = ? ORDER BY row_number, id').all(uploadId) as MigRow[];
     const pending = rows.filter(r => r.status === 'needs_review').length;
     if (pending) throw new AppError('PENDING_REVIEW', `There are ${pending} rows that still need review.`, 400);
     const counts = { customers: 0, measurements: 0, employees: 0, pieceRates: 0,
       excluded: 0, merged: 0, total: rows.length };
-    // What the bulk choices for MANUAL size rows will make; named in the answer only when there is any.
-    const fromManual = { newCustomers: 0, wearers: 0 };
-    const newGroups = new Set<string>();
     const normalized: Record<'customer' | 'measurement' | 'employee' | 'piece_rate', Record<string, string>[]> = {
       customer: [], measurement: [], employee: [], piece_rate: [],
     };
@@ -440,7 +290,7 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (row.status === 'excluded') { counts.excluded++; continue; }
       if (row.status === 'merged') { counts.merged++; continue; }
       if (row.row_type === 'unknown') invalid('Unknown row type cannot pass a dry run.');
-      assignmentValid(db, row, manualFor(row), by);
+      assignmentValid(db, row, manualFor(row));
       const data = effective(row);
       const parsed = validateRow(data);
       const blocking = parsed.issues.filter(issue => !issue.includes('requires owner confirmation') && !issue.includes('seed requires owner confirmation'));
@@ -448,10 +298,6 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (row.row_type === 'customer') counts.customers++;
       if (row.row_type === 'measurement') {
         counts.measurements++;
-        const manual = manualFor(row);
-        if (manual.newCustomer) fromManual.newCustomers++;
-        if (manual.wearerName) fromManual.wearers++;
-        if (manual.newGroupName) newGroups.add(`${manual.customerId}:${String(manual.newGroupName).toLowerCase()}`);
         for (const [key, value] of Object.entries(data)) if (measurementField(key)) {
           const tenths = measurementTenths(value);
           if (tenths !== null) measurementCellTenths = sumExact(measurementCellTenths, tenths);
@@ -469,8 +315,7 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
       }
       normalized[row.row_type].push(data);
     }
-    return { success: true, counts: { ...counts, ...(fromManual.newCustomers ? { newCustomers: fromManual.newCustomers } : {}),
-      ...(newGroups.size ? { newGroups: newGroups.size } : {}), ...(fromManual.wearers ? { wearers: fromManual.wearers } : {}) }, checksums: {
+    return { success: true, counts, checksums: {
       customer: { sha256: hash(normalized.customer) },
       measurement: { sha256: hash(normalized.measurement), cellTenths: measurementCellTenths },
       employee: { sha256: hash(normalized.employee), rateCents: employeeRateCents },

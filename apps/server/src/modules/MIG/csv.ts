@@ -48,40 +48,8 @@ export function isManualMeasurement(raw: Record<string, string>): boolean {
     || (!raw.Customer_Name && !raw.Customer_ID && !raw.Group_Name);
 }
 
-/** What the owner typed for a row: text, pesos in centavos, or a yes for "make this its own customer". */
-export type ManualData = Record<string, string | number | boolean>;
-
-/** The name a MANUAL row carries: the wearer's, or the sheet's Customer Name (a person typed in without a customer). Blank when it is only the word MANUAL. */
-export function manualName(raw: Record<string, string>): string {
-  return [raw.Wearer_Name, raw.Person_Name, raw.Full_Name, raw.Name, raw.Customer_Name]
-    .map(v => (v ?? '').trim()).find(v => v !== '' && v.toUpperCase() !== 'MANUAL') ?? '';
-}
-
-/** A name with case, spaces and punctuation taken out, so "JUAN  dela-Cruz." and "Juan Dela Cruz" are the same. */
-export const nameKey = (name: string): string => name.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-
-/**
- * Where the owner put a measurement row, laid over the staged values: a staged customer (by legacy ID), a customer already in
- * Moonproject (by id), or a new person-customer named as in the sheet; and a group. A bulk choice also names the wearer.
- * The keys `id:` and `MANUAL:` mark the ones the commit resolves itself. Shared by the review and the commit.
- */
-export function applyMeasurementAssignment(raw: Record<string, string>, manual: ManualData): void {
-  const text = (v: unknown): string => String(v);
-  if (manual.customerLegacyId) { raw.Customer_ID = text(manual.customerLegacyId); raw.Customer_Name = text(manual.customerLegacyId); raw.Source = 'ASSIGNED'; }
-  if (manual.groupLegacyId) { raw.Group_ID = text(manual.groupLegacyId); raw.Group_Name = text(manual.groupLegacyId); raw.Source = 'ASSIGNED'; }
-  if (manual.customerId) { raw.Customer_ID = `id:${text(manual.customerId)}`; raw.Customer_Name = raw.Customer_ID; raw.Source = 'ASSIGNED'; }
-  if (manual.newCustomer) {
-    raw.Customer_ID = `MANUAL:${raw.Measurement_ID ?? ''}`;
-    raw.Customer_Name = text(manual.wearerName ?? '');
-    raw.Source = 'ASSIGNED';
-  }
-  if (manual.groupId) { raw.Group_ID = `id:${text(manual.groupId)}`; delete raw.Group_Name; }
-  if (manual.newGroupName) { raw.Group_Name = text(manual.newGroupName); delete raw.Group_ID; }
-  if (manual.wearerName) { raw.Wearer_Name = text(manual.wearerName); raw.Wearer_ID = `manual:${raw.Measurement_ID ?? ''}`; }
-}
-
 /** What the owner typed for an employee row, put over the staged values. Shared by the review and the commit. */
-export function applyEmployeeFix(raw: Record<string, string>, manual: ManualData): void {
+export function applyEmployeeFix(raw: Record<string, string>, manual: Record<string, string | number>): void {
   if (manual.employeeName) raw.Employee_Name = String(manual.employeeName);
   if (manual.legacyId) raw.Employee_ID = String(manual.legacyId);
   if (manual.payType) raw.Pay_Type = String(manual.payType);

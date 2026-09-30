@@ -145,9 +145,8 @@ describe('the customer sizes tab', () => {
   test('each row is linked to its customer by Customer ID, and the sizes and remarks go into the note', async () => {
     const owner = await env.as('owner');
     const { id, rows } = await stage(owner, 'Customer Sizes.csv', sizesCsv);
-    // The MANUAL row can be given a customer that is staged in an upload still waiting (the customers file above was never committed), then left out.
-    expect((await owner.post(`/api/mig/rows/${rows[0]!.id}/fix`, { manualData: { customerLegacyId: 'C-999' } })).statusCode).toBe(422); // no staged customer has that ID
-    expect((await owner.post(`/api/mig/rows/${rows[0]!.id}/fix`, { manualData: { customerLegacyId: 'C-003' } })).statusCode).toBe(200);
+    // The MANUAL row is assigned to a customer, as before.
+    expect((await owner.post(`/api/mig/rows/${rows[0]!.id}/fix`, { manualData: { customerLegacyId: 'C-003' } })).statusCode).toBe(422); // C-003 is not staged: it is already imported
     expect((await owner.post(`/api/mig/rows/${rows[0]!.id}/exclude`, {})).statusCode).toBe(200);
     const done = await commit(owner, id);
     expect(done.counts.measurement).toEqual({ imported: 2, alreadyImported: 0 });

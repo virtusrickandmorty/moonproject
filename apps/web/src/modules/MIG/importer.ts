@@ -5,7 +5,7 @@
  * here posts or recomputes a figure the server reports.
  */
 import { formatPeso, formatPesos, parsePesos } from '@moonproject/shared';
-import type { DryRunResult, MigAssignBody, MigCommitResult, MigEmployeeFix, MigRow, MigRowStatus, MigRowType, MigSizeSuggestion, MigUpload } from '../../api.ts';
+import type { DryRunResult, MigCommitResult, MigRow, MigRowStatus, MigRowType, MigUpload } from '../../api.ts';
 
 /** The four kinds of file the importer takes. The server reads the kind from the columns; the screen checks it before sending. */
 export type MigKind = Exclude<MigRowType, 'unknown'>;
@@ -318,10 +318,6 @@ export function dryRunLines(r: DryRunResult): [label: string, value: string][] {
   return [
     ['Customers to import', String(c.customers)], ['Measurement rows to import', String(c.measurements)], ['Employees to import', String(c.employees)],
     ['Piece rates to import', String(c.pieceRates)], ['Left out (excluded)', String(c.excluded)], ['Merged into another row', String(c.merged)], ['Rows in the file', String(c.total)],
-    // What the choices made for the sizes without a customer will create, when there were any.
-    ...(c.newCustomers ? [['New customers (a person each), from sizes without a customer', String(c.newCustomers)] as [string, string]] : []),
-    ...(c.newGroups ? [['New groups, from sizes without a customer', String(c.newGroups)] as [string, string]] : []),
-    ...(c.wearers ? [['Wearers made from sizes without a customer', String(c.wearers)] as [string, string]] : []),
   ];
 }
 /** Every row of the file is counted once: imported by kind, excluded or merged. */
@@ -358,106 +354,3 @@ export function commitLines(r: MigCommitResult): [label: string, value: string][
   });
 }
 export const clearedWords = (rowsCleared: number): string => `The raw values of ${rowsWord(rowsCleared)} were cleared from staging.`;
-
-/* ---- sizes typed without a customer (the sheet's MANUAL rows), in bulk ---- */
-
-/** A measurement row still waiting to be given a customer: what the bulk choice below is for. */
-export const isManualSize = (row: Pick<MigRow, 'rowType' | 'status' | 'issues'>): boolean => needsCustomer(row as MigRow) && row.status === 'needs_review';
-export const manualSizes = (rows: MigRow[]): MigRow[] => rows.filter(isManualSize);
-
-/** The person's name on a MANUAL row: the sheet's Customer Name, unless it is only the word MANUAL. Blank when there is none. */
-export function sizeName(row: Pick<MigRow, 'raw'>): string {
-  const raw = row.raw;
-  return [raw.Wearer_Name, raw.Person_Name, raw.Full_Name, raw.Name, raw.Customer_Name].map((v) => (v ?? '').trim()).find((v) => v !== '' && v.toUpperCase() !== 'MANUAL') ?? '';
-}
-/** Case, spaces and punctuation do not matter (MIG/csv.ts `nameKey`, same rule). */
-export const nameKey = (name: string): string => name.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-
-/** The suggestion for a row, if the server made one and the row is still waiting. */
-export const suggestionFor = (row: MigRow, suggestions: MigSizeSuggestion[]): MigSizeSuggestion | undefined => suggestions.find((s) => s.rowId === row.id);
-export const suggestionWords = (s: MigSizeSuggestion): string => `${s.name} (${s.code})`;
-
-export type SizeChoice = { mode: 'own' } | { mode: 'under'; customerId: string; group: { kind: 'none' } | { kind: 'existing'; id: string } | { kind: 'new'; name: string } };
-export type AssignResult = { ok: true; body: MigAssignBody } | { ok: false; message: string };
-/** What "Apply" sends for the rows ticked: the choice as the server names it. A customer is needed for "under"; a new group needs its name. */
-export function assignBody(rowIds: string[], choice: SizeChoice): AssignResult {
-  if (rowIds.length === 0) return { ok: false, message: 'Tick the rows first.' };
-  if (choice.mode === 'own') return { ok: true, body: { rowIds, mode: 'own' } };
-  if (!choice.customerId) return { ok: false, message: 'Pick the customer these people belong to.' };
-  const base = { rowIds, mode: 'under' as const, customerId: choice.customerId };
-  if (choice.group.kind === 'existing') return { ok: true, body: { ...base, groupId: choice.group.id } };
-  if (choice.group.kind === 'new') {
-    const name = choice.group.name.trim();
-    return name ? { ok: true, body: { ...base, newGroupName: name } } : { ok: false, message: 'Type the name of the new group.' };
-  }
-  return { ok: true, body: base };
-}
-/** A new group typed with the name of one the customer already has means that group (the server refuses a second one of the same name). */
-export function groupChoice(kind: 'none' | 'existing' | 'new', groupId: string, newName: string, groups: { id: string; name: string }[]): Extract<SizeChoice, { mode: 'under' }>['group'] {
-  if (kind === 'existing') return groupId ? { kind: 'existing', id: groupId } : { kind: 'none' };
-  if (kind === 'new') {
-    const same = groups.find((g) => nameKey(g.name) === nameKey(newName) && nameKey(newName) !== '');
-    return same ? { kind: 'existing', id: same.id } : { kind: 'new', name: newName };
-  }
-  return { kind: 'none' };
-}
-/** The suggestions still to accept, grouped by customer: each group is one request. */
-export function suggestionBatches(rows: MigRow[], suggestions: MigSizeSuggestion[]): { customerId: string; name: string; rowIds: string[] }[] {
-  const waiting = new Set(manualSizes(rows).map((r) => r.id));
-  const batches = new Map<string, { customerId: string; name: string; rowIds: string[] }>();
-  for (const s of suggestions) if (waiting.has(s.rowId)) {
-    const batch = batches.get(s.customerId) ?? { customerId: s.customerId, name: suggestionWords(s), rowIds: [] };
-    batch.rowIds.push(s.rowId);
-    batches.set(s.customerId, batch);
-  }
-  return [...batches.values()];
-}
-/** What the server did with a bulk choice, in words: how many, and which rows it could not take and why. */
-export function assignedWords(r: { assigned: number; skipped: { rowNumber: number; reason: string }[] }): string {
-  const done = `${r.assigned} ${r.assigned === 1 ? 'row was' : 'rows were'} assigned and accepted.`;
-  return r.skipped.length ? `${done} ${r.skipped.length} could not be: ${r.skipped.map((s) => `row ${s.rowNumber}: ${s.reason}`).join(' ')}` : done;
-}
-
-/* ---- employees' missing rates and pay types, in one table ---- */
-
-const PAY_TYPE_ISSUE = /rate|Salary Category|Pay type/i;
-/** An employee still waiting because of a rate or pay type: the rows of the table. Other problems (a date, a status) stay with Fix. */
-export const employeeTableRows = (rows: MigRow[]): MigRow[] =>
-  rows.filter((r) => r.rowType === 'employee' && r.status === 'needs_review' && blockingIssues(r.issues).some((i) => PAY_TYPE_ISSUE.test(i)));
-
-export type PayChoice = '' | 'daily' | 'piece' | 'monthly';
-export const PAY_CHOICES: { key: PayChoice; label: string }[] = [{ key: '', label: 'Choose…' }, { key: 'daily', label: 'Daily' }, { key: 'piece', label: 'Piece rate' }, { key: 'monthly', label: 'Monthly' }];
-export interface EmployeeEdit { payType: PayChoice; rate: string }
-/** The row's pay type from the sheet (the Salary Category), blank when the sheet did not say. */
-export const employeeStart = (row: MigRow): EmployeeEdit => {
-  const t = (row.raw.Pay_Type ?? '').trim().toLowerCase();
-  return { payType: t === 'daily' || t === 'piece' || t === 'monthly' ? t : '', rate: '' };
-};
-/** Whether the rate box means anything: piece pay has no rate here, the piece-rate list has it. */
-export const takesRate = (payType: PayChoice): boolean => payType !== 'piece';
-export type EmployeeFixesResult = { ok: true; fixes: MigEmployeeFix[] } | { ok: false; message: string };
-/**
- * What "Save all" sends: for each row where the owner chose a pay type other than the sheet's or typed a rate, only that.
- * Rows left alone are not sent. A rate that is not a peso amount stops the save before anything is sent.
- */
-export function employeeFixes(rows: MigRow[], edits: Record<string, EmployeeEdit>): EmployeeFixesResult {
-  const fixes: MigEmployeeFix[] = [];
-  for (const row of rows) {
-    const edit = edits[row.id];
-    if (!edit) continue;
-    const start = employeeStart(row);
-    const fix: MigEmployeeFix = { rowId: row.id };
-    if (edit.payType && edit.payType !== start.payType) fix.payType = edit.payType;
-    const text = edit.rate.trim();
-    if (text !== '' && takesRate(edit.payType)) {
-      let cents: number;
-      try { cents = parsePesos(text); } catch { return { ok: false, message: `${rowTitle(row)}: type a peso amount such as 650.50.` }; }
-      if (cents < 0) return { ok: false, message: `${rowTitle(row)}: the rate cannot be negative.` };
-      fix.rateCents = cents;
-    }
-    if (fix.payType !== undefined || fix.rateCents !== undefined) fixes.push(fix);
-  }
-  return fixes.length ? { ok: true, fixes } : { ok: false, message: 'Nothing was typed or chosen yet.' };
-}
-/** What is still missing after a save, for the line under the table. */
-export const employeesLeftWords = (left: number): string => (left === 0 ? 'Every employee has a pay type and rate.' : `${left} ${left === 1 ? 'employee still needs' : 'employees still need'} a pay type or rate.`);

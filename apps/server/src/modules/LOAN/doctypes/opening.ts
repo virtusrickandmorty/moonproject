@@ -13,7 +13,7 @@ import fc from 'fast-check';
 import { allocate, applyRate, formatPeso, isBusinessDate, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { resolveAccount } from '../../../engine/ledger/accounts.ts';
-import { assertOpeningOpen, duplicateOpeningIssue, OPENING_PERMISSIONS, openingIssues } from '../../ACC/public.ts';
+import { assertOpeningOpen, OPENING_PERMISSIONS, openingIssues } from '../../ACC/public.ts';
 import { addMonths, generateSchedule, KINDS, METHODS, schedule, type LoanKind, type Method, type ScheduleRow } from '../loans.ts';
 import { loanDoc } from './loan.ts';
 
@@ -85,14 +85,6 @@ export const openingLoanDoc: DocTypeDef<OpeningLoanInput, OpeningLoan> = {
     if (doc.rows[0] && doc.rows[0].dueDate <= ctx.businessDate) {
       issues.push({ field: 'rows', code: 'DUE_ALREADY', level: 'warning', message: `The first instalment fell due on ${doc.rows[0].dueDate}, by the cut-over date. Please check it is still unpaid.` });
     }
-    const earlier = ctx.db
-      .prepare(
-        `SELECT d.number FROM loan_loans l JOIN documents d ON d.id = l.document_id
-         WHERE d.doc_type = 'loan.opening' AND d.status = 'posted' AND lower(l.lender) = lower(?) AND l.principal_cents = ? ORDER BY d.number LIMIT 1`,
-      )
-      .pluck()
-      .get(doc.lender, doc.principalCents) as string | undefined;
-    issues.push(...duplicateOpeningIssue(ctx.db, 'lender', earlier, `this loan (${doc.lender}, ${formatPeso(doc.principalCents)} still owed)`));
     return issues;
   },
 
