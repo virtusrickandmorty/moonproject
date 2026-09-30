@@ -10,7 +10,7 @@ import { Button, Dialog, Field, Notice, Panel, inputClass } from '../../componen
 import { useToday } from '../../generic/record.tsx';
 import { Link } from '../../router.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
-import { DEPOSIT_MODES, EWT_CLASS_NAMES, checkDraft, formOf, isEditable, ownScreensFor, titleOf, valueOn, wordsOf, type Checked, type Form } from './settings.ts';
+import { BAD_DEBT_METHODS, DEPOSIT_MODES, EWT_CLASS_NAMES, checkDraft, formOf, isEditable, ownScreensFor, titleOf, valueOn, wordsOf, type Checked, type Form } from './settings.ts';
 
 export function Settings({ me }: { me: Me }) {
   const [settings, setSettings] = useState<Setting[]>();
@@ -78,6 +78,9 @@ function pct(form: Form, set: (k: string, v: string) => void, key: string, label
 export function ValueFields({ settingKey, form, set }: { settingKey: string; form: Form; set: (k: string, v: string) => void }) {
   if (settingKey === 'sales.deposit_vat_mode') {
     return <Field label="Downpayment VAT" required><select className={inputClass} value={form.choice ?? ''} onChange={(e) => set('choice', e.target.value)}>{Object.entries(DEPOSIT_MODES).map(([k, w]) => <option key={k} value={k}>{w}</option>)}</select></Field>;
+  }
+  if (settingKey === 'acc.bad_debt_method') {
+    return <Field label="Bad debts" required><select className={inputClass} value={form.choice ?? ''} onChange={(e) => set('choice', e.target.value)}>{Object.entries(BAD_DEBT_METHODS).map(([k, w]) => <option key={k} value={k}>{w}</option>)}</select></Field>;
   }
   if (settingKey === 'tax.top_withholding_agent' || settingKey === 'col.forfeit_vatable') {
     return <Field label="Value" required><select className={inputClass} value={form.yes ?? 'no'} onChange={(e) => set('yes', e.target.value)}><option value="yes">Yes</option><option value="no">No</option></select></Field>;

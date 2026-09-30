@@ -6,6 +6,9 @@
  *   Quarterly: 2307s to payees by the 20th day after the quarter; 2550Q with the SLSP by the 25th; 1601-EQ with the QAP
  *   by the last day of the next month; 1702Q within 60 days after Q1 to Q3.
  *   Yearly: 2316 to employees and 1604-C by 31 January, 1604-E by 1 March, 1702-RT by 15 April.
+ *   Final tax (PLAN D5 DIV): the 1601-FQ by the last day of the month after each quarter in which final tax was withheld
+ *   (on dividends), and the 1604-F by 31 January after each year in which any was (RR 11-2018). Shown only for those
+ *   periods: a shop that declares no dividend is not registered for final withholding and files neither.
  * A due date on a Saturday, a Sunday or an active holiday (EMP's holiday list) moves to the next working day [P, S21];
  * the date in the rules stays beside it. Whether a special non-working day moves a deadline is inferred; the
  * accountant confirms (the BIR usually says so in an RMC).
@@ -14,7 +17,7 @@ import { manilaDate } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { holidaysBetween } from '../EMP/public.ts';
 
-export const TAX_FORMS = ['0619-E', '1601-C', '2307', '2550Q', '1601-EQ', '1702Q', '2316', '1604-C', '1604-E', '1702-RT'] as const;
+export const TAX_FORMS = ['0619-E', '1601-C', '2307', '2550Q', '1601-EQ', '1601-FQ', '1702Q', '2316', '1604-C', '1604-F', '1604-E', '1702-RT'] as const;
 export type TaxForm = (typeof TAX_FORMS)[number];
 
 const TITLES: Record<TaxForm, string> = {
@@ -23,9 +26,11 @@ const TITLES: Record<TaxForm, string> = {
   '2307': 'Give each supplier its 2307 for the quarter',
   '2550Q': 'Quarterly VAT return, with the SLSP and the SAWT for VAT withheld',
   '1601-EQ': 'Quarterly expanded withholding tax return, with the QAP',
+  '1601-FQ': 'Quarterly final withholding tax return (tax withheld on dividends)',
   '1702Q': 'Quarterly income tax return (cumulative), with the SAWT',
   '2316': 'Give each employee their 2316 for the year',
   '1604-C': 'Annual information return of compensation withheld, with the alphalist',
+  '1604-F': 'Annual information return of final taxes withheld, with the alphalist of payees',
   '1604-E': 'Annual information return of expanded withholding, with the alphalist',
   '1702-RT': 'Annual income tax return, with the SAWT',
 };
@@ -75,6 +80,7 @@ function deadlinesOfYear(y: number): Omit<Deadline, 'dueDate'>[] {
     add('2307', period, label, start, end, addDays(end, 20));
     add('2550Q', period, label, start, end, addDays(end, 25));
     add('1601-EQ', period, label, start, end, monthEnd(ny, nm));
+    add('1601-FQ', period, label, start, end, monthEnd(ny, nm));
     // 1702Q is cumulative: it covers the year up to the quarter's end. Q4 is the annual return.
     if (q < 4) add('1702Q', period, `${label}, year to date`, ymd(y, 1, 1), end, addDays(end, 60));
   }
@@ -82,6 +88,7 @@ function deadlinesOfYear(y: number): Omit<Deadline, 'dueDate'>[] {
   const [ys, ye] = [ymd(y, 1, 1), ymd(y, 12, 31)];
   add('2316', year, year, ys, ye, ymd(y + 1, 1, 31));
   add('1604-C', year, year, ys, ye, ymd(y + 1, 1, 31));
+  add('1604-F', year, year, ys, ye, ymd(y + 1, 1, 31));
   add('1604-E', year, year, ys, ye, ymd(y + 1, 3, 1));
   add('1702-RT', year, year, ys, ye, ymd(y + 1, 4, 15));
   return out;
@@ -102,9 +109,12 @@ export function taxDeadlines(db: Db, from: string, to: string): Deadline[] {
   // A rule date a few days before `from` can move into the range, and the periods of the year before are due early in
   // `from`'s year (1702-RT by 15 April at the latest).
   const holidays = new Set(holidaysBetween(db, addDays(from, -31), addDays(to, 31)).map((h) => h.date));
+  const finalTax = new Set(finalTaxQuarters(db));
+  const filed = (d: Omit<Deadline, 'dueDate'>) =>
+    d.form === '1601-FQ' ? finalTax.has(d.period) : d.form === '1604-F' ? [1, 2, 3, 4].some((q) => finalTax.has(`${d.period}-Q${q}`)) : true;
   const out: Deadline[] = [];
   for (let y = Number(from.slice(0, 4)) - 1; y <= Number(to.slice(0, 4)); y++) {
-    for (const d of deadlinesOfYear(y)) {
+    for (const d of deadlinesOfYear(y).filter(filed)) {
       const dueDate = nextWorkingDay(d.statutoryDate, holidays);
       if (dueDate >= from && dueDate <= to) out.push({ ...d, dueDate });
     }
@@ -130,6 +140,26 @@ export const monthRange = (y: number, m: number) => ({ from: ymd(y, m, 1), to: m
 /** When one return for one period is due, after weekends and holidays (period as the calendar writes it: 2026-07, 2026-Q3). */
 export function returnDue(db: Db, form: TaxForm, period: string, periodEnd: string): string | null {
   return taxDeadlines(db, periodEnd, addDays(periodEnd, 120)).find((d) => d.form === form && d.period === period)?.dueDate ?? null;
+}
+
+/**
+ * The quarters in which final tax was withheld on 2312 (net of cancels; a BIR payment withholds nothing), oldest first,
+ * like 2026-Q3: when a 1601-FQ is filed.
+ */
+export function finalTaxQuarters(db: Db): string[] {
+  const rows = db
+    .prepare(
+      `SELECT substr(j.business_date, 1, 7) AS month, SUM(l.credit_cents - l.debit_cents) AS cents FROM journal_lines l JOIN journals j ON j.id = l.journal_id
+       JOIN accounts a ON a.id = l.account_id LEFT JOIN documents d ON d.id = j.source_id AND j.source_type = 'document'
+       WHERE j.sealed = 1 AND a.role_key = 'FINAL_TAX_PAYABLE' AND d.doc_type IS NOT 'tax.bir_payment' GROUP BY 1 ORDER BY 1`,
+    )
+    .all() as { month: string; cents: number }[];
+  const net = new Map<string, number>();
+  for (const r of rows) {
+    const q = `${r.month.slice(0, 4)}-Q${Math.ceil(Number(r.month.slice(5)) / 3)}`;
+    net.set(q, (net.get(q) ?? 0) + r.cents);
+  }
+  return [...net].filter(([, c]) => c !== 0).map(([q]) => q);
 }
 
 /** The quarter that holds a date. */

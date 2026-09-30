@@ -75,7 +75,6 @@ function cashBalance(db: Db, accountId: number): number {
 }
 
 function denominations(cents: number): { denominationCents: number; qty: number }[] {
-  if (cents < 0) cents = 0; // Fix negative till
   if (!Number.isSafeInteger(cents) || cents < 0) throw new Error(`Cannot count a negative or invalid till: ${cents}`);
   let left = cents;
   const lines: { denominationCents: number; qty: number }[] = [];
@@ -265,7 +264,7 @@ export async function createPracticeData(dbPath: string, days: number, start = '
         tenders: [{ cashPlaceId: bank, amountCents: 50_000 }],
       });
       await record(encoder, 'exp.voucher', {
-        categoryId, cashPlaceId: till, amountCents: 25_000,
+        categoryId, tenders: [{ cashPlaceId: till, amountCents: 25_000 }], amountCents: 25_000,
         description: 'Practice shop supplies and utilities', supplierId: utility,
         supplierInvoiceNo: `UTIL-${serial}`, supplierInvoiceDate: date,
       });
@@ -291,7 +290,9 @@ export async function createPracticeData(dbPath: string, days: number, start = '
         const slips = ok(await accountant.get(`/api/pay/runs/${run.id}/payslips`), 'payroll slips');
         const people = slips.employees as { employeeId: string; netCents: number }[];
         const total = people.reduce((sum, person) => sum + person.netCents, 0);
-        if (total > 0) await record(accountant, 'pay.release', {
+        // Paid from the till when it holds enough; otherwise the run waits for its release, as payroll does when the cash
+        // is not in yet (a practice shop started near a month end has only a day's takings in the till).
+        if (total > 0 && total <= cashBalance(db, till)) await record(accountant, 'pay.release', {
           runId: run.id, employeeIds: people.map((person) => person.employeeId),
           tenders: [{ cashPlaceId: till, amountCents: total }],
         });

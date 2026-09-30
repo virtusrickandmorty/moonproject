@@ -29,6 +29,8 @@ function FieldInput({ f, value, set, places }: { f: FieldSpec; value: string; se
       );
     case 'money':
       return <input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={value} onChange={on} />;
+    case 'date':
+      return <input type="date" className={inputClass} value={value} onChange={on} />;
     case 'longText':
       return <textarea rows={2} className={inputClass} value={value} onChange={on} />;
     case 'boolean':
