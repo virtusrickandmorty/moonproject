@@ -15,6 +15,8 @@
     "check": "npm run typecheck && npm test",
     "dev:server": "tsx apps/server/src/main.ts",
     "practice-data": "tsx apps/server/src/platform/practice/data.ts",
+    "perf-data": "tsx apps/server/src/platform/practice/perf-data.ts",
+    "perf": "vitest run -c vitest.perf.config.ts",
     "restore": "tsx apps/server/src/modules/BAK/cli.ts",
     "blind-pack": "tsx tools/blind-pack.ts",
     "compare-blind": "tsx tools/compare-blind.ts",

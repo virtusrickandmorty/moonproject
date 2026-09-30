@@ -13,12 +13,20 @@ function Item({ item, action, muted = false }: { item: DashItem; action?: React.
   </li>;
 }
 
+const NOTE_PAGE = 50;
+
 function Notifications({ all = false }: { all?: boolean }) {
   const [rows, setRows] = useState<DashNotification[] | null>(null);
+  const [more, setMore] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
-  useEffect(() => { void api.dashNotifications().then(setRows, (e: Error) => setError(e.message)); }, []);
-  const shown = all ? rows : rows?.filter((n) => !n.read).slice(0, 8);
+  // The home panel asks for its 8 unread ones; the full list comes 50 at a time (there can be thousands).
+  const load = (offset: number) => api.dashNotifications(all ? { limit: NOTE_PAGE, offset } : { limit: 8, offset: 0, unread: true }).then((page) => {
+    setRows((prior) => (offset ? [...(prior ?? []), ...page] : page));
+    setMore(all && page.length === NOTE_PAGE);
+  }, (e: Error) => setError(e.message));
+  useEffect(() => { void load(0); }, []);
+  const shown = rows;
   async function markRead(id: string) {
     setBusy(id);
     try {
@@ -33,6 +41,7 @@ function Notifications({ all = false }: { all?: boolean }) {
     {shown?.length === 0 && <p className="text-sm text-slate-500">Nothing needs your attention.</p>}
     <ul>{shown?.map((row) => <Item key={row.id} item={row} muted={row.read} action={!row.read &&
       <button type="button" disabled={busy === row.id} onClick={() => void markRead(row.id)} className="shrink-0 text-xs text-indigo-700 hover:underline disabled:opacity-50">Mark read</button>} />)}</ul>
+    {more && <button type="button" onClick={() => void load(rows?.length ?? 0)} className="text-sm text-indigo-700 hover:underline">Show more</button>}
     {!all && <Link to="/dash/notifications" className="text-sm text-indigo-700 hover:underline">See all notifications</Link>}
   </Panel>;
 }

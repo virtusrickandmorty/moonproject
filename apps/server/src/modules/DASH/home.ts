@@ -7,7 +7,7 @@ import type { SessionUser } from '../../engine/security/sessions.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { placesFor } from '../CASH/public.ts';
-import { activeJobOrders, joMoney, releasesAwaitingInvoice } from '../JO/public.ts';
+import { activeJobOrders, joMoney, joMoneyAll, releasesAwaitingInvoice } from '../JO/public.ts';
 import { pendingCertificates } from '../COL/public.ts';
 import { board } from '../PRD/public.ts';
 import { sizerBoard } from '../SZR/public.ts';
@@ -84,6 +84,12 @@ export function home(db: Db, clock: Clock, registry: Registry, user: SessionUser
   });
   const addOrders = (key: string, title: string, filtered: typeof orders, withBalance = false) =>
     widgets.push({ key, title, items: filtered.slice(0, 20).map((jo) => item(jo, withBalance ? joMoney(db, jo.id).balanceDueCents : undefined)) });
+  /** The first 20 orders with money owing: each balance is asked for only until 20 are found, not for every order there is. */
+  const owing = (list: typeof orders) => {
+    const found: typeof orders = [];
+    for (const jo of list) if (joMoney(db, jo.id).balanceDueCents > 0 && found.push(jo) === 20) break;
+    return found;
+  };
 
   if (role === 'encoder' || role === 'accountant') {
     const drafts = db.prepare("SELECT id, doc_type AS docType, updated_at AS updatedAt FROM drafts WHERE status = 'open' AND created_by = ? ORDER BY updated_at DESC LIMIT 20")
@@ -103,10 +109,10 @@ export function home(db: Db, clock: Clock, registry: Registry, user: SessionUser
       addOrders('due', 'Job orders due this week', orders.filter((jo) => jo.dueDate >= date && jo.dueDate <= weekEnd));
       addOrders('ready', 'Ready for release', orders.filter((jo) => jo.stage === 'ready'));
     }
-    if (can('jo.view') && can('col.view')) addOrders('collectibles', 'Collectibles', orders.filter((jo) => joMoney(db, jo.id).balanceDueCents > 0), true);
+    if (can('jo.view') && can('col.view')) addOrders('collectibles', 'Collectibles', owing(orders), true);
   }
   if (role === 'owner' && can('jo.view') && can('col.view')) {
-    addOrders('overdue-collectibles', 'Overdue collectibles', orders.filter((jo) => jo.dueDate < date && joMoney(db, jo.id).balanceDueCents > 0), true);
+    addOrders('overdue-collectibles', 'Overdue collectibles', owing(orders.filter((jo) => jo.dueDate < date)), true);
   }
   if ((role === 'encoder' || role === 'production') && can('prd.view')) {
     widgets.push({ key: 'production', title: role === 'production' ? 'Production board' : 'Production queue', href: '/prd/board',
@@ -171,6 +177,7 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
       `${set.holder!.customerName} · due ${set.holder!.expectedReturnDate}`);
   }
   // Closed orders are excluded by JO's batch stage read before any balance-due lookup.
+  let money: ReturnType<typeof joMoneyAll> | undefined;
   if (can('jo.view')) for (const jo of activeJobOrders(db)) {
     const stage = jo.stage;
     if (stage !== 'released' && stage !== 'partially_released') {
@@ -179,7 +186,7 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
     }
     if (stage === 'ready') push('jo-ready', jo.id, `${jo.number} is ready for release`, `/docs/jo.job_order/${jo.id}`);
     if (can('col.view') && (stage === 'released' || stage === 'partially_released')) {
-      const balance = joMoney(db, jo.id).balanceDueCents;
+      const balance = (money ??= joMoneyAll(db)).get(jo.id)!.balanceDueCents;
       if (balance > 0) push('released-balance', jo.id, `${jo.number} was released with a balance`, `/docs/jo.job_order/${jo.id}`, undefined, balance);
     }
   }
