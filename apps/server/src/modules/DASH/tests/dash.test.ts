@@ -4,6 +4,7 @@ import { createTestEnv, idem } from '../../../../test/helpers.ts';
 import { tx } from '../../../platform/db/driver.ts';
 import { stamp, today } from '../../../platform/clock.ts';
 import { postJournal } from '../../../engine/ledger/post.ts';
+import { appendAudit } from '../../../engine/audit.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import { ownerHealth } from '../health.ts';
 import { arAging, apAging, cashPosition, collectionsRegister, depositsHeld, payrollRegister, productionTiming } from '../../RPT/public.ts';
@@ -194,9 +195,82 @@ describe('DASH role homes and notifications', () => {
     }, invoice: null, expectedTotalCents: 100_000 }, idem());
     expect(release.statusCode, release.body).toBe(200);
     expect((await encoder.get('/api/dash/notifications')).json()).toContainEqual(expect.objectContaining({ kind: 'released-balance', amountCents: 80_000 }));
+    expect((await encoder.get('/api/dash/notifications')).json()).toContainEqual(expect.objectContaining({ kind: 'invoice-to-follow', id: `invoice-to-follow:${release.json().release.id}` }));
+    expect((await (await env.as('production')).get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'invoice-to-follow' }));
+    const invoice = await encoder.post('/api/docs/jo.invoice_record/post', { input: { releaseId: release.json().release.id, invoiceNumber: '9911' }, expectedTotalCents: 100_000 }, idem());
+    expect(invoice.statusCode, invoice.body).toBe(200);
+    expect((await encoder.get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'invoice-to-follow' }));
     env.clock.advance(16 * 86_400_000);
     const overdue = (await (await env.as('owner')).get('/api/dash/home')).json().widgets.find((w: { key: string }) => w.key === 'overdue-collectibles');
     expect(overdue.items).toContainEqual(expect.objectContaining({ id: jo, amountCents: 80_000 }));
+    env.db.close();
+  });
+
+  it('sends guarded-action notices only to owners for 14 days', async () => {
+    const env = await createTestEnv();
+    const [owner, accountant, encoder, production] = await Promise.all([env.as('owner'), env.as('accountant'), env.as('encoder'), env.as('production')]);
+    appendAudit(env.db, { at: stamp(env.clock), userId: accountant.userId, action: 'acc.setting.add', entityType: 'setting', entityId: 'col.cr_mode' });
+    const ownerNotices = (await owner.get('/api/dash/notifications')).json();
+    expect(ownerNotices).toContainEqual(expect.objectContaining({ kind: 'step-up-action', label: expect.stringContaining('acc.setting.add'), href: '/aud/log' }));
+    for (const client of [accountant, encoder, production]) expect((await client.get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'step-up-action' }));
+    env.clock.advance(15 * 86_400_000);
+    expect((await owner.get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'step-up-action' }));
+    env.db.close();
+  });
+
+  it('shows overdue sizer loans only to encoder and production until returned', async () => {
+    const env = await createTestEnv();
+    const [encoder, production, accountant] = await Promise.all([env.as('encoder'), env.as('production'), env.as('accountant')]);
+    const customer = seedCustomers(env.db, encoder.userId).school;
+    const setId = newId();
+    const loanId = newId();
+    const at = stamp(env.clock);
+    env.db.prepare("INSERT INTO szr_sets (id, code, garment_type, sizes_included, status, created_at, updated_at) VALUES (?, 'SZ-MADE-UP', 'Shirt', 'S,M,L', 'lent', ?, ?)").run(setId, at, at);
+    env.db.prepare(`INSERT INTO szr_loans (id, set_id, customer_id, date_out, expected_return_date, created_at, updated_at)
+      VALUES (?, ?, ?, '2026-09-01', '2026-09-20', ?, ?)`).run(loanId, setId, customer, at, at);
+    for (const client of [encoder, production]) expect((await client.get('/api/dash/notifications')).json()).toContainEqual(expect.objectContaining({ kind: 'sizer-overdue', id: `sizer-overdue:${loanId}`, href: '/szr/sets' }));
+    expect((await accountant.get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'sizer-overdue' }));
+    env.db.prepare("UPDATE szr_loans SET returned_date = '2026-09-28', condition_on_return = 'complete' WHERE id = ?").run(loanId);
+    expect((await encoder.get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'sizer-overdue' }));
+    env.db.close();
+  });
+
+  it('shows a pending 2307 after 30 days until it is received', async () => {
+    const env = await createTestEnv();
+    const encoder = await env.as('encoder');
+    const customer = seedCustomers(env.db, encoder.userId).school;
+    const jo = await jobOrder(env, customer);
+    const cashPlaceId = env.db.prepare("SELECT id FROM accounts WHERE code = '1101'").pluck().get() as number;
+    const collection = await encoder.post('/api/docs/col.collection/post', { input: {
+      customerId: customer, crNumber: '991007', applications: [{ jobOrderId: jo, amountCents: 100_000 }],
+      tenders: [{ cashPlaceId, amountCents: 99_000 }], withholding: { cwtCents: 1_000, atc: 'WC158', certificate: 'pending' },
+    }, expectedTotalCents: 100_000 }, idem());
+    expect(collection.statusCode, collection.body).toBe(200);
+    env.clock.advance(31 * 86_400_000);
+    const [laterEncoder, laterAccountant] = await Promise.all([env.as('encoder'), env.as('accountant')]);
+    for (const client of [laterEncoder, laterAccountant]) expect((await client.get('/api/dash/notifications')).json()).toContainEqual(expect.objectContaining({ kind: '2307-to-chase', id: `2307-to-chase:${collection.json().id}` }));
+    expect((await (await env.as('production')).get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: '2307-to-chase' }));
+    expect((await laterAccountant.post('/api/tax/2307s/received', { documentId: collection.json().id, lineNo: 0 })).statusCode).toBe(200);
+    expect((await laterEncoder.get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: '2307-to-chase' }));
+    env.db.close();
+  });
+
+  it('shows unpaid tax deadlines in the next seven days only to permitted accounting roles', async () => {
+    const env = await createTestEnv('2026-09-05T02:00:00Z');
+    const accountant = await env.as('accountant');
+    const encoder = await env.as('encoder');
+    const notice = { kind: 'tax-deadline', id: 'tax-deadline:0619-E:2026-08', href: '/tax/calendar' };
+    expect((await accountant.get('/api/dash/notifications')).json()).toContainEqual(expect.objectContaining(notice));
+    expect((await encoder.get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'tax-deadline' }));
+    const id = newId();
+    const at = stamp(env.clock);
+    env.db.prepare(`INSERT INTO documents (id, doc_type, module, series_key, number, business_date, status, total_cents, summary, posted_at, posted_by)
+      VALUES (?, 'tax.bir_payment', 'TAX', 'BIRP', 'BIRP-MADE-UP', '2026-09-05', 'posted', 100, 'Made-up paid return', ?, ?)`)
+      .run(id, at, accountant.userId);
+    const cash = env.db.prepare("SELECT id FROM accounts WHERE code = '1101'").pluck().get() as number;
+    env.db.prepare(`INSERT INTO tax_bir_payments (document_id, form, period, cash_account_id, reference, payable_cents, amount_cents, penalty_cents)
+      VALUES (?, '0619-E', '2026-08', ?, 'MADE-UP-REF', 100, 100, 0)`).run(id, cash);
+    expect((await accountant.get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining(notice));
     env.db.close();
   });
 
