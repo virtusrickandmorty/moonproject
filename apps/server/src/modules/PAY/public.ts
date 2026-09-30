@@ -155,6 +155,7 @@ export interface PayrollReportRow {
   status: 'posted';
   periodStart: string;
   periodEnd: string;
+  payGroup: string;
   contributionMonth: string;
   runEmployeeId: string;
   employeeId: string;
@@ -177,7 +178,7 @@ export interface PayrollReportRow {
 
 export function payrollReportRows(db: Db): PayrollReportRow[] {
   return db.prepare(`SELECT d.id AS documentId, d.number, d.business_date AS businessDate, d.status,
-    r.period_start AS periodStart, r.period_end AS periodEnd, r.contribution_month AS contributionMonth,
+    r.period_start AS periodStart, r.period_end AS periodEnd, r.contribution_month AS contributionMonth, r.pay_group AS payGroup,
     e.id AS runEmployeeId, e.employee_id AS employeeId, e.employee_code AS employeeCode, e.employee_name AS employeeName,
     e.gross_cents AS grossCents, e.sss_ee_cents AS sssEeCents, e.sss_er_cents AS sssErCents,
     e.sss_ec_cents AS sssEcCents, e.phic_ee_cents AS phicEeCents, e.phic_er_cents AS phicErCents,

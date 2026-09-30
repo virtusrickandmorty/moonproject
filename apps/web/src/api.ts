@@ -127,7 +127,12 @@ export interface NewPostDatedCheck { customerId: string; bank: string; checkNumb
 export type CheckRef = { collectionId: string; lineNo: number };
 export interface DashItem { id: string; label: string; href?: string; detail?: string; amountCents?: number }
 export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string }
-export interface DashHomeData { role: string; asOf: string; widgets: DashWidget[] }
+export interface DashHomeData { role: string; asOf: string; widgets: DashWidget[]; showCharts: boolean }
+export interface DashOwnerCharts {
+  asOf: string;
+  months: { month: string; from: string; to: string; salesCents: number; collectionsCents: number; expensesCents: number; cashCents: number }[];
+  receivables: { key: string; label: string; amountCents: number }[];
+}
 export interface DashOwnerHealth {
   asOf: string;
   periods: { label: string; from: string; to: string; salesCents: number; vatCents: number; collectionsCents: number; payrollCents: number }[];
@@ -874,6 +879,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     health: () => call<{ serverTime: string; practice?: boolean }>('GET', '/api/health'),
     dashHome: () => call<DashHomeData>('GET', '/api/dash/home'),
     dashOwnerHealth: () => call<DashOwnerHealth>('GET', '/api/dash/owner-health'),
+    dashOwnerCharts: () => call<DashOwnerCharts>('GET', '/api/dash/owner-charts'),
     /** `page`: only a page of them (`unread`: of the unread ones), for the home panel and the long list. */
     dashNotifications: (page?: { limit: number; offset: number; unread?: boolean }) =>
       call<DashNotification[]>('GET', `/api/dash/notifications${page ? `?${new URLSearchParams({ limit: String(page.limit), offset: String(page.offset), ...(page.unread ? { unread: '1' } : {}) })}` : ''}`),
