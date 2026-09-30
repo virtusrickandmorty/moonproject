@@ -21,8 +21,12 @@ const sum = (xs: { amountCents: number }[]) => xs.reduce((s, x) => s + x.amountC
 const posted = (res: { statusCode: number; json(): { id: string } }) => (expect(res.statusCode).toBe(200), res.json().id);
 const bill = async (supplierId: string, supplierInvoiceNo: string, supplierInvoiceDate: string, lines: { amountCents: number; [k: string]: unknown }[]) =>
   posted(await encoder.post('/api/docs/ap.bill/post', { input: { supplierId, supplierInvoiceNo, supplierInvoiceDate, lines }, expectedTotalCents: sum(lines) }, idem()));
-const voucher = async (input: { amountCents: number; [k: string]: unknown }) =>
-  posted(await accountant.post('/api/docs/exp.voucher/post', { input: { cashPlaceId: BDO, ...input }, expectedTotalCents: input.amountCents }, idem()));
+const voucher = async (input: { amountCents: number; [k: string]: unknown }) => {
+  // Paid from BDO: what leaves it is the receipt less any EWT, which the server works out (preview).
+  const base = { ...input, tenders: [{ cashPlaceId: BDO, amountCents: 1 }] };
+  const cash = (await accountant.post('/api/docs/exp.voucher/preview', { input: base })).json().doc.cashCents as number;
+  return posted(await accountant.post('/api/docs/exp.voucher/post', { input: { ...input, tenders: [{ cashPlaceId: BDO, amountCents: cash }] }, expectedTotalCents: input.amountCents }, idem()));
+};
 const cancel = async (type: string, id: string) =>
   expect((await accountant.post(`/api/docs/${type}/${id}/cancel`, { reason: 'Recorded against the wrong supplier' }, idem())).statusCode).toBe(200);
 /** Moves the clock; yesterday's sessions have timed out. */

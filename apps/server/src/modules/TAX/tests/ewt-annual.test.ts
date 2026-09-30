@@ -18,8 +18,12 @@ const goTo = async (date: string) => {
   env.clock.set(`${date}T02:00:00Z`);
   [encoder, accountant] = [await env.as('encoder'), await env.as('accountant')];
 };
-const voucher = async (input: { amountCents: number; [k: string]: unknown }) =>
-  posted(await accountant.post('/api/docs/exp.voucher/post', { input: { cashPlaceId: BDO, ...input }, expectedTotalCents: input.amountCents }, idem()));
+const voucher = async (input: { amountCents: number; [k: string]: unknown }) => {
+  // Paid from BDO: what leaves it is the receipt less any EWT, which the server works out (preview).
+  const base = { ...input, tenders: [{ cashPlaceId: BDO, amountCents: 1 }] };
+  const cash = (await accountant.post('/api/docs/exp.voucher/preview', { input: base })).json().doc.cashCents as number;
+  return posted(await accountant.post('/api/docs/exp.voucher/post', { input: { ...input, tenders: [{ cashPlaceId: BDO, amountCents: cash }] }, expectedTotalCents: input.amountCents }, idem()));
+};
 const rent = (day: string) => voucher({ supplierId: lessor, categoryId: cat('6110'), amountCents: 4_000_000, description: `Rent ${day}`, supplierInvoiceNo: `OR-${day}`, supplierInvoiceDate: day });
 const bill = async (no: string, day: string, amountCents: number) =>
   posted(await encoder.post('/api/docs/ap.bill/post', { input: { supplierId: printer, supplierInvoiceNo: no, supplierInvoiceDate: day, lines: [{ purchase: 'subcontract', amountCents }] }, expectedTotalCents: amountCents }, idem()));

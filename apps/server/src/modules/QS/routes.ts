@@ -5,7 +5,7 @@ import type { AppDeps } from '../../app.ts';
 import type { Db } from '../../platform/db/driver.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
-import { cancelDocument, postDocument, previewDocument, reissueDocument, type Actor, type EngineEnv, type PreviewResult } from '../../engine/documents/lifecycle.ts';
+import { cancelDocument, engineEnv, postDocument, previewDocument, reissueDocument, type Actor, type EngineEnv, type PreviewResult } from '../../engine/documents/lifecycle.ts';
 import { findIdempotent, requestHash, storeIdempotent } from '../../engine/idempotency.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { collectionDoc, collectionInput, salePayments, type CollectionInput } from '../COL/public.ts';
@@ -57,7 +57,7 @@ function rolledBack<T>(db: Db, fn: () => T): T {
 
 export function qsRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
-  const env: EngineEnv = { db, clock };
+  const env: EngineEnv = engineEnv(deps);
 
   /** Same Idempotency-Key -> same response, one quick sale (N-02). */
   function idempotent(req: FastifyRequest, reply: FastifyReply, run: (actor: Actor) => unknown) {

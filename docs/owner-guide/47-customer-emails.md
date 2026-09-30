@@ -15,7 +15,7 @@
 
 **To check the outbox or send again:**
 1. On the **Sales** menu, click **Customer emails**.
-2. Stay on the **Outbox** tab to see all emails. You can filter them by clicking **All**, **Waiting**, **Sent**, or **Failed**.
+2. Stay on the **Outbox** tab to see the emails. The counts at the top show how many are waiting, sent and failed. You can filter by kind (**All kinds**, **Customer emails**, **Payslip emails**) and by status (**All**, **Waiting**, **Sent**, **Failed**). Click the name of an email (for example **Order received**) to read it.
 3. If an email is marked as failed and you are allowed to resend (like the owner), you can try sending it again by clicking the **Send again** button next to it. If sending is off, it will warn you: "Sending emails is turned off. Turn it on in the email settings first."
 
 **To email a statement of account:**
@@ -25,7 +25,7 @@
 4. On success, you will see "Queued. It goes out with the next batch: see Customer emails." Or, if they did not agree, it will say "This customer has not agreed to get emails."
 
 ### What the system does for you
-The system automatically creates and queues emails for "Order received", "Ready for pick-up", and "Picked up" as you process job orders. It also queues "Statement of account" emails when you click the button. In the outbox, it tracks if an email is "Waiting to be sent", successfully "Sent", or "Failed" so you know exactly what the customer has received.
+The system automatically creates and queues emails for "Order received", "Ready for pick-up", and "Picked up" as you process job orders. It also queues "Statement of account" emails when you click the button, and payslip emails for employees who agreed to get their payslip by email (the list shows the pay period, never an amount). In the outbox, it tracks if an email is "Waiting to be sent", successfully "Sent", or "Failed" (a failed email is tried again by the system, and shows how many tries it had) so you know exactly what the customer has received.
 
 ### Common mistakes and how to fix them
 - **Mistake:** You fixed a typo in the customer's email address and expect a queued email to go to the new address.
