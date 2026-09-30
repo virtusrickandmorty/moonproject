@@ -59,8 +59,12 @@ test('sales: a customer, a job order with a deposit, a collection, a release wit
   const picture = attachments.getByRole('link', { name: 'jersey design.png' });
   await expect(picture).toBeVisible();
   await expect(attachments.getByText(/PNG picture · 1 KB · added by /)).toBeVisible();
-  const opened = await page.request.get((await picture.getAttribute('href'))!);
-  expect([opened.status(), opened.headers()['content-type'], opened.headers()['x-content-type-options']]).toEqual([200, 'image/png', 'nosniff']);
+  // Fetched by the signed-in page itself: the session cookie is Secure, and only the browser sends it on http://127.0.0.1.
+  const opened = await page.evaluate(async (href) => {
+    const r = await fetch(href, { credentials: 'same-origin' });
+    return [r.status, r.headers.get('content-type'), r.headers.get('x-content-type-options'), (await r.arrayBuffer()).byteLength];
+  }, (await picture.getAttribute('href'))!);
+  expect(opened).toEqual([200, 'image/png', 'nosniff', Buffer.from(PIXEL_PNG, 'base64').length]);
 
   // The deposit, then the rest: each collection opens filled for this job order.
   await collect(page, 'Take the downpayment', '3,000.00', '401');
