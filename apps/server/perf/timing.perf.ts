@@ -42,7 +42,16 @@ const qs = (o: Record<string, string | number>) => Object.entries(o).map(([k, v]
 const lastDay = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 
 /** A report or list, and the address it is opened at for the month and for the year. `list` ones have no dates: they are timed once. */
-interface Screen { name: string; month?: (c: Ctx) => string; year?: (c: Ctx) => string; list?: (c: Ctx) => string }
+interface Screen { name: string; month?: (c: Ctx) => string; year?: (c: Ctx) => string; list?: (c: Ctx) => string;
+  /** The screen shows this many rows (or, for the BIR books, loose pages) at a time and asks for them with ?limit; the CSV file has them all. */
+  page?: number;
+  /** A limit of its own for a check that reads all the history there is (the audit chain and the ledger checks): the year's. */
+  budget?: number }
+/** The screens' page size (PAGE_ROWS in the web app) and the BIR books' (five loose pages of twenty rows). */
+const ROWS = 100;
+const LOOSE = 5;
+const paging = (screen: Screen, url: string) => (screen.page ? `${url}${url.includes('?') ? '&' : '?'}limit=${screen.page}` : url);
+const shown = (n: number, screen: Screen): Screen => ({ ...screen, page: n });
 const range = (path: string, extra: Record<string, string | number> = {}): Pick<Screen, 'month' | 'year'> => ({
   month: (c) => `${path}?${qs({ from: c.month.from, to: c.month.to, ...extra })}`,
   year: (c) => `${path}?${qs({ from: c.year.from, to: c.year.to, ...extra })}`,
@@ -177,9 +186,10 @@ const SCREENS: Screen[] = [
   list('ACC go-live decisions', '/api/acc/go-live-decisions'),
   list('DASH home', '/api/dash/home'),
   list('DASH owner health', '/api/dash/owner-health'),
-  list('DASH notifications', '/api/dash/notifications'),
+  list('DASH notifications (home panel)', '/api/dash/notifications?limit=8&offset=0&unread=1'),
+  list('DASH notifications (all, first page)', '/api/dash/notifications?limit=50&offset=0'),
   list('AUD log', '/api/aud/log'),
-  list('AUD integrity check', '/api/aud/integrity'),
+  { name: 'AUD integrity check', list: () => '/api/aud/integrity', budget: YEAR_MS },
   list('AUD users', '/api/aud/users'),
   list('SZR overview', '/api/szr/overview'),
   list('SZR sets', '/api/szr/sets'),
@@ -199,6 +209,11 @@ const SCREENS: Screen[] = [
   list('COM outbox', '/api/com/outbox'),
   list('USERS', '/api/users'),
 ];
+
+const PAGED_ROWS = ['RPT collections register', 'RPT sales by period', 'RPT AR aging', 'RPT job order follow-up', 'RPT general journal',
+  'RPT general ledger (one account)', 'RPT general ledger (all accounts)', 'RPT production timing', 'RPT lead time', 'RPT late jobs', 'RPT job margin',
+  'RPT labor cost', 'TAX sales register', 'TAX withholding received register', 'TAX purchases register', 'TAX EWT register'];
+const PAGED_SCREENS: Screen[] = SCREENS.map((sc) => PAGED_ROWS.includes(sc.name) ? shown(ROWS, sc) : sc.name.startsWith('RPT BIR book') ? shown(LOOSE, sc) : sc);
 
 const ready = existsSync(DB_FILE) && existsSync(`${DB_FILE}.json`);
 describe.skipIf(!ready)('three busy years', () => {
@@ -296,8 +311,8 @@ describe.skipIf(!ready)('three busy years', () => {
     db?.close();
   });
 
-  describe.each(SCREENS)('$name', (screen) => {
-    if (screen.month) it('one month', async () => check(await time(screen.name, 'month', screen.month!(ctx), MONTH_MS)));
+  describe.each(PAGED_SCREENS)('$name', (screen) => {
+    if (screen.month) it('one month', async () => check(await time(screen.name, 'month', paging(screen, screen.month!(ctx)), MONTH_MS)));
     if (screen.year) it('one year', async () => {
       // A synchronous query cannot be interrupted: when the month took over 20 s, the year is not tried (it would run for hours).
       const month = samples.find((s) => s.name === screen.name && s.scope === 'month');
@@ -307,9 +322,9 @@ describe.skipIf(!ready)('three busy years', () => {
         process.stderr.write(`    not tried  year   ${screen.name}\n`);
         return check(skipped);
       }
-      check(await time(screen.name, 'year', screen.year!(ctx), YEAR_MS));
+      check(await time(screen.name, 'year', paging(screen, screen.year!(ctx)), YEAR_MS));
     });
-    if (screen.list) it('the list', async () => check(await time(screen.name, 'list', screen.list!(ctx), MONTH_MS)));
+    if (screen.list) it('the list', async () => check(await time(screen.name, 'list', paging(screen, screen.list!(ctx)), screen.budget ?? MONTH_MS)));
   });
 
   // The generic lists every document type gets, first page and a page far down.
@@ -328,6 +343,16 @@ describe.skipIf(!ready)('three busy years', () => {
     }
     expect(slow).toEqual([]);
   });
+
+  // The whole report as a file (every row, no page): the Export CSV link of a year.
+  it.each([
+    ['collections register', (c: Ctx) => `/api/rpt/collections-register?${qs({ from: c.year.from, to: c.year.to, format: 'csv' })}`],
+    ['sales by period', (c: Ctx) => `/api/rpt/sales-by-period?${qs({ from: c.year.from, to: c.year.to, format: 'csv' })}`],
+    ['general journal', (c: Ctx) => `/api/rpt/journal?${qs({ from: c.year.from, to: c.year.to, format: 'csv' })}`],
+    ['AR aging', (c: Ctx) => `/api/rpt/ar-aging?${qs({ asOf: c.year.to, format: 'csv' })}`],
+    ['TAX sales register', (c: Ctx) => `/api/tax/registers/sales?${qs({ from: c.year.from, to: c.year.to, format: 'csv' })}`],
+    ['BIR sales book', (c: Ctx) => `/api/rpt/bir-books/sales?${qs({ from: c.year.from, to: c.year.to, format: 'csv' })}`],
+  ] as const)('CSV file of a year: %s', async (name, url) => check(await time(`CSV ${name}`, 'year', url(ctx), YEAR_MS)));
 
   it('a job order and a payslip run open', async () => {
     check(await time('DOC one job order', 'list', `/api/docs/jo.job_order/${ctx.jobOrderId}`, MONTH_MS));

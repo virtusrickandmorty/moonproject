@@ -1,7 +1,9 @@
 /** Small shared building blocks. Tailwind only; no component library. */
 import { useEffect, useState, type ButtonHTMLAttributes, type FormEvent, type ReactNode } from 'react';
 import { formatPeso } from '@moonproject/shared';
-import { api, type CashPlace, type JournalLine } from '../api.ts';
+import { api, type CashPlace, type JournalLine, type PageInfo } from '../api.ts';
+
+export type { PageInfo };
 
 export const peso = (cents: number) => formatPeso(cents);
 
@@ -31,8 +33,6 @@ export function Button({ tone = 'plain', className = '', ...rest }: ButtonHTMLAt
   return <button type="button" className={`rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50 ${tones[tone]} ${className}`} {...rest} />;
 }
 
-/** Where a page of a long list sits (the server's `page`): `total` rows, this page starts at `offset` and holds at most `limit`. */
-export interface PageInfo { total: number; offset: number; limit: number }
 /** How many rows a screen asks for at a time. */
 export const PAGE_ROWS = 100;
 

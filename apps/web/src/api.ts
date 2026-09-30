@@ -380,13 +380,17 @@ export interface TaxSupplierRow extends TaxJournalRef { supplierId: string | nul
 export type PurchaseClass = 'capital_goods' | 'goods' | 'services';
 export interface PurchaseSums { netCents: number; vatCents: number; totalCents: number }
 /** GET /api/tax/registers/purchases: a bill with lines of two classes gives two rows with the same journal; `purchaseClass` null = to classify. */
+/** Where a page of a long list sits: `total` rows in all, this page starts at `offset` and holds at most `limit`. */
+export interface PageInfo { total: number; offset: number; limit: number }
 export interface PurchasesRegister {
+  page?: PageInfo;
   from: string; to: string; rows: (TaxSupplierRow & PurchaseSums & { supplierInvoiceNo: string | null; purchaseClass: PurchaseClass | null })[];
   totals: PurchaseSums; byClass: Record<PurchaseClass | 'unclassified', PurchaseSums>; glVatCents: number;
 }
 /** An EWT class and its ATC; `atc` null with `atcChoices` = the ATC to confirm (individual or company). */
 export interface EwtAtc { ewtClass: string | null; atc: string | null; atcChoices: string[] }
 export interface EwtRegister {
+  page?: PageInfo;
   from: string; to: string; rows: (TaxSupplierRow & EwtAtc & { baseCents: number | null; rateBp: number | null; ewtCents: number })[];
   totals: { baseCents: number; ewtCents: number }; glEwtCents: number; atcToConfirmCount: number;
 }
@@ -438,8 +442,9 @@ export interface Sawt {
   inHand: { cwtCents: number; vatWithheldCents: number }; pending: { cwtCents: number; vatWithheldCents: number };
   ties: TaxTie[]; checks: WorksheetCheck[];
 }
-export interface SalesRegister { from: string; to: string; rows: (TaxRegisterRow & { netCents: number; vatCents: number; totalCents: number })[]; totals: { netCents: number; vatCents: number; totalCents: number }; glVatCents: number }
+export interface SalesRegister { page?: PageInfo; from: string; to: string; rows: (TaxRegisterRow & { netCents: number; vatCents: number; totalCents: number })[]; totals: { netCents: number; vatCents: number; totalCents: number }; glVatCents: number }
 export interface WithholdingRegister {
+  page?: PageInfo;
   from: string; to: string;
   /** `lineNo` names the 2307 (an opening withholding's row, 0 for a collection's); `period` ('2026-Q2') only on an opening's. */
   rows: (TaxRegisterRow & {
@@ -722,7 +727,9 @@ export interface EwtAnnualReturn {
 /** A year's annual report URL; with &format=csv the same URL downloads it for Excel. */
 export const taxYearPath = (report: '1702rt' | '1604e', year: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year) })}`;
 /** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
-export const taxRegisterPath = (register: 'sales' | 'withholding-received' | 'purchases' | 'ewt', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
+/** `page`: a page of the rows (the screens ask for one; the Excel file, which has no page, gets every row). */
+export const taxRegisterPath = (register: 'sales' | 'withholding-received' | 'purchases' | 'ewt', from: string, to: string, page?: { limit: number; offset: number }) =>
+  `/api/tax/registers/${register}?${new URLSearchParams({ from, to, ...(page ? { limit: String(page.limit), offset: String(page.offset) } : {}) })}`;
 /** A quarter's tax report URL; with &format=csv the same URL downloads it for Excel. */
 export const taxQuarterPath = (report: '2307-to-issue' | '2550q' | '1601eq' | '1702q' | 'slsp/sales' | 'slsp/purchases' | 'sawt', year: number, quarter: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}`;
 /** The 0619-E worksheet's URL (month like 2026-07); with &format=csv it downloads for Excel. */
@@ -783,7 +790,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     health: () => call<{ serverTime: string; practice?: boolean }>('GET', '/api/health'),
     dashHome: () => call<DashHomeData>('GET', '/api/dash/home'),
     dashOwnerHealth: () => call<DashOwnerHealth>('GET', '/api/dash/owner-health'),
-    dashNotifications: () => call<DashNotification[]>('GET', '/api/dash/notifications'),
+    /** `page`: only a page of them (`unread`: of the unread ones), for the home panel and the long list. */
+    dashNotifications: (page?: { limit: number; offset: number; unread?: boolean }) =>
+      call<DashNotification[]>('GET', `/api/dash/notifications${page ? `?${new URLSearchParams({ limit: String(page.limit), offset: String(page.offset), ...(page.unread ? { unread: '1' } : {}) })}` : ''}`),
     dashRead: (id: string) => call<{ ok: true }>('POST', '/api/dash/notifications/read', { id }),
     calItems: (from: string, to: string) => call<CalItem[]>('GET', `/api/cal?${new URLSearchParams({ from, to })}`),
     calCreate: (body: CalEventInput) => call<CalEvent>('POST', '/api/cal/events', body),
@@ -980,13 +989,13 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     booklet: (id: string) => call<BookletUsage>('GET', `/api/tax/booklets/${encodeURIComponent(id)}`),
     registerBooklet: (body: BookletInput) => call<Booklet>('POST', '/api/tax/booklets', body),
     setBookletActive: (id: string, v: number, active: boolean, note: string) => call<Booklet>('POST', `/api/tax/booklets/${encodeURIComponent(id)}/${active ? 'activate' : 'retire'}`, { note }, version(v)),
-    salesRegister: (from: string, to: string) => call<SalesRegister>('GET', taxRegisterPath('sales', from, to)),
-    withholdingReceived: (from: string, to: string) => call<WithholdingRegister>('GET', taxRegisterPath('withholding-received', from, to)),
+    salesRegister: (from: string, to: string, page?: { limit: number; offset: number }) => call<SalesRegister>('GET', taxRegisterPath('sales', from, to, page)),
+    withholdingReceived: (from: string, to: string, page?: { limit: number; offset: number }) => call<WithholdingRegister>('GET', taxRegisterPath('withholding-received', from, to, page)),
     /** A customer's 2307 recorded as pending has come (tax.2307.receive); dated the server's today. */
     mark2307Received: (documentId: string, lineNo: number) =>
       call<{ documentId: string; number: string; lineNo: number; receivedOn: string }>('POST', '/api/tax/2307s/received', { documentId, lineNo }),
-    purchasesRegister: (from: string, to: string) => call<PurchasesRegister>('GET', taxRegisterPath('purchases', from, to)),
-    ewtRegister: (from: string, to: string) => call<EwtRegister>('GET', taxRegisterPath('ewt', from, to)),
+    purchasesRegister: (from: string, to: string, page?: { limit: number; offset: number }) => call<PurchasesRegister>('GET', taxRegisterPath('purchases', from, to, page)),
+    ewtRegister: (from: string, to: string, page?: { limit: number; offset: number }) => call<EwtRegister>('GET', taxRegisterPath('ewt', from, to, page)),
     certificatesToIssue: (year: number, quarter: number) => call<CertificatesToIssue>('GET', taxQuarterPath('2307-to-issue', year, quarter)),
     vatWorksheet: (year: number, quarter: number) => call<VatWorksheet>('GET', taxQuarterPath('2550q', year, quarter)),
     slspSales: (year: number, quarter: number) => call<SlspSales>('GET', taxQuarterPath('slsp/sales', year, quarter)),
