@@ -7,8 +7,11 @@ import type { SessionUser } from '../../engine/security/sessions.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { placesFor } from '../CASH/public.ts';
-import { activeJobOrders, joMoney } from '../JO/public.ts';
+import { activeJobOrders, joMoney, releasesAwaitingInvoice } from '../JO/public.ts';
+import { collectionsBetween, withholdingOf } from '../COL/public.ts';
 import { board } from '../PRD/public.ts';
+import { sizerBoard } from '../SZR/public.ts';
+import { hasReceived2307, paidTaxPeriods, taxDeadlines } from '../TAX/public.ts';
 import { redLightNotices, type Host } from '../../platform/health/health.ts';
 
 /** Where the app runs, for the System Health notifications: the practice shop has no backups to warn about. */
@@ -125,6 +128,39 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
   const out: Omit<DashNotification, 'read'>[] = [];
   const push = (kind: string, id: string, label: string, href?: string, detail?: string, amountCents?: number) =>
     out.push({ kind, id: `${kind}:${id}`, label, ...(href ? { href } : {}), ...(detail ? { detail } : {}), ...(amountCents === undefined ? {} : { amountCents }) });
+  if (roleOf(user) === 'owner' && can('aud.log.view')) {
+    const since = manilaTimestamp(new Date(clock.now().getTime() - 14 * 86_400_000));
+    const guarded = db.prepare(`SELECT a.seq, a.at, a.action, a.entity_id AS entityId, u.display_name AS userName
+      FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
+      WHERE a.at >= ? AND (a.action IN ('bak.restore', 'user.create', 'user.roles', 'user.reset_password',
+        'user.activate', 'user.deactivate', 'role.permission') OR a.action = 'acc.setting.add')
+      ORDER BY a.at DESC, a.seq DESC`).all(since) as { seq: number; at: string; action: string; entityId: string | null; userName: string | null }[];
+    for (const action of guarded) push('step-up-action', String(action.seq), `${action.userName ?? 'The system'}: ${action.action}`, '/aud/log', `${action.entityId ?? 'system'} · ${action.at}`);
+  }
+  if (can('jo.view') && can('jo.invoice')) for (const release of releasesAwaitingInvoice(db, date)) {
+    push('invoice-to-follow', release.id, `${release.number} still needs its invoice record`, `/docs/jo.invoice_record/new?releaseId=${release.id}`, `${release.jobOrderNumber} · released ${release.date}`);
+  }
+  if (can('col.view') && (roleOf(user) === 'encoder' || roleOf(user) === 'accountant')) {
+    const cutoff = addDays(date, -30);
+    const seen = new Set<string>();
+    for (const collection of collectionsBetween(db, '0001-01-01', cutoff)) {
+      if (seen.has(collection.id) || collection.status !== 'posted' || collection.cwtCents <= 0) continue;
+      seen.add(collection.id);
+      if (withholdingOf(db, collection.id)?.certificate === 'pending' && !hasReceived2307(db, collection.id)) push('2307-to-chase', collection.id,
+        `${collection.number}: 2307 to chase`, `/docs/col.collection/${collection.id}`, `${collection.customerName} · collected ${collection.date}`);
+    }
+  }
+  if (can('tax.calendar.view') && can('tax.payment.view')) {
+    const paid = paidTaxPeriods(db);
+    const payable = new Set(['0619-E', '2550Q', '1601-EQ', '1702Q', '1702-RT']);
+    for (const deadline of taxDeadlines(db, date, addDays(date, 7))) if (payable.has(deadline.form) && !paid.has(`${deadline.form}:${deadline.period}`)) {
+      push('tax-deadline', `${deadline.form}:${deadline.period}`, `${deadline.form} is due ${deadline.dueDate}`, '/tax/calendar', deadline.periodLabel);
+    }
+  }
+  if (can('szr.loan.view') && (roleOf(user) === 'encoder' || roleOf(user) === 'production')) {
+    for (const set of sizerBoard(db, date).overdue) push('sizer-overdue', set.holder!.loanId, `${set.code} sizer set is overdue`, '/szr/sets',
+      `${set.holder!.customerName} · due ${set.holder!.expectedReturnDate}`);
+  }
   // Closed orders are excluded by JO's batch stage read before any balance-due lookup.
   if (can('jo.view')) for (const jo of activeJobOrders(db)) {
     const stage = jo.stage;
