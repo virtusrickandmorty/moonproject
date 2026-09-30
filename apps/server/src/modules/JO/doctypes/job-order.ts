@@ -237,12 +237,13 @@ export const jobOrderDoc: DocTypeDef<JobOrderInput, JobOrder> = {
     };
   },
 
-  /** Its releases and invoice records: cancel those first (D6), invoice records before their releases. */
+  /** Its releases and invoice records (downpayment invoices in mode C too): cancel those first (D6), invoice records before their releases. */
   dependents(db, documentId) {
     return db
       .prepare(
         `SELECT d.id, d.number FROM documents d
-         WHERE d.status = 'posted' AND d.id IN (SELECT document_id FROM jo_invoice_records WHERE job_order_id = @jo UNION SELECT document_id FROM jo_releases WHERE job_order_id = @jo)
+         WHERE d.status = 'posted' AND d.id IN (SELECT document_id FROM jo_invoice_records WHERE job_order_id = @jo UNION SELECT document_id FROM jo_releases WHERE job_order_id = @jo
+           UNION SELECT document_id FROM jo_dp_invoices WHERE job_order_id = @jo)
          ORDER BY d.doc_type = 'jo.release', d.number`,
       )
       .all({ jo: documentId }) as { id: string; number: string }[];

@@ -7,6 +7,8 @@ import type { Db } from '../../platform/db/driver.ts';
 import type { Clock } from '../../platform/clock.ts';
 
 export const SESSION_COOKIE = '__Host-moon_session';
+/** The practice shop's own cookie: a browser shares cookies across the ports of one PC, so signing in to practice must not replace the real sign-in. */
+export const PRACTICE_SESSION_COOKIE = '__Host-moon_practice';
 export const IDLE_TIMEOUT_MS = 60 * 60_000;
 export const ABSOLUTE_TIMEOUT_MS = 12 * 3600_000;
 export const STEP_UP_WINDOW_MS = 5 * 60_000;

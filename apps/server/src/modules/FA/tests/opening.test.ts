@@ -161,7 +161,7 @@ describe('golden: a disposal', () => {
     const { id } = (await open(heatPress())).json();
     await goTo('2026-10-20T02:00:00Z');
     const oct = (await run('2026-10')).json();
-    expect(errorCodes(await post('disposal', { assetId: id, kind: 'sale', reason: 'Sold to another shop' }, 10_000_000))).toEqual(['SALE_NEEDS_INVOICE']);
+    expect(errorCodes(await post('disposal', { assetId: id, kind: 'sale', reason: 'Sold to another shop' }, 0))).toEqual(['INVOICE', 'AMOUNT', 'CASH_PLACE', 'BUYER']);
     const fad = await post('disposal', { assetId: id, kind: 'retirement', reason: 'Heating plate cracked, scrapped' }, 10_000_000);
     expect(fad.statusCode, fad.body).toBe(200);
     expect(fad.json()).toMatchObject({
@@ -261,7 +261,7 @@ describe('refusals', () => {
     expect(await codes({ ...heatPress(), lifeMonths: 48 }, CUTOVER, 'warning')).toEqual(['LIFE_DIFFERENT', 'NOT_STRAIGHT_LINE']);
     const ended = await preview({ ...heatPress(), acquiredOn: '2020-01-10', accumulatedCents: 8_000_000 });
     expect(ended.issues.map((i: { code: string }) => i.code)).toEqual(['LIFE_ENDED']);
-    expect(ended.issues[0].message).toBe('Its 60 months of life ended by the cut-over, so the first depreciation run after September 2026 charges the ₱10,000.00 left.');
+    expect(ended.issues[0].message).toBe('Its 60 months of life ended by the cut-over, so the next depreciation run charges the ₱10,000.00 left.');
     for (const role of ['owner', 'encoder'] as const) expect((await open(heatPress(), CUTOVER, await env.as(role))).statusCode).toBe(403);
     expect(balances(env.db)).toEqual({});
   });

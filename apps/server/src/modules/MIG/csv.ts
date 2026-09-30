@@ -1,4 +1,4 @@
-import { parsePesos } from '@moonproject/shared';
+import { formatPesos, isBusinessDate, parsePesos } from '@moonproject/shared';
 
 export type RowType = 'customer' | 'measurement' | 'employee' | 'piece_rate' | 'unknown';
 export interface ParsedRow {
@@ -41,6 +41,58 @@ export function rateFromPesos(value: string): number {
   if (cents < 0) throw new Error('Rate cannot be negative.');
   return cents;
 }
+
+/** A measurement row with no customer yet: the sheet's MANUAL rows, or a row naming neither a customer nor a group. */
+export function isManualMeasurement(raw: Record<string, string>): boolean {
+  return raw.Source === 'MANUAL' || raw.Customer_Name === 'MANUAL' || raw.Customer_ID === 'MANUAL'
+    || (!raw.Customer_Name && !raw.Customer_ID && !raw.Group_Name);
+}
+
+/** What the owner typed for a row: text, pesos in centavos, or a yes for "make this its own customer". */
+export type ManualData = Record<string, string | number | boolean>;
+
+/** The name a MANUAL row carries: the wearer's, or the sheet's Customer Name (a person typed in without a customer). Blank when it is only the word MANUAL. */
+export function manualName(raw: Record<string, string>): string {
+  return [raw.Wearer_Name, raw.Person_Name, raw.Full_Name, raw.Name, raw.Customer_Name]
+    .map(v => (v ?? '').trim()).find(v => v !== '' && v.toUpperCase() !== 'MANUAL') ?? '';
+}
+
+/** A name with case, spaces and punctuation taken out, so "JUAN  dela-Cruz." and "Juan Dela Cruz" are the same. */
+export const nameKey = (name: string): string => name.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+
+/**
+ * Where the owner put a measurement row, laid over the staged values: a staged customer (by legacy ID), a customer already in
+ * Moonproject (by id), or a new person-customer named as in the sheet; and a group. A bulk choice also names the wearer.
+ * The keys `id:` and `MANUAL:` mark the ones the commit resolves itself. Shared by the review and the commit.
+ */
+export function applyMeasurementAssignment(raw: Record<string, string>, manual: ManualData): void {
+  const text = (v: unknown): string => String(v);
+  if (manual.customerLegacyId) { raw.Customer_ID = text(manual.customerLegacyId); raw.Customer_Name = text(manual.customerLegacyId); raw.Source = 'ASSIGNED'; }
+  if (manual.groupLegacyId) { raw.Group_ID = text(manual.groupLegacyId); raw.Group_Name = text(manual.groupLegacyId); raw.Source = 'ASSIGNED'; }
+  if (manual.customerId) { raw.Customer_ID = `id:${text(manual.customerId)}`; raw.Customer_Name = raw.Customer_ID; raw.Source = 'ASSIGNED'; }
+  if (manual.newCustomer) {
+    raw.Customer_ID = `MANUAL:${raw.Measurement_ID ?? ''}`;
+    raw.Customer_Name = text(manual.wearerName ?? '');
+    raw.Source = 'ASSIGNED';
+  }
+  if (manual.groupId) { raw.Group_ID = `id:${text(manual.groupId)}`; delete raw.Group_Name; }
+  if (manual.newGroupName) { raw.Group_Name = text(manual.newGroupName); delete raw.Group_ID; }
+  if (manual.wearerName) { raw.Wearer_Name = text(manual.wearerName); raw.Wearer_ID = `manual:${raw.Measurement_ID ?? ''}`; }
+}
+
+/** What the owner typed for an employee row, put over the staged values. Shared by the review and the commit. */
+export function applyEmployeeFix(raw: Record<string, string>, manual: ManualData): void {
+  if (manual.employeeName) raw.Employee_Name = String(manual.employeeName);
+  if (manual.legacyId) raw.Employee_ID = String(manual.legacyId);
+  if (manual.payType) raw.Pay_Type = String(manual.payType);
+  if (manual.hireDate) raw.Hire_Date = String(manual.hireDate);
+  if (manual.rateCents !== undefined) {
+    // One rate box: the monthly rate for monthly pay, the daily rate otherwise.
+    raw[raw.Pay_Type?.trim().toLowerCase() === 'monthly' ? 'Monthly_Rate' : 'Daily_Rate'] = formatPesos(Number(manual.rateCents));
+  }
+}
+
+const PAY_TYPES = ['daily', 'piece', 'monthly', 'mixed'];
 
 /** CSV parser supporting quoted newlines and reporting each data row's source line. */
 export function parseCSV(csvText: string): { objects: Record<string, string>[]; lineNumbers: number[] } {
@@ -105,24 +157,45 @@ export function validateRow(raw: Record<string, string>): ParsedRow {
   }
   if (rowType === 'measurement') {
     if (!legacyId) issues.push('Measurement is missing a legacy ID.');
-    if (raw.Source === 'MANUAL' || raw.Customer_Name === 'MANUAL' || (!raw.Customer_Name && !raw.Group_Name)) {
+    if (isManualMeasurement(raw)) {
       issues.push('Manual measurement row needs to be assigned to a customer or group.');
     }
     const seen = new Set<string>();
+    let cells = 0;
     for (const [key, value] of Object.entries(raw)) {
       const field = measurementField(key);
       if (!field) continue;
       if (seen.has(field)) { issues.push(`Measurement column ${field} appears twice.`); continue; }
       seen.add(field);
-      try { measurementTenths(value); } catch { issues.push(`${key} must be a number exact to tenths.`); }
+      try { if (measurementTenths(value) !== null) cells++; } catch { issues.push(`${key} must be a number exact to tenths.`); }
     }
+    if (!cells) issues.push('This row has no measurements, so there is nothing to import. Type a measurement with Fix, or exclude the row.');
   }
   if (rowType === 'employee') {
     if (!raw.Employee_Name) issues.push('Employee is missing a name.');
     if (!legacyId) issues.push('Employee is missing a legacy ID.');
+    const sheet = raw.Salary_Category !== undefined; // a row of the old sheet's Employees tab
+    const payType = (raw.Pay_Type ?? '').trim().toLowerCase();
+    if (payType && !PAY_TYPES.includes(payType)) issues.push('Pay type must be daily, piece, monthly or mixed.');
+    if (sheet && !payType) {
+      issues.push(raw.Salary_Category
+        ? `Salary Category "${raw.Salary_Category}" is not Daily, Piece Rate (Pakyawan) or Monthly. Use Fix to choose the pay type.`
+        : 'Salary Category is blank. Use Fix to choose the pay type.');
+    }
     if (raw.Daily_Rate?.trim()) {
       try { rateCents = rateFromPesos(raw.Daily_Rate); }
       catch { issues.push('Daily rate must be a non-negative peso amount exact to the centavo.'); }
+    }
+    if (payType === 'monthly') {
+      if (!raw.Monthly_Rate?.trim()) issues.push('Monthly pay needs a monthly rate. Use Fix to type it.');
+      else try { rateFromPesos(raw.Monthly_Rate); } catch { issues.push('Monthly rate must be a non-negative peso amount exact to the centavo.'); }
+    } else if ((payType === 'daily' || payType === 'mixed') && !rateCents && !issues.some(i => i.startsWith('Daily rate'))) {
+      issues.push('Daily pay needs a daily rate. Use Fix to type it.');
+    }
+    if (raw.Hire_Date?.trim() && !isBusinessDate(raw.Hire_Date.trim())) issues.push(`Hire date "${raw.Hire_Date}" is not a date like 2026-02-11. Use Fix to type it.`);
+    if (raw.Hire_Date !== undefined && !raw.Hire_Date.trim()) issues.push('Date Employed is blank, so the hire date will be today (requires owner confirmation).');
+    if (raw.Status !== undefined && raw.Status.trim().toLowerCase() !== 'active') {
+      issues.push(`Status is ${raw.Status.trim() ? `"${raw.Status.trim()}"` : 'blank'}, not Active. Exclude the row, or accept it to bring the employee in as active (requires owner confirmation).`);
     }
     issues.push('Employee rate or missing rate requires owner confirmation.');
   }

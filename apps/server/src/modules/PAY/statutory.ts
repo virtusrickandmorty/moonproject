@@ -12,6 +12,8 @@ export interface Bracket { overCents: number; baseCents: number; rateBp: number 
 export interface PayRules {
   minimumWageCents: number; regHolidayOffBp: number; regHolidayWorkedBp: number; regHolidayRestBp: number; specialWorkedBp: number; specialRestBp: number;
   restDayWorkedBp: number; otOrdinaryBp: number; otPremiumBp: number; accrue13th: boolean; minNetPayCents: number;
+  /** Night differential, of the day's rate (migration 0006: 10%). */
+  nightDiffBp: number;
 }
 export type TaxFrequency = 'weekly' | 'semi_monthly' | 'monthly';
 export interface Share { ee: number; er: number }
@@ -84,7 +86,18 @@ export function payRulesAt(db: Db, date: string): PayRules | undefined {
   return {
     minimumWageCents: +r.minimum_wage_cents!, regHolidayOffBp: +r.reg_holiday_off_bp!, regHolidayWorkedBp: +r.reg_holiday_worked_bp!, regHolidayRestBp: +r.reg_holiday_rest_bp!,
     specialWorkedBp: +r.special_worked_bp!, specialRestBp: +r.special_rest_bp!, restDayWorkedBp: +r.rest_day_worked_bp!, otOrdinaryBp: +r.ot_ordinary_bp!, otPremiumBp: +r.ot_premium_bp!,
-    accrue13th: r.accrue_13th === 1, minNetPayCents: +r.min_net_pay_cents!,
+    accrue13th: r.accrue_13th === 1, minNetPayCents: +r.min_net_pay_cents!, nightDiffBp: +r.night_diff_bp!,
   };
 }
 export const rulesAt = (db: Db, date: string): PayRules => need(payRulesAt(db, date), 'pay rules (minimum wage, holiday rates)', date);
+/** The yearly ceiling of tax-exempt 13th-month pay and other benefits in force on a date (F1, RR 11-2018: ₱90,000). */
+export function benefitCeilingAt(db: Db, date: string): number {
+  const r = need(db.prepare(latest('pay_benefit_ceilings')).get({ d: date }) as Row | undefined, 'ceiling of tax-exempt 13th-month pay', date);
+  return +r.ceiling_cents!;
+}
+/** The annual tax table on compensation in force on a date (RR 11-2018; the year-end adjustment uses 31 December). */
+export function annualTableAt(db: Db, date: string): Bracket[] {
+  const from = db.prepare('SELECT MAX(effective_from) FROM pay_wtax_annual WHERE effective_from <= ?').pluck().get(date) as string | null;
+  need(from ?? undefined, 'annual tax table', date);
+  return db.prepare('SELECT over_cents AS overCents, base_cents AS baseCents, rate_bp AS rateBp FROM pay_wtax_annual WHERE effective_from = ? ORDER BY over_cents').all(from) as Bracket[];
+}

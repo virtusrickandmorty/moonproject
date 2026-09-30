@@ -11,3 +11,11 @@
   .rpt-page a { color: black; text-decoration: none; }
   .rpt-heading { margin-bottom: 12mm; }
 }
+
+.bir-sheet { break-after: page; min-height: 180mm; }
+.bir-sheet:last-child { break-after: auto; }
+@media print {
+  .bir-sheet { box-shadow: none; border: 0; }
+  .bir-landscape { page: bir-landscape; }
+  @page bir-landscape { size: A4 landscape; margin: 10mm; @bottom-center { content: 'Page ' counter(page); font-size: 9pt; } }
+}

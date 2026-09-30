@@ -16,7 +16,7 @@
 7. Click **Save event**.
 8. To change an event, click **Manage** on the event in the calendar.
 9. To move the event, pick a new **Move to date** and **Time**, then click **Move**.
-10. To cancel an event, type a **Cancellation reason** and click **Cancel event**.
+10. To cancel an event, type a **Cancellation reason** (at least 10 characters) and click **Cancel event**.
 
 **Audit Log**
 1. To see who changed what, go to the **Admin** menu and click **Audit log**.
@@ -37,4 +37,4 @@ The system keeps everything organized. The calendar reminds you of important dat
 
 ### Common mistakes and how to fix them
 - **Mistake:** You clicked on an event on the calendar to fix a typo in the title or notes, but there is no save button.
-- **Fix:** You cannot change the title or notes of an event once saved. To fix a mistake, just cancel and redo it. Open the event, type a **Cancellation reason**, and click **Cancel event**. Then click **+ New event** to create a new one with the correct details.
+- **Fix:** You cannot change the title or notes of an event once saved. To fix a mistake, just cancel and redo it. Open the event, type a **Cancellation reason** (at least 10 characters), and click **Cancel event**. Then click **+ New event** to create a new one with the correct details.

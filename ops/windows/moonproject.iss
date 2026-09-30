@@ -4,6 +4,8 @@
 ; checks the database and moves the program aside to {app}\previous; the new program installs into clean folders and
 ; starts, migrating the database; update.mjs then waits for it to answer, and puts the previous program and the copy
 ; back if it does not and nothing was recorded meanwhile. /HEALTHWAIT=<seconds> changes how long it waits (180).
+; The watchdog (watchdog.mjs, a scheduled task every 5 minutes) restarts the service when it stops answering; an
+; update pauses it, and uninstall removes it.
 
 #define AppVersion GetEnv("MOONPROJECT_VERSION")
 #if AppVersion == ""
@@ -11,6 +13,7 @@
 #endif
 #define Svc "{app}\service\moonproject-service.exe"
 #define Data "{commonappdata}\Moonproject"
+#define Watchdog "Moonproject Watchdog"
 
 [Setup]
 AppId={{6F1B7C2E-3A9D-4E58-9B41-2D7C5E8A0F13}
@@ -45,6 +48,7 @@ Name: "{#Data}\logs"; Flags: uninsneveruninstall
 [Files]
 Source: "out\stage\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 Source: "update.mjs"; Flags: dontcopy
+Source: "watchdog.mjs"; DestDir: "{app}\service"; Flags: ignoreversion
 
 [Run]
 ; Node strips types only outside node_modules, so @moonproject/shared is a junction to packages\shared.
@@ -60,13 +64,15 @@ Filename: "{sys}\sc.exe"; Parameters: "config Moonproject obj= ""NT SERVICE\Moon
 Filename: "{sys}\icacls.exe"; Parameters: """{#Data}"" /inheritance:r /grant:r ""*S-1-5-18:(OI)(CI)F"" ""*S-1-5-32-544:(OI)(CI)F"" ""NT SERVICE\Moonproject:(OI)(CI)M"" /C /Q"; Flags: runhidden waituntilterminated; StatusMsg: "Protecting the data folder..."
 Filename: "{sys}\icacls.exe"; Parameters: """{#Data}\*"" /reset /T /C /Q"; Flags: runhidden waituntilterminated
 Filename: "{sys}\icacls.exe"; Parameters: """{app}"" /grant ""NT SERVICE\Moonproject:(OI)(CI)RX"" /C /Q"; Flags: runhidden waituntilterminated
-; Open ports 443 (the app) and 80 (the "Join this PC" page; 8080 when another program has 80) on private and domain
+; Open ports 443 (the app), 80 (the "Join this PC" page; 8080 when another program has 80) and 8443 (the practice shop) on private and domain
 ; networks only, never on public Wi-Fi.
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Moonproject"""; Flags: runhidden waituntilterminated
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Moonproject"" dir=in action=allow protocol=TCP localport=443,80,8080 profile=private,domain"; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""Moonproject"" dir=in action=allow protocol=TCP localport=443,80,8080,8443 profile=private,domain"; Flags: runhidden waituntilterminated
 Filename: "{sys}\tzutil.exe"; Parameters: "/s ""Singapore Standard Time"""; Tasks: timezone; Flags: runhidden waituntilterminated
 Filename: "{#Svc}"; Parameters: "start"; Flags: runhidden waituntilterminated; StatusMsg: "Starting Moonproject..."
 Filename: "{tmp}\node.exe"; Parameters: "--disable-warning=ExperimentalWarning ""{tmp}\update.mjs"" after --app ""{app}"" --data ""{#Data}"" --wait {param:HEALTHWAIT|180}"; Check: Updating; Flags: runhidden waituntilterminated; StatusMsg: "Checking that the new version started..."
+; Last, once the service runs (or an update has gone back): the watchdog task, registered afresh.
+Filename: "{app}\node\node.exe"; Parameters: """{app}\service\watchdog.mjs"" install"; Flags: runhidden waituntilterminated; StatusMsg: "Setting up the watchdog..."
 Filename: "http://localhost/"; Description: "Open the ""Join this PC"" page"; Flags: postinstall shellexec nowait skipifsilent
 
 [UninstallDelete]
@@ -74,6 +80,8 @@ Filename: "http://localhost/"; Description: "Open the ""Join this PC"" page"; Fl
 Type: filesandordirs; Name: "{app}\previous"
 
 [UninstallRun]
+; The watchdog first, so it does not start the service again while it is being removed.
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""{#Watchdog}"" /F"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveWatchdog"
 Filename: "{#Svc}"; Parameters: "stop"; Flags: runhidden waituntilterminated; RunOnceId: "StopService"
 Filename: "{#Svc}"; Parameters: "uninstall"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveService"
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Moonproject"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveFirewall"
@@ -99,17 +107,21 @@ begin
   IsUpdate := FileExists(ExpandConstant('{app}\node\node.exe'));
   if not IsUpdate then
     exit;
-  if not FileCopy(ExpandConstant('{app}\node\node.exe'), ExpandConstant('{tmp}\node.exe'), False) then
+  if not CopyFile(ExpandConstant('{app}\node\node.exe'), ExpandConstant('{tmp}\node.exe'), False) then
   begin
     Result := 'Setup could not prepare the update (copying node.exe failed). Nothing was changed.';
     exit;
   end;
   ExtractTemporaryFile('update.mjs');
+  { The watchdog must not start the service while its folders move: paused here, registered again at the end. }
+  Exec(ExpandConstant('{sys}\schtasks.exe'), '/Change /TN "{#Watchdog}" /DISABLE', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Exec(ExpandConstant('{sys}\schtasks.exe'), '/End /TN "{#Watchdog}"', '', SW_HIDE, ewWaitUntilTerminated, Code);
   Exec(ExpandConstant('{#Svc}'), 'stop', '', SW_HIDE, ewWaitUntilTerminated, Code);
   if not Exec(ExpandConstant('{tmp}\node.exe'), ExpandConstant('--disable-warning=ExperimentalWarning "{tmp}\update.mjs" before --app "{app}" --data "{#Data}" --to "{#AppVersion}"'),
     '', SW_HIDE, ewWaitUntilTerminated, Code) or (Code <> 0) then
   begin
     Exec(ExpandConstant('{#Svc}'), 'start', '', SW_HIDE, ewWaitUntilTerminated, Code);
+    Exec(ExpandConstant('{sys}\schtasks.exe'), '/Change /TN "{#Watchdog}" /ENABLE', '', SW_HIDE, ewWaitUntilTerminated, Code);
     Result := ExpandConstant('Moonproject could not make and check its copy of the database before the update, so nothing was changed and the current version is running again. The reason is in {#Data}\logs\update.log.');
   end;
 end;

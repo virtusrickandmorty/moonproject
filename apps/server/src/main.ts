@@ -5,12 +5,14 @@
  *   with the app's own CA and server certificate (PLAN C6); plain HTTP on port 80 (HTTP_PORT, or 8080 when another
  *   program has 80: HTTP_FALLBACK_PORT) serves only the "Join this PC" page and the CA download. The certificate is renewed without a restart when this PC's addresses
  *   change or it nears its end.
+ *   Practice mode (MOONPROJECT_PRACTICE_PORT, set to 8443 by the installer): a made-up shop for training on that port,
+ *   with its own database in data/practice (platform/practice/shop.ts).
  */
 import { mkdirSync } from 'node:fs';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Server as HttpsServer } from 'node:https';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { openDb } from './platform/db/driver.ts';
 import { stamp, systemClock } from './platform/clock.ts';
 import { buildApp, prepareDatabase } from './app.ts';
@@ -20,6 +22,10 @@ import { applyPendingRestore, recordRestored } from './modules/BAK/restore.ts';
 import { localNames } from './engine/security/tls/certs.ts';
 import { joinHandler } from './engine/security/tls/join.ts';
 import { ensureTls } from './engine/security/tls/store.ts';
+import { practiceShop, type PracticeShop } from './platform/practice/shop.ts';
+import { nightlyTick } from './modules/AUD/nightly.ts';
+import { isCheckDue, lastSystemCheck, runSystemCheck } from './platform/health/health.ts';
+import { RESTART_EXIT_CODE } from './platform/restart.ts';
 
 const dbFile = process.env.MOONPROJECT_DB ?? 'data/moonproject.db';
 mkdirSync(dirname(dbFile), { recursive: true });
@@ -30,7 +36,36 @@ const lan = process.env.MOONPROJECT_LISTEN === 'lan';
 const modules = await loadModules();
 // The certificate table comes with the engine migrations, so LAN mode migrates first (buildApp's own run is then a no-op).
 let tls = lan ? (prepareDatabase(db, systemClock, modules), ensureTls(db, systemClock, localNames())) : null;
-const { app } = buildApp({ db, clock: systemClock, modules, logger: true, ...(tls ? { https: { key: tls.server.keyPem, cert: tls.server.certPem } } : {}) });
+const practicePort = Number(process.env.MOONPROJECT_PRACTICE_PORT ?? 0);
+let practice: PracticeShop | undefined;
+if (practicePort) {
+  practice = practiceShop({
+    realDb: db, folder: join(dirname(dbFile), 'practice'), host: lan ? '0.0.0.0' : '127.0.0.1', port: practicePort, clock: systemClock, modules,
+    ...(tls ? { https: { key: tls.server.keyPem, cert: tls.server.certPem } } : {}),
+    log: { info: (m) => app.log.info(m), error: (m) => app.log.error(m) },
+  });
+}
+let joinPort: number | null = null;
+const { app, deps } = buildApp({
+  db, clock: systemClock, modules, logger: true, ...(practice ? { practiceShop: practice } : {}),
+  ...(tls ? { https: { key: tls.server.keyPem, cert: tls.server.certPem } } : {}),
+  network: { joinPort: () => joinPort },
+  // After a restore (PLAN C8): exit once no request is running; the Windows service starts Moonproject again, and the
+  // start above swaps the restored copy in. Run by hand (development), start it again yourself.
+  onRestart: (reason) => {
+    app.log.warn(`Restarting to finish the ${reason}`);
+    setTimeout(() => process.exit(RESTART_EXIT_CODE), 15_000).unref(); // a connection that will not close
+    void (async () => {
+      try {
+        await practice?.stop();
+        await app.close();
+        db.close();
+      } finally {
+        process.exit(RESTART_EXIT_CODE);
+      }
+    })();
+  },
+});
 if (restored) {
   recordRestored(db, restored, stamp(systemClock), 'start');
   app.log.warn(`Restored ${restored.file}. The database it replaced is kept as ${restored.previous}.`);
@@ -57,6 +92,7 @@ if (tls) {
       join.off('error', failed);
       join.on('error', (e) => app.log.error(`"Join this PC" page: ${e.message}`));
       const port = (join.address() as AddressInfo).port;
+      joinPort = port;
       const ip = tls!.server.ips.find((a) => a !== '127.0.0.1') ?? 'localhost';
       app.log.info(`Devices join at http://${ip}${port === 80 ? '' : `:${port}`}/ ("Join this PC" page on port ${port})`);
     });
@@ -68,6 +104,7 @@ if (tls) {
       const next = ensureTls(db, systemClock, localNames());
       if (next.issued) {
         (app.server as unknown as HttpsServer).setSecureContext({ key: next.server.keyPem, cert: next.server.certPem });
+        practice?.setSecureContext({ key: next.server.keyPem, cert: next.server.certPem });
         app.log.info(`New server certificate for ${[...next.server.ips, ...next.server.dnsNames].join(', ')}`);
       }
       tls = next;
@@ -78,6 +115,8 @@ if (tls) {
 } else {
   await app.listen({ host: '127.0.0.1', port: Number(process.env.PORT ?? 3000) });
 }
+// After the real shop is up: making the practice shop's data the first time takes a while, in a child process.
+void practice?.start();
 
 // Backups (PLAN C8): one at start if none today, then every 2 hours from 07:00 to 21:00 Manila. A failed run is
 // logged in bak_runs and shown on the backup page; the server keeps running.
@@ -93,5 +132,26 @@ const backupTick = async () => {
     backingUp = false;
   }
 };
-void backupTick();
+// Nightly checks (PLAN E13): at 02:00 Manila by this PC's clock, or at the next start when the PC was off. The start
+// waits for its backup first, so the "last backup" check does not judge a backup that is about to be made.
+const nightlyChecks = () => {
+  try {
+    const ran = nightlyTick({ db, clock: systemClock, practice: false, titleOf: (type) => deps.registry.docType(type)?.title ?? type });
+    if (ran) app.log.info(`Nightly checks for ${ran.night}: ${ran.checks.filter((c) => !c.passed).length} of ${ran.checks.length} found something`);
+  } catch (e) {
+    app.log.error(`The nightly checks failed: ${(e as Error).message}`);
+  }
+};
+void backupTick().finally(nightlyChecks);
 setInterval(() => void backupTick(), 10 * 60_000).unref();
+setInterval(nightlyChecks, 60_000).unref();
+
+// System Health (PLAN C8): the full system check every night; the page shows the newest.
+setInterval(() => {
+  try {
+    const now = stamp(systemClock);
+    if (isCheckDue(lastSystemCheck(db)?.at ?? null, now)) runSystemCheck(db, now, { reason: 'schedule', userId: null });
+  } catch (e) {
+    app.log.error(`The nightly system check failed: ${(e as Error).message}`);
+  }
+}, 10 * 60_000).unref();

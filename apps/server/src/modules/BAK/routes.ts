@@ -12,15 +12,11 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { requireStepUp } from '../../engine/security/sessions.ts';
 import { TIERS, bakSettings, keptIn, lastOkRun, runBackup } from './backup.ts';
 import { saveSettings, settingsIssues } from './settings.ts';
-import { BACKUP_FILE, cleanStaged, openBackup, pendingRestore, requestRestore, restoreDir, stage, stagedPath } from './restore.ts';
+import { attachmentsDir } from '../../engine/attachments.ts';
+import { BACKUP_FILE, attachmentProblems, cleanStaged, openBackup, pendingRestore, requestRestore, restoreDir, stage, stagedPath } from './restore.ts';
 import { copyToUsb } from './usb.ts';
+import { DRILL_EVERY_MS, STALE_MS, USB_EVERY_MS } from './public.ts';
 
-const HOUR = 3600_000;
-/** No successful backup for this long turns the status red (PLAN E13 "backup stale"). */
-const STALE_MS = 26 * HOUR;
-/** The restore drill is quarterly; USB drives are swapped weekly (PLAN C8). */
-const DRILL_EVERY_MS = 92 * 24 * HOUR;
-const USB_EVERY_MS = 8 * 24 * HOUR;
 
 const checkInput = z.object({
   source: z.enum(['local', 'offsite']),
@@ -28,7 +24,11 @@ const checkInput = z.object({
   key: z.string().max(200),
   purpose: z.enum(['drill', 'restore']),
 }).strict();
-const usbInput = z.object({ drive: z.enum(['A', 'B']), dir: z.string().trim().min(1).max(260) }).strict();
+/** A folder on this PC: a network folder (\\server\share) would send the PC's Windows sign-in, and the backups, to that server. */
+const usbInput = z.object({
+  drive: z.enum(['A', 'B']),
+  dir: z.string().trim().min(1).max(260).refine((d) => !/^[\\/]{2}/.test(d), 'Pick the USB drive plugged into this PC, like E:\\Moonproject, not a network folder.'),
+}).strict();
 
 export function bakRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock, registry } = deps;
@@ -111,7 +111,15 @@ export function bakRoutes(app: FastifyInstance, deps: AppDeps): void {
       });
     try {
       const facts = await openBackup(join(folder, input.file), input.key, staged, migrations(), (copy) =>
-        prepareDatabase(copy, clock, registry.modules.filter((m) => m !== engineModule)));
+        prepareDatabase(copy, clock, registry.modules.filter((m) => m !== engineModule)),
+      // A restore puts the backup's attached files back beside the database now: named by their SHA-256, they never
+      // replace another file, so nothing changes for the live data until the restore itself.
+      input.purpose === 'restore' ? { restoreAttachmentsTo: attachmentsDir(db) } : {});
+      const problem = attachmentProblems(facts.attachments);
+      if (problem && input.purpose === 'drill') {
+        rmSync(staged, { force: true });
+        throw new AppError('ATTACHMENTS_BAD', problem, 422, facts.attachments);
+      }
       log('ok', null, facts);
       const live = db.prepare('SELECT seq, at FROM audit_log ORDER BY seq DESC LIMIT 1').get() as { seq: number; at: string };
       if (input.purpose === 'drill') {
@@ -126,7 +134,10 @@ export function bakRoutes(app: FastifyInstance, deps: AppDeps): void {
     }
   });
 
-  /** Restores the checked copy: it is swapped in when Moonproject next starts. The owner, with a fresh password. */
+  /**
+   * Restores the checked copy: Moonproject restarts by itself once no request is running, and the start swaps the copy
+   * in. Until then nothing more can be recorded. The owner, with a fresh password.
+   */
   app.post('/api/bak/restore/apply', { config: { permission: 'bak.restore' } }, async (req: FastifyRequest) => {
     const user = currentUser(req);
     requireStepUp(user, clock);
@@ -134,7 +145,25 @@ export function bakRoutes(app: FastifyInstance, deps: AppDeps): void {
     const at = now();
     const s = requestRestore(dir(), stagedId, at);
     tx(db, () => appendAudit(db, { at, userId: user.userId, action: 'bak.restore', entityType: 'bak.backup', entityId: s.file, data: { stagedId, madeAt: s.facts.madeAt } }));
-    return { file: s.file, restartNeeded: true, message: 'Restart Moonproject to finish. Everyone should save their work and sign out first; the current data is kept next to the restored one.' };
+    deps.restart.request(`restore of ${s.file}`);
+    return {
+      file: s.file, restartNeeded: true, restarting: true,
+      message: 'Moonproject restarts by itself within a minute to finish the restore, then everyone signs in again. Nothing more can be recorded until then; the current data is kept next to the restored one.',
+    };
+  });
+
+  /**
+   * The last restore, shown to an owner at their first sign-in after it ("Restored from <backup> at <time>"): only in
+   * the first session they opened since, so it is not shown again at the sign-in after.
+   */
+  app.get('/api/bak/restored', { config: { permission: 'bak.restore' } }, async (req: FastifyRequest) => {
+    const last = db.prepare(`SELECT at, entity_id AS file FROM audit_log WHERE action = 'bak.restored' ORDER BY seq DESC LIMIT 1`).get() as
+      | { at: string; file: string }
+      | undefined;
+    if (!last) return { restored: null };
+    const user = currentUser(req);
+    const first = db.prepare('SELECT id FROM sessions WHERE user_id = ? AND created_at >= ? ORDER BY created_at, rowid LIMIT 1').pluck().get(user.userId, last.at);
+    return { restored: first === user.sessionId ? { file: last.file, at: last.at } : null };
   });
 
   /** Copies the backups to USB drive A or B. */

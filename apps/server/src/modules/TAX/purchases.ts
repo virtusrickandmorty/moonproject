@@ -1,17 +1,21 @@
 /**
  * Purchases and EWT registers and the 2307s to issue (PLAN E12, G "Tax"), read from the ledger the way the sales
  * register is (registers.ts): one row per journal that touches the account in the period, a cancel as its own negative
- * row on the cancel date, a journal voucher as an adjustment, the quarterly VAT close and the BIR payments left out, so
- * the totals tie to the GL movement by construction. What the ledger does not carry (the supplier's invoice number,
+ * row on the cancel date, a journal voucher as an adjustment, the quarterly VAT close, the BIR payments and the opening
+ * tax payables left out (IN_REGISTERS), so the totals tie to the GL movement by construction. What the ledger does not carry (the supplier's invoice number,
  * what a bill line bought, the EWT class, base and rate) comes from the posting document, through AP, EXP and FA public.ts.
  *   Purchases register (1401 input VAT): amount before VAT, input VAT, total and the class the 2550Q and the SLP need.
  *   A bill with lines of two classes gives one row per class.
+ *   Purchases with no input VAT: every supplier bill, expense voucher and asset bought (FA-) with no input VAT (a
+ *   supplier that is not VAT-registered, or no valid VAT invoice: the full amount is the cost, D4.7), by class, dated
+ *   when recorded and its cancel as a negative row on the cancel date, like the register above. Nothing on 1401 to tie
+ *   to, so it ties to the documents. An expense for taxes, licenses or penalties buys nothing, so it is left out.
  *   EWT register (2311 EWT payable): EWT class, ATC, base, rate and EWT.
  *   2307s to issue for a quarter: per supplier and ATC, the base and EWT of each month.
  */
 import type { Db } from '../../platform/db/driver.ts';
 import type { EwtClass } from '../../engine/settings.ts';
-import { billTaxFacts, type BillTaxFacts } from '../AP/public.ts';
+import { advanceTaxFacts, billTaxFacts, type BillTaxFacts } from '../AP/public.ts';
 import { voucherTaxFacts, type GoodsOrServices } from '../EXP/public.ts';
 import { purchaseTaxFacts } from '../FA/public.ts';
 import { supplierTaxInfo } from '../PUR/public.ts';
@@ -61,6 +65,7 @@ export interface SupplierRow {
   supplierId: string | null; supplierName: string; tin: string | null;
 }
 export interface PurchaseRow extends SupplierRow { supplierInvoiceNo: string | null; purchaseClass: PurchaseClass | null; netCents: number; vatCents: number; totalCents: number }
+export interface NoVatPurchaseRow extends SupplierRow { supplierInvoiceNo: string | null; purchaseClass: PurchaseClass; amountCents: number }
 export interface EwtRow extends SupplierRow { ewtClass: EwtClass | null; atc: string | null; atcChoices: string[]; baseCents: number | null; rateBp: number | null; ewtCents: number }
 
 /** What the posting document says beside the ledger: the payee as registered, the invoice number, a bill's lines, the EWT. */
@@ -85,6 +90,9 @@ function sourceOf(db: Db, t: Touch): Source {
   if (bill) return { ...registered(db, bill.supplierId), invoiceNo: bill.supplierInvoiceNo, lines: bill.lines, ewt: ewt(bill) };
   const v = t.docType === 'exp.voucher' ? voucherTaxFacts(db, t.sourceId) : undefined;
   if (v) return { ...(v.supplierId ? registered(db, v.supplierId) : { name: v.payeeName, tin: v.payeeTin }), invoiceNo: v.supplierInvoiceNo, bought: v.bought, ewt: ewt(v) };
+  // A supplier advance withholds when it is paid (EWT is due on payment or accrual, whichever comes first); the bill that applies it leaves that base out.
+  const adv = t.docType === 'ap.advance' ? advanceTaxFacts(db, t.sourceId) : undefined;
+  if (adv) return { ...registered(db, adv.supplierId), invoiceNo: null, ewt: ewt(adv) };
   const fa = t.docType === 'fa.buy' ? purchaseTaxFacts(db, t.sourceId) : undefined;
   if (fa) return { ...registered(db, fa.supplierId), invoiceNo: fa.supplierInvoiceNo };
   return { ...(t.partyId ? registered(db, t.partyId) : { name: '', tin: null }), invoiceNo: null };
@@ -138,6 +146,56 @@ export function purchasesRegister(db: Db, from: string, to: string) {
     glVatCents: movement(db, ['INPUT_VAT'], from, to, 'debit'),
   };
 }
+
+/** A recorded bill, voucher or asset bought with no input VAT, per class: what it cost, VAT included (nothing when it had input VAT). */
+function withoutVat(db: Db, docType: string | null, id: string): { cls: PurchaseClass; cents: number }[] {
+  const bill = docType === 'ap.bill' ? billTaxFacts(db, id) : undefined;
+  if (bill) {
+    if (bill.lines.some((l) => l.vatCents !== 0)) return [];
+    return CLASSES.map((cls) => ({ cls, cents: total(bill.lines.filter((l) => l.isPurchase && l.bought === cls), (l) => l.costCents) })).filter((x) => x.cents !== 0);
+  }
+  const v = docType === 'exp.voucher' ? voucherTaxFacts(db, id) : undefined;
+  if (v) return v.inputVatCents === 0 && v.isPurchase ? [{ cls: v.bought, cents: v.grossCents }] : [];
+  const fa = docType === 'fa.buy' ? purchaseTaxFacts(db, id) : undefined;
+  return fa && fa.inputVatCents === 0 ? [{ cls: 'capital_goods', cents: fa.grossCents }] : [];
+}
+
+/** The party a purchase document names on its tax lines: the supplier, or a one-off payee's `tin:…` (none without a TIN). */
+function partyOf(db: Db, docType: string | null, id: string): string | null {
+  if (docType === 'exp.voucher') return voucherTaxFacts(db, id)?.taxPartyId ?? null;
+  return (docType === 'ap.bill' ? billTaxFacts(db, id)?.supplierId : purchaseTaxFacts(db, id)?.supplierId) ?? null;
+}
+
+/**
+ * Purchases with no input VAT: every journal of a supplier bill, expense voucher or asset bought (FA-) in the period
+ * whose document had no input VAT, one row per class, the cancel negative. The SLP puts them in its exempt column and
+ * the 2550Q in "domestic purchases with no input tax".
+ */
+export function noVatPurchasesRegister(db: Db, from: string, to: string) {
+  const journals = db
+    .prepare(
+      `SELECT j.id AS journalId, j.number AS journalNumber, j.business_date AS date, j.posting_kind AS posting, j.source_type AS sourceType, j.source_id AS sourceId,
+         d.doc_type AS docType, d.number AS documentNumber, NULL AS formNumber, d.status AS docStatus, NULL AS partyId, 1 AS parties
+       FROM journals j JOIN documents d ON d.id = j.source_id
+       WHERE j.source_type = 'document' AND j.sealed = 1 AND j.business_date BETWEEN ? AND ? AND d.doc_type IN ('ap.bill', 'exp.voucher', 'fa.buy')
+       ORDER BY j.business_date, j.number`,
+    )
+    .all(from, to) as Touch[];
+  const rows: NoVatPurchaseRow[] = journals.flatMap((j) => {
+    const parts = withoutVat(db, j.docType, j.sourceId);
+    if (parts.length === 0) return [];
+    const t = { ...j, partyId: partyOf(db, j.docType, j.sourceId) };
+    const s = sourceOf(db, t);
+    return parts.map((p) => ({ ...supplierRow(t, s), supplierInvoiceNo: s.invoiceNo, purchaseClass: p.cls, amountCents: sign(t) * p.cents }));
+  });
+  return {
+    from, to, rows,
+    totals: { amountCents: total(rows, (r) => r.amountCents) },
+    /** The 2550Q and SLP figures by class. */
+    byClass: Object.fromEntries(CLASSES.map((c) => [c, total(rows.filter((r) => r.purchaseClass === c), (r) => r.amountCents)])) as Record<PurchaseClass, number>,
+  };
+}
+export type NoVatPurchases = ReturnType<typeof noVatPurchasesRegister>;
 
 /** EWT register: every journal on 2311 EWT payable, with the EWT class, its ATC, the base and rate of the document, and the EWT. */
 export function ewtRegister(db: Db, from: string, to: string) {

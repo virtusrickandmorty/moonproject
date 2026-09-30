@@ -178,6 +178,44 @@ export function updateEmployee(db: Db, id: string, ifMatch: unknown, raw: unknow
   return after;
 }
 
+/** Where a payslip is emailed, and whether the employee agreed to get it. Set only with emp.pay (setPayslipEmail). */
+export const EMAIL = /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/;
+export const payslipEmailInput = z
+  .object({
+    email: z.string().trim().max(254).regex(EMAIL, 'That is not an email address.').nullable(),
+    consent: z.boolean(),
+  })
+  .strict()
+  .refine((v) => !v.consent || v.email !== null, { message: 'Type the email address before ticking that the employee agrees to get payslips by email.', path: ['email'] });
+
+export interface PayslipEmail { email: string | null; consent: boolean }
+export function payslipEmailOf(db: Db, id: string): PayslipEmail | undefined {
+  const r = db.prepare('SELECT payslip_email AS email, payslip_email_consent AS consent FROM emp_employees WHERE id = ?').get(id) as { email: string | null; consent: number } | undefined;
+  return r && { email: r.email?.trim() || null, consent: r.consent === 1 };
+}
+
+/**
+ * The employee's payslip email address and consent (If-Match). Only with emp.pay, checked here as well as on the route,
+ * and even for a separated employee (a last payslip may still be owed). The audit row names what changed and says whether
+ * consent is now on; it never carries the address.
+ */
+export function setPayslipEmail(db: Db, id: string, ifMatch: unknown, raw: unknown, who: Who): PayslipEmail {
+  if (!who.can('emp.pay')) throw forbidden('emp.pay');
+  const v = payslipEmailInput.parse(raw);
+  const e = mustGet(db, id);
+  checkVersion(ifMatch, e.version);
+  const before = payslipEmailOf(db, id)!;
+  const addressChanged = v.email !== before.email;
+  const consentChanged = v.consent !== before.consent;
+  if (!addressChanged && !consentChanged) throw badRequest('NO_CHANGES', 'Enter a change before saving.');
+  db.prepare('UPDATE emp_employees SET payslip_email = ?, payslip_email_consent = ?, version = version + 1, updated_at = ? WHERE id = ?').run(v.email, +v.consent, who.at, id);
+  appendAudit(db, {
+    at: who.at, userId: who.userId, action: 'emp.payslip_email', entityType: 'emp.employee', entityId: id,
+    data: { fields: [...(addressChanged ? ['payslipEmail'] : []), ...(consentChanged ? ['payslipEmailConsent'] : [])], addressNow: v.email === null ? 'none' : 'set', consentBefore: before.consent, consentNow: v.consent },
+  });
+  return { email: v.email, consent: v.consent };
+}
+
 export const separationInput = z.object({ separatedOn: date, reason: z.string().trim().min(10).max(300) }).strict();
 
 /** Records a separation (the last day worked and why). Payroll still pays what is owed up to that day. */
@@ -190,6 +228,11 @@ export function separateEmployee(db: Db, id: string, ifMatch: unknown, raw: unkn
   if (v.separatedOn > who.today) throw badRequest('BAD_DATE', 'Record the separation on or after the last day worked.');
   const later = db.prepare('SELECT MAX(work_date) FROM emp_attendance WHERE employee_id = ?').pluck().get(id) as string | null;
   if (later && later > v.separatedOn) throw conflict('HAS_ATTENDANCE', `Attendance is recorded up to ${later}, after that last day.`);
+  // A recorded payroll that paid days after the last day paid them wrongly (EMP 0002 emp_paid_days): it is cancelled first.
+  const paid = db
+    .prepare(`SELECT d.number, p.to_date AS toDate FROM emp_paid_days p JOIN documents d ON d.id = p.document_id WHERE d.status = 'posted' AND p.employee_id = ? AND p.to_date > ? ORDER BY p.to_date DESC, d.number LIMIT 1`)
+    .get(id, v.separatedOn) as { number: string; toDate: string } | undefined;
+  if (paid) throw conflict('PAID_AFTER', `${paid.number} paid ${e.fullName} up to ${paid.toDate}, after that last day. Cancel it first, then record the separation and work the payroll out again.`);
   db.prepare('UPDATE emp_employees SET is_active = 0, separated_on = ?, separation_reason = ?, version = version + 1, updated_at = ? WHERE id = ?').run(v.separatedOn, v.reason, who.at, id);
   appendAudit(db, { at: who.at, userId: who.userId, action: 'emp.employee.separate', entityType: 'emp.employee', entityId: id, data: v });
   return mustGet(db, id);

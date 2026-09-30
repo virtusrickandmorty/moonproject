@@ -2,11 +2,16 @@
  * Invoice record (PLAN D3, D5 INV-REC + DEP-APPLY): the manual BIR invoice written for a release, recorded as the sale.
  *   Dr 1201 AR (G); Dr 4190 the discount shown (its NET) / Cr 4101/4102/4103 sales (NET at list, by line class); Cr 2301 VAT(G)
  *   Dr 2201 the JO's deposits (up to G) / Cr 1201 AR                                                          (DEP-APPLY)
- * VAT at document level (D4.1) at the rate in force on the invoice date (settings). Deposit VAT mode A only: modes B and
- * C are refused until they are built. AR and deposit lines name the customer and the JO (journal ref): the JO's deposits
- * are one pool, applied oldest first up to G, and its balance due reads straight from the ledger.
- * Cancel (plain or for an edit): the mirror, then settleLines: what was paid on this invoice becomes deposits of the JO
- * again, Dr 1201 / Cr 2201 (D6); an edit's replacement applies them as deposits.
+ * Downpayment VAT modes (D3, COL doctypes/deposit-vat.ts; the job order's mode, which its first downpayment fixed):
+ *   B  plus Dr 2301 / Cr 2209: the output VAT recognised on the deposits it applies (DEP-VAT-REV)
+ *   C  the downpayments invoiced ahead (INV-DP) are taken into sales first: the booklet shows G − DP, so AR is G − DP
+ *      and 2301 gets VAT(G) − VAT_dp; Dr 2201 NET_dp / Cr sales NET_dp (on their own lines). Money held is then applied.
+ * The record keeps the whole sale: gross_cents G, vat_cents VAT(G), and deposit_applied_cents = money + DP applied, so
+ * G − deposit applied is what it leaves to collect. VAT at document level (D4.1) at the rate in force on the invoice date
+ * (settings). AR and deposit lines name the customer and the JO (journal ref): the JO's deposits are one pool, applied
+ * oldest first up to G, and its balance due reads straight from the ledger.
+ * Cancel (plain or for an edit): the mirror, then settleJobOrder: what was paid on this invoice becomes deposits of the JO
+ * again, Dr 1201 / Cr 2201 (D6), and 2209 follows the deposits; an edit's replacement applies them as deposits.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -16,7 +21,10 @@ import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { DraftLine } from '../../../engine/ledger/post.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { saleByInvoiceNumber, saleInvoiceNumbersBetween } from '../../QS/public.ts';
+import { assetSaleByInvoiceNumber, assetSaleInvoiceNumbersBetween } from '../../FA/public.ts';
+import { creditsOn, depositModeOn, depositVatLines, depositVatRowsOf, invoiceDeposits, modeKeptIssue, recordDepositVat, settleJobOrder, vatRow } from '../../COL/public.ts';
 import { bookletIssue } from '../../TAX/public.ts';
+import { dpInvoiceUsedBy, dpInvoiceNumbersBetween } from './dp-invoice.ts';
 import { invoicedCents, joLedger } from '../public.ts';
 import { MAX_CENTS } from './job-order.ts';
 import { releaseDoc, type LineKind, type ReleaseLine } from './release.ts';
@@ -25,7 +33,6 @@ export const SALES_CLASSES: LineKind[] = ['made_to_order', 'ready_made', 'servic
 export const SALES_ROLE: Record<LineKind, string> = { made_to_order: 'SALES_MTO', ready_made: 'SALES_RTW', service: 'SALES_SERVICE' };
 /** One IR- series for every invoice record: a release's (here) and a quick sale's (QS). */
 export const INVOICE_SERIES = { key: 'IR', prefix: 'IR-' };
-const MODE_WORDS = { A: 'deposit only', B: 'VAT on deposit', C: 'invoice on downpayment' } as const;
 
 export const invoiceRecordInput = z
   .object({
@@ -53,11 +60,31 @@ export function invoiceAmounts(lines: readonly { kind: LineKind; listCents: numb
   return { vatRateBp, listCents, discountCents, grossCents, vatableSalesCents: netCents, vatCents, discountNetCents, salesCents };
 }
 
-/** A release's invoice figures (also the "write these on the booklet" worksheet), with the JO's deposits it applies. */
+const NO_DEPOSITS = {
+  depositVatMode: 'A' as 'A' | 'B' | 'C',
+  depositAppliedCents: 0, depositVatCents: 0, depositVatBaseCents: 0, dpAppliedCents: 0, dpVatAppliedCents: 0,
+};
+
+/**
+ * A release's invoice figures, with what it does with the JO's deposits (COL invoiceDeposits): money applied, the 2209 on
+ * it (mode B), the downpayments invoiced ahead it takes into sales (mode C, their NET split by line class like the sale's).
+ * `booklet`: "write these on the booklet" (D4.4); in mode C the balance invoice shows G − DP.
+ */
 export function invoiceFigures(db: Db, jobOrderId: string, lines: readonly ReleaseLine[], date: string) {
   const figures = invoiceAmounts(lines, settingAt(db, 'tax.vat_rate_bp', date));
-  const depositAppliedCents = Math.max(0, Math.min(joLedger(db, jobOrderId).depositsHeldCents, figures.grossCents));
-  return { ...figures, depositAppliedCents };
+  const deposits = jobOrderId ? invoiceDeposits(db, jobOrderId, figures.grossCents, date) : { ...NO_DEPOSITS, depositVatMode: settingAt(db, 'sales.deposit_vat_mode', date) };
+  const dpNetCents = deposits.dpAppliedCents - deposits.dpVatAppliedCents;
+  const weights = SALES_CLASSES.map((k) => figures.salesCents[k]);
+  const shares = weights.some((w) => w > 0) ? allocate(dpNetCents, weights) : [dpNetCents, 0, 0];
+  const dpSalesCents = Object.fromEntries(SALES_CLASSES.map((k, i) => [k, shares[i]!])) as Record<LineKind, number>;
+  const bookletGross = figures.grossCents - deposits.dpAppliedCents;
+  const bookletVat = figures.vatCents - deposits.dpVatAppliedCents;
+  return {
+    ...figures,
+    ...deposits,
+    dpSalesCents,
+    booklet: { grossCents: bookletGross, vatableSalesCents: bookletGross - bookletVat, vatCents: bookletVat },
+  };
 }
 
 export interface InvoiceRecord extends InvoiceRecordInput, ReturnType<typeof invoiceFigures> {
@@ -66,7 +93,6 @@ export interface InvoiceRecord extends InvoiceRecordInput, ReturnType<typeof inv
   jobOrderNumber: string;
   customerId: string;
   customerName: string;
-  depositVatMode: 'A' | 'B' | 'C';
   lines: ReleaseLine[];
   totalCents: number;
 }
@@ -74,21 +100,21 @@ export interface InvoiceRecord extends InvoiceRecordInput, ReturnType<typeof inv
 const releaseHeader = (db: Db, id: string) =>
   db.prepare(`SELECT d.number, d.status FROM jo_releases r JOIN documents d ON d.id = r.document_id WHERE r.document_id = ?`).get(id) as { number: string; status: string } | undefined;
 
-/** The document that used a booklet invoice number, cancelled ones included. Releases and quick sales share one booklet. */
+/** The document that used a booklet invoice number, cancelled ones included. Releases, quick sales and asset sales (FA) share one booklet. */
 export function invoiceNumberUsedBy(db: Db, invoiceNumber: string): { number: string; status: string } | undefined {
   const own = db
     .prepare(`SELECT d.number, d.status FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id WHERE CAST(i.invoice_number AS INTEGER) = CAST(? AS INTEGER)`)
     .get(invoiceNumber) as { number: string; status: string } | undefined;
-  return own ?? saleByInvoiceNumber(db, invoiceNumber);
+  return own ?? dpInvoiceUsedBy(db, invoiceNumber) ?? saleByInvoiceNumber(db, invoiceNumber) ?? assetSaleByInvoiceNumber(db, invoiceNumber);
 }
 
-/** Booklet invoice numbers used between two numbers by invoice records and quick sales, cancelled ones included (TAX). */
+/** Booklet invoice numbers used between two numbers by invoice records, quick sales and asset sales, cancelled ones included (TAX). */
 export function invoiceNumbersBetween(db: Db, from: number, to: number): { n: number; number: string; status: 'posted' | 'cancelled' }[] {
   const own = db
     .prepare(`SELECT CAST(i.invoice_number AS INTEGER) AS n, d.number, d.status FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id
               WHERE CAST(i.invoice_number AS INTEGER) BETWEEN ? AND ?`)
     .all(from, to) as { n: number; number: string; status: 'posted' | 'cancelled' }[];
-  return [...own, ...saleInvoiceNumbersBetween(db, from, to)].sort((a, b) => a.n - b.n);
+  return [...own, ...dpInvoiceNumbersBetween(db, from, to), ...saleInvoiceNumbersBetween(db, from, to), ...assetSaleInvoiceNumbersBetween(db, from, to)].sort((a, b) => a.n - b.n);
 }
 
 export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
@@ -113,7 +139,6 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
       jobOrderNumber: rel?.jobOrderNumber ?? '?',
       customerId: rel?.customerId ?? '',
       customerName: rel?.customerName ?? '?',
-      depositVatMode: settingAt(ctx.db, 'sales.deposit_vat_mode', ctx.businessDate),
       lines: rel?.lines ?? [],
       totalCents: figures.grossCents,
     };
@@ -122,10 +147,8 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
   validate(doc, ctx) {
     const issues: Issue[] = [];
     const error = (field: string, code: string, message: string) => issues.push({ field, code, level: 'error', message });
-    if (doc.depositVatMode !== 'A') {
-      const m = doc.depositVatMode;
-      error('releaseId', 'DEPOSIT_VAT_MODE', `Downpayment VAT mode ${m} (${MODE_WORDS[m]}) is in force, and this version can record invoices only in mode A (deposit only). Mode ${m} is not built yet: ask the accountant.`);
-    }
+    const kept = doc.jobOrderId ? modeKeptIssue(depositModeOn(ctx.db, doc.jobOrderId, ctx.businessDate), doc.jobOrderNumber, 'releaseId') : null;
+    if (kept) issues.push(kept);
     const rel = releaseHeader(ctx.db, doc.releaseId);
     if (!rel) error('releaseId', 'RELEASE', 'Pick the release this invoice is for.');
     else if (rel.status !== 'posted') error('releaseId', 'RELEASE_CANCELLED', `${rel.number} is cancelled. Record the invoice for the release that replaced it.`);
@@ -153,29 +176,49 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
     ).run(
       h.documentId, doc.releaseId, doc.jobOrderId, doc.customerId, doc.customerName, doc.invoiceNumber, doc.vatRateBp, doc.depositVatMode,
       doc.listCents, doc.discountCents, doc.grossCents, doc.vatCents, doc.discountNetCents,
-      doc.salesCents.made_to_order, doc.salesCents.ready_made, doc.salesCents.service, doc.depositAppliedCents, doc.note ?? null,
+      doc.salesCents.made_to_order, doc.salesCents.ready_made, doc.salesCents.service, doc.depositAppliedCents + doc.dpAppliedCents, doc.note ?? null,
     );
+    if (doc.depositVatCents !== 0 || doc.depositVatBaseCents !== 0 || doc.dpAppliedCents !== 0) {
+      const dpNetCents = doc.dpAppliedCents - doc.dpVatAppliedCents;
+      recordDepositVat(db, h.documentId, 'original', [
+        vatRow({
+          jobOrderId: doc.jobOrderId, customerId: doc.customerId, mode: doc.depositVatMode, depositCents: -doc.depositAppliedCents,
+          depositVatCents: -doc.depositVatCents, depositBaseCents: -doc.depositVatBaseCents, dpInvoicedCents: -doc.dpAppliedCents, dpVatCents: -doc.dpVatAppliedCents,
+          // The register's VATable sales of this invoice: its sales, less what was booked with the VAT on the deposits or downpayment invoices.
+          registerBaseCents: -doc.depositVatBaseCents - dpNetCents,
+        }),
+      ]);
+    }
   },
 
   journal(doc) {
     const party = { type: 'customer', id: doc.customerId };
     const ref = { documentId: doc.jobOrderId };
+    const dp = `Downpayment invoiced before on ${doc.jobOrderNumber}`;
+    // A class's own sale can come out a centavo below zero when the downpayment invoices' VAT rounded down: it is then a debit.
+    const credit = (cents: number) => (cents >= 0 ? { creditCents: cents } : { debitCents: -cents });
     return {
       memo: `Sale to ${doc.customerName}, invoice no. ${doc.invoiceNumber} (${doc.jobOrderNumber}, ${doc.releaseNumber})`,
       lines: [
-        { account: { role: 'AR_TRADE' }, party, ref, debitCents: doc.grossCents, memo: `Invoice no. ${doc.invoiceNumber}` },
+        { account: { role: 'AR_TRADE' }, party, ref, debitCents: doc.grossCents - doc.dpAppliedCents, memo: `Invoice no. ${doc.invoiceNumber}` },
         { account: { role: 'SALES_DISCOUNTS' }, party, debitCents: doc.discountNetCents, memo: 'Discount shown on the invoice' },
-        ...SALES_CLASSES.map((k) => ({ account: { role: SALES_ROLE[k] }, party, creditCents: doc.salesCents[k] })),
-        { account: { role: 'OUTPUT_VAT' }, party, creditCents: doc.vatCents },
+        ...SALES_CLASSES.map((k) => ({ account: { role: SALES_ROLE[k] }, party, ...credit(doc.salesCents[k] - doc.dpSalesCents[k]) })),
+        { account: { role: 'OUTPUT_VAT' }, party, ...credit(doc.vatCents - doc.dpVatAppliedCents) },
+        { account: { role: 'CUSTOMER_DEPOSITS' }, party, ref, debitCents: doc.dpAppliedCents - doc.dpVatAppliedCents, memo: `${dp}, net of VAT, into sales` },
+        ...SALES_CLASSES.map((k) => ({ account: { role: SALES_ROLE[k] }, party, creditCents: doc.dpSalesCents[k], memo: dp })),
         { account: { role: 'CUSTOMER_DEPOSITS' }, party, ref, debitCents: doc.depositAppliedCents, memo: `Deposits of ${doc.jobOrderNumber} applied` },
         { account: { role: 'AR_TRADE' }, party, ref, creditCents: doc.depositAppliedCents, memo: `Deposits of ${doc.jobOrderNumber} applied` },
+        ...depositVatLines(doc.customerId, doc.jobOrderId, doc.jobOrderNumber, -doc.depositVatCents),
       ],
     };
   },
 
+  /** What COL recorded on this invoice (credit memos, write-offs, 2307s received with no cash): cancel those first. */
+  dependents: (db, documentId) => creditsOn(db, documentId),
+
   afterCancel(db, documentId) {
     const d = invoiceRecordDoc.load(db, documentId);
-    const lines = settleLines(db, d.customerId, d.jobOrderId, d.jobOrderNumber);
+    const lines = settleJobOrder(db, documentId, d.customerId, d.jobOrderId, d.jobOrderNumber);
     return lines.length > 0 ? { memo: `${d.jobOrderNumber} receivable and deposits put back in line`, lines } : null;
   },
 
@@ -192,11 +235,24 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
     if (!r) throw new Error(`Invoice record ${documentId} not found`);
     const { note, mto, rtw, service, ...rest } = r;
     const rel = releaseDoc.load(db, r.releaseId);
+    const row = depositVatRowsOf(db, documentId)[0];
+    const dpAppliedCents = 0 - (row?.dpInvoicedCents ?? 0);
+    const dpVatAppliedCents = 0 - (row?.dpVatCents ?? 0);
+    const salesCents = { made_to_order: mto, ready_made: rtw, service };
+    const shares = allocate(dpAppliedCents - dpVatAppliedCents, SALES_CLASSES.some((k) => salesCents[k] > 0) ? SALES_CLASSES.map((k) => salesCents[k]) : [1, 0, 0]);
+    const bookletGross = r.grossCents - dpAppliedCents;
     return {
       ...rest,
       ...(note ? { note } : {}),
+      depositAppliedCents: r.depositAppliedCents - dpAppliedCents,
+      depositVatCents: 0 - (row?.depositVatCents ?? 0),
+      depositVatBaseCents: 0 - (row?.depositBaseCents ?? 0),
+      dpAppliedCents,
+      dpVatAppliedCents,
+      dpSalesCents: Object.fromEntries(SALES_CLASSES.map((k, i) => [k, shares[i]!])) as Record<LineKind, number>,
+      booklet: { grossCents: bookletGross, vatableSalesCents: bookletGross - (r.vatCents - dpVatAppliedCents), vatCents: r.vatCents - dpVatAppliedCents },
       vatableSalesCents: r.grossCents - r.vatCents,
-      salesCents: { made_to_order: mto, ready_made: rtw, service },
+      salesCents,
       releaseNumber: releaseHeader(db, r.releaseId)!.number,
       jobOrderNumber: rel.jobOrderNumber,
       lines: rel.lines,
@@ -208,8 +264,15 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
 
   summary(doc) {
     const discount = doc.discountCents > 0 ? `, discount ${formatPeso(doc.discountCents)} shown` : '';
-    const applied = doc.depositAppliedCents > 0 ? ` ${formatPeso(doc.depositAppliedCents)} of deposits is applied; ${formatPeso(doc.grossCents - doc.depositAppliedCents)} is left to collect.` : '';
-    return `This will record invoice no. ${doc.invoiceNumber} to ${doc.customerName} for ${doc.releaseNumber} of ${doc.jobOrderNumber}: ${formatPeso(doc.grossCents)} (VATable sales ${formatPeso(doc.vatableSalesCents)}, VAT ${formatPeso(doc.vatCents)}${discount}).${applied}`;
+    const applied = doc.depositAppliedCents > 0 ? ` ${formatPeso(doc.depositAppliedCents)} of deposits is applied;` : '';
+    const left = doc.depositAppliedCents > 0 || doc.dpAppliedCents > 0 ? `${applied} ${formatPeso(doc.grossCents - doc.depositAppliedCents - doc.dpAppliedCents)} is left to collect.` : '';
+    const vatOnDeposits = doc.depositVatCents > 0 ? ` ${formatPeso(doc.depositVatCents)} of it was already booked as output VAT on the deposits (mode B).` : '';
+    const sale = `${formatPeso(doc.grossCents)} (VATable sales ${formatPeso(doc.vatableSalesCents)}, VAT ${formatPeso(doc.vatCents)}${discount})`;
+    if (doc.dpAppliedCents > 0) {
+      const b = doc.booklet;
+      return `This will record invoice no. ${doc.invoiceNumber} to ${doc.customerName} for ${doc.releaseNumber} of ${doc.jobOrderNumber}: a sale of ${sale}, less ${formatPeso(doc.dpAppliedCents)} of downpayments already invoiced (mode C), so the invoice shows ${formatPeso(b.grossCents)} (VATable sales ${formatPeso(b.vatableSalesCents)}, VAT ${formatPeso(b.vatCents)}).${left}`;
+    }
+    return `This will record invoice no. ${doc.invoiceNumber} to ${doc.customerName} for ${doc.releaseNumber} of ${doc.jobOrderNumber}: ${sale}.${vatOnDeposits}${left}`;
   },
 
   arbitrary(db) {

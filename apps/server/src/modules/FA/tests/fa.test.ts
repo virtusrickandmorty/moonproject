@@ -163,11 +163,11 @@ describe('cancel mirrors each posting', () => {
     noBrokenInvariants();
   });
 
-  it('retirement: book value to 7202, a sale is refused, later runs skip the asset, cancel puts it back', async () => {
+  it('retirement: book value to 7202, a sale without its invoice is refused, later runs skip the asset, cancel puts it back', async () => {
     const press = (await buy(heatPress())).json();
     const sep = (await run('2026-09')).json();
-    const sale = await post('disposal', { assetId: press.id, kind: 'sale', reason: 'Sold to another shop' }, 10_000_000);
-    expect(errorCodes(sale)).toEqual(['SALE_NEEDS_INVOICE']);
+    const sale = await post('disposal', { assetId: press.id, kind: 'sale', reason: 'Sold to another shop' }, 0);
+    expect(errorCodes(sale)).toEqual(['INVOICE', 'AMOUNT', 'CASH_PLACE', 'BUYER']); // a sale needs its invoice (sale.test.ts)
     const fad = await post('disposal', { assetId: press.id, kind: 'retirement', reason: 'Heating plate cracked, scrapped' }, 10_000_000);
     expect(fad.json()).toMatchObject({ number: 'FAD-000001', summary: 'This will retire FA-000001 Heat press: cost ₱100,000.00 less ₱1,500.00 accumulated depreciation, a loss of ₱98,500.00 (its book value).' });
     expect(journalOf(fad.json().id)).toEqual([['1511', 'asset', press.id, 150_000, 0], ['7202', null, null, 9_850_000, 0], ['1510', 'asset', press.id, 0, 10_000_000]]);

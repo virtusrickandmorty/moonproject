@@ -45,7 +45,7 @@ describe('tax report screen rules', () => {
     expect(cancelMark({ posting: 'original', documentStatus: 'cancelled' })?.text).toBe('Cancelled later');
     expect(cancelMark({ posting: 'reversal', documentStatus: 'cancelled' })?.text).toBe('Cancelled');
     expect(['received', 'pending', null].map((c) => certificateWords(c as 'pending'))).toEqual(['In hand', 'Pending', '—']);
-    expect([0, 1, 3].map(pendingWords)).toEqual(['No 2307 is still to come.', '1 collection still waits for its 2307.', '3 collections still wait for their 2307s.']);
+    expect([0, 1, 3].map(pendingWords)).toEqual(['No 2307 is still to come.', '1 2307 is still to come.', '3 2307s are still to come.']);
     expect(ledgerWarnings([['VAT', 'output VAT', 123_750, 123_750]])).toEqual([]);
     expect(ledgerWarnings([['CWT', 'creditable withholding tax', 10_000, 10_000], ['VAT withheld', 'VAT withheld', 50_000, 60_000]])).toEqual([
       'The VAT withheld in this register (₱500.00) is not what the ledger shows on VAT withheld for these dates (₱600.00). Look at the general ledger before filing.',
@@ -92,11 +92,12 @@ describe('tax report screen rules', () => {
     const tax = (permissions: string[]) => buildMenu([], new Set(permissions)).find((g) => g.group === 'Accounting & Tax')?.items.map((i) => `${i.label} ${i.path}`);
     expect(tax(['tax.registers.view', 'tax.calendar.view'])).toEqual([
       'Sales register /tax/sales', '2307s received /tax/2307-received', 'Purchases register /tax/purchases', 'EWT register /tax/ewt',
-      '2307s to issue /tax/2307-to-issue', 'VAT this quarter /tax/vat', '2550Q worksheet /tax/2550q', '0619-E (monthly EWT) /tax/0619e', '1601-EQ (quarterly EWT) /tax/1601eq',
-      'Tax calendar /tax/calendar',
+      '2307s to issue /tax/2307-to-issue', 'VAT this quarter /tax/vat', '2550Q worksheet /tax/2550q',
+      'SLSP: sales /tax/slsp-sales', 'SLSP: purchases /tax/slsp-purchases', 'SAWT /tax/sawt', '0619-E (monthly EWT) /tax/0619e', '1601-EQ (quarterly EWT) /tax/1601eq',
+      '1702Q worksheet /tax/1702q', '1702-RT worksheet (annual) /tax/1702rt', '1604-E (annual EWT) /tax/1604e', 'Tax calendar /tax/calendar', 'Settings /acc/settings',
     ]);
-    expect(tax(['tax.calendar.view', 'tax.booklets.view'])).toEqual(['Tax calendar /tax/calendar', 'Booklets /tax/booklets']);
-    expect(tax([])).toBeUndefined();
+    expect(tax(['tax.calendar.view', 'tax.booklets.view'])).toEqual(['Tax calendar /tax/calendar', 'Booklets /tax/booklets', 'Settings /acc/settings']);
+    expect(tax([])).toEqual(['Settings /acc/settings']);
   });
 });
 

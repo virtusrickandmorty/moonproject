@@ -1,14 +1,15 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { badRequest, forbidden, isBusinessDate, notFound } from '@moonproject/shared';
+import { badRequest, forbidden, isBusinessDate, notFound, toCsv, type CsvCell } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { clockGuard } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { activeEmployees } from './public.ts';
-import { addPayProfile, createEmployee, employeeRecord, listEmployees, masked, payHistory, payProfileAt, separateEmployee, updateEmployee, type Who } from './employees.ts';
-import { ATTENDANCE, addHoliday, attendanceBetween, checkRange, deactivateHoliday, holidaysBetween, holidaysOf, saveAttendance, silOf } from './time.ts';
+import { addPayProfile, createEmployee, employeeRecord, listEmployees, masked, payHistory, payProfileAt, payslipEmailOf, separateEmployee, setPayslipEmail, updateEmployee, type Who } from './employees.ts';
+import { ATTENDANCE, addHoliday, attendanceBetween, checkRange, deactivateHoliday, holidaysBetween, holidaysOf, paidDaysBetween, saveAttendance, silOf } from './time.ts';
+import { leaveBalances } from './leave-balances.ts';
 
 const dateQ = z.string().refine(isBusinessDate);
 
@@ -26,6 +27,20 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
     return listEmployees(db, { search: q.search?.trim() ?? '', status: q.status ?? 'active' });
   });
 
+  app.get('/api/emp/leave-balances', { config: { permission: 'emp.view' } }, async (req, reply) => {
+    const q = z.object({ year: z.coerce.number().int().min(2000).max(2100).optional(), format: z.literal('csv').optional() }).strict().parse(req.query);
+    const year = q.year ?? Number(today(clock).slice(0, 4));
+    const result = leaveBalances(db, year);
+    if (q.format !== 'csv') return result;
+    reply.header('Content-Disposition', `attachment; filename="leave-balances-${year}.csv"`);
+    reply.type('text/csv; charset=utf-8');
+    return toCsv([
+      ['Employee code', 'Employee', 'Hired', 'Separated', 'SIL earned', 'Days used', 'Paid in cash', 'Left'],
+      ...result.rows.map((r): CsvCell[] => [r.code, r.fullName, r.hireDate, r.separatedOn ?? '', r.earned, r.used, r.paid, r.left]),
+      ['TOTAL', '', '', '', result.totals.earned, result.totals.used, result.totals.paid, result.totals.left],
+    ]);
+  });
+
   /**
    * One employee: the record (government IDs masked without emp.view_ids), pay type and group, SIL this year, and the pay
    * history with rates only for pay.view_rates (C6, N-05).
@@ -40,6 +55,8 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
       pay: pay && { payType: pay.payType, payGroup: pay.payGroup, workweekDays: pay.workweekDays, effectiveFrom: pay.effectiveFrom },
       payHistory: can(req, 'pay.view_rates') ? payHistory(db, e.id) : null,
       sil: silOf(db, e.id, Number(now.slice(0, 4))),
+      // Where the payslip is emailed: shown only to whoever sets up payroll (emp.pay).
+      payslipEmail: can(req, 'emp.pay') ? payslipEmailOf(db, e.id) ?? null : null,
     };
   });
 
@@ -59,7 +76,15 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
     return write(() => addPayProfile(db, req.params.id, req.body, who(req)));
   });
 
-  /** The attendance grid: employees in service in the range, the holidays in it, and each typed day (at most 31 days). */
+  /** The payslip email address and consent: only emp.pay changes them (and the function checks it again). Audited by name. */
+  app.put<{ Params: { id: string } }>('/api/emp/employees/:id/payslip-email', { config: { permission: 'emp.pay' } }, async (req) =>
+    write(() => setPayslipEmail(db, req.params.id, req.headers['if-match'], req.body, who(req))),
+  );
+
+  /**
+   * The attendance grid: employees in service in the range, the holidays in it, each typed day (at most 31 days), and the
+   * days recorded payroll runs paid (locked until the run is cancelled).
+   */
   app.get('/api/emp/attendance', { config: { permission: 'emp.view' } }, async (req) => {
     const q = z.object({ from: dateQ, to: dateQ }).strict().safeParse(req.query);
     if (!q.success) throw badRequest('BAD_DATE', 'Pick the dates to show, like 2026-09-16 to 2026-09-30.');
@@ -68,7 +93,7 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
     const employees = listEmployees(db, { search: '', status: 'all' })
       .filter((e) => e.hireDate <= to && (!e.separatedOn || e.separatedOn >= from))
       .map(({ id, code, fullName, hireDate, separatedOn }) => ({ id, code, fullName, hireDate, separatedOn }));
-    return { from, to, today: today(clock), statuses: ATTENDANCE, holidays: holidaysBetween(db, from, to), employees, days: attendanceBetween(db, from, to) };
+    return { from, to, today: today(clock), statuses: ATTENDANCE, holidays: holidaysBetween(db, from, to), employees, days: attendanceBetween(db, from, to), paid: paidDaysBetween(db, from, to) };
   });
 
   app.post('/api/emp/attendance', { config: { permission: 'emp.attendance' } }, async (req) => write(() => saveAttendance(db, req.body, who(req))));

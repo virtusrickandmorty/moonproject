@@ -1,11 +1,15 @@
 /**
  * One employee (PLAN E11): the record and its edits (If-Match), the statutory switches, government IDs (only with
- * emp.view_ids), separation, paid leave (SIL) this year, and the pay history with a new pay from a date (pay.view_rates).
+ * emp.view_ids), separation, paid leave (SIL) this year, the pay history with a new pay from a date (pay.view_rates), and
+ * the employee's government loans (pay.loans.view) and pay before Moonproject (pay.prior.view).
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type EmployeeDetail, type EmployeeRecord, type Me, type PayProfile } from '../../api.ts';
 import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
+import { Link } from '../../router.tsx';
 import { cents } from '../COL/money.ts';
+import { EmployeeLoans } from '../PAY/Loans.tsx';
+import { EmployeePriorPay } from '../PAY/Prior.tsx';
 
 const PAY_TYPE = { daily: 'Daily', piece: 'Per piece (pakyawan)', monthly: 'Monthly', mixed: 'Daily and per piece' } as const;
 const PAY_GROUP = { WEEKLY_PIECE: 'Weekly (piece rate)', SEMI_DAILY: 'Semi-monthly (daily paid)', SEMI_MONTHLY: 'Semi-monthly (monthly staff)' } as const;
@@ -33,9 +37,13 @@ export function EmployeePage({ me, params }: { me: Me; params?: Record<string, s
       {!e.isActive && <Notice tone="info">Separated on {e.separatedOn}: {e.separationReason}</Notice>}
       <Record e={e} editable={e.isActive && can('emp.manage')} idsVisible={can('emp.view_ids')} onSaved={load} />
       <Panel title={`Paid leave (SIL) ${d.sil.year}`}>
-        <p className="text-sm">{d.sil.eligibleFrom > `${d.sil.year}-12-31` ? `Paid leave starts after a year of service, on ${d.sil.eligibleFrom}.` : `${d.sil.used} of ${d.sil.daysPerYear} days used; ${d.sil.left} left.`}</p>
+        <p className="text-sm">{d.sil.eligibleFrom > `${d.sil.year}-12-31` ? `Paid leave starts after a year of service, on ${d.sil.eligibleFrom}.` : `${d.sil.used} of ${d.sil.daysPerYear} days used${d.sil.paid ? `, ${d.sil.paid} paid in cash` : ''}; ${d.sil.left} left.`}</p>
       </Panel>
+      {can('emp.pay') && d.payslipEmail && <PayslipEmail e={e} current={d.payslipEmail} onSaved={load} />}
       <Pay d={d} canSet={e.isActive && can('emp.pay') && can('pay.view_rates')} onSaved={load} />
+      {can('ca.view') && <Link to={`/ca/employees/${e.id}`} className="underline">Cash advances (what {e.fullName} owes)</Link>}
+      {can('pay.loans.view') && <EmployeeLoans me={me} employeeId={e.id} active={e.isActive} />}
+      {can('pay.prior.view') && <EmployeePriorPay me={me} employeeId={e.id} />}
       {separating && <Separate e={e} onClose={() => setSeparating(false)} onSaved={load} />}
     </div>
   );
@@ -103,6 +111,40 @@ function Record({ e, editable, idsVisible, onSaved }: { e: EmployeeRecord; edita
       {a.error && <Notice>{a.error}</Notice>}
       {done && !a.error && <Notice tone="success">{done}</Notice>}
       {editable && <Button tone="primary" disabled={a.busy} onClick={() => a.run(save)}>Save changes</Button>}
+    </Panel>
+  );
+}
+
+/** Where the payslip is emailed, and the tick that the employee agreed to get it (PLAN B3). Changed only with emp.pay; audited by name. */
+function PayslipEmail({ e, current, onSaved }: { e: EmployeeRecord; current: { email: string | null; consent: boolean }; onSaved: () => Promise<unknown> }) {
+  const [email, setEmail] = useState(current.email ?? '');
+  const [consent, setConsent] = useState(current.consent);
+  const [done, setDone] = useState('');
+  const a = useAction();
+  useEffect(() => (setEmail(current.email ?? ''), setConsent(current.consent)), [e.version]); // a save reloads the record with a new version
+  const address = email.trim();
+  const changed = address !== (current.email ?? '') || consent !== current.consent;
+  const save = async () => {
+    await api.savePayslipEmail(e.id, e.version, { email: address === '' ? null : address, consent });
+    setDone('Saved.');
+    await onSaved();
+  };
+  return (
+    <Panel title="Payslip by email">
+      <p className="text-sm text-slate-600">
+        The payslip is emailed after payroll is released, only if {e.fullName} agreed and there is an address here. The email says the pay period; the pay figures are only in the attached payslip.
+      </p>
+      <div className="max-w-lg space-y-3">
+        <Field label="Email address"><input type="email" className={inputClass} autoComplete="off" value={email} onChange={(x) => (setEmail(x.target.value), setDone(''))} /></Field>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={consent} onChange={(x) => (setConsent(x.target.checked), setDone(''))} />
+          {e.fullName} agrees to get payslips by email at this address
+        </label>
+      </div>
+      {consent && address === '' && <p className="text-sm text-slate-600">Type the email address before ticking that {e.fullName} agrees.</p>}
+      {a.error && <Notice>{a.error}</Notice>}
+      {done && !a.error && <Notice tone="success">{done}</Notice>}
+      <Button tone="primary" disabled={!changed || (consent && address === '') || a.busy} onClick={() => a.run(save)}>Save payslip email</Button>
     </Panel>
   );
 }

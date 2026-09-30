@@ -28,18 +28,21 @@ export type MoneyFormState = ReturnType<typeof useMoneyForm>;
 
 /**
  * Title, the edit gate (reason first, NR-4), the form's fields, Record with the server's confirm dialog, and "So far":
- * the total, `figures` from the document the server worked out, the summary and the checks. `adjust` drops the checks
+ * the total, `figures` from the document the server worked out, the summary and the checks (`onLive` sees them too). `adjust` drops the checks
  * an edit's original causes (see forReplacement). The client sends only the input and the total the user confirmed,
  * and `businessDate` for a type that may be backdated (an opening supplier bill, on the cut-over date).
  */
 export function MoneyForm(p: {
   type: DocTypeInfo; f: MoneyFormState; title: string; input: unknown; errors: string[]; children: ReactNode;
   figures?: (doc: never) => [string, number, string?][]; adjust?: (preview: Preview, originalNumber: string) => Preview; businessDate?: string;
+  /** Called with each live preview (the supplier advance takes the cash the server says leaves the cash places). */
+  onLive?: (preview: Preview) => void;
 }) {
   const { type, f, input, errors, businessDate } = p;
   const adjust = (r: Preview) => (f.original && p.adjust ? p.adjust(r, f.original.number) : r);
   const preview = () => api.preview(type.key, input, businessDate).then(adjust);
   const live = useLive(JSON.stringify([input, f.original?.id, businessDate]), errors.length === 0, preview);
+  useEffect(() => void (live && p.onLive?.(live)), [live]);
   if (f.original && !f.reason) return <EditGate original={f.original} typeKey={type.key} onReason={f.setReason} />;
 
   const openConfirm = () => {

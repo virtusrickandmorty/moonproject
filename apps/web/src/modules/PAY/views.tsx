@@ -1,6 +1,6 @@
 /**
- * View parts for payroll runs, releases and cash advances (PLAN H2 "What this did"), and the printable payslips (F4,
- * H4 PAYSLIP, A4 2-up, internal: no legend).
+ * View parts for payroll runs, 13th-month pay, releases and cash advances (PLAN H2 "What this did"), and the printable
+ * payslips (F4, H4 PAYSLIP, A4 2-up, internal: no legend), which show the 13th month too.
  */
 import { useEffect, useState } from 'react';
 import { api, type DocDetail, type Me, type Payslips as PayslipData } from '../../api.ts';
@@ -8,8 +8,11 @@ import { Button, Notice, peso } from '../../components/ui.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { GROUP_LABEL, deductionsOf, qtyText } from './run.ts';
-import type { PayRunDoc } from '../../api.ts';
+import { GROUP_LABEL, deductionsOf, finalPayText, loansLeft, qtyText, thirteenthText, yearEndDetail, yearEndText } from './run.ts';
+import type { PayRunDoc, PayThirteenthDoc } from '../../api.ts';
+
+/** The "Final pay" badge of an employee separated within the run's period. */
+export const FinalBadge = () => <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-900">Final pay</span>;
 
 /** D6: a recorded run whose month is already remitted (STAT): cancelling it leaves those payables below zero. */
 function RemittedWarning({ runId }: { runId: string }) {
@@ -30,14 +33,28 @@ function RunParts({ d }: { d: DocDetail }) {
   return (
     <div className="space-y-2 pt-2">
       {d.header.status === 'posted' && <RemittedWarning runId={d.header.id} />}
-      <p className="text-sm">{GROUP_LABEL[run.payGroup]} · {run.periodStart} to {run.periodEnd} · government shares for {run.contributionMonth}</p>
+      <p className="text-sm">
+        {GROUP_LABEL[run.payGroup]} · {run.periodStart} to {run.periodEnd} · government shares for {run.contributionMonth}
+        {run.yearEnd && ` · with the ${run.periodEnd.slice(0, 4)} year-end tax adjustment`}
+        {run.unusedLeave && ' · unused leave paid in cash'}
+      </p>
       <table className="w-full text-sm">
-        <thead className="text-left text-slate-500"><tr><th>Employee</th><th className="text-right">Gross</th><th className="text-right">Deductions</th><th className="text-right">Net</th></tr></thead>
+        <thead className="text-left text-slate-500">
+          <tr><th>Employee</th><th className="text-right">Gross</th><th className="text-right">Deductions</th>{run.yearEnd && <th className="text-right">Tax refund</th>}<th className="text-right">Net</th>{run.yearEnd && <th className="pl-3">Year-end tax</th>}</tr>
+        </thead>
         <tbody>
           {run.employees.map((e) => (
             <tr key={e.employeeId} className="border-t border-slate-100">
-              <td className="py-1">{e.name}</td><td className="text-right tabular-nums">{peso(e.grossCents)}</td>
-              <td className="text-right tabular-nums">{peso(e.grossCents - e.netCents)}</td><td className="text-right tabular-nums">{peso(e.netCents)}</td>
+              <td className="py-1">
+                {e.name}{e.final && <FinalBadge />}
+                {e.lines.filter((l) => l.kind === 'unused_leave').map((l) => <span key={l.lineNo} className="block text-xs text-slate-600">{l.description}: {qtyText(l.kind, l.qty)}, {peso(l.amountCents)}</span>)}
+                {e.final && <span className="block text-xs text-slate-600">{finalPayText(e)}{e.yearEnd && ` · year-end tax: ${yearEndText(e)}`}</span>}
+              </td>
+              <td className="text-right tabular-nums">{peso(e.grossCents)}</td>
+              <td className="text-right tabular-nums">{peso(e.grossCents - e.netCents + (e.wtaxRefundCents ?? 0))}</td>
+              {run.yearEnd && <td className="text-right tabular-nums">{peso(e.wtaxRefundCents ?? 0)}</td>}
+              <td className="text-right tabular-nums">{peso(e.netCents)}</td>
+              {run.yearEnd && <td className="pl-3 text-xs">{yearEndText(e) || 'Withholding tax is off'}</td>}
             </tr>
           ))}
         </tbody>
@@ -53,6 +70,38 @@ function RunParts({ d }: { d: DocDetail }) {
 
 export const runView: ViewParts = { noEdit: true, extra: (d) => <RunParts d={d} />, cancelNote: (d) => <RemittedWarning runId={d.header.id} /> };
 
+function ThirteenthParts({ d }: { d: DocDetail }) {
+  const t = d.doc as PayThirteenthDoc | undefined;
+  if (!t) return null;
+  return (
+    <div className="space-y-2 pt-2">
+      <p className="text-sm">{GROUP_LABEL[t.payGroup]} · 13th month {t.year}: one twelfth of the basic pay of the recorded payroll runs, beside what they accrued</p>
+      <table className="w-full text-sm">
+        <thead className="text-left text-slate-500">
+          <tr><th>Employee</th><th className="text-right">Basic pay</th><th className="text-right">One twelfth</th><th className="text-right">Accrued</th><th className="text-right">Paid</th><th className="text-right">Tax</th><th className="text-right">Net</th></tr>
+        </thead>
+        <tbody>
+          {t.employees.map((e) => (
+            <tr key={e.employeeId} className="border-t border-slate-100">
+              <td className="py-1">{e.name}{e.reason && <span className="block text-xs text-slate-500">Changed: {e.reason}</span>}</td>
+              <td className="text-right tabular-nums">{peso(e.basicCents)}</td><td className="text-right tabular-nums">{peso(e.dueCents)}</td>
+              <td className="text-right tabular-nums">{peso(e.accruedCents)}</td><td className="text-right tabular-nums">{peso(e.amountCents)}</td>
+              <td className="text-right tabular-nums">{peso(e.wtaxCents)}</td><td className="text-right tabular-nums">{peso(e.netCents)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {t.skip?.map((s) => <p key={s.employeeId} className="text-xs text-slate-600">Left out: {s.reason}</p>)}
+      {d.header.status === 'posted' && (
+        <Link to={docPath('pay.release', `/new?run=${d.header.id}`)} className="inline-block rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100">Release net pay</Link>
+      )}
+      <p className="text-xs text-slate-500">To correct it, cancel it (its releases first) and work it out again.</p>
+    </div>
+  );
+}
+
+export const thirteenthView: ViewParts = { noEdit: true, extra: (d) => <ThirteenthParts d={d} /> };
+
 export const releaseView: ViewParts = {
   noEdit: true,
   extra: (d) => {
@@ -60,7 +109,7 @@ export const releaseView: ViewParts = {
     if (!r) return null;
     return (
       <div className="pt-2 text-sm">
-        <p>Net pay from <Link to={docPath('pay.run', `/${r.runId}`)} className="underline">{r.runNumber}</Link>:</p>
+        <p>Net pay from <Link to={docPath(r.runNumber.startsWith('TH13-') ? 'pay.thirteenth' : 'pay.run', `/${r.runId}`)} className="underline">{r.runNumber}</Link>:</p>
         {r.lines.map((l) => <div key={l.employeeId} className="flex justify-between"><span>{l.name}</span><span className="tabular-nums">{peso(l.amountCents)}</span></div>)}
       </div>
     );
@@ -69,8 +118,13 @@ export const releaseView: ViewParts = {
 
 export const advanceView: ViewParts = {
   extra: (d) => {
-    const a = d.doc as { employeeName: string; cashPlaceName: string; installmentCents: number } | undefined;
-    return a ? <p className="pt-2 text-sm">Given to {a.employeeName} from {a.cashPlaceName}; {peso(a.installmentCents)} is deducted each payroll until repaid.</p> : null;
+    const a = d.doc as { employeeId: string; employeeName: string; cashPlaceName: string; installmentCents: number } | undefined;
+    return a ? (
+      <p className="pt-2 text-sm">
+        Given to {a.employeeName} from {a.cashPlaceName}; {peso(a.installmentCents)} is deducted each payroll until repaid.{' '}
+        <Link to={`/ca/employees/${a.employeeId}`} className="underline">What {a.employeeName} owes</Link>
+      </p>
+    ) : null;
   },
 };
 
@@ -92,7 +146,7 @@ export function Payslips({ params }: { me: Me; params?: Record<string, string> }
       <div className="grid gap-4 md:grid-cols-2 print:grid-cols-2 print:gap-2">
         {p.employees.map((e) => (
           <section key={e.employeeId} className="break-inside-avoid space-y-2 rounded-lg bg-white p-4 text-sm ring-1 ring-slate-300">
-            <div className="flex justify-between"><h2 className="font-semibold">PAYSLIP</h2><span>{p.number}</span></div>
+            <div className="flex justify-between"><h2 className="font-semibold">PAYSLIP{e.final && <FinalBadge />}</h2><span>{p.number}</span></div>
             <p>{e.name} <span className="text-slate-500">{e.code}</span></p>
             <p className="text-slate-600">{GROUP_LABEL[p.payGroup]} · {p.periodStart} to {p.periodEnd} · dated {p.payDate}</p>
             <table className="w-full">
@@ -100,6 +154,7 @@ export function Payslips({ params }: { me: Me; params?: Record<string, string> }
                 {e.lines.map((l) => <tr key={l.lineNo}><td>{l.description}</td><td className="text-right text-slate-500">{qtyText(l.kind, l.qty)}</td><td className="text-right tabular-nums">{peso(l.amountCents)}</td></tr>)}
                 <tr className="border-t font-medium"><td colSpan={2}>Gross pay</td><td className="text-right tabular-nums">{peso(e.grossCents)}</td></tr>
                 {deductionsOf(e).map(([label, c]) => <tr key={label}><td colSpan={2}>Less {label}</td><td className="text-right tabular-nums">{peso(-c)}</td></tr>)}
+                {(e.wtaxRefundCents ?? 0) > 0 && <tr><td colSpan={2}>Add year-end tax refund</td><td className="text-right tabular-nums">{peso(e.wtaxRefundCents!)}</td></tr>}
                 <tr className="border-t text-base font-semibold"><td colSpan={2}>Net pay</td><td className="text-right tabular-nums">{peso(e.netCents)}</td></tr>
               </tbody>
             </table>
@@ -107,6 +162,10 @@ export function Payslips({ params }: { me: Me; params?: Record<string, string> }
               Cash advance still owed {peso(e.caBalanceAfterCents)} · Year to date: gross {peso(e.ytd.grossCents)}, tax {peso(e.ytd.wtaxCents)}
               {e.eeShortCents > 0 && ` · ${peso(e.eeShortCents)} of government shares carried to the next payroll`}
             </p>
+            {loansLeft(e).map(([label, c]) => <p key={label} className="text-xs text-slate-600">{label}: {peso(c)} left</p>)}
+            <p className="text-xs text-slate-600">{thirteenthText(e)}</p>
+            {e.yearEnd && <p className="text-xs text-slate-600">{yearEndDetail(e)}</p>}
+            {e.final && <p className="text-xs font-medium text-slate-700">{finalPayText(e)}. The 13th month on separation is paid on its own (13th-month pay for this employee).</p>}
             <p className="pt-4 text-xs">Received by: ______________________ Date: __________</p>
           </section>
         ))}

@@ -2,10 +2,10 @@ import { AppError } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { createCustomer, createGroup, createWearer, createMeasurement } from '../CUS/public.ts';
+import { addCustomerPhone, createCustomer, createGroup, createWearer, createMeasurement, customerRef, normalizePhone } from '../CUS/public.ts';
 import { createEmployee, addPayProfile, type Who as EmployeeWho } from '../EMP/public.ts';
 import { addRate } from '../RATE/public.ts';
-import { measurementField, measurementTenths, rateFromPesos, validateRow } from './csv.ts';
+import { applyEmployeeFix, applyMeasurementAssignment, measurementField, measurementTenths, rateFromPesos, validateRow, type ManualData } from './csv.ts';
 
 type Kind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate';
 type Row = { id: string; upload_id: string; row_number: number; row_type: Kind; status: string;
@@ -22,23 +22,22 @@ const mapped = (db: Db, kind: Kind, legacyId: string): string | undefined =>
 const putMap = (db: Db, kind: Kind, legacyId: string, newId: string, uploadId: string): void => {
   db.prepare('INSERT INTO mig_legacy_map (legacy_kind,legacy_id,new_id,upload_id) VALUES (?,?,?,?)').run(kind, legacyId, newId, uploadId);
 };
+const manualOf = (row: Row): ManualData => (row.manual_data_json ? JSON.parse(row.manual_data_json) as ManualData : {});
 const rawFor = (row: Row): Record<string, string> => {
   const raw = JSON.parse(row.raw_json) as Record<string, string>;
-  const manual = row.manual_data_json ? JSON.parse(row.manual_data_json) as Record<string, string | number> : {};
+  const manual = manualOf(row);
   if (row.row_type === 'customer') {
     if (manual.customerName) raw.Customer_Name = String(manual.customerName);
     if (manual.registeredName) raw.Registered_Name = String(manual.registeredName);
     if (manual.legacyId) raw.Legacy_ID = String(manual.legacyId);
   } else if (row.row_type === 'measurement') {
-    if (manual.customerLegacyId) { raw.Customer_ID = String(manual.customerLegacyId); raw.Customer_Name = String(manual.customerLegacyId); raw.Source = 'ASSIGNED'; }
-    if (manual.groupLegacyId) { raw.Group_ID = String(manual.groupLegacyId); raw.Group_Name = String(manual.groupLegacyId); raw.Source = 'ASSIGNED'; }
+    applyMeasurementAssignment(raw, manual);
     for (const [key, value] of Object.entries(manual)) if (measurementField(key)) {
       const oldKey = Object.keys(raw).find(k => measurementField(k) === key);
       raw[oldKey ?? key] = String(value);
     }
   } else if (row.row_type === 'employee') {
-    if (manual.employeeName) raw.Employee_Name = String(manual.employeeName);
-    if (manual.rateCents !== undefined) raw.Daily_Rate = (Number(manual.rateCents) / 100).toFixed(2);
+    applyEmployeeFix(raw, manual);
   } else if (row.row_type === 'piece_rate') {
     if (manual.garmentType) raw.Garment_Type = String(manual.garmentType);
     if (manual.operation) raw.Operation = String(manual.operation);
@@ -46,6 +45,21 @@ const rawFor = (row: Row): Record<string, string> => {
   }
   return raw;
 };
+
+/** The numbers in a phone cell (several may share it, split by / , or ;): those Moonproject can read, and those it cannot. */
+function phoneNumbers(cell: string): { readable: string[]; unreadable: string[] } {
+  const out: { readable: string[]; unreadable: string[] } = { readable: [], unreadable: [] };
+  for (const part of cell.split(/[/,;]/).map(p => p.trim()).filter(Boolean)) {
+    try { normalizePhone(part); out.readable.push(part); } catch { out.unreadable.push(part); }
+  }
+  return out;
+}
+/** A measurement's note: the sizes and remarks the old sheet held beside the cells ("-" means none). */
+function measurementNote(raw: Record<string, string>): string {
+  const part = (label: string, value: string) => (value && value !== '-' ? `${label}: ${value}` : '');
+  return [part('Upper size', first(raw, 'Upper_Size')), part('Lower size', first(raw, 'Lower_Size')), part('Remarks', first(raw, 'Remarks'))]
+    .filter(Boolean).join('. ').slice(0, 500);
+}
 
 /** All module creates and map writes join this one immediate transaction. */
 export function commitUpload(db: Db, uploadId: string, expectedCellTenths: number, who: Who) {
@@ -91,13 +105,21 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
     for (const row of customerRows) {
       const raw = data.get(row.id)!;
       const legacyId = row.legacy_id ?? first(raw, 'Legacy_ID', 'Customer_ID');
-      const id = create(row, 'customer', legacyId, () => createCustomer(db, {
-        kind: first(raw, 'Kind').toLowerCase() === 'person' ? 'person' : 'organization',
-        displayName: first(raw, 'Customer_Name', 'Registered_Name'),
-        ...(first(raw, 'Registered_Name') ? { registeredName: first(raw, 'Registered_Name') } : {}),
-        ...(first(raw, 'TIN') ? { tin: first(raw, 'TIN') } : {}),
-        ...(first(raw, 'Email') ? { email: first(raw, 'Email') } : {}),
-      }, who, legacyId).id);
+      const phones = phoneNumbers(first(raw, 'Phone'));
+      const notes = [first(raw, 'Notes'), phones.unreadable.length ? `Phone in the old sheet: ${phones.unreadable.join(', ')}` : ''].filter(Boolean).join('. ');
+      const id = create(row, 'customer', legacyId, () => {
+        const created = createCustomer(db, {
+          kind: first(raw, 'Kind').toLowerCase() === 'person' ? 'person' : 'organization',
+          displayName: first(raw, 'Customer_Name', 'Registered_Name'),
+          ...(first(raw, 'Registered_Name') ? { registeredName: first(raw, 'Registered_Name') } : {}),
+          ...(first(raw, 'TIN') ? { tin: first(raw, 'TIN') } : {}),
+          ...(first(raw, 'Email') ? { email: first(raw, 'Email') } : {}),
+          ...(first(raw, 'Address') ? { billingAddress: first(raw, 'Address') } : {}),
+          ...(notes ? { notes } : {}),
+        }, who, legacyId);
+        for (const phone of phones.readable) addCustomerPhone(db, created.id, { phone }, who);
+        return created.id;
+      });
       customerBySource.set(legacyId, id);
       customerBySource.set(first(raw, 'Customer_Name', 'Registered_Name').toLowerCase(), id);
     }
@@ -110,41 +132,61 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
     const groupBySource = new Map<string, string>();
     const wearerBySource = new Map<string, string>();
     const measurementRows = active.filter(r => r.row_type === 'measurement');
+    const measurementLegacyId = (row: Row): string => row.legacy_id ?? first(data.get(row.id)!, 'Measurement_ID');
+    // A row imported by an earlier run makes nothing again: not its measurement, and not the customer, group or wearer it would need.
+    const todo = new Set(measurementRows.filter(r => !mapped(db, 'measurement', measurementLegacyId(r))).map(r => r.id));
+    // A MANUAL row the owner made its own customer: a person, named as in the sheet, keyed by the sheet's Size ID.
+    for (const row of measurementRows) if (todo.has(row.id) && manualOf(row).newCustomer) {
+      const raw = data.get(row.id)!;
+      const legacyId = first(raw, 'Customer_ID');
+      customerBySource.set(legacyId, create(row, 'customer', legacyId, () =>
+        createCustomer(db, { kind: 'person', displayName: first(raw, 'Wearer_Name') }, who, legacyId).id));
+    }
     const contexts = measurementRows.map(row => {
       const raw = data.get(row.id)!;
+      const manual = manualOf(row);
+      const needed = todo.has(row.id);
       const sourceCustomer = first(raw, 'Customer_ID', 'Customer_Legacy_ID', 'Customer_Name');
-      const customerId = customerBySource.get(sourceCustomer) ?? customerBySource.get(sourceCustomer.toLowerCase()) ?? mapped(db, 'customer', sourceCustomer);
-      if (!customerId) error(`Row ${row.row_number} (measurement): customer ${sourceCustomer || '(missing)'} has no imported legacy mapping.`);
+      let customerId = customerBySource.get(sourceCustomer) ?? customerBySource.get(sourceCustomer.toLowerCase()) ?? mapped(db, 'customer', sourceCustomer);
+      if (manual.customerId) {
+        // A customer already in Moonproject, chosen for a whole batch of rows: it must still be there and active.
+        const chosen = customerRef(db, String(manual.customerId));
+        if (needed && (!chosen || chosen.is_active !== 1 || chosen.merged_into_id)) error(`Row ${row.row_number} (measurement): the customer chosen for it is no longer an active customer.`);
+        customerId = String(manual.customerId);
+      }
+      if (!customerId && needed) error(`Row ${row.row_number} (measurement): customer ${sourceCustomer || '(missing)'} has no imported legacy mapping.`);
       const groupName = first(raw, 'Group_Name', 'Group');
       const groupKey = first(raw, 'Group_ID') || `${sourceCustomer}:${groupName.toLowerCase()}`;
-      const wearerName = first(raw, 'Wearer_Name', 'Person_Name', 'Full_Name', 'Name');
-      if (!wearerName) error(`Row ${row.row_number} (measurement): wearer name is missing.`);
+      if (manual.groupId) groupBySource.set(groupKey, String(manual.groupId)); // a group that is already there is used, not made
+      // A sheet row names no wearer: the measurements are the customer's own.
+      const wearerName = first(raw, 'Wearer_Name', 'Person_Name', 'Full_Name', 'Name') || (customerId ? customerRef(db, customerId)?.display_name ?? '' : '');
+      if (!wearerName && needed) error(`Row ${row.row_number} (measurement): wearer name is missing.`);
       const wearerKey = first(raw, 'Wearer_ID', 'Person_ID') || `${sourceCustomer}:${groupKey}:${wearerName.toLowerCase()}`;
-      return { row, raw, customerId: customerId!, groupName, groupKey, wearerName, wearerKey };
+      return { row, raw, customerId: customerId ?? '', groupName, groupKey, wearerName, wearerKey };
     });
-    for (const { row, customerId, groupName, groupKey } of contexts) if (groupName && !groupBySource.has(groupKey))
+    for (const { row, customerId, groupName, groupKey } of contexts) if (todo.has(row.id) && groupName && !groupBySource.has(groupKey))
       groupBySource.set(groupKey, create(row, 'group', groupKey, () => createGroup(db, customerId, { name: groupName }, who).id));
-    for (const { row, customerId, groupKey, wearerName, wearerKey } of contexts) if (!wearerBySource.has(wearerKey)) {
+    for (const { row, customerId, groupKey, wearerName, wearerKey } of contexts) if (todo.has(row.id) && !wearerBySource.has(wearerKey)) {
       const groupId = groupBySource.get(groupKey);
       wearerBySource.set(wearerKey, create(row, 'wearer', wearerKey, () => createWearer(db, customerId,
         { fullName: wearerName, ...(groupId ? { groupId } : {}) }, who).id));
     }
     for (const { row, raw, wearerKey } of contexts) {
-      const wearerId = wearerBySource.get(wearerKey)!;
       const values: Record<string, number> = {};
       for (const [key, value] of Object.entries(raw)) {
         const field = measurementField(key);
         if (field) { const tenths = measurementTenths(value); if (tenths !== null) values[field.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())] = tenths / 10; }
       }
-      create(row, 'measurement', row.legacy_id ?? first(raw, 'Measurement_ID'), () => createMeasurement(db, wearerId,
-        { sizeMode: 'measured', unit: 'inch', values, reason: 'Imported legacy measurement revision' }, who).id);
+      create(row, 'measurement', measurementLegacyId(row), () => createMeasurement(db, wearerBySource.get(wearerKey)!,
+        { sizeMode: 'measured', unit: 'inch', values, ...(measurementNote(raw) ? { remarks: measurementNote(raw) } : {}), reason: 'Imported legacy measurement revision' }, who).id);
     }
     for (const row of active.filter(r => r.row_type === 'employee')) {
       const raw = data.get(row.id)!;
       const legacyId = row.legacy_id ?? first(raw, 'Employee_ID', 'Legacy_ID');
       create(row, 'employee', legacyId, () => {
         const centre = first(raw, 'Cost_Centre').toLowerCase() || 'production';
-        const e = createEmployee(db, { fullName: first(raw, 'Employee_Name'), costCentre: centre, hireDate: first(raw, 'Hire_Date') || who.today }, who);
+        const e = createEmployee(db, { fullName: first(raw, 'Employee_Name'), costCentre: centre, hireDate: first(raw, 'Hire_Date') || who.today,
+          ...(first(raw, 'Position', 'Job_Title') ? { position: first(raw, 'Position', 'Job_Title').slice(0, 60) } : {}) }, who);
         const rate = row.rate_cents;
         const payType = first(raw, 'Pay_Type').toLowerCase() || (rate ? 'daily' : 'piece');
         const daily = payType === 'daily' || payType === 'mixed';

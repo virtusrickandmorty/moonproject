@@ -45,8 +45,24 @@ export const SETTINGS = {
     label: 'EWT rate of each withholding class, in basis points (500 = 5%) (PLAN D4.8)',
     schema: ewtRates,
   },
+  'col.forfeit_vatable': {
+    label: 'A forfeited customer deposit is VATable: 12/112 of it goes to output VAT (ACC-15; default no)',
+    schema: z.boolean(),
+  },
+  'acc.bad_debt_method': {
+    label: 'Bad debts: written off directly to 6270, or provided for on 1209 and written off against it (ACC-26; default direct)',
+    schema: z.enum(['direct', 'allowance']),
+  },
+  'tax.uncollected_vat_credit': {
+    label: 'Claim output VAT on uncollected receivables once the agreed time to pay has passed (EOPT, RMC 65-2024) (ACC-27; default no)',
+    schema: z.boolean(),
+  },
   'tax.interest_final_tax_bp': {
     label: 'Final tax the bank withholds on interest, in basis points (2000 = 20%, PLAN D5 BANK-ADJ)',
+    schema: z.number().int().min(0).max(5000),
+  },
+  'tax.dividend_final_tax_bp': {
+    label: 'Final tax Virtus withholds on cash dividends to individual stockholders, in basis points (1000 = 10%, PLAN D5 DIV)',
     schema: z.number().int().min(0).max(5000),
   },
 } as const;

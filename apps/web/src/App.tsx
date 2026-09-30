@@ -13,11 +13,25 @@ import { DocList } from './generic/DocList.tsx';
 import { DocForm, type FormMode } from './generic/DocForm.tsx';
 import { DocView } from './generic/DocView.tsx';
 import { FORMS, PAGES, VIEWS } from './modules/screens.ts';
+import { JOB_ORDER_LATER } from './modules/QUO/quotation.ts';
 import { DashHome } from './modules/DASH/Home.tsx';
+import { PracticeBanner } from './modules/PLT/PracticeBanner.tsx';
+import { HealthDot } from './modules/PLT/HealthDot.tsx';
+import { RestoredNotice } from './modules/BAK/RestoredNotice.tsx';
 
 type Stage = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'firstOwner' } | { kind: 'login'; message?: string } | { kind: 'ready'; me: Me; docTypes: DocTypeInfo[] };
 
+/** The practice banner sits above everything, the sign-in page included (PLAN C8). */
 export function App() {
+  return (
+    <>
+      <PracticeBanner />
+      <Stages />
+    </>
+  );
+}
+
+function Stages() {
   const [stage, setStage] = useState<Stage>({ kind: 'loading' });
   const location = useLocation();
   const signedIn = useCallback(async (me: Me) => setStage({ kind: 'ready', me, docTypes: me.mustChangePassword ? [] : await api.docTypes() }), []);
@@ -39,9 +53,10 @@ export function App() {
 
   const signOut = () => void api.logout().catch(() => undefined).then(() => setStage({ kind: 'login', message: 'You are signed out.' }));
   const [path = '/', query = ''] = location.split('?');
+  const fromQuotation = new URLSearchParams(query).get('from-quotation');
   const typeOf = (key = '') => stage.docTypes.find((d) => d.key === key);
   const routes: [string, (p: Record<string, string>, t: DocTypeInfo) => ReactNode][] = [
-    ['/docs/:type', (_, t) => <DocList key={t.key} type={t} />],
+    ['/docs/:type', (_, t) => <DocList key={t.key} type={t} notice={fromQuotation && t.key === 'jo.job_order' ? JOB_ORDER_LATER(fromQuotation) : undefined} />],
     ['/docs/:type/new', (_, t) => <Form key={location} type={t} me={stage.me} mode={{ kind: 'new', draftId: new URLSearchParams(query).get('draft') ?? undefined }} />],
     ['/docs/:type/:id/edit', (p, t) => <Form key={location} type={t} me={stage.me} mode={{ kind: 'edit', id: p.id! }} />],
     ['/docs/:type/:id', (p, t) => <DocView key={p.id} type={t} id={p.id!} recorded={query === 'recorded=1'} parts={VIEWS[t.key]} />],
@@ -66,7 +81,7 @@ export function App() {
       break;
     }
   }
-  return <Shell me={stage.me} docTypes={stage.docTypes} onSignOut={signOut}>{page}</Shell>;
+  return <Shell me={stage.me} docTypes={stage.docTypes} onSignOut={signOut}><RestoredNotice me={stage.me} />{page}</Shell>;
 }
 
 /** A module's own form when it has one (FORMS), else the generic form. */
@@ -78,7 +93,10 @@ function Form({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me: Me })
 function Home({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }) {
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Hello, {me.displayName}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold">Hello, {me.displayName}</h1>
+        {me.permissions.includes('sec.health.view') && <HealthDot />}
+      </div>
       {me.permissions.includes('dash.view') && <DashHome />}
       <div className="flex flex-wrap gap-2">
         {docTypes.filter((d) => d.canCreate).map((d) => (

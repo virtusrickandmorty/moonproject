@@ -1,6 +1,8 @@
 # Installs Moonproject-Setup.exe on a clean Windows machine (the CI runner), checks the service, the "Join this PC"
 # page and HTTPS trusted through the shop CA the way a PC joins, then updates in place (a checked copy of the database
 # first), tries an update to a build that cannot start (it must go back by itself), and uninstalls, keeping the data.
+# On the way it checks the watchdog task: installed, every 5 minutes, restarting a service stopped by force, back after
+# each update and gone after uninstall.
 $ErrorActionPreference = 'Stop'
 $setup = Join-Path $PSScriptRoot 'out\Moonproject-Setup.exe'
 $broken = Join-Path $PSScriptRoot 'out\Moonproject-Setup-broken.exe'
@@ -26,6 +28,25 @@ function WaitForHealth([string]$url) {
     Start-Sleep -Seconds 2
   }
   throw "No answer from $url"
+}
+
+$watchdog = 'Moonproject Watchdog'
+function RunWatchdog {
+  Start-ScheduledTask -TaskName $watchdog
+  Start-Sleep -Seconds 2
+  for ($i = 0; $i -lt 90 -and (Get-ScheduledTask -TaskName $watchdog).State -eq 'Running'; $i++) { Start-Sleep -Seconds 2 }
+  $r = (Get-ScheduledTaskInfo -TaskName $watchdog).LastTaskResult
+  if ($r -ne 0) { throw "The watchdog task ended with $r" }
+}
+
+function WatchdogReady {
+  $t = Get-ScheduledTask -TaskName $watchdog -ErrorAction SilentlyContinue
+  if (-not $t) { throw 'The watchdog task is not installed' }
+  if ($t.State -eq 'Disabled') { throw 'The watchdog task was left paused' }
+  $every = $t.Triggers[0].Repetition.Interval
+  if ($every -ne 'PT5M') { throw "The watchdog runs every $every, not 5 minutes" }
+  if ($t.Principal.UserId -notmatch 'SYSTEM') { throw "The watchdog runs as $($t.Principal.UserId)" }
+  return $t
 }
 
 function WaitForService {
@@ -66,11 +87,35 @@ Write-Host "HTTPS by name: $($h.serverTime), version $($h.version)"
 if ($h.version -ne $version) { throw "The server says it is $($h.version), not $version" }
 $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -match '^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)' } | Select-Object -First 1).IPAddress
 if ($ip) { WaitForHealth "https://$ip/api/health" | Out-Null; Write-Host "HTTPS by address $ip" }
+# Practice mode: a made-up shop on port 8443 with its own database; the first start makes its data.
+$p = WaitForHealth 'https://localhost:8443/api/health'
+if (-not $p.practice) { throw 'Port 8443 is not the practice shop' }
+if (-not (Test-Path (Join-Path $data 'data\practice\practice.db'))) { throw 'The practice database is not in ProgramData\Moonproject\data\practice' }
+Write-Host 'Practice shop on port 8443'
 
 if (-not (Test-Path (Join-Path $data 'data\moonproject.db'))) { throw 'The database is not in ProgramData\Moonproject\data' }
 $who = (Get-Acl (Join-Path $data 'data')).Access | ForEach-Object { $_.IdentityReference.Value }
 Write-Host "Data folder access: $($who -join ', ')"
 if ($who -match 'Users|Everyone') { throw 'The data folder is open to ordinary users' }
+
+# The watchdog: a task every 5 minutes. Stopped by force, the service is not started again by Windows; the watchdog
+# starts it when it has not answered twice in a row, and logs it.
+$t = WatchdogReady
+Write-Host "Watchdog task $($t.State), every $($t.Triggers[0].Repetition.Interval), as $($t.Principal.UserId): $($t.Actions[0].Execute) $($t.Actions[0].Arguments)"
+RunWatchdog
+# A scheduled run in the middle would count as one of the misses: start well clear of the next one.
+$next = (Get-ScheduledTaskInfo -TaskName $watchdog).NextRunTime
+if ($next -and ($next - (Get-Date)).TotalSeconds -lt 150) { Start-Sleep -Seconds ([int]($next - (Get-Date)).TotalSeconds + 30) }
+Stop-Service 'Moonproject' -Force
+if ((Get-Service 'Moonproject').Status -ne 'Stopped') { throw 'The service did not stop' }
+RunWatchdog
+if ((Get-Service 'Moonproject').Status -ne 'Stopped') { throw 'The watchdog restarted the service after one miss' }
+RunWatchdog
+WaitForService
+WaitForHealth 'https://localhost/api/health' | Out-Null
+$restarts = Get-Content (Join-Path $data 'logs\watchdog.log') | Where-Object { $_ -match 'restarted the Moonproject service' }
+if (-not $restarts) { throw 'The watchdog did not log the restart' }
+Write-Host "Watchdog restarted the stopped service: $($restarts | Select-Object -Last 1)"
 
 # An update in place: a checked copy of the database first, the program moved aside, and the service back on the same
 # database and CA.
@@ -81,6 +126,8 @@ $u = LastUpdate 'updated'
 if (-not (Test-Path $u.copy)) { throw "The copy from before the update is missing: $($u.copy)" }
 if (-not (Test-Path (Join-Path $program 'previous\app\apps\server\src\main.ts'))) { throw 'The previous program was not kept' }
 Write-Host "Updated in place; the database was copied to $($u.copy)"
+WatchdogReady | Out-Null
+if (-not (WaitForHealth 'https://localhost:8443/api/health').practice) { throw 'The practice shop did not come back after the update' }
 
 # An update to a build that cannot start: Setup puts the previous program and the database back by itself.
 Install $broken 'setup-3.log' @('/HEALTHWAIT=45')
@@ -89,11 +136,13 @@ $h = WaitForHealth 'https://localhost/api/health'
 if ($h.version -ne $version) { throw "After the failed update the server says it is $($h.version), not $version" }
 $u = LastUpdate 'rolled-back'
 Write-Host "The broken update went back by itself: $($u.message)"
+WatchdogReady | Out-Null
 
 # Uninstall keeps the data.
 $p = Start-Process (Join-Path $program 'unins000.exe') -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru
 if ($p.ExitCode -ne 0) { throw "Uninstall exited with $($p.ExitCode)" }
 if (Get-Service 'Moonproject' -ErrorAction SilentlyContinue) { throw 'The service is still there after uninstall' }
+if (Get-ScheduledTask -TaskName $watchdog -ErrorAction SilentlyContinue) { throw 'The watchdog task is still there after uninstall' }
 if (-not (Test-Path (Join-Path $data 'data\moonproject.db'))) { throw 'Uninstall removed the database' }
 if (Test-Path (Join-Path $program 'previous')) { throw 'Uninstall left the previous program behind' }
 Remove-Item -Path "Cert:\LocalMachine\Root\$($ca.Thumbprint)"

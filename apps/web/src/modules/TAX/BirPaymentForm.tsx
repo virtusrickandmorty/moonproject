@@ -1,9 +1,10 @@
 /**
- * BIR payment form (BIRP-, PLAN D5 VAT-PAY and EWT-REM, E12): the return paid (2550Q, 0619-E or 1601-EQ), the quarter
- * or month it pays, where the money came from, the amount (by default what the worksheet leaves to pay), any penalty
+ * BIR payment form (BIRP-, PLAN D5 VAT-PAY, EWT-REM, IT-QPAY and IT-SETTLE, E12): the return paid (2550Q, 0619-E, 1601-EQ,
+ * 1702Q or the annual 1702), the quarter, month or year it pays, where the money came from, the amount (by default what the worksheet leaves to pay), any penalty
  * paid on top and the eFPS, eBIRForms or bank reference. The server's preview shows what the period leaves to pay and,
  * for EWT, what the amount clears per payee. Opened from a worksheet with the return and period filled in. Someone who
- * may backdate (acc.backdate) gives the date paid. Also the Edit of a recorded one (cancel + reissue, NR-4).
+ * may backdate (acc.backdate) gives the date paid. A 1702Q may pay more than its worksheet leaves (the return has income the
+ * books do not) only with a note. Also the Edit of a recorded one (cancel + reissue, NR-4).
  */
 import { useEffect, useRef, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
@@ -16,14 +17,15 @@ import { docPath } from '../../shell/menu.ts';
 import { Errors, useLive } from '../COL/parts.tsx';
 import { paidOn } from '../STAT/stat.ts';
 import {
-  BIR_FORMS, BIR_FORM_WORDS, amountText, birPaymentInput, defaultPeriod, ewtMonthChoices, isBirForm, leftToPay, paysMonth, periodOf, periodParts, quarterOfPeriod,
-  worksheetPath, type BirPaymentInput, type BirValues,
+  BIR_FORMS, BIR_FORM_WORDS, amountText, birPaymentInput, defaultPeriod, ewtMonthChoices, isBirForm, leftToPay, leftWithDue, paysMonth, paysYear, periodOf, periodParts, quarterOfPeriod,
+  quartersOf, worksheetPath, type BirPaymentInput, type BirValues,
 } from './bir.ts';
-import { QUARTERS, yearChoices } from './reports.ts';
+import { yearChoices } from './reports.ts';
 
 interface BirPaymentDoc {
   periodLabel: string; payableCents: number; totalCents: number;
   vatClose: { documentId: string; number: string; date: string } | null;
+  opening: { documentId: string; number: string; date: string } | null;
   lines: { partyId: string; name: string; payableCents: number; amountCents: number }[];
 }
 
@@ -59,11 +61,16 @@ export function BirPaymentForm({ type, mode, me }: { type: DocTypeInfo; mode: Fo
     setLeft(null);
     if (!form || !period) return;
     let stale = false;
-    const { year, quarter } = paysMonth(form) ? { year: 0, quarter: 1 } : quarterOfPeriod(period);
-    const worksheet = form === '0619-E' ? api.ewtMonthWorksheet(period) : form === '1601-EQ' ? api.ewtQuarterWorksheet(year, quarter) : api.vatWorksheet(year, quarter);
-    worksheet.then((w) => {
+    const { year, quarter } = paysMonth(form) || paysYear(form) ? { year: Number(period.slice(0, 4)), quarter: 1 } : quarterOfPeriod(period);
+    const worksheet = form === '0619-E' ? api.ewtMonthWorksheet(period) : form === '1601-EQ' ? api.ewtQuarterWorksheet(year, quarter)
+      : form === '1702Q' ? api.incomeTaxWorksheet(year, quarter) : form === '1702' ? api.annualIncomeTaxWorksheet(year) : api.vatWorksheet(year, quarter);
+    // A 2550Q of a quarter before the cut-over has no VAT close here: what its opening left comes with the returns due.
+    const cents = worksheet.then(async (w) => {
+      const fromWorksheet = leftToPay(form, w);
+      return form === '2550Q' && fromWorksheet === 0 ? leftWithDue(form, period, fromWorksheet, await api.taxPaymentsDue()) : fromWorksheet;
+    });
+    cents.then((cents) => {
       if (stale) return;
-      const cents = leftToPay(form, w);
       setLeft(cents);
       if (!amountTyped.current) setV((old) => ({ ...old, amount: amountText(cents) }));
     }, () => undefined); // the worksheet is a convenience: the preview still says what is left
@@ -102,14 +109,16 @@ export function BirPaymentForm({ type, mode, me }: { type: DocTypeInfo; mode: Fo
               {years.map((y) => <option key={y} value={y}>{y}</option>)}
             </select>
           </Field>
-          <Field label={form && paysMonth(form) ? 'Month' : 'Quarter'} required hint={form && paysMonth(form) ? 'The third month of a quarter goes on the 1601-EQ' : undefined}>
-            <select className={inputClass} value={v.part} onChange={(e) => set({ part: e.target.value })}>
-              <option value="" />
-              {form && paysMonth(form)
-                ? ewtMonthChoices.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)
-                : QUARTERS.map((q) => <option key={q} value={q}>Q{q}</option>)}
-            </select>
-          </Field>
+          {!paysYear(form) && (
+            <Field label={form && paysMonth(form) ? 'Month' : 'Quarter'} required hint={form && paysMonth(form) ? 'The third month of a quarter goes on the 1601-EQ' : undefined}>
+              <select className={inputClass} value={v.part} onChange={(e) => set({ part: e.target.value })}>
+                <option value="" />
+                {form && paysMonth(form)
+                  ? ewtMonthChoices.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)
+                  : quartersOf(form).map((q) => <option key={q} value={q}>Q{q}</option>)}
+              </select>
+            </Field>
+          )}
         </div>
         {left !== null && form && !r.original && (
           <p className="text-sm text-slate-600">
@@ -132,7 +141,9 @@ export function BirPaymentForm({ type, mode, me }: { type: DocTypeInfo; mode: Fo
           <input type="date" max={today || undefined} className={inputClass} value={paidOnText} onChange={(e) => setPaidOnText(e.target.value)} />
         </Field>
       )}
-      <Field label="Note"><input className={inputClass} value={v.note} onChange={(e) => set({ note: e.target.value })} /></Field>
+      <Field label="Note" hint={form === '1702Q' ? 'Needed to pay more than the worksheet leaves: say why the return says more' : undefined}>
+        <input className={inputClass} value={v.note} onChange={(e) => set({ note: e.target.value })} />
+      </Field>
       {live && (
         <Panel title={doc ? `The ${input.form} for ${doc.periodLabel}` : 'Preview'}>
           <p className="text-sm">{live.summary}{date.businessDate && ` Dated ${date.businessDate}, the day paid.`}</p>
@@ -140,6 +151,7 @@ export function BirPaymentForm({ type, mode, me }: { type: DocTypeInfo; mode: Fo
             <p className="text-sm text-slate-600">
               Left to pay with this return: {peso(doc.payableCents)}.
               {doc.vatClose && <> From the VAT close <Link to={docPath('tax.vat_close', `/${doc.vatClose.documentId}`)} className="underline">{doc.vatClose.number}</Link> of {doc.vatClose.date}.</>}
+              {doc.opening && <> From the old books: the opening <Link to={docPath('tax.payable.opening', `/${doc.opening.documentId}`)} className="underline">{doc.opening.number}</Link> of {doc.opening.date}.</>}
             </p>
           )}
           {doc && doc.lines.length > 0 && (

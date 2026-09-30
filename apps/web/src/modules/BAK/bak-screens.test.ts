@@ -32,7 +32,7 @@ describe('backup screen rules', () => {
     expect(staleWords({ lastOk, stale: true }, now)).toBe('Backups are stale: the last good backup was 26 hours ago.');
     expect(staleWords({ lastOk: null, stale: true }, now)).toBe('Backups are stale: no backup has worked yet.');
     expect(staleWords({ lastOk, stale: false }, now)).toBeNull();
-    expect(pendingRestoreWords({ file: lastOk.file })).toBe('Restart Moonproject to finish the restore of moonproject-2026-09-27T07-30-00-daily.db.gz.age.');
+    expect(pendingRestoreWords({ file: lastOk.file })).toBe('Moonproject restarts by itself to finish the restore of moonproject-2026-09-27T07-30-00-daily.db.gz.age. If it has not within a few minutes, restart this PC.');
   });
 
   it('shows each run, a new backup and a USB copy in words', () => {
@@ -88,8 +88,8 @@ describe('backup screen rules', () => {
 
   it('the menu shows Backups under Admin with the permission of the status route', () => {
     const admin = (permissions: string[]) => buildMenu([], new Set(permissions)).find((g) => g.group === 'Admin')?.items.map((i) => `${i.label} ${i.path}`);
-    expect(admin(['bak.view'])).toEqual(['Shop certificate /admin/shop-certificate', 'Backups /bak']);
-    expect(admin(['bak.run', 'bak.manage'])).toEqual(['Shop certificate /admin/shop-certificate']);
+    expect(admin(['bak.view'])).toEqual(['Shop certificate /admin/shop-certificate', 'Practice shop /admin/practice', 'Backups /bak']);
+    expect(admin(['bak.run', 'bak.manage'])).toEqual(['Shop certificate /admin/shop-certificate', 'Practice shop /admin/practice']);
   });
 });
 
@@ -159,10 +159,10 @@ describe('web client for the backup screens', () => {
     expect(lostWords(check)).toMatch(/^Everything recorded after 2026-09-28 10:00 will be lost: \d+ audit entries in the live data are newer than this backup\.$/);
     await owner.stepUp(PASSWORD);
     const applied = await owner.bakApply(check.stagedId!);
-    expect(applied).toMatchObject({ file: made.file, restartNeeded: true, message: expect.stringMatching(/^Restart Moonproject to finish\./) });
+    expect(applied).toMatchObject({ file: made.file, restartNeeded: true, restarting: true, message: expect.stringMatching(/^Moonproject restarts by itself within a minute/) });
     const pending = (await owner.bakStatus()).pendingRestore;
     expect(pending).toMatchObject({ id: check.stagedId, file: made.file });
-    expect(pendingRestoreWords(pending!)).toBe(`Restart Moonproject to finish the restore of ${made.file}.`);
+    expect(pendingRestoreWords(pending!)).toBe(`Moonproject restarts by itself to finish the restore of ${made.file}. If it has not within a few minutes, restart this PC.`);
     await env.app.close();
   });
 });

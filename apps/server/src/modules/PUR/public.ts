@@ -22,6 +22,11 @@ export function supplierTaxInfo(db: Db, id: string): { registeredName: string; t
 
 export const activeSupplierIds = (db: Db): string[] => db.prepare('SELECT id FROM pur_suppliers WHERE is_active = 1 ORDER BY id').pluck().all() as string[];
 
+export function searchSuppliers(db: Db, query: string, limit = 20): { id: string; name: string }[] {
+  return db.prepare('SELECT id, name FROM pur_suppliers WHERE name LIKE ? COLLATE NOCASE ORDER BY name LIMIT ?')
+    .all(`%${query}%`, limit) as { id: string; name: string }[];
+}
+
 export interface Supply { id: string; name: string; category: 'materials' | 'ready_made'; isActive: boolean }
 
 export function supply(db: Db, id: string): Supply | undefined {
@@ -44,6 +49,15 @@ export function receivingReport(db: Db, id: string): ReceivingReport | undefined
        JOIN documents pd ON pd.id = r.po_document_id WHERE r.document_id = ?`,
     )
     .get(id) as ReceivingReport | undefined;
+}
+
+/** A purchase order (PO-) and its supplier, for a supplier advance paid on it (AP, read-only). */
+export interface PurchaseOrderRef { id: string; number: string; status: 'posted' | 'cancelled'; supplierId: string }
+
+export function purchaseOrder(db: Db, id: string): PurchaseOrderRef | undefined {
+  return db
+    .prepare('SELECT d.id, d.number, d.status, po.supplier_id AS supplierId FROM pur_purchase_orders po JOIN documents d ON d.id = po.document_id WHERE po.document_id = ?')
+    .get(id) as PurchaseOrderRef | undefined;
 }
 
 /** Read-only names for purchase order printouts. Callers enforce their own view permission. */
@@ -102,3 +116,10 @@ export const receivedQty = (db: Db, receivingReportId: string, supplyId: string)
     )
     .pluck()
     .get(receivingReportId, supplyId) as number;
+
+export function purchaseOrdersForReport(db: Db) {
+  return db.prepare(`SELECT d.id,d.number,d.business_date AS date,d.status,p.supplier_id AS supplierId,d.total_cents AS totalCents FROM pur_purchase_orders p JOIN documents d ON d.id=p.document_id ORDER BY d.business_date DESC,d.number`).all() as {id:string;number:string;date:string;status:string;supplierId:string;totalCents:number}[];
+}
+export function receivedNotBilledForReport(db: Db) {
+  return db.prepare(`SELECT d.id,d.number,d.business_date AS date,p.supplier_id AS supplierId,pd.number AS poNumber,d.total_cents AS totalCents FROM pur_receiving_reports r JOIN documents d ON d.id=r.document_id JOIN pur_purchase_orders p ON p.document_id=r.po_document_id JOIN documents pd ON pd.id=p.document_id LEFT JOIN ap_bills b ON b.receiving_report_id=d.id LEFT JOIN documents bd ON bd.id=b.document_id AND bd.status='posted' WHERE d.status='posted' AND bd.id IS NULL ORDER BY d.business_date,d.number`).all() as {id:string;number:string;date:string;supplierId:string;poNumber:string;totalCents:number}[];
+}
