@@ -32,6 +32,7 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [28. Year-end tax and 2316](28-year-end-tax.md): Do the year-end adjustment, check substituted filing, and download the 2316 and alphalist.
 - [29. VAT each quarter](29-vat-each-quarter.md): Check the VAT registers, mark 2307s received, preview the quarter's VAT, and close the VAT.
 - [30. Suppliers and Purchase Orders](30-suppliers-and-purchase-orders.md): Manage suppliers and your supplies list, make purchase orders, and receive goods.
+- [31. Importing the old data](31-importing-old-data.md): Bring your records from the old Google sheet.
 - [32. Bank reconciliation](32-bank-reconciliation.md): Check that your bank accounts match your real bank statements.
 - [33. Month-end checklist](33-month-end-checklist.md): View the status of month-end tasks and sign off the month.
 - [34. Government upload files](34-government-upload-files.md): Download the SSS, PhilHealth and Pag-IBIG files for a month, check the exposure report, and upload files to the agencies.
