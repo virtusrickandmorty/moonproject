@@ -38,6 +38,7 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [34. Government upload files](34-government-upload-files.md): Download the SSS, PhilHealth and Pag-IBIG files for a month, check the exposure report, and upload files to the agencies.
 - [35. Users, Roles and Passwords](35-users-roles-passwords.md): Manage staff logins, permissions, and passwords.
 - [36. Fixed assets, loans and owners](36-fixed-assets-loans-owners.md): See your fixed assets, your loans, and the people who own or run the business.
+- [38. Reports and BIR books](38-reports-and-bir-books.md): View lists and summaries of the shop's data, and print out the BIR books for tax records.
 - [39. Switch-over day](39-switch-over-day.md): Plan and execute the move from the old apps to Moonproject.
 - [41. Production Board and Piece Rates](41-production-board-and-piece-rates.md): View the production board, record pieces done, and manage piece rates.
 - [42. Employees, Attendance and Holidays](42-employees-attendance-holidays.md): Add employees, set their pay rates, record daily attendance, and manage holidays.
