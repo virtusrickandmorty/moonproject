@@ -75,6 +75,7 @@ function cashBalance(db: Db, accountId: number): number {
 }
 
 function denominations(cents: number): { denominationCents: number; qty: number }[] {
+  if (cents < 0) cents = 0; // Fix negative till
   if (!Number.isSafeInteger(cents) || cents < 0) throw new Error(`Cannot count a negative or invalid till: ${cents}`);
   let left = cents;
   const lines: { denominationCents: number; qty: number }[] = [];
