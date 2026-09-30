@@ -50,6 +50,10 @@ export async function openBookPrint(me: Me, book: string, from: string, to: stri
 export interface AuditLogRow { seq: number; at: string; userId: string | null; userName: string | null; action: string; entityType: string; entityId: string | null; data: Record<string, unknown> }
 export interface AuditLogPage { rows: AuditLogRow[]; nextBefore: number | null }
 export interface IntegrityReport { audit: { ok: boolean; brokenAt: number | null; count: number; newestAt: string | null; message: string }; checks: { id: string; name: string; ok: boolean; problems: string[]; message: string }[] }
+export interface NightlyCheck { key: string; label: string; reportPath: string; passed: boolean; foundCount: number; findings: { detail: string; path: string | null }[] }
+export interface NightlyNight { night: string; coversFrom: string; ranAt: string; foundCount: number; checks: NightlyCheck[] }
+export interface NightlyRunNow { at: string; from: string; to: string; foundCount: number; checks: NightlyCheck[] }
+export interface NightlyStatus { night: string | null; foundCount: number; found: { key: string; label: string; foundCount: number }[] }
 /** Public certificate details returned to a signed-in user; no private key is sent. */
 /** System Health (PLAN C8), as GET /api/system/health reports it. */
 export type HealthLight = 'green' | 'amber' | 'red' | 'grey';
@@ -826,6 +830,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     report: <T>(path: string) => call<T>('GET', `/api/rpt/${path}`),
     auditLog: (query: string) => call<AuditLogPage>('GET', `/api/aud/log?${query}`),
     auditUsers: () => call<{ id: string; name: string }[]>('GET', '/api/aud/users'),
+    nightlyChecks: (before?: string) => call<{ rows: NightlyNight[]; nextBefore: string | null }>('GET', `/api/aud/nightly${before ? `?before=${before}` : ''}`),
+    nightlyStatus: () => call<NightlyStatus>('GET', '/api/aud/nightly/status'),
+    nightlyRunNow: () => call<NightlyRunNow>('POST', '/api/aud/nightly/run', {}),
     auditIntegrity: () => call<IntegrityReport>('GET', '/api/aud/integrity'),
     list: (type: string, q: { status?: string; before?: string; limit?: number } = {}) =>
       call<DocHeader[]>('GET', doc(type, `?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`)),

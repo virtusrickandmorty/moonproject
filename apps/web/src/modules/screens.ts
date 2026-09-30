@@ -116,6 +116,7 @@ import { ImportOldData } from './MIG/Importer.tsx';
 import { ImportUpload } from './MIG/Upload.tsx';
 import { AuditLog } from './AUD/AuditLog.tsx';
 import { IntegrityCheck } from './AUD/IntegrityCheck.tsx';
+import { NightlyChecks } from './AUD/NightlyChecks.tsx';
 import { Suppliers } from './PUR/Suppliers.tsx';
 import { SupplierPage } from './PUR/Supplier.tsx';
 import { Supplies } from './PUR/Supplies.tsx';
@@ -233,6 +234,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/mig/:uploadId': ImportUpload,
   '/aud/log': AuditLog,
   '/aud/integrity': IntegrityCheck,
+  '/aud/nightly': NightlyChecks,
   '/ap/suppliers': ApBalances,
   '/ap/suppliers/:id': ApSupplierPage,
   '/fa/assets': Assets,
