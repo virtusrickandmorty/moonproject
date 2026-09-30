@@ -4,7 +4,7 @@ import { AppError, notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { tx, type Db } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
-import { clockGuard, postDocument, previewDocument, type Actor } from '../../engine/documents/lifecycle.ts';
+import { clockGuard, engineEnv, postDocument, previewDocument, type Actor } from '../../engine/documents/lifecycle.ts';
 import { findIdempotent, requestHash, storeIdempotent } from '../../engine/idempotency.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { activeChart, activeWearers, customerWearers } from './cus.ts';
@@ -158,7 +158,7 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
     const key = req.headers['idempotency-key'];
     if (typeof key !== 'string' || key.length < 8 || key.length > 100) throw new AppError('IDEMPOTENCY_KEY_REQUIRED', 'Missing Idempotency-Key header.', 400);
     const actor = actorOf(req);
-    const env = { db, clock };
+    const env = engineEnv(deps);
     const hash = requestHash('POST /api/jo/releases', req.body);
     const out = tx(db, () => {
       const prior = findIdempotent(db, key, actor.userId, hash);

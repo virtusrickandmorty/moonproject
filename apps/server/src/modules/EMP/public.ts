@@ -1,6 +1,6 @@
 /** EMP contract for other modules (PRD, PAY, CAL, DASH, MIG). Includes import creates; callers check their own route permission. */
 import type { Db } from '../../platform/db/driver.ts';
-import { payProfileAt, type PayGroup } from './employees.ts';
+import { payProfileAt, payslipEmailOf, type PayGroup } from './employees.ts';
 export { createEmployee, addPayProfile, type Who } from './employees.ts';
 
 export { PAY_GROUPS, PAY_TYPES, payProfileAt, type PayGroup, type PayProfile, type PayType } from './employees.ts';
@@ -54,4 +54,11 @@ export function governmentIds(db: Db, ids: string[]): Map<string, GovernmentIds>
     .prepare(`SELECT id, sss_no AS sssNo, phic_no AS phicNo, hdmf_no AS hdmfNo, tin FROM emp_employees WHERE id IN (SELECT value FROM json_each(?))`)
     .all(JSON.stringify(ids)) as (GovernmentIds & { id: string })[];
   return new Map(rows.map(({ id, ...g }) => [id, g]));
+}
+
+/** Who a payslip email goes to (COM): the address and consent EMP keeps. Read when the email is queued and again when it is sent. */
+export function payslipContact(db: Db, id: string): { id: string; name: string; email: string | null; consent: boolean } | undefined {
+  const name = db.prepare('SELECT full_name FROM emp_employees WHERE id = ?').pluck().get(id) as string | undefined;
+  const mail = payslipEmailOf(db, id);
+  return name === undefined || !mail ? undefined : { id, name, ...mail };
 }

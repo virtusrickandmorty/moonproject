@@ -9,7 +9,7 @@ import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.
 import { useTransport } from '../../../../server/src/modules/COM/transport.ts';
 import { createApi } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
-import { progressWords, TEMPLATE_WORDS } from './com.ts';
+import { documentWords, KIND_WORDS, progressWords, TEMPLATE_WORDS } from './com.ts';
 
 const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: string, init: RequestInit) => {
   const res = await app.inject({ method: init.method as 'GET', url, payload: init.body as string, headers: { ...(init.headers as object), cookie: jar.cookie } });
@@ -26,6 +26,14 @@ describe('customer email screen words', () => {
     expect(progressWords({ ...base, status: 'queued', attempts: 2, lastError: 'Mailbox full' })).toBe('Try 2 failed (Mailbox full). Next try 2026-09-28 10:05');
     expect(progressWords({ ...base, status: 'failed', attempts: 5, lastError: 'Mailbox full' })).toBe('Failed after 5 tries: Mailbox full');
     expect(progressWords({ ...base, status: 'sent', attempts: 1, sentAt: '2026-09-28T10:00:00.000+08:00' })).toBe('Sent 2026-09-28 10:00');
+  });
+
+  it('a payslip email is named and shows the recipient and the pay period, never an amount', () => {
+    expect(TEMPLATE_WORDS.payslip).toBe('Payslip');
+    expect(KIND_WORDS).toEqual({ customer: 'Customer emails', payslip: 'Payslip emails' });
+    expect(documentWords({ kind: 'payslip', documentNumber: 'POUT-000004', periodFrom: '2026-09-16', periodTo: '2026-09-30' })).toBe('Pay 2026-09-16 to 2026-09-30 (POUT-000004)');
+    expect(documentWords({ kind: 'customer', documentNumber: null, periodFrom: '2026-09-01', periodTo: '2026-09-30' })).toBe('2026-09-01 to 2026-09-30');
+    expect(documentWords({ kind: 'customer', documentNumber: 'JO-000001', periodFrom: null, periodTo: null })).toBe('JO-000001');
   });
 
   it('shows the outbox to those who may see it and the settings only to those who may change them', () => {
@@ -74,5 +82,8 @@ describe('web client for the customer email screens', () => {
     expect(await acct.comOutbox()).toMatchObject({ rows: [] });
     await expect(acct.comSettings()).rejects.toMatchObject({ status: 403 });
     await expect(acct.comResend('x')).rejects.toMatchObject({ status: 403 });
+    // The kind filter is sent to the server.
+    expect(await owner.comOutbox(undefined, 'payslip')).toEqual({ rows: [], counts: { queued: 0, sent: 0, failed: 0 } });
+    expect(await owner.comOutbox('failed', 'customer')).toMatchObject({ rows: [] });
   });
 });

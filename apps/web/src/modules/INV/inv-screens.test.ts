@@ -14,8 +14,8 @@ const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: 
   return new Response(res.body || null, { status: res.statusCode });
 };
 
-const twill: SheetSupply = { supplyId: 't', name: 'Cotton twill', unit: 'yard', milliUnits: true, defaultCostCents: 12_000, costSource: 'catalogue', costSourceNumber: null };
-const cone: SheetSupply = { supplyId: 'c', name: 'Thread cone', unit: 'pc', milliUnits: false, defaultCostCents: 5_000, costSource: 'po', costSourceNumber: 'PO-000001' };
+const twill: SheetSupply = { supplyId: 't', name: 'Cotton twill', unit: 'yard', milliUnits: true, defaultCostCents: 12_000, costSource: 'catalogue', costSourceNumber: null, costSourceDate: null };
+const cone: SheetSupply = { supplyId: 'c', name: 'Thread cone', unit: 'pc', milliUnits: false, defaultCostCents: 5_000, costSource: 'po', costSourceNumber: 'PO-000001', costSourceDate: '2026-09-01' };
 
 describe('INV count screen rules', () => {
   it('has its own form and view, and sits under Purchases & Expenses', () => {
@@ -75,7 +75,7 @@ describe('INV web client against server routes', () => {
     env.db.prepare(`INSERT INTO pur_supplies (id, name, unit, category, last_purchase_cost_cents, created_at, updated_at) VALUES ('s1', 'Cotton twill', 'yard', 'materials', 12000, '2026-09-01T10:00:00+08:00', '2026-09-01T10:00:00+08:00')`).run();
 
     const sheet = await encoder.countSheet('materials', '2026-09-30');
-    expect(sheet.supplies).toEqual([{ supplyId: 's1', name: 'Cotton twill', unit: 'yard', milliUnits: true, defaultCostCents: 12_000, costSource: 'catalogue', costSourceNumber: null }]);
+    expect(sheet.supplies).toEqual([{ supplyId: 's1', name: 'Cotton twill', unit: 'yard', milliUnits: true, defaultCostCents: 12_000, costSource: 'catalogue', costSourceNumber: null, costSourceDate: null }]);
     const { lines, totalCents } = countLines(sheet.supplies, { s1: { qty: '10.5', cost: '', reason: '' } });
     const input = { category: 'materials', lines };
 

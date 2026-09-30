@@ -34,6 +34,7 @@ export const DOC_TITLES = [
   '2307 Received',
   'Deposit Forfeit',
   'Bad Debt Write-off',
+  'Allowance for Credit Losses',
   'Customer Refund',
   'Deposit Transfer',
   'Supplier Bill',
@@ -44,6 +45,8 @@ export const DOC_TITLES = [
   'Receiving Report',
   'Owner Money',
   'Officer Transaction',
+  'Dividend Declaration',
+  'Dividend Payment',
   'Loan',
   'Loan Payment',
   'Fixed Asset',
@@ -58,6 +61,8 @@ export const DOC_TITLES = [
   'Cash Advance Write-off',
   'Remittance',
   'VAT Close',
+  'VAT on Uncollected Receivable',
+  'VAT on Recovered Receivable',
   'BIR Payment',
   'Opening Balances',
   // MIG-02 part 2: each module's opening document (key <module>.opening), dated the cut-over date (ACC/public.ts).
@@ -149,6 +154,34 @@ export interface DocTypeDef<Input = any, Doc extends { totalCents: number } = an
   arbitrary(db: Db): fc.Arbitrary<Input>;
 }
 
+/**
+ * What a notice is asked about: a document about to be recorded (its computed doc; no number yet) or cancelled (its id).
+ * `businessDate` is the document's own date, also on a cancel, whose mirror is dated the cancel day (ACC-09).
+ */
+export interface NoticeTarget {
+  docType: string;
+  action: 'post' | 'cancel';
+  businessDate: string;
+  /** The doc type posts a journal (a quotation or a purchase order does not). */
+  posts: boolean;
+  /** On post: the computed document. */
+  doc?: unknown;
+  /** On cancel: the document being cancelled. */
+  documentId?: string;
+}
+/**
+ * A read-only check a module runs on every doc type, after validate (e.g. TAX's filed-period warning, ACC-22). It only
+ * ever warns: the engine turns whatever it returns into warnings, so a notice never blocks a record or a cancel.
+ */
+export type NoticeFn = (db: Db, target: NoticeTarget) => Issue[];
+
+/**
+ * Documents of this module that must be cancelled before a document of another module is (e.g. COL: a returned check's
+ * fund transfer before the deposit it came back from). Asked on every cancel and edit (`reissuing`), like the doc type's
+ * own dependents; it may also refuse with a conflict of its own when there is nothing to cancel first.
+ */
+export type DependentsFn = (db: Db, docType: string, documentId: string, reissuing: boolean) => { id: string; number: string }[];
+
 export interface ModuleDef {
   /** Module code, same as its folder name, e.g. "CASH". */
   code: string;
@@ -159,6 +192,10 @@ export interface ModuleDef {
   migrationsDir?: string;
   /** Extra routes (lookups, reports). Every route must declare config.permission. */
   routes?(app: FastifyInstance, deps: AppDeps): void;
+  /** Notices this module adds to every doc type's preview, record and cancel (warnings only). */
+  notices?: NoticeFn[];
+  /** Its documents that stand on other modules' documents, so those are not cancelled first (DependentsFn). */
+  dependents?: DependentsFn[];
 }
 
 export function defineModule(m: ModuleDef): ModuleDef {
@@ -188,6 +225,16 @@ export class Registry {
 
   docTypes(): DocTypeDef[] {
     return [...this.types.values()];
+  }
+
+  /** Every module's notices, in module order. */
+  notices(): NoticeFn[] {
+    return this.modules.flatMap((m) => m.notices ?? []);
+  }
+
+  /** Every module's dependents of other modules' documents, in module order. */
+  dependents(): DependentsFn[] {
+    return this.modules.flatMap((m) => m.dependents ?? []);
   }
 
   permissions(): (PermissionDef & { module: string })[] {

@@ -69,10 +69,18 @@ export function arAging(db: Db, asOf: string) {
   rows.sort((a, b) => a.customerName.localeCompare(b.customerName) || a.dueDate.localeCompare(b.dueDate) || a.documentNumber.localeCompare(b.documentNumber));
   const totals = empty();
   for (const row of rows) for (const bucket of buckets) totals[bucket] += row.buckets[bucket];
+  // The allowance for credit losses (1209) per customer on the date, credit-positive; the net is what AR is expected to bring in.
+  const allowanceRows = db.prepare(`SELECT l.party_id AS customerId, SUM(l.credit_cents - l.debit_cents) AS allowanceCents
+    FROM journal_lines l JOIN journals j ON j.id = l.journal_id
+    WHERE l.account_id = ? AND j.sealed = 1 AND j.business_date <= ? GROUP BY l.party_id HAVING allowanceCents <> 0`)
+    .all(resolveAccount(db, { role: 'AR_ALLOWANCE' }).id, asOf) as { customerId: string; allowanceCents: number }[];
+  const allowance = allowanceRows.map((r) => ({ ...r, customerName: customerRef(db, r.customerId)?.display_name ?? 'Unassigned' }))
+    .sort((a, b) => a.customerName.localeCompare(b.customerName));
+  const allowanceCents = allowance.reduce((n, r) => n + r.allowanceCents, 0);
   const memo = sources.orders.filter((order) => order.notInvoicedCents > 0)
     .map((order) => ({ customerId: order.customerId, customerName: order.customerName, jobOrderId: order.id,
       jobOrderNumber: order.number, dueDate: order.dueDate, notInvoicedCents: order.notInvoicedCents }));
-  return { asOf, rows, buckets: totals, totalCents: sum(totals), memo, memoTotalCents: memo.reduce((n, row) => n + row.notInvoicedCents, 0) };
+  return { asOf, rows, buckets: totals, totalCents: sum(totals), allowance, allowanceCents, netCents: sum(totals) - allowanceCents, memo, memoTotalCents: memo.reduce((n, row) => n + row.notInvoicedCents, 0) };
 }
 
 interface CustomerLine {

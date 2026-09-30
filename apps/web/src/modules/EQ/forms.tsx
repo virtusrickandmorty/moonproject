@@ -3,6 +3,7 @@
  * register of stockholders and officers, in or out, the cash place, the amount and a note. Owner money is always in and
  * recorded as an advance until the accountant classifies it; an officer's money goes out (taken, or their advance paid
  * back) or comes in (paid back). Never an expense and never revenue. Also their Edit (NR-4).
+ * A dividend payment (DIVP-, D5 DIV) pays a stockholder the dividend a declaration made payable, from a cash place.
  */
 import { useEffect, useState } from 'react';
 import { api, type CashPlace, type DocTypeInfo, type EqPerson, type Me } from '../../api.ts';
@@ -10,7 +11,7 @@ import { Field, Panel, inputClass, peso } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { MoneyForm, PlacePicker, useList, useMoneyForm } from '../AP/parts.tsx';
 import { forReplacement } from '../AP/payables.ts';
-import { OFFICER_KINDS, classificationsFor, emptyEq, eqValues, officerInput, ownerMoneyInput, personLabel, type EqValues } from './eq.ts';
+import { OFFICER_KINDS, classificationsFor, dividendPaymentInput, emptyEq, eqValues, officerInput, ownerMoneyInput, personLabel, type EqValues } from './eq.ts';
 
 /** The person a form was opened for, from a person's page (?person=<id>); the pick list still decides if it is valid. */
 const askedPerson = () => new URLSearchParams(location.search).get('person') ?? '';
@@ -107,6 +108,30 @@ export function OfficerForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
       <div className="grid gap-3 sm:grid-cols-2">
         <Amount v={v} set={set} />
         <Field label="What was it for?" required><input className={inputClass} value={v.note} onChange={(e) => set({ note: e.target.value })} /></Field>
+      </div>
+    </MoneyForm>
+  );
+}
+
+export function DividendPaymentForm({ type, mode }: { type: DocTypeInfo; mode: FormMode; me: Me }) {
+  const people = useList(api.eqPeople).filter((p) => p.isStockholder);
+  const places = useList<CashPlace>(api.cashPlaces);
+  const [v, setV] = useState(() => ({ ...emptyEq('dividend'), personId: askedPerson() }));
+  const f = useMoneyForm(type, mode, (d) => setV(eqValues(d.input as Parsed)));
+  const set = (patch: Partial<EqValues>) => setV({ ...v, ...patch });
+  const { input, errors } = dividendPaymentInput(v);
+
+  return (
+    <MoneyForm type={type} f={f} title="New dividend payment" input={input} errors={errors}>
+      <Panel title="Which stockholder was paid?">
+        <PersonSelect people={people} v={v} set={set} />
+      </Panel>
+      <Panel title="Where did the money come from?">
+        <PlacePicker places={places} value={v.cashPlaceId} onChange={(cashPlaceId) => set({ cashPlaceId })} question="Where did the money come from?" />
+      </Panel>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Amount v={v} set={set} label="Amount paid (the dividend less the final tax withheld)" />
+        <Field label="Note" hint="Check number or bank reference"><input className={inputClass} value={v.note} onChange={(e) => set({ note: e.target.value })} /></Field>
       </div>
     </MoneyForm>
   );

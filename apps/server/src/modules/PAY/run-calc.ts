@@ -1,11 +1,12 @@
 /**
  * The payroll run algorithm (PLAN F3), server-side and deterministic. For each employee of the pay group in service
  * during the period: earnings from attendance (days × the daily rate of that day, holidays and rest days at the DOLE
- * rates, overtime), the half-month salary of monthly staff, unpaid piece work up to the period end (PRD), and manual
- * lines; then SSS, PhilHealth and Pag-IBIG for the contribution month as a month-to-date true-up, withholding tax for
- * the period, government loan amortizations (once a month, loans.ts), the cash-advance instalment, net pay and the
- * 13th-month accrual. On a year-end run the tax is the year-end adjustment instead (year-end.ts): a deficiency withheld,
- * or an excess refunded (net pay more by it). Warnings go with the result.
+ * rates, overtime, night differential; an unworked regular holiday only after a workday present or on paid leave), the
+ * half-month salary of monthly staff, unpaid piece work up to the period end (PRD), and manual lines; then SSS,
+ * PhilHealth and Pag-IBIG for the contribution month as a month-to-date true-up, withholding tax for the period,
+ * government loan amortizations (once a month, loans.ts), the cash-advance instalment, net pay and the 13th-month accrual.
+ * On a year-end run the tax is the year-end adjustment instead (year-end.ts): a deficiency withheld, or an excess refunded
+ * (net pay more by it). Warnings go with the result.
  * Unused SIL (F1, Labor Code Art. 95) is paid in cash on an employee's final pay, and on a December run with "Pay unused
  * leave": the days left × the daily rate absences use; de minimis up to 10 days a year (RR 11-2018), taxable above;
  * not 13th-month basic. An employee separated within the period gets their final pay: the unused leave, the year-end
@@ -22,8 +23,11 @@ import { KIND_LABEL, govLoan, loanInMonth, loansOf, runsIn, type Agency, type Lo
 import { hdmfMonthly, hdmfRateAt, phicDailyBasis, phicMonthly, phicRateAt, rulesAt, sssMonthly, sssRateAt, withholding, wtaxTableAt, type PayRules, type TaxFrequency } from './statutory.ts';
 import { addLine, figures, yearParts } from './year-end.ts';
 
-/** 'unused_leave' is unused SIL paid in cash; stored as a 'leave' line marked in pay_run_unused_leave (migration 0005). */
-export type LineKind = 'basic' | 'leave' | 'holiday' | 'rest_day' | 'ot' | 'salary' | 'absence' | 'piece' | 'allowance' | 'adjustment' | 'unused_leave';
+/**
+ * 'unused_leave' is unused SIL paid in cash; stored as a 'leave' line marked in pay_run_unused_leave (migration 0005).
+ * 'night' is night differential (qty in minutes); stored as an 'ot' line marked in pay_run_night_diff (migration 0006).
+ */
+export type LineKind = 'basic' | 'leave' | 'holiday' | 'rest_day' | 'ot' | 'night' | 'salary' | 'absence' | 'piece' | 'allowance' | 'adjustment' | 'unused_leave';
 export interface RunLine {
   lineNo: number; kind: LineKind; description: string; qty: number; rateCents: number; multiplierBp: number; amountCents: number;
   taxable: boolean; thirteenthBase: boolean; assignmentId?: string; jobOrderId?: string; reason?: string; leaveYear?: number;
@@ -56,7 +60,7 @@ export interface LoanOverride { amountCents: number; reason: string }
 export interface ManualLine { employeeId: string; kind: 'allowance' | 'adjustment'; amountCents: number; reason: string }
 
 const THIRTEENTH_BASE = new Set<LineKind>(['basic', 'leave', 'salary', 'absence', 'piece']); // basic pay only (PD 851)
-const ALWAYS_TAXABLE = new Set<LineKind>(['allowance', 'adjustment']); // an MWE's SMW, holiday pay and overtime are exempt (F1)
+const ALWAYS_TAXABLE = new Set<LineKind>(['allowance', 'adjustment']); // an MWE's SMW, holiday pay, overtime and night differential are exempt (F1)
 export const TAX_FREQUENCY: Record<PayGroup, Exclude<TaxFrequency, 'monthly'>> = { WEEKLY_PIECE: 'weekly', SEMI_DAILY: 'semi_monthly', SEMI_MONTHLY: 'semi_monthly' };
 
 const pct = (bp: number) => `${bp / 100}%`;
@@ -98,6 +102,41 @@ function pieceHolidayRate(db: Db, employeeId: string, date: string, minimumWageC
   const days = [...new Set([...earned.keys(), ...worked])].sort().slice(-7);
   const average = days.length ? divRoundHalfAway(days.reduce((s, d) => s + (earned.get(d) ?? 0), 0), days.length) : 0;
   return { rateCents: Math.max(average, minimumWageCents), days: days.length };
+}
+
+/** What makes the last workday before a regular holiday count (DOLE): at work, or on leave with pay. */
+const EARNS_HOLIDAY = new Set(['present', 'half_day', 'leave', 'holiday_worked', 'rest_day_worked']);
+const LOOK_BACK_DAYS = 14;
+
+/**
+ * Why an unworked regular holiday is not paid, or undefined when it is (F1; Labor Code Art. 94, Book III Rule IV §6 of
+ * its rules; DOLE Handbook on Workers' Statutory Monetary Benefits): the employee must have been present, or on leave
+ * with pay, on the last workday before it. Going back day by day from the day before:
+ * - a rest day is passed over: typed "Rest day", or nothing typed on a day off of the workweek (Sunday; Saturday too
+ *   for a 5-day week); so is a holiday not worked (a special day off, when the shop does not open, and the first of two
+ *   regular holidays in a row, so both go by the workday before the first);
+ * - a day worked (a half day, a holiday worked, a rest day worked; for someone paid per piece, a day with piece work)
+ *   or on paid leave (SIL) makes it paid; so working the first of two holidays in a row pays the second;
+ * - absent or on unpaid leave makes it unpaid; so does a workday with nothing typed, and no workday in service within
+ *   the 14 days before (hired on or just before the holiday).
+ * Monthly staff are not checked: their monthly pay covers the holidays (a deduction for one is not built).
+ */
+function holidayNotPaid(db: Db, e: Employee, date: string, fallback: PayProfile): string | undefined {
+  const from = addDays(date, -LOOK_BACK_DAYS);
+  const typed = new Map(attendanceBetween(db, from, addDays(date, -1), e.id).map((d) => [d.date, d.status]));
+  const holidays = new Set(holidaysBetween(db, from, addDays(date, -1)).map((h) => h.date));
+  const pieces = new Set(pieceEarningsByDay(db, e.id, from, addDays(date, -1)).map((x) => x.date));
+  for (let d = addDays(date, -1); d >= from && d >= e.hireDate; d = addDays(d, -1)) {
+    const status = typed.get(d);
+    if ((status && EARNS_HOLIDAY.has(status)) || pieces.has(d)) return undefined;
+    if (status === 'absent' || status === 'unpaid_leave') return `${status === 'absent' ? 'absent' : 'on unpaid leave'} on ${d}, the last workday before it`;
+    if (status === 'rest_day' || status === 'holiday_off' || holidays.has(d)) continue;
+    const weekday = new Date(`${d}T00:00:00Z`).getUTCDay();
+    const workweek = (payProfileAt(db, e.id, d) ?? fallback).workweekDays;
+    if (weekday === 0 || (workweek === 5 && weekday === 6)) continue; // a day off of the workweek, nothing typed
+    return `nothing is typed on ${d}, the last workday before it (type that day, then work the payroll out again)`;
+  }
+  return `no workday in service in the ${LOOK_BACK_DAYS} days before it`;
 }
 
 /**
@@ -151,8 +190,16 @@ function earnings(
     const r: PayRules = rulesAt(db, d.date);
     const h = holidays.get(d.date);
     if (WORKED.has(d.status)) daysWorked += d.status === 'half_day' ? 0.5 : 1;
+    // An unworked regular holiday is paid only after a workday present or on paid leave: else a ₱0 line says why.
+    const notPaid = h?.kind === 'regular' && d.status === 'holiday_off' && p.payType !== 'monthly' ? holidayNotPaid(db, e, d.date, p) : undefined;
+    if (notPaid) {
+      add('holiday', `Regular holiday ${d.date} (${h!.name}), not paid: ${notPaid}`, DAY, p.dailyRateCents ?? r.minimumWageCents, 0, DAY);
+      note('HOLIDAY_NOT_PAID', `${e.name}: ${h!.name} (${d.date}) is not paid, ${notPaid}.`);
+      continue;
+    }
     if (p.payType === 'piece') {
       if (d.otMinutes > 0) manualNeeded.add('overtime');
+      if (d.nightMinutes > 0) manualNeeded.add('night differential');
       if (h?.kind === 'regular' && d.status === 'holiday_off') {
         const pay = pieceHolidayRate(db, e.id, d.date, r.minimumWageCents);
         const basis = pay.rateCents === r.minimumWageCents ? 'the minimum wage' : `average of the last ${pay.days} workdays`;
@@ -199,6 +246,11 @@ function earnings(
     if (d.otMinutes > 0) {
       const otBp = d.status === 'present' ? r.otOrdinaryBp : divRoundHalfAway(dayBp * r.otPremiumBp, 10_000);
       add('ot', `Overtime (${pct(otBp)} of the hourly rate)`, d.otMinutes, rate, otBp, 480); // hourly = daily ÷ 8; qty in minutes
+    }
+    // Night differential (F1): 10% of the day's hourly rate, so on a holiday or rest day 10% of its premium rate.
+    if (d.nightMinutes > 0) {
+      const nightBp = divRoundHalfAway(dayBp * r.nightDiffBp, 10_000);
+      add('night', `Night differential (${pct(nightBp)} of the hourly rate)`, d.nightMinutes, rate, nightBp, 480);
     }
   }
   if (manualNeeded.size) note('ADD_BY_HAND', `${e.name} is paid per piece: add ${[...manualNeeded].join(' and ')} as a manual line.`);

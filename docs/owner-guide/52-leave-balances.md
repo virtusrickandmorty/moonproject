@@ -6,20 +6,22 @@
 
 ### Steps
 1. On the **People & Payroll** menu, click **Leave balances**.
-2. Type the **Year** you want to view.
+2. Type the **Year** you want to view (it opens on this year). The list changes by itself. Click an employee's **Code** to open their record.
 
 ### What the system does for you
 It calculates and shows the SIL balances for all employees who were in service during the year you picked. The list has these columns:
-- **Code:** The employee's unique number.
+- **Code:** The employee's code.
 - **Employee:** The name of the employee.
-- **In service:** The dates the employee worked during the year.
-- **SIL earned:** The total number of leave days they earned.
-- **Days used:** The number of leave days they took.
-- **Paid in cash:** The number of unused leave days they converted to cash.
-- **Left:** The number of leave days they have remaining.
+- **In service:** The date the employee started, and the date they left (or "onward" if they are still with you).
+- **SIL earned:** The leave days for the year (5), once the employee has a year of service. It shows 0 before that.
+- **Days used:** The days marked **Leave (SIL)** in the attendance grid for that year.
+- **Paid in cash:** The unused leave days a recorded payroll run paid in cash.
+- **Left:** The leave days remaining.
 
-You can click **Download CSV** to save the list to your computer, or click **Print** to print it. If you go to an employee's own page, you will see these exact same figures under **Paid leave (SIL)**.
+A **Total** line at the bottom adds up each column.
+
+You can click **Download CSV** to save the list to your computer, or click **Print** to print it. If you open an employee's own page, you will see the same figures under **Paid leave (SIL)** for the year. No pay amounts are shown on this list.
 
 ### Common mistakes and how to fix them
 - **Mistake:** You cannot find an employee in the list.
-- **Fix:** Check that the employee was actually in service during the **Year** you picked. If they were not working for you during that year, they will not appear on the list.
+- **Fix:** Check that the employee was in service during the **Year** you picked. Someone who started after that year, or left before it, is not listed. If nobody was in service, the screen says so.

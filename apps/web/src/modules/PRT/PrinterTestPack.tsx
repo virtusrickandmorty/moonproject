@@ -48,7 +48,7 @@ export function PrinterTestPackScreen() {
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!checked[item.id]} onChange={(e) => mark(item.id, e.target.checked)} />Printed well</label>
         </div>)}
       </div></Panel>
-      <Panel title="Not built"><ul className="list-disc space-y-1 pl-5 text-sm">{pack.notBuilt.map((name) => <li key={name}>{name} — not built</li>)}</ul></Panel>
+      {pack.notBuilt.length > 0 && <Panel title="Not built"><ul className="list-disc space-y-1 pl-5 text-sm">{pack.notBuilt.map((name) => <li key={name}>{name} — not built</li>)}</ul></Panel>}
     </>}
   </div>;
 }

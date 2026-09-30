@@ -41,6 +41,7 @@ const yesNo = (title: string): Kind =>
 
 export const DEPOSIT_MODES: Record<string, string> = { A: 'A: a deposit only', B: 'B: VAT on the deposit', C: 'C: an invoice on the downpayment' };
 export const EWT_CLASS_NAMES = EWT_WORDS;
+export const BAD_DEBT_METHODS: Record<string, string> = { direct: 'Written off directly to bad debts (6270)', allowance: 'Allowance for credit losses (1209), written off against it' };
 interface CrMode { mode: 'booklet' | 'system'; signOff?: { name: string; date: string; basis: string } }
 const crWords = (v: unknown) => {
   const c = v as CrMode;
@@ -51,6 +52,7 @@ const ewt = (v: unknown) => v as Record<string, number>;
 const KINDS: Record<string, Kind> = {
   'tax.vat_rate_bp': percent('VAT rate', 50),
   'tax.interest_final_tax_bp': percent('Final tax on bank interest', 50),
+  'tax.dividend_final_tax_bp': percent('Final tax on dividends to individual stockholders', 50),
   'sales.deposit_vat_mode': single('Downpayment VAT', (v) => DEPOSIT_MODES[String(v)] ?? String(v), {
     toForm: (v) => ({ choice: String(v) }),
     fromForm: (f) => (f.choice && f.choice in DEPOSIT_MODES ? { value: f.choice, errors: [] } : { errors: ['Choose A, B or C.'] }),
@@ -70,6 +72,10 @@ const KINDS: Record<string, Kind> = {
   }),
   'tax.top_withholding_agent': yesNo('Top Withholding Agent'),
   'col.forfeit_vatable': yesNo('Forfeited deposit is VATable'),
+  'acc.bad_debt_method': single('Bad debts', (v) => BAD_DEBT_METHODS[String(v)] ?? String(v), {
+    toForm: (v) => ({ choice: String(v) }),
+    fromForm: (f) => (f.choice && f.choice in BAD_DEBT_METHODS ? { value: f.choice, errors: [] } : { errors: ['Choose direct write-off or the allowance method.'] }),
+  }),
   'tax.ewt_rates_bp': {
     title: 'Withholding tax (EWT) rates',
     words: (v) => Object.entries(ewt(v)).map(([k, bp]) => `${EWT_CLASS_NAMES[k] ?? k} ${bpWords(bp)}`).join('; '),
