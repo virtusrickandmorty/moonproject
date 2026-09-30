@@ -45,7 +45,10 @@ describe('print base', () => {
     const categoryId = env.db.prepare("SELECT c.id FROM exp_categories c JOIN accounts a ON a.id = c.account_id WHERE a.code = '6190'").pluck().get() as number;
     const cashPlace = cashPlaceId(env.db, '1111');
     for (const [supplierId, amountCents, description] of [[printer, 500_000, 'Sample printing'], [auditor, 1_120_000, 'Sample audit']] as const) {
-      const response = await owner.post('/api/docs/exp.voucher/post', { input: { supplierId, categoryId, cashPlaceId: cashPlace, amountCents, description }, expectedTotalCents: amountCents }, idem());
+      // What leaves the cash place is the receipt less the EWT the server works out (preview).
+      const bare = { supplierId, categoryId, amountCents, description };
+      const cash = (await owner.post('/api/docs/exp.voucher/preview', { input: { ...bare, tenders: [{ cashPlaceId: cashPlace, amountCents: 1 }] } })).json().doc.cashCents as number;
+      const response = await owner.post('/api/docs/exp.voucher/post', { input: { ...bare, tenders: [{ cashPlaceId: cashPlace, amountCents: cash }] }, expectedTotalCents: amountCents }, idem());
       expect(response.statusCode, response.body).toBe(200);
     }
     const list = (await owner.get('/api/tax/2307-to-issue?year=2026&quarter=3')).json();
@@ -177,7 +180,7 @@ describe('print base', () => {
       ['col.collection', { customerName: '<Buyer>', applications: [], sales: [], totalCents: 100, cwtCents: 0, vatWithheldCents: 0, unappliedCents: 0 }, 'COLLECTION RECEIPT', true, true],
       ['col.credit_memo', { customerName: '<Buyer>', invoice: { number: 'IR-1' }, kind: 'allowance', reason: '<late>', netCents: 90, vatCents: 10, totalCents: 100 }, 'CREDIT MEMO', true, false],
       ['ap.payment', { supplierName: '<Supplier>', bills: [], tenders: [], feeCents: 0, totalCents: 100 }, 'PAYMENT VOUCHER', true, true],
-      ['exp.voucher', { payee: { name: '<Payee>' }, categoryName: 'Rent', description: '<office>', cashPlaceName: 'Bank', totalCents: 100, inputVatCents: 0, ewtCents: 0, cashCents: 100 }, 'EXPENSE VOUCHER', false, false],
+      ['exp.voucher', { payee: { name: '<Payee>' }, categoryName: 'Rent', description: '<office>', tenders: [{ cashPlaceName: 'Bank', reference: '<ref>', amountCents: 100 }], totalCents: 100, inputVatCents: 0, ewtCents: 0, cashCents: 100 }, 'EXPENSE VOUCHER', false, false],
       ['cash.transfer', { fromName: '<Bank>', toName: 'Cash', amountSentCents: 100, amountReceivedCents: 100, feeCents: 0 }, 'FUND TRANSFER', false, false],
       ['cash.count', { placeName: '<Till>', lines: [], countedCents: 100, ledgerCents: 100, differenceCents: 0 }, 'CASH COUNT', false, false],
       ['acc.jv', { memo: '<Accrual>', lines: [], totalCents: 100 }, 'JOURNAL VOUCHER', false, false],

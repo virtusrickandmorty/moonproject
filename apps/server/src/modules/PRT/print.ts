@@ -91,7 +91,8 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind): { title: Pr
   };
   if (h.doc_type === 'exp.voucher') return {
     title: 'Expense Voucher', subtitle: '', legend: false, twoUp: false,
-    body: field('Payee', doc.payee?.name) + field('Category', doc.categoryName) + field('Description', doc.description) + field('Paid from', doc.cashPlaceName) +
+    body: field('Payee', doc.payee?.name) + field('Category', doc.categoryName) + field('Description', doc.description) +
+      lineTable(['Paid from', 'Reference', 'Amount'], doc.tenders.map((x: any) => [x.cashPlaceName, x.reference, money(x.amountCents)])) +
       field('Gross', money(doc.totalCents)) + field('Input VAT', money(doc.inputVatCents)) + field('EWT', money(doc.ewtCents)) + field('Cash paid', money(doc.cashCents)),
   };
   if (h.doc_type === 'cash.transfer') return { title: 'Fund Transfer', subtitle: 'Fund transfer slip', legend: false, twoUp: false,
