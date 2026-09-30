@@ -298,11 +298,11 @@ describe('EXP migration 0003: vouchers recorded before tenders', () => {
     const modules = await loadModules();
     const exp = modules.find((m) => m.code === 'EXP')!;
     const before = mkdtempSync(join(tmpdir(), 'exp-migrations-'));
-    for (const f of ['0001_exp.sql', '0002_exp_purchase_class.sql']) copyFileSync(join(exp.migrationsDir!, f), join(before, f));
+    for (const f of ['0001_exp.sql', '0002_exp_purchase_class.sql', '0003_exp_category_is_purchase.sql']) copyFileSync(join(exp.migrationsDir!, f), join(before, f));
     const db = openDb(':memory:');
     const clock = fixedClock('2026-09-28T02:00:00Z');
     prepareDatabase(db, clock, modules.map((m) => (m.code === 'EXP' ? { ...m, migrationsDir: before } : m)));
-    expect(db.prepare("SELECT COUNT(*) FROM schema_migrations WHERE id LIKE 'EXP/%'").pluck().get()).toBe(2);
+    expect(db.prepare("SELECT COUNT(*) FROM schema_migrations WHERE id LIKE 'EXP/%'").pluck().get()).toBe(3);
     expect(db.prepare('SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?').pluck().get('exp_vouchers', 'cash_account_id')).toBe(1);
 
     const actor = { userId: createUser(db, 'old-accountant', ['accountant']), permissions: new Set(['exp.voucher.create', 'exp.voucher.post', 'exp.voucher.cancel']) };
@@ -327,7 +327,7 @@ describe('EXP migration 0003: vouchers recorded before tenders', () => {
 
     // Migrate: the same database, the real EXP migrations.
     prepareDatabase(db, clock, modules);
-    expect(db.prepare("SELECT id FROM schema_migrations WHERE id LIKE 'EXP/%' ORDER BY id").pluck().all()).toEqual(['EXP/0001_exp.sql', 'EXP/0002_exp_purchase_class.sql', 'EXP/0003_exp_voucher_tenders.sql']);
+    expect(db.prepare("SELECT id FROM schema_migrations WHERE id LIKE 'EXP/%' ORDER BY id").pluck().all()).toEqual(['EXP/0001_exp.sql', 'EXP/0002_exp_purchase_class.sql', 'EXP/0003_exp_category_is_purchase.sql', 'EXP/0004_exp_voucher_tenders.sql']);
 
     // No journal (and no document) changed by a single value.
     expect(snapshot(db)).toEqual(posted);
