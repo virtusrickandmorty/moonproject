@@ -15,6 +15,10 @@ type BalanceSheetResult = { asOf: string; yearStart: string; sections: Section[]
   receivables: { tradeCents: number; allowanceCents: number; netCents: number };
   totalAssetsCents: number; totalLiabilitiesCents: number; totalEquityCents: number; totalLiabilitiesAndEquityCents: number; differenceCents: number; balanced: boolean;
   comparison?: { kind: string; asOf: string }; totalLiabilitiesAndEquity?: ComparedTotal; comparisonBalanced?: boolean };
+type EquityColumn = { key: string; code: string | null; name: string; startCents: number; endCents: number };
+type EquityRow = { key: string; label: string; amountsCents: Record<string, number>; totalCents: number };
+type EquityResult = { from: string; to: string; openingAsOf: string; columns: EquityColumn[]; rows: EquityRow[];
+  openingTotalCents: number; endingTotalCents: number; balanceSheetTotalEquityCents: number };
 
 /** Statement style: a negative amount (a contra account, a loss) in brackets. */
 const amount = (cents: number) => (cents < 0 ? `(${peso(-cents)})` : peso(cents));
@@ -112,5 +116,30 @@ export function BalanceSheet({ me }: { me: Me }) {
     <p className="text-xs text-slate-600">Current-year earnings are the net income from {data.yearStart} to {data.asOf}; earlier years’ earnings are every income and expense before {data.yearStart}. Both are computed, never posted.
       {data.balanced && ' Total assets equal total liabilities and equity.'}
       {data.receivables.allowanceCents !== 0 && ` Trade receivables of ${peso(data.receivables.tradeCents)} less the allowance for credit losses of ${peso(data.receivables.allowanceCents)}: ${peso(data.receivables.netCents)} expected to be collected.`}</p></Panel>}
+  </article>;
+}
+
+export function ChangesInEquity({ me }: { me: Me }) {
+  const today = useToday(); const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [applied, setApplied] = useState('');
+  useEffect(() => { if (today && !from && !to) { setFrom(`${today.slice(0, 4)}-01-01`); setTo(today); } }, [today, from, to]);
+  useEffect(() => { if (from && to && !applied) setApplied(new URLSearchParams({ from, to }).toString()); }, [from, to, applied]);
+  const path = applied ? `changes-in-equity?${applied}` : null; const { data, error } = useReport<EquityResult>(path);
+  if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
+  const show = (f: string, t: string) => { setFrom(f); setTo(t); setApplied(new URLSearchParams({ from: f, to: t }).toString()); };
+  const cells = (values: Record<string, number>) => <>{data?.columns.map((column) => <td key={column.key} className={money}>{amount(values[column.key] ?? 0)}</td>)}</>;
+  return <article className="rpt-page space-y-4"><BookTitle title="Statement of changes in equity" dates={data ? `${data.from} to ${data.to}` : ''} />
+    <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+      <Field label="To"><input type="date" className={inputClass} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
+      <Button tone="primary" disabled={!from || !to || from > to} onClick={() => show(from, to)}>Show</Button>
+      {today && presets(today).map(([label, start]) => <Button key={label} onClick={() => show(start, today)}>{label}</Button>)}
+      {path && <Tools path={path} />}</div>
+    {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
+    {data && <Panel title="From the posted journals"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr><th className={th}>Movement</th>
+      {data.columns.map((column) => <th key={column.key} className={`${th} min-w-36 text-right`}>{column.code && `${column.code} `}{column.name}</th>)}
+      <th className={`${th} min-w-32 text-right`}>Total equity</th></tr></thead><tbody>
+      <tr className="font-semibold"><td className={td}>Balance at {data.openingAsOf}</td>{cells(Object.fromEntries(data.columns.map((c) => [c.key, c.startCents])))}<td className={money}>{amount(data.openingTotalCents)}</td></tr>
+      {data.rows.map((row) => <tr key={row.key}><td className={td}>{row.label}</td>{cells(row.amountsCents)}<td className={money}>{amount(row.totalCents)}</td></tr>)}
+      <tr className="font-semibold"><td className={td}>Balance at {data.to}</td>{cells(Object.fromEntries(data.columns.map((c) => [c.key, c.endCents])))}<td className={money}>{amount(data.endingTotalCents)}</td></tr>
+    </tbody></table></div><p className="text-xs text-slate-600">The ending balance agrees with total equity on the balance sheet at {data.to}.</p></Panel>}
   </article>;
 }

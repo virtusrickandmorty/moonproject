@@ -49,7 +49,7 @@ import { RemittanceForm } from './STAT/RemittanceForm.tsx';
 import { OpeningStatForm } from './STAT/OpeningStatForm.tsx';
 import { GeneralJournal, GeneralLedger, TrialBalance } from './RPT/Books.tsx';
 import { BirBooks } from './RPT/BirBooks.tsx';
-import { BalanceSheet, IncomeStatement } from './RPT/Statements.tsx';
+import { BalanceSheet, ChangesInEquity, IncomeStatement } from './RPT/Statements.tsx';
 import { CashFlow } from './RPT/CashFlow.tsx';
 import { ArAging, CustomerStatement } from './RPT/Receivables.tsx';
 import { DepositsCrossingQuarter, DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
@@ -179,6 +179,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/rpt/trial-balance': TrialBalance,
   '/rpt/income-statement': IncomeStatement,
   '/rpt/balance-sheet': BalanceSheet,
+  '/rpt/changes-in-equity': ChangesInEquity,
   '/rpt/cash-flow': CashFlow,
   '/rpt/ar-aging': ArAging,
   '/rpt/customer-statement': CustomerStatement,

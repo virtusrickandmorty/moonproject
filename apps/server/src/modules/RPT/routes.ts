@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { AppError, csvPesos, toCsv, type CsvCell } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { comparativeTrialBalance, generalJournal, generalLedger, ledgerAccounts } from './books.ts';
-import { balanceSheet, compareSections, comparisonDates, incomeStatement, type Comparison, type StatementSection } from './statements.ts';
+import { balanceSheet, changesInEquity, compareSections, comparisonDates, incomeStatement, type Comparison, type StatementSection } from './statements.ts';
 import { arAging, customerStatement } from './receivables.ts';
 import { statementCustomers } from '../CUS/public.ts';
 import { collectionsRegister, depositsCrossingQuarter, depositsHeld, jobOrderFollowUp, salesByPeriod } from './sales-collections.ts';
@@ -250,6 +250,17 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
       check('Total liabilities and equity', result.totalLiabilitiesAndEquityCents, other?.totalLiabilitiesAndEquityCents ?? 0),
       check('Total assets less liabilities and equity', result.differenceCents, other?.differenceCents ?? 0)];
     return sendCsv(reply, `balance-sheet-${result.asOf}`, rows);
+  });
+  app.get('/api/rpt/changes-in-equity', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
+    const q = req.query as Record<string, unknown>; const { from, to } = range(q); const result = changesInEquity(db, from, to);
+    if (q.format !== 'csv') return result;
+    const head: CsvCell[] = ['Movement', ...result.columns.map((c) => `${c.code ? `${c.code} ` : ''}${c.name} PHP`), 'Total equity PHP'];
+    const line = (label: string, values: Record<string, number>): CsvCell[] => [label, ...result.columns.map((c) => csvPesos(values[c.key] ?? 0)),
+      csvPesos(result.columns.reduce((sum, c) => sum + (values[c.key] ?? 0), 0))];
+    const opening = Object.fromEntries(result.columns.map((c) => [c.key, c.startCents]));
+    const ending = Object.fromEntries(result.columns.map((c) => [c.key, c.endCents]));
+    return sendCsv(reply, `statement-of-changes-in-equity-${from}-${to}`, [head, line(`Balance at ${result.openingAsOf}`, opening),
+      ...result.rows.map((r) => line(r.label, r.amountsCents)), line(`Balance at ${to}`, ending)]);
   });
   app.get('/api/rpt/cash-flow', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>; const { from, to } = range(q); const result = cashFlowStatement(db, from, to);
