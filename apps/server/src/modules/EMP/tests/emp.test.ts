@@ -170,7 +170,7 @@ describe('attendance, holidays and SIL', () => {
     expect((await save([{ employeeId: a, date: '2026-09-23', status: 'half_day', nightMinutes: 180 }, { employeeId: old, date: '2026-09-23', status: 'present', otMinutes: 60, nightMinutes: 480 }])).json()).toEqual({ saved: 1, unchanged: 1 });
     expect(await codes([{ employeeId: a, date: '2026-09-22', status: 'absent', nightMinutes: 60 }, { employeeId: old, date: '2026-09-22', status: 'rest_day', nightMinutes: 30 }])).toEqual(['NIGHT', 'NIGHT']);
     expect((await save([{ employeeId: a, date: '2026-09-22', status: 'present', nightMinutes: 481 }])).statusCode).toBe(400);
-    // The table refuses them too (migration 0003).
+    // The table refuses them too (migration 0004).
     expect(() => env.db.prepare(`INSERT INTO emp_attendance (employee_id, work_date, seq, status, ot_minutes, night_minutes, at, user_id) VALUES (?, '2026-09-21', 1, 'absent', 0, 60, 'x', ?)`).run(a, createUser(env.db, 'typist', ['encoder']))).toThrow(/CHECK/);
   });
 
