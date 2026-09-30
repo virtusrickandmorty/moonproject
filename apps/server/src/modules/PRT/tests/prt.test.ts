@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { formatPeso } from '@moonproject/shared';
+import jsQR from 'jsqr';
 import { cashPlaceId, createTestEnv, idem, PASSWORD, type Client, type TestEnv } from '../../../../test/helpers.ts';
 import { renderPrint, renderReportPrint, printLineTable, printMoney, type PrintHeader, type Profile } from '../print.ts';
 
@@ -12,6 +13,22 @@ const profile: Profile = { registered_name: value.registeredName, trade_name: va
   tin: value.tin, registered_address: value.registeredAddress, is_vat_registered: 1, version: 1 };
 const header = (type: string): PrintHeader => ({ id: '00000000-0000-4000-8000-000000000001', number: 'TEST-000001',
   business_date: '2026-09-28', doc_type: type, status: 'posted' });
+
+/** Paint the deliberately simple one-module SVG path into pixels, then decode the QR independently with jsQR. */
+const decodeQr = (html: string) => {
+  const svg = html.match(/<svg[^>]*viewBox="0 0 (\d+) \1"[^>]*>.*?<path fill="#000" d="([^"]+)"\/>(?:<\/svg>)/s);
+  if (!svg) throw new Error('QR SVG not found');
+  const modules = Number(svg[1]), scale = 8, width = modules * scale;
+  const pixels = new Uint8ClampedArray(width * width * 4).fill(255);
+  for (const match of svg[2]!.matchAll(/M(\d+) (\d+)h1v1h-1z/g)) {
+    const x = Number(match[1]) * scale, y = Number(match[2]) * scale;
+    for (let py = y; py < y + scale; py++) for (let px = x; px < x + scale; px++) {
+      const offset = (py * width + px) * 4;
+      pixels[offset] = pixels[offset + 1] = pixels[offset + 2] = 0;
+    }
+  }
+  return jsQR(pixels, width, width)?.data;
+};
 
 beforeEach(async () => { env = await createTestEnv(); owner = await env.as('owner'); encoder = await env.as('encoder'); });
 afterEach(async () => { await env.app.close(); env.db.close(); });
@@ -82,6 +99,11 @@ describe('print base', () => {
     for (const item of pack.prints) expect(item.html.includes('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.')).toBe(publicPrints.includes(item.id));
     expect(pack.prints.find((p) => p.id === 'collection-80mm')?.html).toContain('@page{size:80mm auto');
     expect(pack.prints.filter((p) => p.paper === 'A4 2-up').every((p) => p.html.includes('sheet two-up'))).toBe(true);
+    for (const id of ['job-ticket', 'release-slip']) {
+      const sample = pack.prints.find((print) => print.id === id)?.html ?? '';
+      expect(sample).toContain('<svg');
+      expect(decodeQr(sample)).toBe('http://192.168.1.20/docs/jo.job_order/00000000-0000-4000-8000-000000000000');
+    }
     expect(pack.prints.find((p) => p.id === 'bir-2307')?.html).toContain('Sample Supplier Corporation');
     expect(pack.notBuilt).toEqual(['Books layouts']);
     expect(tableCounts()).toEqual(before);
@@ -135,6 +157,28 @@ describe('print base', () => {
     expect(ticket).toContain('<h1>JOB TICKET</h1>');
     expect(ticket).not.toContain('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.');
     expect(ticket).not.toContain('₱');
+  });
+
+  it('puts a decodable inline SVG for the job-order screen on tickets and both release-slip copies', () => {
+    const jo = { customerName: 'Sample Buyer', dueDate: '2026-10-13', priority: 'normal', lines: [] };
+    const release = { jobOrderId: 'job-order-id', jobOrderNumber: 'JO-000321', customerName: 'Sample Buyer', lines: [], balanceDueCents: 0 };
+    const ticket = renderPrint(env.db, { ...header('jo.job_order'), id: 'job-order-id', number: 'JO-000321' }, jo,
+      profile, 'job_ticket', 'Example Owner', '2026-09-28T10:00:00+08:00', 1, false, false, 'http://192.168.1.20:8080/');
+    const slip = renderPrint(env.db, header('jo.release'), release, profile, 'document', 'Example Owner',
+      '2026-09-28T10:00:00+08:00', 1, false, false, 'http://192.168.1.20:8080/');
+    expect(ticket).toContain('<svg');
+    expect(decodeQr(ticket)).toBe('http://192.168.1.20:8080/docs/jo.job_order/job-order-id');
+    expect(slip.match(/<svg/g)).toHaveLength(2);
+    expect(decodeQr(slip)).toBe('http://192.168.1.20:8080/docs/jo.job_order/job-order-id');
+    expect(slip.match(/<figcaption>JO-000321<\/figcaption>/g)).toHaveLength(2);
+  });
+
+  it('puts only the job-order number in the QR when there is no join address, including a practice print', () => {
+    const html = renderPrint(env.db, { ...header('jo.job_order'), number: 'JO-000654' },
+      { customerName: 'Practice Customer', lines: [] }, profile, 'job_ticket', 'Practice Owner',
+      '2026-09-28T10:00:00+08:00', 1, true);
+    expect(html).toContain('PRACTICE ONLY · NOT A REAL DOCUMENT');
+    expect(decodeQr(html)).toBe('JO-000654');
   });
 
   it('shows line and document discounts so quotation amounts reconcile to the total', () => {

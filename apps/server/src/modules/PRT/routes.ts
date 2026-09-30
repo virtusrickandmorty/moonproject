@@ -60,7 +60,7 @@ const TEST_PRINTS: readonly { id: string; label: string; paper: string; type: st
   { id: 'quotation', label: 'Quotation', paper: 'A4', type: 'quo.quotation', kind: 'document', doc: quote },
   { id: 'job-order', label: 'Job Order (customer copy)', paper: 'A4', type: 'jo.job_order', kind: 'document', doc: job },
   { id: 'job-ticket', label: 'Job Ticket', paper: 'A4', type: 'jo.job_order', kind: 'job_ticket', doc: job },
-  { id: 'release-slip', label: 'Release Slip', paper: 'A4 2-up', type: 'jo.release', kind: 'document', doc: { jobOrderNumber: 'TEST-JO-000000', customerName: 'Sample Customer', lines: [{ description: 'Sample uniform', qty: 2 }], claimedBy: 'Sample Customer', idSeen: 'Sample ID', balanceDueCents: 56000 } },
+  { id: 'release-slip', label: 'Release Slip', paper: 'A4 2-up', type: 'jo.release', kind: 'document', doc: { jobOrderId: '00000000-0000-4000-8000-000000000000', jobOrderNumber: 'TEST-JO-000000', customerName: 'Sample Customer', lines: [{ description: 'Sample uniform', qty: 2 }], claimedBy: 'Sample Customer', idSeen: 'Sample ID', balanceDueCents: 56000 } },
   { id: 'collection-a4', label: 'Collection Receipt', paper: 'A4 2-up', type: 'col.collection', kind: 'document', doc: { customerName: 'Sample Customer', applications: [{ jobOrderNumber: 'TEST-JO-000000', amountCents: 56000 }], sales: [], totalCents: 56000, cwtCents: 0, vatWithheldCents: 0, unappliedCents: 0, note: 'Sample payment' } },
   { id: 'collection-80mm', label: 'Collection Receipt', paper: '80 mm', type: 'col.collection', kind: 'thermal', doc: { customerName: 'Sample Customer', applications: [{ jobOrderNumber: 'TEST-JO-000000', amountCents: 56000 }], sales: [], totalCents: 56000, cwtCents: 0, vatWithheldCents: 0, unappliedCents: 0 } },
   { id: 'credit-memo', label: 'Credit Memo', paper: 'A4', type: 'col.credit_memo', kind: 'document', doc: { customerName: 'Sample Customer', invoice: { number: 'TEST-IR-000000' }, kind: 'allowance', reason: 'Sample adjustment', netCents: 10000, vatCents: 1200, totalCents: 11200 } },
@@ -98,7 +98,7 @@ export function prtRoutes(app: FastifyInstance, { db, clock, registry, practice 
   app.get('/api/prt/test-pack', { config: { permission: 'prt.test_pack' } }, async () => ({
     prints: [...TEST_PRINTS.map((item) => ({ id: item.id, label: item.label, paper: item.paper,
       html: renderPrint(db, testHeader(item.type), item.doc, TEST_PROFILE, item.kind, 'Sample Owner',
-        '2026-09-28T10:00:00+08:00', 1, false, true) })), { id: 'bir-2307', label: 'BIR Form 2307', paper: 'A4',
+        '2026-09-28T10:00:00+08:00', 1, false, true, 'http://192.168.1.20/') })), { id: 'bir-2307', label: 'BIR Form 2307', paper: 'A4',
       html: render2307(TEST_PROFILE, 2026, 3, [{ supplierName: 'Sample Supplier Corporation', tin: '111-222-333-000', address: null,
         lines: [{ atc: 'WC120', months: [{ month: '2026-07', baseCents: 500_000 }, { month: '2026-08', baseCents: 750_000 }, { month: '2026-09', baseCents: 250_000 }], baseCents: 1_500_000, ewtCents: 30_000 }] }], true) }, ...TEST_REPORTS],
     notBuilt: NOT_BUILT,
@@ -225,6 +225,10 @@ export function prtRoutes(app: FastifyInstance, { db, clock, registry, practice 
       const def = registry.docType(type);
       if (!def || !PRINTABLE.get(type)?.includes(kind)) throw notFound('That printout');
       if (!user.permissions.has(def.permissions.view)) throw forbidden(def.permissions.view);
+      const tls = await app.inject({ method: 'GET', url: '/api/system/tls', headers: { cookie: req.headers.cookie ?? '' } });
+      const join = tls.statusCode === 200 ? (tls.json() as { join?: { addresses: { kind: 'lan' | 'vpn' }[]; urls: string[] } }).join : undefined;
+      const lan = join?.addresses.findIndex((address) => address.kind === 'lan') ?? -1;
+      const joinBase = join?.urls[lan >= 0 ? lan : 0];
       return tx(db, () => {
         const h = db.prepare('SELECT id, number, business_date, doc_type, status FROM documents WHERE id = ? AND doc_type = ?').get(id, type) as PrintHeader | undefined;
         if (!h) throw notFound('The document');
@@ -241,7 +245,7 @@ export function prtRoutes(app: FastifyInstance, { db, clock, registry, practice 
         const copyNumber = (db.prepare('SELECT COALESCE(MAX(copy_number), 0) + 1 AS n FROM prt_print_log WHERE document_id = ? AND print_kind = ?')
           .get(id, kind) as { n: number }).n;
         const at = stamp(clock);
-        const html = renderPrint(db, h, doc, profile, kind, user.displayName, at, copyNumber, practice);
+        const html = renderPrint(db, h, doc, profile, kind, user.displayName, at, copyNumber, practice, false, joinBase);
         db.prepare('INSERT INTO prt_print_log (document_id, user_id, printed_at, copy_number, print_kind) VALUES (?, ?, ?, ?, ?)')
           .run(id, user.userId, at, copyNumber, kind);
         appendAudit(db, { at, userId: user.userId, action: 'prt.print', entityType: 'document', entityId: id,
