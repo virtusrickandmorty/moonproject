@@ -45,7 +45,7 @@ beforeEach(async () => {
   expect((await quickSale(c.other, '0702', '0902', 560_000, 25_000, 'received')).statusCode).toBe(200);
   // Q3 purchases: office supplies ₱1,120.00 (goods, VAT ₱120.00) and ₱400.00 input VAT on a journal voucher (to classify).
   expect((await accountant.post('/api/docs/exp.voucher/post', {
-    input: { cashPlaceId: cashPlaceId(env.db, '1111'), categoryId: cat('6160'), amountCents: 112_000, description: 'Bond paper', payeeName: 'Sample Office Depot Inc.',
+    input: { tenders: [{ cashPlaceId: cashPlaceId(env.db, '1111'), amountCents: 112_000 }], categoryId: cat('6160'), amountCents: 112_000, description: 'Bond paper', payeeName: 'Sample Office Depot Inc.',
       payeeVatRegistered: true, payeeTin: '444-555-666-000', supplierInvoiceNo: 'OR-0101', supplierInvoiceDate: '2026-09-28' },
     expectedTotalCents: 112_000,
   }, idem())).statusCode).toBe(200);

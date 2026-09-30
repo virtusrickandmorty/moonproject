@@ -264,7 +264,7 @@ export async function createPracticeData(dbPath: string, days: number, start = '
         tenders: [{ cashPlaceId: bank, amountCents: 50_000 }],
       });
       await record(encoder, 'exp.voucher', {
-        categoryId, cashPlaceId: till, amountCents: 25_000,
+        categoryId, tenders: [{ cashPlaceId: till, amountCents: 25_000 }], amountCents: 25_000,
         description: 'Practice shop supplies and utilities', supplierId: utility,
         supplierInvoiceNo: `UTIL-${serial}`, supplierInvoiceDate: date,
       });
