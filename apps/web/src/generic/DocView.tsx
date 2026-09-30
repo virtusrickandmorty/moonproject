@@ -1,14 +1,16 @@
 /**
  * Generic view for any doc type (PLAN H2): status, "What this did" in plain words for everyone, and
  * "Behind the scenes" (journal lines) only when the server sent them (acc.journal.view).
- * Cancel and Edit (= cancel and reissue) start here.
+ * Cancel and Edit (= cancel and reissue) start here. The cancel dialog shows what the server warns about first (a filed
+ * period, ACC-22), from the preview before Cancel; a warning never blocks. Every document has its Attachments panel.
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, newIdempotencyKey, type CashPlace, type DocDetail, type DocTypeInfo, type PrintVariant } from '../api.ts';
+import { api, newIdempotencyKey, type CancelPreview, type CashPlace, type DocDetail, type DocTypeInfo, type PrintVariant } from '../api.ts';
 import { Link, navigate } from '../router.tsx';
 import { Button, JournalTable, Notice, Panel, ReasonDialog, StatusChip, longDate, manilaTime, peso } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
 import { fieldsOf, toValues } from './fields.ts';
+import { AttachmentsPanel } from './Attachments.tsx';
 
 /** A module's own view parts: more detail under "What this did", and its own cancel (e.g. a quick sale and its payment). */
 /** `noEdit` hides Edit where a cancel and a new document is the way to correct (a payroll's figures depend on the state it was worked out on). */
@@ -24,6 +26,7 @@ export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo;
   const [printError, setPrintError] = useState('');
   const [printVariants, setPrintVariants] = useState<PrintVariant[]>([]);
   const [cancelKey, setCancelKey] = useState<string | null>(null); // one Idempotency-Key per cancel dialog
+  const [cancelPreview, setCancelPreview] = useState<CancelPreview | null>(null);
 
   const load = useCallback(() => api.get(type.key, id).then(setD, (e: Error) => setError(e.message)), [type.key, id]);
   useEffect(() => void load(), [load]);
@@ -35,6 +38,14 @@ export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo;
     }, () => { if (active) setPrintVariants([]); });
     return () => { active = false; };
   }, [type.key]);
+
+  useEffect(() => {
+    setCancelPreview(null);
+    if (!cancelKey) return;
+    let active = true;
+    api.cancelPreview(type.key, id).then((p) => { if (active) setCancelPreview(p); }, () => undefined); // the cancel itself says what is wrong
+    return () => { active = false; };
+  }, [cancelKey, type.key, id]);
 
   if (error) return <Notice>{error}</Notice>;
   if (!d) return <p className="text-slate-500">Loading…</p>;
@@ -89,6 +100,7 @@ export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo;
         </dl>
         {parts.extra?.(d)}
       </Panel>
+      <AttachmentsPanel type={type} id={id} />
       {d.journals && (
         <Panel title="Behind the scenes">
           {d.journals.map((j) => (
@@ -109,6 +121,7 @@ export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo;
           onConfirm={cancel}
           onClose={() => setCancelKey(null)}
         >
+          {cancelPreview?.issues.map((i) => <Notice key={i.code + i.field + i.message} tone={i.level}>{i.message}</Notice>)}
           {parts.cancelNote?.(d)}
         </ReasonDialog>
       )}

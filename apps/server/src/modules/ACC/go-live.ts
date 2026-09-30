@@ -14,12 +14,13 @@ const answerInput = z.object({
   decidedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), note: z.string().trim().max(1000),
 }).strict();
 type AnswerRow = { id: number; decision_id: string; answer: string; decided_by: string; decided_on: string; note: string; recorded_at: string; recorded_by: string; recorded_by_name: string };
-const settingWords = (key: string, value: unknown) => key === 'col.cr_mode' ? ((value as { mode: string }).mode === 'booklet' ? 'Booklet mode' : 'System-numbered') : key === 'tax.top_withholding_agent' ? ((value as boolean) ? 'Yes' : 'No') : key === 'col.forfeit_vatable' ? ((value as boolean) ? 'VATable' : 'Not VATable') : String(value);
+const settingWords = (key: string, value: unknown) => key === 'col.cr_mode' ? ((value as { mode: string }).mode === 'booklet' ? 'Booklet mode' : 'System-numbered') : key === 'tax.top_withholding_agent' ? ((value as boolean) ? 'Yes' : 'No') : key === 'col.forfeit_vatable' ? ((value as boolean) ? 'VATable' : 'Not VATable') : key === 'acc.bad_debt_method' ? (value === 'allowance' ? 'Allowance method' : 'Direct write-off') : String(value);
 const agrees = (id: string, answer: string, value: unknown) => {
   const a = answer.trim().toLowerCase();
   if (id === 'ACC-02') return a === String(value).toLowerCase() || a.startsWith(`${String(value).toLowerCase()} `);
   if (id === 'ACC-03') return a.includes((value as { mode: string }).mode === 'booklet' ? 'booklet' : 'system');
   if (id === 'ACC-06') return (value as boolean) ? /(^|\W)(yes|twa|published)(\W|$)/i.test(answer) && !/not\s+(a\s+)?twa/i.test(answer) : /not\s+(a\s+)?twa|not published/i.test(answer);
+  if (id === 'ACC-26') return value === 'allowance' ? /allowance/i.test(answer) : /direct/i.test(answer);
   if (id === 'ACC-15') return (value as boolean) ? /vatable/i.test(answer) && !/not\s+vatable/i.test(answer) : /not\s+vatable/i.test(answer);
   return true;
 };

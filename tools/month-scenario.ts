@@ -440,7 +440,7 @@ export const STEPS: Step[] = [
       m.record('G-12r', 'col.collection', { id: first.id, number: first.number, businessDate: this.date }, 'reversal');
       m.record('G-12b', 'col.collection', res);
       await m.post('G-13', 'exp.voucher', {
-        categoryId: m.categories['6110']!, cashPlaceId: m.places['1111'], amountCents: 4_000_000, description: 'September rent, shop', payeeName: LESSOR, payeeVatRegistered: true,
+        categoryId: m.categories['6110']!, tenders: [{ cashPlaceId: m.places['1111'], amountCents: 3_821_429 }], amountCents: 4_000_000, description: 'September rent, shop', payeeName: LESSOR, payeeVatRegistered: true,
         payeeTin: '123-456-789-000', supplierInvoiceNo: 'SI-0101', supplierInvoiceDate: this.date,
       }, { who: 'enc', total: 4_000_000 });
     },
@@ -468,7 +468,7 @@ export const STEPS: Step[] = [
     async run(m) {
       await m.on(this.date);
       await m.post('G-14', 'exp.voucher', {
-        categoryId: m.categories['6110']!, cashPlaceId: m.places['1111'], amountCents: 4_000_000, description: 'September rent, stock room', payeeName: LANDLORD, payeeVatRegistered: false,
+        categoryId: m.categories['6110']!, tenders: [{ cashPlaceId: m.places['1111'], amountCents: 3_800_000 }], amountCents: 4_000_000, description: 'September rent, stock room', payeeName: LANDLORD, payeeVatRegistered: false,
         payeeTin: '987-654-321-000', supplierInvoiceNo: '0201', supplierInvoiceDate: this.date,
       }, { who: 'enc', total: 4_000_000 });
       await m.post('G-15', 'ap.bill', { supplierId: m.ids[FABRIC], supplierInvoiceNo: 'SI-7788', supplierInvoiceDate: this.date, lines: [{ supplyId: m.ids['Cotton twill'], amountCents: 1_120_000 }] }, { who: 'enc', total: 1_120_000 });
@@ -482,7 +482,7 @@ export const STEPS: Step[] = [
     async run(m) {
       await m.on(this.date);
       await m.post('G-15b', 'ap.payment', { supplierId: m.ids[FABRIC], bills: [{ billId: m.doc('G-15').id, amountCents: 500_000 }], tenders: [{ cashPlaceId: m.places['1111'], amountCents: 500_000 }] }, { who: 'enc', total: 500_000 });
-      await m.post('G-16', 'exp.voucher', { categoryId: m.categories['6140']!, cashPlaceId: m.places['1102'], amountCents: 20_000, description: 'Tricycle to the fabric store', payeeName: 'Tricycle driver' }, { who: 'enc', total: 20_000 });
+      await m.post('G-16', 'exp.voucher', { categoryId: m.categories['6140']!, tenders: [{ cashPlaceId: m.places['1102'], amountCents: 20_000 }], amountCents: 20_000, description: 'Tricycle to the fabric store', payeeName: 'Tricycle driver' }, { who: 'enc', total: 20_000 });
     },
   },
   {

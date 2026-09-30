@@ -53,7 +53,7 @@ describe('golden: owner money, a sale, a purchase, an expense and a depreciation
       lines: [{ supplyId: cloth, amountCents: 1_120_000 }] }, expectedTotalCents: 1_120_000 }, idem()));
     // Expense (G-13): rent ₱40,000.00 from BDO, EWT 5% (Dr 6110 35,714.29, Dr 1401 4,285.71 / Cr 2311 1,785.71, Cr 1111).
     const rent = env.db.prepare('SELECT c.id FROM exp_categories c JOIN accounts a ON a.id = c.account_id WHERE a.code = ?').pluck().get('6110');
-    await ok(encoder.post('/api/docs/exp.voucher/post', { input: { categoryId: rent, cashPlaceId: BDO, amountCents: 4_000_000, description: 'September rent',
+    await ok(encoder.post('/api/docs/exp.voucher/post', { input: { categoryId: rent, tenders: [{ cashPlaceId: BDO, amountCents: 3_821_429 }], amountCents: 4_000_000, description: 'September rent',
       payeeName: 'Sample Lessor Corp.', payeeVatRegistered: true, payeeTin: '123-456-789-000', supplierInvoiceNo: 'SI-0101', supplierInvoiceDate: '2026-09-28' },
       expectedTotalCents: 4_000_000 }, idem()));
     // Asset (G-21): heat press ₱112,000.00, ₱30,000.00 from BDO, ₱82,000.00 financed; September run Dr 5302 / Cr 1511 1,500.00.

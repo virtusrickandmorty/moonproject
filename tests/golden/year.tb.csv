@@ -1,0 +1,227 @@
+as_of,account_code,account_name,debit,credit
+2026-10-01,1101,Cash on hand (main cash box),50000.00,0.00
+2026-10-01,1102,Petty cash fund,5000.00,0.00
+2026-10-01,1111,Cash in bank – BDO,1200000.00,0.00
+2026-10-01,1121,E-wallet – GCash,10000.00,0.00
+2026-10-01,1201,Accounts receivable – trade,44800.00,0.00
+2026-10-01,1210,Advances to employees (cash advances),3000.00,0.00
+2026-10-01,1301,Materials and supplies inventory,60000.00,0.00
+2026-10-01,1410,Creditable withholding tax (customers' 2307),1200.00,0.00
+2026-10-01,1510,Machinery and production equipment,186000.00,0.00
+2026-10-01,1511,Accumulated depreciation – machinery,0.00,72000.00
+2026-10-01,1520,Office and computer equipment,37000.00,0.00
+2026-10-01,1521,Accumulated depreciation – office equipment,0.00,18000.00
+2026-10-01,2101,Accounts payable,0.00,44800.00
+2026-10-01,2201,Customer deposits and unapplied payments,0.00,16800.00
+2026-10-01,2302,VAT payable,0.00,24000.00
+2026-10-01,2310,Withholding tax on compensation payable,0.00,2618.20
+2026-10-01,2311,Expanded withholding tax payable,0.00,1700.00
+2026-10-01,2401,SSS contributions payable,0.00,13460.00
+2026-10-01,2402,PhilHealth contributions payable,0.00,5167.10
+2026-10-01,2403,Pag-IBIG contributions payable,0.00,2000.00
+2026-10-01,3101,Capital stock,0.00,1000000.00
+2026-10-01,3201,Retained earnings,0.00,396454.70
+2026-12-31,1101,Cash on hand (main cash box),55820.00,0.00
+2026-12-31,1102,Petty cash fund,5000.00,0.00
+2026-12-31,1111,Cash in bank – BDO,1338897.77,0.00
+2026-12-31,1121,E-wallet – GCash,10000.00,0.00
+2026-12-31,1201,Accounts receivable – trade,16800.00,0.00
+2026-12-31,1301,Materials and supplies inventory,62500.00,0.00
+2026-12-31,1410,Creditable withholding tax (customers' 2307),9050.00,0.00
+2026-12-31,1510,Machinery and production equipment,186000.00,0.00
+2026-12-31,1511,Accumulated depreciation – machinery,0.00,81000.00
+2026-12-31,1520,Office and computer equipment,37000.00,0.00
+2026-12-31,1521,Accumulated depreciation – office equipment,0.00,21000.00
+2026-12-31,2111,13th-month pay payable,0.00,4041.67
+2026-12-31,2302,VAT payable,0.00,47040.00
+2026-12-31,2310,Withholding tax on compensation payable,0.00,2619.80
+2026-12-31,2311,Expanded withholding tax payable,0.00,1700.00
+2026-12-31,2320,Income tax payable,0.00,28573.00
+2026-12-31,2401,SSS contributions payable,0.00,15280.00
+2026-12-31,2402,PhilHealth contributions payable,0.00,5167.10
+2026-12-31,2403,Pag-IBIG contributions payable,0.00,2000.00
+2026-12-31,2404,SSS loan amortizations payable,0.00,1000.00
+2026-12-31,2405,Pag-IBIG loan amortizations payable,0.00,900.00
+2026-12-31,3101,Capital stock,0.00,1000000.00
+2026-12-31,3201,Retained earnings,0.00,396454.70
+2026-12-31,4101,Sales – made-to-order garments,0.00,780000.00
+2026-12-31,4103,Service income – repairs and alterations,0.00,6000.00
+2026-12-31,4191,Sales returns and allowances,5000.00,0.00
+2026-12-31,5101,Purchases – materials and supplies,120000.00,0.00
+2026-12-31,5109,Inventory change (count adjustment),0.00,2500.00
+2026-12-31,5201,Direct labor – piece-rate,45000.00,0.00
+2026-12-31,5202,Direct labor – daily production staff,77500.00,0.00
+2026-12-31,5203,Direct labor – employer contributions,17820.65,0.00
+2026-12-31,5204,Direct labor – 13th month and benefits,9500.00,0.00
+2026-12-31,5301,Subcontracted production,30000.00,0.00
+2026-12-31,5302,Depreciation – production equipment,9000.00,0.00
+2026-12-31,6101,Salaries – office and sales,178734.85,0.00
+2026-12-31,6102,Employer contributions – office,21180.00,0.00
+2026-12-31,6103,13th month and benefits – office,14000.00,0.00
+2026-12-31,6110,Rent,90000.00,0.00
+2026-12-31,6120,Electricity,24000.00,0.00
+2026-12-31,6140,Transportation and travel,900.00,0.00
+2026-12-31,6210,Depreciation – non-production,3000.00,0.00
+2026-12-31,8101,Income tax – current,28573.00,0.00
+2027-03-31,1101,Cash on hand (main cash box),59640.00,0.00
+2027-03-31,1102,Petty cash fund,5000.00,0.00
+2027-03-31,1111,Cash in bank – BDO,1413435.52,0.00
+2027-03-31,1121,E-wallet – GCash,10000.00,0.00
+2027-03-31,1201,Accounts receivable – trade,16800.00,0.00
+2027-03-31,1301,Materials and supplies inventory,58000.00,0.00
+2027-03-31,1410,Creditable withholding tax (customers' 2307),16550.00,0.00
+2027-03-31,1510,Machinery and production equipment,186000.00,0.00
+2027-03-31,1511,Accumulated depreciation – machinery,0.00,90000.00
+2027-03-31,1520,Office and computer equipment,109000.00,0.00
+2027-03-31,1521,Accumulated depreciation – office equipment,0.00,28000.00
+2027-03-31,2111,13th-month pay payable,0.00,27541.69
+2027-03-31,2302,VAT payable,0.00,35400.00
+2027-03-31,2310,Withholding tax on compensation payable,0.00,2618.20
+2027-03-31,2311,Expanded withholding tax payable,0.00,1700.00
+2027-03-31,2320,Income tax payable,0.00,28573.00
+2027-03-31,2401,SSS contributions payable,0.00,13460.00
+2027-03-31,2402,PhilHealth contributions payable,0.00,5167.10
+2027-03-31,2403,Pag-IBIG contributions payable,0.00,2000.00
+2027-03-31,2404,SSS loan amortizations payable,0.00,1000.00
+2027-03-31,2405,Pag-IBIG loan amortizations payable,0.00,900.00
+2027-03-31,3101,Capital stock,0.00,1000000.00
+2027-03-31,3201,Retained earnings,0.00,396454.70
+2027-03-31,4101,Sales – made-to-order garments,0.00,1530000.00
+2027-03-31,4103,Service income – repairs and alterations,0.00,12000.00
+2027-03-31,4191,Sales returns and allowances,5000.00,0.00
+2027-03-31,5101,Purchases – materials and supplies,240000.00,0.00
+2027-03-31,5109,Inventory change (count adjustment),2000.00,0.00
+2027-03-31,5201,Direct labor – piece-rate,90000.00,0.00
+2027-03-31,5202,Direct labor – daily production staff,146500.00,0.00
+2027-03-31,5203,Direct labor – employer contributions,34721.30,0.00
+2027-03-31,5204,Direct labor – 13th month and benefits,18999.98,0.00
+2027-03-31,5301,Subcontracted production,60000.00,0.00
+2027-03-31,5302,Depreciation – production equipment,18000.00,0.00
+2027-03-31,6101,Salaries – office and sales,346734.85,0.00
+2027-03-31,6102,Employer contributions – office,42060.00,0.00
+2027-03-31,6103,13th month and benefits – office,28000.04,0.00
+2027-03-31,6110,Rent,180000.00,0.00
+2027-03-31,6120,Electricity,48000.00,0.00
+2027-03-31,6140,Transportation and travel,1800.00,0.00
+2027-03-31,6210,Depreciation – non-production,10000.00,0.00
+2027-03-31,8101,Income tax – current,28573.00,0.00
+2027-06-30,1101,Cash on hand (main cash box),65460.00,0.00
+2027-06-30,1102,Petty cash fund,5000.00,0.00
+2027-06-30,1111,Cash in bank – BDO,1542587.87,0.00
+2027-06-30,1121,E-wallet – GCash,10000.00,0.00
+2027-06-30,1301,Materials and supplies inventory,61000.00,0.00
+2027-06-30,1410,Creditable withholding tax (customers' 2307),15000.00,0.00
+2027-06-30,1411,Prepaid income tax (quarterly payments),17964.00,0.00
+2027-06-30,1510,Machinery and production equipment,186000.00,0.00
+2027-06-30,1511,Accumulated depreciation – machinery,0.00,99000.00
+2027-06-30,1520,Office and computer equipment,109000.00,0.00
+2027-06-30,1521,Accumulated depreciation – office equipment,0.00,37000.00
+2027-06-30,2111,13th-month pay payable,0.00,51041.71
+2027-06-30,2302,VAT payable,0.00,44040.00
+2027-06-30,2310,Withholding tax on compensation payable,0.00,2618.20
+2027-06-30,2311,Expanded withholding tax payable,0.00,1700.00
+2027-06-30,2401,SSS contributions payable,0.00,13460.00
+2027-06-30,2402,PhilHealth contributions payable,0.00,5167.10
+2027-06-30,2403,Pag-IBIG contributions payable,0.00,2000.00
+2027-06-30,2404,SSS loan amortizations payable,0.00,1000.00
+2027-06-30,2405,Pag-IBIG loan amortizations payable,0.00,900.00
+2027-06-30,3101,Capital stock,0.00,1000000.00
+2027-06-30,3201,Retained earnings,0.00,396454.70
+2027-06-30,4101,Sales – made-to-order garments,0.00,2280000.00
+2027-06-30,4103,Service income – repairs and alterations,0.00,18000.00
+2027-06-30,4191,Sales returns and allowances,5000.00,0.00
+2027-06-30,5101,Purchases – materials and supplies,360000.00,0.00
+2027-06-30,5109,Inventory change (count adjustment),0.00,1000.00
+2027-06-30,5201,Direct labor – piece-rate,135000.00,0.00
+2027-06-30,5202,Direct labor – daily production staff,215500.00,0.00
+2027-06-30,5203,Direct labor – employer contributions,51621.95,0.00
+2027-06-30,5204,Direct labor – 13th month and benefits,28499.96,0.00
+2027-06-30,5301,Subcontracted production,90000.00,0.00
+2027-06-30,5302,Depreciation – production equipment,27000.00,0.00
+2027-06-30,6101,Salaries – office and sales,514734.85,0.00
+2027-06-30,6102,Employer contributions – office,62940.00,0.00
+2027-06-30,6103,13th month and benefits – office,42000.08,0.00
+2027-06-30,6110,Rent,270000.00,0.00
+2027-06-30,6120,Electricity,72000.00,0.00
+2027-06-30,6140,Transportation and travel,2700.00,0.00
+2027-06-30,6210,Depreciation – non-production,19000.00,0.00
+2027-06-30,6270,Bad debts,16800.00,0.00
+2027-06-30,8101,Income tax – current,28573.00,0.00
+2027-09-30,1101,Cash on hand (main cash box),71280.00,0.00
+2027-09-30,1102,Petty cash fund,5000.00,0.00
+2027-09-30,1111,Cash in bank – BDO,1785683.22,0.00
+2027-09-30,1121,E-wallet – GCash,10000.00,0.00
+2027-09-30,1301,Materials and supplies inventory,64000.00,0.00
+2027-09-30,1410,Creditable withholding tax (customers' 2307),22500.00,0.00
+2027-09-30,1411,Prepaid income tax (quarterly payments),33668.00,0.00
+2027-09-30,1520,Office and computer equipment,109000.00,0.00
+2027-09-30,1521,Accumulated depreciation – office equipment,0.00,46000.00
+2027-09-30,2111,13th-month pay payable,0.00,74541.73
+2027-09-30,2302,VAT payable,0.00,54840.00
+2027-09-30,2310,Withholding tax on compensation payable,0.00,2618.20
+2027-09-30,2311,Expanded withholding tax payable,0.00,1700.00
+2027-09-30,2401,SSS contributions payable,0.00,13460.00
+2027-09-30,2402,PhilHealth contributions payable,0.00,5167.10
+2027-09-30,2403,Pag-IBIG contributions payable,0.00,2000.00
+2027-09-30,2404,SSS loan amortizations payable,0.00,1000.00
+2027-09-30,2405,Pag-IBIG loan amortizations payable,0.00,900.00
+2027-09-30,3101,Capital stock,0.00,1000000.00
+2027-09-30,3201,Retained earnings,0.00,396454.70
+2027-09-30,4101,Sales – made-to-order garments,0.00,3030000.00
+2027-09-30,4103,Service income – repairs and alterations,0.00,24000.00
+2027-09-30,4191,Sales returns and allowances,5000.00,0.00
+2027-09-30,5101,Purchases – materials and supplies,480000.00,0.00
+2027-09-30,5109,Inventory change (count adjustment),0.00,4000.00
+2027-09-30,5201,Direct labor – piece-rate,180000.00,0.00
+2027-09-30,5202,Direct labor – daily production staff,284500.00,0.00
+2027-09-30,5203,Direct labor – employer contributions,68522.60,0.00
+2027-09-30,5204,Direct labor – 13th month and benefits,37999.94,0.00
+2027-09-30,5301,Subcontracted production,120000.00,0.00
+2027-09-30,5302,Depreciation – production equipment,33000.00,0.00
+2027-09-30,6101,Salaries – office and sales,682734.85,0.00
+2027-09-30,6102,Employer contributions – office,83820.00,0.00
+2027-09-30,6103,13th month and benefits – office,56000.12,0.00
+2027-09-30,6110,Rent,360000.00,0.00
+2027-09-30,6120,Electricity,96000.00,0.00
+2027-09-30,6140,Transportation and travel,3600.00,0.00
+2027-09-30,6210,Depreciation – non-production,28000.00,0.00
+2027-09-30,6270,Bad debts,16800.00,0.00
+2027-09-30,7102,Gain on disposal,0.00,9000.00
+2027-09-30,8101,Income tax – current,28573.00,0.00
+2027-12-31,1101,Cash on hand (main cash box),77100.00,0.00
+2027-12-31,1102,Petty cash fund,5000.00,0.00
+2027-12-31,1111,Cash in bank – BDO,1797910.32,0.00
+2027-12-31,1121,E-wallet – GCash,10000.00,0.00
+2027-12-31,1301,Materials and supplies inventory,60000.00,0.00
+2027-12-31,1520,Office and computer equipment,109000.00,0.00
+2027-12-31,1521,Accumulated depreciation – office equipment,0.00,55000.00
+2027-12-31,2111,13th-month pay payable,0.00,4041.67
+2027-12-31,2302,VAT payable,0.00,44040.00
+2027-12-31,2310,Withholding tax on compensation payable,0.00,2619.80
+2027-12-31,2311,Expanded withholding tax payable,0.00,1700.00
+2027-12-31,2320,Income tax payable,0.00,15622.00
+2027-12-31,2401,SSS contributions payable,0.00,15055.00
+2027-12-31,2402,PhilHealth contributions payable,0.00,5167.10
+2027-12-31,2403,Pag-IBIG contributions payable,0.00,2000.00
+2027-12-31,3101,Capital stock,0.00,1000000.00
+2027-12-31,3201,Retained earnings,0.00,396454.70
+2027-12-31,4101,Sales – made-to-order garments,0.00,3780000.00
+2027-12-31,4103,Service income – repairs and alterations,0.00,30000.00
+2027-12-31,4191,Sales returns and allowances,5000.00,0.00
+2027-12-31,5101,Purchases – materials and supplies,600000.00,0.00
+2027-12-31,5201,Direct labor – piece-rate,225000.00,0.00
+2027-12-31,5202,Direct labor – daily production staff,360900.00,0.00
+2027-12-31,5203,Direct labor – employer contributions,86193.25,0.00
+2027-12-31,5204,Direct labor – 13th month and benefits,47500.00,0.00
+2027-12-31,5301,Subcontracted production,150000.00,0.00
+2027-12-31,5302,Depreciation – production equipment,33000.00,0.00
+2027-12-31,6101,Salaries – office and sales,861469.70,0.00
+2027-12-31,6102,Employer contributions – office,105000.00,0.00
+2027-12-31,6103,13th month and benefits – office,70000.00,0.00
+2027-12-31,6110,Rent,450000.00,0.00
+2027-12-31,6120,Electricity,120000.00,0.00
+2027-12-31,6140,Transportation and travel,4500.00,0.00
+2027-12-31,6210,Depreciation – non-production,37000.00,0.00
+2027-12-31,6270,Bad debts,16800.00,0.00
+2027-12-31,7102,Gain on disposal,0.00,9000.00
+2027-12-31,8101,Income tax – current,129327.00,0.00
