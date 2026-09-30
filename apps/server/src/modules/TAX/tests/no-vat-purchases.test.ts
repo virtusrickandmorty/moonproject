@@ -19,9 +19,13 @@ const account = (code: string) => env.db.prepare('SELECT id FROM accounts WHERE 
 const cat = (code: string) => env.db.prepare('SELECT c.id FROM exp_categories c JOIN accounts a ON a.id = c.account_id WHERE a.code = ?').pluck().get(code) as number;
 const posted = (res: { statusCode: number; body: string; json(): { id: string } }) => (expect(res.statusCode, res.body).toBe(200), res.json().id);
 const post = async (type: string, input: object, cents: number, who = accountant) => posted(await who.post(`/api/docs/${type}/post`, { input, expectedTotalCents: cents }, idem()));
-const voucher = (categoryId: number, amountCents: number, payee: object, receipt?: string) =>
-  post('exp.voucher', { cashPlaceId: cashPlaceId(env.db, '1101'), categoryId, amountCents, description: 'Test purchase', ...payee,
-    ...(receipt ? { supplierInvoiceNo: receipt, supplierInvoiceDate: '2026-09-28' } : {}) }, amountCents);
+/** Paid from the till: what leaves it is the receipt less any EWT, so the preview says how much. */
+const voucher = async (categoryId: number, amountCents: number, payee: object, receipt?: string) => {
+  const input = { categoryId, amountCents, description: 'Test purchase', ...payee, ...(receipt ? { supplierInvoiceNo: receipt, supplierInvoiceDate: '2026-09-28' } : {}) };
+  const till = cashPlaceId(env.db, '1101');
+  const cash = (await accountant.post('/api/docs/exp.voucher/preview', { input: { ...input, tenders: [{ cashPlaceId: till, amountCents: 1 }] } })).json().doc.cashCents as number;
+  return post('exp.voucher', { ...input, tenders: [{ cashPlaceId: till, amountCents: cash }] }, amountCents);
+};
 const jvSale = async (memo: string, code: string, cents: number, customerId: string) => {
   const id = await post('acc.jv', { memo, lines: [
     { accountId: account('1101'), debitCents: cents }, { accountId: account(code), party: { type: 'customer', id: customerId }, creditCents: cents },
