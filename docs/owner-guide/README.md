@@ -42,6 +42,3 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [43. Home, Search and TV Board](43-home-search-tv-board.md): See your daily alerts, find records quickly, and view the production status.
 - [46. Selling a fixed asset](46-selling-a-fixed-asset.md): Record taking a fixed asset off the books by selling or retiring it.
 - [48. Go-live decisions](48-go-live-decisions.md): Answer questions before switch-over.
-- [49. Cash flow statement](49-cash-flow-statement.md): View where your cash came from and where it went.
-- [50. Printing statements and schedules](50-printing-statements-and-schedules.md): Print a customer's statement of account, a wearer's sizing profile, or the fixed asset schedule.
-- [51. Depreciation run and retiring an asset](51-depreciation-and-retiring-assets.md): Run the month's depreciation and record taking an asset off the books.

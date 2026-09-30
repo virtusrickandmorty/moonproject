@@ -2,7 +2,7 @@
 
 **What it is for:** Before switch-over day, the accountant and the owners must answer important questions about how the business works. This register keeps track of those questions and records what was decided.
 
-**Before you start:** Read the question and look for the **Default:** answer. This default is the safest choice if you are not sure what to decide.
+**Before you start:** Each question shows a **Default:** answer.
 
 ### Steps
 1. On the **Accounting & Tax** menu, click **Go-live decisions**.
