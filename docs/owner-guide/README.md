@@ -54,3 +54,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [50. Printing statements and schedules](50-printing-statements-and-schedules.md): Print a customer's statement of account, a wearer's sizing profile, or the fixed asset schedule.
 - [51. Depreciation run and retiring an asset](51-depreciation-and-retiring-assets.md): Run the month's depreciation and record taking an asset off the books.
 - [53. Printing 2307 for suppliers](53-printing-2307-for-suppliers.md): Print the 2307s for your suppliers.
+- [54. Comparing Statements](54-comparing-statements.md): Compare the income statement or balance sheet with a previous period.
