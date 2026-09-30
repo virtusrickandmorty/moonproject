@@ -1,6 +1,7 @@
 /**
  * Attendance (PLAN E11): a day grid per pay period, one row per employee in service. Each cell takes a status and,
- * on a worked day, overtime and night hours (10 PM to 6 AM, the night differential) in hours. Holidays show their name
+ * on a worked day, overtime and night hours (10 PM to 6 AM, the night differential) in hours, and of the night hours
+ * those that were also overtime (night OT, paid 10% of the overtime rate). Holidays show their name
  * and take the holiday statuses; a holiday with nothing typed shows "Holiday off" from the calendar, to change for
  * those who worked. Only changed cells are sent.
  * Days a recorded payroll paid are locked (shown with the run's number) until that payroll is cancelled.
@@ -41,7 +42,7 @@ export function Attendance({ me }: { me: Me }) {
   const shift = (dir: 1 | -1) => setRange(halfMonthOf(plusDays(dir === 1 ? grid.to : grid.from, dir)));
   const set = (key: string, c: Partial<Cell>) => {
     setDone('');
-    setCells({ ...cells, [key]: { status: '', ot: '', night: '', ...cells[key], ...c } });
+    setCells({ ...cells, [key]: { status: '', ot: '', night: '', nightOt: '', ...cells[key], ...c } });
   };
   // "Saved" shows once the grid is read back, and the cells stay shut until then, so nothing typed meanwhile is lost.
   const save = async () => {
@@ -60,7 +61,7 @@ export function Attendance({ me }: { me: Me }) {
         <Button onClick={() => shift(1)}>Later →</Button>
       </div>
       <p className="text-sm text-slate-600">
-        {Object.entries(STATUS_MARK).map(([k, m]) => `${m} ${STATUS_LABEL[k as AttendanceStatus]}`).join(' · ')}. Overtime and night hours (worked between 10 PM and 6 AM) in hours (1.5 or 1:30) on worked days.
+        {Object.entries(STATUS_MARK).map(([k, m]) => `${m} ${STATUS_LABEL[k as AttendanceStatus]}`).join(' · ')}. Overtime and night hours (worked between 10 PM and 6 AM) in hours (1.5 or 1:30) on worked days; Night OT is the night hours that were also overtime.
       </p>
       {grid.paid.length > 0 && (
         <Notice tone="info">
@@ -89,14 +90,14 @@ export function Attendance({ me }: { me: Me }) {
                 <td className="sticky left-0 bg-white p-2 whitespace-nowrap">{e.fullName}</td>
                 {dates.map((d) => {
                   const key = cellKey(e.id, d);
-                  const c = cells[key] ?? { status: '', ot: '', night: '' };
+                  const c = cells[key] ?? { status: '', ot: '', night: '', nightOt: '' };
                   const off = d < e.hireDate || (e.separatedOn !== null && d > e.separatedOn) || d > grid.today;
                   if (off) return <td key={d} className="bg-slate-100" />;
                   const run = paidBy(grid.paid, e.id, d);
                   if (run) {
                     return (
                       <td key={d} title={`Paid by ${run}`} aria-label={`${e.fullName} ${d} paid by ${run}`} className="bg-slate-100 p-0.5 text-center text-slate-600">
-                        {c.status ? STATUS_MARK[c.status] : '–'} 🔒{c.ot && <span className="block">{c.ot} h</span>}{c.night && <span className="block">{c.night} h night</span>}
+                        {c.status ? STATUS_MARK[c.status] : '–'} 🔒{c.ot && <span className="block">{c.ot} h</span>}{c.night && <span className="block">{c.night} h night</span>}{c.nightOt && <span className="block">{c.nightOt} h night OT</span>}
                       </td>
                     );
                   }
@@ -111,6 +112,9 @@ export function Attendance({ me }: { me: Me }) {
                       )}
                       {c.status && WITH_NIGHT.has(c.status) && (
                         <input aria-label={`${e.fullName} ${d} night hours`} placeholder="Night" disabled={!editable || a.busy} className="mt-0.5 block w-14 rounded border border-slate-300 px-1 text-xs" value={c.night} onChange={(x) => set(key, { night: x.target.value })} />
+                      )}
+                      {['present', 'holiday_worked', 'rest_day_worked'].includes(c.status) && (
+                        <input aria-label={`${e.fullName} ${d} night overtime`} placeholder="Night OT" disabled={!editable || a.busy} className="mt-0.5 block w-14 rounded border border-slate-300 px-1 text-xs" value={c.nightOt} onChange={(x) => set(key, { nightOt: x.target.value })} />
                       )}
                     </td>
                   );

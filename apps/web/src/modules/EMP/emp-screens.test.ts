@@ -5,7 +5,7 @@ import { PASSWORD, createTestEnv, createUser } from '../../../../server/test/hel
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { createApi, type AttendanceDay, type AttendanceGrid } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
-import { changedCells, datesBetween, halfMonthOf, otMinutes, otText, paidBy, startCells, statusesFor, weekday, type Cell } from './time.ts';
+import { cellsOf, changedCells, datesBetween, halfMonthOf, otMinutes, otText, paidBy, startCells, statusesFor, weekday, type Cell } from './time.ts';
 
 const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: string, init: RequestInit) => {
   const res = await app.inject({ method: init.method as 'GET', url, payload: init.body as string, headers: { ...(init.headers as object), cookie: jar.cookie } });
@@ -36,10 +36,10 @@ describe('attendance grid rules', () => {
   });
 
   it('only changed cells are sent; a typed day cannot be blanked; overtime only with a worked day', () => {
-    const saved: AttendanceDay[] = [{ employeeId: 'e1', date: '2026-09-21', status: 'present', otMinutes: 90, nightMinutes: 0, note: null }];
+    const saved: AttendanceDay[] = [{ employeeId: 'e1', date: '2026-09-21', status: 'present', otMinutes: 90, nightMinutes: 0, nightOtMinutes: 0, note: null }];
     const names = { e1: 'Ana', e2: 'Ben' };
-    expect(changedCells(saved, { 'e1|2026-09-21': { status: 'present', ot: '1:30', night: '' }, 'e2|2026-09-21': { status: '', ot: '', night: '' } }, names)).toEqual({ days: [], errors: [] });
-    expect(changedCells(saved, { 'e1|2026-09-21': { status: 'present', ot: '2', night: '' }, 'e2|2026-09-22': { status: 'absent', ot: '', night: '' }, 'e2|2026-09-21': { status: 'half_day', ot: '', night: '' } }, names)).toEqual({
+    expect(changedCells(saved, { 'e1|2026-09-21': { status: 'present', ot: '1:30', night: '', nightOt: '' }, 'e2|2026-09-21': { status: '', ot: '', night: '', nightOt: '' } }, names)).toEqual({ days: [], errors: [] });
+    expect(changedCells(saved, { 'e1|2026-09-21': { status: 'present', ot: '2', night: '', nightOt: '' }, 'e2|2026-09-22': { status: 'absent', ot: '', night: '', nightOt: '' }, 'e2|2026-09-21': { status: 'half_day', ot: '', night: '', nightOt: '' } }, names)).toEqual({
       days: [
         { employeeId: 'e1', date: '2026-09-21', status: 'present', otMinutes: 120 },
         { employeeId: 'e2', date: '2026-09-21', status: 'half_day' },
@@ -47,7 +47,7 @@ describe('attendance grid rules', () => {
       ],
       errors: [],
     });
-    expect(changedCells(saved, { 'e1|2026-09-21': { status: '', ot: '', night: '' }, 'e2|2026-09-22': { status: 'absent', ot: '1', night: '' }, 'e2|2026-09-23': { status: 'present', ot: 'x', night: '' } }, names).errors).toEqual([
+    expect(changedCells(saved, { 'e1|2026-09-21': { status: '', ot: '', night: '', nightOt: '' }, 'e2|2026-09-22': { status: 'absent', ot: '1', night: '', nightOt: '' }, 'e2|2026-09-23': { status: 'present', ot: 'x', night: '', nightOt: '' } }, names).errors).toEqual([
       'Ana on 2026-09-21: pick a status (a typed day cannot be left blank).',
       'Ben on 2026-09-22: overtime goes only with a worked day.',
       'Ben on 2026-09-23: type overtime in hours, like 1.5 or 1:30.',
@@ -55,9 +55,9 @@ describe('attendance grid rules', () => {
   });
 
   it('night hours (10 PM to 6 AM) go with a worked day, a half day too, at most 8', () => {
-    const saved: AttendanceDay[] = [{ employeeId: 'e1', date: '2026-09-21', status: 'present', otMinutes: 0, nightMinutes: 180, note: null }];
+    const saved: AttendanceDay[] = [{ employeeId: 'e1', date: '2026-09-21', status: 'present', otMinutes: 0, nightMinutes: 180, nightOtMinutes: 0, note: null }];
     const names = { e1: 'Ana', e2: 'Ben' };
-    const cell = (status: Cell['status'], night: string) => ({ status, ot: '', night });
+    const cell = (status: Cell['status'], night: string) => ({ status, ot: '', night, nightOt: '' });
     expect(changedCells(saved, { 'e1|2026-09-21': cell('present', '3') }, names)).toEqual({ days: [], errors: [] });
     expect(changedCells(saved, { 'e1|2026-09-21': cell('present', '8'), 'e2|2026-09-21': cell('half_day', '2:30') }, names).days).toEqual([
       { employeeId: 'e1', date: '2026-09-21', status: 'present', nightMinutes: 480 },
@@ -71,6 +71,24 @@ describe('attendance grid rules', () => {
     ]);
   });
 
+  it('night overtime (night hours that were also overtime) is at most the overtime and the night hours of the day', () => {
+    const saved: AttendanceDay[] = [{ employeeId: 'e1', date: '2026-09-21', status: 'present', otMinutes: 180, nightMinutes: 240, nightOtMinutes: 180, note: null }];
+    const names = { e1: 'Ana', e2: 'Ben' };
+    const cell = (status: Cell['status'], ot: string, night: string, nightOt: string) => ({ status, ot, night, nightOt });
+    expect(cellsOf(saved)['e1|2026-09-21']).toEqual(cell('present', '3', '4', '3'));
+    expect(changedCells(saved, { 'e1|2026-09-21': cell('present', '3', '4', '3') }, names)).toEqual({ days: [], errors: [] });
+    expect(changedCells(saved, { 'e1|2026-09-21': cell('present', '3', '4', '2'), 'e2|2026-09-21': cell('rest_day_worked', '2', '4', '1:30') }, names).days).toEqual([
+      { employeeId: 'e1', date: '2026-09-21', status: 'present', otMinutes: 180, nightMinutes: 240, nightOtMinutes: 120 },
+      { employeeId: 'e2', date: '2026-09-21', status: 'rest_day_worked', otMinutes: 120, nightMinutes: 240, nightOtMinutes: 90 },
+    ]);
+    expect(changedCells(saved, { 'e1|2026-09-21': cell('present', '1', '4', '2'), 'e2|2026-09-21': cell('present', '3', '1', '2'), 'e2|2026-09-22': cell('present', '1', '1', 'x'), 'e2|2026-09-23': cell('', '', '', '1') }, names).errors).toEqual([
+      'Ana on 2026-09-21: night overtime is at most the overtime and the night hours of the day.',
+      'Ben on 2026-09-21: night overtime is at most the overtime and the night hours of the day.',
+      'Ben on 2026-09-22: type night overtime in hours, like 1.5 or 1:30.',
+      'Ben on 2026-09-23: pick a status for the overtime or night hours.',
+    ]);
+  });
+
   it('a holiday with nothing typed shows Holiday off from the calendar, for everyone in service, as a change to save', () => {
     const person = (id: string, hireDate = '2025-01-06', separatedOn: string | null = null) => ({ id, code: id, fullName: id, hireDate, separatedOn });
     const holiday = (date: string, kind: 'regular' | 'special') => ({ id: 1, date, name: 'Made-up holiday', kind, source: 'Test', isActive: true, deactivatedReason: null });
@@ -78,7 +96,7 @@ describe('attendance grid rules', () => {
       from: '2026-08-16', to: '2026-08-31', today: '2026-08-31', statuses: [], holidays: [holiday('2026-08-21', 'special'), holiday('2026-08-31', 'regular')],
       // e1 typed Aug 21 already; e2 was hired after Aug 21; e3 left before Aug 31; e4's Aug 21 is paid by a recorded run.
       employees: [person('e1'), person('e2', '2026-08-24'), person('e3', '2025-01-06', '2026-08-28'), person('e4')],
-      days: [{ employeeId: 'e1', date: '2026-08-21', status: 'holiday_worked', otMinutes: 0, nightMinutes: 0, note: null }],
+      days: [{ employeeId: 'e1', date: '2026-08-21', status: 'holiday_worked', otMinutes: 0, nightMinutes: 0, nightOtMinutes: 0, note: null }],
       paid: [{ employeeId: 'e4', from: '2026-08-16', to: '2026-08-22', number: 'PAY-000009' }],
     };
     const { cells, filled } = startCells(grid);
@@ -86,7 +104,7 @@ describe('attendance grid rules', () => {
     expect([filled, cells['e1|2026-08-21']!.status]).toEqual([4, 'holiday_worked']);
     // They are sent on save like typed cells; changed to worked, they go as worked.
     const names = { e1: 'e1', e2: 'e2', e3: 'e3', e4: 'e4' };
-    expect(changedCells(grid.days, { ...cells, 'e2|2026-08-31': { status: 'holiday_worked', ot: '', night: '2' } }, names).days).toEqual([
+    expect(changedCells(grid.days, { ...cells, 'e2|2026-08-31': { status: 'holiday_worked', ot: '', night: '2', nightOt: '' } }, names).days).toEqual([
       { employeeId: 'e3', date: '2026-08-21', status: 'holiday_off' },
       { employeeId: 'e1', date: '2026-08-31', status: 'holiday_off' },
       { employeeId: 'e2', date: '2026-08-31', status: 'holiday_worked', nightMinutes: 120 },
