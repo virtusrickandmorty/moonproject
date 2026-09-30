@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Me } from '../../api.ts';
+import { openServerPrint, type Me } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { masterRequest } from './http.ts';
 
@@ -175,6 +175,7 @@ function Measurements({ me, person, canEdit, onClose }: { me: Me; person: Person
     } catch (e) { setError((e as Error).message); }
   };
   return <Panel title={`Measurements · ${person.full_name}`}><Button onClick={onClose}>Close</Button>
+    {charts.some((c) => c.status === 'active') && <Button onClick={() => void openServerPrint(me, '/api/prt/reports/sizing-profile', { personId: person.id })}>Print sizing profile</Button>}
     {charts.map((c) => <div key={c.id} className="border-b py-2 text-sm"><b>Revision {c.revision_no}</b> · {c.status} · {c.measured_on} · {c.size_mode}
       {c.upper_size && ` · upper ${sizeLabel(c.upper_size)}`}{c.lower_size && ` · lower ${sizeLabel(c.lower_size)}`}
       <div className="grid grid-cols-2 gap-x-3 sm:grid-cols-4">{Object.entries(c.values).filter(([, v]) => v != null).map(([k, v]) => <span key={k}>{label(k)}: {v} {c.unit}</span>)}</div>

@@ -30,7 +30,7 @@ describe('money-out screen rules', () => {
     expect(ewtLabel('prof_firm_15', rates)).toBe('Professional fees, firm (higher rate) 15%');
     expect(ewtLabel('goods_1', null)).toBe('Goods (Top Withholding Agent only)');
     expect([null, 'none'].map((c) => ewtLabel(c, rates))).toEqual(['No EWT', 'No EWT']);
-    expect(ewtRates([{ key: 'tax.ewt_rates_bp', label: '', current: rates }])).toBe(rates);
+    expect(ewtRates([{ key: 'tax.ewt_rates_bp', label: '', current: rates, versions: [] }])).toBe(rates);
     expect(ewtRates([])).toBeNull();
     const choices = ewtChoices('contractor_2', rates);
     expect(choices.slice(0, 3)).toEqual([['', 'Usual: Contractors and printers 2%'], ['none', 'No EWT'], ['rent_5', 'Rent 5%']]);
@@ -113,18 +113,18 @@ describe('money-out screen rules', () => {
   });
 
   it('expense voucher: a supplier on file or someone else, the receipt only when typed, and back for an edit', () => {
-    const v = { ...emptyVoucher(), categoryId: '2', description: 'Shop rent', payeeName: 'Sample Landlord', payeeVatRegistered: true, payeeTin: '123-456-789-000', amount: '40,000.00', receiptNo: 'OR-1001', receiptDate: '2026-09-27', cashPlaceId: '6' };
+    const v = { ...emptyVoucher(), categoryId: '2', description: 'Shop rent', payeeName: 'Sample Landlord', payeeVatRegistered: true, payeeTin: '123-456-789-000', amount: '40,000.00', receiptNo: 'OR-1001', receiptDate: '2026-09-27', tenders: [{ cashPlaceId: '6', amount: '38,214.29', reference: '' }] };
     const g13: VoucherInput = {
-      categoryId: 2, cashPlaceId: 6, amountCents: 4_000_000, description: 'Shop rent', payeeName: 'Sample Landlord', payeeVatRegistered: true, payeeTin: '123-456-789-000',
+      categoryId: 2, tenders: [{ cashPlaceId: 6, amountCents: 3_821_429 }], amountCents: 4_000_000, description: 'Shop rent', payeeName: 'Sample Landlord', payeeVatRegistered: true, payeeTin: '123-456-789-000',
       supplierInvoiceNo: 'OR-1001', supplierInvoiceDate: '2026-09-27',
     };
     expect(voucherInput(v)).toEqual({ input: g13, errors: [] });
     expect(voucherValues(g13)).toEqual(v);
     expect(voucherInput({ ...v, payee: 'supplier', supplierId: 'sup-1', ewtClass: 'none' }).input).toEqual({
-      categoryId: 2, cashPlaceId: 6, amountCents: 4_000_000, description: 'Shop rent', supplierId: 'sup-1', supplierInvoiceNo: 'OR-1001', supplierInvoiceDate: '2026-09-27', ewtClass: 'none',
+      categoryId: 2, tenders: [{ cashPlaceId: 6, amountCents: 3_821_429 }], amountCents: 4_000_000, description: 'Shop rent', supplierId: 'sup-1', supplierInvoiceNo: 'OR-1001', supplierInvoiceDate: '2026-09-27', ewtClass: 'none',
     });
     expect(voucherInput({ ...v, receiptNo: ' ', receiptDate: '' }).input).not.toHaveProperty('supplierInvoiceNo');
-    expect(voucherInput(emptyVoucher()).errors).toEqual(['Pick what the money was spent on.', 'Say what it was for.', 'Type who was paid.', 'Type the amount on the receipt, like 1,250.00', 'Pick where the money came from.']);
+    expect(voucherInput(emptyVoucher()).errors).toEqual(['Pick what the money was spent on.', 'Say what it was for.', 'Type who was paid.', 'Type the amount on the receipt, like 1,250.00', 'Type the amount and pick where the money went.']);
     expect(voucherInput({ ...v, payeeTin: '123456789', receiptDate: '2026-02-30' }).errors).toEqual(['Type the TIN like 123-456-789-000.', 'Pick the date on the receipt.']);
     expect(voucherInput({ ...v, payee: 'supplier' }).errors).toEqual(['Pick the supplier.']);
   });
@@ -210,9 +210,14 @@ describe('money-out web client against server routes', () => {
     expect((await accountant.reissue('ap.payment', paid.id, edit, 1_176_000, 'Paid from the cash box instead', key())).number).toBe('SPAY-000002');
 
     // Golden G-13 through the voucher form's input: rent ₱40,000 from a VAT-registered landlord, EWT 5%.
-    const voucher = voucherInput({ ...emptyVoucher(), categoryId: String(rent.id), description: 'Shop rent for September', payeeName: 'Sample Landlord', payeeVatRegistered: true,
-      payeeTin: '123-456-789-000', amount: '40,000', receiptNo: 'OR-1001', receiptDate: '2026-09-27', cashPlaceId: BDO });
+    // One cash place typed without an amount pays what the server says is paid out (the receipt less the EWT), as the form does.
+    const typed = { ...emptyVoucher(), categoryId: String(rent.id), description: 'Shop rent for September', payeeName: 'Sample Landlord', payeeVatRegistered: true,
+      payeeTin: '123-456-789-000', amount: '40,000', receiptNo: 'OR-1001', receiptDate: '2026-09-27', tenders: [{ cashPlaceId: BDO, amount: '', reference: '' }] };
+    const beforeAnswer = await encoder.preview('exp.voucher', voucherInput(typed).input); // before the server has answered: the receipt itself
+    expect(beforeAnswer.issues.map((i) => i.code)).toContain('TENDERS');
+    const voucher = voucherInput(typed, (beforeAnswer.doc as { cashCents: number }).cashCents);
     const vp = await encoder.preview('exp.voucher', voucher.input);
+    expect(vp.issues.filter((i) => i.level === 'error')).toEqual([]);
     expect(voucherFigures(vp.doc as never)).toEqual([['Expense', 3_571_429], ['Input VAT', 428_571], ['EWT withheld (Rent 5%)', 178_571], ['Paid out', 3_821_429]]);
     expect((await encoder.post('exp.voucher', voucher.input, vp.totalCents, key())).number).toBe('EXP-000001');
 

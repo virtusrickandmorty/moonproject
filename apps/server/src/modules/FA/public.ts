@@ -1,5 +1,6 @@
 /** What other modules may read from FA. */
 import type { Db } from '../../platform/db/driver.ts';
+import { accumulatedCents, assetsInService, monthsInService, scheduledCents } from './assets.ts';
 import { supplier } from './pur.ts';
 
 export interface FinancedPurchase {
@@ -19,9 +20,23 @@ export function financedPurchase(db: Db, id: string): FinancedPurchase | undefin
 /** Posted FA- purchases with a financed part, oldest first. */
 export const financedPurchases = (db: Db): FinancedPurchase[] => (db.prepare(`${SELECT} AND d.status = 'posted' ORDER BY d.number`).all() as Row[]).map((r) => named(db, r));
 
-/** An FA- purchase's supplier and invoice number, for the TAX purchases register. */
-export function purchaseTaxFacts(db: Db, id: string): { supplierId: string; supplierInvoiceNo: string | null } | undefined {
-  return db.prepare('SELECT supplier_id AS supplierId, supplier_invoice_no AS supplierInvoiceNo FROM fa_assets WHERE document_id = ?').get(id) as
-    | { supplierId: string; supplierInvoiceNo: string | null }
-    | undefined;
+/** An FA- purchase's supplier, invoice number, amount and input VAT, for the TAX purchases registers (with and without input VAT). */
+export function purchaseTaxFacts(db: Db, id: string): { supplierId: string; supplierInvoiceNo: string | null; grossCents: number; inputVatCents: number } | undefined {
+  return db
+    .prepare('SELECT supplier_id AS supplierId, supplier_invoice_no AS supplierInvoiceNo, gross_cents AS grossCents, input_vat_cents AS inputVatCents FROM fa_assets WHERE document_id = ?')
+    .get(id) as { supplierId: string; supplierInvoiceNo: string | null; grossCents: number; inputVatCents: number } | undefined;
 }
+
+/**
+ * The depreciation of a month for the month-end checklist: its recorded run, and how many assets still have a charge
+ * to take for it (the lines a run would hold, as fa.depreciation computes them). Read-only.
+ */
+export function depreciationOfMonth(db: Db, month: string): { run: { id: string; number: string; date: string } | null; assetsToCharge: number } {
+  const run = db
+    .prepare(`SELECT d.id, d.number, d.business_date AS date FROM fa_depreciation_runs r JOIN documents d ON d.id = r.document_id WHERE r.month = ? AND d.status = 'posted'`)
+    .get(month) as { id: string; number: string; date: string } | undefined;
+  const assetsToCharge = assetsInService(db).filter((a) => monthsInService(a.acquiredOn, month) >= 1 && scheduledCents(a, month) - accumulatedCents(db, a) > 0).length;
+  return { run: run ?? null, assetsToCharge };
+}
+export { assetsInService, accumulatedCents, straightLine, monthsInService } from './assets.ts';
+export { ASSET_SALE_SERIES, assetSaleByInvoiceNumber, assetSaleInvoiceNumbersBetween, assetSaleTaxFacts, type AssetSaleTaxFacts } from './sales.ts';

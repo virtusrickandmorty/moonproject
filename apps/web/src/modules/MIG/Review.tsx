@@ -2,8 +2,9 @@
 import { useState } from 'react';
 import type { MigRow } from '../../api.ts';
 import { Button, Field, Notice, ReasonDialog, inputClass, useAction } from '../../components/ui.tsx';
+import { BulkEmployees, BulkSizes } from './Bulk.tsx';
 import {
-  STATUS_FILTERS, countsAddUp, countsWords, filterCount, filterRows, fixBody, fixFieldsOf, fixStart, issueWords, mergeCandidates, rowButtons, rowFields,
+  STATUS_FILTERS, countsAddUp, countsWords, filterCount, filterRows, fixBody, fixFieldsOf, fixStart, issueWords, mergeCandidates, notKeptNote, rowButtons, rowFields,
   rowStatusWords, rowTitle, rowTypeWords, type RowCounts, type StatusFilter,
 } from './importer.ts';
 
@@ -114,7 +115,7 @@ function RowCard({ row, all, reason, doers }: { row: MigRow; all: MigRow[]; reas
   );
 }
 
-export function Review({ rows, filter, onFilter, reasons, doers, counts }: { rows: MigRow[]; filter: StatusFilter; onFilter: (f: StatusFilter) => void; reasons: Record<string, string>; doers: RowDoers; counts: RowCounts }) {
+export function Review({ uploadId, rows, filter, onFilter, reasons, doers, counts, onChanged }: { uploadId: string; rows: MigRow[]; filter: StatusFilter; onFilter: (f: StatusFilter) => void; reasons: Record<string, string>; doers: RowDoers; counts: RowCounts; onChanged: () => Promise<unknown> }) {
   const shown = filterRows(rows, filter);
   return (
     <div className="space-y-3">
@@ -129,6 +130,9 @@ export function Review({ rows, filter, onFilter, reasons, doers, counts }: { row
       <p className={`text-sm ${countsAddUp(counts) ? 'text-slate-700' : 'font-semibold text-red-700'}`}>
         {countsAddUp(counts) ? countsWords(counts) : 'The counts do not add up. Reload the page.'} Showing {shown.length}.
       </p>
+      {notKeptNote(rows) && <Notice tone="warning">{notKeptNote(rows)}</Notice>}
+      {(filter === 'all' || filter === 'needs_review') && <BulkSizes uploadId={uploadId} rows={rows} onChanged={onChanged} />}
+      {(filter === 'all' || filter === 'needs_review') && <BulkEmployees uploadId={uploadId} rows={rows} onChanged={onChanged} />}
       <p className="text-xs text-slate-500">Rows with nothing wrong are not listed. They go in as they are, and the dry run counts them.</p>
       {shown.length === 0 ? <p className="text-sm text-slate-500">No rows here.</p> : (
         <ul className="space-y-2">{shown.map((r) => <RowCard key={r.id} row={r} all={rows} reason={reasons[r.id]} doers={doers} />)}</ul>

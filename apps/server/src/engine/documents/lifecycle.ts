@@ -8,7 +8,7 @@ import { CLOCK_TOLERANCE_MS, clockBackwardsError, stamp, today, type Clock } fro
 import { appendAudit, lastAuditAt } from '../audit.ts';
 import { ensureSeries, allocateNumber } from '../numbering.ts';
 import { postJournal, resolveDraft, reverseJournalOf } from '../ledger/post.ts';
-import type { DocContext, DocTypeDef } from './registry.ts';
+import type { DependentsFn, DocContext, DocTypeDef, NoticeFn, NoticeTarget, Registry } from './registry.ts';
 
 export interface Actor {
   userId: string;
@@ -18,6 +18,15 @@ export interface Actor {
 export interface EngineEnv {
   db: Db;
   clock: Clock;
+  /** The modules' notices (Registry.notices()), run after validate on preview, record and cancel. */
+  notices?: readonly NoticeFn[];
+  /** The modules' dependents of other modules' documents (Registry.dependents()), asked on cancel and edit. */
+  dependents?: readonly DependentsFn[];
+}
+
+/** The engine's view of the app: the database, the clock, and every module's notices and cross-module dependents. */
+export function engineEnv(deps: { db: Db; clock: Clock; registry: Pick<Registry, 'notices' | 'dependents'> }): EngineEnv {
+  return { db: deps.db, clock: deps.clock, notices: deps.registry.notices(), dependents: deps.registry.dependents() };
 }
 
 export const BACKDATE_PERMISSION = 'acc.backdate';
@@ -69,6 +78,11 @@ function resolveBusinessDate(def: DocTypeDef, actor: Actor, env: EngineEnv, requ
 
 const errorsOf = (issues: Issue[]) => issues.filter((i) => i.level === 'error');
 
+/** The modules' notices on this record or cancel, always as warnings: a notice never blocks. */
+function noticesOf(env: EngineEnv, target: NoticeTarget): Issue[] {
+  return (env.notices ?? []).flatMap((n) => n(env.db, target)).map((i) => ({ ...i, level: 'warning' as const }));
+}
+
 export interface PreviewResult {
   totalCents: number;
   summary: string;
@@ -83,7 +97,7 @@ export function previewDocument(env: EngineEnv, def: DocTypeDef, actor: Actor, r
   const input = parseInput(def, rawInput);
   const ctx = context(env, actor, resolveBusinessDate(def, actor, env, businessDate));
   const doc = def.compute(input, ctx);
-  const issues = def.validate(doc, ctx);
+  const issues = [...def.validate(doc, ctx), ...noticesOf(env, { docType: def.key, action: 'post', businessDate: ctx.businessDate, posts: !!def.journal, doc })];
   let journal: PreviewResult['journal'] = null;
   if (errorsOf(issues).length === 0 && def.journal) {
     const draft = def.journal(doc, ctx);
@@ -129,6 +143,8 @@ function postInTx(env: EngineEnv, def: DocTypeDef, actor: Actor, req: PostReques
   }
   const issues = def.validate(doc, ctx);
   if (errorsOf(issues).length > 0) throw new AppError('VALIDATION', errorsOf(issues)[0]!.message, 422, issues);
+  // Before anything is written, as in the preview: a return's own payment does not warn about itself.
+  const notices = noticesOf(env, { docType: def.key, action: 'post', businessDate: ctx.businessDate, posts: !!def.journal, doc });
 
   ensureSeries(db, def.numbering.series);
   const number = allocateNumber(db, def.numbering.series.key);
@@ -160,7 +176,7 @@ function postInTx(env: EngineEnv, def: DocTypeDef, actor: Actor, req: PostReques
     entityId: id,
     data: { number, totalCents: doc.totalCents, businessDate: ctx.businessDate, replacesId, journalNumber },
   });
-  return { id, number, businessDate: ctx.businessDate, totalCents: doc.totalCents, summary, warnings: issues, journalNumber };
+  return { id, number, businessDate: ctx.businessDate, totalCents: doc.totalCents, summary, warnings: [...issues, ...notices], journalNumber };
 }
 
 export function postDocument(env: EngineEnv, def: DocTypeDef, actor: Actor, req: PostRequest): PostResult {
@@ -179,19 +195,21 @@ interface DocRow {
   business_date: string;
 }
 
-function cancelInTx(env: EngineEnv, def: DocTypeDef, actor: Actor, id: string, reason: string, reissuing = false): { reversalNumber: string | null } {
+function cancelInTx(env: EngineEnv, def: DocTypeDef, actor: Actor, id: string, reason: string, reissuing = false): { reversalNumber: string | null; warnings: Issue[] } {
   const db = env.db;
   const d = db.prepare('SELECT id, doc_type, number, status, business_date FROM documents WHERE id = ?').get(id) as DocRow | undefined;
   if (!d || d.doc_type !== def.key) throw notFound('The document');
   if (d.status !== 'posted') throw conflict('ALREADY_CANCELLED', `${d.number} is already cancelled.`);
   // On reissue, children are moved to the replacement by relinkOnReissue instead.
-  const deps = reissuing && def.relinkOnReissue ? [] : (def.dependents?.(db, id) ?? []);
+  const deps = reissuing && def.relinkOnReissue ? [] : [...(def.dependents?.(db, id) ?? []), ...(env.dependents ?? []).flatMap((f) => f(db, def.key, id, reissuing))];
   if (deps.length > 0) {
     throw conflict('HAS_DEPENDENTS', `Cancel these first: ${deps.map((x) => x.number).join(', ')}.`, deps);
   }
   const at = stamp(env.clock);
   const date = def.cancelOn === 'document_date' ? d.business_date : today(env.clock);
   if (date < today(env.clock)) need(actor, BACKDATE_PERMISSION);
+  // Before anything is written, as in the preview before Cancel.
+  const warnings = noticesOf(env, { docType: def.key, action: 'cancel', businessDate: d.business_date, posts: !!def.journal, documentId: id });
   const rev = reverseJournalOf(db, 'document', id, { sourceType: 'document', sourceId: id, businessDate: date, userId: actor.userId, at }, `Cancel ${d.number}: ${reason}`);
   db.prepare(`UPDATE documents SET status = 'cancelled', cancelled_at = ?, cancelled_by = ?, cancel_reason = ? WHERE id = ?`).run(at, actor.userId, reason, id);
   // D6 follow-ups read the ledger after the mirror; their journal has its own source so L4 still nets the mirror.
@@ -207,7 +225,26 @@ function cancelInTx(env: EngineEnv, def: DocTypeDef, actor: Actor, id: string, r
     entityId: id,
     data: { number: d.number, reason, reversalJournal: rev?.number ?? null, ...(followUp ? { followUpJournal: followUp.number } : {}) },
   });
-  return { reversalNumber: rev?.number ?? null };
+  return { reversalNumber: rev?.number ?? null, warnings };
+}
+
+export interface CancelPreview {
+  number: string;
+  /** The document's own date, and the date its mirror will carry (NR-4, ACC-09). */
+  businessDate: string;
+  cancelDate: string;
+  /** The modules' notices (warnings) about this cancel; nothing is written. */
+  issues: Issue[];
+}
+
+/** What a cancel would say before it is confirmed: the same notices the cancel returns, with no writes. */
+export function previewCancel(env: EngineEnv, def: DocTypeDef, actor: Actor, id: string): CancelPreview {
+  need(actor, def.permissions.cancel);
+  const d = env.db.prepare('SELECT id, doc_type, number, status, business_date FROM documents WHERE id = ?').get(id) as DocRow | undefined;
+  if (!d || d.doc_type !== def.key) throw notFound('The document');
+  if (d.status !== 'posted') throw conflict('ALREADY_CANCELLED', `${d.number} is already cancelled.`);
+  const cancelDate = def.cancelOn === 'document_date' ? d.business_date : today(env.clock);
+  return { number: d.number, businessDate: d.business_date, cancelDate, issues: noticesOf(env, { docType: def.key, action: 'cancel', businessDate: d.business_date, posts: !!def.journal, documentId: id }) };
 }
 
 function checkReason(reason: unknown): string {

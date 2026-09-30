@@ -1,0 +1,7 @@
+import type { Db } from '../../platform/db/driver.ts';
+import { cashReportData,countsForReport,transfersForReport } from '../CASH/public.ts';
+import { assetsInService,accumulatedCents,straightLine,monthsInService } from '../FA/public.ts';
+export function cashPosition(db:Db,asOf:string){const rows=cashReportData(db,asOf);return {asOf,rows,totalCents:rows.reduce((n,r)=>n+r.balanceCents,0)};}
+export const transfers=(db:Db,from:string,to:string)=>({from,to,rows:transfersForReport(db,from,to).map(r=>({...r,documentPath:`/docs/cash.transfer/${r.id}`}))});
+export const cashCounts=(db:Db,from:string,to:string)=>({from,to,rows:countsForReport(db,from,to).map(r=>({...r,documentPath:`/docs/cash.count/${r.id}`}))});
+export function assetSchedule(db:Db,asOf:string){const rows=assetsInService(db).filter(a=>a.acquiredOn<=asOf).map(a=>{const accumulatedDepreciationCents=accumulatedCents(db,a);const monthlyChargeCents=straightLine(a,monthsInService(a.acquiredOn,asOf.slice(0,7)))-straightLine(a,monthsInService(a.acquiredOn,asOf.slice(0,7))-1);return {...a,accumulatedDepreciationCents,bookValueCents:a.costCents-accumulatedDepreciationCents,monthlyChargeCents,documentPath:`/docs/${a.openedOn?'fa.opening':'fa.buy'}/${a.id}`}});return {asOf,rows,totalCostCents:rows.reduce((n,r)=>n+r.costCents,0),totalAccumulatedCents:rows.reduce((n,r)=>n+r.accumulatedDepreciationCents,0),totalBookValueCents:rows.reduce((n,r)=>n+r.bookValueCents,0)};}

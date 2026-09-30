@@ -6,7 +6,7 @@
  * adjustment: the preview then shows each employee's refund or deficiency, and "Pay unused leave" (SIL days left, in
  * cash). An employee separated within the period gets their final pay, marked with a badge.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, type DocTypeInfo, type Me, type PayGroup, type PayPeriod, type PayRunDoc, type Preview } from '../../api.ts';
 import { Link, navigate } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
@@ -15,6 +15,9 @@ import { docPath } from '../../shell/menu.ts';
 import { Errors, useLive } from '../COL/parts.tsx';
 import { GROUP_LABEL, emptyManual, endsInDecember, finalPayText, loanLabel, qtyText, runInput, yearEndText, type LoanRow, type ManualRow } from './run.ts';
 import { FinalBadge } from './views.tsx';
+
+/** The period the run opens on: the newest one not yet recorded that has people in it, else the newest not yet recorded. */
+const firstToPay = (periods: PayPeriod[]) => periods.find((x) => !x.recorded && x.employees > 0) ?? periods.find((x) => !x.recorded);
 
 export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me?: Me }) {
   const [payGroup, setPayGroup] = useState<PayGroup>('SEMI_DAILY');
@@ -31,10 +34,19 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState('');
 
+  const chosenByUser = useRef(false);
   useEffect(() => {
     setPeriods(null);
-    api.payPeriods(payGroup).then((p) => (setPeriods(p), setPeriodStart(p.find((x) => !x.recorded)?.periodStart ?? '')), (e: Error) => setError(e.message));
+    api.payPeriods(payGroup).then((p) => (setPeriods(p), setPeriodStart(firstToPay(p)?.periodStart ?? '')), (e: Error) => setError(e.message));
   }, [payGroup]);
+  // Opens on a pay group that has someone to pay, not on one the shop does not use (a made-up empty period says "nobody in service").
+  useEffect(() => {
+    const groups = Object.keys(GROUP_LABEL) as PayGroup[];
+    Promise.all(groups.map((g) => api.payPeriods(g).then((p) => [g, p] as const))).then((all) => {
+      const found = all.find(([, p]) => p.some((x) => !x.recorded && x.employees > 0));
+      if (found && !chosenByUser.current) setPayGroup(found[0]);
+    }, () => undefined);
+  }, []);
 
   const period = periods?.find((p) => p.periodStart === periodStart);
   const canYearEnd = endsInDecember(period?.periodEnd) && !!me?.permissions.includes('pay.yearend.run');
@@ -85,7 +97,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
       <Panel title="Which payroll?">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Pay group" required>
-            <select className={inputClass} value={payGroup} onChange={(e) => (setPayGroup(e.target.value as PayGroup), setAdvances({}), setSkip({}), setRows([]), setLoanRows({}))}>
+            <select className={inputClass} value={payGroup} onChange={(e) => (chosenByUser.current = true, setPayGroup(e.target.value as PayGroup), setAdvances({}), setSkip({}), setRows([]), setLoanRows({}))}>
               {Object.entries(GROUP_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
           </Field>

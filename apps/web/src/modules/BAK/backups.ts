@@ -37,7 +37,7 @@ export function staleWords(s: Pick<BackupStatus, 'lastOk' | 'stale'>, now: strin
   return s.lastOk ? `Backups are stale: the last good backup was ${agoWords(s.lastOk.at, now)}.` : 'Backups are stale: no backup has worked yet.';
 }
 
-export const pendingRestoreWords = (p: { file: string }) => `Restart Moonproject to finish the restore of ${p.file}.`;
+export const pendingRestoreWords = (p: { file: string }) => `Moonproject restarts by itself to finish the restore of ${p.file}. If it has not within a few minutes, restart this PC.`;
 
 const REASONS: Record<BackupRun['reason'], string> = { schedule: 'Scheduled', manual: 'Back up now', pre_update: 'Before an update' };
 
@@ -79,7 +79,15 @@ export function factRows(c: BackupCheck): [label: string, value: string][] {
     ['Books up to', c.lastBusinessDate ?? 'Nothing posted yet'],
     ['Trial balance', `Debits ${formatPeso(c.trialBalance.totalDebitCents)}, credits ${formatPeso(c.trialBalance.totalCreditCents)}`],
     ['Updates to apply', c.toApply.length ? `${c.toApply.length}: ${c.toApply.join(', ')}` : 'None: made by this version'],
+    ...(c.attachments ? [['Attached files', attachmentWords(c.attachments)] as [string, string]] : []),
   ];
+}
+
+/** The attached files a backup holds, and any it lacks or has changed (the drill fails on those; a restore leaves them out). */
+export function attachmentWords(a: NonNullable<BackupCheck['attachments']>): string {
+  const bad = a.missing.length + a.changed.length;
+  const all = a.files ? `${count(a.files, 'file')}, ${sizeWords(a.bytes)}` : 'None';
+  return bad ? `${all}; ${count(bad, 'file')} not in the backup as attached: ${[...a.missing, ...a.changed].map((s) => s.slice(0, 12)).join(', ')}` : a.files ? `${all}, all there` : all;
 }
 
 /** How many audit entries the live data has after the backup: what a restore would take away. */
@@ -90,3 +98,6 @@ export function lostWords(c: Pick<BackupCheck, 'audit' | 'live' | 'madeAt' | 'la
   const n = lostEntries(c);
   return `Everything recorded after ${after ? manilaTime(after) : 'this backup was made'} will be lost: ${count(n, 'audit entry', 'audit entries')} in the live data ${n === 1 ? 'is' : 'are'} newer than this backup.`;
 }
+
+/** What an owner is told at the first sign-in after a restore. */
+export const restoredWords = (r: { file: string; at: string }) => `Restored from ${r.file} at ${manilaTime(r.at)}.`;

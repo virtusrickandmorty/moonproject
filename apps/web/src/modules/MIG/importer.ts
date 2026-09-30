@@ -5,7 +5,7 @@
  * here posts or recomputes a figure the server reports.
  */
 import { formatPeso, formatPesos, parsePesos } from '@moonproject/shared';
-import type { DryRunResult, MigCommitResult, MigRow, MigRowStatus, MigRowType, MigUpload } from '../../api.ts';
+import type { DryRunResult, MigAssignBody, MigCommitResult, MigEmployeeFix, MigRow, MigRowStatus, MigRowType, MigSizeSuggestion, MigUpload } from '../../api.ts';
 
 /** The four kinds of file the importer takes. The server reads the kind from the columns; the screen checks it before sending. */
 export type MigKind = Exclude<MigRowType, 'unknown'>;
@@ -15,6 +15,29 @@ export const KINDS: { kind: MigKind; label: string; columns: string; holds: stri
   { kind: 'employee', label: 'Employees', columns: 'Employee_ID, Employee_Name, Daily_Rate', holds: 'employees and their daily rates' },
   { kind: 'piece_rate', label: 'Piece rates', columns: 'Garment_Type, Operation, Rate', holds: 'the piece-rate list' },
 ];
+
+/**
+ * The old Google sheet's own tabs, downloaded as they are (File > Download > Comma-separated values, one tab at a time).
+ * The server renames their columns to the importer's own (MIG/sheet.ts `sheetTabOf`, same rules); no renaming by hand.
+ */
+export type SheetTabKey = 'customers' | 'sizes' | 'employees';
+export const SHEET_TABS: Record<SheetTabKey, { name: string; kind: MigKind; columns: string; notKept?: string }> = {
+  customers: { name: 'Customers', kind: 'customer', columns: 'Customer ID, Name, Email Address, Contact No., Address' },
+  sizes: { name: 'Customer Sizes', kind: 'measurement', columns: 'Size ID, Customer ID, Customer Name, Upper Size, Shoulder to Lower Length (with Sleeve Height), Lower Size, Remarks' },
+  employees: { name: 'Employees', kind: 'employee', columns: 'Employee ID, Name, Job Title, Salary Category, Status, Date Employed',
+    notKept: 'Date of Birth, Gender, Address and Contact No.' },
+};
+const SHEET_KIND_TAB: Partial<Record<MigKind, SheetTabKey>> = { customer: 'customers', measurement: 'sizes', employee: 'employees' };
+const normHeader = (h: string) => h.trim().toLowerCase().replace(/\s+/g, ' ');
+/** Which tab of the old sheet a file's columns are, or null (MIG/sheet.ts `sheetTabOf`, same order). */
+export function sheetTabOf(headers: string[]): SheetTabKey | null {
+  const has = new Set(headers.map(normHeader));
+  if (has.has('employee id')) return 'employees';
+  if (has.has('size id')) return 'sizes';
+  if (has.has('customer id') && has.has('name')) return 'customers';
+  return null;
+}
+const tabWords = (tab: SheetTabKey): string => `the ${SHEET_TABS[tab].name} tab of the old sheet`;
 export const kindLabel = (kind: MigRowType): string => KINDS.find((k) => k.kind === kind)?.label ?? 'Unknown';
 const ROW_WORDS: Record<MigRowType, string> = { customer: 'Customer', measurement: 'Measurements', employee: 'Employee', piece_rate: 'Piece rate', unknown: 'Unknown' };
 export const rowTypeWords = (t: MigRowType): string => ROW_WORDS[t];
@@ -61,6 +84,8 @@ export function headerOf(csv: string): string[] {
 
 /** What the server will read a file with these columns as (MIG/csv.ts `rowTypeOf`, same order). */
 export function kindOfHeader(headers: string[]): MigRowType {
+  const tab = sheetTabOf(headers);
+  if (tab) return SHEET_TABS[tab].kind;
   const has = (k: string) => headers.includes(k);
   if (has('Measurement_ID') || headers.some((h) => measurementKey(h))) return 'measurement';
   if (has('Employee_ID') || has('Employee_Name') || has('Daily_Rate') || has('Pay_Type')) return 'employee';
@@ -74,11 +99,31 @@ export function fileProblem(kind: MigKind | '', filename: string, csv: string): 
   if (!kind) return 'Pick what the file holds.';
   if (!filename) return 'Pick the CSV file.';
   if (!cleanCsv(csv).trim()) return 'The file is empty.';
-  const found = kindOfHeader(headerOf(csv));
+  const headers = headerOf(csv);
+  const found = kindOfHeader(headers);
   const wanted = KINDS.find((k) => k.kind === kind)!;
-  if (found === 'unknown') return `Moonproject cannot tell what this file holds from its first line. ${wanted.label} need these columns: ${wanted.columns}.`;
-  if (found !== kind) return `This file looks like ${kindLabel(found).toLowerCase()}, not ${wanted.label.toLowerCase()}. Pick ${kindLabel(found)}, or choose another file.`;
+  const tab = sheetTabOf(headers);
+  if (found === 'unknown') {
+    const own = SHEET_KIND_TAB[kind];
+    return `Moonproject cannot tell what this file holds from its first line. ${wanted.label} need these columns: ${wanted.columns}.${own ? ` The old sheet's ${SHEET_TABS[own].name} tab has: ${SHEET_TABS[own].columns}.` : ''}`;
+  }
+  if (found !== kind) return `This file looks like ${tab ? `${tabWords(tab)} (${kindLabel(found).toLowerCase()})` : kindLabel(found).toLowerCase()}, not ${wanted.label.toLowerCase()}. Pick ${kindLabel(found)}, or choose another file.`;
   return null;
+}
+
+/** What to tell the owner about a file that is a tab of the old sheet: which one, and what is left out. Null for any other file. */
+export function fileNote(csv: string): string | null {
+  const tab = sheetTabOf(headerOf(csv));
+  if (!tab) return null;
+  const { notKept } = SHEET_TABS[tab];
+  return `This looks like ${tabWords(tab)}. It is read as it is, with no renaming.${notKept ? ` Its ${notKept} are not brought in.` : ''}`;
+}
+
+/** Said on the review screen when it lists employees from the old sheet: what the plan does not keep is not staged or imported. */
+export function notKeptNote(rows: Pick<MigRow, 'rowType' | 'raw'>[]): string | null {
+  if (!rows.some((r) => r.rowType === 'employee' && r.raw.Salary_Category !== undefined)) return null;
+  return `The old sheet's ${SHEET_TABS.employees.notKept} are not brought in: Moonproject does not keep them, so they were left out when the file was uploaded. `
+    + 'Every employee waits here until you confirm the pay: type the rate for daily and monthly pay, and choose a pay type where the Salary Category is blank.';
 }
 
 /** The body of POST /api/mig/upload. The kind is not sent: the server reads it from the columns. */
@@ -145,7 +190,7 @@ export function rowTitle(row: MigRow): string {
   if (row.rowType === 'employee') return `${text(m.employeeName) || raw.Employee_Name || 'No name'}${id}`;
   if (row.rowType === 'piece_rate') return `${text(m.garmentType) || raw.Garment_Type || '?'}, ${text(m.operation) || raw.Operation || '?'}`;
   if (row.rowType === 'measurement') {
-    const who = raw.Wearer_Name || raw.Person_Name || raw.Full_Name || raw.Name;
+    const who = raw.Wearer_Name || raw.Person_Name || raw.Full_Name || raw.Name || raw.Customer_Name;
     return `${who ?? 'Measurements'}${id}`;
   }
   return 'Unknown row';
@@ -201,7 +246,9 @@ export const FIX_FIELDS: Record<MigKind, FixField[]> = {
   employee: [
     { key: 'employeeName', label: 'Employee name', kind: 'text' },
     { key: 'legacyId', label: 'Legacy ID', kind: 'text' },
-    { key: 'rateCents', label: 'Daily rate (pesos)', kind: 'peso' },
+    { key: 'payType', label: 'Pay type', kind: 'text', hint: 'daily, piece or monthly. Piece pay has no rate here: the piece-rate list has it.' },
+    { key: 'rateCents', label: 'Rate (pesos)', kind: 'peso', hint: 'The daily rate for daily pay; the monthly rate for monthly pay.' },
+    { key: 'hireDate', label: 'Hire date', kind: 'text', hint: 'Like 2026-02-11.' },
   ],
   piece_rate: [
     { key: 'garmentType', label: 'Garment type', kind: 'text' },
@@ -222,6 +269,8 @@ export function currentValue(row: MigRow, key: string): string {
   if (key === 'customerName') return raw.Customer_Name ?? '';
   if (key === 'registeredName') return raw.Registered_Name ?? '';
   if (key === 'employeeName') return raw.Employee_Name ?? '';
+  if (key === 'payType') return raw.Pay_Type ?? '';
+  if (key === 'hireDate') return raw.Hire_Date ?? '';
   if (key === 'garmentType') return raw.Garment_Type ?? '';
   if (key === 'operation') return raw.Operation ?? '';
   const header = Object.keys(raw).find((h) => measurementKey(h) === key);
@@ -250,7 +299,7 @@ export function fixBody(row: MigRow, edits: Record<string, string>): FixResult {
     } else if (f.kind === 'tenths') {
       if (!/^(\d+(\.\d)?|-)$/.test(text)) return { ok: false, message: `${f.label}: type a number to one decimal place such as 15.2, or - for no measurement.` };
       manualData[f.key] = text;
-    } else manualData[f.key] = text;
+    } else manualData[f.key] = f.key === 'payType' ? text.toLowerCase() : text;
   }
   if (manualData.groupLegacyId && !manualData.customerLegacyId) return { ok: false, message: 'Type the customer\'s legacy ID with the group.' };
   if (needsCustomer(row) && !manualData.customerLegacyId) return { ok: false, message: 'This measurement is not assigned to a customer yet. Type the customer\'s legacy ID.' };
@@ -269,6 +318,10 @@ export function dryRunLines(r: DryRunResult): [label: string, value: string][] {
   return [
     ['Customers to import', String(c.customers)], ['Measurement rows to import', String(c.measurements)], ['Employees to import', String(c.employees)],
     ['Piece rates to import', String(c.pieceRates)], ['Left out (excluded)', String(c.excluded)], ['Merged into another row', String(c.merged)], ['Rows in the file', String(c.total)],
+    // What the choices made for the sizes without a customer will create, when there were any.
+    ...(c.newCustomers ? [['New customers (a person each), from sizes without a customer', String(c.newCustomers)] as [string, string]] : []),
+    ...(c.newGroups ? [['New groups, from sizes without a customer', String(c.newGroups)] as [string, string]] : []),
+    ...(c.wearers ? [['Wearers made from sizes without a customer', String(c.wearers)] as [string, string]] : []),
   ];
 }
 /** Every row of the file is counted once: imported by kind, excluded or merged. */
@@ -305,3 +358,106 @@ export function commitLines(r: MigCommitResult): [label: string, value: string][
   });
 }
 export const clearedWords = (rowsCleared: number): string => `The raw values of ${rowsWord(rowsCleared)} were cleared from staging.`;
+
+/* ---- sizes typed without a customer (the sheet's MANUAL rows), in bulk ---- */
+
+/** A measurement row still waiting to be given a customer: what the bulk choice below is for. */
+export const isManualSize = (row: Pick<MigRow, 'rowType' | 'status' | 'issues'>): boolean => needsCustomer(row as MigRow) && row.status === 'needs_review';
+export const manualSizes = (rows: MigRow[]): MigRow[] => rows.filter(isManualSize);
+
+/** The person's name on a MANUAL row: the sheet's Customer Name, unless it is only the word MANUAL. Blank when there is none. */
+export function sizeName(row: Pick<MigRow, 'raw'>): string {
+  const raw = row.raw;
+  return [raw.Wearer_Name, raw.Person_Name, raw.Full_Name, raw.Name, raw.Customer_Name].map((v) => (v ?? '').trim()).find((v) => v !== '' && v.toUpperCase() !== 'MANUAL') ?? '';
+}
+/** Case, spaces and punctuation do not matter (MIG/csv.ts `nameKey`, same rule). */
+export const nameKey = (name: string): string => name.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+
+/** The suggestion for a row, if the server made one and the row is still waiting. */
+export const suggestionFor = (row: MigRow, suggestions: MigSizeSuggestion[]): MigSizeSuggestion | undefined => suggestions.find((s) => s.rowId === row.id);
+export const suggestionWords = (s: MigSizeSuggestion): string => `${s.name} (${s.code})`;
+
+export type SizeChoice = { mode: 'own' } | { mode: 'under'; customerId: string; group: { kind: 'none' } | { kind: 'existing'; id: string } | { kind: 'new'; name: string } };
+export type AssignResult = { ok: true; body: MigAssignBody } | { ok: false; message: string };
+/** What "Apply" sends for the rows ticked: the choice as the server names it. A customer is needed for "under"; a new group needs its name. */
+export function assignBody(rowIds: string[], choice: SizeChoice): AssignResult {
+  if (rowIds.length === 0) return { ok: false, message: 'Tick the rows first.' };
+  if (choice.mode === 'own') return { ok: true, body: { rowIds, mode: 'own' } };
+  if (!choice.customerId) return { ok: false, message: 'Pick the customer these people belong to.' };
+  const base = { rowIds, mode: 'under' as const, customerId: choice.customerId };
+  if (choice.group.kind === 'existing') return { ok: true, body: { ...base, groupId: choice.group.id } };
+  if (choice.group.kind === 'new') {
+    const name = choice.group.name.trim();
+    return name ? { ok: true, body: { ...base, newGroupName: name } } : { ok: false, message: 'Type the name of the new group.' };
+  }
+  return { ok: true, body: base };
+}
+/** A new group typed with the name of one the customer already has means that group (the server refuses a second one of the same name). */
+export function groupChoice(kind: 'none' | 'existing' | 'new', groupId: string, newName: string, groups: { id: string; name: string }[]): Extract<SizeChoice, { mode: 'under' }>['group'] {
+  if (kind === 'existing') return groupId ? { kind: 'existing', id: groupId } : { kind: 'none' };
+  if (kind === 'new') {
+    const same = groups.find((g) => nameKey(g.name) === nameKey(newName) && nameKey(newName) !== '');
+    return same ? { kind: 'existing', id: same.id } : { kind: 'new', name: newName };
+  }
+  return { kind: 'none' };
+}
+/** The suggestions still to accept, grouped by customer: each group is one request. */
+export function suggestionBatches(rows: MigRow[], suggestions: MigSizeSuggestion[]): { customerId: string; name: string; rowIds: string[] }[] {
+  const waiting = new Set(manualSizes(rows).map((r) => r.id));
+  const batches = new Map<string, { customerId: string; name: string; rowIds: string[] }>();
+  for (const s of suggestions) if (waiting.has(s.rowId)) {
+    const batch = batches.get(s.customerId) ?? { customerId: s.customerId, name: suggestionWords(s), rowIds: [] };
+    batch.rowIds.push(s.rowId);
+    batches.set(s.customerId, batch);
+  }
+  return [...batches.values()];
+}
+/** What the server did with a bulk choice, in words: how many, and which rows it could not take and why. */
+export function assignedWords(r: { assigned: number; skipped: { rowNumber: number; reason: string }[] }): string {
+  const done = `${r.assigned} ${r.assigned === 1 ? 'row was' : 'rows were'} assigned and accepted.`;
+  return r.skipped.length ? `${done} ${r.skipped.length} could not be: ${r.skipped.map((s) => `row ${s.rowNumber}: ${s.reason}`).join(' ')}` : done;
+}
+
+/* ---- employees' missing rates and pay types, in one table ---- */
+
+const PAY_TYPE_ISSUE = /rate|Salary Category|Pay type/i;
+/** An employee still waiting because of a rate or pay type: the rows of the table. Other problems (a date, a status) stay with Fix. */
+export const employeeTableRows = (rows: MigRow[]): MigRow[] =>
+  rows.filter((r) => r.rowType === 'employee' && r.status === 'needs_review' && blockingIssues(r.issues).some((i) => PAY_TYPE_ISSUE.test(i)));
+
+export type PayChoice = '' | 'daily' | 'piece' | 'monthly';
+export const PAY_CHOICES: { key: PayChoice; label: string }[] = [{ key: '', label: 'Choose…' }, { key: 'daily', label: 'Daily' }, { key: 'piece', label: 'Piece rate' }, { key: 'monthly', label: 'Monthly' }];
+export interface EmployeeEdit { payType: PayChoice; rate: string }
+/** The row's pay type from the sheet (the Salary Category), blank when the sheet did not say. */
+export const employeeStart = (row: MigRow): EmployeeEdit => {
+  const t = (row.raw.Pay_Type ?? '').trim().toLowerCase();
+  return { payType: t === 'daily' || t === 'piece' || t === 'monthly' ? t : '', rate: '' };
+};
+/** Whether the rate box means anything: piece pay has no rate here, the piece-rate list has it. */
+export const takesRate = (payType: PayChoice): boolean => payType !== 'piece';
+export type EmployeeFixesResult = { ok: true; fixes: MigEmployeeFix[] } | { ok: false; message: string };
+/**
+ * What "Save all" sends: for each row where the owner chose a pay type other than the sheet's or typed a rate, only that.
+ * Rows left alone are not sent. A rate that is not a peso amount stops the save before anything is sent.
+ */
+export function employeeFixes(rows: MigRow[], edits: Record<string, EmployeeEdit>): EmployeeFixesResult {
+  const fixes: MigEmployeeFix[] = [];
+  for (const row of rows) {
+    const edit = edits[row.id];
+    if (!edit) continue;
+    const start = employeeStart(row);
+    const fix: MigEmployeeFix = { rowId: row.id };
+    if (edit.payType && edit.payType !== start.payType) fix.payType = edit.payType;
+    const text = edit.rate.trim();
+    if (text !== '' && takesRate(edit.payType)) {
+      let cents: number;
+      try { cents = parsePesos(text); } catch { return { ok: false, message: `${rowTitle(row)}: type a peso amount such as 650.50.` }; }
+      if (cents < 0) return { ok: false, message: `${rowTitle(row)}: the rate cannot be negative.` };
+      fix.rateCents = cents;
+    }
+    if (fix.payType !== undefined || fix.rateCents !== undefined) fixes.push(fix);
+  }
+  return fixes.length ? { ok: true, fixes } : { ok: false, message: 'Nothing was typed or chosen yet.' };
+}
+/** What is still missing after a save, for the line under the table. */
+export const employeesLeftWords = (left: number): string => (left === 0 ? 'Every employee has a pay type and rate.' : `${left} ${left === 1 ? 'employee still needs' : 'employees still need'} a pay type or rate.`);

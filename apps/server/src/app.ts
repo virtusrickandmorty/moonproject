@@ -15,14 +15,17 @@ import { engineModule } from './engine/security/module.ts';
 import { syncPermissions } from './engine/security/permissions-sync.ts';
 import { PRACTICE_SESSION_COOKIE, SESSION_COOKIE, loadSession, type SessionUser } from './engine/security/sessions.ts';
 import { securityRoutes } from './engine/security/routes.ts';
-import { tlsRoutes } from './engine/security/tls/routes.ts';
+import { networkOf, tlsRoutes } from './engine/security/tls/routes.ts';
 import { documentRoutes } from './engine/documents/routes.ts';
 import { draftRoutes } from './engine/documents/drafts.ts';
+import { attachmentRoutes } from './engine/attachments.ts';
 import { hashPassword, DEFAULT_SCRYPT_N } from './engine/security/passwords.ts';
 import { webRoutes } from './platform/web.ts';
 import { practiceRoutes, type PracticeControl } from './platform/practice/routes.ts';
 import { healthRoutes } from './platform/health/routes.ts';
-import type { Host } from './platform/health/health.ts';
+import { realHost, type Host } from './platform/health/health.ts';
+import { idleRestarter, type Restarter } from './platform/restart.ts';
+import type { Network } from './engine/security/tls/routes.ts';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -50,6 +53,12 @@ export interface AppDeps {
   /** True in the practice shop (PLAN C8): made-up data, its own sign-in cookie, no backups, "PRACTICE" on printouts. */
   practice: boolean;
   sessionCookie: string;
+  /** The PC System Health reports on. */
+  host: Host;
+  /** Restarts the server once no request is running (after a restore, PLAN C8). */
+  restart: Restarter;
+  /** This PC's name, addresses and join page (tests give their own). */
+  network: Network;
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -73,6 +82,10 @@ export interface BuildOptions {
   practiceShop?: PracticeControl;
   /** The PC System Health reports on (tests give their own); the real one by default. */
   host?: Host;
+  /** Called once a restart asked for (after a restore) can happen: main.ts exits so the service starts it again. */
+  onRestart?: (reason: string) => void;
+  /** This PC's name and addresses for the join address on the System pages (tests give their own). */
+  network?: Partial<Network>;
 }
 
 /** Migrates, registers modules and permissions. Separate from buildApp so tools and tests can use it. */
@@ -89,9 +102,20 @@ export function prepareDatabase(db: Db, clock: Clock, modules: ModuleDef[]): Reg
   return registry;
 }
 
+/** The host of an Origin header; null when it is not a URL ("null" from a sandboxed page), which never matches. */
+function originHost(origin: string): string | null {
+  try {
+    return new URL(origin).host;
+  } catch {
+    return null;
+  }
+}
+
 export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppDeps } {
   const registry = prepareDatabase(opts.db, opts.clock, opts.modules);
   const scryptN = opts.config?.scryptN ?? DEFAULT_SCRYPT_N;
+  const base = { logger: opts.logger ?? false, bodyLimit: 1024 * 1024 };
+  const app = (opts.https ? Fastify({ ...base, https: opts.https }) : Fastify(base)) as unknown as FastifyInstance;
   const deps: AppDeps = {
     db: opts.db,
     clock: opts.clock,
@@ -100,10 +124,10 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
     dummyHash: hashPassword('dummy-password-for-timing', scryptN),
     practice: opts.practice ?? false,
     sessionCookie: opts.practice ? PRACTICE_SESSION_COOKIE : SESSION_COOKIE,
+    host: opts.host ?? realHost,
+    restart: idleRestarter(app, opts.onRestart ?? ((reason) => app.log.warn(`Restart needed: ${reason}`))),
+    network: networkOf(opts.network),
   };
-
-  const base = { logger: opts.logger ?? false, bodyLimit: 1024 * 1024 };
-  const app = (opts.https ? Fastify({ ...base, https: opts.https }) : Fastify(base)) as unknown as FastifyInstance;
   app.register(cookie);
   app.decorateRequest('user', null);
 
@@ -117,14 +141,19 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
   app.addHook('preHandler', async (req) => {
     const perm = req.routeOptions.config.permission;
     if (!perm) throw new AppError('NOT_FOUND', 'Not found.', 404);
-    // A practice backup or restore would write into the real shop's backup and restore folders.
-    if (deps.practice && req.url.startsWith('/api/bak/')) {
+    // A practice backup or restore would write into the real shop's backup and restore folders. The route matched, not
+    // the address as typed: /api/%62ak/... reaches the same routes.
+    if (deps.practice && req.routeOptions.url?.startsWith('/api/bak/')) {
       throw new AppError('PRACTICE', 'Backups and restores are not part of the practice shop. The real shop backs itself up.', 403);
     }
     const unsafe = req.method !== 'GET' && req.method !== 'HEAD';
+    // A restore is about to be swapped in: anything recorded now would be lost with the database it replaces.
+    if (unsafe && deps.restart.reason) {
+      throw new AppError('RESTARTING', 'Moonproject is restarting to finish a restore. Nothing was recorded. Wait a minute, then reload the page.', 503);
+    }
     // Origin check on every state-changing request (CSRF, PLAN C6).
     const origin = req.headers.origin;
-    if (unsafe && origin && new URL(origin).host !== req.headers.host) {
+    if (unsafe && origin && originHost(origin) !== req.headers.host) {
       throw new AppError('BAD_ORIGIN', 'Request blocked (wrong origin).', 403);
     }
     if (perm === 'public') return;
@@ -139,6 +168,15 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
     if (perm !== 'authenticated' && !req.user.permissions.has(perm)) {
       throw new AppError('FORBIDDEN', 'You do not have permission to do this. Ask an owner.', 403, { permission: perm });
     }
+  });
+
+  // Never inside another site's page (clickjacking), and no guessing of content types.
+  app.addHook('onSend', async (_req, reply) => {
+    reply.header('X-Frame-Options', 'DENY');
+    // An attachment sets its own, stricter one (sandbox, engine/attachments.ts).
+    if (!reply.hasHeader('Content-Security-Policy')) reply.header('Content-Security-Policy', "frame-ancestors 'none'");
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('Referrer-Policy', 'same-origin');
   });
 
   app.setErrorHandler((err, req, reply) => {
@@ -159,8 +197,9 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
   tlsRoutes(app, deps);
   documentRoutes(app, deps);
   draftRoutes(app, deps);
+  attachmentRoutes(app, deps);
   practiceRoutes(app, deps, opts.practiceShop);
-  healthRoutes(app, deps, { ...(opts.practiceShop ? { practiceShop: opts.practiceShop } : {}), ...(opts.host ? { host: opts.host } : {}) });
+  healthRoutes(app, deps, opts.practiceShop ? { practiceShop: opts.practiceShop } : {});
   for (const m of registry.modules) m.routes?.(app, deps);
   webRoutes(app, opts.webRoot ?? WEB_DIST);
 

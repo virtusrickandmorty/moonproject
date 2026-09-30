@@ -102,9 +102,11 @@ describe('tax screens, part 2: rules', () => {
 
   it('puts every tax screen, the booklets included, under Accounting & Tax (PLAN H1) with the permission its route checks', () => {
     const groups = buildMenu([], new Set(['tax.registers.view', 'tax.calendar.view', 'tax.booklets.view']));
-    expect(groups.map((g) => g.group)).toEqual(['Overview', 'Accounting & Tax', 'Admin']); // no separate Tax group; Admin has the Shop certificate for everyone
+    // No separate Tax group; Reports has the changes after filing (ACC-22); Admin has the Shop certificate for everyone.
+    expect(groups.map((g) => g.group)).toEqual(['Overview', 'Accounting & Tax', 'Reports', 'Admin']);
+    expect(groups[2]!.items.map((i) => `${i.label} ${i.path}`)).toEqual(['Changes after filing /tax/changes-after-filing']);
     const tax = groups[1]!.items;
-    expect(tax.map((i) => i.label).at(-1)).toBe('Booklets');
+    expect(tax.map((i) => i.label).slice(-2)).toEqual(['Booklets', 'Settings']);
     expect(tax.slice(2, 7).map((i) => `${i.label} ${i.path}`)).toEqual([
       'Purchases register /tax/purchases', 'EWT register /tax/ewt', '2307s to issue /tax/2307-to-issue', 'VAT this quarter /tax/vat', '2550Q worksheet /tax/2550q',
     ]);

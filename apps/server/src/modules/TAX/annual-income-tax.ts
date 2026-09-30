@@ -2,7 +2,8 @@
  * Annual income tax (1702-RT, PLAN D5 IT-PROV and IT-SETTLE, D8 "Yearly", E12). The year from 1 January to 31 December,
  * read from sealed journals the way the 1702Q is (income-tax.ts), every figure in whole pesos (PLAN D4 rule 10):
  *   Sales − cost of sales = gross income from operations; + other income not under final tax = total gross income
- *   − deductions: itemized (operating and other expenses, 6290 penalties aside) or, if the accountant picks it for the
+ *   − deductions: itemized (operating and other expenses, 6290 penalties aside; the bad-debt provision added back and
+ *     the write-offs against the allowance deducted, as the 1702Q does: income-tax.ts) or, if the accountant picks it for the
  *     year (a dated setting, tax_income_tax_deductions; itemized and flagged until confirmed), the 40% optional
  *     standard deduction on total gross income
  *   = taxable income. Income tax: the regular rate, or MCIT where it applies (from the 4th year after operations began)
@@ -23,7 +24,8 @@ import { appendAudit } from '../../engine/audit.ts';
 import { cutoverDate } from '../ACC/public.ts';
 import { returnDue } from './calendar.ts';
 import {
-  carriedOverInto, cwtOfYear, incomeTaxSettingsAt, ledgerYearToDate, mcitApplies, otherPrepaid, posted, taxOn, wholePesos, type IncomeTaxSettings, type PaymentRef,
+  BAD_DEBTS_NOTE, badDebtsForTax, carriedOverInto, cwtOfYear, incomeTaxSettingsAt, itemizedDeductions, ledgerYearToDate, mcitApplies, otherPrepaid, posted, taxOn, wholePesos,
+  type BadDebtKey, type IncomeTaxSettings, type PaymentRef,
 } from './income-tax.ts';
 import { openedByParty, openingsOf } from './opening-payables.ts';
 import { annualIncomeTaxDue, quarterPeriod, type BirForm } from './payments.ts';
@@ -88,7 +90,7 @@ export function addDeductionSetting(db: Db, body: unknown, who: { userId: string
 // ---------- The 1702-RT ----------
 
 export type AnnualKey =
-  | 'sales' | 'cost_of_sales' | 'gross_income' | 'other_income' | 'total_gross_income' | 'deductions' | 'taxable_income'
+  | 'sales' | 'cost_of_sales' | 'gross_income' | 'other_income' | 'total_gross_income' | BadDebtKey | 'deductions' | 'taxable_income'
   | 'regular_tax' | 'mcit' | 'tax_due' | 'prior_excess' | 'quarterly_payments' | 'other_prepaid' | 'cwt' | 'payable';
 export interface AnnualLine { key: AnnualKey; label: string; cents: number }
 const QUARTERS = [1, 2, 3] as const;
@@ -119,7 +121,8 @@ export function annualIncomeTaxPosition(db: Db, year: number, today: string) {
   const grossIncome = sales - costOfSales;
   const otherIncome = wholePesos(ytd.otherIncome);
   const totalGrossIncome = grossIncome + otherIncome;
-  const itemized = wholePesos(ytd.deductions);
+  const itemizedFigures = itemizedDeductions(ytd, badDebtsForTax(db, from, to));
+  const itemized = itemizedFigures.cents;
   const osd = totalGrossIncome > 0 ? taxOn(totalGrossIncome, OSD_RATE_BP) : 0;
   const deductions = deduction.method === 'osd' ? osd : itemized;
   const taxableIncome = totalGrossIncome - deductions;
@@ -153,6 +156,7 @@ export function annualIncomeTaxPosition(db: Db, year: number, today: string) {
     { key: 'gross_income', label: 'Gross income from operations', cents: grossIncome },
     { key: 'other_income', label: 'Add: other income not subject to final tax', cents: otherIncome },
     { key: 'total_gross_income', label: 'Total gross income', cents: totalGrossIncome },
+    ...(deduction.method === 'osd' ? [] : itemizedFigures.lines),
     { key: 'deductions', label: deduction.method === 'osd' ? 'Less: optional standard deduction (40% of total gross income)' : 'Less: deductions (itemized: operating and other expenses)', cents: deductions },
     { key: 'taxable_income', label: taxableIncome < 0 ? 'Net loss' : 'Taxable income', cents: taxableIncome },
     { key: 'regular_tax', label: `Income tax at the regular rate (${pct(settings.regularRateBp)} of taxable income)`, cents: regularTax },
@@ -172,6 +176,8 @@ export function annualIncomeTaxPosition(db: Db, year: number, today: string) {
     priorExcessCents: priorExcess, quarterlyPayments, quarterlyPaidCents, otherPrepaidCents, cwtCents: cwtInHand, cwtPendingCents: cwt.pendingCents, payableCents: payable,
     /** Left out, for the checks: 6290 penalties and 7101 interest income, unrounded. */
     penaltiesCents: ytd.penalties, interestIncomeCents: ytd.interest,
+    /** Bad debts treated apart in the itemized deductions (whole pesos). */
+    badDebtProvisionCents: itemizedFigures.provisionCents, badDebtsWrittenOffCents: itemizedFigures.writtenOffCents,
     // ----- What the provision and the settlement post (centavos) -----
     /** The old books' 1702Qs of the year on 2320 (openings), and what these books paid of them. */
     openedCents, paidOpenedCents,
@@ -246,6 +252,7 @@ export function annualIncomeTaxWorksheet(db: Db, year: number, today: string) {
   check(w.cwtPendingCents > 0, 'PENDING_2307', 'warning', `${formatPeso(w.cwtPendingCents)} withheld by customers in ${year} still waits for its 2307, so it is not claimed on this return.`);
   check(w.penaltiesCents !== 0, 'PENALTIES', 'info', 'Penalties and surcharges (6290) are not deductible: they are left out of the deductions.');
   check(w.interestIncomeCents !== 0, 'INTEREST', 'info', 'Interest income (7101) is under the final tax the bank withheld: it is left out of gross income.');
+  check(w.deduction.method === 'itemized' && (w.badDebtProvisionCents !== 0 || w.badDebtsWrittenOffCents !== 0), 'BAD_DEBTS', 'info', BAD_DEBTS_NOTE);
   check(w.payableCents < 0, 'OVERPAID', 'info', 'The credits are more than the tax due: the overpayment is carried over to next year (the default; the return may ask for a refund or a tax credit certificate instead, which is not built).');
   check(today <= w.to, 'YEAR_OPEN', 'info', `${year} has not ended: these figures still change.`);
   check(today > w.to && !provision && w.provisionCents > 0, 'NOT_PROVIDED', 'info', `Record the income tax provision of ${year}, dated ${w.to}.`);

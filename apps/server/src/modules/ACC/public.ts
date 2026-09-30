@@ -13,6 +13,8 @@ import type { Db } from '../../platform/db/driver.ts';
 import { closedOn, cutoverDate, openingClose } from './opening.ts';
 
 export { cutoverDate, openingClose, type OpeningClose } from './opening.ts';
+/** Accruals whose reversal day has come and that are not reversed yet (for a to-do list on the accountant's home). */
+export { reversalsDue, type ReversibleJv } from './doctypes/jv-reversals.ts';
 
 /** The accountant records the opening; owners see it (the acc.opening.* keys, declared by ACC). */
 export const OPENING_PERMISSIONS = { view: 'acc.opening.view', create: 'acc.opening.create', post: 'acc.opening.post', cancel: 'acc.opening.cancel' } as const;
@@ -26,6 +28,16 @@ export function openingIssues(db: Db, businessDate: string): Issue[] {
   if (!cutover) return [err('NO_CUTOVER', 'Set the cut-over date first.')];
   if (businessDate !== cutover) return [err('NOT_CUTOVER_DATE', `Opening balances are dated the cut-over date, ${cutover}, not ${businessDate}.`)];
   return [];
+}
+
+/**
+ * The warning every opening document gives when a posted, not cancelled document of its own type already records the
+ * same key figures (`number` is that document). A warning, not an error: two real rows can look alike. Once the opening
+ * is closed, OPENING_CLOSED is the only thing worth saying.
+ */
+export function duplicateOpeningIssue(db: Db, field: string, number: string | undefined, what: string): Issue[] {
+  if (!number || openingClose(db)) return [];
+  return [{ field, code: 'DUPLICATE_OPENING', level: 'warning', message: `${number} already records ${what}. Record it again only if there really are two.` }];
 }
 
 /** For an opening document's afterCancel: throwing rolls the cancel back once the opening is closed. */

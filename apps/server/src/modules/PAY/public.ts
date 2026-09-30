@@ -1,8 +1,11 @@
 /** PAY contract for other modules (STAT). Read-only; callers check their own route permission. */
 import type { Db } from '../../platform/db/driver.ts';
 import { sssRateAt } from './statutory.ts';
+export { hdmfMonthly, hdmfRateAt, phicMonthly, phicRateAt, sssMonthly, sssRateAt } from './statutory.ts';
 import type { Agency, LoanKind } from './loans.ts';
 export { KIND_LABEL, LOAN_ACCOUNT, type Agency, type LoanKind } from './loans.ts';
+// Last, after loans.ts: the run's doc type reaches STAT (via TAX), which reads LOAN_ACCOUNT from here as it loads.
+import { runDoc } from './doctypes/run.ts';
 
 /** One employee's recorded pay for a contribution month (PAY-RUN's month M, F3), over the month's recorded runs. */
 export interface MonthPay {
@@ -140,3 +143,94 @@ export function loansOfMonth(db: Db, month: string): MonthLoan[] {
   }
   return [...out.values()];
 }
+
+/** Immutable payroll snapshots used by RPT's register; every amount comes from the recorded run and payslip. */
+export interface PayrollReportRow {
+  documentId: string;
+  number: string;
+  businessDate: string;
+  status: 'posted';
+  periodStart: string;
+  periodEnd: string;
+  contributionMonth: string;
+  runEmployeeId: string;
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  grossCents: number;
+  sssEeCents: number;
+  sssErCents: number;
+  sssEcCents: number;
+  phicEeCents: number;
+  phicErCents: number;
+  hdmfEeCents: number;
+  hdmfErCents: number;
+  taxCents: number;
+  caCents: number;
+  loanCents: number;
+  accruedCents: number;
+  netCents: number;
+}
+
+export function payrollReportRows(db: Db): PayrollReportRow[] {
+  return db.prepare(`SELECT d.id AS documentId, d.number, d.business_date AS businessDate, d.status,
+    r.period_start AS periodStart, r.period_end AS periodEnd, r.contribution_month AS contributionMonth,
+    e.id AS runEmployeeId, e.employee_id AS employeeId, e.employee_code AS employeeCode, e.employee_name AS employeeName,
+    e.gross_cents AS grossCents, e.sss_ee_cents AS sssEeCents, e.sss_er_cents AS sssErCents,
+    e.sss_ec_cents AS sssEcCents, e.phic_ee_cents AS phicEeCents, e.phic_er_cents AS phicErCents,
+    e.hdmf_ee_cents AS hdmfEeCents, e.hdmf_er_cents AS hdmfErCents, e.wtax_cents AS taxCents,
+    e.ca_cents AS caCents, COALESCE((SELECT SUM(x.amount_cents) FROM pay_run_loans x WHERE x.run_employee_id=e.id),0) AS loanCents,
+    e.thirteenth_cents AS accruedCents,
+    e.net_cents - e.loan_cents + e.wtax_refund_cents AS netCents
+    FROM pay_run_employees e JOIN pay_runs r ON r.document_id=e.document_id JOIN documents d ON d.id=r.document_id
+    WHERE d.status='posted' ORDER BY d.business_date,d.number,e.employee_name`).all() as PayrollReportRow[];
+}
+
+/** Recorded earning lines, including their JO tags, for payroll reports. */
+export function payrollEarningRows(db: Db) {
+  return db.prepare(`SELECT e.document_id AS documentId,r.period_start AS periodStart,r.period_end AS periodEnd,e.employee_id AS employeeId,e.employee_code AS employeeCode,e.employee_name AS employeeName,
+    l.kind,l.description,l.qty,l.amount_cents AS amountCents,l.job_order_id AS jobOrderId
+    FROM pay_run_lines l JOIN pay_run_employees e ON e.id=l.run_employee_id JOIN pay_runs r ON r.document_id=e.document_id JOIN documents d ON d.id=e.document_id
+    WHERE d.status='posted' ORDER BY e.document_id,e.employee_name,l.line_no`).all() as Array<Record<string, string | number | null>>;
+}
+
+/** Recorded 13th-month snapshots for a year. */
+export function thirteenthReportRows(db: Db, year: number) {
+  return db.prepare(`SELECT d.id AS documentId,d.number,e.employee_id AS employeeId,e.employee_code AS employeeCode,e.employee_name AS employeeName,
+    e.due_cents AS dueCents,e.accrued_cents AS accruedCents,e.amount_cents AS paidCents,e.taxable_cents AS taxableCents
+    FROM pay_thirteenth_employees e JOIN pay_thirteenths t ON t.document_id=e.document_id JOIN documents d ON d.id=e.document_id
+    WHERE d.status='posted' AND t.year=? ORDER BY e.employee_name,d.number`).all(year) as Array<Record<string, string | number>>;
+}
+
+/**
+ * COM's timed scan (PLAN E14) reads payroll releases after the place it last reached (a documents row id), so no posting
+ * code has a hook. Row ids only grow (nothing is deleted), so one is a safe place to resume from.
+ */
+export interface PayrollRelease {
+  id: string; number: string; runId: string; runNumber: string; periodStart: string; periodEnd: string;
+  /** The employees whose net pay this release paid. Never amounts. */
+  employeeIds: string[];
+}
+/** The newest documents row id now: where a scan starts when it is switched on, so nothing already released is emailed. */
+export const payrollScanEdge = (db: Db): number => db.prepare('SELECT COALESCE(MAX(rowid), 0) FROM documents').pluck().get() as number;
+
+/** Releases of a payroll run recorded after `after` (a documents row id) that are still recorded. A cancelled one has no one to pay; recording it again is a new release. */
+export function payrollReleasesAfter(db: Db, after: number, limit: number): { items: PayrollRelease[]; next: number } {
+  const raw = db
+    .prepare(
+      `SELECT d.rowid AS cursor, d.id, d.number, d.status, r.run_id AS runId, rd.number AS runNumber, p.period_start AS periodStart, p.period_end AS periodEnd
+       FROM documents d JOIN pay_releases r ON r.document_id = d.id JOIN pay_runs p ON p.document_id = r.run_id JOIN documents rd ON rd.id = r.run_id
+       WHERE d.rowid > ? AND d.doc_type = 'pay.release' ORDER BY d.rowid LIMIT ?`,
+    )
+    .all(after, limit) as (PayrollRelease & { cursor: number; status: string })[];
+  const who = db.prepare('SELECT employee_id FROM pay_release_lines WHERE document_id = ? ORDER BY rowid').pluck();
+  const items = raw.filter((r) => r.status === 'posted').map(({ cursor: _c, status: _s, ...rel }) => ({ ...rel, employeeIds: who.all(rel.id) as string[] }));
+  return { items, next: raw.length < limit ? payrollScanEdge(db) : raw[raw.length - 1]!.cursor };
+}
+
+/** Is this payroll release still recorded (not cancelled)? Read again when its emails are sent. */
+export const payrollReleaseStands = (db: Db, releaseId: string): boolean =>
+  db.prepare(`SELECT 1 FROM documents WHERE id = ? AND doc_type = 'pay.release' AND status = 'posted'`).get(releaseId) !== undefined;
+
+/** A recorded run as stored, for the payslip print (PRT). Callers keep to the one employee they are allowed to send. */
+export const payrollRunDoc = (db: Db, runId: string) => runDoc.load(db, runId);
