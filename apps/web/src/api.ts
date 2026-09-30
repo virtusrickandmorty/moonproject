@@ -64,7 +64,7 @@ export interface IntegrityReport { audit: { ok: boolean; brokenAt: number | null
 export interface NightlyCheck { key: string; label: string; reportPath: string; passed: boolean; foundCount: number; findings: { detail: string; path: string | null }[] }
 export interface NightlyNight { night: string; coversFrom: string; ranAt: string; foundCount: number; checks: NightlyCheck[] }
 export interface NightlyRunNow { at: string; from: string; to: string; foundCount: number; checks: NightlyCheck[] }
-export interface NightlyStatus { night: string | null; foundCount: number; found: { key: string; label: string; foundCount: number }[] }
+export interface NightlyStatus { night: string | null; ranAt: string | null; foundCount: number; found: { key: string; label: string; foundCount: number }[]; integrity: { ranAt: string; passed: boolean; foundCount: number } | null }
 /** Public certificate details returned to a signed-in user; no private key is sent. */
 /** System Health (PLAN C8), as GET /api/system/health reports it. */
 export type HealthLight = 'green' | 'amber' | 'red' | 'grey';
@@ -126,7 +126,7 @@ export interface PostDatedCheck {
 export interface NewPostDatedCheck { customerId: string; bank: string; checkNumber: string; checkDate: string; amountCents: number; jobOrderIds: string[]; note?: string }
 export type CheckRef = { collectionId: string; lineNo: number };
 export interface DashItem { id: string; label: string; href?: string; detail?: string; amountCents?: number }
-export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string }
+export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string; tone?: 'danger' }
 export interface DashHomeData { role: string; asOf: string; widgets: DashWidget[] }
 export interface DashOwnerHealth {
   asOf: string;

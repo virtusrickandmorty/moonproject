@@ -11,7 +11,9 @@ import { activeJobOrders, joMoney, releasesAwaitingInvoice } from '../JO/public.
 import { pendingCertificates } from '../COL/public.ts';
 import { board } from '../PRD/public.ts';
 import { sizerBoard } from '../SZR/public.ts';
-import { hasReceived2307, paidTaxPeriods, taxDeadlines } from '../TAX/public.ts';
+import { hasReceived2307, paidTaxPeriods, taxDeadlines, vatSummary } from '../TAX/public.ts';
+import { monthEndChecklist } from '../ACC/public.ts';
+import { nightlyStatus } from '../AUD/public.ts';
 import { redLightNotices, type Host } from '../../platform/health/health.ts';
 
 /** What the owner is told about for 14 days: actions that need a fresh password, in words (the audit log has the rest). */
@@ -39,7 +41,7 @@ const canSee = (user: SessionUser, registry: Registry, type: string) => {
 };
 
 export interface DashItem { id: string; label: string; href?: string; detail?: string; amountCents?: number }
-export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string }
+export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string; tone?: 'danger' }
 export interface DashNotification extends DashItem { kind: string; read: boolean }
 
 /** Sales and collections are ledger reads; JO collectibles use its public balance-due calculation. */
@@ -96,6 +98,33 @@ export function home(db: Db, clock: Clock, registry: Registry, user: SessionUser
   if (role === 'accountant') {
     widgets.push({ key: 'exceptions', title: 'Exceptions inbox', items: notifications(db, clock, registry, user, where)
       .filter((n) => !n.read).slice(0, 20).map(({ id, label, href, detail, amountCents }) => ({ id, label, href, detail, amountCents })) });
+  }
+  if ((role === 'accountant' || role === 'owner') && can('tax.registers.view')) {
+    const year = Number(date.slice(0, 4));
+    const quarter = Math.ceil(Number(date.slice(5, 7)) / 3) as 1 | 2 | 3 | 4;
+    const vat = vatSummary(db, year, quarter);
+    widgets.push({ key: 'vat-quarter', title: 'VAT this quarter', href: '/tax/vat', items: [
+      { id: 'output', label: 'Output VAT', amountCents: vat.outputVatCents },
+      { id: 'input', label: 'Input VAT', amountCents: vat.inputVatCents },
+      { id: 'payable', label: 'VAT payable so far', amountCents: vat.payableCents },
+    ] });
+  }
+  if ((role === 'accountant' || role === 'owner') && can('acc.monthend.view')) {
+    const month = prevMonthEnd(date).slice(0, 7);
+    const checklist = monthEndChecklist(db, clock, registry, user, month);
+    const done = checklist.items.filter((step) => step.state === 'done').length;
+    widgets.push({ key: 'month-end', title: 'Month-end checklist', href: '/acc/month-end', items: [
+      { id: month, label: `${done} of ${checklist.items.length} steps done`, detail: month },
+    ] });
+  }
+  if ((role === 'accountant' || role === 'owner') && can('aud.integrity.view')) {
+    const status = nightlyStatus(db);
+    const nightlyFailed = status.foundCount > 0;
+    const integrityFailed = status.integrity !== null && !status.integrity.passed;
+    widgets.push({ key: 'integrity', title: 'Integrity', href: '/aud/integrity', ...(nightlyFailed || integrityFailed ? { tone: 'danger' as const } : {}), items: [
+      { id: 'nightly', label: 'Last nightly check', detail: status.ranAt ? `${status.ranAt} · ${nightlyFailed ? `${status.foundCount} found` : 'Passed'}` : 'Not run yet' },
+      { id: 'integrity', label: 'Last integrity check', detail: status.integrity ? `${status.integrity.ranAt} · ${status.integrity.passed ? 'Passed' : `${status.integrity.foundCount} found`}` : 'Not run yet' },
+    ] });
   }
   if (role === 'encoder') {
     if (can('jo.view')) {
