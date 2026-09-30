@@ -11,10 +11,13 @@
  * invoiced (JO downpayment invoice) and the collection pays that receivable; money taken first waits for its invoice.
  * Cancel: the mirror, then any part of a deposit that an invoice record already applied reopens the receivable,
  * Dr 1201 / Cr 2201 (D6), so the JO's deposits never go below zero, and 2209 follows (settleJobOrder).
+ * Checks (checks.ts): a tender into Checks on hand carries the check (number, bank, date on the check), and a check dated
+ * after today is refused: it waits on the post-dated checks list (ACC-23, pdc.ts), from which it is recorded on its date
+ * (postDatedCheckId). A collection whose check is at the bank is cancelled only once the check is back (returned).
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { allocate, applyRate, formatPeso, manilaDate, vatFromGross, type Issue } from '@moonproject/shared';
+import { allocate, applyRate, conflict, formatPeso, manilaDate, vatFromGross, type Issue } from '@moonproject/shared';
 import type { Db } from '../../../platform/db/driver.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { listCashPlaces } from '../../../engine/ledger/accounts.ts';
@@ -25,7 +28,9 @@ import { saleOpenCents, saleRef } from '../../QS/public.ts';
 import { bookletIssue } from '../../TAX/public.ts';
 import { writeOffsOn } from '../credits.ts';
 import { depositModeOn, depositVatLines, depositVatRowsOf, modeKeptIssue, recordDepositVat, settleJobOrder, vatOnDeposit, vatRow, type DepositMode } from './deposit-vat.ts';
-import { MAX_CENTS, cashPlaceIssues, insertTenders, loadTenders, sumCents, takenOutBy, tenderInput, tenderToInput, withNames, type Tender } from '../ledger.ts';
+import { MAX_CENTS, cashPlaceIssues, insertTenders, loadTenders, sumCents, takenOutBy, withNames } from '../ledger.ts';
+import { checkIssues, checkPlaceIds, collectionTenderInput, depositedChecksOf, insertTenderChecks, tenderWithCheckToInput, withChecks, type CollectionTender } from '../checks.ts';
+import { pdcUseIssues } from '../pdc.ts';
 
 /** Largest difference that may go to cash short and over instead of a deposit or an unpaid balance (D4.9). */
 export const SHORT_OVER_LIMIT_CENTS = 100;
@@ -45,7 +50,7 @@ export const collectionInput = z
     crNumber: z.string().trim().regex(/^0*[1-9]\d{0,11}$/, 'Type the number printed on the CR (digits only).'),
     applications: z.array(application).max(50),
     sales: z.array(saleApplication).min(1).max(20).optional(),
-    tenders: z.array(tenderInput).min(1).max(10),
+    tenders: z.array(collectionTenderInput).min(1).max(10),
     withholding: z
       .object({
         cwtCents: z.number().int().positive().max(MAX_CENTS),
@@ -57,6 +62,7 @@ export const collectionInput = z
       .optional(),
     settleSmallDifference: z.boolean().optional(), // a difference up to ₱1.00 goes to cash short and over (D4.9)
     note: z.string().trim().min(1).max(500).optional(),
+    postDatedCheckId: z.uuid().optional(), // recorded from the post-dated checks list on the check's date (ACC-23)
   })
   .strict();
 export type CollectionInput = z.infer<typeof collectionInput>;
@@ -70,7 +76,7 @@ export interface SaleApplication extends z.infer<typeof saleApplication> { lineN
 export interface Collection extends Omit<CollectionInput, 'applications' | 'sales' | 'tenders'> {
   applications: Application[];
   sales: SaleApplication[];
-  tenders: Tender[];
+  tenders: CollectionTender[];
   customerName: string;
   cwtCents: number;
   vatWithheldCents: number;
@@ -150,6 +156,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
     const booklet = bookletIssue(ctx.db, 'CR', doc.crNumber, 'crNumber');
     if (booklet) issues.push(booklet);
     issues.push(...cashPlaceIssues(ctx.db, doc.tenders, 'Pick where the money went.'));
+    issues.push(...checkIssues(ctx.db, doc.tenders, ctx.businessDate), ...pdcUseIssues(ctx.db, doc, ctx.businessDate));
     if (doc.totalCents > MAX_CENTS) add('error', 'tenders', 'TOO_BIG', 'The amount is over ₱100 million. Please check the amounts.');
 
     const seen = new Set<string>();
@@ -239,6 +246,8 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(h.documentId, doc.customerId, doc.customerName, doc.crNumber, doc.cwtCents, w?.atc ?? null, w?.certificate ?? null, doc.vatWithheldCents, doc.unappliedCents, doc.shortOverCents, doc.settleSmallDifference ? 1 : 0, doc.note ?? null);
     insertTenders(db, 'col_tenders', h.documentId, doc.tenders);
+    insertTenderChecks(db, h.documentId, doc.tenders);
+    if (doc.postDatedCheckId) db.prepare('INSERT INTO col_pdc_uses (document_id, pdc_id) VALUES (?, ?)').run(h.documentId, doc.postDatedCheckId);
     const app = db.prepare(
       'INSERT INTO col_applications (document_id, line_no, job_order_id, amount_cents, to_receivable_cents, to_deposit_cents) VALUES (?, ?, ?, ?, ?, ?)',
     );
@@ -282,6 +291,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
       | undefined;
     if (!r) throw new Error(`Collection ${documentId} not found`);
     const vat = new Map(depositVatRowsOf(db, documentId).map((v) => [v.jobOrderId, v]));
+    const pdcId = db.prepare('SELECT pdc_id FROM col_pdc_uses WHERE document_id = ?').pluck().get(documentId) as string | undefined;
     const applications = (
       db
         .prepare('SELECT line_no, job_order_id, amount_cents, to_receivable_cents, to_deposit_cents FROM col_applications WHERE document_id = ? ORDER BY line_no')
@@ -312,9 +322,10 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
         : {}),
       ...(r.settle_small_difference ? { settleSmallDifference: true } : {}),
       ...(r.note ? { note: r.note } : {}),
+      ...(pdcId ? { postDatedCheckId: pdcId } : {}),
       applications,
       sales,
-      tenders: loadTenders(db, 'col_tenders', documentId),
+      tenders: withChecks(db, documentId, loadTenders(db, 'col_tenders', documentId)),
       customerName: r.customer_name,
       cwtCents: r.cwt_cents,
       vatWithheldCents: r.vat_withheld_cents,
@@ -326,16 +337,17 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
   },
 
   toInput(doc) {
-    const { customerId, crNumber, withholding, settleSmallDifference, note } = doc;
+    const { customerId, crNumber, withholding, settleSmallDifference, note, postDatedCheckId } = doc;
     return {
       customerId,
       crNumber,
       applications: doc.applications.map(({ jobOrderId, amountCents }) => ({ jobOrderId, amountCents })),
       ...(doc.sales.length > 0 ? { sales: doc.sales.map(({ saleId, amountCents }) => ({ saleId, amountCents })) } : {}),
-      tenders: doc.tenders.map(tenderToInput),
+      tenders: doc.tenders.map(tenderWithCheckToInput),
       ...(withholding ? { withholding } : {}),
       ...(settleSmallDifference ? { settleSmallDifference } : {}),
       ...(note ? { note } : {}),
+      ...(postDatedCheckId ? { postDatedCheckId } : {}),
     };
   },
 
@@ -345,6 +357,11 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
    * the receivable instead (afterCancel), as long as the JO's receivable stays within what was invoiced.
    */
   dependents(db, documentId) {
+    const banked = depositedChecksOf(db, documentId)[0];
+    if (banked) {
+      const n = `${banked.checkNumber} ${banked.bank}`;
+      throw conflict('CHECK_DEPOSITED', `Check no. ${n} was deposited with ${banked.lastDeposit!.number}. If the bank returned it, record that on the Checks on hand screen first; if the deposit was a mistake, cancel ${banked.lastDeposit!.number} first.`);
+    }
     const d = collectionDoc.load(db, documentId);
     return [
       ...d.applications.flatMap((a) => takenOutBy(db, d.customerId, a.jobOrderId, a.toDepositCents, a.toReceivableCents)),
@@ -375,6 +392,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
   arbitrary(db) {
     const vatBp = settingAt(db, 'tax.vat_rate_bp', manilaDate(new Date()));
     const places = listCashPlaces(db).map((c) => c.id);
+    const checks = checkPlaceIds(db);
     const byCustomer = new Map<string, { id: string; dueCents: number }[]>();
     for (const jo of jobOrdersOf(db)) {
       const dueCents = joMoney(db, jo.id).balanceDueCents;
@@ -391,8 +409,9 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
           cwtBp: fc.constantFrom(0, 100, 200),
           government: fc.boolean(), // also withholds 5% VAT (D4.6), only ever next to CWT
           cr: fc.integer({ min: 1, max: 99_999_999 }),
+          checkNo: fc.integer({ min: 1, max: 999_999 }),
         })
-        .map(({ applications, weights, extraCents, cwtBp, government, cr }) => {
+        .map(({ applications, weights, extraCents, cwtBp, government, cr, checkNo }) => {
           const applied = sumCents(applications);
           const total = Math.max(applied + extraCents, 1_000); // every tender gets at least a centavo
           const netCents = vatFromGross(total, vatBp).netCents;
@@ -403,7 +422,10 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
             customerId,
             crNumber: String(cr).padStart(6, '0'),
             applications,
-            tenders: weights.map(([cashPlaceId], i) => ({ cashPlaceId, amountCents: amounts[i]! })),
+            tenders: weights.map(([cashPlaceId], i) => ({
+              cashPlaceId, amountCents: amounts[i]!,
+              ...(checks.has(cashPlaceId) ? { check: { number: String(checkNo * 10 + i).padStart(6, '0'), bank: 'Sample Savings Bank', date: '2026-09-01' } } : {}),
+            })),
             ...(cwtCents > 0
               ? { withholding: { cwtCents, atc: cwtBp === 100 ? ('WC158' as const) : ('WC160' as const), certificate: 'pending' as const, ...(vatWithheldCents > 0 ? { vatWithheldCents } : {}) } }
               : {}),
