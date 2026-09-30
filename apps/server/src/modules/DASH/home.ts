@@ -137,7 +137,7 @@ export function home(db: Db, clock: Clock, registry: Registry, user: SessionUser
     widgets.push({ key: 'cancellations', title: 'Recent cancellations', items: cancelled.filter((d) => canSee(user, registry, d.docType))
       .map((d) => ({ id: d.id, label: d.number, detail: d.reason, href: `/docs/${d.docType}/${d.id}` })) });
   }
-  return { role, asOf: date, widgets };
+  return { role, asOf: date, widgets, showCharts: role === 'owner' && can('rpt.books.view') };
 }
 
 export function notifications(db: Db, clock: Clock, registry: Registry, user: SessionUser, where: HomeContext = {}): DashNotification[] {

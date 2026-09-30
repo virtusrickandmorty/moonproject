@@ -7,7 +7,8 @@ import { postJournal } from '../../../engine/ledger/post.ts';
 import { appendAudit } from '../../../engine/audit.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import { ownerHealth } from '../health.ts';
-import { arAging, apAging, cashPosition, collectionsRegister, depositsHeld, payrollRegister, productionTiming } from '../../RPT/public.ts';
+import { ownerCharts } from '../charts.ts';
+import { arAging, apAging, cashPosition, collectionsRegister, depositsHeld, incomeStatement, payrollRegister, productionTiming } from '../../RPT/public.ts';
 import { salesRegister, taxDeadlines } from '../../TAX/public.ts';
 
 const addDays = (date: string, days: number) => {
@@ -26,6 +27,41 @@ async function jobOrder(env: Awaited<ReturnType<typeof createTestEnv>>, customer
 }
 
 describe('DASH role homes and notifications', () => {
+  it('builds twelve monthly chart points from the reports, including empty months, and protects the route', async () => {
+    const env = await createTestEnv();
+    const owner = await env.as('owner');
+    const encoder = await env.as('encoder');
+    const cash = env.db.prepare("SELECT id FROM accounts WHERE code = '1101'").pluck().get() as number;
+    const customer = seedCustomers(env.db, owner.userId).school;
+    for (const [date, received, spent] of [['2025-11-14', 50_000, 12_000], ['2026-03-09', 80_000, 25_000]] as const) tx(env.db, () => {
+      postJournal(env.db, { memo: 'Made-up monthly chart activity', lines: [
+        { account: { cashPlace: cash }, debitCents: received },
+        { account: { role: 'SALES_SERVICE' }, party: { type: 'customer', id: customer }, creditCents: received },
+        { account: { role: 'CASH_SHORT_OVER' }, debitCents: spent },
+        { account: { cashPlace: cash }, creditCents: spent },
+      ] }, { sourceType: 'test', sourceId: newId(), businessDate: date, userId: owner.userId, at: stamp(env.clock) });
+    });
+    const charts = ownerCharts(env.db, today(env.clock));
+    expect(charts.months).toHaveLength(12);
+    expect(charts.months.some((month) => month.salesCents === 0 && month.expensesCents === 0)).toBe(true);
+    for (const month of charts.months) {
+      const statement = incomeStatement(env.db, month.from, month.to);
+      const section = (key: string) => statement.sections.find((row) => row.key === key)?.totalCents ?? 0;
+      expect(month.salesCents).toBe(section('revenue'));
+      expect(month.expensesCents).toBe(section('costOfSales') + section('operatingExpenses') + section('incomeTax'));
+      expect(month.collectionsCents).toBe(collectionsRegister(env.db, month.from, month.to).tenderCents);
+      const book = await owner.get(`/api/cash/places/${cash}/book?from=${month.from}&to=${month.to}`);
+      expect(book.statusCode, book.body).toBe(200);
+      expect(month.cashCents).toBe(book.json().closingCents);
+    }
+    const response = await owner.get('/api/dash/owner-charts');
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json()).toEqual(charts);
+    expect(charts.receivables.map((bucket) => bucket.amountCents)).toEqual(Object.values(arAging(env.db, charts.asOf).buckets));
+    expect((await encoder.get('/api/dash/owner-charts')).statusCode).toBe(403);
+    env.db.close();
+  });
+
   it('gives each role its own permitted home', async () => {
     const env = await createTestEnv();
     const [encoder, accountant, owner, production] = await Promise.all([env.as('encoder'), env.as('accountant'), env.as('owner'), env.as('production')]);
