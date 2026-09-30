@@ -11,7 +11,7 @@ import type { AppDeps } from '../../app.ts';
 import { currentUser } from '../security/routes.ts';
 import { findIdempotent, requestHash, storeIdempotent } from '../idempotency.ts';
 import { journalsForSource } from '../ledger/queries.ts';
-import { cancelDocument, postDocument, previewDocument, reissueDocument, type Actor } from './lifecycle.ts';
+import { cancelDocument, postDocument, previewCancel, previewDocument, reissueDocument, type Actor } from './lifecycle.ts';
 import type { DocTypeDef } from './registry.ts';
 
 const auth = { config: { permission: 'authenticated' } };
@@ -29,7 +29,7 @@ function parse<T>(schema: z.ZodType<T>, v: unknown): T {
 
 export function documentRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock, registry } = deps;
-  const env = { db, clock };
+  const env = { db, clock, notices: registry.notices() };
 
   const typeOf = (key: string): DocTypeDef => {
     const d = registry.docType(key);
@@ -122,6 +122,12 @@ export function documentRoutes(app: FastifyInstance, deps: AppDeps): void {
     const d = typeOf(req.params.type);
     const b = parse(postBody, req.body);
     return idempotent(req, reply, () => postDocument(env, d, actorOf(req), b));
+  });
+
+  /** What cancelling would warn about (the modules' notices, e.g. a filed period), for the cancel dialog. No writes. */
+  app.get<{ Params: { type: string; id: string } }>('/api/docs/:type/:id/cancel-preview', auth, async (req) => {
+    const d = typeOf(req.params.type);
+    return previewCancel(env, d, actorOf(req), req.params.id);
   });
 
   app.post<{ Params: { type: string; id: string } }>('/api/docs/:type/:id/cancel', auth, async (req, reply) => {

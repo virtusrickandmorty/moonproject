@@ -15,6 +15,17 @@ export interface Me { userId: string; username: string; displayName: string; rol
 export interface GoLiveAnswer { id: number; answer: string; decidedBy: string; decidedOn: string; note: string; recordedAt: string; recordedByName: string }
 export interface GoLiveDecision { id: string; group: 'accountant' | 'owner' | 'co-owners'; question: string; defaultAnswer: string; when: string; history: GoLiveAnswer[]; setting: null | { key: string; value: unknown; words: string; matches: boolean | null } }
 export interface GoLiveRegister { asOf: string; open: number; rows: GoLiveDecision[] }
+/** GET /api/docs/:type/:id/cancel-preview: what cancelling would warn about (e.g. a filed period), before the reason is asked. */
+export interface CancelPreview { number: string; businessDate: string; cancelDate: string; issues: Issue[] }
+/** A journal voucher marked to reverse whose reversal day has come (GET /api/acc/jv/reversals-due). */
+export interface ReversalDue { documentId: string; number: string; date: string; memo: string; reverseOn: string; totalCents: number }
+/** GET /api/acc/jv/:id/reversal: the reversal's form input (lines swapped) and its date. */
+export interface JvReversal { businessDate: string; original: { documentId: string; number: string; date: string }; input: { memo: string; lines: { accountId: number; party?: { type: PartyType; id: string }; debitCents?: number; creditCents?: number; memo?: string }[]; reversalOf: string } }
+/** GET /api/tax/changes-after-filing (ACC-22): one document recorded or cancelled after a return of its period was paid. */
+export interface ChangeAfterFiling {
+  date: string; documentId: string; docType: string; docTitle: string; number: string; what: 'recorded' | 'cancelled'; userName: string; at: string;
+  form: string; period: string; periodLabel: string; paymentNumber: string; paymentRecordedAt: string;
+}
 export async function openServerPrint(me: Me, path: string, body: unknown): Promise<void> {
   const preview = window.open('', '_blank');
   const response = await fetch(path, { method: 'POST', credentials: 'same-origin',
@@ -862,6 +873,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     preview: (type: string, input: unknown, businessDate?: string) => call<Preview>('POST', doc(type, '/preview'), { input, ...(businessDate ? { businessDate } : {}) }),
     post: (type: string, input: unknown, expectedTotalCents: number, key: string, businessDate?: string) =>
       call<PostResult>('POST', doc(type, '/post'), { input, expectedTotalCents, ...(businessDate ? { businessDate } : {}) }, idem(key)),
+    cancelPreview: (type: string, id: string) => call<CancelPreview>('GET', one(type, id, '/cancel-preview')),
     cancel: (type: string, id: string, reason: string, key: string) => call<unknown>('POST', one(type, id, '/cancel'), { reason }, idem(key)),
     reissue: (type: string, id: string, input: unknown, expectedTotalCents: number, reason: string, key: string, businessDate?: string) =>
       call<PostResult>('POST', one(type, id, '/reissue'), { input, expectedTotalCents, reason, ...(businessDate ? { businessDate } : {}) }, idem(key)),
@@ -1064,6 +1076,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     opening: () => call<OpeningState>('GET', '/api/acc/opening'),
     monthEnd: (month?: string) => call<MonthEndChecklist>('GET', `/api/acc/month-end${month ? `?${new URLSearchParams({ month })}` : ''}`),
     goLiveDecisions: () => call<GoLiveRegister>('GET', '/api/acc/go-live-decisions'),
+    reversalsDue: () => call<ReversalDue[]>('GET', '/api/acc/jv/reversals-due'),
+    jvReversal: (id: string) => call<JvReversal>('GET', `/api/acc/jv/${encodeURIComponent(id)}/reversal`),
+    changesAfterFiling: () => call<{ rows: ChangeAfterFiling[] }>('GET', '/api/tax/changes-after-filing'),
     recordGoLiveAnswer: (body: { decisionId: string; answer: string; decidedBy: string; decidedOn: string; note: string }) => call<GoLiveRegister>('POST', '/api/acc/go-live-decisions/answers', body),
     /** The accountant's sign-off of a month that has ended; needs a fresh password (step-up). */
     signOffMonth: (month: string, note: string) => call<MonthEndChecklist>('POST', '/api/acc/month-end/sign-off', { month, note }),

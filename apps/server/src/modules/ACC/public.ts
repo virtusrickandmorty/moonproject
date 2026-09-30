@@ -13,6 +13,8 @@ import type { Db } from '../../platform/db/driver.ts';
 import { closedOn, cutoverDate, openingClose } from './opening.ts';
 
 export { cutoverDate, openingClose, type OpeningClose } from './opening.ts';
+/** Accruals whose reversal day has come and that are not reversed yet (for a to-do list on the accountant's home). */
+export { reversalsDue, type ReversibleJv } from './doctypes/jv-reversals.ts';
 
 /** The accountant records the opening; owners see it (the acc.opening.* keys, declared by ACC). */
 export const OPENING_PERMISSIONS = { view: 'acc.opening.view', create: 'acc.opening.create', post: 'acc.opening.post', cancel: 'acc.opening.cancel' } as const;

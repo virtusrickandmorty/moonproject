@@ -19,6 +19,7 @@ import { addIncomeTaxSettings, incomeTaxSettingsAt, incomeTaxSettingsHistory, in
 import { addDeductionSetting, annualIncomeTaxWorksheet, deductionAt, deductionHistory } from './annual-income-tax.ts';
 import { ewtAnnualReturn } from './ewt-annual.ts';
 import { classifySale, sawt, slspPurchases, slspSales, type Tie } from './slsp.ts';
+import { changesAfterFiling } from './filed.ts';
 
 export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
@@ -409,5 +410,15 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get<{ Querystring: QuarterQuery }>('/api/tax/vat-summary', { config: { permission: 'tax.registers.view' } }, async (req) => {
     const { year, quarter } = quarterQuery(req.query);
     return vatSummary(db, year, quarter);
+  });
+
+  /** ACC-22: documents dated in a filed period recorded or cancelled after the return's payment was recorded (?format=csv). */
+  app.get<{ Querystring: { format?: string } }>('/api/tax/changes-after-filing', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
+    const rows = changesAfterFiling(db).map((r) => ({ ...r, docTitle: title(r.docType) }));
+    if (req.query.format !== 'csv') return { rows };
+    return csv(reply, `changes-after-filing-${today(clock)}`, [
+      ['Date', 'Document', 'Number', 'What happened', 'Who', 'When', 'Return', 'Period', 'Paid with', 'Payment recorded'],
+      ...rows.map((r) => [r.date, r.docTitle, r.number, r.what === 'recorded' ? 'Recorded' : 'Cancelled', r.userName, r.at, r.form, r.periodLabel, r.paymentNumber, r.paymentRecordedAt]),
+    ]);
   });
 }
