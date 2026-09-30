@@ -198,6 +198,36 @@ export function depositChecks(env: EngineEnv, registry: Registry, actor: Actor, 
   return { transfer, count: checks.length };
 }
 
+/**
+ * COL's dependents of fund transfers (engine DependentsFn): a check's transfers are undone in the order the check moved,
+ * so Checks on hand always holds exactly the checks on its list.
+ *   A deposit is not cancelled while a return from it stands (cancel the return first).
+ *   A return is not cancelled while its check is at the bank again (cancel that deposit first), nor once its collection
+ *   was cancelled (the check already left Checks on hand with the collection's mirror).
+ *   Neither is edited: the checks it carried stay with the cancelled one, so cancel it and use the Checks screen again.
+ */
+export function checkTransferDependents(db: Db, docType: string, documentId: string, reissuing: boolean): { id: string; number: string }[] {
+  if (docType !== 'cash.transfer') return [];
+  const deposited = db.prepare('SELECT 1 FROM col_check_deposits WHERE transfer_id = ? LIMIT 1').get(documentId) !== undefined;
+  const back = db.prepare('SELECT document_id AS collectionId, line_no AS lineNo FROM col_check_returns WHERE transfer_id = ?').get(documentId) as
+    { collectionId: string; lineNo: number } | undefined;
+  if (!deposited && !back) return [];
+  if (reissuing) {
+    throw conflict('CHECK_TRANSFER', 'This transfer carried customer checks, so it is not edited. Cancel it, then deposit the checks or record the returned check again on the Checks on hand screen.');
+  }
+  if (deposited) {
+    return db
+      .prepare(`SELECT d.id, d.number FROM col_check_returns r JOIN documents d ON d.id = r.transfer_id WHERE r.deposit_id = ? AND d.status = 'posted' ORDER BY d.number`)
+      .all(documentId) as { id: string; number: string }[];
+  }
+  const r = checkAt(db, back!.collectionId, back!.lineNo);
+  if (!r) return [];
+  if (r.collectionStatus !== 'posted') {
+    throw conflict('CHECK_GONE', `Check no. ${label(r)} came back with this transfer, and its collection ${r.collectionNumber} was cancelled since, which already took the check out of ${r.cashPlaceName}. This transfer stays.`);
+  }
+  return whereIs(r) === 'at the bank' ? [{ id: r.lastDeposit!.id, number: r.lastDeposit!.number }] : [];
+}
+
 export const returnBody = z
   .object({
     collectionId: z.uuid(),

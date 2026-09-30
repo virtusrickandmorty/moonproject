@@ -11,7 +11,7 @@ import type { AppDeps } from '../../app.ts';
 import { currentUser } from '../security/routes.ts';
 import { findIdempotent, requestHash, storeIdempotent } from '../idempotency.ts';
 import { journalsForSource } from '../ledger/queries.ts';
-import { cancelDocument, postDocument, previewCancel, previewDocument, reissueDocument, type Actor } from './lifecycle.ts';
+import { cancelDocument, engineEnv, postDocument, previewCancel, previewDocument, reissueDocument, type Actor } from './lifecycle.ts';
 import type { DocTypeDef } from './registry.ts';
 
 const auth = { config: { permission: 'authenticated' } };
@@ -29,7 +29,7 @@ function parse<T>(schema: z.ZodType<T>, v: unknown): T {
 
 export function documentRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock, registry } = deps;
-  const env = { db, clock, notices: registry.notices() };
+  const env = engineEnv(deps);
 
   const typeOf = (key: string): DocTypeDef => {
     const d = registry.docType(key);

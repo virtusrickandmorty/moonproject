@@ -175,6 +175,13 @@ export interface NoticeTarget {
  */
 export type NoticeFn = (db: Db, target: NoticeTarget) => Issue[];
 
+/**
+ * Documents of this module that must be cancelled before a document of another module is (e.g. COL: a returned check's
+ * fund transfer before the deposit it came back from). Asked on every cancel and edit (`reissuing`), like the doc type's
+ * own dependents; it may also refuse with a conflict of its own when there is nothing to cancel first.
+ */
+export type DependentsFn = (db: Db, docType: string, documentId: string, reissuing: boolean) => { id: string; number: string }[];
+
 export interface ModuleDef {
   /** Module code, same as its folder name, e.g. "CASH". */
   code: string;
@@ -187,6 +194,8 @@ export interface ModuleDef {
   routes?(app: FastifyInstance, deps: AppDeps): void;
   /** Notices this module adds to every doc type's preview, record and cancel (warnings only). */
   notices?: NoticeFn[];
+  /** Its documents that stand on other modules' documents, so those are not cancelled first (DependentsFn). */
+  dependents?: DependentsFn[];
 }
 
 export function defineModule(m: ModuleDef): ModuleDef {
@@ -221,6 +230,11 @@ export class Registry {
   /** Every module's notices, in module order. */
   notices(): NoticeFn[] {
     return this.modules.flatMap((m) => m.notices ?? []);
+  }
+
+  /** Every module's dependents of other modules' documents, in module order. */
+  dependents(): DependentsFn[] {
+    return this.modules.flatMap((m) => m.dependents ?? []);
   }
 
   permissions(): (PermissionDef & { module: string })[] {

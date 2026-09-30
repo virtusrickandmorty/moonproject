@@ -10,6 +10,7 @@ import { creditMemoDoc } from './doctypes/credit-memo.ts';
 import { writeOffDoc } from './doctypes/write-off.ts';
 import { allowanceDoc } from './doctypes/allowance.ts';
 import { colRoutes } from './routes.ts';
+import { checkTransferDependents } from './checks.ts';
 
 export default defineModule({
   code: 'COL',
@@ -34,4 +35,6 @@ export default defineModule({
   docTypes: [collectionDoc, refundDoc, depositTransferDoc, cwtOnlyDoc, forfeitDoc, creditMemoDoc, writeOffDoc, allowanceDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: colRoutes,
+  // A check's deposit and return transfers (CASH) are undone in the order the check moved (checks.ts).
+  dependents: [checkTransferDependents],
 });

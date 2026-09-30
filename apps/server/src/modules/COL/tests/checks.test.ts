@@ -230,6 +230,50 @@ describe('a check the bank returned', () => {
     noBrokenInvariants();
   });
 
+  it('its fund transfers are undone only in the order the check moved, and never edited', async () => {
+    const owner = await env.as('owner');
+    const cancelTransfer = (id: string) => owner.post(`/api/docs/cash.transfer/${id}/cancel`, { reason: 'Recorded by mistake' }, idem());
+    const agrees = async () => {
+      const list = await onHand();
+      expect(list.ledgerCents).toBe(list.totalCents);
+      return list.checks.length;
+    };
+    const jo = await jobOrder(500_000);
+    const id = (await collect({ customerId: c.school, applications: [{ jobOrderId: jo, amountCents: 500_000 }], tenders: [check('5005', 500_000)] }, 500_000)).json().id;
+    const k = { collectionId: id, lineNo: 1 };
+    const first = (await deposit([k])).json().transfer as { id: string; number: string };
+    const back = (await accountant.post('/api/col/checks/return', { ...k, reason: 'Drawn against insufficient funds', cancelCollection: false }, idem())).json().transfer as { id: string; number: string };
+    const second = (await deposit([k])).json().transfer as { id: string; number: string };
+
+    // The first deposit stands under its return, and the return under the second deposit.
+    let r = await cancelTransfer(first.id);
+    expect([r.statusCode, r.json().code, r.json().message]).toEqual([409, 'HAS_DEPENDENTS', `Cancel these first: ${back.number}.`]);
+    r = await cancelTransfer(back.id);
+    expect([r.statusCode, r.json().code, r.json().message]).toEqual([409, 'HAS_DEPENDENTS', `Cancel these first: ${second.number}.`]);
+    // Editing a transfer that carried a check would leave the check behind on the cancelled one.
+    const input = { fromCashPlaceId: CHECKS, toCashPlaceId: BDO, amountSentCents: 500_000, amountReceivedCents: 500_000 };
+    r = await owner.post(`/api/docs/cash.transfer/${second.id}/reissue`, { input, expectedTotalCents: 500_000, reason: 'Deposited to the wrong bank' }, idem());
+    expect([r.statusCode, r.json().code]).toEqual([409, 'CHECK_TRANSFER']);
+
+    // Undone newest first, the check and 1103 agree at every step.
+    expect((await cancelTransfer(second.id)).statusCode).toBe(200);
+    expect(await agrees()).toBe(1);
+    expect((await cancelTransfer(back.id)).statusCode).toBe(200);
+    expect(await agrees()).toBe(0);
+    expect((await accountant.get('/api/col/checks/at-bank')).json()).toMatchObject([{ checkNumber: '5005', deposit: { number: first.number } }]);
+    expect((await cancelTransfer(first.id)).statusCode).toBe(200);
+    expect(await agrees()).toBe(1);
+
+    // A return whose collection was cancelled with it stays: the collection's mirror already took the check out of 1103.
+    await deposit([k]);
+    const gone = (await accountant.post('/api/col/checks/return', { ...k, reason: 'Account closed per the bank', cancelCollection: true }, idem())).json().transfer as { id: string };
+    r = await cancelTransfer(gone.id);
+    expect([r.statusCode, r.json().code]).toEqual([409, 'CHECK_GONE']);
+    expect(await agrees()).toBe(0);
+    expect(ledger1103()).toBe(0);
+    noBrokenInvariants();
+  });
+
   it('property: whatever is collected, deposited, returned and cancelled, 1103 on the ledger equals the checks-on-hand list', async () => {
     const jos = [await jobOrder(50_000_000), await jobOrder(50_000_000, c.other)];
     const owner = await env.as('owner');
@@ -239,6 +283,7 @@ describe('a check the bank returned', () => {
       fc.record({ kind: fc.constant('deposit' as const), pick: fc.array(fc.nat(), { minLength: 1, maxLength: 3 }), bank: fc.constantFrom('BDO', 'CHINA') }),
       fc.record({ kind: fc.constant('return' as const), pick: fc.nat(), charge: fc.integer({ min: 0, max: 30_000 }), cancel: fc.boolean() }),
       fc.record({ kind: fc.constant('cancel' as const), pick: fc.nat() }),
+      fc.record({ kind: fc.constant('undo' as const), pick: fc.nat() }),
     );
     await fc.assert(
       fc.asyncProperty(fc.array(op, { minLength: 1, maxLength: 8 }), async (ops) => {
@@ -260,6 +305,15 @@ describe('a check the bank returned', () => {
             const tenders = env.db.prepare('SELECT COUNT(*) FROM col_tenders WHERE document_id = ?').pluck().get(k.collectionId) as number;
             const r = await owner.post('/api/col/checks/return', { ...k, ...(o.charge ? { chargeCents: o.charge } : {}), reason: 'Drawn against insufficient funds', cancelCollection: o.cancel && tenders === 1 }, idem());
             expect(r.statusCode, r.body).toBe(200);
+          } else if (o.kind === 'undo') {
+            // Any deposit's or return's transfer still standing: cancelled, or refused for what stands on it.
+            const standing = env.db
+              .prepare(`SELECT DISTINCT x.transfer_id FROM (SELECT transfer_id FROM col_check_deposits UNION ALL SELECT transfer_id FROM col_check_returns) x
+                        JOIN documents d ON d.id = x.transfer_id WHERE d.status = 'posted' ORDER BY d.number`)
+              .pluck().all() as string[];
+            if (standing.length === 0) continue;
+            const r = await owner.post(`/api/docs/cash.transfer/${standing[o.pick % standing.length]!}/cancel`, { reason: 'Recorded by mistake' }, idem());
+            expect([200, 409], r.body).toContain(r.statusCode);
           } else {
             const list = (await onHand()).checks;
             if (list.length === 0) continue;

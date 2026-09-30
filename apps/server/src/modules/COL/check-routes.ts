@@ -5,7 +5,7 @@ import { AppError } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
-import { previewDocument, type Actor, type EngineEnv } from '../../engine/documents/lifecycle.ts';
+import { engineEnv, previewDocument, type Actor } from '../../engine/documents/lifecycle.ts';
 import { findIdempotent, requestHash, storeIdempotent } from '../../engine/idempotency.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { placesFor } from '../CASH/public.ts';
@@ -16,7 +16,7 @@ const depositPost = depositBody.extend({ expectedTotalCents: z.number().int() })
 
 export function checkRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock, registry } = deps;
-  const env: EngineEnv = { db, clock };
+  const env = engineEnv(deps);
   const actorOf = (req: FastifyRequest): Actor => ({ userId: currentUser(req).userId, permissions: currentUser(req).permissions });
   const who = (req: FastifyRequest) => ({ userId: currentUser(req).userId, at: stamp(clock) });
 

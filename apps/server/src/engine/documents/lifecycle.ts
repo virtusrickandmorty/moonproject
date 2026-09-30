@@ -8,7 +8,7 @@ import { CLOCK_TOLERANCE_MS, clockBackwardsError, stamp, today, type Clock } fro
 import { appendAudit, lastAuditAt } from '../audit.ts';
 import { ensureSeries, allocateNumber } from '../numbering.ts';
 import { postJournal, resolveDraft, reverseJournalOf } from '../ledger/post.ts';
-import type { DocContext, DocTypeDef, NoticeFn, NoticeTarget } from './registry.ts';
+import type { DependentsFn, DocContext, DocTypeDef, NoticeFn, NoticeTarget, Registry } from './registry.ts';
 
 export interface Actor {
   userId: string;
@@ -20,6 +20,13 @@ export interface EngineEnv {
   clock: Clock;
   /** The modules' notices (Registry.notices()), run after validate on preview, record and cancel. */
   notices?: readonly NoticeFn[];
+  /** The modules' dependents of other modules' documents (Registry.dependents()), asked on cancel and edit. */
+  dependents?: readonly DependentsFn[];
+}
+
+/** The engine's view of the app: the database, the clock, and every module's notices and cross-module dependents. */
+export function engineEnv(deps: { db: Db; clock: Clock; registry: Pick<Registry, 'notices' | 'dependents'> }): EngineEnv {
+  return { db: deps.db, clock: deps.clock, notices: deps.registry.notices(), dependents: deps.registry.dependents() };
 }
 
 export const BACKDATE_PERMISSION = 'acc.backdate';
@@ -194,7 +201,7 @@ function cancelInTx(env: EngineEnv, def: DocTypeDef, actor: Actor, id: string, r
   if (!d || d.doc_type !== def.key) throw notFound('The document');
   if (d.status !== 'posted') throw conflict('ALREADY_CANCELLED', `${d.number} is already cancelled.`);
   // On reissue, children are moved to the replacement by relinkOnReissue instead.
-  const deps = reissuing && def.relinkOnReissue ? [] : (def.dependents?.(db, id) ?? []);
+  const deps = reissuing && def.relinkOnReissue ? [] : [...(def.dependents?.(db, id) ?? []), ...(env.dependents ?? []).flatMap((f) => f(db, def.key, id, reissuing))];
   if (deps.length > 0) {
     throw conflict('HAS_DEPENDENTS', `Cancel these first: ${deps.map((x) => x.number).join(', ')}.`, deps);
   }

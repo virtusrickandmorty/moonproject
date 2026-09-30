@@ -205,8 +205,8 @@ export function balanceSheet(db: Db, asOf: string) {
   const [totalAssetsCents, totalLiabilitiesCents, totalEquityCents] = sections.map((s) => s.totalCents) as [number, number, number];
   const totalLiabilitiesAndEquityCents = totalLiabilitiesCents + totalEquityCents;
   // Trade receivables less the allowance for credit losses (1201 − 1209); the two lines also sit under Receivables.
-  const balanceOf = (role: string) => { const a = accounts.find((x) => x.roleKey === role); return a ? (balances.get(a.id)?.netCents ?? 0) : 0; };
-  const tradeCents = balanceOf('AR_TRADE'); const allowanceCents = -balanceOf('AR_ALLOWANCE');
+  const roleBalance = (role: string) => { const a = accounts.find((x) => x.roleKey === role); return a ? (balances.get(a.id)?.netCents ?? 0) : 0; };
+  const tradeCents = roleBalance('AR_TRADE'); const allowanceCents = -roleBalance('AR_ALLOWANCE');
   const receivables = { tradeCents, allowanceCents, netCents: tradeCents - allowanceCents };
   return { asOf, yearStart, sections, receivables, currentYearEarningsCents, earlierYearsEarningsCents, earlierYearsDividendsCents, totalAssetsCents, totalLiabilitiesCents,
     totalEquityCents, totalLiabilitiesAndEquityCents, differenceCents: totalAssetsCents - totalLiabilitiesAndEquityCents,
