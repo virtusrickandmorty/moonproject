@@ -6,7 +6,7 @@
  */
 import { useState } from 'react';
 import { api, taxRegisterPath, type Me, type WithholdingRegister } from '../../api.ts';
-import { Button, Dialog, Notice, Panel, useAction } from '../../components/ui.tsx';
+import { Button, Dialog, Notice, Panel, useAction, Pager } from '../../components/ui.tsx';
 import { Excel, RangeForm, RegisterTable, customerColumns, pesos, useRangeReport } from './ReportParts.tsx';
 import { canMarkReceived, certificateCell } from './opening.ts';
 import { ledgerWarnings, pendingWords, quarterSoFar } from './reports.ts';
@@ -30,6 +30,7 @@ export function SalesRegister({ me }: { me: Me }) {
             { head: 'VAT', amount: true, cell: (x) => pesos(x.vatCents), total: pesos(d.totals.vatCents) },
             { head: 'Total', amount: true, cell: (x) => pesos(x.totalCents), total: pesos(d.totals.totalCents) },
           ]} />
+          <Pager page={d.page} onOffset={r.goto} />
           <Excel url={taxRegisterPath('sales', d.from, d.to)} />
         </Panel>
       )}
@@ -79,6 +80,7 @@ export function WithholdingReceived({ me }: { me: Me }) {
             { head: 'CWT', amount: true, cell: (x) => pesos(x.cwtCents), total: pesos(d.totals.cwtCents) },
             { head: 'VAT withheld', amount: true, cell: (x) => pesos(x.vatWithheldCents), total: pesos(d.totals.vatWithheldCents) },
           ]} />
+          <Pager page={d.page} onOffset={r.goto} />
           <Excel url={taxRegisterPath('withholding-received', d.from, d.to)} />
         </Panel>
       )}

@@ -48,7 +48,9 @@ export function productionBoard(db: Db) {
 }
 
 export function productionActivity(db: Db, from: string, to: string) {
-  const source=(productionReportRows(db,from,to) as AnyRow[]).map((r)=>({ ...r,employeeName:employee(db,String(r.employeeId))?.name??String(r.employeeId),documentType:'prd.entry',documentPath:documentPath('prd.entry',String(r.documentId)) }));
+  const names=new Map<string,string>(); // each worker is looked up once, not once per entry
+  const nameOf=(id:string)=>names.get(id)??names.set(id,employee(db,id)?.name??id).get(id)!;
+  const source=(productionReportRows(db,from,to) as AnyRow[]).map((r)=>({ ...r,employeeName:nameOf(String(r.employeeId)),documentType:'prd.entry',documentPath:documentPath('prd.entry',String(r.documentId)) }));
   return { from,to,throughput:group(source,['stepId','stepCode','stepName'],['pieces']),workerOutput:group(source,['employeeId','employeeName','stepName'],['pieces']),source };
 }
 

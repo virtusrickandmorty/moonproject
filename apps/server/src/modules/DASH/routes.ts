@@ -5,6 +5,7 @@ import type { AppDeps } from '../../app.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { tx } from '../../platform/db/driver.ts';
+import { pageAsked } from '../../platform/paging.ts';
 import { home, notifications } from './home.ts';
 import { ownerHealth } from './health.ts';
 
@@ -15,7 +16,14 @@ export function dashRoutes(app: FastifyInstance, { db, clock, registry, practice
   const where = { practice, host };
   app.get('/api/dash/home', view, async (req) => home(db, clock, registry, currentUser(req), where));
   app.get('/api/dash/owner-health', { config: { permission: 'dash.home.owner' } }, async () => ownerHealth(db, today(clock)));
-  app.get('/api/dash/notifications', view, async (req) => notifications(db, clock, registry, currentUser(req), where));
+  // A page of them when asked (?limit&offset, and ?unread=1 for only the unread ones): the whole list can be thousands of lines.
+  app.get('/api/dash/notifications', view, async (req) => {
+    const q = req.query as Record<string, unknown>;
+    const all = notifications(db, clock, registry, currentUser(req), where);
+    const asked = pageAsked(q);
+    if (!asked) return all;
+    return (q.unread === '1' ? all.filter((n) => !n.read) : all).slice(asked.offset, asked.offset + asked.limit);
+  });
   app.post('/api/dash/notifications/read', view, async (req) => {
     const { id } = readInput.parse(req.body);
     const user = currentUser(req);

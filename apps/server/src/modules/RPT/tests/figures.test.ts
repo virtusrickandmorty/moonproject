@@ -131,5 +131,10 @@ describe('RPT report figures', () => {
       for (let page = 1; page < screen.pages.length; page++) expect(screen.pages[page].broughtForward).toEqual(screen.pages[page - 1].carriedForward);
       expect(csvTotal((await owner.get(`/api/rpt/bir-books/${book}?from=${from}&to=${to}&format=csv`)).body, 'cashCents')).toBe(screen.totals.cashCents);
     }
+    // The BIR general journal's file is the RPT general journal's, line for line (it once answered 500).
+    const birJournal = await owner.get(`/api/rpt/bir-books/general-journal?from=${from}&to=${to}&format=csv`);
+    expect(birJournal.statusCode).toBe(200);
+    expect(birJournal.body).toBe((await owner.get(`/api/rpt/journal?from=${from}&to=${to}&format=csv`)).body);
+    expect(birJournal.body.split(/\r?\n/).length).toBeGreaterThan(10);
   });
 });

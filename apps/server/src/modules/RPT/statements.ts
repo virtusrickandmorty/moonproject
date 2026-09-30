@@ -97,18 +97,20 @@ function chart(db: Db): ChartRow[] {
 
 /** Debit-positive net and line count per account, from sealed journals dated from..to (no lower bound when from is null). */
 function movements(db: Db, from: string | null, to: string): Map<number, Movement> {
+  // The journals of the dates come first (CROSS JOIN fixes the order), then each one's lines: without a date index on the
+  // journals SQLite read every line and looked its journal up.
   const rows = db.prepare(`SELECT l.account_id AS accountId, SUM(l.debit_cents - l.credit_cents) AS netCents, COUNT(*) AS lineCount
-    FROM journal_lines l JOIN journals j ON j.id = l.journal_id
-    WHERE j.sealed = 1 AND (@from IS NULL OR j.business_date >= @from) AND j.business_date <= @to
-    GROUP BY l.account_id`).all({ from, to }) as ({ accountId: number } & Movement)[];
+    FROM journals j CROSS JOIN journal_lines l ON l.journal_id = j.id
+    WHERE j.sealed = 1 AND ${from === null ? 'j.business_date <= @to' : 'j.business_date BETWEEN @from AND @to'}
+    GROUP BY l.account_id`).all(from === null ? { to } : { from, to }) as ({ accountId: number } & Movement)[];
   return new Map(rows.map((r) => [r.accountId, r]));
 }
 
-/** Net income (credit-positive) of every income statement account, dated from..to. */
-function netIncome(db: Db, accounts: ChartRow[], from: string | null, to: string): number {
+/** Net income (credit-positive) of every income statement account, from movements already read. */
+function netIncome(accounts: ChartRow[], moved: Map<number, Movement>, before?: Map<number, Movement>): number {
   const codes = new Map(accounts.map((a) => [a.id, a.code]));
   let net = 0;
-  for (const [id, m] of movements(db, from, to)) if (!onBalanceSheet(codes.get(id) ?? '')) net -= m.netCents;
+  for (const [id, m] of moved) if (!onBalanceSheet(codes.get(id) ?? '')) net -= m.netCents - (before?.get(id)?.netCents ?? 0);
   return net;
 }
 
@@ -172,11 +174,13 @@ export function balanceSheet(db: Db, asOf: string) {
   const balances = movements(db, null, asOf);
   const year = Number(asOf.slice(0, 4));
   const yearStart = `${year}-01-01`;
-  const currentYearEarningsCents = netIncome(db, accounts, yearStart, asOf);
-  const earlierYearsEarningsCents = netIncome(db, accounts, null, `${year - 1}-12-31`);
+  // The current year's earnings are the movement to asOf less the movement to the year before's end: two reads, not three.
+  const before = movements(db, null, `${year - 1}-12-31`);
+  const currentYearEarningsCents = netIncome(accounts, balances, before);
+  const earlierYearsEarningsCents = netIncome(accounts, before);
   const dividends = accounts.find((a) => a.roleKey === 'DIVIDENDS_DECLARED');
   // Credit-positive, like the equity section: dividends declared before 1 January and not closed to 3201.
-  const earlierYearsDividendsCents = dividends ? 0 - (movements(db, null, `${year - 1}-12-31`).get(dividends.id)?.netCents ?? 0) : 0;
+  const earlierYearsDividendsCents = dividends ? 0 - (before.get(dividends.id)?.netCents ?? 0) : 0;
   const currentYear = accounts.find((a) => a.roleKey === 'CURRENT_YEAR_EARNINGS');
   const retained = accounts.find((a) => a.roleKey === 'RETAINED_EARNINGS') ?? currentYear;
   const entry = (a: ChartRow, side: Side, amountCents: number, computed = false): Entry => ({ accountId: a.id, code: a.code, name: a.name,

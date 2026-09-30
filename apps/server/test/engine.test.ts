@@ -2,7 +2,8 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { createTestEnv, createUser, type TestEnv } from './helpers.ts';
 import { tx } from '../src/platform/db/driver.ts';
 import { postJournal, reverseJournalOf } from '../src/engine/ledger/post.ts';
-import { appendAudit, verifyAuditChain } from '../src/engine/audit.ts';
+import { createHash } from 'node:crypto';
+import { appendAudit, canonicalJson, verifyAuditChain } from '../src/engine/audit.ts';
 import { runInvariants } from '../src/engine/ledger/invariants.ts';
 import { accountBalance, trialBalance } from '../src/engine/ledger/queries.ts';
 import { resolveAccount } from '../src/engine/ledger/accounts.ts';
@@ -91,6 +92,21 @@ describe('database rules (PLAN C5, D9)', () => {
     env.db.exec('DROP TRIGGER audit_log_no_update');
     env.db.prepare(`UPDATE audit_log SET data = '{"i":9}' WHERE seq = 2`).run();
     expect(verifyAuditChain(env.db)).toBe(2);
+  });
+
+  it('hashes each audit row as the canonical JSON of the row, so chains written before the faster hash still verify', () => {
+    tx(env.db, () => {
+      appendAudit(env.db, { at: '2026-09-28T10:00:00.000+08:00', userId, action: 'say "hi"', entityType: 'y', entityId: 'e\u00f1-1', data: { note: 'line\nbreak' } });
+      appendAudit(env.db, { at: 't', userId: null, action: 'x', entityType: 'y', data: {} });
+    });
+    let prev = '0'.repeat(64);
+    for (const r of env.db.prepare('SELECT seq, at, user_id, action, entity_type, entity_id, data, prev_hash, row_hash FROM audit_log ORDER BY seq').all() as {
+      seq: number; at: string; user_id: string | null; action: string; entity_type: string; entity_id: string | null; data: string; prev_hash: string; row_hash: string;
+    }[]) {
+      const { prev_hash: _p, row_hash: rowHash, ...row } = r;
+      expect(rowHash).toBe(createHash('sha256').update(prev + canonicalJson(row)).digest('hex'));
+      prev = rowHash;
+    }
   });
 
   it('passes every invariant on a fresh database', () => {

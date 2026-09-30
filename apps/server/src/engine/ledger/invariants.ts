@@ -21,7 +21,8 @@ function check(id: string, problems: string[]): InvariantResult {
   return { id, ok: problems.length === 0, problems };
 }
 
-export function runInvariants(db: Db): InvariantResult[] {
+/** `auditBrokenAt`: the result of verifyAuditChain when the caller has just run it, so the whole chain is not hashed twice. */
+export function runInvariants(db: Db, known: { auditBrokenAt?: number | null } = {}): InvariantResult[] {
   const out: InvariantResult[] = [];
 
   // L1: every journal balances, every journal is sealed, and the TB balances.
@@ -94,7 +95,7 @@ export function runInvariants(db: Db): InvariantResult[] {
   out.push(check('L7', l7));
 
   // L12: audit chain.
-  const broken = verifyAuditChain(db);
+  const broken = known.auditBrokenAt === undefined ? verifyAuditChain(db) : known.auditBrokenAt;
   out.push(check('L12', broken === null ? [] : [`Audit chain breaks at entry ${broken}`]));
 
   return out;
