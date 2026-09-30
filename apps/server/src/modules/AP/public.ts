@@ -5,7 +5,7 @@
 import { divRoundHalfAway } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import type { EwtClass } from '../../engine/settings.ts';
-import { categoryPurchaseClass, type GoodsOrServices } from '../EXP/public.ts';
+import { categoryIsPurchase, categoryPurchaseClass, type GoodsOrServices } from '../EXP/public.ts';
 import { receivedQty, type PurchaseCost } from '../PUR/public.ts';
 export { supplierBalances, supplierLedger } from './ledger.ts';
 
@@ -32,9 +32,10 @@ export interface BillTaxFacts {
   ewtClass: EwtClass | null; ewtRateBp: number; ewtBaseCents: number; ewtCents: number;
   /**
    * Per line: what it bought, and whether that is goods or services (supplies and freight-in are goods, subcontracting
-   * is a service, an expense category says which), its cost before VAT (what the journal debits) and its share of the input VAT.
+   * is a service, an expense category says which), its cost before VAT (what the journal debits) and its share of the input VAT,
+   * and whether it buys anything (an expense category of taxes, licenses or penalties does not).
    */
-  lines: { kind: BillLineKind; bought: GoodsOrServices; costCents: number; vatCents: number }[];
+  lines: { kind: BillLineKind; bought: GoodsOrServices; isPurchase: boolean; costCents: number; vatCents: number }[];
 }
 
 export function billTaxFacts(db: Db, documentId: string): BillTaxFacts | undefined {
@@ -50,9 +51,10 @@ export function billTaxFacts(db: Db, documentId: string): BillTaxFacts | undefin
       `SELECT CASE WHEN supply_id IS NOT NULL THEN 'supply' WHEN category_id IS NOT NULL THEN 'category' ELSE purchase END AS kind, category_id AS categoryId,
          amount_cents - vat_cents AS costCents, vat_cents AS vatCents FROM ap_bill_lines WHERE document_id = ? ORDER BY line_no`,
     )
-    .all(documentId) as (Omit<BillTaxFacts['lines'][number], 'bought'> & { categoryId: number | null })[];
+    .all(documentId) as (Omit<BillTaxFacts['lines'][number], 'bought' | 'isPurchase'> & { categoryId: number | null })[];
   const lines = rows.map(({ categoryId, ...l }) => ({
     ...l,
+    isPurchase: categoryId === null || categoryIsPurchase(db, categoryId),
     bought: l.kind === 'category' ? (categoryPurchaseClass(db, categoryId!) ?? 'services') : l.kind === 'subcontract' ? ('services' as const) : ('goods' as const),
   }));
   return { ...b, lines };

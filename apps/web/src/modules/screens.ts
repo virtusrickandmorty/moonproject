@@ -83,6 +83,7 @@ import { VoucherForm } from './EXP/VoucherForm.tsx';
 import { OfficerForm, OwnerMoneyForm } from './EQ/forms.tsx';
 import { OpeningForm as OpeningOfficerForm } from './EQ/OpeningForm.tsx';
 import { VatCloseForm } from './TAX/VatCloseForm.tsx';
+import { UncollectedVatForm, UncollectedVatRecoveryForm } from './TAX/UncollectedVatForm.tsx';
 import { JvForm } from './ACC/JvForm.tsx';
 import { OpeningForm } from './ACC/OpeningForm.tsx';
 import { OpeningBalances } from './ACC/OpeningBalances.tsx';
@@ -287,6 +288,8 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'eq.opening': OpeningOfficerForm,
   'acc.jv': JvForm,
   'tax.vat_close': VatCloseForm,
+  'tax.uncollected_vat': UncollectedVatForm,
+  'tax.uncollected_vat_recovery': UncollectedVatRecoveryForm,
   'tax.bir_payment': BirPaymentForm,
   'acc.opening': OpeningForm,
   'loan.loan': LoanForm,

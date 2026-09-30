@@ -52,6 +52,9 @@ export const SETTINGS = {
   'acc.bad_debt_method': {
     label: 'Bad debts: written off directly to 6270, or provided for on 1209 and written off against it (ACC-26; default direct)',
     schema: z.enum(['direct', 'allowance']),
+  'tax.uncollected_vat_credit': {
+    label: 'Claim output VAT on uncollected receivables once the agreed time to pay has passed (EOPT, RMC 65-2024) (ACC-27; default no)',
+    schema: z.boolean(),
   },
   'tax.interest_final_tax_bp': {
     label: 'Final tax the bank withholds on interest, in basis points (2000 = 20%, PLAN D5 BANK-ADJ)',

@@ -59,6 +59,8 @@ export const DOC_TITLES = [
   'Cash Advance Write-off',
   'Remittance',
   'VAT Close',
+  'VAT on Uncollected Receivable',
+  'VAT on Recovered Receivable',
   'BIR Payment',
   'Opening Balances',
   // MIG-02 part 2: each module's opening document (key <module>.opening), dated the cut-over date (ACC/public.ts).
