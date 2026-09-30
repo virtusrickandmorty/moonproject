@@ -12,6 +12,10 @@ import { apAging, purchases, purchaseOrders, receivedNotBilled } from './supplie
 import { cashPosition, transfers, cashCounts, assetSchedule } from './cash-assets.ts';
 import { lateEntries, cancellations, exceptions, signIns } from './control.ts';
 import { cashFlowStatement } from './cash-flow.ts';
+import { monthlyOwnersPack, monthlyOwnersPackBody } from './monthly-pack.ts';
+import { renderReportPrint, type Profile } from '../PRT/public.ts';
+import { currentUser } from '../../engine/security/routes.ts';
+import { stamp, today } from '../../platform/clock.ts';
 
 function date(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new AppError('BAD_DATE', 'Use a date in YYYY-MM-DD format.', 400);
@@ -59,9 +63,19 @@ function sectionRows(s: StatementSection, comparative = false): CsvCell[][] {
 const STATEMENT_HEAD = ['Section', 'Account', 'Line', 'Amount PHP'];
 
 export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
-  const { db } = deps;
+  const { db, clock } = deps;
   birBookRoutes(app, deps);
   payrollProductionRoutes(app, deps);
+  app.post('/api/rpt/monthly-owners-pack', { config: { permission: 'rpt.books.view' } }, async (req) => {
+    const month = (req.body as { month?: unknown } | null)?.month;
+    if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
+      throw new AppError('BAD_MONTH', 'Pick a month in YYYY-MM format.', 400);
+    const profile = db.prepare('SELECT * FROM prt_company_profile WHERE id = 1').get() as Profile | undefined;
+    if (!profile) throw new AppError('COMPANY_PROFILE_REQUIRED', 'An owner must complete the company profile before printing.', 409);
+    const data = monthlyOwnersPack(db, month), user = currentUser(req);
+    return { data, html: renderReportPrint("Monthly Owners' Pack", monthlyOwnersPackBody(data), profile,
+      today(clock), user.displayName, stamp(clock)) };
+  });
   app.get('/api/rpt/deposits-held', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const result = depositsHeld(db, date(q.asOf));

@@ -50,6 +50,7 @@ import { GeneralJournal, GeneralLedger, TrialBalance } from './RPT/Books.tsx';
 import { BirBooks } from './RPT/BirBooks.tsx';
 import { BalanceSheet, IncomeStatement } from './RPT/Statements.tsx';
 import { CashFlow } from './RPT/CashFlow.tsx';
+import { MonthlyOwnersPack } from './RPT/MonthlyOwnersPack.tsx';
 import { ArAging, CustomerStatement } from './RPT/Receivables.tsx';
 import { DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
 import { PayrollRegister, PieceWork, LaborCost, ThirteenthRegister, ProductionStatus, Throughput, WorkerOutput, LeadTime, LateJobs, JobMargin } from './RPT/PayrollProduction.tsx';
@@ -171,6 +172,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/rpt/income-statement': IncomeStatement,
   '/rpt/balance-sheet': BalanceSheet,
   '/rpt/cash-flow': CashFlow,
+  '/rpt/monthly-owners-pack': MonthlyOwnersPack,
   '/rpt/ar-aging': ArAging,
   '/rpt/customer-statement': CustomerStatement,
   '/rpt/deposits-held': DepositsHeld,
