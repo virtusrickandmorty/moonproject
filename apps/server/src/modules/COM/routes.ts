@@ -16,7 +16,7 @@ import { statementMessage } from './text.ts';
 import { mailTransport } from './transport.ts';
 
 const statementInput = z.object({ customerId: z.string().min(1).max(64), from: z.string(), to: z.string() }).strict();
-const listQuery = z.object({ status: z.enum(['queued', 'sent', 'failed']).optional(), limit: z.coerce.number().int().min(1).max(500).optional() });
+const listQuery = z.object({ status: z.enum(['queued', 'sent', 'failed']).optional(), kind: z.enum(['customer', 'payslip']).optional(), limit: z.coerce.number().int().min(1).max(500).optional() });
 const TICK_MS = 60_000;
 
 export function comRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -49,7 +49,7 @@ export function comRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get('/api/com/outbox', { config: { permission: 'com.outbox.view' } }, async (req: FastifyRequest) => {
     const q = listQuery.parse(req.query);
-    return outboxList(db, q.status, q.limit);
+    return outboxList(db, q.status, q.limit, q.kind);
   });
 
   app.post<{ Params: { id: string } }>('/api/com/outbox/:id/resend', { config: { permission: 'com.outbox.resend' } }, async (req) => {

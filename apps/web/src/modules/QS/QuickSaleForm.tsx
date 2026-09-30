@@ -10,7 +10,7 @@ import { navigate } from '../../router.tsx';
 import { Button, Dialog, Field, JournalTable, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { emptyTender, tendersToInput, tendersToRows, type TenderInput, type TenderRow } from '../COL/money.ts';
+import { checkPlaceIds, emptyTender, tendersToInput, tendersToRows, type TenderInput, type TenderRow } from '../COL/money.ts';
 import { CustomerPicker, EditGate, Errors, Figures, TenderRows, useLive, type Picked } from '../COL/parts.tsx';
 import { KINDS, emptyLine, linesToInput, linesToRows, type LineInput, type LineRow } from './lines.ts';
 
@@ -91,7 +91,7 @@ export function QuickSaleForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
   const sold = linesToInput(rows);
   // One payment with no amount typed pays the exact total: pick where the money went and record.
   const exact = tenders.length === 1 && !tenders[0]!.amount.trim() && sold.totalCents > 0 ? [{ ...tenders[0]!, amount: formatPesos(sold.totalCents) }] : tenders;
-  const pay = tendersToInput(exact);
+  const pay = tendersToInput(exact, undefined, checkPlaceIds(places));
   const errors = [
     ...(customer ? [] : ['Pick the customer (or Walk-in).']),
     ...sold.errors,

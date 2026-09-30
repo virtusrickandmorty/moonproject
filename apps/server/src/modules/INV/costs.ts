@@ -4,8 +4,8 @@
  */
 import { divRoundHalfAway } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
-import { latestBillUnitCost } from '../AP/public.ts';
-import { activeSuppliesOf, latestPoUnitCost, type CountableSupply, type SupplyUnit } from '../PUR/public.ts';
+import { latestPurchaseCost, type LatestPurchaseCost, type PurchaseCostSource } from '../AP/public.ts';
+import { activeSuppliesOf, type CountableSupply, type SupplyUnit } from '../PUR/public.ts';
 
 export const CATEGORIES = ['materials', 'ready_made'] as const;
 export type Category = (typeof CATEGORIES)[number];
@@ -20,16 +20,10 @@ export const qtyScale = (unit: SupplyUnit) => (MILLI_UNITS.has(unit) ? 1000 : 1)
 /** Quantity × cost per unit, rounded to the centavo per line. */
 export const lineValue = (qty: number, unitCostCents: number, unit: SupplyUnit) => divRoundHalfAway(qty * unitCostCents, qtyScale(unit));
 
-export type CostSource = 'bill' | 'po' | 'catalogue';
-export interface DefaultCost { unitCostCents: number; source: CostSource; sourceNumber: string | null }
+export type CostSource = PurchaseCostSource;
+export type DefaultCost = LatestPurchaseCost;
 
-export function defaultCost(db: Db, s: CountableSupply, asOf: string): DefaultCost {
-  const bill = latestBillUnitCost(db, s.id, asOf);
-  if (bill) return { unitCostCents: bill.unitCostCents, source: 'bill', sourceNumber: bill.number };
-  const po = latestPoUnitCost(db, s.id, asOf);
-  if (po) return { unitCostCents: po.unitCostCents, source: 'po', sourceNumber: po.number };
-  return { unitCostCents: s.lastPurchaseCostCents, source: 'catalogue', sourceNumber: null };
-}
+export const defaultCost = (db: Db, s: CountableSupply, asOf: string): DefaultCost => latestPurchaseCost(db, s, asOf);
 
 /** "2026-02-14" -> "2026-02-28". */
 export function monthEndOf(date: string): string {
@@ -47,10 +41,11 @@ export function previousMonthEnd(date: string): string {
 /** One row of the count sheet: an active supply of the category with its unit and default cost on the count date. */
 export interface SheetRow {
   supplyId: string; name: string; unit: SupplyUnit; milliUnits: boolean; defaultCostCents: number; costSource: CostSource; costSourceNumber: string | null;
+  costSourceDate: string | null;
 }
 
 export const countSheet = (db: Db, category: Category, asOf: string): SheetRow[] =>
   activeSuppliesOf(db, category).map((s) => {
     const d = defaultCost(db, s, asOf);
-    return { supplyId: s.id, name: s.name, unit: s.unit, milliUnits: MILLI_UNITS.has(s.unit), defaultCostCents: d.unitCostCents, costSource: d.source, costSourceNumber: d.sourceNumber };
+    return { supplyId: s.id, name: s.name, unit: s.unit, milliUnits: MILLI_UNITS.has(s.unit), defaultCostCents: d.unitCostCents, costSource: d.source, costSourceNumber: d.sourceNumber, costSourceDate: d.sourceDate };
   });

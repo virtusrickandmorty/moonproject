@@ -11,16 +11,20 @@
 2. Type the **Registered name**, **Trade name**, **TIN**, and **Registered address**.
 3. Check the **VAT registered** box if the business is VAT registered.
 4. Type **Your password to confirm this change**.
-5. Click **Save details**.
+5. Click **Save details**. All four boxes must be filled in.
+
+**To choose the paper for the loose-leaf books:**
+1. On the same screen, under **Loose-leaf books of accounts**, pick the **Paper**: **A4 portrait** or **Long bond paper (8.5 × 13 in)**.
+2. Type **Your password to confirm this change** and click **Save paper**.
 
 **To test the printers:**
 1. On the **Admin** menu, click **Printer test pack**.
-2. To test the A4 pages, click **Print all A4**. Each sample prints with a red "TEST PRINT, NOT A REAL DOCUMENT" stamp.
+2. To test the A4 pages, click **Print all A4**. Each sample prints with a "TEST PRINT, NOT A REAL DOCUMENT" stamp.
 3. For other pages, look under the **Print checklist**. Click **Print** next to each form to send it to the printer.
 4. Check the printed pages. If they look good, check the **Printed well** box next to each one.
 
 ### What the system does for you
-The system puts your company print details on every document you print. On the quotation, job order, release slip, purchase order, collection receipt and credit memo, it prints the line "THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX."
+The system puts your company print details on every document you print. On the quotation, job order, release slip, purchase order, collection receipt, credit memo and payment voucher, it prints the line "THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX."
 
 Every time you print a document, the system counts it. The footer reads "Original print · Copy 1" the first time, then "REPRINT no. 1 · Copy 2" and so on.
 

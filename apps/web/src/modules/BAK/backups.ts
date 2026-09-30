@@ -79,7 +79,15 @@ export function factRows(c: BackupCheck): [label: string, value: string][] {
     ['Books up to', c.lastBusinessDate ?? 'Nothing posted yet'],
     ['Trial balance', `Debits ${formatPeso(c.trialBalance.totalDebitCents)}, credits ${formatPeso(c.trialBalance.totalCreditCents)}`],
     ['Updates to apply', c.toApply.length ? `${c.toApply.length}: ${c.toApply.join(', ')}` : 'None: made by this version'],
+    ...(c.attachments ? [['Attached files', attachmentWords(c.attachments)] as [string, string]] : []),
   ];
+}
+
+/** The attached files a backup holds, and any it lacks or has changed (the drill fails on those; a restore leaves them out). */
+export function attachmentWords(a: NonNullable<BackupCheck['attachments']>): string {
+  const bad = a.missing.length + a.changed.length;
+  const all = a.files ? `${count(a.files, 'file')}, ${sizeWords(a.bytes)}` : 'None';
+  return bad ? `${all}; ${count(bad, 'file')} not in the backup as attached: ${[...a.missing, ...a.changed].map((s) => s.slice(0, 12)).join(', ')}` : a.files ? `${all}, all there` : all;
 }
 
 /** How many audit entries the live data has after the backup: what a restore would take away. */
