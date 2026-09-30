@@ -7,6 +7,7 @@ import { stamp, today } from '../../platform/clock.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { home, notifications } from './home.ts';
 import { ownerHealth } from './health.ts';
+import { ownerCharts } from './charts.ts';
 
 const view = { config: { permission: 'dash.view' } };
 const readInput = z.object({ id: z.string().min(1).max(200) }).strict();
@@ -15,6 +16,7 @@ export function dashRoutes(app: FastifyInstance, { db, clock, registry, practice
   const where = { practice, host };
   app.get('/api/dash/home', view, async (req) => home(db, clock, registry, currentUser(req), where));
   app.get('/api/dash/owner-health', { config: { permission: 'dash.home.owner' } }, async () => ownerHealth(db, today(clock)));
+  app.get('/api/dash/owner-charts', { config: { permission: 'rpt.books.view' } }, async () => ownerCharts(db, today(clock)));
   app.get('/api/dash/notifications', view, async (req) => notifications(db, clock, registry, currentUser(req), where));
   app.post('/api/dash/notifications/read', view, async (req) => {
     const { id } = readInput.parse(req.body);
