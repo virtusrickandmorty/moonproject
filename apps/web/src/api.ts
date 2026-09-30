@@ -679,6 +679,9 @@ export interface BackupMade { file: string; tier: BackupTier; bytes: number; off
 export interface BackupFile { source: BackupSource; file: string; at: string; tier: BackupTier; bytes: number }
 /** Customer emails (COM). The App Password is write-only: the server says only whether one is saved. */
 export type EmailTemplate = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement' | 'payslip';
+export type BulkStatementRow = { customerId: string; customerName: string; balanceCents: number; email: string | null;
+  reason?: string; lastStatementEmailedAt: string | null };
+export type BulkStatements = { date: string; eligible: BulkStatementRow[]; excluded: BulkStatementRow[] };
 /** Customer emails, or payslip emails to employees (a payslip row shows the recipient and the pay period, never an amount). */
 export type EmailKind = 'customer' | 'payslip';
 export interface EmailSettings { sendingOn: boolean; host: string; port: number; user: string; senderName: string; senderAddress: string; version: number; appPasswordSet: boolean; missing: string[] }
@@ -1185,6 +1188,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     comOutbox: (status?: OutboxRow['status'], kind?: EmailKind) => call<Outbox>('GET', `/api/com/outbox${status || kind ? `?${new URLSearchParams({ ...(status ? { status } : {}), ...(kind ? { kind } : {}) })}` : ''}`),
     comResend: (id: string) => call<{ success: true }>('POST', `/api/com/outbox/${encodeURIComponent(id)}/resend`, {}),
     comEmailStatement: (b: { customerId: string; from: string; to: string }) => call<{ id: string }>('POST', '/api/com/statements', b),
+    comBulkStatements: (date: string) => call<BulkStatements>('GET', `/api/com/statements/bulk?date=${encodeURIComponent(date)}`),
+    comSendBulkStatements: (date: string, customerIds: string[]) => call<{ queued: number }>('POST', '/api/com/statements/bulk', { date, customerIds }),
     migUploads: () => call<{ uploads: MigUpload[] }>('GET', '/api/mig/uploads').then((r) => r.uploads),
     /** The kind is not sent: the server reads it from the columns. */
     migUpload: (filename: string, csv: string) => call<MigUploaded>('POST', '/api/mig/upload', { filename, csv }),
