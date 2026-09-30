@@ -39,12 +39,14 @@ export function useReport<T>(path: string | null) {
  * first page when the report changes, and gives the `pager` to put under the list. The CSV and print links keep the whole report.
  */
 export function usePagedReport<T extends { page?: PageInfo }>(path: string | null, size = PAGE_ROWS) {
-  const [offsets, setOffsets] = useState<Record<string, number>>({});
-  useEffect(() => setOffsets({}), [path]);
+  // The offsets belong to the report they were chosen on: another report (other dates) starts at its first page.
+  const [chosen, setChosen] = useState<{ path: string | null; offsets: Record<string, number> }>({ path, offsets: {} });
+  const offsets = chosen.path === path ? chosen.offsets : {};
   const paged = path ? `${path}${path.includes('?') ? '&' : '?'}${new URLSearchParams({ limit: String(size), offset: String(offsets.offset ?? 0),
     ...Object.fromEntries(Object.entries(offsets).filter(([k]) => k !== 'offset').map(([k, v]) => [k, String(v)])) })}` : null;
   const report = useReport<T>(paged);
-  const pagerFor = (key: string, page: PageInfo | undefined, what = 'rows') => <Pager page={page} what={what} onOffset={(o) => setOffsets({ ...offsets, [key]: o })} />;
+  const pagerFor = (key: string, page: PageInfo | undefined, what = 'rows') =>
+    <Pager page={page} what={what} onOffset={(o) => setChosen({ path, offsets: { ...offsets, [key]: o } })} />;
   return { ...report, pager: pagerFor('offset', report.data?.page), pagerFor };
 }
 function source(line: Pick<Line, 'documentType' | 'documentNumber' | 'sourceId' | 'journalNumber'>) {
