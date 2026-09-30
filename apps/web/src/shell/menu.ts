@@ -87,6 +87,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Accounting & Tax', label: 'Settings', path: '/acc/settings' },
   { group: 'Admin', label: 'System health', path: '/admin/health', permission: 'sec.health.view' },
   { group: 'Reports', label: 'Deposits held', path: '/rpt/deposits-held', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'Deposits crossing a VAT quarter', path: '/rpt/deposits-crossing-quarter', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Collections register', path: '/rpt/collections-register', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Sales by period', path: '/rpt/sales-by-period', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Job order follow-up', path: '/rpt/job-order-follow-up', permission: 'rpt.books.view' },

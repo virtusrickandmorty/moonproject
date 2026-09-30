@@ -5,7 +5,7 @@ import { comparativeTrialBalance, generalJournal, generalLedger, ledgerAccounts 
 import { balanceSheet, compareSections, comparisonDates, incomeStatement, type Comparison, type StatementSection } from './statements.ts';
 import { arAging, customerStatement } from './receivables.ts';
 import { statementCustomers } from '../CUS/public.ts';
-import { collectionsRegister, depositsHeld, jobOrderFollowUp, salesByPeriod } from './sales-collections.ts';
+import { collectionsRegister, depositsCrossingQuarter, depositsHeld, jobOrderFollowUp, salesByPeriod } from './sales-collections.ts';
 import { birBookRoutes } from './bir-books.ts';
 import { payrollProductionRoutes } from './payroll-production-routes.ts';
 import { apAging, purchases, purchaseOrders, receivedNotBilled } from './suppliers.ts';
@@ -70,6 +70,21 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
       ['Customer', 'Job order', 'Deposits held PHP', 'Document link'],
       ...result.rows.map((r): CsvCell[] => [r.customerName, r.jobOrderNumber, csvPesos(r.heldCents), r.documentPath]),
       ['TOTAL', '', csvPesos(result.totalCents), ''],
+    ]);
+  });
+  app.get('/api/rpt/deposits-crossing-quarter', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
+    const q = req.query as Record<string, unknown>;
+    if (typeof q.quarter !== 'string' || !/^\d{4}-Q[1-4]$/.test(q.quarter))
+      throw new AppError('BAD_QUARTER', 'Choose a quarter in YYYY-Q1 format.', 400);
+    const [year, quarter] = q.quarter.replace('Q', '').split('-').map(Number) as [number, number];
+    const result = depositsCrossingQuarter(db, year, quarter);
+    if (q.format !== 'csv') return result;
+    return sendCsv(reply, `deposits-crossing-${q.quarter}`, [
+      ['Customer', 'Job order', 'Deposit document', 'Deposit date', 'Quarter received', 'Amount PHP', 'Held at quarter end PHP', 'Quarter applied', 'Deposit VAT mode', 'Output VAT declared PHP', 'Document link'],
+      ...result.rows.map((r): CsvCell[] => [r.customerName, r.jobOrderNumber, r.depositDocumentNumber, r.depositDate,
+        r.quarterReceived, csvPesos(r.amountCents), csvPesos(r.heldAtQuarterEndCents), r.quarterApplied ?? '', r.mode,
+        csvPesos(r.outputVatCents), r.depositDocumentPath]),
+      ['TOTAL', '', '', '', '', csvPesos(result.totals.amountCents), csvPesos(result.totals.heldAtQuarterEndCents), '', '', csvPesos(result.totals.outputVatCents), ''],
     ]);
   });
   app.get('/api/rpt/collections-register', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
