@@ -9,6 +9,7 @@ import Fastify from 'fastify';
 import { idleRestarter } from '../src/platform/restart.ts';
 import { recordRestored } from '../src/modules/BAK/restore.ts';
 import { ensureTls } from '../src/engine/security/tls/store.ts';
+import { printLinkBase } from '../src/engine/security/tls/routes.ts';
 import type { Host } from '../src/platform/health/health.ts';
 import { PASSWORD, createTestEnv, login } from './helpers.ts';
 
@@ -159,5 +160,16 @@ describe('the join address', () => {
     expect((await encoder.get('/api/system/tls')).json().join.urls).toEqual(['http://100.80.1.2:8080/', 'http://192.168.1.20:8080/']);
     port = null;
     expect((await encoder.get('/api/system/tls')).json().join).toMatchObject({ port: null, urls: [] });
+  });
+
+  it('points printed QR codes at the LAN join address, and nowhere before the CA or while the join page is off', async () => {
+    let port: number | null = 8080;
+    const env = await createTestEnv('2026-09-28T02:00:00Z', { network: { ...network, joinPort: () => port } });
+    expect(printLinkBase(env.db, env.deps.network)).toBeUndefined();
+    ensureTls(env.db, env.clock, network.names());
+    expect(printLinkBase(env.db, env.deps.network)).toBe('http://192.168.1.20:8080/');
+    expect(printLinkBase(env.db, { ...env.deps.network, names: () => ({ ips: ['100.80.1.2'], dnsNames: [] }) })).toBe('http://100.80.1.2:8080/');
+    port = null;
+    expect(printLinkBase(env.db, env.deps.network)).toBeUndefined();
   });
 });

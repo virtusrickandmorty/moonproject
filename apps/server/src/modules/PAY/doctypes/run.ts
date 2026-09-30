@@ -227,6 +227,7 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const unused = db.prepare('INSERT INTO pay_run_unused_leave (run_line_id, year) VALUES (?, ?)');
+    const night = db.prepare('INSERT INTO pay_run_night_diff (run_line_id) VALUES (?)');
     const final = db.prepare('INSERT INTO pay_run_final (run_employee_id, separated_on, ca_left_cents, loans_left_cents) VALUES (?, ?, ?, ?)');
     for (const e of doc.employees) {
       const id = newId();
@@ -240,9 +241,11 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
       const leaveDays = new Map<number, number>();
       for (const l of e.lines) {
         const lineId = newId();
-        // Unused leave is a 'leave' line in the table (0001's kinds), marked in pay_run_unused_leave (0005).
-        line.run(lineId, id, l.lineNo, l.kind === 'unused_leave' ? 'leave' : l.kind, l.description, l.qty, l.rateCents, l.multiplierBp, l.amountCents, +l.taxable, +l.thirteenthBase, l.assignmentId ?? null, l.jobOrderId ?? null, l.reason ?? null);
+        // Unused leave is a 'leave' line in the table (0001's kinds), marked in pay_run_unused_leave (0005); night
+        // differential an 'ot' line, marked in pay_run_night_diff (0006).
+        line.run(lineId, id, l.lineNo, l.kind === 'unused_leave' ? 'leave' : l.kind === 'night' ? 'ot' : l.kind, l.description, l.qty, l.rateCents, l.multiplierBp, l.amountCents, +l.taxable, +l.thirteenthBase, l.assignmentId ?? null, l.jobOrderId ?? null, l.reason ?? null);
         if (l.assignmentId) markAssignmentPaid(db, l.assignmentId, lineId);
+        if (l.kind === 'night') night.run(lineId);
         if (l.kind === 'unused_leave') {
           unused.run(lineId, l.leaveYear!);
           leaveDays.set(l.leaveYear!, (leaveDays.get(l.leaveYear!) ?? 0) + l.qty / 1000);
@@ -297,7 +300,10 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
       | { pay_group: PayGroup; period_start: string; period_end: string; contribution_month: string; tax_frequency: 'weekly' | 'semi_monthly'; gross_cents: number; net_cents: number; year_end: 0 | 1; unused_leave: 0 | 1 }
       | undefined;
     if (!r) throw new Error(`Payroll run ${documentId} not found`);
-    const lineRows = db.prepare('SELECT l.*, u.year AS leave_year FROM pay_run_lines l LEFT JOIN pay_run_unused_leave u ON u.run_line_id = l.id WHERE l.run_employee_id = ? ORDER BY l.line_no');
+    const lineRows = db.prepare(
+      `SELECT l.*, u.year AS leave_year, n.run_line_id IS NOT NULL AS night FROM pay_run_lines l LEFT JOIN pay_run_unused_leave u ON u.run_line_id = l.id
+       LEFT JOIN pay_run_night_diff n ON n.run_line_id = l.id WHERE l.run_employee_id = ? ORDER BY l.line_no`,
+    );
     const finalRow = db.prepare('SELECT * FROM pay_run_final WHERE run_employee_id = ?');
     const loanRows = db.prepare('SELECT * FROM pay_run_loans WHERE run_employee_id = ? ORDER BY rowid');
     const yearEndRow = db.prepare('SELECT * FROM pay_run_year_end WHERE run_employee_id = ?');
@@ -305,7 +311,7 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
       employeeId: e.employee_id, code: e.employee_code, name: e.employee_name, costCentre: e.cost_centre, payType: e.pay_type, isMwe: e.is_mwe === 1,
       lines: (lineRows.all(e.id) as DbRow[]).map(
         (l): RunLine => ({
-          lineNo: l.line_no, kind: l.leave_year === null ? l.kind : 'unused_leave', description: l.description, qty: l.qty, rateCents: l.rate_cents, multiplierBp: l.multiplier_bp,
+          lineNo: l.line_no, kind: l.leave_year !== null ? 'unused_leave' : l.night === 1 ? 'night' : l.kind, description: l.description, qty: l.qty, rateCents: l.rate_cents, multiplierBp: l.multiplier_bp,
           amountCents: l.amount_cents, taxable: l.taxable === 1, thirteenthBase: l.thirteenth_base === 1, ...(l.leave_year === null ? {} : { leaveYear: l.leave_year }),
           ...(l.assignment_id ? { assignmentId: l.assignment_id, jobOrderId: l.job_order_id } : {}), ...(l.reason ? { reason: l.reason } : {}),
         }),

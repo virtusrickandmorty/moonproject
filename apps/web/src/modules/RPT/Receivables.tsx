@@ -9,6 +9,7 @@ type Buckets = { current: number; days1to30: number; days31to60: number; days61t
 type Aging = { asOf: string; rows: { customerId: string | null; customerName: string; documentId: string | null;
   documentNumber: string; documentType: string | null; jobOrderNumber: string; date: string; dueDate: string;
   buckets: Buckets; totalCents: number }[]; buckets: Buckets; totalCents: number;
+  allowance: { customerId: string; customerName: string; allowanceCents: number }[]; allowanceCents: number; netCents: number;
   memo: { customerId: string; customerName: string; jobOrderId: string; jobOrderNumber: string; dueDate: string; notInvoicedCents: number }[];
   memoTotalCents: number };
 type Statement = { customerId: string; customerName: string; from: string; to: string; openingBalanceCents: number;
@@ -48,7 +49,12 @@ export function ArAging({ me }: { me: Me }) {
         <td className={money}>{peso(row.totalCents)}</td></tr>)}
       <tr className="font-semibold"><td className={td} colSpan={4}>Total AR</td>
         {bucketNames.map(([key]) => <td className={money} key={key}>{peso(data.buckets[key])}</td>)}
-        <td className={money}>{peso(data.totalCents)}</td></tr></tbody></table></div></Panel>
+        <td className={money}>{peso(data.totalCents)}</td></tr>
+      {data.allowanceCents !== 0 && <>{data.allowance.map((row) => <tr key={`allowance-${row.customerId}`}><td className={td}>{row.customerName}</td>
+        <td className={td} colSpan={3 + bucketNames.length}>Less allowance for credit losses</td><td className={money}>({peso(row.allowanceCents)})</td></tr>)}
+        <tr className="font-semibold"><td className={td} colSpan={4 + bucketNames.length}>Less allowance for credit losses</td><td className={money}>({peso(data.allowanceCents)})</td></tr>
+        <tr className="font-semibold"><td className={td} colSpan={4 + bucketNames.length}>Net receivables</td><td className={money}>{peso(data.netCents)}</td></tr></>}
+      </tbody></table></div></Panel>
       <Panel title="Job orders not yet invoiced (memo only)"><div className="overflow-x-auto"><table className="w-full text-sm">
         <thead><tr>{['Customer', 'Job order', 'Due date', 'Amount'].map((name) => <th className={th} key={name}>{name}</th>)}</tr></thead>
         <tbody>{data.memo.map((row) => <tr key={row.jobOrderId}><td className={td}>{row.customerName}</td>

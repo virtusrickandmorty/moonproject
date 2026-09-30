@@ -1,6 +1,7 @@
 /** What other parts of the app may read about backups: the facts System Health shows as lights (PLAN C8). */
 import type { Db } from '../../platform/db/driver.ts';
 import { bakSettings, keptIn, lastOkRun } from './backup.ts';
+import { backupProblems } from './verify.ts';
 
 const HOUR = 3600_000;
 /** No successful backup for this long turns the status red (PLAN E13 "backup stale"). */
@@ -39,3 +40,6 @@ export function backupFacts(db: Db): BackupFacts {
     usb: { A: usb('A'), B: usb('B') },
   };
 }
+
+/** What is wrong with the newest good backup (missing, old, damaged), for the nightly checks; empty when it is fine. `now` is a Manila timestamp. */
+export const lastBackupProblems = (db: Db, now: string): string[] => backupProblems(db, now, STALE_MS);

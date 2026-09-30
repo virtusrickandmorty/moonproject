@@ -15,9 +15,10 @@ import { engineModule } from './engine/security/module.ts';
 import { syncPermissions } from './engine/security/permissions-sync.ts';
 import { PRACTICE_SESSION_COOKIE, SESSION_COOKIE, loadSession, type SessionUser } from './engine/security/sessions.ts';
 import { securityRoutes } from './engine/security/routes.ts';
-import { tlsRoutes } from './engine/security/tls/routes.ts';
+import { networkOf, tlsRoutes } from './engine/security/tls/routes.ts';
 import { documentRoutes } from './engine/documents/routes.ts';
 import { draftRoutes } from './engine/documents/drafts.ts';
+import { attachmentRoutes } from './engine/attachments.ts';
 import { hashPassword, DEFAULT_SCRYPT_N } from './engine/security/passwords.ts';
 import { webRoutes } from './platform/web.ts';
 import { practiceRoutes, type PracticeControl } from './platform/practice/routes.ts';
@@ -56,6 +57,8 @@ export interface AppDeps {
   host: Host;
   /** Restarts the server once no request is running (after a restore, PLAN C8). */
   restart: Restarter;
+  /** This PC's name, addresses and join page (tests give their own). */
+  network: Network;
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -123,6 +126,7 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
     sessionCookie: opts.practice ? PRACTICE_SESSION_COOKIE : SESSION_COOKIE,
     host: opts.host ?? realHost,
     restart: idleRestarter(app, opts.onRestart ?? ((reason) => app.log.warn(`Restart needed: ${reason}`))),
+    network: networkOf(opts.network),
   };
   app.register(cookie);
   app.decorateRequest('user', null);
@@ -169,7 +173,8 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
   // Never inside another site's page (clickjacking), and no guessing of content types.
   app.addHook('onSend', async (_req, reply) => {
     reply.header('X-Frame-Options', 'DENY');
-    reply.header('Content-Security-Policy', "frame-ancestors 'none'");
+    // An attachment sets its own, stricter one (sandbox, engine/attachments.ts).
+    if (!reply.hasHeader('Content-Security-Policy')) reply.header('Content-Security-Policy', "frame-ancestors 'none'");
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'same-origin');
   });
@@ -189,9 +194,10 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
     ok: true, version: APP_VERSION, serverTime: stamp(deps.clock), ...(deps.practice ? { practice: true } : {}),
   }));
   securityRoutes(app, deps);
-  tlsRoutes(app, deps, opts.network);
+  tlsRoutes(app, deps);
   documentRoutes(app, deps);
   draftRoutes(app, deps);
+  attachmentRoutes(app, deps);
   practiceRoutes(app, deps, opts.practiceShop);
   healthRoutes(app, deps, opts.practiceShop ? { practiceShop: opts.practiceShop } : {});
   for (const m of registry.modules) m.routes?.(app, deps);

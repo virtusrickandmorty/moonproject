@@ -6,13 +6,13 @@
 
 ### Steps
 1. On the **Accounting & Tax** menu, click **2307s to issue**.
-2. Under **Quarter**, pick the quarter and the year you want to print.
-3. To print for just one supplier, click **Print 2307** next to their name. To print for everyone who had tax withheld in the quarter, click the **Print all for this quarter** button.
+2. Pick the **Year** and the **Quarter** (Q1 to Q4) you want to print. The screen opens on the quarter whose returns are due now. You see one line per supplier and ATC, with each month's base and tax withheld.
+3. To print for just one supplier, click **Print 2307** on their line (it is off for a line with no supplier). To print for everyone who had tax withheld in the quarter, click **Print all for this quarter**. To get the list in a spreadsheet, click **Download for Excel**.
 4. A new window will open with the printed forms. *Note: If your browser blocks the print window, you must allow pop-ups for this site.*
 
 ### What the system does for you
-The system gathers all the tax withheld from each supplier in the chosen quarter and puts it on the BIR Form No. 2307. When you print it out, you should check that the supplier's **Registered name**, **TIN**, and **Registered address** are correct, and that the right **ATC** (Alphanumeric Tax Code) is shown. Once checked, sign it as the authorized representative before giving it to the supplier.
+The system gathers all the tax withheld from each supplier in the chosen quarter and puts it on the BIR Form No. 2307. When you print it out, check that the supplier's **Registered name**, **TIN** and **Registered address**, and the shop's own, are correct, and that the right **ATC** (Alphanumeric Tax Code) is shown. If the supplier's name or TIN is wrong, correct it in the supplier's file under **Suppliers** (**Registered name** and **TIN**) and print again. Once checked, sign it on the **Payor / Authorized representative** line before giving it to the supplier.
 
 ### Common mistakes and how to fix them
 - **Mistake:** The printout or the list says "To confirm" where the ATC should be.
-- **Fix:** A line that says "To confirm" means the system does not know if the supplier is an individual or a company, so the ATC must be chosen first. Go to the supplier's file and make sure their details are complete so the system can pick the right code.
+- **Fix:** A line that says "To confirm" (or "ATC to confirm" on the screen) means the supplier's file does not say whether the supplier is an individual or a company, so the system cannot choose between the two ATCs it shows in brackets. Ask your accountant which one applies before you sign and give out the certificate.
