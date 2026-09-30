@@ -80,7 +80,7 @@ import { AdvanceReturnForm } from './AP/AdvanceReturnForm.tsx';
 import { ApBalances, ApSupplierPage } from './AP/Suppliers.tsx';
 import { advanceReturnView, advanceView as supplierAdvanceView, billView, paymentView } from './AP/views.tsx';
 import { VoucherForm } from './EXP/VoucherForm.tsx';
-import { OfficerForm, OwnerMoneyForm } from './EQ/forms.tsx';
+import { DividendPaymentForm, OfficerForm, OwnerMoneyForm } from './EQ/forms.tsx';
 import { OpeningForm as OpeningOfficerForm } from './EQ/OpeningForm.tsx';
 import { VatCloseForm } from './TAX/VatCloseForm.tsx';
 import { UncollectedVatForm, UncollectedVatRecoveryForm } from './TAX/UncollectedVatForm.tsx';
@@ -285,6 +285,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'exp.voucher': VoucherForm,
   'eq.owner_money': OwnerMoneyForm,
   'eq.officer': OfficerForm,
+  'eq.dividend_payment': DividendPaymentForm,
   'eq.opening': OpeningOfficerForm,
   'acc.jv': JvForm,
   'tax.vat_close': VatCloseForm,

@@ -42,6 +42,7 @@ describe('effective-dated settings (E12, D4.2)', () => {
       'tax.interest_final_tax_bp': 2000,
       'acc.bad_debt_method': 'direct',
       'tax.uncollected_vat_credit': false,
+      'tax.dividend_final_tax_bp': 1000,
     });
   });
 

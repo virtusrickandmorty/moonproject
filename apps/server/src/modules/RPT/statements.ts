@@ -2,7 +2,9 @@
  * Financial statements (PLAN G "Books & statements", D1.7) from sealed journal lines only. Codes decide the statement:
  * 1xxx assets, 2xxx liabilities and 3xxx equity go to the balance sheet; 4xxx to 8xxx to the income statement. The
  * year-end close is virtual: 3290 current-year earnings and the earlier years' earnings not yet closed to retained
- * earnings are computed here and never posted, so total assets always equal total liabilities and equity.
+ * earnings are computed here and never posted, so total assets always equal total liabilities and equity. 3210 dividends
+ * declared is closed the same way: it shows the dividends declared in the year, and those of earlier years not yet
+ * closed to retained earnings (by a journal voucher Dr 3201 / Cr 3210) are a computed line beside retained earnings.
  */
 import type { Db } from '../../platform/db/driver.ts';
 
@@ -161,7 +163,8 @@ export function incomeStatement(db: Db, from: string, to: string) {
 /**
  * Assets, liabilities and equity as of a date; accounts with a zero balance are left out (so 3900 opening balance equity
  * shows only while it is not zero). Equity adds the current-year earnings (1 January of the asOf year to asOf) on 3290
- * and the earlier years' earnings (every income and expense before that 1 January) under retained earnings.
+ * and the earlier years' earnings (every income and expense before that 1 January) under retained earnings; 3210
+ * dividends declared shows the year's, and the earlier years' dividends go under retained earnings too (when not zero).
  */
 export function balanceSheet(db: Db, asOf: string) {
   const accounts = chart(db);
@@ -171,15 +174,19 @@ export function balanceSheet(db: Db, asOf: string) {
   const yearStart = `${year}-01-01`;
   const currentYearEarningsCents = netIncome(db, accounts, yearStart, asOf);
   const earlierYearsEarningsCents = netIncome(db, accounts, null, `${year - 1}-12-31`);
+  const dividends = accounts.find((a) => a.roleKey === 'DIVIDENDS_DECLARED');
+  // Credit-positive, like the equity section: dividends declared before 1 January and not closed to 3201.
+  const earlierYearsDividendsCents = dividends ? 0 - (movements(db, null, `${year - 1}-12-31`).get(dividends.id)?.netCents ?? 0) : 0;
   const currentYear = accounts.find((a) => a.roleKey === 'CURRENT_YEAR_EARNINGS');
   const retained = accounts.find((a) => a.roleKey === 'RETAINED_EARNINGS') ?? currentYear;
   const entry = (a: ChartRow, side: Side, amountCents: number, computed = false): Entry => ({ accountId: a.id, code: a.code, name: a.name,
     amountCents, computed, sortOrder: a.sortOrder, groupCode: headerOf(a.code, headers)?.code ?? null });
 
+  const balanceOf = (a: ChartRow) => (balances.get(a.id)?.netCents ?? 0) + (a.id === dividends?.id ? earlierYearsDividendsCents : 0);
   const sections = BS_SECTIONS.map((def) => {
     const entries = accounts
-      .filter((a) => a.isHeader === 0 && a.code[0] === def.digit && a.id !== currentYear?.id && (balances.get(a.id)?.netCents ?? 0) !== 0)
-      .map((a) => entry(a, def.side, signed(def.side, balances.get(a.id)!.netCents)));
+      .filter((a) => a.isHeader === 0 && a.code[0] === def.digit && a.id !== currentYear?.id && balanceOf(a) !== 0)
+      .map((a) => entry(a, def.side, signed(def.side, balanceOf(a))));
     if (def.key === 'equity') {
       // 3290 is never posted; anything that reached it anyway stays in the total so the check still holds.
       const posted = currentYear ? -(balances.get(currentYear.id)?.netCents ?? 0) : 0;
@@ -188,6 +195,10 @@ export function balanceSheet(db: Db, asOf: string) {
         : { accountId: null, code: null, name: 'Current-year earnings', amountCents: currentYearEarningsCents, computed: true, sortOrder: Number.MAX_SAFE_INTEGER, groupCode: null });
       entries.push({ accountId: null, code: null, name: 'Earlier years’ earnings not yet closed to retained earnings', amountCents: earlierYearsEarningsCents,
         computed: true, sortOrder: (retained?.sortOrder ?? Number.MAX_SAFE_INTEGER) + 0.5, groupCode: retained ? (headerOf(retained.code, headers)?.code ?? null) : null });
+      if (earlierYearsDividendsCents !== 0) {
+        entries.push({ accountId: null, code: null, name: 'Earlier years’ dividends not yet closed to retained earnings', amountCents: earlierYearsDividendsCents,
+          computed: true, sortOrder: (retained?.sortOrder ?? Number.MAX_SAFE_INTEGER) + 0.6, groupCode: retained ? (headerOf(retained.code, headers)?.code ?? null) : null });
+      }
     }
     return section(def, entries, headers);
   });
@@ -197,7 +208,7 @@ export function balanceSheet(db: Db, asOf: string) {
   const balanceOf = (role: string) => { const a = accounts.find((x) => x.roleKey === role); return a ? (balances.get(a.id)?.netCents ?? 0) : 0; };
   const tradeCents = balanceOf('AR_TRADE'); const allowanceCents = -balanceOf('AR_ALLOWANCE');
   const receivables = { tradeCents, allowanceCents, netCents: tradeCents - allowanceCents };
-  return { asOf, yearStart, sections, receivables, currentYearEarningsCents, earlierYearsEarningsCents, totalAssetsCents, totalLiabilitiesCents,
+  return { asOf, yearStart, sections, receivables, currentYearEarningsCents, earlierYearsEarningsCents, earlierYearsDividendsCents, totalAssetsCents, totalLiabilitiesCents,
     totalEquityCents, totalLiabilitiesAndEquityCents, differenceCents: totalAssetsCents - totalLiabilitiesAndEquityCents,
     balanced: totalAssetsCents === totalLiabilitiesAndEquityCents };
 }

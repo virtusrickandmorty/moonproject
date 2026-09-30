@@ -45,6 +45,8 @@ export const DOC_TITLES = [
   'Receiving Report',
   'Owner Money',
   'Officer Transaction',
+  'Dividend Declaration',
+  'Dividend Payment',
   'Loan',
   'Loan Payment',
   'Fixed Asset',

@@ -8,3 +8,6 @@ export { filedReturns, filedReturnsCovering, type FiledForm, type FiledReturn } 
 /** The VAT registers, for RPT's BIR books (read-only). */
 export { salesRegister } from './registers.ts';
 export { certificatesToIssue, purchasesRegister, type CertificateLine } from './purchases.ts';
+
+/** What a quarter's 1601-FQ leaves to pay (EQ's dividend declaration checks it before a cancel). */
+export { finalTaxDue, type FinalTaxDue } from './payments.ts';

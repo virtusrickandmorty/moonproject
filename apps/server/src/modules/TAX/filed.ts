@@ -5,7 +5,7 @@
  * A return counts as filed for its period once its payment is recorded and not cancelled; the earliest such payment is
  * the one that filed it:
  *   2550Q (BIRP-, the quarter, and the quarter's VAT close whatever its date), 0619-E (the month), 1601-EQ (the quarter),
- *   1702Q (the quarter), 1702 (the year), and the 1601-C that a withholding-tax remittance pays (REM-, the month).
+ *   1601-FQ (the quarter), 1702Q (the quarter), 1702 (the year), and the 1601-C that a withholding-tax remittance pays (REM-, the month).
  * Only documents that post a journal count: a quotation or a purchase order changes no filed figure.
  */
 import type { Db } from '../../platform/db/driver.ts';
