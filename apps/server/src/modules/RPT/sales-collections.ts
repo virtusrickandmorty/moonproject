@@ -3,7 +3,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { customerRef } from '../CUS/public.ts';
 import { jobOrderRef, jobOrderStatusRows, invoiceSaleLines, releasesAwaitingInvoice } from '../JO/public.ts';
-import { collectionsBetween } from '../COL/public.ts';
+import { collectionsBetween, depositVatRowsOf } from '../COL/public.ts';
 import { quickSaleLines } from '../QS/public.ts';
 
 export const documentPath = (type: string, id: string) => `/docs/${encodeURIComponent(type)}/${encodeURIComponent(id)}`;
@@ -31,6 +31,59 @@ export function depositsHeld(db: Db, asOf: string) {
       documentPath: id && type ? documentPath(type, id) : '' };
   }).sort((a, b) => a.customerName.localeCompare(b.customerName) || a.jobOrderNumber.localeCompare(b.jobOrderNumber));
   return { asOf, rows, totalCents: rows.reduce((n, row) => n + row.heldCents, 0) };
+}
+
+const quarterOf = (date: string) => `${date.slice(0, 4)}-Q${Math.ceil(Number(date.slice(5, 7)) / 3)}`;
+
+/** Deposits which were still on a job order at a quarter end, allocated oldest first just as invoices consume them. */
+export function depositsCrossingQuarter(db: Db, year: number, quarter: number) {
+  const month = quarter * 3;
+  const quarterEnd = `${year}-${String(month).padStart(2, '0')}-${new Date(Date.UTC(year, month, 0)).getUTCDate()}`;
+  const accountId = resolveAccount(db, { role: 'CUSTOMER_DEPOSITS' }).id;
+  const sources = db.prepare(`SELECT DISTINCT d.id, d.number, d.doc_type AS type, d.business_date AS date
+    FROM journal_lines l JOIN journals j ON j.id = l.journal_id JOIN documents d ON d.id = j.source_id
+    WHERE l.account_id = ? AND j.sealed = 1 AND j.source_type = 'document' AND j.posting_kind = 'original'
+      AND d.status = 'posted' ORDER BY d.business_date, d.posted_at, d.number`).all(accountId) as
+    { id: string; number: string; type: string; date: string }[];
+  type Lot = { customerId: string; jobOrderId: string; mode: 'A' | 'B' | 'C'; received: typeof sources[number];
+    amountCents: number; heldCents: number; heldAtQuarterEndCents: number | null; outputVatCents: number; appliedDate: string | null };
+  const lots = new Map<string, Lot[]>();
+  let quarterClosed = false;
+  for (const source of sources) {
+    if (!quarterClosed && source.date > quarterEnd) {
+      for (const lot of [...lots.values()].flat()) lot.heldAtQuarterEndCents = lot.heldCents;
+      quarterClosed = true;
+    }
+    for (const row of depositVatRowsOf(db, source.id)) {
+      const amount = row.mode === 'C' ? row.dpInvoicedCents : row.depositCents;
+      const held = row.mode === 'C' ? row.dpInvoicedCents - row.dpVatCents : row.depositCents;
+      const vat = row.mode === 'B' ? row.depositVatCents : row.mode === 'C' ? row.dpVatCents : 0;
+      const queue = lots.get(row.jobOrderId) ?? [];
+      if (amount > 0 && held > 0) queue.push({ customerId: row.customerId, jobOrderId: row.jobOrderId, mode: row.mode,
+        received: source, amountCents: amount, heldCents: held, heldAtQuarterEndCents: null, outputVatCents: vat, appliedDate: null });
+      let leaving = Math.max(0, -held);
+      for (const lot of queue) {
+        if (!leaving || lot.heldCents === 0) continue;
+        const used = Math.min(leaving, lot.heldCents);
+        lot.heldCents -= used; leaving -= used;
+        if (lot.heldCents === 0) lot.appliedDate = source.date;
+      }
+      lots.set(row.jobOrderId, queue);
+    }
+  }
+  if (!quarterClosed) for (const lot of [...lots.values()].flat()) lot.heldAtQuarterEndCents = lot.heldCents;
+  const rows = [...lots.values()].flat().filter((lot) => lot.received.date <= quarterEnd && (lot.heldAtQuarterEndCents ?? 0) > 0)
+    .map((lot) => {
+      const order = jobOrderRef(db, lot.jobOrderId);
+      return { customerId: lot.customerId, customerName: order?.customerName ?? customerRef(db, lot.customerId)?.display_name ?? 'Unassigned',
+        jobOrderId: lot.jobOrderId, jobOrderNumber: order?.number ?? '', depositDocumentId: lot.received.id,
+        depositDocumentType: lot.received.type, depositDocumentNumber: lot.received.number, depositDocumentPath: documentPath(lot.received.type, lot.received.id),
+        depositDate: lot.received.date, quarterReceived: quarterOf(lot.received.date), amountCents: lot.amountCents,
+        heldAtQuarterEndCents: lot.heldAtQuarterEndCents ?? 0, quarterApplied: lot.appliedDate ? quarterOf(lot.appliedDate) : null,
+        mode: lot.mode, outputVatCents: lot.outputVatCents };
+    }).sort((a, b) => a.customerName.localeCompare(b.customerName) || a.depositDate.localeCompare(b.depositDate));
+  return { year, quarter, quarterEnd, rows, totals: { amountCents: rows.reduce((n, r) => n + r.amountCents, 0),
+    heldAtQuarterEndCents: rows.reduce((n, r) => n + r.heldAtQuarterEndCents, 0), outputVatCents: rows.reduce((n, r) => n + r.outputVatCents, 0) } };
 }
 
 export function collectionsRegister(db: Db, from: string, to: string) {
