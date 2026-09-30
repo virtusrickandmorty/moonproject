@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Me } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
-import { BookTitle, Tools, money, td, th, useReport, useToday } from './Books.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso, type PageInfo } from '../../components/ui.tsx';
+import { BookTitle, Tools, money, td, th, usePagedReport, useReport, useToday } from './Books.tsx';
 import './books.css';
 
 type Doc = { id: string; number: string; documentType: string };
@@ -51,16 +51,16 @@ function DepositsBody({ path }: { path: string | null }) {
 type Collections = { rows: (Doc & { date: string; customerName: string; cashPlaceName: string | null;
   tenderCents: number | null; cwtCents: number; recordedByName: string; status: string })[];
   byCashPlace: { cashPlaceName: string; tenderCents: number }[];
-  byRecorder: { recordedByName: string; tenderCents: number }[]; tenderCents: number };
+  byRecorder: { recordedByName: string; tenderCents: number }[]; tenderCents: number; page?: PageInfo };
 export function CollectionsRegister({ me }: { me: Me }) {
   return <ReportPage me={me} title="Collections register" route="collections-register" dated="range">{(path) => <CollectionsBody path={path} />}</ReportPage>;
 }
 function CollectionsBody({ path }: { path: string | null }) {
-  const { data, error } = useReport<Collections>(path);
+  const { data, error, pager } = usePagedReport<Collections>(path);
   return data ? <><Panel title={`Tenders ${peso(data.tenderCents)}`}><Table
     headings={['Date', 'Collection', 'Customer', 'Cash place', 'Tender', 'CWT', 'Recorded by', 'Status']}
     rows={data.rows.map((r) => [r.date, document(r), r.customerName, r.cashPlaceName ?? '—',
-      peso(r.tenderCents ?? 0), peso(r.cwtCents), r.recordedByName, r.status])} /></Panel>
+      peso(r.tenderCents ?? 0), peso(r.cwtCents), r.recordedByName, r.status])} />{pager}</Panel>
     <Panel title="By cash place"><Table headings={['Cash place', 'Tenders']}
       rows={data.byCashPlace.map((r) => [r.cashPlaceName, peso(r.tenderCents)])} /></Panel>
     <Panel title="By recorder"><Table headings={['Recorded by', 'Tenders']}
@@ -70,16 +70,16 @@ function CollectionsBody({ path }: { path: string | null }) {
 type Sales = { rows: (Doc & { date: string; customerName: string; description: string; kind: string;
   garmentType: string; qty: number; salesCents: number })[]; totalCents: number;
   byPeriod: { label: string; salesCents: number }[]; byCustomer: { label: string; salesCents: number }[];
-  byItem: { label: string; salesCents: number }[]; byGarmentType: { label: string; salesCents: number }[] };
+  byItem: { label: string; salesCents: number }[]; byGarmentType: { label: string; salesCents: number }[]; page?: PageInfo };
 export function SalesByPeriod({ me }: { me: Me }) {
   return <ReportPage me={me} title="Sales by period" route="sales-by-period" dated="range">{(path) => <SalesBody path={path} />}</ReportPage>;
 }
 function SalesBody({ path }: { path: string | null }) {
-  const { data, error } = useReport<Sales>(path);
+  const { data, error, pager } = usePagedReport<Sales>(path);
   return data ? <><Panel title={`Net sales ${peso(data.totalCents)}`}><Table
     headings={['Date', 'Document', 'Customer', 'Item', 'Class', 'Garment type', 'Qty', 'Net sales']}
     rows={data.rows.map((r) => [r.date, document(r), r.customerName, r.description, r.kind,
-      r.garmentType, r.qty, peso(r.salesCents)])} /></Panel>
+      r.garmentType, r.qty, peso(r.salesCents)])} />{pager}</Panel>
     {([['By period', data.byPeriod], ['By customer', data.byCustomer], ['By item', data.byItem],
       ['By garment type', data.byGarmentType]] as const).map(([title, rows]) => <Panel key={title} title={title}>
       <Table headings={[title.slice(3), 'Net sales']} rows={rows.map((r) => [r.label, peso(r.salesCents)])} /></Panel>)}
@@ -90,18 +90,18 @@ function SalesBody({ path }: { path: string | null }) {
 type Jobs = { rows: (Doc & { customerName: string; stage: string; dueDate: string; balanceDueCents: number })[];
   byStatus: { stage: string; count: number }[];
   releasedWithBalance: (Doc & { customerName: string; balanceDueCents: number })[];
-  awaitingInvoice: (Doc & { customerName: string; jobOrderNumber: string; date: string; releasedCents: number })[] };
+  awaitingInvoice: (Doc & { customerName: string; jobOrderNumber: string; date: string; releasedCents: number })[]; page?: PageInfo; balancePage?: PageInfo };
 export function JobOrderFollowUp({ me }: { me: Me }) {
   return <ReportPage me={me} title="Job order follow-up" route="job-order-follow-up" dated="none">{(path) => <JobsBody path={path} />}</ReportPage>;
 }
 function JobsBody({ path }: { path: string | null }) {
-  const { data, error } = useReport<Jobs>(path);
+  const { data, error, pager, pagerFor } = usePagedReport<Jobs>(path);
   return data ? <><Panel title="By status"><Table headings={['Status', 'Orders']}
     rows={data.byStatus.map((r) => [r.stage, r.count])} /></Panel>
     <Panel title="Job orders"><Table headings={['Job order', 'Customer', 'Status', 'Due date', 'Balance']}
-      rows={data.rows.map((r) => [document(r), r.customerName, r.stage, r.dueDate, peso(r.balanceDueCents)])} /></Panel>
+      rows={data.rows.map((r) => [document(r), r.customerName, r.stage, r.dueDate, peso(r.balanceDueCents)])} />{pager}</Panel>
     <Panel title="Released with a balance"><Table headings={['Job order', 'Customer', 'Balance']}
-      rows={data.releasedWithBalance.map((r) => [document(r), r.customerName, peso(r.balanceDueCents)])} /></Panel>
+      rows={data.releasedWithBalance.map((r) => [document(r), r.customerName, peso(r.balanceDueCents)])} />{pagerFor('balanceOffset', data.balancePage, 'job orders')}</Panel>
     <Panel title="Release records awaiting invoice"><Table headings={['Release', 'Job order', 'Customer', 'Date', 'Released value']}
       rows={data.awaitingInvoice.map((r) => [document(r), r.jobOrderNumber, r.customerName, r.date, peso(r.releasedCents)])} /></Panel>
   </> : path && <Loading error={error} />;

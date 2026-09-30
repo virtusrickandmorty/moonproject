@@ -81,9 +81,12 @@ export function runsOfMonth(db: Db, month: string): MonthRun[] {
 /** Contribution months that have a recorded or cancelled run, newest first. */
 export const payrollMonths = (db: Db): string[] => db.prepare('SELECT DISTINCT contribution_month FROM pay_runs ORDER BY 1 DESC').pluck().all() as string[];
 
-/** Months (by their own document date) with a recorded or cancelled 13th-month pay, newest first. */
+/**
+ * Months (by their own document date) with a recorded or cancelled 13th-month pay, newest first. The 13th-month tables are read first
+ * (CROSS JOIN fixes the order): there are a few dozen rows, and the months of the whole documents table are not worth walking.
+ */
 export const thirteenthMonths = (db: Db): string[] =>
-  db.prepare(`SELECT DISTINCT substr(d.business_date, 1, 7) AS month FROM pay_thirteenths t JOIN documents d ON d.id = t.document_id ORDER BY 1 DESC`).pluck().all() as string[];
+  db.prepare(`SELECT DISTINCT substr(d.business_date, 1, 7) AS month FROM pay_thirteenths t CROSS JOIN documents d ON d.id = t.document_id ORDER BY 1 DESC`).pluck().all() as string[];
 
 /** A run's contribution month, or undefined if the id is not a payroll run. */
 export function runMonth(db: Db, runId: string): { number: string; status: 'posted' | 'cancelled'; contributionMonth: string } | undefined {
@@ -96,7 +99,7 @@ export function runMonth(db: Db, runId: string): { number: string; status: 'post
 export function thirteenthsOfMonth(db: Db, month: string): MonthRun[] {
   return db
     .prepare(
-      `SELECT d.id, d.number, d.status, d.posted_at AS postedAt, d.cancelled_at AS cancelledAt FROM pay_thirteenths t JOIN documents d ON d.id = t.document_id
+      `SELECT d.id, d.number, d.status, d.posted_at AS postedAt, d.cancelled_at AS cancelledAt FROM pay_thirteenths t CROSS JOIN documents d ON d.id = t.document_id
        WHERE substr(d.business_date, 1, 7) = ? ORDER BY d.number`,
     )
     .all(month) as MonthRun[];
@@ -117,7 +120,7 @@ export function thirteenthTaxOfMonth(db: Db, month: string): ThirteenthMonthTax[
   return db
     .prepare(
       `SELECT e.employee_id AS employeeId, e.employee_code AS code, e.employee_name AS name, SUM(e.amount_cents) AS amountCents, SUM(e.taxable_cents) AS taxableCents, SUM(e.wtax_cents) AS wtaxCents
-       FROM pay_thirteenth_employees e JOIN documents d ON d.id = e.document_id
+       FROM pay_thirteenth_employees e CROSS JOIN documents d ON d.id = e.document_id
        WHERE d.status = 'posted' AND substr(d.business_date, 1, 7) = ? GROUP BY e.employee_id, e.employee_code, e.employee_name`,
     )
     .all(month) as ThirteenthMonthTax[];

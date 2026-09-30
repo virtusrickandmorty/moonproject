@@ -3,6 +3,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import type { FastifyInstance } from 'fastify';
 import { AppError, csvPesos, toCsv, type CsvCell } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
+import { pageAsked, paged, pagedLedger } from '../../platform/paging.ts';
 import { customerRef, customerTaxInfo } from '../CUS/public.ts';
 import { supplier, supplierTaxInfo } from '../PUR/public.ts';
 import { purchasesRegister, salesRegister } from '../TAX/public.ts';
@@ -158,7 +159,8 @@ export function birBookRoutes(app: FastifyInstance, { db }: AppDeps): void {
       : book === 'cash-disbursements' ? cashJournal(db, from, to, 'disbursements')
       : book === 'sales' ? salesBook(db, from, to) : book === 'purchases' ? purchaseBook(db, from, to)
       : book === 'general-journal' ? birGeneralJournal(db, from, to) : birGeneralLedger(db, from, to, accountId);
-    if (q.format !== 'csv') return result;
+    // A page of the book's loose pages (of a ledger: a window of its pages counted across the accounts).
+    if (q.format !== 'csv') return book === 'general-ledger' ? pagedLedger(result as ReturnType<typeof birGeneralLedger>, pageAsked(q), 'pages') : paged(result as { pages: unknown[] }, 'pages', pageAsked(q));
     if (book === 'general-ledger') {
       const r = result as ReturnType<typeof birGeneralLedger>; const rows: CsvCell[][] = [['Account', 'Name', 'Date', 'Journal', 'Document', 'Debit PHP', 'Credit PHP', 'Balance PHP', 'Memo']];
       for (const a of r.accounts) for (const l of a.lines) rows.push([a.code, a.name, l.businessDate, l.journalNumber, l.documentNumber, csvPesos(l.debitCents), csvPesos(l.creditCents), csvPesos(l.runningBalanceCents), l.memo ?? l.journalMemo]);

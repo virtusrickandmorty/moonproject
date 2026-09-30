@@ -17,14 +17,14 @@ import { loadModules } from '../../modules/load.ts';
 import { runInvariants } from '../../engine/ledger/invariants.ts';
 import { SESSION_COOKIE } from '../../engine/security/sessions.ts';
 
-const DAY_MS = 86_400_000;
+export const DAY_MS = 86_400_000;
 /** The made-up users' passwords are random and thrown away, so a cheap hash keeps the build quick (the cost is in each hash). */
-const PRACTICE_SCRYPT_N = 2 ** 10;
-const ROLES = ['owner', 'accountant', 'encoder', 'production'] as const;
-type Role = typeof ROLES[number];
-type Json = Record<string, any>;
+export const PRACTICE_SCRYPT_N = 2 ** 10;
+export const ROLES = ['owner', 'accountant', 'encoder', 'production'] as const;
+export type Role = typeof ROLES[number];
+export type Json = Record<string, any>;
 
-interface Client {
+export interface Client {
   get(url: string): Promise<LightMyRequestResponse>;
   post(url: string, body: unknown, headers?: Record<string, string>): Promise<LightMyRequestResponse>;
   put(url: string, body: unknown, headers?: Record<string, string>): Promise<LightMyRequestResponse>;
@@ -37,12 +37,12 @@ export interface PracticeSummary {
   cashPlaces: { name: string; balanceCents: number }[];
 }
 
-function ok(response: LightMyRequestResponse, action: string): Json {
+export function ok(response: LightMyRequestResponse, action: string): Json {
   if (response.statusCode !== 200) throw new Error(`${action}: HTTP ${response.statusCode} ${response.body}`);
   return response.json() as Json;
 }
 
-function client(app: FastifyInstance, response: LightMyRequestResponse): Client {
+export function client(app: FastifyInstance, response: LightMyRequestResponse): Client {
   const cookie = response.cookies.find((c) => c.name === SESSION_COOKIE);
   if (!cookie) throw new Error('The app did not issue a session cookie.');
   const cookies = { [SESSION_COOKIE]: cookie.value };
@@ -56,11 +56,11 @@ function client(app: FastifyInstance, response: LightMyRequestResponse): Client 
   };
 }
 
-async function signIn(app: FastifyInstance, role: Role, password: string): Promise<Client> {
+export async function signIn(app: FastifyInstance, role: Role, password: string): Promise<Client> {
   return client(app, await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: `practice-${role}`, password } }));
 }
 
-async function record(who: Client, type: string, input: object): Promise<Json> {
+export async function record(who: Client, type: string, input: object): Promise<Json> {
   const preview = ok(await who.post(`/api/docs/${type}/preview`, { input }), `${type} preview`);
   const errors = (preview.issues as { level: string; code: string; message: string }[]).filter((x) => x.level === 'error');
   if (errors.length) throw new Error(`${type}: ${JSON.stringify(errors)}`);
@@ -68,13 +68,13 @@ async function record(who: Client, type: string, input: object): Promise<Json> {
     { 'idempotency-key': randomUUID() }), `${type} post`);
 }
 
-function cashBalance(db: Db, accountId: number): number {
+export function cashBalance(db: Db, accountId: number): number {
   return (db.prepare(`SELECT COALESCE(SUM(l.debit_cents - l.credit_cents), 0) AS balance
     FROM journal_lines l JOIN journals j ON j.id = l.journal_id
     WHERE j.sealed = 1 AND l.account_id = ?`).get(accountId) as { balance: number }).balance;
 }
 
-function denominations(cents: number): { denominationCents: number; qty: number }[] {
+export function denominations(cents: number): { denominationCents: number; qty: number }[] {
   if (!Number.isSafeInteger(cents) || cents < 0) throw new Error(`Cannot count a negative or invalid till: ${cents}`);
   let left = cents;
   const lines: { denominationCents: number; qty: number }[] = [];
@@ -86,7 +86,7 @@ function denominations(cents: number): { denominationCents: number; qty: number 
   return lines;
 }
 
-function quarter(date: string): { year: number; quarter: number } {
+export function quarter(date: string): { year: number; quarter: number } {
   const [year, month] = date.split('-').map(Number);
   return { year: year!, quarter: Math.ceil(month! / 3) };
 }

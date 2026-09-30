@@ -18,8 +18,11 @@ const selectLines = `SELECT j.id AS journalId, j.number AS journalNumber, j.busi
   JOIN accounts a ON a.id = l.account_id LEFT JOIN documents d ON d.id = j.source_id
   WHERE j.sealed = 1`;
 
+/** selectLines walking the journals of the dates first (CROSS JOIN fixes the order), then each journal's lines. */
+const inDateOrder = selectLines.replace('FROM journal_lines l JOIN journals j ON j.id = l.journal_id', 'FROM journals j CROSS JOIN journal_lines l ON l.journal_id = j.id');
+
 export function generalJournal(db: Db, from: string, to: string) {
-  const lines = db.prepare(`${selectLines} AND j.business_date BETWEEN @from AND @to
+  const lines = db.prepare(`${inDateOrder} AND j.business_date BETWEEN @from AND @to
     ORDER BY j.business_date, j.number, l.line_no`).all({ from, to }) as BookLine[];
   const journals: (Omit<BookLine, 'lineNo' | 'accountId' | 'accountCode' | 'accountName' | 'partyType' | 'partyId' | 'debitCents' | 'creditCents' | 'memo'> & {
     lines: Pick<BookLine, 'lineNo' | 'accountId' | 'accountCode' | 'accountName' | 'partyType' | 'partyId' | 'debitCents' | 'creditCents' | 'memo'>[];
@@ -58,10 +61,22 @@ export function generalLedger(db: Db, from: string, to: string, accountId?: numb
     WHERE j.sealed = 1 AND l.account_id = ? AND j.business_date < ?`);
   const lines = db.prepare(`${selectLines} AND l.account_id = @accountId
     AND j.business_date BETWEEN @from AND @to ORDER BY j.business_date, j.number, l.line_no`);
+  // All accounts at once: the opening balances and the period's lines are read in one pass each and dealt out to the accounts,
+  // instead of two questions per account (a hundred accounts, a few years of journals). One account keeps its own two queries.
+  let openings: Map<number, number> | undefined;
+  let linesOf: Map<number, BookLine[]> | undefined;
+  if (accountId === undefined) {
+    openings = new Map((db.prepare(`SELECT l.account_id AS id, SUM(l.debit_cents - l.credit_cents) AS balance
+      FROM journals j CROSS JOIN journal_lines l ON l.journal_id = j.id WHERE j.sealed = 1 AND j.business_date < ? GROUP BY l.account_id`)
+      .all(from) as { id: number; balance: number }[]).map((r) => [r.id, r.balance]));
+    linesOf = new Map();
+    for (const line of db.prepare(`${inDateOrder} AND j.business_date BETWEEN @from AND @to ORDER BY j.business_date, j.number, l.line_no`)
+      .all({ from, to }) as BookLine[]) (linesOf.get(line.accountId) ?? linesOf.set(line.accountId, []).get(line.accountId)!).push(line);
+  }
   return { from, to, accounts: accounts.map((account) => {
-    const openingBalanceCents = (opening.get(account.id, from) as { balance: number }).balance;
+    const openingBalanceCents = openings ? (openings.get(account.id) ?? 0) : (opening.get(account.id, from) as { balance: number }).balance;
     let balance = openingBalanceCents;
-    const entries = (lines.all({ accountId: account.id, from, to }) as BookLine[]).map((line) => {
+    const entries = (linesOf ? (linesOf.get(account.id) ?? []) : lines.all({ accountId: account.id, from, to }) as BookLine[]).map((line) => {
       balance += line.debitCents - line.creditCents;
       return { ...line, runningBalanceCents: balance };
     });

@@ -31,6 +31,24 @@ export function Button({ tone = 'plain', className = '', ...rest }: ButtonHTMLAt
   return <button type="button" className={`rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50 ${tones[tone]} ${className}`} {...rest} />;
 }
 
+/** Where a page of a long list sits (the server's `page`): `total` rows, this page starts at `offset` and holds at most `limit`. */
+export interface PageInfo { total: number; offset: number; limit: number }
+/** How many rows a screen asks for at a time. */
+export const PAGE_ROWS = 100;
+
+/** "Rows 101 to 200 of 9,611" with Previous and Next, under a long list. Shows nothing when the list fits on one page. */
+export function Pager({ page, onOffset, what = 'rows' }: { page?: PageInfo | undefined; onOffset: (offset: number) => void; what?: string }) {
+  if (!page || page.total <= page.limit) return null;
+  const last = Math.min(page.offset + page.limit, page.total);
+  return (
+    <div className="flex flex-wrap items-center gap-3 py-2 text-sm print:hidden">
+      <Button disabled={page.offset === 0} onClick={() => onOffset(Math.max(0, page.offset - page.limit))}>Previous</Button>
+      <span>{page.total === 0 ? `No ${what}` : `${what[0]!.toUpperCase()}${what.slice(1)} ${(page.offset + 1).toLocaleString('en-PH')} to ${last.toLocaleString('en-PH')} of ${page.total.toLocaleString('en-PH')}`}</span>
+      <Button disabled={last >= page.total} onClick={() => onOffset(page.offset + page.limit)}>Next</Button>
+    </div>
+  );
+}
+
 export const inputClass = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm';
 
 export function Field({ label, required, error, hint, children }: { label: string; required?: boolean; error?: string; hint?: string; children: ReactNode }) {

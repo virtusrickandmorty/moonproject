@@ -12,6 +12,7 @@ import { apAging, purchases, purchaseOrders, receivedNotBilled } from './supplie
 import { cashPosition, transfers, cashCounts, assetSchedule } from './cash-assets.ts';
 import { lateEntries, cancellations, exceptions, signIns } from './control.ts';
 import { cashFlowStatement } from './cash-flow.ts';
+import { pageAsked, paged, pagedLedger } from '../../platform/paging.ts';
 
 function date(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new AppError('BAD_DATE', 'Use a date in YYYY-MM-DD format.', 400);
@@ -75,7 +76,7 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/rpt/collections-register', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const { from, to } = range(q); const result = collectionsRegister(db, from, to);
-    if (q.format !== 'csv') return result;
+    if (q.format !== 'csv') return paged(result, 'rows', pageAsked(q));
     return sendCsv(reply, `collections-register-${from}-${to}`, [
       ['Date', 'Collection', 'Customer', 'Cash place', 'Tender PHP', 'CWT PHP', 'Recorded by', 'Status', 'Document link'],
       ...result.rows.map((r): CsvCell[] => [r.date, r.number, r.customerName, r.cashPlaceName ?? '',
@@ -86,7 +87,7 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/rpt/sales-by-period', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const { from, to } = range(q); const result = salesByPeriod(db, from, to);
-    if (q.format !== 'csv') return result;
+    if (q.format !== 'csv') return paged(result, 'rows', pageAsked(q));
     return sendCsv(reply, `sales-by-period-${from}-${to}`, [
       ['Date', 'Document', 'Customer', 'Item', 'Class', 'Garment type', 'Quantity', 'Net sales PHP', 'Document link'],
       ...result.rows.map((r): CsvCell[] => [r.date, r.number, r.customerName, r.description, r.kind,
@@ -97,7 +98,8 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/rpt/job-order-follow-up', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const result = jobOrderFollowUp(db);
-    if (q.format !== 'csv') return result;
+    // A page of the orders, and (its own page, `balanceOffset`) of the released orders that still owe.
+    if (q.format !== 'csv') return paged(paged(result, 'rows', pageAsked(q)), 'releasedWithBalance', pageAsked(q, 'balanceOffset'), 'balancePage');
     return sendCsv(reply, 'job-order-follow-up', [
       ['Job order', 'Customer', 'Status', 'Due date', 'Balance PHP', 'Document link'],
       ...result.rows.map((r): CsvCell[] => [r.number, r.customerName, r.stage, r.dueDate,
@@ -111,7 +113,8 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/rpt/ar-aging', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const result = arAging(db, date(q.asOf));
-    if (q.format !== 'csv') return result;
+    // A page of the invoices, and (its own page, `memoOffset`) of the job orders not yet invoiced.
+    if (q.format !== 'csv') return paged(paged(result, 'rows', pageAsked(q)), 'memo', pageAsked(q, 'memoOffset'), 'memoPage');
     const rows: CsvCell[][] = [['Customer', 'Document', 'Job order', 'Date', 'Due date', 'Current PHP',
       '1-30 PHP', '31-60 PHP', '61-90 PHP', 'Over 90 PHP', 'Total PHP']];
     for (const r of result.rows) rows.push([r.customerName, r.documentNumber, r.jobOrderNumber, r.date, r.dueDate,
@@ -152,7 +155,7 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
     const q = req.query as Record<string, unknown>;
     const { from, to } = range(q);
     const result = generalJournal(db, from, to);
-    if (q.format !== 'csv') return result;
+    if (q.format !== 'csv') return paged(result, 'journals', pageAsked(q));
     const rows: CsvCell[][] = [['Date', 'Journal', 'Document type', 'Document', 'Posting', 'Account', 'Account name', 'Party type', 'Party ID', 'Debit PHP', 'Credit PHP', 'Memo']];
     for (const j of result.journals) for (const l of j.lines) rows.push([j.businessDate, j.journalNumber, j.documentType, j.documentNumber,
       j.postingKind, l.accountCode, l.accountName, l.partyType, l.partyId, pesos(l.debitCents), pesos(l.creditCents), l.memo ?? j.journalMemo]);
@@ -166,7 +169,7 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (id !== undefined && (!Number.isSafeInteger(id) || id <= 0 || !ledgerAccounts(db).some((a) => a.id === id)))
       throw new AppError('BAD_ACCOUNT', 'Choose an account from the list.', 400);
     const result = generalLedger(db, from, to, id);
-    if (q.format !== 'csv') return result;
+    if (q.format !== 'csv') return pagedLedger(result, pageAsked(q));
     const rows: CsvCell[][] = [['Account', 'Account name', 'Date', 'Journal', 'Document type', 'Document', 'Party type', 'Party ID', 'Debit PHP', 'Credit PHP', 'Balance PHP', 'Memo']];
     for (const a of result.accounts) {
       rows.push([a.code, a.name, from, '', '', '', '', '', '', '', pesos(a.openingBalanceCents), 'Opening balance']);

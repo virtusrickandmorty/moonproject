@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type Me } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Field, Notice, PAGE_ROWS, Pager, Panel, inputClass, peso, type PageInfo } from '../../components/ui.tsx';
 import './books.css';
 
 type Account = { id: number; code: string; name: string; normalSide: 'debit' | 'credit' };
@@ -10,8 +10,8 @@ type Line = { journalId: string; journalNumber: string; businessDate: string; so
   lineNo: number; accountId: number; accountCode: string; accountName: string;
   partyType: string | null; partyId: string | null; debitCents: number; creditCents: number; memo: string | null };
 type Journal = Pick<Line, 'journalId' | 'journalNumber' | 'businessDate' | 'sourceType' | 'sourceId' | 'documentType' | 'documentNumber' | 'postingKind' | 'journalMemo'> & { lines: Line[]; runningDebitCents: number; runningCreditCents: number };
-type JournalResult = { from: string; to: string; journals: Journal[]; totalDebitCents: number; totalCreditCents: number };
-type LedgerResult = { from: string; to: string; accounts: (Account & { openingBalanceCents: number;
+type JournalResult = { from: string; to: string; journals: Journal[]; totalDebitCents: number; totalCreditCents: number; page?: PageInfo };
+type LedgerResult = { from: string; to: string; page?: PageInfo; accounts: (Account & { openingBalanceCents: number;
   lines: (Line & { runningBalanceCents: number })[]; closingBalanceCents: number })[] };
 type TbResult = { asOf: string; compareTo: string | null; rows: { accountId: number; code: string; name: string;
   debitCents: number; creditCents: number; compareDebitCents: number; compareCreditCents: number }[];
@@ -33,6 +33,19 @@ export function useReport<T>(path: string | null) {
     return () => { active = false; };
   }, [path]);
   return { data, error };
+}
+/**
+ * useReport for a long report, a page at a time: asks for `limit` and `offset` beside the report's own dates, starts again at the
+ * first page when the report changes, and gives the `pager` to put under the list. The CSV and print links keep the whole report.
+ */
+export function usePagedReport<T extends { page?: PageInfo }>(path: string | null, size = PAGE_ROWS) {
+  const [offsets, setOffsets] = useState<Record<string, number>>({});
+  useEffect(() => setOffsets({}), [path]);
+  const paged = path ? `${path}${path.includes('?') ? '&' : '?'}${new URLSearchParams({ limit: String(size), offset: String(offsets.offset ?? 0),
+    ...Object.fromEntries(Object.entries(offsets).filter(([k]) => k !== 'offset').map(([k, v]) => [k, String(v)])) })}` : null;
+  const report = useReport<T>(paged);
+  const pagerFor = (key: string, page: PageInfo | undefined, what = 'rows') => <Pager page={page} what={what} onOffset={(o) => setOffsets({ ...offsets, [key]: o })} />;
+  return { ...report, pager: pagerFor('offset', report.data?.page), pagerFor };
 }
 function source(line: Pick<Line, 'documentType' | 'documentNumber' | 'sourceId' | 'journalNumber'>) {
   return line.documentType && line.documentNumber
@@ -59,7 +72,7 @@ export function GeneralJournal({ me }: { me: Me }) {
   useEffect(() => { if (today && !from && !to) { setFrom(today.slice(0, 7) + '-01'); setTo(today); } }, [today, from, to]);
   useEffect(() => { if (from && to && !applied) setApplied(new URLSearchParams({ from, to }).toString()); }, [from, to, applied]);
   const path = applied ? `journal?${applied}` : null;
-  const { data, error } = useReport<JournalResult>(path);
+  const { data, error, pager } = usePagedReport<JournalResult>(path);
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   return <article className="rpt-page space-y-4"><BookTitle title="General journal" dates={data ? `${data.from} to ${data.to}` : ''} />
     <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
@@ -67,7 +80,7 @@ export function GeneralJournal({ me }: { me: Me }) {
       <Button tone="primary" disabled={!from || !to || from > to} onClick={() => setApplied(new URLSearchParams({ from, to }).toString())}>Show</Button>
       {path && <Tools path={path} />}</div>
     {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
-    {data && <Panel title={`${data.journals.length} journal entries`}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{['Date / journal', 'Source document', 'Account / party', 'Memo', 'Debit', 'Credit'].map((x) => <th key={x} className={th}>{x}</th>)}</tr></thead>
+    {data && <Panel title={`${(data.page?.total ?? data.journals.length).toLocaleString('en-PH')} journal entries`}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{['Date / journal', 'Source document', 'Account / party', 'Memo', 'Debit', 'Credit'].map((x) => <th key={x} className={th}>{x}</th>)}</tr></thead>
       {data.journals.map((j) => <tbody key={j.journalId}>{j.lines.map((l, i) => <tr key={`${j.journalId}-${l.lineNo}`}>
         <td className={td}>{i === 0 && <>{j.businessDate}<br />{j.journalNumber}{j.postingKind === 'reversal' && ' (reversal)'}</>}</td>
         <td className={td}>{i === 0 && source({ ...j, journalNumber: j.journalNumber })}</td>
@@ -75,7 +88,7 @@ export function GeneralJournal({ me }: { me: Me }) {
         <td className={td}>{l.memo ?? j.journalMemo}</td><td className={money}>{l.debitCents ? peso(l.debitCents) : ''}</td><td className={money}>{l.creditCents ? peso(l.creditCents) : ''}</td></tr>)}
         <tr className="text-xs text-slate-600"><td className={td} colSpan={4}>Running total through {j.journalNumber}</td><td className={money}>{peso(j.runningDebitCents)}</td><td className={money}>{peso(j.runningCreditCents)}</td></tr></tbody>)}
       <tbody><tr className="font-semibold"><td className={td} colSpan={4}>Total</td><td className={money}>{peso(data.totalDebitCents)}</td><td className={money}>{peso(data.totalCreditCents)}</td></tr></tbody>
-    </table></div></Panel>}
+    </table></div>{pager}</Panel>}
   </article>;
 }
 
@@ -87,7 +100,7 @@ export function GeneralLedger({ me }: { me: Me }) {
   useEffect(() => { void api.report<Account[]>('accounts').then(setAccounts); }, []);
   useEffect(() => { if (from && to && !applied) setApplied(new URLSearchParams({ from, to }).toString()); }, [from, to, applied]);
   const path = applied ? `ledger?${applied}` : null;
-  const { data, error } = useReport<LedgerResult>(path);
+  const { data, error, pager } = usePagedReport<LedgerResult>(path);
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   return <article className="rpt-page space-y-4"><BookTitle title="General ledger" dates={data ? `${data.from} to ${data.to}` : ''} />
     <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
@@ -103,6 +116,7 @@ export function GeneralLedger({ me }: { me: Me }) {
         <td className={money}>{l.creditCents ? peso(l.creditCents) : ''}</td><td className={money}>{balance(l.runningBalanceCents)}</td></tr>)}
       <tr className="font-semibold"><td className={td} colSpan={6}>Closing balance</td><td className={money}>{balance(a.closingBalanceCents)}</td></tr>
     </tbody></table></div></Panel>)}
+    {data && pager}
   </article>;
 }
 

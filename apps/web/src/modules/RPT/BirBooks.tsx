@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { type Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
-import { BookTitle, Tools, money, td, th, useReport, useToday } from './Books.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso, type PageInfo } from '../../components/ui.tsx';
+import { BookTitle, Tools, money, td, th, usePagedReport, useToday } from './Books.tsx';
 import './books.css';
 
 const BOOKS = {
@@ -13,7 +13,9 @@ const BOOKS = {
 } as const;
 type Book = keyof typeof BOOKS;
 type Page = { number: number; broughtForward: Record<string, number>; rows: Record<string, unknown>[]; carriedForward: Record<string, number> };
-type Result = { from: string; to: string; pages?: Page[]; accounts?: { code: string; name: string; pages: Page[] }[] };
+type Result = { from: string; to: string; pages?: Page[]; accounts?: { code: string; name: string; pages: Page[] }[]; page?: PageInfo };
+/** Loose pages asked for at a time (twenty rows to a page). */
+const LOOSE_PAGES = 5;
 const label = (key: string) => ({ formOrReference: 'BIR form / reference', documentNumber: 'Document', cashCents: 'Cash', receivablesCents: 'Receivables', depositsCents: 'Deposits', vatCents: 'VAT', salesIncomeCents: 'Sales / other income', payablesCents: 'Payables', expensesCents: 'Expenses', inputVatCents: 'Input VAT', ewtCents: 'EWT', salariesPayableCents: 'Salaries payable', vatableCents: 'VATable', zeroRatedCents: 'Zero-rated', exemptCents: 'Exempt', totalCents: 'Total', payableCents: 'Payable', capitalGoodsCents: 'Capital goods', goodsCents: 'Goods', servicesCents: 'Services', invoiceNumber: 'Booklet no.', supplierInvoiceNumber: 'Supplier document no.' } as Record<string, string>)[key] ?? key.replace(/[A-Z]/g, (x) => ` ${x}`).replace(/^./, (x) => x.toUpperCase());
 const display = (key: string, v: unknown) => key.endsWith('Cents') ? peso(Number(v ?? 0)) : key === 'sundry' ? (v as { account: string; amountCents: number }[]).map((x) => `${x.account}: ${peso(x.amountCents)}`).join('; ') : String(v ?? '');
 
@@ -30,7 +32,7 @@ export function BirBooks({ me }: { me: Me }) {
   const today = useToday(); const [book, setBook] = useState<Book>('cash-receipts'); const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [query, setQuery] = useState('');
   useEffect(() => { if (today && !from) { setFrom(`${today.slice(0, 7)}-01`); setTo(today); } }, [today, from]);
   useEffect(() => { if (from && to && !query) setQuery(new URLSearchParams({ from, to }).toString()); }, [from, to, query]);
-  const path = query ? `bir-books/${book}?${query}` : null; const { data, error } = useReport<Result>(path); const [title, cols] = BOOKS[book];
+  const path = query ? `bir-books/${book}?${query}` : null; const { data, error, pagerFor } = usePagedReport<Result>(path, LOOSE_PAGES); const [title, cols] = BOOKS[book];
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   return <article className={`rpt-page bir-book ${book.startsWith('cash-') || book === 'sales' || book === 'purchases' ? 'bir-landscape' : ''} space-y-4`}>
     <BookTitle title={`BIR books — ${title}`} dates={data ? `${data.from} to ${data.to}` : ''} />
@@ -40,5 +42,6 @@ export function BirBooks({ me }: { me: Me }) {
     {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
     {data && cols.length > 0 && <LoosePages pages={data.pages ?? []} columns={cols} />}
     {data && cols.length === 0 && <>{(data.accounts ?? [{ code: '', name: title, pages: data.pages ?? [] }]).map((a) => <Panel key={`${a.code}-${a.name}`} title={`${a.code} ${a.name}`}><LoosePages pages={a.pages} columns={book === 'general-journal' ? ['businessDate', 'journalNumber', 'journalMemo', 'lines'] : ['businessDate', 'journalNumber', 'documentNumber', 'debitCents', 'creditCents', 'runningBalanceCents']} /></Panel>)}</>}
+    {data && pagerFor('offset', data.page, 'loose pages')}
   </article>;
 }
