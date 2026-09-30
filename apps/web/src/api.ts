@@ -235,6 +235,8 @@ export interface EmployeeDetail {
   payHistory: PayProfile[] | null;
   /** used: days of leave taken; paid: unused days paid in cash by a payroll (final pay, December). */
   sil: { year: number; eligibleFrom: string; daysPerYear: number; used: number; paid: number; left: number };
+  /** Where the payslip is emailed and whether the employee agreed. Only for whoever sets up payroll (emp.pay); null for others. */
+  payslipEmail: { email: string | null; consent: boolean } | null;
 }
 export interface LeaveBalances {
   year: number;
@@ -620,11 +622,13 @@ export interface BackupStatus {
 export interface BackupMade { file: string; tier: BackupTier; bytes: number; offsite: boolean; offsiteError: string | null }
 export interface BackupFile { source: BackupSource; file: string; at: string; tier: BackupTier; bytes: number }
 /** Customer emails (COM). The App Password is write-only: the server says only whether one is saved. */
-export type EmailTemplate = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement';
+export type EmailTemplate = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement' | 'payslip';
+/** Customer emails, or payslip emails to employees (a payslip row shows the recipient and the pay period, never an amount). */
+export type EmailKind = 'customer' | 'payslip';
 export interface EmailSettings { sendingOn: boolean; host: string; port: number; user: string; senderName: string; senderAddress: string; version: number; appPasswordSet: boolean; missing: string[] }
 export interface EmailSettingsInput { sendingOn: boolean; host: string; port: number; user: string; senderName: string; senderAddress: string; appPassword?: string }
 export interface OutboxRow {
-  id: string; template: EmailTemplate; customerId: string; customerName: string; toAddress: string; documentId: string | null; documentNumber: string | null;
+  id: string; template: EmailTemplate; kind: EmailKind; customerId: string | null; employeeId: string | null; customerName: string; toAddress: string; documentId: string | null; documentNumber: string | null;
   periodFrom: string | null; periodTo: string | null; subject: string; body: string; attachmentName: string | null; status: 'queued' | 'sent' | 'failed';
   attempts: number; nextAttemptAt: string; lastError: string | null; createdAt: string; sentAt: string | null;
 }
@@ -910,6 +914,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     leaveBalances: (year?: number) => call<LeaveBalances>('GET', `/api/emp/leave-balances${year ? `?year=${year}` : ''}`),
     addEmployee: (body: Record<string, unknown>) => call<EmployeeRecord>('POST', '/api/emp/employees', body),
     updateEmployee: (id: string, v: number, body: Record<string, unknown>) => call<EmployeeRecord>('PUT', emp(id), body, version(v)),
+    savePayslipEmail: (id: string, v: number, body: { email: string | null; consent: boolean }) => call<{ email: string | null; consent: boolean }>('PUT', emp(id, '/payslip-email'), body, version(v)),
     separateEmployee: (id: string, v: number, body: { separatedOn: string; reason: string }) => call<EmployeeRecord>('POST', emp(id, '/separate'), body, version(v)),
     addPay: (id: string, body: Omit<PayProfile, 'id' | 'createdAt' | 'dailyRateCents' | 'monthlyRateCents'> & { dailyRateCents?: number; monthlyRateCents?: number }) =>
       call<PayProfile>('POST', emp(id, '/pay'), body),
@@ -1089,7 +1094,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** Needs a fresh password (step-up). Leave `appPassword` out to keep the saved one. */
     comSaveSettings: (v: number, body: EmailSettingsInput) => call<EmailSettings>('PUT', '/api/com/settings', body, version(v)),
     comTestEmail: () => call<{ ok: true; message: string }>('POST', '/api/com/test-email', {}),
-    comOutbox: (status?: OutboxRow['status']) => call<Outbox>('GET', `/api/com/outbox${status ? `?status=${status}` : ''}`),
+    comOutbox: (status?: OutboxRow['status'], kind?: EmailKind) => call<Outbox>('GET', `/api/com/outbox${status || kind ? `?${new URLSearchParams({ ...(status ? { status } : {}), ...(kind ? { kind } : {}) })}` : ''}`),
     comResend: (id: string) => call<{ success: true }>('POST', `/api/com/outbox/${encodeURIComponent(id)}/resend`, {}),
     comEmailStatement: (b: { customerId: string; from: string; to: string }) => call<{ id: string }>('POST', '/api/com/statements', b),
     migUploads: () => call<{ uploads: MigUpload[] }>('GET', '/api/mig/uploads').then((r) => r.uploads),
