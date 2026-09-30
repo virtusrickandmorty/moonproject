@@ -44,3 +44,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [49. Cash flow statement](49-cash-flow-statement.md): View where your cash came from and where it went.
 - [50. Printing statements and schedules](50-printing-statements-and-schedules.md): Print a customer's statement of account, a wearer's sizing profile, or the fixed asset schedule.
 - [51. Depreciation run and retiring an asset](51-depreciation-and-retiring-assets.md): Run the month's depreciation and record taking an asset off the books.
+- [55. Customer checks](55-customer-checks.md): Manage customer checks, deposits, and post-dated checks.
