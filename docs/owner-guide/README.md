@@ -41,6 +41,7 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [37. Job Orders, Release Slips and Invoices](37-job-orders-release-invoices.md): Record a customer's order, track what they owe, release goods, and issue invoices.
 - [38. Reports and BIR books](38-reports-and-bir-books.md): View lists and summaries of the shop's data, and print out the BIR books for tax records.
 - [39. Switch-over day](39-switch-over-day.md): Plan and execute the move from the old apps to Moonproject.
+- [40. Price List and Quotations](40-price-list-and-quotations.md): Add items to the price list, make quotations, and turn them into job orders.
 - [41. Production Board and Piece Rates](41-production-board-and-piece-rates.md): View the production board, record pieces done, and manage piece rates.
 - [42. Employees, Attendance and Holidays](42-employees-attendance-holidays.md): Add employees, set their pay rates, record daily attendance, and manage holidays.
 - [43. Home, Search and TV Board](43-home-search-tv-board.md): See your daily alerts, find records quickly, and view the production status.
