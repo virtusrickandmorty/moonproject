@@ -36,4 +36,20 @@ describe('practice data', () => {
       await rmdir(dir);
     }
   }, 120_000);
+
+  it('starts on a month end: the payroll the till cannot pay yet waits for its release instead of the count going negative', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'moon-practice-'));
+    const file = join(dir, 'practice.db');
+    try {
+      const summary = await createPracticeData(file, 2, '2026-08-31'); // what a practice shop made on 30 September starts on
+      expect(summary.documents['pay.run']).toBe(1); // 16 to 31 August, on the first day
+      expect(summary.documents['pay.release']).toBeUndefined();
+      expect(summary.documents['cash.count']).toBe(2);
+    } finally {
+      await rm(file, { force: true });
+      await rm(`${file}-wal`, { force: true });
+      await rm(`${file}-shm`, { force: true });
+      await rmdir(dir);
+    }
+  }, 120_000);
 });

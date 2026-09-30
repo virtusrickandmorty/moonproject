@@ -339,8 +339,15 @@ describe('refusals', () => {
     const twice = (await preview(obwt([inHand(), inHand()]))).json();
     expect(twice.issues).toEqual([expect.objectContaining({ code: 'SAME_2307', level: 'warning', message: 'Row 2: Moonlight Test School has a WC158 2307 for Q2 2026 on this opening already. Record each certificate once.' })]);
     expect((await open(obwt([inHand()]))).statusCode).toBe(200);
-    expect((await preview(obwt([inHand()]))).json().issues).toEqual([expect.objectContaining({ code: 'SAME_2307', message: 'Row 1: Moonlight Test School has a WC158 2307 for Q2 2026 on OBWT-000001 already. Record each certificate once.' })]);
-    expect((await preview(obwt([{ ...inHand(), atc: 'WC160' }]))).json().issues).toEqual([]);
+    // The same amounts as well: the duplicate warning shared by every opening document comes with it (ACC/tests/duplicate-opening.test.ts).
+    expect((await preview(obwt([inHand()]))).json().issues).toEqual([
+      expect.objectContaining({ code: 'SAME_2307', message: 'Row 1: Moonlight Test School has a WC158 2307 for Q2 2026 on OBWT-000001 already. Record each certificate once.' }),
+      expect.objectContaining({ code: 'DUPLICATE_OPENING', level: 'warning' }),
+    ]);
+    expect((await preview(obwt([{ ...inHand(), cwtCents: 110_000 }]))).json().issues.map((i: { code: string }) => i.code)).toEqual(['SAME_2307']); // other amount: no duplicate warning
+    // Another ATC is no SAME_2307; the duplicate warning goes by customer, quarter and amounts (ATC is not one of its key figures).
+    expect((await preview(obwt([{ ...inHand(), atc: 'WC160' }]))).json().issues.map((i: { code: string }) => i.code)).toEqual(['DUPLICATE_OPENING']);
+    expect((await preview(obwt([{ ...inHand(), atc: 'WC160', cwtCents: 110_000 }]))).json().issues).toEqual([]);
 
     const bad = (input: unknown) => preview(input).then((r) => r.json().code);
     expect(await bad({ rows: [] })).toBe('INVALID_INPUT');
