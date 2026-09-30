@@ -261,7 +261,7 @@ describe('refusals', () => {
     expect(await codes({ ...heatPress(), lifeMonths: 48 }, CUTOVER, 'warning')).toEqual(['LIFE_DIFFERENT', 'NOT_STRAIGHT_LINE']);
     const ended = await preview({ ...heatPress(), acquiredOn: '2020-01-10', accumulatedCents: 8_000_000 });
     expect(ended.issues.map((i: { code: string }) => i.code)).toEqual(['LIFE_ENDED']);
-    expect(ended.issues[0].message).toBe('Its 60 months of life ended by the cut-over, so the first depreciation run after September 2026 charges the ₱10,000.00 left.');
+    expect(ended.issues[0].message).toBe('Its 60 months of life ended by the cut-over, so the next depreciation run charges the ₱10,000.00 left.');
     for (const role of ['owner', 'encoder'] as const) expect((await open(heatPress(), CUTOVER, await env.as(role))).statusCode).toBe(403);
     expect(balances(env.db)).toEqual({});
   });

@@ -6,6 +6,7 @@ import { openingDoc } from './doctypes/opening.ts';
 import { monthEndRoutes } from './month-end.ts';
 import { openingRoutes } from './opening.ts';
 import { accRoutes } from './routes.ts';
+import { goLiveRoutes } from './go-live.ts';
 
 export default defineModule({
   code: 'ACC',
@@ -17,6 +18,8 @@ export default defineModule({
     { key: 'acc.jv.post', label: 'Record journal vouchers', defaultRoles: ['accountant'] },
     { key: 'acc.jv.cancel', label: 'Cancel or edit recorded journal vouchers', defaultRoles: ['accountant'] },
     { key: 'acc.settings.manage', label: 'Change dated settings (VAT rate, deposit VAT mode, CR mode, TWA)', defaultRoles: ['accountant', 'owner'] },
+    { key: 'acc.golive.view', label: 'See the go-live decisions register', defaultRoles: ['accountant', 'owner'] },
+    { key: 'acc.golive.answer', label: 'Record answers in the go-live decisions register', defaultRoles: ['accountant', 'owner'] },
     { key: 'acc.monthend.view', label: 'See the month-end checklist', defaultRoles: ['accountant', 'owner'] },
     { key: 'acc.monthend.signoff', label: 'Sign a month off on the month-end checklist', defaultRoles: ['accountant'] },
     { key: 'acc.opening.view', label: 'See the opening balances and the cut-over checks', defaultRoles: ['accountant', 'owner'] },
@@ -30,5 +33,6 @@ export default defineModule({
     accRoutes(app, deps);
     openingRoutes(app, deps);
     monthEndRoutes(app, deps);
+    goLiveRoutes(app, deps);
   },
 });

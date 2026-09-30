@@ -14,7 +14,7 @@ import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { DraftLine } from '../../../engine/ledger/post.ts';
 import type { Db } from '../../../platform/db/driver.ts';
-import { assertOpeningOpen, OPENING_PERMISSIONS, openingIssues } from '../../ACC/public.ts';
+import { assertOpeningOpen, duplicateOpeningIssue, OPENING_PERMISSIONS, openingIssues } from '../../ACC/public.ts';
 import { activeCustomers, customerRef } from '../../CUS/public.ts';
 import { quarterOf, quarterRange, type Quarter } from '../calendar.ts';
 import { ATCS, OPENING_WITHHOLDING, openingLines, receivedOn, type OpeningLine } from '../withholding.ts';
@@ -97,6 +97,13 @@ export const openingWithholdingDoc: DocTypeDef<OpeningWithholdingInput, OpeningW
       `SELECT d.number FROM tax_opening_lines l JOIN documents d ON d.id = l.document_id
        WHERE d.status = 'posted' AND l.customer_id = ? AND l.year = ? AND l.quarter = ? AND l.atc = ? ORDER BY d.number LIMIT 1`,
     );
+    // The same customer, quarter and amounts as a 2307 already opened: typed twice, or two certificates that look alike.
+    const same = ctx.db
+      .prepare(
+        `SELECT d.number FROM tax_opening_lines l JOIN documents d ON d.id = l.document_id
+         WHERE d.status = 'posted' AND l.customer_id = ? AND l.year = ? AND l.quarter = ? AND l.cwt_cents = ? AND l.vat_withheld_cents = ? ORDER BY d.number LIMIT 1`,
+      )
+      .pluck();
     const seen = new Set<string>();
     doc.rows.forEach((r, i) => {
       const n = `Row ${r.lineNo}`;
@@ -113,6 +120,8 @@ export const openingWithholdingDoc: DocTypeDef<OpeningWithholdingInput, OpeningW
       const on = seen.has(key) ? 'this opening' : (earlier.pluck().get(r.customerId, r.year, r.quarter, r.atc) as string | undefined);
       if (on) add('warning', `rows.${i}.customerId`, 'SAME_2307', `${n}: ${r.customerName} has a ${r.atc} 2307 for ${quarterName(r)} on ${on} already. Record each certificate once.`);
       seen.add(key);
+      const dup = same.get(r.customerId, r.year, r.quarter, r.cwtCents, r.vatWithheldCents) as string | undefined;
+      issues.push(...duplicateOpeningIssue(ctx.db, `rows.${i}.customerId`, dup, `this 2307 (${r.customerName}, ${quarterName(r)}, ${formatPeso(r.cwtCents + r.vatWithheldCents)})`));
     });
     return issues;
   },
