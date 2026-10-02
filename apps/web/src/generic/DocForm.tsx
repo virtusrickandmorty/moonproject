@@ -143,7 +143,7 @@ export function DocForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   return (
     <form ref={formRef} onKeyDown={onKeyDown} onSubmit={(e) => e.preventDefault()} className="grid gap-4 lg:grid-cols-[1fr_20rem]">
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">{original ? `Edit ${original.number}` : `New ${type.title}`}</h1>
+        <h1 className="text-2xl font-bold text-[#010101]">{original ? `Edit ${original.number}` : `New ${type.title}`}</h1>
         {original && <Notice tone="info">When you record, {original.number} is cancelled and the replacement gets a new number. Reason: {reason}</Notice>}
         {blocked && <Notice tone="warning">This document needs its own screen; the general form cannot fill it in yet.</Notice>}
         {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
@@ -161,7 +161,7 @@ export function DocForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
         </div>
       </div>
       <Panel title="So far">
-        {live ? <p className="text-2xl font-semibold tabular-nums">{peso(live.totalCents)}</p> : <p className="text-sm text-slate-500">Fill in the required fields to see the total.</p>}
+        {live ? <p className="text-2xl font-bold text-[#010101] tabular-nums">{peso(live.totalCents)}</p> : <p className="text-sm text-slate-500">Fill in the required fields to see the total.</p>}
         {live && <p className="text-sm">{live.summary}</p>}
         {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
       </Panel>

@@ -70,7 +70,7 @@ export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo;
     <div className="max-w-3xl space-y-4">
       {recorded && <Notice tone="success">Recorded as {h.number}.</Notice>}
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">{type.title} {h.number}</h1>
+        <h1 className="text-2xl font-bold text-[#010101]">{type.title} {h.number}</h1>
         <StatusChip status={h.status} />
         <span className="flex-1" />
         {printVariants.includes('document') && <Button onClick={() => void print()}>Print</Button>}

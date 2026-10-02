@@ -28,7 +28,7 @@ export function DocList({ type, notice }: { type: DocTypeInfo; notice?: string }
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <h1 className="flex-1 text-2xl font-semibold">{pluralLabelOf(type)}</h1>
+        <h1 className="flex-1 text-2xl font-bold text-[#010101]">{pluralLabelOf(type)}</h1>
         {type.canCreate && <Button tone="primary" onClick={() => navigate(docPath(type.key, '/new'))}>+ New {labelOf(type)}</Button>}
       </div>
       {notice && <Notice tone="info">{notice}</Notice>}
@@ -51,9 +51,9 @@ export function DocList({ type, notice }: { type: DocTypeInfo; notice?: string }
           </button>
         ))}
       </div>
-      <div className="overflow-x-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
-        <table className="w-full text-sm [&_td]:px-3 [&_td]:py-2 [&_th]:px-3 [&_th]:py-2">
-          <thead className="bg-slate-50 text-left text-slate-500">
+      <div className="overflow-x-auto rounded-lg bg-white p-2 shadow-sm">
+        <table className="w-full text-sm [&_td]:px-4 [&_td]:py-3 [&_th]:px-4 [&_th]:py-3">
+          <thead className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-muted">
             <tr><th>Number</th><th>Date</th><th>What</th><th className="text-right">Amount</th><th>Status</th></tr>
           </thead>
           <tbody>

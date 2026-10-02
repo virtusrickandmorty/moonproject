@@ -8,13 +8,29 @@ type Customer = { id: string; code: string; kind: 'person' | 'organization'; dis
   is_active: number; version: number };
 type Group = { id: string; name: string; is_active: number; version: number };
 type Person = { id: string; full_name: string; group_id: string | null; is_active: number; version: number };
-type Detail = Customer & { groups: Group[]; people: Person[] };
+type Phone = { id: string; phone: string; label: string | null; version: number };
+type Detail = Customer & { groups: Group[]; people: Person[]; phones: Phone[] };
 type DuplicateWarning = { id: string; reason: string };
 type Size = { id: string; label: string; category: 'adult' | 'kids'; is_active: number };
 type Chart = { id: string; revision_no: number; status: string; size_mode: 'preset' | 'measured'; upper_size: string | null;
   lower_size: string | null; unit: 'inch' | 'cm'; values: Record<string, number | null>; remarks: string | null; measured_on: string; reason: string | null };
 const measures = ['shoulder', 'chest', 'upperWaist', 'collar', 'bustPoint', 'figurePoint', 'bustDistance', 'armHole', 'sleeveHole',
   'sleeveLength', 'upperLength', 'lowerWaist', 'hips', 'crotch', 'thigh', 'calf', 'ankle', 'lowerLength'] as const;
+/** The server's rule (normalizePhone): a Philippine number, 9 or 10 digits after 0 or +63. Checked here first so a bad number never leaves a customer half-saved. */
+const phoneOk = (raw: string) => {
+  const d = raw.replace(/[^0-9]/g, '');
+  const national = d.startsWith('63') ? d.slice(2) : d.startsWith('0') ? d.slice(1) : d;
+  return national.length >= 9 && national.length <= 10;
+};
+const PHONE_RULE = 'Enter a Philippine phone number with 9 or 10 digits, like 0917 123 4567.';
+/** Grouped for reading: mobile "+63 917 123 4567", Metro Manila "+63 2 8123 4567", provincial "+63 32 234 5678". */
+function showPhone(p: string): string {
+  const n = p.replace(/^\+63/, '');
+  if (/^9\d{9}$/.test(n)) return `+63 ${n.slice(0, 3)} ${n.slice(3, 6)} ${n.slice(6)}`;
+  if (/^2\d{8}$/.test(n)) return `+63 2 ${n.slice(1, 5)} ${n.slice(5)}`;
+  if (/^\d{9}$/.test(n)) return `+63 ${n.slice(0, 2)} ${n.slice(2, 5)} ${n.slice(5)}`;
+  return p;
+}
 const label = (name: string) => name.replace(/[A-Z]/g, (c) => ` ${c.toLowerCase()}`).replace(/^./, (c) => c.toUpperCase());
 
 export function Customers({ me }: { me: Me }) {
@@ -72,14 +88,22 @@ function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Customer |
   const [v, setV] = useState({ kind: old?.kind ?? 'organization', displayName: old?.display_name ?? '',
     registeredName: old?.registered_name ?? '', tin: old?.tin ?? '', isVatRegistered: Boolean(old?.is_vat_registered),
     billingAddress: old?.billing_address ?? '', email: old?.email ?? '', notes: old?.notes ?? '' });
+  const [phone, setPhone] = useState({ number: '', label: '' }); // a new customer's first number; more go on the customer itself
   const [error, setError] = useState('');
   const save = async () => {
+    if (!old && phone.number.trim() && !phoneOk(phone.number)) return setError(PHONE_RULE);
     try {
       const body = { ...v, registeredName: v.registeredName || null, tin: v.tin || null, billingAddress: v.billingAddress || null,
         email: v.email || null, notes: v.notes || null };
       const saved = await masterRequest<Customer & { duplicateWarnings: DuplicateWarning[] }>(me, old ? `/api/cus/customers/${old.id}` : '/api/cus/customers',
         old ? 'PUT' : 'POST', body, old?.version);
-      await onSaved(saved.id, saved.duplicateWarnings ?? []);
+      let warnings = saved.duplicateWarnings ?? [];
+      if (!old && phone.number.trim()) {
+        const added = await masterRequest<{ duplicateWarnings: DuplicateWarning[] }>(me, `/api/cus/customers/${saved.id}/phones`, 'POST',
+          { phone: phone.number.trim(), label: phone.label.trim() || null });
+        warnings = added.duplicateWarnings ?? warnings;
+      }
+      await onSaved(saved.id, warnings);
     } catch (e) { setError((e as Error).message); }
   };
   return <Panel title={old ? `Edit ${old.display_name}` : 'New customer'}><div className="grid gap-3 sm:grid-cols-2">
@@ -90,6 +114,10 @@ function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Customer |
     <Field label="TIN"><input className={inputClass} value={v.tin} onChange={(e) => setV({ ...v, tin: e.target.value })} /></Field>
     <Field label="Billing address"><input className={inputClass} value={v.billingAddress} onChange={(e) => setV({ ...v, billingAddress: e.target.value })} /></Field>
     <Field label="Email"><input type="email" className={inputClass} value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} /></Field>
+    {!old && <>
+      <Field label="Contact no." hint="Mobile or landline, like 0917 123 4567"><input type="tel" inputMode="tel" autoComplete="tel" className={inputClass} value={phone.number} onChange={(e) => setPhone({ ...phone, number: e.target.value })} /></Field>
+      <Field label="Contact no. label" hint="Optional, like Mobile, Office or Coach"><input className={inputClass} value={phone.label} onChange={(e) => setPhone({ ...phone, label: e.target.value })} /></Field>
+    </>}
     <Field label="Notes"><input className={inputClass} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field>
     <Field label="VAT registered"><input type="checkbox" checked={v.isVatRegistered} onChange={(e) => setV({ ...v, isVatRegistered: e.target.checked })} /></Field>
   </div>{error && <Notice>{error}</Notice>}<div className="flex gap-2"><Button tone="primary" disabled={!v.displayName.trim()} onClick={() => void save()}>Save</Button>
@@ -107,6 +135,7 @@ function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
   const [person, setPerson] = useState<Person | null>(null);
   const [personName, setPersonName] = useState('');
   const [personGroup, setPersonGroup] = useState('');
+  const [newPhone, setNewPhone] = useState({ number: '', label: '' });
   const [error, setError] = useState('');
   const action = async (path: string, body: unknown) => {
     try { await masterRequest(me, path, 'POST', body); setError(''); await onRefresh(); return true; }
@@ -116,6 +145,14 @@ function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
     try { await masterRequest(me, path, 'PUT', body, version); setError(''); await onRefresh(); return true; }
     catch (e) { setError((e as Error).message); return false; }
   };
+  const addPhone = async () => {
+    if (!phoneOk(newPhone.number)) return setError(PHONE_RULE);
+    if (await action(`/api/cus/customers/${data.id}/phones`, { phone: newPhone.number.trim(), label: newPhone.label.trim() || null })) setNewPhone({ number: '', label: '' });
+  };
+  const removePhone = async (p: Phone) => {
+    try { await masterRequest(me, `/api/cus/phones/${p.id}/deactivate`, 'POST', {}, p.version); setError(''); await onRefresh(); }
+    catch (e) { setError((e as Error).message); }
+  };
   return <div className="space-y-4"><Panel title={`${data.display_name} · ${data.code}`}>
     <p className="text-sm text-slate-600">{data.kind} · {data.is_active ? 'Active' : 'Inactive'}{data.tin ? ` · TIN ${data.tin}` : ''}</p>
     {data.registered_name && <p>Registered name: {data.registered_name}</p>}
@@ -123,6 +160,18 @@ function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
     {canManage && data.is_active === 1 && <Button onClick={onEdit}>Edit customer</Button>} <Button onClick={onClose}>Close</Button>
   </Panel>
     {error && <Notice>{error}</Notice>}
+    <Panel title="Contact numbers">
+      {data.phones.length === 0 ? <p className="text-sm text-muted">No contact number yet.</p> : <ul className="divide-y divide-slate-100">{data.phones.map((p) => (
+        <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
+          <a href={`tel:${p.phone}`} className="font-semibold text-indigo-700 underline">{showPhone(p.phone)}</a>
+          {p.label && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">{p.label}</span>}
+          {canManage && data.is_active === 1 && <button type="button" className="ml-auto text-xs text-red-700 underline" onClick={() => void removePhone(p)}>Remove</button>}
+        </li>))}</ul>}
+      {canManage && data.is_active === 1 && <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+        <input aria-label="New contact no." type="tel" inputMode="tel" placeholder="Contact no., like 0917 123 4567" className={inputClass} value={newPhone.number} onChange={(e) => setNewPhone({ ...newPhone, number: e.target.value })} />
+        <input aria-label="New contact no. label" placeholder="Label (optional), like Mobile" className={inputClass} value={newPhone.label} onChange={(e) => setNewPhone({ ...newPhone, label: e.target.value })} />
+        <Button disabled={!newPhone.number.trim()} onClick={() => void addPhone()}>Add number</Button></div>}
+    </Panel>
     <Panel title="Groups"><div className="flex flex-wrap gap-2">{data.groups.map((g) => <span key={g.id} className="rounded-full bg-slate-100 px-3 py-1 text-sm">
       {g.name}{!g.is_active && ' (inactive)'} {canManage && g.is_active === 1 && <button className="text-indigo-700 underline" onClick={() => {
         setEditGroup(g); setGroupName(g.name);
