@@ -7,6 +7,15 @@ import { formatPeso } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { SCHEMES, schemeCheck } from './ledger.ts';
 
+/**
+ * When a pay month's SSS, PhilHealth and Pag-IBIG are due: the last day of the next month. exposure.ts counts the
+ * months late from the same day (monthsLate); DASH reads it here for the due-date reminders.
+ */
+export function remittanceDueDate(month: string): string {
+  const d = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) + 1, 0));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+}
+
 export interface RemittanceCheck { scheme: string; label: string; state: 'done' | 'not_done' | 'not_needed'; detail: string }
 
 export function remittanceChecks(db: Db, month: string): RemittanceCheck[] {

@@ -13,8 +13,7 @@ import { board } from '../PRD/public.ts';
 import { sizerBoard } from '../SZR/public.ts';
 import { hasReceived2307, paidTaxPeriods, taxDeadlines, vatSummary } from '../TAX/public.ts';
 import { monthEndChecklist } from '../ACC/public.ts';
-import { remittanceChecks } from '../STAT/public.ts';
-import { monthsLate } from '../STAT/exposure.ts';
+import { remittanceChecks, remittanceDueDate } from '../STAT/public.ts';
 import { nightlyStatus } from '../AUD/public.ts';
 import { redLightNotices, type Host } from '../../platform/health/health.ts';
 
@@ -225,14 +224,7 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
   if (can('stat.view')) {
     let month = prevMonthEnd(date).slice(0, 7);
     for (let n = 0; n < 3; n++, month = prevMonthEnd(`${month}-01`).slice(0, 7)) {
-      // STAT's existing rule decides the first late month; the day before it is the deadline.
-      let afterDue = `${month}-01`;
-      while (monthsLate(month, afterDue) === 0) {
-        const next = day(afterDue);
-        next.setUTCMonth(next.getUTCMonth() + 1);
-        afterDue = dateOf(next);
-      }
-      const dueDate = addDays(afterDue, -1);
+      const dueDate = remittanceDueDate(month); // STAT's rule: the last day of the month after the pay month
       if (date < addDays(dueDate, -7)) continue;
       const monthLabel = day(`${month}-01`).toLocaleDateString('en-PH', { month: 'long', year: 'numeric', timeZone: 'UTC' });
       for (const check of remittanceChecks(db, month)) if (check.scheme !== 'WTAX' && check.state === 'not_done') {
