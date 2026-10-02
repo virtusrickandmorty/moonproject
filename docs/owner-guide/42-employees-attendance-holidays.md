@@ -35,7 +35,7 @@
 2. Use the **← Earlier** or **Later →** buttons to find the right dates.
 3. Pick a status mark for each day from the list (**P** Present, **½** Half day, **A** Absent, **R** Rest day, **L** Leave (SIL), **UL** Unpaid leave, **H** Holiday off, **HW** Holiday worked, or **RW** Rest day worked). The key is printed above the grid. For holidays, you can only pick the holiday marks.
 4. For worked days (Present, Holiday worked, and Rest day worked), an **OT** box appears. Type the overtime in hours (like 1.5 or 1:30).
-5. For night hours (worked between 10 PM and 6 AM), type them in the **Night** box (it appears for Present, Half day, Holiday worked and Rest day worked). For night hours that were also overtime, type them in the **Night OT** box (Present, Holiday worked and Rest day worked only). Type them in hours, like the OT.
+5. For night hours (worked between 10 PM and 6 AM), a **Night** box appears. A **Night OT** box also appears for night hours that were also overtime. Type them in hours.
 6. You can click **Undo changes** if you make a mistake. When you are done, click **Save changes** (the button will show how many changes you made, for example **Save 3 changes**).
 
 #### Adding a local holiday
