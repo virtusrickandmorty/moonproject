@@ -78,7 +78,7 @@ const TEST_PRINTS: readonly { id: string; label: string; paper: string; type: st
 ];
 const NOT_BUILT: string[] = [];
 const testReport = (id: string, label: string, body: string, legend = false) => ({ id, label, paper: 'A4',
-  html: renderReportPrint(label as 'Statement of Account' | 'Sizing Profile' | 'Fixed Asset Schedule' | "Monthly Owners' Pack", body,
+  html: renderReportPrint(label as 'Statement of Account' | 'Sizing Profile' | 'Fixed Asset Schedule', body,
     TEST_PROFILE, '2026-09-28', 'Sample Owner', '2026-09-28T10:00:00+08:00', legend).replace('<article>', '<article><div class="test-print">TEST PRINT, NOT A REAL DOCUMENT</div>') });
 const TEST_REPORTS = [
   testReport('statement-of-account', 'Statement of Account', printField('Customer', 'Sample Customer') +
@@ -87,9 +87,6 @@ const TEST_REPORTS = [
     printLineTable(['Measurement', 'Value', 'Unit'], [['Chest', 36, 'inch']])),
   testReport('fixed-asset-schedule', 'Fixed Asset Schedule', printField('As of', '2026-09-28') +
     printLineTable(['Code', 'Asset', 'Cost', 'Book value'], [['FA-SAMPLE', 'Sample sewing machine', printMoney(500000), printMoney(450000)]])),
-  testReport('monthly-owners-pack', "Monthly Owners' Pack", printField('Month', '2026-09') +
-    printLineTable(['Report', 'Made-up figure'], [['Income statement', printMoney(125000)], ['Cash flow statement', printMoney(98000)], ['Customers owing', printMoney(27000)]]) +
-    '<p><b>Noted by:</b> ______________________________ Owner 1</p>'),
 ];
 
 export function prtRoutes(app: FastifyInstance, deps: AppDeps): void {

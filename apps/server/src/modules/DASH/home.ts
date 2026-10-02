@@ -7,13 +7,11 @@ import type { SessionUser } from '../../engine/security/sessions.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { placesFor } from '../CASH/public.ts';
-import { activeJobOrders, joMoney, joMoneyAll, releasesAwaitingInvoice } from '../JO/public.ts';
+import { activeJobOrders, joMoney, releasesAwaitingInvoice } from '../JO/public.ts';
 import { pendingCertificates } from '../COL/public.ts';
 import { board } from '../PRD/public.ts';
 import { sizerBoard } from '../SZR/public.ts';
-import { hasReceived2307, paidTaxPeriods, taxDeadlines, vatSummary } from '../TAX/public.ts';
-import { monthEndChecklist } from '../ACC/public.ts';
-import { nightlyStatus } from '../AUD/public.ts';
+import { hasReceived2307, paidTaxPeriods, taxDeadlines } from '../TAX/public.ts';
 import { redLightNotices, type Host } from '../../platform/health/health.ts';
 
 /** What the owner is told about for 14 days: actions that need a fresh password, in words (the audit log has the rest). */
@@ -41,7 +39,7 @@ const canSee = (user: SessionUser, registry: Registry, type: string) => {
 };
 
 export interface DashItem { id: string; label: string; href?: string; detail?: string; amountCents?: number }
-export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string; tone?: 'danger' }
+export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string }
 export interface DashNotification extends DashItem { kind: string; read: boolean }
 
 /** Sales and collections are ledger reads; JO collectibles use its public balance-due calculation. */
@@ -86,12 +84,6 @@ export function home(db: Db, clock: Clock, registry: Registry, user: SessionUser
   });
   const addOrders = (key: string, title: string, filtered: typeof orders, withBalance = false) =>
     widgets.push({ key, title, items: filtered.slice(0, 20).map((jo) => item(jo, withBalance ? joMoney(db, jo.id).balanceDueCents : undefined)) });
-  /** The first 20 orders with money owing: each balance is asked for only until 20 are found, not for every order there is. */
-  const owing = (list: typeof orders) => {
-    const found: typeof orders = [];
-    for (const jo of list) if (joMoney(db, jo.id).balanceDueCents > 0 && found.push(jo) === 20) break;
-    return found;
-  };
 
   if (role === 'encoder' || role === 'accountant') {
     const drafts = db.prepare("SELECT id, doc_type AS docType, updated_at AS updatedAt FROM drafts WHERE status = 'open' AND created_by = ? ORDER BY updated_at DESC LIMIT 20")
@@ -105,43 +97,16 @@ export function home(db: Db, clock: Clock, registry: Registry, user: SessionUser
     widgets.push({ key: 'exceptions', title: 'Exceptions inbox', items: notifications(db, clock, registry, user, where)
       .filter((n) => !n.read).slice(0, 20).map(({ id, label, href, detail, amountCents }) => ({ id, label, href, detail, amountCents })) });
   }
-  if ((role === 'accountant' || role === 'owner') && can('tax.registers.view')) {
-    const year = Number(date.slice(0, 4));
-    const quarter = Math.ceil(Number(date.slice(5, 7)) / 3) as 1 | 2 | 3 | 4;
-    const vat = vatSummary(db, year, quarter);
-    widgets.push({ key: 'vat-quarter', title: 'VAT this quarter', href: '/tax/vat', items: [
-      { id: 'output', label: 'Output VAT', amountCents: vat.outputVatCents },
-      { id: 'input', label: 'Input VAT', amountCents: vat.inputVatCents },
-      { id: 'payable', label: 'VAT payable so far', amountCents: vat.payableCents },
-    ] });
-  }
-  if ((role === 'accountant' || role === 'owner') && can('acc.monthend.view')) {
-    const month = prevMonthEnd(date).slice(0, 7);
-    const checklist = monthEndChecklist(db, clock, registry, user, month);
-    const done = checklist.items.filter((step) => step.state === 'done').length;
-    widgets.push({ key: 'month-end', title: 'Month-end checklist', href: '/acc/month-end', items: [
-      { id: month, label: `${done} of ${checklist.items.length} steps done`, detail: month },
-    ] });
-  }
-  if ((role === 'accountant' || role === 'owner') && can('aud.integrity.view')) {
-    const status = nightlyStatus(db);
-    const nightlyFailed = status.foundCount > 0;
-    const integrityFailed = status.integrity !== null && !status.integrity.passed;
-    widgets.push({ key: 'integrity', title: 'Integrity', href: '/aud/integrity', ...(nightlyFailed || integrityFailed ? { tone: 'danger' as const } : {}), items: [
-      { id: 'nightly', label: 'Last nightly check', detail: status.ranAt ? `${status.ranAt} · ${nightlyFailed ? `${status.foundCount} found` : 'Passed'}` : 'Not run yet' },
-      { id: 'integrity', label: 'Last integrity check', detail: status.integrity ? `${status.integrity.ranAt} · ${status.integrity.passed ? 'Passed' : `${status.integrity.foundCount} found`}` : 'Not run yet' },
-    ] });
-  }
   if (role === 'encoder') {
     if (can('jo.view')) {
       const weekEnd = addDays(date, 7 - (day(date).getUTCDay() || 7));
       addOrders('due', 'Job orders due this week', orders.filter((jo) => jo.dueDate >= date && jo.dueDate <= weekEnd));
       addOrders('ready', 'Ready for release', orders.filter((jo) => jo.stage === 'ready'));
     }
-    if (can('jo.view') && can('col.view')) addOrders('collectibles', 'Collectibles', owing(orders), true);
+    if (can('jo.view') && can('col.view')) addOrders('collectibles', 'Collectibles', orders.filter((jo) => joMoney(db, jo.id).balanceDueCents > 0), true);
   }
   if (role === 'owner' && can('jo.view') && can('col.view')) {
-    addOrders('overdue-collectibles', 'Overdue collectibles', owing(orders.filter((jo) => jo.dueDate < date)), true);
+    addOrders('overdue-collectibles', 'Overdue collectibles', orders.filter((jo) => jo.dueDate < date && joMoney(db, jo.id).balanceDueCents > 0), true);
   }
   if ((role === 'encoder' || role === 'production') && can('prd.view')) {
     widgets.push({ key: 'production', title: role === 'production' ? 'Production board' : 'Production queue', href: '/prd/board',
@@ -166,7 +131,7 @@ export function home(db: Db, clock: Clock, registry: Registry, user: SessionUser
     widgets.push({ key: 'cancellations', title: 'Recent cancellations', items: cancelled.filter((d) => canSee(user, registry, d.docType))
       .map((d) => ({ id: d.id, label: d.number, detail: d.reason, href: `/docs/${d.docType}/${d.id}` })) });
   }
-  return { role, asOf: date, widgets, showCharts: role === 'owner' && can('rpt.books.view') };
+  return { role, asOf: date, widgets };
 }
 
 export function notifications(db: Db, clock: Clock, registry: Registry, user: SessionUser, where: HomeContext = {}): DashNotification[] {
@@ -206,7 +171,6 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
       `${set.holder!.customerName} · due ${set.holder!.expectedReturnDate}`);
   }
   // Closed orders are excluded by JO's batch stage read before any balance-due lookup.
-  let money: ReturnType<typeof joMoneyAll> | undefined;
   if (can('jo.view')) for (const jo of activeJobOrders(db)) {
     const stage = jo.stage;
     if (stage !== 'released' && stage !== 'partially_released') {
@@ -215,7 +179,7 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
     }
     if (stage === 'ready') push('jo-ready', jo.id, `${jo.number} is ready for release`, `/docs/jo.job_order/${jo.id}`);
     if (can('col.view') && (stage === 'released' || stage === 'partially_released')) {
-      const balance = (money ??= joMoneyAll(db)).get(jo.id)!.balanceDueCents;
+      const balance = joMoney(db, jo.id).balanceDueCents;
       if (balance > 0) push('released-balance', jo.id, `${jo.number} was released with a balance`, `/docs/jo.job_order/${jo.id}`, undefined, balance);
     }
   }

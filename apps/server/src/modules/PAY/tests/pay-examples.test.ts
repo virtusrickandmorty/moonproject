@@ -2,8 +2,8 @@
  * G-25: the payroll research examples A, B, C and C2 (docs/research/payroll-examples.md, a copy of payroll-ph-2026.md
  * §13–14.3) run through PAY to the centavo. Where PAY differs from an example, the difference is written here as a
  * DECISION, flagged for the accountant. Made-up people; the piece rates are the example's illustrative ones.
- * Then the F1 holiday rules beyond the examples, worked out by hand: night differential (on overtime, of the overtime
- * rate), and the day-before rule for an unworked regular holiday; with property tests of them.
+ * Then the F1 holiday rules beyond the examples, worked out by hand: night differential, and the day-before rule for
+ * an unworked regular holiday; with property tests of both.
  */
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
@@ -258,7 +258,7 @@ describe('night differential (F1): 10% of the hourly rate for work between 10 PM
     const [a, b] = runDoc.load(w.db, run.id).employees;
     // Ben's hourly rate is 1,000 / 8 = 125.00.
     //   Aug 17 and 18, ordinary days: 8 h + 3 h = 11 h at 10% × 125 = 12.50 an hour → 137.50 (660 minutes).
-    //   Aug 18 overtime: 2 h at 125% × 125 = 312.50; no night minutes are typed as overtime, so all 3 h take the day's 10%.
+    //   Aug 18 overtime: 2 h at 125% × 125 = 312.50; its night hours are paid at the day's 10% (see the PR's list).
     //   Aug 21, special day worked (130%): 2 h at 10% × 130% = 13% × 125 = 16.25 an hour → 32.50; premium 30% = 300.00.
     //   Aug 31, regular holiday worked (200%): 4 h at 10% × 200% = 20% × 125 = 25.00 an hour → 100.00; premium 100% = 1,000.00.
     //   Days worked: 13 × 1,000 = 13,000.00 (Aug 17–22, 24–29, 31). Gross 14,882.50.
@@ -281,61 +281,6 @@ describe('night differential (F1): 10% of the hourly rate for work between 10 PM
     expect([a!.grossCents, a!.taxableCents]).toEqual([280_500, 0]);
     const f = form2316(yearParts(w.db, ana, 2026), true);
     expect([f.i29BasicSmwCents, f.i32NightMweCents, f.i38NonTaxableCents - f.i36SharesCents]).toEqual([275_000, 5_500, 280_500]);
-    clean(w.db);
-  });
-});
-
-describe('night differential on overtime (F1, DOLE Handbook): 10% of the overtime hourly rate for night hours that are also overtime', () => {
-  it('₱1,000/day, not an MWE, 1–15 September 2026: an ordinary day and a rest day; an MWE’s is exempt, 2316 item 32', async () => {
-    const w = await world('2026-09-15');
-    const ana = w.person('Ana Tahi', { payType: 'daily', payGroup: 'SEMI_DAILY', dailyRateCents: 55_000, isMwe: true });
-    const ben = w.person('Ben Gabi', { payType: 'daily', payGroup: 'SEMI_DAILY', dailyRateCents: 100_000 });
-    w.attend([
-      // Tue Sep 1: 2 PM to 11 PM (8 h and a meal hour), overtime to 2 AM. Overtime 3 h; night 10 PM to 2 AM, 4 h, 3 h of them overtime.
-      { employeeId: ben, date: '2026-09-01', status: 'present', otMinutes: 180, nightMinutes: 240, nightOtMinutes: 180 },
-      // Sun Sep 6, his rest day: 3 PM to midnight, overtime to 2 AM. Overtime 2 h; night 10 PM to 2 AM, 4 h, 2 h of them overtime.
-      { employeeId: ben, date: '2026-09-06', status: 'rest_day_worked', otMinutes: 120, nightMinutes: 240, nightOtMinutes: 120 },
-      // Ana, Tue Sep 1: overtime 1 h; night 2 h, 1 h of it overtime.
-      { employeeId: ana, date: '2026-09-01', status: 'present', otMinutes: 60, nightMinutes: 120, nightOtMinutes: 60 },
-    ]);
-    const run = w.record(runDoc, { payGroup: 'SEMI_DAILY', periodStart: '2026-09-01' });
-    expect(codes(run.warnings, 'warning')).toEqual([]);
-    const [a, b] = runDoc.load(w.db, run.id).employees;
-    // Ben's hourly rate is 1,000 / 8 = 125.00.
-    //   Sep 1, an ordinary day:
-    //     day worked 1,000.00; overtime 3 h at 125% × 125 = 156.25 an hour → 468.75;
-    //     night, not overtime: 1 h (10 PM to 11 PM) at 10% × 125 = 12.50;
-    //     night overtime: 3 h at 10% of the overtime hourly rate = 10% × 156.25 = 15.625 an hour (12.5%) → 46.875 → 46.88.
-    //     (Before: all 4 h at the day's 12.50 = 50.00; now 12.50 + 46.88 = 59.38.)
-    //   Sep 6, a rest day (130%):
-    //     day worked 1,000.00 + premium 30% = 300.00; overtime 2 h at 130% × 130% = 169% × 125 = 211.25 an hour → 422.50;
-    //     night, not overtime: 2 h at 10% × 130% = 13% × 125 = 16.25 an hour → 32.50;
-    //     night overtime: 2 h at 10% × 211.25 = 21.125 an hour (16.9%) → 42.25.
-    //     (Before: all 4 h at 16.25 = 65.00; now 32.50 + 42.25 = 74.75.)
-    //   Gross: 2,000.00 + 468.75 + 12.50 + 46.88 + 300.00 + 422.50 + 32.50 + 42.25 = 3,325.38.
-    expect(b!.lines.map((l) => [l.kind, l.description, l.qty, l.amountCents])).toEqual([
-      ['basic', 'Days worked', 2_000, 200_000],
-      ['ot', 'Overtime (125% of the hourly rate)', 180, 46_875],
-      ['night', 'Night differential (10% of the hourly rate)', 60, 1_250],
-      ['night', 'Night differential on overtime (12.5% of the hourly rate)', 180, 4_688],
-      ['rest_day', 'Rest day worked, premium (30%)', 1_000, 30_000],
-      ['ot', 'Overtime (169% of the hourly rate)', 120, 42_250],
-      ['night', 'Night differential (13% of the hourly rate)', 120, 3_250],
-      ['night', 'Night differential on overtime (16.9% of the hourly rate)', 120, 4_225],
-    ]);
-    expect([b!.grossCents, b!.lines.filter((l) => l.kind === 'night').every((l) => l.taxable && !l.thirteenthBase)]).toEqual([332_538, true]);
-    // The same payslip line kind: stored as 'ot' lines marked in pay_run_night_diff (0006), loaded back as night differential.
-    expect(w.db.prepare(`SELECT l.kind, COUNT(*) FROM pay_run_night_diff n JOIN pay_run_lines l ON l.id = n.run_line_id GROUP BY l.kind`).raw().all()).toEqual([['ot', 6]]);
-
-    // Ana, ₱550 an MWE, hourly 68.75: day 550.00; overtime 1 h at 125% = 85.9375 → 85.94; night 1 h at 10% = 6.875 → 6.88;
-    // night overtime 1 h at 12.5% = 8.59375 → 8.59. All exempt (RR 11-2018); on the 2316, night is item 32: 6.88 + 8.59 = 15.47.
-    expect(a!.lines.map((l) => [l.description, l.amountCents, l.taxable, l.thirteenthBase])).toEqual([
-      ['Days worked', 55_000, false, true], ['Overtime (125% of the hourly rate)', 8_594, false, false],
-      ['Night differential (10% of the hourly rate)', 688, false, false], ['Night differential on overtime (12.5% of the hourly rate)', 859, false, false],
-    ]);
-    expect([a!.grossCents, a!.taxableCents]).toEqual([65_141, 0]);
-    const f = form2316(yearParts(w.db, ana, 2026), true);
-    expect([f.i29BasicSmwCents, f.i31OvertimeMweCents, f.i32NightMweCents]).toEqual([55_000, 8_594, 1_547]);
     clean(w.db);
   });
 });
@@ -387,7 +332,7 @@ describe('the day before an unworked regular holiday (F1, DOLE): present or on p
   });
 });
 
-describe('property: night minutes, night overtime and the day before a holiday (PLAN I1.3)', () => {
+describe('property: night minutes and the day before a holiday (PLAN I1.3)', () => {
   const REGULAR = ['2026-01-01', '2026-03-20', '2026-04-02', '2026-04-03', '2026-04-09', '2026-05-01', '2026-05-27', '2026-06-12', '2026-08-31', '2026-11-30', '2026-12-25', '2026-12-30'];
   const request = (payGroup: RunRequest['payGroup'], periodStart: string): RunRequest => {
     const periodEnd = periodEndOf(payGroup, periodStart)!;
@@ -427,74 +372,6 @@ describe('property: night minutes, night overtime and the day before a holiday (
       }),
       { numRuns: 25 },
     );
-  });
-
-  it('pay never goes down when night overtime minutes are added, and only night differential lines change', async () => {
-    await fc.assert(
-      fc.asyncProperty(fc.gen(), async (g) => {
-        const w = await world('2026-09-30');
-        const payType = g(() => fc.constantFrom('daily', 'mixed', 'monthly', 'piece') as fc.Arbitrary<'daily' | 'mixed' | 'monthly' | 'piece'>);
-        const payGroup = payType === 'monthly' ? 'SEMI_MONTHLY' : 'SEMI_DAILY';
-        const rate = payType === 'monthly' ? { monthlyRateCents: g(() => fc.integer({ min: 1_000_000, max: 8_000_000 })) } : payType === 'piece' ? {} : { dailyRateCents: g(() => fc.integer({ min: 55_000, max: 250_000 })) };
-        const isMwe = g(() => fc.boolean());
-        const id = w.person('Ivo Gabi', { payType, payGroup, ...rate, isMwe, workweekDays: g(() => fc.constantFrom(5 as const, 6 as const)) });
-        const q = request(payGroup, '2026-08-16'); // Aug 21 special, Aug 31 regular
-        const holidays = new Set(holidaysBetween(w.db, q.periodStart, q.periodEnd).map((h) => h.date));
-        const days = Array.from({ length: 16 }, (_, i) => addDays(q.periodStart, i)).map((date) => {
-          const status = g(() => fc.constantFrom(...(holidays.has(date) ? ['holiday_off', 'holiday_worked', 'rest_day', 'rest_day_worked'] : ['present', 'present', 'half_day', 'absent', 'rest_day', 'rest_day_worked'])));
-          const otMinutes = ['present', 'holiday_worked', 'rest_day_worked'].includes(status) ? g(() => fc.constantFrom(0, 60, 150, 240)) : 0;
-          const nightMinutes = ['present', 'half_day', 'holiday_worked', 'rest_day_worked'].includes(status) ? g(() => fc.integer({ min: 0, max: 480 })) : 0;
-          return { employeeId: id, date, status, otMinutes, nightMinutes };
-        });
-        w.attend(days);
-        const before = one(w.db, q);
-        // In quarter hours, as typed on the grid: a single minute moved to the overtime rate earns about 2 centavos at the
-        // lowest monthly pay here, which one centavo of rounding on each of two lines could take back.
-        const nightOt = days.filter((d) => Math.min(d.otMinutes, d.nightMinutes) >= 15).map((d) => ({ ...d, nightOtMinutes: 15 * g(() => fc.integer({ min: 0, max: Math.floor(Math.min(d.otMinutes, d.nightMinutes) / 15) })) }));
-        if (nightOt.length) w.attend(nightOt);
-        const after = one(w.db, q);
-        expect(withoutNight(after)).toEqual(withoutNight(before));
-        expect(after.grossCents).toBeGreaterThanOrEqual(before.grossCents);
-        // The night minutes paid stay the same: only the rate of some of them goes up.
-        const nightQty = (e: RunEmployee) => e.lines.filter((l) => l.kind === 'night').reduce((s, l) => s + l.qty, 0);
-        expect(nightQty(after)).toBe(nightQty(before));
-        const moved = nightOt.reduce((s, d) => s + d.nightOtMinutes, 0);
-        // Paid per piece: night differential is added by hand (no hourly rate), so the pay stays as it was.
-        if (payType !== 'piece' && moved > 0) expect(after.grossCents).toBeGreaterThan(before.grossCents);
-        if (isMwe) expect(after.taxableCents).toBe(before.taxableCents); // exempt for a minimum wage earner
-        await w.env.app.close();
-      }),
-      { numRuns: 25 },
-    );
-  });
-
-  it('night overtime minutes above the day\'s overtime or night minutes are refused, and nothing is saved', async () => {
-    const w = await world('2026-09-30');
-    const id = w.person('Jo Puyat', { payType: 'daily', payGroup: 'SEMI_DAILY', dailyRateCents: 60_000 });
-    await fc.assert(
-      fc.property(
-        fc.constantFrom('present', 'half_day', 'rest_day_worked'), fc.constantFrom(0, 30, 60, 150, 240), fc.integer({ min: 0, max: 480 }), fc.integer({ min: 1, max: 480 }), fc.integer({ min: 1, max: 30 }),
-        (status, ot, night, above, day) => {
-          const otMinutes = status === 'half_day' ? 0 : ot;
-          const date = `2026-09-${String(day).padStart(2, '0')}`;
-          const nightOtMinutes = Math.min(otMinutes, night) + above;
-          const was = w.db.prepare('SELECT COUNT(*) FROM emp_attendance').pluck().get();
-          let code = '';
-          try {
-            w.attend([{ employeeId: id, date, status, otMinutes, nightMinutes: night, nightOtMinutes }]);
-          } catch (e) {
-            code = (e as { details?: { code: string }[] }).details?.map((i) => i.code).join() ?? String(e);
-          }
-          if (nightOtMinutes > 480) expect(code).not.toBe(''); // refused by the input itself: at most the 8 night hours
-          else expect(code).toBe('NIGHT_OT');
-          expect(w.db.prepare('SELECT COUNT(*) FROM emp_attendance').pluck().get()).toBe(was);
-          // At the limit it is taken.
-          w.attend([{ employeeId: id, date, status, otMinutes, nightMinutes: night, nightOtMinutes: Math.min(otMinutes, night) }]);
-        },
-      ),
-      { numRuns: 60 },
-    );
-    await w.env.app.close();
   });
 
   it('an unworked regular holiday after an absence (past rest days) pays nothing; after a day worked it pays a day', async () => {

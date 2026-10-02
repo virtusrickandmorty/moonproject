@@ -7,9 +7,8 @@ import { postJournal } from '../../../engine/ledger/post.ts';
 import { appendAudit } from '../../../engine/audit.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import { ownerHealth } from '../health.ts';
-import { ownerCharts } from '../charts.ts';
-import { arAging, apAging, cashPosition, collectionsRegister, depositsHeld, incomeStatement, payrollRegister, productionTiming } from '../../RPT/public.ts';
-import { salesRegister, taxDeadlines, vatSummary } from '../../TAX/public.ts';
+import { arAging, apAging, cashPosition, collectionsRegister, depositsHeld, payrollRegister, productionTiming } from '../../RPT/public.ts';
+import { salesRegister, taxDeadlines } from '../../TAX/public.ts';
 
 const addDays = (date: string, days: number) => {
   const value = new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000);
@@ -27,41 +26,6 @@ async function jobOrder(env: Awaited<ReturnType<typeof createTestEnv>>, customer
 }
 
 describe('DASH role homes and notifications', () => {
-  it('builds twelve monthly chart points from the reports, including empty months, and protects the route', async () => {
-    const env = await createTestEnv();
-    const owner = await env.as('owner');
-    const encoder = await env.as('encoder');
-    const cash = env.db.prepare("SELECT id FROM accounts WHERE code = '1101'").pluck().get() as number;
-    const customer = seedCustomers(env.db, owner.userId).school;
-    for (const [date, received, spent] of [['2025-11-14', 50_000, 12_000], ['2026-03-09', 80_000, 25_000]] as const) tx(env.db, () => {
-      postJournal(env.db, { memo: 'Made-up monthly chart activity', lines: [
-        { account: { cashPlace: cash }, debitCents: received },
-        { account: { role: 'SALES_SERVICE' }, party: { type: 'customer', id: customer }, creditCents: received },
-        { account: { role: 'CASH_SHORT_OVER' }, debitCents: spent },
-        { account: { cashPlace: cash }, creditCents: spent },
-      ] }, { sourceType: 'test', sourceId: newId(), businessDate: date, userId: owner.userId, at: stamp(env.clock) });
-    });
-    const charts = ownerCharts(env.db, today(env.clock));
-    expect(charts.months).toHaveLength(12);
-    expect(charts.months.some((month) => month.salesCents === 0 && month.expensesCents === 0)).toBe(true);
-    for (const month of charts.months) {
-      const statement = incomeStatement(env.db, month.from, month.to);
-      const section = (key: string) => statement.sections.find((row) => row.key === key)?.totalCents ?? 0;
-      expect(month.salesCents).toBe(section('revenue'));
-      expect(month.expensesCents).toBe(section('costOfSales') + section('operatingExpenses') + section('incomeTax'));
-      expect(month.collectionsCents).toBe(collectionsRegister(env.db, month.from, month.to).tenderCents);
-      const book = await owner.get(`/api/cash/places/${cash}/book?from=${month.from}&to=${month.to}`);
-      expect(book.statusCode, book.body).toBe(200);
-      expect(month.cashCents).toBe(book.json().closingCents);
-    }
-    const response = await owner.get('/api/dash/owner-charts');
-    expect(response.statusCode, response.body).toBe(200);
-    expect(response.json()).toEqual(charts);
-    expect(charts.receivables.map((bucket) => bucket.amountCents)).toEqual(Object.values(arAging(env.db, charts.asOf).buckets));
-    expect((await encoder.get('/api/dash/owner-charts')).statusCode).toBe(403);
-    env.db.close();
-  });
-
   it('gives each role its own permitted home', async () => {
     const env = await createTestEnv();
     const [encoder, accountant, owner, production] = await Promise.all([env.as('encoder'), env.as('accountant'), env.as('owner'), env.as('production')]);
@@ -72,42 +36,11 @@ describe('DASH role homes and notifications', () => {
     }));
     expect(homes.map((h) => h.role)).toEqual(['encoder', 'accountant', 'owner', 'production']);
     expect(homes[0]!.widgets.map((w) => w.key)).toEqual(['drafts', 'due', 'ready', 'collectibles', 'production']);
-    expect(homes[1]!.widgets.map((w) => w.key)).toEqual(['drafts', 'exceptions', 'vat-quarter', 'month-end', 'integrity']);
-    expect(homes[2]!.widgets.map((w) => w.key)).toEqual(['vat-quarter', 'month-end', 'integrity', 'overdue-collectibles', 'cash', 'sales', 'collections', 'cancellations']);
+    expect(homes[1]!.widgets.map((w) => w.key)).toEqual(['drafts', 'exceptions']);
+    expect(homes[2]!.widgets.map((w) => w.key)).toEqual(['overdue-collectibles', 'cash', 'sales', 'collections', 'cancellations']);
     expect(homes[3]!.widgets.map((w) => w.key)).toEqual(['production']);
     expect((await owner.get('/api/dash/owner-health')).statusCode).toBe(200);
     for (const client of [encoder, accountant, production]) expect((await client.get('/api/dash/owner-health')).statusCode).toBe(403);
-    env.db.close();
-  });
-
-  it('uses the VAT worksheet, month-end checklist and AUD results for accounting widgets', async () => {
-    const env = await createTestEnv();
-    const accountant = await env.as('accountant');
-    const home = (await accountant.get('/api/dash/home')).json();
-    const vat = vatSummary(env.db, 2026, 3);
-    expect(home.widgets.find((w: { key: string }) => w.key === 'vat-quarter').items).toEqual([
-      { id: 'output', label: 'Output VAT', amountCents: vat.outputVatCents },
-      { id: 'input', label: 'Input VAT', amountCents: vat.inputVatCents },
-      { id: 'payable', label: 'VAT payable so far', amountCents: vat.payableCents },
-    ]);
-    const checklist = (await accountant.get('/api/acc/month-end?month=2026-08')).json();
-    const done = checklist.items.filter((item: { state: string }) => item.state === 'done').length;
-    expect(home.widgets.find((w: { key: string }) => w.key === 'month-end').items[0].label).toBe(`${done} of ${checklist.items.length} steps done`);
-
-    env.db.prepare("INSERT INTO aud_nightly_runs (id, night, covers_from, ran_at, found_count) VALUES ('dash-run', '2026-09-27', '2026-09-27', '2026-09-28T02:00:00.000+08:00', 1)").run();
-    env.db.prepare("INSERT INTO aud_nightly_checks (run_id, check_key, passed, found_count) VALUES ('dash-run', 'integrity', 0, 1)").run();
-    const failed = (await accountant.get('/api/dash/home')).json().widgets.find((w: { key: string }) => w.key === 'integrity');
-    expect(failed).toMatchObject({ tone: 'danger', items: [
-      { label: 'Last nightly check', detail: expect.stringContaining('1 found') },
-      { label: 'Last integrity check', detail: expect.stringContaining('1 found') },
-    ] });
-
-    for (const permission of ['tax.registers.view', 'acc.monthend.view', 'aud.integrity.view']) {
-      env.db.prepare("UPDATE role_permissions SET granted = 0 WHERE role_key = 'accountant' AND permission_key = ?").run(permission);
-    }
-    const hidden = (await (await env.as('accountant')).get('/api/dash/home')).json();
-    expect(hidden.widgets.map((w: { key: string }) => w.key)).not.toEqual(expect.arrayContaining(['vat-quarter', 'month-end', 'integrity']));
-    expect((await (await env.as('encoder')).get('/api/dash/home')).json().widgets.map((w: { key: string }) => w.key)).not.toEqual(expect.arrayContaining(['vat-quarter', 'month-end', 'integrity']));
     env.db.close();
   });
 

@@ -5,7 +5,7 @@
  * day it was cancelled.
  */
 import { api, taxRegisterPath, type Me } from '../../api.ts';
-import { Notice, Panel, Pager } from '../../components/ui.tsx';
+import { Notice, Panel } from '../../components/ui.tsx';
 import { Excel, RangeForm, RegisterTable, pesos, supplierColumns, useRangeReport } from './ReportParts.tsx';
 import { atcToConfirmWords, atcWords, classTotals, classWords, ewtClassWords, ledgerWarnings, quarterSoFar, rateWords } from './reports.ts';
 
@@ -45,7 +45,6 @@ export function PurchasesRegister({ me }: { me: Me }) {
             { head: 'Input VAT', amount: true, cell: (x) => pesos(x.vatCents), total: pesos(d.totals.vatCents) },
             { head: 'Total', amount: true, cell: (x) => pesos(x.totalCents), total: pesos(d.totals.totalCents) },
           ]} />
-          <Pager page={d.page} onOffset={r.goto} />
           <Excel url={taxRegisterPath('purchases', d.from, d.to)} />
         </Panel>
       )}
@@ -75,7 +74,6 @@ export function EwtRegister({ me }: { me: Me }) {
             { head: 'Rate', amount: true, cell: (x) => rateWords(x.rateBp) },
             { head: 'EWT', amount: true, cell: (x) => pesos(x.ewtCents), total: pesos(d.totals.ewtCents) },
           ]} />
-          <Pager page={d.page} onOffset={r.goto} />
           <Excel url={taxRegisterPath('ewt', d.from, d.to)} />
         </Panel>
       )}

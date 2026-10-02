@@ -7,7 +7,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
 import { dpAppliedByInvoice, dpHeld, invoiceCreditsAt } from '../COL/public.ts';
-import { JO_DOC_TYPES_SQL, currentStage, type Stage } from './stages.ts';
+import { JO_DOC_TYPES_SQL, currentStage } from './stages.ts';
 
 export { abandon, currentStage, isAbandoned, productionMove, unabandon, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
 export { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, awaitingInvoice, invoiceAmounts, invoiceNumberUsedBy, invoiceNumbersBetween, settleLines } from './doctypes/invoice-record.ts';
@@ -131,53 +131,6 @@ export function joMoney(db: Db, documentId: string) {
   return { ...owed, requiredDownpaymentCents: r.requiredDownpaymentCents, ...ledger, ...balanceDue({ ...owed, ...ledger }) };
 }
 
-export type JoMoney = ReturnType<typeof joMoney>;
-
-/**
- * joMoney for every job order in one pass, for lists of thousands (follow-up report, pick lists, dashboards): a loop of joMoney
- * asks the ledger about each order in turn. The figures are the same as joMoney's, worked out by the same rules over grouped sums;
- * JO's tests compare the two.
- */
-export function joMoneyAll(db: Db): Map<string, JoMoney> {
-  const byRef = (role: string) => new Map((db.prepare(`SELECT l.ref_doc_id AS id, SUM(l.debit_cents - l.credit_cents) AS bal
-    FROM journal_lines l JOIN journals j ON j.id = l.journal_id
-    WHERE l.account_id = ? AND j.sealed = 1 AND l.ref_doc_id IS NOT NULL GROUP BY l.ref_doc_id`)
-    .all(resolveAccount(db, { role }).id) as { id: string; bal: number }[]).map((r) => [r.id, r.bal]));
-  const receivable = byRef('AR_TRADE');
-  const deposits = byRef('CUSTOMER_DEPOSITS');
-  const sums = (sql: string) => new Map((db.prepare(sql).all() as { id: string; a: number; b: number }[]).map((r) => [r.id, r]));
-  const invoiced = sums(`SELECT i.job_order_id AS id, SUM(i.gross_cents) AS a, 0 AS b FROM jo_invoice_records i JOIN documents d ON d.id = i.document_id
-    WHERE d.status = 'posted' GROUP BY i.job_order_id`);
-  const opening = sums(`SELECT o.document_id AS id, SUM(o.receivable_cents) AS a, 0 AS b FROM jo_opening_orders o JOIN documents d ON d.id = o.document_id
-    WHERE d.status = 'posted' GROUP BY o.document_id`);
-  // Mode C downpayments (COL dpHeld): the rows that stand are those of recorded documents and the cancel follow-ups.
-  const dp = sums(`SELECT v.job_order_id AS id, SUM(v.dp_invoiced_cents) AS a, SUM(v.dp_vat_cents) AS b FROM col_deposit_vat v JOIN documents d ON d.id = v.document_id
-    WHERE v.posting = 'cancel' OR d.status = 'posted' GROUP BY v.job_order_id`);
-  const out = new Map<string, JoMoney>();
-  for (const r of db.prepare(`SELECT d.id, d.status, d.total_cents AS totalCents, o.required_dp_cents AS requiredDownpaymentCents
-    FROM jo_orders o JOIN documents d ON d.id = o.document_id`).all() as { id: string; status: string; totalCents: number; requiredDownpaymentCents: number }[]) {
-    const held = dp.get(r.id);
-    const owed = { totalCents: r.status === 'cancelled' ? 0 : r.totalCents, invoicedCents: (invoiced.get(r.id)?.a ?? 0) + (opening.get(r.id)?.a ?? 0) + (held?.a ?? 0) };
-    const ledger = { receivableCents: receivable.get(r.id) ?? 0, depositsHeldCents: 0 - (deposits.get(r.id) ?? 0) - ((held?.a ?? 0) - (held?.b ?? 0)) };
-    out.set(r.id, { ...owed, requiredDownpaymentCents: r.requiredDownpaymentCents, ...ledger, ...balanceDue({ ...owed, ...ledger }) });
-  }
-  return out;
-}
-
-/** The current stage of every live job order (the latest stage event; 'open' before any), for the lists that would ask once per order. */
-export function stagesAll(db: Db): Map<string, Stage> {
-  return new Map((db.prepare(`SELECT s.document_id AS id, s.to_stage AS stage FROM jo_stage_events s
-    WHERE s.seq = (SELECT MAX(seq) FROM jo_stage_events WHERE document_id = s.document_id)`).all() as { id: string; stage: Stage }[]).map((r) => [r.id, r.stage]));
-}
-
-/** Pieces still to release on every job order: what its lines ordered less what its recorded releases took (lineState's sums, grouped). */
-export function leftPiecesAll(db: Db): Map<string, number> {
-  const ordered = db.prepare('SELECT document_id AS id, SUM(qty) AS n FROM jo_lines GROUP BY document_id').all() as { id: string; n: number }[];
-  const released = new Map((db.prepare(`SELECT r.job_order_id AS id, SUM(rl.qty) AS n FROM jo_release_lines rl JOIN jo_releases r ON r.document_id = rl.document_id
-    JOIN documents d ON d.id = r.document_id WHERE d.status = 'posted' GROUP BY r.job_order_id`).all() as { id: string; n: number }[]).map((r) => [r.id, r.n]));
-  return new Map(ordered.map((r) => [r.id, r.n - (released.get(r.id) ?? 0)]));
-}
-
 /** A release's invoice record as other documents see it (COL credit memos, write-offs, 2307s received on it). */
 export interface InvoiceRecordRef {
   id: string; number: string; status: 'posted' | 'cancelled'; businessDate: string; invoiceNumber: string; customerId: string; customerName: string;
@@ -281,22 +234,22 @@ export function releasesAwaitingInvoice(db: Db, asOf: string) {
 
 /** Current stage, open money and released quantity for every live job order. */
 export function jobOrderStatusRows(db: Db) {
-  const money = joMoneyAll(db);
-  const stages = stagesAll(db);
-  return jobOrdersOf(db).map((order) => ({ ...order, stage: stages.get(order.id) ?? 'open', ...money.get(order.id)! }));
+  return jobOrdersOf(db).map((order) => {
+    const stage = db.prepare(`SELECT to_stage FROM jo_stage_events WHERE document_id = ? ORDER BY seq DESC LIMIT 1`)
+      .pluck().get(order.id) as string | undefined;
+    return { ...order, stage: stage ?? 'open', ...joMoney(db, order.id) };
+  });
 }
 
 
 /** Dates and release state needed by RPT's production timing reports. */
 export function productionOrderRows(db: Db) {
-  // The first release date is asked of each order on its own (an index on jo_releases answers it), not by grouping a join of
-  // every order with every release, which read all releases for a report of thousands of orders.
   return db.prepare(`SELECT d.id,d.number,d.business_date AS orderDate,o.customer_name AS customerName,o.due_date AS dueDate,
-    COALESCE(s.to_stage,'open') AS stage,
-    (SELECT MIN(rd.business_date) FROM jo_releases r JOIN documents rd ON rd.id=r.document_id WHERE r.job_order_id=d.id AND rd.status='posted') AS releaseDate
+    COALESCE(s.to_stage,'open') AS stage,MIN(rd.business_date) AS releaseDate
     FROM jo_orders o JOIN documents d ON d.id=o.document_id
     LEFT JOIN jo_stage_events s ON s.document_id=d.id AND s.seq=(SELECT MAX(seq) FROM jo_stage_events WHERE document_id=d.id)
-    WHERE d.status='posted' ORDER BY d.number`).all() as Array<Record<string, string | null>>;
+    LEFT JOIN jo_releases r ON r.job_order_id=d.id LEFT JOIN documents rd ON rd.id=r.document_id AND rd.status='posted'
+    WHERE d.status='posted' GROUP BY d.id ORDER BY d.number`).all() as Array<Record<string, string | null>>;
 }
 
 /**

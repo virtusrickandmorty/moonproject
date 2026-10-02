@@ -81,9 +81,9 @@ async function jobOrder(customerId = c.school): Promise<string> {
 }
 const stage = async (jo: string, from: string, to: string) => expect((await encoder.post(`/api/jo/orders/${jo}/stage`, { from, to })).statusCode).toBe(200);
 const ready = async (jo: string) => (await stage(jo, 'open', 'in_production'), await stage(jo, 'in_production', 'ready'));
-async function release(jo: string, invoiceNumber?: string) {
+async function release(jo: string) {
   const release = { jobOrderId: jo, lines: [{ lineNo: 1, qty: 20 }], claimedBy: 'Coach Placeholder', idSeen: 'school_id', creditNote: 'Balance by bank transfer after the event', creditDueInDays: 7 };
-  const r = await accountant.post('/api/jo/releases', { release, invoice: invoiceNumber ? { invoiceNumber } : null, expectedTotalCents: 5_600_000 }, idem());
+  const r = await accountant.post('/api/jo/releases', { release, invoice: null, expectedTotalCents: 5_600_000 }, idem());
   expect(r.statusCode, r.body).toBe(200);
   return r.json().release.id as string;
 }
@@ -279,38 +279,6 @@ describe('the queue: one email per template', () => {
     expect(refused.statusCode).toBe(409);
     expect(refused.json().message).toBe('This customer has not agreed to get emails.');
     expect(outbox()).toEqual([]);
-  });
-
-  it('bulk statements queue exactly the ticked eligible customers once, with the same figures as a single statement', async () => {
-    consent(c.other, 'club@example.test', 1);
-    const school = await jobOrder(c.school); await ready(school); await release(school, '1201');
-    const club = await jobOrder(c.other); await ready(club); await release(club, '1202');
-    const list = await accountant.get('/api/com/statements/bulk?date=2026-09-28');
-    expect(list.statusCode, list.body).toBe(200);
-    expect(list.json().eligible.map((row: any) => [row.customerId, row.balanceCents])).toEqual([[c.school, 5_600_000], [c.other, 5_600_000]]);
-
-    expect((await accountant.post('/api/com/statements/bulk', { date: '2026-09-28', customerIds: [c.other] })).json()).toEqual({ queued: 1 });
-    const bulk = outbox().find((row) => row.dedupe_key === `statement:2026-09-28:${c.other}`)!;
-    expect(bulk).toMatchObject({ customer_id: c.other, period_from: '2026-09-01', period_to: '2026-09-28', to_address: 'club@example.test' });
-    expect(outbox().some((row) => row.template === 'statement' && row.customer_id === c.school)).toBe(false);
-    expect((await accountant.post('/api/com/statements/bulk', { date: '2026-09-28', customerIds: [c.other] })).json()).toEqual({ queued: 0 });
-
-    const figures = (await accountant.get(`/api/rpt/customer-statement?customerId=${c.other}&from=2026-09-01&to=2026-09-28`)).json();
-    expect(figures.closingBalanceCents).toBe(5_600_000);
-    expect(bulk.attachment_html).toContain('₱56,000.00');
-    expect(bulk.subject).toContain('2026-09-01 to 2026-09-28');
-  });
-
-  it('bulk statements list a customer without consent apart, never queue it, and refuse other roles', async () => {
-    const school = await jobOrder(c.school); await ready(school); await release(school, '1301');
-    consent(c.school, 'school@example.test', 0);
-    const list = (await accountant.get('/api/com/statements/bulk?date=2026-09-28')).json();
-    expect(list.eligible).toEqual([]);
-    expect(list.excluded).toEqual([expect.objectContaining({ customerId: c.school, reason: 'No email consent' })]);
-    expect((await accountant.post('/api/com/statements/bulk', { date: '2026-09-28', customerIds: [c.school] })).json()).toEqual({ queued: 0 });
-    expect(outbox().filter((row) => row.template === 'statement')).toEqual([]);
-    expect((await encoder.get('/api/com/statements/bulk?date=2026-09-28')).statusCode).toBe(403);
-    expect((await encoder.post('/api/com/statements/bulk', { date: '2026-09-28', customerIds: [c.school] })).statusCode).toBe(403);
   });
 });
 

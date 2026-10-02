@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api, openServerPrint, type Me } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Button, Field, Notice, Panel, inputClass, peso, type PageInfo } from '../../components/ui.tsx';
-import { BookTitle, Tools, money, td, th, usePagedReport, useReport, useToday } from './Books.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { BookTitle, Tools, money, td, th, useReport, useToday } from './Books.tsx';
 import './books.css';
 
 type Buckets = { current: number; days1to30: number; days31to60: number; days61to90: number; over90: number };
@@ -11,7 +11,7 @@ type Aging = { asOf: string; rows: { customerId: string | null; customerName: st
   buckets: Buckets; totalCents: number }[]; buckets: Buckets; totalCents: number;
   allowance: { customerId: string; customerName: string; allowanceCents: number }[]; allowanceCents: number; netCents: number;
   memo: { customerId: string; customerName: string; jobOrderId: string; jobOrderNumber: string; dueDate: string; notInvoicedCents: number }[];
-  memoTotalCents: number; page?: PageInfo; memoPage?: PageInfo };
+  memoTotalCents: number };
 type Statement = { customerId: string; customerName: string; from: string; to: string; openingBalanceCents: number;
   lines: { journalId: string; businessDate: string; journalNumber: string; sourceId: string;
     documentType: string | null; documentNumber: string | null; memo: string; debitCents: number;
@@ -31,7 +31,7 @@ export function ArAging({ me }: { me: Me }) {
   useEffect(() => { if (today && !asOf) setAsOf(today); }, [today, asOf]);
   useEffect(() => { if (asOf && !applied) setApplied(new URLSearchParams({ asOf }).toString()); }, [asOf, applied]);
   const path = applied ? `ar-aging?${applied}` : null;
-  const { data, error, pager, pagerFor } = usePagedReport<Aging>(path);
+  const { data, error } = useReport<Aging>(path);
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   return <article className="rpt-page space-y-4"><BookTitle title="AR aging" dates={data ? `As of ${data.asOf}` : ''} />
     <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="As of"><input type="date" className={inputClass}
@@ -54,14 +54,14 @@ export function ArAging({ me }: { me: Me }) {
         <td className={td} colSpan={3 + bucketNames.length}>Less allowance for credit losses</td><td className={money}>({peso(row.allowanceCents)})</td></tr>)}
         <tr className="font-semibold"><td className={td} colSpan={4 + bucketNames.length}>Less allowance for credit losses</td><td className={money}>({peso(data.allowanceCents)})</td></tr>
         <tr className="font-semibold"><td className={td} colSpan={4 + bucketNames.length}>Net receivables</td><td className={money}>{peso(data.netCents)}</td></tr></>}
-      </tbody></table></div>{pager}</Panel>
+      </tbody></table></div></Panel>
       <Panel title="Job orders not yet invoiced (memo only)"><div className="overflow-x-auto"><table className="w-full text-sm">
         <thead><tr>{['Customer', 'Job order', 'Due date', 'Amount'].map((name) => <th className={th} key={name}>{name}</th>)}</tr></thead>
         <tbody>{data.memo.map((row) => <tr key={row.jobOrderId}><td className={td}>{row.customerName}</td>
           <td className={td}>{docLink(row.jobOrderId, 'jo.job_order', row.jobOrderNumber)}</td><td className={td}>{row.dueDate}</td>
           <td className={money}>{peso(row.notInvoicedCents)}</td></tr>)}
           <tr className="font-semibold"><td className={td} colSpan={3}>Memo total</td><td className={money}>{peso(data.memoTotalCents)}</td></tr>
-        </tbody></table></div>{pagerFor('memoOffset', data.memoPage, 'job orders')}</Panel></>}
+        </tbody></table></div></Panel></>}
   </article>;
 }
 

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, type TaxJournalRef, type TaxRegisterRow, type TaxSupplierRow } from '../../api.ts';
-import { Button, Field, Notice, PAGE_ROWS, inputClass } from '../../components/ui.tsx';
+import { Button, Field, Notice, inputClass } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { QUARTERS, cancelMark, excelUrl, rangeError, yearChoices, type Quarter } from './reports.ts';
@@ -10,20 +10,19 @@ import { QUARTERS, cancelMark, excelUrl, rangeError, yearChoices, type Quarter }
 type Range = { from: string; to: string };
 
 /** A report over a range of dates: opens on `initial` of the server's today and loads it; `show` asks again. */
-export function useRangeReport<T>(allowed: boolean, initial: (today: string) => Range, load: (from: string, to: string, page: { limit: number; offset: number }) => Promise<T>) {
+export function useRangeReport<T>(allowed: boolean, initial: (today: string) => Range, load: (from: string, to: string) => Promise<T>) {
   const [range, setRange] = useState<Range>({ from: '', to: '' });
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const asked = useRef(0);
-  // `offset`: the row a long register starts at. Reports that are not paged ignore the page they are given.
-  const show = async (r: Range, offset = 0) => {
+  const show = async (r: Range) => {
     if (rangeError(r.from, r.to)) return;
     const n = ++asked.current; // only the last answer is shown
     setBusy(true);
     setError('');
     setData(null);
-    await load(r.from, r.to, { limit: PAGE_ROWS, offset }).then((d) => n === asked.current && setData(d), (e: Error) => n === asked.current && setError(e.message));
+    await load(r.from, r.to).then((d) => n === asked.current && setData(d), (e: Error) => n === asked.current && setError(e.message));
     if (n === asked.current) setBusy(false);
   };
   useEffect(() => {
@@ -35,7 +34,7 @@ export function useRangeReport<T>(allowed: boolean, initial: (today: string) => 
     }, (e: Error) => setError(e.message));
   }, [allowed]); // once, on the server's today
   const set = (part: Partial<Range>) => (setRange({ ...range, ...part }), setData(null));
-  return { ...range, data, error, busy, set, show: () => show(range), goto: (offset: number) => show(range, offset) };
+  return { ...range, data, error, busy, set, show: () => show(range) };
 }
 
 export function RangeForm({ r }: { r: ReturnType<typeof useRangeReport<unknown>> }) {

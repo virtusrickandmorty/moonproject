@@ -96,7 +96,7 @@ export function audRoutes(app: FastifyInstance, { db, clock, registry, practice 
     const brokenAt = verifyAuditChain(db);
     const audit = { ok: brokenAt === null, brokenAt, count, newestAt: latest?.at ?? null,
       message: brokenAt === null ? `The entire audit chain is intact (${count} entries).` : `The audit chain breaks at entry ${brokenAt}. Check the database and a known good backup.` };
-    const checks = runInvariants(db, { auditBrokenAt: brokenAt }).map((r) => ({ ...r, name: NAMES[r.id] ?? r.id,
+    const checks = runInvariants(db).map((r) => ({ ...r, name: NAMES[r.id] ?? r.id,
       message: r.ok ? `${NAMES[r.id] ?? r.id}: passed.` : `${NAMES[r.id] ?? r.id}: ${r.problems.join('; ')}` }));
     return { audit, checks };
   });

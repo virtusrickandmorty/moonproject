@@ -91,12 +91,12 @@ describe('print base', () => {
     const response = await owner.get('/api/prt/test-pack');
     expect(response.statusCode, response.body).toBe(200);
     const pack = response.json() as { prints: { id: string; label: string; paper: string; html: string }[]; notBuilt: string[] };
-    expect(pack.prints).toHaveLength(27);
+    expect(pack.prints).toHaveLength(26);
     expect(new Set(pack.prints.map((p) => p.id)).size).toBe(pack.prints.length);
     for (const item of pack.prints) {
       expect(item.html, item.id).toContain('TEST PRINT, NOT A REAL DOCUMENT');
-      if (!['statement-of-account', 'sizing-profile', 'fixed-asset-schedule', 'monthly-owners-pack', 'bir-2307'].includes(item.id) && !item.id.startsWith('book-')) expect(item.html, item.id).toContain('TEST-000000');
-      expect(item.html, item.id).toMatch(/<h1>(QUOTATION|JOB ORDER|JOB TICKET|RELEASE SLIP|COLLECTION RECEIPT|CREDIT MEMO|PURCHASE ORDER|PAYMENT VOUCHER|EXPENSE VOUCHER|FUND TRANSFER|CASH COUNT|JOURNAL VOUCHER|PAYSLIP|CASH ADVANCE SLIP|INVENTORY COUNT SHEET|STATEMENT OF ACCOUNT|SIZING PROFILE|FIXED ASSET SCHEDULE|MONTHLY OWNERS&#39; PACK|CERTIFICATE OF CREDITABLE TAX WITHHELD AT SOURCE|CASH RECEIPTS JOURNAL|CASH DISBURSEMENTS JOURNAL|SALES JOURNAL|PURCHASE JOURNAL|GENERAL JOURNAL|GENERAL LEDGER)<\/h1>/);
+      if (!['statement-of-account', 'sizing-profile', 'fixed-asset-schedule', 'bir-2307'].includes(item.id) && !item.id.startsWith('book-')) expect(item.html, item.id).toContain('TEST-000000');
+      expect(item.html, item.id).toMatch(/<h1>(QUOTATION|JOB ORDER|JOB TICKET|RELEASE SLIP|COLLECTION RECEIPT|CREDIT MEMO|PURCHASE ORDER|PAYMENT VOUCHER|EXPENSE VOUCHER|FUND TRANSFER|CASH COUNT|JOURNAL VOUCHER|PAYSLIP|CASH ADVANCE SLIP|INVENTORY COUNT SHEET|STATEMENT OF ACCOUNT|SIZING PROFILE|FIXED ASSET SCHEDULE|CERTIFICATE OF CREDITABLE TAX WITHHELD AT SOURCE|CASH RECEIPTS JOURNAL|CASH DISBURSEMENTS JOURNAL|SALES JOURNAL|PURCHASE JOURNAL|GENERAL JOURNAL|GENERAL LEDGER)<\/h1>/);
     }
     const publicPrints = ['quotation', 'job-order', 'release-slip', 'collection-a4', 'collection-80mm', 'credit-memo', 'purchase-order', 'payment-voucher', 'statement-of-account'];
     for (const item of pack.prints) expect(item.html.includes('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.')).toBe(publicPrints.includes(item.id));

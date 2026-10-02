@@ -1,6 +1,6 @@
 /**
  * The attendance grid's rules (PLAN E11): the pay period shown by default, the days in it, which statuses a day takes,
- * overtime, night hours and night overtime typed in hours, holidays filled in from the calendar, and the cells that changed. Pure, so it is tested without a browser; the server checks again.
+ * overtime and night hours typed in hours, holidays filled in from the calendar, and the cells that changed. Pure, so it is tested without a browser; the server checks again.
  */
 import type { AttendanceDay, AttendanceGrid, AttendanceSave, AttendanceStatus, PaidDays } from '../../api.ts';
 
@@ -53,11 +53,10 @@ export function otMinutes(text: string): number | undefined {
 }
 export const otText = (minutes: number) => (minutes ? (minutes % 60 ? `${Math.floor(minutes / 60)}:${pad(minutes % 60)}` : String(minutes / 60)) : '');
 
-/** `nightOt`: of the night hours, those that were also overtime (paid 10% of the overtime rate), at most `ot` and `night`. */
-export interface Cell { status: AttendanceStatus | ''; ot: string; night: string; nightOt: string }
+export interface Cell { status: AttendanceStatus | ''; ot: string; night: string }
 export const cellKey = (employeeId: string, date: string) => `${employeeId}|${date}`;
 export function cellsOf(days: AttendanceDay[]): Record<string, Cell> {
-  return Object.fromEntries(days.map((d) => [cellKey(d.employeeId, d.date), { status: d.status, ot: otText(d.otMinutes), night: otText(d.nightMinutes), nightOt: otText(d.nightOtMinutes) }]));
+  return Object.fromEntries(days.map((d) => [cellKey(d.employeeId, d.date), { status: d.status, ot: otText(d.otMinutes), night: otText(d.nightMinutes) }]));
 }
 
 /**
@@ -73,7 +72,7 @@ export function startCells(grid: AttendanceGrid): { cells: Record<string, Cell>;
     for (const e of grid.employees) {
       const key = cellKey(e.id, h.date);
       if (cells[key] || h.date < e.hireDate || (e.separatedOn !== null && h.date > e.separatedOn) || paidBy(grid.paid, e.id, h.date)) continue;
-      cells[key] = { status: 'holiday_off', ot: '', night: '', nightOt: '' };
+      cells[key] = { status: 'holiday_off', ot: '', night: '' };
       filled++;
     }
   }
@@ -87,25 +86,22 @@ export function changedCells(saved: AttendanceDay[], cells: Record<string, Cell>
   const errors: string[] = [];
   for (const [key, c] of Object.entries(cells)) {
     const before = was[key];
-    if ((before?.status ?? '') === c.status && (before?.ot ?? '') === c.ot.trim() && (before?.night ?? '') === c.night.trim() && (before?.nightOt ?? '') === c.nightOt.trim()) continue;
+    if ((before?.status ?? '') === c.status && (before?.ot ?? '') === c.ot.trim() && (before?.night ?? '') === c.night.trim()) continue;
     const [employeeId, date] = key.split('|') as [string, string];
     const at = `${names[employeeId] ?? 'Someone'} on ${date}`;
     if (!c.status) {
       if (before) errors.push(`${at}: pick a status (a typed day cannot be left blank).`);
-      else if (c.ot.trim() || c.night.trim() || c.nightOt.trim()) errors.push(`${at}: pick a status for the overtime or night hours.`);
+      else if (c.ot.trim() || c.night.trim()) errors.push(`${at}: pick a status for the overtime or night hours.`);
       continue;
     }
     const ot = otMinutes(c.ot);
     const night = otMinutes(c.night);
-    const nightOt = otMinutes(c.nightOt);
     if (ot === undefined) errors.push(`${at}: type overtime in hours, like 1.5 or 1:30.`);
     else if (ot > 0 && !WITH_OT.has(c.status)) errors.push(`${at}: overtime goes only with a worked day.`);
     else if (night === undefined) errors.push(`${at}: type night hours in hours, like 1.5 or 1:30.`);
     else if (night > 0 && !WITH_NIGHT.has(c.status)) errors.push(`${at}: night hours go only with a worked day.`);
     else if (night > MAX_NIGHT_MINUTES) errors.push(`${at}: night hours are at most 8 (10 PM to 6 AM).`);
-    else if (nightOt === undefined) errors.push(`${at}: type night overtime in hours, like 1.5 or 1:30.`);
-    else if (nightOt > Math.min(ot, night)) errors.push(`${at}: night overtime is at most the overtime and the night hours of the day.`);
-    else days.push({ employeeId, date, status: c.status, ...(ot ? { otMinutes: ot } : {}), ...(night ? { nightMinutes: night } : {}), ...(nightOt ? { nightOtMinutes: nightOt } : {}) });
+    else days.push({ employeeId, date, status: c.status, ...(ot ? { otMinutes: ot } : {}), ...(night ? { nightMinutes: night } : {}) });
   }
   days.sort((a, b) => a.date.localeCompare(b.date) || a.employeeId.localeCompare(b.employeeId));
   return { days, errors };

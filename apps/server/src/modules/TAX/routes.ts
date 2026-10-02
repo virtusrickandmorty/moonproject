@@ -23,7 +23,6 @@ import { addDeductionSetting, annualIncomeTaxWorksheet, deductionAt, deductionHi
 import { ewtAnnualReturn } from './ewt-annual.ts';
 import { classifySale, sawt, slspPurchases, slspSales, type Tie } from './slsp.ts';
 import { changesAfterFiling } from './filed.ts';
-import { pageAsked, paged } from '../../platform/paging.ts';
 
 export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
@@ -58,7 +57,7 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   // Tax registers (PLAN E12): JSON for the screens, or CSV for Excel with ?format=csv.
-  type RangeQuery = { Querystring: { from?: string; to?: string; format?: string; limit?: string; offset?: string } };
+  type RangeQuery = { Querystring: { from?: string; to?: string; format?: string } };
   const range = (q: RangeQuery['Querystring']) => {
     if (!q.from || !q.to || !isBusinessDate(q.from) || !isBusinessDate(q.to)) throw badRequest('BAD_DATE', 'Pick the first and last dates, like 2026-07-01 and 2026-09-30.');
     if (q.to < q.from) throw badRequest('BAD_RANGE', 'The last date is before the first.');
@@ -81,16 +80,10 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
     return toCsv(rows);
   };
 
-  /** A register as the screen gets it: a page of its rows when one is asked for (?limit&offset), each row with its document's title. */
-  const register = <R extends { rows: { docType: string | null }[] }>(r: R, query: RangeQuery['Querystring']) => {
-    const shown = paged(r, 'rows', pageAsked(query));
-    return { ...shown, rows: shown.rows.map((x) => ({ ...x, docTitle: title(x.docType) })) };
-  };
-
   app.get<RangeQuery>('/api/tax/registers/sales', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
     const { from, to } = range(req.query);
     const r = salesRegister(db, from, to);
-    if (req.query.format !== 'csv') return register(r, req.query);
+    if (req.query.format !== 'csv') return { ...r, rows: r.rows.map((x) => ({ ...x, docTitle: title(x.docType) })) };
     return csv(reply, `sales-register-${from}-${to}`, [
       [...HEAD, 'VATable sales', 'VAT', 'Total'],
       ...r.rows.map((x) => [...lead(x), csvPesos(x.netCents), csvPesos(x.vatCents), csvPesos(x.totalCents)]),
@@ -101,7 +94,7 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get<RangeQuery>('/api/tax/registers/withholding-received', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
     const { from, to } = range(req.query);
     const r = withholdingReceivedRegister(db, from, to);
-    if (req.query.format !== 'csv') return register(r, req.query);
+    if (req.query.format !== 'csv') return { ...r, rows: r.rows.map((x) => ({ ...x, docTitle: title(x.docType) })) };
     return csv(reply, `2307-received-${from}-${to}`, [
       [...HEAD, 'ATC', '2307', 'Received on', 'Opening 2307 for', 'CWT', 'VAT withheld'],
       ...r.rows.map((x) => [...lead(x), x.atc, x.certificate, x.receivedOn, x.period, csvPesos(x.cwtCents), csvPesos(x.vatWithheldCents)]),
@@ -123,7 +116,7 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get<RangeQuery>('/api/tax/registers/purchases', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
     const { from, to } = range(req.query);
     const r = purchasesRegister(db, from, to);
-    if (req.query.format !== 'csv') return register(r, req.query);
+    if (req.query.format !== 'csv') return { ...r, rows: r.rows.map((x) => ({ ...x, docTitle: title(x.docType) })) };
     return csv(reply, `purchases-register-${from}-${to}`, [
       ['Date', 'Journal', 'Cancel', 'Document', 'Number', 'Supplier invoice', 'Supplier', 'TIN', 'Class', 'Amount before VAT', 'Input VAT', 'Total'],
       ...r.rows.map((x) => [
@@ -158,7 +151,7 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get<RangeQuery>('/api/tax/registers/ewt', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
     const { from, to } = range(req.query);
     const r = ewtRegister(db, from, to);
-    if (req.query.format !== 'csv') return register(r, req.query);
+    if (req.query.format !== 'csv') return { ...r, rows: r.rows.map((x) => ({ ...x, docTitle: title(x.docType) })) };
     return csv(reply, `ewt-register-${from}-${to}`, [
       ['Date', 'Journal', 'Cancel', 'Document', 'Number', 'Supplier', 'TIN', 'EWT class', 'ATC', 'Base', 'Rate', 'EWT'],
       ...r.rows.map((x) => [

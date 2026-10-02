@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { AppError, csvPesos, toCsv, type CsvCell } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
-import { comparativeTrialBalance, generalJournal, generalJournalCsv, generalLedger, ledgerAccounts } from './books.ts';
-import { balanceSheet, changesInEquity, compareSections, comparisonDates, incomeStatement, type Comparison, type StatementSection } from './statements.ts';
+import { comparativeTrialBalance, generalJournal, generalLedger, ledgerAccounts } from './books.ts';
+import { balanceSheet, compareSections, comparisonDates, incomeStatement, type Comparison, type StatementSection } from './statements.ts';
 import { arAging, customerStatement } from './receivables.ts';
 import { statementCustomers } from '../CUS/public.ts';
 import { collectionsRegister, depositsCrossingQuarter, depositsHeld, jobOrderFollowUp, salesByPeriod } from './sales-collections.ts';
@@ -12,11 +12,6 @@ import { apAging, purchases, purchaseOrders, receivedNotBilled } from './supplie
 import { cashPosition, transfers, cashCounts, assetSchedule } from './cash-assets.ts';
 import { lateEntries, cancellations, exceptions, signIns } from './control.ts';
 import { cashFlowStatement } from './cash-flow.ts';
-import { pageAsked, paged, pagedLedger } from '../../platform/paging.ts';
-import { monthlyOwnersPack, monthlyOwnersPackBody } from './monthly-pack.ts';
-import { companyProfile, renderReportPrint } from '../PRT/public.ts';
-import { currentUser } from '../../engine/security/routes.ts';
-import { stamp, today } from '../../platform/clock.ts';
 
 function date(value: unknown): string {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new AppError('BAD_DATE', 'Use a date in YYYY-MM-DD format.', 400);
@@ -64,19 +59,9 @@ function sectionRows(s: StatementSection, comparative = false): CsvCell[][] {
 const STATEMENT_HEAD = ['Section', 'Account', 'Line', 'Amount PHP'];
 
 export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
-  const { db, clock } = deps;
+  const { db } = deps;
   birBookRoutes(app, deps);
   payrollProductionRoutes(app, deps);
-  app.post('/api/rpt/monthly-owners-pack', { config: { permission: 'rpt.books.view' } }, async (req) => {
-    const month = (req.body as { month?: unknown } | null)?.month;
-    if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month))
-      throw new AppError('BAD_MONTH', 'Pick a month in YYYY-MM format.', 400);
-    const profile = companyProfile(db);
-    if (!profile) throw new AppError('COMPANY_PROFILE_REQUIRED', 'An owner must complete the company profile before printing.', 409);
-    const data = monthlyOwnersPack(db, month), user = currentUser(req);
-    return { data, html: renderReportPrint("Monthly Owners' Pack", monthlyOwnersPackBody(data), profile,
-      today(clock), user.displayName, stamp(clock)) };
-  });
   app.get('/api/rpt/deposits-held', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const result = depositsHeld(db, date(q.asOf));
@@ -105,7 +90,7 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/rpt/collections-register', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const { from, to } = range(q); const result = collectionsRegister(db, from, to);
-    if (q.format !== 'csv') return paged(result, 'rows', pageAsked(q));
+    if (q.format !== 'csv') return result;
     return sendCsv(reply, `collections-register-${from}-${to}`, [
       ['Date', 'Collection', 'Customer', 'Cash place', 'Tender PHP', 'CWT PHP', 'Recorded by', 'Status', 'Document link'],
       ...result.rows.map((r): CsvCell[] => [r.date, r.number, r.customerName, r.cashPlaceName ?? '',
@@ -116,7 +101,7 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/rpt/sales-by-period', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const { from, to } = range(q); const result = salesByPeriod(db, from, to);
-    if (q.format !== 'csv') return paged(result, 'rows', pageAsked(q));
+    if (q.format !== 'csv') return result;
     return sendCsv(reply, `sales-by-period-${from}-${to}`, [
       ['Date', 'Document', 'Customer', 'Item', 'Class', 'Garment type', 'Quantity', 'Net sales PHP', 'Document link'],
       ...result.rows.map((r): CsvCell[] => [r.date, r.number, r.customerName, r.description, r.kind,
@@ -127,8 +112,7 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/rpt/job-order-follow-up', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const result = jobOrderFollowUp(db);
-    // A page of the orders, and (its own page, `balanceOffset`) of the released orders that still owe.
-    if (q.format !== 'csv') return paged(paged(result, 'rows', pageAsked(q)), 'releasedWithBalance', pageAsked(q, 'balanceOffset'), 'balancePage');
+    if (q.format !== 'csv') return result;
     return sendCsv(reply, 'job-order-follow-up', [
       ['Job order', 'Customer', 'Status', 'Due date', 'Balance PHP', 'Document link'],
       ...result.rows.map((r): CsvCell[] => [r.number, r.customerName, r.stage, r.dueDate,
@@ -142,8 +126,7 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/rpt/ar-aging', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
     const result = arAging(db, date(q.asOf));
-    // A page of the invoices, and (its own page, `memoOffset`) of the job orders not yet invoiced.
-    if (q.format !== 'csv') return paged(paged(result, 'rows', pageAsked(q)), 'memo', pageAsked(q, 'memoOffset'), 'memoPage');
+    if (q.format !== 'csv') return result;
     const rows: CsvCell[][] = [['Customer', 'Document', 'Job order', 'Date', 'Due date', 'Current PHP',
       '1-30 PHP', '31-60 PHP', '61-90 PHP', 'Over 90 PHP', 'Total PHP']];
     for (const r of result.rows) rows.push([r.customerName, r.documentNumber, r.jobOrderNumber, r.date, r.dueDate,
@@ -187,8 +170,12 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
     const q = req.query as Record<string, unknown>;
     const { from, to } = range(q);
     const result = generalJournal(db, from, to);
-    if (q.format !== 'csv') return paged(result, 'journals', pageAsked(q));
-    return sendCsv(reply, `general-journal-${result.from}-${result.to}`, generalJournalCsv(result));
+    if (q.format !== 'csv') return result;
+    const rows: CsvCell[][] = [['Date', 'Journal', 'Document type', 'Document', 'Posting', 'Account', 'Account name', 'Party type', 'Party ID', 'Debit PHP', 'Credit PHP', 'Memo']];
+    for (const j of result.journals) for (const l of j.lines) rows.push([j.businessDate, j.journalNumber, j.documentType, j.documentNumber,
+      j.postingKind, l.accountCode, l.accountName, l.partyType, l.partyId, pesos(l.debitCents), pesos(l.creditCents), l.memo ?? j.journalMemo]);
+    rows.push(['TOTAL', '', '', '', '', '', '', '', '', pesos(result.totalDebitCents), pesos(result.totalCreditCents), '']);
+    return sendCsv(reply, `general-journal-${result.from}-${result.to}`, rows);
   });
   app.get('/api/rpt/ledger', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;
@@ -197,7 +184,7 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (id !== undefined && (!Number.isSafeInteger(id) || id <= 0 || !ledgerAccounts(db).some((a) => a.id === id)))
       throw new AppError('BAD_ACCOUNT', 'Choose an account from the list.', 400);
     const result = generalLedger(db, from, to, id);
-    if (q.format !== 'csv') return pagedLedger(result, pageAsked(q));
+    if (q.format !== 'csv') return result;
     const rows: CsvCell[][] = [['Account', 'Account name', 'Date', 'Journal', 'Document type', 'Document', 'Party type', 'Party ID', 'Debit PHP', 'Credit PHP', 'Balance PHP', 'Memo']];
     for (const a of result.accounts) {
       rows.push([a.code, a.name, from, '', '', '', '', '', '', '', pesos(a.openingBalanceCents), 'Opening balance']);
@@ -263,17 +250,6 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
       check('Total liabilities and equity', result.totalLiabilitiesAndEquityCents, other?.totalLiabilitiesAndEquityCents ?? 0),
       check('Total assets less liabilities and equity', result.differenceCents, other?.differenceCents ?? 0)];
     return sendCsv(reply, `balance-sheet-${result.asOf}`, rows);
-  });
-  app.get('/api/rpt/changes-in-equity', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
-    const q = req.query as Record<string, unknown>; const { from, to } = range(q); const result = changesInEquity(db, from, to, (type) => deps.registry.docType(type)?.title ?? type);
-    if (q.format !== 'csv') return result;
-    const head: CsvCell[] = ['Movement', ...result.columns.map((c) => `${c.code ? `${c.code} ` : ''}${c.name} PHP`), 'Total equity PHP'];
-    const line = (label: string, values: Record<string, number>): CsvCell[] => [label, ...result.columns.map((c) => csvPesos(values[c.key] ?? 0)),
-      csvPesos(result.columns.reduce((sum, c) => sum + (values[c.key] ?? 0), 0))];
-    const opening = Object.fromEntries(result.columns.map((c) => [c.key, c.startCents]));
-    const ending = Object.fromEntries(result.columns.map((c) => [c.key, c.endCents]));
-    return sendCsv(reply, `statement-of-changes-in-equity-${from}-${to}`, [head, line(`Balance at ${result.openingAsOf}`, opening),
-      ...result.rows.map((r) => line(r.label, r.amountsCents)), line(`Balance at ${to}`, ending)]);
   });
   app.get('/api/rpt/cash-flow', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>; const { from, to } = range(q); const result = cashFlowStatement(db, from, to);

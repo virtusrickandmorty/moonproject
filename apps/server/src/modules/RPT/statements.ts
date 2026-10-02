@@ -21,8 +21,6 @@ export type StatementGroup = Compared & { code: string | null; name: string | nu
 export type StatementSection = Compared & { key: string; title: string; side: Side; groups: StatementGroup[]; totalCents: number };
 
 export type Comparison = 'previous_month' | 'last_year';
-export type EquityChangeColumn = { key: string; accountId: number | null; code: string | null; name: string; startCents: number; endCents: number };
-export type EquityChangeRow = { key: string; label: string; documentType: string | null; amountsCents: Record<string, number>; totalCents: number };
 
 const parts = (date: string) => date.split('-').map(Number) as [number, number, number];
 const daysInMonth = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
@@ -99,20 +97,18 @@ function chart(db: Db): ChartRow[] {
 
 /** Debit-positive net and line count per account, from sealed journals dated from..to (no lower bound when from is null). */
 function movements(db: Db, from: string | null, to: string): Map<number, Movement> {
-  // The journals of the dates come first (CROSS JOIN fixes the order), then each one's lines: without a date index on the
-  // journals SQLite read every line and looked its journal up.
   const rows = db.prepare(`SELECT l.account_id AS accountId, SUM(l.debit_cents - l.credit_cents) AS netCents, COUNT(*) AS lineCount
-    FROM journals j CROSS JOIN journal_lines l ON l.journal_id = j.id
-    WHERE j.sealed = 1 AND ${from === null ? 'j.business_date <= @to' : 'j.business_date BETWEEN @from AND @to'}
-    GROUP BY l.account_id`).all(from === null ? { to } : { from, to }) as ({ accountId: number } & Movement)[];
+    FROM journal_lines l JOIN journals j ON j.id = l.journal_id
+    WHERE j.sealed = 1 AND (@from IS NULL OR j.business_date >= @from) AND j.business_date <= @to
+    GROUP BY l.account_id`).all({ from, to }) as ({ accountId: number } & Movement)[];
   return new Map(rows.map((r) => [r.accountId, r]));
 }
 
-/** Net income (credit-positive) of every income statement account, from movements already read. */
-function netIncome(accounts: ChartRow[], moved: Map<number, Movement>, before?: Map<number, Movement>): number {
+/** Net income (credit-positive) of every income statement account, dated from..to. */
+function netIncome(db: Db, accounts: ChartRow[], from: string | null, to: string): number {
   const codes = new Map(accounts.map((a) => [a.id, a.code]));
   let net = 0;
-  for (const [id, m] of moved) if (!onBalanceSheet(codes.get(id) ?? '')) net -= m.netCents - (before?.get(id)?.netCents ?? 0);
+  for (const [id, m] of movements(db, from, to)) if (!onBalanceSheet(codes.get(id) ?? '')) net -= m.netCents;
   return net;
 }
 
@@ -176,13 +172,11 @@ export function balanceSheet(db: Db, asOf: string) {
   const balances = movements(db, null, asOf);
   const year = Number(asOf.slice(0, 4));
   const yearStart = `${year}-01-01`;
-  // The current year's earnings are the movement to asOf less the movement to the year before's end: two reads, not three.
-  const before = movements(db, null, `${year - 1}-12-31`);
-  const currentYearEarningsCents = netIncome(accounts, balances, before);
-  const earlierYearsEarningsCents = netIncome(accounts, before);
+  const currentYearEarningsCents = netIncome(db, accounts, yearStart, asOf);
+  const earlierYearsEarningsCents = netIncome(db, accounts, null, `${year - 1}-12-31`);
   const dividends = accounts.find((a) => a.roleKey === 'DIVIDENDS_DECLARED');
   // Credit-positive, like the equity section: dividends declared before 1 January and not closed to 3201.
-  const earlierYearsDividendsCents = dividends ? 0 - (before.get(dividends.id)?.netCents ?? 0) : 0;
+  const earlierYearsDividendsCents = dividends ? 0 - (movements(db, null, `${year - 1}-12-31`).get(dividends.id)?.netCents ?? 0) : 0;
   const currentYear = accounts.find((a) => a.roleKey === 'CURRENT_YEAR_EARNINGS');
   const retained = accounts.find((a) => a.roleKey === 'RETAINED_EARNINGS') ?? currentYear;
   const entry = (a: ChartRow, side: Side, amountCents: number, computed = false): Entry => ({ accountId: a.id, code: a.code, name: a.name,
@@ -212,80 +206,9 @@ export function balanceSheet(db: Db, asOf: string) {
   const totalLiabilitiesAndEquityCents = totalLiabilitiesCents + totalEquityCents;
   // Trade receivables less the allowance for credit losses (1201 − 1209); the two lines also sit under Receivables.
   const roleBalance = (role: string) => { const a = accounts.find((x) => x.roleKey === role); return a ? (balances.get(a.id)?.netCents ?? 0) : 0; };
-  const tradeCents = roleBalance('AR_TRADE'); const allowanceCents = 0 - roleBalance('AR_ALLOWANCE'); // 0 - x: an empty allowance is 0, not -0
+  const tradeCents = roleBalance('AR_TRADE'); const allowanceCents = -roleBalance('AR_ALLOWANCE');
   const receivables = { tradeCents, allowanceCents, netCents: tradeCents - allowanceCents };
   return { asOf, yearStart, sections, receivables, currentYearEarningsCents, earlierYearsEarningsCents, earlierYearsDividendsCents, totalAssetsCents, totalLiabilitiesCents,
     totalEquityCents, totalLiabilitiesAndEquityCents, differenceCents: totalAssetsCents - totalLiabilitiesAndEquityCents,
     balanced: totalAssetsCents === totalLiabilitiesAndEquityCents };
-}
-
-const previousDate = (date: string) => {
-  const [year, month, day] = parts(date);
-  const d = new Date(Date.UTC(year, month - 1, day - 1));
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-};
-
-/** Changes in each balance-sheet equity line, reconciled from the opening balance to the closing balance. */
-/** `titleOf` names a document type for the other-movements rows (the route passes the registry's titles). */
-export function changesInEquity(db: Db, from: string, to: string, titleOf: (documentType: string) => string = (type) => type) {
-  const accounts = chart(db).filter((a) => a.isHeader === 0 && a.code[0] === '3');
-  const openingAsOf = previousDate(from);
-  const opening = balanceSheet(db, openingAsOf);
-  const closing = balanceSheet(db, to);
-  const equityLines = (statement: ReturnType<typeof balanceSheet>) => statement.sections
-    .find((s) => s.key === 'equity')!.groups.flatMap((g) => g.lines);
-  const openingLines = equityLines(opening); const closingLines = equityLines(closing);
-  const currentYear = accounts.find((a) => a.roleKey === 'CURRENT_YEAR_EARNINGS');
-  const retained = accounts.find((a) => a.roleKey === 'RETAINED_EARNINGS');
-  const dividends = accounts.find((a) => a.roleKey === 'DIVIDENDS_DECLARED');
-  const keyOf = (line: StatementLine) => line.accountId === currentYear?.id || line.name === 'Current-year earnings'
-    ? 'profit-for-the-year' : line.name.startsWith('Earlier years’ earnings') && retained ? `account:${retained.id}`
-      : line.name.startsWith('Earlier years’ dividends') && dividends ? `account:${dividends.id}`
-        : line.accountId === null ? `computed:${line.name}` : `account:${line.accountId}`;
-  const amountMap = (lines: StatementLine[]) => { const values = new Map<string, number>();
-    for (const line of lines) values.set(keyOf(line), (values.get(keyOf(line)) ?? 0) + line.amountCents); return values; };
-  const starts = amountMap(openingLines); const ends = amountMap(closingLines);
-  const columns: EquityChangeColumn[] = accounts.filter((a) => a.id !== currentYear?.id).map((a) => ({ key: `account:${a.id}`, accountId: a.id,
-    code: a.code, name: a.name, startCents: starts.get(`account:${a.id}`) ?? 0, endCents: ends.get(`account:${a.id}`) ?? 0 }));
-  columns.push({ key: 'profit-for-the-year', accountId: currentYear?.id ?? null, code: currentYear?.code ?? null,
-    name: currentYear?.name ?? 'Profit for the year', startCents: starts.get('profit-for-the-year') ?? 0, endCents: ends.get('profit-for-the-year') ?? 0 });
-  const empty = () => Object.fromEntries(columns.map((c) => [c.key, 0]));
-  const profit = empty(); profit['profit-for-the-year'] = incomeStatement(db, from, to).netIncomeCents;
-  const ledger = db.prepare(`SELECT COALESCE(d.doc_type, j.source_type) AS documentType, l.account_id AS accountId,
-      SUM(l.credit_cents - l.debit_cents) AS amountCents
-    FROM journal_lines l JOIN journals j ON j.id = l.journal_id
-    LEFT JOIN documents d ON j.source_type = 'document' AND d.id = j.source_id
-    JOIN accounts a ON a.id = l.account_id
-    WHERE j.sealed = 1 AND j.business_date >= ? AND j.business_date <= ? AND a.code LIKE '3%'
-    GROUP BY documentType, l.account_id ORDER BY documentType, l.account_id`).all(from, to) as
-    { documentType: string; accountId: number; amountCents: number }[];
-  const byType = new Map<string, Record<string, number>>();
-  for (const item of ledger) {
-    const values = byType.get(item.documentType) ?? empty();
-    const key = item.accountId === currentYear?.id ? 'profit-for-the-year' : `account:${item.accountId}`;
-    values[key] = (values[key] ?? 0) + item.amountCents; byType.set(item.documentType, values);
-  }
-  const take = (types: string[]) => { const values = empty(); for (const type of types) { const found = byType.get(type); if (!found) continue;
-    for (const column of columns) values[column.key] = (values[column.key] ?? 0) + (found[column.key] ?? 0); byType.delete(type); } return values; };
-  const total = (values: Record<string, number>) => columns.reduce((sum, column) => sum + values[column.key]!, 0);
-  const rows: EquityChangeRow[] = [
-    { key: 'profit', label: 'Profit or loss for the period', documentType: null, amountsCents: profit, totalCents: total(profit) },
-    { key: 'dividends', label: 'Dividends declared', documentType: 'eq.dividend', amountsCents: take(['eq.dividend']), totalCents: 0 },
-    { key: 'owners', label: 'Owners’ money put in and taken out', documentType: 'eq.owner_money', amountsCents: take(['eq.owner_money']), totalCents: 0 },
-  ];
-  rows[1]!.totalCents = total(rows[1]!.amountsCents); rows[2]!.totalCents = total(rows[2]!.amountsCents);
-  for (const [documentType, amountsCents] of byType) rows.push({ key: `other:${documentType}`, label: `Other movements — ${titleOf(documentType)}`,
-    documentType, amountsCents, totalCents: total(amountsCents) });
-  const accounted = empty(); for (const row of rows) for (const column of columns)
-    accounted[column.key] = (accounted[column.key] ?? 0) + (row.amountsCents[column.key] ?? 0);
-  const residual = empty(); for (const column of columns) residual[column.key] = column.endCents - column.startCents - accounted[column.key]!;
-  // What the rows leave is the balance sheet's own year-end step: last year's profit moves from the profit-for-the-year line to
-  // earlier years' earnings, so it adds up to nothing. Anything else would be a difference to look into, and is named so.
-  if (Object.values(residual).some((value) => value !== 0)) {
-    const moved = total(residual) === 0;
-    rows.push({ key: moved ? 'other:earlier-profit-moved' : 'other:difference', documentType: null, amountsCents: residual, totalCents: total(residual),
-      label: moved ? 'Earlier years’ profit moved to retained earnings' : 'Difference not explained by the rows above (check the ledger)' });
-  }
-  return { from, to, openingAsOf, columns, rows, openingTotalCents: columns.reduce((sum, c) => sum + c.startCents, 0),
-    endingTotalCents: columns.reduce((sum, c) => sum + c.endCents, 0), balanceSheetTotalEquityCents: closing.totalEquityCents };
 }

@@ -6,7 +6,7 @@
 import { AppError, conflict, notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { currentStage, jobOrderRef, jobOrdersOf, lineState, productionMove, stagesAll } from '../JO/public.ts';
+import { currentStage, jobOrderRef, jobOrdersOf, lineState, productionMove } from '../JO/public.ts';
 
 export const COMPLEXITIES = ['simple', 'standard', 'complex'] as const;
 export type Complexity = (typeof COMPLEXITIES)[number];
@@ -178,11 +178,9 @@ export function stepAction(db: Db, jobOrderId: string, lineNo: number, stepId: n
  * the step it is at (the first one not closed) and whether it is ready. The screen groups the cards by step.
  */
 export function board(db: Db) {
-  // Every recorded order's stage in one read: asking once per order costs seconds once the shop has years of finished ones.
-  const stages = stagesAll(db);
   return jobOrdersOf(db).flatMap((jo) => {
-    const stage = stages.get(jo.id) ?? 'open';
-    if (stage === 'released' || stage === 'closed') return []; // (jobOrdersOf lists recorded orders only, so none is cancelled)
+    const stage = currentStage(db, jo.id);
+    if (stage === 'released' || stage === 'closed' || stage === 'cancelled') return [];
     return lineState(db, jo.id)
       .filter((l) => l.qty > l.releasedQty)
       .map((l) => {

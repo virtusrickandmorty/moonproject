@@ -10,7 +10,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { activeChart, activeWearers, customerWearers } from './cus.ts';
 import { STAGES, STAGE_LABELS, changeStage, currentStage, isAbandoned, movesFrom, stageHistory } from './stages.ts';
 import { MODE_WORDS, depositModeOn, modeKeptIssue } from '../COL/public.ts';
-import { jobOrderRef, jobOrdersOf, joMoney, leftPiecesAll, stagesAll } from './public.ts';
+import { jobOrderRef, jobOrdersOf, joMoney } from './public.ts';
 import { dpInvoiceDoc } from './doctypes/dp-invoice.ts';
 import { lineState, releaseDoc, type Release } from './doctypes/release.ts';
 import { awaitingInvoice, invoiceFigures, invoiceRecordDoc, invoiceRecordInput } from './doctypes/invoice-record.ts';
@@ -108,18 +108,15 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
    */
   app.get('/api/jo/pick/orders', { config: { permission: 'jo.view' } }, async (req) => {
     const q = searchOf(req);
-    // Stages and pieces left are read for all orders at once; a balance is worked out only for the 20 that are shown.
-    const stages = stagesAll(db);
-    const left = leftPiecesAll(db);
-    const rows: { id: string; number: string; customerName: string; dueDate: string; stageLabel: string; leftPieces: number; balanceDueCents: number }[] = [];
-    for (const jo of jobOrdersOf(db)) {
-      if (q && !jo.number.toLowerCase().includes(q) && !jo.customerName.toLowerCase().includes(q)) continue;
-      const leftPieces = left.get(jo.id) ?? 0;
-      if (!q && leftPieces <= 0) continue;
-      rows.push({ id: jo.id, number: jo.number, customerName: jo.customerName, dueDate: jo.dueDate, stageLabel: STAGE_LABELS[stages.get(jo.id) ?? 'open'], leftPieces, balanceDueCents: joMoney(db, jo.id).balanceDueCents });
-      if (rows.length === 20) break;
-    }
-    return rows;
+    const rows = jobOrdersOf(db)
+      .filter((jo) => !q || jo.number.toLowerCase().includes(q) || jo.customerName.toLowerCase().includes(q))
+      .map((jo) => {
+        const stage = currentStage(db, jo.id);
+        const leftPieces = lineState(db, jo.id).reduce((s, l) => s + l.qty - l.releasedQty, 0);
+        return { id: jo.id, number: jo.number, customerName: jo.customerName, dueDate: jo.dueDate, stageLabel: STAGE_LABELS[stage], leftPieces, balanceDueCents: joMoney(db, jo.id).balanceDueCents };
+      })
+      .filter((jo) => q || jo.leftPieces > 0);
+    return rows.slice(0, 20);
   });
 
   /** Releases to pick on the invoice record form (read-only): by release, job order or customer; with nothing typed, the ones waiting for their invoice. */
