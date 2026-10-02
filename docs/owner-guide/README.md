@@ -62,5 +62,6 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [58. Attachments](58-attachments.md): Attach a photo or a PDF to a document, and remove one.
 - [59. Reversing journal vouchers](59-reversing-journal-vouchers.md): Mark an accrual to reverse next month and record its reversal.
 - [60. Dividends](60-dividends.md): Declare and pay a cash dividend to stockholders.
+- [61. Allowance for credit losses](61-allowance-for-credit-losses.md): Set up bad debts to write off directly or via allowance, record an allowance, and write off invoices.
 - [62. VAT on Uncollected Receivables](62-vat-on-uncollected-receivables.md): Claim output VAT on an uncollected receivable, and add it back when the customer pays.
 - [63. Owners' charts and monthly pack](63-owners-charts-and-monthly-pack.md): View the business performance charts and print the monthly pack for the co-owners' meeting.
