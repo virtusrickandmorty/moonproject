@@ -28,8 +28,10 @@ export function canonicalJson(v: unknown): string {
 }
 
 function hashRow(prev: string, r: { seq: number; at: string; user_id: string | null; action: string; entity_type: string; entity_id: string | null; data: string }): string {
+  // canonicalJson of the row, written out: its keys sorted are action, at, data, entity_id, entity_type, seq, user_id. Checking the
+  // whole chain hashes every entry ever made, so this runs a few hundred thousand times (audit tests compare it with canonicalJson).
   return createHash('sha256')
-    .update(prev + canonicalJson({ seq: r.seq, at: r.at, user_id: r.user_id, action: r.action, entity_type: r.entity_type, entity_id: r.entity_id, data: r.data }))
+    .update(`${prev}{"action":${JSON.stringify(r.action)},"at":${JSON.stringify(r.at)},"data":${JSON.stringify(r.data)},"entity_id":${JSON.stringify(r.entity_id)},"entity_type":${JSON.stringify(r.entity_type)},"seq":${r.seq},"user_id":${JSON.stringify(r.user_id)}}`)
     .digest('hex');
 }
 
@@ -57,11 +59,11 @@ export function appendAudit(db: Db, e: AuditEntry): void {
 export function verifyAuditChain(db: Db): number | null {
   let prev = GENESIS;
   let expectedSeq = 1;
-  for (const r of db.prepare('SELECT * FROM audit_log ORDER BY seq').iterate() as Iterable<{
-    seq: number; at: string; user_id: string | null; action: string; entity_type: string; entity_id: string | null; data: string; prev_hash: string; row_hash: string;
-  }>) {
-    if (r.seq !== expectedSeq || r.prev_hash !== prev || hashRow(prev, r) !== r.row_hash) return r.seq;
-    prev = r.row_hash;
+  for (const [seq, at, userId, action, entityType, entityId, data, prevHash, rowHash] of db.prepare(
+    'SELECT seq, at, user_id, action, entity_type, entity_id, data, prev_hash, row_hash FROM audit_log ORDER BY seq',
+  ).raw().iterate() as Iterable<[number, string, string | null, string, string, string | null, string, string, string]>) {
+    if (seq !== expectedSeq || prevHash !== prev || hashRow(prev, { seq, at, user_id: userId, action, entity_type: entityType, entity_id: entityId, data }) !== rowHash) return seq;
+    prev = rowHash;
     expectedSeq++;
   }
   return null;

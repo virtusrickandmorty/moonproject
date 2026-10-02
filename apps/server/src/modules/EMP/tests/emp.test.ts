@@ -142,8 +142,8 @@ describe('attendance, holidays and SIL', () => {
     expect((await save([{ employeeId: a, date: '2026-09-24', status: 'present', otMinutes: 90 }, { employeeId: old, date: '2026-09-24', status: 'absent', note: 'Sick' }])).json()).toEqual({ saved: 1, unchanged: 1 });
     expect(attendanceBetween(env.db, '2026-09-24', '2026-09-24')).toEqual(
       expect.arrayContaining([
-        { employeeId: a, date: '2026-09-24', status: 'present', otMinutes: 90, nightMinutes: 0, note: null },
-        { employeeId: old, date: '2026-09-24', status: 'absent', otMinutes: 0, nightMinutes: 0, note: 'Sick' },
+        { employeeId: a, date: '2026-09-24', status: 'present', otMinutes: 90, nightMinutes: 0, nightOtMinutes: 0, note: null },
+        { employeeId: old, date: '2026-09-24', status: 'absent', otMinutes: 0, nightMinutes: 0, nightOtMinutes: 0, note: 'Sick' },
       ]),
     );
     const bad = await save([{ employeeId: a, date: '2026-09-25', status: 'present' }, { employeeId: a, date: '2026-09-29', status: 'present' }]);
@@ -172,6 +172,27 @@ describe('attendance, holidays and SIL', () => {
     expect((await save([{ employeeId: a, date: '2026-09-22', status: 'present', nightMinutes: 481 }])).statusCode).toBe(400);
     // The table refuses them too (migration 0004).
     expect(() => env.db.prepare(`INSERT INTO emp_attendance (employee_id, work_date, seq, status, ot_minutes, night_minutes, at, user_id) VALUES (?, '2026-09-21', 1, 'absent', 0, 60, 'x', ?)`).run(a, createUser(env.db, 'typist', ['encoder']))).toThrow(/CHECK/);
+  });
+
+  it('night overtime minutes (night hours that were also overtime) are at most the day\'s overtime and its night minutes', async () => {
+    // Worked 2 PM to 11 PM, then overtime to 2 AM: 3 h overtime, 4 h at night (10 PM to 2 AM), 3 h of them overtime.
+    expect((await save([{ employeeId: old, date: '2026-09-23', status: 'present', otMinutes: 180, nightMinutes: 240, nightOtMinutes: 180 }])).json()).toEqual({ saved: 1, unchanged: 0 });
+    expect(attendanceBetween(env.db, '2026-09-23', '2026-09-23').map((d) => [d.otMinutes, d.nightMinutes, d.nightOtMinutes])).toEqual([[180, 240, 180]]);
+    // A change of the night overtime alone is a change; the same again is skipped.
+    expect((await save([{ employeeId: old, date: '2026-09-23', status: 'present', otMinutes: 180, nightMinutes: 240, nightOtMinutes: 120 }])).json()).toEqual({ saved: 1, unchanged: 0 });
+    expect((await save([{ employeeId: old, date: '2026-09-23', status: 'present', otMinutes: 180, nightMinutes: 240, nightOtMinutes: 120 }])).json()).toEqual({ saved: 0, unchanged: 1 });
+    // More than the overtime, more than the night hours, or on a day with neither: refused, and nothing is saved.
+    expect(await codes([
+      { employeeId: old, date: '2026-09-22', status: 'present', otMinutes: 60, nightMinutes: 240, nightOtMinutes: 90 },
+      { employeeId: a, date: '2026-09-22', status: 'present', otMinutes: 240, nightMinutes: 60, nightOtMinutes: 90 },
+      { employeeId: a, date: '2026-09-21', status: 'half_day', nightMinutes: 60, nightOtMinutes: 30 },
+    ])).toEqual(['NIGHT_OT', 'NIGHT_OT', 'NIGHT_OT']);
+    expect(attendanceBetween(env.db, '2026-09-21', '2026-09-22')).toEqual([]);
+    // The table refuses them too (migration 0005).
+    const typist = createUser(env.db, 'typist', ['encoder']);
+    const raw = env.db.prepare(`INSERT INTO emp_attendance (employee_id, work_date, seq, status, ot_minutes, night_minutes, night_ot_minutes, at, user_id) VALUES (?, '2026-09-21', 1, 'present', ?, ?, ?, 'x', ?)`);
+    expect(() => raw.run(a, 60, 240, 61, typist)).toThrow(/CHECK/);
+    expect(() => raw.run(a, 240, 60, 61, typist)).toThrow(/CHECK/);
   });
 
   it('holidays take the holiday statuses, other days never do; switching a holiday off is refused while attendance marks it', async () => {
