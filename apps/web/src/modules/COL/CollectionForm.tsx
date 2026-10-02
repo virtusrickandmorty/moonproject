@@ -1,7 +1,7 @@
 /**
  * Collection form (PLAN E5, H2): the customer, what they pay on (job orders and quick sales still owed, oldest due first),
  * where the money went (split tenders), tax withheld (2307, with VAT withheld by government buyers) and the CR booklet number. The server computes every split;
- * this screen only sends what was typed. Also the Edit of a recorded collection (cancel + reissue, NR-4).
+ * this screen suggests the customer's withholding, then sends the encoder's figures. Also the Edit of a recorded collection (cancel + reissue, NR-4).
  * A check put in Checks on hand carries its number, bank and date; `?pdc=<id>` fills the form from a post-dated check
  * that is due (ACC-23): its customer, the check in Checks on hand, and its amount on its job orders, oldest due first.
  */
@@ -15,6 +15,8 @@ import { docPath } from '../../shell/menu.ts';
 import { cents, checkPlaceIds, emptyTender, oldestFirst, sum, tendersToInput, tendersToRows, type TenderInput, type TenderRow } from './money.ts';
 import { CustomerPicker, EditGate, Errors, Figures, TenderRows, useLive, type Picked } from './parts.tsx';
 import { collectionPreset } from '../JO/forms.ts';
+import type { WithholdingProfile } from '../CUS/withholding.ts';
+import { emptyWithholding, paymentGross, withholdingRows, type WithholdingRows } from './withholding.ts';
 
 /** Something the customer can pay on; `due` already counts back what the collection being edited paid on it. */
 interface Item { key: string; label: string; date: string; due: number; ref: { jobOrderId: string } | { saleId: string } }
@@ -54,7 +56,9 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
   const [reason, setReason] = useState('');
   const [crNumber, setCr] = useState('');
   const [tenders, setTenders] = useState<TenderRow[]>([emptyTender()]);
-  const [cwt, setCwt] = useState({ amount: '', atc: '', certificate: 'pending', vat: '' });
+  const [manualCwt, setCwt] = useState<WithholdingRows | null>(null);
+  const [certificate, setCertificate] = useState('pending');
+  const [profile, setProfile] = useState<{ customerId: string; value: WithholdingProfile; vatBp: number } | null>(null);
   const [typed, setTyped] = useState<Record<string, string> | null>(null); // null = apply oldest first
   const [settle, setSettle] = useState(false);
   const [note, setNote] = useState('');
@@ -94,7 +98,8 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
       setCustomer({ id: input.customerId, name: doc.customerName });
       setTenders(tendersToRows(input.tenders));
       const w = input.withholding;
-      if (w) setCwt({ amount: formatPesos(w.cwtCents), atc: w.atc, certificate: w.certificate, vat: w.vatWithheldCents ? formatPesos(w.vatWithheldCents) : '' });
+      setCwt(w ? { amount: formatPesos(w.cwtCents), atc: w.atc, certificate: w.certificate, vat: w.vatWithheldCents ? formatPesos(w.vatWithheldCents) : '' } : emptyWithholding());
+      setCertificate(w?.certificate ?? 'pending');
       setTyped(Object.fromEntries([...input.applications.map((a) => [`jo:${a.jobOrderId}`, formatPesos(a.amountCents)]), ...(input.sales ?? []).map((a) => [`qs:${a.saleId}`, formatPesos(a.amountCents)])]));
       setSettle(!!input.settleSmallDifference);
       setNote(input.note ?? '');
@@ -103,7 +108,17 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
 
   useEffect(() => {
     setOpen(null);
-    if (customer) api.openItems(customer.id).then(setOpen, fail);
+    setProfile(null);
+    if (!customer) return;
+    let stale = false;
+    api.openItems(customer.id).then((o) => { if (!stale) setOpen(o); }, (e: Error) => { if (!stale) fail(e); });
+    Promise.all([api.customerWithholding(customer.id), api.settings()]).then(([c, settings]) => {
+      if (stale) return;
+      const vatBp = settings.find((s) => s.key === 'tax.vat_rate_bp')?.current;
+      if (typeof vatBp !== 'number') throw new Error('Could not read the VAT rate for the withholding suggestion.');
+      setProfile({ customerId: customer.id, value: c.withholding_profile, vatBp });
+    }).catch((e: Error) => { if (!stale) fail(e); });
+    return () => { stale = true; };
   }, [customer?.id]);
 
   // The check goes to Checks on hand with its details once the cash places are known.
@@ -113,7 +128,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     setTenders([{ cashPlaceId: String(checksPlace.id), amount: formatPesos(pdc.amountCents), reference: '', checkNumber: pdc.checkNumber, bank: pdc.bank, checkDate: pdc.checkDate }]);
   }, [pdc?.id, checksPlace?.id]);
 
-  const items = useMemo(() => (open ? itemsOf(open, original?.input.customerId === open.customerId ? original : undefined) : []), [open, original]);
+  const items = useMemo(() => (open?.customerId === customer?.id && open ? itemsOf(open, original?.input.customerId === open.customerId ? original : undefined) : []), [open, original, customer?.id]);
   useEffect(() => {
     if (!preset || !open || !items.some((i) => i.key === preset.key)) return;
     const amount = preset.cents > 0 ? formatPesos(preset.cents) : '';
@@ -132,6 +147,11 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     })));
   }, [pdc?.id, open, items]);
   const pay = tendersToInput(tenders, undefined, checkPlaceIds(places));
+  const mine = profile?.customerId === customer?.id ? profile : null;
+  const cashCents = sum(pay.tenders.map((t) => t.amountCents));
+  const selectedCents = typed ? sum(items.map((i) => Math.max(0, cents(typed[i.key] ?? '') ?? 0))) : 0;
+  const grossCents = selectedCents || (mine ? paymentGross(mine.value, cashCents, mine.vatBp) : cashCents);
+  const cwt = { ...withholdingRows(manualCwt, mine?.value ?? 'none', grossCents, mine?.vatBp ?? 0), certificate };
   const cwtCents = cents(cwt.amount);
   const vatWithheldCents = cents(cwt.vat);
   const received = sum(pay.tenders.map((t) => t.amountCents)) + (cwtCents ?? 0) + (vatWithheldCents ?? 0);
@@ -187,7 +207,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
         {original && <Notice tone="info">When you record, {original.header.number} is cancelled and the replacement gets a new number. Reason: {reason}</Notice>}
         {error && <Notice>{error}</Notice>}
         <Panel title="Who paid">
-          <CustomerPicker value={customer} onChange={(c) => (setCustomer(c), setTyped(null))} />
+          <CustomerPicker value={customer} onChange={(c) => { setCustomer(c); setTyped(null); setCwt(null); setCertificate('pending'); }} />
           <Field label="CR number (from the booklet)" required hint={original ? `CR ${original.input.crNumber} stays with the cancelled collection: write this payment on a new CR.` : undefined}>
             <input inputMode="numeric" className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
           </Field>
@@ -196,6 +216,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
           <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" />
         </Panel>
         <Panel title="Tax withheld by the customer (2307)">
+          {mine && mine.value !== 'none' && grossCents > 0 && manualCwt === null && <p className="text-sm text-slate-600">Filled in from the customer's withholding profile; change it to match the 2307</p>}
           <div className="grid gap-3 sm:grid-cols-4">
             <Field label="Amount withheld" hint="As written on the 2307">
               <input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={cwt.amount} onChange={(e) => setCwt({ ...cwt, amount: e.target.value })} />
@@ -209,7 +230,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
               </select>
             </Field>
             <Field label="2307 certificate">
-              <select className={inputClass} value={cwt.certificate} onChange={(e) => setCwt({ ...cwt, certificate: e.target.value })}>
+              <select className={inputClass} value={cwt.certificate} onChange={(e) => setCertificate(e.target.value)}>
                 <option value="pending">Still to get</option>
                 <option value="received">Received</option>
               </select>
@@ -218,6 +239,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
               <input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={cwt.vat} onChange={(e) => setCwt({ ...cwt, vat: e.target.value })} />
             </Field>
           </div>
+          <Button onClick={() => setCwt(emptyWithholding())}>Clear withholding</Button>
         </Panel>
         <Panel title="What is it for?">
           {!customer && <p className="text-sm text-slate-500">Pick the customer to see what they can pay on.</p>}

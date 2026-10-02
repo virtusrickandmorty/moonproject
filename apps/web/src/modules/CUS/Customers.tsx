@@ -2,10 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { openServerPrint, type Me } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { masterRequest } from './http.ts';
+import { withholdingLabels, type WithholdingProfile } from './withholding.ts';
 
 type Customer = { id: string; code: string; kind: 'person' | 'organization'; display_name: string; registered_name: string | null;
   tin: string | null; is_vat_registered: number; billing_address: string | null; email: string | null; notes: string | null;
-  is_active: number; version: number };
+  withholding_profile: WithholdingProfile; is_active: number; version: number };
 type Group = { id: string; name: string; is_active: number; version: number };
 type Person = { id: string; full_name: string; group_id: string | null; is_active: number; version: number };
 type Detail = Customer & { groups: Group[]; people: Person[] };
@@ -71,7 +72,7 @@ function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Customer |
   const old = row === 'new' ? null : row;
   const [v, setV] = useState({ kind: old?.kind ?? 'organization', displayName: old?.display_name ?? '',
     registeredName: old?.registered_name ?? '', tin: old?.tin ?? '', isVatRegistered: Boolean(old?.is_vat_registered),
-    billingAddress: old?.billing_address ?? '', email: old?.email ?? '', notes: old?.notes ?? '' });
+    withholdingProfile: old?.withholding_profile ?? 'none', billingAddress: old?.billing_address ?? '', email: old?.email ?? '', notes: old?.notes ?? '' });
   const [error, setError] = useState('');
   const save = async () => {
     try {
@@ -91,6 +92,8 @@ function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Customer |
     <Field label="Billing address"><input className={inputClass} value={v.billingAddress} onChange={(e) => setV({ ...v, billingAddress: e.target.value })} /></Field>
     <Field label="Email"><input type="email" className={inputClass} value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} /></Field>
     <Field label="Notes"><input className={inputClass} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field>
+    <Field label="Withholding profile"><select className={inputClass} value={v.withholdingProfile} onChange={(e) => setV({ ...v, withholdingProfile: e.target.value as WithholdingProfile })}>
+      {Object.entries(withholdingLabels).map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></Field>
     <Field label="VAT registered"><input type="checkbox" checked={v.isVatRegistered} onChange={(e) => setV({ ...v, isVatRegistered: e.target.checked })} /></Field>
   </div>{error && <Notice>{error}</Notice>}<div className="flex gap-2"><Button tone="primary" disabled={!v.displayName.trim()} onClick={() => void save()}>Save</Button>
     <Button onClick={onClose}>Cancel</Button></div></Panel>;
@@ -118,6 +121,7 @@ function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
   };
   return <div className="space-y-4"><Panel title={`${data.display_name} · ${data.code}`}>
     <p className="text-sm text-slate-600">{data.kind} · {data.is_active ? 'Active' : 'Inactive'}{data.tin ? ` · TIN ${data.tin}` : ''}</p>
+    <p>Withholding profile: {withholdingLabels[data.withholding_profile]}</p>
     {data.registered_name && <p>Registered name: {data.registered_name}</p>}
     {data.billing_address && <p>Billing address: {data.billing_address}</p>}
     {canManage && data.is_active === 1 && <Button onClick={onEdit}>Edit customer</Button>} <Button onClick={onClose}>Close</Button>
