@@ -973,6 +973,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** The release (REL-) and, unless the invoice is to follow (invoice: null), its invoice record, in one transaction. */
     joRelease: (b: ReleaseBody, expectedTotalCents: number, key: string) =>
       call<{ release: PostResult; invoiceRecord: PostResult | null }>('POST', '/api/jo/releases', { ...b, expectedTotalCents }, idem(key)),
+    customerWithholding: (id: string) => call<{ withholding_profile: import('./modules/CUS/withholding.ts').WithholdingProfile }>('GET', `/api/cus/customers/${encodeURIComponent(id)}`),
     addCustomer: (b: { kind: 'person' | 'organization'; displayName: string }) => call<CustomerRow & { duplicateWarnings: { id: string; reason: string }[] }>('POST', '/api/cus/customers', b),
     catItems: (search: string) => call<CatItem[]>('GET', `/api/cat/items?${new URLSearchParams({ search, active: '1', limit: '10' })}`),
     catPrice: (itemId: string, qty: number) => call<CatPrice>('GET', `/api/cat/items/${encodeURIComponent(itemId)}/price?${new URLSearchParams({ qty: String(qty) })}`),
