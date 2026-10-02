@@ -18,6 +18,12 @@
 2. Stay on the **Outbox** tab to see the emails. The counts at the top show how many are waiting, sent and failed. You can filter by kind (**All kinds**, **Customer emails**, **Payslip emails**) and by status (**All**, **Waiting**, **Sent**, **Failed**). Click the name of an email (for example **Order received**) to read it.
 3. If an email is marked as failed and you are allowed to resend (like the owner), you can try sending it again by clicking the **Send again** button next to it. If sending is off, it will warn you: "Sending emails is turned off. Turn it on in the email settings first."
 
+**To email statements in bulk:**
+1. On the **Sales** menu, click **Customer emails**.
+2. Go to the **Email statements** tab.
+3. Pick the **Statement date** and click **Show customers**.
+4. Tick the checkboxes for customers, and click the **Send 1 statement** or **Send N statements** button.
+
 **To email a statement of account:**
 1. On the **Reports** menu, click **Customer statement**.
 2. Pick a customer and dates, then click **Show**.

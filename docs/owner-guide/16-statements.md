@@ -17,6 +17,8 @@ The Income statement shows your business performance: Revenue is your sales. Cos
 
 On the Balance sheet, current-year earnings are the net income from the start of the year to your chosen date, while opening balance equity is a setup account that only shows while it is not zero. A balance check line at the bottom tells you if total assets equal total liabilities and equity.
 
+The Statement of changes in equity tracks changes to your equity. To open it, choose the **From** and **To** dates and click **Show**. The rows show your opening balance, adding net income (or subtracting loss), and subtracting dividends, ending with **Total equity** which agrees with the balance sheet.
+
 To save the information to your computer, click **Export CSV**.
 
 ### Common mistakes and how to fix them
