@@ -26,6 +26,8 @@ const GUARDED: Record<string, string> = {
   'user.deactivate': 'turned a user off',
   'role.permission': "changed a role's permissions",
   'acc.setting.add': 'changed a setting',
+  'tax.filed_return.add': 'recorded a filed return',
+  'tax.filed_return.void': 'voided a filed return',
 };
 
 /** Where the app runs, for the System Health notifications: the practice shop has no backups to warn about. */
