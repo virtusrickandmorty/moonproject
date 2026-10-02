@@ -20,6 +20,8 @@ It checks:
 - Cash counts against the books
 - Late entries and back-dated documents
 - Documents cancelled
+- Books against the registers
+- Cash places below zero
 
 Each check has a green ✓ and **Passed**, or a red ✗ and a number such as **3 found**. A night with nothing found says **Everything passed**; otherwise it says how many were **found**. If no check has run yet, you see **No nightly check has run yet. The first one runs at the next 2:00 AM.** Click **Open the report** next to a check to see more details.
 

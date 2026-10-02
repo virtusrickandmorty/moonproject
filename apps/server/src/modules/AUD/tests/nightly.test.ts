@@ -107,7 +107,8 @@ describe('the checks', () => {
   it('all pass on a clean shop', async () => {
     const r = await night();
     expect(r.checks.map((c) => [c.key, c.passed])).toEqual([
-      ['integrity', true], ['backup', true], ['gaps', true], ['drafts', true], ['cash', true], ['late', true], ['cancelled', true]]);
+      ['integrity', true], ['backup', true], ['gaps', true], ['drafts', true], ['cash', true], ['late', true], ['cancelled', true],
+      ['books', true], ['negative-cash', true]]);
     expect(env.db.prepare('SELECT found_count FROM aud_nightly_runs').pluck().get()).toBe(0);
   });
 
@@ -247,7 +248,7 @@ describe('Run the checks now, and who may see the nights', () => {
     expect(res.statusCode, res.body).toBe(200);
     const body = res.json();
     expect([body.from, body.to, body.foundCount]).toEqual(['2026-09-27', '2026-09-27', 1]);
-    expect(body.checks.map((c: { key: string }) => c.key)).toEqual(['integrity', 'backup', 'gaps', 'drafts', 'cash', 'late', 'cancelled']);
+    expect(body.checks.map((c: { key: string }) => c.key)).toEqual(['integrity', 'backup', 'gaps', 'drafts', 'cash', 'late', 'cancelled', 'books', 'negative-cash']);
     expect(body.checks.find((c: { key: string }) => c.key === 'late').findings).toHaveLength(1);
     expect(['documents', 'journals', 'journal_lines', 'audit_log', 'aud_nightly_runs', 'aud_nightly_checks'].map(count)).toEqual(before);
   });

@@ -118,5 +118,5 @@ describe('statutory property test (PLAN I1.3)', () => {
     );
     expect(stats.runs).toBeGreaterThan(0);
     expect(stats.penalties).toBeGreaterThan(0);
-  });
+  }, 60_000); // about 25 s on a 4-core machine: each case builds a fresh shop
 });
