@@ -22,7 +22,8 @@
 1. On the **Sales** menu, click **Customer emails**.
 2. Go to the **Email statements** tab.
 3. Pick the **Statement date** and click **Show customers**.
-4. Tick the checkboxes for customers, and click the **Send 1 statement** or **Send N statements** button.
+4. Customers with a balance, an email address and consent are ticked already. Untick any you do not want to email. Customers who cannot be emailed are listed under **Cannot email**, with the reason.
+5. Click the **Send** button (it shows how many, for example **Send 3 statements**). Each customer can be queued only once for the same statement date.
 
 **To email a statement of account:**
 1. On the **Reports** menu, click **Customer statement**.
