@@ -10,7 +10,7 @@ import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { cancelDocument, postDocument } from '../../../engine/documents/lifecycle.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import { jvDoc } from '../../ACC/doctypes/jv.ts';
-import { balanceSheet, incomeStatement, type StatementSection } from '../statements.ts';
+import { balanceSheet, changesInEquity, incomeStatement, type StatementSection } from '../statements.ts';
 
 let env: TestEnv;
 let accountant: Client;
@@ -301,6 +301,46 @@ describe('comparative statement columns', () => {
     expect(compared.comparisonBalanced).toBe(true);
     const csv = await accountant.get('/api/rpt/balance-sheet?asOf=2026-09-30&compare=previous_month&format=csv');
     expect(csv.body).toContain('"2026-09-30 PHP","2026-08-31 PHP","Difference PHP","Difference %"');
+    noBrokenInvariants();
+  });
+});
+
+describe('statement of changes in equity', () => {
+  it('reconciles capital, profit and a dividend to every balance-sheet equity line, carries periods forward, exports CSV and enforces permission', async () => {
+    const BDO = cashPlaceId(env.db, '1111');
+    const person = await ok(accountant.post('/api/eq/people', { name: 'Sample Equity Owner', isStockholder: true, isOfficer: true,
+      position: 'President', shares: 1000, tin: '123-456-789-000' }));
+    await ok(accountant.post('/api/docs/eq.owner_money/post', { input: { personId: person.id, cashPlaceId: BDO, amountCents: 10_000_000,
+      classification: 'capital_stock', parValueCents: 8_000_000 }, expectedTotalCents: 10_000_000 }, idem()));
+    const profit = { memo: 'Made-up year profit', lines: [{ accountId: account('1101'), debitCents: 2_000_000 }, { accountId: account('7103'), creditCents: 2_000_000 }] };
+    await ok(accountant.post('/api/docs/acc.jv/post', { input: profit, expectedTotalCents: 2_000_000 }, idem()));
+    const dividend = { resolutionNumber: 'BR-SAMPLE-01', resolutionDate: '2026-09-28', recordDate: '2026-09-28', basis: 'total', amountCents: 500_000 };
+    await ok(accountant.post('/api/docs/eq.dividend/post', { input: dividend, expectedTotalCents: 500_000 }, idem()));
+
+    const result = changesInEquity(env.db, '2026-01-01', '2026-09-28');
+    const bs = balanceSheet(env.db, '2026-09-28');
+    const bsEquity = bs.sections.find((s) => s.key === 'equity')!.groups.flatMap((g) => g.lines);
+    for (const column of result.columns) {
+      const line = column.key === 'profit-for-the-year'
+        ? bsEquity.find((l) => l.code === '3290')
+        : bsEquity.find((l) => l.accountId === column.accountId);
+      expect(column.endCents).toBe(line?.amountCents ?? 0);
+      expect(column.endCents).toBe(column.startCents + result.rows.reduce((sum, row) => sum + (row.amountsCents[column.key] ?? 0), 0));
+    }
+    expect(result.endingTotalCents).toBe(bs.totalEquityCents);
+    // Every movement is explained by the ledger: no unexplained difference row, and the other movements name their document.
+    expect(result.rows.some((r) => r.key === 'other:difference')).toBe(false);
+    expect(result.rows.find((r) => r.key === 'profit')?.totalCents).toBe(2_000_000);
+    expect(result.rows.find((r) => r.key === 'dividends')?.totalCents).toBe(-500_000);
+    expect(result.rows.find((r) => r.key === 'owners')?.totalCents).toBe(10_000_000);
+    const previous = changesInEquity(env.db, '2025-01-01', '2025-12-31');
+    expect(result.openingTotalCents).toBe(previous.endingTotalCents);
+
+    const csv = await accountant.get('/api/rpt/changes-in-equity?from=2026-01-01&to=2026-09-28&format=csv');
+    expect(csv.statusCode).toBe(200); expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.headers['content-disposition']).toBe('attachment; filename="statement-of-changes-in-equity-2026-01-01-2026-09-28.csv"');
+    expect(csv.body).toContain('"Profit or loss for the period"');
+    expect((await encoder.get('/api/rpt/changes-in-equity?from=2026-01-01&to=2026-09-28')).statusCode).toBe(403);
     noBrokenInvariants();
   });
 });

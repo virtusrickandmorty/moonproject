@@ -1,6 +1,12 @@
 /** Read-only PRT contract for other modules. */
 import type { Db } from '../../platform/db/driver.ts';
 import { renderPrint, type PrintHeader, type Profile } from './print.ts';
+export { renderReportPrint, printField, printLineTable, printMoney, type Profile } from './print.ts';
+
+/** The company print profile (registered name, TIN, address), or undefined until an owner has filled it in. */
+export function companyProfile(db: Db): Profile | undefined {
+  return db.prepare('SELECT * FROM prt_company_profile WHERE id = 1').get() as Profile | undefined;
+}
 
 /** The company's registered name from the print profile, or undefined until an owner has filled the profile in. */
 export function companyRegisteredName(db: Db): string | undefined {
