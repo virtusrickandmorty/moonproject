@@ -59,3 +59,4 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [55. Customer checks](55-customer-checks.md): Keep track of customer checks: post-dated, on hand, deposited, or returned by the bank.
 - [56. Nightly checks](56-nightly-checks.md): See the result of the nightly checks and run them now.
 - [57. Expense paid from several places](57-expense-paid-from-several-places.md): Record an expense paid right away from two or more places.
+- [60. Dividends](60-dividends.md): Declare and pay a cash dividend to stockholders.
