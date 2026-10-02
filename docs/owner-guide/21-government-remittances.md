@@ -6,6 +6,7 @@
 
 ### Steps
 1. On the **People & Payroll** menu, click **Government remittances**.
+   ![The Government remittances screen, month by month](img/21-remittances.png)
 2. Click **Lists and 1601-C worksheet for {month}** to see the details of a specific month.
 3. This screen shows the **SSS contributions list**, **PhilHealth list**, **Pag-IBIG list**, and **1601-C worksheet**.
 4. In those lists, the **Employee share** is the money you deducted from your employees' pay. The **Employer share** is the extra money the business pays for them.

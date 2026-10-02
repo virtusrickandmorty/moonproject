@@ -7,6 +7,7 @@
 ### Steps
 #### Adding an employee
 1. On the **People & Payroll** menu, click **Employees**.
+   ![The Employees list](img/42-employees.png)
 2. Click **+ New employee**.
 3. Type the **Full name**, **Hire date**, **Position**, and **Department**.
 4. Choose the **Cost centre**.
@@ -14,6 +15,7 @@
 
 #### Adding government numbers
 1. On the employee's page, under the **Details** panel, look for the **Government deductions** heading. You will see ticks for **SSS**, **PhilHealth**, **Pag-IBIG**, and **Withholding tax**. These start switched on. If you switch one off, you must answer **Why is one switched off? (at least 10 characters)**.
+   ![An employee's page](img/42-employee.png)
 2. Under the **Government numbers** heading (this might be hidden from some users), type their **SSS no.**, **PhilHealth PIN**, **Pag-IBIG MID**, and **TIN**.
 3. Click **Save changes**.
 

@@ -6,6 +6,7 @@
 
 ### Steps
 1. On the **Accounting & Tax** menu, click **2307s to issue**.
+   ![The 2307s to issue screen](img/53-2307s-to-issue.png)
 2. Pick the **Year** and the **Quarter** (Q1 to Q4) you want to print. The screen opens on the quarter whose returns are due now. You see one line per supplier and ATC, with each month's base and tax withheld.
 3. To print for just one supplier, click **Print 2307** on their line (it is off for a line with no supplier). To print for everyone who had tax withheld in the quarter, click **Print all for this quarter**. To get the list in a spreadsheet, click **Download for Excel**.
 4. A new window will open with the printed forms. *Note: If your browser blocks the print window, you must allow pop-ups for this site.*

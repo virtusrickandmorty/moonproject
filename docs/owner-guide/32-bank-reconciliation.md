@@ -8,6 +8,7 @@
 1. On the **Money** menu, click **Bank reconciliation**.
 2. Under **Start a reconciliation**, pick the **Bank account** from the list.
 3. Type the **Statement date** (the last day on the statement) and the **Statement ending balance** exactly as printed.
+   ![The Bank reconciliation screen, ready to start](img/32-bank-reconciliation.png)
 4. Click **Start**.
 5. Under **Cash book items: tick what cleared the bank**, look at your real statement and tick the box for every item that cleared the bank.
 6. Click **Save ticks**. You must save your ticks before you can finish.

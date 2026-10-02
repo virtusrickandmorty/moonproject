@@ -6,6 +6,7 @@
 
 ### Steps
 1. On the **Admin** menu, click **System health**.
+   ![The System health screen with its lights](img/25-system-health.png)
 2. Look at the top light to see the overall health.
    - **Green**: Everything is in order.
    - **Amber**: Something needs doing soon. See the amber lights below.

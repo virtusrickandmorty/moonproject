@@ -8,6 +8,7 @@
 
 **To lend a set:**
 1. On the **Production** menu, click **Sizer sets**.
+   ![The Sizer sets screen](img/45-sizer-sets.png)
 2. Find the set in the list and click **Lend**. This button shows only for a set that is in the shop, and only if you are allowed to change sizer loans. You can search the list, or use the status drop-down to narrow it.
 3. Under **Who is borrowing it?**, pick the customer.
 4. Under **Due back on**, pick the date (it starts one week from today). The set goes out today.

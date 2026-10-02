@@ -8,6 +8,7 @@
 **To mark a voucher to reverse:**
 1. On the **Accounting & Tax** menu, click **Journal Vouchers**, then click **+ New Journal Voucher**.
 2. Fill in the voucher as usual, and tick **Reverse on the first day of next month (an accrual). It shows in Reversals due from that day.**
+   ![A journal voucher with the box to reverse it next month ticked](img/59-new-journal-voucher.png)
 3. Click **Record**, read the box **Record this Journal Voucher?**, then click **Record** again.
 
 **To record the reversal:**

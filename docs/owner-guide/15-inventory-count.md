@@ -11,6 +11,7 @@
 4. Check the **Count date**.
 5. Click **Print the count sheet (CSV)** to download and print the list, then go count the physical items.
 6. Back in the system, type the **Quantity** you counted for each item. Leave a quantity empty when there is none on hand.
+   ![The new inventory count form, with the quantities counted](img/15-new-inventory-count.png)
 7. The **Cost per unit** is the latest purchase cost; you can change it if needed, but you must type a reason why it is not the latest purchase cost.
 8. Add a **Note** if needed.
 9. Click **Record**. Check what the app shows in **Record this Inventory Count?**, then click **Record** again. (Or click **Save draft** to finish later.)

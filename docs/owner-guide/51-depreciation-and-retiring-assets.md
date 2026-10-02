@@ -8,6 +8,7 @@
 **To run depreciation:**
 1. On the **Money** menu, click **Fixed assets**. (You can also do this from an individual asset's page. The **Run depreciation** button only shows if you have permission to record runs.)
 2. Click the **Run depreciation** button to open the "Run depreciation" dialog.
+   ![The Run depreciation box](img/51-run-depreciation.png)
 3. Pick the **Month to depreciate**. The system will help by showing a hint like "The latest run so far is <month>. Runs go month by month." or "No run has been recorded yet."
 4. Check the summary shown on the screen and click **Record the run**.
 

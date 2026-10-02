@@ -6,6 +6,7 @@
 
 ### Steps
 1. On the document, find the **Attachments** section (below **What this did**).
+   ![The Attachments section of a document](img/58-attachments.png)
 2. Click **Add a file** to choose one or more files from your PC. On a phone, you can also tap **Take a photo** to use the camera.
 3. To open an attachment, click its file name in the list.
 4. To remove an attachment, click **Remove** next to it.

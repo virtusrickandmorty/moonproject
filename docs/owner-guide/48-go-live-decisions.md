@@ -6,6 +6,7 @@
 
 ### Steps
 1. On the **Accounting & Tax** menu, click **Go-live decisions**.
+   ![The Go-live decisions screen](img/48-go-live-decisions.png)
 2. Under **Who must decide**, pick **Everyone**, **Accountant**, **Owner**, or **Co-owners** to see different questions.
 3. A question with no answer shows **Open — no answer recorded.**. The top of the page shows how many rows are still open (for example, "3 of 20 rows still open"). For questions tied to a setting, it will show the **Current setting:** and an **Open Settings** link.
 4. Type the answer in **What was decided (or done)**.

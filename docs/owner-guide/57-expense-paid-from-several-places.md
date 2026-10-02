@@ -13,6 +13,7 @@
 6. Under **Where did the money come from?**, click the first cash place.
 7. Type the **Amount** for that cash place and any **Reference** (like a GCash or bank reference, or check no. and bank).
 8. Click **+ Split the payment** to add another cash place. You can add up to four places in total.
+   ![The expense voucher with a payment split over two places](img/57-expense-voucher-split.png)
 9. Click the second cash place, type its **Amount**, and add a **Reference**.
 10. The amounts must add up to what is paid out: the receipt less any EWT withheld. If you need to remove a row, click **Remove**.
 11. Click **Record**. Read the sentence in the box **Record this Expense Voucher?**, then click **Record** again. Click **Go back** if something is wrong.

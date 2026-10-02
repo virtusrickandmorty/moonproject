@@ -6,6 +6,7 @@
 
 ### Steps
 1. On the **Reports** menu, choose **Deposits held**, **Collections register**, **Sales by period**, or **Job order follow-up**.
+   ![The collections register](img/26-collections-register.png)
 2. If the report needs dates, choose the **As of** date, or choose the **From** and **To** dates.
 3. Click **Show**.
 4. To view the source record for an entry, click the document number on a row to open it.

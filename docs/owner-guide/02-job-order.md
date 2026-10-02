@@ -9,6 +9,7 @@
 2. Click **+ New**.
 3. Pick the customer.
 4. Add lines for the items the customer wants to order.
+   ![The new job order form with a customer, one line and the total](img/02-new-job-order.png)
 5. If taking a downpayment, record it. *(Coming soon: full flow for recording the downpayment directly on the job order).*
 6. Review the details and click **Record**.
 

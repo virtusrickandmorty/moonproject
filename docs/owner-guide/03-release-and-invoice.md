@@ -6,9 +6,11 @@
 
 ### Steps
 1. Open the job order that is ready to be claimed.
+   ![A job order that is ready for release, with its Release button](img/03-job-order.png)
 2. Click to create a **Release Slip**.
 3. Select which items (and how many pieces) are being released.
 4. Record who claimed the items and what ID was seen.
+   ![The new release slip form, with who claimed it](img/03-new-release.png)
 5. Review the release details and click **Record**.
 6. *(Coming soon)* Next, create the **Invoice Record**.
 7. *(Coming soon)* Look at the system's "write these on the booklet" screen, and copy those exact amounts onto your physical BIR invoice booklet.

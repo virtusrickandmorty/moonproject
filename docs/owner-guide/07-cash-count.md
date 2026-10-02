@@ -6,6 +6,7 @@
 
 ### Steps
 1. On the **Money** menu, click **Cash Accounts**.
+   ![The Cash Accounts list](img/07-cash-accounts.png)
 2. Click **Add place**.
 3. Type the **Name** and choose the **Kind** (Cash box, Checks on hand, Bank, or E-wallet).
 4. For banks and e-wallets, you can type an **Account number**.
@@ -14,6 +15,7 @@
 7. Click **+ New cash count**.
 8. Under **Cash box**, pick the one you counted.
 9. Under **Bills and coins**, type the **Quantity** of each **Denomination** you have.
+   ![The new cash count form with bills and coins counted](img/07-new-cash-count.png)
 10. Add a **Note** if needed.
 11. Click **Record** (or **Save draft** if you want to finish later).
 

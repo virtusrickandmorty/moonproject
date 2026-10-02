@@ -6,6 +6,7 @@
 
 ### Steps
 1. On the **Admin** menu, choose **Import old data**.
+   ![The Import old data screen](img/31-import-old-data.png)
 2. To start a new upload, use **Upload a file from the old sheet**. (To go back to an earlier upload, click **Review** on its line under **Uploads**.) Under **What is in the file?**, pick what the file holds, choose the **CSV file**, and click **Upload and stage the rows**. The system reads the file but does not import anything yet.
 3. Review the staged rows. Only rows with something wrong are listed; rows with nothing wrong go in as they are. Each listed row must be dealt with:
    - If the row is good, click **Accept**. (Accept is only available when nothing is wrong with the row.)

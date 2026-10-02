@@ -7,6 +7,7 @@
 ### Steps
 1. On the **Admin** menu, click **Backups**.
 2. Click the **Restore and drill** tab.
+   ![The Restore and drill tab, with a list of backups](img/12-restore-and-drill.png)
 3. You will see a list of backups. Pick one and click **Run drill** (or **Restore** for emergencies).
 4. Type your **Recovery key A or B** exactly as printed on your sheet.
 5. Click **Open the backup**.

@@ -8,6 +8,7 @@
 
 **Calendar**
 1. On the **Overview** menu, click **Calendar**.
+   ![The calendar for the month](img/19-calendar.png)
 2. The calendar shows different kinds of events like Booked events, Job orders due, Releases, Holidays, Tax deadlines, Customer birthdays, and Employee birthdays.
 3. You can use the **Show** drop-down to filter the calendar (for example, pick "Booked events" or "All kinds").
 4. To book a fitting or another booking, click **+ New event**.
@@ -20,6 +21,7 @@
 
 **Audit Log**
 1. To see who changed what, go to the **Admin** menu and click **Audit log**.
+   ![The audit log with its filters](img/19-audit-log.png)
 2. Under **Filters**, you can type or select a **From** date, **To** date, **User**, **Action**, **Entity type**, and **Entity ID**.
 3. Click **Show** to view the matching entries.
 4. If you want a spreadsheet of the log, click **Download CSV**.

@@ -13,6 +13,7 @@
 **Adding a post-dated check:**
 1. On the **Sales** menu, click **Post-dated checks**.
 2. Click **+ Add a post-dated check**.
+   ![The form for adding a post-dated check](img/55-new-post-dated-check.png)
 3. Pick the customer, then fill in **Check number**, **Bank**, **Date on the check** and **Amount**. If the customer has job orders, tick the ones the check is **For**. You can type a **Note**. Click **Add to the list**.
 4. When the check is due, its status says **Due: record it now**. Click **Record the collection** next to it. If the customer gave a new check instead, click **Void** and type a reason.
 

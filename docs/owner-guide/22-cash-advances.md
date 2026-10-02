@@ -9,6 +9,7 @@
 **To give an advance:**
 1. On the **People & Payroll** menu, click **Cash advances owed**.
 2. Click the name of the **Employee**.
+   ![An employee's cash advances, with Pay back, Write off and Give an advance](img/22-cash-advance-employee.png)
 3. Click **Give an advance**.
 4. Choose the employee and the cash place where the money came from.
 5. Type the **Amount** and the amount **Deducted each payroll**.
