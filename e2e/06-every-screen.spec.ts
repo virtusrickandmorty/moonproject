@@ -1,64 +1,13 @@
 /**
  * Every screen opens for every role, on the practice shop's made-up data (serve-practice.ts). Each default role signs in
- * in turn and opens every menu item it sees: the page loads, says something, shows no error message, logs no console error
+ * and opens every menu item it sees: the page loads, says something, shows no error message, logs no console error
  * and no request is answered 403, 404 or 500. Then each "+ New" form the role is offered opens without an id to type and
  * reaches its preview. A role sees no menu item for a screen whose data it may not read.
+ * The roles tour side by side, after 06-every-screen.setup.ts has put open work in, added the TV user and turned backups on.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { SCREENS } from '../apps/web/src/shell/menu';
-import { openWork, signInApi } from './practice-work';
-
-interface Who { role: string; username: string; name: string }
-const ROLES: Who[] = [
-  { role: 'owner', username: 'practice-owner', name: 'Practice Owner' },
-  { role: 'accountant', username: 'practice-accountant', name: 'Practice accountant' },
-  { role: 'encoder', username: 'practice-encoder', name: 'Practice encoder' },
-  { role: 'production', username: 'practice-production', name: 'Practice production' },
-  { role: 'tv', username: 'practice-tv', name: 'Practice tv' },
-];
-const passwords: Record<string, string> = {};
-
-/** The made-up users the practice data makes have no TV role: the owner adds one, the way the Users screen does. */
-async function addTvUser(baseURL: string) {
-  const owner = await signInApi(baseURL, 'practice-owner', passwords.owner!);
-  await owner.post('/api/auth/step-up', { password: passwords.owner });
-  const temporary = 'Practice7-tv-lantern-kettle-river!';
-  await owner.post('/api/users', { username: 'practice-tv', displayName: 'Practice tv', roles: ['tv'], temporaryPassword: temporary });
-  await owner.close();
-  const tv = await signInApi(baseURL, 'practice-tv', temporary);
-  passwords.tv = 'Practice8-tv-river-kettle-lantern!';
-  await tv.post('/api/auth/change-password', { currentPassword: temporary, newPassword: passwords.tv });
-  await tv.close();
-}
-
-test.beforeAll(() => {
-  Object.assign(passwords, JSON.parse(readFileSync(join(process.env.E2E_DIR!, 'practice-passwords.json'), 'utf8')));
-});
-
-/**
- * The owner turns backups on the way 05-backups does, so the Backups screens show a working shop and not the red "Backups are off"
- * every new shop starts with: recovery keys, then the first backup.
- */
-async function setUpBackups(page: Page, who: Who) {
-  await page.getByRole('link', { name: 'Backups', exact: true }).click();
-  await page.getByRole('link', { name: 'Recovery keys and folders' }).click();
-  await page.getByLabel('Backup folder').fill(join(process.env.E2E_DIR!, 'practice', 'backups'));
-  await page.getByLabel('Off-site folder').fill(join(process.env.E2E_DIR!, 'practice', 'offsite'));
-  await page.getByRole('button', { name: 'Make new recovery keys' }).click();
-  const keyA = await page.getByRole('heading', { name: 'Recovery key A' }).locator('xpath=following-sibling::p[1]').innerText();
-  const keyB = await page.getByRole('heading', { name: 'Recovery key B' }).locator('xpath=following-sibling::p[1]').innerText();
-  await page.getByLabel(/^Last \d+ characters of key A/).fill(keyA.slice(-8));
-  await page.getByLabel(/^Last \d+ characters of key B/).fill(keyB.slice(-8));
-  await page.getByRole('button', { name: 'Save the folders and the new keys' }).click();
-  await page.getByLabel('Enter your password again to continue').fill(passwords[who.role]!);
-  await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page.getByText('Saved. New backups are locked with the new recovery keys.')).toBeVisible();
-  await page.getByRole('link', { name: 'Status', exact: true }).click();
-  await page.getByRole('button', { name: 'Back up now' }).click();
-  await expect(page.getByText(/^Backed up: /)).toBeVisible();
-}
+import { ROLES, practicePasswords, signInAs } from './practice-users';
 
 /** Everything the browser reports while a page is open. */
 function watch(page: Page) {
@@ -77,14 +26,6 @@ function watch(page: Page) {
       return lines;
     },
   };
-}
-
-async function signInAs(page: Page, who: Who) {
-  await page.goto('/');
-  await page.getByLabel('Username').fill(who.username);
-  await page.getByLabel('Password').fill(passwords[who.role]!);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('button', { name: new RegExp(`${who.name} ▾`) })).toBeVisible();
 }
 
 /** What is wrong with the screen that is open now: nothing is the empty list. */
@@ -110,16 +51,6 @@ async function newForms(page: Page): Promise<{ label: string; href: string }[]> 
   await button.click();
   const links = await page.locator('header a').evaluateAll((as) => as.map((a) => ({ label: (a.textContent ?? '').trim(), href: a.getAttribute('href') ?? '' })));
   return links.filter((l) => l.href.endsWith('/new'));
-}
-
-/** The made-up history leaves nothing open, so the tour starts by putting some work in (practice-work.ts). */
-async function openWorkForTheTour(baseURL: string) {
-  const [owner, production, accountant] = await Promise.all(['owner', 'production', 'accountant'].map((role) => signInApi(baseURL, `practice-${role}`, passwords[role]!)));
-  try {
-    await openWork(owner!, production!, accountant!);
-  } finally {
-    await Promise.all([owner, production, accountant].map((s) => s!.close()));
-  }
 }
 
 /** What a person would type into an empty box, guessed from its label; nothing here is an id, which is the point. */
@@ -238,18 +169,12 @@ async function checkNewForm(page: Page, href: string, today: string, take: () =>
   return [...problems, ...take()];
 }
 
-test.describe.configure({ mode: 'serial' });
-
 for (const who of ROLES) {
   test(`${who.role}: every menu item opens, every New form reaches its preview`, async ({ page }) => {
     test.setTimeout(600_000);
-    if (who.role === 'tv') await addTvUser(test.info().project.use.baseURL!);
-    if (who.role === 'owner') await openWorkForTheTour(test.info().project.use.baseURL!);
     const seen = watch(page);
-    await signInAs(page, who);
+    await signInAs(page, who, practicePasswords()[who.role]!);
     seen.take(); // the 401 the sign-in page gets before anyone has signed in is not a screen's fault
-    if (who.role === 'owner') await setUpBackups(page, who);
-    seen.take();
     const report: string[] = [];
     const note = (where: string, lines: string[]) => lines.forEach((l) => report.push(`${where}: ${l}`));
 

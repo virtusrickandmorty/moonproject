@@ -18,9 +18,10 @@ const executablePath = process.env.E2E_CHROMIUM || undefined;
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
-  // The tests share one shop, one after another: each builds on the ones before it, as a week at the shop does.
+  // The empty shop's tests share it, one after another: each builds on the ones before it, as a week at the shop does.
+  // Beside them, the practice shop's roles tour it side by side (06-every-screen), so the run stays inside CI's 10 minutes.
   fullyParallel: false,
-  workers: 1,
+  workers: 4,
   timeout: 90_000,
   expect: { timeout: 10_000 },
   retries: 0,
@@ -33,8 +34,9 @@ export default defineConfig({
     launchOptions: executablePath ? { executablePath } : {},
   },
   projects: [
-    { name: 'chromium', testIgnore: /06-every-screen\.spec\.ts/, use: { browserName: 'chromium' } },
-    { name: 'practice', testMatch: /06-every-screen\.spec\.ts/, use: { browserName: 'chromium', baseURL: `http://127.0.0.1:${PRACTICE_PORT}`, actionTimeout: 10_000 } },
+    { name: 'chromium', testIgnore: /06-every-screen\.spec\.ts/, workers: 1, use: { browserName: 'chromium' } },
+    { name: 'practice-setup', testMatch: /06-every-screen\.setup\.ts/, use: { browserName: 'chromium', baseURL: `http://127.0.0.1:${PRACTICE_PORT}`, actionTimeout: 10_000 } },
+    { name: 'practice', testMatch: /06-every-screen\.spec\.ts/, dependencies: ['practice-setup'], fullyParallel: true, use: { browserName: 'chromium', baseURL: `http://127.0.0.1:${PRACTICE_PORT}`, actionTimeout: 10_000 } },
   ],
   webServer: [
     {
