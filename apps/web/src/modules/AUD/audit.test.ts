@@ -22,9 +22,9 @@ describe('audit screen helpers', () => {
 describe('nightly checks screen helpers', () => {
   it('words the Home line only when last night found something', async () => {
     const { nightlyLine, checkResult } = await import('./nightly.ts');
-    expect(nightlyLine({ night: null, foundCount: 0, found: [] })).toBeNull();
-    expect(nightlyLine({ night: '2026-09-27', foundCount: 0, found: [] })).toBeNull();
-    expect(nightlyLine({ night: '2026-09-27', foundCount: 3, found: [{ key: 'gaps', label: 'Gaps in number series', foundCount: 1 }, { key: 'late', label: 'Late entries', foundCount: 2 }] }))
+    expect(nightlyLine({ night: null, ranAt: null, integrity: null, foundCount: 0, found: [] })).toBeNull();
+    expect(nightlyLine({ night: '2026-09-27', ranAt: null, integrity: null, foundCount: 0, found: [] })).toBeNull();
+    expect(nightlyLine({ night: '2026-09-27', ranAt: null, integrity: null, foundCount: 3, found: [{ key: 'gaps', label: 'Gaps in number series', foundCount: 1 }, { key: 'late', label: 'Late entries', foundCount: 2 }] }))
       .toBe("Last night's checks (2026-09-27) found 3 things to look at: gaps in number series, late entries.");
     expect([checkResult({ passed: true, foundCount: 0 }), checkResult({ passed: false, foundCount: 4 })]).toEqual(['Passed', '4 found']);
   });

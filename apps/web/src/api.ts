@@ -64,7 +64,7 @@ export interface IntegrityReport { audit: { ok: boolean; brokenAt: number | null
 export interface NightlyCheck { key: string; label: string; reportPath: string; passed: boolean; foundCount: number; findings: { detail: string; path: string | null }[] }
 export interface NightlyNight { night: string; coversFrom: string; ranAt: string; foundCount: number; checks: NightlyCheck[] }
 export interface NightlyRunNow { at: string; from: string; to: string; foundCount: number; checks: NightlyCheck[] }
-export interface NightlyStatus { night: string | null; foundCount: number; found: { key: string; label: string; foundCount: number }[] }
+export interface NightlyStatus { night: string | null; ranAt: string | null; foundCount: number; found: { key: string; label: string; foundCount: number }[]; integrity: { ranAt: string; passed: boolean; foundCount: number } | null }
 /** Public certificate details returned to a signed-in user; no private key is sent. */
 /** System Health (PLAN C8), as GET /api/system/health reports it. */
 export type HealthLight = 'green' | 'amber' | 'red' | 'grey';
@@ -126,8 +126,13 @@ export interface PostDatedCheck {
 export interface NewPostDatedCheck { customerId: string; bank: string; checkNumber: string; checkDate: string; amountCents: number; jobOrderIds: string[]; note?: string }
 export type CheckRef = { collectionId: string; lineNo: number };
 export interface DashItem { id: string; label: string; href?: string; detail?: string; amountCents?: number }
-export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string }
-export interface DashHomeData { role: string; asOf: string; widgets: DashWidget[] }
+export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string; tone?: 'danger' }
+export interface DashHomeData { role: string; asOf: string; widgets: DashWidget[]; showCharts: boolean }
+export interface DashOwnerCharts {
+  asOf: string;
+  months: { month: string; from: string; to: string; salesCents: number; collectionsCents: number; expensesCents: number; cashCents: number }[];
+  receivables: { key: string; label: string; amountCents: number }[];
+}
 export interface DashOwnerHealth {
   asOf: string;
   periods: { label: string; from: string; to: string; salesCents: number; vatCents: number; collectionsCents: number; payrollCents: number }[];
@@ -281,7 +286,7 @@ export interface LeaveBalances {
   totals: { earned: number; used: number; paid: number; left: number };
 }
 export type AttendanceStatus = 'present' | 'half_day' | 'absent' | 'rest_day' | 'leave' | 'unpaid_leave' | 'holiday_off' | 'holiday_worked' | 'rest_day_worked';
-export interface AttendanceDay { employeeId: string; date: string; status: AttendanceStatus; otMinutes: number; nightMinutes: number; note: string | null }
+export interface AttendanceDay { employeeId: string; date: string; status: AttendanceStatus; otMinutes: number; nightMinutes: number; nightOtMinutes: number; note: string | null }
 export interface Holiday { id: number; date: string; name: string; kind: 'regular' | 'special'; source: string; isActive: boolean; deactivatedReason: string | null }
 export interface AttendanceGrid {
   from: string; to: string; today: string; statuses: AttendanceStatus[]; holidays: Holiday[];
@@ -290,7 +295,7 @@ export interface AttendanceGrid {
   paid: PaidDays[];
 }
 export interface PaidDays { employeeId: string; from: string; to: string; number: string }
-export type AttendanceSave = { employeeId: string; date: string; status: AttendanceStatus; otMinutes?: number; nightMinutes?: number; note?: string };
+export type AttendanceSave = { employeeId: string; date: string; status: AttendanceStatus; otMinutes?: number; nightMinutes?: number; nightOtMinutes?: number; note?: string };
 /** Payroll (PAY) and cash advances (CA): every figure is worked out by the server. */
 export type PayGroup = 'WEEKLY_PIECE' | 'SEMI_DAILY' | 'SEMI_MONTHLY';
 export interface PayLine { lineNo: number; kind: string; description: string; qty: number; rateCents: number; multiplierBp: number; amountCents: number; jobOrderId?: string; reason?: string }
@@ -446,13 +451,17 @@ export interface TaxSupplierRow extends TaxJournalRef { supplierId: string | nul
 export type PurchaseClass = 'capital_goods' | 'goods' | 'services';
 export interface PurchaseSums { netCents: number; vatCents: number; totalCents: number }
 /** GET /api/tax/registers/purchases: a bill with lines of two classes gives two rows with the same journal; `purchaseClass` null = to classify. */
+/** Where a page of a long list sits: `total` rows in all, this page starts at `offset` and holds at most `limit`. */
+export interface PageInfo { total: number; offset: number; limit: number }
 export interface PurchasesRegister {
+  page?: PageInfo;
   from: string; to: string; rows: (TaxSupplierRow & PurchaseSums & { supplierInvoiceNo: string | null; purchaseClass: PurchaseClass | null })[];
   totals: PurchaseSums; byClass: Record<PurchaseClass | 'unclassified', PurchaseSums>; glVatCents: number;
 }
 /** An EWT class and its ATC; `atc` null with `atcChoices` = the ATC to confirm (individual or company). */
 export interface EwtAtc { ewtClass: string | null; atc: string | null; atcChoices: string[] }
 export interface EwtRegister {
+  page?: PageInfo;
   from: string; to: string; rows: (TaxSupplierRow & EwtAtc & { baseCents: number | null; rateBp: number | null; ewtCents: number })[];
   totals: { baseCents: number; ewtCents: number }; glEwtCents: number; atcToConfirmCount: number;
 }
@@ -510,8 +519,9 @@ export interface Sawt {
   inHand: { cwtCents: number; vatWithheldCents: number }; pending: { cwtCents: number; vatWithheldCents: number };
   ties: TaxTie[]; checks: WorksheetCheck[];
 }
-export interface SalesRegister { from: string; to: string; rows: (TaxRegisterRow & { netCents: number; vatCents: number; totalCents: number })[]; totals: { netCents: number; vatCents: number; totalCents: number }; glVatCents: number }
+export interface SalesRegister { page?: PageInfo; from: string; to: string; rows: (TaxRegisterRow & { netCents: number; vatCents: number; totalCents: number })[]; totals: { netCents: number; vatCents: number; totalCents: number }; glVatCents: number }
 export interface WithholdingRegister {
+  page?: PageInfo;
   from: string; to: string;
   /** `lineNo` names the 2307 (an opening withholding's row, 0 for a collection's); `period` ('2026-Q2') only on an opening's. */
   rows: (TaxRegisterRow & {
@@ -669,6 +679,9 @@ export interface BackupMade { file: string; tier: BackupTier; bytes: number; off
 export interface BackupFile { source: BackupSource; file: string; at: string; tier: BackupTier; bytes: number }
 /** Customer emails (COM). The App Password is write-only: the server says only whether one is saved. */
 export type EmailTemplate = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement' | 'payslip';
+export type BulkStatementRow = { customerId: string; customerName: string; balanceCents: number; email: string | null;
+  reason?: string; lastStatementEmailedAt: string | null };
+export type BulkStatements = { date: string; eligible: BulkStatementRow[]; excluded: BulkStatementRow[] };
 /** Customer emails, or payslip emails to employees (a payslip row shows the recipient and the pay period, never an amount). */
 export type EmailKind = 'customer' | 'payslip';
 export interface EmailSettings { sendingOn: boolean; host: string; port: number; user: string; senderName: string; senderAddress: string; version: number; appPasswordSet: boolean; missing: string[] }
@@ -801,7 +814,9 @@ export interface EwtAnnualReturn {
 /** A year's annual report URL; with &format=csv the same URL downloads it for Excel. */
 export const taxYearPath = (report: '1702rt' | '1604e', year: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year) })}`;
 /** A tax register's URL; with &format=csv the same URL downloads it for Excel. */
-export const taxRegisterPath = (register: 'sales' | 'withholding-received' | 'purchases' | 'ewt', from: string, to: string) => `/api/tax/registers/${register}?${new URLSearchParams({ from, to })}`;
+/** `page`: a page of the rows (the screens ask for one; the Excel file, which has no page, gets every row). */
+export const taxRegisterPath = (register: 'sales' | 'withholding-received' | 'purchases' | 'ewt', from: string, to: string, page?: { limit: number; offset: number }) =>
+  `/api/tax/registers/${register}?${new URLSearchParams({ from, to, ...(page ? { limit: String(page.limit), offset: String(page.offset) } : {}) })}`;
 /** A quarter's tax report URL; with &format=csv the same URL downloads it for Excel. */
 export const taxQuarterPath = (report: '2307-to-issue' | '2550q' | '1601eq' | '1702q' | 'slsp/sales' | 'slsp/purchases' | 'sawt', year: number, quarter: number) => `/api/tax/${report}?${new URLSearchParams({ year: String(year), quarter: String(quarter) })}`;
 /** The 0619-E worksheet's URL (month like 2026-07); with &format=csv it downloads for Excel. */
@@ -867,7 +882,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     health: () => call<{ serverTime: string; practice?: boolean }>('GET', '/api/health'),
     dashHome: () => call<DashHomeData>('GET', '/api/dash/home'),
     dashOwnerHealth: () => call<DashOwnerHealth>('GET', '/api/dash/owner-health'),
-    dashNotifications: () => call<DashNotification[]>('GET', '/api/dash/notifications'),
+    dashOwnerCharts: () => call<DashOwnerCharts>('GET', '/api/dash/owner-charts'),
+    /** `page`: only a page of them (`unread`: of the unread ones), for the home panel and the long list. */
+    dashNotifications: (page?: { limit: number; offset: number; unread?: boolean }) =>
+      call<DashNotification[]>('GET', `/api/dash/notifications${page ? `?${new URLSearchParams({ limit: String(page.limit), offset: String(page.offset), ...(page.unread ? { unread: '1' } : {}) })}` : ''}`),
     dashRead: (id: string) => call<{ ok: true }>('POST', '/api/dash/notifications/read', { id }),
     calItems: (from: string, to: string) => call<CalItem[]>('GET', `/api/cal?${new URLSearchParams({ from, to })}`),
     calCreate: (body: CalEventInput) => call<CalEvent>('POST', '/api/cal/events', body),
@@ -1087,13 +1105,13 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     booklet: (id: string) => call<BookletUsage>('GET', `/api/tax/booklets/${encodeURIComponent(id)}`),
     registerBooklet: (body: BookletInput) => call<Booklet>('POST', '/api/tax/booklets', body),
     setBookletActive: (id: string, v: number, active: boolean, note: string) => call<Booklet>('POST', `/api/tax/booklets/${encodeURIComponent(id)}/${active ? 'activate' : 'retire'}`, { note }, version(v)),
-    salesRegister: (from: string, to: string) => call<SalesRegister>('GET', taxRegisterPath('sales', from, to)),
-    withholdingReceived: (from: string, to: string) => call<WithholdingRegister>('GET', taxRegisterPath('withholding-received', from, to)),
+    salesRegister: (from: string, to: string, page?: { limit: number; offset: number }) => call<SalesRegister>('GET', taxRegisterPath('sales', from, to, page)),
+    withholdingReceived: (from: string, to: string, page?: { limit: number; offset: number }) => call<WithholdingRegister>('GET', taxRegisterPath('withholding-received', from, to, page)),
     /** A customer's 2307 recorded as pending has come (tax.2307.receive); dated the server's today. */
     mark2307Received: (documentId: string, lineNo: number) =>
       call<{ documentId: string; number: string; lineNo: number; receivedOn: string }>('POST', '/api/tax/2307s/received', { documentId, lineNo }),
-    purchasesRegister: (from: string, to: string) => call<PurchasesRegister>('GET', taxRegisterPath('purchases', from, to)),
-    ewtRegister: (from: string, to: string) => call<EwtRegister>('GET', taxRegisterPath('ewt', from, to)),
+    purchasesRegister: (from: string, to: string, page?: { limit: number; offset: number }) => call<PurchasesRegister>('GET', taxRegisterPath('purchases', from, to, page)),
+    ewtRegister: (from: string, to: string, page?: { limit: number; offset: number }) => call<EwtRegister>('GET', taxRegisterPath('ewt', from, to, page)),
     certificatesToIssue: (year: number, quarter: number) => call<CertificatesToIssue>('GET', taxQuarterPath('2307-to-issue', year, quarter)),
     vatWorksheet: (year: number, quarter: number) => call<VatWorksheet>('GET', taxQuarterPath('2550q', year, quarter)),
     uncollectedVat: () => call<UncollectedVat>('GET', '/api/tax/uncollected-vat'),
@@ -1170,6 +1188,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     comOutbox: (status?: OutboxRow['status'], kind?: EmailKind) => call<Outbox>('GET', `/api/com/outbox${status || kind ? `?${new URLSearchParams({ ...(status ? { status } : {}), ...(kind ? { kind } : {}) })}` : ''}`),
     comResend: (id: string) => call<{ success: true }>('POST', `/api/com/outbox/${encodeURIComponent(id)}/resend`, {}),
     comEmailStatement: (b: { customerId: string; from: string; to: string }) => call<{ id: string }>('POST', '/api/com/statements', b),
+    comBulkStatements: (date: string) => call<BulkStatements>('GET', `/api/com/statements/bulk?date=${encodeURIComponent(date)}`),
+    comSendBulkStatements: (date: string, customerIds: string[]) => call<{ queued: number }>('POST', '/api/com/statements/bulk', { date, customerIds }),
     migUploads: () => call<{ uploads: MigUpload[] }>('GET', '/api/mig/uploads').then((r) => r.uploads),
     /** The kind is not sent: the server reads it from the columns. */
     migUpload: (filename: string, csv: string) => call<MigUploaded>('POST', '/api/mig/upload', { filename, csv }),

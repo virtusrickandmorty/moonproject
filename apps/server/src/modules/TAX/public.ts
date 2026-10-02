@@ -26,3 +26,5 @@ export { certificatesToIssue, purchasesRegister, type CertificateLine } from './
 
 /** What a quarter's 1601-FQ leaves to pay (EQ's dividend declaration checks it before a cancel). */
 export { finalTaxDue, type FinalTaxDue } from './payments.ts';
+/** The same quarter figures shown by the VAT worksheet, for read-only summaries such as DASH. */
+export { vatSummary, type VatPosition } from './vat.ts';
