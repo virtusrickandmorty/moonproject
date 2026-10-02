@@ -23,6 +23,7 @@ import { addDeductionSetting, annualIncomeTaxWorksheet, deductionAt, deductionHi
 import { ewtAnnualReturn } from './ewt-annual.ts';
 import { classifySale, sawt, slspPurchases, slspSales, type Tie } from './slsp.ts';
 import { changesAfterFiling } from './filed.ts';
+import { addFiledReturn, FILED_FORMS, filedRegister, voidFiledReturn } from './filed-register.ts';
 import { pageAsked, paged } from '../../platform/paging.ts';
 
 export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -31,6 +32,18 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   const write = <T>(fn: () => T) => tx(db, () => (clockGuard({ db, clock }), fn()));
   /** Changing the register needs a fresh password: a booklet decides which paper counts as a real invoice. */
   const stepUp = (req: FastifyRequest) => requireStepUp(currentUser(req), clock);
+
+  app.get('/api/tax/filed-returns', { config: { permission: 'tax.registers.view' } }, async () => ({
+    rows: filedRegister(db), forms: FILED_FORMS, today: today(clock),
+  }));
+  app.post('/api/tax/filed-returns', { config: { permission: 'acc.settings.manage' } }, async (req) => {
+    stepUp(req);
+    return write(() => addFiledReturn(db, req.body, who(req), today(clock)));
+  });
+  app.post<{ Params: { id: string } }>('/api/tax/filed-returns/:id/void', { config: { permission: 'acc.settings.manage' } }, async (req) => {
+    stepUp(req);
+    return write(() => voidFiledReturn(db, Number(req.params.id), req.body, who(req)));
+  });
 
   /** The register with each booklet's usage: numbers used, skipped and left. */
   app.get('/api/tax/booklets', { config: { permission: 'tax.booklets.view' } }, async () => listBooklets(db).map((b) => bookletUsage(db, b)));
@@ -465,7 +478,7 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
     return vatSummary(db, year, quarter);
   });
 
-  /** ACC-22: documents dated in a filed period recorded or cancelled after the return's payment was recorded (?format=csv). */
+  /** ACC-22: documents dated in a filed period recorded or cancelled after its filing source was recorded (?format=csv). */
   app.get<{ Querystring: { format?: string } }>('/api/tax/changes-after-filing', { config: { permission: 'tax.registers.view' } }, async (req, reply) => {
     const rows = changesAfterFiling(db).map((r) => ({ ...r, docTitle: title(r.docType) }));
     if (req.query.format !== 'csv') return { rows };

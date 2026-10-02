@@ -21,11 +21,17 @@ export interface CancelPreview { number: string; businessDate: string; cancelDat
 export interface ReversalDue { documentId: string; number: string; date: string; memo: string; reverseOn: string; totalCents: number }
 /** GET /api/acc/jv/:id/reversal: the reversal's form input (lines swapped) and its date. */
 export interface JvReversal { businessDate: string; original: { documentId: string; number: string; date: string }; input: { memo: string; lines: { accountId: number; party?: { type: PartyType; id: string }; debitCents?: number; creditCents?: number; memo?: string }[]; reversalOf: string } }
-/** GET /api/tax/changes-after-filing (ACC-22): one document recorded or cancelled after a return of its period was paid. */
+/** GET /api/tax/changes-after-filing (ACC-22): one document recorded or cancelled after its period's filing source was recorded. */
 export interface ChangeAfterFiling {
   date: string; documentId: string; docType: string; docTitle: string; number: string; what: 'recorded' | 'cancelled'; userName: string; at: string;
   form: string; period: string; periodLabel: string; paymentNumber: string; paymentRecordedAt: string;
 }
+export interface FiledReturnInput { form: string; period: string; filedOn: string; reference: string; note?: string }
+export interface FiledRegisterRow extends Omit<FiledReturnInput, 'note'> {
+  note: string | null;
+  id: number; recordedAt: string; recordedBy: string; voidedAt: string | null; voidedBy: string | null; voidReason: string | null;
+}
+export interface FiledRegister { rows: FiledRegisterRow[]; forms: string[]; today: string }
 export async function openServerPrint(me: Me, path: string, body: unknown): Promise<void> {
   const preview = window.open('', '_blank');
   const response = await fetch(path, { method: 'POST', credentials: 'same-origin',
@@ -1139,6 +1145,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     reversalsDue: () => call<ReversalDue[]>('GET', '/api/acc/jv/reversals-due'),
     jvReversal: (id: string) => call<JvReversal>('GET', `/api/acc/jv/${encodeURIComponent(id)}/reversal`),
     changesAfterFiling: () => call<{ rows: ChangeAfterFiling[] }>('GET', '/api/tax/changes-after-filing'),
+    filedReturns: () => call<FiledRegister>('GET', '/api/tax/filed-returns'),
+    addFiledReturn: (body: FiledReturnInput) => call<FiledRegisterRow>('POST', '/api/tax/filed-returns', body),
+    voidFiledReturn: (id: number, reason: string) => call<FiledRegisterRow>('POST', `/api/tax/filed-returns/${id}/void`, { reason }),
     recordGoLiveAnswer: (body: { decisionId: string; answer: string; decidedBy: string; decidedOn: string; note: string }) => call<GoLiveRegister>('POST', '/api/acc/go-live-decisions/answers', body),
     /** The accountant's sign-off of a month that has ended; needs a fresh password (step-up). */
     signOffMonth: (month: string, note: string) => call<MonthEndChecklist>('POST', '/api/acc/month-end/sign-off', { month, note }),
