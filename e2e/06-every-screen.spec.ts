@@ -208,7 +208,7 @@ async function openPreview(page: Page) {
 }
 
 /** What a form says, in words, when the books give it nothing to do yet: a refusal that names the reason, not a screen that failed. */
-const STATE_OF_THE_BOOKS = /cut-over date|has no VAT to close|no income tax|nothing to (adjust|provide|settle|close)|no credits to settle/;
+const STATE_OF_THE_BOOKS = /cut-over date|has no VAT to close|no income tax|nothing to (adjust|provide|settle|close)|no credits to settle|already closed by/;
 
 /** Opens one New form, fills it in and presses Record: what is wrong with it, nothing being the empty list. */
 async function checkNewForm(page: Page, href: string, today: string, take: () => string[]): Promise<string[]> {
