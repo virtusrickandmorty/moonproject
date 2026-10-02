@@ -56,5 +56,6 @@ Welcome to the Moonproject guides. These short guides show you step-by-step how 
 - [52. Leave balances](52-leave-balances.md): View the service incentive leave balances of your employees for a year.
 - [53. Printing 2307 for suppliers](53-printing-2307-for-suppliers.md): Print the 2307s for your suppliers.
 - [54. Comparing Statements](54-comparing-statements.md): Compare the income statement or balance sheet with a previous period.
+- [55. Customer checks](55-customer-checks.md): Keep track of customer checks: post-dated, on hand, deposited, or returned by the bank.
 - [56. Nightly checks](56-nightly-checks.md): See the result of the nightly checks and run them now.
 - [57. Expense paid from several places](57-expense-paid-from-several-places.md): Record an expense paid right away from two or more places.
