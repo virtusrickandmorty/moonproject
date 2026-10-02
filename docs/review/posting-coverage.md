@@ -1,6 +1,7 @@
 # Posting coverage check (W29)
 
-Checked on 2026-09-29 against `main` at 9406f50. One row per posting code in PLAN D5 (every table) and per golden in
+Checked on 2026-09-29 against `main` at 9406f50; brought up to date on 2026-10-03 against `main` at 8160e02 (the rows for
+DIV, the sale half of FA-DISP and the allowance method, and "Added since 29 Sep" below). One row per posting code in PLAN D5 (every table) and per golden in
 PLAN I2, with the doc type that posts it, the test that checks its journal line by line, and the test that checks its
 cancel (D6). Paths are under `apps/server/src/modules/` unless they start with `apps/` or `tests/`; test names are
 quoted from the start of the `it(...)` title.
@@ -14,8 +15,8 @@ this PR adds for the gap.
 
 **Result.** Every doc type that exists posts what the plan says; no rule posts wrongly, so there is no `it.fails` test.
 Before this PR there were 7 gaps: G-26, and the cancel or journal check of RENT-ACCR, RCV, CA-GIVE, COL-OVER and
-DEP-REFUND. All 7 now have tests (5 new files, below). Not built: DIV, the sale half of FA-DISP, and the allowance
-method (1209) of BAD-DEBT.
+DEP-REFUND. All 7 now have tests (5 new files, below). DIV, the sale half of FA-DISP and the allowance method (1209) of
+BAD-DEBT were not built on 29 Sep; all three were built since, each with a golden, its cancel and a property test.
 
 ## Sales and collections
 
@@ -36,7 +37,7 @@ method (1209) of BAD-DEBT.
 | DEP-FORFEIT | `col.forfeit` (DFF-) | `COL/tests/credits.test.ts` › "golden: an abandoned JO's ₱28,000 deposit is kept as other income, no VAT, flagged; …"; "VATable from a date set by the accountant: Cr 7103 NET and Cr 2301 12/112; …" | same tests (`linesOf(id, 'reversal')` = mirror) |
 | CM-ALLOW | `col.credit_memo` (CM-) | `COL/tests/credits.test.ts` › "golden, unpaid invoice: allowance ₱5,600 → Dr 4191 5,000.00, Dr 2301 600.00 / Cr 1201 5,600.00; …"; "golden, paid invoice: return ₱5,600 → Cr 2201 …"; "part paid: …" | `COL/tests/credits.test.ts` › "golden, paid invoice: … " (both memos cancelled, reversal = mirror) |
 | QS-SALE | `qs.sale` + `col.collection` | `QS/tests/sale.test.ts` › "G-08: alteration ₱350 cash, invoice no. 0502: …"; "splits sales by class, shows a discount as gross + 4190, and takes split tenders" | `QS/tests/sale.test.ts` › "cancel cancels both, mirrored with today's date; …" |
-| BAD-DEBT | `col.write_off` (BDW-) | `COL/tests/credits.test.ts` › "golden: writes off all the invoice owes, Dr 6270 / Cr 1201, output VAT stays; …" | same test (reversal = mirror). The allowance method (Dr 1209) is not built: see below |
+| BAD-DEBT | `col.write_off` (BDW-) | `COL/tests/credits.test.ts` › "golden: writes off all the invoice owes, Dr 6270 / Cr 1201, output VAT stays; …" | same test (reversal = mirror). Allowance method (Dr 1209): `COL/tests/allowance.test.ts` › "golden: refused when the allowance is short, …; then Dr 1209 / Cr 1201; recovery: cancel (Dr 1201 / Cr 1209), then the collection"; property › "random allowances …, write-offs, cancels and recoveries: …" |
 
 ## Purchases and expenses
 
@@ -61,12 +62,12 @@ method (1209) of BAD-DEBT.
 | OWN-IN | `eq.owner_money` (OWN-) | `EQ/tests/eq.test.ts` › "owner puts 100,000.00 into BDO as an advance from a stockholder"; "capital stock: par to 3101, the excess to 3104; …"; "a subscription payment clears 3103 …"; "deposits for future subscription go to 3105 (FRB 6 met) or 2502" | `EQ/tests/eq.test.ts` › "cancel posts a mirror dated today and nets to zero; encoders cannot cancel" |
 | OFC-OUT | `eq.officer` (OFC-), kind `taken` | `EQ/tests/eq.test.ts` › "officer takes 5,000.00 from the cash box and pays back 3,000.00 into GCash" | `EQ/tests/eq.test.ts` › "cancel: money taken waits for its pay-backs to be cancelled first; mirrors net to zero" |
 | OFC-IN | `eq.officer`, kinds `returned`, `repaid_to_officer` | `EQ/tests/eq.test.ts` › "officer takes 5,000.00 … pays back 3,000.00 into GCash"; "the company pays back an advance, never more than it owes" | `EQ/tests/eq.test.ts` › "cancel: money taken waits for its pay-backs …" |
-| DIV | none | Not built (below) | — |
+| DIV | `eq.dividend` (DIV-) | `EQ/tests/dividend.test.ts` › "₱50.00 a share on 5,000 shares: Dr 3210 250,000.00 / Cr 2503 per stockholder net of 10% final tax on individuals / Cr 2312 17,500.00" | `EQ/tests/dividend.test.ts` › "a declaration is cancelled only after the payments made from it; its mirror lands on its own date"; `EQ/tests/dividend-property.test.ts` › "random earnings, share changes, declarations, payments, 1601-FQ payments and cancels keep 3210, 2503 and 2312 in step" |
 | LOAN-IN | `loan.loan` (LOAN-) | `LOAN/tests/loan.test.ts` › "loan ₱500,000 with a ₱5,000 fee deducted; instalment ₱25,000 = …" | `LOAN/tests/loan.test.ts` › "a loan with payments cannot be cancelled; once cancelled it takes no payment" (ledger empty after) |
 | LOAN-PAY | `loan.payment` (LPAY-) | `LOAN/tests/loan.test.ts` › "loan ₱500,000 …" | `LOAN/tests/loan.test.ts` › "cancelling a payment mirrors it and opens the instalment again" |
 | FA-BUY | `fa.buy` (FA-) | `FA/tests/fa.test.ts` › "capitalises the net cost, claims the VAT in full, …" (G-21); "other classes go to 6210, on account to 2101; …" | `FA/tests/fa.test.ts` › "a purchase waits for its runs; a run can be cancelled only when it is the latest for its assets" (ledger empty after) |
 | FA-DEP | `fa.depreciation` (DEPR-) | `FA/tests/fa.test.ts` › "capitalises the net cost … charges 1,500.00 a month to 5302 and blocks a second run" | `FA/tests/fa.test.ts` › "a purchase waits for its runs; …"; "a run is redone (cancel + new number) …" |
-| FA-DISP | `fa.disposal` (FAD-), retirement only | `FA/tests/fa.test.ts` › "retirement: book value to 7202, a sale is refused, later runs skip the asset, cancel puts it back"; `FA/tests/opening.test.ts` › "retires an opening asset like a bought one …" | `FA/tests/fa.test.ts` › "retirement: … cancel puts it back" (register and L4). The sale (Cash X, 2301, 7102) is not built: see below |
+| FA-DISP | `fa.disposal` (FAD-), retirement only | `FA/tests/fa.test.ts` › "retirement: book value to 7202, a sale is refused, later runs skip the asset, cancel puts it back"; `FA/tests/opening.test.ts` › "retires an opening asset like a bought one …" | `FA/tests/fa.test.ts` › "retirement: … cancel puts it back" (register and L4). Sale (Cash X, 2301, 7102 or 7202): `FA/tests/sale.test.ts` › "posts the journal line by line, warns September is not run, then shows in the register, the booklet and the sales book"; "a customer picked: Cr 7102 the gain, …"; property › "every random sale balances, and gain less loss equals NET less book value; cancels undo it" |
 | INV-COUNT | `inv.count` (INVC-) | `INV/tests/count.test.ts` › "GL 1301 ₱30,000, counted ₱25,000: … next count ₱42,000: Dr 1301 17,000.00 / Cr 5109"; "ready-made merchandise posts to 1302: …" | `INV/tests/count.test.ts` › "cancel mirrors the adjustment on the count date, latest count first (D6); …" |
 
 ## Payroll and statutory
@@ -129,13 +130,22 @@ method (1209) of BAD-DEBT.
 | G-29 | `PAY/tests/pay.test.ts` › "CA ₱2,000 given, … the run waits for its release; cancels restore the CA balance"; `PAY/tests/pay.test.ts` › "pays the week, marks the rows paid, … and cancels in order" (piece assignments unpaid again); `PAY/tests/thirteenth.test.ts` | same tests |
 | G-30 | `apps/server/test/month-in-the-life.test.ts` › "records every document of the month with the journal worked out by hand, dated as planned"; "ends on the trial balance of tests/golden/month.tb.csv, to the centavo, account names included" (`tests/golden/month.tb.csv`) | — (one month in sequence; no cancel in the plan's scenario) |
 
-## Not built
+## Added since 29 Sep
 
-Plan words (D5) for posting rules with no doc type. Left alone, as the task says:
+Posting types built after the check above (none of them is a D5 row of its own except BAD-ALLOW), read on 3 Oct 2026.
 
-- **DIV**: "Dividend declaration (accountant; board resolution ref.) | Dr 3210 | Cr 2503 (+ final tax payable) | Later tier". There is no doc type; the accountant can post it today only as a JV.
-- **FA-DISP, sale of an asset**: "Disposal / retirement | Cash X; 15x1 (accum.); 7202 (loss) | 15x0 (cost); 2301 (VAT on sale); 7102 (gain) | A sale of an asset needs an invoice record". `fa.disposal` records a retirement only; `kind: 'sale'` is refused with `SALE_NEEDS_INVOICE` (`FA/doctypes/disposal.ts`). The Cash X, 2301 and 7102 lines are never posted.
-- **BAD-DEBT, allowance method**: "Accountant write-off | 6270 (or 1209 via allowance) | 1201". `col.write_off` posts Dr 6270 only; its header says "The allowance method (1209) is not built."
+| Code | Doc type | Journal checked by | Cancel checked by |
+|---|---|---|---|
+| BAD-ALLOW | `col.allowance` (ACL-) | `COL/tests/allowance.test.ts` › "golden: up per customer from the aging (Dr 6270 / Cr 1209 per customer), then down (Dr 1209 / Cr 6270); cancel mirrors on its own date" | same test; property › "random allowances (per customer and in total), write-offs, cancels and recoveries: each allowance posts its change exactly; the invariants hold" |
+| DIV payment | `eq.dividend_payment` (DIVP-) | `EQ/tests/dividend.test.ts` › "pays a stockholder what the declaration made payable, in part or in full, never more; cancel mirrors it" | same test |
+| 1601-FQ payment | `tax.bir_payment`, form 1601-FQ | `EQ/tests/dividend.test.ts` › "the 1601-FQ pays the quarter’s final tax: Dr 2312 / Cr cash; …"; "the late 1601-FQ asks for the penalty; a penalty goes to 6290" | `EQ/tests/dividend-property.test.ts` (1601-FQ payments and cancels) |
+| UVAT, UVATR | `tax.uncollected_vat` (UVAT-), `tax.uncollected_vat_recovery` (UVATR-) | `TAX/tests/uncollected-vat.test.ts` › "golden: the claim Dr 2301 / Cr 2303 with the invoice as ref, …; the add-backs as the customer pays; cancels mirror" | same test; property › "after a claim and any payments with their add-backs, 2303 on the invoice = the claim VAT on what is still owed; …" |
+| JV reversal | `acc.jv`, reversing (`jv-reversals.ts`) | `ACC/tests/reversing-jv.test.ts` › "golden: a month-end accrual and its reversal on the first day of the next month, mirrored to the centavo" | `ACC/tests/reversing-jv.test.ts` › "reversed at most once; cancelling the reversal lets it be reversed again; …" |
+| Split tenders | `exp.voucher` (EXP-), up to four cash places | `EXP/tests/tenders.test.ts` › the four goldens (no EWT or VAT; input VAT; EWT, G-14; EWT and input VAT, G-13) | `EXP/tests/tenders.test.ts` › "a reissue can change the split: one place becomes two, and the old journal is mirrored"; property › "every voucher’s journal balances and its tenders equal the cash credits, …" |
+| Customer checks | `col.collection` into 1103, deposit `cash.transfer`, returned check | `COL/tests/checks.test.ts` › "lists every check not yet deposited with its days; a deposit is one transfer 1103 -> bank; 1103 equals the list"; "comes back to 1103, the bank charge goes to 6230, …" | `COL/tests/checks.test.ts` › "… cancelling the collection puts the receivable back, to the centavo"; "its fund transfers are undone only in the order the check moved, …"; property › "whatever is collected, deposited, returned and cancelled, 1103 on the ledger equals the checks-on-hand list" |
+| Night differential | `pay.run`, line kind `night` | `PAY/tests/pay-examples.test.ts` › "₱1,000/day, not an MWE, 16–31 August: …"; "₱1,000/day, not an MWE, 1–15 September 2026: an ordinary day and a rest day; …" | property › "pay never goes down when night minutes are added, …"; "pay never goes down when night overtime minutes are added, …" |
+
+Not built: nothing from D5.
 
 ## New tests in this PR
 

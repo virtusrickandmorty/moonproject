@@ -13,6 +13,11 @@ never read, copy or build on them. Everything you need is in this repo, mainly `
    Screens and prints: Part **H**. Tests: Part **I**. Do not read the whole plan unless you need to.
 3. The reference module: `apps/server/src/modules/CASH/` (Fund Transfer). Copy its shape.
 
+## The plan is frozen (the owner's rule, 2 Oct 2026)
+- **Never edit `docs/PLAN.md`.** The owner keeps the plan as agreed; Claude #1 keeps the log of every change made to it so far.
+- If you think a plan rule should change, do not change it. Write a **Plan change proposal** in your PR description: what, why, the old text and the new text. Claude #1 passes it to the owner, and it is applied only after the owner says yes.
+- Build what the plan says today. Where it leaves a choice, take its safe default and say which one in the PR.
+
 ## Lanes: only change files in your own lane
 | Builder | Owns |
 |---|---|

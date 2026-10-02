@@ -3,7 +3,8 @@
  * changes the books; the only writes are the night's results in aud_nightly_*.
  *   Each night at 02:00 Manila by this PC's clock (or at the next start, when the PC was off) the checks run once:
  *   the integrity check, the last backup, gaps in the number series, drafts left over 7 days, cash boxes whose last
- *   count differed from the books, the day's late entries and back-dated documents, and the day's cancellations.
+ *   count differed from the books, the day's late entries and back-dated documents (L9), the day's cancellations, the
+ *   books against the registers (L6, L8, L10) and cash places below zero (L11).
  *   A run after a night or more off covers every day since the last run (at most 31), so no day's entries are missed.
  *   The "Run the checks now" button runs the same checks and stores nothing.
  */
@@ -12,7 +13,12 @@ import type { Db } from '../../platform/db/driver.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp, type Clock } from '../../platform/clock.ts';
 import { INVARIANT_NAMES, runInvariants } from '../../engine/ledger/invariants.ts';
+import { accountBalance } from '../../engine/ledger/queries.ts';
+import { openingClose } from '../ACC/public.ts';
 import { lastBackupProblems } from '../BAK/public.ts';
+import { placesFor } from '../CASH/public.ts';
+import { payrollTotalsProblems } from '../PAY/public.ts';
+import { registerDifferences } from '../TAX/public.ts';
 
 export interface Finding { detail: string; path: string | null }
 export interface CheckResult { key: string; label: string; reportPath: string; passed: boolean; foundCount: number; findings: Finding[] }
@@ -46,6 +52,19 @@ type Check = { key: string; label: string; reportPath: string; run(ctx: NightlyC
 
 const doc = (type: string, id: string) => `/docs/${type}/${id}`;
 const when = (at: string) => at.slice(0, 16).replace('T', ' ');
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/** The calendar quarter a date is in: its first and last day, and "July to September 2026". */
+function quarterOf(date: string): { from: string; to: string; label: string } {
+  const year = Number(date.slice(0, 4));
+  const first = Math.floor((Number(date.slice(5, 7)) - 1) / 3) * 3; // 0, 3, 6 or 9
+  const month = (y: number, m: number) => `${y}-${String(m + 1).padStart(2, '0')}-01`;
+  return {
+    from: month(year, first),
+    to: addDays(first === 9 ? month(year + 1, 0) : month(year, first + 3), -1),
+    label: `${MONTHS[first]} to ${MONTHS[first + 2]} ${year}`,
+  };
+}
 
 const CHECKS: Check[] = [
   {
@@ -146,6 +165,43 @@ const CHECKS: Check[] = [
          WHERE status = 'cancelled' AND substr(cancelled_at, 1, 10) BETWEEN ? AND ? ORDER BY cancelled_at, number`,
       ).all(from, to) as { id: string; number: string; docType: string; reason: string; replacedBy: string | null }[];
       return rows.map((r) => ({ detail: `${titleOf(r.docType)} ${r.number} was cancelled${r.replacedBy ? ' and reissued' : ''}: ${r.reason}`, path: doc(r.docType, r.id) }));
+    },
+  },
+  {
+    key: 'books', label: 'Books against the registers', reportPath: '/aud/integrity',
+    run({ db }, _from, _to, asOf) {
+      const out: Finding[] = [];
+      // L6: the tax registers of this quarter and the one before (whose returns may still be open) against the GL.
+      const now = quarterOf(asOf);
+      for (const q of [quarterOf(addDays(now.from, -1)), now]) for (const d of registerDifferences(db, q.from, q.to)) {
+        out.push({ detail: `${d.register}, ${q.label}: the register adds up to ${formatPeso(d.registerCents)} but the books show ${formatPeso(d.ledgerCents)}.`, path: d.path });
+      }
+      // L8: once the opening balances are closed, opening balance equity stays at zero.
+      const closed = openingClose(db);
+      if (closed) {
+        const equity = db.prepare("SELECT id, code, name FROM accounts WHERE role_key = 'OPENING_EQUITY'").get() as { id: number; code: string; name: string };
+        const balance = accountBalance(db, equity.id); // debit-positive
+        if (balance !== 0) out.push({ detail: `${equity.code} ${equity.name} is ${formatPeso(Math.abs(balance))} ${balance > 0 ? 'debit' : 'credit'}, but the opening balances were closed on ${closed.closedAt.slice(0, 10)} and it should be zero.`, path: '/acc/opening' });
+      }
+      // L10: every posted payroll's payslips and totals add up.
+      for (const p of payrollTotalsProblems(db)) {
+        out.push({
+          detail: p.employeeName
+            ? `${p.number}: ${p.employeeName}'s gross pay is ${formatPeso(p.recordedCents)} but the payslip's lines add up to ${formatPeso(p.addsUpCents)}.`
+            : `${p.number}: the run's ${p.what} pay is ${formatPeso(p.recordedCents)} but its payslips add up to ${formatPeso(p.addsUpCents)}.`,
+          path: doc('pay.run', p.documentId),
+        });
+      }
+      return out;
+    },
+  },
+  {
+    key: 'negative-cash', label: 'Cash places below zero', reportPath: '/cash/accounts',
+    run({ db }) {
+      // L11, a warning only: a cash place below zero means a receipt is missing or a payment was put in the wrong place.
+      return placesFor(db, () => true)
+        .filter((p) => p.balanceCents !== null && p.balanceCents < 0)
+        .map((p) => ({ detail: `${p.name} is ${formatPeso(-p.balanceCents!)} below zero.`, path: '/cash/accounts' }));
     },
   },
 ];
