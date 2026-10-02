@@ -3,9 +3,10 @@
  * during the period: earnings from attendance (days × the daily rate of that day, holidays and rest days at the DOLE
  * rates, overtime, night differential, on overtime of the overtime rate; an unworked regular holiday only after a
  * workday present or on paid leave), the half-month salary of monthly staff, unpaid piece work up to the period end
- * (PRD), and manual lines; then SSS, PhilHealth and Pag-IBIG for the contribution month as a month-to-date true-up,
- * withholding tax for the period, government loan amortizations (once a month, loans.ts), the cash-advance instalment,
- * net pay and the 13th-month accrual.
+ * (PRD) with a piece worker's premiums above it (overtime, night hours, holidays and rest days worked), and manual
+ * lines; then SSS, PhilHealth and Pag-IBIG for the contribution month as a month-to-date true-up, withholding tax for
+ * the period, government loan amortizations (once a month, loans.ts), the cash-advance instalment, net pay and the
+ * 13th-month accrual.
  * On a year-end run the tax is the year-end adjustment instead (year-end.ts): a deficiency withheld, or an excess refunded
  * (net pay more by it). Warnings go with the result.
  * Unused SIL (F1, Labor Code Art. 95) is paid in cash on an employee's final pay, and on a December run with "Pay unused
@@ -16,7 +17,7 @@
  */
 import { divRoundHalfAway, formatPeso, type Issue } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
-import { attendanceBetween, employeesInGroup, holidaysBetween, payProfileAt, silOf, type Employee, type Holiday, type PayGroup, type PayProfile } from '../EMP/public.ts';
+import { attendanceBetween, employeesInGroup, holidaysBetween, payProfileAt, silOf, type AttendanceDay, type Employee, type Holiday, type PayGroup, type PayProfile } from '../EMP/public.ts';
 import { pieceEarningsByDay, stepById, unpaidAssignments } from '../PRD/public.ts';
 import { jobOrderRef } from '../JO/public.ts';
 import { advanceSchedule } from '../CA/public.ts';
@@ -181,6 +182,62 @@ function earnings(
     else groups.set(key, { kind, description, qty, rateCents, multiplierBp, per, taxable: ALWAYS_TAXABLE.has(kind) || !end.isMwe, thirteenthBase: THIRTEENTH_BASE.has(kind) });
   };
   const manualNeeded = new Set<string>();
+  const pieceByDay = new Map(pieceEarningsByDay(db, e.id, from, to).map((x) => [x.date, x.amountCents]));
+  /**
+   * A piece worker's day worked: what is due above what its pieces pay (F1). The rules followed:
+   * - Labor Code Book III, Rule I §2(e) of its implementing rules leaves out of hours of work and overtime "workers who
+   *   are paid by results, including those who are paid on piece-work, takay, pakiao, or task basis, if their output
+   *   rates are in accordance with the standards prescribed under Section 8, Rule VII, Book Three of these regulations,
+   *   or where such rates have been fixed by the Secretary of Labor and Employment". No piece rate of the shop is fixed
+   *   that way (no piece-rate order or time-and-motion study), so piece workers are paid overtime (Art. 87), night
+   *   differential (Art. 86), premium pay (Arts. 91–93) and holiday pay (Art. 94) like daily-paid staff.
+   * - DOLE Handbook on Workers' Statutory Monetary Benefits: workers paid by results "shall receive not less than the
+   *   prescribed minimum wage rates ... for the normal working hours which shall not exceed eight hours a day". So a
+   *   day's pieces pay its first 8 hours and the hours past them are overtime.
+   * - Rule II §2: "night shift differential of no less than ten per cent (10%) of his regular wage for each hour of work
+   *   performed between ten o'clock in the evening and six o'clock in the morning"; §3: on overtime, "an additional
+   *   amount of no less than ten per cent (10%) of such overtime rate".
+   * - Rule IV §8(a): the holiday pay of an employee "paid by results or output, such as payment on piece work, ... shall
+   *   not be less than his average daily earnings for the last seven (7) actual working days preceding the regular
+   *   holiday: Provided, however, That in no case shall the holiday pay be less than the applicable statutory minimum
+   *   wage rate."
+   * The basis (the regular wage of the day) is the day's average earnings for 8 hours: its piece pay × 8 ÷ the hours
+   * worked (8, or 4 on a half day, plus the overtime), not below the minimum wage; on a regular holiday not below the
+   * holiday pay of Rule IV §8 either. The pieces already pay 100% of every hour worked, so the run adds, at the premiums
+   * it uses for daily-paid staff (pay_rules on the work date): on a holiday or rest day the day's premium (e.g. 100% on
+   * a regular holiday worked, 30% on a rest day); for overtime its rate less those 100% (25% on an ordinary day, 69% on
+   * a rest day); for night hours 10% of the day's hourly rate, and 10% of the overtime hourly rate for night hours that
+   * were also overtime, in full (the pieces carry none of it).
+   */
+  const pieceDay = (d: AttendanceDay, h: Holiday | undefined, r: PayRules) => {
+    const average = divRoundHalfAway((pieceByDay.get(d.date) ?? 0) * 480, (d.status === 'half_day' ? 240 : 480) + d.otMinutes);
+    let rate = Math.max(average, r.minimumWageCents);
+    let basis = rate === average ? 'the day’s average earnings' : 'the minimum wage';
+    if (h?.kind === 'regular') {
+      const pay = pieceHolidayRate(db, e.id, d.date, r.minimumWageCents);
+      if (pay.rateCents > rate) [rate, basis] = [pay.rateCents, `the average of the last ${pay.days} workdays`];
+    }
+    let dayBp = 10_000;
+    if (d.status === 'holiday_worked') {
+      dayBp = h?.kind === 'regular' ? r.regHolidayWorkedBp : r.specialWorkedBp;
+      add('holiday', `${h?.kind === 'regular' ? 'Regular holiday' : 'Special day'} worked ${d.date}, premium (${pct(dayBp - 10_000)} of ${basis})`, DAY, rate, dayBp - 10_000, DAY);
+    } else if (d.status === 'rest_day_worked') {
+      dayBp = h ? (h.kind === 'regular' ? r.regHolidayRestBp : r.specialRestBp) : r.restDayWorkedBp;
+      const what = h ? `Rest day on a ${h.kind === 'regular' ? 'regular holiday' : 'special day'}` : 'Rest day worked';
+      add(h ? 'holiday' : 'rest_day', `${what} ${d.date}, premium (${pct(dayBp - 10_000)} of ${basis})`, DAY, rate, dayBp - 10_000, DAY);
+    }
+    const otBp = d.status === 'present' ? r.otOrdinaryBp : divRoundHalfAway(dayBp * r.otPremiumBp, 10_000);
+    if (d.otMinutes > 0) add('ot', `Overtime ${d.date}, premium (${pct(otBp - 10_000)} of the hourly rate from ${basis})`, d.otMinutes, rate, otBp - 10_000, 480);
+    const nightOt = Math.min(d.nightOtMinutes, d.otMinutes, d.nightMinutes);
+    if (d.nightMinutes > nightOt) {
+      const nightBp = divRoundHalfAway(dayBp * r.nightDiffBp, 10_000);
+      add('night', `Night differential ${d.date} (${pct(nightBp)} of the hourly rate from ${basis})`, d.nightMinutes - nightOt, rate, nightBp, 480);
+    }
+    if (nightOt > 0) {
+      const nightOtBp = divRoundHalfAway(otBp * r.nightDiffBp, 10_000);
+      add('night', `Night differential on overtime ${d.date} (${pct(nightOtBp)} of the hourly rate from ${basis})`, nightOt, rate, nightOtBp, 480);
+    }
+  };
 
   for (const d of attendanceBetween(db, from, to, e.id)) {
     const p = payProfileAt(db, e.id, d.date);
@@ -199,13 +256,12 @@ function earnings(
       continue;
     }
     if (p.payType === 'piece') {
-      if (d.otMinutes > 0) manualNeeded.add('overtime');
-      if (d.nightMinutes > 0) manualNeeded.add('night differential');
       if (h?.kind === 'regular' && d.status === 'holiday_off') {
         const pay = pieceHolidayRate(db, e.id, d.date, r.minimumWageCents);
         const basis = pay.rateCents === r.minimumWageCents ? 'the minimum wage' : `average of the last ${pay.days} workdays`;
         add('holiday', `Regular holiday, not worked (${pct(r.regHolidayOffBp)} of ${basis})`, DAY, pay.rateCents, r.regHolidayOffBp, DAY);
-      }
+      } else if (d.status === 'leave') manualNeeded.add('paid leave (SIL)');
+      else if (WORKED.has(d.status)) pieceDay(d, h, r);
       continue;
     }
     const monthly = p.payType === 'monthly';
@@ -259,6 +315,7 @@ function earnings(
       add('night', `Night differential on overtime (${pct(nightOtBp)} of the hourly rate)`, nightOt, rate, nightOtBp, 480);
     }
   }
+  // What a piece worker's pay still leaves to a manual line: a day of paid leave (SIL) taken.
   if (manualNeeded.size) note('ADD_BY_HAND', `${e.name} is paid per piece: add ${[...manualNeeded].join(' and ')} as a manual line.`);
 
   if (end.payType === 'monthly') {

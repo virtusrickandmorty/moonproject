@@ -3,7 +3,8 @@
  * §13–14.3) run through PAY to the centavo. Where PAY differs from an example, the difference is written here as a
  * DECISION, flagged for the accountant. Made-up people; the piece rates are the example's illustrative ones.
  * Then the F1 holiday rules beyond the examples, worked out by hand: night differential (on overtime, of the overtime
- * rate), and the day-before rule for an unworked regular holiday; with property tests of them.
+ * rate), a piece worker's overtime, night hours, holiday and rest day worked, and the day-before rule for an unworked
+ * regular holiday; with property tests of them.
  */
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
@@ -180,7 +181,8 @@ describe('Example B: piece-rate sewer, weekly (Mon–Sat, paid Saturday), Septem
     // wage's monthly equivalent (550 × 313/12), as the example does, once they earn any piece pay in the month. F1 only
     // names PhilHealth's own ₱10,000 floor; with that floor W1 would take 250.00 and W4 123.65 (the month still 443.60).
     // Piece holiday pay counts the last 7 days with piece work or attendance marked worked, in the 31 days before the
-    // holiday; a piece worker's overtime and work on a holiday are still added by hand (ADD_BY_HAND).
+    // holiday. A piece worker's overtime, night hours and work on a holiday or rest day are worked out by the run (the
+    // piece worker example below); a day of paid leave (SIL) taken is still added by hand (ADD_BY_HAND).
     clean(w.db);
   });
 });
@@ -387,6 +389,208 @@ describe('the day before an unworked regular holiday (F1, DOLE): present or on p
   });
 });
 
+/** A job order of jerseys at a typed piece rate, and a helper recording one day's sewing (a piece row is dated the day it is recorded). */
+function sewing(w: Awaited<ReturnType<typeof world>>, rateCents: number) {
+  const cs = seedCustomers(w.db, w.userId);
+  const jo = w.record(jobOrderDoc, {
+    customerId: cs.school, dueInDays: 60, priority: 'normal', paymentTerms: 'full',
+    lines: [{ kind: 'made_to_order' as const, description: 'Jersey (NBA cut)', qty: 5_000, unitPriceCents: 30_000, discountCents: 0, roster: [] }],
+  }).id;
+  tx(w.db, () => setupLine(w.db, jo, 1, { templateId: 1, stepIds: [4, 6, 8], garmentType: 'Jersey (NBA cut)', complexity: 'standard' }, w.who()));
+  return (date: string, rows: [string, number][]) => {
+    w.at(date);
+    w.record(entryDoc, {
+      jobOrderId: jo, stepId: 6, overCapReason: 'Cut earlier by the old shop (made up)',
+      rows: rows.map(([employeeId, pieces]) => ({ lineNo: 1, employeeId, pieces, rateCents, rateReason: 'Illustrative rate of the example' })),
+    });
+  };
+}
+
+describe('a piece worker’s overtime, night hours, holiday and rest day worked (F1; Labor Code Book III Rules I §2(e), II, IV §8)', () => {
+  it('weekly, 31 August – 5 September 2026: the premiums above the pieces, on the day’s average earnings; an MWE’s are exempt', async () => {
+    const w = await world('2026-08-17');
+    // Paid per piece, a Monday-to-Friday week (Saturday is the rest day). Hana is a minimum wage earner, Gil is not.
+    const pay = { payType: 'piece' as const, payGroup: 'WEEKLY_PIECE' as const, workweekDays: 5 as const };
+    const gil = w.person('Gil Piraso', pay);
+    const hana = w.person('Hana Piraso', { ...pay, isMwe: true });
+    const sew = sewing(w, 2_500); // ₱25.00 a jersey
+    const both = (date: string, pieces: number) => sew(date, [[gil, pieces], [hana, pieces]]);
+    // The last 7 workdays before the Aug 31 regular holiday: Aug 19, 20 and 24–28, 28 jerseys a day = 700.00 each,
+    // paid by August's weekly runs. Their average, 700.00, is the holiday pay of Rule IV §8.
+    for (const d of ['19', '20']) both(`2026-08-${d}`, 28);
+    w.at('2026-08-22');
+    w.record(runDoc, { payGroup: 'WEEKLY_PIECE', periodStart: '2026-08-17' });
+    for (const d of ['24', '25', '26', '27', '28']) both(`2026-08-${d}`, 28);
+    w.at('2026-08-29');
+    w.record(runDoc, { payGroup: 'WEEKLY_PIECE', periodStart: '2026-08-24' });
+
+    // The week: 20 + 44 + 16 + 28 + 28 + 24 = 160 jerseys × 25 = 4,000.00 of pieces.
+    for (const [d, pieces] of [['08-31', 20], ['09-01', 44], ['09-02', 16], ['09-03', 28], ['09-04', 28], ['09-05', 24]] as const) both(`2026-${d}`, pieces);
+    w.attend([gil, hana].flatMap((employeeId) => [
+      // Mon Aug 31, National Heroes Day (regular), worked 8 h and 2 h of overtime.
+      { employeeId, date: '2026-08-31', status: 'holiday_worked', otMinutes: 120 },
+      // Tue Sep 1: 2 PM to 11 PM (8 h and a meal hour), overtime to 2 AM: overtime 3 h; night 10 PM to 2 AM, 4 h, 3 h of them overtime.
+      { employeeId, date: '2026-09-01', status: 'present', otMinutes: 180, nightMinutes: 240, nightOtMinutes: 180 },
+      // Wed Sep 2: a night shift, 4 h of it between 10 PM and 6 AM, no overtime.
+      { employeeId, date: '2026-09-02', status: 'present', nightMinutes: 240 },
+      { employeeId, date: '2026-09-03', status: 'present' }, { employeeId, date: '2026-09-04', status: 'present' },
+      // Sat Sep 5, the rest day, worked 8 h.
+      { employeeId, date: '2026-09-05', status: 'rest_day_worked' },
+    ]));
+    const run = w.record(runDoc, { payGroup: 'WEEKLY_PIECE', periodStart: '2026-08-31' });
+    expect(codes(run.warnings, 'warning')).toEqual([]);
+    const [g, h] = runDoc.load(w.db, run.id).employees;
+    // The pieces pay 100% of every hour worked; the run adds what the law asks above that, on the day's basis:
+    //   Aug 31: 20 × 25 = 500.00 in 10 h, so 500 × 8 / 10 = 400.00 for 8 h, below the minimum wage 550.00, and below the
+    //     holiday pay of Rule IV §8 (700.00): the basis is 700.00, hourly 87.50.
+    //     Regular holiday worked (200%): premium 100% × 700.00 = 700.00.
+    //     Overtime on a regular holiday: 200% × 130% = 260% of the hourly rate, less the 100% the pieces paid = 160%:
+    //       160% × 87.50 = 140.00 an hour × 2 h = 280.00.
+    //   Sep 1: 44 × 25 = 1,100.00 in 11 h, so 1,100 × 8 / 11 = 800.00 for 8 h (the day's average earnings), hourly 100.00.
+    //     Overtime: 125% less 100% = 25% × 100.00 × 3 h = 75.00.
+    //     Night, not overtime: 1 h (10 PM to 11 PM) × 10% × 100.00 = 10.00.
+    //     Night overtime: 3 h × 10% of the overtime rate (125% × 100.00) = 12.50 an hour (12.5%) → 37.50.
+    //   Sep 2: 16 × 25 = 400.00 in 8 h, below the minimum wage: the basis is 550.00, hourly 68.75.
+    //     Night: 4 h × 10% × 68.75 = 27.50.
+    //   Sep 3 and 4: ordinary days of 8 h, the pieces are the whole pay.
+    //   Sep 5: 24 × 25 = 600.00 in 8 h (the day's average), rest day worked (130%): premium 30% × 600.00 = 180.00.
+    //   Premiums 700 + 280 + 75 + 10 + 37.50 + 27.50 + 180 = 1,310.00; gross 4,000.00 + 1,310.00 = 5,310.00.
+    const premiums = [
+      ['holiday', 'Regular holiday worked 2026-08-31, premium (100% of the average of the last 7 workdays)', 1_000, 70_000],
+      ['ot', 'Overtime 2026-08-31, premium (160% of the hourly rate from the average of the last 7 workdays)', 120, 28_000],
+      ['ot', 'Overtime 2026-09-01, premium (25% of the hourly rate from the day’s average earnings)', 180, 7_500],
+      ['night', 'Night differential 2026-09-01 (10% of the hourly rate from the day’s average earnings)', 60, 1_000],
+      ['night', 'Night differential on overtime 2026-09-01 (12.5% of the hourly rate from the day’s average earnings)', 180, 3_750],
+      ['night', 'Night differential 2026-09-02 (10% of the hourly rate from the minimum wage)', 240, 2_750],
+      ['rest_day', 'Rest day worked 2026-09-05, premium (30% of the day’s average earnings)', 1_000, 18_000],
+    ];
+    expect(g!.lines.map((l) => [l.kind, l.description, l.qty, l.amountCents])).toEqual([
+      ...premiums,
+      ...[['2026-08-31', 20], ['2026-09-01', 44], ['2026-09-02', 16], ['2026-09-03', 28], ['2026-09-04', 28], ['2026-09-05', 24]].map(([d, n]) => ['piece', expect.stringContaining(`Sewing ${d}, ${n} pcs`), n, (n as number) * 2_500]),
+    ]);
+    // Premiums are taxable for Gil and not 13th-month basic: the 13th month is 4,000.00 / 12 = 333.33.
+    expect([g!.grossCents, g!.pieceCents, g!.thirteenthCents, g!.lines.every((l) => l.taxable), g!.lines.filter((l) => l.kind !== 'piece').some((l) => l.thirteenthBase)]).toEqual([531_000, 400_000, 33_333, true, false]);
+    // Hana, an MWE: the same lines, all exempt (RR 11-2018), as for daily-paid staff.
+    expect(h!.lines.map((l) => [l.kind, l.description, l.qty, l.amountCents])).toEqual(g!.lines.map((l) => [l.kind, l.description, l.qty, l.amountCents]));
+    expect([h!.grossCents, h!.taxableCents, h!.lines.some((l) => l.taxable)]).toEqual([531_000, 0, false]);
+    // Her 2316: basic SMW 7 × 700 + 4,000 = 8,900.00; holiday and rest day pay 700 + 180 = 880.00 (item 30); overtime
+    // 280 + 75 = 355.00 (item 31); night differential 10 + 37.50 + 27.50 = 75.00 (item 32).
+    const f = form2316(yearParts(w.db, hana, 2026), true);
+    expect([f.i29BasicSmwCents, f.i30HolidayMweCents, f.i31OvertimeMweCents, f.i32NightMweCents]).toEqual([890_000, 88_000, 35_500, 7_500]);
+    // The pieces go to 5201 (job-order tagged); the premiums, like a piece worker's holiday pay, to 5202 (Example B).
+    expect(journal(w.env, run.id).filter((l) => /^520[12] /.test(l))).toEqual(['5201 Dr 8,000.00', '5202 Dr 2,620.00']);
+    clean(w.db);
+  });
+
+  it('a day of paid leave (SIL) taken is not worked out for a piece worker: the run still says to add it by hand', async () => {
+    const w = await world('2026-09-12');
+    const id = w.person('Ira Piraso', { payType: 'piece', payGroup: 'WEEKLY_PIECE' });
+    w.attend([{ employeeId: id, date: '2026-09-07', status: 'leave' }, { employeeId: id, date: '2026-09-08', status: 'present', otMinutes: 60, nightMinutes: 60 }]);
+    const run = w.preview(runDoc, { payGroup: 'WEEKLY_PIECE', periodStart: '2026-09-07' });
+    // Sep 8, no piece work: the minimum wage's hourly 68.75; overtime 25% → 17.19, night 10% → 6.88. No line for Sep 7.
+    expect((run.doc as { employees: RunEmployee[] }).employees[0]!.lines.map((l) => [l.kind, l.amountCents])).toEqual([['ot', 1_719], ['night', 688]]);
+    expect(run.issues.filter((i) => i.code === 'ADD_BY_HAND').map((i) => i.message)).toEqual(['Ira Piraso is paid per piece: add paid leave (SIL) as a manual line.']);
+  });
+});
+
+describe('property: a piece worker’s overtime, night hours and holidays worked (PLAN I1.3)', () => {
+  const PERIOD: RunRequest = { payGroup: 'SEMI_DAILY', periodStart: '2026-08-16', periodEnd: '2026-08-31', payDate: '2026-08-31', manual: [], caOverrides: new Map(), skipped: new Set() };
+  const one = (db: Db, q: RunRequest, id: string) => workOut(db, q).employees.find((e) => e.employeeId === id)!;
+  const PREMIUM = new Set(['ot', 'night', 'holiday', 'rest_day']);
+  const WORKED = ['present', 'half_day', 'holiday_worked', 'rest_day_worked'];
+
+  it('pay never goes down when overtime or night minutes are added, and only the premium lines change', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.gen(), async (g) => {
+        const w = await world('2026-08-14');
+        const isMwe = g(() => fc.boolean());
+        const id = w.person('Ivo Piraso', { payType: 'piece', payGroup: 'SEMI_DAILY', isMwe, workweekDays: g(() => fc.constantFrom(5 as const, 6 as const)) });
+        const sew = sewing(w, g(() => fc.constantFrom(1_800, 2_500, 4_500)));
+        const holidays = new Set(holidaysBetween(w.db, PERIOD.periodStart, PERIOD.periodEnd).map((h) => h.date)); // Aug 21 special, Aug 31 regular
+        const days = Array.from({ length: 16 }, (_, i) => addDays(PERIOD.periodStart, i)).map((date) => {
+          const status = g(() => fc.constantFrom(...(holidays.has(date) ? ['holiday_off', 'holiday_worked', 'rest_day', 'rest_day_worked'] : ['present', 'present', 'half_day', 'absent', 'rest_day', 'rest_day_worked'])));
+          const otMinutes = ['present', 'holiday_worked', 'rest_day_worked'].includes(status) ? g(() => fc.constantFrom(0, 60, 150)) : 0;
+          const nightMinutes = WORKED.includes(status) ? g(() => fc.integer({ min: 0, max: 240 })) : 0;
+          const nightOtMinutes = g(() => fc.integer({ min: 0, max: Math.min(otMinutes, nightMinutes) }));
+          return { employeeId: id, date, status, otMinutes, nightMinutes, nightOtMinutes };
+        });
+        for (const d of days) {
+          const pieces = WORKED.includes(d.status) ? g(() => fc.integer({ min: 0, max: 60 })) : 0;
+          if (pieces) sew(d.date, [[id, pieces]]);
+        }
+        w.at('2026-08-31');
+        w.attend(days);
+        const before = one(w.db, PERIOD, id);
+        // More overtime (in quarter hours, as typed on the grid) and more night minutes on some days worked.
+        const worked = days.filter((d) => WORKED.includes(d.status));
+        const more = worked.map((d) => ({
+          ...d,
+          otMinutes: d.otMinutes + (d.status === 'half_day' ? 0 : 15 * g(() => fc.integer({ min: 0, max: 16 }))),
+          nightMinutes: d.nightMinutes + g(() => fc.integer({ min: 0, max: 240 })),
+        }));
+        if (more.length) w.attend(more);
+        const after = one(w.db, PERIOD, id);
+        const others = (e: RunEmployee) => e.lines.filter((l) => !PREMIUM.has(l.kind)).map(({ lineNo: _, ...l }) => l);
+        expect(others(after)).toEqual(others(before));
+        expect(after.grossCents).toBeGreaterThanOrEqual(before.grossCents);
+        const added = more.reduce((s, d, i) => s + d.otMinutes - worked[i]!.otMinutes + d.nightMinutes - worked[i]!.nightMinutes, 0);
+        if (added > 0) expect(after.grossCents).toBeGreaterThan(before.grossCents);
+        // Premiums are never 13th-month basic, and exempt for a minimum wage earner.
+        expect(after.thirteenthCents).toBe(before.thirteenthCents);
+        if (isMwe) expect(after.taxableCents).toBe(0);
+        await w.env.app.close();
+      }),
+      { numRuns: 20, endOnFailure: true },
+    );
+  }, 120_000);
+
+  it('the same output on a holiday worked never pays less than on an ordinary day', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.gen(), async (g) => {
+        const w = await world('2026-08-14');
+        const pay = { payType: 'piece' as const, payGroup: 'SEMI_DAILY' as const, isMwe: g(() => fc.boolean()) };
+        // The same history and the same day's work: Ula on a holiday, Vic on an ordinary Friday.
+        const ula = w.person('Ula Piraso', pay);
+        const vic = w.person('Vic Piraso', pay);
+        const sew = sewing(w, g(() => fc.constantFrom(1_800, 2_500, 4_500)));
+        const history = ['2026-08-17', '2026-08-18', '2026-08-19', '2026-08-20', '2026-08-24', '2026-08-25', '2026-08-26', '2026-08-27'];
+        const rows = new Map<string, [string, number][]>();
+        for (const date of history) {
+          const pieces = g(() => fc.integer({ min: 0, max: 60 }));
+          if (pieces) rows.set(date, [[ula, pieces], [vic, pieces]]);
+        }
+        const holiday = g(() => fc.constantFrom('2026-08-21', '2026-08-31')); // special, regular
+        const restDay = g(() => fc.boolean());
+        const ordinary = '2026-08-28';
+        const pieces = g(() => fc.integer({ min: 0, max: 80 }));
+        const otMinutes = 15 * g(() => fc.integer({ min: 0, max: 16 }));
+        const nightMinutes = g(() => fc.integer({ min: 0, max: 480 }));
+        const nightOtMinutes = g(() => fc.integer({ min: 0, max: Math.min(otMinutes, nightMinutes) }));
+        if (pieces) {
+          rows.set(holiday, [[ula, pieces]]);
+          rows.set(ordinary, [[vic, pieces]]);
+        }
+        for (const date of [...rows.keys()].sort()) sew(date, rows.get(date)!); // in date order: the clock only goes forward
+        w.at('2026-08-31');
+        const day = { otMinutes, nightMinutes, nightOtMinutes };
+        w.attend([
+          ...history.flatMap((date) => [ula, vic].map((employeeId) => ({ employeeId, date, status: 'present' }))),
+          { employeeId: ula, date: holiday, status: restDay ? 'rest_day_worked' : 'holiday_worked', ...day },
+          { employeeId: vic, date: ordinary, status: restDay ? 'rest_day_worked' : 'present', ...day },
+        ]);
+        const [u, v] = [one(w.db, PERIOD, ula), one(w.db, PERIOD, vic)];
+        expect(u.pieceCents).toBe(v.pieceCents);
+        expect(u.grossCents).toBeGreaterThanOrEqual(v.grossCents);
+        // On a regular holiday worked the day's premium alone is at least the holiday pay of Rule IV §8, so at least the
+        // minimum wage (₱550) more; every other line of the day is at least what the ordinary day pays.
+        if (holiday === '2026-08-31') expect(u.grossCents - v.grossCents).toBeGreaterThanOrEqual(55_000);
+        await w.env.app.close();
+      }),
+      { numRuns: 20, endOnFailure: true },
+    );
+  }, 120_000);
+});
+
 describe('property: night minutes, night overtime and the day before a holiday (PLAN I1.3)', () => {
   const REGULAR = ['2026-01-01', '2026-03-20', '2026-04-02', '2026-04-03', '2026-04-09', '2026-05-01', '2026-05-27', '2026-06-12', '2026-08-31', '2026-11-30', '2026-12-25', '2026-12-30'];
   const request = (payGroup: RunRequest['payGroup'], periodStart: string): RunRequest => {
@@ -420,8 +624,8 @@ describe('property: night minutes, night overtime and the day before a holiday (
         expect(withoutNight(after)).toEqual(withoutNight(before));
         expect(after.grossCents).toBeGreaterThanOrEqual(before.grossCents);
         const minutes = night.reduce((s, d) => s + d.nightMinutes, 0);
-        // Paid per piece: night differential is added by hand (no hourly rate), so the pay stays as it was.
-        if (payType !== 'piece' && minutes > 0) expect(after.grossCents).toBeGreaterThan(before.grossCents);
+        // Paid per piece too: on the hourly rate from the day's average earnings, here the minimum wage (no piece work).
+        if (minutes > 0) expect(after.grossCents).toBeGreaterThan(before.grossCents);
         if (isMwe) expect(after.taxableCents).toBe(before.taxableCents); // exempt for a minimum wage earner
         await w.env.app.close();
       }),
@@ -459,8 +663,8 @@ describe('property: night minutes, night overtime and the day before a holiday (
         const nightQty = (e: RunEmployee) => e.lines.filter((l) => l.kind === 'night').reduce((s, l) => s + l.qty, 0);
         expect(nightQty(after)).toBe(nightQty(before));
         const moved = nightOt.reduce((s, d) => s + d.nightOtMinutes, 0);
-        // Paid per piece: night differential is added by hand (no hourly rate), so the pay stays as it was.
-        if (payType !== 'piece' && moved > 0) expect(after.grossCents).toBeGreaterThan(before.grossCents);
+        // Paid per piece too: on the hourly rate from the day's average earnings, here the minimum wage (no piece work).
+        if (moved > 0) expect(after.grossCents).toBeGreaterThan(before.grossCents);
         if (isMwe) expect(after.taxableCents).toBe(before.taxableCents); // exempt for a minimum wage earner
         await w.env.app.close();
       }),
