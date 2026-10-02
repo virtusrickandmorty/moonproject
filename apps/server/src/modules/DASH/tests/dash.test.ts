@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { newId } from '@moonproject/shared';
-import { createTestEnv, idem } from '../../../../test/helpers.ts';
+import { PASSWORD, cashPlaceId, createTestEnv, idem } from '../../../../test/helpers.ts';
 import { tx } from '../../../platform/db/driver.ts';
 import { stamp, today } from '../../../platform/clock.ts';
 import { postJournal } from '../../../engine/ledger/post.ts';
@@ -10,6 +10,7 @@ import { ownerHealth } from '../health.ts';
 import { ownerCharts } from '../charts.ts';
 import { arAging, apAging, cashPosition, collectionsRegister, depositsHeld, incomeStatement, payrollRegister, productionTiming } from '../../RPT/public.ts';
 import { salesRegister, taxDeadlines, vatSummary } from '../../TAX/public.ts';
+import { addEmployee } from '../../EMP/tests/fixture.ts';
 
 const addDays = (date: string, days: number) => {
   const value = new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000);
@@ -282,6 +283,71 @@ describe('DASH role homes and notifications', () => {
     for (const client of [accountant, encoder, production]) expect((await client.get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'step-up-action' }));
     env.clock.advance(15 * 86_400_000);
     expect((await owner.get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'step-up-action' }));
+    env.db.close();
+  });
+
+  it('tells the owner when the accountant moves the cut-over date', async () => {
+    const env = await createTestEnv();
+    const accountant = await env.as('accountant');
+    const owner = await env.as('owner');
+    expect((await accountant.post('/api/auth/step-up', { password: PASSWORD })).statusCode).toBe(200);
+    for (const date of ['2026-09-01', '2026-09-02']) {
+      const moved = await accountant.post('/api/acc/opening/cutover-date', { date });
+      expect(moved.statusCode, moved.body).toBe(200);
+    }
+    const notices = (await owner.get('/api/dash/notifications')).json();
+    expect(notices.filter((n: { kind: string }) => n.kind === 'step-up-action')).toHaveLength(2);
+    expect(notices).toContainEqual(expect.objectContaining({ label: expect.stringContaining('moved the cut-over date'), href: '/aud/log' }));
+    expect((await accountant.get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'step-up-action' }));
+    env.clock.advance(15 * 86_400_000);
+    expect((await (await env.as('owner')).get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'step-up-action' }));
+    env.db.close();
+  });
+
+  it('shows government remittances seven days before due, keeps late notices, and clears each recorded scheme', async () => {
+    const env = await createTestEnv('2026-09-22T02:00:00Z');
+    let accountant = await env.as('accountant');
+    const employeeId = addEmployee(env.db, 'Mira Made-up');
+    expect((await accountant.post('/api/auth/step-up', { password: PASSWORD })).statusCode).toBe(200);
+    expect((await accountant.post('/api/acc/opening/cutover-date', { date: '2026-09-01' })).statusCode).toBe(200);
+    for (const month of ['2026-05', '2026-06', '2026-07', '2026-08']) {
+      const opened = await accountant.post('/api/docs/stat.opening/post', { input: {
+        month, employees: [{ employeeId, sssCents: 100, phicCents: 100, hdmfCents: 100, wtaxCents: 100 }],
+      }, businessDate: '2026-09-01', expectedTotalCents: 400 }, idem());
+      expect(opened.statusCode, opened.body).toBe(200);
+    }
+    const notices = async () => (await accountant.get('/api/dash/notifications')).json() as { kind: string; id: string; label: string }[];
+    const august = (scheme: string, label: string, late = false) => ({
+      kind: 'remittance-deadline', id: `remittance-deadline:${scheme}:2026-08`, href: '/stat',
+      label: `${label} for August 2026 ${late ? 'was' : 'is'} due 2026-09-30`,
+    });
+    expect((await notices()).filter((n) => n.id.endsWith(':2026-08'))).toEqual([]);
+    expect((await notices()).filter((n) => n.kind === 'remittance-deadline')).toHaveLength(6);
+    expect(await notices()).not.toContainEqual(expect.objectContaining({ id: 'remittance-deadline:SSS:2026-05' }));
+    env.clock.advance(86_400_000);
+    accountant = await env.as('accountant');
+    for (const [scheme, label] of [['SSS', 'SSS'], ['PHIC', 'PhilHealth'], ['HDMF', 'Pag-IBIG']]) {
+      expect(await notices()).toContainEqual(expect.objectContaining(august(scheme!, label!)));
+    }
+    expect(await notices()).not.toContainEqual(expect.objectContaining({ id: 'remittance-deadline:WTAX:2026-08' }));
+    expect((await (await env.as('production')).get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'remittance-deadline' }));
+    env.db.prepare("UPDATE role_permissions SET granted = 0 WHERE role_key = 'accountant' AND permission_key = 'stat.view'").run();
+    expect(await notices()).not.toContainEqual(expect.objectContaining({ kind: 'remittance-deadline' }));
+    env.db.prepare("UPDATE role_permissions SET granted = 1 WHERE role_key = 'accountant' AND permission_key = 'stat.view'").run();
+    env.clock.advance(7 * 86_400_000);
+    accountant = await env.as('accountant');
+    expect(await notices()).toContainEqual(expect.objectContaining(august('SSS', 'SSS')));
+    env.clock.advance(86_400_000);
+    accountant = await env.as('accountant');
+    for (const [scheme, label] of [['SSS', 'SSS'], ['PHIC', 'PhilHealth'], ['HDMF', 'Pag-IBIG']]) {
+      expect(await notices()).toContainEqual(expect.objectContaining(august(scheme!, label!, true)));
+      const paid = await accountant.post('/api/docs/stat.remittance/post', { input: {
+        scheme, month: '2026-08', cashPlaceId: cashPlaceId(env.db, '1111'), amountCents: 100, reference: 'MADE-UP-REM',
+      }, expectedTotalCents: 100 }, idem());
+      expect(paid.statusCode, paid.body).toBe(200);
+      expect(await notices()).not.toContainEqual(expect.objectContaining({ id: `remittance-deadline:${scheme}:2026-08` }));
+    }
+    expect((await notices()).filter((n) => n.kind === 'remittance-deadline')).toHaveLength(3);
     env.db.close();
   });
 

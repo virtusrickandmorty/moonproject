@@ -13,6 +13,8 @@ import { board } from '../PRD/public.ts';
 import { sizerBoard } from '../SZR/public.ts';
 import { hasReceived2307, paidTaxPeriods, taxDeadlines, vatSummary } from '../TAX/public.ts';
 import { monthEndChecklist } from '../ACC/public.ts';
+import { remittanceChecks } from '../STAT/public.ts';
+import { monthsLate } from '../STAT/exposure.ts';
 import { nightlyStatus } from '../AUD/public.ts';
 import { redLightNotices, type Host } from '../../platform/health/health.ts';
 
@@ -26,6 +28,25 @@ const GUARDED: Record<string, string> = {
   'user.deactivate': 'turned a user off',
   'role.permission': "changed a role's permissions",
   'acc.setting.add': 'changed a setting',
+  'acc.account.deactivate': 'turned an account off',
+  'acc.opening.cutover': 'moved the cut-over date',
+  'acc.opening.close': 'closed the opening balances',
+  'acc.monthend.signoff': 'signed off a month',
+  'bak.settings': 'changed the backup settings',
+  'bak.drill': 'checked a backup in a restore drill',
+  'com.settings': 'changed the email settings',
+  'com.test_email': 'sent a test email',
+  'tax.booklet.register': 'registered a booklet',
+  'tax.booklet.retire': 'retired a booklet',
+  'tax.booklet.activate': 'turned a booklet back on',
+  'tax.income_tax_settings.add': 'changed the income tax settings',
+  'tax.income_tax_deduction.add': 'changed the income tax deduction method',
+  'stat.employer_number_set': 'changed a government employer number',
+  'mig.commit': 'imported master data',
+  'mig.clear_staging': 'cleared an import staging area',
+  'prt.company_profile_edit': 'changed the company details for printing',
+  'prt.loose_leaf_paper': 'changed the paper size for the books',
+  'practice.reset': 'reset the practice shop',
 };
 
 /** Where the app runs, for the System Health notifications: the practice shop has no backups to warn about. */
@@ -199,6 +220,24 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
     const payable = new Set(['0619-E', '1601-C', '2550Q', '1601-EQ', '1601-FQ', '1702Q', '1702-RT']);
     for (const deadline of taxDeadlines(db, date, addDays(date, 7))) if (payable.has(deadline.form) && !paid.has(`${deadline.form}:${deadline.period}`)) {
       push('tax-deadline', `${deadline.form}:${deadline.period}`, `${deadline.form} is due ${deadline.dueDate}`, '/tax/calendar', deadline.periodLabel);
+    }
+  }
+  if (can('stat.view')) {
+    let month = prevMonthEnd(date).slice(0, 7);
+    for (let n = 0; n < 3; n++, month = prevMonthEnd(`${month}-01`).slice(0, 7)) {
+      // STAT's existing rule decides the first late month; the day before it is the deadline.
+      let afterDue = `${month}-01`;
+      while (monthsLate(month, afterDue) === 0) {
+        const next = day(afterDue);
+        next.setUTCMonth(next.getUTCMonth() + 1);
+        afterDue = dateOf(next);
+      }
+      const dueDate = addDays(afterDue, -1);
+      if (date < addDays(dueDate, -7)) continue;
+      const monthLabel = day(`${month}-01`).toLocaleDateString('en-PH', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+      for (const check of remittanceChecks(db, month)) if (check.scheme !== 'WTAX' && check.state === 'not_done') {
+        push('remittance-deadline', `${check.scheme}:${month}`, `${check.label} for ${monthLabel} ${date > dueDate ? 'was' : 'is'} due ${dueDate}`, '/stat');
+      }
     }
   }
   if (can('szr.loan.view') && (roleOf(user) === 'encoder' || roleOf(user) === 'production')) {
