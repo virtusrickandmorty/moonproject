@@ -2,7 +2,7 @@
 
 **What it is for:** Prove your backups work by running a test (a "drill") every quarter, or put a backup back into the live system if something goes wrong.
 
-**Before you start:** Have your printed Recovery Key A or Key B ready. The system will not let you open any backup without typing one of them. For a drill, nothing changes in the system. For a real restore, know that anything typed into the system after the backup was made will be lost.
+**Before you start:** Do this in the real shop (no yellow "PRACTICE SHOP" band at the top). The practice shop has no backups, so there the screen says "Backups and restores are not part of the practice shop." Have your printed Recovery Key A or Key B ready. The system will not let you open any backup without typing one of them. For a drill, nothing changes in the system. For a real restore, know that anything typed into the system after the backup was made will be lost.
 
 ### Steps
 1. On the **Admin** menu, click **Backups**.

@@ -105,12 +105,12 @@ export function bookPrintRoutes(app: FastifyInstance, { db, clock, practice }: A
   });
 }
 
-/** One made-up sample leaf per book for the printer test pack. */
-export function testBookPrints(profile: Profile) {
+/** One made-up sample leaf per book for the printer test pack, on the paper the books are set to print on. */
+export function testBookPrints(profile: Profile, paper: Paper = 'a4') {
   return BIR_BOOKS.map((book) => {
     const leaf = sampleBook(book);
-    return { id: `book-${book}`, label: BOOK_TITLES[book], paper: 'Loose-leaf (A4 or long bond)',
-      html: renderLooseLeaf(leaf, layoutBook(leaf, 'a4'), { profile, from: '2026-09-01', to: '2026-09-30', paper: 'a4',
+    return { id: `book-${book}`, label: BOOK_TITLES[book], paper: paper === 'a4' ? 'Loose-leaf, A4' : 'Loose-leaf, long bond',
+      html: renderLooseLeaf(leaf, layoutBook(leaf, paper), { profile, from: '2026-09-01', to: '2026-09-30', paper,
         printedBy: 'Sample Owner', printedAt: '2026-09-28T10:00:00+08:00', testPrint: true, year: 2026 }) };
   });
 }
