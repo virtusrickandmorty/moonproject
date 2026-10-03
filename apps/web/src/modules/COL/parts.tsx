@@ -2,7 +2,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { api, type CashPlace, type CustomerRow, type DocHeader } from '../../api.ts';
 import { navigate } from '../../router.tsx';
-import { Button, Notice, ReasonDialog, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Field, Notice, ReasonDialog, inputClass, peso } from '../../components/ui.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { emptyTender, type TenderRow } from './money.ts';
 
@@ -28,6 +28,7 @@ export function CustomerPicker({ value, onChange }: { value: Picked | null; onCh
   }
   return (
     <div className="space-y-1">
+      <span className="block text-sm text-slate-700">Customer</span>
       <input aria-label="Customer" className={inputClass} placeholder="Type 2 or more letters of the name or code" value={q} onChange={(e) => setQ(e.target.value)} />
       {rows.map((c) => (
         <button key={c.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => onChange({ id: c.id, name: c.display_name })}>
@@ -56,14 +57,14 @@ export function TenderRows(p: { rows: TenderRow[]; onChange: (rows: TenderRow[])
           </div>
           {p.places.find((c) => String(c.id) === r.cashPlaceId)?.kind === 'checks' && (
             <div className="grid gap-2 sm:grid-cols-3">
-              <input aria-label="Check number" placeholder="Check no." className={inputClass} value={r.checkNumber ?? ''} onChange={(e) => set(i, { checkNumber: e.target.value })} />
-              <input aria-label="Bank of the check" placeholder="Bank" className={inputClass} value={r.bank ?? ''} onChange={(e) => set(i, { bank: e.target.value })} />
-              <input aria-label="Date on the check" type="date" className={inputClass} value={r.checkDate ?? ''} onChange={(e) => set(i, { checkDate: e.target.value })} />
+              <Field label="Check number"><input aria-label="Check number" placeholder="Check no." className={inputClass} value={r.checkNumber ?? ''} onChange={(e) => set(i, { checkNumber: e.target.value })} /></Field>
+              <Field label="Bank of the check"><input aria-label="Bank of the check" placeholder="Bank" className={inputClass} value={r.bank ?? ''} onChange={(e) => set(i, { bank: e.target.value })} /></Field>
+              <Field label="Date on the check"><input aria-label="Date on the check" type="date" className={inputClass} value={r.checkDate ?? ''} onChange={(e) => set(i, { checkDate: e.target.value })} /></Field>
             </div>
           )}
-          <div className="flex gap-2">
-            <input aria-label="Amount" inputMode="decimal" placeholder={(p.rows.length === 1 && p.amountHint) || '0.00'} className={`${inputClass} max-w-40 text-right tabular-nums`} value={r.amount} onChange={(e) => set(i, { amount: e.target.value })} />
-            <input aria-label="Reference" placeholder="GCash or bank reference, or check no. and bank" className={inputClass} value={r.reference} onChange={(e) => set(i, { reference: e.target.value })} />
+          <div className="grid items-end gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_auto]">
+            <Field label="Amount"><input aria-label="Amount" inputMode="decimal" placeholder={(p.rows.length === 1 && p.amountHint) || '0.00'} className={`${inputClass} max-w-40 text-right tabular-nums`} value={r.amount} onChange={(e) => set(i, { amount: e.target.value })} /></Field>
+            <Field label="Reference"><input aria-label="Reference" placeholder="GCash or bank reference, or check no. and bank" className={inputClass} value={r.reference} onChange={(e) => set(i, { reference: e.target.value })} /></Field>
             {p.rows.length > 1 && <Button onClick={() => p.onChange(p.rows.filter((_, j) => j !== i))}>Remove</Button>}
           </div>
         </div>

@@ -23,13 +23,13 @@
 #### Making a quotation
 1. On the **Sales** menu, click **Quotations**, then click **+ New Quotation**.
    ![The new quotation form](img/40-new-quotation.png)
-2. Pick the **Customer** from the list, or type a **Prospect name**.
+2. Type two or more letters in **Customer**, then click the matching name, or type a **Prospect name**.
 3. Type who the **Contact** person is, and how many days the quotation is good for under **Valid for days**.
-4. Under **Items**, pick a **Catalog item** for the first line. (Type in **Search catalog** to shorten the list.)
+4. Under **Items**, type two or more letters in **Price list item**, then click the matching item. Use **Change item** to pick another one.
 5. Type the **Description** and **Quantity**.
-6. (Optional) Type a **Line discount** and the **Discount reason**, or type an **Override price** and the **Override reason**.
+6. (Optional) Open **Add a line discount** to enter a **Line discount** and **Discount reason**, or **Change the usual price** to enter an **Override price** and **Override reason**. Choices already in use stay open.
 7. If they want more items, click **+ Add item** and repeat steps 4 to 6. **Remove item** takes a line off.
-8. (Optional) Under **Terms and discount**, type a **Document discount** and **Discount reason**. Type the **Terms** and **Notes**.
+8. Under **Terms and discount**, type the **Terms** and **Notes**. If needed, open **Add a document discount** to enter a **Document discount** and **Discount reason**.
 9. Click **Record**. A box asks you to confirm. Or click **Save draft** to keep it without a number.
 
 #### Printing a quotation

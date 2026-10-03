@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { api, ApiError, type CustomerRow, type DocHeader, type DocTypeInfo, type Preview } from '../../api.ts';
+import { api, ApiError, type DocHeader, type DocTypeInfo, type Preview } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, peso, ReasonDialog } from '../../components/ui.tsx';
 import { navigate } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
+import { CustomerPicker } from '../COL/parts.tsx';
+import { ItemSearch } from '../JO/parts.tsx';
+import { Exception, SalesActions } from '../JO/entry.tsx';
 import { amount, blank, blankLine, cents, isReady, toInput, valuesOfInput, type Form, type Line, type QuotationDoc } from './quotation.ts';
 
-type Item = { id: string; code: string; name: string; unit: 'pc' | 'set'; is_active: number };
 function MoneyField({ value, onValue, placeholder }: { value: number | undefined; onValue: (n: number | undefined) => void; placeholder?: string }) {
   const [text, setText] = useState(amount(value));
   const sent = useRef<number | undefined>(value);
@@ -21,10 +23,7 @@ function MoneyField({ value, onValue, placeholder }: { value: number | undefined
 
 export function QuotationForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   const [v, setV] = useState<Form>(blank);
-  const [items, setItems] = useState<Item[]>([]);
-  const [customers, setCustomers] = useState<CustomerRow[]>([]);
-  const [customerSearch, setCustomerSearch] = useState('');
-  const [itemSearch, setItemSearch] = useState('');
+  const [customerName, setCustomerName] = useState('Customer on file');
   const [original, setOriginal] = useState<DocHeader | null>(null);
   const [reason, setReason] = useState('');
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -39,18 +38,19 @@ export function QuotationForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
     if (mode.kind === 'edit') api.get(type.key, mode.id).then((d) => {
       setOriginal(d.header);
       setV(valuesOfInput(d.input));
+      setCustomerName(String(d.doc?.customerName ?? 'Customer on file'));
     }, (e: Error) => setError(e.message));
     else if (mode.draftId) api.drafts(type.key).then((ds) => {
       const d = ds.find((x) => x.id === mode.draftId);
       if (d) { setDraft({ id: d.id, version: d.version }); setV(d.payload.values as unknown as Form); }
     }, (e: Error) => setError(e.message));
   }, [type.key, mode.kind, mode.kind === 'edit' ? mode.id : mode.draftId]);
-  useEffect(() => { api.customers(customerSearch).then(setCustomers, () => undefined); }, [customerSearch]);
   useEffect(() => {
-    fetch(`/api/cat/items?${new URLSearchParams({ search: itemSearch, active: '1', limit: '100' })}`, { credentials: 'same-origin' })
-      .then((r) => { if (!r.ok) throw new Error('Could not load catalog items.'); return r.json() as Promise<Item[]>; })
-      .then(setItems, (e: Error) => setError(e.message));
-  }, [itemSearch]);
+    if (!v.customerId) return;
+    let stale = false;
+    api.customer(v.customerId).then((c) => { if (!stale) setCustomerName(c.display_name); }, () => undefined);
+    return () => { stale = true; };
+  }, [v.customerId]);
   useEffect(() => {
     if (!ready) { setPreview(null); return; }
     let stale = false;
@@ -82,40 +82,48 @@ export function QuotationForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
     explain="The old quotation will be cancelled and the replacement will get a new number when you record it."
     confirmLabel="Continue to edit" onConfirm={setReason} onClose={() => navigate(docPath(type.key, `/${original.id}`))} />;
 
-  return <div className="max-w-5xl space-y-4"><h1 className="text-2xl font-semibold">{original ? `Edit ${original.number}` : 'New quotation'}</h1>
+  return <div className="max-w-5xl space-y-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-0"><h1 className="text-2xl font-semibold">{original ? `Edit ${original.number}` : 'New quotation'}</h1>
     {error && <Notice>{error}</Notice>}{saved && <Notice tone="success">{saved}</Notice>}{original && <Notice tone="info">Recording will cancel {original.number} and issue a replacement. Reason: {reason}</Notice>}
     <Panel title="Customer or prospect"><div className="grid gap-3 sm:grid-cols-2">
-      <Field label="Search customers"><input className={inputClass} value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} /></Field>
-      <Field label="Customer"><select className={inputClass} value={v.customerId} onChange={(e) => setV({ ...v, customerId: e.target.value, prospectName: '' })}>
-        <option value="">Choose a customer</option>{v.customerId && !customers.some((c) => c.id === v.customerId) && <option value={v.customerId}>Selected customer</option>}
-        {customers.filter((c) => c.is_active).map((c) => <option key={c.id} value={c.id}>{c.display_name}</option>)}</select></Field>
+      <div className="sm:col-span-2"><CustomerPicker value={v.customerId ? { id: v.customerId, name: customerName } : null} onChange={(c) => {
+        setCustomerName(c?.name ?? 'Customer on file');
+        setV({ ...v, customerId: c?.id ?? '', prospectName: '' });
+      }} /></div>
       <Field label="Prospect name"><input className={inputClass} value={v.prospectName} onChange={(e) => setV({ ...v, prospectName: e.target.value, customerId: '' })} /></Field>
       <Field label="Contact"><input className={inputClass} value={v.contact} onChange={(e) => setV({ ...v, contact: e.target.value })} /></Field>
       <Field label="Valid for days" required><input type="number" min="1" max="365" className={inputClass} value={v.validForDays}
         onChange={(e) => setV({ ...v, validForDays: Number(e.target.value) })} /></Field></div></Panel>
-    <Panel title="Items"><Field label="Search catalog"><input className={`${inputClass} max-w-sm`} value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} /></Field>
-      <div className="space-y-3">{v.lines.map((l, i) => <div key={i} className="rounded-md border p-3"><div className="grid gap-3 sm:grid-cols-4">
-        <Field label="Catalog item" required><select className={inputClass} value={l.itemId} onChange={(e) => {
-          const item = items.find((x) => x.id === e.target.value);
-          line(i, { itemId: e.target.value, description: item?.name ?? l.description, unit: item?.unit ?? l.unit });
-        }}><option value="">Choose item</option>{l.itemId && !items.some((x) => x.id === l.itemId) && <option value={l.itemId}>Selected item</option>}
-          {items.map((item) => <option key={item.id} value={item.id}>{item.code} · {item.name} ({item.unit})</option>)}</select></Field>
+    <Panel title="Items">
+      <div className="space-y-3">{v.lines.map((l, i) => <div key={i} className="space-y-3 rounded-md border p-3">
+        <p className="font-medium">Line {i + 1}</p>
+        {l.itemId ? <div className="flex items-center gap-3"><span className="font-medium">{l.description}</span>
+          <Button onClick={() => line(i, { itemId: '' })}>Change item</Button></div>
+          : <ItemSearch n={i + 1} onPick={(item) => line(i, { itemId: item.id, description: item.name, unit: item.unit })} />}
+        <div className="grid gap-3 sm:grid-cols-[minmax(12rem,1fr)_6rem_6rem]">
         <Field label="Description" required><input className={inputClass} value={l.description} onChange={(e) => line(i, { description: e.target.value })} /></Field>
         <Field label="Quantity" required><input type="number" min="1" className={inputClass} value={l.qty} onChange={(e) => line(i, { qty: Number(e.target.value) })} /></Field>
         <Field label="Unit"><input className={inputClass} value={l.unit} readOnly /></Field>
+        </div>
+        <Exception title="Add a line discount" active={l.discountCents !== 0 || !!l.discountReason?.trim()}>
+        <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Line discount"><MoneyField value={l.discountCents} onValue={(n) => line(i, { discountCents: n ?? 0 })} /></Field>
         <Field label="Discount reason"><input className={inputClass} value={l.discountReason ?? ''} onChange={(e) => line(i, { discountReason: e.target.value })} /></Field>
+        </div></Exception>
+        <Exception title="Change the usual price" active={l.overrideUnitPriceCents !== undefined || !!l.overrideReason?.trim()}>
+        <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Override price"><MoneyField value={l.overrideUnitPriceCents} placeholder="Use catalog price"
           onValue={(n) => line(i, { overrideUnitPriceCents: n })} /></Field>
         <Field label="Override reason"><input className={inputClass} value={l.overrideReason ?? ''} onChange={(e) => line(i, { overrideReason: e.target.value })} /></Field>
-      </div><Button disabled={v.lines.length === 1} onClick={() => setV({ ...v, lines: v.lines.filter((_, x) => x !== i) })}>Remove item</Button></div>)}</div>
+        </div></Exception><Button disabled={v.lines.length === 1} onClick={() => setV({ ...v, lines: v.lines.filter((_, x) => x !== i) })}>Remove item</Button></div>)}</div>
       <Button disabled={v.lines.length >= 50} onClick={() => setV({ ...v, lines: [...v.lines, blankLine()] })}>+ Add item</Button></Panel>
     <Panel title="Terms and discount"><div className="grid gap-3 sm:grid-cols-2">
+      <Field label="Terms"><textarea className={inputClass} value={v.termsText} onChange={(e) => setV({ ...v, termsText: e.target.value })} /></Field>
+      <Field label="Notes"><textarea className={inputClass} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field></div>
+      <Exception title="Add a document discount" active={v.documentDiscountCents !== 0 || !!v.discountReason.trim()}><div className="grid gap-3 sm:grid-cols-2">
       <Field label="Document discount"><MoneyField value={v.documentDiscountCents}
         onValue={(n) => setV({ ...v, documentDiscountCents: n ?? 0 })} /></Field>
       <Field label="Discount reason"><input className={inputClass} value={v.discountReason} onChange={(e) => setV({ ...v, discountReason: e.target.value })} /></Field>
-      <Field label="Terms"><textarea className={inputClass} value={v.termsText} onChange={(e) => setV({ ...v, termsText: e.target.value })} /></Field>
-      <Field label="Notes"><textarea className={inputClass} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field></div></Panel>
+      </div></Exception></Panel>
     {preview && <Panel title="So far"><p className="text-2xl font-semibold">{peso(preview.totalCents)}</p><p>{preview.summary}</p>
       {(preview.doc as QuotationDoc | undefined)?.lines && <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left text-slate-500">
         <th>Item</th><th>Qty</th><th className="text-right">Price each</th><th className="text-right">Line total</th></tr></thead><tbody>
@@ -123,9 +131,9 @@ export function QuotationForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
           <td className="text-right tabular-nums">{peso(l.unitPriceCents)}{l.unitPriceCents !== l.listUnitPriceCents && <span className="block text-xs text-slate-500">list {peso(l.listUnitPriceCents)}</span>}</td>
           <td className="text-right tabular-nums">{peso(l.lineTotalCents)}</td></tr>)}</tbody></table></div>}
       {preview.issues.map((x) => <Notice key={x.code + x.field} tone={x.level}>{x.message}</Notice>)}</Panel>}
-    <div className="flex gap-2"><Button tone="primary" disabled={!ready || !type.canPost} onClick={() => void openConfirm()}>Record</Button>
+    <SalesActions total={preview?.totalCents}><Button tone="primary" disabled={!ready || !type.canPost} onClick={() => void openConfirm()}>Record</Button>
       {mode.kind === 'new' && <Button disabled={!type.canCreate} onClick={() => void saveDraft()}>Save draft</Button>}
-      <Button onClick={() => navigate(docPath(type.key))}>Back</Button></div>
+      <Button onClick={() => navigate(docPath(type.key))}>Back</Button></SalesActions>
     {confirm && <RecordDialog type={type} preview={confirm} original={original ?? undefined} reason={reason} onRecord={record} onClose={() => setConfirm(null)} />}
   </div>;
 }
