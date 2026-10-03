@@ -4,8 +4,9 @@ import { activeJobOrders, jobOrderRef, releasesBetween } from '../JO/public.ts';
 import { customerBirthdays } from '../CUS/public.ts';
 import { employeeBirthdays, holidaysBetween } from '../EMP/public.ts';
 import { taxDeadlines } from '../TAX/public.ts';
+import { remittanceChecks, remittanceDueDate } from '../STAT/public.ts';
 
-export type CalKind = 'event' | 'job_due' | 'release' | 'holiday' | 'tax' | 'customer_birthday' | 'employee_birthday';
+export type CalKind = 'event' | 'job_due' | 'release' | 'holiday' | 'tax' | 'remittance' | 'customer_birthday' | 'employee_birthday';
 export interface CalItem { id: string; date: string; kind: CalKind; title: string; href: string; time?: string | null; notes?: string | null; rush?: boolean }
 export interface EventRow {
   id: string; eventId: string; seq: number; action: 'create' | 'move' | 'cancel'; title: string; date: string;
@@ -74,6 +75,22 @@ export function calendarItems(db: Db, from: string, to: string, can: (permission
   }
   if (can('tax.calendar.view')) for (const deadline of taxDeadlines(db, from, to)) {
     add({ id: `tax:${deadline.form}:${deadline.period}`, date: deadline.dueDate, kind: 'tax', title: `${deadline.form} · ${deadline.title}`, href: '/tax/calendar' });
+  }
+  if (can('stat.view')) {
+    // Visit each due month in the range; STAT decides the preceding pay month's due date.
+    for (let dueMonth = from.slice(0, 7); dueMonth <= to.slice(0, 7);) {
+      const year = Number(dueMonth.slice(0, 4));
+      const m = Number(dueMonth.slice(5, 7));
+      const month = `${m === 1 ? year - 1 : year}-${String(m === 1 ? 12 : m - 1).padStart(2, '0')}`;
+      const dueDate = remittanceDueDate(month);
+      if (dueDate >= from && dueDate <= to) {
+        const label = new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-PH', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+        for (const check of remittanceChecks(db, month)) if (check.scheme !== 'WTAX' && check.state === 'not_done') {
+          add({ id: `remittance:${check.scheme}:${month}`, date: dueDate, kind: 'remittance', title: `${check.label} for ${label} due`, href: '/stat' });
+        }
+      }
+      dueMonth = `${m === 12 ? year + 1 : year}-${String(m === 12 ? 1 : m + 1).padStart(2, '0')}`;
+    }
   }
   return items.sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '').localeCompare(b.time ?? '') || a.title.localeCompare(b.title));
 }

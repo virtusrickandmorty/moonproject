@@ -22,7 +22,7 @@ import { addIncomeTaxSettings, incomeTaxSettingsAt, incomeTaxSettingsHistory, in
 import { addDeductionSetting, annualIncomeTaxWorksheet, deductionAt, deductionHistory } from './annual-income-tax.ts';
 import { ewtAnnualReturn } from './ewt-annual.ts';
 import { classifySale, sawt, slspPurchases, slspSales, type Tie } from './slsp.ts';
-import { changesAfterFiling } from './filed.ts';
+import { changesAfterFiling, filedReturns } from './filed.ts';
 import { addFiledReturn, FILED_FORMS, filedRegister, voidFiledReturn } from './filed-register.ts';
 import { pageAsked, paged } from '../../platform/paging.ts';
 
@@ -199,7 +199,12 @@ export function taxRoutes(app: FastifyInstance, deps: AppDeps): void {
   /** Tax deadlines due in a range (the calendar, and the accountant home's next 30 days). */
   app.get<RangeQuery>('/api/tax/calendar', { config: { permission: 'tax.calendar.view' } }, async (req) => {
     const { from, to } = range(req.query);
-    return taxDeadlines(db, from, to);
+    const filed = new Map(filedReturns(db).map((r) => [`${r.form === '1702' ? '1702-RT' : r.form}:${r.period}`, r]));
+    const date = today(clock);
+    return taxDeadlines(db, from, to).map((d) => {
+      const r = filed.get(`${d.form}:${d.period}`);
+      return { ...d, status: r ? 'filed' : d.dueDate < date ? 'late' : 'not_yet_filed', reference: r?.reference ?? null, recordedAt: r?.recordedAt ?? null };
+    });
   });
 
   /** The 2550Q worksheet of one quarter (?year=2026&quarter=3, or today's quarter): each item of the return, and the checks before filing. */
