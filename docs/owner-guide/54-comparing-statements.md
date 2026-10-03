@@ -20,7 +20,7 @@ It also adds two more columns:
 
 If the amount in the earlier period was zero, the **Difference %** is left blank, because you cannot work out a percentage change from nothing. Amounts in brackets are negative.
 
-You can click **Export CSV** to download a copy of the numbers to open in Excel, or click **Print** to get a paper copy.
+You can click **Export CSV** to download a copy of the numbers to open in Excel, or click **Print this page** to get a paper copy.
 
 ### Common mistakes and how to fix them
 - **Mistake:** You picked a comparison under **Compare with** but the screen still shows one column.
