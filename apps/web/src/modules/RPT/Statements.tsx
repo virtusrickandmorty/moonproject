@@ -3,6 +3,7 @@ import type { Me } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { BookTitle, Tools, money, td, th, useReport, useToday } from './Books.tsx';
 import './books.css';
+import { addressValue, PendingPeriod, ResultSummary } from './ReportParts.tsx';
 
 type Compared = { compareAmountCents?: number; differenceCents?: number; percentChange?: number | null };
 type Line = Compared & { accountId: number | null; code: string | null; name: string; amountCents: number; computed: boolean };
@@ -65,9 +66,9 @@ const CompareField = ({ value, onChange }: { value: Compare; onChange: (value: C
 
 export function IncomeStatement({ me }: { me: Me }) {
   const today = useToday();
-  const [from, setFrom] = useState(''); const [to, setTo] = useState('');
+  const [from, setFrom] = useState(() => addressValue('from')); const [to, setTo] = useState(() => addressValue('to'));
   const [compare, setCompare] = useState<Compare>('none'); const [applied, setApplied] = useState('');
-  useEffect(() => { if (today && !from && !to) { setFrom(`${today.slice(0, 4)}-01-01`); setTo(today); } }, [today, from, to]);
+  useEffect(() => { if (today && !applied) { if (!from) setFrom(`${today.slice(0, 4)}-01-01`); if (!to) setTo(today); } }, [today, from, to]);
   useEffect(() => { if (from && to && !applied) setApplied(new URLSearchParams({ from, to }).toString()); }, [from, to, applied]);
   const path = applied ? `income-statement?${applied}` : null;
   const { data, error } = useReport<IncomeStatementResult>(path);
@@ -81,8 +82,9 @@ export function IncomeStatement({ me }: { me: Me }) {
       <Button tone="primary" disabled={!from || !to || from > to} onClick={() => show(from, to)}>Show</Button>
       {today && presets(today).map(([label, start]) => <Button key={label} onClick={() => show(start, today)}>{label}</Button>)}
       {path && <Tools path={path} />}</div>
+    <PendingPeriod applied={applied} values={{ from, to, compare: compare === 'none' ? '' : compare }} />
     {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
-    {data && revenue && costOfSales && operatingExpenses && other && incomeTax && <Panel title="From the posted journals"><Statement headings={data.comparison ? [`${data.from} to ${data.to}`, `${data.comparison.from} to ${data.comparison.to}`] : undefined}>
+    {data && revenue && costOfSales && operatingExpenses && other && incomeTax && <Panel title="From the posted journals"><ResultSummary count={data.sections.reduce((n, s) => n + s.groups.reduce((m, g) => m + g.lines.length, 0), 0)} summary={`Net income ${amount(data.netIncomeCents)}.`} /><Statement headings={data.comparison ? [`${data.from} to ${data.to}`, `${data.comparison.from} to ${data.comparison.to}`] : undefined}>
       <SectionRows section={revenue} /><SectionRows section={costOfSales} />
       <tbody><Total label="Gross profit" cents={data.grossProfitCents} compared={data.grossProfit} strong /></tbody>
       <SectionRows section={operatingExpenses} /><SectionRows section={other} />
@@ -94,8 +96,8 @@ export function IncomeStatement({ me }: { me: Me }) {
 }
 
 export function BalanceSheet({ me }: { me: Me }) {
-  const today = useToday(); const [asOf, setAsOf] = useState(''); const [compare, setCompare] = useState<Compare>('none'); const [applied, setApplied] = useState('');
-  useEffect(() => { if (today && !asOf) setAsOf(today); }, [today, asOf]);
+  const today = useToday(); const [asOf, setAsOf] = useState(() => addressValue('asOf')); const [compare, setCompare] = useState<Compare>('none'); const [applied, setApplied] = useState('');
+  useEffect(() => { if (today && !applied && !asOf) setAsOf(today); }, [today, asOf]);
   useEffect(() => { if (asOf && !applied) setApplied(new URLSearchParams({ asOf }).toString()); }, [asOf, applied]);
   const path = applied ? `balance-sheet?${applied}` : null;
   const { data, error } = useReport<BalanceSheetResult>(path);
@@ -106,9 +108,10 @@ export function BalanceSheet({ me }: { me: Me }) {
       <CompareField value={compare} onChange={setCompare} />
       <Button tone="primary" disabled={!asOf} onClick={() => setApplied(new URLSearchParams({ asOf, ...(compare === 'none' ? {} : { compare }) }).toString())}>Show</Button>
       {path && <Tools path={path} />}</div>
+    <PendingPeriod applied={applied} values={{ asOf, compare: compare === 'none' ? '' : compare }} />
     {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
     {data && !data.balanced && <Notice>Total assets differ from total liabilities and equity by {amount(data.differenceCents)}. Run the integrity check and tell the accountant.</Notice>}
-    {data && assets && liabilities && equity && <Panel title="From the posted journals"><Statement headings={data.comparison ? [data.asOf, data.comparison.asOf] : undefined}>
+    {data && assets && liabilities && equity && <Panel title="From the posted journals"><ResultSummary count={data.sections.reduce((n, s) => n + s.groups.reduce((m, g) => m + g.lines.length, 0), 0)} summary={`Assets ${amount(data.totalAssetsCents)} · Equity ${amount(data.totalEquityCents)}.`} /><Statement headings={data.comparison ? [data.asOf, data.comparison.asOf] : undefined}>
       <SectionRows section={assets} />
       <SectionRows section={liabilities} /><SectionRows section={equity} />
       <tbody><Total label="Total liabilities and equity" cents={data.totalLiabilitiesAndEquityCents} compared={data.totalLiabilitiesAndEquity} strong /></tbody>
@@ -120,8 +123,8 @@ export function BalanceSheet({ me }: { me: Me }) {
 }
 
 export function ChangesInEquity({ me }: { me: Me }) {
-  const today = useToday(); const [from, setFrom] = useState(''); const [to, setTo] = useState(''); const [applied, setApplied] = useState('');
-  useEffect(() => { if (today && !from && !to) { setFrom(`${today.slice(0, 4)}-01-01`); setTo(today); } }, [today, from, to]);
+  const today = useToday(); const [from, setFrom] = useState(() => addressValue('from')); const [to, setTo] = useState(() => addressValue('to')); const [applied, setApplied] = useState('');
+  useEffect(() => { if (today && !applied) { if (!from) setFrom(`${today.slice(0, 4)}-01-01`); if (!to) setTo(today); } }, [today, from, to]);
   useEffect(() => { if (from && to && !applied) setApplied(new URLSearchParams({ from, to }).toString()); }, [from, to, applied]);
   const path = applied ? `changes-in-equity?${applied}` : null; const { data, error } = useReport<EquityResult>(path);
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
@@ -133,8 +136,9 @@ export function ChangesInEquity({ me }: { me: Me }) {
       <Button tone="primary" disabled={!from || !to || from > to} onClick={() => show(from, to)}>Show</Button>
       {today && presets(today).map(([label, start]) => <Button key={label} onClick={() => show(start, today)}>{label}</Button>)}
       {path && <Tools path={path} />}</div>
+    <PendingPeriod applied={applied} values={{ from, to }} />
     {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
-    {data && <Panel title="From the posted journals"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr><th className={th}>Movement</th>
+    {data && <Panel title="From the posted journals"><ResultSummary count={data.rows.length} summary={`Closing equity ${amount(data.endingTotalCents)}.`} /><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr><th className={th}>Movement</th>
       {data.columns.map((column) => <th key={column.key} className={`${th} min-w-36 text-right`}>{column.code && `${column.code} `}{column.name}</th>)}
       <th className={`${th} min-w-32 text-right`}>Total equity</th></tr></thead><tbody>
       <tr className="font-semibold"><td className={td}>Balance at {data.openingAsOf}</td>{cells(Object.fromEntries(data.columns.map((c) => [c.key, c.startCents])))}<td className={money}>{amount(data.openingTotalCents)}</td></tr>
