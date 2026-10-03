@@ -123,6 +123,13 @@ const publicPayment = (p: NonNullable<ReturnType<typeof paymentSettings>>) => ({
   bankName: p.bankName, accountName: p.accountName, accountHint: p.accountHint, instructions: p.instructions, qrUrl: `/api/shp/payment/qr/${p.version}`, deliveryOptions: p.deliveryOptions,
 });
 
+/** The order a customer's link names: the number and the secret token must both match. */
+export function findCustomersOrder(db: Db, number: string, token: string) {
+  const o = db.prepare(`${ORDER} WHERE o.number = ?`).get(number) as OrderRow | undefined;
+  if (!o || !sameHash(o.token_hash, hash(token))) throw notFound('The order');
+  return o;
+}
+
 export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
   const nowMs = () => clock.now().getTime();
@@ -131,12 +138,7 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
     { lineNo: number; productId: string; productName: string; size: string; colour: string; qty: number; unitPriceCents: number }[];
   const event = (orderId: string, status: string, at: string, userId: string | null, note?: string | null) =>
     db.prepare('INSERT INTO shp_order_events (id, order_id, status, user_id, note, at) VALUES (?, ?, ?, ?, ?, ?)').run(newId(), orderId, status, userId, note ?? null, at);
-  /** The order a customer's link names: the number and the secret token must both match. */
-  const customersOrder = (number: string, token: string) => {
-    const o = db.prepare(`${ORDER} WHERE o.number = ?`).get(number) as OrderRow | undefined;
-    if (!o || !sameHash(o.token_hash, hash(token))) throw notFound('The order');
-    return o;
-  };
+  const customersOrder = (number: string, token: string) => findCustomersOrder(db, number, token);
   const staffOrder = (id: string) => {
     const o = db.prepare(`${ORDER} WHERE o.id = ?`).get(id) as OrderRow | undefined;
     if (!o) throw notFound('The order');
@@ -155,6 +157,8 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       holdUntil: new Date(o.hold_until_ms).toISOString(), paymentReference: o.payment_reference, saleNumber: o.sale_number ?? null, lines: lines(o.id),
       events: db.prepare('SELECT status, note, at FROM shp_order_events WHERE order_id = ? ORDER BY at, rowid').all(o.id),
       payment: pay ? publicPayment(pay) : null,
+      // The items the buyer has rated (a completed order's items can each be rated once).
+      reviewed: db.prepare('SELECT product_id FROM shp_reviews WHERE order_id = ?').pluck().all(o.id) as string[],
     };
   };
 

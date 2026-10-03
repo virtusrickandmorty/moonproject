@@ -130,11 +130,14 @@ function OrderDialog({ me, order: o, onClose, onChanged }: { me: Me; order: Deta
         </div>
       </div>
 
-      {canManage && step === 'view' && (
+      {step === 'view' && (
         <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
-          {(waiting || o.status === 'expired') && <>{waiting && <Button tone="primary" onClick={() => setStep('confirm')}>Payment found: confirm</Button>}<Button tone="danger" onClick={() => setStep('reject')}>Reject payment</Button></>}
-          {o.status === 'confirmed' && <Button tone="primary" disabled={busy} onClick={() => void move('ready')}>{o.fulfilment === 'pickup' ? 'Ready for pickup' : 'Sent out'}</Button>}
-          {(o.status === 'confirmed' || o.status === 'ready') && <Button disabled={busy} onClick={() => void move('completed')}>Handed over: completed</Button>}
+          {canManage && <>
+            {(waiting || o.status === 'expired') && <>{waiting && <Button tone="primary" onClick={() => setStep('confirm')}>Payment found: confirm</Button>}<Button tone="danger" onClick={() => setStep('reject')}>Reject payment</Button></>}
+            {o.status === 'confirmed' && <Button tone="primary" disabled={busy} onClick={() => void move('ready')}>{o.fulfilment === 'pickup' ? 'Ready for pickup' : 'Sent out'}</Button>}
+            {(o.status === 'confirmed' || o.status === 'ready') && <Button disabled={busy} onClick={() => void move('completed')}>Handed over: completed</Button>}
+          </>}
+          <Button className="ml-auto" onClick={onClose}>Close</Button>
         </div>
       )}
       {step === 'confirm' && (

@@ -29,7 +29,7 @@ export interface Who { userId: string; at: string }
 const lastStage = (db: Db, documentId: string) =>
   (db.prepare('SELECT to_stage FROM jo_stage_events WHERE document_id = ? ORDER BY seq DESC LIMIT 1').get(documentId) as { to_stage: Stage } | undefined)?.to_stage;
 
-/** Documents that are job orders: one taken in Moonproject, or one taken before the cut-over date (opening.ts). */
+/** Documents that are job orders: one taken in Virtus, or one taken before the cut-over date (opening.ts). */
 export const JO_DOC_TYPES_SQL = `doc_type IN ('jo.job_order', 'jo.opening')`;
 
 export function currentStage(db: Db, documentId: string): Stage | 'cancelled' {

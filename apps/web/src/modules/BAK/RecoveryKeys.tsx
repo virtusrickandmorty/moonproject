@@ -70,7 +70,7 @@ export function RecoveryKeys() {
       <div className="space-y-4 print:hidden">
         <Panel title="Folders">
           <div className="max-w-lg space-y-3">
-            <Field label="Backup folder" required hint="On this PC, for example D:\Moonproject-Backups.">
+            <Field label="Backup folder" required hint="On this PC, for example D:\Virtus-Backups.">
               <input className={inputClass} value={backupDir} onChange={(e) => (setBackupDir(e.target.value), setSaved(''))} />
             </Field>
             <Field label="Off-site folder" hint="The Google Drive for desktop folder. The daily, monthly and yearly backups are copied there. Leave it blank for none.">
@@ -80,7 +80,7 @@ export function RecoveryKeys() {
         </Panel>
         <Panel title="Recovery keys">
           <p className="text-sm text-slate-700">
-            Every backup is locked with two recovery keys, A and B, and either one opens it. Moonproject keeps only their public halves, so nobody can open a
+            Every backup is locked with two recovery keys, A and B, and either one opens it. Virtus keeps only their public halves, so nobody can open a
             backup without one of the printed keys.
           </p>
           {hasKeys ? (
@@ -97,7 +97,7 @@ export function RecoveryKeys() {
       </div>
       {keys && (
         <>
-          <p className="text-sm text-slate-700 print:hidden">Print both sheets, or write the keys down exactly. These keys are shown only now: they are never saved in Moonproject.</p>
+          <p className="text-sm text-slate-700 print:hidden">Print both sheets, or write the keys down exactly. These keys are shown only now: they are never saved in Virtus.</p>
           <div className="grid gap-4 lg:grid-cols-2">
             {(['a', 'b'] as const).map((l) => <KeySheet key={l} letter={l} secret={keys[l].secret} date={today} hidden={!!printing && printing !== l} onPrint={() => setPrinting(l)} />)}
           </div>

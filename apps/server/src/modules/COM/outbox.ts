@@ -208,7 +208,7 @@ export async function sendTest(db: Db, transport: MailTransport, who: { userId: 
   const password = readAppPassword(db);
   const missing = missingForSending(settings, password !== null);
   if (missing.length > 0 || password === null) throw conflict('NOT_CONFIGURED', `Fill in first: ${missing.join(', ')}.`);
-  const company = companyRegisteredName(db) ?? 'Moonproject';
+  const company = companyRegisteredName(db) ?? 'Virtus';
   const message = { subject: `${company}: test email`, body: `This is a test email from ${company}. If you can read it, sending emails works.\n` };
   assertAllowedWording(message);
   let error: string | null = null;

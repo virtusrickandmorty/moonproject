@@ -25,10 +25,10 @@ export default defineModule({
     { key: 'pay.thirteenth.cancel', label: 'Cancel recorded 13th-month pay', defaultRoles: ['accountant'] },
     { key: 'pay.loans.view', label: 'View employees’ SSS and Pag-IBIG loans', defaultRoles: ['accountant', 'owner'] },
     { key: 'pay.loans.manage', label: 'Register, change and stop employees’ SSS and Pag-IBIG loans', defaultRoles: ['accountant', 'owner'] },
-    // Year-end tax adjustment, pay before Moonproject, 2316 and the 1604-C alphalist: the accountant's (F3, F4).
+    // Year-end tax adjustment, pay before Virtus, 2316 and the 1604-C alphalist: the accountant's (F3, F4).
     { key: 'pay.yearend.run', label: 'Do the year-end tax adjustment on a payroll run', defaultRoles: ['accountant'] },
-    { key: 'pay.prior.view', label: 'View pay before Moonproject and from previous employers', defaultRoles: ['accountant'] },
-    { key: 'pay.prior.manage', label: 'Record and change pay before Moonproject and from previous employers', defaultRoles: ['accountant'] },
+    { key: 'pay.prior.view', label: 'View pay before Virtus and from previous employers', defaultRoles: ['accountant'] },
+    { key: 'pay.prior.manage', label: 'Record and change pay before Virtus and from previous employers', defaultRoles: ['accountant'] },
     { key: 'pay.yearend.view', label: 'View 2316 data and the 1604-C alphalist', defaultRoles: ['accountant'] },
   ],
   docTypes: [runDoc, releaseDoc, thirteenthDoc],

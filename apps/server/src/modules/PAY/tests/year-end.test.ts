@@ -1,7 +1,7 @@
 /**
- * Year-end tax adjustment (PLAN F3, BIR RR 11-2018, RMC 21-2010), pay before Moonproject and the 2316 / 1604-C data
+ * Year-end tax adjustment (PLAN F3, BIR RR 11-2018, RMC 21-2010), pay before Virtus and the 2316 / 1604-C data
  * (F4): goldens to the centavo (over-withheld: refund; under-withheld: deficiency within net pay; net pay too small; a
- * weekly piece worker whose weekly tax is all refunded; an MWE with overtime; pay before Moonproject and a previous
+ * weekly piece worker whose weekly tax is all refunded; an MWE with overtime; pay before Virtus and a previous
  * employer; 13th-month pay above ₱90,000), the refusals (not December; a second adjustment while the first stands; the
  * run cancelled and done again), and the API. Every figure is worked out by hand. Made-up people only.
  */
@@ -31,7 +31,7 @@ const only = (db: Db, runId: string, employeeId: string) => runDoc.load(db, runI
 /** [gross, EE shares, tax withheld, refund, net] of one employee on a run. */
 const pay = (e: RunEmployee) => [e.grossCents, e.sssEeCents + e.phicEeCents + e.hdmfEeCents, e.wtaxCents, e.wtaxRefundCents, e.netCents];
 const zero = { benefitsCents: 0, deMinimisCents: 0, sssCents: 0, phicCents: 0, hdmfCents: 0, otherNontaxCents: 0, taxableCents: 0, wtaxCents: 0 };
-/** Pay before Moonproject for 2026 (source 'before' unless given), recorded as the accountant would. */
+/** Pay before Virtus for 2026 (source 'before' unless given), recorded as the accountant would. */
 function prior(w: World, employeeId: string, p: Partial<typeof zero> & { source?: 'before' | 'previous'; employerName?: string }) {
   const v = { ...zero, ...p };
   const grossCents = v.benefitsCents + v.deMinimisCents + v.sssCents + v.phicCents + v.hdmfCents + v.otherNontaxCents + v.taxableCents;
@@ -49,7 +49,7 @@ function december(w: World, payGroup: 'SEMI_MONTHLY') {
 // A ₱30,000 a month office employee in December: 1–15 gross 15,000.00, SSS 750 (MSC 15,000), PhilHealth 750 (all of
 // the month's, on the monthly rate), Pag-IBIG 200 → taxable 13,300.00 → semi-monthly table 15% over 10,417 = 432.45.
 // 16–31: SSS 1,500 − 750 = 750 more (MSC 30,000), nothing more for PhilHealth or Pag-IBIG. December taxable
-// 13,300.00 + 14,250.00 = 27,550.00. Jan–Nov before Moonproject: 11 × 30,000 = 330,000.00 gross, shares 11 × 2,450.00,
+// 13,300.00 + 14,250.00 = 27,550.00. Jan–Nov before Virtus: 11 × 30,000 = 330,000.00 gross, shares 11 × 2,450.00,
 // taxable 303,050.00. Year: 330,600.00 taxable → 15% of 80,600.00 = 12,090.00 tax due.
 const JAN_NOV = { sssCents: 1_650_000, phicCents: 825_000, hdmfCents: 220_000, taxableCents: 30_305_000 };
 
@@ -165,8 +165,8 @@ describe('year-end adjustment goldens', () => {
     const d = data2316(w.db, employee(w.db, ana)!, 2026, false);
     expect(d.isMwe).toBe(true);
     expect(d.smw).toEqual({ perDayCents: 55_000, factor: 313, perMonthCents: 1_434_583, perYearCents: 17_215_000 });
-    // Item 29: 12,100.00 of minimum wage + 138,000.00 before Moonproject; item 31 overtime 257.82; item 36 only the
-    // shares before Moonproject (an MWE's payroll shares stay inside the minimum wage, as on the 1601-C).
+    // Item 29: 12,100.00 of minimum wage + 138,000.00 before Virtus; item 31 overtime 257.82; item 36 only the
+    // shares before Virtus (an MWE's payroll shares stay inside the minimum wage, as on the 1601-C).
     expect(d.figures).toMatchObject({
       i29BasicSmwCents: 15_010_000, i30HolidayMweCents: 0, i31OvertimeMweCents: 25_782, i36SharesCents: 900_000, i39BasicCents: 25_500_000, i51OtherCents: 100_000,
       i52TaxableCents: 25_600_000, i19GrossCents: 41_535_782, i24TaxDueCents: 90_000, i26WithheldCents: 90_000,
@@ -174,7 +174,7 @@ describe('year-end adjustment goldens', () => {
     clean(w.db);
   });
 
-  it('pay before Moonproject and a previous employer: both counted; no substituted filing', async () => {
+  it('pay before Virtus and a previous employer: both counted; no substituted filing', async () => {
     const w = await world('2026-12-01');
     const pedro = w.person('Pedro Bago', { payType: 'monthly', payGroup: 'SEMI_MONTHLY', monthlyRateCents: 4_000_000 }, { ...office, hireDate: '2026-06-01' });
     prior(w, pedro, { source: 'previous', employerName: 'Made-up Trading Co.', sssCents: 500_000, phicCents: 375_000, hdmfCents: 100_000, taxableCents: 14_025_000, wtaxCents: 500_000 });
@@ -221,7 +221,7 @@ describe('year-end adjustment goldens', () => {
 });
 
 describe('year-end adjustment refusals', () => {
-  it('only on a run ending in December; once per employee and year while it stands; earlier runs and pay before Moonproject wait for it', async () => {
+  it('only on a run ending in December; once per employee and year while it stands; earlier runs and pay before Virtus wait for it', async () => {
     const w = await world('2026-11-30');
     const olga = w.person('Olga Opisina', { payType: 'monthly', payGroup: 'SEMI_MONTHLY', monthlyRateCents: 3_000_000 }, office);
     const row = prior(w, olga, { ...JAN_NOV, wtaxCents: 4_000_000 });
@@ -253,7 +253,7 @@ describe('year-end adjustment refusals', () => {
     w.cancel(runDoc, last.id);
     expect(journal(w.env, last.id, 'reversal')).toEqual(['2110 Dr 42,592.45', '2111 Dr 1,250.00', '2310 Cr 28,342.45', '2401 Dr 2,250.00', '6101 Cr 15,000.00', '6102 Cr 1,500.00', '6103 Cr 1,250.00']);
     expect(-partyBalance(w.env, '2310', olga)).toBe(43_245);
-    // Pay before Moonproject may change again once nothing counted it; changed back, the redo is the same.
+    // Pay before Virtus may change again once nothing counted it; changed back, the redo is the same.
     const changed = tx(w.db, () => updatePrior(w.db, row.id, '1', { note: 'Checked against the old payroll (made up)' }, w.who()));
     expect(changed.version).toBe(2);
     const again = w.record(runDoc, { payGroup: 'SEMI_MONTHLY', periodStart: '2026-12-16', yearEnd: true });
@@ -266,8 +266,8 @@ describe('year-end adjustment refusals', () => {
   });
 });
 
-describe('pay before Moonproject, 2316 and alphalist through the API', () => {
-  it('the accountant records and changes pay before Moonproject (If-Match); the encoder and owner may not; 2316 and the 1604-C CSV', async () => {
+describe('pay before Virtus, 2316 and alphalist through the API', () => {
+  it('the accountant records and changes pay before Virtus (If-Match); the encoder and owner may not; 2316 and the 1604-C CSV', async () => {
     const w = await world('2026-12-01');
     const olga = w.person('Olga Opisina', { payType: 'monthly', payGroup: 'SEMI_MONTHLY', monthlyRateCents: 3_000_000 }, office);
     const ana = w.person('Ana Tahi', { payType: 'daily', payGroup: 'SEMI_DAILY', dailyRateCents: 55_000, isMwe: true });

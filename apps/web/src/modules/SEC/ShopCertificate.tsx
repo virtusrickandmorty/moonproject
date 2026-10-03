@@ -46,7 +46,7 @@ export function ShopCertificate() {
           <span className="break-all font-mono text-lg font-semibold text-slate-900">{url}</span>
           <span className="ml-2 text-slate-600">{addressKind(join.addresses[i]!.kind)}</span>
         </li>)}
-      </ul> : <Notice tone="warning">{join.addresses.length ? 'The "Join this PC" page is not running. Restart Moonproject, or see its log.' : 'This PC has no network address. Connect it to the shop network.'}</Notice>}
+      </ul> : <Notice tone="warning">{join.addresses.length ? 'The "Join this PC" page is not running. Restart Virtus, or see its log.' : 'This PC has no network address. Connect it to the shop network.'}</Notice>}
     </Panel>}
   </div>;
 }

@@ -1,5 +1,5 @@
 /** Sign in, first owner and change password (PLAN C6, E13). Passphrases of 15+ characters (OWN-14). */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, type Me } from '../api.ts';
 import { Button, Field, Notice, inputClass, useAction } from '../components/ui.tsx';
 import { PrivacyNotice } from './PrivacyNotice.tsx';
@@ -30,7 +30,7 @@ function AuthForm(p: { title: string; intro?: string; boxes: Box[]; submitLabel:
       <img src="/virtus-logo.png" alt="Virtus" className="mb-8 h-28 w-auto" />
       {form}
       <PrivacyNotice />
-      <p className="mt-6 text-center text-xs tracking-wide text-slate-400">MOONPROJECT · VIRTUS GARMENTS, INC.</p>
+      <p className="mt-6 text-center text-xs tracking-wide text-slate-400">VIRTUS GARMENTS, INC.</p>
     </main>
   );
 }
@@ -41,6 +41,13 @@ function same(a = '', b = '') {
 
 export function LoginScreen({ message, onSignedIn }: { message?: string; onSignedIn: (me: Me) => Promise<void> }) {
   const boxes: Box[] = [['username', 'Username', 'text', 'username'], ['password', 'Password', 'password', 'current-password']];
+  // Staff only: the tab says so, and search engines leave the page out.
+  useEffect(() => {
+    document.title = 'Sign in · Virtus';
+    let robots = document.head.querySelector<HTMLMetaElement>('meta[name="robots"]');
+    if (!robots) { robots = document.createElement('meta'); robots.name = 'robots'; document.head.appendChild(robots); }
+    robots.content = 'noindex, nofollow';
+  }, []);
   return <AuthForm page title="Sign in" intro={message} boxes={boxes} submitLabel="Sign in" onSubmit={async (v) => (await api.login(v.username ?? '', v.password ?? ''), onSignedIn(await api.me()))} />;
 }
 
@@ -56,7 +63,7 @@ export function FirstOwnerScreen({ onSignedIn }: { onSignedIn: (me: Me) => Promi
     await api.firstOwner({ displayName, username, password });
     await onSignedIn(await api.me());
   };
-  const intro = 'Nobody has set up Moonproject yet. The first person becomes an Owner and adds everyone else.';
+  const intro = 'Nobody has set up Virtus yet. The first person becomes an Owner and adds everyone else.';
   return <AuthForm page title="Create the first owner" intro={intro} boxes={boxes} submitLabel="Create owner and sign in" onSubmit={submit} />;
 }
 

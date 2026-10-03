@@ -87,3 +87,17 @@ body {
     animation: none;
   }
 }
+
+/* The shop's hero banner (shop/Home.tsx): each slide fades up as it comes in. */
+@keyframes hero-in {
+  from { opacity: 0; transform: translateY(0.75rem); }
+  to { opacity: 1; transform: none; }
+}
+.hero-slide {
+  animation: hero-in 500ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-slide {
+    animation: none;
+  }
+}

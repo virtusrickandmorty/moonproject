@@ -43,7 +43,7 @@ const total = (s: StockLine[] | null, k: keyof Omit<StockLine, 'size' | 'colour'
 const tab = (on: boolean) => `rounded-md px-4 py-2 text-sm font-semibold ${on ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-indigo-50'}`;
 
 export function ShopProducts({ me }: { me: Me }) {
-  const [view, setView] = useState<'products' | 'categories' | 'payment'>('products');
+  const [view, setView] = useState<'products' | 'categories' | 'payment' | 'reviews'>('products');
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -57,12 +57,13 @@ export function ShopProducts({ me }: { me: Me }) {
         </div>
       </div>
       <div className="flex flex-wrap gap-2" role="tablist">
-        {([['products', 'Products and stock'], ['categories', 'Categories'], ['payment', 'Online payment']] as const).map(([k, l]) => (
+        {([['products', 'Products and stock'], ['categories', 'Categories'], ['payment', 'Online payment'], ['reviews', 'Reviews']] as const).map(([k, l]) => (
           <button key={k} type="button" role="tab" aria-selected={view === k} className={tab(view === k)} onClick={() => setView(k)}>{l}</button>))}
       </div>
       {view === 'products' && <Products me={me} />}
       {view === 'categories' && <Categories me={me} />}
       {view === 'payment' && <Payment me={me} />}
+      {view === 'reviews' && <Reviews me={me} />}
     </div>
   );
 }
@@ -218,6 +219,57 @@ function StockDialog({ me, product, onClose }: { me: Me; product: Row; onClose: 
       )}
       <div className="flex justify-end"><Button onClick={onClose}>Close</Button></div>
     </Dialog>
+  );
+}
+
+interface ReviewRow { id: string; productName: string; rating: number; title: string | null; body: string; name: string; buyer: string; orderNumber: string;
+  hidden: boolean; hiddenReason: string | null; at: string; version: number }
+/** Buyers' ratings and reviews (written from their completed online orders). Staff hide one that should not show, with a reason. */
+function Reviews({ me }: { me: Me }) {
+  const [rows, setRows] = useState<ReviewRow[] | null>(null);
+  const [hiding, setHiding] = useState<ReviewRow | null>(null);
+  const [reason, setReason] = useState('');
+  const { busy, error, run } = useAction();
+  const canManage = me.permissions.includes('shp.manage');
+  const load = useCallback(() => masterRequest<ReviewRow[]>(me, '/api/shp/admin/reviews').then(setRows), [me]);
+  useEffect(() => { void run(load); }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = (r: ReviewRow, hidden: boolean) => run(async () => {
+    await masterRequest(me, `/api/shp/admin/reviews/${r.id}/hide`, 'POST', { hidden, ...(hidden ? { reason: reason.trim() } : {}), version: r.version });
+    setHiding(null); setReason(''); await load();
+  });
+  const shown = rows?.filter((r) => !r.hidden) ?? [];
+  const average = shown.length ? shown.reduce((n, r) => n + r.rating, 0) / shown.length : 0;
+  return (
+    <div className="space-y-3">
+      {error && <Notice>{error}</Notice>}
+      <p className="text-sm text-slate-600">Buyers rate each item once their online order is <b>completed</b>, from their order page. The website shows the reviews below under the buyer's first name and initial{shown.length ? <> · <b>{shown.length}</b> shown, average <b>{average.toFixed(1)}</b> of 5</> : ''}.</p>
+      <div className="overflow-x-auto rounded-lg bg-white shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"><tr><th className="p-3">Date</th><th className="p-3">Item</th><th className="p-3">Rating</th><th className="p-3">Review</th><th className="p-3">Buyer</th><th className="p-3">On the website</th><th className="p-3" /></tr></thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows?.length === 0 && <tr><td colSpan={7} className="p-4 text-slate-500">No reviews yet. They appear here once buyers rate their completed orders.</td></tr>}
+            {rows?.map((r) => (
+              <tr key={r.id} className={r.hidden ? 'text-slate-400' : ''}>
+                <td className="whitespace-nowrap p-3">{manilaTime(r.at)}</td>
+                <td className="p-3 font-semibold">{r.productName}</td>
+                <td className="whitespace-nowrap p-3 text-amber-500" aria-label={`${r.rating} of 5`}>{'★'.repeat(r.rating)}<span className="text-slate-300">{'★'.repeat(5 - r.rating)}</span></td>
+                <td className="max-w-md p-3">{r.title && <b className="block">{r.title}</b>}<span className="whitespace-pre-line">{r.body}</span></td>
+                <td className="whitespace-nowrap p-3">{r.buyer}<span className="block text-xs text-slate-500">{r.orderNumber} · shown as {r.name}</span></td>
+                <td className="p-3">{r.hidden ? <>Hidden<span className="block text-xs">{r.hiddenReason}</span></> : 'Shown'}</td>
+                <td className="whitespace-nowrap p-3 text-right">{canManage && (r.hidden
+                  ? <Button disabled={busy} onClick={() => void set(r, false)}>Show</Button>
+                  : <Button onClick={() => { setHiding(r); setReason(''); }}>Hide</Button>)}</td>
+              </tr>))}
+          </tbody>
+        </table>
+      </div>
+      {hiding && (
+        <Dialog title="Hide this review" onClose={() => setHiding(null)}>
+          <p className="text-sm text-slate-600">{hiding.buyer}'s review of {hiding.productName} stops showing on the website. It is kept, and you can show it again.</p>
+          <Field label="Why" required><input className={inputClass} maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Like: about a different shop, or has a phone number" /></Field>
+          <div className="flex justify-end gap-2"><Button onClick={() => setHiding(null)}>Cancel</Button><Button tone="primary" disabled={busy || reason.trim().length < 3} onClick={() => void set(hiding, true)}>Hide review</Button></div>
+        </Dialog>)}
+    </div>
   );
 }
 

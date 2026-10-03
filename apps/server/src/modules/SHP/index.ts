@@ -6,6 +6,8 @@ import { shpStockRoutes } from './stock.ts';
 import { shpOrderRoutes } from './orders.ts';
 import { shopItemsNotice } from './public.ts';
 import { shpTrackRoutes } from './track.ts';
+import { shpReviewRoutes } from './reviews.ts';
+import { shpSeoRoutes } from './seo.ts';
 
 export default defineModule({
   code: 'SHP',
@@ -27,5 +29,7 @@ export default defineModule({
     shpStockRoutes(app, deps);
     shpOrderRoutes(app, deps);
     shpTrackRoutes(app, deps);
+    shpReviewRoutes(app, deps);
+    shpSeoRoutes(app, deps);
   },
 });

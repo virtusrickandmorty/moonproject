@@ -48,7 +48,7 @@ export function TaxCalendar({ me }: { me: Me }) {
               </table>
             </div>
           )}
-          <p className="text-xs text-slate-500">Filed returns are not recorded in Moonproject yet, so this list shows what falls due, not what is already filed.</p>
+          <p className="text-xs text-slate-500">Filed returns are not recorded in Virtus yet, so this list shows what falls due, not what is already filed.</p>
         </Panel>
       )}
     </div>

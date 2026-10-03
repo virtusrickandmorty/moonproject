@@ -170,8 +170,8 @@ describe('default roles against the plan (C6, E13)', () => {
 // (limited per sender and per hour), then read, paid or cancelled only with the order's secret link — tracking an order or a job
 // order by its number (status only, limited per sender), the delivery fee for an address, and the support form.
 const PUBLIC_ROUTES = ['GET /*', 'GET /api/health', 'GET /api/setup/status', 'GET /api/shp/delivery-fee', 'GET /api/shp/orders/:number', 'GET /api/shp/payment',
-  'GET /api/shp/payment/qr/:version', 'GET /api/shp/photos/:photoId', 'GET /api/shp/products',
-  'POST /api/auth/login', 'POST /api/setup/first-owner', 'POST /api/shp/orders', 'POST /api/shp/orders/:number/cancel', 'POST /api/shp/orders/:number/payment', 'POST /api/shp/track',
+  'GET /api/shp/payment/qr/:version', 'GET /api/shp/photos/:photoId', 'GET /api/shp/products', 'GET /api/shp/reviews', 'GET /robots.txt', 'GET /sitemap.xml',
+  'POST /api/auth/login', 'POST /api/setup/first-owner', 'POST /api/shp/orders', 'POST /api/shp/orders/:number/cancel', 'POST /api/shp/orders/:number/payment', 'POST /api/shp/orders/:number/reviews', 'POST /api/shp/track',
   'POST /api/sup/messages'];
 
 /** 'authenticated' routes that are open to every signed-in user by design (nothing the role lacks is shown). */

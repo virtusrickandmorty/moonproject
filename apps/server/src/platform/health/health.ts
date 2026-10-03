@@ -192,7 +192,7 @@ export function healthLights(f: HealthFacts): HealthLight[] {
     if (!failed.length) add('books', 'Books', 'green', 'Every journal balances, so the trial balance does, and the other ledger checks passed.');
     else add('books', 'Books', 'red', `${failed.map((x) => `${x.name}: ${x.problems[0] ?? 'failed'}`).join('; ')}. Open Integrity check for the details.`);
     if (r.audit.ok) add('audit', 'Audit trail', 'green', `The audit trail is intact (${r.audit.entries} entries).`);
-    else add('audit', 'Audit trail', 'red', `The audit trail breaks at entry ${r.audit.brokenAt}: records were changed outside Moonproject. Keep the latest backups and call for help.`);
+    else add('audit', 'Audit trail', 'red', `The audit trail breaks at entry ${r.audit.brokenAt}: records were changed outside Virtus. Keep the latest backups and call for help.`);
   }
 
   if (f.host.platform !== 'win32') add('windows', 'Windows', 'grey', `This server is not running on Windows (${f.host.platform}).`);
@@ -211,7 +211,7 @@ export function healthLights(f: HealthFacts): HealthLight[] {
   else if (p && p.state === 'preparing') add('practice', 'Practice shop', 'grey', 'The practice shop is being prepared with new made-up data.');
   else if (p && p.state === 'ready') add('practice', 'Practice shop', 'green', 'The practice shop is ready.');
 
-  add('version', 'Version', 'grey', `Moonproject ${f.version}. An update comes as a new Setup.exe, run on this PC.`);
+  add('version', 'Version', 'grey', `Virtus ${f.version}. An update comes as a new Setup.exe, run on this PC.`);
   return out;
 }
 

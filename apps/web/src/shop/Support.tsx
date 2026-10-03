@@ -8,6 +8,7 @@ import { cartText } from './Panels.tsx';
 import { SERVICES } from './Services.tsx';
 import { SHOP_CONTACT } from './products.ts';
 import { useShop } from './store.tsx';
+import { PageHero } from './Home.tsx';
 
 type Kind = 'inquiry' | 'complaint' | 'suggestion' | 'quotation';
 const KINDS: { kind: Kind; label: string; hint: string; subject: string }[] = [
@@ -123,14 +124,14 @@ export function Support({ query }: { query: string }) {
 
   return (
     <>
-      <section className="mx-auto max-w-7xl px-4 pb-6 pt-12 sm:px-6 md:pt-16">
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-600">Customer support</p>
-        <h1 className="mt-3 text-4xl font-extrabold tracking-tight sm:text-5xl">How can we help?</h1>
-        <p className="mt-3 max-w-2xl text-lg text-slate-600">Send us a question, a concern, an idea, or your design for a quotation. A person at the shop reads every message.</p>
-      </section>
+      <PageHero eyebrow="Customer support" title={<>How can we <span className="text-indigo-300">help?</span></>}
+        text="Send us a question, a concern, an idea, or your design for a quotation. A person at the shop reads every message.">
+        <div className="mt-8 flex flex-wrap gap-2">{KINDS.map((k) => <button key={k.kind} type="button" onClick={() => { pickKind(k.kind); document.getElementById('message')?.scrollIntoView({ behavior: 'smooth' }); }}
+          className={`rounded-full px-4 py-2 text-sm font-bold ring-1 transition ${kind === k.kind ? 'bg-white text-slate-900 ring-white' : 'bg-white/10 text-white ring-white/15 hover:bg-white/20'}`}>{k.label}</button>)}</div>
+      </PageHero>
 
-      <section className="mx-auto grid max-w-7xl gap-8 px-4 pb-16 sm:px-6 lg:grid-cols-[1fr_20rem]">
-        <form onSubmit={submit} className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5 sm:p-8" noValidate>
+      <section className="mx-auto grid max-w-7xl gap-6 px-4 pb-6 pt-10 sm:px-6 lg:grid-cols-[1fr_22rem]">
+        <form id="message" onSubmit={submit} className="scroll-mt-24 rounded-[2rem] bg-white p-5 ring-1 ring-slate-900/5 sm:p-8" noValidate>
           <fieldset>
             <legend className="text-sm font-bold">What is this about?</legend>
             <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -181,7 +182,7 @@ export function Support({ query }: { query: string }) {
         </form>
 
         <aside className="space-y-5">
-          <div className="rounded-3xl bg-slate-900 p-6 text-white">
+          <div className="rounded-[2rem] bg-slate-900 p-6 text-white">
             <p className="font-extrabold">Prefer to talk?</p>
             <dl className="mt-4 space-y-3 text-sm">
               <div><dt className="text-white/60">Call or text</dt><dd className="font-semibold">{SHOP_CONTACT.phone}</dd></div>
@@ -189,7 +190,7 @@ export function Support({ query }: { query: string }) {
               <div><dt className="text-white/60">Hours</dt><dd className="font-semibold">{SHOP_CONTACT.hours}</dd></div>
             </dl>
           </div>
-          <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-900/5">
+          <div className="rounded-[2rem] bg-white p-6 ring-1 ring-slate-900/5">
             <p className="font-extrabold">Common questions</p>
             <div className="mt-2 divide-y divide-slate-100">
               {[['How does ordering work?', 'Send a quotation request. We reply with the price, a design proof and a delivery date. Production starts once you approve and pay the downpayment.'],

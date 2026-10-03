@@ -117,7 +117,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
           <label className="mt-2 flex items-start gap-2 text-sm">
             <input type="checkbox" className="mt-1" checked={yearEnd} onChange={(e) => setYearEnd(e.target.checked)} />
             <span>
-              <b>Year-end tax adjustment</b> on this payroll: each employee's tax is the year's tax less what was withheld this year (pay before Moonproject and a
+              <b>Year-end tax adjustment</b> on this payroll: each employee's tax is the year's tax less what was withheld this year (pay before Virtus and a
               previous employer's included). An excess is refunded with net pay; a deficiency is withheld as far as the pay allows. Tick it on each employee's last payroll of the year.
             </span>
           </label>

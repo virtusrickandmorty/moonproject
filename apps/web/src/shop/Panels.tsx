@@ -5,6 +5,7 @@ import { ProductPicture } from './GarmentArt.tsx';
 import { navigate } from '../router.tsx';
 import { SIZE_CHART, type Product } from './products.ts';
 import { useShop, type CartLine } from './store.tsx';
+import { ReviewCard, Stars } from './Stars.tsx';
 
 /** Open overlays, newest last: Escape closes only the top one. */
 const open: string[] = [];
@@ -49,7 +50,9 @@ export function WishButton({ product, className = '' }: { product: Product; clas
 
 /** Product details with a quantity per size, so a team can order its whole size run in one go. */
 export function QuickView({ product, onClose, onSizeGuide, onAdded }: { product: Product; onClose: () => void; onSizeGuide: () => void; onAdded: () => void }) {
-  const { add } = useShop();
+  const { add, reviews, ratingOf } = useShop();
+  const mine = reviews.filter((r) => r.productId === product.id);
+  const rating = ratingOf(product.id);
   // A ready-stock item from the shop knows its pieces left per size and colour: those cap what can go in the cart.
   const left = (size: string, c: string) => (product.stock ? product.stock.find((x) => x.size === size && x.colour === c)?.available ?? 0 : 999);
   const firstIn = (c: string) => product.sizes.find((s) => left(s, c) > 0);
@@ -76,6 +79,8 @@ export function QuickView({ product, onClose, onSizeGuide, onAdded }: { product:
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-indigo-600">{product.category}</p>
           <h3 className="mt-1 text-2xl font-bold text-slate-900">{product.name}</h3>
+          {rating.count > 0 && <a href="#reviews" onClick={(e) => { e.preventDefault(); document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth' }); }} className="mt-1 inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900">
+            <Stars rating={rating.average} /> <b>{rating.average.toFixed(1)}</b> · {rating.count} review{rating.count === 1 ? '' : 's'}</a>}
           <p className="mt-2 text-xl font-semibold">{product.madeToOrder ? 'from ' : ''}{formatPeso(product.priceCents)} <span className="text-sm font-normal text-slate-500">a piece</span></p>
           <p className="mt-3 text-slate-600">{product.summary}</p>
           <ul className="mt-3 space-y-1 text-sm text-slate-600">{product.features.map((f) => <li key={f}>✓ {f}</li>)}</ul>
@@ -106,6 +111,12 @@ export function QuickView({ product, onClose, onSizeGuide, onAdded }: { product:
           </button>
         </div>
       </div>
+      {mine.length > 0 && (
+        <section id="reviews" className="border-t border-slate-100 bg-slate-50 p-5 md:p-7" aria-label="Reviews">
+          <h4 className="flex items-center gap-3 text-lg font-bold">What buyers say <Stars rating={rating.average} /> <span className="text-sm font-semibold text-slate-500">{rating.average.toFixed(1)} of 5 · {rating.count}</span></h4>
+          <ul className="mt-4 grid gap-3 sm:grid-cols-2">{mine.slice(0, 6).map((r) => <li key={r.id}><ReviewCard r={r} /></li>)}</ul>
+        </section>
+      )}
     </Overlay>
   );
 }

@@ -136,7 +136,7 @@ function UsbCopy() {
           </div>
         </fieldset>
         <Field label="Folder on the drive" required>
-          <input className={inputClass} placeholder="E:\Moonproject-Backups" value={dir} onChange={(e) => (setDir(e.target.value), setResult(''))} />
+          <input className={inputClass} placeholder="E:\Virtus-Backups" value={dir} onChange={(e) => (setDir(e.target.value), setResult(''))} />
         </Field>
         <Button tone="primary" disabled={!dir.trim() || copy.busy} onClick={run}>{copy.busy ? 'Copying…' : `Copy to drive ${drive}`}</Button>
         {result && <Notice tone="success">{result}</Notice>}

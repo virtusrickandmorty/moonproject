@@ -57,11 +57,15 @@ export function Pos({ me }: { me: Me }) {
   try { if (isCash && tendered.trim()) tenderedCents = parsePesos(tendered); } catch { tenderedCents = -1; }
   const change = tenderedCents - totalCents;
 
+  // Only pieces in stock can be sold: what is left, less what is already in this sale.
+  const inSale = (product: Item, size: string, colour: string) => cart.filter((l) => same(l, { product, size, colour })).reduce((n, l) => n + l.qty, 0);
   const add = (product: Item, size: string, colour: string) => {
+    if (inSale(product, size, colour) >= leftOf(product, size, colour)) return;
     setDone(null);
     setCart((c) => (c.some((l) => same(l, { product, size, colour })) ? c.map((l) => (same(l, { product, size, colour }) ? { ...l, qty: l.qty + 1 } : l)) : [...c, { product, size, colour, qty: 1 }]));
   };
-  const setQty = (line: CartLine, qty: number) => setCart((c) => (qty <= 0 ? c.filter((l) => l !== line) : c.map((l) => (l === line ? { ...l, qty: Math.min(999, qty) } : l))));
+  const setQty = (line: CartLine, qty: number) => setCart((c) => (qty <= 0 ? c.filter((l) => l !== line)
+    : c.map((l) => (l === line ? { ...l, qty: Math.min(leftOf(l.product, l.size, l.colour), qty) } : l))));
   const problems = [
     ...(cart.length ? [] : ['Add at least one piece.']),
     ...(customer ? [] : ['There is no "Walk-in" customer: add one on the Customers screen, or pick a customer.']),
@@ -83,8 +87,11 @@ export function Pos({ me }: { me: Me }) {
     const issues = [...pre.sale.issues, ...(pre.payment?.issues ?? [])];
     const errors = issues.filter((i) => i.level === 'error');
     if (errors.length) throw new Error(errors.map((i) => i.message).join(' '));
+    // Not enough pieces (sold meanwhile, at the POS or online): the sale stops; reload to see what is left.
+    const short = issues.filter((i) => i.code === 'STOCK' || i.code === 'ITEM');
+    if (short.length) { await load(); throw new Error(`${short.map((i) => i.message.replace(/ Record it if the pieces are here, then recount the stock\.$/, '')).join(' ')} Lower the quantity or remove it.`); }
     const warn = issues.filter((i) => i.level === 'warning');
-    // A warning (more pieces than the stock shows, say) is shown once; pressing Record again records anyway.
+    // Any other warning is shown once; pressing Record again records anyway.
     if (warn.length && JSON.stringify(warn) !== JSON.stringify(warnings)) { setWarnings(warn); return; }
     const r = await api.qsRecord(b, pre.totalCents, key);
     setDone({ id: r.sale.id, number: r.sale.number, change: isCash ? change : 0 });
@@ -112,10 +119,10 @@ export function Pos({ me }: { me: Me }) {
             {shown.map((p) => {
               const left = (p.stock ?? []).reduce((n, s) => n + s.available, 0);
               return (
-                <li key={p.id}><button type="button" onClick={() => setPicking(p)} className="flex w-full flex-col rounded-lg bg-white p-2 text-left shadow-sm ring-1 ring-slate-200 transition hover:ring-indigo-400">
+                <li key={p.id}><button type="button" disabled={left === 0} onClick={() => setPicking(p)} className="flex w-full flex-col rounded-lg bg-white p-2 text-left shadow-sm ring-1 ring-slate-200 transition hover:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:ring-slate-200">
                   <span className="grid aspect-square place-items-center overflow-hidden rounded-md bg-slate-50"><ProductPicture product={p} colour={p.colours[0]?.hex ?? '#ccc'} className={p.photoUrl ? '' : 'w-3/4'} /></span>
                   <span className="mt-2 line-clamp-2 text-sm font-semibold">{p.name}</span>
-                  <span className="flex items-center justify-between text-sm"><b>{peso(p.priceCents)}</b><span className={left ? 'text-slate-500' : 'font-semibold text-red-700'}>{left} left</span></span>
+                  <span className="flex items-center justify-between text-sm"><b>{peso(p.priceCents)}</b><span className={left ? 'text-slate-500' : 'font-semibold text-red-700'}>{left ? `${left} left` : 'Sold out'}</span></span>
                 </button></li>);
             })}
           </ul>
@@ -130,7 +137,7 @@ export function Pos({ me }: { me: Me }) {
                 <div className="flex items-center rounded-md ring-1 ring-slate-200">
                   <button type="button" className="size-7" aria-label="One fewer" onClick={() => setQty(l, l.qty - 1)}>−</button>
                   <span className="w-7 text-center tabular-nums">{l.qty}</span>
-                  <button type="button" className="size-7" aria-label="One more" onClick={() => setQty(l, l.qty + 1)}>+</button>
+                  <button type="button" className="size-7 disabled:opacity-30" aria-label="One more" disabled={l.qty >= leftOf(l.product, l.size, l.colour)} onClick={() => setQty(l, l.qty + 1)}>+</button>
                 </div>
                 <span className="w-20 text-right tabular-nums">{peso(l.qty * l.product.priceCents)}</span>
               </li>))}</ul>)}
@@ -174,8 +181,8 @@ function PickVariant({ product, inCart, onPick, onClose }: { product: Item; inCa
               const taken = inCart.filter((l) => same(l, { product, size: s, colour: c.name })).reduce((n, l) => n + l.qty, 0);
               const left = leftOf(product, s, c.name) - taken;
               return (
-                <button key={s} type="button" onClick={() => onPick(s, c.name)}
-                  className={`min-w-16 rounded-md px-3 py-2 text-center text-sm ring-1 transition hover:ring-indigo-500 ${left > 0 ? 'bg-white ring-slate-300' : 'bg-red-50 text-red-800 ring-red-200'}`}>
+                <button key={s} type="button" disabled={left <= 0} onClick={() => onPick(s, c.name)}
+                  className={`min-w-16 rounded-md px-3 py-2 text-center text-sm ring-1 transition ${left > 0 ? 'bg-white ring-slate-300 hover:ring-indigo-500' : 'cursor-not-allowed bg-slate-50 text-slate-400 ring-slate-200'}`}>
                   <span className="block font-bold">{s}</span><span className="block text-xs">{left > 0 ? `${left} left` : 'none left'}</span>
                 </button>);
             })}</div>

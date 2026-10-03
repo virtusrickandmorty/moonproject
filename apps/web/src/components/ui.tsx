@@ -103,8 +103,11 @@ export function Dialog({ title, onClose, wide, children }: { title: string; onCl
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 p-4">
-      <div role="dialog" aria-modal="true" aria-label={title} className={`mx-auto mt-12 ${wide ? 'max-w-5xl' : 'max-w-xl'} space-y-4 rounded-lg bg-white p-6 shadow-xl`}>
-        <h2 className="text-lg font-bold text-[#010101]">{title}</h2>
+      <div role="dialog" aria-modal="true" aria-label={title} className={`relative mx-auto mt-12 ${wide ? 'max-w-5xl' : 'max-w-xl'} space-y-4 rounded-lg bg-white p-6 shadow-xl`}>
+        <h2 className="pr-10 text-lg font-bold text-[#010101]">{title}</h2>
+        {/* Every dialog can be closed with this, as well as with Escape. */}
+        <button type="button" onClick={onClose} aria-label="Close dialog" title="Close"
+          className="absolute right-3 top-3 grid size-9 place-items-center rounded-full text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900">×</button>
         {children}
       </div>
     </div>

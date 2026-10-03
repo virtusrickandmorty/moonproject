@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Button, Dialog } from '../components/ui.tsx';
 
 const SECTIONS: [heading: string, body: string][] = [
-  ['Who keeps your data', 'Virtus Garments, Inc. runs Moonproject on its own computer in the shop. Your data stays on that computer and on the shop\'s encrypted backups. It is not sent to an outside service.'],
+  ['Who keeps your data', 'Virtus Garments, Inc. runs Virtus on its own computer in the shop. Your data stays on that computer and on the shop\'s encrypted backups. It is not sent to an outside service.'],
   ['What we record about you', 'Your name, username and roles; your passphrase, kept only as a one-way scrambled code that nobody can read back; each sign-in attempt with its time and the network address of the device; and a history of what you record, change or print, with the time.'],
   ['Why', 'To let you in, to protect the shop\'s books, to show who did what, and to keep the records the BIR and other laws require.'],
   ['Customer and staff data', 'You will see personal data about customers and co-workers, such as names, phone numbers, measurements and pay. Use it only for your work at the shop. Do not copy it, photograph it or share it outside the shop.'],

@@ -1,5 +1,6 @@
 /** The services page: what the shop makes and decorates, and how an order goes. Each service leads to a quotation request. */
 import { Link } from '../router.tsx';
+import { PageHero, SectionHead } from './Home.tsx';
 
 interface Service { id: string; name: string; tagline: string; detail: string; bestFor: string[]; send: string; lead: string; min: string; icon: string; tone: string }
 
@@ -53,20 +54,19 @@ const STEPS: [string, string][] = [
 export function Services() {
   return (
     <>
-      <section className="mx-auto max-w-7xl px-4 pb-8 pt-12 sm:px-6 md:pt-16">
-        <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-600">Our services</p>
-        <h1 className="mt-3 max-w-3xl text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl">Everything your garments and sports apparel need, under one roof.</h1>
-        <p className="mt-4 max-w-2xl text-lg text-slate-600">From one embroidered polo to a whole league in sublimated jerseys: tell us what you have in mind and we will quote it.</p>
-        <nav className="mt-6 flex flex-wrap gap-2" aria-label="Services on this page">
-          {SERVICES.map((s) => <a key={s.id} href={`#${s.id}`} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:border-slate-400">{s.name}</a>)}
+      <PageHero eyebrow="Our services" title={<>Everything your team wears, <span className="text-indigo-300">under one roof.</span></>}
+        text="From one embroidered polo to a whole league in sublimated jerseys: tell us what you have in mind and we will quote it.">
+        <nav className="mt-8 flex flex-wrap gap-2" aria-label="Services on this page">
+          {SERVICES.map((s) => <a key={s.id} href={`#${s.id}`} className="rounded-full bg-white/10 px-3.5 py-1.5 text-sm font-semibold text-white ring-1 ring-white/15 hover:bg-white hover:text-slate-900">{s.name}</a>)}
         </nav>
-      </section>
+      </PageHero>
 
-      <section className="mx-auto grid max-w-7xl gap-5 px-4 pb-14 sm:px-6 md:grid-cols-2">
+      <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6"><SectionHead eyebrow="What we do" title="Pick a service" /></section>
+      <section className="mx-auto grid max-w-7xl gap-5 px-4 pb-6 pt-6 sm:px-6 md:grid-cols-2">
         {SERVICES.map((s) => (
-          <article key={s.id} id={s.id} className="flex scroll-mt-24 flex-col rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-900/5 sm:p-7">
+          <article key={s.id} id={s.id} className="group flex scroll-mt-24 flex-col rounded-3xl bg-white p-6 ring-1 ring-slate-900/5 transition hover:-translate-y-0.5 hover:shadow-xl sm:p-7">
             <div className="flex items-start gap-4">
-              <span className={`grid size-12 shrink-0 place-items-center rounded-2xl ${s.tone}`}>
+              <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-slate-900 text-white transition group-hover:bg-indigo-600">
                 <svg viewBox="0 0 24 24" className="size-6" aria-hidden="true"><path d={ICONS[s.icon]} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
               </span>
               <div><h2 className="text-xl font-extrabold">{s.name}</h2><p className="text-sm font-semibold text-slate-500">{s.tagline}</p></div>
@@ -83,22 +83,17 @@ export function Services() {
         ))}
       </section>
 
-      <section className="border-y border-slate-200 bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6">
-          <h2 className="text-3xl font-extrabold tracking-tight">How an order works</h2>
+      <section className="mx-auto max-w-7xl px-4 pt-10 sm:px-6">
+        <div className="rounded-[2rem] bg-white p-6 ring-1 ring-slate-900/5 sm:p-10">
+          <SectionHead eyebrow="Step by step" title="How an order works" />
           <ol className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
             {STEPS.map(([title, detail], i) => (
               <li key={title} className="relative rounded-2xl bg-slate-50 p-5">
-                <span className="grid size-9 place-items-center rounded-full bg-indigo-600 text-sm font-bold text-white">{i + 1}</span>
+                <span className="grid size-9 place-items-center rounded-full bg-slate-900 text-sm font-bold text-white">{i + 1}</span>
                 <p className="mt-3 font-bold">{title}</p><p className="mt-1 text-sm text-slate-600">{detail}</p>
               </li>
             ))}
           </ol>
-          <div className="mt-10 flex flex-wrap items-center gap-4 rounded-3xl bg-slate-900 p-7 text-white">
-            <div className="flex-1"><p className="text-xl font-extrabold">Have a design ready?</p><p className="text-white/70">Send it with your quantities and we will quote it.</p></div>
-            <Link to="/support?type=quotation" className="rounded-full bg-white px-6 py-3 font-bold text-slate-900 hover:bg-indigo-100">Request a quotation</Link>
-            <Link to="/" className="rounded-full border border-white/30 px-6 py-3 font-bold hover:border-white">Browse garments</Link>
-          </div>
         </div>
       </section>
     </>

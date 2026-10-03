@@ -10,6 +10,7 @@ import { Link, navigate } from '../router.tsx';
 import { ProductPicture } from './GarmentArt.tsx';
 import { SHOP_CONTACT } from './products.ts';
 import { useShop } from './store.tsx';
+import { StarPicker } from './Stars.tsx';
 import { base64, prepare } from './Support.tsx';
 
 const input = 'mt-1 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100';
@@ -139,9 +140,11 @@ type Status = 'awaiting_payment' | 'payment_sent' | 'confirmed' | 'rejected' | '
 interface CustomerOrder {
   number: string; status: Status; name: string; fulfilment: 'pickup' | 'delivery'; address: string | null; totalCents: number; holdUntil: string; deliveryOption: string | null; deliveryFeeCents: number;
   paymentReference: string | null; saleNumber: string | null;
-  lines: { lineNo: number; productName: string; size: string; colour: string; qty: number; unitPriceCents: number }[];
+  lines: { lineNo: number; productId: string; productName: string; size: string; colour: string; qty: number; unitPriceCents: number }[];
   events: { status: string; note: string | null; at: string }[];
   payment: { bankName: string; accountName: string; accountHint: string | null; instructions: string | null; qrUrl: string } | null;
+  /** The items the buyer has rated already. */
+  reviewed: string[];
 }
 const STEPS: [Status[], string][] = [[['awaiting_payment'], 'Order placed'], [['payment_sent'], 'Payment sent'], [['confirmed'], 'Payment confirmed'], [['ready'], 'Ready / sent'], [['completed'], 'Completed']];
 const ORDER_OF: Status[] = ['awaiting_payment', 'payment_sent', 'confirmed', 'ready', 'completed'];
@@ -212,6 +215,7 @@ export function OrderStatus({ number, query }: { number: string; query: string }
       {at >= 0 && <ol className="mt-6 grid grid-cols-5 gap-1 text-center text-[11px] font-semibold sm:text-xs">{STEPS.map(([s, label], i) => (
         <li key={label} className={i <= at ? 'text-indigo-700' : 'text-slate-400'}><span className={`mx-auto mb-1 block h-1.5 rounded-full ${i <= at ? 'bg-indigo-600' : 'bg-slate-200'}`} aria-hidden="true" />{label}<span className="sr-only">{s.includes(o.status) ? ' (now)' : ''}</span></li>))}</ol>}
       {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">{error}</p>}
+      {o.status === 'completed' && <RateItems order={o} token={token} onRated={(reviewed) => setO({ ...o, reviewed })} />}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_22rem]">
         {(o.status === 'awaiting_payment' || o.status === 'expired') && o.payment ? (
@@ -256,6 +260,56 @@ export function OrderStatus({ number, query }: { number: string; query: string }
 }
 
 /** /orders: the orders placed from this browser, newest first, with where each one is. */
+/** Once an order is completed its buyer rates each item on it, once: stars, a title and a few words, shown on the website. */
+function RateItems({ order, token, onRated }: { order: CustomerOrder; token: string; onRated: (reviewed: string[]) => void }) {
+  const { reloadReviews } = useShop();
+  const items = [...new Map(order.lines.map((l) => [l.productId, l.productName])).entries()];
+  const left = items.filter(([id]) => !order.reviewed.includes(id));
+  const [open, setOpen] = useState(left[0]?.[0] ?? '');
+  const [rating, setRating] = useState(0);
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const send = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!rating) return setError('Pick 1 to 5 stars.');
+    if (body.trim().length < 10) return setError('Write a few words about it (at least 10 letters).');
+    setBusy(true); setError('');
+    try {
+      const res = await fetch(`/api/shp/orders/${encodeURIComponent(order.number)}/reviews`, { method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+        body: JSON.stringify({ token, productId: open, rating, ...(title.trim() ? { title: title.trim() } : {}), body: body.trim() }) });
+      const data = await res.json().catch(() => null) as { reviewed?: string[]; message?: string } | null;
+      if (!res.ok) throw new Error(data?.message ?? 'That did not go through. Please try again.');
+      onRated(data!.reviewed!); reloadReviews();
+      setOpen(left.find(([id]) => id !== open)?.[0] ?? ''); setRating(0); setTitle(''); setBody('');
+    } catch (err) { setError(err instanceof TypeError ? 'Cannot reach us right now. Check your connection and try again.' : (err as Error).message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-6 rounded-3xl bg-white p-6 ring-1 ring-slate-900/5">
+      <h2 className="text-xl font-extrabold">{left.length ? 'How did we do? Rate your items' : 'Thank you for your reviews!'}</h2>
+      <p className="mt-1 text-sm text-slate-500">Your rating shows on the item in our shop under your first name and initial ({shownNameOf(order.name)}).</p>
+      <ul className="mt-4 flex flex-wrap gap-2">{items.map(([id, name]) => {
+        const done = order.reviewed.includes(id);
+        return <li key={id}><button type="button" disabled={done} onClick={() => setOpen(id)}
+          className={`rounded-full px-4 py-2 text-sm font-semibold ${done ? 'bg-emerald-50 text-emerald-800' : open === id ? 'bg-slate-900 text-white' : 'bg-slate-100 hover:bg-slate-200'}`}>{done ? '✓ ' : ''}{name}</button></li>; })}</ul>
+      {open && !order.reviewed.includes(open) && (
+        <form onSubmit={(e) => void send(e)} className="mt-5 space-y-4">
+          <StarPicker value={rating} onChange={setRating} name={`rating-${open}`} />
+          <label className="block text-sm font-semibold">Title <span className="font-normal text-slate-500">(optional)</span>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={80} className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 font-normal outline-none focus:border-indigo-500" placeholder="Great fit, soft cloth" /></label>
+          <label className="block text-sm font-semibold">Your review
+            <textarea value={body} onChange={(e) => setBody(e.target.value)} maxLength={1000} rows={4} required className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-2.5 font-normal outline-none focus:border-indigo-500" placeholder="How is the fit, the cloth, the print?" /></label>
+          {error && <p role="alert" className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">{error}</p>}
+          <button type="submit" disabled={busy} className="rounded-full bg-slate-900 px-6 py-3 font-bold text-white hover:bg-indigo-700 disabled:bg-slate-300">{busy ? 'Sending…' : 'Post my review'}</button>
+        </form>)}
+    </div>
+  );
+}
+/** "Juan dela Cruz" → "Juan C.", as the server shows it. */
+const shownNameOf = (name: string) => { const p = name.trim().split(/\s+/); return p.length > 1 ? `${p[0]} ${p[p.length - 1]![0]!.toUpperCase()}.` : p[0]!; };
+
 export function MyOrders() {
   const mine = rememberedOrders();
   const [rows, setRows] = useState<(CustomerOrder & { token: string })[] | null>(null);

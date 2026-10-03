@@ -58,6 +58,21 @@ function load(): State {
 /** How the shop takes online payments (GET /api/shp/payment), or null while online ordering is closed. */
 export interface OnlinePayment { bankName: string; accountName: string; accountHint: string | null; instructions: string | null; qrUrl: string; deliveryOptions: { name: string; feeCents: number; places: string[]; otherwise: boolean }[] }
 
+/** A buyer's rating and review (GET /api/shp/reviews), shown under their first name and initial. */
+export interface Review { id: string; productId: string; productName: string; rating: number; title: string | null; body: string; name: string; at: string }
+
+/** Every review the website shows, newest first; `reload` after the buyer adds one. */
+function useReviews(): { reviews: Review[]; reload: () => void } {
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    let live = true;
+    fetch('/api/shp/reviews', { credentials: 'same-origin' }).then((r) => (r.ok ? (r.json() as Promise<Review[]>) : [])).then((list) => live && setReviews(list), () => undefined);
+    return () => { live = false; };
+  }, [n]);
+  return { reviews, reload: () => setN((x) => x + 1) };
+}
+
 /** The shop's own products, or the samples when it has none yet or cannot be reached. */
 function useProducts(): { products: readonly Product[]; samples: boolean; ready: boolean; payment: OnlinePayment | null } {
   const [got, setGot] = useState<{ products: readonly Product[]; samples: boolean } | null>(null);
@@ -83,12 +98,15 @@ interface Shop extends State {
   orderable: (line: CartLine) => boolean;
   add: (lines: CartLine[]) => void; setQty: (line: CartLine, qty: number) => void; remove: (line: CartLine) => void;
   clearCart: () => void; toggleWish: (productId: string) => void; cartCount: number; cartTotalCents: number;
+  /** Buyers' reviews, newest first; a product's average rating and count (none: count 0). */
+  reviews: Review[]; ratingOf: (productId: string) => { average: number; count: number }; reloadReviews: () => void;
 }
 const ShopContext = createContext<Shop | null>(null);
 
 export function ShopProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, load);
   const { products, samples, ready, payment } = useProducts();
+  const { reviews, reload: reloadReviews } = useReviews();
   useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* private window: the cart lasts this visit */ } }, [state]);
   // Another tab changed the cart: follow it.
   useEffect(() => {
@@ -98,6 +116,8 @@ export function ShopProvider({ children }: { children: ReactNode }) {
   }, []);
   const value = useMemo<Shop>(() => {
     const byId = new Map(products.map((p) => [p.id, p]));
+    const ratings = new Map<string, { sum: number; count: number }>();
+    for (const r of reviews) { const x = ratings.get(r.productId) ?? { sum: 0, count: 0 }; ratings.set(r.productId, { sum: x.sum + r.rating, count: x.count + 1 }); }
     const cart = state.cart.filter((l) => { const p = byId.get(l.productId); return !!p && p.sizes.includes(l.size) && p.colours.some((c) => c.name === l.colour); });
     return {
       cart, wishlist: state.wishlist.filter((id) => byId.has(id)), products, samples, ready, productById: (id) => byId.get(id), payment,
@@ -109,8 +129,10 @@ export function ShopProvider({ children }: { children: ReactNode }) {
       toggleWish: (productId) => dispatch({ type: 'toggleWish', productId }),
       cartCount: cart.reduce((n, l) => n + l.qty, 0),
       cartTotalCents: cart.reduce((n, l) => n + l.qty * byId.get(l.productId)!.priceCents, 0),
+      reviews, reloadReviews,
+      ratingOf: (id) => { const x = ratings.get(id); return x ? { average: x.sum / x.count, count: x.count } : { average: 0, count: 0 }; },
     };
-  }, [state, products, samples, ready, payment]);
+  }, [state, products, samples, ready, payment, reviews]); // eslint-disable-line react-hooks/exhaustive-deps
   return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>;
 }
 

@@ -3,6 +3,7 @@
  * number (POST /api/shp/track): the status, items and dates only. The link /track?n=JO-000123 fills in the number.
  */
 import { useState, type FormEvent } from 'react';
+import { PageHero } from './Home.tsx';
 import { SHOP_CONTACT } from './products.ts';
 
 interface Tracked {
@@ -14,7 +15,6 @@ const STEPS: Record<Tracked['kind'], { steps: string[]; at: Record<string, numbe
   job_order: { steps: ['Order received', 'In production', 'Ready for release', 'Released'], at: { open: 0, in_production: 1, ready: 2, partially_released: 3, released: 3, closed: 3 } },
   online: { steps: ['Order placed', 'Payment sent', 'Paid · being prepared', 'Ready / sent', 'Completed'], at: { awaiting_payment: 0, payment_sent: 1, confirmed: 2, ready: 3, completed: 4 } },
 };
-const input = 'w-full rounded-full border border-slate-300 bg-white px-5 py-3 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100';
 const day = (d: string) => new Date(d.length === 10 ? `${d}T00:00:00+08:00` : d).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium' });
 
 export function Track({ query }: { query: string }) {
@@ -38,19 +38,20 @@ export function Track({ query }: { query: string }) {
   const flow = found ? STEPS[found.kind] : null;
   const at = found && flow ? flow.at[found.status] ?? -1 : -1;
   return (
-    <section className="mx-auto max-w-3xl px-4 pb-16 pt-12 sm:px-6">
-      <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-600">Track your order</p>
-      <h1 className="mt-3 text-4xl font-extrabold tracking-tight sm:text-5xl">Where is my order?</h1>
-      <p className="mt-3 text-lg text-slate-600">For orders placed on this website (WEB-…) and job orders made at the shop (JO-…).</p>
-      <form onSubmit={(e) => void search(e)} className="mt-6 grid gap-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-900/5 sm:grid-cols-[1fr_auto] sm:p-5" role="search">
-        <label className="text-sm font-semibold">Order or job order number<input className={`${input} mt-1`} value={number} onChange={(e) => setNumber(e.target.value)} placeholder="WEB-000012 or JO-000123" autoCapitalize="characters" /></label>
-        <button type="submit" disabled={busy} className="self-end rounded-full bg-indigo-600 px-7 py-3 font-bold text-white hover:bg-indigo-700 disabled:cursor-wait disabled:bg-slate-400">{busy ? 'Looking…' : 'Track'}</button>
+    <>
+    <PageHero eyebrow="Track your order" title={<>Where is <span className="text-emerald-300">my order?</span></>}
+      text="For orders placed on this website (WEB-…) and job orders made at the shop (JO-…).">
+      <form onSubmit={(e) => void search(e)} className="mt-8 flex max-w-xl flex-col gap-2 rounded-[1.75rem] bg-white p-2 sm:flex-row sm:rounded-full" role="search">
+        <input className="min-w-0 flex-1 rounded-full bg-transparent px-5 py-3 text-slate-900 outline-none" value={number} onChange={(e) => setNumber(e.target.value)} placeholder="WEB-000012 or JO-000123" autoCapitalize="characters" aria-label="Order or job order number" />
+        <button type="submit" disabled={busy} className="rounded-full bg-slate-900 px-7 py-3 font-bold text-white hover:bg-indigo-700 disabled:cursor-wait disabled:bg-slate-400">{busy ? 'Looking…' : 'Track'}</button>
       </form>
-      <p className="mt-2 text-xs text-slate-500">The number is on your order email, your order page, or the job order slip from the shop.</p>
+      <p className="mt-3 text-sm text-white/60">The number is on your order email, your order page, or the job order slip from the shop.</p>
+    </PageHero>
+    <section className="mx-auto max-w-3xl px-4 pb-6 pt-2 sm:px-6">
       {error && <p role="alert" className="mt-5 rounded-2xl bg-rose-50 px-5 py-4 text-sm font-semibold text-rose-800">{error}</p>}
 
       {found && flow && (
-        <div className="mt-6 space-y-5 rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-900/5" aria-live="polite">
+        <div className="mt-8 space-y-5 rounded-[2rem] bg-white p-6 ring-1 ring-slate-900/5 sm:p-8" aria-live="polite">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-sm text-slate-500">{found.kind === 'online' ? 'Online order' : 'Job order'} {found.number}{found.asked && found.asked !== found.number ? ` (replaces ${found.asked})` : ''}</p>
@@ -70,5 +71,6 @@ export function Track({ query }: { query: string }) {
         </div>
       )}
     </section>
+    </>
   );
 }

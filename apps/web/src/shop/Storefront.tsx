@@ -1,9 +1,8 @@
 /** The welcome page: a showcase store of the shop's garments, with filters and quick view (the cart lives in Site.tsx). */
 import { formatPeso } from '@moonproject/shared';
-import { useMemo, useState } from 'react';
-import { Link, navigate } from '../router.tsx';
-import { ProductPicture } from './GarmentArt.tsx';
-import { WishButton } from './Panels.tsx';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation } from '../router.tsx';
+import { CategoryTiles, HeroSlider, ProductCard, ProductRail, TrustStrip, isSoldOut } from './Home.tsx';
 import { SIZES, categoriesOf, type Category, type Product } from './products.ts';
 import type { SiteControls } from './Site.tsx';
 import { useShop } from './store.tsx';
@@ -42,6 +41,13 @@ export function Store({ openPanel, view }: SiteControls) {
   const [sort, setSort] = useState<Sort>('featured');
   const [showFilters, setShowFilters] = useState(false);
   const { products } = shop;
+  // The header's search sends shoppers here with ?q=…: search for it and bring the results into view.
+  const q = new URLSearchParams(useLocation().split('?')[1] ?? '').get('q');
+  useEffect(() => {
+    if (q === null) return;
+    setF({ ...NONE, text: q });
+    requestAnimationFrame(() => document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }));
+  }, [q]);
   // The filters offer what the shop's products have: their categories, colours and price range.
   const { categories, colours, low, high } = useMemo(() => ({
     categories: categoriesOf(products),
@@ -73,47 +79,14 @@ export function Store({ openPanel, view }: SiteControls) {
 
   return (
     <>
-      <section className="mx-auto grid max-w-7xl items-center gap-8 px-4 pb-10 pt-10 sm:px-6 md:grid-cols-[1.1fr_1fr] md:pt-16">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-600">{online ? 'Virtus Garments · own brand and made to order' : 'Virtus Garments · made to order'}</p>
-          <h1 className="mt-4 text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">Team wear, uniforms and custom prints, <span className="text-indigo-600">made for you.</span></h1>
-          <p className="mt-5 max-w-xl text-lg text-slate-600">{online
-            ? `Buy our own-brand ready-to-wear online and pay by ${shop.payment!.bankName} QR, or send your team's list for a quotation and a design proof.`
-            : 'Pick your garments, set the sizes for everyone, and send us the list. We reply with a quotation and a design proof.'}</p>
-          <div className="mt-7 flex flex-wrap gap-3">
-            {online ? <>
-              <button type="button" onClick={() => toShop('ready')} className="rounded-full bg-indigo-600 px-7 py-3.5 font-bold text-white hover:bg-indigo-700">Shop ready-to-wear</button>
-              <button type="button" onClick={() => navigate('/support?type=quotation')} className="rounded-full border border-slate-300 px-7 py-3.5 font-bold hover:border-slate-900">Get a team quote</button>
-            </> : <>
-              <a href="#shop" className="rounded-full bg-slate-900 px-7 py-3.5 font-bold text-white hover:bg-indigo-700">Browse garments</a>
-              <button type="button" onClick={() => openPanel('sizes')} className="rounded-full border border-slate-300 px-7 py-3.5 font-bold hover:border-slate-900">Find your size</button>
-            </>}
-          </div>
-        </div>
-        <div className="relative grid grid-cols-3 gap-3">
-          {products.slice(0, 3).map((p, i) => (
-            <button key={p.id} type="button" onClick={() => view(p)} className={`grid aspect-[3/4] place-items-center overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-900/5 transition hover:-translate-y-1 ${i === 1 ? 'mt-10' : ''}`} aria-label={`Quick view: ${p.name}`}>
-              <ProductPicture product={p} colour={p.colours[i % p.colours.length]!.hex} className={p.photoUrl ? '' : 'w-4/5'} />
-            </button>))}
-        </div>
-      </section>
+      <HeroSlider products={products} online={online} payment={shop.payment} toShop={toShop} />
+      <TrustStrip online={online} payment={shop.payment} />
+      <CategoryTiles products={products} categories={categories} pick={(c) => { setF({ ...NONE, categories: [c] }); document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }); }} />
+      <ProductRail eyebrow="Featured" title={online ? 'Picked for you' : 'Popular garments'} products={products.filter((p) => p.badge && !isSoldOut(p)).slice(0, 8)} online={online} view={view} />
 
-      {online && (
-        <section className="mx-auto max-w-7xl px-4 pb-10 sm:px-6" aria-label="How ordering online works">
-          <div className="grid gap-3 rounded-3xl bg-indigo-600 p-5 text-white sm:grid-cols-[auto_1fr_1fr_1fr] sm:items-center sm:p-6">
-            <p className="text-lg font-extrabold sm:pr-4">Order online,<br className="hidden sm:block" /> pay by QR</p>
-            {[['1', 'Add ready-to-wear to your cart', 'Pick the size and colour; we show how many are left.'],
-              ['2', `Pay by ${shop.payment!.bankName} QR`, 'Pay the exact amount, then send the reference and a screenshot.'],
-              ['3', 'We confirm and prepare it', 'Pick it up at the shop or have it delivered.']].map(([n, t, d]) => (
-              <div key={n} className="flex gap-3 rounded-2xl bg-white/10 p-3">
-                <span className="grid size-8 shrink-0 place-items-center rounded-full bg-white text-sm font-extrabold text-indigo-700">{n}</span>
-                <div><p className="font-bold">{t}</p><p className="text-sm text-white/80">{d}</p></div>
-              </div>))}
-          </div>
-        </section>
-      )}
-
-      <section id="shop" className="mx-auto max-w-7xl scroll-mt-20 px-4 pb-16 sm:px-6">
+      <section id="shop" className="mx-auto max-w-7xl scroll-mt-24 px-4 pb-16 pt-16 sm:px-6">
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">The shop</p>
+        <h2 className="mb-5 mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">All garments</h2>
         <div className="flex gap-2 overflow-x-auto pb-2">
           <button type="button" className={chip(!f.categories.length)} onClick={() => setF({ ...f, categories: [] })}>All</button>
           {categories.map((c) => <button key={c} type="button" className={`${chip(f.categories.includes(c))} shrink-0`} onClick={() => setF({ ...f, categories: toggle(f.categories, c) })}>{c} <span className="opacity-60">{count('categories', (p) => p.category === c)}</span></button>)}
@@ -166,34 +139,9 @@ export function Store({ openPanel, view }: SiteControls) {
                 <button type="button" onClick={() => setF(NONE)} className="mt-3 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-bold text-white">Show everything</button>
               </div>
             ) : (
-              <ul className="mt-5 grid grid-cols-2 gap-4 sm:gap-5 xl:grid-cols-3">{shown.map((p) => (
-                <li key={p.id} className="group relative flex flex-col rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-900/5 transition hover:shadow-md">
-                  <div className="relative grid aspect-square place-items-center overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-slate-100">
-                    <ProductPicture product={p} colour={(f.colours.length ? p.colours.find((c) => f.colours.includes(c.name)) : undefined)?.hex ?? p.colours[0]!.hex} className={`transition duration-300 group-hover:scale-105 ${p.photoUrl ? '' : 'w-3/4'}`} />
-                    {p.stock && p.stock.every((s) => s.available === 0)
-                      ? <span className="absolute left-2 top-2 rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm">Sold out</span>
-                      : p.badge && <span className="absolute left-2 top-2 rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-slate-800 shadow-sm">{p.badge}</span>}
-                    <WishButton product={p} className="absolute right-2 top-2" />
-                    <button type="button" onClick={() => view(p)} className="absolute inset-x-2 bottom-2 rounded-full bg-slate-900/90 py-2 text-sm font-bold text-white opacity-100 transition sm:translate-y-2 sm:opacity-0 sm:group-hover:translate-y-0 sm:group-hover:opacity-100 sm:focus:translate-y-0 sm:focus:opacity-100">View details</button>
-                  </div>
-                  <div className="flex flex-1 flex-col px-1 pt-3">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{p.category}</p>
-                    <h3 className="mt-0.5 font-bold leading-snug"><button type="button" onClick={() => view(p)} className="text-left hover:text-indigo-700">{p.name}</button></h3>
-                    <div className="mt-auto flex items-end justify-between gap-2 pt-2">
-                      <p className="text-sm">{p.madeToOrder && <span className="text-slate-500">from </span>}<b>{formatPeso(p.priceCents)}</b></p>
-                      <div className="flex -space-x-1">{p.colours.map((c) => <span key={c.name} className="size-3.5 rounded-full ring-2 ring-white" style={{ background: c.hex }} title={c.name} />)}</div>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500">{p.madeToOrder ? `Min. ${p.minQty} pcs · ${p.leadDays} days` : stockWords(p)}</p>
-                    {(() => {
-                      // What the customer can do with it: buy a ready-stock piece online, or ask for a quotation.
-                      const soldOut = !!p.stock && p.stock.every((s) => s.available === 0);
-                      const buy = online && !p.madeToOrder && !!p.stock;
-                      const label = p.madeToOrder || !online ? 'Get a quote' : soldOut ? 'Sold out' : 'Buy online';
-                      return <button type="button" disabled={buy && soldOut} onClick={() => view(p)}
-                        className={`mt-3 w-full rounded-full py-2 text-sm font-bold transition disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 ${buy ? 'bg-indigo-600 text-white hover:bg-indigo-700' : 'border border-slate-300 text-slate-800 hover:border-slate-900'}`}>{label}</button>;
-                    })()}
-                  </div>
-                </li>))}</ul>
+              <ul className="mt-5 grid grid-cols-2 gap-x-4 gap-y-8 sm:gap-x-5 xl:grid-cols-3">{shown.map((p) => (
+                <li key={p.id}><ProductCard p={p} online={online} view={view} colourHex={(f.colours.length ? p.colours.find((c) => f.colours.includes(c.name)) : undefined)?.hex} />
+                  <p className="mt-1 px-1 text-xs text-slate-500">{p.madeToOrder ? `Min. ${p.minQty} pcs · ${p.leadDays} days` : stockWords(p)}</p></li>))}</ul>
             )}
           </div>
         </div>

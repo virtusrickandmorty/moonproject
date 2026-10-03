@@ -1,7 +1,7 @@
 /**
  * One employee (PLAN E11): the record and its edits (If-Match), the statutory switches, government IDs (only with
  * emp.view_ids), separation, paid leave (SIL) this year, the pay history with a new pay from a date (pay.view_rates), and
- * the employee's government loans (pay.loans.view) and pay before Moonproject (pay.prior.view).
+ * the employee's government loans (pay.loans.view) and pay before Virtus (pay.prior.view).
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type EmployeeDetail, type EmployeeRecord, type Me, type PayProfile } from '../../api.ts';

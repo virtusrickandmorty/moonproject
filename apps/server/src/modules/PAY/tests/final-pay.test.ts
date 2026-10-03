@@ -46,12 +46,12 @@ function separate(w: World, id: string, separatedOn: string) {
   const version = String(w.db.prepare('SELECT version FROM emp_employees WHERE id = ?').pluck().get(id));
   return tx(w.db, () => separateEmployee(w.db, id, version, { separatedOn, reason: 'Resigned to move to the province (made up)' }, w.who()));
 }
-/** Jan–Aug before Moonproject for a ₱30,000 a month employee: 8 × 30,000 gross, shares 8 × (1,500 + 750 + 200). */
+/** Jan–Aug before Virtus for a ₱30,000 a month employee: 8 × 30,000 gross, shares 8 × (1,500 + 750 + 200). */
 const JAN_AUG = { sssCents: 1_200_000, phicCents: 600_000, hdmfCents: 160_000, taxableCents: 22_040_000 };
 
 /**
  * Olga, ₱30,000 a month (office, hired 2024), took 2 days of SIL in March, owes ₱15,000 on a cash advance and had
- * ₱5,000 withheld before Moonproject; she leaves on Wed 2026-09-10. Her final pay is the Sep 1–15 run.
+ * ₱5,000 withheld before Virtus; she leaves on Wed 2026-09-10. Her final pay is the Sep 1–15 run.
  */
 async function olgaLeaves() {
   const w = await world('2026-09-01');

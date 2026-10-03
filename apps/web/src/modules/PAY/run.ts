@@ -172,7 +172,7 @@ export function thirteenthText(e: Payslips['employees'][number]): string {
   return [`13th month: ${peso(e.thirteenthCents)} this payroll, ${peso(e.ytd.thirteenthCents)} so far this year`, ...paid].join('; ');
 }
 
-/** The pay-before-Moonproject form's amounts, as typed. */
+/** The pay-before-Virtus form's amounts, as typed. */
 export type PriorForm = Record<'gross' | 'benefits' | 'deMinimis' | 'sss' | 'phic' | 'hdmf' | 'otherNontax' | 'taxable' | 'wtax', string>;
 export const PRIOR_FIELDS: [keyof PriorForm, string][] = [
   ['gross', 'Gross compensation'], ['benefits', '13th month and other benefits (exempt, up to ₱90,000)'], ['deMinimis', 'De minimis benefits'], ['sss', 'SSS (employee share)'],

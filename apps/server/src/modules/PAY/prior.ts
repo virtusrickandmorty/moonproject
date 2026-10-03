@@ -1,6 +1,6 @@
 /**
- * Pay before Moonproject (PLAN F3 year-end adjustment, F4 2316): per employee and year, what this shop paid and withheld
- * before it used Moonproject ('before'), and what a previous employer paid and withheld this year, from its 2316
+ * Pay before Virtus (PLAN F3 year-end adjustment, F4 2316): per employee and year, what this shop paid and withheld
+ * before it used Virtus ('before'), and what a previous employer paid and withheld this year, from its 2316
  * ('previous'). The year-end tax adjustment and the 2316 add them to the recorded payrolls. Master data, the accountant's:
  * changed in place with If-Match and an audit row, never deleted (a wrong row is changed to zeros). While a recorded
  * year-end adjustment counted the year, its rows stay as they are: cancel that payroll first.
@@ -43,7 +43,7 @@ function withoutAmounts<T extends Record<string, unknown>>(row: T) {
 
 function mustGet(db: Db, id: string): PriorPay {
   const p = priorRows(db, { id })[0];
-  if (!p) throw notFound('That pay before Moonproject');
+  if (!p) throw notFound('That pay before Virtus');
   return p;
 }
 
@@ -56,10 +56,10 @@ function check(db: Db, p: Omit<PriorPay, 'id' | 'version' | 'employeeName' | 'cr
   if (p.year > +today.slice(0, 4)) throw badRequest('BAD_YEAR', `${p.year} has not started yet.`);
   if (p.source === 'previous' && !p.employerName) throw badRequest('EMPLOYER_NEEDED', 'Type the previous employer’s name, as on its 2316.');
   const done = yearEndDoneBy(db, p.employeeId, p.year);
-  if (done) throw conflict('YEAR_END_DONE', `${done} did the ${p.year} year-end tax adjustment with the pay before Moonproject as it is. Cancel that payroll first, then change this and work it out again.`);
+  if (done) throw conflict('YEAR_END_DONE', `${done} did the ${p.year} year-end tax adjustment with the pay before Virtus as it is. Cancel that payroll first, then change this and work it out again.`);
 }
 
-/** Records one employee's pay before Moonproject for a year and source. Call inside a transaction. */
+/** Records one employee's pay before Virtus for a year and source. Call inside a transaction. */
 export function addPrior(db: Db, raw: unknown, who: Who): PriorPay {
   const v = priorInput.parse(raw);
   const e = employee(db, v.employeeId);
@@ -68,7 +68,7 @@ export function addPrior(db: Db, raw: unknown, who: Who): PriorPay {
   if (v.source === 'before' && (v.employerName || v.employerTin)) throw badRequest('NOT_PREVIOUS', 'An employer is named only for a previous employer.');
   check(db, row, who.today);
   if (priorRows(db, { employeeId: v.employeeId, year: v.year, source: v.source }).length) {
-    throw conflict('DUPLICATE', `${e.name} already has ${v.source === 'before' ? 'pay before Moonproject' : 'a previous employer'} for ${v.year}. Change that row instead.`);
+    throw conflict('DUPLICATE', `${e.name} already has ${v.source === 'before' ? 'pay before Virtus' : 'a previous employer'} for ${v.year}. Change that row instead.`);
   }
   const id = newId();
   db.prepare(

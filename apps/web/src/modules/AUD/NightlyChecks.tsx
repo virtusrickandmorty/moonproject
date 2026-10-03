@@ -39,7 +39,7 @@ export function NightlyChecks({ me }: { me: Me }) {
   return <article className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-semibold">Nightly checks</h1>
       {canRun && <Button disabled={busy} onClick={() => void runNow()}>{busy ? 'Checking…' : 'Run the checks now'}</Button>}</div>
-    <p className="text-sm text-slate-600">Every night at 2:00 AM, or at the next start if this PC was off, Moonproject checks the books and lists anything to look at.
+    <p className="text-sm text-slate-600">Every night at 2:00 AM, or at the next start if this PC was off, Virtus checks the books and lists anything to look at.
       Running the checks by hand only reads: it changes nothing.</p>
     {error && <Notice>{error}</Notice>}
     {now && <Panel title={`Checked just now (${now.from === now.to ? now.to : `${now.from} to ${now.to}`})`}><Checks checks={now.checks} /></Panel>}

@@ -1,7 +1,7 @@
 /**
  * Command-line restore, for a new PC after the old one died (PLAN C8: "new PC → Setup → Restore from backup →
- * recovery key"). Run with Moonproject stopped:
- *   npm run restore -- D:\Moonproject-Backups\offsite\moonproject-2026-09-28T10-00-00-daily.db.gz.age
+ * recovery key"). Run with Virtus stopped:
+ *   npm run restore -- D:\Virtus-Backups\offsite\moonproject-2026-09-28T10-00-00-daily.db.gz.age
  * It asks for recovery key A or B, checks the backup like the restore wizard, and puts it in place of the database
  * (MOONPROJECT_DB, default data/moonproject.db); a database already there is kept as before-restore-….db.
  */
@@ -48,7 +48,7 @@ try {
   if (facts.attachments.missing.length || facts.attachments.changed.length) {
     console.warn(`Attached files not in the backup or changed, not restored: ${[...facts.attachments.missing, ...facts.attachments.changed].join(', ')}`);
   }
-  console.log(`The database it replaced, if any, is kept as ${r.previous}. Start Moonproject now.`);
+  console.log(`The database it replaced, if any, is kept as ${r.previous}. Start Virtus now.`);
 } catch (e) {
   console.error(`Not restored: ${(e as Error).message}`);
   process.exit(1);

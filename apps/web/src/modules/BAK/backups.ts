@@ -37,7 +37,7 @@ export function staleWords(s: Pick<BackupStatus, 'lastOk' | 'stale'>, now: strin
   return s.lastOk ? `Backups are stale: the last good backup was ${agoWords(s.lastOk.at, now)}.` : 'Backups are stale: no backup has worked yet.';
 }
 
-export const pendingRestoreWords = (p: { file: string }) => `Moonproject restarts by itself to finish the restore of ${p.file}. If it has not within a few minutes, restart this PC.`;
+export const pendingRestoreWords = (p: { file: string }) => `Virtus restarts by itself to finish the restore of ${p.file}. If it has not within a few minutes, restart this PC.`;
 
 const REASONS: Record<BackupRun['reason'], string> = { schedule: 'Scheduled', manual: 'Back up now', pre_update: 'Before an update' };
 

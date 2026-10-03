@@ -313,7 +313,7 @@ export interface PayYearEnd {
   year: number; taxableCents: number; benefitsTaxableCents: number; annualTaxCents: number; withheldBeforeCents: number;
   deficiencyCents: number; withheldCents: number; shortCents: number; refundCents: number;
 }
-/** Pay before Moonproject (this shop's, 'before') or a previous employer's ('previous'), per employee and year; the parts add up to the gross. */
+/** Pay before Virtus (this shop's, 'before') or a previous employer's ('previous'), per employee and year; the parts add up to the gross. */
 export interface PriorPay {
   id: string; employeeId: string; employeeName: string; year: number; source: 'before' | 'previous'; employerName: string | null; employerTin: string | null;
   grossCents: number; benefitsCents: number; deMinimisCents: number; sssCents: number; phicCents: number; hdmfCents: number; otherNontaxCents: number;

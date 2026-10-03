@@ -4,7 +4,7 @@
  * zero. The remittance remits the net (tax withheld less refunds) and credits 2310 for each refund; when December's
  * refunds are more than its tax, December has nothing to remit and the excess comes off January's remittance, which
  * settles both months. Built on the PAY year-end goldens (PAY/tests/year-end.test.ts): ₱30,000 a month office staff,
- * January to November before Moonproject, December 1–15 withholding 432.45, the tax due for the year 12,090.00.
+ * January to November before Virtus, December 1–15 withholding 432.45, the tax due for the year 12,090.00.
  * Made-up people only.
  */
 import { describe, expect, it } from 'vitest';
@@ -33,7 +33,7 @@ function journal(env: TestEnv, documentId: string, kind: 'original' | 'reversal'
 }
 
 /**
- * Olga and Uri, ₱30,000 a month, with January to November before Moonproject (₱303,050.00 taxable). Olga's old payroll
+ * Olga and Uri, ₱30,000 a month, with January to November before Virtus (₱303,050.00 taxable). Olga's old payroll
  * withheld `olgaBefore`, Uri's ₱5,000.00. December: 1–15 as usual (432.45 each), 16–31 with the year-end adjustment.
  * Uri: 5,432.45 withheld before, 12,090.00 due → 6,657.55 more; December 2310 = 432.45 + 6,657.55 = 7,090.00.
  */

@@ -141,6 +141,8 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
   const [shutHere, setShutHere] = useState(false);
   const menu = useMemo(() => buildMenu(docTypes, new Set(me.permissions)), [docTypes, me.permissions]);
   useEffect(() => { setOpen(null); setShutHere(false); }, [path]);
+  // The tab says the app's name inside the ERP (the website's pages set their own titles for search engines).
+  useEffect(() => { if (!document.title.startsWith('PRACTICE')) document.title = 'Virtus'; }, []);
   const toggle = (w: typeof open) => setOpen(open === w ? null : w);
   const creatable = docTypes.filter((d) => d.canCreate);
   const toggleMenu = () => (window.matchMedia('(min-width: 768px)').matches ? setWide(!wide) : toggle('menu'));
