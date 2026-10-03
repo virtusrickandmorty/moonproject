@@ -3,8 +3,8 @@ import type { CalItem, CalKind } from '../../api.ts';
 export const KINDS: { kind: CalKind; label: string }[] = [
   { kind: 'event', label: 'Booked events' }, { kind: 'job_due', label: 'Job orders due' },
   { kind: 'release', label: 'Releases' }, { kind: 'holiday', label: 'Holidays' },
-  { kind: 'tax', label: 'Tax deadlines' }, { kind: 'customer_birthday', label: 'Customer birthdays' },
-  { kind: 'employee_birthday', label: 'Employee birthdays' },
+  { kind: 'tax', label: 'Tax deadlines' }, { kind: 'remittance', label: 'Government remittances' },
+  { kind: 'customer_birthday', label: 'Customer birthdays' }, { kind: 'employee_birthday', label: 'Employee birthdays' },
 ];
 const pad = (n: number) => String(n).padStart(2, '0');
 export const dayString = (year: number, month: number, day: number) => `${year}-${pad(month)}-${pad(day)}`;

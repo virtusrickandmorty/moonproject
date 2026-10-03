@@ -150,7 +150,7 @@ export interface DashOwnerHealth {
   taxDeadlines: { form: string; periodLabel: string; dueDate: string }[];
 }
 export interface DashNotification extends DashItem { kind: string; read: boolean }
-export type CalKind = 'event' | 'job_due' | 'release' | 'holiday' | 'tax' | 'customer_birthday' | 'employee_birthday';
+export type CalKind = 'event' | 'job_due' | 'release' | 'holiday' | 'tax' | 'remittance' | 'customer_birthday' | 'employee_birthday';
 export interface CalItem { id: string; date: string; kind: CalKind; title: string; href: string; time?: string | null; notes?: string | null; rush?: boolean }
 export interface CalEvent { id: string; eventId: string; seq: number; action: 'create' | 'move' | 'cancel'; title: string; date: string; time: string | null; customerId: string | null; jobOrderId: string | null; notes: string | null; reason: string | null; createdAt: string; createdBy: string }
 export interface CalEventInput { title: string; date: string; time?: string | null; customerId?: string | null; jobOrderId?: string | null; notes?: string | null }
@@ -536,7 +536,7 @@ export interface WithholdingRegister {
   })[];
   totals: { cwtCents: number; vatWithheldCents: number }; glCwtCents: number; glVatWithheldCents: number; pendingCount: number;
 }
-export interface TaxDeadline { form: string; title: string; period: string; periodLabel: string; periodStart: string; periodEnd: string; statutoryDate: string; dueDate: string }
+export interface TaxDeadline { form: string; title: string; period: string; periodLabel: string; periodStart: string; periodEnd: string; statutoryDate: string; dueDate: string; status: 'filed' | 'not_yet_filed' | 'late'; reference: string | null; recordedAt: string | null }
 export interface VatSummary {
   year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string; returnDue: string; outputVatCents: number; inputVatCents: number; vatWithheldCents: number;
   carryOverCents: number; vatWithheldPendingCents: number; payableCents: number; carryForwardCents: number;

@@ -17,11 +17,11 @@ export function customerRef(db: Db, id: string): CustomerRef | undefined {
 }
 
 /** Tax details used when a sale is written into the manual invoice booklet. */
-export function customerTaxInfo(db: Db, id: string): { tin: string | null; registeredName: string | null; isVatRegistered: boolean } | undefined {
-  const row = db.prepare('SELECT tin, registered_name, is_vat_registered FROM cus_customers WHERE id = ?').get(id) as
-    | { tin: string | null; registered_name: string | null; is_vat_registered: number }
+export function customerTaxInfo(db: Db, id: string): { tin: string | null; registeredName: string | null; isVatRegistered: boolean; withholdingProfile: 'none' | 'twa_goods' | 'twa_services' | 'government' | 'platform' } | undefined {
+  const row = db.prepare('SELECT tin, registered_name, is_vat_registered, withholding_profile FROM cus_customers WHERE id = ?').get(id) as
+    | { tin: string | null; registered_name: string | null; is_vat_registered: number; withholding_profile: 'none' | 'twa_goods' | 'twa_services' | 'government' | 'platform' }
     | undefined;
-  return row && { tin: row.tin, registeredName: row.registered_name, isVatRegistered: row.is_vat_registered === 1 };
+  return row && { tin: row.tin, registeredName: row.registered_name, isVatRegistered: row.is_vat_registered === 1, withholdingProfile: row.withholding_profile };
 }
 
 /** Active, unmerged customers for customer pickers in sales documents. */

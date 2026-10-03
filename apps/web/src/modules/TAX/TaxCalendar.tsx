@@ -1,7 +1,7 @@
 /**
  * The tax calendar (PLAN E12, D8): each BIR return due in a range of dates (today and the 60 days after when the screen
- * opens), with the period it covers. The server works out the due dates, moved past weekends and holidays. Filed
- * returns are not recorded yet, so the screen never calls a date late.
+ * opens), with the period it covers and its filing status. The server works out the due dates, moved past weekends
+ * and holidays, and matches the standing filing records.
  */
 import { api, type Me } from '../../api.ts';
 import { Notice, Panel } from '../../components/ui.tsx';
@@ -29,7 +29,7 @@ export function TaxCalendar({ me }: { me: Me }) {
           {d.length === 0 ? <p className="text-sm text-slate-500">Nothing is due in these dates.</p> : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="text-left text-slate-500"><tr><th className="pr-3">Due</th><th className="pr-3">Form</th><th className="pr-3">What</th><th>Period</th></tr></thead>
+                <thead className="text-left text-slate-500"><tr><th className="pr-3">Due</th><th className="pr-3">Form</th><th className="pr-3">What</th><th className="pr-3">Period</th><th>Status</th></tr></thead>
                 <tbody>
                   {d.map((x) => (
                     <tr key={`${x.form} ${x.period}`} className="border-t border-slate-100 align-top">
@@ -41,14 +41,17 @@ export function TaxCalendar({ me }: { me: Me }) {
                         {worksheetOfDeadline(x) ? <Link to={worksheetOfDeadline(x)!} className="underline">{x.form}</Link> : x.form}
                       </td>
                       <td className="py-1 pr-3">{x.title}</td>
-                      <td className="py-1">{x.periodLabel}</td>
+                      <td className="py-1 pr-3">{x.periodLabel}</td>
+                      <td className="py-1">
+                        <span className={x.status === 'late' ? 'font-medium text-red-700' : ''}>{x.status === 'filed' ? 'Filed' : x.status === 'late' ? 'Late' : 'Not yet filed'}</span>
+                        {x.status === 'filed' && <span className="block text-xs text-slate-500">{x.reference} · recorded {x.recordedAt?.slice(0, 10)}</span>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-          <p className="text-xs text-slate-500">Filed returns are not recorded in Moonproject yet, so this list shows what falls due, not what is already filed.</p>
         </Panel>
       )}
     </div>

@@ -44,10 +44,10 @@ describe('CUS master data', () => {
     env = await createTestEnv();
     const encoder = await env.as('encoder');
     const first = (await encoder.post('/api/cus/customers', { kind: 'organization', displayName: 'Fictional Academy',
-      registeredName: 'Fictional Academy Inc.', tin: '000-111-222', isVatRegistered: true })).json();
+      registeredName: 'Fictional Academy Inc.', tin: '000-111-222', isVatRegistered: true, withholdingProfile: 'government' })).json();
     const second = (await encoder.post('/api/cus/customers', { kind: 'person', displayName: 'Sample Customer' })).json();
-    expect(customerTaxInfo(env.db, first.id)).toEqual({ tin: '000-111-222', registeredName: 'Fictional Academy Inc.', isVatRegistered: true });
-    expect(customerTaxInfo(env.db, second.id)).toEqual({ tin: null, registeredName: null, isVatRegistered: false });
+    expect(customerTaxInfo(env.db, first.id)).toEqual({ tin: '000-111-222', registeredName: 'Fictional Academy Inc.', isVatRegistered: true, withholdingProfile: 'government' });
+    expect(customerTaxInfo(env.db, second.id)).toEqual({ tin: null, registeredName: null, isVatRegistered: false, withholdingProfile: 'none' });
     expect(customerTaxInfo(env.db, 'missing')).toBeUndefined();
     expect((await encoder.post(`/api/cus/customers/${second.id}/deactivate`, {}, { 'if-match': '1' })).statusCode).toBe(200);
     expect(activeCustomers(env.db)).toEqual([{ id: first.id, name: 'Fictional Academy' }]);

@@ -3,9 +3,10 @@
  * registers and the VAT position the close posts, so the worksheet agrees with the close; the checks before filing;
  * a late item after the close; the CSV; and who may see it.
  */
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
+import * as registers from '../registers.ts';
 
 let env: TestEnv;
 let encoder: Client, accountant: Client;
@@ -68,7 +69,7 @@ describe('2550Q worksheet', () => {
     const w = (await worksheet(2026, 3)).json();
     expect([w.from, w.to, w.returnDue, w.close]).toEqual(['2026-07-01', '2026-09-30', '2026-10-26', null]);
     expect(items(w)).toEqual({
-      vatable_sales: [1_500_000, 180_000], zero_rated_sales: [0, 0], exempt_sales: [0, 0],
+      vatable_sales: [1_500_000, 180_000], government_sales: [0, 0], zero_rated_sales: [0, 0], exempt_sales: [0, 0],
       uncollected_receivables: [null, 0], recovered_receivables: [null, 0], output_tax: [1_500_000, 180_000],
       input_carried_over: [null, 30_000], capital_goods: [0, 0], goods: [100_000, 12_000], services: [0, 0],
       no_input_capital_goods: [0, 0], no_input_goods: [0, 0], no_input_services: [0, 0], no_input_tax: [0, 0], to_classify: [0, 40_000],
@@ -77,6 +78,40 @@ describe('2550Q worksheet', () => {
     const summary = (await accountant.get('/api/tax/vat-summary?year=2026&quarter=3')).json();
     expect([summary.outputVatCents, summary.inputVatCents + summary.carryOverCents, summary.payableCents]).toEqual([180_000, 82_000, 73_000]);
     expect(codes(w)).toEqual(['TO_CLASSIFY', 'PENDING_2307', 'QUARTER_OPEN']);
+  });
+
+  it('shows government sales as part of VATable sales without changing any other line or check', async () => {
+    const before = (await worksheet(2026, 3)).json();
+    expect(items(before).government_sales).toEqual([0, 0]);
+    expect((await encoder.put(`/api/cus/customers/${c.school}`, { withholdingProfile: 'government' }, { 'if-match': '1' })).statusCode).toBe(200);
+    const after = (await worksheet(2026, 3)).json();
+    expect(after.lines[1]).toEqual({ key: 'government_sales', label: 'Of which: sales to government', amountCents: 1_000_000, taxCents: 120_000 });
+    const withoutGovernment = (w: { lines: Line[] }) => ({ ...w, lines: w.lines.filter((l) => l.key !== 'government_sales') });
+    expect(withoutGovernment(after)).toEqual(withoutGovernment(before));
+    const csv = await accountant.get('/api/tax/2550q?year=2026&quarter=3&format=csv');
+    expect(csv.body).toContain('"Of which: sales to government","10000.00","1200.00"');
+  });
+
+  it('nets a cancelled government sale out of the government line', async () => {
+    expect((await encoder.put(`/api/cus/customers/${c.school}`, { withholdingProfile: 'government' }, { 'if-match': '1' })).statusCode).toBe(200);
+    expect(items((await worksheet(2026, 3)).json()).government_sales).toEqual([1_000_000, 120_000]);
+    const saleId = env.db.prepare("SELECT id FROM documents WHERE doc_type = 'qs.sale' AND external_number = '0701'").pluck().get() as string;
+    expect((await accountant.post(`/api/qs/sales/${saleId}/cancel`, { reason: 'Recorded against the wrong buyer' }, idem())).statusCode).toBe(200);
+    const after = (await worksheet(2026, 3)).json();
+    expect(items(after)).toMatchObject({ government_sales: [0, 0], vatable_sales: [500_000, 60_000], output_tax: [500_000, 60_000] });
+    expect(codes(after).some((code) => code.endsWith('_NOT_TIED'))).toBe(false);
+  });
+
+  it('treats register rows without a customer as private sales', async () => {
+    expect((await encoder.put(`/api/cus/customers/${c.school}`, { withholdingProfile: 'government' }, { 'if-match': '1' })).statusCode).toBe(200);
+    // Exercise the register's nullable customer contract; QS itself uses a walk-in customer record.
+    const sales = registers.salesRegister(env.db, '2026-07-01', '2026-09-30');
+    const spy = vi.spyOn(registers, 'salesRegister').mockReturnValue({
+      ...sales, rows: sales.rows.map((r) => r.customerId === c.school ? { ...r, customerId: null } : r),
+    });
+    try {
+      expect(items((await worksheet(2026, 3)).json())).toMatchObject({ government_sales: [0, 0], vatable_sales: [1_500_000, 180_000] });
+    } finally { spy.mockRestore(); }
   });
 
   it('asks for the close once the quarter ends; a late item after the close is flagged, then swept into the next quarter', async () => {
@@ -106,6 +141,7 @@ describe('2550Q worksheet', () => {
     const csv = await accountant.get('/api/tax/2550q?year=2026&quarter=3&format=csv');
     expect(csv.headers['content-disposition']).toContain('2550Q-worksheet-2026-Q3.csv');
     expect(csv.body).toContain('"VATable sales","15000.00","1800.00"');
+    expect(csv.body).toContain('"Of which: sales to government","0.00","0.00"');
     expect(csv.body).toContain('"Tax still payable","","730.00"');
     expect((await worksheet(2026, 3, encoder)).statusCode).toBe(403);
     expect((await accountant.get('/api/tax/2550q?year=2026&quarter=5')).json().code).toBe('BAD_QUARTER');
