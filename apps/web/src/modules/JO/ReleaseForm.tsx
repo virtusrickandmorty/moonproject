@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, ApiError, newIdempotencyKey, type DocTypeInfo, type JoStatus, type Me, type ReleasePreview } from '../../api.ts';
 import { navigate } from '../../router.tsx';
 import { Button, Dialog, Field, JournalTable, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
+import { SalesActions } from './entry.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, Figures, useLive } from '../COL/parts.tsx';
@@ -82,7 +83,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
 
   if (mode.kind === 'edit') return <Notice tone="info">A recorded release is not edited: cancel it (and its invoice record first, if any), then release again.</Notice>;
   return (
-    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className="space-y-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-0">
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">New release slip</h1>
         {error && <Notice>{error}</Notice>}
@@ -90,33 +91,6 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
           <JoPicker value={jo} onChange={(x) => (x ? void choose(x.id) : (setJo(null), setStatus(null), setV(emptyRelease())))} />
           {status && <p className="text-sm text-slate-600">{status.stageLabel} · due {status.jobOrder.dueDate} · balance due <b className="tabular-nums text-slate-900">{peso(status.money.balanceDueCents)}</b></p>}
         </Panel>
-        {status && (
-          <Panel title="What goes out">
-            <table className="w-full text-sm">
-              <thead className="text-left text-slate-500"><tr><th className="w-8" /><th>Line</th><th className="text-right">Ordered</th><th className="text-right">Released</th><th className="w-28 text-right">Pieces now</th></tr></thead>
-              <tbody>
-                {status.lines.map((l) => {
-                  const typedQty = v.qtys[l.lineNo] ?? '';
-                  const ticked = !!typedQty.trim() && typedQty.trim() !== '0';
-                  return (
-                    <tr key={l.lineNo} className={`border-t border-slate-100 ${l.leftQty === 0 ? 'text-slate-400' : ''}`}>
-                      <td className="py-1">
-                        <input type="checkbox" aria-label={`Release line ${l.lineNo}`} disabled={l.leftQty === 0} checked={ticked}
-                          onChange={(e) => set({ qtys: { ...v.qtys, [l.lineNo]: e.target.checked ? String(l.leftQty) : '' } })} />
-                      </td>
-                      <td className="py-1">{l.lineNo}. {l.description}</td>
-                      <td className="py-1 text-right tabular-nums">{l.qty}</td>
-                      <td className="py-1 text-right tabular-nums">{l.releasedQty}</td>
-                      <td className="py-1">
-                        {l.leftQty > 0 ? <input aria-label={`Pieces of line ${l.lineNo}`} inputMode="numeric" className={money} value={typedQty} onChange={(e) => set({ qtys: { ...v.qtys, [l.lineNo]: e.target.value } })} /> : <span className="block text-right">All out</span>}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </Panel>
-        )}
         <Panel title="Who claimed it">
           <Field label="Claimed by" required>
             <input className={inputClass} value={v.claimedBy} onChange={(e) => set({ claimedBy: e.target.value })} />
@@ -131,6 +105,33 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
           </div>
           <p className="text-xs text-slate-500">Only the kind of ID is kept, never its number.</p>
         </Panel>
+        {status && (
+          <Panel title="What goes out">
+            <table className="block w-full text-sm sm:table">
+              <thead className="hidden text-left text-slate-500 sm:table-header-group"><tr><th className="w-8" /><th>Line</th><th className="text-right">Ordered</th><th className="text-right">Released</th><th className="w-28 text-right">Pieces now</th></tr></thead>
+              <tbody className="grid gap-3 sm:table-row-group">
+                {status.lines.map((l) => {
+                  const typedQty = v.qtys[l.lineNo] ?? '';
+                  const ticked = !!typedQty.trim() && typedQty.trim() !== '0';
+                  return (
+                    <tr key={l.lineNo} className={`grid gap-2 rounded border p-3 sm:table-row sm:border-0 sm:p-0 ${l.leftQty === 0 ? 'text-slate-400' : ''}`}>
+                      <td className="py-1">
+                        <label className="flex items-center gap-2"><span className="sm:hidden">Release line {l.lineNo}</span><input type="checkbox" aria-label={`Release line ${l.lineNo}`} disabled={l.leftQty === 0} checked={ticked}
+                          onChange={(e) => set({ qtys: { ...v.qtys, [l.lineNo]: e.target.checked ? String(l.leftQty) : '' } })} /></label>
+                      </td>
+                      <td className="py-1">{l.lineNo}. {l.description}</td>
+                      <td className="py-1 text-right tabular-nums"><span className="mr-2 sm:hidden">Ordered</span>{l.qty}</td>
+                      <td className="py-1 text-right tabular-nums"><span className="mr-2 sm:hidden">Released</span>{l.releasedQty}</td>
+                      <td className="py-1">
+                        {l.leftQty > 0 ? <Field label="Pieces now"><input aria-label={`Pieces of line ${l.lineNo}`} inputMode="numeric" className={money} value={typedQty} onChange={(e) => set({ qtys: { ...v.qtys, [l.lineNo]: e.target.value } })} /></Field> : <span className="block text-right">All out</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Panel>
+        )}
         {status && !ready && (
           <Panel title="Not ready yet">
             <Notice tone="warning">{status.jobOrder.number} is {status.stageLabel}. Mark it Ready for release first{can('jo.release_override') ? ', or release it anyway with a reason.' : ', or ask the owner to release it.'}</Notice>
@@ -168,17 +169,17 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
           </label>
         </Panel>
         <Errors list={typed.errors} show={touched} />
-        <div className="flex gap-2">
+        <Panel title="So far">
+          <Figures items={[['Released now', live?.release.totalCents ?? 0, 'text-lg font-semibold'], ['Balance due', balance, 'font-semibold']]} />
+          {live && <Booklet b={live.booklet} depositAppliedCents={live.depositAppliedCents} />}
+          {live && <p className="text-sm">{live.release.summary}</p>}
+          {live?.release.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
+        </Panel>
+        <SalesActions total={live?.release.totalCents ?? 0} label="Released now">
           <Button tone="primary" disabled={!type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
           <Button onClick={() => history.back()}>Back</Button>
-        </div>
+        </SalesActions>
       </div>
-      <Panel title="So far">
-        <Figures items={[['Released now', live?.release.totalCents ?? 0, 'text-lg font-semibold'], ['Balance due', balance, 'font-semibold']]} />
-        {live && <Booklet b={live.booklet} depositAppliedCents={live.depositAppliedCents} />}
-        {live && <p className="text-sm">{live.release.summary}</p>}
-        {live?.release.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
-      </Panel>
       {confirm && <ConfirmDialog preview={confirm} invoiceNumber={typed.invoice?.invoiceNumber ?? null} onRecord={record} onClose={() => setConfirm(null)} />}
     </form>
   );
