@@ -87,19 +87,23 @@ export const advanceDoc: DocTypeDef<AdvanceInput, Advance> = {
     return { employeeId, cashPlaceId, amountCents, installmentCents, ...(note ? { note } : {}) };
   },
 
-  /** Deductions and repayments recorded after it, while they have taken the balance below this advance. */
+  /**
+   * While the balance is below this advance, cancelling it would leave the employee owing less than nothing: the payroll
+   * deductions, repayments and write-offs still recorded go first. Any of them, also one recorded before this advance,
+   * which an advance cancelled since had covered.
+   */
   dependents(db, documentId) {
-    const r = db.prepare('SELECT c.employee_id, c.amount_cents, d.posted_at FROM ca_advances c JOIN documents d ON d.id = c.document_id WHERE c.document_id = ?').get(documentId) as
-      | { employee_id: string; amount_cents: number; posted_at: string }
+    const r = db.prepare('SELECT employee_id, amount_cents FROM ca_advances WHERE document_id = ?').get(documentId) as
+      | { employee_id: string; amount_cents: number }
       | undefined;
     if (!r || caBalance(db, r.employee_id) >= r.amount_cents) return [];
     return db
       .prepare(
         `SELECT DISTINCT d.id, d.number FROM journal_lines l JOIN journals j ON j.id = l.journal_id JOIN documents d ON d.id = j.source_id
          WHERE l.account_id = ? AND l.party_type = 'employee' AND l.party_id = ? AND l.credit_cents > 0 AND j.posting_kind = 'original' AND j.source_type = 'document'
-           AND d.status = 'posted' AND d.id <> ? AND d.posted_at >= ? ORDER BY d.posted_at`,
+           AND d.status = 'posted' AND d.id <> ? ORDER BY d.posted_at`,
       )
-      .all(resolveAccount(db, { role: 'EMP_ADVANCES' }).id, r.employee_id, documentId, r.posted_at) as { id: string; number: string }[];
+      .all(resolveAccount(db, { role: 'EMP_ADVANCES' }).id, r.employee_id, documentId) as { id: string; number: string }[];
   },
 
   summary(doc) {

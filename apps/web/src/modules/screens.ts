@@ -96,6 +96,7 @@ import { MonthEnd } from './ACC/MonthEnd.tsx';
 import { GoLiveDecisions } from './ACC/GoLiveDecisions.tsx';
 import { ReversalsDue } from './ACC/ReversalsDue.tsx';
 import { ChangesAfterFiling } from './TAX/ChangesAfterFiling.tsx';
+import { FiledReturns } from './TAX/FiledReturns.tsx';
 import { BirPaymentForm } from './TAX/BirPaymentForm.tsx';
 import { OpeningWithholdingForm } from './TAX/OpeningWithholdingForm.tsx';
 import { OpeningPayableForm } from './TAX/OpeningPayableForm.tsx';
@@ -232,6 +233,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/acc/go-live-decisions': GoLiveDecisions,
   '/acc/reversals-due': ReversalsDue,
   '/tax/changes-after-filing': ChangesAfterFiling,
+  '/tax/filed-returns': FiledReturns,
   '/tax/calendar': TaxCalendar,
   '/admin/shop-certificate': ShopCertificate,
   '/admin/practice': PracticeShop,

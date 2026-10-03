@@ -46,6 +46,8 @@ const GUARDED: Record<string, string> = {
   'prt.company_profile_edit': 'changed the company details for printing',
   'prt.loose_leaf_paper': 'changed the paper size for the books',
   'practice.reset': 'reset the practice shop',
+  'tax.filed_return.add': 'recorded a filed return',
+  'tax.filed_return.void': 'voided a filed return',
 };
 
 /** Where the app runs, for the System Health notifications: the practice shop has no backups to warn about. */

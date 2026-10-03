@@ -1,6 +1,6 @@
 /**
- * Changes after filing (ACC-22): documents dated in a period whose BIR return is filed (its payment recorded and not
- * cancelled) that were recorded or cancelled after that payment was recorded. The accountant decides whether the return
+ * Changes after filing (ACC-22): documents dated in a period whose BIR return has a standing confirmation or payment
+ * that were recorded or cancelled after that source was recorded. The accountant decides whether the return
  * needs amending. For the accountant and the owners, with a download for Excel.
  */
 import { useEffect, useState } from 'react';
@@ -22,7 +22,7 @@ export function ChangesAfterFiling({ me }: { me: Me }) {
         <span className="flex-1" />
         <a href="/api/tax/changes-after-filing?format=csv" className="text-sm underline print:hidden">Download for Excel</a>
       </div>
-      <p className="text-sm text-slate-600">Documents dated in a filed period that were recorded or cancelled after the return was paid. The filed return still shows the figures before them: tell the accountant, who may need to amend it.</p>
+      <p className="text-sm text-slate-600">Documents dated in a filed period that were recorded or cancelled after its filing confirmation or payment was recorded. The filed return still shows the figures before them: tell the accountant, who may need to amend it.</p>
       {error && <Notice>{error}</Notice>}
       {!rows && !error && <p className="text-slate-500">Loading…</p>}
       {rows?.length === 0 && <Notice tone="note">Nothing changed after a return was filed.</Notice>}

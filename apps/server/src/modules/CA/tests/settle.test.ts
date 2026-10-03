@@ -75,6 +75,21 @@ describe('repayment goldens (D5 CA-REPAY)', () => {
     expect(fails(() => w.cancel(advanceDoc, ca.id), 'HAS_DEPENDENTS')).toEqual([{ id: r.id, number: 'CAR-000001' }]);
     clean(w.db);
   });
+
+  it('a write-off recorded before an advance still waits for it, once the advance it covered is cancelled (property test seed -1493889512)', async () => {
+    const w = await world('2026-09-14');
+    const ana = w.person('Ana Tahi', daily);
+    const cash = cashPlaceId(w.db, '1101');
+    const first = w.record(advanceDoc, { employeeId: ana, cashPlaceId: cash, amountCents: 100_000, installmentCents: 50_000 });
+    const wo = w.record(writeoffDoc, { employeeId: ana, amountCents: 60_000, accountId: accountId(w.db, '6990'), reason: 'Part forgiven (made up)' });
+    w.at('2026-09-15');
+    const second = w.record(advanceDoc, { employeeId: ana, cashPlaceId: cash, amountCents: 80_000, installmentCents: 40_000 });
+    w.cancel(advanceDoc, first.id); // ₱1,200 owed covers it: ₱200 left
+    expect(caBalance(w.db, ana)).toBe(20_000);
+    expect(fails(() => w.cancel(advanceDoc, second.id), 'HAS_DEPENDENTS')).toEqual([{ id: wo.id, number: 'CAW-000001' }]);
+    expect(caBalance(w.db, ana)).toBe(20_000);
+    clean(w.db);
+  });
 });
 
 describe('write-off golden (D5 CA-WO)', () => {
