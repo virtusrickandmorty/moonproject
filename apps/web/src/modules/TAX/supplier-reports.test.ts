@@ -100,6 +100,19 @@ describe('tax screens, part 2: rules', () => {
     expect(renderToStaticMarkup(createElement(CertificateTable, { c: { ...c, lines: [] } }))).toContain('there is no 2307 to issue');
   });
 
+  it('shows the government sales subset on the worksheet table used for the screen and browser print', () => {
+    for (const [amountCents, taxCents, amount, tax] of [[1_000_000, 120_000, '10,000.00', '1,200.00'], [0, 0, '0.00', '0.00']] as const) {
+      const table = renderToStaticMarkup(createElement(WorksheetTable, { lines: [
+        { key: 'vatable_sales', label: 'VATable sales', amountCents: 1_500_000, taxCents: 180_000 },
+        { key: 'government_sales', label: 'Of which: sales to government', amountCents, taxCents },
+      ] }));
+      expect(table).toContain(`Of which: sales to government</td><td class="whitespace-nowrap py-1 pl-3 text-right tabular-nums">${amount}</td><td class="whitespace-nowrap py-1 pl-3 text-right tabular-nums">${tax}</td>`);
+      expect(table.indexOf('VATable sales')).toBeLessThan(table.indexOf('Of which: sales to government'));
+      expect(table).not.toContain('print:hidden');
+      expect(isWorksheetTotal('government_sales')).toBe(false);
+    }
+  });
+
   it('puts every tax screen, the booklets included, under Accounting & Tax (PLAN H1) with the permission its route checks', () => {
     const groups = buildMenu([], new Set(['tax.registers.view', 'tax.calendar.view', 'tax.booklets.view']));
     // No separate Tax group; Reports has the changes after filing (ACC-22); Admin has the Shop certificate for everyone.
