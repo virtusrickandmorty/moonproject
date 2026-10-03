@@ -173,7 +173,7 @@ const OPEN_TO_SIGNED_IN = ['GET /api/system/tls', 'GET /api/system/practice', 'G
 
 /** 'authenticated' routes that check a document type's permission inside; called through every doc type below. */
 const DOC_TYPE_ROUTES = [
-  'GET /api/doc-types', 'GET /api/docs/:type', 'GET /api/docs/:type/:id', 'POST /api/docs/:type/preview', 'POST /api/docs/:type/post', 'POST /api/docs/:type/:id/cancel',
+  'GET /api/doc-types', 'GET /api/docs/:type', 'GET /api/docs/:type/counts', 'GET /api/docs/:type/:id', 'POST /api/docs/:type/preview', 'POST /api/docs/:type/post', 'POST /api/docs/:type/:id/cancel',
   'POST /api/docs/:type/:id/reissue', 'GET /api/drafts', 'POST /api/drafts', 'PUT /api/drafts/:id', 'POST /api/drafts/:id/discard', 'GET /api/prt/printable-types', 'POST /api/prt/print/:type/:id',
   // The cancel dialog's warnings and the attachments panel check the doc type's own view, cancel or create permission.
   'GET /api/docs/:type/:id/cancel-preview', 'GET /api/docs/:type/:id/attachments', 'POST /api/docs/:type/:id/attachments', 'GET /api/docs/:type/:id/attachments/:attachmentId',
@@ -282,6 +282,7 @@ describe('document routes, every document type, every role (routes marked authen
       for (const role of ROLES) {
         const c = clients[role];
         check(`GET /api/docs/${d.key}`, role, p.view, await c.get(`/api/docs/${d.key}`));
+        check(`GET /api/docs/${d.key}/counts`, role, p.view, await c.get(`/api/docs/${d.key}/counts?q=a`));
         check(`GET /api/docs/${d.key}/x`, role, p.view, await c.get(`/api/docs/${d.key}/x`));
         check(`POST preview ${d.key}`, role, p.create, await c.post(`/api/docs/${d.key}/preview`, { input: {} }));
         check(`POST post ${d.key}`, role, p.post, await c.post(`/api/docs/${d.key}/post`, post, idem()));
@@ -292,7 +293,7 @@ describe('document routes, every document type, every role (routes marked authen
         check(`POST /api/drafts ${d.key}`, role, p.create, await c.post('/api/drafts', { docType: d.key, payload: {} }));
       }
     }
-    expect(called).toBe(types().length * ROLES.length * 7);
+    expect(called).toBe(types().length * ROLES.length * 8);
     expect(wrong).toEqual([]);
   });
 
