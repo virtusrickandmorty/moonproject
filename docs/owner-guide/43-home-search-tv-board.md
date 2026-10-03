@@ -7,7 +7,9 @@
 ### Steps
 1. **Home screen:** On the **Overview** menu, click **Home**.
 2. **Search:** Click or tap the **Search customers, JOs, numbers…** box at the top of the screen and type what you are looking for.
+   ![The search box at the top, listing what it found](img/43-search.png)
 3. **TV board:** On the **Production** menu, click **TV board**.
+   ![The TV board](img/43-tv-board.png)
 
 ### What the system does for you
 - **On the Home screen:** It shows a **Notifications** panel listing up to 8 unread alerts that need your attention. You can click **Mark read** when you are done with an alert, or click **See all notifications** to open the **Notifications** screen (also on the **Overview** menu) to view older ones. It also shows summary widgets for your role, such as **Sales this month**, **Collections this month**, **Cash position**, **My drafts**, **Exceptions inbox**, **Recent cancellations**, or **Production queue**. On the production one, you can click **Open board** to see more details.

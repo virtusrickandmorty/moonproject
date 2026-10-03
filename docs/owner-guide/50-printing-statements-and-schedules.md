@@ -11,6 +11,7 @@
 2. Pick the customer in the **Customer** field (it starts as "Choose a customer").
 3. Type the **From** and **To** dates.
 4. Click **Show** (this button stays off until a customer and both dates are set, and **From** is not after **To**).
+   ![A customer's statement of account on screen](img/50-customer-statement.png)
 5. When the report is showing, click **Print statement of account**.
 
 **To print a wearer's sizing profile:**

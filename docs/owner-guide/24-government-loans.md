@@ -6,6 +6,7 @@
 
 ### Steps to register a loan
 1. On the **People & Payroll** menu, click **Government loans**.
+   ![The Government loans screen with the Register a loan form](img/24-government-loans.png)
 2. Under the **Loans** panel, fill in the **Register a loan** form.
 3. Pick the **Employee** and the **Loan** kind (like SSS Salary or Pag-IBIG Multi-Purpose).
 4. Type the **Loan number** and the **Monthly amortization**.

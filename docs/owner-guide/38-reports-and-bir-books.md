@@ -6,6 +6,7 @@
 
 ### Steps
 1. Open the report you want under **Reports**. It loads automatically (using this month, or today for reports asking for **As of**).
+   ![The AP aging report](img/38-ap-aging.png)
 2. If you want a different date, pick the dates.
    - **Purchase orders by status**, **Received but not billed**, **Late entries** and **Cancellations and reissues** do not have date boxes and no **Show** button.
    - **AP aging**, **Cash position**, **Fixed-asset schedule**, and **Exceptions** use **As of**.
@@ -16,6 +17,7 @@
 
 To open the BIR books:
 1. Open **BIR books** under **Reports**. It starts with the **From** and **To** dates filled in from the first of this month to today.
+   ![The BIR books screen](img/38-bir-books.png)
 2. From the **Book** box, pick **Cash receipts journal**, **Cash disbursements journal**, **Sales journal**, **Purchase journal**, **General journal**, or **General ledger**.
 3. If you want a different range, fill in the **From** and **To** dates.
 4. Click the **Show** button. (The button stays off until both dates are filled and **From** is not after **To**).

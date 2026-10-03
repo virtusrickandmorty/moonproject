@@ -8,6 +8,7 @@
 
 #### Adding an item to the price list
 1. On the **Sales** menu, click **Price list**.
+   ![The price list](img/40-price-list.png)
 2. Click **+ New item**.
 3. Type the **Code** and **Name**.
 4. Choose the **Class** (**Made-to-order garment**, **Service** or **Ready-made item**) and the **Unit** (**Piece** or **Set**). If the unit is a set, type the **Components per set**. If the class is made-to-order garment, type the **Garment type**.
@@ -21,6 +22,7 @@
 
 #### Making a quotation
 1. On the **Sales** menu, click **Quotations**, then click **+ New Quotation**.
+   ![The new quotation form](img/40-new-quotation.png)
 2. Pick the **Customer** from the list, or type a **Prospect name**.
 3. Type who the **Contact** person is, and how many days the quotation is good for under **Valid for days**.
 4. Under **Items**, pick a **Catalog item** for the first line. (Type in **Search catalog** to shorten the list.)

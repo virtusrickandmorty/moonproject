@@ -8,6 +8,7 @@
 **To claim output VAT on an uncollected receivable:**
 1. On the **Accounting & Tax** menu, click **VAT on Uncollected Receivables**.
 2. Click **+ New VAT on Uncollected Receivable**.
+   ![The VAT on uncollected receivables form](img/62-new-uncollected-vat.png)
 3. Under **Invoices whose agreed time to pay ended in an earlier quarter**, pick the invoice.
 4. Under **The accountant confirms (the books cannot tell)**, tick all four boxes:
    - **A written agreement sets the time to pay**

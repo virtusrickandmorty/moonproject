@@ -8,6 +8,7 @@
 **To declare a dividend:**
 1. On the **Money** menu, click **Dividend Declarations**.
 2. Click **+ New Dividend Declaration**.
+   ![The new dividend declaration form](img/60-new-dividend.png)
 3. Type the **Resolution number**, and pick the **Resolution date** and the **Record date**. The record date must be today or earlier.
 4. Pick the **Basis**: **per_share** (an amount for each share) or **total** (the whole dividend).
 5. Type the **Amount**.

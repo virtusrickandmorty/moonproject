@@ -8,6 +8,7 @@
 
 **To set the company print details:**
 1. On the **Admin** menu, click **Company print details**.
+   ![The Company print details screen](img/44-company-print-details.png)
 2. Type the **Registered name**, **Trade name**, **TIN**, and **Registered address**.
 3. Check the **VAT registered** box if the business is VAT registered.
 4. Type **Your password to confirm this change**.
@@ -19,6 +20,7 @@
 
 **To test the printers:**
 1. On the **Admin** menu, click **Printer test pack**.
+   ![The Printer test pack screen](img/44-printer-test-pack.png)
 2. To test the A4 pages, click **Print all A4**. Each sample prints with a "TEST PRINT, NOT A REAL DOCUMENT" stamp.
 3. For other pages, look under the **Print checklist**. Click **Print** next to each form to send it to the printer.
 4. Check the printed pages. If they look good, check the **Printed well** box next to each one.

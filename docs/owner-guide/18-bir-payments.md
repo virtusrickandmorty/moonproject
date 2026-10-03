@@ -7,8 +7,10 @@
 ### Steps
 1. **Check what is due:**
    - On the **Accounting & Tax** menu, click **Tax calendar**. Here you will see a list of what falls due and when.
+     ![The tax calendar, with what falls due and when](img/18-tax-calendar.png)
 2. **Close the VAT (at quarter end):**
    - When a quarter ends, go to the **2550Q worksheet** on the **Accounting & Tax** menu.
+     ![The 2550Q worksheet](img/18-vat-worksheet.png)
    - Click the **Record the VAT close of Q...** button.
    - Pick the **Year** and **Quarter**, and optionally choose the **Date of the close** (the quarter's last day or today).
    - Click **Record**.

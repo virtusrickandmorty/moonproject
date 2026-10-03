@@ -8,6 +8,7 @@
 1. On the **Money** menu, click **Fixed assets**, **Loans**, or **Owners and officers**.
 2. **For fixed assets:**
    - You can see the list of assets with their cost, accumulated depreciation so far, and book value.
+     ![The Fixed assets screen](img/36-fixed-assets.png)
    - Click **Run depreciation** to record the monthly wear and tear. Choose the **Month to depreciate** and click **Record the run**. The system will warn you if a month was missed.
    - To look closer, click an asset. To take it off the books, click **Dispose of this asset**, type in **Why is it being taken off?**, and click **Record the disposal**. Only a retirement (nothing received for it) can be recorded now. Run the month's depreciation first: the book value left is charged as a loss.
 3. **For loans:**
@@ -16,6 +17,7 @@
    - If you have permission to record them, click **Record a loan** to add a new one, or **Record a payment** to pay one down.
 4. **For owners and officers:**
    - You will see the list of stockholders and officers. If you have permission to view balances, you will see what they owe the company, and what the company owes them.
+     ![The Owners and officers screen](img/36-owners-and-officers.png)
    - Click a person to see **What is due**, their **Owner money**, **Officer money out and back**, and the **Officer ledger**.
    - If you have permission to record them, click **Record owner money** for owner investments, or **Record officer money out or back** when an officer takes out money or brings it back.
 

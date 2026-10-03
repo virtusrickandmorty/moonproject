@@ -11,6 +11,7 @@
 4. Type the amount received.
 5. If the customer withheld tax, type the withheld amount in the 2307 field.
 6. Under "Where did the money go?", click the button for where you put the money (e.g., **Cash on hand**, **GCash**). You can split the amount if they paid partly in cash and partly in GCash.
+   ![The new collection form, with where the money went](img/04-new-collection.png)
 7. Click **Record**.
 
 ### What the system does for you

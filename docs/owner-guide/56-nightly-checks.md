@@ -6,6 +6,7 @@
 
 ### Steps
 1. On the **Admin** menu, click **Nightly checks**.
+   ![The Nightly checks screen](img/56-nightly-checks.png)
 2. To check right now, click **Run the checks now** (only people with that permission, usually the owner, see this button). The button shows **Checking…**, then a box called **Checked just now** appears with the results.
 3. Each earlier run is a box called **Night of** and the date. To see more of them, click **Show older nights**.
 

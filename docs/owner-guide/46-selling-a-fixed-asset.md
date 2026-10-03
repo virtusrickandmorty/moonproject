@@ -8,6 +8,7 @@
 1. On the **Money** menu, click **Fixed assets**.
 2. Find the asset in the list and click on its number.
 3. Click the **Dispose of this asset** button to open the "Take <asset> off the books" dialog.
+   ![The box for taking an asset off the books](img/46-dispose-of-an-asset.png)
 4. Choose **Sold** or **Retired**.
 5. Type **Why is it being taken off?**.
 6. If sold, type the **Invoice number (from the booklet)** and the **Price, VAT included**. Pick **Where did the buyer's money go?** and the **Buyer** (or type the **Buyer's name**, **Buyer's TIN** and **Buyer's address**).

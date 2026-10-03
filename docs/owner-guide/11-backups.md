@@ -8,6 +8,7 @@
 1. On the **Admin** menu, click **Backups**.
 2. Click the **Recovery keys and folders** tab.
 3. Type the **Backup folder** where you want to save backups on the server PC.
+   ![The Recovery keys and folders tab of Backups](img/11-recovery-keys.png)
 4. If you have an **Off-site folder**, type its location too.
 5. Click **Make new recovery keys**. The system will show you two keys, Key A and Key B.
 6. Click **Print key A** and **Print key B**, or write the keys down exactly. Keep Key A with you (the owner) and seal Key B in a safe place away from the shop.

@@ -7,6 +7,7 @@
 ### Steps
 **To see the charts:**
 1. On the **Overview** menu, click **Home**.
+   ![The charts on the Home screen](img/63-home-charts.png)
 2. Look under **Last 12 months**:
    - **Sales, collections and expenses**: bars for each month's sales, money collected, and expenses. Point at a bar to see the amount. Click **Income statement** or **Collections register** to see the report.
    - **Cash on hand at month end**: a line of the money in all cash places at the end of each month (this month: today). Click **See the report** for the cash position.

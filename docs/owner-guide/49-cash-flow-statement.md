@@ -6,6 +6,7 @@
 
 ### Steps
 1. On the **Reports** menu, click **Cash flow statement**. This opens the page loaded from the first of this month to today.
+   ![The cash flow statement](img/49-cash-flow-statement.png)
 2. To change the dates, type the **From** and **To** dates.
 3. Click **Show** (it will be off if **From** is after **To**).
 

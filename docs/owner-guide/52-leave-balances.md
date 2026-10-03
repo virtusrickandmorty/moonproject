@@ -6,6 +6,7 @@
 
 ### Steps
 1. On the **People & Payroll** menu, click **Leave balances**.
+   ![The Leave balances screen](img/52-leave-balances.png)
 2. Type the **Year** you want to view (it opens on this year). The list changes by itself. Click an employee's **Code** to open their record.
 
 ### What the system does for you

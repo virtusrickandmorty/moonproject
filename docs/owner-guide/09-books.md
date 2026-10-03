@@ -13,6 +13,7 @@
 3. For the General ledger, you can optionally pick a specific **Account** to filter the results.
 4. For the Trial balance, choose the **As of** date. You can also pick a **Compare with (optional)** date to see changes between two periods.
 5. Click **Show**.
+   ![The trial balance report](img/09-trial-balance.png)
 
 ### What the system does for you
 It automatically builds the accounting reports from all the documents and transactions recorded in the system. The reports update instantly as new records are saved. You can click on the source document numbers in the journal or ledger to see exactly where the entry came from.

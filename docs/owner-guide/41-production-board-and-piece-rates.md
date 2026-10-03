@@ -6,10 +6,12 @@
 
 ### Steps
 1. **To view the workroom:** On the **Production** menu, click **Production board**.
+   ![The production board, with a column for each step](img/41-production-board.png)
 2. **To find a job order:** Look at the columns. New job orders are under **Needs a route**. Job orders ready for release are under **Ready**. In the middle are the production steps. You can narrow down the list using the **All due dates**, **Due within 7 days**, or **Overdue** filters. You can also tick **Rush only**.
 3. **To check colors:** A red **RUSH** tag means the job order is a high priority. If a card has a red line on the left side and a red due date, it is overdue.
 4. **To set up or change a route:** Click the job order card on the board. Choose the steps it must go through, the garment type, and the complexity. Click **Save route**. If you need to fix a mistake later, click the card and click **Change route**.
 5. **To record pieces done:** On the **Production** menu, click **Production board**, then click **+ Record pieces**. The card's box on the board also has a **Record pieces** link per step, which opens the form with that job order and step filled in.
+   ![The Record pieces form](img/41-record-pieces.png)
    * Under **Job order and step**, choose the **Job order** and the **Step**.
    * Under **Who did how many pieces**, choose the **Line** and the **Worker**. Type the number of **Pieces**.
    * If a worker is fixing mistakes, tick **Rework**. Ticking **Rework** also needs a typed rate: "Row N: type the rework (pasubra) rate." A typed rate needs a reason in the **Why this rate?** box ("say why this rate is typed").

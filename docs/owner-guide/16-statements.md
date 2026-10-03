@@ -7,7 +7,9 @@
 ### Steps
 1. On the **Reports** menu, choose **Income statement** or **Balance sheet**.
 2. To open the Income statement for a month or a year, choose the **From** and **To** dates, or click **This month**, **This quarter**, or **Year to date**.
+   ![The income statement](img/16-income-statement.png)
 3. To open the Balance sheet on a date, choose the **As of** date.
+   ![The balance sheet](img/16-balance-sheet.png)
 4. Click **Show**.
 
 ### What the system does for you

@@ -8,6 +8,7 @@
 **To set the bad debt method:**
 1. On the **Accounting & Tax** menu, click **Settings**.
 2. Find the **Bad debts** setting and click **New version from a date**.
+   ![The Bad debts setting on the Settings screen](img/61-bad-debts-setting.png)
 3. Pick **Written off directly to bad debts (6270)** or **Allowance for credit losses (1209), written off against it**, pick the date, type a **Reason**, and click **Preview the change**, then **Save this version**.
 
 **To set the allowance:**

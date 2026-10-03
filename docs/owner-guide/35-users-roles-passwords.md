@@ -8,7 +8,9 @@
 
 **To add a new staff member:**
 1. On the **Admin** menu, click **Users**.
+   ![The Users screen](img/35-users.png)
 2. Click **Add a user**.
+   ![The Add a user box](img/35-add-a-user.png)
 3. Type the **Name to show** and the **Username**.
 4. Tick the roles they need.
 5. Type a **Temporary password**. It must be at least 15 characters, for example three or four words, and must not contain the username. You can click **Show** to see what you type.
