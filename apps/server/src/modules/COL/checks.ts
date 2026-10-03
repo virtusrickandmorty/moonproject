@@ -202,8 +202,10 @@ export function depositChecks(env: EngineEnv, registry: Registry, actor: Actor, 
  * COL's dependents of fund transfers (engine DependentsFn): a check's transfers are undone in the order the check moved,
  * so Checks on hand always holds exactly the checks on its list.
  *   A deposit is not cancelled while a return from it stands (cancel the return first).
- *   A return is not cancelled while its check is at the bank again (cancel that deposit first), nor once its collection
- *   was cancelled (the check already left Checks on hand with the collection's mirror).
+ *   A return is not cancelled while a deposit of its check made after it stands (cancel that deposit first), also one
+ *   a later return already brought back: otherwise the check's next return would hang on that later deposit a second
+ *   time, and once the first deposit is cancelled Checks on hand holds the check twice. Nor once its collection was
+ *   cancelled (the check already left Checks on hand with the collection's mirror).
  *   Neither is edited: the checks it carried stay with the cancelled one, so cancel it and use the Checks screen again.
  */
 export function checkTransferDependents(db: Db, docType: string, documentId: string, reissuing: boolean): { id: string; number: string }[] {
@@ -225,7 +227,10 @@ export function checkTransferDependents(db: Db, docType: string, documentId: str
   if (r.collectionStatus !== 'posted') {
     throw conflict('CHECK_GONE', `Check no. ${label(r)} came back with this transfer, and its collection ${r.collectionNumber} was cancelled since, which already took the check out of ${r.cashPlaceName}. This transfer stays.`);
   }
-  return whereIs(r) === 'at the bank' ? [{ id: r.lastDeposit!.id, number: r.lastDeposit!.number }] : [];
+  return db
+    .prepare(`SELECT d.id, d.number FROM col_check_deposits x JOIN documents d ON d.id = x.transfer_id
+              WHERE x.document_id = ? AND x.line_no = ? AND d.status = 'posted' AND d.number > (SELECT number FROM documents WHERE id = ?) ORDER BY d.number`)
+    .all(r.collectionId, r.lineNo, documentId) as { id: string; number: string }[];
 }
 
 export const returnBody = z

@@ -19,9 +19,12 @@ describe('menu (PLAN H1)', () => {
     expect(labels(['sec.users.manage']).at(-1)).toBe('Admin: Users');
   });
 
-  it('finds a quick sale under its own name, though its document title is Invoice Record', () => {
-    const types = [{ key: 'jo.invoice_record', module: 'JO', title: 'Invoice Record' }, { key: 'qs.sale', module: 'QS', title: 'Invoice Record' }] as DocTypeInfo[];
-    expect(buildMenu(types, new Set(), []).map((g) => g.items.map((i) => i.label))).toEqual([['Invoice Records', 'Quick Sales']]);
-    expect(types.map(labelOf)).toEqual(['Invoice Record', 'Quick Sale']);
+  it('finds a quick sale and a downpayment invoice under their own names, though both document titles are Invoice Record', () => {
+    const types = [
+      { key: 'jo.invoice_record', module: 'JO', title: 'Invoice Record' }, { key: 'jo.dp_invoice', module: 'JO', title: 'Invoice Record' },
+      { key: 'qs.sale', module: 'QS', title: 'Invoice Record' },
+    ] as DocTypeInfo[];
+    expect(buildMenu(types, new Set(), []).map((g) => g.items.map((i) => i.label))).toEqual([['Invoice Records', 'Downpayment Invoice Records', 'Quick Sales']]);
+    expect(types.map(labelOf)).toEqual(['Invoice Record', 'Downpayment Invoice Record', 'Quick Sale']);
   });
 });
