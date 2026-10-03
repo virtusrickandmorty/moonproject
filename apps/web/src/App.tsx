@@ -90,19 +90,31 @@ function Form({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me: Me })
   return Custom ? <Custom type={type} mode={mode} me={me} /> : <DocForm type={type} mode={mode} />;
 }
 
+export function dailyActions(me: Me, docTypes: DocTypeInfo[]): { label: string; href: string }[] {
+  const can = (p: string) => me.permissions.includes(p);
+  const keys = can('dash.home.owner') ? ['jo.job_order', 'col.collection', 'exp.voucher', 'cash.count'] :
+    can('dash.home.accountant') ? ['exp.voucher', 'ap.payment', 'pay.run', 'acc.jv'] :
+    can('dash.home.production') ? ['prd.entry'] : ['jo.job_order', 'col.collection', 'jo.release', 'qs.sale'];
+  const types = keys.flatMap((key) => docTypes.filter((d) => d.key === key && d.canCreate));
+  const actions = types.map((d) => ({ label: `+ New ${labelOf(d)}`, href: docPath(d.key, '/new') }));
+  if (can('dash.home.production') && !can('dash.home.owner') && !can('dash.home.accountant') && can('prd.view')) actions.unshift({ label: 'Production board', href: '/prd/board' });
+  return actions.slice(0, 4);
+}
+
 function Home({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }) {
+  const links = dailyActions(me, docTypes);
+  const actions = links.length > 0 && <section aria-label="Daily actions">
+    <h2 className="mb-2 text-lg font-semibold">Daily actions</h2>
+    <div className="flex flex-wrap gap-2">{links.map((a) => <Link key={a.href} to={a.href} className="rounded-lg bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200 hover:bg-indigo-50">{a.label}</Link>)}</div>
+    <p className="mt-2 text-sm text-slate-500">Use + New for every other document you may create.</p>
+  </section>;
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold">Hello, {me.displayName}</h1>
         {me.permissions.includes('sec.health.view') && <HealthDot />}
       </div>
-      {me.permissions.includes('dash.view') && <DashHome />}
-      <div className="flex flex-wrap gap-2">
-        {docTypes.filter((d) => d.canCreate).map((d) => (
-          <Link key={d.key} to={docPath(d.key, '/new')} className="rounded-lg bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200 hover:bg-indigo-50">+ New {labelOf(d)}</Link>
-        ))}
-      </div>
+      {me.permissions.includes('dash.view') ? <DashHome actions={actions} /> : actions}
       {docTypes.length === 0 && <p className="text-slate-600">Your role has no screens yet. Ask an owner.</p>}
     </div>
   );
