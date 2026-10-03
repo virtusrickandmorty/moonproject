@@ -188,6 +188,7 @@ for (const who of ROLES) {
 
     console.log(`${who.role} sees ${links.length} menu items`);
     for (const link of links) {
+      if (!(await page.locator('nav').count())) await page.goto('/'); // the TV board fills the screen without the menu
       await page.locator(`nav a[href="${link.href}"]`).click();
       note(`${link.label} (${link.href})`, [...(await trouble(page)), ...seen.take()]);
     }
