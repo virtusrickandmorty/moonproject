@@ -67,11 +67,11 @@ function typedFor(label: string, kind: string, mode: string | null): string {
 /** A box that finds a customer, job order, release or supply as you type, and lists what it found as buttons under itself. */
 const isSearch = (label: string) => /^search|type 2 or more|number or customer|release number|name or code/i.test(label);
 
-/** Types into a search box until it lists something, and picks the first thing listed. */
+/** Types into a search box until it lists something, and picks the first thing listed (under the box, or under its label). */
 async function pickFirst(input: Locator) {
   for (const query of ['Practice', 'JO-', 'REL-', 'PO-', '0']) {
     await input.fill(query);
-    const found = input.locator('xpath=..').getByRole('button').filter({ hasNotText: /^(Change|\+|Add|✕)/ });
+    const found = input.locator('xpath=ancestor::*[not(self::label)][1]').getByRole('button').filter({ hasNotText: /^(Change|\+|Add|✕)/ });
     await found.first().waitFor({ state: 'visible', timeout: 1_500 }).catch(() => undefined);
     if (await found.count()) return void (await found.first().click());
   }
@@ -188,6 +188,7 @@ for (const who of ROLES) {
 
     console.log(`${who.role} sees ${links.length} menu items`);
     for (const link of links) {
+      if (!(await page.locator('nav').count())) await page.goto('/'); // the TV board fills the screen without the menu
       await page.locator(`nav a[href="${link.href}"]`).click();
       note(`${link.label} (${link.href})`, [...(await trouble(page)), ...seen.take()]);
     }

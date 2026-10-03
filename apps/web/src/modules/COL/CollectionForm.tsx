@@ -10,6 +10,7 @@ import { formatPesos } from '@moonproject/shared';
 import { api, ApiError, type CashPlace, type DocHeader, type DocTypeInfo, type OpenItems, type PostDatedCheck, type Preview } from '../../api.ts';
 import { navigate } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
+import { SalesActions, Exception } from '../JO/entry.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { cents, checkPlaceIds, emptyTender, oldestFirst, sum, tendersToInput, tendersToRows, type TenderInput, type TenderRow } from './money.ts';
@@ -200,7 +201,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
   if (original && !reason) return <EditGate original={original.header} typeKey={type.key} onReason={setReason} />;
   const difference = received - applied;
   return (
-    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className="space-y-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-0">
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">{original ? `Edit ${original.header.number}` : 'New collection'}</h1>
         {pdc && <Notice tone="info">Filled from post-dated check no. {pdc.checkNumber} of {pdc.bank}, {formatPesos(pdc.amountCents)} dated {pdc.checkDate}. Recording it takes it off the post-dated checks list.</Notice>}
@@ -208,14 +209,38 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
         {error && <Notice>{error}</Notice>}
         <Panel title="Who paid">
           <CustomerPicker value={customer} onChange={(c) => { setCustomer(c); setTyped(null); setCwt(null); setCertificate('pending'); }} />
+        </Panel>
+        <Panel title="What is it for?">
+          {!customer && <p className="text-sm text-slate-500">Pick the customer to see what they can pay on.</p>}
+          {customer && open && items.length === 0 && <p className="text-sm text-slate-500">Nothing is owed. Money received is kept as {customer.name}'s deposit.</p>}
+          {items.length > 0 && (
+            <table className="block w-full text-sm sm:table">
+              <thead className="hidden text-left text-slate-500 sm:table-header-group"><tr><th>Job order or invoice</th><th className="text-right">Left to pay</th><th className="w-40 text-right">Pay now</th></tr></thead>
+              <tbody className="grid gap-3 sm:table-row-group">
+                {items.map((i, n) => (
+                  <tr key={i.key} className="grid gap-2 rounded border p-3 sm:table-row sm:border-0 sm:p-0">
+                    <td className="py-1">{i.label}</td>
+                    <td className="py-1 text-right tabular-nums"><span className="mr-2 sm:hidden">Left to pay</span>{formatPesos(i.due)}</td>
+                    <td className="py-1">
+                      <Field label="Pay now"><input aria-label={`Pay now on ${i.label}`} inputMode="decimal" className={`${inputClass} text-right tabular-nums`}
+                        value={typed ? (typed[i.key] ?? '') : auto[n] ? formatPesos(auto[n]!) : ''}
+                        onChange={(e) => setTyped({ ...(typed ?? Object.fromEntries(items.map((x, k) => [x.key, auto[k] ? formatPesos(auto[k]!) : '']))), [i.key]: e.target.value })} /></Field>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {typed && items.length > 0 && <Button onClick={() => setTyped(null)}>Apply oldest first</Button>}
+          {open && open.unappliedCents > 0 && <p className="text-sm text-slate-600">{customer?.name} also has {formatPesos(open.unappliedCents)} of unapplied payments on file.</p>}
+        </Panel>
+        <Panel title="Where did the money go?">
+          <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" />
           <Field label="CR number (from the booklet)" required hint={original ? `CR ${original.input.crNumber} stays with the cancelled collection: write this payment on a new CR.` : undefined}>
             <input inputMode="numeric" className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
           </Field>
         </Panel>
-        <Panel title="Where did the money go?">
-          <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" />
-        </Panel>
-        <Panel title="Tax withheld by the customer (2307)">
+        <Exception title="Customer withheld tax (2307)" active={!!cwt.amount.trim() && Number(cwt.amount.replaceAll(',', '')) !== 0 || !!cwt.vat.trim() && Number(cwt.vat.replaceAll(',', '')) !== 0 || !!cwt.atc || certificate !== 'pending'}>
           {mine && mine.value !== 'none' && grossCents > 0 && manualCwt === null && <p className="text-sm text-slate-600">Filled in from the customer's withholding profile; change it to match the 2307</p>}
           <div className="grid gap-3 sm:grid-cols-4">
             <Field label="Amount withheld" hint="As written on the 2307">
@@ -240,31 +265,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
             </Field>
           </div>
           <Button onClick={() => setCwt(emptyWithholding())}>Clear withholding</Button>
-        </Panel>
-        <Panel title="What is it for?">
-          {!customer && <p className="text-sm text-slate-500">Pick the customer to see what they can pay on.</p>}
-          {customer && open && items.length === 0 && <p className="text-sm text-slate-500">Nothing is owed. Money received is kept as {customer.name}'s deposit.</p>}
-          {items.length > 0 && (
-            <table className="w-full text-sm">
-              <thead className="text-left text-slate-500"><tr><th>Job order or invoice</th><th className="text-right">Left to pay</th><th className="w-40 text-right">Pay now</th></tr></thead>
-              <tbody>
-                {items.map((i, n) => (
-                  <tr key={i.key} className="border-t border-slate-100">
-                    <td className="py-1">{i.label}</td>
-                    <td className="py-1 text-right tabular-nums">{formatPesos(i.due)}</td>
-                    <td className="py-1">
-                      <input aria-label={`Pay now on ${i.label}`} inputMode="decimal" className={`${inputClass} text-right tabular-nums`}
-                        value={typed ? (typed[i.key] ?? '') : auto[n] ? formatPesos(auto[n]!) : ''}
-                        onChange={(e) => setTyped({ ...(typed ?? Object.fromEntries(items.map((x, k) => [x.key, auto[k] ? formatPesos(auto[k]!) : '']))), [i.key]: e.target.value })} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {typed && items.length > 0 && <Button onClick={() => setTyped(null)}>Apply oldest first</Button>}
-          {open && open.unappliedCents > 0 && <p className="text-sm text-slate-600">{customer?.name} also has {formatPesos(open.unappliedCents)} of unapplied payments on file.</p>}
-        </Panel>
+        </Exception>
         {Math.abs(difference) > 0 && Math.abs(difference) <= 100 && (
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={settle} onChange={(e) => setSettle(e.target.checked)} />
@@ -273,21 +274,21 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
         )}
         <Field label="Note"><textarea rows={2} className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         <Errors list={errors} show={touched} />
-        <div className="flex gap-2">
+        <Panel title="So far">
+          <Figures items={[
+            ['Received (money and tax withheld)', received],
+            ['Applied', applied],
+            ...(difference > 0 && !settle ? [['Kept as deposit', difference] as [string, number]] : []),
+            ...(difference < 0 && !settle ? [['Applied more than received', -difference, 'text-red-700'] as [string, number, string]] : []),
+          ]} />
+          {live && <p className="text-sm">{live.summary}</p>}
+          {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
+        </Panel>
+        <SalesActions total={received} label="Received">
           <Button tone="primary" disabled={!type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
           <Button onClick={() => history.back()}>Back</Button>
-        </div>
+        </SalesActions>
       </div>
-      <Panel title="So far">
-        <Figures items={[
-          ['Received (money and tax withheld)', received],
-          ['Applied', applied],
-          ...(difference > 0 && !settle ? [['Kept as deposit', difference] as [string, number]] : []),
-          ...(difference < 0 && !settle ? [['Applied more than received', -difference, 'text-red-700'] as [string, number, string]] : []),
-        ]} />
-        {live && <p className="text-sm">{live.summary}</p>}
-        {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
-      </Panel>
       {confirm && <RecordDialog type={type} preview={confirm} original={original?.header} reason={reason} onRecord={record} onClose={() => setConfirm(null)} />}
     </form>
   );

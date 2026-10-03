@@ -3,10 +3,11 @@ import { openServerPrint, type Me } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { BookTitle, useToday } from './Books.tsx';
 import './books.css';
+import { addressValue } from './ReportParts.tsx';
 
 export function MonthlyOwnersPack({ me }: { me: Me }) {
   const today = useToday();
-  const [month, setMonth] = useState('');
+  const [month, setMonth] = useState(() => addressValue('month'));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { if (today && !month) setMonth(today.slice(0, 7)); }, [today, month]);
