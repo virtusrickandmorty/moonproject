@@ -140,6 +140,25 @@ const LABELS: Record<string, [one: string, many: string]> = { 'qs.sale': ['Quick
 export const labelOf = (d: Pick<DocTypeInfo, 'key' | 'title'>) => LABELS[d.key]?.[0] ?? d.title;
 export const pluralLabelOf = (d: Pick<DocTypeInfo, 'key' | 'title'>) => LABELS[d.key]?.[1] ?? plural(d.title);
 
+/** True when the screen at `path` is the item's screen or one under it (a document of a list, say). */
+export const isHere = (path: string, itemPath: string) => path === itemPath || (itemPath !== '/' && path.startsWith(`${itemPath}/`));
+
+/** A menu with more items than this folds: each group shows its heading only, until opened. */
+export const FOLD_AFTER = 20;
+/** Where the browser keeps the groups a person opened or closed (only a convenience: without it the menu still works). */
+export const MENU_FOLDS_KEY = 'moonproject.menu.groups';
+
+/**
+ * Which groups show their items. A short menu shows them all. A long one (an owner sees every screen) shows the groups
+ * the person opened, and the group of the screen they are on unless they closed it.
+ */
+export function openGroups(menu: { group: MenuGroup; items: MenuItem[] }[], path: string, chosen: Readonly<Record<string, boolean>>): { folds: boolean; open: Set<MenuGroup> } {
+  const all = menu.map((g) => g.group);
+  if (menu.reduce((n, g) => n + g.items.length, 0) <= FOLD_AFTER) return { folds: false, open: new Set(all) };
+  const here = menu.find((g) => g.items.some((i) => isHere(path, i.path)))?.group;
+  return { folds: true, open: new Set(all.filter((g) => chosen[g] ?? g === here)) };
+}
+
 export function buildMenu(docTypes: DocTypeInfo[], permissions: ReadonlySet<string>, screens = SCREENS): { group: MenuGroup; items: MenuItem[] }[] {
   const items: MenuItem[] = [
     ...screens.filter((s) => !s.permission || permissions.has(s.permission)),
