@@ -6,6 +6,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
+import { menuOpenAt } from './menu-open';
 
 /** One temporary folder for the whole run: the workers, the server and the teardown all inherit it. */
 process.env.E2E_DIR ??= mkdtempSync(join(tmpdir(), 'moonproject-e2e-'));
@@ -29,14 +30,15 @@ export default defineConfig({
   globalTeardown: './teardown.ts',
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
+    storageState: menuOpenAt(`http://127.0.0.1:${PORT}`),
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     launchOptions: executablePath ? { executablePath } : {},
   },
   projects: [
     { name: 'chromium', testIgnore: /06-every-screen\.spec\.ts/, workers: 1, use: { browserName: 'chromium' } },
-    { name: 'practice-setup', testMatch: /06-every-screen\.setup\.ts/, use: { browserName: 'chromium', baseURL: `http://127.0.0.1:${PRACTICE_PORT}`, actionTimeout: 10_000 } },
-    { name: 'practice', testMatch: /06-every-screen\.spec\.ts/, dependencies: ['practice-setup'], fullyParallel: true, use: { browserName: 'chromium', baseURL: `http://127.0.0.1:${PRACTICE_PORT}`, actionTimeout: 10_000 } },
+    { name: 'practice-setup', testMatch: /06-every-screen\.setup\.ts/, use: { browserName: 'chromium', baseURL: `http://127.0.0.1:${PRACTICE_PORT}`, storageState: menuOpenAt(`http://127.0.0.1:${PRACTICE_PORT}`), actionTimeout: 10_000 } },
+    { name: 'practice', testMatch: /06-every-screen\.spec\.ts/, dependencies: ['practice-setup'], fullyParallel: true, use: { browserName: 'chromium', baseURL: `http://127.0.0.1:${PRACTICE_PORT}`, storageState: menuOpenAt(`http://127.0.0.1:${PRACTICE_PORT}`), actionTimeout: 10_000 } },
   ],
   webServer: [
     {

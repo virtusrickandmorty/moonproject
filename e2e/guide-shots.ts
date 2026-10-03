@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { chromium, expect, type Browser, type Locator, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { openWork, signInApi, type Signed } from './practice-work.ts';
+import { MENU_ALL_OPEN } from './menu-open.ts';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const IMG = join(ROOT, 'docs', 'owner-guide', 'img');
@@ -386,6 +387,8 @@ async function startShop(dir: string): Promise<ChildProcess> {
 
 async function signInAs(browser: Browser, role: Role, passwords: Record<string, string>): Promise<Page> {
   const context = await browser.newContext({ viewport: { width: WIDTH, height: HEIGHT }, deviceScaleFactor: 1, baseURL: BASE });
+  // Every menu group open, as in the screenshots so far and so that menu items are clicked by name wherever they are.
+  await context.addInitScript(({ name, value }) => localStorage.setItem(name, value), MENU_ALL_OPEN);
   const page = await context.newPage();
   await page.goto('/');
   await page.getByLabel('Username').fill(USERNAME[role]);
