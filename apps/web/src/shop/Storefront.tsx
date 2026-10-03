@@ -2,18 +2,17 @@
 import { formatPeso } from '@moonproject/shared';
 import { useMemo, useState } from 'react';
 import { Link } from '../router.tsx';
-import { GarmentArt } from './GarmentArt.tsx';
+import { ProductPicture } from './GarmentArt.tsx';
 import { WishButton } from './Panels.tsx';
-import { CATEGORIES, PRODUCTS, SIZES, type Category, type Product } from './products.ts';
+import { SIZES, categoriesOf, type Category, type Product } from './products.ts';
 import type { SiteControls } from './Site.tsx';
 import { useShop } from './store.tsx';
 
 type Sort = 'featured' | 'price-low' | 'price-high' | 'name';
 type Kind = 'all' | 'made' | 'ready';
-interface Filters { text: string; categories: Category[]; sizes: string[]; colours: string[]; maxCents: number; kind: Kind; saved: boolean }
-const PRICE_CAP = Math.max(...PRODUCTS.map((p) => p.priceCents));
-const NONE: Filters = { text: '', categories: [], sizes: [], colours: [], maxCents: PRICE_CAP, kind: 'all', saved: false };
-const COLOURS = [...new Map(PRODUCTS.flatMap((p) => p.colours).map((c) => [c.name, c])).values()];
+interface Filters { text: string; categories: Category[]; sizes: string[]; colours: string[]; /** `maxCents`: null for no price limit. */
+  maxCents: number | null; kind: Kind; saved: boolean }
+const NONE: Filters = { text: '', categories: [], sizes: [], colours: [], maxCents: null, kind: 'all', saved: false };
 const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
 /** Every filter except the one named, so each option can show how many products it would leave. */
@@ -23,7 +22,7 @@ function matches(p: Product, f: Filters, wishlist: string[], skip?: keyof Filter
     && (skip === 'categories' || !f.categories.length || f.categories.includes(p.category))
     && (skip === 'sizes' || !f.sizes.length || f.sizes.some((s) => p.sizes.includes(s)))
     && (skip === 'colours' || !f.colours.length || p.colours.some((c) => f.colours.includes(c.name)))
-    && p.priceCents <= f.maxCents
+    && (f.maxCents === null || p.priceCents <= f.maxCents)
     && (f.kind === 'all' || (f.kind === 'made') === p.madeToOrder)
     && (!f.saved || wishlist.includes(p.id));
 }
@@ -35,20 +34,28 @@ export function Store({ openPanel, view }: SiteControls) {
   const [f, setF] = useState<Filters>(NONE);
   const [sort, setSort] = useState<Sort>('featured');
   const [showFilters, setShowFilters] = useState(false);
+  const { products } = shop;
+  // The filters offer what the shop's products have: their categories, colours and price range.
+  const { categories, colours, low, high } = useMemo(() => ({
+    categories: categoriesOf(products),
+    colours: [...new Map(products.flatMap((p) => p.colours).map((c) => [c.name, c])).values()],
+    low: Math.floor(Math.min(...products.map((p) => p.priceCents), 0) / 1000) * 1000,
+    high: Math.max(...products.map((p) => p.priceCents), 0),
+  }), [products]);
 
   const shown = useMemo(() => {
-    const list = PRODUCTS.filter((p) => matches(p, f, shop.wishlist));
+    const list = products.filter((p) => matches(p, f, shop.wishlist));
     if (sort === 'price-low') return [...list].sort((a, b) => a.priceCents - b.priceCents);
     if (sort === 'price-high') return [...list].sort((a, b) => b.priceCents - a.priceCents);
     if (sort === 'name') return [...list].sort((a, b) => a.name.localeCompare(b.name));
     return list;
-  }, [f, sort, shop.wishlist]);
-  const count = (skip: keyof Filters, test: (p: Product) => boolean) => PRODUCTS.filter((p) => matches(p, f, shop.wishlist, skip) && test(p)).length;
+  }, [products, f, sort, shop.wishlist]);
+  const count = (skip: keyof Filters, test: (p: Product) => boolean) => products.filter((p) => matches(p, f, shop.wishlist, skip) && test(p)).length;
   const active: [string, () => void][] = [
     ...f.categories.map((c): [string, () => void] => [c, () => setF({ ...f, categories: toggle(f.categories, c) })]),
     ...f.sizes.map((s): [string, () => void] => [`Size ${s}`, () => setF({ ...f, sizes: toggle(f.sizes, s) })]),
     ...f.colours.map((c): [string, () => void] => [c, () => setF({ ...f, colours: toggle(f.colours, c) })]),
-    ...(f.maxCents < PRICE_CAP ? [[`Up to ${formatPeso(f.maxCents)}`, () => setF({ ...f, maxCents: PRICE_CAP })] as [string, () => void]] : []),
+    ...(f.maxCents !== null ? [[`Up to ${formatPeso(f.maxCents)}`, () => setF({ ...f, maxCents: null })] as [string, () => void]] : []),
     ...(f.kind !== 'all' ? [[f.kind === 'made' ? 'Made to order' : 'Ready stock', () => setF({ ...f, kind: 'all' })] as [string, () => void]] : []),
     ...(f.saved ? [['Saved only', () => setF({ ...f, saved: false })] as [string, () => void]] : []),
   ];
@@ -66,9 +73,9 @@ export function Store({ openPanel, view }: SiteControls) {
           </div>
         </div>
         <div className="relative grid grid-cols-3 gap-3">
-          {[PRODUCTS[0]!, PRODUCTS[2]!, PRODUCTS[6]!].map((p, i) => (
-            <button key={p.id} type="button" onClick={() => view(p)} className={`grid aspect-[3/4] place-items-center rounded-3xl bg-white shadow-sm ring-1 ring-slate-900/5 transition hover:-translate-y-1 ${i === 1 ? 'mt-10' : ''}`} aria-label={`Quick view: ${p.name}`}>
-              <GarmentArt shape={p.shape} colour={p.colours[i % p.colours.length]!.hex} className="w-4/5" />
+          {products.slice(0, 3).map((p, i) => (
+            <button key={p.id} type="button" onClick={() => view(p)} className={`grid aspect-[3/4] place-items-center overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-900/5 transition hover:-translate-y-1 ${i === 1 ? 'mt-10' : ''}`} aria-label={`Quick view: ${p.name}`}>
+              <ProductPicture product={p} colour={p.colours[i % p.colours.length]!.hex} className={p.photoUrl ? '' : 'w-4/5'} />
             </button>))}
         </div>
       </section>
@@ -76,7 +83,7 @@ export function Store({ openPanel, view }: SiteControls) {
       <section id="shop" className="mx-auto max-w-7xl scroll-mt-20 px-4 pb-16 sm:px-6">
         <div className="flex gap-2 overflow-x-auto pb-2">
           <button type="button" className={chip(!f.categories.length)} onClick={() => setF({ ...f, categories: [] })}>All</button>
-          {CATEGORIES.map((c) => <button key={c} type="button" className={`${chip(f.categories.includes(c))} shrink-0`} onClick={() => setF({ ...f, categories: toggle(f.categories, c) })}>{c} <span className="opacity-60">{count('categories', (p) => p.category === c)}</span></button>)}
+          {categories.map((c) => <button key={c} type="button" className={`${chip(f.categories.includes(c))} shrink-0`} onClick={() => setF({ ...f, categories: toggle(f.categories, c) })}>{c} <span className="opacity-60">{count('categories', (p) => p.category === c)}</span></button>)}
         </div>
 
         <div className="mt-6 grid gap-8 lg:grid-cols-[15rem_1fr]">
@@ -92,21 +99,21 @@ export function Store({ openPanel, view }: SiteControls) {
                   className={`rounded-lg border py-1.5 text-sm font-semibold disabled:opacity-30 ${f.sizes.includes(s) ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white hover:border-slate-400'}`}>{s}</button>); })}</div>
             </fieldset>
             <fieldset><legend className="mb-2 text-sm font-bold">Colour</legend>
-              <div className="flex flex-wrap gap-2">{COLOURS.map((c) => { const n = count('colours', (p) => p.colours.some((x) => x.name === c.name)); return (
+              <div className="flex flex-wrap gap-2">{colours.map((c) => { const n = count('colours', (p) => p.colours.some((x) => x.name === c.name)); return (
                 <button key={c.name} type="button" disabled={!n && !f.colours.includes(c.name)} title={`${c.name} (${n})`} aria-label={`${c.name}, ${n} products`} aria-pressed={f.colours.includes(c.name)}
                   onClick={() => setF({ ...f, colours: toggle(f.colours, c.name) })}
                   className={`size-8 rounded-full ring-2 ring-offset-2 disabled:opacity-25 ${f.colours.includes(c.name) ? 'ring-indigo-600' : 'ring-transparent hover:ring-slate-300'}`} style={{ background: c.hex, boxShadow: 'inset 0 0 0 1px rgb(0 0 0 / .15)' }} />); })}</div>
             </fieldset>
             <fieldset><legend className="mb-2 text-sm font-bold">Price per piece</legend>
-              <input type="range" min={20_000} max={PRICE_CAP} step={5_000} value={f.maxCents} onChange={(e) => setF({ ...f, maxCents: Number(e.target.value) })} className="w-full accent-indigo-600" aria-label="Highest price per piece" />
-              <p className="text-sm text-slate-600">Up to {formatPeso(f.maxCents)}</p>
+              <input type="range" min={low} max={high} step={1_000} value={f.maxCents ?? high} onChange={(e) => { const v = Number(e.target.value); setF({ ...f, maxCents: v >= high ? null : v }); }} className="w-full accent-indigo-600" aria-label="Highest price per piece" />
+              <p className="text-sm text-slate-600">{f.maxCents === null ? 'Any price' : `Up to ${formatPeso(f.maxCents)}`}</p>
             </fieldset>
             <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={f.saved} onChange={(e) => setF({ ...f, saved: e.target.checked })} className="size-4 accent-indigo-600" /> Saved to wishlist only</label>
           </aside>
 
           <div>
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm text-slate-600" aria-live="polite"><b className="text-slate-900">{shown.length}</b> of {PRODUCTS.length} garments</p>
+              <p className="text-sm text-slate-600" aria-live="polite">{shop.ready ? <><b className="text-slate-900">{shown.length}</b> of {products.length} garments</> : 'Loading…'}</p>
               <div className="flex items-center gap-2">
                 <button type="button" onClick={() => setShowFilters(!showFilters)} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold lg:hidden" aria-expanded={showFilters}>Filters{active.length ? ` (${active.length})` : ''}</button>
                 <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Sort by" className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold">
@@ -119,7 +126,8 @@ export function Store({ openPanel, view }: SiteControls) {
               <button type="button" onClick={() => setF({ ...NONE, text: f.text })} className="text-sm font-semibold text-slate-500 hover:text-slate-900">Clear all</button>
             </div>}
 
-            {shown.length === 0 ? (
+            {shop.samples && <p className="mt-3 rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-900">These are sample garments. The shop's own products will appear here once they are published.</p>}
+            {!shop.ready ? <p className="mt-6 text-sm text-slate-500">Loading garments…</p> : shown.length === 0 ? (
               <div className="mt-6 rounded-2xl border border-dashed border-slate-300 p-10 text-center">
                 <p className="font-semibold">No garments match these filters.</p>
                 <button type="button" onClick={() => setF(NONE)} className="mt-3 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-bold text-white">Show everything</button>
@@ -128,7 +136,7 @@ export function Store({ openPanel, view }: SiteControls) {
               <ul className="mt-5 grid grid-cols-2 gap-4 sm:gap-5 xl:grid-cols-3">{shown.map((p) => (
                 <li key={p.id} className="group relative flex flex-col rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-900/5 transition hover:shadow-md">
                   <div className="relative grid aspect-square place-items-center overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-slate-100">
-                    <GarmentArt shape={p.shape} colour={(f.colours.length ? p.colours.find((c) => f.colours.includes(c.name)) : undefined)?.hex ?? p.colours[0]!.hex} className="w-3/4 transition duration-300 group-hover:scale-105" />
+                    <ProductPicture product={p} colour={(f.colours.length ? p.colours.find((c) => f.colours.includes(c.name)) : undefined)?.hex ?? p.colours[0]!.hex} className={`transition duration-300 group-hover:scale-105 ${p.photoUrl ? '' : 'w-3/4'}`} />
                     {p.badge && <span className="absolute left-2 top-2 rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-slate-800 shadow-sm">{p.badge}</span>}
                     <WishButton product={p} className="absolute right-2 top-2" />
                     <button type="button" onClick={() => view(p)} className="absolute inset-x-2 bottom-2 rounded-full bg-slate-900/90 py-2 text-sm font-bold text-white opacity-100 transition sm:translate-y-2 sm:opacity-0 sm:group-hover:translate-y-0 sm:group-hover:opacity-100 sm:focus:translate-y-0 sm:focus:opacity-100">Quick view</button>

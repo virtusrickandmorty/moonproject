@@ -35,3 +35,10 @@ export function GarmentArt({ shape, colour, className = '' }: { shape: Shape; co
     </svg>
   );
 }
+
+/** The product's photo when the shop uploaded one, else its drawing in the chosen colour. */
+export function ProductPicture({ product, colour, className = '' }: { product: { name: string; shape: Shape; photoUrl?: string | null }; colour: string; className?: string }) {
+  return product.photoUrl
+    ? <img src={product.photoUrl} alt={product.name} loading="lazy" className={`h-full w-full object-cover ${className}`} />
+    : <GarmentArt shape={product.shape} colour={colour} className={className} />;
+}

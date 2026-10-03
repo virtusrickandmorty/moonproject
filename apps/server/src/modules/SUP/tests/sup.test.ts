@@ -5,7 +5,7 @@ import { PER_SENDER_PER_HOUR } from '../routes.ts';
 /** A real 1×1 PNG, so the first-bytes check passes. */
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 const message = (extra: Record<string, unknown> = {}) => ({
-  kind: 'quotation', name: 'Sample Eagles', email: 'eagles@example.com', subject: '20 jerseys',
+  kind: 'quotation', name: 'Sample Eagles', email: 'eagles@example.com', phone: '0917 000 0000', subject: '20 jerseys',
   message: 'Royal blue jerseys for our league, sizes M to XL.', consent: true, files: [{ name: 'design.png', data: PNG }], ...extra,
 });
 
@@ -34,7 +34,11 @@ describe('customer support', () => {
 
   it('refuses a message without consent, without a way to answer, with a fake picture, or filled in by a robot', async () => {
     expect((await send(message({ consent: false }))).statusCode).toBe(400);
-    expect((await send(message({ email: '', phone: '' }))).json().code).toBe('CONTACT_REQUIRED');
+    // Name, email and mobile number are all required.
+    expect((await send(message({ name: ' ' }))).statusCode).toBe(400);
+    for (const email of ['', 'eagles', 'eagles@example']) expect((await send(message({ email }))).json().code).toBe('EMAIL_REQUIRED');
+    for (const phone of ['', '12345', 'call me', '0917 123 4567 0917 123 4567']) expect((await send(message({ phone }))).json().code).toBe('PHONE_REQUIRED');
+    expect((await send(message({ phone: undefined }))).statusCode).toBe(400);
     expect((await send(message({ files: [{ name: 'virus.png', data: Buffer.from('MZ not a picture').toString('base64') }] }))).statusCode).toBe(415);
     expect((await send(message({ website: 'http://spam.example' }))).statusCode).toBe(400);
     expect((await send(message({ kind: 'refund' }))).statusCode).toBe(400);
@@ -46,6 +50,17 @@ describe('customer support', () => {
     for (let i = 0; i < PER_SENDER_PER_HOUR; i++) expect((await send(message())).statusCode).toBe(200);
     expect((await send(message())).statusCode).toBe(429);
     expect((await send(message(), '10.0.0.6')).statusCode).toBe(200);
+  });
+
+  it('notifies the staff who read the inbox until someone starts on the message', async () => {
+    await send(message({ kind: 'complaint', subject: 'Torn seam', files: [] }));
+    const encoder = await env.as('encoder');
+    const notes = async (c: typeof encoder) => ((await c.get('/api/dash/notifications')).json() as { kind: string; label: string; href: string }[]).filter((n) => n.kind === 'support-message');
+    const id = ((await encoder.get('/api/sup/messages')).json() as { rows: { id: string }[] }).rows[0]!.id;
+    expect(await notes(encoder)).toEqual([expect.objectContaining({ label: 'Complaint from Sample Eagles: Torn seam', href: `/sup?open=${id}` })]);
+    expect(await notes(await env.as('production'))).toEqual([]);
+    await encoder.post(`/api/sup/messages/${id}/notes`, { status: 'in_progress', note: '', version: 1 });
+    expect(await notes(encoder)).toEqual([]);
   });
 
   it('lets only permitted staff read and answer, and refuses a stale answer', async () => {
@@ -61,5 +76,12 @@ describe('customer support', () => {
     expect((await (await env.as('accountant')).post(`/api/sup/messages/${id}/notes`, { status: 'closed', note: 'x', version: 2 })).statusCode).toBe(403);
     const notes = ((await encoder.get(`/api/sup/messages/${id}`)).json() as { notes: { note: string }[] }).notes;
     expect(notes.map((n) => n.note)).toEqual(['Called the customer back.']);
+  });
+});
+
+describe('mobile numbers the support form takes', () => {
+  it('takes the usual ways of writing a number', async () => {
+    const { PHONE } = await import('../routes.ts');
+    for (const ok of ['09171234567', '0917 123 4567', '0917-123-4567', '+63 917 123 4567', '(02) 8123 4567']) expect(PHONE.test(ok), ok).toBe(true);
   });
 });

@@ -55,7 +55,7 @@ export function Support({ query }: { query: string }) {
   const [kind, setKind] = useState<Kind>(startKind);
   const [name, setName] = useState(''); const [email, setEmail] = useState(''); const [phone, setPhone] = useState('');
   const [subject, setSubject] = useState(service ? `Quotation: ${service.name}` : fromCart ? 'Quotation for the garments in my cart' : KINDS.find((k) => k.kind === startKind)!.subject);
-  const [message, setMessage] = useState(fromCart ? `${cartText(shop.cart)}\n\nEstimate: ${formatPeso(shop.cartTotalCents)}\n\nDesign notes and deadline: ` : '');
+  const [message, setMessage] = useState(fromCart ? `${cartText(shop.cart, shop.productById)}\n\nEstimate: ${formatPeso(shop.cartTotalCents)}\n\nDesign notes and deadline: ` : '');
   const [orderRef, setOrderRef] = useState(''); const [consent, setConsent] = useState(false); const [website, setWebsite] = useState('');
   const [pictures, setPictures] = useState<Picture[]>([]);
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [sent, setSent] = useState<string | null>(null);
@@ -86,7 +86,10 @@ export function Support({ query }: { query: string }) {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    if (!email.trim() && !phone.trim()) return setError('Please give an email address or a phone number so we can answer you.');
+    // The same checks as the server, so the customer hears about a missing field before anything is sent.
+    if (!name.trim()) return setError('Please give your name or organisation.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setError('Please give a valid email address so we can answer you.');
+    if (!/^\+?(?:[\s()-]*\d){7,15}[\s()-]*$/.test(phone.trim())) return setError('Please give your mobile number, like 0917 123 4567.');
     if (!consent) return setError('Please tick the box to let us keep your message so we can answer it.');
     setBusy(true);
     try {
@@ -136,10 +139,10 @@ export function Support({ query }: { query: string }) {
           </fieldset>
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
-            <label className="text-sm font-semibold sm:col-span-2">Your name or organisation<input required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} className={input} autoComplete="name" /></label>
-            <label className="text-sm font-semibold">Email<input type="email" maxLength={200} value={email} onChange={(e) => setEmail(e.target.value)} className={input} autoComplete="email" /></label>
-            <label className="text-sm font-semibold">Mobile number<input type="tel" maxLength={40} value={phone} onChange={(e) => setPhone(e.target.value)} className={input} autoComplete="tel" /></label>
-            <p className="-mt-2 text-xs text-slate-500 sm:col-span-2">Give at least one, so we can answer you.</p>
+            <label className="text-sm font-semibold sm:col-span-2">Your name or organisation <span className="text-rose-600" aria-hidden="true">*</span><input required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} className={input} autoComplete="name" /></label>
+            <label className="text-sm font-semibold">Email <span className="text-rose-600" aria-hidden="true">*</span><input type="email" required maxLength={200} value={email} onChange={(e) => setEmail(e.target.value)} className={input} autoComplete="email" /></label>
+            <label className="text-sm font-semibold">Mobile number <span className="text-rose-600" aria-hidden="true">*</span><input type="tel" required maxLength={40} value={phone} onChange={(e) => setPhone(e.target.value)} className={input} autoComplete="tel" placeholder="0917 123 4567" /></label>
+            <p className="-mt-2 text-xs text-slate-500 sm:col-span-2"><span className="text-rose-600">*</span> Required, so we can answer you by email or by phone.</p>
             {kind === 'complaint' && <label className="text-sm font-semibold sm:col-span-2">Order or job order number (if you have it)<input maxLength={40} value={orderRef} onChange={(e) => setOrderRef(e.target.value)} className={input} placeholder="e.g. JO-000123" /></label>}
             <label className="text-sm font-semibold sm:col-span-2">Subject<input required maxLength={150} value={subject} onChange={(e) => { setSubject(e.target.value); setSubjectEdited(true); }} className={input} /></label>
             <label className="text-sm font-semibold sm:col-span-2">Message<textarea required maxLength={5000} rows={7} value={message} onChange={(e) => setMessage(e.target.value)} className={input}

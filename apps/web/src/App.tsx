@@ -18,7 +18,7 @@ import { DashHome } from './modules/DASH/Home.tsx';
 import { PracticeBanner } from './modules/PLT/PracticeBanner.tsx';
 import { HealthDot } from './modules/PLT/HealthDot.tsx';
 import { RestoredNotice } from './modules/BAK/RestoredNotice.tsx';
-import { SITE_PATHS, Site } from './shop/Site.tsx';
+import { SITE_PATHS, STAFF_SITE_PATHS, Site } from './shop/Site.tsx';
 
 type Stage = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'firstOwner' } | { kind: 'login'; message?: string } | { kind: 'ready'; me: Me; docTypes: DocTypeInfo[] };
 
@@ -54,6 +54,7 @@ function Stages() {
     ? <Site />
     : <LoginScreen message={stage.message} onSignedIn={(me) => { if (location.startsWith('/sign-in')) navigate('/'); return signedIn(me); }} />;
   if (stage.me.mustChangePassword) return <ChangePasswordScreen forced onDone={signedIn} />;
+  if (STAFF_SITE_PATHS.includes(location.split('?')[0]!)) return <Site staff />;
 
   const signOut = () => void api.logout().catch(() => undefined).then(() => {
     navigate('/sign-in');

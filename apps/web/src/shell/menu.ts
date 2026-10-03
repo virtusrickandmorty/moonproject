@@ -10,7 +10,7 @@ export type MenuGroup = (typeof MENU_GROUPS)[number];
 export interface MenuItem { group: MenuGroup; label: string; path: string; permission?: string }
 
 const MODULES: [MenuGroup, string][] = [
-  ['Sales', 'CUS CAT QUO JO COL QS COM SUP'],
+  ['Sales', 'CUS CAT QUO JO COL QS COM SUP SHP'],
   ['Production', 'PRD RATE SZR'],
   ['Purchases & Expenses', 'PUR AP EXP INV'],
   ['Money', 'CASH EQ LOAN FA'],
@@ -35,6 +35,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Overview', label: 'Calendar', path: '/cal', permission: 'cal.view' },
   { group: 'Sales', label: 'Customers', path: '/cus', permission: 'cus.view' },
   { group: 'Sales', label: 'Support inbox', path: '/sup', permission: 'sup.view' },
+  { group: 'Sales', label: 'Website shop', path: '/shp', permission: 'shp.view' },
   { group: 'Sales', label: 'Price list', path: '/cat', permission: 'cat.view' },
   { group: 'Purchases & Expenses', label: 'Suppliers', path: '/pur/suppliers', permission: 'pur.supplier.view' },
   { group: 'Purchases & Expenses', label: 'Supplies', path: '/pur/supplies', permission: 'pur.supply.view' },

@@ -33,8 +33,8 @@ export interface ChecklistItem { key: string; title: string; state: ItemState; d
 
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const signBody = z.object({ month: z.string().regex(MONTH, 'Use a month like 2026-08.'), note: z.string().trim().min(5, 'Write a note of at least 5 characters.').max(500) }).strict();
-/** Notifications that are heads-ups, not exceptions; old drafts have their own item. */
-const NOT_EXCEPTIONS = new Set(['jo-due', 'jo-ready', 'old-draft']);
+/** Notifications that are heads-ups, not exceptions; old drafts have their own item. A customer's message never holds up the books. */
+const NOT_EXCEPTIONS = new Set(['jo-due', 'jo-ready', 'old-draft', 'support-message']);
 const SHOWN = 10;
 
 const lastMonth = (date: string) => {

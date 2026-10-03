@@ -110,19 +110,22 @@ function Bell({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   );
 }
 
-/** Which menu groups this browser has folded away; a remembered convenience, so a blocked storage just means all open. */
-const FOLDED_KEY = 'moonproject.menu.folded';
-function useFolded() {
-  const [folded, setFolded] = useState<Set<string>>(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(FOLDED_KEY) ?? '[]') as string[]); } catch { return new Set(); }
+/**
+ * Which menu groups this browser has opened. Groups start folded to their heading, so the menu stays short; a remembered
+ * convenience, so a blocked storage just means all folded (the group of the page on screen still opens by itself).
+ */
+const OPENED_KEY = 'moonproject.menu.opened';
+function useOpened() {
+  const [opened, setOpened] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(OPENED_KEY) ?? '[]') as string[]); } catch { return new Set(); }
   });
-  const toggle = (group: string) => setFolded((f) => {
-    const next = new Set(f);
+  const toggle = (group: string) => setOpened((o) => {
+    const next = new Set(o);
     if (!next.delete(group)) next.add(group);
-    try { localStorage.setItem(FOLDED_KEY, JSON.stringify([...next])); } catch { /* not remembered, still works */ }
+    try { localStorage.setItem(OPENED_KEY, JSON.stringify([...next])); } catch { /* not remembered, still works */ }
     return next;
   });
-  return { folded, toggle };
+  return { opened, toggle };
 }
 
 const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('');
@@ -133,13 +136,16 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
   const path = useLocation().split('?')[0]!;
   const [open, setOpen] = useState<'menu' | 'new' | 'user' | 'bell' | null>(null);
   const [wide, setWide] = useState(true); // the sidebar on a big screen; the same button hides it
-  const { folded, toggle: fold } = useFolded();
+  const { opened, toggle: openGroup } = useOpened();
+  // The group of the page on screen opens by itself; its heading can still fold it until the next page.
+  const [shutHere, setShutHere] = useState(false);
   const menu = useMemo(() => buildMenu(docTypes, new Set(me.permissions)), [docTypes, me.permissions]);
-  useEffect(() => setOpen(null), [path]);
+  useEffect(() => { setOpen(null); setShutHere(false); }, [path]);
   const toggle = (w: typeof open) => setOpen(open === w ? null : w);
   const creatable = docTypes.filter((d) => d.canCreate);
   const toggleMenu = () => (window.matchMedia('(min-width: 768px)').matches ? setWide(!wide) : toggle('menu'));
   const isHere = (p: string) => path === p || (p !== '/' && path.startsWith(`${p}/`));
+  const hereGroup = menu.find((g) => g.items.some((i) => isHere(i.path)))?.group;
 
   return (
     <div className="min-h-screen bg-page">
@@ -181,10 +187,15 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
         {open === 'menu' && <div className="fixed inset-0 z-30 bg-slate-900/30 md:hidden" onClick={() => setOpen(null)} />}
         <nav className={`${open === 'menu' ? 'fixed inset-y-0 left-0 z-40 overflow-y-auto bg-page shadow-xl' : 'hidden'} ${wide ? 'md:block' : ''} w-[260px] max-w-[85vw] shrink-0 pb-10 pr-3 pt-2 text-[13px] md:sticky md:top-[4.5rem] md:max-h-[calc(100vh-4.5rem)] md:w-[220px] md:self-start md:overflow-y-auto md:shadow-none print:hidden`}>
           {menu.map((g) => {
-            const showing = !folded.has(g.group) || g.items.some((i) => isHere(i.path));
+            const here = g.group === hereGroup;
+            const showing = here ? !shutHere || opened.has(g.group) : opened.has(g.group);
             return (
               <div key={g.group} className="mb-1">
-                <button type="button" aria-expanded={showing} onClick={() => fold(g.group)}
+                <button type="button" aria-expanded={showing} onClick={() => {
+                    if (!here) return openGroup(g.group);
+                    if (showing && opened.has(g.group)) openGroup(g.group);
+                    setShutHere(showing);
+                  }}
                   className="flex w-full items-center gap-2 rounded-r-full py-2.5 pl-6 pr-4 text-left text-[11px] font-bold uppercase tracking-wider text-[#404040] hover:bg-white">
                   <Icon name={g.group} className="size-4" />
                   <span className="flex-1">{g.group}</span>
@@ -200,7 +211,8 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
             );
           })}
         </nav>
-        <main className="min-w-0 flex-1 px-3 pb-10 pt-2 sm:px-4 md:px-6">{children}</main>
+        {/* data-erp: the page area of the signed-in ERP; index.css widens its screens (the public website keeps its own layout). */}
+        <main data-erp className="min-w-0 flex-1 px-3 pb-10 pt-2 sm:px-4 md:px-6">{children}</main>
       </div>
     </div>
   );

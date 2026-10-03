@@ -10,13 +10,14 @@ import { SHOP_CONTACT, type Product } from './products.ts';
 import { ShopProvider, useShop } from './store.tsx';
 
 /** The addresses this site answers before sign-in; every other one asks staff to sign in. */
-export const SITE_PATHS = ['/', '/services', '/about', '/support'];
+export const SITE_PATHS = ['/', '/shop', '/services', '/about', '/support'];
+/** Signed-in staff see the website here (the home page `/` is theirs), e.g. to check the shop's products. */
+export const STAFF_SITE_PATHS = SITE_PATHS.filter((p) => p !== '/');
 export type Panel = 'cart' | 'wishlist' | 'sizes' | null;
 export interface SiteControls { openPanel: (p: Panel) => void; view: (p: Product) => void; toast: (text: string) => void }
 
-const NAV: [string, string][] = [['/', 'Shop'], ['/services', 'Services'], ['/about', 'About us'], ['/support', 'Support']];
-
-function Layout() {
+function Layout({ staff }: { staff: boolean }) {
+  const NAV: [string, string][] = [[staff ? '/shop' : '/', 'Shop'], ['/services', 'Services'], ['/about', 'About us'], ['/support', 'Support']];
   const shop = useShop();
   const [path = '/', query = ''] = useLocation().split('?');
   const [panel, setPanel] = useState<Panel>(null);
@@ -34,8 +35,8 @@ function Layout() {
           <Link to="/" className="flex shrink-0 items-center" aria-label="Virtus Garments home"><img src="/virtus-logo.png" alt="Virtus" className="h-9 w-auto" /></Link>
           {/* On a phone the links get a row of their own under the logo. */}
           <nav className="order-last -mx-1 flex w-full items-center gap-0.5 overflow-x-auto sm:order-none sm:mx-0 sm:w-auto sm:gap-1" aria-label="Website">
-            {NAV.map(([to, label]) => <Link key={to} to={to} aria-current={path === to ? 'page' : undefined}
-              className={`shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-semibold sm:px-3.5 ${path === to ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>{label}</Link>)}
+            {NAV.map(([to, label]) => <Link key={to} to={to} aria-current={path === to || (to === '/' && path === '/shop') ? 'page' : undefined}
+              className={`shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-semibold sm:px-3.5 ${path === to || (to === '/' && path === '/shop') ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>{label}</Link>)}
           </nav>
           <div className="ml-auto flex items-center gap-1 sm:gap-2">
             <button type="button" onClick={() => setPanel('wishlist')} className={icon} aria-label={`Wishlist, ${shop.wishlist.length} saved`}>
@@ -46,7 +47,7 @@ function Layout() {
               <svg viewBox="0 0 24 24" className="size-5" aria-hidden="true"><path d="M5 7h14l-1.2 11.2a2 2 0 0 1-2 1.8H8.2a2 2 0 0 1-2-1.8L5 7Zm3 0a4 4 0 0 1 8 0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>
               {shop.cartCount > 0 && <span className="absolute -right-1 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white">{shop.cartCount > 99 ? '99+' : shop.cartCount}</span>}
             </button>
-            <Link to="/sign-in" className="ml-1 rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold hover:border-slate-900">Staff sign in</Link>
+            <Link to={staff ? '/' : '/sign-in'} className="ml-1 whitespace-nowrap rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold hover:border-slate-900">{staff ? 'Back to the ERP' : 'Staff sign in'}</Link>
           </div>
         </div>
       </header>
@@ -56,7 +57,7 @@ function Layout() {
       <footer className="border-t border-slate-200 bg-white">
         <div className="mx-auto grid max-w-7xl gap-6 px-4 py-10 text-sm text-slate-600 sm:grid-cols-3 sm:px-6">
           <div><img src="/virtus-logo.png" alt="Virtus" className="h-9 w-auto" /><p className="mt-3">Team wear, uniforms and custom garments, made to order.</p></div>
-          <div className="space-y-1.5"><p className="font-bold text-slate-900">Visit the site</p>{NAV.map(([to, label]) => <p key={to}><Link to={to} className="hover:text-slate-900">{label}</Link></p>)}<p><Link to="/sign-in" className="hover:text-slate-900">Staff sign in</Link></p></div>
+          <div className="space-y-1.5"><p className="font-bold text-slate-900">Visit the site</p>{NAV.map(([to, label]) => <p key={to}><Link to={to} className="hover:text-slate-900">{label}</Link></p>)}<p><Link to={staff ? "/" : "/sign-in"} className="hover:text-slate-900">{staff ? "Back to the ERP" : "Staff sign in"}</Link></p></div>
           <div className="space-y-1.5"><p className="font-bold text-slate-900">Talk to us</p><p>{SHOP_CONTACT.email}</p><p>{SHOP_CONTACT.phone}</p><p>{SHOP_CONTACT.hours}</p></div>
         </div>
         <p className="border-t border-slate-100 py-5 text-center text-xs text-slate-500">© Virtus Garments · Prices shown are starting prices; your quotation is final.</p>
@@ -72,6 +73,7 @@ function Layout() {
   );
 }
 
-export function Site() {
-  return <ShopProvider><Layout /></ShopProvider>;
+/** `staff`: a signed-in user looking at the website. */
+export function Site({ staff = false }: { staff?: boolean }) {
+  return <ShopProvider><Layout staff={staff} /></ShopProvider>;
 }

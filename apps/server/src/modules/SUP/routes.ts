@@ -22,13 +22,16 @@ export const MAX_FILE_BYTES = 4 * 1024 * 1024;
 export const PER_SENDER_PER_HOUR = 5;
 export const ALL_PER_HOUR = 60;
 const HOUR_MS = 60 * 60 * 1000;
+export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/** 7 to 15 digits, with spaces, dashes, brackets or a leading + between them. */
+export const PHONE = /^\+?(?:[\s()-]*\d){7,15}[\s()-]*$/;
 
 const optional = (max: number) => z.string().trim().max(max).optional().transform((v) => (v ? v : null));
 const sendInput = z.object({
   kind: z.enum(KINDS),
   name: z.string().trim().min(1).max(100),
-  email: optional(200).refine((v) => v === null || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), 'email'),
-  phone: optional(40),
+  email: z.string().trim().max(200),
+  phone: z.string().trim().max(40),
   subject: z.string().trim().min(1).max(150),
   message: z.string().trim().min(1).max(5000),
   orderRef: optional(40),
@@ -61,7 +64,9 @@ export function supRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.post('/api/sup/messages', { bodyLimit: Math.ceil(MAX_FILE_BYTES / 3) * 4 * MAX_FILES + 64 * 1024, config: { permission: 'public' } }, async (req) => {
     const b = sendInput.parse(req.body);
-    if (!b.email && !b.phone) throw new AppError('CONTACT_REQUIRED', 'Please give an email address or a phone number so we can answer you.', 400);
+    // Name, email and mobile number are all needed, so the shop can answer by either.
+    if (!EMAIL.test(b.email)) throw new AppError('EMAIL_REQUIRED', 'Please give a valid email address so we can answer you.', 400);
+    if (!PHONE.test(b.phone)) throw new AppError('PHONE_REQUIRED', 'Please give your mobile number, like 0917 123 4567.', 400);
     const files = b.files.map((f) => {
       const data = Buffer.from(f.data, 'base64');
       const type = sniffType(data);

@@ -1,17 +1,17 @@
 /**
- * The showcase on the welcome page: made-up garments kept in the page itself, not the live catalogue (no server call,
- * no business data). Prices are integer centavos, "from" one piece; the shop confirms the real price on a quotation.
+ * The garments the website shop shows. Staff keep them in the ERP (Sales › Website shop, GET /api/shp/products); the
+ * made-up SAMPLE_PRODUCTS below are shown only until the shop publishes its own. Prices are integer centavos, "from"
+ * one piece; the shop confirms the real price on a quotation.
  */
 export type Shape = 'tee' | 'polo' | 'jersey' | 'jacket' | 'hoodie' | 'shorts';
-export type Category = 'Jerseys' | 'Polo shirts' | 'Shirts' | 'Jackets & hoodies' | 'Uniform sets';
+export type Category = string;
 export interface Colour { name: string; hex: string }
 export interface Product {
-  id: string; name: string; category: Category; shape: Shape; priceCents: number;
-  madeToOrder: boolean; minQty: number; leadDays: number; badge?: string;
+  id: string; name: string; category: Category; shape: Shape; priceCents: number; photoUrl?: string | null;
+  madeToOrder: boolean; minQty: number; leadDays: number; badge?: string | null;
   colours: Colour[]; sizes: string[]; summary: string; features: string[];
 }
 
-export const CATEGORIES: readonly Category[] = ['Jerseys', 'Polo shirts', 'Shirts', 'Jackets & hoodies', 'Uniform sets'];
 export const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'] as const;
 
 const ink = { name: 'Ink', hex: '#1e293b' }, white = { name: 'White', hex: '#f8fafc' }, royal = { name: 'Royal', hex: '#1f3bb3' },
@@ -19,7 +19,7 @@ const ink = { name: 'Ink', hex: '#1e293b' }, white = { name: 'White', hex: '#f8f
   sky = { name: 'Sky', hex: '#5fa8d3' }, maroon = { name: 'Maroon', hex: '#7b2135' }, grey = { name: 'Heather', hex: '#9aa3ad' };
 const ALL = [...SIZES], CORE = ['S', 'M', 'L', 'XL', '2XL'];
 
-export const PRODUCTS: readonly Product[] = [
+export const SAMPLE_PRODUCTS: readonly Product[] = [
   { id: 'sublimated-jersey', name: 'Full-sublimation team jersey', category: 'Jerseys', shape: 'jersey', priceCents: 55_000,
     madeToOrder: true, minQty: 10, leadDays: 14, badge: 'Best seller', colours: [royal, red, ink, gold], sizes: ALL,
     summary: 'Your design printed edge to edge, with names and numbers for each player.', features: ['Breathable dri-fit', 'Names and numbers included', 'Colours that do not crack or fade'] },
@@ -69,4 +69,5 @@ export const SIZE_CHART: { size: string; chest: number; length: number; shoulder
 /** Where a quotation request goes. Placeholders: the owner fills in the shop's real contact details. */
 export const SHOP_CONTACT = { email: 'orders@example.com', phone: '0900 000 0000', hours: 'Monday to Saturday, 8 AM to 6 PM' };
 
-export const productById = (id: string) => PRODUCTS.find((p) => p.id === id);
+/** Categories in the order their first product appears. */
+export const categoriesOf = (products: readonly Product[]) => [...new Set(products.map((p) => p.category))];

@@ -1,9 +1,9 @@
 /** The store's pop-ups: quick view, size guide, cart (which becomes a quotation request) and wishlist. */
 import { formatPeso } from '@moonproject/shared';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { GarmentArt } from './GarmentArt.tsx';
+import { ProductPicture } from './GarmentArt.tsx';
 import { navigate } from '../router.tsx';
-import { PRODUCTS, SIZE_CHART, productById, type Product } from './products.ts';
+import { SIZE_CHART, type Product } from './products.ts';
 import { useShop, type CartLine } from './store.tsx';
 
 /** Open overlays, newest last: Escape closes only the top one. */
@@ -62,8 +62,8 @@ export function QuickView({ product, onClose, onSizeGuide, onAdded }: { product:
   return (
     <Overlay title="Quick view" onClose={onClose}>
       <div className="grid gap-6 p-5 md:grid-cols-[0.9fr_1.1fr] md:p-7">
-        <div className="relative grid aspect-square place-items-center self-start rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100">
-          <GarmentArt shape={product.shape} colour={colour.hex} className="w-4/5" />
+        <div className="relative grid aspect-square place-items-center self-start overflow-hidden rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100">
+          <ProductPicture product={product} colour={colour.hex} className={product.photoUrl ? '' : 'w-4/5'} />
           <WishButton product={product} className="absolute right-3 top-3" />
         </div>
         <div>
@@ -126,26 +126,26 @@ export function SizeGuide({ onClose }: { onClose: () => void }) {
 }
 
 /** The cart as plain lines, for the quotation request on the support page. */
-export const cartText = (cart: CartLine[]) => cart.map((l) => `${l.qty} × ${productById(l.productId)!.name} (${l.colour}, size ${l.size})`).join('\n');
+export const cartText = (cart: CartLine[], byId: (id: string) => Product | undefined) => cart.map((l) => `${l.qty} × ${byId(l.productId)!.name} (${l.colour}, size ${l.size})`).join('\n');
 
 export function CartDrawer({ onClose }: { onClose: () => void }) {
-  const { cart, setQty, remove, clearCart, cartTotalCents } = useShop();
+  const { cart, setQty, remove, clearCart, cartTotalCents, productById } = useShop();
   return (
     <Overlay title={`Your cart (${cart.length})`} side onClose={onClose}>
       {cart.length === 0 ? <p className="p-8 text-center text-slate-500">Your cart is empty. Open a product and pick sizes to start a list.</p> : (
         <div className="flex h-full flex-col">
-          <ul className="flex-1 divide-y divide-slate-100 px-5">{cart.map((l, i) => { const p = productById(l.productId)!; const hex = p.colours.find((c) => c.name === l.colour)?.hex ?? '#ccc'; return (
+          <ul className="flex-1 divide-y divide-slate-100 px-5">{cart.map((l) => { const p = productById(l.productId)!; const hex = p.colours.find((c) => c.name === l.colour)?.hex ?? '#ccc'; return (
             <li key={`${l.productId}-${l.size}-${l.colour}`} className="flex gap-3 py-4">
-              <div className="grid size-16 shrink-0 place-items-center rounded-xl bg-slate-50"><GarmentArt shape={p.shape} colour={hex} className="w-12" /></div>
+              <div className="grid size-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-slate-50"><ProductPicture product={p} colour={hex} className={p.photoUrl ? '' : 'w-12'} /></div>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold">{p.name}</p><p className="text-sm text-slate-500">{l.colour} · size {l.size}</p>
                 <div className="mt-2 flex items-center gap-2">
                   <div className="flex items-center rounded-full border border-slate-200">
-                    <button type="button" onClick={() => setQty(i, l.qty - 1)} className="size-8 text-lg" aria-label="One fewer">−</button>
+                    <button type="button" onClick={() => setQty(l, l.qty - 1)} className="size-8 text-lg" aria-label="One fewer">−</button>
                     <span className="w-8 text-center text-sm tabular-nums">{l.qty}</span>
-                    <button type="button" onClick={() => setQty(i, l.qty + 1)} className="size-8 text-lg" aria-label="One more">+</button>
+                    <button type="button" onClick={() => setQty(l, l.qty + 1)} className="size-8 text-lg" aria-label="One more">+</button>
                   </div>
-                  <button type="button" onClick={() => remove(i)} className="text-sm text-slate-500 hover:text-rose-600">Remove</button>
+                  <button type="button" onClick={() => remove(l)} className="text-sm text-slate-500 hover:text-rose-600">Remove</button>
                 </div>
               </div>
               <p className="font-semibold tabular-nums">{formatPeso(l.qty * p.priceCents)}</p>
@@ -162,14 +162,14 @@ export function CartDrawer({ onClose }: { onClose: () => void }) {
 }
 
 export function WishlistDrawer({ onClose, onOpen }: { onClose: () => void; onOpen: (p: Product) => void }) {
-  const { wishlist, toggleWish } = useShop();
-  const saved = PRODUCTS.filter((p) => wishlist.includes(p.id));
+  const { wishlist, toggleWish, products } = useShop();
+  const saved = products.filter((p) => wishlist.includes(p.id));
   return (
     <Overlay title={`Wishlist (${saved.length})`} side onClose={onClose}>
       {saved.length === 0 ? <p className="p-8 text-center text-slate-500">Tap the heart on any product to save it here.</p> : (
         <ul className="divide-y divide-slate-100 px-5">{saved.map((p) => (
           <li key={p.id} className="flex items-center gap-3 py-4">
-            <div className="grid size-16 shrink-0 place-items-center rounded-xl bg-slate-50"><GarmentArt shape={p.shape} colour={p.colours[0]!.hex} className="w-12" /></div>
+            <div className="grid size-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-slate-50"><ProductPicture product={p} colour={p.colours[0]!.hex} className={p.photoUrl ? '' : 'w-12'} /></div>
             <div className="min-w-0 flex-1"><p className="truncate font-semibold">{p.name}</p><p className="text-sm text-slate-500">from {formatPeso(p.priceCents)}</p></div>
             <button type="button" onClick={() => onOpen(p)} className="rounded-full bg-slate-900 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700">View</button>
             <button type="button" onClick={() => toggleWish(p.id)} className="text-sm text-slate-500 hover:text-rose-600" aria-label={`Remove ${p.name}`}>✕</button>

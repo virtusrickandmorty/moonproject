@@ -32,23 +32,29 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Tables use the whole width the screen gives them: a table fills its box unless it says otherwise, and a width cap
-   (max-w-*) on the table or on any box around it is lifted. Dialogs keep their size; printouts are left as they are. */
+/* Every ERP screen (main[data-erp], the signed-in shell; never the public website) uses the whole width it is given: a width cap (max-w-*) on a page's outer box is lifted, so a
+   page looks the same with or without rows yet. Tables fill their box unless they say otherwise, and a cap on the table
+   or on any box around it is lifted too. Dialogs keep their size; printouts are left as they are. */
+@media screen {
+  main[data-erp] > [class*='max-w-']:not([role='dialog']) {
+    max-width: none;
+  }
+}
 @layer base {
-  main table {
+  main[data-erp] table {
     width: 100%;
   }
 }
 @media screen {
-  main [class*='max-w-']:has(table):not([role='dialog'], [role='dialog'] *),
-  main table[class*='max-w-'] {
+  main[data-erp] [class*='max-w-']:has(table):not([role='dialog'], [role='dialog'] *),
+  main[data-erp] table[class*='max-w-'] {
     max-width: none;
   }
 }
 
 /* On a phone a wide table scrolls sideways inside itself instead of pushing the whole page out (unless a box around it already scrolls). */
 @media screen and (width < 48rem) {
-  main table:not(:is(.overflow-x-auto, .overflow-auto, .overflow-x-scroll) table) {
+  main[data-erp] table:not(:is(.overflow-x-auto, .overflow-auto, .overflow-x-scroll) table) {
     display: block;
     max-width: 100%;
     overflow-x: auto;

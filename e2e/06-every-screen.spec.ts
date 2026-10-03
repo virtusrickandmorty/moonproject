@@ -101,6 +101,8 @@ async function trouble(page: Page): Promise<string[]> {
 }
 
 async function menuLinks(page: Page): Promise<{ label: string; href: string }[]> {
+  // Menu groups start folded; open each one (the browser remembers, so they stay open while the test clicks through).
+  for (const heading of await page.locator('nav button[aria-expanded="false"]').all()) await heading.click();
   return page.locator('nav a').evaluateAll((as) => as.map((a) => ({ label: (a.textContent ?? '').trim(), href: a.getAttribute('href') ?? '' })));
 }
 

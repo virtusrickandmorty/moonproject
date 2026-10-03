@@ -42,6 +42,7 @@ import { NotificationsPage } from './DASH/Home.tsx';
 import { CalendarPage } from './CAL/Calendar.tsx';
 import { Customers } from './CUS/Customers.tsx';
 import { SupportInbox } from './SUP/Inbox.tsx';
+import { ShopProducts } from './SHP/ShopProducts.tsx';
 import { CompanyProfileScreen } from './PRT/CompanyProfile.tsx';
 import { PrinterTestPackScreen } from './PRT/PrinterTestPack.tsx';
 import { StatExposure } from './STAT/Exposure.tsx';
@@ -142,6 +143,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/cal': CalendarPage,
   '/cus': Customers,
   '/sup': SupportInbox,
+  '/shp': ShopProducts,
   '/cat': Catalog,
   '/cash/accounts': CashAccounts,
   '/cash/book': CashBook,

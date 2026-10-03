@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Me } from '../../api.ts';
 import { Button, Notice, Panel, inputClass, manilaTime, useAction } from '../../components/ui.tsx';
 import { masterRequest } from '../CUS/http.ts';
+import { useLocation } from '../../router.tsx';
 
 type Status = 'new' | 'in_progress' | 'closed';
 type Kind = 'inquiry' | 'complaint' | 'suggestion' | 'quotation';
@@ -30,9 +31,12 @@ export function SupportInbox({ me }: { me: Me }) {
   const [note, setNote] = useState('');
   const { busy, error, run } = useAction();
   const canManage = me.permissions.includes('sup.manage');
+  // A notification links here with ?open=<id>: show that message straight away.
+  const opening = new URLSearchParams(useLocation().split('?')[1] ?? '').get('open');
 
   const load = useCallback(() => run(async () => setList(await masterRequest(me, `/api/sup/messages?status=${filter}`))), [me, filter]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => { if (opening) void show(opening); }, [opening]); // eslint-disable-line react-hooks/exhaustive-deps
   const show = (id: string) => run(async () => {
     const d = await masterRequest<Detail>(me, `/api/sup/messages/${encodeURIComponent(id)}`);
     setOpen(d); setStatus(d.status === 'new' ? 'in_progress' : d.status); setNote('');

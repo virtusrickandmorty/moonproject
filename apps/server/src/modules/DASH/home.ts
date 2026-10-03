@@ -10,6 +10,7 @@ import { placesFor } from '../CASH/public.ts';
 import { activeJobOrders, joMoney, joMoneyAll, releasesAwaitingInvoice } from '../JO/public.ts';
 import { pendingCertificates } from '../COL/public.ts';
 import { board } from '../PRD/public.ts';
+import { KIND_LABELS as SUPPORT_KINDS, newSupportMessages } from '../SUP/public.ts';
 import { sizerBoard } from '../SZR/public.ts';
 import { hasReceived2307, paidTaxPeriods, taxDeadlines, vatSummary } from '../TAX/public.ts';
 import { monthEndChecklist } from '../ACC/public.ts';
@@ -200,6 +201,10 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
     for (const deadline of taxDeadlines(db, date, addDays(date, 7))) if (payable.has(deadline.form) && !paid.has(`${deadline.form}:${deadline.period}`)) {
       push('tax-deadline', `${deadline.form}:${deadline.period}`, `${deadline.form} is due ${deadline.dueDate}`, '/tax/calendar', deadline.periodLabel);
     }
+  }
+  // Messages from the website's support page that nobody has started on: they go when someone moves them along in the inbox.
+  if (can('sup.view')) for (const m of newSupportMessages(db)) {
+    push('support-message', m.id, `${SUPPORT_KINDS[m.kind] ?? 'Message'} from ${m.name}: ${m.subject}`, `/sup?open=${m.id}`, `${m.number} · ${m.receivedAt.slice(0, 16).replace('T', ' ')}`);
   }
   if (can('szr.loan.view') && (roleOf(user) === 'encoder' || roleOf(user) === 'production')) {
     for (const set of sizerBoard(db, date).overdue) push('sizer-overdue', set.holder!.loanId, `${set.code} sizer set is overdue`, '/szr/sets',
