@@ -17,7 +17,7 @@ It then shows the **Net change in cash** and the **Closing cash**. Finally, it s
 
 When the closing cash agrees with the balance sheet, it will say "Closing cash equals the cash accounts on the balance sheet at [date]."
 
-You can save the statement to your computer by clicking **Export CSV**, or print it by clicking **Print**.
+You can save the statement to your computer by clicking **Export CSV**, or print it by clicking **Print this page**.
 
 ### Common mistakes and how to fix them
 - **Mistake:** The **Check difference** line does not show zero, and there is a warning message.

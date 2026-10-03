@@ -105,7 +105,7 @@ const isSearch = (label: string) => /^search|type 2 or more|number or customer|r
 async function pickFirst(input: Locator) {
   for (const query of ['Practice', 'JO-', 'REL-', 'PO-', '0']) {
     await input.fill(query);
-    const found = input.locator('xpath=..').getByRole('button').filter({ hasNotText: /^(Change|\+|Add|✕)/ });
+    const found = input.locator('xpath=ancestor::*[not(self::label)][1]').getByRole('button').filter({ hasNotText: /^(Change|\+|Add|✕)/ });
     await found.first().waitFor({ state: 'visible', timeout: 1_500 }).catch(() => undefined);
     if (await found.count()) return void (await found.first().click());
   }

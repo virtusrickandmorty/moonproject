@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, type DashHomeData, type DashItem, type DashNotification, type DashOwnerCharts, type DashOwnerHealth, type NightlyStatus } from '../../api.ts';
+import { api, type DashHomeData, type DashItem, type DashNotification, type DashOwnerCharts, type DashOwnerHealth, type DashWidget, type NightlyStatus } from '../../api.ts';
 import { Link } from '../../router.tsx';
 import { Notice, Panel, peso } from '../../components/ui.tsx';
 import { nightlyLine } from '../AUD/nightly.ts';
@@ -14,8 +14,33 @@ function Item({ item, action, muted = false }: { item: DashItem; action?: React.
 }
 
 const NOTE_PAGE = 50;
+const ATTENTION_KEYS = ['overdue-collectibles', 'due', 'ready', 'collectibles', 'exceptions', 'production', 'drafts', 'month-end'];
+type AttentionItem = DashItem & { notificationId?: string };
 
-function Notifications({ all = false }: { all?: boolean }) {
+/** Prioritise only the reminders already returned; the full widgets and notifications remain reachable. */
+export function attentionItems(widgets: DashWidget[], notifications: DashNotification[]): AttentionItem[] {
+  const priority = ['health-red', 'negative-cash', 'jo-overdue', 'released-balance', 'tax-deadline', 'remittance-deadline', 'jo-due', 'jo-ready'];
+  const notes = notifications.filter((n) => !n.read).sort((a, b) => {
+    const rank = (kind: string) => { const i = priority.indexOf(kind); return i < 0 ? priority.length : i; };
+    return rank(a.kind) - rank(b.kind);
+  }).map((n) => ({ ...n, notificationId: n.id }));
+  const warnings = widgets.filter((w) => w.tone === 'danger').map((w) => ({ id: w.key, label: w.title, href: w.href,
+    detail: w.items?.map((i) => `${i.label}: ${i.detail ?? ''}`).join(' · ') }));
+  const work = ATTENTION_KEYS.flatMap((key) => widgets.filter((w) => w.key === key && w.tone !== 'danger').flatMap((w) =>
+    (w.items ?? []).filter((i) => !notes.some((n) => n.href && n.href === i.href)).slice(0, 2).map((i) => ({ ...i, id: `${w.key}:${i.id}`, label: `${w.title} · ${i.label}`, href: i.href ?? w.href }))));
+  const rank = (item: AttentionItem) => {
+    if (warnings.some((w) => w === item)) return -1;
+    if (item.notificationId) {
+      const n = notes.find((n) => n.id === item.id)!;
+      const i = priority.indexOf(n.kind);
+      return i < 0 ? 12 : i;
+    }
+    return [2, 6, 7, 3, 8, 9, 10, 4][ATTENTION_KEYS.indexOf(item.id.split(':')[0]!)] ?? 12;
+  };
+  return [...warnings, ...notes, ...work].sort((a, b) => rank(a) - rank(b)).slice(0, 8);
+}
+
+function Notifications({ all = false, widgets = [], children }: { all?: boolean; widgets?: DashWidget[]; children?: React.ReactNode }) {
   const [rows, setRows] = useState<DashNotification[] | null>(null);
   const [more, setMore] = useState(false);
   const [error, setError] = useState('');
@@ -26,7 +51,7 @@ function Notifications({ all = false }: { all?: boolean }) {
     setMore(all && page.length === NOTE_PAGE);
   }, (e: Error) => setError(e.message));
   useEffect(() => { void load(0); }, []);
-  const shown = rows;
+  const shown: AttentionItem[] | null = all ? rows : attentionItems(widgets, rows ?? []);
   async function markRead(id: string) {
     setBusy(id);
     try {
@@ -35,12 +60,13 @@ function Notifications({ all = false }: { all?: boolean }) {
     } catch (e) { setError((e as Error).message); }
     setBusy('');
   }
-  return <Panel title="Notifications">
+  return <Panel title={all ? 'Notifications' : 'Needs attention'}>
+    {children}
     {error && <Notice>{error}</Notice>}
     {rows === null && !error && <p className="text-sm text-slate-500">Loading…</p>}
-    {shown?.length === 0 && <p className="text-sm text-slate-500">Nothing needs your attention.</p>}
-    <ul>{shown?.map((row) => <Item key={row.id} item={row} muted={row.read} action={!row.read &&
-      <button type="button" disabled={busy === row.id} onClick={() => void markRead(row.id)} className="shrink-0 text-xs text-indigo-700 hover:underline disabled:opacity-50">Mark read</button>} />)}</ul>
+    {rows !== null && shown?.length === 0 && <p className="text-sm text-slate-500">Nothing needs your attention.</p>}
+    <ul>{shown?.map((row) => { const note = all ? rows?.find((n) => n.id === row.id) : rows?.find((n) => n.id === row.notificationId); return <Item key={row.id} item={row} muted={note?.read} action={note && !note.read &&
+      <button type="button" disabled={busy === note.id} onClick={() => void markRead(note.id)} className="shrink-0 text-xs text-indigo-700 hover:underline disabled:opacity-50">Mark read</button>} />; })}</ul>
     {more && <button type="button" onClick={() => void load(rows?.length ?? 0)} className="text-sm text-indigo-700 hover:underline">Show more</button>}
     {!all && <Link to="/dash/notifications" className="text-sm text-indigo-700 hover:underline">See all notifications</Link>}
   </Panel>;
@@ -59,14 +85,18 @@ function OwnerHealth() {
   useEffect(() => { void api.dashOwnerHealth().then(setData, (e: Error) => setError(e.message)); }, []);
   if (error) return <Notice>{error}</Notice>;
   if (!data) return <p className="text-sm text-slate-500">Loading how the business is doing…</p>;
+  return <OwnerHealthFigures data={data} />;
+}
+
+export function OwnerHealthFigures({ data }: { data: DashOwnerHealth }) {
   const report = (path: string, query: Record<string, string>) => `${path}?${new URLSearchParams(query)}`;
   return <Panel title="How the business is doing">
     <div className="grid gap-4 md:grid-cols-2">
       {data.periods.map((period) => <div key={period.from}>
         <h3 className="mb-2 font-medium">{period.label}</h3>
         <div className="grid grid-cols-2 gap-2">
-          <Metric label="VATable sales" value={period.salesCents} href={report('/tax/sales-register', { from: period.from, to: period.to })} />
-          <Metric label="VAT" value={period.vatCents} href={report('/tax/sales-register', { from: period.from, to: period.to })} />
+          <Metric label="VATable sales" value={period.salesCents} href={report('/tax/sales', { from: period.from, to: period.to })} />
+          <Metric label="VAT" value={period.vatCents} href={report('/tax/sales', { from: period.from, to: period.to })} />
           <Metric label="Collections" value={period.collectionsCents} href={report('/rpt/collections-register', { from: period.from, to: period.to })} />
           <Metric label="Gross payroll" value={period.payrollCents} href={report('/rpt/payroll-register', { month: period.from.slice(0, 7) })} />
         </div>
@@ -104,47 +134,64 @@ function NightlyLine() {
   return <Link to="/aud/nightly" role="status" className="block rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-800 ring-1 ring-red-200 hover:bg-red-100">{line} See Nightly checks.</Link>;
 }
 
-const shortPeso = (cents: number) => Math.abs(cents) >= 100_000_000 ? `₱${(cents / 100_000_000).toFixed(1)}m` : `₱${Math.round(cents / 100_000).toLocaleString()}k`;
+const shortPeso = (cents: number) => Math.abs(cents) < 100_000 ? peso(cents) : Math.abs(cents) >= 100_000_000 ? `₱${(cents / 100_000_000).toFixed(1)}m` : `₱${Math.round(cents / 100_000).toLocaleString()}k`;
 const monthLabel = (month: string) => new Intl.DateTimeFormat('en-PH', { month: 'short' }).format(new Date(`${month}-01T00:00:00Z`));
+const signedScale = (values: number[], bottom: number, height: number) => {
+  const min = Math.min(0, ...values);
+  const max = Math.max(0, ...values);
+  return { min, max, y: (value: number) => bottom - (value - min) / (max - min || 1) * height };
+};
 
-function Bars({ data }: { data: DashOwnerCharts['months'] }) {
+export function Bars({ data }: { data: DashOwnerCharts['months'] }) {
   const fields = [{ key: 'salesCents', label: 'Sales', colour: '#4f46e5' }, { key: 'collectionsCents', label: 'Collections', colour: '#0f766e' },
     { key: 'expensesCents', label: 'Expenses', colour: '#b45309' }] as const;
-  const max = Math.max(1, ...data.flatMap((row) => fields.map((field) => Math.abs(row[field.key]))));
+  const scale = signedScale(data.flatMap((row) => fields.map((field) => row[field.key])), 190, 150);
+  const zero = scale.y(0);
   return <div><svg viewBox="0 0 720 245" role="img" aria-label="Sales, collections and expenses by month" className="h-auto min-w-[620px] print:min-w-0">
-    <line x1="42" y1="190" x2="710" y2="190" stroke="currentColor" />
+    <desc>Negative amounts, including reversals, appear below the labelled zero line.</desc>
+    <line x1="42" y1={zero} x2="710" y2={zero} stroke="currentColor" />
     {data.map((row, index) => <g key={row.month}>{fields.map((field, fieldIndex) => {
-      const height = Math.abs(row[field.key]) / max * 150;
-      return <rect key={field.key} x={48 + index * 55 + fieldIndex * 12} y={190 - height} width="10" height={height} fill={field.colour} tabIndex={0}>
+      const y = scale.y(row[field.key]);
+      return <rect key={field.key} x={48 + index * 55 + fieldIndex * 12} y={Math.min(zero, y)} width="10" height={Math.abs(y - zero)} fill={field.colour} tabIndex={0}>
         <title>{`${field.label}, ${row.month}: ${peso(row[field.key])}`}</title>
       </rect>;
     })}<text x={63 + index * 55} y="208" textAnchor="middle" fontSize="11">{monthLabel(row.month)}</text></g>)}
-    <text x="4" y="44" fontSize="11">{shortPeso(max)}</text><text x="27" y="194" fontSize="11">₱0</text>
+    {scale.max > 0 && <text x="4" y="44" fontSize="11">{shortPeso(scale.max)}</text>}
+    {scale.min < 0 && <text x="4" y="194" fontSize="11">{shortPeso(scale.min)}</text>}
+    <text x="27" y={zero + 4} fontSize="11">₱0</text>
     {fields.map((field, index) => <g key={field.key}><rect x={235 + index * 115} y="225" width="10" height="10" fill={field.colour} />
       <text x={250 + index * 115} y="234" fontSize="12">{field.label}</text></g>)}
   </svg></div>;
 }
 
-function CashLine({ data }: { data: DashOwnerCharts['months'] }) {
-  const max = Math.max(1, ...data.map((row) => Math.abs(row.cashCents)));
-  const points = data.map((row, index) => `${48 + index * 59},${170 - row.cashCents / max * 130}`).join(' ');
+export function CashLine({ data }: { data: DashOwnerCharts['months'] }) {
+  const scale = signedScale(data.map((row) => row.cashCents), 170, 130);
+  const zero = scale.y(0);
+  const points = data.map((row, index) => `${48 + index * 59},${scale.y(row.cashCents)}`).join(' ');
   return <svg viewBox="0 0 720 215" role="img" aria-label="Cash on hand at each month end" className="h-auto min-w-[620px] print:min-w-0">
-    <line x1="42" y1="170" x2="710" y2="170" stroke="currentColor" /><polyline points={points} fill="none" stroke="#4f46e5" strokeWidth="3" />
-    {data.map((row, index) => { const x = 48 + index * 59; const y = 170 - row.cashCents / max * 130; return <g key={row.month}>
+    <desc>Negative cash balances appear below the labelled zero line.</desc>
+    <line x1="42" y1={zero} x2="710" y2={zero} stroke="currentColor" /><polyline points={points} fill="none" stroke="#4f46e5" strokeWidth="3" />
+    {data.map((row, index) => { const x = 48 + index * 59; const y = scale.y(row.cashCents); return <g key={row.month}>
       <circle cx={x} cy={y} r="5" fill="#4f46e5" tabIndex={0}><title>{`${row.month}: ${peso(row.cashCents)}`}</title></circle>
       <text x={x} y="190" textAnchor="middle" fontSize="11">{monthLabel(row.month)}</text></g>; })}
-    <text x="4" y="44" fontSize="11">{shortPeso(max)}</text><text x="27" y="174" fontSize="11">₱0</text>
+    {scale.max > 0 && <text x="4" y="44" fontSize="11">{shortPeso(scale.max)}</text>}
+    {scale.min < 0 && <text x="4" y="174" fontSize="11">{shortPeso(scale.min)}</text>}
+    <text x="27" y={zero + 4} fontSize="11">₱0</text>
   </svg>;
 }
 
-function AgingBars({ data }: { data: DashOwnerCharts['receivables'] }) {
-  const max = Math.max(1, ...data.map((row) => Math.abs(row.amountCents)));
+export function AgingBars({ data }: { data: DashOwnerCharts['receivables'] }) {
+  const scale = signedScale(data.map((row) => row.amountCents), 170, 130);
+  const zero = scale.y(0);
   return <svg viewBox="0 0 520 220" role="img" aria-label="Receivables by age today" className="h-auto min-w-[450px] print:min-w-0">
-    <line x1="42" y1="170" x2="510" y2="170" stroke="currentColor" />
-    {data.map((row, index) => { const height = Math.abs(row.amountCents) / max * 130; return <g key={row.key}>
-      <rect x={65 + index * 90} y={170 - height} width="42" height={height} fill="#0f766e" tabIndex={0}><title>{`${row.label} days: ${peso(row.amountCents)}`}</title></rect>
+    <desc>Negative receivables appear below the labelled zero line.</desc>
+    <line x1="42" y1={zero} x2="510" y2={zero} stroke="currentColor" />
+    {data.map((row, index) => { const y = scale.y(row.amountCents); return <g key={row.key}>
+      <rect x={65 + index * 90} y={Math.min(zero, y)} width="42" height={Math.abs(y - zero)} fill="#0f766e" tabIndex={0}><title>{`${row.label} days: ${peso(row.amountCents)}`}</title></rect>
       <text x={86 + index * 90} y="190" textAnchor="middle" fontSize="12">{row.label}</text></g>; })}
-    <text x="4" y="44" fontSize="11">{shortPeso(max)}</text><text x="27" y="174" fontSize="11">₱0</text>
+    {scale.max > 0 && <text x="4" y="44" fontSize="11">{shortPeso(scale.max)}</text>}
+    {scale.min < 0 && <text x="4" y="174" fontSize="11">{shortPeso(scale.min)}</text>}
+    <text x="27" y={zero + 4} fontSize="11">₱0</text>
   </svg>;
 }
 
@@ -155,6 +202,7 @@ function OwnerCharts() {
   if (error) return <Notice>{error}</Notice>;
   if (!data) return <p className="text-sm text-slate-500">Loading the last 12 months…</p>;
   return <section className="space-y-4"><h2 className="text-xl font-semibold">Last 12 months</h2>
+    <p className="text-sm text-slate-600">Negative amounts appear below ₱0, including reversals. Point at a bar or dot for its signed amount.</p>
     <Panel title="Sales, collections and expenses"><div className="overflow-x-auto"><Bars data={data.months} /></div>
       <p className="flex flex-wrap gap-3 text-sm"><span>See the report:</span>
         <Link to={`/rpt/income-statement?from=${data.months[0]!.from}&to=${data.asOf}`} className="text-indigo-700 hover:underline">Income statement</Link>
@@ -166,24 +214,36 @@ function OwnerCharts() {
   </section>;
 }
 
-export function DashHome() {
+export function DashHome({ actions }: { actions?: React.ReactNode }) {
   const [home, setHome] = useState<DashHomeData | null>(null);
   const [error, setError] = useState('');
   useEffect(() => { void api.dashHome().then(setHome, (e: Error) => setError(e.message)); }, []);
   return <div className="space-y-4">
     {error && <Notice>{error}</Notice>}
     {!home && !error && <p className="text-sm text-slate-500">Loading your home…</p>}
-    {(home?.role === 'owner' || home?.role === 'accountant') && <NightlyLine />}
-    {home?.role === 'owner' && <OwnerHealth />}
-    {home?.showCharts && <OwnerCharts />}
-    {home && <div className="grid gap-4 lg:grid-cols-2">
-      {home.widgets.map((widget) => <div key={widget.key} className={widget.tone === 'danger' ? 'rounded-lg bg-red-50 text-red-900 ring-2 ring-red-300 [&>section]:bg-red-50' : ''}><Panel title={widget.title}>
+    {home ? <HomeContent home={home} actions={actions} /> : actions}
+  </div>;
+}
+
+function Widgets({ widgets }: { widgets: DashWidget[] }) {
+  return <div className="grid gap-4 lg:grid-cols-2">
+      {widgets.map((widget) => <div key={widget.key} className={widget.tone === 'danger' ? 'rounded-lg bg-red-50 text-red-900 ring-2 ring-red-300 [&>section]:bg-red-50' : ''}><Panel title={widget.title}>
         {widget.amountCents !== undefined && <p className="text-2xl font-semibold tabular-nums">{peso(widget.amountCents)}</p>}
         {widget.items && (widget.items.length ? <ul>{widget.items.map((row) => <Item key={row.id} item={row} />)}</ul> : <p className="text-sm text-slate-500">Nothing here right now.</p>)}
         {widget.href && <Link to={widget.href} className="text-sm text-indigo-700 hover:underline">Open {widget.title.toLowerCase()}</Link>}
       </Panel></div>)}
-    </div>}
-    <Notifications />
+    </div>;
+}
+
+export function HomeContent({ home, actions }: { home: DashHomeData; actions?: React.ReactNode }) {
+  const work = home.widgets.filter((w) => ATTENTION_KEYS.includes(w.key) || w.tone === 'danger');
+  return <div className="space-y-4">
+    <Notifications widgets={home.widgets}>{(home.role === 'owner' || home.role === 'accountant') && <NightlyLine />}</Notifications>
+    {actions}
+    {work.length > 0 && <details><summary className="cursor-pointer text-sm font-medium text-indigo-700">More role details</summary><Widgets widgets={work} /></details>}
+    <Widgets widgets={home.widgets.filter((w) => !work.includes(w))} />
+    {home.role === 'owner' && <OwnerHealth />}
+    {home.showCharts && <OwnerCharts />}
   </div>;
 }
 
