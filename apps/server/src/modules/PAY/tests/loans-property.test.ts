@@ -35,7 +35,9 @@ describe('government loans property test (PLAN I1.3)', () => {
           w.person('Ana Tahi', { payType: 'daily', payGroup: 'SEMI_DAILY', dailyRateCents: 55_000, isMwe: true }),
         ];
         const ctx = () => ({ db, businessDate: today(w.env.clock), at: stamp(w.env.clock), userId: w.userId, can: () => true });
-        const steps = g(() => fc.array(fc.constantFrom('tick', 'tick', 'tick', 'attend', 'attend', 'loan', 'run', 'run', 'run', 'cancel', 'remit'), { minLength: 10, maxLength: 40 }));
+        // Each world starts with a loan: with loans only at random, about one world in five recorded a run that deducted
+        // one, so 15 worlds now and then had none at all and the check below failed for want of a case.
+        const steps = ['loan', ...g(() => fc.array(fc.constantFrom('tick', 'tick', 'tick', 'attend', 'attend', 'loan', 'run', 'run', 'run', 'cancel', 'remit'), { minLength: 10, maxLength: 40 }))];
         for (const step of steps) {
           try {
             if (step === 'tick') w.at(addDays(today(w.env.clock), g(() => fc.integer({ min: 2, max: 9 }))));
@@ -126,9 +128,9 @@ describe('government loans property test (PLAN I1.3)', () => {
         expect(runInvariants(db).filter((r) => !r.ok)).toEqual([]);
         await w.env.app.close();
       }),
-      { numRuns: 15, endOnFailure: true },
+      { numRuns: 30, endOnFailure: true },
     );
     expect(stats.runs).toBeGreaterThan(0);
     expect(stats.withLoans).toBeGreaterThan(0);
-  });
+  }, 60_000);
 });
