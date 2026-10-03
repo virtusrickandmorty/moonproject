@@ -90,7 +90,8 @@ export interface JsonSchema { type?: string; format?: string; title?: string; en
 export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
 export type PrintVariant = 'document' | 'job_ticket' | 'thermal';
 export interface PrintableType { key: string; variants: PrintVariant[] }
-export interface PrinterTestPack { prints: { id: string; label: string; paper: string; html: string }[]; notBuilt: string[] }
+/** sampleCompany: no company print details are saved yet, so the samples show a made-up company. */
+export interface PrinterTestPack { prints: { id: string; label: string; paper: string; html: string }[]; notBuilt: string[]; sampleCompany: boolean }
 export interface DocHeader {
   id: string; number: string; businessDate: string; status: 'posted' | 'cancelled'; totalCents: number; summary: string; postedAt: string;
   cancelledAt: string | null; cancelReason: string | null; replacesId: string | null; replacedById: string | null;

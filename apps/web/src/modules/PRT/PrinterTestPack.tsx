@@ -40,6 +40,9 @@ export function PrinterTestPackScreen() {
       <p className="text-sm text-slate-600">Print every sample on the shop printers before go-live. These made-up samples do not record anything or use a real document number.</p></div>
     {error && <Notice>{error}</Notice>}
     {!pack ? !error && <p>Loading…</p> : <>
+      {pack.sampleCompany
+        ? <Notice tone="warning">The samples show a made-up company. To see your own name, TIN and address on them, save them first under Admin, Company print details.</Notice>
+        : <Notice tone="note">The samples show your saved company print details.</Notice>}
       <Button tone="primary" onClick={() => print(combineA4(pack.prints))}>Print all A4</Button>
       <Panel title="Print checklist"><div className="divide-y divide-slate-200">
         {pack.prints.map((item) => <div key={item.id} className="flex flex-wrap items-center gap-3 py-3">
