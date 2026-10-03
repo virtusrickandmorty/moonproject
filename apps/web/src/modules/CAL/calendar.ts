@@ -4,6 +4,7 @@ export const KINDS: { kind: CalKind; label: string }[] = [
   { kind: 'event', label: 'Booked events' }, { kind: 'job_due', label: 'Job orders due' },
   { kind: 'release', label: 'Releases' }, { kind: 'holiday', label: 'Holidays' },
   { kind: 'tax', label: 'Tax deadlines' }, { kind: 'customer_birthday', label: 'Customer birthdays' },
+  { kind: 'remittance', label: 'Government remittances' },
   { kind: 'employee_birthday', label: 'Employee birthdays' },
 ];
 const pad = (n: number) => String(n).padStart(2, '0');
