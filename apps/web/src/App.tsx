@@ -81,6 +81,7 @@ function Stages() {
       break;
     }
   }
+  if (path === '/prd/tv') return <><RestoredNotice me={stage.me} />{page}</>;
   return <Shell me={stage.me} docTypes={stage.docTypes} onSignOut={signOut}><RestoredNotice me={stage.me} />{page}</Shell>;
 }
 
