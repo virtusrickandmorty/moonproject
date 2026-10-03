@@ -80,7 +80,7 @@ function watch(page: Page) {
 }
 
 async function signInAs(page: Page, who: Who) {
-  await page.goto('/');
+  await page.goto('/sign-in');
   await page.getByLabel('Username').fill(who.username);
   await page.getByLabel('Password').fill(passwords[who.role]!);
   await page.getByRole('button', { name: 'Sign in' }).click();

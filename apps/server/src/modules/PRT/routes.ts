@@ -234,7 +234,8 @@ export function prtRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (!user.permissions.has(def.permissions.view)) throw forbidden(def.permissions.view);
       const joinBase = printLinkBase(db, deps.network);
       return tx(db, () => {
-        const h = db.prepare('SELECT id, number, business_date, doc_type, status FROM documents WHERE id = ? AND doc_type = ?').get(id, type) as PrintHeader | undefined;
+        const h = db.prepare(`SELECT d.id, d.number, d.business_date, d.doc_type, d.status, u.display_name AS prepared_by
+          FROM documents d LEFT JOIN users u ON u.id = d.posted_by WHERE d.id = ? AND d.doc_type = ?`).get(id, type) as PrintHeader | undefined;
         if (!h) throw notFound('The document');
         if (type === 'col.collection' && settingAt(db, 'col.cr_mode', h.business_date).mode !== 'system') {
           throw conflict('BOOKLET_CR_NOT_PRINTABLE', 'Collection receipts cannot be printed in booklet mode. Use the pre-printed receipt booklet.');

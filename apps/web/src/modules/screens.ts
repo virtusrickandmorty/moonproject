@@ -41,6 +41,7 @@ import { quotationView } from './QUO/QuotationView.tsx';
 import { NotificationsPage } from './DASH/Home.tsx';
 import { CalendarPage } from './CAL/Calendar.tsx';
 import { Customers } from './CUS/Customers.tsx';
+import { SupportInbox } from './SUP/Inbox.tsx';
 import { CompanyProfileScreen } from './PRT/CompanyProfile.tsx';
 import { PrinterTestPackScreen } from './PRT/PrinterTestPack.tsx';
 import { StatExposure } from './STAT/Exposure.tsx';
@@ -140,6 +141,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/dash/notifications': NotificationsPage,
   '/cal': CalendarPage,
   '/cus': Customers,
+  '/sup': SupportInbox,
   '/cat': Catalog,
   '/cash/accounts': CashAccounts,
   '/cash/book': CashBook,

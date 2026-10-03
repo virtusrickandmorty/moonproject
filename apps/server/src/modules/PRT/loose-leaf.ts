@@ -124,7 +124,7 @@ export function renderLooseLeaf(book: LeafBook, layout: Layout, ctx: LeafContext
     .leaf{position:relative;height:${usable}mm;display:flex;flex-direction:column;page-break-after:always;break-after:page}.leaf.last{page-break-after:auto;break-after:auto}
     header{text-align:center}.company{line-height:${LINE_MM}mm}h1{font-size:14pt;margin:2mm 0 1mm}.meta{display:flex;justify-content:space-between;border-top:1px solid #777;border-bottom:1px solid #777;padding:1mm 0;margin:1mm 0}.pageno{font-weight:bold}.account{margin:1mm 0;font-weight:bold;text-align:left}
     .practice{font-weight:900;color:#a60;border:2px dashed #a60;margin:1mm auto;padding:0 3mm;width:max-content}
-    table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:10pt}th,td{border:1px solid #999;padding:${ROW_PAD_MM / 2}mm 1mm;vertical-align:top;overflow-wrap:anywhere}th{background:#eee;font-weight:bold}
+    table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:10pt}th,td{border:1px solid #999;padding:${ROW_PAD_MM / 2}mm 1mm;vertical-align:top;overflow-wrap:anywhere}th{background:#eee;font-weight:bold;vertical-align:bottom}th.num{white-space:normal;overflow-wrap:break-word;font-size:8pt}
     col.desc,th.desc,td.desc{text-align:left}.num{text-align:right;white-space:nowrap;overflow-wrap:normal;font-variant-numeric:tabular-nums}.b{font-weight:bold}tr.carry td{background:#f6f6f6}
     .sign{display:grid;grid-template-columns:repeat(3,1fr);gap:8mm;margin-top:8mm;text-align:center}.sign span{display:block;border-bottom:1px solid #111;height:10mm}.sign small{font-size:8pt}
     footer{margin-top:auto;display:flex;justify-content:space-between;font-size:8pt;border-top:1px solid #777;padding-top:1mm}

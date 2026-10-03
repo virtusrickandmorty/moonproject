@@ -18,6 +18,7 @@ import { DashHome } from './modules/DASH/Home.tsx';
 import { PracticeBanner } from './modules/PLT/PracticeBanner.tsx';
 import { HealthDot } from './modules/PLT/HealthDot.tsx';
 import { RestoredNotice } from './modules/BAK/RestoredNotice.tsx';
+import { SITE_PATHS, Site } from './shop/Site.tsx';
 
 type Stage = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'firstOwner' } | { kind: 'login'; message?: string } | { kind: 'ready'; me: Me; docTypes: DocTypeInfo[] };
 
@@ -48,10 +49,16 @@ function Stages() {
   if (stage.kind === 'loading') return <p className="p-6 text-slate-500">Loading…</p>;
   if (stage.kind === 'error') return <div className="p-6"><Notice>{stage.message}</Notice></div>;
   if (stage.kind === 'firstOwner') return <FirstOwnerScreen onSignedIn={signedIn} />;
-  if (stage.kind === 'login') return <LoginScreen message={stage.message} onSignedIn={signedIn} />;
+  // Signed out, the home page, services and support make up the public website; any other address (a staff bookmark, an expired session) asks to sign in.
+  if (stage.kind === 'login') return SITE_PATHS.includes(location.split('?')[0]!)
+    ? <Site />
+    : <LoginScreen message={stage.message} onSignedIn={(me) => { if (location.startsWith('/sign-in')) navigate('/'); return signedIn(me); }} />;
   if (stage.me.mustChangePassword) return <ChangePasswordScreen forced onDone={signedIn} />;
 
-  const signOut = () => void api.logout().catch(() => undefined).then(() => setStage({ kind: 'login', message: 'You are signed out.' }));
+  const signOut = () => void api.logout().catch(() => undefined).then(() => {
+    navigate('/sign-in');
+    setStage({ kind: 'login', message: 'You are signed out.' });
+  });
   const [path = '/', query = ''] = location.split('?');
   const fromQuotation = new URLSearchParams(query).get('from-quotation');
   const typeOf = (key = '') => stage.docTypes.find((d) => d.key === key);

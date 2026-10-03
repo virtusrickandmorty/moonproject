@@ -1,4 +1,5 @@
 /** Server-rendered, escaped print views. No journal entries are created here. */
+import { readFileSync } from 'node:fs';
 import { formatPeso } from '@moonproject/shared';
 import qrcode from 'qrcode-generator';
 import { DOC_TITLES, type DocTitle } from '../../engine/documents/registry.ts';
@@ -18,14 +19,36 @@ export interface Certificate2307 {
   address: string | null;
   lines: { atc: string; months: { month: string; baseCents: number }[]; baseCents: number; ewtCents: number }[];
 }
-export interface PrintHeader { id: string; number: string; business_date: string; doc_type: string; status: 'posted' | 'cancelled' }
+/** `prepared_by`: the display name of whoever recorded the document, for the "Prepared by" line. */
+export interface PrintHeader { id: string; number: string; business_date: string; doc_type: string; status: 'posted' | 'cancelled'; prepared_by?: string | null }
 
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const cell = (value: unknown) => `<td>${escape(value)}</td>`;
 const money = (n: number) => formatPeso(n);
-const lineTable = (headings: string[], rows: unknown[][]) => `<table><thead><tr>${headings.map((h) => `<th>${escape(h)}</th>`).join('')}</tr></thead><tbody>${rows.map((r) => `<tr>${r.map(cell).join('')}</tr>`).join('')}</tbody></table>`;
+/** A cell that holds an amount or a count. A column after the first whose filled cells are all figures is right-aligned. */
+const isFigure = (value: unknown) => typeof value === 'number' || /^[−-]?₱|^[−-]?\d[\d,.]*$/.test(String(value ?? '').trim());
+const blank = (value: unknown) => value == null || value === '';
+const figureColumns = (rows: unknown[][]) => new Set(rows[0]?.map((_, i) => i).filter((i) => i > 0 &&
+  rows.some((r) => !blank(r[i])) && rows.every((r) => blank(r[i]) || isFigure(r[i]))));
+const lineTable = (headings: string[], rows: unknown[][]) => {
+  const figures = figureColumns(rows);
+  return `<table><thead><tr>${headings.map((h) => `<th>${escape(h)}</th>`).join('')}</tr></thead><tbody>${rows.length
+    ? rows.map((r) => `<tr>${r.map((v, i) => figures.has(i) ? `<td class="fig">${escape(v)}</td>` : cell(v)).join('')}</tr>`).join('')
+    : `<tr><td class="empty" colspan="${headings.length}">Nothing listed.</td></tr>`}</tbody></table>`;
+};
 const field = (name: string, value: unknown) => value ? `<p><b>${escape(name)}:</b> ${escape(value)}</p>` : '';
+/** A titled block in the body, like "Items" on the quotation. */
+const section = (title: string, html: string) => `<section class="block"><h2 class="section">${escape(title)}</h2>${html}</section>`;
+
+/** The shop's logo, inlined so a printout never fetches an image. Missing file: the printout simply has no logo. */
+let logoUri: string | null | undefined;
+function logo(): string {
+  if (logoUri === undefined) {
+    try { logoUri = `data:image/png;base64,${readFileSync(new URL('./assets/logo.png', import.meta.url)).toString('base64')}`; } catch { logoUri = null; }
+  }
+  return logoUri ? `<img class="logo" src="${logoUri}" alt="">` : '';
+}
 
 /** An inline SVG around the matrix made by qrcode-generator; printing never fetches an image or calls the internet. */
 export function jobOrderQr(jobOrderId: string, jobOrderNumber: string, joinBase?: string): string {
@@ -44,94 +67,200 @@ export function jobOrderQr(jobOrderId: string, jobOrderNumber: string, joinBase?
 type PrintTitle = DocTitle | 'Payment Voucher' | 'Payslip' | 'Cash Advance Slip' | 'Inventory Count Sheet' | 'Certificate of Creditable Tax Withheld at Source';
 export type ReportPrintTitle = 'Statement of Account' | 'Sizing Profile' | 'Fixed Asset Schedule' | "Monthly Owners' Pack";
 export const REPORT_PRINT_TITLES: readonly ReportPrintTitle[] = ['Statement of Account', 'Sizing Profile', 'Fixed Asset Schedule', "Monthly Owners' Pack"];
-function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: string): { title: PrintTitle; subtitle: string; legend: boolean; body: string; twoUp: boolean } {
-  if (h.doc_type === 'quo.quotation') return {
-    title: 'Quotation', subtitle: '', legend: true, twoUp: false,
-    body: field('Customer', doc.customerName) + field('Valid until', doc.validUntil) +
-      lineTable(['Description', 'Qty', 'Unit', 'Unit price', 'Line discount', 'Amount'], doc.lines.map((l: any) =>
-        [l.description, l.qty, l.unit, money(l.unitPriceCents), money(l.discountCents), money(l.lineTotalCents)])) +
-      field('Subtotal', money(doc.lines.reduce((sum: number, l: any) => sum + l.lineTotalCents, 0))) +
-      field('Document discount', `−${money(doc.documentDiscountCents)}`) + field('Total', money(doc.totalCents)) +
-      field('Terms', doc.termsText) + field('Contact', doc.contact) + field('Notes', doc.notes),
-  };
+
+/** One printout's parts; renderPrint lays them out like the shop's quotation (party box, items, totals, signatures, terms). */
+interface Content {
+  title: PrintTitle; subtitle: string; legend: boolean; twoUp: boolean;
+  party?: { label: string; name: unknown; lines?: unknown[] };
+  aside?: string; // shown inside the details box, between the party and the status (the job order QR)
+  status?: [string, unknown][];
+  body: string;
+  totals?: [label: string, value: string, grand?: boolean][];
+  terms?: unknown;
+  signatures?: [caption: string, name?: unknown][];
+}
+const totalsHtml = (rows: Content['totals']) => rows?.length
+  ? `<div class="totals">${rows.map(([label, value, grand]) => `<p class="tot${grand ? ' grand' : ''}"><b>${escape(label)}:</b> ${escape(value)}</p>`).join('')}</div>` : '';
+const signaturesHtml = (rows: Content['signatures']) => rows?.length
+  ? `<div class="signatures">${rows.map(([caption, name]) => `<div class="sign"><span class="name">${escape(name ?? '')}</span><span class="caption">${escape(caption)}</span></div>`).join('')}</div>` : '';
+const termsHtml = (terms: unknown) => terms ? `<section class="terms"><h3>Terms and Conditions</h3><p>${escape(terms)}</p></section>` : '';
+
+function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: string): Content {
+  const prepared = h.prepared_by ?? '';
+  if (h.doc_type === 'quo.quotation') {
+    const subtotal = doc.lines.reduce((sum: number, l: any) => sum + l.lineTotalCents, 0);
+    return {
+      title: 'Quotation', subtitle: '', legend: true, twoUp: false,
+      party: { label: 'Bill to', name: doc.customerName, lines: [doc.contact] },
+      status: [['Valid until', doc.validUntil]],
+      body: section('Items', lineTable(['Description', 'Qty', 'Unit', 'Unit price', 'Line discount', 'Amount'], doc.lines.map((l: any) =>
+        [l.description, l.qty, l.unit, money(l.unitPriceCents), money(l.discountCents), money(l.lineTotalCents)]))) + field('Notes', doc.notes),
+      totals: [['Subtotal', money(subtotal)], ['Document discount', `−${money(doc.documentDiscountCents)}`], ['Total', money(doc.totalCents), true]],
+      terms: doc.termsText,
+      signatures: [['Prepared by', prepared], ['Confirmed by (customer)']],
+    };
+  }
   if (h.doc_type === 'jo.job_order') {
     if (kind === 'job_ticket') return {
       title: 'Job Ticket', subtitle: 'Production copy', legend: false, twoUp: false,
-      body: jobOrderQr(h.id, h.number, joinBase) + field('Customer', doc.customerName) + field('Due date', doc.dueDate) + field('Priority', doc.priority) +
-        doc.lines.map((l: any) => `<section class="job-line"><h2>${escape(l.description)} · ${escape(l.qty)} pieces</h2>` +
+      party: { label: 'Customer', name: doc.customerName },
+      status: [['Due date', doc.dueDate], ['Priority', doc.priority]],
+      aside: jobOrderQr(h.id, h.number, joinBase),
+      body:
+        doc.lines.map((l: any) => `<section class="job-line"><h2 class="section">${escape(l.description)} · ${escape(l.qty)} pieces</h2>` +
           lineTable(['Wearer', 'Size', 'Jersey name', 'Jersey no.', 'Qty'], l.roster.map((r: any) => [r.wearerName, r.size ?? (r.sizeMode === 'measured' ? 'Measured' : ''), r.jerseyName, r.jerseyNumber, r.qty])) +
           `<h3>Route checklist</h3><ul>${jobTicketRoute(db, h.id, l.lineNo).map((s) => `<li>☐ ${escape(s.name)} — ${escape(s.status)}</li>`).join('')}</ul></section>`).join('') +
         field('Notes', doc.notes),
     };
     return {
       title: 'Job Order', subtitle: 'Customer copy', legend: true, twoUp: false,
-      body: field('Customer', doc.customerName) + field('Due date', doc.dueDate) +
-        lineTable(['Description', 'Qty', 'Unit price', 'Discount', 'Amount'], doc.lines.map((l: any) => [l.description, l.qty, money(l.unitPriceCents), money(l.discountCents), money(l.lineTotalCents)])) +
-        field('Total', money(doc.totalCents)) + field('Required downpayment', money(doc.requiredDownpaymentCents)) +
-        field('Payment terms', doc.paymentTerms) + field('Notes', doc.notes),
+      party: { label: 'Bill to', name: doc.customerName },
+      status: [['Due date', doc.dueDate], ['Payment terms', doc.paymentTerms]],
+      body: section('Items', lineTable(['Description', 'Qty', 'Unit price', 'Discount', 'Amount'], doc.lines.map((l: any) => [l.description, l.qty, money(l.unitPriceCents), money(l.discountCents), money(l.lineTotalCents)]))) +
+        field('Notes', doc.notes),
+      totals: [['Required downpayment', money(doc.requiredDownpaymentCents)], ['Total', money(doc.totalCents), true]],
+      signatures: [['Prepared by', prepared], ['Conforme (customer)']],
     };
   }
   if (h.doc_type === 'jo.release') return {
     title: 'Release Slip', subtitle: '', legend: true, twoUp: true,
-    body: jobOrderQr(doc.jobOrderId, doc.jobOrderNumber, joinBase) + field('Job order', doc.jobOrderNumber) + field('Customer', doc.customerName) +
-      lineTable(['Description', 'Qty'], doc.lines.map((l: any) => [l.description, l.qty])) +
-      field('Claimed by', doc.claimedBy) + field('ID type seen', doc.idSeen) +
-      field('Balance due at release', money(doc.balanceDueCents)) + field('Credit note', doc.creditNote) +
-      field('Credit due date', doc.creditDueDate),
+    party: { label: 'Customer', name: doc.customerName },
+    status: [['Job order', doc.jobOrderNumber], ['ID type seen', doc.idSeen]],
+    aside: jobOrderQr(doc.jobOrderId, doc.jobOrderNumber, joinBase),
+    body: section('Items released', lineTable(['Description', 'Qty'], doc.lines.map((l: any) => [l.description, l.qty]))) +
+      field('Credit note', doc.creditNote) + field('Credit due date', doc.creditDueDate),
+    totals: [['Balance due at release', money(doc.balanceDueCents), true]],
+    signatures: [['Released by', prepared], ['Received by', doc.claimedBy]],
   };
   if (h.doc_type === 'pur.po') {
     const names = purchaseOrderNames(db, doc.supplierId, doc.lines.map((l: any) => l.supplyId));
     return {
       title: 'Purchase Order', subtitle: '', legend: true, twoUp: false,
-      body: field('Supplier', names.supplierName) + field('Expected date', doc.expectedDate) +
-        lineTable(['Supply', 'Qty', 'Unit', 'Unit cost', 'Amount'], doc.lines.map((l: any) => [names.supplies[l.supplyId]?.name ?? l.supplyId, l.qty, names.supplies[l.supplyId]?.unit ?? '', money(l.unitCostCents), money(l.lineTotalCents)])) +
-        field('Total', money(doc.totalCents)),
+      party: { label: 'Supplier', name: names.supplierName },
+      status: [['Expected date', doc.expectedDate]],
+      body: section('Items', lineTable(['Supply', 'Qty', 'Unit', 'Unit cost', 'Amount'], doc.lines.map((l: any) => [names.supplies[l.supplyId]?.name ?? l.supplyId, l.qty, names.supplies[l.supplyId]?.unit ?? '', money(l.unitCostCents), money(l.lineTotalCents)]))),
+      totals: [['Total', money(doc.totalCents), true]],
+      signatures: [['Prepared by', prepared], ['Approved by'], ['Received by (supplier)']],
     };
   }
   if (h.doc_type === 'col.collection') return {
     title: 'Collection Receipt', subtitle: kind === 'thermal' ? 'Customer copy' : '', legend: true, twoUp: kind !== 'thermal',
-    body: field('Customer', doc.customerName) +
-      lineTable(['Applied to', 'Amount'], [...doc.applications.map((x: any) => [x.jobOrderNumber, money(x.amountCents)]), ...doc.sales.map((x: any) => [x.invoiceNumber, money(x.amountCents)])]) +
-      field('Amount received', money(doc.totalCents)) + field('CWT withheld', money(doc.cwtCents)) + field('VAT withheld', money(doc.vatWithheldCents)) + field('Unapplied', money(doc.unappliedCents)) + field('Notes', doc.note),
+    party: { label: 'Received from', name: doc.customerName },
+    body: section('Applied to', lineTable(['Applied to', 'Amount'], [...doc.applications.map((x: any) => [x.jobOrderNumber, money(x.amountCents)]), ...doc.sales.map((x: any) => [x.invoiceNumber, money(x.amountCents)])])) + field('Notes', doc.note),
+    totals: [['CWT withheld', money(doc.cwtCents)], ['VAT withheld', money(doc.vatWithheldCents)], ['Unapplied', money(doc.unappliedCents)], ['Amount received', money(doc.totalCents), true]],
+    signatures: [['Received by', prepared]],
   };
   if (h.doc_type === 'col.credit_memo') return {
     title: 'Credit Memo', subtitle: '', legend: true, twoUp: false,
-    body: field('Customer', doc.customerName) + field('Related document', doc.invoice?.invoiceNumber ?? doc.invoice?.number) +
-      field('Kind', doc.kind) + field('Reason', doc.reason) + field('Net', money(doc.netCents)) + field('VAT', money(doc.vatCents)) + field('Total credit', money(doc.totalCents)),
+    party: { label: 'Customer', name: doc.customerName },
+    status: [['Related document', doc.invoice?.invoiceNumber ?? doc.invoice?.number], ['Kind', doc.kind]],
+    body: field('Reason', doc.reason),
+    totals: [['Net', money(doc.netCents)], ['VAT', money(doc.vatCents)], ['Total credit', money(doc.totalCents), true]],
+    signatures: [['Prepared by', prepared], ['Approved by'], ['Received by (customer)']],
   };
   if (h.doc_type === 'ap.payment') return {
     title: 'Payment Voucher', subtitle: '', legend: true, twoUp: true,
-    body: field('Supplier', doc.supplierName) + lineTable(['Supplier bill', 'Supplier document', 'Amount'], doc.bills.map((x: any) => [x.billNumber, x.supplierInvoiceNo, money(x.amountCents)])) +
-      lineTable(['Paid from', 'Reference', 'Amount'], doc.tenders.map((x: any) => [x.cashPlaceName, x.reference, money(x.amountCents)])) + field('Bank fee', money(doc.feeCents)) + field('Total paid', money(doc.totalCents)) + field('Notes', doc.note),
+    party: { label: 'Pay to', name: doc.supplierName },
+    body: section('Bills paid', lineTable(['Supplier bill', 'Supplier document', 'Amount'], doc.bills.map((x: any) => [x.billNumber, x.supplierInvoiceNo, money(x.amountCents)]))) +
+      section('Paid from', lineTable(['Paid from', 'Reference', 'Amount'], doc.tenders.map((x: any) => [x.cashPlaceName, x.reference, money(x.amountCents)]))) + field('Notes', doc.note),
+    totals: [['Bank fee', money(doc.feeCents)], ['Total paid', money(doc.totalCents), true]],
+    signatures: [['Prepared by', prepared], ['Approved by'], ['Received by']],
   };
   if (h.doc_type === 'exp.voucher') return {
     title: 'Expense Voucher', subtitle: '', legend: false, twoUp: false,
-    body: field('Payee', doc.payee?.name) + field('Category', doc.categoryName) + field('Description', doc.description) +
-      lineTable(['Paid from', 'Reference', 'Amount'], doc.tenders.map((x: any) => [x.cashPlaceName, x.reference, money(x.amountCents)])) +
-      field('Gross', money(doc.totalCents)) + field('Input VAT', money(doc.inputVatCents)) + field('EWT', money(doc.ewtCents)) + field('Cash paid', money(doc.cashCents)),
+    party: { label: 'Payee', name: doc.payee?.name },
+    status: [['Category', doc.categoryName]],
+    body: field('Description', doc.description) + section('Paid from', lineTable(['Paid from', 'Reference', 'Amount'], doc.tenders.map((x: any) => [x.cashPlaceName, x.reference, money(x.amountCents)]))),
+    totals: [['Gross', money(doc.totalCents)], ['Input VAT', money(doc.inputVatCents)], ['EWT', money(doc.ewtCents)], ['Cash paid', money(doc.cashCents), true]],
+    signatures: [['Prepared by', prepared], ['Approved by'], ['Received by']],
   };
   if (h.doc_type === 'cash.transfer') return { title: 'Fund Transfer', subtitle: 'Fund transfer slip', legend: false, twoUp: false,
-    body: field('From', doc.fromName) + field('To', doc.toName) + field('Amount sent', money(doc.amountSentCents)) + field('Amount received', money(doc.amountReceivedCents)) + field('Fee', money(doc.feeCents)) + field('Notes', doc.note) };
+    party: { label: 'From', name: doc.fromName, lines: [`To: ${doc.toName ?? ''}`] },
+    body: field('Notes', doc.note),
+    totals: [['Amount sent', money(doc.amountSentCents)], ['Fee', money(doc.feeCents)], ['Amount received', money(doc.amountReceivedCents), true]],
+    signatures: [['Prepared by', prepared], ['Approved by']] };
   if (h.doc_type === 'cash.count') return { title: 'Cash Count', subtitle: 'Cash count sheet', legend: false, twoUp: false,
-    body: field('Cash account', doc.placeName) + lineTable(['Denomination', 'Quantity', 'Amount'], doc.lines.map((x: any) => [money(x.denominationCents), x.qty, money(x.amountCents)])) +
-      field('Counted', money(doc.countedCents)) + field('Ledger', money(doc.ledgerCents)) + field('Difference', money(doc.differenceCents)) };
+    party: { label: 'Cash account', name: doc.placeName },
+    body: section('Count', lineTable(['Denomination', 'Quantity', 'Amount'], doc.lines.map((x: any) => [money(x.denominationCents), x.qty, money(x.amountCents)]))),
+    totals: [['Ledger', money(doc.ledgerCents)], ['Difference', money(doc.differenceCents)], ['Counted', money(doc.countedCents), true]],
+    signatures: [['Counted by', prepared], ['Checked by']] };
   if (h.doc_type === 'acc.jv') return { title: 'Journal Voucher', subtitle: '', legend: false, twoUp: false,
-    body: field('Memo', doc.memo) + lineTable(['Account', 'Party', 'Debit', 'Credit', 'Memo'], doc.lines.map((x: any) => [`${x.accountCode} ${x.accountName}`, x.party ? `${x.party.type}: ${x.party.id}` : '', x.debitCents ? money(x.debitCents) : '', x.creditCents ? money(x.creditCents) : '', x.memo])) + field('Total', money(doc.totalCents)) };
+    body: field('Memo', doc.memo) + section('Entries', lineTable(['Account', 'Party', 'Debit', 'Credit', 'Memo'], doc.lines.map((x: any) => [`${x.accountCode} ${x.accountName}`, x.party ? `${x.party.type}: ${x.party.id}` : '', x.debitCents ? money(x.debitCents) : '', x.creditCents ? money(x.creditCents) : '', x.memo]))),
+    totals: [['Total', money(doc.totalCents), true]],
+    signatures: [['Prepared by', prepared], ['Approved by']] };
   if (h.doc_type === 'pay.run') return { title: 'Payslip', subtitle: `${doc.periodStart} to ${doc.periodEnd}`, legend: false, twoUp: true,
-    body: doc.employees.map((e: any) => `<section class="payslip">${field('Employee', `${e.code} · ${e.name}`)}${lineTable(['Earning / deduction', 'Amount'], e.lines.map((x: any) => [x.description, money(x.amountCents)]))}${field('Gross pay', money(e.grossCents))}${field('SSS', money(e.sssEeCents))}${field('PhilHealth', money(e.phicEeCents))}${field('Pag-IBIG', money(e.hdmfEeCents))}${field('Withholding tax', money(e.wtaxCents))}${field('Cash advance', money(e.caCents))}${field('Net pay', money(e.netCents))}</section>`).join('') };
+    body: doc.employees.map((e: any) => `<section class="payslip"><div class="party slim"><span class="label">Employee</span><strong>${escape(`${e.code} · ${e.name}`)}</strong></div><div class="pay-lines">${lineTable(['Earning / deduction', 'Amount'], e.lines.map((x: any) => [x.description, money(x.amountCents)]))}</div>` +
+      totalsHtml([['Gross pay', money(e.grossCents)], ['SSS', money(e.sssEeCents)], ['PhilHealth', money(e.phicEeCents)], ['Pag-IBIG', money(e.hdmfEeCents)], ['Withholding tax', money(e.wtaxCents)], ['Cash advance', money(e.caCents)], ['Net pay', money(e.netCents), true]]) +
+      signaturesHtml([['Received by', e.name]]) + '</section>').join('') };
   if (h.doc_type === 'ca.advance') return { title: 'Cash Advance Slip', subtitle: '', legend: false, twoUp: true,
-    body: field('Employee', doc.employeeName) + field('Paid from', doc.cashPlaceName) + field('Amount', money(doc.amountCents)) + field('Payroll instalment', money(doc.installmentCents)) + field('Notes', doc.note) };
+    party: { label: 'Employee', name: doc.employeeName },
+    status: [['Paid from', doc.cashPlaceName]],
+    body: field('Notes', doc.note),
+    totals: [['Payroll instalment', money(doc.installmentCents)], ['Amount', money(doc.amountCents), true]],
+    signatures: [['Approved by', prepared], ['Received by', doc.employeeName]] };
   if (h.doc_type === 'inv.count') return { title: 'Inventory Count Sheet', subtitle: doc.category, legend: false, twoUp: false,
-    body: field('Count date', doc.countDate) + lineTable(['Supply', 'Unit', 'Quantity', 'Unit cost', 'Value'], doc.lines.map((x: any) => [x.name, x.unit, x.qty, money(x.unitCostCents), money(x.valueCents)])) + field('Counted value', money(doc.countedCents)) + field('Ledger value', money(doc.ledgerCents)) + field('Adjustment', money(doc.adjustmentCents)) };
+    status: [['Count date', doc.countDate]],
+    body: section('Count', lineTable(['Supply', 'Unit', 'Quantity', 'Unit cost', 'Value'], doc.lines.map((x: any) => [x.name, x.unit, x.qty, money(x.unitCostCents), money(x.valueCents)]))),
+    totals: [['Ledger value', money(doc.ledgerCents)], ['Adjustment', money(doc.adjustmentCents)], ['Counted value', money(doc.countedCents), true]],
+    signatures: [['Counted by', prepared], ['Checked by']] };
   throw new Error(`Unsupported print type ${h.doc_type}`);
 }
+
+/** The company block at the top left of every printout: logo, trade name, registered name, address, TIN. */
+function company(profile: Profile): string {
+  const trade = profile.trade_name?.trim() || profile.registered_name;
+  return `<div class="brand">${logo()}<div class="company"><strong class="trade">${escape(trade)}</strong>` +
+    (trade !== profile.registered_name ? `<span>${escape(profile.registered_name)}</span>` : '') +
+    `<span>${escape(profile.registered_address)}</span><span>TIN ${escape(profile.tin)}${profile.is_vat_registered ? ' · VAT registered' : ' · Non-VAT registered'}</span></div></div>`;
+}
+
+/** The look shared by every printout, after the shop's quotation template (teal accent, dark rule, boxed details). */
+const ACCENT = '#00968a';
+const BASE_CSS = `*{box-sizing:border-box}body{color:#2b2f33;margin:0;font-family:"Segoe UI",Roboto,Arial,sans-serif}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:6mm;padding-bottom:4mm;border-bottom:1.2mm solid #2f3337}
+  .brand{display:flex;align-items:center;gap:4mm;flex:1 1 auto;min-width:0}.logo{height:20mm;width:auto}.company{display:flex;flex-direction:column;line-height:1.45;font-size:9pt;color:#444}
+  .company .trade{font-size:17pt;font-weight:800;color:#2c3e50;text-transform:uppercase;letter-spacing:.3mm;line-height:1.2;margin-bottom:1mm}
+  .titlebox{text-align:right;flex:none;max-width:60%}h1{font-size:22pt;font-weight:800;color:${ACCENT};letter-spacing:.6mm;margin:0 0 2mm}
+  .docmeta{border:1px solid #d6d6d6;padding:2mm 3mm;display:inline-grid;grid-template-columns:auto auto;gap:1mm 5mm;text-align:left;font-size:9pt}
+  .docmeta span{color:#555}.docmeta b{text-align:right;color:#222}.docmeta b.no{color:${ACCENT};font-size:11pt;white-space:nowrap}
+  .cancelled{font-size:16pt;font-weight:900;letter-spacing:2mm;color:#a00;border:2px solid #a00;margin:1mm 0 2mm auto;padding:.5mm 3mm;width:max-content}
+  .practice{font-size:12pt;font-weight:900;letter-spacing:1mm;color:#a60;border:2px dashed #a60;margin:1mm 0 2mm auto;padding:.5mm 3mm;width:max-content}
+  .subtitle{margin:0 0 2mm;font-size:9pt;color:#555;text-transform:uppercase;letter-spacing:.4mm}
+  .legend{font-size:8.5pt;font-weight:bold;text-align:center;margin:2mm 0 0;letter-spacing:.2mm}
+  .details{display:flex;justify-content:space-between;gap:6mm;border:1px solid #e1e1e1;padding:4mm 5mm;margin:5mm 0}
+  .details .label,.party .label{display:block;font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:.3mm;color:#333;margin-bottom:1.5mm}
+  .details .name{display:block;font-size:13pt;font-weight:800;color:${ACCENT};text-transform:uppercase}.details .line{display:block;color:#555;font-size:9.5pt}
+  .details .status{text-align:right;font-size:9.5pt}.details .status p{margin:.8mm 0}.details .status b{color:#222}
+  .party.slim{border:1px solid #e1e1e1;padding:2mm 3mm;margin:2mm 0}
+  main{flex:1}main p{margin:2mm 0}h2.section{font-size:11pt;color:${ACCENT};font-weight:700;margin:4mm 0 1.5mm;padding-bottom:1mm;border-bottom:2px solid #e6e6e6}
+  table{width:100%;border-collapse:collapse;margin:2mm 0;font-size:9.5pt}th,td{border:1px solid #555;padding:1.6mm 2mm;text-align:left}
+  th{background:#f0f0f0;font-size:8pt;text-transform:uppercase;letter-spacing:.2mm;text-align:center}td.empty{text-align:center;color:#777}
+  td.fig{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .totals{margin:3mm 0 0 auto;width:85mm}.tot{display:flex;justify-content:space-between;gap:4mm;margin:0;padding:1.2mm 3mm;font-size:9.5pt;border-bottom:1px solid #eee}
+  .tot.grand{position:relative;margin-top:1.5mm;padding:0 4mm 0 0;border:1px solid #333;font-size:12pt;font-weight:800;align-items:center;color:${ACCENT}}
+  .tot.grand b{background:${ACCENT};color:#fff;padding:2.2mm 4mm;flex:1;text-transform:uppercase}
+  .tot.grand::after{content:"";position:absolute;right:0;bottom:-1.2mm;width:45%;border-bottom:3px double #333}
+  .signatures{display:flex;gap:10mm;margin-top:12mm;flex-wrap:wrap}.sign{width:55mm;text-align:center}
+  .sign .name{display:block;min-height:6mm;font-weight:700;font-size:11pt;border-bottom:1.5px solid #333;padding-bottom:1mm}.sign .name::before{content:"\\200b"}.sign .caption{display:block;font-size:8pt;text-transform:uppercase;letter-spacing:.3mm;margin-top:1.5mm;color:#444}
+  .terms{border-top:2px solid #e6e6e6;margin-top:8mm;padding-top:3mm;font-size:8.5pt}.terms h3{font-size:10pt;color:#2c3e50;margin:0 0 1.5mm}.terms p{white-space:pre-line;margin:0;line-height:1.5}
+  footer{display:flex;justify-content:space-between;font-size:7.5pt;color:#666;border-top:1px solid #ccc;padding-top:1.5mm;margin-top:5mm}
+  h3{font-size:10pt;margin:2mm 0}ul{margin:1mm 0 2mm;columns:2}li{list-style:none;margin:1mm 0}
+  .job-qr{margin:0;text-align:center}.details .job-qr{flex:none;align-self:center}.job-qr svg{display:block;width:25mm;height:25mm;shape-rendering:crispEdges}.job-qr figcaption{font-size:8pt;font-weight:bold;margin-top:1mm;white-space:nowrap}
+  .test-print{position:absolute;z-index:5;top:45%;left:5%;width:90%;transform:rotate(-28deg);border:3px solid #b00;color:#b00;font-size:20pt;font-weight:900;letter-spacing:1mm;text-align:center;opacity:.32;padding:3mm;pointer-events:none}`;
 
 export function renderReportPrint(title: ReportPrintTitle, body: string, profile: Profile, businessDate: string,
   printedBy: string, printedAt: string, legend = false): string {
   if (!REPORT_PRINT_TITLES.includes(title)) throw new Error('Print title is not allowed');
   const ownersPack = title === "Monthly Owners' Pack";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escape(title)}</title><style>
-    @page{size:A4;margin:12mm${ownersPack ? ';@bottom-right{content:"Page " counter(page) " of " counter(pages)}' : ''}}*{box-sizing:border-box}body{font:10pt Arial,sans-serif;color:#111;margin:0}header{text-align:center}.company{line-height:1.35}h1{font-size:18pt;margin:6mm 0 1mm}h2{font-size:14pt}.legend{font-size:9pt;margin:2mm 0 4mm}.meta,footer{display:flex;justify-content:space-between;border-top:1px solid #777;padding-top:2mm}.meta{border-bottom:1px solid #777;border-top:0;padding-bottom:2mm;margin:3mm 0}.pack-section{break-before:page}.pack-section:first-child{break-before:auto}table{width:100%;border-collapse:collapse;margin:3mm 0}th,td{border:1px solid #aaa;padding:1.5mm;text-align:left}th{background:#eee}td.money{text-align:right}footer{font-size:8pt;margin-top:4mm}@media screen{body{background:#ddd;padding:12mm}article{background:#fff;width:210mm;min-height:273mm;margin:auto;padding:12mm;box-shadow:0 2px 12px #777}}</style></head><body><article><header><div class="company"><strong>${escape(profile.registered_name)}</strong><br>TIN ${escape(profile.tin)}<br>${escape(profile.registered_address)}</div><h1>${escape(title.toUpperCase())}</h1>${legend ? '<p class="legend"><strong>THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.</strong></p>' : ''}</header><div class="meta"><span>Date <b>${escape(businessDate)}</b></span><span>${ownersPack ? 'Prepared by' : 'Printed by'} <b>${escape(printedBy)}</b></span></div><main>${body}</main><footer><span>${ownersPack ? 'Prepared on' : `Printed by ${escape(printedBy)} at`} ${escape(printedAt)}</span></footer></article></body></html>`;
+    @page{size:A4;margin:12mm${ownersPack ? ';@bottom-right{content:"Page " counter(page) " of " counter(pages)}' : ''}}${BASE_CSS}body{font:10pt "Segoe UI",Roboto,Arial,sans-serif}
+    h1{font-size:16pt;white-space:nowrap}h2{font-size:12pt;color:${ACCENT}}.meta{display:flex;justify-content:space-between;border-bottom:1px solid #ccc;padding:2mm 0;margin:3mm 0 4mm;font-size:9pt}
+    article{position:relative}.pack-section{break-before:page}.pack-section:first-child{break-before:auto}td.money{text-align:right}
+    @media screen{body{background:#ddd;padding:12mm}article{background:#fff;width:210mm;min-height:273mm;margin:auto;padding:12mm;box-shadow:0 2px 12px #777}}</style></head>` +
+    `<body><article><header class="top">${company(profile)}<div class="titlebox"><h1>${escape(title.toUpperCase())}</h1></div></header>` +
+    `${legend ? '<p class="legend"><strong>THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.</strong></p>' : ''}` +
+    `<div class="meta"><span>Date <b>${escape(businessDate)}</b></span><span>${ownersPack ? 'Prepared by' : 'Printed by'} <b>${escape(printedBy)}</b></span></div><main>${body}</main>` +
+    `<footer><span>${ownersPack ? 'Prepared on' : `Printed by ${escape(printedBy)} at`} ${escape(printedAt)}</span></footer></article></body></html>`;
 }
 
 export const printField = field;
@@ -145,18 +274,32 @@ export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profi
   const catalogueTitles: readonly string[] = ['Payment Voucher', 'Payslip', 'Cash Advance Slip', 'Inventory Count Sheet', 'Certificate of Creditable Tax Withheld at Source'];
   if (!(DOC_TITLES as readonly string[]).includes(p.title) && !catalogueTitles.includes(p.title)) throw new Error('Print title is not allowed');
   const title = p.title.toUpperCase();
-  const one = `<article class="copy">${testPrint ? '<div class="test-print">TEST PRINT, NOT A REAL DOCUMENT</div>' : ''}<header><div class="company"><strong>${escape(profile.registered_name)}</strong><br>TIN ${escape(profile.tin)}<br>${escape(profile.registered_address)}</div><h1>${escape(title)}</h1>${practice ? '<p class="practice">PRACTICE ONLY · NOT A REAL DOCUMENT</p>' : ''}${h.status === 'cancelled' ? '<p class="cancelled">CANCELLED</p>' : ''}${p.subtitle ? `<p class="subtitle">${escape(p.subtitle)}</p>` : ''}${p.legend ? '<p class="legend"><strong>THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.</strong></p>' : ''}</header>` +
-    `<div class="meta"><span>Document no. <b>${escape(h.number)}</b></span><span>Business date <b>${escape(h.business_date)}</b></span></div>` +
-    `<main>${p.body}</main><footer><span>Printed by ${escape(printedBy)} at ${escape(printedAt)}</span><span>${copyNumber > 1 ? `REPRINT no. ${copyNumber - 1}` : 'Original print'} · Copy ${copyNumber}</span></footer></article>`;
+  const details = p.party || p.aside || p.status?.some(([, v]) => v)
+    ? `<section class="details">${p.party ? `<div><span class="label">${escape(p.party.label)}</span><span class="name">${escape(p.party.name)}</span>${(p.party.lines ?? []).filter(Boolean).map((l) => `<span class="line">${escape(l)}</span>`).join('')}</div>` : '<div></div>'}${p.aside ?? ''}` +
+      `<div class="status"><span class="label">Document status</span>${(p.status ?? []).filter(([, v]) => v).map(([k, v]) => `<p>${escape(k)}: <b>${escape(v)}</b></p>`).join('')}<p>Printed: <b>${escape(printedAt.slice(0, 10))}</b></p></div></section>`
+    : '';
+  const one = `<article class="copy">${testPrint ? '<div class="test-print">TEST PRINT, NOT A REAL DOCUMENT</div>' : ''}` +
+    `<header class="top">${company(profile)}<div class="titlebox"><h1>${escape(title)}</h1>${h.status === 'cancelled' ? '<p class="cancelled">CANCELLED</p>' : ''}${practice ? '<p class="practice">PRACTICE ONLY · NOT A REAL DOCUMENT</p>' : ''}${p.subtitle ? `<p class="subtitle">${escape(p.subtitle)}</p>` : ''}` +
+    `<div class="docmeta"><span>Document no.</span><b class="no">${escape(h.number)}</b><span>Date</span><b>${escape(h.business_date)}</b></div></div></header>` +
+    `${p.legend ? '<p class="legend"><strong>THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.</strong></p>' : ''}${details}` +
+    `<main>${p.body}${totalsHtml(p.totals)}</main>${signaturesHtml(p.signatures)}${termsHtml(p.terms)}` +
+    `<footer><span>Printed by ${escape(printedBy)} at ${escape(printedAt)}</span><span>${copyNumber > 1 ? `REPRINT no. ${copyNumber - 1}` : 'Original print'} · Copy ${copyNumber}</span></footer></article>`;
+  const thermal = kind === 'thermal';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escape(title)} ${escape(h.number)}</title><style>
-    @page{size:${kind === 'thermal' ? '80mm auto' : 'A4'};margin:${kind === 'thermal' ? '4mm' : '12mm'}}*{box-sizing:border-box}body{font:11pt Arial,sans-serif;color:#111;margin:0}.sheet{min-height:${kind === 'thermal' ? 'auto' : '273mm'}
-    .sheet.two-up{display:grid;grid-template-rows:1fr 1fr;gap:0}.copy{position:relative;padding:5mm 2mm;display:flex;flex-direction:column;break-inside:avoid}.test-print{position:absolute;z-index:5;top:45%;left:5%;width:90%;transform:rotate(-28deg);border:3px solid #b00;color:#b00;font-size:20pt;font-weight:900;letter-spacing:1mm;text-align:center;opacity:.32;padding:3mm;pointer-events:none}
-    .two-up .copy{height:136mm}.two-up .copy:first-child{border-bottom:1px dashed #777}
-    header{text-align:center}.company{line-height:1.35}h1{font-size:18pt;margin:6mm 0 1mm}.cancelled{font-size:18pt;font-weight:900;letter-spacing:2mm;color:#a00;border:2px solid #a00;margin:2mm auto;padding:1mm 3mm;width:max-content}.subtitle{margin:0 0 2mm}.practice{font-size:14pt;font-weight:900;letter-spacing:1mm;color:#a60;border:2px dashed #a60;margin:2mm auto;padding:1mm 3mm;width:max-content}.legend{font-size:9pt;margin:2mm 0 4mm;font-weight:bold}
-    .meta{display:flex;justify-content:space-between;border-block:1px solid #777;padding:2mm 0;margin:2mm 0 4mm}main{flex:1}main p{margin:2mm 0}
-    table{width:100%;border-collapse:collapse;margin:3mm 0}th,td{border:1px solid #aaa;padding:1.5mm;text-align:left}th{background:#eee}h2{font-size:12pt;margin:4mm 0 1mm}h3{font-size:10pt;margin:2mm 0}ul{margin:1mm 0 2mm;columns:2}li{list-style:none;margin:1mm 0}.job-qr{float:right;width:25mm;margin:0 0 3mm 5mm;text-align:center}.job-qr svg{display:block;width:25mm;height:25mm;shape-rendering:crispEdges}.job-qr figcaption{font-size:8pt;font-weight:bold;margin-top:1mm}
-    footer{display:flex;justify-content:space-between;font-size:8pt;border-top:1px solid #777;padding-top:2mm;margin-top:3mm}
-    @media screen{body{background:#ddd;padding:12mm}.sheet{background:white;width:210mm;margin:auto;padding:12mm;box-shadow:0 2px 12px #777}.two-up .copy{height:125mm}}
+    @page{size:${thermal ? '80mm auto' : 'A4'};margin:${thermal ? '4mm' : '12mm'}}${BASE_CSS}body{font-size:${thermal ? '9pt' : '10.5pt'}}.sheet{min-height:${thermal ? 'auto' : '273mm'}}
+    .sheet.two-up{display:grid;grid-template-rows:1fr 1fr;gap:0}.copy{position:relative;padding:3mm 1mm;display:flex;flex-direction:column;break-inside:avoid}
+    .two-up .copy{height:136mm;overflow:hidden;font-size:9pt}.two-up .copy:first-child{border-bottom:1px dashed #777}
+    .two-up .top{padding-bottom:1.5mm;border-bottom-width:.8mm;gap:4mm}.two-up .logo{height:11mm}.two-up .company{font-size:7.5pt;line-height:1.3}.two-up .company .trade{font-size:12pt;margin:0}
+    .two-up h1{font-size:15pt;margin:0 0 1mm}.two-up .docmeta{font-size:8pt;padding:1mm 2mm;gap:.3mm 4mm}.two-up .docmeta b.no{font-size:9.5pt}.two-up .subtitle{margin:0 0 1mm;font-size:8pt}
+    .two-up .legend{font-size:7.5pt;margin-top:1mm}.two-up .details{margin:2mm 0;padding:1.8mm 3mm;font-size:8.5pt}.two-up .details .name{font-size:10.5pt}.two-up .details .label,.two-up .party .label{font-size:7pt;margin-bottom:.6mm}
+    .two-up .details .status p{margin:.2mm 0}.two-up .job-qr svg{width:17mm;height:17mm;margin:auto}.two-up .job-qr figcaption{font-size:6.5pt}
+    .two-up h2.section{font-size:9pt;margin:1.5mm 0 .8mm;padding-bottom:.5mm}.two-up table{font-size:8pt;margin:1mm 0}.two-up th,.two-up td{padding:.8mm 1.5mm}.two-up th{font-size:7pt}
+    .two-up .totals{width:55%;margin-top:1.5mm}.two-up .tot{padding:.6mm 2mm;font-size:8.5pt}.two-up .tot.grand{font-size:10pt;margin-top:1mm;padding:0 3mm 0 0}.two-up .tot.grand b{padding:1.2mm 3mm}
+    .two-up .signatures{margin-top:4mm;gap:8mm}.two-up .sign .name{min-height:4mm;font-size:9pt}.two-up .sign .caption{font-size:7pt;margin-top:.6mm}.two-up footer{margin-top:2mm;padding-top:1mm;font-size:6.5pt}.two-up main p{margin:1mm 0}
+    .two-up .payslip{display:grid;grid-template-columns:1fr 1fr;column-gap:5mm;align-items:start}.two-up .payslip .party{grid-column:1/-1;margin:1mm 0}.two-up .payslip .totals{width:100%;margin-top:1mm}.two-up .payslip .signatures{grid-column:1/-1;margin-top:3mm}
+    ${thermal ? `.top{flex-direction:column;align-items:center;text-align:center}.brand{flex-direction:column}.logo{height:14mm}.company .trade{font-size:12pt}.titlebox{text-align:center;min-width:0}h1{font-size:14pt}.docmeta{font-size:8pt}
+    .details{flex-direction:column;padding:2mm;gap:2mm}.details .status{text-align:left}.totals{width:100%}.tot.grand{font-size:10.5pt}.signatures{justify-content:center}footer{flex-direction:column;gap:.5mm}.sign{width:100%}table{font-size:8pt}` : ''}
+    @media screen{body{background:#ddd;padding:12mm}.sheet{background:white;width:${thermal ? '80mm' : '210mm'};margin:auto;padding:${thermal ? '4mm' : '12mm'};box-shadow:0 2px 12px #777}.two-up .copy{height:125mm}}
     @media print{.sheet{page-break-after:always}}
   </style></head><body><div class="sheet${p.twoUp ? ' two-up' : ''}">${p.twoUp ? one + one : one}</div></body></html>`;
 }

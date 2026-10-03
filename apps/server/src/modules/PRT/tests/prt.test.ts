@@ -129,7 +129,7 @@ describe('print base', () => {
     for (const [title, legend] of [['Statement of Account', true], ['Sizing Profile', false], ['Fixed Asset Schedule', false]] as const) {
       const html = renderReportPrint(title, body, profile, '2026-09-28', 'Example Owner', '2026-09-28T10:00:00+08:00', legend);
       expect(html).toContain(`<h1>${title.toUpperCase()}</h1>`);
-      expect(html).toContain('<td>₱123.45</td>');
+      expect(html).toContain('<td class="fig">₱123.45</td>');
       expect(html.includes('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.')).toBe(legend);
       expect(html).toContain(value.registeredName);
       expect(html).toContain('Date <b>2026-09-28</b>');
@@ -200,7 +200,7 @@ describe('print base', () => {
     const html = renderPrint(env.db, header('quo.quotation'), quote, profile, 'document', 'Example Owner',
       '2026-09-28T10:00:00+08:00', 1);
     expect(html).toContain('Line discount');
-    expect(html).toContain('<td>₱10.00</td><td>₱90.00</td>');
+    expect(html).toContain('<td class="fig">₱10.00</td><td class="fig">₱90.00</td>');
     expect(html).toContain('Subtotal:</b> ₱90.00');
     expect(html).toContain('Document discount:</b> −₱5.00');
     expect(html).toContain('Total:</b> ₱85.00');

@@ -32,6 +32,20 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Tables use the whole width the screen gives them: a table fills its box unless it says otherwise, and a width cap
+   (max-w-*) on the table or on any box around it is lifted. Dialogs keep their size; printouts are left as they are. */
+@layer base {
+  main table {
+    width: 100%;
+  }
+}
+@media screen {
+  main [class*='max-w-']:has(table):not([role='dialog'], [role='dialog'] *),
+  main table[class*='max-w-'] {
+    max-width: none;
+  }
+}
+
 /* On a phone a wide table scrolls sideways inside itself instead of pushing the whole page out (unless a box around it already scrolls). */
 @media screen and (width < 48rem) {
   main table:not(:is(.overflow-x-auto, .overflow-auto, .overflow-x-scroll) table) {

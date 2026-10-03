@@ -166,7 +166,8 @@ describe('default roles against the plan (C6, E13)', () => {
 // 2. Every route, every role
 // ---------------------------------------------------------------------------------------------------------------
 
-const PUBLIC_ROUTES = ['GET /*', 'GET /api/health', 'GET /api/setup/status', 'POST /api/auth/login', 'POST /api/setup/first-owner'];
+// POST /api/sup/messages: the website's support form, limited per sender and per hour (modules/SUP/routes.ts).
+const PUBLIC_ROUTES = ['GET /*', 'GET /api/health', 'GET /api/setup/status', 'POST /api/auth/login', 'POST /api/setup/first-owner', 'POST /api/sup/messages'];
 
 /** 'authenticated' routes that are open to every signed-in user by design (nothing the role lacks is shown). */
 const OPEN_TO_SIGNED_IN = ['GET /api/system/tls', 'GET /api/system/practice', 'GET /api/settings', 'POST /api/auth/logout', 'GET /api/auth/me', 'POST /api/auth/change-password', 'POST /api/auth/step-up'];
