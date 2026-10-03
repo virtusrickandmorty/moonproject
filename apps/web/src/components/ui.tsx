@@ -1,6 +1,7 @@
 /** Small shared building blocks. Tailwind only; no component library. Styled after Star Admin 2 (see index.css). */
-import { useEffect, useState, type ButtonHTMLAttributes, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type FormEvent, type ReactNode } from 'react';
 import { formatPeso } from '@moonproject/shared';
+import { showToast, textOf } from './Toasts.tsx';
 import { api, type CashPlace, type JournalLine, type PageInfo } from '../api.ts';
 
 export type { PageInfo };
@@ -63,7 +64,12 @@ export function Field({ label, required, error, hint, children }: { label: strin
 }
 
 const noticeTones = { error: 'bg-red-50 text-red-800 ring-red-200', warning: 'bg-amber-50 text-amber-900 ring-amber-200', info: 'bg-sky-50 text-sky-900 ring-sky-200', success: 'bg-emerald-50 text-emerald-900 ring-emerald-200', note: 'bg-slate-50 text-slate-700 ring-slate-200' };
+/** An error or a success also pops up at the top right (Toasts.tsx), once per new message; warnings and notes are page guidance and stay put. */
 export function Notice({ tone = 'error', children }: { tone?: keyof typeof noticeTones; children: ReactNode }) {
+  const words = textOf(children);
+  useEffect(() => {
+    if (tone === 'error' || tone === 'success') showToast(tone, children, { announce: false });
+  }, [tone, words]); // eslint-disable-line react-hooks/exhaustive-deps
   return <div role={tone === 'error' ? 'alert' : 'status'} className={`rounded-md px-3 py-2 text-sm ring-1 ${noticeTones[tone]}`}>{children}</div>;
 }
 
@@ -81,15 +87,23 @@ export function Panel({ title, children }: { title: string; children: ReactNode 
   );
 }
 
-export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+/** Open dialogs, newest last: Escape closes only the one on top (a form opened from a wide dialog, say). */
+const openDialogs: symbol[] = [];
+
+/** `wide`: room for a table or a whole record (a customer with its orders); otherwise a form's width. */
+export function Dialog({ title, onClose, wide, children }: { title: string; onClose: () => void; wide?: boolean; children: ReactNode }) {
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const me = Symbol(title);
+    openDialogs.push(me);
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape' && openDialogs.at(-1) === me) close.current(); };
     window.addEventListener('keydown', esc);
-    return () => window.removeEventListener('keydown', esc);
-  }, [onClose]);
+    return () => { window.removeEventListener('keydown', esc); openDialogs.splice(openDialogs.indexOf(me), 1); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 p-4">
-      <div role="dialog" aria-modal="true" aria-label={title} className="mx-auto mt-12 max-w-xl space-y-4 rounded-lg bg-white p-6 shadow-xl">
+      <div role="dialog" aria-modal="true" aria-label={title} className={`mx-auto mt-12 ${wide ? 'max-w-5xl' : 'max-w-xl'} space-y-4 rounded-lg bg-white p-6 shadow-xl`}>
         <h2 className="text-lg font-bold text-[#010101]">{title}</h2>
         {children}
       </div>

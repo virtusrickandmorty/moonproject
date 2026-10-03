@@ -11,6 +11,7 @@ import { activeJobOrders, joMoney, joMoneyAll, releasesAwaitingInvoice } from '.
 import { pendingCertificates } from '../COL/public.ts';
 import { board } from '../PRD/public.ts';
 import { KIND_LABELS as SUPPORT_KINDS, newSupportMessages } from '../SUP/public.ts';
+import { paymentsToCheck } from '../SHP/public.ts';
 import { sizerBoard } from '../SZR/public.ts';
 import { hasReceived2307, paidTaxPeriods, taxDeadlines, vatSummary } from '../TAX/public.ts';
 import { monthEndChecklist } from '../ACC/public.ts';
@@ -205,6 +206,10 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
   // Messages from the website's support page that nobody has started on: they go when someone moves them along in the inbox.
   if (can('sup.view')) for (const m of newSupportMessages(db)) {
     push('support-message', m.id, `${SUPPORT_KINDS[m.kind] ?? 'Message'} from ${m.name}: ${m.subject}`, `/sup?open=${m.id}`, `${m.number} · ${m.receivedAt.slice(0, 16).replace('T', ' ')}`);
+  }
+  // Online orders paid by QR and waiting for someone to find the money in the bank and confirm it.
+  if (can('shp.orders.manage')) for (const o of paymentsToCheck(db)) {
+    push('online-payment', o.id, `${o.number}: check the online payment from ${o.name}`, `/shp/orders?open=${o.id}`, `Sent ${o.sentAt.slice(0, 16).replace('T', ' ')}`, o.totalCents);
   }
   if (can('szr.loan.view') && (roleOf(user) === 'encoder' || roleOf(user) === 'production')) {
     for (const set of sizerBoard(db, date).overdue) push('sizer-overdue', set.holder!.loanId, `${set.code} sizer set is overdue`, '/szr/sets',

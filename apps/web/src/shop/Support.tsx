@@ -22,7 +22,7 @@ const MAX_SIDE = 2000;
 interface Picture { name: string; blob: Blob; url: string }
 
 /** A picture the server will take: JPEG, PNG or WebP, at most 2000 px on a side and under 4 MB (re-saved as JPEG when not). */
-async function prepare(file: File): Promise<Picture> {
+export async function prepare(file: File): Promise<Picture> {
   const fits = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type) && file.size <= 1.5 * 1024 * 1024;
   let bitmap: ImageBitmap | null = null;
   try { bitmap = await createImageBitmap(file); } catch { throw new Error(`${file.name} is not a picture we can open. Send a JPEG, PNG or WebP.`); }
@@ -37,7 +37,7 @@ async function prepare(file: File): Promise<Picture> {
   if (!blob || blob.size > MAX_BYTES) throw new Error(`${file.name} is too big even after shrinking. Send a smaller picture.`);
   return { name: file.name.replace(/\.[^.]+$/, '') + '.jpg', blob, url: URL.createObjectURL(blob) };
 }
-const base64 = (blob: Blob) => new Promise<string>((ok, fail) => {
+export const base64 = (blob: Blob) => new Promise<string>((ok, fail) => {
   const r = new FileReader();
   r.onload = () => ok(String(r.result).split(',')[1] ?? '');
   r.onerror = () => fail(new Error('Could not read a picture. Add it again.'));
@@ -50,12 +50,14 @@ export function Support({ query }: { query: string }) {
   const shop = useShop();
   const params = new URLSearchParams(query);
   const service = SERVICES.find((s) => s.id === params.get('service'));
-  const fromCart = params.get('from') === 'cart' && shop.cart.length > 0;
+  // From the cart: the lines for a quotation (ready-stock pieces are ordered online instead, when that is open).
+  const quotedLines = shop.cart.filter((l) => !shop.orderable(l));
+  const fromCart = params.get('from') === 'cart' && quotedLines.length > 0;
   const startKind = (KINDS.find((k) => k.kind === params.get('type'))?.kind ?? 'quotation');
   const [kind, setKind] = useState<Kind>(startKind);
   const [name, setName] = useState(''); const [email, setEmail] = useState(''); const [phone, setPhone] = useState('');
   const [subject, setSubject] = useState(service ? `Quotation: ${service.name}` : fromCart ? 'Quotation for the garments in my cart' : KINDS.find((k) => k.kind === startKind)!.subject);
-  const [message, setMessage] = useState(fromCart ? `${cartText(shop.cart, shop.productById)}\n\nEstimate: ${formatPeso(shop.cartTotalCents)}\n\nDesign notes and deadline: ` : '');
+  const [message, setMessage] = useState(fromCart ? `${cartText(quotedLines, shop.productById)}\n\nEstimate: ${formatPeso(quotedLines.reduce((n, l) => n + l.qty * (shop.productById(l.productId)?.priceCents ?? 0), 0))}\n\nDesign notes and deadline: ` : '');
   const [orderRef, setOrderRef] = useState(''); const [consent, setConsent] = useState(false); const [website, setWebsite] = useState('');
   const [pictures, setPictures] = useState<Picture[]>([]);
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [sent, setSent] = useState<string | null>(null);

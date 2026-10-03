@@ -2,6 +2,8 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useLocation } from '../router.tsx';
 import { About } from './About.tsx';
+import { Checkout, MyOrders, OrderStatus, rememberedOrders } from './Checkout.tsx';
+import { Track } from './Track.tsx';
 import { CartDrawer, QuickView, SizeGuide, WishlistDrawer } from './Panels.tsx';
 import { Services } from './Services.tsx';
 import { Store } from './Storefront.tsx';
@@ -10,14 +12,16 @@ import { SHOP_CONTACT, type Product } from './products.ts';
 import { ShopProvider, useShop } from './store.tsx';
 
 /** The addresses this site answers before sign-in; every other one asks staff to sign in. */
-export const SITE_PATHS = ['/', '/shop', '/services', '/about', '/support'];
-/** Signed-in staff see the website here (the home page `/` is theirs), e.g. to check the shop's products. */
-export const STAFF_SITE_PATHS = SITE_PATHS.filter((p) => p !== '/');
+export const SITE_PATHS = ['/', '/shop', '/services', '/about', '/support', '/checkout', '/orders', '/track'];
+/** A customer's order page: /order/WEB-000123 (opened with its secret link). */
+const ORDER_PAGE = /^\/order\/([A-Z]+-\d{1,9})$/;
+/** Whether the website answers this address: for everyone, or (staff) beside the ERP, whose home page is `/`. */
+export const isSitePath = (path: string, staff = false) => (SITE_PATHS.includes(path) && !(staff && path === '/')) || ORDER_PAGE.test(path);
 export type Panel = 'cart' | 'wishlist' | 'sizes' | null;
 export interface SiteControls { openPanel: (p: Panel) => void; view: (p: Product) => void; toast: (text: string) => void }
 
 function Layout({ staff }: { staff: boolean }) {
-  const NAV: [string, string][] = [[staff ? '/shop' : '/', 'Shop'], ['/services', 'Services'], ['/about', 'About us'], ['/support', 'Support']];
+  const NAV: [string, string][] = [[staff ? '/shop' : '/', 'Shop'], ['/services', 'Services'], ['/about', 'About us'], ['/support', 'Support'], ['/track', 'Track order']];
   const shop = useShop();
   const [path = '/', query = ''] = useLocation().split('?');
   const [panel, setPanel] = useState<Panel>(null);
@@ -25,7 +29,10 @@ function Layout({ staff }: { staff: boolean }) {
   const [toast, setToast] = useState('');
   const showToast = (text: string) => { setToast(text); setTimeout(() => setToast((t) => (t === text ? '' : t)), 2500); };
   const controls: SiteControls = { openPanel: setPanel, view: setViewing, toast: showToast };
-  const page: ReactNode = path === '/services' ? <Services /> : path === '/about' ? <About /> : path === '/support' ? <Support key={query} query={query} /> : <Store {...controls} />;
+  const order = ORDER_PAGE.exec(path);
+  const page: ReactNode = order ? <OrderStatus key={path} number={order[1]!} query={query} />
+    : path === '/checkout' ? <Checkout /> : path === '/orders' ? <MyOrders /> : path === '/track' ? <Track key={query} query={query} />
+    : path === '/services' ? <Services /> : path === '/about' ? <About /> : path === '/support' ? <Support key={query} query={query} /> : <Store {...controls} />;
   const icon = 'relative grid size-10 place-items-center rounded-full hover:bg-slate-100';
 
   return (
@@ -39,6 +46,8 @@ function Layout({ staff }: { staff: boolean }) {
               className={`shrink-0 whitespace-nowrap rounded-full px-3 py-2 text-sm font-semibold sm:px-3.5 ${path === to || (to === '/' && path === '/shop') ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'}`}>{label}</Link>)}
           </nav>
           <div className="ml-auto flex items-center gap-1 sm:gap-2">
+            {/* Orders placed from this browser: their pages open from here again. */}
+            {rememberedOrders().length > 0 && <Link to="/orders" className="whitespace-nowrap rounded-full px-3 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50">My orders</Link>}
             <button type="button" onClick={() => setPanel('wishlist')} className={icon} aria-label={`Wishlist, ${shop.wishlist.length} saved`}>
               <svg viewBox="0 0 24 24" className="size-5" aria-hidden="true"><path d="M12 20s-7-4.4-9.2-8.6C1.2 8.2 3.2 4.5 6.8 4.5c2 0 3.4 1.1 4.2 2.4h2c.8-1.3 2.2-2.4 4.2-2.4 3.6 0 5.6 3.7 4 6.9C19 15.6 12 20 12 20Z" fill="none" stroke="currentColor" strokeWidth="1.8" /></svg>
               {shop.wishlist.length > 0 && <span className="absolute -right-0.5 -top-0.5 grid size-5 place-items-center rounded-full bg-rose-600 text-[10px] font-bold text-white">{shop.wishlist.length}</span>}
@@ -60,7 +69,7 @@ function Layout({ staff }: { staff: boolean }) {
           <div className="space-y-1.5"><p className="font-bold text-slate-900">Visit the site</p>{NAV.map(([to, label]) => <p key={to}><Link to={to} className="hover:text-slate-900">{label}</Link></p>)}<p><Link to={staff ? "/" : "/sign-in"} className="hover:text-slate-900">{staff ? "Back to the ERP" : "Staff sign in"}</Link></p></div>
           <div className="space-y-1.5"><p className="font-bold text-slate-900">Talk to us</p><p>{SHOP_CONTACT.email}</p><p>{SHOP_CONTACT.phone}</p><p>{SHOP_CONTACT.hours}</p></div>
         </div>
-        <p className="border-t border-slate-100 py-5 text-center text-xs text-slate-500">© Virtus Garments · Prices shown are starting prices; your quotation is final.</p>
+        <p className="border-t border-slate-100 py-5 text-center text-xs text-slate-500">© Virtus Garments · Ready-stock prices are final and include VAT; made-to-order prices are confirmed on your quotation.</p>
       </footer>
 
       {viewing && <QuickView key={viewing.id} product={viewing} onClose={() => setViewing(null)} onSizeGuide={() => setPanel('sizes')}

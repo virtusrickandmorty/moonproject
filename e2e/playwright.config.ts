@@ -6,6 +6,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
+import { MENU_GROUPS } from '../apps/web/src/shell/menu';
 
 /** One temporary folder for the whole run: the workers, the server and the teardown all inherit it. */
 process.env.E2E_DIR ??= mkdtempSync(join(tmpdir(), 'moonproject-e2e-'));
@@ -14,6 +15,12 @@ const PORT = Number(process.env.E2E_PORT ?? 3199);
 const PRACTICE_PORT = Number(process.env.E2E_PRACTICE_PORT ?? 3198);
 /** Where Chromium is already installed (a container), otherwise Playwright's own copy (`npx playwright install chromium`). */
 const executablePath = process.env.E2E_CHROMIUM || undefined;
+/**
+ * Each browser starts with every menu group opened (they start folded; the tests click links in all of them) and with the
+ * pop-up messages off, so a message is found once, on the page (components/Toasts.tsx).
+ */
+const allMenusOpen = (port: number) => ({ cookies: [], origins: [{ origin: `http://127.0.0.1:${port}`,
+  localStorage: [{ name: 'moonproject.menu.opened', value: JSON.stringify(MENU_GROUPS) }, { name: 'moonproject.toasts', value: 'off' }] }] });
 
 export default defineConfig({
   testDir: '.',
@@ -33,8 +40,8 @@ export default defineConfig({
     launchOptions: executablePath ? { executablePath } : {},
   },
   projects: [
-    { name: 'chromium', testIgnore: /06-every-screen\.spec\.ts/, use: { browserName: 'chromium' } },
-    { name: 'practice', testMatch: /06-every-screen\.spec\.ts/, use: { browserName: 'chromium', baseURL: `http://127.0.0.1:${PRACTICE_PORT}`, actionTimeout: 10_000 } },
+    { name: 'chromium', testIgnore: /06-every-screen\.spec\.ts/, use: { browserName: 'chromium', storageState: allMenusOpen(PORT) } },
+    { name: 'practice', testMatch: /06-every-screen\.spec\.ts/, use: { browserName: 'chromium', baseURL: `http://127.0.0.1:${PRACTICE_PORT}`, actionTimeout: 10_000, storageState: allMenusOpen(PRACTICE_PORT) } },
   ],
   webServer: [
     {

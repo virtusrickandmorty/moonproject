@@ -8,6 +8,8 @@ export type Category = string;
 export interface Colour { name: string; hex: string }
 export interface Product {
   id: string; name: string; category: Category; shape: Shape; priceCents: number; photoUrl?: string | null;
+  /** Ready-stock items from the ERP: pieces available per size and colour (null for made-to-order; absent on the samples). */
+  stock?: { size: string; colour: string; available: number }[] | null;
   madeToOrder: boolean; minQty: number; leadDays: number; badge?: string | null;
   colours: Colour[]; sizes: string[]; summary: string; features: string[];
 }

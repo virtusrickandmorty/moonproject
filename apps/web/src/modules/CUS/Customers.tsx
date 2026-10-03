@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { openServerPrint, type Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
+import { Button, Dialog, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Link } from '../../router.tsx';
+import { docPath } from '../../shell/menu.ts';
 import { masterRequest } from './http.ts';
 
 type Customer = { id: string; code: string; kind: 'person' | 'organization'; display_name: string; registered_name: string | null;
   tin: string | null; is_vat_registered: number; billing_address: string | null; email: string | null; notes: string | null;
-  is_active: number; version: number };
+  is_active: number; version: number; created_at?: string; updated_at?: string };
 type Group = { id: string; name: string; is_active: number; version: number };
 type Person = { id: string; full_name: string; group_id: string | null; is_active: number; version: number };
 type Phone = { id: string; phone: string; label: string | null; version: number };
@@ -64,18 +66,24 @@ export function Customers({ me }: { me: Me }) {
     <div className="flex items-center gap-3"><h1 className="flex-1 text-2xl font-semibold">Customers</h1>
       {canManage && <Button tone="primary" onClick={() => { setSaveWarnings([]); setEditing('new'); }}>+ New customer</Button>}</div>
     {error && <Notice>{error}</Notice>}
-    {saveWarnings.length > 0 && <Notice tone="warning">Possible duplicate customer: {saveWarnings.map((w) => `${w.reason} matches customer ${rows.find((r) => r.id === w.id)?.code ?? w.id}`).join('; ')}. Review before creating another record.</Notice>}
     <input aria-label="Search customers" placeholder="Search name or code" className={`${inputClass} max-w-md`} value={search}
       onChange={(e) => { setSearch(e.target.value); setOffset(0); }} />
     <Panel title="Customer list"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left text-slate-500">
-      <th>Code</th><th>Name</th><th>Kind</th><th>Status</th></tr></thead><tbody>{rows.map((r) => <tr key={r.id} className="border-t">
-        <td className="py-2">{r.code}</td><td><button className="text-indigo-700 underline" onClick={() => void open(r.id)}>{r.display_name}</button></td>
-        <td>{r.kind}</td><td>{r.is_active ? 'Active' : 'Inactive'}</td></tr>)}</tbody></table>
+      <th className="py-2 pl-2">Code</th><th>Name</th><th>Kind</th><th>Status</th></tr></thead><tbody>{rows.map((r) => (
+        // The whole row opens the customer, by mouse or by keyboard (Tab to it, then Enter or Space).
+        <tr key={r.id} tabIndex={0} aria-selected={selected?.id === r.id} onClick={() => void open(r.id)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); void open(r.id); } }}
+          className={`cursor-pointer border-t outline-none transition-colors hover:bg-indigo-50 focus-visible:bg-indigo-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-300 ${selected?.id === r.id ? 'bg-indigo-50 font-semibold text-indigo-800' : ''}`}>
+          <td className="py-2 pl-2">{r.code}</td><td>{r.display_name}</td><td>{r.kind}</td><td>{r.is_active ? 'Active' : 'Inactive'}</td></tr>))}</tbody></table>
       {rows.length === 0 && <p className="py-3 text-sm text-slate-500">No customers found.</p>}</div>
       <div className="flex gap-2"><Button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 25))}>Previous</Button>
         <Button disabled={rows.length < 25} onClick={() => setOffset(offset + 25)}>Next</Button></div></Panel>
-    {selected && <CustomerDetail me={me} data={selected} canManage={canManage} onRefresh={refreshed}
-      onEdit={() => { setSaveWarnings([]); setEditing(selected); }} onClose={() => setSelected(null)} />}
+    {/* The customer opens over the list; Edit opens its form over that, and closing the form comes back here. */}
+    {selected && <Dialog wide title={`${selected.display_name} · ${selected.code}`} onClose={() => { setSelected(null); setSaveWarnings([]); }}>
+      {saveWarnings.length > 0 && <Notice tone="warning">Possible duplicate customer: {saveWarnings.map((w) => `${w.reason} matches customer ${rows.find((r) => r.id === w.id)?.code ?? w.id}`).join('; ')}. Review before creating another record.</Notice>}
+      <CustomerDetail me={me} data={selected} canManage={canManage} onRefresh={refreshed}
+        onEdit={() => { setSaveWarnings([]); setEditing(selected); }} onClose={() => { setSelected(null); setSaveWarnings([]); }} />
+    </Dialog>}
     {editing && <CustomerEditor me={me} row={editing} onClose={() => setEditing(null)} onSaved={async (id, warnings) => {
       setEditing(null); await load(); await open(id);
       setSaveWarnings(warnings);
@@ -106,7 +114,7 @@ function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Customer |
       await onSaved(saved.id, warnings);
     } catch (e) { setError((e as Error).message); }
   };
-  return <Panel title={old ? `Edit ${old.display_name}` : 'New customer'}><div className="grid gap-3 sm:grid-cols-2">
+  return <Dialog title={old ? `Edit ${old.display_name}` : 'New customer'} onClose={onClose}><div className="grid gap-3 sm:grid-cols-2">
     <Field label="Kind" required><select className={inputClass} value={v.kind} onChange={(e) => setV({ ...v, kind: e.target.value as typeof v.kind })}>
       <option value="organization">Organization</option><option value="person">Person</option></select></Field>
     <Field label="Display name" required><input className={inputClass} value={v.displayName} onChange={(e) => setV({ ...v, displayName: e.target.value })} /></Field>
@@ -121,7 +129,7 @@ function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Customer |
     <Field label="Notes"><input className={inputClass} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field>
     <Field label="VAT registered"><input type="checkbox" checked={v.isVatRegistered} onChange={(e) => setV({ ...v, isVatRegistered: e.target.checked })} /></Field>
   </div>{error && <Notice>{error}</Notice>}<div className="flex gap-2"><Button tone="primary" disabled={!v.displayName.trim()} onClick={() => void save()}>Save</Button>
-    <Button onClick={onClose}>Cancel</Button></div></Panel>;
+    <Button onClick={onClose}>Cancel</Button></div></Dialog>;
 }
 
 function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
@@ -153,12 +161,26 @@ function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
     try { await masterRequest(me, `/api/cus/phones/${p.id}/deactivate`, 'POST', {}, p.version); setError(''); await onRefresh(); }
     catch (e) { setError((e as Error).message); }
   };
-  return <div className="space-y-4"><Panel title={`${data.display_name} · ${data.code}`}>
-    <p className="text-sm text-slate-600">{data.kind} · {data.is_active ? 'Active' : 'Inactive'}{data.tin ? ` · TIN ${data.tin}` : ''}</p>
-    {data.registered_name && <p>Registered name: {data.registered_name}</p>}
-    {data.billing_address && <p>Billing address: {data.billing_address}</p>}
-    {canManage && data.is_active === 1 && <Button onClick={onEdit}>Edit customer</Button>} <Button onClick={onClose}>Close</Button>
+  // Everything typed on the customer form, a dash where it was left blank; the contact numbers have their own panel below.
+  const shown: [string, string | null, boolean?][] = [
+    ['Code', data.code], ['Display name', data.display_name], ['Kind', data.kind === 'organization' ? 'Organization' : 'Person'],
+    ['Status', data.is_active ? 'Active' : 'Inactive'], ['Registered name', data.registered_name], ['TIN', data.tin],
+    ['VAT registered', data.is_vat_registered ? 'Yes' : 'No'], ['Email', data.email],
+    ['Billing address', data.billing_address, true], ['Notes', data.notes, true],
+    ['Added', data.created_at?.slice(0, 16).replace('T', ' ') ?? null], ['Last changed', data.updated_at?.slice(0, 16).replace('T', ' ') ?? null],
+  ];
+  return <div className="space-y-4"><Panel title="Details">
+    <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+      {shown.map(([name, value, wide]) => <div key={name} className={wide ? 'sm:col-span-2' : ''}>
+        <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{name}</dt>
+        <dd className={`mt-0.5 whitespace-pre-wrap break-words ${value ? 'text-slate-900' : 'text-slate-400'}`}>
+          {name === 'Email' && value ? <a href={`mailto:${value}`} className="text-indigo-700 hover:underline">{value}</a> : value || '—'}
+        </dd>
+      </div>)}
+    </dl>
+    <div className="flex gap-2">{canManage && data.is_active === 1 && <Button onClick={onEdit}>Edit customer</Button>}<Button onClick={onClose}>Close</Button></div>
   </Panel>
+    {me.permissions.includes('jo.view') && <CustomerOrders me={me} customerId={data.id} />}
     {error && <Notice>{error}</Notice>}
     <Panel title="Contact numbers">
       {data.phones.length === 0 ? <p className="text-sm text-muted">No contact number yet.</p> : <ul className="divide-y divide-slate-100">{data.phones.map((p) => (
@@ -240,5 +262,34 @@ function Measurements({ me, person, canEdit, onClose }: { me: Me; person: Person
       {warnings.length > 0 && <Notice tone="warning">Saved with measurement warnings: {warnings.map((w) => w.message).join(' ')}</Notice>}
       {error && <Notice>{error}</Notice>}<Button tone="primary" disabled={charts.length > 0 && reason.trim().length < 3} onClick={() => void save()}>Save revision</Button>
     </div>}
+  </Panel>;
+}
+
+type Order = { kind: 'job_order' | 'quick_sale'; docType: string; id: string; number: string; date: string; dueDate: string | null; totalCents: number; stage: string | null; balanceDueCents: number };
+/** Everything the customer has ordered, newest first: job orders with their stage, and quick sales. A row opens the document. */
+function CustomerOrders({ me, customerId }: { me: Me; customerId: string }) {
+  const [orders, setOrders] = useState<Order[] | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    setOrders(null);
+    masterRequest<Order[]>(me, `/api/jo/customers/${encodeURIComponent(customerId)}/orders`).then((o) => { setOrders(o); setError(''); }, (e: Error) => setError(e.message));
+  }, [me, customerId]);
+  const owing = orders?.reduce((n, o) => n + o.balanceDueCents, 0) ?? 0;
+  return <Panel title={`Orders${orders ? ` (${orders.length})` : ''}`}>
+    {error && <Notice>{error}</Notice>}
+    {!orders && !error && <p className="text-sm text-slate-500">Loading…</p>}
+    {orders?.length === 0 && <p className="text-sm text-muted">No orders yet.</p>}
+    {orders && orders.length > 0 && <>
+      {owing > 0 && <p className="text-sm">Still owing on these orders: <b>{peso(owing)}</b></p>}
+      <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left text-slate-500">
+        <th className="py-2 pl-2">Date</th><th>Number</th><th>Type</th><th>Due</th><th>Stage</th><th className="text-right">Total</th><th className="pr-2 text-right">Balance due</th></tr></thead>
+        <tbody>{orders.map((o) => <tr key={o.id} className="border-t hover:bg-indigo-50">
+          <td className="py-2 pl-2 whitespace-nowrap">{o.date}</td>
+          <td><Link to={docPath(o.docType, `/${o.id}`)} className="font-semibold text-indigo-700 hover:underline">{o.number}</Link></td>
+          <td>{o.kind === 'job_order' ? 'Job order' : 'Quick sale'}</td><td className="whitespace-nowrap">{o.dueDate ?? '—'}</td><td>{o.stage ?? 'Sold'}</td>
+          <td className="text-right tabular-nums">{peso(o.totalCents)}</td>
+          <td className={`pr-2 text-right tabular-nums ${o.balanceDueCents > 0 ? 'font-semibold text-amber-700' : 'text-slate-500'}`}>{o.balanceDueCents > 0 ? peso(o.balanceDueCents) : 'Paid'}</td>
+        </tr>)}</tbody></table></div>
+    </>}
   </Panel>;
 }

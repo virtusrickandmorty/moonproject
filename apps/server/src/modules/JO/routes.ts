@@ -10,6 +10,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { activeChart, activeWearers, customerWearers } from './cus.ts';
 import { STAGES, STAGE_LABELS, changeStage, currentStage, isAbandoned, movesFrom, stageHistory } from './stages.ts';
 import { MODE_WORDS, depositModeOn, modeKeptIssue } from '../COL/public.ts';
+import { saleInvoicesOf, saleOpenCents } from '../QS/public.ts';
 import { jobOrderRef, jobOrdersOf, joMoney, leftPiecesAll, stagesAll } from './public.ts';
 import { dpInvoiceDoc } from './doctypes/dp-invoice.ts';
 import { lineState, releaseDoc, type Release } from './doctypes/release.ts';
@@ -62,6 +63,24 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
 
   /** What the JO view shows beside the document: stage, allowed moves, history, and money (all derived, NR-2). */
+  /**
+   * Everything one customer has ordered, newest first, for the Customers screen: recorded job orders with their stage and
+   * balance due, and (for those who may see them) quick sales. Cancelled ones are left out: an edit is a cancel plus a
+   * reissue, so they would show every edited order twice.
+   */
+  app.get<{ Params: { id: string } }>('/api/jo/customers/:id/orders', { config: { permission: 'jo.view' } }, async (req) => {
+    const docOf = db.prepare('SELECT business_date AS date, doc_type AS docType FROM documents WHERE id = ?');
+    const orders = jobOrdersOf(db, req.params.id).map((jo) => ({
+      kind: 'job_order' as const, ...(docOf.get(jo.id) as { date: string; docType: string }), id: jo.id, number: jo.number, dueDate: jo.dueDate, totalCents: jo.totalCents,
+      stage: STAGE_LABELS[currentStage(db, jo.id)], balanceDueCents: joMoney(db, jo.id).balanceDueCents,
+    }));
+    const sales = currentUser(req).permissions.has('qs.view') ? saleInvoicesOf(db, req.params.id).map((s) => ({
+      kind: 'quick_sale' as const, docType: 'qs.sale', id: s.id, number: s.number, date: s.businessDate, dueDate: null, totalCents: s.totalCents,
+      stage: null, balanceDueCents: saleOpenCents(db, s.id),
+    })) : [];
+    return [...orders, ...sales].sort((a, b) => b.date.localeCompare(a.date) || b.number.localeCompare(a.number));
+  });
+
   app.get<{ Params: { id: string } }>('/api/jo/orders/:id/status', { config: { permission: 'jo.view' } }, async (req) => {
     const stage = currentStage(db, req.params.id);
     const money = joMoney(db, req.params.id);

@@ -60,3 +60,22 @@ export function quickSaleLines(db: Db) {
     ORDER BY s.document_id, l.line_no`).all() as { id: string; customerId: string; customerName: string;
       lineNo: number; description: string; kind: string; qty: number; grossCents: number }[];
 }
+
+/** Pieces of website shop items on recorded (not cancelled) quick sales, per product, size and colour: they are off the shelf. */
+export function soldShopPieces(db: Db, productIds?: readonly string[]): { productId: string; size: string; colour: string; qty: number }[] {
+  return db.prepare(`SELECT l.product_id AS productId, l.size, l.colour, SUM(l.qty) AS qty FROM qs_sale_lines l JOIN documents d ON d.id = l.document_id
+    WHERE l.product_id IS NOT NULL AND d.status = 'posted' AND (@all OR l.product_id IN (SELECT value FROM json_each(@ids)))
+    GROUP BY l.product_id, l.size, l.colour`).all({ all: productIds ? 0 : 1, ids: JSON.stringify(productIds ?? []) }) as { productId: string; size: string; colour: string; qty: number }[];
+}
+
+/**
+ * Records a quick sale and its payment together, in the caller's transaction (the website shop's confirmed online orders).
+ * Handed over by QS's index.ts when the modules load, so this contract does not import the doc type (COL and SHP read it).
+ */
+type RecordQuickSale = typeof import('./record.ts').recordQuickSale;
+let recordImpl: RecordQuickSale | undefined;
+export const provideRecordQuickSale = (fn: RecordQuickSale) => { recordImpl = fn; };
+export const recordQuickSale: RecordQuickSale = (...args) => {
+  if (!recordImpl) throw new Error('The QS module is not loaded');
+  return recordImpl(...args);
+};

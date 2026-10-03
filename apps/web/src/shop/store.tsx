@@ -55,23 +55,32 @@ function load(): State {
   }
 }
 
+/** How the shop takes online payments (GET /api/shp/payment), or null while online ordering is closed. */
+export interface OnlinePayment { bankName: string; accountName: string; accountHint: string | null; instructions: string | null; qrUrl: string; deliveryOptions: { name: string; feeCents: number; places: string[]; otherwise: boolean }[] }
+
 /** The shop's own products, or the samples when it has none yet or cannot be reached. */
-function useProducts(): { products: readonly Product[]; samples: boolean; ready: boolean } {
+function useProducts(): { products: readonly Product[]; samples: boolean; ready: boolean; payment: OnlinePayment | null } {
   const [got, setGot] = useState<{ products: readonly Product[]; samples: boolean } | null>(null);
+  const [payment, setPayment] = useState<OnlinePayment | null>(null);
   useEffect(() => {
     let live = true;
+    fetch('/api/shp/payment', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)).then((p) => live && setPayment(p), () => undefined);
     fetch('/api/shp/products', { credentials: 'same-origin' })
       .then((r) => (r.ok ? (r.json() as Promise<Product[]>) : Promise.reject(new Error(String(r.status)))))
       .then((list) => live && setGot(list.length ? { products: list, samples: false } : { products: SAMPLE_PRODUCTS, samples: true }))
       .catch(() => live && setGot({ products: SAMPLE_PRODUCTS, samples: true }));
     return () => { live = false; };
   }, []);
-  return got ? { ...got, ready: true } : { products: [], samples: false, ready: false };
+  return got ? { ...got, ready: true, payment } : { products: [], samples: false, ready: false, payment };
 }
 
 interface Shop extends State {
   /** The products shown; `samples` when they are the made-up ones; `ready` once they have loaded. */
   products: readonly Product[]; samples: boolean; ready: boolean; productById: (id: string) => Product | undefined;
+  /** How to pay online, or null: online ordering closed. */
+  payment: OnlinePayment | null;
+  /** A cart line that can be ordered and paid online now: a ready-stock item of the shop's own (not a sample). */
+  orderable: (line: CartLine) => boolean;
   add: (lines: CartLine[]) => void; setQty: (line: CartLine, qty: number) => void; remove: (line: CartLine) => void;
   clearCart: () => void; toggleWish: (productId: string) => void; cartCount: number; cartTotalCents: number;
 }
@@ -79,7 +88,7 @@ const ShopContext = createContext<Shop | null>(null);
 
 export function ShopProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, load);
-  const { products, samples, ready } = useProducts();
+  const { products, samples, ready, payment } = useProducts();
   useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* private window: the cart lasts this visit */ } }, [state]);
   // Another tab changed the cart: follow it.
   useEffect(() => {
@@ -91,7 +100,8 @@ export function ShopProvider({ children }: { children: ReactNode }) {
     const byId = new Map(products.map((p) => [p.id, p]));
     const cart = state.cart.filter((l) => { const p = byId.get(l.productId); return !!p && p.sizes.includes(l.size) && p.colours.some((c) => c.name === l.colour); });
     return {
-      cart, wishlist: state.wishlist.filter((id) => byId.has(id)), products, samples, ready, productById: (id) => byId.get(id),
+      cart, wishlist: state.wishlist.filter((id) => byId.has(id)), products, samples, ready, productById: (id) => byId.get(id), payment,
+      orderable: (l) => !samples && !!payment && !!byId.get(l.productId)?.stock,
       add: (lines) => dispatch({ type: 'add', lines }),
       setQty: (line, qty) => dispatch({ type: 'setQty', line, qty }),
       remove: (line) => dispatch({ type: 'remove', line }),
@@ -100,7 +110,7 @@ export function ShopProvider({ children }: { children: ReactNode }) {
       cartCount: cart.reduce((n, l) => n + l.qty, 0),
       cartTotalCents: cart.reduce((n, l) => n + l.qty * byId.get(l.productId)!.priceCents, 0),
     };
-  }, [state, products, samples, ready]);
+  }, [state, products, samples, ready, payment]);
   return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>;
 }
 

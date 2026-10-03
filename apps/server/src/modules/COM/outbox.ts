@@ -79,6 +79,26 @@ export function enqueue(db: Db, r: EnqueueRequest): { ok: true; id: string } | {
   return { ok: true, id };
 }
 
+/**
+ * An online order email (the website shop): to the address the buyer typed at checkout, where they agreed to it being kept
+ * for the order. Not a customer record, so no consent flag to check later; queued only while sending is on, once per key.
+ */
+export interface OnlineOrderEmail { to: string; name: string; orderNumber: string; dedupeKey: string; at: string; userId?: string; build(company: string): Draft }
+export function enqueueOnlineOrder(db: Db, r: OnlineOrderEmail): { ok: true; id: string } | { ok: false; reason: NotQueued } {
+  if (!comSettings(db).sendingOn) return { ok: false, reason: 'sending_off' };
+  if (!EMAIL.test(r.to)) return { ok: false, reason: 'no_email' };
+  const company = companyRegisteredName(db);
+  if (!company) return { ok: false, reason: 'no_profile' };
+  if (db.prepare('SELECT 1 FROM com_outbox WHERE dedupe_key = ?').get(r.dedupeKey)) return { ok: false, reason: 'already_queued' };
+  const draft = r.build(company);
+  assertAllowedWording({ subject: draft.subject, body: draft.body });
+  const id = newId();
+  db.prepare(`INSERT INTO com_outbox (id, template, customer_id, employee_id, customer_name, to_address, document_number, subject, body, dedupe_key, status, attempts,
+      next_attempt_at, created_at, created_by) VALUES (?, 'online_order', NULL, NULL, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?, ?)`)
+    .run(id, r.name, r.to, r.orderNumber, draft.subject, draft.body, r.dedupeKey, r.at, r.at, r.userId ?? null);
+  return { ok: true, id };
+}
+
 interface Recipient { id: string; name: string; email: string | null; consent: boolean }
 const customerRecipient = (db: Db, id: string | undefined): Recipient | undefined => {
   const c = id === undefined ? undefined : customerContact(db, id);
@@ -119,7 +139,8 @@ export async function sendDue(db: Db, transport: MailTransport, now: () => strin
   for (const row of due) {
     const at = now();
     // Consent can be withdrawn after an email was queued; the address stays as it was when queued.
-    const stillAllowed = row.template === 'payslip' ? employeeContact(db, row.employee_id ?? undefined)?.consent : customerRecipient(db, row.customer_id ?? undefined)?.consent;
+    const stillAllowed = row.template === 'online_order' ? true
+      : row.template === 'payslip' ? employeeContact(db, row.employee_id ?? undefined)?.consent : customerRecipient(db, row.customer_id ?? undefined)?.consent;
     if (!stillAllowed) {
       const who = row.template === 'payslip' ? 'The employee' : 'The customer';
       record(row, 'failed', `${who} no longer agrees to get emails, so it was not sent.`, { status: 'failed', attempts: row.attempts, at });

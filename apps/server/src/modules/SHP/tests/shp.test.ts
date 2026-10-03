@@ -4,13 +4,17 @@ import type { ProductInput } from '../routes.ts';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 const jersey = (extra: Partial<ProductInput> = {}): ProductInput => ({
-  name: 'Sample team jersey', category: 'Jerseys', shape: 'jersey', priceCents: 55_000, madeToOrder: true, minQty: 10, leadDays: 14,
+  name: 'Sample team jersey', categoryId: jerseys, shape: 'jersey', priceCents: 55_000, madeToOrder: true, minQty: 10, leadDays: 14,
   badge: 'Best seller', summary: 'A made-up jersey for the tests.', sortOrder: 1, features: ['Names and numbers'],
   sizes: ['XL', 'S', 'M'], colours: [{ name: 'Royal', hex: '#1F3BB3' }], ...extra,
 });
 
 let env: TestEnv;
-beforeEach(async () => { env = await createTestEnv(); });
+let jerseys = '';
+beforeEach(async () => {
+  env = await createTestEnv();
+  jerseys = ((await (await env.as('owner')).post('/api/shp/categories', { name: 'Jerseys', sortOrder: 1 })).json() as { id: string }).id;
+});
 const publicList = async () => (await env.app.inject({ method: 'GET', url: '/api/shp/products' })).json() as { id: string; name: string; sizes: string[]; photoUrl: string | null }[];
 
 describe('website shop products', () => {

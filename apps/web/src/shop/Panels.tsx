@@ -50,11 +50,18 @@ export function WishButton({ product, className = '' }: { product: Product; clas
 /** Product details with a quantity per size, so a team can order its whole size run in one go. */
 export function QuickView({ product, onClose, onSizeGuide, onAdded }: { product: Product; onClose: () => void; onSizeGuide: () => void; onAdded: () => void }) {
   const { add } = useShop();
-  const [colour, setColour] = useState(product.colours[0]!);
-  const [qty, setQty] = useState<Record<string, number>>(product.madeToOrder ? {} : { [product.sizes[2] ?? product.sizes[0]!]: 1 });
+  // A ready-stock item from the shop knows its pieces left per size and colour: those cap what can go in the cart.
+  const left = (size: string, c: string) => (product.stock ? product.stock.find((x) => x.size === size && x.colour === c)?.available ?? 0 : 999);
+  const firstIn = (c: string) => product.sizes.find((s) => left(s, c) > 0);
+  const startColour = product.colours.find((c) => !product.stock || firstIn(c.name)) ?? product.colours[0]!;
+  const [colour, setColour] = useState(startColour);
+  const startQty = (c: string): Record<string, number> => { const s = product.madeToOrder ? undefined : (product.stock ? firstIn(c) : product.sizes[2] ?? product.sizes[0]); return s ? { [s]: 1 } : {}; };
+  const [qty, setQty] = useState<Record<string, number>>(() => startQty(startColour.name));
   const total = Object.values(qty).reduce((n, q) => n + q, 0);
   const short = product.madeToOrder && total > 0 && total < product.minQty;
-  const set = (size: string, n: number) => setQty((q) => ({ ...q, [size]: Math.max(0, Math.min(999, Number.isFinite(n) ? Math.floor(n) : 0)) }));
+  const set = (size: string, n: number) => setQty((q) => ({ ...q, [size]: Math.max(0, Math.min(left(size, colour.name), Number.isFinite(n) ? Math.floor(n) : 0)) }));
+  const pickColour = (c: typeof colour) => { setColour(c); if (product.stock) setQty(startQty(c.name)); };
+  const soldOut = !!product.stock && product.sizes.every((s) => left(s, colour.name) === 0);
   const addAll = () => {
     add(Object.entries(qty).filter(([, n]) => n > 0).map(([size, n]): CartLine => ({ productId: product.id, size, colour: colour.name, qty: n })));
     onAdded();
@@ -69,24 +76,28 @@ export function QuickView({ product, onClose, onSizeGuide, onAdded }: { product:
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-indigo-600">{product.category}</p>
           <h3 className="mt-1 text-2xl font-bold text-slate-900">{product.name}</h3>
-          <p className="mt-2 text-xl font-semibold">from {formatPeso(product.priceCents)} <span className="text-sm font-normal text-slate-500">a piece</span></p>
+          <p className="mt-2 text-xl font-semibold">{product.madeToOrder ? 'from ' : ''}{formatPeso(product.priceCents)} <span className="text-sm font-normal text-slate-500">a piece</span></p>
           <p className="mt-3 text-slate-600">{product.summary}</p>
           <ul className="mt-3 space-y-1 text-sm text-slate-600">{product.features.map((f) => <li key={f}>✓ {f}</li>)}</ul>
           <p className="mt-4 text-sm font-semibold">Colour: <span className="font-normal">{colour.name}</span></p>
-          <div className="mt-2 flex gap-2">{product.colours.map((c) => <button key={c.name} type="button" onClick={() => setColour(c)} aria-label={c.name} aria-pressed={c === colour}
+          <div className="mt-2 flex gap-2">{product.colours.map((c) => <button key={c.name} type="button" onClick={() => pickColour(c)} aria-label={c.name} aria-pressed={c === colour}
             className={`size-8 rounded-full ring-2 ring-offset-2 transition ${c === colour ? 'ring-indigo-600' : 'ring-transparent hover:ring-slate-300'}`} style={{ background: c.hex, boxShadow: 'inset 0 0 0 1px rgb(0 0 0 / .15)' }} />)}</div>
           <div className="mt-5 flex items-center justify-between">
             <p className="text-sm font-semibold">Quantity per size</p>
             <button type="button" onClick={onSizeGuide} className="text-sm font-semibold text-indigo-600 underline-offset-2 hover:underline">Size guide</button>
           </div>
-          <div className="mt-2 grid grid-cols-4 gap-2">{product.sizes.map((s) => (
-            <label key={s} className={`rounded-lg border p-1.5 text-center ${qty[s] ? 'border-indigo-600 bg-indigo-50' : 'border-slate-200'}`}>
-              <span className="block text-xs font-bold text-slate-700">{s}</span>
-              <input type="number" min={0} max={999} inputMode="numeric" value={qty[s] || ''} placeholder="0" onChange={(e) => set(s, e.target.valueAsNumber)}
-                className="mt-1 w-full rounded border-0 bg-transparent p-0 text-center text-sm outline-none [appearance:textfield]" aria-label={`Quantity in size ${s}`} />
-            </label>))}</div>
+          <div className="mt-2 grid grid-cols-4 gap-2">{product.sizes.map((s) => {
+            const n = left(s, colour.name), out = !!product.stock && n === 0;
+            return (
+              <label key={s} className={`rounded-lg border p-1.5 text-center ${out ? 'border-slate-100 bg-slate-50 opacity-60' : qty[s] ? 'border-indigo-600 bg-indigo-50' : 'border-slate-200'}`}>
+                <span className="block text-xs font-bold text-slate-700">{s}</span>
+                <input type="number" min={0} max={product.stock ? n : 999} inputMode="numeric" value={qty[s] || ''} placeholder={out ? '–' : '0'} disabled={out} onChange={(e) => set(s, e.target.valueAsNumber)}
+                  className="mt-1 w-full rounded border-0 bg-transparent p-0 text-center text-sm outline-none [appearance:textfield]" aria-label={`Quantity in size ${s}`} />
+                {product.stock && <span className={`block text-[10px] ${out ? 'text-red-700' : 'text-slate-500'}`}>{out ? 'Sold out' : `${n} left`}</span>}
+              </label>);
+          })}</div>
           <p className={`mt-3 text-sm ${short ? 'text-amber-700' : 'text-slate-500'}`}>
-            {product.madeToOrder ? `Made to order · minimum ${product.minQty} pieces · about ${product.leadDays} days` : `Ready stock · ready in about ${product.leadDays} days`}
+            {product.madeToOrder ? `Made to order · minimum ${product.minQty} pieces · about ${product.leadDays} days` : soldOut ? `${colour.name} is sold out for now.` : product.stock ? 'Ready stock · order and pay online, or buy at the shop' : `Ready stock · ready in about ${product.leadDays} days`}
             {short && ` · add ${product.minQty - total} more to reach the minimum`}
           </p>
           <button type="button" disabled={total === 0} onClick={addAll}
@@ -129,12 +140,16 @@ export function SizeGuide({ onClose }: { onClose: () => void }) {
 export const cartText = (cart: CartLine[], byId: (id: string) => Product | undefined) => cart.map((l) => `${l.qty} × ${byId(l.productId)!.name} (${l.colour}, size ${l.size})`).join('\n');
 
 export function CartDrawer({ onClose }: { onClose: () => void }) {
-  const { cart, setQty, remove, clearCart, cartTotalCents, productById } = useShop();
+  const { cart, setQty, remove, clearCart, productById, orderable, payment } = useShop();
+  // Ready-stock pieces are ordered and paid online; made-to-order items (and everything while online ordering is closed) are quoted.
+  const online = cart.filter(orderable), quoted = cart.filter((l) => !orderable(l));
+  const sum = (lines: typeof cart) => lines.reduce((n, l) => n + l.qty * (productById(l.productId)?.priceCents ?? 0), 0);
+  const leftOf = (l: (typeof cart)[number]) => productById(l.productId)?.stock?.find((s) => s.size === l.size && s.colour === l.colour)?.available;
   return (
     <Overlay title={`Your cart (${cart.length})`} side onClose={onClose}>
       {cart.length === 0 ? <p className="p-8 text-center text-slate-500">Your cart is empty. Open a product and pick sizes to start a list.</p> : (
         <div className="flex h-full flex-col">
-          <ul className="flex-1 divide-y divide-slate-100 px-5">{cart.map((l) => { const p = productById(l.productId)!; const hex = p.colours.find((c) => c.name === l.colour)?.hex ?? '#ccc'; return (
+          <ul className="flex-1 divide-y divide-slate-100 px-5">{cart.map((l) => { const p = productById(l.productId)!; const hex = p.colours.find((c) => c.name === l.colour)?.hex ?? '#ccc'; const left = leftOf(l); return (
             <li key={`${l.productId}-${l.size}-${l.colour}`} className="flex gap-3 py-4">
               <div className="grid size-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-slate-50"><ProductPicture product={p} colour={hex} className={p.photoUrl ? '' : 'w-12'} /></div>
               <div className="min-w-0 flex-1">
@@ -143,18 +158,28 @@ export function CartDrawer({ onClose }: { onClose: () => void }) {
                   <div className="flex items-center rounded-full border border-slate-200">
                     <button type="button" onClick={() => setQty(l, l.qty - 1)} className="size-8 text-lg" aria-label="One fewer">−</button>
                     <span className="w-8 text-center text-sm tabular-nums">{l.qty}</span>
-                    <button type="button" onClick={() => setQty(l, l.qty + 1)} className="size-8 text-lg" aria-label="One more">+</button>
+                    <button type="button" disabled={left !== undefined && l.qty >= left} onClick={() => setQty(l, l.qty + 1)} className="size-8 text-lg disabled:opacity-30" aria-label="One more">+</button>
                   </div>
                   <button type="button" onClick={() => remove(l)} className="text-sm text-slate-500 hover:text-rose-600">Remove</button>
                 </div>
+                {left !== undefined && l.qty > left && <p className="mt-1 text-xs font-semibold text-rose-700">{left ? `Only ${left} left: lower the quantity.` : 'Sold out: remove it.'}</p>}
+                <p className="mt-1 text-xs text-slate-500">{orderable(l) ? 'Order and pay online' : p.madeToOrder ? 'Made to order: for a quotation' : 'For a quotation or at the shop'}</p>
               </div>
               <p className="font-semibold tabular-nums">{formatPeso(l.qty * p.priceCents)}</p>
             </li>); })}</ul>
-          <div className="border-t border-slate-100 p-5">
-            <div className="flex justify-between text-lg font-bold"><span>Estimate</span><span className="tabular-nums">{formatPeso(cartTotalCents)}</span></div>
-            <p className="mt-1 text-xs text-slate-500">Starting prices. Your quotation confirms the price for your design and quantity.</p>
-            <button type="button" onClick={() => { onClose(); navigate('/support?type=quotation&from=cart'); }} className="mt-4 w-full rounded-full bg-slate-900 px-6 py-3.5 font-bold text-white hover:bg-indigo-700">Request a quotation</button>
-            <button type="button" onClick={clearCart} className="mt-2 w-full py-2 text-sm text-slate-500 hover:text-rose-600">Empty the cart</button>
+          <div className="space-y-4 border-t border-slate-100 p-5">
+            {online.length > 0 && <div>
+              <div className="flex justify-between text-lg font-bold"><span>Order online</span><span className="tabular-nums">{formatPeso(sum(online))}</span></div>
+              <p className="mt-1 text-xs text-slate-500">Pay first by {payment?.bankName ?? 'QR'}; we confirm your payment, then prepare your order.</p>
+              <button type="button" disabled={online.some((l) => (leftOf(l) ?? 0) < l.qty)} onClick={() => { onClose(); navigate('/checkout'); }}
+                className="mt-3 w-full rounded-full bg-indigo-600 px-6 py-3.5 font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">Check out and pay online</button>
+            </div>}
+            {quoted.length > 0 && <div>
+              <div className="flex justify-between font-bold"><span>For a quotation</span><span className="tabular-nums">{formatPeso(sum(quoted))}</span></div>
+              <p className="mt-1 text-xs text-slate-500">Starting prices. Your quotation confirms the price for your design and quantity.</p>
+              <button type="button" onClick={() => { onClose(); navigate('/support?type=quotation&from=cart'); }} className="mt-3 w-full rounded-full bg-slate-900 px-6 py-3 font-bold text-white hover:bg-slate-700">Request a quotation</button>
+            </div>}
+            <button type="button" onClick={clearCart} className="w-full py-1 text-sm text-slate-500 hover:text-rose-600">Empty the cart</button>
           </div>
         </div>)}
     </Overlay>

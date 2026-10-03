@@ -28,6 +28,8 @@ const lineInput = z
     qty: z.number().int().min(1).max(10_000),
     unitPriceCents: z.number().int().min(0).max(MAX_CENTS), // VAT-inclusive
     discountCents: z.number().int().min(0).max(MAX_CENTS), // shown on the invoice
+    // The website shop product, size and colour a ready-made line sold (the POS, online orders): its pieces come off the shop's stock.
+    item: z.object({ productId: z.uuid(), size: z.string().trim().min(1).max(4), colour: z.string().trim().min(1).max(30) }).strict().optional(),
   })
   .strict();
 
@@ -79,6 +81,8 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
     const booklet = bookletIssue(ctx.db, 'SALES_INVOICE', doc.invoiceNumber, 'invoiceNumber');
     if (booklet) issues.push(booklet);
     for (const l of doc.lines) if (l.amountCents < 0) error(`lines.${l.lineNo - 1}.discountCents`, 'DISCOUNT', `Line ${l.lineNo}: the discount is more than the line amount.`);
+    // A website shop item is a ready-made piece; the shop module warns when it is unknown or more than its stock (SHP notices).
+    for (const l of doc.lines) if (l.item && l.kind !== 'ready_made') error(`lines.${l.lineNo - 1}.item`, 'ITEM_KIND', `Line ${l.lineNo}: a shop item is a ready-made sale.`);
     if (doc.listCents > MAX_CENTS) error('lines', 'TOO_BIG', 'The total is over ₱100 million. Please check the quantities and prices.');
     else if (doc.grossCents <= 0) error('lines', 'NOTHING_TO_INVOICE', 'The sale comes to ₱0.00, so there is nothing to invoice.');
     return issues;
@@ -94,9 +98,12 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
       doc.discountNetCents, doc.salesCents.made_to_order, doc.salesCents.ready_made, doc.salesCents.service, doc.note ?? null,
     );
     const line = db.prepare(
-      'INSERT INTO qs_sale_lines (document_id, line_no, kind, description, qty, unit_price_cents, discount_cents, amount_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      `INSERT INTO qs_sale_lines (document_id, line_no, kind, description, qty, unit_price_cents, discount_cents, amount_cents, product_id, size, colour)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
-    for (const l of doc.lines) line.run(h.documentId, l.lineNo, l.kind, l.description, l.qty, l.unitPriceCents, l.discountCents, l.amountCents);
+    for (const l of doc.lines) {
+      line.run(h.documentId, l.lineNo, l.kind, l.description, l.qty, l.unitPriceCents, l.discountCents, l.amountCents, l.item?.productId ?? null, l.item?.size ?? null, l.item?.colour ?? null);
+    }
   },
 
   journal(doc, _ctx, header) {
@@ -128,13 +135,13 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
     const lines = db
       .prepare(
         `SELECT kind, description, qty, unit_price_cents AS unitPriceCents, discount_cents AS discountCents, line_no AS lineNo, qty * unit_price_cents AS listCents,
-           amount_cents AS amountCents FROM qs_sale_lines WHERE document_id = ? ORDER BY line_no`,
+           amount_cents AS amountCents, product_id AS productId, size, colour FROM qs_sale_lines WHERE document_id = ? ORDER BY line_no`,
       )
-      .all(documentId) as (SaleLine & { kind: LineKind })[];
+      .all(documentId) as (Omit<SaleLine, 'item'> & { kind: LineKind; productId: string | null; size: string | null; colour: string | null })[];
     return {
       ...rest,
       ...(note ? { note } : {}),
-      lines,
+      lines: lines.map(({ productId, size, colour, ...l }) => ({ ...l, ...(productId ? { item: { productId, size: size!, colour: colour! } } : {}) })),
       vatableSalesCents: r.grossCents - r.vatCents,
       salesCents: { made_to_order: mto, ready_made: rtw, service },
       totalCents: r.grossCents,
@@ -144,7 +151,7 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
   toInput: ({ customerId, invoiceNumber, lines, note }) => ({
     customerId,
     invoiceNumber,
-    lines: lines.map(({ kind, description, qty, unitPriceCents, discountCents }) => ({ kind, description, qty, unitPriceCents, discountCents })),
+    lines: lines.map(({ kind, description, qty, unitPriceCents, discountCents, item }) => ({ kind, description, qty, unitPriceCents, discountCents, ...(item ? { item } : {}) })),
     ...(note ? { note } : {}),
   }),
 

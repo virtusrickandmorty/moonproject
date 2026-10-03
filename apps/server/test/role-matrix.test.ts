@@ -166,10 +166,13 @@ describe('default roles against the plan (C6, E13)', () => {
 // 2. Every route, every role
 // ---------------------------------------------------------------------------------------------------------------
 
-// The public website: its shop's active products and their photos (modules/SHP), and the support form, limited per
-// sender and per hour (modules/SUP).
-const PUBLIC_ROUTES = ['GET /*', 'GET /api/health', 'GET /api/setup/status', 'GET /api/shp/photos/:photoId', 'GET /api/shp/products',
-  'POST /api/auth/login', 'POST /api/setup/first-owner', 'POST /api/sup/messages'];
+// The public website (modules/SHP, SUP): the shop's active products and photos, how to pay (the QR), online orders — placed
+// (limited per sender and per hour), then read, paid or cancelled only with the order's secret link — tracking an order or a job
+// order by its number (status only, limited per sender), the delivery fee for an address, and the support form.
+const PUBLIC_ROUTES = ['GET /*', 'GET /api/health', 'GET /api/setup/status', 'GET /api/shp/delivery-fee', 'GET /api/shp/orders/:number', 'GET /api/shp/payment',
+  'GET /api/shp/payment/qr/:version', 'GET /api/shp/photos/:photoId', 'GET /api/shp/products',
+  'POST /api/auth/login', 'POST /api/setup/first-owner', 'POST /api/shp/orders', 'POST /api/shp/orders/:number/cancel', 'POST /api/shp/orders/:number/payment', 'POST /api/shp/track',
+  'POST /api/sup/messages'];
 
 /** 'authenticated' routes that are open to every signed-in user by design (nothing the role lacks is shown). */
 const OPEN_TO_SIGNED_IN = ['GET /api/system/tls', 'GET /api/system/practice', 'GET /api/settings', 'POST /api/auth/logout', 'GET /api/auth/me', 'POST /api/auth/change-password', 'POST /api/auth/step-up'];

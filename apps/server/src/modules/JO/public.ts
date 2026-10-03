@@ -7,7 +7,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
 import { dpAppliedByInvoice, dpHeld, invoiceCreditsAt } from '../COL/public.ts';
-import { JO_DOC_TYPES_SQL, currentStage, type Stage } from './stages.ts';
+import { JO_DOC_TYPES_SQL, STAGE_LABELS, currentStage, type Stage } from './stages.ts';
 
 export { abandon, currentStage, isAbandoned, productionMove, unabandon, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
 export { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, awaitingInvoice, invoiceAmounts, invoiceNumberUsedBy, invoiceNumbersBetween, settleLines } from './doctypes/invoice-record.ts';
@@ -356,4 +356,26 @@ export function newReleasesAfter(db: Db, after: number, limit: number): ScanResu
     JOIN jo_lines l ON l.document_id = r.job_order_id AND l.line_no = x.line_no WHERE x.document_id = ? ORDER BY x.line_no`);
   const items = raw.filter((r) => r.status === 'posted' && !r.replacesId).map(({ cursor: _c, status: _s, replacesId: _r, ...rel }) => ({ ...rel, lines: lines.all(rel.id) as NewRelease['lines'] }));
   return finishScan(db, 'documents', raw, limit, items);
+}
+
+/**
+ * A job order for the website's tracking page, by its number: an edited one (cancelled and reissued) is followed to the copy
+ * that stands now. Null when there is no such job order, or when it was cancelled with nothing in its place.
+ */
+export function trackedJobOrder(db: Db, number: string): {
+  id: string; number: string; customerId: string; stage: Stage; stageLabel: string; dueDate: string; businessDate: string;
+  lines: { description: string; qty: number }[]; balanceDueCents: number;
+} | null {
+  const doc = db.prepare(`SELECT id, status FROM documents WHERE number = ? AND ${JO_DOC_TYPES_SQL}`).get(number) as { id: string; status: string } | undefined;
+  if (!doc) return null;
+  const jo = doc.status === 'posted' ? jobOrderRef(db, doc.id) : liveReplacementOf(db, doc.id);
+  if (!jo) return null;
+  const stage = currentStage(db, jo.id);
+  if (stage === 'cancelled') return null;
+  return {
+    id: jo.id, number: jo.number, customerId: jo.customerId, stage, stageLabel: STAGE_LABELS[stage], dueDate: jo.dueDate,
+    businessDate: db.prepare('SELECT business_date FROM documents WHERE id = ?').pluck().get(jo.id) as string,
+    lines: db.prepare('SELECT description, qty FROM jo_lines WHERE document_id = ? ORDER BY line_no').all(jo.id) as { description: string; qty: number }[],
+    balanceDueCents: joMoney(db, jo.id).balanceDueCents,
+  };
 }

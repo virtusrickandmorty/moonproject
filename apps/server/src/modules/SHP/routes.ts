@@ -1,6 +1,8 @@
 /**
- * Website shop products: staff with shp.manage keep the garments the public shop shows; the website reads the active
- * ones without signing in. A showcase only: the "from" price never reaches a quotation or the books.
+ * Website shop products: staff with shp.manage keep the garments and their categories; staff with shp.stock record pieces
+ * coming in and counts; the website reads the active ones, with the pieces available per size and colour, without signing
+ * in. Ready-stock items are sold through quick sales (the POS, online orders), which take their pieces off; made-to-order
+ * ones are quoted. The website price is a "from" price: the sale records the price actually charged.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -11,6 +13,7 @@ import { sha256Hex, sniffType } from '../../engine/attachments.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { tx, type Db } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
+import { stockOf } from './public.ts';
 
 export const SHAPES = ['tee', 'polo', 'jersey', 'jacket', 'hoodie', 'shorts'] as const;
 export const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'] as const;
@@ -18,7 +21,7 @@ export const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 
 const text = (min: number, max: number) => z.string().trim().min(min).max(max);
 export const productInput = z.object({
-  name: text(1, 100), category: text(1, 40), shape: z.enum(SHAPES),
+  name: text(1, 100), categoryId: z.string().min(1).max(64), shape: z.enum(SHAPES),
   priceCents: z.number().int().min(0).max(100_000_000), madeToOrder: z.boolean(),
   minQty: z.number().int().min(1).max(10_000), leadDays: z.number().int().min(0).max(365),
   badge: text(0, 30).transform((v) => v || null), summary: text(1, 300), sortOrder: z.number().int().min(-9999).max(9999),
@@ -29,15 +32,17 @@ export const productInput = z.object({
 export type ProductInput = z.infer<typeof productInput>;
 
 interface Row {
-  id: string; name: string; category: string; shape: string; price_cents: number; made_to_order: number; min_qty: number; lead_days: number;
+  id: string; name: string; category: string; category_id: string | null; category_name: string | null; shape: string; price_cents: number; made_to_order: number; min_qty: number; lead_days: number;
   badge: string | null; summary: string; sort_order: number; photo_id: string | null; is_active: number; version: number; updated_at: string;
 }
 
 /** A product as the website and the staff screen see it: its current version's lists, in order. */
+/** Products with the name their category has now (renaming a category renames it on every product). */
+const PRODUCTS = 'SELECT p.*, c.name AS category_name, c.sort_order AS category_order FROM shp_products p LEFT JOIN shp_categories c ON c.id = p.category_id';
 function shape(db: Db, r: Row) {
   const lines = <T>(table: string, cols: string) => db.prepare(`SELECT ${cols} FROM ${table} WHERE product_id = ? AND version = ? ORDER BY position`).all(r.id, r.version) as T[];
   return {
-    id: r.id, name: r.name, category: r.category, shape: r.shape, priceCents: r.price_cents, madeToOrder: r.made_to_order === 1,
+    id: r.id, name: r.name, category: r.category_name ?? r.category, categoryId: r.category_id, shape: r.shape, priceCents: r.price_cents, madeToOrder: r.made_to_order === 1,
     minQty: r.min_qty, leadDays: r.lead_days, badge: r.badge, summary: r.summary, sortOrder: r.sort_order,
     photoUrl: r.photo_id ? `/api/shp/photos/${r.photo_id}` : null, isActive: r.is_active === 1, version: r.version, updatedAt: r.updated_at,
     features: lines<{ text: string }>('shp_product_features', 'text').map((f) => f.text),
@@ -67,19 +72,29 @@ const tooBig = () => new AppError('FILE_TOO_BIG', 'The photo is bigger than 4 MB
 export function shpRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
   const row = (id: string) => {
-    const r = db.prepare('SELECT * FROM shp_products WHERE id = ?').get(id) as Row | undefined;
+    const r = db.prepare(`${PRODUCTS} WHERE p.id = ?`).get(id) as Row | undefined;
     if (!r) throw notFound('The product');
     return r;
   };
   const audit = (req: FastifyRequest, at: string, action: string, id: string, data: Record<string, unknown>) =>
     appendAudit(db, { at, userId: currentUser(req).userId, action, entityType: 'shp.product', entityId: id, data });
 
-  // The website: active products only, in the shop's order.
-  app.get('/api/shp/products', { config: { permission: 'public' } }, async () =>
-    (db.prepare('SELECT * FROM shp_products WHERE is_active = 1 ORDER BY sort_order, name').all() as Row[]).map((r) => {
-      const { isActive: _a, version: _v, updatedAt: _u, sortOrder: _s, ...shown } = shape(db, r);
-      return shown;
-    }));
+  /** An active category, for a product that names it. */
+  const category = (id: string) => {
+    const c = db.prepare('SELECT id, name FROM shp_categories WHERE id = ? AND is_active = 1').get(id) as { id: string; name: string } | undefined;
+    if (!c) throw new AppError('CATEGORY', "Pick one of the shop's categories (Sales › Website shop › Categories).", 400);
+    return c;
+  };
+
+  // The website: active products only, by category then the shop's order, with the pieces available of each ready-stock item.
+  app.get('/api/shp/products', { config: { permission: 'public' } }, async () => {
+    const rows = db.prepare(`${PRODUCTS} WHERE p.is_active = 1 ORDER BY category_order, p.sort_order, p.name`).all() as Row[];
+    const stock = stockOf(db, rows.filter((r) => r.made_to_order === 0).map((r) => r.id), clock.now().getTime());
+    return rows.map((r) => {
+      const { isActive: _a, version: _v, updatedAt: _u, sortOrder: _s, categoryId: _c, ...shown } = shape(db, r);
+      return { ...shown, stock: r.made_to_order ? null : (stock.get(r.id) ?? []).map(({ size, colour, available }) => ({ size, colour, available })) };
+    });
+  });
 
   /** A product's current photo; never run as a page of this site (sandbox, nosniff). The id changes with every upload. */
   app.get<{ Params: { photoId: string } }>('/api/shp/photos/:photoId', { config: { permission: 'public' } }, async (req, reply) => {
@@ -91,15 +106,20 @@ export function shpRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   app.get('/api/shp/admin/products', { config: { permission: 'shp.view' } }, async () =>
-    (db.prepare('SELECT * FROM shp_products ORDER BY is_active DESC, sort_order, name').all() as Row[]).map((r) => shape(db, r)));
+    {
+      const rows = db.prepare(`${PRODUCTS} ORDER BY p.is_active DESC, category_order, p.sort_order, p.name`).all() as Row[];
+      const stock = stockOf(db, rows.filter((r) => r.made_to_order === 0).map((r) => r.id), clock.now().getTime());
+      return rows.map((r) => ({ ...shape(db, r), stock: r.made_to_order ? null : stock.get(r.id) ?? [] }));
+    });
 
   app.post('/api/shp/products', { config: { permission: 'shp.manage' } }, async (req) => {
     const p = productInput.parse(req.body);
     const at = stamp(clock);
     return tx(db, () => {
+      const c = category(p.categoryId);
       const id = newId();
-      db.prepare(`INSERT INTO shp_products (id, name, category, shape, price_cents, made_to_order, min_qty, lead_days, badge, summary, sort_order, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, p.name, p.category, p.shape, p.priceCents, p.madeToOrder ? 1 : 0, p.minQty, p.leadDays, p.badge, p.summary, p.sortOrder, at, at);
+      db.prepare(`INSERT INTO shp_products (id, name, category, category_id, shape, price_cents, made_to_order, min_qty, lead_days, badge, summary, sort_order, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, p.name, c.name, c.id, p.shape, p.priceCents, p.madeToOrder ? 1 : 0, p.minQty, p.leadDays, p.badge, p.summary, p.sortOrder, at, at);
       writeLists(db, id, 1, p);
       audit(req, at, 'shp.product.create', id, { name: p.name, priceCents: p.priceCents });
       return shape(db, row(id));
@@ -113,9 +133,10 @@ export function shpRoutes(app: FastifyInstance, deps: AppDeps): void {
       const r = row(idOf(req));
       matchingVersion(req, r);
       const version = r.version + 1;
-      db.prepare(`UPDATE shp_products SET name = ?, category = ?, shape = ?, price_cents = ?, made_to_order = ?, min_qty = ?, lead_days = ?, badge = ?,
+      const c = category(p.categoryId);
+      db.prepare(`UPDATE shp_products SET name = ?, category = ?, category_id = ?, shape = ?, price_cents = ?, made_to_order = ?, min_qty = ?, lead_days = ?, badge = ?,
         summary = ?, sort_order = ?, version = ?, updated_at = ? WHERE id = ?`)
-        .run(p.name, p.category, p.shape, p.priceCents, p.madeToOrder ? 1 : 0, p.minQty, p.leadDays, p.badge, p.summary, p.sortOrder, version, at, r.id);
+        .run(p.name, c.name, c.id, p.shape, p.priceCents, p.madeToOrder ? 1 : 0, p.minQty, p.leadDays, p.badge, p.summary, p.sortOrder, version, at, r.id);
       writeLists(db, r.id, version, p);
       audit(req, at, 'shp.product.update', r.id, { name: p.name, fromPriceCents: r.price_cents, priceCents: p.priceCents });
       return shape(db, row(r.id));
