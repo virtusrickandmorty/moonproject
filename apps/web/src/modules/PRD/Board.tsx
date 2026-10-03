@@ -2,12 +2,17 @@
  * Production board (PLAN E7, H1): every line still to release, in a column per step, with due-date and rush filters. A card
  * opens its line: the route with Complete / Not needed / Reopen, "Record pieces", and the route setup.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api, type BoardCard, type DocTypeInfo, type Me, type PrdCatalogue, type StepStatus } from '../../api.ts';
 import { Link } from '../../router.tsx';
 import { Button, Dialog, Field, Notice, ReasonDialog, inputClass, useAction } from '../../components/ui.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { columns, filterCards, type Due } from './board.ts';
+import { columns, filterCards, useBoardRefresh, type Due } from './board.ts';
+
+const readBoard = async () => {
+  const [cards, cat, health] = await Promise.all([api.prdBoard(), api.prdCatalogue(), api.health()]);
+  return { cards, cat, today: health.serverTime.slice(0, 10) };
+};
 
 const STATUS: Record<StepStatus, [string, string]> = {
   pending: ['Pending', 'bg-slate-100 text-slate-700'],
@@ -18,24 +23,15 @@ const STATUS: Record<StepStatus, [string, string]> = {
 const chip = (s: StepStatus) => <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS[s][1]}`}>{STATUS[s][0]}</span>;
 
 export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }) {
-  const [cat, setCat] = useState<PrdCatalogue | null>(null);
-  const [cards, setCards] = useState<BoardCard[] | null>(null);
-  const [today, setToday] = useState('');
+  const { data, error, words, stale, refresh: load } = useBoardRefresh(readBoard);
   const [due, setDue] = useState<Due>('all');
   const [rushOnly, setRushOnly] = useState(false);
+  const [search, setSearch] = useState('');
   const [open, setOpen] = useState<{ jobOrderId: string; lineNo: number } | null>(null);
-  const [error, setError] = useState('');
-  const load = useCallback(() => api.prdBoard().then(setCards, (e: Error) => setError(e.message)), []);
-  useEffect(() => {
-    api.prdCatalogue().then(setCat, (e: Error) => setError(e.message));
-    api.health().then((h) => setToday(h.serverTime.slice(0, 10)), () => undefined);
-    void load();
-  }, [load]);
-
-  if (error) return <Notice>{error}</Notice>;
-  if (!cat || !cards) return <p className="text-slate-500">Loading…</p>;
+  if (!data) return <div className="space-y-3"><p role="status">{words}</p>{error && <Notice>{error}</Notice>}<p className="text-slate-500">Loading…</p></div>;
+  const { cat, cards, today } = data;
   const can = { progress: me.permissions.includes('prd.progress'), assign: !!docTypes.find((d) => d.key === 'prd.entry')?.canCreate };
-  const shown = filterCards(cards, { due, rushOnly }, today);
+  const shown = filterCards(cards, { due, rushOnly, search }, today);
   const card = open && cards.find((c) => c.jobOrderId === open.jobOrderId && c.lineNo === open.lineNo);
   return (
     <div className="space-y-4">
@@ -49,6 +45,12 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
         </select>
         <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={rushOnly} onChange={(e) => setRushOnly(e.target.checked)} /> Rush only</label>
         {can.assign && <Link to={docPath('prd.entry', '/new')} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">+ Record pieces</Link>}
+      </div>
+      <p role="status" className={`text-sm ${stale ? 'font-semibold text-red-800' : 'text-slate-500'}`}>{words} · Refreshes every 30 seconds</p>
+      {error && <Notice>{error}</Notice>}
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="Search job number or customer"><input type="search" className={inputClass} value={search} onChange={(e) => setSearch(e.target.value)} /></Field>
+        <Button onClick={() => { setSearch(''); setDue('all'); setRushOnly(false); }}>Reset filters</Button>
       </div>
       {shown.length === 0 && <p className="text-slate-500">{cards.length === 0 ? 'No job order is in production.' : 'No line matches these filters.'}</p>}
       <div className="flex gap-3 overflow-x-auto pb-2">
