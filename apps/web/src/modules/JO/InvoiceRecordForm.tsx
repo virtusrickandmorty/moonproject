@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { api, type BookletShown, type DocTypeInfo, type Preview, type ReleaseInvoiceInfo, type ReleasePick } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
+import { SalesActions } from './entry.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { Errors, useLive } from '../COL/parts.tsx';
@@ -52,7 +53,7 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
 
   if (rec.gate) return rec.gate;
   return (
-    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && record()} className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && record()} className="space-y-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-0">
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">{rec.title('New invoice record')}</h1>
         {rec.top}
@@ -73,15 +74,15 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
           <Field label="Note"><input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         </Panel>
         <Errors list={errors} show={rec.touched} />
-        <div className="flex gap-2">
+        <div className="space-y-4">
+          {figures ? <Booklet b={figures} depositAppliedCents={figures.depositAppliedCents} /> : <Panel title="So far"><p className="text-sm text-slate-500">Pick the release to see what to write on the booklet.</p></Panel>}
+          {live && <p className="text-sm">{live.summary}</p>}
+          {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
+        </div>
+        <SalesActions total={figures?.grossCents} label="Total">
           <Button tone="primary" disabled={!type.canPost || !!blocked} onClick={record} title="Ctrl+Enter">Record</Button>
           <Button onClick={() => history.back()}>Back</Button>
-        </div>
-      </div>
-      <div className="space-y-4">
-        {figures ? <Booklet b={figures} depositAppliedCents={figures.depositAppliedCents} /> : <Panel title="So far"><p className="text-sm text-slate-500">Pick the release to see what to write on the booklet.</p></Panel>}
-        {live && <p className="text-sm">{live.summary}</p>}
-        {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
+        </SalesActions>
       </div>
       {rec.dialog}
     </form>
