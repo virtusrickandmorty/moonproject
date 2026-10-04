@@ -96,6 +96,8 @@ export interface DocHeader {
   id: string; number: string; businessDate: string; status: 'posted' | 'cancelled'; totalCents: number; summary: string; postedAt: string;
   cancelledAt: string | null; cancelReason: string | null; replacesId: string | null; replacedById: string | null;
 }
+export interface DocListFilters { q?: string; from?: string; to?: string }
+export interface DocCounts { all: number; posted: number; cancelled: number }
 /** Read-only display of lines the server built. Declared this way so the money-rule tripwire (tests/house-rules) stays exact. */
 export type JournalLine = { accountCode: string; accountName: string } & Record<'debitCents' | 'creditCents', number>;
 export interface Journal { id: string; number: string; businessDate: string; postingKind: 'original' | 'reversal'; memo: string; lines: JournalLine[] }
@@ -918,8 +920,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     nightlyStatus: () => call<NightlyStatus>('GET', '/api/aud/nightly/status'),
     nightlyRunNow: () => call<NightlyRunNow>('POST', '/api/aud/nightly/run', {}),
     auditIntegrity: () => call<IntegrityReport>('GET', '/api/aud/integrity'),
-    list: (type: string, q: { status?: string; before?: string; limit?: number } = {}) =>
+    list: (type: string, q: DocListFilters & { status?: string; before?: string; limit?: number } = {}) =>
       call<DocHeader[]>('GET', doc(type, `?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`)),
+    docCounts: (type: string, q: DocListFilters = {}) =>
+      call<DocCounts>('GET', doc(type, `/counts?${new URLSearchParams(Object.entries(q).filter(([, v]) => v))}`)),
     get: (type: string, id: string) => call<DocDetail>('GET', one(type, id)),
     /** `businessDate` only for a type that may be backdated, by someone allowed to (the payroll run's period end). */
     preview: (type: string, input: unknown, businessDate?: string) => call<Preview>('POST', doc(type, '/preview'), { input, ...(businessDate ? { businessDate } : {}) }),

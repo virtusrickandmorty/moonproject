@@ -54,11 +54,11 @@ export function RecordDialog(p: { type: DocTypeInfo; preview: Preview; original?
       <p className="text-sm text-slate-600">Total: <span className="text-lg font-semibold tabular-nums text-slate-900">{peso(p.preview.totalCents)}</span></p>
       {p.original && <Notice tone="info">{p.original.number} will be cancelled (reversed with today's date) and the replacement gets a new number. Reason: {p.reason}</Notice>}
       {p.preview.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
-      {p.preview.journal && <Panel title="Behind the scenes"><JournalTable lines={p.preview.journal} /></Panel>}
+      {p.preview.journal && <details className="rounded-lg bg-slate-50 p-3"><summary className="cursor-pointer text-sm font-medium">Behind the scenes</summary><JournalTable lines={p.preview.journal} /></details>}
       {a.error && <Notice>{a.error}</Notice>}
       <div className="flex justify-end gap-2">
         <Button onClick={p.onClose}>Go back</Button>
-        <Button tone="primary" autoFocus disabled={a.busy || errors.length > 0} onClick={() => a.run(() => p.onRecord(key))}>{a.busy ? 'Recording…' : 'Record'}</Button>
+        <Button tone="primary" disabled={a.busy || errors.length > 0} onClick={() => a.run(() => p.onRecord(key))}>{a.busy ? 'Recording…' : 'Record'}</Button>
       </div>
     </Dialog>
   );
@@ -141,7 +141,7 @@ export function DocForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   }
   const blocked = fields.some((f) => f.kind === 'unsupported' && f.required);
   return (
-    <form ref={formRef} onKeyDown={onKeyDown} onSubmit={(e) => e.preventDefault()} className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+    <form ref={formRef} onKeyDown={onKeyDown} onSubmit={(e) => e.preventDefault()} className="space-y-4 pb-28 sm:pb-0">
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">{original ? `Edit ${original.number}` : `New ${type.title}`}</h1>
         {original && <Notice tone="info">When you record, {original.number} is cancelled and the replacement gets a new number. Reason: {reason}</Notice>}
@@ -154,17 +154,18 @@ export function DocForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
             </Field>
           ))}
         </Panel>
-        <div className="flex gap-2">
-          <Button tone="primary" disabled={blocked || !type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
-          {mode.kind === 'new' && <Button onClick={saveDraft}>Save draft</Button>}
-          <Button onClick={() => history.back()}>Back</Button>
-        </div>
       </div>
       <Panel title="So far">
         {live ? <p className="text-2xl font-semibold tabular-nums">{peso(live.totalCents)}</p> : <p className="text-sm text-slate-500">Fill in the required fields to see the total.</p>}
         {live && <p className="text-sm">{live.summary}</p>}
         {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
       </Panel>
+      <div className="fixed inset-x-0 bottom-0 z-10 flex flex-wrap items-center gap-2 border-t border-slate-200 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-lg sm:static sm:border-0 sm:p-0 sm:shadow-none">
+        <span className="mr-auto text-sm font-semibold tabular-nums">{live ? `Total: ${peso(live.totalCents)}` : 'Check the required fields'}</span>
+        <Button tone="primary" disabled={blocked || !type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
+        {mode.kind === 'new' && <Button onClick={saveDraft}>Save draft</Button>}
+        <Button onClick={() => history.back()}>Back</Button>
+      </div>
       {confirm && <RecordDialog type={type} preview={confirm} original={original} reason={reason} onRecord={record} onClose={() => setConfirm(null)} />}
     </form>
   );
