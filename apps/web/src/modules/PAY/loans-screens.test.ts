@@ -34,7 +34,7 @@ describe('government loan screen rules', () => {
       sssEeCents: 25_000, phicEeCents: 0, hdmfEeCents: 1_200, wtaxCents: 0, caCents: 50_000,
       loans: [{ loanId: 'l1', agency: 'SSS', kind: 'SSS_SALARY', loanNo: '0301-555-01', dueCents: 150_000, amountCents: 150_000, overrideCents: null, balanceAfterCents: 1_650_000 }],
     } as PayEmployee;
-    expect(deductionsOf(e)).toEqual([['SSS', 25_000], ['Pag-IBIG', 1_200], ['SSS salary loan 0301-555-01', 150_000], ['Cash advance', 50_000]]);
+    expect(deductionsOf(e)).toEqual([['SSS employee share', 25_000], ['Pag-IBIG employee share', 1_200], ['SSS salary loan 0301-555-01', 150_000], ['Cash advance', 50_000]]);
     expect(loansLeft(e)).toEqual([['SSS salary loan 0301-555-01', 1_650_000]]);
   });
 

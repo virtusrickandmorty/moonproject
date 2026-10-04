@@ -5,6 +5,10 @@ import { api, ApiError, type DocHeader, type DocTypeInfo, type Preview } from '.
 import { choosePageRows } from '../components/ui.tsx';
 import { DocList, ListMessage } from './DocList.tsx';
 import { DocForm, RecordDialog } from './DocForm.tsx';
+import { DocView } from './DocView.tsx';
+import { Commit, DryRun } from '../modules/MIG/Finish.tsx';
+import { FiledReturns } from '../modules/TAX/FiledReturns.tsx';
+import { StatExposure } from '../modules/STAT/Exposure.tsx';
 import { useRecord } from './record.tsx';
 import { usePagedReport } from '../modules/RPT/Books.tsx';
 import { useRangeReport } from '../modules/TAX/ReportParts.tsx';
@@ -55,6 +59,51 @@ const row = (n = 1): DocHeader => ({ id: `doc${n}`, number: `TRF-${n}`, business
 const preview: Preview = { totalCents: 10000, summary: 'This will move ₱100.00 from Sample bank to Sample wallet.', issues: [], journal: [{ accountCode: '1111', accountName: 'Sample bank', debitCents: 0, creditCents: 10000 }] };
 
 afterEach(() => { hooks.cleanups.splice(0).reverse().forEach((f) => f()); hooks.effects = []; vi.restoreAllMocks(); choosePageRows(25, () => undefined); });
+
+it('shows readable choices on the form and recorded view while keeping their original values', async () => {
+  const wordsType = { ...type, inputJsonSchema: { properties: { paymentTerms: { enum: ['full', 'dp50'] }, priority: { enum: ['normal', 'rush'] } } } };
+  const renderForm = harness(() => DocForm({ type: wordsType, mode: { kind: 'new' } }));
+  const html = renderToStaticMarkup(renderForm());
+  expect(html).toContain('value="full">Full payment</option>');
+  expect(html).toContain('value="normal">Normal</option>');
+  vi.spyOn(api, 'get').mockResolvedValue({ header: row(), input: { paymentTerms: 'full', priority: 'normal' }, doc: {} } as never);
+  vi.spyOn(api, 'printableTypes').mockResolvedValue([]);
+  const renderView = harness(() => DocView({ type: wordsType, id: 'doc1', recorded: false }));
+  renderView(); await flush();
+  const view = renderToStaticMarkup(renderView());
+  expect(view).toContain('<dd>Full payment</dd>');
+  expect(view).toContain('<dd>Normal</dd>');
+});
+
+it('names the import checks and approval action in shop words', () => {
+  const counts = { listed: 0, needsReview: 0, accepted: 0, excluded: 0, merged: 0 };
+  const check = harness(() => renderToStaticMarkup(createElement(DryRun, { uploadId: 'copy1', counts, dry: null, onDry: () => undefined })));
+  expect(check()).toContain('Check the import');
+  const approve = harness(() => renderToStaticMarkup(createElement(Commit, { uploadId: 'copy1', counts, dry: null, mayCommit: true, onCommitted: () => undefined })));
+  expect(approve()).toContain('Import these approved rows');
+});
+
+it('offers Record a filing and keeps the BIR form number in its entry panel', async () => {
+  vi.spyOn(api, 'filedReturns').mockResolvedValue({ today: '2026-10-04', forms: ['2550Q'], rows: [] } as never);
+  const render = harness(() => FiledReturns({ me: { permissions: ['tax.registers.view', 'acc.settings.manage'] } as never }));
+  render(); await flush();
+  button(render(), 'Record a filing').props.onClick();
+  const html = renderToStaticMarkup(render());
+  expect(html).toContain('Record a filing');
+  expect(html).toContain('2550Q');
+  expect(html).not.toContain('Add a row');
+});
+
+it('explains missing past contributions and keeps the accountant’s policy reference in optional detail', async () => {
+  vi.spyOn(api, 'statExposure').mockResolvedValue({ asOf: '2026-10-04', cutoverDate: null, from: null, to: null, totals: [], lines: [], rates: [], notes: ['Catch-up decision (ACC-05).'] } as never);
+  const render = harness(() => StatExposure());
+  render(); await flush();
+  const html = renderToStaticMarkup(render());
+  expect(html).toContain('Missing past government contributions');
+  expect(html).toContain('Government contributions that may be missing for past months');
+  expect(html).toContain('Set the cut-over date first');
+  expect(html.indexOf('ACC-05')).toBeGreaterThan(html.indexOf('<details'));
+});
 
 it('shows Loading, empty, filtered empty and failure separately, each with a next step', () => {
   const state = { key: '', rows: [], busy: false, error: '', more: false };

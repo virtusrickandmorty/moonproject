@@ -68,7 +68,7 @@ export function VoucherForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
           <Field label="Receipt date"><input type="date" className={inputClass} value={v.receiptDate} onChange={(e) => set({ receiptDate: e.target.value })} /></Field>
         </div>
         <p className="text-sm text-slate-500">Input VAT is claimed only with the receipt number, its date and the payee’s TIN.</p>
-        <Field label="Withholding tax (EWT)">
+        <Field label="Tax withheld from supplier (EWT)">
           <select className={inputClass} value={v.ewtClass} onChange={(e) => set({ ewtClass: e.target.value })}>
             {ewtChoices(usual, rates).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
           </select>
@@ -77,7 +77,7 @@ export function VoucherForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
       <Panel title="Where did the money come from?">
         <TenderRows rows={v.tenders} onChange={(tenders) => setV({ ...v, tenders })} places={places} question="Where did the money come from?" max={MAX_TENDERS}
           amountHint={cashCents ? formatPesos(cashCents) : undefined} />
-        <p className="text-sm text-slate-500">The amounts add up to what is paid out: the receipt less any EWT withheld.</p>
+        <p className="text-sm text-slate-500">The amounts add up to what is paid out: the receipt less any tax withheld from the supplier (EWT).</p>
       </Panel>
     </MoneyForm>
   );

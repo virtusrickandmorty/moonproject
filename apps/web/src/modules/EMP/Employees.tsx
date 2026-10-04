@@ -32,7 +32,7 @@ export function Employees({ me }: { me: Me }) {
       {error && <Notice>{error}</Notice>}
       {rows && (
         <table className="w-full rounded-lg bg-white text-sm shadow-sm ring-1 ring-slate-200">
-          <thead className="text-left text-slate-500"><tr><th className="p-2">Code</th><th>Name</th><th>Position</th><th>Cost centre</th><th>Hired</th><th>Status</th></tr></thead>
+          <thead className="text-left text-slate-500"><tr><th className="p-2">Code</th><th>Name</th><th>Position</th><th>Pay cost group</th><th>Hired</th><th>Status</th></tr></thead>
           <tbody>
             {rows.map((e) => (
               <tr key={e.id} className={`border-t border-slate-100 ${e.isActive ? '' : 'text-slate-500'}`}>
@@ -66,7 +66,7 @@ function NewEmployee({ onClose }: { onClose: () => void }) {
         <Field label="Hire date" required><input type="date" className={inputClass} value={v.hireDate} onChange={(e) => setV({ ...v, hireDate: e.target.value })} /></Field>
         <Field label="Position"><input className={inputClass} value={v.position} onChange={(e) => setV({ ...v, position: e.target.value })} /></Field>
         <Field label="Department"><input className={inputClass} value={v.department} onChange={(e) => setV({ ...v, department: e.target.value })} /></Field>
-        <Field label="Cost centre" required hint="Production pay is direct labor; office pay is an office expense.">
+        <Field label="Pay cost group" required hint="Production pay is direct labor; office pay is an office expense.">
           <select className={inputClass} value={v.costCentre} onChange={(e) => setV({ ...v, costCentre: e.target.value })}>
             <option value="production">Production</option><option value="office">Office and sales</option>
           </select>

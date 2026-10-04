@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fieldsOf, humanize, toInput, toValues } from './fields.ts';
+import { choiceLabel, fieldsOf, humanize, toInput, toValues } from './fields.ts';
 
 const int = { type: 'integer' };
 // The shape GET /api/doc-types returns for cash.transfer.
@@ -9,6 +9,20 @@ const fields = fieldsOf({
 });
 
 describe('generic form fields', () => {
+  it('uses shop labels and readable choices without changing stored names or input values', () => {
+    const fields = fieldsOf({ properties: { atc: { type: 'string', title: 'ATC' }, costCentre: { enum: ['production', 'office'] }, eeCents: int, erCents: int, caCents: int, ewtCents: int, paymentTerms: { enum: ['full', 'dp50'] }, priority: { enum: ['normal', 'rush'] } } });
+    expect(fields.slice(0, 6).map((f) => [f.name, f.label])).toEqual([
+      ['atc', 'Tax code (ATC)'], ['costCentre', 'Pay cost group'], ['eeCents', 'Employee share'], ['erCents', 'Company share'], ['caCents', 'Cash advance'], ['ewtCents', 'Tax withheld from supplier (EWT)'],
+    ]);
+    expect(choiceLabel('paymentTerms', 'full')).toBe('Full payment');
+    expect(choiceLabel('priority', 'normal')).toBe('Normal');
+    expect(choiceLabel('costCentre', 'office')).toBe('Office and sales');
+    expect(choiceLabel('other', 'full')).toBe('full');
+    expect(choiceLabel('paymentTerms', 'future_terms')).toBe('future_terms');
+    expect(toInput(fields.slice(6), { paymentTerms: 'full', priority: 'normal' })).toEqual({ input: { paymentTerms: 'full', priority: 'normal' }, errors: {} });
+    expect(toValues(fields.slice(6), { paymentTerms: 'full', priority: 'normal' })).toEqual({ paymentTerms: 'full', priority: 'normal' });
+  });
+
   it('reads kinds and labels from the schema, asking money questions instead of accounts (PLAN H2)', () => {
     expect(fields.map((f) => `${f.label} | ${f.kind} | ${f.required}`)).toEqual([
       'Where did the money come from? | cashPlace | true',

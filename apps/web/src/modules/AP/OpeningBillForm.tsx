@@ -54,7 +54,7 @@ export function OpeningBillForm({ type, mode }: { type: DocTypeInfo; mode: FormM
           </Field>
         </div>
       </Panel>
-      <Field label="Still owed on the cut-over date" required hint="After the EWT withheld and any part payments made before the cut-over. No VAT or EWT here: they were in the old books.">
+      <Field label="Still owed on the cut-over date" required hint="After the tax withheld from supplier (EWT) and any part payments made before the cut-over. No VAT or EWT here: they were in the old books.">
         <input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={owed} onChange={(e) => setOwed(e.target.value)} />
       </Field>
       <Field label="Note"><textarea rows={2} className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>

@@ -78,7 +78,7 @@ export function BulkSizes({ uploadId, rows, onChanged }: { uploadId: string; row
   return (
     <Panel title={`Sizes typed without a customer (${waiting.length})`}>
       <p className="text-sm text-slate-600">
-        These sizes were typed in the old app with no customer: usually people measured one by one, often for a group order. Tick the rows, then choose what to do with them all at once. Nothing is imported until the dry run and the commit.
+        These sizes were typed in the old app with no customer: usually people measured one by one, often for a group order. Tick the rows, then choose what to do with them all at once. Nothing is imported until you check the import and choose to import these approved rows.
       </p>
       {batches.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md bg-sky-50 p-3 text-sm">

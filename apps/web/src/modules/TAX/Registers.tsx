@@ -65,7 +65,7 @@ export function WithholdingReceived({ me }: { me: Me }) {
           ]).map((w) => <Notice key={w} tone="warning">{w}</Notice>)}
           <p className="text-sm">{pendingWords(d.pendingCount)}</p>
           <RegisterTable rows={d.rows} lead={customerColumns} columns={[
-            { head: 'ATC', cell: (x) => x.atc ?? '—' },
+            { head: 'Tax code (ATC)', cell: (x) => x.atc ?? '—' },
             {
               head: '2307',
               cell: (x) => (

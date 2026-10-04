@@ -12,7 +12,7 @@
 
 ### Steps
 1. Freeze the old apps. Do not make new entries after closing time the day before.
-2. Download each tab of the old Apps Script sheet as a CSV file. On the **Admin** menu, click **Import old data**. Upload one tab at a time: pick the file in **CSV file** and click **Upload and stage the rows**. Then go through the review (**Accept**, **Fix**, **Merge**, **Exclude**), click **Run the dry run**, and click **Commit the import**. The commit step will ask for your password again.
+2. Download each tab of the old Apps Script sheet as a CSV file. On the **Admin** menu, click **Import old data**. Upload one tab at a time: pick the file in **CSV file** and click **Load a copy**. Then go through the review (**Accept**, **Fix**, **Merge**, **Exclude**), click **Check the import**, and click **Import these approved rows**. The import step will ask for your password again.
 3. Use the **Opening balances** screen (see [Opening balances](17-opening-balances.md)). Click **Set the cut-over date**, then record your starting balances (cash counts, bank balances, open job orders, bills, loans, and fixed assets). Finally, click **Close the opening** (the accountant signs off the opening trial balance here).
 4. Re-create the job orders that are still in production as live job orders with their remaining steps.
 5. Make the old apps read-only. Turn off the Apps Script web deployment and archive the VERSION 2 database.

@@ -34,7 +34,7 @@ export function ArAging({ me }: { me: Me }) {
   const path = applied ? `ar-aging?${applied}` : null;
   const { data, error, pager, pagerFor } = usePagedReport<Aging>(path);
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
-  return <article className="rpt-page space-y-4"><BookTitle title="AR aging" dates={data ? `As of ${data.asOf}` : ''} />
+  return <article className="rpt-page space-y-4"><BookTitle title="Unpaid customer balances (AR aging)" dates={data ? `As of ${data.asOf}` : ''} />
     <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="As of"><input type="date" className={inputClass}
       value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
       <Button tone="primary" disabled={!asOf} onClick={() => setApplied(new URLSearchParams({ asOf }).toString())}>Show</Button>

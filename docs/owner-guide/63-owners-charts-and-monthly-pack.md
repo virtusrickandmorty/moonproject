@@ -11,7 +11,7 @@
 2. Look under **Last 12 months**:
    - **Sales, collections and expenses**: bars for each month's sales, money collected, and expenses. Point at a bar to see the amount. Click **Income statement** or **Collections register** to see the report.
    - **Cash on hand at month end**: a line of the money in all cash places at the end of each month (this month: today). Click **See the report** for the cash position.
-   - **Receivables by age today**: what customers owe, by how many days overdue (**Current**, **1–30**, **31–60**, **61–90**, **Over 90**). Click **See the report** for the AR aging.
+   - **Receivables by age today**: what customers owe, by how many days overdue (**Current**, **1–30**, **31–60**, **61–90**, **Over 90**). Click **See the report** for the Unpaid customer balances (AR aging).
 
 **To print the monthly pack:**
 1. On the **Reports** menu, click **Monthly owners' pack**.

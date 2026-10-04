@@ -66,7 +66,7 @@ export function ApSupplierPage({ docTypes, params }: { docTypes: DocTypeInfo[]; 
       <Panel title="Advances">
         {l.advances.length === 0 ? <p className="text-sm text-slate-500">No advances paid to this supplier.</p> : (
           <table className="w-full text-sm">
-            <thead className="text-left text-slate-500"><tr><th>Advance</th><th>Date</th><th className="text-right">Advance</th><th className="text-right">EWT</th><th className="text-right">On bills</th><th className="text-right">Given back</th><th className="text-right">Still open</th></tr></thead>
+            <thead className="text-left text-slate-500"><tr><th>Advance</th><th>Date</th><th className="text-right">Advance</th><th className="text-right">Tax withheld from supplier (EWT)</th><th className="text-right">On bills</th><th className="text-right">Given back</th><th className="text-right">Still open</th></tr></thead>
             <tbody>
               {l.advances.map((a) => (
                 <tr key={a.id} className="border-t border-slate-100">
@@ -82,7 +82,7 @@ export function ApSupplierPage({ docTypes, params }: { docTypes: DocTypeInfo[]; 
             </tbody>
           </table>
         )}
-        <p className="text-sm text-slate-500">A bill of this supplier takes its open advances, oldest first. EWT withheld on an advance stays with it, and the bill does not withhold it again.</p>
+        <p className="text-sm text-slate-500">A bill of this supplier takes its open advances, oldest first. Tax withheld from the supplier (EWT) on an advance stays with it, and the bill does not withhold it again.</p>
       </Panel>
       <Panel title="Bills">
         {l.bills.length === 0 ? <p className="text-sm text-slate-500">No bills.</p> : (

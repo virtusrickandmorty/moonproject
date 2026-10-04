@@ -64,10 +64,10 @@ describe('statutory screen rules', () => {
     ]);
   });
 
-  it('the menu shows Government remittances and Statutory exposure to those with stat.view, next to the Remittances list', () => {
+  it('the menu shows Government remittances and Missing past government contributions to those with stat.view, next to the Remittances list', () => {
     const types = [{ key: 'stat.remittance', module: 'STAT', title: 'Remittance' }] as never[];
     expect(buildMenu(types, new Set(['stat.view'])).find((g) => g.group === 'People & Payroll')).toEqual({
-      group: 'People & Payroll', items: ['Government remittances', 'Statutory exposure', 'Remittances'].map((label) => expect.objectContaining({ label })),
+      group: 'People & Payroll', items: ['Government remittances', 'Missing past government contributions', 'Remittances'].map((label) => expect.objectContaining({ label })),
     });
     expect(buildMenu(types, new Set()).find((g) => g.group === 'People & Payroll')!.items.map((i) => i.label)).toEqual(['Remittances']);
   });

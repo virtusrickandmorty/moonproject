@@ -10,7 +10,7 @@
    ![The Employees list](img/42-employees.png)
 2. Click **+ New employee**.
 3. Type the **Full name**, **Hire date**, **Position**, and **Department**.
-4. Choose the **Cost centre**.
+4. Choose the **Pay cost group**.
 5. The form says "Set the pay on the next page." Click **Add employee** to open the new employee's page and **Set the pay**.
 
 #### Adding government numbers

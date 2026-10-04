@@ -23,7 +23,7 @@ function AtcTable({ atcs, totals, what }: { atcs: EwtAtcLine[]; totals: { baseCe
   if (atcs.length === 0) return <p className="text-sm text-slate-500">No tax was withheld in {what}.</p>;
   return (
     <table className="w-full text-sm">
-      <thead className="text-left text-slate-500"><tr><th className="pr-3">ATC</th><th className="pr-3">EWT class</th><th className="pl-3 text-right">Base</th><th className="pl-3 text-right">EWT</th></tr></thead>
+      <thead className="text-left text-slate-500"><tr><th className="pr-3">Tax code (ATC)</th><th className="pr-3">EWT class</th><th className="pl-3 text-right">Base</th><th className="pl-3 text-right">EWT</th></tr></thead>
       <tbody>
         {atcs.map((l) => (
           <tr key={l.atc ?? l.ewtClass ?? '~'} className="border-t border-slate-100 align-top">
@@ -34,7 +34,7 @@ function AtcTable({ atcs, totals, what }: { atcs: EwtAtcLine[]; totals: { baseCe
           </tr>
         ))}
       </tbody>
-      <tfoot><tr className="border-t border-slate-300 font-semibold"><td className="py-1" colSpan={2}>Total EWT withheld</td><td className={num}>{pesos(totals.baseCents)}</td><td className={num}>{pesos(totals.ewtCents)}</td></tr></tfoot>
+      <tfoot><tr className="border-t border-slate-300 font-semibold"><td className="py-1" colSpan={2}>Total tax withheld from supplier (EWT)</td><td className={num}>{pesos(totals.baseCents)}</td><td className={num}>{pesos(totals.ewtCents)}</td></tr></tfoot>
     </table>
   );
 }
@@ -90,7 +90,7 @@ export function EwtMonthReturn({ me, docTypes }: { me: Me; docTypes: DocTypeInfo
     <div className="max-w-3xl space-y-4">
       <h1 className="text-2xl font-semibold">0619-E (monthly EWT)</h1>
       <p className="text-sm text-slate-600">
-        The expanded withholding tax of the first or second month of a quarter, by ATC, from the EWT register. The third month has no 0619-E: its EWT goes on the 1601-EQ.
+        The expanded withholding tax of the first or second month of a quarter, by ATC, from the tax withheld from suppliers register (EWT register). The third month has no 0619-E: its EWT goes on the 1601-EQ.
       </p>
       {month && (
         <div className="flex flex-wrap items-end gap-3 print:hidden">
@@ -149,7 +149,7 @@ export function EwtQuarterReturn({ me, docTypes }: { me: Me; docTypes: DocTypeIn
             <RecordLink docTypes={docTypes} form="1601-EQ" period={w.period} />
             <AtcTable atcs={w.atcs} totals={w.totals} what="the quarter" />
             <Reckoning rows={[
-              { label: 'EWT withheld in the quarter', cents: w.totals.ewtCents },
+              { label: 'Tax withheld from supplier (EWT) in the quarter', cents: w.totals.ewtCents },
               ...openingReckoning(w),
               ...w.remittances.flatMap((r) => (r.payments.length ? r.payments.map((p) => paymentRow(`Less the 0619-E for ${r.label}:`, p)) : [{ label: `Less the 0619-E for ${r.label}: none recorded`, cents: 0 }])),
               { label: 'Due with the 1601-EQ', cents: w.dueCents, strong: true },
@@ -162,7 +162,7 @@ export function EwtQuarterReturn({ me, docTypes }: { me: Me; docTypes: DocTypeIn
             {w.qap.length === 0 ? <p className="text-sm text-slate-500">No payee had tax withheld in this quarter.</p> : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="text-left text-slate-500"><tr><th className="pr-3">TIN</th><th className="pr-3">Registered name</th><th className="pr-3">ATC</th><th className="pl-3 text-right">Base</th><th className="pl-3 text-right">Rate</th><th className="pl-3 text-right">EWT withheld</th></tr></thead>
+                  <thead className="text-left text-slate-500"><tr><th className="pr-3">TIN</th><th className="pr-3">Registered name</th><th className="pr-3">Tax code (ATC)</th><th className="pl-3 text-right">Base</th><th className="pl-3 text-right">Rate</th><th className="pl-3 text-right">Tax withheld from supplier (EWT)</th></tr></thead>
                   <tbody>
                     {w.qap.map((l, i) => (
                       <tr key={`${l.supplierId}:${l.atc ?? l.ewtClass}:${i}`} className="border-t border-slate-100 align-top">

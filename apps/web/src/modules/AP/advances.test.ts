@@ -31,7 +31,7 @@ describe('supplier advance screen rules', () => {
     expect(advanceInput(v, 1_100_000).input.tenders).toEqual([{ cashPlaceId: 3, amountCents: 1_100_000 }]);
     expect(advanceInput({ ...v, purchaseOrderId: 'po1', ewt: 'none', note: ' Deposit ' }, 1_120_000).input).toMatchObject({ purchaseOrderId: 'po1', ewtClass: 'none', note: 'Deposit' });
     expect(advanceInput({ ...v, supplierId: '', amount: '' }).errors).toEqual(['Pick the supplier.', 'Type the advance, like 5,000.00', 'Payment 1: type an amount like 1,250.00']);
-    expect(advanceFigures({ appliedEwtClass: 'contractor_2', ewtRateBp: 200, ewtCents: 20_000, cashCents: 1_100_000 })).toEqual([['EWT withheld (Contractors and printers 2%)', 20_000], ['Paid out', 1_100_000]]);
+    expect(advanceFigures({ appliedEwtClass: 'contractor_2', ewtRateBp: 200, ewtCents: 20_000, cashCents: 1_100_000 })).toEqual([['Tax withheld from supplier (EWT) (Contractors and printers 2%)', 20_000], ['Paid out', 1_100_000]]);
   });
 
   it('open advances, oldest first; a bill leaves them to the server or takes what is typed; a return takes all that is open', () => {
@@ -45,7 +45,7 @@ describe('supplier advance screen rules', () => {
     expect(billAdvancesInput(false, open, {})).toEqual({ advances: [], errors: [] });
     expect(billAdvancesInput(false, open, { a1: '500.01', a3: 'x' }).errors).toEqual(['SADV-000002 of 2026-09-01 on PO-000002: only 500.00 is still open.', 'SADV-000004 of 2026-09-01: type an amount like 1,250.00']);
     expect(billFigures({ inputVatCents: 0, appliedEwtClass: null, ewtRateBp: 0, ewtCents: 0, payableCents: 100_000, dueDate: '2026-10-01', advanceCents: 30_000, owedCents: 70_000 }))
-      .toEqual([['Input VAT', 0], ['EWT withheld', 0], ['Owed to the supplier, due 2026-10-01', 100_000], ['Advances applied', 30_000], ['Still owed after the advances', 70_000]]);
+      .toEqual([['Input VAT', 0], ['Tax withheld from supplier (EWT)', 0], ['Owed to the supplier, due 2026-10-01', 100_000], ['Advances applied', 30_000], ['Still owed after the advances', 70_000]]);
 
     const back = advanceReturnInput({ advance: open[0], tenders: [{ ...emptyTender(), cashPlaceId: '4' }], note: '' });
     expect(back).toEqual({ input: { advanceId: 'a1', tenders: [{ cashPlaceId: 4, amountCents: 50_000 }] }, errors: [] });
@@ -79,7 +79,7 @@ describe('supplier advance web client against server routes', () => {
     const adv = advanceInput(values, cash).input;
     const pre = await encoder.preview('ap.advance', adv);
     expect(pre.issues).toEqual([]);
-    expect(advanceFigures(pre.doc as never)).toEqual([['EWT withheld (Contractors and printers 2%)', 20_000], ['Paid out', 980_000]]);
+    expect(advanceFigures(pre.doc as never)).toEqual([['Tax withheld from supplier (EWT) (Contractors and printers 2%)', 20_000], ['Paid out', 980_000]]);
     const recorded = await encoder.post('ap.advance', adv, pre.totalCents, key());
     expect(recorded.number).toBe('SADV-000001');
 
@@ -87,7 +87,7 @@ describe('supplier advance web client against server routes', () => {
     const bill = { supplierId, supplierInvoiceNo: '0042', supplierInvoiceDate: '2026-09-28', lines: billLinesToInput([{ for: 'subcontract', description: 'Sewing', amount: '15,000' }]).lines };
     const bp = await encoder.preview('ap.bill', bill);
     expect(billFigures(bp.doc as never)).toEqual([
-      ['Input VAT', 0], ['EWT withheld (Contractors and printers 2%)', 10_000], ['Owed to the supplier, due 2026-09-28', 1_490_000], ['Advances applied', 1_000_000], ['Still owed after the advances', 490_000],
+      ['Input VAT', 0], ['Tax withheld from supplier (EWT) (Contractors and printers 2%)', 10_000], ['Owed to the supplier, due 2026-09-28', 1_490_000], ['Advances applied', 1_000_000], ['Still owed after the advances', 490_000],
     ]);
     const b = await encoder.post('ap.bill', bill, bp.totalCents, key());
     const l = await encoder.apLedger(supplierId);

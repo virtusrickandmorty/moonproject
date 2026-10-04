@@ -149,11 +149,11 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
             <PayDetails title="Earnings included">
               {e.lines.map((l) => <div key={l.lineNo} className="flex justify-between gap-3 text-sm"><span>{l.description} {qtyText(l.kind, l.qty)}</span><span className="tabular-nums">{peso(l.amountCents)}</span></div>)}
               {e.lines.length === 0 && <p className="text-sm">No earnings in this period.</p>}
-              <p className="text-xs text-slate-600">Employer shares: SSS {peso(e.sssErCents + e.sssEcCents)}, PhilHealth {peso(e.phicErCents)}, Pag-IBIG {peso(e.hdmfErCents)} · 13th month {peso(e.thirteenthCents)}</p>
+              <p className="text-xs text-slate-600">Company shares: SSS {peso(e.sssErCents + e.sssEcCents)}, PhilHealth {peso(e.phicErCents)}, Pag-IBIG {peso(e.hdmfErCents)} · 13th month {peso(e.thirteenthCents)}</p>
             </PayDetails>
             <PayDetails title="Deductions and changes" active={!!advances[e.employeeId]?.trim() || (e.loans ?? []).some((l) => !!loanRows[l.loanId]?.amount.trim() || !!loanRows[l.loanId]?.reason.trim())}>
               <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm [&>dd]:text-right [&>dd]:tabular-nums">
-                <dt>SSS</dt><dd>{peso(e.sssEeCents)}</dd><dt>PhilHealth</dt><dd>{peso(e.phicEeCents)}</dd><dt>Pag-IBIG</dt><dd>{peso(e.hdmfEeCents)}</dd>
+                <dt>SSS employee share</dt><dd>{peso(e.sssEeCents)}</dd><dt>PhilHealth employee share</dt><dd>{peso(e.phicEeCents)}</dd><dt>Pag-IBIG employee share</dt><dd>{peso(e.hdmfEeCents)}</dd>
                 <dt>Tax</dt><dd>{peso(e.wtaxCents)}</dd><dt>Government loans</dt><dd>{peso(e.loanCents ?? 0)}</dd><dt>Cash advance</dt><dd>{peso(e.caCents)}</dd>
               </dl>
               {e.yearEnd && <p className="text-sm">Year-end tax: {yearEndText(e)}</p>}

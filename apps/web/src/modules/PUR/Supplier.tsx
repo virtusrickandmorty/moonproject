@@ -77,9 +77,9 @@ function SupplierFields({ initial, editable, saveLabel, done, onSave }: { initia
         {text('registeredName', 'Registered name', { required: true, hint: 'The name on its receipts and BIR registration; it goes on the 2307.' })}
         {text('tin', 'TIN', { hint: 'Like 123-456-789-000' })}
         {text('paymentTermsDays', 'Payment terms (days)', { hint: 'How many days after its invoice we pay.' })}
-        <Field label="Usual withholding tax (EWT)" hint="Bills from this supplier start with this class; the accountant may change it on a bill.">
+        <Field label="Usual tax withheld from supplier (EWT)" hint="Bills from this supplier start with this class; the accountant may change it on a bill.">
           <select disabled={!editable} className={inputClass} value={v.ewtClass} onChange={(e) => setV({ ...v, ewtClass: e.target.value })}>
-            <option value="">No EWT</option>
+            <option value="">No tax withheld (EWT)</option>
             {Object.entries(EWT_WORDS).map(([k, w]) => <option key={k} value={k}>{w}</option>)}
           </select>
         </Field>

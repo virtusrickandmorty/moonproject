@@ -77,7 +77,7 @@ const KINDS: Record<string, Kind> = {
     fromForm: (f) => (f.choice && f.choice in BAD_DEBT_METHODS ? { value: f.choice, errors: [] } : { errors: ['Choose direct write-off or the allowance method.'] }),
   }),
   'tax.ewt_rates_bp': {
-    title: 'Withholding tax (EWT) rates',
+    title: 'Tax withheld from supplier (EWT) rates',
     words: (v) => Object.entries(ewt(v)).map(([k, bp]) => `${EWT_CLASS_NAMES[k] ?? k} ${bpWords(bp)}`).join('; '),
     toForm: (v) => Object.fromEntries(Object.entries(ewt(v)).map(([k, bp]) => [k, bpText(bp)])),
     fromForm: (f) => {

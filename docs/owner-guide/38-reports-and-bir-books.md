@@ -6,10 +6,10 @@
 
 ### Steps
 1. Open the report you want under **Reports**. It loads automatically (using this month, or today for reports asking for **As of**).
-   ![The AP aging report](img/38-ap-aging.png)
+   ![The Unpaid supplier bills (AP aging) report](img/38-ap-aging.png)
 2. If you want a different date, pick the dates.
    - **Purchase orders by status**, **Received but not billed**, **Late entries** and **Cancellations and reissues** do not have date boxes and no **Show** button.
-   - **AP aging**, **Cash position**, **Fixed-asset schedule**, and **Exceptions** use **As of**.
+   - **Unpaid supplier bills (AP aging)**, **Cash position**, **Fixed-asset schedule**, and **Exceptions** use **As of**.
    - **Purchases by supplier/category**, **Transfers report**, **Cash counts**, and **Sign-in history** use **From** and **To**.
    - The **Customer statement** also needs a customer first.
 3. Click the **Show** button to reload the numbers with your new dates.
@@ -26,8 +26,8 @@ To open the BIR books:
 It gathers all the documents and journals and lines them up based on the report you picked.
 
 To answer everyday questions:
-- **Who owes us?** Look at the **AR aging** report and the **Customer statement**.
-- **What we owe suppliers?** Check the **AP aging** and **Purchases by supplier/category**.
+- **Who owes us?** Look at the **Unpaid customer balances (AR aging)** report and the **Customer statement**.
+- **What we owe suppliers?** Check the **Unpaid supplier bills (AP aging)** and **Purchases by supplier/category**.
 - **How much cash is where?** View the **Cash position** and **Cash counts**.
 - **What are the fixed assets worth?** Look at the **Fixed-asset schedule**.
 - **Payroll and production:** Check the **Payroll register** for pay details. Use the **Production status counts**, **Production throughput**, **Worker output**, **Late job orders**, and **Job order lead time** to see how the shop floor is moving.
