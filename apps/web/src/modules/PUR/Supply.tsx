@@ -4,6 +4,7 @@ import { Notice, Panel, peso } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { CATEGORY_WORDS, UNIT_WORDS } from './purchasing.ts';
 import { costSource } from './Supplies.tsx';
+import { Crumb } from '../../shell/crumbs.tsx';
 
 export function SupplyPage({ params }: { params?: Record<string, string> }) {
   const [supply, setSupply] = useState<SupplyRecord | null>(null);
@@ -13,7 +14,7 @@ export function SupplyPage({ params }: { params?: Record<string, string> }) {
   if (!supply) return <p className="text-slate-500">Loading…</p>;
   return (
     <div className="max-w-3xl space-y-4">
-      <div className="flex items-center gap-3"><h1 className="flex-1 text-2xl font-semibold">{supply.name}</h1><Link to="/pur/supplies" className="text-sm underline">All supplies</Link></div>
+      <div className="flex items-center gap-3"><Crumb label={supply.name} /><h1 className="flex-1 text-2xl font-semibold">{supply.name}</h1><Link to="/pur/supplies" className="text-sm underline">All supplies</Link></div>
       <Panel title="Details">
         <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
           <dt className="text-slate-500">Unit</dt><dd>{UNIT_WORDS[supply.unit]}</dd>

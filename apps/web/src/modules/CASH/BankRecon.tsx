@@ -13,6 +13,7 @@ import { Errors, Figures } from '../COL/parts.tsx';
 import { adjustmentLink, byBank, figuresOf, finishBlockers, hasChanges, latestOf, monthEnd, ownMatch, readBalance, savedTicks, startCheck } from './recon.ts';
 import { canShowBook } from './rules.ts';
 import { saveTicks } from './ticks.ts';
+import { Crumb } from '../../shell/crumbs.tsx';
 
 type Props = { me: Me; docTypes: DocTypeInfo[]; params?: Record<string, string> };
 const day = (stamp: string | null) => (stamp ? stamp.slice(0, 10) : '');
@@ -137,7 +138,7 @@ export function BankReconWork({ me, docTypes, params }: Props) {
 
   return <div className="max-w-5xl space-y-4">
     <div className="flex flex-wrap items-center gap-3">
-      <h1 className="text-2xl font-semibold">Bank reconciliation · {report.bankName} · {report.month}</h1>
+      <Crumb label={`${report.bankName} · ${report.month}`} /><h1 className="text-2xl font-semibold">Bank reconciliation · {report.bankName} · {report.month}</h1>
       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${open ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>{open ? 'Open' : 'Finished'}</span>
       <span className="flex-1" />
       <Link to="/cash/recon" className="text-sm underline">All reconciliations</Link>

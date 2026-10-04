@@ -91,7 +91,8 @@ export function Panel({ title, children }: { title: string; children: ReactNode 
 const openDialogs: symbol[] = [];
 
 /** `wide`: room for a table or a whole record (a customer with its orders); otherwise a form's width. */
-export function Dialog({ title, onClose, wide, children }: { title: string; onClose: () => void; wide?: boolean; children: ReactNode }) {
+/** `wide` for a table, `size="full"` for a whole form (a New job order over its list). */
+export function Dialog({ title, onClose, wide, size, hideTitle, children }: { title: string; onClose: () => void; wide?: boolean; size?: 'full'; hideTitle?: boolean; children: ReactNode }) {
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
@@ -103,8 +104,8 @@ export function Dialog({ title, onClose, wide, children }: { title: string; onCl
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 p-4">
-      <div role="dialog" aria-modal="true" aria-label={title} className={`relative mx-auto mt-12 ${wide ? 'max-w-5xl' : 'max-w-xl'} space-y-4 rounded-lg bg-white p-6 shadow-xl`}>
-        <h2 className="pr-10 text-lg font-bold text-[#010101]">{title}</h2>
+      <div role="dialog" aria-modal="true" aria-label={title} className={`relative mx-auto ${size === 'full' ? 'mt-4 max-w-7xl' : wide ? 'mt-12 max-w-5xl' : 'mt-12 max-w-xl'} space-y-4 rounded-lg bg-white p-6 shadow-xl`}>
+        <h2 className={hideTitle ? 'sr-only' : 'pr-10 text-lg font-bold text-[#010101]'}>{title}</h2>
         {/* Every dialog can be closed with this, as well as with Escape. */}
         <button type="button" onClick={onClose} aria-label="Close dialog" title="Close"
           className="absolute right-3 top-3 grid size-9 place-items-center rounded-full text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900">×</button>

@@ -12,6 +12,7 @@ import { docPath } from '../../shell/menu.ts';
 import { monthLabel } from '../TAX/bir.ts';
 import { DepreciationRun, DisposeAsset } from './Actions.tsx';
 import { STATUSES, STATUS_WORDS, canDispose, filterAssets, gapWarning, monthRows, onTheBooks } from './register.ts';
+import { Crumb } from '../../shell/crumbs.tsx';
 
 const num = 'py-1 text-right tabular-nums';
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
@@ -88,7 +89,7 @@ export function AssetPage({ docTypes, params }: { docTypes: DocTypeInfo[]; param
   return (
     <div className="max-w-4xl space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">{a.number} {a.description}</h1>
+        <Crumb label={a.number} /><h1 className="text-2xl font-semibold">{a.number} {a.description}</h1>
         <span className={chip(a.status)}>{STATUS_WORDS[a.status]}</span>
         <span className="flex-1" />
         <Link to="/fa/assets" className="text-sm underline">All fixed assets</Link>

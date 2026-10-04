@@ -66,7 +66,7 @@ export function shpReviewRoutes(app: FastifyInstance, deps: AppDeps): void {
       FROM shp_reviews r JOIN shp_orders o ON o.id = r.order_id ORDER BY r.created_at DESC, r.rowid DESC`).all()
       .map((r) => ({ ...(r as object), hidden: (r as { hidden: number }).hidden === 1 })));
 
-  app.post<{ Params: { id: string } }>('/api/shp/admin/reviews/:id/hide', { config: { permission: 'shp.manage' } }, async (req) => {
+  app.post<{ Params: { id: string } }>('/api/shp/admin/reviews/:id/hide', { config: { permission: 'shp.reviews.manage' } }, async (req) => {
     const b = hideInput.parse(req.body);
     const user = currentUser(req);
     const at = stamp(clock);

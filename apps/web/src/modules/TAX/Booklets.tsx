@@ -4,6 +4,7 @@ import { Button, Field, Notice, Panel, ReasonDialog, inputClass, longDate } from
 import { Link, navigate } from '../../router.tsx';
 import { bookletInput, documentLink, skippedNumbers, type BookletFields } from './booklets.ts';
 import { useStepUpAction } from './StepUp.tsx';
+import { Crumb } from '../../shell/crumbs.tsx';
 
 const kindName = (kind: string) => kind === 'SALES_INVOICE' ? 'Sales invoice' : 'Collection receipt';
 const status = (active: boolean) => <span className={`rounded-full px-2 py-1 text-xs font-medium ${active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>{active ? 'In use' : 'Retired'}</span>;
@@ -81,7 +82,7 @@ export function BookletPage({ me, params }: { me: Me; params?: Record<string, st
   const skippedCount = usage ? skippedNumbers(usage).length : 0;
   return <div className="space-y-4">
     <Link to="/tax/booklets" className="text-sm text-indigo-700 underline">← Booklet register</Link>
-    <div className="flex flex-wrap items-center gap-3"><h1 className="text-2xl font-semibold">{usage ? `ATP ${usage.booklet.atpNo}` : 'Booklet'}</h1><span className="flex-1" />
+    <div className="flex flex-wrap items-center gap-3"><Crumb label={usage ? `ATP ${usage.booklet.atpNo}` : 'Booklet'} /><h1 className="text-2xl font-semibold">{usage ? `ATP ${usage.booklet.atpNo}` : 'Booklet'}</h1><span className="flex-1" />
       {usage && me.permissions.includes('tax.booklets.manage') && <Button onClick={() => setChanging(true)}>{usage.booklet.isActive ? 'Retire booklet' : 'Switch back on'}</Button>}
     </div>
     {error && <Notice>{error}</Notice>}{action.error && <Notice>{action.error}</Notice>}

@@ -57,7 +57,8 @@ export function ShopProducts({ me }: { me: Me }) {
         </div>
       </div>
       <div className="flex flex-wrap gap-2" role="tablist">
-        {([['products', 'Products and stock'], ['categories', 'Categories'], ['payment', 'Online payment'], ['reviews', 'Reviews']] as const).map(([k, l]) => (
+        {([['products', 'Products and stock'], ['categories', 'Categories'], ['payment', 'Online payment'], ['reviews', 'Reviews']] as const)
+          .filter(([k]) => k !== 'payment' || me.permissions.includes('shp.orders.view')).map(([k, l]) => (
           <button key={k} type="button" role="tab" aria-selected={view === k} className={tab(view === k)} onClick={() => setView(k)}>{l}</button>))}
       </div>
       {view === 'products' && <Products me={me} />}
@@ -230,7 +231,7 @@ function Reviews({ me }: { me: Me }) {
   const [hiding, setHiding] = useState<ReviewRow | null>(null);
   const [reason, setReason] = useState('');
   const { busy, error, run } = useAction();
-  const canManage = me.permissions.includes('shp.manage');
+  const canManage = me.permissions.includes('shp.reviews.manage');
   const load = useCallback(() => masterRequest<ReviewRow[]>(me, '/api/shp/admin/reviews').then(setRows), [me]);
   useEffect(() => { void run(load); }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
   const set = (r: ReviewRow, hidden: boolean) => run(async () => {

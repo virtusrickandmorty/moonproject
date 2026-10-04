@@ -8,6 +8,7 @@ import { Link, navigate, useLocation } from '../router.tsx';
 import { longDate } from '../components/ui.tsx';
 import { buildMenu, docPath, labelOf, type MenuGroup } from './menu.ts';
 import { SearchBox } from '../modules/NAV/Search.tsx';
+import { Breadcrumbs, CrumbName, crumbsFor } from './crumbs.tsx';
 
 function ServerDate() {
   const [date, setDate] = useState<string | null>(); // undefined while loading, null when the server is unreachable
@@ -140,6 +141,7 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
   // The group of the page on screen opens by itself; its heading can still fold it until the next page.
   const [shutHere, setShutHere] = useState(false);
   const menu = useMemo(() => buildMenu(docTypes, new Set(me.permissions)), [docTypes, me.permissions]);
+  const [crumbName, setCrumbName] = useState<string | undefined>(); // what the page on screen shows (a document's number)
   useEffect(() => { setOpen(null); setShutHere(false); }, [path]);
   // The tab says the app's name inside the ERP (the website's pages set their own titles for search engines).
   useEffect(() => { if (!document.title.startsWith('PRACTICE')) document.title = 'Virtus'; }, []);
@@ -187,7 +189,7 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
       <p className="px-4 pb-2 text-xs text-muted lg:hidden print:hidden"><ServerDate /></p>
       <div className="flex">
         {open === 'menu' && <div className="fixed inset-0 z-30 bg-slate-900/30 md:hidden" onClick={() => setOpen(null)} />}
-        <nav className={`${open === 'menu' ? 'fixed inset-y-0 left-0 z-40 overflow-y-auto bg-page shadow-xl' : 'hidden'} ${wide ? 'md:block' : ''} w-[260px] max-w-[85vw] shrink-0 pb-10 pr-3 pt-2 text-[13px] md:sticky md:top-[4.5rem] md:max-h-[calc(100vh-4.5rem)] md:w-[220px] md:self-start md:overflow-y-auto md:shadow-none print:hidden`}>
+        <nav aria-label="Main menu" className={`${open === 'menu' ? 'fixed inset-y-0 left-0 z-40 overflow-y-auto bg-page shadow-xl' : 'hidden'} ${wide ? 'md:block' : ''} w-[260px] max-w-[85vw] shrink-0 pb-10 pr-3 pt-2 text-[13px] md:sticky md:top-[4.5rem] md:max-h-[calc(100vh-4.5rem)] md:w-[220px] md:self-start md:overflow-y-auto md:shadow-none print:hidden`}>
           {menu.map((g) => {
             const here = g.group === hereGroup;
             const showing = here ? !shutHere || opened.has(g.group) : opened.has(g.group);
@@ -214,7 +216,10 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
           })}
         </nav>
         {/* data-erp: the page area of the signed-in ERP; index.css widens its screens (the public website keeps its own layout). */}
-        <main data-erp className="min-w-0 flex-1 px-3 pb-10 pt-2 sm:px-4 md:px-6">{children}</main>
+        <main data-erp className="min-w-0 flex-1 px-3 pb-10 pt-2 sm:px-4 md:px-6">
+          <Breadcrumbs crumbs={crumbsFor(path, menu, crumbName)} icon={<Icon name="Overview" className="size-4" />} />
+          <CrumbName.Provider value={setCrumbName}>{children}</CrumbName.Provider>
+        </main>
       </div>
     </div>
   );

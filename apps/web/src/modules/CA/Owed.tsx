@@ -8,6 +8,7 @@ import { api, type CaOwing, type CaStatus, type DocTypeInfo, type Me } from '../
 import { Notice, Panel, peso } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
+import { Crumb } from '../../shell/crumbs.tsx';
 
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
 const KIND = { repayment: 'Paid back', writeoff: 'Written off' } as const;
@@ -48,7 +49,7 @@ export function CaEmployeePage({ me, docTypes, params }: { me: Me; docTypes: Doc
   const may = (key: string) => docTypes.some((d) => d.key === key && d.canPost);
   return (
     <div className="max-w-3xl space-y-4">
-      <h1 className="text-2xl font-semibold">Cash advances of {s.name}{s.active ? '' : ' (separated)'}</h1>
+      <Crumb label={s.name} /><h1 className="text-2xl font-semibold">Cash advances of {s.name}{s.active ? '' : ' (separated)'}</h1>
       <p>Owes <b className="tabular-nums">{peso(s.outstandingCents)}</b> now{s.installmentCents ? `; ${peso(s.installmentCents)} is deducted each payroll` : ''}.</p>
       <div className="flex flex-wrap gap-2">
         {s.outstandingCents > 0 && may('ca.repayment') && <Link to={docPath('ca.repayment', `/new?employee=${id}`)} className={link}>Pay back</Link>}

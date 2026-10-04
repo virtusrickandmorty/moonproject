@@ -33,6 +33,9 @@ export function Pos({ me }: { me: Me }) {
   const [done, setDone] = useState<{ id: string; number: string; change: number } | null>(null);
   const [key, setKey] = useState(newIdempotencyKey);
   const { busy, error, run } = useAction();
+  // Selling records a quick sale: the POS needs those permissions too, plus seeing the shop's items and the customers.
+  const missing = (['shp.view', 'cus.view', 'qs.create', 'qs.post'] as const).filter((k) => !me.permissions.includes(k));
+  const canSell = missing.length === 0;
 
   const load = useCallback(() => masterRequest<Item[]>(me, '/api/shp/admin/products').then((all) => setItems(all.filter((p) => p.isActive && !p.madeToOrder))), [me]);
   const walkIn = useCallback(() => masterRequest<{ id: string; display_name: string; is_active: number }[]>(me, '/api/cus/customers?search=walk-in&limit=10').then((cs) => {
@@ -40,6 +43,7 @@ export function Pos({ me }: { me: Me }) {
     setCustomer(w ? { id: w.id, name: w.display_name } : null);
   }, () => undefined), [me]);
   useEffect(() => {
+    if (!canSell) return; // the notice says what is missing; loading would only be refused
     void run(async () => {
       await load(); await walkIn();
       const ps = await api.cashPlaces();
@@ -103,8 +107,9 @@ export function Pos({ me }: { me: Me }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h1 className="text-2xl font-semibold">POS</h1><p className="text-sm text-slate-600">Sell the shop's own-brand pieces at the counter. Each sale is a quick sale with its payment, and the pieces come off the stock.</p></div>
-        <Link to="/shp" className="rounded-md bg-white px-4 py-2 text-sm font-semibold ring-1 ring-slate-300 hover:bg-indigo-50">Products and stock</Link>
+        {me.permissions.includes('shp.view') && <Link to="/shp" className="rounded-md bg-white px-4 py-2 text-sm font-semibold ring-1 ring-slate-300 hover:bg-indigo-50">Products and stock</Link>}
       </div>
+      {!canSell && <Notice>Your role opens the POS but cannot sell here yet. It also needs: {missing.map((k) => ({ 'shp.view': 'see the website shop products', 'cus.view': 'view customers', 'qs.create': 'prepare quick sales', 'qs.post': 'record quick sales' })[k]).join(', ')}. Ask the owner (Admin › Roles and permissions).</Notice>}
       {error && <Notice>{error}</Notice>}
       {done && <Notice tone="success">Recorded as <Link to={docPath('qs.sale', `/${done.id}`)} className="font-semibold underline">{done.number}</Link>.{done.change > 0 ? ` Give ${peso(done.change)} change.` : ''}</Notice>}
       <div className="grid gap-4 xl:grid-cols-[1fr_24rem]">
@@ -159,7 +164,7 @@ export function Pos({ me }: { me: Me }) {
           )}
           {warnings.length > 0 && <Notice tone="warning">{warnings.map((w) => w.message).join(' ')} Press Record again to record it anyway.</Notice>}
           {problems.length > 0 && cart.length > 0 && <ul className="list-disc pl-5 text-xs text-slate-500">{problems.map((p) => <li key={p}>{p}</li>)}</ul>}
-          <Button tone="primary" className="w-full py-3 text-base" disabled={busy || problems.length > 0} onClick={() => void record()}>{busy ? 'Recording…' : `Record sale · ${peso(totalCents)}`}</Button>
+          <Button tone="primary" className="w-full py-3 text-base" disabled={busy || !canSell || problems.length > 0} onClick={() => void record()}>{busy ? 'Recording…' : `Record sale · ${peso(totalCents)}`}</Button>
           {cart.length > 0 && <button type="button" className="w-full text-sm text-slate-500 hover:text-red-700" onClick={() => { setCart([]); setWarnings([]); }}>Clear the sale</button>}
         </aside>
       </div>

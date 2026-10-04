@@ -9,6 +9,7 @@ import { api, type ApBalance, type ApLedger, type DocTypeInfo } from '../../api.
 import { Notice, Panel, StatusChip, peso } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
+import { Crumb } from '../../shell/crumbs.tsx';
 
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
 const num = 'py-1 text-right tabular-nums';
@@ -55,7 +56,7 @@ export function ApSupplierPage({ docTypes, params }: { docTypes: DocTypeInfo[]; 
   const open = l.advances.filter((a) => a.status === 'posted' && a.openCents > 0);
   return (
     <div className="max-w-4xl space-y-4">
-      <h1 className="text-2xl font-semibold">{l.supplierName}</h1>
+      <Crumb label={l.supplierName} /><h1 className="text-2xl font-semibold">{l.supplierName}</h1>
       <p>Owed on bills <b className="tabular-nums">{peso(l.balanceCents)}</b> · advances still open <b className="tabular-nums">{peso(l.advancesCents)}</b></p>
       <div className="flex flex-wrap gap-2">
         {may('ap.advance') && <Link to={docPath('ap.advance', `/new?supplier=${id}`)} className={link}>Pay an advance</Link>}

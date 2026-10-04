@@ -17,7 +17,7 @@ function AuthForm(p: { title: string; intro?: string; boxes: Box[]; submitLabel:
       {p.intro && <p className={`text-sm text-slate-600 ${p.page ? 'text-center' : ''}`}>{p.intro}</p>}
       {p.boxes.map(([name, label, type, autoComplete, hint], i) => (
         <Field key={name} label={label} hint={hint}>
-          <input autoFocus={i === 0} type={type} autoComplete={autoComplete} className={inputClass} value={v[name] ?? ''} onChange={(e) => setV({ ...v, [name]: e.target.value })} />
+          <input autoFocus={i === 0} type={type} autoComplete={autoComplete} {...(name === 'username' ? { autoCapitalize: 'none', autoCorrect: 'off', spellCheck: false } : {})} className={inputClass} value={v[name] ?? ''} onChange={(e) => setV({ ...v, [name]: e.target.value })} />
         </Field>
       ))}
       {a.error && <Notice>{a.error}</Notice>}

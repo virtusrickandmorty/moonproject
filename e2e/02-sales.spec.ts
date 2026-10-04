@@ -276,6 +276,7 @@ test('sales: a job order paid by check, then the check deposited from Checks on 
   await expect(figure(page, 'Balance due')).toHaveText('₱0.00');
 
   // Checks on hand lists it, and the books agree; tick it and deposit it to the bank: one fund transfer.
+  await page.getByRole('button', { name: 'Close dialog' }).click(); // the job order opened over its list
   await page.getByRole('link', { name: 'Checks on hand', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Checks on hand' })).toBeVisible();
   const row = page.getByRole('row').filter({ hasText: '000777' });

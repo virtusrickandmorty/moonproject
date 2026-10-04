@@ -35,7 +35,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Overview', label: 'Calendar', path: '/cal', permission: 'cal.view' },
   { group: 'Sales', label: 'Customers', path: '/cus', permission: 'cus.view' },
   { group: 'Sales', label: 'Support inbox', path: '/sup', permission: 'sup.view' },
-  { group: 'Sales', label: 'POS', path: '/pos', permission: 'qs.post' },
+  { group: 'Sales', label: 'POS', path: '/pos', permission: 'shp.pos' },
   { group: 'Sales', label: 'Website shop', path: '/shp', permission: 'shp.view' },
   { group: 'Sales', label: 'Online orders', path: '/shp/orders', permission: 'shp.orders.view' },
   { group: 'Sales', label: 'Price list', path: '/cat', permission: 'cat.view' },
@@ -132,6 +132,15 @@ export const SCREENS: MenuItem[] = [
   { group: 'Admin', label: 'Integrity check', path: '/aud/integrity', permission: 'aud.integrity.view' },
   { group: 'Admin', label: 'Nightly checks', path: '/aud/nightly', permission: 'aud.integrity.view' },
 ];
+/**
+ * The permission a screen's address needs: its menu item's, or for a page under one (like /pur/suppliers/12) the closest
+ * menu item above it. Undefined: any signed-in user may open it (the server still checks every call).
+ */
+export function pagePermission(path: string): string | undefined {
+  const under = SCREENS.filter((s) => s.permission && (path === s.path || path.startsWith(`${s.path}/`)));
+  return under.sort((a, b) => b.path.length - a.path.length)[0]?.permission;
+}
+
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);
 

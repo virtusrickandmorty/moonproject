@@ -11,6 +11,7 @@ import { Button, JournalTable, Notice, Panel, ReasonDialog, StatusChip, longDate
 import { docPath } from '../shell/menu.ts';
 import { fieldsOf, toValues } from './fields.ts';
 import { AttachmentsPanel } from './Attachments.tsx';
+import { useCrumb } from '../shell/crumbs.tsx';
 
 /** A module's own view parts: more detail under "What this did", and its own cancel (e.g. a quick sale and its payment). */
 /** `noEdit` hides Edit where a cancel and a new document is the way to correct (a payroll's figures depend on the state it was worked out on). */
@@ -18,7 +19,8 @@ import { AttachmentsPanel } from './Attachments.tsx';
 export interface ViewParts { extra?: (d: DocDetail) => ReactNode; cancel?: (id: string, reason: string, key: string) => Promise<unknown>; noEdit?: boolean; cancelNote?: (d: DocDetail) => ReactNode }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo; id: string; recorded: boolean; parts?: ViewParts }) {
+/** `inDialog`: shown over its list; `refresh` reloads the list after a cancel. */
+export function DocView({ type, id, recorded, parts = {}, inDialog }: { type: DocTypeInfo; id: string; recorded: boolean; parts?: ViewParts; inDialog?: { refresh: () => void } }) {
   const fields = useMemo(() => fieldsOf(type.inputJsonSchema), [type]);
   const [d, setD] = useState<DocDetail | null>(null);
   const [places, setPlaces] = useState<CashPlace[]>([]);
@@ -29,6 +31,7 @@ export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo;
   const [cancelPreview, setCancelPreview] = useState<CancelPreview | null>(null);
 
   const load = useCallback(() => api.get(type.key, id).then(setD, (e: Error) => setError(e.message)), [type.key, id]);
+  useCrumb(inDialog ? undefined : d?.header.number); // over its list the trail stays the list's
   useEffect(() => void load(), [load]);
   useEffect(() => void (fields.some((f) => f.kind === 'cashPlace') && api.cashPlaces().then(setPlaces, () => undefined)), [fields]);
   useEffect(() => {
@@ -63,13 +66,13 @@ export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo;
     } catch (e) { page.close(); setPrintError((e as Error).message); }
   };
   const cancel = async (reason: string) => (
-    await (parts.cancel ? parts.cancel(id, reason, cancelKey!) : api.cancel(type.key, id, reason, cancelKey!)), setCancelKey(null), navigate(docPath(type.key, `/${id}`)), await load()
+    await (parts.cancel ? parts.cancel(id, reason, cancelKey!) : api.cancel(type.key, id, reason, cancelKey!)), setCancelKey(null), inDialog ? inDialog.refresh() : navigate(docPath(type.key, `/${id}`)), await load()
   );
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className={inDialog ? 'space-y-4' : 'max-w-3xl space-y-4'}>
       {recorded && <Notice tone="success">Recorded as {h.number}.</Notice>}
-      <div className="flex flex-wrap items-center gap-3">
+      <div className={`flex flex-wrap items-center gap-3 ${inDialog ? 'pr-10' : ''}`}>{/* in a dialog, room for its × */}
         <h1 className="text-2xl font-bold text-[#010101]">{type.title} {h.number}</h1>
         <StatusChip status={h.status} />
         <span className="flex-1" />
