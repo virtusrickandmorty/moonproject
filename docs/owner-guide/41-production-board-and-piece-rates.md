@@ -14,8 +14,8 @@
    ![The Record pieces form](img/41-record-pieces.png)
    * Under **Job order and step**, choose the **Job order** and the **Step**.
    * Under **Who did how many pieces**, choose the **Line** and the **Worker**. Type the number of **Pieces**.
-   * If a worker is fixing mistakes, tick **Rework**. Ticking **Rework** also needs a typed rate: "Row N: type the rework (pasubra) rate." A typed rate needs a reason in the **Why this rate?** box ("say why this rate is typed").
-   * For the **Rate (blank = table)**, the box is empty. Leave it blank and the server takes the rate from the table.
+   * If a worker is fixing mistakes, open **Change rate or record rework** and tick **Rework (pasubra)**. Ticking **Rework (pasubra)** also needs a typed rate: "Row N: type the rework (pasubra) rate." A typed rate needs a reason in the **Why this rate?** box ("say why this rate is typed").
+   * The **Rate per piece** shows the last calculated rate. To change it, open **Change rate or record rework**. The **Rate (blank = table)** box starts empty. Leave it blank and the server takes the rate from the table.
    * To add more workers for the same step, click **+ Another worker**.
    * If you record more pieces than the last step finished, you must explain why under **Why more pieces than came out of the step before? (at least 10 characters)**.
    * Click **Record**.

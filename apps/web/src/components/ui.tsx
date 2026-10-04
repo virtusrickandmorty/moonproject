@@ -1,5 +1,5 @@
 /** Small shared building blocks. Tailwind only; no component library. */
-import { useEffect, useState, type ButtonHTMLAttributes, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type FormEvent, type ReactNode } from 'react';
 import { formatPeso } from '@moonproject/shared';
 import { api, type CashPlace, type JournalLine, type PageInfo } from '../api.ts';
 
@@ -33,15 +33,21 @@ export function Button({ tone = 'plain', className = '', ...rest }: ButtonHTMLAt
   return <button type="button" className={`rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50 ${tones[tone]} ${className}`} {...rest} />;
 }
 
-/** How many rows a screen asks for at a time. */
-export const PAGE_ROWS = 100;
+/** A display preference for this session only, shared by the paged report callers. */
+export let PAGE_ROWS = 25;
+export function choosePageRows(rows: number, onOffset: (offset: number) => void) {
+  if (![25, 50, 100].includes(rows)) return;
+  PAGE_ROWS = rows;
+  onOffset(0); // existing callers request the chosen limit again, starting with the first row
+}
 
-/** "Rows 101 to 200 of 9,611" with Previous and Next, under a long list. Shows nothing when the list fits on one page. */
+/** Page position and a 25/50/100 row choice. Loose-leaf books keep their own fixed number of print pages. */
 export function Pager({ page, onOffset, what = 'rows' }: { page?: PageInfo | undefined; onOffset: (offset: number) => void; what?: string }) {
-  if (!page || page.total <= page.limit) return null;
+  if (!page || (what === 'loose pages' && page.total <= page.limit)) return null;
   const last = Math.min(page.offset + page.limit, page.total);
   return (
     <div className="flex flex-wrap items-center gap-3 py-2 text-sm print:hidden">
+      {what !== 'loose pages' && <label className="flex items-center gap-2">Rows per page<select className="rounded-md border border-slate-300 bg-white px-2 py-1" value={page.limit} onChange={(e) => choosePageRows(Number(e.target.value), onOffset)}>{[25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>}
       <Button disabled={page.offset === 0} onClick={() => onOffset(Math.max(0, page.offset - page.limit))}>Previous</Button>
       <span>{page.total === 0 ? `No ${what}` : `${what[0]!.toUpperCase()}${what.slice(1)} ${(page.offset + 1).toLocaleString('en-PH')} to ${last.toLocaleString('en-PH')} of ${page.total.toLocaleString('en-PH')}`}</span>
       <Button disabled={last >= page.total} onClick={() => onOffset(page.offset + page.limit)}>Next</Button>
@@ -81,15 +87,50 @@ export function Panel({ title, children }: { title: string; children: ReactNode 
   );
 }
 
+const dialogStack: HTMLElement[] = [];
+/** One focus boundary for the top dialog, including controls revealed while it is open. */
+export function keepDialogFocus(root: HTMLElement, opener: HTMLElement | null, close: () => void) {
+  dialogStack.push(root);
+  const doc = root.ownerDocument;
+  const top = () => dialogStack.at(-1) === root;
+  const controls = () => [...root.querySelectorAll<HTMLElement>('a[href], button, input, textarea, select, summary, [tabindex]')]
+    .filter((el) => el.tabIndex >= 0 && !el.matches(':disabled') && el.getClientRects().length > 0);
+  const focus = () => root.focus();
+  if (!root.contains(doc.activeElement)) focus();
+  const keydown = (e: KeyboardEvent) => {
+    if (!top()) return;
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+    if (e.key !== 'Tab') return;
+    const all = controls();
+    const first = all[0]; const last = all.at(-1);
+    if (!first) { e.preventDefault(); focus(); }
+    else if (!root.contains(doc.activeElement) || doc.activeElement === root || (e.shiftKey ? doc.activeElement === first : doc.activeElement === last)) {
+      e.preventDefault(); (e.shiftKey ? last : first)?.focus();
+    }
+  };
+  const focusin = () => { if (top() && !root.contains(doc.activeElement)) focus(); };
+  doc.addEventListener('keydown', keydown, true);
+  doc.addEventListener('focusin', focusin);
+  return () => {
+    doc.removeEventListener('keydown', keydown, true);
+    doc.removeEventListener('focusin', focusin);
+    dialogStack.splice(dialogStack.indexOf(root), 1);
+    if (opener?.isConnected) opener.focus();
+  };
+}
+
 export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  const root = useRef<HTMLDivElement>(null);
+  // Capture before React mounts any autoFocus child, and keep it across rerenders.
+  const opener = useRef(typeof document === 'undefined' ? null : document.activeElement as HTMLElement | null);
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', esc);
-    return () => window.removeEventListener('keydown', esc);
-  }, [onClose]);
+    return keepDialogFocus(root.current!, opener.current, () => close.current());
+  }, []);
   return (
     <div className="fixed inset-0 z-20 overflow-y-auto bg-slate-900/40 p-4">
-      <div role="dialog" aria-modal="true" aria-label={title} className="mx-auto mt-12 max-w-xl space-y-4 rounded-lg bg-white p-5 shadow-xl">
+      <div ref={root} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} className="mx-auto mt-12 max-w-xl space-y-4 rounded-lg bg-white p-5 shadow-xl">
         <h2 className="text-lg font-semibold">{title}</h2>
         {children}
       </div>
