@@ -45,7 +45,7 @@ export function YearEndPage({ me }: { me: Me }) {
           </>
         )}
       </div>
-      {!ids && <Notice tone="info">TINs are hidden: they need the permission to see government numbers (emp.view_ids).</Notice>}
+      {!ids && <Notice tone="info">Your role cannot view government numbers. Ask the owner to review your access in Roles and permissions.</Notice>}
       <Panel title={year ? `Employees paid in ${year}` : 'Employees'}>
         {!rows && <p className="text-sm text-slate-500">Loading…</p>}
         {rows?.length === 0 && <p className="text-sm text-slate-500">Nobody was paid in {year}.</p>}

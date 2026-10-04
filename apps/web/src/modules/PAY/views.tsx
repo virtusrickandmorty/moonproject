@@ -10,6 +10,7 @@ import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { GROUP_LABEL, deductionsOf, finalPayText, loansLeft, qtyText, thirteenthText, yearEndDetail, yearEndText } from './run.ts';
 import type { PayRunDoc, PayThirteenthDoc } from '../../api.ts';
+import { PayDetails, PayTotal, ThirteenthCalculation } from './entry.tsx';
 
 /** The "Final pay" badge of an employee separated within the run's period. */
 export const FinalBadge = () => <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-900">Final pay</span>;
@@ -38,27 +39,20 @@ function RunParts({ d }: { d: DocDetail }) {
         {run.yearEnd && ` · with the ${run.periodEnd.slice(0, 4)} year-end tax adjustment`}
         {run.unusedLeave && ' · unused leave paid in cash'}
       </p>
-      <table className="w-full text-sm">
-        <thead className="text-left text-slate-500">
-          <tr><th>Employee</th><th className="text-right">Gross</th><th className="text-right">Deductions</th>{run.yearEnd && <th className="text-right">Tax refund</th>}<th className="text-right">Net</th>{run.yearEnd && <th className="pl-3">Year-end tax</th>}</tr>
-        </thead>
-        <tbody>
-          {run.employees.map((e) => (
-            <tr key={e.employeeId} className="border-t border-slate-100">
-              <td className="py-1">
-                {e.name}{e.final && <FinalBadge />}
-                {e.lines.filter((l) => l.kind === 'unused_leave').map((l) => <span key={l.lineNo} className="block text-xs text-slate-600">{l.description}: {qtyText(l.kind, l.qty)}, {peso(l.amountCents)}</span>)}
-                {e.final && <span className="block text-xs text-slate-600">{finalPayText(e)}{e.yearEnd && ` · year-end tax: ${yearEndText(e)}`}</span>}
-              </td>
-              <td className="text-right tabular-nums">{peso(e.grossCents)}</td>
-              <td className="text-right tabular-nums">{peso(e.grossCents - e.netCents + (e.wtaxRefundCents ?? 0))}</td>
-              {run.yearEnd && <td className="text-right tabular-nums">{peso(e.wtaxRefundCents ?? 0)}</td>}
-              <td className="text-right tabular-nums">{peso(e.netCents)}</td>
-              {run.yearEnd && <td className="pl-3 text-xs">{yearEndText(e) || 'Withholding tax is off'}</td>}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <PayTotal total={run.netCents}>{run.employees.length} employees</PayTotal>
+      {run.employees.map((e) => (
+        <section key={e.employeeId} aria-label={e.name} className="space-y-3 rounded-lg border border-slate-200 p-3">
+          <div className="flex flex-wrap justify-between gap-3"><h3 className="font-medium">{e.name}{e.final && <FinalBadge />}</h3><p className="font-semibold tabular-nums">Net pay: {peso(e.netCents)}</p></div>
+          <p className="text-sm">Gross {peso(e.grossCents)} − deductions {peso(e.grossCents - e.netCents + (e.wtaxRefundCents ?? 0))}{(e.wtaxRefundCents ?? 0) > 0 && <> + tax refund {peso(e.wtaxRefundCents!)}</>}</p>
+          <PayDetails title="Earnings and deductions">
+            {e.lines.map((l) => <div key={l.lineNo} className="flex justify-between gap-3 text-sm"><span>{l.description} {qtyText(l.kind, l.qty)}</span><span className="tabular-nums">{peso(l.amountCents)}</span></div>)}
+            {deductionsOf(e).map(([label, amount]) => <div key={label} className="flex justify-between gap-3 text-sm"><span>Less {label}</span><span className="tabular-nums">{peso(amount)}</span></div>)}
+            {e.yearEnd && <p className="text-sm">Year-end tax: {yearEndText(e)}</p>}
+          </PayDetails>
+          {e.final && <p className="text-xs text-slate-600">{finalPayText(e)}{e.yearEnd && ' · year-end tax: ' + yearEndText(e)}</p>}
+        </section>
+      ))}
+      <p className="text-sm">Allowances and adjustments included: <b className="tabular-nums">{peso(run.employees.flatMap((e) => e.lines).filter((l) => l.kind === 'allowance' || l.kind === 'adjustment').reduce((sum, l) => sum + l.amountCents, 0))}</b></p>
       <div className="flex gap-2">
         <Link to={`/pay/runs/${d.header.id}/payslips`} className="rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100">Payslips</Link>
         {d.header.status === 'posted' && <Link to={docPath('pay.release', `/new?run=${d.header.id}`)} className="rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100">Release net pay</Link>}
@@ -75,22 +69,17 @@ function ThirteenthParts({ d }: { d: DocDetail }) {
   if (!t) return null;
   return (
     <div className="space-y-2 pt-2">
+      <PayTotal label="To pay now" total={t.netCents}>{t.employees.length} employees</PayTotal>
+      <p className="text-xs text-slate-600">Recorded net pay for this run; check its releases for what is still unpaid.</p>
       <p className="text-sm">{GROUP_LABEL[t.payGroup]} · 13th month {t.year}: one twelfth of the basic pay of the recorded payroll runs, beside what they accrued</p>
-      <table className="w-full text-sm">
-        <thead className="text-left text-slate-500">
-          <tr><th>Employee</th><th className="text-right">Basic pay</th><th className="text-right">One twelfth</th><th className="text-right">Accrued</th><th className="text-right">Paid</th><th className="text-right">Tax</th><th className="text-right">Net</th></tr>
-        </thead>
-        <tbody>
-          {t.employees.map((e) => (
-            <tr key={e.employeeId} className="border-t border-slate-100">
-              <td className="py-1">{e.name}{e.reason && <span className="block text-xs text-slate-500">Changed: {e.reason}</span>}</td>
-              <td className="text-right tabular-nums">{peso(e.basicCents)}</td><td className="text-right tabular-nums">{peso(e.dueCents)}</td>
-              <td className="text-right tabular-nums">{peso(e.accruedCents)}</td><td className="text-right tabular-nums">{peso(e.amountCents)}</td>
-              <td className="text-right tabular-nums">{peso(e.wtaxCents)}</td><td className="text-right tabular-nums">{peso(e.netCents)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {t.employees.map((e) => (
+        <section key={e.employeeId} aria-label={e.name} className="space-y-3 rounded-lg border border-slate-200 p-3">
+          <div className="flex flex-wrap justify-between gap-3"><h3 className="font-medium">{e.name}</h3><p className="font-semibold tabular-nums">To pay now: {peso(e.netCents)}</p></div>
+          <p className="text-sm">Amount {peso(e.amountCents)} − tax {peso(e.wtaxCents)} = {peso(e.netCents)}</p>
+          {e.reason && <p className="text-sm text-slate-600">Changed: {e.reason}</p>}
+          <ThirteenthCalculation employee={e} />
+        </section>
+      ))}
       {t.skip?.map((s) => <p key={s.employeeId} className="text-xs text-slate-600">Left out: {s.reason}</p>)}
       {d.header.status === 'posted' && (
         <Link to={docPath('pay.release', `/new?run=${d.header.id}`)} className="inline-block rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100">Release net pay</Link>

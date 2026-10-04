@@ -74,7 +74,7 @@ function NewLoan({ employees, employeeId, onSaved }: { employees: ActiveEmployee
           <select className={inputClass} value={v.kind} onChange={set('kind')}>{Object.entries(LOAN_KIND).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
         </Field>
         <Field label="Loan number" required><input className={inputClass} value={v.loanNo} onChange={set('loanNo')} /></Field>
-        <Field label="Monthly amortization" required><input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right`} value={v.amortization} onChange={set('amortization')} /></Field>
+        <Field label="Monthly deduction" required><input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right`} value={v.amortization} onChange={set('amortization')} /></Field>
         <Field label="First month deducted" required><input type="month" className={inputClass} value={v.firstMonth} onChange={set('firstMonth')} /></Field>
         <Field label="Last month deducted" required><input type="month" className={inputClass} value={v.lastMonth} onChange={set('lastMonth')} /></Field>
       </div>
@@ -105,7 +105,7 @@ function EditLoan({ loan, onClose, onSaved }: { loan: GovLoan; onClose: () => vo
     <Dialog title={`Change ${LOAN_KIND[loan.kind]} ${loan.loanNo}`} onClose={onClose}>
       <p className="text-sm text-slate-700">Payrolls already recorded keep what they deducted.</p>
       <Field label="Loan number"><input className={inputClass} value={v.loanNo} onChange={set('loanNo')} /></Field>
-      <Field label="Monthly amortization"><input inputMode="decimal" className={`${inputClass} text-right`} value={v.amortization} onChange={set('amortization')} /></Field>
+      <Field label="Monthly deduction"><input inputMode="decimal" className={`${inputClass} text-right`} value={v.amortization} onChange={set('amortization')} /></Field>
       <Field label="First month deducted"><input type="month" className={inputClass} value={v.firstMonth} onChange={set('firstMonth')} /></Field>
       <Field label="Last month deducted"><input type="month" className={inputClass} value={v.lastMonth} onChange={set('lastMonth')} /></Field>
       <Field label="Note"><input className={inputClass} value={v.note} onChange={set('note')} /></Field>

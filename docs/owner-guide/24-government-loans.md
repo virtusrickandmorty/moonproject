@@ -2,14 +2,14 @@
 
 **What it is for:** Register an employee's SSS or Pag-IBIG loan so payroll can deduct it once a month and pay it with the monthly contributions.
 
-**Before you start:** Get the loan statement from the agency. You need the loan number, the monthly amortization, and the first and last month.
+**Before you start:** Get the loan statement from the agency. You need the loan number, the monthly deduction, and the first and last month.
 
 ### Steps to register a loan
 1. On the **People & Payroll** menu, click **Government loans**.
    ![The Government loans screen with the Register a loan form](img/24-government-loans.png)
 2. Under the **Loans** panel, fill in the **Register a loan** form.
 3. Pick the **Employee** and the **Loan** kind (like SSS Salary or Pag-IBIG Multi-Purpose).
-4. Type the **Loan number** and the **Monthly amortization**.
+4. Type the **Loan number** and the **Monthly deduction**.
 5. Pick the **First month deducted** and the **Last month deducted**. (For a loan already running, the first month is the next one payroll deducts).
 6. Click **Register loan**.
 
@@ -21,8 +21,8 @@
 5. Click **Stop the loan**. The record is kept, but payroll deducts nothing from this month on.
 
 ### What the system does for you
-The system checks every payroll. On the first payroll whose period ends on or after the 16th of the month, it automatically deducts the monthly amortization. The payslip shows the loan deduction and what is left. When you record your government remittances, the system pays the month's contributions and loans together.
+The system checks every payroll. On the first payroll whose period ends on or after the 16th of the month, it automatically deducts the monthly deduction. The payslip shows the loan deduction and what is left. When you record your government remittances, the system pays the month's contributions and loans together.
 
 ### Common mistakes and how to fix them
 - **Mistake:** You need to skip a deduction this month because the employee's pay is too low, or you need to deduct a different amount.
-- **Fix:** Do not change the registered loan. When making the **New payroll run**, click the employee's name to see the details. Next to the loan deduction, type the new amount in the **Change (0 skips)** box, and type a reason in the **Why** note box. The system will use your amount for this run only.
+- **Fix:** Do not change the registered loan. When making the **New payroll run**, open **Deductions and changes** for the employee. Next to the loan deduction, type the new amount in the **Change (0 skips)** box, and type a reason in the **Why** note box. The system will use your amount for this run only.

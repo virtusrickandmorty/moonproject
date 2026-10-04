@@ -63,16 +63,15 @@ test('payroll: an employee, a week of attendance, the run, its release and the p
   await page.getByRole('button', { name: '+ New Payroll Run' }).click();
   await page.getByLabel('Pay group').selectOption({ label: 'Weekly (piece rate)' });
   await page.getByLabel('Period').selectOption(start);
-  const row = page.getByRole('row', { name: /^Erin Tailor/ });
+  const row = page.getByRole('region', { name: 'Erin Tailor', exact: true });
   await expect(row).toContainText('₱');
-  const cells = await row.getByRole('cell').allInnerTexts();
-  const gross = cells[1]!;
-  const net = cells[8]!;
+  const gross = await row.getByText('Gross', { exact: false }).first().locator('b').innerText();
+  const net = await row.getByText('Net pay', { exact: false }).first().locator('b').innerText();
   expect(gross).toMatch(/^₱[\d,]+\.\d\d$/);
   await page.getByRole('button', { name: 'Record', exact: true }).click();
   await page.getByRole('dialog', { name: 'Record this Payroll Run?' }).getByRole('button', { name: 'Record', exact: true }).click();
   await expect(page.getByText(/^Recorded as PAY-\d+\.$/)).toBeVisible();
-  await expect(page.getByRole('row', { name: /^Erin Tailor/ })).toContainText(net);
+  await expect(page.getByRole('region', { name: 'Erin Tailor', exact: true })).toContainText(net);
 
   // Its release: the net pay, paid from the cash box.
   await page.getByRole('link', { name: 'Release net pay' }).click();
