@@ -17,15 +17,15 @@ export function DryRun({ uploadId, counts, dry, onDry }: { uploadId: string; cou
   const run = useAction();
   const ready = reviewDone(counts);
   return (
-    <Panel title="Dry run">
+    <Panel title="Check the import">
       <p className="text-sm text-slate-600">Counts what would go in and the totals to compare with the old sheet. Nothing is imported.</p>
       {!ready && <Notice tone="warning">{counts.needsReview} {counts.needsReview === 1 ? 'row still needs' : 'rows still need'} review. Accept, fix, merge or exclude each one first.</Notice>}
-      <Button tone="primary" disabled={!ready || run.busy} onClick={() => void run.run(async () => onDry(await api.migDryRun(uploadId)))}>{run.busy ? 'Running…' : dry ? 'Run the dry run again' : 'Run the dry run'}</Button>
+      <Button tone="primary" disabled={!ready || run.busy} onClick={() => void run.run(async () => onDry(await api.migDryRun(uploadId)))}>{run.busy ? 'Checking…' : dry ? 'Check the import again' : 'Check the import'}</Button>
       {run.error && <Notice>{run.error}</Notice>}
       {dry && (
         <div className="space-y-3">
           <Lines lines={dryRunLines(dry)} />
-          {dryRunAddsUp(dry) ? <Notice tone="success">Every row of the file is counted once.</Notice> : <Notice>The counts do not add up. Do not commit; tell the person who looks after Moonproject.</Notice>}
+          {dryRunAddsUp(dry) ? <Notice tone="success">Every row of the file is counted once.</Notice> : <Notice>The counts do not add up. Do not import; tell the person who looks after Moonproject.</Notice>}
           <h3 className="text-sm font-medium">Totals to check against the old sheet</h3>
           <Lines lines={dryRunChecks(dry)} />
         </div>
@@ -36,20 +36,20 @@ export function DryRun({ uploadId, counts, dry, onDry }: { uploadId: string; cou
 
 export function Commit({ uploadId, counts, dry, mayCommit, onCommitted }: { uploadId: string; counts: RowCounts; dry: DryRunResult | null; mayCommit: boolean; onCommitted: (r: MigCommitResult) => void }) {
   const [asking, setAsking] = useState(false);
-  const action = useStepUpAction('committing the import');
-  if (!dry) return <Panel title="Commit"><p className="text-sm text-slate-500">Run the dry run first. A commit is offered after it, and only while nothing has changed since.</p></Panel>;
+  const action = useStepUpAction('importing these approved rows');
+  if (!dry) return <Panel title="Import these approved rows"><p className="text-sm text-slate-500">Check the import first. You can import the approved rows after that, and only while nothing has changed since.</p></Panel>;
   const commit = () => (setAsking(false), void action.run(async () => onCommitted(await api.migCommit(uploadId, commitRequest(dry).expectedMeasurementCellTenths))));
   return (
-    <Panel title="Commit">
+    <Panel title="Import these approved rows">
       <p className="text-sm text-slate-600">Creates the customers, wearers, measurements, employees and piece rates in one step. Nothing is deleted, and a row already imported from an earlier file is not created twice.</p>
-      {!mayCommit && <Notice tone="warning">Only an owner can commit an import.</Notice>}
-      <Button tone="primary" disabled={!canCommit(dry, counts, mayCommit) || action.busy} onClick={() => setAsking(true)}>{action.busy ? 'Committing…' : 'Commit the import'}</Button>
+      {!mayCommit && <Notice tone="warning">Only an owner can import the approved rows.</Notice>}
+      <Button tone="primary" disabled={!canCommit(dry, counts, mayCommit) || action.busy} onClick={() => setAsking(true)}>{action.busy ? 'Importing…' : 'Import these approved rows'}</Button>
       {action.error && <Notice>{action.error}</Notice>}
       {asking && (
-        <Dialog title="Commit the import?" onClose={() => setAsking(false)}>
-          <p className="text-sm">The measurement cells add up to <strong>{cellSumWords(dry.checksums.measurement.cellTenths)}</strong> in the dry run. If this does not match the old sheet, go back.</p>
+        <Dialog title="Import these approved rows?" onClose={() => setAsking(false)}>
+          <p className="text-sm">The measurement cells add up to <strong>{cellSumWords(dry.checksums.measurement.cellTenths)}</strong> in the import check. If this does not match the old sheet, go back.</p>
           <p className="text-sm text-slate-600">It cannot be undone. You will be asked for your password again if it is needed.</p>
-          <div className="flex justify-end gap-2"><Button onClick={() => setAsking(false)}>Go back</Button><Button tone="primary" onClick={commit}>Commit the import</Button></div>
+          <div className="flex justify-end gap-2"><Button onClick={() => setAsking(false)}>Go back</Button><Button tone="primary" onClick={commit}>Import these approved rows</Button></div>
         </Dialog>
       )}
       {action.dialog}
@@ -67,7 +67,7 @@ export function Committed({ uploadId, result, clearedAt, mayCommit, onCleared }:
   return (
     <>
       <Panel title="Imported">
-        <Notice tone="success">This upload was committed.</Notice>
+        <Notice tone="success">These approved rows were imported.</Notice>
         <Lines lines={[...commitLines(result), ...extra]} />
       </Panel>
       <Panel title="Clear the staged values">

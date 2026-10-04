@@ -110,8 +110,8 @@ export function CwtOnlyForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
         <Field label="Tax withheld (on the 2307)" required hint={invoice ? `The invoice owes ${peso(invoice.owedCents)}` : undefined}>
           <input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right`} value={v.amount} onChange={(e) => setV({ ...v, amount: e.target.value })} />
         </Field>
-        <Field label="ATC" required>
-          <select aria-label="ATC" className={inputClass} value={v.atc} onChange={(e) => setV({ ...v, atc: e.target.value as typeof v.atc })}>
+        <Field label="Tax code (ATC)" required>
+          <select aria-label="Tax code (ATC)" className={inputClass} value={v.atc} onChange={(e) => setV({ ...v, atc: e.target.value as typeof v.atc })}>
             <option value="">Pick</option>
             <option value="WC158">WC158 goods 1%</option>
             <option value="WC160">WC160 services 2%</option>
@@ -281,6 +281,6 @@ export const forfeitView: ViewParts = {
   noEdit: true,
   extra: (d) => {
     const x = d.doc as { customerName: string; jobOrderNumber: string; incomeCents: number; vatCents: number; vatable: boolean; reason: string };
-    return <Rows rows={[['Customer', x.customerName], ['Job order', `${x.jobOrderNumber} (abandoned)`], ['Other income', x.incomeCents], ['Output VAT', x.vatable ? x.vatCents : 'None (ACC-15)'], ['Reason', x.reason]]} />;
+    return <><Rows rows={[['Customer', x.customerName], ['Job order', `${x.jobOrderNumber} (abandoned)`], ['Other income', x.incomeCents], ['Output VAT', x.vatable ? x.vatCents : 'None'], ['Reason', x.reason]]} /><details className="text-sm text-slate-600"><summary className="cursor-pointer">Policy note</summary>Go-live decision ACC-15 covers VAT on forfeited deposits.</details></>;
   },
 };

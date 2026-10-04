@@ -97,7 +97,7 @@ export const advanceReturnView: ViewParts = {
         <p className="text-sm">
           <Link to={`/ap/suppliers/${r.supplierId}`} className="underline">{r.supplierName}</Link> gave back part of{' '}
           <Link to={docPath('ap.advance', `/${r.advanceId}`)} className="underline">{r.advanceNumber}</Link>.
-          {r.advanceEwtCents > 0 ? ` The ${formatPesos(r.advanceEwtCents)} EWT the advance withheld stays.` : ''}
+          {r.advanceEwtCents > 0 ? ` The ${formatPesos(r.advanceEwtCents)} tax withheld from the supplier (EWT) on the advance stays.` : ''}
         </p>
         <TenderLines tenders={r.tenders} word="Into" />
       </>

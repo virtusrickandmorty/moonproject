@@ -5,7 +5,7 @@ import { BookTitle,Tools,useReport,useToday,td,th,money } from './Books.tsx';
 import { PendingPeriod,ResultSummary,statusWords,usePeriod, type Period } from './ReportParts.tsx';
 
 type Result={rows:Record<string,unknown>[];from?:string;to?:string;asOf?:string;totalCents?:number};
-const labels:Record<string,string>={apAging:'AP aging',purchases:'Purchases by supplier and category',purchaseOrders:'Purchase orders by status',receivedNotBilled:'Received but not billed',cashPosition:'Cash position',transfers:'Transfers',cashCounts:'Cash counts',assets:'Fixed-asset schedule',lateEntries:'Late entries',cancellations:'Cancellations and reissues',exceptions:'Exceptions',signIns:'Sign-in history'};
+const labels:Record<string,string>={apAging:'Unpaid supplier bills (AP aging)',purchases:'Purchases by supplier and category',purchaseOrders:'Purchase orders by status',receivedNotBilled:'Received but not billed',cashPosition:'Cash position',transfers:'Transfers',cashCounts:'Cash counts',assets:'Fixed-asset schedule',lateEntries:'Late entries',cancellations:'Cancellations and reissues',exceptions:'Exceptions',signIns:'Sign-in history'};
 const endpoints:Record<string,string>={apAging:'ap-aging',purchases:'purchases',purchaseOrders:'purchase-orders',receivedNotBilled:'received-not-billed',cashPosition:'cash-position',transfers:'transfers',cashCounts:'cash-counts',assets:'assets',lateEntries:'late-entries',cancellations:'cancellations',exceptions:'exceptions',signIns:'sign-ins'};
 const ranges=new Set(['purchases','transfers','cashCounts','signIns']), dated=new Set(['apAging','cashPosition','assets','exceptions']);
 const columns:Record<string,[string,string][]>={

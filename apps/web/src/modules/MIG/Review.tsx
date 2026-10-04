@@ -133,7 +133,7 @@ export function Review({ uploadId, rows, filter, onFilter, reasons, doers, count
       {notKeptNote(rows) && <Notice tone="warning">{notKeptNote(rows)}</Notice>}
       {(filter === 'all' || filter === 'needs_review') && <BulkSizes uploadId={uploadId} rows={rows} onChanged={onChanged} />}
       {(filter === 'all' || filter === 'needs_review') && <BulkEmployees uploadId={uploadId} rows={rows} onChanged={onChanged} />}
-      <p className="text-xs text-slate-500">Rows with nothing wrong are not listed. They go in as they are, and the dry run counts them.</p>
+      <p className="text-xs text-slate-500">Rows with nothing wrong are not listed. They go in as they are, and the import check counts them.</p>
       {shown.length === 0 ? <p className="text-sm text-slate-500">No rows here.</p> : (
         <ul className="space-y-2">{shown.map((r) => <RowCard key={r.id} row={r} all={rows} reason={reasons[r.id]} doers={doers} />)}</ul>
       )}

@@ -25,8 +25,8 @@ function UploadForm() {
   });
   const wanted = KINDS.find((k) => k.kind === kind);
   return (
-    <Panel title="Upload a file from the old sheet">
-      <p className="text-sm text-slate-600">In the old Google sheet, open a tab and choose File, Download, Comma-separated values (.csv). Upload one tab at a time, as downloaded: the columns need no renaming. The Labor Rates tab is not needed, because the piece-rate list is already in place. The rows are only staged: you review them before anything goes in.</p>
+    <Panel title="Load a copy from the old sheet">
+      <p className="text-sm text-slate-600">In the old Google sheet, open a tab and choose File, Download, Comma-separated values (.csv). Upload one tab at a time, as downloaded: the columns need no renaming. The Labor Rates tab is not needed, because the piece-rate list is already in place. This loads a copy for review: you check the rows before anything is imported.</p>
       <div className="max-w-xl space-y-3">
         <fieldset className="space-y-1 text-sm">
           <legend className="font-medium">What is in the file?</legend>
@@ -43,7 +43,7 @@ function UploadForm() {
         {readError && <Notice>{readError}</Notice>}
         {file && problem && <Notice tone="warning">{problem}</Notice>}
         {file && !problem && fileNote(file.csv) && <Notice tone="info">{fileNote(file.csv)}</Notice>}
-        <Button tone="primary" disabled={!!problem || send.busy} onClick={() => void submit()}>{send.busy ? 'Uploading…' : 'Upload and stage the rows'}</Button>
+        <Button tone="primary" disabled={!!problem || send.busy} onClick={() => void submit()}>{send.busy ? 'Loading a copy…' : 'Load a copy'}</Button>
         {send.error && <Notice>{send.error}</Notice>}
       </div>
     </Panel>
@@ -83,7 +83,7 @@ export function ImportOldData({ me }: { me: Me }) {
   return (
     <div className="max-w-4xl space-y-4">
       <h1 className="text-2xl font-semibold">Import old data</h1>
-      <p className="text-sm text-slate-600">Bring customers, measurements, employees and piece rates in from the old Google sheet. Upload, review every row, run a dry run to check the totals, then commit.</p>
+      <p className="text-sm text-slate-600">Bring customers, measurements, employees and piece rates in from the old Google sheet. Load a copy, review every row, check the import totals, then import these approved rows.</p>
       <UploadForm />
       {error && <Notice>{error}</Notice>}
       {!uploads && !error && <p className="text-slate-500">Loading…</p>}

@@ -65,7 +65,7 @@ export function OpeningWithholdingForm({ type, mode }: { type: DocTypeInfo; mode
                   <option value="">The quarter the 2307 covers</option>
                   {quarters.map((q) => <option key={q.value} value={q.value}>{q.label}</option>)}
                 </select>
-                <select aria-label={`Row ${i + 1} ATC`} className={inputClass} value={row.atc} onChange={(e) => set(i, { atc: e.target.value as WithholdingRow['atc'] })}>
+                <select aria-label={`Row ${i + 1} tax code (ATC)`} className={inputClass} value={row.atc} onChange={(e) => set(i, { atc: e.target.value as WithholdingRow['atc'] })}>
                   {ATCS.map((a) => <option key={a} value={a}>{ATC_WORDS[a]}</option>)}
                 </select>
               </div>

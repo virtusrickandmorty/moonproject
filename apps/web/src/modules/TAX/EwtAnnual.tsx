@@ -38,8 +38,8 @@ export function EwtAnnualReturnPage({ me }: { me: Me }) {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="text-left text-slate-500">
-                    <tr><th className="pr-3">TIN</th><th className="pr-3">Registered name</th><th className="pr-3">ATC</th><th className="pl-3 text-right">Rate</th>
-                      {[1, 2, 3, 4].map((q) => <th key={q} className="pl-3 text-right">Q{q}</th>)}<th className="pl-3 text-right">Base</th><th className="pl-3 text-right">EWT withheld</th></tr>
+                    <tr><th className="pr-3">TIN</th><th className="pr-3">Registered name</th><th className="pr-3">Tax code (ATC)</th><th className="pl-3 text-right">Rate</th>
+                      {[1, 2, 3, 4].map((q) => <th key={q} className="pl-3 text-right">Q{q}</th>)}<th className="pl-3 text-right">Base</th><th className="pl-3 text-right">Tax withheld from supplier (EWT)</th></tr>
                   </thead>
                   <tbody>
                     {w.alphalist.map((p, i) => (
@@ -64,7 +64,7 @@ export function EwtAnnualReturnPage({ me }: { me: Me }) {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="text-left text-slate-500">
-                  <tr><th className="pr-3">Quarter</th><th className="pl-3 text-right">QAP</th><th className="pl-3 text-right">1601-EQ</th><th className="pl-3 text-right">EWT register</th><th className="pl-3 text-right">Books</th>
+                  <tr><th className="pr-3">Quarter</th><th className="pl-3 text-right">QAP</th><th className="pl-3 text-right">1601-EQ</th><th className="pl-3 text-right">Tax withheld from suppliers (EWT register)</th><th className="pl-3 text-right">Books</th>
                     <th className="pl-3">Tied</th><th className="pl-3 text-right">Paid (0619-E)</th><th className="pl-3 text-right">Paid (1601-EQ)</th><th className="pl-3 text-right">Left to pay</th></tr>
                 </thead>
                 <tbody>

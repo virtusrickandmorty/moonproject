@@ -110,7 +110,7 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
           </ol>
           {a.error && <Notice>{a.error}</Notice>}
           <div className="flex justify-between gap-2">
-            {can.progress ? <Button onClick={() => setEditing(true)}>Change route</Button> : <span />}
+            {can.progress ? <Button onClick={() => setEditing(true)}>Change production steps</Button> : <span />}
             <Button onClick={onClose}>Close</Button>
           </div>
         </>
@@ -134,7 +134,7 @@ function SetupForm({ card, cat, onSaved, onCancel, disabled }: { card: BoardCard
   return (
     <div className="space-y-3">
       <div>
-        <p className="text-sm font-medium">Start from a route</p>
+        <p className="text-sm font-medium">Start from a set of production steps</p>
         <div className="mt-1 flex flex-wrap gap-2">
           {cat.templates.map((t) => (
             <button key={t.id} type="button" onClick={() => (setTemplateId(t.id), setStepIds(t.stepIds))}
@@ -163,7 +163,7 @@ function SetupForm({ card, cat, onSaved, onCancel, disabled }: { card: BoardCard
       {a.error && <Notice>{a.error}</Notice>}
       <div className="flex justify-end gap-2">
         <Button onClick={onCancel}>Back</Button>
-        <Button tone="primary" disabled={disabled || a.busy || stepIds.length === 0 || !garmentType.trim()} onClick={() => a.run(save)}>Save route</Button>
+        <Button tone="primary" disabled={disabled || a.busy || stepIds.length === 0 || !garmentType.trim()} onClick={() => a.run(save)}>Save production steps</Button>
       </div>
     </div>
   );

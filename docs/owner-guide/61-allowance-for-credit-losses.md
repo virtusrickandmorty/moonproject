@@ -29,9 +29,9 @@
 5. Click **Write off**. Read the box, then click **Record**.
 
 ### What the system does for you
-It suggests the allowance from the AR aging: what each customer owes in each age, times your rates. It records only the change from the allowance already held. The box reads like: "This will set the allowance for credit losses on [date] (per customer) at [amount], from [amount] ...". With the allowance method, a write-off is charged against the allowance instead of straight to bad debts. A write-off takes all that the invoice still owes. Its output VAT stays.
+It suggests the allowance from the Unpaid customer balances (AR aging): what each customer owes in each age, times your rates. It records only the change from the allowance already held. The box reads like: "This will set the allowance for credit losses on [date] (per customer) at [amount], from [amount] ...". With the allowance method, a write-off is charged against the allowance instead of straight to bad debts. A write-off takes all that the invoice still owes. Its output VAT stays.
 
-The **AR aging** report (on the **Reports** menu) shows **Less allowance for credit losses** and **Net receivables**. The **Balance sheet** shows the allowance under the receivables.
+The **Unpaid customer balances (AR aging)** report (on the **Reports** menu) shows **Less allowance for credit losses** and **Net receivables**. The **Balance sheet** shows the allowance under the receivables.
 
 ### Common mistakes and how to fix them
 - **Mistake:** You see "The allowance for credit losses holds [amount], [amount] short of the [amount] to write off. Raise the allowance first".

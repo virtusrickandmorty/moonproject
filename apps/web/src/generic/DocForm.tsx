@@ -9,7 +9,7 @@ import { api, ApiError, newIdempotencyKey, type CashPlace, type DocHeader, type 
 import { navigate } from '../router.tsx';
 import { Button, Dialog, Field, JournalTable, Notice, Panel, ReasonDialog, inputClass, peso, useAction } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
-import { fieldsOf, toInput, toValues, type FieldSpec, type Values } from './fields.ts';
+import { choiceLabel, fieldsOf, toInput, toValues, type FieldSpec, type Values } from './fields.ts';
 
 export type FormMode = { kind: 'new'; draftId?: string } | { kind: 'edit'; id: string };
 
@@ -36,7 +36,7 @@ function FieldInput({ f, value, set, places }: { f: FieldSpec; value: string; se
     case 'boolean':
       return <input type="checkbox" checked={value === 'true'} onChange={(e) => set(e.target.checked ? 'true' : '')} />;
     case 'choice':
-      return <select className={inputClass} value={value} onChange={on}><option value="" />{f.options!.map((o) => <option key={o}>{o}</option>)}</select>;
+      return <select className={inputClass} value={value} onChange={on}><option value="" />{f.options!.map((o) => <option key={o} value={o}>{choiceLabel(f.name, o)}</option>)}</select>;
     case 'unsupported':
       return <p className="text-slate-500">This part needs the module's own screen.</p>;
     default:

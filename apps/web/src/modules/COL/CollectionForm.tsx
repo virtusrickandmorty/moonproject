@@ -165,7 +165,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     ...(customer ? [] : ['Pick the customer.']),
     ...(/^\d+$/.test(crNumber.trim()) ? [] : ['Type the CR number from the booklet (digits only).']),
     ...pay.errors,
-    ...(cwtCents === undefined ? ['Type the tax withheld like 250.00'] : cwtCents > 0 && !cwt.atc ? ['Pick the kind of tax withheld (ATC).'] : []),
+    ...(cwtCents === undefined ? ['Type the tax withheld like 250.00'] : cwtCents > 0 && !cwt.atc ? ['Pick the tax code (ATC).'] : []),
     ...(vatWithheldCents === undefined ? ['Type the VAT withheld like 500.00'] : vatWithheldCents > 0 && !cwtCents ? ['VAT withheld comes with tax withheld on the same 2307: type that amount too.'] : []),
     ...items.filter((_, n) => amounts[n] === undefined || amounts[n]! < 0).map((i) => `${i.label}: type an amount like 1,250.00`),
   ];
@@ -246,7 +246,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
             <Field label="Amount withheld" hint="As written on the 2307">
               <input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={cwt.amount} onChange={(e) => setCwt({ ...cwt, amount: e.target.value })} />
             </Field>
-            <Field label="Kind (ATC)">
+            <Field label="Tax code (ATC)">
               <select className={inputClass} value={cwt.atc} onChange={(e) => setCwt({ ...cwt, atc: e.target.value })}>
                 <option value="" />
                 <option value="WC158">WC158 goods 1%</option>

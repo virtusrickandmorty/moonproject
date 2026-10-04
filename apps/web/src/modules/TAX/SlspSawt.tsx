@@ -180,7 +180,7 @@ export function SawtList({ d }: { d: SawtData }) {
     <ListTable rows={d.rows} rowKey={(r, i) => `${r.customerId}:${r.atc}:${r.certificate}:${r.period}:${i}`} empty="No customer withheld tax in this quarter." cols={[
       { head: 'TIN', cell: (r) => tinCell(r.tin) },
       { head: 'Registered name', cell: (r) => <>{r.registeredName || '—'}<span className="block text-xs text-slate-500">{r.documents.join(', ')}{r.period ? ` · opening, for ${r.period}` : ''}</span></> },
-      { head: 'ATC', cell: (r) => <>{r.atc ?? '—'}{r.rateBp !== null && <span className="block text-xs text-slate-500">{r.rateBp / 100}%</span>}</> },
+      { head: 'Tax code (ATC)', cell: (r) => <>{r.atc ?? '—'}{r.rateBp !== null && <span className="block text-xs text-slate-500">{r.rateBp / 100}%</span>}</> },
       {
         head: '2307',
         cell: (r) => (r.certificate === 'pending' ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">Pending</span> : r.certificate ? certificateWords(r.certificate) : 'None recorded'),

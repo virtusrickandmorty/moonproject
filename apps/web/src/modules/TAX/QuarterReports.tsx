@@ -31,7 +31,7 @@ export function CertificateTable({ c, onError }: { c: Certificates; onError?: (m
       <table className="w-full text-sm">
         <thead className="text-left text-slate-500">
           <tr>
-            {['Supplier', 'TIN', 'ATC', 'Print'].map((h) => <th key={h} rowSpan={2} className="pr-3 align-bottom">{h}</th>)}
+            {['Supplier', 'TIN', 'Tax code (ATC)', 'Print'].map((h) => <th key={h} rowSpan={2} className="pr-3 align-bottom">{h}</th>)}
             {periods.map((p) => <th key={p} colSpan={2} className="pl-3 text-center">{p}</th>)}
           </tr>
           <tr>{periods.map((p) => <Fragment key={p}><th className="pl-3 text-right">Base</th><th className="pl-3 text-right">EWT</th></Fragment>)}</tr>
@@ -72,7 +72,7 @@ export function CertificatesToIssue({ me }: { me: Me }) {
       <h1 className="text-2xl font-semibold">2307s to issue</h1>
       <p className="text-sm text-slate-600">
         The 2307 each supplier gets for the tax Virtus withheld from them: one per supplier and ATC, with each month's income payment (base) and tax withheld,
-        from the EWT register.
+        from the tax withheld from suppliers register (EWT register).
       </p>
       <QuarterForm q={q} />
       {q.error && <Notice>{q.error}</Notice>}

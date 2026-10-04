@@ -105,7 +105,7 @@ export const loanLabel = (l: Pick<PayLoan, 'kind' | 'loanNo'>) => `${LOAN_KIND[l
 /** The deductions a payslip shows (non-zero only), in the F3 order: shares, tax, government loans, cash advance. */
 export function deductionsOf(e: PayEmployee): [string, number][] {
   const rows: [string, number][] = [
-    ['SSS', e.sssEeCents], ['PhilHealth', e.phicEeCents], ['Pag-IBIG', e.hdmfEeCents], [e.yearEnd ? 'Withholding tax (year-end adjustment)' : 'Withholding tax', e.wtaxCents],
+    ['SSS employee share', e.sssEeCents], ['PhilHealth employee share', e.phicEeCents], ['Pag-IBIG employee share', e.hdmfEeCents], [e.yearEnd ? 'Withholding tax (year-end adjustment)' : 'Withholding tax', e.wtaxCents],
     ...(e.loans ?? []).map((l): [string, number] => [loanLabel(l), l.amountCents]), ['Cash advance', e.caCents],
   ];
   return rows.filter(([, c]) => c !== 0);
