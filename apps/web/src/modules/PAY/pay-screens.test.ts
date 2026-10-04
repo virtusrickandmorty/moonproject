@@ -47,7 +47,7 @@ describe('payroll screen rules', () => {
 
   it('payslip rows and quantities', () => {
     const e = { sssEeCents: 25_000, phicEeCents: 0, hdmfEeCents: 1_200, wtaxCents: 0, caCents: 50_000 } as PayEmployee;
-    expect(deductionsOf(e)).toEqual([['SSS', 25_000], ['Pag-IBIG', 1_200], ['Cash advance', 50_000]]);
+    expect(deductionsOf(e)).toEqual([['SSS employee share', 25_000], ['Pag-IBIG employee share', 1_200], ['Cash advance', 50_000]]);
     expect([qtyText('basic', 9_500), qtyText('leave', 1_000), qtyText('ot', 90), qtyText('piece', -2), qtyText('salary', 1)]).toEqual(['9.5 days', '1 day', '1:30 h', '-2 pcs', '']);
   });
 

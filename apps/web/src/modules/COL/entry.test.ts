@@ -17,7 +17,7 @@ it('collection keeps cash, allocations and active 2307 values through preview an
   f.find('question', 'Where did the money go?').props.onChange([{ cashPlaceId: '1', amount: '95.00', reference: '' }]);
   expect(f.find('title', 'Customer withheld tax (2307)').props.active).toBe(false);
   change(f.field('Amount withheld'), '5.00');
-  change(f.field('Kind (ATC)'), 'WC158');
+  change(f.field('Tax code (ATC)'), 'WC158');
   change(f.field('2307 certificate'), 'received');
   expect(f.find('title', 'Customer withheld tax (2307)').props.active).toBe(true);
   const rendered = f.render();

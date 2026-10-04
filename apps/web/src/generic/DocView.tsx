@@ -9,7 +9,7 @@ import { api, newIdempotencyKey, type CancelPreview, type CashPlace, type DocDet
 import { Link, navigate } from '../router.tsx';
 import { Button, JournalTable, Notice, Panel, ReasonDialog, StatusChip, longDate, manilaTime, peso } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
-import { fieldsOf, toValues } from './fields.ts';
+import { choiceLabel, fieldsOf, toValues } from './fields.ts';
 import { AttachmentsPanel } from './Attachments.tsx';
 
 /** A module's own view parts: more detail under "What this did", and its own cancel (e.g. a quick sale and its payment). */
@@ -95,7 +95,7 @@ export function DocView({ type, id, recorded, parts = {} }: { type: DocTypeInfo;
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
           {fields.filter((f) => text[f.name] !== undefined && !UUID.test(text[f.name]!)).map((f) => [
             <dt key={`${f.name}-t`} className="text-slate-500">{f.label}</dt>,
-            <dd key={f.name}>{shown[f.kind]?.(text[f.name]!) ?? text[f.name]}</dd>,
+            <dd key={f.name}>{shown[f.kind]?.(text[f.name]!) ?? (f.kind === 'choice' ? choiceLabel(f.name, text[f.name]!) : text[f.name])}</dd>,
           ])}
         </dl>
         {parts.extra?.(d)}

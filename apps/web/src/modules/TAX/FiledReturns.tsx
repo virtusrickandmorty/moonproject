@@ -29,8 +29,8 @@ export function FiledReturns({ me }: { me: Me }) {
     {action.error && <Notice>{action.error}</Notice>}
     {!data && !error && <p>Loading…</p>}
     {data && <>
-      {manage && !input && <Button onClick={() => setInput({ form: data.forms[0]!, period: '', filedOn: data.today, reference: '', note: '' })}>Add a row</Button>}
-      {manage && input && <Panel title="Record a filed return">
+      {manage && !input && <Button onClick={() => setInput({ form: data.forms[0]!, period: '', filedOn: data.today, reference: '', note: '' })}>Record a filing</Button>}
+      {manage && input && <Panel title="Record a filing">
         <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); save(); }}>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Form" required><select className={inputClass} value={input.form} onChange={(e) => set({ form: e.target.value, period: '' })}>{data.forms.map((f) => <option key={f}>{f}</option>)}</select></Field>
@@ -39,7 +39,7 @@ export function FiledReturns({ me }: { me: Me }) {
             <Field label="Reference" required hint="eFPS or eBIRForms confirmation number"><input required minLength={3} maxLength={100} className={inputClass} value={input.reference} onChange={(e) => set({ reference: e.target.value })} /></Field>
           </div>
           <Field label="Note (optional)"><input maxLength={500} className={inputClass} value={input.note ?? ''} onChange={(e) => set({ note: e.target.value })} /></Field>
-          <div className="flex justify-end gap-2"><Button onClick={() => setInput(null)} disabled={action.busy}>Go back</Button><Button type="submit" tone="primary" disabled={action.busy}>Record filing</Button></div>
+          <div className="flex justify-end gap-2"><Button onClick={() => setInput(null)} disabled={action.busy}>Go back</Button><Button type="submit" tone="primary" disabled={action.busy}>Record a filing</Button></div>
         </form>
       </Panel>}
       {data.rows.length === 0 ? <Notice tone="note">No filing confirmations recorded yet.</Notice> : <div className="overflow-x-auto"><table className="w-full text-sm">

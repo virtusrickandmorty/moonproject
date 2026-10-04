@@ -24,7 +24,7 @@ export const ewtRates = (settings: Setting[]) => (settings.find((s) => s.key ===
 
 /** "Rent 5%"; the words alone while the rates are not loaded. */
 export function ewtLabel(cls: string | null | undefined, ratesBp: Record<string, number> | null): string {
-  if (!cls || cls === 'none') return 'No EWT';
+  if (!cls || cls === 'none') return 'No tax withheld (EWT)';
   const rate = ratesBp?.[cls];
   return `${EWT_WORDS[cls] ?? cls}${rate === undefined ? '' : ` ${rate / 100}%`}`;
 }
@@ -32,7 +32,7 @@ export function ewtLabel(cls: string | null | undefined, ratesBp: Record<string,
 /** The EWT picker: '' leaves it to the usual class (named), then no EWT, then each class. */
 export const ewtChoices = (usual: string | null, ratesBp: Record<string, number> | null): [string, string][] => [
   ['', `Usual: ${ewtLabel(usual, ratesBp)}`],
-  ['none', 'No EWT'],
+  ['none', 'No tax withheld (EWT)'],
   ...Object.keys(EWT_WORDS).map((c): [string, string] => [c, ewtLabel(c, ratesBp)]),
 ];
 
@@ -68,7 +68,7 @@ export const billLinesToRows = (lines: BillLineInput[]): BillLineRow[] =>
 
 /** What the server worked out, for "So far": the EWT with the class and rate it used (today's, at accrual). */
 const ewtFigure = (d: { appliedEwtClass: string | null; ewtRateBp: number; ewtCents: number }): [string, number] =>
-  [d.appliedEwtClass ? `EWT withheld (${ewtLabel(d.appliedEwtClass, { [d.appliedEwtClass]: d.ewtRateBp })})` : 'EWT withheld', d.ewtCents];
+  [d.appliedEwtClass ? `Tax withheld from supplier (EWT) (${ewtLabel(d.appliedEwtClass, { [d.appliedEwtClass]: d.ewtRateBp })})` : 'Tax withheld from supplier (EWT)', d.ewtCents];
 
 /** With advances applied (PLAN D5 SUP-ADV), what they took off and what is still owed after them. */
 export const billFigures = (d: { inputVatCents: number; appliedEwtClass: string | null; ewtRateBp: number; ewtCents: number; payableCents: number; dueDate: string; advanceCents?: number; owedCents?: number }): [string, number][] => [

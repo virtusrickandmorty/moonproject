@@ -15,14 +15,14 @@ async function upload(page: Page, kind: string, name: string, csv: string) {
   await page.goto('/mig');
   await page.getByRole('radio', { name: kind }).check();
   await page.getByLabel('CSV file').setInputFiles({ name, mimeType: 'text/csv', buffer: Buffer.from(csv) });
-  await page.getByRole('button', { name: 'Upload and stage the rows' }).click();
+  await page.getByRole('button', { name: 'Load a copy' }).click();
   await expect(page.getByRole('heading', { name })).toBeVisible();
 }
 async function dryRunAndCommit(page: Page) {
-  await page.getByRole('button', { name: 'Run the dry run' }).click();
+  await page.getByRole('button', { name: 'Check the import' }).click();
   await expect(page.getByText('Every row of the file is counted once.')).toBeVisible();
-  await page.getByRole('button', { name: 'Commit the import' }).click();
-  await page.getByRole('dialog', { name: 'Commit the import?' }).getByRole('button', { name: 'Commit the import' }).click();
+  await page.getByRole('button', { name: 'Import these approved rows' }).click();
+  await page.getByRole('dialog', { name: 'Import these approved rows?' }).getByRole('button', { name: 'Import these approved rows' }).click();
   // Signing in just now counts as a fresh password; later in the run the server asks for it again.
   const ask = page.getByRole('dialog', { name: 'Confirm with your password' });
   await expect(ask.or(page.getByText('Groups', { exact: true }))).toBeVisible();
@@ -70,7 +70,7 @@ test('import: sizes typed with no customer and employees\' rates, in bulk, then 
   await expect(page.getByText(/^1 row was assigned and accepted\./)).toBeVisible();
   await expect(page.getByText('Accepted 4 + excluded 0 + merged 0 = 4 rows listed.')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Run the dry run' }).click();
+  await page.getByRole('button', { name: 'Check the import' }).click();
   await expect(page.getByText('Every row of the file is counted once.')).toBeVisible();
   await expect(page.getByText('New customers (a person each), from sizes without a customer', { exact: true }).locator('xpath=following-sibling::dd[1]')).toHaveText('1');
   await expect(page.getByText('Wearers made from sizes without a customer', { exact: true }).locator('xpath=following-sibling::dd[1]')).toHaveText('4');

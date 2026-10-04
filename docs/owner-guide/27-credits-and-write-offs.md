@@ -13,7 +13,7 @@ Use this for a customer's 2307 when no cash came in.
 3. First pick the **Customer**, then choose the invoice under **Which invoice?**.
    ![The 2307 received form](img/27-new-2307-received.png)
 4. Type the **Tax withheld (on the 2307)**.
-5. Pick the **ATC** and type the **Quarter on the 2307** (like 2026-Q3). You can also add a **Note** on the 2307.
+5. Pick the **Tax code (ATC)** and type the **Quarter on the 2307** (like 2026-Q3). You can also add a **Note** on the 2307.
 6. Click **Record**.
 
 #### Forfeiting an abandoned deposit

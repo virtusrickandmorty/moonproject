@@ -61,7 +61,7 @@ export function StatMonths({ me }: { me: Me }) {
     <div className="max-w-4xl space-y-4">
       <h1 className="text-2xl font-semibold">Government remittances</h1>
       <p className="text-sm text-slate-600">What each month's payrolls owe SSS, PhilHealth, Pag-IBIG and the BIR (1601-C), what was paid, and what is left.</p>
-      <Link to="/stat/exposure" className="text-sm underline">Statutory exposure: months paid with no contribution recorded</Link>
+      <Link to="/stat/exposure" className="text-sm underline">Missing past government contributions: months paid with no contribution recorded</Link>
       {months.length === 0 && <p className="text-slate-500">No payroll is recorded yet.</p>}
       {months.map((m) => (
         <Panel key={m.month} title={m.month}>
@@ -195,16 +195,16 @@ export function StatMonthPage({ me, params }: { me: Me; params?: Record<string, 
         )}
       </Panel>
       <Panel title={`SSS contributions list ${m.month}`}>
-        <Table head={['Employee', 'SSS no.', 'MSC', 'of which MPF', 'Employee share', 'Employer share', 'EC', 'Total']}
+        <Table head={['Employee', 'SSS no.', 'MSC', 'of which MPF', 'Employee share', 'Company share', 'EC', 'Total']}
           rows={m.sss.rows.map((r) => [...who(r), peso(r.mscCents), peso(r.mpfMscCents), peso(r.eeCents), peso(r.erCents), peso(r.ecCents), peso(r.totalCents)])}
           foot={['Total', '', '', '', '', '', '', peso(m.sss.totalCents)]} />
       </Panel>
       <Panel title={`PhilHealth list ${m.month}`}>
-        <Table head={['Employee', 'PhilHealth PIN', 'Monthly basis', 'Employee share', 'Employer share', 'Total']}
+        <Table head={['Employee', 'PhilHealth PIN', 'Monthly basis', 'Employee share', 'Company share', 'Total']}
           rows={m.phic.rows.map((r) => [...who(r), peso(r.basisCents), peso(r.eeCents), peso(r.erCents), peso(r.totalCents)])} foot={['Total', '', '', '', '', peso(m.phic.totalCents)]} />
       </Panel>
       <Panel title={`Pag-IBIG list ${m.month}`}>
-        <Table head={['Employee', 'Pag-IBIG MID', 'Compensation', 'Employee share', 'Employer share', 'Total']}
+        <Table head={['Employee', 'Pag-IBIG MID', 'Compensation', 'Employee share', 'Company share', 'Total']}
           rows={m.hdmf.rows.map((r) => [...who(r), peso(r.compensationCents), peso(r.eeCents), peso(r.erCents), peso(r.totalCents)])} foot={['Total', '', '', '', '', peso(m.hdmf.totalCents)]} />
       </Panel>
       {canDownloadUploads(me.permissions) && <div className="print:hidden"><UploadFiles me={me} m={m} /></div>}

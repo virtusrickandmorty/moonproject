@@ -30,7 +30,7 @@ describe('year-end screen rules', () => {
     expect(yearEndText({})).toBe('');
     expect(yearEndDetail({ yearEnd: y })).toBe('Year-end tax 2026: taxable ₱330,600.00, tax due ₱12,090.00, withheld before ₱40,432.45. Refund ₱28,342.45.');
     const e = { sssEeCents: 75_000, phicEeCents: 0, hdmfEeCents: 0, wtaxCents: 100, caCents: 0, loans: [], yearEnd: y } as unknown as PayEmployee;
-    expect(deductionsOf(e)).toEqual([['SSS', 75_000], ['Withholding tax (year-end adjustment)', 100]]);
+    expect(deductionsOf(e)).toEqual([['SSS employee share', 75_000], ['Withholding tax (year-end adjustment)', 100]]);
   });
 
   it('pay before Moonproject: blanks are ₱0, amounts typed plainly, the parts add up to the gross', () => {

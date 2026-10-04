@@ -121,7 +121,7 @@ describe('tax screens, part 2: rules', () => {
     const tax = groups[1]!.items;
     expect(tax.map((i) => i.label).slice(-2)).toEqual(['Booklets', 'Settings']);
     expect(tax.slice(2, 7).map((i) => `${i.label} ${i.path}`)).toEqual([
-      'Purchases register /tax/purchases', 'EWT register /tax/ewt', '2307s to issue /tax/2307-to-issue', 'VAT this quarter /tax/vat', '2550Q worksheet /tax/2550q',
+      'Purchases register /tax/purchases', 'Tax withheld from suppliers (EWT register) /tax/ewt', '2307s to issue /tax/2307-to-issue', 'VAT this quarter /tax/vat', '2550Q worksheet /tax/2550q',
     ]);
     expect(tax.every((i) => i.path in PAGES)).toBe(true);
   });
