@@ -11,6 +11,30 @@ export class ApiError extends Error {
   }
 }
 
+/** The server's own words for a check (e.g. "Too big: expected string to have <=200 characters") in the shop's words. */
+function plainCheck(message: string): string {
+  if (/email/i.test(message) && /invalid/i.test(message)) return 'Type an email like name@example.com.';
+  if (/^too big/i.test(message)) return 'This is too long or too large.';
+  if (/^too small/i.test(message)) return /string/i.test(message) ? 'Fill this in.' : 'This is too small.';
+  if (/^invalid option|^invalid input: expected one of/i.test(message)) return 'Pick one of the choices.';
+  if (/^invalid input|^invalid/i.test(message)) return 'This is not allowed here.';
+  return message;
+}
+
+/**
+ * The boxes the server refused, by field name, so a screen can show each problem under its own box (Field's error turns it
+ * red). A refusal that names no box gives none: the screen keeps showing its message above the Save button.
+ */
+export function refusedFields(e: unknown): Record<string, string> {
+  if (!(e instanceof ApiError) || !Array.isArray(e.details)) return {};
+  const out: Record<string, string> = {};
+  for (const d of e.details as { field?: unknown; message?: unknown }[]) {
+    const field = typeof d?.field === 'string' ? d.field.split('.')[0] : '';
+    if (field && !(field in out)) out[field] = plainCheck(typeof d.message === 'string' ? d.message : '');
+  }
+  return out;
+}
+
 export interface Me { userId: string; username: string; displayName: string; roles: string[]; permissions: string[]; mustChangePassword: boolean; csrfToken: string }
 export interface GoLiveAnswer { id: number; answer: string; decidedBy: string; decidedOn: string; note: string; recordedAt: string; recordedByName: string }
 export interface GoLiveDecision { id: string; group: 'accountant' | 'owner' | 'co-owners'; question: string; defaultAnswer: string; when: string; history: GoLiveAnswer[]; setting: null | { key: string; value: unknown; words: string; matches: boolean | null } }

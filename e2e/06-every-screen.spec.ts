@@ -38,7 +38,15 @@ async function trouble(page: Page): Promise<string[]> {
   if (!text) problems.push('blank page');
   if (text === 'Loading…') problems.push('still "Loading…"');
   for (const alert of await main.getByRole('alert').allInnerTexts()) problems.push(`error message: ${alert.replace(/\s+/g, ' ').trim()}`);
-  return problems;
+  return [...problems, ...(await noHand(page))];
+}
+
+/** Every button, choice box, tick box and fold-out on the page shows the hand under the mouse, the menu's too. */
+async function noHand(page: Page): Promise<string[]> {
+  const missed = await page.locator('button:not(:disabled), select:not(:disabled), summary, input:is([type=checkbox], [type=radio], [type=file]):not(:disabled)').evaluateAll((els) =>
+    els.filter((e) => (e as HTMLElement).offsetParent !== null && getComputedStyle(e).cursor !== 'pointer')
+      .map((e) => `${e.tagName.toLowerCase()} "${(e.textContent || e.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 40)}"`));
+  return [...new Set(missed)].map((m) => `no hand cursor on ${m}`);
 }
 
 async function menuLinks(page: Page): Promise<{ label: string; href: string }[]> {

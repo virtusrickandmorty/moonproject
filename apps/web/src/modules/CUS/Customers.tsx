@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { openServerPrint, type Me } from '../../api.ts';
+import { openServerPrint, refusedFields, type Me } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { masterRequest } from './http.ts';
 import { withholdingLabels, type WithholdingProfile } from './withholding.ts';
@@ -74,6 +74,12 @@ function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Customer |
     registeredName: old?.registered_name ?? '', tin: old?.tin ?? '', isVatRegistered: Boolean(old?.is_vat_registered),
     withholdingProfile: old?.withholding_profile ?? 'none', billingAddress: old?.billing_address ?? '', email: old?.email ?? '', notes: old?.notes ?? '' });
   const [error, setError] = useState('');
+  const [refused, setRefused] = useState<Record<string, string>>({});
+  /** Typing in a box the server refused clears its red mark until the next Save. */
+  const set = <K extends keyof typeof v>(key: K, value: (typeof v)[K]) => {
+    setV({ ...v, [key]: value });
+    setRefused(({ [key]: _gone, ...rest }) => rest);
+  };
   const save = async () => {
     try {
       const body = { ...v, registeredName: v.registeredName || null, tin: v.tin || null, billingAddress: v.billingAddress || null,
@@ -81,20 +87,20 @@ function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Customer |
       const saved = await masterRequest<Customer & { duplicateWarnings: DuplicateWarning[] }>(me, old ? `/api/cus/customers/${old.id}` : '/api/cus/customers',
         old ? 'PUT' : 'POST', body, old?.version);
       await onSaved(saved.id, saved.duplicateWarnings ?? []);
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { setRefused(refusedFields(e)); setError((e as Error).message); }
   };
   return <Panel title={old ? `Edit ${old.display_name}` : 'New customer'}><div className="grid gap-3 sm:grid-cols-2">
-    <Field label="Kind" required><select className={inputClass} value={v.kind} onChange={(e) => setV({ ...v, kind: e.target.value as typeof v.kind })}>
+    <Field label="Kind" required error={refused.kind}><select className={inputClass} value={v.kind} onChange={(e) => set('kind', e.target.value as typeof v.kind)}>
       <option value="organization">Organization</option><option value="person">Person</option></select></Field>
-    <Field label="Display name" required><input className={inputClass} value={v.displayName} onChange={(e) => setV({ ...v, displayName: e.target.value })} /></Field>
-    <Field label="Registered name"><input className={inputClass} value={v.registeredName} onChange={(e) => setV({ ...v, registeredName: e.target.value })} /></Field>
-    <Field label="TIN"><input className={inputClass} value={v.tin} onChange={(e) => setV({ ...v, tin: e.target.value })} /></Field>
-    <Field label="Billing address"><input className={inputClass} value={v.billingAddress} onChange={(e) => setV({ ...v, billingAddress: e.target.value })} /></Field>
-    <Field label="Email"><input type="email" className={inputClass} value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} /></Field>
-    <Field label="Notes"><input className={inputClass} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field>
-    <Field label="Withholding profile"><select className={inputClass} value={v.withholdingProfile} onChange={(e) => setV({ ...v, withholdingProfile: e.target.value as WithholdingProfile })}>
+    <Field label="Display name" required error={refused.displayName}><input className={inputClass} value={v.displayName} onChange={(e) => set('displayName', e.target.value)} /></Field>
+    <Field label="Registered name" error={refused.registeredName}><input className={inputClass} value={v.registeredName} onChange={(e) => set('registeredName', e.target.value)} /></Field>
+    <Field label="TIN" error={refused.tin}><input className={inputClass} value={v.tin} onChange={(e) => set('tin', e.target.value)} /></Field>
+    <Field label="Billing address" error={refused.billingAddress}><input className={inputClass} value={v.billingAddress} onChange={(e) => set('billingAddress', e.target.value)} /></Field>
+    <Field label="Email" error={refused.email}><input type="email" className={inputClass} value={v.email} onChange={(e) => set('email', e.target.value)} /></Field>
+    <Field label="Notes" error={refused.notes}><input className={inputClass} value={v.notes} onChange={(e) => set('notes', e.target.value)} /></Field>
+    <Field label="Withholding profile" error={refused.withholdingProfile}><select className={inputClass} value={v.withholdingProfile} onChange={(e) => set('withholdingProfile', e.target.value as WithholdingProfile)}>
       {Object.entries(withholdingLabels).map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></Field>
-    <Field label="VAT registered"><input type="checkbox" checked={v.isVatRegistered} onChange={(e) => setV({ ...v, isVatRegistered: e.target.checked })} /></Field>
+    <Field label="VAT registered" error={refused.isVatRegistered}><input type="checkbox" checked={v.isVatRegistered} onChange={(e) => set('isVatRegistered', e.target.checked)} /></Field>
   </div>{error && <Notice>{error}</Notice>}<div className="flex gap-2"><Button tone="primary" disabled={!v.displayName.trim()} onClick={() => void save()}>Save</Button>
     <Button onClick={onClose}>Cancel</Button></div></Panel>;
 }

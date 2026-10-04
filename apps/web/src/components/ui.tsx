@@ -59,7 +59,7 @@ export const inputClass = 'w-full rounded-md border border-slate-300 bg-white px
 
 export function Field({ label, required, error, hint, children }: { label: string; required?: boolean; error?: string; hint?: string; children: ReactNode }) {
   return (
-    <label className="block space-y-1 text-sm">
+    <label className="block space-y-1 text-sm" data-invalid={error ? '' : undefined}>
       <span className="font-medium">{label}{required && <span className="text-red-600"> *</span>}</span>
       {children}
       {hint && <span className="block text-xs text-slate-500">{hint}</span>}
