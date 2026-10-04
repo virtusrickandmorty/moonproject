@@ -5,7 +5,7 @@
  * sends a date, number, total or status: only the input and the total the user confirmed.
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
-import { api, ApiError, newIdempotencyKey, type CashPlace, type DocHeader, type DocTypeInfo, type Preview } from '../api.ts';
+import { api, ApiError, newIdempotencyKey, refusedFields, type CashPlace, type DocHeader, type DocTypeInfo, type Preview } from '../api.ts';
 import { navigate } from '../router.tsx';
 import { Button, Dialog, Field, JournalTable, Notice, Panel, ReasonDialog, inputClass, peso, useAction } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
@@ -78,7 +78,10 @@ export function DocForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   const formRef = useRef<HTMLFormElement>(null);
   const { input, errors } = toInput(fields, values);
   const inputKey = JSON.stringify(input);
-  const fail = (e: Error) => setNotice({ tone: 'error', text: e.message });
+  const [refused, setRefused] = useState<Record<string, string>>({});
+  const fail = (e: Error) => (setRefused(refusedFields(e)), setNotice({ tone: 'error', text: e.message }));
+  // The boxes the server's calculator or a refusal named: each shows its problem in red until the entries change.
+  const named = { ...Object.fromEntries((live?.issues ?? []).filter((i) => i.level === 'error' && i.field).reverse().map((i) => [i.field!.split('.')[0], i.message])), ...refused };
   const modeKey = mode.kind === 'edit' ? mode.id : (mode.draftId ?? '');
 
   useEffect(() => {
@@ -100,6 +103,7 @@ export function DocForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
     const t = setTimeout(() => api.preview(type.key, input).then((p) => stale || setLive(p), () => stale || setLive(null)), 400);
     return () => ((stale = true), clearTimeout(t));
   }, [type.key, inputKey]);
+  useEffect(() => setRefused({}), [inputKey]);
 
   const openConfirm = () => {
     setTouched(true);
@@ -149,7 +153,7 @@ export function DocForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
         {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
         <Panel title="Details">
           {fields.map((f) => (
-            <Field key={f.name} label={f.label} required={f.required} error={touched ? errors[f.name] : undefined}>
+            <Field key={f.name} label={f.label} required={f.required} error={(touched ? errors[f.name] : undefined) ?? named[f.name]}>
               <FieldInput f={f} value={values[f.name] ?? ''} set={(v) => setValues((old) => ({ ...old, [f.name]: v }))} places={places} />
             </Field>
           ))}
