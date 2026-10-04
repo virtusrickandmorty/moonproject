@@ -22,7 +22,7 @@ Actual OS: **Microsoft Windows NT 10.0.26300.0**, Node platform `win32`, archite
 Verified registered source root:
 
 ```text
-C:/Users/James/Documents/Codex/2026-10-05/cloud-environment-plugin-cloud-environment-openai/moonproject-independent-audit
+%USERPROFILE%/Documents/Codex/2026-10-05/cloud-environment-plugin-cloud-environment-openai/moonproject-independent-audit
 ```
 
 The path existed, `git rev-parse --show-toplevel` identified exactly that root, and `git remote get-url origin` returned `https://github.com/virtusrickandmorty/moonproject`. Its branch was `main`, HEAD was the application SHA above, and its working tree was clean. Fetch did not switch, reset or discard that checkout.
@@ -30,9 +30,9 @@ The path existed, `git rev-parse --show-toplevel` identified exactly that root, 
 Separate task-owned checkouts outside the registered source root:
 
 ```text
-Application: C:/Users/James/Documents/Codex/2026-10-05/cloud-environment-plugin-cloud-environment-openai/work/codex2-independent-01-app
-Report:      C:/Users/James/Documents/Codex/2026-10-05/cloud-environment-plugin-cloud-environment-openai/work/codex2-independent-01-report
-Tooling:     C:/Users/James/Documents/Codex/2026-10-05/cloud-environment-plugin-cloud-environment-openai/work/codex2-independent-01-tooling
+Application: %USERPROFILE%/Documents/Codex/2026-10-05/cloud-environment-plugin-cloud-environment-openai/work/codex2-independent-01-app
+Report:      %USERPROFILE%/Documents/Codex/2026-10-05/cloud-environment-plugin-cloud-environment-openai/work/codex2-independent-01-report
+Tooling:     %USERPROFILE%/Documents/Codex/2026-10-05/cloud-environment-plugin-cloud-environment-openai/work/codex2-independent-01-tooling
 ```
 
 The application worktree is detached at the immutable baseline. The report worktree is on the report branch. The application source, dependency declarations and lockfile were not edited. Generated web assets and installed packages are ignored artifacts in the disposable application checkout. Task-only databases, credentials, logs, browser assets, smoke driver and screenshot are under Tooling, outside both source checkouts; none belong in Git. The fictional database is `Tooling/practice-runtime/practice/moonproject.db`, with its own backup directory. No existing shop database was used.
@@ -79,7 +79,7 @@ Only the actual Node 24 Windows setup was exercised here; the declared minimum N
 From the Application checkout, with the task's local npm tool already unpacked in Tooling:
 
 ```powershell
-$auditTools = 'C:\Users\James\Documents\Codex\2026-10-05\cloud-environment-plugin-cloud-environment-openai\work\codex2-independent-01-tooling'
+$auditTools = '%USERPROFILE%\Documents\Codex\2026-10-05\cloud-environment-plugin-cloud-environment-openai\work\codex2-independent-01-tooling'
 $env:PATH = "$auditTools\package\bin;" + $env:PATH
 $env:npm_config_cache = "$auditTools\npm-cache"
 $env:TEMP = "$auditTools\temp"
