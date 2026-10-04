@@ -8,7 +8,7 @@ import { cents } from '../COL/money.ts';
 
 export type Column = { key: string; title: string; cards: BoardCard[] };
 
-/** "Needs a route", a column per step in canonical order, then "Ready"; only the columns that have cards, so the board stays narrow. */
+/** "Choose production steps", a column per step in canonical order, then "Ready"; only the columns that have cards, so the board stays narrow. */
 export function columns(steps: PrdStep[], cards: BoardCard[]): Column[] {
   return [
     { key: 'setup', title: 'Choose production steps', cards: cards.filter((c) => c.steps === null) },
