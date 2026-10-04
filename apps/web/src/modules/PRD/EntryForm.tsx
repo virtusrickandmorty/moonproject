@@ -12,6 +12,7 @@ import { docPath } from '../../shell/menu.ts';
 import { formatPesos } from '@moonproject/shared';
 import { EditGate, Errors, useLive } from '../COL/parts.tsx';
 import { emptyRow, rowsToInput, type EntryRow } from './board.ts';
+import { PayDetails, PayTotal } from '../PAY/entry.tsx';
 
 type Stored = { jobOrderId: string; stepId: number; overCapReason?: string; rows: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string }[] };
 const cell = `${inputClass} py-1`;
@@ -69,6 +70,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
   const input = { jobOrderId: jo, stepId: stepId ?? 0, rows: typed.rows, ...(overCapReason.trim() ? { overCapReason: overCapReason.trim() } : {}) };
   const live = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input));
   const askOverCap = !!overCapReason || !!live?.issues.some((i) => i.code === 'OVER_CAP');
+  const calculated = (live?.doc as { rows: { rowNo: number; rateCents: number; amountCents: number }[] } | undefined)?.rows ?? [];
 
   const openConfirm = () => {
     setTouched(true);
@@ -86,7 +88,8 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
 
   if (original && !editReason) return <EditGate original={original} typeKey={type.key} onReason={setEditReason} />;
   return (
-    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className="space-y-4">
+      <PayTotal label="Piece pay" total={live?.totalCents}>{typed.rows.reduce((s, r) => s + (Number.isInteger(r.pieces) ? r.pieces : 0), 0)} pcs</PayTotal>
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">{original ? `Edit ${original.number}` : 'Record pieces'}</h1>
         {original && <Notice tone="info">When you record, {original.number} is cancelled and the replacement gets a new number. Reason: {editReason}</Notice>}
@@ -108,12 +111,12 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
         </Panel>
         {stepId !== null && job && (
           <Panel title="Who did how many pieces">
-            <table className="w-full text-sm">
-              <thead className="text-left text-slate-500"><tr><th>Line</th><th>Worker</th><th className="w-24">Pieces</th><th>Rework</th><th className="w-28">Rate (blank = table)</th></tr></thead>
-              <tbody>
-                {rows.map((r, i) => (
-                  <tr key={i} className="align-top">
-                    <td className="pr-1 py-1">
+            <div className="space-y-3">
+              {rows.map((r, i) => {
+                const pay = !r.employeeId && !r.pieces.trim() ? undefined : calculated[rows.slice(0, i).filter((row) => row.employeeId || row.pieces.trim()).length];
+                return (
+                  <section key={i} aria-label={`Worker entry ${i + 1}`} className="space-y-3 rounded-lg border border-slate-200 p-3">
+                    <Field label="Line">
                       <select aria-label={`Row ${i + 1} line`} className={cell} value={r.lineNo} onChange={(e) => set(i, { lineNo: e.target.value })}>
                         <option value="" />
                         {lines.map((l) => {
@@ -121,23 +124,29 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                           return <option key={l.lineNo} value={l.lineNo}>{l.lineNo}: {l.description} ({s ? `${s.pieces} of ${l.qty} done, ${Math.max(0, s.availablePieces - s.pieces)} ready` : `${l.qty} pcs`})</option>;
                         })}
                       </select>
-                    </td>
-                    <td className="pr-1 py-1">
-                      <select aria-label={`Row ${i + 1} worker`} className={cell} value={r.employeeId} onChange={(e) => set(i, { employeeId: e.target.value })}>
-                        <option value="" />
-                        {workers.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                      </select>
-                    </td>
-                    <td className="pr-1 py-1"><input aria-label={`Row ${i + 1} pieces`} inputMode="numeric" className={`${cell} text-right tabular-nums`} value={r.pieces} onChange={(e) => set(i, { pieces: e.target.value })} /></td>
-                    <td className="pr-1 py-1 text-center"><input aria-label={`Row ${i + 1} rework`} type="checkbox" checked={r.rework} onChange={(e) => set(i, { rework: e.target.checked })} /></td>
-                    <td className="py-1">
-                      <input aria-label={`Row ${i + 1} rate`} inputMode="decimal" className={`${cell} text-right tabular-nums`} value={r.rate} onChange={(e) => set(i, { rate: e.target.value })} />
-                      {(r.rate.trim() || r.rework) && <input aria-label={`Row ${i + 1} rate reason`} placeholder="Why this rate?" className={`${cell} mt-1`} value={r.rateReason} onChange={(e) => set(i, { rateReason: e.target.value })} />}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </Field>
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(6rem,1fr)_minmax(8rem,1fr)]">
+                      <Field label="Worker">
+                        <select aria-label={`Row ${i + 1} worker`} className={cell} value={r.employeeId} onChange={(e) => set(i, { employeeId: e.target.value })}>
+                          <option value="" />
+                          {workers.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                        </select>
+                      </Field>
+                      <Field label="Pieces"><input aria-label={`Row ${i + 1} pieces`} inputMode="numeric" className={`${cell} text-right tabular-nums`} value={r.pieces} onChange={(e) => set(i, { pieces: e.target.value })} /></Field>
+                      <div className="text-sm"><p className="font-medium">Rate per piece</p><p className="tabular-nums">{pay ? peso(pay.rateCents) : 'Awaiting calculation'}</p><p className="text-xs text-slate-500">Last calculated rate; leave the rate blank to use the table.</p></div>
+                    </div>
+                    <PayDetails title="Change rate or record rework" active={!!r.rate.trim() || r.rework || !!r.rateReason.trim()}>
+                      <label className="flex items-center gap-2 text-sm"><input aria-label={`Row ${i + 1} rework`} type="checkbox" checked={r.rework} onChange={(e) => set(i, { rework: e.target.checked })} /> Rework (pasubra)</label>
+                      <Field label="Rate (blank = table)">
+                        <input aria-label={`Row ${i + 1} rate`} inputMode="decimal" className={`${cell} text-right tabular-nums`} value={r.rate} onChange={(e) => set(i, { rate: e.target.value })} />
+                      </Field>
+                      {(r.rate.trim() || r.rework) && <Field label="Why this rate?"><input aria-label={`Row ${i + 1} rate reason`} placeholder="Why this rate?" className={cell} value={r.rateReason} onChange={(e) => set(i, { rateReason: e.target.value })} /></Field>}
+                      <p className="text-sm text-slate-600">{r.rework ? 'Rework is paid at the typed rate and does not add to normal production progress.' : 'A typed rate replaces the usual rate for these pieces only.'} {pay && <>Last calculated piece pay for this entry: <b className="tabular-nums">{peso(pay.amountCents)}</b>.</>}</p>
+                    </PayDetails>
+                  </section>
+                );
+              })}
+            </div>
             <Button onClick={() => setRows([...rows, emptyRow(rows.at(-1)?.lineNo ?? '')])}>+ Another worker</Button>
           </Panel>
         )}
@@ -147,10 +156,6 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
           </Field>
         )}
         <Errors list={errors} show={touched} />
-        <div className="flex gap-2">
-          <Button tone="primary" disabled={!type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
-          <Button onClick={() => history.back()}>Back</Button>
-        </div>
       </div>
       <Panel title="So far">
         <p className="text-2xl font-semibold tabular-nums">{typed.rows.reduce((s, r) => s + (Number.isInteger(r.pieces) ? r.pieces : 0), 0)} pcs</p>
@@ -158,6 +163,10 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
         {live && live.totalCents !== 0 && <p className="text-sm">Piece pay: <b className="tabular-nums">{peso(live.totalCents)}</b></p>}
         {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
       </Panel>
+      <div className="flex gap-2">
+        <Button tone="primary" disabled={!type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
+        <Button onClick={() => history.back()}>Back</Button>
+      </div>
       {confirm && <RecordDialog type={type} preview={confirm} original={original} reason={editReason} onRecord={record} onClose={() => setConfirm(null)} />}
     </form>
   );

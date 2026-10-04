@@ -121,7 +121,7 @@ export function loanInput(v: { employeeId: string; kind: LoanKind; loanNo: strin
   const month = /^\d{4}-(0[1-9]|1[0-2])$/;
   if (!v.employeeId) errors.push('Pick the employee.');
   if (!/^[0-9A-Za-z-]{3,30}$/.test(v.loanNo.trim())) errors.push('Type the loan number from the agency (letters, digits and dashes).');
-  if (!amortizationCents || amortizationCents <= 0) errors.push('Type the monthly amortization, like 1500.00.');
+  if (!amortizationCents || amortizationCents <= 0) errors.push('Type the monthly deduction, like 1500.00.');
   if (!month.test(v.firstMonth) || !month.test(v.lastMonth)) errors.push('Type the first and last months deducted, like 2026-10.');
   else if (v.lastMonth < v.firstMonth) errors.push('The last month cannot be before the first month.');
   return {
