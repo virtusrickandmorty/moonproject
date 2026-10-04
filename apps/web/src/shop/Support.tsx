@@ -5,7 +5,7 @@
 import { formatPeso } from '@moonproject/shared';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { cartText } from './Panels.tsx';
-import { SERVICES } from './Services.tsx';
+import { SCHOOL_TPL, SERVICES } from './Services.tsx';
 import { SHOP_CONTACT } from './products.ts';
 import { useShop } from './store.tsx';
 import { PageHero } from './Home.tsx';
@@ -50,7 +50,7 @@ const input = 'mt-1 w-full rounded-xl border border-slate-300 bg-white px-3.5 py
 export function Support({ query }: { query: string }) {
   const shop = useShop();
   const params = new URLSearchParams(query);
-  const service = SERVICES.find((s) => s.id === params.get('service'));
+  const service = [SCHOOL_TPL, ...SERVICES].find((s) => s.id === params.get('service'));
   // From the cart: the lines for a quotation (ready-stock pieces are ordered online instead, when that is open).
   const quotedLines = shop.cart.filter((l) => !shop.orderable(l));
   const fromCart = params.get('from') === 'cart' && quotedLines.length > 0;
@@ -185,8 +185,8 @@ export function Support({ query }: { query: string }) {
           <div className="rounded-[2rem] bg-slate-900 p-6 text-white">
             <p className="font-extrabold">Prefer to talk?</p>
             <dl className="mt-4 space-y-3 text-sm">
-              <div><dt className="text-white/60">Call or text</dt><dd className="font-semibold">{SHOP_CONTACT.phone}</dd></div>
-              <div><dt className="text-white/60">Email</dt><dd className="font-semibold break-all">{SHOP_CONTACT.email}</dd></div>
+              <div><dt className="text-white/60">Call or text</dt><dd className="font-semibold"><a href={`tel:${SHOP_CONTACT.phone.replace(/\s/g, '')}`} className="hover:underline">{SHOP_CONTACT.phone}</a></dd></div>
+              <div><dt className="text-white/60">Email</dt><dd className="font-semibold break-all"><a href={`mailto:${SHOP_CONTACT.email}`} className="hover:underline">{SHOP_CONTACT.email}</a></dd></div>
               <div><dt className="text-white/60">Hours</dt><dd className="font-semibold">{SHOP_CONTACT.hours}</dd></div>
             </dl>
           </div>

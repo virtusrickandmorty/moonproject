@@ -3,7 +3,7 @@ import { formatPeso } from '@moonproject/shared';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { ProductPicture } from './GarmentArt.tsx';
 import { navigate } from '../router.tsx';
-import { SIZE_CHART, type Product } from './products.ts';
+import { SIZE_CHART, type Product, percentOff } from './products.ts';
 import { useShop, type CartLine } from './store.tsx';
 import { ReviewCard, Stars } from './Stars.tsx';
 
@@ -81,7 +81,9 @@ export function QuickView({ product, onClose, onSizeGuide, onAdded }: { product:
           <h3 className="mt-1 text-2xl font-bold text-slate-900">{product.name}</h3>
           {rating.count > 0 && <a href="#reviews" onClick={(e) => { e.preventDefault(); document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth' }); }} className="mt-1 inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900">
             <Stars rating={rating.average} /> <b>{rating.average.toFixed(1)}</b> · {rating.count} review{rating.count === 1 ? '' : 's'}</a>}
-          <p className="mt-2 text-xl font-semibold">{product.madeToOrder ? 'from ' : ''}{formatPeso(product.priceCents)} <span className="text-sm font-normal text-slate-500">a piece</span></p>
+          <p className="mt-2 text-xl font-semibold">{product.madeToOrder ? 'from ' : ''}<span className={percentOff(product) ? 'text-rose-600' : ''}>{formatPeso(product.priceCents)}</span>
+            {percentOff(product) > 0 && <><s className="ml-2 text-base font-medium text-slate-400">{formatPeso(product.regularPriceCents!)}</s> <span className="ml-1 rounded-full bg-rose-600 px-2 py-0.5 align-middle text-xs font-bold text-white">−{percentOff(product)}%</span></>}
+            {' '}<span className="text-sm font-normal text-slate-500">a piece</span></p>
           <p className="mt-3 text-slate-600">{product.summary}</p>
           <ul className="mt-3 space-y-1 text-sm text-slate-600">{product.features.map((f) => <li key={f}>✓ {f}</li>)}</ul>
           <p className="mt-4 text-sm font-semibold">Colour: <span className="font-normal">{colour.name}</span></p>
@@ -181,7 +183,7 @@ export function CartDrawer({ onClose }: { onClose: () => void }) {
           <div className="space-y-4 border-t border-slate-100 p-5">
             {online.length > 0 && <div>
               <div className="flex justify-between text-lg font-bold"><span>Order online</span><span className="tabular-nums">{formatPeso(sum(online))}</span></div>
-              <p className="mt-1 text-xs text-slate-500">Pay first by {payment?.bankName ?? 'QR'}; we confirm your payment, then prepare your order.</p>
+              <p className="mt-1 text-xs text-slate-500">Pay online first; we confirm your payment, then prepare your order.</p>
               <button type="button" disabled={online.some((l) => (leftOf(l) ?? 0) < l.qty)} onClick={() => { onClose(); navigate('/checkout'); }}
                 className="mt-3 w-full rounded-full bg-indigo-600 px-6 py-3.5 font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">Check out and pay online</button>
             </div>}

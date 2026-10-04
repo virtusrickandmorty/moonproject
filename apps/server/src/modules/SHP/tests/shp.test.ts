@@ -4,7 +4,7 @@ import type { ProductInput } from '../routes.ts';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 const jersey = (extra: Partial<ProductInput> = {}): ProductInput => ({
-  name: 'Sample team jersey', categoryId: jerseys, shape: 'jersey', priceCents: 55_000, madeToOrder: true, minQty: 10, leadDays: 14,
+  name: 'Sample team jersey', categoryId: jerseys, shape: 'jersey', priceCents: 55_000, regularPriceCents: null, madeToOrder: true, minQty: 10, leadDays: 14,
   badge: 'Best seller', summary: 'A made-up jersey for the tests.', sortOrder: 1, features: ['Names and numbers'],
   sizes: ['XL', 'S', 'M'], colours: [{ name: 'Royal', hex: '#1F3BB3' }], ...extra,
 });
@@ -31,6 +31,16 @@ describe('website shop products', () => {
     expect(changed.json()).toMatchObject({ version: 2, name: 'Renamed jersey', sizes: ['L'], features: [] });
     expect((await owner.put(`/api/shp/products/${p.id}`, jersey(), { 'if-match': '1' })).statusCode).toBe(409);
     expect(await publicList()).toMatchObject([{ id: p.id, name: 'Renamed jersey', sizes: ['L'] }]);
+  });
+
+  it('puts a product on sale with its regular price shown beside it, and takes it off again', async () => {
+    const owner = await env.as('owner');
+    const p = (await owner.post('/api/shp/products', jersey({ priceCents: 44_000, regularPriceCents: 55_000 }))).json() as { id: string };
+    expect(await publicList()).toMatchObject([{ id: p.id, priceCents: 44_000, regularPriceCents: 55_000 }]);
+    // The regular price must be above the price charged, or it is not a sale.
+    expect((await owner.put(`/api/shp/products/${p.id}`, jersey({ priceCents: 55_000, regularPriceCents: 55_000 }), { 'if-match': '1' })).statusCode).toBe(400);
+    expect((await owner.put(`/api/shp/products/${p.id}`, jersey({ priceCents: 55_000 }), { 'if-match': '1' })).statusCode).toBe(200);
+    expect(await publicList()).toMatchObject([{ id: p.id, priceCents: 55_000, regularPriceCents: null }]);
   });
 
   it('hides and shows a product, keeping its lists', async () => {

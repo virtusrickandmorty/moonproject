@@ -17,25 +17,31 @@ export interface StockLine { size: string; colour: string; onHand: number; held:
 interface Row extends Product { categoryId: string | null; sortOrder: number; isActive: boolean; version: number; updatedAt: string; stock: StockLine[] | null }
 interface Category { id: string; name: string; sortOrder: number; isActive: boolean; version: number; products: number }
 interface Values {
-  name: string; categoryId: string; shape: Shape; price: string; madeToOrder: boolean; minQty: string; leadDays: string; badge: string;
+  name: string; categoryId: string; shape: Shape; price: string; regularPrice: string; madeToOrder: boolean; minQty: string; leadDays: string; badge: string;
   summary: string; sortOrder: string; features: string; sizes: string[]; colours: { name: string; hex: string }[];
 }
 const SHAPES: [Shape, string][] = [['tee', 'T-shirt'], ['polo', 'Polo'], ['jersey', 'Jersey'], ['jacket', 'Jacket'], ['hoodie', 'Hoodie'], ['shorts', 'Shorts']];
-const blank: Values = { name: '', categoryId: '', shape: 'tee', price: '', madeToOrder: false, minQty: '1', leadDays: '2', badge: '', summary: '', sortOrder: '0',
+const blank: Values = { name: '', categoryId: '', shape: 'tee', price: '', regularPrice: '', madeToOrder: false, minQty: '1', leadDays: '2', badge: '', summary: '', sortOrder: '0',
   features: '', sizes: ['S', 'M', 'L', 'XL'], colours: [{ name: 'White', hex: '#f8fafc' }] };
-const valuesOf = (p: Row): Values => ({ name: p.name, categoryId: p.categoryId ?? '', shape: p.shape, price: formatPesos(p.priceCents), madeToOrder: p.madeToOrder,
+const valuesOf = (p: Row): Values => ({ name: p.name, categoryId: p.categoryId ?? '', shape: p.shape, price: formatPesos(p.priceCents), regularPrice: p.regularPriceCents ? formatPesos(p.regularPriceCents) : '', madeToOrder: p.madeToOrder,
   minQty: String(p.minQty), leadDays: String(p.leadDays), badge: p.badge ?? '', summary: p.summary, sortOrder: String(p.sortOrder),
   features: p.features.join('\n'), sizes: p.sizes, colours: p.colours });
 /** What the server takes; a message for the first thing that is not right. */
 function bodyOf(v: Values): { body?: unknown; problem?: string } {
   let priceCents: number;
   try { priceCents = parsePesos(v.price); } catch { return { problem: 'Type the price in pesos, like 550 or 550.00.' }; }
+  // On sale: the regular price before the sale (blank: not on sale), above the price charged.
+  let regularPriceCents: number | null = null;
+  if (v.regularPrice.trim()) {
+    try { regularPriceCents = parsePesos(v.regularPrice); } catch { return { problem: 'Type the regular price in pesos, like 650 or 650.00, or leave it blank.' }; }
+    if (regularPriceCents <= priceCents) return { problem: 'The regular price (before the sale) must be higher than the price. Leave it blank when the item is not on sale.' };
+  }
   const whole = (s: string) => (/^-?\d+$/.test(s.trim()) ? Number(s) : NaN);
   if (!v.name.trim() || !v.categoryId || !v.summary.trim()) return { problem: 'Name, category and short description are needed.' };
   if (!v.sizes.length) return { problem: 'Tick at least one size.' };
   if (!v.colours.length || v.colours.some((c) => !c.name.trim())) return { problem: 'Give every colour a name.' };
   if ([whole(v.minQty), whole(v.leadDays), whole(v.sortOrder)].some(Number.isNaN)) return { problem: 'Minimum, days and order must be whole numbers.' };
-  return { body: { name: v.name, categoryId: v.categoryId, shape: v.shape, priceCents, madeToOrder: v.madeToOrder, minQty: whole(v.minQty), leadDays: whole(v.leadDays),
+  return { body: { name: v.name, categoryId: v.categoryId, shape: v.shape, priceCents, regularPriceCents, madeToOrder: v.madeToOrder, minQty: whole(v.minQty), leadDays: whole(v.leadDays),
     badge: v.badge, summary: v.summary, sortOrder: whole(v.sortOrder), features: v.features.split('\n').map((f) => f.trim()).filter(Boolean),
     sizes: v.sizes, colours: v.colours } };
 }
@@ -125,7 +131,7 @@ function Products({ me }: { me: Me }) {
                       <div><p className="font-semibold">{p.name}</p><p className="text-xs text-slate-500">{p.madeToOrder ? `Made to order · min. ${p.minQty}` : 'Ready stock'}{p.badge ? ` · ${p.badge}` : ''}</p></div>
                     </div></td>
                     <td className="p-3">{p.category}</td>
-                    <td className="p-3 text-right tabular-nums">{peso(p.priceCents)}</td>
+                    <td className="p-3 text-right tabular-nums">{peso(p.priceCents)}{p.regularPriceCents ? <span className="block text-xs text-rose-700">sale · was <s>{peso(p.regularPriceCents)}</s></span> : null}</td>
                     <td className={`p-3 text-right tabular-nums ${p.stock && left === 0 ? 'font-semibold text-red-700' : ''}`}>
                       {p.stock ? <>{left}{total(p.stock, 'held') > 0 && <span className="block text-xs text-slate-500">{total(p.stock, 'held')} held online</span>}</> : <span className="text-slate-400">—</span>}
                     </td>
@@ -476,6 +482,11 @@ function ProductDialog({ me, product, categories, onClose, onSaved }: { me: Me; 
             </select></Field>
           <Field label="Drawing (when there is no photo)"><select className={inputClass} value={v.shape} onChange={(e) => set('shape', e.target.value as Shape)}>{SHAPES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
           <Field label={v.madeToOrder ? 'From price per piece (₱)' : 'Price per piece (₱)'} required hint={v.madeToOrder ? undefined : 'What the POS and online orders charge, VAT included.'}><input className={inputClass} inputMode="decimal" value={v.price} onChange={(e) => set('price', e.target.value)} /></Field>
+          <Field label="Regular price before sale (₱)" hint={(() => {
+            // While typing: what the website will show, or how to put it on sale.
+            try { const was = parsePesos(v.regularPrice), now = parsePesos(v.price); return was > now ? `On sale: the website shows ${formatPesos(was)} crossed out, ${Math.floor((1 - now / was) * 100)}% off.` : 'Must be higher than the price.'; }
+            catch { return 'Optional. To put it on sale, type the old price here and the sale price above.'; }
+          })()}><input className={inputClass} inputMode="decimal" value={v.regularPrice} onChange={(e) => set('regularPrice', e.target.value)} /></Field>
           <Field label="Badge" hint="Optional, like Best seller or New."><input className={inputClass} maxLength={30} value={v.badge} onChange={(e) => set('badge', e.target.value)} /></Field>
           <div className="flex items-center gap-4 sm:col-span-2">
             {([[false, 'Ready stock (own brand, sold from the shelf)'], [true, 'Made to order (quoted)']] as const).map(([b, l]) => <label key={l} className="flex items-center gap-2 text-sm"><input type="radio" checked={v.madeToOrder === b} onChange={() => set('madeToOrder', b)} /> {l}</label>)}

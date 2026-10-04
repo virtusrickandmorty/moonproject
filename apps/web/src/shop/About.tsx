@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { Link } from '../router.tsx';
 import { GarmentArt } from './GarmentArt.tsx';
+import { WorkshopFlow } from './Workshop.tsx';
 import { PageHero, SectionHead } from './Home.tsx';
 import { SHOP_CONTACT } from './products.ts';
 import { ReviewCard, Stars } from './Stars.tsx';
@@ -12,8 +13,7 @@ import { useShop } from './store.tsx';
  * shown to customers; nothing on this page is meant to be read as a real figure until it is.
  */
 export const ABOUT = {
-  founded: '[year founded]',
-  address: '[shop address, city]',
+  founded: '2022',
   story: [
     'Virtus Garments began as a small sewing shop making uniforms for teams and schools nearby. Word spread one jersey at a time, and today we make and decorate garments for leagues, schools, offices and organisations.',
     'Everything is made to order in our own workshop: we cut, sew, print, sublimate and embroider under one roof, so we can keep an eye on every piece from the first design to the final stitch.',
@@ -32,7 +32,6 @@ const WHO: [string, string][] = [
   ['Companies and offices', 'Embroidered polos, corporate uniforms and event shirts in your brand colours.'],
   ['Groups and events', 'Fun runs, reunions, outreach and church events, in small or big batches.'],
 ];
-const STEPS = ['Design', 'Cutting', 'Printing and sublimation', 'Sewing', 'Embroidery', 'Quality check', 'Release'];
 
 export function About() {
   return (
@@ -78,9 +77,7 @@ export function About() {
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-300">The workshop</p>
           <h2 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">Inside our workshop</h2>
           <p className="mt-3 max-w-2xl text-white/70">Every job order follows the same route through the shop, and each step is tracked so we always know where your order is.</p>
-          <ol className="mt-8 flex flex-wrap gap-3">
-            {STEPS.map((s, i) => <li key={s} className="flex items-center gap-3 rounded-full bg-white/10 py-2 pl-2 pr-5"><span className="grid size-8 place-items-center rounded-full bg-white text-sm font-bold text-slate-900">{i + 1}</span><span className="font-semibold">{s}</span></li>)}
-          </ol>
+          <WorkshopFlow />
         </div>
       </section>
 
@@ -94,21 +91,24 @@ export function About() {
       <Reviews />
 
       <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6">
-        <div className="grid gap-8 rounded-[2rem] bg-white p-7 ring-1 ring-slate-900/5 sm:p-10 md:grid-cols-[1.2fr_1fr] md:items-center">
-          <div>
+        <div className="grid overflow-hidden rounded-[2rem] bg-white ring-1 ring-slate-900/5 lg:grid-cols-[1fr_1.2fr]">
+          <div className="p-7 sm:p-10">
             <h2 className="text-3xl font-extrabold tracking-tight">Visit the shop</h2>
             <p className="mt-3 text-slate-600">See fabric samples, try on our sizing sets and talk through your design with us in person.</p>
+            <dl className="mt-6 space-y-4 text-sm">
+              <div><dt className="font-bold">Address</dt><dd className="text-slate-600">{SHOP_CONTACT.address}</dd></div>
+              <div><dt className="font-bold">Hours</dt><dd className="text-slate-600">{SHOP_CONTACT.hours}</dd></div>
+              <div><dt className="font-bold">Call or text</dt><dd className="text-slate-600"><a href={`tel:${SHOP_CONTACT.phone.replace(/\s/g, '')}`} className="hover:text-indigo-700 hover:underline">{SHOP_CONTACT.phone}</a></dd></div>
+              <div><dt className="font-bold">Email</dt><dd className="text-slate-600"><a href={`mailto:${SHOP_CONTACT.email}`} className="hover:text-indigo-700 hover:underline">{SHOP_CONTACT.email}</a></dd></div>
+            </dl>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Link to="/support?type=inquiry" className="rounded-full bg-slate-900 px-6 py-3 font-bold text-white hover:bg-indigo-700">Send us a message</Link>
-              <Link to="/" className="rounded-full border border-slate-300 px-6 py-3 font-bold hover:border-slate-900">Browse garments</Link>
+              <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(SHOP_CONTACT.mapQuery)}`} target="_blank" rel="noopener noreferrer" className="rounded-full bg-slate-900 px-6 py-3 font-bold text-white hover:bg-indigo-700">Get directions</a>
+              <Link to="/support?type=inquiry" className="rounded-full border border-slate-300 px-6 py-3 font-bold hover:border-slate-900">Send us a message</Link>
             </div>
           </div>
-          <dl className="space-y-4 text-sm">
-            <div><dt className="font-bold">Address</dt><dd className="text-slate-600">{ABOUT.address}</dd></div>
-            <div><dt className="font-bold">Hours</dt><dd className="text-slate-600">{SHOP_CONTACT.hours}</dd></div>
-            <div><dt className="font-bold">Call or text</dt><dd className="text-slate-600">{SHOP_CONTACT.phone}</dd></div>
-            <div><dt className="font-bold">Email</dt><dd className="text-slate-600">{SHOP_CONTACT.email}</dd></div>
-          </dl>
+          {/* Google's own map of the shop's place (no key needed); it shows the pin for Virtus Garments Inc. */}
+          <iframe title="Map: Virtus Garments Inc, Silang, Cavite" src={`https://www.google.com/maps?q=${encodeURIComponent(SHOP_CONTACT.mapQuery)}&z=15&output=embed`}
+            className="min-h-80 h-full w-full border-0" loading="lazy" referrerPolicy="no-referrer-when-downgrade" allowFullScreen />
         </div>
       </section>
     </>

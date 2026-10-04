@@ -9,7 +9,7 @@ import { navigate } from '../router.tsx';
 import { ProductPicture } from './GarmentArt.tsx';
 import { WishButton } from './Panels.tsx';
 import { Stars } from './Stars.tsx';
-import type { Product } from './products.ts';
+import { deliveryWords, percentOff, type Product } from './products.ts';
 import { useShop, type OnlinePayment } from './store.tsx';
 
 export const isSoldOut = (p: Product) => !!p.stock && p.stock.every((s) => s.available === 0);
@@ -34,6 +34,7 @@ export function ProductCard({ p, colourHex, online, view }: { p: Product; colour
           {!p.photoUrl && second && <span className="absolute inset-0 grid place-items-center opacity-0 transition duration-500 group-hover:opacity-100"><ProductPicture product={p} colour={second} className="w-3/4" /></span>}
         </button>
         <div className="pointer-events-none absolute left-3 top-3 flex flex-col gap-1.5">
+          {!soldOut && percentOff(p) > 0 && <span className="rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">Sale −{percentOff(p)}%</span>}
           {soldOut ? <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">Sold out</span>
             : p.badge && <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-900 shadow-sm">{p.badge}</span>}
           {buy && !soldOut && left > 0 && left <= 5 && <span className="rounded-full bg-amber-400 px-2.5 py-1 text-[11px] font-bold text-slate-900">Only {left} left</span>}
@@ -49,7 +50,9 @@ export function ProductCard({ p, colourHex, online, view }: { p: Product; colour
         <h3 className="mt-1 font-semibold leading-snug"><button type="button" onClick={() => view(p)} className="text-left hover:text-indigo-700">{p.name}</button></h3>
         {count > 0 && <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500"><Stars rating={average} className="size-3.5" />{average.toFixed(1)} ({count})</p>}
         <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-          <p className="font-bold">{p.madeToOrder && <span className="text-xs font-semibold text-slate-500">From </span>}{formatPeso(p.priceCents)}</p>
+          <p className="font-bold">{p.madeToOrder && <span className="text-xs font-semibold text-slate-500">From </span>}
+            <span className={percentOff(p) ? 'text-rose-600' : ''}>{formatPeso(p.priceCents)}</span>
+            {percentOff(p) > 0 && <s className="ml-1.5 text-xs font-medium text-slate-400">{formatPeso(p.regularPriceCents!)}</s>}</p>
           <div className="flex -space-x-1">{p.colours.slice(0, 5).map((c) => <span key={c.name} className="size-4 rounded-full ring-2 ring-white" style={{ background: c.hex, boxShadow: 'inset 0 0 0 1px rgb(0 0 0 / .12)' }} title={c.name} />)}</div>
         </div>
       </div>
@@ -66,7 +69,7 @@ export function HeroSlider({ products, online, payment, toShop }: { products: re
   const slides: Slide[] = [
     ...(online ? [{
       eyebrow: 'Own brand · ready to wear', title: <>Wear it today.<br /><span className="text-indigo-300">Order online.</span></>,
-      text: `Our own-brand pieces, in stock and ready. Pay by ${payment?.bankName ?? 'QR'} QR and pick up or get it delivered.`,
+      text: 'Our own-brand pieces, in stock and ready. Pay online, then pick up or get it delivered.',
       actions: [['Shop ready-to-wear', () => toShop('ready'), 'primary'], ['How it works', () => document.getElementById('trust')?.scrollIntoView({ behavior: 'smooth' }), 'ghost']],
       product: ready, tone: 'from-slate-950 via-slate-900 to-indigo-950',
     } as Slide] : []),
@@ -141,11 +144,10 @@ const ICON: Record<string, string> = {
 };
 /** What a buyer gets from this shop, from its own settings: QR payment, the delivery fees, made in-house, tracking. */
 export function TrustStrip({ online, payment }: { online: boolean; payment: OnlinePayment | null }) {
-  const fees = payment?.deliveryOptions ?? [];
-  const cheapest = fees.length ? Math.min(...fees.map((d) => d.feeCents)) : null;
+  const delivery = deliveryWords(payment?.deliveryOptions ?? []);
   const items: [string, string, string][] = [
-    ['qr', online ? `Pay by ${payment!.bankName} QR` : 'Pay at the shop', online ? 'Pay first, we confirm by hand, then prepare it.' : 'Cash, bank or e-wallet at the counter.'],
-    ['truck', fees.length ? `Delivery from ${formatPeso(cheapest!)}` : 'Pickup at the shop', fees.length ? fees.map((d) => `${d.name} ${formatPeso(d.feeCents)}`).join(' · ') : 'Ready when we tell you.'],
+    ['qr', online ? 'Pay Online' : 'Pay at the shop', online ? 'Pay first, we confirm by hand, then prepare it.' : 'Cash, bank or e-wallet at the counter.'],
+    ['truck', delivery?.headline ?? 'Pickup at the shop', delivery?.detail ?? 'Ready when we tell you.'],
     ['needle', 'Made in our workshop', 'Cut, printed and sewn in-house, checked before it leaves.'],
     ['pin', 'Track every order', 'Online orders and job orders, step by step.'],
   ];
@@ -158,6 +160,40 @@ export function TrustStrip({ online, payment }: { online: boolean; payment: Onli
             <div><p className="font-bold">{title}</p><p className="text-sm text-slate-500">{text}</p></div>
           </li>))}
       </ul>
+    </section>
+  );
+}
+
+/**
+ * The promotion banner: free delivery (when an area is free) and the sale (when products are on sale, up to the biggest
+ * real discount). Each half shows only when it is true; with neither, no banner.
+ */
+export function PromoBanner({ products, payment, showSale }: { products: readonly Product[]; payment: OnlinePayment | null; showSale: () => void }) {
+  const delivery = deliveryWords(payment?.deliveryOptions ?? []);
+  const free = delivery && payment!.deliveryOptions.some((d) => d.feeCents === 0) ? delivery : null;
+  const onSale = products.filter((p) => percentOff(p) > 0 && !isSoldOut(p));
+  const most = Math.max(0, ...onSale.map(percentOff));
+  if (!free && !onSale.length) return null;
+  return (
+    <section className="mx-auto max-w-7xl px-4 pt-6 sm:px-6" aria-label="Offers">
+      <div className={`grid gap-3 ${free && onSale.length ? 'md:grid-cols-2' : ''}`}>
+        {free && (
+          <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-r from-emerald-600 to-teal-500 p-6 text-white sm:p-8">
+            <svg viewBox="0 0 24 24" className="pointer-events-none absolute -right-4 -top-4 size-40 text-white/10" aria-hidden="true"><path d={ICON.truck} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/80">Free shipping</p>
+            <p className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">{free.headline}</p>
+            <p className="mt-2 text-white/85">On every online order. {free.detail}.</p>
+          </div>
+        )}
+        {onSale.length > 0 && (
+          <button type="button" onClick={showSale} className="group relative overflow-hidden rounded-[2rem] bg-gradient-to-r from-rose-600 to-orange-500 p-6 text-left text-white sm:p-8">
+            <span className="pointer-events-none absolute -right-2 -top-6 text-[9rem] font-black leading-none text-white/10" aria-hidden="true">%</span>
+            <span className="block text-xs font-bold uppercase tracking-[0.2em] text-white/80">Sale</span>
+            <span className="mt-2 block text-3xl font-extrabold tracking-tight sm:text-4xl">Up to {most}% off</span>
+            <span className="mt-2 block text-white/85">{onSale.length} item{onSale.length === 1 ? '' : 's'} on sale, while stocks last. <b className="underline-offset-4 group-hover:underline">Shop the sale →</b></span>
+          </button>
+        )}
+      </div>
     </section>
   );
 }

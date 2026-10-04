@@ -8,6 +8,8 @@ export type Category = string;
 export interface Colour { name: string; hex: string }
 export interface Product {
   id: string; name: string; category: Category; shape: Shape; priceCents: number; photoUrl?: string | null;
+  /** On sale: the regular price before the sale, shown crossed out (priceCents is what is charged). */
+  regularPriceCents?: number | null;
   /** Ready-stock items from the ERP: pieces available per size and colour (null for made-to-order; absent on the samples). */
   stock?: { size: string; colour: string; available: number }[] | null;
   madeToOrder: boolean; minQty: number; leadDays: number; badge?: string | null;
@@ -68,8 +70,31 @@ export const SIZE_CHART: { size: string; chest: number; length: number; shoulder
   { size: '3XL', chest: 46, length: 32, shoulder: 21 },
 ];
 
-/** Where a quotation request goes. Placeholders: the owner fills in the shop's real contact details. */
-export const SHOP_CONTACT = { email: 'orders@example.com', phone: '0900 000 0000', hours: 'Monday to Saturday, 8 AM to 6 PM' };
+/** How customers reach the shop: shown on the footer, Support, About us and order pages, and given to search engines. */
+export const SHOP_CONTACT = {
+  email: 'virtusgarment@gmail.com', phone: '0950 588 2663', hours: 'Sunday to Friday, 9 AM to 6 PM',
+  address: 'Sta. Rosa Tagaytay Road, Puting Kahoy, Silang, Cavite',
+  /** For the map: the place as Google Maps knows it. */
+  mapQuery: 'Virtus Garments Inc, Sta. Rosa Tagaytay Road, Puting Kahoy, Silang, Cavite',
+};
+
+/** Percent off of a product on sale (rounded down, so it never says more than it is); 0 when not on sale. */
+export const percentOff = (p: Pick<Product, 'priceCents' | 'regularPriceCents'>) =>
+  p.regularPriceCents && p.regularPriceCents > p.priceCents ? Math.floor((1 - p.priceCents / p.regularPriceCents) * 100) : 0;
+
+/**
+ * What the shop says about delivering, from its delivery areas: the free ones by name ("Free delivery within Metro
+ * Manila"), and the rest without an amount ("Outside Metro Manila: delivery fee may apply"); checkout shows the real fee.
+ */
+export function deliveryWords(areas: readonly { name: string; feeCents: number }[]): { headline: string; detail: string } | null {
+  if (!areas.length) return null;
+  const free = areas.filter((a) => a.feeCents === 0).map((a) => a.name);
+  const paid = areas.filter((a) => a.feeCents > 0).map((a) => a.name);
+  const within = (n: string) => n.replace(/^(within|in)\s+/i, '');
+  const headline = free.length ? `Free delivery within ${free.map(within).join(' and ')}` : 'Delivery available';
+  const detail = paid.length ? `${paid.join(', ')}: delivery fee may apply` : 'Free delivery to every address we deliver to';
+  return { headline, detail };
+}
 
 /** Categories in the order their first product appears. */
 export const categoriesOf = (products: readonly Product[]) => [...new Set(products.map((p) => p.category))];

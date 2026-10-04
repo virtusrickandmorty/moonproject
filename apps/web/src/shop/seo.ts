@@ -82,10 +82,10 @@ export function storeLd(): object {
     '@context': 'https://schema.org', '@type': 'ClothingStore', '@id': `${origin()}/#store`, name: BRAND, url: `${origin()}/`,
     logo: `${origin()}/virtus-logo.png`, image: `${origin()}/icon-512.png`,
     description: 'Team jerseys, uniforms, custom prints and own-brand ready-to-wear, made in our own workshop in the Philippines.',
-    address: { '@type': 'PostalAddress', addressCountry: 'PH' }, currenciesAccepted: 'PHP',
+    address: { '@type': 'PostalAddress', streetAddress: 'Sta. Rosa Tagaytay Road, Puting Kahoy', addressLocality: 'Silang', addressRegion: 'Cavite', addressCountry: 'PH' }, currenciesAccepted: 'PHP',
     ...(real(SHOP_CONTACT.phone) ? { telephone: SHOP_CONTACT.phone } : {}),
     ...(real(SHOP_CONTACT.email) ? { email: SHOP_CONTACT.email } : {}),
-    openingHours: 'Mo-Sa 08:00-18:00',
+    openingHours: 'Su,Mo,Tu,We,Th,Fr 09:00-18:00',
   };
 }
 

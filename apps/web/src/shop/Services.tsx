@@ -16,22 +16,40 @@ const ICONS: Record<string, string> = {
   pen: 'M4 20h4L19 9l-4-4L4 16v4Zm9-13 4 4',
 };
 
+/**
+ * TPL (third-party logistics) for schools: the highlighted service. We make the uniforms and also handle getting them to
+ * every student, so the school does not run a uniform store.
+ */
+export const SCHOOL_TPL = {
+  id: 'school-tpl', name: 'TPL service for schools', tagline: 'Uniforms made, sized, packed and delivered to every student',
+  detail: 'Third-party logistics for your school uniforms. We make them, then handle everything after: sizing days at your school, packing per student with their name and section, keeping your stock, and handing them out at school or delivering to parents. Re-orders and size exchanges through the school year go through us too.',
+  steps: [
+    ['Sizing at your school', 'We bring sizing sets on scheduled days and record every student\'s size.'],
+    ['Made in our workshop', 'Cut, printed and sewn to your approved uniform design.'],
+    ['Packed per student', 'Each set is labelled with the student\'s name, grade and section.'],
+    ['Distributed or delivered', 'Handed out at school on set days, or delivered to parents.'],
+    ['All year support', 'Re-orders, new enrollees and size exchanges, from your kept stock.'],
+  ] as [string, string][],
+  bestFor: ['Private and public schools', 'Colleges and universities', 'Uniform re-orders every school year'],
+  send: 'Your uniform design and number of students', lead: 'Planned with you before enrolment', min: 'For a whole school or grade level',
+};
+
 export const SERVICES: Service[] = [
   { id: 'embroidery', name: 'Embroidery', tagline: 'Logos stitched to last', icon: 'needle', tone: 'bg-indigo-50 text-indigo-700',
     detail: 'Computerized embroidery for logos, names and badges on polos, caps, jackets and uniforms. We digitize your logo for a clean, raised finish.',
     bestFor: ['Corporate polos', 'School and office uniforms', 'Caps and jackets'], send: 'Your logo (any picture; vector is best)', lead: '7 to 12 days', min: 'From 12 pieces' },
   { id: 'sublimation', name: 'Full sublimation', tagline: 'Edge-to-edge colour that never cracks', icon: 'drop', tone: 'bg-sky-50 text-sky-700',
     detail: 'Your design printed into the fabric itself, all over the garment, in any number of colours. Names and numbers for every player included.',
-    bestFor: ['Basketball and volleyball jerseys', 'Esports and fun-run shirts', 'Team uniform sets'], send: 'Your design or a reference picture', lead: '10 to 14 days', min: 'From 10 sets' },
+    bestFor: ['Basketball and volleyball jerseys', 'Esports and fun-run shirts', 'Team uniform sets'], send: 'Your design or a reference picture', lead: '10 to 14 days', min: 'From 10 pcs' },
   { id: 'cut-and-sew', name: 'Cut and sew', tagline: 'Made from scratch to your pattern', icon: 'scissors', tone: 'bg-amber-50 text-amber-700',
     detail: 'We cut and sew garments from fabric you choose: uniforms, jackets, scrubs and team wear, in standard sizes or measured per person.',
-    bestFor: ['School and company uniforms', 'Varsity jackets', 'Custom team wear'], send: 'A sample, sketch or photo of the garment', lead: '14 to 25 days', min: 'From 20 pieces' },
+    bestFor: ['School and company uniforms', 'Varsity jackets', 'Custom team wear'], send: 'A sample, sketch or photo of the garment', lead: '14 to 25 days', min: 'From 10 pcs' },
   { id: 'printing', name: 'T-shirt printing', tagline: 'Bold prints for any crowd', icon: 'shirt', tone: 'bg-rose-50 text-rose-700',
     detail: 'Screen printing for big runs with solid, bright colours; front, back and sleeve prints on cotton or dri-fit shirts.',
     bestFor: ['Org and event shirts', 'Family reunions', 'Merchandise'], send: 'Your artwork and print positions', lead: '5 to 7 days', min: 'From 24 pieces' },
   { id: 'heat-transfer', name: 'DTF and heat transfer', tagline: 'Full colour, even for small orders', icon: 'layers', tone: 'bg-emerald-50 text-emerald-700',
-    detail: 'Direct-to-film and vinyl heat transfer for photos, gradients and personalised names and numbers, with no big minimum.',
-    bestFor: ['Small batches', 'Names and numbers', 'Photo prints'], send: 'A high-resolution picture', lead: '2 to 5 days', min: 'From 1 piece' },
+    detail: 'Direct-to-film and vinyl heat transfer for photos, gradients and personalised names and numbers, in full colour.',
+    bestFor: ['Org and event batches', 'Names and numbers', 'Photo prints'], send: 'A high-resolution picture', lead: '2 to 5 days', min: 'From 20 pcs' },
   { id: 'patches', name: 'Patches and badges', tagline: 'Woven, embroidered or chenille', icon: 'badge', tone: 'bg-violet-50 text-violet-700',
     detail: 'Custom patches sewn or pressed onto jackets, bags and uniforms, including chenille letters for varsity jackets.',
     bestFor: ['Varsity jackets', 'Club and school badges', 'Uniform name tags'], send: 'Your badge design and size', lead: '10 to 14 days', min: 'From 20 pieces' },
@@ -57,9 +75,12 @@ export function Services() {
       <PageHero eyebrow="Our services" title={<>Everything your team wears, <span className="text-indigo-300">under one roof.</span></>}
         text="From one embroidered polo to a whole league in sublimated jerseys: tell us what you have in mind and we will quote it.">
         <nav className="mt-8 flex flex-wrap gap-2" aria-label="Services on this page">
+          <a href={`#${SCHOOL_TPL.id}`} className="rounded-full bg-amber-400 px-3.5 py-1.5 text-sm font-bold text-slate-900 hover:bg-amber-300">★ {SCHOOL_TPL.name}</a>
           {SERVICES.map((s) => <a key={s.id} href={`#${s.id}`} className="rounded-full bg-white/10 px-3.5 py-1.5 text-sm font-semibold text-white ring-1 ring-white/15 hover:bg-white hover:text-slate-900">{s.name}</a>)}
         </nav>
       </PageHero>
+
+      <SchoolTpl />
 
       <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6"><SectionHead eyebrow="What we do" title="Pick a service" /></section>
       <section className="mx-auto grid max-w-7xl gap-5 px-4 pb-6 pt-6 sm:px-6 md:grid-cols-2">
@@ -97,5 +118,40 @@ export function Services() {
         </div>
       </section>
     </>
+  );
+}
+
+/** The highlighted service: TPL for schools, its steps from sizing to delivery, and a quotation request for it. */
+function SchoolTpl() {
+  const t = SCHOOL_TPL;
+  return (
+    <section id={t.id} className="mx-auto max-w-7xl scroll-mt-24 px-4 pt-10 sm:px-6" aria-label={t.name}>
+      <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-amber-300 via-amber-200 to-orange-200 p-6 ring-1 ring-amber-400/40 sm:p-10">
+        <span className="pointer-events-none absolute -right-6 -top-10 text-[12rem] font-black leading-none text-white/30" aria-hidden="true">★</span>
+        <div className="relative grid gap-8 lg:grid-cols-[1fr_1.1fr]">
+          <div>
+            <p className="inline-flex rounded-full bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-amber-300">Featured · for schools</p>
+            <h2 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-5xl">{t.name}</h2>
+            <p className="mt-2 text-lg font-semibold text-slate-800">{t.tagline}</p>
+            <p className="mt-4 text-slate-800">{t.detail}</p>
+            <div className="mt-4 flex flex-wrap gap-1.5">{t.bestFor.map((b) => <span key={b} className="rounded-full bg-white/70 px-2.5 py-1 text-xs font-semibold text-slate-800">{b}</span>)}</div>
+            <dl className="mt-5 grid grid-cols-3 gap-3 border-t border-slate-900/10 pt-4 text-sm">
+              <div><dt className="text-xs font-bold uppercase tracking-wider text-slate-600">Send us</dt><dd className="mt-1 text-slate-900">{t.send}</dd></div>
+              <div><dt className="text-xs font-bold uppercase tracking-wider text-slate-600">Timing</dt><dd className="mt-1 text-slate-900">{t.lead}</dd></div>
+              <div><dt className="text-xs font-bold uppercase tracking-wider text-slate-600">Minimum</dt><dd className="mt-1 text-slate-900">{t.min}</dd></div>
+            </dl>
+            <Link to={`/support?type=quotation&service=${t.id}`} className="mt-6 inline-block rounded-full bg-slate-900 px-6 py-3 font-bold text-white hover:bg-indigo-700">Talk to us about your school →</Link>
+          </div>
+          <ol className="relative space-y-3 self-center">
+            <span className="absolute bottom-6 left-[1.4rem] top-6 w-0.5 bg-slate-900/20" aria-hidden="true" />
+            {t.steps.map(([title, text], i) => (
+              <li key={title} className="relative flex gap-4 rounded-2xl bg-white/80 p-4 shadow-sm backdrop-blur">
+                <span className="relative grid size-8 shrink-0 place-items-center rounded-full bg-slate-900 text-sm font-bold text-white">{i + 1}</span>
+                <div><p className="font-bold text-slate-900">{title}</p><p className="text-sm text-slate-700">{text}</p></div>
+              </li>))}
+          </ol>
+        </div>
+      </div>
+    </section>
   );
 }

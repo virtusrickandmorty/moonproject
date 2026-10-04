@@ -23,16 +23,19 @@ const text = (min: number, max: number) => z.string().trim().min(min).max(max);
 export const productInput = z.object({
   name: text(1, 100), categoryId: z.string().min(1).max(64), shape: z.enum(SHAPES),
   priceCents: z.number().int().min(0).max(100_000_000), madeToOrder: z.boolean(),
+  // On sale: the regular price before the sale, shown crossed out (the price is what is charged). Null: not on sale.
+  regularPriceCents: z.number().int().min(1).max(100_000_000).nullable().default(null),
   minQty: z.number().int().min(1).max(10_000), leadDays: z.number().int().min(0).max(365),
   badge: text(0, 30).transform((v) => v || null), summary: text(1, 300), sortOrder: z.number().int().min(-9999).max(9999),
   features: z.array(text(1, 100)).max(8),
   sizes: z.array(z.enum(SIZES)).min(1).refine((s) => new Set(s).size === s.length, 'sizes'),
   colours: z.array(z.object({ name: text(1, 30), hex: z.string().regex(/^#[0-9a-fA-F]{6}$/).transform((h) => h.toLowerCase()) }).strict()).min(1).max(12),
-}).strict();
+}).strict().refine((p) => p.regularPriceCents === null || p.regularPriceCents > p.priceCents,
+  { message: 'The regular price (before the sale) must be higher than the sale price.', path: ['regularPriceCents'] });
 export type ProductInput = z.infer<typeof productInput>;
 
 interface Row {
-  id: string; name: string; category: string; category_id: string | null; category_name: string | null; shape: string; price_cents: number; made_to_order: number; min_qty: number; lead_days: number;
+  id: string; name: string; category: string; category_id: string | null; category_name: string | null; shape: string; price_cents: number; regular_price_cents: number | null; made_to_order: number; min_qty: number; lead_days: number;
   badge: string | null; summary: string; sort_order: number; photo_id: string | null; is_active: number; version: number; updated_at: string;
 }
 
@@ -42,7 +45,7 @@ const PRODUCTS = 'SELECT p.*, c.name AS category_name, c.sort_order AS category_
 function shape(db: Db, r: Row) {
   const lines = <T>(table: string, cols: string) => db.prepare(`SELECT ${cols} FROM ${table} WHERE product_id = ? AND version = ? ORDER BY position`).all(r.id, r.version) as T[];
   return {
-    id: r.id, name: r.name, category: r.category_name ?? r.category, categoryId: r.category_id, shape: r.shape, priceCents: r.price_cents, madeToOrder: r.made_to_order === 1,
+    id: r.id, name: r.name, category: r.category_name ?? r.category, categoryId: r.category_id, shape: r.shape, priceCents: r.price_cents, regularPriceCents: r.regular_price_cents, madeToOrder: r.made_to_order === 1,
     minQty: r.min_qty, leadDays: r.lead_days, badge: r.badge, summary: r.summary, sortOrder: r.sort_order,
     photoUrl: r.photo_id ? `/api/shp/photos/${r.photo_id}` : null, isActive: r.is_active === 1, version: r.version, updatedAt: r.updated_at,
     features: lines<{ text: string }>('shp_product_features', 'text').map((f) => f.text),
@@ -118,8 +121,8 @@ export function shpRoutes(app: FastifyInstance, deps: AppDeps): void {
     return tx(db, () => {
       const c = category(p.categoryId);
       const id = newId();
-      db.prepare(`INSERT INTO shp_products (id, name, category, category_id, shape, price_cents, made_to_order, min_qty, lead_days, badge, summary, sort_order, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, p.name, c.name, c.id, p.shape, p.priceCents, p.madeToOrder ? 1 : 0, p.minQty, p.leadDays, p.badge, p.summary, p.sortOrder, at, at);
+      db.prepare(`INSERT INTO shp_products (id, name, category, category_id, shape, price_cents, regular_price_cents, made_to_order, min_qty, lead_days, badge, summary, sort_order, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, p.name, c.name, c.id, p.shape, p.priceCents, p.regularPriceCents, p.madeToOrder ? 1 : 0, p.minQty, p.leadDays, p.badge, p.summary, p.sortOrder, at, at);
       writeLists(db, id, 1, p);
       audit(req, at, 'shp.product.create', id, { name: p.name, priceCents: p.priceCents });
       return shape(db, row(id));
@@ -134,11 +137,11 @@ export function shpRoutes(app: FastifyInstance, deps: AppDeps): void {
       matchingVersion(req, r);
       const version = r.version + 1;
       const c = category(p.categoryId);
-      db.prepare(`UPDATE shp_products SET name = ?, category = ?, category_id = ?, shape = ?, price_cents = ?, made_to_order = ?, min_qty = ?, lead_days = ?, badge = ?,
+      db.prepare(`UPDATE shp_products SET name = ?, category = ?, category_id = ?, shape = ?, price_cents = ?, regular_price_cents = ?, made_to_order = ?, min_qty = ?, lead_days = ?, badge = ?,
         summary = ?, sort_order = ?, version = ?, updated_at = ? WHERE id = ?`)
-        .run(p.name, c.name, c.id, p.shape, p.priceCents, p.madeToOrder ? 1 : 0, p.minQty, p.leadDays, p.badge, p.summary, p.sortOrder, version, at, r.id);
+        .run(p.name, c.name, c.id, p.shape, p.priceCents, p.regularPriceCents, p.madeToOrder ? 1 : 0, p.minQty, p.leadDays, p.badge, p.summary, p.sortOrder, version, at, r.id);
       writeLists(db, r.id, version, p);
-      audit(req, at, 'shp.product.update', r.id, { name: p.name, fromPriceCents: r.price_cents, priceCents: p.priceCents });
+      audit(req, at, 'shp.product.update', r.id, { name: p.name, fromPriceCents: r.price_cents, priceCents: p.priceCents, regularPriceCents: p.regularPriceCents });
       return shape(db, row(r.id));
     });
   });

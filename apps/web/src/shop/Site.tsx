@@ -1,16 +1,15 @@
 /** The public website shown before sign-in: the store, the services and the support page under one header. */
-import { formatPeso } from '@moonproject/shared';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link, navigate, useLocation } from '../router.tsx';
 import { About } from './About.tsx';
 import { Checkout, MyOrders, OrderStatus, rememberedOrders } from './Checkout.tsx';
 import { Track } from './Track.tsx';
 import { CartDrawer, QuickView, SizeGuide, WishlistDrawer } from './Panels.tsx';
-import { SERVICES, Services } from './Services.tsx';
+import { SCHOOL_TPL, SERVICES, Services } from './Services.tsx';
 import { BRAND, breadcrumbLd, productListLd, servicesLd, storeLd, useSeo, useSeoReset, type Seo } from './seo.ts';
 import { Store } from './Storefront.tsx';
 import { Support } from './Support.tsx';
-import { SHOP_CONTACT, type Product } from './products.ts';
+import { SHOP_CONTACT, deliveryWords, type Product } from './products.ts';
 import { ShopProvider, useShop } from './store.tsx';
 
 /** The addresses this site answers before sign-in; every other one asks staff to sign in. */
@@ -27,9 +26,9 @@ function seoFor(path: string, shop: ReturnType<typeof useShop>): Seo {
   const fees = shop.payment?.deliveryOptions ?? [];
   const home: [string, string] = ['Shop', '/'];
   if (path === '/services') return {
-    path, title: `Custom Embroidery, Sublimation, Cut and Sew & T-shirt Printing | ${BRAND}`,
+    path, title: `School Uniform TPL, Embroidery, Sublimation, Cut and Sew & Printing | ${BRAND}`,
     description: 'Embroidery, full sublimation jerseys, cut and sew uniforms, T-shirt printing, DTF, patches, pattern making and design, made in our own workshop. Request a free quotation with a design proof.',
-    jsonLd: [storeLd(), servicesLd(SERVICES), breadcrumbLd([home, ['Services', path]])],
+    jsonLd: [storeLd(), servicesLd([SCHOOL_TPL, ...SERVICES]), breadcrumbLd([home, ['Services', path]])],
   };
   if (path === '/about') return {
     path, title: `About Us | ${BRAND}: Team Wear and Uniforms Made to Order`,
@@ -46,7 +45,7 @@ function seoFor(path: string, shop: ReturnType<typeof useShop>): Seo {
   const online = !!shop.payment && !shop.samples;
   return {
     path: '/', title: `${BRAND} | Team Jerseys, Uniforms & Custom Apparel${online ? ' – Shop Online' : ''}`,
-    description: `Shop own-brand ready-to-wear and order custom team jerseys, uniforms and printed shirts from ${BRAND}.${online ? ` Pay online by ${shop.payment!.bankName} QR${fees.length ? `, delivery from ${formatPeso(Math.min(...fees.map((d) => d.feeCents)))}` : ''}.` : ''} Free quotation with a design proof.`,
+    description: `Shop own-brand ready-to-wear and order custom team jerseys, uniforms and printed shirts from ${BRAND}.${online ? ` Pay online${deliveryWords(fees) ? `; ${deliveryWords(fees)!.headline.toLowerCase()}` : ''}.` : ''} Free quotation with a design proof.`,
     jsonLd: [storeLd(), ...(shop.samples || !shop.products.length ? [] : [productListLd(shop.products, shop.reviews)])],
   };
 }
@@ -74,7 +73,7 @@ function Layout({ staff }: { staff: boolean }) {
   // The strip along the top says what the shop really offers: QR payment and its delivery fees, or quotations.
   const fees = shop.payment?.deliveryOptions ?? [];
   const news = shop.payment && !shop.samples
-    ? [`Order online, pay by ${shop.payment.bankName} QR`, fees.length ? `Delivery: ${fees.map((d) => `${d.name} ${formatPeso(d.feeCents)}`).join(' · ')}` : 'Pick up at the shop', 'Team orders: free quotation with a design proof']
+    ? ['Order and pay online', deliveryWords(fees)?.headline ?? 'Pick up at the shop', 'Team orders: free quotation with a design proof']
     : ['Team wear, uniforms and custom prints, made to order', 'Free quotation with a design proof'];
 
   return (

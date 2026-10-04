@@ -2,16 +2,16 @@
 import { formatPeso } from '@moonproject/shared';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from '../router.tsx';
-import { CategoryTiles, HeroSlider, ProductCard, ProductRail, TrustStrip, isSoldOut } from './Home.tsx';
-import { SIZES, categoriesOf, type Category, type Product } from './products.ts';
+import { CategoryTiles, HeroSlider, ProductCard, ProductRail, PromoBanner, TrustStrip, isSoldOut } from './Home.tsx';
+import { SIZES, categoriesOf, type Category, type Product, percentOff } from './products.ts';
 import type { SiteControls } from './Site.tsx';
 import { useShop } from './store.tsx';
 
 type Sort = 'featured' | 'price-low' | 'price-high' | 'name';
 type Kind = 'all' | 'made' | 'ready';
 interface Filters { text: string; categories: Category[]; sizes: string[]; colours: string[]; /** `maxCents`: null for no price limit. */
-  maxCents: number | null; kind: Kind; saved: boolean }
-const NONE: Filters = { text: '', categories: [], sizes: [], colours: [], maxCents: null, kind: 'all', saved: false };
+  maxCents: number | null; kind: Kind; saved: boolean; sale: boolean }
+const NONE: Filters = { text: '', categories: [], sizes: [], colours: [], maxCents: null, kind: 'all', saved: false, sale: false };
 const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
 /** Every filter except the one named, so each option can show how many products it would leave. */
@@ -23,7 +23,8 @@ function matches(p: Product, f: Filters, wishlist: string[], skip?: keyof Filter
     && (skip === 'colours' || !f.colours.length || p.colours.some((c) => f.colours.includes(c.name)))
     && (f.maxCents === null || p.priceCents <= f.maxCents)
     && (f.kind === 'all' || (f.kind === 'made') === p.madeToOrder)
-    && (!f.saved || wishlist.includes(p.id));
+    && (!f.saved || wishlist.includes(p.id))
+    && (!f.sale || percentOff(p) > 0);
 }
 
 /** A ready-stock item's pieces left, from the shop's stock (the samples have none to show). */
@@ -71,6 +72,7 @@ export function Store({ openPanel, view }: SiteControls) {
     ...(f.maxCents !== null ? [[`Up to ${formatPeso(f.maxCents)}`, () => setF({ ...f, maxCents: null })] as [string, () => void]] : []),
     ...(f.kind !== 'all' ? [[f.kind === 'made' ? 'Made to order' : 'Ready stock', () => setF({ ...f, kind: 'all' })] as [string, () => void]] : []),
     ...(f.saved ? [['Saved only', () => setF({ ...f, saved: false })] as [string, () => void]] : []),
+    ...(f.sale ? [['On sale', () => setF({ ...f, sale: false })] as [string, () => void]] : []),
   ];
 
   // Online ordering is open once the shop has set how customers pay (Website shop › Online payment) and shows its own products.
@@ -81,6 +83,7 @@ export function Store({ openPanel, view }: SiteControls) {
     <>
       <HeroSlider products={products} online={online} payment={shop.payment} toShop={toShop} />
       <TrustStrip online={online} payment={shop.payment} />
+      <PromoBanner products={products} payment={shop.payment} showSale={() => { setF({ ...NONE, sale: true }); document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }); }} />
       <CategoryTiles products={products} categories={categories} pick={(c) => { setF({ ...NONE, categories: [c] }); document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }); }} />
       <ProductRail eyebrow="Featured" title={online ? 'Picked for you' : 'Popular garments'} products={products.filter((p) => p.badge && !isSoldOut(p)).slice(0, 8)} online={online} view={view} />
 

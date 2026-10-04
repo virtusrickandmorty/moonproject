@@ -88,7 +88,7 @@ export function Checkout() {
       <form onSubmit={(e) => void submit(e)} noValidate className="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5 sm:p-8">
         <h1 className="text-3xl font-extrabold tracking-tight">Check out</h1>
         <ol className="mt-3 grid gap-2 text-sm text-slate-600 sm:grid-cols-3">
-          {['Place your order: we hold the pieces for 24 hours.', `Pay ${formatPeso(total)} by ${shop.payment?.bankName ?? 'QR'} and send us the reference.`, 'We confirm your payment, then prepare your order.'].map((t, i) =>
+          {['Place your order: we hold the pieces for 24 hours.', `Pay ${formatPeso(total)} online by scanning our QR, and send us the reference.`, 'We confirm your payment, then prepare your order.'].map((t, i) =>
             <li key={t} className="flex gap-2 rounded-xl bg-slate-50 p-3"><span className="grid size-6 shrink-0 place-items-center rounded-full bg-indigo-600 text-xs font-bold text-white">{i + 1}</span>{t}</li>)}
         </ol>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
