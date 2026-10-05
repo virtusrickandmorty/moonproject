@@ -85,6 +85,7 @@ export function ItemDetail({ me, data, onEdit, onClose, onRefresh }: { me: Me; d
   // A new price starts today or later (the server refuses an earlier date); the server's own date is the default.
   useEffect(() => { void api.health().then((h) => { setToday(h.serverTime.slice(0, 10)); setEffectiveFrom((d) => d || h.serverTime.slice(0, 10)); }, () => undefined); }, []);
   const priceChecks = schemaFields(priceInput, { effectiveFrom, minQty, unitPriceCents: moneyCents(amount) });
+  if (moneyCents(amount) === null) priceChecks.unitPriceCents = 'Enter a price with at most two decimal places.';
   if (today && effectiveFrom < today) priceChecks.effectiveFrom = 'A new price starts today or later.';
   const priceBoxes = useBoxes(priceChecks, JSON.stringify([effectiveFrom, minQty, amount]));
   const savePrice = () => price.run(() => priceBoxes.run(async () => {

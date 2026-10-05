@@ -72,6 +72,7 @@ export function useBoxes(local: BoxErrors, key: string, external: BoxErrors = {}
   const refuse = (e: unknown) => { capture(e); if (Object.keys(boxRefusals(e)).length) setSubmitted(true); return generalRefusal(e); };
   const run = async <T,>(action: () => Promise<T>): Promise<T | undefined> => {
     submit();
+    if (Object.keys(local).some((name) => local[name])) return;
     try { return await action(); }
     catch (e) { const general = refuse(e); if (general) throw new Error(general); }
   };
