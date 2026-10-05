@@ -19,7 +19,7 @@ Optional public record of the consolidated review, 5 October 2026. Acting on the
 
 | Priority | Finding | Label |
 |---|---|---|
-| Pay | B2-F1 a worker flagged as a minimum wage earner has no tax withheld even when paid above the minimum | Confirmed |
+| Pay | B2-F1 a worker flagged as a minimum wage earner has no tax withheld even when paid above the minimum | Confirmed; the owner chose no fix |
 | Pay | B2-F2 piece pay takes the date and rate of the day it is typed, not the day the work was done | Confirmed |
 | Pay | B2-F3 the same production sheet can be posted twice and paid twice | Confirmed |
 | Money | B1-01 the same supplier invoice can be recorded twice (spelling variants, or bill plus voucher), doubling input VAT, cost and payables | Confirmed |
@@ -42,7 +42,7 @@ Minor items (centavo split, PhilHealth rounding, tax-code checks, CWT warning wo
 
 ## Fix batches
 
-1. **Pay:** B2-F1, F2, F3, F6 and a pre-run payroll review; F4 and F5 after the accountant answers.
+1. **Pay:** B2-F2, F3, F6 and a pre-run payroll review; F4 and F5 after the accountant answers. B2-F1 is not fixed, by the owner's decision.
 2. **Money:** B1-01, A1-003, A1-004, A1-001, A1-006; B1-02 and A1-002 after the accountant answers.
 3. **Security:** handled privately.
 4. **Blocked and lost work:** A11-003, A1-005, A11-001; A11-002 as explicit "correct current chart" and "start new chart" choices.
@@ -53,7 +53,6 @@ The numbers are groups, not an order: batches 1 to 3 go together before go-live.
 
 ## Verification tests
 
-- An above-minimum worker flagged as a minimum wage earner is refused or warned.
 - A production sheet typed late keeps its work date and rate, and a repeated sheet is warned.
 - Supplier invoice variants such as `si-0042` and `SI 0042`, and a voucher for an invoice already billed, are refused or flagged.
 - A ledger change between preview and save makes the cash count ask again.
