@@ -23,6 +23,10 @@ export function employee(db: Db, id: string): Employee | undefined {
   return r && asEmployee(r);
 }
 
+/** Why a statutory switch (SSS, PhilHealth, Pag-IBIG, tax) is off, as saved on the employee; payroll shows it (B2-F6). */
+export const statutoryOffReason = (db: Db, id: string): string | null =>
+  (db.prepare('SELECT statutory_off_reason FROM emp_employees WHERE id = ?').pluck().get(id) as string | null | undefined) ?? null;
+
 /** Employees not separated, by name. */
 export const activeEmployees = (db: Db): Employee[] => (db.prepare(`${EMPLOYEE} WHERE is_active = 1 ORDER BY full_name, id`).all() as Row[]).map(asEmployee);
 
