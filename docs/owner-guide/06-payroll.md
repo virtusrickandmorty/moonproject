@@ -7,8 +7,9 @@
 ### Steps for the Payroll Run
 1. On the **People & Payroll** menu, click **Payroll Runs**.
 2. Click **+ New**.
-3. Pick the **Pay group** and the **Period**. The system will automatically show the pay worked out for everyone.
-4. If an employee is taking a cash advance deduction, type the amount in the **cash-advance deduction** box.
+3. Pick the **Pay group** and the **Period**. The system will automatically show **Calculated pay** for everyone. Open **Earnings included** to see the attendance, piece work and other earnings used.
+   ![The new payroll run, with the pay worked out for each person](img/06-payroll-run.png)
+4. If an employee is taking a cash advance deduction, open **Deductions and changes** and type the amount in the **Cash-advance deduction** box. Open **Add allowances or adjustments** only when needed; their included total appears in **Review pay**.
 5. If you need to skip an employee for now, click **Leave out**. (You can put them back if you change your mind).
 6. Click **Record**.
 
@@ -17,6 +18,7 @@
 2. Click **+ New**.
 3. Pick the payroll run you just recorded.
 4. Tick the checkbox next to the employees you are paying right now.
+   ![The release net pay form, with the people being paid](img/06-payroll-release.png)
 5. Click **Record**.
 
 ### What the system does for you

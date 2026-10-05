@@ -90,7 +90,7 @@ describe('print base', () => {
     const before = tableCounts();
     const response = await owner.get('/api/prt/test-pack');
     expect(response.statusCode, response.body).toBe(200);
-    const pack = response.json() as { prints: { id: string; label: string; paper: string; html: string }[]; notBuilt: string[] };
+    const pack = response.json() as { prints: { id: string; label: string; paper: string; html: string }[]; notBuilt: string[]; sampleCompany: boolean };
     expect(pack.prints).toHaveLength(27);
     expect(new Set(pack.prints.map((p) => p.id)).size).toBe(pack.prints.length);
     for (const item of pack.prints) {
@@ -109,6 +109,7 @@ describe('print base', () => {
     }
     expect(pack.prints.find((p) => p.id === 'bir-2307')?.html).toContain('Sample Supplier Corporation');
     expect(pack.notBuilt).toEqual([]);
+    expect(pack.sampleCompany).toBe(true);
     const books = pack.prints.filter((p) => p.id.startsWith('book-'));
     expect(books.map((p) => p.id)).toEqual(['book-cash-receipts', 'book-cash-disbursements', 'book-sales', 'book-purchases', 'book-general-journal', 'book-general-ledger']);
     for (const item of books) {
@@ -122,6 +123,26 @@ describe('print base', () => {
     for (const role of ['encoder', 'accountant', 'production', 'tv'] as const) {
       expect((await (await env.as(role)).get('/api/prt/test-pack')).statusCode).toBe(403);
     }
+  });
+
+  it('prints the test pack with the saved company details and loose-leaf paper, so the real header can be checked', async () => {
+    await owner.post('/api/auth/step-up', { password: PASSWORD });
+    expect((await owner.put('/api/prt/company-profile', value, { 'if-match': '0' })).statusCode).toBe(200);
+    expect((await owner.put('/api/prt/settings/loose-leaf-paper', { paper: 'long' })).statusCode).toBe(200);
+    const pack = (await owner.get('/api/prt/test-pack')).json() as { prints: { id: string; paper: string; html: string }[]; sampleCompany: boolean };
+    expect(pack.sampleCompany).toBe(false);
+    expect(pack.prints).toHaveLength(27);
+    for (const item of pack.prints) {
+      expect(item.html, item.id).toContain(value.registeredName);
+      expect(item.html, item.id).not.toContain('Sample Garments Company');
+      expect(item.html, item.id).toContain('TEST PRINT, NOT A REAL DOCUMENT');
+    }
+    for (const item of pack.prints.filter((p) => !['bir-2307'].includes(p.id))) {
+      expect(item.html, item.id).toContain(value.tin);
+      expect(item.html, item.id).toContain(value.registeredAddress);
+    }
+    const books = pack.prints.filter((p) => p.id.startsWith('book-'));
+    expect(books.every((p) => p.paper === 'Loose-leaf, long bond' && p.html.includes('8.5in 13in'))).toBe(true);
   });
 
   it('renders report figures, exact catalogue titles and the statement-only legend', async () => {

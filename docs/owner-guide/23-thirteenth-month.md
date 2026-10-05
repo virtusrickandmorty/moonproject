@@ -8,8 +8,9 @@
 1. On the **People & Payroll** menu, click **13th-Month Pay**.
 2. Click **+ New**.
 3. Pick the **Pay group** and the **Year**. The system will automatically work it out.
-4. Check each employee's **One twelfth** amount against the **Accrued** amount set aside during the year.
-5. If you need to change an amount, type it in the box under **Paid** and type a reason in the **Why the amount is changed** box. For 2026 only, pay before the shop started using Moonproject is not in its payroll runs. You must change each employee's amount to the full 13th-month pay and add a note such as "includes pay before Moonproject".
+   ![The new 13th-month pay form, with the pay worked out](img/23-thirteenth-month.png)
+4. Check each employee's **To pay now** amount. Open **Calculation and deductions** to compare **One twelfth** with **Accrued** and see the tax deduction.
+5. If you need to change an amount, open **Change this amount** and type it in **13th-month amount** and type a reason in the **Why the amount is changed** box. For 2026 only, pay before the shop started using Moonproject is not in its payroll runs. You must change each employee's amount to the full 13th-month pay and add a note such as "includes pay before Moonproject".
 6. To skip someone, click **Leave out** and type a reason in the **Why (their runs stay for a later 13th-month pay)** box. (You can put them back by clicking **Put back**).
 7. If you change your mind about an amount, click **Use one twelfth**.
 8. Click **Record**.

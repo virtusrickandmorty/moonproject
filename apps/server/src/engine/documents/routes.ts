@@ -4,7 +4,7 @@
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { AppError, forbidden, notFound } from '@moonproject/shared';
+import { AppError, forbidden, isBusinessDate, notFound } from '@moonproject/shared';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
 import type { AppDeps } from '../../app.ts';
@@ -26,6 +26,22 @@ function parse<T>(schema: z.ZodType<T>, v: unknown): T {
   if (!r.success) throw new AppError('INVALID_INPUT', 'Some fields are missing or not allowed.', 400, r.error.issues.map((i) => ({ field: i.path.join('.'), message: i.message })));
   return r.data;
 }
+
+/**
+ * A document list's filters (the list screens' search): words found in the number, the booklet number or the summary (which
+ * names the customer or supplier), and a range of business dates. LIKE wildcards typed in the words are taken literally.
+ */
+type ListFilters = { q?: string; from?: string; to?: string };
+function listFilters(query: ListFilters): { q: string | null; from: string | null; to: string | null } {
+  const q = (query.q ?? '').trim();
+  if (q.length > 100) throw new AppError('BAD_SEARCH', 'Type at most 100 characters to search.', 400);
+  for (const [which, d] of [['first', query.from], ['last', query.to]] as const) {
+    if (d !== undefined && d !== '' && !isBusinessDate(d)) throw new AppError('BAD_DATE', `Type the ${which} date like 2026-09-30.`, 400);
+  }
+  return { q: q ? `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null, from: query.from || null, to: query.to || null };
+}
+const FILTERED = `(@q IS NULL OR number LIKE @q ESCAPE '\\' OR external_number LIKE @q ESCAPE '\\' OR summary LIKE @q ESCAPE '\\')
+  AND (@from IS NULL OR business_date >= @from) AND (@to IS NULL OR business_date <= @to)`;
 
 export function documentRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock, registry } = deps;
@@ -78,7 +94,7 @@ export function documentRoutes(app: FastifyInstance, deps: AppDeps): void {
       }));
   });
 
-  app.get<{ Params: { type: string }; Querystring: { limit?: string; before?: string; status?: string } }>('/api/docs/:type', auth, async (req) => {
+  app.get<{ Params: { type: string }; Querystring: { limit?: string; before?: string; status?: string } & ListFilters }>('/api/docs/:type', auth, async (req) => {
     const d = typeOf(req.params.type);
     const u = currentUser(req);
     if (!u.permissions.has(d.permissions.view)) throw forbidden(d.permissions.view);
@@ -86,11 +102,23 @@ export function documentRoutes(app: FastifyInstance, deps: AppDeps): void {
     const rows = db
       .prepare(
         `SELECT id, number, business_date, status, total_cents, summary, posted_at, cancelled_at, cancel_reason, replaces_id, replaced_by_id
-         FROM documents WHERE doc_type = @type AND (@before IS NULL OR posted_at < @before) AND (@status IS NULL OR status = @status)
+         FROM documents WHERE doc_type = @type AND (@before IS NULL OR posted_at < @before) AND (@status IS NULL OR status = @status) AND ${FILTERED}
          ORDER BY posted_at DESC, number DESC LIMIT @limit`,
       )
-      .all({ type: d.key, before: req.query.before ?? null, status: req.query.status ?? null, limit }) as Record<string, unknown>[];
+      .all({ type: d.key, before: req.query.before ?? null, status: req.query.status ?? null, limit, ...listFilters(req.query) }) as Record<string, unknown>[];
     return rows.map(docHeaderOut);
+  });
+
+  /** How many documents of a type the same filters find, recorded and cancelled (the list screen's tabs). */
+  app.get<{ Params: { type: string }; Querystring: ListFilters }>('/api/docs/:type/counts', auth, async (req) => {
+    const d = typeOf(req.params.type);
+    const u = currentUser(req);
+    if (!u.permissions.has(d.permissions.view)) throw forbidden(d.permissions.view);
+    const rows = db
+      .prepare(`SELECT status, COUNT(*) AS n FROM documents WHERE doc_type = @type AND ${FILTERED} GROUP BY status`)
+      .all({ type: d.key, ...listFilters(req.query) }) as { status: 'posted' | 'cancelled'; n: number }[];
+    const n = (status: string) => rows.find((r) => r.status === status)?.n ?? 0;
+    return { all: n('posted') + n('cancelled'), posted: n('posted'), cancelled: n('cancelled') };
   });
 
   app.get<{ Params: { type: string; id: string } }>('/api/docs/:type/:id', auth, async (req) => {

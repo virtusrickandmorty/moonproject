@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
-import { openServerPrint, type Me } from '../../api.ts';
+import { openServerPrint, refusedFields, type Me } from '../../api.ts';
 import { Button, Dialog, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { masterRequest } from './http.ts';
+import { withholdingLabels, type WithholdingProfile } from './withholding.ts';
 
 type Customer = { id: string; code: string; kind: 'person' | 'organization'; display_name: string; registered_name: string | null;
   tin: string | null; is_vat_registered: number; billing_address: string | null; email: string | null; notes: string | null;
-  is_active: number; version: number; created_at?: string; updated_at?: string };
+  withholding_profile: WithholdingProfile; is_active: number; version: number; created_at?: string; updated_at?: string };
 type Group = { id: string; name: string; is_active: number; version: number };
 type Person = { id: string; full_name: string; group_id: string | null; is_active: number; version: number };
 type Phone = { id: string; phone: string; label: string | null; version: number };
@@ -95,9 +96,15 @@ function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Customer |
   const old = row === 'new' ? null : row;
   const [v, setV] = useState({ kind: old?.kind ?? 'organization', displayName: old?.display_name ?? '',
     registeredName: old?.registered_name ?? '', tin: old?.tin ?? '', isVatRegistered: Boolean(old?.is_vat_registered),
-    billingAddress: old?.billing_address ?? '', email: old?.email ?? '', notes: old?.notes ?? '' });
+    withholdingProfile: old?.withholding_profile ?? 'none', billingAddress: old?.billing_address ?? '', email: old?.email ?? '', notes: old?.notes ?? '' });
   const [phone, setPhone] = useState({ number: '', label: '' }); // a new customer's first number; more go on the customer itself
   const [error, setError] = useState('');
+  const [refused, setRefused] = useState<Record<string, string>>({});
+  /** Typing in a box the server refused clears its red mark until the next Save. */
+  const set = <K extends keyof typeof v>(key: K, value: (typeof v)[K]) => {
+    setV({ ...v, [key]: value });
+    setRefused(({ [key]: _gone, ...rest }) => rest);
+  };
   const save = async () => {
     if (!old && phone.number.trim() && !phoneOk(phone.number)) return setError(PHONE_RULE);
     try {
@@ -112,22 +119,24 @@ function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Customer |
         warnings = added.duplicateWarnings ?? warnings;
       }
       await onSaved(saved.id, warnings);
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { setRefused(refusedFields(e)); setError((e as Error).message); }
   };
   return <Dialog title={old ? `Edit ${old.display_name}` : 'New customer'} onClose={onClose}><div className="grid gap-3 sm:grid-cols-2">
-    <Field label="Kind" required><select className={inputClass} value={v.kind} onChange={(e) => setV({ ...v, kind: e.target.value as typeof v.kind })}>
+    <Field label="Kind" required error={refused.kind}><select className={inputClass} value={v.kind} onChange={(e) => set('kind', e.target.value as typeof v.kind)}>
       <option value="organization">Organization</option><option value="person">Person</option></select></Field>
-    <Field label="Display name" required><input className={inputClass} value={v.displayName} onChange={(e) => setV({ ...v, displayName: e.target.value })} /></Field>
-    <Field label="Registered name"><input className={inputClass} value={v.registeredName} onChange={(e) => setV({ ...v, registeredName: e.target.value })} /></Field>
-    <Field label="TIN"><input className={inputClass} value={v.tin} onChange={(e) => setV({ ...v, tin: e.target.value })} /></Field>
-    <Field label="Billing address"><input className={inputClass} value={v.billingAddress} onChange={(e) => setV({ ...v, billingAddress: e.target.value })} /></Field>
-    <Field label="Email"><input type="email" className={inputClass} value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} /></Field>
+    <Field label="Display name" required error={refused.displayName}><input className={inputClass} value={v.displayName} onChange={(e) => set('displayName', e.target.value)} /></Field>
+    <Field label="Registered name" error={refused.registeredName}><input className={inputClass} value={v.registeredName} onChange={(e) => set('registeredName', e.target.value)} /></Field>
+    <Field label="TIN" error={refused.tin}><input className={inputClass} value={v.tin} onChange={(e) => set('tin', e.target.value)} /></Field>
+    <Field label="Billing address" error={refused.billingAddress}><input className={inputClass} value={v.billingAddress} onChange={(e) => set('billingAddress', e.target.value)} /></Field>
+    <Field label="Email" error={refused.email}><input type="email" className={inputClass} value={v.email} onChange={(e) => set('email', e.target.value)} /></Field>
     {!old && <>
       <Field label="Contact no." hint="Mobile or landline, like 0917 123 4567"><input type="tel" inputMode="tel" autoComplete="tel" className={inputClass} value={phone.number} onChange={(e) => setPhone({ ...phone, number: e.target.value })} /></Field>
       <Field label="Contact no. label" hint="Optional, like Mobile, Office or Coach"><input className={inputClass} value={phone.label} onChange={(e) => setPhone({ ...phone, label: e.target.value })} /></Field>
     </>}
-    <Field label="Notes"><input className={inputClass} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field>
-    <Field label="VAT registered"><input type="checkbox" checked={v.isVatRegistered} onChange={(e) => setV({ ...v, isVatRegistered: e.target.checked })} /></Field>
+    <Field label="Notes" error={refused.notes}><input className={inputClass} value={v.notes} onChange={(e) => set('notes', e.target.value)} /></Field>
+    <Field label="Withholding profile" error={refused.withholdingProfile}><select className={inputClass} value={v.withholdingProfile} onChange={(e) => set('withholdingProfile', e.target.value as WithholdingProfile)}>
+      {Object.entries(withholdingLabels).map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></Field>
+    <Field label="VAT registered" error={refused.isVatRegistered}><input type="checkbox" checked={v.isVatRegistered} onChange={(e) => set('isVatRegistered', e.target.checked)} /></Field>
   </div>{error && <Notice>{error}</Notice>}<div className="flex gap-2"><Button tone="primary" disabled={!v.displayName.trim()} onClick={() => void save()}>Save</Button>
     <Button onClick={onClose}>Cancel</Button></div></Dialog>;
 }
@@ -165,7 +174,7 @@ function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
   const shown: [string, string | null, boolean?][] = [
     ['Code', data.code], ['Display name', data.display_name], ['Kind', data.kind === 'organization' ? 'Organization' : 'Person'],
     ['Status', data.is_active ? 'Active' : 'Inactive'], ['Registered name', data.registered_name], ['TIN', data.tin],
-    ['VAT registered', data.is_vat_registered ? 'Yes' : 'No'], ['Email', data.email],
+    ['VAT registered', data.is_vat_registered ? 'Yes' : 'No'], ['Withholding profile', withholdingLabels[data.withholding_profile]], ['Email', data.email],
     ['Billing address', data.billing_address, true], ['Notes', data.notes, true],
     ['Added', data.created_at?.slice(0, 16).replace('T', ' ') ?? null], ['Last changed', data.updated_at?.slice(0, 16).replace('T', ' ') ?? null],
   ];

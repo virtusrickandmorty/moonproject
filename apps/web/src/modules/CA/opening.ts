@@ -18,7 +18,7 @@ export function openingInput(v: OpeningValues): { input: Record<string, unknown>
     ...(owed && owed > 0 ? [] : ['Type what is still owed, like 2,000.00']),
     ...(installment && installment > 0 ? [] : ['Type the deduction per payroll, like 500.00']),
     ...(owed && installment && installment > owed ? ['The deduction per payroll cannot be more than what is owed.'] : []),
-    ...(v.note.trim().length >= 3 ? [] : ['Type the old CA numbers this replaces.']),
+    ...(v.note.trim().length >= 3 ? [] : ['Type the old cash advance numbers this replaces.']),
   ];
   const input = { employeeId: v.employeeId, owedCents: owed ?? 0, installmentCents: installment ?? 0, note: v.note.trim() };
   return { input, errors };

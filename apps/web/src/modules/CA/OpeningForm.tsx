@@ -55,7 +55,7 @@ export function OpeningForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
             <input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={v.installment} onChange={(e) => set({ installment: e.target.value })} />
           </Field>
         </div>
-        <Field label="Old CA numbers this replaces" required hint="From the old books, e.g. CA-0098, CA-0102">
+        <Field label="Old cash advance numbers this replaces" required hint="From the old books, e.g. CA-0098, CA-0102">
           <input className={inputClass} value={v.note} onChange={(e) => set({ note: e.target.value })} />
         </Field>
         <Errors list={errors} show={r.touched} />

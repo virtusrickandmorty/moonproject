@@ -5,6 +5,8 @@ import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { createPracticeData } from '../src/platform/practice/data.ts';
 import { runInvariants } from '../src/engine/ledger/invariants.ts';
+import { payrollTotalsProblems } from '../src/modules/PAY/public.ts';
+import { registerDifferences } from '../src/modules/TAX/public.ts';
 
 describe('practice data', () => {
   it('posts five shop days through the API, with no failed documents or broken invariants', async () => {
@@ -17,6 +19,8 @@ describe('practice data', () => {
       const db = new Database(file, { readonly: true });
       try {
         expect(runInvariants(db).filter((result) => !result.ok)).toEqual([]);
+        expect(registerDifferences(db, '2000-01-01', '2099-12-31')).toEqual([]); // L6, over every day of the practice shop
+        expect(payrollTotalsProblems(db)).toEqual([]); // L10
         expect(db.prepare(`SELECT COUNT(*) AS n FROM documents WHERE status <> 'posted'`).get()).toEqual({ n: 0 });
         for (const type of ['quo.quotation', 'jo.job_order', 'prd.entry', 'jo.release',
           'jo.invoice_record', 'qs.sale', 'ap.bill', 'ap.payment', 'exp.voucher',

@@ -9,20 +9,21 @@
  *   Domestic purchases with no input tax, by class: the register of bills, vouchers and assets bought with no input
  *   VAT (purchases.ts), which is also the SLP's exempt column.
  * Still not tracked by the ERP, so not on the worksheet: importations (and VAT-exempt importations), services by
- * non-residents, zero-rated purchases told apart from those with no input tax, sales to government apart from other
- * VATable sales, and the input VAT the buyer must take off for its own payables left unpaid past the agreed time.
+ * non-residents, zero-rated purchases told apart from those with no input tax, and the input VAT the buyer must take off for its own
+ * payables left unpaid past the agreed time.
  */
 import type { Db } from '../../platform/db/driver.ts';
 import { vatReturnDue, type Quarter } from './calendar.ts';
 import { settingAt } from '../../engine/settings.ts';
 import { noVatPurchasesRegister, purchasesRegister } from './purchases.ts';
-import { salesRegister } from './registers.ts';
+import { customerTaxInfo } from '../CUS/public.ts';
+import { salesRegister, total } from './registers.ts';
 import { slspSales } from './slsp.ts';
 import { addBacksDue, claimCandidates, uncollectedVatOfQuarter } from './uncollected-vat.ts';
 import { vatCloseOf, vatPosition } from './vat.ts';
 
 export type WorksheetKey =
-  | 'vatable_sales' | 'zero_rated_sales' | 'exempt_sales' | 'late_output' | 'uncollected_receivables' | 'recovered_receivables' | 'output_tax'
+  | 'vatable_sales' | 'government_sales' | 'zero_rated_sales' | 'exempt_sales' | 'late_output' | 'uncollected_receivables' | 'recovered_receivables' | 'output_tax'
   | 'input_carried_over' | 'capital_goods' | 'goods' | 'services'
   | 'no_input_capital_goods' | 'no_input_goods' | 'no_input_services' | 'no_input_tax' | 'to_classify' | 'late_input' | 'input_tax' | 'total_purchases'
   | 'net_vat' | 'vat_withheld' | 'payable' | 'carry_forward';
@@ -34,6 +35,7 @@ export interface WorksheetCheck { code: string; level: 'error' | 'warning' | 'in
 export function vatReturnWorksheet(db: Db, year: number, quarter: Quarter, today: string) {
   const p = vatPosition(db, year, quarter);
   const sales = salesRegister(db, p.from, p.to);
+  const governmentSales = sales.rows.filter((r) => r.customerId && customerTaxInfo(db, r.customerId)?.withholdingProfile === 'government');
   const purchases = purchasesRegister(db, p.from, p.to);
   const noVat = noVatPurchasesRegister(db, p.from, p.to);
   const slsp = slspSales(db, year, quarter, today);
@@ -49,6 +51,7 @@ export function vatReturnWorksheet(db: Db, year: number, quarter: Quarter, today
     if (always || amountCents || taxCents) lines.push({ key, label, amountCents, taxCents });
   };
   add('vatable_sales', 'VATable sales', sales.totals.netCents, sales.totals.vatCents);
+  add('government_sales', 'Of which: sales to government', total(governmentSales, (r) => r.netCents), total(governmentSales, (r) => r.vatCents));
   add('zero_rated_sales', 'Zero-rated sales', slsp.totals.zeroRatedCents, 0);
   add('exempt_sales', 'Exempt sales', slsp.totals.exemptCents, 0);
   add('late_output', 'Output VAT on sales dated in an earlier quarter, recorded after its close', null, p.earlierOutputVatCents, false);

@@ -11,6 +11,30 @@ export class ApiError extends Error {
   }
 }
 
+/** The server's own words for a check (e.g. "Too big: expected string to have <=200 characters") in the shop's words. */
+function plainCheck(message: string): string {
+  if (/email/i.test(message) && /invalid/i.test(message)) return 'Type an email like name@example.com.';
+  if (/^too big/i.test(message)) return 'This is too long or too large.';
+  if (/^too small/i.test(message)) return /string/i.test(message) ? 'Fill this in.' : 'This is too small.';
+  if (/^invalid option|^invalid input: expected one of/i.test(message)) return 'Pick one of the choices.';
+  if (/^invalid input|^invalid/i.test(message)) return 'This is not allowed here.';
+  return message;
+}
+
+/**
+ * The boxes the server refused, by field name, so a screen can show each problem under its own box (Field's error turns it
+ * red). A refusal that names no box gives none: the screen keeps showing its message above the Save button.
+ */
+export function refusedFields(e: unknown): Record<string, string> {
+  if (!(e instanceof ApiError) || !Array.isArray(e.details)) return {};
+  const out: Record<string, string> = {};
+  for (const d of e.details as { field?: unknown; message?: unknown }[]) {
+    const field = typeof d?.field === 'string' ? d.field.split('.')[0] : '';
+    if (field && !(field in out)) out[field] = plainCheck(typeof d.message === 'string' ? d.message : '');
+  }
+  return out;
+}
+
 export interface Me { userId: string; username: string; displayName: string; roles: string[]; permissions: string[]; mustChangePassword: boolean; csrfToken: string }
 export interface GoLiveAnswer { id: number; answer: string; decidedBy: string; decidedOn: string; note: string; recordedAt: string; recordedByName: string }
 export interface GoLiveDecision { id: string; group: 'accountant' | 'owner' | 'co-owners'; question: string; defaultAnswer: string; when: string; history: GoLiveAnswer[]; setting: null | { key: string; value: unknown; words: string; matches: boolean | null } }
@@ -21,11 +45,17 @@ export interface CancelPreview { number: string; businessDate: string; cancelDat
 export interface ReversalDue { documentId: string; number: string; date: string; memo: string; reverseOn: string; totalCents: number }
 /** GET /api/acc/jv/:id/reversal: the reversal's form input (lines swapped) and its date. */
 export interface JvReversal { businessDate: string; original: { documentId: string; number: string; date: string }; input: { memo: string; lines: { accountId: number; party?: { type: PartyType; id: string }; debitCents?: number; creditCents?: number; memo?: string }[]; reversalOf: string } }
-/** GET /api/tax/changes-after-filing (ACC-22): one document recorded or cancelled after a return of its period was paid. */
+/** GET /api/tax/changes-after-filing (ACC-22): one document recorded or cancelled after its period's filing source was recorded. */
 export interface ChangeAfterFiling {
   date: string; documentId: string; docType: string; docTitle: string; number: string; what: 'recorded' | 'cancelled'; userName: string; at: string;
   form: string; period: string; periodLabel: string; paymentNumber: string; paymentRecordedAt: string;
 }
+export interface FiledReturnInput { form: string; period: string; filedOn: string; reference: string; note?: string }
+export interface FiledRegisterRow extends Omit<FiledReturnInput, 'note'> {
+  note: string | null;
+  id: number; recordedAt: string; recordedBy: string; voidedAt: string | null; voidedBy: string | null; voidReason: string | null;
+}
+export interface FiledRegister { rows: FiledRegisterRow[]; forms: string[]; today: string }
 export async function openServerPrint(me: Me, path: string, body: unknown): Promise<void> {
   const preview = window.open('', '_blank');
   const response = await fetch(path, { method: 'POST', credentials: 'same-origin',
@@ -84,11 +114,14 @@ export interface JsonSchema { type?: string; format?: string; title?: string; en
 export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
 export type PrintVariant = 'document' | 'job_ticket' | 'thermal';
 export interface PrintableType { key: string; variants: PrintVariant[] }
-export interface PrinterTestPack { prints: { id: string; label: string; paper: string; html: string }[]; notBuilt: string[] }
+/** sampleCompany: no company print details are saved yet, so the samples show a made-up company. */
+export interface PrinterTestPack { prints: { id: string; label: string; paper: string; html: string }[]; notBuilt: string[]; sampleCompany: boolean }
 export interface DocHeader {
   id: string; number: string; businessDate: string; status: 'posted' | 'cancelled'; totalCents: number; summary: string; postedAt: string;
   cancelledAt: string | null; cancelReason: string | null; replacesId: string | null; replacedById: string | null;
 }
+export interface DocListFilters { q?: string; from?: string; to?: string }
+export interface DocCounts { all: number; posted: number; cancelled: number }
 /** Read-only display of lines the server built. Declared this way so the money-rule tripwire (tests/house-rules) stays exact. */
 export type JournalLine = { accountCode: string; accountName: string } & Record<'debitCents' | 'creditCents', number>;
 export interface Journal { id: string; number: string; businessDate: string; postingKind: 'original' | 'reversal'; memo: string; lines: JournalLine[] }
@@ -144,7 +177,7 @@ export interface DashOwnerHealth {
   taxDeadlines: { form: string; periodLabel: string; dueDate: string }[];
 }
 export interface DashNotification extends DashItem { kind: string; read: boolean }
-export type CalKind = 'event' | 'job_due' | 'release' | 'holiday' | 'tax' | 'customer_birthday' | 'employee_birthday';
+export type CalKind = 'event' | 'job_due' | 'release' | 'holiday' | 'tax' | 'remittance' | 'customer_birthday' | 'employee_birthday';
 export interface CalItem { id: string; date: string; kind: CalKind; title: string; href: string; time?: string | null; notes?: string | null; rush?: boolean }
 export interface CalEvent { id: string; eventId: string; seq: number; action: 'create' | 'move' | 'cancel'; title: string; date: string; time: string | null; customerId: string | null; jobOrderId: string | null; notes: string | null; reason: string | null; createdAt: string; createdBy: string }
 export interface CalEventInput { title: string; date: string; time?: string | null; customerId?: string | null; jobOrderId?: string | null; notes?: string | null }
@@ -530,7 +563,7 @@ export interface WithholdingRegister {
   })[];
   totals: { cwtCents: number; vatWithheldCents: number }; glCwtCents: number; glVatWithheldCents: number; pendingCount: number;
 }
-export interface TaxDeadline { form: string; title: string; period: string; periodLabel: string; periodStart: string; periodEnd: string; statutoryDate: string; dueDate: string }
+export interface TaxDeadline { form: string; title: string; period: string; periodLabel: string; periodStart: string; periodEnd: string; statutoryDate: string; dueDate: string; status: 'filed' | 'not_yet_filed' | 'late'; reference: string | null; recordedAt: string | null }
 export interface VatSummary {
   year: number; quarter: 1 | 2 | 3 | 4; from: string; to: string; returnDue: string; outputVatCents: number; inputVatCents: number; vatWithheldCents: number;
   carryOverCents: number; vatWithheldPendingCents: number; payableCents: number; carryForwardCents: number;
@@ -911,8 +944,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     nightlyStatus: () => call<NightlyStatus>('GET', '/api/aud/nightly/status'),
     nightlyRunNow: () => call<NightlyRunNow>('POST', '/api/aud/nightly/run', {}),
     auditIntegrity: () => call<IntegrityReport>('GET', '/api/aud/integrity'),
-    list: (type: string, q: { status?: string; before?: string; limit?: number } = {}) =>
+    list: (type: string, q: DocListFilters & { status?: string; before?: string; limit?: number } = {}) =>
       call<DocHeader[]>('GET', doc(type, `?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`)),
+    docCounts: (type: string, q: DocListFilters = {}) =>
+      call<DocCounts>('GET', doc(type, `/counts?${new URLSearchParams(Object.entries(q).filter(([, v]) => v))}`)),
     get: (type: string, id: string) => call<DocDetail>('GET', one(type, id)),
     /** `businessDate` only for a type that may be backdated, by someone allowed to (the payroll run's period end). */
     preview: (type: string, input: unknown, businessDate?: string) => call<Preview>('POST', doc(type, '/preview'), { input, ...(businessDate ? { businessDate } : {}) }),
@@ -973,6 +1008,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** The release (REL-) and, unless the invoice is to follow (invoice: null), its invoice record, in one transaction. */
     joRelease: (b: ReleaseBody, expectedTotalCents: number, key: string) =>
       call<{ release: PostResult; invoiceRecord: PostResult | null }>('POST', '/api/jo/releases', { ...b, expectedTotalCents }, idem(key)),
+    customerWithholding: (id: string) => call<{ withholding_profile: import('./modules/CUS/withholding.ts').WithholdingProfile }>('GET', `/api/cus/customers/${encodeURIComponent(id)}`),
     addCustomer: (b: { kind: 'person' | 'organization'; displayName: string }) => call<CustomerRow & { duplicateWarnings: { id: string; reason: string }[] }>('POST', '/api/cus/customers', b),
     catItems: (search: string) => call<CatItem[]>('GET', `/api/cat/items?${new URLSearchParams({ search, active: '1', limit: '10' })}`),
     catPrice: (itemId: string, qty: number) => call<CatPrice>('GET', `/api/cat/items/${encodeURIComponent(itemId)}/price?${new URLSearchParams({ qty: String(qty) })}`),
@@ -1138,6 +1174,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     reversalsDue: () => call<ReversalDue[]>('GET', '/api/acc/jv/reversals-due'),
     jvReversal: (id: string) => call<JvReversal>('GET', `/api/acc/jv/${encodeURIComponent(id)}/reversal`),
     changesAfterFiling: () => call<{ rows: ChangeAfterFiling[] }>('GET', '/api/tax/changes-after-filing'),
+    filedReturns: () => call<FiledRegister>('GET', '/api/tax/filed-returns'),
+    addFiledReturn: (body: FiledReturnInput) => call<FiledRegisterRow>('POST', '/api/tax/filed-returns', body),
+    voidFiledReturn: (id: number, reason: string) => call<FiledRegisterRow>('POST', `/api/tax/filed-returns/${id}/void`, { reason }),
     recordGoLiveAnswer: (body: { decisionId: string; answer: string; decidedBy: string; decidedOn: string; note: string }) => call<GoLiveRegister>('POST', '/api/acc/go-live-decisions/answers', body),
     /** The accountant's sign-off of a month that has ended; needs a fresh password (step-up). */
     signOffMonth: (month: string, note: string) => call<MonthEndChecklist>('POST', '/api/acc/month-end/sign-off', { month, note }),

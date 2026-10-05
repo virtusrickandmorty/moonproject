@@ -8,6 +8,7 @@ import { formatPesos } from '@moonproject/shared';
 import { api, ApiError, newIdempotencyKey, type CashPlace, type DocHeader, type DocTypeInfo, type QsBody, type QsPreview } from '../../api.ts';
 import { navigate } from '../../router.tsx';
 import { Button, Dialog, Field, JournalTable, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
+import { SalesActions, Exception } from '../JO/entry.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { checkPlaceIds, emptyTender, tendersToInput, tendersToRows, type TenderInput, type TenderRow } from '../COL/money.ts';
@@ -122,7 +123,7 @@ export function QuickSaleForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
   if (original && !reason) return <EditGate original={original} typeKey={type.key} onReason={setReason} />;
   const set = (i: number, patch: Partial<LineRow>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   return (
-    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className="space-y-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-0">
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">{original ? `Edit ${original.number}` : 'Quick sale'}</h1>
         {original && <Notice tone="info">When you record, {original.number} and its payment are cancelled and the replacement gets a new number. Reason: {reason}</Notice>}
@@ -141,22 +142,18 @@ export function QuickSaleForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
                   </button>
                 ))}
               </div>
-              <div className="grid grid-cols-[1fr_4rem_7rem_7rem_auto] gap-2">
-                <input aria-label="What" placeholder="e.g. Shorten sleeves" className={inputClass} value={r.description} onChange={(e) => set(i, { description: e.target.value })} />
-                <input aria-label="Qty" inputMode="numeric" className={`${inputClass} text-right`} value={r.qty} onChange={(e) => set(i, { qty: e.target.value })} />
-                <input aria-label="Price each" inputMode="decimal" placeholder="Price" className={`${inputClass} text-right tabular-nums`} value={r.price} onChange={(e) => set(i, { price: e.target.value })} />
-                <input aria-label="Discount" inputMode="decimal" placeholder="Discount" className={`${inputClass} text-right tabular-nums`} value={r.discount} onChange={(e) => set(i, { discount: e.target.value })} />
-                {rows.length > 1 ? <Button onClick={() => setRows(rows.filter((_, j) => j !== i))}>Remove</Button> : <span />}
+              <div className="grid gap-2 sm:grid-cols-[minmax(12rem,1fr)_6rem_9rem]">
+                <Field label="What"><input aria-label="What" placeholder="e.g. Shorten sleeves" className={inputClass} value={r.description} onChange={(e) => set(i, { description: e.target.value })} /></Field>
+                <Field label="Qty"><input aria-label="Qty" inputMode="numeric" className={`${inputClass} text-right`} value={r.qty} onChange={(e) => set(i, { qty: e.target.value })} /></Field>
+                <Field label="Price each"><input aria-label="Price each" inputMode="decimal" placeholder="Price" className={`${inputClass} text-right tabular-nums`} value={r.price} onChange={(e) => set(i, { price: e.target.value })} /></Field>
               </div>
+              <Exception title="Add a line discount" active={!!r.discount.trim() && Number(r.discount.replaceAll(',', '')) !== 0}>
+                <div className="max-w-xs"><Field label="Discount"><input aria-label="Discount" inputMode="decimal" placeholder="Discount" className={`${inputClass} text-right tabular-nums`} value={r.discount} onChange={(e) => set(i, { discount: e.target.value })} /></Field></div>
+              </Exception>
+              {rows.length > 1 && <Button onClick={() => setRows(rows.filter((_, j) => j !== i))}>Remove</Button>}
             </div>
           ))}
           {rows.length < 30 && <Button onClick={() => setRows([...rows, emptyLine(rows.at(-1)?.kind)])}>+ Add a line</Button>}
-        </Panel>
-        <Panel title="Invoice">
-          <Field label="Invoice number (from the booklet)" required
-            hint={was.invoice ? `Invoice no. ${was.invoice} stays with the cancelled sale (keep all its copies): write this sale on a new invoice.` : 'VAT sellers write an invoice for every sale, however small.'}>
-            <input inputMode="numeric" className={`${inputClass} max-w-40`} value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} />
-          </Field>
         </Panel>
         <Panel title="Where did the money go?">
           <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" amountHint={sold.totalCents > 0 ? formatPesos(sold.totalCents) : undefined} />
@@ -164,18 +161,24 @@ export function QuickSaleForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
             <input inputMode="numeric" className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
           </Field>
         </Panel>
+        <Panel title="Invoice">
+          <Field label="Invoice number (from the booklet)" required
+            hint={was.invoice ? `Invoice no. ${was.invoice} stays with the cancelled sale (keep all its copies): write this sale on a new invoice.` : 'VAT sellers write an invoice for every sale, however small.'}>
+            <input inputMode="numeric" className={`${inputClass} max-w-40`} value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} />
+          </Field>
+        </Panel>
         <Field label="Note"><textarea rows={2} className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         <Errors list={errors} show={touched} />
-        <div className="flex gap-2">
+        <Panel title="So far">
+          <p className="text-2xl font-semibold tabular-nums">{peso(live?.totalCents ?? sold.totalCents)}</p>
+          {live && <Figures items={[['VATable sales', live.booklet.vatableSalesCents], ['VAT', live.booklet.vatCents]]} />}
+          {live && [live.sale, ...(live.payment ? [live.payment] : [])].flatMap((c) => c.issues).map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
+        </Panel>
+        <SalesActions total={live?.totalCents ?? sold.totalCents} label="Total">
           <Button tone="primary" disabled={!type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
           <Button onClick={() => history.back()}>Back</Button>
-        </div>
+        </SalesActions>
       </div>
-      <Panel title="So far">
-        <p className="text-2xl font-semibold tabular-nums">{peso(live?.totalCents ?? sold.totalCents)}</p>
-        {live && <Figures items={[['VATable sales', live.booklet.vatableSalesCents], ['VAT', live.booklet.vatCents]]} />}
-        {live && [live.sale, ...(live.payment ? [live.payment] : [])].flatMap((c) => c.issues).map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
-      </Panel>
       {confirm && <ConfirmDialog preview={confirm} original={original} onRecord={record} onClose={() => setConfirm(null)} />}
     </form>
   );

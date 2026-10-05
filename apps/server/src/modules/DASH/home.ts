@@ -15,6 +15,7 @@ import { paymentsToCheck } from '../SHP/public.ts';
 import { sizerBoard } from '../SZR/public.ts';
 import { hasReceived2307, paidTaxPeriods, taxDeadlines, vatSummary } from '../TAX/public.ts';
 import { monthEndChecklist } from '../ACC/public.ts';
+import { remittanceChecks, remittanceDueDate } from '../STAT/public.ts';
 import { nightlyStatus } from '../AUD/public.ts';
 import { redLightNotices, type Host } from '../../platform/health/health.ts';
 
@@ -28,6 +29,27 @@ const GUARDED: Record<string, string> = {
   'user.deactivate': 'turned a user off',
   'role.permission': "changed a role's permissions",
   'acc.setting.add': 'changed a setting',
+  'acc.account.deactivate': 'turned an account off',
+  'acc.opening.cutover': 'moved the cut-over date',
+  'acc.opening.close': 'closed the opening balances',
+  'acc.monthend.signoff': 'signed off a month',
+  'bak.settings': 'changed the backup settings',
+  'bak.drill': 'checked a backup in a restore drill',
+  'com.settings': 'changed the email settings',
+  'com.test_email': 'sent a test email',
+  'tax.booklet.register': 'registered a booklet',
+  'tax.booklet.retire': 'retired a booklet',
+  'tax.booklet.activate': 'turned a booklet back on',
+  'tax.income_tax_settings.add': 'changed the income tax settings',
+  'tax.income_tax_deduction.add': 'changed the income tax deduction method',
+  'stat.employer_number_set': 'changed a government employer number',
+  'mig.commit': 'imported master data',
+  'mig.clear_staging': 'cleared an import staging area',
+  'prt.company_profile_edit': 'changed the company details for printing',
+  'prt.loose_leaf_paper': 'changed the paper size for the books',
+  'practice.reset': 'reset the practice shop',
+  'tax.filed_return.add': 'recorded a filed return',
+  'tax.filed_return.void': 'voided a filed return',
 };
 
 /** Where the app runs, for the System Health notifications: the practice shop has no backups to warn about. */
@@ -210,6 +232,17 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
   // Online orders paid by QR and waiting for someone to find the money in the bank and confirm it.
   if (can('shp.orders.manage')) for (const o of paymentsToCheck(db)) {
     push('online-payment', o.id, `${o.number}: check the online payment from ${o.name}`, `/shp/orders?open=${o.id}`, `Sent ${o.sentAt.slice(0, 16).replace('T', ' ')}`, o.totalCents);
+  }
+  if (can('stat.view')) {
+    let month = prevMonthEnd(date).slice(0, 7);
+    for (let n = 0; n < 3; n++, month = prevMonthEnd(`${month}-01`).slice(0, 7)) {
+      const dueDate = remittanceDueDate(month); // STAT's rule: the last day of the month after the pay month
+      if (date < addDays(dueDate, -7)) continue;
+      const monthLabel = day(`${month}-01`).toLocaleDateString('en-PH', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+      for (const check of remittanceChecks(db, month)) if (check.scheme !== 'WTAX' && check.state === 'not_done') {
+        push('remittance-deadline', `${check.scheme}:${month}`, `${check.label} for ${monthLabel} ${date > dueDate ? 'was' : 'is'} due ${dueDate}`, '/stat');
+      }
+    }
   }
   if (can('szr.loan.view') && (roleOf(user) === 'encoder' || roleOf(user) === 'production')) {
     for (const set of sizerBoard(db, date).overdue) push('sizer-overdue', set.holder!.loanId, `${set.code} sizer set is overdue`, '/szr/sets',

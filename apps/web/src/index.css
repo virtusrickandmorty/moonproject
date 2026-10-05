@@ -101,3 +101,38 @@ body {
     animation: none;
   }
 }
+
+/*
+ * Rules for every screen at once, instead of a class on each of hundreds of buttons and boxes:
+ * - Tailwind 4 leaves buttons with the plain arrow. Everything that does something when clicked shows the hand.
+ * - A box that cannot be used now is greyed out, and the mouse shows it cannot be used.
+ * - A box with something typed that is not allowed turns red: a Field given an error, a box marked aria-invalid, or a
+ *   box the browser itself refuses (a wrong email, a number out of range) once the user has typed in it.
+ */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  summary,
+  select:not(:disabled),
+  input:is([type='checkbox'], [type='radio'], [type='file']):not(:disabled),
+  input[type='file']:not(:disabled)::file-selector-button,
+  label:has(> input:is([type='checkbox'], [type='radio'], [type='file']):not(:disabled)) {
+    cursor: pointer;
+  }
+}
+
+/* Outside the base layer so they win over a box's own border and background classes. */
+button:disabled,
+:is(input, select, textarea):disabled {
+  cursor: not-allowed;
+}
+:is(input, select, textarea):disabled {
+  background-color: var(--color-slate-100);
+  color: var(--color-slate-500);
+}
+[data-invalid] :is(input, select, textarea),
+:is(input, select, textarea)[aria-invalid='true'],
+:is(input, select, textarea):user-invalid {
+  border-color: var(--color-red-500);
+  box-shadow: 0 0 0 1px var(--color-red-500);
+}

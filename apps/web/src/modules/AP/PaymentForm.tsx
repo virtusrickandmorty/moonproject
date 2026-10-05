@@ -1,7 +1,7 @@
 /**
  * Supplier payment form (PLAN E9 SPAY-, D5 BILL-PAY): the supplier, what is paid on which of their open bills (AP by
  * supplier, read from the ledger), where the money came from (split tenders; a check is a bank tender with its number)
- * and the bank's fee. No EWT here: it was withheld when each bill was recorded (D4.8). Also its Edit (NR-4).
+ * and the bank's fee. No tax withheld (EWT) here: it was withheld when each bill was recorded (D4.8). Also its Edit (NR-4).
  */
 import { useEffect, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
@@ -64,13 +64,13 @@ export function PaymentForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
                   <td className="py-1">{b.label}</td>
                   <td className="py-1 text-right tabular-nums">{formatPesos(b.owedCents)}</td>
                   <td className="py-1"><input aria-label={`Pay now on ${b.label}`} inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={pay[b.id] ?? ''} onChange={(e) => setPay({ ...pay, [b.id]: e.target.value })} /></td>
-                  <td className="py-1 pl-2"><Button onClick={() => setPay({ ...pay, [b.id]: formatPesos(b.owedCents) })}>All</Button></td>
+                  <td className="py-1 pl-2"><Button onClick={() => setPay({ ...pay, [b.id]: formatPesos(b.owedCents) })}>Pay remaining</Button></td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-        <p className="text-sm text-slate-500">EWT was withheld when each bill was recorded, so what is owed is already after it.</p>
+        <p className="text-sm text-slate-500">Tax was withheld from the supplier (EWT) when each bill was recorded, so what is owed is already after it.</p>
       </Panel>
       <Panel title="Where did the money come from?">
         <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money come from?" amountHint={due > 0 ? formatPesos(due) : undefined} />

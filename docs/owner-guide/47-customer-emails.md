@@ -7,6 +7,7 @@
 ### Steps
 **To turn on sending emails:**
 1. On the **Admin** menu, click **Customer email settings** (or go to **Customer emails** and click the **Settings** tab).
+   ![The Settings tab for customer emails](img/47-email-settings.png)
 2. You will see a notice like "Sending is OFF. No customer is emailed until you turn it on." Check the box to send emails to customers who agreed to them. "Turning it on starts from now: orders recorded while it was off are not emailed later."
 3. Type your **Mail server**, **Port**, **User name**, **Sender name**, and **Sender address**. If anything is missing, a message like "Still needed before sending can be on: ..." will show you what.
 4. Type the **App Password**. The App Password is never shown again once you save it.
@@ -16,7 +17,15 @@
 **To check the outbox or send again:**
 1. On the **Sales** menu, click **Customer emails**.
 2. Stay on the **Outbox** tab to see the emails. The counts at the top show how many are waiting, sent and failed. You can filter by kind (**All kinds**, **Customer emails**, **Payslip emails**) and by status (**All**, **Waiting**, **Sent**, **Failed**). Click the name of an email (for example **Order received**) to read it.
+   ![The Outbox tab of customer emails](img/47-email-outbox.png)
 3. If an email is marked as failed and you are allowed to resend (like the owner), you can try sending it again by clicking the **Send again** button next to it. If sending is off, it will warn you: "Sending emails is turned off. Turn it on in the email settings first."
+
+**To email statements in bulk:**
+1. On the **Sales** menu, click **Customer emails**.
+2. Go to the **Email statements** tab.
+3. Pick the **Statement date** and click **Show customers**.
+4. Customers with a balance, an email address and consent are ticked already. Untick any you do not want to email. Customers who cannot be emailed are listed under **Cannot email**, with the reason.
+5. Click the **Send** button (it shows how many, for example **Send 3 statements**). Each customer can be queued only once for the same statement date.
 
 **To email a statement of account:**
 1. On the **Reports** menu, click **Customer statement**.

@@ -8,6 +8,7 @@
 
 **Making a job order:**
 1. Open **Job Orders** under **Sales**, then click **+ New Job Order**. The form's heading is **New job order**.
+   ![The Job Orders list](img/37-job-orders.png)
 2. In the **Customer** panel, pick the customer from the list or click **+ New customer**. If it's a new customer, type **New customer's name**, pick **Kind of customer** (**Team, school or company** or **Person**) and click **Add customer** (or **Never mind**).
 3. Under **What is made**, click **+ Add a line** to add more lines. Type at least two letters to search the price list, and pick the item. The price fills in from the price list for that number of pieces; you can type a different price.
 4. Fill in the pieces. If you have a list of wearers, open **Wearers** on the line. Use the **Add a wearer…** or **Pull a whole group…** drop-down, or click **Paste from Excel**, paste the rows, and click **Add these**. For a name that is not on file, click **+ One-off name** and type it in. For each wearer pick the **Size** (or **Measured** for a wearer on file) and type the **Jersey name**, **No.** and **Qty**. Once wearers are listed, the pieces follow them.
@@ -17,6 +18,7 @@
 **Taking the downpayment:**
 1. Open the job order.
 2. If a downpayment is still asked and you have permission, click the **Take the downpayment** button. (In mode C, the button opens the downpayment invoice form first, then the collection follows).
+   ![A job order with the Take the downpayment button](img/37-job-order-downpayment.png)
 3. To take any other payment on the order, click **Take a payment** instead.
 4. Finish recording the collection.
 

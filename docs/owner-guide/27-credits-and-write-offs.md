@@ -11,8 +11,9 @@ Use this for a customer's 2307 when no cash came in.
 1. On the **Sales** menu, click **2307s Received**.
 2. Click **+ New 2307 Received**.
 3. First pick the **Customer**, then choose the invoice under **Which invoice?**.
+   ![The 2307 received form](img/27-new-2307-received.png)
 4. Type the **Tax withheld (on the 2307)**.
-5. Pick the **ATC** and type the **Quarter on the 2307** (like 2026-Q3). You can also add a **Note** on the 2307.
+5. Pick the **Tax code (ATC)** and type the **Quarter on the 2307** (like 2026-Q3). You can also add a **Note** on the 2307.
 6. Click **Record**.
 
 #### Forfeiting an abandoned deposit
@@ -20,6 +21,7 @@ The owner or accountant may forfeit a deposit when a customer abandons a job ord
 1. On the **Sales** menu, click **Deposit Forfeits**.
 2. Click **+ New Deposit Forfeit**.
 3. Pick the **Customer** and **Which job order?**.
+   ![The deposit forfeit form](img/27-new-deposit-forfeit.png)
 4. Type the **Amount kept** or click **All of it**.
 5. Type **Why is it kept? (at least 10 characters)**.
 6. Click **Forfeit**.

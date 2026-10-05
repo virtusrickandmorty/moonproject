@@ -2,7 +2,7 @@
  * Turns a doc type's input JSON schema (from GET /api/doc-types) into form fields, and typed text into
  * input and back. Pure, so it is tested without a browser.
  * Conventions: cashPlaceId or *CashPlaceId = a cash place picked with big buttons (PLAN H2), *Cents = a peso amount.
- * A schema field's `title` (zod .meta({ title })) overrides the label. A union of literals (`anyOf` of consts, e.g. a
+ * A schema field's `title` (zod .meta({ title })) supplies the label unless a shop label is defined. A union of literals (`anyOf` of consts, e.g. a
  * VAT close's quarter 1 to 4) is a choice like an enum. A string with format "date" (zod .meta({ format: 'date' })) is
  * a date picked from a calendar.
  */
@@ -14,7 +14,15 @@ export interface FieldSpec { name: string; label: string; kind: FieldKind; requi
 /** What the user typed, per field; booleans are 'true' or ''. */
 export type Values = Record<string, string>;
 
-const LABELS: Record<string, string> = { fromCashPlaceId: 'Where did the money come from?', toCashPlaceId: 'Where did the money go?', cashPlaceId: 'Which cash place?', crNumber: 'CR number' };
+const LABELS: Record<string, string> = { fromCashPlaceId: 'Where did the money come from?', toCashPlaceId: 'Where did the money go?', cashPlaceId: 'Which cash place?', crNumber: 'CR number', atc: 'Tax code (ATC)', costCentre: 'Pay cost group', eeCents: 'Employee share', erCents: 'Company share', eeSharesCents: 'Employee share', erSharesCents: 'Company share', employeeSharesCents: 'Employee share', employerSharesCents: 'Company share', caCents: 'Cash advance', ewtCents: 'Tax withheld from supplier (EWT)', ewtClass: 'Tax withheld from supplier (EWT)' };
+
+const CHOICE_WORDS: Record<string, Record<string, string>> = {
+  priority: { normal: 'Normal', rush: 'Rush' },
+  paymentTerms: { dp50: '50% downpayment', full: 'Full payment', cod: 'Cash on delivery', net7: '7 days', net15: '15 days', net30: '30 days' },
+  costCentre: { production: 'Production', office: 'Office and sales' },
+};
+/** Display words only: option values and recorded input stay exactly as the server supplied them. */
+export const choiceLabel = (name: string, value: string): string => CHOICE_WORDS[name]?.[value] ?? value;
 
 export function humanize(name: string): string {
   const words = name.replace(/(CashPlaceId|Cents|Id)$/, '').replace(/([A-Z])/g, ' $1').trim().toLowerCase();
@@ -42,7 +50,7 @@ export function fieldsOf(schema: JsonSchema): FieldSpec[] {
     const options = choices(s);
     return {
       name,
-      label: s.title ?? LABELS[name] ?? humanize(name),
+      label: LABELS[name] ?? s.title ?? humanize(name),
       kind: kindOf(name, s),
       required: required.has(name),
       ...(options ? { options: options.map(String), ...(options.every((o) => typeof o === 'number') ? { numeric: true } : {}) } : {}),

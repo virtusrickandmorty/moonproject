@@ -60,7 +60,7 @@ export function EwtRegister({ me }: { me: Me }) {
   const d = r.data;
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">EWT register</h1>
+      <h1 className="text-2xl font-semibold">Tax withheld from suppliers (EWT register)</h1>
       <p className="text-sm text-slate-600">Tax Virtus withheld from suppliers (expanded withholding tax), from the books: the EWT class, its ATC, the base, the rate and the EWT.</p>
       <RangeForm r={r} />
       {r.error && <Notice>{r.error}</Notice>}
@@ -70,7 +70,7 @@ export function EwtRegister({ me }: { me: Me }) {
           <p className="text-sm">{atcToConfirmWords(d.atcToConfirmCount)}</p>
           <RegisterTable rows={d.rows} lead={supplierColumns} columns={[
             { head: 'EWT class', cell: (x) => ewtClassWords(x.ewtClass) },
-            { head: 'ATC', cell: (x) => atcWords(x) },
+            { head: 'Tax code (ATC)', cell: (x) => atcWords(x) },
             { head: 'Base', amount: true, cell: (x) => (x.baseCents === null ? '—' : pesos(x.baseCents)), total: pesos(d.totals.baseCents) },
             { head: 'Rate', amount: true, cell: (x) => rateWords(x.rateBp) },
             { head: 'EWT', amount: true, cell: (x) => pesos(x.ewtCents), total: pesos(d.totals.ewtCents) },

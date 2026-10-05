@@ -183,8 +183,10 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
     if (err instanceof AppError) {
       return reply.code(err.status).send({ code: err.code, message: err.message, details: err.details });
     }
-    const e = err as { statusCode?: number; code?: string; message?: string; name?: string };
-    if (e.name === 'ZodError') return reply.code(400).send({ code: 'INVALID_INPUT', message: 'Some fields are missing or not allowed.' });
+    const e = err as { statusCode?: number; code?: string; message?: string; name?: string; issues?: { path: PropertyKey[]; message: string }[] };
+    // Which boxes were refused, like a document's own check, so a screen can mark each one red.
+    if (e.name === 'ZodError') return reply.code(400).send({ code: 'INVALID_INPUT', message: 'Some fields are missing or not allowed.',
+      details: (e.issues ?? []).map((i) => ({ field: i.path.map(String).join('.'), message: i.message })) });
     if (e.statusCode && e.statusCode < 500) return reply.code(e.statusCode).send({ code: e.code ?? 'BAD_REQUEST', message: e.message });
     req.log.error(err);
     return reply.code(500).send({ code: 'INTERNAL', message: 'Something went wrong. Nothing was recorded. Please try again or tell an owner.' });

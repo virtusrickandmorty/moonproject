@@ -238,3 +238,32 @@ export const payrollReleaseStands = (db: Db, releaseId: string): boolean =>
 
 /** A recorded run as stored, for the payslip print (PRT). Callers keep to the one employee they are allowed to send. */
 export const payrollRunDoc = (db: Db, runId: string) => runDoc.load(db, runId);
+
+export interface PayrollTotalsProblem { documentId: string; number: string; employeeName: string | null; recordedCents: number; addsUpCents: number; what: 'gross' | 'net' }
+
+/**
+ * L10 (PLAN D9), for AUD's nightly checks: every posted run's figures add up. A payslip's gross is the sum of its
+ * earning lines, and the run's gross and net are its payslips' (net as released: before loans, plus any tax refund).
+ * A payslip's net = gross less its deductions is a CHECK on pay_run_employees itself, and the cash advance ledger is
+ * GL 1210 by employee (CA), so neither needs a check here. Read-only.
+ */
+export function payrollTotalsProblems(db: Db): PayrollTotalsProblem[] {
+  const slips = db.prepare(
+    `SELECT d.id AS documentId, d.number, e.employee_name AS employeeName, e.gross_cents AS recordedCents, COALESCE(SUM(l.amount_cents), 0) AS addsUpCents
+     FROM pay_run_employees e JOIN documents d ON d.id = e.document_id LEFT JOIN pay_run_lines l ON l.run_employee_id = e.id
+     WHERE d.status = 'posted' GROUP BY e.id HAVING addsUpCents <> e.gross_cents ORDER BY d.number, e.employee_name`,
+  ).all() as Omit<PayrollTotalsProblem, 'what'>[];
+  const runs = db.prepare(
+    `SELECT d.id AS documentId, d.number, r.gross_cents AS gross, r.net_cents AS net,
+            SUM(e.gross_cents) AS slipsGross, SUM(e.net_cents - e.loan_cents + e.wtax_refund_cents) AS slipsNet
+     FROM pay_runs r JOIN documents d ON d.id = r.document_id JOIN pay_run_employees e ON e.document_id = r.document_id
+     WHERE d.status = 'posted' GROUP BY r.document_id HAVING slipsGross <> r.gross_cents OR slipsNet <> r.net_cents ORDER BY d.number`,
+  ).all() as { documentId: string; number: string; gross: number; net: number; slipsGross: number; slipsNet: number }[];
+  return [
+    ...slips.map((s) => ({ ...s, what: 'gross' as const })),
+    ...runs.flatMap((r) => [
+      ...(r.slipsGross !== r.gross ? [{ documentId: r.documentId, number: r.number, employeeName: null, recordedCents: r.gross, addsUpCents: r.slipsGross, what: 'gross' as const }] : []),
+      ...(r.slipsNet !== r.net ? [{ documentId: r.documentId, number: r.number, employeeName: null, recordedCents: r.net, addsUpCents: r.slipsNet, what: 'net' as const }] : []),
+    ]),
+  ];
+}

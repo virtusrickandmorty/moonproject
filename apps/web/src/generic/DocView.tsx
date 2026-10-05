@@ -9,9 +9,9 @@ import { api, newIdempotencyKey, type CancelPreview, type CashPlace, type DocDet
 import { Link, navigate } from '../router.tsx';
 import { Button, JournalTable, Notice, Panel, ReasonDialog, StatusChip, longDate, manilaTime, peso } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
-import { fieldsOf, toValues } from './fields.ts';
+import { choiceLabel, fieldsOf, toValues } from './fields.ts';
 import { AttachmentsPanel } from './Attachments.tsx';
-import { useCrumb } from '../shell/crumbs.tsx';
+import { Crumb } from '../shell/crumbs.tsx';
 
 /** A module's own view parts: more detail under "What this did", and its own cancel (e.g. a quick sale and its payment). */
 /** `noEdit` hides Edit where a cancel and a new document is the way to correct (a payroll's figures depend on the state it was worked out on). */
@@ -31,7 +31,6 @@ export function DocView({ type, id, recorded, parts = {}, inDialog }: { type: Do
   const [cancelPreview, setCancelPreview] = useState<CancelPreview | null>(null);
 
   const load = useCallback(() => api.get(type.key, id).then(setD, (e: Error) => setError(e.message)), [type.key, id]);
-  useCrumb(inDialog ? undefined : d?.header.number); // over its list the trail stays the list's
   useEffect(() => void load(), [load]);
   useEffect(() => void (fields.some((f) => f.kind === 'cashPlace') && api.cashPlaces().then(setPlaces, () => undefined)), [fields]);
   useEffect(() => {
@@ -73,6 +72,7 @@ export function DocView({ type, id, recorded, parts = {}, inDialog }: { type: Do
     <div className={inDialog ? 'space-y-4' : 'max-w-3xl space-y-4'}>
       {recorded && <Notice tone="success">Recorded as {h.number}.</Notice>}
       <div className={`flex flex-wrap items-center gap-3 ${inDialog ? 'pr-10' : ''}`}>{/* in a dialog, room for its × */}
+        {!inDialog && <Crumb label={h.number} />}{/* over its list, the trail stays the list's */}
         <h1 className="text-2xl font-bold text-[#010101]">{type.title} {h.number}</h1>
         <StatusChip status={h.status} />
         <span className="flex-1" />
@@ -98,7 +98,7 @@ export function DocView({ type, id, recorded, parts = {}, inDialog }: { type: Do
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
           {fields.filter((f) => text[f.name] !== undefined && !UUID.test(text[f.name]!)).map((f) => [
             <dt key={`${f.name}-t`} className="text-slate-500">{f.label}</dt>,
-            <dd key={f.name}>{shown[f.kind]?.(text[f.name]!) ?? text[f.name]}</dd>,
+            <dd key={f.name}>{shown[f.kind]?.(text[f.name]!) ?? (f.kind === 'choice' ? choiceLabel(f.name, text[f.name]!) : text[f.name])}</dd>,
           ])}
         </dl>
         {parts.extra?.(d)}

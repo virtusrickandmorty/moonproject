@@ -17,7 +17,7 @@ describe('opening cash advance screen rules', () => {
     expect(input).toEqual({ employeeId: 'e1', owedCents: 200_000, installmentCents: 100_000, note: 'Old CA-0098, CA-0102 from the prior book' });
     expect(openingValues(input as never)).toEqual({ ...typed, note: 'Old CA-0098, CA-0102 from the prior book' });
     expect(openingInput(emptyOpening()).errors).toEqual([
-      'Pick the employee.', 'Type what is still owed, like 2,000.00', 'Type the deduction per payroll, like 500.00', 'Type the old CA numbers this replaces.',
+      'Pick the employee.', 'Type what is still owed, like 2,000.00', 'Type the deduction per payroll, like 500.00', 'Type the old cash advance numbers this replaces.',
     ]);
     expect(openingInput({ ...typed, installment: '2,000.01' }).errors).toEqual(['The deduction per payroll cannot be more than what is owed.']);
   });

@@ -2,12 +2,13 @@
 
 **What it is for:** Set up the recovery keys needed to unlock your system's backups, tell the system where to save backups, and make copies of your backups to a USB drive.
 
-**Before you start:** You will need a printer to print your new recovery keys. Know the folder on the server PC (the computer Moonproject runs on) where you want to keep the backups, and have an off-site folder ready (like a Google Drive for desktop folder) if you want to keep copies there. You should also have two USB flash drives, Drive A and Drive B, to swap out weekly. The USB drive goes into the server PC.
+**Before you start:** Do this in the real shop (no yellow "PRACTICE SHOP" band at the top). The practice shop has no backups, so there the screen says "Backups and restores are not part of the practice shop." You will need a printer to print your new recovery keys. Know the folder on the server PC (the computer Moonproject runs on) where you want to keep the backups, and have an off-site folder ready (like a Google Drive for desktop folder) if you want to keep copies there. You should also have two USB flash drives, Drive A and Drive B, to swap out weekly. The USB drive goes into the server PC.
 
 ### Steps
 1. On the **Admin** menu, click **Backups**.
 2. Click the **Recovery keys and folders** tab.
 3. Type the **Backup folder** where you want to save backups on the server PC.
+   ![The Recovery keys and folders tab of Backups](img/11-recovery-keys.png)
 4. If you have an **Off-site folder**, type its location too.
 5. Click **Make new recovery keys**. The system will show you two keys, Key A and Key B.
 6. Click **Print key A** and **Print key B**, or write the keys down exactly. Keep Key A with you (the owner) and seal Key B in a safe place away from the shop.

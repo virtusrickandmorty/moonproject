@@ -82,7 +82,7 @@ function Record({ e, editable, idsVisible, onSaved }: { e: EmployeeRecord; edita
     <Panel title="Details">
       <div className="grid gap-3 sm:grid-cols-2">
         {TEXT.slice(0, 3).map(([k, l]) => input(k, l))}
-        <Field label="Cost centre">
+        <Field label="Pay cost group">
           <select disabled={!editable} className={inputClass} value={v.costCentre} onChange={(x) => setV({ ...v, costCentre: x.target.value })}>
             <option value="production">Production</option><option value="office">Office and sales</option>
           </select>

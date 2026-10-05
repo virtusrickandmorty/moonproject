@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildMenu, labelOf, pagePermission, type MenuItem } from './menu.ts';
+import { FOLD_AFTER, buildMenu, labelOf, openGroups, pagePermission, type MenuItem } from './menu.ts';
 import type { DocTypeInfo } from '../api.ts';
 
 describe('menu (PLAN H1)', () => {
@@ -19,10 +19,33 @@ describe('menu (PLAN H1)', () => {
     expect(labels(['sec.users.manage']).at(-1)).toBe('Admin: Users');
   });
 
-  it('finds a quick sale under its own name, though its document title is Invoice Record', () => {
-    const types = [{ key: 'jo.invoice_record', module: 'JO', title: 'Invoice Record' }, { key: 'qs.sale', module: 'QS', title: 'Invoice Record' }] as DocTypeInfo[];
-    expect(buildMenu(types, new Set(), []).map((g) => g.items.map((i) => i.label))).toEqual([['Invoice Records', 'Quick Sales']]);
-    expect(types.map(labelOf)).toEqual(['Invoice Record', 'Quick Sale']);
+  it('folds a long menu: only the group of the screen open, and the groups the person opened or closed', () => {
+    const screens = (n: number): MenuItem[] => [
+      { group: 'Overview', label: 'Home', path: '/' },
+      ...Array.from({ length: n }, (_, k) => ({ group: (k % 2 ? 'Money' : 'Admin') as MenuItem['group'], label: `Screen ${k}`, path: `/s${k}` })),
+    ];
+    const menu = (n: number) => buildMenu([], new Set(), screens(n));
+    const open = (n: number, path: string, chosen: Record<string, boolean> = {}) => {
+      const r = openGroups(menu(n), path, chosen);
+      return { folds: r.folds, open: [...r.open] };
+    };
+    // A short menu, as most staff roles have, shows everything.
+    expect(open(FOLD_AFTER - 1, '/')).toEqual({ folds: false, open: ['Overview', 'Money', 'Admin'] });
+    // A long one shows the group of the screen open, also for a document under a list (/s1/123).
+    expect(open(FOLD_AFTER, '/')).toEqual({ folds: true, open: ['Overview'] });
+    expect(open(FOLD_AFTER, '/s1/123')).toEqual({ folds: true, open: ['Money'] });
+    // What the person opened stays open; the group they are in can be closed too.
+    expect(open(FOLD_AFTER, '/s1', { Admin: true })).toEqual({ folds: true, open: ['Money', 'Admin'] });
+    expect(open(FOLD_AFTER, '/s1', { Money: false })).toEqual({ folds: true, open: [] });
+  });
+
+  it('finds a quick sale and a downpayment invoice under their own names, though both document titles are Invoice Record', () => {
+    const types = [
+      { key: 'jo.invoice_record', module: 'JO', title: 'Invoice Record' }, { key: 'jo.dp_invoice', module: 'JO', title: 'Invoice Record' },
+      { key: 'qs.sale', module: 'QS', title: 'Invoice Record' },
+    ] as DocTypeInfo[];
+    expect(buildMenu(types, new Set(), []).map((g) => g.items.map((i) => i.label))).toEqual([['Invoice Records', 'Downpayment Invoice Records', 'Quick Sales']]);
+    expect(types.map(labelOf)).toEqual(['Invoice Record', 'Downpayment Invoice Record', 'Quick Sale']);
   });
 
   it('knows the permission a page needs, pages under a menu item included (so a typed address shows no screen it cannot use)', () => {

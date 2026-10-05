@@ -1,64 +1,13 @@
 /**
  * Every screen opens for every role, on the practice shop's made-up data (serve-practice.ts). Each default role signs in
- * in turn and opens every menu item it sees: the page loads, says something, shows no error message, logs no console error
+ * and opens every menu item it sees: the page loads, says something, shows no error message, logs no console error
  * and no request is answered 403, 404 or 500. Then each "+ New" form the role is offered opens without an id to type and
  * reaches its preview. A role sees no menu item for a screen whose data it may not read.
+ * The roles tour side by side, after 06-every-screen.setup.ts has put open work in, added the TV user and turned backups on.
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { SCREENS } from '../apps/web/src/shell/menu';
-import { openWork, signInApi } from './practice-work';
-
-interface Who { role: string; username: string; name: string }
-const ROLES: Who[] = [
-  { role: 'owner', username: 'practice-owner', name: 'Practice Owner' },
-  { role: 'accountant', username: 'practice-accountant', name: 'Practice accountant' },
-  { role: 'encoder', username: 'practice-encoder', name: 'Practice encoder' },
-  { role: 'production', username: 'practice-production', name: 'Practice production' },
-  { role: 'tv', username: 'practice-tv', name: 'Practice tv' },
-];
-const passwords: Record<string, string> = {};
-
-/** The made-up users the practice data makes have no TV role: the owner adds one, the way the Users screen does. */
-async function addTvUser(baseURL: string) {
-  const owner = await signInApi(baseURL, 'practice-owner', passwords.owner!);
-  await owner.post('/api/auth/step-up', { password: passwords.owner });
-  const temporary = 'Practice7-tv-lantern-kettle-river!';
-  await owner.post('/api/users', { username: 'practice-tv', displayName: 'Practice tv', roles: ['tv'], temporaryPassword: temporary });
-  await owner.close();
-  const tv = await signInApi(baseURL, 'practice-tv', temporary);
-  passwords.tv = 'Practice8-tv-river-kettle-lantern!';
-  await tv.post('/api/auth/change-password', { currentPassword: temporary, newPassword: passwords.tv });
-  await tv.close();
-}
-
-test.beforeAll(() => {
-  Object.assign(passwords, JSON.parse(readFileSync(join(process.env.E2E_DIR!, 'practice-passwords.json'), 'utf8')));
-});
-
-/**
- * The owner turns backups on the way 05-backups does, so the Backups screens show a working shop and not the red "Backups are off"
- * every new shop starts with: recovery keys, then the first backup.
- */
-async function setUpBackups(page: Page, who: Who) {
-  await page.getByRole('link', { name: 'Backups', exact: true }).click();
-  await page.getByRole('link', { name: 'Recovery keys and folders' }).click();
-  await page.getByLabel('Backup folder').fill(join(process.env.E2E_DIR!, 'practice', 'backups'));
-  await page.getByLabel('Off-site folder').fill(join(process.env.E2E_DIR!, 'practice', 'offsite'));
-  await page.getByRole('button', { name: 'Make new recovery keys' }).click();
-  const keyA = await page.getByRole('heading', { name: 'Recovery key A' }).locator('xpath=following-sibling::p[1]').innerText();
-  const keyB = await page.getByRole('heading', { name: 'Recovery key B' }).locator('xpath=following-sibling::p[1]').innerText();
-  await page.getByLabel(/^Last \d+ characters of key A/).fill(keyA.slice(-8));
-  await page.getByLabel(/^Last \d+ characters of key B/).fill(keyB.slice(-8));
-  await page.getByRole('button', { name: 'Save the folders and the new keys' }).click();
-  await page.getByLabel('Enter your password again to continue').fill(passwords[who.role]!);
-  await page.getByRole('button', { name: 'Continue' }).click();
-  await expect(page.getByText('Saved. New backups are locked with the new recovery keys.')).toBeVisible();
-  await page.getByRole('link', { name: 'Status', exact: true }).click();
-  await page.getByRole('button', { name: 'Back up now' }).click();
-  await expect(page.getByText(/^Backed up: /)).toBeVisible();
-}
+import { ROLES, practicePasswords, signInAs } from './practice-users';
 
 /** Everything the browser reports while a page is open. */
 function watch(page: Page) {
@@ -79,14 +28,6 @@ function watch(page: Page) {
   };
 }
 
-async function signInAs(page: Page, who: Who) {
-  await page.goto('/sign-in');
-  await page.getByLabel('Username').fill(who.username);
-  await page.getByLabel('Password').fill(passwords[who.role]!);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('button', { name: new RegExp(`${who.name} ▾`) })).toBeVisible();
-}
-
 /** What is wrong with the screen that is open now: nothing is the empty list. */
 async function trouble(page: Page): Promise<string[]> {
   await page.waitForLoadState('networkidle');
@@ -97,7 +38,15 @@ async function trouble(page: Page): Promise<string[]> {
   if (!text) problems.push('blank page');
   if (text === 'Loading…') problems.push('still "Loading…"');
   for (const alert of await main.getByRole('alert').allInnerTexts()) problems.push(`error message: ${alert.replace(/\s+/g, ' ').trim()}`);
-  return problems;
+  return [...problems, ...(await noHand(page))];
+}
+
+/** Every button, choice box, tick box and fold-out on the page shows the hand under the mouse, the menu's too. */
+async function noHand(page: Page): Promise<string[]> {
+  const missed = await page.locator('button:not(:disabled), select:not(:disabled), summary, input:is([type=checkbox], [type=radio], [type=file]):not(:disabled)').evaluateAll((els) =>
+    els.filter((e) => (e as HTMLElement).offsetParent !== null && getComputedStyle(e).cursor !== 'pointer')
+      .map((e) => `${e.tagName.toLowerCase()} "${(e.textContent || e.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim().slice(0, 40)}"`));
+  return [...new Set(missed)].map((m) => `no hand cursor on ${m}`);
 }
 
 async function menuLinks(page: Page): Promise<{ label: string; href: string }[]> {
@@ -114,16 +63,6 @@ async function newForms(page: Page): Promise<{ label: string; href: string }[]> 
   return links.filter((l) => l.href.endsWith('/new'));
 }
 
-/** The made-up history leaves nothing open, so the tour starts by putting some work in (practice-work.ts). */
-async function openWorkForTheTour(baseURL: string) {
-  const [owner, production, accountant] = await Promise.all(['owner', 'production', 'accountant'].map((role) => signInApi(baseURL, `practice-${role}`, passwords[role]!)));
-  try {
-    await openWork(owner!, production!, accountant!);
-  } finally {
-    await Promise.all([owner, production, accountant].map((s) => s!.close()));
-  }
-}
-
 /** What a person would type into an empty box, guessed from its label; nothing here is an id, which is the point. */
 function typedFor(label: string, kind: string, mode: string | null): string {
   const example = /\blike (\d{4}-(?:Q\d|\d\d)|\d{3}-\d{3}-\d{3}-\d{3})/i.exec(label)?.[1]; // "the payroll month, like 2026-09"
@@ -138,11 +77,11 @@ function typedFor(label: string, kind: string, mode: string | null): string {
 /** A box that finds a customer, job order, release or supply as you type, and lists what it found as buttons under itself. */
 const isSearch = (label: string) => /^search|type 2 or more|number or customer|release number|name or code/i.test(label);
 
-/** Types into a search box until it lists something, and picks the first thing listed. */
+/** Types into a search box until it lists something, and picks the first thing listed (under the box, or under its label). */
 async function pickFirst(input: Locator) {
   for (const query of ['Practice', 'JO-', 'REL-', 'PO-', '0']) {
     await input.fill(query);
-    const found = input.locator('xpath=..').getByRole('button').filter({ hasNotText: /^(Change|\+|Add|✕)/ });
+    const found = input.locator('xpath=ancestor::*[not(self::label)][1]').getByRole('button').filter({ hasNotText: /^(Change|\+|Add|✕)/ });
     await found.first().waitFor({ state: 'visible', timeout: 1_500 }).catch(() => undefined);
     if (await found.count()) return void (await found.first().click());
   }
@@ -210,7 +149,8 @@ async function openPreview(page: Page) {
 }
 
 /** What a form says, in words, when the books give it nothing to do yet: a refusal that names the reason, not a screen that failed. */
-const STATE_OF_THE_BOOKS = /cut-over date|has no VAT to close|no income tax|nothing to (adjust|provide|settle|close)|no credits to settle/;
+// "is already closed by": a quarter the practice data closed on the 1st of the next month (VATC-), which the VAT close form opens on.
+const STATE_OF_THE_BOOKS = /cut-over date|has no VAT to close|no income tax|nothing to (adjust|provide|settle|close)|no credits to settle|is already closed by/;
 
 /** Opens one New form, fills it in and presses Record: what is wrong with it, nothing being the empty list. */
 async function checkNewForm(page: Page, href: string, today: string, take: () => string[]): Promise<string[]> {
@@ -239,18 +179,12 @@ async function checkNewForm(page: Page, href: string, today: string, take: () =>
   return [...problems, ...take()];
 }
 
-test.describe.configure({ mode: 'serial' });
-
 for (const who of ROLES) {
   test(`${who.role}: every menu item opens, every New form reaches its preview`, async ({ page }) => {
     test.setTimeout(600_000);
-    if (who.role === 'tv') await addTvUser(test.info().project.use.baseURL!);
-    if (who.role === 'owner') await openWorkForTheTour(test.info().project.use.baseURL!);
     const seen = watch(page);
-    await signInAs(page, who);
+    await signInAs(page, who, practicePasswords()[who.role]!);
     seen.take(); // the 401 the sign-in page gets before anyone has signed in is not a screen's fault
-    if (who.role === 'owner') await setUpBackups(page, who);
-    seen.take();
     const report: string[] = [];
     const note = (where: string, lines: string[]) => lines.forEach((l) => report.push(`${where}: ${l}`));
 
@@ -264,6 +198,7 @@ for (const who of ROLES) {
 
     console.log(`${who.role} sees ${links.length} menu items`);
     for (const link of links) {
+      if (!(await page.locator('nav[aria-label="Main menu"]').count())) await page.goto('/'); // the TV board fills the screen without the menu
       await page.locator(`nav[aria-label="Main menu"] a[href="${link.href}"]`).click();
       note(`${link.label} (${link.href})`, [...(await trouble(page)), ...seen.take()]);
     }

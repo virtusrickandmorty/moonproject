@@ -4,6 +4,7 @@ import { Link } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, peso, type PageInfo } from '../../components/ui.tsx';
 import { BookTitle, Tools, money, td, th, usePagedReport, useReport, useToday } from './Books.tsx';
 import './books.css';
+import { addressValue, PendingPeriod, ResultSummary } from './ReportParts.tsx';
 
 type Buckets = { current: number; days1to30: number; days31to60: number; days61to90: number; over90: number };
 type Aging = { asOf: string; rows: { customerId: string | null; customerName: string; documentId: string | null;
@@ -27,19 +28,20 @@ function docLink(id: string | null, type: string | null, label: string) {
 }
 
 export function ArAging({ me }: { me: Me }) {
-  const today = useToday(); const [asOf, setAsOf] = useState(''); const [applied, setApplied] = useState('');
-  useEffect(() => { if (today && !asOf) setAsOf(today); }, [today, asOf]);
+  const today = useToday(); const [asOf, setAsOf] = useState(() => addressValue('asOf')); const [applied, setApplied] = useState('');
+  useEffect(() => { if (today && !applied && !asOf) setAsOf(today); }, [today, asOf]);
   useEffect(() => { if (asOf && !applied) setApplied(new URLSearchParams({ asOf }).toString()); }, [asOf, applied]);
   const path = applied ? `ar-aging?${applied}` : null;
   const { data, error, pager, pagerFor } = usePagedReport<Aging>(path);
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
-  return <article className="rpt-page space-y-4"><BookTitle title="AR aging" dates={data ? `As of ${data.asOf}` : ''} />
+  return <article className="rpt-page space-y-4"><BookTitle title="Unpaid customer balances (AR aging)" dates={data ? `As of ${data.asOf}` : ''} />
     <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="As of"><input type="date" className={inputClass}
       value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
       <Button tone="primary" disabled={!asOf} onClick={() => setApplied(new URLSearchParams({ asOf }).toString())}>Show</Button>
       {path && <Tools path={path} />}</div>
+    <PendingPeriod applied={applied} values={{ asOf }} />
     {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
-    {data && <><Panel title="Receivables"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
+    {data && <><Panel title="Receivables"><ResultSummary count={data.rows.length} total={data.page?.total} summary={`Balance ${peso(data.totalCents)}.`} /><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
       {['Customer', 'Document', 'Job order', 'Due date', ...bucketNames.map(([, name]) => name), 'Total'].map((name) =>
         <th className={th} key={name}>{name}</th>)}</tr></thead><tbody>
       {data.rows.map((row, i) => <tr key={`${row.documentId ?? row.documentNumber}-${i}`}><td className={td}>{row.customerName}</td>
@@ -55,7 +57,7 @@ export function ArAging({ me }: { me: Me }) {
         <tr className="font-semibold"><td className={td} colSpan={4 + bucketNames.length}>Less allowance for credit losses</td><td className={money}>({peso(data.allowanceCents)})</td></tr>
         <tr className="font-semibold"><td className={td} colSpan={4 + bucketNames.length}>Net receivables</td><td className={money}>{peso(data.netCents)}</td></tr></>}
       </tbody></table></div>{pager}</Panel>
-      <Panel title="Job orders not yet invoiced (memo only)"><div className="overflow-x-auto"><table className="w-full text-sm">
+      <Panel title="Job orders not yet invoiced (memo only)"><ResultSummary count={data.memo.length} total={data.memoPage?.total} summary={`Amount ${peso(data.memoTotalCents)}.`} /><div className="overflow-x-auto"><table className="w-full text-sm">
         <thead><tr>{['Customer', 'Job order', 'Due date', 'Amount'].map((name) => <th className={th} key={name}>{name}</th>)}</tr></thead>
         <tbody>{data.memo.map((row) => <tr key={row.jobOrderId}><td className={td}>{row.customerName}</td>
           <td className={td}>{docLink(row.jobOrderId, 'jo.job_order', row.jobOrderNumber)}</td><td className={td}>{row.dueDate}</td>
@@ -79,11 +81,12 @@ function EmailStatement(p: { customerId: string; from: string; to: string }) {
 }
 
 export function CustomerStatement({ me }: { me: Me }) {
-  const today = useToday(); const [from, setFrom] = useState(''); const [to, setTo] = useState('');
-  const [customerId, setCustomerId] = useState(''); const [applied, setApplied] = useState('');
+  const today = useToday(); const [from, setFrom] = useState(() => addressValue('from')); const [to, setTo] = useState(() => addressValue('to'));
+  const [customerId, setCustomerId] = useState(() => addressValue('customerId')); const [applied, setApplied] = useState('');
   const [customers, setCustomers] = useState<{ id: string; name: string }[]>([]);
-  useEffect(() => { if (today && !from && !to) { setFrom(`${today.slice(0, 7)}-01`); setTo(today); } }, [today, from, to]);
+  useEffect(() => { if (today && !applied) { if (!from) setFrom(`${today.slice(0, 7)}-01`); if (!to) setTo(today); } }, [today, from, to]);
   useEffect(() => { if (me.permissions.includes('rpt.books.view')) void api.report<{ id: string; name: string }[]>('customers').then(setCustomers); }, [me.permissions]);
+  useEffect(() => { if (!applied && addressValue('customerId') && customerId && from && to) setApplied(new URLSearchParams({ customerId, from, to }).toString()); }, [applied, customerId, from, to]);
   const path = applied ? `customer-statement?${applied}` : null;
   const { data, error } = useReport<Statement>(path);
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
@@ -100,8 +103,9 @@ export function CustomerStatement({ me }: { me: Me }) {
       {data && me.permissions.includes('com.statement.send') && <EmailStatement customerId={data.customerId} from={data.from} to={data.to} />}</div>
     {data && <div className="print:hidden"><Button onClick={() => void openServerPrint(me, '/api/prt/reports/statement',
       { customerId: data.customerId, from: data.from, to: data.to })}>Print statement of account</Button></div>}
+    <PendingPeriod applied={applied} values={{ from, to, customerId }} />
     {error && <Notice>{error}</Notice>}{!data && !error && applied && <p>Loading…</p>}
-    {data && <><Panel title={data.customerName}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
+    {data && <><Panel title={data.customerName}><ResultSummary count={data.lines.length} summary={`Closing balance ${peso(data.closingBalanceCents)}.`} /><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
       {['Date', 'Document', 'Memo', 'Debit', 'Credit', 'Balance'].map((name) => <th className={th} key={name}>{name}</th>)}
       </tr></thead><tbody>
       <tr><td className={td} colSpan={5}>Opening balance</td><td className={money}>{peso(data.openingBalanceCents)}</td></tr>
@@ -112,7 +116,7 @@ export function CustomerStatement({ me }: { me: Me }) {
         <td className={money}>{peso(line.runningBalanceCents)}</td></tr>)}
       <tr className="font-semibold"><td className={td} colSpan={5}>Closing balance</td><td className={money}>{peso(data.closingBalanceCents)}</td></tr>
     </tbody></table></div></Panel>
-    <Panel title="Deposits held"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
+    <Panel title="Deposits held"><ResultSummary count={data.depositLines.length} summary={`Held ${peso(data.depositsHeldCents)}.`} /><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
       {['Date', 'Document', 'Memo', 'Received', 'Applied', 'Held'].map((name) => <th className={th} key={name}>{name}</th>)}
       </tr></thead><tbody>
       <tr><td className={td} colSpan={5}>Opening deposits held</td><td className={money}>{peso(data.openingDepositsHeldCents)}</td></tr>

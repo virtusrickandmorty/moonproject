@@ -14,6 +14,7 @@
 
 ### Steps for the 2316 and alphalist
 1. On the **People & Payroll** menu, click **2316 and alphalist**.
+   ![The 2316 and alphalist screen](img/28-2316-and-alphalist.png)
 2. Pick the **Year**.
 3. It shows if an employee needs **Substituted filing**.
 4. Click **2316** next to an employee. It opens a page called **2316 data**. Click **Print**.

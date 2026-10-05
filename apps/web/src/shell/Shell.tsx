@@ -1,12 +1,13 @@
 /**
- * The frame around every screen: server date banner (PLAN C8, H2), permission-filtered menu and "+ New" (H1).
- * Laid out like Star Admin 2: a grey top bar with a greeting, and a grey sidebar whose current item is a white pill.
+ * The frame around every screen: server date banner (PLAN C8, H2), permission-filtered menu that folds when long, "+ New"
+ * (H1) and the breadcrumb trail. Laid out like Star Admin 2: a grey top bar with a greeting, and a grey sidebar whose
+ * current item is a white pill.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { api, type DashNotification, type DocTypeInfo, type Me } from '../api.ts';
 import { Link, navigate, useLocation } from '../router.tsx';
 import { longDate } from '../components/ui.tsx';
-import { buildMenu, docPath, labelOf, type MenuGroup } from './menu.ts';
+import { MENU_FOLDS_KEY, buildMenu, docPath, isHere, labelOf, openGroups, type MenuGroup } from './menu.ts';
 import { SearchBox } from '../modules/NAV/Search.tsx';
 import { Breadcrumbs, CrumbName, crumbsFor } from './crumbs.tsx';
 
@@ -111,51 +112,80 @@ function Bell({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   );
 }
 
-/**
- * Which menu groups this browser has opened. Groups start folded to their heading, so the menu stays short; a remembered
- * convenience, so a blocked storage just means all folded (the group of the page on screen still opens by itself).
- */
-const OPENED_KEY = 'moonproject.menu.opened';
-function useOpened() {
-  const [opened, setOpened] = useState<Set<string>>(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(OPENED_KEY) ?? '[]') as string[]); } catch { return new Set(); }
-  });
-  const toggle = (group: string) => setOpened((o) => {
-    const next = new Set(o);
-    if (!next.delete(group)) next.add(group);
-    try { localStorage.setItem(OPENED_KEY, JSON.stringify([...next])); } catch { /* not remembered, still works */ }
-    return next;
-  });
-  return { opened, toggle };
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('');
+
+export function newGroups(docTypes: DocTypeInfo[], query: string) {
+  const creatable = docTypes.filter((d) => d.canCreate);
+  const groups = buildMenu(creatable, new Set(), []);
+  return groups.map((g) => ({ ...g, items: g.items.map((i) => {
+    const d = creatable.find((d) => docPath(d.key) === i.path)!;
+    return { ...i, label: labelOf(d), path: docPath(d.key, '/new') };
+  }).filter((i) => `${g.group} ${i.label}`.toLowerCase().includes(query.trim().toLowerCase())) })).filter((g) => g.items.length > 0);
 }
 
-const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('');
+export function NewMenu({ docTypes, query, onQuery, onChoose }: { docTypes: DocTypeInfo[]; query: string; onQuery: (query: string) => void; onChoose: () => void }) {
+  const groups = newGroups(docTypes, query);
+  return <div id="new-menu" className="fixed left-4 right-4 top-24 z-20 rounded-md bg-white text-slate-800 shadow-lg ring-1 ring-slate-200 sm:absolute sm:left-auto sm:right-0 sm:top-auto sm:mt-1 sm:w-80 sm:max-w-[90vw]">
+    <div className="p-3"><input autoFocus aria-label="Search new documents" value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Find a document…"
+      className="w-full rounded border border-slate-300 px-3 py-2" /></div>
+    <div className="max-h-[min(60vh,24rem)] overflow-y-auto px-1 pb-2" onClickCapture={(e) => { if ((e.target as HTMLElement).closest('a')) onChoose(); }}>
+      {groups.length === 0 && <p role="status" className="px-3 py-2 text-sm text-slate-500">No matching documents</p>}
+      {groups.map((g) => <section key={g.group} aria-label={g.group}>
+        <h2 className="px-3 py-2 text-xs font-semibold uppercase text-slate-500">{g.group}</h2>
+        {g.items.map((i) => <Link key={i.path} to={i.path} className="block rounded px-3 py-2 hover:bg-slate-100">{i.label}</Link>)}
+      </section>)}
+    </div>
+  </div>;
+}
+
+/** `wide`: a column on a big screen (the menu button hides it there); on a phone, a drawer over the page. */
+export function Navigation({ open, folds = false, wide = true, onClose, children }: { open: boolean; folds?: boolean; wide?: boolean; onClose: () => void; children: ReactNode }) {
+  return <>
+    {open && <button type="button" aria-label="Close menu backdrop" onClick={onClose} className="fixed inset-0 z-30 bg-slate-900/40 md:hidden print:hidden" />}
+    <nav id="main-menu" aria-label="Main menu" data-folds={folds || undefined} onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }} onClickCapture={(e) => { if ((e.target as HTMLElement).closest('a')) onClose(); }}
+      className={`${open ? '' : 'hidden'} fixed inset-y-0 left-0 z-40 w-[260px] max-w-[85vw] overflow-y-auto bg-page pb-10 pr-3 pt-2 text-[13px] shadow-xl ${wide ? 'md:block' : 'md:hidden'} md:sticky md:top-[4.5rem] md:z-auto md:max-h-[calc(100vh-4.5rem)] md:w-[220px] md:shrink-0 md:self-start md:shadow-none print:hidden`}>
+      {open && <button autoFocus type="button" onClick={onClose} className="mb-2 ml-4 rounded px-2 py-2 font-semibold text-indigo-700 md:hidden">Close menu</button>}
+      {children}
+    </nav>
+  </>;
+}
+
+function storedFolds(): Record<string, boolean> {
+  try {
+    const v = JSON.parse(localStorage.getItem(MENU_FOLDS_KEY) ?? '{}') as unknown;
+    return v && typeof v === 'object' ? (v as Record<string, boolean>) : {};
+  } catch { return {}; }
+}
 
 const pop = 'absolute right-0 z-30 mt-2 w-60 overflow-hidden rounded-lg bg-white py-1 text-sm text-slate-800 shadow-lg ring-1 ring-slate-200 [&>*]:block [&>*]:w-full [&>*]:px-4 [&>*]:py-2 [&>*]:text-left [&>*:hover]:bg-indigo-50';
 
 export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes: DocTypeInfo[]; onSignOut: () => void; children: ReactNode }) {
   const path = useLocation().split('?')[0]!;
   const [open, setOpen] = useState<'menu' | 'new' | 'user' | 'bell' | null>(null);
+  const [newQuery, setNewQuery] = useState('');
   const [wide, setWide] = useState(true); // the sidebar on a big screen; the same button hides it
-  const { opened, toggle: openGroup } = useOpened();
-  // The group of the page on screen opens by itself; its heading can still fold it until the next page.
-  const [shutHere, setShutHere] = useState(false);
   const menu = useMemo(() => buildMenu(docTypes, new Set(me.permissions)), [docTypes, me.permissions]);
+  // A long menu folds: the groups the person opened, and the group of the screen on show unless they closed it.
+  const [chosen, setChosen] = useState(storedFolds);
+  const folding = openGroups(menu, path, chosen);
+  const fold = (group: string, shown: boolean) => {
+    const next = { ...chosen, [group]: !shown };
+    setChosen(next);
+    try { localStorage.setItem(MENU_FOLDS_KEY, JSON.stringify(next)); } catch { /* the menu still folds; it is just not remembered */ }
+  };
   const [crumbName, setCrumbName] = useState<string | undefined>(); // what the page on screen shows (a document's number)
-  useEffect(() => { setOpen(null); setShutHere(false); }, [path]);
+  useEffect(() => { setOpen(null); setNewQuery(''); }, [path]);
   // The tab says the app's name inside the ERP (the website's pages set their own titles for search engines).
   useEffect(() => { if (!document.title.startsWith('PRACTICE')) document.title = 'Virtus'; }, []);
   const toggle = (w: typeof open) => setOpen(open === w ? null : w);
   const creatable = docTypes.filter((d) => d.canCreate);
   const toggleMenu = () => (window.matchMedia('(min-width: 768px)').matches ? setWide(!wide) : toggle('menu'));
-  const isHere = (p: string) => path === p || (p !== '/' && path.startsWith(`${p}/`));
-  const hereGroup = menu.find((g) => g.items.some((i) => isHere(i.path)))?.group;
 
   return (
     <div className="min-h-screen bg-page">
-      <header className="sticky top-0 z-20 flex min-h-[4.5rem] flex-wrap items-center gap-x-2 gap-y-2 bg-page px-3 py-2 text-sm sm:gap-x-3 md:h-[4.5rem] md:flex-nowrap md:px-6 md:py-0 print:hidden">
+      <header onKeyDown={(e) => { if (e.key === 'Escape') setOpen(null); }} className="sticky top-0 z-20 flex min-h-[4.5rem] flex-wrap items-center gap-x-2 gap-y-2 bg-page px-3 py-2 text-sm sm:gap-x-3 md:h-[4.5rem] md:flex-nowrap md:px-6 md:py-0 print:hidden">
         <div className="flex shrink-0 items-center gap-2 sm:gap-3 md:w-[188px]">
-          <button type="button" aria-label="Menu" className="rounded-md p-1.5 text-slate-700 hover:bg-white" onClick={toggleMenu}><Icon name="menu" className="size-6" /></button>
+          <button type="button" aria-label="Menu" aria-expanded={open === 'menu'} aria-controls="main-menu" className="rounded-md p-1.5 text-slate-700 hover:bg-white" onClick={toggleMenu}><Icon name="menu" className="size-6" /></button>
           <Link to="/" aria-label="Home"><img src="/virtus-logo.png" alt="Virtus" className="h-10 w-auto sm:h-11" /></Link>
         </div>
         <div className="hidden min-w-0 flex-1 lg:block">
@@ -166,8 +196,8 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
           {me.permissions.includes('nav.search') && <SearchBox />}
           {creatable.length > 0 && (
             <div className="relative">
-              <button type="button" className="whitespace-nowrap rounded-md bg-indigo-600 px-3 py-2 font-semibold text-white shadow-sm hover:bg-indigo-700 sm:px-4" onClick={() => toggle('new')}>+ New</button>
-              {open === 'new' && <div className={`${pop} max-h-[70vh] overflow-y-auto`}>{creatable.map((d) => <Link key={d.key} to={docPath(d.key, '/new')}>{labelOf(d)}</Link>)}</div>}
+              <button type="button" aria-expanded={open === 'new'} aria-controls="new-menu" className="whitespace-nowrap rounded-md bg-indigo-600 px-3 py-2 font-semibold text-white shadow-sm hover:bg-indigo-700 sm:px-4" onClick={() => { setNewQuery(''); toggle('new'); }}>+ New</button>
+              {open === 'new' && <NewMenu docTypes={docTypes} query={newQuery} onQuery={setNewQuery} onChoose={() => setOpen(null)} />}
             </div>
           )}
           {me.permissions.includes('dash.view') && <Bell open={open === 'bell'} onToggle={() => toggle('bell')} />}
@@ -188,33 +218,30 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
       </header>
       <p className="px-4 pb-2 text-xs text-muted lg:hidden print:hidden"><ServerDate /></p>
       <div className="flex">
-        {open === 'menu' && <div className="fixed inset-0 z-30 bg-slate-900/30 md:hidden" onClick={() => setOpen(null)} />}
-        <nav aria-label="Main menu" className={`${open === 'menu' ? 'fixed inset-y-0 left-0 z-40 overflow-y-auto bg-page shadow-xl' : 'hidden'} ${wide ? 'md:block' : ''} w-[260px] max-w-[85vw] shrink-0 pb-10 pr-3 pt-2 text-[13px] md:sticky md:top-[4.5rem] md:max-h-[calc(100vh-4.5rem)] md:w-[220px] md:self-start md:overflow-y-auto md:shadow-none print:hidden`}>
+        <Navigation open={open === 'menu'} folds={folding.folds} wide={wide} onClose={() => setOpen(null)}>
           {menu.map((g) => {
-            const here = g.group === hereGroup;
-            const showing = here ? !shutHere || opened.has(g.group) : opened.has(g.group);
+            const shown = folding.open.has(g.group);
+            const heading = <><Icon name={g.group} className="size-4" /><span className="flex-1">{g.group}</span></>;
             return (
               <div key={g.group} className="mb-1">
-                <button type="button" aria-expanded={showing} onClick={() => {
-                    if (!here) return openGroup(g.group);
-                    if (showing && opened.has(g.group)) openGroup(g.group);
-                    setShutHere(showing);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-r-full py-2.5 pl-6 pr-4 text-left text-[11px] font-bold uppercase tracking-wider text-[#404040] hover:bg-white">
-                  <Icon name={g.group} className="size-4" />
-                  <span className="flex-1">{g.group}</span>
-                  <Icon name="chevron" className={`size-3.5 text-slate-400 transition-transform ${showing ? 'rotate-90' : ''}`} />
-                </button>
-                {showing && g.items.map((i) => (
+                {folding.folds ? (
+                  <button type="button" aria-expanded={shown} onClick={() => fold(g.group, shown)}
+                    className="flex w-full items-center gap-2 rounded-r-full py-2.5 pl-6 pr-4 text-left text-[11px] font-bold uppercase tracking-wider text-[#404040] hover:bg-white">
+                    {heading}
+                    {!shown && <span aria-hidden="true" className="text-[10px] font-semibold text-slate-400">{g.items.length}</span>}
+                    <Icon name="chevron" className={`size-3.5 text-slate-400 transition-transform ${shown ? 'rotate-90' : ''}`} />
+                  </button>
+                ) : <p className="flex items-center gap-2 py-2.5 pl-6 pr-4 text-[11px] font-bold uppercase tracking-wider text-[#404040]">{heading}</p>}
+                {shown && g.items.map((i) => (
                   <Link key={i.path} to={i.path}
-                    className={`block rounded-r-full py-2 pl-12 pr-4 transition-colors ${isHere(i.path) ? 'bg-white font-bold text-indigo-600 shadow-sm' : 'text-[#484848] hover:bg-white hover:text-indigo-600'}`}>
+                    className={`block rounded-r-full py-2 pl-12 pr-4 transition-colors ${isHere(path, i.path) ? 'bg-white font-bold text-indigo-600 shadow-sm' : 'text-[#484848] hover:bg-white hover:text-indigo-600'}`}>
                     {i.label}
                   </Link>
                 ))}
               </div>
             );
           })}
-        </nav>
+        </Navigation>
         {/* data-erp: the page area of the signed-in ERP; index.css widens its screens (the public website keeps its own layout). */}
         <main data-erp className="min-w-0 flex-1 px-3 pb-10 pt-2 sm:px-4 md:px-6">
           <Breadcrumbs crumbs={crumbsFor(path, menu, crumbName)} icon={<Icon name="Overview" className="size-4" />} />

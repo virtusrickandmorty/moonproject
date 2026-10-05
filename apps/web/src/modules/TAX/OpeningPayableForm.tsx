@@ -78,8 +78,8 @@ export function OpeningPayableForm({ type, mode }: { type: DocTypeInfo; mode: Fo
                   {row.payees.map((p, k) => (
                     <div key={k} className="grid gap-2 sm:grid-cols-[1fr_9rem_9rem_auto]">
                       <SupplierSelect suppliers={suppliers} value={p.supplierId} onChange={(id) => setPayee(i, k, { supplierId: id })} label={`Row ${i + 1} payee ${k + 1}`} />
-                      <select aria-label={`Row ${i + 1} payee ${k + 1} ATC`} className={inputClass} value={p.atc} onChange={(e) => setPayee(i, k, { atc: e.target.value as PayeeRow['atc'] })}>
-                        <option value="">ATC</option>
+                      <select aria-label={`Row ${i + 1} payee ${k + 1} tax code (ATC)`} className={inputClass} value={p.atc} onChange={(e) => setPayee(i, k, { atc: e.target.value as PayeeRow['atc'] })}>
+                        <option value="">Tax code (ATC)</option>
                         {OPENING_ATCS.map((a) => <option key={a} value={a}>{a === 'other' ? 'Other ATC' : a}</option>)}
                       </select>
                       <input aria-label={`Row ${i + 1} payee ${k + 1} EWT`} inputMode="decimal" placeholder="EWT still to pay" className={`${inputClass} text-right tabular-nums`} value={p.amount} onChange={(e) => setPayee(i, k, { amount: e.target.value })} />

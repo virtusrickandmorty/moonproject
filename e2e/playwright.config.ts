@@ -6,7 +6,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineConfig } from '@playwright/test';
-import { MENU_GROUPS } from '../apps/web/src/shell/menu';
+import { menuOpenAt } from './menu-open';
 
 /** One temporary folder for the whole run: the workers, the server and the teardown all inherit it. */
 process.env.E2E_DIR ??= mkdtempSync(join(tmpdir(), 'moonproject-e2e-'));
@@ -19,15 +19,13 @@ const executablePath = process.env.E2E_CHROMIUM || undefined;
  * Each browser starts with every menu group opened (they start folded; the tests click links in all of them) and with the
  * pop-up messages off, so a message is found once, on the page (components/Toasts.tsx).
  */
-const allMenusOpen = (port: number) => ({ cookies: [], origins: [{ origin: `http://127.0.0.1:${port}`,
-  localStorage: [{ name: 'moonproject.menu.opened', value: JSON.stringify(MENU_GROUPS) }, { name: 'moonproject.toasts', value: 'off' }] }] });
-
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
-  // The tests share one shop, one after another: each builds on the ones before it, as a week at the shop does.
+  // The empty shop's tests share it, one after another: each builds on the ones before it, as a week at the shop does.
+  // Beside them, the practice shop's roles tour it side by side (06-every-screen), so the run stays inside CI's 10 minutes.
   fullyParallel: false,
-  workers: 1,
+  workers: 4,
   timeout: 90_000,
   expect: { timeout: 10_000 },
   retries: 0,
@@ -35,13 +33,15 @@ export default defineConfig({
   globalTeardown: './teardown.ts',
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
+    storageState: menuOpenAt(`http://127.0.0.1:${PORT}`),
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     launchOptions: executablePath ? { executablePath } : {},
   },
   projects: [
-    { name: 'chromium', testIgnore: /06-every-screen\.spec\.ts/, use: { browserName: 'chromium', storageState: allMenusOpen(PORT) } },
-    { name: 'practice', testMatch: /06-every-screen\.spec\.ts/, use: { browserName: 'chromium', baseURL: `http://127.0.0.1:${PRACTICE_PORT}`, actionTimeout: 10_000, storageState: allMenusOpen(PRACTICE_PORT) } },
+    { name: 'chromium', testIgnore: /06-every-screen\.spec\.ts/, workers: 1, use: { browserName: 'chromium' } },
+    { name: 'practice-setup', testMatch: /06-every-screen\.setup\.ts/, use: { browserName: 'chromium', baseURL: `http://127.0.0.1:${PRACTICE_PORT}`, storageState: menuOpenAt(`http://127.0.0.1:${PRACTICE_PORT}`), actionTimeout: 10_000 } },
+    { name: 'practice', testMatch: /06-every-screen\.spec\.ts/, dependencies: ['practice-setup'], fullyParallel: true, use: { browserName: 'chromium', baseURL: `http://127.0.0.1:${PRACTICE_PORT}`, storageState: menuOpenAt(`http://127.0.0.1:${PRACTICE_PORT}`), actionTimeout: 10_000 } },
   ],
   webServer: [
     {

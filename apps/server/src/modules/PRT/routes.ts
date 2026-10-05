@@ -14,7 +14,7 @@ import { certificatesToIssue } from '../TAX/public.ts';
 import { customerStatement } from '../RPT/receivables.ts';
 import { assetSchedule } from '../RPT/cash-assets.ts';
 import { sizingProfile } from '../CUS/public.ts';
-import { bookPrintRoutes, testBookPrints } from './book-routes.ts';
+import { bookPrintRoutes, loosePaper, testBookPrints } from './book-routes.ts';
 import { render2307, renderPrint, renderReportPrint, printField, printLineTable, printMoney, type Certificate2307, type Profile, type PrintHeader, type PrintKind } from './print.ts';
 
 const profileInput = z.object({
@@ -47,6 +47,7 @@ const PRINTABLE: ReadonlyMap<string, readonly PrintKind[]> = new Map([
 const out = (r: Profile) => ({ registeredName: r.registered_name, tradeName: r.trade_name, tin: r.tin,
   registeredAddress: r.registered_address, isVatRegistered: !!r.is_vat_registered, version: r.version });
 
+/** The made-up company on the test pack until an owner saves the real print details. */
 const TEST_PROFILE: Profile = { registered_name: 'Sample Garments Company', trade_name: 'Sample Garments',
   tin: '000-000-000-000', registered_address: '123 Sample Street, Manila', is_vat_registered: 1, version: 1 };
 const testHeader = (type: string): PrintHeader => ({ id: '00000000-0000-4000-8000-000000000000', number: 'TEST-000000',
@@ -77,20 +78,24 @@ const TEST_PRINTS: readonly { id: string; label: string; paper: string; type: st
   { id: 'count-sheet', label: 'Inventory Count Sheet', paper: 'A4', type: 'inv.count', kind: 'document', doc: { category: 'Sample materials', countDate: '2026-09-28', lines: [{ name: 'Sample cloth', unit: 'metre', qty: 10, unitCostCents: 10000, valueCents: 100000 }], countedCents: 100000, ledgerCents: 90000, adjustmentCents: 10000 } },
 ];
 const NOT_BUILT: string[] = [];
-const testReport = (id: string, label: string, body: string, legend = false) => ({ id, label, paper: 'A4',
+const testReportOf = (profile: Profile) => (id: string, label: string, body: string, legend = false) => ({ id, label, paper: 'A4',
   html: renderReportPrint(label as 'Statement of Account' | 'Sizing Profile' | 'Fixed Asset Schedule' | "Monthly Owners' Pack", body,
-    TEST_PROFILE, '2026-09-28', 'Sample Owner', '2026-09-28T10:00:00+08:00', legend).replace('<article>', '<article><div class="test-print">TEST PRINT, NOT A REAL DOCUMENT</div>') });
-const TEST_REPORTS = [
-  testReport('statement-of-account', 'Statement of Account', printField('Customer', 'Sample Customer') +
-    printLineTable(['Date', 'Document', 'Memo', 'Charge', 'Payment', 'Balance'], [['2026-09-28', 'TEST-000000', 'Sample sale', printMoney(112000), '', printMoney(112000)]]), true),
-  testReport('sizing-profile', 'Sizing Profile', printField('Wearer', 'Sample Wearer') +
-    printLineTable(['Measurement', 'Value', 'Unit'], [['Chest', 36, 'inch']])),
-  testReport('fixed-asset-schedule', 'Fixed Asset Schedule', printField('As of', '2026-09-28') +
-    printLineTable(['Code', 'Asset', 'Cost', 'Book value'], [['FA-SAMPLE', 'Sample sewing machine', printMoney(500000), printMoney(450000)]])),
-  testReport('monthly-owners-pack', "Monthly Owners' Pack", printField('Month', '2026-09') +
-    printLineTable(['Report', 'Made-up figure'], [['Income statement', printMoney(125000)], ['Cash flow statement', printMoney(98000)], ['Customers owing', printMoney(27000)]]) +
-    '<p><b>Noted by:</b> ______________________________ Owner 1</p>'),
-];
+    profile, '2026-09-28', 'Sample Owner', '2026-09-28T10:00:00+08:00', legend).replace('<article>', '<article><div class="test-print">TEST PRINT, NOT A REAL DOCUMENT</div>') });
+/** The report samples, under the given company's header. */
+function testReports(profile: Profile) {
+  const testReport = testReportOf(profile);
+  return [
+    testReport('statement-of-account', 'Statement of Account', printField('Customer', 'Sample Customer') +
+      printLineTable(['Date', 'Document', 'Memo', 'Charge', 'Payment', 'Balance'], [['2026-09-28', 'TEST-000000', 'Sample sale', printMoney(112000), '', printMoney(112000)]]), true),
+    testReport('sizing-profile', 'Sizing Profile', printField('Wearer', 'Sample Wearer') +
+      printLineTable(['Measurement', 'Value', 'Unit'], [['Chest', 36, 'inch']])),
+    testReport('fixed-asset-schedule', 'Fixed Asset Schedule', printField('As of', '2026-09-28') +
+      printLineTable(['Code', 'Asset', 'Cost', 'Book value'], [['FA-SAMPLE', 'Sample sewing machine', printMoney(500000), printMoney(450000)]])),
+    testReport('monthly-owners-pack', "Monthly Owners' Pack", printField('Month', '2026-09') +
+      printLineTable(['Report', 'Made-up figure'], [['Income statement', printMoney(125000)], ['Cash flow statement', printMoney(98000)], ['Customers owing', printMoney(27000)]]) +
+      '<p><b>Noted by:</b> ______________________________ Owner 1</p>'),
+  ];
+}
 
 export function prtRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock, registry, practice } = deps;
@@ -102,14 +107,19 @@ export function prtRoutes(app: FastifyInstance, deps: AppDeps): void {
     const at = stamp(clock);
     return { html: renderReportPrint(title, body, profile, today(clock), user.displayName, at, legend) };
   };
-  app.get('/api/prt/test-pack', { config: { permission: 'prt.test_pack' } }, async () => ({
-    prints: [...TEST_PRINTS.map((item) => ({ id: item.id, label: item.label, paper: item.paper,
-      html: renderPrint(db, testHeader(item.type), item.doc, TEST_PROFILE, item.kind, 'Sample Owner',
-        '2026-09-28T10:00:00+08:00', 1, false, true, 'http://192.168.1.20/') })), { id: 'bir-2307', label: 'BIR Form 2307', paper: 'A4',
-      html: render2307(TEST_PROFILE, 2026, 3, [{ supplierName: 'Sample Supplier Corporation', tin: '111-222-333-000', address: null,
-        lines: [{ atc: 'WC120', months: [{ month: '2026-07', baseCents: 500_000 }, { month: '2026-08', baseCents: 750_000 }, { month: '2026-09', baseCents: 250_000 }], baseCents: 1_500_000, ewtCents: 30_000 }] }], true) }, ...TEST_REPORTS, ...testBookPrints(TEST_PROFILE)],
-    notBuilt: NOT_BUILT,
-  }));
+  // The samples carry the company's saved print details and loose-leaf paper, so the test shows how the real header fits.
+  app.get('/api/prt/test-pack', { config: { permission: 'prt.test_pack' } }, async () => {
+    const profile = (db.prepare('SELECT * FROM prt_company_profile WHERE id = 1').get() as Profile | undefined) ?? TEST_PROFILE;
+    return {
+      prints: [...TEST_PRINTS.map((item) => ({ id: item.id, label: item.label, paper: item.paper,
+        html: renderPrint(db, testHeader(item.type), item.doc, profile, item.kind, 'Sample Owner',
+          '2026-09-28T10:00:00+08:00', 1, false, true, 'http://192.168.1.20/') })), { id: 'bir-2307', label: 'BIR Form 2307', paper: 'A4',
+        html: render2307(profile, 2026, 3, [{ supplierName: 'Sample Supplier Corporation', tin: '111-222-333-000', address: null,
+          lines: [{ atc: 'WC120', months: [{ month: '2026-07', baseCents: 500_000 }, { month: '2026-08', baseCents: 750_000 }, { month: '2026-09', baseCents: 250_000 }], baseCents: 1_500_000, ewtCents: 30_000 }] }], true) }, ...testReports(profile), ...testBookPrints(profile, loosePaper(db))],
+      notBuilt: NOT_BUILT,
+      sampleCompany: profile === TEST_PROFILE,
+    };
+  });
 
   app.get<{ Querystring: { year?: string; quarter?: string; supplierId?: string } }>('/api/prt/2307',
     { config: { permission: 'tax.registers.view' } }, async (req) => {

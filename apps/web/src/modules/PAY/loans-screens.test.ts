@@ -18,7 +18,7 @@ const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: 
 describe('government loan screen rules', () => {
   it('the loan form: plain errors, then the input', () => {
     const blank = { employeeId: '', kind: 'SSS_SALARY' as const, loanNo: 'x', amortization: '', firstMonth: '2026-10', lastMonth: '2026-09', note: '' };
-    expect(loanInput(blank).errors).toEqual(['Pick the employee.', 'Type the loan number from the agency (letters, digits and dashes).', 'Type the monthly amortization, like 1500.00.', 'The last month cannot be before the first month.']);
+    expect(loanInput(blank).errors).toEqual(['Pick the employee.', 'Type the loan number from the agency (letters, digits and dashes).', 'Type the monthly deduction, like 1500.00.', 'The last month cannot be before the first month.']);
     expect(loanInput({ ...blank, employeeId: 'e1', loanNo: ' 0301-555-01 ', amortization: '1,500', lastMonth: '2027-09', note: ' From the statement ' })).toEqual({
       input: { employeeId: 'e1', kind: 'SSS_SALARY', loanNo: '0301-555-01', amortizationCents: 150_000, firstMonth: '2026-10', lastMonth: '2027-09', note: 'From the statement' }, errors: [],
     });
@@ -34,7 +34,7 @@ describe('government loan screen rules', () => {
       sssEeCents: 25_000, phicEeCents: 0, hdmfEeCents: 1_200, wtaxCents: 0, caCents: 50_000,
       loans: [{ loanId: 'l1', agency: 'SSS', kind: 'SSS_SALARY', loanNo: '0301-555-01', dueCents: 150_000, amountCents: 150_000, overrideCents: null, balanceAfterCents: 1_650_000 }],
     } as PayEmployee;
-    expect(deductionsOf(e)).toEqual([['SSS', 25_000], ['Pag-IBIG', 1_200], ['SSS salary loan 0301-555-01', 150_000], ['Cash advance', 50_000]]);
+    expect(deductionsOf(e)).toEqual([['SSS employee share', 25_000], ['Pag-IBIG employee share', 1_200], ['SSS salary loan 0301-555-01', 150_000], ['Cash advance', 50_000]]);
     expect(loansLeft(e)).toEqual([['SSS salary loan 0301-555-01', 1_650_000]]);
   });
 

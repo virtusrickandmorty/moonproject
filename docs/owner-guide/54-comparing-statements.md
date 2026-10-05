@@ -8,6 +8,7 @@
 1. On the **Reports** menu, click **Income statement** or **Balance sheet**.
 2. If you chose the income statement, check the **From** and **To** dates (it opens on 1 January to today). You can also click **This month**, **This quarter** or **Year to date**. If you chose the balance sheet, check the **As of** date (it opens on today).
 3. Under **Compare with**, pick **Previous month** or **Same period last year**. (**None** shows the statement on its own.)
+   ![The income statement compared with the previous month](img/54-income-statement-compared.png)
 4. Click **Show** (the quick buttons on the income statement show straight away).
 
 ### What the system does for you
@@ -19,7 +20,7 @@ It also adds two more columns:
 
 If the amount in the earlier period was zero, the **Difference %** is left blank, because you cannot work out a percentage change from nothing. Amounts in brackets are negative.
 
-You can click **Export CSV** to download a copy of the numbers to open in Excel, or click **Print** to get a paper copy.
+You can click **Export CSV** to download a copy of the numbers to open in Excel, or click **Print this page** to get a paper copy.
 
 ### Common mistakes and how to fix them
 - **Mistake:** You picked a comparison under **Compare with** but the screen still shows one column.

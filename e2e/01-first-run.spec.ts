@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { MENU_FOLDS_KEY } from '../apps/web/src/shell/menu';
 import { OWNER, signIn, signOut } from './shop';
 
 test('first run: the first owner is set up, signs out and signs in again', async ({ page }) => {
@@ -49,6 +50,14 @@ test('first run: the owner adds a staff user with a role, who signs in and chang
   await expect(menu).toBeVisible();
   // An encoder has no Users or Roles screens, and can open the screens of the role.
   await expect(page.getByRole('link', { name: 'Users', exact: true })).toBeHidden();
+  await expect(page.getByRole('link', { name: 'Customers', exact: true })).toBeVisible();
+  // An encoder's menu is long, so it folds once the browser remembers nothing (the specs start with every group open,
+  // menu-open.ts): the group of the screen open shows, and a heading opens its group.
+  await page.evaluate((key) => localStorage.removeItem(key), MENU_FOLDS_KEY);
+  await page.reload();
+  await expect(menu).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Customers', exact: true })).toBeHidden();
+  await page.getByRole('navigation').getByRole('button', { name: 'Sales', exact: true }).click();
   await expect(page.getByRole('link', { name: 'Customers', exact: true })).toBeVisible();
 
   // The temporary password no longer works; the new one does.

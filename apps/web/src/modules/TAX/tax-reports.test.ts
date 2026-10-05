@@ -91,10 +91,10 @@ describe('tax report screen rules', () => {
   it('the menu shows each screen under Accounting & Tax only with the permission its route checks', () => {
     const tax = (permissions: string[]) => buildMenu([], new Set(permissions)).find((g) => g.group === 'Accounting & Tax')?.items.map((i) => `${i.label} ${i.path}`);
     expect(tax(['tax.registers.view', 'tax.calendar.view'])).toEqual([
-      'Sales register /tax/sales', '2307s received /tax/2307-received', 'Purchases register /tax/purchases', 'EWT register /tax/ewt',
+      'Sales register /tax/sales', '2307s received /tax/2307-received', 'Purchases register /tax/purchases', 'Tax withheld from suppliers (EWT register) /tax/ewt',
       '2307s to issue /tax/2307-to-issue', 'VAT this quarter /tax/vat', '2550Q worksheet /tax/2550q',
       'SLSP: sales /tax/slsp-sales', 'SLSP: purchases /tax/slsp-purchases', 'SAWT /tax/sawt', '0619-E (monthly EWT) /tax/0619e', '1601-EQ (quarterly EWT) /tax/1601eq',
-      '1702Q worksheet /tax/1702q', '1702-RT worksheet (annual) /tax/1702rt', '1604-E (annual EWT) /tax/1604e', 'Tax calendar /tax/calendar', 'Settings /acc/settings',
+      '1702Q worksheet /tax/1702q', '1702-RT worksheet (annual) /tax/1702rt', '1604-E (annual EWT) /tax/1604e', 'Tax calendar /tax/calendar', 'Filed returns /tax/filed-returns', 'Settings /acc/settings',
     ]);
     expect(tax(['tax.calendar.view', 'tax.booklets.view'])).toEqual(['Tax calendar /tax/calendar', 'Booklets /tax/booklets', 'Settings /acc/settings']);
     expect(tax([])).toEqual(['Settings /acc/settings']);

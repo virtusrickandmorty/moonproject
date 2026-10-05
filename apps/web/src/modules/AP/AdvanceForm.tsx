@@ -58,7 +58,7 @@ export function AdvanceForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
         <Field label="Advance" required hint="The whole advance agreed with the supplier, before any EWT">
           <input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={amount} onChange={(e) => (setAmount(e.target.value), setCashCents(undefined))} />
         </Field>
-        <Field label="Withholding tax (EWT)" hint={mayChangeEwt ? 'EWT is due when the income is paid or billed, whichever comes first.' : 'Only the accountant changes the EWT from the supplier’s usual class.'}>
+        <Field label="Tax withheld from supplier (EWT)" hint={mayChangeEwt ? 'EWT is due when the income is paid or billed, whichever comes first.' : 'Only the accountant changes the EWT from the supplier’s usual class.'}>
           <select className={inputClass} value={ewt} disabled={!mayChangeEwt} onChange={(e) => (setEwt(e.target.value), setCashCents(undefined))}>
             {ewtChoices(usual, rates).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
           </select>

@@ -8,10 +8,11 @@
 
 **To add or change a supplier:**
 1. On the **Purchases & Expenses** menu, click **Suppliers**.
+   ![The list of suppliers](img/30-suppliers.png)
 2. Click **+ New supplier** to add one, or click a supplier's name to see their **Details**.
 3. Type their **Name (as staff call it)** and **Registered name**.
 4. Type their **TIN** and check the **VAT-registered** box if they are.
-5. Pick their **Usual withholding tax (EWT)** if you need to withhold tax from them.
+5. Pick their **Usual tax withheld from supplier (EWT)** if you need to withhold tax from them.
 6. Type their **Payment terms (days)** to know when their bills are due.
 7. Click **Add supplier** or **Save changes**.
 
@@ -28,6 +29,7 @@
 **To make a purchase order:**
 1. On the **Purchases & Expenses** menu, click **Purchase Orders**.
 2. Click **+ New Purchase Order**.
+   ![The new purchase order form](img/30-new-purchase-order.png)
 3. Under **Who are we ordering from?**, pick the supplier and an **Expected date**.
 4. Under **What are we ordering?**, pick the supply, and type the **Quantity** and the **Cost of one unit**.
 5. Click **Record**. Check what the app shows, then click **Record** again.

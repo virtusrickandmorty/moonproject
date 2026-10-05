@@ -19,20 +19,21 @@ export function StatExposure() {
   return (
     <div className="max-w-5xl space-y-4">
       <div className="flex items-center gap-3 print:hidden">
-        <h1 className="text-2xl font-semibold">Statutory exposure</h1>
+        <h1 className="text-2xl font-semibold">Missing past government contributions</h1>
         <Button tone="primary" onClick={() => window.print()}>Print</Button>
         <Link to="/stat" className="underline">Government remittances</Link>
       </div>
       <p className="text-sm text-slate-600">
-        {r.from && r.to ? `Months ${r.from} to ${r.to}, as of ${r.asOf}.` : `As of ${r.asOf}.`} Employees who were paid in a month with no SSS, PhilHealth or Pag-IBIG contribution recorded. Nothing here is recorded or posted.
+        {r.from && r.to ? `Months ${r.from} to ${r.to}, as of ${r.asOf}.` : `As of ${r.asOf}.`} Government contributions that may be missing for past months: employees were paid but no SSS, PhilHealth or Pag-IBIG contribution was recorded. Ask the accountant to check these months and decide what needs paying. Nothing here is recorded or posted.
       </p>
-      {r.notes.map((n) => <Notice key={n} tone="info">{n}</Notice>)}
+      {!r.cutoverDate && <Notice tone="info">Set the cut-over date first so the accountant can check past months.</Notice>}
+      <details className="text-sm text-slate-600"><summary className="cursor-pointer">Calculation limits and policy notes (statutory exposure)</summary>{r.notes.map((n) => <Notice key={n} tone="info">{n}</Notice>)}</details>
       {r.lines.length === 0 && r.cutoverDate && <p className="text-slate-500">No month since the cut-over date has pay without a contribution.</p>}
       {r.lines.length > 0 && (
         <>
           <Panel title="By scheme">
             <table className="w-full text-sm">
-              <thead className="text-left text-slate-500"><tr><th>Scheme</th><th className="text-right">Employees</th><th className="text-right">Months</th><th className="text-right">Employee shares</th><th className="text-right">Employer shares</th><th className="text-right">Shares in all</th><th className="text-right">Penalty (estimate)</th></tr></thead>
+              <thead className="text-left text-slate-500"><tr><th>Scheme</th><th className="text-right">Employees</th><th className="text-right">Months</th><th className="text-right">Employee shares</th><th className="text-right">Company shares</th><th className="text-right">Shares in all</th><th className="text-right">Penalty (estimate)</th></tr></thead>
               <tbody>
                 {r.totals.map((t) => (
                   <tr key={t.scheme} className="border-t border-slate-100">
@@ -43,11 +44,11 @@ export function StatExposure() {
               </tbody>
               <tfoot><tr className="border-t border-slate-300 font-semibold"><td className="py-1" colSpan={5}>Total</td><td className="text-right tabular-nums">{peso(grand.total)}</td><td className="text-right tabular-nums">{peso(grand.penalty)}</td></tr></tfoot>
             </table>
-            <p className="text-xs text-slate-600">Employer shares include the SSS employees' compensation (EC). Penalty rates a month: {r.rates.map((x) => `${x.label} ${x.monthlyBp === null ? 'not set' : `${x.monthlyBp / 100}%`}`).join(', ')}.</p>
+            <p className="text-xs text-slate-600">Company shares include the SSS employees' compensation (EC). Penalty rates a month: {r.rates.map((x) => `${x.label} ${x.monthlyBp === null ? 'not set' : `${x.monthlyBp / 100}%`}`).join(', ')}.</p>
           </Panel>
           <Panel title="By employee">
             <table className="w-full text-sm">
-              <thead className="text-left text-slate-500"><tr><th>Employee</th><th>Scheme</th><th>Months with pay and no contribution</th><th className="text-right">Employee share</th><th className="text-right">Employer share</th><th className="text-right">Penalty (estimate)</th></tr></thead>
+              <thead className="text-left text-slate-500"><tr><th>Employee</th><th>Scheme</th><th>Months with pay and no contribution</th><th className="text-right">Employee share</th><th className="text-right">Company share</th><th className="text-right">Penalty (estimate)</th></tr></thead>
               <tbody>
                 {r.lines.map((l) => (
                   <tr key={`${l.employeeId}|${l.scheme}`} className="border-t border-slate-100 align-top">

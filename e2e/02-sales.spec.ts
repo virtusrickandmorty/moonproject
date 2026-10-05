@@ -32,7 +32,7 @@ async function fillCollection(page: Page, amount: string, cr: string, jo = 'JO-0
   await expect(page.getByText(/^Recorded as COL-/)).toBeVisible();
 }
 
-test('sales: a customer, a job order with a deposit, a collection, a release with an invoice record; balance due zero and nothing open in AR aging', async ({ page }) => {
+test('sales: a customer, a job order with a deposit, a collection, a release with an invoice record; balance due zero and nothing open in Unpaid customer balances (AR aging)', async ({ page }) => {
   await signIn(page);
 
   // The job order, with the customer added right on the form.
@@ -105,8 +105,8 @@ test('sales: a customer, a job order with a deposit, a collection, a release wit
   await expect(figure(page, 'Invoiced')).toHaveText('₱6,000.00');
   await expect(page.getByRole('link', { name: 'Record invoice' })).toHaveCount(0);
 
-  // AR aging shows nothing open for the customer.
-  await page.getByRole('link', { name: 'AR aging' }).click();
+  // Unpaid customer balances (AR aging) shows nothing open for the customer.
+  await page.getByRole('link', { name: 'Unpaid customer balances (AR aging)' }).click();
   await expect(page.getByRole('cell', { name: 'Total AR' })).toBeVisible();
   await expect(page.getByRole('cell', { name: CUSTOMER })).toHaveCount(0);
 });

@@ -6,9 +6,11 @@
 
 ### Steps
 1. On the **Sales** menu, click **Customers**.
+   ![The Customers list, with the + New customer button](img/01-customers.png)
 2. Click **+ New customer**.
 3. Type the customer's details and click **Save**.
 4. To add people, click the **Wearers** section.
+   ![A customer's page with the Groups and Wearers sections](img/01-wearers.png)
 5. If the wearer belongs to a team or department, you can type it and click **Add** (or pick an existing one).
 6. Type the wearer's name and click **Add wearer**.
 7. To enter their measurements, click their name in the Wearers list.

@@ -7,10 +7,12 @@
 ### Steps
 1. **Check the sales and purchases registers:**
    - On the **Accounting & Tax** menu, click **Sales register** to see all sales with output VAT and the **Total**.
+     ![The sales register](img/29-sales-register.png)
    - Go to the **Purchases register** to see all purchases with input VAT, broken down **By class** (**Amount before VAT**, **Input VAT**, and **Total**).
    - If a purchase shows **Class** as "To classify", the accountant must classify these journal vouchers into capital goods, goods, or services before filing.
 2. **Mark the 2307s received:**
    - On the **Accounting & Tax** menu, click **2307s received**.
+     ![The 2307s received screen](img/29-2307s-received.png)
    - Find the physical 2307 certificate from your customer.
    - Click **Mark received** next to the matching row. The button shows only on rows still open. This opens a "Mark the 2307 received" box.
    - Check the row details carefully. Click its **Mark received** button to confirm. Or click **Back** to cancel. The box says it cannot be undone. Its VAT withheld will be claimed at the next VAT close.

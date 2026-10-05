@@ -20,7 +20,8 @@
     "restore": "tsx apps/server/src/modules/BAK/cli.ts",
     "blind-pack": "tsx tools/blind-pack.ts",
     "compare-blind": "tsx tools/compare-blind.ts",
-    "e2e": "npm run build -w @moonproject/web && playwright test -c e2e/playwright.config.ts"
+    "e2e": "npm run build -w @moonproject/web && playwright test -c e2e/playwright.config.ts",
+    "guide-shots": "npm run build -w @moonproject/web && tsx e2e/guide-shots.ts"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

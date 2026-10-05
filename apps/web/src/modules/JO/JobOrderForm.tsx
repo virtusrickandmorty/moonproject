@@ -8,12 +8,14 @@ import { useEffect, useRef, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, type CatItem, type CustomerWearers, type DocTypeInfo, type Me, type Preview } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
+import { SalesActions, Exception } from './entry.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { CustomerPicker, Errors, Figures, useLive, type Picked } from '../COL/parts.tsx';
 import { KINDS } from '../QS/lines.ts';
 import { jobOrderPrefill, type QuotationDoc } from '../QUO/quotation.ts';
 import { itemClasses } from '../QUO/QuotationView.tsx';
+import { ItemSearch } from './parts.tsx';
 import { TERMS } from './opening.ts';
 import { parseRosterPaste } from './roster.ts';
 import {
@@ -35,37 +37,15 @@ function AddCustomer({ onAdded, onClose }: { onAdded: (c: Picked, lookalike: boo
   return (
     <div className="space-y-2 rounded-md p-2 ring-1 ring-slate-200">
       <div className="grid gap-2 sm:grid-cols-[1fr_12rem_auto_auto]">
-        <input aria-label="New customer's name" placeholder="New customer's name" className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
-        <select aria-label="Kind of customer" className={inputClass} value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
+        <Field label="New customer's name"><input aria-label="New customer's name" placeholder="New customer's name" className={inputClass} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        <Field label="Kind of customer"><select aria-label="Kind of customer" className={inputClass} value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
           <option value="organization">Team, school or company</option>
           <option value="person">Person</option>
-        </select>
+        </select></Field>
         <Button tone="primary" disabled={!name.trim()} onClick={() => void add()}>Add customer</Button>
         <Button onClick={onClose}>Never mind</Button>
       </div>
       {error && <Notice>{error}</Notice>}
-    </div>
-  );
-}
-
-/** Search the price list (2+ letters); picking an item fills the line and asks for its tier price. */
-function ItemSearch({ onPick, n }: { onPick: (item: CatItem) => void; n: number }) {
-  const [q, setQ] = useState('');
-  const [rows, setRows] = useState<CatItem[]>([]);
-  useEffect(() => {
-    if (q.trim().length < 2) return setRows([]);
-    let stale = false;
-    const t = setTimeout(() => api.catItems(q.trim()).then((r) => stale || setRows(r), () => stale || setRows([])), 250);
-    return () => ((stale = true), clearTimeout(t));
-  }, [q]);
-  return (
-    <div className="space-y-1">
-      <input aria-label={`Line ${n} price list item`} placeholder="Search the price list, e.g. jersey" className={inputClass} value={q} onChange={(e) => setQ(e.target.value)} />
-      {rows.map((it) => (
-        <button key={it.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => (onPick(it), setQ(''))}>
-          {it.name} <span className="text-slate-500">{it.code}</span>
-        </button>
-      ))}
     </div>
   );
 }
@@ -88,15 +68,15 @@ function RosterGrid(p: { line: JoLineRow; n: number; people: CustomerWearers | n
   return (
     <div className="space-y-2">
       {rows.length > 0 && (
-        <table className="w-full text-sm">
-          <thead className="text-left text-slate-500"><tr><th>Wearer</th><th className="w-28">Size</th><th>Jersey name</th><th className="w-20">No.</th><th className="w-16">Qty</th><th /></tr></thead>
-          <tbody>
+        <table className="block w-full text-sm lg:table">
+          <thead className="hidden text-left text-slate-500 lg:table-header-group"><tr><th>Wearer</th><th className="w-28">Size</th><th>Jersey name</th><th className="w-20">No.</th><th className="w-16">Qty</th><th /></tr></thead>
+          <tbody className="grid gap-2 lg:table-row-group">
             {rows.map((r, j) => (
-              <tr key={j} className="border-t border-slate-100">
-                <td className="py-1 pr-1">
+              <tr key={j} className="grid gap-2 rounded border p-2 sm:grid-cols-2 lg:table-row lg:border-0 lg:p-0">
+                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Wearer</span>
                   {r.personId ? <span>{r.name}</span> : <input aria-label={`Line ${p.n} wearer ${j + 1} name`} placeholder="One-off name" className={inputClass} value={r.name} onChange={(e) => set(j, { name: e.target.value })} />}
                 </td>
-                <td className="py-1 pr-1">
+                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Size</span>
                   <select aria-label={`Line ${p.n} wearer ${j + 1} size`} className={inputClass} value={r.sizeMode === 'measured' ? MEASURED : r.size}
                     onChange={(e) => set(j, e.target.value === MEASURED ? { sizeMode: 'measured', size: '' } : { sizeMode: 'preset', size: e.target.value })}>
                     <option value="" />
@@ -104,9 +84,9 @@ function RosterGrid(p: { line: JoLineRow; n: number; people: CustomerWearers | n
                     {[...new Set([...p.sizes, ...(r.size ? [r.size] : [])])].map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </td>
-                <td className="py-1 pr-1"><input aria-label={`Line ${p.n} wearer ${j + 1} jersey name`} className={`${inputClass} uppercase`} value={r.jerseyName} onChange={(e) => set(j, { jerseyName: e.target.value })} /></td>
-                <td className="py-1 pr-1"><input aria-label={`Line ${p.n} wearer ${j + 1} jersey number`} className={inputClass} value={r.jerseyNumber} onChange={(e) => set(j, { jerseyNumber: e.target.value })} /></td>
-                <td className="py-1 pr-1"><input aria-label={`Line ${p.n} wearer ${j + 1} qty`} inputMode="numeric" className={money} value={r.qty} onChange={(e) => set(j, { qty: e.target.value })} /></td>
+                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Jersey name</span><input aria-label={`Line ${p.n} wearer ${j + 1} jersey name`} className={`${inputClass} uppercase`} value={r.jerseyName} onChange={(e) => set(j, { jerseyName: e.target.value })} /></td>
+                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">No.</span><input aria-label={`Line ${p.n} wearer ${j + 1} jersey number`} className={inputClass} value={r.jerseyNumber} onChange={(e) => set(j, { jerseyNumber: e.target.value })} /></td>
+                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Qty</span><input aria-label={`Line ${p.n} wearer ${j + 1} qty`} inputMode="numeric" className={money} value={r.qty} onChange={(e) => set(j, { qty: e.target.value })} /></td>
                 <td className="py-1"><Button onClick={() => p.onChange(rows.filter((_, k) => k !== j))} title="Take off the list">✕</Button></td>
               </tr>
             ))}
@@ -134,7 +114,7 @@ function RosterGrid(p: { line: JoLineRow; n: number; people: CustomerWearers | n
       </div>
       {paste !== null && (
         <div className="space-y-2">
-          <textarea aria-label={`Line ${p.n} pasted rows`} rows={4} className={inputClass} placeholder="Name, size, jersey name, jersey number, qty (one person per row)" value={paste} onChange={(e) => setPaste(e.target.value)} />
+          <Field label="Pasted rows"><textarea aria-label={`Line ${p.n} pasted rows`} rows={4} className={inputClass} placeholder="Name, size, jersey name, jersey number, qty (one person per row)" value={paste} onChange={(e) => setPaste(e.target.value)} /></Field>
           {pasteErrors.map((e) => <Notice key={e}>{e}</Notice>)}
           <Button onClick={addPasted}>Add these</Button>
         </div>
@@ -244,7 +224,7 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
 
   if (r.gate) return r.gate;
   return (
-    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && record()} className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && record()} className="space-y-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-0">
       <div className="space-y-4">
         {!inDialog && <h1 className="text-2xl font-semibold">{r.title('New job order')}</h1>}
         {r.top}
@@ -274,13 +254,17 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
                   </button>
                 ))}
               </div>
-              <div className="grid gap-2 sm:grid-cols-[1fr_5rem_8rem_8rem]">
-                <input aria-label={`Line ${i + 1} description`} placeholder="What, e.g. Team jersey set" className={inputClass} value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} />
-                <input aria-label={`Line ${i + 1} pieces`} inputMode="numeric" className={money} value={lineQty(l)} readOnly={l.roster.length > 0}
-                  title={l.roster.length > 0 ? 'Follows the wearers listed below' : undefined} onChange={(e) => setQty(i, e.target.value)} />
-                <input aria-label={`Line ${i + 1} price each`} inputMode="decimal" placeholder="Price each" className={money} value={l.price} onChange={(e) => setLine(i, { price: e.target.value })} />
-                <input aria-label={`Line ${i + 1} discount`} inputMode="decimal" placeholder="Discount" className={money} value={l.discount} onChange={(e) => setLine(i, { discount: e.target.value })} />
+              <div className="grid gap-2 sm:grid-cols-[minmax(12rem,1fr)_6rem]">
+                <Field label="Description"><input aria-label={`Line ${i + 1} description`} placeholder="What, e.g. Team jersey set" className={inputClass} value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} /></Field>
+                <Field label="Pieces"><input aria-label={`Line ${i + 1} pieces`} inputMode="numeric" className={money} value={lineQty(l)} readOnly={l.roster.length > 0}
+                  title={l.roster.length > 0 ? 'Follows the wearers listed below' : undefined} onChange={(e) => setQty(i, e.target.value)} /></Field>
               </div>
+              <Exception title="Change the usual price" active={l.listCents === null || priceChanged(l)}>
+                <div className="max-w-xs"><Field label="Price each"><input aria-label={`Line ${i + 1} price each`} inputMode="decimal" placeholder="Price each" className={money} value={l.price} onChange={(e) => setLine(i, { price: e.target.value })} /></Field></div>
+              </Exception>
+              <Exception title="Add a line discount" active={!!l.discount.trim() && Number(l.discount.replaceAll(',', '')) !== 0}>
+                <div className="max-w-xs"><Field label="Discount"><input aria-label={`Line ${i + 1} discount`} inputMode="decimal" placeholder="Discount" className={money} value={l.discount} onChange={(e) => setLine(i, { discount: e.target.value })} /></Field></div>
+              </Exception>
               {l.listCents !== null && <p className="text-xs text-slate-500">Price list for {lineQty(l)}: {formatPesos(l.listCents)} each{priceChanged(l) ? ' (changed by hand)' : ''}.</p>}
               {noPrice[i] && <p className="text-xs text-amber-700">{noPrice[i]}</p>}
               <details open={l.roster.length > 0}>
@@ -312,21 +296,21 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
           <Field label="Notes"><textarea rows={2} className={inputClass} value={v.notes} onChange={(e) => set({ notes: e.target.value })} /></Field>
         </Panel>
         <Errors list={typed.errors} show={r.touched} />
-        <div className="flex gap-2">
+        <Panel title="So far">
+          <Figures items={[
+            ['Total', doc?.totalCents ?? typed.totalCents, 'text-lg font-semibold'],
+            ...(doc ? [['Downpayment asked', doc.requiredDownpaymentCents] as [string, number], ['Balance due', doc.totalCents, 'font-semibold'] as [string, number, string]] : []),
+          ]} />
+          {!live && <p className="text-sm text-slate-500">Fill in the customer, terms and lines to see the downpayment asked.</p>}
+          {live && <p className="text-sm">{live.summary}</p>}
+          {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
+        </Panel>
+        <SalesActions total={doc?.totalCents ?? typed.totalCents} label="Total">
           <Button tone="primary" disabled={!type.canPost} onClick={record} title="Ctrl+Enter">Record</Button>
           {mode.kind === 'new' && <Button onClick={() => void saveDraft()}>Save draft</Button>}
           {inDialog ? <Button onClick={inDialog.close}>Close</Button> : <Button onClick={() => history.back()}>Back</Button>}
-        </div>
+        </SalesActions>
       </div>
-      <Panel title="So far">
-        <Figures items={[
-          ['Total', doc?.totalCents ?? typed.totalCents, 'text-lg font-semibold'],
-          ...(doc ? [['Downpayment asked', doc.requiredDownpaymentCents] as [string, number], ['Balance due', doc.totalCents, 'font-semibold'] as [string, number, string]] : []),
-        ]} />
-        {!live && <p className="text-sm text-slate-500">Fill in the customer, terms and lines to see the downpayment asked.</p>}
-        {live && <p className="text-sm">{live.summary}</p>}
-        {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
-      </Panel>
       {r.dialog}
     </form>
   );

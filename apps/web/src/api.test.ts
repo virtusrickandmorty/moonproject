@@ -52,6 +52,12 @@ describe('web client with the Fund Transfer', () => {
       ['TRF-000001', 'cancelled', 'The bank refunded the fee', re.id],
     ]);
     expect(await api.list(trf.key, { status: 'posted' })).toEqual([]);
+    const filters = { q: 'TRF-000001', from: view.header.businessDate, to: view.header.businessDate };
+    expect((await api.list(trf.key, { ...filters, limit: 25 })).map((r) => r.number)).toEqual(['TRF-000001']);
+    expect(await api.docCounts(trf.key, filters)).toEqual({ all: 1, posted: 0, cancelled: 1 });
+    expect(await api.docCounts(trf.key, { q: 'BDO' })).toEqual({ all: 2, posted: 0, cancelled: 2 });
+    expect(await api.list(trf.key, { q: 'no such supplier' })).toEqual([]);
+    expect(await api.docCounts(trf.key, { q: 'no such supplier' })).toEqual({ all: 0, posted: 0, cancelled: 0 });
 
     const d = await api.createDraft(trf.key, { values: { amountSentCents: '500' } });
     await api.saveDraft(d.id, d.version, { values: { amountSentCents: '750' } });
@@ -91,4 +97,15 @@ describe('web client with the Fund Transfer', () => {
     expect((await api.me()).mustChangePassword).toBe(false);
     expect(signedOut).toEqual(['AUTH_REQUIRED', 'PASSWORD_CHANGE_REQUIRED']);
   });
+});
+
+it('encodes list search, dates, status and cursor; counts receive only the shared filters', async () => {
+  const urls: URL[] = [];
+  const api = createApi(async (url) => { urls.push(new URL(url, 'http://shop.test')); return new Response('[]'); });
+  const filters = { q: 'Sample & supplier %_\\', from: '2026-09-01', to: '2026-09-30' };
+  await api.list('cash.transfer', { ...filters, status: 'cancelled', before: '2026-09-25T12:00:00+08:00', limit: 25 });
+  await api.docCounts('cash.transfer', filters);
+  expect(Object.fromEntries(urls[0]!.searchParams)).toEqual({ ...filters, status: 'cancelled', before: '2026-09-25T12:00:00+08:00', limit: '25' });
+  expect(urls[1]!.pathname).toBe('/api/docs/cash.transfer/counts');
+  expect(Object.fromEntries(urls[1]!.searchParams)).toEqual(filters);
 });

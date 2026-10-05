@@ -29,13 +29,13 @@ describe('money-out screen rules', () => {
     expect(ewtLabel('rent_5', rates)).toBe('Rent 5%');
     expect(ewtLabel('prof_firm_15', rates)).toBe('Professional fees, firm (higher rate) 15%');
     expect(ewtLabel('goods_1', null)).toBe('Goods (Top Withholding Agent only)');
-    expect([null, 'none'].map((c) => ewtLabel(c, rates))).toEqual(['No EWT', 'No EWT']);
+    expect([null, 'none'].map((c) => ewtLabel(c, rates))).toEqual(['No tax withheld (EWT)', 'No tax withheld (EWT)']);
     expect(ewtRates([{ key: 'tax.ewt_rates_bp', label: '', current: rates, versions: [] }])).toBe(rates);
     expect(ewtRates([])).toBeNull();
     const choices = ewtChoices('contractor_2', rates);
-    expect(choices.slice(0, 3)).toEqual([['', 'Usual: Contractors and printers 2%'], ['none', 'No EWT'], ['rent_5', 'Rent 5%']]);
+    expect(choices.slice(0, 3)).toEqual([['', 'Usual: Contractors and printers 2%'], ['none', 'No tax withheld (EWT)'], ['rent_5', 'Rent 5%']]);
     expect(choices).toHaveLength(10);
-    expect(ewtChoices(null, rates)[0]).toEqual(['', 'Usual: No EWT']);
+    expect(ewtChoices(null, rates)[0]).toEqual(['', 'Usual: No tax withheld (EWT)']);
   });
 
   it('bill lines: a supply, an expense category, subcontracting or freight-in; blank rows are left out', () => {
@@ -106,10 +106,10 @@ describe('money-out screen rules', () => {
 
   it('shows the figures the server worked out, with the EWT class and the rate it used', () => {
     expect(billFigures({ inputVatCents: 120_000, appliedEwtClass: 'goods_1', ewtRateBp: 100, ewtCents: 10_000, payableCents: 1_110_000, dueDate: '2026-10-25' })).toEqual([
-      ['Input VAT', 120_000], ['EWT withheld (Goods (Top Withholding Agent only) 1%)', 10_000], ['Owed to the supplier, due 2026-10-25', 1_110_000],
+      ['Input VAT', 120_000], ['Tax withheld from supplier (EWT) (Goods (Top Withholding Agent only) 1%)', 10_000], ['Owed to the supplier, due 2026-10-25', 1_110_000],
     ]);
-    expect(voucherFigures({ expenseCents: 3_571_429, inputVatCents: 428_571, appliedEwtClass: 'rent_5', ewtRateBp: 1000, ewtCents: 357_143, cashCents: 3_642_857 })[2]).toEqual(['EWT withheld (Rent 10%)', 357_143]);
-    expect(voucherFigures({ expenseCents: 5_000, inputVatCents: 0, appliedEwtClass: null, ewtRateBp: 0, ewtCents: 0, cashCents: 5_000 })[2]).toEqual(['EWT withheld', 0]);
+    expect(voucherFigures({ expenseCents: 3_571_429, inputVatCents: 428_571, appliedEwtClass: 'rent_5', ewtRateBp: 1000, ewtCents: 357_143, cashCents: 3_642_857 })[2]).toEqual(['Tax withheld from supplier (EWT) (Rent 10%)', 357_143]);
+    expect(voucherFigures({ expenseCents: 5_000, inputVatCents: 0, appliedEwtClass: null, ewtRateBp: 0, ewtCents: 0, cashCents: 5_000 })[2]).toEqual(['Tax withheld from supplier (EWT)', 0]);
   });
 
   it('expense voucher: a supplier on file or someone else, the receipt only when typed, and back for an edit', () => {
@@ -181,7 +181,7 @@ describe('money-out web client against server routes', () => {
     const { lines } = billLinesToInput([{ for: `supply:${twill!.id}`, description: 'Printing', amount: '10,000' }]);
     const bill = { supplierId, supplierInvoiceNo: 'SI-0501', supplierInvoiceDate: '2026-09-25', lines };
     const pre = await encoder.preview('ap.bill', bill);
-    expect(billFigures(pre.doc as never)).toEqual([['Input VAT', 0], ['EWT withheld (Contractors and printers 2%)', 20_000], ['Owed to the supplier, due 2026-10-10', 980_000]]);
+    expect(billFigures(pre.doc as never)).toEqual([['Input VAT', 0], ['Tax withheld from supplier (EWT) (Contractors and printers 2%)', 20_000], ['Owed to the supplier, due 2026-10-10', 980_000]]);
     const first = await encoder.post('ap.bill', bill, pre.totalCents, key());
 
     // Its edit keeps the invoice number: the preview still sees the original, the replacement records.
@@ -218,7 +218,7 @@ describe('money-out web client against server routes', () => {
     const voucher = voucherInput(typed, (beforeAnswer.doc as { cashCents: number }).cashCents);
     const vp = await encoder.preview('exp.voucher', voucher.input);
     expect(vp.issues.filter((i) => i.level === 'error')).toEqual([]);
-    expect(voucherFigures(vp.doc as never)).toEqual([['Expense', 3_571_429], ['Input VAT', 428_571], ['EWT withheld (Rent 5%)', 178_571], ['Paid out', 3_821_429]]);
+    expect(voucherFigures(vp.doc as never)).toEqual([['Expense', 3_571_429], ['Input VAT', 428_571], ['Tax withheld from supplier (EWT) (Rent 5%)', 178_571], ['Paid out', 3_821_429]]);
     expect((await encoder.post('exp.voucher', voucher.input, vp.totalCents, key())).number).toBe('EXP-000001');
 
     // Owner money: the encoder records an advance; the company pays part of it back through an officer transaction.

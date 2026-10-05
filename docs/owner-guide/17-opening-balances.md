@@ -6,6 +6,7 @@
 
 ### Steps
 1. On the **Admin** menu, choose **Opening balances**.
+   ![The Opening balances screen with its checks](img/17-opening-balances.png)
 2. Pick the **Cut-over date** and click **Set the cut-over date**. This is the last day your old books cover, usually a month end. The books open on this date, and every opening document is dated that day.
 3. Record your opening balances in this order:
    - First, record your cash and bank balances using **New opening balances**.

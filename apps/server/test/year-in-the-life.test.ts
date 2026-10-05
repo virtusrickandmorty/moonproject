@@ -17,6 +17,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { runInvariants } from '../src/engine/ledger/invariants.ts';
+import { payrollTotalsProblems } from '../src/modules/PAY/public.ts';
+import { registerDifferences } from '../src/modules/TAX/public.ts';
 import { CUTOVER, EMPLOYEES, QUARTER_ENDS, SEWER, returnsGolden, runYear, type ReturnRow, type Year } from '../../../tools/year-scenario.ts';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -227,5 +229,10 @@ describe('year in the life: the app against the goldens', () => {
 
   it('keeps every D9 invariant', () => {
     expect(runInvariants(y.m.env.db).filter((r) => !r.ok)).toEqual([]);
+    // L6 and L10, as the nightly checks run them: each quarter's tax registers against the GL, and every payroll's totals.
+    for (const year of [2026, 2027]) for (const [from, to] of [['01-01', '03-31'], ['04-01', '06-30'], ['07-01', '09-30'], ['10-01', '12-31']]) {
+      expect(registerDifferences(y.m.env.db, `${year}-${from}`, `${year}-${to}`), `${year}-${from}`).toEqual([]);
+    }
+    expect(payrollTotalsProblems(y.m.env.db)).toEqual([]);
   });
 });

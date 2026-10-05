@@ -15,6 +15,7 @@ import { docPath } from '../../shell/menu.ts';
 import { Errors, useLive } from '../COL/parts.tsx';
 import { GROUP_LABEL, emptyManual, endsInDecember, finalPayText, loanLabel, qtyText, runInput, yearEndText, type LoanRow, type ManualRow } from './run.ts';
 import { FinalBadge } from './views.tsx';
+import { PayDetails, PayTotal } from './entry.tsx';
 
 /** The period the run opens on: the newest one not yet recorded that has people in it, else the newest not yet recorded. */
 const firstToPay = (periods: PayPeriod[]) => periods.find((x) => !x.recorded && x.employees > 0) ?? periods.find((x) => !x.recorded);
@@ -29,7 +30,6 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
   const [loanRows, setLoanRows] = useState<Record<string, LoanRow>>({});
   const [yearEnd, setYearEnd] = useState(false);
   const [unusedLeave, setUnusedLeave] = useState(false);
-  const [open, setOpen] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<Preview | null>(null);
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState('');
@@ -93,6 +93,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
   return (
     <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
       <h1 className="text-2xl font-semibold">New payroll run</h1>
+      <PayTotal total={live ? run?.netCents : undefined}>{people.length} employees{!live && run && ' · Updating calculation…'}</PayTotal>
       {error && <Notice>{error}</Notice>}
       <Panel title="Which payroll?">
         <div className="grid gap-3 sm:grid-cols-2">
@@ -133,63 +134,54 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
         )}
       </Panel>
 
-      <Panel title="Pay worked out by the server">
+      <Panel title="Calculated pay">
+        <p className="text-sm text-slate-600">Includes recorded attendance, salary or piece work, paid leave, holiday pay and premiums where applicable, plus the allowances and adjustments below. Open an employee's earnings to see the included items.</p>
         {!run && <p className="text-sm text-slate-500">{periodStart ? 'Working it out…' : 'Pick a period.'}</p>}
-        {run && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="text-left text-slate-500">
-                <tr><th>Employee</th><th className="text-right">Gross</th><th className="text-right">SSS</th><th className="text-right">PhilHealth</th><th className="text-right">Pag-IBIG</th><th className="text-right">Tax</th><th className="text-right">Gov't loans</th><th className="text-right">Cash advance</th><th className="text-right">Net</th><th /></tr>
-              </thead>
-              <tbody>
-                {people.map((e) => [
-                  <tr key={e.employeeId} className="border-t border-slate-100">
-                    <td className="py-1"><button type="button" className="text-left underline" onClick={() => setOpen(open === e.employeeId ? null : e.employeeId)}>{e.name}</button>{e.final && <FinalBadge />}</td>
-                    <td className="text-right tabular-nums">{peso(e.grossCents)}</td>
-                    <td className="text-right tabular-nums">{peso(e.sssEeCents)}</td>
-                    <td className="text-right tabular-nums">{peso(e.phicEeCents)}</td>
-                    <td className="text-right tabular-nums">{peso(e.hdmfEeCents)}</td>
-                    <td className="text-right tabular-nums">{peso(e.wtaxCents)}{e.yearEnd && <span className="block text-xs text-slate-600">{yearEndText(e)}</span>}</td>
-                    <td className="text-right tabular-nums">{peso(e.loanCents ?? 0)}</td>
-                    <td className="text-right">
-                      <input aria-label={`${e.name} cash-advance deduction`} inputMode="decimal" placeholder={(e.caCents / 100).toFixed(2)} className="w-24 rounded border border-slate-300 px-1 text-right"
-                        value={advances[e.employeeId] ?? ''} onChange={(x) => setAdvances({ ...advances, [e.employeeId]: x.target.value })} />
-                    </td>
-                    <td className="text-right font-medium tabular-nums">{peso(e.netCents)}</td>
-                    <td className="pl-2"><Button onClick={() => setSkip({ ...skip, [e.employeeId]: '' })}>Leave out</Button></td>
-                  </tr>,
-                  open === e.employeeId && (
-                    <tr key={`${e.employeeId}-lines`}>
-                      <td colSpan={10} className="bg-slate-50 px-3 py-2 text-xs">
-                        {e.lines.map((l) => <div key={l.lineNo} className="flex justify-between"><span>{l.description} {qtyText(l.kind, l.qty)}</span><span className="tabular-nums">{peso(l.amountCents)}</span></div>)}
-                        {e.lines.length === 0 && 'No earnings in this period.'}
-                        {(e.loans ?? []).map((l) => (
-                          <div key={l.loanId} className="mt-1 flex flex-wrap items-center gap-2">
-                            <span>{loanLabel(l)}: {peso(l.amountCents)}{l.amountCents < l.dueCents ? ` of ${peso(l.dueCents)} (the pay allows no more)` : ''}, {peso(l.balanceAfterCents)} left</span>
-                            <input aria-label={`${loanLabel(l)} deduction`} inputMode="decimal" placeholder="Change (0 skips)" className="w-32 rounded border border-slate-300 px-1 text-right"
-                              value={loanRows[l.loanId]?.amount ?? ''} onChange={(x) => setLoanRows({ ...loanRows, [l.loanId]: { reason: loanRows[l.loanId]?.reason ?? '', amount: x.target.value } })} />
-                            <input aria-label={`${loanLabel(l)} note`} placeholder="Why" className="w-64 rounded border border-slate-300 px-1"
-                              value={loanRows[l.loanId]?.reason ?? ''} onChange={(x) => setLoanRows({ ...loanRows, [l.loanId]: { amount: loanRows[l.loanId]?.amount ?? '', reason: x.target.value } })} />
-                          </div>
-                        ))}
-                        {e.final && <div className="mt-1 font-medium">{finalPayText(e)}. The whole cash advance is deducted as far as the pay allows.</div>}
-                        <div className="mt-1 text-slate-600">Employer shares: SSS {peso(e.sssErCents + e.sssEcCents)}, PhilHealth {peso(e.phicErCents)}, Pag-IBIG {peso(e.hdmfErCents)} · 13th month {peso(e.thirteenthCents)}</div>
-                      </td>
-                    </tr>
-                  ),
-                ])}
-              </tbody>
-              <tfoot><tr className="border-t border-slate-300 font-semibold"><td className="py-1">Total</td><td className="text-right tabular-nums">{peso(run.grossCents)}</td><td colSpan={6} /><td className="text-right tabular-nums">{peso(run.netCents)}</td><td /></tr></tfoot>
-            </table>
-          </div>
-        )}
+        {run && people.map((e) => (
+          <section key={e.employeeId} aria-label={e.name} className="space-y-3 rounded-lg border border-slate-200 p-3">
+            <div className="grid items-center gap-3 sm:grid-cols-[minmax(0,2fr)_1fr_1fr_1fr]">
+              <h3 className="font-medium">{e.name}{e.final && <FinalBadge />}</h3>
+              <div className="text-sm sm:text-right">Gross <b className="block tabular-nums">{peso(e.grossCents)}</b></div>
+              <div className="text-sm sm:text-right">Deductions <b className="block tabular-nums">{peso(e.grossCents - e.netCents + (e.wtaxRefundCents ?? 0))}</b></div>
+              <div className="text-sm sm:text-right">Net pay <b className="block tabular-nums">{peso(e.netCents)}</b></div>
+            </div>
+            {(e.wtaxRefundCents ?? 0) > 0 && <p className="text-sm">Includes tax refund: {peso(e.wtaxRefundCents!)}</p>}
+            <PayDetails title="Earnings included">
+              {e.lines.map((l) => <div key={l.lineNo} className="flex justify-between gap-3 text-sm"><span>{l.description} {qtyText(l.kind, l.qty)}</span><span className="tabular-nums">{peso(l.amountCents)}</span></div>)}
+              {e.lines.length === 0 && <p className="text-sm">No earnings in this period.</p>}
+              <p className="text-xs text-slate-600">Company shares: SSS {peso(e.sssErCents + e.sssEcCents)}, PhilHealth {peso(e.phicErCents)}, Pag-IBIG {peso(e.hdmfErCents)} · 13th month {peso(e.thirteenthCents)}</p>
+            </PayDetails>
+            <PayDetails title="Deductions and changes" active={!!advances[e.employeeId]?.trim() || (e.loans ?? []).some((l) => !!loanRows[l.loanId]?.amount.trim() || !!loanRows[l.loanId]?.reason.trim())}>
+              <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm [&>dd]:text-right [&>dd]:tabular-nums">
+                <dt>SSS employee share</dt><dd>{peso(e.sssEeCents)}</dd><dt>PhilHealth employee share</dt><dd>{peso(e.phicEeCents)}</dd><dt>Pag-IBIG employee share</dt><dd>{peso(e.hdmfEeCents)}</dd>
+                <dt>Tax</dt><dd>{peso(e.wtaxCents)}</dd><dt>Government loans</dt><dd>{peso(e.loanCents ?? 0)}</dd><dt>Cash advance</dt><dd>{peso(e.caCents)}</dd>
+              </dl>
+              {e.yearEnd && <p className="text-sm">Year-end tax: {yearEndText(e)}</p>}
+              <Field label="Cash-advance deduction" hint="Leave blank for the planned deduction; 0 skips it for this run.">
+                <input aria-label={e.name + ' cash-advance deduction'} inputMode="decimal" placeholder={(e.caCents / 100).toFixed(2)} className={inputClass + ' text-right'}
+                  value={advances[e.employeeId] ?? ''} onChange={(x) => setAdvances({ ...advances, [e.employeeId]: x.target.value })} />
+              </Field>
+              {(e.loans ?? []).map((l) => (
+                <div key={l.loanId} className="mt-1 flex flex-wrap items-center gap-2">
+                  <span>{loanLabel(l)}: {peso(l.amountCents)}{l.amountCents < l.dueCents ? ` of ${peso(l.dueCents)} (the pay allows no more)` : ''}, {peso(l.balanceAfterCents)} left</span>
+                  <input aria-label={`${loanLabel(l)} deduction`} inputMode="decimal" placeholder="Change (0 skips)" className="w-32 rounded border border-slate-300 px-1 text-right"
+                    value={loanRows[l.loanId]?.amount ?? ''} onChange={(x) => setLoanRows({ ...loanRows, [l.loanId]: { reason: loanRows[l.loanId]?.reason ?? '', amount: x.target.value } })} />
+                  <input aria-label={`${loanLabel(l)} note`} placeholder="Why" className="w-64 rounded border border-slate-300 px-1"
+                    value={loanRows[l.loanId]?.reason ?? ''} onChange={(x) => setLoanRows({ ...loanRows, [l.loanId]: { amount: loanRows[l.loanId]?.amount ?? '', reason: x.target.value } })} />
+                </div>
+              ))}
+            </PayDetails>
+            {e.final && <p className="text-sm">{finalPayText(e)}. The whole cash advance is deducted as far as the pay allows.</p>}
+            <Button onClick={() => setSkip({ ...skip, [e.employeeId]: '' })}>Leave out</Button>
+          </section>
+        ))}
         {live?.issues.map((i) => <Notice key={i.code + i.message} tone={i.level}>{i.message}</Notice>)}
       </Panel>
 
       {Object.keys(skip).length > 0 && (
         <Panel title="Left out of this run">
           {Object.entries(skip).map(([id, reason]) => (
-            <div key={id} className="flex items-center gap-2">
+            <div key={id} className="flex flex-wrap items-center gap-2">
               <span className="w-48 text-sm">{names[id] ?? 'Employee'}</span>
               <input aria-label="Why left out" placeholder="Why (their piece work stays for a later run)" className={inputClass} value={reason} onChange={(e) => setSkip({ ...skip, [id]: e.target.value })} />
               <Button onClick={() => setSkip(Object.fromEntries(Object.entries(skip).filter(([k]) => k !== id)))}>Put back</Button>
@@ -198,19 +190,33 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
         </Panel>
       )}
 
-      <Panel title="Manual lines (allowance, adjustment)">
-        {rows.map((r, i) => (
-          <div key={i} className="grid gap-2 sm:grid-cols-[1fr_9rem_8rem_2fr_auto]">
-            <select aria-label="Employee" className={inputClass} value={r.employeeId} onChange={(e) => setRow(i, { employeeId: e.target.value })}>
-              <option value="">Employee</option>{Object.entries(names).filter(([id]) => !(id in skip)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-            </select>
-            <select aria-label="Kind" className={inputClass} value={r.kind} onChange={(e) => setRow(i, { kind: e.target.value as ManualRow['kind'] })}><option value="allowance">Allowance</option><option value="adjustment">Adjustment</option></select>
-            <input aria-label="Amount" inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right`} value={r.amount} onChange={(e) => setRow(i, { amount: e.target.value })} />
-            <input aria-label="What for" placeholder="What for" className={inputClass} value={r.reason} onChange={(e) => setRow(i, { reason: e.target.value })} />
-            <Button onClick={() => setRows(rows.filter((_, j) => j !== i))}>Remove</Button>
-          </div>
-        ))}
-        <Button onClick={() => setRows([...rows, emptyManual()])}>+ Add a line</Button>
+      <Panel title="Allowances and adjustments">
+        <PayDetails title="Add allowances or adjustments" active={rows.length > 0}>
+          {rows.map((r, i) => (
+            <div key={i} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-2">
+              <Field label="Employee">
+                <select aria-label="Employee" className={inputClass} value={r.employeeId} onChange={(e) => setRow(i, { employeeId: e.target.value })}>
+                  <option value="">Employee</option>{Object.entries(names).filter(([id]) => !(id in skip)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+                </select>
+              </Field>
+              <Field label="Kind">
+                <select aria-label="Kind" className={inputClass} value={r.kind} onChange={(e) => setRow(i, { kind: e.target.value as ManualRow['kind'] })}><option value="allowance">Allowance</option><option value="adjustment">Adjustment</option></select>
+              </Field>
+              <Field label="Amount">
+                <input aria-label="Amount" inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right`} value={r.amount} onChange={(e) => setRow(i, { amount: e.target.value })} />
+              </Field>
+              <Field label="What for">
+                <input aria-label="What for" placeholder="What for" className={inputClass} value={r.reason} onChange={(e) => setRow(i, { reason: e.target.value })} />
+              </Field>
+              <Button onClick={() => setRows(rows.filter((_, j) => j !== i))}>Remove</Button>
+            </div>
+          ))}
+          <Button onClick={() => setRows([...rows, emptyManual()])}>+ Add a line</Button>
+        </PayDetails>
+      </Panel>
+      <Panel title="Review pay">
+        <p className="text-sm">Allowances and adjustments included: <b className="tabular-nums">{peso((run?.employees ?? []).flatMap((e) => e.lines).filter((l) => l.kind === 'allowance' || l.kind === 'adjustment').reduce((sum, l) => sum + l.amountCents, 0))}</b></p>
+        <p className="text-sm">Gross pay: {run ? peso(run.grossCents) : '—'} · Net pay: {run ? peso(run.netCents) : '—'}{!live && run && ' (previous calculation; updating…)'}</p>
       </Panel>
 
       <Errors list={errors} show={touched} />

@@ -68,7 +68,8 @@ export function UncollectedVatForm({ type, mode }: { type: DocTypeInfo; mode: Fo
     <form onSubmit={(e) => e.preventDefault()} className="max-w-3xl space-y-4">
       <h1 className="text-2xl font-semibold">{r.title('Claim output VAT on an uncollected receivable')}</h1>
       {r.top}
-      {list && !list.enabled && <Notice tone="warning">The claim is off. The accountant turns it on in the settings (ACC-27) after deciding Virtus claims it.</Notice>}
+      {list && !list.enabled && <Notice tone="warning">The claim is off. The accountant turns it on in the settings after deciding Virtus claims it.</Notice>}
+      <details className="text-sm text-slate-600"><summary className="cursor-pointer">Policy note</summary>Go-live decision ACC-27 covers whether Virtus claims output VAT on uncollected receivables.</details>
       <Panel title="Invoices whose agreed time to pay ended in an earlier quarter">
         {list && list.claimable.length === 0 && !invoiceId && <Notice tone="info">No invoice can be claimed: none whose agreed time to pay ended in an earlier quarter still owes.</Notice>}
         {list?.claimable.map((i) => (

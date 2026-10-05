@@ -56,7 +56,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Admin', label: 'Company print details', path: '/prt/company-profile', permission: 'prt.profile.manage' },
   { group: 'Admin', label: 'Printer test pack', path: '/prt/test-pack', permission: 'prt.test_pack' },
   { group: 'People & Payroll', label: 'Government remittances', path: '/stat', permission: 'stat.view' },
-  { group: 'People & Payroll', label: 'Statutory exposure', path: '/stat/exposure', permission: 'stat.view' },
+  { group: 'People & Payroll', label: 'Missing past government contributions', path: '/stat/exposure', permission: 'stat.view' },
   { group: 'People & Payroll', label: 'Cash advances owed', path: '/ca/employees', permission: 'ca.view' },
   { group: 'Purchases & Expenses', label: 'Payables by supplier', path: '/ap/suppliers', permission: 'ap.ledger.view' },
   { group: 'Accounting & Tax', label: 'Month-end checklist', path: '/acc/month-end', permission: 'acc.monthend.view' },
@@ -65,7 +65,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Accounting & Tax', label: 'Sales register', path: '/tax/sales', permission: 'tax.registers.view' },
   { group: 'Accounting & Tax', label: '2307s received', path: '/tax/2307-received', permission: 'tax.registers.view' },
   { group: 'Accounting & Tax', label: 'Purchases register', path: '/tax/purchases', permission: 'tax.registers.view' },
-  { group: 'Accounting & Tax', label: 'EWT register', path: '/tax/ewt', permission: 'tax.registers.view' },
+  { group: 'Accounting & Tax', label: 'Tax withheld from suppliers (EWT register)', path: '/tax/ewt', permission: 'tax.registers.view' },
   { group: 'Accounting & Tax', label: '2307s to issue', path: '/tax/2307-to-issue', permission: 'tax.registers.view' },
   { group: 'Accounting & Tax', label: 'VAT this quarter', path: '/tax/vat', permission: 'tax.registers.view' },
   { group: 'Accounting & Tax', label: '2550Q worksheet', path: '/tax/2550q', permission: 'tax.registers.view' },
@@ -78,6 +78,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Accounting & Tax', label: '1702-RT worksheet (annual)', path: '/tax/1702rt', permission: 'tax.registers.view' },
   { group: 'Accounting & Tax', label: '1604-E (annual EWT)', path: '/tax/1604e', permission: 'tax.registers.view' },
   { group: 'Accounting & Tax', label: 'Tax calendar', path: '/tax/calendar', permission: 'tax.calendar.view' },
+  { group: 'Accounting & Tax', label: 'Filed returns', path: '/tax/filed-returns', permission: 'tax.registers.view' },
   { group: 'Accounting & Tax', label: 'Booklets', path: '/tax/booklets', permission: 'tax.booklets.view' },
   { group: 'Reports', label: 'General journal', path: '/rpt/journal', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'BIR books', path: '/rpt/bir-books', permission: 'rpt.books.view' },
@@ -88,7 +89,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Reports', label: 'Statement of changes in equity', path: '/rpt/changes-in-equity', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Cash flow statement', path: '/rpt/cash-flow', permission: 'rpt.books.view' },
   { group: 'Reports', label: "Monthly owners' pack", path: '/rpt/monthly-owners-pack', permission: 'rpt.books.view' },
-  { group: 'Reports', label: 'AR aging', path: '/rpt/ar-aging', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'Unpaid customer balances (AR aging)', path: '/rpt/ar-aging', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Customer statement', path: '/rpt/customer-statement', permission: 'rpt.books.view' },
   { group: 'Admin', label: 'Users', path: '/admin/users', permission: 'sec.users.manage' },
   { group: 'Admin', label: 'Roles and permissions', path: '/admin/roles', permission: 'sec.users.manage' },
@@ -110,7 +111,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Reports', label: 'Late job orders', path: '/rpt/late-jobs', permission: 'prd.view' },
   { group: 'Reports', label: 'Worker output', path: '/rpt/worker-output', permission: 'prd.view' },
   { group: 'Reports', label: 'Job margin', path: '/rpt/job-margin', permission: 'pay.run.view' },
-  { group: 'Reports', label: 'AP aging', path: '/rpt/ap-aging', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'Unpaid supplier bills (AP aging)', path: '/rpt/ap-aging', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Purchases by supplier/category', path: '/rpt/purchases', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Purchase orders by status', path: '/rpt/purchase-orders', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Received but not billed', path: '/rpt/received-not-billed', permission: 'rpt.books.view' },
@@ -144,10 +145,32 @@ export function pagePermission(path: string): string | undefined {
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);
 
-/** Doc types found under another name than their document title: a quick sale is an Invoice Record (PLAN H1 "quick sale"). Also plurals the rule above gets wrong. */
-const LABELS: Record<string, [one: string, many: string]> = { 'qs.sale': ['Quick Sale', 'Quick Sales'], 'prd.entry': ['Production Entry', 'Production Entries'], 'pay.thirteenth': ['13th-Month Pay', '13th-Month Pay'], 'col.cwt_only': ['2307 Received', '2307s Received'] };
+/**
+ * Doc types found under another name than their document title: a quick sale is an Invoice Record (PLAN H1 "quick sale"),
+ * and so is a downpayment invoice, kept apart from the release invoices' list. Also plurals the rule above gets wrong.
+ */
+const LABELS: Record<string, [one: string, many: string]> = { 'qs.sale': ['Quick Sale', 'Quick Sales'], 'jo.dp_invoice': ['Downpayment Invoice Record', 'Downpayment Invoice Records'], 'prd.entry': ['Production Entry', 'Production Entries'], 'pay.thirteenth': ['13th-Month Pay', '13th-Month Pay'], 'col.cwt_only': ['2307 Received', '2307s Received'] };
 export const labelOf = (d: Pick<DocTypeInfo, 'key' | 'title'>) => LABELS[d.key]?.[0] ?? d.title;
 export const pluralLabelOf = (d: Pick<DocTypeInfo, 'key' | 'title'>) => LABELS[d.key]?.[1] ?? plural(d.title);
+
+/** True when the screen at `path` is the item's screen or one under it (a document of a list, say). */
+export const isHere = (path: string, itemPath: string) => path === itemPath || (itemPath !== '/' && path.startsWith(`${itemPath}/`));
+
+/** A menu with more items than this folds: each group shows its heading only, until opened. */
+export const FOLD_AFTER = 20;
+/** Where the browser keeps the groups a person opened or closed (only a convenience: without it the menu still works). */
+export const MENU_FOLDS_KEY = 'moonproject.menu.groups';
+
+/**
+ * Which groups show their items. A short menu shows them all. A long one (an owner sees every screen) shows the groups
+ * the person opened, and the group of the screen they are on unless they closed it.
+ */
+export function openGroups(menu: { group: MenuGroup; items: MenuItem[] }[], path: string, chosen: Readonly<Record<string, boolean>>): { folds: boolean; open: Set<MenuGroup> } {
+  const all = menu.map((g) => g.group);
+  if (menu.reduce((n, g) => n + g.items.length, 0) <= FOLD_AFTER) return { folds: false, open: new Set(all) };
+  const here = menu.find((g) => g.items.some((i) => isHere(path, i.path)))?.group;
+  return { folds: true, open: new Set(all.filter((g) => chosen[g] ?? g === here)) };
+}
 
 export function buildMenu(docTypes: DocTypeInfo[], permissions: ReadonlySet<string>, screens = SCREENS): { group: MenuGroup; items: MenuItem[] }[] {
   const items: MenuItem[] = [

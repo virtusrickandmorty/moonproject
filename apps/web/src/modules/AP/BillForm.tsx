@@ -127,7 +127,7 @@ export function BillForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode
         {rows.length < 50 && <Button onClick={() => setRows([...rows, emptyBillLine()])}>+ Add a line</Button>}
         <p className="text-sm text-slate-500">VAT is worked out from the invoice total when the supplier is VAT-registered and has a TIN on file.</p>
       </Panel>
-      <Field label="Withholding tax (EWT)" hint={mayChangeEwt ? 'Leave it on the supplier’s usual class unless the accountant decided otherwise.' : 'Only the accountant changes the EWT from the supplier’s usual class.'}>
+      <Field label="Tax withheld from supplier (EWT)" hint={mayChangeEwt ? 'Leave it on the supplier’s usual class unless the accountant decided otherwise.' : 'Only the accountant changes the EWT from the supplier’s usual class.'}>
         <select className={inputClass} value={ewt} disabled={!mayChangeEwt} onChange={(e) => setEwt(e.target.value)}>
           {ewtChoices(usual, rates).map(([v, label]) => <option key={v} value={v}>{label}</option>)}
         </select>

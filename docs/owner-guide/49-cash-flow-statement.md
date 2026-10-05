@@ -6,6 +6,7 @@
 
 ### Steps
 1. On the **Reports** menu, click **Cash flow statement**. This opens the page loaded from the first of this month to today.
+   ![The cash flow statement](img/49-cash-flow-statement.png)
 2. To change the dates, type the **From** and **To** dates.
 3. Click **Show** (it will be off if **From** is after **To**).
 
@@ -16,7 +17,7 @@ It then shows the **Net change in cash** and the **Closing cash**. Finally, it s
 
 When the closing cash agrees with the balance sheet, it will say "Closing cash equals the cash accounts on the balance sheet at [date]."
 
-You can save the statement to your computer by clicking **Export CSV**, or print it by clicking **Print**.
+You can save the statement to your computer by clicking **Export CSV**, or print it by clicking **Print this page**.
 
 ### Common mistakes and how to fix them
 - **Mistake:** The **Check difference** line does not show zero, and there is a warning message.

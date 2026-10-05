@@ -274,6 +274,33 @@ describe('a check the bank returned', () => {
     noBrokenInvariants();
   });
 
+  it('a return waits for a later deposit of its check, also one a later return brought back (property test seed -1407817875)', async () => {
+    const owner = await env.as('owner');
+    const cancelTransfer = (id: string) => owner.post(`/api/docs/cash.transfer/${id}/cancel`, { reason: 'Recorded by mistake' }, idem());
+    const giveBack = async (k: { collectionId: string; lineNo: number }) =>
+      (await accountant.post('/api/col/checks/return', { ...k, reason: 'Drawn against insufficient funds', cancelCollection: false }, idem())).json().transfer as { id: string; number: string };
+    const id = (await collect({ customerId: c.school, applications: [], tenders: [check('6006', 300_000)] }, 300_000)).json().id;
+    const k = { collectionId: id, lineNo: 1 };
+    const first = (await deposit([k])).json().transfer as { id: string; number: string };
+    const back = await giveBack(k);
+    const second = (await deposit([k])).json().transfer as { id: string; number: string };
+    const backAgain = await giveBack(k);
+
+    // The check is on hand again, but its first return still waits for the second deposit, which waits for its own return.
+    let r = await cancelTransfer(back.id);
+    expect([r.statusCode, r.json().code, r.json().message]).toEqual([409, 'HAS_DEPENDENTS', `Cancel these first: ${second.number}.`]);
+    r = await cancelTransfer(second.id);
+    expect([r.statusCode, r.json().code, r.json().message]).toEqual([409, 'HAS_DEPENDENTS', `Cancel these first: ${backAgain.number}.`]);
+    for (const t of [backAgain, second, back, first]) {
+      expect((await cancelTransfer(t.id)).statusCode).toBe(200);
+      const list = await onHand();
+      expect(list.ledgerCents).toBe(list.totalCents);
+      expect(ledger1103()).toBe(list.totalCents);
+    }
+    expect((await onHand()).checks.map((x) => x.checkNumber)).toEqual(['6006']);
+    noBrokenInvariants();
+  });
+
   it('property: whatever is collected, deposited, returned and cancelled, 1103 on the ledger equals the checks-on-hand list', async () => {
     const jos = [await jobOrder(50_000_000), await jobOrder(50_000_000, c.other)];
     const owner = await env.as('owner');
