@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type DocTypeInfo, type EqBalance, type EqDocument, type EqLedger, type EqPersonRecord, type Me } from '../../api.ts';
-import { Notice, Panel, StatusChip, inputClass, peso } from '../../components/ui.tsx';
+import { Notice, Panel, StatusChip, inputClass, peso, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { OFFICER_KIND_WORDS, OWNER_KIND_WORDS, balanceOf, filterPeople, positionWords, recordedTotal, rolesOf } from './register.ts';
@@ -33,8 +33,8 @@ export function People({ me }: { me: Me }) {
   return (
     <div className="max-w-5xl space-y-4">
       <h1 className="text-2xl font-semibold">Owners and officers</h1>
-      <div className="flex flex-wrap items-center gap-3">
-        <input aria-label="Search people" placeholder="Search name or position" className={`${inputClass} max-w-xs`} value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className={searchRowClass}>
+        <input aria-label="Search people" placeholder="Search name or position" className={`${inputClass} ${searchClass}`} value={search} onChange={(e) => setSearch(e.target.value)} />
         <select aria-label="Show" className={`${inputClass} max-w-44`} value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
           <option value="all">Everyone</option><option value="stockholder">Stockholders</option><option value="officer">Officers</option>
         </select>

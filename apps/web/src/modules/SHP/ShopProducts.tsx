@@ -461,8 +461,8 @@ function ProductDialog({ me, product, categories, onClose, onSaved }: { me: Me; 
   const choices = categories.filter((c) => c.isActive || c.id === v.categoryId);
 
   return (
-    <Dialog title={product ? `Edit ${product.name}` : 'New website product'} onClose={onClose}>
-      <div className="grid max-h-[70vh] gap-4 overflow-y-auto pr-1 sm:grid-cols-[9rem_1fr]">
+    <Dialog title={product ? `Edit ${product.name}` : 'New website product'} size="full" onClose={onClose}>
+      <div className="grid max-h-[80vh] gap-6 overflow-y-auto pr-1 sm:grid-cols-[11rem_1fr] lg:grid-cols-[16rem_1fr]">
         <div className="space-y-2">
           <div className="grid aspect-square place-items-center overflow-hidden rounded-lg bg-slate-50 ring-1 ring-slate-200">
             <ProductPicture product={{ name: v.name, shape: v.shape, photoUrl: current?.photoUrl }} colour={v.colours[0]?.hex ?? '#ccc'} className={current?.photoUrl ? '' : 'w-4/5'} />
@@ -474,8 +474,8 @@ function ProductDialog({ me, product, categories, onClose, onSaved }: { me: Me; 
           {current?.photoUrl && <button type="button" onClick={() => void removePhoto()} className="block w-full text-xs text-slate-500 hover:text-red-600">Remove photo</button>}
           {!current && <p className="text-xs text-slate-500">Save first to add a photo. Without one, the drawing is shown.</p>}
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="sm:col-span-2"><Field label="Name" required><input className={inputClass} maxLength={100} value={v.name} onChange={(e) => set('name', e.target.value)} /></Field></div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="sm:col-span-2 lg:col-span-3"><Field label="Name" required><input className={inputClass} maxLength={100} value={v.name} onChange={(e) => set('name', e.target.value)} /></Field></div>
           <Field label="Category" required hint="Add more on the Categories tab.">
             <select className={inputClass} value={v.categoryId} onChange={(e) => set('categoryId', e.target.value)}>
               <option value="">Pick a category</option>{choices.map((c) => <option key={c.id} value={c.id}>{c.name}{c.isActive ? '' : ' (hidden)'}</option>)}
@@ -488,17 +488,17 @@ function ProductDialog({ me, product, categories, onClose, onSaved }: { me: Me; 
             catch { return 'Optional. To put it on sale, type the old price here and the sale price above.'; }
           })()}><input className={inputClass} inputMode="decimal" value={v.regularPrice} onChange={(e) => set('regularPrice', e.target.value)} /></Field>
           <Field label="Badge" hint="Optional, like Best seller or New."><input className={inputClass} maxLength={30} value={v.badge} onChange={(e) => set('badge', e.target.value)} /></Field>
-          <div className="flex items-center gap-4 sm:col-span-2">
+          <div className="flex items-center gap-4 sm:col-span-2 lg:col-span-3">
             {([[false, 'Ready stock (own brand, sold from the shelf)'], [true, 'Made to order (quoted)']] as const).map(([b, l]) => <label key={l} className="flex items-center gap-2 text-sm"><input type="radio" checked={v.madeToOrder === b} onChange={() => set('madeToOrder', b)} /> {l}</label>)}
           </div>
           <Field label="Minimum pieces"><input className={inputClass} inputMode="numeric" value={v.minQty} onChange={(e) => set('minQty', e.target.value)} /></Field>
           <Field label="Usual days to make or ship"><input className={inputClass} inputMode="numeric" value={v.leadDays} onChange={(e) => set('leadDays', e.target.value)} /></Field>
-          <div className="sm:col-span-2"><Field label="Short description" required><textarea className={inputClass} rows={2} maxLength={300} value={v.summary} onChange={(e) => set('summary', e.target.value)} /></Field></div>
-          <div className="sm:col-span-2"><Field label="Selling points" hint="One per line, up to 8."><textarea className={inputClass} rows={3} value={v.features} onChange={(e) => set('features', e.target.value)} /></Field></div>
-          <fieldset className="sm:col-span-2"><legend className="text-sm font-medium">Sizes</legend>
+          <div className="sm:col-span-2 lg:col-span-3"><Field label="Short description" required><textarea className={inputClass} rows={2} maxLength={300} value={v.summary} onChange={(e) => set('summary', e.target.value)} /></Field></div>
+          <div className="sm:col-span-2 lg:col-span-3"><Field label="Selling points" hint="One per line, up to 8."><textarea className={inputClass} rows={3} value={v.features} onChange={(e) => set('features', e.target.value)} /></Field></div>
+          <fieldset className="sm:col-span-2 lg:col-span-3"><legend className="text-sm font-medium">Sizes</legend>
             <div className="mt-1 flex flex-wrap gap-3">{SIZES.map((s) => <label key={s} className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={v.sizes.includes(s)} onChange={() => set('sizes', v.sizes.includes(s) ? v.sizes.filter((x) => x !== s) : [...v.sizes, s])} /> {s}</label>)}</div>
           </fieldset>
-          <fieldset className="space-y-2 sm:col-span-2"><legend className="text-sm font-medium">Colours</legend>
+          <fieldset className="space-y-2 sm:col-span-2 lg:col-span-3"><legend className="text-sm font-medium">Colours</legend>
             {!v.madeToOrder && product && <p className="text-xs text-amber-700">Stock is kept by colour name: renaming a colour starts its stock again from zero.</p>}
             {v.colours.map((c, i) => (
               <div key={i} className="flex items-center gap-2">

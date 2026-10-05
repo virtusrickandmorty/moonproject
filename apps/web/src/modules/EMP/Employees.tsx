@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type EmployeeRow, type Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
 
 export function Employees({ me }: { me: Me }) {
@@ -23,8 +23,8 @@ export function Employees({ me }: { me: Me }) {
         {me.permissions.includes('emp.manage') && !adding && <Button tone="primary" onClick={() => setAdding(true)}>+ New employee</Button>}
       </div>
       {adding && <NewEmployee onClose={() => setAdding(false)} />}
-      <div className="flex flex-wrap items-center gap-3">
-        <input aria-label="Search name or code" placeholder="Search name or code" className={`${inputClass} max-w-xs`} value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className={searchRowClass}>
+        <input aria-label="Search name or code" placeholder="Search name or code" className={`${inputClass} ${searchClass}`} value={search} onChange={(e) => setSearch(e.target.value)} />
         <select aria-label="Status" className={`${inputClass} max-w-40`} value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
           <option value="active">Active</option><option value="separated">Separated</option><option value="all">All</option>
         </select>

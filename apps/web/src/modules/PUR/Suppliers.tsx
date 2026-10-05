@@ -1,7 +1,7 @@
 /** Suppliers (PLAN E9): the list with search and an active or inactive filter; a new supplier opens its own page (pur.supplier.edit). */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type PurStatus, type SupplierRecord } from '../../api.ts';
-import { Button, Notice, inputClass } from '../../components/ui.tsx';
+import { Button, Notice, inputClass, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
 import { EWT_WORDS, filterSuppliers } from './purchasing.ts';
 
@@ -20,8 +20,8 @@ export function Suppliers({ me }: { me: Me }) {
         <h1 className="text-2xl font-semibold">Suppliers</h1>
         {me.permissions.includes('pur.supplier.edit') && <Button tone="primary" onClick={() => navigate('/pur/suppliers/new')}>+ New supplier</Button>}
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <input aria-label="Search suppliers" placeholder="Search name or TIN" className={`${inputClass} max-w-xs`} value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className={searchRowClass}>
+        <input aria-label="Search suppliers" placeholder="Search name or TIN" className={`${inputClass} ${searchClass}`} value={search} onChange={(e) => setSearch(e.target.value)} />
         <select aria-label="Show" className={`${inputClass} max-w-40`} value={status} onChange={(e) => setStatus(e.target.value as PurStatus)}>
           <option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option>
         </select>

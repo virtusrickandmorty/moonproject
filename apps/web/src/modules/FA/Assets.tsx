@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type AssetPage as AssetData, type AssetRow, type AssetStatus, type DepreciationGaps, type DocTypeInfo } from '../../api.ts';
-import { Button, Notice, Panel, StatusChip, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Notice, Panel, StatusChip, inputClass, peso, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { monthLabel } from '../TAX/bir.ts';
@@ -47,8 +47,8 @@ export function Assets({ docTypes }: { docTypes: DocTypeInfo[] }) {
       </div>
       <GapWarning gaps={gaps} />
       <p className="text-sm">On the books: <b>{t.count}</b> asset{t.count === 1 ? '' : 's'} · cost <b className="tabular-nums">{peso(t.costCents)}</b> · accumulated depreciation <b className="tabular-nums">{peso(t.accumulatedCents)}</b> · book value <b className="tabular-nums">{peso(t.bookValueCents)}</b></p>
-      <div className="flex flex-wrap items-center gap-3">
-        <input aria-label="Search assets" placeholder="Search number, description or class" className={`${inputClass} max-w-xs`} value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className={searchRowClass}>
+        <input aria-label="Search assets" placeholder="Search number, description or class" className={`${inputClass} ${searchClass}`} value={search} onChange={(e) => setSearch(e.target.value)} />
         <select aria-label="Status" className={`${inputClass} max-w-48`} value={status} onChange={(e) => setStatus(e.target.value as AssetStatus | 'all')}>
           <option value="all">Every status</option>
           {STATUSES.map((s) => <option key={s} value={s}>{STATUS_WORDS[s]}</option>)}

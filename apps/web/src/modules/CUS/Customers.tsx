@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { openServerPrint, refusedFields, type Me } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Dialog, Field, Notice, Panel, inputClass, peso, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { masterRequest } from './http.ts';
@@ -67,8 +67,8 @@ export function Customers({ me }: { me: Me }) {
     <div className="flex items-center gap-3"><h1 className="flex-1 text-2xl font-semibold">Customers</h1>
       {canManage && <Button tone="primary" onClick={() => { setSaveWarnings([]); setEditing('new'); }}>+ New customer</Button>}</div>
     {error && <Notice>{error}</Notice>}
-    <input aria-label="Search customers" placeholder="Search name or code" className={`${inputClass} max-w-md`} value={search}
-      onChange={(e) => { setSearch(e.target.value); setOffset(0); }} />
+    <div className={searchRowClass}><input aria-label="Search customers" placeholder="Search name or code" className={`${inputClass} ${searchClass}`} value={search}
+      onChange={(e) => { setSearch(e.target.value); setOffset(0); }} /></div>
     <Panel title="Customer list"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left text-slate-500">
       <th className="py-2 pl-2">Code</th><th>Name</th><th>Kind</th><th>Status</th></tr></thead><tbody>{rows.map((r) => (
         // The whole row opens the customer, by mouse or by keyboard (Tab to it, then Enter or Space).

@@ -27,9 +27,9 @@ function Overlay({ title, onClose, side, children }: { title: string; onClose: (
     return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = overflow; open.splice(open.indexOf(id), 1); before?.focus(); };
   }, [id]);
   return (
-    <div className={`fixed inset-0 z-50 flex bg-slate-900/45 backdrop-blur-[2px] ${side ? 'justify-end' : 'items-center justify-center p-4'}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={`fixed inset-0 z-50 flex bg-slate-900/45 backdrop-blur-[2px] ${side ? 'justify-end' : 'items-center justify-center p-3 sm:p-6'}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={id}
-        className={`flex flex-col bg-white shadow-2xl outline-none ${side ? 'h-full w-full max-w-md' : 'max-h-[92vh] w-full max-w-5xl rounded-2xl'}`}>
+        className={`flex flex-col bg-white shadow-2xl outline-none ${side ? 'h-full w-full max-w-md' : 'max-h-[94vh] w-full rounded-2xl'}`}>
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <h2 id={id} className="text-lg font-bold text-slate-900">{title}</h2>
           <button type="button" onClick={onClose} className="grid size-9 place-items-center rounded-full text-xl text-slate-500 hover:bg-slate-100" aria-label="Close">×</button>
@@ -72,7 +72,7 @@ export function QuickView({ product, onClose, onSizeGuide, onAdded }: { product:
   return (
     <Overlay title="Quick view" onClose={onClose}>
       <div className="grid gap-6 p-5 md:grid-cols-[0.9fr_1.1fr] md:p-7">
-        <div className="relative grid aspect-square place-items-center self-start overflow-hidden rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100">
+        <div className="relative mx-auto grid aspect-square max-h-[75vh] w-full place-items-center self-start overflow-hidden rounded-2xl md:sticky md:top-0 bg-gradient-to-br from-slate-50 to-slate-100">
           <ProductPicture product={product} colour={colour.hex} className={product.photoUrl ? '' : 'w-4/5'} />
           <WishButton product={product} className="absolute right-3 top-3" />
         </div>

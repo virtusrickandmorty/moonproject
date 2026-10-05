@@ -1,7 +1,7 @@
 /** The supplies catalogue (PLAN E9): the list with search and status, add, change (If-Match) and deactivate, for pur.supply.edit. */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type PurStatus, type SupplyRecord } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { CATEGORY_WORDS, UNIT_WORDS, emptySupplyForm, filterSupplies, supplyToForm, supplyToInput, type SupplyForm } from './purchasing.ts';
 
@@ -24,8 +24,8 @@ export function Supplies({ me }: { me: Me }) {
         {canEdit && editing !== 'new' && <Button tone="primary" onClick={() => setEditing('new')}>+ New supply</Button>}
       </div>
       {editing && <SupplyEditor key={editing === 'new' ? 'new' : `${editing.id}:${editing.version}`} row={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={() => (setEditing(null), load())} />}
-      <div className="flex flex-wrap items-center gap-3">
-        <input aria-label="Search supplies" placeholder="Search supplies" className={`${inputClass} max-w-xs`} value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className={searchRowClass}>
+        <input aria-label="Search supplies" placeholder="Search supplies" className={`${inputClass} ${searchClass}`} value={search} onChange={(e) => setSearch(e.target.value)} />
         <select aria-label="Show" className={`${inputClass} max-w-40`} value={status} onChange={(e) => setStatus(e.target.value as PurStatus)}>
           <option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option>
         </select>

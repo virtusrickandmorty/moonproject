@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type PrdStep, type RateTable } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { cents } from '../COL/money.ts';
 
 export function PieceRates({ me }: { me: Me }) {
@@ -26,8 +26,8 @@ export function PieceRates({ me }: { me: Me }) {
   return (
     <div className="max-w-4xl space-y-4">
       <h1 className="text-2xl font-semibold">Piece rates</h1>
-      <div className="flex flex-wrap items-center gap-3">
-        <input aria-label="Search garment type" placeholder="Search garment type" className={`${inputClass} max-w-xs`} value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className={searchRowClass}>
+        <input aria-label="Search garment type" placeholder="Search garment type" className={`${inputClass} ${searchClass}`} value={search} onChange={(e) => setSearch(e.target.value)} />
         <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={history} onChange={(e) => setHistory(e.target.checked)} /> Show history (rates that start later too)</label>
       </div>
       <Panel title={history ? 'All rates, newest first' : `Rates in force on ${table.asOf}`}>

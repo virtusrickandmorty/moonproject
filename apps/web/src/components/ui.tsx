@@ -56,6 +56,11 @@ export function Pager({ page, onOffset, what = 'rows' }: { page?: PageInfo | und
   );
 }
 
+/** A page's own search box (above its list): half the page width, on the right; the whole width on a phone. */
+export const searchClass = 'w-full md:w-1/2';
+/** The row a page's search box sits in, with any filters beside it: on the right. */
+export const searchRowClass = 'flex flex-wrap items-center justify-end gap-3';
+
 export const inputClass = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition-shadow focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100';
 
 export function Field({ label, required, error, hint, children }: { label: string; required?: boolean; error?: string; hint?: string; children: ReactNode }) {

@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type SizerBoard, type SizerSet } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
+import { Button, Dialog, Field, Notice, Panel, inputClass, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { CustomerPicker, type Picked } from '../COL/parts.tsx';
 import { STATUS_WORDS, dueWords, filterSets, lendInput, returnInput, weekFrom, type ReturnValues } from './sizer.ts';
 
@@ -83,8 +83,8 @@ export function SizerSets({ me }: { me: Me }) {
         </Notice>
       )}
       <p className="text-sm"><b>{count('in shop')}</b> in the shop · <b>{count('lent')}</b> lent out · <b>{count('lost or damaged')}</b> lost or damaged</p>
-      <div className="flex flex-wrap items-center gap-3">
-        <input aria-label="Search sets" placeholder="Search code, garment, size or borrower" className={`${inputClass} max-w-xs`} value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className={searchRowClass}>
+        <input aria-label="Search sets" placeholder="Search code, garment, size or borrower" className={`${inputClass} ${searchClass}`} value={search} onChange={(e) => setSearch(e.target.value)} />
         <select aria-label="Status" className={`${inputClass} max-w-44`} value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
           <option value="all">Every status</option>
           {(Object.keys(STATUS_WORDS) as SizerSet['status'][]).map((s) => <option key={s} value={s}>{STATUS_WORDS[s]}</option>)}
