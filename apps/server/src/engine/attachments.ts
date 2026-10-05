@@ -2,7 +2,8 @@
  * Attachments on documents (PLAN C1, C3): the design mock-ups on a quotation, a job order's pictures, the 2307 received
  * on a collection, an expense's receipt photo, a JV's support. Files live in the attachments folder beside the database,
  * named by their SHA-256, so the same file added twice is stored once; the `attachments` table says which document has
- * which file. Only JPEG, PNG, WebP and PDF up to 10 MB, known by their first bytes, not by their name.
+ * which file. Only JPEG, PNG, WebP and PDF up to 10 MB, checked by their contents, not by their name.
+ * Pictures must be complete and within the pixel limits.
  *
  * An attachment is evidence and never changes a journal, so it can be added to or removed from a posted or cancelled
  * document with the doc type's create permission. Removing keeps the row (who, when, why) and the file. Opening one
@@ -32,13 +33,105 @@ const MAX_IMAGES: Record<string, number> = { 'quo.quotation': 5 };
 export type AttachmentType = 'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf';
 const EXTENSIONS: Record<string, AttachmentType> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf' };
 
-/** The file's type from its first bytes; null for anything else (a renamed .exe, a GIF, a Word file). */
+/** The type from the contents; pictures must have dimensions and their format's complete ending. */
 export function sniffType(b: Uint8Array): AttachmentType | null {
   const at = (i: number, ...bytes: number[]) => bytes.every((x, k) => b[i + k] === x);
   const ascii = (i: number, s: string) => at(i, ...[...s].map((c) => c.charCodeAt(0)));
-  if (at(0, 0xff, 0xd8, 0xff)) return 'image/jpeg';
-  if (at(0, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return 'image/png';
-  if (ascii(0, 'RIFF') && ascii(8, 'WEBP')) return 'image/webp';
+  const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const fits = (w: number, h: number) => w > 0 && h > 0 && w <= 6000 && h <= 6000 && w * h <= 24_000_000;
+  if (at(0, 0xff, 0xd8, 0xff)) {
+    // Walk marker segments and scan data, including progressive JPEGs with several scans.
+    let i = 2, dimensions = false, scan = false;
+    while (i < b.length) {
+      if (b[i++] !== 0xff) return null;
+      while (b[i] === 0xff) i++;
+      const marker = b[i++];
+      if (marker === 0xd9) return dimensions && scan && i === b.length ? 'image/jpeg' : null;
+      if (marker === undefined || marker === 0x00 || marker === 0xd8) return null;
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+      if (i + 2 > b.length) return null;
+      const size = view.getUint16(i);
+      if (size < 2 || i + size > b.length) return null;
+      if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+        if (size < 8 || !fits(view.getUint16(i + 5), view.getUint16(i + 3))) return null;
+        dimensions = true;
+      }
+      i += size;
+      if (marker === 0xda) {
+        if (!dimensions) return null;
+        scan = true;
+        while (i < b.length) {
+          if (b[i] !== 0xff) { i++; continue; }
+          const next = b[i + 1];
+          if (next === 0x00 || (next !== undefined && next >= 0xd0 && next <= 0xd7)) { i += 2; continue; }
+          if (next === 0xff) { i++; continue; }
+          break;
+        }
+      }
+    }
+    return null;
+  }
+  if (at(0, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) {
+    let i = 8, pixels = false;
+    while (i + 12 <= b.length) {
+      const size = view.getUint32(i);
+      const end = i + 12 + size; // length, chunk type, data, CRC
+      if (end > b.length) return null;
+      if (i === 8) {
+        if (size !== 13 || !ascii(i + 4, 'IHDR') || !fits(view.getUint32(i + 8), view.getUint32(i + 12))) return null;
+      } else if (ascii(i + 4, 'IHDR')) return null;
+      if (ascii(i + 4, 'IDAT') && size > 0) pixels = true;
+      if (ascii(i + 4, 'IEND')) return size === 0 && pixels && end === b.length ? 'image/png' : null;
+      i = end;
+    }
+    return null;
+  }
+  if (ascii(0, 'RIFF') && ascii(8, 'WEBP')) {
+    // WebP ends at the RIFF length, with every chunk present (and odd-length padding).
+    if (b.length < 20 || view.getUint32(4, true) + 8 !== b.length) return null;
+    const u24 = (i: number) => b[i]! + b[i + 1]! * 256 + b[i + 2]! * 65536;
+    const imageFits = (i: number, size: number): boolean => {
+      const data = i + 8;
+      if (ascii(i, 'VP8 ')) return size >= 10 && (b[data]! & 1) === 0 && at(data + 3, 0x9d, 0x01, 0x2a)
+        && fits(view.getUint16(data + 6, true) & 0x3fff, view.getUint16(data + 8, true) & 0x3fff);
+      if (ascii(i, 'VP8L')) {
+        if (size < 5 || b[data] !== 0x2f) return false;
+        const bits = view.getUint32(data + 1, true);
+        return (bits >>> 29) === 0 && fits((bits & 0x3fff) + 1, ((bits >>> 14) & 0x3fff) + 1);
+      }
+      return false;
+    };
+    let i = 12, pixels = false;
+    while (i + 8 <= b.length) {
+      const size = view.getUint32(i + 4, true);
+      const end = i + 8 + size;
+      const padded = end + size % 2;
+      if (padded > b.length) return null;
+      if (ascii(i, 'VP8X')) {
+        if (i !== 12 || size !== 10 || !fits(u24(i + 12) + 1, u24(i + 15) + 1)) return null;
+      } else if (ascii(i, 'VP8 ') || ascii(i, 'VP8L')) {
+        if (!imageFits(i, size)) return null;
+        pixels = true;
+      } else if (ascii(i, 'ANMF')) {
+        if (size < 16 || !fits(u24(i + 14) + 1, u24(i + 17) + 1)) return null;
+        let frame = i + 24, framePixels = false;
+        while (frame + 8 <= end) {
+          const frameSize = view.getUint32(frame + 4, true);
+          const frameEnd = frame + 8 + frameSize + frameSize % 2;
+          if (frameEnd > end) return null;
+          if (ascii(frame, 'VP8 ') || ascii(frame, 'VP8L')) {
+            if (!imageFits(frame, frameSize)) return null;
+            framePixels = true;
+          }
+          frame = frameEnd;
+        }
+        if (frame !== end || !framePixels) return null;
+        pixels = true;
+      }
+      i = padded;
+    }
+    return i === b.length && pixels ? 'image/webp' : null;
+  }
   if (ascii(0, '%PDF-')) return 'application/pdf';
   return null;
 }
@@ -112,7 +205,7 @@ function cleanName(raw: unknown): string {
   return name;
 }
 
-const TYPE_WORDS = 'Only JPEG, PNG or WebP pictures and PDF files can be attached';
+const TYPE_WORDS = 'Only complete JPEG, PNG or WebP pictures up to 6000 pixels per side and 24 million pixels, and PDF files, can be attached';
 const removeBody = z.object({ reason: z.string() }).strict();
 
 export function attachmentRoutes(app: FastifyInstance, deps: AppDeps): void {

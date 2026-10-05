@@ -1,6 +1,6 @@
 /**
  * Attachments on documents (engine/attachments.ts): add and list; the same file twice is stored once; only JPEG, PNG,
- * WebP and PDF up to 10 MB, known by their first bytes; opening needs a session (N-13: 401) and the view permission
+ * WebP and PDF up to 10 MB, checked for completeness and dimensions; opening needs a session (N-13: 401) and the view permission
  * (403); removing keeps the row, the file and the audit; posted and cancelled documents both take them, with no journal.
  */
 import { randomBytes } from 'node:crypto';
@@ -8,6 +8,7 @@ import { readFileSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestEnv, idem, type Client, type TestEnv } from './helpers.ts';
+import { smallPng as PNG, smallJpeg as JPEG, smallWebp as WEBP } from './pictures.ts';
 import { attachmentsDir, sniffType } from '../src/engine/attachments.ts';
 import { verifyAuditChain } from '../src/engine/audit.ts';
 import { runInvariants } from '../src/engine/ledger/invariants.ts';
@@ -15,10 +16,7 @@ import { runInvariants } from '../src/engine/ledger/invariants.ts';
 let env: TestEnv;
 let accountant: Client, encoder: Client;
 
-const PNG = (seed = randomBytes(64)) => Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), seed]);
-const JPEG = () => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), randomBytes(64)]);
 const PDF = () => Buffer.concat([Buffer.from('%PDF-1.7\n'), randomBytes(64)]);
-const WEBP = () => Buffer.concat([Buffer.from('RIFF'), Buffer.from([0x40, 0, 0, 0]), Buffer.from('WEBPVP8 '), randomBytes(64)]);
 
 const account = (code: string) => env.db.prepare('SELECT id FROM accounts WHERE code = ?').pluck().get(code) as number;
 const jv = async (memo = 'Accrued rent for the month') => {
@@ -50,7 +48,7 @@ afterEach(async () => {
 });
 
 describe('attachments', () => {
-  it('knows a file by its first bytes', () => {
+  it('recognises complete pictures and PDF files', () => {
     expect([PNG(), JPEG(), PDF(), WEBP()].map(sniffType)).toEqual(['image/png', 'image/jpeg', 'application/pdf', 'image/webp']);
     expect(sniffType(Buffer.from('MZ\x90\x00 this program cannot be run in DOS mode'))).toBeNull();
     expect(sniffType(Buffer.from('GIF89a......'))).toBeNull();
