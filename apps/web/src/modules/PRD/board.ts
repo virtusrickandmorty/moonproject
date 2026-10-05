@@ -82,12 +82,12 @@ export function useBoardRefresh<T>(read: () => Promise<T>) {
   return { data, error, updatedAt, refresh, stale: !!error || (updatedAt === null ? elapsed >= REFRESH_MS * 2 : now - updatedAt >= REFRESH_MS * 2), words: updateWords(updatedAt, updatedAt === null ? elapsed : now, error) };
 }
 
-export interface EntryRow { lineNo: string; employeeId: string; pieces: string; rework: boolean; rate: string; rateReason: string }
+export interface EntryRow { lineNo: string; employeeId: string; pieces: string; rework: boolean; rate: string; rateReason: string; repeatReason?: string }
 export const emptyRow = (lineNo = ''): EntryRow => ({ lineNo, employeeId: '', pieces: '', rework: false, rate: '', rateReason: '' });
 
 /** Typed rows -> entry rows for the server. Blank rows are left out; a typed rate goes with its reason. */
 export function rowsToInput(rows: EntryRow[]) {
-  const out: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string }[] = [];
+  const out: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string }[] = [];
   const errors: string[] = [];
   rows.forEach((r, i) => {
     if (!r.employeeId && !r.pieces.trim()) return;
@@ -100,6 +100,8 @@ export function rowsToInput(rows: EntryRow[]) {
     if (r.rate.trim() && rate === undefined) errors.push(`${at}: type the rate like 45.00`);
     if (r.rework && !r.rate.trim()) errors.push(`${at}: type the rework (pasubra) rate.`);
     if (r.rate.trim() && !r.rateReason.trim()) errors.push(`${at}: say why this rate is typed.`);
+    const repeat = r.rework ? '' : (r.repeatReason ?? '').trim();
+    if (repeat && repeat.length < 5) errors.push(`${at}: say in at least 5 characters why this is a different sheet.`);
     out.push({
       lineNo: Number(r.lineNo),
       employeeId: r.employeeId,
@@ -107,6 +109,7 @@ export function rowsToInput(rows: EntryRow[]) {
       ...(r.rework ? { rework: true as const } : {}),
       ...(rate !== undefined ? { rateCents: rate } : {}),
       ...(r.rate.trim() && r.rateReason.trim() ? { rateReason: r.rateReason.trim() } : {}),
+      ...(repeat ? { repeatReason: repeat } : {}),
     });
   });
   if (out.length === 0 && errors.length === 0) errors.push('Add a worker and the pieces done.');

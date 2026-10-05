@@ -5,6 +5,7 @@
  * and take the holiday statuses; a holiday with nothing typed shows "Holiday off" from the calendar, to change for
  * those who worked. Only changed cells are sent.
  * Days a recorded payroll paid are locked (shown with the run's number) until that payroll is cancelled.
+ * Changing the period with unsaved marks asks first.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type AttendanceGrid, type AttendanceStatus, type Me } from '../../api.ts';
@@ -39,7 +40,12 @@ export function Attendance({ me }: { me: Me }) {
   const holiday = Object.fromEntries(grid.holidays.map((h) => [h.date, h]));
   const names = Object.fromEntries(grid.employees.map((e) => [e.id, e.fullName]));
   const pending = changedCells(grid.days, cells, names);
-  const shift = (dir: 1 | -1) => setRange(halfMonthOf(plusDays(dir === 1 ? grid.to : grid.from, dir)));
+  // Moving to another period reloads the grid: unsaved marks would be lost without a word (audit A11-001).
+  const unsaved = pending.days.length > 0 || pending.errors.length > 0;
+  const shift = (dir: 1 | -1) => {
+    if (unsaved && !window.confirm('Discard the unsaved marks?')) return;
+    setRange(halfMonthOf(plusDays(dir === 1 ? grid.to : grid.from, dir)));
+  };
   const set = (key: string, c: Partial<Cell>) => {
     setDone('');
     setCells({ ...cells, [key]: { status: '', ot: '', night: '', nightOt: '', ...cells[key], ...c } });

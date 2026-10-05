@@ -17,8 +17,8 @@
  */
 import { divRoundHalfAway, formatPeso, type Issue } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
-import { attendanceBetween, employeesInGroup, holidaysBetween, payProfileAt, silOf, type AttendanceDay, type Employee, type Holiday, type PayGroup, type PayProfile } from '../EMP/public.ts';
-import { pieceEarningsByDay, stepById, unpaidAssignments } from '../PRD/public.ts';
+import { attendanceBetween, employeesInGroup, holidaysBetween, payProfileAt, silOf, statutoryOffReason, type AttendanceDay, type Employee, type Holiday, type PayGroup, type PayProfile } from '../EMP/public.ts';
+import { pieceEarningsByDay, repeatedAssignments, stepById, unpaidAssignments } from '../PRD/public.ts';
 import { jobOrderRef } from '../JO/public.ts';
 import { advanceSchedule } from '../CA/public.ts';
 import { KIND_LABEL, govLoan, loanInMonth, loansOf, runsIn, type Agency, type LoanKind } from './loans.ts';
@@ -515,6 +515,17 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
       notes.push({ code: 'MIN_WAGE', level: 'warning', message: `${e.name}: piece pay ${formatPeso(piece)} for ${built.daysWorked} days worked is below the minimum wage (${formatPeso(Math.round(built.daysWorked * smw))}).` });
     }
     if ((end.payType === 'daily' || end.payType === 'mixed') && !attendanceBetween(db, from, to, e.id).length) notes.push({ code: 'NO_ATTENDANCE', level: 'warning', message: `${e.name}: no attendance is typed for these days.` });
+    // Contributions switched off (audit B2-F6) and piece rows typed again as a different sheet (B2-F3): shown, never changed here.
+    const off = ([['sss', 'SSS'], ['phic', 'PhilHealth'], ['hdmf', 'Pag-IBIG']] as const).filter(([k]) => !e.statutory[k]).map(([, label]) => label);
+    if (off.length > 0) {
+      const why = statutoryOffReason(db, e.id);
+      notes.push({ code: 'CONTRIB_OFF', level: 'warning', message: `${e.name}: ${off.length === 1 ? off[0] : `${off.slice(0, -1).join(', ')} and ${off.at(-1)}`} ${off.length === 1 ? 'is' : 'are'} switched off, so nothing is taken or paid for ${off.length === 1 ? 'it' : 'them'}. Reason saved: ${why ? `"${why}"` : 'none'}.` });
+    }
+    const pieceLines = built.lines.filter((l) => l.kind === 'piece' && l.assignmentId);
+    const repeated = new Map(repeatedAssignments(db, pieceLines.map((l) => l.assignmentId!)).map((r) => [r.id, r.reason]));
+    for (const l of pieceLines.filter((x) => repeated.has(x.assignmentId!))) {
+      notes.push({ code: 'REPEAT_PIECES', level: 'warning', message: `${e.name}: ${l.description} matches a sheet already recorded and was kept as a different sheet ("${repeated.get(l.assignmentId!)}"). Check it is not paid twice.` });
+    }
 
     const base13 = built.lines.filter((l) => l.thirteenthBase).reduce((s, l) => s + l.amountCents, 0);
     employees.push({

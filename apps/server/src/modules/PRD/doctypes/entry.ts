@@ -6,11 +6,15 @@
  * - Caps (E7 rules 1–2): the pieces of a step never pass the line quantity; passing what came out of the previous step
  *   needs a reason. Rework is outside both.
  * - Cancel: only while no row is paid; after payroll, a correction row (negative pieces, same rate) goes in the next run.
+ * - Work date (audit B2-F2): the day the pieces were done, today unless typed (up to 31 days back). It picks the rate and
+ *   dates the row for payroll.
+ * - Repeated sheet (audit B2-F3): a work row matching a recorded one (worker, job order, line, step, work date and pieces)
+ *   is refused unless a reason says it is a different sheet. Rework and corrections are never refused.
  * Recording pieces moves an open JO to In production (E7 rule 3).
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { conflict, formatPeso, manilaDate, newId, type Issue } from '@moonproject/shared';
+import { conflict, formatPeso, isBusinessDate, manilaDate, newId, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { jobOrderRef, jobOrdersOf, lineState } from '../../JO/public.ts';
 import { rateAt } from '../../RATE/public.ts';
@@ -19,6 +23,7 @@ import { availableFor, lineRoute, lineSetup, stepById, syncStage, type Complexit
 
 const MAX_PIECES = 10_000;
 const MAX_RATE_CENTS = 1_000_000; // ₱10,000 per piece: a typo guard
+const MAX_DAYS_BACK = 31; // a late sheet, not an old one
 
 const row = z
   .object({
@@ -29,6 +34,7 @@ const row = z
     rateCents: z.number().int().min(0).max(MAX_RATE_CENTS).optional(), // typed per piece: an override, or the rework rate
     rateReason: z.string().trim().min(5).max(200).optional(),
     correctionOf: z.uuid().optional(), // a row already paid, corrected with negative pieces (D6)
+    repeatReason: z.string().trim().min(5).max(200).optional(), // why a row matching a recorded one is a different sheet
   })
   .strict();
 
@@ -36,6 +42,7 @@ export const entryInput = z
   .object({
     jobOrderId: z.uuid(),
     stepId: z.number().int().positive(),
+    workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Type the date as YYYY-MM-DD.').optional(), // default: today
     rows: z.array(row).min(1).max(50),
     overCapReason: z.string().trim().min(10).max(500).optional(),
   })
@@ -53,7 +60,8 @@ export interface Assignment extends z.infer<typeof row> {
   rateSource: RateSource;
   amountCents: number;
 }
-export interface Entry extends Omit<EntryInput, 'rows'> {
+export interface Entry extends Omit<EntryInput, 'rows' | 'workDate'> {
+  workDate: string;
   jobOrderNumber: string;
   customerName: string;
   stepName: string;
@@ -77,6 +85,18 @@ function original(db: Parameters<typeof lineState>[0], id: string): Original | u
 
 const plural = (n: number) => `${n} ${Math.abs(n) === 1 ? 'piece' : 'pieces'}`;
 
+/** Recorded entries with a work row for the same worker, job order, line, step, work date and pieces (B2-F3). */
+function sameSheet(db: Parameters<typeof lineState>[0], jobOrderId: string, stepId: number, workDate: string, r: { lineNo: number; employeeId: string; pieces: number }): string[] {
+  return db
+    .prepare(
+      `SELECT DISTINCT d.number FROM prd_assignments a JOIN documents d ON d.id = a.document_id
+       WHERE d.status = 'posted' AND a.kind = 'work' AND a.job_order_id = ? AND a.line_no = ? AND a.step_id = ? AND a.employee_id = ? AND a.work_date = ? AND a.pieces = ?
+       ORDER BY d.number`,
+    )
+    .pluck()
+    .all(jobOrderId, r.lineNo, stepId, r.employeeId, workDate, r.pieces) as string[];
+}
+
 export const entryDoc: DocTypeDef<EntryInput, Entry> = {
   key: 'prd.entry',
   module: 'PRD',
@@ -89,19 +109,21 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
   compute(input, ctx) {
     const jo = jobOrderRef(ctx.db, input.jobOrderId);
     const step = stepById(ctx.db, input.stepId);
+    const workDate = input.workDate ?? ctx.businessDate;
     const rows = input.rows.map((r, i): Assignment => {
       const was = r.correctionOf ? original(ctx.db, r.correctionOf) : undefined;
       const setup = lineSetup(ctx.db, input.jobOrderId, r.lineNo);
       const garmentType = was?.garmentType ?? setup?.garmentType ?? '';
       const complexity = was?.complexity ?? setup?.complexity ?? 'standard';
       const kind = r.correctionOf ? 'correction' : r.rework ? 'rework' : 'work';
-      const table = kind === 'work' && step ? rateAt(ctx.db, garmentType, step.code, complexity, ctx.businessDate) : undefined;
+      const table = kind === 'work' && step ? rateAt(ctx.db, garmentType, step.code, complexity, isBusinessDate(workDate) ? workDate : ctx.businessDate) : undefined;
       const [rateCents, rateSource]: [number, RateSource] =
         r.rateCents !== undefined ? [r.rateCents, 'typed'] : was ? [was.rateCents, 'original'] : table ? [table.rateCents, 'table'] : [0, 'none'];
       return { ...r, rowNo: i + 1, employeeName: employee(ctx.db, r.employeeId)?.name ?? '?', kind, garmentType, complexity, rateCents, rateSource, amountCents: r.pieces * rateCents };
     });
     return {
       ...input,
+      workDate,
       jobOrderNumber: jo?.number ?? '?',
       customerName: jo?.customerName ?? '?',
       stepName: step?.name ?? '?',
@@ -114,6 +136,10 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
   validate(doc, ctx) {
     const issues: Issue[] = [];
     const add = (level: Issue['level'], field: string, code: string, message: string) => issues.push({ field, code, level, message });
+    const back = (Date.parse(ctx.businessDate) - Date.parse(doc.workDate)) / 86_400_000;
+    if (!isBusinessDate(doc.workDate)) add('error', 'workDate', 'WORK_DATE', `${doc.workDate} is not a date. Type the day the pieces were done.`);
+    else if (back < 0) add('error', 'workDate', 'WORK_DATE', `The work date ${doc.workDate} is after today. Record pieces once they are done.`);
+    else if (back > MAX_DAYS_BACK) add('error', 'workDate', 'WORK_DATE', `The work date ${doc.workDate} is more than ${MAX_DAYS_BACK} days back. Ask the accountant how to pay work that old.`);
     const jo = jobOrderRef(ctx.db, doc.jobOrderId);
     if (!jo) add('error', 'jobOrderId', 'JOB_ORDER', 'Pick a job order.');
     else if (jo.status !== 'posted') add('error', 'jobOrderId', 'JO_CANCELLED', `${jo.number} is cancelled. Record the pieces on the job order that replaced it.`);
@@ -156,6 +182,11 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       if (r.rateSource !== 'typed' && r.rateReason) add('error', `${f}.rateReason`, 'RATE_REASON', `${at}: a reason goes with a typed rate only.`);
       if (r.kind === 'rework' && r.rateSource !== 'typed') add('error', `${f}.rateCents`, 'REWORK_RATE', `${at}: type the rework (pasubra) rate for these pieces.`);
       if (r.kind === 'work' && r.rateSource === 'typed' && !ctx.can('rate.override')) add('error', `${f}.rateCents`, 'RATE_OVERRIDE', `${at}: you cannot type a different piece rate. Leave it to the rate table or ask the owner.`);
+      if (r.kind !== 'work' && r.repeatReason) add('error', `${f}.repeatReason`, 'REPEAT_REASON', `${at}: a repeat reason goes with normal work only. Rework and corrections are never taken for a repeated sheet.`);
+      const repeats = r.kind === 'work' && line && !r.repeatReason ? sameSheet(ctx.db, jo.id, step.id, doc.workDate, r) : [];
+      if (repeats.length > 0) {
+        add('error', `${f}.repeatReason`, 'LIKELY_REPEAT', `${at}: ${repeats.join(', ')} already has ${plural(r.pieces)} of ${step.name} by ${r.employeeName} on line ${r.lineNo} dated ${doc.workDate}. If this is a different sheet, say why; if the pieces were redone, record them as rework.`);
+      }
       const what = `${r.garmentType} (${r.complexity})`;
       if (onRoute && r.kind === 'work' && r.rateSource === 'none' && step.payBasis === 'piece') add('error', `${f}.rateCents`, 'NO_RATE', `${at}: there is no ${step.name} rate for ${what}. Type the rate and a reason.`);
       if (onRoute && r.kind === 'work' && r.rateSource === 'none' && step.payBasis === 'piece_or_daily') add('warning', `${f}.rateCents`, 'NO_RATE', `${at}: there is no ${step.name} rate for ${what}, so these pieces count as progress only (₱0).`);
@@ -185,8 +216,10 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
          rate_cents, rate_source, rate_reason, amount_cents, correction_of_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     for (const r of doc.rows) {
-      ins.run(newId(), h.documentId, r.rowNo, doc.jobOrderId, r.lineNo, doc.stepId, r.employeeId, r.employeeName, h.businessDate, r.kind, r.pieces, r.garmentType, r.complexity,
+      const id = newId();
+      ins.run(id, h.documentId, r.rowNo, doc.jobOrderId, r.lineNo, doc.stepId, r.employeeId, r.employeeName, doc.workDate, r.kind, r.pieces, r.garmentType, r.complexity,
         r.rateCents, r.rateSource, r.rateSource === 'typed' ? r.rateReason! : null, r.amountCents, r.correctionOf ?? null);
+      if (r.repeatReason) db.prepare('INSERT INTO prd_assignment_repeats (assignment_id, reason) VALUES (?, ?)').run(id, r.repeatReason);
     }
     const who = db.prepare('SELECT posted_by AS userId, posted_at AS at FROM documents WHERE id = ?').get(h.documentId) as { userId: string; at: string };
     syncStage(db, doc.jobOrderId, `${h.number}: ${doc.stepName} pieces recorded`, who);
@@ -197,24 +230,28 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       | { jobOrderId: string; stepId: number; overCapReason: string | null }
       | undefined;
     if (!e) throw new Error(`Production entry ${documentId} not found`);
-    const rows = (
+    const stored = (
       db
         .prepare(
           `SELECT row_no AS rowNo, line_no AS lineNo, employee_id AS employeeId, employee_name AS employeeName, kind, pieces, garment_type AS garmentType, complexity,
-             rate_cents AS rateCents, rate_source AS rateSource, rate_reason AS rateReason, amount_cents AS amountCents, correction_of_id AS correctionOf
-           FROM prd_assignments WHERE document_id = ? ORDER BY row_no`,
+             rate_cents AS rateCents, rate_source AS rateSource, rate_reason AS rateReason, amount_cents AS amountCents, correction_of_id AS correctionOf,
+             work_date AS workDate, (SELECT reason FROM prd_assignment_repeats WHERE assignment_id = a.id) AS repeatReason
+           FROM prd_assignments a WHERE document_id = ? ORDER BY row_no`,
         )
-        .all(documentId) as (Omit<Assignment, 'rework' | 'rateReason' | 'correctionOf'> & { rateReason: string | null; correctionOf: string | null })[]
-    ).map(({ rateReason, correctionOf, ...r }): Assignment => ({
+        .all(documentId) as (Omit<Assignment, 'rework' | 'rateReason' | 'correctionOf' | 'repeatReason'> & { rateReason: string | null; correctionOf: string | null; repeatReason: string | null; workDate: string })[]
+    );
+    const rows = stored.map(({ rateReason, correctionOf, repeatReason, workDate: _, ...r }): Assignment => ({
       ...r,
       ...(r.kind === 'rework' ? { rework: true as const } : {}),
       ...(rateReason ? { rateReason } : {}),
       ...(correctionOf ? { correctionOf } : {}),
+      ...(repeatReason ? { repeatReason } : {}),
     }));
     const jo = jobOrderRef(db, e.jobOrderId);
     return {
       jobOrderId: e.jobOrderId,
       stepId: e.stepId,
+      workDate: stored[0]?.workDate ?? '',
       ...(e.overCapReason ? { overCapReason: e.overCapReason } : {}),
       jobOrderNumber: jo?.number ?? '?',
       customerName: jo?.customerName ?? '?',
@@ -229,6 +266,7 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
     return {
       jobOrderId: doc.jobOrderId,
       stepId: doc.stepId,
+      workDate: doc.workDate,
       rows: doc.rows.map((r) => ({
         lineNo: r.lineNo,
         employeeId: r.employeeId,
@@ -237,6 +275,7 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
         ...(r.rateSource === 'typed' ? { rateCents: r.rateCents } : {}),
         ...(r.rateReason ? { rateReason: r.rateReason } : {}),
         ...(r.correctionOf ? { correctionOf: r.correctionOf } : {}),
+        ...(r.repeatReason ? { repeatReason: r.repeatReason } : {}),
       })),
       ...(doc.overCapReason ? { overCapReason: doc.overCapReason } : {}),
     };
@@ -249,10 +288,11 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
     return [];
   },
 
-  summary(doc) {
+  summary(doc, ctx) {
     const who = doc.rows.map((r) => `${r.employeeName} ${r.pieces}${r.kind === 'rework' ? ' rework' : r.kind === 'correction' ? ' (correction)' : ''}${doc.rows.some((x) => x.lineNo !== r.lineNo) ? ` on line ${r.lineNo}` : ''}`);
     const pay = doc.totalCents !== 0 ? ` Piece pay: ${formatPeso(doc.totalCents)}.` : ' Progress only: no piece pay.';
-    return `This will record ${plural(doc.pieces)} of ${doc.stepName} for ${doc.jobOrderNumber} (${doc.customerName}): ${who.join(', ')}.${pay}`;
+    const late = doc.workDate !== ctx.businessDate ? ` done on ${doc.workDate}` : '';
+    return `This will record ${plural(doc.pieces)} of ${doc.stepName}${late} for ${doc.jobOrderNumber} (${doc.customerName}): ${who.join(', ')}.${pay}`;
   },
 
   arbitrary(db) {
