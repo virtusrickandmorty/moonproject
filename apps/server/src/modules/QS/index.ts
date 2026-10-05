@@ -3,6 +3,11 @@ import { dirname, join } from 'node:path';
 import { defineModule } from '../../engine/documents/registry.ts';
 import { saleDoc } from './doctypes/sale.ts';
 import { qsRoutes } from './routes.ts';
+import { provideRecordQuickSale } from './public.ts';
+import { recordQuickSale } from './record.ts';
+
+// Other modules record a counter sale through QS's public contract (SHP: confirmed online orders).
+provideRecordQuickSale(recordQuickSale);
 
 export default defineModule({
   code: 'QS',

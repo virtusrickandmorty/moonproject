@@ -1,4 +1,106 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/manrope';
+
+/*
+ * The look of Star Admin 2 (BootstrapDash, MIT licence), redone in Tailwind: its blue, its grey page, the Manrope font,
+ * rounder cards with a soft shadow. Set here as theme values so every screen follows without changing its classes.
+ */
+@theme {
+  --font-sans: 'Manrope Variable', ui-sans-serif, system-ui, sans-serif;
+
+  /* indigo is the app's accent colour everywhere; it becomes Star Admin's primary #1F3BB3 (600). */
+  --color-indigo-50: #eef1fb;
+  --color-indigo-100: #dde3f7;
+  --color-indigo-200: #bac6ef;
+  --color-indigo-300: #8c9ee2;
+  --color-indigo-400: #5a73d2;
+  --color-indigo-500: #3550c4;
+  --color-indigo-600: #1f3bb3;
+  --color-indigo-700: #1a3197;
+  --color-indigo-800: #16297c;
+  --color-indigo-900: #121f5e;
+  --color-indigo-950: #0c1540;
+
+  --color-page: #f4f5f7;
+  --color-muted: #737f8b;
+
+  --radius-lg: 1rem;
+  --shadow-sm: 0 4px 16px 0 rgb(167 175 183 / 0.28);
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Every ERP screen (main[data-erp], the signed-in shell; never the public website) uses the whole width it is given: a width cap (max-w-*) on a page's outer box is lifted, so a
+   page looks the same with or without rows yet. Tables fill their box unless they say otherwise, and a cap on the table
+   or on any box around it is lifted too. Dialogs keep their size; printouts are left as they are. */
+@media screen {
+  main[data-erp] > [class*='max-w-']:not([role='dialog']) {
+    max-width: none;
+  }
+}
+@layer base {
+  main[data-erp] table {
+    width: 100%;
+  }
+}
+@media screen {
+  main[data-erp] [class*='max-w-']:has(table):not([role='dialog'], [role='dialog'] *),
+  main[data-erp] table[class*='max-w-'] {
+    max-width: none;
+  }
+}
+
+/* On a phone a wide table scrolls sideways inside itself instead of pushing the whole page out (unless a box around it already scrolls). */
+@media screen and (width < 48rem) {
+  main[data-erp] table:not(:is(.overflow-x-auto, .overflow-auto, .overflow-x-scroll) table) {
+    display: block;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+}
+
+/* Pop-up messages (components/Toasts.tsx): slide in, the bar runs down over 5 seconds, pointing at a message holds it. */
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(1rem); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes toast-timer {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+.toast {
+  animation: toast-in 180ms ease-out;
+}
+.toast-timer {
+  animation-name: toast-timer;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+.toast:hover .toast-timer,
+.toast:focus-within .toast-timer {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: none;
+  }
+}
+
+/* The shop's hero banner (shop/Home.tsx): each slide fades up as it comes in. */
+@keyframes hero-in {
+  from { opacity: 0; transform: translateY(0.75rem); }
+  to { opacity: 1; transform: none; }
+}
+.hero-slide {
+  animation: hero-in 500ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-slide {
+    animation: none;
+  }
+}
 
 /*
  * Rules for every screen at once, instead of a class on each of hundreds of buttons and boxes:

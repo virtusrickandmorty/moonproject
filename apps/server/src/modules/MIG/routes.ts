@@ -32,7 +32,7 @@ const manualSchemas = {
   customer: z.object({ customerName: z.string().trim().min(1).optional(), registeredName: z.string().trim().min(1).optional(), legacyId: legacyId.optional() }).strict(),
   measurement: z.object({
     customerLegacyId: legacyId.optional(), groupLegacyId: legacyId.optional(),
-    // A customer already in Moonproject, or a new person-customer; a group of that customer, or a new one; the wearer's name.
+    // A customer already in Virtus, or a new person-customer; a group of that customer, or a new one; the wearer's name.
     customerId: z.uuid().optional(), newCustomer: z.literal(true).optional(), groupId: z.uuid().optional(),
     newGroupName: z.string().trim().min(1).max(200).optional(), wearerName: z.string().trim().min(1).max(200).optional(),
     ...measureOverrides,
@@ -122,7 +122,7 @@ function parseManual(row: MigRow, input: unknown): ManualData {
     result.error.issues.map(i => ({ field: i.path.join('.'), message: i.message })));
   const parsed = result.data as ManualData;
   if (row.row_type === 'measurement') {
-    // A customer assignment must resolve to a staged customer ID in this upload, or to a customer already in Moonproject.
+    // A customer assignment must resolve to a staged customer ID in this upload, or to a customer already in Virtus.
     // Group labels are retained for the future commit, under that customer.
     const customers = ['customerLegacyId', 'customerId', 'newCustomer'].filter(k => parsed[k]);
     if (customers.length > 1) invalid('Choose one customer for the measurements.');

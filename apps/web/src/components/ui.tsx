@@ -1,6 +1,7 @@
-/** Small shared building blocks. Tailwind only; no component library. */
+/** Small shared building blocks. Tailwind only; no component library. Styled after Star Admin 2 (see index.css). */
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type FormEvent, type ReactNode } from 'react';
 import { formatPeso } from '@moonproject/shared';
+import { showToast, textOf } from './Toasts.tsx';
 import { api, type CashPlace, type JournalLine, type PageInfo } from '../api.ts';
 
 export type { PageInfo };
@@ -28,9 +29,9 @@ export function useAction() {
   return { busy, error, run };
 }
 
-const tones = { primary: 'bg-indigo-600 text-white hover:bg-indigo-700', plain: 'bg-white ring-1 ring-slate-300 hover:bg-slate-100', danger: 'bg-red-600 text-white hover:bg-red-700' };
+const tones = { primary: 'bg-indigo-600 text-white shadow-sm hover:bg-indigo-700', plain: 'bg-white text-slate-800 ring-1 ring-slate-300 hover:bg-indigo-50 hover:ring-indigo-200', danger: 'bg-[#f95f53] text-white shadow-sm hover:bg-red-600' };
 export function Button({ tone = 'plain', className = '', ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: keyof typeof tones }) {
-  return <button type="button" className={`rounded-md px-3 py-2 text-sm font-medium disabled:opacity-50 ${tones[tone]} ${className}`} {...rest} />;
+  return <button type="button" className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50 ${tones[tone]} ${className}`} {...rest} />;
 }
 
 /** A display preference for this session only, shared by the paged report callers. */
@@ -55,21 +56,31 @@ export function Pager({ page, onOffset, what = 'rows' }: { page?: PageInfo | und
   );
 }
 
-export const inputClass = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm';
+/** A page's own search box (above its list): half the page width, on the right; the whole width on a phone. */
+export const searchClass = 'w-full md:w-1/2';
+/** The row a page's search box sits in, with any filters beside it: on the right. */
+export const searchRowClass = 'flex flex-wrap items-center justify-end gap-3';
+
+export const inputClass = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition-shadow focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100';
 
 export function Field({ label, required, error, hint, children }: { label: string; required?: boolean; error?: string; hint?: string; children: ReactNode }) {
   return (
     <label className="block space-y-1 text-sm" data-invalid={error ? '' : undefined}>
-      <span className="font-medium">{label}{required && <span className="text-red-600"> *</span>}</span>
+      <span className="font-semibold text-slate-800">{label}{required && <span className="text-red-600"> *</span>}</span>
       {children}
-      {hint && <span className="block text-xs text-slate-500">{hint}</span>}
+      {hint && <span className="block text-xs text-muted">{hint}</span>}
       {error && <span className="block text-red-700">{error}</span>}
     </label>
   );
 }
 
 const noticeTones = { error: 'bg-red-50 text-red-800 ring-red-200', warning: 'bg-amber-50 text-amber-900 ring-amber-200', info: 'bg-sky-50 text-sky-900 ring-sky-200', success: 'bg-emerald-50 text-emerald-900 ring-emerald-200', note: 'bg-slate-50 text-slate-700 ring-slate-200' };
+/** An error or a success also pops up at the top right (Toasts.tsx), once per new message; warnings and notes are page guidance and stay put. */
 export function Notice({ tone = 'error', children }: { tone?: keyof typeof noticeTones; children: ReactNode }) {
+  const words = textOf(children);
+  useEffect(() => {
+    if (tone === 'error' || tone === 'success') showToast(tone, children, { announce: false });
+  }, [tone, words]); // eslint-disable-line react-hooks/exhaustive-deps
   return <div role={tone === 'error' ? 'alert' : 'status'} className={`rounded-md px-3 py-2 text-sm ring-1 ${noticeTones[tone]}`}>{children}</div>;
 }
 
@@ -80,8 +91,8 @@ export function StatusChip({ status }: { status: string }) {
 
 export function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="space-y-2 rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-      <h2 className="font-semibold">{title}</h2>
+    <section className="space-y-3 rounded-lg bg-white p-5 shadow-sm">
+      <h2 className="text-base font-bold text-[#010101]">{title}</h2>
       {children}
     </section>
   );
@@ -119,7 +130,8 @@ export function keepDialogFocus(root: HTMLElement, opener: HTMLElement | null, c
   };
 }
 
-export function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+/** `wide` for a table or a whole record, `size="full"` for a whole form (a New job order over its list); `hideTitle` when the content has its own heading. */
+export function Dialog({ title, onClose, wide, size, hideTitle, children }: { title: string; onClose: () => void; wide?: boolean; size?: 'full'; hideTitle?: boolean; children: ReactNode }) {
   const root = useRef<HTMLDivElement>(null);
   // Capture before React mounts any autoFocus child, and keep it across rerenders.
   const opener = useRef(typeof document === 'undefined' ? null : document.activeElement as HTMLElement | null);
@@ -129,9 +141,12 @@ export function Dialog({ title, onClose, children }: { title: string; onClose: (
     return keepDialogFocus(root.current!, opener.current, () => close.current());
   }, []);
   return (
-    <div className="fixed inset-0 z-20 overflow-y-auto bg-slate-900/40 p-4">
-      <div ref={root} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} className="mx-auto mt-12 max-w-xl space-y-4 rounded-lg bg-white p-5 shadow-xl">
-        <h2 className="text-lg font-semibold">{title}</h2>
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 p-4">
+      <div ref={root} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} className={`relative mx-auto ${size === 'full' ? 'mt-4 max-w-7xl' : wide ? 'mt-12 max-w-5xl' : 'mt-12 max-w-xl'} space-y-4 rounded-lg bg-white p-6 shadow-xl`}>
+        <h2 className={hideTitle ? 'sr-only' : 'pr-10 text-lg font-bold text-[#010101]'}>{title}</h2>
+        {/* Every dialog can be closed with this, as well as with Escape. */}
+        <button type="button" onClick={onClose} aria-label="Close dialog" title="Close"
+          className="absolute right-3 top-3 grid size-9 place-items-center rounded-full text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900">×</button>
         {children}
       </div>
     </div>
@@ -198,7 +213,7 @@ export function JournalTable({ lines }: { lines: JournalLine[] }) {
   const cell = (c: number) => <td className="py-1 text-right tabular-nums">{c ? peso(c) : ''}</td>;
   return (
     <table className="w-full text-sm">
-      <thead className="text-left text-slate-500">
+      <thead className="text-left text-xs font-semibold uppercase tracking-wide text-muted">
         <tr><th>Account</th><th className="text-right">Debit</th><th className="text-right">Credit</th></tr>
       </thead>
       <tbody>

@@ -1,5 +1,5 @@
 /**
- * Property test (PLAN I1.3) for the year-end tax adjustment: random pay, pay before Moonproject, a previous employer,
+ * Property test (PLAN I1.3) for the year-end tax adjustment: random pay, pay before Virtus, a previous employer,
  * 13th-month pay and allowances. After the year-end run: the year's tax withheld equals the annual tax whenever net pay
  * allows (else it is short by exactly the amount warned, and net pay is nil); a refund and a deficiency never go
  * together; what is stored equals what was computed; the 2316's parts add up to the gross; L1–L12.

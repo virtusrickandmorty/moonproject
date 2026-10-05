@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { api, type BoardCard, type DocTypeInfo, type Me, type PrdCatalogue, type StepStatus } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Button, Dialog, Field, Notice, ReasonDialog, inputClass, useAction } from '../../components/ui.tsx';
+import { Button, Dialog, Field, Notice, ReasonDialog, inputClass, useAction, searchClass } from '../../components/ui.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { columns, filterCards, useBoardRefresh, type Due } from './board.ts';
 
@@ -48,8 +48,8 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
       </div>
       <p role="status" className={`text-sm ${stale ? 'font-semibold text-red-800' : 'text-slate-500'}`}>{words} · Refreshes every 30 seconds</p>
       {error && <Notice>{error}</Notice>}
-      <div className="flex flex-wrap items-end gap-3">
-        <Field label="Search job number or customer"><input type="search" className={inputClass} value={search} onChange={(e) => setSearch(e.target.value)} /></Field>
+      <div className="flex flex-wrap items-end justify-end gap-3">
+        <div className={searchClass}><Field label="Search job number or customer"><input type="search" className={inputClass} value={search} onChange={(e) => setSearch(e.target.value)} /></Field></div>
         <Button onClick={() => { setSearch(''); setDue('all'); setRushOnly(false); }}>Reset filters</Button>
       </div>
       {shown.length === 0 && <p className="text-slate-500">{cards.length === 0 ? 'No job order is in production.' : 'No line matches these filters.'}</p>}

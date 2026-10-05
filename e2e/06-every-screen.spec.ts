@@ -50,7 +50,9 @@ async function noHand(page: Page): Promise<string[]> {
 }
 
 async function menuLinks(page: Page): Promise<{ label: string; href: string }[]> {
-  return page.locator('nav a').evaluateAll((as) => as.map((a) => ({ label: (a.textContent ?? '').trim(), href: a.getAttribute('href') ?? '' })));
+  // Menu groups start folded; open each one (the browser remembers, so they stay open while the test clicks through).
+  for (const heading of await page.locator('nav[aria-label="Main menu"] button[aria-expanded="false"]').all()) await heading.click();
+  return page.locator('nav[aria-label="Main menu"] a').evaluateAll((as) => as.map((a) => ({ label: (a.textContent ?? '').trim(), href: a.getAttribute('href') ?? '' })));
 }
 
 async function newForms(page: Page): Promise<{ label: string; href: string }[]> {
@@ -196,8 +198,8 @@ for (const who of ROLES) {
 
     console.log(`${who.role} sees ${links.length} menu items`);
     for (const link of links) {
-      if (!(await page.locator('nav').count())) await page.goto('/'); // the TV board fills the screen without the menu
-      await page.locator(`nav a[href="${link.href}"]`).click();
+      if (!(await page.locator('nav[aria-label="Main menu"]').count())) await page.goto('/'); // the TV board fills the screen without the menu
+      await page.locator(`nav[aria-label="Main menu"] a[href="${link.href}"]`).click();
       note(`${link.label} (${link.href})`, [...(await trouble(page)), ...seen.take()]);
     }
 

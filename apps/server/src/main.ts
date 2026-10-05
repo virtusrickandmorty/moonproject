@@ -50,7 +50,7 @@ const { app, deps } = buildApp({
   db, clock: systemClock, modules, logger: true, ...(practice ? { practiceShop: practice } : {}),
   ...(tls ? { https: { key: tls.server.keyPem, cert: tls.server.certPem } } : {}),
   network: { joinPort: () => joinPort },
-  // After a restore (PLAN C8): exit once no request is running; the Windows service starts Moonproject again, and the
+  // After a restore (PLAN C8): exit once no request is running; the Windows service starts Virtus again, and the
   // start above swaps the restored copy in. Run by hand (development), start it again yourself.
   onRestart: (reason) => {
     app.log.warn(`Restarting to finish the ${reason}`);

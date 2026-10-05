@@ -39,7 +39,8 @@ describe('phone navigation', () => {
   it('overlays the page with a dismissible scrolling drawer and keeps desktop navigation in its column', () => {
     const markup = renderToStaticMarkup(createElement(Navigation, { open: true, onClose: () => undefined, children: createElement('a', { href: '/' }, 'Home') }));
     expect(markup).toContain('fixed inset-y-0 left-0');
-    expect(markup).toContain('md:static md:block md:w-56');
+    expect(markup).toContain('md:block'); // a column on a big screen, beside the page
+    expect(markup).toContain('md:sticky');
     expect(markup).toContain('overflow-y-auto');
     expect(markup).toContain('Close menu backdrop');
     expect(markup).toContain('Close menu');

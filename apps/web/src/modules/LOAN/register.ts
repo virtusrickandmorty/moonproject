@@ -32,5 +32,5 @@ export const STATE_WORDS: Record<InstalmentState, string> = { paid: 'Paid', late
 /** "12" from 1200 basis points. */
 export const ratePercent = (bp: number) => `${bp / 100}%`;
 
-/** The document type a loan's number belongs to: an opening loan (OBLN-) or a loan recorded in Moonproject (LOAN-). */
+/** The document type a loan's number belongs to: an opening loan (OBLN-) or a loan recorded in Virtus (LOAN-). */
 export const loanDocType = (number: string) => (number.startsWith('OBLN-') ? 'loan.opening' : 'loan.loan');

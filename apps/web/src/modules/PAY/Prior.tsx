@@ -1,6 +1,6 @@
 /**
- * Pay before Moonproject (PLAN F3 year-end adjustment, F4 2316), a section of the employee's page for the accountant: per
- * year, what this shop paid and withheld before it used Moonproject, and a previous employer's pay this year (from its
+ * Pay before Virtus (PLAN F3 year-end adjustment, F4 2316), a section of the employee's page for the accountant: per
+ * year, what this shop paid and withheld before it used Virtus, and a previous employer's pay this year (from its
  * 2316). Changes use If-Match; rows are never deleted (a wrong one is changed to zeros). While a recorded year-end
  * adjustment counted the year, the server refuses changes until that payroll is cancelled.
  */
@@ -9,7 +9,7 @@ import { api, type Me, type PriorPay } from '../../api.ts';
 import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
 import { PRIOR_FIELDS, priorAmounts, type PriorForm } from './run.ts';
 
-const SOURCE = { before: 'This shop, before Moonproject', previous: 'Previous employer (from its 2316)' } as const;
+const SOURCE = { before: 'This shop, before Virtus', previous: 'Previous employer (from its 2316)' } as const;
 const blankAmounts = (): PriorForm => ({ gross: '', benefits: '', deMinimis: '', sss: '', phic: '', hdmf: '', otherNontax: '', taxable: '', wtax: '' });
 const asForm = (p: PriorPay): PriorForm => ({
   gross: (p.grossCents / 100).toFixed(2), benefits: (p.benefitsCents / 100).toFixed(2), deMinimis: (p.deMinimisCents / 100).toFixed(2), sss: (p.sssCents / 100).toFixed(2),
@@ -49,7 +49,7 @@ function AddPrior({ employeeId, onSaved }: { employeeId: string; onSaved: () => 
   return (
     <div className="space-y-3 border-t border-slate-100 pt-3">
       <h3 className="text-sm font-semibold">Add pay for a year</h3>
-      <p className="text-sm text-slate-600">From the old payroll (January to the month before Moonproject) or the previous employer's 2316. The parts add up to the gross.</p>
+      <p className="text-sm text-slate-600">From the old payroll (January to the month before Virtus) or the previous employer's 2316. The parts add up to the gross.</p>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Year" required><input inputMode="numeric" placeholder="2026" className={inputClass} value={head.year} onChange={(x) => setHead({ ...head, year: x.target.value })} /></Field>
         <Field label="Paid by" required>
@@ -100,7 +100,7 @@ export function EmployeePriorPay({ me, employeeId }: { me: Me; employeeId: strin
   useEffect(() => void load(), [load]);
   const canManage = me.permissions.includes('pay.prior.manage');
   return (
-    <Panel title="Pay before Moonproject and from previous employers">
+    <Panel title="Pay before Virtus and from previous employers">
       <p className="text-sm text-slate-600">Counted in the year-end tax adjustment and the 2316.</p>
       {error && <Notice>{error}</Notice>}
       {rows && rows.length === 0 && <p className="text-sm text-slate-500">None recorded.</p>}

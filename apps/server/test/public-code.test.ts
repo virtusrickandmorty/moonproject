@@ -80,7 +80,7 @@ describe('backups stay on this PC', () => {
 });
 
 describe('pay amounts stay out of the audit trail (C6, N-05)', () => {
-  it('names the amounts of pay before Moonproject, never their values', async () => {
+  it('names the amounts of pay before Virtus, never their values', async () => {
     const w = await world('2026-12-01');
     const olga = w.person('Olga Opisina', { payType: 'monthly', payGroup: 'SEMI_MONTHLY', monthlyRateCents: 3_000_000 }, { costCentre: 'office' });
     const amounts = { benefitsCents: 0, deMinimisCents: 0, sssCents: 1_650_123, phicCents: 825_456, hdmfCents: 220_789, otherNontaxCents: 0, taxableCents: 30_305_321, wtaxCents: 4_000_654 };

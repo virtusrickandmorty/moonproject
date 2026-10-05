@@ -91,6 +91,10 @@ describe('Users screen', () => {
     expect(newUserInput({ username: 'a', displayName: '', roles: [], temporaryPassword: '' }).errors).toEqual([
       'The username needs 2 to 40 characters.', 'Enter the name to show, up to 80 characters.', 'Give the user at least one role.', 'Enter a temporary password.',
     ]);
+    // The two boxes swapped (the full name typed as the username) and capitals are caught before the user is made.
+    expect(newUserInput({ username: 'Juan Dela Cruz', displayName: 'juan', roles: ['encoder'], temporaryPassword: 'x' }).errors)
+      .toEqual(['A username is one word with no spaces, like "juan". Is "Juan Dela Cruz" the name to show? Put it in "Name to show".']);
+    expect(newUserInput({ username: 'Juan', displayName: 'Juan', roles: ['encoder'], temporaryPassword: 'x' }).errors[0]).toMatch(/no capitals/);
     expect(newUserInput({ username: ' maria ', displayName: ' Maria Sample ', roles: ['encoder', 'accountant'], temporaryPassword: 'three little pigs walked' }).body).toEqual({
       username: 'maria', displayName: 'Maria Sample', roles: ['encoder', 'accountant'], temporaryPassword: 'three little pigs walked',
     });

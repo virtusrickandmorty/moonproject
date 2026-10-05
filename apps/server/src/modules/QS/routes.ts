@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { AppError, conflict, formatPeso, type Issue } from '@moonproject/shared';
+import { AppError, conflict } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import type { Db } from '../../platform/db/driver.ts';
 import { tx } from '../../platform/db/driver.ts';
@@ -8,37 +8,17 @@ import { stamp } from '../../platform/clock.ts';
 import { cancelDocument, engineEnv, postDocument, previewDocument, reissueDocument, type Actor, type EngineEnv, type PreviewResult } from '../../engine/documents/lifecycle.ts';
 import { findIdempotent, requestHash, storeIdempotent } from '../../engine/idempotency.ts';
 import { currentUser } from '../../engine/security/routes.ts';
-import { collectionDoc, collectionInput, salePayments, type CollectionInput } from '../COL/public.ts';
+import { collectionDoc, salePayments } from '../COL/public.ts';
 import { saleDoc, type Sale } from './doctypes/sale.ts';
+import { collectionFor, counterPayment, receivedIssue, recordCounterSale, type CounterPayment as Payment } from './record.ts';
 
-/** How the counter was paid: the collection without its customer and applications, which come from the sale. */
-const payment = collectionInput.pick({ crNumber: true, tenders: true, withholding: true, note: true }).strict();
-type Payment = z.infer<typeof payment>;
+const payment = counterPayment();
 const previewBody = z.object({ sale: z.unknown(), payment }).strict();
 const postBody = previewBody.extend({ expectedTotalCents: z.number().int() }).strict();
 const cancelBody = z.object({ reason: z.string() }).strict();
 const reissueBody = postBody.extend({ reason: z.string() }).strict();
 
 const actorOf = (req: FastifyRequest): Actor => ({ userId: currentUser(req).userId, permissions: currentUser(req).permissions });
-
-/** The collection that pays a quick sale at the counter: all of it, to this sale only (QS-SALE). */
-const collectionFor = (sale: { id: string; customerId: string; totalCents: number }, p: Payment): CollectionInput => ({
-  customerId: sale.customerId,
-  crNumber: p.crNumber,
-  applications: [],
-  sales: [{ saleId: sale.id, amountCents: sale.totalCents }],
-  tenders: p.tenders,
-  ...(p.withholding ? { withholding: p.withholding } : {}),
-  ...(p.note ? { note: p.note } : {}),
-});
-
-/** A walk-in pays the whole sale at once: change is given back, never kept as a deposit. */
-function receivedIssue(p: Payment, totalCents: number): Issue | null {
-  const received = p.tenders.reduce((s, t) => s + t.amountCents, 0) + (p.withholding?.cwtCents ?? 0) + (p.withholding?.vatWithheldCents ?? 0);
-  if (received === totalCents) return null;
-  const message = `The money received (${formatPeso(received)}) must equal the sale total (${formatPeso(totalCents)}). Give change for the rest.`;
-  return { field: 'payment.tenders', code: 'RECEIVED', level: 'error', message };
-}
 
 /** Runs fn and rolls back whatever it wrote: a preview that needs the sale recorded to check its payment. */
 function rolledBack<T>(db: Db, fn: () => T): T {
@@ -76,15 +56,8 @@ export function qsRoutes(app: FastifyInstance, deps: AppDeps): void {
     return reply.code(out.status).send(out.body);
   }
 
-  /** Records the sale, then its payment for exactly the sale total; one transaction, so a refused payment records nothing. */
-  function record(actor: Actor, saleInput: unknown, p: Payment, post: (input: unknown) => { id: string; totalCents: number }) {
-    const sale = post(saleInput);
-    const problem = receivedIssue(p, sale.totalCents);
-    if (problem) throw new AppError('VALIDATION', problem.message, 422, [problem]);
-    const { customerId } = saleDoc.load(db, sale.id);
-    const paid = postDocument(env, collectionDoc, actor, { input: collectionFor({ ...sale, customerId }, p), expectedTotalCents: sale.totalCents });
-    return { sale, payment: paid };
-  }
+  const record = (actor: Actor, saleInput: unknown, p: Payment, post: (input: unknown) => { id: string; totalCents: number }) =>
+    recordCounterSale(env, actor, p, post, saleInput);
 
   /** The sale's own payments go with it; a payment that also pays other things must be cancelled on its own first. */
   function cancelPayments(actor: Actor, saleId: string, reason: string) {

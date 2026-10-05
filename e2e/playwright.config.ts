@@ -15,7 +15,10 @@ const PORT = Number(process.env.E2E_PORT ?? 3199);
 const PRACTICE_PORT = Number(process.env.E2E_PRACTICE_PORT ?? 3198);
 /** Where Chromium is already installed (a container), otherwise Playwright's own copy (`npx playwright install chromium`). */
 const executablePath = process.env.E2E_CHROMIUM || undefined;
-
+/**
+ * Each browser starts with every menu group opened (they start folded; the tests click links in all of them) and with the
+ * pop-up messages off, so a message is found once, on the page (components/Toasts.tsx).
+ */
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',

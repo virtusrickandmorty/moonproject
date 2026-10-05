@@ -46,7 +46,7 @@ describe('what the file holds', () => {
     expect(fileProblem('customer', 'buyers.csv', ' \n')).toBe('The file is empty.');
     expect(fileProblem('customer', 'staff.csv', employees)).toBe('This file looks like employees, not customers. Pick Employees, or choose another file.');
     expect(fileProblem('piece_rate', 'x.csv', 'Foo,Bar\n1,2')).toBe(
-      'Moonproject cannot tell what this file holds from its first line. Piece rates need these columns: Garment_Type, Operation, Rate.');
+      'Virtus cannot tell what this file holds from its first line. Piece rates need these columns: Garment_Type, Operation, Rate.');
   });
 
   it('says where an upload stands', () => {
@@ -204,7 +204,7 @@ describe("the old sheet's tabs, as downloaded", () => {
   });
 
   it("lists the sheet's own column names when a file is not recognised", () => {
-    expect(fileProblem('customer', 'x.csv', 'Foo,Bar\n1,2')).toBe('Moonproject cannot tell what this file holds from its first line. Customers need these columns: Legacy_ID, Customer_Name (also Registered_Name, TIN, Email). '
+    expect(fileProblem('customer', 'x.csv', 'Foo,Bar\n1,2')).toBe('Virtus cannot tell what this file holds from its first line. Customers need these columns: Legacy_ID, Customer_Name (also Registered_Name, TIN, Email). '
       + "The old sheet's Customers tab has: Customer ID, Name, Email Address, Contact No., Address.");
     expect(fileProblem('measurement', 'x.csv', 'Foo,Bar\n1,2')).toContain("The old sheet's Customer Sizes tab has: Size ID, Customer ID, Customer Name, Upper Size, Shoulder to Lower Length (with Sleeve Height), Lower Size, Remarks.");
     expect(fileProblem('employee', 'x.csv', 'Foo,Bar\n1,2')).toContain("The old sheet's Employees tab has: Employee ID, Name, Job Title, Salary Category, Status, Date Employed.");

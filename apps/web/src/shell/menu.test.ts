@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FOLD_AFTER, buildMenu, labelOf, openGroups, type MenuItem } from './menu.ts';
+import { FOLD_AFTER, buildMenu, labelOf, openGroups, pagePermission, type MenuItem } from './menu.ts';
 import type { DocTypeInfo } from '../api.ts';
 
 describe('menu (PLAN H1)', () => {
@@ -46,5 +46,16 @@ describe('menu (PLAN H1)', () => {
     ] as DocTypeInfo[];
     expect(buildMenu(types, new Set(), []).map((g) => g.items.map((i) => i.label))).toEqual([['Invoice Records', 'Downpayment Invoice Records', 'Quick Sales']]);
     expect(types.map(labelOf)).toEqual(['Invoice Record', 'Downpayment Invoice Record', 'Quick Sale']);
+  });
+
+  it('knows the permission a page needs, pages under a menu item included (so a typed address shows no screen it cannot use)', () => {
+    expect(pagePermission('/pos')).toBe('shp.pos');
+    expect(pagePermission('/sup')).toBe('sup.view');
+    expect(pagePermission('/shp/orders')).toBe('shp.orders.view');
+    expect(pagePermission('/shp')).toBe('shp.view');
+    expect(pagePermission('/pur/suppliers/12')).toBe('pur.supplier.view');
+    expect(pagePermission('/com/settings')).toBe('com.settings.manage');
+    expect(pagePermission('/admin/practice')).toBeUndefined();
+    expect(pagePermission('/shopping')).toBeUndefined();
   });
 });

@@ -1,6 +1,6 @@
 /**
  * Restore (PLAN C8 "Restore", N-15). A backup is opened with one recovery key (A or B), checked and staged: the
- * decrypted copy must match its sidecar's SHA-256, come from this version of Moonproject or an older one (older copies
+ * decrypted copy must match its sidecar's SHA-256, come from this version of Virtus or an older one (older copies
  * are brought up to date first), and pass the same checks as a new backup. Restoring swaps the staged copy in at the
  * next start; the database it replaces is kept next to it (before-restore-….db). The quarterly drill is the same
  * check without the swap. The secret key is used in memory only: never stored, logged or audited.
@@ -130,8 +130,8 @@ export async function openBackup(
     let toApply: string[];
     try {
       const c = compatibility(migrationsOf(copy), appMigrations);
-      if (c.newer.length) throw new AppError('NEWER_VERSION', 'This backup was made by a newer version of Moonproject. Update Moonproject on this PC first, then restore it.', 409, { newer: c.newer });
-      if (c.changed.length) throw new AppError('CHANGED_VERSION', 'This backup was made by a different build of Moonproject and cannot be opened here.', 409, { changed: c.changed });
+      if (c.newer.length) throw new AppError('NEWER_VERSION', 'This backup was made by a newer version of Virtus. Update Virtus on this PC first, then restore it.', 409, { newer: c.newer });
+      if (c.changed.length) throw new AppError('CHANGED_VERSION', 'This backup was made by a different build of Virtus and cannot be opened here.', 409, { changed: c.changed });
       toApply = c.toApply;
       if (toApply.length) prepare(copy);
       copy.pragma('journal_mode = DELETE');

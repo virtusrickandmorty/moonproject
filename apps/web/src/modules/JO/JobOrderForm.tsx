@@ -6,7 +6,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
-import { api, type CatItem, type CustomerWearers, type DocTypeInfo, type Preview } from '../../api.ts';
+import { api, type CatItem, type CustomerWearers, type DocTypeInfo, type Me, type Preview } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { SalesActions, Exception } from './entry.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
@@ -123,7 +123,8 @@ function RosterGrid(p: { line: JoLineRow; n: number; people: CustomerWearers | n
   );
 }
 
-export function JobOrderForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
+/** `inDialog`: shown over the job order list (New): no page heading, Close instead of Back, and it says when something typed is unsaved. */
+export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; mode: FormMode; me?: Me; inDialog?: { close: () => void; setDirty: (dirty: boolean) => void; show?: (id: string) => void } }) {
   const [v, setV] = useState<JoValues>(emptyJo);
   const [adding, setAdding] = useState(false);
   const [people, setPeople] = useState<CustomerWearers | null>(null);
@@ -131,11 +132,12 @@ export function JobOrderForm({ type, mode }: { type: DocTypeInfo; mode: FormMode
   const [noPrice, setNoPrice] = useState<Record<number, string>>({});
   const [draft, setDraft] = useState<{ id: string; version: number } | null>(null);
   const [saved, setSaved] = useState('');
+  const clean = useRef(JSON.stringify(v)); // the form as last opened or saved as a draft
   const latest = useRef(v);
   latest.current = v;
   const last = useRef(''); // the customer the rosters' wearers belong to: another customer's pick clears them
   if (v.customer) last.current = v.customer.id;
-  const r = useRecord(type, mode, (d) => setV(joValues(d.input as unknown as JoInput, d.doc as unknown as JoDoc)), () => (draft ? api.discardDraft(draft.id) : Promise.resolve()));
+  const r = useRecord(type, mode, (d) => setV(joValues(d.input as unknown as JoInput, d.doc as unknown as JoDoc)), () => (draft ? api.discardDraft(draft.id) : Promise.resolve()), inDialog?.show);
 
   useEffect(() => {
     api.cusSizes().then((s) => { const active = s.filter((x) => x.is_active === 1).map((x) => x.label); if (active.length > 0) setSizes(active); }, () => undefined);
@@ -144,7 +146,9 @@ export function JobOrderForm({ type, mode }: { type: DocTypeInfo; mode: FormMode
         const d = ds.find((x) => x.id === mode.draftId);
         if (!d) return r.fail(new Error('That draft was already recorded or discarded.'));
         setDraft({ id: d.id, version: d.version });
-        setV({ ...emptyJo(), ...(d.payload.form as JoValues) });
+        const opened = { ...emptyJo(), ...(d.payload.form as JoValues) };
+        clean.current = JSON.stringify(opened);
+        setV(opened);
       }, r.fail);
   }, [type.key, mode.kind === 'new' ? mode.draftId : '']);
   /** "Make a job order" on a quotation (?fromQuotation=<id>): its customer, lines, quantities and prices, and its number in the notes; everything can still be changed. */
@@ -211,20 +215,23 @@ export function JobOrderForm({ type, mode }: { type: DocTypeInfo; mode: FormMode
   const record = () => r.ask(typed.input, typed.errors);
   const saveDraft = () =>
     (draft ? api.saveDraft(draft.id, draft.version, { form: v }) : api.createDraft(type.key, { form: v })).then(
-      (d) => (setDraft(d), setSaved('Draft saved. It has no number and records nothing until you press Record.')),
+      (d) => (setDraft(d), (clean.current = JSON.stringify(v)), inDialog?.setDirty(false), setSaved('Draft saved. It has no number and records nothing until you press Record.')),
       r.fail,
     );
+
+  const setDirty = inDialog?.setDirty;
+  useEffect(() => { setDirty?.(JSON.stringify(v) !== clean.current); }, [v, setDirty]);
 
   if (r.gate) return r.gate;
   return (
     <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && record()} className="space-y-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-0">
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">{r.title('New job order')}</h1>
+        {!inDialog && <h1 className="text-2xl font-semibold">{r.title('New job order')}</h1>}
         {r.top}
         {saved && <Notice tone="success">{saved}</Notice>}
         <Panel title="Customer">
           <CustomerPicker value={v.customer} onChange={(c) => set({ customer: c, lines: !c || c.id === last.current ? v.lines : v.lines.map((l) => ({ ...l, roster: [] })) })} />
-          {!v.customer && !adding && <Button onClick={() => setAdding(true)}>+ New customer</Button>}
+          {!v.customer && !adding && me?.permissions.includes('cus.manage') && <Button onClick={() => setAdding(true)}>+ New customer</Button>}
           {!v.customer && adding && <AddCustomer onAdded={(c, lookalike) => (set({ customer: c }), setAdding(false), setSaved(lookalike ? `Added ${c.name}. Another customer has a similar name: check the customer list later in case it is the same one.` : `Added ${c.name} as a new customer.`))} onClose={() => setAdding(false)} />}
           <Field label="Contact person">
             <input className={inputClass} value={v.contact} onChange={(e) => set({ contact: e.target.value })} />
@@ -301,7 +308,7 @@ export function JobOrderForm({ type, mode }: { type: DocTypeInfo; mode: FormMode
         <SalesActions total={doc?.totalCents ?? typed.totalCents} label="Total">
           <Button tone="primary" disabled={!type.canPost} onClick={record} title="Ctrl+Enter">Record</Button>
           {mode.kind === 'new' && <Button onClick={() => void saveDraft()}>Save draft</Button>}
-          <Button onClick={() => history.back()}>Back</Button>
+          {inDialog ? <Button onClick={inDialog.close}>Close</Button> : <Button onClick={() => history.back()}>Back</Button>}
         </SalesActions>
       </div>
       {r.dialog}

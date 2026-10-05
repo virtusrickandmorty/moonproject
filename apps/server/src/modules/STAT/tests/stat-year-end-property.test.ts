@@ -26,7 +26,7 @@ describe('K23: year-end refunds in the withholding-tax remittance, property test
     const stats = { remittances: 0, carried: 0, cancels: 0 };
     await fc.assert(
       fc.asyncProperty(
-        // Withheld before Moonproject: each person's December 2310 comes to 12,090.00 less it (a deficiency or a refund).
+        // Withheld before Virtus: each person's December 2310 comes to 12,090.00 less it (a deficiency or a refund).
         // Anywhere from 0 to 25,000.00 each, or (half the time) December's refunds above its tax by 0.01 to 3,022.20, which
         // January's tax (1,007.40 each) covers.
         fc.oneof(

@@ -25,7 +25,7 @@ export function practicePasswords(): Record<string, string> {
 }
 
 export async function signInAs(page: Page, who: Who, password: string) {
-  await page.goto('/');
+  await page.goto('/sign-in'); // "/" is the public shop to someone signed out
   await page.getByLabel('Username').fill(who.username);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();

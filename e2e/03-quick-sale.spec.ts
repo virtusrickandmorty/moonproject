@@ -10,6 +10,8 @@ test('a quick sale is recorded with its collection', async ({ page }) => {
   await page.getByLabel('Display name').fill('Test School');
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByRole('heading', { name: /^Test School · / })).toBeVisible();
+  // The saved customer opens in a pop-up over the list; close it to go on.
+  await page.getByRole('dialog', { name: /^Test School · / }).getByRole('button', { name: 'Close', exact: true }).click();
 
   // The sale: one repair line, paid in cash. One payment with no amount typed pays the exact total.
   await page.getByRole('link', { name: 'Quick Sales' }).click();

@@ -1,7 +1,7 @@
 /**
  * Restart after a restore (PLAN C8 "Restore"). Once asked, the server takes no more changes (they would be lost when
  * the restored copy is swapped in), waits until no request is running (at most RESTART_WAIT_MS), then calls `exit`.
- * main.ts exits with RESTART_EXIT_CODE: the Windows service counts that as a failure and starts Moonproject again, and
+ * main.ts exits with RESTART_EXIT_CODE: the Windows service counts that as a failure and starts Virtus again, and
  * the start swaps the checked copy in.
  */
 import type { FastifyInstance, FastifyRequest } from 'fastify';

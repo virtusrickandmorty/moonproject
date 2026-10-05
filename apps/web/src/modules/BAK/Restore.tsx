@@ -1,7 +1,7 @@
 /**
  * Restore and the quarterly drill (PLAN C8 "Restore", N-15). Pick a backup and type recovery key A or B: the server opens
  * the copy and checks it. A drill stops there and is recorded. A restore shows what the live data would lose, asks for
- * RESTORE to be typed, and is finished when Moonproject next starts. The key is kept only in this screen's memory, and
+ * RESTORE to be typed, and is finished when Virtus next starts. The key is kept only in this screen's memory, and
  * each step asks for the password first.
  */
 import { useEffect, useState } from 'react';

@@ -1,6 +1,6 @@
 /**
  * Property test (PLAN I1.3) for the final pay: random pay, separation day, leave taken, cash advance, government loan and
- * tax before Moonproject. On the final pay: net pay = gross − shares − tax − loans − cash advance + refund, never below
+ * tax before Virtus. On the final pay: net pay = gross − shares − tax − loans − cash advance + refund, never below
  * zero; the cash advance takes all the pay left unless less is owed, and what is still owed is warned; the leave is used
  * up; what is stored equals what was computed; L1–L12.
  */

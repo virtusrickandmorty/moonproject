@@ -25,7 +25,7 @@ export function DryRun({ uploadId, counts, dry, onDry }: { uploadId: string; cou
       {dry && (
         <div className="space-y-3">
           <Lines lines={dryRunLines(dry)} />
-          {dryRunAddsUp(dry) ? <Notice tone="success">Every row of the file is counted once.</Notice> : <Notice>The counts do not add up. Do not import; tell the person who looks after Moonproject.</Notice>}
+          {dryRunAddsUp(dry) ? <Notice tone="success">Every row of the file is counted once.</Notice> : <Notice>The counts do not add up. Do not import; tell the person who looks after Virtus.</Notice>}
           <h3 className="text-sm font-medium">Totals to check against the old sheet</h3>
           <Lines lines={dryRunChecks(dry)} />
         </div>

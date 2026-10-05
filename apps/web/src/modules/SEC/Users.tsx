@@ -127,7 +127,8 @@ function AddUser({ onClose, onDone }: { onClose: () => void; onDone: (name: stri
   return (
     <Form title="Add a user" onClose={onClose} onSubmit={submit} errors={errors} action={action} label="Add user">
       <Field label="Name to show" required><input autoFocus className={inputClass} value={v.displayName} onChange={(e) => setV({ ...v, displayName: e.target.value })} /></Field>
-      <Field label="Username" required hint="What they type to sign in."><input autoComplete="off" className={inputClass} value={v.username} onChange={(e) => setV({ ...v, username: e.target.value })} /></Field>
+      <Field label="Username" required hint={v.username.trim() ? `They sign in by typing: ${v.username.trim()}` : 'One word they type to sign in, in small letters, like juan or maria.s'}>
+        <input autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} className={inputClass} value={v.username} onChange={(e) => setV({ ...v, username: e.target.value })} /></Field>
       <RoleBoxes value={v.roles} onChange={(roles) => setV({ ...v, roles })} />
       <PasswordBox label="Temporary password" value={v.temporaryPassword} onChange={(temporaryPassword) => setV({ ...v, temporaryPassword })} />
     </Form>

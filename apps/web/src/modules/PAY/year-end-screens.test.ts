@@ -1,4 +1,4 @@
-/** The year-end screens' rules (the tick, refund and deficiency words, pay before Moonproject amounts, the 2316 items), the menu, and the client calls against the real server. */
+/** The year-end screens' rules (the tick, refund and deficiency words, pay before Virtus amounts, the 2316 items), the menu, and the client calls against the real server. */
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { PASSWORD, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
@@ -33,7 +33,7 @@ describe('year-end screen rules', () => {
     expect(deductionsOf(e)).toEqual([['SSS employee share', 75_000], ['Withholding tax (year-end adjustment)', 100]]);
   });
 
-  it('pay before Moonproject: blanks are ₱0, amounts typed plainly, the parts add up to the gross', () => {
+  it('pay before Virtus: blanks are ₱0, amounts typed plainly, the parts add up to the gross', () => {
     expect(priorAmounts({ ...blank, gross: '1,000.00', taxable: '900', sss: '100', wtax: '12.5' })).toEqual({
       amounts: { grossCents: 100_000, benefitsCents: 0, deMinimisCents: 0, sssCents: 10_000, phicCents: 0, hdmfCents: 0, otherNontaxCents: 0, taxableCents: 90_000, wtaxCents: 1_250 },
       errors: [],
@@ -55,7 +55,7 @@ describe('year-end screen rules', () => {
 });
 
 describe('year-end client calls against the server', () => {
-  it('pay before Moonproject, the tick on the December run, the refund on the payslip, and the 2316', async () => {
+  it('pay before Virtus, the tick on the December run, the refund on the payslip, and the 2316', async () => {
     const env = await createTestEnv('2026-12-31T02:00:00Z');
     createUser(env.db, 'ana.accountant', ['accountant']);
     const api = createApi(injectFetch(env.app));
@@ -65,7 +65,7 @@ describe('year-end client calls against the server', () => {
     const row = await api.addPriorPay({ employeeId: olga, year: 2026, source: 'before', grossCents: 33_000_000, benefitsCents: 0, deMinimisCents: 0, sssCents: 1_650_000, phicCents: 825_000, hdmfCents: 220_000, otherNontaxCents: 0, taxableCents: 30_305_000, wtaxCents: 4_043_245 });
     expect((await api.priorPay({ employeeId: olga })).map((p) => p.id)).toEqual([row.id]);
     expect((await api.updatePriorPay(row.id, row.version, { note: 'From the old payroll (made up)' })).version).toBe(2);
-    // Only the 16–31 run is recorded: with ₱40,432.45 withheld before Moonproject, the year-end adjustment refunds some of it.
+    // Only the 16–31 run is recorded: with ₱40,432.45 withheld before Virtus, the year-end adjustment refunds some of it.
     const input = runInput('SEMI_MONTHLY', '2026-12-16', [], {}, {}, {}, true).input;
     const preview = await api.preview('pay.run', input);
     const e = (preview.doc as PayRunDoc).employees[0]!;

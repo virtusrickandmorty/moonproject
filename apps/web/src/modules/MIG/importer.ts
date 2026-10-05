@@ -105,7 +105,7 @@ export function fileProblem(kind: MigKind | '', filename: string, csv: string): 
   const tab = sheetTabOf(headers);
   if (found === 'unknown') {
     const own = SHEET_KIND_TAB[kind];
-    return `Moonproject cannot tell what this file holds from its first line. ${wanted.label} need these columns: ${wanted.columns}.${own ? ` The old sheet's ${SHEET_TABS[own].name} tab has: ${SHEET_TABS[own].columns}.` : ''}`;
+    return `Virtus cannot tell what this file holds from its first line. ${wanted.label} need these columns: ${wanted.columns}.${own ? ` The old sheet's ${SHEET_TABS[own].name} tab has: ${SHEET_TABS[own].columns}.` : ''}`;
   }
   if (found !== kind) return `This file looks like ${tab ? `${tabWords(tab)} (${kindLabel(found).toLowerCase()})` : kindLabel(found).toLowerCase()}, not ${wanted.label.toLowerCase()}. Pick ${kindLabel(found)}, or choose another file.`;
   return null;
@@ -122,7 +122,7 @@ export function fileNote(csv: string): string | null {
 /** Said on the review screen when it lists employees from the old sheet: what the plan does not keep is not staged or imported. */
 export function notKeptNote(rows: Pick<MigRow, 'rowType' | 'raw'>[]): string | null {
   if (!rows.some((r) => r.rowType === 'employee' && r.raw.Salary_Category !== undefined)) return null;
-  return `The old sheet's ${SHEET_TABS.employees.notKept} are not brought in: Moonproject does not keep them, so they were left out when the file was uploaded. `
+  return `The old sheet's ${SHEET_TABS.employees.notKept} are not brought in: Virtus does not keep them, so they were left out when the file was uploaded. `
     + 'Every employee waits here until you confirm the pay: type the rate for daily and monthly pay, and choose a pay type where the Salary Category is blank.';
 }
 

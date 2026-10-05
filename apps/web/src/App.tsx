@@ -4,12 +4,13 @@
  */
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, ApiError, type DocTypeInfo, type Me } from './api.ts';
-import { Link, match, navigate, useLocation } from './router.tsx';
+import { Link, LinkAccess, match, navigate, useLocation } from './router.tsx';
 import { Notice } from './components/ui.tsx';
 import { ChangePasswordScreen, FirstOwnerScreen, LoginScreen } from './auth/AuthScreens.tsx';
 import { Shell } from './shell/Shell.tsx';
-import { docPath, labelOf } from './shell/menu.ts';
-import { DocList } from './generic/DocList.tsx';
+import { docPath, labelOf, pagePermission } from './shell/menu.ts';
+import { DocList, type ListForm, type ListView } from './generic/DocList.tsx';
+import { JobOrderForm } from './modules/JO/JobOrderForm.tsx';
 import { DocForm, type FormMode } from './generic/DocForm.tsx';
 import { DocView } from './generic/DocView.tsx';
 import { FORMS, PAGES, VIEWS } from './modules/screens.ts';
@@ -18,6 +19,8 @@ import { DashHome } from './modules/DASH/Home.tsx';
 import { PracticeBanner } from './modules/PLT/PracticeBanner.tsx';
 import { HealthDot } from './modules/PLT/HealthDot.tsx';
 import { RestoredNotice } from './modules/BAK/RestoredNotice.tsx';
+import { Site, isSitePath } from './shop/Site.tsx';
+import { Toaster } from './components/Toasts.tsx';
 
 type Stage = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'firstOwner' } | { kind: 'login'; message?: string } | { kind: 'ready'; me: Me; docTypes: DocTypeInfo[] };
 
@@ -27,6 +30,7 @@ export function App() {
     <>
       <PracticeBanner />
       <Stages />
+      <Toaster />
     </>
   );
 }
@@ -48,17 +52,33 @@ function Stages() {
   if (stage.kind === 'loading') return <p className="p-6 text-slate-500">Loading…</p>;
   if (stage.kind === 'error') return <div className="p-6"><Notice>{stage.message}</Notice></div>;
   if (stage.kind === 'firstOwner') return <FirstOwnerScreen onSignedIn={signedIn} />;
-  if (stage.kind === 'login') return <LoginScreen message={stage.message} onSignedIn={signedIn} />;
+  // Signed out, the home page, services and support make up the public website; any other address (a staff bookmark, an expired session) asks to sign in.
+  if (stage.kind === 'login') return isSitePath(location.split('?')[0]!)
+    ? <Site />
+    : <LoginScreen message={stage.message} onSignedIn={(me) => { if (location.startsWith('/sign-in')) navigate('/'); return signedIn(me); }} />;
   if (stage.me.mustChangePassword) return <ChangePasswordScreen forced onDone={signedIn} />;
+  if (isSitePath(location.split('?')[0]!, true)) return <Site staff />;
 
-  const signOut = () => void api.logout().catch(() => undefined).then(() => setStage({ kind: 'login', message: 'You are signed out.' }));
+  const signOut = () => void api.logout().catch(() => undefined).then(() => {
+    navigate('/sign-in');
+    setStage({ kind: 'login', message: 'You are signed out.' });
+  });
   const [path = '/', query = ''] = location.split('?');
   const fromQuotation = new URLSearchParams(query).get('from-quotation');
+  const viewParam = new URLSearchParams(query).get('view');
   const typeOf = (key = '') => stage.docTypes.find((d) => d.key === key);
   const routes: [string, (p: Record<string, string>, t: DocTypeInfo) => ReactNode][] = [
-    ['/docs/:type', (_, t) => <DocList key={t.key} type={t} notice={fromQuotation && t.key === 'jo.job_order' ? JOB_ORDER_LATER(fromQuotation) : undefined} />],
-    ['/docs/:type/new', (_, t) => <Form key={location} type={t} me={stage.me} mode={{ kind: 'new', draftId: new URLSearchParams(query).get('draft') ?? undefined }} />],
-    ['/docs/:type/:id/edit', (p, t) => <Form key={location} type={t} me={stage.me} mode={{ kind: 'edit', id: p.id! }} />],
+    ['/docs/:type', (_, t) => <DocList key={t.key} type={t} notice={fromQuotation && t.key === 'jo.job_order' ? JOB_ORDER_LATER(fromQuotation) : undefined}
+      // Job orders: 20 a page, and New opens over the list (its own address, /docs/jo.job_order/new, still opens the full page).
+      {...(t.key === 'jo.job_order' ? {
+        pageSize: 20,
+        form: ({ draftId, close, setDirty, show }: Parameters<ListForm>[0]) => <JobOrderForm type={t} me={stage.me} mode={{ kind: 'new', draftId }} inDialog={{ close, setDirty, show }} />,
+        // A job order opens over the list too (?view=<id>); its own address, /docs/jo.job_order/<id>, is still the full page.
+        view: ({ id, recorded, refresh }: Parameters<ListView>[0]) => <DocView key={id} type={t} id={id} recorded={recorded} parts={VIEWS[t.key]} inDialog={{ refresh }} />,
+        viewing: viewParam ? { id: viewParam, recorded: new URLSearchParams(query).get('recorded') === '1' } : undefined,
+      } : {})} />],
+    ['/docs/:type/new', (_, t) => !t.canCreate ? NO_ACCESS : <Form key={location} type={t} me={stage.me} mode={{ kind: 'new', draftId: new URLSearchParams(query).get('draft') ?? undefined }} />],
+    ['/docs/:type/:id/edit', (p, t) => !(t.canPost && t.canCancel) ? NO_ACCESS : <Form key={location} type={t} me={stage.me} mode={{ kind: 'edit', id: p.id! }} />],
     ['/docs/:type/:id', (p, t) => <DocView key={p.id} type={t} id={p.id!} recorded={query === 'recorded=1'} parts={VIEWS[t.key]} />],
   ];
   let page: ReactNode = <Notice>Page not found. <Link to="/" className="underline">Go home</Link></Notice>;
@@ -68,7 +88,9 @@ function Stages() {
     for (const [pattern, Page] of Object.entries(PAGES)) {
       const params = match(pattern, path);
       if (params) {
-        page = <Page key={path} me={stage.me} docTypes={stage.docTypes} params={params} />;
+        // A page the user's role does not open shows that plainly, instead of a screen whose every call is refused.
+        const needs = pagePermission(path);
+        page = needs && !stage.me.permissions.includes(needs) ? NO_ACCESS : <Page key={path} me={stage.me} docTypes={stage.docTypes} params={params} />;
         break;
       }
     }
@@ -81,9 +103,31 @@ function Stages() {
       break;
     }
   }
-  if (path === '/prd/tv') return <><RestoredNotice me={stage.me} />{page}</>;
-  return <Shell me={stage.me} docTypes={stage.docTypes} onSignOut={signOut}><RestoredNotice me={stage.me} />{page}</Shell>;
+  if (path === '/prd/tv') return <><RestoredNotice me={stage.me} />{page}</>; // the TV board fills the screen, without the menu
+  return (
+    <LinkAccess.Provider value={(to) => mayOpen(to, stage.me, stage.docTypes)}>
+      <Shell me={stage.me} docTypes={stage.docTypes} onSignOut={signOut}><RestoredNotice me={stage.me} />{page}</Shell>
+    </LinkAccess.Provider>
+  );
 }
+
+/** Whether this user may open an address: a document page by its type's rights, any other page by its menu permission. */
+function mayOpen(to: string, me: Me, docTypes: DocTypeInfo[]): boolean {
+  const path = to.split(/[?#]/)[0]!;
+  const doc = /^\/docs\/([^/]+)(\/.*)?$/.exec(path);
+  if (doc) {
+    const t = docTypes.find((d) => d.key === doc[1]);
+    if (!t) return false; // not a type this user may see
+    if (doc[2] === '/new') return t.canCreate;
+    if (doc[2]?.endsWith('/edit')) return t.canPost && t.canCancel;
+    return true;
+  }
+  const needs = pagePermission(path);
+  return !needs || me.permissions.includes(needs);
+}
+
+/** What a page shows to someone whose role does not include it. */
+const NO_ACCESS = <Notice>You do not have access to this page. Ask the owner if your work needs it. <Link to="/" className="underline">Go home</Link></Notice>;
 
 /** A module's own form when it has one (FORMS), else the generic form. */
 function Form({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me: Me }) {

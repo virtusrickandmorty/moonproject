@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
+import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { CLASS_LABELS as classes, PAGE_SIZE, blankItem, catalogCalls, moneyCents, typeLocked, valuesOf, type Detail, type Item, type ItemValues } from './catalog.ts';
 
 export function Catalog({ me }: { me: Me }) {
@@ -28,8 +28,8 @@ export function Catalog({ me }: { me: Me }) {
     <div className="flex items-center gap-3"><h1 className="flex-1 text-2xl font-semibold">Price list</h1>
       {canManage && <Button tone="primary" onClick={() => setEditing('new')}>+ New item</Button>}</div>
     {error && <Notice>{error}</Notice>}
-    <input aria-label="Search catalog" placeholder="Search name or code" className={`${inputClass} max-w-md`} value={search}
-      onChange={(e) => { setSearch(e.target.value); setOffset(0); }} />
+    <div className={searchRowClass}><input aria-label="Search catalog" placeholder="Search name or code" className={`${inputClass} ${searchClass}`} value={search}
+      onChange={(e) => { setSearch(e.target.value); setOffset(0); }} /></div>
     <Panel title="Items"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left text-slate-500">
       <th>Code</th><th>Name</th><th>Class</th><th>Unit</th><th>Status</th></tr></thead><tbody>{rows.map((r) => <tr key={r.id} className="border-t">
         <td className="py-2">{r.code}</td><td><button className="text-indigo-700 underline" onClick={() => void open(r.id)}>{r.name}</button></td>

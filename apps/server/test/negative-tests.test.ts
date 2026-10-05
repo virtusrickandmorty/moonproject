@@ -129,7 +129,7 @@ describe('N-15: restore of a backup made by a newer version', () => {
       expect(refusal).toMatchObject({
         code: 'NEWER_VERSION',
         status: 409,
-        message: 'This backup was made by a newer version of Moonproject. Update Moonproject on this PC first, then restore it.',
+        message: 'This backup was made by a newer version of Virtus. Update Virtus on this PC first, then restore it.',
         details: { newer: ['TAX/9999_from_a_newer_version.sql'] },
       });
       expect(existsSync(staged)).toBe(false);

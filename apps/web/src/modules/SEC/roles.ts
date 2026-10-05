@@ -9,7 +9,7 @@ export const MODULE_NAMES: Record<string, string> = {
   CAT: 'Catalog & pricing', COL: 'Collections & receivables', CUS: 'Customers & measurements', DASH: 'Homes and notifications', EMP: 'Employees & time', EQ: 'Owners & officers',
   EXP: 'Expenses', FA: 'Fixed assets', INV: 'Inventory', JO: 'Job orders & release', LOAN: 'Loans', MIG: 'Migration & opening', PAY: 'Payroll', PRD: 'Production',
   PRT: 'Printing & company profile', PUR: 'Suppliers & purchasing', QS: 'Quick sale', QUO: 'Quotations', RATE: 'Piece-rate table', RPT: 'Books & statements',
-  STAT: 'Government remittances', SZR: 'Sizer tracker', TAX: 'Tax compliance', SEC: 'Users & security', PLT: 'Platform', NAV: 'Navigation', COM: 'Communications',
+  SHP: 'Website shop, POS and online orders', SUP: 'Customer support inbox', STAT: 'Government remittances', SZR: 'Sizer tracker', TAX: 'Tax compliance', SEC: 'Users & security', PLT: 'Platform', NAV: 'Navigation', COM: 'Communications',
 };
 export const moduleName = (code: string) => MODULE_NAMES[code] ?? MODULE_NAMES[code.toUpperCase()] ?? code;
 

@@ -46,7 +46,7 @@ const rawFor = (row: Row): Record<string, string> => {
   return raw;
 };
 
-/** The numbers in a phone cell (several may share it, split by / , or ;): those Moonproject can read, and those it cannot. */
+/** The numbers in a phone cell (several may share it, split by / , or ;): those Virtus can read, and those it cannot. */
 function phoneNumbers(cell: string): { readable: string[]; unreadable: string[] } {
   const out: { readable: string[]; unreadable: string[] } = { readable: [], unreadable: [] };
   for (const part of cell.split(/[/,;]/).map(p => p.trim()).filter(Boolean)) {
@@ -149,7 +149,7 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
       const sourceCustomer = first(raw, 'Customer_ID', 'Customer_Legacy_ID', 'Customer_Name');
       let customerId = customerBySource.get(sourceCustomer) ?? customerBySource.get(sourceCustomer.toLowerCase()) ?? mapped(db, 'customer', sourceCustomer);
       if (manual.customerId) {
-        // A customer already in Moonproject, chosen for a whole batch of rows: it must still be there and active.
+        // A customer already in Virtus, chosen for a whole batch of rows: it must still be there and active.
         const chosen = customerRef(db, String(manual.customerId));
         if (needed && (!chosen || chosen.is_active !== 1 || chosen.merged_into_id)) error(`Row ${row.row_number} (measurement): the customer chosen for it is no longer an active customer.`);
         customerId = String(manual.customerId);

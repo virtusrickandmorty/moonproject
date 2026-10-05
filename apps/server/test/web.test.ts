@@ -10,7 +10,7 @@ import { buildApp } from '../src/app.ts';
 import { loadModules } from '../src/modules/load.ts';
 import { TEST_SCRYPT_N } from './helpers.ts';
 
-const INDEX = '<!doctype html><title>Moonproject</title><div id="root"></div>';
+const INDEX = '<!doctype html><title>Virtus</title><div id="root"></div>';
 let dir: string;
 let app: FastifyInstance;
 

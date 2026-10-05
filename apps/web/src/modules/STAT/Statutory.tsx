@@ -13,6 +13,7 @@ import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
 import { UPLOAD_LIST, canDownloadUploads, checkWords } from './stat.ts';
+import { Crumb } from '../../shell/crumbs.tsx';
 
 const newRemittance = (c: SchemeCheck, month: string) => docPath('stat.remittance', `/new?scheme=${c.scheme}&month=${month}${c.dueCents > 0 ? `&amount=${(c.dueCents / 100).toFixed(2)}` : ''}`);
 
@@ -182,7 +183,7 @@ export function StatMonthPage({ me, params }: { me: Me; params?: Record<string, 
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 print:hidden">
-        <h1 className="text-2xl font-semibold">Government remittances {m.month}</h1>
+        <Crumb label={m.month} /><h1 className="text-2xl font-semibold">Government remittances {m.month}</h1>
         <Button tone="primary" onClick={() => window.print()}>Print</Button>
         <Link to="/stat" className="underline">All months</Link>
       </div>

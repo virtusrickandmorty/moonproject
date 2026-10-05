@@ -1,7 +1,7 @@
 /**
  * One employee (PLAN E11): the record and its edits (If-Match), the statutory switches, government IDs (only with
  * emp.view_ids), separation, paid leave (SIL) this year, the pay history with a new pay from a date (pay.view_rates), and
- * the employee's government loans (pay.loans.view) and pay before Moonproject (pay.prior.view).
+ * the employee's government loans (pay.loans.view) and pay before Virtus (pay.prior.view).
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type EmployeeDetail, type EmployeeRecord, type Me, type PayProfile } from '../../api.ts';
@@ -10,6 +10,7 @@ import { Link } from '../../router.tsx';
 import { cents } from '../COL/money.ts';
 import { EmployeeLoans } from '../PAY/Loans.tsx';
 import { EmployeePriorPay } from '../PAY/Prior.tsx';
+import { Crumb } from '../../shell/crumbs.tsx';
 
 const PAY_TYPE = { daily: 'Daily', piece: 'Per piece (pakyawan)', monthly: 'Monthly', mixed: 'Daily and per piece' } as const;
 const PAY_GROUP = { WEEKLY_PIECE: 'Weekly (piece rate)', SEMI_DAILY: 'Semi-monthly (daily paid)', SEMI_MONTHLY: 'Semi-monthly (monthly staff)' } as const;
@@ -31,7 +32,7 @@ export function EmployeePage({ me, params }: { me: Me; params?: Record<string, s
   return (
     <div className="max-w-4xl space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{e.fullName} <span className="text-base font-normal text-slate-500">{e.code}</span></h1>
+        <Crumb label={e.fullName} /><h1 className="text-2xl font-semibold">{e.fullName} <span className="text-base font-normal text-slate-500">{e.code}</span></h1>
         {e.isActive && can('emp.manage') && <Button tone="danger" onClick={() => setSeparating(true)}>Record separation</Button>}
       </div>
       {!e.isActive && <Notice tone="info">Separated on {e.separatedOn}: {e.separationReason}</Notice>}

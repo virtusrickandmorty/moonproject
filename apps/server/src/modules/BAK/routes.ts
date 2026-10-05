@@ -27,7 +27,7 @@ const checkInput = z.object({
 /** A folder on this PC: a network folder (\\server\share) would send the PC's Windows sign-in, and the backups, to that server. */
 const usbInput = z.object({
   drive: z.enum(['A', 'B']),
-  dir: z.string().trim().min(1).max(260).refine((d) => !/^[\\/]{2}/.test(d), 'Pick the USB drive plugged into this PC, like E:\\Moonproject, not a network folder.'),
+  dir: z.string().trim().min(1).max(260).refine((d) => !/^[\\/]{2}/.test(d), 'Pick the USB drive plugged into this PC, like E:\\Virtus, not a network folder.'),
 }).strict();
 
 export function bakRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -135,7 +135,7 @@ export function bakRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   /**
-   * Restores the checked copy: Moonproject restarts by itself once no request is running, and the start swaps the copy
+   * Restores the checked copy: Virtus restarts by itself once no request is running, and the start swaps the copy
    * in. Until then nothing more can be recorded. The owner, with a fresh password.
    */
   app.post('/api/bak/restore/apply', { config: { permission: 'bak.restore' } }, async (req: FastifyRequest) => {
@@ -148,7 +148,7 @@ export function bakRoutes(app: FastifyInstance, deps: AppDeps): void {
     deps.restart.request(`restore of ${s.file}`);
     return {
       file: s.file, restartNeeded: true, restarting: true,
-      message: 'Moonproject restarts by itself within a minute to finish the restore, then everyone signs in again. Nothing more can be recorded until then; the current data is kept next to the restored one.',
+      message: 'Virtus restarts by itself within a minute to finish the restore, then everyone signs in again. Nothing more can be recorded until then; the current data is kept next to the restored one.',
     };
   });
 

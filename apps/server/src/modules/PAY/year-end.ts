@@ -1,6 +1,6 @@
 /**
  * The year's compensation and tax of an employee (PLAN F3 year-end adjustment, F4 2316 and 1604-C; BIR RR 11-2018,
- * RMC 21-2010): pay before Moonproject and a previous employer's (prior.ts), every recorded payroll run whose period ends
+ * RMC 21-2010): pay before Virtus and a previous employer's (prior.ts), every recorded payroll run whose period ends
  * in the year, and the 13th-month pay recorded in the year (TH13-), put in the parts of BIR Form 2316 (IV-A, IV-B).
  *   annual taxable = taxable compensation + (13th-month pay and other benefits above the ceiling) − employee shares
  *   annual tax     = the annual table (statutory.ts) on it; the adjustment = annual tax − tax withheld in the year
@@ -23,7 +23,7 @@ const PRIOR = `SELECT p.id, p.employee_id AS employeeId, e.full_name AS employee
   p.hdmf_cents AS hdmfCents, p.other_nontax_cents AS otherNontaxCents, p.taxable_cents AS taxableCents, p.wtax_cents AS wtaxCents, p.note, p.version,
   p.created_at AS createdAt, p.updated_at AS updatedAt FROM pay_prior_pay p JOIN emp_employees e ON e.id = p.employee_id`;
 
-/** Pay before Moonproject rows, newest year first, 'before' before 'previous'. */
+/** Pay before Virtus rows, newest year first, 'before' before 'previous'. */
 export function priorRows(db: Db, q: { id?: string; employeeId?: string; year?: number; source?: 'before' | 'previous' }): PriorPay[] {
   const where: string[] = [];
   const args: (string | number)[] = [];
@@ -211,7 +211,7 @@ export function data2316(db: Db, e: Employee, year: number, canSeeIds: boolean):
   };
 }
 
-/** Employees with pay in a year: a recorded run of a period ending in it, 13th-month pay dated in it, or pay before Moonproject. */
+/** Employees with pay in a year: a recorded run of a period ending in it, 13th-month pay dated in it, or pay before Virtus. */
 export function employeesPaidIn(db: Db, year: number): Employee[] {
   const ids = db
     .prepare(

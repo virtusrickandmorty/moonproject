@@ -62,7 +62,7 @@ export const nameKey = (name: string): string => name.toLowerCase().replace(/[^\
 
 /**
  * Where the owner put a measurement row, laid over the staged values: a staged customer (by legacy ID), a customer already in
- * Moonproject (by id), or a new person-customer named as in the sheet; and a group. A bulk choice also names the wearer.
+ * Virtus (by id), or a new person-customer named as in the sheet; and a group. A bulk choice also names the wearer.
  * The keys `id:` and `MANUAL:` mark the ones the commit resolves itself. Shared by the review and the commit.
  */
 export function applyMeasurementAssignment(raw: Record<string, string>, manual: ManualData): void {

@@ -23,6 +23,10 @@ export function newUserInput(v: NewUserValues): { errors: string[]; body?: { use
   const displayName = v.displayName.trim();
   const errors: string[] = [];
   if (username.length < 2 || username.length > 40) errors.push('The username needs 2 to 40 characters.');
+  // Signing in matches the username exactly, so it is kept to one plain word: a full name with spaces typed here (the two
+  // boxes swapped) or a capital letter a phone adds by itself would lock the person out.
+  else if (/\s/.test(username)) errors.push(`A username is one word with no spaces, like "${username.split(/\s+/)[0]!.toLowerCase()}". Is "${username}" the name to show? Put it in "Name to show".`);
+  else if (!/^[a-z0-9._-]+$/.test(username)) errors.push('Use small letters, numbers, dots, dashes or underscores in the username (no capitals), so it is typed the same way every time.');
   if (!displayName || displayName.length > 80) errors.push('Enter the name to show, up to 80 characters.');
   if (v.roles.length === 0) errors.push('Give the user at least one role.');
   if (!v.temporaryPassword) errors.push('Enter a temporary password.');

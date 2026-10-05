@@ -159,7 +159,7 @@ describe('year in the life: the app against the goldens', () => {
     expect((await get('/api/tax/1702rt?year=2026')).checks.map((c: { code: string }) => c.code)).toEqual(['BOOKS_START']);
   });
 
-  it('2316: each employee’s figures for 2026 (with the pay before Moonproject) and 2027, as worked by hand', async () => {
+  it('2316: each employee’s figures for 2026 (with the pay before Virtus) and 2027, as worked by hand', async () => {
     const ITEMS: Record<string, string> = {
       i19: 'i19GrossCents', i29: 'i29BasicSmwCents', i34: 'i34BenefitsCents', i35: 'i35DeMinimisCents', i36: 'i36SharesCents', i38: 'i38NonTaxableCents',
       i39: 'i39BasicCents', i52: 'i52TaxableCents', i24: 'i24TaxDueCents', i26: 'i26WithheldCents', dec: 'withheldDecemberCents', janNov: 'withheldJanNovCents', refund: 'refundedCents',

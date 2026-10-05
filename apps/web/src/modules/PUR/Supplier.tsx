@@ -8,6 +8,7 @@ import { Button, Dialog, Field, Notice, Panel, StatusChip, inputClass, peso, use
 import { Link, navigate } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { EWT_WORDS, contactToInput, emptyContactForm, emptySupplierForm, needsSwornDeclaration, supplierToForm, supplierToInput, type ContactForm, type SupplierForm } from './purchasing.ts';
+import { Crumb } from '../../shell/crumbs.tsx';
 
 export function SupplierPage({ me, docTypes, params }: { me: Me; docTypes: DocTypeInfo[]; params?: Record<string, string> }) {
   const id = params?.id;
@@ -26,7 +27,7 @@ export function SupplierPage({ me, docTypes, params }: { me: Me; docTypes: DocTy
   return (
     <div className="max-w-4xl space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">{supplier.name}</h1>
+        <Crumb label={supplier.name} /><h1 className="text-2xl font-semibold">{supplier.name}</h1>
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${supplier.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>{supplier.is_active ? 'Active' : 'Inactive'}</span>
         <span className="flex-1" />
         <Link to="/pur/suppliers" className="text-sm underline">All suppliers</Link>

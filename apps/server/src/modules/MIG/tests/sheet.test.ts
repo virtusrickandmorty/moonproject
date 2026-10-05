@@ -129,7 +129,7 @@ describe('the customers tab', () => {
     expect(env.db.prepare('SELECT phone FROM cus_customer_phones WHERE customer_id = ? ORDER BY created_at, rowid').all(one.id))
       .toEqual([{ phone: '+639171234567' }, { phone: '+639187654321' }]);
 
-    // An email or phone Moonproject cannot read is kept in the notes, not lost and not a reason to stop the import.
+    // An email or phone Virtus cannot read is kept in the notes, not lost and not a reason to stop the import.
     const two = env.db.prepare("SELECT id, email, notes FROM cus_customers WHERE legacy_id = 'C-002'").get() as Record<string, string>;
     expect(two.email).toBeNull();
     expect(two.notes).toBe('Email in the old sheet: not an email. Phone in the old sheet: call the office');

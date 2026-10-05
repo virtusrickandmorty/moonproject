@@ -84,7 +84,7 @@ describe('the MANUAL size rows, in bulk', () => {
     juan = customerId('C-002');
     sizes = await stage(owner, 'Customer Sizes.csv', sizesCsv);
     expect(sizes.rows.map((r) => r.rowNumber)).toEqual([3, 4, 5, 6, 7, 8]); // S-001 names its customer: nothing to review
-    // A one-by-one Fix cannot name a customer that is already in Moonproject by its legacy ID.
+    // A one-by-one Fix cannot name a customer that is already in Virtus by its legacy ID.
     expect((await owner.post(`/api/mig/rows/${rowId(sizes.rows, ROW.juan)}/fix`, { manualData: { customerLegacyId: 'C-002' } })).statusCode).toBe(422);
   });
 

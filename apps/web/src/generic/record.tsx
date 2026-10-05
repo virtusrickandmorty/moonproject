@@ -13,8 +13,11 @@ import { RecordDialog, type FormMode } from './DocForm.tsx';
 
 interface Asked { preview: Preview; input: unknown; businessDate?: string }
 
-/** `onRecorded` runs after the server recorded it and before the view opens (e.g. discard the form's draft). */
-export function useRecord(type: DocTypeInfo, mode: FormMode, prefill: (d: DocDetail) => void, onRecorded?: () => Promise<unknown>) {
+/**
+ * `onRecorded` runs after the server recorded it and before the view opens (e.g. discard the form's draft). `show`: open the
+ * recorded document another way than its page (a form in a dialog over the list opens it in a dialog there).
+ */
+export function useRecord(type: DocTypeInfo, mode: FormMode, prefill: (d: DocDetail) => void, onRecorded?: () => Promise<unknown>, show?: (id: string) => void) {
   const [original, setOriginal] = useState<DocHeader>();
   const [reason, setReason] = useState('');
   const [asked, setAsked] = useState<Asked | null>(null);
@@ -45,7 +48,7 @@ export function useRecord(type: DocTypeInfo, mode: FormMode, prefill: (d: DocDet
         ? await api.reissue(type.key, original.id, input, shown.totalCents, reason, key, businessDate)
         : await api.post(type.key, input, shown.totalCents, key, businessDate);
       await onRecorded?.().catch(() => undefined);
-      navigate(docPath(type.key, `/${r.id}?recorded=1`));
+      if (show) show(r.id); else navigate(docPath(type.key, `/${r.id}?recorded=1`));
     } catch (e) {
       if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setAsked({ ...asked!, preview: await preview(input, businessDate) });
       throw e;

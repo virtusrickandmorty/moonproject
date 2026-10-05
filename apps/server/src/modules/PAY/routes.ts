@@ -121,7 +121,7 @@ export function payRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   /**
-   * Pay before Moonproject (prior.ts): this shop's pay before it used Moonproject and a previous employer's, per employee
+   * Pay before Virtus (prior.ts): this shop's pay before it used Virtus and a previous employer's, per employee
    * and year; changes with If-Match. The accountant's only.
    */
   app.get('/api/pay/prior', { config: { permission: 'pay.prior.view' } }, async (req) => {

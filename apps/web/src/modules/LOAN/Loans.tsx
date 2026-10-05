@@ -9,6 +9,7 @@ import { Notice, Panel, StatusChip, peso } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { KIND_WORDS, STATE_WORDS, lateCounts, leftCents, loanDocType, loanTotals, ratePercent, scheduleStates } from './register.ts';
+import { Crumb } from '../../shell/crumbs.tsx';
 
 const num = 'py-1 text-right tabular-nums';
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
@@ -78,7 +79,7 @@ export function LoanPage({ docTypes, params }: { docTypes: DocTypeInfo[]; params
   return (
     <div className="max-w-4xl space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">{l.lender}</h1>
+        <Crumb label={l.lender} /><h1 className="text-2xl font-semibold">{l.lender}</h1>
         <Link to={docPath(loanDocType(l.number), `/${l.id}`)} className="underline">{l.number}</Link>
         {l.status !== 'posted' && <StatusChip status={l.status} />}
         <span className="flex-1" />

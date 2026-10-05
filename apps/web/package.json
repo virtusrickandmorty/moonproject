@@ -7,6 +7,7 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@fontsource-variable/manrope": "5.3.0",
     "@moonproject/shared": "*",
     "age-encryption": "0.3.1",
     "react": "19.3.0",

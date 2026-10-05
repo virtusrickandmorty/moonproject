@@ -6,12 +6,13 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type AssetPage as AssetData, type AssetRow, type AssetStatus, type DepreciationGaps, type DocTypeInfo } from '../../api.ts';
-import { Button, Notice, Panel, StatusChip, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Notice, Panel, StatusChip, inputClass, peso, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { monthLabel } from '../TAX/bir.ts';
 import { DepreciationRun, DisposeAsset } from './Actions.tsx';
 import { STATUSES, STATUS_WORDS, canDispose, filterAssets, gapWarning, monthRows, onTheBooks } from './register.ts';
+import { Crumb } from '../../shell/crumbs.tsx';
 
 const num = 'py-1 text-right tabular-nums';
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
@@ -46,8 +47,8 @@ export function Assets({ docTypes }: { docTypes: DocTypeInfo[] }) {
       </div>
       <GapWarning gaps={gaps} />
       <p className="text-sm">On the books: <b>{t.count}</b> asset{t.count === 1 ? '' : 's'} · cost <b className="tabular-nums">{peso(t.costCents)}</b> · accumulated depreciation <b className="tabular-nums">{peso(t.accumulatedCents)}</b> · book value <b className="tabular-nums">{peso(t.bookValueCents)}</b></p>
-      <div className="flex flex-wrap items-center gap-3">
-        <input aria-label="Search assets" placeholder="Search number, description or class" className={`${inputClass} max-w-xs`} value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className={searchRowClass}>
+        <input aria-label="Search assets" placeholder="Search number, description or class" className={`${inputClass} ${searchClass}`} value={search} onChange={(e) => setSearch(e.target.value)} />
         <select aria-label="Status" className={`${inputClass} max-w-48`} value={status} onChange={(e) => setStatus(e.target.value as AssetStatus | 'all')}>
           <option value="all">Every status</option>
           {STATUSES.map((s) => <option key={s} value={s}>{STATUS_WORDS[s]}</option>)}
@@ -88,7 +89,7 @@ export function AssetPage({ docTypes, params }: { docTypes: DocTypeInfo[]; param
   return (
     <div className="max-w-4xl space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">{a.number} {a.description}</h1>
+        <Crumb label={a.number} /><h1 className="text-2xl font-semibold">{a.number} {a.description}</h1>
         <span className={chip(a.status)}>{STATUS_WORDS[a.status]}</span>
         <span className="flex-1" />
         <Link to="/fa/assets" className="text-sm underline">All fixed assets</Link>
