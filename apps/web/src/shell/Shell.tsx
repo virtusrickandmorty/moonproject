@@ -4,10 +4,10 @@
  * current item is a white pill.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { api, type DashNotification, type DocTypeInfo, type Me } from '../api.ts';
+import { api, type DashNotification, type DocTypeInfo, type Me, type MenuOrder } from '../api.ts';
 import { Link, navigate, useLocation } from '../router.tsx';
 import { longDate } from '../components/ui.tsx';
-import { MENU_FOLDS_KEY, buildMenu, docPath, isHere, labelOf, openGroups, type MenuGroup } from './menu.ts';
+import { MENU_FOLDS_KEY, applyMenuOrder, buildMenu, docPath, isHere, labelOf, openGroups, type MenuGroup, type MenuItem } from './menu.ts';
 import { SearchBox } from '../modules/NAV/Search.tsx';
 import { Breadcrumbs, CrumbName, crumbsFor } from './crumbs.tsx';
 
@@ -157,6 +157,75 @@ function storedFolds(): Record<string, boolean> {
   } catch { return {}; }
 }
 
+type MenuList = { group: MenuGroup; items: MenuItem[] }[];
+type Dragging = { kind: 'group'; at: number } | { kind: 'item'; group: number; at: number } | null;
+const moved = <T,>(list: T[], from: number, to: number) => { const next = [...list]; const [x] = next.splice(from, 1); next.splice(to, 0, x!); return next; };
+
+/**
+ * Arranging the side menu: drag a group or a screen to where it should go (within its group), or use the arrows, which
+ * also work on a touch screen and from the keyboard. Saved to the person's account, so it follows them to any PC.
+ */
+export function ArrangeMenu({ menu, onSave, onCancel }: { menu: MenuList; onSave: (order: MenuOrder) => Promise<void>; onCancel: () => void }) {
+  const [draft, setDraft] = useState(menu);
+  const [dragging, setDragging] = useState<Dragging>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const save = async (order: MenuOrder) => {
+    setBusy(true); setError('');
+    try { await onSave(order); } catch (e) { setError((e as Error).message); setBusy(false); }
+  };
+  const moveGroup = (from: number, to: number) => { if (to >= 0 && to < draft.length) setDraft(moved(draft, from, to)); };
+  const moveItem = (g: number, from: number, to: number) => {
+    if (to < 0 || to >= draft[g]!.items.length) return;
+    setDraft(draft.map((x, i) => (i === g ? { ...x, items: moved(x.items, from, to) } : x)));
+  };
+  const arrows = (label: string, up: () => void, down: () => void, first: boolean, last: boolean) => (
+    <span className="ml-auto flex shrink-0 gap-0.5">
+      <button type="button" disabled={first} onClick={up} aria-label={`Move ${label} up`} className="grid size-6 place-items-center rounded text-slate-500 hover:bg-white hover:text-indigo-700 disabled:opacity-25">↑</button>
+      <button type="button" disabled={last} onClick={down} aria-label={`Move ${label} down`} className="grid size-6 place-items-center rounded text-slate-500 hover:bg-white hover:text-indigo-700 disabled:opacity-25">↓</button>
+    </span>
+  );
+  const grip = <span aria-hidden="true" className="cursor-grab select-none text-slate-400">⠿</span>;
+  return (
+    <div className="space-y-2 pl-3" aria-label="Arrange the menu">
+      <div className="sticky top-0 z-10 space-y-2 rounded-lg bg-white p-3 shadow-sm ring-1 ring-indigo-200">
+        <p className="text-xs font-semibold text-slate-700">Drag a group or a screen to where you want it, or use the arrows.</p>
+        <div className="flex flex-wrap gap-1.5">
+          <button type="button" disabled={busy} onClick={() => void save({ groups: draft.map((g) => g.group), items: Object.fromEntries(draft.map((g) => [g.group, g.items.map((i) => i.path)])) })}
+            className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button>
+          <button type="button" disabled={busy} onClick={onCancel} className="rounded-md px-3 py-1.5 text-xs font-semibold ring-1 ring-slate-300 hover:bg-slate-50">Cancel</button>
+          <button type="button" disabled={busy} onClick={() => void save({ groups: [], items: {} })} className="rounded-md px-2 py-1.5 text-xs font-semibold text-slate-500 hover:text-red-700">Reset to default</button>
+        </div>
+        {error && <p role="alert" className="text-xs font-semibold text-red-700">{error}</p>}
+      </div>
+      <ol className="space-y-1">
+        {draft.map((g, gi) => (
+          <li key={g.group} draggable onDragStart={(e) => { e.stopPropagation(); setDragging({ kind: 'group', at: gi }); }} onDragEnd={() => setDragging(null)}
+            onDragOver={(e) => { if (dragging?.kind === 'group') e.preventDefault(); }}
+            onDrop={(e) => { e.preventDefault(); if (dragging?.kind === 'group') moveGroup(dragging.at, gi); setDragging(null); }}
+            className={`rounded-lg bg-page ${dragging?.kind === 'group' && dragging.at === gi ? 'opacity-40' : ''}`}>
+            <div className="flex items-center gap-2 py-2 pl-3 pr-1 text-[11px] font-bold uppercase tracking-wider text-[#404040]">
+              {grip}<Icon name={g.group} className="size-4" /><span className="truncate">{g.group}</span>
+              {arrows(g.group, () => moveGroup(gi, gi - 1), () => moveGroup(gi, gi + 1), gi === 0, gi === draft.length - 1)}
+            </div>
+            <ol className="pb-1">
+              {g.items.map((it, ii) => (
+                <li key={it.path} draggable onDragStart={(e) => { e.stopPropagation(); setDragging({ kind: 'item', group: gi, at: ii }); }} onDragEnd={() => setDragging(null)}
+                  onDragOver={(e) => { if (dragging?.kind === 'item' && dragging.group === gi) { e.preventDefault(); e.stopPropagation(); } }}
+                  onDrop={(e) => { if (dragging?.kind !== 'item' || dragging.group !== gi) return; e.preventDefault(); e.stopPropagation(); moveItem(gi, dragging.at, ii); setDragging(null); }}
+                  className={`flex items-center gap-2 rounded-r-full py-1.5 pl-7 pr-1 text-[#484848] hover:bg-white ${dragging?.kind === 'item' && dragging.group === gi && dragging.at === ii ? 'opacity-40' : ''}`}>
+                  {grip}<span className="min-w-0 break-words leading-tight">{it.label}</span>
+                  {arrows(it.label, () => moveItem(gi, ii, ii - 1), () => moveItem(gi, ii, ii + 1), ii === 0, ii === g.items.length - 1)}
+                </li>
+              ))}
+            </ol>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 const pop = 'absolute right-0 z-30 mt-2 w-60 overflow-hidden rounded-lg bg-white py-1 text-sm text-slate-800 shadow-lg ring-1 ring-slate-200 [&>*]:block [&>*]:w-full [&>*]:px-4 [&>*]:py-2 [&>*]:text-left [&>*:hover]:bg-indigo-50';
 
 export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes: DocTypeInfo[]; onSignOut: () => void; children: ReactNode }) {
@@ -164,7 +233,13 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
   const [open, setOpen] = useState<'menu' | 'new' | 'user' | 'bell' | null>(null);
   const [newQuery, setNewQuery] = useState('');
   const [wide, setWide] = useState(true); // the sidebar on a big screen; the same button hides it
-  const menu = useMemo(() => buildMenu(docTypes, new Set(me.permissions)), [docTypes, me.permissions]);
+  const allowed = useMemo(() => buildMenu(docTypes, new Set(me.permissions)), [docTypes, me.permissions]);
+  // The person's own order of the menu (PREF), from their account; the usual order until it arrives or if it cannot.
+  const [order, setOrder] = useState<MenuOrder | null>(null);
+  const [arranging, setArranging] = useState(false);
+  useEffect(() => { api.menuOrder().then(setOrder, () => undefined); }, []);
+  const menu = useMemo(() => applyMenuOrder(allowed, order), [allowed, order]);
+  const saveOrder = async (next: MenuOrder) => { setOrder(await api.saveMenuOrder(next)); setArranging(false); };
   // A long menu folds: the groups the person opened, and the group of the screen on show unless they closed it.
   const [chosen, setChosen] = useState(storedFolds);
   const folding = openGroups(menu, path, chosen);
@@ -219,7 +294,8 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
       <p className="px-4 pb-2 text-xs text-muted lg:hidden print:hidden"><ServerDate /></p>
       <div className="flex">
         <Navigation open={open === 'menu'} folds={folding.folds} wide={wide} onClose={() => setOpen(null)}>
-          {menu.map((g) => {
+          {arranging && <ArrangeMenu menu={menu} onSave={saveOrder} onCancel={() => setArranging(false)} />}
+          {!arranging && menu.map((g) => {
             const shown = folding.open.has(g.group);
             const heading = <><Icon name={g.group} className="size-4" /><span className="flex-1">{g.group}</span></>;
             return (
@@ -241,6 +317,11 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
               </div>
             );
           })}
+          {!arranging && (
+            <button type="button" onClick={() => setArranging(true)} className="mt-3 flex items-center gap-2 py-2 pl-6 pr-4 text-xs font-semibold text-slate-500 hover:text-indigo-700">
+              <span aria-hidden="true">⇅</span> Arrange menu
+            </button>
+          )}
         </Navigation>
         {/* data-erp: the page area of the signed-in ERP; index.css widens its screens (the public website keeps its own layout). */}
         <main data-erp className="min-w-0 flex-1 px-3 pb-10 pt-2 sm:px-4 md:px-6">

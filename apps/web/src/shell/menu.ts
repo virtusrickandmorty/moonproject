@@ -172,6 +172,19 @@ export function openGroups(menu: { group: MenuGroup; items: MenuItem[] }[], path
   return { folds: true, open: new Set(all.filter((g) => chosen[g] ?? g === here)) };
 }
 
+/**
+ * A person's own order of the menu (PREF): their groups first in the order they chose, and within each group their screens
+ * in their order. A group or screen they did not place (one added since, or newly allowed) keeps its usual place after
+ * the placed ones; a placed one they can no longer open is simply not there.
+ */
+export function applyMenuOrder<G extends { group: MenuGroup; items: MenuItem[] }>(menu: G[], order?: { groups: string[]; items: Record<string, string[]> } | null): G[] {
+  if (!order || (!order.groups.length && !Object.keys(order.items).length)) return menu;
+  const rank = (placed: readonly string[], key: string, usual: number) => { const i = placed.indexOf(key); return i < 0 ? placed.length + usual : i; };
+  const sorted = <T,>(list: T[], placed: readonly string[], key: (t: T) => string) =>
+    list.map((t, usual) => ({ t, at: rank(placed, key(t), usual) })).sort((a, b) => a.at - b.at).map((x) => x.t);
+  return sorted(menu.map((g) => ({ ...g, items: sorted(g.items, order.items[g.group] ?? [], (i) => i.path) })), order.groups, (g) => g.group);
+}
+
 export function buildMenu(docTypes: DocTypeInfo[], permissions: ReadonlySet<string>, screens = SCREENS): { group: MenuGroup; items: MenuItem[] }[] {
   const items: MenuItem[] = [
     ...screens.filter((s) => !s.permission || permissions.has(s.permission)),

@@ -175,7 +175,7 @@ const PUBLIC_ROUTES = ['GET /*', 'GET /api/health', 'GET /api/setup/status', 'GE
   'POST /api/sup/messages'];
 
 /** 'authenticated' routes that are open to every signed-in user by design (nothing the role lacks is shown). */
-const OPEN_TO_SIGNED_IN = ['GET /api/system/tls', 'GET /api/system/practice', 'GET /api/settings', 'POST /api/auth/logout', 'GET /api/auth/me', 'POST /api/auth/change-password', 'POST /api/auth/step-up'];
+const OPEN_TO_SIGNED_IN = ['GET /api/pref/menu', 'PUT /api/pref/menu', 'GET /api/system/tls', 'GET /api/system/practice', 'GET /api/settings', 'POST /api/auth/logout', 'GET /api/auth/me', 'POST /api/auth/change-password', 'POST /api/auth/step-up'];
 
 /** 'authenticated' routes that check a document type's permission inside; called through every doc type below. */
 const DOC_TYPE_ROUTES = [

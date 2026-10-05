@@ -5,3 +5,4 @@ apps/server/src/modules/SUP/migrations/*.sql text eol=lf
 apps/server/src/modules/QS/migrations/0002_qs_line_products.sql text eol=lf
 apps/server/src/modules/COM/migrations/0003_com_online_orders.sql text eol=lf
 apps/server/src/modules/EMP/migrations/0006_emp_personal_details.sql text eol=lf
+apps/server/src/modules/PREF/migrations/*.sql text eol=lf
