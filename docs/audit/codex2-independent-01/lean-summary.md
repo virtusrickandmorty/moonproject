@@ -3,14 +3,14 @@
 Optional public record of the consolidated review, 5 October 2026. Acting on the review does not wait for this file.
 
 - Application SHA: `d4bc1ef84f2771a9f8720f199c9cd4d831dbc949`. Rechecked against main `4e22ef53d9a549aa7d227b9b2e1711da260c4d92`: no finding below is fixed there yet.
-- Status: **partial.** Covered: [00-baseline.md](00-baseline.md), [11-ease-repetition-speed.md](11-ease-repetition-speed.md) (complete for its stated scope) and `01-money-core.md` (partial, pending in PR #275). The B1 money-gap check, B2 payroll and tax review and B3 reliability review have not been run yet, so payroll, tax and reliability are not covered. The security review and A1's restricted findings were consolidated privately and are not summarized here.
+- Status: **partial.** Covered: [00-baseline.md](00-baseline.md), [11-ease-repetition-speed.md](11-ease-repetition-speed.md) (complete for its stated scope) and `01-money-core.md` (partial, pending in PR #275). The B1 money-gap check, B2 payroll and tax review and B3 reliability review are done but were not available to this consolidation, so payroll, tax and reliability are not covered here yet. The security review and A1's restricted findings were consolidated privately and are not summarized here.
 - Detail stays in the linked reports; this file only ranks and groups it.
 
 ## Who did what
 
 - **Independent:** the baseline, A1 and A11 were written by a separate auditor account that did not build the app.
 - **Builder material they used:** the corrected business brief, the existing tests and fixtures, and the owner guides. A1 discloses one accidental run of builder fixtures and adopted nothing from it.
-- **Planned builder reviews:** B1, B2 and B3 were planned as disclosed builder reviews; none has run.
+- **Builder reviews:** B1, B2 and B3 are disclosed builder reviews; they will be added when supplied.
 - **Builder side:** this summary and its code re-checks. "Confirmed" means the auditor observed it and the code at the application SHA agrees; it is not a second independent opinion.
 
 ## Ranked findings
@@ -30,7 +30,7 @@ Optional public record of the consolidated review, 5 October 2026. Acting on the
 | Friction | A11-005 tax choices assume accountant knowledge | Suspected |
 | Guides | A1-007, A11-009, plus the reconciliation guide's reopen text | Confirmed |
 
-No wrong-pay finding is in the published reports, but payroll was not audited, so it is **unresolved**, not clean. A11's "stale customer" suspicion was refuted with evidence. On Windows, one test's cleanup and line-ending-sensitive fixtures keep the full suite from a clean exit (unresolved).
+No wrong-pay finding is in the published reports, but the payroll review is not included yet, so it is **unresolved**, not clean. A11's "stale customer" suspicion was refuted with evidence. On Windows, one test's cleanup and line-ending-sensitive fixtures keep the full suite from a clean exit (unresolved).
 
 ## Fix batches
 
