@@ -35,6 +35,10 @@ const fields = {
   payoutMethod: z.enum(['cash', 'bank', 'gcash']),
   payoutAccount: text(60).nullable(),
   emergencyContact: text(200).nullable(),
+  gender: z.enum(['male', 'female']).nullable(),
+  homeAddress: text(300).nullable(),
+  // The employee's own mobile or landline: digits, spaces, dashes, brackets and a leading +, 7 to 15 digits.
+  contactNo: z.string().trim().regex(/^\+?(?:[\s()-]*\d){7,15}[\s()-]*$/, 'Type a mobile or landline number, like 0917 123 4567.').nullable(),
 };
 export const employeeInput = z.object(fields).partial().required({ fullName: true, costCentre: true, hireDate: true }).strict();
 export const employeeUpdate = z.object(fields).partial().strict();
@@ -44,8 +48,9 @@ const COLUMN: Record<Exclude<keyof EmployeeInput, 'statutory'>, string> = {
   fullName: 'full_name', position: 'position', department: 'department', costCentre: 'cost_centre', hireDate: 'hire_date', birthday: 'birthday',
   statutoryOffReason: 'statutory_off_reason', sssNo: 'sss_no', phicNo: 'phic_no', hdmfNo: 'hdmf_no', tin: 'tin',
   payoutMethod: 'payout_method', payoutAccount: 'payout_account', emergencyContact: 'emergency_contact',
+  gender: 'gender', homeAddress: 'home_address', contactNo: 'contact_no',
 };
-const PERSONAL = new Set(['fullName', 'birthday', 'sssNo', 'phicNo', 'hdmfNo', 'tin', 'payoutAccount', 'emergencyContact']);
+const PERSONAL = new Set(['fullName', 'birthday', 'sssNo', 'phicNo', 'hdmfNo', 'tin', 'payoutAccount', 'emergencyContact', 'gender', 'homeAddress', 'contactNo']);
 const ID_FIELDS = ['sssNo', 'phicNo', 'hdmfNo', 'tin'] as const;
 
 export interface EmployeeRecord {
@@ -53,7 +58,8 @@ export interface EmployeeRecord {
   hireDate: string; separatedOn: string | null; separationReason: string | null; birthday: string | null;
   statutory: { sss: boolean; phic: boolean; hdmf: boolean; wtax: boolean }; statutoryOffReason: string | null;
   sssNo: string | null; phicNo: string | null; hdmfNo: string | null; tin: string | null;
-  payoutMethod: 'cash' | 'bank' | 'gcash'; payoutAccount: string | null; emergencyContact: string | null; version: number; updatedAt: string;
+  payoutMethod: 'cash' | 'bank' | 'gcash'; payoutAccount: string | null; emergencyContact: string | null;
+  gender: 'male' | 'female' | null; homeAddress: string | null; contactNo: string | null; version: number; updatedAt: string;
 }
 
 type Row = Record<string, unknown>;
@@ -64,7 +70,8 @@ const asRecord = (r: Row): EmployeeRecord => ({
   statutory: { sss: r.sss_on === 1, phic: r.phic_on === 1, hdmf: r.hdmf_on === 1, wtax: r.wtax_on === 1 }, statutoryOffReason: r.statutory_off_reason as string | null,
   sssNo: r.sss_no as string | null, phicNo: r.phic_no as string | null, hdmfNo: r.hdmf_no as string | null, tin: r.tin as string | null,
   payoutMethod: r.payout_method as EmployeeRecord['payoutMethod'], payoutAccount: r.payout_account as string | null,
-  emergencyContact: r.emergency_contact as string | null, version: r.version as number, updatedAt: r.updated_at as string,
+  emergencyContact: r.emergency_contact as string | null, gender: r.gender as EmployeeRecord['gender'], homeAddress: r.home_address as string | null,
+  contactNo: r.contact_no as string | null, version: r.version as number, updatedAt: r.updated_at as string,
 });
 
 export function employeeRecord(db: Db, id: string): EmployeeRecord | undefined {

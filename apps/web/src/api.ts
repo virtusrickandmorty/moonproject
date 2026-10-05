@@ -299,6 +299,7 @@ export interface EmployeeRecord extends EmployeeRow {
   separationReason: string | null; birthday: string | null; statutory: Statutory; statutoryOffReason: string | null;
   sssNo: string | null; phicNo: string | null; hdmfNo: string | null; tin: string | null;
   payoutMethod: 'cash' | 'bank' | 'gcash'; payoutAccount: string | null; emergencyContact: string | null; version: number;
+  gender: 'male' | 'female' | null; homeAddress: string | null; contactNo: string | null;
 }
 export interface PayProfile {
   id: number; effectiveFrom: string; payType: 'daily' | 'piece' | 'monthly' | 'mixed'; dailyRateCents: number | null; monthlyRateCents: number | null;

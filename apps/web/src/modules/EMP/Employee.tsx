@@ -1,5 +1,5 @@
 /**
- * One employee (PLAN E11): the record and its edits (If-Match), the statutory switches, government IDs (only with
+ * One employee (PLAN E11): the record (with date of birth, gender, contact no. and address) and its edits in a dialog (If-Match), the statutory switches, government IDs (only with
  * emp.view_ids), separation, paid leave (SIL) this year, the pay history with a new pay from a date (pay.view_rates), and
  * the employee's government loans (pay.loans.view) and pay before Virtus (pay.prior.view).
  */
@@ -50,47 +50,89 @@ export function EmployeePage({ me, params }: { me: Me; params?: Record<string, s
   );
 }
 
+const GENDER = { male: 'Male', female: 'Female' } as const;
+const PAID_BY = { cash: 'Cash', bank: 'Bank', gcash: 'GCash' } as const;
+/** "1990-04-12" → "12 April 1990 (36 years old)" on the server's calendar day; age only when the date is a real birthday. */
+function birthdayWords(b: string | null, today = new Date().toISOString().slice(0, 10)) {
+  if (!b) return null;
+  const age = Number(today.slice(0, 4)) - Number(b.slice(0, 4)) - (today.slice(5) < b.slice(5) ? 1 : 0);
+  const shown = new Date(`${b}T00:00:00Z`).toLocaleDateString('en-PH', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+  return age >= 0 && age < 120 ? `${shown} (${age} years old)` : shown;
+}
+
+/** The employee's details as they are now; Edit opens them in a dialog (emp.manage, while employed). */
 function Record({ e, editable, idsVisible, onSaved }: { e: EmployeeRecord; editable: boolean; idsVisible: boolean; onSaved: () => Promise<unknown> }) {
+  const [editing, setEditing] = useState(false);
+  const [done, setDone] = useState('');
+  const off = SCHEMES.filter(([k]) => !e.statutory[k]).map(([, l]) => l);
+  const shown: [string, string | null, boolean?][] = [
+    ['Full name', e.fullName], ['Position', e.position], ['Department', e.department], ['Pay cost group', e.costCentre === 'office' ? 'Office and sales' : 'Production'],
+    ['Date of birth', birthdayWords(e.birthday)], ['Gender', e.gender ? GENDER[e.gender] : null], ['Contact no.', e.contactNo], ['Hire date', e.hireDate],
+    ['Home address', e.homeAddress, true], ['Emergency contact', e.emergencyContact, true],
+    ['Paid by', PAID_BY[e.payoutMethod]], ['Bank or GCash account', e.payoutAccount],
+    ['Government deductions', off.length ? `${off.join(', ')} switched off: ${e.statutoryOffReason ?? ''}` : 'SSS, PhilHealth, Pag-IBIG and withholding tax', true],
+    ...IDS.map(([k, l]): [string, string | null] => [l, idsVisible ? e[k] : e[k] ? 'Hidden: ask an owner' : null]),
+  ];
+  return (
+    <Panel title="Details">
+      <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+        {shown.map(([name, value, wide]) => <div key={name} className={wide ? 'sm:col-span-2' : ''}>
+          <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{name}</dt>
+          <dd className={`mt-0.5 whitespace-pre-wrap break-words ${value ? 'text-slate-900' : 'text-slate-400'}`}>
+            {name === 'Contact no.' && value ? <a href={`tel:${value.replace(/[^\d+]/g, '')}`} className="text-indigo-700 hover:underline">{value}</a> : value || '—'}
+          </dd>
+        </div>)}
+      </dl>
+      {done && <Notice tone="success">{done}</Notice>}
+      {editable && <div><Button tone="primary" onClick={() => { setDone(''); setEditing(true); }}>Edit details</Button></div>}
+      {editing && <EditEmployee e={e} idsVisible={idsVisible} onClose={() => setEditing(false)} onSaved={async (words) => { setEditing(false); setDone(words); await onSaved(); }} />}
+    </Panel>
+  );
+}
+
+/** The whole record in a dialog: what changed is sent, against the version on screen (If-Match). */
+function EditEmployee({ e, idsVisible, onClose, onSaved }: { e: EmployeeRecord; idsVisible: boolean; onClose: () => void; onSaved: (words: string) => Promise<unknown> }) {
   const initial = (): Record<string, string> => ({
     ...Object.fromEntries([...TEXT, ...IDS].map(([k]) => [k, e[k] ?? ''])), costCentre: e.costCentre, hireDate: e.hireDate, birthday: e.birthday ?? '',
-    payoutMethod: e.payoutMethod, statutoryOffReason: e.statutoryOffReason ?? '',
+    payoutMethod: e.payoutMethod, statutoryOffReason: e.statutoryOffReason ?? '', gender: e.gender ?? '', homeAddress: e.homeAddress ?? '', contactNo: e.contactNo ?? '',
   });
   const [v, setV] = useState(initial);
   const [statutory, setStatutory] = useState(e.statutory);
-  const [done, setDone] = useState('');
   const a = useAction();
-  useEffect(() => (setV(initial()), setStatutory(e.statutory)), [e.version]); // a save reloads the record with a new version
   const allOn = SCHEMES.every(([k]) => statutory[k]);
   const save = async () => {
     const body: Record<string, unknown> = {};
-    const fields = [...TEXT.map(([k]) => k), ...(idsVisible ? IDS.map(([k]) => k) : []), 'costCentre', 'hireDate', 'birthday', 'payoutMethod', 'statutoryOffReason'];
+    const fields = [...TEXT.map(([k]) => k), ...(idsVisible ? IDS.map(([k]) => k) : []), 'costCentre', 'hireDate', 'birthday', 'payoutMethod', 'statutoryOffReason', 'gender', 'homeAddress', 'contactNo'];
     for (const k of fields) {
       const now = String(v[k] ?? '').trim();
       const was = String((e as unknown as Record<string, unknown>)[k] ?? '');
       if (now !== was) body[k] = now === '' ? null : now;
     }
     if (SCHEMES.some(([k]) => statutory[k] !== e.statutory[k])) body.statutory = statutory;
-    if (Object.keys(body).length === 0) return setDone('Nothing changed.');
+    if (Object.keys(body).length === 0) return onSaved('Nothing changed.');
     await api.updateEmployee(e.id, e.version, body);
-    setDone('Saved.');
-    await onSaved();
+    await onSaved('Saved.');
   };
-  const input = (k: string, label: string, type = 'text') => (
-    <Field key={k} label={label}><input type={type} disabled={!editable} className={inputClass} value={v[k] ?? ''} onChange={(x) => setV({ ...v, [k]: x.target.value })} /></Field>
+  const input = (k: string, label: string, type = 'text', more: Record<string, string> = {}) => (
+    <Field key={k} label={label}><input type={type} className={inputClass} value={v[k] ?? ''} onChange={(x) => setV({ ...v, [k]: x.target.value })} {...more} /></Field>
   );
   return (
-    <Panel title="Details">
-      <div className="grid gap-3 sm:grid-cols-2">
+    <Dialog title={`Edit ${e.fullName}`} wide onClose={onClose}>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {TEXT.slice(0, 3).map(([k, l]) => input(k, l))}
+        {input('birthday', 'Date of birth', 'date')}
+        <Field label="Gender"><select className={inputClass} value={v.gender} onChange={(x) => setV({ ...v, gender: x.target.value })}>
+          <option value="">Not given</option><option value="male">Male</option><option value="female">Female</option></select></Field>
+        {input('contactNo', 'Contact no.', 'tel', { inputMode: 'tel', placeholder: '0917 123 4567' })}
+        <div className="sm:col-span-2 lg:col-span-3"><Field label="Home address"><textarea rows={2} maxLength={300} className={inputClass} value={v.homeAddress} onChange={(x) => setV({ ...v, homeAddress: x.target.value })} /></Field></div>
         <Field label="Pay cost group">
-          <select disabled={!editable} className={inputClass} value={v.costCentre} onChange={(x) => setV({ ...v, costCentre: x.target.value })}>
+          <select className={inputClass} value={v.costCentre} onChange={(x) => setV({ ...v, costCentre: x.target.value })}>
             <option value="production">Production</option><option value="office">Office and sales</option>
           </select>
         </Field>
         {input('hireDate', 'Hire date', 'date')}
-        {input('birthday', 'Birthday (optional)', 'date')}
         <Field label="Paid by">
-          <select disabled={!editable} className={inputClass} value={v.payoutMethod} onChange={(x) => setV({ ...v, payoutMethod: x.target.value })}>
+          <select className={inputClass} value={v.payoutMethod} onChange={(x) => setV({ ...v, payoutMethod: x.target.value })}>
             <option value="cash">Cash</option><option value="bank">Bank</option><option value="gcash">GCash</option>
           </select>
         </Field>
@@ -100,7 +142,7 @@ function Record({ e, editable, idsVisible, onSaved }: { e: EmployeeRecord; edita
       <div className="flex flex-wrap gap-4 text-sm">
         {SCHEMES.map(([k, l]) => (
           <label key={k} className="flex items-center gap-1">
-            <input type="checkbox" disabled={!editable} checked={statutory[k]} onChange={(x) => setStatutory({ ...statutory, [k]: x.target.checked })} /> {l}
+            <input type="checkbox" checked={statutory[k]} onChange={(x) => setStatutory({ ...statutory, [k]: x.target.checked })} /> {l}
           </label>
         ))}
       </div>
@@ -110,9 +152,11 @@ function Record({ e, editable, idsVisible, onSaved }: { e: EmployeeRecord; edita
         {IDS.map(([k, l]) => (idsVisible ? input(k, l) : <Field key={k} label={l}><input disabled className={inputClass} value={e[k] ?? ''} /></Field>))}
       </div>
       {a.error && <Notice>{a.error}</Notice>}
-      {done && !a.error && <Notice tone="success">{done}</Notice>}
-      {editable && <Button tone="primary" disabled={a.busy} onClick={() => a.run(save)}>Save changes</Button>}
-    </Panel>
+      <div className="flex justify-end gap-2">
+        <Button onClick={onClose}>Cancel</Button>
+        <Button tone="primary" disabled={a.busy} onClick={() => a.run(save)}>Save changes</Button>
+      </div>
+    </Dialog>
   );
 }
 
