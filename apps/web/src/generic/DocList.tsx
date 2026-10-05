@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, type DocCounts, type DocHeader, type DocListFilters, type DocTypeInfo, type Draft } from '../api.ts';
 import { Link, navigate } from '../router.tsx';
-import { Button, Dialog, Field, Notice, Panel, StatusChip, inputClass, manilaTime, peso, searchClass } from '../components/ui.tsx';
+import { Button, Dialog, Field, Notice, Panel, StatusChip, inputClass, manilaTime, peso } from '../components/ui.tsx';
 import { docPath, labelOf, pluralLabelOf } from '../shell/menu.ts';
 
 const PAGE = 25;
@@ -131,7 +131,7 @@ export function DocList({ type, notice, pageSize, form, view, viewing }: {
         </Panel>
       )}
       {/* The status buttons on the left; the search, its dates and the Search button on the right, in half the page. */}
-      <div className="flex flex-col-reverse gap-3 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col-reverse gap-3 xl:flex-row xl:items-end xl:justify-between">
         <div className="flex flex-wrap gap-2">
           {FILTERS.map(([v, label]) => (
             <button key={v} type="button" aria-pressed={status === v} onClick={() => setStatus(v)} className={`rounded-full px-3 py-1 text-sm ring-1 ${status === v ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300'}`}>
@@ -139,13 +139,14 @@ export function DocList({ type, notice, pageSize, form, view, viewing }: {
             </button>
           ))}
         </div>
-        <form className={`${searchClass} space-y-2`} onSubmit={(e) => { e.preventDefault(); const next = { ...typed, q: typed.q.trim() }; setTyped(next); if (JSON.stringify(next) === JSON.stringify(filters)) void load(); else setFilters(next); }}>
-          <Field label="Search records" hint="Number, customer or supplier, or words in the summary."><input type="search" maxLength={100} className={inputClass} value={typed.q} onChange={(e) => setTyped({ ...typed, q: e.target.value })} /></Field>
-          <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-[1fr_1fr_auto_auto]">
-            <Field label="From date"><input type="date" className={inputClass} value={typed.from} onChange={(e) => setTyped({ ...typed, from: e.target.value })} /></Field>
-            <Field label="To date"><input type="date" className={inputClass} value={typed.to} min={typed.from || undefined} onChange={(e) => setTyped({ ...typed, to: e.target.value })} /></Field>
-            <Button type="submit" tone="primary">Search</Button>
-            {(filtered || typed.q || typed.from || typed.to) && <Button onClick={clear}>Clear filters</Button>}
+        {/* The search, its dates and the button on one line (they wrap on a phone). */}
+        <form className="w-full space-y-1 xl:w-2/3" onSubmit={(e) => { e.preventDefault(); const next = { ...typed, q: typed.q.trim() }; setTyped(next); if (JSON.stringify(next) === JSON.stringify(filters)) void load(); else setFilters(next); }}>
+          <div className="flex flex-wrap items-end gap-2 sm:flex-nowrap">
+            <div className="basis-full sm:min-w-40 sm:flex-1 sm:basis-auto"><Field label="Search records"><input type="search" maxLength={100} className={inputClass} placeholder="Number, customer, supplier or words in the summary" value={typed.q} onChange={(e) => setTyped({ ...typed, q: e.target.value })} /></Field></div>
+            <div className="flex-1 sm:w-36 sm:flex-none sm:shrink-0"><Field label="From date"><input type="date" className={inputClass} value={typed.from} onChange={(e) => setTyped({ ...typed, from: e.target.value })} /></Field></div>
+            <div className="flex-1 sm:w-36 sm:flex-none sm:shrink-0"><Field label="To date"><input type="date" className={inputClass} value={typed.to} min={typed.from || undefined} onChange={(e) => setTyped({ ...typed, to: e.target.value })} /></Field></div>
+            <Button type="submit" tone="primary" className="shrink-0">Search</Button>
+            {(filtered || typed.q || typed.from || typed.to) && <Button className="whitespace-nowrap" onClick={clear}>Clear filters</Button>}
           </div>
           {pending && <p className="text-sm text-slate-500">Filters not applied yet. Press Search.</p>}
         </form>
