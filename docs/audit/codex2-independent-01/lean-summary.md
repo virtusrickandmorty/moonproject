@@ -3,6 +3,7 @@
 Optional public record of the consolidated review, 5 October 2026. Acting on the review does not wait for this file.
 
 - Application SHA: `d4bc1ef84f2771a9f8720f199c9cd4d831dbc949`. Rechecked against main `4e22ef53d9a549aa7d227b9b2e1711da260c4d92`: no finding below is fixed there yet.
+- Not covered: main also gained the website shop, POS, online orders and support inbox (PR #274) after the application SHA. No audit has reviewed them.
 - Inputs: [00-baseline.md](00-baseline.md), [11-ease-repetition-speed.md](11-ease-repetition-speed.md) (complete for its stated scope), `01-money-core.md` (partial, pending in PR #275), and the private reports B1 (money gaps), B2 (payroll and tax), B3 (reliability) and I1 (security).
 - Security results and A1's restricted findings are handled privately and are not described here.
 - Detail stays in the reports; this file only ranks and groups it.
@@ -27,7 +28,8 @@ Optional public record of the consolidated review, 5 October 2026. Acting on the
 | Money | A1-001 account type and code can disagree; A1-004 a non-existent date is accepted; A1-002 a short final loan payment strands the rest | Confirmed |
 | Pay | B2-F4 pay earned after the December 13th-month payout waits a year; B2-F6 contributions switched off give no payroll warning | Confirmed |
 | Pay | B2-F5 the minimum-wage table may miss a 2026 tranche | Suspected |
-| Lost entry | A11-001 attendance marks are dropped when the period changes; A11-002 a measurement correction keeps only the values retyped | Confirmed |
+| Lost entry | A11-001 attendance marks are dropped when the period changes | Confirmed |
+| Records | A11-002 a measurement correction makes a current chart holding only the values retyped; earlier values stay in history | Confirmed; usability |
 | Records | B3-3 an older installer silently downgrades the database; B3-5 a restore reissues document numbers already used on paper | Confirmed |
 | Blocked work | A11-003 the default TV user cannot open the TV board; A1-005 no button to reopen a bank reconciliation | Confirmed |
 | Blocked work | B3-2 the watchdog's stop-then-start may leave the service stopped; B3-6 the documented restore command cannot run on an installed PC | Confirmed in source; Windows outcome unverified |
@@ -43,9 +45,11 @@ Minor items (centavo split, PhilHealth rounding, tax-code checks, CWT warning wo
 1. **Pay:** B2-F1, F2, F3, F6 and a pre-run payroll review; F4 and F5 after the accountant answers.
 2. **Money:** B1-01, A1-003, A1-004, A1-001, A1-006; B1-02 and A1-002 after the accountant answers.
 3. **Security:** handled privately.
-4. **Blocked and lost work:** A11-003, A1-005, A11-001, A11-002.
+4. **Blocked and lost work:** A11-003, A1-005, A11-001; A11-002 as explicit "correct current chart" and "start new chart" choices.
 5. **Windows operation:** B3-2, B3-3, B3-5, B3-6, safer backup file writes.
 6. **Friction and guides.**
+
+The numbers are groups, not an order: batches 1 to 3 go together before go-live. Each accepted finding gets a responsible builder, a fix and a test that first reproduces the original failure. A confirmed duplicate payment needs more than a plain warning: a duplicate supplier invoice is refused unless the accountant overrides it with a reason, and a likely repeated production sheet needs a reason to continue and appears on the pre-run payroll review.
 
 ## Verification tests
 
