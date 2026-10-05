@@ -17,6 +17,7 @@ import { AppError, badRequest, newId } from '@moonproject/shared';
 import { openDb, openReadonly, type Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { attachedFiles, sha256Hex, storeFile } from '../../engine/attachments.ts';
+import { revokeAllSessions } from '../../engine/security/sessions.ts';
 import { ATTACHMENTS, checkCopy, type Sidecar } from './backup.ts';
 
 /** A recovery secret key: "AGE-SECRET-KEY-1" and 58 bech32 characters, as printed at setup. */
@@ -225,7 +226,11 @@ export function applyPendingRestore(dbFile: string, at: string): { file: string;
   return { file: p.file, previous };
 }
 
-/** The audit entry in the restored database: which backup it came from and where the replaced database is kept. */
+/**
+ * After the swap, before anything is served: everyone signs in again, and the audit entry in the restored database says
+ * which backup it came from and where the replaced database is kept.
+ */
 export function recordRestored(db: Db, r: { file: string; previous: string }, at: string, by: 'start' | 'command line'): void {
+  revokeAllSessions(db, at);
   appendAudit(db, { at, userId: null, action: 'bak.restored', entityType: 'bak.backup', entityId: r.file, data: { previous: r.previous, by } });
 }

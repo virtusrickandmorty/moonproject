@@ -17,7 +17,7 @@ import { openDb } from './platform/db/driver.ts';
 import { stamp, systemClock } from './platform/clock.ts';
 import { buildApp, prepareDatabase } from './app.ts';
 import { loadModules } from './modules/load.ts';
-import { bakSettings, isDue, lastOkRun, runBackup } from './modules/BAK/backup.ts';
+import { bakSettings, isDue, lastOkRun, removeLeftoverCopies, runBackup } from './modules/BAK/backup.ts';
 import { applyPendingRestore, recordRestored } from './modules/BAK/restore.ts';
 import { localNames } from './engine/security/tls/certs.ts';
 import { joinHandler } from './engine/security/tls/join.ts';
@@ -121,6 +121,11 @@ void practice?.start();
 // Backups (PLAN C8): one at start if none today, then every 2 hours from 07:00 to 21:00 Manila. A failed run is
 // logged in bak_runs and shown on the backup page; the server keeps running.
 let backingUp = false;
+try {
+  removeLeftoverCopies(db, bakSettings(db).backupDir);
+} catch (e) {
+  app.log.error(`Old temporary backup copies could not be removed: ${(e as Error).message}`);
+}
 const backupTick = async () => {
   // Until the owner sets the two recovery keys, the backup page says backups are off.
   if (backingUp || bakSettings(db).recipients.length !== 2 || !isDue(stamp(systemClock), lastOkRun(db)?.at ?? null)) return;

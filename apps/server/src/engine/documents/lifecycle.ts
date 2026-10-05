@@ -1,7 +1,7 @@
 /**
  * One lifecycle for every document (PLAN C4). Each action runs in a single BEGIN IMMEDIATE transaction.
  */
-import { AppError, conflict, forbidden, newId, notFound, type Issue } from '@moonproject/shared';
+import { AppError, conflict, forbidden, isBusinessDate, newId, notFound, type Issue } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { CLOCK_TOLERANCE_MS, clockBackwardsError, stamp, today, type Clock } from '../../platform/clock.ts';
@@ -70,7 +70,7 @@ function resolveBusinessDate(def: DocTypeDef, actor: Actor, env: EngineEnv, requ
     throw new AppError('DATE_NOT_ALLOWED', 'This document always carries today’s date.', 400);
   }
   need(actor, BACKDATE_PERMISSION);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(requested) || requested > today(env.clock)) {
+  if (typeof requested !== 'string' || !isBusinessDate(requested) || requested > today(env.clock)) {
     throw new AppError('BAD_DATE', 'The date must be today or earlier (YYYY-MM-DD).', 400);
   }
   return requested;

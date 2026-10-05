@@ -91,6 +91,11 @@ export function revokeSession(db: Db, clock: Clock, sessionId: string): void {
   db.prepare('UPDATE sessions SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL').run(manilaTimestamp(clock.now()), sessionId);
 }
 
+/** Signs everyone out: after a restore, the sessions in the restored copy are not trusted (`at`: a Manila timestamp). */
+export function revokeAllSessions(db: Db, at: string): void {
+  db.prepare('UPDATE sessions SET revoked_at = ? WHERE revoked_at IS NULL').run(at);
+}
+
 export function revokeUserSessions(db: Db, clock: Clock, userId: string, exceptSessionId?: string): void {
   db.prepare('UPDATE sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL AND id IS NOT ?').run(
     manilaTimestamp(clock.now()),

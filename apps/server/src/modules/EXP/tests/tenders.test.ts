@@ -199,7 +199,7 @@ describe('Expense voucher split tenders: property tests (PLAN I1.3)', () => {
           } catch (err) {
             // Only a receipt number this payee already used may refuse a generated voucher (the shrinker loves receipt no. 1).
             const issues = ((err as AppError).details ?? []) as { level: string; code: string }[];
-            expect(codes(issues.filter((i) => i.level === 'error'))).toEqual(['DUPLICATE_RECEIPT']);
+            expect(codes(issues.filter((i) => i.level === 'error'))).toEqual(['DUPLICATE_INVOICE']);
             continue;
           }
           const v = voucherDoc.load(env.db, p.id);
@@ -327,7 +327,7 @@ describe('EXP migration 0003: vouchers recorded before tenders', () => {
 
     // Migrate: the same database, the real EXP migrations.
     prepareDatabase(db, clock, modules);
-    expect(db.prepare("SELECT id FROM schema_migrations WHERE id LIKE 'EXP/%' ORDER BY id").pluck().all()).toEqual(['EXP/0001_exp.sql', 'EXP/0002_exp_purchase_class.sql', 'EXP/0003_exp_category_is_purchase.sql', 'EXP/0004_exp_voucher_tenders.sql']);
+    expect(db.prepare("SELECT id FROM schema_migrations WHERE id LIKE 'EXP/%' ORDER BY id").pluck().all()).toEqual(['EXP/0001_exp.sql', 'EXP/0002_exp_purchase_class.sql', 'EXP/0003_exp_category_is_purchase.sql', 'EXP/0004_exp_voucher_tenders.sql', 'EXP/0005_exp_duplicate_reason.sql']);
 
     // No journal (and no document) changed by a single value.
     expect(snapshot(db)).toEqual(posted);
