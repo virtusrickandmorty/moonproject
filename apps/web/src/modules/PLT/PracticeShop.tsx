@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type PracticeStatus } from '../../api.ts';
 import { Button, Notice, Panel } from '../../components/ui.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
-import { practiceAddress, practiceLine } from './practice.ts';
+import { PRACTICE_URL, isLocalAddress, practiceAddress, practiceLine } from './practice.ts';
 
 export function PracticeShop({ me }: { me: Me }) {
   const [status, setStatus] = useState<PracticeStatus>();
@@ -18,7 +18,9 @@ export function PracticeShop({ me }: { me: Me }) {
   }, [status?.state, load]);
 
   const canReset = me.permissions.includes('sec.practice.reset');
-  const address = status?.port ? practiceAddress(window.location, status.port) : null;
+  // Its public address; on this PC or the shop network, the address on the network too (it works there without the internet).
+  const address = status?.port ? PRACTICE_URL : null;
+  const local = status?.port && isLocalAddress(window.location.hostname) ? practiceAddress(window.location, status.port) : null;
   return (
     <div className="max-w-3xl space-y-4">
       <h1 className="text-2xl font-semibold">Practice shop</h1>
@@ -31,10 +33,11 @@ export function PracticeShop({ me }: { me: Me }) {
           {status.state === 'ready' && address && (
             <>
               <p className="text-sm text-slate-700">
-                Open it on any joined phone or PC and sign in with your usual username and password. Everything there is made up; nothing
+                Open it on any phone or PC and sign in with your usual username and password. Everything there is made up; nothing
                 you record, print or change there reaches the real shop.
               </p>
               <p><a href={address} target="_blank" rel="noreferrer" className="font-mono text-lg font-semibold text-indigo-700 underline">{address}</a></p>
+              {local && <p className="text-sm text-slate-600">On the shop network it also opens at <a href={local} target="_blank" rel="noreferrer" className="font-mono text-indigo-700 underline">{local}</a>, even without the internet.</p>}
             </>
           )}
           {status.preparedAt && <p className="text-sm text-slate-500">Made-up data from {status.preparedAt.slice(0, 16).replace('T', ' ')}.</p>}
