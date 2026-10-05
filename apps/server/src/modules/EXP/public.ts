@@ -55,3 +55,13 @@ export function monthlyMiscException(db: Db, month: string) {
     SUM(l.debit_cents-l.credit_cents) AS totalCents FROM journal_lines l JOIN journals j ON j.id=l.journal_id JOIN accounts a ON a.id=l.account_id
     WHERE j.sealed=1 AND j.business_date LIKE ? AND a.type='expense'`).get(`${month}-%`) as {miscCents:number|null;totalCents:number|null};
 }
+
+/** Every posted voucher with a receipt number, with its payee: for the duplicate invoice check that bills share (AP). */
+export function postedVoucherInvoices(db: Db) {
+  return db
+    .prepare(
+      `SELECT d.number, v.supplier_invoice_no AS invoiceNo, v.supplier_id AS supplierId, v.payee_tin AS payeeTin, v.payee_name AS payeeName
+       FROM exp_vouchers v JOIN documents d ON d.id = v.document_id WHERE d.status = 'posted' AND v.supplier_invoice_no IS NOT NULL ORDER BY d.posted_at, d.number`,
+    )
+    .all() as { number: string; invoiceNo: string; supplierId: string | null; payeeTin: string | null; payeeName: string }[];
+}

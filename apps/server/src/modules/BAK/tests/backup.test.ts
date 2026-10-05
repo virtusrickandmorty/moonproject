@@ -3,15 +3,18 @@
  * opens it; tiers and rotation; the settings are the owner's, with a fresh password.
  */
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Decrypter, generateX25519Identity, identityToRecipient } from 'age-encryption';
 import { PASSWORD, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
-import { openReadonly } from '../../../platform/db/driver.ts';
-import { isDue, keptIn, tierFor, toRotate, type Sidecar } from '../backup.ts';
+import { openDb, openReadonly } from '../../../platform/db/driver.ts';
+import { fixedClock } from '../../../platform/clock.ts';
+import { prepareDatabase } from '../../../app.ts';
+import { loadModules } from '../../load.ts';
+import { isDue, keptIn, makeBackup, tierFor, toRotate, type Sidecar } from '../backup.ts';
 
 let env: TestEnv;
 let owner: Client;
@@ -152,5 +155,31 @@ describe('backup rules', () => {
     expect(isDue(at('2026-09-28T09:59:00'), at('2026-09-28T08:00:00'))).toBe(false);
     expect(isDue(at('2026-09-28T10:00:00'), at('2026-09-28T08:00:00'))).toBe(true);
     expect(isDue(at('2026-09-28T22:00:00'), at('2026-09-28T19:00:00'))).toBe(false);
+  });
+});
+
+describe('temporary copies', () => {
+  it('are made in the data folder, and none is left after a backup that fails midway, nor from an earlier run', async () => {
+    const data = join(dir, 'data');
+    const backups = join(dir, 'local');
+    mkdirSync(data, { recursive: true });
+    mkdirSync(backups, { recursive: true });
+    const db = openDb(join(data, 'moonproject.db'));
+    try {
+      prepareDatabase(db, fixedClock('2026-09-28T02:00:00Z'), await loadModules());
+      // Left by runs that stopped (the PC lost power): in the backup folder (older versions) and in the data folder.
+      writeFileSync(join(backups, '.moonproject-2026-09-27T10-00-00-daily-old1.db'), 'leftover');
+      writeFileSync(join(data, '.moonproject-2026-09-27T12-00-00-snapshot-old2.db'), 'leftover');
+      writeFileSync(join(data, '.moonproject-2026-09-27T12-00-00-snapshot-old2.db-journal'), 'leftover');
+      const seen: string[] = [];
+      // Keys that cannot encrypt: the copy is made and checked, then the run fails.
+      const run = makeBackup(db, { backupDir: backups, offsiteDir: null, recipients: ['age1notakey', 'age1notakeyeither'], version: 1 }, '2026-09-28T10:00:00.000+08:00');
+      await expect(run).rejects.toThrow();
+      seen.push(...readdirSync(data), ...readdirSync(backups));
+      expect(seen.filter((f) => f.startsWith('.'))).toEqual([]);
+      expect(readdirSync(data).sort()).toEqual(['moonproject.db', ...readdirSync(data).filter((f) => f.startsWith('moonproject.db-'))].sort());
+    } finally {
+      db.close();
+    }
   });
 });

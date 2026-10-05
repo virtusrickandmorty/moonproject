@@ -98,9 +98,9 @@ describe('supplier advance web client against server routes', () => {
     const reopened = openAdvances(await accountant.apLedger(supplierId), [{ advanceId: recorded.id, amountCents: 1_000_000 }]);
     expect(reopened.map((a) => a.openCents)).toEqual([1_000_000]);
     const typed = billAdvancesInput(false, reopened, { [recorded.id]: '6,000' });
-    const edit = { ...bill, advances: typed.advances };
+    const edit = { ...bill, supplierInvoiceNo: '0043', advances: typed.advances };
     const stale = await accountant.preview('ap.bill', edit);
-    expect(stale.issues.map((i) => i.code)).toEqual(['DUPLICATE_INVOICE', 'ADVANCE_MORE_THAN_OPEN']);
+    expect(stale.issues.map((i) => i.code)).toEqual(['ADVANCE_MORE_THAN_OPEN']);
     expect(forReplacement(stale, b.number, (f) => f === 'advances.0.amountCents').issues).toEqual([]);
     expect((await accountant.reissue('ap.bill', b.id, edit, stale.totalCents, 'Only part of the deposit is for this job', key())).number).toBe('BILL-000002');
 

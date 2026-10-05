@@ -21,6 +21,7 @@ import { EWT_CLASSES, settingAt, type EwtClass } from '../../../engine/settings.
 import type { Db } from '../../../platform/db/driver.ts';
 import { TWA_ONLY, appliedEwtClass, category, listCategories } from '../../EXP/public.ts';
 import { activeSupplierIds, activeSupplyIds, receivingReport, supplier, supply } from '../../PUR/public.ts';
+import { duplicateInvoiceIssues } from '../invoices.ts';
 import { advance, openAdvances, openOnAdvance, paymentsOnBill, type AdvanceRow } from '../ledger.ts';
 
 export const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
@@ -56,6 +57,7 @@ export const billInput = z
     ewtClass: z.enum([...EWT_CLASSES, 'none']).optional(), // left out: the supplier's usual class
     advances: z.array(advanceApplied).max(20).optional(), // left out: the supplier's open advances, oldest first, up to what the bill owes
     note: z.string().trim().min(1).max(500).optional(),
+    duplicateReason: z.string().trim().min(10).max(500).optional(), // why an invoice already recorded is recorded again (acc.backdate)
   })
   .strict();
 export type BillInput = z.infer<typeof billInput>;
@@ -183,11 +185,8 @@ export const billDoc: DocTypeDef<BillInput, Bill> = {
     if (doc.totalCents > MAX_CENTS) add('error', 'lines', 'TOO_LARGE', `A bill cannot be more than ${formatPeso(MAX_CENTS)}.`);
     if (doc.supplierInvoiceDate > ctx.businessDate) add('error', 'supplierInvoiceDate', 'INVOICE_DATE', 'The invoice date cannot be after today.');
     if (doc.dueDate < doc.supplierInvoiceDate) add('error', 'dueDate', 'DUE_DATE', 'The due date cannot be before the invoice date.');
-    const dup = ctx.db
-      .prepare(`SELECT d.number FROM ap_bills b JOIN documents d ON d.id = b.document_id WHERE b.supplier_id = ? AND b.supplier_invoice_no = ? AND d.status = 'posted'`)
-      .pluck()
-      .get(doc.supplierId, doc.supplierInvoiceNo) as string | undefined;
-    if (dup) add('error', 'supplierInvoiceNo', 'DUPLICATE_INVOICE', `Invoice no. ${doc.supplierInvoiceNo} of this supplier is already on ${dup}.`);
+    const party = { supplierId: doc.supplierId, tin: doc.supplierTin, payeeName: doc.supplierName };
+    issues.push(...duplicateInvoiceIssues(ctx.db, ctx.can, party, doc.supplierInvoiceNo, doc.duplicateReason));
     if (doc.receivingReportId) {
       const rr = receivingReport(ctx.db, doc.receivingReportId);
       if (rr?.status !== 'posted') add('error', 'receivingReportId', 'RECEIVING_REPORT', 'Pick a recorded receiving report.');
@@ -232,10 +231,10 @@ export const billDoc: DocTypeDef<BillInput, Bill> = {
   persist(db, doc, h) {
     db.prepare(
       `INSERT INTO ap_bills (document_id, supplier_id, supplier_invoice_no, supplier_invoice_date, due_date, receiving_report_id, vat_registered, vat_rate_bp,
-         gross_cents, input_vat_cents, ewt_class, ewt_rate_bp, ewt_base_cents, ewt_cents, payable_cents, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         gross_cents, input_vat_cents, ewt_class, ewt_rate_bp, ewt_base_cents, ewt_cents, payable_cents, note, duplicate_reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       h.documentId, doc.supplierId, doc.supplierInvoiceNo, doc.supplierInvoiceDate, doc.dueDate, doc.receivingReportId ?? null, +doc.vatRegistered, doc.vatRateBp,
-      doc.totalCents, doc.inputVatCents, doc.appliedEwtClass, doc.ewtRateBp, doc.ewtBaseCents, doc.ewtCents, doc.payableCents, doc.note ?? null,
+      doc.totalCents, doc.inputVatCents, doc.appliedEwtClass, doc.ewtRateBp, doc.ewtBaseCents, doc.ewtCents, doc.payableCents, doc.note ?? null, doc.duplicateReason ?? null,
     );
     const ins = db.prepare(
       `INSERT INTO ap_bill_lines (document_id, line_no, supply_id, category_id, purchase, cost_role, account_id, description, amount_cents, vat_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -269,7 +268,7 @@ export const billDoc: DocTypeDef<BillInput, Bill> = {
     const b = db
       .prepare(
         `SELECT supplier_id AS supplierId, supplier_invoice_no AS supplierInvoiceNo, supplier_invoice_date AS supplierInvoiceDate, due_date AS dueDate,
-           receiving_report_id AS receivingReportId, note, vat_registered AS vatRegistered, vat_rate_bp AS vatRateBp, input_vat_cents AS inputVatCents,
+           receiving_report_id AS receivingReportId, note, duplicate_reason AS duplicateReason, vat_registered AS vatRegistered, vat_rate_bp AS vatRateBp, input_vat_cents AS inputVatCents,
            ewt_class AS appliedEwtClass, ewt_rate_bp AS ewtRateBp, ewt_base_cents AS ewtBaseCents, ewt_cents AS ewtCents FROM ap_bills WHERE document_id = ?`,
       )
       .get(documentId) as (Figures & { vatRegistered: number } & Record<string, string | number | null>) | undefined;
@@ -295,10 +294,10 @@ export const billDoc: DocTypeDef<BillInput, Bill> = {
 
   toInput(doc) {
     const strip = <T extends object>(o: T) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
-    const { supplierId, supplierInvoiceNo, supplierInvoiceDate, dueDate, receivingReportId, ewtClass, note } = doc;
+    const { supplierId, supplierInvoiceNo, supplierInvoiceDate, dueDate, receivingReportId, ewtClass, note, duplicateReason } = doc;
     const lines = doc.lines.map(({ supplyId, categoryId, purchase, description, amountCents }) => strip({ supplyId, categoryId, purchase, description, amountCents }));
     const advances = doc.advances.map(({ advanceId, amountCents }) => ({ advanceId, amountCents })); // named, so an edit applies the same ones
-    return strip({ supplierId, supplierInvoiceNo, supplierInvoiceDate, dueDate, receivingReportId, lines, ewtClass, advances, note });
+    return strip({ supplierId, supplierInvoiceNo, supplierInvoiceDate, dueDate, receivingReportId, lines, ewtClass, advances, note, duplicateReason });
   },
 
   dependents: (db, documentId) => paymentsOnBill(db, documentId),

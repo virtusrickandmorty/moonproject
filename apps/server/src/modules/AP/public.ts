@@ -108,3 +108,5 @@ export function latestPurchaseCost(db: Db, supply: CountableSupply, asOf: string
   if (po) return { unitCostCents: po.unitCostCents, source: 'po', sourceNumber: po.number, sourceDate: po.date };
   return { unitCostCents: supply.lastPurchaseCostCents, source: 'catalogue', sourceNumber: null, sourceDate: null };
 }
+
+export { duplicateInvoiceIssues, normalizeInvoiceNo, type InvoiceParty } from './invoices.ts';

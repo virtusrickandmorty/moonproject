@@ -94,7 +94,7 @@ describe('Expense voucher goldens (PLAN I2)', () => {
       ['2311', 'supplier', supplierId, 0, 178_571],
       ['1111', null, null, 0, 3_821_429],
     ]);
-    expect((await post(encoder, input)).json().details.map((i: { code: string }) => i.code)).toEqual(['DUPLICATE_RECEIPT']);
+    expect((await post(encoder, input)).json().details.map((i: { code: string }) => i.code)).toEqual(['DUPLICATE_INVOICE']);
     expect(codes((await post(encoder, { ...input, supplierInvoiceNo: 'SI-0102', payeeTin: '123-456-789-000' })).json().details)).toContain('FROM_SUPPLIER');
     expect(codes((await post(encoder, { ...input, supplierInvoiceNo: 'SI-0102', payeeName: 'Someone' })).json().details)).toContain('PAYEE');
     noBrokenInvariants();
@@ -231,7 +231,7 @@ describe('property tests (PLAN I1.3)', () => {
             // A receipt number this payee already used is refused whole (the shrinker loves receipt no. 1). Warnings
             // such as an unusual EWT class come back with it; only the duplicate may block.
             const issues = ((err as AppError).details ?? []) as { level: string; code: string }[];
-            expect(codes(issues.filter((i) => i.level === 'error'))).toEqual(['DUPLICATE_RECEIPT']);
+            expect(codes(issues.filter((i) => i.level === 'error'))).toEqual(['DUPLICATE_INVOICE']);
             expect(env.db.prepare('SELECT COUNT(*) FROM documents').pluck().get()).toBe(before);
             continue;
           }

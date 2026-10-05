@@ -26,6 +26,7 @@ beforeEach(async () => {
 
 const noBrokenInvariants = () => expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
 const receive = (c: Client, input: object, cents: number) => c.post('/api/docs/cash.other_receipt/post', { input, expectedTotalCents: cents }, idem());
+const account = (code: string) => env.db.prepare('SELECT id FROM accounts WHERE code = ?').pluck().get(code) as number;
 const count = (c: Client, input: object, cents: number) => c.post('/api/docs/cash.count/post', { input, expectedTotalCents: cents }, idem());
 const oneReceipt = (cashPlaceId: number, amountCents: number) => ({ cashPlaceId, category: 'other_income', receivedFrom: 'Made-up Scrap Buyer', description: 'Scrap cloth', amountCents });
 /** ₱12,450.00 = 12 × ₱1,000 + 4 × ₱100 + 1 × ₱50. */
@@ -50,6 +51,30 @@ describe('Other receipt (D5 OTH-RCV)', () => {
     expect((await receive(encoder, { ...oneReceipt(CASH, 100), totalCents: 100 }, 100)).statusCode).toBe(400);
     const header = env.db.prepare(`SELECT id FROM accounts WHERE code = '1100'`).pluck().get() as number; // the heading
     expect((await receive(encoder, oneReceipt(header, 100), 100)).statusCode).toBe(422);
+  });
+});
+
+describe('Cash count against a ledger that moved (A1-003)', () => {
+  it('refuses the count when money moved in or out of the box since its preview, without telling anyone the balance', async () => {
+    const lines = [{ denominationCents: 100_000, qty: 12 }];
+    const pre = (await accountant.post('/api/docs/cash.count/preview', { input: { cashPlaceId: CASH, lines } })).json();
+    const ledgerVersion = pre.doc.ledgerVersionNow as string;
+    expect(ledgerVersion).toMatch(/^[0-9a-f]{16}$/);
+    // The same count, nothing moved: it checks out.
+    expect((await accountant.post('/api/docs/cash.count/preview', { input: { cashPlaceId: CASH, lines, ledgerVersion } })).json().issues.filter((i: { level: string }) => i.level === 'error')).toEqual([]);
+    // Money comes into the box after the preview.
+    expect((await accountant.post('/api/docs/acc.jv/post', {
+      input: { memo: 'Cash from the owner', lines: [{ accountId: CASH, debitCents: 50_000 }, { accountId: account('3900'), creditCents: 50_000 }] }, expectedTotalCents: 50_000,
+    }, idem())).statusCode).toBe(200);
+    const r = await count(accountant, { cashPlaceId: CASH, lines, ledgerVersion }, 1_200_000);
+    expect(r.statusCode).toBe(422);
+    expect(r.json().message).toBe('Money moved since you started the count. Check and save again.');
+    expect(r.json().details.map((i: { code: string }) => i.code)).toEqual(['LEDGER_MOVED']);
+    expect(env.db.prepare(`SELECT COUNT(*) FROM documents WHERE doc_type = 'cash.count'`).pluck().get()).toBe(0);
+    // Checked again: the new version records.
+    const again = (await accountant.post('/api/docs/cash.count/preview', { input: { cashPlaceId: CASH, lines } })).json().doc.ledgerVersionNow as string;
+    expect(again).not.toBe(ledgerVersion);
+    expect((await count(accountant, { cashPlaceId: CASH, lines, ledgerVersion: again }, 1_200_000)).statusCode).toBe(200);
   });
 });
 
@@ -180,7 +205,7 @@ describe('property tests (PLAN I1.3)', () => {
           const input = isCount ? counted : receipt;
           const computed = def.compute(input as never, ctx());
           const p = postDocument(e, def, actor, { input, expectedTotalCents: computed.totalCents });
-          expect(def.load(env.db, p.id)).toEqual(computed);
+          expect(def.load(env.db, p.id)).toEqual(isCount ? { ...computed, ledgerVersionNow: null } : computed); // a ledger version is not stored
           if (then === 'cancel') cancelDocument(e, def, actor, p.id, 'Recorded twice by mistake');
           if (then === 'reissue') {
             const again = def.compute(def.toInput(computed as never) as never, ctx()); // a count is checked against the ledger again
