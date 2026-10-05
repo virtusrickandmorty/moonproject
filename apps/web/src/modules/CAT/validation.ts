@@ -23,4 +23,3 @@ export const priceInput = z.object({
   unitPriceCents: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
 }).strict();
 export const discountPolicyInput = z.object({ thresholdBasisPoints: z.number().int().min(0).max(10000) }).strict();
-

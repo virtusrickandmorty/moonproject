@@ -58,4 +58,3 @@ export const chartInput = z.object({
   remarks: optionalText,
   reason: z.string().trim().min(3).max(500).optional(),
 }).strict();
-

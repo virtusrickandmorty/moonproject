@@ -25,4 +25,3 @@ export function ReasonDialog(p: { title: string; explain: string; confirmLabel: 
     </Dialog>
   );
 }
-

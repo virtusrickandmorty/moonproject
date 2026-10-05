@@ -15,4 +15,4 @@ export const szrLoanInput = z.object({
 export const szrReturnInput = z.object({
   status: z.enum(['in shop', 'lost or damaged']),
   conditionOnReturn: z.string().trim().min(1).max(500),
-}).strict();
+}).strict();
