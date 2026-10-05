@@ -6,13 +6,16 @@
  * A recorded release is corrected by cancelling it and releasing again, so this form has no Edit.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { schemaFields, useBoxes, issueFields, boxRefusals } from './boxes.ts';
+import { releaseFields } from './typing.ts';
+import { invoiceRecordInput } from './validation.ts';
 import { api, ApiError, newIdempotencyKey, type DocTypeInfo, type JoStatus, type Me, type ReleasePreview } from '../../api.ts';
 import { navigate } from '../../router.tsx';
 import { Button, Dialog, Field, JournalTable, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
 import { SalesActions } from './entry.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { Errors, Figures, useLive } from '../COL/parts.tsx';
+import { Figures, useLive } from '../COL/parts.tsx';
 import { Booklet, JoPicker } from './parts.tsx';
 import { ID_SEEN, allLeft, emptyRelease, releaseInput, type ReleaseValues } from './forms.ts';
 
@@ -47,7 +50,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
   const [confirm, setConfirm] = useState<ReleasePreview | null>(null);
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState('');
-  const fail = (e: Error) => setError(e.message);
+  const fail = (e: Error) => setError(boxes.refuse(e));
   const can = (key: string) => me.permissions.includes(key);
 
   const choose = (id: string) =>
@@ -63,19 +66,23 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
 
   const set = (patch: Partial<ReleaseValues>) => setV((old) => ({ ...old, ...patch }));
   const typed = releaseInput(v, status?.lines ?? []);
-  const live = useLive(JSON.stringify(typed.release), typed.releaseErrors.length === 0, () => api.joReleasePreview(typed.release));
+  const live = useLive(JSON.stringify(typed.release), typed.releaseErrors.length === 0, () => api.joReleasePreview(typed.release), (e) => boxes.capture(e));
   const balance = live?.release.doc.balanceDueCents ?? status?.money.balanceDueCents ?? 0;
   const ready = status ? READY.includes(status.stage) : true;
 
+  const boxes = useBoxes({ ...issueFields(live?.release.issues), ...releaseFields(v, status?.lines ?? []),
+    ...(!v.invoiceToFollow ? schemaFields(invoiceRecordInput.omit({ releaseId: true }), typed.invoice) : {}) }, JSON.stringify(v));
   const openConfirm = () => {
-    setTouched(true);
-    if (typed.errors.length === 0) api.joReleasePreview(typed.release).then(setConfirm, fail);
+    setTouched(true); boxes.submit();
+    if (typed.errors.length === 0) api.joReleasePreview(typed.release).then((p) => { if (boxes.review(p)) setConfirm(p); }, fail);
   };
   const record = async (key: string) => {
     try {
       const r = await api.joRelease({ release: typed.release, invoice: typed.invoice }, confirm!.release.totalCents, key);
       navigate(docPath(type.key, `/${r.release.id}?recorded=1`));
     } catch (e) {
+      fail(e as Error);
+      if (Object.keys(boxRefusals(e)).length) setConfirm(null);
       if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.joReleasePreview(typed.release));
       throw e;
     }
@@ -88,14 +95,14 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
         <h1 className="text-2xl font-semibold">New release slip</h1>
         {error && <Notice>{error}</Notice>}
         <Panel title="Job order">
-          <JoPicker value={jo} onChange={(x) => (x ? void choose(x.id) : (setJo(null), setStatus(null), setV(emptyRelease())))} />
+          <JoPicker boxes={boxes} value={jo} onChange={(x) => (x ? void choose(x.id) : (setJo(null), setStatus(null), setV(emptyRelease())))} />
           {status && <p className="text-sm text-slate-600">{status.stageLabel} · due {status.jobOrder.dueDate} · balance due <b className="tabular-nums text-slate-900">{peso(status.money.balanceDueCents)}</b></p>}
         </Panel>
         <Panel title="Who claimed it">
-          <Field label="Claimed by" required>
-            <input className={inputClass} value={v.claimedBy} onChange={(e) => set({ claimedBy: e.target.value })} />
+          <Field label="Claimed by" error={boxes.error('claimedBy')} required>
+            <input {...boxes.box('claimedBy')} className={inputClass} value={v.claimedBy} onChange={(e) => set({ claimedBy: e.target.value })} />
           </Field>
-          <div role="radiogroup" aria-label="ID seen" className="flex flex-wrap gap-2">
+          <Field label="ID seen" error={boxes.error('idSeen')}><div {...boxes.choice('idSeen')} role="radiogroup" aria-label="ID seen" className="flex flex-wrap gap-2">
             {ID_SEEN.map(([k, label]) => (
               <button key={k} type="button" role="radio" aria-checked={v.idSeen === k} onClick={() => set({ idSeen: k })}
                 className={`rounded-full px-3 py-1 text-sm ring-1 ${v.idSeen === k ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300'}`}>
@@ -103,7 +110,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
               </button>
             ))}
           </div>
-          <p className="text-xs text-slate-500">Only the kind of ID is kept, never its number.</p>
+          </Field><p className="text-xs text-slate-500">Only the kind of ID is kept, never its number.</p>
         </Panel>
         {status && (
           <Panel title="What goes out">
@@ -123,7 +130,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
                       <td className="py-1 text-right tabular-nums"><span className="mr-2 sm:hidden">Ordered</span>{l.qty}</td>
                       <td className="py-1 text-right tabular-nums"><span className="mr-2 sm:hidden">Released</span>{l.releasedQty}</td>
                       <td className="py-1">
-                        {l.leftQty > 0 ? <Field label="Pieces now"><input aria-label={`Pieces of line ${l.lineNo}`} inputMode="numeric" className={money} value={typedQty} onChange={(e) => set({ qtys: { ...v.qtys, [l.lineNo]: e.target.value } })} /></Field> : <span className="block text-right">All out</span>}
+                        <Field hint={l.leftQty <= 0 ? 'All pieces on this line have been released.' : undefined} label="Pieces now" error={boxes.error(`qtys.${l.lineNo}`, `lines.${typed.release.lines.findIndex((x) => x.lineNo === l.lineNo)}.qty`, ...(l.lineNo === status.lines[0]?.lineNo ? ['lines'] : []))}><input {...boxes.box(`qtys.${l.lineNo}`)} aria-label={`Pieces of line ${l.lineNo}`} inputMode="numeric" className={money} disabled={l.leftQty <= 0} value={typedQty} onChange={(e) => set({ qtys: { ...v.qtys, [l.lineNo]: e.target.value } })} /></Field>
                       </td>
                     </tr>
                   );
@@ -132,48 +139,48 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
             </table>
           </Panel>
         )}
-        {status && !ready && (
+        {(
           <Panel title="Not ready yet">
-            <Notice tone="warning">{status.jobOrder.number} is {status.stageLabel}. Mark it Ready for release first{can('jo.release_override') ? ', or release it anyway with a reason.' : ', or ask the owner to release it.'}</Notice>
+            {status && !ready && <Notice tone="warning">{status?.jobOrder.number ?? 'The job order'} is {status?.stageLabel ?? 'not picked'}. Mark it Ready for release first{can('jo.release_override') ? ', or release it anyway with a reason.' : ', or ask the owner to release it.'}</Notice>}
             {can('jo.release_override') && (
-              <Field label="Owner's reason to release it now" required hint="At least 10 characters">
-                <input className={inputClass} value={v.overrideReason} onChange={(e) => set({ overrideReason: e.target.value })} />
+              <Field label="Owner's reason to release it now" error={boxes.error('overrideReason')} required={!ready} hint={ready ? 'An override does not apply when the job is ready.' : 'At least 10 characters'}>
+                <input {...boxes.box('overrideReason')} className={inputClass} disabled={ready} value={v.overrideReason} onChange={(e) => set({ overrideReason: e.target.value })} />
               </Field>
             )}
           </Panel>
         )}
-        {status && balance > 0 && (
+        {(
           <Panel title="Still to be paid">
-            <p className="text-sm">{peso(balance)} is still due.</p>
+            {status && balance > 0 && <p className="text-sm">{peso(balance)} is still due.</p>}
             {can('jo.release_with_balance') ? (
               <div className="grid gap-3 sm:grid-cols-[1fr_10rem]">
-                <Field label="Why it goes out before it is paid" required>
-                  <input className={inputClass} value={v.creditNote} onChange={(e) => set({ creditNote: e.target.value })} />
+                <Field hint={balance <= 0 ? 'No credit note applies when nothing is due.' : undefined} label="Why it goes out before it is paid" error={boxes.error('creditNote')} required>
+                  <input {...boxes.box('creditNote')} className={inputClass} disabled={balance <= 0} value={v.creditNote} onChange={(e) => set({ creditNote: e.target.value })} />
                 </Field>
-                <Field label="Pay within (days)" required>
-                  <input inputMode="numeric" className={money} value={v.creditDueInDays} onChange={(e) => set({ creditDueInDays: e.target.value })} />
+                <Field hint={balance <= 0 ? 'No credit due date applies when nothing is due.' : undefined} label="Pay within (days)" error={boxes.error('creditDueInDays')} required>
+                  <input {...boxes.box('creditDueInDays')} inputMode="numeric" className={money} disabled={balance <= 0} value={v.creditDueInDays} onChange={(e) => set({ creditDueInDays: e.target.value })} />
                 </Field>
               </div>
             ) : (
-              <Notice tone="warning">Only the owner or the accountant can release it before it is paid. Take the payment first.</Notice>
+              balance > 0 && <Notice tone="warning">Only the owner or the accountant can release it before it is paid. Take the payment first.</Notice>
             )}
           </Panel>
         )}
         <Panel title="Invoice">
-          <Field label="Invoice number (from the booklet)" required={!v.invoiceToFollow} hint="VAT sellers write an invoice for every sale.">
-            <input inputMode="numeric" disabled={v.invoiceToFollow} className={`${inputClass} max-w-40`} value={v.invoiceNumber} onChange={(e) => set({ invoiceNumber: e.target.value })} />
+          <Field label="Invoice number (from the booklet)" error={boxes.error('invoiceNumber')} required={!v.invoiceToFollow} hint={v.invoiceToFollow ? 'The invoice will be recorded later.' : 'VAT sellers write an invoice for every sale.'}>
+            <input {...boxes.box('invoiceNumber')} inputMode="numeric" disabled={v.invoiceToFollow} className={`${inputClass} max-w-40`} value={v.invoiceNumber} onChange={(e) => set({ invoiceNumber: e.target.value })} />
           </Field>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={v.invoiceToFollow} onChange={(e) => set({ invoiceToFollow: e.target.checked })} />
             Invoice to follow (the booklet is not at hand)
           </label>
         </Panel>
-        <Errors list={typed.errors} show={touched} />
+
         <Panel title="So far">
           <Figures items={[['Released now', live?.release.totalCents ?? 0, 'text-lg font-semibold'], ['Balance due', balance, 'font-semibold']]} />
           {live && <Booklet b={live.booklet} depositAppliedCents={live.depositAppliedCents} />}
           {live && <p className="text-sm">{live.release.summary}</p>}
-          {live?.release.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
+          {live?.release.issues.filter((i) => i.level !== 'error' || !i.field).map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
         </Panel>
         <SalesActions total={live?.release.totalCents ?? 0} label="Released now">
           <Button tone="primary" disabled={!type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>

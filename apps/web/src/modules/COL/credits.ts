@@ -49,7 +49,7 @@ export function creditMemoInput(v: CreditMemoValues) {
     ...(v.invoiceId ? [] : ['Pick the invoice this credit memo is for.']),
     ...(v.kind ? [] : ['Pick return or allowance.']),
     ...amountErrors,
-    ...(!form || /^\d{1,12}$/.test(form) ? [] : ['Type the credit memo form number in digits only, or leave it blank.']),
+    ...(!form || /^0*[1-9]\d{0,11}$/.test(form) ? [] : ['Type the credit memo form number in digits only, or leave it blank.']),
     ...reasonError(v.reason, 'the customer gets this credit'),
   ];
   return { input: { invoiceId: v.invoiceId, kind: v.kind || 'return', amountCents: amount, ...(form ? { formNumber: form } : {}), reason: v.reason.trim() }, errors };

@@ -18,7 +18,7 @@ export function parseRosterPaste(text: string, wearers: PulledWearer[] = []): { 
     const [name = '', size = '', jerseyName = '', jerseyNumber = '', qty = ''] = line.split('\t').map((c) => c.trim());
     if (!line.trim() || (i === 0 && /^(name|wearer)\b/i.test(name))) return; // blank line or header row
     if (!name) return void errors.push(`Row ${i + 1}: the name is empty.`);
-    if (qty && !/^[1-9]\d*$/.test(qty)) return void errors.push(`Row ${i + 1}: the quantity must be a whole number like 1 or 2.`);
+    if (qty && !(Number.isInteger(Number(qty)) && Number(qty) >= 1 && Number(qty) <= 1000)) return void errors.push(`Row ${i + 1}: the quantity must be a whole number like 1 or 2.`);
     const w = byName.get(key(name));
     const jersey = jerseyName || w?.jerseyName;
     const number = jerseyNumber || w?.jerseyNumber;

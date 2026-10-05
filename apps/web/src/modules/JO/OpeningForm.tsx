@@ -4,12 +4,14 @@
  * what was invoiced and not yet paid; it is recorded on the cut-over date. Also its Edit (cancel + reissue, NR-4).
  */
 import { useEffect, useState } from 'react';
+import { useBoxes, issueFields, rowFields } from './boxes.ts';
+import { openingFields } from './typing.ts';
 import { api, type DocTypeInfo, type OpeningStatus } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
-import { useRecord } from '../../generic/record.tsx';
+import { useRecord } from './record.tsx';
 import { cents } from '../COL/money.ts';
-import { CustomerPicker, Errors, Figures, useLive, type Picked } from '../COL/parts.tsx';
+import { CustomerPicker, Figures, useLive, type Picked } from '../COL/parts.tsx';
 import { KINDS, TERMS, emptyOpening, emptyOpeningLine, openingInput, openingValues, type OpeningInput, type OpeningLineRow, type OpeningValues } from './opening.ts';
 
 const money = `${inputClass} text-right tabular-nums`;
@@ -32,7 +34,9 @@ export function OpeningJobOrderForm({ type, mode }: { type: DocTypeInfo; mode: F
   const noDate = opening && !opening.cutoverDate ? 'Set the cut-over date on the opening balances screen first.' : '';
   const errors = [...typed.errors, ...[closed, noDate].filter(Boolean)];
   const live = useLive(JSON.stringify([typed.input, date]), typed.errors.length === 0 && !!date, () => r.preview(typed.input, date));
-  const record = () => r.ask(typed.input, errors, date);
+  const remap = (fields: Record<string, string>) => rowFields(fields, 'lines', v.lines.flatMap((l, i) => l.description.trim() || l.price.trim() || l.discount.trim() ? [i] : []));
+  const boxes = useBoxes({ ...remap(issueFields(live?.issues)), ...openingFields({ ...v, customerId: customer?.id ?? '' }) }, JSON.stringify(v), r.refusedInput === JSON.stringify(typed.input) ? r.refused : {}, r.touched, remap);
+  const record = () => { boxes.submit(); r.ask(typed.input, errors, date); };
 
   const receivable = cents(v.receivable) ?? 0;
   const deposits = cents(v.deposits) ?? 0;
@@ -48,33 +52,31 @@ export function OpeningJobOrderForm({ type, mode }: { type: DocTypeInfo; mode: F
         {noDate && <Notice tone="warning">{noDate}</Notice>}
         {date && !closed && <Notice tone="info">A job order taken before the cut-over and not finished or not paid for. It is recorded on the cut-over date, {date}, and then works like any job order.</Notice>}
         <Panel title="The job order">
-          <Field label="Customer" required>
-            <CustomerPicker value={customer} onChange={setCustomer} />
-          </Field>
+          <CustomerPicker boxes={boxes} value={customer} onChange={setCustomer} />
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Job order no. in the old records" required>
-              <input className={inputClass} value={v.oldNumber} onChange={(e) => set({ oldNumber: e.target.value })} />
+            <Field label="Job order no. in the old records" error={boxes.error('oldNumber')} required>
+              <input {...boxes.box('oldNumber')} className={inputClass} value={v.oldNumber} onChange={(e) => set({ oldNumber: e.target.value })} />
             </Field>
-            <Field label="Due date" required hint="As promised to the customer">
-              <input type="date" className={inputClass} value={v.dueDate} onChange={(e) => set({ dueDate: e.target.value })} />
+            <Field label="Due date" error={boxes.error('dueDate')} required hint="As promised to the customer">
+              <input {...boxes.box('dueDate')} type="date" className={inputClass} value={v.dueDate} onChange={(e) => set({ dueDate: e.target.value })} />
             </Field>
-            <Field label="Priority" required>
-              <select className={inputClass} value={v.priority} onChange={(e) => set({ priority: e.target.value as OpeningValues['priority'] })}>
+            <Field label="Priority" error={boxes.error('priority')} required>
+              <select {...boxes.box('priority')} className={inputClass} value={v.priority} onChange={(e) => set({ priority: e.target.value as OpeningValues['priority'] })}>
                 <option value="normal">Normal</option>
                 <option value="rush">Rush</option>
               </select>
             </Field>
-            <Field label="Payment terms" required>
-              <select className={inputClass} value={v.paymentTerms} onChange={(e) => set({ paymentTerms: e.target.value as OpeningValues['paymentTerms'] })}>
+            <Field label="Payment terms" error={boxes.error('paymentTerms')} required>
+              <select {...boxes.box('paymentTerms')} className={inputClass} value={v.paymentTerms} onChange={(e) => set({ paymentTerms: e.target.value as OpeningValues['paymentTerms'] })}>
                 <option value="" />
                 {TERMS.map(([key, words]) => <option key={key} value={key}>{words}</option>)}
               </select>
             </Field>
-            <Field label="Contact">
-              <input className={inputClass} value={v.contact} onChange={(e) => set({ contact: e.target.value })} />
+            <Field label="Contact" error={boxes.error('contact')}>
+              <input {...boxes.box('contact')} className={inputClass} value={v.contact} onChange={(e) => set({ contact: e.target.value })} />
             </Field>
-            <Field label="Notes">
-              <input className={inputClass} value={v.notes} onChange={(e) => set({ notes: e.target.value })} />
+            <Field label="Notes" error={boxes.error('notes')}>
+              <input {...boxes.box('notes')} className={inputClass} value={v.notes} onChange={(e) => set({ notes: e.target.value })} />
             </Field>
           </div>
         </Panel>
@@ -83,16 +85,16 @@ export function OpeningJobOrderForm({ type, mode }: { type: DocTypeInfo; mode: F
           {v.lines.map((row, i) => (
             <div key={i} className="space-y-2 rounded-md p-2 ring-1 ring-slate-200">
               <div className="grid gap-2 sm:grid-cols-[10rem_1fr_auto]">
-                <select aria-label={`Line ${i + 1} kind`} className={inputClass} value={row.kind} onChange={(e) => setLine(i, { kind: e.target.value as OpeningLineRow['kind'] })}>
+                <Field label="Kind" error={boxes.error(`lines.${i}.kind`)}><select {...boxes.box(`lines.${i}.kind`)} aria-label={`Line ${i + 1} kind`} className={inputClass} value={row.kind} onChange={(e) => setLine(i, { kind: e.target.value as OpeningLineRow['kind'] })}>
                   {KINDS.map(([key, words]) => <option key={key} value={key}>{words}</option>)}
-                </select>
-                <input aria-label={`Line ${i + 1} description`} placeholder="What, e.g. Team jersey set" className={inputClass} value={row.description} onChange={(e) => setLine(i, { description: e.target.value })} />
+                </select></Field>
+                <Field label="Description" error={boxes.error(`lines.${i}.description`, ...(i === 0 ? ['lines'] : []))}><input {...boxes.box(`lines.${i}.description`)} aria-label={`Line ${i + 1} description`} placeholder="What, e.g. Team jersey set" className={inputClass} value={row.description} onChange={(e) => setLine(i, { description: e.target.value })} /></Field>
                 <Button onClick={() => set({ lines: v.lines.length > 1 ? v.lines.filter((_, j) => j !== i) : [emptyOpeningLine()] })} title="Remove this line">✕</Button>
               </div>
               <div className="grid grid-cols-3 gap-2">
-                <input aria-label={`Line ${i + 1} pieces`} inputMode="numeric" placeholder="Pieces" className={money} value={row.qty} onChange={(e) => setLine(i, { qty: e.target.value })} />
-                <input aria-label={`Line ${i + 1} price each`} inputMode="decimal" placeholder="Price each" className={money} value={row.price} onChange={(e) => setLine(i, { price: e.target.value })} />
-                <input aria-label={`Line ${i + 1} discount`} inputMode="decimal" placeholder="Discount" className={money} value={row.discount} onChange={(e) => setLine(i, { discount: e.target.value })} />
+                <Field label="Pieces" error={boxes.error(`lines.${i}.qty`)}><input {...boxes.box(`lines.${i}.qty`)} aria-label={`Line ${i + 1} pieces`} inputMode="numeric" placeholder="Pieces" className={money} value={row.qty} onChange={(e) => setLine(i, { qty: e.target.value })} /></Field>
+                <Field label="Price each" error={boxes.error(`lines.${i}.unitPriceCents`)}><input {...boxes.box(`lines.${i}.unitPriceCents`)} aria-label={`Line ${i + 1} price each`} inputMode="decimal" placeholder="Price each" className={money} value={row.price} onChange={(e) => setLine(i, { price: e.target.value })} /></Field>
+                <Field label="Discount" error={boxes.error(`lines.${i}.discountCents`)}><input {...boxes.box(`lines.${i}.discountCents`)} aria-label={`Line ${i + 1} discount`} inputMode="decimal" placeholder="Discount" className={money} value={row.discount} onChange={(e) => setLine(i, { discount: e.target.value })} /></Field>
               </div>
               {row.roster.length > 0 && <p className="text-xs text-slate-500">{row.roster.length} wearers on the roster are kept.</p>}
             </div>
@@ -101,21 +103,21 @@ export function OpeningJobOrderForm({ type, mode }: { type: DocTypeInfo; mode: F
         </Panel>
         <Panel title="Money at the cut-over">
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Deposits held" hint="Paid on it and not yet applied to an invoice">
-              <input inputMode="decimal" placeholder="0.00" className={money} value={v.deposits} onChange={(e) => set({ deposits: e.target.value })} />
+            <Field label="Deposits held" error={boxes.error('depositsCents')} hint="Paid on it and not yet applied to an invoice">
+              <input {...boxes.box('depositsCents')} inputMode="decimal" placeholder="0.00" className={money} value={v.deposits} onChange={(e) => set({ deposits: e.target.value })} />
             </Field>
-            <Field label="Old receipt numbers">
-              <input className={inputClass} value={v.depositsMemo} onChange={(e) => set({ depositsMemo: e.target.value })} />
+            <Field label="Old receipt numbers" error={boxes.error('depositsMemo')}>
+              <input {...boxes.box('depositsMemo')} className={inputClass} value={v.depositsMemo} onChange={(e) => set({ depositsMemo: e.target.value })} />
             </Field>
-            <Field label="Invoiced and not yet paid" hint="Released and invoiced before the cut-over">
-              <input inputMode="decimal" placeholder="0.00" className={money} value={v.receivable} onChange={(e) => set({ receivable: e.target.value })} />
+            <Field label="Invoiced and not yet paid" error={boxes.error('receivableCents')} hint="Released and invoiced before the cut-over">
+              <input {...boxes.box('receivableCents')} inputMode="decimal" placeholder="0.00" className={money} value={v.receivable} onChange={(e) => set({ receivable: e.target.value })} />
             </Field>
-            <Field label="Old invoice numbers" required={receivable > 0}>
-              <input className={inputClass} value={v.oldInvoices} onChange={(e) => set({ oldInvoices: e.target.value })} />
+            <Field label="Old invoice numbers" error={boxes.error('oldInvoices')} required={receivable > 0}>
+              <input {...boxes.box('oldInvoices')} className={inputClass} value={v.oldInvoices} onChange={(e) => set({ oldInvoices: e.target.value })} />
             </Field>
           </div>
         </Panel>
-        <Errors list={errors} show={r.touched} />
+
         <div className="flex gap-2">
           <Button tone="primary" disabled={!type.canPost || !!closed} onClick={record} title="Ctrl+Enter">Record</Button>
           <Button onClick={() => history.back()}>Back</Button>
@@ -124,7 +126,7 @@ export function OpeningJobOrderForm({ type, mode }: { type: DocTypeInfo; mode: F
       <Panel title="So far">
         <Figures items={[['Still to release', typed.linesCents], ['Invoiced, not yet paid', receivable], ['Total', totalCents], ['Deposits held', deposits], ['Balance due', totalCents - deposits, 'font-semibold']]} />
         {live && <p className="text-sm">{live.summary}</p>}
-        {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
+        {live?.issues.filter((i) => i.level !== 'error' || !i.field).map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
       </Panel>
       {r.dialog}
     </form>

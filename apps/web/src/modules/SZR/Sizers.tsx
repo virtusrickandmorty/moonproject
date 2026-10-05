@@ -4,6 +4,8 @@
  * the server's; a set can be lent only while it is in the shop, and back only once.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { schemaFields, useBoxes } from '../JO/boxes.ts';
+import { szrLoanInput, szrReturnInput } from './validation.ts';
 import { api, type Me, type SizerBoard, type SizerSet } from '../../api.ts';
 import { Button, Dialog, Field, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
 import { CustomerPicker, type Picked } from '../COL/parts.tsx';
@@ -11,50 +13,54 @@ import { STATUS_WORDS, dueWords, filterSets, lendInput, returnInput, weekFrom, t
 
 const chip = (s: SizerSet['status']) => `rounded-full px-2 py-0.5 text-xs font-medium ${s === 'in shop' ? 'bg-emerald-100 text-emerald-800' : s === 'lent' ? 'bg-sky-100 text-sky-800' : 'bg-red-100 text-red-800'}`;
 
-function Lend({ set, today, onDone, onClose }: { set: SizerSet; today: string; onDone: () => void; onClose: () => void }) {
+export function Lend({ set, today, onDone, onClose }: { set: SizerSet; today: string; onDone: () => void; onClose: () => void }) {
   const [customer, setCustomer] = useState<Picked | null>(null);
   const [due, setDue] = useState(weekFrom(today));
   const [touched, setTouched] = useState(false);
   const a = useAction();
   const { input, errors } = lendInput({ setId: set.id, customerId: customer?.id ?? '', expectedReturnDate: due }, today);
+  const checks = schemaFields(szrLoanInput, input);
+  if (due < today) checks.expectedReturnDate = 'The date it is due back cannot be before today.';
+  const boxes = useBoxes(checks, JSON.stringify(input));
   return (
     <Dialog title={`Lend ${set.code}`} onClose={onClose}>
       <p className="text-sm text-slate-700">{set.garmentType}: {set.sizesIncluded}. It goes out today.</p>
-      <Field label="Who is borrowing it?" required><CustomerPicker value={customer} onChange={setCustomer} /></Field>
-      <Field label="Due back on" required><input type="date" aria-label="Due back on" className={inputClass} value={due} onChange={(e) => setDue(e.target.value)} /></Field>
-      {touched && errors.map((e) => <Notice key={e}>{e}</Notice>)}
+      <CustomerPicker label="Who is borrowing it?" boxes={boxes} value={customer} onChange={setCustomer} />
+      <Field label="Due back on" error={boxes.error('expectedReturnDate')} required><input {...boxes.box('expectedReturnDate')} type="date" aria-label="Due back on" className={inputClass} value={due} onChange={(e) => setDue(e.target.value)} /></Field>
+
       {a.error && <Notice>{a.error}</Notice>}
       <div className="flex justify-end gap-2">
         <Button onClick={onClose}>Go back</Button>
-        <Button tone="primary" disabled={a.busy} onClick={() => (setTouched(true), errors.length === 0 && a.run(async () => { await api.sizerLend(input); onDone(); }))}>Lend it</Button>
+        <Button tone="primary" disabled={a.busy} onClick={() => (setTouched(true), boxes.submit(), errors.length === 0 && a.run(() => boxes.run(async () => { await api.sizerLend(input); onDone(); })))}>Lend it</Button>
       </div>
     </Dialog>
   );
 }
 
-function TakeBack({ set, onDone, onClose }: { set: SizerSet; onDone: () => void; onClose: () => void }) {
+export function TakeBack({ set, onDone, onClose }: { set: SizerSet; onDone: () => void; onClose: () => void }) {
   const [v, setV] = useState<ReturnValues>({ status: 'in shop', condition: '' });
   const [touched, setTouched] = useState(false);
   const a = useAction();
   const { input, errors } = returnInput(v);
+  const boxes = useBoxes(schemaFields(szrReturnInput, input), JSON.stringify(v));
   const holder = set.holder!;
   return (
     <Dialog title={`Take back ${set.code}`} onClose={onClose}>
       <p className="text-sm text-slate-700">Lent to {holder.customerName} on {holder.dateOut}, due back {holder.expectedReturnDate}.</p>
-      <Field label="What came back?" required>
-        <select aria-label="What came back?" className={inputClass} value={v.status} onChange={(e) => setV({ ...v, status: e.target.value as ReturnValues['status'] })}>
+      <Field label="What came back?" error={boxes.error('status')} required>
+        <select {...boxes.box('status')} aria-label="What came back?" className={inputClass} value={v.status} onChange={(e) => setV({ ...v, status: e.target.value as ReturnValues['status'] })}>
           <option value="in shop">The set is back in the shop</option><option value="lost or damaged">The set is lost or damaged</option>
         </select>
       </Field>
-      <Field label="Condition" required hint="Write “Complete” when nothing is wrong.">
-        <textarea rows={2} aria-label="Condition" className={inputClass} value={v.condition} onChange={(e) => setV({ ...v, condition: e.target.value })} />
+      <Field label="Condition" error={boxes.error('conditionOnReturn')} required hint="Write “Complete” when nothing is wrong.">
+        <textarea {...boxes.box('conditionOnReturn')} rows={2} aria-label="Condition" className={inputClass} value={v.condition} onChange={(e) => setV({ ...v, condition: e.target.value })} />
       </Field>
       {v.status === 'lost or damaged' && <Notice tone="info">Nothing is charged here. If the borrower pays for the set, record it as a quick sale.</Notice>}
-      {touched && errors.map((e) => <Notice key={e}>{e}</Notice>)}
+
       {a.error && <Notice>{a.error}</Notice>}
       <div className="flex justify-end gap-2">
         <Button onClick={onClose}>Go back</Button>
-        <Button tone="primary" disabled={a.busy} onClick={() => (setTouched(true), errors.length === 0 && a.run(async () => { await api.sizerReturn(holder.loanId, holder.loanVersion, input); onDone(); }))}>Record the return</Button>
+        <Button tone="primary" disabled={a.busy} onClick={() => (setTouched(true), boxes.submit(), errors.length === 0 && a.run(() => boxes.run(async () => { await api.sizerReturn(holder.loanId, holder.loanVersion, input); onDone(); })))}>Record the return</Button>
       </div>
     </Dialog>
   );

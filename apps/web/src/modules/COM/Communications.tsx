@@ -2,7 +2,10 @@
  * Customer emails (PLAN E14, C9, OWN-11): the outbox, and the settings the owner changes with a fresh password.
  * The App Password is typed here and sent once; it is never shown again, only "saved".
  */
+import { isBusinessDate } from '@moonproject/shared';
 import { Fragment, useEffect, useState } from 'react';
+import { schemaFields, useBoxes } from '../JO/boxes.ts';
+import { settingsInput, bulkStatementInput } from './validation.ts';
 import { api, type BulkStatements, type EmailKind, type EmailSettings, type Me, type Outbox, type OutboxRow } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, manilaTime, peso, useAction, usePasswordPrompt } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
@@ -37,7 +40,7 @@ export function Communications({ me, params }: { me: Me; params?: Record<string,
   );
 }
 
-function BulkStatementsTab() {
+export function BulkStatementsTab() {
   const today = useToday();
   const [date, setDate] = useState('');
   const [data, setData] = useState<BulkStatements | null>(null);
@@ -46,28 +49,30 @@ function BulkStatementsTab() {
   const send = useAction();
   const [done, setDone] = useState('');
   useEffect(() => { if (today && !date) setDate(today); }, [today, date]);
-  const show = () => load.run(async () => {
+  const checks: Record<string, string> = !isBusinessDate(date) ? { date: 'Choose a valid statement date.' } : today && date > today ? { date: 'A statement cannot run past today.' } : {};
+  const boxes = useBoxes({ ...schemaFields(bulkStatementInput, { date, customerIds: [...selected] }), ...checks }, JSON.stringify([date, [...selected]]));
+  const show = () => load.run(() => boxes.run(async () => {
     const next = await api.comBulkStatements(date);
     setData(next); setSelected(new Set(next.eligible.map((row) => row.customerId))); setDone('');
-  });
+  }));
   const toggle = (id: string) => setSelected((old) => {
     const next = new Set(old); if (next.has(id)) next.delete(id); else next.add(id); return next;
   });
-  const queue = () => send.run(async () => {
+  const queue = () => send.run(() => boxes.run(async () => {
     const result = await api.comSendBulkStatements(date, [...selected]);
     setDone(result.queued ? `${result.queued} statement email${result.queued === 1 ? '' : 's'} queued.` : 'No new statement emails were queued.');
     setData(await api.comBulkStatements(date));
-  });
+  }));
   return <div className="space-y-4">
     <Panel title="Email statements for a date">
       <p className="text-sm text-slate-600">Customers with a balance, an email address and consent are ticked. Each customer can be queued only once for this statement date.</p>
-      <div className="flex flex-wrap items-end gap-3"><Field label="Statement date"><input type="date" className={inputClass} value={date} max={today} onChange={(e) => { setDate(e.target.value); setData(null); setDone(''); }} /></Field>
+      <div className="flex flex-wrap items-end gap-3"><Field label="Statement date" error={boxes.error('date')}><input {...boxes.box('date')} type="date" className={inputClass} value={date} max={today} onChange={(e) => { setDate(e.target.value); setData(null); setDone(''); }} /></Field>
         <Button disabled={!date || load.busy} onClick={() => void show()}>Show customers</Button></div>
       {(load.error || send.error) && <Notice>{load.error || send.error}</Notice>}{done && <Notice tone="success">{done}</Notice>}
     </Panel>
     {data && <><Panel title={`Ready to email (${data.eligible.length})`}>
       {data.eligible.length === 0 ? <p className="text-sm text-slate-500">No customers are ready.</p> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="pr-3">Send</th><th className="pr-3">Customer</th><th className="pr-3">Email</th><th className="pr-3 text-right">Balance</th><th>Last statement emailed</th></tr></thead><tbody>
-        {data.eligible.map((row) => <tr className="border-t border-slate-100" key={row.customerId}><td className="py-2 pr-3"><input aria-label={`Email ${row.customerName}`} type="checkbox" checked={selected.has(row.customerId)} onChange={() => toggle(row.customerId)} /></td><td className="pr-3">{row.customerName}</td><td className="pr-3">{row.email}</td><td className="pr-3 text-right">{peso(row.balanceCents)}</td><td>{row.lastStatementEmailedAt ? manilaTime(row.lastStatementEmailedAt) : 'Never'}</td></tr>)}
+        {data.eligible.map((row, i) => <tr className="border-t border-slate-100" key={row.customerId}><td className="py-2 pr-3"><Field label="" error={boxes.error(`customerIds.${[...selected].indexOf(row.customerId)}`, ...(i === 0 ? ['customerIds'] : []))}><input {...boxes.box('customerIds')} aria-label={`Email ${row.customerName}`} type="checkbox" checked={selected.has(row.customerId)} onChange={() => toggle(row.customerId)} /></Field></td><td className="pr-3">{row.customerName}</td><td className="pr-3">{row.email}</td><td className="pr-3 text-right">{peso(row.balanceCents)}</td><td>{row.lastStatementEmailedAt ? manilaTime(row.lastStatementEmailedAt) : 'Never'}</td></tr>)}
       </tbody></table></div>}
       <Button tone="primary" disabled={selected.size === 0 || send.busy} onClick={() => void queue()}>{send.busy ? 'Queuing…' : `Send ${selected.size} statement${selected.size === 1 ? '' : 's'}`}</Button>
     </Panel><Panel title={`Cannot email (${data.excluded.length})`}>
@@ -132,7 +137,7 @@ function OutboxTab({ canResend }: { canResend: boolean }) {
   );
 }
 
-function SettingsTab() {
+export function SettingsTab() {
   const [saved, setSaved] = useState<EmailSettings | null>(null);
   const [error, setError] = useState('');
   const [f, setF] = useState({ sendingOn: false, host: '', port: '587', user: '', senderName: '', senderAddress: '', appPassword: '' });
@@ -140,16 +145,25 @@ function SettingsTab() {
   const save = useAction();
   const test = useAction();
   const password = usePasswordPrompt();
+  const { appPassword, port, ...rest } = f;
+  const body = { ...rest, port: Number(port), ...(appPassword ? { appPassword } : {}) };
+  const checks = schemaFields(settingsInput, body);
+  if (f.sendingOn) {
+    if (!f.host.trim()) checks.host = 'Fill in the mail server before turning sending on.';
+    if (!f.user.trim()) checks.user = 'Fill in the mail user name before turning sending on.';
+    if (!f.senderAddress.trim()) checks.senderAddress = 'Fill in the sender address before turning sending on.';
+    if (!f.appPassword && !saved?.appPasswordSet) checks.appPassword = 'Save an App Password before turning sending on.';
+  }
+  const boxes = useBoxes(checks, JSON.stringify(f));
   const fill = (s: EmailSettings) => (setSaved(s), setF({ sendingOn: s.sendingOn, host: s.host, port: String(s.port), user: s.user, senderName: s.senderName, senderAddress: s.senderAddress, appPassword: '' }));
   useEffect(() => void api.comSettings().then(fill, (e: Error) => setError(e.message)), []);
   if (error) return <Notice>{error}</Notice>;
   if (!saved) return <p className="text-slate-500">Loading…</p>;
   const set = <K extends keyof typeof f>(key: K, value: (typeof f)[K]) => (setF({ ...f, [key]: value }), setDone(''));
-  const doSave = () => save.run(async () => {
-    const { appPassword, port, ...rest } = f;
+  const doSave = () => save.run(() => boxes.run(async () => {
     fill(await api.comSaveSettings(saved.version, { ...rest, port: Number(port), ...(appPassword ? { appPassword } : {}) }));
     setDone('Saved.');
-  });
+  }));
   const doTest = () => test.run(async () => setDone((await api.comTestEmail()).message));
   return (
     <div className="space-y-4">
@@ -160,18 +174,18 @@ function SettingsTab() {
       </Panel>
       <Panel title="Mail server">
         <div className="max-w-lg space-y-3">
-          <Field label="Mail server" hint={PORT_HINT}><input className={inputClass} value={f.host} onChange={(e) => set('host', e.target.value)} /></Field>
-          <Field label="Port"><input className={inputClass} inputMode="numeric" value={f.port} onChange={(e) => set('port', e.target.value)} /></Field>
-          <Field label="User name"><input className={inputClass} autoComplete="off" value={f.user} onChange={(e) => set('user', e.target.value)} /></Field>
-          <Field label="Sender name" hint="How the customer sees who it is from."><input className={inputClass} value={f.senderName} onChange={(e) => set('senderName', e.target.value)} /></Field>
-          <Field label="Sender address"><input className={inputClass} value={f.senderAddress} onChange={(e) => set('senderAddress', e.target.value)} /></Field>
-          <Field label="App Password" hint={saved.appPasswordSet ? 'One is saved. Type a new one only to replace it. It is never shown again.' : 'Make one in the Google account (2-step verification on), then type it here. It is never shown again.'}>
-            <input className={inputClass} type="password" autoComplete="new-password" placeholder={saved.appPasswordSet ? 'Saved' : ''} value={f.appPassword} onChange={(e) => set('appPassword', e.target.value)} />
+          <Field label="Mail server" error={boxes.error('host')} hint={PORT_HINT}><input {...boxes.box('host')} className={inputClass} value={f.host} onChange={(e) => set('host', e.target.value)} /></Field>
+          <Field label="Port" error={boxes.error('port')}><input {...boxes.box('port')} className={inputClass} inputMode="numeric" value={f.port} onChange={(e) => set('port', e.target.value)} /></Field>
+          <Field label="User name" error={boxes.error('user')}><input {...boxes.box('user')} className={inputClass} autoComplete="off" value={f.user} onChange={(e) => set('user', e.target.value)} /></Field>
+          <Field label="Sender name" error={boxes.error('senderName')} hint="How the customer sees who it is from."><input {...boxes.box('senderName')} className={inputClass} value={f.senderName} onChange={(e) => set('senderName', e.target.value)} /></Field>
+          <Field label="Sender address" error={boxes.error('senderAddress')}><input {...boxes.box('senderAddress')} className={inputClass} value={f.senderAddress} onChange={(e) => set('senderAddress', e.target.value)} /></Field>
+          <Field label="App Password" error={boxes.error('appPassword')} hint={saved.appPasswordSet ? 'One is saved. Type a new one only to replace it. It is never shown again.' : 'Make one in the Google account (2-step verification on), then type it here. It is never shown again.'}>
+            <input {...boxes.box('appPassword')} className={inputClass} type="password" autoComplete="new-password" placeholder={saved.appPasswordSet ? 'Saved' : ''} value={f.appPassword} onChange={(e) => set('appPassword', e.target.value)} />
           </Field>
         </div>
         {saved.missing.length > 0 && <p className="text-sm text-slate-600">Still needed before sending can be on: {saved.missing.join(', ')}.</p>}
         <div className="flex flex-wrap gap-2">
-          <Button tone="primary" disabled={save.busy} onClick={() => password.ask('Save the email settings', doSave)}>Save</Button>
+          <Button tone="primary" disabled={save.busy} onClick={() => { boxes.submit(); password.ask('Save the email settings', doSave); }}>Save</Button>
           <Button disabled={test.busy || !saved.appPasswordSet} onClick={() => password.ask('Send a test email', doTest)}>{test.busy ? 'Sending…' : 'Send a test email'}</Button>
         </div>
         {saved.appPasswordSet && <p className="text-xs text-slate-500">The test email goes to the sender address. Save your changes first.</p>}

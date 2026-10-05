@@ -5,13 +5,16 @@
  * Save draft (no number) or Record. Also the Edit of a recorded job order (cancel and reissue, NR-4).
  */
 import { useEffect, useRef, useState } from 'react';
+import { schemaFields, useBoxes, issueFields, rowFields } from './boxes.ts';
+import { customerInput } from '../CUS/validation.ts';
+import { joFields } from './typing.ts';
 import { formatPesos } from '@moonproject/shared';
 import { api, type CatItem, type CustomerWearers, type DocTypeInfo, type Preview } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { SalesActions, Exception } from './entry.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
-import { useRecord } from '../../generic/record.tsx';
-import { CustomerPicker, Errors, Figures, useLive, type Picked } from '../COL/parts.tsx';
+import { useRecord } from './record.tsx';
+import { CustomerPicker, Figures, useLive, type Picked } from '../COL/parts.tsx';
 import { KINDS } from '../QS/lines.ts';
 import { jobOrderPrefill, type QuotationDoc } from '../QUO/quotation.ts';
 import { itemClasses } from '../QUO/QuotationView.tsx';
@@ -28,17 +31,17 @@ const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'];
 const MEASURED = '__measured';
 
 /** A new customer typed in right here, for a walk-in who is not on file yet. */
-function AddCustomer({ onAdded, onClose }: { onAdded: (c: Picked, lookalike: boolean) => void; onClose: () => void }) {
+export function AddCustomer({ onAdded, onClose }: { onAdded: (c: Picked, lookalike: boolean) => void; onClose: () => void }) {
   const [name, setName] = useState('');
   const [kind, setKind] = useState<'organization' | 'person'>('organization');
   const [error, setError] = useState('');
-  const add = () =>
-    api.addCustomer({ kind, displayName: name.trim() }).then((c) => onAdded({ id: c.id, name: c.display_name }, c.duplicateWarnings.length > 0), (e: Error) => setError(e.message));
+  const addBoxes = useBoxes(schemaFields(customerInput, { kind, displayName: name.trim() }), JSON.stringify([name, kind]));
+  const add = () => { addBoxes.submit(); return api.addCustomer({ kind, displayName: name.trim() }).then((c) => onAdded({ id: c.id, name: c.display_name }, c.duplicateWarnings.length > 0), (e: Error) => setError(addBoxes.refuse(e))); };
   return (
     <div className="space-y-2 rounded-md p-2 ring-1 ring-slate-200">
       <div className="grid gap-2 sm:grid-cols-[1fr_12rem_auto_auto]">
-        <Field label="New customer's name"><input aria-label="New customer's name" placeholder="New customer's name" className={inputClass} value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <Field label="Kind of customer"><select aria-label="Kind of customer" className={inputClass} value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
+        <Field label="New customer's name" error={addBoxes.error('displayName')}><input {...addBoxes.box('displayName')} aria-label="New customer's name" placeholder="New customer's name" className={inputClass} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+        <Field label="Kind of customer" error={addBoxes.error('kind')}><select {...addBoxes.box('kind')} aria-label="Kind of customer" className={inputClass} value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
           <option value="organization">Team, school or company</option>
           <option value="person">Person</option>
         </select></Field>
@@ -50,15 +53,17 @@ function AddCustomer({ onAdded, onClose }: { onAdded: (c: Picked, lookalike: boo
   );
 }
 
-function RosterGrid(p: { line: JoLineRow; n: number; people: CustomerWearers | null; sizes: string[]; onChange: (roster: RosterEdit[]) => void }) {
+export function RosterGrid(p: { boxes: import('./boxes.ts').Boxes; index: number; line: JoLineRow; n: number; people: CustomerWearers | null; sizes: string[]; onChange: (roster: RosterEdit[]) => void }) {
   const [paste, setPaste] = useState<string | null>(null);
   const [pasteErrors, setPasteErrors] = useState<string[]>([]);
   const rows = p.line.roster;
   const on = new Set(rows.map((r) => r.personId).filter(Boolean));
   const wearers = p.people?.wearers ?? [];
+  const pasteBoxes = useBoxes(paste === null ? {} : { paste: parseRosterPaste(paste, wearers).errors.join(' ') }, paste ?? '');
   const set = (j: number, patch: Partial<RosterEdit>) => p.onChange(rows.map((r, k) => (k === j ? { ...r, ...patch } : r)));
   const pull = (groupId: string) => p.onChange([...rows, ...wearers.filter((w) => w.groupId === groupId && !on.has(w.personId)).map(fromWearer)]);
   const addPasted = () => {
+    pasteBoxes.submit();
     const out = parseRosterPaste(paste ?? '', wearers);
     setPasteErrors(out.errors);
     if (out.errors.length > 0) return;
@@ -74,19 +79,19 @@ function RosterGrid(p: { line: JoLineRow; n: number; people: CustomerWearers | n
             {rows.map((r, j) => (
               <tr key={j} className="grid gap-2 rounded border p-2 sm:grid-cols-2 lg:table-row lg:border-0 lg:p-0">
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Wearer</span>
-                  {r.personId ? <span>{r.name}</span> : <input aria-label={`Line ${p.n} wearer ${j + 1} name`} placeholder="One-off name" className={inputClass} value={r.name} onChange={(e) => set(j, { name: e.target.value })} />}
+                  {r.personId ? <Field label="Wearer" error={p.boxes.error(`lines.${p.index}.roster.${j}.personId`)}><span>{r.name}</span></Field> : <Field label="Wearer" error={p.boxes.error(`lines.${p.index}.roster.${j}.name`, `lines.${p.index}.roster.${j}.personId`)}><input {...p.boxes.box(`lines.${p.index}.roster.${j}.name`)} aria-label={`Line ${p.n} wearer ${j + 1} name`} placeholder="One-off name" className={inputClass} value={r.name} onChange={(e) => set(j, { name: e.target.value })} /></Field>}
                 </td>
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Size</span>
-                  <select aria-label={`Line ${p.n} wearer ${j + 1} size`} className={inputClass} value={r.sizeMode === 'measured' ? MEASURED : r.size}
+                  <Field label="Size" error={p.boxes.error(`lines.${p.index}.roster.${j}.size`, `lines.${p.index}.roster.${j}.sizeMode`)}><select {...p.boxes.box(`lines.${p.index}.roster.${j}.size`)} aria-label={`Line ${p.n} wearer ${j + 1} size`} className={inputClass} value={r.sizeMode === 'measured' ? MEASURED : r.size}
                     onChange={(e) => set(j, e.target.value === MEASURED ? { sizeMode: 'measured', size: '' } : { sizeMode: 'preset', size: e.target.value })}>
                     <option value="" />
                     {r.personId && <option value={MEASURED}>Measured</option>}
                     {[...new Set([...p.sizes, ...(r.size ? [r.size] : [])])].map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                  </select></Field>
                 </td>
-                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Jersey name</span><input aria-label={`Line ${p.n} wearer ${j + 1} jersey name`} className={`${inputClass} uppercase`} value={r.jerseyName} onChange={(e) => set(j, { jerseyName: e.target.value })} /></td>
-                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">No.</span><input aria-label={`Line ${p.n} wearer ${j + 1} jersey number`} className={inputClass} value={r.jerseyNumber} onChange={(e) => set(j, { jerseyNumber: e.target.value })} /></td>
-                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Qty</span><input aria-label={`Line ${p.n} wearer ${j + 1} qty`} inputMode="numeric" className={money} value={r.qty} onChange={(e) => set(j, { qty: e.target.value })} /></td>
+                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Jersey name</span><Field label="Jersey name" error={p.boxes.error(`lines.${p.index}.roster.${j}.jerseyName`)}><input {...p.boxes.box(`lines.${p.index}.roster.${j}.jerseyName`)} aria-label={`Line ${p.n} wearer ${j + 1} jersey name`} className={`${inputClass} uppercase`} value={r.jerseyName} onChange={(e) => set(j, { jerseyName: e.target.value })} /></Field></td>
+                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">No.</span><Field label="No." error={p.boxes.error(`lines.${p.index}.roster.${j}.jerseyNumber`)}><input {...p.boxes.box(`lines.${p.index}.roster.${j}.jerseyNumber`)} aria-label={`Line ${p.n} wearer ${j + 1} jersey number`} className={inputClass} value={r.jerseyNumber} onChange={(e) => set(j, { jerseyNumber: e.target.value })} /></Field></td>
+                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Qty</span><Field label="Qty" error={p.boxes.error(`lines.${p.index}.roster.${j}.qty`, ...(j === 0 ? [`lines.${p.index}.roster`] : []))}><input {...p.boxes.box(`lines.${p.index}.roster.${j}.qty`)} aria-label={`Line ${p.n} wearer ${j + 1} qty`} inputMode="numeric" className={money} value={r.qty} onChange={(e) => set(j, { qty: e.target.value })} /></Field></td>
                 <td className="py-1"><Button onClick={() => p.onChange(rows.filter((_, k) => k !== j))} title="Take off the list">✕</Button></td>
               </tr>
             ))}
@@ -114,8 +119,7 @@ function RosterGrid(p: { line: JoLineRow; n: number; people: CustomerWearers | n
       </div>
       {paste !== null && (
         <div className="space-y-2">
-          <Field label="Pasted rows"><textarea aria-label={`Line ${p.n} pasted rows`} rows={4} className={inputClass} placeholder="Name, size, jersey name, jersey number, qty (one person per row)" value={paste} onChange={(e) => setPaste(e.target.value)} /></Field>
-          {pasteErrors.map((e) => <Notice key={e}>{e}</Notice>)}
+          <Field label="Pasted rows" error={pasteErrors.join(' ') || pasteBoxes.error('paste')}><textarea {...pasteBoxes.box('paste')} aria-label={`Line ${p.n} pasted rows`} rows={4} className={inputClass} placeholder="Name, size, jersey name, jersey number, qty (one person per row)" value={paste} onChange={(e) => { setPaste(e.target.value); setPasteErrors([]); }} /></Field>
           <Button onClick={addPasted}>Add these</Button>
         </div>
       )}
@@ -208,7 +212,9 @@ export function JobOrderForm({ type, mode }: { type: DocTypeInfo; mode: FormMode
   const typed = joInput(v);
   const live = useLive<Preview | null>(JSON.stringify(typed.input), typed.errors.length === 0, () => r.preview(typed.input));
   const doc = live?.doc as { totalCents: number; requiredDownpaymentCents: number; dueDate: string } | undefined;
-  const record = () => r.ask(typed.input, typed.errors);
+  const remap = (fields: Record<string, string>) => rowFields(fields, 'lines', v.lines.flatMap((l, i) => l.description.trim() || l.price.trim() || l.discount.trim() || l.roster.length || l.itemId ? [i] : []));
+  const boxes = useBoxes({ ...remap(issueFields(live?.issues)), ...joFields(v) }, JSON.stringify(v), r.refusedInput === JSON.stringify(typed.input) ? r.refused : {}, r.touched, remap);
+  const record = () => { boxes.submit(); r.ask(typed.input, typed.errors); };
   const saveDraft = () =>
     (draft ? api.saveDraft(draft.id, draft.version, { form: v }) : api.createDraft(type.key, { form: v })).then(
       (d) => (setDraft(d), setSaved('Draft saved. It has no number and records nothing until you press Record.')),
@@ -223,11 +229,11 @@ export function JobOrderForm({ type, mode }: { type: DocTypeInfo; mode: FormMode
         {r.top}
         {saved && <Notice tone="success">{saved}</Notice>}
         <Panel title="Customer">
-          <CustomerPicker value={v.customer} onChange={(c) => set({ customer: c, lines: !c || c.id === last.current ? v.lines : v.lines.map((l) => ({ ...l, roster: [] })) })} />
+          <CustomerPicker boxes={boxes} value={v.customer} onChange={(c) => set({ customer: c, lines: !c || c.id === last.current ? v.lines : v.lines.map((l) => ({ ...l, roster: [] })) })} />
           {!v.customer && !adding && <Button onClick={() => setAdding(true)}>+ New customer</Button>}
           {!v.customer && adding && <AddCustomer onAdded={(c, lookalike) => (set({ customer: c }), setAdding(false), setSaved(lookalike ? `Added ${c.name}. Another customer has a similar name: check the customer list later in case it is the same one.` : `Added ${c.name} as a new customer.`))} onClose={() => setAdding(false)} />}
-          <Field label="Contact person">
-            <input className={inputClass} value={v.contact} onChange={(e) => set({ contact: e.target.value })} />
+          <Field label="Contact person" error={boxes.error('contact')}>
+            <input {...boxes.box('contact')} className={inputClass} value={v.contact} onChange={(e) => set({ contact: e.target.value })} />
           </Field>
         </Panel>
         <Panel title="What is made">
@@ -248,21 +254,21 @@ export function JobOrderForm({ type, mode }: { type: DocTypeInfo; mode: FormMode
                 ))}
               </div>
               <div className="grid gap-2 sm:grid-cols-[minmax(12rem,1fr)_6rem]">
-                <Field label="Description"><input aria-label={`Line ${i + 1} description`} placeholder="What, e.g. Team jersey set" className={inputClass} value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} /></Field>
-                <Field label="Pieces"><input aria-label={`Line ${i + 1} pieces`} inputMode="numeric" className={money} value={lineQty(l)} readOnly={l.roster.length > 0}
+                <Field label="Description" error={boxes.error(`lines.${i}.description`, ...(i === 0 ? ['lines'] : []))}><input {...boxes.box(`lines.${i}.description`)} aria-label={`Line ${i + 1} description`} placeholder="What, e.g. Team jersey set" className={inputClass} value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} /></Field>
+                <Field label="Pieces" error={boxes.error(`lines.${i}.qty`)} hint={l.roster.length > 0 ? 'Follows the wearers listed below.' : undefined}><input {...boxes.box(`lines.${i}.qty`)} aria-label={`Line ${i + 1} pieces`} inputMode="numeric" className={money} value={lineQty(l)} disabled={l.roster.length > 0}
                   title={l.roster.length > 0 ? 'Follows the wearers listed below' : undefined} onChange={(e) => setQty(i, e.target.value)} /></Field>
               </div>
               <Exception title="Change the usual price" active={l.listCents === null || priceChanged(l)}>
-                <div className="max-w-xs"><Field label="Price each"><input aria-label={`Line ${i + 1} price each`} inputMode="decimal" placeholder="Price each" className={money} value={l.price} onChange={(e) => setLine(i, { price: e.target.value })} /></Field></div>
+                <div className="max-w-xs"><Field label="Price each" error={boxes.error(`lines.${i}.unitPriceCents`)}><input {...boxes.box(`lines.${i}.unitPriceCents`)} aria-label={`Line ${i + 1} price each`} inputMode="decimal" placeholder="Price each" className={money} value={l.price} onChange={(e) => setLine(i, { price: e.target.value })} /></Field></div>
               </Exception>
               <Exception title="Add a line discount" active={!!l.discount.trim() && Number(l.discount.replaceAll(',', '')) !== 0}>
-                <div className="max-w-xs"><Field label="Discount"><input aria-label={`Line ${i + 1} discount`} inputMode="decimal" placeholder="Discount" className={money} value={l.discount} onChange={(e) => setLine(i, { discount: e.target.value })} /></Field></div>
+                <div className="max-w-xs"><Field label="Discount" error={boxes.error(`lines.${i}.discountCents`)}><input {...boxes.box(`lines.${i}.discountCents`)} aria-label={`Line ${i + 1} discount`} inputMode="decimal" placeholder="Discount" className={money} value={l.discount} onChange={(e) => setLine(i, { discount: e.target.value })} /></Field></div>
               </Exception>
               {l.listCents !== null && <p className="text-xs text-slate-500">Price list for {lineQty(l)}: {formatPesos(l.listCents)} each{priceChanged(l) ? ' (changed by hand)' : ''}.</p>}
               {noPrice[i] && <p className="text-xs text-amber-700">{noPrice[i]}</p>}
               <details open={l.roster.length > 0}>
                 <summary className="cursor-pointer text-sm text-indigo-700">Wearers{l.roster.length > 0 ? ` (${l.roster.length})` : ''}</summary>
-                {v.customer ? <RosterGrid line={l} n={i + 1} people={people} sizes={sizes} onChange={(roster) => setRoster(i, roster)} /> : <p className="text-sm text-slate-500">Pick the customer first.</p>}
+                {v.customer ? <RosterGrid boxes={boxes} index={i} line={l} n={i + 1} people={people} sizes={sizes} onChange={(roster) => setRoster(i, roster)} /> : <p className="text-sm text-slate-500">Pick the customer first.</p>}
               </details>
             </div>
           ))}
@@ -270,25 +276,25 @@ export function JobOrderForm({ type, mode }: { type: DocTypeInfo; mode: FormMode
         </Panel>
         <Panel title="Terms">
           <div className="grid gap-3 sm:grid-cols-3">
-            <Field label="Due in (days)" required hint={doc ? `Due ${doc.dueDate}` : 'Counted from today'}>
-              <input inputMode="numeric" className={money} value={v.dueInDays} onChange={(e) => set({ dueInDays: e.target.value })} />
+            <Field label="Due in (days)" error={boxes.error('dueInDays')} required hint={doc ? `Due ${doc.dueDate}` : 'Counted from today'}>
+              <input {...boxes.box('dueInDays')} inputMode="numeric" className={money} value={v.dueInDays} onChange={(e) => set({ dueInDays: e.target.value })} />
             </Field>
-            <Field label="Payment terms" required>
-              <select className={inputClass} value={v.paymentTerms} onChange={(e) => set({ paymentTerms: e.target.value as JoValues['paymentTerms'] })}>
+            <Field label="Payment terms" error={boxes.error('paymentTerms')} required>
+              <select {...boxes.box('paymentTerms')} className={inputClass} value={v.paymentTerms} onChange={(e) => set({ paymentTerms: e.target.value as JoValues['paymentTerms'] })}>
                 <option value="" />
                 {TERMS.map(([key, words]) => <option key={key} value={key}>{words}</option>)}
               </select>
             </Field>
-            <Field label="Priority">
-              <select className={inputClass} value={v.priority} onChange={(e) => set({ priority: e.target.value as JoValues['priority'] })}>
+            <Field label="Priority" error={boxes.error('priority')}>
+              <select {...boxes.box('priority')} className={inputClass} value={v.priority} onChange={(e) => set({ priority: e.target.value as JoValues['priority'] })}>
                 <option value="normal">Normal</option>
                 <option value="rush">Rush</option>
               </select>
             </Field>
           </div>
-          <Field label="Notes"><textarea rows={2} className={inputClass} value={v.notes} onChange={(e) => set({ notes: e.target.value })} /></Field>
+          <Field label="Notes" error={boxes.error('notes')}><textarea {...boxes.box('notes')} rows={2} className={inputClass} value={v.notes} onChange={(e) => set({ notes: e.target.value })} /></Field>
         </Panel>
-        <Errors list={typed.errors} show={r.touched} />
+
         <Panel title="So far">
           <Figures items={[
             ['Total', doc?.totalCents ?? typed.totalCents, 'text-lg font-semibold'],
@@ -296,7 +302,7 @@ export function JobOrderForm({ type, mode }: { type: DocTypeInfo; mode: FormMode
           ]} />
           {!live && <p className="text-sm text-slate-500">Fill in the customer, terms and lines to see the downpayment asked.</p>}
           {live && <p className="text-sm">{live.summary}</p>}
-          {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
+          {live?.issues.filter((i) => i.level !== 'error' || !i.field).map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
         </Panel>
         <SalesActions total={doc?.totalCents ?? typed.totalCents} label="Total">
           <Button tone="primary" disabled={!type.canPost} onClick={record} title="Ctrl+Enter">Record</Button>

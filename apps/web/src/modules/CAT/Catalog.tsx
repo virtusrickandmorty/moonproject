@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
+import { schemaFields, useBoxes } from '../JO/boxes.ts';
+import { itemInput, priceInput } from './validation.ts';
 import { api, type Me } from '../../api.ts';
 import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
-import { CLASS_LABELS as classes, PAGE_SIZE, blankItem, catalogCalls, moneyCents, typeLocked, valuesOf, type Detail, type Item, type ItemValues } from './catalog.ts';
+import { CLASS_LABELS as classes, PAGE_SIZE, blankItem, catalogCalls, moneyCents, typeLocked, valuesOf, itemBody, type Detail, type Item, type ItemValues } from './catalog.ts';
 
 export function Catalog({ me }: { me: Me }) {
   const [rows, setRows] = useState<Item[]>([]);
@@ -48,28 +50,29 @@ export function ItemEditor({ me, row, onClose, onSaved }: { me: Me; row: Detail 
   const locked = typeLocked(old);
   const [v, setV] = useState<ItemValues>(old ? valuesOf(old) : blankItem());
   const save = useAction();
-  const submit = () => save.run(async () => {
+  const boxes = useBoxes(schemaFields(itemInput, itemBody(v)), JSON.stringify(v));
+  const submit = () => save.run(() => boxes.run(async () => {
     const calls = catalogCalls(me);
     const saved = old ? await calls.update(old, v) : await calls.create(v);
     await onSaved(saved.id);
-  });
+  }));
   return <Panel title={old ? `Edit ${old.name}` : 'New catalog item'}><div className="grid gap-3 sm:grid-cols-2">
-    <Field label="Code" required><input className={inputClass} value={v.code} onChange={(e) => setV({ ...v, code: e.target.value })} /></Field>
-    <Field label="Name" required><input className={inputClass} value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} /></Field>
-    <Field label="Class" required><select disabled={locked} className={inputClass} value={v.class} onChange={(e) => setV({ ...v, class: e.target.value as ItemValues['class'] })}>
+    <Field label="Code" error={boxes.error('code')} required><input {...boxes.box('code')} className={inputClass} value={v.code} onChange={(e) => setV({ ...v, code: e.target.value })} /></Field>
+    <Field label="Name" error={boxes.error('name')} required><input {...boxes.box('name')} className={inputClass} value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} /></Field>
+    <Field label="Class" error={boxes.error('class')} required><select {...boxes.box('class')} disabled={locked} className={inputClass} value={v.class} onChange={(e) => setV({ ...v, class: e.target.value as ItemValues['class'] })}>
       {Object.entries(classes).map(([key, title]) => <option key={key} value={key}>{title}</option>)}</select></Field>
-    {v.class === 'made_to_order_garment' && <Field label="Garment type" required><input disabled={locked} className={inputClass} value={v.garmentType}
-      onChange={(e) => setV({ ...v, garmentType: e.target.value })} /></Field>}
-    <Field label="Unit" required><select disabled={locked} className={inputClass} value={v.unit} onChange={(e) => setV({ ...v, unit: e.target.value as ItemValues['unit'] })}>
+    <Field hint={v.class !== 'made_to_order_garment' ? 'Only for made-to-order garments.' : locked ? 'This item already has prices.' : undefined} label="Garment type" error={boxes.error('garmentType')} required><input {...boxes.box('garmentType')} disabled={locked || v.class !== 'made_to_order_garment'} className={inputClass} value={v.garmentType}
+      onChange={(e) => setV({ ...v, garmentType: e.target.value })} /></Field>
+    <Field label="Unit" error={boxes.error('unit')} required><select {...boxes.box('unit')} disabled={locked} className={inputClass} value={v.unit} onChange={(e) => setV({ ...v, unit: e.target.value as ItemValues['unit'] })}>
       <option value="pc">Piece</option><option value="set">Set</option></select></Field>
-    {v.unit === 'set' && <Field label="Components per set" required><input type="number" min="1" disabled={locked} className={inputClass} value={v.setComponents}
-      onChange={(e) => setV({ ...v, setComponents: Number(e.target.value) })} /></Field>}
+    <Field hint={locked ? 'This item already has prices.' : v.unit !== 'set' ? 'A piece has one production component.' : undefined} label="Components per set" error={boxes.error('setComponents')} required><input {...boxes.box('setComponents')} type="number" min="1" disabled={locked || v.unit !== 'set'} className={inputClass} value={v.setComponents}
+      onChange={(e) => setV({ ...v, setComponents: Number(e.target.value) })} /></Field>
   </div>{locked && <p className="text-sm text-slate-500">This item has prices, so its class, garment type and unit cannot change. Deactivate it and add a new item instead.</p>}
     {save.error && <Notice>{save.error}</Notice>}<div className="flex gap-2"><Button tone="primary" disabled={save.busy || !v.code.trim() || !v.name.trim() || (v.class === 'made_to_order_garment' && !v.garmentType.trim())}
       onClick={() => void submit()}>Save</Button><Button onClick={onClose}>Cancel</Button></div></Panel>;
 }
 
-function ItemDetail({ me, data, onEdit, onClose, onRefresh }: { me: Me; data: Detail; onEdit: () => void; onClose: () => void; onRefresh: () => Promise<void> }) {
+export function ItemDetail({ me, data, onEdit, onClose, onRefresh }: { me: Me; data: Detail; onEdit: () => void; onClose: () => void; onRefresh: () => Promise<void> }) {
   const [today, setToday] = useState('');
   const [effectiveFrom, setEffectiveFrom] = useState('');
   const [minQty, setMinQty] = useState(1);
@@ -81,13 +84,16 @@ function ItemDetail({ me, data, onEdit, onClose, onRefresh }: { me: Me; data: De
   const active = data.is_active === 1;
   // A new price starts today or later (the server refuses an earlier date); the server's own date is the default.
   useEffect(() => { void api.health().then((h) => { setToday(h.serverTime.slice(0, 10)); setEffectiveFrom((d) => d || h.serverTime.slice(0, 10)); }, () => undefined); }, []);
-  const savePrice = () => price.run(async () => {
+  const priceChecks = schemaFields(priceInput, { effectiveFrom, minQty, unitPriceCents: moneyCents(amount) });
+  if (today && effectiveFrom < today) priceChecks.effectiveFrom = 'A new price starts today or later.';
+  const priceBoxes = useBoxes(priceChecks, JSON.stringify([effectiveFrom, minQty, amount]));
+  const savePrice = () => price.run(() => priceBoxes.run(async () => {
     const cents = moneyCents(amount);
     if (cents === null) throw new Error('Enter a price with at most two decimal places.');
     await catalogCalls(me).addPrice(data, { effectiveFrom, minQty, unitPriceCents: cents });
-    setAmount('');
+    setAmount(''); priceBoxes.reset();
     await onRefresh();
-  });
+  }));
   const deactivate = () => off.run(async () => { await catalogCalls(me).deactivate(data); setConfirmOff(false); await onRefresh(); });
   return <div className="space-y-4"><Panel title={`${data.name} · ${data.code}`}>
     <p className="text-sm text-slate-600">{classes[data.class]} · {data.unit} · {active ? 'Active' : 'Inactive'}</p>
@@ -100,9 +106,9 @@ function ItemDetail({ me, data, onEdit, onClose, onRefresh }: { me: Me; data: De
       <td className="text-right tabular-nums">{peso(p.unitPriceCents)}</td></tr>)}</tbody></table>
     {data.prices.length === 0 && <p className="py-2 text-sm text-slate-500">No prices yet. A quotation cannot use this item until it has one.</p>}</div></Panel>
     {me.permissions.includes('cat.price.manage') && active && <Panel title="New effective-dated price"><div className="grid gap-3 sm:grid-cols-3">
-      <Field label="Effective from" required><input type="date" min={today || undefined} className={inputClass} value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} /></Field>
-      <Field label="Minimum quantity" required><input type="number" min="1" className={inputClass} value={minQty} onChange={(e) => setMinQty(Number(e.target.value))} /></Field>
-      <Field label="Price per unit" required><input inputMode="decimal" className={inputClass} value={amount} onChange={(e) => setAmount(e.target.value)} /></Field></div>
+      <Field label="Effective from" error={priceBoxes.error('effectiveFrom')} required><input {...priceBoxes.box('effectiveFrom')} type="date" min={today || undefined} className={inputClass} value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} /></Field>
+      <Field label="Minimum quantity" error={priceBoxes.error('minQty')} required><input {...priceBoxes.box('minQty')} type="number" min="1" className={inputClass} value={minQty} onChange={(e) => setMinQty(Number(e.target.value))} /></Field>
+      <Field label="Price per unit" error={priceBoxes.error('unitPriceCents')} required><input {...priceBoxes.box('unitPriceCents')} inputMode="decimal" className={inputClass} value={amount} onChange={(e) => setAmount(e.target.value)} /></Field></div>
       <p className="text-sm text-slate-500">Prices include VAT. Earlier prices stay in the history. The newest applicable date and quantity tier is used.</p>
       {price.error && <Notice>{price.error}</Notice>}<Button tone="primary" disabled={price.busy || !effectiveFrom || !Number.isInteger(minQty) || minQty < 1 || moneyCents(amount) === null}
         onClick={() => void savePrice()}>Save price</Button></Panel>}

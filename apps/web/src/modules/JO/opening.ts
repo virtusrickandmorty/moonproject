@@ -51,7 +51,7 @@ export function openingInput(v: OpeningValues): { input: OpeningInput; linesCent
     const at = `Line ${i + 1}`;
     const before = errors.length;
     if (!r.description.trim()) errors.push(`${at}: say what is still to make or release.`);
-    if (!/^[1-9]\d{0,3}$/.test(r.qty.trim())) errors.push(`${at}: the quantity must be a whole number like 1 or 20.`);
+    if (!(Number.isInteger(Number(r.qty)) && Number(r.qty) >= 1 && Number(r.qty) <= 10_000)) errors.push(`${at}: the quantity must be a whole number like 1 or 20.`);
     if (price === undefined || discount === undefined || price < 0 || discount < 0) errors.push(`${at}: type amounts like 280.00`);
     if (errors.length === before) lines.push({ kind: r.kind, description: r.description.trim(), qty: Number(r.qty), unitPriceCents: price!, discountCents: discount!, roster: r.roster });
   });

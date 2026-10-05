@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { api, type BookletShown, type CatItem, type JoPick, type ReleasePick } from '../../api.ts';
 import { Button, Field, Panel, inputClass, peso } from '../../components/ui.tsx';
+import type { Boxes } from './boxes.ts';
 import { Figures } from '../COL/parts.tsx';
 
 /** What matches the search, a moment after typing stops; nothing while one is already picked. */
@@ -17,20 +18,20 @@ function usePick<T>(q: string, searching: boolean, run: (q: string) => Promise<T
 }
 
 /** Search job orders by number or customer; with nothing typed, the ones with pieces left to release. */
-export function JoPicker({ value, onChange }: { value: { id: string; label: string } | null; onChange: (jo: JoPick | null) => void }) {
+export function JoPicker({ value, onChange, boxes }: { boxes?: Boxes; value: { id: string; label: string } | null; onChange: (jo: JoPick | null) => void }) {
   const [q, setQ] = useState('');
   const rows = usePick(q, !value, api.joPickOrders);
   if (value) {
     return (
-      <div className="flex items-center gap-3">
+      <Field label="Job order" error={boxes?.error('jobOrderId')}><div className="flex items-center gap-3">
         <span className="font-medium">{value.label}</span>
         <Button onClick={() => onChange(null)}>Change</Button>
-      </div>
+      </div></Field>
     );
   }
   return (
     <div className="space-y-1">
-      <Field label="Job order"><input aria-label="Job order" className={inputClass} placeholder="Job order number or customer" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
+      <Field label="Job order" error={boxes?.error('jobOrderId')}><input {...boxes?.box('jobOrderId')} aria-label="Job order" className={inputClass} placeholder="Job order number or customer" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
       {rows.map((jo) => (
         <button key={jo.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => onChange(jo)}>
           {jo.number} · {jo.customerName} <span className="text-slate-500">· {jo.stageLabel} · {jo.leftPieces} pieces left · due {jo.dueDate}</span>
@@ -42,21 +43,21 @@ export function JoPicker({ value, onChange }: { value: { id: string; label: stri
 }
 
 /** Search releases by their number (or the job order or customer); with nothing typed, the ones still waiting for their invoice. */
-export function ReleasePicker({ value, onChange, preset = '' }: { value: ReleasePick | null; onChange: (r: ReleasePick | null) => void; preset?: string }) {
+export function ReleasePicker({ value, onChange, boxes, preset = '' }: { boxes?: Boxes; value: ReleasePick | null; onChange: (r: ReleasePick | null) => void; preset?: string }) {
   const [q, setQ] = useState(preset);
   useEffect(() => setQ(preset), [preset]);
   const rows = usePick(q, !value, api.joPickReleases);
   if (value) {
     return (
-      <div className="flex items-center gap-3">
+      <Field label="Release number" error={boxes?.error('releaseId')}><div className="flex items-center gap-3">
         <span className="font-medium">{value.number} · {value.jobOrderNumber} · {value.customerName}</span>
         <Button onClick={() => onChange(null)}>Change</Button>
-      </div>
+      </div></Field>
     );
   }
   return (
     <div className="space-y-1">
-      <Field label="Release number"><input aria-label="Release number" className={inputClass} placeholder="Release number, e.g. REL-000012" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
+      <Field label="Release number" error={boxes?.error('releaseId')}><input {...boxes?.box('releaseId')} aria-label="Release number" className={inputClass} placeholder="Release number, e.g. REL-000012" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
       {rows.map((r) => (
         <button key={r.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => onChange(r)}>
           {r.number} · {r.jobOrderNumber} · {r.customerName} · {peso(r.totalCents)}
@@ -97,7 +98,7 @@ export function Booklet({ b, depositAppliedCents }: { b: BookletShown; depositAp
 }
 
 /** Search the price list (2+ letters); picking an item fills the line and asks for its tier price. */
-export function ItemSearch({ onPick, n }: { onPick: (item: CatItem) => void; n: number }) {
+export function ItemSearch({ onPick, n, boxes }: { boxes?: Boxes; onPick: (item: CatItem) => void; n: number }) {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<CatItem[]>([]);
   useEffect(() => {
@@ -108,7 +109,7 @@ export function ItemSearch({ onPick, n }: { onPick: (item: CatItem) => void; n: 
   }, [q]);
   return (
     <div className="space-y-1">
-      <Field label="Price list item"><input aria-label={`Line ${n} price list item`} placeholder="Search the price list, e.g. jersey" className={inputClass} value={q} onChange={(e) => setQ(e.target.value)} /></Field>
+      <Field label="Price list item" error={boxes?.error(`lines.${n - 1}.itemId`)}><input {...boxes?.box(`lines.${n - 1}.itemId`)} aria-label={`Line ${n} price list item`} placeholder="Search the price list, e.g. jersey" className={inputClass} value={q} onChange={(e) => setQ(e.target.value)} /></Field>
       {rows.map((it) => (
         <button key={it.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => (onPick(it), setQ(''))}>
           {it.name} <span className="text-slate-500">{it.code}</span>

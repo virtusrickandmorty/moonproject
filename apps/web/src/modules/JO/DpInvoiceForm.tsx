@@ -6,12 +6,14 @@
  * words instead. Also its Edit (cancel and reissue with a new booklet number, NR-4).
  */
 import { useEffect, useState } from 'react';
+import { schemaFields, useBoxes, issueFields } from './boxes.ts';
+import { dpInvoiceInput as dpSchema } from './validation.ts';
 import { formatPesos } from '@moonproject/shared';
 import { api, type DocTypeInfo, type DpInfo, type JoPick, type Preview } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
-import { useRecord } from '../../generic/record.tsx';
-import { Errors, Figures, useLive } from '../COL/parts.tsx';
+import { useRecord } from './record.tsx';
+import { Figures, useLive } from '../COL/parts.tsx';
 import { Booklet, JoPicker } from './parts.tsx';
 import { dpBooklet, dpInvoiceInput, dpSplit, dpStartCents, modeText, type DpPreviewDoc } from './forms.ts';
 
@@ -48,7 +50,8 @@ export function DpInvoiceForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
   const doc = live?.doc as DpPreviewDoc | undefined;
   const refusal = info?.refusal ?? '';
   const errors = [...typed.errors, ...(refusal ? [refusal] : [])];
-  const record = () => rec.ask(typed.input, errors);
+  const boxes = useBoxes({ ...issueFields(live?.issues), ...(refusal ? { jobOrderId: refusal } : {}), ...schemaFields(dpSchema, typed.input) }, JSON.stringify(typed.input), rec.refusedInput === JSON.stringify(typed.input) ? rec.refused : {}, rec.touched);
+  const record = () => { boxes.submit(); rec.ask(typed.input, errors); };
   // What the invoice applies: the money already held for the job order (the preview's own figure once it answers).
   const applied = doc?.depositAppliedCents ?? Math.min(info?.depositsHeldCents ?? 0, typed.input.amountCents);
   const split = dpSplit(typed.input.amountCents, applied);
@@ -61,23 +64,22 @@ export function DpInvoiceForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
         <h1 className="text-2xl font-semibold">{rec.title('New downpayment invoice')}</h1>
         {rec.top}
         <Panel title="Job order">
-          <JoPicker value={jo} onChange={choose} />
+          <JoPicker boxes={boxes} value={jo} onChange={choose} />
           {info && <p className="text-sm text-slate-600">{modeText(info.depositVat)}{info.depositVat.mode !== info.depositVat.setting ? ` (the setting in force is mode ${info.depositVat.setting})` : ''}</p>}
-          {refusal && <Notice tone="warning">{refusal}</Notice>}
           {info && !refusal && info.depositVat.kept && <Notice tone="info">{info.depositVat.kept}</Notice>}
         </Panel>
         <Panel title="Invoice">
-          <Field label="Invoice number (from the booklet)" required
+          <Field label="Invoice number (from the booklet)" error={boxes.error('invoiceNumber')} required
             hint={was ? `Invoice no. ${was} stays with the cancelled record (keep all its copies): write this downpayment on a new invoice.` : 'Type the number printed on the invoice you wrote.'}>
-            <input inputMode="numeric" className={`${inputClass} max-w-40`} value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} />
+            <input {...boxes.box('invoiceNumber')} inputMode="numeric" className={`${inputClass} max-w-40`} value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} />
           </Field>
-          <Field label="Downpayment invoiced (VAT included)" required
+          <Field label="Downpayment invoiced (VAT included)" error={boxes.error('amountCents')} required
             hint={info ? `Starts at the downpayment asked (${peso(info.requiredDownpaymentCents)}) less what is already invoiced (${peso(info.dpInvoicedCents)}).` : 'Pick the job order first.'}>
-            <input inputMode="decimal" className={`${inputClass} max-w-40 text-right tabular-nums`} value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <input {...boxes.box('amountCents')} inputMode="decimal" className={`${inputClass} max-w-40 text-right tabular-nums`} value={amount} onChange={(e) => setAmount(e.target.value)} />
           </Field>
-          <Field label="Note"><input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+          <Field label="Note" error={boxes.error('note')}><input {...boxes.box('note')} className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         </Panel>
-        <Errors list={errors} show={rec.touched} />
+
         <div className="flex gap-2">
           <Button tone="primary" disabled={!type.canPost || !!refusal} onClick={record} title="Ctrl+Enter">Record</Button>
           <Button onClick={() => history.back()}>Back</Button>
@@ -101,7 +103,7 @@ export function DpInvoiceForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
         )}
         {doc ? <Booklet b={dpBooklet(doc)} depositAppliedCents={doc.depositAppliedCents} /> : <Panel title="Write these on the booklet"><p className="text-sm text-slate-500">Pick the job order, type the invoice number and the amount to see what to write on the booklet.</p></Panel>}
         {live && <p className="text-sm">{live.summary}</p>}
-        {live?.issues.filter((i) => i.message !== refusal && i.message !== info?.depositVat.kept).map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
+        {live?.issues.filter((i) => (i.level !== 'error' || !i.field) && i.message !== refusal && i.message !== info?.depositVat.kept).map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
       </div>
       {rec.dialog}
     </form>

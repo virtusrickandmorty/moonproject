@@ -5,9 +5,12 @@
  * opens a collection filled in from it. The server works out every figure.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { ReasonDialog } from '../JO/ReasonDialog.tsx';
+import { schemaFields, useBoxes } from '../JO/boxes.ts';
+import { depositBody, returnBody, pdcInput } from './validation.ts';
 import { formatPesos } from '@moonproject/shared';
-import { api, newIdempotencyKey, type CashPlace, type CheckAtBank, type ChecksOnHand as List, type Me, type PostDatedCheck, type Preview } from '../../api.ts';
-import { Button, Dialog, Field, JournalTable, Notice, Panel, ReasonDialog, inputClass, peso, useAction } from '../../components/ui.tsx';
+import { api, ApiError, newIdempotencyKey, type CashPlace, type CheckAtBank, type ChecksOnHand as List, type Me, type PostDatedCheck, type Preview } from '../../api.ts';
+import { Button, Dialog, Field, JournalTable, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { cents } from './money.ts';
@@ -37,12 +40,15 @@ export function ChecksOnHand({ me }: { me: Me }) {
   }, []);
   const pick = useMemo(() => ticked(list?.checks ?? [], keys), [list, keys]);
   const toggle = (k: string) => setKeys((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const boxes = useBoxes(schemaFields(depositBody, { checks: pick.refs, toCashPlaceId: Number(bank) }), JSON.stringify([pick.refs, bank]));
   const openDeposit = () => {
+    boxes.submit();
     setError('');
-    api.checkDepositPreview(pick.refs, Number(bank)).then(setConfirm, (e: Error) => setError(e.message));
+    api.checkDepositPreview(pick.refs, Number(bank)).then((p) => { boxes.capture(new ApiError('VALIDATION', '', 422, p.issues.filter((i) => i.level === 'error'))); if (!p.issues.some((i) => i.level === 'error' && i.field)) setConfirm(p); }, (e: Error) => setError(boxes.refuse(e)));
   };
   const deposit = async (key: string) => {
-    const r = await api.checkDeposit(pick.refs, Number(bank), confirm!.totalCents, key);
+    const r = await boxes.run(() => api.checkDeposit(pick.refs, Number(bank), confirm!.totalCents, key));
+    if (!r) { setConfirm(null); return; }
     setConfirm(null);
     setKeys(new Set());
     setDone(`Deposited ${r.count} check${r.count === 1 ? '' : 's'}: recorded as ${r.transfer.number}.`);
@@ -67,7 +73,7 @@ export function ChecksOnHand({ me }: { me: Me }) {
               <tbody>
                 {list.checks.map((c) => (
                   <tr key={checkKey(c)} className="border-t border-slate-100">
-                    {depositor && <td><input type="checkbox" aria-label={`Deposit check no. ${c.checkNumber}`} checked={keys.has(checkKey(c))} onChange={() => toggle(checkKey(c))} /></td>}
+                    {depositor && <td><Field label="" error={boxes.error(`checks.${pick.refs.findIndex((r) => r.collectionId === c.collectionId && r.lineNo === c.lineNo)}`, `checks.${pick.refs.findIndex((r) => r.collectionId === c.collectionId && r.lineNo === c.lineNo)}.collectionId`, `checks.${pick.refs.findIndex((r) => r.collectionId === c.collectionId && r.lineNo === c.lineNo)}.lineNo`, ...(c === list.checks[0] ? ['checks'] : []))}><input {...boxes.box('checks')} type="checkbox" aria-label={`Deposit check no. ${c.checkNumber}`} checked={keys.has(checkKey(c))} onChange={() => toggle(checkKey(c))} /></Field></td>}
                     <td className="py-1">{c.receivedOn}</td>
                     <td className="text-right tabular-nums">{c.days}</td>
                     <td>{c.customerName}</td>
@@ -96,8 +102,8 @@ export function ChecksOnHand({ me }: { me: Me }) {
       {depositor && list && list.checks.length > 0 && (
         <Panel title="Deposit">
           <div className="flex flex-wrap items-end gap-3">
-            <Field label="Bank">
-              <select aria-label="Deposit to bank" className={inputClass} value={bank} onChange={(e) => setBank(e.target.value)}>
+            <Field label="Bank" error={boxes.error('toCashPlaceId')}>
+              <select {...boxes.box('toCashPlaceId')} aria-label="Deposit to bank" className={inputClass} value={bank} onChange={(e) => setBank(e.target.value)}>
                 <option value="">Pick the bank</option>
                 {banks.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
               </select>
@@ -151,21 +157,25 @@ function DepositDialog({ preview, onRecord, onClose }: { preview: Preview; onRec
 }
 
 /** A check the bank returned: back to Checks on hand, the bank's charge, and its collection cancelled so the customer owes it again. */
-function ReturnDialog({ check, onClose, onDone }: { check: CheckAtBank; onClose: () => void; onDone: (text: string) => void }) {
+export function ReturnDialog({ check, onClose, onDone }: { check: CheckAtBank; onClose: () => void; onDone: (text: string) => void }) {
   const [charge, setCharge] = useState('');
   const [cancel, setCancel] = useState(true);
   const key = useMemo(newIdempotencyKey, []);
   const chargeCents = cents(charge);
+  const checks = chargeCents === undefined ? { chargeCents: 'Type the bank charge like 250.00' } : schemaFields(returnBody.pick({ chargeCents: true }), chargeCents ? { chargeCents } : {});
+  const boxes = useBoxes(checks, charge);
   const explain = `Check no. ${check.checkNumber} of ${check.customerName} (${peso(check.amountCents)}) comes back from the bank into ${check.cashPlaceName}. Type what the bank wrote as the reason.`;
   return (
-    <ReasonDialog title={`Check no. ${check.checkNumber} returned by the bank`} explain={explain} confirmLabel="Record the return" onClose={onClose}
+    <ReasonDialog max={300} title={`Check no. ${check.checkNumber} returned by the bank`} explain={explain} confirmLabel="Record the return" onClose={onClose}
       onConfirm={async (reason) => {
-        if (chargeCents === undefined) throw new Error('Type the bank charge like 250.00');
-        const r = await api.checkReturn({ collectionId: check.collectionId, lineNo: check.lineNo, ...(chargeCents ? { chargeCents } : {}), reason, cancelCollection: cancel }, key);
+        boxes.submit();
+        if (chargeCents === undefined) return;
+        const r = await boxes.run(() => api.checkReturn({ collectionId: check.collectionId, lineNo: check.lineNo, ...(chargeCents ? { chargeCents } : {}), reason, cancelCollection: cancel }, key));
+        if (!r) return;
         onDone(`${r.summary} Recorded as ${[r.transfer.number, r.charge?.number].filter(Boolean).join(' and ')}${r.cancelled ? `; ${check.collectionNumber} is cancelled, so the customer owes it again` : ''}.`);
       }}>
-      <Field label="Bank charge for the returned check" hint="Leave blank if none">
-        <input inputMode="decimal" placeholder="0.00" className={`${inputClass} max-w-40 text-right tabular-nums`} value={charge} onChange={(e) => setCharge(e.target.value)} />
+      <Field label="Bank charge for the returned check" error={boxes.error('chargeCents')} hint="Leave blank if none">
+        <input {...boxes.box('chargeCents')} inputMode="decimal" placeholder="0.00" className={`${inputClass} max-w-40 text-right tabular-nums`} value={charge} onChange={(e) => setCharge(e.target.value)} />
       </Field>
       <label className="flex items-start gap-2 text-sm">
         <input type="checkbox" checked={cancel} onChange={(e) => setCancel(e.target.checked)} />
@@ -225,14 +235,14 @@ export function PostDatedChecks({ me }: { me: Me }) {
         )}
       </Panel>
       {voiding && (
-        <ReasonDialog title={`Void check no. ${voiding.checkNumber}`} explain="The check comes off the list for good (for example the customer replaced it). To list it again, add it again." confirmLabel="Void it" danger
+        <ReasonDialog max={300} title={`Void check no. ${voiding.checkNumber}`} explain="The check comes off the list for good (for example the customer replaced it). To list it again, add it again." confirmLabel="Void it" danger
           onClose={() => setVoiding(null)} onConfirm={async (reason) => { await api.voidPdc(voiding.id, reason); setVoiding(null); void load(); }} />
       )}
     </div>
   );
 }
 
-function AddPdc({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+export function AddPdc({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
   const [customer, setCustomer] = useState<Picked | null>(null);
   const [jobOrders, setJobOrders] = useState<{ id: string; number: string; dueDate: string; balanceDueCents: number }[]>([]);
   const [chosen, setChosen] = useState<string[]>([]);
@@ -249,33 +259,35 @@ function AddPdc({ onClose, onAdded }: { onClose: () => void; onAdded: () => void
     ...(f.checkNumber.trim() && f.bank.trim() && f.checkDate ? [] : ['Type the check number, the bank and the date on the check.']),
     ...(amountCents && amountCents > 0 ? [] : ['Type the amount like 25,000.00']),
   ];
-  const add = () => a.run(async () => {
-    if (errors.length > 0) throw new Error(errors[0]);
+  const body = { customerId: customer?.id ?? '', bank: f.bank.trim(), checkNumber: f.checkNumber.trim(), checkDate: f.checkDate, amountCents: amountCents!, jobOrderIds: chosen, ...(f.note.trim() ? { note: f.note.trim() } : {}) };
+  const boxes = useBoxes(schemaFields(pdcInput, body), JSON.stringify(body));
+  const add = () => a.run(() => boxes.run(async () => {
+    if (errors.length > 0) return;
     await api.addPdc({ customerId: customer!.id, bank: f.bank.trim(), checkNumber: f.checkNumber.trim(), checkDate: f.checkDate, amountCents: amountCents!, jobOrderIds: chosen, ...(f.note.trim() ? { note: f.note.trim() } : {}) });
     onAdded();
-  });
+  }));
   const set = (k: keyof typeof f) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value });
   return (
     <Panel title="Add a post-dated check">
-      <CustomerPicker value={customer} onChange={setCustomer} />
+      <CustomerPicker boxes={boxes} value={customer} onChange={setCustomer} />
       <div className="grid gap-3 sm:grid-cols-4">
-        <Field label="Check number" required><input className={inputClass} value={f.checkNumber} onChange={set('checkNumber')} /></Field>
-        <Field label="Bank" required><input className={inputClass} value={f.bank} onChange={set('bank')} /></Field>
-        <Field label="Date on the check" required><input type="date" className={inputClass} value={f.checkDate} onChange={set('checkDate')} /></Field>
-        <Field label="Amount" required><input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={f.amount} onChange={set('amount')} /></Field>
+        <Field label="Check number" error={boxes.error('checkNumber')} required><input {...boxes.box('checkNumber')} className={inputClass} value={f.checkNumber} onChange={set('checkNumber')} /></Field>
+        <Field label="Bank" error={boxes.error('bank')} required><input {...boxes.box('bank')} className={inputClass} value={f.bank} onChange={set('bank')} /></Field>
+        <Field label="Date on the check" error={boxes.error('checkDate')} required><input {...boxes.box('checkDate')} type="date" className={inputClass} value={f.checkDate} onChange={set('checkDate')} /></Field>
+        <Field label="Amount" error={boxes.error('amountCents')} required><input {...boxes.box('amountCents')} inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={f.amount} onChange={set('amount')} /></Field>
       </div>
       {jobOrders.length > 0 && (
         <fieldset className="space-y-1 text-sm">
           <legend className="font-medium">For which job orders?</legend>
-          {jobOrders.map((j) => (
-            <label key={j.id} className="flex items-center gap-2">
-              <input type="checkbox" checked={chosen.includes(j.id)} onChange={(e) => setChosen(e.target.checked ? [...chosen, j.id] : chosen.filter((x) => x !== j.id))} />
-              {j.number} · due {j.dueDate} · {formatPesos(j.balanceDueCents)} left to pay
-            </label>
+          {jobOrders.map((j, i) => (
+            <Field key={j.id} label="" error={boxes.error(`jobOrderIds.${chosen.indexOf(j.id)}`, ...(i === 0 ? ['jobOrderIds'] : []))}>
+              <input {...boxes.box('jobOrderIds')} type="checkbox" checked={chosen.includes(j.id)} onChange={(e) => setChosen(e.target.checked ? [...chosen, j.id] : chosen.filter((x) => x !== j.id))} />
+              <span>{j.number} · due {j.dueDate} · {formatPesos(j.balanceDueCents)} left to pay</span>
+            </Field>
           ))}
         </fieldset>
       )}
-      <Field label="Note"><input className={inputClass} value={f.note} onChange={set('note')} /></Field>
+      <Field label="Note" error={boxes.error('note')}><input {...boxes.box('note')} className={inputClass} value={f.note} onChange={set('note')} /></Field>
       {a.error && <Notice>{a.error}</Notice>}
       <div className="flex gap-2">
         <Button tone="primary" disabled={a.busy} onClick={add}>Add to the list</Button>

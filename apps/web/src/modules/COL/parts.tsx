@@ -1,15 +1,17 @@
 /** Pieces the money screens share (collection, refund, quick sale): customer search, split tenders, live preview, edit gate. */
 import { useEffect, useState, type ReactNode } from 'react';
+import { ReasonDialog } from '../JO/ReasonDialog.tsx';
 import { api, type CashPlace, type CustomerRow, type DocHeader } from '../../api.ts';
 import { navigate } from '../../router.tsx';
-import { Button, Field, Notice, ReasonDialog, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Field, Notice, inputClass, peso } from '../../components/ui.tsx';
 import { docPath } from '../../shell/menu.ts';
+import type { Boxes } from '../JO/boxes.ts';
 import { emptyTender, type TenderRow } from './money.ts';
 
 export interface Picked { id: string; name: string }
 
 /** Search customers by name or code (2+ letters); active ones only. */
-export function CustomerPicker({ value, onChange }: { value: Picked | null; onChange: (c: Picked | null) => void }) {
+export function CustomerPicker({ value, onChange, boxes, label = 'Customer' }: { label?: string; boxes?: Boxes; value: Picked | null; onChange: (c: Picked | null) => void }) {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<CustomerRow[]>([]);
   useEffect(() => {
@@ -20,17 +22,17 @@ export function CustomerPicker({ value, onChange }: { value: Picked | null; onCh
   }, [q, value]);
   if (value) {
     return (
-      <div className="flex items-center gap-3">
+      <Field label={label} error={boxes?.error('customerId')}><div className="flex items-center gap-3">
         <span className="font-medium">{value.name}</span>
         <Button onClick={() => onChange(null)}>Change</Button>
-      </div>
+      </div></Field>
     );
   }
   return (
     <div className="space-y-1">
-      <span className="block text-sm text-slate-700">Customer</span>
-      <input aria-label="Customer" className={inputClass} placeholder="Type 2 or more letters of the name or code" value={q} onChange={(e) => setQ(e.target.value)} />
-      {rows.map((c) => (
+      <Field label={label} error={boxes?.error('customerId')}>
+      <input {...boxes?.box('customerId')} aria-label="Customer" className={inputClass} placeholder="Type 2 or more letters of the name or code" value={q} onChange={(e) => setQ(e.target.value)} />
+      </Field>{rows.map((c) => (
         <button key={c.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => onChange({ id: c.id, name: c.display_name })}>
           {c.display_name} <span className="text-slate-500">{c.code}</span>
         </button>
@@ -41,13 +43,13 @@ export function CustomerPicker({ value, onChange }: { value: Picked | null; onCh
 }
 
 /** One row per tender: a big button per cash place (PLAN H2 "money questions"), the amount and a reference. */
-export function TenderRows(p: { rows: TenderRow[]; onChange: (rows: TenderRow[]) => void; places: CashPlace[]; question: string; amountHint?: string; max?: number }) {
+export function TenderRows(p: { boxes?: Boxes; rows: TenderRow[]; onChange: (rows: TenderRow[]) => void; places: CashPlace[]; question: string; amountHint?: string; max?: number }) {
   const set = (i: number, patch: Partial<TenderRow>) => p.onChange(p.rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   return (
     <div className="space-y-3">
       {p.rows.map((r, i) => (
         <div key={i} className="space-y-2 rounded-md p-2 ring-1 ring-slate-200">
-          <div role="radiogroup" aria-label={p.rows.length > 1 ? `${p.question} (payment ${i + 1})` : p.question} className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <Field label={p.question} error={p.boxes?.error(`tenders.${i}.cashPlaceId`)}><div {...p.boxes?.choice(`tenders.${i}.cashPlaceId`)} role="radiogroup" aria-label={p.rows.length > 1 ? `${p.question} (payment ${i + 1})` : p.question} className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {p.places.map((c) => (
               <button key={c.id} type="button" role="radio" aria-checked={r.cashPlaceId === String(c.id)} onClick={() => set(i, { cashPlaceId: String(c.id) })}
                 className={`rounded-lg p-2 text-left text-sm ring-1 ${r.cashPlaceId === String(c.id) ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'}`}>
@@ -55,16 +57,16 @@ export function TenderRows(p: { rows: TenderRow[]; onChange: (rows: TenderRow[])
               </button>
             ))}
           </div>
-          {p.places.find((c) => String(c.id) === r.cashPlaceId)?.kind === 'checks' && (
+          </Field>{(
             <div className="grid gap-2 sm:grid-cols-3">
-              <Field label="Check number"><input aria-label="Check number" placeholder="Check no." className={inputClass} value={r.checkNumber ?? ''} onChange={(e) => set(i, { checkNumber: e.target.value })} /></Field>
-              <Field label="Bank of the check"><input aria-label="Bank of the check" placeholder="Bank" className={inputClass} value={r.bank ?? ''} onChange={(e) => set(i, { bank: e.target.value })} /></Field>
-              <Field label="Date on the check"><input aria-label="Date on the check" type="date" className={inputClass} value={r.checkDate ?? ''} onChange={(e) => set(i, { checkDate: e.target.value })} /></Field>
+              <Field label="Check number" hint={p.places.find((c) => String(c.id) === r.cashPlaceId)?.kind !== 'checks' ? 'Only for a payment into Checks on hand.' : undefined} error={p.boxes?.error(`tenders.${i}.check.number`, `tenders.${i}.check`)}><input disabled={p.places.find((c) => String(c.id) === r.cashPlaceId)?.kind !== 'checks'} {...p.boxes?.box(`tenders.${i}.check.number`)} aria-label="Check number" placeholder="Check no." className={inputClass} value={r.checkNumber ?? ''} onChange={(e) => set(i, { checkNumber: e.target.value })} /></Field>
+              <Field label="Bank of the check" hint={p.places.find((c) => String(c.id) === r.cashPlaceId)?.kind !== 'checks' ? 'Only for a payment into Checks on hand.' : undefined} error={p.boxes?.error(`tenders.${i}.check.bank`)}><input disabled={p.places.find((c) => String(c.id) === r.cashPlaceId)?.kind !== 'checks'} {...p.boxes?.box(`tenders.${i}.check.bank`)} aria-label="Bank of the check" placeholder="Bank" className={inputClass} value={r.bank ?? ''} onChange={(e) => set(i, { bank: e.target.value })} /></Field>
+              <Field label="Date on the check" hint={p.places.find((c) => String(c.id) === r.cashPlaceId)?.kind !== 'checks' ? 'Only for a payment into Checks on hand.' : undefined} error={p.boxes?.error(`tenders.${i}.check.date`)}><input disabled={p.places.find((c) => String(c.id) === r.cashPlaceId)?.kind !== 'checks'} {...p.boxes?.box(`tenders.${i}.check.date`)} aria-label="Date on the check" type="date" className={inputClass} value={r.checkDate ?? ''} onChange={(e) => set(i, { checkDate: e.target.value })} /></Field>
             </div>
           )}
           <div className="grid items-end gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_auto]">
-            <Field label="Amount"><input aria-label="Amount" inputMode="decimal" placeholder={(p.rows.length === 1 && p.amountHint) || '0.00'} className={`${inputClass} max-w-40 text-right tabular-nums`} value={r.amount} onChange={(e) => set(i, { amount: e.target.value })} /></Field>
-            <Field label="Reference"><input aria-label="Reference" placeholder="GCash or bank reference, or check no. and bank" className={inputClass} value={r.reference} onChange={(e) => set(i, { reference: e.target.value })} /></Field>
+            <Field label="Amount" error={p.boxes?.error(`tenders.${i}.amountCents`, ...(i === 0 ? ['tenders'] : []))}><input {...p.boxes?.box(`tenders.${i}.amountCents`)} aria-label="Amount" inputMode="decimal" placeholder={(p.rows.length === 1 && p.amountHint) || '0.00'} className={`${inputClass} max-w-40 text-right tabular-nums`} value={r.amount} onChange={(e) => set(i, { amount: e.target.value })} /></Field>
+            <Field label="Reference" error={p.boxes?.error(`tenders.${i}.reference`)}><input {...p.boxes?.box(`tenders.${i}.reference`)} aria-label="Reference" placeholder="GCash or bank reference, or check no. and bank" className={inputClass} value={r.reference} onChange={(e) => set(i, { reference: e.target.value })} /></Field>
             {p.rows.length > 1 && <Button onClick={() => p.onChange(p.rows.filter((_, j) => j !== i))}>Remove</Button>}
           </div>
         </div>
@@ -75,12 +77,12 @@ export function TenderRows(p: { rows: TenderRow[]; onChange: (rows: TenderRow[])
 }
 
 /** The server's own calculator, a moment after typing stops (PLAN H2 "live totals"). Null while not ready or failing. */
-export function useLive<T>(key: string, ready: boolean, run: () => Promise<T>): T | null {
+export function useLive<T>(key: string, ready: boolean, run: () => Promise<T>, onError?: (e: unknown) => void): T | null {
   const [out, setOut] = useState<T | null>(null);
   useEffect(() => {
     if (!ready) return setOut(null);
     let stale = false;
-    const t = setTimeout(() => run().then((r) => stale || setOut(r), () => stale || setOut(null)), 400);
+    const t = setTimeout(() => run().then((r) => stale || setOut(r), (e) => { if (!stale) { onError?.(e); setOut(null); } }), 400);
     return () => ((stale = true), clearTimeout(t));
   }, [key, ready]);
   return out;

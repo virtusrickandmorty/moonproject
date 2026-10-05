@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ReasonDialog } from '../JO/ReasonDialog.tsx';
+import { schemaFields, useBoxes, issueFields } from '../JO/boxes.ts';
+import { quotationInput } from './validation.ts';
 import { api, ApiError, type DocHeader, type DocTypeInfo, type Preview } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso, ReasonDialog } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { navigate } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
@@ -9,15 +12,15 @@ import { ItemSearch } from '../JO/parts.tsx';
 import { Exception, SalesActions } from '../JO/entry.tsx';
 import { amount, blank, blankLine, cents, isReady, toInput, valuesOfInput, type Form, type Line, type QuotationDoc } from './quotation.ts';
 
-function MoneyField({ value, onValue, placeholder }: { value: number | undefined; onValue: (n: number | undefined) => void; placeholder?: string }) {
-  const [text, setText] = useState(amount(value));
+export function MoneyField({ value, onValue, placeholder, onInput, onBlur }: { onInput?: () => void; onBlur?: () => void; value: number | undefined; onValue: (n: number | undefined) => void; placeholder?: string }) {
+  const [text, setText] = useState(Number.isNaN(value) ? '' : amount(value));
   const sent = useRef<number | undefined>(value);
-  useEffect(() => { if (value !== sent.current) setText(amount(value)); }, [value]);
-  return <input inputMode="decimal" placeholder={placeholder} className={inputClass} value={text} onChange={(e) => {
+  useEffect(() => { if (!Object.is(value, sent.current)) setText(Number.isNaN(value) ? '' : amount(value)); }, [value]);
+  return <input onInput={onInput} onBlur={onBlur} inputMode="decimal" placeholder={placeholder} className={inputClass} value={text} onChange={(e) => {
     const next = e.target.value;
     setText(next);
     if (!next) { sent.current = undefined; onValue(undefined); }
-    else { const n = cents(next); if (n !== null) { sent.current = n; onValue(n); } }
+    else { const n = cents(next); if (n !== null) { sent.current = n; onValue(n); } else { sent.current = NaN; onValue(NaN); } }
   }} />;
 }
 
@@ -33,6 +36,9 @@ export function QuotationForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
   const [draft, setDraft] = useState<{ id: string; version: number } | null>(null);
   const input = useMemo(() => toInput(v), [v]);
   const ready = isReady(v);
+  const checks = schemaFields(quotationInput, input);
+  if (!v.customerId && !v.prospectName.trim() && checks.customerId) { checks.prospectName = checks.customerId; delete checks.customerId; }
+  const boxes = useBoxes({ ...issueFields(preview?.issues), ...checks }, JSON.stringify(v));
 
   useEffect(() => {
     if (mode.kind === 'edit') api.get(type.key, mode.id).then((d) => {
@@ -54,12 +60,12 @@ export function QuotationForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
   useEffect(() => {
     if (!ready) { setPreview(null); return; }
     let stale = false;
-    const timer = setTimeout(() => api.preview(type.key, input).then((p) => { if (!stale) setPreview(p); }, () => { if (!stale) setPreview(null); }), 400);
+    const timer = setTimeout(() => api.preview(type.key, input).then((p) => { if (!stale) setPreview(p); }, (e) => { if (!stale) { boxes.capture(e); setPreview(null); } }), 400);
     return () => { stale = true; clearTimeout(timer); };
   }, [type.key, input, ready]);
 
   const line = (index: number, patch: Partial<Line>) => setV((old) => ({ ...old, lines: old.lines.map((l, i) => i === index ? { ...l, ...patch } : l) }));
-  const openConfirm = () => api.preview(type.key, input).then(setConfirm, (e: Error) => setError(e.message));
+  const openConfirm = () => { boxes.submit(); return api.preview(type.key, input).then((p) => { setPreview(p); if (boxes.review(p)) setConfirm(p); }, (e: Error) => setError(boxes.refuse(e))); };
   const record = async (key: string) => {
     try {
       const r = original ? await api.reissue(type.key, original.id, input, confirm!.totalCents, reason, key)
@@ -67,6 +73,7 @@ export function QuotationForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
       if (draft) await api.discardDraft(draft.id).catch(() => undefined);
       navigate(docPath(type.key, `/${r.id}?recorded=1`));
     } catch (e) {
+      const general = boxes.refuse(e); setError(general); if (!general) setConfirm(null);
       if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.preview(type.key, input));
       throw e;
     }
@@ -76,7 +83,7 @@ export function QuotationForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
       const payload = { values: v as unknown as Record<string, string> };
       const d = draft ? await api.saveDraft(draft.id, draft.version, payload) : await api.createDraft(type.key, payload);
       setDraft(d); setError(''); setSaved('Draft saved. It has no quotation number yet. Open it again from the quotation list.');
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { setError(boxes.refuse(e)); }
   };
   if (mode.kind === 'edit' && original && !reason) return <ReasonDialog title={`Edit ${original.number}`}
     explain="The old quotation will be cancelled and the replacement will get a new number when you record it."
@@ -85,44 +92,44 @@ export function QuotationForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
   return <div className="max-w-5xl space-y-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-0"><h1 className="text-2xl font-semibold">{original ? `Edit ${original.number}` : 'New quotation'}</h1>
     {error && <Notice>{error}</Notice>}{saved && <Notice tone="success">{saved}</Notice>}{original && <Notice tone="info">Recording will cancel {original.number} and issue a replacement. Reason: {reason}</Notice>}
     <Panel title="Customer or prospect"><div className="grid gap-3 sm:grid-cols-2">
-      <div className="sm:col-span-2"><CustomerPicker value={v.customerId ? { id: v.customerId, name: customerName } : null} onChange={(c) => {
+      <div className="sm:col-span-2"><CustomerPicker boxes={boxes} value={v.customerId ? { id: v.customerId, name: customerName } : null} onChange={(c) => {
         setCustomerName(c?.name ?? 'Customer on file');
         setV({ ...v, customerId: c?.id ?? '', prospectName: '' });
       }} /></div>
-      <Field label="Prospect name"><input className={inputClass} value={v.prospectName} onChange={(e) => setV({ ...v, prospectName: e.target.value, customerId: '' })} /></Field>
-      <Field label="Contact"><input className={inputClass} value={v.contact} onChange={(e) => setV({ ...v, contact: e.target.value })} /></Field>
-      <Field label="Valid for days" required><input type="number" min="1" max="365" className={inputClass} value={v.validForDays}
+      <Field label="Prospect name" error={boxes.error('prospectName')}><input {...boxes.box('prospectName')} className={inputClass} value={v.prospectName} onChange={(e) => setV({ ...v, prospectName: e.target.value, customerId: '' })} /></Field>
+      <Field label="Contact" error={boxes.error('contact')}><input {...boxes.box('contact')} className={inputClass} value={v.contact} onChange={(e) => setV({ ...v, contact: e.target.value })} /></Field>
+      <Field label="Valid for days" error={boxes.error('validForDays')} required><input {...boxes.box('validForDays')} type="number" min="1" max="365" className={inputClass} value={v.validForDays}
         onChange={(e) => setV({ ...v, validForDays: Number(e.target.value) })} /></Field></div></Panel>
     <Panel title="Items">
       <div className="space-y-3">{v.lines.map((l, i) => <div key={i} className="space-y-3 rounded-md border p-3">
         <p className="font-medium">Line {i + 1}</p>
-        {l.itemId ? <div className="flex items-center gap-3"><span className="font-medium">{l.description}</span>
-          <Button onClick={() => line(i, { itemId: '' })}>Change item</Button></div>
-          : <ItemSearch n={i + 1} onPick={(item) => line(i, { itemId: item.id, description: item.name, unit: item.unit })} />}
+        {l.itemId ? <Field label="Price list item" error={boxes.error(`lines.${i}.itemId`)}><div className="flex items-center gap-3"><span className="font-medium">{l.description}</span>
+          <Button onClick={() => line(i, { itemId: '' })}>Change item</Button></div></Field>
+          : <ItemSearch boxes={boxes} n={i + 1} onPick={(item) => line(i, { itemId: item.id, description: item.name, unit: item.unit })} />}
         <div className="grid gap-3 sm:grid-cols-[minmax(12rem,1fr)_6rem_6rem]">
-        <Field label="Description" required><input className={inputClass} value={l.description} onChange={(e) => line(i, { description: e.target.value })} /></Field>
-        <Field label="Quantity" required><input type="number" min="1" className={inputClass} value={l.qty} onChange={(e) => line(i, { qty: Number(e.target.value) })} /></Field>
-        <Field label="Unit"><input className={inputClass} value={l.unit} readOnly /></Field>
+        <Field label="Description" error={boxes.error(`lines.${i}.description`, ...(i === 0 ? ['lines'] : []))} required><input {...boxes.box(`lines.${i}.description`)} className={inputClass} value={l.description} onChange={(e) => line(i, { description: e.target.value })} /></Field>
+        <Field label="Quantity" error={boxes.error(`lines.${i}.qty`)} required><input {...boxes.box(`lines.${i}.qty`)} type="number" min="1" className={inputClass} value={l.qty} onChange={(e) => line(i, { qty: Number(e.target.value) })} /></Field>
+        <Field label="Unit" error={boxes.error(`lines.${i}.unit`)}><input {...boxes.box(`lines.${i}.unit`)} className={inputClass} value={l.unit} readOnly /></Field>
         </div>
         <Exception title="Add a line discount" active={l.discountCents !== 0 || !!l.discountReason?.trim()}>
         <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Line discount"><MoneyField value={l.discountCents} onValue={(n) => line(i, { discountCents: n ?? 0 })} /></Field>
-        <Field label="Discount reason"><input className={inputClass} value={l.discountReason ?? ''} onChange={(e) => line(i, { discountReason: e.target.value })} /></Field>
+        <Field label="Line discount" error={boxes.error(`lines.${i}.discountCents`)}><MoneyField {...boxes.box(`lines.${i}.discountCents`)} value={l.discountCents} onValue={(n) => line(i, { discountCents: n ?? 0 })} /></Field>
+        <Field label="Discount reason" error={boxes.error(`lines.${i}.discountReason`)}><input {...boxes.box(`lines.${i}.discountReason`)} className={inputClass} value={l.discountReason ?? ''} onChange={(e) => line(i, { discountReason: e.target.value })} /></Field>
         </div></Exception>
         <Exception title="Change the usual price" active={l.overrideUnitPriceCents !== undefined || !!l.overrideReason?.trim()}>
         <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Override price"><MoneyField value={l.overrideUnitPriceCents} placeholder="Use catalog price"
+        <Field label="Override price" error={boxes.error(`lines.${i}.overrideUnitPriceCents`)}><MoneyField {...boxes.box(`lines.${i}.overrideUnitPriceCents`)} value={l.overrideUnitPriceCents} placeholder="Use catalog price"
           onValue={(n) => line(i, { overrideUnitPriceCents: n })} /></Field>
-        <Field label="Override reason"><input className={inputClass} value={l.overrideReason ?? ''} onChange={(e) => line(i, { overrideReason: e.target.value })} /></Field>
+        <Field hint={l.overrideUnitPriceCents === undefined ? 'Only sent when the price is overridden.' : undefined} label="Override reason" error={boxes.error(`lines.${i}.overrideReason`)}><input {...boxes.box(`lines.${i}.overrideReason`)} className={inputClass} disabled={l.overrideUnitPriceCents === undefined} value={l.overrideReason ?? ''} onChange={(e) => line(i, { overrideReason: e.target.value })} /></Field>
         </div></Exception><Button disabled={v.lines.length === 1} onClick={() => setV({ ...v, lines: v.lines.filter((_, x) => x !== i) })}>Remove item</Button></div>)}</div>
       <Button disabled={v.lines.length >= 50} onClick={() => setV({ ...v, lines: [...v.lines, blankLine()] })}>+ Add item</Button></Panel>
     <Panel title="Terms and discount"><div className="grid gap-3 sm:grid-cols-2">
-      <Field label="Terms"><textarea className={inputClass} value={v.termsText} onChange={(e) => setV({ ...v, termsText: e.target.value })} /></Field>
-      <Field label="Notes"><textarea className={inputClass} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field></div>
+      <Field label="Terms" error={boxes.error('termsText')}><textarea {...boxes.box('termsText')} className={inputClass} value={v.termsText} onChange={(e) => setV({ ...v, termsText: e.target.value })} /></Field>
+      <Field label="Notes" error={boxes.error('notes')}><textarea {...boxes.box('notes')} className={inputClass} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field></div>
       <Exception title="Add a document discount" active={v.documentDiscountCents !== 0 || !!v.discountReason.trim()}><div className="grid gap-3 sm:grid-cols-2">
-      <Field label="Document discount"><MoneyField value={v.documentDiscountCents}
+      <Field label="Document discount" error={boxes.error('documentDiscountCents')}><MoneyField {...boxes.box('documentDiscountCents')} value={v.documentDiscountCents}
         onValue={(n) => setV({ ...v, documentDiscountCents: n ?? 0 })} /></Field>
-      <Field label="Discount reason"><input className={inputClass} value={v.discountReason} onChange={(e) => setV({ ...v, discountReason: e.target.value })} /></Field>
+      <Field label="Discount reason" error={boxes.error('discountReason')}><input {...boxes.box('discountReason')} className={inputClass} value={v.discountReason} onChange={(e) => setV({ ...v, discountReason: e.target.value })} /></Field>
       </div></Exception></Panel>
     {preview && <Panel title="So far"><p className="text-2xl font-semibold">{peso(preview.totalCents)}</p><p>{preview.summary}</p>
       {(preview.doc as QuotationDoc | undefined)?.lines && <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left text-slate-500">
@@ -130,7 +137,7 @@ export function QuotationForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
         {(preview.doc as QuotationDoc).lines.map((l) => <tr key={l.lineNo} className="border-t"><td className="py-1">{l.description}</td><td>{l.qty} {l.unit}</td>
           <td className="text-right tabular-nums">{peso(l.unitPriceCents)}{l.unitPriceCents !== l.listUnitPriceCents && <span className="block text-xs text-slate-500">list {peso(l.listUnitPriceCents)}</span>}</td>
           <td className="text-right tabular-nums">{peso(l.lineTotalCents)}</td></tr>)}</tbody></table></div>}
-      {preview.issues.map((x) => <Notice key={x.code + x.field} tone={x.level}>{x.message}</Notice>)}</Panel>}
+      {preview.issues.filter((i) => i.level !== 'error' || !i.field).map((x) => <Notice key={x.code + x.field} tone={x.level}>{x.message}</Notice>)}</Panel>}
     <SalesActions total={preview?.totalCents}><Button tone="primary" disabled={!ready || !type.canPost} onClick={() => void openConfirm()}>Record</Button>
       {mode.kind === 'new' && <Button disabled={!type.canCreate} onClick={() => void saveDraft()}>Save draft</Button>}
       <Button onClick={() => navigate(docPath(type.key))}>Back</Button></SalesActions>

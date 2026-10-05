@@ -38,7 +38,7 @@ export const fromWearer = (w: WearerPick): RosterEdit => ({
 /** The catalog item's class -> the kind of line (sales account and production). */
 export const KIND_OF_CLASS: Record<CatItem['class'], Kind> = { made_to_order_garment: 'made_to_order', service: 'service', ready_made_item: 'ready_made' };
 
-const pieceCount = (roster: RosterEdit[]) => roster.reduce((s, r) => s + (/^[1-9]\d{0,3}$/.test(r.qty.trim()) ? Number(r.qty) : 0), 0);
+const pieceCount = (roster: RosterEdit[]) => roster.reduce((s, r) => s + (Number.isInteger(Number(r.qty)) && Number(r.qty) >= 1 && Number(r.qty) <= 1000 ? Number(r.qty) : 0), 0);
 /** A line's quantity: its roster's pieces when it has a roster (the server wants them equal), else what was typed. */
 export const lineQty = (l: JoLineRow) => (l.roster.length > 0 ? String(pieceCount(l.roster)) : l.qty);
 /** The price was changed from the price list's tier price. */
@@ -51,7 +51,7 @@ export function joInput(v: JoValues): { input: JoInput; totalCents: number; erro
   const errors: string[] = [];
   if (!v.customer) errors.push('Pick the customer.');
   const days = v.dueInDays.trim();
-  if (!/^\d{1,3}$/.test(days) || Number(days) < 1 || Number(days) > 365) errors.push('Due in: type the number of days, 1 to 365.');
+  if (!(Number.isInteger(Number(days)) && Number(days) >= 1 && Number(days) <= 365)) errors.push('Due in: type the number of days, 1 to 365.');
   if (!v.paymentTerms) errors.push('Pick the payment terms.');
   const lines: JoLineInput[] = [];
   v.lines.forEach((l, i) => {
@@ -61,13 +61,13 @@ export function joInput(v: JoValues): { input: JoInput; totalCents: number; erro
     const qty = lineQty(l);
     const [price, discount] = [cents(l.price), cents(l.discount)];
     if (!l.description.trim()) errors.push(`${at}: pick an item from the price list or say what is made.`);
-    if (!/^[1-9]\d{0,4}$/.test(qty) || Number(qty) > 10_000) errors.push(`${at}: the quantity must be a whole number like 1 or 20.`);
+    if (!(Number.isInteger(Number(qty)) && Number(qty) >= 1 && Number(qty) <= 10_000)) errors.push(`${at}: the quantity must be a whole number like 1 or 20.`);
     if (price === undefined || discount === undefined || price < 0 || discount < 0) errors.push(`${at}: type amounts like 450.00`);
     const roster: RosterInput[] = [];
     l.roster.forEach((r, j) => {
       const who = r.name.trim() || `row ${j + 1}`;
       if (!r.personId && !r.name.trim()) errors.push(`${at}, row ${j + 1}: pick a wearer or type a name.`);
-      if (!/^[1-9]\d{0,3}$/.test(r.qty.trim())) errors.push(`${at}, ${who}: the quantity must be a whole number like 1 or 2.`);
+      if (!(Number.isInteger(Number(r.qty)) && Number(r.qty) >= 1 && Number(r.qty) <= 1000)) errors.push(`${at}, ${who}: the quantity must be a whole number like 1 or 2.`);
       if (r.sizeMode === 'preset' && !r.size.trim()) errors.push(`${at}, ${who}: pick a size.`);
       roster.push({
         ...(r.personId ? { personId: r.personId } : { name: r.name.trim() }),
@@ -180,7 +180,7 @@ export function releaseInput(v: ReleaseValues, left: JoStatus['lines']): { relea
   for (const l of left) {
     const typed = (v.qtys[l.lineNo] ?? '').trim();
     if (!typed || typed === '0') continue;
-    if (!/^[1-9]\d{0,4}$/.test(typed)) errors.push(`Line ${l.lineNo}: type the pieces as a whole number.`);
+    if (!(Number.isInteger(Number(typed)) && Number(typed) >= 1 && Number(typed) <= 10_000)) errors.push(`Line ${l.lineNo}: type the pieces as a whole number.`);
     else if (Number(typed) > l.leftQty) errors.push(l.leftQty > 0 ? `Line ${l.lineNo}: only ${l.leftQty} of ${l.qty} pieces are left to release.` : `Line ${l.lineNo} is already fully released.`);
     else lines.push({ lineNo: l.lineNo, qty: Number(typed) });
   }
@@ -188,7 +188,7 @@ export function releaseInput(v: ReleaseValues, left: JoStatus['lines']): { relea
   if (!v.claimedBy.trim()) errors.push('Type who claimed it.');
   if (!v.idSeen) errors.push('Pick the ID seen.');
   const days = v.creditDueInDays.trim();
-  if (days && (!/^\d{1,3}$/.test(days) || Number(days) < 1 || Number(days) > 365)) errors.push('Pay within: type the number of days, 1 to 365.');
+  if (days && (!Number.isInteger(Number(days)) || Number(days) < 1 || Number(days) > 365)) errors.push('Pay within: type the number of days, 1 to 365.');
   const releaseErrors = [...errors];
   if (!v.invoiceToFollow && !/^\d+$/.test(v.invoiceNumber.trim())) errors.push('Type the invoice number from the booklet (digits only), or tick "Invoice to follow".');
   const release: ReleaseInput = {

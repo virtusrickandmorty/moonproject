@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { openServerPrint, refusedFields, type Me } from '../../api.ts';
+import { schemaFields, useBoxes } from '../JO/boxes.ts';
+import { customerInput, groupInput, personInput, chartInput } from './validation.ts';
+import { openServerPrint, type Me } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { masterRequest } from './http.ts';
 import { withholdingLabels, type WithholdingProfile } from './withholding.ts';
@@ -68,44 +70,43 @@ export function Customers({ me }: { me: Me }) {
   </div>;
 }
 
-function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Customer | 'new'; onClose: () => void; onSaved: (id: string, warnings: DuplicateWarning[]) => Promise<void> }) {
+export function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Customer | 'new'; onClose: () => void; onSaved: (id: string, warnings: DuplicateWarning[]) => Promise<void> }) {
   const old = row === 'new' ? null : row;
   const [v, setV] = useState({ kind: old?.kind ?? 'organization', displayName: old?.display_name ?? '',
     registeredName: old?.registered_name ?? '', tin: old?.tin ?? '', isVatRegistered: Boolean(old?.is_vat_registered),
     withholdingProfile: old?.withholding_profile ?? 'none', billingAddress: old?.billing_address ?? '', email: old?.email ?? '', notes: old?.notes ?? '' });
   const [error, setError] = useState('');
-  const [refused, setRefused] = useState<Record<string, string>>({});
-  /** Typing in a box the server refused clears its red mark until the next Save. */
   const set = <K extends keyof typeof v>(key: K, value: (typeof v)[K]) => {
     setV({ ...v, [key]: value });
-    setRefused(({ [key]: _gone, ...rest }) => rest);
   };
-  const save = async () => {
-    try {
-      const body = { ...v, registeredName: v.registeredName || null, tin: v.tin || null, billingAddress: v.billingAddress || null,
+  const body = { ...v, registeredName: v.registeredName || null, tin: v.tin || null, billingAddress: v.billingAddress || null,
         email: v.email || null, notes: v.notes || null };
+  const boxes = useBoxes(schemaFields(customerInput, body), JSON.stringify(v));
+  const save = async () => {
+    boxes.submit();
+    try {
       const saved = await masterRequest<Customer & { duplicateWarnings: DuplicateWarning[] }>(me, old ? `/api/cus/customers/${old.id}` : '/api/cus/customers',
         old ? 'PUT' : 'POST', body, old?.version);
       await onSaved(saved.id, saved.duplicateWarnings ?? []);
-    } catch (e) { setRefused(refusedFields(e)); setError((e as Error).message); }
+    } catch (e) { setError(boxes.refuse(e)); }
   };
   return <Panel title={old ? `Edit ${old.display_name}` : 'New customer'}><div className="grid gap-3 sm:grid-cols-2">
-    <Field label="Kind" required error={refused.kind}><select className={inputClass} value={v.kind} onChange={(e) => set('kind', e.target.value as typeof v.kind)}>
+    <Field label="Kind" required error={boxes.error('kind')}><select {...boxes.box('kind')} className={inputClass} value={v.kind} onChange={(e) => set('kind', e.target.value as typeof v.kind)}>
       <option value="organization">Organization</option><option value="person">Person</option></select></Field>
-    <Field label="Display name" required error={refused.displayName}><input className={inputClass} value={v.displayName} onChange={(e) => set('displayName', e.target.value)} /></Field>
-    <Field label="Registered name" error={refused.registeredName}><input className={inputClass} value={v.registeredName} onChange={(e) => set('registeredName', e.target.value)} /></Field>
-    <Field label="TIN" error={refused.tin}><input className={inputClass} value={v.tin} onChange={(e) => set('tin', e.target.value)} /></Field>
-    <Field label="Billing address" error={refused.billingAddress}><input className={inputClass} value={v.billingAddress} onChange={(e) => set('billingAddress', e.target.value)} /></Field>
-    <Field label="Email" error={refused.email}><input type="email" className={inputClass} value={v.email} onChange={(e) => set('email', e.target.value)} /></Field>
-    <Field label="Notes" error={refused.notes}><input className={inputClass} value={v.notes} onChange={(e) => set('notes', e.target.value)} /></Field>
-    <Field label="Withholding profile" error={refused.withholdingProfile}><select className={inputClass} value={v.withholdingProfile} onChange={(e) => set('withholdingProfile', e.target.value as WithholdingProfile)}>
+    <Field label="Display name" required error={boxes.error('displayName')}><input {...boxes.box('displayName')} className={inputClass} value={v.displayName} onChange={(e) => set('displayName', e.target.value)} /></Field>
+    <Field label="Registered name" error={boxes.error('registeredName')}><input {...boxes.box('registeredName')} className={inputClass} value={v.registeredName} onChange={(e) => set('registeredName', e.target.value)} /></Field>
+    <Field label="TIN" error={boxes.error('tin')}><input {...boxes.box('tin')} className={inputClass} value={v.tin} onChange={(e) => set('tin', e.target.value)} /></Field>
+    <Field label="Billing address" error={boxes.error('billingAddress')}><input {...boxes.box('billingAddress')} className={inputClass} value={v.billingAddress} onChange={(e) => set('billingAddress', e.target.value)} /></Field>
+    <Field label="Email" error={boxes.error('email')}><input {...boxes.box('email')} type="email" className={inputClass} value={v.email} onChange={(e) => set('email', e.target.value)} /></Field>
+    <Field label="Notes" error={boxes.error('notes')}><input {...boxes.box('notes')} className={inputClass} value={v.notes} onChange={(e) => set('notes', e.target.value)} /></Field>
+    <Field label="Withholding profile" error={boxes.error('withholdingProfile')}><select {...boxes.box('withholdingProfile')} className={inputClass} value={v.withholdingProfile} onChange={(e) => set('withholdingProfile', e.target.value as WithholdingProfile)}>
       {Object.entries(withholdingLabels).map(([value, text]) => <option key={value} value={value}>{text}</option>)}</select></Field>
-    <Field label="VAT registered" error={refused.isVatRegistered}><input type="checkbox" checked={v.isVatRegistered} onChange={(e) => set('isVatRegistered', e.target.checked)} /></Field>
+    <Field label="VAT registered" error={boxes.error('isVatRegistered')}><input {...boxes.box('isVatRegistered')} type="checkbox" checked={v.isVatRegistered} onChange={(e) => set('isVatRegistered', e.target.checked)} /></Field>
   </div>{error && <Notice>{error}</Notice>}<div className="flex gap-2"><Button tone="primary" disabled={!v.displayName.trim()} onClick={() => void save()}>Save</Button>
     <Button onClick={onClose}>Cancel</Button></div></Panel>;
 }
 
-function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
+export function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
   me: Me; data: Detail; canManage: boolean; onRefresh: () => Promise<void>; onEdit: () => void; onClose: () => void;
 }) {
   const [newGroup, setNewGroup] = useState('');
@@ -117,13 +118,19 @@ function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
   const [personName, setPersonName] = useState('');
   const [personGroup, setPersonGroup] = useState('');
   const [error, setError] = useState('');
-  const action = async (path: string, body: unknown) => {
-    try { await masterRequest(me, path, 'POST', body); setError(''); await onRefresh(); return true; }
-    catch (e) { setError((e as Error).message); return false; }
+  const groupBoxes = useBoxes(schemaFields(groupInput, { name: newGroup.trim() }), newGroup);
+  const editGroupBoxes = useBoxes(schemaFields(groupInput, { name: groupName.trim() }), groupName);
+  const personBoxes = useBoxes(schemaFields(personInput, { fullName: newPerson.trim(), groupId: groupId || null }), JSON.stringify([newPerson, groupId]));
+  const editPersonBoxes = useBoxes(schemaFields(personInput, { fullName: personName.trim(), groupId: personGroup || null }), JSON.stringify([personName, personGroup]));
+  const action = async (path: string, body: unknown, boxes: import('../JO/boxes.ts').Boxes) => {
+    boxes.submit();
+    try { await masterRequest(me, path, 'POST', body); setError(''); boxes.reset(); await onRefresh(); return true; }
+    catch (e) { setError(boxes.refuse(e)); return false; }
   };
-  const update = async (path: string, body: unknown, version: number) => {
+  const update = async (path: string, body: unknown, version: number, boxes: import('../JO/boxes.ts').Boxes) => {
+    boxes.submit();
     try { await masterRequest(me, path, 'PUT', body, version); setError(''); await onRefresh(); return true; }
-    catch (e) { setError((e as Error).message); return false; }
+    catch (e) { setError(boxes.refuse(e)); return false; }
   };
   return <div className="space-y-4"><Panel title={`${data.display_name} · ${data.code}`}>
     <p className="text-sm text-slate-600">{data.kind} · {data.is_active ? 'Active' : 'Inactive'}{data.tin ? ` · TIN ${data.tin}` : ''}</p>
@@ -137,31 +144,31 @@ function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
       {g.name}{!g.is_active && ' (inactive)'} {canManage && g.is_active === 1 && <button className="text-indigo-700 underline" onClick={() => {
         setEditGroup(g); setGroupName(g.name);
       }}>Edit</button>}</span>)}</div>
-      {editGroup && <div className="flex max-w-md gap-2"><input aria-label="Group name" className={inputClass} value={groupName}
-        onChange={(e) => setGroupName(e.target.value)} /><Button disabled={!groupName.trim()} onClick={() => void update(`/api/cus/groups/${editGroup.id}`,
-          { name: groupName.trim() }, editGroup.version).then((ok) => { if (ok) setEditGroup(null); })}>Save</Button>
+      {editGroup && <div className="flex max-w-md gap-2"><Field label="Group name" error={editGroupBoxes.error('name')}><input {...editGroupBoxes.box('name')} aria-label="Group name" className={inputClass} value={groupName}
+        onChange={(e) => setGroupName(e.target.value)} /></Field><Button disabled={!groupName.trim()} onClick={() => void update(`/api/cus/groups/${editGroup.id}`,
+          { name: groupName.trim() }, editGroup.version, editGroupBoxes).then((ok) => { if (ok) setEditGroup(null); })}>Save</Button>
         <Button onClick={() => setEditGroup(null)}>Cancel</Button></div>}
-      {canManage && data.is_active === 1 && <div className="flex max-w-md gap-2"><input aria-label="New group" placeholder="Team or department" className={inputClass}
-        value={newGroup} onChange={(e) => setNewGroup(e.target.value)} /><Button disabled={!newGroup.trim()} onClick={() => void action(`/api/cus/customers/${data.id}/groups`, { name: newGroup.trim() }).then((ok) => { if (ok) setNewGroup(''); })}>Add</Button></div>}
+      {canManage && data.is_active === 1 && <div className="flex max-w-md gap-2"><Field label="New group" error={groupBoxes.error('name')}><input {...groupBoxes.box('name')} aria-label="New group" placeholder="Team or department" className={inputClass}
+        value={newGroup} onChange={(e) => setNewGroup(e.target.value)} /></Field><Button disabled={!newGroup.trim()} onClick={() => void action(`/api/cus/customers/${data.id}/groups`, { name: newGroup.trim() }, groupBoxes).then((ok) => { if (ok) setNewGroup(''); })}>Add</Button></div>}
     </Panel>
     <Panel title="Wearers"><div className="grid gap-2 sm:grid-cols-2">{data.people.map((p) => <button key={p.id} className="rounded-md border p-2 text-left hover:bg-indigo-50"
       onClick={() => { setPerson(p); setPersonName(p.full_name); setPersonGroup(p.group_id ?? ''); }}>{p.full_name}{p.group_id ? ` · ${data.groups.find((g) => g.id === p.group_id)?.name ?? 'Group'}` : ''}{!p.is_active && ' (inactive)'}</button>)}</div>
-      {canManage && data.is_active === 1 && <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><input aria-label="Wearer name" placeholder="Wearer name" className={inputClass}
-        value={newPerson} onChange={(e) => setNewPerson(e.target.value)} /><select aria-label="Group" className={inputClass} value={groupId} onChange={(e) => setGroupId(e.target.value)}>
-        <option value="">No group</option>{data.groups.filter((g) => g.is_active).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
-        <Button disabled={!newPerson.trim()} onClick={() => void action(`/api/cus/customers/${data.id}/people`, { fullName: newPerson.trim(), groupId: groupId || null }).then((ok) => { if (ok) setNewPerson(''); })}>Add wearer</Button></div>}
+      {canManage && data.is_active === 1 && <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><Field label="Wearer name" error={personBoxes.error('fullName')}><input {...personBoxes.box('fullName')} aria-label="Wearer name" placeholder="Wearer name" className={inputClass}
+        value={newPerson} onChange={(e) => setNewPerson(e.target.value)} /></Field><Field label="Group" error={personBoxes.error('groupId')}><select {...personBoxes.box('groupId')} aria-label="Group" className={inputClass} value={groupId} onChange={(e) => setGroupId(e.target.value)}>
+        <option value="">No group</option>{data.groups.filter((g) => g.is_active).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></Field>
+        <Button disabled={!newPerson.trim()} onClick={() => void action(`/api/cus/customers/${data.id}/people`, { fullName: newPerson.trim(), groupId: groupId || null }, personBoxes).then((ok) => { if (ok) setNewPerson(''); })}>Add wearer</Button></div>}
     </Panel>
     {person && canManage && person.is_active === 1 && <Panel title={`Edit wearer · ${person.full_name}`}><div className="grid gap-2 sm:grid-cols-2">
-      <Field label="Name"><input className={inputClass} value={personName} onChange={(e) => setPersonName(e.target.value)} /></Field>
-      <Field label="Group"><select className={inputClass} value={personGroup} onChange={(e) => setPersonGroup(e.target.value)}>
+      <Field label="Name" error={editPersonBoxes.error('fullName')}><input {...editPersonBoxes.box('fullName')} className={inputClass} value={personName} onChange={(e) => setPersonName(e.target.value)} /></Field>
+      <Field label="Group" error={editPersonBoxes.error('groupId')}><select {...editPersonBoxes.box('groupId')} className={inputClass} value={personGroup} onChange={(e) => setPersonGroup(e.target.value)}>
         <option value="">No group</option>{data.groups.filter((g) => g.is_active).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></Field>
       </div><Button disabled={!personName.trim()} onClick={() => void update(`/api/cus/people/${person.id}`,
-        { fullName: personName.trim(), groupId: personGroup || null }, person.version).then((ok) => { if (ok) setPerson(null); })}>Save wearer</Button></Panel>}
+        { fullName: personName.trim(), groupId: personGroup || null }, person.version, editPersonBoxes).then((ok) => { if (ok) setPerson(null); })}>Save wearer</Button></Panel>}
     {person && me.permissions.includes('cus.measure.view') && <Measurements key={person.id} me={me} person={person} canEdit={me.permissions.includes('cus.measure') && person.is_active === 1} onClose={() => setPerson(null)} />}
   </div>;
 }
 
-function Measurements({ me, person, canEdit, onClose }: { me: Me; person: Person; canEdit: boolean; onClose: () => void }) {
+export function Measurements({ me, person, canEdit, onClose }: { me: Me; person: Person; canEdit: boolean; onClose: () => void }) {
   const [charts, setCharts] = useState<Chart[]>([]);
   const [sizes, setSizes] = useState<Size[]>([]);
   const [warnings, setWarnings] = useState<{ field: string; message: string }[]>([]);
@@ -176,13 +183,23 @@ function Measurements({ me, person, canEdit, onClose }: { me: Me; person: Person
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void masterRequest<Size[]>(me, '/api/cus/sizes').then(setSizes, (e: Error) => setError(e.message)); }, [me]);
   const sizeLabel = (id: string) => sizes.find((s) => s.id === id)?.label ?? id;
-  const save = async () => {
-    try {
-      const saved = await masterRequest<Chart & { warnings: { field: string; message: string }[] }>(me, `/api/cus/people/${person.id}/measurements`, 'POST', { sizeMode: mode, upperSize: upper || null,
+  const body = { sizeMode: mode, upperSize: upper || null,
         lowerSize: lower || null, unit, values: Object.fromEntries(Object.entries(values).filter(([, v]) => v !== '').map(([k, v]) => [k, Number(v)])),
-        ...(charts.length ? { reason: reason.trim() } : {}) });
-      setWarnings(saved.warnings ?? []); setError(''); setValues({}); setReason(''); await load();
-    } catch (e) { setError((e as Error).message); }
+        ...(charts.length ? { reason: reason.trim() } : {}) };
+  const checks = schemaFields(chartInput, body);
+  if (mode === 'preset' && !upper && !lower) checks.upperSize = 'Choose an upper or lower size.';
+  if (mode === 'measured' && !Object.values(values).some((v) => v !== '')) checks['values.chest'] = 'Enter at least one measurement.';
+  for (const [name, value] of Object.entries(body.values)) {
+    const typed = String(value);
+    if (!/^\d+(?:\.\d+)?$/.test(typed) || (typed.split('.')[1]?.length ?? 0) > (unit === 'inch' ? 2 : 4)) checks[`values.${name}`] = unit === 'inch' ? 'Use at most two decimal places for inches.' : 'Use at most four decimal places for centimetres.';
+  }
+  const boxes = useBoxes(checks, JSON.stringify(body));
+  const save = async () => {
+    boxes.submit();
+    try {
+      const saved = await masterRequest<Chart & { warnings: { field: string; message: string }[] }>(me, `/api/cus/people/${person.id}/measurements`, 'POST', body);
+      setWarnings(saved.warnings ?? []); setError(''); boxes.reset(); setValues({}); setReason(''); await load();
+    } catch (e) { setError(boxes.refuse(e)); }
   };
   return <Panel title={`Measurements · ${person.full_name}`}><Button onClick={onClose}>Close</Button>
     {charts.some((c) => c.status === 'active') && <Button onClick={() => void openServerPrint(me, '/api/prt/reports/sizing-profile', { personId: person.id })}>Print sizing profile</Button>}
@@ -191,13 +208,13 @@ function Measurements({ me, person, canEdit, onClose }: { me: Me; person: Person
       <div className="grid grid-cols-2 gap-x-3 sm:grid-cols-4">{Object.entries(c.values).filter(([, v]) => v != null).map(([k, v]) => <span key={k}>{label(k)}: {v} {c.unit}</span>)}</div>
       {c.reason && <p>Reason: {c.reason}</p>}</div>)}
     {canEdit && <div className="space-y-3"><h3 className="font-medium">New revision</h3><div className="grid gap-2 sm:grid-cols-3">
-      <Field label="Entry type"><select className={inputClass} value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}><option value="preset">Size preset</option><option value="measured">Measurements</option></select></Field>
-      <Field label="Upper size"><select className={inputClass} value={upper} onChange={(e) => setUpper(e.target.value)}><option value="">None</option>{sizes.filter((s) => s.is_active).map((s) => <option key={s.id} value={s.id}>{s.label} ({s.category})</option>)}</select></Field>
-      <Field label="Lower size"><select className={inputClass} value={lower} onChange={(e) => setLower(e.target.value)}><option value="">None</option>{sizes.filter((s) => s.is_active).map((s) => <option key={s.id} value={s.id}>{s.label} ({s.category})</option>)}</select></Field></div>
-      {mode === 'measured' && <><Field label="Unit"><select className={inputClass} value={unit} onChange={(e) => setUnit(e.target.value as typeof unit)}><option value="inch">Inches</option><option value="cm">Centimetres</option></select></Field>
-        <div className="grid gap-3 sm:grid-cols-3">{measures.map((m) => <Field key={m} label={label(m)} hint={charts[0]?.values[m] != null ? `Previous: ${charts[0].values[m]} ${charts[0].unit}` : undefined}>
-          <input type="number" min="0" step="any" inputMode="decimal" className={`${inputClass} text-lg`} value={values[m] ?? ''} onChange={(e) => setValues({ ...values, [m]: e.target.value })} /></Field>)}</div></>}
-      {charts.length > 0 && <Field label="Reason for new revision" required><input className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)} /></Field>}
+      <Field label="Entry type" error={boxes.error('sizeMode')}><select {...boxes.box('sizeMode')} className={inputClass} value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}><option value="preset">Size preset</option><option value="measured">Measurements</option></select></Field>
+      <Field label="Upper size" error={boxes.error('upperSize')}><select {...boxes.box('upperSize')} className={inputClass} value={upper} onChange={(e) => setUpper(e.target.value)}><option value="">None</option>{sizes.filter((s) => s.is_active).map((s) => <option key={s.id} value={s.id}>{s.label} ({s.category})</option>)}</select></Field>
+      <Field label="Lower size" error={boxes.error('lowerSize')}><select {...boxes.box('lowerSize')} className={inputClass} value={lower} onChange={(e) => setLower(e.target.value)}><option value="">None</option>{sizes.filter((s) => s.is_active).map((s) => <option key={s.id} value={s.id}>{s.label} ({s.category})</option>)}</select></Field></div>
+      <><Field label="Unit" error={boxes.error('unit')}><select {...boxes.box('unit')} className={inputClass} value={unit} onChange={(e) => setUnit(e.target.value as typeof unit)}><option value="inch">Inches</option><option value="cm">Centimetres</option></select></Field>
+        <div className="grid gap-3 sm:grid-cols-3">{measures.map((m) => <Field key={m} label={label(m)} error={boxes.error(`values.${m}`)} hint={charts[0]?.values[m] != null ? `Previous: ${charts[0].values[m]} ${charts[0].unit}` : undefined}>
+          <input {...boxes.box(`values.${m}`)} type="number" min="0" step="any" inputMode="decimal" className={`${inputClass} text-lg`} value={values[m] ?? ''} onChange={(e) => setValues({ ...values, [m]: e.target.value })} /></Field>)}</div></>
+      {charts.length > 0 && <Field label="Reason for new revision" error={boxes.error('reason')} required><input {...boxes.box('reason')} className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)} /></Field>}
       {warnings.length > 0 && <Notice tone="warning">Saved with measurement warnings: {warnings.map((w) => w.message).join(' ')}</Notice>}
       {error && <Notice>{error}</Notice>}<Button tone="primary" disabled={charts.length > 0 && reason.trim().length < 3} onClick={() => void save()}>Save revision</Button>
     </div>}

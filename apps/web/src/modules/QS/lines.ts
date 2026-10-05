@@ -22,7 +22,7 @@ export function linesToInput(rows: LineRow[]): { lines: LineInput[]; totalCents:
     const [price, discount] = [cents(r.price), cents(r.discount)];
     const at = `Line ${i + 1}`;
     if (!r.description.trim()) errors.push(`${at}: say what was sold.`);
-    if (!/^[1-9]\d{0,3}$/.test(r.qty.trim())) errors.push(`${at}: the quantity must be a whole number like 1 or 2.`);
+    if (!(Number.isInteger(Number(r.qty)) && Number(r.qty) >= 1 && Number(r.qty) <= 10_000)) errors.push(`${at}: the quantity must be a whole number like 1 or 2.`);
     if (price === undefined || discount === undefined || price < 0 || discount < 0) errors.push(`${at}: type amounts like 350.00`);
     if (errors.length === 0) lines.push({ kind: r.kind, description: r.description.trim(), qty: Number(r.qty), unitPriceCents: price!, discountCents: discount! });
   });

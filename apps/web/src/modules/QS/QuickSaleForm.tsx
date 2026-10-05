@@ -4,6 +4,10 @@
  * "write these on the booklet" (D4.4). Target: under 45 seconds. Also the Edit of a recorded quick sale.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { schemaFields, useBoxes, issueFields, rowFields, usedTenderRows, boxRefusals } from '../JO/boxes.ts';
+import { tenderFields } from '../COL/typing.ts';
+import { collectionInput } from '../COL/validation.ts';
+import { saleFields } from './typing.ts';
 import { formatPesos } from '@moonproject/shared';
 import { api, ApiError, newIdempotencyKey, type CashPlace, type DocHeader, type DocTypeInfo, type QsBody, type QsPreview } from '../../api.ts';
 import { navigate } from '../../router.tsx';
@@ -60,7 +64,7 @@ export function QuickSaleForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
   const [confirm, setConfirm] = useState<QsPreview | null>(null);
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState('');
-  const fail = (e: Error) => setError(e.message);
+  const fail = (e: Error) => setError(boxes.refuse(e));
 
   useEffect(() => {
     api.cashPlaces().then(setPlaces, fail);
@@ -104,17 +108,21 @@ export function QuickSaleForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
     sale: { customerId: customer?.id ?? '', invoiceNumber: invoiceNumber.trim(), lines: sold.lines, ...(note.trim() ? { note: note.trim() } : {}) },
     payment: { crNumber: crNumber.trim(), tenders: pay.tenders },
   };
-  const live = useLive(JSON.stringify(body), errors.length === 0, () => api.qsPreview(body));
+  const live = useLive(JSON.stringify(body), errors.length === 0, () => api.qsPreview(body), (e) => boxes.capture(e));
 
+  const remap = (fields: Record<string, string>) => rowFields(rowFields(fields, 'lines', rows.flatMap((r, i) => r.description.trim() || r.price.trim() || r.discount.trim() ? [i] : [])), 'tenders', usedTenderRows(tenders));
+  const boxes = useBoxes({ ...remap(issueFields(live?.sale.issues)), ...remap(issueFields(live?.payment?.issues)), ...saleFields(rows, body.sale), ...schemaFields(collectionInput.pick({ crNumber: true }), body.payment), ...tenderFields(exact, checkPlaceIds(places)) }, JSON.stringify(body), {}, false, remap);
   const openConfirm = () => {
-    setTouched(true);
-    if (errors.length === 0) api.qsPreview(body).then(setConfirm, fail);
+    setTouched(true); boxes.submit();
+    if (errors.length === 0) api.qsPreview(body).then((p) => { if (boxes.review(p)) setConfirm(p); }, fail);
   };
   const record = async (key: string) => {
     try {
       const r = original ? await api.qsReissue(original.id, body, confirm!.totalCents, reason, key) : await api.qsRecord(body, confirm!.totalCents, key);
       navigate(docPath(type.key, `/${r.sale.id}?recorded=1`));
     } catch (e) {
+      fail(e as Error);
+      if (Object.keys(boxRefusals(e)).length) setConfirm(null);
       if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.qsPreview(body));
       throw e;
     }
@@ -129,7 +137,7 @@ export function QuickSaleForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
         {original && <Notice tone="info">When you record, {original.number} and its payment are cancelled and the replacement gets a new number. Reason: {reason}</Notice>}
         {error && <Notice>{error}</Notice>}
         <Panel title="Customer">
-          <CustomerPicker value={customer} onChange={setCustomer} />
+          <CustomerPicker boxes={boxes} value={customer} onChange={setCustomer} />
         </Panel>
         <Panel title="What was sold">
           {rows.map((r, i) => (
@@ -143,12 +151,12 @@ export function QuickSaleForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
                 ))}
               </div>
               <div className="grid gap-2 sm:grid-cols-[minmax(12rem,1fr)_6rem_9rem]">
-                <Field label="What"><input aria-label="What" placeholder="e.g. Shorten sleeves" className={inputClass} value={r.description} onChange={(e) => set(i, { description: e.target.value })} /></Field>
-                <Field label="Qty"><input aria-label="Qty" inputMode="numeric" className={`${inputClass} text-right`} value={r.qty} onChange={(e) => set(i, { qty: e.target.value })} /></Field>
-                <Field label="Price each"><input aria-label="Price each" inputMode="decimal" placeholder="Price" className={`${inputClass} text-right tabular-nums`} value={r.price} onChange={(e) => set(i, { price: e.target.value })} /></Field>
+                <Field label="What" error={boxes.error(`lines.${i}.description`, ...(i === 0 ? ['lines'] : []))}><input {...boxes.box(`lines.${i}.description`)} aria-label="What" placeholder="e.g. Shorten sleeves" className={inputClass} value={r.description} onChange={(e) => set(i, { description: e.target.value })} /></Field>
+                <Field label="Qty" error={boxes.error(`lines.${i}.qty`)}><input {...boxes.box(`lines.${i}.qty`)} aria-label="Qty" inputMode="numeric" className={`${inputClass} text-right`} value={r.qty} onChange={(e) => set(i, { qty: e.target.value })} /></Field>
+                <Field label="Price each" error={boxes.error(`lines.${i}.unitPriceCents`)}><input {...boxes.box(`lines.${i}.unitPriceCents`)} aria-label="Price each" inputMode="decimal" placeholder="Price" className={`${inputClass} text-right tabular-nums`} value={r.price} onChange={(e) => set(i, { price: e.target.value })} /></Field>
               </div>
               <Exception title="Add a line discount" active={!!r.discount.trim() && Number(r.discount.replaceAll(',', '')) !== 0}>
-                <div className="max-w-xs"><Field label="Discount"><input aria-label="Discount" inputMode="decimal" placeholder="Discount" className={`${inputClass} text-right tabular-nums`} value={r.discount} onChange={(e) => set(i, { discount: e.target.value })} /></Field></div>
+                <div className="max-w-xs"><Field label="Discount" error={boxes.error(`lines.${i}.discountCents`)}><input {...boxes.box(`lines.${i}.discountCents`)} aria-label="Discount" inputMode="decimal" placeholder="Discount" className={`${inputClass} text-right tabular-nums`} value={r.discount} onChange={(e) => set(i, { discount: e.target.value })} /></Field></div>
               </Exception>
               {rows.length > 1 && <Button onClick={() => setRows(rows.filter((_, j) => j !== i))}>Remove</Button>}
             </div>
@@ -156,23 +164,23 @@ export function QuickSaleForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
           {rows.length < 30 && <Button onClick={() => setRows([...rows, emptyLine(rows.at(-1)?.kind)])}>+ Add a line</Button>}
         </Panel>
         <Panel title="Where did the money go?">
-          <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" amountHint={sold.totalCents > 0 ? formatPesos(sold.totalCents) : undefined} />
-          <Field label="CR number (from the booklet)" required hint={was.cr ? `CR ${was.cr} stays with the cancelled payment: write this payment on a new CR.` : undefined}>
-            <input inputMode="numeric" className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
+          <TenderRows boxes={boxes} rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" amountHint={sold.totalCents > 0 ? formatPesos(sold.totalCents) : undefined} />
+          <Field label="CR number (from the booklet)" error={boxes.error('crNumber')} required hint={was.cr ? `CR ${was.cr} stays with the cancelled payment: write this payment on a new CR.` : undefined}>
+            <input {...boxes.box('crNumber')} inputMode="numeric" className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
           </Field>
         </Panel>
         <Panel title="Invoice">
-          <Field label="Invoice number (from the booklet)" required
+          <Field label="Invoice number (from the booklet)" error={boxes.error('invoiceNumber')} required
             hint={was.invoice ? `Invoice no. ${was.invoice} stays with the cancelled sale (keep all its copies): write this sale on a new invoice.` : 'VAT sellers write an invoice for every sale, however small.'}>
-            <input inputMode="numeric" className={`${inputClass} max-w-40`} value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} />
+            <input {...boxes.box('invoiceNumber')} inputMode="numeric" className={`${inputClass} max-w-40`} value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} />
           </Field>
         </Panel>
-        <Field label="Note"><textarea rows={2} className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
-        <Errors list={errors} show={touched} />
+        <Field label="Note" error={boxes.error('note')}><textarea {...boxes.box('note')} rows={2} className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+
         <Panel title="So far">
           <p className="text-2xl font-semibold tabular-nums">{peso(live?.totalCents ?? sold.totalCents)}</p>
           {live && <Figures items={[['VATable sales', live.booklet.vatableSalesCents], ['VAT', live.booklet.vatCents]]} />}
-          {live && [live.sale, ...(live.payment ? [live.payment] : [])].flatMap((c) => c.issues).map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
+          {live && [live.sale, ...(live.payment ? [live.payment] : [])].flatMap((c) => c.issues).filter((i) => i.level !== 'error' || !i.field).map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
         </Panel>
         <SalesActions total={live?.totalCents ?? sold.totalCents} label="Total">
           <Button tone="primary" disabled={!type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>

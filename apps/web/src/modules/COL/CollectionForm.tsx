@@ -6,6 +6,9 @@
  * that is due (ACC-23): its customer, the check in Checks on hand, and its amount on its job orders, oldest due first.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { schemaFields, useBoxes, issueFields, rowFields, usedTenderRows, boxRefusals } from '../JO/boxes.ts';
+import { tenderFields } from './typing.ts';
+import { collectionInput } from './validation.ts';
 import { formatPesos } from '@moonproject/shared';
 import { api, ApiError, type CashPlace, type DocHeader, type DocTypeInfo, type OpenItems, type PostDatedCheck, type Preview } from '../../api.ts';
 import { navigate } from '../../router.tsx';
@@ -14,7 +17,7 @@ import { SalesActions, Exception } from '../JO/entry.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { cents, checkPlaceIds, emptyTender, oldestFirst, sum, tendersToInput, tendersToRows, type TenderInput, type TenderRow } from './money.ts';
-import { CustomerPicker, EditGate, Errors, Figures, TenderRows, useLive, type Picked } from './parts.tsx';
+import { CustomerPicker, EditGate, Figures, TenderRows, useLive, type Picked } from './parts.tsx';
 import { collectionPreset } from '../JO/forms.ts';
 import type { WithholdingProfile } from '../CUS/withholding.ts';
 import { emptyWithholding, paymentGross, withholdingRows, type WithholdingRows } from './withholding.ts';
@@ -66,7 +69,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
   const [confirm, setConfirm] = useState<Preview | null>(null);
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState('');
-  const fail = (e: Error) => setError(e.message);
+  const fail = (e: Error) => setError(boxes.refuse(e));
 
   // From a job order's view: its customer, and the downpayment still asked or the balance due, paid on that job order.
   const [preset, setPreset] = useState<{ key: string; cents: number } | null>(null);
@@ -182,17 +185,25 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     ...(note.trim() ? { note: note.trim() } : {}),
     ...(pdc ? { postDatedCheckId: pdc.id } : original?.input.postDatedCheckId ? { postDatedCheckId: original.input.postDatedCheckId } : {}), // an edit keeps its post-dated check
   };
-  const live = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input));
+  const live = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input), (e) => boxes.capture(e));
 
+  const remap = (fields: Record<string, string>) => rowFields(fields, 'tenders', usedTenderRows(tenders));
+  const boxes = useBoxes({ ...remap(issueFields(live?.issues)), ...schemaFields(collectionInput, input), ...tenderFields(tenders, checkPlaceIds(places)),
+    ...(cwtCents === undefined ? { 'withholding.cwtCents': 'Type the tax withheld like 250.00' } : {}),
+    ...(vatWithheldCents === undefined ? { 'withholding.vatWithheldCents': 'Type the VAT withheld like 500.00' } : {}),
+    ...(vatWithheldCents && !cwtCents ? { 'withholding.cwtCents': 'VAT withheld comes with tax withheld on the same 2307: type that amount too.' } : {}),
+    ...Object.fromEntries(items.flatMap((i, n) => amounts[n] === undefined || amounts[n]! < 0 ? [[`applied.${i.key}`, 'Type an amount like 1,250.00']] : [])) }, JSON.stringify(input), {}, false, remap);
   const openConfirm = () => {
-    setTouched(true);
-    if (errors.length === 0) api.preview(type.key, input).then(setConfirm, fail);
+    setTouched(true); boxes.submit();
+    if (errors.length === 0) api.preview(type.key, input).then((p) => { if (boxes.review(p)) setConfirm(p); }, fail);
   };
   const record = async (key: string) => {
     try {
       const r = original ? await api.reissue(type.key, original.header.id, input, confirm!.totalCents, reason, key) : await api.post(type.key, input, confirm!.totalCents, key);
       navigate(docPath(type.key, `/${r.id}?recorded=1`));
     } catch (e) {
+      fail(e as Error);
+      if (Object.keys(boxRefusals(e)).length) setConfirm(null);
       if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.preview(type.key, input));
       throw e;
     }
@@ -208,7 +219,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
         {original && <Notice tone="info">When you record, {original.header.number} is cancelled and the replacement gets a new number. Reason: {reason}</Notice>}
         {error && <Notice>{error}</Notice>}
         <Panel title="Who paid">
-          <CustomerPicker value={customer} onChange={(c) => { setCustomer(c); setTyped(null); setCwt(null); setCertificate('pending'); }} />
+          <CustomerPicker boxes={boxes} value={customer} onChange={(c) => { setCustomer(c); setTyped(null); setCwt(null); setCertificate('pending'); }} />
         </Panel>
         <Panel title="What is it for?">
           {!customer && <p className="text-sm text-slate-500">Pick the customer to see what they can pay on.</p>}
@@ -222,7 +233,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
                     <td className="py-1">{i.label}</td>
                     <td className="py-1 text-right tabular-nums"><span className="mr-2 sm:hidden">Left to pay</span>{formatPesos(i.due)}</td>
                     <td className="py-1">
-                      <Field label="Pay now"><input aria-label={`Pay now on ${i.label}`} inputMode="decimal" className={`${inputClass} text-right tabular-nums`}
+                      <Field label="Pay now" error={boxes.error(`applied.${i.key}`, ...('jobOrderId' in i.ref ? [`applications.${input.applications.findIndex((a) => a.jobOrderId === (i.ref as { jobOrderId: string }).jobOrderId)}.amountCents`, `applications.${input.applications.findIndex((a) => a.jobOrderId === (i.ref as { jobOrderId: string }).jobOrderId)}.jobOrderId`, ...(n === 0 ? ['applications'] : [])] : [`sales.${input.sales?.findIndex((a) => a.saleId === (i.ref as { saleId: string }).saleId)}.amountCents`, `sales.${input.sales?.findIndex((a) => a.saleId === (i.ref as { saleId: string }).saleId)}.saleId`, ...(n === 0 ? ['applications', 'sales'] : [])]))}><input {...boxes.box(`applied.${i.key}`)} aria-label={`Pay now on ${i.label}`} inputMode="decimal" className={`${inputClass} text-right tabular-nums`}
                         value={typed ? (typed[i.key] ?? '') : auto[n] ? formatPesos(auto[n]!) : ''}
                         onChange={(e) => setTyped({ ...(typed ?? Object.fromEntries(items.map((x, k) => [x.key, auto[k] ? formatPesos(auto[k]!) : '']))), [i.key]: e.target.value })} /></Field>
                     </td>
@@ -235,45 +246,44 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
           {open && open.unappliedCents > 0 && <p className="text-sm text-slate-600">{customer?.name} also has {formatPesos(open.unappliedCents)} of unapplied payments on file.</p>}
         </Panel>
         <Panel title="Where did the money go?">
-          <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" />
-          <Field label="CR number (from the booklet)" required hint={original ? `CR ${original.input.crNumber} stays with the cancelled collection: write this payment on a new CR.` : undefined}>
-            <input inputMode="numeric" className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
+          <TenderRows boxes={boxes} rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" />
+          <Field label="CR number (from the booklet)" error={boxes.error('crNumber')} required hint={original ? `CR ${original.input.crNumber} stays with the cancelled collection: write this payment on a new CR.` : undefined}>
+            <input {...boxes.box('crNumber')} inputMode="numeric" className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
           </Field>
         </Panel>
         <Exception title="Customer withheld tax (2307)" active={!!cwt.amount.trim() && Number(cwt.amount.replaceAll(',', '')) !== 0 || !!cwt.vat.trim() && Number(cwt.vat.replaceAll(',', '')) !== 0 || !!cwt.atc || certificate !== 'pending'}>
           {mine && mine.value !== 'none' && grossCents > 0 && manualCwt === null && <p className="text-sm text-slate-600">Filled in from the customer's withholding profile; change it to match the 2307</p>}
           <div className="grid gap-3 sm:grid-cols-4">
-            <Field label="Amount withheld" hint="As written on the 2307">
-              <input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={cwt.amount} onChange={(e) => setCwt({ ...cwt, amount: e.target.value })} />
+            <Field label="Amount withheld" error={boxes.error('withholding.cwtCents', 'withholding')} hint="As written on the 2307">
+              <input {...boxes.box('withholding.cwtCents')} inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={cwt.amount} onChange={(e) => setCwt({ ...cwt, amount: e.target.value })} />
             </Field>
-            <Field label="Tax code (ATC)">
-              <select className={inputClass} value={cwt.atc} onChange={(e) => setCwt({ ...cwt, atc: e.target.value })}>
+            <Field hint={!(cwtCents && cwtCents > 0) ? 'Only sent when tax is withheld.' : undefined} label="Tax code (ATC)" error={boxes.error('withholding.atc')}>
+              <select disabled={!(cwtCents && cwtCents > 0)} {...boxes.box('withholding.atc')} className={inputClass} value={cwt.atc} onChange={(e) => setCwt({ ...cwt, atc: e.target.value })}>
                 <option value="" />
                 <option value="WC158">WC158 goods 1%</option>
                 <option value="WC160">WC160 services 2%</option>
                 <option value="other">Other</option>
               </select>
             </Field>
-            <Field label="2307 certificate">
-              <select className={inputClass} value={cwt.certificate} onChange={(e) => setCertificate(e.target.value)}>
+            <Field hint={!(cwtCents && cwtCents > 0) ? 'Only sent when tax is withheld.' : undefined} label="2307 certificate" error={boxes.error('withholding.certificate')}>
+              <select disabled={!(cwtCents && cwtCents > 0)} {...boxes.box('withholding.certificate')} className={inputClass} value={cwt.certificate} onChange={(e) => setCertificate(e.target.value)}>
                 <option value="pending">Still to get</option>
                 <option value="received">Received</option>
               </select>
             </Field>
-            <Field label="VAT withheld" hint="Government buyers, 5%">
-              <input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={cwt.vat} onChange={(e) => setCwt({ ...cwt, vat: e.target.value })} />
+            <Field label="VAT withheld" error={boxes.error('withholding.vatWithheldCents')} hint={!(cwtCents && cwtCents > 0) ? 'Only sent with tax withheld on the same 2307.' : 'Government buyers, 5%'}>
+              <input disabled={!(cwtCents && cwtCents > 0)} {...boxes.box('withholding.vatWithheldCents')} inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={cwt.vat} onChange={(e) => setCwt({ ...cwt, vat: e.target.value })} />
             </Field>
           </div>
           <Button onClick={() => setCwt(emptyWithholding())}>Clear withholding</Button>
         </Exception>
-        {Math.abs(difference) > 0 && Math.abs(difference) <= 100 && (
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={settle} onChange={(e) => setSettle(e.target.checked)} />
-            Put the {formatPesos(Math.abs(difference))} difference to cash short and over
-          </label>
+        {(
+          <Field label={`Put the ${formatPesos(Math.abs(difference))} difference to cash short and over`} error={boxes.error('settleSmallDifference')} hint={Math.abs(difference) > 100 ? 'Only a difference of up to ₱1.00 can go to cash short and over.' : undefined}>
+            <input {...boxes.box('settleSmallDifference')} disabled={Math.abs(difference) > 100} type="checkbox" checked={settle} onChange={(e) => setSettle(e.target.checked)} />
+          </Field>
         )}
-        <Field label="Note"><textarea rows={2} className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
-        <Errors list={errors} show={touched} />
+        <Field label="Note" error={boxes.error('note')}><textarea {...boxes.box('note')} rows={2} className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+
         <Panel title="So far">
           <Figures items={[
             ['Received (money and tax withheld)', received],
@@ -282,7 +292,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
             ...(difference < 0 && !settle ? [['Applied more than received', -difference, 'text-red-700'] as [string, number, string]] : []),
           ]} />
           {live && <p className="text-sm">{live.summary}</p>}
-          {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
+          {live?.issues.filter((i) => i.level !== 'error' || !i.field).map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
         </Panel>
         <SalesActions total={received} label="Received">
           <Button tone="primary" disabled={!type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
