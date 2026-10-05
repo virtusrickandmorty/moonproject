@@ -121,7 +121,8 @@ describe('restart after a restore', () => {
     env.clock.set('2026-09-28T02:05:00Z');
     const file = 'moonproject-2026-09-28T09-00-00-daily.db.gz.age';
     recordRestored(env.db, { file, previous: 'before-restore-2026-09-28T10-05-00.db' }, '2026-09-28T10:05:00.000+08:00', 'start');
-    expect((await owner.get('/api/bak/restored')).json()).toEqual({ restored: null }); // signed in before the restore
+    const old = await owner.get('/api/bak/restored'); // signed in before the restore: the restore signed everyone out
+    expect([old.statusCode, old.json().code]).toEqual([401, 'AUTH_REQUIRED']);
 
     env.clock.set('2026-09-28T02:06:00Z');
     const username = env.db.prepare('SELECT username FROM users WHERE id = ?').pluck().get(owner.userId) as string;
