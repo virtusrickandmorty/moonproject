@@ -11,6 +11,7 @@ import type { AppDeps } from '../../app.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { sha256Hex, sniffType } from '../../engine/attachments.ts';
 import { currentUser } from '../../engine/security/routes.ts';
+import { PUBLIC_RATE_MESSAGE } from '../../engine/security/sessions.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
 
@@ -86,7 +87,7 @@ export function supRoutes(app: FastifyInstance, deps: AppDeps): void {
       const mine = db.prepare('SELECT COUNT(*) AS n FROM sup_messages WHERE ip = ? AND received_ms > ?').get(req.ip, since) as { n: number };
       const all = db.prepare('SELECT COUNT(*) AS n FROM sup_messages WHERE received_ms > ?').get(since) as { n: number };
       if (mine.n >= PER_SENDER_PER_HOUR || all.n >= ALL_PER_HOUR) {
-        throw new AppError('TOO_MANY_MESSAGES', 'We have received many messages just now. Please try again in an hour, or call us.', 429);
+        throw new AppError('TOO_MANY_MESSAGES', PUBLIC_RATE_MESSAGE, 429);
       }
       const pictureWarning = files.length > 0 && openPictureBytes(db) + files.reduce((n, f) => n + f.data.length, 0) > MAX_OPEN_PICTURE_BYTES
         ? 'Your message was saved, but we cannot take more pictures just now. Please call us about the pictures.' : null;

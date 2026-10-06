@@ -15,6 +15,7 @@ import { engineModule } from './engine/security/module.ts';
 import { syncPermissions } from './engine/security/permissions-sync.ts';
 import { PRACTICE_SESSION_COOKIE, SESSION_COOKIE, loadSession, type SessionUser } from './engine/security/sessions.ts';
 import { securityRoutes } from './engine/security/routes.ts';
+import { publicRequestLimits } from './engine/security/public-requests.ts';
 import { networkOf, tlsRoutes } from './engine/security/tls/routes.ts';
 import { documentRoutes } from './engine/documents/routes.ts';
 import { draftRoutes } from './engine/documents/drafts.ts';
@@ -130,6 +131,7 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
   };
   app.register(cookie);
   app.decorateRequest('user', null);
+  publicRequestLimits(app, deps.clock);
 
   // Refuse to start if any route forgot to declare its permission (NR-10).
   app.addHook('onRoute', (route) => {

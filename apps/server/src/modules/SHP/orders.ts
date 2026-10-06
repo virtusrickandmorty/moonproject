@@ -13,6 +13,7 @@ import { appendAudit } from '../../engine/audit.ts';
 import { sha256Hex, sniffType } from '../../engine/attachments.ts';
 import { engineEnv } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
+import { PUBLIC_RATE_MESSAGE } from '../../engine/security/sessions.ts';
 import { tx, type Db } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
 import { placesFor } from '../CASH/public.ts';
@@ -248,7 +249,7 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       const since = now - HOUR_MS;
       const mine = db.prepare('SELECT COUNT(*) AS n FROM shp_orders WHERE ip = ? AND created_ms > ?').get(req.ip, since) as { n: number };
       const all = db.prepare('SELECT COUNT(*) AS n FROM shp_orders WHERE created_ms > ?').get(since) as { n: number };
-      if (mine.n >= ORDERS_PER_SENDER_PER_HOUR || all.n >= ORDERS_PER_HOUR) throw new AppError('TOO_MANY_ORDERS', 'We have received many orders just now. Please try again in an hour, or call us.', 429);
+      if (mine.n >= ORDERS_PER_SENDER_PER_HOUR || all.n >= ORDERS_PER_HOUR) throw new AppError('TOO_MANY_ORDERS', PUBLIC_RATE_MESSAGE, 429);
       // One line per item, prices from the shop (never from the browser), and only what is available now.
       const wanted = new Map<string, { productId: string; size: string; colour: string; qty: number }>();
       for (const l of b.lines) {

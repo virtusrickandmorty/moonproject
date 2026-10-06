@@ -10,9 +10,9 @@ import { z } from 'zod';
 import { AppError } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { trackedJobOrder } from '../JO/public.ts';
+import { PUBLIC_TRACK_REQUESTS } from '../../engine/security/public-requests.ts';
 
-export const LOOKUPS_PER_SENDER = 20;
-const WINDOW_MS = 10 * 60 * 1000;
+export const LOOKUPS_PER_SENDER = PUBLIC_TRACK_REQUESTS;
 const trackInput = z.object({ number: z.string().trim().min(3).max(30), token: z.string().min(10).max(100).optional() }).strict();
 const NOT_FOUND = 'We found no order with that number. Check it, or call the shop.';
 
@@ -29,15 +29,9 @@ const knows = (tokenHash: string, token: string) => {
 
 export function shpTrackRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
-  // Lookups per sender in the last 10 minutes, kept in memory: a restart only forgives a few.
-  const recent = new Map<string, number[]>();
-
   app.post('/api/shp/track', { config: { permission: 'public' } }, async (req) => {
     const b = trackInput.parse(req.body);
     const now = clock.now().getTime();
-    const mine = (recent.get(req.ip) ?? []).filter((t) => t > now - WINDOW_MS);
-    if (mine.length >= LOOKUPS_PER_SENDER) throw new AppError('TOO_MANY_LOOKUPS', 'Too many lookups just now. Please wait a few minutes and try again.', 429);
-    recent.set(req.ip, [...mine, now]);
     const number = b.number.toUpperCase().replace(/\s+/g, '');
 
     // An online order from the website.

@@ -109,9 +109,39 @@ export function checkRateLimit(db: Db, clock: Clock, username: string, ip: strin
   const since = clock.now().getTime() - WINDOW_MS;
   const u = db.prepare('SELECT COUNT(*) AS n FROM login_attempts WHERE username = ? AND success = 0 AND at_ms > ?').get(username, since) as { n: number };
   const i = db.prepare('SELECT COUNT(*) AS n FROM login_attempts WHERE ip = ? AND success = 0 AND at_ms > ?').get(ip, since) as { n: number };
-  if (u.n >= MAX_FAILS_PER_USER || i.n >= MAX_FAILS_PER_IP) {
-    throw new AppError('LOCKED_OUT', 'Too many wrong passwords. Please wait 15 minutes, or ask an owner to reset your password.', 429);
-  }
+  enforceRateLimit([{ count: u.n, limit: MAX_FAILS_PER_USER }, { count: i.n, limit: MAX_FAILS_PER_IP }],
+    'LOCKED_OUT', 'Too many wrong passwords. Please wait 15 minutes, or ask an owner to reset your password.');
+}
+
+/** Shared threshold check for sign-in attempts and public requests; each keeps its own counters and policy. */
+function enforceRateLimit(budgets: { count: number; limit: number }[], code: string, message: string): void {
+  if (budgets.some(({ count, limit }) => count >= limit)) throw new AppError(code, message, 429);
+}
+
+export const PUBLIC_RATE_MESSAGE = 'Too many requests. Try again in a few minutes.';
+
+/**
+ * Public requests use transient counters, not the permanent failed-password log. Fixed windows expire in insertion
+ * order; inactive addresses are removed on the next request. At capacity, new addresses wait rather than displacing
+ * active counters. There are no timers, per-request timestamp arrays, or database writes.
+ */
+export function requestRateLimiter(clock: Clock, limit: number, windowMs: number, maxAddresses = 4096): (ip: string) => void {
+  const recent = new Map<string, { count: number; expires: number }>();
+  return (ip) => {
+    const now = clock.now().getTime();
+    for (const [address, entry] of recent) {
+      if (entry.expires > now) break;
+      recent.delete(address);
+    }
+    let mine = recent.get(ip);
+    if (!mine) {
+      enforceRateLimit([{ count: recent.size, limit: maxAddresses }], 'TOO_MANY_REQUESTS', PUBLIC_RATE_MESSAGE);
+      mine = { count: 0, expires: now + windowMs };
+      recent.set(ip, mine);
+    }
+    enforceRateLimit([{ count: mine.count, limit }], 'TOO_MANY_REQUESTS', PUBLIC_RATE_MESSAGE);
+    mine.count++;
+  };
 }
 
 export function recordAttempt(db: Db, clock: Clock, username: string, ip: string, success: boolean): void {
