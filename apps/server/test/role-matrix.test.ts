@@ -111,7 +111,6 @@ const TV_KEYS = ['prd.tv'];
  * Each line is `<rule> <what differs>`.
  */
 const KNOWN_DIFFERENCES = [
-  'TV: the role lacks prd.tv, the TV board\'s own permission (plan C6/E14: TV is the board)',
   'TV: the role holds nav.search (plan E14: "TV (board only)")',
 ];
 
@@ -151,7 +150,7 @@ describe('default roles against the plan (C6, E13)', () => {
   it('gives each role the permissions the plan says, and lists every difference', () => {
     // The wording of a difference differs between the two TV lines and KNOWN_DIFFERENCES only in the key name:
     // normalise the TV extras to the plan's sentence about nav.search.
-    const found = planDifferences().map((d) => (d.startsWith('TV: the role holds nav.search') ? KNOWN_DIFFERENCES[1]! : d));
+    const found = planDifferences().map((d) => (d.startsWith('TV: the role holds nav.search') ? KNOWN_DIFFERENCES[0]! : d));
     expect(found).toEqual(KNOWN_DIFFERENCES);
   });
 
