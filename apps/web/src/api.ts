@@ -683,13 +683,16 @@ export interface EqLedger {
 
 /** GET /api/loan/loans/:id: the register row with its schedule (and the payment on each paid instalment) and the loan ledger. */
 export interface LoanDetail extends LoanRow {
-  schedule: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number; paidBy: string | null }[];
+  /** `paidBy`: the payment that finished it. A part-paid instalment keeps `paidBy` null and shows what is still due. */
+  schedule: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number; paidBy: string | null;
+    paidPrincipalCents?: number; paidInterestCents?: number; remainingPrincipalCents?: number; remainingInterestCents?: number }[];
   ledger: { date: string; journalNumber: string; documentNumber: string | null; memo: string; amountCents: number; balanceCents: number }[];
 }
 /** GET /api/loan/loans/:id/payments. */
 export interface LoanPayment { id: string; number: string; date: string; status: 'posted' | 'cancelled'; instalmentNo: number; principalCents: number; interestCents: number; totalCents: number; note: string | null }
 /** GET /api/loan/late: an instalment past its due date with no recorded payment. */
-export interface LateInstalment { loanId: string; loanNumber: string; lender: string; instalmentNo: number; dueDate: string; principalCents: number; interestCents: number; daysLate: number }
+/** `principalCents` and `interestCents`: what is still due on it; `partPaidCents`: what part payments already covered. */
+export interface LateInstalment { loanId: string; loanNumber: string; lender: string; instalmentNo: number; dueDate: string; principalCents: number; interestCents: number; partPaidCents?: number; daysLate: number }
 
 /** GET /api/szr/overview (PLAN E8): every set with who has it, the overdue ones and the last returns. */
 export interface SizerHolder { loanId: string; loanVersion: number; customerId: string; customerName: string; dateOut: string; expectedReturnDate: string; daysOverdue: number }

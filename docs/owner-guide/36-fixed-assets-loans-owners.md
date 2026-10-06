@@ -22,7 +22,7 @@
    - If you have permission to record them, click **Record owner money** for owner investments, or **Record officer money out or back** when an officer takes out money or brings it back.
 
 ### What the system does for you
-It keeps all these records organized and does the math for you. It tracks the exact book value of assets month by month and alerts you if you forget to run the depreciation (the warning shows on the **Fixed assets** list). Late instalments are worked out as of the server's date when you open **Loans** or a loan. For owners and officers, it adds up all the money brought in and taken out so you always know exactly who owes what.
+It keeps all these records organized and does the math for you. It tracks the exact book value of assets month by month and alerts you if you forget to run the depreciation (the warning shows on the **Fixed assets** list). Late instalments are worked out as of the server's date when you open **Loans** or a loan. If you pay less than an instalment, it is not marked paid: the rest stays due on that instalment (and shows as late once past its due date), and the next payment on it starts from what is left. If the lender agrees to forgive the rest, ask your accountant to record it. For owners and officers, it adds up all the money brought in and taken out so you always know exactly who owes what.
 
 ### Common mistakes and how to fix them
 - **Mistake:** You clicked the wrong month to run depreciation or typed the wrong amount for a loan payment.

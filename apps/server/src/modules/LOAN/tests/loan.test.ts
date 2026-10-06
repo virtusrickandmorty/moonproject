@@ -149,7 +149,8 @@ describe('Loan golden (PLAN I2 G-20)', () => {
     const ledger = (await accountant.get(`/api/loan/loans/${loanId}`)).json();
     expect(ledger.ledger.map((x: { documentNumber: string; amountCents: number; balanceCents: number }) => [x.documentNumber, x.amountCents, x.balanceCents])).toEqual([['LOAN-000001', 50_000_000, 50_000_000], ['LPAY-000001', -2_000_000, 48_000_000]]);
     expect(ledger.schedule[0]).toMatchObject({ instalmentNo: 1, paidBy: 'LPAY-000001' });
-    expect(ledger.schedule.at(-1)).toEqual({ instalmentNo: 25, dueDate: '2028-10-28', principalCents: 2_000_000, interestCents: 500_000, paidBy: null });
+    expect(ledger.schedule.at(-1)).toEqual({ instalmentNo: 25, dueDate: '2028-10-28', principalCents: 2_000_000, interestCents: 500_000, paidBy: null,
+      paidPrincipalCents: 0, paidInterestCents: 0, remainingPrincipalCents: 2_000_000, remainingInterestCents: 500_000 });
     expect((await encoder.get(`/api/loan/loans/${loanId}`)).statusCode).toBe(403);
     noBrokenInvariants();
   });
@@ -220,6 +221,42 @@ describe('Loan payment rules', () => {
     const payOff = await pay(encoder, { loanId, instalmentNo: 2, cashPlaceId: BDO, principalCents: 48_000_000, note: 'Paying it all off' }, 48_500_000);
     expect(payOff.statusCode, payOff.body).toBe(200);
     expect((await encoder.get('/api/loan/loans')).json()[0]).toMatchObject({ balanceCents: 0, nextDue: null });
+    noBrokenInvariants();
+  });
+});
+
+describe('a payment short of the instalment (A1-002)', () => {
+  it('leaves the rest due on the same instalment, on the late list, and the next payment starts from it', async () => {
+    const { id: loanId } = (await borrow(accountant, g20())).json();
+    // Instalment 1 is ₱20,000 principal + ₱5,000 interest; only ₱10,000 is paid.
+    const part = await pay(encoder, { loanId, instalmentNo: 1, cashPlaceId: BDO, principalCents: 500_000, interestCents: 500_000, note: 'Paid part, rest next week' }, 1_000_000);
+    expect(part.statusCode, part.body).toBe(200);
+    expect(part.json().warnings.map((w: { code: string }) => w.code)).toContain('PART_PAYMENT');
+    expect(part.json().summary).toContain('₱15,000.00 stays due on it.');
+    expect((await encoder.get('/api/loan/loans')).json()[0].nextDue).toEqual({ instalmentNo: 1, dueDate: '2026-10-28', principalCents: 1_500_000, interestCents: 0 });
+    const ledger = (await accountant.get(`/api/loan/loans/${loanId}`)).json();
+    expect(ledger.schedule[0]).toMatchObject({ instalmentNo: 1, paidBy: null, paidPrincipalCents: 500_000, paidInterestCents: 500_000, remainingPrincipalCents: 1_500_000, remainingInterestCents: 0 });
+    const skip = await pay(encoder, { loanId, instalmentNo: 2, cashPlaceId: BDO }, 2_500_000);
+    expect(skip.json().details[0]).toMatchObject({ code: 'NOT_NEXT', message: 'Pay instalment 1 of LOAN-000001 first (₱15,000.00 of it is still due).' });
+
+    // Past its due date, the rest is on the late list.
+    env.clock.advance(35 * 86_400_000); // 2026-11-02
+    [accountant, encoder] = [await env.as('accountant'), await env.as('encoder')]; // signed in again after the weeks
+    expect((await accountant.get('/api/loan/late')).json()).toEqual([
+      expect.objectContaining({ loanNumber: 'LOAN-000001', instalmentNo: 1, dueDate: '2026-10-28', principalCents: 1_500_000, interestCents: 0, partPaidCents: 1_000_000, daysLate: 5 }),
+    ]);
+
+    // The next payment on it defaults to the rest, needs no note, and finishes it.
+    const rest = await pay(encoder, { loanId, instalmentNo: 1, cashPlaceId: BDO }, 1_500_000);
+    expect(rest.statusCode, rest.body).toBe(200);
+    expect(rest.json().summary).toContain('the rest of instalment 1 of 25');
+    expect(journalOf(rest.json().id)).toEqual([['2601', 'loan', 1_500_000, 0], ['1111', null, 0, 1_500_000]]);
+    expect((await accountant.get(`/api/loan/loans/${loanId}`)).json().schedule[0].paidBy).toBe('LPAY-000002');
+    expect((await accountant.get('/api/loan/late')).json()).toEqual([]);
+    expect((await encoder.get('/api/loan/loans')).json()[0].nextDue).toMatchObject({ instalmentNo: 2, principalCents: 2_000_000, interestCents: 500_000 });
+    // The part payment reads back as it was recorded.
+    expect((await accountant.get(`/api/docs/loan.payment/${part.json().id}`)).json().input).toEqual({ loanId, instalmentNo: 1, cashPlaceId: BDO, principalCents: 500_000, interestCents: 500_000, note: 'Paid part, rest next week' });
+    expect(balances(env.db)['2601']).toBe(-48_000_000);
     noBrokenInvariants();
   });
 });

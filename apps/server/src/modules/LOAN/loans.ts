@@ -78,16 +78,58 @@ const LOANS = `SELECT l.document_id AS id, d.number, d.status, r.number AS repla
 
 export const loan = (db: Db, id: string) => db.prepare(`${LOANS} WHERE l.document_id = ?`).get(id) as LoanRow | undefined;
 
-/** The schedule with the posted payment (if any) of each instalment. */
-export function schedule(db: Db, loanId: string): (ScheduleRow & { paidBy: string | null })[] {
+/**
+ * What is still due on an instalment after part payments (audit A1-002): the scheduled total less what was paid on it,
+ * interest first (what is left of the scheduled interest), then principal. Zero once the payments cover the scheduled total.
+ */
+export function remainingOf(row: ScheduleRow, paidPrincipalCents: number, paidInterestCents: number): { principalCents: number; interestCents: number } {
+  const total = Math.max(0, row.principalCents + row.interestCents - paidPrincipalCents - paidInterestCents);
+  const interestCents = Math.min(total, Math.max(0, row.interestCents - paidInterestCents));
+  return { principalCents: total - interestCents, interestCents };
+}
+
+export interface InstalmentState extends ScheduleRow {
+  /** The payment that finished paying it; null while any of it is still due. */
+  paidBy: string | null;
+  /** Posted payments on it so far (several when it was paid in parts). */
+  paidPrincipalCents: number;
+  paidInterestCents: number;
+  /** Still due on it: the scheduled amounts less part payments. */
+  remainingPrincipalCents: number;
+  remainingInterestCents: number;
+}
+
+/**
+ * Posted payments on one instalment. `beforeNumber`: only payments numbered before it (how a recorded payment reads
+ * back what was due when it was made).
+ */
+export function paidOnInstalment(db: Db, loanId: string, instalmentNo: number, beforeNumber?: string) {
   return db
     .prepare(
-      `SELECT s.instalment_no AS instalmentNo, s.due_date AS dueDate, s.principal_cents AS principalCents, s.interest_cents AS interestCents,
-         (SELECT d.number FROM loan_payments p JOIN documents d ON d.id = p.document_id
-          WHERE p.loan_id = s.loan_id AND p.instalment_no = s.instalment_no AND d.status = 'posted') AS paidBy
+      `SELECT COALESCE(SUM(p.principal_cents), 0) AS principal, COALESCE(SUM(p.interest_cents), 0) AS interest, MAX(d.number) AS lastNumber
+       FROM loan_payments p JOIN documents d ON d.id = p.document_id
+       WHERE p.loan_id = ? AND p.instalment_no = ? AND d.status = 'posted' AND (? IS NULL OR d.number < ?)`,
+    )
+    .get(loanId, instalmentNo, beforeNumber ?? null, beforeNumber ?? null) as { principal: number; interest: number; lastNumber: string | null };
+}
+
+/** The schedule with what was paid on each instalment and what is still due. An instalment paid short stays open. */
+export function schedule(db: Db, loanId: string): InstalmentState[] {
+  const rows = db
+    .prepare(
+      `SELECT s.instalment_no AS instalmentNo, s.due_date AS dueDate, s.principal_cents AS principalCents, s.interest_cents AS interestCents
        FROM loan_schedule s WHERE s.loan_id = ? ORDER BY s.instalment_no`,
     )
-    .all(loanId) as (ScheduleRow & { paidBy: string | null })[];
+    .all(loanId) as ScheduleRow[];
+  return rows.map((r) => {
+    const paid = paidOnInstalment(db, loanId, r.instalmentNo);
+    const left = remainingOf(r, paid.principal, paid.interest);
+    const settled = paid.lastNumber !== null && left.principalCents + left.interestCents === 0;
+    return {
+      ...r, paidBy: settled ? paid.lastNumber : null, paidPrincipalCents: paid.principal, paidInterestCents: paid.interest,
+      remainingPrincipalCents: left.principalCents, remainingInterestCents: left.interestCents,
+    };
+  });
 }
 
 /** Principal still owed: the credit balance of the loan's liability account for this loan. */
@@ -113,7 +155,8 @@ function position(db: Db, l: LoanRow) {
     principalPaidCents: paid.principal + (l.owedAtCutoverCents === null ? 0 : l.principalCents - l.owedAtCutoverCents),
     interestPaidCents: paid.interest,
     balanceCents,
-    nextDue: next ? { instalmentNo: next.instalmentNo, dueDate: next.dueDate, principalCents: next.principalCents, interestCents: next.interestCents } : null,
+    // What is still due on it: a part-paid instalment shows only its rest.
+    nextDue: next ? { instalmentNo: next.instalmentNo, dueDate: next.dueDate, principalCents: next.remainingPrincipalCents, interestCents: next.remainingInterestCents } : null,
     rows,
   };
 }

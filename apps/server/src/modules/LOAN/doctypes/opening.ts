@@ -132,7 +132,7 @@ export const openingLoanDoc: DocTypeDef<OpeningLoanInput, OpeningLoan> = {
     if (!r) throw new Error(`Opening loan ${documentId} not found`);
     return {
       lender: r.lender, kind: r.kind, originalPrincipalCents: r.original_principal_cents, dateReceived: r.date_received, principalCents: r.principal_cents,
-      interestRateBp: r.rate_bp, monthsLeft: r.term_months, schedule: r.schedule, rows: schedule(db, documentId).map(({ paidBy: _, ...row }) => row),
+      interestRateBp: r.rate_bp, monthsLeft: r.term_months, schedule: r.schedule, rows: schedule(db, documentId).map(({ instalmentNo, dueDate, principalCents, interestCents }) => ({ instalmentNo, dueDate, principalCents, interestCents })),
       ...(r.reference ? { reference: r.reference } : {}), ...(r.note ? { note: r.note } : {}), totalCents: r.principal_cents,
     };
   },
