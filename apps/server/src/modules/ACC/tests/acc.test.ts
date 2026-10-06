@@ -106,6 +106,20 @@ describe('chart of accounts (E12)', () => {
     expect((await add({ code: '6266', name: 'Encoder account', type: 'expense' }, encoder)).statusCode).toBe(403);
   });
 
+  it('a type that does not fit the code is saved with a warning that statements group by code (A1-001)', async () => {
+    const res = await accountant.post('/api/acc/accounts', { code: '1295', name: 'Shop supplies used', type: 'expense' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ code: '1295', type: 'expense', normalSide: 'debit' });
+    expect(res.json().warning).toMatch(/starts with 1, so the financial statements show this account under Assets/);
+    expect(res.json().warning).toMatch(/group accounts by code/);
+    const audit = env.db.prepare(`SELECT data FROM audit_log WHERE action = 'acc.account.create' ORDER BY seq DESC LIMIT 1`).pluck().get() as string;
+    expect(JSON.parse(audit).warning).toMatch(/under Assets/);
+    // A type that fits gets no warning; 7xxx takes either revenue or expense.
+    expect((await accountant.post('/api/acc/accounts', { code: '6266', name: 'Uniform laundry', type: 'expense' })).json().warning).toBeUndefined();
+    expect((await accountant.post('/api/acc/accounts', { code: '7104', name: 'Rental income', type: 'revenue' })).json().warning).toBeUndefined();
+    expect((await accountant.post('/api/acc/accounts', { code: '4196', name: 'Sales of scrap', type: 'expense' })).json().warning).toMatch(/under Revenue/);
+  });
+
   it('renames with the current version only; code, type and role never change', async () => {
     const rename = (v?: number) => accountant.put(`/api/acc/accounts/${id('6990')}`, { name: 'Miscellaneous expenses' }, v ? { 'if-match': String(v) } : {});
     expect((await rename()).statusCode).toBe(428);

@@ -1105,7 +1105,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
       call<{ ok: true }>('POST', `/api/roles/${encodeURIComponent(role)}/permissions`, { permissionKey, granted }),
     /** The chart of accounts (acc.coa.view); changes need acc.coa.manage, `v` is the account's version (If-Match). Deactivating needs a fresh password. */
     coaAccounts: () => call<CoaAccount[]>('GET', '/api/acc/accounts'),
-    addAccount: (body: NewAccountBody) => call<CoaAccount>('POST', '/api/acc/accounts', body),
+    /** `warning`: the type does not fit the code's first digit; the account was added all the same. */
+    addAccount: (body: NewAccountBody) => call<CoaAccount & { warning?: string }>('POST', '/api/acc/accounts', body),
     renameAccount: (id: number, v: number, name: string) => call<CoaAccount>('PUT', `/api/acc/accounts/${id}`, { name }, version(v)),
     deactivateAccount: (id: number, v: number) => call<CoaAccount>('POST', `/api/acc/accounts/${id}/deactivate`, undefined, version(v)),
     activateAccount: (id: number, v: number) => call<CoaAccount>('POST', `/api/acc/accounts/${id}/activate`, undefined, version(v)),

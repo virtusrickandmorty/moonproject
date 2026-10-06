@@ -7,7 +7,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { api, type CoaAccount, type Me } from '../../api.ts';
 import { Button, Dialog, Field, Notice, inputClass, peso, useAction } from '../../components/ui.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
-import { TYPES, TYPE_WORDS, accountNotes, newAccountInput, ownSideCents, renameInput, visibleAccounts } from './coa.ts';
+import { TYPES, TYPE_WORDS, accountNotes, newAccountInput, ownSideCents, renameInput, typeWarning, visibleAccounts } from './coa.ts';
 
 type Open = { kind: 'add' } | { kind: 'rename' | 'deactivate'; account: CoaAccount };
 
@@ -45,7 +45,7 @@ export function ChartOfAccounts({ me }: { me: Me }) {
       {!accounts && !error && <p className="text-sm text-slate-500">Loading…</p>}
       {accounts && <AccountTable accounts={visibleAccounts(accounts, showInactive)} manage={manage} onRename={(a) => { setDone(''); setOpen({ kind: 'rename', account: a }); }} onDeactivate={(a) => { setDone(''); setOpen({ kind: 'deactivate', account: a }); }} onActivate={doActivate} busy={activate.busy} />}
       <p className="text-sm text-slate-500">Accounts are never deleted. An account with a balance, or one the posting rules use, cannot be deactivated: rename it instead.</p>
-      {open?.kind === 'add' && <AddAccount onClose={() => setOpen(null)} onDone={(a) => finished(`Added ${a.code} ${a.name}.`)} />}
+      {open?.kind === 'add' && <AddAccount onClose={() => setOpen(null)} onDone={(a) => finished(`Added ${a.code} ${a.name}.${a.warning ? ` ${a.warning}` : ''}`)} />}
       {open?.kind === 'rename' && <Rename account={open.account} onClose={() => setOpen(null)} onStale={() => void load()} onDone={(a) => finished(`Renamed ${a.code} to ${a.name}.`)} />}
       {open?.kind === 'deactivate' && <Deactivate account={open.account} onClose={() => setOpen(null)} onStale={() => void load()} onDone={() => finished(`Deactivated ${open.account.code} ${open.account.name}.`)} />}
     </div>
@@ -101,7 +101,7 @@ function Form({ title, onClose, onSubmit, children, errors, action, label, tone 
   );
 }
 
-function AddAccount({ onClose, onDone }: { onClose: () => void; onDone: (a: CoaAccount) => void }) {
+function AddAccount({ onClose, onDone }: { onClose: () => void; onDone: (a: CoaAccount & { warning?: string }) => void }) {
   const [v, setV] = useState({ code: '', name: '', type: 'expense' as CoaAccount['type'], contra: false });
   const [errors, setErrors] = useState<string[]>([]);
   const action = useStepUpAction('adding the account');
@@ -118,6 +118,7 @@ function AddAccount({ onClose, onDone }: { onClose: () => void; onDone: (a: CoaA
         <select className={inputClass} value={v.type} onChange={(e) => setV({ ...v, type: e.target.value as CoaAccount['type'] })}>{TYPES.map((t) => <option key={t} value={t}>{TYPE_WORDS[t]}</option>)}</select>
       </Field>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={v.contra} onChange={(e) => setV({ ...v, contra: e.target.checked })} />Contra account: its balance sits on the opposite side (for example an allowance or a discount)</label>
+      {typeWarning(v.code, v.type) && <Notice tone="warning">{typeWarning(v.code, v.type)} You can still add it.</Notice>}
     </Form>
   );
 }

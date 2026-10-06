@@ -37,6 +37,29 @@ const settingChange = z
   .object({ effectiveFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.'), value: z.unknown(), reason: z.string().trim().min(10).max(500) })
   .strict();
 
+/**
+ * The financial statements place an account by the first digit of its code, not by its type (audit A1-001). A type that
+ * does not fit that digit is allowed (the accountant may mean it), but the screen says plainly where the account will show.
+ */
+const CODE_SECTIONS: Record<string, { title: string; types: readonly (typeof TYPES)[number][] }> = {
+  '1': { title: 'Assets', types: ['asset'] },
+  '2': { title: 'Liabilities', types: ['liability'] },
+  '3': { title: 'Equity', types: ['equity'] },
+  '4': { title: 'Revenue', types: ['revenue'] },
+  '5': { title: 'Cost of sales', types: ['expense'] },
+  '6': { title: 'Operating expenses', types: ['expense'] },
+  '7': { title: 'Other income and expenses', types: ['revenue', 'expense'] },
+  '8': { title: 'Income tax', types: ['expense'] },
+};
+
+/** A plain warning when the type does not fit the code's first digit; null when it fits. */
+export function accountTypeWarning(code: string, type: (typeof TYPES)[number]): string | null {
+  const section = CODE_SECTIONS[code[0] ?? ''];
+  if (!section || section.types.includes(type)) return null;
+  return `The code ${code} starts with ${code[0]}, so the financial statements show this account under ${section.title}, whatever its type. ` +
+    'The statements group accounts by code, not by type. Check the code and the type before you use the account.';
+}
+
 /** Cash places are made in the Cash Accounts screen, which also sets who sees their balance (PLAN D2). */
 const CASH_PLACE_CODES = /^11(0[1-9]|[1-8]\d)$/;
 
@@ -114,8 +137,9 @@ export function accRoutes(app: FastifyInstance, deps: AppDeps): void {
           .prepare('INSERT INTO accounts (code, name, type, normal_side, party_type, is_header, is_postable, is_cash_place, is_reserved, is_active, sort_order) VALUES (?, ?, ?, ?, ?, 0, 1, 0, 0, 1, ?)')
           .run(input.code, input.name, input.type, input.normalSide ?? NORMAL_SIDE[input.type], input.partyType ?? null, before + 1).lastInsertRowid,
       );
-      appendAudit(db, { at, userId: u.userId, action: 'acc.account.create', entityType: 'account', entityId: String(id), data: input });
-      return accountOut(accountRow(db, id), 0);
+      const warning = accountTypeWarning(input.code, input.type);
+      appendAudit(db, { at, userId: u.userId, action: 'acc.account.create', entityType: 'account', entityId: String(id), data: warning ? { ...input, warning } : input });
+      return { ...accountOut(accountRow(db, id), 0), ...(warning ? { warning } : {}) };
     });
   });
 
