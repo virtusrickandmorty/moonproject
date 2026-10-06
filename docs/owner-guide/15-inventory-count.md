@@ -2,7 +2,7 @@
 
 **What it is for:** Print a sheet to write down what you have, count your materials or ready-made goods at a month end, and type the count to match the books to the physical inventory.
 
-**Before you start:** You will need to print the count sheet to record your quantities before typing them in. Count on the last day of the month and record it that day. On a later day, click **Save draft** and ask the accountant to record it.
+**Before you start:** You will need to print the count sheet to record your quantities before typing them in. Count on the last day of the month and record it that day. On a later day, a user with backdating permission must record the month-end date. Owners, accountants and encoders have that permission by default; ask the accountant to check the date.
 
 ### Steps
 1. On the **Purchases & Expenses** menu, click **Inventory Counts**.

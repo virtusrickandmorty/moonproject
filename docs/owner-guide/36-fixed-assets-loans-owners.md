@@ -10,7 +10,7 @@
    - You can see the list of assets with their cost, accumulated depreciation so far, and book value.
      ![The Fixed assets screen](img/36-fixed-assets.png)
    - Click **Run depreciation** to record the monthly wear and tear. Choose the **Month to depreciate** and click **Record the run**. The system will warn you if a month was missed.
-   - To look closer, click an asset. To take it off the books, click **Dispose of this asset**, type in **Why is it being taken off?**, and click **Record the disposal**. Only a retirement (nothing received for it) can be recorded now. Run the month's depreciation first: the book value left is charged as a loss.
+   - To look closer, click an asset. Run the month's depreciation before taking it off the books. Click **Dispose of this asset**, choose **Sold** or **Retired**, and type in **Why is it being taken off?**. For **Sold**, follow guide 46 for the sale details. For **Retired**, nothing is received and the book value left is charged as a loss. Review the details, then click **Record the disposal**.
 3. **For loans:**
    - You will see your loans and what is late.
    - Click a loan to see its schedule, payments made, and any late instalments.
@@ -24,10 +24,41 @@
 ### What the system does for you
 It keeps all these records organized and does the math for you. It tracks the exact book value of assets month by month and alerts you if you forget to run the depreciation (the warning shows on the **Fixed assets** list). Late instalments are worked out as of the server's date when you open **Loans** or a loan. If you pay less than an instalment, it is not marked paid: the rest stays due on that instalment (and shows as late once past its due date), and the next payment on it starts from what is left. For owners and officers, it adds up all the money brought in and taken out so you always know exactly who owes what.
 
-**When the lender forgives the rest of an instalment:** your accountant (or you, as owner) opens the loan and clicks **Forgive the rest** next to the instalment that is still due, on the schedule or in the **Late** list. The form shows the amount still due, which you cannot change: all of it is forgiven, never more. Type why the lender forgave it (10 to 200 characters) and, if you like, a note such as where the lender's letter is filed, then click **Forgive the rest**. The forgiven principal is booked as a gain on debt forgiveness and lowers what you owe; the forgiven interest books nothing, because interest is only an expense when it is paid. The instalment then shows as "forgiven" with the amount, leaves the late list, and the next instalment becomes due. Nothing is ever forgiven automatically. If it was recorded by mistake, cancel it: the instalment is due again.
-
 ### Common mistakes and how to fix them
 - **Mistake:** You clicked the wrong month to run depreciation or typed the wrong amount for a loan payment.
 - **Fix:** Do not try to delete the record. Instead, find the wrong record, cancel it, and then redo the steps to record it correctly.
-- **Mistake:** You want to record selling an asset for money, but the system only says "Take off the books" for nothing.
-- **Fix:** Only a retirement can be recorded now.
+- **Mistake:** You want to sell an asset but chose **Retired**.
+- **Fix:** Choose **Sold** and follow guide 46. Run the month's depreciation first.
+
+### A short loan payment stays owed
+
+**What it is for:** Record what was actually paid when it is less than the instalment.
+
+**Before you start:** Have the lender's statement showing the principal and interest paid.
+
+**Steps:**
+1. Open **Money** > **Loans**, open the loan and click **Record a payment**.
+2. Check the instalment offered and choose **Where did the money come from?**.
+3. Tick **The amount or split differs (a part payment, or the lender applied it differently)** if needed, then enter **Principal**, **Interest** and **Why is it different?**.
+4. Click **Record**, read the confirmation and click **Record** again.
+
+**What the system does:** Only the amount paid reduces the debt. The unpaid rest remains on that instalment, stays on the late list after its due date, and is offered for the next payment.
+
+**Common mistakes:** A short payment is not a settlement. Record the rest when paid. Do not use forgiveness unless the lender actually forgave it.
+
+### Loan Forgiveness
+
+**What it is for:** Close the unpaid rest of an instalment when the lender forgives it.
+
+**Before you start:** Keep the lender's confirmation. Owners, accountants and encoders have permission by default. Nothing is forgiven automatically.
+
+**Steps:**
+1. Open **Money** > **Loans**, then the loan.
+2. On the schedule or **Late** list, click **Forgive the rest** beside the first unsettled instalment.
+3. Read **Principal**, **Interest** and **Amount forgiven**. These are read-only: all the rest is forgiven, never more.
+4. Fill **Why did the lender forgive it? (10 to 200 characters)** and, if useful, **Note** with where the letter is kept.
+5. Click **Record**, check the confirmation, then click **Record** again.
+
+**What the system does:** It records a Loan Forgiveness with an LFGV number. Forgiven principal lowers the loan and is booked as a gain on debt forgiveness. Forgiven interest posts nothing because interest is expensed only when paid. The instalment shows as forgiven, leaves the late list, and the next due moves on.
+
+**Common mistakes:** Open a mistaken forgiveness document and use **Cancel**, give a reason and click **Cancel document**. Its reversal reopens the instalment. Cancel the forgiveness before cancelling the short payment it depended on. A fully paid or already forgiven instalment cannot be forgiven again.

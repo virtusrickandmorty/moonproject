@@ -12,7 +12,7 @@
 4. For banks and e-wallets, you can type an **Account number**.
 5. Click **Save**.
 6. To count the money in a cash box, go to the **Money** menu and click **Cash Counts**.
-7. Click **+ New cash count**.
+7. Click **+ New Cash Count**.
 8. Under **Cash box**, pick the one you counted.
 9. Under **Bills and coins**, type the **Quantity** of each **Denomination** you have.
    ![The new cash count form with bills and coins counted](img/07-new-cash-count.png)

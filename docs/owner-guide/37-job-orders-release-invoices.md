@@ -33,7 +33,7 @@
 2. Under **What goes out**, tick the lines and pieces that are going out now.
 3. Under **Who claimed it**, type the **Claimed by** name and pick the **ID seen**. Only the kind of ID is kept, never its number.
 4. Under **Not ready yet** (shown only when the job order is not ready for release), the owner types the **Owner's reason to release it now** (at least 10 characters). Anyone else must first mark the order ready, or ask the owner.
-5. Under **Still to be paid**, if the job is not paid in full, only the owner or the accountant can release it. They type **Why it goes out before it is paid** and **Pay within (days)** to give credit. Anyone else must take the payment first.
+5. Under **Still to be paid**, if the job is not paid in full, a user with permission to release unpaid work can release it (owner, accountant or encoder by default). They type **Why it goes out before it is paid** and **Pay within (days)** to give credit. Anyone else must take the payment first.
 6. Under **Invoice**, type the **Invoice number (from the booklet)**, or tick **Invoice to follow (the booklet is not at hand)**.
 7. Click **Record**. In the **Record this release?** box, click **Record** again (or **Go back**).
 
@@ -41,7 +41,7 @@
 1. If the invoice was not recorded with the release, click **Invoice Records** from the **Sales** menu, or click **Record invoice** on the job order.
 2. Pick the release by its number (it starts with REL-).
 3. Under **Write these on the booklet**, copy the **VATable sales**, **VAT**, and **Total** exactly as shown to your physical booklet.
-4. Type the **Invoice number (from the booklet)** you just wrote. You can also fill the **Note** box.
+4. Type the **Invoice number (from the booklet)** you just wrote and the **Date on the invoice**. You can also fill the **Note** box.
 5. Click **Record**.
 
 ### What the system does for you
