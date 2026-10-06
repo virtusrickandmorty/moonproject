@@ -99,5 +99,20 @@ export function lostWords(c: Pick<BackupCheck, 'audit' | 'live' | 'madeAt' | 'la
   return `Everything recorded after ${after ? manilaTime(after) : 'this backup was made'} will be lost: ${count(n, 'audit entry', 'audit entries')} in the live data ${n === 1 ? 'is' : 'are'} newer than this backup.`;
 }
 
+/**
+ * The series a restore would take back (audit B3-5): numbers go on from the backup's, so those issued since are issued
+ * again to new documents. Only series that moved since the backup; empty when none did.
+ */
+export function reusedSeries(c: Pick<BackupCheck, 'series'>): { series: string; liveLast: string; backupLast: string; reused: number }[] {
+  return (c.series ?? []).filter((s) => s.reused > 0).map((s) => ({ series: s.series, liveLast: s.liveLast ?? '—', backupLast: s.backupLast ?? 'none yet', reused: s.reused }));
+}
+
+export function reusedWords(c: Pick<BackupCheck, 'series'>): string {
+  const n = reusedSeries(c).reduce((sum, s) => sum + s.reused, 0);
+  return n === 0
+    ? 'No document number was issued after this backup.'
+    : `${count(n, 'document number')} issued after this backup will be issued again to new documents. Printed or sent copies with those numbers will not match: mark them, or keep them apart.`;
+}
+
 /** What an owner is told at the first sign-in after a restore. */
 export const restoredWords = (r: { file: string; at: string }) => `Restored from ${r.file} at ${manilaTime(r.at)}.`;

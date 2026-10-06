@@ -104,6 +104,11 @@ describe('restore', () => {
     expect(res.statusCode, res.body).toBe(200);
     const { stagedId, live, audit } = res.json();
     expect(live.auditSeq).toBeGreaterThan(audit.seq); // what was recorded after the backup is shown before restoring
+    // Per document series, the live data's last number and the backup's: the JV recorded since, and its journal, will be numbered again (B3-5).
+    expect(res.json().series).toEqual([
+      { series: 'JE-2026', liveLast: 'JE-2026-000002', backupLast: 'JE-2026-000001', reused: 1 },
+      { series: 'JV', liveLast: 'JV-000002', backupLast: 'JV-000001', reused: 1 },
+    ]);
 
     await stepUp(owner);
     const applied = await owner.post('/api/bak/restore/apply', { stagedId });

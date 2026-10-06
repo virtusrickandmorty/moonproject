@@ -161,6 +161,26 @@ export async function openBackup(
   }
 }
 
+/** One document series: the last number in the live data and in the backup, and how many numbers a restore would issue again. */
+export interface SeriesCompared { series: string; liveLast: string | null; backupLast: string | null; reused: number }
+
+const seriesOf = (db: Db) =>
+  new Map((db.prepare('SELECT series_key AS key, prefix, next_value AS next, pad FROM number_series').all() as { key: string; prefix: string; next: number; pad: number }[]).map((r) => [r.key, r]));
+
+/**
+ * Per document series, the last number issued in the live data and in the backup (audit B3-5). Numbers move forward
+ * by one and are never reset, so after a restore the series go on from the backup's numbers: those issued after the
+ * backup are issued again, to new documents. Series that moved since the backup come first.
+ */
+export function seriesCompared(live: Db, copy: Db): SeriesCompared[] {
+  const a = seriesOf(live);
+  const b = seriesOf(copy);
+  const last = (r?: { prefix: string; next: number; pad: number }) => (r && r.next > 1 ? `${r.prefix}${String(r.next - 1).padStart(r.pad, '0')}` : null);
+  return [...new Set([...a.keys(), ...b.keys()])]
+    .map((key) => ({ series: key, liveLast: last(a.get(key)), backupLast: last(b.get(key)), reused: Math.max(0, (a.get(key)?.next ?? 1) - (b.get(key)?.next ?? 1)) }))
+    .sort((x, y) => (y.reused > 0 ? 1 : 0) - (x.reused > 0 ? 1 : 0) || x.series.localeCompare(y.series));
+}
+
 /** What a drill reports when attachment files are missing from the backup or changed; null when all are there. */
 export function attachmentProblems(a: BackupFacts['attachments']): string | null {
   const parts = [

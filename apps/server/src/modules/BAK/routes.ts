@@ -4,7 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AppError, newId, type Issue } from '@moonproject/shared';
 import { prepareDatabase, type AppDeps } from '../../app.ts';
-import { tx } from '../../platform/db/driver.ts';
+import { openReadonly, tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { engineModule } from '../../engine/security/module.ts';
@@ -13,7 +13,7 @@ import { requireStepUp } from '../../engine/security/sessions.ts';
 import { TIERS, bakSettings, keptIn, lastOkRun, runBackup } from './backup.ts';
 import { saveSettings, settingsIssues } from './settings.ts';
 import { attachmentsDir } from '../../engine/attachments.ts';
-import { BACKUP_FILE, attachmentProblems, cleanStaged, openBackup, pendingRestore, requestRestore, restoreDir, stage, stagedPath } from './restore.ts';
+import { BACKUP_FILE, attachmentProblems, cleanStaged, openBackup, pendingRestore, requestRestore, restoreDir, seriesCompared, stage, stagedPath } from './restore.ts';
 import { copyToUsb } from './usb.ts';
 import { DRILL_EVERY_MS, STALE_MS, USB_EVERY_MS } from './public.ts';
 
@@ -127,7 +127,10 @@ export function bakRoutes(app: FastifyInstance, deps: AppDeps): void {
         return { ...facts, drill: 'passed' };
       }
       stage(dir(), { id, file: input.file, at, userId: user.userId, facts });
-      return { ...facts, stagedId: id, live: { auditSeq: live.seq, lastAuditAt: live.at } };
+      // Per document series, the live data's last number and the backup's: those issued since are issued again (B3-5).
+      const copy = openReadonly(staged);
+      const series = (() => { try { return seriesCompared(db, copy); } finally { copy.close(); } })();
+      return { ...facts, stagedId: id, live: { auditSeq: live.seq, lastAuditAt: live.at }, series };
     } catch (e) {
       log('failed', (e as Error).message, null);
       throw e;

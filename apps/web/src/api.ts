@@ -764,6 +764,8 @@ export interface BackupCheck {
   file: string; madeAt: string | null; tier: BackupTier | null; sidecar: 'matches' | 'missing'; toApply: string[]; audit: { seq: number } | null;
   lastAuditAt: string | null; trialBalance: { totalDebitCents: number; totalCreditCents: number }; lastBusinessDate: string | null; postedDocuments: number;
   drill?: 'passed'; stagedId?: string; live?: { auditSeq: number; lastAuditAt: string };
+  /** A restore check: per document series, the last number in the live data and in the backup; `reused` numbers would be issued again. */
+  series?: { series: string; liveLast: string | null; backupLast: string | null; reused: number }[];
   /** The attached files the copy names; `missing` and `changed` ones are not in the backup as they were. */
   attachments?: { files: number; bytes: number; missing: string[]; changed: string[] };
 }
