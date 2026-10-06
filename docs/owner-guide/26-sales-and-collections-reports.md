@@ -2,7 +2,7 @@
 
 **What it is for:** View your sales, collections, deposits, and the status of your job orders.
 
-**Before you start:** Know the dates you want to check. *Note: Only the accountant and the owner have access to these reports.*
+**Before you start:** Know the dates you want to check. *Note: Owners, accountants and encoders have access to these reports by default.*
 
 ### Steps
 1. On the **Reports** menu, choose **Deposits held**, **Collections register**, **Sales by period**, or **Job order follow-up**.
@@ -24,6 +24,6 @@ To save the information to your computer, click **Export CSV**.
 
 ### Common mistakes and how to fix them
 - **Mistake:** You cannot find the reports on the menu.
-- **Fix:** Access is limited. Only users with the accountant or owner roles can open the reports.
+- **Fix:** Owners, accountants and encoders can open these reports by default. If a report is missing, ask the owner to check **Roles and permissions**.
 - **Mistake:** You want to fix a wrong amount on a report by deleting a record.
 - **Fix:** You cannot delete records in the system. Fix mistakes by canceling and redoing the incorrect document.

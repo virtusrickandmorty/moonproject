@@ -6,7 +6,7 @@
 
 ### Steps
 1. On the **Sales** menu, click **Quick Sales**.
-2. Click **+ New**.
+2. Click **+ New Quick Sale**.
 3. Under the lines, type the **Description** (e.g., Shorten sleeves) and the **Price each**.
 4. Choose how they paid (e.g., **Cash on hand**, **GCash**).
    ![The quick sale form with one line and how it was paid](img/05-new-quick-sale.png)
