@@ -5,11 +5,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { api, ApiError, type CashPlace, type DocDetail, type DocHeader, type DocTypeInfo, type Preview, type SupplierRow } from '../../api.ts';
 import { navigate } from '../../router.tsx';
-import { Button, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { EditGate, Errors, Figures, useLive } from '../COL/parts.tsx';
-import { ewtRates } from './payables.ts';
+import { DUPLICATE_REASON_MAX, DUPLICATE_REASON_MIN, duplicateReasonBox, ewtRates } from './payables.ts';
 
 /** The state around a form's own fields; on an edit, `load` fills the fields from the recorded document. */
 export function useMoneyForm(type: DocTypeInfo, mode: FormMode, load: (d: DocDetail) => void) {
@@ -37,10 +37,17 @@ export function MoneyForm(p: {
   figures?: (doc: never) => [string, number, string?][]; adjust?: (preview: Preview, originalNumber: string) => Preview; businessDate?: string;
   /** Called with each live preview (the supplier advance takes the cash the server says leaves the cash places). */
   onLive?: (preview: Preview) => void;
+  /** The user may record a supplier invoice that is already on file by giving a reason (acc.backdate): the box shows once the server says DUPLICATE_INVOICE. */
+  mayGoAhead?: boolean;
 }) {
-  const { type, f, input, errors, businessDate } = p;
+  const { type, f, errors, businessDate } = p;
+  const [duplicateText, setDuplicateText] = useState('');
   const adjust = (r: Preview) => (f.original && p.adjust ? p.adjust(r, f.original.number) : r);
-  const preview = () => api.preview(type.key, input, businessDate).then(adjust);
+  // The box rests on the server's last answer (live checks or the ones before Record); its reason goes with the input only while the box is showing.
+  const [answered, setAnswered] = useState<readonly { code: string }[]>([]);
+  const box = duplicateReasonBox(answered, p.mayGoAhead === true, duplicateText);
+  const input = box.reason ? { ...(p.input as object), duplicateReason: box.reason } : p.input;
+  const preview = () => api.preview(type.key, input, businessDate).then(adjust).then((r) => (setAnswered(r.issues), r));
   const live = useLive(JSON.stringify([input, f.original?.id, businessDate]), errors.length === 0, preview);
   useEffect(() => void (live && p.onLive?.(live)), [live]);
   if (f.original && !f.reason) return <EditGate original={f.original} typeKey={type.key} onReason={f.setReason} />;
@@ -68,6 +75,7 @@ export function MoneyForm(p: {
         {f.original && <Notice tone="info">When you record, {f.original.number} is cancelled and the replacement gets a new number. Reason: {f.reason}</Notice>}
         {f.error && <Notice>{f.error}</Notice>}
         {p.children}
+        {box.show && <DuplicateReasonBox value={duplicateText} onChange={setDuplicateText} problem={box.problem} />}
         <Errors list={errors} show={f.touched} />
         <div className="flex gap-2">
           <Button tone="primary" disabled={!type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
@@ -82,6 +90,17 @@ export function MoneyForm(p: {
       </Panel>
       {f.confirm && <RecordDialog type={type} preview={f.confirm} original={f.original} reason={f.reason} onRecord={record} onClose={() => f.setConfirm(null)} />}
     </form>
+  );
+}
+
+/** "Reason to go ahead anyway": asked once the server says this supplier invoice is already on a bill or voucher. */
+export function DuplicateReasonBox({ value, onChange, problem }: { value: string; onChange: (text: string) => void; problem?: string }) {
+  return (
+    <Panel title="This invoice is already recorded">
+      <Field label="Reason to go ahead anyway" required hint={`${DUPLICATE_REASON_MIN} to ${DUPLICATE_REASON_MAX} characters. It is kept with this document.`} error={problem}>
+        <textarea rows={2} className={inputClass} value={value} onChange={(e) => onChange(e.target.value)} />
+      </Field>
+    </Panel>
   );
 }
 

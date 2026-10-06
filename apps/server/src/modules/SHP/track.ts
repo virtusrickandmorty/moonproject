@@ -17,9 +17,9 @@ const trackInput = z.object({ number: z.string().trim().min(3).max(30), token: z
 const NOT_FOUND = 'We found no order with that number. Check it, or call the shop.';
 
 type OnlineStatus = 'awaiting_payment' | 'payment_sent' | 'confirmed' | 'rejected' | 'cancelled' | 'ready' | 'completed';
-const ONLINE_WORDS: Record<OnlineStatus | 'expired', string> = {
+const ONLINE_WORDS: Record<OnlineStatus | 'expired' | 'returned', string> = {
   awaiting_payment: 'Waiting for your payment', payment_sent: 'Checking your payment', confirmed: 'Paid · being prepared', ready: 'Ready / sent',
-  completed: 'Completed', rejected: 'Payment not confirmed', cancelled: 'Cancelled', expired: 'Expired (not paid in time)',
+  completed: 'Completed', rejected: 'Payment not confirmed', cancelled: 'Cancelled', returned: 'Returned', expired: 'Expired (not paid in time)',
 };
 
 const knows = (tokenHash: string, token: string) => {
@@ -42,10 +42,10 @@ export function shpTrackRoutes(app: FastifyInstance, deps: AppDeps): void {
 
     // An online order from the website.
     const o = db.prepare(`SELECT id, number, status, fulfilment, delivery_option AS deliveryOption, hold_until_ms AS holdUntil,
-      created_at AS createdAt, token_hash AS tokenHash FROM shp_orders WHERE number = ?`).get(number) as
-      { id: string; number: string; status: OnlineStatus; fulfilment: 'pickup' | 'delivery'; deliveryOption: string | null; holdUntil: number; createdAt: string; tokenHash: string } | undefined;
+      created_at AS createdAt, token_hash AS tokenHash, reversal_kind AS reversalKind FROM shp_orders WHERE number = ?`).get(number) as
+      { id: string; number: string; status: OnlineStatus; fulfilment: 'pickup' | 'delivery'; deliveryOption: string | null; holdUntil: number; createdAt: string; tokenHash: string; reversalKind: 'cancelled' | 'returned' | null } | undefined;
     if (o) {
-      const status = o.status === 'awaiting_payment' && o.holdUntil <= now ? 'expired' : o.status;
+      const status = o.status === 'awaiting_payment' && o.holdUntil <= now ? 'expired' : o.status === 'cancelled' && o.reversalKind === 'returned' ? 'returned' : o.status;
       const rows = db.prepare('SELECT product_name AS name, size, colour, qty FROM shp_order_lines WHERE order_id = ? ORDER BY line_no').all(o.id) as { name: string; size: string; colour: string; qty: number }[];
       const shown = {
         kind: 'online', number: o.number, status, statusLabel: ONLINE_WORDS[status], placedAt: o.createdAt,

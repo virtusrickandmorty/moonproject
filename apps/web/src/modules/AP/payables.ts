@@ -164,6 +164,23 @@ export function forReplacement(p: Preview, originalNumber: string, fits: (field:
   return { ...p, issues: p.issues.filter((i) => !stale(i)) };
 }
 
+/** The reason for recording a supplier invoice that is already on a bill or voucher: 10 to 200 characters (the server accepts more, and checks again). */
+export const DUPLICATE_REASON_MIN = 10;
+export const DUPLICATE_REASON_MAX = 200;
+export const MAY_GO_AHEAD = 'acc.backdate';
+
+/**
+ * The "Reason to go ahead anyway" box of a bill or voucher: shown once the server's checks name DUPLICATE_INVOICE, and only to a
+ * user who may go ahead (the server checks that again). `reason` is what is sent as duplicateReason: nothing until it is the right length.
+ */
+export function duplicateReasonBox(issues: readonly { code: string }[], mayGoAhead: boolean, typed: string): { show: boolean; reason?: string; problem?: string } {
+  if (!mayGoAhead || !issues.some((i) => i.code === 'DUPLICATE_INVOICE')) return { show: false };
+  const reason = typed.trim();
+  if (reason.length >= DUPLICATE_REASON_MIN && reason.length <= DUPLICATE_REASON_MAX) return { show: true, reason };
+  if (!reason) return { show: true };
+  return { show: true, problem: `The reason needs ${DUPLICATE_REASON_MIN} to ${DUPLICATE_REASON_MAX} characters (now ${reason.length}).` };
+}
+
 /**
  * A supplier advance (SADV-, PLAN D5 SUP-ADV): the whole advance, where the money came from and the EWT. The server
  * works out the EWT; `cashCents` is what it last said leaves the cash places, so one tender typed without an amount

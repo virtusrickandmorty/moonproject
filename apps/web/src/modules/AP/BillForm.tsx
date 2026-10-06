@@ -14,7 +14,7 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import { PrintedDateField, usePrintedDate } from '../../generic/PrintedDate.tsx';
 import { MoneyForm, SupplierSelect, useEwtRates, useList, useMoneyForm } from './parts.tsx';
 import {
-  billAdvancesInput, billFigures, billLinesToInput, billLinesToRows, emptyBillLine, ewtChoices, forReplacement, openAdvances, type BillLineInput, type BillLineRow,
+  billAdvancesInput, billFigures, billLinesToInput, billLinesToRows, emptyBillLine, ewtChoices, forReplacement, MAY_GO_AHEAD, openAdvances, type BillLineInput, type BillLineRow,
 } from './payables.ts';
 
 type Applied = { advanceId: string; amountCents: number };
@@ -92,7 +92,7 @@ export function BillForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode
   const mayChangeEwt = me.permissions.includes('ap.bill.ewt');
 
   return (
-    <MoneyForm type={type} f={f} title="New supplier bill" input={input} errors={errors} figures={billFigures} adjust={(p, n) => forReplacement(p, n, fits)} businessDate={printed.businessDate}
+    <MoneyForm type={type} f={f} title="New supplier bill" input={input} errors={errors} figures={billFigures} mayGoAhead={me.permissions.includes(MAY_GO_AHEAD)} adjust={(p, n) => forReplacement(p, n, fits)} businessDate={printed.businessDate}
       onLive={(p) => setLiveAdvances((p.doc as { advances?: Applied[] }).advances ?? [])}>
       <Panel title="Who billed">
         <SupplierSelect suppliers={suppliers} value={supplierId} onChange={setSupplierId} />
