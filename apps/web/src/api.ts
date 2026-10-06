@@ -980,6 +980,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     matchRecon: (id: string, statementLineIds: number[], journalLineIds: number[]) => call<ReconReport>('POST', `/api/cash/recons/${id}/match`, { statementLineIds, journalLineIds }),
     unmatchRecon: (id: string, matchNo: number) => call<ReconReport>('POST', `/api/cash/recons/${id}/unmatch`, { matchNo }),
     finishRecon: (id: string) => call<ReconReport>('POST', `/api/cash/recons/${id}/finish`, {}),
+    /** Unlocks a bank's latest finished reconciliation (cash.recon.reopen), with the reason. */
+    reopenRecon: (id: string, reason: string) => call<ReconReport>('POST', `/api/cash/recons/${id}/reopen`, { reason }),
     customer: (id: string) => call<CustomerRow>('GET', `/api/cus/customers/${encodeURIComponent(id)}`),
     /** The active groups of a customer, for a picker. */
     customerGroups: (id: string) => call<{ groups: CustomerGroup[] }>('GET', `/api/cus/customers/${encodeURIComponent(id)}`).then((r) => r.groups.filter((g) => g.is_active === 1)),
