@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { generateX25519Identity, identityToRecipient } from 'age-encryption';
 import { PASSWORD, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
 import { openReadonly } from '../../../platform/db/driver.ts';
-import { applyPendingRestore, compatibility } from '../restore.ts';
+import { applyPendingRestore, compatibility, recordRestored } from '../restore.ts';
 
 let env: TestEnv;
 let owner: Client, accountant: Client;
@@ -104,6 +104,11 @@ describe('restore', () => {
     expect(res.statusCode, res.body).toBe(200);
     const { stagedId, live, audit } = res.json();
     expect(live.auditSeq).toBeGreaterThan(audit.seq); // what was recorded after the backup is shown before restoring
+    // Per document series, the live data's last number and the backup's: the JV recorded since, and its journal, will be numbered again (B3-5).
+    expect(res.json().series).toEqual([
+      { series: 'JE-2026', liveLast: 'JE-2026-000002', backupLast: 'JE-2026-000001', reused: 1 },
+      { series: 'JV', liveLast: 'JV-000002', backupLast: 'JV-000001', reused: 1 },
+    ]);
 
     await stepUp(owner);
     const applied = await owner.post('/api/bak/restore/apply', { stagedId });
@@ -124,6 +129,17 @@ describe('restore', () => {
     expect(restored.prepare(`SELECT COUNT(*) FROM documents WHERE status = 'posted'`).pluck().get()).toBe(1);
     restored.close();
     expect(applyPendingRestore(liveFile, '2026-09-28T11:05:00.000+08:00')).toBeNull();
+  });
+
+  it('signs everyone out: a session from before the restore is refused (I1-02)', async () => {
+    expect((await owner.get('/api/auth/me')).statusCode).toBe(200);
+    expect((await accountant.get('/api/auth/me')).statusCode).toBe(200);
+    // What the start (main.ts) does once the restored copy is swapped in, before serving.
+    recordRestored(env.db, { file: backup, previous: join(dir, 'before-restore.db') }, '2026-09-28T11:00:00.000+08:00', 'start');
+    expect((await owner.get('/api/auth/me')).statusCode).toBe(401);
+    expect((await jv('Cash after the restore', 1_000)).statusCode).toBe(401);
+    expect(env.db.prepare('SELECT COUNT(*) FROM sessions WHERE revoked_at IS NULL').pluck().get()).toBe(0);
+    expect((await (await env.as('owner')).get('/api/auth/me')).statusCode).toBe(200); // signing in again works
   });
 
   it('refuses to restore without a fresh check', async () => {

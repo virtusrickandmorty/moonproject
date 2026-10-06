@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createElement, type FunctionComponent } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { FastifyInstance } from 'fastify';
-import { PASSWORD, createTestEnv, createUser, type TestEnv } from '../../../server/test/helpers.ts';
+import { PASSWORD, createTestEnv, encoderOwnDefaults, createUser, type TestEnv } from '../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../server/src/engine/security/sessions.ts';
 import { jobOrderInput } from '../../../server/src/modules/JO/doctypes/job-order.ts';
 import { createApi, newIdempotencyKey as key, type DocDetail, type DocTypeInfo, type Me } from '../api.ts';
@@ -43,7 +43,7 @@ async function signIn(name: string, roles: Parameters<typeof createUser>[2]) {
   vi.stubGlobal('fetch', injectFetch(env.app, cookies));
   return { api, me };
 }
-beforeEach(async () => { env = await createTestEnv(); });
+beforeEach(async () => { env = await createTestEnv(); encoderOwnDefaults(env); });
 afterEach(async () => { vi.unstubAllGlobals(); await env.app.close(); env.db.close(); });
 
 describe('menu and registration', () => {

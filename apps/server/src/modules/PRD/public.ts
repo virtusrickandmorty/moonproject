@@ -39,6 +39,14 @@ export function unpaidAssignments(db: Db, upTo: string, employeeId?: string): Un
     .all({ upTo, e: employeeId ?? null }) as UnpaidAssignment[];
 }
 
+/** Rows recorded as a different sheet despite matching an earlier one (B2-F3), with the reason typed; PAY lists them. */
+export function repeatedAssignments(db: Db, assignmentIds: string[]): { id: string; reason: string }[] {
+  if (assignmentIds.length === 0) return [];
+  return db
+    .prepare('SELECT assignment_id AS id, reason FROM prd_assignment_repeats WHERE assignment_id IN (SELECT value FROM json_each(?)) ORDER BY assignment_id')
+    .all(JSON.stringify(assignmentIds)) as { id: string; reason: string }[];
+}
+
 /**
  * Piece earnings per day of one worker, paid or not (work and rework of recorded entries; corrections are left out,
  * since they fix an earlier day). PAY averages them for a piece worker's regular-holiday pay (F1).

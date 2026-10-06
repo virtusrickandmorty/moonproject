@@ -17,8 +17,8 @@ export default defineModule({
     { key: 'shp.manage', label: 'Add, change, hide and show website shop products, their photos and categories', defaultRoles: ['encoder', 'owner'] },
     { key: 'shp.stock', label: 'Record shop pieces coming in and stock counts', defaultRoles: ['encoder', 'owner'] },
     { key: 'shp.orders.view', label: 'See online orders and their proofs of payment', defaultRoles: ['encoder', 'accountant', 'owner'] },
-    // Confirming records the sale and its payment (a quick sale), so it also needs the quick sale permissions (checked in the route).
-    { key: 'shp.orders.manage', label: 'Confirm or reject online payments and move orders to ready and completed', defaultRoles: ['encoder', 'accountant', 'owner'] },
+    // Confirming records the sale and its payment (a quick sale), and cancelling or returning a confirmed order cancels it, so both also need the quick sale permissions (checked on the sale).
+    { key: 'shp.orders.manage', label: 'Confirm or reject online payments, move orders to ready and completed, and cancel or return confirmed orders', defaultRoles: ['encoder', 'accountant', 'owner'] },
     // The POS records a quick sale, so selling there also needs qs.create and qs.post (the server checks those on the sale).
     { key: 'shp.pos', label: 'Sell shop items at the POS counter (also needs the quick sale permissions to record the sale)', defaultRoles: ['encoder', 'owner'] },
     { key: 'shp.reviews.manage', label: "Hide and show buyers' reviews on the website", defaultRoles: ['encoder', 'owner'] },

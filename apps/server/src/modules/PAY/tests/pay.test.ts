@@ -282,3 +282,29 @@ describe('PAY-1: a run is dated the last day of its period once that has passed,
     expect(runInvariants(w.db).filter((r) => !r.ok)).toEqual([]);
   });
 });
+
+describe('audit codex2-independent-01: run warnings CONTRIB_OFF and REPEAT_PIECES (B2-F6, B2-F3)', () => {
+  it('names the contributions switched off with their reason and lists piece rows kept as a different sheet, amounts unchanged', async () => {
+    const w = await world('2026-09-22');
+    const eli = w.person('Eli Tahi', { payType: 'piece', payGroup: 'WEEKLY_PIECE' });
+    const fe = w.person('Fe Tahi', { payType: 'piece', payGroup: 'WEEKLY_PIECE' });
+    const cs = seedCustomers(w.db, w.userId);
+    const jo = w.record(jobOrderDoc, { customerId: cs.school, dueInDays: 20, priority: 'normal', paymentTerms: 'full', lines: [{ kind: 'made_to_order', description: 'Team shirt', qty: 50, unitPriceCents: 30_000, discountCents: 0, roster: [] }] });
+    tx(w.db, () => setupLine(w.db, jo.id, 1, { templateId: 1, stepIds: [6, 8], garmentType: 'T-shirt', complexity: 'standard' }, w.who()));
+    const sheet = { jobOrderId: jo.id, stepId: 6, rows: [{ lineNo: 1, employeeId: eli, pieces: 10 }, { lineNo: 1, employeeId: fe, pieces: 5 }] };
+    w.record(entryDoc, sheet);
+    w.record(entryDoc, { ...sheet, rows: [{ lineNo: 1, employeeId: eli, pieces: 10, repeatReason: 'Second bundle, its own sheet' }] });
+    w.db.prepare(`UPDATE emp_employees SET sss_on = 0, hdmf_on = 0, statutory_off_reason = 'Covered as a voluntary member (made up)' WHERE id = ?`).run(eli);
+
+    w.at('2026-09-26');
+    const input = { payGroup: 'WEEKLY_PIECE' as const, periodStart: '2026-09-21' };
+    const warnings = w.preview(runDoc, input).issues.filter((i) => i.code === 'CONTRIB_OFF' || i.code === 'REPEAT_PIECES').map((i) => [i.level, i.code, i.message]);
+    expect(warnings).toEqual([
+      ['warning', 'CONTRIB_OFF', 'Eli Tahi: SSS and Pag-IBIG are switched off, so nothing is taken or paid for them. Reason saved: "Covered as a voluntary member (made up)".'],
+      ['warning', 'REPEAT_PIECES', `Eli Tahi: ${jo.number} Sewing 2026-09-22, 10 pcs matches a sheet already recorded and was kept as a different sheet ("Second bundle, its own sheet"). Check it is not paid twice.`],
+    ]);
+    const run = w.record(runDoc, input);
+    // 25 pieces × ₱40.00 = 1,000.00 piece labor, both sheets paid as recorded: the warnings change no amount.
+    expect(journal(w.env, run.id).find((l) => l.startsWith('5201'))).toBe('5201 Dr 1,000.00');
+  });
+});

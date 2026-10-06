@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { newId } from '@moonproject/shared';
-import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 
@@ -61,7 +61,7 @@ const goTo = async (iso: string) => {
 };
 
 beforeEach(async () => {
-  env = await createTestEnv(); // 2026-09-28, in Q3
+  env = await createTestEnv(); encoderOwnDefaults(env); // 2026-09-28, in Q3
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   c = seedCustomers(env.db, encoder.userId);
@@ -170,6 +170,27 @@ describe('SLSP: sales', () => {
     expect(reversal).toMatchObject({ amountCents: -200_000, saleClass: 'exempt' });
     expect(r.totals.exemptCents).toBe(0);
     expect((await classify(reversal.journalId, 'zero_rated')).json().code).toBe('REVERSAL');
+    noDifference(r);
+  });
+
+  it('a posted loan forgiveness (gain on debt forgiveness) is other income, not a possible sale in the revenue without VAT list', async () => {
+    const BDO = cashPlaceId(env.db, '1111');
+    const loanId = (await accountant.post('/api/docs/loan.loan/post', {
+      input: { lender: 'Sample Bank', kind: 'loan', cashPlaceId: BDO, principalCents: 50_000_000, feeCents: 500_000, interestRateBp: 1200, termMonths: 25, schedule: 'flat' },
+      expectedTotalCents: 50_000_000,
+    }, idem())).json().id as string;
+    posted(await encoder.post('/api/docs/loan.payment/post', {
+      input: { loanId, instalmentNo: 1, cashPlaceId: BDO, principalCents: 500_000, interestCents: 500_000, note: 'Paid part only' }, expectedTotalCents: 1_000_000,
+    }, idem()));
+    const before = (await get('slsp/sales')).json();
+    const f = await accountant.post('/api/docs/loan.forgiveness/post', {
+      input: { loanId, instalmentNo: 1, reason: 'The bank waived the rest (made up)' }, expectedTotalCents: 1_500_000,
+    }, idem());
+    expect(f.statusCode, f.body).toBe(200);
+    const r = (await get('slsp/sales')).json();
+    expect(r.noVatSales.map((x: { journalId: string }) => x.journalId).sort()).toEqual(before.noVatSales.map((x: { journalId: string }) => x.journalId).sort());
+    expect(r.totals.toClassifyCents).toBe(before.totals.toClassifyCents);
+    expect(r.otherIncomeCents).toBe(before.otherIncomeCents + 1_500_000);
     noDifference(r);
   });
 

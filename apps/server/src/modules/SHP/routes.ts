@@ -99,13 +99,13 @@ export function shpRoutes(app: FastifyInstance, deps: AppDeps): void {
     });
   });
 
-  /** A product's current photo; never run as a page of this site (sandbox, nosniff). The id changes with every upload. */
+  /** A shown product's current photo (a hidden product's is not found); never run as a page of this site (sandbox, nosniff). The id changes with every upload. */
   app.get<{ Params: { photoId: string } }>('/api/shp/photos/:photoId', { config: { permission: 'public' } }, async (req, reply) => {
-    const p = db.prepare(`SELECT ph.content_type, ph.data FROM shp_photos ph JOIN shp_products pr ON pr.photo_id = ph.id WHERE ph.id = ?`)
+    const p = db.prepare(`SELECT ph.content_type, ph.data FROM shp_photos ph JOIN shp_products pr ON pr.photo_id = ph.id WHERE ph.id = ? AND pr.is_active = 1`)
       .get(req.params.photoId) as { content_type: string; data: Buffer } | undefined;
     if (!p) throw notFound('The photo');
     return reply.type(p.content_type).header('Content-Security-Policy', "sandbox; default-src 'none'; frame-ancestors 'none'")
-      .header('Cache-Control', 'public, max-age=86400').send(p.data);
+      .header('Cache-Control', 'public, max-age=3600').send(p.data);
   });
 
   app.get('/api/shp/admin/products', { config: { permission: 'shp.view' } }, async () =>

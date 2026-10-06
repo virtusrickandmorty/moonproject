@@ -1,7 +1,7 @@
 /** The supplier, supplies, purchase order and receiving screens' rules, the menu, and the web client calls against the real server. */
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { PASSWORD, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
+import { PASSWORD, createTestEnv, encoderOwnDefaults, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { createApi, newIdempotencyKey, type PoStatus, type SupplierRecord, type SupplyRecord } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
@@ -124,7 +124,7 @@ describe('the menu', () => {
 
 describe('web client for suppliers, supplies, purchase orders and receiving', () => {
   it('adds, changes with If-Match, deactivates and lists; contacts; the order and receiving flow by name', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     createUser(env.db, 'acct1', ['accountant']);
     createUser(env.db, 'enc1', ['encoder']);
     createUser(env.db, 'prod1', ['production']);

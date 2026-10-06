@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { manilaTimestamp } from '@moonproject/shared';
 import { healthLights, isCheckDue, overallLight, type HealthFacts, type Host, type StoredCheck } from '../src/platform/health/health.ts';
-import { createTestEnv, createUser } from './helpers.ts';
+import { createTestEnv, createUser, encoderOwnDefaults } from './helpers.ts';
 
 const NOW = '2026-09-28T10:00:00.000+08:00';
 const ago = (hours: number) => manilaTimestamp(new Date(Date.parse(NOW) - hours * 3600_000));
@@ -132,7 +132,7 @@ describe('System Health routes', () => {
   const host: Host = { platform: 'win32', release: '10.0.26100', arch: 'x64', freeBytes: () => 50e9, utcOffsetMinutes: 480 };
 
   it('lets the owner and the accountant see the lights and run the check, which is stored; not the encoder', async () => {
-    const env = await createTestEnv('2026-09-28T02:00:00Z', { host });
+    const env = await createTestEnv('2026-09-28T02:00:00Z', { host }); encoderOwnDefaults(env);
     const owner = await env.as('owner');
     const accountant = await env.as('accountant');
     const encoder = await env.as('encoder');
@@ -158,7 +158,7 @@ describe('System Health routes', () => {
   });
 
   it('gives a support file with the version, lights, migrations and counts, and no names or paths', async () => {
-    const env = await createTestEnv('2026-09-28T02:00:00Z', { host });
+    const env = await createTestEnv('2026-09-28T02:00:00Z', { host }); encoderOwnDefaults(env);
     createUser(env.db, 'mariaclara', ['encoder']);
     const owner = await env.as('owner');
     const res = await owner.get('/api/system/support-file');
@@ -172,7 +172,7 @@ describe('System Health routes', () => {
   });
 
   it('in the practice shop reports on the practice database, which is not backed up', async () => {
-    const env = await createTestEnv('2026-09-28T02:00:00Z', { practice: true, host });
+    const env = await createTestEnv('2026-09-28T02:00:00Z', { practice: true, host }); encoderOwnDefaults(env);
     const owner = await env.as('owner');
     const r = (await owner.get('/api/system/health')).json();
     expect(r.lights.find((l: { key: string }) => l.key === 'backups').light).toBe('grey');

@@ -6,7 +6,7 @@
  * cancelled, none outside the period. The "changes after filing" report lists exactly the late changes. Made-up names.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cashPlaceId, createTestEnv, idem, PASSWORD, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, PASSWORD, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { cancelDocument, postDocument, previewCancel, previewDocument } from '../../../engine/documents/lifecycle.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import { jvDoc } from '../../ACC/doctypes/jv.ts';
@@ -68,7 +68,7 @@ const cancelling = (named: string) =>
   `${named} Cancelling this changes figures already filed (its reversal is dated the day it is cancelled, but the filed return still shows the original); tell the accountant, who may need to amend the return.`;
 
 beforeEach(async () => {
-  env = await createTestEnv('2026-07-01T02:00:00Z');
+  env = await createTestEnv('2026-07-01T02:00:00Z'); encoderOwnDefaults(env);
   await goTo('2026-07-01');
   BDO = cashPlaceId(env.db, '1111');
   customer = seedCustomers(env.db, encoder.userId).school;

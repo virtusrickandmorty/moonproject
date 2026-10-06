@@ -1,16 +1,16 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { AppError, conflict } from '@moonproject/shared';
+import { AppError } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import type { Db } from '../../platform/db/driver.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
-import { cancelDocument, engineEnv, postDocument, previewDocument, reissueDocument, type Actor, type EngineEnv, type PreviewResult } from '../../engine/documents/lifecycle.ts';
+import { engineEnv, postDocument, previewDocument, reissueDocument, type Actor, type EngineEnv, type PreviewResult } from '../../engine/documents/lifecycle.ts';
 import { findIdempotent, requestHash, storeIdempotent } from '../../engine/idempotency.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { collectionDoc, salePayments } from '../COL/public.ts';
 import { saleDoc, type Sale } from './doctypes/sale.ts';
-import { collectionFor, counterPayment, receivedIssue, recordCounterSale, type CounterPayment as Payment } from './record.ts';
+import { cancelQuickSale, cancelSalePayments, collectionFor, counterPayment, receivedIssue, recordCounterSale, type CounterPayment as Payment } from './record.ts';
 
 const payment = counterPayment();
 const previewBody = z.object({ sale: z.unknown(), payment }).strict();
@@ -59,14 +59,6 @@ export function qsRoutes(app: FastifyInstance, deps: AppDeps): void {
   const record = (actor: Actor, saleInput: unknown, p: Payment, post: (input: unknown) => { id: string; totalCents: number }) =>
     recordCounterSale(env, actor, p, post, saleInput);
 
-  /** The sale's own payments go with it; a payment that also pays other things must be cancelled on its own first. */
-  function cancelPayments(actor: Actor, saleId: string, reason: string) {
-    for (const c of salePayments(db, saleId).filter((p) => p.status === 'posted')) {
-      if (!c.paysOnlyThis) throw conflict('HAS_DEPENDENTS', `${c.number} also pays other things. Cancel it on its own first.`, [c]);
-      cancelDocument(env, collectionDoc, actor, c.id, reason);
-    }
-  }
-
   const shown = (actor: Actor, r: PreviewResult) => ({ summary: r.summary, issues: r.issues, journal: actor.permissions.has('acc.journal.view') ? r.journal : undefined });
 
   /**
@@ -98,8 +90,7 @@ export function qsRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post<{ Params: { id: string } }>('/api/qs/sales/:id/cancel', { config: { permission: 'qs.cancel' } }, async (req, reply) => {
     const { reason } = cancelBody.parse(req.body);
     return idempotent(req, reply, (actor) => {
-      cancelPayments(actor, req.params.id, reason);
-      return cancelDocument(env, saleDoc, actor, req.params.id, reason);
+      return cancelQuickSale(env, actor, req.params.id, reason);
     });
   });
 
@@ -107,7 +98,7 @@ export function qsRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post<{ Params: { id: string } }>('/api/qs/sales/:id/reissue', { config: { permission: 'qs.cancel' } }, async (req, reply) => {
     const body = reissueBody.parse(req.body);
     return idempotent(req, reply, (actor) => {
-      cancelPayments(actor, req.params.id, body.reason);
+      cancelSalePayments(env, actor, req.params.id, body.reason);
       return record(actor, body.sale, body.payment, (input) => reissueDocument(env, saleDoc, actor, req.params.id, { input, expectedTotalCents: body.expectedTotalCents, reason: body.reason }));
     });
   });

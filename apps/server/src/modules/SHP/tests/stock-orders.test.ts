@@ -138,6 +138,124 @@ describe('online orders', () => {
     expect(await item('M', 'White')).toMatchObject({ held: 3, available: 0 });
   });
 
+  it('keep the payment account they were placed under when the settings change later', async () => {
+    await setUpPayment(); // version 1: the QR, bank and instructions below, paid into BDO
+    await owner.post('/api/shp/admin/payment', { bankName: 'First Bank', accountName: 'Sample Garments', instructions: 'Pay within the day', cashPlaceId: BDO, qr: { name: 'qr.png', data: PNG } });
+    const placed = (await order([{ productId: tee, size: 'M', colour: 'White', qty: 1 }])).json() as { number: string; token: string };
+    // Later the owner saves new settings: another bank, new instructions and another cash account.
+    expect((await owner.post('/api/shp/admin/payment', { bankName: 'Second Bank', accountName: 'Sample Garments', instructions: 'New instructions', cashPlaceId: CASH, qr: { name: 'qr2.png', data: PNG } })).statusCode).toBe(200);
+    const page = (await env.app.inject({ method: 'GET', url: `/api/shp/orders/${placed.number}?t=${placed.token}` })).json() as { payment: { bankName: string; instructions: string; qrUrl: string } };
+    expect(page.payment).toMatchObject({ bankName: 'First Bank', instructions: 'Pay within the day', qrUrl: '/api/shp/payment/qr/2' });
+    expect(((await env.app.inject({ method: 'GET', url: '/api/shp/payment' })).json() as { bankName: string }).bankName).toBe('Second Bank'); // new orders see the new settings
+
+    await pay(placed.number, placed.token);
+    const id = ((await encoder.get('/api/shp/admin/orders')).json() as { rows: { id: string }[] }).rows[0]!.id;
+    expect(((await encoder.get(`/api/shp/admin/orders/${id}`)).json() as { payment: { bankName: string } }).payment.bankName).toBe('First Bank');
+    expect((await encoder.post(`/api/shp/admin/orders/${id}/confirm`, { customerId: walkIn, invoiceNumber: '9701', crNumber: '9801', version: 2 })).statusCode).toBe(200);
+    const money = (place: number) => env.db.prepare(`SELECT COALESCE(SUM(l.debit_cents) - SUM(l.credit_cents), 0) FROM journal_lines l WHERE l.account_id = ?`).pluck().get(place);
+    expect(money(BDO)).toBe(25_000); // the cash place of its own version, not the latest
+    expect(money(CASH)).toBe(0);
+  });
+
+  it('keep using the latest settings when placed before the order remembered them', async () => {
+    await setUpPayment();
+    const placed = (await order([{ productId: tee, size: 'M', colour: 'White', qty: 1 }])).json() as { number: string; token: string };
+    env.db.prepare('UPDATE shp_orders SET payment_version = NULL, cash_place_id = NULL').run();
+    await owner.post('/api/shp/admin/payment', { bankName: 'Second Bank', accountName: 'Sample Garments', cashPlaceId: CASH, qr: { name: 'qr2.png', data: PNG } });
+    expect(((await env.app.inject({ method: 'GET', url: `/api/shp/orders/${placed.number}?t=${placed.token}` })).json() as { payment: { bankName: string } }).payment.bankName).toBe('Second Bank');
+    await pay(placed.number, placed.token);
+    const id = ((await encoder.get('/api/shp/admin/orders')).json() as { rows: { id: string }[] }).rows[0]!.id;
+    expect((await encoder.post(`/api/shp/admin/orders/${id}/confirm`, { customerId: walkIn, invoiceNumber: '9702', crNumber: '9802', version: 2 })).statusCode).toBe(200);
+    expect(env.db.prepare(`SELECT COALESCE(SUM(l.debit_cents) - SUM(l.credit_cents), 0) FROM journal_lines l WHERE l.account_id = ?`).pluck().get(CASH)).toBe(25_000);
+  });
+
+  it('refuse to be confirmed once the pieces have sold elsewhere, and are confirmed when enough pieces exist', async () => {
+    await setUpPayment();
+    const placed = (await order([{ productId: tee, size: 'M', colour: 'White', qty: 2 }])).json() as { number: string; token: string };
+    await pay(placed.number, placed.token);
+    const id = ((await encoder.get('/api/shp/admin/orders')).json() as { rows: { id: string }[] }).rows[0]!.id;
+    const confirm = (invoice: string, version: number) => encoder.post(`/api/shp/admin/orders/${id}/confirm`, { customerId: walkIn, invoiceNumber: invoice, crNumber: `${invoice}1`, version });
+    // The counter sells two of the three pieces: only 1 is left, and the order holds 2 of its own.
+    const counter = await encoder.post('/api/qs/sales', { sale: { customerId: walkIn, invoiceNumber: '9901', lines: [{ kind: 'ready_made', description: 'Tee', qty: 2, unitPriceCents: 25_000, discountCents: 0, item: { productId: tee, size: 'M', colour: 'White' } }] },
+      payment: { crNumber: '9911', tenders: [{ cashPlaceId: CASH, amountCents: 50_000 }] }, expectedTotalCents: 50_000 }, idem());
+    expect(counter.statusCode, counter.body).toBe(200);
+    const refused = await confirm('9902', 2);
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().code).toBe('OUT_OF_STOCK');
+    expect(refused.json().message).toMatch(/Sample classic tee.*White.*size M/);
+    expect(await status(placed.number, placed.token)).toMatchObject({ status: 'payment_sent', saleNumber: null }); // nothing was recorded
+    expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
+    // Staff can still reject it, and a recount that finds the pieces lets the same order be confirmed.
+    await encoder.post(`/api/shp/products/${tee}/stock`, { mode: 'in', lines: [{ size: 'M', colour: 'White', qty: 1 }] });
+    const accepted = await confirm('9903', 2);
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    expect(await status(placed.number, placed.token)).toMatchObject({ status: 'confirmed' });
+    expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
+  });
+
+  it('can still be rejected when the pieces are gone', async () => {
+    await setUpPayment();
+    const placed = (await order([{ productId: tee, size: 'M', colour: 'White', qty: 3 }])).json() as { number: string; token: string };
+    await pay(placed.number, placed.token);
+    const id = ((await encoder.get('/api/shp/admin/orders')).json() as { rows: { id: string }[] }).rows[0]!.id;
+    await encoder.post(`/api/shp/products/${tee}/stock`, { mode: 'count', note: 'Recount', lines: [{ size: 'M', colour: 'White', qty: 1 }] });
+    expect((await encoder.post(`/api/shp/admin/orders/${id}/confirm`, { customerId: walkIn, invoiceNumber: '9904', crNumber: '9914', version: 2 })).json().code).toBe('OUT_OF_STOCK');
+    expect((await encoder.post(`/api/shp/admin/orders/${id}/reject`, { reason: 'The pieces are no longer here', version: 2 })).statusCode).toBe(200);
+  });
+
+  it('show a payment nobody decided on for 72 hours as overdue, and still hold its pieces', async () => {
+    await setUpPayment();
+    const placed = (await order([{ productId: tee, size: 'M', colour: 'White', qty: 2 }])).json() as { number: string; token: string };
+    await pay(placed.number, placed.token);
+    const rows = async () => (await encoder.get('/api/shp/admin/orders')).json() as { rows: { overdue: boolean; statusLabel: string | null; status: string }[]; counts: Record<string, number> };
+    const notice = async () => ((await encoder.get('/api/dash/notifications')).json() as { kind: string; label: string }[]).find((n) => n.kind === 'online-payment')!;
+    expect((await rows()).rows[0]).toMatchObject({ status: 'payment_sent', overdue: false, statusLabel: null });
+    expect((await notice()).label).not.toMatch(/Overdue/);
+
+    env.clock.advance(72 * 60 * 60 * 1000 - 60_000);
+    encoder = await env.as('encoder');
+    expect((await rows()).rows[0]!.overdue).toBe(false);
+    env.clock.advance(120_000);
+    encoder = await env.as('encoder');
+    const overdue = await rows();
+    expect(overdue.rows[0]).toMatchObject({ status: 'payment_sent', overdue: true, statusLabel: 'Overdue: check the bank' });
+    expect(overdue.counts.payment_sent).toBe(1);
+    expect((await notice()).label).toContain('Overdue: check the bank');
+    // Nothing cancels it: its pieces are still held, and the buyer still sees the payment as sent.
+    expect(await item('M', 'White')).toMatchObject({ onHand: 3, held: 2, available: 1 });
+    expect(await status(placed.number, placed.token)).toMatchObject({ status: 'payment_sent' });
+  });
+
+  it('take at most 100 payments waiting to be checked', async () => {
+    await setUpPayment();
+    const placed = (await order([{ productId: tee, size: 'M', colour: 'White', qty: 1 }])).json() as { number: string; token: string };
+    const insert = env.db.prepare(`INSERT INTO shp_orders (id, number, status, name, email, phone, fulfilment, total_cents, hold_until_ms, token_hash, ip, created_at, created_ms, updated_at)
+      VALUES (?, ?, 'payment_sent', 'Sample', 'a@example.com', '0917', 'pickup', 100, 0, 'x', '10.9.9.9', '2026-09-28T10:00:00+08:00', 0, '2026-09-28T10:00:00+08:00')`);
+    for (let i = 0; i < 100; i++) insert.run(`filler-${i}`, `WEB-9${String(i).padStart(5, '0')}`);
+    const refused = await pay(placed.number, placed.token);
+    expect(refused.statusCode).toBe(429);
+    expect(refused.json().code).toBe('TOO_MANY_PAYMENTS');
+    expect(await status(placed.number, placed.token)).toMatchObject({ status: 'awaiting_payment' });
+    env.db.prepare("UPDATE shp_orders SET status = 'rejected' WHERE id = 'filler-0'").run();
+    expect((await pay(placed.number, placed.token)).statusCode).toBe(200);
+  });
+
+  it('are never cached: the order, its payment, its cancel and its review answers say so', async () => {
+    await setUpPayment();
+    const a = (await order([{ productId: tee, size: 'M', colour: 'White', qty: 1 }])).json() as { number: string; token: string };
+    const b = (await order([{ productId: tee, size: 'M', colour: 'White', qty: 1 }])).json() as { number: string; token: string };
+    const NO_STORE = 'private, no-store';
+    expect((await env.app.inject({ method: 'GET', url: `/api/shp/orders/${a.number}?t=${a.token}` })).headers['cache-control']).toBe(NO_STORE);
+    const paid = await pay(a.number, a.token);
+    expect(paid.statusCode).toBe(200);
+    expect(paid.headers['cache-control']).toBe(NO_STORE);
+    const cancelled = await send(`/api/shp/orders/${b.number}/cancel`, { token: b.token });
+    expect(cancelled.statusCode, cancelled.body).toBe(200);
+    expect(cancelled.headers['cache-control']).toBe(NO_STORE);
+    const review = await send(`/api/shp/orders/${a.number}/reviews`, { token: a.token, productId: tee, rating: 5, body: 'Fits well, thank you' });
+    expect(review.headers['cache-control']).toBe(NO_STORE); // refused (not completed yet) or accepted, never cached
+  });
+
   it('work the delivery fee out from the address, and record it as a delivery service line on the sale', async () => {
     const fee = async (city: string, province: string) => (await env.app.inject({ method: 'GET', url: `/api/shp/delivery-fee?city=${encodeURIComponent(city)}&province=${encodeURIComponent(province)}` })).json();
     expect((await owner.post('/api/shp/admin/payment', { bankName: 'Sample Bank', accountName: 'Sample Garments', cashPlaceId: BDO, qr: { name: 'qr.png', data: PNG },

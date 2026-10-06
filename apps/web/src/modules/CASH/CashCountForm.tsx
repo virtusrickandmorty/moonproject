@@ -22,6 +22,8 @@ export function CashCountForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  // The ledger version the count started with (a new count only): money moving in or out since refuses the save.
+  const [seen, setSeen] = useState<{ placeId: string; version: string } | null>(null);
   const fail = (e: Error) => setError(e.message);
   const modeKey = mode.kind === 'edit' ? mode.id : mode.draftId ?? '';
 
@@ -51,12 +53,18 @@ export function CashCountForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
     ...count.errors,
     ...(note.trim().length > 500 ? ['Keep the note within 500 characters.'] : []),
   ];
-  const input = { cashPlaceId: Number(placeId), lines: count.lines, ...(note.trim() ? { note: note.trim() } : {}) };
+  const version = !original && seen?.placeId === placeId ? { ledgerVersion: seen.version } : {};
+  const input = { cashPlaceId: Number(placeId), lines: count.lines, ...(note.trim() ? { note: note.trim() } : {}), ...version };
   const inputKey = JSON.stringify(input);
   useEffect(() => {
     if (errors.length) { setLive(null); return; }
     let stale = false;
-    const timer = setTimeout(() => api.preview(type.key, input).then((p) => { if (!stale) setLive(p); }, () => { if (!stale) setLive(null); }), 400);
+    const timer = setTimeout(() => api.preview(type.key, input).then((p) => {
+      if (stale) return;
+      setLive(p);
+      const now = (p.doc as { ledgerVersionNow?: string | null } | undefined)?.ledgerVersionNow;
+      if (now && !original) setSeen((old) => (old?.placeId === placeId ? old : { placeId, version: now }));
+    }, () => { if (!stale) setLive(null); }), 400);
     return () => { stale = true; clearTimeout(timer); };
   }, [type.key, inputKey, errors.length]);
 
@@ -71,6 +79,8 @@ export function CashCountForm({ type, mode }: { type: DocTypeInfo; mode: FormMod
       navigate(docPath(type.key, `/${result.id}?recorded=1`));
     } catch (e) {
       if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.preview(type.key, input));
+      // Money moved: the next preview starts the count again from the ledger as it is now.
+      if (e instanceof ApiError && Array.isArray(e.details) && e.details.some((i: { code?: string }) => i.code === 'LEDGER_MOVED')) setSeen(null);
       throw e;
     }
   };

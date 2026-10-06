@@ -13,6 +13,7 @@ import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.ts
 import { SalesActions, Exception } from '../JO/entry.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
+import { PrintedDateField, usePrintedDate } from '../../generic/PrintedDate.tsx';
 import { cents, checkPlaceIds, emptyTender, oldestFirst, sum, tendersToInput, tendersToRows, type TenderInput, type TenderRow } from './money.ts';
 import { CustomerPicker, EditGate, Errors, Figures, TenderRows, useLive, type Picked } from './parts.tsx';
 import { collectionPreset } from '../JO/forms.ts';
@@ -54,6 +55,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
   const [customer, setCustomer] = useState<Picked | null>(null);
   const [open, setOpen] = useState<OpenItems | null>(null);
   const [original, setOriginal] = useState<{ header: DocHeader; input: Stored; doc: StoredDoc }>();
+  const printed = usePrintedDate(original?.header);
   const [reason, setReason] = useState('');
   const [crNumber, setCr] = useState('');
   const [tenders, setTenders] = useState<TenderRow[]>([emptyTender()]);
@@ -163,6 +165,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
 
   const errors = [
     ...(customer ? [] : ['Pick the customer.']),
+    ...(printed.error ? [printed.error] : []),
     ...(/^\d+$/.test(crNumber.trim()) ? [] : ['Type the CR number from the booklet (digits only).']),
     ...pay.errors,
     ...(cwtCents === undefined ? ['Type the tax withheld like 250.00'] : cwtCents > 0 && !cwt.atc ? ['Pick the tax code (ATC).'] : []),
@@ -182,18 +185,19 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     ...(note.trim() ? { note: note.trim() } : {}),
     ...(pdc ? { postDatedCheckId: pdc.id } : original?.input.postDatedCheckId ? { postDatedCheckId: original.input.postDatedCheckId } : {}), // an edit keeps its post-dated check
   };
-  const live = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input));
+  const day = printed.businessDate;
+  const live = useLive(JSON.stringify([input, day]), errors.length === 0, () => api.preview(type.key, input, day));
 
   const openConfirm = () => {
     setTouched(true);
-    if (errors.length === 0) api.preview(type.key, input).then(setConfirm, fail);
+    if (errors.length === 0) api.preview(type.key, input, day).then(setConfirm, fail);
   };
   const record = async (key: string) => {
     try {
-      const r = original ? await api.reissue(type.key, original.header.id, input, confirm!.totalCents, reason, key) : await api.post(type.key, input, confirm!.totalCents, key);
+      const r = original ? await api.reissue(type.key, original.header.id, input, confirm!.totalCents, reason, key, day) : await api.post(type.key, input, confirm!.totalCents, key, day);
       navigate(docPath(type.key, `/${r.id}?recorded=1`));
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.preview(type.key, input));
+      if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.preview(type.key, input, day));
       throw e;
     }
   };
@@ -239,6 +243,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
           <Field label="CR number (from the booklet)" required hint={original ? `CR ${original.input.crNumber} stays with the cancelled collection: write this payment on a new CR.` : undefined}>
             <input inputMode="numeric" className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
           </Field>
+          <PrintedDateField label="Date on the CR" value={printed.text} onChange={printed.setText} />
         </Panel>
         <Exception title="Customer withheld tax (2307)" active={!!cwt.amount.trim() && Number(cwt.amount.replaceAll(',', '')) !== 0 || !!cwt.vat.trim() && Number(cwt.vat.replaceAll(',', '')) !== 0 || !!cwt.atc || certificate !== 'pending'}>
           {mine && mine.value !== 'none' && grossCents > 0 && manualCwt === null && <p className="text-sm text-slate-600">Filled in from the customer's withholding profile; change it to match the 2307</p>}

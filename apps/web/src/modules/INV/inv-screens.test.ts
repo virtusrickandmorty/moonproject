@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { PASSWORD, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
+import { PASSWORD, createTestEnv, encoderOwnDefaults, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { createApi, newIdempotencyKey, type SheetSupply } from '../../api.ts';
 import { FORMS, VIEWS } from '../screens.ts';
@@ -65,7 +65,7 @@ describe('INV count screen rules', () => {
 
 describe('INV web client against server routes', () => {
   it('loads the sheet, previews the adjustment on a backdated month end, and records the count', async () => {
-    const env = await createTestEnv('2026-10-02T02:00:00Z');
+    const env = await createTestEnv('2026-10-02T02:00:00Z'); encoderOwnDefaults(env);
     createUser(env.db, 'acct1', ['accountant']);
     createUser(env.db, 'enc1', ['encoder']);
     const accountant = createApi(injectFetch(env.app));

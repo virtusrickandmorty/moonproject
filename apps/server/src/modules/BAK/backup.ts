@@ -14,8 +14,9 @@
  * year is yearly, the first of a month monthly, the first of a day daily, the rest snapshots.
  */
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import { Encrypter } from 'age-encryption';
 import { AppError, newId } from '@moonproject/shared';
@@ -191,6 +192,29 @@ export interface BackupResult {
   attachments: AttachmentsBackedUp; attachmentsError: string | null;
 }
 
+/** The temporary copy a run makes before it is checked and encrypted: hidden, and named so a leftover is known. */
+const TEMP_COPY = /^\.moonproject-.*\.db(-journal|-wal|-shm)?$/;
+const inProgress = new Set<string>();
+const memoryDirs = new WeakMap<Db, string>();
+
+/** The database's own data folder, where a run makes its temporary copy (a folder of its own for an in-memory database). */
+export function tempCopyDir(db: Db): string {
+  if (db.name && db.name !== ':memory:') return dirname(db.name);
+  let dir = memoryDirs.get(db);
+  if (!dir) memoryDirs.set(db, (dir = mkdtempSync(join(tmpdir(), 'moonproject-data-'))));
+  return dir;
+}
+
+/** Deletes temporary copies left by a run that stopped, in the data folder and the backup folder; never one in progress. */
+export function removeLeftoverCopies(db: Db, backupDir: string): void {
+  for (const dir of new Set([tempCopyDir(db), backupDir])) {
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir)) {
+      if (TEMP_COPY.test(f) && ![...inProgress].some((p) => join(dir, f).startsWith(p))) rmSync(join(dir, f), { force: true });
+    }
+  }
+}
+
 /**
  * Makes one backup into settings.backupDir. `at` is the Manila timestamp of the run; it names the file
  * (moonproject-2026-09-28T10-00-00-daily.db.gz.age, safe on Windows).
@@ -201,7 +225,9 @@ export async function makeBackup(db: Db, settings: BakSettings, at: string): Pro
   mkdirSync(dir, { recursive: true });
   const tier = tierFor(at, keptIn(dir));
   const base = `${PREFIX}${at.slice(0, 19).replaceAll(':', '-')}-${tier}`;
-  const tmp = join(dir, `.${base}-${newId()}.db`);
+  removeLeftoverCopies(db, dir);
+  const tmp = join(tempCopyDir(db), `.${base}-${newId()}.db`);
+  inProgress.add(tmp);
   try {
     await snapshotTo(db, tmp);
     const facts = checkCopy(tmp);
@@ -237,8 +263,8 @@ export async function makeBackup(db: Db, settings: BakSettings, at: string): Pro
     }
     return { file, tier, bytes: sidecar.bytes, sha256: sidecar.sha256, offsite, offsiteError, attachments, attachmentsError };
   } finally {
-    rmSync(tmp, { force: true });
-    rmSync(`${tmp}-journal`, { force: true });
+    for (const suffix of ['', '-journal', '-wal', '-shm']) rmSync(`${tmp}${suffix}`, { force: true });
+    inProgress.delete(tmp);
   }
 }
 

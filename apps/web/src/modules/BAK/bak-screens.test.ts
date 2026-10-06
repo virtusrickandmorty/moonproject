@@ -10,7 +10,7 @@ import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.
 import { createApi, type BackupCheck, type BackupRun } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
 import {
-  agoWords, bothTypedBack, cleanKey, factRows, keyEnd, lostEntries, lostWords, madeWords, pendingRestoreWords, restoreConfirmed, runWords, sizeWords,
+  agoWords, bothTypedBack, cleanKey, factRows, keyEnd, lostEntries, lostWords, madeWords, pendingRestoreWords, restoreConfirmed, reusedSeries, reusedWords, runWords, sizeWords,
   staleWords, typedBackOk, usbWords, whenWords,
 } from './backups.ts';
 
@@ -84,6 +84,18 @@ describe('backup screen rules', () => {
     expect(lostWords({ ...check, live: { auditSeq: 41, lastAuditAt: now } })).toMatch(/lost: 1 audit entry in the live data is newer than this backup\.$/);
     expect(lostWords({ ...check, madeAt: null, audit: null })).toMatch(/^Everything recorded after 2026-09-27 18:59 will be lost: 52 audit entries/);
     expect(['RESTORE', ' RESTORE ', 'restore', 'RESTOR', ''].map(restoreConfirmed)).toEqual([true, true, false, false, false]);
+    // Per series, what a restore would number again (B3-5).
+    const series = [
+      { series: 'COL', liveLast: 'CR-000012', backupLast: 'CR-000010', reused: 2 },
+      { series: 'JO', liveLast: 'JO-000003', backupLast: 'JO-000003', reused: 0 },
+      { series: 'QS', liveLast: 'QS-000001', backupLast: null, reused: 1 },
+    ];
+    expect(reusedSeries({ series })).toEqual([
+      { series: 'COL', liveLast: 'CR-000012', backupLast: 'CR-000010', reused: 2 },
+      { series: 'QS', liveLast: 'QS-000001', backupLast: 'none yet', reused: 1 },
+    ]);
+    expect(reusedWords({ series })).toBe('3 document numbers issued after this backup will be issued again to new documents. Printed or sent copies with those numbers will not match: mark them, or keep them apart.');
+    expect(reusedWords({ series: [series[1]!] })).toBe('No document number was issued after this backup.');
   });
 
   it('the menu shows Backups under Admin with the permission of the status route', () => {
@@ -157,6 +169,7 @@ describe('web client for the backup screens', () => {
     expect(lostEntries(check)).toBe(check.live!.auditSeq - check.audit!.seq);
     expect(lostEntries(check)).toBeGreaterThan(0); // at least the password and the checks since
     expect(lostWords(check)).toMatch(/^Everything recorded after 2026-09-28 10:00 will be lost: \d+ audit entries in the live data are newer than this backup\.$/);
+    expect(check.series).toEqual(expect.any(Array));
     await owner.stepUp(PASSWORD);
     const applied = await owner.bakApply(check.stagedId!);
     expect(applied).toMatchObject({ file: made.file, restartNeeded: true, restarting: true, message: expect.stringMatching(/^Virtus restarts by itself within a minute/) });

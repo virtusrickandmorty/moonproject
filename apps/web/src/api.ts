@@ -111,7 +111,7 @@ export interface CertInfo { fingerprint256: string; fingerprint1: string; notAft
 export interface JoinAddress { pcName: string; addresses: { ip: string; kind: 'lan' | 'vpn' }[]; port: number | null; urls: string[] }
 export interface CompanyProfile { registeredName: string; tradeName: string; tin: string; registeredAddress: string; isVatRegistered: boolean; version: number; supersededAt?: string }
 export interface JsonSchema { type?: string; format?: string; title?: string; enum?: unknown[]; const?: unknown; anyOf?: JsonSchema[]; maxLength?: number; properties?: Record<string, JsonSchema>; required?: string[] }
-export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
+export interface DocTypeInfo { key: string; module: string; title: string; dating: 'system' | 'accountant_may_backdate' | 'printed'; canCreate: boolean; canPost: boolean; canCancel: boolean; inputJsonSchema: JsonSchema }
 export type PrintVariant = 'document' | 'job_ticket' | 'thermal';
 export interface PrintableType { key: string; variants: PrintVariant[] }
 /** sampleCompany: no company print details are saved yet, so the samples show a made-up company. */
@@ -651,6 +651,8 @@ export type Supplier = SupplierRow;
 export interface LoanRow {
   id: string; number: string; status: 'posted' | 'cancelled'; lender: string; kind: 'loan' | 'equipment'; principalCents: number; balanceCents: number; instalments: number;
   dateReceived?: string; rateBp?: number; termMonths?: number; principalPaidCents?: number; interestPaidCents?: number; reference?: string | null;
+  /** What the lender forgave (LFGV-): balance = principal − paid − forgiven principal. */
+  principalForgivenCents?: number; interestForgivenCents?: number;
   nextDue: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number } | null;
 }
 /** An FA- purchase whose financed part no loan has taken over yet. */
@@ -686,13 +688,20 @@ export interface EqLedger {
 
 /** GET /api/loan/loans/:id: the register row with its schedule (and the payment on each paid instalment) and the loan ledger. */
 export interface LoanDetail extends LoanRow {
-  schedule: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number; paidBy: string | null }[];
+  /**
+   * `paidBy`: the document that settled it (the payment that finished it, or the forgiveness of its rest). A part-paid
+   * instalment keeps `paidBy` null and shows what is still due. `forgivenBy` and its amounts only when the lender forgave the rest.
+   */
+  schedule: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number; paidBy: string | null;
+    paidPrincipalCents?: number; paidInterestCents?: number; remainingPrincipalCents?: number; remainingInterestCents?: number;
+    forgivenBy?: string; forgivenPrincipalCents?: number; forgivenInterestCents?: number }[];
   ledger: { date: string; journalNumber: string; documentNumber: string | null; memo: string; amountCents: number; balanceCents: number }[];
 }
 /** GET /api/loan/loans/:id/payments. */
 export interface LoanPayment { id: string; number: string; date: string; status: 'posted' | 'cancelled'; instalmentNo: number; principalCents: number; interestCents: number; totalCents: number; note: string | null }
 /** GET /api/loan/late: an instalment past its due date with no recorded payment. */
-export interface LateInstalment { loanId: string; loanNumber: string; lender: string; instalmentNo: number; dueDate: string; principalCents: number; interestCents: number; daysLate: number }
+/** `principalCents` and `interestCents`: what is still due on it; `partPaidCents`: what part payments already covered. */
+export interface LateInstalment { loanId: string; loanNumber: string; lender: string; instalmentNo: number; dueDate: string; principalCents: number; interestCents: number; partPaidCents?: number; daysLate: number }
 
 /** GET /api/szr/overview (PLAN E8): every set with who has it, the overdue ones and the last returns. */
 export interface SizerHolder { loanId: string; loanVersion: number; customerId: string; customerName: string; dateOut: string; expectedReturnDate: string; daysOverdue: number }
@@ -764,6 +773,8 @@ export interface BackupCheck {
   file: string; madeAt: string | null; tier: BackupTier | null; sidecar: 'matches' | 'missing'; toApply: string[]; audit: { seq: number } | null;
   lastAuditAt: string | null; trialBalance: { totalDebitCents: number; totalCreditCents: number }; lastBusinessDate: string | null; postedDocuments: number;
   drill?: 'passed'; stagedId?: string; live?: { auditSeq: number; lastAuditAt: string };
+  /** A restore check: per document series, the last number in the live data and in the backup; `reused` numbers would be issued again. */
+  series?: { series: string; liveLast: string | null; backupLast: string | null; reused: number }[];
   /** The attached files the copy names; `missing` and `changed` ones are not in the backup as they were. */
   attachments?: { files: number; bytes: number; missing: string[]; changed: string[] };
 }
@@ -983,6 +994,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     matchRecon: (id: string, statementLineIds: number[], journalLineIds: number[]) => call<ReconReport>('POST', `/api/cash/recons/${id}/match`, { statementLineIds, journalLineIds }),
     unmatchRecon: (id: string, matchNo: number) => call<ReconReport>('POST', `/api/cash/recons/${id}/unmatch`, { matchNo }),
     finishRecon: (id: string) => call<ReconReport>('POST', `/api/cash/recons/${id}/finish`, {}),
+    /** Unlocks a bank's latest finished reconciliation (cash.recon.reopen), with the reason. */
+    reopenRecon: (id: string, reason: string) => call<ReconReport>('POST', `/api/cash/recons/${id}/reopen`, { reason }),
     customer: (id: string) => call<CustomerRow>('GET', `/api/cus/customers/${encodeURIComponent(id)}`),
     /** The active groups of a customer, for a picker. */
     customerGroups: (id: string) => call<{ groups: CustomerGroup[] }>('GET', `/api/cus/customers/${encodeURIComponent(id)}`).then((r) => r.groups.filter((g) => g.is_active === 1)),
@@ -1111,7 +1124,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
       call<{ ok: true }>('POST', `/api/roles/${encodeURIComponent(role)}/permissions`, { permissionKey, granted }),
     /** The chart of accounts (acc.coa.view); changes need acc.coa.manage, `v` is the account's version (If-Match). Deactivating needs a fresh password. */
     coaAccounts: () => call<CoaAccount[]>('GET', '/api/acc/accounts'),
-    addAccount: (body: NewAccountBody) => call<CoaAccount>('POST', '/api/acc/accounts', body),
+    /** `warning`: the type does not fit the code's first digit; the account was added all the same. */
+    addAccount: (body: NewAccountBody) => call<CoaAccount & { warning?: string }>('POST', '/api/acc/accounts', body),
     renameAccount: (id: number, v: number, name: string) => call<CoaAccount>('PUT', `/api/acc/accounts/${id}`, { name }, version(v)),
     deactivateAccount: (id: number, v: number) => call<CoaAccount>('POST', `/api/acc/accounts/${id}/deactivate`, undefined, version(v)),
     activateAccount: (id: number, v: number) => call<CoaAccount>('POST', `/api/acc/accounts/${id}/activate`, undefined, version(v)),

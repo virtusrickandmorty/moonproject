@@ -16,17 +16,25 @@ import { base64, prepare } from './Support.tsx';
 const input = 'mt-1 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100';
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE = /^\+?(?:[\s()-]*\d){7,15}[\s()-]*$/;
-/** This browser's own orders (number and link only), so a customer can find their order page again. */
+/** This browser's order links and saved-on timestamps, kept for at most 30 days. */
 const MINE_KEY = 'moonproject.shop.orders';
-export function rememberedOrders(): { number: string; token: string }[] {
-  try { return (JSON.parse(localStorage.getItem(MINE_KEY) ?? '[]') as { number: string; token: string }[]).filter((m) => typeof m?.number === 'string' && typeof m.token === 'string'); }
-  catch { return []; }
+interface SavedOrder { number: string; token: string; savedOn: number }
+const ORDER_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+export function rememberedOrders(): SavedOrder[] {
+  try {
+    const mine: unknown = JSON.parse(localStorage.getItem(MINE_KEY) ?? '[]');
+    const now = Date.now();
+    if (!Array.isArray(mine)) return [];
+    return mine.filter((m): m is SavedOrder => typeof m?.number === 'string' && typeof m.token === 'string'
+      && typeof m.savedOn === 'number' && Number.isFinite(m.savedOn) && m.savedOn <= now && now - m.savedOn <= ORDER_LIFETIME_MS).slice(0, 10);
+  } catch { return []; }
 }
 function remember(number: string, token: string) {
   try {
-    const mine = JSON.parse(localStorage.getItem(MINE_KEY) ?? '[]') as { number: string; token: string }[];
-    localStorage.setItem(MINE_KEY, JSON.stringify([{ number, token }, ...mine.filter((m) => m.number !== number)].slice(0, 10)));
-  } catch { /* the link in the address bar still works */ }
+    const mine = rememberedOrders();
+    const savedOn = mine.find((m) => m.number === number && m.token === token)?.savedOn ?? Date.now();
+    localStorage.setItem(MINE_KEY, JSON.stringify([{ number, token, savedOn }, ...mine.filter((m) => m.number !== number)].slice(0, 10)));
+  } catch { /* this page keeps the token in memory when browser storage is unavailable */ }
 }
 
 export function Checkout() {
@@ -136,7 +144,7 @@ export function Checkout() {
   );
 }
 
-type Status = 'awaiting_payment' | 'payment_sent' | 'confirmed' | 'rejected' | 'cancelled' | 'ready' | 'completed' | 'expired';
+type Status = 'awaiting_payment' | 'payment_sent' | 'confirmed' | 'rejected' | 'cancelled' | 'ready' | 'completed' | 'expired' | 'returned';
 interface CustomerOrder {
   number: string; status: Status; name: string; fulfilment: 'pickup' | 'delivery'; address: string | null; totalCents: number; holdUntil: string; deliveryOption: string | null; deliveryFeeCents: number;
   paymentReference: string | null; saleNumber: string | null;
@@ -151,7 +159,12 @@ const ORDER_OF: Status[] = ['awaiting_payment', 'payment_sent', 'confirmed', 're
 const when = (iso: string) => new Date(iso).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
 
 export function OrderStatus({ number, query }: { number: string; query: string }) {
-  const token = new URLSearchParams(query).get('t') ?? '';
+  const linkToken = new URLSearchParams(query).get('t');
+  const access = useRef({ number, token: linkToken ?? rememberedOrders().find((m) => m.number === number)?.token ?? '' });
+  if (access.current.number !== number || (linkToken && linkToken !== access.current.token)) {
+    access.current = { number, token: linkToken ?? rememberedOrders().find((m) => m.number === number)?.token ?? '' };
+  }
+  const token = access.current.token;
   const [o, setO] = useState<CustomerOrder | null>(null);
   const [error, setError] = useState('');
   const [reference, setReference] = useState('');
@@ -165,7 +178,19 @@ export function OrderStatus({ number, query }: { number: string; query: string }
     if (!res.ok) throw new Error(res.status === 404 ? 'We cannot find this order. Open the link we gave you when you placed it.' : 'Cannot load your order right now.');
     setO(await res.json() as CustomerOrder);
   }, [number, token]);
-  useEffect(() => { load().catch((e: Error) => setError(e.message)); }, [load]);
+  useEffect(() => {
+    let active = true;
+    load().then(() => {
+      if (!active) return;
+      if (token) remember(number, token);
+      const url = new URL(window.location.href);
+      if (url.pathname === `/order/${encodeURIComponent(number)}` && url.searchParams.get('t') === token) {
+        url.searchParams.delete('t');
+        history.replaceState(history.state, '', url.pathname + url.search + url.hash);
+      }
+    }).catch((e: Error) => { if (active) setError(e.message); });
+    return () => { active = false; };
+  }, [load, number, token]);
   // While staff are working on it, the page follows by itself.
   useEffect(() => {
     if (!o || !['awaiting_payment', 'payment_sent', 'confirmed', 'ready'].includes(o.status)) return;
@@ -204,7 +229,9 @@ export function OrderStatus({ number, query }: { number: string; query: string }
     completed: ['Completed', 'Thank you for buying from us!', 'bg-slate-100 text-slate-800'],
     rejected: ['We could not confirm your payment', `${o.events.filter((e) => e.status === 'rejected').at(-1)?.note ?? ''} If you did pay, call or message us with your reference number.`, 'bg-rose-50 text-rose-900'],
     expired: ['This order expired', 'No payment reached us within 24 hours, so the pieces went back on sale. If they are still available you can still pay below; otherwise place a new order.', 'bg-slate-100 text-slate-800'],
-    cancelled: ['This order was cancelled', 'Nothing was charged.', 'bg-slate-100 text-slate-800'],
+    // A cancelled order with a sale was paid and confirmed first: the shop returns the payment.
+    cancelled: ['This order was cancelled', o.saleNumber ? 'The shop will return your payment. Call or message us with your order number if you have questions.' : 'Nothing was charged.', 'bg-slate-100 text-slate-800'],
+    returned: ['This order was returned', 'The shop will return your payment. Call or message us with your order number if you have questions.', 'bg-slate-100 text-slate-800'],
   };
   const [title, text, tone] = banner[o.status]!;
 
@@ -241,8 +268,8 @@ export function OrderStatus({ number, query }: { number: string; query: string }
         ) : (
           <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-900/5">
             <p className="font-extrabold">What happened</p>
-            <ul className="mt-3 space-y-2 text-sm">{o.events.map((e, i) => <li key={i} className="flex gap-3"><span className="w-36 shrink-0 text-slate-500">{when(e.at)}</span><span>{({ awaiting_payment: 'Order placed', payment_sent: 'Payment sent', confirmed: 'Payment confirmed', rejected: 'Payment not confirmed', cancelled: 'Cancelled', ready: o.fulfilment === 'pickup' ? 'Ready for pickup' : 'Sent out', completed: 'Completed' } as Record<string, string>)[e.status] ?? e.status}{e.note && e.status !== 'confirmed' ? ` · ${e.note}` : ''}</span></li>)}</ul>
-            {(o.status === 'expired' || o.status === 'cancelled' || o.status === 'rejected') && <Link to="/" className="mt-5 inline-block rounded-full bg-slate-900 px-6 py-3 font-bold text-white hover:bg-indigo-700">Back to the shop</Link>}
+            <ul className="mt-3 space-y-2 text-sm">{o.events.map((e, i) => <li key={i} className="flex gap-3"><span className="w-36 shrink-0 text-slate-500">{when(e.at)}</span><span>{({ awaiting_payment: 'Order placed', payment_sent: 'Payment sent', confirmed: 'Payment confirmed', rejected: 'Payment not confirmed', cancelled: 'Cancelled', returned: 'Returned', ready: o.fulfilment === 'pickup' ? 'Ready for pickup' : 'Sent out', completed: 'Completed' } as Record<string, string>)[e.status] ?? e.status}{e.note && e.status !== 'confirmed' ? ` · ${e.note}` : ''}</span></li>)}</ul>
+            {(o.status === 'expired' || o.status === 'cancelled' || o.status === 'returned' || o.status === 'rejected') && <Link to="/" className="mt-5 inline-block rounded-full bg-slate-900 px-6 py-3 font-bold text-white hover:bg-indigo-700">Back to the shop</Link>}
           </div>
         )}
         <aside className="space-y-3 self-start rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
@@ -252,7 +279,7 @@ export function OrderStatus({ number, query }: { number: string; query: string }
           <div className="flex justify-between border-t pt-2 font-bold"><span>Total</span><span className="tabular-nums">{formatPeso(o.totalCents)}</span></div>
           <p className="text-sm text-slate-600">{o.fulfilment === 'pickup' ? 'Pickup at the shop' : `Delivery to ${o.address}`}</p>
           {o.paymentReference && <p className="text-sm text-slate-600">Your reference: <b>{o.paymentReference}</b></p>}
-          <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">Keep this page's link: it is the only way to open your order. Questions? Call or text {SHOP_CONTACT.phone}.</p>
+          <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">Your order is saved on this device for 30 days. On another device, open the link in your order email. Questions? Call or text {SHOP_CONTACT.phone}.</p>
         </aside>
       </div>
     </section>
@@ -311,20 +338,29 @@ function RateItems({ order, token, onRated }: { order: CustomerOrder; token: str
 const shownNameOf = (name: string) => { const p = name.trim().split(/\s+/); return p.length > 1 ? `${p[0]} ${p[p.length - 1]![0]!.toUpperCase()}.` : p[0]!; };
 
 export function MyOrders() {
-  const mine = rememberedOrders();
+  const [mine, setMine] = useState(rememberedOrders);
+  const forgotten = useRef(false);
   const [rows, setRows] = useState<(CustomerOrder & { token: string })[] | null>(null);
   useEffect(() => {
+    let active = true;
     void Promise.all(mine.map(async (m) => {
       const res = await fetch(`/api/shp/orders/${encodeURIComponent(m.number)}?t=${encodeURIComponent(m.token)}`, { credentials: 'same-origin' }).catch(() => null);
       return res?.ok ? { ...(await res.json() as CustomerOrder), token: m.token } : null;
-    })).then((r) => setRows(r.filter((x): x is CustomerOrder & { token: string } => x !== null)));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    })).then((r) => { if (active && !forgotten.current) setRows(r.filter((x): x is CustomerOrder & { token: string } => x !== null)); });
+    return () => { active = false; };
+  }, [mine]);
+  const forget = () => {
+    forgotten.current = true;
+    try { localStorage.removeItem(MINE_KEY); } catch { /* still clear the displayed orders */ }
+    setMine([]); setRows([]);
+  };
   const words: Record<Status, string> = { awaiting_payment: 'Waiting for your payment', payment_sent: 'We are checking your payment', confirmed: 'Paid · being prepared', ready: 'Ready / sent',
-    completed: 'Completed', rejected: 'Payment not confirmed', cancelled: 'Cancelled', expired: 'Expired' };
+    completed: 'Completed', rejected: 'Payment not confirmed', cancelled: 'Cancelled', returned: 'Returned', expired: 'Expired' };
   return (
     <section className="mx-auto max-w-3xl px-4 pb-16 pt-12 sm:px-6">
       <h1 className="text-3xl font-extrabold tracking-tight">My orders</h1>
-      <p className="mt-2 text-slate-600">Orders placed from this phone or computer. On another device, open the link in your order email.</p>
+      <p className="mt-2 text-slate-600">Orders saved on this phone or computer in the last 30 days. On another device, open the link in your order email.</p>
+      <button type="button" onClick={forget} className="mt-4 rounded-full border border-slate-300 px-5 py-2 text-sm font-semibold hover:bg-slate-100">Forget these orders on this device</button>
       {rows === null ? <p className="mt-6 text-slate-500">Loading…</p> : rows.length === 0 ? (
         <div className="mt-6 rounded-2xl border border-dashed border-slate-300 p-8 text-center"><p className="font-semibold">No orders from this browser yet.</p>
           <Link to="/" className="mt-4 inline-block rounded-full bg-slate-900 px-6 py-3 font-bold text-white hover:bg-indigo-700">Shop ready-to-wear</Link></div>

@@ -1,7 +1,7 @@
 /** The government loan screens' rules (loan form, run input, payslip rows), the menu, and the web client calls against the real server. */
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { PASSWORD, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
+import { PASSWORD, createTestEnv, encoderOwnDefaults, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { addEmployee, addPay } from '../../../../server/src/modules/EMP/tests/fixture.ts';
 import { ApiError, createApi, newIdempotencyKey as key, type PayEmployee, type PayRunDoc } from '../../api.ts';
@@ -47,7 +47,7 @@ describe('government loan screen rules', () => {
 
 describe('web client for government loans', () => {
   it('registers a loan, the run deducts it, the payslip shows what is left; the encoder may not see loans', async () => {
-    const env = await createTestEnv('2026-09-30T02:00:00Z');
+    const env = await createTestEnv('2026-09-30T02:00:00Z'); encoderOwnDefaults(env);
     const acct = createUser(env.db, 'acct-l', ['accountant']);
     createUser(env.db, 'enc-l', ['encoder']);
     const carla = addEmployee(env.db, 'Carla Opisina', { costCentre: 'office' });

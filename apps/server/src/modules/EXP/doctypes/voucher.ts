@@ -17,6 +17,8 @@ import { EWT_CLASSES, settingAt, type EwtClass } from '../../../engine/settings.
 import type { Db } from '../../../platform/db/driver.ts';
 import { category, listCategories } from '../categories.ts';
 import { supplier } from '../pur.ts';
+import { duplicateInvoiceIssues } from '../../AP/public.ts';
+import { dayOf, signedOffIssues } from '../../ACC/public.ts';
 import { TWA_ONLY, appliedEwtClass } from '../public.ts';
 import { MAX_CENTS, MAX_TENDERS, cashPlaceIssues, insertTenders, loadTenders, sumCents, tenderInput, tenderToInput, withNames, type Tender } from '../tenders.ts';
 
@@ -38,6 +40,7 @@ export const voucherInput = z
     supplierInvoiceNo: z.string().trim().min(1).max(40).optional(), // the VAT receipt: number, date (and the TIN)
     supplierInvoiceDate: receiptDate.optional(),
     ewtClass: z.enum([...EWT_CLASSES, 'none']).optional(), // left out: the usual class of the supplier or category
+    duplicateReason: z.string().trim().min(10).max(500).optional(), // why an invoice already recorded is recorded again (acc.backdate)
   })
   .strict();
 export type VoucherInput = z.infer<typeof voucherInput>;
@@ -103,7 +106,7 @@ export const voucherDoc: DocTypeDef<VoucherInput, Voucher> = {
   title: 'Expense Voucher',
   numbering: { series: { key: 'EXP', prefix: 'EXP-' } },
   permissions: { view: 'exp.voucher.view', create: 'exp.voucher.create', post: 'exp.voucher.post', cancel: 'exp.voucher.cancel' },
-  dating: 'system',
+  dating: 'printed', // the date printed on the voucher (registry.ts)
   inputSchema: voucherInput,
 
   compute(input, ctx) {
@@ -125,18 +128,14 @@ export const voucherDoc: DocTypeDef<VoucherInput, Voucher> = {
     if (doc.supplierId && (doc.payeeTin || doc.payeeVatRegistered)) {
       add('error', 'payeeTin', 'FROM_SUPPLIER', 'The supplier’s TIN and VAT registration come from the supplier record. Clear them here.');
     }
-    if (doc.supplierInvoiceDate && doc.supplierInvoiceDate > ctx.businessDate) add('error', 'supplierInvoiceDate', 'RECEIPT_DATE', 'The receipt date cannot be after today.');
+    if (doc.supplierInvoiceDate && doc.supplierInvoiceDate > ctx.businessDate) add('error', 'supplierInvoiceDate', 'RECEIPT_DATE', `The receipt date cannot be after ${dayOf(ctx)}.`);
+    issues.push(...signedOffIssues(ctx.db, ctx.businessDate));
     if (doc.ewtClass && TWA_ONLY.has(doc.ewtClass) && !settingAt(ctx.db, 'tax.top_withholding_agent', ctx.businessDate)) {
       add('error', 'ewtClass', 'NOT_TWA', 'Virtus is not a Top Withholding Agent, so goods and services from regular suppliers have no EWT.');
     }
     if (doc.appliedEwtClass && !doc.payee.tin) add('error', 'payeeTin', 'TIN_REQUIRED', 'Withholding tax needs the payee’s TIN (for the 2307).');
-    if (doc.supplierInvoiceNo && doc.payee.taxPartyId) {
-      const dup = ctx.db
-        .prepare(`SELECT d.number FROM exp_vouchers v JOIN documents d ON d.id = v.document_id WHERE v.tax_party_id = ? AND v.supplier_invoice_no = ? AND d.status = 'posted'`)
-        .pluck()
-        .get(doc.payee.taxPartyId, doc.supplierInvoiceNo) as string | undefined;
-      if (dup) add('error', 'supplierInvoiceNo', 'DUPLICATE_RECEIPT', `Receipt no. ${doc.supplierInvoiceNo} of this payee is already on ${dup}.`);
-    }
+    const party = { supplierId: doc.supplierId ?? null, tin: doc.payee.tin, payeeName: doc.payee.name };
+    issues.push(...duplicateInvoiceIssues(ctx.db, ctx.can, party, doc.supplierInvoiceNo, doc.duplicateReason));
     if (doc.payee.vatRegistered && !doc.vatClaimed) {
       add('warning', 'supplierInvoiceNo', 'NO_INPUT_VAT', 'No input VAT: that needs the receipt number, its date and the payee’s TIN. The full amount goes to the expense.');
     }
@@ -150,12 +149,12 @@ export const voucherDoc: DocTypeDef<VoucherInput, Voucher> = {
     db.prepare(
       `INSERT INTO exp_vouchers (document_id, category_id, expense_account_id, supplier_id, payee_name, payee_tin, payee_vat_registered,
          tax_party_id, description, supplier_invoice_no, supplier_invoice_date, gross_cents, vat_rate_bp, expense_cents, input_vat_cents,
-         ewt_class, ewt_rate_bp, ewt_base_cents, ewt_cents, cash_cents)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         ewt_class, ewt_rate_bp, ewt_base_cents, ewt_cents, cash_cents, duplicate_reason)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       h.documentId, doc.categoryId, doc.expenseAccountId, doc.supplierId ?? null, doc.payee.name, doc.payee.tin, +doc.payee.vatRegistered,
       doc.payee.taxPartyId, doc.description, doc.supplierInvoiceNo ?? null, doc.supplierInvoiceDate ?? null, doc.amountCents, doc.vatRateBp, doc.expenseCents,
-      doc.inputVatCents, doc.appliedEwtClass, doc.ewtRateBp, doc.ewtBaseCents, doc.ewtCents, doc.cashCents,
+      doc.inputVatCents, doc.appliedEwtClass, doc.ewtRateBp, doc.ewtBaseCents, doc.ewtCents, doc.cashCents, doc.duplicateReason ?? null,
     );
     insertTenders(db, h.documentId, doc.tenders);
   },
@@ -184,6 +183,7 @@ export const voucherDoc: DocTypeDef<VoucherInput, Voucher> = {
       ...(s('supplier_invoice_no') ? { supplierInvoiceNo: s('supplier_invoice_no')! } : {}),
       ...(s('supplier_invoice_date') ? { supplierInvoiceDate: s('supplier_invoice_date')! } : {}),
       ewtClass: (s('ewt_class') as EwtClass | null) ?? 'none',
+      ...(s('duplicate_reason') ? { duplicateReason: s('duplicate_reason')! } : {}),
     };
     const cat = category(db, input.categoryId);
     const { tenders: _tenders, ...rest } = input;
@@ -208,9 +208,9 @@ export const voucherDoc: DocTypeDef<VoucherInput, Voucher> = {
   },
 
   toInput(doc) {
-    const { categoryId, tenders, amountCents, description, supplierId, payeeName, payeeVatRegistered, payeeTin, supplierInvoiceNo, supplierInvoiceDate, ewtClass } = doc;
+    const { categoryId, tenders, amountCents, description, supplierId, payeeName, payeeVatRegistered, payeeTin, supplierInvoiceNo, supplierInvoiceDate, ewtClass, duplicateReason } = doc;
     const payee = supplierId ? { supplierId } : { payeeName, payeeVatRegistered, payeeTin };
-    const input = { categoryId, tenders: tenders.map(tenderToInput), amountCents, description, ...payee, supplierInvoiceNo, supplierInvoiceDate, ewtClass };
+    const input = { categoryId, tenders: tenders.map(tenderToInput), amountCents, description, ...payee, supplierInvoiceNo, supplierInvoiceDate, ewtClass, duplicateReason };
     return Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) as VoucherInput;
   },
 

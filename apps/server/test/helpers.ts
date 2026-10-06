@@ -40,6 +40,17 @@ export async function createTestEnv(at = '2026-09-28T02:00:00Z', extra: Pick<Bui
   return env;
 }
 
+/**
+ * The encoder role as it was before the owner's decision of 6 Oct 2026 (encoders have the accountant's access): only the
+ * permissions the modules give encoders by default. An owner can still set the grid up like this. Tests written for an
+ * encoder without the accountant's access (what it may not see or do) call this right after createTestEnv; the new
+ * default grid is checked in role-matrix.test.ts.
+ */
+export function encoderOwnDefaults(env: Pick<TestEnv, 'db' | 'deps'>): void {
+  const set = env.db.prepare(`UPDATE role_permissions SET granted = ? WHERE role_key = 'encoder' AND permission_key = ?`);
+  for (const p of env.deps.registry.permissions()) set.run(p.defaultRoles.includes('encoder') ? 1 : 0, p.key);
+}
+
 export function createUser(db: Db, username: string, roles: RoleKey[], mustChange = false): string {
   const id = newId();
   const at = '2026-09-28T10:00:00.000+08:00';

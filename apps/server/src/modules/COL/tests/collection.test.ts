@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { newId, vatFromGross } from '@moonproject/shared';
-import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { postJournal, type DraftLine } from '../../../engine/ledger/post.ts';
 import { cancelDocument, postDocument, reissueDocument } from '../../../engine/documents/lifecycle.ts';
@@ -25,7 +25,7 @@ let c: ReturnType<typeof seedCustomers>;
 let CASH: number, BDO: number, GCASH: number;
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   c = seedCustomers(env.db, encoder.userId);

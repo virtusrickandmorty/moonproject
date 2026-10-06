@@ -9,7 +9,7 @@ import { join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { gzipSync } from 'node:zlib';
 import { Encrypter, generateX25519Identity, identityToRecipient } from 'age-encryption';
-import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from './helpers.ts';
+import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from './helpers.ts';
 import { openDb } from '../src/platform/db/driver.ts';
 import { prepareDatabase } from '../src/app.ts';
 import { fixedClock } from '../src/platform/clock.ts';
@@ -26,7 +26,7 @@ let school: string;
 let CASH: number;
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   school = seedCustomers(env.db, encoder.userId).school;

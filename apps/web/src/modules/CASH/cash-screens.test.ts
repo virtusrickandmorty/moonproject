@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { PASSWORD, cashPlaceId, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
+import { PASSWORD, cashPlaceId, createTestEnv, encoderOwnDefaults, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { createApi, newIdempotencyKey, type CashAccount } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
@@ -44,7 +44,7 @@ describe('CASH screen rules', () => {
 
 describe('CASH web client against server routes', () => {
   it('keeps masked values, manages a place with If-Match, books its movements, and previews and posts a denomination count', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     createUser(env.db, 'acct1', ['accountant']);
     createUser(env.db, 'encoder1', ['encoder']);
     const accountant = createApi(injectFetch(env.app));

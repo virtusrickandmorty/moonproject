@@ -14,7 +14,7 @@ import { buildMenu } from '../shell/menu.ts';
 import { PAGES } from './screens.ts';
 import { AccountTable, ChartOfAccounts } from './ACC/ChartOfAccounts.tsx';
 import { ChangePreview, Settings, SettingList, ValueFields } from './ACC/Settings.tsx';
-import { accountNotes, newAccountInput, ownSideCents, renameInput, visibleAccounts } from './ACC/coa.ts';
+import { accountNotes, newAccountInput, ownSideCents, renameInput, typeWarning, visibleAccounts } from './ACC/coa.ts';
 import { checkDraft, laterVersions, ownScreensFor, percentToBp, valueOn, wordsOf } from './ACC/settings.ts';
 import { PermissionGrid, Roles } from './SEC/Roles.tsx';
 import { UserTable, Users } from './SEC/Users.tsx';
@@ -152,6 +152,10 @@ describe('Chart of accounts screen', () => {
     expect(newAccountInput({ code: '1150', name: 'Petty box', type: 'asset', contra: false }).errors[0]).toBe('Codes 1101 to 1189 are cash places. Add a cash place in the Cash Accounts screen.');
     expect(newAccountInput({ code: '6190', name: ' Delivery costs ', type: 'expense', contra: false }).body).toEqual({ code: '6190', name: 'Delivery costs', type: 'expense' });
     expect(newAccountInput({ code: '1295', name: 'Allowance for x', type: 'asset', contra: true }).body).toEqual({ code: '1295', name: 'Allowance for x', type: 'asset', normalSide: 'credit' });
+    // A type that does not fit the code warns but never refuses (A1-001).
+    expect(newAccountInput({ code: '1295', name: 'Shop supplies used', type: 'expense', contra: false }).errors).toEqual([]);
+    expect(typeWarning('1295', 'expense')).toMatch(/under Assets, whatever its type\. The statements group accounts by code/);
+    expect([typeWarning('1295', 'asset'), typeWarning('7104', 'revenue'), typeWarning('7104', 'expense'), typeWarning('12', 'expense')]).toEqual(['', '', '', '']);
     expect(renameInput('Rent', 'Rent')).toEqual({ error: 'Enter a different name.' });
     expect(renameInput('R', 'Rent').error).toContain('3 to 120');
     expect(renameInput(' Office rent ', 'Rent')).toEqual({ error: '', name: 'Office rent' });

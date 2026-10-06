@@ -1,6 +1,6 @@
 /** EMP (PLAN E11): employee master, pay profile history, attendance grid, holidays and SIL. Made-up people only. */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createTestEnv, createUser, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, createUser, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { activeEmployees, attendanceBetween, employeesInGroup, holidaysBetween, payProfileAt } from '../public.ts';
 import { activeEmployees as prdWorkers } from '../../PRD/emp.ts';
@@ -14,7 +14,7 @@ let acct: Client;
 let enc: Client;
 
 beforeEach(async () => {
-  env = await createTestEnv(); // Manila 2026-09-28
+  env = await createTestEnv(); encoderOwnDefaults(env); // Manila 2026-09-28
   [owner, acct, enc] = [await env.as('owner'), await env.as('accountant'), await env.as('encoder')];
 });
 

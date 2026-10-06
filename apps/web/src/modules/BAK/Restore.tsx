@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import { api, type BackupCheck, type BackupFile } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, manilaTime, useAction, usePasswordPrompt } from '../../components/ui.tsx';
-import { cleanKey, factRows, lostWords, restoreConfirmed, sizeWords, sourceWords, tierWords } from './backups.ts';
+import { cleanKey, factRows, lostWords, restoreConfirmed, reusedSeries, reusedWords, sizeWords, sourceWords, tierWords } from './backups.ts';
 
 type Purpose = 'drill' | 'restore';
 
@@ -90,6 +90,17 @@ function OpenBackup({ backup, purpose, onBack }: { backup: BackupFile; purpose: 
         {check?.stagedId && !message && (
           <div className="max-w-lg space-y-3">
             <Notice tone="warning">{lostWords(check)}</Notice>
+            <Notice tone={reusedSeries(check).length ? 'warning' : 'note'}>{reusedWords(check)}</Notice>
+            {reusedSeries(check).length > 0 && (
+              <table className="w-full text-sm">
+                <thead className="text-left text-slate-500"><tr><th className="pr-3">Series</th><th className="pr-3">Last number now</th><th className="pr-3">Last in the backup</th><th className="text-right">Issued again</th></tr></thead>
+                <tbody>
+                  {reusedSeries(check).map((r) => (
+                    <tr key={r.series} className="border-t border-slate-100"><td className="py-1 pr-3">{r.series}</td><td className="pr-3">{r.liveLast}</td><td className="pr-3">{r.backupLast}</td><td className="text-right tabular-nums">{r.reused}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
             <p className="text-sm text-slate-700">The current data is kept next to the restored one. Restore within 30 minutes, or open the backup again.</p>
             <Field label="Type RESTORE to go ahead" required>
               <input className={inputClass} autoComplete="off" value={typed} onChange={(e) => setTyped(e.target.value)} />

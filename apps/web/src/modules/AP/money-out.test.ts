@@ -184,17 +184,17 @@ describe('money-out web client against server routes', () => {
     expect(billFigures(pre.doc as never)).toEqual([['Input VAT', 0], ['Tax withheld from supplier (EWT) (Contractors and printers 2%)', 20_000], ['Owed to the supplier, due 2026-10-10', 980_000]]);
     const first = await encoder.post('ap.bill', bill, pre.totalCents, key());
 
-    // Its edit keeps the invoice number: the preview still sees the original, the replacement records.
-    const again = { ...bill, lines: [{ ...lines[0]!, amountCents: 1_200_000 }] };
+    // Its edit is a bill of its own, so it has its own invoice number: the preview still sees the original, the replacement records.
+    const again = { ...bill, supplierInvoiceNo: 'SI-0502', lines: [{ ...lines[0]!, amountCents: 1_200_000 }] };
     const stale = await accountant.preview('ap.bill', again);
-    expect(stale.issues.map((i) => i.code)).toEqual(['DUPLICATE_INVOICE']);
+    expect(stale.issues.map((i) => i.code)).toEqual([]);
     expect(forReplacement(stale, first.number).issues).toEqual([]);
     const second = await accountant.reissue('ap.bill', first.id, again, stale.totalCents, 'The supplier corrected the invoice', key());
     expect(second.number).toBe('BILL-000002');
 
     // A payment from AP by supplier: one tender without an amount pays the bill and the fee.
     const open = openBills(await encoder.apLedger(supplierId));
-    expect(open).toEqual([{ id: second.id, label: 'BILL-000002 · invoice no. SI-0501 · due 2026-10-10', owedCents: 1_176_000 }]);
+    expect(open).toEqual([{ id: second.id, label: 'BILL-000002 · invoice no. SI-0502 · due 2026-10-10', owedCents: 1_176_000 }]);
     const payment = paymentInput({ supplierId, bills: open, pay: { [second.id]: '11,760.00' }, tenders: [{ cashPlaceId: BDO, amount: '', reference: 'Check 000123' }], fee: '15', note: '' });
     expect(payment.errors).toEqual([]);
     const paid = await encoder.post('ap.payment', payment.input, (await encoder.preview('ap.payment', payment.input)).totalCents, key());
@@ -225,10 +225,12 @@ describe('money-out web client against server routes', () => {
     const advance = ownerMoneyInput({ ...emptyEq('advance'), personId, cashPlaceId: CASH, amount: '20,000', parValue: '', note: '' }).input;
     await encoder.post('eq.owner_money', advance, (await encoder.preview('eq.owner_money', advance)).totalCents, key());
     const capital = ownerMoneyInput({ ...emptyEq('capital_stock'), personId, cashPlaceId: CASH, amount: '5,000', parValue: '5,000', note: '' }).input;
-    expect((await encoder.preview('eq.owner_money', capital)).issues.map((i) => i.code)).toEqual(['CLASSIFY']);
+    // Encoders have the accountant's access (owner's decision, 6 Oct 2026), so they may classify owner money too.
+    expect((await encoder.preview('eq.owner_money', capital)).issues.map((i) => i.code)).toEqual([]);
     const repay = officerInput({ ...emptyEq('repaid_to_officer'), personId, cashPlaceId: CASH, amount: '8,000', parValue: '', note: 'Part of the advance' }).input;
     await encoder.post('eq.officer', repay, (await encoder.preview('eq.officer', repay)).totalCents, key());
     expect(await accountant.officerBalances(personId)).toMatchObject({ dueFromCents: 0, dueToCents: 1_200_000 });
-    await expect(encoder.officerBalances(personId)).rejects.toMatchObject({ status: 403 });
+    // Encoders have the accountant's access (owner's decision, 6 Oct 2026): they see the officer ledger too.
+    expect(await encoder.officerBalances(personId)).toMatchObject({ dueFromCents: 0, dueToCents: 1_200_000 });
   });
 });

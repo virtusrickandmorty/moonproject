@@ -3,7 +3,8 @@
  * the service was stopped by force. Setup installs a scheduled task, "Moonproject Watchdog", that runs this as SYSTEM
  * every 5 minutes with the installed Node, built-ins only:
  *   check    Asks /api/health. When it has not answered twice in a row, restarts the Moonproject service and logs the
- *            restart to <data>\logs\watchdog.log. It leaves the service alone while an update runs (Setup pauses the
+ *            restart to <data>\logs\watchdog.log. It waits until the service has really stopped (WinSW "stopwait",
+ *            then the service state) before starting it again, so a slow stop is never started over. It leaves the service alone while an update runs (Setup pauses the
  *            task; the service is disabled, or <data>\update\pending.json is there).
  *   install  Registers the task, replacing an older one. Setup runs it after the service has started.
  * Setup removes the task on uninstall.
@@ -88,6 +89,26 @@ function service(command) {
   }
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/** How long a stop may take: WinSW ends the server after 30 s (stoptimeout), plus room for Windows to settle. */
+const STOP_WAIT_MS = 90_000;
+
+/** The service state from Windows ("running", "stop_pending", "stopped", ...). */
+const serviceState = () => /STATE\s*:\s*\d+\s+(\w+)/.exec(sc('query', 'Moonproject'))?.[1]?.toLowerCase() ?? 'unknown';
+
+/** Stops the service and waits until Windows says it is stopped; the state it ended in. */
+async function stopAndWait() {
+  service('stopwait'); // WinSW 2.12 returns once the service has stopped; one that was already stopped says so, which is fine
+  if (!onWindows) return 'stopped';
+  const until = Date.now() + STOP_WAIT_MS;
+  let now = serviceState();
+  while (now !== 'stopped' && Date.now() < until) {
+    await sleep(2000);
+    now = serviceState();
+  }
+  return now;
+}
+
 const readMisses = () => {
   try {
     const s = JSON.parse(readFileSync(stateFile, 'utf8'));
@@ -109,12 +130,17 @@ async function check() {
   if (onWindows) {
     const config = sc('qc', 'Moonproject');
     if (/1060/.test(config) || /START_TYPE\s*:\s*4/.test(config)) return writeMisses(0); // not installed, or held off on purpose
-    state = /STATE\s*:\s*\d+\s+(\w+)/.exec(sc('query', 'Moonproject'))?.[1]?.toLowerCase() ?? 'unknown';
+    state = serviceState();
   }
   const misses = readMisses() + 1;
   if (misses < 2) return writeMisses(misses);
   writeMisses(0);
-  service('stop'); // a hung server is stopped (WinSW ends it after 30 s); a stopped one says so, which is fine
+  const stopped = await stopAndWait(); // a hung server is stopped (WinSW ends it after 30 s)
+  if (stopped !== 'stopped') {
+    log(`No answer from ${opt.health} twice in a row (the service was ${state}). It did not stop within ${STOP_WAIT_MS / 1000} s (it is ${stopped}), so it was not started again; the next check tries again.`);
+    process.exitCode = 1;
+    return;
+  }
   const failed = service('start');
   log(failed
     ? `No answer from ${opt.health} twice in a row (the service was ${state}). Starting it again failed: ${failed}`

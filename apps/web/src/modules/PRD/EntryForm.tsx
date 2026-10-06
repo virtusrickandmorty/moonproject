@@ -2,6 +2,8 @@
  * Production entry form (PLAN E7 "assign workers with piece counts in a quick grid", H5 ≤ 30 s): one step of one job
  * order, a row per worker and line. The server takes the piece rate from the table; a typed rate (override or rework)
  * needs a reason. Opened from the board with ?jo=<JO>&step=<step>. Also its Edit (NR-4).
+ * The work date is today unless the sheet is late (audit B2-F2). When the server takes a row for a sheet already recorded
+ * (LIKELY_REPEAT, B2-F3), the row asks why it is a different sheet.
  */
 import { useEffect, useState } from 'react';
 import { api, ApiError, type DocHeader, type DocTypeInfo, type Preview, type PrdJob, type Worker } from '../../api.ts';
@@ -9,12 +11,12 @@ import { navigate } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { formatPesos } from '@moonproject/shared';
+import { formatPesos, manilaDate, type Issue } from '@moonproject/shared';
 import { EditGate, Errors, useLive } from '../COL/parts.tsx';
 import { emptyRow, rowsToInput, type EntryRow } from './board.ts';
 import { PayDetails, PayTotal } from '../PAY/entry.tsx';
 
-type Stored = { jobOrderId: string; stepId: number; overCapReason?: string; rows: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string }[] };
+type Stored = { jobOrderId: string; stepId: number; workDate?: string; overCapReason?: string; rows: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string }[] };
 const cell = `${inputClass} py-1`;
 
 export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
@@ -30,6 +32,8 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
   const [confirm, setConfirm] = useState<Preview | null>(null);
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState('');
+  const [workDate, setWorkDate] = useState(() => manilaDate(new Date()));
+  const [refusedRepeat, setRefusedRepeat] = useState<number[]>([]); // rows (as sent) the server took for a repeated sheet on Record
   const fail = (e: Error) => setError(e.message);
 
   useEffect(() => {
@@ -42,7 +46,8 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
         setJo(input.jobOrderId);
         setStepId(input.stepId);
         setOverCapReason(input.overCapReason ?? '');
-        setRows(input.rows.map((r) => ({ lineNo: String(r.lineNo), employeeId: r.employeeId, pieces: String(r.pieces), rework: !!r.rework, rate: r.rateCents === undefined ? '' : formatPesos(r.rateCents), rateReason: r.rateReason ?? '' })));
+        if (input.workDate) setWorkDate(input.workDate);
+        setRows(input.rows.map((r) => ({ lineNo: String(r.lineNo), employeeId: r.employeeId, pieces: String(r.pieces), rework: !!r.rework, rate: r.rateCents === undefined ? '' : formatPesos(r.rateCents), rateReason: r.rateReason ?? '', repeatReason: r.repeatReason ?? '' })));
       }, fail);
       return;
     }
@@ -67,21 +72,26 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
   const set = (i: number, patch: Partial<EntryRow>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const typed = rowsToInput(rows);
   const errors = [...(jo ? [] : ['Pick the job order.']), ...(stepId ? [] : ['Pick the step.']), ...typed.errors];
-  const input = { jobOrderId: jo, stepId: stepId ?? 0, rows: typed.rows, ...(overCapReason.trim() ? { overCapReason: overCapReason.trim() } : {}) };
-  const live = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input));
+  const input = { jobOrderId: jo, stepId: stepId ?? 0, workDate, rows: typed.rows, ...(overCapReason.trim() ? { overCapReason: overCapReason.trim() } : {}) };
+  // On Edit the entry being replaced is still recorded until Record cancels it: a row matching only that entry is no repeat.
+  const own = (p: Preview): Preview => (original ? { ...p, issues: p.issues.filter((i) => !(i.code === 'LIKELY_REPEAT' && i.message.includes(`: ${original.number} already has`))) } : p);
+  const preview = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input));
+  const live = preview && own(preview);
   const askOverCap = !!overCapReason || !!live?.issues.some((i) => i.code === 'OVER_CAP');
+  const repeatAt = new Set([...refusedRepeat, ...(live?.issues ?? []).filter((i) => i.code === 'LIKELY_REPEAT').map((i) => Number(i.field?.split('.')[1]))]);
   const calculated = (live?.doc as { rows: { rowNo: number; rateCents: number; amountCents: number }[] } | undefined)?.rows ?? [];
 
   const openConfirm = () => {
     setTouched(true);
-    if (errors.length === 0) api.preview(type.key, input).then(setConfirm, fail);
+    if (errors.length === 0) api.preview(type.key, input).then((p) => setConfirm(own(p)), fail);
   };
   const record = async (key: string) => {
     try {
       const r = original ? await api.reissue(type.key, original.id, input, confirm!.totalCents, editReason, key) : await api.post(type.key, input, confirm!.totalCents, key);
       navigate(docPath(type.key, `/${r.id}?recorded=1`));
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.preview(type.key, input));
+      if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(own(await api.preview(type.key, input)));
+      if (e instanceof ApiError && Array.isArray(e.details)) setRefusedRepeat((e.details as Issue[]).filter((i) => i.code === 'LIKELY_REPEAT').map((i) => Number(i.field?.split('.')[1])));
       throw e;
     }
   };
@@ -101,6 +111,9 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
             {jobs.map((j) => <option key={j.id} value={j.id}>{j.label}</option>)}
             {jo && !jobs.some((j) => j.id === jo) && job && <option value={jo}>{job.jobOrder.number} · {job.jobOrder.customerName}</option>}
           </select>
+          <Field label="Day the pieces were done" hint="Today unless the sheet is late (up to 31 days back).">
+            <input type="date" aria-label="Work date" className={inputClass} value={workDate} max={manilaDate(new Date())} onChange={(e) => setWorkDate(e.target.value)} />
+          </Field>
           <div role="radiogroup" aria-label="Step" className="flex flex-wrap gap-2">
             {steps.map((s) => (
               <button key={s.id} type="button" role="radio" aria-checked={stepId === s.id} onClick={() => (setStepId(s.id), setRows([emptyRow()]))}
@@ -113,7 +126,9 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
           <Panel title="Who did how many pieces">
             <div className="space-y-3">
               {rows.map((r, i) => {
-                const pay = !r.employeeId && !r.pieces.trim() ? undefined : calculated[rows.slice(0, i).filter((row) => row.employeeId || row.pieces.trim()).length];
+                const sent = rows.slice(0, i).filter((row) => row.employeeId || row.pieces.trim()).length; // its place among the rows sent
+                const pay = !r.employeeId && !r.pieces.trim() ? undefined : calculated[sent];
+                const askRepeat = !r.rework && (!!r.repeatReason?.trim() || ((!!r.employeeId || !!r.pieces.trim()) && repeatAt.has(sent)));
                 return (
                   <section key={i} aria-label={`Worker entry ${i + 1}`} className="space-y-3 rounded-lg border border-slate-200 p-3">
                     <Field label="Line">
@@ -135,6 +150,11 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                       <Field label="Pieces"><input aria-label={`Row ${i + 1} pieces`} inputMode="numeric" className={`${cell} text-right tabular-nums`} value={r.pieces} onChange={(e) => set(i, { pieces: e.target.value })} /></Field>
                       <div className="text-sm"><p className="font-medium">Rate per piece</p><p className="tabular-nums">{pay ? peso(pay.rateCents) : 'Awaiting calculation'}</p><p className="text-xs text-slate-500">Last calculated rate; leave the rate blank to use the table.</p></div>
                     </div>
+                    {askRepeat && (
+                      <Field label="This matches a sheet already recorded. Why is it a different sheet? (at least 5 characters)" hint="If the pieces were redone, tick Rework (pasubra) instead.">
+                        <input aria-label={`Row ${i + 1} repeat reason`} className={cell} value={r.repeatReason ?? ''} onChange={(e) => set(i, { repeatReason: e.target.value })} />
+                      </Field>
+                    )}
                     <PayDetails title="Change rate or record rework" active={!!r.rate.trim() || r.rework || !!r.rateReason.trim()}>
                       <label className="flex items-center gap-2 text-sm"><input aria-label={`Row ${i + 1} rework`} type="checkbox" checked={r.rework} onChange={(e) => set(i, { rework: e.target.checked })} /> Rework (pasubra)</label>
                       <Field label="Rate (blank = table)">

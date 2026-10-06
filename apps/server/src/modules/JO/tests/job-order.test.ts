@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { cancelDocument, postDocument, reissueDocument } from '../../../engine/documents/lifecycle.ts';
 import { tx } from '../../../platform/db/driver.ts';
@@ -21,7 +21,7 @@ let encoder: Client;
 let c: ReturnType<typeof seedCustomers>;
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   encoder = await env.as('encoder');
   c = seedCustomers(env.db, encoder.userId);
 });

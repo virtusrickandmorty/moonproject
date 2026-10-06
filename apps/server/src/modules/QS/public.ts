@@ -79,3 +79,12 @@ export const recordQuickSale: RecordQuickSale = (...args) => {
   if (!recordImpl) throw new Error('The QS module is not loaded');
   return recordImpl(...args);
 };
+
+/** Cancels a recorded quick sale and its payment in the caller's transaction (SHP: a confirmed online order cancelled or returned). Provided like recordQuickSale. */
+type CancelQuickSale = typeof import('./record.ts').cancelQuickSale;
+let cancelImpl: CancelQuickSale | undefined;
+export const provideCancelQuickSale = (fn: CancelQuickSale) => { cancelImpl = fn; };
+export const cancelQuickSale: CancelQuickSale = (...args) => {
+  if (!cancelImpl) throw new Error('The QS module is not loaded');
+  return cancelImpl(...args);
+};

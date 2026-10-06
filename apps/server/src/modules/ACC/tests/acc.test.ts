@@ -3,7 +3,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { PASSWORD, balances, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { PASSWORD, balances, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { cancelDocument, postDocument } from '../../../engine/documents/lifecycle.ts';
 import { settingAt } from '../../../engine/settings.ts';
@@ -16,7 +16,7 @@ let accountant: Client;
 let encoder: Client;
 
 beforeEach(async () => {
-  env = await createTestEnv(); // 2026-09-28 10:00 Manila
+  env = await createTestEnv(); encoderOwnDefaults(env); // 2026-09-28 10:00 Manila
   accountant = await env.as('accountant');
   encoder = await env.as('encoder');
 });
@@ -104,6 +104,20 @@ describe('chart of accounts (E12)', () => {
     expect((await add({ code: '1150', name: 'Cash in bank – BPI', type: 'asset' })).json().code).toBe('CASH_PLACE_CODE');
     expect((await add({ code: '6265', name: 'Laundry again', type: 'expense' })).json().code).toBe('CODE_EXISTS');
     expect((await add({ code: '6266', name: 'Encoder account', type: 'expense' }, encoder)).statusCode).toBe(403);
+  });
+
+  it('a type that does not fit the code is saved with a warning that statements group by code (A1-001)', async () => {
+    const res = await accountant.post('/api/acc/accounts', { code: '1295', name: 'Shop supplies used', type: 'expense' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ code: '1295', type: 'expense', normalSide: 'debit' });
+    expect(res.json().warning).toMatch(/starts with 1, so the financial statements show this account under Assets/);
+    expect(res.json().warning).toMatch(/group accounts by code/);
+    const audit = env.db.prepare(`SELECT data FROM audit_log WHERE action = 'acc.account.create' ORDER BY seq DESC LIMIT 1`).pluck().get() as string;
+    expect(JSON.parse(audit).warning).toMatch(/under Assets/);
+    // A type that fits gets no warning; 7xxx takes either revenue or expense.
+    expect((await accountant.post('/api/acc/accounts', { code: '6266', name: 'Uniform laundry', type: 'expense' })).json().warning).toBeUndefined();
+    expect((await accountant.post('/api/acc/accounts', { code: '7104', name: 'Rental income', type: 'revenue' })).json().warning).toBeUndefined();
+    expect((await accountant.post('/api/acc/accounts', { code: '4196', name: 'Sales of scrap', type: 'expense' })).json().warning).toMatch(/under Revenue/);
   });
 
   it('renames with the current version only; code, type and role never change', async () => {

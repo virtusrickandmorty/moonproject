@@ -9,7 +9,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { AppError } from '@moonproject/shared';
-import { PASSWORD, balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { PASSWORD, balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { resolveDraft } from '../../../engine/ledger/post.ts';
 import { cancelDocument, postDocument, previewDocument } from '../../../engine/documents/lifecycle.ts';
@@ -28,7 +28,7 @@ let BDO: number;
 let lessor: string, printer: string, auditor: string;
 
 beforeEach(async () => {
-  env = await createTestEnv(); // 2026-09-28 10:00 Manila
+  env = await createTestEnv(); encoderOwnDefaults(env); // 2026-09-28 10:00 Manila
   [accountant, encoder, owner] = [await env.as('accountant'), await env.as('encoder'), await env.as('owner')];
   BDO = cashPlaceId(env.db, '1111');
   const newSupplier = async (s: Record<string, unknown>) => (await accountant.post('/api/pur/suppliers', { isVatRegistered: true, ...s })).json().id as string;

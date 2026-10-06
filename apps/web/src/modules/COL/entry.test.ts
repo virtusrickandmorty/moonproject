@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { change, form, type } from '../JO/entry-test.ts';
 import { api } from '../../api.ts';
 import { CollectionForm } from './CollectionForm.tsx';
+import { PrintedDateField } from '../../generic/PrintedDate.tsx';
 import { TenderRows } from './parts.tsx';
 
 afterEach(() => vi.restoreAllMocks());
@@ -25,9 +26,15 @@ it('collection keeps cash, allocations and active 2307 values through preview an
   await f.find('children', 'Record').props.onClick();
   const input = { customerId: 'c1', crNumber: '0055', applications: [{ jobOrderId: 'jo1', amountCents: 10000 }], tenders: [{ cashPlaceId: 1, amountCents: 9500 }],
     withholding: { cwtCents: 500, atc: 'WC158', certificate: 'received' } };
-  expect(preview).toHaveBeenLastCalledWith('col.collection', input);
+  expect(preview).toHaveBeenLastCalledWith('col.collection', input, undefined);
   await f.render().find((n) => n.props.onRecord)!.props.onRecord('test-key');
-  expect(post).toHaveBeenLastCalledWith('col.collection', input, 10000, 'test-key');
+  expect(post).toHaveBeenLastCalledWith('col.collection', input, 10000, 'test-key', undefined);
+  // The date on the CR goes with the preview and the record (blank is today).
+  f.render().find((n) => n.type === PrintedDateField)!.props.onChange('2026-09-20');
+  await f.find('children', 'Record').props.onClick();
+  expect(preview).toHaveBeenLastCalledWith('col.collection', input, '2026-09-20');
+  await f.render().find((n) => n.props.onRecord)!.props.onRecord('test-key-2');
+  expect(post).toHaveBeenLastCalledWith('col.collection', input, 10000, 'test-key-2', '2026-09-20');
 });
 
 it('payment cards retain visible labels for amounts, references and checks', () => {

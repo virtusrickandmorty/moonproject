@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { cancelDocument, postDocument } from '../../../engine/documents/lifecycle.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
@@ -19,7 +19,7 @@ const account = (code: string) => env.db.prepare('SELECT id FROM accounts WHERE 
 const noBrokenInvariants = () => expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   accountant = await env.as('accountant');
   encoder = await env.as('encoder');
 });

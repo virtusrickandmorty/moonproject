@@ -13,7 +13,7 @@
 5. Click **Open the backup**.
 6. Type your password in **Enter your password again to continue** and click **Continue**.
 7. If you ran a drill, the system checks that the backup is completely sound, changes nothing in your live data, and records that you successfully did your drill.
-8. If you chose Restore, the system checks the backup and shows you exactly what you will lose if you continue. The current data is kept safe for now.
+8. If you chose Restore, the system checks the backup and shows you exactly what you will lose if you continue. For each document series it shows the last number now and the last number in the backup: the numbers issued after the backup will be issued again to new documents, so mark or set aside any printed or sent copies with those numbers. The current data is kept safe for now.
 9. To confirm the restore, type RESTORE in capital letters in **Type RESTORE to go ahead**.
 10. Click **Restore this backup**.
 11. Type your password in **Enter your password again to continue** and click **Continue**.

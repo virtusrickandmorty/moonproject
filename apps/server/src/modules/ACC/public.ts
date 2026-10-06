@@ -42,6 +42,24 @@ export function duplicateOpeningIssue(db: Db, field: string, number: string | un
   return [{ field, code: 'DUPLICATE_OPENING', level: 'warning', message: `${number} already records ${what}. Record it again only if there really are two.` }];
 }
 
+/**
+ * A booklet or supplier document dated by the date printed on it (dating 'printed') may not fall in a month the accountant
+ * already signed off at month-end (acc_month_signoffs; a sign-off is never undone). Today's month is never signed off yet.
+ */
+export function signedOffIssues(db: Db, businessDate: string): Issue[] {
+  const month = businessDate.slice(0, 7);
+  if (!db.prepare('SELECT 1 FROM acc_month_signoffs WHERE month = ? LIMIT 1').get(month)) return [];
+  const name = new Date(`${month}-01T00:00:00Z`).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  return [{
+    field: 'businessDate', code: 'MONTH_SIGNED_OFF', level: 'error',
+    message: `${name} is already signed off at month-end, so nothing new is dated ${businessDate}. Check the date printed on the document, or ask the accountant.`,
+  }];
+}
+
+/** How a check names the document's own date: "today", or the printed date when one was given. */
+export const dayOf = (ctx: { businessDate: string; typedOn?: string }): string =>
+  ctx.typedOn === undefined || ctx.businessDate === ctx.typedOn ? 'today' : `the date printed on it (${ctx.businessDate})`;
+
 /** For an opening document's afterCancel: throwing rolls the cancel back once the opening is closed. */
 export function assertOpeningOpen(db: Db): void {
   const closed = openingClose(db);

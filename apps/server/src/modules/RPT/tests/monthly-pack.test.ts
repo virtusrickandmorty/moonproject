@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { createTestEnv, idem, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, idem, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { balanceSheet, incomeStatement } from '../statements.ts';
 import { cashFlowStatement } from '../cash-flow.ts';
 import { arAging } from '../receivables.ts';
@@ -10,7 +10,7 @@ afterEach(async () => { await env?.app.close(); env = undefined; });
 
 describe("monthly owners' pack", () => {
   it('uses every source report figure for a made-up month and denies other roles', async () => {
-    env = await createTestEnv();
+    env = await createTestEnv(); encoderOwnDefaults(env);
     const accountant = await env.as('accountant'), encoder = await env.as('encoder');
     const account = (code: string) => env!.db.prepare('SELECT id FROM accounts WHERE code=?').pluck().get(code) as number;
     const posted = await accountant.post('/api/docs/acc.jv/post', { input: { memo: 'Made-up September counter sale', lines: [
@@ -43,7 +43,7 @@ describe("monthly owners' pack", () => {
   });
 
   it('puts a made-up monthly pack row in the printer test pack', async () => {
-    env = await createTestEnv(); const owner = await env.as('owner');
+    env = await createTestEnv(); encoderOwnDefaults(env); const owner = await env.as('owner');
     const response = await owner.get('/api/prt/test-pack');
     expect(response.statusCode, response.body).toBe(200);
     const sample = response.json().prints.find((row: { id: string }) => row.id === 'monthly-owners-pack');

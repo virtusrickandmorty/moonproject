@@ -6,7 +6,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import fc from 'fast-check';
 import type { AppError } from '@moonproject/shared';
-import { balances, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { balances, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { accountBalance } from '../../../engine/ledger/queries.ts';
 import { cancelDocument, postDocument, reissueDocument } from '../../../engine/documents/lifecycle.ts';
@@ -25,7 +25,7 @@ async function newSupply(name: string, unit: string, category: string, lastCostC
 }
 
 beforeEach(async () => {
-  env = await createTestEnv('2026-09-30T02:00:00Z'); // 10:00 on 30 September in Manila: a month end
+  env = await createTestEnv('2026-09-30T02:00:00Z'); encoderOwnDefaults(env); // 10:00 on 30 September in Manila: a month end
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   owner = await env.as('owner');

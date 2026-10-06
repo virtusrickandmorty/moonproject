@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import { joMoney } from '../../JO/public.ts';
@@ -20,7 +20,7 @@ let CASH: number, CHECKS: number, BDO: number, CHINA: number, GCASH: number;
 let cr = 900;
 
 beforeEach(async () => {
-  env = await createTestEnv(); // 2026-09-28 in Manila
+  env = await createTestEnv(); encoderOwnDefaults(env); // 2026-09-28 in Manila
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   c = seedCustomers(env.db, encoder.userId);

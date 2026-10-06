@@ -3,7 +3,7 @@
  * accountant's sign-off (step-up, insert-only, audited), a change dated in the month after it, and 403 for other roles.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { PASSWORD, cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { PASSWORD, cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 
 const AUG = '2026-08';
@@ -47,7 +47,7 @@ async function augustBooks() {
 }
 
 beforeEach(async () => {
-  env = await createTestEnv('2026-08-10T02:00:00Z');
+  env = await createTestEnv('2026-08-10T02:00:00Z'); encoderOwnDefaults(env);
   CASH = cashPlaceId(env.db, '1101');
   BDO = cashPlaceId(env.db, '1111');
   await goTo('2026-08-10T02:00:00Z');

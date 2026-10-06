@@ -4,7 +4,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { PASSWORD, balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { PASSWORD, balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { resolveDraft } from '../../../engine/ledger/post.ts';
 import { cancelDocument, postDocument } from '../../../engine/documents/lifecycle.ts';
@@ -20,7 +20,7 @@ let accountant: Client, encoder: Client, owner: Client;
 let BDO: number;
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   accountant = await env.as('accountant');
   encoder = await env.as('encoder');
   owner = await env.as('owner');
@@ -76,7 +76,8 @@ describe('Opening loan goldens', () => {
       }),
     ]);
     const { schedule } = (await accountant.get(`/api/loan/loans/${id}`)).json();
-    expect(schedule.at(-1)).toEqual({ instalmentNo: 13, dueDate: '2027-10-15', principalCents: 6_029_338, interestCents: 60_293, paidBy: null });
+    expect(schedule.at(-1)).toEqual({ instalmentNo: 13, dueDate: '2027-10-15', principalCents: 6_029_338, interestCents: 60_293, paidBy: null,
+      paidPrincipalCents: 0, paidInterestCents: 0, remainingPrincipalCents: 6_029_338, remainingInterestCents: 60_293 });
     expect((await accountant.get(`/api/docs/loan.opening/${id}`)).json().input).toEqual(bank());
     const acc = (await owner.get('/api/acc/opening')).json();
     expect(acc.documents).toMatchObject([{ docType: 'loan.opening', number: 'OBLN-000001', businessDate: CUTOVER, status: 'posted' }]);

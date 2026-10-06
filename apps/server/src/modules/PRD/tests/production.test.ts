@@ -199,8 +199,8 @@ describe('production entries (PLAN E7 assignments)', () => {
     const accountant = await env.as('accountant');
     const raised = await accountant.post('/api/rate/rates', { garmentType: 'T-shirt', stepCode: 'SEWING', complexity: 'standard', rateCents: 4_500, effectiveFrom: '2026-09-28', reason: 'Owner raised the sewing rate' });
     expect(raised.statusCode, raised.body).toBe(200);
-    const second = (await record(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 10 }]))).json();
-    expect(second.totalCents).toBe(45_000);
+    const second = (await record(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 12 }]))).json();
+    expect(second.totalCents).toBe(54_000);
     expect((await production.get(`${PE}/${first.id}`)).json().doc.rows[0]).toMatchObject({ rateCents: 4_000, rateSource: 'table', amountCents: 40_000 }); // the snapshot stays
 
     const typed = rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer2, pieces: 10, rateCents: 5_000, rateReason: 'Complex collar on this batch' }]);
@@ -209,7 +209,7 @@ describe('production entries (PLAN E7 assignments)', () => {
     expect(await issues(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer2, pieces: 10, rateCents: 5_000 }]), encoder)).toEqual(['RATE_REASON']);
     expect(await issues(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer2, pieces: 10, rateReason: 'Just because' }]), encoder)).toEqual(['RATE_REASON']);
     const t = (await record(typed, encoder)).json();
-    expect((await encoder.get(`${PE}/${t.id}`)).json().input).toEqual(typed);
+    expect((await encoder.get(`${PE}/${t.id}`)).json().input).toEqual({ ...typed, workDate: '2026-09-28' }); // dated today when no date is typed
 
     // No rate: refused on a piece-rate step, progress only (₱0) elsewhere, with a warning on cutting.
     const gown = await jobOrder([4]);
@@ -254,6 +254,63 @@ describe('production entries (PLAN E7 assignments)', () => {
     const packRow = unpaidAssignments(env.db, '2026-09-30').find((a) => a.documentId === unpaid.id)!;
     expect(await issues(rows(jo, PACKING, [{ lineNo: 1, employeeId: w.packer, pieces: -1, correctionOf: packRow.id }]))).toEqual(['NOT_PAID']);
     expect(() => env.db.prepare('UPDATE prd_assignments SET pay_run_line_id = ? WHERE id = ?').run('run-line-1', packRow.id)).toThrow(/UNIQUE/); // paid once
+    expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
+  });
+});
+
+describe('audit codex2-independent-01: work date and repeated sheets (B2-F2, B2-F3)', () => {
+  it('a late sheet keeps its work date and that day\'s rate; dates in the future, too old or not real are refused', async () => {
+    const jo = await jobOrder([100]);
+    await setup(jo, 1, { ...tShirts, stepIds: [SEWING, PACKING] });
+    const accountant = await env.as('accountant');
+    expect((await accountant.post('/api/rate/rates', { garmentType: 'T-shirt', stepCode: 'SEWING', complexity: 'standard', rateCents: 4_500, effectiveFrom: '2026-09-28', reason: 'Owner raised the sewing rate' })).statusCode).toBe(200);
+    const late = rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 10 }], { workDate: '2026-09-25' });
+    const e = (await record(late)).json();
+    expect(e.totalCents).toBe(40_000); // ₱40.00, the rate on 25 September, not today's ₱45.00
+    expect(e.summary).toContain('done on 2026-09-25');
+    const got = (await production.get(`${PE}/${e.id}`)).json();
+    expect([got.doc.workDate, got.input.workDate, got.doc.rows[0].rateCents]).toEqual(['2026-09-25', '2026-09-25', 4_000]);
+    expect(unpaidAssignments(env.db, '2026-09-25').map((a) => [a.workDate, a.pieces])).toEqual([['2026-09-25', 10]]); // payroll for that week takes it
+    expect((await record(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer2, pieces: 10 }]))).json().totalCents).toBe(45_000); // no date: today
+
+    for (const workDate of ['2026-02-30', '2026-09-29', '2026-08-27']) {
+      expect(await issues({ ...late, workDate }), workDate).toEqual(['WORK_DATE']); // not a date, after today, 32 days back
+    }
+    expect(await issues({ ...late, workDate: '2026-08-28' })).toEqual([]); // 31 days back
+  });
+
+  it('the same sheet twice is refused without a reason and kept with one; rework of the same pieces never is', async () => {
+    const jo = await jobOrder([100]);
+    await setup(jo, 1, { ...tShirts, stepIds: [SEWING, PACKING] });
+    const sheet = rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 10 }]);
+    const first = (await record(sheet)).json();
+    const p = (await production.post(`${PE}/preview`, { input: sheet })).json();
+    expect(p.issues.map((i: { code: string; field: string }) => [i.code, i.field])).toEqual([['LIKELY_REPEAT', 'rows.0.repeatReason']]);
+    expect(p.issues[0].message).toContain(first.number);
+    expect((await record(sheet)).statusCode).toBe(422); // a second post is refused too
+    expect(await issues(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 11 }]))).toEqual([]); // other pieces
+    expect(await issues(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer2, pieces: 10 }]))).toEqual([]); // another worker
+    expect(await issues({ ...sheet, workDate: '2026-09-27' })).toEqual([]); // another day
+
+    expect((await production.post(`${PE}/preview`, { input: rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 10, repeatReason: 'Two' }]) })).statusCode).toBe(400); // 5 to 200 characters
+    const again = rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 10, repeatReason: 'Second bundle, separate sheet' }]);
+    const second = (await record(again)).json();
+    expect(second.totalCents).toBe(40_000);
+    expect((await production.get(`${PE}/${second.id}`)).json().input).toEqual({ ...again, workDate: '2026-09-28' });
+    expect(env.db.prepare('SELECT reason FROM prd_assignment_repeats').pluck().all()).toEqual(['Second bundle, separate sheet']);
+    expect(() => env.db.prepare(`UPDATE prd_assignment_repeats SET reason = 'Changed later'`).run()).toThrow(/IMMUTABLE/);
+
+    // Rework (pasubra) of the same pieces is never taken for a repeat, however often it is recorded.
+    const rework = rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 10, rework: true, rateCents: 2_000, rateReason: 'Pasubra, seams redone' }]);
+    expect(await issues(rework, encoder)).toEqual([]);
+    expect((await record(rework, encoder)).statusCode).toBe(200);
+    expect(await issues(rework, encoder)).toEqual([]);
+    expect(await issues(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 10, rework: true, rateCents: 2_000, rateReason: 'Pasubra, seams redone', repeatReason: 'Not needed here' }]), encoder)).toEqual(['REPEAT_REASON']);
+
+    // Cancelled sheets do not count.
+    expect((await production.post(`${PE}/${first.id}/cancel`, { reason: 'Typed twice by mistake' }, idem())).statusCode).toBe(200);
+    expect((await production.post(`${PE}/${second.id}/cancel`, { reason: 'Typed twice by mistake' }, idem())).statusCode).toBe(200);
+    expect(await issues(sheet)).toEqual([]);
     expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
   });
 });
@@ -319,7 +376,7 @@ describe('property test (PLAN I1.3)', () => {
               const doc = entryDoc.compute(input, ctx());
               const p = postDocument(e, entryDoc, actor, { input, expectedTotalCents: doc.totalCents });
               expect(entryDoc.load(db, p.id)).toEqual(doc);
-              expect(entryDoc.toInput(doc)).toEqual(input);
+              expect(entryDoc.toInput(doc)).toEqual({ ...input, workDate: today(t.clock) }); // no date typed: today
               for (const r of doc.rows) expect(r.amountCents).toBe(r.pieces * r.rateCents);
             } else if (step === 'cancel') {
               const ids = db.prepare(`SELECT id FROM documents WHERE doc_type = 'prd.entry' AND status = 'posted'`).pluck().all() as string[];

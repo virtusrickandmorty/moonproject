@@ -16,8 +16,9 @@ import { dirname, join } from 'node:path';
 import { openDb } from './platform/db/driver.ts';
 import { stamp, systemClock } from './platform/clock.ts';
 import { buildApp, prepareDatabase } from './app.ts';
+import { NewerDatabaseError } from './platform/db/migrate.ts';
 import { loadModules } from './modules/load.ts';
-import { bakSettings, isDue, lastOkRun, runBackup } from './modules/BAK/backup.ts';
+import { bakSettings, isDue, lastOkRun, removeLeftoverCopies, runBackup } from './modules/BAK/backup.ts';
 import { applyPendingRestore, recordRestored } from './modules/BAK/restore.ts';
 import { localNames } from './engine/security/tls/certs.ts';
 import { joinHandler } from './engine/security/tls/join.ts';
@@ -34,8 +35,17 @@ const restored = applyPendingRestore(dbFile, stamp(systemClock));
 const db = openDb(dbFile);
 const lan = process.env.MOONPROJECT_LISTEN === 'lan';
 const modules = await loadModules();
-// The certificate table comes with the engine migrations, so LAN mode migrates first (buildApp's own run is then a no-op).
-let tls = lan ? (prepareDatabase(db, systemClock, modules), ensureTls(db, systemClock, localNames())) : null;
+// Migrate first (buildApp's own run is then a no-op): the certificate table comes with the engine migrations, and a
+// database a newer version used is refused here, in plain words, before anything writes to it.
+try {
+  prepareDatabase(db, systemClock, modules);
+} catch (e) {
+  if (!(e instanceof NewerDatabaseError)) throw e;
+  console.error(e.message);
+  db.close();
+  process.exit(1);
+}
+let tls = lan ? ensureTls(db, systemClock, localNames()) : null;
 const practicePort = Number(process.env.MOONPROJECT_PRACTICE_PORT ?? 0);
 let practice: PracticeShop | undefined;
 if (practicePort) {
@@ -121,6 +131,11 @@ void practice?.start();
 // Backups (PLAN C8): one at start if none today, then every 2 hours from 07:00 to 21:00 Manila. A failed run is
 // logged in bak_runs and shown on the backup page; the server keeps running.
 let backingUp = false;
+try {
+  removeLeftoverCopies(db, bakSettings(db).backupDir);
+} catch (e) {
+  app.log.error(`Old temporary backup copies could not be removed: ${(e as Error).message}`);
+}
 const backupTick = async () => {
   // Until the owner sets the two recovery keys, the backup page says backups are off.
   if (backingUp || bakSettings(db).recipients.length !== 2 || !isDue(stamp(systemClock), lastOkRun(db)?.at ?? null)) return;

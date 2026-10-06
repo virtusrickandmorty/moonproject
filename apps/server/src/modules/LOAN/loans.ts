@@ -78,16 +78,78 @@ const LOANS = `SELECT l.document_id AS id, d.number, d.status, r.number AS repla
 
 export const loan = (db: Db, id: string) => db.prepare(`${LOANS} WHERE l.document_id = ?`).get(id) as LoanRow | undefined;
 
-/** The schedule with the posted payment (if any) of each instalment. */
-export function schedule(db: Db, loanId: string): (ScheduleRow & { paidBy: string | null })[] {
+/**
+ * What is still due on an instalment after part payments (audit A1-002): the scheduled total less what was paid on it,
+ * interest first (what is left of the scheduled interest), then principal. Zero once the payments cover the scheduled total.
+ */
+export function remainingOf(row: ScheduleRow, paidPrincipalCents: number, paidInterestCents: number): { principalCents: number; interestCents: number } {
+  const total = Math.max(0, row.principalCents + row.interestCents - paidPrincipalCents - paidInterestCents);
+  const interestCents = Math.min(total, Math.max(0, row.interestCents - paidInterestCents));
+  return { principalCents: total - interestCents, interestCents };
+}
+
+export interface InstalmentState extends ScheduleRow {
+  /** The document that settled it: the payment that finished paying it, or the forgiveness of its rest; null while any of it is still due. */
+  paidBy: string | null;
+  /** Posted payments on it so far (several when it was paid in parts). */
+  paidPrincipalCents: number;
+  paidInterestCents: number;
+  /** Still due on it: the scheduled amounts less part payments and what the lender forgave. */
+  remainingPrincipalCents: number;
+  remainingInterestCents: number;
+  /** Only when a standing forgiveness (LFGV-) closed it: its number and what it forgave. */
+  forgivenBy?: string;
+  forgivenPrincipalCents?: number;
+  forgivenInterestCents?: number;
+}
+
+/**
+ * Posted payments on one instalment. `beforeNumber`: only payments numbered before it (how a recorded payment reads
+ * back what was due when it was made).
+ */
+export function paidOnInstalment(db: Db, loanId: string, instalmentNo: number, beforeNumber?: string) {
   return db
     .prepare(
-      `SELECT s.instalment_no AS instalmentNo, s.due_date AS dueDate, s.principal_cents AS principalCents, s.interest_cents AS interestCents,
-         (SELECT d.number FROM loan_payments p JOIN documents d ON d.id = p.document_id
-          WHERE p.loan_id = s.loan_id AND p.instalment_no = s.instalment_no AND d.status = 'posted') AS paidBy
+      `SELECT COALESCE(SUM(p.principal_cents), 0) AS principal, COALESCE(SUM(p.interest_cents), 0) AS interest, MAX(d.number) AS lastNumber
+       FROM loan_payments p JOIN documents d ON d.id = p.document_id
+       WHERE p.loan_id = ? AND p.instalment_no = ? AND d.status = 'posted' AND (? IS NULL OR d.number < ?)`,
+    )
+    .get(loanId, instalmentNo, beforeNumber ?? null, beforeNumber ?? null) as { principal: number; interest: number; lastNumber: string | null };
+}
+
+/** The standing forgiveness (LFGV-) of an instalment, if any: what it forgave. There is at most one (it settles the instalment). */
+export function forgivenOnInstalment(db: Db, loanId: string, instalmentNo: number) {
+  return db
+    .prepare(
+      `SELECT d.number, f.principal_cents AS principal, f.interest_cents AS interest
+       FROM loan_forgivenesses f JOIN documents d ON d.id = f.document_id
+       WHERE f.loan_id = ? AND f.instalment_no = ? AND d.status = 'posted' ORDER BY d.number DESC LIMIT 1`,
+    )
+    .get(loanId, instalmentNo) as { number: string; principal: number; interest: number } | undefined;
+}
+
+/**
+ * The schedule with what was paid on each instalment and what is still due. An instalment paid short stays open until
+ * it is paid or the lender forgives the rest (doctypes/forgiveness.ts); a forgiven amount counts like a paid one.
+ */
+export function schedule(db: Db, loanId: string): InstalmentState[] {
+  const rows = db
+    .prepare(
+      `SELECT s.instalment_no AS instalmentNo, s.due_date AS dueDate, s.principal_cents AS principalCents, s.interest_cents AS interestCents
        FROM loan_schedule s WHERE s.loan_id = ? ORDER BY s.instalment_no`,
     )
-    .all(loanId) as (ScheduleRow & { paidBy: string | null })[];
+    .all(loanId) as ScheduleRow[];
+  return rows.map((r) => {
+    const paid = paidOnInstalment(db, loanId, r.instalmentNo);
+    const forgiven = forgivenOnInstalment(db, loanId, r.instalmentNo);
+    const left = remainingOf(r, paid.principal + (forgiven?.principal ?? 0), paid.interest + (forgiven?.interest ?? 0));
+    const settled = (paid.lastNumber !== null || !!forgiven) && left.principalCents + left.interestCents === 0;
+    return {
+      ...r, paidBy: settled ? (forgiven?.number ?? paid.lastNumber) : null, paidPrincipalCents: paid.principal, paidInterestCents: paid.interest,
+      remainingPrincipalCents: left.principalCents, remainingInterestCents: left.interestCents,
+      ...(forgiven ? { forgivenBy: forgiven.number, forgivenPrincipalCents: forgiven.principal, forgivenInterestCents: forgiven.interest } : {}),
+    };
+  });
 }
 
 /** Principal still owed: the credit balance of the loan's liability account for this loan. */
@@ -95,13 +157,19 @@ export function loanBalance(db: Db, loanId: string, kind: LoanKind): number {
   return 0 - accountBalance(db, resolveAccount(db, { role: KINDS[kind].role }).id, { party: { type: 'loan', id: loanId } });
 }
 
-/** A register row: principal, paid, balance and the next instalment due (none once cancelled or paid off). */
+/** A register row: principal, paid, forgiven, balance and the next instalment due (none once cancelled or paid off). */
 function position(db: Db, l: LoanRow) {
   const rows = schedule(db, l.id);
   const paid = db
     .prepare(
       `SELECT COALESCE(SUM(p.principal_cents), 0) AS principal, COALESCE(SUM(p.interest_cents), 0) AS interest
        FROM loan_payments p JOIN documents d ON d.id = p.document_id WHERE p.loan_id = ? AND d.status = 'posted'`,
+    )
+    .get(l.id) as { principal: number; interest: number };
+  const forgiven = db
+    .prepare(
+      `SELECT COALESCE(SUM(f.principal_cents), 0) AS principal, COALESCE(SUM(f.interest_cents), 0) AS interest
+       FROM loan_forgivenesses f JOIN documents d ON d.id = f.document_id WHERE f.loan_id = ? AND d.status = 'posted'`,
     )
     .get(l.id) as { principal: number; interest: number };
   const balanceCents = loanBalance(db, l.id, l.kind);
@@ -112,8 +180,12 @@ function position(db: Db, l: LoanRow) {
     // An opening loan's principal repaid before the cut-over counts as paid, so balance = principal − paid for both.
     principalPaidCents: paid.principal + (l.owedAtCutoverCents === null ? 0 : l.principalCents - l.owedAtCutoverCents),
     interestPaidCents: paid.interest,
+    // What the lender forgave (LFGV-): balance = principal − paid − forgiven principal.
+    principalForgivenCents: forgiven.principal,
+    interestForgivenCents: forgiven.interest,
     balanceCents,
-    nextDue: next ? { instalmentNo: next.instalmentNo, dueDate: next.dueDate, principalCents: next.principalCents, interestCents: next.interestCents } : null,
+    // What is still due on it: a part-paid instalment shows only its rest.
+    nextDue: next ? { instalmentNo: next.instalmentNo, dueDate: next.dueDate, principalCents: next.remainingPrincipalCents, interestCents: next.remainingInterestCents } : null,
     rows,
   };
 }

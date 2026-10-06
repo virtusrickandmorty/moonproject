@@ -1,9 +1,9 @@
 /** The asset screens' read-only routes: one asset's page, the months with no depreciation run, and who may see them. */
 import { describe, expect, it } from 'vitest';
-import { cashPlaceId, createTestEnv, idem } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, encoderOwnDefaults } from '../../../../test/helpers.ts';
 
 async function shop() {
-  const env = await createTestEnv(); // today is 2026-09-28
+  const env = await createTestEnv(); encoderOwnDefaults(env); // today is 2026-09-28
   let acc = await env.as('accountant');
   const supplierId = (await acc.post('/api/pur/suppliers', { name: 'Sample Machines', registeredName: 'Sample Machines Corp.', tin: '123-456-789-000', isVatRegistered: true })).json().id as string;
   const buy = (await acc.post('/api/docs/fa.buy/post', {

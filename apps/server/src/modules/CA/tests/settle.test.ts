@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { AppError } from '@moonproject/shared';
-import { cashPlaceId, createTestEnv, createUser, idem } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, createUser, idem, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { cancelDocument, postDocument, previewDocument } from '../../../engine/documents/lifecycle.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
@@ -187,7 +187,7 @@ describe('repayment and write-off property test (PLAN I1.3)', () => {
     let settled = 0;
     await fc.assert(
       fc.asyncProperty(fc.gen(), async (g) => {
-        const t = await createTestEnv('2026-09-01T02:00:00Z');
+        const t = await createTestEnv('2026-09-01T02:00:00Z'); encoderOwnDefaults(t);
         const db = t.db;
         const userId = createUser(db, 'prop-owner', ['owner']);
         const actor = { userId, permissions: new Set(t.deps.registry.permissions().map((p) => p.key)) };
