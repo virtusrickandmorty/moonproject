@@ -1,9 +1,9 @@
 /** The loan screens' read-only routes: a loan's payments and the instalments that are late. */
 import { describe, expect, it } from 'vitest';
-import { cashPlaceId, createTestEnv, idem } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, encoderOwnDefaults } from '../../../../test/helpers.ts';
 
 async function shop() {
-  const env = await createTestEnv(); // today is 2026-09-28
+  const env = await createTestEnv(); encoderOwnDefaults(env); // today is 2026-09-28
   let acc = await env.as('accountant');
   const BDO = cashPlaceId(env.db, '1111');
   // ₱60,000 at 12% a year flat over 3 months, first due one month after the loan: 2026-10-28, 11-28, 12-28.

@@ -18,6 +18,7 @@ import type { Db } from '../../../platform/db/driver.ts';
 import { category, listCategories } from '../categories.ts';
 import { supplier } from '../pur.ts';
 import { duplicateInvoiceIssues } from '../../AP/public.ts';
+import { dayOf, signedOffIssues } from '../../ACC/public.ts';
 import { TWA_ONLY, appliedEwtClass } from '../public.ts';
 import { MAX_CENTS, MAX_TENDERS, cashPlaceIssues, insertTenders, loadTenders, sumCents, tenderInput, tenderToInput, withNames, type Tender } from '../tenders.ts';
 
@@ -105,7 +106,7 @@ export const voucherDoc: DocTypeDef<VoucherInput, Voucher> = {
   title: 'Expense Voucher',
   numbering: { series: { key: 'EXP', prefix: 'EXP-' } },
   permissions: { view: 'exp.voucher.view', create: 'exp.voucher.create', post: 'exp.voucher.post', cancel: 'exp.voucher.cancel' },
-  dating: 'system',
+  dating: 'printed', // the date printed on the voucher (registry.ts)
   inputSchema: voucherInput,
 
   compute(input, ctx) {
@@ -127,7 +128,8 @@ export const voucherDoc: DocTypeDef<VoucherInput, Voucher> = {
     if (doc.supplierId && (doc.payeeTin || doc.payeeVatRegistered)) {
       add('error', 'payeeTin', 'FROM_SUPPLIER', 'The supplier’s TIN and VAT registration come from the supplier record. Clear them here.');
     }
-    if (doc.supplierInvoiceDate && doc.supplierInvoiceDate > ctx.businessDate) add('error', 'supplierInvoiceDate', 'RECEIPT_DATE', 'The receipt date cannot be after today.');
+    if (doc.supplierInvoiceDate && doc.supplierInvoiceDate > ctx.businessDate) add('error', 'supplierInvoiceDate', 'RECEIPT_DATE', `The receipt date cannot be after ${dayOf(ctx)}.`);
+    issues.push(...signedOffIssues(ctx.db, ctx.businessDate));
     if (doc.ewtClass && TWA_ONLY.has(doc.ewtClass) && !settingAt(ctx.db, 'tax.top_withholding_agent', ctx.businessDate)) {
       add('error', 'ewtClass', 'NOT_TWA', 'Virtus is not a Top Withholding Agent, so goods and services from regular suppliers have no EWT.');
     }

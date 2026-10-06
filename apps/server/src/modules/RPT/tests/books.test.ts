@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 
 let env: TestEnv;
 let accountant: Client;
@@ -7,7 +7,7 @@ let encoder: Client;
 const account = (code: string) => env.db.prepare('SELECT id FROM accounts WHERE code = ?').pluck().get(code) as number;
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   accountant = await env.as('accountant');
   encoder = await env.as('encoder');
 });

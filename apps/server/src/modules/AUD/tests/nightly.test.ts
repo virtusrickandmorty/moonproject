@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { generateX25519Identity, identityToRecipient } from 'age-encryption';
-import { PASSWORD, cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { PASSWORD, cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { stamp } from '../../../platform/clock.ts';
 import { runBackup } from '../../BAK/backup.ts';
 import { nightlyRuns, nightlyTick, type NightlyContext } from '../nightly.ts';
@@ -49,7 +49,7 @@ const backdatedJv = () => accountant.post('/api/docs/acc.jv/post', { input: { me
   lines: [{ accountId: account('1101'), debitCents: 5000 }, { accountId: account('3900'), creditCents: 5000 }] }, businessDate: '2026-09-01', expectedTotalCents: 5000 }, idem());
 
 beforeEach(async () => {
-  env = await createTestEnv('2026-09-27T02:00:00Z'); // 10:00 Manila
+  env = await createTestEnv('2026-09-27T02:00:00Z'); encoderOwnDefaults(env); // 10:00 Manila
   owner = await env.as('owner');
   accountant = await env.as('accountant');
   encoder = await env.as('encoder');
@@ -128,7 +128,7 @@ describe('the checks', () => {
     await backupNow();
     for (const f of files()) rmSync(join(dir, 'local', f));
     expect(found(tick()!, 'backup').findings[0]!.detail).toContain('is not in the backup folder');
-    const off = await createTestEnv('2026-09-28T02:00:00Z');
+    const off = await createTestEnv('2026-09-28T02:00:00Z'); encoderOwnDefaults(off);
     const r = nightlyTick({ db: off.db, clock: off.clock, practice: false, titleOf: (t) => t })!;
     expect(found(r, 'backup').findings[0]).toEqual({ detail: expect.stringContaining('Backups are off'), path: '/bak' });
   });

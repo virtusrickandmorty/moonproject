@@ -7,7 +7,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { AppError } from '@moonproject/shared';
-import { PASSWORD, balances, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { PASSWORD, balances, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { postDocument, previewDocument } from '../../../engine/documents/lifecycle.ts';
 import { cutoverDate } from '../../ACC/public.ts';
@@ -21,7 +21,7 @@ let env: TestEnv;
 let acc: Client;
 
 beforeEach(async () => {
-  env = await createTestEnv(); // 2026-09-28 10:00 Manila
+  env = await createTestEnv(); encoderOwnDefaults(env); // 2026-09-28 10:00 Manila
   acc = await env.as('accountant');
 });
 
@@ -299,7 +299,7 @@ describe('property tests (PLAN I1.3)', () => {
         fc.array(fc.integer({ min: 1, max: 18 }), { minLength: 1, maxLength: 4 }), // months between runs, in turn
         fc.boolean(), // a run for the cut-over month itself
         async (inputs, gaps, septemberRun) => {
-          const t = await createTestEnv();
+          const t = await createTestEnv(); encoderOwnDefaults(t);
           const actor = { userId: (await setCutover(t, await t.as('accountant'))).userId, permissions };
           const e = { db: t.db, clock: t.clock };
           const assets = inputs.map((input) => {

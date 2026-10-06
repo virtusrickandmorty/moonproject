@@ -3,7 +3,8 @@
  *
  * 1. The five default roles hold what the plan says they hold. C6 has no key-by-key table: it names the roles and says
  *    Production is "view/assign only" and TV is a "read-only board". The rest of the plan says who does what (JV is the
- *    accountant's, backdating is the accountant's, salaries need pay.view_rates, encoders see no payroll, ...). Those
+ *    accountant's, backdating is the accountant's, salaries need pay.view_rates, ...; since the owner's decision of 6 Oct 2026
+ *    encoders hold the accountant's permissions too, except the owner's own: OWNER_ONLY_PERMISSIONS). Those
  *    sentences are written below as rules, each with its source. Where the code differs from the plan, the difference is
  *    listed in KNOWN_DIFFERENCES: this test passes today, and fails when a NEW difference appears or a listed one is
  *    fixed. Claude #1 decides which side to change.
@@ -13,6 +14,8 @@
  */
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { ROLES, type RoleKey } from '@moonproject/shared';
+import { readFileSync } from 'node:fs';
+import { OWNER_ONLY_PERMISSIONS } from '../src/engine/security/permissions-sync.ts';
 import { PASSWORD, createTestEnv, createUser, idem, login, type Client, type TestEnv } from './helpers.ts';
 
 /** Every route Fastify registers, read as the app builds (the app itself does not list them). */
@@ -61,24 +64,26 @@ interface KeyRule {
   excludes?: RoleKey[];
 }
 
-const OUTSIDE_THE_OFFICE: RoleKey[] = ['encoder', 'production', 'tv'];
+const OUTSIDE_THE_OFFICE: RoleKey[] = ['production', 'tv'];
+/** The owner's decision of 6 Oct 2026: encoders have the accountant's access, except what stays the owner's. */
+const ENCODER_AS_ACCOUNTANT = "owner's decision of 6 Oct 2026 (encoders have the accountant's access)";
 
 const KEY_RULES: KeyRule[] = [
-  { id: 'JV', source: 'PLAN D (JV: "Accountant only"), N-04', keys: ['acc.jv.create', 'acc.jv.post', 'acc.jv.cancel'], exactly: ['accountant'] },
-  { id: 'BACKDATE', source: 'PLAN A2 ("Only the accountant can date an adjustment in the past"), NR-7', keys: ['acc.backdate'], exactly: ['accountant'] },
+  { id: 'JV', source: 'PLAN D (JV: "Accountant only"), N-04', keys: ['acc.jv.create', 'acc.jv.post', 'acc.jv.cancel'], exactly: ['encoder', 'accountant'] },
+  { id: 'BACKDATE', source: 'PLAN A2 ("Only the accountant can date an adjustment in the past"), NR-7', keys: ['acc.backdate'], exactly: ['encoder', 'accountant'] },
   { id: 'USERS', source: 'PLAN C6 Step-up and E13 (user and role admin is the owner\'s)', keys: ['sec.users.manage'], exactly: ['owner'] },
   { id: 'RESTORE', source: 'PLAN C6 Step-up, E13 (restore wizard)', keys: ['bak.restore'], includes: ['owner'], excludes: OUTSIDE_THE_OFFICE },
   { id: 'SETTINGS', source: 'PLAN F1 (settings edited by the accountant), N-06', keys: ['acc.settings.manage'], includes: ['accountant'], excludes: OUTSIDE_THE_OFFICE },
-  { id: 'RATES', source: 'PLAN C6 Privacy and N-05 (salaries only with pay.view_rates), K OWN-12 (no payroll for encoders)', keys: ['pay.view_rates'], includes: ['accountant', 'owner'], excludes: OUTSIDE_THE_OFFICE },
-  { id: 'PAYROLL', source: 'PLAN K OWN-12 (encoders see no payroll)', keys: /^(pay\.|emp\.pay$|emp\.view_ids$)/, excludes: OUTSIDE_THE_OFFICE },
+  { id: 'RATES', source: `PLAN C6 Privacy and N-05 (salaries only with pay.view_rates), ${ENCODER_AS_ACCOUNTANT}`, keys: ['pay.view_rates'], includes: ['accountant', 'owner'], excludes: OUTSIDE_THE_OFFICE },
+  { id: 'PAYROLL', source: `PLAN K OWN-12, replaced by the ${ENCODER_AS_ACCOUNTANT}`, keys: /^(pay\.|emp\.pay$|emp\.view_ids$)/, excludes: OUTSIDE_THE_OFFICE },
   { id: 'JOURNALS', source: 'PLAN AGENTS/E: journals only with acc.journal.view; previews for accountants and owners', keys: ['acc.journal.view'], includes: ['accountant', 'owner'], excludes: OUTSIDE_THE_OFFICE },
-  { id: 'CASH-BALANCES', source: 'PLAN E9 and K OWN-12/OWN-27 (encoders see cash on hand and petty cash only)', keys: ['cash.balances.view_all'], excludes: OUTSIDE_THE_OFFICE },
-  { id: 'RELEASE-WITH-BALANCE', source: 'PLAN A3 item 3 (default Owner + Accountant)', keys: ['jo.release_with_balance'], exactly: ['accountant', 'owner'] },
+  { id: 'CASH-BALANCES', source: `PLAN E9 and K OWN-12/OWN-27, replaced by the ${ENCODER_AS_ACCOUNTANT}`, keys: ['cash.balances.view_all'], excludes: OUTSIDE_THE_OFFICE },
+  { id: 'RELEASE-WITH-BALANCE', source: 'PLAN A3 item 3 (default Owner + Accountant)', keys: ['jo.release_with_balance'], exactly: ['encoder', 'accountant', 'owner'] },
   { id: 'RELEASE-OVERRIDE', source: 'PLAN A3 item 2 (an owner override with reason)', keys: ['jo.release_override'], includes: ['owner'], excludes: OUTSIDE_THE_OFFICE },
-  { id: 'FORFEIT', source: 'PLAN D5 DEP-FORFEIT (owner/accountant permission col.forfeit)', keys: ['col.forfeit'], exactly: ['accountant', 'owner'] },
-  { id: 'ACCOUNTANT-ONLY-MONEY', source: 'PLAN D5 (credit memo: accountant; bad debt: "Accountant only")', keys: ['col.credit_memo', 'col.write_off'], exactly: ['accountant'] },
-  { id: 'TAX-CLOSES', source: 'PLAN D5 (VAT close, income tax quarterly/provision/settlement: accountant)', keys: ['tax.vatc.post', 'tax.vatc.cancel', 'tax.income_tax.post', 'tax.income_tax.cancel'], exactly: ['accountant'] },
-  { id: 'OWNER-MONEY-CLASS', source: 'PLAN D5 OWN-IN (the accountant classifies)', keys: ['eq.own.classify'], exactly: ['accountant'] },
+  { id: 'FORFEIT', source: 'PLAN D5 DEP-FORFEIT (owner/accountant permission col.forfeit)', keys: ['col.forfeit'], exactly: ['encoder', 'accountant', 'owner'] },
+  { id: 'ACCOUNTANT-ONLY-MONEY', source: 'PLAN D5 (credit memo: accountant; bad debt: "Accountant only")', keys: ['col.credit_memo', 'col.write_off'], exactly: ['encoder', 'accountant'] },
+  { id: 'TAX-CLOSES', source: 'PLAN D5 (VAT close, income tax quarterly/provision/settlement: accountant)', keys: ['tax.vatc.post', 'tax.vatc.cancel', 'tax.income_tax.post', 'tax.income_tax.cancel'], exactly: ['encoder', 'accountant'] },
+  { id: 'OWNER-MONEY-CLASS', source: 'PLAN D5 OWN-IN (the accountant classifies)', keys: ['eq.own.classify'], exactly: ['encoder', 'accountant'] },
   { id: 'PIECE-RATE-OVERRIDE', source: 'PLAN E8 (rate.override default Encoder allowed)', keys: ['rate.override'], includes: ['encoder'] },
   {
     id: 'ENCODER-DAILY-WORK',
@@ -86,7 +91,8 @@ const KEY_RULES: KeyRule[] = [
     keys: ['jo.create', 'jo.post', 'jo.release', 'jo.invoice', 'qs.create', 'qs.post', 'col.create', 'col.post', 'exp.voucher.create', 'exp.voucher.post', 'cash.trf.create', 'cash.trf.post', 'emp.attendance', 'prd.assign'],
     includes: ['encoder'],
   },
-  { id: 'BACK-OFFICE-ONLY', source: 'PLAN C6 (Encoder is not an accountant, owner or platform role); E13', keys: /^(acc|aud|sec|bak|mig)\./, excludes: OUTSIDE_THE_OFFICE },
+  { id: 'BACK-OFFICE-ONLY', source: 'PLAN C6 (production and TV are not office roles); E13', keys: /^(acc|aud|sec|bak|mig)\./, excludes: OUTSIDE_THE_OFFICE },
+  { id: 'OWNER-ONLY', source: `${ENCODER_AS_ACCOUNTANT}: users, backups and restores, the shop's payment settings stay the owner's`, keys: [...OWNER_ONLY_PERMISSIONS], includes: ['owner'], excludes: ['encoder', ...OUTSIDE_THE_OFFICE] },
   {
     id: 'OWNER-HOLDS',
     source: 'PLAN E13, E14 (the owner sees users, the audit trail, System Health and the owner home)',
@@ -98,6 +104,12 @@ const KEY_RULES: KeyRule[] = [
     source: 'PLAN E12, E14 (the accountant posts JVs, closes VAT, signs off month end and sees the accountant home)',
     keys: ['acc.jv.post', 'acc.monthend.signoff', 'tax.vatc.post', 'acc.journal.view', 'dash.home.accountant'],
     includes: ['accountant'],
+  },
+  {
+    id: 'ENCODER-HOLDS',
+    source: `${ENCODER_AS_ACCOUNTANT}: JVs, backdating, settings, payroll, journals, month end, VAT close`,
+    keys: ['acc.jv.post', 'acc.backdate', 'acc.settings.manage', 'pay.view_rates', 'pay.run.post', 'acc.journal.view', 'acc.monthend.signoff', 'tax.vatc.post', 'cash.balances.view_all'],
+    includes: ['encoder'],
   },
 ];
 
@@ -152,6 +164,33 @@ describe('default roles against the plan (C6, E13)', () => {
     // normalise the TV extras to the plan's sentence about nav.search.
     const found = planDifferences().map((d) => (d.startsWith('TV: the role holds nav.search') ? KNOWN_DIFFERENCES[0]! : d));
     expect(found).toEqual(KNOWN_DIFFERENCES);
+  });
+
+  it("the encoder holds every permission the accountant holds, except the owner's own (owner's decision, 6 Oct 2026)", () => {
+    const missing = [...held.accountant].filter((k) => !OWNER_ONLY_PERMISSIONS.includes(k) && !held.encoder.has(k));
+    expect(missing).toEqual([]);
+    expect(OWNER_ONLY_PERMISSIONS.filter((k) => held.encoder.has(k))).toEqual([]);
+    // Backups are the accountant's and the owner's, but not the encoder's.
+    expect(['bak.view', 'bak.run'].filter((k) => held.accountant.has(k))).toEqual(['bak.view', 'bak.run']);
+  });
+
+  it("migration 0014 gives an existing grid's encoder role the accountant's permissions, owner's own excepted, and takes nothing away", () => {
+    const db = env.db;
+    const grid = () => db.prepare(`SELECT permission_key FROM role_permissions WHERE role_key = 'encoder' AND granted = 1 ORDER BY 1`).pluck().all() as string[];
+    const now = grid();
+    db.exec('SAVEPOINT before_0014'); // put back afterwards: the routes below read this grid
+    try {
+      // The grid as it was before: the encoder held none of the accountant's permissions, and one extra the owner gave.
+      db.prepare(`UPDATE role_permissions SET granted = 0 WHERE role_key = 'encoder' AND permission_key IN (SELECT permission_key FROM role_permissions WHERE role_key = 'accountant' AND granted = 1)`).run();
+      db.prepare(`UPDATE role_permissions SET granted = 1 WHERE role_key = 'encoder' AND permission_key = 'prt.test_pack'`).run();
+      expect(grid().length).toBeLessThan(now.length);
+      db.exec(readFileSync(new URL('../src/platform/db/migrations/0014_encoder_access.sql', import.meta.url), 'utf8'));
+      expect(grid()).toEqual([...now, 'prt.test_pack'].sort());
+      expect(OWNER_ONLY_PERMISSIONS.filter((k) => grid().includes(k))).toEqual([]);
+    } finally {
+      db.exec('ROLLBACK TO before_0014; RELEASE before_0014');
+    }
+    expect(grid()).toEqual(now);
   });
 
   it('every role has at least one permission, and no key is granted to a role that does not exist', () => {

@@ -39,6 +39,7 @@ function context(env: EngineEnv, actor: Actor, businessDate?: string): DocContex
   return {
     db: env.db,
     businessDate: businessDate ?? today(env.clock),
+    typedOn: today(env.clock),
     at: stamp(env.clock),
     userId: actor.userId,
     can: (p) => actor.permissions.has(p),
@@ -66,6 +67,7 @@ function parseInput<I>(def: DocTypeDef<I>, raw: unknown): I {
 
 function resolveBusinessDate(def: DocTypeDef, actor: Actor, env: EngineEnv, requested?: string): string {
   if (requested === undefined) return today(env.clock);
+  if (def.dating === 'printed') return printedDate(env, requested);
   if (def.dating !== 'accountant_may_backdate') {
     throw new AppError('DATE_NOT_ALLOWED', 'This document always carries today’s date.', 400);
   }
@@ -73,6 +75,17 @@ function resolveBusinessDate(def: DocTypeDef, actor: Actor, env: EngineEnv, requ
   if (typeof requested !== 'string' || !isBusinessDate(requested) || requested > today(env.clock)) {
     throw new AppError('BAD_DATE', 'The date must be today or earlier (YYYY-MM-DD).', 400);
   }
+  return requested;
+}
+
+/** The date printed on a booklet or supplier form (dating 'printed'): a real date, today or earlier. Anyone who may record it gives it. */
+function printedDate(env: EngineEnv, requested: unknown): string {
+  if (typeof requested !== 'string' || !isBusinessDate(requested)) {
+    const what = typeof requested === 'string' && requested.trim() ? `"${requested.slice(0, 20)}" is not a real date. ` : '';
+    throw new AppError('BAD_DATE', `${what}Type the date printed on the document like 2026-09-30.`, 400);
+  }
+  const now = today(env.clock);
+  if (requested > now) throw new AppError('BAD_DATE', `The date printed on the document cannot be after today (${now}).`, 400);
   return requested;
 }
 
@@ -174,7 +187,8 @@ function postInTx(env: EngineEnv, def: DocTypeDef, actor: Actor, req: PostReques
     action: 'document.post',
     entityType: def.key,
     entityId: id,
-    data: { number, totalCents: doc.totalCents, businessDate: ctx.businessDate, replacesId, journalNumber },
+    // A printed date: the document carries it, and the trail keeps the day it was typed too.
+    data: { number, totalCents: doc.totalCents, businessDate: ctx.businessDate, replacesId, journalNumber, ...(def.dating === 'printed' ? { typedOn: ctx.typedOn } : {}) },
   });
   return { id, number, businessDate: ctx.businessDate, totalCents: doc.totalCents, summary, warnings: [...issues, ...notices], journalNumber };
 }

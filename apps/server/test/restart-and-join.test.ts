@@ -11,14 +11,14 @@ import { recordRestored } from '../src/modules/BAK/restore.ts';
 import { ensureTls } from '../src/engine/security/tls/store.ts';
 import { printLinkBase } from '../src/engine/security/tls/routes.ts';
 import type { Host } from '../src/platform/health/health.ts';
-import { PASSWORD, createTestEnv, login } from './helpers.ts';
+import { PASSWORD, createTestEnv, login, encoderOwnDefaults } from './helpers.ts';
 
 const host: Host = { platform: 'win32', release: '10.0.26100', arch: 'x64', freeBytes: () => 50e9, utcOffsetMinutes: 480 };
 type Notice = { kind: string; id: string; label: string; href?: string; detail?: string; read: boolean };
 
 describe('System Health on the Home', () => {
   it('makes a notification for each red light, for the owner and the accountant only, back the next day once read', async () => {
-    const env = await createTestEnv('2026-09-28T02:00:00Z', { host });
+    const env = await createTestEnv('2026-09-28T02:00:00Z', { host }); encoderOwnDefaults(env);
     const owner = await env.as('owner');
     const accountant = await env.as('accountant');
     const encoder = await env.as('encoder');
@@ -44,7 +44,7 @@ describe('System Health on the Home', () => {
   });
 
   it('makes none in the practice shop, which has no backups', async () => {
-    const env = await createTestEnv('2026-09-28T02:00:00Z', { host, practice: true });
+    const env = await createTestEnv('2026-09-28T02:00:00Z', { host, practice: true }); encoderOwnDefaults(env);
     const owner = await env.as('owner');
     expect(((await owner.get('/api/dash/notifications')).json() as Notice[]).filter((n) => n.kind === 'health-red')).toEqual([]);
   });
@@ -100,7 +100,7 @@ describe('restart after a restore', () => {
 
   it('is asked for by applying a restore, after which nothing more is recorded', async () => {
     const exit = vi.fn();
-    const env = await createTestEnv('2026-09-28T02:00:00Z', { onRestart: exit });
+    const env = await createTestEnv('2026-09-28T02:00:00Z', { onRestart: exit }); encoderOwnDefaults(env);
     const owner = await env.as('owner');
     const accountant = await env.as('accountant');
     // The restore route itself is covered in BAK's restore tests; here the restart it asks for.
@@ -113,7 +113,7 @@ describe('restart after a restore', () => {
   });
 
   it('tells the owner "Restored from <backup> at <time>" at the first sign-in after, not the one after that', async () => {
-    const env = await createTestEnv('2026-09-28T02:00:00Z');
+    const env = await createTestEnv('2026-09-28T02:00:00Z'); encoderOwnDefaults(env);
     const owner = await env.as('owner');
     expect((await owner.get('/api/bak/restored')).json()).toEqual({ restored: null });
 
@@ -144,7 +144,7 @@ describe('the join address', () => {
 
   it('gives the PC\'s name and its private addresses with the CA code, once the server runs on the network', async () => {
     let port: number | null = 80;
-    const env = await createTestEnv('2026-09-28T02:00:00Z', { network: { ...network, joinPort: () => port } });
+    const env = await createTestEnv('2026-09-28T02:00:00Z', { network: { ...network, joinPort: () => port } }); encoderOwnDefaults(env);
     const encoder = await env.as('encoder');
     expect((await encoder.get('/api/system/tls')).json()).toEqual({ ca: null });
 
@@ -165,7 +165,7 @@ describe('the join address', () => {
 
   it('points printed QR codes at the LAN join address, and nowhere before the CA or while the join page is off', async () => {
     let port: number | null = 8080;
-    const env = await createTestEnv('2026-09-28T02:00:00Z', { network: { ...network, joinPort: () => port } });
+    const env = await createTestEnv('2026-09-28T02:00:00Z', { network: { ...network, joinPort: () => port } }); encoderOwnDefaults(env);
     expect(printLinkBase(env.db, env.deps.network)).toBeUndefined();
     ensureTls(env.db, env.clock, network.names());
     expect(printLinkBase(env.db, env.deps.network)).toBe('http://192.168.1.20:8080/');

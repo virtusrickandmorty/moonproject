@@ -11,6 +11,7 @@ import { formatPesos, isBusinessDate } from '@moonproject/shared';
 import { api, type ApLedger, type DocTypeInfo, type Me } from '../../api.ts';
 import { Button, Field, Panel, inputClass, peso } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
+import { PrintedDateField, usePrintedDate } from '../../generic/PrintedDate.tsx';
 import { MoneyForm, SupplierSelect, useEwtRates, useList, useMoneyForm } from './parts.tsx';
 import {
   billAdvancesInput, billFigures, billLinesToInput, billLinesToRows, emptyBillLine, ewtChoices, forReplacement, openAdvances, type BillLineInput, type BillLineRow,
@@ -58,7 +59,9 @@ export function BillForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode
   const adv = billAdvancesInput(autoAdvances || open.length === 0, open, typedAdvances);
 
   const typed = billLinesToInput(rows);
+  const printed = usePrintedDate(f.original);
   const errors = [
+    ...(printed.error ? [printed.error] : []),
     ...(supplierId ? [] : ['Pick the supplier.']),
     ...(invoiceNo.trim() ? [] : ['Type the number on the supplier’s invoice.']),
     ...(isBusinessDate(invoiceDate) ? [] : ['Pick the date on the supplier’s invoice.']),
@@ -89,17 +92,18 @@ export function BillForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode
   const mayChangeEwt = me.permissions.includes('ap.bill.ewt');
 
   return (
-    <MoneyForm type={type} f={f} title="New supplier bill" input={input} errors={errors} figures={billFigures} adjust={(p, n) => forReplacement(p, n, fits)}
+    <MoneyForm type={type} f={f} title="New supplier bill" input={input} errors={errors} figures={billFigures} adjust={(p, n) => forReplacement(p, n, fits)} businessDate={printed.businessDate}
       onLive={(p) => setLiveAdvances((p.doc as { advances?: Applied[] }).advances ?? [])}>
       <Panel title="Who billed">
         <SupplierSelect suppliers={suppliers} value={supplierId} onChange={setSupplierId} />
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Invoice no. (on the supplier’s invoice)" required>
             <input className={inputClass} value={invoiceNo} onChange={(e) => setInvoiceNo(e.target.value)} />
           </Field>
           <Field label="Invoice date" required hint="The date printed on the invoice; the due date follows the supplier’s terms.">
             <input type="date" className={inputClass} value={invoiceDate} onChange={(e) => setInvoiceDate(e.target.value)} />
           </Field>
+          <PrintedDateField label="Date to record it on" value={printed.text} onChange={printed.setText} />
         </div>
         {rr && <p className="text-sm text-slate-600">For receiving report {rr.number}.</p>}
       </Panel>

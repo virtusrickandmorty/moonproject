@@ -6,7 +6,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import fc from 'fast-check';
 import type { AppError } from '@moonproject/shared';
-import { balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { cancelDocument, postDocument } from '../../../engine/documents/lifecycle.ts';
 import { advanceDoc, type AdvanceInput } from '../doctypes/advance.ts';
@@ -23,7 +23,7 @@ const newSupplier = async (s: { name: string; tin?: string; isVatRegistered?: bo
   (await accountant.post('/api/pur/suppliers', { registeredName: `${s.name} Inc.`, isVatRegistered: false, ...s })).json().id as string;
 
 async function setUp(at?: string) {
-  env = await createTestEnv(at);
+  env = await createTestEnv(at); encoderOwnDefaults(env);
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   BDO = cashPlaceId(env.db, '1111');

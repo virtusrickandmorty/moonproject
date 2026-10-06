@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { formatPeso } from '@moonproject/shared';
 import jsQR from 'jsqr';
-import { cashPlaceId, createTestEnv, idem, PASSWORD, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, PASSWORD, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { renderPrint, renderReportPrint, printLineTable, printMoney, type PrintHeader, type Profile } from '../print.ts';
 
 let env: TestEnv;
@@ -30,7 +30,7 @@ const decodeQr = (html: string) => {
   return jsQR(pixels, width, width)?.data;
 };
 
-beforeEach(async () => { env = await createTestEnv(); owner = await env.as('owner'); encoder = await env.as('encoder'); });
+beforeEach(async () => { env = await createTestEnv(); encoderOwnDefaults(env); owner = await env.as('owner'); encoder = await env.as('encoder'); });
 afterEach(async () => { await env.app.close(); env.db.close(); });
 
 describe('company profile', () => {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { formatPesos } from '@moonproject/shared';
-import { createTestEnv, idem, PASSWORD, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, idem, PASSWORD, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import { layoutBook, PAPERS, type LeafBook } from '../loose-leaf.ts';
 
@@ -22,7 +22,7 @@ const print = (book: string, from: string, to: string, extra: object = {}, who =
 const screen = async (book: string, from: string, to: string) => (await accountant.get(`/api/rpt/bir-books/${book}?from=${from}&to=${to}`)).json();
 
 beforeEach(async () => {
-  env = await createTestEnv('2026-09-05T02:00:00Z');
+  env = await createTestEnv('2026-09-05T02:00:00Z'); encoderOwnDefaults(env);
   await goTo('2026-09-05T02:00:00Z');
   await owner.post('/api/auth/step-up', { password: PASSWORD });
   expect((await owner.put('/api/prt/company-profile', profile, { 'if-match': '0' })).statusCode).toBe(200);
@@ -190,7 +190,7 @@ describe('loose-leaf print of the BIR books', () => {
     expect((await print('no-such-book', '2026-09-01', '2026-09-30')).statusCode).toBe(404);
     expect((await print('cash-receipts', '2026-09-30', '2026-09-01')).statusCode).toBe(400);
     expect((await accountant.post('/api/prt/books/sales/print', { from: '2026-09-01', to: '2026-09-30', page: 5 })).statusCode).toBe(400);
-    const bare = await createTestEnv('2026-09-05T02:00:00Z');
+    const bare = await createTestEnv('2026-09-05T02:00:00Z'); encoderOwnDefaults(bare);
     const acc = await bare.as('accountant');
     const res = await acc.post('/api/prt/books/sales/print', { from: '2026-09-01', to: '2026-09-30' });
     expect(res.statusCode).toBe(409); expect(res.json().code).toBe('COMPANY_PROFILE_REQUIRED');

@@ -7,7 +7,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { formatPesos } from '@moonproject/shared';
-import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import type { BirPaymentInput } from '../doctypes/bir-payment.ts';
@@ -65,7 +65,7 @@ const noBrokenInvariants = () => expect(runInvariants(env.db).filter((r) => !r.o
 
 describe('EWT: 0619-E for months 1 and 2, the 1601-EQ for the quarter (D5 EWT-REM)', () => {
   beforeEach(async () => {
-    env = await createTestEnv('2026-07-15T02:00:00Z');
+    env = await createTestEnv('2026-07-15T02:00:00Z'); encoderOwnDefaults(env);
     await goTo('2026-07-15');
     BDO = cashPlaceId(env.db, '1111');
     printer = await newSupplier({ name: 'Sample Print', registeredName: 'Sample Print Shop Co.', tin: '222-333-444-000', ewtClass: 'contractor_2' });
@@ -216,7 +216,7 @@ describe('EWT: 0619-E for months 1 and 2, the 1601-EQ for the quarter (D5 EWT-RE
 
 describe('VAT: the 2550Q pays what the VAT close made payable (D5 VAT-PAY)', () => {
   it('in two parts, the second late with a penalty; more is refused; the close cannot be cancelled under its payments; cancel mirrors', async () => {
-    env = await createTestEnv(); // 2026-09-28
+    env = await createTestEnv(); encoderOwnDefaults(env); // 2026-09-28
     await goTo('2026-09-28');
     BDO = cashPlaceId(env.db, '1111');
     const c = seedCustomers(env.db, encoder.userId);

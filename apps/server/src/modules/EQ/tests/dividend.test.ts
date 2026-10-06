@@ -4,7 +4,7 @@
  * 1601-FQ that pays the final tax, the 1601-FQ and 1604-F list and calendar, cancels and the balance sheet.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { balanceSheet } from '../../RPT/statements.ts';
 
@@ -21,7 +21,7 @@ const jv = (memo: string, lines: { code: string; debitCents?: number; creditCent
   }, idem());
 
 beforeEach(async () => {
-  env = await createTestEnv(); // Monday 28 September 2026
+  env = await createTestEnv(); encoderOwnDefaults(env); // Monday 28 September 2026
   accountant = await env.as('accountant');
   owner = await env.as('owner');
   encoder = await env.as('encoder');

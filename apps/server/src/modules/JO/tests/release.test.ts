@@ -6,7 +6,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { AppError } from '@moonproject/shared';
-import { cashPlaceId, createTestEnv, createUser, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, createUser, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { cancelDocument, postDocument, reissueDocument } from '../../../engine/documents/lifecycle.ts';
 import { addSettingVersion, type SettingKey } from '../../../engine/settings.ts';
@@ -27,7 +27,7 @@ let c: ReturnType<typeof seedCustomers>;
 let CASH: number, GCASH: number;
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   c = seedCustomers(env.db, encoder.userId);
@@ -393,7 +393,7 @@ describe('property test (PLAN I1.3)', () => {
     await fc.assert(
       fc.asyncProperty(fc.gen(), async (g) => {
         // A fresh database per run, so each run's JOs are the only ones the arbitraries can pick.
-        const t = await createTestEnv();
+        const t = await createTestEnv(); encoderOwnDefaults(t);
         const db = t.db;
         const userId = createUser(db, `prop-${number}`, ['accountant']);
         seedCustomers(db, userId);

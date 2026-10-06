@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { newId } from '@moonproject/shared';
-import { PASSWORD, cashPlaceId, createTestEnv, idem } from '../../../../test/helpers.ts';
+import { PASSWORD, cashPlaceId, createTestEnv, idem, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { tx } from '../../../platform/db/driver.ts';
 import { stamp, today } from '../../../platform/clock.ts';
 import { postJournal } from '../../../engine/ledger/post.ts';
@@ -29,7 +29,7 @@ async function jobOrder(env: Awaited<ReturnType<typeof createTestEnv>>, customer
 
 describe('DASH role homes and notifications', () => {
   it('builds twelve monthly chart points from the reports, including empty months, and protects the route', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const owner = await env.as('owner');
     const encoder = await env.as('encoder');
     const cash = env.db.prepare("SELECT id FROM accounts WHERE code = '1101'").pluck().get() as number;
@@ -64,7 +64,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('gives each role its own permitted home', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const [encoder, accountant, owner, production] = await Promise.all([env.as('encoder'), env.as('accountant'), env.as('owner'), env.as('production')]);
     const homes = await Promise.all([encoder, accountant, owner, production].map(async (client) => {
       const res = await client.get('/api/dash/home');
@@ -82,7 +82,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('uses the VAT worksheet, month-end checklist and AUD results for accounting widgets', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const accountant = await env.as('accountant');
     const home = (await accountant.get('/api/dash/home')).json();
     const vat = vatSummary(env.db, 2026, 3);
@@ -113,7 +113,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('builds every owner health figure from its report calculation', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const owner = await env.as('owner');
     const customerId = seedCustomers(env.db, owner.userId).school;
     await jobOrder(env, customerId, 2);
@@ -155,7 +155,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('chooses homes by grants, including a grant on a different role', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const encoder = await env.as('encoder');
     const owner = await env.as('owner');
     env.db.prepare("UPDATE role_permissions SET granted = 1 WHERE role_key = 'encoder' AND permission_key = 'dash.home.accountant'").run();
@@ -166,7 +166,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('hides negative cash at a place whose balance the encoder may not see', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const encoder = await env.as('encoder');
     const owner = await env.as('owner');
     const placeRes = await owner.post('/api/cash/places', { name: 'Hidden test safe', kind: 'cash', encoderSeesBalance: false });
@@ -185,7 +185,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('keeps per-user read state and drops a notice when its permission is removed', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const encoder = await env.as('encoder');
     const owner = await env.as('owner');
     const draft = await encoder.post('/api/drafts', { docType: 'quo.quotation', payload: {} });
@@ -206,7 +206,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('shows cancellations and reissues by the change permission and document view permission', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const encoder = await env.as('encoder');
     const accountant = await env.as('accountant');
     const owner = await env.as('owner');
@@ -241,7 +241,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('uses JO balance due for collectibles and a released order awaiting its invoice', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const encoder = await env.as('encoder');
     const accountant = await env.as('accountant');
     const customer = seedCustomers(env.db, encoder.userId).school;
@@ -275,7 +275,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('sends guarded-action notices only to owners for 14 days', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const [owner, accountant, encoder, production] = await Promise.all([env.as('owner'), env.as('accountant'), env.as('encoder'), env.as('production')]);
     appendAudit(env.db, { at: stamp(env.clock), userId: accountant.userId, action: 'acc.setting.add', entityType: 'setting', entityId: 'col.cr_mode' });
     const ownerNotices = (await owner.get('/api/dash/notifications')).json();
@@ -287,7 +287,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('tells the owner when the accountant moves the cut-over date', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const accountant = await env.as('accountant');
     const owner = await env.as('owner');
     expect((await accountant.post('/api/auth/step-up', { password: PASSWORD })).statusCode).toBe(200);
@@ -305,7 +305,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('shows government remittances seven days before due, keeps late notices, and clears each recorded scheme', async () => {
-    const env = await createTestEnv('2026-09-22T02:00:00Z');
+    const env = await createTestEnv('2026-09-22T02:00:00Z'); encoderOwnDefaults(env);
     let accountant = await env.as('accountant');
     const employeeId = addEmployee(env.db, 'Mira Made-up');
     expect((await accountant.post('/api/auth/step-up', { password: PASSWORD })).statusCode).toBe(200);
@@ -352,7 +352,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('shows overdue sizer loans only to encoder and production until returned', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const [encoder, production, accountant] = await Promise.all([env.as('encoder'), env.as('production'), env.as('accountant')]);
     const customer = seedCustomers(env.db, encoder.userId).school;
     const setId = newId();
@@ -369,7 +369,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('shows a pending 2307 after 30 days until it is received', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const encoder = await env.as('encoder');
     const customer = seedCustomers(env.db, encoder.userId).school;
     const jo = await jobOrder(env, customer);
@@ -389,7 +389,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('shows unpaid tax deadlines in the next seven days only to permitted accounting roles', async () => {
-    const env = await createTestEnv('2026-09-05T02:00:00Z');
+    const env = await createTestEnv('2026-09-05T02:00:00Z'); encoderOwnDefaults(env);
     const accountant = await env.as('accountant');
     const encoder = await env.as('encoder');
     const notice = { kind: 'tax-deadline', id: 'tax-deadline:0619-E:2026-08', href: '/tax/calendar' };
@@ -408,7 +408,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('counts only this month\'s collection journals', async () => {
-    const env = await createTestEnv('2026-08-28T02:00:00Z');
+    const env = await createTestEnv('2026-08-28T02:00:00Z'); encoderOwnDefaults(env);
     let encoder = await env.as('encoder');
     const customer = seedCustomers(env.db, encoder.userId).school;
     const jo = await jobOrder(env, customer);
@@ -428,7 +428,7 @@ describe('DASH role homes and notifications', () => {
   });
 
   it('ignores old closed orders without hiding notices for later open orders', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const encoder = await env.as('encoder');
     const customer = seedCustomers(env.db, encoder.userId).school;
     const first = await jobOrder(env, customer, 1);

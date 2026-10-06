@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { FastifyInstance } from 'fastify';
-import { PASSWORD, cashPlaceId, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
+import { PASSWORD, cashPlaceId, createTestEnv, encoderOwnDefaults, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { createApi, newIdempotencyKey, type Me, type ReconBookLine, type ReconReport, type ReconRow } from '../../api.ts';
 import { ReopenRecon } from './BankRecon.tsx';
@@ -152,7 +152,7 @@ const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: 
 
 describe('bank reconciliation screens against the server', () => {
   it('ticks, saves, unticks and finishes: the screen\'s figures are the server\'s at every step', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     createUser(env.db, 'acct', ['accountant']);
     createUser(env.db, 'enc', ['encoder']);
     const api = createApi(injectFetch(env.app));
@@ -229,7 +229,7 @@ describe('bank reconciliation screens against the server', () => {
   });
 
   it('clears an item dated after the month inside the month and counts it as recorded after it', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     createUser(env.db, 'acct', ['accountant']);
     const api = createApi(injectFetch(env.app));
     await api.login('acct', PASSWORD);

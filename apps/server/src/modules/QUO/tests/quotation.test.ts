@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { postDocument } from '../../../engine/documents/lifecycle.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { verifyAuditChain } from '../../../engine/audit.ts';
@@ -18,7 +18,7 @@ const post = (input: object, expectedTotalCents: number) =>
   encoder.post('/api/docs/quo.quotation/post', { input, expectedTotalCents }, idem());
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   encoder = await env.as('encoder');
   const owner = await env.as('owner');
   const item = await owner.post('/api/cat/items', {

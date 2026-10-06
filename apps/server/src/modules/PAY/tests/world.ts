@@ -1,7 +1,7 @@
 /** The payroll tests' world: a database at a Manila date, an actor with every permission, and helpers. Made-up people only. */
 import { expect } from 'vitest';
 import { AppError, formatPesos } from '@moonproject/shared';
-import { createTestEnv, createUser, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, createUser, encoderOwnDefaults, type TestEnv } from '../../../../test/helpers.ts';
 import { cancelDocument, postDocument, previewDocument } from '../../../engine/documents/lifecycle.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { stamp, today } from '../../../platform/clock.ts';
@@ -12,6 +12,7 @@ import { saveAttendance } from '../../EMP/time.ts';
 /** A test world at a Manila date: users, an actor with every permission, and helpers to record through the engine. */
 export async function world(date: string) {
   const env = await createTestEnv(`${date}T02:00:00Z`); // 10:00 in Manila
+  encoderOwnDefaults(env); // the payroll tests' encoder sees no payroll
   const userId = createUser(env.db, `payroll-${date}`, ['owner']);
   const actor = { userId, permissions: new Set(env.deps.registry.permissions().map((p) => p.key)) };
   const e = { db: env.db, clock: env.clock };

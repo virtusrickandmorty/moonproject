@@ -3,7 +3,7 @@
  * both, for the same supplier (TIN, else the supplier on file). Someone who may backdate records it again with a reason.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { normalizeInvoiceNo } from '../invoices.ts';
 import type { BillInput } from '../doctypes/bill.ts';
@@ -13,7 +13,7 @@ let encoder: Client, accountant: Client;
 let fabric: string, cloth: string, CASH: number;
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   CASH = cashPlaceId(env.db, '1101');

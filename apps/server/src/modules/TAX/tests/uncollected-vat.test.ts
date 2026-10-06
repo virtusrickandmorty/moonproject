@@ -7,7 +7,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { addSettingVersion } from '../../../engine/settings.ts';
 import { stamp, today } from '../../../platform/clock.ts';
@@ -77,7 +77,7 @@ const worksheet = async (year: number, quarter: number) => (await accountant.get
 const noBrokenInvariants = () => expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
 
 beforeEach(async () => {
-  env = await createTestEnv(); // 2026-09-28, in Q3
+  env = await createTestEnv(); encoderOwnDefaults(env); // 2026-09-28, in Q3
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   c = seedCustomers(env.db, encoder.userId);
@@ -195,7 +195,7 @@ describe('output VAT on uncollected receivables (UVAT-, UVATR-)', () => {
   });
 
   it('refuses a sale on or before 27 April 2024, and one with no VAT shown', async () => {
-    env = await createTestEnv('2024-04-20T02:00:00Z');
+    env = await createTestEnv('2024-04-20T02:00:00Z'); encoderOwnDefaults(env);
     [encoder, accountant] = [await env.as('encoder'), await env.as('accountant')];
     c = seedCustomers(env.db, encoder.userId);
     const early = await invoice(await jobOrder(1_120_000), 1_120_000, 1);

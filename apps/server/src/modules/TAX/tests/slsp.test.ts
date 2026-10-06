@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { newId } from '@moonproject/shared';
-import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 
@@ -61,7 +61,7 @@ const goTo = async (iso: string) => {
 };
 
 beforeEach(async () => {
-  env = await createTestEnv(); // 2026-09-28, in Q3
+  env = await createTestEnv(); encoderOwnDefaults(env); // 2026-09-28, in Q3
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   c = seedCustomers(env.db, encoder.userId);

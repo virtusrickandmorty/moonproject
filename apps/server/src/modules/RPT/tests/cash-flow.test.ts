@@ -1,6 +1,6 @@
 /** Direct cash-flow golden: hand-worked receipts/payments, non-cash source documents, internal transfer, CSV and access. */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { cashFlowStatement } from '../cash-flow.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
@@ -21,7 +21,7 @@ const jv = async (date: string, memo: string, lines: { code: string; debitCents?
 };
 
 beforeEach(async () => {
-  env = await createTestEnv(); accountant = await env.as('accountant'); encoder = await env.as('encoder');
+  env = await createTestEnv(); encoderOwnDefaults(env); accountant = await env.as('accountant'); encoder = await env.as('encoder');
   customerId = seedCustomers(env.db, encoder.userId).school;
   await jv('2026-08-31', 'Opening cash', [{ code: '1101', debitCents: 10_000_000 }, { code: '3900', creditCents: 10_000_000 }]);
   // Downpayment and paid release invoice: collections 20,000 + 30,000.

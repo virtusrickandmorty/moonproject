@@ -24,6 +24,7 @@ import { saleByInvoiceNumber, saleInvoiceNumbersBetween } from '../../QS/public.
 import { assetSaleByInvoiceNumber, assetSaleInvoiceNumbersBetween } from '../../FA/public.ts';
 import { creditsOn, depositModeOn, depositVatLines, depositVatRowsOf, invoiceDeposits, modeKeptIssue, recordDepositVat, settleJobOrder, vatRow } from '../../COL/public.ts';
 import { bookletIssue } from '../../TAX/public.ts';
+import { signedOffIssues } from '../../ACC/public.ts';
 import { dpInvoiceUsedBy, dpInvoiceNumbersBetween } from './dp-invoice.ts';
 import { invoicedCents, joLedger } from '../public.ts';
 import { MAX_CENTS } from './job-order.ts';
@@ -123,7 +124,7 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
   title: 'Invoice Record',
   numbering: { series: INVOICE_SERIES },
   permissions: { view: 'jo.view', create: 'jo.invoice', post: 'jo.invoice', cancel: 'jo.invoice_cancel' },
-  dating: 'system',
+  dating: 'printed', // the date on the booklet invoice (registry.ts)
   inputSchema: invoiceRecordInput,
   externalNumber: (doc) => doc.invoiceNumber,
 
@@ -163,6 +164,7 @@ export const invoiceRecordDoc: DocTypeDef<InvoiceRecordInput, InvoiceRecord> = {
     }
     const booklet = bookletIssue(ctx.db, 'SALES_INVOICE', doc.invoiceNumber, 'invoiceNumber');
     if (booklet) issues.push(booklet);
+    issues.push(...signedOffIssues(ctx.db, ctx.businessDate));
     if (rel && doc.grossCents <= 0) error('releaseId', 'NOTHING_TO_INVOICE', `${doc.releaseNumber} released nothing with a price, so there is nothing to invoice.`);
     if (doc.grossCents > MAX_CENTS) error('releaseId', 'TOO_BIG', 'The amount is over ₱100 million. Please check the job order.');
     return issues;
