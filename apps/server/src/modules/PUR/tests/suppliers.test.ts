@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createTestEnv, idem, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, idem, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 
 describe('PUR Suppliers and Supplies', () => {
   let env: TestEnv;
 
   beforeEach(async () => {
-    env = await createTestEnv();
+    env = await createTestEnv(); encoderOwnDefaults(env);
   });
 
   afterEach(async () => {

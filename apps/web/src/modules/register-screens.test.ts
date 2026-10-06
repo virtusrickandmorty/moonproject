@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { PASSWORD, cashPlaceId, createTestEnv, createUser, type TestEnv } from '../../../server/test/helpers.ts';
+import { PASSWORD, cashPlaceId, createTestEnv, encoderOwnDefaults, createUser, type TestEnv } from '../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../server/src/engine/security/sessions.ts';
 import { createApi, newIdempotencyKey as key, type AssetRow, type EqPersonRecord, type LoanDetail, type LoanRow, type SizerSet } from '../api.ts';
 import { buildMenu } from '../shell/menu.ts';
@@ -122,7 +122,7 @@ describe('menu and pages', () => {
 
 describe('the screens against the real server', () => {
   it('fixed assets: register, run dialog inputs for a missed month, the asset page and a disposal', async () => {
-    const env = await createTestEnv(); // today is 2026-09-28
+    const env = await createTestEnv(); encoderOwnDefaults(env); // today is 2026-09-28
     const setup = await env.as('accountant');
     const supplierId = (await setup.post('/api/pur/suppliers', { name: 'Sample Machines', registeredName: 'Sample Machines Corp.', tin: '123-456-789-000', isVatRegistered: true })).json().id as string;
     let api = await client(env, 'acct1', ['accountant']);
@@ -162,7 +162,7 @@ describe('the screens against the real server', () => {
   });
 
   it('owners and officers: the register, a person’s documents and what is due', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const setup = await env.as('accountant');
     const A = (await setup.post('/api/eq/people', { name: 'Sample Owner A', isStockholder: true, isOfficer: true, position: 'President', shares: 2500 })).json().id as string;
     await setup.post('/api/eq/people', { name: 'Sample Officer B', isStockholder: false, isOfficer: true, position: 'Treasurer' });
@@ -189,7 +189,7 @@ describe('the screens against the real server', () => {
   });
 
   it('loans: the register, what is late and paid, and the loan page', async () => {
-    const env = await createTestEnv(); // today is 2026-09-28
+    const env = await createTestEnv(); encoderOwnDefaults(env); // today is 2026-09-28
     let api = await client(env, 'acct1', ['accountant']);
     const BDO = cashPlaceId(env.db, '1111');
     const loanInput = { lender: 'Sample Bank', kind: 'loan', cashPlaceId: BDO, principalCents: 6_000_000, interestRateBp: 1200, termMonths: 3, schedule: 'flat' };
@@ -211,7 +211,7 @@ describe('the screens against the real server', () => {
   });
 
   it('sizer sets: lend and return with what the dialogs send, overdue by the server’s date', async () => {
-    const env = await createTestEnv(); // today is 2026-09-28
+    const env = await createTestEnv(); encoderOwnDefaults(env); // today is 2026-09-28
     const setup = await env.as('accountant');
     const customerId = (await setup.post('/api/cus/customers', { kind: 'organization', displayName: 'Example School Inc.' })).json().id as string;
     let api = await client(env, 'enc1', ['encoder']);

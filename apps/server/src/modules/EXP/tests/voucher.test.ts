@@ -4,7 +4,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import fc from 'fast-check';
 import { AppError, applyRate } from '@moonproject/shared';
-import { balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { postDocument, cancelDocument, reissueDocument } from '../../../engine/documents/lifecycle.ts';
 import { voucherDoc } from '../doctypes/voucher.ts';
@@ -14,7 +14,7 @@ let encoder: Client, accountant: Client;
 let BDO: number, CASH: number, PETTY: number;
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   BDO = cashPlaceId(env.db, '1111');

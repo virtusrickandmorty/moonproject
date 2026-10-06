@@ -4,7 +4,7 @@
  * leave the close out; an item dated in a closed quarter is swept into the next one.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 
@@ -41,7 +41,7 @@ const close = async (year: number, quarter: number) => {
 const cancel = (id: string) => accountant.post(`/api/docs/tax.vat_close/${id}/cancel`, { reason: 'Closed with the wrong figures' }, idem());
 
 beforeEach(async () => {
-  env = await createTestEnv(); // 2026-09-28
+  env = await createTestEnv(); encoderOwnDefaults(env); // 2026-09-28
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   c = seedCustomers(env.db, encoder.userId);

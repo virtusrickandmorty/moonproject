@@ -6,7 +6,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { formatPesos } from '@moonproject/shared';
-import { createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { firstOfNextMonth } from '../doctypes/jv-reversals.ts';
 
@@ -67,7 +67,7 @@ const accrual = (): JvInput => ({
 });
 
 beforeEach(async () => {
-  env = await createTestEnv('2026-09-30T02:00:00Z');
+  env = await createTestEnv('2026-09-30T02:00:00Z'); encoderOwnDefaults(env);
   await goTo('2026-09-30');
 });
 

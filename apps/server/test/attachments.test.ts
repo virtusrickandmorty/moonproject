@@ -7,7 +7,7 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createTestEnv, idem, type Client, type TestEnv } from './helpers.ts';
+import { createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from './helpers.ts';
 import { smallPng as PNG, smallJpeg as JPEG, smallWebp as WEBP } from './pictures.ts';
 import { attachmentsDir, sniffType } from '../src/engine/attachments.ts';
 import { verifyAuditChain } from '../src/engine/audit.ts';
@@ -36,7 +36,7 @@ const audits = (action: string) =>
     .map((r) => ({ ...r, data: JSON.parse(r.data) as Record<string, unknown> }));
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   accountant = await env.as('accountant');
   encoder = await env.as('encoder');
 });

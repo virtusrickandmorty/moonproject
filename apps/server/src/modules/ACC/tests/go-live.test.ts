@@ -1,10 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createTestEnv, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { PART_K_DECISIONS } from '../go-live-decisions.ts';
 
 let env: TestEnv, accountant: Client, owner: Client, encoder: Client, production: Client;
-beforeEach(async () => { env = await createTestEnv(); [accountant, owner, encoder, production] = await Promise.all([env.as('accountant'), env.as('owner'), env.as('encoder'), env.as('production')]); });
+beforeEach(async () => { env = await createTestEnv(); encoderOwnDefaults(env); [accountant, owner, encoder, production] = await Promise.all([env.as('accountant'), env.as('owner'), env.as('encoder'), env.as('production')]); });
 const get = (c = accountant) => c.get('/api/acc/go-live-decisions');
 const answer = (c: Client, decisionId: string, value: string) => c.post('/api/acc/go-live-decisions/answers', { decisionId, answer: value, decidedBy: 'Sample Accountant', decidedOn: '2026-09-28', note: 'Confirmed for the test shop' });
 

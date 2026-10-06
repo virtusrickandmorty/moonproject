@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { appendAudit } from '../../../engine/audit.ts';
-import { createTestEnv, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 
 let env: TestEnv;
 let accountant: Client;
 let encoder: Client;
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   accountant = await env.as('accountant');
   encoder = await env.as('encoder');
 });

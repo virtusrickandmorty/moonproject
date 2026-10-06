@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cashPlaceId, createTestEnv, idem, PASSWORD, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, PASSWORD, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { filedReturnsCovering } from '../filed.ts';
 import { stamp } from '../../../platform/clock.ts';
@@ -31,7 +31,7 @@ const pay = async () => {
 };
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   accountant = await env.as('accountant');
   input.lines = [{ accountId: cashPlaceId(env.db, '6190'), debitCents: 5000 }, { accountId: cashPlaceId(env.db, '1111'), creditCents: 5000 }];
 });

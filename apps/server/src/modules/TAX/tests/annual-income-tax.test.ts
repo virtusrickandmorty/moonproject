@@ -8,7 +8,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { formatPesos } from '@moonproject/shared';
-import { PASSWORD, balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { PASSWORD, balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import type { BirPaymentInput } from '../doctypes/bir-payment.ts';
@@ -89,7 +89,7 @@ function journal(documentId: string, kind: 'original' | 'reversal' = 'original',
 const noBrokenInvariants = () => expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
 
 beforeEach(async () => {
-  env = await createTestEnv('2026-01-05T02:00:00Z');
+  env = await createTestEnv('2026-01-05T02:00:00Z'); encoderOwnDefaults(env);
   await goTo('2026-01-05');
   [BDO, CASH] = [cashPlaceId(env.db, '1111'), cashPlaceId(env.db, '1101')];
   customer = seedCustomers(env.db, encoder.userId).school;

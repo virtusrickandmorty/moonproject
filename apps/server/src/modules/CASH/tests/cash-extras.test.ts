@@ -3,7 +3,7 @@
  */
 import { describe, expect, it, beforeEach } from 'vitest';
 import fc from 'fast-check';
-import { balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { accountBalance } from '../../../engine/ledger/queries.ts';
 import { cancelDocument, postDocument, reissueDocument } from '../../../engine/documents/lifecycle.ts';
@@ -15,7 +15,7 @@ let encoder: Client, accountant: Client;
 let CASH: number, PETTY: number, BDO: number, GCASH: number;
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   CASH = cashPlaceId(env.db, '1101');

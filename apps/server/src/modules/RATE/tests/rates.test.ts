@@ -1,6 +1,6 @@
 /** Piece-rate table (PLAN E7 RATE): starter rates, effective-dated versions with history, lookup, permissions. */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createTestEnv, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { rateAt } from '../rates.ts';
 
 let env: TestEnv;
@@ -8,7 +8,7 @@ let encoder: Client;
 let accountant: Client;
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
 });

@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { balances, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { balances, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { resolveDraft } from '../../../engine/ledger/post.ts';
 import { cancelDocument, postDocument } from '../../../engine/documents/lifecycle.ts';
@@ -23,7 +23,7 @@ let accountant: Client, encoder: Client, owner: Client;
 let ana: string; // active employee
 
 beforeEach(async () => {
-  env = await createTestEnv('2026-09-15T02:00:00Z'); // 10:00 Manila, the end of September's first half
+  env = await createTestEnv('2026-09-15T02:00:00Z'); encoderOwnDefaults(env); // 10:00 Manila, the end of September's first half
   accountant = await env.as('accountant');
   encoder = await env.as('encoder');
   owner = await env.as('owner');

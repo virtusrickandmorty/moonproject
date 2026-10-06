@@ -2,11 +2,11 @@
  * The bank reconciliation list (GET /api/cash/recons) says who started and who finished each one, for the reconciliation screen.
  */
 import { describe, expect, it } from 'vitest';
-import { cashPlaceId, createTestEnv, createUser, login, PASSWORD } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, createUser, login, PASSWORD, encoderOwnDefaults } from '../../../../test/helpers.ts';
 
 describe('GET /api/cash/recons: who did each reconciliation', () => {
   it('names the user who started it and the user who finished it, and hides the list from encoders', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     createUser(env.db, 'Ana', ['accountant']);
     createUser(env.db, 'Ben', ['owner']);
     const ana = await login(env.app, 'Ana', PASSWORD);
