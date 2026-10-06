@@ -144,7 +144,7 @@ export function Checkout() {
   );
 }
 
-type Status = 'awaiting_payment' | 'payment_sent' | 'confirmed' | 'rejected' | 'cancelled' | 'ready' | 'completed' | 'expired';
+type Status = 'awaiting_payment' | 'payment_sent' | 'confirmed' | 'rejected' | 'cancelled' | 'ready' | 'completed' | 'expired' | 'returned';
 interface CustomerOrder {
   number: string; status: Status; name: string; fulfilment: 'pickup' | 'delivery'; address: string | null; totalCents: number; holdUntil: string; deliveryOption: string | null; deliveryFeeCents: number;
   paymentReference: string | null; saleNumber: string | null;
@@ -229,7 +229,9 @@ export function OrderStatus({ number, query }: { number: string; query: string }
     completed: ['Completed', 'Thank you for buying from us!', 'bg-slate-100 text-slate-800'],
     rejected: ['We could not confirm your payment', `${o.events.filter((e) => e.status === 'rejected').at(-1)?.note ?? ''} If you did pay, call or message us with your reference number.`, 'bg-rose-50 text-rose-900'],
     expired: ['This order expired', 'No payment reached us within 24 hours, so the pieces went back on sale. If they are still available you can still pay below; otherwise place a new order.', 'bg-slate-100 text-slate-800'],
-    cancelled: ['This order was cancelled', 'Nothing was charged.', 'bg-slate-100 text-slate-800'],
+    // A cancelled order with a sale was paid and confirmed first: the shop returns the payment.
+    cancelled: ['This order was cancelled', o.saleNumber ? 'The shop will return your payment. Call or message us with your order number if you have questions.' : 'Nothing was charged.', 'bg-slate-100 text-slate-800'],
+    returned: ['This order was returned', 'The shop will return your payment. Call or message us with your order number if you have questions.', 'bg-slate-100 text-slate-800'],
   };
   const [title, text, tone] = banner[o.status]!;
 
@@ -266,8 +268,8 @@ export function OrderStatus({ number, query }: { number: string; query: string }
         ) : (
           <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-900/5">
             <p className="font-extrabold">What happened</p>
-            <ul className="mt-3 space-y-2 text-sm">{o.events.map((e, i) => <li key={i} className="flex gap-3"><span className="w-36 shrink-0 text-slate-500">{when(e.at)}</span><span>{({ awaiting_payment: 'Order placed', payment_sent: 'Payment sent', confirmed: 'Payment confirmed', rejected: 'Payment not confirmed', cancelled: 'Cancelled', ready: o.fulfilment === 'pickup' ? 'Ready for pickup' : 'Sent out', completed: 'Completed' } as Record<string, string>)[e.status] ?? e.status}{e.note && e.status !== 'confirmed' ? ` · ${e.note}` : ''}</span></li>)}</ul>
-            {(o.status === 'expired' || o.status === 'cancelled' || o.status === 'rejected') && <Link to="/" className="mt-5 inline-block rounded-full bg-slate-900 px-6 py-3 font-bold text-white hover:bg-indigo-700">Back to the shop</Link>}
+            <ul className="mt-3 space-y-2 text-sm">{o.events.map((e, i) => <li key={i} className="flex gap-3"><span className="w-36 shrink-0 text-slate-500">{when(e.at)}</span><span>{({ awaiting_payment: 'Order placed', payment_sent: 'Payment sent', confirmed: 'Payment confirmed', rejected: 'Payment not confirmed', cancelled: 'Cancelled', returned: 'Returned', ready: o.fulfilment === 'pickup' ? 'Ready for pickup' : 'Sent out', completed: 'Completed' } as Record<string, string>)[e.status] ?? e.status}{e.note && e.status !== 'confirmed' ? ` · ${e.note}` : ''}</span></li>)}</ul>
+            {(o.status === 'expired' || o.status === 'cancelled' || o.status === 'returned' || o.status === 'rejected') && <Link to="/" className="mt-5 inline-block rounded-full bg-slate-900 px-6 py-3 font-bold text-white hover:bg-indigo-700">Back to the shop</Link>}
           </div>
         )}
         <aside className="space-y-3 self-start rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-900/5">
@@ -353,7 +355,7 @@ export function MyOrders() {
     setMine([]); setRows([]);
   };
   const words: Record<Status, string> = { awaiting_payment: 'Waiting for your payment', payment_sent: 'We are checking your payment', confirmed: 'Paid · being prepared', ready: 'Ready / sent',
-    completed: 'Completed', rejected: 'Payment not confirmed', cancelled: 'Cancelled', expired: 'Expired' };
+    completed: 'Completed', rejected: 'Payment not confirmed', cancelled: 'Cancelled', returned: 'Returned', expired: 'Expired' };
   return (
     <section className="mx-auto max-w-3xl px-4 pb-16 pt-12 sm:px-6">
       <h1 className="text-3xl font-extrabold tracking-tight">My orders</h1>

@@ -3,9 +3,9 @@
  * the Quick Sale screen and the POS (routes.ts) and by the website shop when staff confirm an online payment (SHP).
  */
 import { z } from 'zod';
-import { AppError, formatPeso, type Issue } from '@moonproject/shared';
-import { postDocument, type Actor, type EngineEnv } from '../../engine/documents/lifecycle.ts';
-import { collectionDoc, collectionInput, type CollectionInput } from '../COL/public.ts';
+import { AppError, conflict, formatPeso, type Issue } from '@moonproject/shared';
+import { cancelDocument, postDocument, type Actor, type EngineEnv } from '../../engine/documents/lifecycle.ts';
+import { collectionDoc, collectionInput, salePayments, type CollectionInput } from '../COL/public.ts';
 import { saleDoc } from './doctypes/sale.ts';
 
 /**
@@ -49,3 +49,17 @@ export function recordCounterSale(env: EngineEnv, actor: Actor, p: CounterPaymen
 /** The usual way in: post a new quick sale with the total the user confirmed, then its payment. */
 export const recordQuickSale = (env: EngineEnv, actor: Actor, saleInput: unknown, p: CounterPayment, expectedTotalCents: number) =>
   recordCounterSale(env, actor, p, (input) => postDocument(env, saleDoc, actor, { input, expectedTotalCents }), saleInput);
+
+/** The sale's own payments go with it; a payment that also pays other things must be cancelled on its own first. */
+export function cancelSalePayments(env: EngineEnv, actor: Actor, saleId: string, reason: string) {
+  for (const c of salePayments(env.db, saleId).filter((p) => p.status === 'posted')) {
+    if (!c.paysOnlyThis) throw conflict('HAS_DEPENDENTS', `${c.number} also pays other things. Cancel it on its own first.`, [c]);
+    cancelDocument(env, collectionDoc, actor, c.id, reason);
+  }
+}
+
+/** Cancels a quick sale and its payment together (E6), both mirrored with today's date; the pieces on it are back in stock. */
+export function cancelQuickSale(env: EngineEnv, actor: Actor, saleId: string, reason: string) {
+  cancelSalePayments(env, actor, saleId, reason);
+  return cancelDocument(env, saleDoc, actor, saleId, reason);
+}

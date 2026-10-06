@@ -7,17 +7,17 @@
  * amount pays whatever the server says is paid out (the receipt less the EWT).
  */
 import { useState } from 'react';
-import { api, type CashPlace, type DocTypeInfo } from '../../api.ts';
+import { api, type CashPlace, type DocTypeInfo, type Me } from '../../api.ts';
 import { Field, Panel, inputClass } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { PrintedDateField, usePrintedDate } from '../../generic/PrintedDate.tsx';
 import { formatPesos } from '@moonproject/shared';
 import { TenderRows } from '../COL/parts.tsx';
 import { MoneyForm, SupplierSelect, useEwtRates, useList, useMoneyForm } from '../AP/parts.tsx';
-import { ewtChoices, forReplacement, voucherFigures } from '../AP/payables.ts';
+import { MAY_GO_AHEAD, ewtChoices, forReplacement, voucherFigures } from '../AP/payables.ts';
 import { MAX_TENDERS, emptyVoucher, voucherInput, voucherValues, type VoucherInput, type VoucherValues } from './voucher.ts';
 
-export function VoucherForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
+export function VoucherForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me: Me }) {
   const categories = useList(api.expCategories);
   const suppliers = useList(api.suppliers);
   const places = useList<CashPlace>(api.cashPlaces);
@@ -34,7 +34,7 @@ export function VoucherForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
   const usual = (v.payee === 'supplier' ? suppliers.find((s) => s.id === v.supplierId)?.ewt_class : null) ?? categories.find((c) => String(c.id) === v.categoryId)?.defaultEwtClass ?? null;
 
   return (
-    <MoneyForm type={type} f={f} title="New expense voucher" input={input} errors={errors} figures={voucherFigures} adjust={(p, n) => forReplacement(p, n)} businessDate={printed.businessDate}
+    <MoneyForm type={type} f={f} title="New expense voucher" input={input} errors={errors} figures={voucherFigures} mayGoAhead={me.permissions.includes(MAY_GO_AHEAD)} adjust={(p, n) => forReplacement(p, n)} businessDate={printed.businessDate}
       onLive={(p) => setCashCents((p.doc as { cashCents: number }).cashCents)}>
       <Panel title="What was it for?">
         <div className="grid gap-3 sm:grid-cols-2">

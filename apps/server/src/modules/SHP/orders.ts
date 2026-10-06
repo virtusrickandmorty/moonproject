@@ -17,7 +17,7 @@ import { tx, type Db } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
 import { placesFor } from '../CASH/public.ts';
 import { enqueueOnlineOrder, plain } from '../COM/public.ts';
-import { recordQuickSale } from '../QS/public.ts';
+import { cancelQuickSale, recordQuickSale, saleRef } from '../QS/public.ts';
 import { HOLD_MS, OVERDUE_LABEL, isOverdue, stockOf } from './public.ts';
 
 export const MAX_PROOF_BYTES = 4 * 1024 * 1024;
@@ -57,6 +57,8 @@ const confirmInput = z.object({
   version: z.number().int().min(1),
 }).strict();
 const rejectInput = z.object({ reason: z.string().trim().min(10).max(500), version: z.number().int().min(1) }).strict();
+/** Staff cancel or return an order that was confirmed: the reason is kept with the order; the buyer sees only the new status. */
+const reverseInput = z.object({ reason: z.string().trim().min(10).max(200), version: z.number().int().min(1) }).strict();
 const moveInput = z.object({ to: z.enum(['ready', 'completed']), note: z.string().trim().max(500).optional(), version: z.number().int().min(1) }).strict();
 const settingsInput = z.object({
   bankName: z.string().trim().min(1).max(60), accountName: z.string().trim().min(1).max(100), accountHint: z.string().trim().max(40).optional(),
@@ -74,15 +76,17 @@ const settingsInput = z.object({
     .default([]),
 }).strict();
 
-export type OrderStatus = 'awaiting_payment' | 'payment_sent' | 'confirmed' | 'rejected' | 'cancelled' | 'ready' | 'completed' | 'expired';
+export type OrderStatus = 'awaiting_payment' | 'payment_sent' | 'confirmed' | 'rejected' | 'cancelled' | 'ready' | 'completed' | 'expired' | 'returned';
 interface OrderRow {
-  id: string; number: string; status: Exclude<OrderStatus, 'expired'>; name: string; email: string; phone: string; fulfilment: 'pickup' | 'delivery';
+  id: string; number: string; status: Exclude<OrderStatus, 'expired' | 'returned'>; name: string; email: string; phone: string; fulfilment: 'pickup' | 'delivery';
   address: string | null; note: string | null; total_cents: number; hold_until_ms: number; token_hash: string; payment_reference: string | null;
   payment_sent_at: string | null; sale_document_id: string | null; created_at: string; version: number; updated_at: string; sale_number?: string | null;
   delivery_option: string | null; delivery_fee_cents: number; payment_version: number | null; cash_place_id: number | null;
+  reversal_kind: 'cancelled' | 'returned' | null; reversal_reason: string | null; reversal_at: string | null;
 }
-/** An order still waiting for payment after its 24 hours has expired: its pieces are back on sale. */
-const statusOf = (o: OrderRow, nowMs: number): OrderStatus => (o.status === 'awaiting_payment' && o.hold_until_ms <= nowMs ? 'expired' : o.status);
+/** An order still waiting for payment after its 24 hours has expired: its pieces are back on sale. One staff returned after it went out shows as returned. */
+const statusOf = (o: OrderRow, nowMs: number): OrderStatus =>
+  (o.status === 'awaiting_payment' && o.hold_until_ms <= nowMs ? 'expired' : o.status === 'cancelled' && o.reversal_kind === 'returned' ? 'returned' : o.status);
 const hash = (token: string) => createHash('sha256').update(token).digest('hex');
 const sameHash = (a: string, b: string) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
 const ORDER = `SELECT o.*, d.number AS sale_number FROM shp_orders o LEFT JOIN documents d ON d.id = o.sale_document_id`;
@@ -163,7 +167,9 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       number: o.number, status: statusOf(o, nowMs()), name: o.name, fulfilment: o.fulfilment, address: o.address, totalCents: o.total_cents,
       deliveryOption: o.delivery_option, deliveryFeeCents: o.delivery_fee_cents,
       holdUntil: new Date(o.hold_until_ms).toISOString(), paymentReference: o.payment_reference, saleNumber: o.sale_number ?? null, lines: lines(o.id),
-      events: db.prepare('SELECT status, note, at FROM shp_order_events WHERE order_id = ? ORDER BY at, rowid').all(o.id),
+      // Staff's reason for cancelling or returning a confirmed order stays with the shop: the buyer sees the status only.
+      events: db.prepare(`SELECT status, CASE WHEN status IN ('cancelled', 'returned') AND user_id IS NOT NULL THEN NULL ELSE note END AS note, at
+        FROM shp_order_events WHERE order_id = ? ORDER BY at, rowid`).all(o.id),
       payment: pay ? publicPayment(pay) : null,
       // The items the buyer has rated (a completed order's items can each be rated once).
       reviewed: db.prepare('SELECT product_id FROM shp_reviews WHERE order_id = ?').pluck().all(o.id) as string[],
@@ -352,6 +358,7 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       deliveryOption: o.delivery_option, deliveryFeeCents: o.delivery_fee_cents, lateButAvailable: statusOf(o, nowMs()) === 'expired' ? stillAvailable(o) : null,
       totalCents: o.total_cents, holdUntil: new Date(o.hold_until_ms).toISOString(), paymentReference: o.payment_reference, paymentSentAt: o.payment_sent_at,
       saleId: o.sale_document_id, saleNumber: o.sale_number ?? null, createdAt: o.created_at, version: o.version, lines: lines(o.id),
+      reversal: o.reversal_kind ? { kind: o.reversal_kind, reason: o.reversal_reason, at: o.reversal_at } : null,
       proofs: db.prepare('SELECT id, content_type AS contentType, bytes, at FROM shp_order_files WHERE order_id = ? ORDER BY at').all(o.id),
       events: db.prepare(`SELECT e.status, e.note, e.at, u.display_name AS userName FROM shp_order_events e LEFT JOIN users u ON u.id = e.user_id
         WHERE e.order_id = ? ORDER BY e.at, e.rowid`).all(o.id),
@@ -436,6 +443,35 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       event(o.id, b.to, at, user.userId, b.note ?? null);
       if (b.to === 'ready') tell(o, 'ready', at, { userId: user.userId });
       return { ok: true };
+    });
+  });
+
+  /**
+   * A confirmed order (the buyer paid and a quick sale was recorded) is cancelled or returned: QS cancels the linked sale and
+   * its payment the usual way (its mirrored journal, the pieces back in stock), and the order is marked cancelled, or returned
+   * when it had already gone out. Once per order. Any refund to the buyer is paid by staff outside the app.
+   */
+  app.post('/api/shp/admin/orders/:id/reverse', { config: { permission: 'shp.orders.manage' } }, async (req) => {
+    const b = reverseInput.parse(req.body);
+    const user = currentUser(req);
+    const at = stamp(clock);
+    return tx(db, () => {
+      const o = staffOrder((req.params as { id: string }).id);
+      // Said first, so a second try gets this plain message and not a "changed meanwhile" one.
+      if (o.reversal_kind) throw conflict('ALREADY_REVERSED', `${o.number} was already ${o.reversal_kind}. It can only be done once.`);
+      sameVersion(o, b.version);
+      const from = statusOf(o, nowMs());
+      if (!['confirmed', 'ready', 'completed'].includes(from) || !o.sale_document_id) {
+        throw conflict('NOT_REVERSIBLE', `${o.number} is ${from.replace('_', ' ')}: only an order the shop confirmed can be cancelled or returned here.`);
+      }
+      const kind = from === 'confirmed' ? 'cancelled' : 'returned';
+      // The sale may already have been cancelled in Quick Sale: then there is nothing left to cancel there.
+      const sale = saleRef(db, o.sale_document_id);
+      if (sale?.status === 'posted') cancelQuickSale(engineEnv(deps), { userId: user.userId, permissions: user.permissions }, o.sale_document_id, `Online order ${o.number} ${kind}: ${b.reason}`);
+      setStatus(o, 'cancelled', at, ', reversal_kind = ?, reversal_reason = ?, reversal_by = ?, reversal_at = ?', kind, b.reason, user.userId, at);
+      event(o.id, kind, at, user.userId, b.reason);
+      appendAudit(db, { at, userId: user.userId, action: `shp.order.${kind}`, entityType: 'shp.order', entityId: o.id, data: { number: o.number, sale: o.sale_number, reason: b.reason, totalCents: o.total_cents } });
+      return { ok: true, status: kind === 'returned' ? 'returned' : 'cancelled' };
     });
   });
 
