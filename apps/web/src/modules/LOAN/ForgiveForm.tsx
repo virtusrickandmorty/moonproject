@@ -38,6 +38,8 @@ export function ForgiveForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
     : row?.forgivenBy ? { principal: row.forgivenPrincipalCents ?? 0, interest: row.forgivenInterestCents ?? 0 } // an edit: what it forgave
     : row ? { principal: row.remainingPrincipalCents ?? row.principalCents, interest: row.remainingInterestCents ?? row.interestCents } : null;
 
+  const nothingDue = mode.kind === 'new' && (!v.loanId || !v.instalmentNo || (loan !== null && (!due || due.principal + due.interest <= 0)));
+
   if (r.gate) return r.gate;
   return (
     <form onSubmit={(e) => e.preventDefault()} className="grid gap-4 lg:grid-cols-[1fr_20rem]">
@@ -59,9 +61,10 @@ export function ForgiveForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
         <Field label="Note" hint="For example where the lender's letter is filed.">
           <input className={inputClass} value={v.note} onChange={(e) => setV({ ...v, note: e.target.value })} />
         </Field>
+        {nothingDue && <Notice tone="info">There is no loan instalment with something still due. Open this from the loan’s schedule or the late list.</Notice>}
         <Errors list={errors} show={r.touched} />
         <div className="flex gap-2">
-          <Button tone="danger" disabled={!type.canPost} onClick={() => r.ask(input, errors)}>Forgive the rest</Button>
+          <Button tone="danger" disabled={!type.canPost || nothingDue} onClick={() => r.ask(input, errors)}>Record</Button>
           <Button onClick={() => history.back()}>Back</Button>
         </div>
       </div>
