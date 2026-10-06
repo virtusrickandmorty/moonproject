@@ -1,6 +1,6 @@
 /**
  * Read-only lists for the loan screens (PLAN E10, H2): one loan's payments as documents, and the instalments past their
- * due date that recorded payments do not fully cover. Nothing here posts anything.
+ * due date that recorded payments (or a forgiveness of the rest) do not settle. Nothing here posts anything.
  */
 import { notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
@@ -27,7 +27,7 @@ const dayNumber = (date: string) => Date.parse(`${date}T00:00:00Z`) / 86_400_000
 
 /**
  * Instalments of recorded loans with principal still owed that were due before `date` and are not fully paid, oldest
- * first. One paid short (audit A1-002) stays here with what is still due on it.
+ * first. One paid short (audit A1-002) stays here with what is still due on it, until paid or the rest is forgiven.
  */
 export function lateInstalments(db: Db, date: string): LateInstalment[] {
   const loans = db

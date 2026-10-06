@@ -49,6 +49,7 @@ export const DOC_TITLES = [
   'Dividend Payment',
   'Loan',
   'Loan Payment',
+  'Loan Forgiveness',
   'Fixed Asset',
   'Depreciation Run',
   'Asset Disposal',

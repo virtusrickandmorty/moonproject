@@ -15,8 +15,9 @@ import { LoanPage, Loans } from './LOAN/Loans.tsx';
 import { SizerSets } from './SZR/Sizers.tsx';
 import { canDispose, defaultRunMonth, disposalInput, filterAssets, gapWarning, lastDayOf, monthRows, onTheBooks, runDate } from './FA/register.ts';
 import { balanceOf, filterPeople, positionWords, recordedTotal, rolesOf } from './EQ/register.ts';
-import { lateCounts, loanDocType, loanTotals, scheduleStates } from './LOAN/register.ts';
+import { forgivableNo, forgivenWords, lateCounts, loanDocType, loanTotals, scheduleStates } from './LOAN/register.ts';
 import { dueWords, filterSets, lendInput, returnInput, weekFrom } from './SZR/sizer.ts';
+import { forgivenessInput } from './LOAN/loan.ts';
 
 const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: string, init: RequestInit) => {
   const res = await app.inject({ method: init.method as 'GET', url, payload: init.body as string, headers: { ...(init.headers as object), cookie: jar.cookie } });
@@ -87,6 +88,21 @@ describe('loan rules', () => {
     const row = (over: Partial<LoanRow>): LoanRow => ({ id: 'l1', number: 'LOAN-000001', status: 'posted', lender: 'Sample Bank', kind: 'loan', principalCents: 6_000_000, balanceCents: 4_000_000, instalments: 3, principalPaidCents: 2_000_000, nextDue: null, ...over });
     expect(loanTotals([row({}), row({ id: 'l2', status: 'cancelled' }), row({ id: 'l3', principalCents: 1_000_000, balanceCents: 1_000_000, principalPaidCents: 0 })])).toEqual({ count: 2, principalCents: 7_000_000, paidCents: 2_000_000, leftCents: 5_000_000 });
     expect([loanDocType('OBLN-000001'), loanDocType('LOAN-000001')]).toEqual(['loan.opening', 'loan.loan']);
+  });
+
+  it('a forgiven instalment reads "forgiven, ₱X"; only the first one not settled may be forgiven, while the loan stands and owes', () => {
+    const rows = [
+      { ...schedule[0]!, paidBy: 'LFGV-000001', forgivenBy: 'LFGV-000001', paidPrincipalCents: 500_000, paidInterestCents: 60_000, forgivenPrincipalCents: 1_500_000, forgivenInterestCents: 0 },
+      { ...schedule[1]!, paidPrincipalCents: 1_000_000, paidInterestCents: 0, remainingPrincipalCents: 1_000_000, remainingInterestCents: 60_000 },
+      schedule[2]!,
+    ];
+    expect(scheduleStates(rows, '2026-11-30').map((r) => r.state)).toEqual(['forgiven', 'late', 'next']);
+    expect(rows.map(forgivenWords)).toEqual(['forgiven, ₱15,000.00', '', '']);
+    const loan = { status: 'posted' as const, balanceCents: 3_000_000, schedule: rows };
+    expect(forgivableNo(loan)).toBe(2);
+    expect(forgivableNo({ ...loan, status: 'cancelled' })).toBeUndefined();
+    expect(forgivableNo({ ...loan, balanceCents: 0 })).toBeUndefined();
+    expect(forgivableNo({ ...loan, schedule: rows.map((r) => ({ ...r, paidBy: r.paidBy ?? 'LPAY-000009' })) })).toBeUndefined();
   });
 });
 
@@ -207,6 +223,42 @@ describe('the screens against the real server', () => {
     const detail: LoanDetail = await api.loan(loan.id);
     expect(scheduleStates(detail.schedule, '2026-11-30').map((r) => r.state)).toEqual(['paid', 'late', 'next']);
     expect((await api.loanPayments(loan.id)).map((p) => [p.instalmentNo, p.totalCents, p.status])).toEqual([[1, 2_060_000, 'posted']]);
+    env.db.close();
+  });
+
+  it('loans: forgiving the rest of a late instalment, as the forgiveness form sends it, and cancelling it', async () => {
+    const env = await createTestEnv(); encoderOwnDefaults(env); // today is 2026-09-28
+    let api = await client(env, 'acct1', ['accountant']);
+    const BDO = cashPlaceId(env.db, '1111');
+    const loan = await api.post('loan.loan', { lender: 'Sample Bank', kind: 'loan', cashPlaceId: BDO, principalCents: 6_000_000, interestRateBp: 1200, termMonths: 3, schedule: 'flat' }, 6_000_000, key());
+    env.clock.set('2026-11-02T09:00:00+08:00');
+    api = await client(env, 'acct2', ['accountant']);
+    await api.post('loan.payment', { loanId: loan.id, instalmentNo: 1, cashPlaceId: BDO, principalCents: 500_000, interestCents: 60_000, note: 'Paid part only' }, 560_000, key());
+    let detail = await api.loan(loan.id);
+    expect(forgivableNo(detail)).toBe(1);
+    expect((await api.loansLate()).map((l) => l.instalmentNo)).toEqual([1]);
+    expect((await api.docTypes()).find((d) => d.key === 'loan.forgiveness')).toMatchObject({ canPost: true });
+
+    const { input, errors } = forgivenessInput({ loanId: loan.id, instalmentNo: 1, reason: ' The bank waived the rest (made up) ', note: '' });
+    expect(errors).toEqual([]);
+    const pre = await api.preview('loan.forgiveness', input);
+    expect(pre.totalCents).toBe(1_500_000);
+    const f = await api.post('loan.forgiveness', input, pre.totalCents, key());
+    expect(f.number).toBe('LFGV-000001');
+    detail = await api.loan(loan.id);
+    expect(scheduleStates(detail.schedule, '2026-11-02').map((r) => r.state)).toEqual(['forgiven', 'next', 'coming']);
+    expect(forgivenWords(detail.schedule[0]!)).toBe('forgiven, ₱15,000.00');
+    expect(detail).toMatchObject({ principalPaidCents: 500_000, principalForgivenCents: 1_500_000, balanceCents: 4_000_000 });
+    expect(forgivableNo(detail)).toBe(2);
+    expect(await api.loansLate()).toEqual([]);
+
+    await api.cancel('loan.forgiveness', f.id, 'Recorded by mistake today', key());
+    expect((await api.loansLate()).map((l) => l.instalmentNo)).toEqual([1]);
+    expect(forgivableNo(await api.loan(loan.id))).toBe(1);
+
+    // An encoder holding only the encoder defaults does not get the button.
+    const encoder = await client(env, 'enc1', ['encoder']);
+    expect((await encoder.docTypes()).find((d) => d.key === 'loan.forgiveness')?.canPost ?? false).toBe(false);
     env.db.close();
   });
 

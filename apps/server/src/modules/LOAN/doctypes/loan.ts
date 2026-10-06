@@ -148,8 +148,12 @@ export const loanDoc: DocTypeDef<LoanInput, Loan> = {
   /** Payments that stand against the loan: cancel them first (also before an edit, which keeps no payments). */
   dependents(db, documentId) {
     return db
-      .prepare(`SELECT d.id, d.number FROM loan_payments p JOIN documents d ON d.id = p.document_id WHERE p.loan_id = ? AND d.status = 'posted' ORDER BY d.number DESC`)
-      .all(documentId) as { id: string; number: string }[];
+      .prepare(
+        `SELECT d.id, d.number FROM loan_payments p JOIN documents d ON d.id = p.document_id WHERE p.loan_id = ? AND d.status = 'posted'
+         UNION ALL SELECT d.id, d.number FROM loan_forgivenesses f JOIN documents d ON d.id = f.document_id WHERE f.loan_id = ? AND d.status = 'posted'
+         ORDER BY 2 DESC`,
+      )
+      .all(documentId, documentId) as { id: string; number: string }[];
   },
 
   load(db, documentId) {
