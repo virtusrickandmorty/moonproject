@@ -52,8 +52,10 @@ export function EmployeePage({ me, params }: { me: Me; params?: Record<string, s
 
 const GENDER = { male: 'Male', female: 'Female' } as const;
 const PAID_BY = { cash: 'Cash', bank: 'Bank', gcash: 'GCash' } as const;
-/** "1990-04-12" → "12 April 1990 (36 years old)" on the server's calendar day; age only when the date is a real birthday. */
-function birthdayWords(b: string | null, today = new Date().toISOString().slice(0, 10)) {
+/** "1990-04-12" → "12 April 1990 (36 years old)" on today's Manila date; age only when the date is a real birthday. */
+// Today in Manila (never the UTC clock, NR-7); only for showing an age, nothing is recorded from it.
+const manilaToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+function birthdayWords(b: string | null, today = manilaToday()) {
   if (!b) return null;
   const age = Number(today.slice(0, 4)) - Number(b.slice(0, 4)) - (today.slice(5) < b.slice(5) ? 1 : 0);
   const shown = new Date(`${b}T00:00:00Z`).toLocaleDateString('en-PH', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
