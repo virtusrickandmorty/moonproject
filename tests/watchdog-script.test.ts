@@ -18,6 +18,7 @@ let data: string;
 let server: Server;
 let healthUrl: string;
 const state = () => join(root, 'service-state');
+const commands = () => (existsSync(join(root, 'service-commands')) ? readFileSync(join(root, 'service-commands'), 'utf8').trim().split('\n') : []);
 const running = () => readFileSync(state(), 'utf8') === 'running';
 const logged = () => (existsSync(join(data, 'logs', 'watchdog.log')) ? readFileSync(join(data, 'logs', 'watchdog.log'), 'utf8').trim().split('\n') : []);
 
@@ -35,7 +36,7 @@ beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), 'moonproject-watchdog-'));
   data = join(root, 'ProgramData', 'Moonproject');
   mkdirSync(data, { recursive: true });
-  writeFileSync(join(root, 'service.mjs'), `import { writeFileSync } from 'node:fs';\nwriteFileSync(${JSON.stringify(state())}, process.argv[2] === 'start' ? 'running' : 'stopped');\n`);
+  writeFileSync(join(root, 'service.mjs'), `import { appendFileSync, writeFileSync } from 'node:fs';\nappendFileSync(${JSON.stringify(join(root, 'service-commands'))}, process.argv[2] + '\\n');\nwriteFileSync(${JSON.stringify(state())}, process.argv[2] === 'start' ? 'running' : 'stopped');\n`);
   writeFileSync(state(), 'running');
   server = createServer((_req, res) => {
     if (!running()) return void res.writeHead(503).end();
@@ -63,6 +64,8 @@ describe('the watchdog', () => {
     expect(r.code, r.out).toBe(0);
     expect(running()).toBe(true);
     expect(logged()).toEqual([expect.stringMatching(/No answer from .* twice in a row \(the service was stopped\): restarted the Moonproject service$/)]);
+    // It waits for the stop to finish (WinSW stopwait) before starting it again (B3-2).
+    expect(commands()).toEqual(['stopwait', 'start']);
     // Answering again: the count starts over.
     await check();
     writeFileSync(state(), 'stopped');
