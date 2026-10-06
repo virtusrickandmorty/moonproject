@@ -84,7 +84,7 @@ export function DocView({ type, id, recorded, parts = {}, inDialog }: { type: Do
       </div>
       {printError && <Notice>{printError}</Notice>}
       <p className="text-sm text-slate-600">
-        Dated {longDate(h.businessDate)} · recorded {manilaTime(h.postedAt)} · total <b className="tabular-nums text-slate-900">{peso(h.totalCents)}</b>
+        {type.dating === 'printed' ? 'Date printed on it' : 'Dated'} {longDate(h.businessDate)} · {type.dating === 'printed' ? 'typed' : 'recorded'} {manilaTime(h.postedAt)} · total <b className="tabular-nums text-slate-900">{peso(h.totalCents)}</b>
       </p>
       {h.replacesId && <Notice tone="info">This replaces <Link to={docPath(type.key, `/${h.replacesId}`)} className="underline">an earlier {type.title}</Link> that was edited.</Notice>}
       {!posted && (

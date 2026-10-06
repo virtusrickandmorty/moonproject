@@ -1,7 +1,7 @@
 /** The web client and form rules against the real server (in memory), proven with the Fund Transfer (cash.transfer). */
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { PASSWORD, createTestEnv, createUser } from '../../server/test/helpers.ts';
+import { PASSWORD, createTestEnv, encoderOwnDefaults, createUser } from '../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../server/src/engine/security/sessions.ts';
 import { createApi, newIdempotencyKey as key } from './api.ts';
 import { fieldsOf, toInput, toValues } from './generic/fields.ts';
@@ -16,7 +16,7 @@ const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: 
 
 describe('web client with the Fund Transfer', () => {
   it('first owner; record after confirm; retried click; view; edit = cancel and reissue; cancel; drafts; sign out', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     const api = createApi(injectFetch(env.app));
     expect(await api.setupStatus()).toEqual({ needsFirstOwner: true });
     await api.firstOwner({ username: 'owner1', displayName: 'Test Owner', password: 'moon garden paper lamp' });
@@ -71,7 +71,7 @@ describe('web client with the Fund Transfer', () => {
   });
 
   it('encoders never get debits and credits; changes need the in-memory CSRF token; lost sessions are reported', async () => {
-    const env = await createTestEnv();
+    const env = await createTestEnv(); encoderOwnDefaults(env);
     createUser(env.db, 'encoder1', ['encoder']);
     createUser(env.db, 'newhire', ['encoder'], true);
     const jar = { cookie: '' };

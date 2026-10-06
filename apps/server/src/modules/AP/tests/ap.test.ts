@@ -4,7 +4,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import fc from 'fast-check';
 import type { AppError } from '@moonproject/shared';
-import { balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { balances, cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { cancelDocument, postDocument } from '../../../engine/documents/lifecycle.ts';
 import { billDoc, type BillInput } from '../doctypes/bill.ts';
@@ -18,7 +18,7 @@ let fabric: string, cloth: string;
 const newSupplier = async (s: { name: string; tin?: string; isVatRegistered?: boolean; ewtClass?: string; paymentTermsDays?: number }) => (await accountant.post('/api/pur/suppliers', { registeredName: `${s.name} Inc.`, isVatRegistered: false, ...s })).json().id as string;
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   BDO = cashPlaceId(env.db, '1111');

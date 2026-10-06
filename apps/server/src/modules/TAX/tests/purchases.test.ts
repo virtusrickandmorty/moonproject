@@ -4,7 +4,7 @@
  * a cancel as its own negative row on the cancel date; the CSV; and who may see them.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { ewtAtc, purchaseClass } from '../purchases.ts';
 
@@ -40,7 +40,7 @@ const ewt = (from: string, to: string) => accountant.get(`/api/tax/registers/ewt
 const noBrokenInvariants = () => expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
 
 async function setUp(at?: string) {
-  env = await createTestEnv(at);
+  env = await createTestEnv(at); encoderOwnDefaults(env);
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   BDO = cashPlaceId(env.db, '1111');

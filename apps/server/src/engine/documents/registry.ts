@@ -83,8 +83,10 @@ export type DocTitle = (typeof DOC_TITLES)[number];
 /** What compute/validate/journal/summary may read. Read-only by convention: never write in these. */
 export interface DocContext {
   db: Db;
-  /** Business date the document will carry (Manila). */
+  /** Business date the document will carry (Manila): today, or the date printed on it (dating 'printed'). */
   businessDate: string;
+  /** The day it is typed (the server's Manila date). Differs from businessDate only for a backdated or printed date. */
+  typedOn?: string;
   /** Timestamp of this action, ISO with +08:00. */
   at: string;
   userId: string;
@@ -105,8 +107,14 @@ export interface DocTypeDef<Input = any, Doc extends { totalCents: number } = an
   title: DocTitle;
   numbering: { series: SeriesDef };
   permissions: { view: string; create: string; post: string; cancel: string; print?: string };
-  /** 'system' = always the server's Manila date (NR-7). */
-  dating: 'system' | 'accountant_may_backdate';
+  /**
+   * 'system' = always the server's Manila date (NR-7). 'accountant_may_backdate' = an earlier date with acc.backdate.
+   * 'printed' = a booklet or supplier paper form: whoever records it may give the date printed on it (today when none is
+   * given), never after today. The document, its journal and so the tax registers carry that date; its number still
+   * follows the order typed, and the audit trail keeps the day it was typed. The doc type's validate refuses a date in
+   * a month the accountant signed off (ACC public.ts signedOffIssues).
+   */
+  dating: 'system' | 'accountant_may_backdate' | 'printed';
   /**
    * The date of a cancel's mirror (NR-4, ACC-09): the cancel day (the default), or 'document_date' for a document that
    * states a balance as of its own date (opening balances on the cut-over date, an inventory count on a month end). Its

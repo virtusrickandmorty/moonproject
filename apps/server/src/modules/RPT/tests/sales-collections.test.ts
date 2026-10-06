@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { createTestEnv, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 
 let env: TestEnv | undefined;
 afterEach(async () => { await env?.app.close(); env = undefined; });
@@ -73,7 +73,7 @@ function madeUpShop(userId: string) {
 
 describe('sales and collections reports', () => {
   it('lists only deposits crossing the chosen VAT quarter in every deposit VAT mode', async () => {
-    env = await createTestEnv(); const owner = await env.as('owner'); const db = env.db;
+    env = await createTestEnv(); encoderOwnDefaults(env); const owner = await env.as('owner'); const db = env.db;
     const at = '2026-09-28T10:00:00+08:00';
     db.prepare(`INSERT INTO cus_customers (id, code, kind, display_name, credit_terms_days, created_at, updated_at)
       VALUES ('c-cross', 'CROSS', 'organization', 'Quarter Crossing Club', 15, ?, ?)`).run(at, at);
@@ -124,7 +124,7 @@ describe('sales and collections reports', () => {
   });
 
   it('shows deposits, collections, sales, and job follow-up tied to the trial balance', async () => {
-    env = await createTestEnv(); const owner = await env.as('owner'); const codes = madeUpShop(owner.userId);
+    env = await createTestEnv(); encoderOwnDefaults(env); const owner = await env.as('owner'); const codes = madeUpShop(owner.userId);
     const get = (name: string) => owner.get(`/api/rpt/${name}`);
     const deposits = await get('deposits-held?asOf=2026-09-28');
     const collections = await get('collections-register?from=2026-09-28&to=2026-09-28');
@@ -146,7 +146,7 @@ describe('sales and collections reports', () => {
   });
 
   it('exports every report as CSV and denies both formats without permission', async () => {
-    env = await createTestEnv(); const owner = await env.as('owner'); madeUpShop(owner.userId);
+    env = await createTestEnv(); encoderOwnDefaults(env); const owner = await env.as('owner'); madeUpShop(owner.userId);
     const encoder = await env.as('encoder');
     for (const name of ['deposits-held?asOf=2026-09-28',
       'collections-register?from=2026-09-28&to=2026-09-28',

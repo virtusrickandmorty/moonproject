@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { FastifyInstance } from 'fastify';
-import { PASSWORD, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
+import { PASSWORD, createTestEnv, encoderOwnDefaults, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { createApi, newIdempotencyKey as key, taxQuarterPath, taxRegisterPath, type CertificatesToIssue, type WorksheetCheck } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
@@ -129,7 +129,7 @@ describe('tax screens, part 2: rules', () => {
 
 describe('web client for tax screens, part 2', () => {
   it('purchases and EWT registers, 2307s to issue and the 2550Q worksheet, each with its Excel download, as the screens ask for them', async () => {
-    const env = await createTestEnv('2026-06-20T02:00:00Z');
+    const env = await createTestEnv('2026-06-20T02:00:00Z'); encoderOwnDefaults(env);
     createUser(env.db, 'acct1', ['accountant']);
     createUser(env.db, 'enc1', ['encoder']);
     const server = await env.as('accountant');

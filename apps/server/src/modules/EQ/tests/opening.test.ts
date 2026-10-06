@@ -5,7 +5,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { balances, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { balances, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { resolveDraft } from '../../../engine/ledger/post.ts';
 import { cancelDocument, postDocument } from '../../../engine/documents/lifecycle.ts';
@@ -24,7 +24,7 @@ let notOfficer: string; // a stockholder only, never an officer
 const cashPlaceId = (code: string) => (env.db.prepare('SELECT id FROM accounts WHERE code = ?').get(code) as { id: number }).id;
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   accountant = await env.as('accountant');
   encoder = await env.as('encoder');
   owner = await env.as('owner');

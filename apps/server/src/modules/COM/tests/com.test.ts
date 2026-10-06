@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createTestEnv, idem, PASSWORD, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, idem, PASSWORD, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import { MAX_ATTEMPTS, WAIT_MINUTES, sendDue } from '../outbox.ts';
 import { scanOnce } from '../scan.ts';
@@ -45,7 +45,7 @@ const stepUp = (who: Client) => who.post('/api/auth/step-up', { password: PASSWO
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'com-test-'));
   process.env.MOONPROJECT_COM_DIR = dir;
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   owner = await env.as('owner');
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');

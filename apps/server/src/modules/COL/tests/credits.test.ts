@@ -7,7 +7,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import { AppError } from '@moonproject/shared';
-import { cashPlaceId, createTestEnv, createUser, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, createUser, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { cancelDocument, postDocument } from '../../../engine/documents/lifecycle.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
@@ -36,7 +36,7 @@ let c: ReturnType<typeof seedCustomers>;
 let CASH: number;
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); encoderOwnDefaults(env);
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   owner = await env.as('owner');
@@ -426,7 +426,7 @@ describe('property test (PLAN I1.3)', () => {
     let number = 20_000;
     await fc.assert(
       fc.asyncProperty(fc.gen(), async (g) => {
-        const t = await createTestEnv();
+        const t = await createTestEnv(); encoderOwnDefaults(t);
         const db = t.db;
         const userId = createUser(db, `prop-${number}`, ['accountant']);
         const cs = seedCustomers(db, userId);

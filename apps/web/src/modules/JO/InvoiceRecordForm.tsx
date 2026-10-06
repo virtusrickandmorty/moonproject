@@ -9,6 +9,7 @@ import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.ts
 import { SalesActions } from './entry.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
+import { PrintedDateField, usePrintedDate } from '../../generic/PrintedDate.tsx';
 import { Errors, useLive } from '../COL/parts.tsx';
 import { Booklet, ReleasePicker } from './parts.tsx';
 import { invoiceBooklet, invoiceInput } from './forms.ts';
@@ -38,9 +39,10 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
     else if (jo) api.joStatus(jo).then((s) => setPreset(s.jobOrder.number), rec.fail);
   }, []);
 
+  const printed = usePrintedDate(rec.original);
   const r = info?.release ?? null;
   const typed = invoiceInput({ releaseId: r?.id ?? '', invoiceNumber, note });
-  const live = useLive<Preview | null>(JSON.stringify(typed.input), typed.errors.length === 0, () => rec.preview(typed.input));
+  const live = useLive<Preview | null>(JSON.stringify([typed.input, printed.businessDate]), typed.errors.length === 0 && !printed.error, () => rec.preview(typed.input, printed.businessDate));
   // The preview's own figures once it answers; until then the release's. In mode C both show the sale less the downpayments invoiced.
   const doc = live?.doc as Parameters<typeof invoiceBooklet>[0] & { depositAppliedCents: number } | undefined;
   const figures: (BookletShown & { depositAppliedCents: number }) | null = doc ? { ...invoiceBooklet(doc), depositAppliedCents: doc.depositAppliedCents } : info ? { ...info.booklet, depositAppliedCents: info.depositAppliedCents } : null;
@@ -48,8 +50,8 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
   const blocked = r?.status === 'cancelled'
     ? `${r.number} is cancelled. Record the invoice for the release that replaced it.`
     : r?.invoice && !ownInvoice ? `${r.number} already has its invoice: no. ${r.invoice.invoiceNumber} (${r.invoice.number}). Cancel that one first to record another.` : '';
-  const errors = [...typed.errors, ...(blocked ? [blocked] : [])];
-  const record = () => rec.ask(typed.input, errors);
+  const errors = [...typed.errors, ...(printed.error ? [printed.error] : []), ...(blocked ? [blocked] : [])];
+  const record = () => rec.ask(typed.input, errors, printed.businessDate);
 
   if (rec.gate) return rec.gate;
   return (
@@ -71,6 +73,7 @@ export function InvoiceRecordForm({ type, mode }: { type: DocTypeInfo; mode: For
             hint={was ? `Invoice no. ${was} stays with the cancelled record (keep all its copies): write this sale on a new invoice.` : 'Type the number printed on the invoice you wrote.'}>
             <input inputMode="numeric" className={`${inputClass} max-w-40`} value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} />
           </Field>
+          <PrintedDateField label="Date on the invoice" value={printed.text} onChange={printed.setText} />
           <Field label="Note"><input className={inputClass} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         </Panel>
         <Errors list={errors} show={rec.touched} />

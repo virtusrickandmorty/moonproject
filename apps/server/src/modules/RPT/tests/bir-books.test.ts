@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { paginate } from '../bir-books.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 
 let env: TestEnv; let accountant: Client; let encoder: Client;
 const account = (code: string) => env.db.prepare('SELECT id FROM accounts WHERE code=?').pluck().get(code) as number;
-beforeEach(async () => { env = await createTestEnv(); accountant = await env.as('accountant'); encoder = await env.as('encoder'); });
+beforeEach(async () => { env = await createTestEnv(); encoderOwnDefaults(env); accountant = await env.as('accountant'); encoder = await env.as('encoder'); });
 
 describe('RPT BIR loose-leaf books', () => {
   it('carries the exact running totals from one numbered page to the next', () => {

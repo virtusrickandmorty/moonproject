@@ -3,7 +3,7 @@
  */
 import { beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import { PASSWORD, balances, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { PASSWORD, balances, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { cancelDocument, postDocument } from '../../../engine/documents/lifecycle.ts';
 import { settingAt } from '../../../engine/settings.ts';
@@ -16,7 +16,7 @@ let accountant: Client;
 let encoder: Client;
 
 beforeEach(async () => {
-  env = await createTestEnv(); // 2026-09-28 10:00 Manila
+  env = await createTestEnv(); encoderOwnDefaults(env); // 2026-09-28 10:00 Manila
   accountant = await env.as('accountant');
   encoder = await env.as('encoder');
 });

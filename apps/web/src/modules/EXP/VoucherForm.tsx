@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { api, type CashPlace, type DocTypeInfo } from '../../api.ts';
 import { Field, Panel, inputClass } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
+import { PrintedDateField, usePrintedDate } from '../../generic/PrintedDate.tsx';
 import { formatPesos } from '@moonproject/shared';
 import { TenderRows } from '../COL/parts.tsx';
 import { MoneyForm, SupplierSelect, useEwtRates, useList, useMoneyForm } from '../AP/parts.tsx';
@@ -26,11 +27,14 @@ export function VoucherForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
   // Any change to the receipt makes the server's last payout figure stale until the next live preview.
   const set = (patch: Partial<VoucherValues>) => (setV({ ...v, ...patch }), setCashCents(undefined));
   const [cashCents, setCashCents] = useState<number>();
-  const { input, errors } = voucherInput(v, cashCents);
+  const typed = voucherInput(v, cashCents);
+  const printed = usePrintedDate(f.original);
+  const { input } = typed;
+  const errors = printed.error ? [...typed.errors, printed.error] : typed.errors;
   const usual = (v.payee === 'supplier' ? suppliers.find((s) => s.id === v.supplierId)?.ewt_class : null) ?? categories.find((c) => String(c.id) === v.categoryId)?.defaultEwtClass ?? null;
 
   return (
-    <MoneyForm type={type} f={f} title="New expense voucher" input={input} errors={errors} figures={voucherFigures} adjust={(p, n) => forReplacement(p, n)}
+    <MoneyForm type={type} f={f} title="New expense voucher" input={input} errors={errors} figures={voucherFigures} adjust={(p, n) => forReplacement(p, n)} businessDate={printed.businessDate}
       onLive={(p) => setCashCents((p.doc as { cashCents: number }).cashCents)}>
       <Panel title="What was it for?">
         <div className="grid gap-3 sm:grid-cols-2">
@@ -67,6 +71,7 @@ export function VoucherForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
           <Field label="Receipt no."><input className={inputClass} value={v.receiptNo} onChange={(e) => set({ receiptNo: e.target.value })} /></Field>
           <Field label="Receipt date"><input type="date" className={inputClass} value={v.receiptDate} onChange={(e) => set({ receiptDate: e.target.value })} /></Field>
         </div>
+        <PrintedDateField label="Date on the voucher" value={printed.text} onChange={printed.setText} />
         <p className="text-sm text-slate-500">Input VAT is claimed only with the receipt number, its date and the payee’s TIN.</p>
         <Field label="Tax withheld from supplier (EWT)">
           <select className={inputClass} value={v.ewtClass} onChange={(e) => set({ ewtClass: e.target.value })}>

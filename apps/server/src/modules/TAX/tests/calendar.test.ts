@@ -3,7 +3,7 @@
  * and the holidays in EMP's list; and output VAT less input, withheld and carried-over VAT, read from the ledger.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import { nextWorkingDay } from '../calendar.ts';
 
@@ -11,7 +11,7 @@ let env: TestEnv;
 let encoder: Client, accountant: Client;
 
 beforeEach(async () => {
-  env = await createTestEnv(); // 2026-09-28, a Monday
+  env = await createTestEnv(); encoderOwnDefaults(env); // 2026-09-28, a Monday
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
 });

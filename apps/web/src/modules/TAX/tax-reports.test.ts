@@ -1,7 +1,7 @@
 /** The tax report screens' rules (dates, range check, cancel marks, words), the menu, and the web client against the real server. */
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { PASSWORD, cashPlaceId, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
+import { PASSWORD, cashPlaceId, createTestEnv, encoderOwnDefaults, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { seedCustomers } from '../../../../server/src/modules/JO/tests/cus-fixture.ts';
 import { createApi, newIdempotencyKey as key, taxRegisterPath } from '../../api.ts';
@@ -103,7 +103,7 @@ describe('tax report screen rules', () => {
 
 describe('web client for the tax reports', () => {
   it('registers, their Excel download, the calendar and the VAT of a quarter, as the screens ask for them; a cancel shows on both rows', async () => {
-    const env = await createTestEnv(); // 2026-09-28, a Monday
+    const env = await createTestEnv(); encoderOwnDefaults(env); // 2026-09-28, a Monday
     createUser(env.db, 'acct1', ['accountant']);
     const encoderId = createUser(env.db, 'enc1', ['encoder']);
     const c = seedCustomers(env.db, encoderId);

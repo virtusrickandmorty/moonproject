@@ -1,9 +1,9 @@
 /** The owners and officers screens' read-only routes: a person's documents and what everyone owes and is owed. */
 import { describe, expect, it } from 'vitest';
-import { cashPlaceId, createTestEnv, idem } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, encoderOwnDefaults } from '../../../../test/helpers.ts';
 
 async function shop() {
-  const env = await createTestEnv();
+  const env = await createTestEnv(); encoderOwnDefaults(env);
   const acc = await env.as('accountant');
   const BDO = cashPlaceId(env.db, '1111');
   const person = async (body: object) => (await acc.post('/api/eq/people', body)).json().id as string;

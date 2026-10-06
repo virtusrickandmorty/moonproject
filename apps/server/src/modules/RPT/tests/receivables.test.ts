@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Db } from '../../../platform/db/driver.ts';
-import { createTestEnv, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 
 let env: TestEnv | undefined;
 afterEach(async () => { await env?.app.close(); env = undefined; });
@@ -63,7 +63,7 @@ function shop(db: Db, userId: string) {
 
 describe('customer receivables reports', () => {
   it('ages invoice records, keeps uninvoiced orders as memo, and ties to the trial balance', async () => {
-    env = await createTestEnv();
+    env = await createTestEnv(); encoderOwnDefaults(env);
     const owner = await env.as('owner');
     expect((await owner.get('/api/doc-types')).json().some((type: { key: string }) => type.key === 'jo.invoice_record')).toBe(true);
     const { arCode } = shop(env.db, owner.userId);
@@ -82,7 +82,7 @@ describe('customer receivables reports', () => {
   });
 
   it("ages an old job order's receivable opened at the cut-over from its due date", async () => {
-    env = await createTestEnv();
+    env = await createTestEnv(); encoderOwnDefaults(env);
     const owner = await env.as('owner');
     shop(env.db, owner.userId);
     const db = env.db;
@@ -105,7 +105,7 @@ describe('customer receivables reports', () => {
   });
 
   it('shows opening, document movements, running balance and held deposits; exports CSV', async () => {
-    env = await createTestEnv();
+    env = await createTestEnv(); encoderOwnDefaults(env);
     const owner = await env.as('owner');
     shop(env.db, owner.userId);
     const url = '/api/rpt/customer-statement?customerId=c-one&from=2026-09-01&to=2026-09-28';
@@ -127,7 +127,7 @@ describe('customer receivables reports', () => {
   });
 
   it('denies both reports and CSV to a role without book permission', async () => {
-    env = await createTestEnv();
+    env = await createTestEnv(); encoderOwnDefaults(env);
     const encoder = await env.as('encoder');
     for (const url of ['/api/rpt/ar-aging?asOf=2026-09-28', '/api/rpt/ar-aging?asOf=2026-09-28&format=csv',
       '/api/rpt/customer-statement?customerId=c-one&from=2026-09-01&to=2026-09-28',

@@ -4,7 +4,7 @@
  * a late item after the close; the CSV; and who may see it.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import * as registers from '../registers.ts';
 
@@ -37,7 +37,7 @@ const items = (w: { lines: Line[] }) => Object.fromEntries(w.lines.map((l) => [l
 const codes = (w: { checks: { code: string }[] }) => w.checks.map((x) => x.code);
 
 beforeEach(async () => {
-  env = await createTestEnv(); // 2026-09-28
+  env = await createTestEnv(); encoderOwnDefaults(env); // 2026-09-28
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
   c = seedCustomers(env.db, encoder.userId);
