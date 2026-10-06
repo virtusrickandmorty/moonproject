@@ -164,3 +164,16 @@ export function paymentInput(v: PaymentValues): { input: Record<string, unknown>
   };
   return { input, errors };
 }
+
+export interface ForgiveValues { loanId: string; instalmentNo: number; reason: string; note: string }
+
+/** The loan forgiveness form's values -> input. The amount is never sent: the server forgives all that is still due. */
+export function forgivenessInput(v: ForgiveValues): { input: Record<string, unknown>; errors: string[] } {
+  const reason = v.reason.trim();
+  const errors = [
+    ...(v.loanId && v.instalmentNo ? [] : ['Open this from the loan’s schedule or the late list.']),
+    ...(reason.length < 10 ? ['Say why the lender forgave it (at least 10 characters).'] : reason.length > 200 ? ['Keep the reason to 200 characters.'] : []),
+  ];
+  const input = { loanId: v.loanId, instalmentNo: v.instalmentNo, reason, ...(v.note.trim() ? { note: v.note.trim() } : {}) };
+  return { input, errors };
+}

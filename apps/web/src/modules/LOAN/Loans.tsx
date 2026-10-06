@@ -2,17 +2,19 @@
  * Loans (PLAN E10, H2): every loan with lender, principal, paid, left and the next due date, with a warning for what is
  * late; and one loan's page with its schedule, its payments and what is late. Balances come from the ledger on the
  * server (NR-2); "late" is an instalment past its due date that recorded payments do not fully cover, as of the server's date.
+ * Users with loan.forgive see "Forgive the rest" on the instalment that may be forgiven (the first one not settled).
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type DocTypeInfo, type LateInstalment, type LoanDetail, type LoanPayment, type LoanRow } from '../../api.ts';
 import { Notice, Panel, StatusChip, peso } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { KIND_WORDS, STATE_WORDS, lateCounts, leftCents, loanDocType, loanTotals, ratePercent, scheduleStates } from './register.ts';
+import { KIND_WORDS, STATE_WORDS, forgivableNo, forgivenWords, lateCounts, leftCents, loanDocType, loanTotals, ratePercent, scheduleStates } from './register.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
 
 const num = 'py-1 text-right tabular-nums';
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
+const small = 'rounded-md bg-white px-2 py-0.5 text-xs font-medium ring-1 ring-slate-300 hover:bg-slate-100';
 const lateChip = <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">Late</span>;
 
 function LateNotice({ late }: { late: LateInstalment[] }) {
@@ -76,6 +78,8 @@ export function LoanPage({ docTypes, params }: { docTypes: DocTypeInfo[]; params
   if (!l) return <p className="text-slate-500">Loading…</p>;
   const may = (key: string) => docTypes.some((d) => d.key === key && d.canPost);
   const states = scheduleStates(l.schedule, today);
+  const forgiveNo = may('loan.forgiveness') ? forgivableNo(l) : undefined;
+  const forgiveLink = (no: number) => <Link to={docPath('loan.forgiveness', `/new?loan=${l.id}&instalment=${no}`)} className={small}>Forgive the rest</Link>;
   return (
     <div className="max-w-4xl space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -86,16 +90,17 @@ export function LoanPage({ docTypes, params }: { docTypes: DocTypeInfo[]; params
         <Link to="/loan/loans" className="text-sm underline">All loans</Link>
       </div>
       <p className="text-sm">{KIND_WORDS[l.kind]}{l.dateReceived && ` received ${l.dateReceived}`}{l.rateBp !== undefined && ` · ${ratePercent(l.rateBp)} a year`}{l.termMonths !== undefined && ` · ${l.termMonths} months`}{l.reference ? ` · ref. ${l.reference}` : ''}</p>
-      <p>Principal <b className="tabular-nums">{peso(l.principalCents)}</b> · paid <b className="tabular-nums">{peso(l.principalPaidCents ?? 0)}</b> · left <b className="tabular-nums">{peso(leftCents(l))}</b>{l.interestPaidCents ? <> · interest paid <b className="tabular-nums">{peso(l.interestPaidCents)}</b></> : null}</p>
+      <p>Principal <b className="tabular-nums">{peso(l.principalCents)}</b> · paid <b className="tabular-nums">{peso(l.principalPaidCents ?? 0)}</b>{l.principalForgivenCents ? <> · forgiven <b className="tabular-nums">{peso(l.principalForgivenCents)}</b></> : null} · left <b className="tabular-nums">{peso(leftCents(l))}</b>{l.interestPaidCents ? <> · interest paid <b className="tabular-nums">{peso(l.interestPaidCents)}</b></> : null}</p>
       {l.status === 'posted' && l.nextDue && may('loan.payment') && <div><Link to={docPath('loan.payment', `/new?loan=${l.id}`)} className={link}>Record the next payment</Link></div>}
       {late.length > 0 && (
         <Panel title="Late">
           <LateNotice late={late} />
           <table className="w-full text-sm">
-            <thead className="text-left text-slate-500"><tr><th>Instalment</th><th>Was due</th><th className="text-right">Days late</th><th className="text-right">Principal</th><th className="text-right">Interest</th></tr></thead>
+            <thead className="text-left text-slate-500"><tr><th>Instalment</th><th>Was due</th><th className="text-right">Days late</th><th className="text-right">Principal</th><th className="text-right">Interest</th><th /></tr></thead>
             <tbody>
               {late.map((z) => (
-                <tr key={z.instalmentNo} className="border-t border-slate-100"><td className="py-1">{z.instalmentNo} of {l.instalments}</td><td className="py-1">{z.dueDate}</td><td className={num}>{z.daysLate}</td><td className={num}>{peso(z.principalCents)}</td><td className={num}>{peso(z.interestCents)}</td></tr>
+                <tr key={z.instalmentNo} className="border-t border-slate-100"><td className="py-1">{z.instalmentNo} of {l.instalments}</td><td className="py-1">{z.dueDate}</td><td className={num}>{z.daysLate}</td><td className={num}>{peso(z.principalCents)}</td><td className={num}>{peso(z.interestCents)}</td>
+                  <td className="py-1 pl-2 text-right">{z.instalmentNo === forgiveNo && forgiveLink(z.instalmentNo)}</td></tr>
               ))}
             </tbody>
           </table>
@@ -109,8 +114,10 @@ export function LoanPage({ docTypes, params }: { docTypes: DocTypeInfo[]; params
               <tr key={r.instalmentNo} className={`border-t border-slate-100 ${r.state === 'late' ? 'bg-red-50' : ''}`}>
                 <td className="py-1">{r.instalmentNo}</td><td className="py-1">{r.dueDate}</td>
                 <td className={num}>{peso(r.principalCents)}</td><td className={num}>{peso(r.interestCents)}</td><td className={num}>{peso(r.principalCents + r.interestCents)}</td>
-                <td className="py-1">{r.state === 'paid' ? `Paid (${r.paidBy})` : r.state === 'late' ? <span className="font-medium text-red-800">{STATE_WORDS.late}</span> : STATE_WORDS[r.state]}
-                  {r.state !== 'paid' && (r.paidPrincipalCents ?? 0) + (r.paidInterestCents ?? 0) > 0 && <> · part paid, {peso((r.remainingPrincipalCents ?? 0) + (r.remainingInterestCents ?? 0))} still due</>}</td>
+                <td className="py-1">{r.state === 'paid' ? `Paid (${r.paidBy})` : r.state === 'forgiven' ? <>{(r.paidPrincipalCents ?? 0) + (r.paidInterestCents ?? 0) > 0 ? 'Part paid, ' : ''}{forgivenWords(r)} ({r.forgivenBy})</>
+                  : r.state === 'late' ? <span className="font-medium text-red-800">{STATE_WORDS.late}</span> : STATE_WORDS[r.state]}
+                  {r.state !== 'paid' && r.state !== 'forgiven' && (r.paidPrincipalCents ?? 0) + (r.paidInterestCents ?? 0) > 0 && <> · part paid, {peso((r.remainingPrincipalCents ?? 0) + (r.remainingInterestCents ?? 0))} still due</>}
+                  {r.instalmentNo === forgiveNo && <> {forgiveLink(r.instalmentNo)}</>}</td>
               </tr>
             ))}
           </tbody>

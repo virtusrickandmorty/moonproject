@@ -648,6 +648,8 @@ export type Supplier = SupplierRow;
 export interface LoanRow {
   id: string; number: string; status: 'posted' | 'cancelled'; lender: string; kind: 'loan' | 'equipment'; principalCents: number; balanceCents: number; instalments: number;
   dateReceived?: string; rateBp?: number; termMonths?: number; principalPaidCents?: number; interestPaidCents?: number; reference?: string | null;
+  /** What the lender forgave (LFGV-): balance = principal − paid − forgiven principal. */
+  principalForgivenCents?: number; interestForgivenCents?: number;
   nextDue: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number } | null;
 }
 /** An FA- purchase whose financed part no loan has taken over yet. */
@@ -683,9 +685,13 @@ export interface EqLedger {
 
 /** GET /api/loan/loans/:id: the register row with its schedule (and the payment on each paid instalment) and the loan ledger. */
 export interface LoanDetail extends LoanRow {
-  /** `paidBy`: the payment that finished it. A part-paid instalment keeps `paidBy` null and shows what is still due. */
+  /**
+   * `paidBy`: the document that settled it (the payment that finished it, or the forgiveness of its rest). A part-paid
+   * instalment keeps `paidBy` null and shows what is still due. `forgivenBy` and its amounts only when the lender forgave the rest.
+   */
   schedule: { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number; paidBy: string | null;
-    paidPrincipalCents?: number; paidInterestCents?: number; remainingPrincipalCents?: number; remainingInterestCents?: number }[];
+    paidPrincipalCents?: number; paidInterestCents?: number; remainingPrincipalCents?: number; remainingInterestCents?: number;
+    forgivenBy?: string; forgivenPrincipalCents?: number; forgivenInterestCents?: number }[];
   ledger: { date: string; journalNumber: string; documentNumber: string | null; memo: string; amountCents: number; balanceCents: number }[];
 }
 /** GET /api/loan/loans/:id/payments. */

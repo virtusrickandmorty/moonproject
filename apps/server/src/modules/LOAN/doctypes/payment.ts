@@ -5,7 +5,8 @@
  *   Dr 2601/2602 principal (party = the loan) ; Dr 7201 interest / Cr cash place
  * Instalments are paid in order. A loan whose LOAN- document is cancelled takes no payment.
  * A payment short of what is due (audit A1-002) leaves the rest due on the same instalment: it is not marked paid, stays
- * on the late list once past due, and the next payment on it starts from that rest. Forgiving the rest is not done here.
+ * on the late list once past due, and the next payment on it starts from that rest. The lender forgiving the rest is a
+ * Loan Forgiveness (doctypes/forgiveness.ts), which then stands on this payment's figures until it is cancelled.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -90,6 +91,7 @@ export const paymentDoc: DocTypeDef<PaymentInput, LoanPayment> = {
     const row = rows.find((r) => r.instalmentNo === doc.instalmentNo);
     const next = rows.find((r) => !r.paidBy);
     if (!row) err('instalmentNo', 'INSTALMENT', `${l.number} has ${rows.length} instalments.`);
+    else if (row.forgivenBy) err('instalmentNo', 'PAID', `The rest of instalment ${row.instalmentNo} of ${l.number} was forgiven by ${row.forgivenBy}; nothing is due on it.`);
     else if (row.paidBy) err('instalmentNo', 'PAID', `Instalment ${row.instalmentNo} of ${l.number} is already paid by ${row.paidBy}.`);
     else if (next && next.instalmentNo !== row.instalmentNo) {
       const rest = next.remainingPrincipalCents + next.remainingInterestCents;
@@ -106,6 +108,16 @@ export const paymentDoc: DocTypeDef<PaymentInput, LoanPayment> = {
     if (doc.principalCents > owed) err('principalCents', 'MORE_THAN_OWED', `Only ${formatPeso(owed)} of principal is still owed on ${l.number}.`);
     if (doc.totalCents === 0) err('principalCents', 'ZERO', 'The payment is zero.');
     return issues;
+  },
+
+  /** A forgiveness of the rest of the same instalment forgave what this payment left: cancel it first. */
+  dependents(db, documentId) {
+    return db
+      .prepare(
+        `SELECT d.id, d.number FROM loan_payments p JOIN loan_forgivenesses f ON f.loan_id = p.loan_id AND f.instalment_no = p.instalment_no
+         JOIN documents d ON d.id = f.document_id WHERE p.document_id = ? AND d.status = 'posted' ORDER BY d.number DESC`,
+      )
+      .all(documentId) as { id: string; number: string }[];
   },
 
   persist(db, doc, h) {

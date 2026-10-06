@@ -1,7 +1,7 @@
 /** The loan screens' rules: the yearly rate as a percent, the loan and loan payment inputs, the fee accounts offered. */
 import { describe, expect, it } from 'vitest';
 import type { Account } from '../../api.ts';
-import { bpToPercent, emptyLoan, emptyOpening, feeAccounts, loanInput, loanValues, openingInput, openingValues, paymentInput, percentToBp, scheduledPrincipal, type LoanValues, type OpeningValues } from './loan.ts';
+import { bpToPercent, emptyLoan, emptyOpening, feeAccounts, forgivenessInput, loanInput, loanValues, openingInput, openingValues, paymentInput, percentToBp, scheduledPrincipal, type LoanValues, type OpeningValues } from './loan.ts';
 
 const loan = (patch: Partial<LoanValues>): LoanValues => ({ ...emptyLoan(), ...patch });
 const bank = loan({ lender: ' Sample Bank ', reference: 'PN-1', cashPlaceId: '6', principal: '500,000', fee: '5,000', rate: '12', term: '24', firstDueDate: '2026-10-28' });
@@ -123,5 +123,17 @@ describe('loan payment form', () => {
     expect(paymentInput({ ...base, loanId: '', instalmentNo: 0, cashPlaceId: '', differs: true, principal: 'x', note: 'ok' }).errors).toEqual([
       'Pick the loan.', 'Pick where the money came from.', 'Type the principal and interest the lender applied, like 12,500.00', 'Say why the split differs from the schedule.',
     ]);
+  });
+});
+
+describe('loan forgiveness form', () => {
+  const base = { loanId: 'loan-1', instalmentNo: 2, reason: '', note: '' };
+  it('sends the loan, the instalment, the reason and a note; never an amount', () => {
+    expect(forgivenessInput({ ...base, reason: ' Bank waived the rest by letter ', note: ' Filed with the loan papers ' })).toEqual({
+      input: { loanId: 'loan-1', instalmentNo: 2, reason: 'Bank waived the rest by letter', note: 'Filed with the loan papers' }, errors: [],
+    });
+    expect(forgivenessInput({ ...base, reason: 'Bank waived the rest' }).input).toEqual({ loanId: 'loan-1', instalmentNo: 2, reason: 'Bank waived the rest' });
+    expect(forgivenessInput({ ...base, loanId: '', instalmentNo: 0, reason: 'Waived' }).errors).toEqual(['Open this from the loan’s schedule or the late list.', 'Say why the lender forgave it (at least 10 characters).']);
+    expect(forgivenessInput({ ...base, reason: 'x'.repeat(201) }).errors).toEqual(['Keep the reason to 200 characters.']);
   });
 });

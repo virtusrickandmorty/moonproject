@@ -111,6 +111,7 @@ import { EwtAnnualReturnPage } from './TAX/EwtAnnual.tsx';
 import { LoanForm } from './LOAN/LoanForm.tsx';
 import { OpeningForm as OpeningLoanForm } from './LOAN/OpeningForm.tsx';
 import { PaymentForm as LoanPaymentForm } from './LOAN/PaymentForm.tsx';
+import { ForgiveForm as LoanForgiveForm } from './LOAN/ForgiveForm.tsx';
 import { loanView } from './LOAN/views.tsx';
 import { BuyForm } from './FA/BuyForm.tsx';
 import { DepreciationForm } from './FA/DepreciationForm.tsx';
@@ -311,6 +312,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'acc.opening': OpeningForm,
   'loan.loan': LoanForm,
   'loan.payment': LoanPaymentForm,
+  'loan.forgiveness': LoanForgiveForm,
   'loan.opening': OpeningLoanForm,
   'fa.buy': BuyForm,
   'fa.disposal': DisposalForm,
