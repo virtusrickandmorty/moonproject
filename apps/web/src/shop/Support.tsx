@@ -61,6 +61,7 @@ export function Support({ query }: { query: string }) {
   const [message, setMessage] = useState(fromCart ? `${cartText(quotedLines, shop.productById)}\n\nEstimate: ${formatPeso(quotedLines.reduce((n, l) => n + l.qty * (shop.productById(l.productId)?.priceCents ?? 0), 0))}\n\nDesign notes and deadline: ` : '');
   const [orderRef, setOrderRef] = useState(''); const [consent, setConsent] = useState(false); const [website, setWebsite] = useState('');
   const [pictures, setPictures] = useState<Picture[]>([]);
+  const [pictureWarning, setPictureWarning] = useState('');
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [sent, setSent] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [subjectEdited, setSubjectEdited] = useState(false);
@@ -101,8 +102,9 @@ export function Support({ query }: { query: string }) {
         method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
         body: JSON.stringify({ kind, name, email, phone, subject, message, orderRef: kind === 'complaint' ? orderRef : '', consent, website, files }),
       });
-      const data = await res.json().catch(() => null) as { number?: string; message?: string } | null;
+      const data = await res.json().catch(() => null) as { number?: string; message?: string; pictureWarning?: string } | null;
       if (!res.ok) throw new Error(data?.message ?? 'Your message could not be sent. Please try again or call us.');
+      setPictureWarning(data?.pictureWarning ?? '');
       setSent(data!.number!);
       window.scrollTo(0, 0);
     } catch (err) {
@@ -115,6 +117,7 @@ export function Support({ query }: { query: string }) {
       <span className="mx-auto grid size-16 place-items-center rounded-full bg-emerald-100 text-3xl text-emerald-700">✓</span>
       <h1 className="mt-6 text-3xl font-extrabold">Thank you, we got your message</h1>
       <p className="mt-3 text-slate-600">Your reference number is <b className="text-slate-900">{sent}</b>. Mention it when you call or message us. We usually reply within one working day.</p>
+      {pictureWarning && <p role="alert" className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{pictureWarning}</p>}
       <div className="mt-8 flex flex-wrap justify-center gap-3">
         {fromCart && kind === 'quotation' && <button type="button" onClick={shop.clearCart} className="rounded-full border border-slate-300 px-5 py-3 font-bold hover:border-slate-900">Empty my cart</button>}
         <button type="button" onClick={() => { setSent(null); setMessage(''); setPictures([]); setOrderRef(''); }} className="rounded-full bg-slate-900 px-5 py-3 font-bold text-white hover:bg-indigo-700">Send another message</button>

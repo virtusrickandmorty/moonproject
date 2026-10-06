@@ -9,7 +9,7 @@ type Status = 'new' | 'in_progress' | 'closed';
 type Kind = 'inquiry' | 'complaint' | 'suggestion' | 'quotation';
 interface Message {
   id: string; number: string; kind: Kind; name: string; email: string | null; phone: string | null; subject: string; message: string;
-  orderRef: string | null; status: Status; receivedAt: string; version: number; files: number;
+  orderRef: string | null; status: Status; receivedAt: string; version: number; files: number; pictureBytes: number;
 }
 interface Detail extends Message {
   attachments: { id: string; fileName: string; contentType: string; bytes: number }[];
@@ -21,6 +21,7 @@ const KIND_LABELS: Record<Kind, [string, string]> = {
   quotation: ['Quotation request', 'bg-indigo-100 text-indigo-800'], inquiry: ['Inquiry', 'bg-sky-100 text-sky-800'],
   complaint: ['Complaint', 'bg-rose-100 text-rose-800'], suggestion: ['Suggestion', 'bg-amber-100 text-amber-800'],
 };
+const pictureSize = (bytes: number) => bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 const Kind = ({ kind }: { kind: Kind }) => <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${KIND_LABELS[kind][1]}`}>{KIND_LABELS[kind][0]}</span>;
 
 export function SupportInbox({ me }: { me: Me }) {
@@ -67,6 +68,7 @@ export function SupportInbox({ me }: { me: Me }) {
                 <div className="flex items-center justify-between gap-2"><Kind kind={m.kind} /><span className="text-xs text-slate-500">{manilaTime(m.receivedAt)}</span></div>
                 <p className={`mt-1 truncate ${m.status === 'new' ? 'font-bold' : 'font-medium'}`}>{m.subject}</p>
                 <p className="truncate text-sm text-slate-500">{m.name} · {m.number}{m.files ? ` · ${m.files} picture${m.files > 1 ? 's' : ''}` : ''}</p>
+                <p className="text-xs text-slate-500">Pictures: {pictureSize(m.pictureBytes)}</p>
               </button>
             </li>))}
         </ul>
@@ -84,7 +86,7 @@ export function SupportInbox({ me }: { me: Me }) {
               <p className="whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-sm">{open.message}</p>
               {open.attachments.length > 0 && <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{open.attachments.map((a) => {
                 const url = `/api/sup/messages/${encodeURIComponent(open.id)}/files/${encodeURIComponent(a.id)}`;
-                return <a key={a.id} href={url} target="_blank" rel="noreferrer" className="block"><img src={url} alt={a.fileName} className="aspect-square w-full rounded-md object-cover ring-1 ring-slate-200" /><span className="mt-1 block truncate text-xs text-slate-500">{a.fileName}</span></a>;
+                return <a key={a.id} href={url} target="_blank" rel="noreferrer" className="block"><img src={url} alt={a.fileName} className="aspect-square w-full rounded-md object-cover ring-1 ring-slate-200" /><span className="mt-1 block truncate text-xs text-slate-500">{a.fileName} · {pictureSize(a.bytes)}</span></a>;
               })}</div>}
             </Panel>
             <Panel title="Notes">

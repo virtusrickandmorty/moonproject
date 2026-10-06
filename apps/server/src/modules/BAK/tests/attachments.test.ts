@@ -3,7 +3,7 @@
  * database copies, and goes off-site and to USB with them; a restore puts the files back; the drill reports a file
  * missing from the backup or changed.
  */
-import { randomBytes } from 'node:crypto';
+import { smallJpeg as JPEG } from '../../../../test/pictures.ts';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -30,7 +30,6 @@ const newKey = async () => {
 };
 const account = (code: string) => env.db.prepare('SELECT id FROM accounts WHERE code = ?').pluck().get(code) as number;
 const stepUp = (c: Client) => c.post('/api/auth/step-up', { password: PASSWORD });
-const JPEG = () => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), randomBytes(2048)]);
 const attach = (data: Buffer, name: string) =>
   accountant.post(`/api/docs/acc.jv/${jvId}/attachments`, data, { 'content-type': 'application/octet-stream', 'x-file-name': name });
 const backUp = async () => {

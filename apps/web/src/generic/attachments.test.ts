@@ -3,6 +3,7 @@ import { rmSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { createTestEnv } from '../../../server/test/helpers.ts';
+import { smallJpeg } from '../../../server/test/pictures.ts';
 import { SESSION_COOKIE } from '../../../server/src/engine/security/sessions.ts';
 import { attachmentsDir } from '../../../server/src/engine/attachments.ts';
 import { attachmentUrl, createApi, newIdempotencyKey } from '../api.ts';
@@ -25,9 +26,10 @@ describe('attachments from the web client', () => {
     const input = { fromCashPlaceId: await place('BDO'), toCashPlaceId: await place('China Bank'), amountSentCents: 100_000, amountReceivedCents: 100_000 };
     const { id } = await api.post('cash.transfer', input, 100_000, newIdempotencyKey());
 
-    const photo = new File([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4])], 'bank slip – 1.jpg', { type: 'image/jpeg' });
+    const jpeg = smallJpeg();
+    const photo = new File([new Uint8Array(jpeg)], 'bank slip – 1.jpg', { type: 'image/jpeg' });
     const added = await api.addAttachment('cash.transfer', id, photo);
-    expect(added).toMatchObject({ fileName: 'bank slip – 1.jpg', contentType: 'image/jpeg', bytes: 8, addedByName: 'Test Owner', removedAt: null });
+    expect(added).toMatchObject({ fileName: 'bank slip – 1.jpg', contentType: 'image/jpeg', bytes: jpeg.length, addedByName: 'Test Owner', removedAt: null });
     expect(await api.attachments('cash.transfer', id)).toEqual([added]);
     expect(attachmentUrl('cash.transfer', id, added.id)).toBe(`/api/docs/cash.transfer/${id}/attachments/${added.id}`);
 
