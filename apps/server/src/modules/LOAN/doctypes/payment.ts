@@ -96,12 +96,13 @@ export const paymentDoc: DocTypeDef<PaymentInput, LoanPayment> = {
       const partly = next.paidPrincipalCents + next.paidInterestCents > 0 ? ` (${formatPeso(rest)} of it is still due)` : '';
       err('instalmentNo', 'NOT_NEXT', `Pay instalment ${next.instalmentNo} of ${l.number} first${partly}.`);
     }
-    if (row && !row.paidBy && doc.shortCents > 0) {
+    const owed = loanBalance(ctx.db, l.id, l.kind);
+    // Short of the instalment, unless it pays off the loan (then nothing stays due).
+    if (row && !row.paidBy && doc.shortCents > 0 && doc.principalCents < owed) {
       issues.push({ field: 'principalCents', code: 'PART_PAYMENT', level: 'warning', message:
         `This pays only part of instalment ${row.instalmentNo}. ${formatPeso(doc.shortCents)} stays due on it, and shows on the late list once past its due date.` });
     }
     if (doc.changed && !doc.note) err('note', 'NOTE_REQUIRED', 'Say why the principal or interest differs from the schedule.');
-    const owed = loanBalance(ctx.db, l.id, l.kind);
     if (doc.principalCents > owed) err('principalCents', 'MORE_THAN_OWED', `Only ${formatPeso(owed)} of principal is still owed on ${l.number}.`);
     if (doc.totalCents === 0) err('principalCents', 'ZERO', 'The payment is zero.');
     return issues;
