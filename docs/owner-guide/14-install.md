@@ -15,6 +15,7 @@
 8. The browser opens the page. If it does not open, go to **http://localhost:8080/**.
 9. You will see the "Join this PC" page. This shows the shop certificate code.
 10. Leave this open. Then join each device with guide 10.
+11. Create the owner account **on this shop PC**, in its own browser. Moonproject refuses to create the first owner from any other device on the network and shows "Create the owner account on the shop PC itself".
 
 ### What the system does for you
 It installs the system and runs it in the background. It keeps all your records in `C:\ProgramData\Moonproject`. Inside are the `data`, `backups`, and `logs` folders.
