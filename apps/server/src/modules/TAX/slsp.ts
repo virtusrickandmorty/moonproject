@@ -29,7 +29,7 @@ import type { WorksheetCheck } from './vat-return.ts';
 export const SALE_CLASSES = ['zero_rated', 'exempt', 'not_a_sale'] as const;
 export type SaleClass = (typeof SALE_CLASSES)[number];
 /** Revenue accounts that are no sale: their income without VAT stays out of the SLSP. */
-const OTHER_INCOME_ROLES = ['INTEREST_INCOME', 'GAIN_ON_DISPOSAL', 'OTHER_INCOME'];
+const OTHER_INCOME_ROLES = ['INTEREST_INCOME', 'GAIN_ON_DISPOSAL', 'OTHER_INCOME', 'GAIN_ON_DEBT_FORGIVENESS'];
 
 /** One figure of a list against the register or the books it must equal. */
 export interface Tie { key: string; label: string; listCents: number; bookCents: number; differenceCents: number }

@@ -173,6 +173,27 @@ describe('SLSP: sales', () => {
     noDifference(r);
   });
 
+  it('a posted loan forgiveness (gain on debt forgiveness) is other income, not a possible sale in the revenue without VAT list', async () => {
+    const BDO = cashPlaceId(env.db, '1111');
+    const loanId = (await accountant.post('/api/docs/loan.loan/post', {
+      input: { lender: 'Sample Bank', kind: 'loan', cashPlaceId: BDO, principalCents: 50_000_000, feeCents: 500_000, interestRateBp: 1200, termMonths: 25, schedule: 'flat' },
+      expectedTotalCents: 50_000_000,
+    }, idem())).json().id as string;
+    posted(await encoder.post('/api/docs/loan.payment/post', {
+      input: { loanId, instalmentNo: 1, cashPlaceId: BDO, principalCents: 500_000, interestCents: 500_000, note: 'Paid part only' }, expectedTotalCents: 1_000_000,
+    }, idem()));
+    const before = (await get('slsp/sales')).json();
+    const f = await accountant.post('/api/docs/loan.forgiveness/post', {
+      input: { loanId, instalmentNo: 1, reason: 'The bank waived the rest (made up)' }, expectedTotalCents: 1_500_000,
+    }, idem());
+    expect(f.statusCode, f.body).toBe(200);
+    const r = (await get('slsp/sales')).json();
+    expect(r.noVatSales.map((x: { journalId: string }) => x.journalId).sort()).toEqual(before.noVatSales.map((x: { journalId: string }) => x.journalId).sort());
+    expect(r.totals.toClassifyCents).toBe(before.totals.toClassifyCents);
+    expect(r.otherIncomeCents).toBe(before.otherIncomeCents + 1_500_000);
+    noDifference(r);
+  });
+
   it('exports the CSV in the BIR data-entry order, then the ERP columns, the total and the ties', async () => {
     const csv = await get('slsp/sales', accountant, '&format=csv');
     expect(csv.headers['content-disposition']).toContain('slsp-sales-2026-Q3.csv');
