@@ -76,7 +76,8 @@ describe('Opening loan goldens', () => {
       }),
     ]);
     const { schedule } = (await accountant.get(`/api/loan/loans/${id}`)).json();
-    expect(schedule.at(-1)).toEqual({ instalmentNo: 13, dueDate: '2027-10-15', principalCents: 6_029_338, interestCents: 60_293, paidBy: null });
+    expect(schedule.at(-1)).toEqual({ instalmentNo: 13, dueDate: '2027-10-15', principalCents: 6_029_338, interestCents: 60_293, paidBy: null,
+      paidPrincipalCents: 0, paidInterestCents: 0, remainingPrincipalCents: 6_029_338, remainingInterestCents: 60_293 });
     expect((await accountant.get(`/api/docs/loan.opening/${id}`)).json().input).toEqual(bank());
     const acc = (await owner.get('/api/acc/opening')).json();
     expect(acc.documents).toMatchObject([{ docType: 'loan.opening', number: 'OBLN-000001', businessDate: CUTOVER, status: 'posted' }]);

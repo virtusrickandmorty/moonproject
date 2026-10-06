@@ -12,7 +12,7 @@ import { useRecord } from '../../generic/record.tsx';
 import { Errors, useLive } from '../COL/parts.tsx';
 import { paymentInput, type PaymentValues } from './loan.ts';
 
-type Worked = { instalments: number; dueDate: string | null; scheduledPrincipalCents: number; scheduledInterestCents: number; totalCents: number };
+type Worked = { instalments: number; dueDate: string | null; scheduledPrincipalCents: number; scheduledInterestCents: number; totalCents: number; earlierPaidCents?: number };
 
 export function PaymentForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   const [loans, setLoans] = useState<LoanRow[]>([]);
@@ -61,7 +61,8 @@ export function PaymentForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
           {loans.length > 0 && open.length === 0 && <p className="text-sm text-slate-500">No loan is still owing.</p>}
           {v.loanId && scheduled && (
             <p className="text-sm">
-              Instalment {v.instalmentNo}{worked ? ` of ${worked.instalments}` : ''}{(worked?.dueDate ?? next?.dueDate) ? `, due ${worked?.dueDate ?? next?.dueDate}` : ''}:{' '}
+              Instalment {v.instalmentNo}{worked ? ` of ${worked.instalments}` : ''}{(worked?.dueDate ?? next?.dueDate) ? `, due ${worked?.dueDate ?? next?.dueDate}` : ''}
+              {worked?.earlierPaidCents ? `, ${peso(worked.earlierPaidCents)} already paid; still due` : ''}:{' '}
               {peso(scheduled.principal)} principal and {peso(scheduled.interest)} interest = <b className="tabular-nums">{peso(scheduled.principal + scheduled.interest)}</b>
             </p>
           )}
@@ -72,7 +73,7 @@ export function PaymentForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={v.differs} disabled={!scheduled}
             onChange={(e) => set({ differs: e.target.checked, principal: scheduled ? formatPesos(scheduled.principal) : '', interest: scheduled ? formatPesos(scheduled.interest) : '' })} />
-          The lender applied it differently
+          The amount or split differs (a part payment, or the lender applied it differently)
         </label>
         {v.differs && (
           <div className="grid gap-3 sm:grid-cols-3">

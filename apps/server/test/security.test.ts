@@ -22,6 +22,20 @@ describe('first run and login (PLAN C6, E13)', () => {
     expect(me.json().roles).toEqual(['owner']);
   });
 
+  it('creates the first owner only from the shop PC itself (I1-01)', async () => {
+    const from = (remoteAddress: string) =>
+      env.app.inject({ method: 'POST', url: '/api/setup/first-owner', remoteAddress, payload: { username: 'virtus', displayName: 'Owner', password: 'three blue sewing machines' } });
+    for (const ip of ['192.168.1.20', '10.0.0.5', '::ffff:192.168.1.20', 'fe80::1']) {
+      const r = await from(ip);
+      expect(r.statusCode).toBe(403);
+      expect(r.json().code).toBe('SHOP_PC_ONLY');
+      expect(r.json().message).toMatch(/shop PC/);
+    }
+    expect((env.db.prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n).toBe(0);
+    expect((await inject('GET', '/api/setup/status')).json()).toEqual({ needsFirstOwner: true });
+    expect((await from('::1')).statusCode).toBe(200);
+  });
+
   it('locks out after 5 wrong passwords, and audits it (N-07)', async () => {
     createUser(env.db, 'enc', ['encoder']);
     for (let i = 0; i < 5; i++) expect((await inject('POST', '/api/auth/login', { username: 'enc', password: 'wrong wrong wrong' })).statusCode).toBe(401);

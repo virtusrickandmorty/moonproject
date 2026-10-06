@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, type CashAccount, type DocTypeInfo, type Me, type ReconReport, type ReconRow } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, ReasonDialog, inputClass, peso } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
 import { Errors, Figures } from '../COL/parts.tsx';
 import { adjustmentLink, byBank, figuresOf, finishBlockers, hasChanges, latestOf, monthEnd, ownMatch, readBalance, savedTicks, startCheck } from './recon.ts';
@@ -190,5 +190,21 @@ export function BankReconWork({ me, docTypes, params }: Props) {
       {adjType?.canPost && <Button disabled={busy} onClick={adjust}>Record a bank adjustment</Button>}
       {blockers.length > 0 && <span className="self-center text-sm text-slate-600">To finish: {blockers.join(' ')}</span>}
     </div>}
+    <ReopenRecon report={report} me={me} onReopened={(r) => { load(r); setError(''); setMessage('Reopened. The month is unlocked: change what is needed and finish it again.'); }} />
+  </div>;
+}
+
+/**
+ * A finished reconciliation reopens with a reason (cash.recon.reopen, audit A1-005): the Reopen button asks first. Only a
+ * bank's latest month reopens; the server says so plainly when it is not.
+ */
+export function ReopenRecon({ report, me, onReopened, startOpen = false }: { report: ReconReport; me: Me; onReopened: (r: ReconReport) => void; startOpen?: boolean }) {
+  const [asking, setAsking] = useState(startOpen);
+  if (report.status !== 'finished' || !me.permissions.includes('cash.recon.reopen')) return null;
+  return <div className="flex flex-wrap gap-2">
+    <Button onClick={() => setAsking(true)}>Reopen</Button>
+    {asking && <ReasonDialog title={`Reopen ${report.bankName} · ${report.month}?`} confirmLabel="Reopen" danger onClose={() => setAsking(false)}
+      explain="This unlocks the month so its ticks and statement lines can change. It must be finished again at zero difference. Only a bank's latest month reopens."
+      onConfirm={async (reason) => { const r = await api.reopenRecon(report.id, reason); setAsking(false); onReopened(r); }} />}
   </div>;
 }

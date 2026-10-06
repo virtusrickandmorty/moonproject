@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path';
 import { openDb } from './platform/db/driver.ts';
 import { stamp, systemClock } from './platform/clock.ts';
 import { buildApp, prepareDatabase } from './app.ts';
+import { NewerDatabaseError } from './platform/db/migrate.ts';
 import { loadModules } from './modules/load.ts';
 import { bakSettings, isDue, lastOkRun, removeLeftoverCopies, runBackup } from './modules/BAK/backup.ts';
 import { applyPendingRestore, recordRestored } from './modules/BAK/restore.ts';
@@ -34,8 +35,17 @@ const restored = applyPendingRestore(dbFile, stamp(systemClock));
 const db = openDb(dbFile);
 const lan = process.env.MOONPROJECT_LISTEN === 'lan';
 const modules = await loadModules();
-// The certificate table comes with the engine migrations, so LAN mode migrates first (buildApp's own run is then a no-op).
-let tls = lan ? (prepareDatabase(db, systemClock, modules), ensureTls(db, systemClock, localNames())) : null;
+// Migrate first (buildApp's own run is then a no-op): the certificate table comes with the engine migrations, and a
+// database a newer version used is refused here, in plain words, before anything writes to it.
+try {
+  prepareDatabase(db, systemClock, modules);
+} catch (e) {
+  if (!(e instanceof NewerDatabaseError)) throw e;
+  console.error(e.message);
+  db.close();
+  process.exit(1);
+}
+let tls = lan ? ensureTls(db, systemClock, localNames()) : null;
 const practicePort = Number(process.env.MOONPROJECT_PRACTICE_PORT ?? 0);
 let practice: PracticeShop | undefined;
 if (practicePort) {

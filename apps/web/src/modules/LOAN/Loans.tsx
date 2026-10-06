@@ -1,7 +1,7 @@
 /**
  * Loans (PLAN E10, H2): every loan with lender, principal, paid, left and the next due date, with a warning for what is
  * late; and one loan's page with its schedule, its payments and what is late. Balances come from the ledger on the
- * server (NR-2); "late" is an instalment past its due date with no recorded payment, as of the server's date.
+ * server (NR-2); "late" is an instalment past its due date that recorded payments do not fully cover, as of the server's date.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type DocTypeInfo, type LateInstalment, type LoanDetail, type LoanPayment, type LoanRow } from '../../api.ts';
@@ -109,7 +109,8 @@ export function LoanPage({ docTypes, params }: { docTypes: DocTypeInfo[]; params
               <tr key={r.instalmentNo} className={`border-t border-slate-100 ${r.state === 'late' ? 'bg-red-50' : ''}`}>
                 <td className="py-1">{r.instalmentNo}</td><td className="py-1">{r.dueDate}</td>
                 <td className={num}>{peso(r.principalCents)}</td><td className={num}>{peso(r.interestCents)}</td><td className={num}>{peso(r.principalCents + r.interestCents)}</td>
-                <td className="py-1">{r.state === 'paid' ? `Paid (${r.paidBy})` : r.state === 'late' ? <span className="font-medium text-red-800">{STATE_WORDS.late}</span> : STATE_WORDS[r.state]}</td>
+                <td className="py-1">{r.state === 'paid' ? `Paid (${r.paidBy})` : r.state === 'late' ? <span className="font-medium text-red-800">{STATE_WORDS.late}</span> : STATE_WORDS[r.state]}
+                  {r.state !== 'paid' && (r.paidPrincipalCents ?? 0) + (r.paidInterestCents ?? 0) > 0 && <> · part paid, {peso((r.remainingPrincipalCents ?? 0) + (r.remainingInterestCents ?? 0))} still due</>}</td>
               </tr>
             ))}
           </tbody>

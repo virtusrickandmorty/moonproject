@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import type { FastifyInstance } from 'fastify';
 import { PASSWORD, cashPlaceId, createTestEnv, encoderOwnDefaults, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
-import { createApi, newIdempotencyKey, type ReconBookLine, type ReconReport, type ReconRow } from '../../api.ts';
+import { createApi, newIdempotencyKey, type Me, type ReconBookLine, type ReconReport, type ReconRow } from '../../api.ts';
+import { ReopenRecon } from './BankRecon.tsx';
 import { buildMenu } from '../../shell/menu.ts';
 import { adjustmentInput, statementDay } from './adjustment.ts';
 import { CLEARED_MARK, adjustmentLink, byBank, figuresOf, finishBlockers, hasChanges, latestOf, monthEnd, ownMatch, readBalance, reconFigures, savedTicks, startCheck, statementLineFor, tickPlan } from './recon.ts';
@@ -207,6 +210,22 @@ describe('bank reconciliation screens against the server', () => {
     expect(done.bookLines.map((l) => l.state)).toEqual(['cleared', 'outstanding', 'cleared']);
     await expect(api.matchRecon(rep.id, [], [payment])).rejects.toMatchObject({ code: 'LOCKED' });
     expect(await api.cashRecons()).toEqual([expect.objectContaining({ bankId: BDO, month: '2026-09', status: 'finished', createdByName: 'acct', finishedByName: 'acct' })]);
+
+    // A finished month shows a Reopen button to whoever may reopen it; it asks for the reason first (A1-005).
+    const me = await api.me();
+    const reopen = (report: ReconReport, who: Me, startOpen = false) => renderToStaticMarkup(createElement(ReopenRecon, { report, me: who, onReopened: () => undefined, startOpen }));
+    expect(me.permissions).toContain('cash.recon.reopen');
+    expect(reopen(done, me)).toContain('>Reopen</button>');
+    const asking = reopen(done, me, true);
+    expect(asking).toContain('Reopen Cash in bank – BDO · 2026-09?');
+    expect(asking).toContain('Reason (at least 10 characters)');
+    expect(reopen(done, { ...me, permissions: me.permissions.filter((p) => p !== 'cash.recon.reopen') })).toBe('');
+    expect(reopen(started, me)).toBe('');
+    // What the dialog sends: the server unlocks the month with the reason, and the button goes away.
+    await expect(api.reopenRecon(rep.id, 'too short')).rejects.toMatchObject({ status: 400 });
+    const reopened = await api.reopenRecon(rep.id, 'The bank corrected its statement');
+    expect(reopened).toMatchObject({ status: 'open', reopenReason: 'The bank corrected its statement' });
+    expect(reopen(reopened, me)).toBe('');
   });
 
   it('clears an item dated after the month inside the month and counts it as recorded after it', async () => {

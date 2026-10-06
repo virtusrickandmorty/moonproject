@@ -2,6 +2,8 @@
  * Forward-only, checksummed migrations (PLAN C5). Engine migrations run first, then each
  * module's migrations in module-code order. After migrating, every table gets a
  * BEFORE DELETE trigger that aborts (NR-3), so no table can ever lose rows.
+ * A database that already ran a migration this version does not have (a newer version used it) is refused before
+ * anything runs: an older version must never write to it (audit B3-3).
  */
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
@@ -14,6 +16,20 @@ export interface MigrationSource {
   dir: string;
 }
 
+/** The database was used by a newer version: `unknown` are its migrations that this version does not have. */
+export class NewerDatabaseError extends Error {
+  readonly unknown: string[];
+  constructor(unknown: string[]) {
+    super(
+      'This database was used by a newer version of Virtus, so this older version will not start on it. ' +
+        'Install the newer version again (or a later one), or restore a backup made with this version. ' +
+        `Changes this version does not know: ${unknown.slice(0, 5).join(', ')}${unknown.length > 5 ? `, and ${unknown.length - 5} more` : ''}.`,
+    );
+    this.name = 'NewerDatabaseError';
+    this.unknown = unknown;
+  }
+}
+
 export function migrate(db: Db, sources: MigrationSource[], appliedAt: string): string[] {
   db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
     id TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL) STRICT`);
@@ -23,6 +39,11 @@ export function migrate(db: Db, sources: MigrationSource[], appliedAt: string): 
       r.checksum,
     ]),
   );
+  const known = new Set(
+    sources.flatMap((src) => (existsSync(src.dir) ? readdirSync(src.dir).filter((f) => f.endsWith('.sql')).map((f) => `${src.owner}/${f}`) : [])),
+  );
+  const unknown = [...applied.keys()].filter((id) => !known.has(id)).sort();
+  if (unknown.length > 0) throw new NewerDatabaseError(unknown);
   const ran: string[] = [];
   for (const src of sources) {
     if (!existsSync(src.dir)) continue;

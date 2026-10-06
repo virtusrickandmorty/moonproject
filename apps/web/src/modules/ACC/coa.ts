@@ -21,6 +21,27 @@ export function accountNotes(a: CoaAccount): string[] {
 /** The list, with inactive accounts left out when asked. Rows stay in the code order the server sent. */
 export const visibleAccounts = (accounts: CoaAccount[], showInactive: boolean) => (showInactive ? accounts : accounts.filter((a) => a.isActive));
 
+/** Where the financial statements show an account: by the first digit of its code, whatever its type (the server's rule, audit A1-001). */
+const CODE_SECTIONS: Record<string, { title: string; types: CoaAccount['type'][] }> = {
+  '1': { title: 'Assets', types: ['asset'] },
+  '2': { title: 'Liabilities', types: ['liability'] },
+  '3': { title: 'Equity', types: ['equity'] },
+  '4': { title: 'Revenue', types: ['revenue'] },
+  '5': { title: 'Cost of sales', types: ['expense'] },
+  '6': { title: 'Operating expenses', types: ['expense'] },
+  '7': { title: 'Other income and expenses', types: ['revenue', 'expense'] },
+  '8': { title: 'Income tax', types: ['expense'] },
+};
+
+/** A warning (never a refusal) when the type does not fit the code's first digit; '' when it fits or the code is not complete yet. */
+export function typeWarning(code: string, type: CoaAccount['type']): string {
+  const c = code.trim();
+  const section = /^[1-8]\d{3}$/.test(c) ? CODE_SECTIONS[c[0]!] : undefined;
+  if (!section || section.types.includes(type)) return '';
+  return `The code ${c} starts with ${c[0]}, so the financial statements show this account under ${section.title}, whatever its type. ` +
+    'The statements group accounts by code, not by type. Check the code and the type before you use the account.';
+}
+
 export interface NewAccountValues { code: string; name: string; type: CoaAccount['type']; contra: boolean }
 
 /** The new account's body, or plain messages. The code rules are the server's (four digits from 1000 to 8999; 1101 to 1189 are cash places). */

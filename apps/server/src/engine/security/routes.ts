@@ -30,6 +30,11 @@ export function currentUser(req: FastifyRequest): SessionUser {
   return req.user;
 }
 
+/** True when the request comes from the shop PC itself (no proxy is trusted, so this is the socket's address). */
+export function isLoopback(ip: string): boolean {
+  return ip === '::1' || ip.startsWith('127.') || ip.startsWith('::ffff:127.');
+}
+
 export function securityRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
   const hash = (p: string) => hashPassword(p, deps.config.scryptN);
@@ -45,6 +50,7 @@ export function securityRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   app.post('/api/setup/first-owner', { config: { permission: 'public' } }, async (req, reply) => {
+    if (!isLoopback(req.ip)) throw new AppError('SHOP_PC_ONLY', 'Create the owner account on the shop PC itself, not from another device. Open Moonproject in the browser on the shop PC.', 403);
     const b = body(z.object({ username: z.string().trim().min(2).max(40), displayName: z.string().trim().min(1).max(80), password: z.string() }).strict(), req);
     checkPasswordPolicy(b.password, b.username);
     const userId = newId();
