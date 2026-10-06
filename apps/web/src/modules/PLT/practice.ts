@@ -2,6 +2,12 @@
 import type { PracticeStatus } from '../../api.ts';
 
 /** The practice shop is this same PC on its own port, over the same kind of address the page was opened with. */
+/** The practice shop's public address (it answers as the practice shop, practice: true on /api/health). */
+export const PRACTICE_URL = 'https://practice.virtusgarments.com/';
+/** Whether the ERP is opened on this PC or the shop network itself (not through the public address). */
+export const isLocalAddress = (hostname: string) => /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)|\.local$/.test(hostname);
+
+/** The practice shop on this PC or the shop network: the same host, the practice port. */
 export function practiceAddress(location: { protocol: string; hostname: string }, port: number): string {
   return `${location.protocol}//${location.hostname}:${port}/`;
 }

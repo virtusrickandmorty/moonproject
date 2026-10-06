@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type EmployeeRow, type Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
+import { Button, Dialog, Field, Notice, inputClass, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
 
 export function Employees({ me }: { me: Me }) {
@@ -20,7 +20,7 @@ export function Employees({ me }: { me: Me }) {
     <div className="max-w-4xl space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Employees</h1>
-        {me.permissions.includes('emp.manage') && !adding && <Button tone="primary" onClick={() => setAdding(true)}>+ New employee</Button>}
+        {me.permissions.includes('emp.manage') && <Button tone="primary" onClick={() => setAdding(true)}>+ New employee</Button>}
       </div>
       {adding && <NewEmployee onClose={() => setAdding(false)} />}
       <div className={searchRowClass}>
@@ -50,33 +50,40 @@ export function Employees({ me }: { me: Me }) {
 }
 
 function NewEmployee({ onClose }: { onClose: () => void }) {
-  const [v, setV] = useState({ fullName: '', position: '', department: '', costCentre: 'production', hireDate: '' });
+  const [v, setV] = useState({ fullName: '', position: '', department: '', costCentre: 'production', hireDate: '', birthday: '', gender: '', contactNo: '', homeAddress: '' });
   const a = useAction();
   const ready = v.fullName.trim().length >= 2 && /^\d{4}-\d{2}-\d{2}$/.test(v.hireDate);
+  const set = (k: keyof typeof v) => (x: { target: { value: string } }) => setV({ ...v, [k]: x.target.value });
   const save = async () => {
     const opt = (s: string) => (s.trim() ? s.trim() : undefined);
-    const e = await api.addEmployee({ fullName: v.fullName.trim(), costCentre: v.costCentre, hireDate: v.hireDate, position: opt(v.position), department: opt(v.department) });
+    const e = await api.addEmployee({ fullName: v.fullName.trim(), costCentre: v.costCentre, hireDate: v.hireDate, position: opt(v.position), department: opt(v.department),
+      birthday: opt(v.birthday), gender: opt(v.gender), contactNo: opt(v.contactNo), homeAddress: opt(v.homeAddress) });
     navigate(`/emp/employees/${e.id}`);
   };
   return (
-    <Panel title="New employee">
+    <Dialog title="New employee" wide onClose={onClose}>
       <p className="text-sm text-slate-600">SSS, PhilHealth, Pag-IBIG and withholding tax start switched on. Set the pay on the next page.</p>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Full name" required><input className={inputClass} value={v.fullName} onChange={(e) => setV({ ...v, fullName: e.target.value })} /></Field>
-        <Field label="Hire date" required><input type="date" className={inputClass} value={v.hireDate} onChange={(e) => setV({ ...v, hireDate: e.target.value })} /></Field>
-        <Field label="Position"><input className={inputClass} value={v.position} onChange={(e) => setV({ ...v, position: e.target.value })} /></Field>
-        <Field label="Department"><input className={inputClass} value={v.department} onChange={(e) => setV({ ...v, department: e.target.value })} /></Field>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <Field label="Full name" required><input autoFocus className={inputClass} value={v.fullName} onChange={set('fullName')} /></Field>
+        <Field label="Position"><input className={inputClass} value={v.position} onChange={set('position')} /></Field>
+        <Field label="Department"><input className={inputClass} value={v.department} onChange={set('department')} /></Field>
+        <Field label="Date of birth"><input type="date" className={inputClass} value={v.birthday} onChange={set('birthday')} /></Field>
+        <Field label="Gender"><select className={inputClass} value={v.gender} onChange={set('gender')}>
+          <option value="">Not given</option><option value="male">Male</option><option value="female">Female</option></select></Field>
+        <Field label="Contact no."><input type="tel" inputMode="tel" placeholder="0917 123 4567" className={inputClass} value={v.contactNo} onChange={set('contactNo')} /></Field>
+        <div className="sm:col-span-2 lg:col-span-3"><Field label="Home address"><textarea rows={2} maxLength={300} className={inputClass} value={v.homeAddress} onChange={set('homeAddress')} /></Field></div>
+        <Field label="Hire date" required><input type="date" className={inputClass} value={v.hireDate} onChange={set('hireDate')} /></Field>
         <Field label="Pay cost group" required hint="Production pay is direct labor; office pay is an office expense.">
-          <select className={inputClass} value={v.costCentre} onChange={(e) => setV({ ...v, costCentre: e.target.value })}>
+          <select className={inputClass} value={v.costCentre} onChange={set('costCentre')}>
             <option value="production">Production</option><option value="office">Office and sales</option>
           </select>
         </Field>
       </div>
       {a.error && <Notice>{a.error}</Notice>}
-      <div className="flex gap-2">
+      <div className="flex justify-end gap-2">
+        <Button onClick={onClose}>Cancel</Button>
         <Button tone="primary" disabled={!ready || a.busy} onClick={() => a.run(save)}>Add employee</Button>
-        <Button onClick={onClose}>Close</Button>
       </div>
-    </Panel>
+    </Dialog>
   );
 }

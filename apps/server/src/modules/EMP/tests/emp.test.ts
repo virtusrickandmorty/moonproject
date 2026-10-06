@@ -45,6 +45,20 @@ describe('employee master', () => {
     expect(JSON.parse(created!.data).changes.position).toEqual({ before: null, after: 'Sewer' });
   });
 
+  it('keeps date of birth, gender, home address and contact no.; checks them; audits their names, never their values', async () => {
+    const a = await create({ ...newbie, birthday: '1998-04-12', gender: 'female', homeAddress: 'Blk 1 Lot 2 Sample St., Silang, Cavite', contactNo: '0917 123 4567' });
+    expect((await enc.get(`/api/emp/employees/${a.id}`)).json().employee).toMatchObject({
+      birthday: '1998-04-12', gender: 'female', homeAddress: 'Blk 1 Lot 2 Sample St., Silang, Cavite', contactNo: '0917 123 4567' });
+    expect((await acct.post('/api/emp/employees', { ...newbie, gender: 'unknown' })).statusCode).toBe(400);
+    expect((await acct.post('/api/emp/employees', { ...newbie, contactNo: 'call me' })).statusCode).toBe(400);
+    const changed = await acct.put(`/api/emp/employees/${a.id}`, { contactNo: '+63 950 588 2663', homeAddress: null }, { 'if-match': String(a.version) });
+    expect(changed.statusCode, changed.body).toBe(200);
+    expect(changed.json()).toMatchObject({ contactNo: '+63 950 588 2663', homeAddress: null, gender: 'female' });
+    const trail = auditOf(a.id).map((x) => x.data).join(' ');
+    expect(trail).not.toMatch(/1998-04-12|Sample St|0917|588 2663|female/);
+    expect(trail).toMatch(/contactNo/);
+  });
+
   it('switching a statutory deduction off needs a reason; edits need If-Match; IDs need emp.view_ids', async () => {
     const off = await acct.post('/api/emp/employees', { ...newbie, statutory: { sss: true, phic: true, hdmf: true, wtax: false } });
     expect(off.json().code).toBe('STATUTORY_REASON');

@@ -295,10 +295,13 @@ export interface RateTable { asOf: string; current: PieceRate[]; history: PieceR
 /** Employees and time (EMP). Government IDs arrive masked without emp.view_ids; pay history is null without pay.view_rates. */
 export interface EmployeeRow { id: string; code: string; fullName: string; position: string | null; department: string | null; costCentre: string; isActive: boolean; hireDate: string; separatedOn: string | null }
 export interface Statutory { sss: boolean; phic: boolean; hdmf: boolean; wtax: boolean }
+/** A person's own side-menu order: the groups, and the screens' addresses within each group. */
+export interface MenuOrder { groups: string[]; items: Record<string, string[]> }
 export interface EmployeeRecord extends EmployeeRow {
   separationReason: string | null; birthday: string | null; statutory: Statutory; statutoryOffReason: string | null;
   sssNo: string | null; phicNo: string | null; hdmfNo: string | null; tin: string | null;
   payoutMethod: 'cash' | 'bank' | 'gcash'; payoutAccount: string | null; emergencyContact: string | null; version: number;
+  gender: 'male' | 'female' | null; homeAddress: string | null; contactNo: string | null;
 }
 export interface PayProfile {
   id: number; effectiveFrom: string; payType: 'daily' | 'piece' | 'monthly' | 'mixed'; dailyRateCents: number | null; monthlyRateCents: number | null;
@@ -924,6 +927,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
       call<{ html: string; copyNumber: number }>('POST', `/api/prt/print/${encodeURIComponent(type)}/${encodeURIComponent(id)}`, { variant }),
     /** practice: this is the practice shop (PLAN C8). */
     health: () => call<{ serverTime: string; practice?: boolean }>('GET', '/api/health'),
+    /** The signed-in person's own side-menu order (empty: the usual order). */
+    menuOrder: () => call<MenuOrder>('GET', '/api/pref/menu'),
+    saveMenuOrder: (order: MenuOrder) => call<MenuOrder>('PUT', '/api/pref/menu', order),
     dashHome: () => call<DashHomeData>('GET', '/api/dash/home'),
     dashOwnerHealth: () => call<DashOwnerHealth>('GET', '/api/dash/owner-health'),
     dashOwnerCharts: () => call<DashOwnerCharts>('GET', '/api/dash/owner-charts'),

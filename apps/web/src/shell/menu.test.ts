@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FOLD_AFTER, buildMenu, labelOf, openGroups, pagePermission, type MenuItem } from './menu.ts';
+import { FOLD_AFTER, applyMenuOrder, buildMenu, labelOf, openGroups, pagePermission, type MenuItem } from './menu.ts';
 import type { DocTypeInfo } from '../api.ts';
 
 describe('menu (PLAN H1)', () => {
@@ -57,5 +57,15 @@ describe('menu (PLAN H1)', () => {
     expect(pagePermission('/com/settings')).toBe('com.settings.manage');
     expect(pagePermission('/admin/practice')).toBeUndefined();
     expect(pagePermission('/shopping')).toBeUndefined();
+  });
+
+  it("follows a person's own order, keeping screens they did not place after the placed ones", () => {
+    const m = (group: MenuItem['group'], ...paths: string[]) => ({ group, items: paths.map((path) => ({ group, label: path, path })) });
+    const menu = [m('Overview', '/'), m('Sales', '/cus', '/pos', '/shp'), m('Admin', '/admin/users')];
+    const shaped = applyMenuOrder(menu, { groups: ['Sales', 'Admin'], items: { Sales: ['/pos', '/gone', '/cus'] } });
+    expect(shaped.map((g) => g.group)).toEqual(['Sales', 'Admin', 'Overview']);
+    expect(shaped[0]!.items.map((i) => i.path)).toEqual(['/pos', '/cus', '/shp']);
+    expect(applyMenuOrder(menu, { groups: [], items: {} })).toBe(menu);
+    expect(applyMenuOrder(menu, null)).toBe(menu);
   });
 });
