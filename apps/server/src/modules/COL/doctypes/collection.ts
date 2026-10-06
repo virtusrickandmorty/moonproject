@@ -26,6 +26,7 @@ import { customerRef } from '../../CUS/public.ts';
 import { isAbandoned, jobOrderRef, jobOrdersOf, joLedger, joMoney } from '../../JO/public.ts';
 import { saleOpenCents, saleRef } from '../../QS/public.ts';
 import { bookletIssue } from '../../TAX/public.ts';
+import { signedOffIssues } from '../../ACC/public.ts';
 import { writeOffsOn } from '../credits.ts';
 import { depositModeOn, depositVatLines, depositVatRowsOf, modeKeptIssue, recordDepositVat, settleJobOrder, vatOnDeposit, vatRow, type DepositMode } from './deposit-vat.ts';
 import { MAX_CENTS, cashPlaceIssues, insertTenders, loadTenders, sumCents, takenOutBy, withNames } from '../ledger.ts';
@@ -99,7 +100,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
   title: 'Collection Receipt',
   numbering: { series: { key: 'COL', prefix: 'COL-' } },
   permissions: { view: 'col.view', create: 'col.create', post: 'col.post', cancel: 'col.cancel' },
-  dating: 'system',
+  dating: 'printed', // the date on the booklet collection receipt (registry.ts)
   inputSchema: collectionInput,
   externalNumber: (doc) => doc.crNumber,
 
@@ -155,6 +156,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
     }
     const booklet = bookletIssue(ctx.db, 'CR', doc.crNumber, 'crNumber');
     if (booklet) issues.push(booklet);
+    issues.push(...signedOffIssues(ctx.db, ctx.businessDate));
     issues.push(...cashPlaceIssues(ctx.db, doc.tenders, 'Pick where the money went.'));
     issues.push(...checkIssues(ctx.db, doc.tenders, ctx.businessDate), ...pdcUseIssues(ctx.db, doc, ctx.businessDate));
     if (doc.totalCents > MAX_CENTS) add('error', 'tenders', 'TOO_BIG', 'The amount is over ₱100 million. Please check the amounts.');

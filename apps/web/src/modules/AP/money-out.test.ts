@@ -225,10 +225,12 @@ describe('money-out web client against server routes', () => {
     const advance = ownerMoneyInput({ ...emptyEq('advance'), personId, cashPlaceId: CASH, amount: '20,000', parValue: '', note: '' }).input;
     await encoder.post('eq.owner_money', advance, (await encoder.preview('eq.owner_money', advance)).totalCents, key());
     const capital = ownerMoneyInput({ ...emptyEq('capital_stock'), personId, cashPlaceId: CASH, amount: '5,000', parValue: '5,000', note: '' }).input;
-    expect((await encoder.preview('eq.owner_money', capital)).issues.map((i) => i.code)).toEqual(['CLASSIFY']);
+    // Encoders have the accountant's access (owner's decision, 6 Oct 2026), so they may classify owner money too.
+    expect((await encoder.preview('eq.owner_money', capital)).issues.map((i) => i.code)).toEqual([]);
     const repay = officerInput({ ...emptyEq('repaid_to_officer'), personId, cashPlaceId: CASH, amount: '8,000', parValue: '', note: 'Part of the advance' }).input;
     await encoder.post('eq.officer', repay, (await encoder.preview('eq.officer', repay)).totalCents, key());
     expect(await accountant.officerBalances(personId)).toMatchObject({ dueFromCents: 0, dueToCents: 1_200_000 });
-    await expect(encoder.officerBalances(personId)).rejects.toMatchObject({ status: 403 });
+    // Encoders have the accountant's access (owner's decision, 6 Oct 2026): they see the officer ledger too.
+    expect(await encoder.officerBalances(personId)).toMatchObject({ dueFromCents: 0, dueToCents: 1_200_000 });
   });
 });

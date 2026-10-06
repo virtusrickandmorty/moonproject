@@ -225,12 +225,11 @@ describe('web client for job orders, releases and invoice records', () => {
     rel = releaseInput({ ...rv, overrideReason: 'Needed for the tournament today', creditNote: 'Pays the rest on Friday', creditDueInDays: '7' }, s.lines);
     rp = await api.joReleasePreview(rel.release);
     expect(rp).toMatchObject({ release: { totalCents: 600_000, issues: [], doc: { balanceDueCents: 300_000 } }, booklet: { grossCents: 600_000, vatableSalesCents: 535_714, vatCents: 64_286 }, depositAppliedCents: 300_000 });
-    // An encoder may not release it before it is ready or paid.
+    // An encoder may not release it before it is ready (the owner's); unpaid is fine, as for the accountant (6 Oct 2026).
     const enc = createApi(injectFetch(env.app));
     await enc.login('enc1', PASSWORD);
     expect((await enc.joReleasePreview(rel.release)).release.issues.map((i) => i.message)).toEqual([
       'Only the owner can release a job order that is not ready yet.',
-      '₱3,000.00 is still due on JO-000001. Only the owner or the accountant can release it before it is paid.',
     ]);
     const out = await api.joRelease({ release: rel.release, invoice: rel.invoice }, rp.release.totalCents, key());
     expect([out.release.number, out.invoiceRecord]).toEqual(['REL-000001', null]);

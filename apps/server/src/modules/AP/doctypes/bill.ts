@@ -21,6 +21,7 @@ import { EWT_CLASSES, settingAt, type EwtClass } from '../../../engine/settings.
 import type { Db } from '../../../platform/db/driver.ts';
 import { TWA_ONLY, appliedEwtClass, category, listCategories } from '../../EXP/public.ts';
 import { activeSupplierIds, activeSupplyIds, receivingReport, supplier, supply } from '../../PUR/public.ts';
+import { dayOf, signedOffIssues } from '../../ACC/public.ts';
 import { duplicateInvoiceIssues } from '../invoices.ts';
 import { advance, openAdvances, openOnAdvance, paymentsOnBill, type AdvanceRow } from '../ledger.ts';
 
@@ -149,7 +150,7 @@ export const billDoc: DocTypeDef<BillInput, Bill> = {
   title: 'Supplier Bill',
   numbering: { series: { key: 'BILL', prefix: 'BILL-' } },
   permissions: { view: 'ap.bill.view', create: 'ap.bill.create', post: 'ap.bill.post', cancel: 'ap.bill.cancel' },
-  dating: 'system',
+  dating: 'printed', // the date printed on the supplier's document (registry.ts)
   inputSchema: billInput,
 
   compute(input, ctx) {
@@ -183,7 +184,8 @@ export const billDoc: DocTypeDef<BillInput, Bill> = {
       else if (l.categoryId && !category(ctx.db, l.categoryId)?.isActive) add('error', `lines.${i}.categoryId`, 'CATEGORY', `${at}: pick an active expense category.`);
     });
     if (doc.totalCents > MAX_CENTS) add('error', 'lines', 'TOO_LARGE', `A bill cannot be more than ${formatPeso(MAX_CENTS)}.`);
-    if (doc.supplierInvoiceDate > ctx.businessDate) add('error', 'supplierInvoiceDate', 'INVOICE_DATE', 'The invoice date cannot be after today.');
+    if (doc.supplierInvoiceDate > ctx.businessDate) add('error', 'supplierInvoiceDate', 'INVOICE_DATE', `The invoice date cannot be after ${dayOf(ctx)}.`);
+    issues.push(...signedOffIssues(ctx.db, ctx.businessDate));
     if (doc.dueDate < doc.supplierInvoiceDate) add('error', 'dueDate', 'DUE_DATE', 'The due date cannot be before the invoice date.');
     const party = { supplierId: doc.supplierId, tin: doc.supplierTin, payeeName: doc.supplierName };
     issues.push(...duplicateInvoiceIssues(ctx.db, ctx.can, party, doc.supplierInvoiceNo, doc.duplicateReason));

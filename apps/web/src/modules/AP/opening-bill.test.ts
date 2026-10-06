@@ -60,7 +60,7 @@ describe('opening supplier bill web client against server routes', () => {
     await server.post('/api/acc/opening/cutover-date', { date: '2026-09-27' });
     const opening = await accountant.opening();
     expect(openingDateProblem(opening)).toBeNull();
-    await expect(encoder.opening()).rejects.toMatchObject({ status: 403 });
+    expect((await encoder.opening()).cutoverDate).toBe('2026-09-27'); // encoders have the accountant's access (6 Oct 2026)
 
     const { input } = openingBillInput({ ...typed, supplierId });
     const today = await accountant.preview('ap.opening', input);

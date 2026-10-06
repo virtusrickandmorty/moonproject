@@ -8,6 +8,7 @@ import { ReleaseForm } from './ReleaseForm.tsx';
 import { InvoiceRecordForm } from './InvoiceRecordForm.tsx';
 import { emptyJo, emptyJoLine } from './forms.ts';
 import { Exception, SalesActions } from './entry.tsx';
+import { PrintedDateField } from '../../generic/PrintedDate.tsx';
 
 afterEach(() => vi.restoreAllMocks());
 const mode = { kind: 'new' } as const;
@@ -50,7 +51,14 @@ it('invoice record keeps release, trimmed booklet number and note in Record', as
   change(f.field('Invoice number (from the booklet)'), ' 0042 ');
   change(f.field('Note'), ' Booklet 3 ');
   f.find('children', 'Record').props.onClick();
-  expect(recorder.ask).toHaveBeenLastCalledWith({ releaseId: 'rel1', invoiceNumber: '0042', note: 'Booklet 3' }, []);
+  expect(recorder.ask).toHaveBeenLastCalledWith({ releaseId: 'rel1', invoiceNumber: '0042', note: 'Booklet 3' }, [], undefined);
+  // The date on the booklet invoice goes with it (blank is today); a date that does not exist stops it here.
+  f.render().find((n) => n.type === PrintedDateField)!.props.onChange('2026-09-20');
+  f.find('children', 'Record').props.onClick();
+  expect(recorder.ask).toHaveBeenLastCalledWith({ releaseId: 'rel1', invoiceNumber: '0042', note: 'Booklet 3' }, [], '2026-09-20');
+  f.render().find((n) => n.type === PrintedDateField)!.props.onChange('2026-09-31');
+  f.find('children', 'Record').props.onClick();
+  expect(recorder.ask).toHaveBeenLastCalledWith(expect.anything(), ['Type the date printed on the document like 2026-09-30, or leave it empty for today.'], undefined);
 });
 
 it('unused exceptions start folded, active exceptions stay open, and the phone action includes the total', () => {
