@@ -17,6 +17,12 @@
 10. Leave this open. Then join each device with guide 10.
 11. Create the owner account **on this shop PC**, in its own browser. Moonproject refuses to create the first owner from any other device on the network and shows "Create the owner account on the shop PC itself".
 
+### Before putting the website shop on the internet
+1. Create the owner account in the browser **on the shop PC** and finish setup privately.
+2. Turn on automatic backups, keep an off-machine copy, and complete a restore drill (guides 11 and 12).
+3. Ask the installer to put trusted HTTPS in front of the public shop. Check that its certificate is trusted by an outside browser.
+4. Give the public shop pages their own address. Ask the installer to allow only the shop pages and their shop/support requests there, keeping accounting, staff sign-in, setup, device joining and practice pages on the LAN or VPN. Check from outside that only the approved public pages are reachable before opening the shop to customers.
+
 ### What the system does for you
 It installs the system and runs it in the background. It keeps all your records in `C:\ProgramData\Moonproject`. Inside are the `data`, `backups`, and `logs` folders.
 
