@@ -41,7 +41,8 @@ export function shpReviewRoutes(app: FastifyInstance, deps: AppDeps): void {
     db.prepare(`SELECT id, product_id AS productId, product_name AS productName, rating, title, body, shown_name AS name, created_at AS at
       FROM shp_reviews WHERE is_hidden = 0 ORDER BY created_at DESC, rowid DESC LIMIT 500`).all());
 
-  app.post<{ Params: { number: string } }>('/api/shp/orders/:number/reviews', { config: { permission: 'public' } }, async (req) => {
+  app.post<{ Params: { number: string } }>('/api/shp/orders/:number/reviews', { config: { permission: 'public' } }, async (req, reply) => {
+    reply.header('Cache-Control', 'private, no-store');
     const b = reviewInput.parse(req.body);
     const at = stamp(clock);
     return tx(db, () => {

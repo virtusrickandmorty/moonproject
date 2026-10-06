@@ -5,7 +5,7 @@
  * PLAN QS-SALE), or reject it with a reason. The customer follows the order on a page only their link opens.
  */
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AppError, conflict, formatPeso, newId, notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
@@ -18,11 +18,13 @@ import { stamp } from '../../platform/clock.ts';
 import { placesFor } from '../CASH/public.ts';
 import { enqueueOnlineOrder, plain } from '../COM/public.ts';
 import { recordQuickSale } from '../QS/public.ts';
-import { HOLD_MS, stockOf } from './public.ts';
+import { HOLD_MS, OVERDUE_LABEL, isOverdue, stockOf } from './public.ts';
 
 export const MAX_PROOF_BYTES = 4 * 1024 * 1024;
 export const ORDERS_PER_SENDER_PER_HOUR = 5;
 export const ORDERS_PER_HOUR = 60;
+/** Orders with a payment sent and no staff decision yet, all customers together; past it the website asks buyers to call the shop. */
+export const MAX_PAYMENTS_WAITING = 100;
 const HOUR_MS = 60 * 60 * 1000;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE = /^\+?(?:[\s()-]*\d){7,15}[\s()-]*$/;
@@ -77,7 +79,7 @@ interface OrderRow {
   id: string; number: string; status: Exclude<OrderStatus, 'expired'>; name: string; email: string; phone: string; fulfilment: 'pickup' | 'delivery';
   address: string | null; note: string | null; total_cents: number; hold_until_ms: number; token_hash: string; payment_reference: string | null;
   payment_sent_at: string | null; sale_document_id: string | null; created_at: string; version: number; updated_at: string; sale_number?: string | null;
-  delivery_option: string | null; delivery_fee_cents: number;
+  delivery_option: string | null; delivery_fee_cents: number; payment_version: number | null; cash_place_id: number | null;
 }
 /** An order still waiting for payment after its 24 hours has expired: its pieces are back on sale. */
 const statusOf = (o: OrderRow, nowMs: number): OrderStatus => (o.status === 'awaiting_payment' && o.hold_until_ms <= nowMs ? 'expired' : o.status);
@@ -94,10 +96,10 @@ function picture(f: { name: string; data: string }, what: string) {
   return { type, data, sha256: sha256Hex(data) };
 }
 
-/** The current payment settings (the latest version) with its delivery areas, without the QR's bytes. */
-function paymentSettings(db: Db) {
+/** The payment settings of a version (default: the latest) with its delivery areas, without the QR's bytes. */
+function paymentSettings(db: Db, version?: number) {
   const p = db.prepare(`SELECT version, bank_name AS bankName, account_name AS accountName, account_hint AS accountHint, instructions,
-    cash_place_id AS cashPlaceId, saved_at AS savedAt FROM shp_payment_settings ORDER BY version DESC LIMIT 1`).get() as
+    cash_place_id AS cashPlaceId, saved_at AS savedAt FROM shp_payment_settings ${version === undefined ? '' : 'WHERE version = ?'} ORDER BY version DESC LIMIT 1`).get(...(version === undefined ? [] : [version])) as
     { version: number; bankName: string; accountName: string; accountHint: string | null; instructions: string | null; cashPlaceId: number; savedAt: string } | undefined;
   if (!p) return undefined;
   const places = db.prepare('SELECT position, place FROM shp_delivery_places WHERE version = ? ORDER BY position, rowid').all(p.version) as { position: number; place: string }[];
@@ -122,6 +124,12 @@ export function areaFor(options: { name: string; feeCents: number; places: strin
 const publicPayment = (p: NonNullable<ReturnType<typeof paymentSettings>>) => ({
   bankName: p.bankName, accountName: p.accountName, accountHint: p.accountHint, instructions: p.instructions, qrUrl: `/api/shp/payment/qr/${p.version}`, deliveryOptions: p.deliveryOptions,
 });
+
+/** The settings an order was placed under; an order without a snapshot (placed before it existed) uses the latest. */
+const paymentOf = (db: Db, o: OrderRow) => (o.payment_version === null ? undefined : paymentSettings(db, o.payment_version)) ?? paymentSettings(db);
+
+/** Order data names the buyer: browsers and shared caches must not keep it. */
+const noStore = (reply: FastifyReply) => reply.header('Cache-Control', 'private, no-store');
 
 /** The order a customer's link names: the number and the secret token must both match. */
 export function findCustomersOrder(db: Db, number: string, token: string) {
@@ -150,7 +158,7 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   /** What the customer sees: never the staff's names, the IP or the token. */
   const forCustomer = (o: OrderRow) => {
-    const pay = paymentSettings(db);
+    const pay = paymentOf(db, o);
     return {
       number: o.number, status: statusOf(o, nowMs()), name: o.name, fulfilment: o.fulfilment, address: o.address, totalCents: o.total_cents,
       deliveryOption: o.delivery_option, deliveryFeeCents: o.delivery_fee_cents,
@@ -167,6 +175,25 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
     const ls = lines(o.id);
     const stock = stockOf(db, [...new Set(ls.map((l) => l.productId))], nowMs());
     return ls.every((l) => (stock.get(l.productId)?.find((s) => s.size === l.size && s.colour === l.colour)?.available ?? 0) >= l.qty);
+  };
+
+  /**
+   * Inside the confirm transaction: every item must have as many pieces available as the order needs, not counting the pieces
+   * this order holds itself (they are about to become its sale). The counter may have sold them since the order was placed.
+   * An item the product no longer lists has no count to compare, so it is left to the sale's own stock warning.
+   */
+  const enoughPieces = (o: OrderRow, status: OrderStatus) => {
+    const ls = lines(o.id);
+    const stock = stockOf(db, [...new Set(ls.map((l) => l.productId))], nowMs());
+    const holding = status === 'payment_sent' || status === 'awaiting_payment';
+    for (const l of ls) {
+      const s = stock.get(l.productId)?.find((x) => x.size === l.size && x.colour === l.colour);
+      if (!s) continue;
+      const available = s.onHand - (s.held - (holding ? l.qty : 0));
+      if (available < l.qty) {
+        throw new AppError('OUT_OF_STOCK', `${l.productName} (${l.colour}, size ${l.size}) has ${Math.max(0, available)} available now and ${o.number} needs ${l.qty}. Count the stock if the pieces are here, or reject the order with a reason and refund the customer.`, 409);
+      }
+    }
   };
 
   /** Tells the buyer by email (when the shop sends emails); an email that cannot be queued never stops the order. */
@@ -205,7 +232,8 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
     return reply.type(q.type).header('Content-Security-Policy', "sandbox; default-src 'none'; frame-ancestors 'none'").header('Cache-Control', 'public, max-age=86400').send(q.data);
   });
 
-  app.post('/api/shp/orders', { config: { permission: 'public' } }, async (req) => {
+  app.post('/api/shp/orders', { config: { permission: 'public' } }, async (req, reply) => {
+    noStore(reply);
     const b = orderInput.parse(req.body);
     if (!EMAIL.test(b.email)) throw new AppError('EMAIL_REQUIRED', 'Please give a valid email address so we can reach you about your order.', 400);
     if (!PHONE.test(b.phone)) throw new AppError('PHONE_REQUIRED', 'Please give your mobile number, like 0917 123 4567.', 400);
@@ -248,9 +276,9 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       const count = (db.prepare('SELECT COUNT(*) AS n FROM shp_orders').get() as { n: number }).n;
       const id = newId(), number = `WEB-${String(count + 1).padStart(6, '0')}`, token = randomBytes(24).toString('base64url');
       db.prepare(`INSERT INTO shp_orders (id, number, status, name, email, phone, fulfilment, address, note, total_cents, hold_until_ms, token_hash, ip, created_at, created_ms, updated_at,
-          delivery_option, delivery_fee_cents)
-        VALUES (?, ?, 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, number, b.name, b.email, b.phone, b.fulfilment, b.fulfilment === 'delivery' ? `${b.address}, ${b.city}, ${b.province}` : null,
-        b.note ?? null, total, now + HOLD_MS, hash(token), req.ip, at, now, at, area?.name ?? null, fee);
+          delivery_option, delivery_fee_cents, payment_version, cash_place_id)
+        VALUES (?, ?, 'awaiting_payment', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, number, b.name, b.email, b.phone, b.fulfilment, b.fulfilment === 'delivery' ? `${b.address}, ${b.city}, ${b.province}` : null,
+        b.note ?? null, total, now + HOLD_MS, hash(token), req.ip, at, now, at, area?.name ?? null, fee, pay.version, pay.cashPlaceId);
       const line = db.prepare('INSERT INTO shp_order_lines (order_id, line_no, product_id, product_name, size, colour, qty, unit_price_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
       priced.forEach((l, i) => line.run(id, i + 1, l.productId, l.name, l.size, l.colour, l.qty, l.unitPriceCents));
       event(id, 'awaiting_payment', at, null);
@@ -262,10 +290,13 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
     });
   });
 
-  app.get<{ Params: { number: string }; Querystring: { t?: string } }>('/api/shp/orders/:number', { config: { permission: 'public' } }, async (req) =>
-    forCustomer(customersOrder(req.params.number, String(req.query.t ?? ''))));
+  app.get<{ Params: { number: string }; Querystring: { t?: string } }>('/api/shp/orders/:number', { config: { permission: 'public' } }, async (req, reply) => {
+    noStore(reply);
+    return forCustomer(customersOrder(req.params.number, String(req.query.t ?? '')));
+  });
 
-  app.post<{ Params: { number: string } }>('/api/shp/orders/:number/payment', { bodyLimit: b64(MAX_PROOF_BYTES) + 16 * 1024, config: { permission: 'public' } }, async (req) => {
+  app.post<{ Params: { number: string } }>('/api/shp/orders/:number/payment', { bodyLimit: b64(MAX_PROOF_BYTES) + 16 * 1024, config: { permission: 'public' } }, async (req, reply) => {
+    noStore(reply);
     const b = paymentInput.parse(req.body);
     const proof = picture(b.proof, 'proof of payment');
     const at = stamp(clock);
@@ -275,6 +306,8 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       // Paid after the 24 hours: still taken while every piece is available; otherwise the buyer is told to contact the shop.
       if (status === 'expired' && !stillAvailable(o)) throw conflict('EXPIRED', 'This order expired before the payment was sent, and some of its items have sold since. If you already paid, call or message the shop with your reference number.');
       if (status !== 'awaiting_payment' && status !== 'expired') throw conflict('NOT_AWAITING_PAYMENT', 'The payment for this order was already sent.');
+      const waiting = (db.prepare("SELECT COUNT(*) FROM shp_orders WHERE status = 'payment_sent'").pluck().get() as number);
+      if (waiting >= MAX_PAYMENTS_WAITING) throw new AppError('TOO_MANY_PAYMENTS', 'The shop has many payments waiting to be checked just now, so we cannot take another here. Please call or message the shop with your order number and reference.', 429);
       db.prepare('INSERT INTO shp_order_files (id, order_id, content_type, bytes, sha256, data, at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(newId(), o.id, proof.type, proof.data.length, proof.sha256, proof.data, at);
       setStatus(o, 'payment_sent', at, ', payment_reference = ?, payment_sent_at = ?', b.reference, at);
       event(o.id, 'payment_sent', at, null, `Reference ${b.reference}`);
@@ -283,7 +316,8 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
     });
   });
 
-  app.post<{ Params: { number: string } }>('/api/shp/orders/:number/cancel', { config: { permission: 'public' } }, async (req) => {
+  app.post<{ Params: { number: string } }>('/api/shp/orders/:number/cancel', { config: { permission: 'public' } }, async (req, reply) => {
+    noStore(reply);
     const b = tokenInput.parse(req.body);
     const at = stamp(clock);
     return tx(db, () => {
@@ -302,6 +336,8 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
     const rows = (db.prepare(`${ORDER} ORDER BY o.created_ms DESC LIMIT 300`).all() as OrderRow[]).map((o) => ({
       id: o.id, number: o.number, status: statusOf(o, now), name: o.name, phone: o.phone, fulfilment: o.fulfilment, totalCents: o.total_cents,
       createdAt: o.created_at, paymentReference: o.payment_reference, saleNumber: o.sale_number ?? null,
+      // A payment sent and not decided for 72 hours: still held and still waiting for staff, shown so it is not forgotten.
+      overdue: isOverdue(o, now), statusLabel: isOverdue(o, now) ? OVERDUE_LABEL : null,
     }));
     const counts: Record<string, number> = {};
     for (const r of rows) counts[r.status] = (counts[r.status] ?? 0) + 1;
@@ -319,7 +355,8 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       proofs: db.prepare('SELECT id, content_type AS contentType, bytes, at FROM shp_order_files WHERE order_id = ? ORDER BY at').all(o.id),
       events: db.prepare(`SELECT e.status, e.note, e.at, u.display_name AS userName FROM shp_order_events e LEFT JOIN users u ON u.id = e.user_id
         WHERE e.order_id = ? ORDER BY e.at, e.rowid`).all(o.id),
-      payment: paymentSettings(db) ?? null,
+      overdue: isOverdue(o, nowMs()), statusLabel: isOverdue(o, nowMs()) ? OVERDUE_LABEL : null,
+      payment: paymentOf(db, o) ?? null,
     };
   });
 
@@ -344,8 +381,9 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (status !== 'payment_sent' && status !== 'awaiting_payment' && status !== 'expired') throw conflict('NOT_CONFIRMABLE', `${o.number} is ${status.replace('_', ' ')}: only an order waiting for its payment can be confirmed.`);
       // A late payment for an expired order: confirmed only while its pieces are all still available.
       if (status === 'expired' && !stillAvailable(o)) throw conflict('SOLD_SINCE', `${o.number} expired and some of its items have sold since. Reject it with a reason and refund the customer, or call them about other items.`);
-      const pay = paymentSettings(db);
+      const pay = paymentOf(db, o);
       if (!pay) throw conflict('NO_ONLINE_PAYMENT', 'Set the online payment account first (Website shop › Online payment).');
+      enoughPieces(o, status);
       setStatus(o, 'confirmed', at);
       const saleLines = lines(o.id).map((l) => ({
         kind: 'ready_made' as const, description: `${l.productName} (${l.colour}, ${l.size})`, qty: l.qty, unitPriceCents: l.unitPriceCents, discountCents: 0,
@@ -356,7 +394,7 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
         ? [{ kind: 'service' as const, description: `Delivery (${o.delivery_option ?? 'delivery'})`, qty: 1, unitPriceCents: o.delivery_fee_cents, discountCents: 0 }] : [];
       const recorded = recordQuickSale(engineEnv(deps), { userId: user.userId, permissions: user.permissions },
         { customerId: b.customerId, invoiceNumber: b.invoiceNumber, lines: [...saleLines, ...delivery], note: `Online order ${o.number} · ${o.name} · ${o.phone}` },
-        { crNumber: b.crNumber, tenders: [{ cashPlaceId: pay.cashPlaceId, amountCents: o.total_cents, ...(o.payment_reference ? { reference: o.payment_reference.slice(0, 40) } : {}) }] },
+        { crNumber: b.crNumber, tenders: [{ cashPlaceId: o.cash_place_id ?? pay.cashPlaceId, amountCents: o.total_cents, ...(o.payment_reference ? { reference: o.payment_reference.slice(0, 40) } : {}) }] },
         o.total_cents);
       db.prepare('UPDATE shp_orders SET sale_document_id = ? WHERE id = ?').run(recorded.sale.id, o.id);
       const saleNumber = db.prepare('SELECT number FROM documents WHERE id = ?').pluck().get(recorded.sale.id) as string;

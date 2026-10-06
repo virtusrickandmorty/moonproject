@@ -67,6 +67,19 @@ describe('website shop products', () => {
     expect((await publicList())[0]!.photoUrl).toBeNull();
   });
 
+  it('does not serve the photo of a hidden product, and keeps a shown one for an hour', async () => {
+    const owner = await env.as('owner');
+    const p = (await owner.post('/api/shp/products', jersey())).json() as { id: string };
+    const url = ((await owner.post(`/api/shp/products/${p.id}/photo`, PNG, { 'content-type': 'application/octet-stream' })).json() as { photoUrl: string }).photoUrl;
+    const shown = await env.app.inject({ method: 'GET', url });
+    expect(shown.statusCode).toBe(200);
+    expect(shown.headers['cache-control']).toBe('public, max-age=3600');
+    expect((await owner.post(`/api/shp/products/${p.id}/hide`, {}, { 'if-match': '1' })).statusCode).toBe(200);
+    expect((await env.app.inject({ method: 'GET', url })).statusCode).toBe(404);
+    expect((await owner.post(`/api/shp/products/${p.id}/show`, {}, { 'if-match': '2' })).statusCode).toBe(200);
+    expect((await env.app.inject({ method: 'GET', url })).statusCode).toBe(200);
+  });
+
   it('checks the input and the permissions', async () => {
     const owner = await env.as('owner');
     expect((await owner.post('/api/shp/products', jersey({ sizes: [] }))).statusCode).toBe(400);

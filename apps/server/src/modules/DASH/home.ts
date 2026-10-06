@@ -11,7 +11,7 @@ import { activeJobOrders, joMoney, joMoneyAll, releasesAwaitingInvoice } from '.
 import { pendingCertificates } from '../COL/public.ts';
 import { board } from '../PRD/public.ts';
 import { KIND_LABELS as SUPPORT_KINDS, newSupportMessages } from '../SUP/public.ts';
-import { paymentsToCheck } from '../SHP/public.ts';
+import { OVERDUE_LABEL, paymentsToCheck } from '../SHP/public.ts';
 import { sizerBoard } from '../SZR/public.ts';
 import { hasReceived2307, paidTaxPeriods, taxDeadlines, vatSummary } from '../TAX/public.ts';
 import { monthEndChecklist } from '../ACC/public.ts';
@@ -230,8 +230,8 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
     push('support-message', m.id, `${SUPPORT_KINDS[m.kind] ?? 'Message'} from ${m.name}: ${m.subject}`, `/sup?open=${m.id}`, `${m.number} · ${m.receivedAt.slice(0, 16).replace('T', ' ')}`);
   }
   // Online orders paid by QR and waiting for someone to find the money in the bank and confirm it.
-  if (can('shp.orders.manage')) for (const o of paymentsToCheck(db)) {
-    push('online-payment', o.id, `${o.number}: check the online payment from ${o.name}`, `/shp/orders?open=${o.id}`, `Sent ${o.sentAt.slice(0, 16).replace('T', ' ')}`, o.totalCents);
+  if (can('shp.orders.manage')) for (const o of paymentsToCheck(db, clock.now().getTime())) {
+    push('online-payment', o.id, `${o.number}: ${o.overdue ? `${OVERDUE_LABEL} (online payment from ${o.name})` : `check the online payment from ${o.name}`}`, `/shp/orders?open=${o.id}`, `Sent ${o.sentAt.slice(0, 16).replace('T', ' ')}`, o.totalCents);
   }
   if (can('stat.view')) {
     let month = prevMonthEnd(date).slice(0, 7);
