@@ -8,7 +8,7 @@ import { SHOP_CONTACT } from './products.ts';
 
 interface Tracked {
   kind: 'online' | 'job_order'; number: string; asked?: string; status: string; statusLabel: string; placedAt: string; dueDate?: string;
-  fulfilment?: 'pickup' | 'delivery'; deliveryOption?: string | null; lines: { description: string; qty: number }[];
+  pieces: number; fulfilment?: 'pickup' | 'delivery'; deliveryOption?: string | null; lines?: { description: string; qty: number }[];
 }
 /** The steps each kind of order goes through, and where its status sits on them. */
 const STEPS: Record<Tracked['kind'], { steps: string[]; at: Record<string, number> }> = {
@@ -19,6 +19,7 @@ const day = (d: string) => new Date(d.length === 10 ? `${d}T00:00:00+08:00` : d)
 
 export function Track({ query }: { query: string }) {
   const [number, setNumber] = useState(new URLSearchParams(query).get('n') ?? '');
+  const token = new URLSearchParams(query).get('t') ?? ''; // an online order's own link also shows its items
   const [found, setFound] = useState<Tracked | null>(null);
   const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
 
@@ -27,7 +28,7 @@ export function Track({ query }: { query: string }) {
     if (number.trim().length < 3) return setError('Type your order or job order number, like WEB-000012 or JO-000123.');
     setBusy(true);
     try {
-      const res = await fetch('/api/shp/track', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ number: number.trim() }) });
+      const res = await fetch('/api/shp/track', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ number: number.trim(), ...(token ? { token } : {}) }) });
       const data = await res.json().catch(() => null) as (Tracked & { message?: string }) | null;
       if (!res.ok) throw new Error(data?.message ?? 'We could not look that up just now. Please try again.');
       setFound(data);
@@ -64,9 +65,10 @@ export function Track({ query }: { query: string }) {
           </ol>}
           <dl className="grid gap-3 text-sm sm:grid-cols-3">
             {found.dueDate && <div><dt className="text-slate-500">Promised for</dt><dd className="font-semibold">{day(found.dueDate)}</dd></div>}
-            {found.kind === 'online' && <div><dt className="text-slate-500">Gets it by</dt><dd className="font-semibold">{found.fulfilment === 'delivery' ? `Delivery${found.deliveryOption ? ` (${found.deliveryOption})` : ''}` : 'Pickup at the shop'}</dd></div>}
+            {found.kind === 'online' && found.fulfilment && <div><dt className="text-slate-500">Gets it by</dt><dd className="font-semibold">{found.fulfilment === 'delivery' ? `Delivery${found.deliveryOption ? ` (${found.deliveryOption})` : ''}` : 'Pickup at the shop'}</dd></div>}
           </dl>
-          <ul className="divide-y divide-slate-100 text-sm">{found.lines.map((l, i) => <li key={i} className="flex justify-between gap-3 py-2"><span>{l.description}</span><span className="tabular-nums text-slate-500">× {l.qty}</span></li>)}</ul>
+          {!found.lines && <p className="text-sm"><span className="text-slate-500">Pieces</span> <span className="font-semibold">{found.pieces}</span></p>}
+          {found.lines && <ul className="divide-y divide-slate-100 text-sm">{found.lines.map((l, i) => <li key={i} className="flex justify-between gap-3 py-2"><span>{l.description}</span><span className="tabular-nums text-slate-500">× {l.qty}</span></li>)}</ul>}
           <p className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">Questions about this order? Call or text {SHOP_CONTACT.phone} and give the number {found.number}.</p>
         </div>
       )}

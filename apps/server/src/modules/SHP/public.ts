@@ -79,8 +79,15 @@ export function shopItemsNotice(db: Db, t: NoticeTarget): Issue[] {
   return issues;
 }
 
-/** Online orders with a payment sent and not yet checked by staff, oldest first (DASH notifications). */
-export function paymentsToCheck(db: Db): { id: string; number: string; name: string; totalCents: number; sentAt: string }[] {
-  return db.prepare(`SELECT id, number, name, total_cents AS totalCents, payment_sent_at AS sentAt FROM shp_orders WHERE status = 'payment_sent' ORDER BY payment_sent_at`).all() as
-    { id: string; number: string; name: string; totalCents: number; sentAt: string }[];
+/** A payment sent that staff have not decided on for this long is shown as overdue. It still holds its pieces: only staff cancel it. */
+export const PAYMENT_OVERDUE_MS = 72 * 60 * 60 * 1000;
+export const OVERDUE_LABEL = 'Overdue: check the bank';
+export const isOverdue = (o: { status: string; payment_sent_at: string | null }, nowMs: number) =>
+  o.status === 'payment_sent' && o.payment_sent_at !== null && nowMs - Date.parse(o.payment_sent_at) >= PAYMENT_OVERDUE_MS;
+
+/** Online orders with a payment sent and not yet checked by staff, oldest first, each marked overdue after 72 hours (DASH notifications). */
+export function paymentsToCheck(db: Db, nowMs = Date.now()): { id: string; number: string; name: string; totalCents: number; sentAt: string; overdue: boolean }[] {
+  return (db.prepare(`SELECT id, number, name, total_cents AS totalCents, payment_sent_at AS sentAt FROM shp_orders WHERE status = 'payment_sent' ORDER BY payment_sent_at`).all() as
+    { id: string; number: string; name: string; totalCents: number; sentAt: string }[])
+    .map((o) => ({ ...o, overdue: isOverdue({ status: 'payment_sent', payment_sent_at: o.sentAt }, nowMs) }));
 }
