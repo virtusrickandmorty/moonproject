@@ -17,6 +17,28 @@ export function columns(steps: PrdStep[], cards: BoardCard[]): Column[] {
   ].filter((c) => c.cards.length > 0);
 }
 
+/**
+ * What a step's row on the line panel says (the owner's rule, Oct 2026): Complete only once every piece of the line is
+ * done on it; how many it received from the step before; how many it has forwarded to the next step that is needed.
+ */
+export function stepFlow(steps: NonNullable<BoardCard['steps']>, i: number, qty: number, nameOf: (stepId: number) => string) {
+  const s = steps[i]!;
+  const closed = s.status === 'completed' || s.status === 'not_needed';
+  const prev = steps.slice(0, i).reverse().find((x) => x.status !== 'not_needed');
+  const next = steps.slice(i + 1).find((x) => x.status !== 'not_needed');
+  const short = Math.max(0, qty - s.pieces);
+  // A set is complete once both its parts are: say which part still needs pieces.
+  const setWords = s.parts ? `Record the rest of the parts to complete ${nameOf(s.stepId)}: upper ${s.parts.upper} of ${qty}, lower ${s.parts.lower} of ${qty}.` : '';
+  return {
+    canComplete: !closed && short === 0,
+    /** Why Complete is greyed out, for its tooltip and the line under it. */
+    shortWords: closed || short === 0 ? '' : setWords || (short === qty ? `Record all ${qty} pcs to complete ${nameOf(s.stepId)}.` : `Record the other ${short} of ${qty} pcs to complete ${nameOf(s.stepId)}.`),
+    received: prev && s.status !== 'not_needed' && s.receivedPieces > 0 ? { pieces: Math.min(qty, s.receivedPieces), from: nameOf(prev.stepId) } : null,
+    forwarded: next && s.status !== 'not_needed' && s.pieces > 0 ? { pieces: Math.min(qty, s.pieces), to: nameOf(next.stepId) } : null,
+    percent: qty > 0 ? Math.min(100, Math.round((s.pieces / qty) * 100)) : 0,
+  };
+}
+
 export type Due = 'all' | 'week' | 'overdue';
 const daysBetween = (from: string, to: string) => (Date.parse(to) - Date.parse(from)) / 86_400_000; // both are Manila dates (YYYY-MM-DD)
 /** Filters by due date (overdue, or due within 7 days of the server date) and rush priority. */
@@ -82,7 +104,8 @@ export function useBoardRefresh<T>(read: () => Promise<T>) {
   return { data, error, updatedAt, refresh, stale: !!error || (updatedAt === null ? elapsed >= REFRESH_MS * 2 : now - updatedAt >= REFRESH_MS * 2), words: updateWords(updatedAt, updatedAt === null ? elapsed : now, error) };
 }
 
-export interface EntryRow { lineNo: string; employeeId: string; pieces: string; rework: boolean; rate: string; rateReason: string; repeatReason?: string }
+/** `wearers`: the line's wearers (roster rows) this row finished; its pieces are then theirs. `part`: on a set, the upper or the lower part. */
+export interface EntryRow { lineNo: string; employeeId: string; pieces: string; rework: boolean; rate: string; rateReason: string; repeatReason?: string; wearers?: number[]; part?: 'upper' | 'lower' }
 export const emptyRow = (lineNo = ''): EntryRow => ({ lineNo, employeeId: '', pieces: '', rework: false, rate: '', rateReason: '' });
 
 /** Typed rows -> entry rows for the server. Blank rows are left out; a typed rate goes with its reason. */
@@ -110,6 +133,8 @@ export function rowsToInput(rows: EntryRow[]) {
       ...(rate !== undefined ? { rateCents: rate } : {}),
       ...(r.rate.trim() && r.rateReason.trim() ? { rateReason: r.rateReason.trim() } : {}),
       ...(repeat ? { repeatReason: repeat } : {}),
+      ...(!r.rework && r.wearers && r.wearers.length > 0 ? { wearers: [...r.wearers].sort((a, b) => a - b) } : {}),
+      ...(r.part ? { part: r.part } : {}),
     });
   });
   if (out.length === 0 && errors.length === 0) errors.push('Add a worker and the pieces done.');

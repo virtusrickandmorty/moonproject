@@ -215,7 +215,8 @@ export async function createPerfData(dbPath: string, given: Partial<PerfOptions>
         const first = sewers[int(0, sewers.length - 1)]!;
         const second = sewers[(sewers.indexOf(first) + 1) % sewers.length]!;
         const a = Math.floor(job.qty / 2);
-        await record(production, 'prd.entry', { jobOrderId: job.id, stepId: 6, rows: [
+        // Every step needs all of the line's pieces before it is completed (sewing, then packing).
+        for (const stepId of [6, 8]) await record(production, 'prd.entry', { jobOrderId: job.id, stepId, rows: [
           { lineNo: 1, employeeId: first, pieces: a }, { lineNo: 1, employeeId: second, pieces: job.qty - a }] });
         for (const step of [6, 8]) ok(await production.post(`/api/prd/jobs/${job.id}/lines/1/steps/${step}/complete`, {}), `complete step ${step}`);
         later(toRelease, day + int(0, 8), job);

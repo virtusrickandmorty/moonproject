@@ -225,8 +225,9 @@ export async function createPracticeData(dbPath: string, days: number, start = '
       ok(await production.post(`/api/prd/jobs/${jo.id}/lines/1/setup`, {
         templateId: 1, stepIds: [6, 8], garmentType: 'T-shirt', complexity: 'standard',
       }), 'set production route');
-      await record(production, 'prd.entry', {
-        jobOrderId: jo.id, stepId: 6, rows: [{ lineNo: 1, employeeId: sewer, pieces: 5 }],
+      // Every step needs all of the line's pieces before it is completed (sewing, then packing).
+      for (const stepId of [6, 8]) await record(production, 'prd.entry', {
+        jobOrderId: jo.id, stepId, rows: [{ lineNo: 1, employeeId: sewer, pieces: 5 }],
       });
       for (const step of [6, 8]) ok(await production.post(
         `/api/prd/jobs/${jo.id}/lines/1/steps/${step}/complete`, {},

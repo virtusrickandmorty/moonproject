@@ -2,12 +2,13 @@
  * Production board (PLAN E7, H1): every line still to release, in a column per step, with due-date and rush filters. A card
  * opens its line: the route with Complete / Not needed / Reopen, "Record pieces", and the route setup.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, type BoardCard, type DocTypeInfo, type Me, type PrdCatalogue, type StepStatus } from '../../api.ts';
-import { Link } from '../../router.tsx';
+import { addRewrite, Link, navigate, useLocation } from '../../router.tsx';
+import { EntryForm } from './EntryForm.tsx';
 import { Button, Dialog, Field, Notice, ReasonDialog, inputClass, useAction, searchClass, showDate } from '../../components/ui.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { columns, filterCards, useBoardRefresh, type Due } from './board.ts';
+import { columns, filterCards, stepFlow, useBoardRefresh, type Due } from './board.ts';
 
 const readBoard = async () => {
   const [cards, cat, health] = await Promise.all([api.prdBoard(), api.prdCatalogue(), api.health()]);
@@ -28,6 +29,18 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
   const [rushOnly, setRushOnly] = useState(false);
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<{ jobOrderId: string; lineNo: number } | null>(null);
+  // Record pieces opens over the board (?record&jo=…&step=…, which the form reads); once recorded the board comes back
+  // with the new entry (?recorded=<id>) and its counts refreshed.
+  const query = new URLSearchParams(useLocation().split('?')[1] ?? '');
+  const entryType = docTypes.find((d) => d.key === 'prd.entry');
+  const recordedId = query.get('recorded');
+  useEffect(() => addRewrite((to) => {
+    const [path = '', q = ''] = to.split('?');
+    if (path === docPath('prd.entry', '/new')) return { to: `/prd/board?record${q ? `&${q}` : ''}` };
+    const done = /^\/docs\/prd\.entry\/([^/]+)$/.exec(path);
+    return done && q === 'recorded=1' ? { to: `/prd/board?recorded=${encodeURIComponent(done[1]!)}`, replace: true } : null;
+  }), []);
+  useEffect(() => { if (recordedId) void load(); }, [recordedId, load]);
   if (!data) return <div className="space-y-3"><p role="status">{words}</p>{error && <Notice>{error}</Notice>}<p className="text-slate-500">Loading…</p></div>;
   const { cat, cards, today } = data;
   const can = { progress: me.permissions.includes('prd.progress'), assign: !!docTypes.find((d) => d.key === 'prd.entry')?.canCreate };
@@ -48,6 +61,7 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
       </div>
       <p role="status" className={`text-sm ${stale ? 'font-semibold text-red-800' : 'text-slate-500'}`}>{words} · Refreshes every 30 seconds</p>
       {error && <Notice>{error}</Notice>}
+      {recordedId && <Notice tone="success">Pieces recorded. <Link to={docPath('prd.entry', `/${recordedId}`)} className="underline">Open the entry</Link></Notice>}
       <div className="flex flex-wrap items-end justify-end gap-3">
         <div className={searchClass}><Field label="Search job number or customer"><input type="search" className={inputClass} value={search} onChange={(e) => setSearch(e.target.value)} /></Field></div>
         <Button onClick={() => { setSearch(''); setDue('all'); setRushOnly(false); }}>Reset filters</Button>
@@ -74,6 +88,11 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
         ))}
       </div>
       {card && <LinePanel card={card} cat={cat} can={can} onChanged={load} onClose={() => setOpen(null)} />}
+      {query.has('record') && entryType && (
+        <Dialog title="Record pieces" size="full" hideTitle onClose={() => navigate('/prd/board', { replace: true })}>
+          <EntryForm type={entryType} mode={{ kind: 'new' }} />
+        </Dialog>
+      )}
     </div>
   );
 }
@@ -85,25 +104,42 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
   const name = (id: number) => cat.steps.find((s) => s.id === id)?.name ?? '?';
   const step = (id: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) => api.prdStep(card.jobOrderId, card.lineNo, id, action, reason).then(onChanged);
   return (
-    <Dialog title={`${card.number} · line ${card.lineNo}: ${card.description}`} onClose={onClose}>
-      <p className="text-sm text-slate-600">{card.customerName} · {card.qty} pcs · due {showDate(card.dueDate)}{card.garmentType ? ` · ${card.garmentType} (${card.complexity})` : ''}</p>
+    <Dialog wide title={`${card.number} · line ${card.lineNo}: ${card.description}`} onClose={onClose}>
+      <p className="text-sm text-slate-600">{card.customerName} · {card.qty} {card.isSet ? 'sets (upper and lower)' : 'pcs'} · due {showDate(card.dueDate)}</p>
       {editing ? (
         <SetupForm card={card} cat={cat} onSaved={() => onChanged().then(() => setEditing(false))} onCancel={card.steps ? () => setEditing(false) : onClose} disabled={!can.progress} />
       ) : (
         <>
           <ol className="space-y-2">
-            {card.steps!.map((s) => {
+            {card.steps!.map((s, i) => {
               const closed = s.status === 'completed' || s.status === 'not_needed';
+              const flow = stepFlow(card.steps!, i, card.qty, name);
               return (
-                <li key={s.stepId} className="flex flex-wrap items-center gap-2 rounded-md p-2 ring-1 ring-slate-200">
-                  <span className="min-w-28 font-medium">{name(s.stepId)}</span>
-                  {chip(s.status)}
-                  <span className="text-sm text-slate-600">{s.pieces} of {card.qty}{s.reworkPieces ? ` + ${s.reworkPieces} rework` : ''}</span>
-                  <span className="flex-1" />
-                  {can.assign && !closed && <Link to={docPath('prd.entry', `/new?jo=${card.jobOrderId}&step=${s.stepId}`)} className="text-sm text-indigo-700 underline">Record pieces</Link>}
-                  {can.progress && !closed && <Button disabled={a.busy} onClick={() => a.run(() => step(s.stepId, 'complete'))}>Complete</Button>}
-                  {can.progress && s.status === 'pending' && <Button disabled={a.busy} onClick={() => a.run(() => step(s.stepId, 'not-needed'))}>Not needed</Button>}
-                  {can.progress && closed && <Button onClick={() => setReopen(s.stepId)}>Reopen</Button>}
+                <li key={s.stepId} className="space-y-2 rounded-md p-3 ring-1 ring-slate-200">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="min-w-28 font-medium">{name(s.stepId)}</span>
+                    {chip(s.status)}
+                    <span className="text-sm text-slate-600">{s.parts ? `Upper ${s.parts.upper} of ${card.qty} · Lower ${s.parts.lower} of ${card.qty}` : `${s.pieces} of ${card.qty} pcs done`}{s.reworkPieces ? ` + ${s.reworkPieces} rework` : ''}</span>
+                  </div>
+                  {s.status !== 'not_needed' && (
+                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label={`${name(s.stepId)} pieces done`} aria-valuemin={0} aria-valuemax={card.qty} aria-valuenow={s.pieces}>
+                      <div className={`h-full rounded-full ${flow.percent === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${flow.percent}%` }} />
+                    </div>
+                  )}
+                  {(flow.received || flow.forwarded) && (
+                    <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                      {flow.received && <span className="text-slate-600">← {flow.received.pieces} pcs received from {flow.received.from}</span>}
+                      {flow.forwarded && <span className="font-medium text-indigo-700">→ {flow.forwarded.pieces} pcs forwarded to {flow.forwarded.to}</span>}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {can.assign && !closed && <Link to={docPath('prd.entry', `/new?jo=${card.jobOrderId}&step=${s.stepId}`)} className="text-sm text-indigo-700 underline">Record pieces</Link>}
+                    <span className="flex-1" />
+                    {can.progress && !closed && <Button disabled={a.busy || !flow.canComplete} title={flow.shortWords || undefined} onClick={() => a.run(() => step(s.stepId, 'complete'))}>Complete</Button>}
+                    {can.progress && s.status === 'pending' && <Button disabled={a.busy} onClick={() => a.run(() => step(s.stepId, 'not-needed'))}>Not needed</Button>}
+                    {can.progress && closed && <Button onClick={() => setReopen(s.stepId)}>Reopen</Button>}
+                  </div>
+                  {can.progress && flow.shortWords && <p className="text-xs text-amber-800">{flow.shortWords}</p>}
                 </li>
               );
             })}
@@ -126,11 +162,11 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
 function SetupForm({ card, cat, onSaved, onCancel, disabled }: { card: BoardCard; cat: PrdCatalogue; onSaved: () => Promise<unknown>; onCancel: () => void; disabled: boolean }) {
   const [templateId, setTemplateId] = useState<number | undefined>(card.templateId ?? undefined);
   const [stepIds, setStepIds] = useState<number[]>(card.steps?.map((s) => s.stepId) ?? []);
-  const [garmentType, setGarmentType] = useState(card.garmentType ?? '');
-  const [complexity, setComplexity] = useState(card.complexity ?? 'standard');
   const a = useAction();
   const toggle = (id: number) => setStepIds(stepIds.includes(id) ? stepIds.filter((x) => x !== id) : [...stepIds, id]);
-  const save = () => api.prdSetup(card.jobOrderId, card.lineNo, { ...(templateId ? { templateId } : {}), stepIds, garmentType: garmentType.trim(), complexity }).then(onSaved);
+  // The garment type for piece rates (and whether the line is a set) comes from the price list item the line matches: not typed here.
+  // Piece rates go by the price list item (the owner's decision, Oct 2026): no complexity is picked; the standard rate applies.
+  const save = () => api.prdSetup(card.jobOrderId, card.lineNo, { ...(templateId ? { templateId } : {}), stepIds, complexity: 'standard' }).then(onSaved);
   return (
     <div className="space-y-3">
       <div>
@@ -150,20 +186,10 @@ function SetupForm({ card, cat, onSaved, onCancel, disabled }: { card: BoardCard
           ))}
         </div>
       </fieldset>
-      <Field label="Garment type (for piece rates)" required>
-        <input list="garment-types" className={inputClass} value={garmentType} onChange={(e) => setGarmentType(e.target.value)} />
-        <datalist id="garment-types">{cat.garmentTypes.map((g) => <option key={g} value={g} />)}</datalist>
-      </Field>
-      <div role="radiogroup" aria-label="Complexity" className="flex gap-2">
-        {cat.complexities.map((x) => (
-          <button key={x} type="button" role="radio" aria-checked={complexity === x} onClick={() => setComplexity(x)}
-            className={`rounded-md px-3 py-1 text-sm capitalize ring-1 ${complexity === x ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300'}`}>{x}</button>
-        ))}
-      </div>
       {a.error && <Notice>{a.error}</Notice>}
       <div className="flex justify-end gap-2">
         <Button onClick={onCancel}>Back</Button>
-        <Button tone="primary" disabled={disabled || a.busy || stepIds.length === 0 || !garmentType.trim()} onClick={() => a.run(save)}>Save production steps</Button>
+        <Button tone="primary" disabled={disabled || a.busy || stepIds.length === 0} onClick={() => a.run(save)}>Save production steps</Button>
       </div>
     </div>
   );

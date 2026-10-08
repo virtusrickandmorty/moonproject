@@ -22,6 +22,27 @@ export function catalogItemRef(db: Db, id: string): {
   return row && { code: row.code, name: row.name, class: row.class, unit: row.unit, isActive: row.is_active === 1 };
 }
 
+/**
+ * The price list item a job order line is made from, by its words (the owner's request, Oct 2026: production takes the
+ * garment type for piece rates, and whether it is a set, from it). Active made-to-order items only. The item named
+ * exactly wins; then one whose name's words all appear in the line; then the one sharing most words; a longer name wins
+ * a tie. Null when no word is shared.
+ */
+export function matchCatalogItem(db: Db, text: string): { id: string; name: string; garmentType: string; unit: 'pc' | 'set' } | null {
+  const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 2));
+  const said = words(text);
+  const flat = text.trim().toLowerCase();
+  const items = db.prepare(`SELECT id, name, garment_type AS garmentType, unit FROM cat_items WHERE is_active = 1 AND class = 'made_to_order_garment'`).all() as { id: string; name: string; garmentType: string; unit: 'pc' | 'set' }[];
+  let best: { item: (typeof items)[number]; score: number } | null = null;
+  for (const item of items) {
+    const own = words(item.name);
+    const shared = [...own].filter((w) => said.has(w)).length;
+    const score = item.name.trim().toLowerCase() === flat ? 3_000 : shared === own.size && shared > 0 ? 2_000 + shared : shared;
+    if (score > 0 && (!best || score > best.score || (score === best.score && item.name.length > best.item.name.length))) best = { item, score };
+  }
+  return best ? best.item : null;
+}
+
 /** The newest eligible effective date wins; within that date the largest eligible tier wins. */
 export function lookupCatalogPrice(db: Db, itemId: string, qty: number, businessDate: string): CatalogPrice | null {
   if (!Number.isSafeInteger(qty) || qty < 1 || !z.iso.date().safeParse(businessDate).success) {

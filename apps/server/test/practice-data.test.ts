@@ -22,9 +22,10 @@ describe('practice data', () => {
         expect(registerDifferences(db, '2000-01-01', '2099-12-31')).toEqual([]); // L6, over every day of the practice shop
         expect(payrollTotalsProblems(db)).toEqual([]); // L10
         expect(db.prepare(`SELECT COUNT(*) AS n FROM documents WHERE status <> 'posted'`).get()).toEqual({ n: 0 });
-        for (const type of ['quo.quotation', 'jo.job_order', 'prd.entry', 'jo.release',
+        for (const type of ['quo.quotation', 'jo.job_order', 'jo.release',
           'jo.invoice_record', 'qs.sale', 'ap.bill', 'ap.payment', 'exp.voucher',
           'cash.transfer', 'cash.count']) expect(summary.documents[type]).toBe(5);
+        expect(summary.documents['prd.entry']).toBe(10); // sewing and packing each day: a step is completed with all its pieces
         expect(summary.documents['col.collection']).toBe(15);
         expect(summary.documents['pay.run']).toBe(1); // first weekly cutoff
         expect(summary.documents['pay.release']).toBe(1);
