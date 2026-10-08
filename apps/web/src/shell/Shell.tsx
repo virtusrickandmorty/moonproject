@@ -7,7 +7,7 @@ import { startLive, stopLive, useLiveChange } from '../live.ts';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { api, type DashNotification, type DocTypeInfo, type Me, type MenuOrder } from '../api.ts';
 import { Link, navigate, useLocation } from '../router.tsx';
-import { longDate } from '../components/ui.tsx';
+import { Button, longDate } from '../components/ui.tsx';
 import { MENU_FOLDS_KEY, applyMenuOrder, buildMenu, docPath, isHere, labelOf, openGroups, type MenuGroup, type MenuItem } from './menu.ts';
 import { SearchBox } from '../modules/NAV/Search.tsx';
 import { Breadcrumbs, CrumbName, crumbsFor } from './crumbs.tsx';
@@ -230,7 +230,25 @@ export function ArrangeMenu({ menu, onSave, onCancel }: { menu: MenuList; onSave
 
 const pop = 'absolute right-0 z-30 mt-2 w-60 overflow-hidden rounded-lg bg-white py-1 text-sm text-slate-800 shadow-lg ring-1 ring-slate-200 [&>*]:block [&>*]:w-full [&>*]:px-4 [&>*]:py-2 [&>*]:text-left [&>*:hover]:bg-indigo-50';
 
-export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes: DocTypeInfo[]; onSignOut: () => void; children: ReactNode }) {
+/**
+ * A report stays a snapshot (its figures do not move while it is read or printed); after a change anywhere, this bar says
+ * so and Refresh opens it again with the same filters. `reportKey` changes when the report is opened again.
+ */
+function ReportChanged({ onRefresh, reportKey }: { onRefresh: () => void; reportKey: string }) {
+  const [changed, setChanged] = useState(false);
+  useEffect(() => setChanged(false), [reportKey]);
+  useLiveChange(() => setChanged(true));
+  if (!changed) return null;
+  return (
+    <div role="status" className="mb-3 flex flex-wrap items-center gap-3 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-900 ring-1 ring-sky-200 print:hidden">
+      <span className="flex-1">New entries were recorded since you opened this report.</span>
+      <Button tone="primary" onClick={onRefresh}>Refresh</Button>
+    </div>
+  );
+}
+
+/** `onRefreshReport`: the page on show is a report (it gets the Refresh bar after a change). */
+export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = '', children }: { me: Me; docTypes: DocTypeInfo[]; onSignOut: () => void; onRefreshReport?: (() => void) | undefined; reportKey?: string; children: ReactNode }) {
   const path = useLocation().split('?')[0]!;
   // Live changes: one stream while signed in; every screen that shows records reloads when anyone changes something.
   useEffect(() => { startLive(); return stopLive; }, []);
@@ -330,6 +348,7 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
         {/* data-erp: the page area of the signed-in ERP; index.css widens its screens (the public website keeps its own layout). */}
         <main data-erp className="min-w-0 flex-1 px-3 pb-10 pt-2 sm:px-4 md:px-6">
           <Breadcrumbs crumbs={crumbsFor(path, menu, crumbName)} icon={<Icon name="Overview" className="size-4" />} />
+          {onRefreshReport && <ReportChanged onRefresh={onRefreshReport} reportKey={reportKey} />}
           <CrumbName.Provider value={setCrumbName}>{children}</CrumbName.Provider>
         </main>
       </div>
