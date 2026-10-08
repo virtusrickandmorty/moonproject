@@ -281,7 +281,10 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
     }
     const who = db.prepare('SELECT posted_by AS userId, posted_at AS at FROM documents WHERE id = ?').get(h.documentId) as { userId: string; at: string };
     // A step whose pieces (and rework) are all recorded completes on its own (the owner's rule, Oct 2026).
-    for (const lineNo of new Set(doc.rows.map((r) => r.lineNo))) autoComplete(db, doc.jobOrderId, lineNo, doc.stepId, who);
+    // Every step of the lines touched, so a step left with all its pieces before this rule completes too.
+    for (const lineNo of new Set(doc.rows.map((r) => r.lineNo))) {
+      for (const s of lineRoute(db, doc.jobOrderId, lineNo) ?? []) autoComplete(db, doc.jobOrderId, lineNo, s.id, who);
+    }
     syncStage(db, doc.jobOrderId, `${h.number}: ${doc.stepName} pieces recorded`, who);
   },
 
