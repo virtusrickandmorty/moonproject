@@ -261,7 +261,8 @@ export function invoiceBooklet(d: { vatRateBp: number; listCents: number; discou
 
 export interface JoAction { label: string; to: string; primary?: boolean }
 /** What the user may start from a job order's view (doc types they may create). */
-export interface JoCan { collect: boolean; release: boolean; invoice: boolean; dpInvoice?: boolean }
+/** `releaseOverride`: may release what is not ready yet (the owner, with a reason), so Release slip is offered before. */
+export interface JoCan { collect: boolean; release: boolean; invoice: boolean; dpInvoice?: boolean; releaseOverride?: boolean }
 
 /** Downpayments invoiced on the job order so far (recorded invoices only). */
 export const dpInvoicedCents = (s: Pick<JoStatus, 'dpInvoices'>) => s.dpInvoices.filter((i) => i.status === 'posted').reduce((sum, i) => sum + i.amountCents, 0);
@@ -280,7 +281,9 @@ export function joActions(s: JoStatus, can: JoCan): JoAction[] {
     }
     out.push({ label: 'Take a payment', to: `/docs/col.collection/new?jo=${id}` });
   }
-  if (can.release && s.lines.some((l) => l.leftQty > 0)) out.push({ label: 'Release', to: `/docs/jo.release/new?jo=${id}` });
+  // Release slip once an item may go out (its production is done), even while others are still being made; earlier for
+  // the owner, who may release what is not ready with a reason.
+  if (can.release && s.lines.some((l) => l.leftQty > 0 && (l.ready !== false || can.releaseOverride))) out.push({ label: 'Release slip', to: `/docs/jo.release/new?jo=${id}` });
   if (can.invoice && s.awaitingInvoice.length > 0) {
     const one = s.awaitingInvoice.length === 1 ? `release=${encodeURIComponent(s.awaitingInvoice[0]!.id)}` : `jo=${id}`;
     out.push({ label: 'Record invoice', to: `/docs/jo.invoice_record/new?${one}` });

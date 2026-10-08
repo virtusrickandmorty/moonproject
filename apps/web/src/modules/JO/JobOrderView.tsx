@@ -115,9 +115,10 @@ function JoMoney({ d, typeKey }: { d: DocDetail; typeKey: string }) {
   const [can, setCan] = useState<JoCan & { move: boolean; refund: boolean }>({ move: false, refund: false, collect: false, release: false, invoice: false, dpInvoice: false });
   useEffect(() => {
     api.joStatus(id).then(setS, () => undefined);
-    api.docTypes().then((ts) => {
+    Promise.all([api.docTypes(), api.me().catch(() => null)]).then(([ts, me]) => {
       const may = (key: string) => !!ts.find((t) => t.key === key)?.canCreate;
-      setCan({ move: may('col.deposit_transfer'), refund: may('col.refund'), collect: may('col.collection'), release: may('jo.release'), invoice: may('jo.invoice_record'), dpInvoice: may('jo.dp_invoice') });
+      setCan({ move: may('col.deposit_transfer'), refund: may('col.refund'), collect: may('col.collection'), release: may('jo.release'), invoice: may('jo.invoice_record'), dpInvoice: may('jo.dp_invoice'),
+        releaseOverride: !!me?.permissions.includes('jo.release_override') });
     }, () => undefined);
     if (replacesId) Promise.all([api.get(typeKey, replacesId), api.joStatus(replacesId)]).then(([old, os]) => setBefore({ number: old.header.number, heldCents: os.money.depositsHeldCents }), () => undefined);
   }, [id, status]);

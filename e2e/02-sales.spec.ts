@@ -92,7 +92,7 @@ test('sales: a customer, a job order with a deposit, a collection, a release wit
   await expect(figure(page, 'Balance due')).toHaveText('₱0.00');
 
   // The release: everything left is ticked; the owner releases it before it is marked ready; the invoice is to follow.
-  await page.getByRole('link', { name: 'Release', exact: true }).click();
+  await page.getByRole('link', { name: 'Release slip', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'New release slip' })).toBeVisible();
   await expect(page.getByText(`JO-000001 · ${CUSTOMER}`)).toBeVisible();
   await expect(page.getByLabel('Pieces of line 1')).toHaveValue('4');
@@ -194,7 +194,7 @@ test('sales, downpayment VAT mode C: the downpayment invoice, its collection, th
   await expect(figure(page, 'Deposits held')).toHaveText('₱3,000.00');
 
   // The release with the balance invoice: the booklet shows the sale less the downpayment invoiced.
-  await page.getByRole('link', { name: 'Release', exact: true }).click();
+  await page.getByRole('link', { name: 'Release slip', exact: true }).click();
   await expect(page.getByLabel('Pieces of line 1')).toHaveValue('4');
   await page.getByLabel('Claimed by').fill('Coach Placeholder');
   await page.getByRole('radio', { name: 'School ID' }).click();

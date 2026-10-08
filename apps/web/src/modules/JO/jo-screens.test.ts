@@ -145,13 +145,13 @@ describe("the job order view's buttons", () => {
     expect(joActions(status(), all)).toEqual([
       { label: 'Take the downpayment', to: '/docs/col.collection/new?jo=jo-1&for=downpayment', primary: true },
       { label: 'Take a payment', to: '/docs/col.collection/new?jo=jo-1' },
-      { label: 'Release', to: '/docs/jo.release/new?jo=jo-1' },
+      { label: 'Release slip', to: '/docs/jo.release/new?jo=jo-1' },
     ]);
     const paid = status({ lines: [{ lineNo: 1, description: 'Jersey', qty: 4, releasedQty: 4, leftQty: 0 }], awaitingInvoice: [{ id: 'rel-1', number: 'REL-000001', businessDate: '2026-09-28', totalCents: 600_000 }] }, { balanceDueCents: 0, collectedCents: 600_000 });
     expect(joActions(paid, all)).toEqual([{ label: 'Record invoice', to: '/docs/jo.invoice_record/new?release=rel-1' }]);
     const two = { ...paid, awaitingInvoice: [...paid.awaitingInvoice, { id: 'rel-2', number: 'REL-000002', businessDate: '2026-09-28', totalCents: 1 }] };
     expect(joActions(two, all).map((a) => a.to)).toEqual(['/docs/jo.invoice_record/new?jo=jo-1']);
-    expect(joActions(status(), { collect: false, release: true, invoice: false }).map((a) => a.label)).toEqual(['Release']);
+    expect(joActions(status(), { collect: false, release: true, invoice: false }).map((a) => a.label)).toEqual(['Release slip']);
     expect(joActions(status({ jobOrder: { ...status().jobOrder, status: 'cancelled' } }), all)).toEqual([]);
   });
 
@@ -215,12 +215,13 @@ describe('web client for job orders, releases and invoice records', () => {
     // The view's buttons, then "Take the downpayment": the collection for this job order.
     let s = await api.joStatus(jo.id);
     expect(s.jobOrder).toMatchObject({ number: 'JO-000001', customerName: 'Moonlight Test School' });
-    expect(joActions(s, { collect: true, release: true, invoice: true }).map((a) => a.label)).toEqual(['Take the downpayment', 'Take a payment', 'Release']);
+    expect(joActions(s, { collect: true, release: true, invoice: true }).map((a) => a.label)).toEqual(['Take the downpayment', 'Take a payment']); // nothing is made yet: no Release slip
     const dp = collectionPreset(s, true);
     await api.post('col.collection', { customerId: dp.customer.id, crNumber: '0801', applications: [{ jobOrderId: jo.id, amountCents: dp.cents }], tenders: [{ cashPlaceId: CASH, amountCents: dp.cents }] }, dp.cents, key());
     s = await api.joStatus(jo.id);
     expect(s.money).toMatchObject({ collectedCents: 300_000, balanceDueCents: 300_000, depositsHeldCents: 300_000 });
-    expect(joActions(s, { collect: true, release: true, invoice: true }).map((a) => a.label)).toEqual(['Take a payment', 'Release']);
+    expect(joActions(s, { collect: true, release: true, invoice: true }).map((a) => a.label)).toEqual(['Take a payment']);
+    expect(joActions(s, { collect: true, release: true, invoice: true, releaseOverride: true }).map((a) => a.label)).toEqual(['Take a payment', 'Release slip']); // the owner may release it anyway
 
     // The release form: pick the job order by customer; everything left ticked.
     expect((await api.joPickOrders('moonlight')).map((x) => [x.number, x.stageLabel, x.leftPieces, x.balanceDueCents])).toEqual([['JO-000001', 'Open', 4, 300_000]]);
