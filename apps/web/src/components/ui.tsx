@@ -136,6 +136,8 @@ export function keepDialogFocus(root: HTMLElement, opener: HTMLElement | null, c
   };
 }
 
+/** The two standard dialog widths. */
+export const DIALOG_WIDTH = { question: 'max-w-lg', record: 'max-w-5xl' } as const;
 /** How long a dialog takes to grow out of the middle of the screen, and to shrink back into it (index.css). */
 export const DIALOG_MS = 180;
 const reducedMotion = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -164,8 +166,9 @@ export function useExit<T>(value: T | null | undefined, ms = DIALOG_MS): [T | nu
 }
 
 /**
- * `wide` for a table or a whole record, `size="full"` for a whole form or record (a New job order over its list): the
- * whole width of the screen. `hideTitle` when the content has its own heading. `leaving` when its parent already
+ * Every dialog in the ERP has one of two standard widths (DIALOG_WIDTH): a question (a confirm, a reason, a password)
+ * is narrow; a table, a form or a whole record (`wide`, or `size="full"`, the same) is the record width. On a phone
+ * both take the screen's width less a 16px margin. `hideTitle` when the content has its own heading. `leaving` when its parent already
  * closed it and keeps it a moment (useExit) to shrink away. `beforeClose` may keep it open (something typed, not saved).
  */
 export function Dialog({ title, onClose, wide, size, hideTitle, leaving, beforeClose, children }: {
@@ -192,9 +195,9 @@ export function Dialog({ title, onClose, wide, size, hideTitle, leaving, beforeC
   }, []);
   const state = closing || leaving ? 'closing' : 'open';
   return (
-    <div data-state={state} className={`dialog-backdrop fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 ${size === 'full' ? 'p-2 sm:p-4' : 'p-4'}`}>
+    <div data-state={state} className="dialog-backdrop fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 p-4 sm:p-8">
       <div ref={root} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} data-state={state}
-        className={`dialog-panel relative mx-auto ${size === 'full' ? 'mt-2 w-full max-w-none sm:mt-4' : wide ? 'mt-12 max-w-5xl' : 'mt-12 max-w-xl'} space-y-4 rounded-lg bg-white p-4 shadow-xl sm:p-6`}>
+        className={`dialog-panel relative mx-auto w-full ${DIALOG_WIDTH[wide || size === 'full' ? 'record' : 'question']} space-y-4 rounded-lg bg-white p-4 shadow-xl sm:p-6`}>
         <h2 className={hideTitle ? 'sr-only' : 'pr-10 text-lg font-bold text-[#010101]'}>{title}</h2>
         {/* Every dialog can be closed with this, as well as with Escape. */}
         <button type="button" onClick={() => void shut.current()} aria-label="Close dialog" title="Close"
