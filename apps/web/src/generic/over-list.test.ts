@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { openedFrom, openedPath, overList } from './DocList.tsx';
 import { longDate, manilaTime, showDate } from '../components/ui.tsx';
+import { isReportPath } from '../shell/menu.ts';
 
 describe('dates on screen', () => {
   it('shows every date as "July 9, 2026", from the Manila date as given', () => {
@@ -40,5 +41,14 @@ describe('dialogs over a list', () => {
     expect(overList(base, `${base}/new?draft=d9`)).toEqual({ to: `${base}?new&draft=d9` });
     for (const other of [base, `${base}?view=a1`, `${base}/new?jo=j1&for=downpayment`, `${base}/a1?x=1`, '/docs/jo.job_order/a1', '/docs/col.collections/a1', '/'])
       expect(overList(base, other)).toBeNull();
+  });
+});
+
+describe('reports stay a snapshot', () => {
+  it('knows a report address (a screen under Reports, or a page under one) from any other', () => {
+    expect(isReportPath('/rpt/trial-balance')).toBe(true);
+    expect(isReportPath('/rpt/ledger')).toBe(true);
+    expect(isReportPath('/docs/jo.job_order')).toBe(false);
+    expect(isReportPath('/cus')).toBe(false);
   });
 });

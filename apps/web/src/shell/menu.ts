@@ -142,6 +142,9 @@ export function pagePermission(path: string): string | undefined {
   return under.sort((a, b) => b.path.length - a.path.length)[0]?.permission;
 }
 
+/** A report's address (a screen under Reports, or a page under one): it stays a snapshot until Refresh (live changes). */
+export const isReportPath = (path: string) => SCREENS.some((s) => s.group === 'Reports' && (path === s.path || path.startsWith(`${s.path}/`)));
+
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);
 
