@@ -22,7 +22,7 @@
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { conflict, formatPeso, isBusinessDate, manilaDate, newId, type Issue } from '@moonproject/shared';
+import { conflict, isBusinessDate, manilaDate, newId, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { jobOrderRef, jobOrdersOf, lineState, rosterOf } from '../../JO/public.ts';
 import { rateAt } from '../../RATE/public.ts';
@@ -357,9 +357,8 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
 
   summary(doc, ctx) {
     const who = doc.rows.map((r) => `${r.employeeName} ${r.pieces}${r.part !== 'whole' ? ` ${r.part}` : ''}${r.kind === 'rework' ? ' rework' : r.kind === 'correction' ? ' (correction)' : ''}${doc.rows.some((x) => x.lineNo !== r.lineNo) ? ` on line ${r.lineNo}` : ''}`);
-    const pay = doc.totalCents !== 0 ? ` Piece pay: ${formatPeso(doc.totalCents)}.` : ' Progress only: no piece pay.';
     const late = doc.workDate !== ctx.businessDate ? ` done on ${doc.workDate}` : '';
-    return `This will record ${plural(doc.pieces)} of ${doc.stepName}${late} for ${doc.jobOrderNumber} (${doc.customerName}): ${who.join(', ')}.${pay}`;
+    return `This will record ${plural(doc.pieces)} of ${doc.stepName}${late} for ${doc.jobOrderNumber} (${doc.customerName}): ${who.join(', ')}.`; // no piece pay: it shows in payroll (the owner's decision, Oct 2026)
   },
 
   arbitrary(db) {

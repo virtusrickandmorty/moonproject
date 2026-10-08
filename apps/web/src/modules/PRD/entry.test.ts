@@ -48,13 +48,12 @@ it('production does not go on with more pieces than are ready on the step, or mo
   expect(pre).toHaveBeenCalledTimes(1); // 6 rework, 5 done
 });
 
-it('production keeps calculated rates and pay on the correct worker when a blank row is skipped', () => {
+it('production shows no rate or piece pay anywhere on the form or the Record confirmation (payroll shows them)', () => {
   const f = form(() => EntryForm({ type: type('prd.entry'), mode }), [[], [], 'jo1', job, 1,
     [emptyRow('1'), { ...emptyRow('1'), employeeId: 'e1', pieces: '3' }]], preview);
-  expect(renderToStaticMarkup(f.find('aria-label', 'Worker entry 1'))).not.toContain('₱40.00');
-  const worker = renderToStaticMarkup(f.find('aria-label', 'Worker entry 2'));
-  expect(worker).toContain('₱40.00');
-  expect(worker).toContain('From the price list. Payroll can change it.');
+  const page = f.render().map((n) => renderToStaticMarkup(n)).join('');
+  expect(page).not.toContain('₱');
+  expect(page).not.toMatch(/rate per piece|piece pay/i);
 });
 
 it('production sends the typed work date and asks why a row the server takes for a repeated sheet is a different sheet', async () => {
