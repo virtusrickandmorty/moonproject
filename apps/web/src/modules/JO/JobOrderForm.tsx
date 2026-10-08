@@ -44,7 +44,7 @@ function AddPeopleIcon() {
  * The New customer button beside the customer box: the Customers screen's own form (every detail of a customer) in a
  * dialog over the job order; once saved, the new customer is picked here.
  */
-function NewCustomerButton({ me, onAdded }: { me: Me; onAdded: (c: Picked, lookalike: boolean) => void }) {
+export function NewCustomerButton({ me, onAdded }: { me: Me; onAdded: (c: Picked, lookalike: boolean) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <>
