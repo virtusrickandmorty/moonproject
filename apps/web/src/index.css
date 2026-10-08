@@ -137,15 +137,15 @@ button:disabled,
   box-shadow: 0 0 0 1px var(--color-red-500);
 }
 
-/* Dialogs (components/ui.tsx Dialog): grow out of the middle of the screen as the backdrop fades in, and shrink back
-   into it when closed (data-state="closing", for DIALOG_MS). */
+/* Dialogs (components/ui.tsx Dialog): centred on the screen, they grow out of its middle as the backdrop fades in, and
+   shrink back into it when closed (data-state="closing", for DIALOG_MS). */
 @keyframes dialog-in {
-  from { opacity: 0; transform: scale(0.94); }
+  from { opacity: 0; transform: scale(0.9); }
   to { opacity: 1; transform: none; }
 }
 @keyframes dialog-out {
   from { opacity: 1; transform: none; }
-  to { opacity: 0; transform: scale(0.94); }
+  to { opacity: 0; transform: scale(0.9); }
 }
 @keyframes backdrop-in {
   from { opacity: 0; }
@@ -157,8 +157,8 @@ button:disabled,
 }
 .dialog-backdrop { animation: backdrop-in 180ms ease-out; }
 .dialog-backdrop[data-state='closing'] { animation: backdrop-out 180ms ease-in forwards; pointer-events: none; }
-.dialog-panel { transform-origin: center; animation: dialog-in 180ms cubic-bezier(0.2, 0.9, 0.3, 1.1); }
-.dialog-panel[data-state='closing'] { animation: dialog-out 180ms ease-in forwards; }
+.dialog-panel { transform-origin: center center; animation: dialog-in 200ms cubic-bezier(0.16, 1, 0.3, 1); }
+.dialog-panel[data-state='closing'] { animation: dialog-out 180ms cubic-bezier(0.7, 0, 0.84, 0) forwards; }
 @media (prefers-reduced-motion: reduce) {
   .dialog-backdrop, .dialog-panel { animation: none !important; }
 }
