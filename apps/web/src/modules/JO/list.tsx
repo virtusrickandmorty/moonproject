@@ -24,10 +24,25 @@ export const jobOrderDetail = (r: DocHeader) =>
 
 export const JOB_ORDER_SEARCH = 'Number, customer, or what was ordered (e.g. rowing jersey)';
 
-/** Make payment: the collection form for this job order, when the user may record collections and something is left to pay. */
+/**
+ * Make payment: the collection form for this job order, when the user may record collections and something is left to pay.
+ * Invoice: the invoice record for what was released and not invoiced yet (the release itself when there is one), for
+ * those who record invoices; greyed out, with why, until something is released.
+ */
 export function jobOrderActions(docTypes: DocTypeInfo[]) {
-  const canCollect = !!docTypes.find((t) => t.key === 'col.collection')?.canCreate;
-  return (r: DocHeader) => canCollect && r.status === 'posted' && row(r).balanceDueCents > 0
-    ? <QuickAction label="Make payment" title={`Take a payment on ${r.number}`} onClick={() => navigate(`/docs/col.collection/new?jo=${encodeURIComponent(r.id)}`)} />
-    : null;
+  const can = (key: string) => !!docTypes.find((t) => t.key === key)?.canCreate;
+  const [canCollect, canInvoice] = [can('col.collection'), can('jo.invoice_record')];
+  return (r: DocHeader) => {
+    if (r.status !== 'posted') return null;
+    const waiting = row(r).awaitingInvoice ?? [];
+    const target = waiting.length === 1 ? `release=${encodeURIComponent(waiting[0]!.id)}` : `jo=${encodeURIComponent(r.id)}`;
+    return (
+      <>
+        {canCollect && row(r).balanceDueCents > 0 && <QuickAction label="Make payment" title={`Take a payment on ${r.number}`} onClick={() => navigate(`/docs/col.collection/new?jo=${encodeURIComponent(r.id)}`)} />}
+        {canInvoice && <QuickAction label="Invoice" disabled={waiting.length === 0}
+          title={waiting.length === 0 ? `Nothing of ${r.number} is released and waiting for its invoice yet` : `Record the invoice for ${waiting.map((x) => x.number).join(', ')}`}
+          onClick={() => navigate(`/docs/jo.invoice_record/new?${target}`)} />}
+      </>
+    );
+  };
 }

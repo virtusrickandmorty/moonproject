@@ -17,7 +17,7 @@ const primary = 'rounded-md bg-indigo-600 px-3 py-1 text-sm font-medium text-whi
 
 interface RecordedWearer {
   rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size?: string; chartRevision?: number | null;
-  qty: number; jerseyName?: string; jerseyNumber?: string; notes?: string;
+  qty: number; jerseyName?: string; jerseyNumber?: string; garmentType?: string; notes?: string;
 }
 interface RecordedLine {
   lineNo: number; description: string; qty: number; unitPriceCents: number; discountCents: number; lineTotalCents: number;
@@ -70,6 +70,7 @@ function Garments({ d, opening }: { d: DocDetail; opening: boolean }) {
                       <p>{r.sizeMode === 'measured' ? `Measured${r.chartRevision != null ? ` · revision ${r.chartRevision}` : ''}` : `Size: ${r.size ?? 'Not supplied'}`} · Quantity: {r.qty}</p>
                       {r.jerseyName && <p>Jersey name: {r.jerseyName}</p>}
                       {r.jerseyNumber && <p>Jersey number: {r.jerseyNumber}</p>}
+                      {r.garmentType && <p>Garment type: {r.garmentType}</p>}
                       {r.notes && <p className="text-slate-600">{r.notes}</p>}
                     </li>
                   ))}

@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify';
 import { AppError, isBusinessDate } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { joMoney } from './public.ts';
+import { awaitingInvoice } from './doctypes/invoice-record.ts';
 
 export type JoListFilters = { q?: string; from?: string; to?: string };
 
@@ -47,7 +48,7 @@ function matchedItem(db: Db, id: string, words: string[]): string | null {
 export function joListRoutes(app: FastifyInstance, db: Db): void {
   const FROM = 'FROM documents d JOIN jo_orders o ON o.document_id = d.id WHERE d.doc_type = \'jo.job_order\'';
 
-  /** As GET /api/docs/jo.job_order, with `balanceDueCents` (0 once cancelled) and `matchedItem` when a search found it in an item. */
+  /** As GET /api/docs/jo.job_order, with `balanceDueCents` (0 once cancelled), `matchedItem` when a search found it in an item, and `awaitingInvoice`. */
   app.get<{ Querystring: JoListFilters & { limit?: string; before?: string; status?: string } }>('/api/jo/list', { config: { permission: 'jo.view' } }, async (req) => {
     const limit = Math.min(Math.max(Number(req.query.limit ?? 25) || 25, 1), 200);
     const { where, params } = filtersOf(req.query);
@@ -62,6 +63,8 @@ export function joListRoutes(app: FastifyInstance, db: Db): void {
       replacedById: r.replaced_by_id ?? null, externalNumber: r.external_number ?? null,
       balanceDueCents: r.status === 'posted' ? joMoney(db, r.id as string).balanceDueCents : 0,
       matchedItem: words.length ? matchedItem(db, r.id as string, words) : null,
+      // Releases waiting for their booklet invoice (the row's Invoice action); none once cancelled.
+      awaitingInvoice: r.status === 'posted' ? awaitingInvoice(db, r.id as string).map((x) => ({ id: x.id, number: x.number })) : [],
     }));
   });
 

@@ -34,8 +34,8 @@ const typedJo = (over: Partial<JoValues> = {}): JoValues => ({
       price: '1,500.00',
       listCents: 150_000,
       roster: [
-        { personId: 'p-ari', name: 'Ari Sample', sizeMode: 'preset', size: 'l', jerseyName: 'ari', jerseyNumber: '7', qty: '1' },
-        { personId: 'p-bea', name: 'Bea Example', sizeMode: 'measured', size: '', jerseyName: '', jerseyNumber: '', qty: '1' },
+        { personId: 'p-ari', name: 'Ari Sample', sizeMode: 'preset', size: 'l', jerseyName: 'ari', jerseyNumber: '7', qty: '1', garmentType: ' Jersey (women) ' },
+        { personId: 'p-bea', name: 'Bea Example', sizeMode: 'measured', size: '', jerseyName: '', jerseyNumber: '', qty: '1', garmentType: '' },
         { ...oneOff(' Coach Guest '), size: 'XL', qty: '2' },
       ],
     },
@@ -68,7 +68,7 @@ describe('job order form rules', () => {
       lines: [{
         kind: 'made_to_order', description: 'Team jersey set', qty: 4, unitPriceCents: 150_000, discountCents: 0,
         roster: [
-          { personId: 'p-ari', sizeMode: 'preset', size: 'L', jerseyName: 'ARI', jerseyNumber: '7', qty: 1 },
+          { personId: 'p-ari', sizeMode: 'preset', size: 'L', jerseyName: 'ARI', jerseyNumber: '7', qty: 1, garmentType: 'Jersey (women)' },
           { personId: 'p-bea', sizeMode: 'measured', qty: 1 },
           { name: 'Coach Guest', sizeMode: 'preset', size: 'XL', qty: 2 },
         ],
@@ -96,7 +96,7 @@ describe('job order form rules', () => {
   });
 
   it('fills a picked wearer with the size on file; tells a price changed from the price list', () => {
-    expect(fromWearer({ personId: 'p', wearerName: 'Bea', groupId: null, sizeMode: 'preset', size: 'M', jerseyName: 'BEA' })).toEqual({ personId: 'p', name: 'Bea', sizeMode: 'preset', size: 'M', jerseyName: 'BEA', jerseyNumber: '', qty: '1' });
+    expect(fromWearer({ personId: 'p', wearerName: 'Bea', groupId: null, sizeMode: 'preset', size: 'M', jerseyName: 'BEA' })).toEqual({ personId: 'p', name: 'Bea', sizeMode: 'preset', size: 'M', jerseyName: 'BEA', jerseyNumber: '', qty: '1', garmentType: '' });
     const line = { ...emptyJoLine(), qty: '12', price: '1,400.00', listCents: 140_000 };
     expect([lineQty(line), priceChanged(line), priceChanged({ ...line, price: '1,350' }), priceChanged({ ...line, listCents: null })]).toEqual(['12', false, true, false]);
   });
