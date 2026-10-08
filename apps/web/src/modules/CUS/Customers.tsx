@@ -92,7 +92,8 @@ export function Customers({ me }: { me: Me }) {
   </div>;
 }
 
-function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Customer | 'new'; onClose: () => void; onSaved: (id: string, warnings: DuplicateWarning[]) => Promise<void> }) {
+/** The customer form (new or edit), in its own dialog; also opened from the job order form to add a customer there. */
+export function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Customer | 'new'; onClose: () => void; onSaved: (id: string, warnings: DuplicateWarning[]) => Promise<void> }) {
   const old = row === 'new' ? null : row;
   const [v, setV] = useState({ kind: old?.kind ?? 'organization', displayName: old?.display_name ?? '',
     registeredName: old?.registered_name ?? '', tin: old?.tin ?? '', isVatRegistered: Boolean(old?.is_vat_registered),
