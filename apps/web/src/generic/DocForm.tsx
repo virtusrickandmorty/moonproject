@@ -44,14 +44,15 @@ function FieldInput({ f, value, set, places }: { f: FieldSpec; value: string; se
   }
 }
 
-export function RecordDialog(p: { type: DocTypeInfo; preview: Preview; original?: DocHeader; reason: string; onRecord: (key: string) => Promise<unknown>; onClose: () => void }) {
+/** `hideTotal`: a document whose amount is not shown on its form (production entries: piece pay shows in payroll). */
+export function RecordDialog(p: { type: DocTypeInfo; preview: Preview; original?: DocHeader; reason: string; onRecord: (key: string) => Promise<unknown>; onClose: () => void; hideTotal?: boolean }) {
   const key = useMemo(newIdempotencyKey, [p.preview]); // same key when a click is retried, a new one after a new preview
   const a = useAction();
   const errors = p.preview.issues.filter((i) => i.level === 'error');
   return (
     <Dialog title={p.original ? `Cancel ${p.original.number} and record the replacement?` : `Record this ${p.type.title}?`} onClose={p.onClose}>
       <p>{p.preview.summary}</p>
-      <p className="text-sm text-slate-600">Total: <span className="text-lg font-semibold tabular-nums text-slate-900">{peso(p.preview.totalCents)}</span></p>
+      {!p.hideTotal && <p className="text-sm text-slate-600">Total: <span className="text-lg font-semibold tabular-nums text-slate-900">{peso(p.preview.totalCents)}</span></p>}
       {p.original && <Notice tone="info">{p.original.number} will be cancelled (reversed with today's date) and the replacement gets a new number. Reason: {p.reason}</Notice>}
       {p.preview.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
       {p.preview.journal && <details className="rounded-lg bg-slate-50 p-3"><summary className="cursor-pointer text-sm font-medium">Behind the scenes</summary><JournalTable lines={p.preview.journal} /></details>}
