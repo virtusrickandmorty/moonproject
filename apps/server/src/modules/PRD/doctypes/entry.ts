@@ -2,7 +2,8 @@
  * Production Entry (PE-, PLAN E7 assignments, C4, D6): the pieces workers did on one step of one job order, one row per
  * worker per line, with the piece rate taken as a snapshot. It posts no journal: payroll pays the rows later (F3).
  * - Rate: from the rate table (garment type × step × complexity on the work date), or typed with a reason (an override
- *   needs rate.override, OWN-26), or none (progress only, ₱0). Rework (pasubra) is paid at a rate typed per entry (OWN-25).
+ *   needs rate.override, OWN-26), or none (progress only, ₱0). Rework (pasubra) is paid the same table rate unless a rate
+ *   is typed (the owner's decision, Oct 2026: rates are changed in payroll, not on Record pieces; it was OWN-25).
  * - Caps (E7 rules 1–2): the pieces of a step never pass the line quantity; passing what came out of the previous step
  *   needs a reason. Rework is outside both.
  * - Cancel: only while no row is paid; after payroll, a correction row (negative pieces, same rate) goes in the next run.
@@ -128,7 +129,7 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       const complexity = was?.complexity ?? setup?.complexity ?? 'standard';
       const kind = r.correctionOf ? 'correction' : r.rework ? 'rework' : 'work';
       const part: Part = was?.part ?? r.part ?? 'whole';
-      const table = kind === 'work' && step ? rateAt(ctx.db, garmentType, step.code, complexity, isBusinessDate(workDate) ? workDate : ctx.businessDate, part) : undefined;
+      const table = kind !== 'correction' && step ? rateAt(ctx.db, garmentType, step.code, complexity, isBusinessDate(workDate) ? workDate : ctx.businessDate, part) : undefined;
       const [rateCents, rateSource]: [number, RateSource] =
         r.rateCents !== undefined ? [r.rateCents, 'typed'] : was ? [was.rateCents, 'original'] : table ? [table.rateCents, 'table'] : [0, 'none'];
       return { ...r, rowNo: i + 1, employeeName: employee(ctx.db, r.employeeId)?.name ?? '?', kind, garmentType, complexity, rateCents, rateSource, amountCents: r.pieces * rateCents, part };
@@ -161,6 +162,7 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
 
     const lines = lineState(ctx.db, jo.id);
     const added = new Map<string, number>(); // work pieces per line and part in this entry ("1|whole", "2|upper")
+    const redone = new Map<string, number>(); // rework pieces per line and part in this entry
     const takenOff = new Map<string, number>(); // correction pieces per corrected row in this entry
     const ticked = new Map<string, Set<number>>(); // wearers ticked per line and part in this entry
     for (const r of doc.rows) {
@@ -194,7 +196,6 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       }
       if (r.rateSource === 'typed' && !r.rateReason) add('error', `${f}.rateReason`, 'RATE_REASON', `${at}: say why this rate is typed.`);
       if (r.rateSource !== 'typed' && r.rateReason) add('error', `${f}.rateReason`, 'RATE_REASON', `${at}: a reason goes with a typed rate only.`);
-      if (r.kind === 'rework' && r.rateSource !== 'typed') add('error', `${f}.rateCents`, 'REWORK_RATE', `${at}: type the rework (pasubra) rate for these pieces.`);
       if (r.kind === 'work' && r.rateSource === 'typed' && !ctx.can('rate.override')) add('error', `${f}.rateCents`, 'RATE_OVERRIDE', `${at}: you cannot type a different piece rate. Leave it to the rate table or ask the owner.`);
       if (r.kind !== 'work' && r.repeatReason) add('error', `${f}.repeatReason`, 'REPEAT_REASON', `${at}: a repeat reason goes with normal work only. Rework and corrections are never taken for a repeated sheet.`);
       // Wearers ticked say which garments the row is for, and each is done once per step: such a row is never a repeated sheet.
@@ -203,17 +204,19 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
         add('error', `${f}.repeatReason`, 'LIKELY_REPEAT', `${at}: ${repeats.join(', ')} already has ${plural(r.pieces)} of ${step.name} by ${r.employeeName} on line ${r.lineNo} dated ${doc.workDate}. If this is a different sheet, say why; if the pieces were redone, record them as rework.`);
       }
       const what = `${r.garmentType} (${r.complexity})`;
-      if (onRoute && r.kind === 'work' && r.rateSource === 'none' && step.payBasis === 'piece') add('error', `${f}.rateCents`, 'NO_RATE', `${at}: there is no ${step.name} rate for ${what}. Type the rate and a reason.`);
-      if (onRoute && r.kind === 'work' && r.rateSource === 'none' && step.payBasis === 'piece_or_daily') add('warning', `${f}.rateCents`, 'NO_RATE', `${at}: there is no ${step.name} rate for ${what}, so these pieces count as progress only (₱0).`);
+      if (onRoute && r.kind !== 'correction' && r.rateSource === 'none' && step.payBasis === 'piece') add('error', `${f}.rateCents`, 'NO_RATE', `${at}: there is no ${step.name} rate for ${what}. Type the rate and a reason.`);
+      if (onRoute && r.kind !== 'correction' && r.rateSource === 'none' && step.payBasis === 'piece_or_daily') add('warning', `${f}.rateCents`, 'NO_RATE', `${at}: there is no ${step.name} rate for ${what}, so these pieces count as progress only (₱0).`);
       const isSet = !!line && !!lineSetup(ctx.db, jo.id, line.lineNo)?.isSet;
       if (line && isSet && r.kind !== 'correction' && r.part === 'whole') add('error', `${f}.part`, 'PART_REQUIRED', `${at}: line ${line.lineNo} is a set. Pick the upper or the lower part.`);
       if (line && !isSet && r.part !== 'whole') add('error', `${f}.part`, 'PART_NOT_SET', `${at}: line ${line.lineNo} is not a set, so it has no upper or lower part.`);
       if (line && r.kind === 'work') added.set(`${line.lineNo}|${r.part}`, (added.get(`${line.lineNo}|${r.part}`) ?? 0) + r.pieces);
+      if (line && r.kind === 'rework') redone.set(`${line.lineNo}|${r.part}`, (redone.get(`${line.lineNo}|${r.part}`) ?? 0) + r.pieces);
       if (r.wearers && line) {
         if (r.kind === 'correction') add('error', `${f}.wearers`, 'WEARERS_KIND', `${at}: wearers are ticked on work and rework only, not on a correction.`);
         const roster = new Map(rosterOf(ctx.db, jo.id, line.lineNo).map((w) => [w.rowNo, w]));
         const done = wearersDone(ctx.db, jo.id, line.lineNo, step.id, r.part);
-        const sentBack = new Set(r.kind === 'rework' ? reworkOpen(ctx.db, jo.id, line.lineNo, step.id, r.part).wearers : []);
+        // Rework is for a wearer done on this step, or sent back to it; a wearer still to come is not listed.
+        const sentBack = new Set(r.kind === 'rework' ? [...reworkOpen(ctx.db, jo.id, line.lineNo, step.id, r.part).wearers, ...done.keys()] : []);
         const forwarded = r.kind === 'work' && route && onRoute ? forwardedWearers(ctx.db, jo.id, line.lineNo, route, step.id, r.part) : null;
         const key = `${line.lineNo}|${r.part}|${r.kind}`;
         const mine = ticked.get(key) ?? new Set<number>();
@@ -221,7 +224,7 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
         for (const n of r.wearers) {
           const w = roster.get(n);
           if (!w) { add('error', `${f}.wearers`, 'WEARER', `${at}: line ${line.lineNo} has no wearer ${n}.`); continue; }
-          if (r.kind === 'rework' && !sentBack.has(n)) add('error', `${f}.wearers`, 'WEARER_NOT_SENT_BACK', `${at}: ${w.wearerName} is not sent back to ${step.name} for rework.`);
+          if (r.kind === 'rework' && !sentBack.has(n)) add('error', `${f}.wearers`, 'WEARER_NOT_DONE', `${at}: ${w.wearerName} is not done on ${step.name} yet, so there is nothing to rework.`);
           else if (r.kind === 'work' && done.has(n)) add('error', `${f}.wearers`, 'WEARER_DONE', `${at}: ${w.wearerName}${r.part !== 'whole' ? ` (${r.part} part)` : ''} is already done on ${step.name} (${done.get(n)}).`);
           else if (mine.has(n)) add('error', `${f}.wearers`, 'WEARER_TWICE', `${at}: ${w.wearerName} is ticked on two rows of this entry.`);
           else if (forwarded && !forwarded.includes(n) && !doc.overCapReason) {
@@ -233,6 +236,14 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
         ticked.set(key, mine);
         if (r.kind !== 'correction' && pieces !== r.pieces) add('error', `${f}.pieces`, 'WEARERS_PIECES', `${at}: the wearers ticked are ${plural(pieces)}, so the row is ${pieces}, not ${r.pieces}.`);
       }
+    }
+    // Rework (the owner's rule, Oct 2026): at most the pieces done on the step, since only those can be redone.
+    for (const [key, pieces] of redone) {
+      const [lineNo, part] = [Number(key.split('|')[0]), key.split('|')[1] as Part];
+      const here = lineRoute(ctx.db, jo.id, lineNo)?.find((s) => s.id === step.id);
+      if (!here) continue;
+      const done = part !== 'whole' && here.parts ? here.parts[part].pieces : here.pieces;
+      if (pieces > done) add('error', 'rows', 'REWORK_OVER', `Line ${lineNo} has ${plural(done)} done on ${step.name}, so at most ${done} can be recorded as rework.`);
     }
     for (const [key, pieces] of added) {
       const [lineNo, part] = [Number(key.split('|')[0]), key.split('|')[1] as Part];
