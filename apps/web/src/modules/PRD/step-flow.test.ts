@@ -1,7 +1,7 @@
 /** A step's row on the production board's line panel: Complete only with every piece done; pieces received and forwarded. */
 import { describe, expect, it } from 'vitest';
 import type { BoardCard } from '../../api.ts';
-import { activeSteps, emptyRow, rowsToInput, stepFlow } from './board.ts';
+import { activeSteps, emptyRow, readyNow, rowsToInput, stepFlow } from './board.ts';
 
 type Steps = NonNullable<BoardCard['steps']>;
 const NAMES: Record<number, string> = { 4: 'Cutting', 6: 'Sewing', 8: 'Packing', 1: 'Layout' };
@@ -53,5 +53,14 @@ describe('where an item shows on the board', () => {
     const done: Steps = [step(4, 'completed', 10, 10), step(6, 'in_progress', 3, 10), step(8, 'pending', 0, 3)];
     expect(activeSteps({ currentStepId: 6, steps: done })).toEqual([6, 8]); // a completed step is not shown
     expect(activeSteps({ currentStepId: null, steps: null })).toEqual([]);
+  });
+});
+
+describe('ready for release on the board', () => {
+  it('takes an item with every step done, or with pieces through every step not released yet', () => {
+    expect(readyNow({ ready: true, finishedPieces: 10, releasedQty: 0 })).toBe(true);
+    expect(readyNow({ ready: false, finishedPieces: 4, releasedQty: 0 })).toBe(true); // 4 of 10 packed: they can go out
+    expect(readyNow({ ready: false, finishedPieces: 4, releasedQty: 4 })).toBe(false); // those 4 are already out
+    expect(readyNow({ ready: false, finishedPieces: 0, releasedQty: 0 })).toBe(false);
   });
 });

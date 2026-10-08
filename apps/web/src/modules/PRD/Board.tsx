@@ -82,8 +82,13 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
                   <span className="block text-slate-600">{c.customerName}</span>
                   <span className="block">{c.description} · {c.qty - c.releasedQty} pcs</span>
                   <span className={`block text-xs ${late ? 'text-red-700' : 'text-slate-500'}`}>Due {showDate(c.dueDate)}</span>
+                  {/* Under a step: only what is still to do there (the owner's request: no "done" count). */}
                   {here && col.stepId && <span className="mt-1 block text-xs font-medium text-indigo-800">
-                    {here.parts ? `Upper ${here.parts.upper} · Lower ${here.parts.lower} of ${c.qty} done` : `${here.pieces} of ${c.qty} done`}{waiting > 0 && !here.parts ? ` · ${waiting} waiting` : ''}
+                    {here.parts ? `Upper ${Math.max(0, c.qty - here.parts.upper)} · Lower ${Math.max(0, c.qty - here.parts.lower)} to do` : waiting > 0 ? `${waiting} to do` : `${Math.max(0, c.qty - here.pieces)} still to come`}
+                  </span>}
+                  {/* Under Ready for release: how many may go out now, when not all of it is finished. */}
+                  {!col.stepId && col.key === 'ready' && !c.ready && <span className="mt-1 block text-xs font-medium text-emerald-800">
+                    {Math.max(0, (c.finishedPieces ?? 0) - c.releasedQty)} of {c.qty - c.releasedQty} ready to release
                   </span>}
                 </button>
               );
