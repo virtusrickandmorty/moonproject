@@ -18,6 +18,21 @@ export function lineProduction(db: Db, jobOrderId: string): Map<number, 'done' |
   }));
 }
 
+/**
+ * The pieces of each line that went through every step of its route (the owner's request, Oct 2026: they can go out
+ * first): all of the line once every step is done; else the pieces done on its last step that is needed (each step takes
+ * only what came out of the one before, so none passed it without the steps before). Null: the line has no route.
+ */
+export function finishedPieces(db: Db, jobOrderId: string): Map<number, number | null> {
+  return new Map(lineState(db, jobOrderId).map((l) => {
+    const route = lineRoute(db, jobOrderId, l.lineNo);
+    if (route === null) return [l.lineNo, null] as const;
+    if (routeDone(route)) return [l.lineNo, l.qty] as const;
+    const last = [...route].reverse().find((s) => s.status !== 'not_needed');
+    return [l.lineNo, Math.max(0, Math.min(l.qty, last?.pieces ?? 0))] as const;
+  }));
+}
+
 /** Current route names and status for a production job ticket. */
 export function jobTicketRoute(db: Db, jobOrderId: string, lineNo: number) {
   return lineRoute(db, jobOrderId, lineNo)?.map(({ name, status }) => ({ name, status })) ?? [];

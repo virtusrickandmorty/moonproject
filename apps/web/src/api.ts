@@ -227,7 +227,8 @@ export interface JoStatus {
   stageLabel: string;
   money: { totalCents: number; invoicedCents: number; receivableCents: number; depositsHeldCents: number; balanceDueCents: number; collectedCents: number; requiredDownpaymentCents: number };
   /** ready: the line may go out now (its production is done, or the whole job order is Ready). */
-  lines: { lineNo: number; description: string; qty: number; releasedQty: number; leftQty: number; ready?: boolean }[];
+  /** readyQty: pieces that may go out now (finished every step); ready: some may. */
+  lines: { lineNo: number; description: string; qty: number; releasedQty: number; leftQty: number; ready?: boolean; readyQty?: number }[];
   awaitingInvoice: { id: string; number: string; businessDate: string; totalCents: number }[];
   depositVat: JoDepositVat;
   dpInvoices: DpInvoiceRow[];

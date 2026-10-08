@@ -175,7 +175,9 @@ export const emptyRelease = (jobOrderId = ''): ReleaseValues => ({
 export function allLeft(lines: JoStatus['lines']): Record<number, string> {
   const left = lines.filter((l) => l.leftQty > 0);
   const ready = left.filter((l) => l.ready !== false);
-  return Object.fromEntries((ready.length > 0 ? ready : left).map((l) => [l.lineNo, String(l.leftQty)]));
+  // What is finished of each line (all that is left when the server does not say); everything left for an override.
+  const now = (l: (typeof lines)[number]) => String(Math.min(l.leftQty, l.readyQty ?? l.leftQty));
+  return ready.length > 0 ? Object.fromEntries(ready.map((l) => [l.lineNo, now(l)])) : Object.fromEntries(left.map((l) => [l.lineNo, String(l.leftQty)]));
 }
 
 export interface ReleaseInput { jobOrderId: string; lines: { lineNo: number; qty: number }[]; claimedBy: string; idSeen: IdSeen; creditNote?: string; creditDueInDays?: number; overrideReason?: string }
