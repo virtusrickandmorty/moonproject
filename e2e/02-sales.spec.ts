@@ -45,9 +45,10 @@ test('sales: a customer, a job order with a deposit, a collection, a release wit
   await customerForm.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(customerForm).toBeHidden();
   await expect(page.getByText(`Added ${CUSTOMER} as a new customer.`)).toBeVisible();
-  await page.getByLabel('Line 1 description').fill('Rowing jersey');
-  await page.getByLabel('Line 1 pieces').fill('4');
-  await page.getByLabel('Line 1 price each').fill('1,500.00');
+  await page.getByLabel('Item description').fill('Rowing jersey');
+  await page.getByLabel('Item pieces').fill('4');
+  await page.getByLabel('Item price each').fill('1,500.00');
+  await page.getByRole('button', { name: '+ Add to order' }).click();
   await page.getByLabel('Payment terms').selectOption({ label: '50% downpayment' });
   await expect(figure(page, 'Downpayment asked')).toHaveText('₱3,000.00');
   await expect(figure(page, 'Balance due')).toHaveText('₱6,000.00');
@@ -141,9 +142,10 @@ test('sales, downpayment VAT mode C: the downpayment invoice, its collection, th
   await page.getByRole('button', { name: '+ New Job Order' }).click();
   await page.getByLabel('Customer', { exact: true }).fill('Harbor');
   await page.getByRole('button', { name: /^Harbor Rowing Club/ }).click();
-  await page.getByLabel('Line 1 description').fill('Rowing jersey');
-  await page.getByLabel('Line 1 pieces').fill('4');
-  await page.getByLabel('Line 1 price each').fill('1,500.00');
+  await page.getByLabel('Item description').fill('Rowing jersey');
+  await page.getByLabel('Item pieces').fill('4');
+  await page.getByLabel('Item price each').fill('1,500.00');
+  await page.getByRole('button', { name: '+ Add to order' }).click();
   await page.getByLabel('Payment terms').selectOption({ label: '50% downpayment' });
   await expect(figure(page, 'Downpayment asked')).toHaveText('₱3,000.00');
   await page.getByRole('button', { name: 'Record', exact: true }).click();
@@ -229,14 +231,18 @@ test('sales: a job order made from a quotation is filled from it and can be chan
   await expect(page.getByRole('heading', { name: 'New job order' })).toBeVisible();
   await expect(page.getByText(/^Filled from quotation QUO-000001/)).toBeVisible();
   await expect(page.getByText(CUSTOMER, { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Line 1 description')).toHaveValue('Rowing jersey');
-  await expect(page.getByLabel('Line 1 pieces')).toHaveValue('3');
-  await expect(page.getByLabel('Line 1 price each')).toHaveValue('1,500.00');
+  // The quoted item is in the breakdown; Edit puts it in the item form to change.
+  await expect(page.getByRole('list', { name: 'Items in this job order' })).toContainText('Rowing jersey');
+  await page.getByRole('button', { name: 'Edit item 1' }).click();
+  await expect(page.getByLabel('Item description')).toHaveValue('Rowing jersey');
+  await expect(page.getByLabel('Item pieces')).toHaveValue('3');
+  await expect(page.getByLabel('Item price each')).toHaveValue('1,500.00');
   await expect(page.getByLabel('Notes')).toHaveValue('From quotation QUO-000001. Sample notes');
 
   // Staff change what they need: the pieces and the price, and pick the terms.
-  await page.getByLabel('Line 1 pieces').fill('4');
-  await page.getByLabel('Line 1 price each').fill('1,400.00');
+  await page.getByLabel('Item pieces').fill('4');
+  await page.getByLabel('Item price each').fill('1,400.00');
+  await page.getByRole('button', { name: 'Update item' }).click();
   await page.getByLabel('Payment terms').selectOption({ label: '50% downpayment' });
   await expect(figure(page, 'Total')).toHaveText('₱5,600.00');
   await page.getByRole('button', { name: 'Record', exact: true }).click();
@@ -254,9 +260,10 @@ test('sales: a job order paid by check, then the check deposited from Checks on 
   await page.getByRole('button', { name: '+ New Job Order' }).click();
   await page.getByLabel('Customer', { exact: true }).fill('Harbor');
   await page.getByRole('button', { name: /^Harbor Rowing Club/ }).click();
-  await page.getByLabel('Line 1 description').fill('Rowing cap');
-  await page.getByLabel('Line 1 pieces').fill('5');
-  await page.getByLabel('Line 1 price each').fill('500.00');
+  await page.getByLabel('Item description').fill('Rowing cap');
+  await page.getByLabel('Item pieces').fill('5');
+  await page.getByLabel('Item price each').fill('500.00');
+  await page.getByRole('button', { name: '+ Add to order' }).click();
   await page.getByLabel('Payment terms').selectOption({ label: '50% downpayment' });
   await page.getByRole('button', { name: 'Record', exact: true }).click();
   await page.getByRole('dialog', { name: 'Record this Job Order?' }).getByRole('button', { name: 'Record', exact: true }).click();

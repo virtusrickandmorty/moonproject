@@ -43,7 +43,8 @@ const pieceCount = (roster: RosterEdit[]) => roster.reduce((s, r) => s + (/^[1-9
 export const lineQty = (l: JoLineRow) => (l.roster.length > 0 ? String(pieceCount(l.roster)) : l.qty);
 /** The price was changed from the price list's tier price. */
 export const priceChanged = (l: JoLineRow) => l.listCents !== null && cents(l.price) !== l.listCents;
-const blankLine = (l: JoLineRow) => !l.itemId && !l.description.trim() && !l.price.trim() && !l.discount.trim() && l.roster.length === 0;
+/** A line with nothing typed in it (an item form not filled yet). */
+export const blankLine = (l: JoLineRow) => !l.itemId && !l.description.trim() && !l.price.trim() && !l.discount.trim() && l.roster.length === 0;
 const optional = (key: string, text: string) => (text.trim() ? { [key]: text.trim() } : {});
 
 /** Typed values -> input, the total so far, and what to fix first. Blank lines are left out. */
