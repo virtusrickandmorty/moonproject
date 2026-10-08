@@ -7,7 +7,7 @@ import { api, type BoardCard, type DocTypeInfo, type Me, type PrdCatalogue, type
 import { Link } from '../../router.tsx';
 import { Button, Dialog, Field, Notice, ReasonDialog, inputClass, useAction, searchClass, showDate } from '../../components/ui.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { columns, filterCards, useBoardRefresh, type Due } from './board.ts';
+import { columns, filterCards, stepFlow, useBoardRefresh, type Due } from './board.ts';
 
 const readBoard = async () => {
   const [cards, cat, health] = await Promise.all([api.prdBoard(), api.prdCatalogue(), api.health()]);
@@ -85,25 +85,42 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
   const name = (id: number) => cat.steps.find((s) => s.id === id)?.name ?? '?';
   const step = (id: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) => api.prdStep(card.jobOrderId, card.lineNo, id, action, reason).then(onChanged);
   return (
-    <Dialog title={`${card.number} · line ${card.lineNo}: ${card.description}`} onClose={onClose}>
+    <Dialog wide title={`${card.number} · line ${card.lineNo}: ${card.description}`} onClose={onClose}>
       <p className="text-sm text-slate-600">{card.customerName} · {card.qty} pcs · due {showDate(card.dueDate)}{card.garmentType ? ` · ${card.garmentType} (${card.complexity})` : ''}</p>
       {editing ? (
         <SetupForm card={card} cat={cat} onSaved={() => onChanged().then(() => setEditing(false))} onCancel={card.steps ? () => setEditing(false) : onClose} disabled={!can.progress} />
       ) : (
         <>
           <ol className="space-y-2">
-            {card.steps!.map((s) => {
+            {card.steps!.map((s, i) => {
               const closed = s.status === 'completed' || s.status === 'not_needed';
+              const flow = stepFlow(card.steps!, i, card.qty, name);
               return (
-                <li key={s.stepId} className="flex flex-wrap items-center gap-2 rounded-md p-2 ring-1 ring-slate-200">
-                  <span className="min-w-28 font-medium">{name(s.stepId)}</span>
-                  {chip(s.status)}
-                  <span className="text-sm text-slate-600">{s.pieces} of {card.qty}{s.reworkPieces ? ` + ${s.reworkPieces} rework` : ''}</span>
-                  <span className="flex-1" />
-                  {can.assign && !closed && <Link to={docPath('prd.entry', `/new?jo=${card.jobOrderId}&step=${s.stepId}`)} className="text-sm text-indigo-700 underline">Record pieces</Link>}
-                  {can.progress && !closed && <Button disabled={a.busy} onClick={() => a.run(() => step(s.stepId, 'complete'))}>Complete</Button>}
-                  {can.progress && s.status === 'pending' && <Button disabled={a.busy} onClick={() => a.run(() => step(s.stepId, 'not-needed'))}>Not needed</Button>}
-                  {can.progress && closed && <Button onClick={() => setReopen(s.stepId)}>Reopen</Button>}
+                <li key={s.stepId} className="space-y-2 rounded-md p-3 ring-1 ring-slate-200">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="min-w-28 font-medium">{name(s.stepId)}</span>
+                    {chip(s.status)}
+                    <span className="text-sm text-slate-600">{s.pieces} of {card.qty} pcs done{s.reworkPieces ? ` + ${s.reworkPieces} rework` : ''}</span>
+                  </div>
+                  {s.status !== 'not_needed' && (
+                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label={`${name(s.stepId)} pieces done`} aria-valuemin={0} aria-valuemax={card.qty} aria-valuenow={s.pieces}>
+                      <div className={`h-full rounded-full ${flow.percent === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${flow.percent}%` }} />
+                    </div>
+                  )}
+                  {(flow.received || flow.forwarded) && (
+                    <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                      {flow.received && <span className="text-slate-600">← {flow.received.pieces} pcs received from {flow.received.from}</span>}
+                      {flow.forwarded && <span className="font-medium text-indigo-700">→ {flow.forwarded.pieces} pcs forwarded to {flow.forwarded.to}</span>}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {can.assign && !closed && <Link to={docPath('prd.entry', `/new?jo=${card.jobOrderId}&step=${s.stepId}`)} className="text-sm text-indigo-700 underline">Record pieces</Link>}
+                    <span className="flex-1" />
+                    {can.progress && !closed && <Button disabled={a.busy || !flow.canComplete} title={flow.shortWords || undefined} onClick={() => a.run(() => step(s.stepId, 'complete'))}>Complete</Button>}
+                    {can.progress && s.status === 'pending' && <Button disabled={a.busy} onClick={() => a.run(() => step(s.stepId, 'not-needed'))}>Not needed</Button>}
+                    {can.progress && closed && <Button onClick={() => setReopen(s.stepId)}>Reopen</Button>}
+                  </div>
+                  {can.progress && flow.shortWords && <p className="text-xs text-amber-800">{flow.shortWords}</p>}
                 </li>
               );
             })}
