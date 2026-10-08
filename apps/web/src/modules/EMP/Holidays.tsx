@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Holiday, type Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, ReasonDialog, inputClass, useAction } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, ReasonDialog, inputClass, useAction, showDate } from '../../components/ui.tsx';
 import { weekday } from './time.ts';
 
 export function Holidays({ me }: { me: Me }) {
@@ -30,7 +30,7 @@ export function Holidays({ me }: { me: Me }) {
           <tbody>
             {rows.map((h) => (
               <tr key={h.id} className={`border-t border-slate-100 ${h.isActive ? '' : 'text-slate-400 line-through'}`}>
-                <td className="py-1 whitespace-nowrap">{weekday(h.date)} {h.date}</td><td>{h.name}</td><td className="capitalize">{h.kind}</td>
+                <td className="py-1 whitespace-nowrap">{weekday(h.date)} {showDate(h.date)}</td><td>{h.name}</td><td className="capitalize">{h.kind}</td>
                 <td className="text-slate-600">{h.isActive ? h.source : `Switched off: ${h.deactivatedReason}`}</td>
                 <td>{manage && h.isActive && <Button onClick={() => setOff(h)}>Switch off</Button>}</td>
               </tr>

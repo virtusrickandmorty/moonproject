@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, newIdempotencyKey, type CancelPreview, type CashPlace, type DocDetail, type DocTypeInfo, type PrintVariant } from '../api.ts';
 import { Link, navigate } from '../router.tsx';
-import { Button, JournalTable, Notice, Panel, ReasonDialog, StatusChip, longDate, manilaTime, peso } from '../components/ui.tsx';
+import { Button, JournalTable, Notice, Panel, ReasonDialog, StatusChip, longDate, manilaTime, peso, showDate } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
 import { choiceLabel, fieldsOf, toValues } from './fields.ts';
 import { AttachmentsPanel } from './Attachments.tsx';
@@ -17,17 +17,28 @@ import { Crumb } from '../shell/crumbs.tsx';
 /** `noEdit` hides Edit where a cancel and a new document is the way to correct (a payroll's figures depend on the state it was worked out on). */
 /** `cancelNote` is shown in the cancel dialog (a payroll whose month was already remitted, D6). */
 export interface ViewParts { extra?: (d: DocDetail) => ReactNode; cancel?: (id: string, reason: string, key: string) => Promise<unknown>; noEdit?: boolean; cancelNote?: (d: DocDetail) => ReactNode }
+/** Opens a document's printout in a new window and prints it; the problem in words, or null. Also used by a list row's Print. */
+export async function printDocument(typeKey: string, id: string, variant: PrintVariant = 'document'): Promise<string | null> {
+  const page = window.open('', '_blank');
+  if (!page) return 'Allow a new window to print this document.';
+  try {
+    const { html } = await api.printDocument(typeKey, id, variant);
+    page.onload = () => page.print();
+    page.document.open(); page.document.write(html); page.document.close();
+    return null;
+  } catch (e) { page.close(); return (e as Error).message; }
+}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** `inDialog`: shown over its list; `refresh` reloads the list after a cancel. */
-export function DocView({ type, id, recorded, parts = {}, inDialog }: { type: DocTypeInfo; id: string; recorded: boolean; parts?: ViewParts; inDialog?: { refresh: () => void } }) {
+/** `inDialog`: shown over its list; `refresh` reloads the list after a cancel. `startCancel`: its cancel dialog opens at once (a list row's Cancel). */
+export function DocView({ type, id, recorded, parts = {}, inDialog, startCancel }: { type: DocTypeInfo; id: string; recorded: boolean; parts?: ViewParts; inDialog?: { refresh: () => void }; startCancel?: boolean }) {
   const fields = useMemo(() => fieldsOf(type.inputJsonSchema), [type]);
   const [d, setD] = useState<DocDetail | null>(null);
   const [places, setPlaces] = useState<CashPlace[]>([]);
   const [error, setError] = useState('');
   const [printError, setPrintError] = useState('');
   const [printVariants, setPrintVariants] = useState<PrintVariant[]>([]);
-  const [cancelKey, setCancelKey] = useState<string | null>(null); // one Idempotency-Key per cancel dialog
+  const [cancelKey, setCancelKey] = useState<string | null>(() => (startCancel ? newIdempotencyKey() : null)); // one Idempotency-Key per cancel dialog
   const [cancelPreview, setCancelPreview] = useState<CancelPreview | null>(null);
 
   const load = useCallback(() => api.get(type.key, id).then(setD, (e: Error) => setError(e.message)), [type.key, id]);
@@ -55,15 +66,7 @@ export function DocView({ type, id, recorded, parts = {}, inDialog }: { type: Do
   const text = toValues(fields, d.input);
   const shown = { cashPlace: (v: string) => places.find((p) => String(p.id) === v)?.name ?? v, money: (v: string) => `₱${v}`, boolean: (v: string) => (v ? 'Yes' : 'No') } as Record<string, (v: string) => string>;
   const posted = h.status === 'posted';
-  const print = async (variant: PrintVariant = 'document') => {
-    const page = window.open('', '_blank');
-    if (!page) { setPrintError('Allow a new window to print this document.'); return; }
-    try {
-      const { html } = await api.printDocument(type.key, id, variant);
-      page.onload = () => page.print();
-      page.document.open(); page.document.write(html); page.document.close();
-    } catch (e) { page.close(); setPrintError((e as Error).message); }
-  };
+  const print = (variant: PrintVariant = 'document') => void printDocument(type.key, id, variant).then((e) => setPrintError(e ?? ''));
   const cancel = async (reason: string) => (
     await (parts.cancel ? parts.cancel(id, reason, cancelKey!) : api.cancel(type.key, id, reason, cancelKey!)), setCancelKey(null), inDialog ? inDialog.refresh() : navigate(docPath(type.key, `/${id}`)), await load()
   );
@@ -75,12 +78,14 @@ export function DocView({ type, id, recorded, parts = {}, inDialog }: { type: Do
         {!inDialog && <Crumb label={h.number} />}{/* over its list, the trail stays the list's */}
         <h1 className="text-2xl font-bold text-[#010101]">{type.title} {h.number}</h1>
         <StatusChip status={h.status} />
-        <span className="flex-1" />
-        {printVariants.includes('document') && <Button onClick={() => void print()}>Print</Button>}
-        {printVariants.includes('job_ticket') && <Button onClick={() => void print('job_ticket')}>Print job ticket</Button>}
-        {printVariants.includes('thermal') && <Button onClick={() => void print('thermal')}>Print 80 mm receipt</Button>}
-        {posted && type.canCancel && type.canPost && !parts.noEdit && <Button onClick={() => navigate(docPath(type.key, `/${id}/edit`))}>Edit</Button>}
-        {posted && type.canCancel && <Button tone="danger" onClick={() => setCancelKey(newIdempotencyKey())}>Cancel</Button>}
+        {/* Its actions together: on their own row under the title on a phone, on the right from a tablet up. */}
+        <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto sm:justify-end">
+          {printVariants.includes('document') && <Button onClick={() => void print()}>Print</Button>}
+          {printVariants.includes('job_ticket') && <Button onClick={() => void print('job_ticket')}>Print job ticket</Button>}
+          {printVariants.includes('thermal') && <Button onClick={() => void print('thermal')}>Print 80 mm receipt</Button>}
+          {posted && type.canCancel && type.canPost && !parts.noEdit && <Button onClick={() => navigate(docPath(type.key, `/${id}/edit`))}>Edit</Button>}
+          {posted && type.canCancel && <Button tone="danger" onClick={() => setCancelKey(newIdempotencyKey())}>Cancel</Button>}
+        </div>
       </div>
       {printError && <Notice>{printError}</Notice>}
       <p className="text-sm text-slate-600">
@@ -108,14 +113,14 @@ export function DocView({ type, id, recorded, parts = {}, inDialog }: { type: Do
         <Panel title="Behind the scenes">
           {d.journals.map((j) => (
             <div key={j.id}>
-              <p className="text-sm text-slate-600">{j.number} · {j.businessDate} · {j.postingKind === 'reversal' ? 'reversal (cancel)' : 'original'} · {j.memo}</p>
+              <p className="text-sm text-slate-600">{j.number} · {showDate(j.businessDate)} · {j.postingKind === 'reversal' ? 'reversal (cancel)' : 'original'} · {j.memo}</p>
               <JournalTable lines={j.lines} />
             </div>
           ))}
           {d.journals.length === 0 && <p className="text-sm text-slate-500">This document posts no journal.</p>}
         </Panel>
       )}
-      {cancelKey && (
+      {cancelKey && posted && (
         <ReasonDialog
           title={`Cancel ${h.number}?`}
           explain="The document stays on file, marked Cancelled, and everything it recorded is reversed with today's date. This cannot be undone."

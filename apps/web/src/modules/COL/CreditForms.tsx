@@ -8,7 +8,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, type CustomerInvoices, type DocDetail, type DocTypeInfo, type Forfeitable, type Preview } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
 import { useRecord } from '../../generic/record.tsx';
@@ -16,7 +16,7 @@ import { CustomerPicker, Errors, useLive, type Picked } from './parts.tsx';
 import { creditMemoInput, cwtOnlyInput, emptyCreditMemo, emptyCwtOnly, emptyForfeit, emptyWriteOff, forfeitInput, writeOffInput } from './credits.ts';
 
 type Invoice = CustomerInvoices['invoices'][number];
-const invoiceLabel = (i: Invoice) => `Invoice no. ${i.invoiceNumber} · ${i.number}${i.jobOrderNumber ? ` · ${i.jobOrderNumber}` : ' · quick sale'} · ${i.businessDate}`;
+const invoiceLabel = (i: Invoice) => `Invoice no. ${i.invoiceNumber} · ${i.number}${i.jobOrderNumber ? ` · ${i.jobOrderNumber}` : ' · quick sale'} · ${showDate(i.businessDate)}`;
 
 function Choice({ picked, onPick, label, right, disabled, note }: { picked: boolean; onPick: () => void; label: string; right: string; disabled?: boolean; note?: string | null }) {
   return (

@@ -46,10 +46,23 @@ export function AttachmentsPanel({ type, id }: { type: DocTypeInfo; id: string }
   };
 
   const active = rows?.filter((r) => !r.removedAt).length ?? 0;
+  const pictures = rows?.filter((r) => !r.removedAt && r.contentType.startsWith('image/')) ?? [];
   return (
     <Panel title="Attachments">
       {error && <Notice>{error}</Notice>}
       {rows && rows.length === 0 && <p className="text-sm text-slate-500">No files attached.</p>}
+      {/* The pictures themselves (a job order's design), each opening full size; a removed one is not shown. */}
+      {pictures.length > 0 && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {pictures.map((r, i) => (
+            <a key={r.id} href={attachmentUrl(type.key, id, r.id)} target="_blank" rel="noopener noreferrer" title={`Open ${r.fileName}`} aria-label={`View picture ${i + 1} full size`}
+              className="group block overflow-hidden rounded-lg bg-slate-50 ring-1 ring-slate-200 hover:ring-indigo-300">
+              <img src={attachmentUrl(type.key, id, r.id)} alt={r.fileName} loading="lazy" className="aspect-[4/3] w-full object-contain transition-transform group-hover:scale-[1.02]" />
+              <span className="block truncate px-2 py-1 text-xs text-slate-600">{r.fileName}</span>
+            </a>
+          ))}
+        </div>
+      )}
       {rows && rows.length > 0 && (
         <ul className="divide-y divide-slate-100 text-sm">
           {rows.map((r) => (

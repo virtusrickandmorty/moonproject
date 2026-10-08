@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { showDate } from '../../components/ui.tsx';
 import { api, type BoardCard } from '../../api.ts';
 import { columns, tvPages, TV_CARD_HEIGHT, TURN_MS, useBoardRefresh, type Column } from './board.ts';
 
@@ -61,7 +62,7 @@ export function TvCard({ card, today }: { card: BoardCard; today: string }) {
   return <article style={{ height: TV_CARD_HEIGHT }} className={`space-y-1 rounded-lg bg-white p-3 text-xl shadow-sm ${late ? 'border-l-4 border-red-600' : ''}`}>
     <p className="truncate font-bold">{card.number} · line {card.lineNo} · {initials(card.customerName)}</p>
     <p className="line-clamp-2 break-words">{card.description}</p>
-    <p>{card.qty - card.releasedQty} pcs · Due {card.dueDate}</p>
+    <p>{card.qty - card.releasedQty} pcs · Due {showDate(card.dueDate)}</p>
     <p className="flex flex-wrap gap-2 font-bold">{card.priority === 'rush' && <strong className="rounded bg-red-700 px-2 text-white">RUSH</strong>}{late && <strong className="rounded bg-red-100 px-2 text-red-900">OVERDUE</strong>}</p>
   </article>;
 }

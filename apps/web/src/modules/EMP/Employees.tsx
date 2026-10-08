@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type EmployeeRow, type Me } from '../../api.ts';
-import { Button, Dialog, Field, Notice, inputClass, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
+import { Button, Dialog, Field, Notice, inputClass, useAction, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
 
 export function Employees({ me }: { me: Me }) {
@@ -37,8 +37,8 @@ export function Employees({ me }: { me: Me }) {
             {rows.map((e) => (
               <tr key={e.id} className={`border-t border-slate-100 ${e.isActive ? '' : 'text-slate-500'}`}>
                 <td className="p-2"><Link to={`/emp/employees/${e.id}`} className="text-indigo-700 underline">{e.code}</Link></td>
-                <td>{e.fullName}</td><td>{e.position ?? ''}</td><td className="capitalize">{e.costCentre}</td><td>{e.hireDate}</td>
-                <td>{e.isActive ? 'Active' : `Separated ${e.separatedOn}`}</td>
+                <td>{e.fullName}</td><td>{e.position ?? ''}</td><td className="capitalize">{e.costCentre}</td><td>{showDate(e.hireDate)}</td>
+                <td>{e.isActive ? 'Active' : `Separated ${showDate(e.separatedOn)}`}</td>
               </tr>
             ))}
           </tbody>

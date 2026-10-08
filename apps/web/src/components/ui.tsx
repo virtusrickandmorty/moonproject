@@ -1,5 +1,5 @@
 /** Small shared building blocks. Tailwind only; no component library. Styled after Star Admin 2 (see index.css). */
-import { useEffect, useRef, useState, type ButtonHTMLAttributes, type FormEvent, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ButtonHTMLAttributes, type FormEvent, type ReactNode } from 'react';
 import { formatPeso } from '@moonproject/shared';
 import { showToast, textOf } from './Toasts.tsx';
 import { api, type CashPlace, type JournalLine, type PageInfo } from '../api.ts';
@@ -8,13 +8,19 @@ export type { PageInfo };
 
 export const peso = (cents: number) => formatPeso(cents);
 
-/** "2026-09-27" -> "Sunday, 27 September 2026". The date is already Manila's, so no time-zone shift. */
-export function longDate(d: string): string {
-  const [y, m, day] = d.split('-').map(Number);
-  return new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(Date.UTC(y!, m! - 1, day));
+const DAY = /^(\d{4})-(\d{2})-(\d{2})/;
+const dayFormat = (options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...options });
+const asDay = (d: string) => { const [, y, m, day] = DAY.exec(d)!.map(Number); return Date.UTC(y!, m! - 1, day!); };
+/** Every date a screen shows: "2026-07-09" -> "July 9, 2026". The date is already Manila's, so no time-zone shift; other text is left as it is. */
+export const showDate = (d: string | null | undefined) => (!d ? '' : DAY.test(d) ? dayFormat({ month: 'long', day: 'numeric', year: 'numeric' }).format(asDay(d)) : d);
+/** "2026-09-27" -> "Sunday, September 27, 2026". */
+export const longDate = (d: string) => (DAY.test(d) ? dayFormat({ weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(asDay(d)) : d);
+/** Server timestamps carry +08:00, so the text itself is Manila time: "July 9, 2026, 2:05 PM". */
+export function manilaTime(ts: string): string {
+  if (!DAY.test(ts) || !/^.{10}[T ]\d{2}:\d{2}/.test(ts)) return showDate(ts);
+  const [h, m] = [Number(ts.slice(11, 13)), ts.slice(14, 16)];
+  return `${showDate(ts)}, ${h % 12 || 12}:${m} ${h < 12 ? 'AM' : 'PM'}`;
 }
-/** Server timestamps carry +08:00, so the text itself is Manila time. */
-export const manilaTime = (ts: string) => `${ts.slice(0, 10)} ${ts.slice(11, 16)}`;
 
 /** Runs an action with busy and error state; server messages are already plain English. */
 export function useAction() {
@@ -130,25 +136,115 @@ export function keepDialogFocus(root: HTMLElement, opener: HTMLElement | null, c
   };
 }
 
-/** `wide` for a table or a whole record, `size="full"` for a whole form (a New job order over its list); `hideTitle` when the content has its own heading. */
-export function Dialog({ title, onClose, wide, size, hideTitle, children }: { title: string; onClose: () => void; wide?: boolean; size?: 'full'; hideTitle?: boolean; children: ReactNode }) {
+/** The two standard dialog widths. */
+export const DIALOG_WIDTH = { question: 'max-w-xl', record: 'max-w-6xl' } as const;
+/** How long a dialog takes to grow out of the middle of the screen, and to shrink back into it (index.css). */
+export const DIALOG_MS = 180;
+const reducedMotion = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+/** Closes the dialog around a button the way × does: it shrinks away first, then its onClose runs. */
+const CloseDialog = createContext<(() => void) | null>(null);
+export const useCloseDialog = () => useContext(CloseDialog);
+/** A dialog's own "Go back": closes it the way × does. */
+export function GoBack({ label = 'Go back', onClose }: { label?: string; onClose: () => void }) {
+  const close = useCloseDialog();
+  return <Button onClick={close ?? onClose}>{label}</Button>;
+}
+
+/**
+ * Keeps something on screen a moment after it goes, so a dialog opened from the address (?view=, ?new, ?edit=) can
+ * shrink away when Back or a link closes it: [what to show, whether it is leaving].
+ */
+export function useExit<T>(value: T | null | undefined, ms = DIALOG_MS): [T | null, boolean] {
+  const [last, setLast] = useState<T | null>(value ?? null);
+  useEffect(() => {
+    if (value != null) return setLast(value);
+    const t = setTimeout(() => setLast(null), ms);
+    return () => clearTimeout(t);
+  }, [value, ms]);
+  return value != null ? [value, false] : [last, last != null];
+}
+
+/**
+ * Every dialog in the ERP has one of two standard widths (DIALOG_WIDTH): a question (a confirm, a reason, a password)
+ * is narrow; a table, a form or a whole record (`wide`, or `size="full"`, the same) is the record width. On a phone
+ * both take the screen's width less a 16px margin. `hideTitle` when the content has its own heading. `leaving` when its parent already
+ * closed it and keeps it a moment (useExit) to shrink away. `beforeClose` may keep it open (something typed, not saved).
+ */
+export function Dialog({ title, onClose, wide, size, hideTitle, leaving, beforeClose, children }: {
+  title: string; onClose: () => void; wide?: boolean; size?: 'full'; hideTitle?: boolean; leaving?: boolean; beforeClose?: () => boolean | Promise<boolean>; children: ReactNode;
+}) {
   const root = useRef<HTMLDivElement>(null);
   // Capture before React mounts any autoFocus child, and keep it across rerenders.
   const opener = useRef(typeof document === 'undefined' ? null : document.activeElement as HTMLElement | null);
+  const [closing, setClosing] = useState(false);
   const close = useRef(onClose);
   close.current = onClose;
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const shut = useRef(async () => undefined as void);
+  shut.current = async () => {
+    if (closing || (beforeClose && !(await beforeClose()))) return;
+    if (reducedMotion()) return close.current();
+    setClosing(true);
+    timer.current = setTimeout(() => close.current(), DIALOG_MS);
+  };
   useEffect(() => {
-    return keepDialogFocus(root.current!, opener.current, () => close.current());
+    const stop = keepDialogFocus(root.current!, opener.current, () => void shut.current());
+    // Gone before it finished shrinking (the page changed meanwhile): its close no longer applies.
+    return () => (clearTimeout(timer.current), stop());
   }, []);
+  const state = closing || leaving ? 'closing' : 'open';
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 p-4">
-      <div ref={root} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} className={`relative mx-auto ${size === 'full' ? 'mt-4 max-w-7xl' : wide ? 'mt-12 max-w-5xl' : 'mt-12 max-w-xl'} space-y-4 rounded-lg bg-white p-6 shadow-xl`}>
-        <h2 className={hideTitle ? 'sr-only' : 'pr-10 text-lg font-bold text-[#010101]'}>{title}</h2>
+    // Centred on the screen and never taller than it (its content scrolls inside), so it grows out of and shrinks back
+    // into the middle of the screen whatever its length; the × stays in its corner while the content scrolls.
+    <div data-state={state} className="dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 sm:p-8">
+      <div ref={root} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} data-state={state}
+        className={`dialog-panel relative flex max-h-full w-full ${DIALOG_WIDTH[wide || size === 'full' ? 'record' : 'question']} flex-col overflow-hidden rounded-lg bg-white shadow-xl outline-none`}>
         {/* Every dialog can be closed with this, as well as with Escape. */}
-        <button type="button" onClick={onClose} aria-label="Close dialog" title="Close"
-          className="absolute right-3 top-3 grid size-9 place-items-center rounded-full text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900">×</button>
-        {children}
+        <button type="button" onClick={() => void shut.current()} aria-label="Close dialog" title="Close"
+          className="absolute right-3 top-3 z-20 grid size-9 place-items-center rounded-full bg-white/90 text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900">×</button>
+        <div className="dialog-body min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 sm:p-6">
+          <h2 className={hideTitle ? 'sr-only' : 'pr-10 text-lg font-bold text-[#010101]'}>{title}</h2>
+          <CloseDialog.Provider value={() => void shut.current()}>{children}</CloseDialog.Provider>
+        </div>
       </div>
+    </div>
+  );
+}
+
+/** Pop-up questions instead of the browser's own confirm box: `if (!(await askConfirm('Discard the marks?'))) return;` */
+interface Ask { id: number; message: ReactNode; title: string; yes: string; no: string; danger: boolean; answer: (yes: boolean) => void }
+let asks: Ask[] = [];
+let askId = 0;
+const askListeners = new Set<() => void>();
+const setAsks = (next: Ask[]) => { asks = next; askListeners.forEach((l) => l()); };
+export function askConfirm(message: ReactNode, { title = 'Are you sure?', yes = 'Yes', no = 'Go back', danger = false } = {}): Promise<boolean> {
+  return new Promise((resolve) => {
+    const ask: Ask = { id: ++askId, message, title, yes, no, danger, answer: (v) => (setAsks(asks.filter((a) => a !== ask)), resolve(v)) };
+    setAsks([...asks, ask]);
+  });
+}
+/** Shown once, at the root of the app (App.tsx), beside the pop-up messages. */
+export function ConfirmHost() {
+  const all = useSyncExternalStore((l) => (askListeners.add(l), () => void askListeners.delete(l)), () => asks, () => asks);
+  const top = all[0];
+  return top ? <ConfirmDialog key={top.id} ask={top} /> : null;
+}
+function ConfirmDialog({ ask }: { ask: Ask }) {
+  const said = useRef(false);
+  return (
+    <Dialog title={ask.title} onClose={() => ask.answer(said.current)}>
+      <div className="text-sm text-slate-700">{ask.message}</div>
+      <ConfirmButtons ask={ask} say={(v) => { said.current = v; }} />
+    </Dialog>
+  );
+}
+function ConfirmButtons({ ask, say }: { ask: Ask; say: (yes: boolean) => void }) {
+  const close = useCloseDialog()!;
+  return (
+    <div className="flex justify-end gap-2">
+      <Button onClick={() => (say(false), close())}>{ask.no}</Button>
+      <Button autoFocus tone={ask.danger ? 'danger' : 'primary'} onClick={() => (say(true), close())}>{ask.yes}</Button>
     </div>
   );
 }
@@ -178,7 +274,7 @@ function PasswordDialog({ title, onDone, onClose }: { title: string; onDone: () 
         </Field>
         {a.error && <Notice>{a.error}</Notice>}
         <div className="flex justify-end gap-2">
-          <Button onClick={onClose}>Go back</Button>
+          <GoBack onClose={onClose} />
           <Button type="submit" tone="primary" disabled={!password || a.busy}>Continue</Button>
         </div>
       </form>
@@ -199,7 +295,7 @@ export function ReasonDialog(p: { title: string; explain: string; confirmLabel: 
       </Field>
       {a.error && <Notice>{a.error}</Notice>}
       <div className="flex justify-end gap-2">
-        <Button onClick={p.onClose}>Go back</Button>
+        <GoBack onClose={p.onClose} />
         <Button tone={p.danger ? 'danger' : 'primary'} disabled={reason.trim().length < 10 || a.busy} onClick={() => a.run(async () => p.onConfirm(reason.trim()))}>
           {p.confirmLabel}
         </Button>

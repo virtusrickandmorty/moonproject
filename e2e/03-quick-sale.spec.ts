@@ -36,7 +36,8 @@ test('a quick sale is recorded with its collection', async ({ page }) => {
   await expect(page.getByRole('cell', { name: /^Shorten sleeves/ })).toBeVisible();
   await expect(page.getByText(/Paid by .* \(CR 301\), ₱1,120\.00/)).toBeVisible();
 
-  // The money is in the cash box.
+  // The money is in the cash box (the sale opened over its list; close it first).
+  await page.getByRole('button', { name: 'Close dialog' }).click();
   await page.getByRole('link', { name: 'Cash Accounts' }).click();
   await expect(page.getByRole('row', { name: /^Cash on hand/ })).toContainText('₱1,120.00');
 });

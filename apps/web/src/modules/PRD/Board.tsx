@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { api, type BoardCard, type DocTypeInfo, type Me, type PrdCatalogue, type StepStatus } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Button, Dialog, Field, Notice, ReasonDialog, inputClass, useAction, searchClass } from '../../components/ui.tsx';
+import { Button, Dialog, Field, Notice, ReasonDialog, inputClass, useAction, searchClass, showDate } from '../../components/ui.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { columns, filterCards, useBoardRefresh, type Due } from './board.ts';
 
@@ -66,7 +66,7 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
                   <span className="flex justify-between font-medium"><span>{c.number} · line {c.lineNo}</span>{c.priority === 'rush' && <span className="text-xs font-semibold text-red-700">RUSH</span>}</span>
                   <span className="block text-slate-600">{c.customerName}</span>
                   <span className="block">{c.description} · {c.qty - c.releasedQty} pcs</span>
-                  <span className={`block text-xs ${late ? 'text-red-700' : 'text-slate-500'}`}>Due {c.dueDate}{here ? ` · ${here.pieces} of ${c.qty} done` : ''}</span>
+                  <span className={`block text-xs ${late ? 'text-red-700' : 'text-slate-500'}`}>Due {showDate(c.dueDate)}{here ? ` · ${here.pieces} of ${c.qty} done` : ''}</span>
                 </button>
               );
             })}
@@ -86,7 +86,7 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
   const step = (id: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) => api.prdStep(card.jobOrderId, card.lineNo, id, action, reason).then(onChanged);
   return (
     <Dialog title={`${card.number} · line ${card.lineNo}: ${card.description}`} onClose={onClose}>
-      <p className="text-sm text-slate-600">{card.customerName} · {card.qty} pcs · due {card.dueDate}{card.garmentType ? ` · ${card.garmentType} (${card.complexity})` : ''}</p>
+      <p className="text-sm text-slate-600">{card.customerName} · {card.qty} pcs · due {showDate(card.dueDate)}{card.garmentType ? ` · ${card.garmentType} (${card.complexity})` : ''}</p>
       {editing ? (
         <SetupForm card={card} cat={cat} onSaved={() => onChanged().then(() => setEditing(false))} onCancel={card.steps ? () => setEditing(false) : onClose} disabled={!can.progress} />
       ) : (

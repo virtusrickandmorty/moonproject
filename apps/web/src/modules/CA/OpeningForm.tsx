@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type ActiveEmployee, type CaStatus, type DocTypeInfo, type OpeningStatus } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { Errors, useLive } from '../COL/parts.tsx';
@@ -39,7 +39,7 @@ export function OpeningForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
         {r.top}
         {opening && !cutover && <Notice>Set the cut-over date on the opening balances screen first.</Notice>}
         {opening?.closed && <Notice>The opening was closed on {opening.closed.closedAt.slice(0, 10)}. Correct balances with a journal voucher.</Notice>}
-        {cutover && !opening?.closed && <Notice tone="info">Dated the cut-over date, {cutover}. The first payroll after it deducts the instalment below, like any cash advance.</Notice>}
+        {cutover && !opening?.closed && <Notice tone="info">Dated the cut-over date, {showDate(cutover)}. The first payroll after it deducts the instalment below, like any cash advance.</Notice>}
         <Panel title="Who still owed it?">
           <select aria-label="Employee" className={inputClass} value={v.employeeId} onChange={(e) => set({ employeeId: e.target.value })}>
             <option value="">Pick the employee</option>

@@ -1,7 +1,7 @@
 /** Yearly SIL balances for everyone who was in service during the selected year. No pay figures are shown. */
 import { useEffect, useState } from 'react';
 import { api, type LeaveBalances as LeaveBalancesData } from '../../api.ts';
-import { Button, Notice, inputClass } from '../../components/ui.tsx';
+import { Button, Notice, inputClass, showDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 
 export function LeaveBalances() {
@@ -28,7 +28,7 @@ export function LeaveBalances() {
         <thead className="text-left text-slate-500"><tr><th className="p-2">Code</th><th>Employee</th><th>In service</th><th className="text-right">SIL earned</th><th className="text-right">Days used</th><th className="text-right">Paid in cash</th><th className="pr-2 text-right">Left</th></tr></thead>
         <tbody>{data.rows.map((r) => <tr key={r.employeeId} className="border-t border-slate-100">
           <td className="p-2"><Link className="text-indigo-700 underline" to={`/emp/employees/${r.employeeId}`}>{r.code}</Link></td><td>{r.fullName}</td>
-          <td>{r.hireDate}{r.separatedOn ? ` to ${r.separatedOn}` : ' onward'}</td><td className="text-right">{r.earned}</td><td className="text-right">{r.used}</td><td className="text-right">{r.paid}</td><td className="pr-2 text-right font-medium">{r.left}</td>
+          <td>{showDate(r.hireDate)}{r.separatedOn ? ` to ${showDate(r.separatedOn)}` : ' onward'}</td><td className="text-right">{r.earned}</td><td className="text-right">{r.used}</td><td className="text-right">{r.paid}</td><td className="pr-2 text-right font-medium">{r.left}</td>
         </tr>)}</tbody>
         <tfoot className="border-t-2 border-slate-300 font-semibold"><tr><td className="p-2" colSpan={3}>Total</td><td className="text-right">{data.totals.earned}</td><td className="text-right">{data.totals.used}</td><td className="text-right">{data.totals.paid}</td><td className="pr-2 text-right">{data.totals.left}</td></tr></tfoot>
       </table>}

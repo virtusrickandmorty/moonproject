@@ -16,7 +16,7 @@ describe('TV board on the display', () => {
   it('shows initials, quantities and text markers without customer names or prices', () => {
     const html = renderToStaticMarkup(createElement(TvCard, { card: card(1, { priority: 'rush' }), today: '2026-10-04' }));
     expect(initials('  Ada Maria Santos  ')).toBe('AMS');
-    for (const label of ['JO-000001', 'AMS', '8 pcs', 'Due 2026-10-03', 'OVERDUE', 'RUSH']) expect(html).toContain(label);
+    for (const label of ['JO-000001', 'AMS', '8 pcs', 'Due October 3, 2026', 'OVERDUE', 'RUSH']) expect(html).toContain(label);
     for (const hidden of ['Ada', 'Maria', 'Santos', '₱', 'price', 'Cents']) expect(html).not.toContain(hidden);
     const dueToday = renderToStaticMarkup(createElement(TvCard, { card: card(2, { dueDate: '2026-10-04' }), today: '2026-10-04' }));
     expect(dueToday).not.toContain('OVERDUE');

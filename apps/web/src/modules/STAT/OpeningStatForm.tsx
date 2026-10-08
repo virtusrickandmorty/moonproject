@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type ActiveEmployee, type DocTypeInfo, type OpeningStatInput, type OpeningStatus } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { Errors, useLive } from '../COL/parts.tsx';
@@ -49,7 +49,7 @@ export function OpeningStatForm({ type, mode }: { type: DocTypeInfo; mode: FormM
         {r.top}
         {noDate && <Notice tone="warning">{noDate}</Notice>}
         {closed && <Notice>{closed}</Notice>}
-        {cutover && !closed && <Notice tone="info">Dated the cut-over date, {cutover}: what a contribution month on or before it left withheld and not yet remitted.</Notice>}
+        {cutover && !closed && <Notice tone="info">Dated the cut-over date, {showDate(cutover)}: what a contribution month on or before it left withheld and not yet remitted.</Notice>}
         <Panel title="Which contribution month?">
           <Field label="Month" required hint="Like 2026-08, the payroll month this is still owed for">
             <input className={`${inputClass} max-w-40`} placeholder="2026-08" value={month} disabled={!!r.original} onChange={(e) => setMonth(e.target.value.trim())} />

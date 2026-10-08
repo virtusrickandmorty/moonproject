@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, newIdempotencyKey, type CashPlace, type CheckAtBank, type ChecksOnHand as List, type Me, type PostDatedCheck, type Preview } from '../../api.ts';
-import { Button, Dialog, Field, JournalTable, Notice, Panel, ReasonDialog, inputClass, peso, useAction } from '../../components/ui.tsx';
+import { Button, Dialog, Field, JournalTable, Notice, Panel, ReasonDialog, inputClass, peso, useAction, showDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { cents } from './money.ts';
@@ -73,7 +73,7 @@ export function ChecksOnHand({ me }: { me: Me }) {
                     <td>{c.customerName}</td>
                     <td>{c.checkNumber}{c.returned && <span className="block text-xs text-amber-800">Returned by the bank ({c.returned.number})</span>}</td>
                     <td>{c.bank}</td>
-                    <td>{c.checkDate}</td>
+                    <td>{showDate(c.checkDate)}</td>
                     <td className="text-right tabular-nums">{peso(c.amountCents)}</td>
                     <td>{docLink('col.collection', { id: c.collectionId, number: c.collectionNumber })}</td>
                   </tr>
@@ -115,7 +115,7 @@ export function ChecksOnHand({ me }: { me: Me }) {
             <tbody>
               {atBank.map((c) => (
                 <tr key={checkKey(c)} className="border-t border-slate-100">
-                  <td className="py-1">{docLink('cash.transfer', c.deposit)} · {c.deposit.date}</td>
+                  <td className="py-1">{docLink('cash.transfer', c.deposit)} · {showDate(c.deposit.date)}</td>
                   <td>{c.customerName}</td><td>{c.checkNumber}</td><td>{c.bank}</td>
                   <td className="text-right tabular-nums">{peso(c.amountCents)}</td>
                   <td className="text-right"><Button onClick={() => setReturning(c)}>Returned by the bank</Button></td>
@@ -203,7 +203,7 @@ export function PostDatedChecks({ me }: { me: Me }) {
               <tbody>
                 {rows.map((p) => (
                   <tr key={p.id} className="border-t border-slate-100 align-top">
-                    <td className="py-1">{p.checkDate}</td>
+                    <td className="py-1">{showDate(p.checkDate)}</td>
                     <td>{p.customerName}{p.note && <span className="block text-xs text-slate-500">{p.note}</span>}</td>
                     <td>{p.checkNumber}</td><td>{p.bank}</td>
                     <td className="text-right tabular-nums">{peso(p.amountCents)}</td>
@@ -270,7 +270,7 @@ function AddPdc({ onClose, onAdded }: { onClose: () => void; onAdded: () => void
           {jobOrders.map((j) => (
             <label key={j.id} className="flex items-center gap-2">
               <input type="checkbox" checked={chosen.includes(j.id)} onChange={(e) => setChosen(e.target.checked ? [...chosen, j.id] : chosen.filter((x) => x !== j.id))} />
-              {j.number} · due {j.dueDate} · {formatPesos(j.balanceDueCents)} left to pay
+              {j.number} · due {showDate(j.dueDate)} · {formatPesos(j.balanceDueCents)} left to pay
             </label>
           ))}
         </fieldset>

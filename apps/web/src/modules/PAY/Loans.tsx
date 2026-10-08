@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type ActiveEmployee, type GovLoan, type LoanKind, type Me } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
+import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, showDate } from '../../components/ui.tsx';
 import { cents } from '../COL/money.ts';
 import { LOAN_KIND, loanInput } from './run.ts';
 
@@ -31,7 +31,7 @@ function LoanTable({ loans, canManage, showEmployee, onSaved }: { loans: GovLoan
               <td className="pl-3">{l.firstMonth} to {l.lastMonth}</td>
               <td className="text-right tabular-nums">{peso(l.deductedCents)}</td>
               <td className="text-right tabular-nums">{peso(l.leftCents)}</td>
-              <td className="pl-3">{STATUS[l.status]}{l.stoppedFrom && <p className="text-xs text-slate-500">from {l.stoppedFrom}: {l.stopReason}</p>}</td>
+              <td className="pl-3">{STATUS[l.status]}{l.stoppedFrom && <p className="text-xs text-slate-500">from {showDate(l.stoppedFrom)}: {l.stopReason}</p>}</td>
               <td className="space-x-1 text-right whitespace-nowrap">
                 {canManage && !l.stoppedFrom && <><Button onClick={() => setEditing(l)}>Change</Button><Button onClick={() => setStopping(l)}>Stop</Button></>}
               </td>

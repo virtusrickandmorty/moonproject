@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, ApiError, newIdempotencyKey, type DocTypeInfo, type JoStatus, type Me, type ReleasePreview } from '../../api.ts';
 import { navigate } from '../../router.tsx';
-import { Button, Dialog, Field, JournalTable, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
+import { Button, Dialog, Field, JournalTable, Notice, Panel, inputClass, peso, useAction, showDate } from '../../components/ui.tsx';
 import { SalesActions } from './entry.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
@@ -89,7 +89,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
         {error && <Notice>{error}</Notice>}
         <Panel title="Job order">
           <JoPicker value={jo} onChange={(x) => (x ? void choose(x.id) : (setJo(null), setStatus(null), setV(emptyRelease())))} />
-          {status && <p className="text-sm text-slate-600">{status.stageLabel} · due {status.jobOrder.dueDate} · balance due <b className="tabular-nums text-slate-900">{peso(status.money.balanceDueCents)}</b></p>}
+          {status && <p className="text-sm text-slate-600">{status.stageLabel} · due {showDate(status.jobOrder.dueDate)} · balance due <b className="tabular-nums text-slate-900">{peso(status.money.balanceDueCents)}</b></p>}
         </Panel>
         <Panel title="Who claimed it">
           <Field label="Claimed by" required>

@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { api, ApiError, newIdempotencyKey, refusedFields, type CashPlace, type DocHeader, type DocTypeInfo, type Preview } from '../api.ts';
 import { navigate } from '../router.tsx';
-import { Button, Dialog, Field, JournalTable, Notice, Panel, ReasonDialog, inputClass, peso, useAction } from '../components/ui.tsx';
+import { Button, Dialog, Field, GoBack, JournalTable, Notice, Panel, ReasonDialog, inputClass, peso, useAction } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
 import { choiceLabel, fieldsOf, toInput, toValues, type FieldSpec, type Values } from './fields.ts';
 
@@ -57,7 +57,7 @@ export function RecordDialog(p: { type: DocTypeInfo; preview: Preview; original?
       {p.preview.journal && <details className="rounded-lg bg-slate-50 p-3"><summary className="cursor-pointer text-sm font-medium">Behind the scenes</summary><JournalTable lines={p.preview.journal} /></details>}
       {a.error && <Notice>{a.error}</Notice>}
       <div className="flex justify-end gap-2">
-        <Button onClick={p.onClose}>Go back</Button>
+        <GoBack onClose={p.onClose} />
         <Button tone="primary" disabled={a.busy || errors.length > 0} onClick={() => a.run(() => p.onRecord(key))}>{a.busy ? 'Recording…' : 'Record'}</Button>
       </div>
     </Dialog>

@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type DocTypeInfo, type OpeningStatus } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, showDate } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { cents } from '../COL/money.ts';
@@ -46,7 +46,7 @@ export function OpeningJobOrderForm({ type, mode }: { type: DocTypeInfo; mode: F
         {r.top}
         {closed && <Notice>{closed}</Notice>}
         {noDate && <Notice tone="warning">{noDate}</Notice>}
-        {date && !closed && <Notice tone="info">A job order taken before the cut-over and not finished or not paid for. It is recorded on the cut-over date, {date}, and then works like any job order.</Notice>}
+        {date && !closed && <Notice tone="info">A job order taken before the cut-over and not finished or not paid for. It is recorded on the cut-over date, {showDate(date)}, and then works like any job order.</Notice>}
         <Panel title="The job order">
           <Field label="Customer" required>
             <CustomerPicker value={customer} onChange={setCustomer} />

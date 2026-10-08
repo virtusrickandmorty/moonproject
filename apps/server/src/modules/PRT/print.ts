@@ -4,6 +4,7 @@ import { formatPeso } from '@moonproject/shared';
 import qrcode from 'qrcode-generator';
 import { DOC_TITLES, type DocTitle } from '../../engine/documents/registry.ts';
 import type { Db } from '../../platform/db/driver.ts';
+import { attachmentsDir, readStored } from '../../engine/attachments.ts';
 import { jobTicketRoute } from '../PRD/public.ts';
 import { purchaseOrderNames } from '../PUR/public.ts';
 
@@ -85,6 +86,23 @@ const signaturesHtml = (rows: Content['signatures']) => rows?.length
   ? `<div class="signatures">${rows.map(([caption, name]) => `<div class="sign"><span class="name">${escape(name ?? '')}</span><span class="caption">${escape(caption)}</span></div>`).join('')}</div>` : '';
 const termsHtml = (terms: unknown) => terms ? `<section class="terms"><h3>Terms and Conditions</h3><p>${escape(terms)}</p></section>` : '';
 
+/** How many of a job order's pictures its job ticket shows. */
+export const TICKET_PICTURES = 6;
+/**
+ * The pictures attached to a document (a job order's design), inlined so the printout fetches nothing: the first few,
+ * oldest first, without removed ones or files missing from the folder. Empty when there are none.
+ */
+export function attachedPictures(db: Db, documentId: string, max = TICKET_PICTURES): string {
+  const rows = db.prepare(`SELECT file_name, content_type, sha256 FROM attachments WHERE document_id = ? AND removed_at IS NULL
+    AND content_type IN ('image/jpeg', 'image/png', 'image/webp') ORDER BY added_at, id LIMIT ?`).all(documentId, max) as { file_name: string; content_type: string; sha256: string }[];
+  const dir = rows.length ? attachmentsDir(db) : '';
+  const figures = rows.flatMap((r) => {
+    const data = readStored(dir, r.sha256);
+    return data ? [`<figure style="margin:0;break-inside:avoid;text-align:center"><img src="data:${r.content_type};base64,${data.toString('base64')}" alt="${escape(r.file_name)}" style="max-width:100%;max-height:70mm;object-fit:contain;border:1px solid #ccc"><figcaption style="font-size:8pt;color:#555">${escape(r.file_name)}</figcaption></figure>`] : [];
+  });
+  return figures.length ? section('Design', `<div class="designs" style="display:grid;grid-template-columns:repeat(${Math.min(figures.length, 2)},1fr);gap:4mm">${figures.join('')}</div>`) : '';
+}
+
 function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: string): Content {
   const prepared = h.prepared_by ?? '';
   if (h.doc_type === 'quo.quotation') {
@@ -106,7 +124,7 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
       party: { label: 'Customer', name: doc.customerName },
       status: [['Due date', doc.dueDate], ['Priority', doc.priority]],
       aside: jobOrderQr(h.id, h.number, joinBase),
-      body:
+      body: attachedPictures(db, h.id) +
         doc.lines.map((l: any) => `<section class="job-line"><h2 class="section">${escape(l.description)} · ${escape(l.qty)} pieces</h2>` +
           lineTable(['Wearer', 'Size', 'Jersey name', 'Jersey no.', 'Qty'], l.roster.map((r: any) => [r.wearerName, r.size ?? (r.sizeMode === 'measured' ? 'Measured' : ''), r.jerseyName, r.jerseyNumber, r.qty])) +
           `<h3>Route checklist</h3><ul>${jobTicketRoute(db, h.id, l.lineNo).map((s) => `<li>☐ ${escape(s.name)} — ${escape(s.status)}</li>`).join('')}</ul></section>`).join('') +
