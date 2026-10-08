@@ -2,6 +2,7 @@
  * The production screens' rules (PLAN E7, H2): board columns and filters, and typed entry rows -> server input. Pure, so it
  * is tested without a browser; the server checks every piece and rate again.
  */
+import { useLiveChange } from '../../live.ts';
 import type { BoardCard, PrdStep } from '../../api.ts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cents } from '../COL/money.ts';
@@ -78,6 +79,7 @@ export function useBoardRefresh<T>(read: () => Promise<T>) {
     const clock = setInterval(() => setElapsed(Date.now() - started.current), 5_000);
     return () => { poll.stop(); polling.current = null; clearInterval(clock); };
   }, [read]);
+  useLiveChange(() => void polling.current?.refresh()); // a change anywhere refreshes now, not at the next 30 s
   const now = started.current + elapsed;
   return { data, error, updatedAt, refresh, stale: !!error || (updatedAt === null ? elapsed >= REFRESH_MS * 2 : now - updatedAt >= REFRESH_MS * 2), words: updateWords(updatedAt, updatedAt === null ? elapsed : now, error) };
 }
