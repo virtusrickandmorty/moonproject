@@ -6,13 +6,30 @@ import type { BoardCard, PrdStep } from '../../api.ts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cents } from '../COL/money.ts';
 
-export type Column = { key: string; title: string; cards: BoardCard[] };
+/** `stepId`: the step a column is for, so a card shows that step's own pieces. */
+export type Column = { key: string; title: string; cards: BoardCard[]; stepId?: number };
 
-/** "Choose production steps", a column per step in canonical order, then "Ready"; only the columns that have cards, so the board stays narrow. */
+/**
+ * The steps an item shows under (the owner's request, Oct 2026): the first step not done yet, and every later step not
+ * done that already has work, pieces forwarded to it from the step before or pieces recorded on it. An item being cut
+ * whose first pieces went on to sewing shows under both.
+ */
+export function activeSteps(c: Pick<BoardCard, 'steps' | 'currentStepId'>): number[] {
+  const later = (c.steps ?? [])
+    .filter((s) => s.status !== 'completed' && s.status !== 'not_needed')
+    .filter((s) => s.receivedPieces > 0 || s.pieces !== 0 || s.reworkPieces > 0)
+    .map((s) => s.stepId);
+  return [...new Set([...(c.currentStepId ? [c.currentStepId] : []), ...later])];
+}
+
+/**
+ * "Choose production steps", a column per step in canonical order, then "Ready"; an item shows under every step it has
+ * work in (activeSteps); only the columns that have cards, so the board stays narrow.
+ */
 export function columns(steps: PrdStep[], cards: BoardCard[]): Column[] {
   return [
     { key: 'setup', title: 'Choose production steps', cards: cards.filter((c) => c.steps === null) },
-    ...steps.map((s) => ({ key: String(s.id), title: s.name, cards: cards.filter((c) => c.currentStepId === s.id) })),
+    ...steps.map((s) => ({ key: String(s.id), title: s.name, stepId: s.id, cards: cards.filter((c) => activeSteps(c).includes(s.id)) })),
     { key: 'ready', title: 'Ready', cards: cards.filter((c) => c.ready) },
   ].filter((c) => c.cards.length > 0);
 }
