@@ -40,10 +40,21 @@ export type ListForm = (p: { mode: FormMode; close: () => void; setDirty: (dirty
 /** A document shown in a dialog over the list; `refresh` reloads the list (after a cancel); `cancel` opens its cancel at once. */
 export type ListView = (p: { id: string; recorded: boolean; cancel: boolean; refresh: () => void }) => ReactNode;
 
-/** What the address opens over a list: ?view=<id> (&recorded=1 just recorded, &act=cancel its cancel), ?new (&draft=<id>), ?edit=<id>. */
-export type Opened = { kind: 'view'; id: string; recorded: boolean; cancel: boolean } | { kind: 'new'; draftId?: string } | { kind: 'edit'; id: string };
+/**
+ * What the address opens over a list: ?view=<id> (&recorded=1 just recorded, &act=cancel its cancel), ?new (&draft=<id>),
+ * ?edit=<id>; and another type's New form or document (?with=<type>, then &doc=<id> once recorded, or the form's own
+ * prefill such as &jo=<id>, which the form reads from the address as on its own page).
+ */
+export type Opened = { kind: 'view'; id: string; recorded: boolean; cancel: boolean } | { kind: 'new'; draftId?: string } | { kind: 'edit'; id: string }
+  | { kind: 'other'; typeKey: string; docId?: string; recorded: boolean; params: string };
 export function openedFrom(query: string): Opened | undefined {
   const q = new URLSearchParams(query);
+  const other = q.get('with');
+  if (other) {
+    const doc = q.get('doc') ?? undefined;
+    const params = new URLSearchParams([...q.entries()].filter(([k]) => !['with', 'doc', 'recorded'].includes(k))).toString();
+    return { kind: 'other', typeKey: other, ...(doc ? { docId: doc } : {}), recorded: q.get('recorded') === '1', params };
+  }
   const view = q.get('view');
   const edit = q.get('edit');
   if (view) return { kind: 'view', id: view, recorded: q.get('recorded') === '1', cancel: q.get('act') === 'cancel' };
@@ -52,6 +63,7 @@ export function openedFrom(query: string): Opened | undefined {
   return undefined;
 }
 export function openedPath(base: string, o: Opened): string {
+  if (o.kind === 'other') return `${base}?with=${encodeURIComponent(o.typeKey)}${o.docId ? `&doc=${encodeURIComponent(o.docId)}${o.recorded ? '&recorded=1' : ''}` : o.params ? `&${o.params}` : ''}`;
   if (o.kind === 'view') return `${base}?view=${encodeURIComponent(o.id)}${o.recorded ? '&recorded=1' : ''}${o.cancel ? '&act=cancel' : ''}`;
   if (o.kind === 'edit') return `${base}?edit=${encodeURIComponent(o.id)}`;
   return `${base}?new${o.draftId ? `&draft=${encodeURIComponent(o.draftId)}` : ''}`;
@@ -60,8 +72,17 @@ export function openedPath(base: string, o: Opened): string {
  * While the list is on screen, its own document pages open over it instead: a form that recorded (…/<id>?recorded=1,
  * in the form's place), an Edit (…/<id>/edit), New (…/new) and a link to one of them (…/<id>).
  */
-export function overList(base: string, to: string): { to: string; replace?: boolean } | null {
+export function overList(base: string, to: string, others: readonly string[] = []): { to: string; replace?: boolean } | null {
   const [path = '', query = ''] = to.split('?');
+  // Another type's New form, or one of its documents (a payment taken on a job order), opens over this list too.
+  const other = others.find((t) => path.startsWith(`/docs/${t}/`));
+  if (other) {
+    const rest = path.slice(`/docs/${other}/`.length).split('/').map(decodeURIComponent);
+    if (rest.length !== 1 || !rest[0]) return null;
+    if (rest[0] === 'new') return { to: openedPath(base, { kind: 'other', typeKey: other, recorded: false, params: query }) };
+    if (query === 'recorded=1') return { to: openedPath(base, { kind: 'other', typeKey: other, docId: rest[0], recorded: true, params: '' }), replace: true };
+    return query ? null : { to: openedPath(base, { kind: 'other', typeKey: other, docId: rest[0], recorded: false, params: '' }) };
+  }
   if (!path.startsWith(`${base}/`)) return null;
   const q = new URLSearchParams(query);
   const rest = path.slice(base.length + 1).split('/').map(decodeURIComponent);
@@ -94,11 +115,13 @@ export function QuickAction({ label, title, onClick, tone = 'plain', disabled }:
  * `formTitled`: the form shows no heading of its own in a dialog, so the dialog shows its title. `formSize`: "screen" for a
  * form that needs the whole width (a job order with its breakdown beside it).
  * `source`, `columns`, `detail` and `searchHint`: a module's own rows, its columns after Amount, a line under a row's
- * summary (why a search found it) and what its search reads.
+ * summary (why a search found it) and what its search reads. `others`: other document types whose New form and documents
+ * open over this list (a job order's payment, invoice and release), with what shows them.
  */
-export function DocList({ type, notice, pageSize, form, view, opened, noEdit, rowActions, formTitled, formSize = 'full', source, columns = [], detail, searchHint }: {
+export function DocList({ type, notice, pageSize, form, view, opened, noEdit, rowActions, formTitled, formSize = 'full', source, columns = [], detail, searchHint, others }: {
   type: DocTypeInfo; notice?: string; pageSize?: number; form?: ListForm; view?: ListView; opened?: Opened; noEdit?: boolean; rowActions?: (r: DocHeader) => ReactNode; formTitled?: boolean; formSize?: 'full' | 'screen';
   source?: ListSource; columns?: ListColumn[]; detail?: (r: DocHeader) => ReactNode; searchHint?: string;
+  others?: { types: readonly string[]; title: (typeKey: string) => string; render: (p: { typeKey: string; docId?: string; recorded: boolean; refresh: () => void }) => ReactNode };
 }) {
   const [status, setStatus] = useState('');
   const [typed, setTyped] = useState({ q: '', from: '', to: '' });
@@ -118,7 +141,7 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
   const dirty = useRef(false); // something typed in the dialog's form and not saved
   const base = docPath(type.key);
   // Over the list only what it can show: a form needs `form`, a document needs `view`.
-  const wanted = opened && (opened.kind === 'view' ? view : form) ? opened : undefined;
+  const wanted = opened && (opened.kind === 'view' ? view : opened.kind === 'other' ? others?.types.includes(opened.typeKey) : form) ? opened : undefined;
   const [shown, leaving] = useExit(wanted);
   const pushed = useRef(''); // the dialog address this list opened itself, so closing it is Back
   const fail = (e: Error) => setError(e.message);
@@ -143,7 +166,13 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
   const loadDrafts = () => setDraftRetry((n) => n + 1);
   useEffect(() => { setStarts([undefined]); setPageNo(0); void load(); return () => { asked.current++; }; }, [load]);
   const over = !!(view && form);
-  useEffect(() => (over ? addRewrite((to) => overList(base, to)) : undefined), [base, over]);
+  const otherTypes = others?.types.join(',') ?? '';
+  // A link that opens over the list (pushed, not in place of a form that recorded) is closed again with Back.
+  useEffect(() => (over ? addRewrite((to) => {
+    const out = overList(base, to, otherTypes ? otherTypes.split(',') : []);
+    if (out && !out.replace) pushed.current = out.to;
+    return out;
+  }) : undefined), [base, over, otherTypes]);
   useEffect(() => {
     let active = true;
     api.printableTypes().then((types) => { if (active) setPrintVariants(types.find((item) => item.key === type.key)?.variants ?? []); }, () => undefined);
@@ -170,12 +199,14 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
     pushed.current = to;
     navigate(to);
   };
-  /** Back to the bare list: Back when this list opened the dialog, else the list's own address in its place. */
+  /**
+   * Back to the bare list (×, Escape, Close): the list's own address in place of the dialog's, so closing never reopens
+   * an earlier dialog; the browser's Back still steps back through what was opened.
+   */
   const closeOver = () => {
     if (window.location.pathname !== base) return; // the user already went elsewhere
-    const here = window.location.pathname + window.location.search;
-    if (pushed.current === here) history.back(); else navigate(base, { replace: true });
     pushed.current = '';
+    navigate(base, { replace: true });
   };
   /** Before a form's dialog closes (×, Escape or its Close button): asks first when something typed is not saved. */
   const mayCloseForm = async () =>
@@ -307,7 +338,13 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
           {view({ id: shown.id, recorded: shown.recorded, cancel: shown.cancel, refresh: () => void load(starts[pageNo]) })}
         </Dialog>
       )}
-      {form && shown && shown.kind !== 'view' && (
+      {others && shown?.kind === 'other' && (
+        <Dialog key={`other-${shown.typeKey}-${shown.docId ?? 'new'}`} title={others.title(shown.typeKey)} size="full" hideTitle leaving={leaving}
+          onClose={() => { closeOver(); void load(starts[pageNo]); }}>
+          {others.render({ typeKey: shown.typeKey, docId: shown.docId, recorded: shown.recorded, refresh: () => void load(starts[pageNo]) })}
+        </Dialog>
+      )}
+      {form && shown && shown.kind !== 'view' && shown.kind !== 'other' && (
         <Dialog key={shown.kind === 'edit' ? `edit-${shown.id}` : `new-${shown.draftId ?? ''}`} title={shown.kind === 'edit' ? `Edit ${labelOf(type)}` : `New ${labelOf(type)}`}
           size={formSize} hideTitle={!formTitled} leaving={leaving} beforeClose={mayCloseForm} onClose={formClosed}>
           {form({ mode: shown.kind === 'edit' ? { kind: 'edit', id: shown.id } : { kind: 'new', draftId: shown.draftId }, setDirty: (d) => { dirty.current = d; }, close: () => void closeForm(), show: showRecorded })}

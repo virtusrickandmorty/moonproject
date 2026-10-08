@@ -168,7 +168,15 @@ export const emptyRelease = (jobOrderId = ''): ReleaseValues => ({
   jobOrderId, qtys: {}, claimedBy: '', idSeen: '', creditNote: '', creditDueInDays: '', overrideReason: '', invoiceNumber: '', invoiceToFollow: false, invoiceNote: '',
 });
 /** Everything left on each line, ticked. */
-export const allLeft = (lines: JoStatus['lines']): Record<number, string> => Object.fromEntries(lines.filter((l) => l.leftQty > 0).map((l) => [l.lineNo, String(l.leftQty)]));
+/**
+ * What the release form ticks to start with: what is left of each line that may go out now; when none may (nothing made
+ * yet, for an owner's override), every line with something left, as before.
+ */
+export function allLeft(lines: JoStatus['lines']): Record<number, string> {
+  const left = lines.filter((l) => l.leftQty > 0);
+  const ready = left.filter((l) => l.ready !== false);
+  return Object.fromEntries((ready.length > 0 ? ready : left).map((l) => [l.lineNo, String(l.leftQty)]));
+}
 
 export interface ReleaseInput { jobOrderId: string; lines: { lineNo: number; qty: number }[]; claimedBy: string; idSeen: IdSeen; creditNote?: string; creditDueInDays?: number; overrideReason?: string }
 
@@ -253,7 +261,8 @@ export function invoiceBooklet(d: { vatRateBp: number; listCents: number; discou
 
 export interface JoAction { label: string; to: string; primary?: boolean }
 /** What the user may start from a job order's view (doc types they may create). */
-export interface JoCan { collect: boolean; release: boolean; invoice: boolean; dpInvoice?: boolean }
+/** `releaseOverride`: may release what is not ready yet (the owner, with a reason), so Release slip is offered before. */
+export interface JoCan { collect: boolean; release: boolean; invoice: boolean; dpInvoice?: boolean; releaseOverride?: boolean }
 
 /** Downpayments invoiced on the job order so far (recorded invoices only). */
 export const dpInvoicedCents = (s: Pick<JoStatus, 'dpInvoices'>) => s.dpInvoices.filter((i) => i.status === 'posted').reduce((sum, i) => sum + i.amountCents, 0);
@@ -272,7 +281,9 @@ export function joActions(s: JoStatus, can: JoCan): JoAction[] {
     }
     out.push({ label: 'Take a payment', to: `/docs/col.collection/new?jo=${id}` });
   }
-  if (can.release && s.lines.some((l) => l.leftQty > 0)) out.push({ label: 'Release', to: `/docs/jo.release/new?jo=${id}` });
+  // Release slip once an item may go out (its production is done), even while others are still being made; earlier for
+  // the owner, who may release what is not ready with a reason.
+  if (can.release && s.lines.some((l) => l.leftQty > 0 && (l.ready !== false || can.releaseOverride))) out.push({ label: 'Release slip', to: `/docs/jo.release/new?jo=${id}` });
   if (can.invoice && s.awaitingInvoice.length > 0) {
     const one = s.awaitingInvoice.length === 1 ? `release=${encodeURIComponent(s.awaitingInvoice[0]!.id)}` : `jo=${id}`;
     out.push({ label: 'Record invoice', to: `/docs/jo.invoice_record/new?${one}` });

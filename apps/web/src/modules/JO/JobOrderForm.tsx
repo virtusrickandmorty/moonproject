@@ -75,7 +75,7 @@ function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWearers | n
     const out = parseRosterPaste(paste ?? '', wearers);
     setPasteErrors(out.errors);
     if (out.errors.length > 0) return;
-    p.onChange([...rows, ...out.rows.map((g) => ({ personId: g.personId ?? '', name: g.wearerName, sizeMode: g.sizeMode, size: g.size ?? (g.personId ? wearers.find((w) => w.personId === g.personId)?.size ?? '' : ''), jerseyName: g.jerseyName ?? '', jerseyNumber: g.jerseyNumber ?? '', qty: String(g.qty), garmentType: '' }))]);
+    p.onChange([...rows, ...out.rows.map((g) => ({ personId: g.personId ?? '', name: g.wearerName, sizeMode: g.sizeMode, size: g.size ?? (g.personId ? wearers.find((w) => w.personId === g.personId)?.size ?? '' : ''), jerseyName: g.jerseyName ?? '', jerseyNumber: g.jerseyNumber ?? '', qty: String(g.qty), garmentType: g.garmentType ?? '' }))]);
     setPaste(null);
   };
   return (
@@ -128,7 +128,7 @@ function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWearers | n
       </div>
       {paste !== null && (
         <div className="space-y-2">
-          <Field label="Pasted rows"><textarea aria-label={`${p.n} pasted rows`} rows={4} className={inputClass} placeholder="Name, size, jersey name, jersey number, qty (one person per row)" value={paste} onChange={(e) => setPaste(e.target.value)} /></Field>
+          <Field label="Pasted rows"><textarea aria-label={`${p.n} pasted rows`} rows={4} className={inputClass} placeholder="Name, size, jersey name, jersey number, qty, garment type (one person per row)" value={paste} onChange={(e) => setPaste(e.target.value)} /></Field>
           {pasteErrors.map((e) => <Notice key={e}>{e}</Notice>)}
           <Button onClick={addPasted}>Add these</Button>
         </div>

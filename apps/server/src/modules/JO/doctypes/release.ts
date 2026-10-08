@@ -13,6 +13,20 @@ import type { DocHeader, DocTypeDef } from '../../../engine/documents/registry.t
 import { jobOrderRef, jobOrdersOf, joMoney } from '../public.ts';
 import { STAGE_LABELS, currentStage, isAbandoned, moveTo } from '../stages.ts';
 import { addDays } from './job-order.ts';
+import { lineProduction } from '../../PRD/public.ts';
+
+/**
+ * The lines that may go out now (the owner's rule, Oct 2026: release what is ready, even while other items are still
+ * being made): those with pieces left whose own production is done; every line once the job order is Ready; and, once
+ * something is released, a line that needs no production (no route).
+ */
+export function releasableLines(db: Db, jobOrderId: string): Set<number> {
+  const stage = currentStage(db, jobOrderId);
+  if (stage === 'cancelled' || stage === 'closed' || stage === 'released') return new Set();
+  const made = lineProduction(db, jobOrderId);
+  return new Set(lineState(db, jobOrderId).filter((l) => l.qty > l.releasedQty
+    && (stage === 'ready' || made.get(l.lineNo) === 'done' || (stage === 'partially_released' && made.get(l.lineNo) === 'none'))).map((l) => l.lineNo));
+}
 
 export const ID_SEEN = ['government_id', 'school_id', 'company_id', 'other_id', 'none'] as const;
 const ID_WORDS: Record<(typeof ID_SEEN)[number], string> = { government_id: 'government ID', school_id: 'school ID', company_id: 'company ID', other_id: 'an ID', none: 'no ID' };
@@ -116,13 +130,17 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
     });
 
     const stage = currentStage(ctx.db, jo.id);
-    const ready = stage === 'ready' || stage === 'partially_released';
+    const ok = releasableLines(ctx.db, jo.id);
+    const waiting = doc.lines.filter((l) => state.has(l.lineNo) && !ok.has(l.lineNo)).map((l) => l.lineNo);
+    const ready = waiting.length === 0;
     if (!ready && !doc.overrideReason) {
-      error('overrideReason', 'NOT_READY', `${jo.number} is ${STAGE_LABELS[stage]}. Mark it Ready for release first, or ask the owner to release it anyway with a reason.`);
+      error('overrideReason', 'NOT_READY', ok.size === 0
+        ? `${jo.number} is ${STAGE_LABELS[stage]}. Mark it Ready for release first, or ask the owner to release it anyway with a reason.`
+        : `${waiting.length === 1 ? `Line ${waiting[0]} is` : `Lines ${waiting.join(', ')} are`} still being made. Release only the items that are ready, or ask the owner to release ${waiting.length === 1 ? 'it' : 'them'} anyway with a reason.`);
     } else if (!ready && !ctx.can('jo.release_override')) {
       error('overrideReason', 'OVERRIDE_NOT_ALLOWED', 'Only the owner can release a job order that is not ready yet.');
     } else if (ready && doc.overrideReason) {
-      error('overrideReason', 'NO_OVERRIDE', `${jo.number} is ready for release. Leave the override reason empty.`);
+      error('overrideReason', 'NO_OVERRIDE', `What is released from ${jo.number} is ready. Leave the override reason empty.`);
     }
 
     const due = doc.balanceDueCents;
@@ -148,7 +166,9 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
 
   afterCancel(db, documentId, h) {
     const jo = joOf(db, documentId);
-    moveTo(db, jo, lineState(db, jo).some((l) => l.releasedQty > 0) ? 'partially_released' : 'ready', `${h.number} cancelled`, h);
+    // Nothing out any more: back to Ready, or to In production while an item is still being made.
+    const making = [...lineProduction(db, jo).values()].includes('in_production');
+    moveTo(db, jo, lineState(db, jo).some((l) => l.releasedQty > 0) ? 'partially_released' : making ? 'in_production' : 'ready', `${h.number} cancelled`, h);
     return null;
   },
 

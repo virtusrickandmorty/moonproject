@@ -9,6 +9,8 @@ import { AppError, isBusinessDate } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { joMoney } from './public.ts';
 import { awaitingInvoice } from './doctypes/invoice-record.ts';
+import { releasableLines } from './doctypes/release.ts';
+import { isAbandoned } from './stages.ts';
 
 export type JoListFilters = { q?: string; from?: string; to?: string };
 
@@ -65,6 +67,8 @@ export function joListRoutes(app: FastifyInstance, db: Db): void {
       matchedItem: words.length ? matchedItem(db, r.id as string, words) : null,
       // Releases waiting for their booklet invoice (the row's Invoice action); none once cancelled.
       awaitingInvoice: r.status === 'posted' ? awaitingInvoice(db, r.id as string).map((x) => ({ id: x.id, number: x.number })) : [],
+      // Something may go out now (the row's Release slip action): an item whose production is done, pieces left.
+      readyToRelease: r.status === 'posted' && !isAbandoned(db, r.id as string) && releasableLines(db, r.id as string).size > 0,
     }));
   });
 
