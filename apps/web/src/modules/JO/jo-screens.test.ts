@@ -91,7 +91,7 @@ describe('job order form rules', () => {
   });
 
   it('says what is missing in plain words', () => {
-    expect(joInput({ ...emptyJo(), dueInDays: '0' }).errors).toEqual(['Pick the customer.', 'Due in: type the number of days, 1 to 365.', 'Pick the payment terms.', 'Add at least one line.']);
+    expect(joInput({ ...emptyJo(), dueInDays: '0' }).errors).toEqual(['Pick the customer.', 'Pick the due date: tomorrow up to a year from today.', 'Add at least one line.']);
     const bad = typedJo({ lines: [{ ...emptyJoLine(), description: '', qty: '0', price: 'abc', roster: [] }, { ...emptyJoLine(), description: 'Shorts', roster: [oneOff(), { ...oneOff('Dee'), qty: 'x' }] }] });
     expect(joInput(bad).errors).toEqual([
       'Line 1: pick an item from the price list or say what is made.',

@@ -248,6 +248,17 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
     for (const set of sizerBoard(db, date).overdue) push('sizer-overdue', set.holder!.loanId, `${set.code} sizer set is overdue`, '/szr/sets',
       `${set.holder!.customerName} · due ${set.holder!.expectedReturnDate}`);
   }
+  // New job orders whose items have no production steps yet (the owner's request, Oct 2026): production routes them on the
+  // board. The notice goes once every item has its steps.
+  if (can('prd.progress')) {
+    const waiting = new Map<string, { number: string; customerName: string; dueDate: string; items: number }>();
+    for (const c of board(db)) if (c.steps === null) {
+      const w = waiting.get(c.jobOrderId);
+      if (w) w.items++;
+      else waiting.set(c.jobOrderId, { number: c.number, customerName: c.customerName, dueDate: c.dueDate, items: 1 });
+    }
+    for (const [id, w] of waiting) push('jo-to-route', id, `New job order ${w.number}: choose its production steps`, '/prd/board', `${w.customerName} · ${w.items} ${w.items === 1 ? 'item' : 'items'} · due ${w.dueDate}`);
+  }
   // Closed orders are excluded by JO's batch stage read before any balance-due lookup.
   let money: ReturnType<typeof joMoneyAll> | undefined;
   if (can('jo.view')) for (const jo of activeJobOrders(db)) {
