@@ -1,7 +1,7 @@
 /**
  * Production entry form (PLAN E7 "assign workers with piece counts in a quick grid", H5 ≤ 30 s): one step of one job
- * order, a row per worker and line. The server takes the piece rate from the price list, for rework too; rates are
- * changed in payroll, not here (the owner's decision, Oct 2026). Opened from the board with ?jo=<JO>&step=<step>. Also its
+ * order, a row per worker and line. No rate or piece pay shows here (the owner's decision, Oct 2026): the server takes the
+ * piece rate from the price list item (for rework too), and payroll shows and changes the pay. Opened from the board with ?jo=<JO>&step=<step>. Also its
  * Edit (NR-4). A row takes at most the pieces ready on the step (came from the step before, not done yet); rework, at most
  * the pieces done there: more is not recorded.
  * The work date is today unless the sheet is late (audit B2-F2). When the server takes a row for a sheet already recorded
@@ -13,13 +13,12 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError, type DocHeader, type DocTypeInfo, type Preview, type PrdJob, type Worker } from '../../api.ts';
 import { navigate } from '../../router.tsx';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { formatPesos, manilaDate, type Issue } from '@moonproject/shared';
 import { EditGate, Errors, useLive } from '../COL/parts.tsx';
 import { emptyRow, rowsToInput, type EntryRow } from './board.ts';
-import { PayTotal } from '../PAY/entry.tsx';
 
 type Stored = { jobOrderId: string; stepId: number; workDate?: string; overCapReason?: string; rows: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string; wearers?: number[]; part?: 'upper' | 'lower' }[] };
 const cell = `${inputClass} py-1`;
@@ -105,7 +104,6 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
   const preview = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input));
   const live = preview && own(preview);
   const repeatAt = new Set([...refusedRepeat, ...(live?.issues ?? []).filter((i) => i.code === 'LIKELY_REPEAT').map((i) => Number(i.field?.split('.')[1]))]);
-  const calculated = (live?.doc as { rows: { rowNo: number; rateCents: number; amountCents: number }[] } | undefined)?.rows ?? [];
 
   const openConfirm = () => {
     setTouched(true);
@@ -125,7 +123,6 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
   if (original && !editReason) return <EditGate original={original} typeKey={type.key} onReason={setEditReason} />;
   return (
     <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className="space-y-4">
-      <PayTotal label="Piece pay" total={live?.totalCents}>{typed.rows.reduce((s, r) => s + (Number.isInteger(r.pieces) ? r.pieces : 0), 0)} pcs</PayTotal>
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">{original ? `Edit ${original.number}` : 'Record pieces'}</h1>
         {original && <Notice tone="info">When you record, {original.number} is cancelled and the replacement gets a new number. Reason: {editReason}</Notice>}
@@ -153,7 +150,6 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
             <div className="space-y-3">
               {rows.map((r, i) => {
                 const sent = rows.slice(0, i).filter((row) => row.employeeId || row.pieces.trim()).length; // its place among the rows sent
-                const pay = !r.employeeId && !r.pieces.trim() ? undefined : calculated[sent];
                 const askRepeat = !r.rework && (!!r.repeatReason?.trim() || ((!!r.employeeId || !!r.pieces.trim()) && repeatAt.has(sent)));
                 return (
                   <section key={i} aria-label={`Worker entry ${i + 1}`} className="space-y-3 rounded-lg border border-slate-200 p-3">
@@ -242,7 +238,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                         </fieldset>
                       );
                     })()}
-                    <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(6rem,1fr)_minmax(8rem,1fr)]">
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(6rem,1fr)]">
                       <Field label="Worker">
                         <select aria-label={`Row ${i + 1} worker`} className={cell} value={r.employeeId} onChange={(e) => set(i, { employeeId: e.target.value })}>
                           <option value="" />
@@ -250,14 +246,13 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                         </select>
                       </Field>
                       <Field label="Pieces" hint={[(r.wearers?.length ?? 0) > 0 ? 'From the wearers ticked' : '', (() => { const cap = r.lineNo ? capOf(r.lineNo, r.part, r.rework) : null; return cap === null ? '' : r.rework ? `${cap} done here` : `${cap} ready`; })()].filter(Boolean).join(' · ') || undefined}><input aria-label={`Row ${i + 1} pieces`} inputMode="numeric" readOnly={(r.wearers?.length ?? 0) > 0} className={`${cell} text-right tabular-nums`} value={r.pieces} onChange={(e) => set(i, { pieces: e.target.value })} /></Field>
-                      <div className="text-sm"><p className="font-medium">Rate per piece</p><p className="tabular-nums">{pay ? peso(pay.rateCents) : 'Awaiting calculation'}</p><p className="text-xs text-slate-500">From the price list. Payroll can change it.</p></div>
                     </div>
                     {askRepeat && (
                       <Field label="This matches a sheet already recorded. Why is it a different sheet? (at least 5 characters)" hint="If the pieces were redone, tick Rework (pasubra) instead.">
                         <input aria-label={`Row ${i + 1} repeat reason`} className={cell} value={r.repeatReason ?? ''} onChange={(e) => set(i, { repeatReason: e.target.value })} />
                       </Field>
                     )}
-                    {r.rework && <p className="text-xs text-slate-600">Rework is paid the price list rate and does not add to the pieces done on this step.{pay ? <> Piece pay: <b className="tabular-nums">{peso(pay.amountCents)}</b>.</> : null}</p>}
+                    {r.rework && <p className="text-xs text-slate-600">Rework does not add to the pieces done on this step.</p>}
                   </section>
                 );
               })}
@@ -270,14 +265,13 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
       <Panel title="So far">
         <p className="text-2xl font-semibold tabular-nums">{typed.rows.reduce((s, r) => s + (Number.isInteger(r.pieces) ? r.pieces : 0), 0)} pcs</p>
         {live && <p className="text-sm">{live.summary}</p>}
-        {live && live.totalCents !== 0 && <p className="text-sm">Piece pay: <b className="tabular-nums">{peso(live.totalCents)}</b></p>}
         {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
       </Panel>
       <div className="flex gap-2">
         <Button tone="primary" disabled={!type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
         <Button onClick={() => history.back()}>Back</Button>
       </div>
-      {confirm && <RecordDialog type={type} preview={confirm} original={original} reason={editReason} onRecord={record} onClose={() => setConfirm(null)} />}
+      {confirm && <RecordDialog hideTotal type={type} preview={confirm} original={original} reason={editReason} onRecord={record} onClose={() => setConfirm(null)} />}
     </form>
   );
 }

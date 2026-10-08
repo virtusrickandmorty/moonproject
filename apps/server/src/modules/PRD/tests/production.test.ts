@@ -118,7 +118,7 @@ describe('board, Complete / Not needed / Reopen, and the JO stage (PLAN E7 rule 
     ]);
 
     const sew = await record(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 35 }, { lineNo: 1, employeeId: w.sewer2, pieces: 25 }]));
-    expect(sew.json().summary).toBe('This will record 60 pieces of Sewing for JO-000001 (Moonlight Test School): Ely Sewer 35, Fai Stitcher 25. Piece pay: ₱2,400.00.');
+    expect(sew.json().summary).toBe('This will record 60 pieces of Sewing for JO-000001 (Moonlight Test School): Ely Sewer 35, Fai Stitcher 25.');
     expect((await act(jo, 1, SEWING, 'not-needed')).json()).toMatchObject({ code: 'HAS_PIECES' });
     await act(jo, 1, SEWING, 'complete');
     await act(jo, 1, PACKING, 'not-needed'); // no pieces: fine
@@ -236,7 +236,7 @@ describe('production entries (PLAN E7 assignments)', () => {
     expect(await issues(rows(gown, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1 }], { overCapReason: 'Cut pieces came from stock' }))).toEqual(['NO_RATE']);
     expect(await issues(rows(gown, CUTTING, [{ lineNo: 1, employeeId: w.cutter, pieces: 4 }]))).toEqual(['NO_RATE']);
     const p = (await production.post(`${PE}/preview`, { input: rows(gown, CUTTING, [{ lineNo: 1, employeeId: w.cutter, pieces: 4 }]) })).json();
-    expect([p.issues[0].level, p.totalCents, p.summary]).toEqual(['warning', 0, 'This will record 4 pieces of Cutting for JO-000002 (Moonlight Test School): Dana Cutter 4. Progress only: no piece pay.']);
+    expect([p.issues[0].level, p.totalCents, p.summary]).toEqual(['warning', 0, 'This will record 4 pieces of Cutting for JO-000002 (Moonlight Test School): Dana Cutter 4.']);
     expect(p.journal ?? null).toBeNull(); // posts nothing
   });
 
