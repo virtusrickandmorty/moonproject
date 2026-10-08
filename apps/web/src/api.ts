@@ -289,9 +289,11 @@ export interface BoardCard {
   /** isSet: made as an upper and a lower part; a step's `pieces` are then complete sets and `parts` each part's count. */
   isSet?: boolean;
   /** receivedPieces: what came out of the step before (all of the line for the first step, or once the one before is closed). */
-  steps: { stepId: number; status: StepStatus; pieces: number; reworkPieces: number; receivedPieces: number; parts?: { upper: number; lower: number } }[] | null;
+  /** reworkOpen: pieces sent back to the step for rework, not redone yet. */
+  steps: { stepId: number; status: StepStatus; pieces: number; reworkPieces: number; receivedPieces: number; reworkOpen?: number; parts?: { upper: number; lower: number } }[] | null;
 }
 export interface NavResult { kind: 'Customer' | 'Wearer' | 'Job order' | 'Document' | 'Supplier' | 'Employee'; id: string; label: string; detail?: string; href: string }
+export interface PrdRework { pieces: number; wearers: number[] }
 export interface PrdJob {
   jobOrder: { id: string; number: string; status: 'posted' | 'cancelled'; customerName: string; dueDate: string; priority: string; stage: string };
   lines: { lineNo: number; description: string; qty: number; releasedQty: number; setup: { templateId: number | null; garmentType: string; complexity: string; stepIds: number[] } | null;
@@ -300,7 +302,9 @@ export interface PrdJob {
     /** Made as an upper and a lower part (a set on the price list). */
     isSet?: boolean;
     /** doneWearers: the roster rows already done on the step. */
+    /** forwardedWearers: the wearers that came out of the step before (null: all); rework: sent back to the step, not redone yet. */
     route: (PrdStep & { status: StepStatus; pieces: number; reworkPieces: number; availablePieces: number; doneWearers?: number[];
+      forwardedWearers?: number[] | null; rework?: PrdRework; partForwarded?: { upper: number[] | null; lower: number[] | null }; partRework?: { upper: PrdRework; lower: PrdRework };
       /** On a set: each part's pieces, what each may still take, and the wearers done per part. */
       partPieces?: { upper: number; lower: number }; partAvailable?: { upper: number; lower: number }; partWearersDone?: { upper: number[]; lower: number[] } })[] | null }[];
 }
@@ -1069,6 +1073,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     prdSetup: (jo: string, lineNo: number, body: PrdSetup) => call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/setup`), body),
     prdStep: (jo: string, lineNo: number, stepId: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) =>
       call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/steps/${stepId}/${action}`), reason ? { reason } : {}),
+    /** Send pieces back for rework to a step they went through (labelled rework there, not replacing what was done). */
+    prdRework: (jo: string, lineNo: number, stepId: number, body: { pieces?: number; wearers?: number[]; part?: 'upper' | 'lower'; reason: string }) =>
+      call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/steps/${stepId}/rework`), body),
     prdWorkers: () => call<Worker[]>('GET', '/api/prd/workers'),
     rates: () => call<RateTable>('GET', '/api/rate/rates'),
     addRate: (body: Omit<PieceRate, 'id' | 'createdAt'>) => call<PieceRate>('POST', '/api/rate/rates', body),
