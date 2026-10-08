@@ -16,4 +16,4 @@ It calculates the opening balance at the start of your chosen dates. Then, it li
 
 ### Common mistakes and how to fix them
 - **Mistake:** You cannot see the cash place you want to look at in the list.
-- **Fix:** If a cash place is missing, it means you do not have permission to see its balance. The accountant or owner must go to the Cash Accounts screen and check "Encoders see the balance" for that place.
+- **Fix:** Check that the place exists and is active. Encoders now have the accountant's access to balances by default. If a place is still missing, ask the owner to check your permissions on **Roles and permissions**.

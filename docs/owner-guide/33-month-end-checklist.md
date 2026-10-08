@@ -9,7 +9,7 @@
 2. Pick the **Month** you want to look at.
    ![The month-end checklist for a month](img/33-month-end-checklist.png)
 3. Check the list of items. Click the blue links on the right of each item to open the screen that does it.
-4. Once everything is done, the accountant types a **Note** (between 5 and 500 characters) and clicks **Sign off the month**. The system will ask for your password to confirm. Note that a month can only be signed off after its last day; before that, the screen will say it has not ended yet. Only the accountant can see and use the sign-off form.
+4. Once everything is done, the accountant types a **Note** (between 5 and 500 characters) and clicks **Sign off the month**. The system will ask for your password to confirm. Note that a month can only be signed off after its last day; before that, the screen will say it has not ended yet. The form needs sign-off permission, given by default to owners, accountants and encoders. The shop should have its accountant review and sign off the month.
 
 ### What the system does for you
 The system automatically checks the records for that month and updates the status of each item. An item can show as **Done**, **Not done**, or **Not needed**.

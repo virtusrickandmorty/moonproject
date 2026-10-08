@@ -2,7 +2,7 @@
 
 **What it is for:** View the full accounting records of the business: the General journal, General ledger, and Trial balance.
 
-**Before you start:** Know which report you want to see and the dates you are interested in. *Note: Only the accountant and the owner have access to these reports.*
+**Before you start:** Know which report you want to see and the dates you are interested in. *Note: Owners, accountants and encoders have access to these reports by default.*
 
 ### Steps
 1. On the **Reports** menu, choose the report you want:
@@ -22,4 +22,4 @@ To save the information to your computer, click **Export CSV**. This downloads a
 
 ### Common mistakes and how to fix them
 - **Mistake:** You cannot find the reports on the menu.
-- **Fix:** Access to the books is strictly limited. If you are an encoder, you will not see these options. Only users with the accountant or owner roles can open the reports.
+- **Fix:** Owners, accountants and encoders have access to the books by default. If the reports are missing, ask the owner to check **Roles and permissions**.

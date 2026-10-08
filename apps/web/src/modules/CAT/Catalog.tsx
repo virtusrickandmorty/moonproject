@@ -5,6 +5,7 @@
  * RTW-0001), and its name is what its piece rates go by (the owner's decision, Oct 2026: no garment type or complexity
  * is typed). Prices and rates are effective-dated: earlier ones stay in the history.
  */
+import { useLiveChange } from '../../live.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type PieceRate, type PrdStep } from '../../api.ts';
 import { Link } from '../../router.tsx';
@@ -34,6 +35,7 @@ export function Catalog({ me }: { me: Me }) {
     catch (e) { setError((e as Error).message); }
   };
   useEffect(() => { void load(); }, [load]);
+  useLiveChange(() => void load()); // an item added or changed on another computer shows here
   if (!canView) return <Notice>You do not have permission to see the price list.</Notice>;
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center gap-3"><h1 className="flex-1 text-2xl font-semibold">Price list & piece rates</h1>
