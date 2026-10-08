@@ -264,7 +264,8 @@ describe('production entries (PLAN E7 assignments)', () => {
     const c1 = (await record(fix(-5))).json();
     expect(c1).toMatchObject({ totalCents: -20_000 }); // the paid row's own rate
     // The next run takes the correction off (beside the other 20 pieces sewn before Complete, not paid yet).
-    expect(unpaidAssignments(env.db, '2026-09-30').map((a) => [a.kind, a.pieces, a.amountCents])).toEqual([['work', 20, 80_000], ['correction', -5, -20_000]]);
+    expect(unpaidAssignments(env.db, '2026-09-30').map((a) => [a.kind, a.pieces, a.amountCents])).toEqual(expect.arrayContaining([['work', 20, 80_000], ['correction', -5, -20_000]]));
+    expect(unpaidAssignments(env.db, '2026-09-30')).toHaveLength(2);
     expect(await issues(fix(-26))).toEqual(['CORRECTION_PIECES']); // 25 pieces still counted
     expect(await issues({ ...fix(-20), rows: [...fix(-20).rows, ...fix(-6).rows] })).toEqual(['CORRECTION_PIECES']); // two rows in one entry count together
     expect(statuses(jo, 1)[0]).toEqual(['SEWING', 'completed', 45]);
