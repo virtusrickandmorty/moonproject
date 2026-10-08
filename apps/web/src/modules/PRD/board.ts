@@ -141,7 +141,6 @@ export function rowsToInput(rows: EntryRow[]) {
     if (!r.employeeId) errors.push(`${at}: pick the worker.`);
     if (!Number.isInteger(pieces) || pieces <= 0) errors.push(`${at}: type the pieces as a whole number like 12.`);
     if (r.rate.trim() && rate === undefined) errors.push(`${at}: type the rate like 45.00`);
-    if (r.rework && !r.rate.trim()) errors.push(`${at}: type the rework (pasubra) rate.`);
     if (r.rate.trim() && !r.rateReason.trim()) errors.push(`${at}: say why this rate is typed.`);
     const repeat = r.rework ? '' : (r.repeatReason ?? '').trim();
     if (repeat && repeat.length < 5) errors.push(`${at}: say in at least 5 characters why this is a different sheet.`);

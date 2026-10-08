@@ -1,11 +1,13 @@
 /**
  * Production entry form (PLAN E7 "assign workers with piece counts in a quick grid", H5 ≤ 30 s): one step of one job
- * order, a row per worker and line. The server takes the piece rate from the table; a typed rate (override or rework)
- * needs a reason. Opened from the board with ?jo=<JO>&step=<step>. Also its Edit (NR-4).
+ * order, a row per worker and line. The server takes the piece rate from the price list, for rework too; rates are
+ * changed in payroll, not here (the owner's decision, Oct 2026). Opened from the board with ?jo=<JO>&step=<step>. Also its
+ * Edit (NR-4). A row takes at most the pieces ready on the step (came from the step before, not done yet); rework, at most
+ * the pieces done there: more is not recorded.
  * The work date is today unless the sheet is late (audit B2-F2). When the server takes a row for a sheet already recorded
  * (LIKELY_REPEAT, B2-F3), the row asks why it is a different sheet.
  * Wearers (the owner's request, Oct 2026): a step lists the wearers forwarded from the step before (and those done there);
- * a rework row lists the wearers sent back to the step for rework. ?rework=1 starts with a rework row.
+ * a rework row lists the wearers done on the step (those sent back first). ?rework=1 starts with a rework row.
  */
 import { useEffect, useState } from 'react';
 import { api, ApiError, type DocHeader, type DocTypeInfo, type Preview, type PrdJob, type Worker } from '../../api.ts';
@@ -16,7 +18,7 @@ import { docPath } from '../../shell/menu.ts';
 import { formatPesos, manilaDate, type Issue } from '@moonproject/shared';
 import { EditGate, Errors, useLive } from '../COL/parts.tsx';
 import { emptyRow, rowsToInput, type EntryRow } from './board.ts';
-import { PayDetails, PayTotal } from '../PAY/entry.tsx';
+import { PayTotal } from '../PAY/entry.tsx';
 
 type Stored = { jobOrderId: string; stepId: number; workDate?: string; overCapReason?: string; rows: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string; wearers?: number[]; part?: 'upper' | 'lower' }[] };
 const cell = `${inputClass} py-1`;
@@ -78,13 +80,28 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
 
   const set = (i: number, patch: Partial<EntryRow>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const typed = rowsToInput(rows);
-  const errors = [...(jo ? [] : ['Pick the job order.']), ...(stepId ? [] : ['Pick the step.']), ...typed.errors];
+  // Pieces ready per line and part on this step (work: came from the step before, not done yet; rework: done there).
+  // On Edit, the entry being replaced still counts until Record cancels it, so its own pieces are free again.
+  const capOf = (lineNo: string, part: 'upper' | 'lower' | undefined, rework: boolean) => {
+    const s = job?.lines.find((l) => String(l.lineNo) === lineNo)?.route?.find((x) => x.id === stepId);
+    if (!s) return null;
+    const done = part && s.partPieces ? s.partPieces[part] : s.pieces;
+    if (rework) return done;
+    const mine = (originalRows ?? []).filter((o) => String(o.lineNo) === lineNo && !o.rework && o.part === part).reduce((n, o) => n + o.pieces, 0);
+    return Math.max(0, (part && s.partAvailable ? s.partAvailable[part] : s.availablePieces) - done + mine);
+  };
+  const overReady = [...new Map(rows.filter((r) => r.lineNo && Number(r.pieces) > 0).map((r) => [`${r.lineNo}|${r.part ?? ''}|${r.rework}`, r])).values()].flatMap((r) => {
+    const cap = capOf(r.lineNo, r.part, r.rework);
+    const sum = rows.filter((x) => x.lineNo === r.lineNo && x.part === r.part && x.rework === r.rework).reduce((n, x) => n + (Number(x.pieces) || 0), 0);
+    const what = `${r.part ? `${r.part} parts` : 'pieces'} of line ${r.lineNo}`;
+    return cap !== null && sum > cap ? [r.rework ? `Only ${cap} ${what} are done on this step, so at most ${cap} can be rework. You entered ${sum}.` : `Only ${cap} ${what} are ready on this step. You entered ${sum}.`] : [];
+  });
+  const errors = [...(jo ? [] : ['Pick the job order.']), ...(stepId ? [] : ['Pick the step.']), ...typed.errors, ...overReady];
   const input = { jobOrderId: jo, stepId: stepId ?? 0, workDate, rows: typed.rows, ...(overCapReason.trim() ? { overCapReason: overCapReason.trim() } : {}) };
   // On Edit the entry being replaced is still recorded until Record cancels it: a row matching only that entry is no repeat.
   const own = (p: Preview): Preview => (original ? { ...p, issues: p.issues.filter((i) => !(i.code === 'LIKELY_REPEAT' && i.message.includes(`: ${original.number} already has`)) && !(i.code === 'WEARER_DONE' && i.message.includes(`(${original.number})`))) } : p);
   const preview = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input));
   const live = preview && own(preview);
-  const askOverCap = !!overCapReason || !!live?.issues.some((i) => i.code === 'OVER_CAP' || i.code === 'WEARER_NOT_FORWARDED');
   const repeatAt = new Set([...refusedRepeat, ...(live?.issues ?? []).filter((i) => i.code === 'LIKELY_REPEAT').map((i) => Number(i.field?.split('.')[1]))]);
   const calculated = (live?.doc as { rows: { rowNo: number; rateCents: number; amountCents: number }[] } | undefined)?.rows ?? [];
 
@@ -159,35 +176,42 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                         {!r.part && <span className="text-xs text-amber-800">Pick the part these pieces are for.</span>}
                       </div>
                     )}
+                    <label className="flex w-fit items-center gap-2 rounded-md bg-amber-50 px-3 py-1.5 text-sm ring-1 ring-amber-200">
+                      <input aria-label={`Row ${i + 1} rework`} type="checkbox" checked={r.rework} onChange={(e) => set(i, { rework: e.target.checked, ...(r.wearers?.length ? { wearers: [], pieces: '' } : {}) })} />
+                      Record rework (pasubra)
+                    </label>
                     {(() => {
                       // The line's wearers: tick who this worker finished; the pieces follow the ticks. Done ones show who did them.
-                      // Only the wearers forwarded from the step before are listed; on rework, only those sent back for rework.
+                      // Only the wearers forwarded from the step before are listed (not those still to come); on rework, those done
+                      // on this step, the ones sent back first.
                       const line = job.lines.find((l) => String(l.lineNo) === r.lineNo);
                       const roster = line?.roster ?? [];
                       if (roster.length === 0 || (line?.isSet && !r.part)) return null;
                       const step = line?.route?.find((x) => x.id === stepId);
                       const part = line?.isSet ? r.part : undefined;
                       const sentBack = (part ? step?.partRework?.[part] : step?.rework)?.wearers ?? [];
-                      if (r.rework && sentBack.length === 0) return null; // rework by count: the pieces are typed
-                      const forwarded = r.rework ? sentBack : (part ? step?.partForwarded?.[part] : step?.forwardedWearers) ?? null;
-                      const done = new Set(r.rework ? [] : part ? step?.partWearersDone?.[part] ?? [] : step?.doneWearers ?? []);
+                      const doneHere = part ? step?.partWearersDone?.[part] ?? [] : step?.doneWearers ?? [];
+                      const forwarded = r.rework ? [...sentBack, ...doneHere] : (part ? step?.partForwarded?.[part] : step?.forwardedWearers) ?? null;
+                      if (r.rework && forwarded?.length === 0) return null; // nobody done here yet: the rework pieces are typed
+                      const done = new Set(r.rework ? [] : doneHere);
                       // On a set, each wearer's parts already finished on this step.
                       const partsDone = (n: number) => (line?.isSet ? (['upper', 'lower'] as const).filter((p) => step?.partWearersDone?.[p]?.includes(n)) : []);
                       if (original) for (const o of (originalRows ?? []).filter((x) => String(x.lineNo) === r.lineNo)) for (const n of o.wearers ?? []) done.delete(n); // the entry being edited frees its own
                       const elsewhere = new Map(rows.flatMap((x, j) => (j !== i && x.lineNo === r.lineNo && x.rework === r.rework && x.part === r.part ? (x.wearers ?? []).map((n) => [n, j + 1] as const) : [])));
                       const mine = new Set(r.wearers ?? []);
                       const tick = (next: Set<number>) => set(i, { wearers: [...next].sort((a, b) => a - b), pieces: String(roster.filter((w) => next.has(w.rowNo)).reduce((s, w) => s + w.qty, 0) || '') });
-                      const listed = forwarded === null ? roster : roster.filter((w) => forwarded.includes(w.rowNo) || done.has(w.rowNo) || mine.has(w.rowNo));
+                      const listed = (forwarded === null ? roster : roster.filter((w) => forwarded.includes(w.rowNo) || done.has(w.rowNo) || mine.has(w.rowNo)))
+                        .sort((a, b) => (r.rework ? +!sentBack.includes(a.rowNo) - +!sentBack.includes(b.rowNo) : 0));
                       const notYet = roster.length - listed.length;
                       const left = listed.filter((w) => !done.has(w.rowNo) && !elsewhere.has(w.rowNo));
                       return (
                         <fieldset className="space-y-2 rounded-md bg-slate-50 p-3">
                           <legend className="sr-only">Wearers finished on row {i + 1}</legend>
                           <div className="flex flex-wrap items-center gap-2">
-                            {r.rework ? <span className="rounded bg-amber-100 px-2 py-0.5 text-sm font-medium text-amber-900">Rework · sent back{part ? ` · ${part} part` : ''}</span>
+                            {r.rework ? <span className="rounded bg-amber-100 px-2 py-0.5 text-sm font-medium text-amber-900">Who needs rework{part ? ` · ${part} part` : ''}</span>
                               : <span className="text-sm font-medium">Wearers finished{part ? ` · ${part} part` : ''}</span>}
                             <span className="text-xs text-slate-500">
-                              {r.rework ? `${sentBack.length} sent back for rework · tick the ones this worker redid`
+                              {r.rework ? `${listed.length} done on this step${sentBack.length ? `, ${sentBack.length} sent back for rework` : ''} · tick the ones this worker redid`
                                 : `${done.size} of ${roster.length} done on this step${part ? ` (${part} part)` : ''} · tick the ones this worker finished`}
                               {!r.rework && notYet > 0 && ` · ${notYet} not yet forwarded from the step before`}
                             </span>
@@ -206,6 +230,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                                     <span className="min-w-0 flex-1 truncate">{w.wearerName}<span className="text-slate-500">{w.size ? ` · ${w.size}` : w.sizeMode === 'measured' ? ' · measured' : ''}{w.jerseyNumber ? ` · #${w.jerseyNumber}` : ''}{w.qty > 1 ? ` · ${w.qty} pcs` : ''}</span></span>
                                     {line?.isSet ? partsDone(w.rowNo).map((p) => <span key={p} className="rounded bg-emerald-100 px-1 text-xs text-emerald-800">{p === 'upper' ? 'Upper' : 'Lower'} ✓</span>)
                                       : isDone && <span className="text-xs">done</span>}
+                                    {r.rework && sentBack.includes(w.rowNo) && <span className="rounded bg-amber-100 px-1 text-xs text-amber-900">sent back</span>}
                                     {otherRow && <span className="text-xs">row {otherRow}</span>}
                                   </label>
                                 </li>
@@ -222,33 +247,21 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                           {workers.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                         </select>
                       </Field>
-                      <Field label="Pieces" hint={(r.wearers?.length ?? 0) > 0 ? 'From the wearers ticked' : undefined}><input aria-label={`Row ${i + 1} pieces`} inputMode="numeric" readOnly={(r.wearers?.length ?? 0) > 0} className={`${cell} text-right tabular-nums`} value={r.pieces} onChange={(e) => set(i, { pieces: e.target.value })} /></Field>
-                      <div className="text-sm"><p className="font-medium">Rate per piece</p><p className="tabular-nums">{pay ? peso(pay.rateCents) : 'Awaiting calculation'}</p><p className="text-xs text-slate-500">Last calculated rate; leave the rate blank to use the table.</p></div>
+                      <Field label="Pieces" hint={[(r.wearers?.length ?? 0) > 0 ? 'From the wearers ticked' : '', (() => { const cap = r.lineNo ? capOf(r.lineNo, r.part, r.rework) : null; return cap === null ? '' : r.rework ? `${cap} done here` : `${cap} ready`; })()].filter(Boolean).join(' · ') || undefined}><input aria-label={`Row ${i + 1} pieces`} inputMode="numeric" readOnly={(r.wearers?.length ?? 0) > 0} className={`${cell} text-right tabular-nums`} value={r.pieces} onChange={(e) => set(i, { pieces: e.target.value })} /></Field>
+                      <div className="text-sm"><p className="font-medium">Rate per piece</p><p className="tabular-nums">{pay ? peso(pay.rateCents) : 'Awaiting calculation'}</p><p className="text-xs text-slate-500">From the price list. Payroll can change it.</p></div>
                     </div>
                     {askRepeat && (
                       <Field label="This matches a sheet already recorded. Why is it a different sheet? (at least 5 characters)" hint="If the pieces were redone, tick Rework (pasubra) instead.">
                         <input aria-label={`Row ${i + 1} repeat reason`} className={cell} value={r.repeatReason ?? ''} onChange={(e) => set(i, { repeatReason: e.target.value })} />
                       </Field>
                     )}
-                    <PayDetails title="Change rate or record rework" active={!!r.rate.trim() || r.rework || !!r.rateReason.trim()}>
-                      <label className="flex items-center gap-2 text-sm"><input aria-label={`Row ${i + 1} rework`} type="checkbox" checked={r.rework} onChange={(e) => set(i, { rework: e.target.checked, ...(r.wearers?.length ? { wearers: [], pieces: '' } : {}) })} /> Rework (pasubra)</label>
-                      <Field label="Rate (blank = table)">
-                        <input aria-label={`Row ${i + 1} rate`} inputMode="decimal" className={`${cell} text-right tabular-nums`} value={r.rate} onChange={(e) => set(i, { rate: e.target.value })} />
-                      </Field>
-                      {(r.rate.trim() || r.rework) && <Field label="Why this rate?"><input aria-label={`Row ${i + 1} rate reason`} placeholder="Why this rate?" className={cell} value={r.rateReason} onChange={(e) => set(i, { rateReason: e.target.value })} /></Field>}
-                      <p className="text-sm text-slate-600">{r.rework ? 'Rework is paid at the typed rate and does not add to normal production progress.' : 'A typed rate replaces the usual rate for these pieces only.'} {pay && <>Last calculated piece pay for this entry: <b className="tabular-nums">{peso(pay.amountCents)}</b>.</>}</p>
-                    </PayDetails>
+                    {r.rework && <p className="text-xs text-slate-600">Rework is paid the price list rate and does not add to the pieces done on this step.{pay ? <> Piece pay: <b className="tabular-nums">{peso(pay.amountCents)}</b>.</> : null}</p>}
                   </section>
                 );
               })}
             </div>
             <Button onClick={() => setRows([...rows, emptyRow(rows.at(-1)?.lineNo ?? '')])}>+ Another worker</Button>
           </Panel>
-        )}
-        {askOverCap && (
-          <Field label="Why more pieces than came out of the step before? (at least 10 characters)">
-            <input className={inputClass} value={overCapReason} onChange={(e) => setOverCapReason(e.target.value)} />
-          </Field>
         )}
         <Errors list={errors} show={touched} />
       </div>

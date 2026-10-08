@@ -181,8 +181,9 @@ describe('production entries (PLAN E7 assignments)', () => {
     );
     expect(await issues(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 41 }], { overCapReason: 'Cutter forgot to record 20 pieces' }))).toEqual([]);
     expect((await record(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 40 }]))).statusCode).toBe(200);
-    // Pasubra (rework) is paid at a typed rate and sits outside the caps (OWN-25).
-    expect(await issues(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer2, pieces: 5, rework: true }]))).toEqual(['REWORK_RATE']);
+    // Pasubra (rework) is paid the table rate unless one is typed, and sits outside the caps; at most what is done.
+    expect(await issues(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer2, pieces: 5, rework: true }]))).toEqual([]);
+    expect(await issues(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer2, pieces: 41, rework: true }]))).toEqual(['REWORK_OVER']);
     const rework = await record(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer2, pieces: 5, rework: true, rateCents: 2_000, rateReason: 'Pasubra on loose seams' }]));
     expect(rework.json()).toMatchObject({ totalCents: 10_000 });
     expect(statuses(jo, 1)[1]).toEqual(['SEWING', 'in_progress', 40]);
