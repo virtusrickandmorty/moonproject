@@ -105,7 +105,7 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
   const step = (id: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) => api.prdStep(card.jobOrderId, card.lineNo, id, action, reason).then(onChanged);
   return (
     <Dialog wide title={`${card.number} · line ${card.lineNo}: ${card.description}`} onClose={onClose}>
-      <p className="text-sm text-slate-600">{card.customerName} · {card.qty} {card.isSet ? 'sets (upper and lower)' : 'pcs'} · due {showDate(card.dueDate)}{card.complexity ? ` · ${card.complexity}` : ''}</p>
+      <p className="text-sm text-slate-600">{card.customerName} · {card.qty} {card.isSet ? 'sets (upper and lower)' : 'pcs'} · due {showDate(card.dueDate)}</p>
       {editing ? (
         <SetupForm card={card} cat={cat} onSaved={() => onChanged().then(() => setEditing(false))} onCancel={card.steps ? () => setEditing(false) : onClose} disabled={!can.progress} />
       ) : (
@@ -162,11 +162,11 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
 function SetupForm({ card, cat, onSaved, onCancel, disabled }: { card: BoardCard; cat: PrdCatalogue; onSaved: () => Promise<unknown>; onCancel: () => void; disabled: boolean }) {
   const [templateId, setTemplateId] = useState<number | undefined>(card.templateId ?? undefined);
   const [stepIds, setStepIds] = useState<number[]>(card.steps?.map((s) => s.stepId) ?? []);
-  const [complexity, setComplexity] = useState(card.complexity ?? 'standard');
   const a = useAction();
   const toggle = (id: number) => setStepIds(stepIds.includes(id) ? stepIds.filter((x) => x !== id) : [...stepIds, id]);
   // The garment type for piece rates (and whether the line is a set) comes from the price list item the line matches: not typed here.
-  const save = () => api.prdSetup(card.jobOrderId, card.lineNo, { ...(templateId ? { templateId } : {}), stepIds, complexity }).then(onSaved);
+  // Piece rates go by the price list item (the owner's decision, Oct 2026): no complexity is picked; the standard rate applies.
+  const save = () => api.prdSetup(card.jobOrderId, card.lineNo, { ...(templateId ? { templateId } : {}), stepIds, complexity: 'standard' }).then(onSaved);
   return (
     <div className="space-y-3">
       <div>
@@ -186,12 +186,6 @@ function SetupForm({ card, cat, onSaved, onCancel, disabled }: { card: BoardCard
           ))}
         </div>
       </fieldset>
-      <div role="radiogroup" aria-label="Complexity" className="flex gap-2">
-        {cat.complexities.map((x) => (
-          <button key={x} type="button" role="radio" aria-checked={complexity === x} onClick={() => setComplexity(x)}
-            className={`rounded-md px-3 py-1 text-sm capitalize ring-1 ${complexity === x ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300'}`}>{x}</button>
-        ))}
-      </div>
       {a.error && <Notice>{a.error}</Notice>}
       <div className="flex justify-end gap-2">
         <Button onClick={onCancel}>Back</Button>
