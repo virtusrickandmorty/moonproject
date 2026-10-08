@@ -22,8 +22,8 @@ import { ItemSearch } from './parts.tsx';
 import { TERMS } from './opening.ts';
 import { parseRosterPaste } from './roster.ts';
 import {
-  KIND_OF_CLASS, ROSTER_CATEGORIES, blankLine, emptyJo, emptyJoLine, fromWearer, joInput, joValues, lineQty, oneOff, priceChanged,
-  valuesFromQuotation, type JoDoc, type JoInput, type JoLineRow, type JoValues, type RosterCategory, type RosterEdit,
+  KIND_OF_CLASS, blankLine, emptyJo, emptyJoLine, fromWearer, joInput, joValues, lineQty, oneOff, priceChanged,
+  valuesFromQuotation, type JoDoc, type JoInput, type JoLineRow, type JoValues, type RosterEdit,
 } from './forms.ts';
 
 const money = `${inputClass} text-right tabular-nums`;
@@ -75,25 +75,19 @@ function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWearers | n
     const out = parseRosterPaste(paste ?? '', wearers);
     setPasteErrors(out.errors);
     if (out.errors.length > 0) return;
-    p.onChange([...rows, ...out.rows.map((g) => ({ personId: g.personId ?? '', name: g.wearerName, sizeMode: g.sizeMode, size: g.size ?? (g.personId ? wearers.find((w) => w.personId === g.personId)?.size ?? '' : ''), jerseyName: g.jerseyName ?? '', jerseyNumber: g.jerseyNumber ?? '', category: '' as const, qty: String(g.qty) }))]);
+    p.onChange([...rows, ...out.rows.map((g) => ({ personId: g.personId ?? '', name: g.wearerName, sizeMode: g.sizeMode, size: g.size ?? (g.personId ? wearers.find((w) => w.personId === g.personId)?.size ?? '' : ''), jerseyName: g.jerseyName ?? '', jerseyNumber: g.jerseyNumber ?? '', qty: String(g.qty), garmentType: '' }))]);
     setPaste(null);
   };
   return (
     <div className="space-y-2">
       {rows.length > 0 && (
         <table className="block w-full text-sm lg:table">
-          <thead className="hidden text-left text-slate-500 lg:table-header-group"><tr><th>Wearer</th><th className="w-28">Category</th><th className="w-28">Size</th><th>Jersey name</th><th className="w-20">No.</th><th className="w-16">Qty</th><th /></tr></thead>
+          <thead className="hidden text-left text-slate-500 lg:table-header-group"><tr><th>Wearer</th><th className="w-28">Size</th><th>Jersey name</th><th className="w-20">No.</th><th className="w-16">Qty</th><th className="w-44">Garment type</th><th /></tr></thead>
           <tbody className="grid gap-2 lg:table-row-group">
             {rows.map((r, j) => (
               <tr key={j} className="grid gap-2 rounded border p-2 sm:grid-cols-2 lg:table-row lg:border-0 lg:p-0">
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Wearer</span>
                   {r.personId ? <span>{r.name}</span> : <input aria-label={`${p.n} wearer ${j + 1} name`} placeholder="One-off name" className={inputClass} value={r.name} onChange={(e) => set(j, { name: e.target.value })} />}
-                </td>
-                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Category</span>
-                  <select aria-label={`${p.n} wearer ${j + 1} category`} className={inputClass} value={r.category} onChange={(e) => set(j, { category: e.target.value as RosterCategory })}>
-                    <option value="" />
-                    {ROSTER_CATEGORIES.map(([value, words]) => <option key={value} value={value}>{words}</option>)}
-                  </select>
                 </td>
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Size</span>
                   <select aria-label={`${p.n} wearer ${j + 1} size`} className={inputClass} value={r.sizeMode === 'measured' ? MEASURED : r.size}
@@ -106,6 +100,7 @@ function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWearers | n
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Jersey name</span><input aria-label={`${p.n} wearer ${j + 1} jersey name`} className={`${inputClass} uppercase`} value={r.jerseyName} onChange={(e) => set(j, { jerseyName: e.target.value })} /></td>
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">No.</span><input aria-label={`${p.n} wearer ${j + 1} jersey number`} className={inputClass} value={r.jerseyNumber} onChange={(e) => set(j, { jerseyNumber: e.target.value })} /></td>
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Qty</span><input aria-label={`${p.n} wearer ${j + 1} qty`} inputMode="numeric" className={money} value={r.qty} onChange={(e) => set(j, { qty: e.target.value })} /></td>
+                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Garment type</span><input aria-label={`${p.n} wearer ${j + 1} garment type`} maxLength={60} placeholder="e.g. Jersey (men)" className={inputClass} value={r.garmentType} onChange={(e) => set(j, { garmentType: e.target.value })} /></td>
                 <td className="py-1"><Button onClick={() => p.onChange(rows.filter((_, k) => k !== j))} title="Take off the list">✕</Button></td>
               </tr>
             ))}

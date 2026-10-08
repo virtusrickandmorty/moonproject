@@ -13,17 +13,14 @@ import type { Terms } from './opening.ts';
 /* ---------- Job order ---------- */
 
 /** One wearer on a line: a wearer of the customer (personId) or a one-off name typed in. */
-/** A wearer's category on the roster (male or female, for the cut); '' when not given. */
-export type RosterCategory = '' | 'male' | 'female';
-export const ROSTER_CATEGORIES: [Exclude<RosterCategory, ''>, string][] = [['male', 'Male'], ['female', 'Female']];
-export interface RosterEdit { personId: string; name: string; sizeMode: 'preset' | 'measured'; size: string; jerseyName: string; jerseyNumber: string; category: RosterCategory; qty: string }
+export interface RosterEdit { personId: string; name: string; sizeMode: 'preset' | 'measured'; size: string; jerseyName: string; jerseyNumber: string; qty: string; garmentType: string }
 /** A line; `listCents` is the price list's tier price for the quantity (null when not from the price list). */
 export interface JoLineRow { itemId: string; kind: Kind; description: string; qty: string; price: string; listCents: number | null; discount: string; roster: RosterEdit[] }
 export interface JoValues {
   customer: { id: string; name: string } | null;
   contact: string; dueInDays: string; priority: 'normal' | 'rush'; paymentTerms: Terms | ''; notes: string; lines: JoLineRow[];
 }
-export interface RosterInput { personId?: string; name?: string; sizeMode: 'preset' | 'measured'; size?: string; jerseyName?: string; jerseyNumber?: string; category?: 'male' | 'female'; qty: number }
+export interface RosterInput { personId?: string; name?: string; sizeMode: 'preset' | 'measured'; size?: string; jerseyName?: string; jerseyNumber?: string; qty: number; garmentType?: string }
 export interface JoLineInput { kind: Kind; description: string; qty: number; unitPriceCents: number; discountCents: number; roster: RosterInput[] }
 export interface JoInput { customerId: string; contact?: string; dueInDays: number; priority: 'normal' | 'rush'; paymentTerms: Terms; notes?: string; lines: JoLineInput[] }
 /** What GET /api/docs/jo.job_order/:id keeps beside the input: the names shown for listed wearers. */
@@ -31,11 +28,11 @@ export interface JoDoc { customerName: string; lines: { roster: { wearerName: st
 
 export const emptyJoLine = (): JoLineRow => ({ itemId: '', kind: 'made_to_order', description: '', qty: '1', price: '', listCents: null, discount: '', roster: [] });
 export const emptyJo = (): JoValues => ({ customer: null, contact: '', dueInDays: '15', priority: 'normal', paymentTerms: '', notes: '', lines: [emptyJoLine()] });
-export const oneOff = (name = ''): RosterEdit => ({ personId: '', name, sizeMode: 'preset', size: '', jerseyName: '', jerseyNumber: '', category: '', qty: '1' });
+export const oneOff = (name = ''): RosterEdit => ({ personId: '', name, sizeMode: 'preset', size: '', jerseyName: '', jerseyNumber: '', qty: '1', garmentType: '' });
 
 /** A wearer of the customer on a roster row, with the size and jersey on file (a measured wearer's chart is linked by the server). */
 export const fromWearer = (w: WearerPick): RosterEdit => ({
-  personId: w.personId, name: w.wearerName, sizeMode: w.sizeMode, size: w.size ?? '', jerseyName: w.jerseyName ?? '', jerseyNumber: w.jerseyNumber ?? '', category: '', qty: '1',
+  personId: w.personId, name: w.wearerName, sizeMode: w.sizeMode, size: w.size ?? '', jerseyName: w.jerseyName ?? '', jerseyNumber: w.jerseyNumber ?? '', qty: '1', garmentType: '',
 });
 
 /** The catalog item's class -> the kind of line (sales account and production). */
@@ -79,8 +76,8 @@ export function joInput(v: JoValues): { input: JoInput; totalCents: number; erro
         ...(r.sizeMode === 'preset' ? optional('size', r.size.toUpperCase()) : {}),
         ...optional('jerseyName', r.jerseyName.toUpperCase()),
         ...optional('jerseyNumber', r.jerseyNumber),
-        ...(r.category ? { category: r.category } : {}),
         qty: Number(r.qty),
+        ...optional('garmentType', r.garmentType),
       });
     });
     if (errors.length === before) lines.push({ kind: l.kind, description: l.description.trim(), qty: Number(qty), unitPriceCents: price!, discountCents: discount!, roster });
@@ -122,8 +119,8 @@ export function joValues(i: JoInput, doc?: JoDoc): JoValues {
         size: r.size ?? '',
         jerseyName: r.jerseyName ?? '',
         jerseyNumber: r.jerseyNumber ?? '',
-        category: r.category ?? '',
         qty: String(r.qty),
+        garmentType: r.garmentType ?? '',
       })),
     })),
   };

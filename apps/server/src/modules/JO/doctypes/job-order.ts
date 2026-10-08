@@ -18,9 +18,6 @@ const DOWNPAYMENT_BP: Record<(typeof PAYMENT_TERMS)[number], number> = { dp50: 5
 
 const text = (max: number) => z.string().trim().min(1).max(max);
 
-/** A wearer's category on the roster (the owner's request, Oct 2026). */
-export const ROSTER_CATEGORIES = ['male', 'female'] as const;
-
 const rosterRow = z
   .object({
     personId: z.uuid().optional(), // a wearer of this customer, or
@@ -29,7 +26,7 @@ const rosterRow = z
     size: text(20).optional(),
     jerseyName: text(40).optional(),
     jerseyNumber: text(10).optional(),
-    category: z.enum(ROSTER_CATEGORIES).optional(), // male or female, for the cut
+    garmentType: text(60).optional(), // typed by hand, e.g. "Jersey (men)" (the owner's request, Oct 2026)
     qty: z.number().int().min(1).max(1000),
     notes: text(200).optional(),
   })
@@ -134,13 +131,13 @@ export function persistLines(db: Db, documentId: string, lines: readonly JoLine[
     'INSERT INTO jo_lines (document_id, line_no, kind, description, qty, unit_price_cents, discount_cents, line_total_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
   );
   const row = db.prepare(
-    `INSERT INTO jo_roster (document_id, line_no, row_no, person_id, group_id, wearer_name, size_mode, size, chart_id, chart_revision, jersey_name, jersey_number, qty, notes, category)
+    `INSERT INTO jo_roster (document_id, line_no, row_no, person_id, group_id, wearer_name, size_mode, size, chart_id, chart_revision, jersey_name, jersey_number, qty, notes, garment_type)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const l of lines) {
     line.run(documentId, l.lineNo, l.kind, l.description, l.qty, l.unitPriceCents, l.discountCents, l.lineTotalCents);
     for (const r of l.roster) {
-      row.run(documentId, l.lineNo, r.rowNo, r.personId ?? null, r.groupId, r.wearerName, r.sizeMode, r.size ?? null, r.chartId, r.chartRevision, r.jerseyName ?? null, r.jerseyNumber ?? null, r.qty, r.notes ?? null, r.category ?? null);
+      row.run(documentId, l.lineNo, r.rowNo, r.personId ?? null, r.groupId, r.wearerName, r.sizeMode, r.size ?? null, r.chartId, r.chartRevision, r.jerseyName ?? null, r.jerseyNumber ?? null, r.qty, r.notes ?? null, r.garmentType ?? null);
     }
   }
 }
@@ -149,7 +146,7 @@ export function loadLines(db: Db, documentId: string): JoLine[] {
   const rows = db
     .prepare(
       `SELECT line_no AS lineNo, person_id AS personId, CASE WHEN person_id IS NULL THEN wearer_name END AS name, size_mode AS sizeMode, size,
-         jersey_name AS jerseyName, jersey_number AS jerseyNumber, category, qty, notes, row_no AS rowNo, wearer_name AS wearerName, group_id AS groupId,
+         jersey_name AS jerseyName, jersey_number AS jerseyNumber, garment_type AS garmentType, qty, notes, row_no AS rowNo, wearer_name AS wearerName, group_id AS groupId,
          chart_id AS chartId, chart_revision AS chartRevision
        FROM jo_roster WHERE document_id = ? ORDER BY line_no, row_no`,
     )
@@ -161,7 +158,7 @@ export function loadLines(db: Db, documentId: string): JoLine[] {
     )
     .all(documentId) as Omit<JoLine, 'roster'>[];
   const roster = (lineNo: number) =>
-    rows.filter((r) => r.lineNo === lineNo).map(({ lineNo: _, ...r }) => dropNulls(r, ['personId', 'name', 'size', 'jerseyName', 'jerseyNumber', 'category', 'notes']) as unknown as RosterRow);
+    rows.filter((r) => r.lineNo === lineNo).map(({ lineNo: _, ...r }) => dropNulls(r, ['personId', 'name', 'size', 'jerseyName', 'jerseyNumber', 'garmentType', 'notes']) as unknown as RosterRow);
   return lines.map((l) => ({ ...l, roster: roster(l.lineNo) }));
 }
 
@@ -272,7 +269,7 @@ export const jobOrderDoc: DocTypeDef<JobOrderInput, JobOrder> = {
     if (byCustomer.size === 0) throw new Error('jo.job_order.arbitrary needs at least one customer with active wearers');
     return fc.constantFrom(...byCustomer.keys()).chain((customerId) => {
       const who = fc.oneof(fc.constantFrom(...byCustomer.get(customerId)!).map((w) => ({ personId: w.id })), fc.constant({ name: 'One-off Wearer' }));
-      const row = fc.record({ who, size: fc.constantFrom('S', 'M', 'L', '2XL'), jerseyName: fc.constantFrom(undefined, 'ace', 'Dela Cruz'), category: fc.constantFrom(undefined, ...ROSTER_CATEGORIES), qty: fc.integer({ min: 1, max: 3 }) });
+      const row = fc.record({ who, size: fc.constantFrom('S', 'M', 'L', '2XL'), jerseyName: fc.constantFrom(undefined, 'ace', 'Dela Cruz'), garmentType: fc.constantFrom(undefined, 'Jersey (men)', 'Shorts'), qty: fc.integer({ min: 1, max: 3 }) });
       const line = fc
         .record({ roster: fc.array(row, { maxLength: 4 }), qty: fc.integer({ min: 1, max: 30 }), unitPriceCents: fc.integer({ min: 0, max: 500_000 }), discountPct: fc.integer({ min: 0, max: 100 }) })
         .map(({ roster, qty, unitPriceCents, discountPct }) => {
@@ -283,7 +280,7 @@ export const jobOrderDoc: DocTypeDef<JobOrderInput, JobOrder> = {
             qty: pieces,
             unitPriceCents,
             discountCents: Math.floor((pieces * unitPriceCents * discountPct) / 100),
-            roster: roster.map(({ who, size, jerseyName, category, qty: n }) => ({ ...who, sizeMode: 'preset' as const, size, ...(jerseyName ? { jerseyName } : {}), ...(category ? { category } : {}), qty: n })),
+            roster: roster.map(({ who, size, jerseyName, garmentType, qty: n }) => ({ ...who, sizeMode: 'preset' as const, size, ...(jerseyName ? { jerseyName } : {}), ...(garmentType ? { garmentType } : {}), qty: n })),
           };
         });
       return fc
