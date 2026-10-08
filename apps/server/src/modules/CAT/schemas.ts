@@ -16,6 +16,8 @@ export const itemInput = z.object(itemFields).strict().superRefine((v, ctx) => {
     ctx.addIssue({ code: 'custom', path: ['setComponents'], message: 'A piece has one production component.' });
   }
 });
+/** A new item: the code may be left out, and the server gives the next one for its class (MTO-0001, SRV-0001, RTW-0001). */
+export const itemCreate = z.object({ ...itemFields, code: itemFields.code.optional() }).strict();
 export const itemUpdate = z.object(itemFields).partial().strict();
 export const priceInput = z.object({
   effectiveFrom: z.iso.date(),

@@ -295,7 +295,7 @@ export interface PrdJob {
 export interface PrdWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
 export interface PrdSetup { templateId?: number; stepIds: number[]; garmentType: string; complexity: string }
 export interface Worker { id: string; code: string; name: string }
-export interface PieceRate { id: number; garmentType: string; stepCode: string; complexity: string; rateCents: number; effectiveFrom: string; reason: string; createdAt: string }
+export interface PieceRate { id: number; garmentType: string; stepCode: string; complexity: string; part?: 'whole' | 'upper' | 'lower'; rateCents: number; effectiveFrom: string; reason: string; createdAt: string }
 export interface RateTable { asOf: string; current: PieceRate[]; history: PieceRate[]; garmentTypes: string[] }
 /** Employees and time (EMP). Government IDs arrive masked without emp.view_ids; pay history is null without pay.view_rates. */
 export interface EmployeeRow { id: string; code: string; fullName: string; position: string | null; department: string | null; costCentre: string; isActive: boolean; hireDate: string; separatedOn: string | null }

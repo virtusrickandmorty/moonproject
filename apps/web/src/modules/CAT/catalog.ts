@@ -25,11 +25,11 @@ export const moneyCents = (text: string): number | null => {
 export const blankItem = (): ItemValues => ({ code: '', name: '', class: 'made_to_order_garment', garmentType: '', unit: 'pc', setComponents: 1 });
 export const valuesOf = (row: Item): ItemValues => ({ code: row.code, name: row.name, class: row.class, garmentType: row.garment_type ?? '', unit: row.unit, setComponents: row.set_components });
 
-/** The strict body of POST /api/cat/items and PUT /api/cat/items/:id: a garment type only for garments, one component for a piece. */
+/** The strict body of POST /api/cat/items and PUT /api/cat/items/:id: a garment type only for garments, one component for a piece, two (upper and lower) for a set; no code for the next one. */
 export const itemBody = (v: ItemValues) => ({
-  code: v.code.trim(), name: v.name.trim(), class: v.class,
+  ...(v.code.trim() ? { code: v.code.trim() } : {}), name: v.name.trim(), class: v.class,
   garmentType: v.class === 'made_to_order_garment' ? v.garmentType.trim() : null,
-  unit: v.unit, setComponents: v.unit === 'pc' ? 1 : v.setComponents,
+  unit: v.unit, setComponents: v.unit === 'pc' ? 1 : 2, // a set is an upper and a lower part
 });
 
 /** The server refuses a change of type or unit once an item has prices (ITEM_IN_USE); the form says so instead of letting it try. */
