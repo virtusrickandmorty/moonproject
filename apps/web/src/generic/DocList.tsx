@@ -91,12 +91,13 @@ export function QuickAction({ label, title, onClick, tone = 'plain' }: { label: 
  * `pageSize`: numbered pages of this many rows (Newer / Older) instead of "Show older". `form` and `view` open over the
  * list what the address names (`opened`, from openedFrom). `noEdit`: no Edit on its rows (its view has none either).
  * `rowActions`: a screen's own quick actions for a row, before Print, Edit and Cancel (a job order's Make payment).
- * `formTitled`: the form shows no heading of its own in a dialog, so the dialog shows its title.
+ * `formTitled`: the form shows no heading of its own in a dialog, so the dialog shows its title. `formSize`: "screen" for a
+ * form that needs the whole width (a job order with its breakdown beside it).
  * `source`, `columns`, `detail` and `searchHint`: a module's own rows, its columns after Amount, a line under a row's
  * summary (why a search found it) and what its search reads.
  */
-export function DocList({ type, notice, pageSize, form, view, opened, noEdit, rowActions, formTitled, source, columns = [], detail, searchHint }: {
-  type: DocTypeInfo; notice?: string; pageSize?: number; form?: ListForm; view?: ListView; opened?: Opened; noEdit?: boolean; rowActions?: (r: DocHeader) => ReactNode; formTitled?: boolean;
+export function DocList({ type, notice, pageSize, form, view, opened, noEdit, rowActions, formTitled, formSize = 'full', source, columns = [], detail, searchHint }: {
+  type: DocTypeInfo; notice?: string; pageSize?: number; form?: ListForm; view?: ListView; opened?: Opened; noEdit?: boolean; rowActions?: (r: DocHeader) => ReactNode; formTitled?: boolean; formSize?: 'full' | 'screen';
   source?: ListSource; columns?: ListColumn[]; detail?: (r: DocHeader) => ReactNode; searchHint?: string;
 }) {
   const [status, setStatus] = useState('');
@@ -308,7 +309,7 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
       )}
       {form && shown && shown.kind !== 'view' && (
         <Dialog key={shown.kind === 'edit' ? `edit-${shown.id}` : `new-${shown.draftId ?? ''}`} title={shown.kind === 'edit' ? `Edit ${labelOf(type)}` : `New ${labelOf(type)}`}
-          size="full" hideTitle={!formTitled} leaving={leaving} beforeClose={mayCloseForm} onClose={formClosed}>
+          size={formSize} hideTitle={!formTitled} leaving={leaving} beforeClose={mayCloseForm} onClose={formClosed}>
           {form({ mode: shown.kind === 'edit' ? { kind: 'edit', id: shown.id } : { kind: 'new', draftId: shown.draftId }, setDirty: (d) => { dirty.current = d; }, close: () => void closeForm(), show: showRecorded })}
         </Dialog>
       )}
