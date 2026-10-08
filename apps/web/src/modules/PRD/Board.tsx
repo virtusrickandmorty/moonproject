@@ -111,7 +111,7 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
 function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; cat: PrdCatalogue; can: { progress: boolean; assign: boolean }; onChanged: () => Promise<unknown>; onClose: () => void }) {
   const [editing, setEditing] = useState(card.steps === null);
   const [reopen, setReopen] = useState<number | null>(null);
-  const [sendBack, setSendBack] = useState<number | null>(null);
+  const [sendBack, setSendBack] = useState(false);
   const a = useAction();
   const name = (id: number) => cat.steps.find((s) => s.id === id)?.name ?? '?';
   const step = (id: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) => api.prdStep(card.jobOrderId, card.lineNo, id, action, reason).then(onChanged);
@@ -149,7 +149,6 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
                     {can.assign && !closed && <Link to={docPath('prd.entry', `/new?jo=${card.jobOrderId}&step=${s.stepId}`)} className="text-sm text-indigo-700 underline">Record pieces</Link>}
                     {can.assign && (s.reworkOpen ?? 0) > 0 && <Link to={docPath('prd.entry', `/new?jo=${card.jobOrderId}&step=${s.stepId}&rework=1`)} className="text-sm text-amber-800 underline">Record rework</Link>}
                     <span className="flex-1" />
-                    {can.progress && s.status !== 'not_needed' && s.pieces + (s.parts ? Math.max(s.parts.upper, s.parts.lower) : 0) > 0 && <Button onClick={() => setSendBack(s.stepId)}>Send back for rework</Button>}
                     {can.progress && !closed && <Button disabled={a.busy || !flow.canComplete} title={flow.shortWords || undefined} onClick={() => a.run(() => step(s.stepId, 'complete'))}>Complete</Button>}
                     {can.progress && s.status === 'pending' && <Button disabled={a.busy} onClick={() => a.run(() => step(s.stepId, 'not-needed'))}>Not needed</Button>}
                     {can.progress && closed && <Button onClick={() => setReopen(s.stepId)}>Reopen</Button>}
@@ -162,6 +161,10 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
           {a.error && <Notice>{a.error}</Notice>}
           <div className="flex justify-between gap-2">
             {can.progress ? <Button onClick={() => setEditing(true)}>Change production steps</Button> : <span />}
+            <span className="flex-1" />
+            {/* Rework goes back to the first step and through every step again (the owner's rule, Oct 2026). */}
+            {can.progress && (() => { const first = card.steps!.find((s) => s.status !== 'not_needed'); return first && first.pieces + (first.parts ? Math.max(first.parts.upper, first.parts.lower) : 0) > 0; })()
+              && <Button onClick={() => setSendBack(true)}>Send back for rework</Button>}
             <Button onClick={onClose}>Close</Button>
           </div>
         </>
@@ -170,14 +173,15 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
         <ReasonDialog title={`Reopen ${name(reopen)}?`} explain="The step goes back to work until it is completed again. The job order is no longer ready." confirmLabel="Reopen"
           onConfirm={(reason) => step(reopen, 'reopen', reason).then(() => setReopen(null))} onClose={() => setReopen(null)} />
       )}
-      {sendBack !== null && <SendBackDialog card={card} stepId={sendBack} stepName={name(sendBack)} onDone={() => onChanged().then(() => setSendBack(null))} onClose={() => setSendBack(null)} />}
+      {sendBack && (() => { const first = card.steps!.find((s) => s.status !== 'not_needed')!; return <SendBackDialog card={card} stepId={first.stepId} stepName={name(first.stepId)} onDone={() => onChanged().then(() => setSendBack(false))} onClose={() => setSendBack(false)} />; })()}
     </Dialog>
   );
 }
 
 /**
- * Send back for rework (the owner's request, Oct 2026): pieces found needing rework go back to a step they went through.
- * With a wearer list, tick whose pieces go back (those done on that step); else type how many.
+ * Send back for rework (the owner's rule, Oct 2026): pieces found needing rework go back to the first step (`stepId`) and
+ * through every step again, labelled rework. With a wearer list, tick whose pieces go back (those through the first step
+ * and not in rework already); else type how many.
  */
 function SendBackDialog({ card, stepId, stepName, onDone, onClose }: { card: BoardCard; stepId: number; stepName: string; onDone: () => Promise<unknown>; onClose: () => void }) {
   const [job, setJob] = useState<PrdJob | null>(null);
@@ -188,17 +192,17 @@ function SendBackDialog({ card, stepId, stepName, onDone, onClose }: { card: Boa
   const line = job?.lines.find((l) => l.lineNo === card.lineNo);
   const s = line?.route?.find((x) => x.id === stepId);
   const done = new Set(part ? s?.partWearersDone?.[part] ?? [] : s?.doneWearers ?? []);
-  const back = new Set((part ? s?.partRework?.[part] : s?.rework)?.wearers ?? []);
+  const back = new Set((line?.route ?? []).flatMap((x) => (part ? x.partRework?.[part] : x.rework)?.wearers ?? []));
   const choosable = (line?.roster ?? []).filter((w) => done.has(w.rowNo) && !back.has(w.rowNo));
   const byWearer = choosable.length > 0;
   const n = Number(pieces);
   const valid = !(card.isSet && !part) && (byWearer ? ticked.length > 0 : Number.isInteger(n) && n > 0);
   const send = (reason: string) => valid
-    ? api.prdRework(card.jobOrderId, card.lineNo, stepId, { ...(byWearer ? { wearers: ticked } : { pieces: n }), ...(part ? { part } : {}), reason }).then(onDone)
+    ? api.prdRework(card.jobOrderId, card.lineNo, { ...(byWearer ? { wearers: ticked } : { pieces: n }), ...(part ? { part } : {}), reason }).then(onDone)
     : Promise.reject(new Error(card.isSet && !part ? 'Pick the upper or the lower part.' : byWearer ? 'Tick the wearers whose pieces need rework.' : 'Type how many pieces need rework.'));
   return (
-    <ReasonDialog title={`Send back to ${stepName} for rework`} confirmLabel="Send back for rework" onConfirm={send} onClose={onClose}
-      explain={`What was done on ${stepName} stays recorded. The pieces show there as rework until a worker records them as rework (pasubra), and they are not released meanwhile.`}>
+    <ReasonDialog title="Send back for rework" confirmLabel="Send back for rework" onConfirm={send} onClose={onClose}
+      explain={`The pieces go back to ${stepName} and through every step again, labelled rework. What was done stays recorded; each step is paid its price list rate for the rework, and the pieces are not released until they are done again.`}>
       {card.isSet && (
         <div role="radiogroup" aria-label="Part of the set" className="flex flex-wrap items-center gap-2">
           <span className="text-sm font-medium">Part of the set</span>
@@ -222,7 +226,7 @@ function SendBackDialog({ card, stepId, stepName, onDone, onClose }: { card: Boa
               </li>
             ))}
           </ul>
-          {back.size > 0 && <p className="text-xs text-amber-800">{back.size} already sent back, not redone yet.</p>}
+          {back.size > 0 && <p className="text-xs text-amber-800">{back.size} already in rework.</p>}
         </fieldset>
       ) : (
         <Field label="Pieces that need rework"><input aria-label="Pieces that need rework" inputMode="numeric" className={inputClass} value={pieces} onChange={(e) => setPieces(e.target.value)} /></Field>
