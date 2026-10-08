@@ -66,4 +66,17 @@ describe('piece rates', () => {
     const grants = env.db.prepare(`SELECT role_key FROM role_permissions WHERE permission_key = 'rate.override' AND granted = 1 ORDER BY role_key`).pluck().all();
     expect(grants).toEqual(['accountant', 'encoder', 'owner']); // OWN-26: encoders may override, with a reason
   });
+
+  it("keeps a set's upper and lower rates apart from a whole garment's (the owner's request, Oct 2026)", async () => {
+    for (const [part, rateCents] of [['upper', 4_500], ['lower', 3_500]] as const) {
+      expect((await add({ garmentType: 'Jersey set', part, rateCents, reason: 'Set rates for the jersey set' })).json()).toMatchObject({ garmentType: 'Jersey set', part, rateCents });
+    }
+    expect((await add({ garmentType: 'Jersey set', part: 'middle' })).statusCode).toBe(400);
+    expect(rateAt(env.db, 'Jersey set', 'SEWING', 'standard', '2026-09-28', 'upper')?.rateCents).toBe(4_500);
+    expect(rateAt(env.db, 'Jersey set', 'SEWING', 'standard', '2026-09-28', 'lower')?.rateCents).toBe(3_500);
+    expect(rateAt(env.db, 'Jersey set', 'SEWING', 'standard', '2026-09-28')).toBeUndefined(); // no whole-garment rate
+    expect(rateAt(env.db, 'T-shirt', 'SEWING', 'standard', '2026-09-28')?.part).toBe('whole'); // every earlier rate is whole
+    const parts = (await encoder.get(RATES)).json().current.filter((x: { garmentType: string }) => x.garmentType === 'Jersey set').map((x: { part: string }) => x.part);
+    expect(parts.sort()).toEqual(['lower', 'upper']);
+  });
 });
