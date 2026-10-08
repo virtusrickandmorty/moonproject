@@ -65,7 +65,10 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
   const typed = releaseInput(v, status?.lines ?? []);
   const live = useLive(JSON.stringify(typed.release), typed.releaseErrors.length === 0, () => api.joReleasePreview(typed.release));
   const balance = live?.release.doc.balanceDueCents ?? status?.money.balanceDueCents ?? 0;
-  const ready = status ? READY.includes(status.stage) : true;
+  // Ready when every line picked may go out now (its own production is done); an older server says it by the stage.
+  const picked = (status?.lines ?? []).filter((l) => { const q = (v.qtys[l.lineNo] ?? '').trim(); return !!q && q !== '0'; });
+  const waiting = picked.filter((l) => l.ready === false);
+  const ready = status ? (status.lines.some((l) => l.ready !== undefined) ? waiting.length === 0 : READY.includes(status.stage)) : true;
 
   const openConfirm = () => {
     setTouched(true);
@@ -114,12 +117,13 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
                   const typedQty = v.qtys[l.lineNo] ?? '';
                   const ticked = !!typedQty.trim() && typedQty.trim() !== '0';
                   return (
-                    <tr key={l.lineNo} className={`grid gap-2 rounded border p-3 sm:table-row sm:border-0 sm:p-0 ${l.leftQty === 0 ? 'text-slate-400' : ''}`}>
+                    <tr key={l.lineNo} className={`grid gap-2 rounded border p-3 sm:table-row sm:border-0 sm:p-0 ${l.leftQty === 0 || l.ready === false ? 'text-slate-400' : ''}`}>
                       <td className="py-1">
                         <label className="flex items-center gap-2"><span className="sm:hidden">Release line {l.lineNo}</span><input type="checkbox" aria-label={`Release line ${l.lineNo}`} disabled={l.leftQty === 0} checked={ticked}
                           onChange={(e) => set({ qtys: { ...v.qtys, [l.lineNo]: e.target.checked ? String(l.leftQty) : '' } })} /></label>
                       </td>
-                      <td className="py-1">{l.lineNo}. {l.description}</td>
+                      <td className="py-1">{l.lineNo}. {l.description}{l.leftQty > 0 && l.ready === false && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">Still being made</span>}
+                        {l.leftQty > 0 && l.ready && l.readyQty !== undefined && l.readyQty < l.leftQty && <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900">{l.readyQty} of {l.leftQty} ready</span>}</td>
                       <td className="py-1 text-right tabular-nums"><span className="mr-2 sm:hidden">Ordered</span>{l.qty}</td>
                       <td className="py-1 text-right tabular-nums"><span className="mr-2 sm:hidden">Released</span>{l.releasedQty}</td>
                       <td className="py-1">
@@ -134,7 +138,9 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
         )}
         {status && !ready && (
           <Panel title="Not ready yet">
-            <Notice tone="warning">{status.jobOrder.number} is {status.stageLabel}. Mark it Ready for release first{can('jo.release_override') ? ', or release it anyway with a reason.' : ', or ask the owner to release it.'}</Notice>
+            <Notice tone="warning">{waiting.length > 0
+              ? `${waiting.map((l) => `Line ${l.lineNo}`).join(', ')} ${waiting.length === 1 ? 'is' : 'are'} still being made. Untick ${waiting.length === 1 ? 'it' : 'them'}${can('jo.release_override') ? ', or release anyway with a reason.' : ', or ask the owner to release it.'}`
+              : `${status.jobOrder.number} is ${status.stageLabel}. Mark it Ready for release first${can('jo.release_override') ? ', or release it anyway with a reason.' : ', or ask the owner to release it.'}`}</Notice>
             {can('jo.release_override') && (
               <Field label="Owner's reason to release it now" required hint="At least 10 characters">
                 <input className={inputClass} value={v.overrideReason} onChange={(e) => set({ overrideReason: e.target.value })} />

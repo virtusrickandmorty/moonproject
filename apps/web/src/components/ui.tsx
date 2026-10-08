@@ -137,7 +137,7 @@ export function keepDialogFocus(root: HTMLElement, opener: HTMLElement | null, c
 }
 
 /** The two standard dialog widths. */
-export const DIALOG_WIDTH = { question: 'max-w-xl', record: 'max-w-6xl' } as const;
+export const DIALOG_WIDTH = { question: 'max-w-xl', record: 'max-w-6xl', screen: 'max-w-none' } as const;
 /** How long a dialog takes to grow out of the middle of the screen, and to shrink back into it (index.css). */
 export const DIALOG_MS = 180;
 const reducedMotion = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -168,11 +168,11 @@ export function useExit<T>(value: T | null | undefined, ms = DIALOG_MS): [T | nu
 /**
  * Every dialog in the ERP has one of two standard widths (DIALOG_WIDTH): a question (a confirm, a reason, a password)
  * is narrow; a table, a form or a whole record (`wide`, or `size="full"`, the same) is the record width. On a phone
- * both take the screen's width less a 16px margin. `hideTitle` when the content has its own heading. `leaving` when its parent already
+ * both take the screen's width less a 16px margin. `size="screen"`: the whole width of the screen (a job order being typed). `hideTitle` when the content has its own heading. `leaving` when its parent already
  * closed it and keeps it a moment (useExit) to shrink away. `beforeClose` may keep it open (something typed, not saved).
  */
 export function Dialog({ title, onClose, wide, size, hideTitle, leaving, beforeClose, children }: {
-  title: string; onClose: () => void; wide?: boolean; size?: 'full'; hideTitle?: boolean; leaving?: boolean; beforeClose?: () => boolean | Promise<boolean>; children: ReactNode;
+  title: string; onClose: () => void; wide?: boolean; size?: 'full' | 'screen'; hideTitle?: boolean; leaving?: boolean; beforeClose?: () => boolean | Promise<boolean>; children: ReactNode;
 }) {
   const root = useRef<HTMLDivElement>(null);
   // Capture before React mounts any autoFocus child, and keep it across rerenders.
@@ -199,7 +199,7 @@ export function Dialog({ title, onClose, wide, size, hideTitle, leaving, beforeC
     // into the middle of the screen whatever its length; the × stays in its corner while the content scrolls.
     <div data-state={state} className="dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 sm:p-8">
       <div ref={root} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} data-state={state}
-        className={`dialog-panel relative flex max-h-full w-full ${DIALOG_WIDTH[wide || size === 'full' ? 'record' : 'question']} flex-col overflow-hidden rounded-lg bg-white shadow-xl outline-none`}>
+        className={`dialog-panel relative flex max-h-full w-full ${DIALOG_WIDTH[size === 'screen' ? 'screen' : wide || size === 'full' ? 'record' : 'question']} flex-col overflow-hidden rounded-lg bg-white shadow-xl outline-none`}>
         {/* Every dialog can be closed with this, as well as with Escape. */}
         <button type="button" onClick={() => void shut.current()} aria-label="Close dialog" title="Close"
           className="absolute right-3 top-3 z-20 grid size-9 place-items-center rounded-full bg-white/90 text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900">×</button>

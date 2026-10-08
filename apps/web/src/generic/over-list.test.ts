@@ -41,4 +41,17 @@ describe('dialogs over a list', () => {
     for (const other of [base, `${base}?view=a1`, `${base}/new?jo=j1&for=downpayment`, `${base}/a1?x=1`, '/docs/jo.job_order/a1', '/docs/col.collections/a1', '/'])
       expect(overList(base, other)).toBeNull();
   });
+
+  it("opens another type's New form (with its prefill) and the document it recorded over the list", () => {
+    const jo = '/docs/jo.job_order';
+    const others = ['col.collection', 'jo.release'];
+    expect(overList(jo, '/docs/col.collection/new?jo=j1&for=downpayment', others)).toEqual({ to: `${jo}?with=col.collection&jo=j1&for=downpayment` });
+    expect(overList(jo, '/docs/jo.release/new?jo=j1', others)).toEqual({ to: `${jo}?with=jo.release&jo=j1` });
+    expect(overList(jo, '/docs/col.collection/c9?recorded=1', others)).toEqual({ to: `${jo}?with=col.collection&doc=c9&recorded=1`, replace: true });
+    expect(overList(jo, '/docs/col.collection/c9', others)).toEqual({ to: `${jo}?with=col.collection&doc=c9` });
+    expect(overList(jo, '/docs/col.collection/c9/edit', others)).toBeNull(); // an edit opens its own page
+    expect(overList(jo, '/docs/ap.bill/new', others)).toBeNull(); // not one of the list's
+    expect(openedFrom('with=col.collection&jo=j1&for=downpayment')).toEqual({ kind: 'other', typeKey: 'col.collection', recorded: false, params: 'jo=j1&for=downpayment' });
+    expect(openedFrom('with=col.collection&doc=c9&recorded=1')).toEqual({ kind: 'other', typeKey: 'col.collection', docId: 'c9', recorded: true, params: '' });
+  });
 });

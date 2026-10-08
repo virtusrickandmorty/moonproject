@@ -126,7 +126,7 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
       aside: jobOrderQr(h.id, h.number, joinBase),
       body: attachedPictures(db, h.id) +
         doc.lines.map((l: any) => `<section class="job-line"><h2 class="section">${escape(l.description)} · ${escape(l.qty)} pieces</h2>` +
-          lineTable(['Wearer', 'Size', 'Jersey name', 'Jersey no.', 'Qty'], l.roster.map((r: any) => [r.wearerName, r.size ?? (r.sizeMode === 'measured' ? 'Measured' : ''), r.jerseyName, r.jerseyNumber, r.qty])) +
+          lineTable(['Wearer', 'Size', 'Jersey name', 'Jersey no.', 'Qty', 'Garment type'], l.roster.map((r: any) => [r.wearerName, r.size ?? (r.sizeMode === 'measured' ? 'Measured' : ''), r.jerseyName, r.jerseyNumber, r.qty, r.garmentType])) +
           `<h3>Route checklist</h3><ul>${jobTicketRoute(db, h.id, l.lineNo).map((s) => `<li>☐ ${escape(s.name)} — ${escape(s.status)}</li>`).join('')}</ul></section>`).join('') +
         field('Notes', doc.notes),
     };

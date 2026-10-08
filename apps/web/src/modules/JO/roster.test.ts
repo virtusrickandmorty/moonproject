@@ -17,6 +17,12 @@ describe('roster paste from Excel (PLAN E4)', () => {
     expect(rosterPieces(rows)).toBe(3);
   });
 
+  it('takes the garment type from a sixth column', () => {
+    const { rows, errors } = parseRosterPaste('Ana Reyes\ts\tana\t7\t1\tJersey (women)\nBen Cruz\tl\t\t\t2\t');
+    expect(errors).toEqual([]);
+    expect(rows.map((r) => [r.wearerName, r.qty, r.garmentType])).toEqual([['Ana Reyes', 1, 'Jersey (women)'], ['Ben Cruz', 2, undefined]]);
+  });
+
   it("matches the group's wearers by name and keeps their measurements and jersey defaults", () => {
     const { rows } = parseRosterPaste('ari  sample\nBEA EXAMPLE\t\tbee\nBea Example\tL', team);
     expect(rows.map(toRosterInput)).toEqual([

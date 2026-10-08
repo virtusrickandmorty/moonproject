@@ -13,14 +13,14 @@ import type { Terms } from './opening.ts';
 /* ---------- Job order ---------- */
 
 /** One wearer on a line: a wearer of the customer (personId) or a one-off name typed in. */
-export interface RosterEdit { personId: string; name: string; sizeMode: 'preset' | 'measured'; size: string; jerseyName: string; jerseyNumber: string; qty: string }
+export interface RosterEdit { personId: string; name: string; sizeMode: 'preset' | 'measured'; size: string; jerseyName: string; jerseyNumber: string; qty: string; garmentType: string }
 /** A line; `listCents` is the price list's tier price for the quantity (null when not from the price list). */
 export interface JoLineRow { itemId: string; kind: Kind; description: string; qty: string; price: string; listCents: number | null; discount: string; roster: RosterEdit[] }
 export interface JoValues {
   customer: { id: string; name: string } | null;
   contact: string; dueInDays: string; priority: 'normal' | 'rush'; paymentTerms: Terms | ''; notes: string; lines: JoLineRow[];
 }
-export interface RosterInput { personId?: string; name?: string; sizeMode: 'preset' | 'measured'; size?: string; jerseyName?: string; jerseyNumber?: string; qty: number }
+export interface RosterInput { personId?: string; name?: string; sizeMode: 'preset' | 'measured'; size?: string; jerseyName?: string; jerseyNumber?: string; qty: number; garmentType?: string }
 export interface JoLineInput { kind: Kind; description: string; qty: number; unitPriceCents: number; discountCents: number; roster: RosterInput[] }
 export interface JoInput { customerId: string; contact?: string; dueInDays: number; priority: 'normal' | 'rush'; paymentTerms: Terms; notes?: string; lines: JoLineInput[] }
 /** What GET /api/docs/jo.job_order/:id keeps beside the input: the names shown for listed wearers. */
@@ -28,11 +28,11 @@ export interface JoDoc { customerName: string; lines: { roster: { wearerName: st
 
 export const emptyJoLine = (): JoLineRow => ({ itemId: '', kind: 'made_to_order', description: '', qty: '1', price: '', listCents: null, discount: '', roster: [] });
 export const emptyJo = (): JoValues => ({ customer: null, contact: '', dueInDays: '15', priority: 'normal', paymentTerms: '', notes: '', lines: [emptyJoLine()] });
-export const oneOff = (name = ''): RosterEdit => ({ personId: '', name, sizeMode: 'preset', size: '', jerseyName: '', jerseyNumber: '', qty: '1' });
+export const oneOff = (name = ''): RosterEdit => ({ personId: '', name, sizeMode: 'preset', size: '', jerseyName: '', jerseyNumber: '', qty: '1', garmentType: '' });
 
 /** A wearer of the customer on a roster row, with the size and jersey on file (a measured wearer's chart is linked by the server). */
 export const fromWearer = (w: WearerPick): RosterEdit => ({
-  personId: w.personId, name: w.wearerName, sizeMode: w.sizeMode, size: w.size ?? '', jerseyName: w.jerseyName ?? '', jerseyNumber: w.jerseyNumber ?? '', qty: '1',
+  personId: w.personId, name: w.wearerName, sizeMode: w.sizeMode, size: w.size ?? '', jerseyName: w.jerseyName ?? '', jerseyNumber: w.jerseyNumber ?? '', qty: '1', garmentType: '',
 });
 
 /** The catalog item's class -> the kind of line (sales account and production). */
@@ -43,7 +43,8 @@ const pieceCount = (roster: RosterEdit[]) => roster.reduce((s, r) => s + (/^[1-9
 export const lineQty = (l: JoLineRow) => (l.roster.length > 0 ? String(pieceCount(l.roster)) : l.qty);
 /** The price was changed from the price list's tier price. */
 export const priceChanged = (l: JoLineRow) => l.listCents !== null && cents(l.price) !== l.listCents;
-const blankLine = (l: JoLineRow) => !l.itemId && !l.description.trim() && !l.price.trim() && !l.discount.trim() && l.roster.length === 0;
+/** A line with nothing typed in it (an item form not filled yet). */
+export const blankLine = (l: JoLineRow) => !l.itemId && !l.description.trim() && !l.price.trim() && !l.discount.trim() && l.roster.length === 0;
 const optional = (key: string, text: string) => (text.trim() ? { [key]: text.trim() } : {});
 
 /** Typed values -> input, the total so far, and what to fix first. Blank lines are left out. */
@@ -76,6 +77,7 @@ export function joInput(v: JoValues): { input: JoInput; totalCents: number; erro
         ...optional('jerseyName', r.jerseyName.toUpperCase()),
         ...optional('jerseyNumber', r.jerseyNumber),
         qty: Number(r.qty),
+        ...optional('garmentType', r.garmentType),
       });
     });
     if (errors.length === before) lines.push({ kind: l.kind, description: l.description.trim(), qty: Number(qty), unitPriceCents: price!, discountCents: discount!, roster });
@@ -118,6 +120,7 @@ export function joValues(i: JoInput, doc?: JoDoc): JoValues {
         jerseyName: r.jerseyName ?? '',
         jerseyNumber: r.jerseyNumber ?? '',
         qty: String(r.qty),
+        garmentType: r.garmentType ?? '',
       })),
     })),
   };
@@ -165,7 +168,17 @@ export const emptyRelease = (jobOrderId = ''): ReleaseValues => ({
   jobOrderId, qtys: {}, claimedBy: '', idSeen: '', creditNote: '', creditDueInDays: '', overrideReason: '', invoiceNumber: '', invoiceToFollow: false, invoiceNote: '',
 });
 /** Everything left on each line, ticked. */
-export const allLeft = (lines: JoStatus['lines']): Record<number, string> => Object.fromEntries(lines.filter((l) => l.leftQty > 0).map((l) => [l.lineNo, String(l.leftQty)]));
+/**
+ * What the release form ticks to start with: what is left of each line that may go out now; when none may (nothing made
+ * yet, for an owner's override), every line with something left, as before.
+ */
+export function allLeft(lines: JoStatus['lines']): Record<number, string> {
+  const left = lines.filter((l) => l.leftQty > 0);
+  const ready = left.filter((l) => l.ready !== false);
+  // What is finished of each line (all that is left when the server does not say); everything left for an override.
+  const now = (l: (typeof lines)[number]) => String(Math.min(l.leftQty, l.readyQty ?? l.leftQty));
+  return ready.length > 0 ? Object.fromEntries(ready.map((l) => [l.lineNo, now(l)])) : Object.fromEntries(left.map((l) => [l.lineNo, String(l.leftQty)]));
+}
 
 export interface ReleaseInput { jobOrderId: string; lines: { lineNo: number; qty: number }[]; claimedBy: string; idSeen: IdSeen; creditNote?: string; creditDueInDays?: number; overrideReason?: string }
 
@@ -250,7 +263,8 @@ export function invoiceBooklet(d: { vatRateBp: number; listCents: number; discou
 
 export interface JoAction { label: string; to: string; primary?: boolean }
 /** What the user may start from a job order's view (doc types they may create). */
-export interface JoCan { collect: boolean; release: boolean; invoice: boolean; dpInvoice?: boolean }
+/** `releaseOverride`: may release what is not ready yet (the owner, with a reason), so Release slip is offered before. */
+export interface JoCan { collect: boolean; release: boolean; invoice: boolean; dpInvoice?: boolean; releaseOverride?: boolean }
 
 /** Downpayments invoiced on the job order so far (recorded invoices only). */
 export const dpInvoicedCents = (s: Pick<JoStatus, 'dpInvoices'>) => s.dpInvoices.filter((i) => i.status === 'posted').reduce((sum, i) => sum + i.amountCents, 0);
@@ -269,7 +283,9 @@ export function joActions(s: JoStatus, can: JoCan): JoAction[] {
     }
     out.push({ label: 'Take a payment', to: `/docs/col.collection/new?jo=${id}` });
   }
-  if (can.release && s.lines.some((l) => l.leftQty > 0)) out.push({ label: 'Release', to: `/docs/jo.release/new?jo=${id}` });
+  // Release slip once an item may go out (its production is done), even while others are still being made; earlier for
+  // the owner, who may release what is not ready with a reason.
+  if (can.release && s.lines.some((l) => l.leftQty > 0 && (l.ready !== false || can.releaseOverride))) out.push({ label: 'Release slip', to: `/docs/jo.release/new?jo=${id}` });
   if (can.invoice && s.awaitingInvoice.length > 0) {
     const one = s.awaitingInvoice.length === 1 ? `release=${encodeURIComponent(s.awaitingInvoice[0]!.id)}` : `jo=${id}`;
     out.push({ label: 'Record invoice', to: `/docs/jo.invoice_record/new?${one}` });
