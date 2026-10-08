@@ -261,7 +261,11 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
               <span className="ml-auto text-sm text-slate-500">{showDate(r.businessDate)}</span>
             </div>
             <p className={`line-clamp-3 text-sm ${r.status === 'cancelled' ? 'line-through' : 'text-slate-700'}`}>{r.summary}</p>
-            <p className="text-sm">Amount <b className="tabular-nums">{peso(r.totalCents)}</b></p>
+            {detail?.(r)}
+            <p className="flex flex-wrap gap-x-4 text-sm">
+              <span>Amount <b className="tabular-nums">{peso(r.totalCents)}</b></span>
+              {columns.map((c) => <span key={c.head}>{c.head} <span className="tabular-nums">{c.cell(r)}</span></span>)}
+            </p>
             <div className="flex flex-wrap gap-1.5">{actions(r)}</div>
           </li>
         ))}
