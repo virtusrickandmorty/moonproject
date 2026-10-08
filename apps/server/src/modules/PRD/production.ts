@@ -7,6 +7,7 @@ import { AppError, conflict, notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { currentStage, jobOrderRef, jobOrdersOf, lineState, productionMove, stagesAll } from '../JO/public.ts';
+import { matchCatalogItem } from '../CAT/public.ts';
 
 export const COMPLEXITIES = ['simple', 'standard', 'complex'] as const;
 export type Complexity = (typeof COMPLEXITIES)[number];
@@ -31,46 +32,56 @@ export function listTemplates(db: Db): { id: number; code: string; name: string;
   return (db.prepare('SELECT id, code, name FROM prd_route_templates ORDER BY code').all() as { id: number; code: string; name: string }[]).map((t) => ({ ...t, stepIds: steps.all(t.id) as number[] }));
 }
 
-export interface LineSetup { seq: number; templateId: number | null; garmentType: string; complexity: Complexity; stepIds: number[] }
+/** `isSet`: made as an upper and a lower part (a set on the price list). */
+export interface LineSetup { seq: number; templateId: number | null; garmentType: string; complexity: Complexity; isSet: boolean; stepIds: number[] }
+export type Part = 'whole' | 'upper' | 'lower';
+export const SET_PARTS = ['upper', 'lower'] as const;
 
 /** A JO line's current setup: route, garment type and complexity (the latest row). */
 export function lineSetup(db: Db, jobOrderId: string, lineNo: number): LineSetup | undefined {
   const r = db
     .prepare(
-      `SELECT seq, template_id AS templateId, garment_type AS garmentType, complexity FROM prd_line_setups
+      `SELECT seq, template_id AS templateId, garment_type AS garmentType, complexity, is_set AS isSet FROM prd_line_setups
        WHERE job_order_id = ? AND line_no = ? ORDER BY seq DESC LIMIT 1`,
     )
-    .get(jobOrderId, lineNo) as Omit<LineSetup, 'stepIds'> | undefined;
+    .get(jobOrderId, lineNo) as (Omit<LineSetup, 'stepIds' | 'isSet'> & { isSet: number }) | undefined;
   if (!r) return undefined;
   const stepIds = db
     .prepare('SELECT x.step_id FROM prd_line_setup_steps x JOIN prd_steps s ON s.id = x.step_id WHERE x.job_order_id = ? AND x.line_no = ? AND x.seq = ? ORDER BY s.seq')
     .pluck()
     .all(jobOrderId, lineNo, r.seq) as number[];
-  return { ...r, stepIds };
+  return { ...r, isSet: r.isSet === 1, stepIds };
 }
 
-/** Pieces recorded on one step of a JO line by recorded entries: work net of corrections, and rework (pasubra) apart. */
-export function piecesOn(db: Db, jobOrderId: string, lineNo: number, stepId: number): { pieces: number; reworkPieces: number } {
+/**
+ * Pieces recorded on one step of a JO line by recorded entries: work net of corrections, and rework (pasubra) apart. A
+ * part ('upper' or 'lower' of a set) counts that part only; none counts every row.
+ */
+export function piecesOn(db: Db, jobOrderId: string, lineNo: number, stepId: number, part?: Part): { pieces: number; reworkPieces: number } {
   return db
     .prepare(
       `SELECT COALESCE(SUM(CASE WHEN a.kind <> 'rework' THEN a.pieces END), 0) AS pieces, COALESCE(SUM(CASE WHEN a.kind = 'rework' THEN a.pieces END), 0) AS reworkPieces
        FROM prd_assignments a JOIN documents d ON d.id = a.document_id
-       WHERE a.job_order_id = ? AND a.line_no = ? AND a.step_id = ? AND d.status = 'posted'`,
+       WHERE a.job_order_id = ? AND a.line_no = ? AND a.step_id = ? AND d.status = 'posted' AND (? IS NULL OR a.part = ?)`,
     )
-    .get(jobOrderId, lineNo, stepId) as { pieces: number; reworkPieces: number };
+    .get(jobOrderId, lineNo, stepId, part ?? null, part ?? null) as { pieces: number; reworkPieces: number };
 }
 
 /**
  * The wearers already done on one step of a JO line, by recorded entries (roster row → the entry that ticked it): the
  * owner's request, Oct 2026. A cancelled entry's wearers are free again.
  */
-export function wearersDone(db: Db, jobOrderId: string, lineNo: number, stepId: number): Map<number, string> {
+export function wearersDone(db: Db, jobOrderId: string, lineNo: number, stepId: number, part: Part = 'whole'): Map<number, string> {
   const rows = db.prepare(`SELECT w.roster_row_no AS rowNo, d.number FROM prd_assignment_wearers w JOIN prd_assignments a ON a.id = w.assignment_id
-    JOIN documents d ON d.id = a.document_id WHERE a.job_order_id = ? AND a.line_no = ? AND a.step_id = ? AND d.status = 'posted'`).all(jobOrderId, lineNo, stepId) as { rowNo: number; number: string }[];
+    JOIN documents d ON d.id = a.document_id WHERE a.job_order_id = ? AND a.line_no = ? AND a.step_id = ? AND a.part = ? AND d.status = 'posted'`).all(jobOrderId, lineNo, stepId, part) as { rowNo: number; number: string }[];
   return new Map(rows.map((r) => [r.rowNo, r.number]));
 }
 
-export interface RouteStep extends Step { status: StepStatus; pieces: number; reworkPieces: number }
+/**
+ * `pieces` of a set are its complete sets: the fewer of its upper and lower parts done; `parts` has each part's own count
+ * (null on a line made as one piece).
+ */
+export interface RouteStep extends Step { status: StepStatus; pieces: number; reworkPieces: number; parts: Record<'upper' | 'lower', { pieces: number; reworkPieces: number }> | null }
 
 /** The line's route in canonical order with each step's status, or null before the line is set up. */
 export function lineRoute(db: Db, jobOrderId: string, lineNo: number): RouteStep[] | null {
@@ -79,10 +90,12 @@ export function lineRoute(db: Db, jobOrderId: string, lineNo: number): RouteStep
   const last = db.prepare('SELECT action FROM prd_step_events WHERE job_order_id = ? AND line_no = ? AND step_id = ? ORDER BY seq DESC LIMIT 1').pluck();
   return setup.stepIds.map((id) => {
     const step = stepById(db, id)!;
-    const done = piecesOn(db, jobOrderId, lineNo, id);
+    const all = piecesOn(db, jobOrderId, lineNo, id);
+    const parts = setup.isSet ? { upper: piecesOn(db, jobOrderId, lineNo, id, 'upper'), lower: piecesOn(db, jobOrderId, lineNo, id, 'lower') } : null;
+    const done = parts ? { pieces: Math.min(parts.upper.pieces, parts.lower.pieces), reworkPieces: all.reworkPieces } : all;
     const action = last.get(jobOrderId, lineNo, id) as string | undefined;
-    const status: StepStatus = action === 'complete' ? 'completed' : action === 'not_needed' ? 'not_needed' : done.pieces > 0 || done.reworkPieces > 0 ? 'in_progress' : 'pending';
-    return { ...step, status, ...done };
+    const status: StepStatus = action === 'complete' ? 'completed' : action === 'not_needed' ? 'not_needed' : all.pieces !== 0 || all.reworkPieces > 0 ? 'in_progress' : 'pending';
+    return { ...step, status, ...done, parts };
   });
 }
 
@@ -93,11 +106,12 @@ export const routeDone = (route: RouteStep[]) => route.length > 0 && route.every
  * Pieces that came out of the step before this one (E7 rule 1): the previous step on the route that is needed. All of the
  * line once that step is completed (or when there is none), else the pieces recorded on it.
  */
-export function availableFor(route: RouteStep[], stepId: number, lineQty: number): number {
+export function availableFor(route: RouteStep[], stepId: number, lineQty: number, part: Part = 'whole'): number {
   const i = route.findIndex((s) => s.id === stepId);
   const prev = route.slice(0, Math.max(0, i)).reverse().find((s) => s.status !== 'not_needed');
   if (!prev || prev.status === 'completed') return lineQty;
-  return Math.min(lineQty, Math.max(0, prev.pieces));
+  const came = part !== 'whole' && prev.parts ? prev.parts[part].pieces : prev.pieces; // a set's part follows that part
+  return Math.min(lineQty, Math.max(0, came));
 }
 
 /**
@@ -122,13 +136,22 @@ function lineOf(db: Db, jobOrderId: string, lineNo: number) {
   return line;
 }
 
-export interface SetupRequest { templateId?: number | undefined; stepIds: number[]; garmentType: string; complexity: Complexity }
+/** `garmentType`: none takes it from the price list item the line matches (the owner's request, Oct 2026), which also says whether it is a set. */
+export interface SetupRequest { templateId?: number | undefined; stepIds: number[]; garmentType?: string | undefined; complexity: Complexity }
 
 /** Sets a line's route, garment type and complexity. Steps keep the canonical order; a step with pieces stays on. */
 export function setupLine(db: Db, jobOrderId: string, lineNo: number, req: SetupRequest, who: Who): RouteStep[] {
   recordedJo(db, jobOrderId);
-  lineOf(db, jobOrderId, lineNo);
+  const theLine = lineOf(db, jobOrderId, lineNo);
   const before = lineSetup(db, jobOrderId, lineNo);
+  const matched = matchCatalogItem(db, theLine.description);
+  const garmentType = (req.garmentType?.trim() || matched?.garmentType || theLine.description).slice(0, 60);
+  const isSet = matched?.unit === 'set';
+  if (before?.isSet && !isSet) {
+    // A line made in parts keeps its parts while pieces of a part are recorded on it.
+    const parted = db.prepare(`SELECT 1 FROM prd_assignments a JOIN documents d ON d.id = a.document_id WHERE a.job_order_id = ? AND a.line_no = ? AND a.part <> 'whole' AND d.status = 'posted' LIMIT 1`).get(jobOrderId, lineNo);
+    if (parted) throw conflict('PARTS_RECORDED', `Line ${lineNo} has upper and lower pieces recorded, so it stays a set.`);
+  }
   const ids = [...new Set(req.stepIds)];
   if (ids.length === 0) throw new AppError('NO_STEPS', 'Pick at least one step.', 400);
   for (const id of ids) {
@@ -142,12 +165,12 @@ export function setupLine(db: Db, jobOrderId: string, lineNo: number, req: Setup
     if (done.pieces !== 0 || done.reworkPieces !== 0) throw conflict('STEP_HAS_PIECES', `${stepById(db, id)!.name} has pieces recorded on line ${lineNo}, so it stays on the route.`);
   }
   const seq = (before?.seq ?? 0) + 1;
-  db.prepare('INSERT INTO prd_line_setups (job_order_id, line_no, seq, template_id, garment_type, complexity, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
-    jobOrderId, lineNo, seq, req.templateId ?? null, req.garmentType, req.complexity, who.at, who.userId,
+  db.prepare('INSERT INTO prd_line_setups (job_order_id, line_no, seq, template_id, garment_type, complexity, is_set, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+    jobOrderId, lineNo, seq, req.templateId ?? null, garmentType, req.complexity, isSet ? 1 : 0, who.at, who.userId,
   );
   const step = db.prepare('INSERT INTO prd_line_setup_steps (job_order_id, line_no, seq, step_id) VALUES (?, ?, ?, ?)');
   for (const id of ids) step.run(jobOrderId, lineNo, seq, id);
-  appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.setup', entityType: 'jo.job_order', entityId: jobOrderId, data: { lineNo, seq, ...req, stepIds: ids } });
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.setup', entityType: 'jo.job_order', entityId: jobOrderId, data: { lineNo, seq, ...req, garmentType, isSet, stepIds: ids } });
   syncStage(db, jobOrderId, `Route of line ${lineNo} changed`, who);
   return lineRoute(db, jobOrderId, lineNo)!;
 }
@@ -177,6 +200,9 @@ export function stepAction(db: Db, jobOrderId: string, lineNo: number, stepId: n
       throw conflict('HAS_PIECES', `${step.name} has pieces recorded on line ${lineNo}. Mark it Completed instead, or cancel those entries first.`);
     }
     // The owner's rule (Oct 2026): a step is completed only once all of the line's pieces are recorded on it (rework apart).
+    if (action === 'complete' && step.parts && step.pieces < line.qty) {
+      throw conflict('PIECES_SHORT', `${step.name} on line ${lineNo} has ${step.parts.upper.pieces} of ${line.qty} upper and ${step.parts.lower.pieces} of ${line.qty} lower parts done. Record the rest of both first, or mark it Not needed if no piece goes through it.`);
+    }
     if (action === 'complete' && step.pieces < line.qty) {
       throw conflict('PIECES_SHORT', `${step.name} on line ${lineNo} has ${step.pieces} of ${line.qty} pieces done. Record the other ${line.qty - step.pieces} first, or mark it Not needed if no piece goes through it.`);
     }
@@ -222,7 +248,9 @@ export function board(db: Db) {
           currentStepId: route?.find((s) => !closed(s))?.id ?? null,
           ready: route !== null && routeDone(route),
           // receivedPieces: what came out of the step before (all of the line once that one is closed, or for the first step).
-          steps: route?.map((s) => ({ stepId: s.id, status: s.status, pieces: s.pieces, reworkPieces: s.reworkPieces, receivedPieces: availableFor(route, s.id, l.qty) })) ?? null,
+          isSet: setup?.isSet ?? false,
+          steps: route?.map((s) => ({ stepId: s.id, status: s.status, pieces: s.pieces, reworkPieces: s.reworkPieces, receivedPieces: availableFor(route, s.id, l.qty),
+            ...(s.parts ? { parts: { upper: s.parts.upper.pieces, lower: s.parts.lower.pieces } } : {}) })) ?? null,
         };
       });
   });

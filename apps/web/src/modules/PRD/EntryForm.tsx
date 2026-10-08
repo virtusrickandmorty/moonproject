@@ -16,7 +16,7 @@ import { EditGate, Errors, useLive } from '../COL/parts.tsx';
 import { emptyRow, rowsToInput, type EntryRow } from './board.ts';
 import { PayDetails, PayTotal } from '../PAY/entry.tsx';
 
-type Stored = { jobOrderId: string; stepId: number; workDate?: string; overCapReason?: string; rows: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string; wearers?: number[] }[] };
+type Stored = { jobOrderId: string; stepId: number; workDate?: string; overCapReason?: string; rows: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string; wearers?: number[]; part?: 'upper' | 'lower' }[] };
 const cell = `${inputClass} py-1`;
 
 export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
@@ -49,7 +49,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
         setStepId(input.stepId);
         setOverCapReason(input.overCapReason ?? '');
         if (input.workDate) setWorkDate(input.workDate);
-        setRows(input.rows.map((r) => ({ lineNo: String(r.lineNo), employeeId: r.employeeId, pieces: String(r.pieces), rework: !!r.rework, rate: r.rateCents === undefined ? '' : formatPesos(r.rateCents), rateReason: r.rateReason ?? '', repeatReason: r.repeatReason ?? '', ...(r.wearers ? { wearers: r.wearers } : {}) })));
+        setRows(input.rows.map((r) => ({ lineNo: String(r.lineNo), employeeId: r.employeeId, pieces: String(r.pieces), rework: !!r.rework, rate: r.rateCents === undefined ? '' : formatPesos(r.rateCents), rateReason: r.rateReason ?? '', repeatReason: r.repeatReason ?? '', ...(r.wearers ? { wearers: r.wearers } : {}), ...(r.part ? { part: r.part } : {}) })));
       }, fail);
       return;
     }
@@ -134,23 +134,37 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                 return (
                   <section key={i} aria-label={`Worker entry ${i + 1}`} className="space-y-3 rounded-lg border border-slate-200 p-3">
                     <Field label="Line">
-                      <select aria-label={`Row ${i + 1} line`} className={cell} value={r.lineNo} onChange={(e) => set(i, { lineNo: e.target.value, ...(r.wearers?.length ? { wearers: [], pieces: '' } : {}) })}>
+                      <select aria-label={`Row ${i + 1} line`} className={cell} value={r.lineNo} onChange={(e) => set(i, { lineNo: e.target.value, part: undefined, ...(r.wearers?.length ? { wearers: [], pieces: '' } : {}) })}>
                         <option value="" />
                         {lines.map((l) => {
                           const s = l.route?.find((x) => x.id === stepId);
-                          return <option key={l.lineNo} value={l.lineNo}>{l.lineNo}: {l.description} ({s ? `${s.pieces} of ${l.qty} done, ${Math.max(0, s.availablePieces - s.pieces)} ready` : `${l.qty} pcs`})</option>;
+                          const words = s?.partPieces ? `upper ${s.partPieces.upper} of ${l.qty}, lower ${s.partPieces.lower} of ${l.qty} done` : s ? `${s.pieces} of ${l.qty} done, ${Math.max(0, s.availablePieces - s.pieces)} ready` : `${l.qty} pcs`;
+                          return <option key={l.lineNo} value={l.lineNo}>{l.lineNo}: {l.description} ({words})</option>;
                         })}
                       </select>
                     </Field>
+                    {job.lines.find((l) => String(l.lineNo) === r.lineNo)?.isSet && (
+                      <div role="radiogroup" aria-label={`Row ${i + 1} part`} className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium">Part of the set</span>
+                        {(['upper', 'lower'] as const).map((p) => (
+                          <button key={p} type="button" role="radio" aria-checked={r.part === p} onClick={() => set(i, { part: p, ...(r.part !== p && r.wearers?.length ? { wearers: [], pieces: '' } : {}) })}
+                            className={`rounded-full px-3 py-1 text-sm ring-1 ${r.part === p ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'}`}>{p === 'upper' ? 'Upper' : 'Lower'}</button>
+                        ))}
+                        {!r.part && <span className="text-xs text-amber-800">Pick the part these pieces are for.</span>}
+                      </div>
+                    )}
                     {(() => {
                       // The line's wearers: tick who this worker finished; the pieces follow the ticks. Done ones show who did them.
                       const line = job.lines.find((l) => String(l.lineNo) === r.lineNo);
                       const roster = line?.roster ?? [];
-                      if (r.rework || roster.length === 0) return null;
+                      if (r.rework || roster.length === 0 || (line?.isSet && !r.part)) return null;
                       const step = line?.route?.find((x) => x.id === stepId);
-                      const done = new Set(step?.doneWearers ?? []);
+                      const part = line?.isSet ? r.part : undefined;
+                      const done = new Set(part ? step?.partWearersDone?.[part] ?? [] : step?.doneWearers ?? []);
+                      // On a set, each wearer's parts already finished on this step.
+                      const partsDone = (n: number) => (line?.isSet ? (['upper', 'lower'] as const).filter((p) => step?.partWearersDone?.[p]?.includes(n)) : []);
                       if (original) for (const o of (originalRows ?? []).filter((x) => String(x.lineNo) === r.lineNo)) for (const n of o.wearers ?? []) done.delete(n); // the entry being edited frees its own
-                      const elsewhere = new Map(rows.flatMap((x, j) => (j !== i && x.lineNo === r.lineNo && !x.rework ? (x.wearers ?? []).map((n) => [n, j + 1] as const) : [])));
+                      const elsewhere = new Map(rows.flatMap((x, j) => (j !== i && x.lineNo === r.lineNo && !x.rework && x.part === r.part ? (x.wearers ?? []).map((n) => [n, j + 1] as const) : [])));
                       const mine = new Set(r.wearers ?? []);
                       const tick = (next: Set<number>) => set(i, { wearers: [...next].sort((a, b) => a - b), pieces: String(roster.filter((w) => next.has(w.rowNo)).reduce((s, w) => s + w.qty, 0) || '') });
                       const left = roster.filter((w) => !done.has(w.rowNo) && !elsewhere.has(w.rowNo));
@@ -158,8 +172,8 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                         <fieldset className="space-y-2 rounded-md bg-slate-50 p-3">
                           <legend className="sr-only">Wearers finished on row {i + 1}</legend>
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-medium">Wearers finished</span>
-                            <span className="text-xs text-slate-500">{done.size} of {roster.length} done on this step · tick the ones this worker finished</span>
+                            <span className="text-sm font-medium">Wearers finished{part ? ` · ${part} part` : ''}</span>
+                            <span className="text-xs text-slate-500">{done.size} of {roster.length} done on this step{part ? ` (${part} part)` : ''} · tick the ones this worker finished</span>
                             <span className="flex-1" />
                             {left.length > 0 && <Button onClick={() => tick(new Set([...mine, ...left.map((w) => w.rowNo)]))}>Tick all left ({left.length})</Button>}
                           </div>
@@ -173,7 +187,8 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                                     <input type="checkbox" aria-label={`Row ${i + 1} wearer ${w.wearerName}`} disabled={isDone || !!otherRow} checked={isDone || mine.has(w.rowNo)}
                                       onChange={(e) => { const next = new Set(mine); if (e.target.checked) next.add(w.rowNo); else next.delete(w.rowNo); tick(next); }} />
                                     <span className="min-w-0 flex-1 truncate">{w.wearerName}<span className="text-slate-500">{w.size ? ` · ${w.size}` : w.sizeMode === 'measured' ? ' · measured' : ''}{w.jerseyNumber ? ` · #${w.jerseyNumber}` : ''}{w.qty > 1 ? ` · ${w.qty} pcs` : ''}</span></span>
-                                    {isDone && <span className="text-xs">done</span>}
+                                    {line?.isSet ? partsDone(w.rowNo).map((p) => <span key={p} className="rounded bg-emerald-100 px-1 text-xs text-emerald-800">{p === 'upper' ? 'Upper' : 'Lower'} ✓</span>)
+                                      : isDone && <span className="text-xs">done</span>}
                                     {otherRow && <span className="text-xs">row {otherRow}</span>}
                                   </label>
                                 </li>

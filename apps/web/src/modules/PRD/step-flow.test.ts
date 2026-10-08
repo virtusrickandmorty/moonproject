@@ -37,3 +37,11 @@ describe('wearers ticked on Record pieces', () => {
     expect(rowsToInput([{ ...row, wearers: [] }]).rows[0]).not.toHaveProperty('wearers');
   });
 });
+
+describe('sets on the board and on Record pieces', () => {
+  it('says which part of a set still needs pieces, and sends the part with the row', () => {
+    const set = [{ stepId: 6, status: 'in_progress' as const, pieces: 1, reworkPieces: 0, receivedPieces: 2, parts: { upper: 2, lower: 1 } }];
+    expect(stepFlow(set, 0, 2, () => 'Sewing')).toMatchObject({ canComplete: false, shortWords: 'Record the rest of the parts to complete Sewing: upper 2 of 2, lower 1 of 2.' });
+    expect(rowsToInput([{ ...emptyRow('1'), employeeId: 'e1', pieces: '1', part: 'lower', wearers: [2] }]).rows).toEqual([{ lineNo: 1, employeeId: 'e1', pieces: 1, wearers: [2], part: 'lower' }]);
+  });
+});
