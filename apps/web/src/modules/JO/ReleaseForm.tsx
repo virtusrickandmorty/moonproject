@@ -122,7 +122,8 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
                         <label className="flex items-center gap-2"><span className="sm:hidden">Release line {l.lineNo}</span><input type="checkbox" aria-label={`Release line ${l.lineNo}`} disabled={l.leftQty === 0} checked={ticked}
                           onChange={(e) => set({ qtys: { ...v.qtys, [l.lineNo]: e.target.checked ? String(l.leftQty) : '' } })} /></label>
                       </td>
-                      <td className="py-1">{l.lineNo}. {l.description}{l.leftQty > 0 && l.ready === false && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">Still being made</span>}</td>
+                      <td className="py-1">{l.lineNo}. {l.description}{l.leftQty > 0 && l.ready === false && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">Still being made</span>}
+                        {l.leftQty > 0 && l.ready && l.readyQty !== undefined && l.readyQty < l.leftQty && <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900">{l.readyQty} of {l.leftQty} ready</span>}</td>
                       <td className="py-1 text-right tabular-nums"><span className="mr-2 sm:hidden">Ordered</span>{l.qty}</td>
                       <td className="py-1 text-right tabular-nums"><span className="mr-2 sm:hidden">Released</span>{l.releasedQty}</td>
                       <td className="py-1">

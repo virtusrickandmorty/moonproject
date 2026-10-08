@@ -55,7 +55,7 @@ it('releases an item whose production is done while the other is still being mad
   expect(await ready(jo)).toEqual([[1, true], [2, false]]);
   expect(await listed(jo)).toBe(true);
   expect((await issues(release(jo, [{ lineNo: 2, qty: 4 }])))[0]).toMatchObject({ code: 'NOT_READY',
-    message: 'Line 2 is still being made. Release only the items that are ready, or ask the owner to release it anyway with a reason.' });
+    message: 'Line 2 is still being made. Release only what is finished, or ask the owner to release the rest anyway with a reason.' });
   expect((await issues(release(jo, [{ lineNo: 1, qty: 4 }], { overrideReason: 'Not needed for a ready item' })))[0]).toMatchObject({ code: 'NO_OVERRIDE' });
 
   const out = await accountant.post('/api/jo/releases', { release: release(jo, [{ lineNo: 1, qty: 4 }]), invoice: null, expectedTotalCents: 120_000 }, idem());
@@ -72,4 +72,25 @@ it('releases an item whose production is done while the other is still being mad
   await finish(jo, 2);
   expect(currentStage(env.db, jo)).toBe('ready');
   expect(await ready(jo)).toEqual([[1, true], [2, true]]);
+});
+
+it('releases the pieces that went through every step first, while the rest of the item is still being made', async () => {
+  const jo = await jobOrder();
+  // Line 1: all 4 sewn, 3 packed: 3 went through every step.
+  for (const [stepId, pieces] of [[SEWING, 4], [PACKING, 3]] as const) {
+    const input = { jobOrderId: jo, stepId, rows: [{ lineNo: 1, employeeId: stepId === SEWING ? w.sewer1 : w.packer, pieces }] };
+    const p = await production.post('/api/docs/prd.entry/preview', { input });
+    expect((await production.post('/api/docs/prd.entry/post', { input, expectedTotalCents: p.json().totalCents }, idem())).statusCode).toBe(200);
+  }
+  const lines = (await encoder.get(`/api/jo/orders/${jo}/status`)).json().lines as { lineNo: number; ready: boolean; readyQty: number }[];
+  expect(lines.map((l) => [l.lineNo, l.ready, l.readyQty])).toEqual([[1, true, 3], [2, false, 0]]);
+  expect(await listed(jo)).toBe(true);
+  expect((await issues(release(jo, [{ lineNo: 1, qty: 4 }])))[0]).toMatchObject({ code: 'NOT_READY',
+    message: 'Line 1: 3 pieces went through every step, so at most 3 can go out now. Release only what is finished, or ask the owner to release the rest anyway with a reason.' });
+  const out = await accountant.post('/api/jo/releases', { release: release(jo, [{ lineNo: 1, qty: 3 }]), invoice: null, expectedTotalCents: 90_000 }, idem());
+  expect(out.statusCode, out.body).toBe(200);
+  expect(currentStage(env.db, jo)).toBe('partially_released');
+  // Those 3 are out: nothing more is ready until the last one is packed.
+  expect(((await encoder.get(`/api/jo/orders/${jo}/status`)).json().lines as { readyQty: number }[]).map((l) => l.readyQty)).toEqual([0, 0]);
+  expect(await listed(jo)).toBe(false);
 });

@@ -14,7 +14,7 @@ import { saleInvoicesOf, saleOpenCents } from '../QS/public.ts';
 import { jobOrderRef, jobOrdersOf, joMoney, leftPiecesAll, stagesAll } from './public.ts';
 import { dpInvoiceDoc } from './doctypes/dp-invoice.ts';
 import { joListRoutes } from './list.ts';
-import { lineState, releasableLines, releaseDoc, type Release } from './doctypes/release.ts';
+import { lineState, releasableQty, releaseDoc, type Release } from './doctypes/release.ts';
 import { awaitingInvoice, invoiceFigures, invoiceRecordDoc, invoiceRecordInput } from './doctypes/invoice-record.ts';
 
 const stageBody = z.object({ from: z.enum(STAGES), to: z.enum(STAGES), reason: z.string().max(500).optional() }).strict();
@@ -86,9 +86,12 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get<{ Params: { id: string } }>('/api/jo/orders/:id/status', { config: { permission: 'jo.view' } }, async (req) => {
     const stage = currentStage(db, req.params.id);
     const money = joMoney(db, req.params.id);
-    // ready: the line may go out now (its production is done, or the whole job order is Ready).
-    const ready = releasableLines(db, req.params.id);
-    const lines = lineState(db, req.params.id).map(({ lineNo, description, qty, releasedQty }) => ({ lineNo, description, qty, releasedQty, leftQty: qty - releasedQty, ready: ready.has(lineNo) }));
+    // readyQty: the pieces that may go out now (finished every step, or all once the line or the job order is done); ready: some.
+    const may = releasableQty(db, req.params.id);
+    const lines = lineState(db, req.params.id).map(({ lineNo, description, qty, releasedQty }) => {
+      const readyQty = may.get(lineNo) ?? 0;
+      return { lineNo, description, qty, releasedQty, leftQty: qty - releasedQty, ready: readyQty > 0, readyQty };
+    });
     // An abandoned job order is closed; its label says why (D5 DEP-FORFEIT).
     const stageLabel = stage === 'closed' && isAbandoned(db, req.params.id) ? 'Abandoned (deposit forfeited)' : STAGE_LABELS[stage];
     const jo = jobOrderRef(db, req.params.id)!;
