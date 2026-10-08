@@ -7,7 +7,8 @@
  * The work date is today unless the sheet is late (audit B2-F2). When the server takes a row for a sheet already recorded
  * (LIKELY_REPEAT, B2-F3), the row asks why it is a different sheet.
  * Wearers (the owner's request, Oct 2026): a step lists the wearers forwarded from the step before (and those done there);
- * a rework row lists the wearers done on the step (those sent back first). ?rework=1 starts with a rework row.
+ * a rework row lists the wearers done on the step (those sent back first). ?line=<n> picks the item opened from the board;
+ * ?rework=1 starts with a rework row.
  */
 import { useEffect, useState } from 'react';
 import { api, ApiError, type DocHeader, type DocTypeInfo, type Preview, type PrdJob, type Worker } from '../../api.ts';
@@ -60,7 +61,8 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
     const q = new URLSearchParams(location.search);
     setJo(q.get('jo') ?? '');
     setStepId(q.get('step') ? Number(q.get('step')) : null);
-    if (q.has('rework')) setRows([{ ...emptyRow(), rework: true }]);
+    // The item opened from the board (?line=) is the row's line; ?rework=1 starts it as rework.
+    setRows([{ ...emptyRow(q.get('line') ?? ''), rework: q.has('rework') }]);
   }, [type.key, mode.kind === 'edit' ? mode.id : '']);
 
   useEffect(() => {
@@ -140,7 +142,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
           </Field>
           <div role="radiogroup" aria-label="Step" className="flex flex-wrap gap-2">
             {steps.map((s) => (
-              <button key={s.id} type="button" role="radio" aria-checked={stepId === s.id} onClick={() => (setStepId(s.id), setRows([emptyRow()]))}
+              <button key={s.id} type="button" role="radio" aria-checked={stepId === s.id} onClick={() => (setStepId(s.id), setRows([emptyRow(job?.lines.some((l) => String(l.lineNo) === rows[0]?.lineNo && openOn(l, s.id)) ? rows[0]!.lineNo : '')]))}
                 className={`rounded-lg px-3 py-2 text-sm ring-1 ${stepId === s.id ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'}`}>{s.name}</button>
             ))}
             {job && steps.length === 0 && <p className="text-sm text-slate-500">No step is open for pieces on {job.jobOrder.number}. Set up its route on the board.</p>}
