@@ -7,19 +7,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, type CatItem, type CustomerWearers, type DocTypeInfo, type Me, type Preview } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, showDate } from '../../components/ui.tsx';
-import { SalesActions, Exception } from './entry.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
+import { cents } from '../COL/money.ts';
+import { SalesActions } from './entry.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { CustomerPicker, Errors, Figures, useLive, type Picked } from '../COL/parts.tsx';
 import { KINDS } from '../QS/lines.ts';
 import { jobOrderPrefill, type QuotationDoc } from '../QUO/quotation.ts';
 import { itemClasses } from '../QUO/QuotationView.tsx';
+import { CustomerEditor } from '../CUS/Customers.tsx';
+import { masterRequest } from '../CUS/http.ts';
 import { ItemSearch } from './parts.tsx';
 import { TERMS } from './opening.ts';
 import { parseRosterPaste } from './roster.ts';
 import {
-  KIND_OF_CLASS, emptyJo, emptyJoLine, fromWearer, joInput, joValues, lineQty, oneOff, priceChanged,
+  KIND_OF_CLASS, blankLine, emptyJo, emptyJoLine, fromWearer, joInput, joValues, lineQty, oneOff, priceChanged,
   valuesFromQuotation, type JoDoc, type JoInput, type JoLineRow, type JoValues, type RosterEdit,
 } from './forms.ts';
 
@@ -27,30 +30,40 @@ const money = `${inputClass} text-right tabular-nums`;
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'];
 const MEASURED = '__measured';
 
-/** A new customer typed in right here, for a walk-in who is not on file yet. */
-function AddCustomer({ onAdded, onClose }: { onAdded: (c: Picked, lookalike: boolean) => void; onClose: () => void }) {
-  const [name, setName] = useState('');
-  const [kind, setKind] = useState<'organization' | 'person'>('organization');
-  const [error, setError] = useState('');
-  const add = () =>
-    api.addCustomer({ kind, displayName: name.trim() }).then((c) => onAdded({ id: c.id, name: c.display_name }, c.duplicateWarnings.length > 0), (e: Error) => setError(e.message));
+/** A plus beside two people: add a new customer. */
+function AddPeopleIcon() {
   return (
-    <div className="space-y-2 rounded-md p-2 ring-1 ring-slate-200">
-      <div className="grid gap-2 sm:grid-cols-[1fr_12rem_auto_auto]">
-        <Field label="New customer's name"><input aria-label="New customer's name" placeholder="New customer's name" className={inputClass} value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <Field label="Kind of customer"><select aria-label="Kind of customer" className={inputClass} value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
-          <option value="organization">Team, school or company</option>
-          <option value="person">Person</option>
-        </select></Field>
-        <Button tone="primary" disabled={!name.trim()} onClick={() => void add()}>Add customer</Button>
-        <Button onClick={onClose}>Never mind</Button>
-      </div>
-      {error && <Notice>{error}</Notice>}
-    </div>
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="8" r="3.2" /><path d="M3 19c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" />
+      <path d="M16 6.5a3 3 0 0 1 0 5.6" /><path d="M20 4v6M17 7h6" />
+    </svg>
   );
 }
 
-function RosterGrid(p: { line: JoLineRow; n: number; people: CustomerWearers | null; sizes: string[]; onChange: (roster: RosterEdit[]) => void }) {
+/**
+ * The New customer button beside the customer box: the Customers screen's own form (every detail of a customer) in a
+ * dialog over the job order; once saved, the new customer is picked here.
+ */
+function NewCustomerButton({ me, onAdded }: { me: Me; onAdded: (c: Picked, lookalike: boolean) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" aria-label="New customer" title="Add a new customer" onClick={() => setOpen(true)}
+        className="inline-flex size-10 shrink-0 items-center justify-center gap-0.5 rounded-md bg-indigo-600 text-white shadow-sm hover:bg-indigo-700">
+        <AddPeopleIcon />
+      </button>
+      {open && (
+        <CustomerEditor me={me} row="new" onClose={() => setOpen(false)} onSaved={async (id, warnings) => {
+          const saved = await masterRequest<{ display_name: string }>(me, `/api/cus/customers/${encodeURIComponent(id)}`);
+          setOpen(false);
+          onAdded({ id, name: saved.display_name }, warnings.length > 0);
+        }} />
+      )}
+    </>
+  );
+}
+
+function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWearers | null; sizes: string[]; onChange: (roster: RosterEdit[]) => void }) {
   const [paste, setPaste] = useState<string | null>(null);
   const [pasteErrors, setPasteErrors] = useState<string[]>([]);
   const rows = p.line.roster;
@@ -62,31 +75,32 @@ function RosterGrid(p: { line: JoLineRow; n: number; people: CustomerWearers | n
     const out = parseRosterPaste(paste ?? '', wearers);
     setPasteErrors(out.errors);
     if (out.errors.length > 0) return;
-    p.onChange([...rows, ...out.rows.map((g) => ({ personId: g.personId ?? '', name: g.wearerName, sizeMode: g.sizeMode, size: g.size ?? (g.personId ? wearers.find((w) => w.personId === g.personId)?.size ?? '' : ''), jerseyName: g.jerseyName ?? '', jerseyNumber: g.jerseyNumber ?? '', qty: String(g.qty) }))]);
+    p.onChange([...rows, ...out.rows.map((g) => ({ personId: g.personId ?? '', name: g.wearerName, sizeMode: g.sizeMode, size: g.size ?? (g.personId ? wearers.find((w) => w.personId === g.personId)?.size ?? '' : ''), jerseyName: g.jerseyName ?? '', jerseyNumber: g.jerseyNumber ?? '', qty: String(g.qty), garmentType: g.garmentType ?? '' }))]);
     setPaste(null);
   };
   return (
     <div className="space-y-2">
       {rows.length > 0 && (
         <table className="block w-full text-sm lg:table">
-          <thead className="hidden text-left text-slate-500 lg:table-header-group"><tr><th>Wearer</th><th className="w-28">Size</th><th>Jersey name</th><th className="w-20">No.</th><th className="w-16">Qty</th><th /></tr></thead>
+          <thead className="hidden text-left text-slate-500 lg:table-header-group"><tr><th>Wearer</th><th className="w-28">Size</th><th>Jersey name</th><th className="w-20">No.</th><th className="w-16">Qty</th><th className="w-44">Garment type</th><th /></tr></thead>
           <tbody className="grid gap-2 lg:table-row-group">
             {rows.map((r, j) => (
               <tr key={j} className="grid gap-2 rounded border p-2 sm:grid-cols-2 lg:table-row lg:border-0 lg:p-0">
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Wearer</span>
-                  {r.personId ? <span>{r.name}</span> : <input aria-label={`Line ${p.n} wearer ${j + 1} name`} placeholder="One-off name" className={inputClass} value={r.name} onChange={(e) => set(j, { name: e.target.value })} />}
+                  {r.personId ? <span>{r.name}</span> : <input aria-label={`${p.n} wearer ${j + 1} name`} placeholder="One-off name" className={inputClass} value={r.name} onChange={(e) => set(j, { name: e.target.value })} />}
                 </td>
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Size</span>
-                  <select aria-label={`Line ${p.n} wearer ${j + 1} size`} className={inputClass} value={r.sizeMode === 'measured' ? MEASURED : r.size}
+                  <select aria-label={`${p.n} wearer ${j + 1} size`} className={inputClass} value={r.sizeMode === 'measured' ? MEASURED : r.size}
                     onChange={(e) => set(j, e.target.value === MEASURED ? { sizeMode: 'measured', size: '' } : { sizeMode: 'preset', size: e.target.value })}>
                     <option value="" />
                     {r.personId && <option value={MEASURED}>Measured</option>}
                     {[...new Set([...p.sizes, ...(r.size ? [r.size] : [])])].map((s) => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </td>
-                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Jersey name</span><input aria-label={`Line ${p.n} wearer ${j + 1} jersey name`} className={`${inputClass} uppercase`} value={r.jerseyName} onChange={(e) => set(j, { jerseyName: e.target.value })} /></td>
-                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">No.</span><input aria-label={`Line ${p.n} wearer ${j + 1} jersey number`} className={inputClass} value={r.jerseyNumber} onChange={(e) => set(j, { jerseyNumber: e.target.value })} /></td>
-                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Qty</span><input aria-label={`Line ${p.n} wearer ${j + 1} qty`} inputMode="numeric" className={money} value={r.qty} onChange={(e) => set(j, { qty: e.target.value })} /></td>
+                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Jersey name</span><input aria-label={`${p.n} wearer ${j + 1} jersey name`} className={`${inputClass} uppercase`} value={r.jerseyName} onChange={(e) => set(j, { jerseyName: e.target.value })} /></td>
+                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">No.</span><input aria-label={`${p.n} wearer ${j + 1} jersey number`} className={inputClass} value={r.jerseyNumber} onChange={(e) => set(j, { jerseyNumber: e.target.value })} /></td>
+                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Qty</span><input aria-label={`${p.n} wearer ${j + 1} qty`} inputMode="numeric" className={money} value={r.qty} onChange={(e) => set(j, { qty: e.target.value })} /></td>
+                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Garment type</span><input aria-label={`${p.n} wearer ${j + 1} garment type`} maxLength={60} placeholder="e.g. Jersey (men)" className={inputClass} value={r.garmentType} onChange={(e) => set(j, { garmentType: e.target.value })} /></td>
                 <td className="py-1"><Button onClick={() => p.onChange(rows.filter((_, k) => k !== j))} title="Take off the list">✕</Button></td>
               </tr>
             ))}
@@ -95,13 +109,13 @@ function RosterGrid(p: { line: JoLineRow; n: number; people: CustomerWearers | n
       )}
       <div className="flex flex-wrap gap-2">
         {(p.people?.groups.length ?? 0) > 0 && (
-          <select aria-label={`Line ${p.n} pull a group`} className={`${inputClass} w-auto`} value="" onChange={(e) => e.target.value && pull(e.target.value)}>
+          <select aria-label={`${p.n} pull a group`} className={`${inputClass} w-auto`} value="" onChange={(e) => e.target.value && pull(e.target.value)}>
             <option value="">Pull a whole group…</option>
             {p.people!.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
           </select>
         )}
         {wearers.some((w) => !on.has(w.personId)) && (
-          <select aria-label={`Line ${p.n} add a wearer`} className={`${inputClass} w-auto`} value="" onChange={(e) => {
+          <select aria-label={`${p.n} add a wearer`} className={`${inputClass} w-auto`} value="" onChange={(e) => {
             const w = wearers.find((x) => x.personId === e.target.value);
             if (w) p.onChange([...rows, fromWearer(w)]);
           }}>
@@ -114,7 +128,7 @@ function RosterGrid(p: { line: JoLineRow; n: number; people: CustomerWearers | n
       </div>
       {paste !== null && (
         <div className="space-y-2">
-          <Field label="Pasted rows"><textarea aria-label={`Line ${p.n} pasted rows`} rows={4} className={inputClass} placeholder="Name, size, jersey name, jersey number, qty (one person per row)" value={paste} onChange={(e) => setPaste(e.target.value)} /></Field>
+          <Field label="Pasted rows"><textarea aria-label={`${p.n} pasted rows`} rows={4} className={inputClass} placeholder="Name, size, jersey name, jersey number, qty, garment type (one person per row)" value={paste} onChange={(e) => setPaste(e.target.value)} /></Field>
           {pasteErrors.map((e) => <Notice key={e}>{e}</Notice>)}
           <Button onClick={addPasted}>Add these</Button>
         </div>
@@ -125,11 +139,15 @@ function RosterGrid(p: { line: JoLineRow; n: number; people: CustomerWearers | n
 
 /** `inDialog`: shown over the job order list (New): no page heading, Close instead of Back, and it says when something typed is unsaved. */
 export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; mode: FormMode; me?: Me; inDialog?: { close: () => void; setDirty: (dirty: boolean) => void; show?: (id: string) => void } }) {
-  const [v, setV] = useState<JoValues>(emptyJo);
-  const [adding, setAdding] = useState(false);
+  const [v, setV] = useState<JoValues>(() => ({ ...emptyJo(), lines: [] })); // items join the breakdown from the item form
   const [people, setPeople] = useState<CustomerWearers | null>(null);
   const [sizes, setSizes] = useState<string[]>(SIZES);
-  const [noPrice, setNoPrice] = useState<Record<number, string>>({});
+  const [item, setItem] = useState<JoLineRow>(emptyJoLine); // the item form
+  const [editing, setEditing] = useState<number | null>(null); // the breakdown's item the item form is changing
+  const [noPrice, setNoPrice] = useState('');
+  const latestItem = useRef(item);
+  latestItem.current = item;
+  const itemForm = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<{ id: string; version: number } | null>(null);
   const [saved, setSaved] = useState('');
   const clean = useRef(JSON.stringify(v)); // the form as last opened or saved as a draft
@@ -146,7 +164,8 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
         const d = ds.find((x) => x.id === mode.draftId);
         if (!d) return r.fail(new Error('That draft was already recorded or discarded.'));
         setDraft({ id: d.id, version: d.version });
-        const opened = { ...emptyJo(), ...(d.payload.form as JoValues) };
+        const form = { ...emptyJo(), ...(d.payload.form as JoValues) };
+        const opened = { ...form, lines: form.lines.filter((l) => !blankLine(l)) };
         clean.current = JSON.stringify(opened);
         setV(opened);
       }, r.fail);
@@ -171,48 +190,73 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
   }, [v.customer?.id]);
 
   const set = (patch: Partial<JoValues>) => setV((old) => ({ ...old, ...patch }));
-  const setLine = (i: number, patch: Partial<JoLineRow>) => setV((old) => ({ ...old, lines: old.lines.map((x, j) => (j === i ? { ...x, ...patch } : x)) }));
 
-  /** The price list's tier price for the line's quantity; a price typed by hand stays. A late answer for an older quantity is dropped. */
-  const lookup = (i: number, itemId: string, qty: string) => {
+  /**
+   * The item form: what is typed here goes into the breakdown with Add to order, or replaces the item picked there with
+   * Update item. The price list's tier price for its quantity fills the price unless one was typed by hand; a late answer
+   * for another item or quantity is dropped.
+   */
+  const lookup = (itemId: string, qty: string) => {
     if (!itemId || !/^[1-9]\d*$/.test(qty)) return;
     api.catPrice(itemId, Number(qty)).then(
       (p) => {
-        setNoPrice((old) => ({ ...old, [i]: '' }));
-        setV((old) => ({
-          ...old,
-          lines: old.lines.map((l, j) => {
-            if (j !== i || l.itemId !== itemId || lineQty(l) !== qty) return l;
-            const byHand = l.listCents !== null ? priceChanged(l) : !!l.price.trim();
-            return { ...l, listCents: p.unitPriceCents, ...(byHand ? {} : { price: formatPesos(p.unitPriceCents) }) };
-          }),
-        }));
+        setNoPrice('');
+        setItem((l) => {
+          if (l.itemId !== itemId || lineQty(l) !== qty) return l;
+          const byHand = l.listCents !== null ? priceChanged(l) : !!l.price.trim();
+          return { ...l, listCents: p.unitPriceCents, ...(byHand ? {} : { price: formatPesos(p.unitPriceCents) }) };
+        });
       },
       () => {
-        setNoPrice((old) => ({ ...old, [i]: `The price list has no price for ${qty} of this item: type the price.` }));
-        setLine(i, { listCents: null });
+        setNoPrice(`The price list has no price for ${qty} of this item: type the price.`);
+        setItem((l) => (l.itemId === itemId ? { ...l, listCents: null } : l));
       },
     );
   };
-  const pick = (i: number, it: CatItem) => {
-    const qty = lineQty(latest.current.lines[i]!);
-    setLine(i, { itemId: it.id, kind: KIND_OF_CLASS[it.class], description: it.name, price: '', listCents: null });
-    lookup(i, it.id, qty);
+  const setItemPatch = (patch: Partial<JoLineRow>) => setItem((l) => ({ ...l, ...patch }));
+  const pick = (it: CatItem) => {
+    const qty = lineQty(latestItem.current);
+    setItemPatch({ itemId: it.id, kind: KIND_OF_CLASS[it.class], description: it.name, price: '', listCents: null });
+    lookup(it.id, qty);
   };
-  const setQty = (i: number, qty: string) => {
-    setLine(i, { qty });
-    lookup(i, latest.current.lines[i]!.itemId, qty);
+  const setQty = (qty: string) => { setItemPatch({ qty }); lookup(latestItem.current.itemId, qty); };
+  const setRoster = (roster: RosterEdit[]) => { setItemPatch({ roster }); lookup(latestItem.current.itemId, lineQty({ ...latestItem.current, roster })); };
+  /** The item form's own slips, in its words (the same checks as Record, on this item alone). */
+  const itemErrors = joInput({ ...emptyJo(), customer: { id: '-', name: '' }, paymentTerms: 'dp50', lines: [item] }).errors
+    .filter((e) => e.startsWith('Line 1') || e === 'Add at least one line.')
+    .map((e) => (e === 'Add at least one line.' ? 'Pick an item from the price list or say what is made.' : e.replace(/^Line 1/, 'This item')));
+  const [itemTouched, setItemTouched] = useState(false);
+  const clearItem = () => { setItem(emptyJoLine()); setEditing(null); setNoPrice(''); setItemTouched(false); };
+  const putItem = () => {
+    setItemTouched(true);
+    if (itemErrors.length > 0) return;
+    setV((old) => ({ ...old, lines: editing === null ? [...old.lines, item] : old.lines.map((l, j) => (j === editing ? item : l)) }));
+    clearItem();
   };
-  const setRoster = (i: number, roster: RosterEdit[]) => {
-    const line = { ...latest.current.lines[i]!, roster };
-    setLine(i, { roster });
-    lookup(i, line.itemId, lineQty(line));
+  const editItem = (i: number) => {
+    setItem(v.lines[i]!); setEditing(i); setNoPrice(''); setItemTouched(false);
+    itemForm.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+  };
+  const removeItem = (i: number) => {
+    setV((old) => ({ ...old, lines: old.lines.filter((_, j) => j !== i) }));
+    if (editing === i) clearItem(); else if (editing !== null && editing > i) setEditing(editing - 1);
   };
 
   const typed = joInput(v);
   const live = useLive<Preview | null>(JSON.stringify(typed.input), typed.errors.length === 0, () => r.preview(typed.input));
   const doc = live?.doc as { totalCents: number; requiredDownpaymentCents: number; dueDate: string } | undefined;
-  const record = () => r.ask(typed.input, typed.errors);
+  const pending = !blankLine(item); // something typed in the item form and not added yet
+  /** Record takes a complete item still in the item form with it (added, or its change applied); an incomplete one stops it. */
+  const record = () => {
+    if (!pending) return r.ask(typed.input, typed.errors);
+    setItemTouched(true);
+    if (itemErrors.length > 0) return r.fail(new Error(editing === null ? 'The item in the form is not complete: finish it and press Add to order, or Clear it.' : 'The item being changed is not complete: finish it and press Update item, or Cancel the change.'));
+    const next = { ...v, lines: editing === null ? [...v.lines, item] : v.lines.map((l, j) => (j === editing ? item : l)) };
+    setV(next);
+    clearItem();
+    const all = joInput(next);
+    r.ask(all.input, all.errors);
+  };
   const saveDraft = () =>
     (draft ? api.saveDraft(draft.id, draft.version, { form: v }) : api.createDraft(type.key, { form: v })).then(
       (d) => (setDraft(d), (clean.current = JSON.stringify(v)), inDialog?.setDirty(false), setSaved('Draft saved. It has no number and records nothing until you press Record.')),
@@ -225,56 +269,61 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
   if (r.gate) return r.gate;
   return (
     <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && record()} className="space-y-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-0">
-      <div className="space-y-4">
+      {/* Two columns from a wide screen: the form on the left, the breakdown on the right. */}
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)]">
+        <div className="min-w-0 space-y-4">
         {!inDialog && <h1 className="text-2xl font-semibold">{r.title('New job order')}</h1>}
         {r.top}
         {saved && <Notice tone="success">{saved}</Notice>}
         <Panel title="Customer">
-          <CustomerPicker value={v.customer} onChange={(c) => set({ customer: c, lines: !c || c.id === last.current ? v.lines : v.lines.map((l) => ({ ...l, roster: [] })) })} />
-          {!v.customer && !adding && me?.permissions.includes('cus.manage') && <Button onClick={() => setAdding(true)}>+ New customer</Button>}
-          {!v.customer && adding && <AddCustomer onAdded={(c, lookalike) => (set({ customer: c }), setAdding(false), setSaved(lookalike ? `Added ${c.name}. Another customer has a similar name: check the customer list later in case it is the same one.` : `Added ${c.name} as a new customer.`))} onClose={() => setAdding(false)} />}
-          <Field label="Contact person">
-            <input className={inputClass} value={v.contact} onChange={(e) => set({ contact: e.target.value })} />
-          </Field>
+          {/* The customer on one line, with New customer beside it; the contact person beside that on a wide screen. */}
+          <div className="grid items-end gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <CustomerPicker value={v.customer} onChange={(c) => {
+              const other = !!c && c.id !== last.current;
+              set({ customer: c, lines: other ? v.lines.map((l) => ({ ...l, roster: [] })) : v.lines });
+              if (other) setItemPatch({ roster: [] });
+            }}
+              beside={!v.customer && me?.permissions.includes('cus.manage') && <NewCustomerButton me={me} onAdded={(c, lookalike) => (set({ customer: c }),
+                setSaved(lookalike ? `Added ${c.name}. Another customer has a similar name: check the customer list later in case it is the same one.` : `Added ${c.name} as a new customer.`))} />} />
+            <Field label="Contact person">
+              <input className={inputClass} value={v.contact} onChange={(e) => set({ contact: e.target.value })} />
+            </Field>
+          </div>
         </Panel>
-        <Panel title="What is made">
-          {v.lines.map((l, i) => (
-            <div key={i} className="space-y-2 rounded-md p-2 ring-1 ring-slate-200">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">Line {i + 1}</span>
-                <span className="flex-1" />
-                <Button onClick={() => set({ lines: v.lines.length > 1 ? v.lines.filter((_, j) => j !== i) : [emptyJoLine()] })} title="Remove this line">✕</Button>
-              </div>
-              <ItemSearch n={i + 1} onPick={(it) => pick(i, it)} />
-              <div role="radiogroup" aria-label={`Kind of line ${i + 1}`} className="flex flex-wrap gap-2">
-                {KINDS.map(([k, label]) => (
-                  <button key={k} type="button" role="radio" aria-checked={l.kind === k} onClick={() => setLine(i, { kind: k })}
-                    className={`rounded-full px-3 py-1 text-sm ring-1 ${l.kind === k ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300'}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <div className="grid gap-2 sm:grid-cols-[minmax(12rem,1fr)_6rem]">
-                <Field label="Description"><input aria-label={`Line ${i + 1} description`} placeholder="What, e.g. Team jersey set" className={inputClass} value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} /></Field>
-                <Field label="Pieces"><input aria-label={`Line ${i + 1} pieces`} inputMode="numeric" className={money} value={lineQty(l)} readOnly={l.roster.length > 0}
-                  title={l.roster.length > 0 ? 'Follows the wearers listed below' : undefined} onChange={(e) => setQty(i, e.target.value)} /></Field>
-              </div>
-              <Exception title="Change the usual price" active={l.listCents === null || priceChanged(l)}>
-                <div className="max-w-xs"><Field label="Price each"><input aria-label={`Line ${i + 1} price each`} inputMode="decimal" placeholder="Price each" className={money} value={l.price} onChange={(e) => setLine(i, { price: e.target.value })} /></Field></div>
-              </Exception>
-              <Exception title="Add a line discount" active={!!l.discount.trim() && Number(l.discount.replaceAll(',', '')) !== 0}>
-                <div className="max-w-xs"><Field label="Discount"><input aria-label={`Line ${i + 1} discount`} inputMode="decimal" placeholder="Discount" className={money} value={l.discount} onChange={(e) => setLine(i, { discount: e.target.value })} /></Field></div>
-              </Exception>
-              {l.listCents !== null && <p className="text-xs text-slate-500">Price list for {lineQty(l)}: {formatPesos(l.listCents)} each{priceChanged(l) ? ' (changed by hand)' : ''}.</p>}
-              {noPrice[i] && <p className="text-xs text-amber-700">{noPrice[i]}</p>}
-              <details open={l.roster.length > 0}>
-                <summary className="cursor-pointer text-sm text-indigo-700">Wearers{l.roster.length > 0 ? ` (${l.roster.length})` : ''}</summary>
-                {v.customer ? <RosterGrid line={l} n={i + 1} people={people} sizes={sizes} onChange={(roster) => setRoster(i, roster)} /> : <p className="text-sm text-slate-500">Pick the customer first.</p>}
-              </details>
+        <div ref={itemForm} className="scroll-mt-4">
+        <Panel title={editing === null ? 'What is made: add an item' : `What is made: change item ${editing + 1}`}>
+          <div className="space-y-3">
+            <ItemSearch label="Item price list item" onPick={pick} />
+            <div role="radiogroup" aria-label="Kind of item" className="flex flex-wrap gap-2">
+              {KINDS.map(([k, label]) => (
+                <button key={k} type="button" role="radio" aria-checked={item.kind === k} onClick={() => setItemPatch({ kind: k })}
+                  className={`rounded-full px-3 py-1 text-sm ring-1 ${item.kind === k ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300'}`}>
+                  {label}
+                </button>
+              ))}
             </div>
-          ))}
-          {v.lines.length < 50 && <Button onClick={() => set({ lines: [...v.lines, emptyJoLine()] })}>+ Add a line</Button>}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Description"><input aria-label="Item description" placeholder="What, e.g. Team jersey set" className={inputClass} value={item.description} onChange={(e) => setItemPatch({ description: e.target.value })} /></Field>
+              <Field label="Pieces"><input aria-label="Item pieces" inputMode="numeric" className={money} value={lineQty(item)} readOnly={item.roster.length > 0}
+                title={item.roster.length > 0 ? 'Follows the wearers listed below' : undefined} onChange={(e) => setQty(e.target.value)} /></Field>
+              <Field label="Price each" hint={item.listCents !== null ? `Price list for ${lineQty(item)}: ${formatPesos(item.listCents)} each${priceChanged(item) ? ' (changed by hand)' : ''}` : undefined}>
+                <input aria-label="Item price each" inputMode="decimal" placeholder="Price each" className={money} value={item.price} onChange={(e) => setItemPatch({ price: e.target.value })} />
+              </Field>
+              <Field label="Discount (optional)"><input aria-label="Item discount" inputMode="decimal" placeholder="0.00" className={money} value={item.discount} onChange={(e) => setItemPatch({ discount: e.target.value })} /></Field>
+            </div>
+            {noPrice && <p className="text-xs text-amber-700">{noPrice}</p>}
+            <details open={item.roster.length > 0}>
+              <summary className="cursor-pointer text-sm text-indigo-700">Wearers{item.roster.length > 0 ? ` (${item.roster.length})` : ''}</summary>
+              {v.customer ? <RosterGrid line={item} n="Item" people={people} sizes={sizes} onChange={setRoster} /> : <p className="text-sm text-slate-500">Pick the customer first.</p>}
+            </details>
+            <Errors list={itemErrors} show={itemTouched} />
+            <div className="flex flex-wrap gap-2">
+              <Button tone="primary" onClick={putItem} disabled={v.lines.length >= 50 && editing === null}>{editing === null ? '+ Add to order' : 'Update item'}</Button>
+              {(editing !== null || pending) && <Button onClick={clearItem}>{editing === null ? 'Clear' : 'Cancel the change'}</Button>}
+            </div>
+          </div>
         </Panel>
+        </div>
         <Panel title="Terms">
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Due in (days)" required hint={doc ? `Due ${showDate(doc.dueDate)}` : 'Counted from today'}>
@@ -295,21 +344,54 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
           </div>
           <Field label="Notes"><textarea rows={2} className={inputClass} value={v.notes} onChange={(e) => set({ notes: e.target.value })} /></Field>
         </Panel>
-        <Errors list={typed.errors} show={r.touched} />
-        <Panel title="So far">
-          <Figures items={[
-            ['Total', doc?.totalCents ?? typed.totalCents, 'text-lg font-semibold'],
-            ...(doc ? [['Downpayment asked', doc.requiredDownpaymentCents] as [string, number], ['Balance due', doc.totalCents, 'font-semibold'] as [string, number, string]] : []),
-          ]} />
-          {!live && <p className="text-sm text-slate-500">Fill in the customer, terms and lines to see the downpayment asked.</p>}
-          {live && <p className="text-sm">{live.summary}</p>}
-          {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
-        </Panel>
-        <SalesActions total={doc?.totalCents ?? typed.totalCents} label="Total">
-          <Button tone="primary" disabled={!type.canPost} onClick={record} title="Ctrl+Enter">Record</Button>
-          {mode.kind === 'new' && <Button onClick={() => void saveDraft()}>Save draft</Button>}
-          {inDialog ? <Button onClick={inDialog.close}>Close</Button> : <Button onClick={() => history.back()}>Back</Button>}
-        </SalesActions>
+        </div>
+        {/* The breakdown on the right (under the form on a phone), in view while the form scrolls. */}
+        <aside className="space-y-4 lg:sticky lg:top-0">
+          <Panel title="So far">
+            {v.lines.length === 0 && <p className="text-sm text-slate-500">No item yet. Fill in the item on the left, then press Add to order.</p>}
+            {v.lines.length > 0 && (
+              <ol className="divide-y divide-slate-100" aria-label="Items in this job order">
+                {v.lines.map((l, i) => {
+                  const each = cents(l.price);
+                  const off = cents(l.discount) ?? 0;
+                  const total = each === undefined ? undefined : Number(lineQty(l)) * each - off;
+                  return (
+                    <li key={i} className={`flex gap-3 py-2 ${editing === i ? '-mx-2 rounded-md bg-indigo-50 px-2' : ''}`}>
+                      <span className="w-5 shrink-0 text-sm text-slate-500">{i + 1}.</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium" title={l.description}>{l.description || '(no description)'}</p>
+                        <p className="text-xs text-slate-500">
+                          {lineQty(l)} pcs × {each === undefined ? '—' : peso(each)}{off ? ` less ${peso(off)}` : ''}{l.roster.length > 0 ? ` · ${l.roster.length} wearer${l.roster.length === 1 ? '' : 's'}` : ''}
+                        </p>
+                        <div className="mt-1 flex gap-3 text-xs">
+                          <button type="button" className="font-medium text-indigo-700 hover:underline" aria-label={`Edit item ${i + 1}`} onClick={() => editItem(i)}>Edit</button>
+                          <button type="button" className="font-medium text-red-700 hover:underline" aria-label={`Remove item ${i + 1}`} onClick={() => removeItem(i)}>Remove</button>
+                        </div>
+                      </div>
+                      <span className="shrink-0 text-right text-sm font-semibold tabular-nums">{total === undefined ? '—' : peso(total)}</span>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+            <div className="border-t border-slate-200 pt-3">
+              <Figures items={[
+                ['Total', doc?.totalCents ?? typed.totalCents, 'text-lg font-semibold'],
+                ...(doc ? [['Downpayment asked', doc.requiredDownpaymentCents] as [string, number], ['Balance due', doc.totalCents, 'font-semibold'] as [string, number, string]] : []),
+              ]} />
+            </div>
+            {!live && v.lines.length > 0 && <p className="text-sm text-slate-500">Fill in the customer and terms to see the downpayment asked.</p>}
+            {live && <p className="text-sm">{live.summary}</p>}
+            {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
+            {pending && <Notice tone="warning">{editing === null ? 'The item in the form is not added yet: press Add to order (Record adds it too).' : `Item ${editing + 1} is being changed: press Update item (Record applies it too).`}</Notice>}
+          </Panel>
+          <Errors list={typed.errors} show={r.touched} />
+          <SalesActions total={doc?.totalCents ?? typed.totalCents} label="Total">
+            <Button tone="primary" disabled={!type.canPost} onClick={record} title="Ctrl+Enter">Record</Button>
+            {mode.kind === 'new' && <Button onClick={() => void saveDraft()}>Save draft</Button>}
+            {inDialog ? <Button onClick={inDialog.close}>Close</Button> : <Button onClick={() => history.back()}>Back</Button>}
+          </SalesActions>
+        </aside>
       </div>
       {r.dialog}
     </form>

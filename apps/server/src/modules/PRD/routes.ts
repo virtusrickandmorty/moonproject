@@ -10,13 +10,19 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { currentStage, jobOrderRef, lineState, rosterOf } from '../JO/public.ts';
 import { garmentTypes } from '../RATE/public.ts';
 import { activeEmployees } from './emp.ts';
-import { COMPLEXITIES, availableFor, board, lineRoute, lineSetup, listSteps, listTemplates, setupLine, stepAction, stepById, wearersDone, type StepAction } from './production.ts';
+import { COMPLEXITIES, SET_PARTS, availableFor, board, forwardedWearers, lineRoute, lineSetup, listSteps, listTemplates, reworkOpen, sendBackForRework, setupLine, stepAction, stepById, wearersDone, type StepAction } from './production.ts';
 
 const setupBody = z
   .object({ templateId: z.number().int().positive().optional(), stepIds: z.array(z.number().int().positive()).min(1).max(20), garmentType: z.string().trim().min(1).max(60).optional(), complexity: z.enum(COMPLEXITIES) })
   .strict();
 const stepBody = z.object({ name: z.string().trim().min(1).max(60).optional(), payBasis: z.enum(['piece', 'daily', 'piece_or_daily']).optional(), isActive: z.boolean().optional() }).strict();
 const ACTIONS: Record<string, StepAction> = { complete: 'complete', 'not-needed': 'not_needed', reopen: 'reopen' };
+const reworkBody = z.object({
+  pieces: z.number().int().min(1).max(10_000).optional(),
+  wearers: z.array(z.number().int().min(1).max(1000)).min(1).max(1000).optional(),
+  part: z.enum(SET_PARTS).optional(),
+  reason: z.string().max(500),
+}).strict();
 type LineParams = { jo: string; line: string };
 const lineNoOf = (p: LineParams) => {
   const n = Number(p.line);
@@ -48,9 +54,13 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
         roster: rosterOf(db, jo.id, l.lineNo),
         // A set's parts: each step's pieces and wearers done per part (the owner's request, Oct 2026).
         isSet: lineSetup(db, jo.id, l.lineNo)?.isSet ?? false,
+        // forwardedWearers: the wearers that came out of the step before (null: all of them); rework: sent back, not redone yet.
         route: route?.map((s) => ({
           ...s, availablePieces: availableFor(route, s.id, l.qty), doneWearers: [...wearersDone(db, jo.id, l.lineNo, s.id).keys()],
+          forwardedWearers: forwardedWearers(db, jo.id, l.lineNo, route, s.id), rework: reworkOpen(db, jo.id, l.lineNo, s.id),
           ...(s.parts ? {
+            partForwarded: { upper: forwardedWearers(db, jo.id, l.lineNo, route, s.id, 'upper'), lower: forwardedWearers(db, jo.id, l.lineNo, route, s.id, 'lower') },
+            partRework: { upper: reworkOpen(db, jo.id, l.lineNo, s.id, 'upper'), lower: reworkOpen(db, jo.id, l.lineNo, s.id, 'lower') },
             partPieces: { upper: s.parts.upper.pieces, lower: s.parts.lower.pieces },
             partAvailable: { upper: availableFor(route, s.id, l.qty, 'upper'), lower: availableFor(route, s.id, l.qty, 'lower') },
             partWearersDone: { upper: [...wearersDone(db, jo.id, l.lineNo, s.id, 'upper').keys()], lower: [...wearersDone(db, jo.id, l.lineNo, s.id, 'lower').keys()] },
@@ -72,6 +82,12 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (!action) throw notFound('That action');
     const body = z.object({ reason: z.string().max(500).optional() }).strict().parse(req.body ?? {});
     return write(() => stepAction(db, req.params.jo, lineNoOf(req.params), Number(req.params.step), action, body.reason, who(req)));
+  });
+
+  /** Send pieces back for rework to a step they went through (the owner's request, Oct 2026): labelled rework there, not replaced. */
+  app.post<{ Params: LineParams & { step: string } }>('/api/prd/jobs/:jo/lines/:line/steps/:step/rework', { config: { permission: 'prd.progress' } }, async (req) => {
+    const body = reworkBody.parse(req.body);
+    return write(() => sendBackForRework(db, req.params.jo, lineNoOf(req.params), Number(req.params.step), body, who(req)));
   });
 
   /** Workers who can be given pieces (active employees). */

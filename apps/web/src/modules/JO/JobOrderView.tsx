@@ -17,7 +17,7 @@ const primary = 'rounded-md bg-indigo-600 px-3 py-1 text-sm font-medium text-whi
 
 interface RecordedWearer {
   rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size?: string; chartRevision?: number | null;
-  qty: number; jerseyName?: string; jerseyNumber?: string; notes?: string;
+  qty: number; jerseyName?: string; jerseyNumber?: string; garmentType?: string; notes?: string;
 }
 interface RecordedLine {
   lineNo: number; description: string; qty: number; unitPriceCents: number; discountCents: number; lineTotalCents: number;
@@ -70,6 +70,7 @@ function Garments({ d, opening }: { d: DocDetail; opening: boolean }) {
                       <p>{r.sizeMode === 'measured' ? `Measured${r.chartRevision != null ? ` · revision ${r.chartRevision}` : ''}` : `Size: ${r.size ?? 'Not supplied'}`} · Quantity: {r.qty}</p>
                       {r.jerseyName && <p>Jersey name: {r.jerseyName}</p>}
                       {r.jerseyNumber && <p>Jersey number: {r.jerseyNumber}</p>}
+                      {r.garmentType && <p>Garment type: {r.garmentType}</p>}
                       {r.notes && <p className="text-slate-600">{r.notes}</p>}
                     </li>
                   ))}
@@ -114,9 +115,10 @@ function JoMoney({ d, typeKey }: { d: DocDetail; typeKey: string }) {
   const [can, setCan] = useState<JoCan & { move: boolean; refund: boolean }>({ move: false, refund: false, collect: false, release: false, invoice: false, dpInvoice: false });
   useEffect(() => {
     api.joStatus(id).then(setS, () => undefined);
-    api.docTypes().then((ts) => {
+    Promise.all([api.docTypes(), api.me().catch(() => null)]).then(([ts, me]) => {
       const may = (key: string) => !!ts.find((t) => t.key === key)?.canCreate;
-      setCan({ move: may('col.deposit_transfer'), refund: may('col.refund'), collect: may('col.collection'), release: may('jo.release'), invoice: may('jo.invoice_record'), dpInvoice: may('jo.dp_invoice') });
+      setCan({ move: may('col.deposit_transfer'), refund: may('col.refund'), collect: may('col.collection'), release: may('jo.release'), invoice: may('jo.invoice_record'), dpInvoice: may('jo.dp_invoice'),
+        releaseOverride: !!me?.permissions.includes('jo.release_override') });
     }, () => undefined);
     if (replacesId) Promise.all([api.get(typeKey, replacesId), api.joStatus(replacesId)]).then(([old, os]) => setBefore({ number: old.header.number, heldCents: os.money.depositsHeldCents }), () => undefined);
   }, [id, status]);

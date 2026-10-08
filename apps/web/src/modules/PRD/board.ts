@@ -12,12 +12,11 @@ export type Column = { key: string; title: string; cards: BoardCard[]; stepId?: 
 /**
  * The steps an item shows under (the owner's request, Oct 2026): the first step not done yet, and every later step not
  * done that already has work, pieces forwarded to it from the step before or pieces recorded on it. An item being cut
- * whose first pieces went on to sewing shows under both.
+ * whose first pieces went on to sewing shows under both. A step with rework sent back to it shows the item too, done or not.
  */
 export function activeSteps(c: Pick<BoardCard, 'steps' | 'currentStepId'>): number[] {
   const later = (c.steps ?? [])
-    .filter((s) => s.status !== 'completed' && s.status !== 'not_needed')
-    .filter((s) => s.receivedPieces > 0 || s.pieces !== 0 || s.reworkPieces > 0)
+    .filter((s) => ((s.status !== 'completed' && s.status !== 'not_needed') && (s.receivedPieces > 0 || s.pieces !== 0 || s.reworkPieces > 0)) || (s.reworkOpen ?? 0) > 0)
     .map((s) => s.stepId);
   return [...new Set([...(c.currentStepId ? [c.currentStepId] : []), ...later])];
 }
@@ -131,7 +130,7 @@ export const emptyRow = (lineNo = ''): EntryRow => ({ lineNo, employeeId: '', pi
 
 /** Typed rows -> entry rows for the server. Blank rows are left out; a typed rate goes with its reason. */
 export function rowsToInput(rows: EntryRow[]) {
-  const out: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string }[] = [];
+  const out: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string; wearers?: number[]; part?: 'upper' | 'lower' }[] = [];
   const errors: string[] = [];
   rows.forEach((r, i) => {
     if (!r.employeeId && !r.pieces.trim()) return;
@@ -154,7 +153,7 @@ export function rowsToInput(rows: EntryRow[]) {
       ...(rate !== undefined ? { rateCents: rate } : {}),
       ...(r.rate.trim() && r.rateReason.trim() ? { rateReason: r.rateReason.trim() } : {}),
       ...(repeat ? { repeatReason: repeat } : {}),
-      ...(!r.rework && r.wearers && r.wearers.length > 0 ? { wearers: [...r.wearers].sort((a, b) => a - b) } : {}),
+      ...(r.wearers && r.wearers.length > 0 ? { wearers: [...r.wearers].sort((a, b) => a - b) } : {}), // on rework: the wearers sent back
       ...(r.part ? { part: r.part } : {}),
     });
   });

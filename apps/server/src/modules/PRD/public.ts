@@ -4,7 +4,32 @@ import type { Db } from '../../platform/db/driver.ts';
 
 export { COMPLEXITIES, listSteps, stepById, type Complexity, type Step } from './production.ts';
 export { board } from './production.ts';
-import { lineRoute } from './production.ts';
+import { lineDone, lineFinished, lineRoute } from './production.ts';
+import { lineState } from '../JO/public.ts';
+
+/**
+ * Each line's production, for releasing what is ready (JO): 'done' when every step of its route is closed and no rework
+ * is open on it, 'in_production'
+ * while one is not, 'none' when the line has no route (nothing to make, or not set up yet).
+ */
+export function lineProduction(db: Db, jobOrderId: string): Map<number, 'done' | 'in_production' | 'none'> {
+  return new Map(lineState(db, jobOrderId).map((l) => {
+    const route = lineRoute(db, jobOrderId, l.lineNo);
+    return [l.lineNo, route === null ? 'none' : lineDone(db, jobOrderId, l.lineNo, route) ? 'done' : 'in_production'] as const;
+  }));
+}
+
+/**
+ * The pieces of each line that went through every step of its route (the owner's request, Oct 2026: they can go out
+ * first): all of the line once every step is done; else the pieces done on its last step that is needed (each step takes
+ * only what came out of the one before, so none passed it without the steps before); less rework sent back and not
+ * redone yet. Null: the line has no route.
+ */
+export function finishedPieces(db: Db, jobOrderId: string): Map<number, number | null> {
+  return new Map(lineState(db, jobOrderId).map((l) => {
+    return [l.lineNo, lineFinished(db, jobOrderId, l.lineNo, l.qty, lineRoute(db, jobOrderId, l.lineNo))] as const;
+  }));
+}
 
 /** Current route names and status for a production job ticket. */
 export function jobTicketRoute(db: Db, jobOrderId: string, lineNo: number) {

@@ -222,9 +222,10 @@ const SHOTS: Shot[] = [
   { guide: '02', name: 'new-job-order', role: 'encoder', show: async (p) => {
     await p.goto('/docs/jo.job_order/new'); await settle(p);
     await pickFirst(p.getByRole('textbox', { name: 'Customer', exact: true }));
-    await p.getByLabel('Line 1 description').fill('Polo shirts');
-    await p.getByLabel('Line 1 pieces').fill('12');
-    await p.getByLabel('Line 1 price each').fill('450.00');
+    await p.getByLabel('Item description').fill('Polo shirts');
+    await p.getByLabel('Item pieces').fill('12');
+    await p.getByLabel('Item price each').fill('450.00');
+    await p.getByRole('button', { name: '+ Add to order' }).click();
     await p.getByLabel('Payment terms *').selectOption({ label: '50% downpayment' });
     await p.waitForTimeout(600);
   } },
