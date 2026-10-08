@@ -78,12 +78,14 @@ export function DocView({ type, id, recorded, parts = {}, inDialog, startCancel 
         {!inDialog && <Crumb label={h.number} />}{/* over its list, the trail stays the list's */}
         <h1 className="text-2xl font-bold text-[#010101]">{type.title} {h.number}</h1>
         <StatusChip status={h.status} />
-        <span className="flex-1" />
-        {printVariants.includes('document') && <Button onClick={() => void print()}>Print</Button>}
-        {printVariants.includes('job_ticket') && <Button onClick={() => void print('job_ticket')}>Print job ticket</Button>}
-        {printVariants.includes('thermal') && <Button onClick={() => void print('thermal')}>Print 80 mm receipt</Button>}
-        {posted && type.canCancel && type.canPost && !parts.noEdit && <Button onClick={() => navigate(docPath(type.key, `/${id}/edit`))}>Edit</Button>}
-        {posted && type.canCancel && <Button tone="danger" onClick={() => setCancelKey(newIdempotencyKey())}>Cancel</Button>}
+        {/* Its actions together: on their own row under the title on a phone, on the right from a tablet up. */}
+        <div className="flex w-full flex-wrap gap-2 sm:ml-auto sm:w-auto sm:justify-end">
+          {printVariants.includes('document') && <Button onClick={() => void print()}>Print</Button>}
+          {printVariants.includes('job_ticket') && <Button onClick={() => void print('job_ticket')}>Print job ticket</Button>}
+          {printVariants.includes('thermal') && <Button onClick={() => void print('thermal')}>Print 80 mm receipt</Button>}
+          {posted && type.canCancel && type.canPost && !parts.noEdit && <Button onClick={() => navigate(docPath(type.key, `/${id}/edit`))}>Edit</Button>}
+          {posted && type.canCancel && <Button tone="danger" onClick={() => setCancelKey(newIdempotencyKey())}>Cancel</Button>}
+        </div>
       </div>
       {printError && <Notice>{printError}</Notice>}
       <p className="text-sm text-slate-600">
