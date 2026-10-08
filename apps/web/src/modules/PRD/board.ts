@@ -22,6 +22,9 @@ export function activeSteps(c: Pick<BoardCard, 'steps' | 'currentStepId'>): numb
   return [...new Set([...(c.currentStepId ? [c.currentStepId] : []), ...later])];
 }
 
+/** Something of the item may go out now: all its steps done, or pieces through every step not released yet. */
+export const readyNow = (c: Pick<BoardCard, 'ready' | 'finishedPieces' | 'releasedQty'>) => c.ready || (c.finishedPieces ?? 0) > c.releasedQty;
+
 /**
  * "Choose production steps", a column per step in canonical order, then "Ready"; an item shows under every step it has
  * work in (activeSteps); only the columns that have cards, so the board stays narrow.
@@ -30,7 +33,8 @@ export function columns(steps: PrdStep[], cards: BoardCard[]): Column[] {
   return [
     { key: 'setup', title: 'Choose production steps', cards: cards.filter((c) => c.steps === null) },
     ...steps.map((s) => ({ key: String(s.id), title: s.name, stepId: s.id, cards: cards.filter((c) => activeSteps(c).includes(s.id)) })),
-    { key: 'ready', title: 'Ready', cards: cards.filter((c) => c.ready) },
+    // Ready for release: every step done, or some pieces through every step and not released yet (they can go out first).
+    { key: 'ready', title: 'Ready', cards: cards.filter(readyNow) },
   ].filter((c) => c.cards.length > 0);
 }
 

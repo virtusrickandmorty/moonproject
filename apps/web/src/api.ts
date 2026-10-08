@@ -280,6 +280,8 @@ export type StepStatus = 'pending' | 'in_progress' | 'completed' | 'not_needed';
 export interface BoardCard {
   jobOrderId: string; number: string; customerName: string; dueDate: string; priority: 'normal' | 'rush'; stage: string; lineNo: number; description: string;
   qty: number; releasedQty: number; garmentType: string | null; complexity: string | null; templateId: number | null; currentStepId: number | null; ready: boolean;
+  /** finishedPieces: went through every step (can go out first). */
+  finishedPieces?: number;
   /** isSet: made as an upper and a lower part; a step's `pieces` are then complete sets and `parts` each part's count. */
   isSet?: boolean;
   /** receivedPieces: what came out of the step before (all of the line for the first step, or once the one before is closed). */

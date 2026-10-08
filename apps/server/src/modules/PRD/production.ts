@@ -247,6 +247,10 @@ export function board(db: Db) {
           templateId: setup?.templateId ?? null,
           currentStepId: route?.find((s) => !closed(s))?.id ?? null,
           ready: route !== null && routeDone(route),
+          // The pieces that went through every step (the owner's request, Oct 2026: they can go out first): all once the
+          // route is done; else those done on its last needed step.
+          finishedPieces: route === null ? 0 : routeDone(route) ? l.qty
+            : Math.max(0, Math.min(l.qty, [...route].reverse().find((s) => s.status !== 'not_needed')?.pieces ?? 0)),
           // receivedPieces: what came out of the step before (all of the line once that one is closed, or for the first step).
           isSet: setup?.isSet ?? false,
           steps: route?.map((s) => ({ stepId: s.id, status: s.status, pieces: s.pieces, reworkPieces: s.reworkPieces, receivedPieces: availableFor(route, s.id, l.qty),
