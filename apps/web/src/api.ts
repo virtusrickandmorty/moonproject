@@ -122,6 +122,8 @@ export interface DocHeader {
 }
 export interface DocListFilters { q?: string; from?: string; to?: string }
 export interface DocCounts { all: number; posted: number; cancelled: number }
+/** A job order list row: `balanceDueCents` (0 once cancelled), and the item a search found its words in. */
+export interface JoListRow extends DocHeader { balanceDueCents: number; matchedItem: string | null }
 /** Read-only display of lines the server built. Declared this way so the money-rule tripwire (tests/house-rules) stays exact. */
 export type JournalLine = { accountCode: string; accountName: string } & Record<'debitCents' | 'creditCents', number>;
 export interface Journal { id: string; number: string; businessDate: string; postingKind: 'original' | 'reversal'; memo: string; lines: JournalLine[] }
@@ -1018,6 +1020,11 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     customerInvoices: (customerId: string) => call<CustomerInvoices>('GET', customer(customerId, 'invoices')),
     forfeitable: (customerId: string) => call<Forfeitable>('GET', customer(customerId, 'forfeitable')),
     joStatus: (id: string) => call<JoStatus>('GET', `/api/jo/orders/${encodeURIComponent(id)}/status`),
+    /** The job order list: the document list's rows with each balance due; its search also reads what was ordered. */
+    joList: (q: DocListFilters & { status?: string; before?: string; limit?: number } = {}) =>
+      call<JoListRow[]>('GET', `/api/jo/list?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`),
+    joListCounts: (q: DocListFilters = {}) =>
+      call<DocCounts>('GET', `/api/jo/list/counts?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`),
     joDpInfo: (id: string) => call<DpInfo>('GET', `/api/jo/orders/${encodeURIComponent(id)}/dp-info`),
     joPickOrders: (q: string) => call<JoPick[]>('GET', `/api/jo/pick/orders?${new URLSearchParams({ q })}`),
     joPickReleases: (q: string) => call<ReleasePick[]>('GET', `/api/jo/pick/releases?${new URLSearchParams({ q })}`),

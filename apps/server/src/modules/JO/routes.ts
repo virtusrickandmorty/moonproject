@@ -13,6 +13,7 @@ import { MODE_WORDS, depositModeOn, modeKeptIssue } from '../COL/public.ts';
 import { saleInvoicesOf, saleOpenCents } from '../QS/public.ts';
 import { jobOrderRef, jobOrdersOf, joMoney, leftPiecesAll, stagesAll } from './public.ts';
 import { dpInvoiceDoc } from './doctypes/dp-invoice.ts';
+import { joListRoutes } from './list.ts';
 import { lineState, releaseDoc, type Release } from './doctypes/release.ts';
 import { awaitingInvoice, invoiceFigures, invoiceRecordDoc, invoiceRecordInput } from './doctypes/invoice-record.ts';
 
@@ -61,6 +62,7 @@ const JOB_ORDER_REFUSALS = new Set(['JOB_ORDER', 'JO_CANCELLED', 'JO_ABANDONED',
 
 export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
+  joListRoutes(app, db);
 
   /** What the JO view shows beside the document: stage, allowed moves, history, and money (all derived, NR-2). */
   /**
