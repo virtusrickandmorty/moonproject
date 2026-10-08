@@ -38,9 +38,12 @@ test('sales: a customer, a job order with a deposit, a collection, a release wit
   // The job order, with the customer added right on the form.
   await page.getByRole('link', { name: 'Job Orders', exact: true }).click();
   await page.getByRole('button', { name: '+ New Job Order' }).click();
-  await page.getByRole('button', { name: '+ New customer' }).click();
-  await page.getByLabel("New customer's name").fill(CUSTOMER);
-  await page.getByRole('button', { name: 'Add customer' }).click();
+  // The + people button beside the customer box opens the Customers screen's own form over the job order.
+  await page.getByRole('button', { name: 'New customer', exact: true }).click();
+  const customerForm = page.getByRole('dialog', { name: 'New customer' });
+  await customerForm.getByLabel(/^Display name/).fill(CUSTOMER);
+  await customerForm.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(customerForm).toBeHidden();
   await expect(page.getByText(`Added ${CUSTOMER} as a new customer.`)).toBeVisible();
   await page.getByLabel('Line 1 description').fill('Rowing jersey');
   await page.getByLabel('Line 1 pieces').fill('4');

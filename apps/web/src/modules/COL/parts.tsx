@@ -8,8 +8,11 @@ import { emptyTender, type TenderRow } from './money.ts';
 
 export interface Picked { id: string; name: string }
 
-/** Search customers by name or code (2+ letters); active ones only. */
-export function CustomerPicker({ value, onChange }: { value: Picked | null; onChange: (c: Picked | null) => void }) {
+/**
+ * Search customers by name or code (2+ letters); active ones only. One line: the box (its matches drop down under it)
+ * or the picked name, with `beside` next to it (the job order's New customer button).
+ */
+export function CustomerPicker({ value, onChange, beside }: { value: Picked | null; onChange: (c: Picked | null) => void; beside?: ReactNode }) {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<CustomerRow[]>([]);
   useEffect(() => {
@@ -23,19 +26,30 @@ export function CustomerPicker({ value, onChange }: { value: Picked | null; onCh
       <div className="flex items-center gap-3">
         <span className="font-medium">{value.name}</span>
         <Button onClick={() => onChange(null)}>Change</Button>
+        {beside}
       </div>
     );
   }
+  const none = q.trim().length >= 2 && rows.length === 0;
   return (
     <div className="space-y-1">
       <span className="block text-sm text-slate-700">Customer</span>
-      <input aria-label="Customer" className={inputClass} placeholder="Type 2 or more letters of the name or code" value={q} onChange={(e) => setQ(e.target.value)} />
-      {rows.map((c) => (
-        <button key={c.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => onChange({ id: c.id, name: c.display_name })}>
-          {c.display_name} <span className="text-slate-500">{c.code}</span>
-        </button>
-      ))}
-      {q.trim().length >= 2 && rows.length === 0 && <p className="text-sm text-slate-500">No active customer matches.</p>}
+      <div className="flex items-center gap-2">
+        <div className="relative min-w-0 flex-1">
+          <input aria-label="Customer" className={inputClass} placeholder="Type 2 or more letters of the name or code" value={q} onChange={(e) => setQ(e.target.value)} />
+          {(rows.length > 0 || none) && (
+            <div className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-md bg-white p-1 shadow-lg ring-1 ring-slate-200">
+              {rows.map((c) => (
+                <button key={c.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => onChange({ id: c.id, name: c.display_name })}>
+                  {c.display_name} <span className="text-slate-500">{c.code}</span>
+                </button>
+              ))}
+              {none && <p className="px-2 py-1 text-sm text-slate-500">No active customer matches.</p>}
+            </div>
+          )}
+        </div>
+        {beside}
+      </div>
     </div>
   );
 }

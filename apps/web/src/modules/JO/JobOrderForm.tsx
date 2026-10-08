@@ -15,6 +15,8 @@ import { CustomerPicker, Errors, Figures, useLive, type Picked } from '../COL/pa
 import { KINDS } from '../QS/lines.ts';
 import { jobOrderPrefill, type QuotationDoc } from '../QUO/quotation.ts';
 import { itemClasses } from '../QUO/QuotationView.tsx';
+import { CustomerEditor } from '../CUS/Customers.tsx';
+import { masterRequest } from '../CUS/http.ts';
 import { ItemSearch } from './parts.tsx';
 import { TERMS } from './opening.ts';
 import { parseRosterPaste } from './roster.ts';
@@ -27,26 +29,36 @@ const money = `${inputClass} text-right tabular-nums`;
 const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'];
 const MEASURED = '__measured';
 
-/** A new customer typed in right here, for a walk-in who is not on file yet. */
-function AddCustomer({ onAdded, onClose }: { onAdded: (c: Picked, lookalike: boolean) => void; onClose: () => void }) {
-  const [name, setName] = useState('');
-  const [kind, setKind] = useState<'organization' | 'person'>('organization');
-  const [error, setError] = useState('');
-  const add = () =>
-    api.addCustomer({ kind, displayName: name.trim() }).then((c) => onAdded({ id: c.id, name: c.display_name }, c.duplicateWarnings.length > 0), (e: Error) => setError(e.message));
+/** A plus beside two people: add a new customer. */
+function AddPeopleIcon() {
   return (
-    <div className="space-y-2 rounded-md p-2 ring-1 ring-slate-200">
-      <div className="grid gap-2 sm:grid-cols-[1fr_12rem_auto_auto]">
-        <Field label="New customer's name"><input aria-label="New customer's name" placeholder="New customer's name" className={inputClass} value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <Field label="Kind of customer"><select aria-label="Kind of customer" className={inputClass} value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
-          <option value="organization">Team, school or company</option>
-          <option value="person">Person</option>
-        </select></Field>
-        <Button tone="primary" disabled={!name.trim()} onClick={() => void add()}>Add customer</Button>
-        <Button onClick={onClose}>Never mind</Button>
-      </div>
-      {error && <Notice>{error}</Notice>}
-    </div>
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="9" cy="8" r="3.2" /><path d="M3 19c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5" />
+      <path d="M16 6.5a3 3 0 0 1 0 5.6" /><path d="M20 4v6M17 7h6" />
+    </svg>
+  );
+}
+
+/**
+ * The New customer button beside the customer box: the Customers screen's own form (every detail of a customer) in a
+ * dialog over the job order; once saved, the new customer is picked here.
+ */
+function NewCustomerButton({ me, onAdded }: { me: Me; onAdded: (c: Picked, lookalike: boolean) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" aria-label="New customer" title="Add a new customer" onClick={() => setOpen(true)}
+        className="inline-flex size-10 shrink-0 items-center justify-center gap-0.5 rounded-md bg-indigo-600 text-white shadow-sm hover:bg-indigo-700">
+        <AddPeopleIcon />
+      </button>
+      {open && (
+        <CustomerEditor me={me} row="new" onClose={() => setOpen(false)} onSaved={async (id, warnings) => {
+          const saved = await masterRequest<{ display_name: string }>(me, `/api/cus/customers/${encodeURIComponent(id)}`);
+          setOpen(false);
+          onAdded({ id, name: saved.display_name }, warnings.length > 0);
+        }} />
+      )}
+    </>
   );
 }
 
@@ -126,7 +138,6 @@ function RosterGrid(p: { line: JoLineRow; n: number; people: CustomerWearers | n
 /** `inDialog`: shown over the job order list (New): no page heading, Close instead of Back, and it says when something typed is unsaved. */
 export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; mode: FormMode; me?: Me; inDialog?: { close: () => void; setDirty: (dirty: boolean) => void; show?: (id: string) => void } }) {
   const [v, setV] = useState<JoValues>(emptyJo);
-  const [adding, setAdding] = useState(false);
   const [people, setPeople] = useState<CustomerWearers | null>(null);
   const [sizes, setSizes] = useState<string[]>(SIZES);
   const [noPrice, setNoPrice] = useState<Record<number, string>>({});
@@ -230,12 +241,15 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
         {r.top}
         {saved && <Notice tone="success">{saved}</Notice>}
         <Panel title="Customer">
-          <CustomerPicker value={v.customer} onChange={(c) => set({ customer: c, lines: !c || c.id === last.current ? v.lines : v.lines.map((l) => ({ ...l, roster: [] })) })} />
-          {!v.customer && !adding && me?.permissions.includes('cus.manage') && <Button onClick={() => setAdding(true)}>+ New customer</Button>}
-          {!v.customer && adding && <AddCustomer onAdded={(c, lookalike) => (set({ customer: c }), setAdding(false), setSaved(lookalike ? `Added ${c.name}. Another customer has a similar name: check the customer list later in case it is the same one.` : `Added ${c.name} as a new customer.`))} onClose={() => setAdding(false)} />}
-          <Field label="Contact person">
-            <input className={inputClass} value={v.contact} onChange={(e) => set({ contact: e.target.value })} />
-          </Field>
+          {/* The customer on one line, with New customer beside it; the contact person beside that on a wide screen. */}
+          <div className="grid items-end gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <CustomerPicker value={v.customer} onChange={(c) => set({ customer: c, lines: !c || c.id === last.current ? v.lines : v.lines.map((l) => ({ ...l, roster: [] })) })}
+              beside={!v.customer && me?.permissions.includes('cus.manage') && <NewCustomerButton me={me} onAdded={(c, lookalike) => (set({ customer: c }),
+                setSaved(lookalike ? `Added ${c.name}. Another customer has a similar name: check the customer list later in case it is the same one.` : `Added ${c.name} as a new customer.`))} />} />
+            <Field label="Contact person">
+              <input className={inputClass} value={v.contact} onChange={(e) => set({ contact: e.target.value })} />
+            </Field>
+          </div>
         </Panel>
         <Panel title="What is made">
           {v.lines.map((l, i) => (
