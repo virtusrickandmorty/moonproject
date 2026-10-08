@@ -137,7 +137,7 @@ export function keepDialogFocus(root: HTMLElement, opener: HTMLElement | null, c
 }
 
 /** The two standard dialog widths. */
-export const DIALOG_WIDTH = { question: 'max-w-lg', record: 'max-w-5xl' } as const;
+export const DIALOG_WIDTH = { question: 'max-w-xl', record: 'max-w-6xl' } as const;
 /** How long a dialog takes to grow out of the middle of the screen, and to shrink back into it (index.css). */
 export const DIALOG_MS = 180;
 const reducedMotion = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
