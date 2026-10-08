@@ -5,7 +5,7 @@ import { appendAudit } from '../../engine/audit.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { AppError, conflict, newId, notFound } from '@moonproject/shared';
-import { discountPolicyInput, itemInput, itemUpdate, priceInput, type ItemInput } from './schemas.ts';
+import { discountPolicyInput, itemCreate, itemInput, itemUpdate, priceInput, type ItemInput } from './schemas.ts';
 import { lookupCatalogPrice } from './public.ts';
 
 type ItemRow = {
@@ -50,6 +50,15 @@ function audit(db: Db, req: FastifyRequest, at: string, action: string, entityTy
   appendAudit(db, { at, userId: currentUser(req).userId, action, entityType, entityId: id, data });
 }
 
+/** The prefix of an item code by class, and the next free code: the highest number used with that prefix, plus one. */
+const CODE_PREFIX: Record<'made_to_order_garment' | 'service' | 'ready_made_item', string> = { made_to_order_garment: 'MTO', service: 'SRV', ready_made_item: 'RTW' };
+export function nextCode(db: Db, cls: keyof typeof CODE_PREFIX): string {
+  const prefix = CODE_PREFIX[cls];
+  const used = db.prepare(`SELECT code FROM cat_items WHERE code LIKE ? COLLATE NOCASE`).pluck().all(`${prefix}-%`) as string[];
+  const top = Math.max(0, ...used.map((c) => Number(/^[A-Za-z]+-(\d+)$/.exec(c)?.[1] ?? 0)));
+  return `${prefix}-${String(top + 1).padStart(4, '0')}`;
+}
+
 export function catRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
 
@@ -89,8 +98,10 @@ export function catRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   app.post('/api/cat/items', { config: { permission: 'cat.manage' } }, async (req) => {
-    const input = itemInput.parse(req.body), id = newId(), at = stamp(clock);
+    const raw = itemCreate.parse(req.body), id = newId(), at = stamp(clock);
     return db.transaction(() => {
+      // No code typed: the next one for its class, counted in the same transaction (the owner's request, Oct 2026).
+      const input = itemInput.parse({ ...raw, code: raw.code ?? nextCode(db, raw.class) });
       if (db.prepare('SELECT 1 FROM cat_items WHERE code = ? COLLATE NOCASE').get(input.code)) {
         throw conflict('CODE_EXISTS', 'This catalog code is already in use.');
       }

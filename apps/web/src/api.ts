@@ -280,8 +280,10 @@ export type StepStatus = 'pending' | 'in_progress' | 'completed' | 'not_needed';
 export interface BoardCard {
   jobOrderId: string; number: string; customerName: string; dueDate: string; priority: 'normal' | 'rush'; stage: string; lineNo: number; description: string;
   qty: number; releasedQty: number; garmentType: string | null; complexity: string | null; templateId: number | null; currentStepId: number | null; ready: boolean;
+  /** isSet: made as an upper and a lower part; a step's `pieces` are then complete sets and `parts` each part's count. */
+  isSet?: boolean;
   /** receivedPieces: what came out of the step before (all of the line for the first step, or once the one before is closed). */
-  steps: { stepId: number; status: StepStatus; pieces: number; reworkPieces: number; receivedPieces: number }[] | null;
+  steps: { stepId: number; status: StepStatus; pieces: number; reworkPieces: number; receivedPieces: number; parts?: { upper: number; lower: number } }[] | null;
 }
 export interface NavResult { kind: 'Customer' | 'Wearer' | 'Job order' | 'Document' | 'Supplier' | 'Employee'; id: string; label: string; detail?: string; href: string }
 export interface PrdJob {
@@ -289,13 +291,18 @@ export interface PrdJob {
   lines: { lineNo: number; description: string; qty: number; releasedQty: number; setup: { templateId: number | null; garmentType: string; complexity: string; stepIds: number[] } | null;
     /** The line's wearers (its roster), to tick who is done on a step. */
     roster?: PrdWearer[];
+    /** Made as an upper and a lower part (a set on the price list). */
+    isSet?: boolean;
     /** doneWearers: the roster rows already done on the step. */
-    route: (PrdStep & { status: StepStatus; pieces: number; reworkPieces: number; availablePieces: number; doneWearers?: number[] })[] | null }[];
+    route: (PrdStep & { status: StepStatus; pieces: number; reworkPieces: number; availablePieces: number; doneWearers?: number[];
+      /** On a set: each part's pieces, what each may still take, and the wearers done per part. */
+      partPieces?: { upper: number; lower: number }; partAvailable?: { upper: number; lower: number }; partWearersDone?: { upper: number[]; lower: number[] } })[] | null }[];
 }
 export interface PrdWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
-export interface PrdSetup { templateId?: number; stepIds: number[]; garmentType: string; complexity: string }
+/** `garmentType`: left out, the server takes it (and whether the line is a set) from the price list item the line matches. */
+export interface PrdSetup { templateId?: number; stepIds: number[]; garmentType?: string; complexity: string }
 export interface Worker { id: string; code: string; name: string }
-export interface PieceRate { id: number; garmentType: string; stepCode: string; complexity: string; rateCents: number; effectiveFrom: string; reason: string; createdAt: string }
+export interface PieceRate { id: number; garmentType: string; stepCode: string; complexity: string; part?: 'whole' | 'upper' | 'lower'; rateCents: number; effectiveFrom: string; reason: string; createdAt: string }
 export interface RateTable { asOf: string; current: PieceRate[]; history: PieceRate[]; garmentTypes: string[] }
 /** Employees and time (EMP). Government IDs arrive masked without emp.view_ids; pay history is null without pay.view_rates. */
 export interface EmployeeRow { id: string; code: string; fullName: string; position: string | null; department: string | null; costCentre: string; isActive: boolean; hireDate: string; separatedOn: string | null }

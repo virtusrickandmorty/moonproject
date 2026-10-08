@@ -105,7 +105,7 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
   const step = (id: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) => api.prdStep(card.jobOrderId, card.lineNo, id, action, reason).then(onChanged);
   return (
     <Dialog wide title={`${card.number} · line ${card.lineNo}: ${card.description}`} onClose={onClose}>
-      <p className="text-sm text-slate-600">{card.customerName} · {card.qty} pcs · due {showDate(card.dueDate)}{card.garmentType ? ` · ${card.garmentType} (${card.complexity})` : ''}</p>
+      <p className="text-sm text-slate-600">{card.customerName} · {card.qty} {card.isSet ? 'sets (upper and lower)' : 'pcs'} · due {showDate(card.dueDate)}</p>
       {editing ? (
         <SetupForm card={card} cat={cat} onSaved={() => onChanged().then(() => setEditing(false))} onCancel={card.steps ? () => setEditing(false) : onClose} disabled={!can.progress} />
       ) : (
@@ -119,7 +119,7 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="min-w-28 font-medium">{name(s.stepId)}</span>
                     {chip(s.status)}
-                    <span className="text-sm text-slate-600">{s.pieces} of {card.qty} pcs done{s.reworkPieces ? ` + ${s.reworkPieces} rework` : ''}</span>
+                    <span className="text-sm text-slate-600">{s.parts ? `Upper ${s.parts.upper} of ${card.qty} · Lower ${s.parts.lower} of ${card.qty}` : `${s.pieces} of ${card.qty} pcs done`}{s.reworkPieces ? ` + ${s.reworkPieces} rework` : ''}</span>
                   </div>
                   {s.status !== 'not_needed' && (
                     <div className="h-1.5 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label={`${name(s.stepId)} pieces done`} aria-valuemin={0} aria-valuemax={card.qty} aria-valuenow={s.pieces}>
@@ -162,11 +162,11 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
 function SetupForm({ card, cat, onSaved, onCancel, disabled }: { card: BoardCard; cat: PrdCatalogue; onSaved: () => Promise<unknown>; onCancel: () => void; disabled: boolean }) {
   const [templateId, setTemplateId] = useState<number | undefined>(card.templateId ?? undefined);
   const [stepIds, setStepIds] = useState<number[]>(card.steps?.map((s) => s.stepId) ?? []);
-  const [garmentType, setGarmentType] = useState(card.garmentType ?? '');
-  const [complexity, setComplexity] = useState(card.complexity ?? 'standard');
   const a = useAction();
   const toggle = (id: number) => setStepIds(stepIds.includes(id) ? stepIds.filter((x) => x !== id) : [...stepIds, id]);
-  const save = () => api.prdSetup(card.jobOrderId, card.lineNo, { ...(templateId ? { templateId } : {}), stepIds, garmentType: garmentType.trim(), complexity }).then(onSaved);
+  // The garment type for piece rates (and whether the line is a set) comes from the price list item the line matches: not typed here.
+  // Piece rates go by the price list item (the owner's decision, Oct 2026): no complexity is picked; the standard rate applies.
+  const save = () => api.prdSetup(card.jobOrderId, card.lineNo, { ...(templateId ? { templateId } : {}), stepIds, complexity: 'standard' }).then(onSaved);
   return (
     <div className="space-y-3">
       <div>
@@ -186,20 +186,10 @@ function SetupForm({ card, cat, onSaved, onCancel, disabled }: { card: BoardCard
           ))}
         </div>
       </fieldset>
-      <Field label="Garment type (for piece rates)" required>
-        <input list="garment-types" className={inputClass} value={garmentType} onChange={(e) => setGarmentType(e.target.value)} />
-        <datalist id="garment-types">{cat.garmentTypes.map((g) => <option key={g} value={g} />)}</datalist>
-      </Field>
-      <div role="radiogroup" aria-label="Complexity" className="flex gap-2">
-        {cat.complexities.map((x) => (
-          <button key={x} type="button" role="radio" aria-checked={complexity === x} onClick={() => setComplexity(x)}
-            className={`rounded-md px-3 py-1 text-sm capitalize ring-1 ${complexity === x ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300'}`}>{x}</button>
-        ))}
-      </div>
       {a.error && <Notice>{a.error}</Notice>}
       <div className="flex justify-end gap-2">
         <Button onClick={onCancel}>Back</Button>
-        <Button tone="primary" disabled={disabled || a.busy || stepIds.length === 0 || !garmentType.trim()} onClick={() => a.run(save)}>Save production steps</Button>
+        <Button tone="primary" disabled={disabled || a.busy || stepIds.length === 0} onClick={() => a.run(save)}>Save production steps</Button>
       </div>
     </div>
   );

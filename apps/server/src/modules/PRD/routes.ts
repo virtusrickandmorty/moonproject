@@ -13,7 +13,7 @@ import { activeEmployees } from './emp.ts';
 import { COMPLEXITIES, availableFor, board, lineRoute, lineSetup, listSteps, listTemplates, setupLine, stepAction, stepById, wearersDone, type StepAction } from './production.ts';
 
 const setupBody = z
-  .object({ templateId: z.number().int().positive().optional(), stepIds: z.array(z.number().int().positive()).min(1).max(20), garmentType: z.string().trim().min(1).max(60), complexity: z.enum(COMPLEXITIES) })
+  .object({ templateId: z.number().int().positive().optional(), stepIds: z.array(z.number().int().positive()).min(1).max(20), garmentType: z.string().trim().min(1).max(60).optional(), complexity: z.enum(COMPLEXITIES) })
   .strict();
 const stepBody = z.object({ name: z.string().trim().min(1).max(60).optional(), payBasis: z.enum(['piece', 'daily', 'piece_or_daily']).optional(), isActive: z.boolean().optional() }).strict();
 const ACTIONS: Record<string, StepAction> = { complete: 'complete', 'not-needed': 'not_needed', reopen: 'reopen' };
@@ -46,7 +46,16 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
         lineNo: l.lineNo, description: l.description, qty: l.qty, releasedQty: l.releasedQty, setup: lineSetup(db, jo.id, l.lineNo) ?? null,
         // The line's wearers, and who is done on each step (ticked on Record pieces; the owner's request, Oct 2026).
         roster: rosterOf(db, jo.id, l.lineNo),
-        route: route?.map((s) => ({ ...s, availablePieces: availableFor(route, s.id, l.qty), doneWearers: [...wearersDone(db, jo.id, l.lineNo, s.id).keys()] })) ?? null,
+        // A set's parts: each step's pieces and wearers done per part (the owner's request, Oct 2026).
+        isSet: lineSetup(db, jo.id, l.lineNo)?.isSet ?? false,
+        route: route?.map((s) => ({
+          ...s, availablePieces: availableFor(route, s.id, l.qty), doneWearers: [...wearersDone(db, jo.id, l.lineNo, s.id).keys()],
+          ...(s.parts ? {
+            partPieces: { upper: s.parts.upper.pieces, lower: s.parts.lower.pieces },
+            partAvailable: { upper: availableFor(route, s.id, l.qty, 'upper'), lower: availableFor(route, s.id, l.qty, 'lower') },
+            partWearersDone: { upper: [...wearersDone(db, jo.id, l.lineNo, s.id, 'upper').keys()], lower: [...wearersDone(db, jo.id, l.lineNo, s.id, 'lower').keys()] },
+          } : {}),
+        })) ?? null,
       };
     });
     return { jobOrder: { id: jo.id, number: jo.number, status: jo.status, customerName: jo.customerName, dueDate: jo.dueDate, priority: jo.priority, stage: currentStage(db, jo.id) }, lines };

@@ -27,10 +27,12 @@ export function stepFlow(steps: NonNullable<BoardCard['steps']>, i: number, qty:
   const prev = steps.slice(0, i).reverse().find((x) => x.status !== 'not_needed');
   const next = steps.slice(i + 1).find((x) => x.status !== 'not_needed');
   const short = Math.max(0, qty - s.pieces);
+  // A set is complete once both its parts are: say which part still needs pieces.
+  const setWords = s.parts ? `Record the rest of the parts to complete ${nameOf(s.stepId)}: upper ${s.parts.upper} of ${qty}, lower ${s.parts.lower} of ${qty}.` : '';
   return {
     canComplete: !closed && short === 0,
     /** Why Complete is greyed out, for its tooltip and the line under it. */
-    shortWords: closed || short === 0 ? '' : short === qty ? `Record all ${qty} pcs to complete ${nameOf(s.stepId)}.` : `Record the other ${short} of ${qty} pcs to complete ${nameOf(s.stepId)}.`,
+    shortWords: closed || short === 0 ? '' : setWords || (short === qty ? `Record all ${qty} pcs to complete ${nameOf(s.stepId)}.` : `Record the other ${short} of ${qty} pcs to complete ${nameOf(s.stepId)}.`),
     received: prev && s.status !== 'not_needed' && s.receivedPieces > 0 ? { pieces: Math.min(qty, s.receivedPieces), from: nameOf(prev.stepId) } : null,
     forwarded: next && s.status !== 'not_needed' && s.pieces > 0 ? { pieces: Math.min(qty, s.pieces), to: nameOf(next.stepId) } : null,
     percent: qty > 0 ? Math.min(100, Math.round((s.pieces / qty) * 100)) : 0,
@@ -102,8 +104,8 @@ export function useBoardRefresh<T>(read: () => Promise<T>) {
   return { data, error, updatedAt, refresh, stale: !!error || (updatedAt === null ? elapsed >= REFRESH_MS * 2 : now - updatedAt >= REFRESH_MS * 2), words: updateWords(updatedAt, updatedAt === null ? elapsed : now, error) };
 }
 
-/** `wearers`: the line's wearers (roster rows) this row finished; its pieces are then theirs. */
-export interface EntryRow { lineNo: string; employeeId: string; pieces: string; rework: boolean; rate: string; rateReason: string; repeatReason?: string; wearers?: number[] }
+/** `wearers`: the line's wearers (roster rows) this row finished; its pieces are then theirs. `part`: on a set, the upper or the lower part. */
+export interface EntryRow { lineNo: string; employeeId: string; pieces: string; rework: boolean; rate: string; rateReason: string; repeatReason?: string; wearers?: number[]; part?: 'upper' | 'lower' }
 export const emptyRow = (lineNo = ''): EntryRow => ({ lineNo, employeeId: '', pieces: '', rework: false, rate: '', rateReason: '' });
 
 /** Typed rows -> entry rows for the server. Blank rows are left out; a typed rate goes with its reason. */
@@ -132,6 +134,7 @@ export function rowsToInput(rows: EntryRow[]) {
       ...(r.rate.trim() && r.rateReason.trim() ? { rateReason: r.rateReason.trim() } : {}),
       ...(repeat ? { repeatReason: repeat } : {}),
       ...(!r.rework && r.wearers && r.wearers.length > 0 ? { wearers: [...r.wearers].sort((a, b) => a - b) } : {}),
+      ...(r.part ? { part: r.part } : {}),
     });
   });
   if (out.length === 0 && errors.length === 0) errors.push('Add a worker and the pieces done.');
