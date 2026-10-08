@@ -57,10 +57,10 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
         // forwardedWearers: the wearers that came out of the step before (null: all of them); rework: sent back, not redone yet.
         route: route?.map((s) => ({
           ...s, availablePieces: availableFor(route, s.id, l.qty), doneWearers: [...wearersDone(db, jo.id, l.lineNo, s.id).keys()],
-          forwardedWearers: forwardedWearers(db, jo.id, l.lineNo, route, s.id), rework: reworkOpen(db, jo.id, l.lineNo, s.id),
+          forwardedWearers: forwardedWearers(db, jo.id, l.lineNo, route, s.id), rework: reworkOpen(db, jo.id, l.lineNo, s.id, 'whole', route),
           ...(s.parts ? {
             partForwarded: { upper: forwardedWearers(db, jo.id, l.lineNo, route, s.id, 'upper'), lower: forwardedWearers(db, jo.id, l.lineNo, route, s.id, 'lower') },
-            partRework: { upper: reworkOpen(db, jo.id, l.lineNo, s.id, 'upper'), lower: reworkOpen(db, jo.id, l.lineNo, s.id, 'lower') },
+            partRework: { upper: reworkOpen(db, jo.id, l.lineNo, s.id, 'upper', route), lower: reworkOpen(db, jo.id, l.lineNo, s.id, 'lower', route) },
             partPieces: { upper: s.parts.upper.pieces, lower: s.parts.lower.pieces },
             partAvailable: { upper: availableFor(route, s.id, l.qty, 'upper'), lower: availableFor(route, s.id, l.qty, 'lower') },
             partWearersDone: { upper: [...wearersDone(db, jo.id, l.lineNo, s.id, 'upper').keys()], lower: [...wearersDone(db, jo.id, l.lineNo, s.id, 'lower').keys()] },
@@ -84,10 +84,10 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
     return write(() => stepAction(db, req.params.jo, lineNoOf(req.params), Number(req.params.step), action, body.reason, who(req)));
   });
 
-  /** Send pieces back for rework to a step they went through (the owner's request, Oct 2026): labelled rework there, not replaced. */
-  app.post<{ Params: LineParams & { step: string } }>('/api/prd/jobs/:jo/lines/:line/steps/:step/rework', { config: { permission: 'prd.progress' } }, async (req) => {
+  /** Send pieces back for rework (the owner's rule, Oct 2026): from the first step through every step again, labelled rework. */
+  app.post<{ Params: LineParams }>('/api/prd/jobs/:jo/lines/:line/rework', { config: { permission: 'prd.progress' } }, async (req) => {
     const body = reworkBody.parse(req.body);
-    return write(() => sendBackForRework(db, req.params.jo, lineNoOf(req.params), Number(req.params.step), body, who(req)));
+    return write(() => sendBackForRework(db, req.params.jo, lineNoOf(req.params), body, who(req)));
   });
 
   /** Workers who can be given pieces (active employees). */
