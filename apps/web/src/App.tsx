@@ -8,7 +8,7 @@ import { Link, LinkAccess, match, navigate, useLocation } from './router.tsx';
 import { ConfirmHost, Notice } from './components/ui.tsx';
 import { ChangePasswordScreen, FirstOwnerScreen, LoginScreen } from './auth/AuthScreens.tsx';
 import { Shell } from './shell/Shell.tsx';
-import { docPath, labelOf, pagePermission } from './shell/menu.ts';
+import { docPath, isReportPath, labelOf, pagePermission } from './shell/menu.ts';
 import { DocList, openedFrom, type ListForm, type ListView } from './generic/DocList.tsx';
 import { JobOrderForm } from './modules/JO/JobOrderForm.tsx';
 import { DocForm, type FormMode } from './generic/DocForm.tsx';
@@ -38,6 +38,7 @@ export function App() {
 
 function Stages() {
   const [stage, setStage] = useState<Stage>({ kind: 'loading' });
+  const [fresh, setFresh] = useState(0); // a report's Refresh: the page is opened again (its filters are in the address)
   const location = useLocation();
   const signedIn = useCallback(async (me: Me) => setStage({ kind: 'ready', me, docTypes: me.mustChangePassword ? [] : await api.docTypes() }), []);
 
@@ -89,7 +90,7 @@ function Stages() {
       if (params) {
         // A page the user's role does not open shows that plainly, instead of a screen whose every call is refused.
         const needs = pagePermission(path);
-        page = needs && !stage.me.permissions.includes(needs) ? NO_ACCESS : <Page key={path} me={stage.me} docTypes={stage.docTypes} params={params} />;
+        page = needs && !stage.me.permissions.includes(needs) ? NO_ACCESS : <Page key={`${path}#${fresh}`} me={stage.me} docTypes={stage.docTypes} params={params} />;
         break;
       }
     }
@@ -105,7 +106,9 @@ function Stages() {
   if (path === '/prd/tv') return <><RestoredNotice me={stage.me} />{page}</>; // the TV board fills the screen, without the menu
   return (
     <LinkAccess.Provider value={(to) => mayOpen(to, stage.me, stage.docTypes)}>
-      <Shell me={stage.me} docTypes={stage.docTypes} onSignOut={signOut}><RestoredNotice me={stage.me} />{page}</Shell>
+      <Shell me={stage.me} docTypes={stage.docTypes} onSignOut={signOut} onRefreshReport={isReportPath(path) ? () => setFresh((n) => n + 1) : undefined} reportKey={`${path}#${fresh}`}>
+        <RestoredNotice me={stage.me} />{page}
+      </Shell>
     </LinkAccess.Provider>
   );
 }
