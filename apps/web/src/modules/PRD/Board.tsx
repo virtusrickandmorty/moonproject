@@ -72,7 +72,8 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
           <section key={col.key} aria-label={col.title} className="w-60 shrink-0 space-y-2 rounded-lg bg-slate-100 p-2">
             <h2 className="flex justify-between px-1 text-sm font-semibold"><span>{col.title}</span><span className="text-slate-500">{col.cards.length}</span></h2>
             {col.cards.map((c) => {
-              const here = c.steps?.find((s) => s.stepId === c.currentStepId);
+              const here = c.steps?.find((s) => s.stepId === (col.stepId ?? c.currentStepId));
+              const waiting = here ? Math.max(0, here.receivedPieces - here.pieces) : 0; // came from the step before, not done here yet
               const late = today && c.dueDate < today;
               return (
                 <button key={`${c.jobOrderId}-${c.lineNo}`} type="button" onClick={() => setOpen({ jobOrderId: c.jobOrderId, lineNo: c.lineNo })}
@@ -80,7 +81,10 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
                   <span className="flex justify-between font-medium"><span>{c.number} · line {c.lineNo}</span>{c.priority === 'rush' && <span className="text-xs font-semibold text-red-700">RUSH</span>}</span>
                   <span className="block text-slate-600">{c.customerName}</span>
                   <span className="block">{c.description} · {c.qty - c.releasedQty} pcs</span>
-                  <span className={`block text-xs ${late ? 'text-red-700' : 'text-slate-500'}`}>Due {showDate(c.dueDate)}{here ? ` · ${here.pieces} of ${c.qty} done` : ''}</span>
+                  <span className={`block text-xs ${late ? 'text-red-700' : 'text-slate-500'}`}>Due {showDate(c.dueDate)}</span>
+                  {here && col.stepId && <span className="mt-1 block text-xs font-medium text-indigo-800">
+                    {here.parts ? `Upper ${here.parts.upper} · Lower ${here.parts.lower} of ${c.qty} done` : `${here.pieces} of ${c.qty} done`}{waiting > 0 && !here.parts ? ` · ${waiting} waiting` : ''}
+                  </span>}
                 </button>
               );
             })}
