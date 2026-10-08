@@ -60,6 +60,16 @@ export function piecesOn(db: Db, jobOrderId: string, lineNo: number, stepId: num
     .get(jobOrderId, lineNo, stepId) as { pieces: number; reworkPieces: number };
 }
 
+/**
+ * The wearers already done on one step of a JO line, by recorded entries (roster row → the entry that ticked it): the
+ * owner's request, Oct 2026. A cancelled entry's wearers are free again.
+ */
+export function wearersDone(db: Db, jobOrderId: string, lineNo: number, stepId: number): Map<number, string> {
+  const rows = db.prepare(`SELECT w.roster_row_no AS rowNo, d.number FROM prd_assignment_wearers w JOIN prd_assignments a ON a.id = w.assignment_id
+    JOIN documents d ON d.id = a.document_id WHERE a.job_order_id = ? AND a.line_no = ? AND a.step_id = ? AND d.status = 'posted'`).all(jobOrderId, lineNo, stepId) as { rowNo: number; number: string }[];
+  return new Map(rows.map((r) => [r.rowNo, r.number]));
+}
+
 export interface RouteStep extends Step { status: StepStatus; pieces: number; reworkPieces: number }
 
 /** The line's route in canonical order with each step's status, or null before the line is set up. */

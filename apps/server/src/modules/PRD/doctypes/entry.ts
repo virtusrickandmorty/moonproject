@@ -11,15 +11,17 @@
  * - Repeated sheet (audit B2-F3): a work row matching a recorded one (worker, job order, line, step, work date and pieces)
  *   is refused unless a reason says it is a different sheet. Rework and corrections are never refused.
  * Recording pieces moves an open JO to In production (E7 rule 3).
+ * Wearers (the owner's request, Oct 2026): on a line with a wearer list, a work row may name the wearers it finished; its
+ * pieces are then their quantities, and a wearer is done once per step (until that entry is cancelled).
  */
 import { z } from 'zod';
 import fc from 'fast-check';
 import { conflict, formatPeso, isBusinessDate, manilaDate, newId, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
-import { jobOrderRef, jobOrdersOf, lineState } from '../../JO/public.ts';
+import { jobOrderRef, jobOrdersOf, lineState, rosterOf } from '../../JO/public.ts';
 import { rateAt } from '../../RATE/public.ts';
 import { activeEmployees, employee } from '../emp.ts';
-import { availableFor, lineRoute, lineSetup, stepById, syncStage, type Complexity } from '../production.ts';
+import { availableFor, lineRoute, lineSetup, stepById, syncStage, wearersDone, type Complexity } from '../production.ts';
 
 const MAX_PIECES = 10_000;
 const MAX_RATE_CENTS = 1_000_000; // ₱10,000 per piece: a typo guard
@@ -35,6 +37,7 @@ const row = z
     rateReason: z.string().trim().min(5).max(200).optional(),
     correctionOf: z.uuid().optional(), // a row already paid, corrected with negative pieces (D6)
     repeatReason: z.string().trim().min(5).max(200).optional(), // why a row matching a recorded one is a different sheet
+    wearers: z.array(z.number().int().min(1).max(1000)).min(1).max(1000).optional(), // the line's wearers (roster rows) this row finished
   })
   .strict();
 
@@ -150,6 +153,7 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
     const lines = lineState(ctx.db, jo.id);
     const added = new Map<number, number>(); // work pieces per line in this entry
     const takenOff = new Map<string, number>(); // correction pieces per corrected row in this entry
+    const ticked = new Map<number, Set<number>>(); // wearers ticked per line in this entry
     for (const r of doc.rows) {
       const [f, at] = [`rows.${r.rowNo - 1}`, `Row ${r.rowNo}`];
       const line = lines.find((l) => l.lineNo === r.lineNo);
@@ -191,6 +195,23 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       if (onRoute && r.kind === 'work' && r.rateSource === 'none' && step.payBasis === 'piece') add('error', `${f}.rateCents`, 'NO_RATE', `${at}: there is no ${step.name} rate for ${what}. Type the rate and a reason.`);
       if (onRoute && r.kind === 'work' && r.rateSource === 'none' && step.payBasis === 'piece_or_daily') add('warning', `${f}.rateCents`, 'NO_RATE', `${at}: there is no ${step.name} rate for ${what}, so these pieces count as progress only (₱0).`);
       if (line && r.kind === 'work') added.set(line.lineNo, (added.get(line.lineNo) ?? 0) + r.pieces);
+      if (r.wearers && line) {
+        if (r.kind !== 'work') add('error', `${f}.wearers`, 'WEARERS_KIND', `${at}: wearers are ticked on normal work only, not on rework or a correction.`);
+        const roster = new Map(rosterOf(ctx.db, jo.id, line.lineNo).map((w) => [w.rowNo, w]));
+        const done = wearersDone(ctx.db, jo.id, line.lineNo, step.id);
+        const mine = ticked.get(line.lineNo) ?? new Set<number>();
+        let pieces = 0;
+        for (const n of r.wearers) {
+          const w = roster.get(n);
+          if (!w) { add('error', `${f}.wearers`, 'WEARER', `${at}: line ${line.lineNo} has no wearer ${n}.`); continue; }
+          if (done.has(n)) add('error', `${f}.wearers`, 'WEARER_DONE', `${at}: ${w.wearerName} is already done on ${step.name} (${done.get(n)}).`);
+          else if (mine.has(n)) add('error', `${f}.wearers`, 'WEARER_TWICE', `${at}: ${w.wearerName} is ticked on two rows of this entry.`);
+          mine.add(n);
+          pieces += w.qty;
+        }
+        ticked.set(line.lineNo, mine);
+        if (r.kind === 'work' && pieces !== r.pieces) add('error', `${f}.pieces`, 'WEARERS_PIECES', `${at}: the wearers ticked are ${plural(pieces)}, so the row is ${pieces}, not ${r.pieces}.`);
+      }
     }
     for (const [lineNo, pieces] of added) {
       const line = lines.find((l) => l.lineNo === lineNo)!;
@@ -220,6 +241,7 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       ins.run(id, h.documentId, r.rowNo, doc.jobOrderId, r.lineNo, doc.stepId, r.employeeId, r.employeeName, doc.workDate, r.kind, r.pieces, r.garmentType, r.complexity,
         r.rateCents, r.rateSource, r.rateSource === 'typed' ? r.rateReason! : null, r.amountCents, r.correctionOf ?? null);
       if (r.repeatReason) db.prepare('INSERT INTO prd_assignment_repeats (assignment_id, reason) VALUES (?, ?)').run(id, r.repeatReason);
+      for (const n of r.wearers ?? []) db.prepare('INSERT INTO prd_assignment_wearers (assignment_id, roster_row_no) VALUES (?, ?)').run(id, n);
     }
     const who = db.prepare('SELECT posted_by AS userId, posted_at AS at FROM documents WHERE id = ?').get(h.documentId) as { userId: string; at: string };
     syncStage(db, doc.jobOrderId, `${h.number}: ${doc.stepName} pieces recorded`, who);
@@ -235,13 +257,15 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
         .prepare(
           `SELECT row_no AS rowNo, line_no AS lineNo, employee_id AS employeeId, employee_name AS employeeName, kind, pieces, garment_type AS garmentType, complexity,
              rate_cents AS rateCents, rate_source AS rateSource, rate_reason AS rateReason, amount_cents AS amountCents, correction_of_id AS correctionOf,
-             work_date AS workDate, (SELECT reason FROM prd_assignment_repeats WHERE assignment_id = a.id) AS repeatReason
+             work_date AS workDate, (SELECT reason FROM prd_assignment_repeats WHERE assignment_id = a.id) AS repeatReason,
+             (SELECT json_group_array(roster_row_no) FROM (SELECT roster_row_no FROM prd_assignment_wearers WHERE assignment_id = a.id ORDER BY roster_row_no)) AS wearers
            FROM prd_assignments a WHERE document_id = ? ORDER BY row_no`,
         )
-        .all(documentId) as (Omit<Assignment, 'rework' | 'rateReason' | 'correctionOf' | 'repeatReason'> & { rateReason: string | null; correctionOf: string | null; repeatReason: string | null; workDate: string })[]
+        .all(documentId) as (Omit<Assignment, 'rework' | 'rateReason' | 'correctionOf' | 'repeatReason' | 'wearers'> & { rateReason: string | null; correctionOf: string | null; repeatReason: string | null; workDate: string; wearers: string })[]
     );
-    const rows = stored.map(({ rateReason, correctionOf, repeatReason, workDate: _, ...r }): Assignment => ({
+    const rows = stored.map(({ rateReason, correctionOf, repeatReason, workDate: _, wearers, ...r }): Assignment => ({
       ...r,
+      ...((JSON.parse(wearers) as number[]).length > 0 ? { wearers: JSON.parse(wearers) as number[] } : {}),
       ...(r.kind === 'rework' ? { rework: true as const } : {}),
       ...(rateReason ? { rateReason } : {}),
       ...(correctionOf ? { correctionOf } : {}),
@@ -276,6 +300,7 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
         ...(r.rateReason ? { rateReason: r.rateReason } : {}),
         ...(r.correctionOf ? { correctionOf: r.correctionOf } : {}),
         ...(r.repeatReason ? { repeatReason: r.repeatReason } : {}),
+        ...(r.wearers ? { wearers: r.wearers } : {}),
       })),
       ...(doc.overCapReason ? { overCapReason: doc.overCapReason } : {}),
     };

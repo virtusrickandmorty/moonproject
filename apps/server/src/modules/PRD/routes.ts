@@ -7,10 +7,10 @@ import { stamp } from '../../platform/clock.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { clockGuard } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
-import { currentStage, jobOrderRef, lineState } from '../JO/public.ts';
+import { currentStage, jobOrderRef, lineState, rosterOf } from '../JO/public.ts';
 import { garmentTypes } from '../RATE/public.ts';
 import { activeEmployees } from './emp.ts';
-import { COMPLEXITIES, availableFor, board, lineRoute, lineSetup, listSteps, listTemplates, setupLine, stepAction, stepById, type StepAction } from './production.ts';
+import { COMPLEXITIES, availableFor, board, lineRoute, lineSetup, listSteps, listTemplates, setupLine, stepAction, stepById, wearersDone, type StepAction } from './production.ts';
 
 const setupBody = z
   .object({ templateId: z.number().int().positive().optional(), stepIds: z.array(z.number().int().positive()).min(1).max(20), garmentType: z.string().trim().min(1).max(60), complexity: z.enum(COMPLEXITIES) })
@@ -36,7 +36,7 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get('/api/prd/tv', { config: { permission: 'prd.tv' } }, async () => ({ cards: board(db), steps: listSteps(db) }));
 
-  /** One job order's production: each line's setup and route, with the pieces each step may still take (E7 rules 1–2). */
+  /** One job order's production: each line's setup and route, with the pieces each step may still take (E7 rules 1–2), its wearers and who is done. */
   app.get<{ Params: { jo: string } }>('/api/prd/jobs/:jo', { config: { permission: 'prd.view' } }, async (req) => {
     const jo = jobOrderRef(db, req.params.jo);
     if (!jo) throw notFound('The job order');
@@ -44,7 +44,9 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
       const route = lineRoute(db, jo.id, l.lineNo);
       return {
         lineNo: l.lineNo, description: l.description, qty: l.qty, releasedQty: l.releasedQty, setup: lineSetup(db, jo.id, l.lineNo) ?? null,
-        route: route?.map((s) => ({ ...s, availablePieces: availableFor(route, s.id, l.qty) })) ?? null,
+        // The line's wearers, and who is done on each step (ticked on Record pieces; the owner's request, Oct 2026).
+        roster: rosterOf(db, jo.id, l.lineNo),
+        route: route?.map((s) => ({ ...s, availablePieces: availableFor(route, s.id, l.qty), doneWearers: [...wearersDone(db, jo.id, l.lineNo, s.id).keys()] })) ?? null,
       };
     });
     return { jobOrder: { id: jo.id, number: jo.number, status: jo.status, customerName: jo.customerName, dueDate: jo.dueDate, priority: jo.priority, stage: currentStage(db, jo.id) }, lines };

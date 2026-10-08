@@ -2,9 +2,10 @@
  * Production board (PLAN E7, H1): every line still to release, in a column per step, with due-date and rush filters. A card
  * opens its line: the route with Complete / Not needed / Reopen, "Record pieces", and the route setup.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, type BoardCard, type DocTypeInfo, type Me, type PrdCatalogue, type StepStatus } from '../../api.ts';
-import { Link } from '../../router.tsx';
+import { addRewrite, Link, navigate, useLocation } from '../../router.tsx';
+import { EntryForm } from './EntryForm.tsx';
 import { Button, Dialog, Field, Notice, ReasonDialog, inputClass, useAction, searchClass, showDate } from '../../components/ui.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { columns, filterCards, stepFlow, useBoardRefresh, type Due } from './board.ts';
@@ -28,6 +29,18 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
   const [rushOnly, setRushOnly] = useState(false);
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<{ jobOrderId: string; lineNo: number } | null>(null);
+  // Record pieces opens over the board (?record&jo=…&step=…, which the form reads); once recorded the board comes back
+  // with the new entry (?recorded=<id>) and its counts refreshed.
+  const query = new URLSearchParams(useLocation().split('?')[1] ?? '');
+  const entryType = docTypes.find((d) => d.key === 'prd.entry');
+  const recordedId = query.get('recorded');
+  useEffect(() => addRewrite((to) => {
+    const [path = '', q = ''] = to.split('?');
+    if (path === docPath('prd.entry', '/new')) return { to: `/prd/board?record${q ? `&${q}` : ''}` };
+    const done = /^\/docs\/prd\.entry\/([^/]+)$/.exec(path);
+    return done && q === 'recorded=1' ? { to: `/prd/board?recorded=${encodeURIComponent(done[1]!)}`, replace: true } : null;
+  }), []);
+  useEffect(() => { if (recordedId) void load(); }, [recordedId, load]);
   if (!data) return <div className="space-y-3"><p role="status">{words}</p>{error && <Notice>{error}</Notice>}<p className="text-slate-500">Loading…</p></div>;
   const { cat, cards, today } = data;
   const can = { progress: me.permissions.includes('prd.progress'), assign: !!docTypes.find((d) => d.key === 'prd.entry')?.canCreate };
@@ -48,6 +61,7 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
       </div>
       <p role="status" className={`text-sm ${stale ? 'font-semibold text-red-800' : 'text-slate-500'}`}>{words} · Refreshes every 30 seconds</p>
       {error && <Notice>{error}</Notice>}
+      {recordedId && <Notice tone="success">Pieces recorded. <Link to={docPath('prd.entry', `/${recordedId}`)} className="underline">Open the entry</Link></Notice>}
       <div className="flex flex-wrap items-end justify-end gap-3">
         <div className={searchClass}><Field label="Search job number or customer"><input type="search" className={inputClass} value={search} onChange={(e) => setSearch(e.target.value)} /></Field></div>
         <Button onClick={() => { setSearch(''); setDue('all'); setRushOnly(false); }}>Reset filters</Button>
@@ -74,6 +88,11 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
         ))}
       </div>
       {card && <LinePanel card={card} cat={cat} can={can} onChanged={load} onClose={() => setOpen(null)} />}
+      {query.has('record') && entryType && (
+        <Dialog title="Record pieces" size="full" hideTitle onClose={() => navigate('/prd/board', { replace: true })}>
+          <EntryForm type={entryType} mode={{ kind: 'new' }} />
+        </Dialog>
+      )}
     </div>
   );
 }

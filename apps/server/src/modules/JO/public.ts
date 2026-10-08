@@ -26,6 +26,13 @@ export function jobOrderRef(db: Db, id: string): JoRef | undefined {
   return db.prepare(`${JO_REF} WHERE o.document_id = ?`).get(id) as JoRef | undefined;
 }
 
+/** A job order line's wearers (its roster) as recorded, in order: production ticks who is done on each step (PRD). */
+export interface RosterWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
+export function rosterOf(db: Db, jobOrderId: string, lineNo: number): RosterWearer[] {
+  return db.prepare(`SELECT row_no AS rowNo, wearer_name AS wearerName, size_mode AS sizeMode, size, jersey_name AS jerseyName, jersey_number AS jerseyNumber, qty
+    FROM jo_roster WHERE document_id = ? AND line_no = ? ORDER BY row_no`).all(jobOrderId, lineNo) as RosterWearer[];
+}
+
 /** Where an edited job order lives on now: JO-1 edited into JO-2, then into JO-3, gives JO-3. Null when the chain ends cancelled. */
 export function liveReplacementOf(db: Db, id: string): JoRef | null {
   const next = db.prepare(`SELECT replaced_by_id FROM documents WHERE id = ? AND ${JO_DOC_TYPES_SQL}`).pluck();
