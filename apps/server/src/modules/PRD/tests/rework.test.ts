@@ -43,7 +43,7 @@ async function record(input: object) {
 type JobStep = { id: number; pieces: number; reworkPieces: number; forwardedWearers: number[] | null; rework: { pieces: number; wearers: number[] } };
 const stepOf = async (jo: string, stepId: number) => ((await production.get(`/api/prd/jobs/${jo}`)).json().lines[0].route as JobStep[]).find((s) => s.id === stepId)!;
 const cardOf = async (jo: string) => ((await production.get('/api/prd/board')).json() as { jobOrderId: string; ready: boolean; finishedPieces: number; steps: { stepId: number; reworkOpen: number }[] }[]).find((x) => x.jobOrderId === jo)!;
-const sendBack = (jo: string, stepId: number, body: object) => production.post(`/api/prd/jobs/${jo}/lines/1/steps/${stepId}/rework`, body);
+const sendBack = (jo: string, body: object) => production.post(`/api/prd/jobs/${jo}/lines/1/rework`, body);
 const readyQty = async (jo: string) => (await encoder.get(`/api/jo/orders/${jo}/status`)).json().lines[0].readyQty as number;
 const pasubra = { rework: true, rateCents: 2_000, rateReason: 'Pasubra rate' };
 
@@ -65,7 +65,7 @@ it('lists on a step only the wearers forwarded from the step before', async () =
   expect((await stepOf(jo, PACKING)).forwardedWearers).toBeNull();
 });
 
-it('sends pieces back for rework without replacing what was done, holds them from release, and clears once redone', async () => {
+it('sends pieces back to the first step, through every step again as rework, without replacing what was done', async () => {
   const jo = await jobOrder();
   await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 5, wearers: [1, 2, 3, 4] }]));
   expect((await production.post(`/api/prd/jobs/${jo}/lines/1/steps/${SEWING}/complete`, {})).statusCode).toBe(200);
@@ -73,29 +73,36 @@ it('sends pieces back for rework without replacing what was done, holds them fro
   expect((await production.post(`/api/prd/jobs/${jo}/lines/1/steps/${PACKING}/complete`, {})).statusCode).toBe(200);
   expect(currentStage(env.db, jo)).toBe('ready');
 
-  // Ben's 2 shirts go back to Sewing: Sewing keeps its 5 pieces done, and shows 2 rework.
-  const sent = await sendBack(jo, SEWING, { wearers: [2], reason: 'Seam opened on both shirts' });
+  // Ben's 2 shirts go back to the beginning (Sewing): Sewing keeps its 5 pieces done, and shows 2 rework.
+  const sent = await sendBack(jo, { wearers: [2], reason: 'Seam opened on both shirts' });
   expect(sent.statusCode, sent.body).toBe(200);
   const sewing = await stepOf(jo, SEWING);
   expect([sewing.pieces, sewing.rework]).toEqual([5, { pieces: 2, wearers: [2] }]);
+  expect((await stepOf(jo, PACKING)).rework).toEqual({ pieces: 0, wearers: [] });
   expect(await cardOf(jo)).toMatchObject({ ready: false, finishedPieces: 3 });
-  expect((await cardOf(jo)).steps.find((s) => s.stepId === SEWING)!.reworkOpen).toBe(2);
+  expect((await cardOf(jo)).steps.map((s) => s.reworkOpen)).toEqual([2, 0]);
   expect(currentStage(env.db, jo)).toBe('in_production');
   expect(await readyQty(jo)).toBe(3); // the other 3 can still go out
-  expect((await stepOf(jo, PACKING)).forwardedWearers).toBeNull(); // Sewing is completed
 
   // Not twice; not more than was done; a reason is needed.
-  expect((await sendBack(jo, SEWING, { wearers: [2], reason: 'Seam opened again' })).json().code).toBe('WEARER_IN_REWORK');
-  expect((await sendBack(jo, SEWING, { pieces: 4, reason: 'Too many pieces sent back' })).json().code).toBe('REWORK_OVER');
-  expect((await sendBack(jo, SEWING, { wearers: [1], reason: 'short' })).json().code).toBe('REASON_REQUIRED');
+  expect((await sendBack(jo, { wearers: [2], reason: 'Seam opened again' })).json().code).toBe('WEARER_IN_REWORK');
+  expect((await sendBack(jo, { pieces: 4, reason: 'Too many pieces sent back' })).json().code).toBe('REWORK_OVER');
+  expect((await sendBack(jo, { wearers: [1], reason: 'short' })).json().code).toBe('REASON_REQUIRED');
 
-  // Rework goes on the completed step, for the wearers sent back only; normal work there still needs a reopen.
+  // Rework goes on the completed step; normal work there still needs a reopen.
   expect(await codes(entry(jo, [{ lineNo: 1, employeeId: w.sewer2, pieces: 1, wearers: [9], ...pasubra }]))).toContain('WEARER');
   expect(await codes(entry(jo, [{ lineNo: 1, employeeId: w.sewer2, pieces: 1 }]))).toContain('STEP_CLOSED');
   await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer2, pieces: 2, wearers: [2], ...pasubra }]));
 
+  // Redone at Sewing, they move on to Packing as rework; still not ready.
   const redone = await stepOf(jo, SEWING);
   expect([redone.pieces, redone.reworkPieces, redone.rework]).toEqual([5, 2, { pieces: 0, wearers: [] }]);
+  expect((await stepOf(jo, PACKING)).rework).toEqual({ pieces: 2, wearers: [2] });
+  expect(await cardOf(jo)).toMatchObject({ ready: false, finishedPieces: 3 });
+
+  // Packed again (paid the table rate): done, ready, all 5 can go.
+  await record(entry(jo, [{ lineNo: 1, employeeId: w.packer, pieces: 2, wearers: [2], rework: true }], PACKING));
+  expect((await stepOf(jo, PACKING)).rework).toEqual({ pieces: 0, wearers: [] });
   expect(await cardOf(jo)).toMatchObject({ ready: true, finishedPieces: 5 });
   expect(currentStage(env.db, jo)).toBe('ready');
   expect(await readyQty(jo)).toBe(5);
@@ -104,10 +111,10 @@ it('sends pieces back for rework without replacing what was done, holds them fro
 it('sends back a count of pieces on a line recorded without wearers', async () => {
   const jo = await jobOrder();
   await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 4 }]));
-  expect((await sendBack(jo, SEWING, { pieces: 1, reason: 'Wrong thread colour used' })).statusCode).toBe(200);
+  expect((await sendBack(jo, { pieces: 1, reason: 'Wrong thread colour used' })).statusCode).toBe(200);
   expect((await stepOf(jo, SEWING)).rework).toEqual({ pieces: 1, wearers: [] });
-  expect(await cardOf(jo)).toMatchObject({ finishedPieces: 0 });
   await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1, ...pasubra }]));
   expect((await stepOf(jo, SEWING)).rework.pieces).toBe(0);
-  expect((await sendBack(jo, PACKING, { pieces: 1, reason: 'Nothing packed yet here' })).json().code).toBe('REWORK_OVER');
+  expect((await stepOf(jo, PACKING)).rework.pieces).toBe(1); // on to the next step
+  expect((await sendBack(jo, { pieces: 4, reason: 'More than was sewn' })).json().code).toBe('REWORK_OVER');
 });

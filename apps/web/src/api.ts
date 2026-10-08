@@ -1073,9 +1073,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     prdSetup: (jo: string, lineNo: number, body: PrdSetup) => call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/setup`), body),
     prdStep: (jo: string, lineNo: number, stepId: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) =>
       call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/steps/${stepId}/${action}`), reason ? { reason } : {}),
-    /** Send pieces back for rework to a step they went through (labelled rework there, not replacing what was done). */
-    prdRework: (jo: string, lineNo: number, stepId: number, body: { pieces?: number; wearers?: number[]; part?: 'upper' | 'lower'; reason: string }) =>
-      call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/steps/${stepId}/rework`), body),
+    /** Send pieces back for rework: from the first step through every step again, labelled rework (what was done stays). */
+    prdRework: (jo: string, lineNo: number, body: { pieces?: number; wearers?: number[]; part?: 'upper' | 'lower'; reason: string }) =>
+      call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/rework`), body),
     prdWorkers: () => call<Worker[]>('GET', '/api/prd/workers'),
     rates: () => call<RateTable>('GET', '/api/rate/rates'),
     addRate: (body: Omit<PieceRate, 'id' | 'createdAt'>) => call<PieceRate>('POST', '/api/rate/rates', body),
