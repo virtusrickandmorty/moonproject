@@ -8,7 +8,19 @@ const PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+
 /** The "So far" / money figures: the amount shown beside a label. */
 const figure = (page: Page, label: string) => page.locator('dt', { hasText: new RegExp(`^${label}$`) }).first().locator('xpath=following-sibling::dd[1]');
 
+/** Whatever opened over a list (a job order, a payment taken on it) is closed, as staff do before using the menu. */
+async function closeDialogs(page: Page) {
+  const close = page.getByRole('button', { name: 'Close dialog' });
+  for (let i = 0; i < 3; i++) {
+    const open = await close.count();
+    if (open === 0) return;
+    await close.last().click(); // the top one; it shrinks away before it is gone
+    await expect.poll(() => close.count()).toBeLessThan(open);
+  }
+}
+
 async function openJobOrder(page: Page, jo = 'JO-000001') {
+  await closeDialogs(page);
   await page.getByRole('link', { name: 'Job Orders', exact: true }).click();
   await page.getByRole('link', { name: jo, exact: true }).click();
   await expect(page.getByRole('heading', { name: `Job Order ${jo}` })).toBeVisible();
@@ -28,8 +40,9 @@ async function fillCollection(page: Page, amount: string, cr: string, jo = 'JO-0
   await page.getByRole('radio', { name: /GCash/ }).click();
   await page.getByLabel('CR number (from the booklet)').fill(cr);
   await page.getByRole('button', { name: 'Record', exact: true }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Record', exact: true }).click();
+  await page.getByRole('dialog', { name: /^Record this / }).getByRole('button', { name: 'Record', exact: true }).click();
   await expect(page.getByText(/^Recorded as COL-/)).toBeVisible();
+  await closeDialogs(page); // taken from the job order list, the payment opened over it
 }
 
 test('sales: a customer, a job order with a deposit, a collection, a release with an invoice record; balance due zero and nothing open in Unpaid customer balances (AR aging)', async ({ page }) => {
@@ -110,6 +123,7 @@ test('sales: a customer, a job order with a deposit, a collection, a release wit
   await expect(page.getByRole('link', { name: 'Record invoice' })).toHaveCount(0);
 
   // Unpaid customer balances (AR aging) shows nothing open for the customer.
+  await closeDialogs(page);
   await page.getByRole('link', { name: 'Unpaid customer balances (AR aging)' }).click();
   await expect(page.getByRole('cell', { name: 'Total AR' })).toBeVisible();
   await expect(page.getByRole('cell', { name: CUSTOMER })).toHaveCount(0);
@@ -280,13 +294,13 @@ test('sales: a job order paid by check, then the check deposited from Checks on 
   await page.getByLabel('Date on the check').fill(today);
   await page.getByLabel('CR number (from the booklet)').fill('405');
   await page.getByRole('button', { name: 'Record', exact: true }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Record', exact: true }).click();
+  await page.getByRole('dialog', { name: /^Record this / }).getByRole('button', { name: 'Record', exact: true }).click();
   await expect(page.getByText(/^Recorded as COL-/)).toBeVisible();
   await openJobOrder(page, 'JO-000004');
   await expect(figure(page, 'Balance due')).toHaveText('₱0.00');
 
   // Checks on hand lists it, and the books agree; tick it and deposit it to the bank: one fund transfer.
-  await page.getByRole('button', { name: 'Close dialog' }).click(); // the job order opened over its list
+  await closeDialogs(page); // the job order opened over its list
   await page.getByRole('link', { name: 'Checks on hand', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Checks on hand' })).toBeVisible();
   const row = page.getByRole('row').filter({ hasText: '000777' });

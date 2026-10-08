@@ -56,6 +56,15 @@ const status = (over: Partial<JoStatus> = {}, money: Partial<JoStatus['money']> 
   ...over,
 });
 
+describe('release form start', () => {
+  it('ticks what may go out now; with nothing ready yet (an owner override), everything left', () => {
+    const line = (lineNo: number, leftQty: number, ready?: boolean) => ({ lineNo, description: 'Item', qty: 4, releasedQty: 4 - leftQty, leftQty, ...(ready === undefined ? {} : { ready }) });
+    expect(allLeft([line(1, 4, true), line(2, 4, false), line(3, 0, true)])).toEqual({ 1: '4' });
+    expect(allLeft([line(1, 4, false), line(2, 2, false)])).toEqual({ 1: '4', 2: '2' });
+    expect(allLeft([line(1, 4), line(2, 1)])).toEqual({ 1: '4', 2: '1' }); // the server did not say: as before
+  });
+});
+
 describe('job order form rules', () => {
   it('turns what was typed into the input: the roster sets the pieces, sizes and jersey names upper-case, blank lines left out', () => {
     const { input, totalCents, errors } = joInput(typedJo());

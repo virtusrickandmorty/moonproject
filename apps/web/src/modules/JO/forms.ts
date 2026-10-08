@@ -168,7 +168,15 @@ export const emptyRelease = (jobOrderId = ''): ReleaseValues => ({
   jobOrderId, qtys: {}, claimedBy: '', idSeen: '', creditNote: '', creditDueInDays: '', overrideReason: '', invoiceNumber: '', invoiceToFollow: false, invoiceNote: '',
 });
 /** Everything left on each line, ticked. */
-export const allLeft = (lines: JoStatus['lines']): Record<number, string> => Object.fromEntries(lines.filter((l) => l.leftQty > 0).map((l) => [l.lineNo, String(l.leftQty)]));
+/**
+ * What the release form ticks to start with: what is left of each line that may go out now; when none may (nothing made
+ * yet, for an owner's override), every line with something left, as before.
+ */
+export function allLeft(lines: JoStatus['lines']): Record<number, string> {
+  const left = lines.filter((l) => l.leftQty > 0);
+  const ready = left.filter((l) => l.ready !== false);
+  return Object.fromEntries((ready.length > 0 ? ready : left).map((l) => [l.lineNo, String(l.leftQty)]));
+}
 
 export interface ReleaseInput { jobOrderId: string; lines: { lineNo: number; qty: number }[]; claimedBy: string; idSeen: IdSeen; creditNote?: string; creditDueInDays?: number; overrideReason?: string }
 

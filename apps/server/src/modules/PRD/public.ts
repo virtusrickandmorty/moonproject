@@ -4,7 +4,19 @@ import type { Db } from '../../platform/db/driver.ts';
 
 export { COMPLEXITIES, listSteps, stepById, type Complexity, type Step } from './production.ts';
 export { board } from './production.ts';
-import { lineRoute } from './production.ts';
+import { lineRoute, routeDone } from './production.ts';
+import { lineState } from '../JO/public.ts';
+
+/**
+ * Each line's production, for releasing what is ready (JO): 'done' when every step of its route is closed, 'in_production'
+ * while one is not, 'none' when the line has no route (nothing to make, or not set up yet).
+ */
+export function lineProduction(db: Db, jobOrderId: string): Map<number, 'done' | 'in_production' | 'none'> {
+  return new Map(lineState(db, jobOrderId).map((l) => {
+    const route = lineRoute(db, jobOrderId, l.lineNo);
+    return [l.lineNo, route === null ? 'none' : routeDone(route) ? 'done' : 'in_production'] as const;
+  }));
+}
 
 /** Current route names and status for a production job ticket. */
 export function jobTicketRoute(db: Db, jobOrderId: string, lineNo: number) {

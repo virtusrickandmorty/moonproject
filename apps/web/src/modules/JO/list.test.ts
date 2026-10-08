@@ -6,7 +6,7 @@ import { jobOrderActions, jobOrderColumns, jobOrderDetail } from './list.tsx';
 
 const jo = (over: Partial<JoListRow> = {}): JoListRow => ({ id: 'j1', number: 'JO-000001', businessDate: '2026-10-08', status: 'posted', totalCents: 600_000,
   summary: 'Job order for Sample School', postedAt: '2026-10-08T10:00:00+08:00', cancelledAt: null, cancelReason: null, replacesId: null, replacedById: null,
-  balanceDueCents: 300_000, matchedItem: null, awaitingInvoice: [], ...over } as JoListRow);
+  balanceDueCents: 300_000, matchedItem: null, awaitingInvoice: [], readyToRelease: false, ...over } as JoListRow);
 const html = (node: ReactNode) => (isValidElement(node) ? renderToStaticMarkup(node) : String(node ?? ''));
 const balance = jobOrderColumns[0]!;
 
@@ -29,6 +29,13 @@ describe('job order list', () => {
     expect(html(jobOrderActions(types(false))(jo()))).not.toContain('Make payment');
     expect(html(jobOrderActions(types(true))(jo({ balanceDueCents: 0 })))).not.toContain('Make payment');
     expect(jobOrderActions(types(true))(jo({ status: 'cancelled' }))).toBeNull();
+  });
+
+  it('shows Release slip to those who release, only once an item is ready to go out', () => {
+    const types = (canCreate: boolean) => [{ key: 'jo.release', canCreate } as DocTypeInfo];
+    expect(html(jobOrderActions(types(true))(jo({ readyToRelease: true })))).toContain('Release slip');
+    expect(html(jobOrderActions(types(true))(jo({ readyToRelease: false })))).not.toContain('Release slip');
+    expect(html(jobOrderActions(types(false))(jo({ readyToRelease: true })))).not.toContain('Release slip');
   });
 
   it('offers Invoice to those who record invoices: greyed out with why until something released waits for its invoice', () => {
