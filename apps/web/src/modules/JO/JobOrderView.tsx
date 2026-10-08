@@ -3,6 +3,7 @@
  * release and invoice record forms already filled for this job order; and deposits left on a cancelled or edited JO,
  * with the way to move them to the replacement (DEP-XFER) or pay them back.
  */
+import { useLiveChange } from '../../live.ts';
 import { useEffect, useState } from 'react';
 import { api, type DocDetail, type JoStatus } from '../../api.ts';
 import { Link } from '../../router.tsx';
@@ -120,6 +121,7 @@ function JoMoney({ d, typeKey }: { d: DocDetail; typeKey: string }) {
     }, () => undefined);
     if (replacesId) Promise.all([api.get(typeKey, replacesId), api.joStatus(replacesId)]).then(([old, os]) => setBefore({ number: old.header.number, heldCents: os.money.depositsHeldCents }), () => undefined);
   }, [id, status]);
+  useLiveChange(() => void api.joStatus(id).then(setS, () => undefined)); // a payment or a release elsewhere shows here
   if (!s) return null;
   const m = s.money;
   const held = m.depositsHeldCents;
