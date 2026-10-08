@@ -35,13 +35,13 @@ describe('production screen rules', () => {
     expect(n({ due: 'all', rushOnly: true })).toEqual(['soon']);
   });
 
-  it('entry rows: blank rows left out; whole pieces; a typed rate goes with its reason; rework needs a rate', () => {
+  it('entry rows: blank rows left out; whole pieces; a typed rate goes with its reason; rework takes the price list rate', () => {
     expect(rowsToInput([{ lineNo: '1', employeeId: 'e1', pieces: '12', rework: false, rate: '', rateReason: '' }, emptyRow('1'), { lineNo: '1', employeeId: 'e2', pieces: '3', rework: true, rate: '20', rateReason: ' Pasubra ' }])).toEqual({
       rows: [{ lineNo: 1, employeeId: 'e1', pieces: 12 }, { lineNo: 1, employeeId: 'e2', pieces: 3, rework: true, rateCents: 2_000, rateReason: 'Pasubra' }],
       errors: [],
     });
     expect(rowsToInput([{ lineNo: '', employeeId: '', pieces: '2.5', rework: true, rate: '', rateReason: '' }, { lineNo: '1', employeeId: 'e', pieces: '1', rework: false, rate: 'x', rateReason: '' }]).errors).toEqual([
-      'Row 1: pick the line.', 'Row 1: pick the worker.', 'Row 1: type the pieces as a whole number like 12.', 'Row 1: type the rework (pasubra) rate.',
+      'Row 1: pick the line.', 'Row 1: pick the worker.', 'Row 1: type the pieces as a whole number like 12.',
       'Row 2: type the rate like 45.00', 'Row 2: say why this rate is typed.',
     ]);
     expect(rowsToInput([emptyRow()]).errors).toEqual(['Add a worker and the pieces done.']);

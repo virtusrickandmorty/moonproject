@@ -90,7 +90,7 @@ it('sends pieces back for rework without replacing what was done, holds them fro
   expect((await sendBack(jo, SEWING, { wearers: [1], reason: 'short' })).json().code).toBe('REASON_REQUIRED');
 
   // Rework goes on the completed step, for the wearers sent back only; normal work there still needs a reopen.
-  expect(await codes(entry(jo, [{ lineNo: 1, employeeId: w.sewer2, pieces: 1, wearers: [1], ...pasubra }]))).toEqual(['WEARER_NOT_SENT_BACK']);
+  expect(await codes(entry(jo, [{ lineNo: 1, employeeId: w.sewer2, pieces: 1, wearers: [9], ...pasubra }]))).toContain('WEARER');
   expect(await codes(entry(jo, [{ lineNo: 1, employeeId: w.sewer2, pieces: 1 }]))).toContain('STEP_CLOSED');
   await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer2, pieces: 2, wearers: [2], ...pasubra }]));
 

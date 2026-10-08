@@ -66,12 +66,12 @@ it('lists the wearers of a line, keeps who each row finished, and counts the pie
   expect((await production.post(`/api/prd/jobs/${jo}/lines/1/steps/${SEWING}/complete`, {})).statusCode).toBe(200);
 });
 
-it('frees the wearers of a cancelled entry; rework names only wearers sent back; a row without wearers still works', async () => {
+it('frees the wearers of a cancelled entry; rework names only wearers done on the step; a row without wearers still works', async () => {
   const jo = await jobOrder();
   const e = await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 2, wearers: [2] }]));
   expect((await production.post(`${PE}/${e.id}/cancel`, { reason: 'Recorded on the wrong job order' }, idem())).statusCode).toBe(200);
   expect(await doneOn(jo, SEWING)).toEqual([]);
-  expect(await codes(entry(jo, [{ lineNo: 1, employeeId: w.sewer2, pieces: 1, rework: true, rateCents: 2_000, rateReason: 'Pasubra on a seam', wearers: [1] }]))).toEqual(['WEARER_NOT_SENT_BACK']);
+  expect(await codes(entry(jo, [{ lineNo: 1, employeeId: w.sewer2, pieces: 1, rework: true, rateCents: 2_000, rateReason: 'Pasubra on a seam', wearers: [1] }]))).toEqual(['WEARER_NOT_DONE', 'REWORK_OVER']); // nothing is done there yet
   await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 2 }])); // counted, no wearers named
   expect(await doneOn(jo, SEWING)).toEqual([]);
 });
