@@ -23,7 +23,7 @@ describe('production screen rules', () => {
   it('columns: needs a route, the steps cards are at in canonical order, ready; empty ones left out', () => {
     const cards = [card('A', {}), card('B', { currentStepId: 4, steps: [] }), card('C', { currentStepId: 3, steps: [] }), card('D', { ready: true, steps: [] })];
     const steps = [step(1, 'Cutting'), step(2, 'Sewing'), step(3, 'QC', false), step(4, 'Packing')];
-    expect(columns(steps, cards).map((c) => [c.title, c.cards.map((x) => x.number).join('')])).toEqual([['Choose production steps', 'A'], ['QC', 'C'], ['Packing', 'B'], ['Ready', 'D']]);
+    expect(columns(steps, cards).map((c) => [c.title, c.cards.map((x) => x.number).join('')])).toEqual([['Choose production steps', 'A'], ['QC', 'C'], ['Packing', 'B'], ['Ready for release', 'D']]);
     expect(columns(steps, [])).toEqual([]);
   });
 
