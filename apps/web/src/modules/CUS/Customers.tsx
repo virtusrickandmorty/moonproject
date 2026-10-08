@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useLiveChange } from '../../live.ts';
 import { openServerPrint, refusedFields, type Me } from '../../api.ts';
 import { Button, Dialog, Field, Notice, Panel, inputClass, peso, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
@@ -56,6 +57,7 @@ export function Customers({ me }: { me: Me }) {
     catch (e) { setError((e as Error).message); }
   };
   useEffect(() => { void load(); }, [load]);
+  useLiveChange(() => void load());
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get('customer');
     if (id) void open(id);

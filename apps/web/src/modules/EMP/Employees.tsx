@@ -2,6 +2,7 @@
  * Employees (PLAN E11): the list with search and status, and a new employee form for emp.manage. Pay is set on the
  * employee's own page, by those with pay.view_rates.
  */
+import { useLiveChange } from '../../live.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { api, type EmployeeRow, type Me } from '../../api.ts';
 import { Button, Dialog, Field, Notice, inputClass, useAction, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
@@ -15,6 +16,7 @@ export function Employees({ me }: { me: Me }) {
   const [error, setError] = useState('');
   const load = useCallback(() => api.employees({ search, status }).then(setRows, (e: Error) => setError(e.message)), [search, status]);
   useEffect(() => void load(), [load]);
+  useLiveChange(() => void load());
 
   return (
     <div className="max-w-4xl space-y-4">

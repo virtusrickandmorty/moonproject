@@ -3,6 +3,7 @@
  * (H1) and the breadcrumb trail. Laid out like Star Admin 2: a grey top bar with a greeting, and a grey sidebar whose
  * current item is a white pill.
  */
+import { startLive, stopLive, useLiveChange } from '../live.ts';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { api, type DashNotification, type DocTypeInfo, type Me, type MenuOrder } from '../api.ts';
 import { Link, navigate, useLocation } from '../router.tsx';
@@ -69,6 +70,7 @@ function Bell({ open, onToggle }: { open: boolean; onToggle: () => void }) {
     const t = setInterval(load, 60_000);
     return () => clearInterval(t);
   }, [load, path]);
+  useLiveChange(() => void load());
   const markRead = async (ids: string[]) => {
     setBusy(true);
     for (const id of ids) await api.dashRead(id).catch(() => {});
@@ -230,6 +232,8 @@ const pop = 'absolute right-0 z-30 mt-2 w-60 overflow-hidden rounded-lg bg-white
 
 export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes: DocTypeInfo[]; onSignOut: () => void; children: ReactNode }) {
   const path = useLocation().split('?')[0]!;
+  // Live changes: one stream while signed in; every screen that shows records reloads when anyone changes something.
+  useEffect(() => { startLive(); return stopLive; }, []);
   const [open, setOpen] = useState<'menu' | 'new' | 'user' | 'bell' | null>(null);
   const [newQuery, setNewQuery] = useState('');
   const [wide, setWide] = useState(true); // the sidebar on a big screen; the same button hides it

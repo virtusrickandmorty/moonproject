@@ -2,6 +2,7 @@
  * Builds the Fastify app. Every route must declare config.permission:
  * 'public', 'authenticated' (the handler checks a doc-type permission), or an exact permission key.
  */
+import { liveRoutes } from './engine/live.ts';
 import Fastify, { type FastifyInstance } from 'fastify';
 import cookie from '@fastify/cookie';
 import { AppError, manilaTimestamp } from '@moonproject/shared';
@@ -202,6 +203,7 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
   documentRoutes(app, deps);
   draftRoutes(app, deps);
   attachmentRoutes(app, deps);
+  liveRoutes(app, deps.db);
   practiceRoutes(app, deps, opts.practiceShop);
   healthRoutes(app, deps, opts.practiceShop ? { practiceShop: opts.practiceShop } : {});
   for (const m of registry.modules) m.routes?.(app, deps);

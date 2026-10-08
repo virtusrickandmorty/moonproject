@@ -4,6 +4,7 @@
  * Cancel and Edit (= cancel and reissue) start here. The cancel dialog shows what the server warns about first (a filed
  * period, ACC-22), from the preview before Cancel; a warning never blocks. Every document has its Attachments panel.
  */
+import { useLiveChange } from '../live.ts';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, newIdempotencyKey, type CancelPreview, type CashPlace, type DocDetail, type DocTypeInfo, type PrintVariant } from '../api.ts';
 import { Link, navigate } from '../router.tsx';
@@ -43,6 +44,7 @@ export function DocView({ type, id, recorded, parts = {}, inDialog, startCancel 
 
   const load = useCallback(() => api.get(type.key, id).then(setD, (e: Error) => setError(e.message)), [type.key, id]);
   useEffect(() => void load(), [load]);
+  useLiveChange(() => void load()); // a cancel, an edit or a payment on another computer shows here too
   useEffect(() => void (fields.some((f) => f.kind === 'cashPlace') && api.cashPlaces().then(setPlaces, () => undefined)), [fields]);
   useEffect(() => {
     let active = true;
