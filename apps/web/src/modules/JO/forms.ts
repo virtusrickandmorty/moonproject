@@ -27,7 +27,8 @@ export interface JoInput { customerId: string; contact?: string; dueInDays: numb
 export interface JoDoc { customerName: string; lines: { roster: { wearerName: string }[] }[] }
 
 export const emptyJoLine = (): JoLineRow => ({ itemId: '', kind: 'made_to_order', description: '', qty: '1', price: '', listCents: null, discount: '', roster: [] });
-export const emptyJo = (): JoValues => ({ customer: null, contact: '', dueInDays: '15', priority: 'normal', paymentTerms: '', notes: '', lines: [emptyJoLine()] });
+// 50% downpayment unless picked otherwise (the owner's request, Oct 2026).
+export const emptyJo = (): JoValues => ({ customer: null, contact: '', dueInDays: '15', priority: 'normal', paymentTerms: 'dp50', notes: '', lines: [emptyJoLine()] });
 export const oneOff = (name = ''): RosterEdit => ({ personId: '', name, sizeMode: 'preset', size: '', jerseyName: '', jerseyNumber: '', qty: '1', garmentType: '' });
 
 /** A wearer of the customer on a roster row, with the size and jersey on file (a measured wearer's chart is linked by the server). */
@@ -52,7 +53,7 @@ export function joInput(v: JoValues): { input: JoInput; totalCents: number; erro
   const errors: string[] = [];
   if (!v.customer) errors.push('Pick the customer.');
   const days = v.dueInDays.trim();
-  if (!/^\d{1,3}$/.test(days) || Number(days) < 1 || Number(days) > 365) errors.push('Due in: type the number of days, 1 to 365.');
+  if (!/^\d{1,3}$/.test(days) || Number(days) < 1 || Number(days) > 365) errors.push('Pick the due date: tomorrow up to a year from today.');
   if (!v.paymentTerms) errors.push('Pick the payment terms.');
   const lines: JoLineInput[] = [];
   v.lines.forEach((l, i) => {

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { api, type DashNotification, type DocTypeInfo, type Me, type MenuOrder } from '../api.ts';
 import { Link, navigate, useLocation } from '../router.tsx';
 import { longDate } from '../components/ui.tsx';
+import { showToast } from '../components/Toasts.tsx';
 import { MENU_FOLDS_KEY, applyMenuOrder, buildMenu, docPath, isHere, labelOf, openGroups, type MenuGroup, type MenuItem } from './menu.ts';
 import { SearchBox } from '../modules/NAV/Search.tsx';
 import { Breadcrumbs, CrumbName, crumbsFor } from './crumbs.tsx';
@@ -63,10 +64,17 @@ function Bell({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const [unread, setUnread] = useState<DashNotification[]>([]);
   const [busy, setBusy] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
-  const load = useCallback(() => api.dashNotifications({ limit: BELL_ASK, offset: 0, unread: true }).then(setUnread, () => {}), []);
+  // A new job order to route pops up once (the owner's request, Oct 2026); those already there when the page opened do not.
+  const seen = useRef<Set<string> | null>(null);
+  const load = useCallback(() => api.dashNotifications({ limit: BELL_ASK, offset: 0, unread: true }).then((list) => {
+    const fresh = list.filter((n) => n.kind === 'jo-to-route' && seen.current && !seen.current.has(n.id));
+    seen.current = new Set([...(seen.current ?? []), ...list.map((n) => n.id)]);
+    for (const n of fresh) showToast('info', <>{n.label}. <Link to={n.href ?? '/prd/board'} className="underline">Open the production board</Link></>);
+    setUnread(list);
+  }, () => {}), []);
   useEffect(() => {
     void load();
-    const t = setInterval(load, 60_000);
+    const t = setInterval(load, 30_000);
     return () => clearInterval(t);
   }, [load, path]);
   const markRead = async (ids: string[]) => {

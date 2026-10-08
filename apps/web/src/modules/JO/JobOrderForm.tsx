@@ -5,7 +5,7 @@
  * Save draft (no number) or Record. Also the Edit of a recorded job order (cancel and reissue, NR-4).
  */
 import { useEffect, useRef, useState } from 'react';
-import { formatPesos } from '@moonproject/shared';
+import { formatPesos, manilaDate } from '@moonproject/shared';
 import { api, type CatItem, type CustomerWearers, type DocTypeInfo, type Me, type Preview } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import { cents } from '../COL/money.ts';
@@ -138,6 +138,17 @@ function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWearers | n
 }
 
 /** `inDialog`: shown over the job order list (New): no page heading, Close instead of Back, and it says when something typed is unsaved. */
+/** The due date as days from today (Manila), both ways: the form keeps the days the server takes (dueInDays). */
+const DAY = 86_400_000;
+const todayMs = () => Date.parse(manilaDate(new Date()));
+export const dateIn = (days: number) => new Date(todayMs() + days * DAY).toISOString().slice(0, 10);
+export const daysTo = (date: string) => Math.round((Date.parse(date) - todayMs()) / DAY);
+const dueDateOf = (days: string) => (/^\d+$/.test(days.trim()) ? dateIn(Number(days)) : '');
+const dueHint = (days: string) => {
+  const n = Number(days);
+  return !/^\d+$/.test(days.trim()) ? 'Pick the day it is due' : n === 1 ? 'Tomorrow · 1 day from today' : `${n} days from today`;
+};
+
 export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; mode: FormMode; me?: Me; inDialog?: { close: () => void; setDirty: (dirty: boolean) => void; show?: (id: string) => void } }) {
   const [v, setV] = useState<JoValues>(() => ({ ...emptyJo(), lines: [] })); // items join the breakdown from the item form
   const [people, setPeople] = useState<CustomerWearers | null>(null);
@@ -326,8 +337,10 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
         </div>
         <Panel title="Terms">
           <div className="grid gap-3 sm:grid-cols-3">
-            <Field label="Due in (days)" required hint={doc ? `Due ${showDate(doc.dueDate)}` : 'Counted from today'}>
-              <input inputMode="numeric" className={money} value={v.dueInDays} onChange={(e) => set({ dueInDays: e.target.value })} />
+            {/* A date to pick (the owner's request, Oct 2026); the days from today are worked out and sent. */}
+            <Field label="Due date" required hint={dueHint(v.dueInDays)}>
+              <input type="date" aria-label="Due date" className={inputClass} min={dateIn(1)} max={dateIn(365)} value={dueDateOf(v.dueInDays)}
+                onChange={(e) => set({ dueInDays: e.target.value ? String(daysTo(e.target.value)) : '' })} />
             </Field>
             <Field label="Payment terms" required>
               <select className={inputClass} value={v.paymentTerms} onChange={(e) => set({ paymentTerms: e.target.value as JoValues['paymentTerms'] })}>
