@@ -81,9 +81,9 @@ export interface ListSource {
 export interface ListColumn { head: string; figure?: boolean; cell: (r: DocHeader) => ReactNode }
 
 /** A small button at the end of a row; a click on it does not open the row. */
-export function QuickAction({ label, title, onClick, tone = 'plain' }: { label: string; title?: string; onClick: () => void; tone?: 'plain' | 'danger' }) {
+export function QuickAction({ label, title, onClick, tone = 'plain', disabled }: { label: string; title?: string; onClick: () => void; tone?: 'plain' | 'danger'; disabled?: boolean }) {
   const look = tone === 'danger' ? 'bg-white text-red-700 ring-red-200 hover:bg-red-50' : 'bg-white text-slate-700 ring-slate-300 hover:bg-indigo-50 hover:ring-indigo-200';
-  return <button type="button" title={title ?? label} onClick={(e) => (e.stopPropagation(), onClick())} className={`whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold ring-1 transition-colors ${look}`}>{label}</button>;
+  return <button type="button" title={title ?? label} disabled={disabled} onClick={(e) => (e.stopPropagation(), onClick())} className={`whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold ring-1 transition-colors disabled:opacity-40 ${look}`}>{label}</button>;
 }
 
 /**

@@ -86,6 +86,8 @@ const signaturesHtml = (rows: Content['signatures']) => rows?.length
   ? `<div class="signatures">${rows.map(([caption, name]) => `<div class="sign"><span class="name">${escape(name ?? '')}</span><span class="caption">${escape(caption)}</span></div>`).join('')}</div>` : '';
 const termsHtml = (terms: unknown) => terms ? `<section class="terms"><h3>Terms and Conditions</h3><p>${escape(terms)}</p></section>` : '';
 
+/** A wearer's category as the job ticket says it. */
+const CATEGORY_WORDS: Record<string, string> = { male: 'Male', female: 'Female' };
 /** How many of a job order's pictures its job ticket shows. */
 export const TICKET_PICTURES = 6;
 /**
@@ -126,7 +128,7 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
       aside: jobOrderQr(h.id, h.number, joinBase),
       body: attachedPictures(db, h.id) +
         doc.lines.map((l: any) => `<section class="job-line"><h2 class="section">${escape(l.description)} · ${escape(l.qty)} pieces</h2>` +
-          lineTable(['Wearer', 'Size', 'Jersey name', 'Jersey no.', 'Qty'], l.roster.map((r: any) => [r.wearerName, r.size ?? (r.sizeMode === 'measured' ? 'Measured' : ''), r.jerseyName, r.jerseyNumber, r.qty])) +
+          lineTable(['Wearer', 'Category', 'Size', 'Jersey name', 'Jersey no.', 'Qty'], l.roster.map((r: any) => [r.wearerName, CATEGORY_WORDS[r.category] ?? '', r.size ?? (r.sizeMode === 'measured' ? 'Measured' : ''), r.jerseyName, r.jerseyNumber, r.qty])) +
           `<h3>Route checklist</h3><ul>${jobTicketRoute(db, h.id, l.lineNo).map((s) => `<li>☐ ${escape(s.name)} — ${escape(s.status)}</li>`).join('')}</ul></section>`).join('') +
         field('Notes', doc.notes),
     };

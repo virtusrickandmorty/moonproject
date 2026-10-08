@@ -122,8 +122,8 @@ export interface DocHeader {
 }
 export interface DocListFilters { q?: string; from?: string; to?: string }
 export interface DocCounts { all: number; posted: number; cancelled: number }
-/** A job order list row: `balanceDueCents` (0 once cancelled), and the item a search found its words in. */
-export interface JoListRow extends DocHeader { balanceDueCents: number; matchedItem: string | null }
+/** A job order list row: `balanceDueCents` (0 once cancelled), the item a search found its words in, and its releases waiting for their invoice. */
+export interface JoListRow extends DocHeader { balanceDueCents: number; matchedItem: string | null; awaitingInvoice: { id: string; number: string }[] }
 /** Read-only display of lines the server built. Declared this way so the money-rule tripwire (tests/house-rules) stays exact. */
 export type JournalLine = { accountCode: string; accountName: string } & Record<'debitCents' | 'creditCents', number>;
 export interface Journal { id: string; number: string; businessDate: string; postingKind: 'original' | 'reversal'; memo: string; lines: JournalLine[] }
