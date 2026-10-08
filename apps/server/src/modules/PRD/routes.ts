@@ -22,6 +22,7 @@ const reworkBody = z.object({
   wearers: z.array(z.number().int().min(1).max(1000)).min(1).max(1000).optional(),
   part: z.enum(SET_PARTS).optional(),
   reason: z.string().max(500),
+  foundAtStepId: z.number().int().positive().optional(),
 }).strict();
 type LineParams = { jo: string; line: string };
 const lineNoOf = (p: LineParams) => {
