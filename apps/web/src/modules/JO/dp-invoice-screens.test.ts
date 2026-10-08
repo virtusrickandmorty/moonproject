@@ -250,7 +250,7 @@ describe('web client for the downpayment invoice (mode C)', () => {
 const formatStart = (info: Parameters<typeof dpStartCents>[0]) => (dpStartCents(info) / 100).toFixed(2);
 
 describe('a job order from a quotation', () => {
-  it('fills the customer, lines, quantities, prices and the quotation number; staff still pick the terms and may change anything', async () => {
+  it('fills the customer, lines, quantities, prices and the quotation number; terms start at 50% downpayment and staff may change anything', async () => {
     const s = await shop();
     const { csrfToken } = await s.api.me();
     const send = async (url: string, body: unknown, ifMatch?: string) =>
@@ -264,11 +264,11 @@ describe('a job order from a quotation', () => {
     const prefill = jobOrderPrefill(detail, { [item.id]: 'made_to_order_garment' })!;
     const values = valuesFromQuotation(prefill, (detail.doc as { customerName: string }).customerName);
     expect(values).toMatchObject({
-      customer: { id: s.c.school, name: 'Moonlight Test School' }, paymentTerms: '', notes: `From quotation ${detail.header.number}. Rush for the regatta`,
+      customer: { id: s.c.school, name: 'Moonlight Test School' }, paymentTerms: 'dp50', notes: `From quotation ${detail.header.number}. Rush for the regatta`,
       lines: [{ kind: 'made_to_order', description: 'Team jersey set', qty: '4', price: '1,500.00', discount: '' }],
     });
-    // The payment terms are staff's to pick: the form asks until they do.
-    expect(joInput(values).errors).toEqual(['Pick the payment terms.']);
+    // The payment terms start at 50% downpayment (the owner's request, Oct 2026); staff may change them.
+    expect(joInput(values).errors).toEqual([]);
     // Staff change a price and add a line; the rest stays as quoted.
     const changed = { ...values, paymentTerms: 'dp50' as const, lines: [{ ...values.lines[0]!, price: '1,400.00' }, { ...values.lines[0]!, description: 'Carry bag', qty: '4', price: '250.00' }] };
     const typed = joInput(changed);
