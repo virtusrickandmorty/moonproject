@@ -109,6 +109,12 @@ describe('board, Complete / Not needed / Reopen, and the JO stage (PLAN E7 rule 
     expect((await act(jo, 1, CUTTING, 'complete')).statusCode).toBe(200);
     expect((await act(jo, 1, CUTTING, 'complete')).json()).toMatchObject({ code: 'ALREADY', message: 'Cutting on line 1 is already completed.' });
     expect((await board())[0]).toMatchObject({ currentStepId: SEWING, ready: false });
+    expect((await board())[1]!.steps).toEqual([ // line 2: nothing forwarded yet, so only its first step has pieces to work on
+      { stepId: CUTTING, status: 'pending', pieces: 0, reworkPieces: 0, receivedPieces: 20 },
+      { stepId: EMBROIDERY, status: 'pending', pieces: 0, reworkPieces: 0, receivedPieces: 0 },
+      { stepId: SEWING, status: 'pending', pieces: 0, reworkPieces: 0, receivedPieces: 0 },
+      { stepId: PACKING, status: 'pending', pieces: 0, reworkPieces: 0, receivedPieces: 0 },
+    ]);
 
     const sew = await record(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 35 }, { lineNo: 1, employeeId: w.sewer2, pieces: 25 }]));
     expect(sew.json().summary).toBe('This will record 60 pieces of Sewing for JO-000001 (Moonlight Test School): Ely Sewer 35, Fai Stitcher 25. Piece pay: ₱2,400.00.');
@@ -119,7 +125,14 @@ describe('board, Complete / Not needed / Reopen, and the JO stage (PLAN E7 rule 
     expect((await board())[0]).toMatchObject({ currentStepId: null, ready: true });
     expect(currentStage(env.db, jo)).toBe('in_production'); // line 2 is not done
 
-    for (const s of [CUTTING, EMBROIDERY, SEWING, PACKING]) expect((await act(jo, 2, s, 'complete')).statusCode).toBe(200);
+    // Complete needs all of the line's pieces on the step (the owner's rule): short, it is refused and says how many are missing.
+    expect((await act(jo, 2, CUTTING, 'complete')).json()).toMatchObject({ code: 'PIECES_SHORT',
+      message: 'Cutting on line 2 has 0 of 20 pieces done. Record the other 20 first, or mark it Not needed if no piece goes through it.' });
+    const workers = { [CUTTING]: w.cutter, [EMBROIDERY]: w.packer, [SEWING]: w.sewer1, [PACKING]: w.packer };
+    for (const s of [CUTTING, EMBROIDERY, SEWING, PACKING]) {
+      expect((await record(rows(jo, s, [{ lineNo: 2, employeeId: workers[s]!, pieces: 20 }]))).statusCode).toBe(200);
+      expect((await act(jo, 2, s, 'complete')).statusCode).toBe(200);
+    }
     expect(currentStage(env.db, jo)).toBe('ready');
 
     expect((await act(jo, 1, SEWING, 'reopen')).json()).toMatchObject({ code: 'REASON_REQUIRED' });
@@ -138,6 +151,7 @@ describe('board, Complete / Not needed / Reopen, and the JO stage (PLAN E7 rule 
   it('a released line cannot be reopened; a cancelled JO’s production cannot change; lines without a route or step are refused', async () => {
     const jo = await jobOrder([2]);
     await setup(jo, 1, { ...tShirts, stepIds: [PACKING] });
+    await record(rows(jo, PACKING, [{ lineNo: 1, employeeId: w.packer, pieces: 2 }]));
     await act(jo, 1, PACKING, 'complete');
     expect(currentStage(env.db, jo)).toBe('ready');
     await act(jo, 1, PACKING, 'reopen', 'Boxes were not labelled'); // its only step: nothing has started, yet it is no longer ready
@@ -173,11 +187,14 @@ describe('production entries (PLAN E7 assignments)', () => {
     expect(rework.json()).toMatchObject({ totalCents: 10_000 });
     expect(statuses(jo, 1)[1]).toEqual(['SEWING', 'in_progress', 40]);
 
+    expect((await act(jo, 1, CUTTING, 'complete')).json()).toMatchObject({ code: 'PIECES_SHORT' }); // 40 of 60 cut
+    await record(rows(jo, CUTTING, [{ lineNo: 1, employeeId: w.cutter, pieces: 20 }]));
     await act(jo, 1, CUTTING, 'complete'); // everything is cut now
     expect(await issues(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 20 }]))).toEqual([]);
     expect(await issues(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 21 }], { overCapReason: 'More pieces than ordered' }))).toEqual(['OVER_QTY']);
+    await record(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 20 }]));
     await act(jo, 1, SEWING, 'complete');
-    expect(await issues(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1 }]))).toEqual(['STEP_CLOSED']);
+    expect(await issues(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1 }]))).toEqual(['STEP_CLOSED', 'OVER_QTY']); // all 60 are sewn
     expect(await issues(rows(jo, EMBROIDERY, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1 }]))).toEqual(['NOT_ON_ROUTE']);
     expect(await issues(rows(jo, PACKING, [{ lineNo: 2, employeeId: w.packer, pieces: 1 }, { lineNo: 1, employeeId: w.left, pieces: 1 }]))).toEqual(['LINE', 'EMPLOYEE']);
     const noRoute = await jobOrder([3]);
@@ -238,6 +255,7 @@ describe('production entries (PLAN E7 assignments)', () => {
     expect(() => env.db.prepare('UPDATE prd_assignments SET pieces = 1 WHERE id = ?').run(row!.id)).toThrow(/IMMUTABLE/);
     expect((await production.post(`${PE}/${e2.id}/cancel`, { reason: 'Recorded on the wrong job order' }, idem())).json()).toMatchObject({ code: 'PAID' });
 
+    await record(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer2, pieces: 20 }]));
     await act(jo, 1, SEWING, 'complete'); // a correction still goes in on a completed step
     const fix = (pieces: number, correctionOf = row!.id) => rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces, correctionOf }]);
     expect(await issues(fix(-31))).toEqual(['CORRECTION_PIECES']);
@@ -245,10 +263,11 @@ describe('production entries (PLAN E7 assignments)', () => {
     expect(await issues({ ...fix(-5), rows: [{ lineNo: 1, employeeId: w.sewer2, pieces: -5, correctionOf: row!.id }] })).toEqual(['CORRECTION']);
     const c1 = (await record(fix(-5))).json();
     expect(c1).toMatchObject({ totalCents: -20_000 }); // the paid row's own rate
-    expect(unpaidAssignments(env.db, '2026-09-30').map((a) => [a.kind, a.pieces, a.amountCents])).toEqual([['correction', -5, -20_000]]); // the next run takes it off
+    // The next run takes the correction off (beside the other 20 pieces sewn before Complete, not paid yet).
+    expect(unpaidAssignments(env.db, '2026-09-30').map((a) => [a.kind, a.pieces, a.amountCents])).toEqual([['work', 20, 80_000], ['correction', -5, -20_000]]);
     expect(await issues(fix(-26))).toEqual(['CORRECTION_PIECES']); // 25 pieces still counted
     expect(await issues({ ...fix(-20), rows: [...fix(-20).rows, ...fix(-6).rows] })).toEqual(['CORRECTION_PIECES']); // two rows in one entry count together
-    expect(statuses(jo, 1)[0]).toEqual(['SEWING', 'completed', 25]);
+    expect(statuses(jo, 1)[0]).toEqual(['SEWING', 'completed', 45]);
 
     const unpaid = (await record(rows(jo, PACKING, [{ lineNo: 1, employeeId: w.packer, pieces: 25 }]))).json();
     const packRow = unpaidAssignments(env.db, '2026-09-30').find((a) => a.documentId === unpaid.id)!;
@@ -389,7 +408,7 @@ describe('property test (PLAN I1.3)', () => {
               tx(db, () => stepAction(db, jo, line, s.id, step as 'complete' | 'not_needed' | 'reopen', 'Checked again on the floor', who()));
             }
           } catch (err) {
-            if (!(err instanceof AppError) || !['ALREADY', 'HAS_PIECES', 'NOT_CLOSED', 'VALIDATION'].includes(err.code)) throw err;
+            if (!(err instanceof AppError) || !['ALREADY', 'HAS_PIECES', 'NOT_CLOSED', 'PIECES_SHORT', 'VALIDATION'].includes(err.code)) throw err;
           }
           for (const jo of jobOrdersOf(db)) {
             const lines = lineState(db, jo.id);

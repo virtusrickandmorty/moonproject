@@ -17,6 +17,26 @@ export function columns(steps: PrdStep[], cards: BoardCard[]): Column[] {
   ].filter((c) => c.cards.length > 0);
 }
 
+/**
+ * What a step's row on the line panel says (the owner's rule, Oct 2026): Complete only once every piece of the line is
+ * done on it; how many it received from the step before; how many it has forwarded to the next step that is needed.
+ */
+export function stepFlow(steps: NonNullable<BoardCard['steps']>, i: number, qty: number, nameOf: (stepId: number) => string) {
+  const s = steps[i]!;
+  const closed = s.status === 'completed' || s.status === 'not_needed';
+  const prev = steps.slice(0, i).reverse().find((x) => x.status !== 'not_needed');
+  const next = steps.slice(i + 1).find((x) => x.status !== 'not_needed');
+  const short = Math.max(0, qty - s.pieces);
+  return {
+    canComplete: !closed && short === 0,
+    /** Why Complete is greyed out, for its tooltip and the line under it. */
+    shortWords: closed || short === 0 ? '' : short === qty ? `Record all ${qty} pcs to complete ${nameOf(s.stepId)}.` : `Record the other ${short} of ${qty} pcs to complete ${nameOf(s.stepId)}.`,
+    received: prev && s.status !== 'not_needed' && s.receivedPieces > 0 ? { pieces: Math.min(qty, s.receivedPieces), from: nameOf(prev.stepId) } : null,
+    forwarded: next && s.status !== 'not_needed' && s.pieces > 0 ? { pieces: Math.min(qty, s.pieces), to: nameOf(next.stepId) } : null,
+    percent: qty > 0 ? Math.min(100, Math.round((s.pieces / qty) * 100)) : 0,
+  };
+}
+
 export type Due = 'all' | 'week' | 'overdue';
 const daysBetween = (from: string, to: string) => (Date.parse(to) - Date.parse(from)) / 86_400_000; // both are Manila dates (YYYY-MM-DD)
 /** Filters by due date (overdue, or due within 7 days of the server date) and rush priority. */

@@ -145,7 +145,10 @@ export function setupLine(db: Db, jobOrderId: string, lineNo: number, req: Setup
 export type StepAction = 'complete' | 'not_needed' | 'reopen';
 const DONE_WORDS: Record<StepAction, string> = { complete: 'completed', not_needed: 'marked not needed', reopen: 'reopened' };
 
-/** Complete, Not needed or Reopen (reason) one step of a line (E7). Reopen is allowed until the line is released. */
+/**
+ * Complete, Not needed or Reopen (reason) one step of a line (E7). Complete needs every piece of the line recorded on the
+ * step; Reopen is allowed until the line is released.
+ */
 export function stepAction(db: Db, jobOrderId: string, lineNo: number, stepId: number, action: StepAction, reason: string | undefined, who: Who): RouteStep[] {
   const jo = recordedJo(db, jobOrderId);
   const line = lineOf(db, jobOrderId, lineNo);
@@ -162,6 +165,10 @@ export function stepAction(db: Db, jobOrderId: string, lineNo: number, stepId: n
     if (step.status === (action === 'complete' ? 'completed' : 'not_needed')) throw conflict('ALREADY', `${step.name} on line ${lineNo} is already ${DONE_WORDS[action]}.`);
     if (action === 'not_needed' && (step.pieces !== 0 || step.reworkPieces !== 0)) {
       throw conflict('HAS_PIECES', `${step.name} has pieces recorded on line ${lineNo}. Mark it Completed instead, or cancel those entries first.`);
+    }
+    // The owner's rule (Oct 2026): a step is completed only once all of the line's pieces are recorded on it (rework apart).
+    if (action === 'complete' && step.pieces < line.qty) {
+      throw conflict('PIECES_SHORT', `${step.name} on line ${lineNo} has ${step.pieces} of ${line.qty} pieces done. Record the other ${line.qty - step.pieces} first, or mark it Not needed if no piece goes through it.`);
     }
   }
   const seq = ((db.prepare('SELECT MAX(seq) FROM prd_step_events WHERE job_order_id = ? AND line_no = ? AND step_id = ?').pluck().get(jobOrderId, lineNo, stepId) as number | null) ?? 0) + 1;
@@ -204,7 +211,8 @@ export function board(db: Db) {
           templateId: setup?.templateId ?? null,
           currentStepId: route?.find((s) => !closed(s))?.id ?? null,
           ready: route !== null && routeDone(route),
-          steps: route?.map((s) => ({ stepId: s.id, status: s.status, pieces: s.pieces, reworkPieces: s.reworkPieces })) ?? null,
+          // receivedPieces: what came out of the step before (all of the line once that one is closed, or for the first step).
+          steps: route?.map((s) => ({ stepId: s.id, status: s.status, pieces: s.pieces, reworkPieces: s.reworkPieces, receivedPieces: availableFor(route, s.id, l.qty) })) ?? null,
         };
       });
   });

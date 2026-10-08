@@ -280,7 +280,8 @@ export type StepStatus = 'pending' | 'in_progress' | 'completed' | 'not_needed';
 export interface BoardCard {
   jobOrderId: string; number: string; customerName: string; dueDate: string; priority: 'normal' | 'rush'; stage: string; lineNo: number; description: string;
   qty: number; releasedQty: number; garmentType: string | null; complexity: string | null; templateId: number | null; currentStepId: number | null; ready: boolean;
-  steps: { stepId: number; status: StepStatus; pieces: number; reworkPieces: number }[] | null;
+  /** receivedPieces: what came out of the step before (all of the line for the first step, or once the one before is closed). */
+  steps: { stepId: number; status: StepStatus; pieces: number; reworkPieces: number; receivedPieces: number }[] | null;
 }
 export interface NavResult { kind: 'Customer' | 'Wearer' | 'Job order' | 'Document' | 'Supplier' | 'Employee'; id: string; label: string; detail?: string; href: string }
 export interface PrdJob {
