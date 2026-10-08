@@ -27,7 +27,7 @@ import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { jobOrderRef, jobOrdersOf, lineState, rosterOf } from '../../JO/public.ts';
 import { rateAt } from '../../RATE/public.ts';
 import { activeEmployees, employee } from '../emp.ts';
-import { SET_PARTS, availableFor, forwardedWearers, lineRoute, lineSetup, reworkOpen, stepById, syncStage, wearersDone, type Complexity, type Part } from '../production.ts';
+import { SET_PARTS, autoComplete, availableFor, forwardedWearers, lineRoute, lineSetup, reworkOpen, stepById, syncStage, wearersDone, type Complexity, type Part } from '../production.ts';
 
 const MAX_PIECES = 10_000;
 const MAX_RATE_CENTS = 1_000_000; // ₱10,000 per piece: a typo guard
@@ -242,7 +242,8 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       const [lineNo, part] = [Number(key.split('|')[0]), key.split('|')[1] as Part];
       const here = lineRoute(ctx.db, jo.id, lineNo)?.find((s) => s.id === step.id);
       if (!here) continue;
-      const done = part !== 'whole' && here.parts ? here.parts[part].pieces : here.pieces;
+      // What is done there, or the rework that reached it (sent back before this step had those pieces).
+      const done = Math.max(part !== 'whole' && here.parts ? here.parts[part].pieces : here.pieces, reworkOpen(ctx.db, jo.id, lineNo, step.id, part).pieces);
       if (pieces > done) add('error', 'rows', 'REWORK_OVER', `Line ${lineNo} has ${plural(done)} done on ${step.name}, so at most ${done} can be recorded as rework.`);
     }
     for (const [key, pieces] of added) {
@@ -279,6 +280,8 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       for (const n of r.wearers ?? []) db.prepare('INSERT INTO prd_assignment_wearers (assignment_id, roster_row_no) VALUES (?, ?)').run(id, n);
     }
     const who = db.prepare('SELECT posted_by AS userId, posted_at AS at FROM documents WHERE id = ?').get(h.documentId) as { userId: string; at: string };
+    // A step whose pieces (and rework) are all recorded completes on its own (the owner's rule, Oct 2026).
+    for (const lineNo of new Set(doc.rows.map((r) => r.lineNo))) autoComplete(db, doc.jobOrderId, lineNo, doc.stepId, who);
     syncStage(db, doc.jobOrderId, `${h.number}: ${doc.stepName} pieces recorded`, who);
   },
 

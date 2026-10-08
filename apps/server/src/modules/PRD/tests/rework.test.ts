@@ -40,7 +40,7 @@ async function record(input: object) {
   const r = await production.post(`${PE}/post`, { input, expectedTotalCents: p.json().totalCents }, idem());
   expect(r.statusCode, r.body).toBe(200);
 }
-type JobStep = { id: number; pieces: number; reworkPieces: number; forwardedWearers: number[] | null; rework: { pieces: number; wearers: number[] } };
+type JobStep = { id: number; status: string; pieces: number; reworkPieces: number; forwardedWearers: number[] | null; rework: { pieces: number; wearers: number[] } };
 const stepOf = async (jo: string, stepId: number) => ((await production.get(`/api/prd/jobs/${jo}`)).json().lines[0].route as JobStep[]).find((s) => s.id === stepId)!;
 const cardOf = async (jo: string) => ((await production.get('/api/prd/board')).json() as { jobOrderId: string; ready: boolean; finishedPieces: number; steps: { stepId: number; reworkOpen: number }[] }[]).find((x) => x.jobOrderId === jo)!;
 const sendBack = (jo: string, body: object) => production.post(`/api/prd/jobs/${jo}/lines/1/rework`, body);
@@ -77,8 +77,9 @@ it('sends pieces back to the first step, through every step again as rework, wit
   const sent = await sendBack(jo, { wearers: [2], reason: 'Seam opened on both shirts' });
   expect(sent.statusCode, sent.body).toBe(200);
   const sewing = await stepOf(jo, SEWING);
-  expect([sewing.pieces, sewing.rework]).toEqual([5, { pieces: 2, wearers: [2] }]);
-  expect((await stepOf(jo, PACKING)).rework).toEqual({ pieces: 0, wearers: [] });
+  expect(sewing.pieces).toBe(5);
+  expect(sewing.rework).toMatchObject({ pieces: 2, wearers: [2] });
+  expect((await stepOf(jo, PACKING)).rework).toMatchObject({ pieces: 0, wearers: [] });
   expect(await cardOf(jo)).toMatchObject({ ready: false, finishedPieces: 3 });
   expect((await cardOf(jo)).steps.map((s) => s.reworkOpen)).toEqual([2, 0]);
   expect(currentStage(env.db, jo)).toBe('in_production');
@@ -96,13 +97,14 @@ it('sends pieces back to the first step, through every step again as rework, wit
 
   // Redone at Sewing, they move on to Packing as rework; still not ready.
   const redone = await stepOf(jo, SEWING);
-  expect([redone.pieces, redone.reworkPieces, redone.rework]).toEqual([5, 2, { pieces: 0, wearers: [] }]);
-  expect((await stepOf(jo, PACKING)).rework).toEqual({ pieces: 2, wearers: [2] });
+  expect([redone.pieces, redone.reworkPieces]).toEqual([5, 2]);
+  expect(redone.rework).toMatchObject({ pieces: 0, wearers: [] });
+  expect((await stepOf(jo, PACKING)).rework).toMatchObject({ pieces: 2, wearers: [2] });
   expect(await cardOf(jo)).toMatchObject({ ready: false, finishedPieces: 3 });
 
   // Packed again (paid the table rate): done, ready, all 5 can go.
   await record(entry(jo, [{ lineNo: 1, employeeId: w.packer, pieces: 2, wearers: [2], rework: true }], PACKING));
-  expect((await stepOf(jo, PACKING)).rework).toEqual({ pieces: 0, wearers: [] });
+  expect((await stepOf(jo, PACKING)).rework).toMatchObject({ pieces: 0, wearers: [] });
   expect(await cardOf(jo)).toMatchObject({ ready: true, finishedPieces: 5 });
   expect(currentStage(env.db, jo)).toBe('ready');
   expect(await readyQty(jo)).toBe(5);
@@ -112,9 +114,30 @@ it('sends back a count of pieces on a line recorded without wearers', async () =
   const jo = await jobOrder();
   await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 4 }]));
   expect((await sendBack(jo, { pieces: 1, reason: 'Wrong thread colour used' })).statusCode).toBe(200);
-  expect((await stepOf(jo, SEWING)).rework).toEqual({ pieces: 1, wearers: [] });
+  expect((await stepOf(jo, SEWING)).rework).toMatchObject({ pieces: 1, wearers: [] });
   await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1, ...pasubra }]));
   expect((await stepOf(jo, SEWING)).rework.pieces).toBe(0);
   expect((await stepOf(jo, PACKING)).rework.pieces).toBe(1); // on to the next step
   expect((await sendBack(jo, { pieces: 4, reason: 'More than was sewn' })).json().code).toBe('REWORK_OVER');
+});
+
+it('completes a step on its own once its pieces and the rework that reached it are all recorded', async () => {
+  const jo = await jobOrder();
+  await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 5, wearers: [1, 2, 3, 4] }]));
+  expect((await stepOf(jo, SEWING)).status).toBe('completed'); // all 5 sewn: no Complete click
+
+  // Ben (2) is found bad before packing: back to Sewing; the other 3 are packed.
+  expect((await sendBack(jo, { wearers: [2], reason: 'Wrong collar, redo it' })).statusCode).toBe(200);
+  expect((await stepOf(jo, PACKING)).forwardedWearers).toBeNull(); // Sewing is completed: all listed, Ben comes as rework
+  await record(entry(jo, [{ lineNo: 1, employeeId: w.packer, pieces: 3, wearers: [1, 3, 4] }], PACKING));
+  expect((await stepOf(jo, PACKING)).status).toBe('in_progress');
+  expect(await cardOf(jo)).toMatchObject({ finishedPieces: 3 });
+
+  // Redone at Sewing, then packed as rework: Packing has every piece now and completes on its own.
+  await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer2, pieces: 2, wearers: [2], rework: true }]));
+  expect(await cardOf(jo)).toMatchObject({ finishedPieces: 3, ready: false });
+  await record(entry(jo, [{ lineNo: 1, employeeId: w.packer, pieces: 2, wearers: [2], rework: true }], PACKING));
+  expect((await stepOf(jo, PACKING)).status).toBe('completed');
+  expect(await cardOf(jo)).toMatchObject({ finishedPieces: 5, ready: true });
+  expect(currentStage(env.db, jo)).toBe('ready');
 });

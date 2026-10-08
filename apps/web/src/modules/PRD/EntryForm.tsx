@@ -86,7 +86,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
     const s = job?.lines.find((l) => String(l.lineNo) === lineNo)?.route?.find((x) => x.id === stepId);
     if (!s) return null;
     const done = part && s.partPieces ? s.partPieces[part] : s.pieces;
-    if (rework) return done;
+    if (rework) return Math.max(done, part ? s.partRework?.[part]?.pieces ?? 0 : s.rework?.pieces ?? 0); // or the rework that reached it
     const mine = (originalRows ?? []).filter((o) => String(o.lineNo) === lineNo && !o.rework && o.part === part).reduce((n, o) => n + o.pieces, 0);
     return Math.max(0, (part && s.partAvailable ? s.partAvailable[part] : s.availablePieces) - done + mine);
   };

@@ -106,8 +106,9 @@ describe('board, Complete / Not needed / Reopen, and the JO stage (PLAN E7 rule 
     const cut = await record(rows(jo, CUTTING, [{ lineNo: 1, employeeId: w.cutter, pieces: 60 }]));
     expect(cut.json()).toMatchObject({ number: 'PE-000001', totalCents: 48_000 }); // T-shirt cutting ₱8.00 × 60
     expect(currentStage(env.db, jo)).toBe('in_production');
+    // All 60 cut: Cutting completed on its own (the owner's rule, Oct 2026); Complete again changes nothing.
+    expect(((await board())[0]!.steps as { stepId: number; status: string }[])[0]).toMatchObject({ stepId: CUTTING, status: 'completed' });
     expect((await act(jo, 1, CUTTING, 'complete')).statusCode).toBe(200);
-    expect((await act(jo, 1, CUTTING, 'complete')).json()).toMatchObject({ code: 'ALREADY', message: 'Cutting on line 1 is already completed.' });
     expect((await board())[0]).toMatchObject({ currentStepId: SEWING, ready: false });
     expect((await board())[1]!.steps).toEqual([ // line 2: nothing forwarded yet, so only its first step has pieces to work on
       { stepId: CUTTING, status: 'pending', pieces: 0, reworkPieces: 0, reworkOpen: 0, receivedPieces: 20 },
@@ -143,7 +144,7 @@ describe('board, Complete / Not needed / Reopen, and the JO stage (PLAN E7 rule 
     const history = (await encoder.get(`/api/jo/orders/${jo}/status`)).json().history.map((h: { fromStage: string; toStage: string; reason: string }) => [h.fromStage, h.toStage, h.reason]);
     expect(history).toEqual([
       ['open', 'in_production', 'PE-000001: Cutting pieces recorded'],
-      ['in_production', 'ready', 'Packing of line 2 completed'],
+      ['in_production', 'ready', 'PE-000006: Packing pieces recorded'],
       ['ready', 'in_production', 'Sewing of line 1 reopened'],
     ]);
   });

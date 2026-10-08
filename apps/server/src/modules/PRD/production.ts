@@ -114,7 +114,8 @@ export function availableFor(route: RouteStep[], stepId: number, lineQty: number
   return Math.min(lineQty, Math.max(0, came));
 }
 
-export type ReworkOpen = { pieces: number; wearers: number[] };
+/** `redone`: the rework pieces the step redid of those that arrived (kept apart from `pieces`, which still wait). */
+export type ReworkOpen = { pieces: number; wearers: number[]; redone?: number };
 
 /**
  * Where the rework sent back on a line is now (the owner's rule, Oct 2026): sent-back pieces start again at the first
@@ -138,7 +139,7 @@ export function reworkFlow(db: Db, jobOrderId: string, lineNo: number, route: Ro
   for (const s of route.filter((x) => x.status !== 'not_needed')) {
     const redone = Math.min(arrived, redoneOn.get(jobOrderId, lineNo, s.id, part, since) as number);
     const ticked = new Set(tickedOn.all(jobOrderId, lineNo, s.id, part, since) as number[]);
-    out.set(s.id, { pieces: arrived - redone, wearers: arrivedWearers.filter((w) => !ticked.has(w)).sort((x, y) => x - y) });
+    out.set(s.id, { pieces: arrived - redone, wearers: arrivedWearers.filter((w) => !ticked.has(w)).sort((x, y) => x - y), redone });
     arrived = redone;
     arrivedWearers = arrivedWearers.filter((w) => ticked.has(w));
   }
@@ -168,9 +169,42 @@ export const lineDone = (db: Db, jobOrderId: string, lineNo: number, route: Rout
  */
 export function lineFinished(db: Db, jobOrderId: string, lineNo: number, qty: number, route: RouteStep[] | null): number | null {
   if (route === null) return null;
-  const through = routeDone(route) ? qty : Math.min(qty, [...route].reverse().find((s) => s.status !== 'not_needed')?.pieces ?? 0);
-  return Math.max(0, through - lineReworkOpen(db, jobOrderId, lineNo, route));
+  if (routeDone(route)) return Math.max(0, qty - lineReworkOpen(db, jobOrderId, lineNo, route));
+  const last = [...route].reverse().find((s) => s.status !== 'not_needed');
+  if (!last) return 0;
+  // Through the last step, less what is in rework: by wearer when the wearers are known, else by count.
+  const parts: Part[] = last.parts ? ['upper', 'lower'] : ['whole'];
+  return Math.min(...parts.map((part) => {
+    const c = coverage(db, jobOrderId, lineNo, route, last, part, qty);
+    if (c.wearers === null) return Math.max(0, c.pieces - [...reworkFlow(db, jobOrderId, lineNo, route, part).values()].reduce((n, f) => n + f.pieces, 0));
+    const open = new Set([...reworkFlow(db, jobOrderId, lineNo, route, part).values()].flatMap((f) => f.wearers));
+    const roster = new Map(rosterOf(db, jobOrderId, lineNo).map((w) => [w.rowNo, w.qty]));
+    return Math.min(qty, [...c.wearers].filter((w) => !open.has(w)).reduce((n, w) => n + (roster.get(w) ?? 0), 0) + c.untracked);
+  }));
 }
+
+/**
+ * What one step has covered of a line (part): the pieces done there plus the rework pieces that reached it after being sent
+ * back before it had them (the owner's rule, Oct 2026: they go through every step again). With a wearer list, by wearer:
+ * those ticked on work or rework there, plus pieces recorded without ticks (`untracked`); else by count. At most the line.
+ */
+export function coverage(db: Db, jobOrderId: string, lineNo: number, route: RouteStep[], step: RouteStep, part: Part, qty: number): { pieces: number; wearers: Set<number> | null; untracked: number } {
+  const done = part !== 'whole' && step.parts ? step.parts[part].pieces : step.pieces;
+  const roster = new Map(rosterOf(db, jobOrderId, lineNo).map((w) => [w.rowNo, w.qty]));
+  if (roster.size === 0) {
+    const redone = reworkFlow(db, jobOrderId, lineNo, route, part).get(step.id)?.redone ?? 0;
+    return { pieces: Math.min(qty, done + redone), wearers: null, untracked: 0 };
+  }
+  const ticked = new Set(db.prepare(`SELECT DISTINCT x.roster_row_no FROM prd_assignment_wearers x JOIN prd_assignments a ON a.id = x.assignment_id JOIN documents d ON d.id = a.document_id
+    WHERE a.job_order_id = ? AND a.line_no = ? AND a.step_id = ? AND a.part = ? AND a.kind IN ('work', 'rework') AND d.status = 'posted'`).pluck().all(jobOrderId, lineNo, step.id, part) as number[]);
+  const workTicked = [...wearersDone(db, jobOrderId, lineNo, step.id, part).keys()].reduce((n, w) => n + (roster.get(w) ?? 0), 0);
+  const untracked = Math.max(0, done - workTicked);
+  return { pieces: Math.min(qty, [...ticked].reduce((n, w) => n + (roster.get(w) ?? 0), 0) + untracked), wearers: ticked, untracked };
+}
+
+/** A step's pieces covered for Complete: both parts of a set (the fewer). */
+export const stepCovered = (db: Db, jobOrderId: string, lineNo: number, route: RouteStep[], step: RouteStep, qty: number) =>
+  Math.min(...(step.parts ? (['upper', 'lower'] as const) : (['whole'] as const)).map((p) => coverage(db, jobOrderId, lineNo, route, step, p, qty).pieces));
 
 /**
  * The wearers forwarded to a step (the owner's request, Oct 2026: a step's wearer list shows only those): the wearers done
@@ -252,6 +286,24 @@ export function setupLine(db: Db, jobOrderId: string, lineNo: number, req: Setup
   return lineRoute(db, jobOrderId, lineNo)!;
 }
 
+/**
+ * Completes a step on its own (the owner's rule, Oct 2026) once every piece of the line is recorded on it (both parts of a
+ * set) and no rework waits there. The step event has no reason; the audit row says it was automatic. True when it did.
+ */
+export function autoComplete(db: Db, jobOrderId: string, lineNo: number, stepId: number, who: Who): boolean {
+  const line = lineState(db, jobOrderId).find((l) => l.lineNo === lineNo);
+  const route = lineRoute(db, jobOrderId, lineNo);
+  const step = route?.find((s) => s.id === stepId);
+  if (!line || !route || !step || closed(step) || stepCovered(db, jobOrderId, lineNo, route, step, line.qty) < line.qty) return false;
+  if (stepReworkOpen(db, jobOrderId, lineNo, step, route) > 0) return false;
+  const seq = ((db.prepare('SELECT MAX(seq) FROM prd_step_events WHERE job_order_id = ? AND line_no = ? AND step_id = ?').pluck().get(jobOrderId, lineNo, stepId) as number | null) ?? 0) + 1;
+  db.prepare('INSERT INTO prd_step_events (job_order_id, line_no, step_id, seq, action, reason, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+    jobOrderId, lineNo, stepId, seq, 'complete', null, who.at, who.userId,
+  );
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.step', entityType: 'jo.job_order', entityId: jobOrderId, data: { lineNo, stepId, seq, action: 'complete', reason: null, automatic: true } });
+  return true;
+}
+
 export type StepAction = 'complete' | 'not_needed' | 'reopen';
 const DONE_WORDS: Record<StepAction, string> = { complete: 'completed', not_needed: 'marked not needed', reopen: 'reopened' };
 
@@ -272,15 +324,18 @@ export function stepAction(db: Db, jobOrderId: string, lineNo: number, stepId: n
     if (line.releasedQty > 0) throw conflict('RELEASED', `Line ${lineNo} of ${jo.number} is already released, so its steps cannot be reopened.`);
     if (why.length < 10) throw new AppError('REASON_REQUIRED', 'Reopening a step needs a reason of at least 10 characters.', 400);
   } else {
+    // Steps complete on their own once every piece is recorded (autoComplete), so Complete on a completed step changes nothing.
+    if (action === 'complete' && step.status === 'completed') return route;
     if (step.status === (action === 'complete' ? 'completed' : 'not_needed')) throw conflict('ALREADY', `${step.name} on line ${lineNo} is already ${DONE_WORDS[action]}.`);
     if (action === 'not_needed' && (step.pieces !== 0 || step.reworkPieces !== 0)) {
       throw conflict('HAS_PIECES', `${step.name} has pieces recorded on line ${lineNo}. Mark it Completed instead, or cancel those entries first.`);
     }
     // The owner's rule (Oct 2026): a step is completed only once all of the line's pieces are recorded on it (rework apart).
-    if (action === 'complete' && step.parts && step.pieces < line.qty) {
+    const covered = action === 'complete' ? stepCovered(db, jobOrderId, lineNo, route, step, line.qty) : line.qty;
+    if (action === 'complete' && step.parts && covered < line.qty) {
       throw conflict('PIECES_SHORT', `${step.name} on line ${lineNo} has ${step.parts.upper.pieces} of ${line.qty} upper and ${step.parts.lower.pieces} of ${line.qty} lower parts done. Record the rest of both first, or mark it Not needed if no piece goes through it.`);
     }
-    if (action === 'complete' && step.pieces < line.qty) {
+    if (action === 'complete' && covered < line.qty) {
       throw conflict('PIECES_SHORT', `${step.name} on line ${lineNo} has ${step.pieces} of ${line.qty} pieces done. Record the other ${line.qty - step.pieces} first, or mark it Not needed if no piece goes through it.`);
     }
   }
@@ -294,7 +349,8 @@ export function stepAction(db: Db, jobOrderId: string, lineNo: number, stepId: n
 }
 
 /** `wearers`: the wearers sent back (their pieces are then the pieces); `part`: on a set, the upper or the lower part. */
-export interface ReworkRequest { pieces?: number | undefined; wearers?: number[] | undefined; part?: 'upper' | 'lower' | undefined; reason: string }
+/** `foundAtStepId`: the step where the rework was found (kept in the audit row); the pieces still start again at the first step. */
+export interface ReworkRequest { pieces?: number | undefined; wearers?: number[] | undefined; part?: 'upper' | 'lower' | undefined; reason: string; foundAtStepId?: number | undefined }
 
 /**
  * Sends pieces back for rework (the owner's rule, Oct 2026): they start again at the first step of the line and go through
@@ -340,7 +396,7 @@ export function sendBackForRework(db: Db, jobOrderId: string, lineNo: number, re
   const id = newId();
   db.prepare('INSERT INTO prd_reworks (id, job_order_id, line_no, step_id, part, pieces, reason, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, jobOrderId, lineNo, stepId, part, pieces, why, who.at, who.userId);
   for (const n of wearers) db.prepare('INSERT INTO prd_rework_wearers (rework_id, roster_row_no) VALUES (?, ?)').run(id, n);
-  appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.rework', entityType: 'jo.job_order', entityId: jobOrderId, data: { id, lineNo, stepId, part, pieces, wearers, reason: why } });
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.rework', entityType: 'jo.job_order', entityId: jobOrderId, data: { id, lineNo, stepId, part, pieces, wearers, reason: why, foundAtStepId: req.foundAtStepId ?? null } });
   syncStage(db, jobOrderId, `${pieces} ${of} of line ${lineNo} sent back for rework from ${step.name}`, who);
   return lineRoute(db, jobOrderId, lineNo)!;
 }
