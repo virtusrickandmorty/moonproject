@@ -193,6 +193,16 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
   const canEdit = type.canCancel && type.canPost && !noEdit;
   /** A row's Edit or Cancel: over the list, or on the document's own page when this list has no dialogs. */
   const act = (o: Opened, page: string) => (over ? openOver(o) : navigate(docPath(type.key, page)));
+  /** A row's quick actions, the same in the table and on a phone's card. */
+  const actions = (r: DocHeader) => (
+    <>
+      {rowActions?.(r)}
+      {printVariants.includes('document') && <QuickAction label="Print" title={`Print ${r.number}`} onClick={() => print(r.id, 'document')} />}
+      {printVariants.includes('job_ticket') && <QuickAction label="Job ticket" title={`Print the job ticket of ${r.number}`} onClick={() => print(r.id, 'job_ticket')} />}
+      {r.status === 'posted' && canEdit && <QuickAction label="Edit" title={`Edit ${r.number}`} onClick={() => act({ kind: 'edit', id: r.id }, `/${r.id}/edit`)} />}
+      {r.status === 'posted' && type.canCancel && <QuickAction label="Cancel" title={`Cancel ${r.number}`} tone="danger" onClick={() => act({ kind: 'view', id: r.id, recorded: false, cancel: true }, `/${r.id}`)} />}
+    </>
+  );
   const total = counts?.[status === 'posted' || status === 'cancelled' ? status : 'all'];
   const first = pageSize ? pageNo * pageSize : 0;
 
@@ -240,8 +250,25 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
       </div>
       <ListMessage state={state} filtered={filtered} canCreate={type.canCreate} onRetry={() => void load(state.before)} onClear={clear} onNew={() => openNew()} />
       {counts && <p className="text-sm text-slate-500">Showing {rows.length === 0 ? '0' : `${first + 1} to ${first + rows.length}`} of {total} matching records, newest first.</p>}
+      {/* On a phone each record is a card (number, status, date, what, amount and its quick actions); a table from a tablet up. */}
       {rows.length > 0 && (
-      <div className="overflow-x-auto rounded-lg bg-white p-2 shadow-sm">
+      <ul className="space-y-3 md:hidden" aria-label={pluralLabelOf(type)}>
+        {rows.map((r) => (
+          <li key={r.id} onClick={() => navigate(rowPath(r.id))} className={`cursor-pointer space-y-2 rounded-lg bg-white p-4 shadow-sm active:bg-indigo-50 ${r.status === 'cancelled' ? 'text-slate-400' : ''}`}>
+            <div className="flex items-center gap-2">
+              <Link to={rowPath(r.id)} onClick={(e) => e.stopPropagation()} className={`font-semibold text-indigo-700 ${r.status === 'cancelled' ? 'line-through' : ''}`}>{r.number}</Link>
+              <StatusChip status={r.status} />
+              <span className="ml-auto text-sm text-slate-500">{showDate(r.businessDate)}</span>
+            </div>
+            <p className={`line-clamp-3 text-sm ${r.status === 'cancelled' ? 'line-through' : 'text-slate-700'}`}>{r.summary}</p>
+            <p className="text-sm">Amount <b className="tabular-nums">{peso(r.totalCents)}</b></p>
+            <div className="flex flex-wrap gap-1.5">{actions(r)}</div>
+          </li>
+        ))}
+      </ul>
+      )}
+      {rows.length > 0 && (
+      <div className="hidden overflow-x-auto rounded-lg bg-white p-2 shadow-sm md:block">
         <table className="w-full text-sm [&_td]:px-4 [&_td]:py-3 [&_th]:px-4 [&_th]:py-3">
           <thead className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-muted">
             <tr><th>Number</th><th>Date</th><th>What</th><th className="text-right">Amount</th>{columns.map((c) => <th key={c.head} className={c.figure ? 'text-right' : ''}>{c.head}</th>)}<th>Status</th><th className="text-right">Actions</th></tr>
@@ -255,15 +282,7 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
                 <td className="text-right tabular-nums">{peso(r.totalCents)}</td>
                 {columns.map((c) => <td key={c.head} className={c.figure ? 'whitespace-nowrap text-right tabular-nums' : ''}>{c.cell(r)}</td>)}
                 <td><StatusChip status={r.status} /></td>
-                <td>
-                  <div className="flex flex-wrap justify-end gap-1">
-                    {rowActions?.(r)}
-                    {printVariants.includes('document') && <QuickAction label="Print" title={`Print ${r.number}`} onClick={() => print(r.id, 'document')} />}
-                    {printVariants.includes('job_ticket') && <QuickAction label="Job ticket" title={`Print the job ticket of ${r.number}`} onClick={() => print(r.id, 'job_ticket')} />}
-                    {r.status === 'posted' && canEdit && <QuickAction label="Edit" title={`Edit ${r.number}`} onClick={() => act({ kind: 'edit', id: r.id }, `/${r.id}/edit`)} />}
-                    {r.status === 'posted' && type.canCancel && <QuickAction label="Cancel" title={`Cancel ${r.number}`} tone="danger" onClick={() => act({ kind: 'view', id: r.id, recorded: false, cancel: true }, `/${r.id}`)} />}
-                  </div>
-                </td>
+                <td><div className="flex flex-wrap justify-end gap-1">{actions(r)}</div></td>
               </tr>
             ))}
           </tbody>
