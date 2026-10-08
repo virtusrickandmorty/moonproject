@@ -16,7 +16,7 @@ import { EditGate, Errors, useLive } from '../COL/parts.tsx';
 import { emptyRow, rowsToInput, type EntryRow } from './board.ts';
 import { PayDetails, PayTotal } from '../PAY/entry.tsx';
 
-type Stored = { jobOrderId: string; stepId: number; workDate?: string; overCapReason?: string; rows: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string }[] };
+type Stored = { jobOrderId: string; stepId: number; workDate?: string; overCapReason?: string; rows: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string; wearers?: number[] }[] };
 const cell = `${inputClass} py-1`;
 
 export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
@@ -34,6 +34,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
   const [error, setError] = useState('');
   const [workDate, setWorkDate] = useState(() => manilaDate(new Date()));
   const [refusedRepeat, setRefusedRepeat] = useState<number[]>([]); // rows (as sent) the server took for a repeated sheet on Record
+  const [originalRows, setOriginalRows] = useState<Stored['rows'] | null>(null); // the edited entry's rows: its wearers are free again
   const fail = (e: Error) => setError(e.message);
 
   useEffect(() => {
@@ -43,11 +44,12 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
       api.get(type.key, mode.id).then((d) => {
         const input = d.input as Stored;
         setOriginal(d.header);
+        setOriginalRows(input.rows);
         setJo(input.jobOrderId);
         setStepId(input.stepId);
         setOverCapReason(input.overCapReason ?? '');
         if (input.workDate) setWorkDate(input.workDate);
-        setRows(input.rows.map((r) => ({ lineNo: String(r.lineNo), employeeId: r.employeeId, pieces: String(r.pieces), rework: !!r.rework, rate: r.rateCents === undefined ? '' : formatPesos(r.rateCents), rateReason: r.rateReason ?? '', repeatReason: r.repeatReason ?? '' })));
+        setRows(input.rows.map((r) => ({ lineNo: String(r.lineNo), employeeId: r.employeeId, pieces: String(r.pieces), rework: !!r.rework, rate: r.rateCents === undefined ? '' : formatPesos(r.rateCents), rateReason: r.rateReason ?? '', repeatReason: r.repeatReason ?? '', ...(r.wearers ? { wearers: r.wearers } : {}) })));
       }, fail);
       return;
     }
@@ -74,7 +76,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
   const errors = [...(jo ? [] : ['Pick the job order.']), ...(stepId ? [] : ['Pick the step.']), ...typed.errors];
   const input = { jobOrderId: jo, stepId: stepId ?? 0, workDate, rows: typed.rows, ...(overCapReason.trim() ? { overCapReason: overCapReason.trim() } : {}) };
   // On Edit the entry being replaced is still recorded until Record cancels it: a row matching only that entry is no repeat.
-  const own = (p: Preview): Preview => (original ? { ...p, issues: p.issues.filter((i) => !(i.code === 'LIKELY_REPEAT' && i.message.includes(`: ${original.number} already has`))) } : p);
+  const own = (p: Preview): Preview => (original ? { ...p, issues: p.issues.filter((i) => !(i.code === 'LIKELY_REPEAT' && i.message.includes(`: ${original.number} already has`)) && !(i.code === 'WEARER_DONE' && i.message.includes(`(${original.number})`))) } : p);
   const preview = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input));
   const live = preview && own(preview);
   const askOverCap = !!overCapReason || !!live?.issues.some((i) => i.code === 'OVER_CAP');
@@ -132,7 +134,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                 return (
                   <section key={i} aria-label={`Worker entry ${i + 1}`} className="space-y-3 rounded-lg border border-slate-200 p-3">
                     <Field label="Line">
-                      <select aria-label={`Row ${i + 1} line`} className={cell} value={r.lineNo} onChange={(e) => set(i, { lineNo: e.target.value })}>
+                      <select aria-label={`Row ${i + 1} line`} className={cell} value={r.lineNo} onChange={(e) => set(i, { lineNo: e.target.value, ...(r.wearers?.length ? { wearers: [], pieces: '' } : {}) })}>
                         <option value="" />
                         {lines.map((l) => {
                           const s = l.route?.find((x) => x.id === stepId);
@@ -140,6 +142,47 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                         })}
                       </select>
                     </Field>
+                    {(() => {
+                      // The line's wearers: tick who this worker finished; the pieces follow the ticks. Done ones show who did them.
+                      const line = job.lines.find((l) => String(l.lineNo) === r.lineNo);
+                      const roster = line?.roster ?? [];
+                      if (r.rework || roster.length === 0) return null;
+                      const step = line?.route?.find((x) => x.id === stepId);
+                      const done = new Set(step?.doneWearers ?? []);
+                      if (original) for (const o of (originalRows ?? []).filter((x) => String(x.lineNo) === r.lineNo)) for (const n of o.wearers ?? []) done.delete(n); // the entry being edited frees its own
+                      const elsewhere = new Map(rows.flatMap((x, j) => (j !== i && x.lineNo === r.lineNo && !x.rework ? (x.wearers ?? []).map((n) => [n, j + 1] as const) : [])));
+                      const mine = new Set(r.wearers ?? []);
+                      const tick = (next: Set<number>) => set(i, { wearers: [...next].sort((a, b) => a - b), pieces: String(roster.filter((w) => next.has(w.rowNo)).reduce((s, w) => s + w.qty, 0) || '') });
+                      const left = roster.filter((w) => !done.has(w.rowNo) && !elsewhere.has(w.rowNo));
+                      return (
+                        <fieldset className="space-y-2 rounded-md bg-slate-50 p-3">
+                          <legend className="sr-only">Wearers finished on row {i + 1}</legend>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-medium">Wearers finished</span>
+                            <span className="text-xs text-slate-500">{done.size} of {roster.length} done on this step · tick the ones this worker finished</span>
+                            <span className="flex-1" />
+                            {left.length > 0 && <Button onClick={() => tick(new Set([...mine, ...left.map((w) => w.rowNo)]))}>Tick all left ({left.length})</Button>}
+                          </div>
+                          <ul className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+                            {roster.map((w) => {
+                              const isDone = done.has(w.rowNo);
+                              const otherRow = elsewhere.get(w.rowNo);
+                              return (
+                                <li key={w.rowNo}>
+                                  <label className={`flex items-center gap-2 rounded px-2 py-1 text-sm ${isDone || otherRow ? 'text-slate-400' : 'hover:bg-white'}`}>
+                                    <input type="checkbox" aria-label={`Row ${i + 1} wearer ${w.wearerName}`} disabled={isDone || !!otherRow} checked={isDone || mine.has(w.rowNo)}
+                                      onChange={(e) => { const next = new Set(mine); if (e.target.checked) next.add(w.rowNo); else next.delete(w.rowNo); tick(next); }} />
+                                    <span className="min-w-0 flex-1 truncate">{w.wearerName}<span className="text-slate-500">{w.size ? ` · ${w.size}` : w.sizeMode === 'measured' ? ' · measured' : ''}{w.jerseyNumber ? ` · #${w.jerseyNumber}` : ''}{w.qty > 1 ? ` · ${w.qty} pcs` : ''}</span></span>
+                                    {isDone && <span className="text-xs">done</span>}
+                                    {otherRow && <span className="text-xs">row {otherRow}</span>}
+                                  </label>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </fieldset>
+                      );
+                    })()}
                     <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(6rem,1fr)_minmax(8rem,1fr)]">
                       <Field label="Worker">
                         <select aria-label={`Row ${i + 1} worker`} className={cell} value={r.employeeId} onChange={(e) => set(i, { employeeId: e.target.value })}>
@@ -147,7 +190,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                           {workers.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                         </select>
                       </Field>
-                      <Field label="Pieces"><input aria-label={`Row ${i + 1} pieces`} inputMode="numeric" className={`${cell} text-right tabular-nums`} value={r.pieces} onChange={(e) => set(i, { pieces: e.target.value })} /></Field>
+                      <Field label="Pieces" hint={(r.wearers?.length ?? 0) > 0 && !r.rework ? 'From the wearers ticked' : undefined}><input aria-label={`Row ${i + 1} pieces`} inputMode="numeric" readOnly={(r.wearers?.length ?? 0) > 0 && !r.rework} className={`${cell} text-right tabular-nums`} value={r.pieces} onChange={(e) => set(i, { pieces: e.target.value })} /></Field>
                       <div className="text-sm"><p className="font-medium">Rate per piece</p><p className="tabular-nums">{pay ? peso(pay.rateCents) : 'Awaiting calculation'}</p><p className="text-xs text-slate-500">Last calculated rate; leave the rate blank to use the table.</p></div>
                     </div>
                     {askRepeat && (

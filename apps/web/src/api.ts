@@ -287,8 +287,12 @@ export interface NavResult { kind: 'Customer' | 'Wearer' | 'Job order' | 'Docume
 export interface PrdJob {
   jobOrder: { id: string; number: string; status: 'posted' | 'cancelled'; customerName: string; dueDate: string; priority: string; stage: string };
   lines: { lineNo: number; description: string; qty: number; releasedQty: number; setup: { templateId: number | null; garmentType: string; complexity: string; stepIds: number[] } | null;
-    route: (PrdStep & { status: StepStatus; pieces: number; reworkPieces: number; availablePieces: number })[] | null }[];
+    /** The line's wearers (its roster), to tick who is done on a step. */
+    roster?: PrdWearer[];
+    /** doneWearers: the roster rows already done on the step. */
+    route: (PrdStep & { status: StepStatus; pieces: number; reworkPieces: number; availablePieces: number; doneWearers?: number[] })[] | null }[];
 }
+export interface PrdWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
 export interface PrdSetup { templateId?: number; stepIds: number[]; garmentType: string; complexity: string }
 export interface Worker { id: string; code: string; name: string }
 export interface PieceRate { id: number; garmentType: string; stepCode: string; complexity: string; rateCents: number; effectiveFrom: string; reason: string; createdAt: string }

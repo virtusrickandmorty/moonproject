@@ -1,7 +1,7 @@
 /** A step's row on the production board's line panel: Complete only with every piece done; pieces received and forwarded. */
 import { describe, expect, it } from 'vitest';
 import type { BoardCard } from '../../api.ts';
-import { stepFlow } from './board.ts';
+import { emptyRow, rowsToInput, stepFlow } from './board.ts';
 
 type Steps = NonNullable<BoardCard['steps']>;
 const NAMES: Record<number, string> = { 4: 'Cutting', 6: 'Sewing', 8: 'Packing', 1: 'Layout' };
@@ -26,5 +26,14 @@ describe('production step flow', () => {
     expect(stepFlow(steps, 3, 60, name)).toMatchObject({ received: { pieces: 25, from: 'Sewing' }, forwarded: null }); // the last step forwards nothing
     expect(stepFlow(steps, 0, 60, name)).toMatchObject({ received: null, forwarded: null });
     expect(stepFlow([step(4, 'pending', 0, 60), step(6, 'pending', 0, 0)], 1, 60, name).received).toBeNull(); // nothing received yet: no line
+  });
+});
+
+describe('wearers ticked on Record pieces', () => {
+  it('go to the server with the row (in order), not on rework', () => {
+    const row = { ...emptyRow('1'), employeeId: 'e1', pieces: '3', wearers: [4, 1] };
+    expect(rowsToInput([row]).rows).toEqual([{ lineNo: 1, employeeId: 'e1', pieces: 3, wearers: [1, 4] }]);
+    expect(rowsToInput([{ ...row, rework: true, rate: '20.00', rateReason: 'Pasubra on a seam' }]).rows[0]).not.toHaveProperty('wearers');
+    expect(rowsToInput([{ ...row, wearers: [] }]).rows[0]).not.toHaveProperty('wearers');
   });
 });

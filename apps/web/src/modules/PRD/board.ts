@@ -102,7 +102,8 @@ export function useBoardRefresh<T>(read: () => Promise<T>) {
   return { data, error, updatedAt, refresh, stale: !!error || (updatedAt === null ? elapsed >= REFRESH_MS * 2 : now - updatedAt >= REFRESH_MS * 2), words: updateWords(updatedAt, updatedAt === null ? elapsed : now, error) };
 }
 
-export interface EntryRow { lineNo: string; employeeId: string; pieces: string; rework: boolean; rate: string; rateReason: string; repeatReason?: string }
+/** `wearers`: the line's wearers (roster rows) this row finished; its pieces are then theirs. */
+export interface EntryRow { lineNo: string; employeeId: string; pieces: string; rework: boolean; rate: string; rateReason: string; repeatReason?: string; wearers?: number[] }
 export const emptyRow = (lineNo = ''): EntryRow => ({ lineNo, employeeId: '', pieces: '', rework: false, rate: '', rateReason: '' });
 
 /** Typed rows -> entry rows for the server. Blank rows are left out; a typed rate goes with its reason. */
@@ -130,6 +131,7 @@ export function rowsToInput(rows: EntryRow[]) {
       ...(rate !== undefined ? { rateCents: rate } : {}),
       ...(r.rate.trim() && r.rateReason.trim() ? { rateReason: r.rateReason.trim() } : {}),
       ...(repeat ? { repeatReason: repeat } : {}),
+      ...(!r.rework && r.wearers && r.wearers.length > 0 ? { wearers: [...r.wearers].sort((a, b) => a - b) } : {}),
     });
   });
   if (out.length === 0 && errors.length === 0) errors.push('Add a worker and the pieces done.');
