@@ -149,8 +149,8 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
                     </p>
                   )}
                   <div className="flex flex-wrap items-center gap-2">
-                    {can.assign && !closed && <Link to={docPath('prd.entry', `/new?jo=${card.jobOrderId}&step=${s.stepId}`)} className="text-sm text-indigo-700 underline">Record pieces</Link>}
-                    {can.assign && (s.reworkOpen ?? 0) > 0 && <Link to={docPath('prd.entry', `/new?jo=${card.jobOrderId}&step=${s.stepId}&rework=1`)} className="text-sm text-amber-800 underline">Record rework</Link>}
+                    {can.assign && !closed && <Link to={docPath('prd.entry', `/new?jo=${card.jobOrderId}&step=${s.stepId}&line=${card.lineNo}`)} className="text-sm text-indigo-700 underline">Record pieces</Link>}
+                    {can.assign && (s.reworkOpen ?? 0) > 0 && <Link to={docPath('prd.entry', `/new?jo=${card.jobOrderId}&step=${s.stepId}&line=${card.lineNo}&rework=1`)} className="text-sm text-amber-800 underline">Record rework</Link>}
                     <span className="flex-1" />
                     {can.progress && firstHas && s.status !== 'not_needed' && (s.pieces > 0 || s.receivedPieces > 0 || !!s.parts) && <Button onClick={() => setSendBack(s.stepId)}>Send back for rework</Button>}
                     {can.progress && s.status === 'pending' && <Button disabled={a.busy} onClick={() => a.run(() => step(s.stepId, 'not-needed'))}>Not needed</Button>}
