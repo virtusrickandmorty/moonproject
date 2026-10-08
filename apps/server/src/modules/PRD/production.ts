@@ -3,10 +3,10 @@
  * Routes and statuses are operational data, changed in place with an audit row (OWN-21) as new insert-only rows; a
  * step's status is read from its latest event and the pieces recorded on it.
  */
-import { AppError, conflict, notFound } from '@moonproject/shared';
+import { AppError, conflict, newId, notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { currentStage, jobOrderRef, jobOrdersOf, lineState, productionMove, stagesAll } from '../JO/public.ts';
+import { currentStage, jobOrderRef, jobOrdersOf, lineState, productionMove, rosterOf, stagesAll } from '../JO/public.ts';
 import { matchCatalogItem } from '../CAT/public.ts';
 
 export const COMPLEXITIES = ['simple', 'standard', 'complex'] as const;
@@ -115,12 +115,73 @@ export function availableFor(route: RouteStep[], stepId: number, lineQty: number
 }
 
 /**
+ * Rework sent back to one step of a line and not redone yet (the owner's request, Oct 2026): the pieces sent back less the
+ * rework (pasubra) pieces recorded there since; with a wearer list, the wearers sent back with no rework ticked for them
+ * since. The pieces done there before stay as recorded.
+ */
+export function reworkOpen(db: Db, jobOrderId: string, lineNo: number, stepId: number, part: Part = 'whole'): { pieces: number; wearers: number[] } {
+  const sent = db.prepare('SELECT COALESCE(SUM(pieces), 0) AS pieces, MIN(at) AS since FROM prd_reworks WHERE job_order_id = ? AND line_no = ? AND step_id = ? AND part = ?')
+    .get(jobOrderId, lineNo, stepId, part) as { pieces: number; since: string | null };
+  if (sent.since === null) return { pieces: 0, wearers: [] };
+  const redone = db.prepare(`SELECT COALESCE(SUM(a.pieces), 0) FROM prd_assignments a JOIN documents d ON d.id = a.document_id
+    WHERE a.job_order_id = ? AND a.line_no = ? AND a.step_id = ? AND a.part = ? AND a.kind = 'rework' AND d.status = 'posted' AND d.posted_at >= ?`)
+    .pluck().get(jobOrderId, lineNo, stepId, part, sent.since) as number;
+  const wearers = db.prepare(`SELECT DISTINCT w.roster_row_no FROM prd_rework_wearers w JOIN prd_reworks r ON r.id = w.rework_id
+    WHERE r.job_order_id = ? AND r.line_no = ? AND r.step_id = ? AND r.part = ? AND NOT EXISTS (
+      SELECT 1 FROM prd_assignment_wearers x JOIN prd_assignments a ON a.id = x.assignment_id JOIN documents d ON d.id = a.document_id
+      WHERE a.job_order_id = r.job_order_id AND a.line_no = r.line_no AND a.step_id = r.step_id AND a.part = r.part AND a.kind = 'rework'
+        AND d.status = 'posted' AND d.posted_at >= r.at AND x.roster_row_no = w.roster_row_no)
+    ORDER BY w.roster_row_no`).pluck().all(jobOrderId, lineNo, stepId, part) as number[];
+  return { pieces: Math.max(0, sent.pieces - redone), wearers };
+}
+
+/** Rework still open on one step, in pieces of the line (a set counts the more of its parts). */
+export const stepReworkOpen = (db: Db, jobOrderId: string, lineNo: number, s: RouteStep) => reworkOpen(db, jobOrderId, lineNo, s.id).pieces
+  + (s.parts ? Math.max(reworkOpen(db, jobOrderId, lineNo, s.id, 'upper').pieces, reworkOpen(db, jobOrderId, lineNo, s.id, 'lower').pieces) : 0);
+
+/** Rework still open on any step of a line, in pieces of the line. */
+export const lineReworkOpen = (db: Db, jobOrderId: string, lineNo: number, route: RouteStep[] | null) =>
+  (route ?? []).reduce((n, s) => n + stepReworkOpen(db, jobOrderId, lineNo, s), 0);
+
+/** Every step of the line is closed and no rework is open on it. */
+export const lineDone = (db: Db, jobOrderId: string, lineNo: number, route: RouteStep[] | null) =>
+  route !== null && routeDone(route) && lineReworkOpen(db, jobOrderId, lineNo, route) === 0;
+
+/**
+ * The pieces of a line that went through every step (they can go out first): all once every step is done, else those
+ * done on its last needed step; less the rework still open on it. Null: the line has no route.
+ */
+export function lineFinished(db: Db, jobOrderId: string, lineNo: number, qty: number, route: RouteStep[] | null): number | null {
+  if (route === null) return null;
+  const through = routeDone(route) ? qty : Math.min(qty, [...route].reverse().find((s) => s.status !== 'not_needed')?.pieces ?? 0);
+  return Math.max(0, through - lineReworkOpen(db, jobOrderId, lineNo, route));
+}
+
+/**
+ * The wearers forwarded to a step (the owner's request, Oct 2026: a step's wearer list shows only those): the wearers done
+ * on the step before that is needed, less any sent back for rework to it or an earlier step. Null: every wearer (the first
+ * step, the step before is completed, or pieces were recorded there without ticking wearers, so who is unknown).
+ */
+export function forwardedWearers(db: Db, jobOrderId: string, lineNo: number, route: RouteStep[], stepId: number, part: Part = 'whole'): number[] | null {
+  const i = route.findIndex((s) => s.id === stepId);
+  const prev = route.slice(0, Math.max(0, i)).reverse().find((s) => s.status !== 'not_needed');
+  if (!prev || prev.status === 'completed') return null;
+  const roster = new Map(rosterOf(db, jobOrderId, lineNo).map((w) => [w.rowNo, w.qty]));
+  const done = [...wearersDone(db, jobOrderId, lineNo, prev.id, part).keys()];
+  const prevPieces = part !== 'whole' && prev.parts ? prev.parts[part].pieces : prev.pieces;
+  if (done.reduce((n, w) => n + (roster.get(w) ?? 0), 0) < prevPieces) return null;
+  const back = new Set(route.slice(0, i).flatMap((s) => reworkOpen(db, jobOrderId, lineNo, s.id, part).wearers));
+  return done.filter((w) => !back.has(w)).sort((a, b) => a - b);
+}
+
+/**
  * Moves the JO (E7 rule 3): Ready when every line's route is done; In production once any step has started, or when a
  * Ready JO is no longer done (a step reopened or added).
  */
 export function syncStage(db: Db, jobOrderId: string, reason: string, who: Who): void {
-  const routes = lineState(db, jobOrderId).map((l) => lineRoute(db, jobOrderId, l.lineNo));
-  if (routes.every((r) => r !== null && routeDone(r))) productionMove(db, jobOrderId, 'ready', reason, who);
+  const lines = lineState(db, jobOrderId).map((l) => ({ lineNo: l.lineNo, route: lineRoute(db, jobOrderId, l.lineNo) }));
+  const routes = lines.map((l) => l.route);
+  if (lines.every((l) => lineDone(db, jobOrderId, l.lineNo, l.route))) productionMove(db, jobOrderId, 'ready', reason, who);
   else if (routes.some((r) => r?.some((s) => s.status !== 'pending')) || currentStage(db, jobOrderId) === 'ready') productionMove(db, jobOrderId, 'in_production', reason, who);
 }
 
@@ -216,6 +277,56 @@ export function stepAction(db: Db, jobOrderId: string, lineNo: number, stepId: n
   return lineRoute(db, jobOrderId, lineNo)!;
 }
 
+/** `wearers`: the wearers sent back (their pieces are then the pieces); `part`: on a set, the upper or the lower part. */
+export interface ReworkRequest { pieces?: number | undefined; wearers?: number[] | undefined; part?: 'upper' | 'lower' | undefined; reason: string }
+
+/**
+ * Sends pieces back for rework to a step they went through (the owner's request, Oct 2026). The pieces done there stay
+ * recorded; the step shows them as rework to do until rework (pasubra) pieces are recorded on it, and they are held back
+ * from release meanwhile.
+ */
+export function sendBackForRework(db: Db, jobOrderId: string, lineNo: number, stepId: number, req: ReworkRequest, who: Who): RouteStep[] {
+  const jo = recordedJo(db, jobOrderId);
+  const line = lineOf(db, jobOrderId, lineNo);
+  const route = lineRoute(db, jobOrderId, lineNo);
+  if (!route) throw conflict('NO_ROUTE', `Line ${lineNo} of ${jo.number} has no route yet. Set it up first.`);
+  const step = route.find((s) => s.id === stepId);
+  if (!step) throw conflict('NOT_ON_ROUTE', `That step is not on the route of line ${lineNo}.`);
+  const why = req.reason.trim();
+  if (why.length < 10) throw new AppError('REASON_REQUIRED', 'Say what needs rework, in at least 10 characters.', 400);
+  if (step.parts && !req.part) throw new AppError('PART_REQUIRED', `Line ${lineNo} is a set. Pick the upper or the lower part.`, 400);
+  if (!step.parts && req.part) throw new AppError('PART_NOT_SET', `Line ${lineNo} is not a set, so it has no upper or lower part.`, 400);
+  const part: Part = req.part ?? 'whole';
+  const done = part !== 'whole' && step.parts ? step.parts[part].pieces : step.pieces;
+  const open = reworkOpen(db, jobOrderId, lineNo, stepId, part);
+  const of = part !== 'whole' ? `${part} parts` : 'pieces';
+  let pieces = req.pieces ?? 0;
+  const wearers = [...new Set(req.wearers ?? [])].sort((a, b) => a - b);
+  if (wearers.length > 0) {
+    const roster = new Map(rosterOf(db, jobOrderId, lineNo).map((w) => [w.rowNo, w]));
+    const doneHere = wearersDone(db, jobOrderId, lineNo, stepId, part);
+    pieces = 0;
+    for (const n of wearers) {
+      const w = roster.get(n);
+      if (!w) throw new AppError('WEARER', `Line ${lineNo} has no wearer ${n}.`, 400);
+      if (!doneHere.has(n)) throw conflict('WEARER_NOT_DONE', `${w.wearerName} is not done on ${step.name} yet, so there is nothing to send back.`);
+      if (open.wearers.includes(n)) throw conflict('WEARER_IN_REWORK', `${w.wearerName} is already sent back to ${step.name} for rework.`);
+      pieces += w.qty;
+    }
+  }
+  if (!Number.isInteger(pieces) || pieces < 1) throw new AppError('PIECES', 'Type how many pieces need rework, or tick the wearers.', 400);
+  if (pieces > done - open.pieces) {
+    throw conflict('REWORK_OVER', `${step.name} of line ${lineNo} has ${done} ${of} done${open.pieces ? ` and ${open.pieces} already sent back` : ''}, so at most ${Math.max(0, done - open.pieces)} can go back for rework.`);
+  }
+  if (pieces > line.qty - line.releasedQty) throw conflict('RELEASED', `Only ${line.qty - line.releasedQty} pieces of line ${lineNo} are not released yet.`);
+  const id = newId();
+  db.prepare('INSERT INTO prd_reworks (id, job_order_id, line_no, step_id, part, pieces, reason, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, jobOrderId, lineNo, stepId, part, pieces, why, who.at, who.userId);
+  for (const n of wearers) db.prepare('INSERT INTO prd_rework_wearers (rework_id, roster_row_no) VALUES (?, ?)').run(id, n);
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.rework', entityType: 'jo.job_order', entityId: jobOrderId, data: { id, lineNo, stepId, part, pieces, wearers, reason: why } });
+  syncStage(db, jobOrderId, `${pieces} ${of} of line ${lineNo} sent back to ${step.name} for rework`, who);
+  return lineRoute(db, jobOrderId, lineNo)!;
+}
+
 /**
  * The production board (E7): every line still to release of recorded JOs in production, oldest due first, with its route,
  * the step it is at (the first one not closed) and whether it is ready. The screen groups the cards by step.
@@ -246,14 +357,14 @@ export function board(db: Db) {
           complexity: setup?.complexity ?? null,
           templateId: setup?.templateId ?? null,
           currentStepId: route?.find((s) => !closed(s))?.id ?? null,
-          ready: route !== null && routeDone(route),
-          // The pieces that went through every step (the owner's request, Oct 2026: they can go out first): all once the
-          // route is done; else those done on its last needed step.
-          finishedPieces: route === null ? 0 : routeDone(route) ? l.qty
-            : Math.max(0, Math.min(l.qty, [...route].reverse().find((s) => s.status !== 'not_needed')?.pieces ?? 0)),
+          ready: lineDone(db, jo.id, l.lineNo, route),
+          // The pieces that went through every step (the owner's request, Oct 2026: they can go out first), less open rework.
+          finishedPieces: lineFinished(db, jo.id, l.lineNo, l.qty, route) ?? 0,
           // receivedPieces: what came out of the step before (all of the line once that one is closed, or for the first step).
           isSet: setup?.isSet ?? false,
+          // reworkOpen: pieces sent back to the step for rework and not redone yet (shown there labelled rework).
           steps: route?.map((s) => ({ stepId: s.id, status: s.status, pieces: s.pieces, reworkPieces: s.reworkPieces, receivedPieces: availableFor(route, s.id, l.qty),
+            reworkOpen: stepReworkOpen(db, jo.id, l.lineNo, s),
             ...(s.parts ? { parts: { upper: s.parts.upper.pieces, lower: s.parts.lower.pieces } } : {}) })) ?? null,
         };
       });

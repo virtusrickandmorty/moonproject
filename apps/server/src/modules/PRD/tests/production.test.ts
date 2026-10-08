@@ -110,10 +110,10 @@ describe('board, Complete / Not needed / Reopen, and the JO stage (PLAN E7 rule 
     expect((await act(jo, 1, CUTTING, 'complete')).json()).toMatchObject({ code: 'ALREADY', message: 'Cutting on line 1 is already completed.' });
     expect((await board())[0]).toMatchObject({ currentStepId: SEWING, ready: false });
     expect((await board())[1]!.steps).toEqual([ // line 2: nothing forwarded yet, so only its first step has pieces to work on
-      { stepId: CUTTING, status: 'pending', pieces: 0, reworkPieces: 0, receivedPieces: 20 },
-      { stepId: EMBROIDERY, status: 'pending', pieces: 0, reworkPieces: 0, receivedPieces: 0 },
-      { stepId: SEWING, status: 'pending', pieces: 0, reworkPieces: 0, receivedPieces: 0 },
-      { stepId: PACKING, status: 'pending', pieces: 0, reworkPieces: 0, receivedPieces: 0 },
+      { stepId: CUTTING, status: 'pending', pieces: 0, reworkPieces: 0, reworkOpen: 0, receivedPieces: 20 },
+      { stepId: EMBROIDERY, status: 'pending', pieces: 0, reworkPieces: 0, reworkOpen: 0, receivedPieces: 0 },
+      { stepId: SEWING, status: 'pending', pieces: 0, reworkPieces: 0, reworkOpen: 0, receivedPieces: 0 },
+      { stepId: PACKING, status: 'pending', pieces: 0, reworkPieces: 0, reworkOpen: 0, receivedPieces: 0 },
     ]);
 
     const sew = await record(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 35 }, { lineNo: 1, employeeId: w.sewer2, pieces: 25 }]));

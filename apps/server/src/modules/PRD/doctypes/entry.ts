@@ -14,7 +14,10 @@
  * Sets (the owner's request, Oct 2026): on a line made as a set, each row is for its upper or its lower part, paid at that
  * part's rate and counted, capped and ticked per part.
  * Wearers (the owner's request, Oct 2026): on a line with a wearer list, a work row may name the wearers it finished; its
- * pieces are then their quantities, and a wearer is done once per step (until that entry is cancelled).
+ * pieces are then their quantities, and a wearer is done once per step (until that entry is cancelled). A step takes the
+ * wearers forwarded from the step before (passing that needs the over-cap reason).
+ * Rework sent back (the owner's request, Oct 2026): rework rows may name the wearers sent back to the step, and may go on
+ * a completed step while rework sent back to it is open.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -23,7 +26,7 @@ import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { jobOrderRef, jobOrdersOf, lineState, rosterOf } from '../../JO/public.ts';
 import { rateAt } from '../../RATE/public.ts';
 import { activeEmployees, employee } from '../emp.ts';
-import { SET_PARTS, availableFor, lineRoute, lineSetup, stepById, syncStage, wearersDone, type Complexity, type Part } from '../production.ts';
+import { SET_PARTS, availableFor, forwardedWearers, lineRoute, lineSetup, reworkOpen, stepById, syncStage, wearersDone, type Complexity, type Part } from '../production.ts';
 
 const MAX_PIECES = 10_000;
 const MAX_RATE_CENTS = 1_000_000; // ₱10,000 per piece: a typo guard
@@ -168,7 +171,8 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       if (!line) add('error', `${f}.lineNo`, 'LINE', `${at}: ${jo.number} has no line ${r.lineNo}.`);
       else if (!route) add('error', `${f}.lineNo`, 'NO_ROUTE', `${at}: line ${r.lineNo} has no route yet. Set it up on the board first.`);
       else if (!onRoute) add('error', `${f}.lineNo`, 'NOT_ON_ROUTE', `${at}: ${step.name} is not on the route of line ${r.lineNo}.`);
-      else if (r.kind !== 'correction' && (onRoute.status === 'completed' || onRoute.status === 'not_needed')) {
+      else if (r.kind !== 'correction' && (onRoute.status === 'completed' || onRoute.status === 'not_needed')
+        && !(r.kind === 'rework' && reworkOpen(ctx.db, jo.id, r.lineNo, step.id, r.part).pieces > 0)) {
         add('error', `${f}.lineNo`, 'STEP_CLOSED', `${at}: ${step.name} of line ${r.lineNo} is ${onRoute.status === 'completed' ? 'completed' : 'marked not needed'}. Reopen it first.`);
       }
       const who = employee(ctx.db, r.employeeId);
@@ -206,21 +210,28 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       if (line && !isSet && r.part !== 'whole') add('error', `${f}.part`, 'PART_NOT_SET', `${at}: line ${line.lineNo} is not a set, so it has no upper or lower part.`);
       if (line && r.kind === 'work') added.set(`${line.lineNo}|${r.part}`, (added.get(`${line.lineNo}|${r.part}`) ?? 0) + r.pieces);
       if (r.wearers && line) {
-        if (r.kind !== 'work') add('error', `${f}.wearers`, 'WEARERS_KIND', `${at}: wearers are ticked on normal work only, not on rework or a correction.`);
+        if (r.kind === 'correction') add('error', `${f}.wearers`, 'WEARERS_KIND', `${at}: wearers are ticked on work and rework only, not on a correction.`);
         const roster = new Map(rosterOf(ctx.db, jo.id, line.lineNo).map((w) => [w.rowNo, w]));
         const done = wearersDone(ctx.db, jo.id, line.lineNo, step.id, r.part);
-        const mine = ticked.get(`${line.lineNo}|${r.part}`) ?? new Set<number>();
+        const sentBack = new Set(r.kind === 'rework' ? reworkOpen(ctx.db, jo.id, line.lineNo, step.id, r.part).wearers : []);
+        const forwarded = r.kind === 'work' && route && onRoute ? forwardedWearers(ctx.db, jo.id, line.lineNo, route, step.id, r.part) : null;
+        const key = `${line.lineNo}|${r.part}|${r.kind}`;
+        const mine = ticked.get(key) ?? new Set<number>();
         let pieces = 0;
         for (const n of r.wearers) {
           const w = roster.get(n);
           if (!w) { add('error', `${f}.wearers`, 'WEARER', `${at}: line ${line.lineNo} has no wearer ${n}.`); continue; }
-          if (done.has(n)) add('error', `${f}.wearers`, 'WEARER_DONE', `${at}: ${w.wearerName}${r.part !== 'whole' ? ` (${r.part} part)` : ''} is already done on ${step.name} (${done.get(n)}).`);
+          if (r.kind === 'rework' && !sentBack.has(n)) add('error', `${f}.wearers`, 'WEARER_NOT_SENT_BACK', `${at}: ${w.wearerName} is not sent back to ${step.name} for rework.`);
+          else if (r.kind === 'work' && done.has(n)) add('error', `${f}.wearers`, 'WEARER_DONE', `${at}: ${w.wearerName}${r.part !== 'whole' ? ` (${r.part} part)` : ''} is already done on ${step.name} (${done.get(n)}).`);
           else if (mine.has(n)) add('error', `${f}.wearers`, 'WEARER_TWICE', `${at}: ${w.wearerName} is ticked on two rows of this entry.`);
+          else if (forwarded && !forwarded.includes(n) && !doc.overCapReason) {
+            add('error', 'overCapReason', 'WEARER_NOT_FORWARDED', `${at}: ${w.wearerName}${r.part !== 'whole' ? ` (${r.part} part)` : ''} has not come out of the step before ${step.name} yet. Give a reason to record it anyway.`);
+          }
           mine.add(n);
           pieces += w.qty;
         }
-        ticked.set(`${line.lineNo}|${r.part}`, mine);
-        if (r.kind === 'work' && pieces !== r.pieces) add('error', `${f}.pieces`, 'WEARERS_PIECES', `${at}: the wearers ticked are ${plural(pieces)}, so the row is ${pieces}, not ${r.pieces}.`);
+        ticked.set(key, mine);
+        if (r.kind !== 'correction' && pieces !== r.pieces) add('error', `${f}.pieces`, 'WEARERS_PIECES', `${at}: the wearers ticked are ${plural(pieces)}, so the row is ${pieces}, not ${r.pieces}.`);
       }
     }
     for (const [key, pieces] of added) {

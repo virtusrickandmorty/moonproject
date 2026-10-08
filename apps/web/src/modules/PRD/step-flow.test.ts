@@ -30,10 +30,10 @@ describe('production step flow', () => {
 });
 
 describe('wearers ticked on Record pieces', () => {
-  it('go to the server with the row (in order), not on rework', () => {
+  it('go to the server with the row (in order); on rework, the wearers sent back', () => {
     const row = { ...emptyRow('1'), employeeId: 'e1', pieces: '3', wearers: [4, 1] };
     expect(rowsToInput([row]).rows).toEqual([{ lineNo: 1, employeeId: 'e1', pieces: 3, wearers: [1, 4] }]);
-    expect(rowsToInput([{ ...row, rework: true, rate: '20.00', rateReason: 'Pasubra on a seam' }]).rows[0]).not.toHaveProperty('wearers');
+    expect(rowsToInput([{ ...row, rework: true, rate: '20.00', rateReason: 'Pasubra on a seam' }]).rows[0]!.wearers).toEqual([1, 4]);
     expect(rowsToInput([{ ...row, wearers: [] }]).rows[0]).not.toHaveProperty('wearers');
   });
 });
@@ -62,5 +62,18 @@ describe('ready for release on the board', () => {
     expect(readyNow({ ready: false, finishedPieces: 4, releasedQty: 0 })).toBe(true); // 4 of 10 packed: they can go out
     expect(readyNow({ ready: false, finishedPieces: 4, releasedQty: 4 })).toBe(false); // those 4 are already out
     expect(readyNow({ ready: false, finishedPieces: 0, releasedQty: 0 })).toBe(false);
+  });
+});
+
+describe('rework sent back (the owner\'s request, Oct 2026)', () => {
+  it('shows an item under a step with rework sent back to it, even a completed one', () => {
+    const steps: Steps = [{ ...step(4, 'completed', 5, 5), reworkOpen: 2 }, step(6, 'completed', 5, 5), step(8, 'completed', 5, 5)];
+    expect(activeSteps({ steps, currentStepId: null })).toEqual([4]);
+    expect(activeSteps({ steps: steps.map((s) => ({ ...s, reworkOpen: 0 })), currentStepId: null })).toEqual([]);
+  });
+
+  it('sends the wearers ticked on a rework row', () => {
+    const { rows } = rowsToInput([{ ...emptyRow('1'), employeeId: 'e1', pieces: '2', rework: true, rate: '20', rateReason: 'Pasubra', wearers: [2] }]);
+    expect(rows).toEqual([{ lineNo: 1, employeeId: 'e1', pieces: 2, rework: true, rateCents: 2000, rateReason: 'Pasubra', wearers: [2] }]);
   });
 });
