@@ -97,7 +97,7 @@ describe('Price list against the routes', () => {
     const renamed = await calls.update(tiered, { ...valuesOf(tiered), name: 'Sample polo shirt (short sleeve)' });
     expect(renamed).toMatchObject({ name: 'Sample polo shirt (short sleeve)', version: 4 });
     const editor = html(ItemEditor, { me, row: await calls.open(item.id), onClose: () => undefined, onSaved: async () => undefined });
-    expect(editor).toContain('This item has prices, so its kind, garment type and unit cannot change');
+    expect(editor).toContain('This item has prices, so its kind and unit cannot change');
     expect(editor.match(/<select disabled=""/g)?.length).toBe(2); // class and unit
 
     await calls.deactivate(renamed);
