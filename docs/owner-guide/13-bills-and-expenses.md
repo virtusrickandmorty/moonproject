@@ -15,7 +15,7 @@
 6. Type the **Amount (VAT included)**.
    ![The new supplier bill form](img/13-new-supplier-bill.png)
 7. Click **+ Add a line** if there are more items, or **Remove** to delete one.
-8. The **Tax withheld from supplier (EWT)** is set to the supplier's usual class, and only the accountant can change it (the box is locked for you).
+8. The **Tax withheld from supplier (EWT)** is set to the supplier's usual class, and users with permission to change EWT can change it. Owners, accountants and encoders have this access by default; follow the accountant's instructions.
 9. Add a **Note** if needed.
 10. Click **Record**. Check what the app shows in **Record this Supplier Bill?**, then click **Record** again.
 
@@ -48,3 +48,35 @@ It records what you owe and when you pay it. The receipt number, its date, and t
 ### Common mistakes and how to fix them
 - **Mistake:** You entered the wrong amount.
 - **Fix:** You cannot delete recorded documents. Open the document and click **Edit** (this asks for a reason, cancels the old one, and records the replacement under a new number), or click **Cancel** with a reason of at least 10 characters. A bill that has payments cancels only after them: the app will warn you to cancel the payments first.
+
+
+### Printed dates on bills and vouchers
+
+**What it is for:** Record the PRINTED DATE from the booklet or paper document, including when you type it later.
+
+**Before you start:** Have the paper in front of you. The date must be real, today or earlier, and outside a month the accountant has signed off.
+
+**Steps:**
+1. Fill **Date to record it on** on a bill, or **Date on the voucher** on an expense voucher with the date printed on the paper. Leave it empty only when that date is today.
+2. On a bill, also fill **Invoice date** from the supplier's invoice. On a voucher, **Receipt date** is the date of the supporting receipt; it is separate from the voucher's printed date.
+3. Click **Record**, check the date and amounts, then click **Record** again.
+
+**What the system does:** The recorded document and its journal use this date; its VAT goes to that month. The app still keeps when it was entered. It refuses a future date, an impossible date, or a date in a signed-off month.
+
+**Common mistakes:** "Type the date printed on the document like 2026-09-30, or leave it empty for today." means check the day, month and year. "The date printed on the document cannot be after today (...)" means check the paper and the shop PC's date. "... is already signed off at month-end, so nothing new is dated ..." means stop and ask the accountant; do not change the true date just to get past it.
+
+### A duplicate supplier invoice
+
+**What it is for:** Stop the same supplier invoice being recorded twice, while allowing an explained exception.
+
+**Before you start:** Search the supplier's bills and expense vouchers and compare the paper. Going ahead needs the permission to backdate, given by default to owners, accountants and encoders. Follow the accountant's decision.
+
+**Steps:**
+1. Fill the bill or voucher and click **Record** to check it.
+2. If it is a duplicate, open the existing record named by the refusal. If it is the same purchase, stop: do not record it again.
+3. If the accountant confirms a genuine exception, fill **Reason to go ahead anyway** with 10 to 200 characters.
+4. Click **Record** again, review the figures and reason, and confirm with **Record**.
+
+**What the system does:** The reason box appears after the duplicate refusal, only for someone with permission. The next check and recording carry the reason, which is kept with the document.
+
+**Common mistakes:** Do not change the invoice number to hide a duplicate. If the box does not appear, ask the accountant or owner to handle the exception.

@@ -4,6 +4,7 @@
  * its documents and their Edit open in dialogs over the list, each with its own address (?new, ?view=<id>, ?edit=<id>),
  * so Back closes them and a link still opens them; each row has its quick actions (print, edit, cancel).
  */
+import { useLiveChange } from '../live.ts';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, type DocCounts, type DocHeader, type DocListFilters, type DocTypeInfo, type Draft, type PrintVariant } from '../api.ts';
 import { addRewrite, Link, navigate } from '../router.tsx';
@@ -111,11 +112,12 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
   const size = pageSize ?? PAGE;
 
   const load = useCallback(
-    async (before?: string) => {
+    async (before?: string, quiet = false) => {
       const n = ++asked.current;
-      // "Show older" adds to the rows on screen; a numbered page replaces them.
+      // "Show older" adds to the rows on screen; a numbered page replaces them. A quiet reload (a live change) keeps the
+      // rows on screen until the new ones arrive.
       const adding = !pageSize && !!before;
-      setLoaded((s) => ({ ...(adding && s.key === key ? s : waiting(key)), busy: true, error: '', before }));
+      if (!quiet) setLoaded((s) => ({ ...(adding && s.key === key ? s : waiting(key)), busy: true, error: '', before }));
       try {
         const page = await documentPage(type.key, filters, status, before, size, !!pageSize);
         if (n === asked.current) setLoaded((s) => ({ ...page, key, rows: adding ? [...s.rows, ...page.rows] : page.rows, busy: false, error: '', before }));
@@ -128,6 +130,13 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
   const [draftRetry, setDraftRetry] = useState(0);
   const loadDrafts = () => setDraftRetry((n) => n + 1);
   useEffect(() => { setStarts([undefined]); setPageNo(0); void load(); return () => { asked.current++; }; }, [load]);
+  // Someone recorded or changed something (here or on another computer): the page on show and the drafts again, quietly.
+  // After "Show older" the list holds still rather than jump back to the newest rows.
+  useLiveChange(() => {
+    if (!pageSize && state.before) return;
+    void load(pageSize ? starts[pageNo] : undefined, true);
+    loadDrafts();
+  });
   const over = !!(view && form);
   useEffect(() => (over ? addRewrite((to) => overList(base, to)) : undefined), [base, over]);
   useEffect(() => {

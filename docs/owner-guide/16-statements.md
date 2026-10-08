@@ -2,7 +2,7 @@
 
 **What it is for:** View how much money the business made or lost, and see what the business owns and owes.
 
-**Before you start:** Know the dates you want to check. *Note: Only the accountant and the owner have access to these reports.*
+**Before you start:** Know the dates you want to check. *Note: Owners, accountants and encoders have access to these reports by default.*
 
 ### Steps
 1. On the **Reports** menu, choose **Income statement** or **Balance sheet**.
@@ -25,6 +25,6 @@ To save the information to your computer, click **Export CSV**.
 
 ### Common mistakes and how to fix them
 - **Mistake:** You cannot find the statements on the menu.
-- **Fix:** Access is limited. Only users with the accountant or owner roles can open the reports.
+- **Fix:** Owners, accountants and encoders can open these reports by default. If a report is missing, ask the owner to check **Roles and permissions**.
 - **Mistake:** You want to fix a wrong amount on the statement by deleting a record.
 - **Fix:** You cannot delete records in the system. Fix mistakes by canceling and redoing the incorrect document.

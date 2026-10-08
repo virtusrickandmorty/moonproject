@@ -209,6 +209,29 @@ describe('output VAT on uncollected receivables (UVAT-, UVATR-)', () => {
   });
 });
 
+describe('a last centavo with no VAT', () => {
+  it('needs no add-back: the last centavo owed carries no VAT, so the preview says nothing was paid and 2303 is already empty', async () => {
+    const gross = 123_457;
+    const jo = await jobOrder(gross);
+    const inv = await invoice(jo, gross, 1);
+    await goTo('2026-10-05T02:00:00Z');
+    await closeQuarter(2026, 3);
+    turnOn();
+    const claimVat = vatShare(Math.round((gross * 12) / 112), gross, gross);
+    const claim = await posted('tax.uncollected_vat', claimInput(inv), claimVat);
+    for (const pay of [8_641, 114_815]) {
+      await collect(jo, pay);
+      const back = await preview('tax.uncollected_vat_recovery', { claimId: claim });
+      await posted('tax.uncollected_vat_recovery', { claimId: claim }, back.totalCents);
+    }
+    await collect(jo, 1);
+    const last = await preview('tax.uncollected_vat_recovery', { claimId: claim });
+    expect([last.totalCents, last.issues.map((i) => i.code)]).toEqual([0, ['NOTHING_PAID']]);
+    expect(deferred(inv)).toBe(0);
+    noBrokenInvariants();
+  });
+});
+
 describe('property test (PLAN I1.3)', () => {
   it('after a claim and any payments with their add-backs, 2303 on the invoice = the claim VAT on what is still owed; paid in full, it is empty', async () => {
     const grosses = [1_120_000, 999_900, 5_600_035, 123_457];
@@ -241,7 +264,9 @@ describe('property test (PLAN I1.3)', () => {
         }
         if (owed > 0) {
           await collect(jo, owed);
-          await posted('tax.uncollected_vat_recovery', { claimId: claim }, (await preview('tax.uncollected_vat_recovery', { claimId: claim })).totalCents);
+          // Rounding can leave a last centavo or two that carry no VAT: then there is nothing to add back.
+          const last = await preview('tax.uncollected_vat_recovery', { claimId: claim });
+          if (last.totalCents > 0) await posted('tax.uncollected_vat_recovery', { claimId: claim }, last.totalCents);
         }
         expect(deferred(inv)).toBe(0);
         noBrokenInvariants();
