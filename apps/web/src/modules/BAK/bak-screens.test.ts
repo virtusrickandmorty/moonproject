@@ -26,7 +26,7 @@ describe('backup screen rules', () => {
   it('says how long ago on the server clock, and turns red with "Backups are stale" only when the server says so', () => {
     expect(['2026-09-28T09:59:30.000+08:00', '2026-09-28T09:59:00.000+08:00', '2026-09-28T09:15:00.000+08:00', '2026-09-28T09:00:00.000+08:00', '2026-09-27T08:00:00.000+08:00', '2026-09-25T09:00:00.000+08:00']
       .map((at) => agoWords(at, now))).toEqual(['just now', '1 minute ago', '45 minutes ago', '1 hour ago', '26 hours ago', '3 days ago']);
-    expect(whenWords('2026-09-28T08:00:00.000+08:00', now)).toBe('2026-09-28 08:00 (2 hours ago)');
+    expect(whenWords('2026-09-28T08:00:00.000+08:00', now)).toBe('September 28, 2026, 8:00 AM (2 hours ago)');
     expect(whenWords(null, now)).toBe('Never');
     const lastOk = { at: '2026-09-27T07:30:00.000+08:00', file: 'moonproject-2026-09-27T07-30-00-daily.db.gz.age', tier: 'daily' as const };
     expect(staleWords({ lastOk, stale: true }, now)).toBe('Backups are stale: the last good backup was 26 hours ago.');
@@ -37,7 +37,7 @@ describe('backup screen rules', () => {
 
   it('shows each run, a new backup and a USB copy in words', () => {
     const run = (r: Partial<BackupRun>): BackupRun => ({ id: 'r', started_at: now, finished_at: now, reason: 'schedule', tier: 'daily', status: 'ok', file: 'f', bytes: 1, offsite: 1, error: null, ...r });
-    expect(runWords(run({}))).toEqual({ when: '2026-09-28 10:00', reason: 'Scheduled', tier: 'Daily', ok: true, result: 'OK' });
+    expect(runWords(run({}))).toEqual({ when: 'September 28, 2026, 10:00 AM', reason: 'Scheduled', tier: 'Daily', ok: true, result: 'OK' });
     expect(runWords(run({ reason: 'manual', offsite: 0, error: 'The off-site copy failed: EACCES' })).result).toBe('OK. The off-site copy failed: EACCES');
     expect(runWords(run({ reason: 'pre_update', status: 'failed', tier: 'snapshot', error: 'Backups are off: set the two recovery keys first.' })))
       .toMatchObject({ reason: 'Before an update', tier: '—', ok: false, result: 'Failed: Backups are off: set the two recovery keys first.' });
@@ -74,15 +74,15 @@ describe('backup screen rules', () => {
       stagedId: 's', live: { auditSeq: 52, lastAuditAt: now },
     };
     expect(factRows(check)).toEqual([
-      ['Made at', '2026-09-27 19:00'], ['Posted documents', '17'], ['Books up to', '2026-09-27'], ['Trial balance', 'Debits ₱12,345.00, credits ₱12,345.00'],
+      ['Made at', 'September 27, 2026, 7:00 PM'], ['Posted documents', '17'], ['Books up to', '2026-09-27'], ['Trial balance', 'Debits ₱12,345.00, credits ₱12,345.00'],
       ['Updates to apply', 'None: made by this version'],
     ]);
     expect(factRows({ ...check, madeAt: null, lastBusinessDate: null, toApply: ['TAX/0003_x.sql'] }).map(([, v]) => v))
       .toEqual(['Unknown: the backup has no record file', '17', 'Nothing posted yet', 'Debits ₱12,345.00, credits ₱12,345.00', '1: TAX/0003_x.sql']);
     expect(lostEntries(check)).toBe(12);
-    expect(lostWords(check)).toBe('Everything recorded after 2026-09-27 19:00 will be lost: 12 audit entries in the live data are newer than this backup.');
+    expect(lostWords(check)).toBe('Everything recorded after September 27, 2026, 7:00 PM will be lost: 12 audit entries in the live data are newer than this backup.');
     expect(lostWords({ ...check, live: { auditSeq: 41, lastAuditAt: now } })).toMatch(/lost: 1 audit entry in the live data is newer than this backup\.$/);
-    expect(lostWords({ ...check, madeAt: null, audit: null })).toMatch(/^Everything recorded after 2026-09-27 18:59 will be lost: 52 audit entries/);
+    expect(lostWords({ ...check, madeAt: null, audit: null })).toMatch(/^Everything recorded after September 27, 2026, 6:59 PM will be lost: 52 audit entries/);
     expect(['RESTORE', ' RESTORE ', 'restore', 'RESTOR', ''].map(restoreConfirmed)).toEqual([true, true, false, false, false]);
     // Per series, what a restore would number again (B3-5).
     const series = [
@@ -168,7 +168,7 @@ describe('web client for the backup screens', () => {
     expect(check.stagedId).toEqual(expect.any(String));
     expect(lostEntries(check)).toBe(check.live!.auditSeq - check.audit!.seq);
     expect(lostEntries(check)).toBeGreaterThan(0); // at least the password and the checks since
-    expect(lostWords(check)).toMatch(/^Everything recorded after 2026-09-28 10:00 will be lost: \d+ audit entries in the live data are newer than this backup\.$/);
+    expect(lostWords(check)).toMatch(/^Everything recorded after September 28, 2026, 10:00 AM will be lost: \d+ audit entries in the live data are newer than this backup\.$/);
     expect(check.series).toEqual(expect.any(Array));
     await owner.stepUp(PASSWORD);
     const applied = await owner.bakApply(check.stagedId!);

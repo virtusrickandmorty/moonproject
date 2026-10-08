@@ -41,5 +41,5 @@ test('backups: back up now, then a restore drill on that backup', async ({ page 
 
   // The drill is recorded on the status page.
   await page.getByRole('link', { name: 'Status', exact: true }).click();
-  await expect(drill).toHaveText(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2} \(/);
+  await expect(drill).toHaveText(/^[A-Z][a-z]+ \d{1,2}, \d{4}, \d{1,2}:\d{2} [AP]M \(/);
 });

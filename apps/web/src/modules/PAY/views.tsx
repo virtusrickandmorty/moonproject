@@ -4,7 +4,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type DocDetail, type Me, type Payslips as PayslipData } from '../../api.ts';
-import { Button, Notice, peso } from '../../components/ui.tsx';
+import { Button, Notice, peso, showDate } from '../../components/ui.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
@@ -35,7 +35,7 @@ function RunParts({ d }: { d: DocDetail }) {
     <div className="space-y-2 pt-2">
       {d.header.status === 'posted' && <RemittedWarning runId={d.header.id} />}
       <p className="text-sm">
-        {GROUP_LABEL[run.payGroup]} · {run.periodStart} to {run.periodEnd} · government shares for {run.contributionMonth}
+        {GROUP_LABEL[run.payGroup]} · {showDate(run.periodStart)} to {showDate(run.periodEnd)} · government shares for {run.contributionMonth}
         {run.yearEnd && ` · with the ${run.periodEnd.slice(0, 4)} year-end tax adjustment`}
         {run.unusedLeave && ' · unused leave paid in cash'}
       </p>
@@ -137,7 +137,7 @@ export function Payslips({ params }: { me: Me; params?: Record<string, string> }
           <section key={e.employeeId} className="break-inside-avoid space-y-2 rounded-lg bg-white p-4 text-sm ring-1 ring-slate-300">
             <div className="flex justify-between"><h2 className="font-semibold">PAYSLIP{e.final && <FinalBadge />}</h2><span>{p.number}</span></div>
             <p>{e.name} <span className="text-slate-500">{e.code}</span></p>
-            <p className="text-slate-600">{GROUP_LABEL[p.payGroup]} · {p.periodStart} to {p.periodEnd} · dated {p.payDate}</p>
+            <p className="text-slate-600">{GROUP_LABEL[p.payGroup]} · {showDate(p.periodStart)} to {showDate(p.periodEnd)} · dated {showDate(p.payDate)}</p>
             <table className="w-full">
               <tbody>
                 {e.lines.map((l) => <tr key={l.lineNo}><td>{l.description}</td><td className="text-right text-slate-500">{qtyText(l.kind, l.qty)}</td><td className="text-right tabular-nums">{peso(l.amountCents)}</td></tr>)}

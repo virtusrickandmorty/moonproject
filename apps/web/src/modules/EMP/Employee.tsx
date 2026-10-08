@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type EmployeeDetail, type EmployeeRecord, type Me, type PayProfile } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
+import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, showDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { cents } from '../COL/money.ts';
 import { EmployeeLoans } from '../PAY/Loans.tsx';
@@ -35,10 +35,10 @@ export function EmployeePage({ me, params }: { me: Me; params?: Record<string, s
         <Crumb label={e.fullName} /><h1 className="text-2xl font-semibold">{e.fullName} <span className="text-base font-normal text-slate-500">{e.code}</span></h1>
         {e.isActive && can('emp.manage') && <Button tone="danger" onClick={() => setSeparating(true)}>Record separation</Button>}
       </div>
-      {!e.isActive && <Notice tone="info">Separated on {e.separatedOn}: {e.separationReason}</Notice>}
+      {!e.isActive && <Notice tone="info">Separated on {showDate(e.separatedOn)}: {e.separationReason}</Notice>}
       <Record e={e} editable={e.isActive && can('emp.manage')} idsVisible={can('emp.view_ids')} onSaved={load} />
       <Panel title={`Paid leave (SIL) ${d.sil.year}`}>
-        <p className="text-sm">{d.sil.eligibleFrom > `${d.sil.year}-12-31` ? `Paid leave starts after a year of service, on ${d.sil.eligibleFrom}.` : `${d.sil.used} of ${d.sil.daysPerYear} days used${d.sil.paid ? `, ${d.sil.paid} paid in cash` : ''}; ${d.sil.left} left.`}</p>
+        <p className="text-sm">{d.sil.eligibleFrom > `${d.sil.year}-12-31` ? `Paid leave starts after a year of service, on ${showDate(d.sil.eligibleFrom)}.` : `${d.sil.used} of ${d.sil.daysPerYear} days used${d.sil.paid ? `, ${d.sil.paid} paid in cash` : ''}; ${d.sil.left} left.`}</p>
       </Panel>
       {can('emp.pay') && d.payslipEmail && <PayslipEmail e={e} current={d.payslipEmail} onSaved={load} />}
       <Pay d={d} canSet={e.isActive && can('emp.pay') && can('pay.view_rates')} onSaved={load} />
@@ -199,14 +199,14 @@ function PayslipEmail({ e, current, onSaved }: { e: EmployeeRecord; current: { e
 function Pay({ d, canSet, onSaved }: { d: EmployeeDetail; canSet: boolean; onSaved: () => Promise<unknown> }) {
   return (
     <Panel title="Pay">
-      <p className="text-sm">{d.pay ? `${PAY_TYPE[d.pay.payType]}, ${PAY_GROUP[d.pay.payGroup]}, ${d.pay.workweekDays}-day week, since ${d.pay.effectiveFrom}.` : 'No pay is set yet.'}</p>
+      <p className="text-sm">{d.pay ? `${PAY_TYPE[d.pay.payType]}, ${PAY_GROUP[d.pay.payGroup]}, ${d.pay.workweekDays}-day week, since ${showDate(d.pay.effectiveFrom)}.` : 'No pay is set yet.'}</p>
       {d.payHistory && d.payHistory.length > 0 && (
         <table className="w-full text-sm">
           <thead className="text-left text-slate-500"><tr><th>From</th><th>Pay</th><th className="text-right">Daily</th><th className="text-right">Monthly</th><th className="pl-4">Group</th><th>Why</th></tr></thead>
           <tbody>
             {d.payHistory.map((p) => (
               <tr key={p.id} className="border-t border-slate-100">
-                <td className="py-1">{p.effectiveFrom}</td><td>{PAY_TYPE[p.payType]}{p.isMwe ? ' (MWE)' : ''}</td>
+                <td className="py-1">{showDate(p.effectiveFrom)}</td><td>{PAY_TYPE[p.payType]}{p.isMwe ? ' (MWE)' : ''}</td>
                 <td className="text-right tabular-nums">{p.dailyRateCents ? peso(p.dailyRateCents) : ''}</td>
                 <td className="text-right tabular-nums">{p.monthlyRateCents ? peso(p.monthlyRateCents) : ''}</td>
                 <td className="pl-4">{PAY_GROUP[p.payGroup]}</td><td className="text-slate-600">{p.reason}</td>

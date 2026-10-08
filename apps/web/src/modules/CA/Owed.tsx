@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type CaOwing, type CaStatus, type DocTypeInfo, type Me } from '../../api.ts';
-import { Notice, Panel, peso } from '../../components/ui.tsx';
+import { Notice, Panel, peso, showDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
@@ -79,7 +79,7 @@ export function CaEmployeePage({ me, docTypes, params }: { me: Me; docTypes: Doc
             <tbody>
               {s.settlements.map((x) => (
                 <tr key={x.documentId} className="border-t border-slate-100">
-                  <td className="py-1">{x.businessDate}</td>
+                  <td className="py-1">{showDate(x.businessDate)}</td>
                   <td><Link to={docPath(`ca.${x.kind}`, `/${x.documentId}`)} className="underline">{x.number}</Link></td>
                   <td>{KIND[x.kind]}</td>
                   <td className="text-right tabular-nums">{peso(x.amountCents)}</td><td className="text-right tabular-nums">{peso(x.balanceAfterCents)}</td>

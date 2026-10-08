@@ -7,7 +7,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, type CatItem, type CustomerWearers, type DocTypeInfo, type Me, type Preview } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, showDate } from '../../components/ui.tsx';
 import { SalesActions, Exception } from './entry.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
@@ -277,7 +277,7 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
         </Panel>
         <Panel title="Terms">
           <div className="grid gap-3 sm:grid-cols-3">
-            <Field label="Due in (days)" required hint={doc ? `Due ${doc.dueDate}` : 'Counted from today'}>
+            <Field label="Due in (days)" required hint={doc ? `Due ${showDate(doc.dueDate)}` : 'Counted from today'}>
               <input inputMode="numeric" className={money} value={v.dueInDays} onChange={(e) => set({ dueInDays: e.target.value })} />
             </Field>
             <Field label="Payment terms" required>

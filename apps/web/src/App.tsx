@@ -5,11 +5,11 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, ApiError, type DocTypeInfo, type Me } from './api.ts';
 import { Link, LinkAccess, match, navigate, useLocation } from './router.tsx';
-import { Notice } from './components/ui.tsx';
+import { ConfirmHost, Notice } from './components/ui.tsx';
 import { ChangePasswordScreen, FirstOwnerScreen, LoginScreen } from './auth/AuthScreens.tsx';
 import { Shell } from './shell/Shell.tsx';
 import { docPath, labelOf, pagePermission } from './shell/menu.ts';
-import { DocList, type ListForm, type ListView } from './generic/DocList.tsx';
+import { DocList, openedFrom, type ListForm, type ListView } from './generic/DocList.tsx';
 import { JobOrderForm } from './modules/JO/JobOrderForm.tsx';
 import { DocForm, type FormMode } from './generic/DocForm.tsx';
 import { DocView } from './generic/DocView.tsx';
@@ -31,6 +31,7 @@ export function App() {
       <PracticeBanner />
       <Stages />
       <Toaster />
+      <ConfirmHost />
     </>
   );
 }
@@ -65,18 +66,16 @@ function Stages() {
   });
   const [path = '/', query = ''] = location.split('?');
   const fromQuotation = new URLSearchParams(query).get('from-quotation');
-  const viewParam = new URLSearchParams(query).get('view');
   const typeOf = (key = '') => stage.docTypes.find((d) => d.key === key);
   const routes: [string, (p: Record<string, string>, t: DocTypeInfo) => ReactNode][] = [
+    // Every list opens New, a document and its Edit over itself (?new, ?view=<id>, ?edit=<id>); their own addresses
+    // (/docs/<type>/new, /docs/<type>/<id>, …/edit) still open the full page. Job orders: 20 a page.
     ['/docs/:type', (_, t) => <DocList key={t.key} type={t} notice={fromQuotation && t.key === 'jo.job_order' ? JOB_ORDER_LATER(fromQuotation) : undefined}
-      // Job orders: 20 a page, and New opens over the list (its own address, /docs/jo.job_order/new, still opens the full page).
-      {...(t.key === 'jo.job_order' ? {
-        pageSize: 20,
-        form: ({ draftId, close, setDirty, show }: Parameters<ListForm>[0]) => <JobOrderForm type={t} me={stage.me} mode={{ kind: 'new', draftId }} inDialog={{ close, setDirty, show }} />,
-        // A job order opens over the list too (?view=<id>); its own address, /docs/jo.job_order/<id>, is still the full page.
-        view: ({ id, recorded, refresh }: Parameters<ListView>[0]) => <DocView key={id} type={t} id={id} recorded={recorded} parts={VIEWS[t.key]} inDialog={{ refresh }} />,
-        viewing: viewParam ? { id: viewParam, recorded: new URLSearchParams(query).get('recorded') === '1' } : undefined,
-      } : {})} />],
+      pageSize={t.key === 'jo.job_order' ? 20 : undefined} opened={openedFrom(query)} noEdit={VIEWS[t.key]?.noEdit} formTitled={t.key === 'jo.job_order'}
+      form={t.canCreate || (t.canPost && t.canCancel) ? ({ mode, close, setDirty, show }: Parameters<ListForm>[0]) => (mode.kind === 'new' ? t.canCreate : t.canPost && t.canCancel)
+        ? (t.key === 'jo.job_order' ? <JobOrderForm type={t} me={stage.me} mode={mode} inDialog={{ close, setDirty, show }} /> : <Form type={t} me={stage.me} mode={mode} />)
+        : NO_ACCESS : undefined}
+      view={({ id, recorded, cancel, refresh }: Parameters<ListView>[0]) => <DocView key={id} type={t} id={id} recorded={recorded} parts={VIEWS[t.key]} inDialog={{ refresh }} startCancel={cancel} />} />],
     ['/docs/:type/new', (_, t) => !t.canCreate ? NO_ACCESS : <Form key={location} type={t} me={stage.me} mode={{ kind: 'new', draftId: new URLSearchParams(query).get('draft') ?? undefined }} />],
     ['/docs/:type/:id/edit', (p, t) => !(t.canPost && t.canCancel) ? NO_ACCESS : <Form key={location} type={t} me={stage.me} mode={{ kind: 'edit', id: p.id! }} />],
     ['/docs/:type/:id', (p, t) => <DocView key={p.id} type={t} id={p.id!} recorded={query === 'recorded=1'} parts={VIEWS[t.key]} />],

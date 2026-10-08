@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, type DocTypeInfo, type Me, type PayGroup, type PayPeriod, type PayRunDoc, type Preview } from '../../api.ts';
 import { Link, navigate } from '../../router.tsx';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, useLive } from '../COL/parts.tsx';
@@ -107,7 +107,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
               <option value="">{periods ? 'Pick the period' : 'Loading…'}</option>
               {periods?.map((p) => (
                 <option key={p.periodStart} value={p.periodStart} disabled={!!p.recorded}>
-                  {p.periodStart} to {p.periodEnd} · {p.recorded ? `recorded as ${p.recorded.number}` : `${p.employees} ${p.employees === 1 ? 'person' : 'people'}`}
+                  {showDate(p.periodStart)} to {showDate(p.periodEnd)} · {p.recorded ? `recorded as ${p.recorded.number}` : `${p.employees} ${p.employees === 1 ? 'person' : 'people'}`}
                 </option>
               ))}
             </select>

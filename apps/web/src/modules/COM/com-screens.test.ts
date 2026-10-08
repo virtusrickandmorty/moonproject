@@ -23,9 +23,9 @@ describe('customer email screen words', () => {
     expect(Object.values(TEMPLATE_WORDS).join(' ')).not.toMatch(/invoice|official receipt/i);
     const base = { attempts: 0, nextAttemptAt: '2026-09-28T10:05:00.000+08:00', sentAt: null, lastError: null };
     expect(progressWords({ ...base, status: 'queued' })).toBe('Waiting to be sent');
-    expect(progressWords({ ...base, status: 'queued', attempts: 2, lastError: 'Mailbox full' })).toBe('Try 2 failed (Mailbox full). Next try 2026-09-28 10:05');
+    expect(progressWords({ ...base, status: 'queued', attempts: 2, lastError: 'Mailbox full' })).toBe('Try 2 failed (Mailbox full). Next try September 28, 2026, 10:05 AM');
     expect(progressWords({ ...base, status: 'failed', attempts: 5, lastError: 'Mailbox full' })).toBe('Failed after 5 tries: Mailbox full');
-    expect(progressWords({ ...base, status: 'sent', attempts: 1, sentAt: '2026-09-28T10:00:00.000+08:00' })).toBe('Sent 2026-09-28 10:00');
+    expect(progressWords({ ...base, status: 'sent', attempts: 1, sentAt: '2026-09-28T10:00:00.000+08:00' })).toBe('Sent September 28, 2026, 10:00 AM');
   });
 
   it('a payslip email is named and shows the recipient and the pay period, never an amount', () => {

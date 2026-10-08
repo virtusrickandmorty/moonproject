@@ -9,9 +9,25 @@ function subscribe(l: () => void) {
   return () => (listeners.delete(l), window.removeEventListener('popstate', l));
 }
 
-export function navigate(to: string): void {
-  history.pushState(null, '', to);
-  window.scrollTo(0, 0);
+/**
+ * A screen on display may take over addresses (a document list shows its own documents in dialogs over itself): it
+ * returns the address to go to instead, and `replace` when that step should not stay in Back's history.
+ */
+export type Rewrite = (to: string) => { to: string; replace?: boolean } | null;
+const rewrites = new Set<Rewrite>();
+export function addRewrite(r: Rewrite): () => void {
+  rewrites.add(r);
+  return () => void rewrites.delete(r);
+}
+
+export function navigate(to: string, { replace = false } = {}): void {
+  for (const r of rewrites) {
+    const out = r(to);
+    if (out) { to = out.to; replace ||= !!out.replace; break; }
+  }
+  const stay = to.split('?')[0] === window.location?.pathname; // a dialog over the same page: keep the scroll
+  if (replace) history.replaceState(null, '', to); else history.pushState(null, '', to);
+  if (!stay) window.scrollTo(0, 0);
   listeners.forEach((l) => l());
 }
 

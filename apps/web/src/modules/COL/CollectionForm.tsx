@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, ApiError, type CashPlace, type DocHeader, type DocTypeInfo, type OpenItems, type PostDatedCheck, type Preview } from '../../api.ts';
 import { navigate } from '../../router.tsx';
-import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, showDate } from '../../components/ui.tsx';
 import { SalesActions, Exception } from '../JO/entry.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
@@ -32,8 +32,8 @@ function itemsOf(open: OpenItems, original?: { input: Stored; doc: StoredDoc }):
     ...(original?.input.sales ?? []).map((a): [string, number] => [`qs:${a.saleId}`, a.amountCents]),
   ]);
   const items: Item[] = [
-    ...open.jobOrders.map((jo) => ({ key: `jo:${jo.id}`, label: `${jo.number} · due ${jo.dueDate}`, date: jo.dueDate, due: jo.balanceDueCents, ref: { jobOrderId: jo.id } })),
-    ...open.quickSales.map((s) => ({ key: `qs:${s.id}`, label: `Invoice no. ${s.invoiceNumber} (${s.number}) · ${s.businessDate}`, date: s.businessDate, due: s.openCents, ref: { saleId: s.id } })),
+    ...open.jobOrders.map((jo) => ({ key: `jo:${jo.id}`, label: `${jo.number} · due ${showDate(jo.dueDate)}`, date: jo.dueDate, due: jo.balanceDueCents, ref: { jobOrderId: jo.id } })),
+    ...open.quickSales.map((s) => ({ key: `qs:${s.id}`, label: `Invoice no. ${s.invoiceNumber} (${s.number}) · ${showDate(s.businessDate)}`, date: s.businessDate, due: s.openCents, ref: { saleId: s.id } })),
   ];
   // What the collection being edited paid is owed again once it is cancelled; fully paid items are not in open items.
   for (const [key, cents] of back) {
@@ -82,7 +82,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
       api.pdc(pdcId).then((p) => {
         setPdc(p);
         setCustomer({ id: p.customerId, name: p.customerName });
-        setNote(`Post-dated check no. ${p.checkNumber} (${p.bank}) dated ${p.checkDate}`);
+        setNote(`Post-dated check no. ${p.checkNumber} (${p.bank}) dated ${showDate(p.checkDate)}`);
       }, fail);
     }
     const jo = q.get('jo');
@@ -208,7 +208,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className="space-y-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-0">
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">{original ? `Edit ${original.header.number}` : 'New collection'}</h1>
-        {pdc && <Notice tone="info">Filled from post-dated check no. {pdc.checkNumber} of {pdc.bank}, {formatPesos(pdc.amountCents)} dated {pdc.checkDate}. Recording it takes it off the post-dated checks list.</Notice>}
+        {pdc && <Notice tone="info">Filled from post-dated check no. {pdc.checkNumber} of {pdc.bank}, {formatPesos(pdc.amountCents)} dated {showDate(pdc.checkDate)}. Recording it takes it off the post-dated checks list.</Notice>}
         {original && <Notice tone="info">When you record, {original.header.number} is cancelled and the replacement gets a new number. Reason: {reason}</Notice>}
         {error && <Notice>{error}</Notice>}
         <Panel title="Who paid">

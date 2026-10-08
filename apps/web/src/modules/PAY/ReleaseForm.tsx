@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, ApiError, type CashPlace, type DocTypeInfo, type Preview, type ReleaseRow, type RunToRelease } from '../../api.ts';
 import { Link, navigate } from '../../router.tsx';
-import { Button, Notice, Panel, peso } from '../../components/ui.tsx';
+import { Button, Notice, Panel, peso, showDate } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { emptyTender, sum, tendersToInput, type TenderRow } from '../COL/money.ts';
@@ -70,7 +70,7 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
             {runs?.map((r) => (
               <button key={r.id} type="button" role="radio" aria-checked={runId === r.id} onClick={() => setRunId(r.id)}
                 className={`flex w-full justify-between rounded-lg p-3 text-left text-sm ring-1 ${runId === r.id ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'}`}>
-                <span>{r.number} · {GROUP_LABEL[r.payGroup]} · {r.kind === 'thirteenth' ? `13th month ${r.periodStart.slice(0, 4)}` : `${r.periodStart} to ${r.periodEnd}`}</span><span className="tabular-nums">{formatPesos(r.dueCents)} to release</span>
+                <span>{r.number} · {GROUP_LABEL[r.payGroup]} · {r.kind === 'thirteenth' ? `13th month ${r.periodStart.slice(0, 4)}` : `${showDate(r.periodStart)} to ${showDate(r.periodEnd)}`}</span><span className="tabular-nums">{formatPesos(r.dueCents)} to release</span>
               </button>
             ))}
           </div>

@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError, type CashPlace, type DocTypeInfo, type Me, type Preview, type SchemeCheck } from '../../api.ts';
 import { Link, navigate } from '../../router.tsx';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, useLive } from '../COL/parts.tsx';
@@ -99,7 +99,7 @@ export function RemittanceForm({ type, mode, me }: { type: DocTypeInfo; mode: Fo
         </Field>
       )}
       <Field label="Note"><input className={inputClass} value={v.note} onChange={(e) => set({ note: e.target.value })} /></Field>
-      {live && <p className="text-sm">{live.summary}{date.businessDate && ` Dated ${date.businessDate}, the day paid.`}</p>}
+      {live && <p className="text-sm">{live.summary}{date.businessDate && ` Dated ${showDate(date.businessDate)}, the day paid.`}</p>}
       {live?.issues.map((i) => <Notice key={i.code} tone={i.level}>{i.message}</Notice>)}
       <Errors list={errors} show={touched} />
       <div className="flex gap-2">

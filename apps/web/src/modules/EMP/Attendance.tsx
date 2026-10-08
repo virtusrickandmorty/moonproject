@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type AttendanceGrid, type AttendanceStatus, type Me } from '../../api.ts';
-import { Button, Notice, useAction } from '../../components/ui.tsx';
+import { askConfirm, Button, Notice, useAction, showDate } from '../../components/ui.tsx';
 import { STATUS_LABEL, STATUS_MARK, WITH_NIGHT, cellKey, changedCells, datesBetween, halfMonthOf, paidBy, plusDays, startCells, statusesFor, weekday, type Cell } from './time.ts';
 
 export function Attendance({ me }: { me: Me }) {
@@ -42,8 +42,8 @@ export function Attendance({ me }: { me: Me }) {
   const pending = changedCells(grid.days, cells, names);
   // Moving to another period reloads the grid: unsaved marks would be lost without a word (audit A11-001).
   const unsaved = pending.days.length > 0 || pending.errors.length > 0;
-  const shift = (dir: 1 | -1) => {
-    if (unsaved && !window.confirm('Discard the unsaved marks?')) return;
+  const shift = async (dir: 1 | -1) => {
+    if (unsaved && !(await askConfirm('Moving to another half-month loses the marks you have not saved.', { title: 'Discard the unsaved marks?', yes: 'Discard them', no: 'Keep them', danger: true }))) return;
     setRange(halfMonthOf(plusDays(dir === 1 ? grid.to : grid.from, dir)));
   };
   const set = (key: string, c: Partial<Cell>) => {
@@ -62,9 +62,9 @@ export function Attendance({ me }: { me: Me }) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">Attendance</h1>
-        <Button onClick={() => shift(-1)}>← Earlier</Button>
+        <Button onClick={() => void shift(-1)}>← Earlier</Button>
         <span className="text-sm font-medium">{grid.from} to {grid.to}</span>
-        <Button onClick={() => shift(1)}>Later →</Button>
+        <Button onClick={() => void shift(1)}>Later →</Button>
       </div>
       <p className="text-sm text-slate-600">
         {Object.entries(STATUS_MARK).map(([k, m]) => `${m} ${STATUS_LABEL[k as AttendanceStatus]}`).join(' · ')}. Overtime and night hours (worked between 10 PM and 6 AM) in hours (1.5 or 1:30) on worked days; Night OT is the night hours that were also overtime.
@@ -74,7 +74,7 @@ export function Attendance({ me }: { me: Me }) {
           Shaded days with a lock are paid by {[...new Set(grid.paid.map((p) => p.number))].join(', ')}: they cannot be changed until that payroll is cancelled.
         </Notice>
       )}
-      {grid.holidays.length > 0 && <Notice tone="info">Holidays: {grid.holidays.map((h) => `${h.date} ${h.name} (${h.kind})`).join('; ')}</Notice>}
+      {grid.holidays.length > 0 && <Notice tone="info">Holidays: {grid.holidays.map((h) => `${showDate(h.date)} ${h.name} (${h.kind})`).join('; ')}</Notice>}
       {filled > 0 && editable && (
         <Notice tone="info">
           {filled === 1 ? 'One holiday cell with nothing typed shows' : `${filled} holiday cells with nothing typed show`} H (Holiday off) from the calendar. Change it to HW for those who worked, then save.

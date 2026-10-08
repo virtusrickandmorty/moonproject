@@ -1,7 +1,7 @@
 /** Pieces the release slip and invoice record forms share: pick a job order or a release by its number, and the booklet figures. */
 import { useEffect, useState } from 'react';
 import { api, type BookletShown, type CatItem, type JoPick, type ReleasePick } from '../../api.ts';
-import { Button, Field, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Field, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import { Figures } from '../COL/parts.tsx';
 
 /** What matches the search, a moment after typing stops; nothing while one is already picked. */
@@ -33,7 +33,7 @@ export function JoPicker({ value, onChange }: { value: { id: string; label: stri
       <Field label="Job order"><input aria-label="Job order" className={inputClass} placeholder="Job order number or customer" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
       {rows.map((jo) => (
         <button key={jo.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => onChange(jo)}>
-          {jo.number} · {jo.customerName} <span className="text-slate-500">· {jo.stageLabel} · {jo.leftPieces} pieces left · due {jo.dueDate}</span>
+          {jo.number} · {jo.customerName} <span className="text-slate-500">· {jo.stageLabel} · {jo.leftPieces} pieces left · due {showDate(jo.dueDate)}</span>
         </button>
       ))}
       {rows.length === 0 && <p className="text-sm text-slate-500">{q.trim() ? 'No job order matches.' : 'No job order has pieces left to release.'}</p>}

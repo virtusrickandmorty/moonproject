@@ -27,7 +27,7 @@ describe('System health page', () => {
     expect(HOME_DOT.red).toBe('System health: something needs doing now');
     expect(Object.keys(HOME_DOT)).toEqual(['green', 'amber', 'red']);
     expect(restoredWords({ file: 'moonproject-2026-09-28T09-00-00-daily.db.gz.age', at: '2026-09-28T10:05:00.000+08:00' }))
-      .toBe('Restored from moonproject-2026-09-28T09-00-00-daily.db.gz.age at 2026-09-28 10:05.');
+      .toBe('Restored from moonproject-2026-09-28T09-00-00-daily.db.gz.age at September 28, 2026, 10:05 AM.');
     expect(addressKind('vpn')).toContain('VPN');
   });
 });

@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, alphalistPath, type Data2316, type Me } from '../../api.ts';
-import { Button, Notice, Panel, peso } from '../../components/ui.tsx';
+import { Button, Notice, Panel, peso, showDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { ITEMS_2316, yearsToPick } from './year-end.ts';
@@ -101,7 +101,7 @@ export function Sheet2316({ params }: { me: Me; params?: Record<string, string> 
       </div>
       <section className="space-y-2 rounded-lg bg-white p-4 text-sm ring-1 ring-slate-300">
         <h2 className="font-semibold">BIR Form 2316 data, {d.year}: figures to copy into the form</h2>
-        <p>{d.name} <span className="text-slate-500">{d.code}</span> · TIN {d.tin ?? '(hidden)'} · employed {d.periodFrom} to {d.periodTo}{d.separatedOn ? ' (separated)' : ''}</p>
+        <p>{d.name} <span className="text-slate-500">{d.code}</span> · TIN {d.tin ?? '(hidden)'} · employed {showDate(d.periodFrom)} to {showDate(d.periodTo)}{d.separatedOn ? ' (separated)' : ''}</p>
         {d.isMwe && d.smw && (
           <p>Minimum wage earner: statutory minimum wage {peso(d.smw.perDayCents)} a day, {peso(d.smw.perMonthCents)} a month ({d.smw.factor} days a year).</p>
         )}

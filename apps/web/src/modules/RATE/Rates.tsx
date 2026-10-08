@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type PrdStep, type RateTable } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso, useAction, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
 import { cents } from '../COL/money.ts';
 
 export function PieceRates({ me }: { me: Me }) {
@@ -37,7 +37,7 @@ export function PieceRates({ me }: { me: Me }) {
             {rows.map((r) => (
               <tr key={r.id} className="border-t border-slate-100">
                 <td className="py-1">{r.garmentType}</td><td>{stepName(r.stepCode)}</td><td className="capitalize">{r.complexity}</td>
-                <td className="text-right tabular-nums">{peso(r.rateCents)}</td><td className="pl-6">{r.effectiveFrom}</td>{history && <td className="pl-4 text-slate-600">{r.reason}</td>}
+                <td className="text-right tabular-nums">{peso(r.rateCents)}</td><td className="pl-6">{showDate(r.effectiveFrom)}</td>{history && <td className="pl-4 text-slate-600">{r.reason}</td>}
               </tr>
             ))}
           </tbody>
@@ -58,7 +58,7 @@ function NewRate({ table, steps, onSaved }: { table: RateTable; steps: PrdStep[]
   const ready = v.garmentType.trim() && rateCents !== undefined && v.rate.trim() && v.reason.trim().length >= 10;
   const save = async () => {
     const r = await api.addRate({ garmentType: v.garmentType.trim(), stepCode: v.stepCode, complexity: v.complexity, rateCents: rateCents!, effectiveFrom: v.effectiveFrom, reason: v.reason.trim() });
-    setDone(`${r.garmentType} ${r.stepCode.toLowerCase()} (${r.complexity}) is ${peso(r.rateCents)} per piece from ${r.effectiveFrom}.`);
+    setDone(`${r.garmentType} ${r.stepCode.toLowerCase()} (${r.complexity}) is ${peso(r.rateCents)} per piece from ${showDate(r.effectiveFrom)}.`);
     setV(blank);
     await onSaved();
   };
