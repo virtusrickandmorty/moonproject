@@ -115,3 +115,17 @@ it('recorded payroll and 13th month use employee cards with expandable figures; 
   const yearEnd = form(() => YearEndPage({ me: { permissions: [] } as unknown as Me }));
   expect(yearEnd.render().some((n) => typeof n.props.children === 'string' && n.props.children.startsWith('Your role cannot view government numbers'))).toBe(true);
 });
+
+it('payroll period: Date from or Date to picks the pay group period holding that day; a recorded one is only shown', () => {
+  const periods = [
+    { periodStart: '2026-09-16', periodEnd: '2026-09-30', employees: 3, recorded: null, bookOn: null },
+    { periodStart: '2026-09-01', periodEnd: '2026-09-15', employees: 3, recorded: { id: 'r1', number: 'PR-000001' }, bookOn: null },
+  ];
+  const f = form(() => RunForm({ type: type('pay.run'), mode }), ['SEMI_DAILY', periods, '']);
+  change(f.find('aria-label', 'Date to'), '2026-09-22'); // a day inside the second half
+  expect(f.find('aria-label', 'Date from').props.value).toBe('2026-09-16');
+  expect(f.find('aria-label', 'Date to').props.value).toBe('2026-09-30');
+  change(f.find('aria-label', 'Date from'), '2026-09-03'); // already recorded: not chosen
+  expect(f.find('aria-label', 'Date from').props.value).toBe('');
+  expect(renderToStaticMarkup(f.render()[0]!)).toContain('already recorded as PR-000001');
+});
