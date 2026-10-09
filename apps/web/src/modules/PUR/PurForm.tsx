@@ -21,7 +21,8 @@ export function usePurForm(type: DocTypeInfo, mode: FormMode, load: (d: DocDetai
   return { original, error, setError };
 }
 
-export function PurFrame(p: { type: DocTypeInfo; form: ReturnType<typeof usePurForm>; title: string; input: unknown; errors: string[]; showTotal: boolean; children: ReactNode }) {
+/** `side`: shown in So far above the checks (the purchase order's lines); `wide`: a wider right column for it. */
+export function PurFrame(p: { type: DocTypeInfo; form: ReturnType<typeof usePurForm>; title: string; input: unknown; errors: string[]; showTotal: boolean; side?: ReactNode; wide?: boolean; children: ReactNode }) {
   const { type, form, input, errors } = p;
   const [reason, setReason] = useState('');
   const [confirm, setConfirm] = useState<Preview | null>(null);
@@ -46,7 +47,7 @@ export function PurFrame(p: { type: DocTypeInfo; form: ReturnType<typeof usePurF
     }
   };
   return (
-    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className={`grid items-start gap-4 ${p.wide ? 'lg:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)]' : 'lg:grid-cols-[1fr_20rem]'}`}>
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">{form.original ? `Edit ${form.original.number}` : p.title}</h1>
         {form.original && <Notice tone="info">When you record, {form.original.number} is cancelled and the replacement gets a new number. Reason: {reason}</Notice>}
@@ -59,6 +60,7 @@ export function PurFrame(p: { type: DocTypeInfo; form: ReturnType<typeof usePurF
         </div>
       </div>
       <Panel title="So far">
+        {p.side}
         {live && p.showTotal && <p className="text-2xl font-semibold tabular-nums">{peso(live.totalCents)}</p>}
         {!live && <p className="text-sm text-slate-500">Fill in the required fields to see the checks{p.showTotal ? ' and the total' : ''}.</p>}
         {live && <p className="text-sm">{live.summary}</p>}

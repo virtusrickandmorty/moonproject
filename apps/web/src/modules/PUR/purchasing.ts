@@ -9,7 +9,7 @@ import { cents } from '../COL/money.ts';
 
 export { EWT_WORDS, ewtLabel } from '../AP/payables.ts';
 
-export const UNIT_WORDS: Record<SupplyUnit, string> = { yard: 'Yard', meter: 'Meter', kg: 'Kilogram', roll: 'Roll', pc: 'Piece' };
+export const UNIT_WORDS: Record<SupplyUnit, string> = { yard: 'Yard', meter: 'Meter', kg: 'Kilogram', liter: 'Liter', roll: 'Roll', pc: 'Piece' };
 export const CATEGORY_WORDS = { materials: 'Materials', ready_made: 'Ready-made merchandise' } as const;
 const MAX_QTY = 1_000_000;
 
@@ -159,6 +159,6 @@ export function rrToInput(poDocumentId: string, rows: RrRow[]): { input: { poDoc
   return { errors, input: { poDocumentId, lines } };
 }
 
-const UNIT_NOUNS: Record<SupplyUnit, [one: string, many: string]> = { yard: ['yard', 'yards'], meter: ['meter', 'meters'], kg: ['kg', 'kg'], roll: ['roll', 'rolls'], pc: ['piece', 'pieces'] };
+const UNIT_NOUNS: Record<SupplyUnit, [one: string, many: string]> = { yard: ['yard', 'yards'], meter: ['meter', 'meters'], kg: ['kg', 'kg'], liter: ['liter', 'liters'], roll: ['roll', 'rolls'], pc: ['piece', 'pieces'] };
 /** "1 yard", "12 yards": a quantity with its unit. */
 export const qtyWords = (qty: number, unit: SupplyUnit) => `${qty} ${UNIT_NOUNS[unit][qty === 1 ? 0 : 1]}`;

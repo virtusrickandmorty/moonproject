@@ -619,7 +619,7 @@ export interface SupplierBody {
 }
 export interface SupplierContact { id: string; supplier_id: string; name: string; role: string | null; phone: string | null; email: string | null }
 export interface ContactBody { name: string; role: string | null; phone: string | null; email: string | null }
-export type SupplyUnit = 'yard' | 'meter' | 'kg' | 'roll' | 'pc';
+export type SupplyUnit = 'yard' | 'meter' | 'kg' | 'liter' | 'roll' | 'pc';
 export interface SupplyRecord extends SupplyRow {
   unit: SupplyUnit; is_active: number; version: number; purchase_cost_cents: number; purchase_cost_source: 'bill' | 'po' | 'catalogue';
   purchase_cost_source_number: string | null; purchase_cost_source_date: string | null;
@@ -1182,6 +1182,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     updateSupplier: (id: string, v: number, body: SupplierBody) => call<{ success: true; version: number }>('PUT', `/api/pur/suppliers/${encodeURIComponent(id)}`, body, version(v)),
     deactivateSupplier: (id: string, v: number) => call<{ success: true }>('POST', `/api/pur/suppliers/${encodeURIComponent(id)}/deactivate`, undefined, version(v)),
     supplierContacts: (id: string) => call<SupplierContact[]>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}/contacts`),
+    /** The supplies a supplier sells (linked on its page), with each one's last cost. */
+    supplierSupplies: (id: string) => call<SupplyRecord[]>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}/supplies`),
+    linkSupply: (supplierId: string, supplyId: string, linked: boolean) => call<unknown>('POST', `/api/pur/suppliers/${encodeURIComponent(supplierId)}/supplies`, { supplyId, linked }),
+    supplySuppliers: (id: string) => call<{ id: string; name: string }[]>('GET', `/api/pur/supplies/${encodeURIComponent(id)}/suppliers`),
     addSupplierContact: (id: string, body: ContactBody) => call<{ id: string }>('POST', `/api/pur/suppliers/${encodeURIComponent(id)}/contacts`, body),
     deactivateSupplierContact: (supplierId: string, id: string) => call<{ success: true }>('POST', `/api/pur/suppliers/${encodeURIComponent(supplierId)}/contacts/${encodeURIComponent(id)}/deactivate`),
     supplierPurchaseOrders: (id: string) => call<SupplierPo[]>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}/purchase-orders`),
