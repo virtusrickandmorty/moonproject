@@ -5,11 +5,12 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { api, ApiError, type DocDetail, type DocHeader, type DocTypeInfo, type Preview } from '../../api.ts';
-import { Button, Notice, Panel, peso } from '../../components/ui.tsx';
+import { Button, Notice, Panel, peso, useCloseDialog } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { navigate } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { EditGate, Errors, useLive } from '../COL/parts.tsx';
+import { SalesActions } from '../JO/entry.tsx';
 
 /** On an edit, `load` fills the fields from the recorded document. */
 export function usePurForm(type: DocTypeInfo, mode: FormMode, load: (d: DocDetail) => void) {
@@ -21,13 +22,17 @@ export function usePurForm(type: DocTypeInfo, mode: FormMode, load: (d: DocDetai
   return { original, error, setError };
 }
 
-/** `side`: shown in So far above the checks (the purchase order's lines); `wide`: a wider right column for it. */
+/**
+ * `side`: shown in So far above the checks (the purchase order's lines); `wide`: laid out like the job order (a wider right
+ * column for it, kept in view, with the total, Record and Close or Back under it). In a dialog the dialog shows the title.
+ */
 export function PurFrame(p: { type: DocTypeInfo; form: ReturnType<typeof usePurForm>; title: string; input: unknown; errors: string[]; showTotal: boolean; side?: ReactNode; wide?: boolean; children: ReactNode }) {
   const { type, form, input, errors } = p;
   const [reason, setReason] = useState('');
   const [confirm, setConfirm] = useState<Preview | null>(null);
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState('');
+  const closeDialog = useCloseDialog();
   const preview = () => api.preview(type.key, input);
   const live = useLive(JSON.stringify([input, form.original?.id]), errors.length === 0, preview);
   if (form.original && !reason) return <EditGate original={form.original} typeKey={type.key} onReason={setReason} />;
@@ -47,18 +52,21 @@ export function PurFrame(p: { type: DocTypeInfo; form: ReturnType<typeof usePurF
     }
   };
   return (
-    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className={`grid items-start gap-4 ${p.wide ? 'lg:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)]' : 'lg:grid-cols-[1fr_20rem]'}`}>
-      <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">{form.original ? `Edit ${form.original.number}` : p.title}</h1>
+    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className={`grid items-start gap-4 ${p.wide ? 'pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-0 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)]' : 'lg:grid-cols-[1fr_20rem]'}`}>
+      <div className="min-w-0 space-y-4">
+        {!(closeDialog && p.wide) && <h1 className="text-2xl font-semibold">{form.original ? `Edit ${form.original.number}` : p.title}</h1>}
         {form.original && <Notice tone="info">When you record, {form.original.number} is cancelled and the replacement gets a new number. Reason: {reason}</Notice>}
         {(form.error || error) && <Notice>{form.error || error}</Notice>}
         {p.children}
-        <Errors list={errors} show={touched} />
-        <div className="flex gap-2">
-          <Button tone="primary" disabled={!type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
-          <Button onClick={() => history.back()}>Back</Button>
-        </div>
+        {!p.wide && <>
+          <Errors list={errors} show={touched} />
+          <div className="flex gap-2">
+            <Button tone="primary" disabled={!type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
+            <Button onClick={() => history.back()}>Back</Button>
+          </div>
+        </>}
       </div>
+      <aside className={`space-y-4 ${p.wide ? 'lg:sticky lg:top-0' : ''}`}>
       <Panel title="So far">
         {p.side}
         {live && p.showTotal && <p className="text-2xl font-semibold tabular-nums">{peso(live.totalCents)}</p>}
@@ -66,6 +74,14 @@ export function PurFrame(p: { type: DocTypeInfo; form: ReturnType<typeof usePurF
         {live && <p className="text-sm">{live.summary}</p>}
         {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
       </Panel>
+      {p.wide && <>
+        <Errors list={errors} show={touched} />
+        <SalesActions total={live?.totalCents} label="Total">
+          <Button tone="primary" disabled={!type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
+          {closeDialog ? <Button onClick={closeDialog}>Close</Button> : <Button onClick={() => history.back()}>Back</Button>}
+        </SalesActions>
+      </>}
+      </aside>
       {confirm && <RecordDialog type={type} preview={confirm} original={form.original} reason={reason} onRecord={record} onClose={() => setConfirm(null)} />}
     </form>
   );
