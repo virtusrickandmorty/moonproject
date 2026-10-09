@@ -44,6 +44,7 @@ describe('effective-dated settings (E12, D4.2)', () => {
       'tax.uncollected_vat_credit': false,
       'tax.dividend_final_tax_bp': 1000,
       'pay.week_start': 'monday', // Friday from Oct 9, 2026 (the owner's decision); this shop's date is before it
+      'pay.semi_monthly_cutoff': 'calendar', // the 10th/25th cut-offs from Oct 16, 2026 (the owner's decision)
     });
   });
 

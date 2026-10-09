@@ -34,7 +34,7 @@ import { lastAuditAt } from '../../../engine/audit.ts';
 import { PAY_GROUPS, employee as employeeOf, employeesInGroup, markPaidDays, markSilPaid, paidDaysBetween, silPaidBy, type PayGroup } from '../../EMP/public.ts';
 import { advanceSchedule } from '../../CA/public.ts';
 import { clearAssignmentsPaidBy, markAssignmentPaid } from '../../PRD/public.ts';
-import { TAX_FREQUENCY, periodEndOf, weekRuleOf, weekStartOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunLoan, type YearEnd } from '../run-calc.ts';
+import { TAX_FREQUENCY, periodEndOf, periodRuleOf, semiStartOf, weekStartOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunLoan, type YearEnd } from '../run-calc.ts';
 import { KIND_LABEL, LOAN_ACCOUNT, govLoan, loanInMonth, type Agency } from '../loans.ts';
 import { yearEndDoneBy } from '../year-end.ts';
 
@@ -108,10 +108,10 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
   inputSchema: runInput,
 
   compute(input, ctx) {
-    const periodEnd = periodEndOf(input.payGroup, input.periodStart, weekRuleOf(ctx.db)) ?? input.periodStart;
+    const periodEnd = periodEndOf(input.payGroup, input.periodStart, periodRuleOf(ctx.db)) ?? input.periodStart;
     const base = { ...input, periodEnd, contributionMonth: periodEnd.slice(0, 7), taxFrequency: TAX_FREQUENCY[input.payGroup] };
     let worked: ReturnType<typeof workOut> = { employees: [], notes: [] };
-    if (periodEndOf(input.payGroup, input.periodStart, weekRuleOf(ctx.db)) && periodEnd <= ctx.businessDate) {
+    if (periodEndOf(input.payGroup, input.periodStart, periodRuleOf(ctx.db)) && periodEnd <= ctx.businessDate) {
       try {
         worked = workOut(ctx.db, {
           payGroup: input.payGroup, periodStart: input.periodStart, periodEnd, payDate: ctx.businessDate, manual: input.lines ?? [],
@@ -132,9 +132,9 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
   validate(doc, ctx) {
     const issues: Issue[] = [];
     const error = (field: string, code: string, message: string) => issues.push({ field, code, message, level: 'error' });
-    const periodEnd = periodEndOf(doc.payGroup, doc.periodStart, weekRuleOf(ctx.db));
+    const periodEnd = periodEndOf(doc.payGroup, doc.periodStart, periodRuleOf(ctx.db));
     if (!periodEnd) {
-      error('periodStart', 'PERIOD', doc.payGroup === 'WEEKLY_PIECE' ? `A weekly payroll starts on a ${weekRuleOf(ctx.db).startsOn(doc.periodStart) === 'friday' ? 'Friday (Friday to Thursday)' : 'Monday (Monday to Saturday)'}.` : 'A semi-monthly payroll starts on the 1st or the 16th.');
+      error('periodStart', 'PERIOD', doc.payGroup === 'WEEKLY_PIECE' ? `A weekly payroll starts on a ${periodRuleOf(ctx.db).startsOn(doc.periodStart) === 'friday' ? 'Friday (Friday to Thursday)' : 'Monday (Monday to Saturday)'}.` : (periodRuleOf(ctx.db).semi?.(doc.periodStart) === '10_25' ? 'A semi-monthly payroll starts on the 26th or the 11th (26th to 10th, 11th to 25th).' : 'A semi-monthly payroll starts on the 1st or the 16th.'));
       return issues;
     }
     if (periodEnd > ctx.businessDate) {
@@ -403,10 +403,10 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
       .pluck()
       .all() as string[];
     const periods: { payGroup: PayGroup; periodStart: string }[] = [];
-    const rule = weekRuleOf(db);
+    const rule = periodRuleOf(db);
     for (const payGroup of PAY_GROUPS) {
       for (const d of days) {
-        const start = payGroup === 'WEEKLY_PIECE' ? weekStartOf(d, rule) : `${d.slice(0, 8)}${Number(d.slice(8)) <= 15 ? '01' : '16'}`;
+        const start = payGroup === 'WEEKLY_PIECE' ? weekStartOf(d, rule) : semiStartOf(d, rule);
         if (!start) continue;
         const end = periodEndOf(payGroup, start, rule)!;
         if (end <= lastDay && employeesInGroup(db, payGroup, start, end).length && !recordedRunFor(db, payGroup, start) && !periods.some((p) => p.payGroup === payGroup && p.periodStart === start)) periods.push({ payGroup, periodStart: start });

@@ -76,46 +76,79 @@ export const addDays = (d: string, n: number) => {
 const daysBetween = (from: string, to: string) => Math.round((Date.UTC(+to.slice(0, 4), +to.slice(5, 7) - 1, +to.slice(8)) - Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8))) / 86_400_000) + 1;
 
 /**
- * The weekly piece payroll's week (setting pay.week_start, the owner's decision, Oct 9, 2026): Monday to Saturday, or
- * Friday to Thursday, by the version in force on the period's first day. `changes` are the days a version takes effect.
+ * The pay periods' rules, from dated settings (the owner's decisions, Oct 9, 2026), by the version in force on a period's
+ * first day; `…Changes` are the days a version that changes something takes effect.
+ * - pay.week_start: the weekly piece payroll runs Monday to Saturday, or Friday to Thursday.
+ * - pay.semi_monthly_cutoff: the semi-monthly groups run 1–15 and 16–end ("calendar"), or 26th–10th and 11th–25th
+ *   ("10_25", paid on the 15th and at month end).
  */
-export interface WeekRule { startsOn: (day: string) => 'monday' | 'friday'; changes: readonly string[] }
-/** Monday to Saturday throughout (PLAN F2 before the change): what a caller without the shop's settings gets. */
-export const MONDAY_WEEKS: WeekRule = { startsOn: () => 'monday', changes: [] };
-/** The shop's week rule, from its pay.week_start versions. */
-export function weekRuleOf(db: Db): WeekRule {
-  const versions = new Map<string, 'monday' | 'friday'>();
-  for (const r of db.prepare(`SELECT effective_from AS f, value_json AS v FROM settings WHERE key = 'pay.week_start' ORDER BY effective_from, id`).all() as { f: string; v: string }[]) {
-    versions.set(r.f, JSON.parse(r.v) as 'monday' | 'friday'); // a later row on the same date wins
+export interface PeriodRule {
+  startsOn: (day: string) => 'monday' | 'friday'; changes: readonly string[];
+  semi?: (day: string) => 'calendar' | '10_25'; semiChanges?: readonly string[];
+}
+/** @deprecated the name before the semi-monthly cut-off joined it. */
+export type WeekRule = PeriodRule;
+/** Monday to Saturday and 1–15 / 16–end throughout (PLAN F2 before the changes): what a caller without the shop's settings gets. */
+export const MONDAY_WEEKS: PeriodRule = { startsOn: () => 'monday', changes: [] };
+
+function versionsOf<V extends string>(db: Db, key: string, first: V): { at: (day: string) => V; changes: string[] } {
+  const versions = new Map<string, V>();
+  for (const r of db.prepare(`SELECT effective_from AS f, value_json AS v FROM settings WHERE key = ? ORDER BY effective_from, id`).all(key) as { f: string; v: string }[]) {
+    versions.set(r.f, JSON.parse(r.v) as V); // a later row on the same date wins
   }
   const list = [...versions].sort(([a], [b]) => a.localeCompare(b));
-  // A change is a version whose day differs from the one before it (a repeat of the same day changes nothing).
+  // A change is a version whose value differs from the one before it (a repeat changes nothing).
   const changes = list.filter(([, v], i) => i > 0 && v !== list[i - 1]![1]).map(([f]) => f);
-  return { startsOn: (day) => list.filter(([f]) => f <= day).at(-1)?.[1] ?? 'monday', changes };
+  return { at: (day) => list.filter(([f]) => f <= day).at(-1)?.[1] ?? first, changes };
 }
+/** The shop's period rules, from its pay.week_start and pay.semi_monthly_cutoff versions. */
+export function periodRuleOf(db: Db): PeriodRule {
+  const week = versionsOf<'monday' | 'friday'>(db, 'pay.week_start', 'monday');
+  const semi = versionsOf<'calendar' | '10_25'>(db, 'pay.semi_monthly_cutoff', 'calendar');
+  return { startsOn: week.at, changes: week.changes, semi: semi.at, semiChanges: semi.changes };
+}
+/** @deprecated periodRuleOf. */
+export const weekRuleOf = periodRuleOf;
 const weekday = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay();
+const monthEnd = (d: string) => addDays(`${addDays(`${d.slice(0, 8)}28`, 4).slice(0, 8)}01`, -1);
+const dayIn = (d: string, n: number) => `${d.slice(0, 8)}${String(n).padStart(2, '0')}`;
 
 /**
- * The period a start date opens (F2): for the weekly piece group Monday to Saturday or Friday to Thursday (WeekRule);
- * the day a new week rule takes effect opens a short period to that rule's last weekday, and a week reaching the change
- * ends the day before it, so no day is in two periods. 1–15 or 16–end otherwise. Undefined if the date opens none.
+ * The period a start date opens (F2), by the rules in force on it (PeriodRule): weekly Monday to Saturday or Friday to
+ * Thursday; semi-monthly 1–15 and 16–end, or 26th–10th and 11th–25th. The day a new rule takes effect opens a short
+ * period to that rule's next end, and a period reaching a change ends the day before it, so no day is in two periods
+ * and none is left out. Undefined if the date opens none.
  */
-export function periodEndOf(payGroup: PayGroup, start: string, rule: WeekRule = MONDAY_WEEKS): string | undefined {
+export function periodEndOf(payGroup: PayGroup, start: string, rule: PeriodRule = MONDAY_WEEKS): string | undefined {
+  const cap = (end: string, changes: readonly string[]) => { const next = changes.find((c) => c > start); return next && end >= next ? addDays(next, -1) : end; };
   if (payGroup === 'WEEKLY_PIECE') {
     const friday = rule.startsOn(start) === 'friday';
     if (weekday(start) !== (friday ? 5 : 1) && !rule.changes.includes(start)) return undefined;
-    const end = addDays(start, ((friday ? 4 : 6) - weekday(start) + 7) % 7);
-    const next = rule.changes.find((c) => c > start);
-    return next && end >= next ? addDays(next, -1) : end;
+    return cap(addDays(start, ((friday ? 4 : 6) - weekday(start) + 7) % 7), rule.changes);
   }
-  const day = start.slice(8);
-  if (day === '01') return `${start.slice(0, 8)}15`;
-  if (day === '16') return addDays(`${addDays(`${start.slice(0, 8)}28`, 4).slice(0, 8)}01`, -1); // the last day of the month
+  const changes = rule.semiChanges ?? [];
+  const opensAny = changes.includes(start);
+  const day = Number(start.slice(8));
+  if ((rule.semi?.(start) ?? 'calendar') === 'calendar') {
+    if (day !== 1 && day !== 16 && !opensAny) return undefined;
+    return cap(day <= 15 ? dayIn(start, 15) : monthEnd(start), changes);
+  }
+  if (day !== 26 && day !== 11 && !opensAny) return undefined;
+  return cap(day <= 10 ? dayIn(start, 10) : day <= 25 ? dayIn(start, 25) : dayIn(addDays(monthEnd(start), 1), 10), changes);
+}
+
+/** The first day of the semi-monthly period holding a day, by the rules in force (PeriodRule). */
+export function semiStartOf(day: string, rule: PeriodRule = MONDAY_WEEKS): string | undefined {
+  for (let k = 0; k < 32; k++) {
+    const start = addDays(day, -k);
+    const end = periodEndOf('SEMI_MONTHLY', start, rule);
+    if (end) return end >= day ? start : undefined;
+  }
   return undefined;
 }
 
 /** The first day of the weekly piece period holding a day, or undefined (a Sunday under Monday-to-Saturday weeks). */
-export function weekStartOf(day: string, rule: WeekRule = MONDAY_WEEKS): string | undefined {
+export function weekStartOf(day: string, rule: PeriodRule = MONDAY_WEEKS): string | undefined {
   for (let k = 0; k < 7; k++) {
     const start = addDays(day, -k);
     const end = periodEndOf('WEEKLY_PIECE', start, rule);

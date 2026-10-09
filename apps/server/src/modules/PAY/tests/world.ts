@@ -12,12 +12,18 @@ import { saveAttendance } from '../../EMP/time.ts';
 /**
  * A test world at a Manila date: users, an actor with every permission, and helpers to record through the engine.
  * The payroll goldens were worked with Monday-to-Saturday weeks (PLAN F2), so the world keeps them past the shop's change
- * to Friday-to-Thursday on Oct 9, 2026, unless `fridayWeeks` (the setting as shipped).
+ * to Friday-to-Thursday on Oct 9, 2026, unless `fridayWeeks` (the setting as shipped); and 1–15 / 16–end semi-monthly
+ * periods past the 10th/25th cut-offs of Oct 16, 2026, unless `cutoff1025`.
  */
-export async function world(date: string, { fridayWeeks = false } = {}) {
+export async function world(date: string, { fridayWeeks = false, cutoff1025 = false } = {}) {
   const env = await createTestEnv(`${date}T02:00:00Z`); // 10:00 in Manila
   if (!fridayWeeks) {
     env.db.prepare(`INSERT INTO settings (key, effective_from, value_json, reason, created_at) VALUES ('pay.week_start', '2026-10-09', '"monday"', 'Payroll goldens: Monday-to-Saturday weeks', ?)`)
+      .run(`${date}T10:00:00.000+08:00`);
+  }
+  // Likewise the semi-monthly goldens keep 1–15 and 16–end past the change to the 10th/25th cut-offs on Oct 16, 2026.
+  if (!cutoff1025) {
+    env.db.prepare(`INSERT INTO settings (key, effective_from, value_json, reason, created_at) VALUES ('pay.semi_monthly_cutoff', '2026-10-16', '"calendar"', 'Payroll goldens: 1–15 and 16–end', ?)`)
       .run(`${date}T10:00:00.000+08:00`);
   }
   encoderOwnDefaults(env); // the payroll tests' encoder sees no payroll

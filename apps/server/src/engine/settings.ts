@@ -65,6 +65,10 @@ export const SETTINGS = {
     label: 'The day the weekly piece payroll starts: Monday (to Saturday) or Friday (to Thursday) (PLAN F2; Friday from Oct 9, 2026)',
     schema: z.enum(['monday', 'friday']),
   },
+  'pay.semi_monthly_cutoff': {
+    label: 'Semi-monthly pay periods: 1–15 and 16–end (calendar), or 26th–10th and 11th–25th, paid the 15th and month end (10_25; from Oct 16, 2026)',
+    schema: z.enum(['calendar', '10_25']),
+  },
   'tax.dividend_final_tax_bp': {
     label: 'Final tax Virtus withholds on cash dividends to individual stockholders, in basis points (1000 = 10%, PLAN D5 DIV)',
     schema: z.number().int().min(0).max(5000),
