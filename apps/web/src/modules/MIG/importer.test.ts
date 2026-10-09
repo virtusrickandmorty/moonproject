@@ -416,3 +416,19 @@ describe('web client for the importer screens', () => {
     await env.app.close();
   });
 });
+
+describe('CSV templates (the owner\'s request, Oct 2026)', () => {
+  it('each template is read as its own kind, with every column one the importer takes', async () => {
+    const { TEMPLATES, templateCsv } = await import('./importer.ts');
+    const { parseCSV, validateRow } = await import('../../../../server/src/modules/MIG/csv.ts');
+    for (const kind of ['customer', 'measurement', 'employee', 'piece_rate'] as const) {
+      const { objects } = parseCSV(templateCsv(kind));
+      expect(objects, kind).toHaveLength(1);
+      expect(rowTypeOf(objects[0]!), kind).toBe(kind);
+      expect(Object.keys(objects[0]!)).toEqual(TEMPLATES[kind].rows[0]);
+      // Only the owner's confirmations the importer always asks for: nothing in the example row is wrong.
+      expect(validateRow(objects[0]!).issues.filter((i) => !/requires owner confirmation/.test(i)), kind).toEqual([]);
+    }
+    expect(templateCsv('customer')).toContain('"1 Sample Street, Manila"'); // a cell with a comma is quoted
+  });
+});

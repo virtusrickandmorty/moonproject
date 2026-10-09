@@ -17,6 +17,37 @@ export const KINDS: { kind: MigKind; label: string; columns: string; holds: stri
 ];
 
 /**
+ * A blank file to fill in for each kind (the owner's request, Oct 2026): the importer's own column names, and one made-up
+ * row showing how a cell is written. Delete the example row before uploading. Columns left blank are fine where the
+ * import has a default (MIG/commit.ts): Kind person or organization; Cost_Centre production or office; Pay_Type piece,
+ * daily, mixed or monthly; Operation a production step code; measurements in inches, exact to tenths.
+ */
+export const TEMPLATES: Record<MigKind, { file: string; rows: string[][] }> = {
+  customer: { file: 'customers-template.csv', rows: [
+    ['Legacy_ID', 'Kind', 'Customer_Name', 'Registered_Name', 'TIN', 'Email', 'Phone', 'Address', 'Notes'],
+    ['C-0001', 'organization', 'Sample Academy', 'Sample Academy Inc.', '000-123-456-000', 'office@example.com', '09170000000', '1 Sample Street, Manila', 'Example row: delete it'],
+  ] },
+  measurement: { file: 'measurements-template.csv', rows: [
+    ['Measurement_ID', 'Customer_ID', 'Customer_Name', 'Group_Name', 'Wearer_Name', 'Upper_Size', 'Lower_Size',
+      'Shoulder', 'Chest', 'Upper_Waist', 'Collar', 'Bust_Point', 'Figure_Point', 'Bust_Distance', 'Arm_Hole', 'Sleeve_Hole', 'Sleeve_Length', 'Upper_Length',
+      'Lower_Waist', 'Hips', 'Crotch', 'Thigh', 'Calf', 'Ankle', 'Lower_Length', 'Remarks'],
+    ['M-0001', 'C-0001', 'Sample Academy', 'Grade 10 Section A', 'Ana Reyes', 'M', 'M',
+      '15.5', '34', '28', '14', '', '', '', '17', '12', '22.5', '26', '28', '36', '', '21', '14', '9', '38', 'Example row: delete it'],
+  ] },
+  employee: { file: 'employees-template.csv', rows: [
+    ['Employee_ID', 'Employee_Name', 'Position', 'Cost_Centre', 'Hire_Date', 'Pay_Type', 'Daily_Rate', 'Monthly_Rate', 'Pay_Group', 'Workweek_Days', 'Is_MWE'],
+    ['E-0001', 'Juan Dela Cruz', 'Sewer', 'production', '2024-02-11', 'daily', '645.00', '', 'WEEKLY_PIECE', '6', 'no'],
+  ] },
+  piece_rate: { file: 'piece-rates-template.csv', rows: [
+    ['Rate_ID', 'Garment_Type', 'Operation', 'Complexity', 'Rate', 'Effective_From'],
+    ['R-0001', 'T-shirt', 'SEWING', 'standard', '12.50', '2026-10-01'],
+  ] },
+};
+const csvCell = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+/** A template's text, as the importer reads it (comma-separated, quotes where needed). */
+export const templateCsv = (kind: MigKind) => `${TEMPLATES[kind].rows.map((r) => r.map(csvCell).join(',')).join('\r\n')}\r\n`;
+
+/**
  * The old Google sheet's own tabs, downloaded as they are (File > Download > Comma-separated values, one tab at a time).
  * The server renames their columns to the importer's own (MIG/sheet.ts `sheetTabOf`, same rules); no renaming by hand.
  */
