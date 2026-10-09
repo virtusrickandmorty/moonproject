@@ -6,7 +6,7 @@ import { formatPeso as peso } from '@moonproject/shared';
 import type { LoanKind, PayEmployee, PayGroup, PayLoan, PayRunInput, PayThirteenthInput, Payslips, PriorAmounts } from '../../api.ts';
 import { cents } from '../COL/money.ts';
 
-export const GROUP_LABEL: Record<PayGroup, string> = { WEEKLY_PIECE: 'Weekly (piece rate)', SEMI_DAILY: 'Semi-monthly (daily paid)', SEMI_MONTHLY: 'Semi-monthly (monthly staff)' };
+export const GROUP_LABEL: Record<PayGroup, string> = { WEEKLY_PIECE: 'Weekly (piece rate)', WEEKLY_DAILY: 'Weekly (daily paid)', SEMI_DAILY: 'Semi-monthly (daily paid)', SEMI_MONTHLY: 'Semi-monthly (monthly staff)' };
 
 export const LOAN_KIND: Record<LoanKind, string> = { SSS_SALARY: 'SSS salary loan', SSS_CALAMITY: 'SSS calamity loan', HDMF_MPL: 'Pag-IBIG multi-purpose loan', HDMF_CALAMITY: 'Pag-IBIG calamity loan' };
 /** A loan deduction typed on the run: blank amount = the plan; 0 skips the month. A note is needed either way. */

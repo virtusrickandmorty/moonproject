@@ -9,7 +9,8 @@ import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 
 export const PAY_TYPES = ['daily', 'piece', 'monthly', 'mixed'] as const;
-export const PAY_GROUPS = ['WEEKLY_PIECE', 'SEMI_DAILY', 'SEMI_MONTHLY'] as const;
+// WEEKLY_DAILY: daily-rated staff paid every week, in their own runs (the owner's decision, Oct 9, 2026).
+export const PAY_GROUPS = ['WEEKLY_PIECE', 'WEEKLY_DAILY', 'SEMI_DAILY', 'SEMI_MONTHLY'] as const;
 export type PayType = (typeof PAY_TYPES)[number];
 export type PayGroup = (typeof PAY_GROUPS)[number];
 export const MAX_DAILY_CENTS = 10_000_00; // ₱10,000 a day: a typo guard

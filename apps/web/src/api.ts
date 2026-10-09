@@ -329,7 +329,7 @@ export interface EmployeeRecord extends EmployeeRow {
 }
 export interface PayProfile {
   id: number; effectiveFrom: string; payType: 'daily' | 'piece' | 'monthly' | 'mixed'; dailyRateCents: number | null; monthlyRateCents: number | null;
-  payGroup: 'WEEKLY_PIECE' | 'SEMI_DAILY' | 'SEMI_MONTHLY'; workweekDays: 5 | 6; isMwe: boolean; reason: string; createdAt: string;
+  payGroup: 'WEEKLY_PIECE' | 'WEEKLY_DAILY' | 'SEMI_DAILY' | 'SEMI_MONTHLY'; workweekDays: 5 | 6; isMwe: boolean; reason: string; createdAt: string;
 }
 export interface EmployeeDetail {
   employee: EmployeeRecord;
@@ -365,7 +365,7 @@ export interface BiometricDay {
 export interface BiometricPreview { from: string; to: string; people: { userId: string; name: string; department: string; employeeId: string | null; suggestedEmployeeId: string | null; days: BiometricDay[] }[] }
 export type AttendanceSave = { employeeId: string; date: string; status: AttendanceStatus; otMinutes?: number; nightMinutes?: number; nightOtMinutes?: number; note?: string };
 /** Payroll (PAY) and cash advances (CA): every figure is worked out by the server. */
-export type PayGroup = 'WEEKLY_PIECE' | 'SEMI_DAILY' | 'SEMI_MONTHLY';
+export type PayGroup = 'WEEKLY_PIECE' | 'WEEKLY_DAILY' | 'SEMI_DAILY' | 'SEMI_MONTHLY';
 export interface PayLine { lineNo: number; kind: string; description: string; qty: number; rateCents: number; multiplierBp: number; amountCents: number; jobOrderId?: string; reason?: string }
 export interface PayEmployee {
   employeeId: string; code: string; name: string; costCentre: string; payType: string; isMwe: boolean; lines: PayLine[]; grossCents: number; pieceCents: number; taxableCents: number;

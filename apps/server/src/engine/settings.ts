@@ -62,7 +62,7 @@ export const SETTINGS = {
     schema: z.number().int().min(0).max(5000),
   },
   'pay.week_start': {
-    label: 'The day the weekly piece payroll starts: Monday (to Saturday) or Friday (to Thursday) (PLAN F2; Friday from Oct 9, 2026)',
+    label: 'The day the weekly payrolls (piece rate and daily paid) start: Monday (to Saturday) or Friday (to Thursday) (PLAN F2; Friday from Oct 2, 2026)',
     schema: z.enum(['monday', 'friday']),
   },
   'pay.semi_monthly_cutoff': {
