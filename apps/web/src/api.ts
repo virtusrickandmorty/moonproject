@@ -320,7 +320,8 @@ export interface RateTable { asOf: string; current: PieceRate[]; history: PieceR
 export interface EmployeeRow { id: string; code: string; fullName: string; position: string | null; department: string | null; costCentre: string; isActive: boolean; hireDate: string; separatedOn: string | null }
 export interface Statutory { sss: boolean; phic: boolean; hdmf: boolean; wtax: boolean }
 /** A person's own side-menu order: the groups, and the screens' addresses within each group. */
-export interface MenuOrder { groups: string[]; items: Record<string, string[]> }
+/** subs: the sub-categories' order within each group (optional: an older server or saved order has none). */
+export interface MenuOrder { groups: string[]; items: Record<string, string[]>; subs?: Record<string, string[]> }
 export interface EmployeeRecord extends EmployeeRow {
   separationReason: string | null; birthday: string | null; statutory: Statutory; statutoryOffReason: string | null;
   sssNo: string | null; phicNo: string | null; hdmfNo: string | null; tin: string | null;

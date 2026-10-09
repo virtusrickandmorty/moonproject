@@ -251,9 +251,13 @@ export function subOf(item: Pick<MenuItem, 'group' | 'path'>): string {
   }
   return best?.[0] ?? MORE;
 }
-/** A group's items by sub-category, in SUBS order ("More" last); each keeps its order within (a person's own order too). */
-export function sectionsOf(group: MenuGroup, items: MenuItem[]): { sub: string; items: MenuItem[] }[] {
-  const order = [...(SUBS[group] ?? []).map(([s]) => s), MORE];
+/**
+ * A group's items by sub-category: in the person's own order of the sub-categories (`subOrder`, Arrange menu), then the
+ * usual SUBS order ("More" last); each keeps its order within (a person's own order too).
+ */
+export function sectionsOf(group: MenuGroup, items: MenuItem[], subOrder: readonly string[] = []): { sub: string; items: MenuItem[] }[] {
+  const usual = [...(SUBS[group] ?? []).map(([s]) => s), MORE];
+  const order = [...subOrder.filter((s) => usual.includes(s)), ...usual.filter((s) => !subOrder.includes(s))];
   return order.map((sub) => ({ sub, items: items.filter((i) => (i.sub ?? subOf(i)) === sub) })).filter((s) => s.items.length > 0);
 }
 
