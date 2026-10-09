@@ -17,6 +17,8 @@ import { Booklet, JoPicker } from './parts.tsx';
 import { ID_SEEN, allLeft, emptyRelease, readyWearers, releaseInput, type ReleaseValues } from './forms.ts';
 
 const money = `${inputClass} text-right tabular-nums`;
+/** Ticked to start with: only the lines that may go out now (the owner's request, Oct 2026: what is not ready is greyed). */
+const onlyReady = (lines: JoStatus['lines']) => Object.fromEntries(Object.entries(allLeft(lines)).filter(([n]) => lines.find((l) => l.lineNo === Number(n))?.ready !== false));
 const READY = ['ready', 'partially_released'];
 
 function ConfirmDialog(p: { preview: ReleasePreview; invoiceNumber: string | null; onRecord: (key: string) => Promise<unknown>; onClose: () => void }) {
@@ -54,7 +56,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
     api.joStatus(id).then((s) => {
       setJo({ id, label: `${s.jobOrder.number} · ${s.jobOrder.customerName}` });
       setStatus(s);
-      setV((old) => ({ ...emptyRelease(id), claimedBy: old.claimedBy, idSeen: old.idSeen, ...readyWearers(s.lines, allLeft(s.lines)) }));
+      setV((old) => ({ ...emptyRelease(id), claimedBy: old.claimedBy, idSeen: old.idSeen, ...readyWearers(s.lines, onlyReady(s.lines)) }));
     }, fail);
   useEffect(() => {
     const id = new URLSearchParams(location.search).get('jo');
@@ -122,19 +124,21 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
                     qtys: { ...v.qtys, [l.lineNo]: next.length ? String((l.wearers ?? []).filter((w) => next.includes(w.rowNo)).reduce((n, w) => n + w.qty, 0)) : '' } });
                   const free = (l.wearers ?? []).filter((w) => !w.releasedOn);
                   const readyFree = free.filter((w) => w.ready);
+                  // Only what is ready can be ticked (the owner's request, Oct 2026); a line or wearer still being made is greyed.
+                  const closedLine = l.leftQty === 0 || l.ready === false;
                   return (
                     <Fragment key={l.lineNo}>
                     <tr className={`grid gap-2 rounded border p-3 sm:table-row sm:border-0 sm:p-0 ${l.leftQty === 0 || l.ready === false ? 'text-slate-400' : ''}`}>
                       <td className="py-1">
-                        <label className="flex items-center gap-2"><span className="sm:hidden">Release line {l.lineNo}</span><input type="checkbox" aria-label={`Release line ${l.lineNo}`} disabled={l.leftQty === 0} checked={ticked}
-                          onChange={(e) => (e.target.checked ? (readyFree.length ? tick(readyFree.map((w) => w.rowNo)) : set({ qtys: { ...v.qtys, [l.lineNo]: String(l.leftQty) } })) : set({ qtys: { ...v.qtys, [l.lineNo]: '' }, wearers: { ...v.wearers, [l.lineNo]: [] } }))} /></label>
+                        <label className="flex items-center gap-2"><span className="sm:hidden">Release line {l.lineNo}</span><input type="checkbox" aria-label={`Release line ${l.lineNo}`} disabled={closedLine} checked={ticked}
+                          onChange={(e) => (e.target.checked ? (readyFree.length ? tick(readyFree.map((w) => w.rowNo)) : set({ qtys: { ...v.qtys, [l.lineNo]: String(Math.min(l.leftQty, l.readyQty ?? l.leftQty)) } })) : set({ qtys: { ...v.qtys, [l.lineNo]: '' }, wearers: { ...v.wearers, [l.lineNo]: [] } }))} /></label>
                       </td>
                       <td className="py-1">{l.lineNo}. {l.description}{l.leftQty > 0 && l.ready === false && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">Still being made</span>}
                         {l.leftQty > 0 && l.ready && l.readyQty !== undefined && l.readyQty < l.leftQty && <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900">{l.readyQty} of {l.leftQty} ready</span>}</td>
                       <td className="py-1 text-right tabular-nums"><span className="mr-2 sm:hidden">Ordered</span>{l.qty}</td>
                       <td className="py-1 text-right tabular-nums"><span className="mr-2 sm:hidden">Released</span>{l.releasedQty}</td>
                       <td className="py-1">
-                        {l.leftQty > 0 ? <Field label="Pieces now" hint={mine.length ? 'From the wearers ticked' : undefined}><input aria-label={`Pieces of line ${l.lineNo}`} inputMode="numeric" readOnly={mine.length > 0} className={money} value={typedQty} onChange={(e) => set({ qtys: { ...v.qtys, [l.lineNo]: e.target.value } })} /></Field> : <span className="block text-right">All out</span>}
+                        {l.leftQty > 0 ? <Field label="Pieces now" hint={mine.length ? 'From the wearers ticked' : undefined}><input aria-label={`Pieces of line ${l.lineNo}`} inputMode="numeric" readOnly={mine.length > 0} disabled={l.ready === false} className={money} value={typedQty} onChange={(e) => set({ qtys: { ...v.qtys, [l.lineNo]: e.target.value } })} /></Field> : <span className="block text-right">All out</span>}
                       </td>
                     </tr>
                     {l.leftQty > 0 && (l.wearers?.length ?? 0) > 0 && (
@@ -152,8 +156,8 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
                             <ul className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
                               {(l.wearers ?? []).map((w) => (
                                 <li key={w.rowNo}>
-                                  <label className={`flex items-center gap-2 rounded px-2 py-1 text-sm ${w.releasedOn ? 'text-slate-400' : 'hover:bg-white'}`}>
-                                    <input type="checkbox" aria-label={`Release ${w.wearerName}`} disabled={!!w.releasedOn} checked={!!w.releasedOn || mine.includes(w.rowNo)}
+                                  <label className={`flex items-center gap-2 rounded px-2 py-1 text-sm ${w.releasedOn || w.ready === false ? 'text-slate-400' : 'hover:bg-white'}`}>
+                                    <input type="checkbox" aria-label={`Release ${w.wearerName}`} disabled={!!w.releasedOn || w.ready === false || l.ready === false} checked={!!w.releasedOn || mine.includes(w.rowNo)}
                                       onChange={(e) => tick(e.target.checked ? [...mine, w.rowNo] : mine.filter((x) => x !== w.rowNo))} />
                                     <span className="min-w-0 flex-1 truncate">{w.wearerName}<span className="text-slate-500">{w.size ? ` · ${w.size}` : ''}{w.jerseyNumber ? ` · #${w.jerseyNumber}` : ''}{w.qty > 1 ? ` · ${w.qty} pcs` : ''}</span></span>
                                     {w.releasedOn ? <span className="text-xs">out on {w.releasedOn}</span>
