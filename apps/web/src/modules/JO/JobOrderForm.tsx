@@ -27,7 +27,7 @@ import {
 } from './forms.ts';
 
 const money = `${inputClass} text-right tabular-nums`;
-const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'];
+export const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL', '4XL', '5XL'];
 const MEASURED = '__measured';
 
 /** A plus beside two people: add a new customer. */
@@ -63,7 +63,7 @@ function NewCustomerButton({ me, onAdded }: { me: Me; onAdded: (c: Picked, looka
   );
 }
 
-function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWearers | null; sizes: string[]; onChange: (roster: RosterEdit[]) => void }) {
+export function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWearers | null; sizes: string[]; onChange: (roster: RosterEdit[]) => void }) {
   const [paste, setPaste] = useState<string | null>(null);
   const [pasteErrors, setPasteErrors] = useState<string[]>([]);
   const rows = p.line.roster;
