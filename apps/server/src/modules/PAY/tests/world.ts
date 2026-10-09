@@ -18,8 +18,10 @@ import { saveAttendance } from '../../EMP/time.ts';
 export async function world(date: string, { fridayWeeks = false, cutoff1025 = false } = {}) {
   const env = await createTestEnv(`${date}T02:00:00Z`); // 10:00 in Manila
   if (!fridayWeeks) {
-    env.db.prepare(`INSERT INTO settings (key, effective_from, value_json, reason, created_at) VALUES ('pay.week_start', '2026-10-09', '"monday"', 'Payroll goldens: Monday-to-Saturday weeks', ?)`)
-      .run(`${date}T10:00:00.000+08:00`);
+    for (const day of ['2026-10-02', '2026-10-09']) { // the shop's Friday weeks start Oct 2 (PAY 0007), first set for Oct 9 (0017)
+      env.db.prepare(`INSERT INTO settings (key, effective_from, value_json, reason, created_at) VALUES ('pay.week_start', ?, '"monday"', 'Payroll goldens: Monday-to-Saturday weeks', ?)`)
+        .run(day, `${date}T10:00:00.000+08:00`);
+    }
   }
   // Likewise the semi-monthly goldens keep 1–15 and 16–end past the change to the 10th/25th cut-offs on Oct 16, 2026.
   if (!cutoff1025) {
