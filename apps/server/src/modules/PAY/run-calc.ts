@@ -75,12 +75,52 @@ export const addDays = (d: string, n: number) => {
 };
 const daysBetween = (from: string, to: string) => Math.round((Date.UTC(+to.slice(0, 4), +to.slice(5, 7) - 1, +to.slice(8)) - Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8))) / 86_400_000) + 1;
 
-/** The period a start date opens (F2): Monday to Saturday for the weekly piece group, 1–15 or 16–end otherwise; undefined if it opens none. */
-export function periodEndOf(payGroup: PayGroup, start: string): string | undefined {
-  if (payGroup === 'WEEKLY_PIECE') return new Date(`${start}T00:00:00Z`).getUTCDay() === 1 ? addDays(start, 5) : undefined;
+/**
+ * The weekly piece payroll's week (setting pay.week_start, the owner's decision, Oct 9, 2026): Monday to Saturday, or
+ * Friday to Thursday, by the version in force on the period's first day. `changes` are the days a version takes effect.
+ */
+export interface WeekRule { startsOn: (day: string) => 'monday' | 'friday'; changes: readonly string[] }
+/** Monday to Saturday throughout (PLAN F2 before the change): what a caller without the shop's settings gets. */
+export const MONDAY_WEEKS: WeekRule = { startsOn: () => 'monday', changes: [] };
+/** The shop's week rule, from its pay.week_start versions. */
+export function weekRuleOf(db: Db): WeekRule {
+  const versions = new Map<string, 'monday' | 'friday'>();
+  for (const r of db.prepare(`SELECT effective_from AS f, value_json AS v FROM settings WHERE key = 'pay.week_start' ORDER BY effective_from, id`).all() as { f: string; v: string }[]) {
+    versions.set(r.f, JSON.parse(r.v) as 'monday' | 'friday'); // a later row on the same date wins
+  }
+  const list = [...versions].sort(([a], [b]) => a.localeCompare(b));
+  // A change is a version whose day differs from the one before it (a repeat of the same day changes nothing).
+  const changes = list.filter(([, v], i) => i > 0 && v !== list[i - 1]![1]).map(([f]) => f);
+  return { startsOn: (day) => list.filter(([f]) => f <= day).at(-1)?.[1] ?? 'monday', changes };
+}
+const weekday = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay();
+
+/**
+ * The period a start date opens (F2): for the weekly piece group Monday to Saturday or Friday to Thursday (WeekRule);
+ * the day a new week rule takes effect opens a short period to that rule's last weekday, and a week reaching the change
+ * ends the day before it, so no day is in two periods. 1–15 or 16–end otherwise. Undefined if the date opens none.
+ */
+export function periodEndOf(payGroup: PayGroup, start: string, rule: WeekRule = MONDAY_WEEKS): string | undefined {
+  if (payGroup === 'WEEKLY_PIECE') {
+    const friday = rule.startsOn(start) === 'friday';
+    if (weekday(start) !== (friday ? 5 : 1) && !rule.changes.includes(start)) return undefined;
+    const end = addDays(start, ((friday ? 4 : 6) - weekday(start) + 7) % 7);
+    const next = rule.changes.find((c) => c > start);
+    return next && end >= next ? addDays(next, -1) : end;
+  }
   const day = start.slice(8);
   if (day === '01') return `${start.slice(0, 8)}15`;
   if (day === '16') return addDays(`${addDays(`${start.slice(0, 8)}28`, 4).slice(0, 8)}01`, -1); // the last day of the month
+  return undefined;
+}
+
+/** The first day of the weekly piece period holding a day, or undefined (a Sunday under Monday-to-Saturday weeks). */
+export function weekStartOf(day: string, rule: WeekRule = MONDAY_WEEKS): string | undefined {
+  for (let k = 0; k < 7; k++) {
+    const start = addDays(day, -k);
+    const end = periodEndOf('WEEKLY_PIECE', start, rule);
+    if (end) return end >= day ? start : undefined;
+  }
   return undefined;
 }
 

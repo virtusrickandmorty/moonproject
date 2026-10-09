@@ -15,6 +15,7 @@ import { fixedClock, today } from '../clock.ts';
 import { openDb, type Db } from '../db/driver.ts';
 import { loadModules } from '../../modules/load.ts';
 import { runInvariants } from '../../engine/ledger/invariants.ts';
+import { periodEndOf, weekRuleOf, weekStartOf } from '../../modules/PAY/run-calc.ts';
 import { SESSION_COOKIE } from '../../engine/security/sessions.ts';
 
 export const DAY_MS = 86_400_000;
@@ -270,19 +271,18 @@ export async function createPracticeData(dbPath: string, days: number, start = '
         supplierInvoiceNo: `UTIL-${serial}`, supplierInvoiceDate: date,
       });
 
-      // Cutoffs close after the day's work. A weekly piece run is recorded on
-      // Saturdays; the office run is recorded on the 15th and month end.
+      // Cutoffs close after the day's work. A weekly piece run is recorded on the
+      // last day of its week (Saturday, or Thursday once weeks start on Friday);
+      // the office run is recorded on the 15th and month end.
       clock.set(new Date(START + day * DAY_MS + 7 * 3_600_000).toISOString());
       accountant = await signIn(app, 'accountant', passwords.accountant);
       encoder = await signIn(app, 'encoder', passwords.encoder);
-      const weekday = new Date(START + day * DAY_MS).getUTCDay();
       const dayOfMonth = Number(date.slice(8));
       const monthEnd = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0)).getUTCDate();
       const runs: { payGroup: string; periodStart: string }[] = [];
-      if (weekday === 6) {
-        const monday = manilaDate(new Date(START + (day - 5) * DAY_MS));
-        runs.push({ payGroup: 'WEEKLY_PIECE', periodStart: monday });
-      }
+      const rule = weekRuleOf(db);
+      const week = weekStartOf(date, rule);
+      if (week && periodEndOf('WEEKLY_PIECE', week, rule) === date) runs.push({ payGroup: 'WEEKLY_PIECE', periodStart: week });
       if (dayOfMonth === 15 || dayOfMonth === monthEnd) {
         runs.push({ payGroup: 'SEMI_MONTHLY', periodStart: `${date.slice(0, 8)}${dayOfMonth === 15 ? '01' : '16'}` });
       }
