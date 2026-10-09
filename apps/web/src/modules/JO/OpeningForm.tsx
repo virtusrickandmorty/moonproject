@@ -8,12 +8,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, type CatItem, type CustomerWearers, type DocTypeInfo, type OpeningStatus } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso, showDate, useCloseDialog } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { cents } from '../COL/money.ts';
 import { CustomerPicker, Errors, Figures, useLive, type Picked } from '../COL/parts.tsx';
 import { KINDS } from '../QS/lines.ts';
+import { SalesActions } from './entry.tsx';
 import { ItemSearch } from './parts.tsx';
 import { RosterGrid, SIZES } from './JobOrderForm.tsx';
 import { KIND_OF_CLASS, blankLine, emptyJo, emptyJoLine, joInput, lineQty, type JoLineRow, type RosterInput } from './forms.ts';
@@ -50,6 +51,7 @@ export function OpeningJobOrderForm({ type, mode }: { type: DocTypeInfo; mode: F
   const latestItem = useRef(item);
   latestItem.current = item;
   const itemForm = useRef<HTMLDivElement>(null);
+  const closeDialog = useCloseDialog(); // opened over the list: the dialog shows the title, and Close instead of Back
   const r = useRecord(type, mode, (d) => {
     const back = openingValues(d.input as unknown as OpeningInput);
     setV({ ...back, lines: back.lines.filter((l) => !emptyLine(l)) });
@@ -105,10 +107,10 @@ export function OpeningJobOrderForm({ type, mode }: { type: DocTypeInfo; mode: F
 
   if (r.gate) return r.gate;
   return (
-    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && record()} className="space-y-4">
+    <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && record()} className="space-y-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-0">
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)]">
         <div className="min-w-0 space-y-4">
-          <h1 className="text-2xl font-semibold">{r.title('New opening job order')}</h1>
+          {!closeDialog && <h1 className="text-2xl font-semibold">{r.title('New opening job order')}</h1>}
           {r.top}
           {closed && <Notice>{closed}</Notice>}
           {noDate && <Notice tone="warning">{noDate}</Notice>}
@@ -220,10 +222,10 @@ export function OpeningJobOrderForm({ type, mode }: { type: DocTypeInfo; mode: F
             {pending && <Notice tone="warning">{editing === null ? 'The item in the form is not added yet: press Add to order (Record adds it too).' : `Item ${editing + 1} is being changed: press Update item (Record applies it too).`}</Notice>}
           </Panel>
           <Errors list={errors} show={r.touched} />
-          <div className="flex gap-2">
+          <SalesActions total={totalCents - deposits} label="Balance due">
             <Button tone="primary" disabled={!type.canPost || !!closed} onClick={record} title="Ctrl+Enter">Record</Button>
-            <Button onClick={() => history.back()}>Back</Button>
-          </div>
+            {closeDialog ? <Button onClick={closeDialog}>Close</Button> : <Button onClick={() => history.back()}>Back</Button>}
+          </SalesActions>
         </aside>
       </div>
       {r.dialog}
