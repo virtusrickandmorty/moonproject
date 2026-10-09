@@ -16,6 +16,7 @@ import { manilaDate } from '@moonproject/shared';
 import { buildApp } from '../../app.ts';
 import { fixedClock, today } from '../clock.ts';
 import { openDb, type Db } from '../db/driver.ts';
+import { periodEndOf, periodRuleOf, semiStartOf } from '../../modules/PAY/run-calc.ts';
 import { loadModules } from '../../modules/load.ts';
 import { runInvariants } from '../../engine/ledger/invariants.ts';
 import {
@@ -269,8 +270,10 @@ export async function createPerfData(dbPath: string, given: Partial<PerfOptions>
       encoder = await login('encoder');
       const dayOfMonth = Number(date.slice(8));
       const monthEnd = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0)).getUTCDate();
-      if (dayOfMonth === 15 || dayOfMonth === monthEnd) {
-        const run = await record(accountant, 'pay.run', { payGroup: 'SEMI_MONTHLY', periodStart: `${date.slice(0, 8)}${dayOfMonth === 15 ? '01' : '16'}` });
+      const rule = periodRuleOf(db);
+      const half = semiStartOf(date, rule); // the run closes on its period's last day (the 15th and month end, or the 10th and 25th)
+      if (half && periodEndOf('SEMI_MONTHLY', half, rule) === date) {
+        const run = await record(accountant, 'pay.run', { payGroup: 'SEMI_MONTHLY', periodStart: half });
         const slips = ok(await accountant.get(`/api/pay/runs/${run.id}/payslips`), 'payroll slips');
         const people = slips.employees as { employeeId: string; netCents: number }[];
         const total = people.reduce((sum, person) => sum + person.netCents, 0);

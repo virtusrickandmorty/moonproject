@@ -65,8 +65,8 @@ describe('year-end client calls against the server', () => {
     const row = await api.addPriorPay({ employeeId: olga, year: 2026, source: 'before', grossCents: 33_000_000, benefitsCents: 0, deMinimisCents: 0, sssCents: 1_650_000, phicCents: 825_000, hdmfCents: 220_000, otherNontaxCents: 0, taxableCents: 30_305_000, wtaxCents: 4_043_245 });
     expect((await api.priorPay({ employeeId: olga })).map((p) => p.id)).toEqual([row.id]);
     expect((await api.updatePriorPay(row.id, row.version, { note: 'From the old payroll (made up)' })).version).toBe(2);
-    // Only the 16–31 run is recorded: with ₱40,432.45 withheld before Virtus, the year-end adjustment refunds some of it.
-    const input = runInput('SEMI_MONTHLY', '2026-12-16', [], {}, {}, {}, true).input;
+    // Only the Dec 11–25 run is recorded (cut-offs on the 10th and 25th from Oct 16, 2026): with ₱40,432.45 withheld before Virtus, the year-end adjustment refunds some of it.
+    const input = runInput('SEMI_MONTHLY', '2026-12-11', [], {}, {}, {}, true).input;
     const preview = await api.preview('pay.run', input);
     const e = (preview.doc as PayRunDoc).employees[0]!;
     expect(e.yearEnd?.refundCents).toBeGreaterThan(0);
