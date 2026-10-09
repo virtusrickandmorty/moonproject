@@ -62,7 +62,7 @@ test('payroll: an employee, a week of attendance, the run, its release and the p
   await page.getByRole('link', { name: 'Payroll Runs' }).click();
   await page.getByRole('button', { name: '+ New Payroll Run' }).click();
   await page.getByLabel('Pay group').selectOption({ label: 'Weekly (piece rate)' });
-  await page.getByLabel('Period').selectOption(start);
+  await page.getByLabel('Date from').fill(start); // takes the week starting that day
   const row = page.getByRole('region', { name: 'Erin Tailor', exact: true });
   await expect(row).toContainText('₱');
   const gross = await row.getByText('Gross', { exact: false }).first().locator('b').innerText();

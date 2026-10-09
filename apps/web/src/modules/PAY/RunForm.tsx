@@ -49,6 +49,14 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
   }, []);
 
   const period = periods?.find((p) => p.periodStart === periodStart);
+  const oldest = periods?.reduce((m, p) => (p.periodStart < m ? p.periodStart : m), periods[0]?.periodStart ?? '') || undefined;
+  const newest = periods?.reduce((m, p) => (p.periodEnd > m ? p.periodEnd : m), '') || undefined;
+  const pickDay = (day: string) => {
+    const hit = periods?.find((p) => p.periodStart <= day && day <= p.periodEnd) ?? null;
+    setPicked(hit);
+    setDayNote(!day || hit ? '' : `No ${GROUP_LABEL[payGroup]} period that has ended holds ${showDate(day)}.`);
+    setPeriodStart(hit && !hit.recorded ? hit.periodStart : '');
+  };
   const canYearEnd = endsInDecember(period?.periodEnd) && !!me?.permissions.includes('pay.yearend.run');
   const { input, errors } = runInput(payGroup, periodStart, rows, advances, skip, loanRows, yearEnd && canYearEnd, unusedLeave && canYearEnd);
   // PAY-1: dated the period's last day when that has passed and the user may backdate, so its pay is booked in that month.
@@ -56,6 +64,11 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
   const live = useLive(JSON.stringify([input, bookOn]), !!periodStart && errors.length === 0, () => api.preview(type.key, input, bookOn));
   const [last, setLast] = useState<PayRunDoc | null>(null); // kept while a reason is being typed
   const [names, setNames] = useState<Record<string, string>>({});
+  // The day picked on Date from or Date to, and the period holding it (a recorded one is shown, not chosen). Kept last:
+  // the form tests set the earlier ones by position.
+  const [picked, setPicked] = useState<PayPeriod | null>(null);
+  const [dayNote, setDayNote] = useState('');
+  const shown = picked ?? period ?? null;
   useEffect(() => {
     const doc = live?.doc as PayRunDoc | undefined;
     if (!doc) return;
@@ -102,17 +115,25 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
               {Object.entries(GROUP_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
           </Field>
-          <Field label="Period" required hint="Periods that have ended. A recorded one must be cancelled to redo it.">
-            <select className={inputClass} value={periodStart} onChange={(e) => setPeriodStart(e.target.value)}>
-              <option value="">{periods ? 'Pick the period' : 'Loading…'}</option>
-              {periods?.map((p) => (
-                <option key={p.periodStart} value={p.periodStart} disabled={!!p.recorded}>
-                  {showDate(p.periodStart)} to {showDate(p.periodEnd)} · {p.recorded ? `recorded as ${p.recorded.number}` : `${p.employees} ${p.employees === 1 ? 'person' : 'people'}`}
-                </option>
-              ))}
-            </select>
-          </Field>
+          {/* Date from and Date to (the owner's request, Oct 2026): picking either day takes the pay group's period that holds
+              it (weekly, or the 1st–15th and 16th–end of the month), so the pay rules keep their periods. */}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Date from" required>
+              <input type="date" aria-label="Date from" className={inputClass} value={periodStart} min={oldest} max={newest} disabled={!periods}
+                onChange={(e) => pickDay(e.target.value)} />
+            </Field>
+            <Field label="Date to" required>
+              <input type="date" aria-label="Date to" className={inputClass} value={period?.periodEnd ?? ''} min={oldest} max={newest} disabled={!periods}
+                onChange={(e) => pickDay(e.target.value)} />
+            </Field>
+          </div>
         </div>
+        <p className={`mt-2 text-sm ${shown?.recorded ? 'text-amber-800' : 'text-slate-600'}`}>
+          {!periods ? 'Loading the periods…'
+            : dayNote ? dayNote
+            : shown ? `${showDate(shown.periodStart)} to ${showDate(shown.periodEnd)} · ${shown.recorded ? `already recorded as ${shown.recorded.number}: cancel it to redo it` : `${shown.employees} ${shown.employees === 1 ? 'person' : 'people'}`}`
+            : 'Pick the first or last day of the period. Only periods that have ended can be paid.'}
+        </p>
         {bookOn && <p className="mt-2 text-sm text-slate-600">Dated {bookOn}, the period's last day, so its pay is booked in that month.</p>}
         {canYearEnd && (
           <label className="mt-2 flex items-start gap-2 text-sm">
