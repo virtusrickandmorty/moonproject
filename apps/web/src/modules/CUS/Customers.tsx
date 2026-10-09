@@ -222,13 +222,17 @@ function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
         <option value="">No group</option>{data.groups.filter((g) => g.is_active).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
         <Button disabled={!newPerson.trim()} onClick={() => void action(`/api/cus/customers/${data.id}/people`, { fullName: newPerson.trim(), groupId: groupId || null }).then((ok) => { if (ok) setNewPerson(''); })}>Add wearer</Button></div>}
     </Panel>
-    {person && canManage && person.is_active === 1 && <Panel title={`Edit wearer · ${person.full_name}`}><div className="grid gap-2 sm:grid-cols-2">
+    {/* A wearer opens in its own window (the owner's request, Oct 2026): their name and group, and their measurements. */}
+    {person && <Dialog title={`Wearer · ${person.full_name}`} wide onClose={() => setPerson(null)}>
+    {error && <Notice>{error}</Notice>}
+    {canManage && person.is_active === 1 && <Panel title="Name and group"><div className="grid gap-2 sm:grid-cols-2">
       <Field label="Name"><input className={inputClass} value={personName} onChange={(e) => setPersonName(e.target.value)} /></Field>
       <Field label="Group"><select className={inputClass} value={personGroup} onChange={(e) => setPersonGroup(e.target.value)}>
         <option value="">No group</option>{data.groups.filter((g) => g.is_active).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></Field>
       </div><Button disabled={!personName.trim()} onClick={() => void update(`/api/cus/people/${person.id}`,
         { fullName: personName.trim(), groupId: personGroup || null }, person.version).then((ok) => { if (ok) setPerson(null); })}>Save wearer</Button></Panel>}
-    {person && me.permissions.includes('cus.measure.view') && <Measurements key={person.id} me={me} person={person} canEdit={me.permissions.includes('cus.measure') && person.is_active === 1} onClose={() => setPerson(null)} />}
+    {me.permissions.includes('cus.measure.view') && <Measurements key={person.id} me={me} person={person} canEdit={me.permissions.includes('cus.measure') && person.is_active === 1} onClose={() => setPerson(null)} />}
+    </Dialog>}
   </div>;
 }
 
