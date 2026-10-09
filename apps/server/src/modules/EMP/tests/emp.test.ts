@@ -336,3 +336,15 @@ it('marks piece-rate workers on the attendance grid, so the screen can hide them
   expect(grid.employees.find((e) => e.id === sewer)?.pieceRate).toBe(true);
   expect(grid.employees.find((e) => e.id === clerk)?.pieceRate).toBe(false);
 });
+
+it('switches a holiday off with a reason and back on again (added again; the switched-off row stays as history)', async () => {
+  const list = async () => ((await acct.get('/api/emp/holidays?year=2026')).json() as { holidays: { id: number; date: string; name: string; isActive: boolean }[] }).holidays.filter((h) => h.date === '2026-11-30');
+  const [bonifacio] = await list();
+  expect(bonifacio).toMatchObject({ isActive: true });
+  expect((await acct.post(`/api/emp/holidays/${bonifacio!.id}/deactivate`, { reason: 'Moved by a proclamation (made up)' })).statusCode).toBe(200);
+  const on = await acct.post(`/api/emp/holidays/${bonifacio!.id}/activate`, {});
+  expect(on.statusCode, on.body).toBe(200);
+  expect((await list()).map((h) => [h.name, h.isActive])).toEqual([[bonifacio!.name, false], [bonifacio!.name, true]]);
+  expect((await acct.post(`/api/emp/holidays/${bonifacio!.id}/activate`, {})).json().code).toBe('HOLIDAY_TAKEN'); // the date has its holiday again
+  expect((await acct.post(`/api/emp/holidays/${on.json().id}/activate`, {})).json().code).toBe('ALREADY_ON');
+});
