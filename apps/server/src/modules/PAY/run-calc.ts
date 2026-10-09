@@ -433,6 +433,7 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
   const holidays = new Map(holidaysBetween(db, q.periodStart, q.periodEnd).map((h) => [h.date, h]));
   const endRules = rulesAt(db, q.periodEnd);
   const employees: RunEmployee[] = [];
+  const idle: string[] = []; // weekly piece workers with nothing to pay this week
 
   for (const e of employeesInGroup(db, q.payGroup, q.periodStart, q.periodEnd)) {
     if (q.skipped.has(e.id)) continue;
@@ -448,6 +449,9 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
       built.lines.push(...unusedLeave(db, e.id, to, end, phic));
       built.lines.forEach((l, i) => (l.lineNo = i + 1));
     }
+    // A weekly piece worker with nothing to pay this week (no pieces, no attendance, no manual line) is left off the run
+    // (the owner's request, Oct 9, 2026), unless it is their final pay; the run names them.
+    if (q.payGroup === 'WEEKLY_PIECE' && !final && built.lines.length === 0) { idle.push(e.name); continue; }
     const gross = built.lines.reduce((s, l) => s + l.amountCents, 0);
     const piece = built.lines.filter((l) => l.kind === 'piece').reduce((s, l) => s + l.amountCents, 0);
 
@@ -578,5 +582,6 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
       netCents: gross - ee.sss - ee.phic - ee.hdmf - wtax - loanCents - ca + refund, wtaxRefundCents: refund, ...(yearEnd ? { yearEnd } : {}), ...(finalPay ? { final: finalPay } : {}),
     });
   }
+  if (idle.length) notes.push({ code: 'NOTHING_TO_PAY', level: 'warning', message: `Nothing to pay this week, so not on this run: ${idle.join(', ')}.` });
   return { employees, notes };
 }
