@@ -9,7 +9,9 @@ import { Crumb } from '../../shell/crumbs.tsx';
 export function SupplyPage({ params }: { params?: Record<string, string> }) {
   const [supply, setSupply] = useState<SupplyRecord | null>(null);
   const [error, setError] = useState('');
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => void api.supply(params?.id ?? '').then(setSupply, (e: Error) => setError(e.message)), [params?.id]);
+  useEffect(() => void api.supplySuppliers(params?.id ?? '').then(setSuppliers, () => undefined), [params?.id]);
   if (error) return <Notice>{error}</Notice>;
   if (!supply) return <p className="text-slate-500">Loading…</p>;
   return (
@@ -23,6 +25,11 @@ export function SupplyPage({ params }: { params?: Record<string, string> }) {
           <dt className="text-slate-500">Last purchase cost</dt><dd className="tabular-nums">{peso(supply.purchase_cost_cents)}</dd>
           <dt className="text-slate-500">Cost from</dt><dd>{costSource(supply)}</dd>
         </dl>
+      </Panel>
+      {/* The suppliers it is linked to (on each supplier's page; the owner's request, Oct 2026). */}
+      <Panel title="Sold by">
+        {suppliers.length === 0 ? <p className="text-sm text-slate-500">Not linked to a supplier yet. Link it on the supplier's page.</p>
+          : <p className="flex flex-wrap gap-x-4 text-sm">{suppliers.map((s) => <Link key={s.id} to={`/pur/suppliers/${s.id}`} className="text-indigo-700 underline">{s.name}</Link>)}</p>}
       </Panel>
     </div>
   );

@@ -161,6 +161,39 @@ export function purRoutes(app: FastifyInstance, deps: AppDeps): void {
     return { success: true };
   });
 
+  /**
+   * The supplies a supplier sells (the owner's request, Oct 2026): linked on the supplier's page, listed first on a purchase
+   * order from that supplier. Each with its unit and the cost of one unit last bought.
+   */
+  app.get('/api/pur/suppliers/:id/supplies', { config: { permission: 'pur.supplier.view' } }, async (req) => {
+    const { id } = z.object({ id: z.string() }).parse(req.params);
+    const rows = db.prepare(`SELECT s.* FROM pur_supplier_supplies l JOIN pur_supplies s ON s.id = l.supply_id
+      WHERE l.supplier_id = ? AND l.is_active = 1 ORDER BY s.name`).all(id) as { id: string }[];
+    return rows.map((s) => ({ ...s, ...costFields(latestPurchaseCost(db, countableSupply(db, s.id)!, today(clock))) }));
+  });
+
+  /** Links a supply to the supplier, or unlinks it (linked: false). Master data: the link is switched off, never deleted. */
+  app.post('/api/pur/suppliers/:id/supplies', { config: { permission: 'pur.supplier.edit' } }, async (req) => {
+    const { id: supplierId } = z.object({ id: z.string() }).parse(req.params);
+    const { supplyId, linked } = z.object({ supplyId: z.string().min(1).max(64), linked: z.boolean() }).strict().parse(req.body);
+    return tx(db, () => {
+      if (!db.prepare('SELECT 1 FROM pur_suppliers WHERE id = ?').get(supplierId)) throw notFound('That supplier is not on file.');
+      if (!db.prepare('SELECT 1 FROM pur_supplies WHERE id = ?').get(supplyId)) throw notFound('That supply is not on file.');
+      const now = stamp(clock);
+      db.prepare(`INSERT INTO pur_supplier_supplies (supplier_id, supply_id, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (supplier_id, supply_id) DO UPDATE SET is_active = excluded.is_active, updated_at = excluded.updated_at`).run(supplierId, supplyId, linked ? 1 : 0, now, now);
+      appendAudit(db, { at: now, userId: currentUser(req).userId, action: linked ? 'pur.supply.link' : 'pur.supply.unlink', entityType: 'pur.supplier', entityId: supplierId, data: { supplyId } });
+      return { supplierId, supplyId, linked };
+    });
+  });
+
+  /** The suppliers a supply is linked to (its own page). */
+  app.get('/api/pur/supplies/:id/suppliers', { config: { permission: 'pur.supply.view' } }, async (req) => {
+    const { id } = z.object({ id: z.string() }).parse(req.params);
+    return db.prepare(`SELECT p.id, p.name FROM pur_supplier_supplies l JOIN pur_suppliers p ON p.id = l.supplier_id
+      WHERE l.supply_id = ? AND l.is_active = 1 ORDER BY p.name`).all(id);
+  });
+
   app.get('/api/pur/suppliers/:id/contacts', { config: { permission: 'pur.supplier.view' } }, async (req) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     return db.prepare('SELECT * FROM pur_supplier_contacts WHERE supplier_id = ? AND is_active = 1 ORDER BY name').all(id);
