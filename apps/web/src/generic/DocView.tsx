@@ -5,7 +5,7 @@
  * period, ACC-22), from the preview before Cancel; a warning never blocks. Every document has its Attachments panel.
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, newIdempotencyKey, type CancelPreview, type CashPlace, type DocDetail, type DocTypeInfo, type PrintVariant } from '../api.ts';
+import { api, ApiError, newIdempotencyKey, type CancelPreview, type CashPlace, type DocDetail, type DocTypeInfo, type PrintVariant } from '../api.ts';
 import { Link, navigate } from '../router.tsx';
 import { Button, JournalTable, Notice, Panel, ReasonDialog, StatusChip, longDate, manilaTime, peso, showDate } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
@@ -26,7 +26,15 @@ export async function printDocument(typeKey: string, id: string, variant: PrintV
     page.onload = () => page.print();
     page.document.open(); page.document.write(html); page.document.close();
     return null;
-  } catch (e) { page.close(); return (e as Error).message; }
+  } catch (e) {
+    page.close();
+    // A job ticket waits until every made item has its production steps: open them on the production board.
+    if (e instanceof ApiError && e.code === 'NEEDS_STEPS') {
+      const d = e.details as { jobOrderId: string; number: string; lines: { lineNo: number }[] };
+      navigate(`/prd/board?jo=${encodeURIComponent(d.jobOrderId)}&number=${encodeURIComponent(d.number)}&steps=${d.lines.map((l) => l.lineNo).join(',')}`);
+    }
+    return (e as Error).message;
+  }
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
