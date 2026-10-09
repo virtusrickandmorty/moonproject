@@ -28,8 +28,11 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
   const { data, error, words, stale, refresh: load } = useBoardRefresh(readBoard);
   const [due, setDue] = useState<Due>('all');
   const [rushOnly, setRushOnly] = useState(false);
-  const [search, setSearch] = useState('');
-  const [open, setOpen] = useState<{ jobOrderId: string; lineNo: number } | null>(null);
+  // From a job ticket that cannot print yet (?jo=…&number=…&steps=1,2): that job order only, its first item to route open.
+  const sent = typeof location === 'undefined' ? null : new URLSearchParams(location.search);
+  const toRoute = sent?.get('jo') && sent.get('steps') ? { jobOrderId: sent.get('jo')!, number: sent.get('number') ?? '', lines: sent.get('steps')!.split(',').map(Number).filter((n) => n > 0) } : null;
+  const [search, setSearch] = useState(toRoute?.number ?? '');
+  const [open, setOpen] = useState<{ jobOrderId: string; lineNo: number } | null>(toRoute?.lines[0] ? { jobOrderId: toRoute.jobOrderId, lineNo: toRoute.lines[0] } : null);
   // Record pieces opens over the board (?record&jo=…&step=…, which the form reads); once recorded the board comes back
   // with the new entry (?recorded=<id>) and its counts refreshed.
   const query = new URLSearchParams(useLocation().split('?')[1] ?? '');
@@ -62,6 +65,7 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
       </div>
       <p role="status" className={`text-sm ${stale ? 'font-semibold text-red-800' : 'text-slate-500'}`}>{words} · Refreshes every 30 seconds</p>
       {error && <Notice>{error}</Notice>}
+      {toRoute && <Notice tone="warning">Choose the production steps of {toRoute.number} {toRoute.lines.length === 1 ? 'line' : 'lines'} {toRoute.lines.join(', ')} first; then its job ticket can be printed.</Notice>}
       {recordedId && <Notice tone="success">Pieces recorded. <Link to={docPath('prd.entry', `/${recordedId}`)} className="underline">Open the entry</Link></Notice>}
       <div className="flex flex-wrap items-end justify-end gap-3">
         <div className={searchClass}><Field label="Search job number or customer"><input type="search" className={inputClass} value={search} onChange={(e) => setSearch(e.target.value)} /></Field></div>

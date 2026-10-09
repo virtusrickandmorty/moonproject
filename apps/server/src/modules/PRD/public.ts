@@ -55,6 +55,12 @@ export function finishedWearers(db: Db, jobOrderId: string, lineNo: number): Set
   return new Set(roster.map((w) => w.rowNo).filter((w) => covered.every((c) => c.has(w)) && !open.has(w)));
 }
 
+/** The made items of a job order with no production steps chosen yet (its job ticket waits for them; the owner's rule, Oct 2026). */
+export function linesAwaitingSteps(db: Db, jobOrderId: string): { lineNo: number; description: string }[] {
+  return db.prepare(`SELECT l.line_no AS lineNo, l.description FROM jo_lines l WHERE l.document_id = ? AND l.kind <> 'ready_made'
+    AND NOT EXISTS (SELECT 1 FROM prd_line_setups s WHERE s.job_order_id = l.document_id AND s.line_no = l.line_no) ORDER BY l.line_no`).all(jobOrderId) as { lineNo: number; description: string }[];
+}
+
 /** Current route names and status for a production job ticket. */
 export function jobTicketRoute(db: Db, jobOrderId: string, lineNo: number) {
   return lineRoute(db, jobOrderId, lineNo)?.map(({ name, status }) => ({ name, status })) ?? [];
