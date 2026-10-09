@@ -15,10 +15,20 @@ import { ROLES, type RoleKey } from '@moonproject/shared';
  */
 export const OWNER_ONLY_PERMISSIONS: readonly string[] = ['sec.users.manage', 'bak.view', 'bak.run', 'bak.manage', 'bak.restore', 'shp.payment.manage'];
 
-/** The roles a new permission is granted to: its defaults, plus the encoder wherever the accountant has it. */
+/**
+ * What Purchasing starts with (the owner's decision, Oct 9, 2026; migration 0015_purchasing_role.sql repeats it): the
+ * basics, and what Sales (the encoder) gets for suppliers, purchase orders and receiving, supplier bills and payments,
+ * and inventory counts.
+ */
+export const PURCHASING_BASICS: readonly string[] = ['dash.view', 'nav.search', 'cal.view', 'cat.view'];
+const PURCHASING_AREAS = ['pur.', 'ap.', 'inv.'];
+
+/** The roles a new permission is granted to: its defaults, plus the encoder wherever the accountant has it, plus Purchasing in its areas. */
 export function defaultGrants(key: string, defaultRoles: readonly RoleKey[]): RoleKey[] {
   const encoderToo = defaultRoles.includes('accountant') && !OWNER_ONLY_PERMISSIONS.includes(key);
-  return ROLES.filter((r) => defaultRoles.includes(r) || (r === 'encoder' && encoderToo));
+  const encoder = defaultRoles.includes('encoder') || encoderToo;
+  const purchasing = PURCHASING_BASICS.includes(key) || (encoder && PURCHASING_AREAS.some((a) => key.startsWith(a)));
+  return ROLES.filter((r) => defaultRoles.includes(r) || (r === 'encoder' && encoderToo) || (r === 'purchasing' && purchasing));
 }
 
 export function syncPermissions(db: Db, registry: Registry, at: string): void {

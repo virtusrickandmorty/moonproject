@@ -74,12 +74,12 @@ describe('menu', () => {
 describe('Users screen', () => {
   it('lists name, username, roles and whether each is active; you cannot deactivate yourself', () => {
     const out = html(UserTable, { users, meId: 'u-me', onOpen: () => undefined });
-    for (const text of ['Owner One', '(you)', 'owner1', 'Owner', 'Maria Sample', 'Encoder, Accountant', 'Must choose a new password at next sign-in', 'Jose Sample', 'No role', 'Deactivated']) expect(out).toContain(text);
+    for (const text of ['Owner One', '(you)', 'owner1', 'Administrator', 'Maria Sample', 'Accounting, Sales', 'Must choose a new password at next sign-in', 'Jose Sample', 'No role', 'Deactivated']) expect(out).toContain(text);
     expect(out.match(/>Deactivate</g)?.length).toBe(1); // Maria only; Owner One is you and Jose is already inactive
     expect(out).toContain('>Activate<');
     expect(out.match(/>Reset password</g)?.length).toBe(3);
     expect([canDeactivate('u-me', 'u-me'), canDeactivate('u-me', 'u-2')]).toEqual([false, true]);
-    expect(rolesWords(['tv', 'owner'])).toBe('Owner, TV board');
+    expect(rolesWords(['tv', 'owner'])).toBe('Administrator, Live view');
   });
 
   it('refuses a user without sec.users.manage', () => {
@@ -96,7 +96,7 @@ describe('Users screen', () => {
       .toEqual(['A username is one word with no spaces, like "juan". Is "Juan Dela Cruz" the name to show? Put it in "Name to show".']);
     expect(newUserInput({ username: 'Juan', displayName: 'Juan', roles: ['encoder'], temporaryPassword: 'x' }).errors[0]).toMatch(/no capitals/);
     expect(newUserInput({ username: ' maria ', displayName: ' Maria Sample ', roles: ['encoder', 'accountant'], temporaryPassword: 'three little pigs walked' }).body).toEqual({
-      username: 'maria', displayName: 'Maria Sample', roles: ['encoder', 'accountant'], temporaryPassword: 'three little pigs walked',
+      username: 'maria', displayName: 'Maria Sample', roles: ['accountant', 'encoder'], temporaryPassword: 'three little pigs walked', // the screens' order
     });
   });
 });
@@ -105,7 +105,7 @@ describe('Roles and permissions screen', () => {
   it('draws every permission by its plain label, grouped by module, against every role, with the ticks', () => {
     const saved = grantsOf(grid);
     const out = html(PermissionGrid, { grid, draft: saved, saved, onTick: () => undefined });
-    for (const text of ['Accounting &amp; journals', 'Users &amp; security', 'Manage users, roles and passwords', 'Encoder', 'Accountant', 'Owner', 'Production', 'TV board']) expect(out).toContain(text);
+    for (const text of ['Accounting &amp; journals', 'Users &amp; security', 'Manage users, roles and passwords', 'Administrator', 'Accounting', 'Sales', 'Production', 'Live view']) expect(out).toContain(text);
     expect(out.match(/type="checkbox"/g)?.length).toBe(15); // 3 permissions x 5 roles
     expect(out.match(/checked=""/g)?.length).toBe(4); // owner x2, accountant x2
     expect(groupPermissions(grid.permissions).map((g) => [g.name, g.permissions.length])).toEqual([['Accounting & journals', 2], ['Users & security', 1]]);
@@ -285,7 +285,7 @@ describe('the screens against the real server', () => {
     const web = createApi(injectFetch(env.app));
     await web.login('owner1', PASSWORD);
     const g = await web.roles();
-    expect(g.roles).toEqual(['encoder', 'accountant', 'owner', 'production', 'tv']);
+    expect(g.roles).toEqual(['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing']);
     expect(g.permissions.find((p) => p.key === 'sec.users.manage')).toMatchObject({ module: 'SEC', label: 'Manage users, roles and passwords', roles: ['owner'] });
     expect(groupPermissions(g.permissions).length).toBeGreaterThan(10);
     await expect(web.setRolePermission('encoder', 'acc.coa.view', true)).rejects.toMatchObject({ code: 'STEP_UP_REQUIRED' });
@@ -378,5 +378,21 @@ describe('the screens against the real server', () => {
     expect((await enc.settings()).length).toBe(list.length); // every signed-in user sees them
     await expect(enc.addSetting('tax.vat_rate_bp', body!)).rejects.toMatchObject({ status: 403 });
     await env.app.close();
+  });
+});
+
+describe('Roles and permissions as departments (the owner\'s request, Oct 9, 2026)', () => {
+  it('shows the departments in order and searches what they may do', async () => {
+    const { searchPermissions } = await import('./SEC/roles.ts');
+    const { roleLabel, sortRoles } = await import('./SEC/users.ts');
+    expect(sortRoles(['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing']).map(roleLabel)).toEqual(['Administrator', 'Accounting', 'Sales', 'Production', 'Purchasing', 'Live view']);
+    const perms = [
+      { key: 'pur.po.create', module: 'PUR', label: 'Create purchase orders' },
+      { key: 'jo.view', module: 'JO', label: 'View job orders' },
+      { key: 'sec.users.manage', module: 'SEC', label: 'Manage users, roles and passwords' },
+    ];
+    expect(searchPermissions(perms, 'purchase').map((p) => p.key)).toEqual(['pur.po.create']);
+    expect(searchPermissions(perms, 'orders view').map((p) => p.key)).toEqual(['jo.view']); // every word, any order
+    expect(searchPermissions(perms, '  ')).toHaveLength(3);
   });
 });

@@ -8,7 +8,7 @@ import { ROLES } from '@moonproject/shared';
 import { api, type Me, type UserRow } from '../../api.ts';
 import { Button, Dialog, Field, Notice, inputClass } from '../../components/ui.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
-import { ROLE_HINTS, canDeactivate, newUserInput, rolesInput, rolesWords, roleLabel } from './users.ts';
+import { ROLE_HINTS, canDeactivate, newUserInput, rolesInput, rolesWords, roleLabel, sortRoles } from './users.ts';
 
 type Dialogs = { kind: 'add' } | { kind: 'roles' | 'password' | 'active'; user: UserRow };
 
@@ -73,7 +73,7 @@ function RoleBoxes({ value, onChange }: { value: string[]; onChange: (roles: str
   return (
     <fieldset className="space-y-1">
       <legend className="text-sm font-medium">Roles</legend>
-      {ROLES.map((r) => (
+      {sortRoles([...ROLES]).map((r) => (
         <label key={r} className="flex items-start gap-2 text-sm">
           <input type="checkbox" className="mt-1" checked={value.includes(r)} onChange={(e) => onChange(e.target.checked ? [...value, r] : value.filter((x) => x !== r))} />
           <span><span className="font-medium">{roleLabel(r)}</span> <span className="text-slate-500">{ROLE_HINTS[r]}</span></span>
