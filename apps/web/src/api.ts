@@ -229,7 +229,7 @@ export interface JoStatus {
   /** ready: the line may go out now (its production is done, or the whole job order is Ready). */
   /** readyQty: pieces that may go out now (finished every step); ready: some may. */
   /** wearers: the line's wearer list; releasedOn: the release it went out on; ready: through every step (null: not known by wearer). */
-  lines: { lineNo: number; description: string; qty: number; releasedQty: number; leftQty: number; ready?: boolean; readyQty?: number;
+  lines: { lineNo: number; description: string; qty: number; releasedQty: number; leftQty: number; ready?: boolean; readyQty?: number; awaitingSteps?: boolean;
     wearers?: { rowNo: number; wearerName: string; size: string | null; jerseyNumber: string | null; qty: number; releasedOn: string | null; ready: boolean | null }[] }[];
   awaitingInvoice: { id: string; number: string; businessDate: string; totalCents: number }[];
   depositVat: JoDepositVat;

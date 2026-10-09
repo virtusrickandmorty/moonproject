@@ -70,3 +70,15 @@ it('ticks who goes out, prints them on the slip, and lets each wearer go out onc
   expect(await wearersOf(jo)).toEqual([['Ana Reyes', true, d.header.number], ['Ben Cruz', false, null], ['Cy Lim', true, d.header.number], ['Dee Tan', false, null]]);
   expect(await issues(release(jo, [{ lineNo: 1, qty: 1, wearers: [1] }]))).toContain('WEARER_RELEASED');
 });
+
+it('says a made item has no production steps yet, so the release form greys it', async () => {
+  const lines = [{ kind: 'made_to_order', description: 'Team shirt', qty: 2, unitPriceCents: 30_000, discountCents: 0, roster: [] },
+    { kind: 'ready_made', description: 'Cap', qty: 1, unitPriceCents: 20_000, discountCents: 0, roster: [] }];
+  const r = await encoder.post('/api/docs/jo.job_order/post', { input: { customerId: c.school, dueInDays: 10, priority: 'normal', paymentTerms: 'full', lines }, expectedTotalCents: 80_000 }, idem());
+  expect(r.statusCode, r.body).toBe(200);
+  const status = async () => ((await encoder.get(`/api/jo/orders/${r.json().id}/status`)).json().lines as { lineNo: number; awaitingSteps: boolean; ready: boolean }[]).map((l) => [l.lineNo, l.awaitingSteps, l.ready]);
+  expect((await status())[0]).toEqual([1, true, false]);
+  expect((await status())[1]![1]).toBe(false); // ready-made: nothing to make
+  expect((await production.post(`/api/prd/jobs/${r.json().id}/lines/1/setup`, { templateId: 1, stepIds: [SEWING, PACKING], complexity: 'standard' })).statusCode).toBe(200);
+  expect((await status())[0]).toEqual([1, false, false]); // routed, still being made
+});
