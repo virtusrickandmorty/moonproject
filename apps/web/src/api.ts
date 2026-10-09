@@ -355,6 +355,13 @@ export interface AttendanceGrid {
   paid: PaidDays[];
 }
 export interface PaidDays { employeeId: string; from: string; to: string; number: string }
+/** The biometric report worked out for review (EMP biometric.ts): each day's action says what saving it would do. */
+export type BiometricAction = 'new' | 'changed' | 'same' | 'kept' | 'locked' | 'outside' | 'not_linked';
+export interface BiometricDay {
+  date: string; punches: string[]; status: AttendanceStatus; otMinutes: number; nightMinutes: number; nightOtMinutes: number; lateMinutes: number; undertimeMinutes: number;
+  flags: string[]; action: BiometricAction; existing: { status: AttendanceStatus; otMinutes: number; nightMinutes: number; note: string | null } | null; lockedBy?: string;
+}
+export interface BiometricPreview { from: string; to: string; people: { userId: string; name: string; department: string; employeeId: string | null; suggestedEmployeeId: string | null; days: BiometricDay[] }[] }
 export type AttendanceSave = { employeeId: string; date: string; status: AttendanceStatus; otMinutes?: number; nightMinutes?: number; nightOtMinutes?: number; note?: string };
 /** Payroll (PAY) and cash advances (CA): every figure is worked out by the server. */
 export type PayGroup = 'WEEKLY_PIECE' | 'SEMI_DAILY' | 'SEMI_MONTHLY';
@@ -1093,6 +1100,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
       call<PayProfile>('POST', emp(id, '/pay'), body),
     attendance: (from: string, to: string) => call<AttendanceGrid>('GET', `/api/emp/attendance?${new URLSearchParams({ from, to })}`),
     saveAttendance: (days: AttendanceSave[]) => call<{ saved: number; unchanged: number }>('POST', '/api/emp/attendance', { days }),
+    /** The biometric's .xls report (base64) worked out for review; nothing is saved. */
+    biometricPreview: (fileName: string, data: string) => call<BiometricPreview>('POST', '/api/emp/biometric/preview', { fileName, data }),
+    biometricLink: (userId: string, employeeId: string | null, deviceName?: string) => call<unknown>('POST', '/api/emp/biometric/links', { userId, employeeId, ...(deviceName ? { deviceName } : {}) }),
     /** Without a year: the server's current year. */
     holidays: (year?: number) => call<{ year: number; holidays: Holiday[] }>('GET', `/api/emp/holidays${year ? `?year=${year}` : ''}`),
     addHoliday: (body: { date: string; name: string; kind: 'regular' | 'special'; source: string }) => call<Holiday>('POST', '/api/emp/holidays', body),

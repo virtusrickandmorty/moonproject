@@ -164,3 +164,21 @@ describe('web client for employees and time', () => {
     expect(sep.isActive).toBe(false);
   });
 });
+
+describe('import from biometric (the owner\'s request, Oct 2026)', () => {
+  it('saves only the ticked days of linked people that may change, with the biometric note and no zero minutes', async () => {
+    const { daysToSave, hoursText } = await import('./Biometric.tsx');
+    const day = (date: string, action: string, extra = {}) => ({ date, punches: [], status: 'present', otMinutes: 0, nightMinutes: 0, nightOtMinutes: 0, lateMinutes: 0, undertimeMinutes: 0, flags: [], action, existing: null, ...extra });
+    const preview = { from: '2026-07-01', to: '2026-07-03', people: [
+      { userId: '7', name: 'ana', department: 'PRODUCTION', employeeId: 'e1', suggestedEmployeeId: null,
+        days: [day('2026-07-01', 'new', { otMinutes: 90, nightMinutes: 30, nightOtMinutes: 30 }), day('2026-07-02', 'kept'), day('2026-07-03', 'locked')] },
+      { userId: '8', name: 'ben', department: 'ADMIN', employeeId: null, suggestedEmployeeId: null, days: [day('2026-07-01', 'not_linked')] },
+    ] } as never;
+    const ticked = new Set(['7|2026-07-01', '7|2026-07-02', '7|2026-07-03', '8|2026-07-01']);
+    expect(daysToSave(preview, ticked, 'july.xls')).toEqual([
+      { employeeId: 'e1', date: '2026-07-01', status: 'present', otMinutes: 90, nightMinutes: 30, nightOtMinutes: 30, note: 'From biometric: july.xls' },
+      { employeeId: 'e1', date: '2026-07-02', status: 'present', note: 'From biometric: july.xls' }, // kept, but ticked: saved
+    ]);
+    expect([hoursText(90), hoursText(0)]).toEqual(['1:30', '']);
+  });
+});

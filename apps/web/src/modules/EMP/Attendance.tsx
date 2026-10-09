@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type AttendanceGrid, type AttendanceStatus, type Me } from '../../api.ts';
 import { askConfirm, Button, Notice, useAction, showDate } from '../../components/ui.tsx';
+import { BiometricImport } from './Biometric.tsx';
 import { STATUS_LABEL, STATUS_MARK, WITH_NIGHT, cellKey, changedCells, datesBetween, halfMonthOf, paidBy, plusDays, startCells, statusesFor, weekday, type Cell } from './time.ts';
 
 export function Attendance({ me }: { me: Me }) {
@@ -19,6 +20,7 @@ export function Attendance({ me }: { me: Me }) {
   const [filled, setFilled] = useState(0);
   const [done, setDone] = useState('');
   const [error, setError] = useState('');
+  const [importing, setImporting] = useState(false);
   const a = useAction();
   const load = useCallback(async (r: { from: string; to: string }) => {
     setError('');
@@ -65,7 +67,10 @@ export function Attendance({ me }: { me: Me }) {
         <Button onClick={() => void shift(-1)}>← Earlier</Button>
         <span className="text-sm font-medium">{grid.from} to {grid.to}</span>
         <Button onClick={() => void shift(1)}>Later →</Button>
+        <span className="flex-1" />
+        {editable && <Button onClick={() => setImporting(true)}>Import from biometric</Button>}
       </div>
+      {importing && <BiometricImport onClose={() => setImporting(false)} onSaved={() => void load(range)} />}
       <p className="text-sm text-slate-600">
         {Object.entries(STATUS_MARK).map(([k, m]) => `${m} ${STATUS_LABEL[k as AttendanceStatus]}`).join(' · ')}. Overtime and night hours (worked between 10 PM and 6 AM) in hours (1.5 or 1:30) on worked days; Night OT is the night hours that were also overtime.
       </p>

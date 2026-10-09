@@ -1,15 +1,17 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { badRequest, forbidden, isBusinessDate, notFound, toCsv, type CsvCell } from '@moonproject/shared';
+import { AppError, badRequest, forbidden, isBusinessDate, notFound, toCsv, type CsvCell } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { clockGuard } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
+import { appendAudit } from '../../engine/audit.ts';
 import { activeEmployees } from './public.ts';
 import { addPayProfile, createEmployee, employeeRecord, listEmployees, masked, payHistory, payProfileAt, payslipEmailOf, separateEmployee, setPayslipEmail, updateEmployee, type Who } from './employees.ts';
 import { ATTENDANCE, addHoliday, attendanceBetween, checkRange, deactivateHoliday, holidaysBetween, holidaysOf, paidDaysBetween, saveAttendance, silOf } from './time.ts';
 import { leaveBalances } from './leave-balances.ts';
+import { linkBiometricUser, previewBiometric } from './biometric.ts';
 
 const dateQ = z.string().refine(isBusinessDate);
 
@@ -97,6 +99,33 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   app.post('/api/emp/attendance', { config: { permission: 'emp.attendance' } }, async (req) => write(() => saveAttendance(db, req.body, who(req))));
+
+  /**
+   * The biometric's attendance report (.xls) worked out for review (the owner's request, Oct 2026): each person, their
+   * linked employee, and each day against what attendance holds. Nothing is saved: the screen saves the days it keeps
+   * through POST /api/emp/attendance.
+   */
+  app.post('/api/emp/biometric/preview', { config: { permission: 'emp.attendance' }, bodyLimit: 12 * 1024 * 1024 }, async (req) => {
+    const body = z.object({ fileName: z.string().trim().min(1).max(200), data: z.string().min(1).max(11_000_000) }).strict().parse(req.body);
+    const employees = listEmployees(db, { search: '', status: 'all' });
+    try {
+      return previewBiometric(db, Buffer.from(body.data, 'base64'), employees);
+    } catch (e) {
+      throw new AppError('BIOMETRIC_FILE', (e as Error).message, 400);
+    }
+  });
+
+  /** Links a biometric user (the device's User ID) to an employee, or unlinks it (employeeId null); remembered for the next import. */
+  app.post('/api/emp/biometric/links', { config: { permission: 'emp.attendance' } }, async (req) => {
+    const body = z.object({ userId: z.string().trim().min(1).max(40), employeeId: z.uuid().nullable(), deviceName: z.string().trim().max(120).optional() }).strict().parse(req.body);
+    return write(() => {
+      if (body.employeeId && !listEmployees(db, { search: '', status: 'all' }).some((e) => e.id === body.employeeId)) throw notFound('The employee');
+      const w = who(req);
+      linkBiometricUser(db, body, w);
+      appendAudit(db, { at: w.at, userId: w.userId, action: 'emp.biometric_link', entityType: 'emp.employee', entityId: body.employeeId ?? `biometric:${body.userId}`, data: body });
+      return { userId: body.userId, employeeId: body.employeeId };
+    });
+  });
 
   app.get('/api/emp/holidays', { config: { permission: 'emp.view' } }, async (req) => {
     const q = z.object({ year: z.coerce.number().int().min(2000).max(2100).optional() }).strict().parse(req.query);
