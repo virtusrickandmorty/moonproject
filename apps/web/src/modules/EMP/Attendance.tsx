@@ -13,6 +13,9 @@ import { askConfirm, Button, Notice, useAction, showDate } from '../../component
 import { BiometricImport } from './Biometric.tsx';
 import { STATUS_LABEL, STATUS_MARK, WITH_NIGHT, cellKey, changedCells, datesBetween, halfMonthOf, paidBy, plusDays, startCells, statusesFor, weekday, type Cell } from './time.ts';
 
+/** A column's day: "Jul 8" (the full date shows on pointing at it). */
+const shortDay = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
 export function Attendance({ me }: { me: Me }) {
   const [range, setRange] = useState<{ from: string; to: string } | null>(null);
   const [grid, setGrid] = useState<AttendanceGrid | null>(null);
@@ -71,7 +74,7 @@ export function Attendance({ me }: { me: Me }) {
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold">Attendance</h1>
         <Button onClick={() => void shift(-1)}>← Earlier</Button>
-        <span className="text-sm font-medium">{grid.from} to {grid.to}</span>
+        <span className="text-sm font-medium">{showDate(grid.from)} to {showDate(grid.to)}</span>
         <Button onClick={() => void shift(1)}>Later →</Button>
         <span className="flex-1" />
         {pieceCount > 0 && (
@@ -103,7 +106,7 @@ export function Attendance({ me }: { me: Me }) {
             <tr>
               <th className="sticky left-0 bg-white p-2 text-left">Employee</th>
               {dates.map((d) => (
-                <th key={d} title={holiday[d]?.name} className={`px-1 py-2 ${holiday[d] ? 'bg-amber-50 text-amber-900' : weekday(d) === 'Sun' ? 'bg-slate-50' : ''}`}>{weekday(d)}<br />{d.slice(8)}</th>
+                <th key={d} title={[showDate(d), holiday[d]?.name].filter(Boolean).join(': ')} className={`whitespace-nowrap px-1 py-2 ${holiday[d] ? 'bg-amber-50 text-amber-900' : weekday(d) === 'Sun' ? 'bg-slate-50' : ''}`}>{weekday(d)}<br />{shortDay(d)}</th>
               ))}
             </tr>
           </thead>
