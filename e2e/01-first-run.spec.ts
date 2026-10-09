@@ -25,7 +25,7 @@ test('first run: the owner adds a staff user with a role, who signs in and chang
   await page.getByRole('button', { name: 'Add a user' }).click();
   await page.getByLabel('Name to show').fill(STAFF.name);
   await page.getByLabel(/^Username/).fill(STAFF.username);
-  await page.getByRole('checkbox', { name: /^Encoder/ }).check();
+  await page.getByRole('checkbox', { name: /^Sales/ }).check();
   await page.getByLabel(/^Temporary password/).fill(STAFF.temporary);
   await page.getByRole('button', { name: 'Add user' }).click();
   const askAgain = page.getByRole('dialog', { name: 'Confirm with your password' });
@@ -33,7 +33,7 @@ test('first run: the owner adds a staff user with a role, who signs in and chang
   await askAgain.getByRole('button', { name: 'Continue' }).click();
   await expect(page.getByText(`Added ${STAFF.name}.`)).toBeVisible();
   const row = page.getByRole('row', { name: new RegExp(STAFF.username) });
-  await expect(row).toContainText('Encoder');
+  await expect(row).toContainText('Sales');
   await expect(row).toContainText('Must choose a new password at next sign-in');
   await signOut(page);
 

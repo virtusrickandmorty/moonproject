@@ -153,8 +153,9 @@ function planDifferences(): string[] {
 }
 
 describe('default roles against the plan (C6, E13)', () => {
-  it('has exactly the five role templates of E13', () => {
-    expect([...ROLES]).toEqual(['encoder', 'accountant', 'owner', 'production', 'tv']);
+  // E13's five role templates, plus Purchasing (the owner's decision, Oct 9, 2026; a PLAN change for E13 is proposed).
+  it('has the five role templates of E13 and Purchasing', () => {
+    expect([...ROLES]).toEqual(['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing']);
     const rows = env.db.prepare('SELECT DISTINCT role_key FROM role_permissions ORDER BY role_key').pluck().all();
     expect(rows).toEqual([...ROLES].sort());
   });
@@ -393,3 +394,11 @@ describe('document routes, every document type, every role (routes marked authen
 function cashPlace(code: string): number {
   return env.db.prepare('SELECT id FROM accounts WHERE code = ?').pluck().get(code) as number;
 }
+
+describe('Purchasing (the owner\'s decision, Oct 9, 2026)', () => {
+  it('starts with the basics and what Sales holds for suppliers, purchases, supplier bills and inventory counts', () => {
+    const held = new Set(env.db.prepare(`SELECT permission_key FROM role_permissions WHERE role_key = 'purchasing' AND granted = 1`).pluck().all() as string[]);
+    for (const key of ['dash.view', 'nav.search', 'cal.view', 'cat.view', 'pur.po.create', 'pur.rr.post', 'ap.bill.post', 'ap.pay.view', 'inv.count.create']) expect(held, key).toContain(key);
+    for (const key of ['jo.view', 'col.view', 'cat.manage', 'sec.users.manage', 'pay.run.view']) expect(held, key).not.toContain(key);
+  });
+});
