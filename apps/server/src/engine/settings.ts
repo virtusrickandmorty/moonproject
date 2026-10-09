@@ -61,6 +61,10 @@ export const SETTINGS = {
     label: 'Final tax the bank withholds on interest, in basis points (2000 = 20%, PLAN D5 BANK-ADJ)',
     schema: z.number().int().min(0).max(5000),
   },
+  'pay.week_start': {
+    label: 'The day the weekly piece payroll starts: Monday (to Saturday) or Friday (to Thursday) (PLAN F2; Friday from Oct 9, 2026)',
+    schema: z.enum(['monday', 'friday']),
+  },
   'tax.dividend_final_tax_bp': {
     label: 'Final tax Virtus withholds on cash dividends to individual stockholders, in basis points (1000 = 10%, PLAN D5 DIV)',
     schema: z.number().int().min(0).max(5000),

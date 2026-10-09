@@ -43,6 +43,7 @@ describe('effective-dated settings (E12, D4.2)', () => {
       'acc.bad_debt_method': 'direct',
       'tax.uncollected_vat_credit': false,
       'tax.dividend_final_tax_bp': 1000,
+      'pay.week_start': 'monday', // Friday from Oct 9, 2026 (the owner's decision); this shop's date is before it
     });
   });
 
