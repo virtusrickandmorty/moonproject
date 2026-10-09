@@ -35,7 +35,8 @@ export function Employees({ me }: { me: Me }) {
           <thead className="text-left text-slate-500"><tr><th className="p-2">Code</th><th>Name</th><th>Position</th><th>Pay cost group</th><th>Hired</th><th>Status</th></tr></thead>
           <tbody>
             {rows.map((e) => (
-              <tr key={e.id} className={`border-t border-slate-100 ${e.isActive ? '' : 'text-slate-500'}`}>
+              // The whole row opens the employee (the owner's request, Oct 2026); the code stays a link for the keyboard.
+              <tr key={e.id} onClick={() => navigate(`/emp/employees/${e.id}`)} className={`cursor-pointer border-t border-slate-100 hover:bg-indigo-50 ${e.isActive ? '' : 'text-slate-500'}`}>
                 <td className="p-2"><Link to={`/emp/employees/${e.id}`} className="text-indigo-700 underline">{e.code}</Link></td>
                 <td>{e.fullName}</td><td>{e.position ?? ''}</td><td className="capitalize">{e.costCentre}</td><td>{showDate(e.hireDate)}</td>
                 <td>{e.isActive ? 'Active' : `Separated ${showDate(e.separatedOn)}`}</td>
