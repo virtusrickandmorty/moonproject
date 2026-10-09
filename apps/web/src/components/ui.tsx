@@ -168,7 +168,7 @@ export function useExit<T>(value: T | null | undefined, ms = DIALOG_MS): [T | nu
 /**
  * Every dialog in the ERP has one of two standard widths (DIALOG_WIDTH): a question (a confirm, a reason, a password)
  * is narrow; a table, a form or a whole record (`wide`, or `size="full"`, the same) is the record width. On a phone
- * both take the screen's width less a 16px margin. `size="screen"`: maximized, the whole screen edge to edge and its full height (a job order or purchase order being typed). `hideTitle` when the content has its own heading. `leaving` when its parent already
+ * both take the screen's width less a 16px margin. `size="screen"`: the whole width of the screen (a job order being typed). `hideTitle` when the content has its own heading. `leaving` when its parent already
  * closed it and keeps it a moment (useExit) to shrink away. `beforeClose` may keep it open (something typed, not saved).
  */
 export function Dialog({ title, onClose, wide, size, hideTitle, leaving, beforeClose, children }: {
@@ -197,9 +197,9 @@ export function Dialog({ title, onClose, wide, size, hideTitle, leaving, beforeC
   return (
     // Centred on the screen and never taller than it (its content scrolls inside), so it grows out of and shrinks back
     // into the middle of the screen whatever its length; the × stays in its corner while the content scrolls.
-    <div data-state={state} className={`dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 ${size === 'screen' ? 'p-0' : 'p-4 sm:p-8'}`}>
+    <div data-state={state} className="dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 sm:p-8">
       <div ref={root} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} data-state={state}
-        className={`dialog-panel relative flex max-h-full w-full ${DIALOG_WIDTH[size === 'screen' ? 'screen' : wide || size === 'full' ? 'record' : 'question']} ${size === 'screen' ? 'h-full rounded-none' : 'rounded-lg'} flex-col overflow-hidden bg-white shadow-xl outline-none`}>
+        className={`dialog-panel relative flex max-h-full w-full ${DIALOG_WIDTH[size === 'screen' ? 'screen' : wide || size === 'full' ? 'record' : 'question']} flex-col overflow-hidden rounded-lg bg-white shadow-xl outline-none`}>
         {/* Every dialog can be closed with this, as well as with Escape. */}
         <button type="button" onClick={() => void shut.current()} aria-label="Close dialog" title="Close"
           className="absolute right-3 top-3 z-20 grid size-9 place-items-center rounded-full bg-white/90 text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900">×</button>
