@@ -153,9 +153,9 @@ function planDifferences(): string[] {
 }
 
 describe('default roles against the plan (C6, E13)', () => {
-  // E13's five role templates, plus Purchasing (the owner's decision, Oct 9, 2026; a PLAN change for E13 is proposed).
-  it('has the five role templates of E13 and Purchasing', () => {
-    expect([...ROLES]).toEqual(['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing']);
+  // E13's five role templates, plus Purchasing and Human Resource (the owner's decisions, Oct 9, 2026; a PLAN change for E13 is proposed).
+  it('has the five role templates of E13, Purchasing and Human Resource', () => {
+    expect([...ROLES]).toEqual(['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing', 'hr']);
     const rows = env.db.prepare('SELECT DISTINCT role_key FROM role_permissions ORDER BY role_key').pluck().all();
     expect(rows).toEqual([...ROLES].sort());
   });
@@ -400,5 +400,13 @@ describe('Purchasing (the owner\'s decision, Oct 9, 2026)', () => {
     const held = new Set(env.db.prepare(`SELECT permission_key FROM role_permissions WHERE role_key = 'purchasing' AND granted = 1`).pluck().all() as string[]);
     for (const key of ['dash.view', 'nav.search', 'cal.view', 'cat.view', 'pur.po.create', 'pur.rr.post', 'ap.bill.post', 'ap.pay.view', 'inv.count.create']) expect(held, key).toContain(key);
     for (const key of ['jo.view', 'col.view', 'cat.manage', 'sec.users.manage', 'pay.run.view']) expect(held, key).not.toContain(key);
+  });
+});
+
+describe("Human Resource (the owner's decision, Oct 9, 2026)", () => {
+  it('starts with the basics and what Sales holds for employees, payroll, cash advances and government contributions', () => {
+    const held = new Set(env.db.prepare(`SELECT permission_key FROM role_permissions WHERE role_key = 'hr' AND granted = 1`).pluck().all() as string[]);
+    for (const key of ['dash.view', 'nav.search', 'cal.view', 'emp.view', 'emp.attendance', 'pay.run.view', 'pay.run.post', 'ca.give', 'stat.view']) expect(held, key).toContain(key);
+    for (const key of ['jo.view', 'pur.po.view', 'cat.view', 'sec.users.manage', 'acc.coa.view']) expect(held, key).not.toContain(key);
   });
 });
