@@ -23,8 +23,8 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
   const can = (req: FastifyRequest, p: string) => currentUser(req).permissions.has(p);
 
   app.get('/api/emp/employees', { config: { permission: 'emp.view' } }, async (req) => {
-    const q = z.object({ search: z.string().max(100).optional(), status: z.enum(['active', 'separated', 'all']).optional() }).strict().parse(req.query);
-    return listEmployees(db, { search: q.search?.trim() ?? '', status: q.status ?? 'active' });
+    const q = z.object({ search: z.string().max(100).optional(), status: z.enum(['active', 'separated', 'all']).optional(), order: z.literal('newest').optional() }).strict().parse(req.query);
+    return listEmployees(db, { search: q.search?.trim() ?? '', status: q.status ?? 'active', newest: q.order === 'newest' });
   });
 
   app.get('/api/emp/leave-balances', { config: { permission: 'emp.view' } }, async (req, reply) => {
