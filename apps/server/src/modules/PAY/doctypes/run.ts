@@ -34,7 +34,7 @@ import { lastAuditAt } from '../../../engine/audit.ts';
 import { PAY_GROUPS, employee as employeeOf, employeesInGroup, markPaidDays, markSilPaid, paidDaysBetween, silPaidBy, type PayGroup } from '../../EMP/public.ts';
 import { advanceSchedule } from '../../CA/public.ts';
 import { clearAssignmentsPaidBy, markAssignmentPaid } from '../../PRD/public.ts';
-import { TAX_FREQUENCY, periodEndOf, periodRuleOf, semiStartOf, weekStartOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunLoan, type YearEnd } from '../run-calc.ts';
+import { TAX_FREQUENCY, isWeekly, periodEndOf, periodRuleOf, semiStartOf, weekStartOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunLoan, type YearEnd } from '../run-calc.ts';
 import { KIND_LABEL, LOAN_ACCOUNT, govLoan, loanInMonth, type Agency } from '../loans.ts';
 import { yearEndDoneBy } from '../year-end.ts';
 
@@ -65,7 +65,7 @@ export interface Run extends RunInput {
 
 /** Warnings worked out with the run, handed from compute to validate (the same object, in the same request). */
 const notesOf = new WeakMap<Run, Issue[]>();
-const GROUP_LABEL: Record<PayGroup, string> = { WEEKLY_PIECE: 'weekly piece-rate', SEMI_DAILY: 'semi-monthly daily-paid', SEMI_MONTHLY: 'semi-monthly monthly staff' };
+const GROUP_LABEL: Record<PayGroup, string> = { WEEKLY_PIECE: 'weekly piece-rate', WEEKLY_DAILY: 'weekly daily-paid', SEMI_DAILY: 'semi-monthly daily-paid', SEMI_MONTHLY: 'semi-monthly monthly staff' };
 const employee = (id: string) => ({ type: 'employee', id });
 // Rows straight from SQLite, read field by field in load().
 type DbRow = Record<string, any>;
@@ -134,7 +134,7 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     const error = (field: string, code: string, message: string) => issues.push({ field, code, message, level: 'error' });
     const periodEnd = periodEndOf(doc.payGroup, doc.periodStart, periodRuleOf(ctx.db));
     if (!periodEnd) {
-      error('periodStart', 'PERIOD', doc.payGroup === 'WEEKLY_PIECE' ? `A weekly payroll starts on a ${periodRuleOf(ctx.db).startsOn(doc.periodStart) === 'friday' ? 'Friday (Friday to Thursday)' : 'Monday (Monday to Saturday)'}.` : (periodRuleOf(ctx.db).semi?.(doc.periodStart) === '10_25' ? 'A semi-monthly payroll starts on the 26th or the 11th (26th to 10th, 11th to 25th).' : 'A semi-monthly payroll starts on the 1st or the 16th.'));
+      error('periodStart', 'PERIOD', isWeekly(doc.payGroup) ? `A weekly payroll starts on a ${periodRuleOf(ctx.db).startsOn(doc.periodStart) === 'friday' ? 'Friday (Friday to Thursday)' : 'Monday (Monday to Saturday)'}.` : (periodRuleOf(ctx.db).semi?.(doc.periodStart) === '10_25' ? 'A semi-monthly payroll starts on the 26th or the 11th (26th to 10th, 11th to 25th).' : 'A semi-monthly payroll starts on the 1st or the 16th.'));
       return issues;
     }
     if (periodEnd > ctx.businessDate) {
@@ -406,7 +406,7 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     const rule = periodRuleOf(db);
     for (const payGroup of PAY_GROUPS) {
       for (const d of days) {
-        const start = payGroup === 'WEEKLY_PIECE' ? weekStartOf(d, rule) : semiStartOf(d, rule);
+        const start = isWeekly(payGroup) ? weekStartOf(d, rule) : semiStartOf(d, rule);
         if (!start) continue;
         const end = periodEndOf(payGroup, start, rule)!;
         if (end <= lastDay && employeesInGroup(db, payGroup, start, end).length && !recordedRunFor(db, payGroup, start) && !periods.some((p) => p.payGroup === payGroup && p.periodStart === start)) periods.push({ payGroup, periodStart: start });

@@ -30,6 +30,9 @@ export class NewerDatabaseError extends Error {
   }
 }
 
+/** The first line of a migration that rebuilds a table other tables point to (run with foreign keys off, then checked). */
+const REBUILD = /^--\s*migrate:\s*rebuild-with-foreign-keys-off\b/;
+
 export function migrate(db: Db, sources: MigrationSource[], appliedAt: string): string[] {
   db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
     id TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL) STRICT`);
@@ -57,10 +60,23 @@ export function migrate(db: Db, sources: MigrationSource[], appliedAt: string): 
         if (prev !== checksum) throw new Error(`Migration ${id} was changed after it ran. Add a new migration instead.`);
         continue;
       }
-      db.transaction(() => {
-        db.exec(sql);
-        db.prepare('INSERT INTO schema_migrations (id, checksum, applied_at) VALUES (?, ?, ?)').run(id, checksum, appliedAt);
-      }).immediate();
+      // A migration that rebuilds a table other tables point to (SQLite's documented way to change a CHECK: copy, drop,
+      // rename) says so on its first line; foreign keys are off while it runs (the pragma has no effect inside a
+      // transaction), every key is checked before it is kept, and they are on again after.
+      const rebuild = REBUILD.test(sql.split(/\r?\n/, 1)[0] ?? '');
+      if (rebuild) db.pragma('foreign_keys = OFF');
+      try {
+        db.transaction(() => {
+          db.exec(sql);
+          if (rebuild) {
+            const broken = db.prepare('PRAGMA foreign_key_check').all() as { table: string; parent: string }[];
+            if (broken.length > 0) throw new Error(`Migration ${id} would break ${broken.length} link(s), e.g. ${broken[0]!.table} → ${broken[0]!.parent}. Nothing was changed.`);
+          }
+          db.prepare('INSERT INTO schema_migrations (id, checksum, applied_at) VALUES (?, ?, ?)').run(id, checksum, appliedAt);
+        }).immediate();
+      } finally {
+        if (rebuild) db.pragma('foreign_keys = ON');
+      }
       ran.push(id);
     }
   }
