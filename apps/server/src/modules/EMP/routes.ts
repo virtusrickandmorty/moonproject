@@ -9,7 +9,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { activeEmployees } from './public.ts';
 import { addPayProfile, createEmployee, employeeRecord, listEmployees, masked, payHistory, payProfileAt, payslipEmailOf, separateEmployee, setPayslipEmail, updateEmployee, type Who } from './employees.ts';
-import { ATTENDANCE, addHoliday, attendanceBetween, checkRange, deactivateHoliday, holidaysBetween, holidaysOf, paidDaysBetween, saveAttendance, silOf } from './time.ts';
+import { ATTENDANCE, addHoliday, attendanceBetween, checkRange, deactivateHoliday, holidaysBetween, holidaysOf, paidDaysBetween, reactivateHoliday, saveAttendance, silOf } from './time.ts';
 import { leaveBalances } from './leave-balances.ts';
 import { linkBiometricUser, previewBiometric } from './biometric.ts';
 
@@ -137,6 +137,10 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post('/api/emp/holidays', { config: { permission: 'emp.holidays' } }, async (req) => write(() => addHoliday(db, req.body, who(req))));
   app.post<{ Params: { id: string } }>('/api/emp/holidays/:id/deactivate', { config: { permission: 'emp.holidays' } }, async (req) =>
     write(() => deactivateHoliday(db, Number(req.params.id), req.body, who(req))),
+  );
+  /** Switches a holiday that was switched off on again (added again, with the same checks as a new one). */
+  app.post<{ Params: { id: string } }>('/api/emp/holidays/:id/activate', { config: { permission: 'emp.holidays' } }, async (req) =>
+    write(() => reactivateHoliday(db, Number(req.params.id), who(req))),
   );
 
   /** Active employees for pickers (no pay, no IDs). */
