@@ -74,3 +74,12 @@ it('the shop as shipped pays Oct 26 – Nov 10 in November and refuses a period 
   expect(run.doc as { periodEnd: string; contributionMonth: string }).toMatchObject({ periodEnd: '2026-11-10', contributionMonth: '2026-11' });
   expect(w.preview(runDoc, { payGroup: 'SEMI_MONTHLY', periodStart: '2026-11-01' }).issues).toContainEqual(expect.objectContaining({ code: 'PERIOD', message: 'A semi-monthly payroll starts on the 26th or the 11th (26th to 10th, 11th to 25th).' }));
 });
+
+it('as shipped, Friday weeks start on Oct 2, 2026: Sep 28 – Oct 1, then Oct 2–8, Oct 9–15', async () => {
+  const w = await world('2026-10-20', { fridayWeeks: true });
+  const { periodRuleOf } = await import('../run-calc.ts');
+  const rule = periodRuleOf(w.db);
+  expect(rule.changes).toEqual(['2026-10-02']); // the Oct 9 version repeats Friday: no change on that day
+  expect(['2026-09-28', '2026-10-02', '2026-10-09'].map((d) => periodEndOf('WEEKLY_PIECE', d, rule))).toEqual(['2026-10-01', '2026-10-08', '2026-10-15']);
+  expect(periodEndOf('WEEKLY_PIECE', '2026-10-05', rule)).toBeUndefined();
+});
