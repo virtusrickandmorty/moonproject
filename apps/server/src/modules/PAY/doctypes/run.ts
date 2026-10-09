@@ -34,7 +34,7 @@ import { lastAuditAt } from '../../../engine/audit.ts';
 import { PAY_GROUPS, employee as employeeOf, employeesInGroup, markPaidDays, markSilPaid, paidDaysBetween, silPaidBy, type PayGroup } from '../../EMP/public.ts';
 import { advanceSchedule } from '../../CA/public.ts';
 import { clearAssignmentsPaidBy, markAssignmentPaid } from '../../PRD/public.ts';
-import { TAX_FREQUENCY, periodEndOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunLoan, type YearEnd } from '../run-calc.ts';
+import { TAX_FREQUENCY, periodEndOf, weekRuleOf, weekStartOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunLoan, type YearEnd } from '../run-calc.ts';
 import { KIND_LABEL, LOAN_ACCOUNT, govLoan, loanInMonth, type Agency } from '../loans.ts';
 import { yearEndDoneBy } from '../year-end.ts';
 
@@ -108,10 +108,10 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
   inputSchema: runInput,
 
   compute(input, ctx) {
-    const periodEnd = periodEndOf(input.payGroup, input.periodStart) ?? input.periodStart;
+    const periodEnd = periodEndOf(input.payGroup, input.periodStart, weekRuleOf(ctx.db)) ?? input.periodStart;
     const base = { ...input, periodEnd, contributionMonth: periodEnd.slice(0, 7), taxFrequency: TAX_FREQUENCY[input.payGroup] };
     let worked: ReturnType<typeof workOut> = { employees: [], notes: [] };
-    if (periodEndOf(input.payGroup, input.periodStart) && periodEnd <= ctx.businessDate) {
+    if (periodEndOf(input.payGroup, input.periodStart, weekRuleOf(ctx.db)) && periodEnd <= ctx.businessDate) {
       try {
         worked = workOut(ctx.db, {
           payGroup: input.payGroup, periodStart: input.periodStart, periodEnd, payDate: ctx.businessDate, manual: input.lines ?? [],
@@ -132,9 +132,9 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
   validate(doc, ctx) {
     const issues: Issue[] = [];
     const error = (field: string, code: string, message: string) => issues.push({ field, code, message, level: 'error' });
-    const periodEnd = periodEndOf(doc.payGroup, doc.periodStart);
+    const periodEnd = periodEndOf(doc.payGroup, doc.periodStart, weekRuleOf(ctx.db));
     if (!periodEnd) {
-      error('periodStart', 'PERIOD', doc.payGroup === 'WEEKLY_PIECE' ? 'A weekly payroll starts on a Monday (Monday to Saturday).' : 'A semi-monthly payroll starts on the 1st or the 16th.');
+      error('periodStart', 'PERIOD', doc.payGroup === 'WEEKLY_PIECE' ? `A weekly payroll starts on a ${weekRuleOf(ctx.db).startsOn(doc.periodStart) === 'friday' ? 'Friday (Friday to Thursday)' : 'Monday (Monday to Saturday)'}.` : 'A semi-monthly payroll starts on the 1st or the 16th.');
       return issues;
     }
     if (periodEnd > ctx.businessDate) {
@@ -403,22 +403,18 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
       .pluck()
       .all() as string[];
     const periods: { payGroup: PayGroup; periodStart: string }[] = [];
+    const rule = weekRuleOf(db);
     for (const payGroup of PAY_GROUPS) {
       for (const d of days) {
-        const monday = (() => {
-          const wd = new Date(`${d}T00:00:00Z`).getUTCDay();
-          const [y, m, day] = d.split('-').map(Number);
-          const t = new Date(Date.UTC(y!, m! - 1, day! - ((wd + 6) % 7)));
-          return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
-        })();
-        const start = payGroup === 'WEEKLY_PIECE' ? monday : `${d.slice(0, 8)}${Number(d.slice(8)) <= 15 ? '01' : '16'}`;
-        const end = periodEndOf(payGroup, start)!;
+        const start = payGroup === 'WEEKLY_PIECE' ? weekStartOf(d, rule) : `${d.slice(0, 8)}${Number(d.slice(8)) <= 15 ? '01' : '16'}`;
+        if (!start) continue;
+        const end = periodEndOf(payGroup, start, rule)!;
         if (end <= lastDay && employeesInGroup(db, payGroup, start, end).length && !recordedRunFor(db, payGroup, start) && !periods.some((p) => p.payGroup === payGroup && p.periodStart === start)) periods.push({ payGroup, periodStart: start });
       }
     }
     if (!periods.length) throw new Error('No period has anyone to pay');
     return fc.constantFrom(...periods).chain((p) => {
-      const people = employeesInGroup(db, p.payGroup, p.periodStart, periodEndOf(p.payGroup, p.periodStart)!).map((e) => e.id);
+      const people = employeesInGroup(db, p.payGroup, p.periodStart, periodEndOf(p.payGroup, p.periodStart, rule)!).map((e) => e.id);
       return fc
         .option(fc.record({ employeeId: fc.constantFrom(...people), amountCents: fc.integer({ min: 1, max: 2_000_00 }) }), { nil: undefined })
         .map((extra) => ({ ...p, ...(extra ? { lines: [{ ...extra, kind: 'allowance' as const, reason: 'Transport allowance (made up)' }] } : {}) }));

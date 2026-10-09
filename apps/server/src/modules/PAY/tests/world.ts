@@ -9,9 +9,17 @@ import { tx } from '../../../platform/db/driver.ts';
 import { addEmployee, addPay, type TestPay } from '../../EMP/tests/fixture.ts';
 import { saveAttendance } from '../../EMP/time.ts';
 
-/** A test world at a Manila date: users, an actor with every permission, and helpers to record through the engine. */
-export async function world(date: string) {
+/**
+ * A test world at a Manila date: users, an actor with every permission, and helpers to record through the engine.
+ * The payroll goldens were worked with Monday-to-Saturday weeks (PLAN F2), so the world keeps them past the shop's change
+ * to Friday-to-Thursday on Oct 9, 2026, unless `fridayWeeks` (the setting as shipped).
+ */
+export async function world(date: string, { fridayWeeks = false } = {}) {
   const env = await createTestEnv(`${date}T02:00:00Z`); // 10:00 in Manila
+  if (!fridayWeeks) {
+    env.db.prepare(`INSERT INTO settings (key, effective_from, value_json, reason, created_at) VALUES ('pay.week_start', '2026-10-09', '"monday"', 'Payroll goldens: Monday-to-Saturday weeks', ?)`)
+      .run(`${date}T10:00:00.000+08:00`);
+  }
   encoderOwnDefaults(env); // the payroll tests' encoder sees no payroll
   const userId = createUser(env.db, `payroll-${date}`, ['owner']);
   const actor = { userId, permissions: new Set(env.deps.registry.permissions().map((p) => p.key)) };
