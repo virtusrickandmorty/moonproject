@@ -13,14 +13,17 @@ beforeEach(async () => {
 
 describe('menu order', () => {
   it('is the usual order until arranged, then each person gets back only their own', async () => {
-    expect((await owner.get('/api/pref/menu')).json()).toEqual({ groups: [], items: {} });
-    const mine = { groups: ['Sales', 'Overview'], items: { Sales: ['/pos', '/cus', '/docs/jo.job_order'] } };
+    expect((await owner.get('/api/pref/menu')).json()).toEqual({ groups: [], items: {}, subs: {} });
+    // The sub-categories' order too (the owner's request, Oct 2026).
+    const mine = { groups: ['Sales', 'Overview'], items: { Sales: ['/pos', '/cus', '/docs/jo.job_order'] }, subs: { Sales: ['Collections', 'Customers & quotes'] } };
     expect((await owner.put('/api/pref/menu', mine)).statusCode).toBe(200);
     expect((await owner.get('/api/pref/menu')).json()).toEqual(mine);
-    expect((await encoder.get('/api/pref/menu')).json()).toEqual({ groups: [], items: {} });
+    // An order saved without sub-categories (an older screen) keeps them in the usual order.
+    expect((await owner.put('/api/pref/menu', { groups: ['Sales'], items: {} })).json()).toEqual({ groups: ['Sales'], items: {}, subs: {} });
+    expect((await encoder.get('/api/pref/menu')).json()).toEqual({ groups: [], items: {}, subs: {} });
     // Saving again replaces it; empty lists are "reset to default".
     await owner.put('/api/pref/menu', { groups: [], items: {} });
-    expect((await owner.get('/api/pref/menu')).json()).toEqual({ groups: [], items: {} });
+    expect((await owner.get('/api/pref/menu')).json()).toEqual({ groups: [], items: {}, subs: {} });
   });
 
   it('takes only group names and screen addresses, and needs a signed-in person', async () => {

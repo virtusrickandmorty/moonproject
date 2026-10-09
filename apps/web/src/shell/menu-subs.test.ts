@@ -16,3 +16,9 @@ it('places every screen and document list an owner sees under a named sub-catego
   expect([placed('/docs/jo.release'), placed('/docs/col.cwt_only'), placed('/col/checks'), placed('/tax/sales'), placed('/tax/1702q'), placed('/acc/opening')])
     .toEqual(['Job orders & release', 'Collections', 'Cash & bank', 'Tax registers', 'Tax returns & payments', 'Setup']);
 });
+
+it("puts a group's sub-categories in the person's own order, then the usual one", () => {
+  const menu = buildMenu(DOC_TYPES, new Set(SCREENS.flatMap((s) => (s.permission ? [s.permission] : []))));
+  const sales = menu.find((g) => g.group === 'Sales')!;
+  expect(sectionsOf('Sales', sales.items, ['Collections', 'Gone sub-category']).map((s) => s.sub)).toEqual(['Collections', 'Customers & quotes', 'Job orders & release', 'Shop & POS']);
+});
