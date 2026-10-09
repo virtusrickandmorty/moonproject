@@ -8,7 +8,7 @@ import { api, type DashNotification, type DocTypeInfo, type Me, type MenuOrder }
 import { Link, navigate, useLocation } from '../router.tsx';
 import { longDate } from '../components/ui.tsx';
 import { showToast } from '../components/Toasts.tsx';
-import { MENU_FOLDS_KEY, applyMenuOrder, buildMenu, docPath, isHere, labelOf, openGroups, type MenuGroup, type MenuItem } from './menu.ts';
+import { MENU_FOLDS_KEY, applyMenuOrder, buildMenu, docPath, isHere, labelOf, openGroups, sectionsOf, type MenuGroup, type MenuItem } from './menu.ts';
 import { SearchBox } from '../modules/NAV/Search.tsx';
 import { Breadcrumbs, CrumbName, crumbsFor } from './crumbs.tsx';
 
@@ -316,11 +316,17 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
                     <Icon name="chevron" className={`size-3.5 text-slate-400 transition-transform ${shown ? 'rotate-90' : ''}`} />
                   </button>
                 ) : <p className="flex items-center gap-2 py-2.5 pl-6 pr-4 text-[11px] font-bold uppercase tracking-wider text-[#404040]">{heading}</p>}
-                {shown && g.items.map((i) => (
-                  <Link key={i.path} to={i.path}
-                    className={`block rounded-r-full py-2 pl-12 pr-4 transition-colors ${isHere(path, i.path) ? 'bg-white font-bold text-indigo-600 shadow-sm' : 'text-[#484848] hover:bg-white hover:text-indigo-600'}`}>
-                    {i.label}
-                  </Link>
+                {shown && sectionsOf(g.group, g.items).map((s, k, all) => (
+                  <div key={s.sub} role="group" aria-label={all.length > 1 ? `${g.group}: ${s.sub}` : undefined}>
+                    {/* Sub-categories (the owner's request, Oct 2026): related screens together, under a small heading. */}
+                    {all.length > 1 && <p className={`pb-1 pl-12 pr-4 text-[10px] font-semibold uppercase tracking-wider text-slate-400 ${k === 0 ? 'pt-0.5' : 'pt-2.5'}`}>{s.sub}</p>}
+                    {s.items.map((i) => (
+                      <Link key={i.path} to={i.path}
+                        className={`block rounded-r-full py-2 pl-12 pr-4 transition-colors ${isHere(path, i.path) ? 'bg-white font-bold text-indigo-600 shadow-sm' : 'text-[#484848] hover:bg-white hover:text-indigo-600'}`}>
+                        {i.label}
+                      </Link>
+                    ))}
+                  </div>
                 ))}
               </div>
             );
