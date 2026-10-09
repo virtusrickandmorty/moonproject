@@ -10,7 +10,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { PAY_GROUPS, employee, employeesInGroup } from '../EMP/public.ts';
 import { runDoc } from './doctypes/run.ts';
 import { releaseStatus } from './doctypes/release.ts';
-import { addDays, periodEndOf, weekRuleOf } from './run-calc.ts';
+import { addDays, periodEndOf, periodRuleOf } from './run-calc.ts';
 import { listLoans, registerLoan, stopLoan, updateLoan, withTotals } from './loans.ts';
 import { annualTableAt, hdmfRateAt, payRulesAt, phicRateAt, sssRateAt, wtaxTableAt } from './statutory.ts';
 import { addPrior, updatePrior } from './prior.ts';
@@ -96,7 +96,7 @@ export function payRoutes(app: FastifyInstance, deps: AppDeps): void {
     const { payGroup } = z.object({ payGroup: z.enum(PAY_GROUPS) }).strict().parse(req.query);
     const now = today(clock);
     const backdate = currentUser(req).permissions.has(BACKDATE_PERMISSION);
-    const rule = weekRuleOf(db);
+    const rule = periodRuleOf(db);
     const starts: string[] = [];
     for (let d = now; starts.length < 6 && d > addDays(now, -120); d = addDays(d, -1)) {
       const end = periodEndOf(payGroup, d, rule);

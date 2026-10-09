@@ -15,7 +15,7 @@ import { fixedClock, today } from '../clock.ts';
 import { openDb, type Db } from '../db/driver.ts';
 import { loadModules } from '../../modules/load.ts';
 import { runInvariants } from '../../engine/ledger/invariants.ts';
-import { periodEndOf, weekRuleOf, weekStartOf } from '../../modules/PAY/run-calc.ts';
+import { periodEndOf, periodRuleOf, semiStartOf, weekStartOf } from '../../modules/PAY/run-calc.ts';
 import { SESSION_COOKIE } from '../../engine/security/sessions.ts';
 
 export const DAY_MS = 86_400_000;
@@ -278,14 +278,12 @@ export async function createPracticeData(dbPath: string, days: number, start = '
       accountant = await signIn(app, 'accountant', passwords.accountant);
       encoder = await signIn(app, 'encoder', passwords.encoder);
       const dayOfMonth = Number(date.slice(8));
-      const monthEnd = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0)).getUTCDate();
       const runs: { payGroup: string; periodStart: string }[] = [];
-      const rule = weekRuleOf(db);
+      const rule = periodRuleOf(db);
       const week = weekStartOf(date, rule);
       if (week && periodEndOf('WEEKLY_PIECE', week, rule) === date) runs.push({ payGroup: 'WEEKLY_PIECE', periodStart: week });
-      if (dayOfMonth === 15 || dayOfMonth === monthEnd) {
-        runs.push({ payGroup: 'SEMI_MONTHLY', periodStart: `${date.slice(0, 8)}${dayOfMonth === 15 ? '01' : '16'}` });
-      }
+      const half = semiStartOf(date, rule); // the semi-monthly run closes on its period's last day (the 15th and month end, or the 10th and 25th)
+      if (half && periodEndOf('SEMI_MONTHLY', half, rule) === date) runs.push({ payGroup: 'SEMI_MONTHLY', periodStart: half });
       for (const input of runs) {
         const run = await record(accountant, 'pay.run', input);
         const slips = ok(await accountant.get(`/api/pay/runs/${run.id}/payslips`), 'payroll slips');

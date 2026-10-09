@@ -4,7 +4,7 @@
  * periods and none is left out.
  */
 import { describe, expect, it } from 'vitest';
-import { periodEndOf, weekStartOf, type WeekRule } from '../run-calc.ts';
+import { periodEndOf, semiStartOf, weekStartOf, type PeriodRule, type WeekRule } from '../run-calc.ts';
 import { runDoc } from '../doctypes/run.ts';
 import { world } from './world.ts';
 
@@ -48,4 +48,29 @@ it('a weekly run leaves off whoever has nothing to pay that week, and names them
   const run = w.preview(runDoc, { payGroup: 'WEEKLY_PIECE', periodStart: '2026-09-21' });
   expect((run.doc as { employees: { name: string }[] }).employees.map((e) => e.name)).toEqual(['Ben Lingguhan']);
   expect(run.issues).toContainEqual(expect.objectContaining({ code: 'NOTHING_TO_PAY', message: 'Nothing to pay this week, so not on this run: Cora Walangtrabaho.' }));
+});
+
+describe('semi-monthly cut-offs on the 10th and 25th from Oct 16, 2026 (the owner\'s decision, Oct 9, 2026)', () => {
+  const CUT: PeriodRule = { startsOn: () => 'monday', changes: [], semi: (day) => (day >= '2026-10-16' ? '10_25' : 'calendar'), semiChanges: ['2026-10-16'] };
+  it('1–15 and 16–end before; Oct 16–25 to switch; then 26th–10th and 11th–25th, across month and year ends', () => {
+    expect(periodEndOf('SEMI_MONTHLY', '2026-10-01', CUT)).toBe('2026-10-15');
+    expect(periodEndOf('SEMI_MONTHLY', '2026-10-16', CUT)).toBe('2026-10-25'); // the short switch-over period
+    expect(periodEndOf('SEMI_MONTHLY', '2026-10-26', CUT)).toBe('2026-11-10');
+    expect(periodEndOf('SEMI_DAILY', '2026-11-11', CUT)).toBe('2026-11-25');
+    expect(periodEndOf('SEMI_MONTHLY', '2026-12-26', CUT)).toBe('2027-01-10');
+    expect(periodEndOf('SEMI_MONTHLY', '2027-02-11', CUT)).toBe('2027-02-25');
+    expect(periodEndOf('SEMI_MONTHLY', '2026-11-01', CUT)).toBeUndefined(); // the 1st and 16th no longer open a period
+    expect(periodEndOf('SEMI_MONTHLY', '2026-11-16', CUT)).toBeUndefined();
+    expect([semiStartOf('2026-11-05', CUT), semiStartOf('2026-10-20', CUT), semiStartOf('2026-10-03', CUT)]).toEqual(['2026-10-26', '2026-10-16', '2026-10-01']);
+    expect(periodEndOf('WEEKLY_PIECE', '2026-10-19', CUT)).toBe('2026-10-24'); // the weekly group keeps its own rule
+  });
+});
+
+it('the shop as shipped pays Oct 26 – Nov 10 in November and refuses a period starting on the 1st after the change', async () => {
+  const w = await world('2026-11-12', { fridayWeeks: true, cutoff1025: true });
+  w.person('Carla Opisina', { payType: 'monthly', payGroup: 'SEMI_MONTHLY', monthlyRateCents: 1_500_000 }, { costCentre: 'office' });
+  const run = w.preview(runDoc, { payGroup: 'SEMI_MONTHLY', periodStart: '2026-10-26' });
+  expect(run.issues.filter((i) => i.level === 'error')).toEqual([]);
+  expect(run.doc as { periodEnd: string; contributionMonth: string }).toMatchObject({ periodEnd: '2026-11-10', contributionMonth: '2026-11' });
+  expect(w.preview(runDoc, { payGroup: 'SEMI_MONTHLY', periodStart: '2026-11-01' }).issues).toContainEqual(expect.objectContaining({ code: 'PERIOD', message: 'A semi-monthly payroll starts on the 26th or the 11th (26th to 10th, 11th to 25th).' }));
 });
