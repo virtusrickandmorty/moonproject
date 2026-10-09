@@ -21,15 +21,21 @@ export function Attendance({ me }: { me: Me }) {
   const [done, setDone] = useState('');
   const [error, setError] = useState('');
   const [importing, setImporting] = useState(false);
+  // Piece-rate workers are paid by their pieces, so the grid leaves them out unless shown (the owner's request, Oct 2026).
+  const [showPiece, setShowPiece] = useState(false);
+  const [pieceCount, setPieceCount] = useState(0);
   const a = useAction();
   const load = useCallback(async (r: { from: string; to: string }) => {
     setError('');
-    const g = await api.attendance(r.from, r.to).catch((e: Error) => (setError(e.message), null));
+    const all = await api.attendance(r.from, r.to).catch((e: Error) => (setError(e.message), null));
+    const piece = new Set(all?.employees.filter((e) => e.pieceRate).map((e) => e.id) ?? []);
+    setPieceCount(piece.size);
+    const g = all && !showPiece ? { ...all, employees: all.employees.filter((e) => !piece.has(e.id)), days: all.days.filter((d) => !piece.has(d.employeeId)) } : all;
     setGrid(g);
     const start = g ? startCells(g) : { cells: {}, filled: 0 };
     setCells(start.cells);
     setFilled(start.filled);
-  }, []);
+  }, [showPiece]);
   useEffect(() => {
     api.health().then((h) => setRange(halfMonthOf(h.serverTime.slice(0, 10))), (e: Error) => setError(e.message)); // the server's Manila date
   }, []);
@@ -68,6 +74,12 @@ export function Attendance({ me }: { me: Me }) {
         <span className="text-sm font-medium">{grid.from} to {grid.to}</span>
         <Button onClick={() => void shift(1)}>Later →</Button>
         <span className="flex-1" />
+        {pieceCount > 0 && (
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={showPiece} disabled={unsaved} title={unsaved ? 'Save or undo your marks first' : undefined} onChange={(e) => setShowPiece(e.target.checked)} />
+            Show piece-rate workers ({pieceCount})
+          </label>
+        )}
         {editable && <Button onClick={() => setImporting(true)}>Import from biometric</Button>}
       </div>
       {importing && <BiometricImport onClose={() => setImporting(false)} onSaved={() => void load(range)} />}

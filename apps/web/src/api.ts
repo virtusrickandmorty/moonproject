@@ -350,7 +350,8 @@ export interface AttendanceDay { employeeId: string; date: string; status: Atten
 export interface Holiday { id: number; date: string; name: string; kind: 'regular' | 'special'; source: string; isActive: boolean; deactivatedReason: string | null }
 export interface AttendanceGrid {
   from: string; to: string; today: string; statuses: AttendanceStatus[]; holidays: Holiday[];
-  employees: { id: string; code: string; fullName: string; hireDate: string; separatedOn: string | null }[]; days: AttendanceDay[];
+  /** pieceRate: paid by the piece (hidden on the grid unless shown). */
+  employees: { id: string; code: string; fullName: string; hireDate: string; separatedOn: string | null; pieceRate?: boolean }[]; days: AttendanceDay[];
   /** Days recorded payroll runs paid: locked until the run is cancelled. */
   paid: PaidDays[];
 }

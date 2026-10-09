@@ -94,7 +94,9 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
     checkRange(from, to);
     const employees = listEmployees(db, { search: '', status: 'all' })
       .filter((e) => e.hireDate <= to && (!e.separatedOn || e.separatedOn >= from))
-      .map(({ id, code, fullName, hireDate, separatedOn }) => ({ id, code, fullName, hireDate, separatedOn }));
+      // pieceRate: paid by the piece at the end of the range (the screen hides them unless asked; the owner's request, Oct 2026).
+      .map(({ id, code, fullName, hireDate, separatedOn }) => ({ id, code, fullName, hireDate, separatedOn,
+        pieceRate: payProfileAt(db, id, separatedOn && separatedOn < to ? separatedOn : to)?.payType === 'piece' }));
     return { from, to, today: today(clock), statuses: ATTENDANCE, holidays: holidaysBetween(db, from, to), employees, days: attendanceBetween(db, from, to), paid: paidDaysBetween(db, from, to) };
   });
 
