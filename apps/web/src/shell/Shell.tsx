@@ -316,18 +316,33 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
                     <Icon name="chevron" className={`size-3.5 text-slate-400 transition-transform ${shown ? 'rotate-90' : ''}`} />
                   </button>
                 ) : <p className="flex items-center gap-2 py-2.5 pl-6 pr-4 text-[11px] font-bold uppercase tracking-wider text-[#404040]">{heading}</p>}
-                {shown && sectionsOf(g.group, g.items).map((s, k, all) => (
-                  <div key={s.sub} role="group" aria-label={all.length > 1 ? `${g.group}: ${s.sub}` : undefined}>
-                    {/* Sub-categories (the owner's request, Oct 2026): related screens together, under a small heading. */}
-                    {all.length > 1 && <p className={`pb-1 pl-12 pr-4 text-[10px] font-semibold uppercase tracking-wider text-slate-400 ${k === 0 ? 'pt-0.5' : 'pt-2.5'}`}>{s.sub}</p>}
-                    {s.items.map((i) => (
-                      <Link key={i.path} to={i.path}
-                        className={`block rounded-r-full py-2 pl-12 pr-4 transition-colors ${isHere(path, i.path) ? 'bg-white font-bold text-indigo-600 shadow-sm' : 'text-[#484848] hover:bg-white hover:text-indigo-600'}`}>
-                        {i.label}
-                      </Link>
-                    ))}
-                  </div>
-                ))}
+                {shown && sectionsOf(g.group, g.items).map((s, k, all) => {
+                  // Sub-categories (the owner's request, Oct 2026): related screens together under a heading that folds; their
+                  // screens indented under it. Each starts open and closes on its own; what a person folds is remembered
+                  // like the groups (so nothing is hidden until they fold it).
+                  const multi = all.length > 1;
+                  const key = `${g.group}/${s.sub}`;
+                  const holdsHere = s.items.some((i) => isHere(path, i.path));
+                  const subOpen = !multi || (chosen[key] ?? true);
+                  return (
+                    <div key={s.sub} role="group" aria-label={multi ? `${g.group}: ${s.sub}` : undefined} className={multi && k > 0 ? 'mt-0.5' : ''}>
+                      {multi && (
+                        <button type="button" aria-expanded={subOpen} onClick={() => fold(key, subOpen)}
+                          className={`flex w-full items-center gap-1.5 rounded-r-full py-1.5 pl-10 pr-4 text-left text-[10px] font-semibold uppercase tracking-wider hover:bg-white hover:text-indigo-700 ${holdsHere ? 'text-indigo-700' : 'text-slate-500'}`}>
+                          <Icon name="chevron" className={`size-3 shrink-0 transition-transform ${subOpen ? 'rotate-90' : ''}`} />
+                          <span className="flex-1">{s.sub}</span>
+                          {!subOpen && <span aria-hidden="true" className="text-[10px] font-semibold text-slate-400">{s.items.length}</span>}
+                        </button>
+                      )}
+                      {subOpen && s.items.map((i) => (
+                        <Link key={i.path} to={i.path}
+                          className={`block rounded-r-full py-2 pr-4 transition-colors ${multi ? 'pl-16' : 'pl-12'} ${isHere(path, i.path) ? 'bg-white font-bold text-indigo-600 shadow-sm' : 'text-[#484848] hover:bg-white hover:text-indigo-600'}`}>
+                          {i.label}
+                        </Link>
+                      ))}
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
