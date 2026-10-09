@@ -285,7 +285,7 @@ describe('the screens against the real server', () => {
     const web = createApi(injectFetch(env.app));
     await web.login('owner1', PASSWORD);
     const g = await web.roles();
-    expect(g.roles).toEqual(['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing']);
+    expect(g.roles).toEqual(['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing', 'hr']);
     expect(g.permissions.find((p) => p.key === 'sec.users.manage')).toMatchObject({ module: 'SEC', label: 'Manage users, roles and passwords', roles: ['owner'] });
     expect(groupPermissions(g.permissions).length).toBeGreaterThan(10);
     await expect(web.setRolePermission('encoder', 'acc.coa.view', true)).rejects.toMatchObject({ code: 'STEP_UP_REQUIRED' });
@@ -385,7 +385,7 @@ describe('Roles and permissions as departments (the owner\'s request, Oct 9, 202
   it('shows the departments in order and searches what they may do', async () => {
     const { searchPermissions } = await import('./SEC/roles.ts');
     const { roleLabel, sortRoles } = await import('./SEC/users.ts');
-    expect(sortRoles(['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing']).map(roleLabel)).toEqual(['Administrator', 'Accounting', 'Sales', 'Production', 'Purchasing', 'Live view']);
+    expect(sortRoles(['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing', 'hr']).map(roleLabel)).toEqual(['Administrator', 'Accounting', 'Sales', 'Production', 'Purchasing', 'Human Resource', 'Live view']);
     const perms = [
       { key: 'pur.po.create', module: 'PUR', label: 'Create purchase orders' },
       { key: 'jo.view', module: 'JO', label: 'View job orders' },

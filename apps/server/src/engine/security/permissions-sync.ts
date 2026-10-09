@@ -16,19 +16,22 @@ import { ROLES, type RoleKey } from '@moonproject/shared';
 export const OWNER_ONLY_PERMISSIONS: readonly string[] = ['sec.users.manage', 'bak.view', 'bak.run', 'bak.manage', 'bak.restore', 'shp.payment.manage'];
 
 /**
- * What Purchasing starts with (the owner's decision, Oct 9, 2026; migration 0015_purchasing_role.sql repeats it): the
- * basics, and what Sales (the encoder) gets for suppliers, purchase orders and receiving, supplier bills and payments,
- * and inventory counts.
+ * What the departments added later start with (the owner's decisions, Oct 9, 2026; migrations 0015_purchasing_role.sql and
+ * 0016_hr_role.sql repeat it): a few basics, and what Sales (the encoder) gets in their areas. Purchasing: suppliers,
+ * purchase orders and receiving, supplier bills and payments, inventory counts. Human Resource: employees, payroll, cash
+ * advances and the government contributions.
  */
-export const PURCHASING_BASICS: readonly string[] = ['dash.view', 'nav.search', 'cal.view', 'cat.view'];
-const PURCHASING_AREAS = ['pur.', 'ap.', 'inv.'];
+export const DEPARTMENT_STARTS: Readonly<Partial<Record<RoleKey, { basics: readonly string[]; areas: readonly string[] }>>> = {
+  purchasing: { basics: ['dash.view', 'nav.search', 'cal.view', 'cat.view'], areas: ['pur.', 'ap.', 'inv.'] },
+  hr: { basics: ['dash.view', 'nav.search', 'cal.view'], areas: ['emp.', 'pay.', 'ca.', 'stat.'] },
+};
 
-/** The roles a new permission is granted to: its defaults, plus the encoder wherever the accountant has it, plus Purchasing in its areas. */
+/** The roles a new permission is granted to: its defaults, plus the encoder wherever the accountant has it, plus the departments in their areas. */
 export function defaultGrants(key: string, defaultRoles: readonly RoleKey[]): RoleKey[] {
   const encoderToo = defaultRoles.includes('accountant') && !OWNER_ONLY_PERMISSIONS.includes(key);
   const encoder = defaultRoles.includes('encoder') || encoderToo;
-  const purchasing = PURCHASING_BASICS.includes(key) || (encoder && PURCHASING_AREAS.some((a) => key.startsWith(a)));
-  return ROLES.filter((r) => defaultRoles.includes(r) || (r === 'encoder' && encoderToo) || (r === 'purchasing' && purchasing));
+  const starts = (r: RoleKey) => { const d = DEPARTMENT_STARTS[r]; return !!d && (d.basics.includes(key) || (encoder && d.areas.some((a) => key.startsWith(a)))); };
+  return ROLES.filter((r) => defaultRoles.includes(r) || (r === 'encoder' && encoderToo) || starts(r));
 }
 
 export function syncPermissions(db: Db, registry: Registry, at: string): void {
