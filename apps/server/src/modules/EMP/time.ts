@@ -59,6 +59,20 @@ export function addHoliday(db: Db, raw: unknown, who: Who): Holiday {
   return holidaysOf(db, Number(v.date.slice(0, 4))).find((h) => h.id === id)!;
 }
 
+/**
+ * Switches a holiday that was switched off on again (the owner's request, Oct 2026): a holiday row once off stays off, so
+ * it is added again with the same date, name, kind and source, through addHoliday's checks (no other holiday on the date,
+ * no recorded payroll paid it, no ordinary day typed on it).
+ */
+export function reactivateHoliday(db: Db, id: number, who: Who): Holiday {
+  const h = db.prepare(`${HOLIDAY} WHERE id = ?`).get(id) as (Omit<Holiday, 'isActive'> & { isActive: number }) | undefined;
+  if (!h) throw notFound('The holiday');
+  if (h.isActive) throw conflict('ALREADY_ON', `${h.name} (${h.date}) is already on.`);
+  const again = addHoliday(db, { date: h.date, name: h.name, kind: h.kind, source: h.source }, who);
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'emp.holiday.reactivate', entityType: 'emp.holiday', entityId: String(again.id), data: { date: h.date, name: h.name, switchedOffId: id } });
+  return again;
+}
+
 export function deactivateHoliday(db: Db, id: number, raw: unknown, who: Who): Holiday {
   const { reason } = z.object({ reason: z.string().trim().min(10).max(300) }).strict().parse(raw);
   const h = db.prepare(`${HOLIDAY} WHERE id = ?`).get(id) as (Omit<Holiday, 'isActive'> & { isActive: number }) | undefined;

@@ -1,10 +1,11 @@
 /**
  * Holidays (PLAN E11, F1): the year's regular and special days that payroll and attendance read. The accountant adds
- * local days (OWN-29) and switches a wrong one off with a reason; nothing is edited or deleted.
+ * local days (OWN-29). Each date shows once with an on/off switch (the owner's request, Oct 2026): off asks why; on adds
+ * the holiday again (a row once off stays off); nothing is edited or deleted.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Holiday, type Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, ReasonDialog, inputClass, useAction, showDate } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, ReasonDialog, askConfirm, inputClass, useAction, showDate } from '../../components/ui.tsx';
 import { weekday } from './time.ts';
 
 export function Holidays({ me }: { me: Me }) {
@@ -15,6 +16,17 @@ export function Holidays({ me }: { me: Me }) {
   const load = useCallback((y?: number) => api.holidays(y).then((r) => (setYear(r.year), setRows(r.holidays)), (e: Error) => setError(e.message)), []);
   useEffect(() => void load(), [load]);
   const manage = me.permissions.includes('emp.holidays');
+  const turnOn = useAction();
+  // One row per date: the holiday on it now, else the one switched off last (earlier rows are its history).
+  const shown = [...new Map(rows.map((h) => [h.date, h])).keys()].map((date) => {
+    const all = rows.filter((h) => h.date === date);
+    return all.find((h) => h.isActive) ?? all.at(-1)!;
+  });
+  const switchOn = (h: Holiday) => turnOn.run(async () => {
+    if (!(await askConfirm(`Attendance and payroll treat ${showDate(h.date)} as ${h.kind === 'regular' ? 'a regular holiday' : 'a special non-working day'} again.`, { title: `Switch ${h.name} back on?`, yes: 'Switch on' }))) return;
+    await api.activateHoliday(h.id);
+    await load(year ?? undefined);
+  });
   if (error) return <Notice>{error}</Notice>;
   if (year === null) return <p className="text-slate-500">Loading…</p>;
   return (
@@ -26,18 +38,26 @@ export function Holidays({ me }: { me: Me }) {
       </div>
       <Panel title="Regular holidays and special non-working days">
         <table className="w-full text-sm">
-          <thead className="text-left text-slate-500"><tr><th>Date</th><th>Name</th><th>Kind</th><th>Source</th><th /></tr></thead>
+          <thead className="text-left text-slate-500"><tr><th>Date</th><th>Name</th><th>Kind</th><th>Source</th><th className="text-right">On</th></tr></thead>
           <tbody>
-            {rows.map((h) => (
-              <tr key={h.id} className={`border-t border-slate-100 ${h.isActive ? '' : 'text-slate-400 line-through'}`}>
-                <td className="py-1 whitespace-nowrap">{weekday(h.date)} {showDate(h.date)}</td><td>{h.name}</td><td className="capitalize">{h.kind}</td>
+            {shown.map((h) => (
+              <tr key={h.id} className={`border-t border-slate-100 ${h.isActive ? '' : 'text-slate-400'}`}>
+                <td className="py-1 whitespace-nowrap">{weekday(h.date)} {showDate(h.date)}</td><td className={h.isActive ? '' : 'line-through'}>{h.name}</td><td className="capitalize">{h.kind}</td>
                 <td className="text-slate-600">{h.isActive ? h.source : `Switched off: ${h.deactivatedReason}`}</td>
-                <td>{manage && h.isActive && <Button onClick={() => setOff(h)}>Switch off</Button>}</td>
+                <td className="text-right">
+                  <button type="button" role="switch" aria-checked={h.isActive} aria-label={`${h.name} ${showDate(h.date)}: ${h.isActive ? 'on' : 'off'}`}
+                    disabled={!manage || turnOn.busy} title={manage ? (h.isActive ? 'Switch off' : 'Switch back on') : undefined}
+                    onClick={() => (h.isActive ? setOff(h) : void switchOn(h))}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${h.isActive ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+                    <span className={`inline-block size-5 rounded-full bg-white shadow transition-transform ${h.isActive ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
         {rows.length === 0 && <p className="text-sm text-slate-500">No holidays for this year yet.</p>}
+        {turnOn.error && <Notice>{turnOn.error}</Notice>}
       </Panel>
       {manage && <NewHoliday onSaved={() => load(year)} />}
       {off && (

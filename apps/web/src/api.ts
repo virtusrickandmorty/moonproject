@@ -1109,6 +1109,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     holidays: (year?: number) => call<{ year: number; holidays: Holiday[] }>('GET', `/api/emp/holidays${year ? `?year=${year}` : ''}`),
     addHoliday: (body: { date: string; name: string; kind: 'regular' | 'special'; source: string }) => call<Holiday>('POST', '/api/emp/holidays', body),
     deactivateHoliday: (id: number, reason: string) => call<Holiday>('POST', `/api/emp/holidays/${id}/deactivate`, { reason }),
+    activateHoliday: (id: number) => call<Holiday>('POST', `/api/emp/holidays/${id}/activate`, {}),
     activeEmployees: () => call<ActiveEmployee[]>('GET', '/api/emp/active'),
     payPeriods: (payGroup: PayGroup) => call<PayPeriod[]>('GET', `/api/pay/periods?payGroup=${payGroup}`),
     payslips: (runId: string) => call<Payslips>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/payslips`),
