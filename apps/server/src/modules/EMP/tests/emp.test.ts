@@ -325,3 +325,14 @@ it('lists the newest added first when asked (the Employees screen); by name othe
   const byName = await ids('');
   expect(byName.indexOf(second.id)).toBeLessThan(byName.indexOf(first.id)); // Ana before Zed
 });
+
+it('marks piece-rate workers on the attendance grid, so the screen can hide them', async () => {
+  const userId = (env.db.prepare('SELECT id FROM users LIMIT 1').pluck().get() as string);
+  const sewer = addEmployee(env.db, 'Pia Piraso', { hireDate: '2026-01-05' });
+  addPay(env.db, sewer, userId, { effectiveFrom: '2026-01-05', payType: 'piece', payGroup: 'WEEKLY_PIECE' });
+  const clerk = addEmployee(env.db, 'Dina Araw', { hireDate: '2026-01-05' });
+  addPay(env.db, clerk, userId, { effectiveFrom: '2026-01-05', payType: 'daily', payGroup: 'SEMI_DAILY', dailyRateCents: 60_000 });
+  const grid = (await acct.get('/api/emp/attendance?from=2026-09-16&to=2026-09-27')).json() as { employees: { id: string; pieceRate: boolean }[] };
+  expect(grid.employees.find((e) => e.id === sewer)?.pieceRate).toBe(true);
+  expect(grid.employees.find((e) => e.id === clerk)?.pieceRate).toBe(false);
+});
