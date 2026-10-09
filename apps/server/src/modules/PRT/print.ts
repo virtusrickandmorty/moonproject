@@ -146,6 +146,9 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
     status: [['Job order', doc.jobOrderNumber], ['ID type seen', doc.idSeen]],
     aside: jobOrderQr(doc.jobOrderId, doc.jobOrderNumber, joinBase),
     body: section('Items released', lineTable(['Description', 'Qty'], doc.lines.map((l: any) => [l.description, l.qty]))) +
+      // Who went out, when the wearers were ticked (the owner's request, Oct 2026).
+      (doc.lines.some((l: any) => l.wearers?.length) ? section('Wearers released', lineTable(['Item', 'Wearer', 'Size', 'Jersey no.', 'Qty'],
+        doc.lines.flatMap((l: any) => (l.wearers ?? []).map((w: any) => [l.description, w.wearerName, w.size, w.jerseyNumber, w.qty])))) : '') +
       field('Credit note', doc.creditNote) + field('Credit due date', doc.creditDueDate),
     totals: [['Balance due at release', money(doc.balanceDueCents), true]],
     signatures: [['Released by', prepared], ['Received by', doc.claimedBy]],

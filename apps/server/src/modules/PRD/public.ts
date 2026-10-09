@@ -4,7 +4,8 @@ import type { Db } from '../../platform/db/driver.ts';
 
 export { COMPLEXITIES, listSteps, stepById, type Complexity, type Step } from './production.ts';
 export { board } from './production.ts';
-import { lineDone, lineFinished, lineRoute } from './production.ts';
+import { coverage, lineDone, lineFinished, lineRoute, reworkFlow, routeDone, type Part } from './production.ts';
+import { rosterOf } from '../JO/public.ts';
 import { lineState } from '../JO/public.ts';
 
 /**
@@ -29,6 +30,29 @@ export function finishedPieces(db: Db, jobOrderId: string): Map<number, number |
   return new Map(lineState(db, jobOrderId).map((l) => {
     return [l.lineNo, lineFinished(db, jobOrderId, l.lineNo, l.qty, lineRoute(db, jobOrderId, l.lineNo))] as const;
   }));
+}
+
+/**
+ * The wearers of a line that went through every step (the release form marks them ready): all once every step is done,
+ * else those covered on the last needed step (both parts of a set); less any in rework. Null: not known by wearer (no
+ * route, no wearer list, or pieces recorded without ticking wearers).
+ */
+export function finishedWearers(db: Db, jobOrderId: string, lineNo: number): Set<number> | null {
+  const line = lineState(db, jobOrderId).find((l) => l.lineNo === lineNo);
+  const route = lineRoute(db, jobOrderId, lineNo);
+  const roster = rosterOf(db, jobOrderId, lineNo);
+  if (!line || !route || roster.length === 0) return null;
+  const last = [...route].reverse().find((s) => s.status !== 'not_needed');
+  const parts: Part[] = last?.parts ? ['upper', 'lower'] : ['whole'];
+  const open = new Set(parts.flatMap((p) => [...reworkFlow(db, jobOrderId, lineNo, route, p).values()].flatMap((f) => f.wearers)));
+  if (routeDone(route) || !last) return new Set(roster.map((w) => w.rowNo).filter((w) => !open.has(w)));
+  const covered: Set<number>[] = [];
+  for (const p of parts) {
+    const c = coverage(db, jobOrderId, lineNo, route, last, p, line.qty);
+    if (c.wearers === null || c.untracked > 0) return null;
+    covered.push(c.wearers);
+  }
+  return new Set(roster.map((w) => w.rowNo).filter((w) => covered.every((c) => c.has(w)) && !open.has(w)));
 }
 
 /** Current route names and status for a production job ticket. */

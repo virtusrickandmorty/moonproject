@@ -162,11 +162,13 @@ export interface ReleaseValues {
   jobOrderId: string;
   /** Pieces to release, by line number. */
   qtys: Record<number, string>;
+  /** On a line with a wearer list: who goes out (roster rows); the pieces are then theirs. */
+  wearers: Record<number, number[]>;
   claimedBy: string; idSeen: IdSeen | ''; creditNote: string; creditDueInDays: string; overrideReason: string;
   invoiceNumber: string; invoiceToFollow: boolean; invoiceNote: string;
 }
 export const emptyRelease = (jobOrderId = ''): ReleaseValues => ({
-  jobOrderId, qtys: {}, claimedBy: '', idSeen: '', creditNote: '', creditDueInDays: '', overrideReason: '', invoiceNumber: '', invoiceToFollow: false, invoiceNote: '',
+  jobOrderId, qtys: {}, wearers: {}, claimedBy: '', idSeen: '', creditNote: '', creditDueInDays: '', overrideReason: '', invoiceNumber: '', invoiceToFollow: false, invoiceNote: '',
 });
 /** Everything left on each line, ticked. */
 /**
@@ -181,7 +183,21 @@ export function allLeft(lines: JoStatus['lines']): Record<number, string> {
   return ready.length > 0 ? Object.fromEntries(ready.map((l) => [l.lineNo, now(l)])) : Object.fromEntries(left.map((l) => [l.lineNo, String(l.leftQty)]));
 }
 
-export interface ReleaseInput { jobOrderId: string; lines: { lineNo: number; qty: number }[]; claimedBy: string; idSeen: IdSeen; creditNote?: string; creditDueInDays?: number; overrideReason?: string }
+/** The wearers ticked to start with: on each line ticked, those ready (through every step) and not out yet. */
+export function readyWearers(lines: JoStatus['lines'], qtys: Record<number, string>): { wearers: Record<number, number[]>; qtys: Record<number, string> } {
+  const wearers: Record<number, number[]> = {};
+  const out = { ...qtys };
+  for (const l of lines) {
+    if (!qtys[l.lineNo] || !l.wearers?.some((w) => w.ready !== null)) continue;
+    const picked = l.wearers.filter((w) => w.ready && !w.releasedOn);
+    if (picked.length === 0) continue;
+    wearers[l.lineNo] = picked.map((w) => w.rowNo);
+    out[l.lineNo] = String(picked.reduce((n, w) => n + w.qty, 0));
+  }
+  return { wearers, qtys: out };
+}
+
+export interface ReleaseInput { jobOrderId: string; lines: { lineNo: number; qty: number; wearers?: number[] }[]; claimedBy: string; idSeen: IdSeen; creditNote?: string; creditDueInDays?: number; overrideReason?: string }
 
 /**
  * Typed values -> the release, its invoice (null = invoice to follow), and what to fix first (`releaseErrors`: the release
@@ -190,13 +206,13 @@ export interface ReleaseInput { jobOrderId: string; lines: { lineNo: number; qty
 export function releaseInput(v: ReleaseValues, left: JoStatus['lines']): { release: ReleaseInput; invoice: { invoiceNumber: string; note?: string } | null; errors: string[]; releaseErrors: string[] } {
   const errors: string[] = [];
   if (!v.jobOrderId) errors.push('Pick the job order.');
-  const lines: { lineNo: number; qty: number }[] = [];
+  const lines: { lineNo: number; qty: number; wearers?: number[] }[] = [];
   for (const l of left) {
     const typed = (v.qtys[l.lineNo] ?? '').trim();
     if (!typed || typed === '0') continue;
     if (!/^[1-9]\d{0,4}$/.test(typed)) errors.push(`Line ${l.lineNo}: type the pieces as a whole number.`);
     else if (Number(typed) > l.leftQty) errors.push(l.leftQty > 0 ? `Line ${l.lineNo}: only ${l.leftQty} of ${l.qty} pieces are left to release.` : `Line ${l.lineNo} is already fully released.`);
-    else lines.push({ lineNo: l.lineNo, qty: Number(typed) });
+    else lines.push({ lineNo: l.lineNo, qty: Number(typed), ...((v.wearers?.[l.lineNo]?.length ?? 0) > 0 ? { wearers: [...v.wearers[l.lineNo]!].sort((a, b) => a - b) } : {}) });
   }
   if (v.jobOrderId && lines.length === 0 && errors.length === 0) errors.push('Tick the lines and pieces going out.');
   if (!v.claimedBy.trim()) errors.push('Type who claimed it.');
