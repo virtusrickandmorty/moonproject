@@ -63,7 +63,7 @@ export interface ManualLine { employeeId: string; kind: 'allowance' | 'adjustmen
 
 const THIRTEENTH_BASE = new Set<LineKind>(['basic', 'leave', 'salary', 'absence', 'piece']); // basic pay only (PD 851)
 const ALWAYS_TAXABLE = new Set<LineKind>(['allowance', 'adjustment']); // an MWE's SMW, holiday pay, overtime and night differential are exempt (F1)
-export const TAX_FREQUENCY: Record<PayGroup, Exclude<TaxFrequency, 'monthly'>> = { WEEKLY_PIECE: 'weekly', SEMI_DAILY: 'semi_monthly', SEMI_MONTHLY: 'semi_monthly' };
+export const TAX_FREQUENCY: Record<PayGroup, Exclude<TaxFrequency, 'monthly'>> = { WEEKLY_PIECE: 'weekly', WEEKLY_DAILY: 'weekly', SEMI_DAILY: 'semi_monthly', SEMI_MONTHLY: 'semi_monthly' };
 
 const pct = (bp: number) => `${bp / 100}%`;
 /** Monetized unused leave up to 10 days a year is a de minimis benefit (RR 11-2018): not taxable up to that. */
@@ -119,9 +119,12 @@ const dayIn = (d: string, n: number) => `${d.slice(0, 8)}${String(n).padStart(2,
  * period to that rule's next end, and a period reaching a change ends the day before it, so no day is in two periods
  * and none is left out. Undefined if the date opens none.
  */
+/** The groups paid every week (the week rule), the others twice a month. */
+export const isWeekly = (g: PayGroup) => g === 'WEEKLY_PIECE' || g === 'WEEKLY_DAILY';
+
 export function periodEndOf(payGroup: PayGroup, start: string, rule: PeriodRule = MONDAY_WEEKS): string | undefined {
   const cap = (end: string, changes: readonly string[]) => { const next = changes.find((c) => c > start); return next && end >= next ? addDays(next, -1) : end; };
-  if (payGroup === 'WEEKLY_PIECE') {
+  if (isWeekly(payGroup)) {
     const friday = rule.startsOn(start) === 'friday';
     if (weekday(start) !== (friday ? 5 : 1) && !rule.changes.includes(start)) return undefined;
     return cap(addDays(start, ((friday ? 4 : 6) - weekday(start) + 7) % 7), rule.changes);

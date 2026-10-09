@@ -55,7 +55,7 @@ export interface ThirteenthEmployee {
 export interface Thirteenth extends ThirteenthInput { employees: ThirteenthEmployee[]; netCents: number; totalCents: number }
 
 const notesOf = new WeakMap<Thirteenth, Issue[]>();
-const GROUP_LABEL: Record<PayGroup, string> = { WEEKLY_PIECE: 'weekly piece-rate', SEMI_DAILY: 'semi-monthly daily-paid', SEMI_MONTHLY: 'semi-monthly monthly staff' };
+const GROUP_LABEL: Record<PayGroup, string> = { WEEKLY_PIECE: 'weekly piece-rate', WEEKLY_DAILY: 'weekly daily-paid', SEMI_DAILY: 'semi-monthly daily-paid', SEMI_MONTHLY: 'semi-monthly monthly staff' };
 const employee = (id: string) => ({ type: 'employee', id });
 type DbRow = Record<string, any>;
 

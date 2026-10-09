@@ -83,3 +83,17 @@ it('as shipped, Friday weeks start on Oct 2, 2026: Sep 28 â€“ Oct 1, then Oct 2â
   expect(['2026-09-28', '2026-10-02', '2026-10-09'].map((d) => periodEndOf('WEEKLY_PIECE', d, rule))).toEqual(['2026-10-01', '2026-10-08', '2026-10-15']);
   expect(periodEndOf('WEEKLY_PIECE', '2026-10-05', rule)).toBeUndefined();
 });
+
+it('a weekly daily-paid group: its own Friday-to-Thursday run on the weekly tax table, apart from the piece-rate run', async () => {
+  const w = await world('2026-10-23', { fridayWeeks: true });
+  const dina = w.person('Dina Lingguhan', { payType: 'daily', payGroup: 'WEEKLY_DAILY', dailyRateCents: 60_000 });
+  w.person('Pia Piraso', { payType: 'piece', payGroup: 'WEEKLY_PIECE' });
+  w.attend(['16', '17', '19', '20', '21', '22'].map((d) => ({ employeeId: dina, date: `2026-10-${d}`, status: 'present' })));
+  const run = w.preview(runDoc, { payGroup: 'WEEKLY_DAILY', periodStart: '2026-10-16' });
+  expect(run.issues.filter((i) => i.level === 'error')).toEqual([]);
+  const doc = run.doc as { periodEnd: string; taxFrequency: string; employees: { name: string; grossCents: number }[] };
+  expect([doc.periodEnd, doc.taxFrequency]).toEqual(['2026-10-22', 'weekly']);
+  expect(doc.employees.map((e) => [e.name, e.grossCents])).toEqual([['Dina Lingguhan', 6 * 60_000]]);
+  const piece = w.preview(runDoc, { payGroup: 'WEEKLY_PIECE', periodStart: '2026-10-16' }).doc as { employees: { name: string }[] };
+  expect(piece.employees.map((e) => e.name)).not.toContain('Dina Lingguhan');
+});
