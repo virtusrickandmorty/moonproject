@@ -39,3 +39,13 @@ it('the shop as shipped pays a Friday-to-Thursday week and refuses a Monday star
   expect((run.doc as { periodEnd: string }).periodEnd).toBe('2026-10-22');
   expect(w.preview(runDoc, { payGroup: 'WEEKLY_PIECE', periodStart: '2026-10-12' }).issues).toContainEqual(expect.objectContaining({ code: 'PERIOD', message: 'A weekly payroll starts on a Friday (Friday to Thursday).' }));
 });
+
+it('a weekly run leaves off whoever has nothing to pay that week, and names them', async () => {
+  const w = await world('2026-09-28');
+  const ben = w.person('Ben Lingguhan', { payType: 'daily', payGroup: 'WEEKLY_PIECE', dailyRateCents: 60_000 });
+  w.person('Cora Walangtrabaho', { payType: 'daily', payGroup: 'WEEKLY_PIECE', dailyRateCents: 60_000 });
+  w.attend(['21', '22'].map((d) => ({ employeeId: ben, date: `2026-09-${d}`, status: 'present' })));
+  const run = w.preview(runDoc, { payGroup: 'WEEKLY_PIECE', periodStart: '2026-09-21' });
+  expect((run.doc as { employees: { name: string }[] }).employees.map((e) => e.name)).toEqual(['Ben Lingguhan']);
+  expect(run.issues).toContainEqual(expect.objectContaining({ code: 'NOTHING_TO_PAY', message: 'Nothing to pay this week, so not on this run: Cora Walangtrabaho.' }));
+});
