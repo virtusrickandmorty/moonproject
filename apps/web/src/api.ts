@@ -1081,7 +1081,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     prdWorkers: () => call<Worker[]>('GET', '/api/prd/workers'),
     rates: () => call<RateTable>('GET', '/api/rate/rates'),
     addRate: (body: Omit<PieceRate, 'id' | 'createdAt'>) => call<PieceRate>('POST', '/api/rate/rates', body),
-    employees: (q: { search?: string; status?: 'active' | 'separated' | 'all' } = {}) =>
+    employees: (q: { search?: string; status?: 'active' | 'separated' | 'all'; order?: 'newest' } = {}) =>
       call<EmployeeRow[]>('GET', `/api/emp/employees?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][])}`),
     employee: (id: string) => call<EmployeeDetail>('GET', emp(id)),
     leaveBalances: (year?: number) => call<LeaveBalances>('GET', `/api/emp/leave-balances${year ? `?year=${year}` : ''}`),

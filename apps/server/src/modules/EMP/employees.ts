@@ -92,12 +92,13 @@ export function masked(e: EmployeeRecord, canSeeIds: boolean): EmployeeRecord {
 }
 
 export interface EmployeeListRow { id: string; code: string; fullName: string; position: string | null; department: string | null; costCentre: string; isActive: boolean; hireDate: string; separatedOn: string | null }
-export function listEmployees(db: Db, q: { search: string; status: 'active' | 'separated' | 'all' }): EmployeeListRow[] {
+/** `newest`: the most recently added first (the Employees screen, the owner's request, Oct 2026); else active ones by name. */
+export function listEmployees(db: Db, q: { search: string; status: 'active' | 'separated' | 'all'; newest?: boolean }): EmployeeListRow[] {
   const rows = db
     .prepare(
       `SELECT id, code, full_name AS fullName, position, department, cost_centre AS costCentre, is_active AS isActive, hire_date AS hireDate, separated_on AS separatedOn
        FROM emp_employees WHERE (full_name LIKE @s OR code LIKE @s) AND (@status = 'all' OR is_active = (@status = 'active'))
-       ORDER BY is_active DESC, full_name, code`,
+       ORDER BY ${q.newest ? 'created_at DESC, rowid DESC' : 'is_active DESC, full_name, code'}`,
     )
     .all({ s: `%${q.search}%`, status: q.status }) as (Omit<EmployeeListRow, 'isActive'> & { isActive: number })[];
   return rows.map((r) => ({ ...r, isActive: r.isActive === 1 }));

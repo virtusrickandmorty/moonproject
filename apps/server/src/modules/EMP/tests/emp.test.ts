@@ -316,3 +316,12 @@ describe('PRD route templates (review minor on #18)', () => {
     expect(() => env.db.prepare('UPDATE prd_route_template_steps SET step_id = 5 WHERE template_id = 1 AND step_id = 4').run()).toThrow(/IMMUTABLE/);
   });
 });
+
+it('lists the newest added first when asked (the Employees screen); by name otherwise', async () => {
+  const first = await create({ ...newbie, fullName: 'Zed Una' });
+  const second = await create({ ...newbie, fullName: 'Ana Ikalawa' });
+  const ids = async (q: string) => ((await acct.get(`/api/emp/employees?${q}`)).json() as { id: string }[]).map((e) => e.id);
+  expect((await ids('order=newest')).slice(0, 2)).toEqual([second.id, first.id]);
+  const byName = await ids('');
+  expect(byName.indexOf(second.id)).toBeLessThan(byName.indexOf(first.id)); // Ana before Zed
+});

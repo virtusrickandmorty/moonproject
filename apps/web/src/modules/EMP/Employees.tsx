@@ -7,13 +7,20 @@ import { api, type EmployeeRow, type Me } from '../../api.ts';
 import { Button, Dialog, Field, Notice, inputClass, useAction, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
 
+/** Rows a page of the list shows (the owner's request, Oct 2026), the newest added first. */
+export const EMPLOYEES_PER_PAGE = 20;
+
 export function Employees({ me }: { me: Me }) {
   const [rows, setRows] = useState<EmployeeRow[] | null>(null);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<'active' | 'separated' | 'all'>('active');
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState('');
-  const load = useCallback(() => api.employees({ search, status }).then(setRows, (e: Error) => setError(e.message)), [search, status]);
+  const [page, setPage] = useState(0);
+  const load = useCallback(() => api.employees({ search, status, order: 'newest' }).then(setRows, (e: Error) => setError(e.message)), [search, status]);
+  useEffect(() => setPage(0), [search, status]); // a new search starts on the first page
+  const pages = Math.max(1, Math.ceil((rows?.length ?? 0) / EMPLOYEES_PER_PAGE));
+  const shown = rows?.slice(page * EMPLOYEES_PER_PAGE, (page + 1) * EMPLOYEES_PER_PAGE) ?? [];
   useEffect(() => void load(), [load]);
 
   return (
@@ -34,8 +41,9 @@ export function Employees({ me }: { me: Me }) {
         <table className="w-full rounded-lg bg-white text-sm shadow-sm ring-1 ring-slate-200">
           <thead className="text-left text-slate-500"><tr><th className="p-2">Code</th><th>Name</th><th>Position</th><th>Pay cost group</th><th>Hired</th><th>Status</th></tr></thead>
           <tbody>
-            {rows.map((e) => (
-              <tr key={e.id} className={`border-t border-slate-100 ${e.isActive ? '' : 'text-slate-500'}`}>
+            {shown.map((e) => (
+              // The whole row opens the employee (the owner's request, Oct 2026); the code stays a link for the keyboard.
+              <tr key={e.id} onClick={() => navigate(`/emp/employees/${e.id}`)} className={`cursor-pointer border-t border-slate-100 hover:bg-indigo-50 ${e.isActive ? '' : 'text-slate-500'}`}>
                 <td className="p-2"><Link to={`/emp/employees/${e.id}`} className="text-indigo-700 underline">{e.code}</Link></td>
                 <td>{e.fullName}</td><td>{e.position ?? ''}</td><td className="capitalize">{e.costCentre}</td><td>{showDate(e.hireDate)}</td>
                 <td>{e.isActive ? 'Active' : `Separated ${showDate(e.separatedOn)}`}</td>
@@ -43,6 +51,13 @@ export function Employees({ me }: { me: Me }) {
             ))}
           </tbody>
         </table>
+      )}
+      {rows && rows.length > EMPLOYEES_PER_PAGE && (
+        <div className="flex flex-wrap items-center justify-end gap-3 text-sm">
+          <Button disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</Button>
+          <span>{page * EMPLOYEES_PER_PAGE + 1} to {Math.min((page + 1) * EMPLOYEES_PER_PAGE, rows.length)} of {rows.length} · page {page + 1} of {pages}</span>
+          <Button disabled={page + 1 >= pages} onClick={() => setPage(page + 1)}>Next</Button>
+        </div>
       )}
       {rows?.length === 0 && <p className="text-sm text-slate-500">Nobody matches.</p>}
     </div>
