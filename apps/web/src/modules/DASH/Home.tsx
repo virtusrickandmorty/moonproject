@@ -144,7 +144,7 @@ const signedScale = (values: number[], bottom: number, height: number) => {
 };
 
 export function Bars({ data }: { data: DashOwnerCharts['months'] }) {
-  // `light`: the second colour of the stripes this month's bar wears (the month still in progress).
+  // `light`: the second colour of each series' stripes.
   const fields = [{ key: 'salesCents', label: 'Sales', colour: '#1f3bb3', light: '#8c9ee2' }, { key: 'collectionsCents', label: 'Collections', colour: '#64748b', light: '#b6c0cd' },
     { key: 'expensesCents', label: 'Expenses', colour: '#cbd5e1', light: '#eef2f6' }] as const;
   const scale = signedScale(data.flatMap((row) => fields.map((field) => row[field.key])), 190, 150);
@@ -152,7 +152,7 @@ export function Bars({ data }: { data: DashOwnerCharts['months'] }) {
   const top = scale.y(scale.max);
   const last = data.length - 1;
   // As the home's other charts (the owner's reference picture): a pale track behind each month, this month's track
-  // tinted and its three bars striped in their own colours (the month is still going), dashed guides and light labels.
+  // tinted, every bar striped in its series' colours, dashed guides and light labels.
   return <div><svg viewBox="0 0 720 245" role="img" aria-label="Sales, collections and expenses by month" className="h-auto min-w-[620px] print:min-w-0">
     <desc>Negative amounts, including reversals, appear below the labelled zero line.</desc>
     <defs>{fields.map((field) => <pattern key={field.key} id={`month-hatch-${field.key}`} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -163,7 +163,7 @@ export function Bars({ data }: { data: DashOwnerCharts['months'] }) {
       <rect x={44 + index * 55} y="32" width="42" height="160" rx="12" fill={index === last ? '#eef1fb' : '#f8fafc'} />
       {fields.map((field, fieldIndex) => {
         const y = scale.y(row[field.key]);
-        const striped = index === last && row[field.key] !== 0; // this month, still in progress: every bar striped
+        const striped = row[field.key] !== 0; // every month's bars striped, each in its own colour (the owner's choice)
         return <rect key={field.key} x={48 + index * 55 + fieldIndex * 12} y={Math.min(zero, y)} width="10" height={Math.abs(y - zero)} rx="3" fill={striped ? `url(#month-hatch-${field.key})` : field.colour} tabIndex={0}>
           <title>{`${field.label}, ${row.month}: ${peso(row[field.key])}`}</title>
         </rect>;
