@@ -148,20 +148,30 @@ export function Bars({ data }: { data: DashOwnerCharts['months'] }) {
     { key: 'expensesCents', label: 'Expenses', colour: '#cbd5e1' }] as const;
   const scale = signedScale(data.flatMap((row) => fields.map((field) => row[field.key])), 190, 150);
   const zero = scale.y(0);
+  const top = scale.y(scale.max);
+  const last = data.length - 1;
+  // As the home's other charts (the owner's reference picture): a pale track behind each month, this month's track
+  // tinted and its sales bar striped in our blue, dashed guides and light labels.
   return <div><svg viewBox="0 0 720 245" role="img" aria-label="Sales, collections and expenses by month" className="h-auto min-w-[620px] print:min-w-0">
     <desc>Negative amounts, including reversals, appear below the labelled zero line.</desc>
-    <line x1="42" y1={zero} x2="710" y2={zero} stroke="currentColor" />
-    {data.map((row, index) => <g key={row.month}>{fields.map((field, fieldIndex) => {
-      const y = scale.y(row[field.key]);
-      return <rect key={field.key} x={48 + index * 55 + fieldIndex * 12} y={Math.min(zero, y)} width="10" height={Math.abs(y - zero)} rx="3" fill={field.colour} tabIndex={0}>
-        <title>{`${field.label}, ${row.month}: ${peso(row[field.key])}`}</title>
-      </rect>;
-    })}<text x={63 + index * 55} y="208" textAnchor="middle" fontSize="11">{monthLabel(row.month)}</text></g>)}
-    {scale.max > 0 && <text x="4" y="44" fontSize="11">{shortPeso(scale.max)}</text>}
-    {scale.min < 0 && <text x="4" y="194" fontSize="11">{shortPeso(scale.min)}</text>}
-    <text x="27" y={zero + 4} fontSize="11">₱0</text>
-    {fields.map((field, index) => <g key={field.key}><rect x={235 + index * 115} y="225" width="10" height="10" fill={field.colour} />
-      <text x={250 + index * 115} y="234" fontSize="12">{field.label}</text></g>)}
+    <defs><pattern id="sales-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="#8c9ee2" /><rect width="3.5" height="6" fill="#1f3bb3" /></pattern></defs>
+    <line x1="42" y1={zero} x2="710" y2={zero} stroke="#cbd5e1" />
+    {scale.max > 0 && [top, (top + zero) / 2].map((y) => <line key={y} x1="42" y1={y} x2="710" y2={y} stroke="#e2e8f0" strokeDasharray="4 4" />)}
+    {data.map((row, index) => <g key={row.month}>
+      <rect x={44 + index * 55} y="32" width="42" height="160" rx="12" fill={index === last ? '#eef1fb' : '#f8fafc'} />
+      {fields.map((field, fieldIndex) => {
+        const y = scale.y(row[field.key]);
+        const striped = index === last && field.key === 'salesCents' && row[field.key] > 0;
+        return <rect key={field.key} x={48 + index * 55 + fieldIndex * 12} y={Math.min(zero, y)} width="10" height={Math.abs(y - zero)} rx="3" fill={striped ? 'url(#sales-hatch)' : field.colour} tabIndex={0}>
+          <title>{`${field.label}, ${row.month}: ${peso(row[field.key])}`}</title>
+        </rect>;
+      })}
+      <text x={65 + index * 55} y="208" textAnchor="middle" fontSize="11" fill={index === last ? '#0f172a' : '#64748b'} fontWeight={index === last ? 600 : 400}>{monthLabel(row.month)}</text></g>)}
+    {scale.max > 0 && <text x="4" y="44" fontSize="11" fill="#94a3b8">{shortPeso(scale.max)}</text>}
+    {scale.min < 0 && <text x="4" y="194" fontSize="11" fill="#94a3b8">{shortPeso(scale.min)}</text>}
+    <text x="27" y={zero + 4} fontSize="11" fill="#94a3b8">₱0</text>
+    {fields.map((field, index) => <g key={field.key}><circle cx={240 + index * 115} cy="230" r="5" fill={field.colour} />
+      <text x={250 + index * 115} y="234" fontSize="12" fill="#475569">{field.label}</text></g>)}
   </svg></div>;
 }
 
@@ -171,20 +181,21 @@ export function CashLine({ data }: { data: DashOwnerCharts['months'] }) {
   const points = data.map((row, index) => `${48 + index * 59},${scale.y(row.cashCents)}`).join(' ');
   return <svg viewBox="0 0 720 215" role="img" aria-label="Cash on hand at each month end" className="h-auto min-w-[620px] print:min-w-0">
     <desc>Negative cash balances appear below the labelled zero line.</desc>
-    <line x1="42" y1={zero} x2="710" y2={zero} stroke="currentColor" /><polyline points={points} fill="none" stroke="#1f3bb3" strokeWidth="3" />
+    <line x1="42" y1={zero} x2="710" y2={zero} stroke="#cbd5e1" />
+    {scale.max > 0 && [scale.y(scale.max), (scale.y(scale.max) + zero) / 2].map((y) => <line key={y} x1="42" y1={y} x2="710" y2={y} stroke="#e2e8f0" strokeDasharray="4 4" />)}
+    <polyline points={points} fill="none" stroke="#1f3bb3" strokeWidth="3" strokeLinejoin="round" strokeLinecap="round" />
     {data.map((row, index) => { const x = 48 + index * 59; const y = scale.y(row.cashCents); return <g key={row.month}>
-      <circle cx={x} cy={y} r="5" fill="#1f3bb3" tabIndex={0}><title>{`${row.month}: ${peso(row.cashCents)}`}</title></circle>
-      <text x={x} y="190" textAnchor="middle" fontSize="11">{monthLabel(row.month)}</text></g>; })}
-    {scale.max > 0 && <text x="4" y="44" fontSize="11">{shortPeso(scale.max)}</text>}
-    {scale.min < 0 && <text x="4" y="174" fontSize="11">{shortPeso(scale.min)}</text>}
-    <text x="27" y={zero + 4} fontSize="11">₱0</text>
+      <circle cx={x} cy={y} r={index === data.length - 1 ? 6 : 4} fill={index === data.length - 1 ? '#1f3bb3' : '#ffffff'} stroke="#1f3bb3" strokeWidth="2" tabIndex={0}><title>{`${row.month}: ${peso(row.cashCents)}`}</title></circle>
+      <text x={x} y="190" textAnchor="middle" fontSize="11" fill={index === data.length - 1 ? '#0f172a' : '#64748b'} fontWeight={index === data.length - 1 ? 600 : 400}>{monthLabel(row.month)}</text></g>; })}
+    {scale.max > 0 && <text x="4" y="44" fontSize="11" fill="#94a3b8">{shortPeso(scale.max)}</text>}
+    {scale.min < 0 && <text x="4" y="174" fontSize="11" fill="#94a3b8">{shortPeso(scale.min)}</text>}
+    <text x="27" y={zero + 4} fontSize="11" fill="#94a3b8">₱0</text>
   </svg>;
 }
 
 export function AgingBars({ data }: { data: DashOwnerCharts['receivables'] }) {
   const scale = signedScale(data.map((row) => row.amountCents), 170, 130);
   const zero = scale.y(0);
-  const top = scale.y(scale.max);
   const largest = data.reduce((b, row) => (row.amountCents > b.amountCents ? row : b), data[0] ?? { key: '', amountCents: 0 });
   // A pale track behind each bar and the largest one striped in our blue (the owner's reference picture).
   return <svg viewBox="0 0 520 220" role="img" aria-label="Receivables by age today" className="h-auto min-w-[450px] print:min-w-0">
@@ -192,7 +203,7 @@ export function AgingBars({ data }: { data: DashOwnerCharts['receivables'] }) {
     <defs><pattern id="aging-hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#8c9ee2" /><rect width="4" height="7" fill="#1f3bb3" /></pattern></defs>
     <line x1="42" y1={zero} x2="510" y2={zero} stroke="#cbd5e1" />
     {data.map((row, index) => { const y = scale.y(row.amountCents); const best = row.amountCents > 0 && row === largest; return <g key={row.key}>
-      <rect x={63 + index * 90} y={Math.min(top, zero) - 4} width="46" height={Math.abs(zero - top) + 4} rx="11" fill="#f8fafc" />
+      <rect x={63 + index * 90} y="32" width="46" height="144" rx="12" fill="#f8fafc" />
       <rect x={65 + index * 90} y={Math.min(zero, y)} width="42" height={Math.max(1, Math.abs(y - zero))} rx="10" fill={best ? 'url(#aging-hatch)' : '#cbd5e1'} tabIndex={0}><title>{`${row.label} days: ${peso(row.amountCents)}`}</title></rect>
       <text x={86 + index * 90} y="190" textAnchor="middle" fontSize="12" fill="#64748b">{row.label}</text></g>; })}
     {scale.max > 0 && <text x="4" y="44" fontSize="11" fill="#94a3b8">{shortPeso(scale.max)}</text>}
