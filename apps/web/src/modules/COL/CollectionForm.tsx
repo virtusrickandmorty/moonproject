@@ -222,7 +222,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
               <thead className="hidden text-left text-slate-500 sm:table-header-group"><tr><th>Job order or invoice</th><th className="text-right">Left to pay</th><th className="w-40 text-right">Pay now</th></tr></thead>
               <tbody className="grid gap-3 sm:table-row-group">
                 {items.map((i, n) => (
-                  <tr key={i.key} className="grid gap-2 rounded border p-3 sm:table-row sm:border-0 sm:p-0">
+                  <tr key={i.key} className="grid gap-2 rounded-xl border border-slate-200 p-3 sm:table-row sm:border-0 sm:p-0">
                     <td className="py-1">{i.label}</td>
                     <td className="py-1 text-right tabular-nums"><span className="mr-2 sm:hidden">Left to pay</span>{formatPesos(i.due)}</td>
                     <td className="py-1">

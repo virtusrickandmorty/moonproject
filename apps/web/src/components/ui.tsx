@@ -91,8 +91,9 @@ export function Notice({ tone = 'error', children }: { tone?: keyof typeof notic
 }
 
 export function StatusChip({ status }: { status: string }) {
-  const [text, c] = status === 'cancelled' ? ['Cancelled', 'bg-slate-200 text-slate-700'] : ['Recorded', 'bg-emerald-100 text-emerald-800'];
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${c}`}>{text}</span>;
+  // As the home's chips (the owner's request, Oct 2026): calm, colour only where it means something.
+  const [text, c] = status === 'cancelled' ? ['Cancelled', 'bg-slate-100 text-slate-500'] : ['Recorded', 'bg-emerald-50 text-emerald-700'];
+  return <span className={`rounded-md px-2 py-0.5 text-xs font-medium ${c}`}>{text}</span>;
 }
 
 /**
