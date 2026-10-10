@@ -6,18 +6,15 @@
  * those who worked. Only changed cells are sent.
  * Days a recorded payroll paid are locked (shown with the run's number) until that payroll is cancelled.
  * Changing the period with unsaved marks asks first.
- * Two views (the owner's request, Oct 2026, after a reference attendance sheet, in our colours): the attendance sheet, an
- * icon per day (click one to change it in a small window), and the detail view, every cell's boxes at once for typing a
- * lot. Both edit the same marks; Save sends the changed ones.
+ * Shown as an attendance sheet (the owner's request, Oct 2026, after a reference sheet, in our colours): an icon per day;
+ * a click opens a small window to change it. Save sends the changed ones.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type AttendanceGrid, type AttendanceStatus, type Me } from '../../api.ts';
 import { askConfirm, Button, Dialog, Field, Notice, inputClass, useAction, showDate } from '../../components/ui.tsx';
 import { BiometricImport } from './Biometric.tsx';
-import { STATUS_LABEL, STATUS_MARK, WITH_NIGHT, cellKey, changedCells, datesBetween, halfMonthOf, paidBy, plusDays, startCells, statusesFor, weekday, type Cell } from './time.ts';
+import { STATUS_LABEL, WITH_NIGHT, cellKey, changedCells, datesBetween, halfMonthOf, paidBy, plusDays, startCells, statusesFor, weekday, type Cell } from './time.ts';
 
-/** A column's day: "Jul 8" (the full date shows on pointing at it). */
-const shortDay = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
 /** Outline icons (Heroicons, MIT) for the sheet. */
 const ICON = {
@@ -28,8 +25,6 @@ const ICON = {
   half: 'M12 3a9 9 0 0 0 0 18V3Zm0 0a9 9 0 0 1 0 18',
   moon: 'M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z',
   lock: 'M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z',
-  sheet: 'M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 0 1 0 3.75H5.625a1.875 1.875 0 0 1 0-3.75Z',
-  detail: 'M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75',
 };
 function Glyph({ d, className }: { d: string; className: string }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 ${className}`}><path d={d} /></svg>;
@@ -86,7 +81,6 @@ export function Attendance({ me }: { me: Me }) {
   const [showPiece, setShowPiece] = useState(false);
   const [pieceCount, setPieceCount] = useState(0);
   const a = useAction();
-  const [view, setView] = useState<'sheet' | 'detail'>('sheet');
   const [editing, setEditing] = useState<{ employeeId: string; date: string } | null>(null);
   const load = useCallback(async (r: { from: string; to: string }) => {
     setError('');
@@ -133,12 +127,6 @@ export function Attendance({ me }: { me: Me }) {
     <div className="space-y-4">
       <h1 className="text-2xl font-semibold">Attendance</h1>
       <div className="flex flex-wrap items-center gap-4 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70">
-        <div role="tablist" aria-label="View" className="flex gap-1 rounded-lg bg-slate-100 p-1">
-          {([['sheet', 'Attendance sheet', ICON.sheet], ['detail', 'Detail view', ICON.detail]] as const).map(([k, label, d]) => (
-            <button key={k} type="button" role="tab" aria-selected={view === k} onClick={() => setView(k)}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium ${view === k ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-white'}`}><Glyph d={d} className="size-4" />{label}</button>
-          ))}
-        </div>
         <div className="flex items-center gap-2">
           <button type="button" aria-label="Earlier half-month" onClick={() => void shift(-1)} className="grid size-8 place-items-center rounded-full bg-indigo-50 text-indigo-700 hover:bg-indigo-100">←</button>
           <span className="text-center"><span className="block text-xs text-slate-500">Pay period</span><span className="text-sm font-semibold">{showDate(grid.from)} – {showDate(grid.to)}</span></span>
@@ -154,15 +142,13 @@ export function Attendance({ me }: { me: Me }) {
         {editable && <Button onClick={() => setImporting(true)}>Import from biometric</Button>}
       </div>
       {importing && <BiometricImport onClose={() => setImporting(false)} onSaved={() => void load(range)} />}
-      {view === 'sheet' ? <ul aria-label="Legend" className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
+      <ul aria-label="Legend" className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600">
         {LEGEND.map((k) => <li key={k} className="flex items-center gap-1"><StatusIcon status={k} size="size-4" />{STATUS_LABEL[k]}</li>)}
         <li className="flex items-center gap-1"><span className="font-semibold text-indigo-700">+2h</span> overtime</li>
         <li className="flex items-center gap-1"><Glyph d={ICON.moon} className="size-3.5 text-slate-500" />night hours</li>
         <li className="flex items-center gap-1"><Glyph d={ICON.lock} className="size-3.5 text-slate-400" />paid</li>
-        {editable && <li className="text-slate-500">Click a day to change it.</li>}
-      </ul> : <p className="text-sm text-slate-600">
-        {Object.entries(STATUS_MARK).map(([k, m]) => `${m} ${STATUS_LABEL[k as AttendanceStatus]}`).join(' · ')}. Overtime and night hours (worked between 10 PM and 6 AM) in hours (1.5 or 1:30) on worked days; Night OT is the night hours that were also overtime.
-      </p>}
+        {editable && <li className="text-slate-500">Click a day to change it. Overtime and night hours (10 PM to 6 AM) in hours, like 1.5 or 1:30.</li>}
+      </ul>
       {grid.paid.length > 0 && (
         <Notice tone="info">
           Shaded days with a lock are paid by {[...new Set(grid.paid.map((p) => p.number))].join(', ')}: they cannot be changed until that payroll is cancelled.
@@ -175,7 +161,7 @@ export function Attendance({ me }: { me: Me }) {
         </Notice>
       )}
       <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
-        {view === 'sheet' ? <table className="text-xs">
+        <table className="text-xs">
           <thead>
             <tr className="bg-slate-50">
               <th className="sticky left-0 z-10 bg-slate-50 p-3 text-left">Employee</th>
@@ -223,54 +209,7 @@ export function Attendance({ me }: { me: Me }) {
               </tr>
             ))}
           </tbody>
-        </table> : <table className="text-xs">
-          <thead>
-            <tr>
-              <th className="sticky left-0 bg-white p-2 text-left">Employee</th>
-              {dates.map((d) => (
-                <th key={d} title={[showDate(d), holiday[d]?.name].filter(Boolean).join(': ')} className={`whitespace-nowrap px-1 py-2 ${holiday[d] ? 'bg-amber-50 text-amber-900' : weekday(d) === 'Sun' ? 'bg-slate-50' : ''}`}>{weekday(d)}<br />{shortDay(d)}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {grid.employees.map((e) => (
-              <tr key={e.id} className="border-t border-slate-100">
-                <td className="sticky left-0 bg-white p-2 whitespace-nowrap">{e.fullName}</td>
-                {dates.map((d) => {
-                  const key = cellKey(e.id, d);
-                  const c = cells[key] ?? { status: '', ot: '', night: '', nightOt: '' };
-                  const off = d < e.hireDate || (e.separatedOn !== null && d > e.separatedOn) || d > grid.today;
-                  if (off) return <td key={d} className="bg-slate-100" />;
-                  const run = paidBy(grid.paid, e.id, d);
-                  if (run) {
-                    return (
-                      <td key={d} title={`Paid by ${run}`} aria-label={`${e.fullName} ${d} paid by ${run}`} className="bg-slate-100 p-0.5 text-center text-slate-600">
-                        {c.status ? STATUS_MARK[c.status] : '–'} 🔒{c.ot && <span className="block">{c.ot} h</span>}{c.night && <span className="block">{c.night} h night</span>}{c.nightOt && <span className="block">{c.nightOt} h night OT</span>}
-                      </td>
-                    );
-                  }
-                  return (
-                    <td key={d} className={`p-0.5 ${holiday[d] ? 'bg-amber-50' : ''}`}>
-                      <select aria-label={`${e.fullName} ${d}`} disabled={!editable || a.busy} className="w-14 rounded border border-slate-300 bg-white text-xs" value={c.status} onChange={(x) => set(key, { status: x.target.value as Cell['status'] })}>
-                        <option value="" />
-                        {statusesFor(!!holiday[d]).map((s) => <option key={s} value={s} title={STATUS_LABEL[s]}>{STATUS_MARK[s]}</option>)}
-                      </select>
-                      {['present', 'holiday_worked', 'rest_day_worked'].includes(c.status) && (
-                        <input aria-label={`${e.fullName} ${d} overtime`} placeholder="OT" disabled={!editable || a.busy} className="mt-0.5 block w-14 rounded border border-slate-300 px-1 text-xs" value={c.ot} onChange={(x) => set(key, { ot: x.target.value })} />
-                      )}
-                      {c.status && WITH_NIGHT.has(c.status) && (
-                        <input aria-label={`${e.fullName} ${d} night hours`} placeholder="Night" disabled={!editable || a.busy} className="mt-0.5 block w-14 rounded border border-slate-300 px-1 text-xs" value={c.night} onChange={(x) => set(key, { night: x.target.value })} />
-                      )}
-                      {['present', 'holiday_worked', 'rest_day_worked'].includes(c.status) && (
-                        <input aria-label={`${e.fullName} ${d} night overtime`} placeholder="Night OT" disabled={!editable || a.busy} className="mt-0.5 block w-14 rounded border border-slate-300 px-1 text-xs" value={c.nightOt} onChange={(x) => set(key, { nightOt: x.target.value })} />
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>}
+        </table>
       </div>
       {editing && (() => {
         const key = cellKey(editing.employeeId, editing.date);
