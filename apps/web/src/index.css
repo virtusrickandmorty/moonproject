@@ -198,5 +198,9 @@ button:disabled,
     main[data-erp] tbody tr:hover {
       background-color: color-mix(in oklab, var(--color-indigo-50) 70%, transparent);
     }
+    /* A row that opens its link on a click anywhere (shell/rowLinks.ts): not a form row, not one switched off. */
+    main[data-erp] tbody tr:has(a[href]):not(:has(input, select, textarea)):not([data-row-link='off'] *) {
+      cursor: pointer;
+    }
   }
 }
