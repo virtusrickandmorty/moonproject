@@ -41,7 +41,7 @@ export function Commit({ uploadId, counts, dry, mayCommit, onCommitted }: { uplo
   const commit = () => (setAsking(false), void action.run(async () => onCommitted(await api.migCommit(uploadId, commitRequest(dry).expectedMeasurementCellTenths))));
   return (
     <Panel title="Import these approved rows">
-      <p className="text-sm text-slate-600">Creates the customers, wearers, measurements, employees and piece rates in one step. Nothing is deleted, and a row already imported from an earlier file is not created twice.</p>
+      <p className="text-sm text-slate-600">Creates the customers, wearers, measurements, employees, piece rates and sizer sets in one step. Nothing is deleted, and a row already imported from an earlier file is not created twice.</p>
       {!mayCommit && <Notice tone="warning">Only an owner can import the approved rows.</Notice>}
       <Button tone="primary" disabled={!canCommit(dry, counts, mayCommit) || action.busy} onClick={() => setAsking(true)}>{action.busy ? 'Importing…' : 'Import these approved rows'}</Button>
       {action.error && <Notice>{action.error}</Notice>}

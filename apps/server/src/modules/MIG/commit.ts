@@ -5,14 +5,15 @@ import { appendAudit } from '../../engine/audit.ts';
 import { addCustomerPhone, createCustomer, createGroup, createWearer, createMeasurement, customerRef, normalizePhone } from '../CUS/public.ts';
 import { createEmployee, addPayProfile, type Who as EmployeeWho } from '../EMP/public.ts';
 import { addRate } from '../RATE/public.ts';
-import { applyEmployeeFix, applyMeasurementAssignment, measurementField, measurementTenths, rateFromPesos, validateRow, type ManualData } from './csv.ts';
+import { createSizerSet } from '../SZR/public.ts';
+import { applyEmployeeFix, applyMeasurementAssignment, applySizerFix, measurementField, measurementTenths, rateFromPesos, validateRow, type ManualData } from './csv.ts';
 
-type Kind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate';
+type Kind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate' | 'sizer_set';
 type Row = { id: string; upload_id: string; row_number: number; row_type: Kind; status: string;
   raw_json: string; manual_data_json: string | null; legacy_id: string | null; rate_cents: number | null; merge_into_row_id: string | null };
 type Who = EmployeeWho;
 type Counts = Record<Kind, { imported: number; alreadyImported: number }>;
-const kinds: Kind[] = ['customer', 'group', 'wearer', 'measurement', 'employee', 'piece_rate'];
+const kinds: Kind[] = ['customer', 'group', 'wearer', 'measurement', 'employee', 'piece_rate', 'sizer_set'];
 const counts = (): Counts => Object.fromEntries(kinds.map(k => [k, { imported: 0, alreadyImported: 0 }])) as Counts;
 const error = (message: string, details?: unknown): never => { throw new AppError('IMPORT_COMMIT', message, 422, details); };
 const string = (v: unknown): string => typeof v === 'string' ? v.trim() : '';
@@ -42,6 +43,8 @@ const rawFor = (row: Row): Record<string, string> => {
     if (manual.garmentType) raw.Garment_Type = String(manual.garmentType);
     if (manual.operation) raw.Operation = String(manual.operation);
     if (manual.rateCents !== undefined) raw.Rate = (Number(manual.rateCents) / 100).toFixed(2);
+  } else if (row.row_type === 'sizer_set') {
+    applySizerFix(raw, manual);
   }
   return raw;
 };
@@ -208,6 +211,12 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
         `${garmentType.toLowerCase()}:${stepCode}:${complexity}:${first(raw, 'Effective_From')}:${row.rate_cents}`);
       create(row, 'piece_rate', legacyId, () => String(addRate(db, { garmentType, stepCode, complexity,
         rateCents: row.rate_cents, effectiveFrom: who.today, reason: 'Confirmed legacy piece-rate import' }, who).id));
+    }
+    // Sizer sets (the owner's request, Oct 2026), in the shop; a code already on file stops the import with the row named.
+    for (const row of active.filter(r => r.row_type === 'sizer_set')) {
+      const raw = data.get(row.id)!;
+      create(row, 'sizer_set', first(raw, 'Code'), () => createSizerSet(db,
+        { code: first(raw, 'Code'), garmentType: first(raw, 'Garment_Type'), sizesIncluded: first(raw, 'Sizes_Included') }, who).id);
     }
     const summary = { counts: tally, measurementCellTenths: cellTenths, measurementCellSum: cellTenths / 10,
       excluded: rows.filter(r => r.status === 'excluded').length, merged: rows.filter(r => r.status === 'merged').length };

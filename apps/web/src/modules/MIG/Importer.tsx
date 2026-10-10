@@ -99,7 +99,7 @@ export function ImportOldData({ me }: { me: Me }) {
   return (
     <div className="max-w-4xl space-y-4">
       <h1 className="text-2xl font-semibold">Import old data</h1>
-      <p className="text-sm text-slate-600">Bring customers, measurements, employees and piece rates in from the old Google sheet. Load a copy, review every row, check the import totals, then import these approved rows.</p>
+      <p className="text-sm text-slate-600">Bring customers, measurements, employees, piece rates and sizer sets in from the old Google sheet. Load a copy, review every row, check the import totals, then import these approved rows.</p>
       <UploadForm />
       {error && <Notice>{error}</Notice>}
       {!uploads && !error && <p className="text-slate-500">Loading…</p>}

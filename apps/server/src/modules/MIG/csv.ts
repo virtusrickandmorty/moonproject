@@ -1,6 +1,6 @@
 import { formatPesos, isBusinessDate, parsePesos } from '@moonproject/shared';
 
-export type RowType = 'customer' | 'measurement' | 'employee' | 'piece_rate' | 'unknown';
+export type RowType = 'customer' | 'measurement' | 'employee' | 'piece_rate' | 'sizer_set' | 'unknown';
 export interface ParsedRow {
   rowType: RowType;
   raw: Record<string, string>;
@@ -136,6 +136,7 @@ export function parseCSV(csvText: string): { objects: Record<string, string>[]; 
 
 export function rowTypeOf(raw: Record<string, string>): RowType {
   const keys = Object.keys(raw);
+  if (keys.includes('Sizes_Included')) return 'sizer_set'; // the owner's request, Oct 2026
   if (keys.includes('Measurement_ID') || keys.some(k => measurementField(k))) return 'measurement';
   if (keys.includes('Employee_ID') || keys.includes('Employee_Name') || keys.includes('Daily_Rate') || keys.includes('Pay_Type')) return 'employee';
   if (keys.includes('Customer_Name') || keys.includes('Registered_Name') || keys.includes('TIN') || keys.includes('Email')) return 'customer';
@@ -148,7 +149,8 @@ export function validateRow(raw: Record<string, string>): ParsedRow {
   const issues: string[] = [];
   const legacyId = (rowType === 'customer' ? raw.Legacy_ID || raw.Customer_ID
     : rowType === 'employee' ? raw.Employee_ID || raw.Legacy_ID
-    : rowType === 'measurement' ? raw.Measurement_ID : null) || null;
+    : rowType === 'measurement' ? raw.Measurement_ID
+    : rowType === 'sizer_set' ? raw.Code : null) || null;
   let rateCents: number | null = null;
   if (rowType === 'unknown') issues.push('Could not determine row type from columns.');
   if (rowType === 'customer') {
@@ -205,7 +207,20 @@ export function validateRow(raw: Record<string, string>): ParsedRow {
     catch { issues.push('Piece rate must be a non-negative peso amount exact to the centavo.'); }
     issues.push('Piece rate seed requires owner confirmation.');
   }
+  if (rowType === 'sizer_set') {
+    if (!raw.Code?.trim()) issues.push('Sizer set is missing its code.');
+    if (!raw.Garment_Type?.trim()) issues.push('Sizer set is missing its garment type.');
+    if (!raw.Sizes_Included?.trim()) issues.push('Sizer set is missing the sizes it includes, like XS, S, M, L, XL.');
+    if ((raw.Code ?? '').length > 100 || (raw.Garment_Type ?? '').length > 100 || (raw.Sizes_Included ?? '').length > 200) issues.push('Sizer set code and garment type take up to 100 letters, sizes up to 200.');
+  }
   return { rowType, raw, issues, status: issues.length ? 'needs_review' : 'valid', legacyId, rateCents };
+}
+
+/** What the owner typed with Fix on a sizer set row, laid over the sheet's values. Shared by the review and the commit. */
+export function applySizerFix(raw: Record<string, string>, manual: ManualData): void {
+  if (manual.code) raw.Code = String(manual.code);
+  if (manual.garmentType) raw.Garment_Type = String(manual.garmentType);
+  if (manual.sizesIncluded) raw.Sizes_Included = String(manual.sizesIncluded);
 }
 
 /** Keys scoped by type avoid merging unrelated customers and employees with the same ID. */

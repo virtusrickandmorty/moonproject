@@ -5,9 +5,9 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type SizerBoard, type SizerSet } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, inputClass, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
+import { Button, Dialog, Field, Notice, Panel, askConfirm, inputClass, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { CustomerPicker, type Picked } from '../COL/parts.tsx';
-import { STATUS_WORDS, dueWords, filterSets, lendInput, returnInput, weekFrom, type ReturnValues } from './sizer.ts';
+import { STATUS_WORDS, dueWords, filterSets, lendInput, returnInput, setInput, weekFrom, type ReturnValues, type SetValues } from './sizer.ts';
 
 const chip = (s: SizerSet['status']) => `rounded-full px-2 py-0.5 text-xs font-medium ${s === 'in shop' ? 'bg-emerald-100 text-emerald-800' : s === 'lent' ? 'bg-sky-100 text-sky-800' : 'bg-red-100 text-red-800'}`;
 
@@ -60,23 +60,64 @@ function TakeBack({ set, onDone, onClose }: { set: SizerSet; onDone: () => void;
   );
 }
 
+/** A sizer set made or changed (the owner's request, Oct 2026): its code, the garment it fits and the sizes in it. */
+function SetForm({ set, garments, onClose, onDone }: { set: SizerSet | null; garments: string[]; onClose: () => void; onDone: () => void }) {
+  const [v, setV] = useState<SetValues>({ code: set?.code ?? '', garmentType: set?.garmentType ?? '', sizesIncluded: set?.sizesIncluded ?? '' });
+  const [touched, setTouched] = useState(false);
+  const a = useAction();
+  const { input, errors } = setInput(v);
+  const save = () => (setTouched(true), errors.length === 0 && a.run(async () => {
+    await (set ? api.sizerSetUpdate(set.id, set.version, input) : api.sizerSetCreate(input));
+    onDone();
+  }));
+  return (
+    <Dialog title={set ? `Change ${set.code}` : 'New sizer set'} onClose={onClose}>
+      <div className="space-y-3">
+        <Field label="Code" required hint="Its own name, written on the bag, e.g. SZ-JERSEY-01"><input autoFocus className={inputClass} value={v.code} onChange={(e) => setV({ ...v, code: e.target.value })} /></Field>
+        <Field label="Garment type" required hint="The garment it fits, as on the price list">
+          <input list="sizer-garments" className={inputClass} value={v.garmentType} onChange={(e) => setV({ ...v, garmentType: e.target.value })} />
+          <datalist id="sizer-garments">{garments.map((g) => <option key={g} value={g} />)}</datalist>
+        </Field>
+        <Field label="Sizes in it" required hint="e.g. XS, S, M, L, XL, 2XL"><input className={inputClass} value={v.sizesIncluded} onChange={(e) => setV({ ...v, sizesIncluded: e.target.value })} /></Field>
+        {touched && errors.map((e) => <Notice key={e}>{e}</Notice>)}
+        {a.error && <Notice>{a.error}</Notice>}
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Go back</Button>
+          <Button tone="primary" disabled={a.busy} onClick={save}>{set ? 'Save the change' : 'Add the set'}</Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
 export function SizerSets({ me }: { me: Me }) {
   const [board, setBoard] = useState<SizerBoard | null>(null);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<SizerSet['status'] | 'all'>('all');
-  const [dialog, setDialog] = useState<{ kind: 'lend' | 'back'; set: SizerSet } | null>(null);
+  const [dialog, setDialog] = useState<{ kind: 'lend' | 'back'; set: SizerSet } | { kind: 'set'; set: SizerSet | null } | null>(null);
+  const [offError, setOffError] = useState('');
   const load = useCallback(() => void api.sizerBoard().then((b) => (setBoard(b), setError('')), (e: Error) => setError(e.message)), []);
   useEffect(load, [load]);
   if (error) return <Notice>{error}</Notice>;
   if (!board) return <p className="text-slate-500">Loading…</p>;
   const canEdit = me.permissions.includes('szr.loan.edit');
+  const canSets = me.permissions.includes('szr.set.edit');
+  const garments = [...new Set(board.sets.map((s) => s.garmentType))].sort();
+  const switchOff = async (s: SizerSet) => {
+    if (!(await askConfirm(`${s.code} leaves the list; its loans stay on record.`, { title: `Switch ${s.code} off?`, yes: 'Switch it off', danger: true }))) return;
+    api.sizerSetDeactivate(s.id, s.version).then(load, (e: Error) => setOffError(e.message));
+  };
   const shown = filterSets(board.sets, search, status);
   const count = (s: SizerSet['status']) => board.sets.filter((x) => x.status === s).length;
   const done = () => (setDialog(null), load());
   return (
     <div className="max-w-5xl space-y-4">
-      <h1 className="text-2xl font-semibold">Sizer sets</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-2xl font-semibold">Sizer sets</h1>
+        {canSets && <Button tone="primary" onClick={() => setDialog({ kind: 'set', set: null })}>+ New sizer set</Button>}
+      </div>
+      {offError && <Notice>{offError}</Notice>}
       {board.overdue.length > 0 && (
         <Notice tone="warning">
           Overdue: {board.overdue.map((s) => `${s.code} with ${s.holder!.customerName} (${dueWords(s.holder!.expectedReturnDate, board.today)})`).join('; ')}.
@@ -103,6 +144,8 @@ export function SizerSets({ me }: { me: Me }) {
                 <td className="py-1 text-right">
                   {canEdit && s.status === 'in shop' && <Button onClick={() => setDialog({ kind: 'lend', set: s })}>Lend</Button>}
                   {canEdit && s.status === 'lent' && s.holder && <Button onClick={() => setDialog({ kind: 'back', set: s })}>Take back</Button>}
+                  {canSets && <button type="button" className="ml-2 text-xs text-indigo-700 hover:underline" onClick={() => setDialog({ kind: 'set', set: s })}>Change</button>}
+                  {canSets && s.status !== 'lent' && <button type="button" className="ml-2 text-xs text-red-700 hover:underline" onClick={() => void switchOff(s)}>Switch off</button>}
                 </td>
               </tr>
             ))}
@@ -125,6 +168,7 @@ export function SizerSets({ me }: { me: Me }) {
           </table>
         )}
       </Panel>
+      {dialog?.kind === 'set' && <SetForm set={dialog.set} garments={garments} onClose={() => setDialog(null)} onDone={done} />}
       {dialog?.kind === 'lend' && <Lend set={dialog.set} today={board.today} onClose={() => setDialog(null)} onDone={done} />}
       {dialog?.kind === 'back' && <TakeBack set={dialog.set} onClose={() => setDialog(null)} onDone={done} />}
     </div>
