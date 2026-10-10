@@ -748,7 +748,7 @@ export interface LateInstalment { loanId: string; loanNumber: string; lender: st
 
 /** GET /api/szr/overview (PLAN E8): every set with who has it, the overdue ones and the last returns. */
 export interface SizerHolder { loanId: string; loanVersion: number; customerId: string; customerName: string; dateOut: string; expectedReturnDate: string; daysOverdue: number }
-export interface SizerSet { id: string; code: string; garmentType: string; sizesIncluded: string; status: 'in shop' | 'lent' | 'lost or damaged'; holder: SizerHolder | null }
+export interface SizerSet { id: string; code: string; garmentType: string; sizesIncluded: string; status: 'in shop' | 'lent' | 'lost or damaged'; version: number; holder: SizerHolder | null }
 export interface SizerReturned { loanId: string; setCode: string; garmentType: string; customerName: string; dateOut: string; expectedReturnDate: string; returnedDate: string; conditionOnReturn: string }
 export interface SizerBoard { today: string; sets: SizerSet[]; overdue: SizerSet[]; returned: SizerReturned[] }
 /** Backups (BAK). The status's `runs` are the server's bak_runs rows as stored. */
@@ -781,7 +781,7 @@ export interface OutboxRow {
 }
 export interface Outbox { rows: OutboxRow[]; counts: Record<'queued' | 'sent' | 'failed', number> }
 /** The old-data importer (PLAN E13 MIG-01), as /api/mig reports it. */
-export type MigRowType = 'customer' | 'measurement' | 'employee' | 'piece_rate' | 'unknown';
+export type MigRowType = 'customer' | 'measurement' | 'employee' | 'piece_rate' | 'sizer_set' | 'unknown';
 export type MigRowStatus = 'valid' | 'needs_review' | 'accepted' | 'merged' | 'excluded';
 export interface MigUpload { id: string; filename: string; uploadedAt: string; uploadedBy: string; status: 'staged' | 'dry_run_passed' | 'committed' }
 export interface MigUploaded { uploadId: string; totalRows: number; needsReview: number }
@@ -793,12 +793,12 @@ export interface MigRow {
 export interface DryRunResult {
   success: true;
   counts: {
-    customers: number; measurements: number; employees: number; pieceRates: number; excluded: number; merged: number; total: number;
+    customers: number; measurements: number; employees: number; pieceRates: number; sizerSets?: number; excluded: number; merged: number; total: number;
     /** What the bulk choices for MANUAL size rows will make: customers, groups, and wearers. */
     newCustomers?: number; newGroups?: number; wearers?: number;
   };
   checksums: {
-    customer: { sha256: string }; measurement: { sha256: string; cellTenths: number }; employee: { sha256: string; rateCents: number }; pieceRate: { sha256: string; rateCents: number };
+    customer: { sha256: string }; measurement: { sha256: string; cellTenths: number }; employee: { sha256: string; rateCents: number }; pieceRate: { sha256: string; rateCents: number }; sizerSet?: { sha256: string };
   };
 }
 /** A MANUAL size row's one customer with the same name, offered to accept. */
@@ -808,9 +808,9 @@ export type MigAssignBody = { rowIds: string[]; mode: 'own' } | { rowIds: string
 export interface MigAssigned { success: true; assigned: number; skipped: { rowId: string; rowNumber: number; reason: string }[] }
 export interface MigEmployeeFix { rowId: string; payType?: 'daily' | 'piece' | 'monthly'; rateCents?: number }
 export interface CustomerGroup { id: string; name: string; is_active: number }
-export type MigCommitKind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate';
+export type MigCommitKind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate' | 'sizer_set';
 /** What a commit made. `excluded` and `merged` are only in the answer to the commit itself, not in the later look-up. */
-export interface MigCommitResult { counts: Record<MigCommitKind, { imported: number; alreadyImported: number }>; measurementCellTenths: number; excluded?: number; merged?: number }
+export interface MigCommitResult { counts: Record<Exclude<MigCommitKind, 'sizer_set'>, { imported: number; alreadyImported: number }> & { sizer_set?: { imported: number; alreadyImported: number } }; measurementCellTenths: number; excluded?: number; merged?: number }
 /** What a backup holds, found by opening it with a recovery key. A restore check adds `stagedId` and the live data's audit head. */
 export interface BackupCheck {
   file: string; madeAt: string | null; tier: BackupTier | null; sidecar: 'matches' | 'missing'; toApply: string[]; audit: { seq: number } | null;
@@ -1285,6 +1285,13 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     loanPayments: (id: string) => call<LoanPayment[]>('GET', `/api/loan/loans/${encodeURIComponent(id)}/payments`),
     loansLate: () => call<LateInstalment[]>('GET', '/api/loan/late'),
     sizerBoard: () => call<SizerBoard>('GET', '/api/szr/overview'),
+    /** A new sizer set, in the shop (the owner's request, Oct 2026); its code is unique. */
+    sizerSetCreate: (body: { code: string; garmentType: string; sizesIncluded: string }) => call<{ id: string; version: number }>('POST', '/api/szr/sets', body),
+    /** A set's code, garment type or sizes changed, with its version (If-Match). */
+    sizerSetUpdate: (id: string, v: number, body: { code: string; garmentType: string; sizesIncluded: string }) =>
+      call<{ success: true; version: number }>('PUT', `/api/szr/sets/${encodeURIComponent(id)}`, body, version(v)),
+    /** Switch a set off (not while it is lent); it leaves the list, its history stays. */
+    sizerSetDeactivate: (id: string, v: number) => call<{ success: true }>('POST', `/api/szr/sets/${encodeURIComponent(id)}/deactivate`, {}, version(v)),
     /** Lend a set that is in the shop to a customer; the date out is the server's today. */
     sizerLend: (body: { setId: string; customerId: string; expectedReturnDate: string }) => call<{ id: string; version: number }>('POST', '/api/szr/loans', body),
     /** Take a set back, with the loan's version (If-Match); it is back in the shop, or lost or damaged. */

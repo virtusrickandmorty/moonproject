@@ -3,7 +3,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { customerRef } from '../CUS/public.ts';
 
 export interface SizerHolder { loanId: string; loanVersion: number; customerId: string; customerName: string; dateOut: string; expectedReturnDate: string; daysOverdue: number }
-export interface SizerSet { id: string; code: string; garmentType: string; sizesIncluded: string; status: 'in shop' | 'lent' | 'lost or damaged'; holder: SizerHolder | null }
+export interface SizerSet { id: string; code: string; garmentType: string; sizesIncluded: string; status: 'in shop' | 'lent' | 'lost or damaged'; version: number; holder: SizerHolder | null }
 export interface SizerReturned { loanId: string; setCode: string; garmentType: string; customerName: string; dateOut: string; expectedReturnDate: string; returnedDate: string; conditionOnReturn: string }
 
 const customerName = (db: Db, id: string) => customerRef(db, id)?.display_name ?? '?';
@@ -20,7 +20,7 @@ export function sizerBoard(db: Db, date: string) {
       .all() as (Omit<SizerHolder, 'daysOverdue' | 'customerName'> & { setId: string })[]).map(({ setId, ...h }) => [setId, { ...h, customerName: customerName(db, h.customerId), daysOverdue: Math.max(0, dayNumber(date) - dayNumber(h.expectedReturnDate)) }]),
   );
   const sets = (
-    db.prepare(`SELECT id, code, garment_type AS garmentType, sizes_included AS sizesIncluded, status FROM szr_sets WHERE status != 'inactive' ORDER BY code`).all() as Omit<SizerSet, 'holder'>[]
+    db.prepare(`SELECT id, code, garment_type AS garmentType, sizes_included AS sizesIncluded, status, version FROM szr_sets WHERE status != 'inactive' ORDER BY code`).all() as Omit<SizerSet, 'holder'>[]
   ).map((s) => ({ ...s, holder: open.get(s.id) ?? null }));
   const overdue = sets.filter((s) => s.holder && s.holder.daysOverdue > 0).sort((a, b) => a.holder!.expectedReturnDate.localeCompare(b.holder!.expectedReturnDate));
   const returned = (db
