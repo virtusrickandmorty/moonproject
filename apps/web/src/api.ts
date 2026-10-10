@@ -1087,6 +1087,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** Send pieces back for rework: from the first step through every step again, labelled rework (what was done stays). */
     prdRework: (jo: string, lineNo: number, body: { pieces?: number; wearers?: number[]; part?: 'upper' | 'lower'; reason: string; foundAtStepId?: number }) =>
       call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/rework`), body),
+    /** What an edit of a job order does to its production: items or wearers with work left out, sizes changed after work. */
+    prdCarryCheck: (jo: string, lines: unknown[]) => call<{ warnings: string[] }>('POST', prdJob(jo, '/carry-check'), { lines }),
     prdWorkers: () => call<Worker[]>('GET', '/api/prd/workers'),
     rates: () => call<RateTable>('GET', '/api/rate/rates'),
     addRate: (body: Omit<PieceRate, 'id' | 'createdAt'>) => call<PieceRate>('POST', '/api/rate/rates', body),

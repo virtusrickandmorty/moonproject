@@ -10,6 +10,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { currentStage, jobOrderRef, lineState, rosterOf } from '../JO/public.ts';
 import { garmentTypes } from '../RATE/public.ts';
 import { activeEmployees } from './emp.ts';
+import { carryWarnings } from './carry.ts';
 import { COMPLEXITIES, SET_PARTS, availableFor, board, forwardedWearers, lineRoute, lineSetup, listSteps, listTemplates, reworkOpen, sendBackForRework, setupLine, stepAction, stepById, wearersDone, type StepAction } from './production.ts';
 
 const setupBody = z
@@ -24,6 +25,8 @@ const reworkBody = z.object({
   reason: z.string().max(500),
   foundAtStepId: z.number().int().positive().optional(),
 }).strict();
+const carryWearer = z.looseObject({ personId: z.string().max(60).optional(), name: z.string().max(120).optional(), size: z.string().max(60).optional(), jerseyName: z.string().max(120).optional(), jerseyNumber: z.string().max(20).optional(), qty: z.number().int() });
+const carryBody = z.object({ lines: z.array(z.looseObject({ kind: z.string().max(30), description: z.string().max(500), qty: z.number().int(), roster: z.array(carryWearer).max(1000).optional() })).max(200) }).strict();
 type LineParams = { jo: string; line: string };
 const lineNoOf = (p: LineParams) => {
   const n = Number(p.line);
@@ -89,6 +92,20 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post<{ Params: LineParams }>('/api/prd/jobs/:jo/lines/:line/rework', { config: { permission: 'prd.progress' } }, async (req) => {
     const body = reworkBody.parse(req.body);
     return write(() => sendBackForRework(db, req.params.jo, lineNoOf(req.params), body, who(req)));
+  });
+
+  /**
+   * What an edit of a job order does to its production (shown on the job order form before Record): items or wearers with
+   * work left out (kept as extras), items below the pieces made, sizes or jerseys changed after work. `lines`: the form's input.
+   */
+  app.post<{ Params: { jo: string } }>('/api/prd/jobs/:jo/carry-check', { config: { permission: 'jo.post' } }, async (req) => {
+    const body = carryBody.parse(req.body);
+    if (!jobOrderRef(db, req.params.jo)) throw notFound('The job order');
+    const lines = body.lines.map((l, i) => ({
+      lineNo: i + 1, kind: l.kind, description: l.description, qty: l.roster?.length ? l.roster.reduce((n, r) => n + r.qty, 0) : l.qty,
+      roster: (l.roster ?? []).map((r, j) => ({ rowNo: j + 1, personId: r.personId ?? null, name: r.name ?? '', size: r.size ?? null, jerseyName: r.jerseyName ?? null, jerseyNumber: r.jerseyNumber ?? null, qty: r.qty })),
+    }));
+    return { warnings: carryWarnings(db, req.params.jo, lines) };
   });
 
   /** Workers who can be given pieces (active employees). */

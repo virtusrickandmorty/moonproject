@@ -9,7 +9,7 @@ import { applyRate, conflict, formatPeso, manilaDate, type Issue } from '@moonpr
 import type { Db } from '../../../platform/db/driver.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { activeChart, activeWearers, customer, wearer, type Wearer } from '../cus.ts';
-import { carryStageOver } from '../stages.ts';
+import { carryStageOver, jobOrderEdited } from '../stages.ts';
 
 export const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
 export const PAYMENT_TERMS = ['dp50', 'full', 'cod', 'net7', 'net15', 'net30'] as const;
@@ -255,6 +255,8 @@ export const jobOrderDoc: DocTypeDef<JobOrderInput, JobOrder> = {
     const deps = jobOrderDoc.dependents!(db, oldId);
     if (deps.length > 0) throw conflict('HAS_DEPENDENTS', `Cancel these first: ${deps.map((x) => x.number).join(', ')}.`, deps);
     carryStageOver(db, oldId, newId);
+    // Its production goes on: each item keeps its route, steps, pieces and wearers (the owner's request, Oct 2026).
+    jobOrderEdited(db, oldId, newId);
   },
 
   summary(doc) {

@@ -101,8 +101,8 @@ const plural = (n: number) => `${n} ${Math.abs(n) === 1 ? 'piece' : 'pieces'}`;
 function sameSheet(db: Parameters<typeof lineState>[0], jobOrderId: string, stepId: number, workDate: string, r: { lineNo: number; employeeId: string; pieces: number; part: Part }): string[] {
   return db
     .prepare(
-      `SELECT DISTINCT d.number FROM prd_assignments a JOIN documents d ON d.id = a.document_id
-       WHERE d.status = 'posted' AND a.kind = 'work' AND a.job_order_id = ? AND a.line_no = ? AND a.step_id = ? AND a.employee_id = ? AND a.work_date = ? AND a.pieces = ? AND a.part = ?
+      `SELECT DISTINCT d.number FROM prd_line_assignments a JOIN documents d ON d.id = a.document_id
+       WHERE d.status = 'posted' AND a.kind = 'work' AND a.jo = ? AND a.line = ? AND a.step_id = ? AND a.employee_id = ? AND a.work_date = ? AND a.pieces = ? AND a.part = ?
        ORDER BY d.number`,
     )
     .pluck()

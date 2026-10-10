@@ -61,8 +61,8 @@ export function piecesOn(db: Db, jobOrderId: string, lineNo: number, stepId: num
   return db
     .prepare(
       `SELECT COALESCE(SUM(CASE WHEN a.kind <> 'rework' THEN a.pieces END), 0) AS pieces, COALESCE(SUM(CASE WHEN a.kind = 'rework' THEN a.pieces END), 0) AS reworkPieces
-       FROM prd_assignments a JOIN documents d ON d.id = a.document_id
-       WHERE a.job_order_id = ? AND a.line_no = ? AND a.step_id = ? AND d.status = 'posted' AND (? IS NULL OR a.part = ?)`,
+       FROM prd_line_assignments a JOIN documents d ON d.id = a.document_id
+       WHERE a.jo = ? AND a.line = ? AND a.step_id = ? AND d.status = 'posted' AND (? IS NULL OR a.part = ?)`,
     )
     .get(jobOrderId, lineNo, stepId, part ?? null, part ?? null) as { pieces: number; reworkPieces: number };
 }
@@ -72,8 +72,8 @@ export function piecesOn(db: Db, jobOrderId: string, lineNo: number, stepId: num
  * owner's request, Oct 2026. A cancelled entry's wearers are free again.
  */
 export function wearersDone(db: Db, jobOrderId: string, lineNo: number, stepId: number, part: Part = 'whole'): Map<number, string> {
-  const rows = db.prepare(`SELECT w.roster_row_no AS rowNo, d.number FROM prd_assignment_wearers w JOIN prd_assignments a ON a.id = w.assignment_id
-    JOIN documents d ON d.id = a.document_id WHERE a.job_order_id = ? AND a.line_no = ? AND a.step_id = ? AND a.part = ? AND d.status = 'posted'`).all(jobOrderId, lineNo, stepId, part) as { rowNo: number; number: string }[];
+  const rows = db.prepare(`SELECT w.roster_row_no AS rowNo, d.number FROM prd_line_assignment_wearers w JOIN prd_assignments a ON a.id = w.assignment_id
+    JOIN documents d ON d.id = a.document_id WHERE w.jo = ? AND w.line = ? AND a.step_id = ? AND a.part = ? AND d.status = 'posted'`).all(jobOrderId, lineNo, stepId, part) as { rowNo: number; number: string }[];
   return new Map(rows.map((r) => [r.rowNo, r.number]));
 }
 
@@ -128,10 +128,10 @@ export function reworkFlow(db: Db, jobOrderId: string, lineNo: number, route: Ro
   const sent = db.prepare('SELECT id, pieces, at FROM prd_reworks WHERE job_order_id = ? AND line_no = ? AND part = ? ORDER BY at').all(jobOrderId, lineNo, part) as { id: string; pieces: number; at: string }[];
   if (sent.length === 0) return out;
   const since = sent[0]!.at;
-  const redoneOn = db.prepare(`SELECT COALESCE(SUM(a.pieces), 0) FROM prd_assignments a JOIN documents d ON d.id = a.document_id
-    WHERE a.job_order_id = ? AND a.line_no = ? AND a.step_id = ? AND a.part = ? AND a.kind = 'rework' AND d.status = 'posted' AND d.posted_at >= ?`).pluck();
-  const tickedOn = db.prepare(`SELECT DISTINCT x.roster_row_no FROM prd_assignment_wearers x JOIN prd_assignments a ON a.id = x.assignment_id JOIN documents d ON d.id = a.document_id
-    WHERE a.job_order_id = ? AND a.line_no = ? AND a.step_id = ? AND a.part = ? AND a.kind = 'rework' AND d.status = 'posted' AND d.posted_at >= ?`).pluck();
+  const redoneOn = db.prepare(`SELECT COALESCE(SUM(a.pieces), 0) FROM prd_line_assignments a JOIN documents d ON d.id = a.document_id
+    WHERE a.jo = ? AND a.line = ? AND a.step_id = ? AND a.part = ? AND a.kind = 'rework' AND d.status = 'posted' AND d.posted_at >= ?`).pluck();
+  const tickedOn = db.prepare(`SELECT DISTINCT x.roster_row_no FROM prd_line_assignment_wearers x JOIN prd_assignments a ON a.id = x.assignment_id JOIN documents d ON d.id = a.document_id
+    WHERE x.jo = ? AND x.line = ? AND a.step_id = ? AND a.part = ? AND a.kind = 'rework' AND d.status = 'posted' AND d.posted_at >= ?`).pluck();
   const sentWearers = db.prepare(`SELECT DISTINCT w.roster_row_no FROM prd_rework_wearers w JOIN prd_reworks r ON r.id = w.rework_id
     WHERE r.job_order_id = ? AND r.line_no = ? AND r.part = ?`).pluck().all(jobOrderId, lineNo, part) as number[];
   let arrived = sent.reduce((n, r) => n + r.pieces, 0);
@@ -195,8 +195,8 @@ export function coverage(db: Db, jobOrderId: string, lineNo: number, route: Rout
     const redone = reworkFlow(db, jobOrderId, lineNo, route, part).get(step.id)?.redone ?? 0;
     return { pieces: Math.min(qty, done + redone), wearers: null, untracked: 0 };
   }
-  const ticked = new Set(db.prepare(`SELECT DISTINCT x.roster_row_no FROM prd_assignment_wearers x JOIN prd_assignments a ON a.id = x.assignment_id JOIN documents d ON d.id = a.document_id
-    WHERE a.job_order_id = ? AND a.line_no = ? AND a.step_id = ? AND a.part = ? AND a.kind IN ('work', 'rework') AND d.status = 'posted'`).pluck().all(jobOrderId, lineNo, step.id, part) as number[]);
+  const ticked = new Set(db.prepare(`SELECT DISTINCT x.roster_row_no FROM prd_line_assignment_wearers x JOIN prd_assignments a ON a.id = x.assignment_id JOIN documents d ON d.id = a.document_id
+    WHERE x.jo = ? AND x.line = ? AND a.step_id = ? AND a.part = ? AND a.kind IN ('work', 'rework') AND d.status = 'posted'`).pluck().all(jobOrderId, lineNo, step.id, part) as number[]);
   const workTicked = [...wearersDone(db, jobOrderId, lineNo, step.id, part).keys()].reduce((n, w) => n + (roster.get(w) ?? 0), 0);
   const untracked = Math.max(0, done - workTicked);
   return { pieces: Math.min(qty, [...ticked].reduce((n, w) => n + (roster.get(w) ?? 0), 0) + untracked), wearers: ticked, untracked };
@@ -260,7 +260,7 @@ export function setupLine(db: Db, jobOrderId: string, lineNo: number, req: Setup
   const isSet = matched?.unit === 'set';
   if (before?.isSet && !isSet) {
     // A line made in parts keeps its parts while pieces of a part are recorded on it.
-    const parted = db.prepare(`SELECT 1 FROM prd_assignments a JOIN documents d ON d.id = a.document_id WHERE a.job_order_id = ? AND a.line_no = ? AND a.part <> 'whole' AND d.status = 'posted' LIMIT 1`).get(jobOrderId, lineNo);
+    const parted = db.prepare(`SELECT 1 FROM prd_line_assignments a JOIN documents d ON d.id = a.document_id WHERE a.jo = ? AND a.line = ? AND a.part <> 'whole' AND d.status = 'posted' LIMIT 1`).get(jobOrderId, lineNo);
     if (parted) throw conflict('PARTS_RECORDED', `Line ${lineNo} has upper and lower pieces recorded, so it stays a set.`);
   }
   const ids = [...new Set(req.stepIds)];

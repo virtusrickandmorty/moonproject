@@ -141,7 +141,7 @@ export function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWear
 /** The due date as days from today (Manila), both ways: the form keeps the days the server takes (dueInDays). */
 const DAY = 86_400_000;
 const todayMs = () => Date.parse(manilaDate(new Date()));
-export const dateIn = (days: number) => new Date(todayMs() + days * DAY).toISOString().slice(0, 10);
+export const dateIn = (days: number) => manilaDate(new Date(todayMs() + days * DAY)); // midnight UTC is the same day in Manila
 export const daysTo = (date: string) => Math.round((Date.parse(date) - todayMs()) / DAY);
 const dueDateOf = (days: string) => (/^\d+$/.test(days.trim()) ? dateIn(Number(days)) : '');
 const dueHint = (days: string) => {
@@ -256,6 +256,9 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
   const typed = joInput(v);
   const live = useLive<Preview | null>(JSON.stringify(typed.input), typed.errors.length === 0, () => r.preview(typed.input));
   const doc = live?.doc as { totalCents: number; requiredDownpaymentCents: number; dueDate: string } | undefined;
+  // An edit carries the job's production over to the replacement: what it leaves out or changes after work, before Record.
+  const editOf = mode.kind === 'edit' ? mode.id : '';
+  const carry = useLive(JSON.stringify([editOf, typed.input.lines]), !!editOf && typed.input.lines.length > 0, () => api.prdCarryCheck(editOf, typed.input.lines));
   const pending = !blankLine(item); // something typed in the item form and not added yet
   /** Record takes a complete item still in the item form with it (added, or its change applied); an incomplete one stops it. */
   const record = () => {
@@ -396,6 +399,13 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
             {!live && v.lines.length > 0 && <p className="text-sm text-slate-500">Fill in the customer and terms to see the downpayment asked.</p>}
             {live && <p className="text-sm">{live.summary}</p>}
             {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
+            {carry && carry.warnings.length > 0 && (
+              <div className="space-y-2" aria-label="Production">
+                <p className="text-sm font-semibold">Production</p>
+                <p className="text-xs text-slate-500">The items kept go on in production where they are. This edit also:</p>
+                {carry.warnings.map((w) => <Notice key={w} tone="warning">{w}</Notice>)}
+              </div>
+            )}
             {pending && <Notice tone="warning">{editing === null ? 'The item in the form is not added yet: press Add to order (Record adds it too).' : `Item ${editing + 1} is being changed: press Update item (Record applies it too).`}</Notice>}
           </Panel>
           <Errors list={typed.errors} show={r.touched} />
