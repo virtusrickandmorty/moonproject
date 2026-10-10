@@ -136,13 +136,16 @@ export function CalendarCard({ calendar, today }: { calendar: NonNullable<DashCa
       {calendar.days.map((d) => {
         const past = d.date < today;
         const isToday = d.date === today;
-        const look = isToday ? 'bg-indigo-600 text-white font-semibold' : d.late ? 'bg-red-50 text-red-700 font-medium' : d.due > 0 ? 'bg-slate-200 text-slate-800 font-medium' : past ? 'text-slate-300' : 'ring-1 ring-slate-200 text-slate-400';
-        return <span key={d.date} title={`${d.date}: ${d.due} due${d.late ? ' (late)' : ''}`} className={`mx-auto grid size-8 place-items-center rounded-full ${look}`}>
-          {d.due > 0 ? d.due : past ? <Icon name="check" className="size-3.5" /> : isToday ? Number(d.date.slice(8)) : ''}
+        // The day of the month in every circle (the owner: the dates must show); what is due that day is the badge on it.
+        const look = isToday ? 'bg-indigo-600 text-white font-semibold' : d.late ? 'bg-red-50 text-red-700 font-medium ring-1 ring-red-200'
+          : d.due > 0 ? 'bg-slate-100 text-slate-900 font-medium ring-1 ring-slate-300' : past ? 'text-slate-400' : 'text-slate-700';
+        return <span key={d.date} title={`${d.date}: ${d.due} due${d.late ? ' (late)' : ''}`} className={`relative mx-auto grid size-8 place-items-center rounded-full tabular-nums ${look}`}>
+          {Number(d.date.slice(8))}
+          {d.due > 0 && <span aria-hidden="true" className={`absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10px] font-semibold leading-none text-white ${d.late ? 'bg-red-600' : 'bg-slate-700'}`}>{d.due}</span>}
         </span>;
       })}
     </div>
-    <p className="text-xs text-slate-500">Each circle: open job orders due that day. Red: past due. Ticked: nothing left due.</p>
+    <p className="text-xs text-slate-500">The badge on a date: open job orders due that day. Red: past due. Blue: today.</p>
   </Card>;
 }
 
