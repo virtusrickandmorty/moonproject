@@ -40,15 +40,15 @@ function Icon({ name, className = 'size-5' }: { name: IconName; className?: stri
  * the home uses it (the owner's request, Oct 2026); `tone="danger"` is a warning card (red ring and icon tile).
  */
 export function Card({ icon, title, count, note, href, dark = false, tone, children }: { icon: IconName; title: string; count?: number; note?: string; href?: string; dark?: boolean; tone?: 'danger'; children: ReactNode }) {
-  // Our colours (the owner's request, Oct 2026): the accent blue for icon tiles and the feature card, our red for warnings.
-  const look = dark ? 'rounded-xl bg-indigo-700 text-white shadow-sm' : tone === 'danger' ? 'rounded-xl bg-red-50 text-red-950 shadow-sm ring-2 ring-[#f95f53]/60' : SURFACE;
+  // Calm (the owner: not too colourful): grey icon tiles on white; red only for a warning.
+  const look = tone === 'danger' ? 'rounded-xl bg-white shadow-sm ring-1 ring-red-200' : SURFACE;
   return <section className={`flex min-w-0 flex-col gap-4 p-5 ${look}`}>
     <header className="flex items-center gap-3">
-      <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${dark ? 'bg-white text-indigo-700' : tone === 'danger' ? 'bg-[#f95f53] text-white' : 'bg-indigo-600 text-white'}`}><Icon name={icon} /></span>
-      <h2 className={dark ? 'text-base font-bold text-white' : CARD_TITLE}>{title}</h2>
-      {count !== undefined && <span className={`rounded-md px-1.5 text-xs font-medium tabular-nums ${dark ? 'bg-white/15' : 'bg-slate-100 text-slate-600'}`}>{count}</span>}
-      {note && <span className={`hidden truncate text-xs sm:inline ${dark ? 'text-white/60' : 'text-slate-500'}`}>{note}</span>}
-      {href && <Link to={href} aria-label={`Open ${title.toLowerCase()}`} className={`ml-auto rounded-md px-2 text-lg leading-none ${dark ? 'text-white/70 hover:bg-white/10' : 'text-slate-500 hover:bg-slate-100'}`}>⋯</Link>}
+      <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${tone === 'danger' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-700'}`}><Icon name={icon} /></span>
+      <h2 className={CARD_TITLE}>{title}</h2>
+      {count !== undefined && <span className="rounded-md bg-slate-100 px-1.5 text-xs font-medium tabular-nums text-slate-600">{count}</span>}
+      {note && <span className="hidden truncate text-xs text-slate-500 sm:inline">{note}</span>}
+      {href && <Link to={href} aria-label={`Open ${title.toLowerCase()}`} className="ml-auto rounded-md px-2 text-lg leading-none text-slate-500 hover:bg-slate-100">⋯</Link>}
     </header>
     {children}
   </section>;
@@ -58,7 +58,7 @@ export function KpiStrip({ kpis }: { kpis: DashCards['kpis'] }) {
   if (kpis.length === 0) return null;
   return <section aria-label="Headline figures" className={`grid sm:grid-cols-2 lg:grid-cols-4 ${SURFACE}`}>
     {kpis.map((k, i) => <Link key={k.key} to={k.href} className={`flex items-center gap-3 p-4 hover:bg-slate-50 ${i > 0 ? 'border-t border-slate-100 sm:border-t-0 lg:border-l' : ''} ${i % 2 === 1 ? 'sm:border-l' : ''}`}>
-      <span className="grid size-10 place-items-center rounded-full bg-indigo-50 text-indigo-700"><Icon name={KPI_ICON[k.key] ?? 'jobs'} /></span>
+      <span className="grid size-10 place-items-center rounded-full bg-slate-100 text-slate-600"><Icon name={KPI_ICON[k.key] ?? 'jobs'} /></span>
       <span className="min-w-0 flex-1">
         <span className="block text-xs text-slate-500">{k.label}</span>
         <span className="flex items-baseline gap-2">
@@ -67,18 +67,18 @@ export function KpiStrip({ kpis }: { kpis: DashCards['kpis'] }) {
         </span>
       </span>
       {k.changePct !== undefined && k.changePct !== null && <span title="Against the same days last month"
-        className={`rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums ${k.changePct >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700'}`}>{k.changePct >= 0 ? '+' : ''}{k.changePct}%</span>}
+        className={`text-xs font-semibold tabular-nums ${k.changePct >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{k.changePct >= 0 ? '+' : ''}{k.changePct}%</span>}
     </Link>)}
   </section>;
 }
 
 const STATUS: Record<NonNullable<DashCards['jobs']>['rows'][number]['status'], [string, string]> = {
-  to_route: ['To route', 'bg-amber-100 text-amber-800'],
-  in_production: ['In production', 'bg-indigo-100 text-indigo-800'],
-  ready: ['Ready', 'bg-emerald-100 text-emerald-800'],
-  late: ['Late', 'bg-red-100 text-red-700'],
+  to_route: ['To route', 'bg-slate-100 text-slate-600'],
+  in_production: ['In production', 'bg-slate-100 text-slate-800'],
+  ready: ['Ready', 'bg-emerald-50 text-emerald-700'],
+  late: ['Late', 'bg-red-50 text-red-700'],
 };
-const AVATAR = ['bg-indigo-600', 'bg-teal-600', 'bg-indigo-400', 'bg-amber-600', 'bg-sky-600', 'bg-rose-500'];
+const AVATAR = ['bg-slate-200 text-slate-700'];
 const shortDate = (date: string) => new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
 
 export function JobsCard({ jobs }: { jobs: NonNullable<DashCards['jobs']> }) {
@@ -89,8 +89,8 @@ export function JobsCard({ jobs }: { jobs: NonNullable<DashCards['jobs']> }) {
         <thead><tr className="text-left text-xs text-slate-500"><th className="px-1 pb-2 font-normal">Job order</th><th className="px-1 pb-2 font-normal">Item</th><th className="px-1 pb-2 font-normal">Step</th><th className="px-1 pb-2 font-normal">Status</th><th className="px-1 pb-2 text-right font-normal">Due</th></tr></thead>
         <tbody>{jobs.rows.map((j, i) => <tr key={j.id} className="border-t border-slate-50">
           <td className="px-1 py-2"><Link to={`/docs/jo.job_order/${j.id}`} className="flex items-center gap-2 hover:underline">
-            <span aria-hidden="true" className={`grid size-7 shrink-0 place-items-center rounded-full text-xs font-semibold text-white ${AVATAR[i % AVATAR.length]}`}>{j.customerName.trim().charAt(0).toUpperCase() || '?'}</span>
-            <span className="min-w-0"><span className="block font-medium">{j.number}{j.rush && <span className="ml-1 rounded bg-red-600 px-1 text-[10px] font-semibold uppercase text-white">Rush</span>}</span><span className="block max-w-[10rem] truncate text-xs text-slate-500">{j.customerName}</span></span>
+            <span aria-hidden="true" className={`grid size-7 shrink-0 place-items-center rounded-full text-xs font-semibold ${AVATAR[i % AVATAR.length]}`}>{j.customerName.trim().charAt(0).toUpperCase() || '?'}</span>
+            <span className="min-w-0"><span className="block font-medium">{j.number}{j.rush && <span className="ml-1 rounded px-1 text-[10px] font-semibold uppercase text-red-600 ring-1 ring-red-200">Rush</span>}</span><span className="block max-w-[10rem] truncate text-xs text-slate-500">{j.customerName}</span></span>
           </Link></td>
           <td className="max-w-[12rem] truncate px-1 py-2 text-slate-700" title={j.item}>{j.item}</td>
           <td className="px-1 py-2 text-slate-700">{j.step ?? '—'}</td>
@@ -109,7 +109,7 @@ export function ActivityCard({ activity }: { activity: NonNullable<DashCards['ac
   const max = Math.max(1, ...activity.days.map((d) => d.pieces));
   const best = activity.days.reduce((b, d) => (d.pieces > b.pieces ? d : b), activity.days[0]!);
   const stat = (value: number, label: string) => <div className="rounded-xl p-2 text-center ring-1 ring-slate-100">
-    <p className="text-lg font-semibold tabular-nums text-indigo-700">{value.toLocaleString('en-PH')}</p><p className="text-xs text-slate-500">{label}</p>
+    <p className="text-lg font-semibold tabular-nums text-slate-900">{value.toLocaleString('en-PH')}</p><p className="text-xs text-slate-500">{label}</p>
   </div>;
   return <Card icon="clock" title="Pieces made this week" href="/rpt/production-status">
     <div className="grid grid-cols-3 gap-2">{stat(activity.today, 'Pieces today')}{stat(activity.averagePerDay, 'Average a work day')}{stat(activity.workersToday, 'Workers today')}</div>
@@ -121,7 +121,7 @@ export function ActivityCard({ activity }: { activity: NonNullable<DashCards['ac
         <span className="text-[11px] text-slate-500">{weekday(d.date)}</span>
       </div>)}
     </div>
-    <div className="flex items-center gap-2 text-xs text-slate-500"><span>Less busy</span><span className="h-1.5 flex-1 rounded-full bg-gradient-to-r from-indigo-100 via-indigo-300 to-indigo-600" /><span>Busy</span></div>
+    <div className="flex items-center gap-2 text-xs text-slate-500"><span>Less busy</span><span className="h-1.5 flex-1 rounded-full bg-gradient-to-r from-slate-100 to-slate-400" /><span>Busy</span></div>
   </Card>;
 }
 
@@ -129,26 +129,26 @@ export function CalendarCard({ calendar, today }: { calendar: NonNullable<DashCa
   const first = new Date(`${calendar.month}-01T00:00:00Z`).getUTCDay();
   const title = new Intl.DateTimeFormat('en-PH', { month: 'long', timeZone: 'UTC' }).format(new Date(`${calendar.month}-01T00:00:00Z`));
   const due = calendar.days.reduce((n, d) => n + d.due, 0);
-  return <Card icon="calendar" title={`${title} due dates`} count={due} href="/cal" dark>
+  return <Card icon="calendar" title={`${title} due dates`} count={due} href="/cal">
     <div className="grid grid-cols-7 gap-1.5 text-center text-xs">
-      {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <span key={i} className="text-white/60">{d}</span>)}
+      {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <span key={i} className="text-slate-400">{d}</span>)}
       {Array.from({ length: first }, (_, i) => <span key={`blank${i}`} />)}
       {calendar.days.map((d) => {
         const past = d.date < today;
         const isToday = d.date === today;
-        const look = isToday ? 'bg-white text-indigo-700 font-semibold' : d.late ? 'bg-[#f95f53] text-white' : d.due > 0 ? 'bg-white/30 text-white font-medium' : past ? 'bg-white/10 text-white/60' : 'ring-1 ring-white/20 text-white/50';
+        const look = isToday ? 'bg-indigo-600 text-white font-semibold' : d.late ? 'bg-red-50 text-red-700 font-medium' : d.due > 0 ? 'bg-slate-200 text-slate-800 font-medium' : past ? 'text-slate-300' : 'ring-1 ring-slate-200 text-slate-400';
         return <span key={d.date} title={`${d.date}: ${d.due} due${d.late ? ' (late)' : ''}`} className={`mx-auto grid size-8 place-items-center rounded-full ${look}`}>
           {d.due > 0 ? d.due : past ? <Icon name="check" className="size-3.5" /> : isToday ? Number(d.date.slice(8)) : ''}
         </span>;
       })}
     </div>
-    <p className="text-xs text-white/60">Each circle: open job orders due that day. Red: past due. Ticked: nothing left due.</p>
+    <p className="text-xs text-slate-500">Each circle: open job orders due that day. Red: past due. Ticked: nothing left due.</p>
   </Card>;
 }
 
 // Not started, in production, ready, released: the same colours as the status chips of the floor table.
-const BUBBLE = ['bg-amber-100 text-amber-900', 'bg-indigo-100 text-indigo-900', 'bg-emerald-100 text-emerald-900', 'bg-slate-200 text-slate-800'];
-const DOT = ['bg-amber-500', 'bg-indigo-600', 'bg-emerald-600', 'bg-slate-500'];
+const BUBBLE = ['bg-slate-100 text-slate-700', 'bg-slate-200 text-slate-900', 'bg-emerald-50 text-emerald-800', 'bg-white text-slate-600 ring-1 ring-slate-200'];
+const DOT = ['bg-slate-300', 'bg-slate-500', 'bg-emerald-500', 'bg-slate-200'];
 
 export function StagesCard({ stages }: { stages: NonNullable<DashCards['stages']> }) {
   const total = stages.reduce((n, s) => n + s.count, 0);

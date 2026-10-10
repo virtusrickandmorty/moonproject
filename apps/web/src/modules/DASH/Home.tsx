@@ -144,8 +144,8 @@ const signedScale = (values: number[], bottom: number, height: number) => {
 };
 
 export function Bars({ data }: { data: DashOwnerCharts['months'] }) {
-  const fields = [{ key: 'salesCents', label: 'Sales', colour: '#1f3bb3' }, { key: 'collectionsCents', label: 'Collections', colour: '#0f766e' },
-    { key: 'expensesCents', label: 'Expenses', colour: '#b45309' }] as const;
+  const fields = [{ key: 'salesCents', label: 'Sales', colour: '#1f3bb3' }, { key: 'collectionsCents', label: 'Collections', colour: '#64748b' },
+    { key: 'expensesCents', label: 'Expenses', colour: '#cbd5e1' }] as const;
   const scale = signedScale(data.flatMap((row) => fields.map((field) => row[field.key])), 190, 150);
   const zero = scale.y(0);
   return <div><svg viewBox="0 0 720 245" role="img" aria-label="Sales, collections and expenses by month" className="h-auto min-w-[620px] print:min-w-0">
@@ -188,7 +188,7 @@ export function AgingBars({ data }: { data: DashOwnerCharts['receivables'] }) {
     <desc>Negative receivables appear below the labelled zero line.</desc>
     <line x1="42" y1={zero} x2="510" y2={zero} stroke="currentColor" />
     {data.map((row, index) => { const y = scale.y(row.amountCents); return <g key={row.key}>
-      <rect x={65 + index * 90} y={Math.min(zero, y)} width="42" height={Math.abs(y - zero)} fill="#0f766e" tabIndex={0}><title>{`${row.label} days: ${peso(row.amountCents)}`}</title></rect>
+      <rect x={65 + index * 90} y={Math.min(zero, y)} width="42" height={Math.abs(y - zero)} fill="#64748b" tabIndex={0}><title>{`${row.label} days: ${peso(row.amountCents)}`}</title></rect>
       <text x={86 + index * 90} y="190" textAnchor="middle" fontSize="12">{row.label}</text></g>; })}
     {scale.max > 0 && <text x="4" y="44" fontSize="11">{shortPeso(scale.max)}</text>}
     {scale.min < 0 && <text x="4" y="174" fontSize="11">{shortPeso(scale.min)}</text>}
