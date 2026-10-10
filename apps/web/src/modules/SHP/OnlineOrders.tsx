@@ -51,7 +51,7 @@ export function OnlineOrders({ me }: { me: Me }) {
           {s === 'all' ? 'All' : ORDER_STATUS[s][0]}{s !== 'all' && list?.counts[s] ? ` (${list.counts[s]})` : ''}</Button>)}
       </div>
       {error && <Notice>{error}</Notice>}
-      <div className="overflow-x-auto rounded-lg bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"><tr><th className="p-3">Order</th><th className="p-3">Placed</th><th className="p-3">Customer</th><th className="p-3">Gets it by</th><th className="p-3">Status</th><th className="p-3">Reference</th><th className="p-3 text-right">Total</th></tr></thead>
           <tbody className="divide-y divide-slate-100">

@@ -109,14 +109,14 @@ function Products({ me }: { me: Me }) {
       </div>
       {error && <Notice>{error}</Notice>}
       {rows?.length === 0 && (
-        <div className="rounded-lg bg-white p-6 shadow-sm">
+        <div className="rounded-xl bg-white p-6 shadow-sm ring-1 ring-slate-200/70">
           <p className="font-semibold">The website shop has no products yet, so it shows made-up sample garments.</p>
           <p className="mt-1 text-sm text-slate-600">Add your own (start with a category), or copy the {SAMPLE_PRODUCTS.length} samples in and change them into yours.</p>
           {canManage && <Button className="mt-3" disabled={busy} onClick={() => void startFromSamples()}>{busy ? 'Copying…' : 'Start from the sample garments'}</Button>}
         </div>
       )}
       {rows && rows.length > 0 && (
-        <div className="overflow-x-auto rounded-lg bg-white shadow-sm">
+        <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr><th className="p-3">Product</th><th className="p-3">Category</th><th className="p-3 text-right">Price</th><th className="p-3 text-right">Pieces left</th><th className="p-3">Sizes</th><th className="p-3">On the website</th><th className="p-3" /></tr>
@@ -250,7 +250,7 @@ function Reviews({ me }: { me: Me }) {
     <div className="space-y-3">
       {error && <Notice>{error}</Notice>}
       <p className="text-sm text-slate-600">Buyers rate each item once their online order is <b>completed</b>, from their order page. The website shows the reviews below under the buyer's first name and initial{shown.length ? <> · <b>{shown.length}</b> shown, average <b>{average.toFixed(1)}</b> of 5</> : ''}.</p>
-      <div className="overflow-x-auto rounded-lg bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"><tr><th className="p-3">Date</th><th className="p-3">Item</th><th className="p-3">Rating</th><th className="p-3">Review</th><th className="p-3">Buyer</th><th className="p-3">On the website</th><th className="p-3" /></tr></thead>
           <tbody className="divide-y divide-slate-100">
@@ -307,7 +307,7 @@ function Categories({ me }: { me: Me }) {
           <Button tone="primary" disabled={busy || !name.trim()} onClick={() => void add()}>Add category</Button>
         </div>
       )}
-      <div className="overflow-x-auto rounded-lg bg-white shadow-sm">
+      <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"><tr><th className="p-3">Category</th><th className="p-3">Order</th><th className="p-3 text-right">Shown products</th><th className="p-3">On the website</th><th className="p-3" /></tr></thead>
           <tbody className="divide-y divide-slate-100">
@@ -380,7 +380,7 @@ function Payment({ me }: { me: Me }) {
   if (current === undefined) return <p className="text-sm text-slate-500">Loading…</p>;
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_18rem]">
-      <div className="space-y-3 rounded-lg bg-white p-5 shadow-sm">
+      <div className="space-y-3 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70">
         {!current && <Notice tone="warning">Online ordering is closed until this is set: the website only takes quotation requests.</Notice>}
         {error && <Notice>{error}</Notice>}
         {done && <Notice tone="success">{done}</Notice>}
@@ -420,7 +420,7 @@ function Payment({ me }: { me: Me }) {
         {!canSet && <p className="text-sm text-slate-500">Only an owner can change how customers pay.</p>}
         {current && <p className="text-xs text-slate-500">Version {current.version}, saved {manilaTime(current.savedAt)}.</p>}
       </div>
-      <div className="rounded-lg bg-white p-5 text-center shadow-sm">
+      <div className="rounded-xl bg-white p-5 text-center shadow-sm ring-1 ring-slate-200/70">
         <p className="text-sm font-semibold">What customers scan</p>
         {qr || current ? <img src={qr?.url ?? current!.qrUrl} alt="Payment QR code" className="mx-auto mt-3 max-h-80 w-full object-contain" /> : <p className="mt-6 text-sm text-slate-500">No QR yet.</p>}
         {qr && <p className="mt-2 text-xs text-amber-700">Not saved yet.</p>}

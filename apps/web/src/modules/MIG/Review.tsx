@@ -78,7 +78,7 @@ function RowCard({ row, all, reason, doers }: { row: MigRow; all: MigRow[]; reas
   const candidates = mergeCandidates(row, all);
   const close = () => setMode(null);
   return (
-    <li className="space-y-2 rounded-lg bg-white p-3 shadow-sm ring-1 ring-slate-200">
+    <li className="space-y-2 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm text-slate-500">Row {row.rowNumber}</span>
         <span className="text-sm text-slate-500">{rowTypeWords(row.rowType)}</span>

@@ -11,7 +11,7 @@ const status = (active: boolean) => <span className={`rounded-full px-2 py-1 tex
 const PAGE_SIZE = 100;
 
 export function BookletTable({ rows }: { rows: BookletUsage[] }) {
-  return <div className="overflow-x-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+  return <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
     <table className="w-full text-sm [&_td]:px-3 [&_td]:py-3 [&_th]:px-3 [&_th]:py-2">
       <thead className="bg-slate-50 text-left text-slate-500"><tr><th>Kind</th><th>ATP number</th><th>Serial range</th><th>Received</th><th>Status</th><th className="text-right">Used</th><th className="text-right">Skipped</th><th className="text-right">Left</th></tr></thead>
       <tbody>{rows.map(({ booklet: b, usedCount, skippedCount, leftCount }) => <tr key={b.id} className="border-t border-slate-100">

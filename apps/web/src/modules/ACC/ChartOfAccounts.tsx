@@ -56,7 +56,7 @@ export function AccountTable({ accounts, manage, onRename, onDeactivate, onActiv
   accounts: CoaAccount[]; manage: boolean; onRename?: (a: CoaAccount) => void; onDeactivate?: (a: CoaAccount) => void; onActivate?: (a: CoaAccount) => void; busy?: boolean;
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+    <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
       <table className="w-full text-sm">
         <thead className="text-left text-slate-500"><tr><th className="p-2">Code</th><th className="p-2">Account</th><th className="p-2">Type</th><th className="p-2">Role key</th><th className="p-2 text-right">Balance</th><th className="p-2">Active</th>{manage && <th className="p-2" />}</tr></thead>
         <tbody>

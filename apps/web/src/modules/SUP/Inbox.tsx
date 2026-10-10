@@ -60,7 +60,7 @@ export function SupportInbox({ me }: { me: Me }) {
       {error && <Notice>{error}</Notice>}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,22rem)_1fr]">
-        <ul className="divide-y divide-slate-100 self-start overflow-hidden rounded-lg bg-white shadow-sm">
+        <ul className="divide-y divide-slate-100 self-start overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
           {list?.rows.length === 0 && <li className="p-5 text-sm text-slate-500">No messages here.</li>}
           {list?.rows.map((m) => (
             <li key={m.id}>
@@ -104,7 +104,7 @@ export function SupportInbox({ me }: { me: Me }) {
                 </div>)}
             </Panel>
           </div>
-        ) : <p className="rounded-lg bg-white p-6 text-sm text-slate-500 shadow-sm">Pick a message to read it.</p>}
+        ) : <p className="rounded-xl bg-white p-6 text-sm text-slate-500 shadow-sm ring-1 ring-slate-200/70">Pick a message to read it.</p>}
       </div>
     </div>
   );
