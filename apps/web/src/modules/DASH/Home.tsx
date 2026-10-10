@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api, type DashHomeData, type DashItem, type DashNotification, type DashOwnerCharts, type DashOwnerHealth, type DashWidget, type NightlyStatus } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Notice, Panel, peso } from '../../components/ui.tsx';
+import { Notice, peso } from '../../components/ui.tsx';
 import { nightlyLine } from '../AUD/nightly.ts';
-import { HomeCards } from './Cards.tsx';
+import { Card, HomeCards, type IconName } from './Cards.tsx';
 
 function Item({ item, action, muted = false }: { item: DashItem; action?: React.ReactNode; muted?: boolean }) {
   const title = item.href ? <Link to={item.href} className="font-medium text-indigo-700 hover:underline">{item.label}</Link> : <span className="font-medium">{item.label}</span>;
@@ -61,7 +61,7 @@ function Notifications({ all = false, widgets = [], children }: { all?: boolean;
     } catch (e) { setError((e as Error).message); }
     setBusy('');
   }
-  return <Panel title={all ? 'Notifications' : 'Needs attention'}>
+  return <Card icon="bell" title={all ? 'Notifications' : 'Needs attention'} count={rows ? rows.filter((n) => !n.read).length : undefined} href={all ? undefined : '/dash/notifications'}>
     {children}
     {error && <Notice>{error}</Notice>}
     {rows === null && !error && <p className="text-sm text-slate-500">Loading…</p>}
@@ -70,13 +70,13 @@ function Notifications({ all = false, widgets = [], children }: { all?: boolean;
       <button type="button" disabled={busy === note.id} onClick={() => void markRead(note.id)} className="shrink-0 text-xs text-indigo-700 hover:underline disabled:opacity-50">Mark read</button>} />; })}</ul>
     {more && <button type="button" onClick={() => void load(rows?.length ?? 0)} className="text-sm text-indigo-700 hover:underline">Show more</button>}
     {!all && <Link to="/dash/notifications" className="text-sm text-indigo-700 hover:underline">See all notifications</Link>}
-  </Panel>;
+  </Card>;
 }
 
 function Metric({ label, value, href, money = true }: { label: string; value: number; href: string; money?: boolean }) {
-  return <Link to={href} className="rounded border border-slate-200 p-3 hover:border-indigo-300">
+  return <Link to={href} className="rounded-xl p-3 ring-1 ring-slate-100 hover:bg-slate-50">
     <span className="block text-xs text-slate-500">{label}</span>
-    <strong className="tabular-nums">{money ? peso(value) : value}</strong>
+    <strong className="text-lg font-semibold tabular-nums">{money ? peso(value) : value}</strong>
   </Link>;
 }
 
@@ -91,7 +91,7 @@ function OwnerHealth() {
 
 export function OwnerHealthFigures({ data }: { data: DashOwnerHealth }) {
   const report = (path: string, query: Record<string, string>) => `${path}?${new URLSearchParams(query)}`;
-  return <Panel title="How the business is doing">
+  return <Card icon="trend" title="How the business is doing">
     <div className="grid gap-4 md:grid-cols-2">
       {data.periods.map((period) => <div key={period.from}>
         <h3 className="mb-2 font-medium">{period.label}</h3>
@@ -119,11 +119,11 @@ export function OwnerHealthFigures({ data }: { data: DashOwnerHealth }) {
     </div>
     <h3 className="mb-2 mt-5 font-medium">Next tax due dates</h3>
     <ul className="grid gap-2 sm:grid-cols-2">{data.taxDeadlines.map((deadline) => <li key={`${deadline.form}:${deadline.periodLabel}`}>
-      <Link to="/tax/calendar" className="block rounded border border-slate-200 p-3 hover:border-indigo-300">
+      <Link to="/tax/calendar" className="block rounded-xl p-3 ring-1 ring-slate-100 hover:bg-slate-50">
         <strong>{deadline.form}</strong><span className="block text-sm text-slate-500">{deadline.periodLabel} · due {deadline.dueDate}</span>
       </Link>
     </li>)}</ul>
-  </Panel>;
+  </Card>;
 }
 
 /** The red line on the owner's and accountant's Home when last night's checks found anything (AUD). */
@@ -204,14 +204,14 @@ function OwnerCharts() {
   if (!data) return <p className="text-sm text-slate-500">Loading the last 12 months…</p>;
   return <section className="space-y-4"><h2 className="text-xl font-semibold">Last 12 months</h2>
     <p className="text-sm text-slate-600">Negative amounts appear below ₱0, including reversals. Point at a bar or dot for its signed amount.</p>
-    <Panel title="Sales, collections and expenses"><div className="overflow-x-auto"><Bars data={data.months} /></div>
+    <Card icon="chart" title="Sales, collections and expenses" href={`/rpt/income-statement?from=${data.months[0]!.from}&to=${data.asOf}`}><div className="overflow-x-auto"><Bars data={data.months} /></div>
       <p className="flex flex-wrap gap-3 text-sm"><span>See the report:</span>
         <Link to={`/rpt/income-statement?from=${data.months[0]!.from}&to=${data.asOf}`} className="text-indigo-700 hover:underline">Income statement</Link>
-        <Link to={`/rpt/collections-register?from=${data.months[0]!.from}&to=${data.asOf}`} className="text-indigo-700 hover:underline">Collections register</Link></p></Panel>
-    <Panel title="Cash on hand at month end"><div className="overflow-x-auto"><CashLine data={data.months} /></div>
-      <Link to={`/rpt/cash-position?asOf=${data.asOf}`} className="text-sm text-indigo-700 hover:underline">See the report</Link></Panel>
-    <Panel title="Receivables by age today"><div className="overflow-x-auto"><AgingBars data={data.receivables} /></div>
-      <Link to={`/rpt/ar-aging?asOf=${data.asOf}`} className="text-sm text-indigo-700 hover:underline">See the report</Link></Panel>
+        <Link to={`/rpt/collections-register?from=${data.months[0]!.from}&to=${data.asOf}`} className="text-indigo-700 hover:underline">Collections register</Link></p></Card>
+    <div className="grid items-start gap-4 xl:grid-cols-2">
+      <Card icon="cash" title="Cash on hand at month end" href={`/rpt/cash-position?asOf=${data.asOf}`}><div className="overflow-x-auto"><CashLine data={data.months} /></div></Card>
+      <Card icon="money" title="Receivables by age today" href={`/rpt/ar-aging?asOf=${data.asOf}`}><div className="overflow-x-auto"><AgingBars data={data.receivables} /></div></Card>
+    </div>
   </section>;
 }
 
@@ -226,13 +226,19 @@ export function DashHome({ actions }: { actions?: React.ReactNode }) {
   </div>;
 }
 
+/** Each role widget's icon on its card (the owner's request, Oct 2026: every home card alike). */
+const WIDGET_ICON: Record<string, IconName> = {
+  cash: 'cash', sales: 'sales', collections: 'money', 'vat-quarter': 'tax', 'month-end': 'calendar', integrity: 'alert', cancellations: 'undo',
+  drafts: 'draft', exceptions: 'inbox', production: 'floor', due: 'calendar', ready: 'jobs', collectibles: 'money', 'overdue-collectibles': 'money',
+};
+
 function Widgets({ widgets }: { widgets: DashWidget[] }) {
-  return <div className="grid gap-4 lg:grid-cols-2">
-      {widgets.map((widget) => <div key={widget.key} className={widget.tone === 'danger' ? 'rounded-lg bg-red-50 text-red-900 ring-2 ring-red-300 [&>section]:bg-red-50' : ''}><Panel title={widget.title}>
+  return <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {widgets.map((widget) => <Card key={widget.key} icon={widget.tone === 'danger' ? 'alert' : WIDGET_ICON[widget.key] ?? 'jobs'} title={widget.title}
+        count={widget.items?.length || undefined} href={widget.href} tone={widget.tone}>
         {widget.amountCents !== undefined && <p className="text-2xl font-semibold tabular-nums">{peso(widget.amountCents)}</p>}
         {widget.items && (widget.items.length ? <ul>{widget.items.map((row) => <Item key={row.id} item={row} />)}</ul> : <p className="text-sm text-slate-500">Nothing here right now.</p>)}
-        {widget.href && <Link to={widget.href} className="text-sm text-indigo-700 hover:underline">Open {widget.title.toLowerCase()}</Link>}
-      </Panel></div>)}
+      </Card>)}
     </div>;
 }
 
