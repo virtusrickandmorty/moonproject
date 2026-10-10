@@ -38,7 +38,7 @@ export function Employees({ me }: { me: Me }) {
       </div>
       {error && <Notice>{error}</Notice>}
       {rows && (
-        <table className="w-full rounded-lg bg-white text-sm shadow-sm ring-1 ring-slate-200">
+        <table className="w-full rounded-xl bg-white text-sm shadow-sm ring-1 ring-slate-200/70">
           <thead className="text-left text-slate-500"><tr><th className="p-2">Code</th><th>Name</th><th>Position</th><th>Pay cost group</th><th>Hired</th><th>Status</th></tr></thead>
           <tbody>
             {shown.map((e) => (

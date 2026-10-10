@@ -100,7 +100,7 @@ export function Attendance({ me }: { me: Me }) {
           {filled === 1 ? 'One holiday cell with nothing typed shows' : `${filled} holiday cells with nothing typed show`} H (Holiday off) from the calendar. Change it to HW for those who worked, then save.
         </Notice>
       )}
-      <div className="overflow-x-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+      <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
         <table className="text-xs">
           <thead>
             <tr>

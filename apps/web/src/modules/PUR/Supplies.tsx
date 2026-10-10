@@ -32,7 +32,7 @@ export function Supplies({ me }: { me: Me }) {
       </div>
       {(error || a.error) && <Notice>{error || a.error}</Notice>}
       {shown && (
-        <table className="w-full rounded-lg bg-white text-sm shadow-sm ring-1 ring-slate-200 [&_td]:px-2 [&_td]:py-2 [&_th]:px-2 [&_th]:py-2">
+        <table className="w-full rounded-xl bg-white text-sm shadow-sm ring-1 ring-slate-200/70 [&_td]:px-2 [&_td]:py-2 [&_th]:px-2 [&_th]:py-2">
           <thead className="text-left text-slate-500"><tr><th>Name</th><th>Unit</th><th>Kind</th><th className="text-right">Last purchase cost</th><th>Status</th><th /></tr></thead>
           <tbody>
             {shown.map((s) => (

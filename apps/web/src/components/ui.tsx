@@ -95,10 +95,18 @@ export function StatusChip({ status }: { status: string }) {
   return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${c}`}>{text}</span>;
 }
 
+/**
+ * The surface every panel and home card shares (the owner's request, Oct 2026: the screens and the home's cards look
+ * alike): white, rounded, a soft shadow and a hairline ring. Panel titles carry a short bar in the accent colour, as the
+ * home's cards carry an icon tile in it.
+ */
+export const SURFACE = 'rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70';
+export const CARD_TITLE = 'text-base font-bold text-[#010101]';
+
 export function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="space-y-3 rounded-lg bg-white p-5 shadow-sm">
-      <h2 className="text-base font-bold text-[#010101]">{title}</h2>
+    <section className={`space-y-3 p-5 ${SURFACE}`}>
+      <h2 className={`flex items-center gap-2 ${CARD_TITLE}`}><span aria-hidden="true" className="h-4 w-1 shrink-0 rounded-full bg-indigo-600" />{title}</h2>
       {children}
     </section>
   );

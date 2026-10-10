@@ -152,7 +152,7 @@ function Home({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }) {
   const links = dailyActions(me, docTypes);
   const actions = links.length > 0 && <section aria-label="Daily actions">
     <h2 className="mb-2 text-lg font-semibold">Daily actions</h2>
-    <div className="flex flex-wrap gap-2">{links.map((a) => <Link key={a.href} to={a.href} className="rounded-lg bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200 hover:bg-indigo-50">{a.label}</Link>)}</div>
+    <div className="flex flex-wrap gap-2">{links.map((a) => <Link key={a.href} to={a.href} className="rounded-xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200/70 hover:bg-indigo-50">{a.label}</Link>)}</div>
     <p className="mt-2 text-sm text-slate-500">Use + New for every other document you may create.</p>
   </section>;
   return (

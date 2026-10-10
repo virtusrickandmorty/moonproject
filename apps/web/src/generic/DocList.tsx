@@ -286,7 +286,7 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
       {rows.length > 0 && (
       <ul className="space-y-3 md:hidden" aria-label={pluralLabelOf(type)}>
         {rows.map((r) => (
-          <li key={r.id} onClick={() => navigate(rowPath(r.id))} className={`cursor-pointer space-y-2 rounded-lg bg-white p-4 shadow-sm active:bg-indigo-50 ${r.status === 'cancelled' ? 'text-slate-400' : ''}`}>
+          <li key={r.id} onClick={() => navigate(rowPath(r.id))} className={`cursor-pointer space-y-2 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70 active:bg-indigo-50 ${r.status === 'cancelled' ? 'text-slate-400' : ''}`}>
             <div className="flex items-center gap-2">
               <Link to={rowPath(r.id)} onClick={(e) => e.stopPropagation()} className={`font-semibold text-indigo-700 ${r.status === 'cancelled' ? 'line-through' : ''}`}>{r.number}</Link>
               <StatusChip status={r.status} />
@@ -304,7 +304,7 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
       </ul>
       )}
       {rows.length > 0 && (
-      <div className="hidden overflow-x-auto rounded-lg bg-white p-2 shadow-sm md:block">
+      <div className="hidden overflow-x-auto rounded-xl bg-white p-2 shadow-sm ring-1 ring-slate-200/70 md:block">
         <table className="w-full text-sm [&_td]:px-4 [&_td]:py-3 [&_th]:px-4 [&_th]:py-3">
           <thead className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-muted">
             <tr><th>Number</th><th>Date</th><th>What</th><th className="text-right">Amount</th>{columns.map((c) => <th key={c.head} className={c.figure ? 'text-right' : ''}>{c.head}</th>)}<th>Status</th><th className="text-right">Actions</th></tr>
