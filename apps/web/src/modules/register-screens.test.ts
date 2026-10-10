@@ -116,8 +116,8 @@ describe('sizer rules', () => {
     expect([weekFrom('2026-09-28'), weekFrom('2026-12-28')]).toEqual(['2026-10-05', '2027-01-04']);
     expect([dueWords('2026-09-25', '2026-09-28'), dueWords('2026-09-27', '2026-09-28'), dueWords('2026-09-28', '2026-09-28'), dueWords('2026-09-29', '2026-09-28'), dueWords('2026-10-05', '2026-09-28')]).toEqual(['3 days overdue', '1 day overdue', 'due today', 'due in 1 day', 'due in 7 days']);
     const sets: SizerSet[] = [
-      { id: 's1', code: 'POLO-A', garmentType: 'Polo', sizesIncluded: 'S, M', status: 'lent', holder: { loanId: 'l', loanVersion: 1, customerId: 'c', customerName: 'Example School', dateOut: '2026-09-20', expectedReturnDate: '2026-09-27', daysOverdue: 1 } },
-      { id: 's2', code: 'TEE-B', garmentType: 'T-shirt', sizesIncluded: 'L', status: 'in shop', holder: null },
+      { id: 's1', code: 'POLO-A', garmentType: 'Polo', sizesIncluded: 'S, M', version: 1, status: 'lent', holder: { loanId: 'l', loanVersion: 1, customerId: 'c', customerName: 'Example School', dateOut: '2026-09-20', expectedReturnDate: '2026-09-27', daysOverdue: 1 } },
+      { id: 's2', code: 'TEE-B', garmentType: 'T-shirt', sizesIncluded: 'L', version: 1, status: 'in shop', holder: null },
     ];
     expect(filterSets(sets, 'example', 'all').map((s) => s.id)).toEqual(['s1']);
     expect(filterSets(sets, '', 'in shop').map((s) => s.id)).toEqual(['s2']);

@@ -27,7 +27,7 @@ describe('what the file holds', () => {
     for (const h of headers) expect(kindOfHeader(h)).toBe(rowTypeOf(Object.fromEntries(h.map((k) => [k, '']))));
     expect([...MEASUREMENT_FIELDS]).toEqual([...measurementFields]);
     expect(['Sleeve Height', ' Upper-Waist ', 'chest', 'Waist'].map(measurementKey)).toEqual(['sleeve_length', 'upper_waist', 'chest', null]);
-    expect(KINDS.map((k) => k.kind)).toEqual(['customer', 'measurement', 'employee', 'piece_rate']);
+    expect(KINDS.map((k) => k.kind)).toEqual(['customer', 'measurement', 'employee', 'piece_rate', 'sizer_set']);
   });
 
   it('reads the first line of a spreadsheet file, quotes and the byte-order mark included', () => {
@@ -341,7 +341,7 @@ describe('web client for the importer screens', () => {
     expect(counts.accepted + counts.excluded + counts.merged).toBe(counts.listed);
     expect(rows.find((r) => r.id === none.id)).toMatchObject({ status: 'accepted', manualData: { legacyId: 'C13' } });
     const dry = await owner.migDryRun(up.uploadId);
-    expect(dry.counts).toEqual({ customers: 3, measurements: 0, employees: 0, pieceRates: 0, excluded: 0, merged: 1, total: 4 });
+    expect(dry.counts).toEqual({ customers: 3, measurements: 0, employees: 0, pieceRates: 0, sizerSets: 0, excluded: 0, merged: 1, total: 4 });
     expect(dryRunAddsUp(dry)).toBe(true);
     expect(canCommit(dry, counts, true)).toBe(true);
 

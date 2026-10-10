@@ -14,6 +14,7 @@ export const KINDS: { kind: MigKind; label: string; columns: string; holds: stri
   { kind: 'measurement', label: 'Measurements', columns: 'Measurement_ID, Customer_ID, Customer_Name, Wearer_Name, Group_Name, then Shoulder, Chest and the other measurement columns', holds: 'the measurement sheet' },
   { kind: 'employee', label: 'Employees', columns: 'Employee_ID, Employee_Name, Daily_Rate', holds: 'employees and their daily rates' },
   { kind: 'piece_rate', label: 'Piece rates', columns: 'Garment_Type, Operation, Rate', holds: 'the piece-rate list' },
+  { kind: 'sizer_set', label: 'Sizer sets', columns: 'Code, Garment_Type, Sizes_Included', holds: 'the sizer sets lent to customers' },
 ];
 
 /**
@@ -41,6 +42,10 @@ export const TEMPLATES: Record<MigKind, { file: string; rows: string[][] }> = {
   piece_rate: { file: 'piece-rates-template.csv', rows: [
     ['Rate_ID', 'Garment_Type', 'Operation', 'Complexity', 'Rate', 'Effective_From'],
     ['R-0001', 'T-shirt', 'SEWING', 'standard', '12.50', '2026-10-01'],
+  ] },
+  sizer_set: { file: 'sizer-sets-template.csv', rows: [
+    ['Code', 'Garment_Type', 'Sizes_Included'],
+    ['SZ-JERSEY-01', 'Full Sublimation Jersey', 'XS, S, M, L, XL, 2XL'],
   ] },
 };
 const csvCell = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
@@ -70,7 +75,7 @@ export function sheetTabOf(headers: string[]): SheetTabKey | null {
 }
 const tabWords = (tab: SheetTabKey): string => `the ${SHEET_TABS[tab].name} tab of the old sheet`;
 export const kindLabel = (kind: MigRowType): string => KINDS.find((k) => k.kind === kind)?.label ?? 'Unknown';
-const ROW_WORDS: Record<MigRowType, string> = { customer: 'Customer', measurement: 'Measurements', employee: 'Employee', piece_rate: 'Piece rate', unknown: 'Unknown' };
+const ROW_WORDS: Record<MigRowType, string> = { customer: 'Customer', measurement: 'Measurements', employee: 'Employee', piece_rate: 'Piece rate', sizer_set: 'Sizer set', unknown: 'Unknown' };
 export const rowTypeWords = (t: MigRowType): string => ROW_WORDS[t];
 
 /** The 18 measurement columns, as the server names them (MIG/csv.ts `measurementFields`; a test keeps the two lists equal). */
@@ -118,6 +123,7 @@ export function kindOfHeader(headers: string[]): MigRowType {
   const tab = sheetTabOf(headers);
   if (tab) return SHEET_TABS[tab].kind;
   const has = (k: string) => headers.includes(k);
+  if (has('Sizes_Included')) return 'sizer_set';
   if (has('Measurement_ID') || headers.some((h) => measurementKey(h))) return 'measurement';
   if (has('Employee_ID') || has('Employee_Name') || has('Daily_Rate') || has('Pay_Type')) return 'employee';
   if (has('Customer_Name') || has('Registered_Name') || has('TIN') || has('Email')) return 'customer';
@@ -220,6 +226,7 @@ export function rowTitle(row: MigRow): string {
   if (row.rowType === 'customer') return `${text(m.customerName) || raw.Customer_Name || text(m.registeredName) || raw.Registered_Name || 'No name'}${id}`;
   if (row.rowType === 'employee') return `${text(m.employeeName) || raw.Employee_Name || 'No name'}${id}`;
   if (row.rowType === 'piece_rate') return `${text(m.garmentType) || raw.Garment_Type || '?'}, ${text(m.operation) || raw.Operation || '?'}`;
+  if (row.rowType === 'sizer_set') return `${text(m.code) || raw.Code || 'No code'} · ${text(m.garmentType) || raw.Garment_Type || '?'}`;
   if (row.rowType === 'measurement') {
     const who = raw.Wearer_Name || raw.Person_Name || raw.Full_Name || raw.Name || raw.Customer_Name;
     return `${who ?? 'Measurements'}${id}`;
@@ -286,6 +293,11 @@ export const FIX_FIELDS: Record<MigKind, FixField[]> = {
     { key: 'operation', label: 'Operation', kind: 'text' },
     { key: 'rateCents', label: 'Rate (pesos)', kind: 'peso' },
   ],
+  sizer_set: [
+    { key: 'code', label: 'Code', kind: 'text' },
+    { key: 'garmentType', label: 'Garment type', kind: 'text' },
+    { key: 'sizesIncluded', label: 'Sizes included', kind: 'text', hint: 'Like XS, S, M, L, XL.' },
+  ],
 };
 export const fixFieldsOf = (row: Pick<MigRow, 'rowType'>): FixField[] => (row.rowType === 'unknown' ? [] : FIX_FIELDS[row.rowType]);
 
@@ -348,7 +360,7 @@ export function dryRunLines(r: DryRunResult): [label: string, value: string][] {
   const c = r.counts;
   return [
     ['Customers to import', String(c.customers)], ['Measurement rows to import', String(c.measurements)], ['Employees to import', String(c.employees)],
-    ['Piece rates to import', String(c.pieceRates)], ['Left out (excluded)', String(c.excluded)], ['Merged into another row', String(c.merged)], ['Rows in the file', String(c.total)],
+    ['Piece rates to import', String(c.pieceRates)], ...(c.sizerSets ? [['Sizer sets to import', String(c.sizerSets)] as [string, string]] : []), ['Left out (excluded)', String(c.excluded)], ['Merged into another row', String(c.merged)], ['Rows in the file', String(c.total)],
     // What the choices made for the sizes without a customer will create, when there were any.
     ...(c.newCustomers ? [['New customers (a person each), from sizes without a customer', String(c.newCustomers)] as [string, string]] : []),
     ...(c.newGroups ? [['New groups, from sizes without a customer', String(c.newGroups)] as [string, string]] : []),
@@ -358,7 +370,7 @@ export function dryRunLines(r: DryRunResult): [label: string, value: string][] {
 /** Every row of the file is counted once: imported by kind, excluded or merged. */
 export const dryRunAddsUp = (r: DryRunResult): boolean => {
   const c = r.counts;
-  return c.customers + c.measurements + c.employees + c.pieceRates + c.excluded + c.merged === c.total;
+  return c.customers + c.measurements + c.employees + c.pieceRates + (c.sizerSets ?? 0) + c.excluded + c.merged === c.total;
 };
 /** The checks to compare against the old sheet: the measurement cells (e.g. 30,122.0) and the rate totals. */
 export function dryRunChecks(r: DryRunResult): [label: string, value: string][] {
@@ -371,6 +383,7 @@ export function dryRunChecks(r: DryRunResult): [label: string, value: string][] 
     ['Measurements, fingerprint', shortHash(k.measurement.sha256)],
     ['Employees, fingerprint', shortHash(k.employee.sha256)],
     ['Piece rates, fingerprint', shortHash(k.pieceRate.sha256)],
+    ...(r.counts.sizerSets && k.sizerSet ? [['Sizer sets, fingerprint', shortHash(k.sizerSet.sha256)] as [string, string]] : []),
   ];
 }
 /** What "Commit" sends: the measurement total the owner saw in the dry run. The server checks it again and refuses if it differs. */
@@ -383,8 +396,10 @@ const COMMIT_KINDS: [keyof MigCommitResult['counts'], string][] = [
 ];
 /** Each kind's line of the commit result. "Already imported" rows were in an earlier upload and are not created twice. */
 export function commitLines(r: MigCommitResult): [label: string, value: string][] {
-  return COMMIT_KINDS.map(([k, label]) => {
-    const { imported, alreadyImported } = r.counts[k];
+  // Sizer sets (the owner's request, Oct 2026) show only when the upload had some.
+  const sizers = r.counts.sizer_set && (r.counts.sizer_set.imported || r.counts.sizer_set.alreadyImported) ? [['sizer_set', 'Sizer sets'] as [keyof MigCommitResult['counts'], string]] : [];
+  return [...COMMIT_KINDS, ...sizers].map(([k, label]) => {
+    const { imported, alreadyImported } = r.counts[k]!;
     return [label, alreadyImported ? `${imported} imported, ${alreadyImported} already imported before` : `${imported} imported`];
   });
 }
