@@ -116,6 +116,16 @@ export function carryStageOver(db: Db, oldId: string, newId: string): void {
   record(db, newId, 'open', stage, `Carried over from ${old.number}`, { userId: old.cancelled_by, at: old.cancelled_at });
 }
 
+/**
+ * What else an edit carries over, inside the edit's transaction after the stage: production registers its carry-over here
+ * (PRD index), so the job order does not import production (whose code imports the job order's).
+ */
+const editListeners: ((db: Db, oldId: string, newId: string) => void)[] = [];
+export function onJobOrderEdited(fn: (db: Db, oldId: string, newId: string) => void): void {
+  if (!editListeners.includes(fn)) editListeners.push(fn);
+}
+export const jobOrderEdited = (db: Db, oldId: string, newId: string) => editListeners.forEach((fn) => fn(db, oldId, newId));
+
 export function stageHistory(db: Db, documentId: string) {
   return (
     db
