@@ -59,6 +59,22 @@ const openPictureBytes = (db: AppDeps['db']) => (db.prepare(`SELECT COALESCE(SUM
 const cleanName = (raw: string) => (raw.split(/[\\/]/).pop() ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(-200) || 'picture';
 const idOf = (req: FastifyRequest) => (req.params as { id: string }).id;
 
+/**
+ * Files a message in the Support inbox (numbered SUP-…), with its audit row. The support page calls it after its own
+ * checks and limits; the website's AI assistant calls it to hand a chat to staff (the owner's request, Oct 2026).
+ * Runs inside the caller's transaction.
+ */
+export function recordSupportMessage(db: AppDeps['db'], m: { kind: (typeof KINDS)[number]; name: string; email: string; phone: string; subject: string; message: string; orderRef: string | null },
+  ip: string, at: string, nowMs: number, files = 0): { id: string; number: string } {
+  const count = (db.prepare('SELECT COUNT(*) AS n FROM sup_messages').get() as { n: number }).n;
+  const id = newId();
+  const number = `SUP-${String(count + 1).padStart(6, '0')}`;
+  db.prepare(`INSERT INTO sup_messages (id, number, kind, name, email, phone, subject, message, order_ref, ip, received_at, received_ms, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, number, m.kind, m.name, m.email, m.phone, m.subject, m.message, m.orderRef, ip, at, nowMs, at);
+  appendAudit(db, { at, userId: null, action: 'sup.received', entityType: 'sup.message', entityId: id, data: { number, kind: m.kind, files } });
+  return { id, number };
+}
+
 export function supRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
   const messageRow = (id: string) => {
@@ -92,14 +108,9 @@ export function supRoutes(app: FastifyInstance, deps: AppDeps): void {
       const pictureWarning = files.length > 0 && openPictureBytes(db) + files.reduce((n, f) => n + f.data.length, 0) > MAX_OPEN_PICTURE_BYTES
         ? 'Your message was saved, but we cannot take more pictures just now. Please call us about the pictures.' : null;
       const acceptedFiles = pictureWarning ? [] : files;
-      const count = (db.prepare('SELECT COUNT(*) AS n FROM sup_messages').get() as { n: number }).n;
-      const id = newId();
-      const number = `SUP-${String(count + 1).padStart(6, '0')}`;
-      db.prepare(`INSERT INTO sup_messages (id, number, kind, name, email, phone, subject, message, order_ref, ip, received_at, received_ms, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, number, b.kind, b.name, b.email, b.phone, b.subject, b.message, b.orderRef, req.ip, at, now, at);
+      const { id, number } = recordSupportMessage(db, { kind: b.kind, name: b.name, email: b.email, phone: b.phone, subject: b.subject, message: b.message, orderRef: b.orderRef }, req.ip, at, now, acceptedFiles.length);
       const insertFile = db.prepare('INSERT INTO sup_files (id, message_id, file_name, content_type, bytes, sha256, data) VALUES (?, ?, ?, ?, ?, ?, ?)');
       for (const f of acceptedFiles) insertFile.run(newId(), id, f.name, f.type, f.data.length, f.sha256, f.data);
-      appendAudit(db, { at, userId: null, action: 'sup.received', entityType: 'sup.message', entityId: id, data: { number, kind: b.kind, files: acceptedFiles.length } });
       return { number, ...(pictureWarning ? { pictureWarning } : {}) };
     });
   });
