@@ -97,22 +97,25 @@ const changes = (o: CarryWearer, n: CarryWearer) => [
 /**
  * What an edit does to the production of a job order (shown before it is recorded): the items and wearers with work that
  * are left out (kept as extras), items going below the pieces already made, and wearers whose size or jersey changes
- * after work (keep the progress; send back for rework if needed).
+ * after work (keep the progress; send back for rework if needed). `extra`: work kept as extras, which the person editing
+ * confirms before Record (the owner's request, Oct 2026); `changed`: a warning only.
  */
-export function carryWarnings(db: Db, jobOrderId: string, next: CarryLine[]): string[] {
+export interface CarryWarning { kind: 'extra' | 'changed'; message: string }
+export function carryWarnings(db: Db, jobOrderId: string, next: CarryLine[]): CarryWarning[] {
   const old = carryLinesOf(db, jobOrderId);
   const pairs = matchLines(old, next);
   const newOf = new Map([...pairs].map(([n, o]) => [o, n]));
-  const out: string[] = [];
+  const out: CarryWarning[] = [];
+  const extra = (message: string) => out.push({ kind: 'extra', message });
   for (const o of old) {
     const work = lineWork(db, jobOrderId, o.lineNo);
     if (!work) continue;
     const n = next.find((l) => l.lineNo === newOf.get(o.lineNo));
     if (!n) {
-      out.push(`${o.description} is left out, but ${work.made} ${work.made === 1 ? 'piece has' : 'pieces have'} gone through ${work.step}. ${work.made === 1 ? 'It stays' : 'They stay'} on record as extras.`);
+      extra(`${o.description} is left out, but ${work.made} ${work.made === 1 ? 'piece has' : 'pieces have'} gone through ${work.step}. ${work.made === 1 ? 'It stays' : 'They stay'} on record as extras.`);
       continue;
     }
-    if (n.qty < work.made) out.push(`Item ${n.lineNo} (${n.description}) goes down to ${n.qty} pieces, but ${work.made} have gone through ${work.step}. The extra stay on record.`);
+    if (n.qty < work.made) extra(`Item ${n.lineNo} (${n.description}) goes down to ${n.qty} pieces, but ${work.made} have gone through ${work.step}. The extra stay on record.`);
     const ticked = wearerSteps(db, jobOrderId, o.lineNo);
     const wearers = matchWearers(o.roster, n.roster);
     const oldOf = new Map([...wearers].map(([nr, or]) => [or, nr]));
@@ -120,8 +123,8 @@ export function carryWarnings(db: Db, jobOrderId: string, next: CarryLine[]): st
       const step = ticked.get(w.rowNo);
       if (!step) continue;
       const nw = n.roster.find((x) => x.rowNo === oldOf.get(w.rowNo));
-      if (!nw) out.push(`Item ${n.lineNo}: ${w.name} is left out, but their piece has gone through ${step}. It stays on record as an extra.`);
-      else for (const c of changes(w, nw)) out.push(`Item ${n.lineNo}: ${w.name}'s ${c} after ${step}. The progress is kept: send it back for rework if it needs redoing.`);
+      if (!nw) extra(`Item ${n.lineNo}: ${w.name} is left out, but their piece has gone through ${step}. It stays on record as an extra.`);
+      else for (const c of changes(w, nw)) out.push({ kind: 'changed', message: `Item ${n.lineNo}: ${w.name}'s ${c} after ${step}. The progress is kept: send it back for rework if it needs redoing.` });
     }
   }
   return out;
@@ -135,6 +138,7 @@ export function carryProductionOver(db: Db, oldId: string, newId_: string): void
   const old = carryLinesOf(db, oldId);
   const next = carryLinesOf(db, newId_);
   const pairs = matchLines(old, next);
+  const kept = carryWarnings(db, oldId, next); // what the person editing confirmed (extras) or was warned about, for the audit
   const by = db.prepare('SELECT number, cancelled_by AS userId, cancelled_at AS at FROM documents WHERE id = ?').get(oldId) as { number: string; userId: string; at: string };
   const who: Who = { userId: by.userId, at: by.at };
   const link = db.prepare('INSERT INTO prd_carry_overs (job_order_id, line_no, from_job_order_id, from_line_no) VALUES (?, ?, ?, ?)');
@@ -179,7 +183,8 @@ export function carryProductionOver(db: Db, oldId: string, newId_: string): void
     }
     carried.push({ lineNo: n, fromLineNo: o });
   }
+  if (carried.length === 0 && kept.length === 0) return;
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.carry_over', entityType: 'jo.job_order', entityId: newId_, data: { from: oldId, lines: carried, warnings: kept } });
   if (carried.length === 0) return;
-  appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.carry_over', entityType: 'jo.job_order', entityId: newId_, data: { from: oldId, lines: carried } });
   syncStage(db, newId_, `Production carried over from ${by.number}`, who);
 }

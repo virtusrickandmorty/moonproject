@@ -258,18 +258,24 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
   const doc = live?.doc as { totalCents: number; requiredDownpaymentCents: number; dueDate: string } | undefined;
   // An edit carries the job's production over to the replacement: what it leaves out or changes after work, before Record.
   const editOf = mode.kind === 'edit' ? mode.id : '';
-  const carry = useLive(JSON.stringify([editOf, typed.input.lines]), !!editOf && typed.input.lines.length > 0, () => api.prdCarryCheck(editOf, typed.input.lines));
+  const carryKey = JSON.stringify([editOf, typed.input.lines]);
+  const carry = useLive(carryKey, !!editOf && typed.input.lines.length > 0, () => api.prdCarryCheck(editOf, typed.input.lines).then((c) => ({ ...c, key: carryKey }), () => ({ warnings: [], key: carryKey }))); // a failed check does not hold Record up
+  // Work kept as extras needs a tick before Record (the owner's request, Oct 2026); a new answer asks again.
+  const extras = carry?.warnings.filter((w) => w.kind === 'extra') ?? [];
+  const [extrasOk, setExtrasOk] = useState('');
+  const carryErrors = !editOf ? [] : carry?.key !== carryKey ? ['Checking what this edit does to production: try Record again in a moment.']
+    : extras.length > 0 && extrasOk !== carryKey ? ['Tick the box under Production to confirm the work kept as extras.'] : [];
   const pending = !blankLine(item); // something typed in the item form and not added yet
   /** Record takes a complete item still in the item form with it (added, or its change applied); an incomplete one stops it. */
   const record = () => {
-    if (!pending) return r.ask(typed.input, typed.errors);
+    if (!pending) return r.ask(typed.input, [...typed.errors, ...carryErrors]);
     setItemTouched(true);
     if (itemErrors.length > 0) return r.fail(new Error(editing === null ? 'The item in the form is not complete: finish it and press Add to order, or Clear it.' : 'The item being changed is not complete: finish it and press Update item, or Cancel the change.'));
     const next = { ...v, lines: editing === null ? [...v.lines, item] : v.lines.map((l, j) => (j === editing ? item : l)) };
     setV(next);
     clearItem();
     const all = joInput(next);
-    r.ask(all.input, all.errors);
+    r.ask(all.input, [...all.errors, ...carryErrors]);
   };
   const saveDraft = () =>
     (draft ? api.saveDraft(draft.id, draft.version, { form: v }) : api.createDraft(type.key, { form: v })).then(
@@ -403,12 +409,18 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
               <div className="space-y-2" aria-label="Production">
                 <p className="text-sm font-semibold">Production</p>
                 <p className="text-xs text-slate-500">The items kept go on in production where they are. This edit also:</p>
-                {carry.warnings.map((w) => <Notice key={w} tone="warning">{w}</Notice>)}
+                {carry.warnings.map((w) => <Notice key={w.message} tone="warning">{w.message}</Notice>)}
+                {extras.length > 0 && (
+                  <label className="flex items-start gap-2 rounded-md bg-amber-50 p-2 text-sm">
+                    <input type="checkbox" className="mt-1" checked={extrasOk === carryKey} onChange={(e) => setExtrasOk(e.target.checked ? carryKey : '')} />
+                    <span>I understand: the work already done on {extras.length === 1 ? 'this' : 'these'} stays on record (and paid) as extras, and is not made again.</span>
+                  </label>
+                )}
               </div>
             )}
             {pending && <Notice tone="warning">{editing === null ? 'The item in the form is not added yet: press Add to order (Record adds it too).' : `Item ${editing + 1} is being changed: press Update item (Record applies it too).`}</Notice>}
           </Panel>
-          <Errors list={typed.errors} show={r.touched} />
+          <Errors list={[...typed.errors, ...carryErrors]} show={r.touched} />
           <SalesActions total={doc?.totalCents ?? typed.totalCents} label="Total">
             <Button tone="primary" disabled={!type.canPost} onClick={record} title="Ctrl+Enter">Record</Button>
             {mode.kind === 'new' && <Button onClick={() => void saveDraft()}>Save draft</Button>}
