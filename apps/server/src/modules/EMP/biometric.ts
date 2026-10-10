@@ -9,7 +9,7 @@
  * on, and work before 6:00 am is real night work, counted as overtime too; night differential 10:00 pm to 6:00 am. A day
  * with one punch is present, flagged to check the missing time. Late and undertime are shown, not deducted.
  */
-import { isBusinessDate } from '@moonproject/shared';
+import { isBusinessDate, manilaDate } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { readXls } from './xls.ts';
 import { attendanceBetween, holidaysBetween, paidDaysBetween, type AttendanceStatus } from './time.ts';
@@ -28,7 +28,8 @@ const after = (row: string[], name: string) => {
   return i < 0 ? undefined : row.slice(i + 1).find((c) => c.trim())?.trim();
 };
 const isoOf = (mdy: string) => { const [m, d, y] = mdy.split('-'); return `${y}-${m}-${d}`; };
-const addDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+// Calendar days: midnight UTC of a day is 8am of the same day in Manila (NR-7).
+const addDays = (d: string, n: number) => manilaDate(new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000));
 
 /** Reads the report's grid: the date range, and each person's punches by date (HH:MM, in order). */
 export function parseReport(grid: string[][]): Report {
