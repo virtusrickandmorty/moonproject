@@ -100,7 +100,7 @@ export function ThirteenthForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
         {last && !recorded && (
           <div className="space-y-3">
             {last.employees.map((e) => (
-              <section key={e.employeeId} aria-label={e.name} className="space-y-3 rounded-lg border border-slate-200 p-3">
+              <section key={e.employeeId} aria-label={e.name} className="space-y-3 rounded-xl p-4 ring-1 ring-slate-200/70">
                 <div className="flex flex-wrap justify-between gap-3"><h3 className="font-medium">{e.name}</h3><p className="font-semibold tabular-nums">To pay now: {peso(e.netCents)}</p></div>
                 <p className="text-sm text-slate-600">Amount {peso(e.amountCents)} − tax {peso(e.wtaxCents)} = {peso(e.netCents)}</p>
                 <ThirteenthCalculation employee={e} />

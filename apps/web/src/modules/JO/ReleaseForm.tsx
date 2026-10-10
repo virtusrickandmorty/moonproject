@@ -128,7 +128,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
                   const closedLine = l.leftQty === 0 || l.ready === false;
                   return (
                     <Fragment key={l.lineNo}>
-                    <tr className={`grid gap-2 rounded border p-3 sm:table-row sm:border-0 sm:p-0 ${l.leftQty === 0 || l.ready === false ? 'text-slate-400' : ''}`}>
+                    <tr className={`grid gap-2 rounded-xl border border-slate-200 p-3 sm:table-row sm:border-0 sm:p-0 ${l.leftQty === 0 || l.ready === false ? 'text-slate-400' : ''}`}>
                       <td className="py-1">
                         <label className="flex items-center gap-2"><span className="sm:hidden">Release line {l.lineNo}</span><input type="checkbox" aria-label={`Release line ${l.lineNo}`} disabled={closedLine} checked={ticked}
                           onChange={(e) => (e.target.checked ? (readyFree.length ? tick(readyFree.map((w) => w.rowNo)) : set({ qtys: { ...v.qtys, [l.lineNo]: String(Math.min(l.leftQty, l.readyQty ?? l.leftQty)) } })) : set({ qtys: { ...v.qtys, [l.lineNo]: '' }, wearers: { ...v.wearers, [l.lineNo]: [] } }))} /></label>

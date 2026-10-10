@@ -8,6 +8,7 @@ import { api, type BoardCard, type DocTypeInfo, type Me, type PrdCatalogue, type
 import { addRewrite, Link, navigate, useLocation } from '../../router.tsx';
 import { EntryForm } from './EntryForm.tsx';
 import { Button, Dialog, Field, Notice, ReasonDialog, inputClass, useAction, searchClass, showDate } from '../../components/ui.tsx';
+import { TickBar } from '../../components/charts.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { columns, filterCards, stepFlow, useBoardRefresh, type Due } from './board.ts';
 
@@ -142,8 +143,8 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
                     {(s.reworkOpen ?? 0) > 0 && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">{s.reworkOpen} sent back for rework</span>}
                   </div>
                   {s.status !== 'not_needed' && (
-                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label={`${name(s.stepId)} pieces done`} aria-valuemin={0} aria-valuemax={card.qty} aria-valuenow={s.pieces}>
-                      <div className={`h-full rounded-full ${flow.percent === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`} style={{ width: `${flow.percent}%` }} />
+                    <div role="progressbar" aria-label={`${name(s.stepId)} pieces done`} aria-valuemin={0} aria-valuemax={card.qty} aria-valuenow={s.pieces}>
+                      <TickBar parts={[{ share: flow.percent / 100, tone: flow.percent === 100 ? 'bg-emerald-500' : 'bg-indigo-600' }]} ticks={140} height="h-4" stretch label={`${flow.percent}% done`} />
                     </div>
                   )}
                   {(flow.received || flow.forwarded) && (
