@@ -39,10 +39,10 @@ function Icon({ name, className = 'size-5' }: { name: IconName; className?: stri
  * A card: a dark icon tile, the title, a small count, and a link to the full screen (the ⋯ of the picture). Every card of
  * the home uses it (the owner's request, Oct 2026); `tone="danger"` is a warning card (red ring and icon tile).
  */
-export function Card({ icon, title, count, note, href, dark = false, tone, children }: { icon: IconName; title: string; count?: number; note?: string; href?: string; dark?: boolean; tone?: 'danger'; children: ReactNode }) {
+export function Card({ icon, title, count, note, href, dark = false, tone, grow = false, children }: { icon: IconName; title: string; count?: number; note?: string; href?: string; dark?: boolean; tone?: 'danger'; grow?: boolean; children: ReactNode }) {
   // Calm (the owner: not too colourful): grey icon tiles on white; red only for a warning.
   const look = tone === 'danger' ? 'rounded-xl bg-white shadow-sm ring-1 ring-red-200' : SURFACE;
-  return <section className={`flex min-w-0 flex-col gap-4 p-5 ${look}`}>
+  return <section className={`flex min-w-0 flex-col gap-4 p-5 ${grow ? 'h-full' : ''} ${look}`}>
     <header className="flex items-center gap-3">
       <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${tone === 'danger' ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-700'}`}><Icon name={icon} /></span>
       <h2 className={CARD_TITLE}>{title}</h2>
@@ -54,20 +54,41 @@ export function Card({ icon, title, count, note, href, dark = false, tone, child
   </section>;
 }
 
-export function KpiStrip({ kpis }: { kpis: DashCards['kpis'] }) {
+/** The accent stripes of the best bar in a chart (the owner's reference picture), in our blue. */
+export const HATCH = { backgroundImage: 'repeating-linear-gradient(135deg, #1f3bb3 0 4px, #8c9ee2 4px 7px)' };
+
+/**
+ * A progress bar of thin upright ticks (the owner's reference picture): each part fills its share of the ticks in its
+ * colour, in order; the rest stay faded. Shares are 0 to 1 of the whole.
+ */
+export function TickBar({ parts, ticks = 32, height = 'h-7', label, stretch = false }: { parts: { share: number; tone: string }[]; ticks?: number; height?: string; label: string; stretch?: boolean }) {
+  const ends: number[] = [];
+  parts.reduce((n, p) => (ends.push(n + Math.max(0, p.share) * ticks), n + Math.max(0, p.share) * ticks), 0);
+  return <span role="img" aria-label={label} title={label} className={`flex items-end ${stretch ? 'w-full gap-[3px]' : 'gap-[2px]'} ${height}`}>
+    {Array.from({ length: ticks }, (_, i) => {
+      const part = ends.findIndex((end) => i + 0.5 <= end);
+      return <span key={i} className={`h-full rounded-full ${stretch ? 'min-w-[2px] flex-1' : 'w-[3px] shrink-0'} ${part < 0 ? 'bg-slate-200' : parts[part]!.tone}`} />;
+    })}
+  </span>;
+}
+
+export function KpiStrip({ kpis, shares = {} }: { kpis: DashCards['kpis']; shares?: Record<string, { share: number; label: string }> }) {
   if (kpis.length === 0) return null;
   return <section aria-label="Headline figures" className={`grid sm:grid-cols-2 lg:grid-cols-4 ${SURFACE}`}>
-    {kpis.map((k, i) => <Link key={k.key} to={k.href} className={`flex items-center gap-3 p-4 hover:bg-slate-50 ${i > 0 ? 'border-t border-slate-100 sm:border-t-0 lg:border-l' : ''} ${i % 2 === 1 ? 'sm:border-l' : ''}`}>
-      <span className="grid size-10 place-items-center rounded-full bg-slate-100 text-slate-600"><Icon name={KPI_ICON[k.key] ?? 'jobs'} /></span>
-      <span className="min-w-0 flex-1">
-        <span className="block text-xs text-slate-500">{k.label}</span>
-        <span className="flex items-baseline gap-2">
-          <strong className="text-xl font-semibold tabular-nums">{k.money ? peso(k.value) : k.value.toLocaleString('en-PH')}</strong>
-          {k.note && <span className="truncate text-xs text-slate-500">{k.note}</span>}
-        </span>
+    {kpis.map((k, i) => <Link key={k.key} to={k.href} className={`flex flex-col gap-2 p-4 hover:bg-slate-50 ${i > 0 ? 'border-t border-slate-100 sm:border-t-0 lg:border-l' : ''} ${i % 2 === 1 ? 'sm:border-l' : ''}`}>
+      <span className="flex items-center gap-2">
+        <span className="grid size-8 place-items-center rounded-full bg-slate-100 text-slate-600"><Icon name={KPI_ICON[k.key] ?? 'jobs'} className="size-4" /></span>
+        <span className="flex-1 text-sm text-slate-500">{k.label}</span>
+        {k.changePct !== undefined && k.changePct !== null && <span title="Against the same days last month"
+          className={`text-xs font-semibold tabular-nums ${k.changePct >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{k.changePct >= 0 ? '↗ +' : '↘ '}{k.changePct}%</span>}
       </span>
-      {k.changePct !== undefined && k.changePct !== null && <span title="Against the same days last month"
-        className={`text-xs font-semibold tabular-nums ${k.changePct >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{k.changePct >= 0 ? '+' : ''}{k.changePct}%</span>}
+      <span className="flex items-end justify-between gap-3">
+        <span className="min-w-0">
+          <strong className="block text-2xl font-semibold tabular-nums leading-tight">{k.money ? peso(k.value) : k.value.toLocaleString('en-PH')}</strong>
+          {k.note && <span className="block truncate text-xs text-slate-500">{k.note}</span>}
+        </span>
+        {shares[k.key] && <TickBar parts={[{ share: shares[k.key]!.share, tone: 'bg-slate-700' }]} ticks={24} label={shares[k.key]!.label} />}
+      </span>
     </Link>)}
   </section>;
 }
@@ -94,7 +115,10 @@ export function JobsCard({ jobs }: { jobs: NonNullable<DashCards['jobs']> }) {
           </Link></td>
           <td className="max-w-[12rem] truncate px-1 py-2 text-slate-700" title={j.item}>{j.item}</td>
           <td className="px-1 py-2 text-slate-700">{j.step ?? '—'}</td>
-          <td className="px-1 py-2"><span className={`rounded-md px-2 py-0.5 text-xs font-medium ${STATUS[j.status][1]}`}>{STATUS[j.status][0]}</span></td>
+          <td className="px-1 py-2"><span className="flex items-center gap-2">
+            <TickBar parts={[{ share: j.progress, tone: j.status === 'late' ? 'bg-red-500' : j.status === 'ready' ? 'bg-emerald-500' : 'bg-indigo-600' }]} ticks={12} height="h-4" label={`${Math.round(j.progress * 100)}% along`} />
+            <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${STATUS[j.status][1]}`}>{STATUS[j.status][0]}</span>
+          </span></td>
           <td className={`px-1 py-2 text-right tabular-nums ${j.late ? 'font-semibold text-red-700' : 'text-slate-700'}`}>{shortDate(j.dueDate)}</td>
         </tr>)}</tbody>
       </table>
@@ -106,23 +130,46 @@ export function JobsCard({ jobs }: { jobs: NonNullable<DashCards['jobs']> }) {
 const weekday = (date: string) => new Intl.DateTimeFormat('en-PH', { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
 
 export function ActivityCard({ activity }: { activity: NonNullable<DashCards['activity']> }) {
-  const max = Math.max(1, ...activity.days.map((d) => d.pieces));
+  const top = niceTop(Math.max(0, ...activity.days.map((d) => d.pieces)));
   const best = activity.days.reduce((b, d) => (d.pieces > b.pieces ? d : b), activity.days[0]!);
   const stat = (value: number, label: string) => <div className="rounded-xl p-2 text-center ring-1 ring-slate-100">
     <p className="text-lg font-semibold tabular-nums text-slate-900">{value.toLocaleString('en-PH')}</p><p className="text-xs text-slate-500">{label}</p>
   </div>;
-  return <Card icon="clock" title="Pieces made this week" href="/rpt/production-status">
+  return <Card icon="clock" title="Pieces made this week" href="/rpt/production-status" grow>
     <div className="grid grid-cols-3 gap-2">{stat(activity.today, 'Pieces today')}{stat(activity.averagePerDay, 'Average a work day')}{stat(activity.workersToday, 'Workers today')}</div>
-    <div role="img" aria-label={`Pieces made each day: ${activity.days.map((d) => `${weekday(d.date)} ${d.pieces}`).join(', ')}`} className="flex h-40 items-end gap-2">
-      {activity.days.map((d) => <div key={d.date} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
-        <span className="text-[10px] tabular-nums text-slate-500">{d.pieces || ''}</span>
-        <div title={`${d.date}: ${d.pieces} pieces by ${d.workers} workers`} style={{ height: `${Math.max(6, (d.pieces / max) * 100)}%` }}
-          className={`w-full rounded-xl ${d.pieces > 0 && d === best ? 'bg-indigo-600' : 'bg-slate-100'}`} />
-        <span className="text-[11px] text-slate-500">{weekday(d.date)}</span>
+    <TrackChart height="h-56 xl:h-auto xl:min-h-56 xl:flex-1" label={`Pieces made each day: ${activity.days.map((d) => `${weekday(d.date)} ${d.pieces}`).join(', ')}`} top={top}
+      bars={activity.days.map((d) => ({ key: d.date, label: weekday(d.date), value: d.pieces, title: `${d.date}: ${d.pieces} pieces by ${d.workers} workers`, best: d.pieces > 0 && d === best }))} />
+  </Card>;
+}
+
+/** A round top for a chart's scale: 1, 2 or 5 times a power of ten, at least the largest value. */
+export function niceTop(max: number): number {
+  if (max <= 0) return 4;
+  const p = 10 ** Math.floor(Math.log10(max));
+  return [1, 2, 2.5, 5, 10].map((m) => m * p).find((n) => n >= max)!;
+}
+
+/**
+ * A bar chart as in the owner's reference picture: each bar stands in a pale full-height track, the best one striped in
+ * our blue, with a light scale (0, half, top) on the left.
+ */
+export function TrackChart({ bars, top, label, height = 'h-44' }: { bars: { key: string; label: string; value: number; title: string; best?: boolean }[]; top: number; label: string; height?: string }) {
+  return <div role="img" aria-label={label} className={`flex gap-2 ${height}`}>
+    <div className="flex flex-col justify-between pb-5 text-right text-[10px] tabular-nums text-slate-400">
+      {[top, top / 2, 0].map((n) => <span key={n}>{n.toLocaleString('en-PH')}</span>)}
+    </div>
+    <div className="relative flex flex-1 items-stretch gap-2">
+      <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-1.5 bottom-5 flex flex-col justify-between">
+        {[0, 1, 2].map((n) => <span key={n} className="border-t border-dashed border-slate-100" />)}
+      </div>
+      {bars.map((b) => <div key={b.key} className="relative flex flex-1 flex-col items-center gap-1">
+        <div title={b.title} className="relative w-full flex-1 overflow-hidden rounded-xl bg-slate-50">
+          <div className={`absolute inset-x-0 bottom-0 rounded-xl ${b.best ? '' : 'bg-slate-200'}`} style={{ height: `${Math.min(100, (b.value / top) * 100)}%`, ...(b.best ? HATCH : {}) }} />
+        </div>
+        <span className={`text-[11px] ${b.best ? 'font-semibold text-slate-900' : 'text-slate-500'}`}>{b.label}</span>
       </div>)}
     </div>
-    <div className="flex items-center gap-2 text-xs text-slate-500"><span>Less busy</span><span className="h-1.5 flex-1 rounded-full bg-gradient-to-r from-slate-100 to-slate-400" /><span>Busy</span></div>
-  </Card>;
+  </div>;
 }
 
 export function CalendarCard({ calendar, today }: { calendar: NonNullable<DashCards['calendar']>; today: string }) {
@@ -149,34 +196,64 @@ export function CalendarCard({ calendar, today }: { calendar: NonNullable<DashCa
   </Card>;
 }
 
-// Not started, in production, ready, released: the same colours as the status chips of the floor table.
-const BUBBLE = ['bg-slate-100 text-slate-700', 'bg-slate-200 text-slate-900', 'bg-emerald-50 text-emerald-800', 'bg-white text-slate-600 ring-1 ring-slate-200'];
-const DOT = ['bg-slate-300', 'bg-slate-500', 'bg-emerald-500', 'bg-slate-200'];
 
 export function StagesCard({ stages }: { stages: NonNullable<DashCards['stages']> }) {
-  const total = stages.reduce((n, s) => n + s.count, 0);
-  const max = Math.max(1, ...stages.map((s) => s.count));
-  return <Card icon="stages" title="Job orders by stage" count={total} href="/rpt/job-order-follow-up">
-    <div className="flex min-h-48 flex-wrap items-center justify-center gap-1">
-      {stages.map((s, i) => {
-        const size = 48 + Math.round(Math.sqrt(s.count / max) * 104);
-        return <div key={s.key} title={`${s.label}: ${s.count}`} style={{ width: size, height: size }}
-          className={`grid place-items-center rounded-full text-center ${BUBBLE[i % BUBBLE.length]} ${s.count === 0 ? 'opacity-50' : ''}`}>
-          <span><span className="block text-lg font-semibold tabular-nums">{s.count}</span>{size > 90 && <span className="block text-[11px]">{total ? Math.round((s.count / total) * 100) : 0}%</span>}</span>
-        </div>;
-      })}
+  const of = (key: string) => stages.find((s) => s.key === key)?.count ?? 0;
+  const [ready, making, waiting, released] = [of('ready'), of('in_production'), of('not_started'), of('released')];
+  const open = ready + making + waiting;
+  const share = (n: number) => (open ? n / open : 0);
+  // Ready in our blue, in production in dark grey, not started faded (the reference picture's Total / Done / In progress).
+  const parts = [{ key: 'ready', label: 'Ready', count: ready, tone: 'bg-indigo-600' }, { key: 'in_production', label: 'In production', count: making, tone: 'bg-slate-500' },
+    { key: 'not_started', label: 'Not started', count: waiting, tone: 'bg-slate-200' }];
+  return <Card icon="stages" title="Job orders by stage" href="/rpt/job-order-follow-up">
+    <div className="flex flex-wrap items-end justify-between gap-2">
+      <div>
+        <p className="text-xs text-slate-500">Open job orders</p>
+        <p className="flex items-center gap-2"><strong className="text-3xl font-semibold tabular-nums">{open}</strong>
+          {open > 0 && <span className="rounded-md bg-indigo-50 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-indigo-700">{Math.round(share(ready) * 100)}% ready</span>}</p>
+      </div>
+      <ul className="flex flex-wrap gap-3 text-xs text-slate-600">{parts.map((p) => <li key={p.key} className="flex items-center gap-1.5"><span className={`size-2 rounded-full ${p.tone}`} />{p.label}</li>)}</ul>
     </div>
-    <ul className="grid grid-cols-2 gap-2 text-xs">
-      {stages.map((s, i) => <li key={s.key} className="flex items-center gap-2 rounded-full px-3 py-1 ring-1 ring-slate-100"><span className={`size-2 rounded-full ${DOT[i % DOT.length]}`} />{s.label}</li>)}
+    <TickBar parts={parts.slice(0, 2).map((p) => ({ share: share(p.count), tone: p.tone }))} ticks={64} height="h-10" stretch
+      label={parts.map((p) => `${p.label} ${p.count}`).join(', ')} />
+    <ul className="grid grid-cols-2 gap-2 text-sm">
+      {[...parts, { key: 'released', label: 'Released this month', count: released, tone: 'bg-white ring-1 ring-slate-300' }].map((p) => <li key={p.key} className="rounded-xl p-2.5 ring-1 ring-slate-100">
+        <span className="flex items-center gap-1.5 text-xs text-slate-500"><span className={`size-2 rounded-full ${p.tone}`} />{p.label}</span>
+        <strong className="text-lg font-semibold tabular-nums">{p.count}</strong>
+      </li>)}
     </ul>
   </Card>;
+}
+
+/**
+ * What the headline figures' tick bars show: sales and collections against the same days last month (full when as much or
+ * more), the open job orders already started, in production or ready out of the open ones, and today's pieces against
+ * the average day.
+ */
+export function kpiShares(cards: DashCards): Record<string, { share: number; label: string }> {
+  const open = cards.jobs?.total ?? 0;
+  const of = (key: string) => cards.stages?.find((s) => s.key === key)?.count ?? 0;
+  const out: Record<string, { share: number; label: string }> = {};
+  for (const k of cards.kpis) {
+    if ((k.key === 'sales' || k.key === 'collections') && k.changePct !== undefined && k.changePct !== null) {
+      const pace = Math.max(0, 1 + k.changePct / 100);
+      out[k.key] = { share: Math.min(1, pace), label: `${Math.round(pace * 100)}% of the same days last month` };
+    }
+    if (k.key === 'open' && open && cards.stages) out.open = { share: (open - of('not_started')) / open, label: `${open - of('not_started')} of ${open} started` };
+    if ((k.key === 'in_production' || k.key === 'ready') && open) out[k.key] = { share: k.value / open, label: `${k.value} of ${open} open job orders` };
+    if (k.key === 'pieces' && cards.activity) {
+      const avg = Math.max(1, cards.activity.averagePerDay);
+      out.pieces = { share: Math.min(1, k.value / avg), label: `${Math.round((k.value / avg) * 100)}% of an average day` };
+    }
+  }
+  return out;
 }
 
 /** The cards laid out; `attention` (the Needs attention list) takes the third place of the bottom row. */
 export function CardsLayout({ cards, attention }: { cards: DashCards | null; attention: ReactNode }) {
   const bottom = [cards?.calendar && <CalendarCard key="cal" calendar={cards.calendar} today={cards.asOf} />, cards?.stages && <StagesCard key="stages" stages={cards.stages} />, <div key="attention" className="min-w-0">{attention}</div>].filter(Boolean);
   return <div className="space-y-4">
-    {cards && <KpiStrip kpis={cards.kpis} />}
+    {cards && <KpiStrip kpis={cards.kpis} shares={kpiShares(cards)} />}
     {cards && (cards.jobs || cards.activity) && <div className={`grid gap-4 ${cards.jobs && cards.activity ? 'xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : ''}`}>
       {cards.jobs && <JobsCard jobs={cards.jobs} />}
       {cards.activity && <ActivityCard activity={cards.activity} />}

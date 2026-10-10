@@ -153,7 +153,7 @@ export function Bars({ data }: { data: DashOwnerCharts['months'] }) {
     <line x1="42" y1={zero} x2="710" y2={zero} stroke="currentColor" />
     {data.map((row, index) => <g key={row.month}>{fields.map((field, fieldIndex) => {
       const y = scale.y(row[field.key]);
-      return <rect key={field.key} x={48 + index * 55 + fieldIndex * 12} y={Math.min(zero, y)} width="10" height={Math.abs(y - zero)} fill={field.colour} tabIndex={0}>
+      return <rect key={field.key} x={48 + index * 55 + fieldIndex * 12} y={Math.min(zero, y)} width="10" height={Math.abs(y - zero)} rx="3" fill={field.colour} tabIndex={0}>
         <title>{`${field.label}, ${row.month}: ${peso(row[field.key])}`}</title>
       </rect>;
     })}<text x={63 + index * 55} y="208" textAnchor="middle" fontSize="11">{monthLabel(row.month)}</text></g>)}
@@ -184,15 +184,20 @@ export function CashLine({ data }: { data: DashOwnerCharts['months'] }) {
 export function AgingBars({ data }: { data: DashOwnerCharts['receivables'] }) {
   const scale = signedScale(data.map((row) => row.amountCents), 170, 130);
   const zero = scale.y(0);
+  const top = scale.y(scale.max);
+  const largest = data.reduce((b, row) => (row.amountCents > b.amountCents ? row : b), data[0] ?? { key: '', amountCents: 0 });
+  // A pale track behind each bar and the largest one striped in our blue (the owner's reference picture).
   return <svg viewBox="0 0 520 220" role="img" aria-label="Receivables by age today" className="h-auto min-w-[450px] print:min-w-0">
     <desc>Negative receivables appear below the labelled zero line.</desc>
-    <line x1="42" y1={zero} x2="510" y2={zero} stroke="currentColor" />
-    {data.map((row, index) => { const y = scale.y(row.amountCents); return <g key={row.key}>
-      <rect x={65 + index * 90} y={Math.min(zero, y)} width="42" height={Math.abs(y - zero)} fill="#64748b" tabIndex={0}><title>{`${row.label} days: ${peso(row.amountCents)}`}</title></rect>
-      <text x={86 + index * 90} y="190" textAnchor="middle" fontSize="12">{row.label}</text></g>; })}
-    {scale.max > 0 && <text x="4" y="44" fontSize="11">{shortPeso(scale.max)}</text>}
-    {scale.min < 0 && <text x="4" y="174" fontSize="11">{shortPeso(scale.min)}</text>}
-    <text x="27" y={zero + 4} fontSize="11">₱0</text>
+    <defs><pattern id="aging-hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" fill="#8c9ee2" /><rect width="4" height="7" fill="#1f3bb3" /></pattern></defs>
+    <line x1="42" y1={zero} x2="510" y2={zero} stroke="#cbd5e1" />
+    {data.map((row, index) => { const y = scale.y(row.amountCents); const best = row.amountCents > 0 && row === largest; return <g key={row.key}>
+      <rect x={63 + index * 90} y={Math.min(top, zero) - 4} width="46" height={Math.abs(zero - top) + 4} rx="11" fill="#f8fafc" />
+      <rect x={65 + index * 90} y={Math.min(zero, y)} width="42" height={Math.max(1, Math.abs(y - zero))} rx="10" fill={best ? 'url(#aging-hatch)' : '#cbd5e1'} tabIndex={0}><title>{`${row.label} days: ${peso(row.amountCents)}`}</title></rect>
+      <text x={86 + index * 90} y="190" textAnchor="middle" fontSize="12" fill="#64748b">{row.label}</text></g>; })}
+    {scale.max > 0 && <text x="4" y="44" fontSize="11" fill="#94a3b8">{shortPeso(scale.max)}</text>}
+    {scale.min < 0 && <text x="4" y="174" fontSize="11" fill="#94a3b8">{shortPeso(scale.min)}</text>}
+    <text x="27" y={zero + 4} fontSize="11" fill="#94a3b8">₱0</text>
   </svg>;
 }
 

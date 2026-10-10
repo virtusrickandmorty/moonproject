@@ -25,7 +25,8 @@ const change = (now: number, before: number) => (before === 0 ? null : Math.roun
 
 export interface Kpi { key: string; label: string; value: number; money: boolean; changePct?: number | null; note?: string; href: string }
 export type JobStatus = 'to_route' | 'in_production' | 'ready' | 'late';
-export interface JobRow { id: string; number: string; customerName: string; item: string; step: string | null; status: JobStatus; dueDate: string; late: boolean; rush: boolean }
+/** `progress`: how far along its items are, 0 to 1 (steps closed over steps on the route; a ready item counts whole). */
+export interface JobRow { id: string; number: string; customerName: string; item: string; step: string | null; status: JobStatus; dueDate: string; late: boolean; rush: boolean; progress: number }
 
 export function homeCards(db: Db, date: string, user: SessionUser) {
   const can = (p: string) => user.permissions.has(p);
@@ -46,8 +47,10 @@ export function homeCards(db: Db, date: string, user: SessionUser) {
     const routed = mine.some((l) => l.steps !== null);
     const late = j.dueDate < date;
     const status: JobStatus = late ? 'late' : !routed && j.stage === 'open' ? 'to_route' : j.stage === 'ready' || j.stage === 'partially_released' ? 'ready' : 'in_production';
+    const parts = mine.map((l) => (l.ready ? 1 : l.steps && l.steps.length ? l.steps.filter((x) => x.status === 'completed' || x.status === 'not_needed').length / l.steps.length : 0));
+    const progress = parts.length ? Math.round((parts.reduce((n, p) => n + p, 0) / parts.length) * 100) / 100 : 0;
     const item = mine[0] ? `${mine[0].description}${mine.length > 1 ? ` +${mine.length - 1} more` : ''}` : '';
-    return { id: j.id, number: j.number, customerName: j.customerName, item, step: open?.currentStepId ? stepName.get(open.currentStepId) ?? null : open?.steps ? 'Rework' : null, status, dueDate: j.dueDate, late, rush: j.priority === 'rush' };
+    return { id: j.id, number: j.number, customerName: j.customerName, item, step: open?.currentStepId ? stepName.get(open.currentStepId) ?? null : open?.steps ? 'Rework' : null, status, dueDate: j.dueDate, late, rush: j.priority === 'rush', progress };
   }).sort((a, b) => Number(b.late) - Number(a.late) || a.dueDate.localeCompare(b.dueDate) || a.number.localeCompare(b.number));
 
   const count = (s: (j: (typeof active)[number]) => boolean) => active.filter(s).length;

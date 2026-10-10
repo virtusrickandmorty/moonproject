@@ -172,7 +172,7 @@ export interface DashOwnerCharts {
 export interface DashCards {
   asOf: string;
   kpis: { key: string; label: string; value: number; money: boolean; changePct?: number | null; note?: string; href: string }[];
-  jobs: { total: number; late: number; inProduction: number; toRoute: number; rows: { id: string; number: string; customerName: string; item: string; step: string | null; status: 'to_route' | 'in_production' | 'ready' | 'late'; dueDate: string; late: boolean; rush: boolean }[] } | null;
+  jobs: { total: number; late: number; inProduction: number; toRoute: number; rows: { id: string; number: string; customerName: string; item: string; step: string | null; status: 'to_route' | 'in_production' | 'ready' | 'late'; dueDate: string; late: boolean; rush: boolean; progress: number }[] } | null;
   activity: { days: { date: string; pieces: number; workers: number }[]; today: number; averagePerDay: number; workersToday: number } | null;
   calendar: { month: string; days: { date: string; due: number; late: boolean }[] } | null;
   stages: { key: string; label: string; count: number }[] | null;
