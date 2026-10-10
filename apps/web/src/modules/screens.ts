@@ -137,6 +137,7 @@ import { RrForm } from './PUR/RrForm.tsx';
 import { purchaseOrderView, receivingReportView } from './PUR/views.tsx';
 import { InventoryCountForm } from './INV/InventoryCountForm.tsx';
 import { inventoryCountView } from './INV/InventoryCountView.tsx';
+import { WebsiteAssistant } from './AIA/Assistant.tsx';
 
 /**
  * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
@@ -147,6 +148,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/cal': CalendarPage,
   '/cus': Customers,
   '/sup': SupportInbox,
+  '/aia': WebsiteAssistant,
   '/shp': ShopProducts,
   '/shp/orders': OnlineOrders,
   '/pos': Pos,

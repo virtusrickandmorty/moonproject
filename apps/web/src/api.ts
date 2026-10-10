@@ -178,6 +178,12 @@ export interface DashCards {
   stages: { key: string; label: string; count: number }[] | null;
 }
 
+/** The website's AI assistant (AIA): its settings (the key is never sent back, only whether it is set) and its chats. */
+export interface AiaSettings { isOn: boolean; greeting: string; knowledge: string; version: number; keySet: boolean }
+export interface AiaChatRow { id: string; startedAt: string; messages: number; firstQuestion: string | null; inputTokens: number; outputTokens: number; supportNumber: string | null }
+export interface AiaChats { rows: AiaChatRow[]; last30Days: { chats: number; inputTokens: number; outputTokens: number } }
+export interface AiaMessage { seq: number; role: 'customer' | 'assistant'; text: string; at: string }
+
 export interface DashOwnerHealth {
   asOf: string;
   periods: { label: string; from: string; to: string; salesCents: number; vatCents: number; collectionsCents: number; payrollCents: number }[];
@@ -975,6 +981,11 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     saveMenuOrder: (order: MenuOrder) => call<MenuOrder>('PUT', '/api/pref/menu', order),
     dashHome: () => call<DashHomeData>('GET', '/api/dash/home'),
     dashCards: () => call<DashCards>('GET', '/api/dash/cards'),
+    aiaSettings: () => call<AiaSettings>('GET', '/api/aia/settings'),
+    /** `apiKey`: leave it out to keep the saved key; '' removes it. */
+    aiaSaveSettings: (body: { isOn: boolean; greeting: string; knowledge: string; apiKey?: string; version: number }) => call<AiaSettings>('PUT', '/api/aia/settings', body),
+    aiaChats: () => call<AiaChats>('GET', '/api/aia/chats'),
+    aiaChat: (id: string) => call<{ messages: AiaMessage[]; supportNumber: string | null }>('GET', `/api/aia/chats/${encodeURIComponent(id)}`),
     dashOwnerHealth: () => call<DashOwnerHealth>('GET', '/api/dash/owner-health'),
     dashOwnerCharts: () => call<DashOwnerCharts>('GET', '/api/dash/owner-charts'),
     /** `page`: only a page of them (`unread`: of the unread ones), for the home panel and the long list. */

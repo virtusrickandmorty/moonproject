@@ -9,6 +9,7 @@ import { SCHOOL_TPL, SERVICES, Services } from './Services.tsx';
 import { BRAND, breadcrumbLd, productListLd, servicesLd, storeLd, useSeo, useSeoReset, type Seo } from './seo.ts';
 import { Store } from './Storefront.tsx';
 import { Support } from './Support.tsx';
+import { ChatBubble } from './Assistant.tsx';
 import { SHOP_CONTACT, deliveryWords, type Product } from './products.ts';
 import { ShopProvider, useShop } from './store.tsx';
 
@@ -147,6 +148,7 @@ function Layout({ staff }: { staff: boolean }) {
       {panel === 'sizes' && <SizeGuide onClose={() => setPanel(null)} />}
       {panel === 'cart' && <CartDrawer onClose={() => setPanel(null)} />}
       {panel === 'wishlist' && <WishlistDrawer onClose={() => setPanel(null)} onOpen={(p) => { setPanel(null); setViewing(p); }} />}
+      <ChatBubble />
       {toast && <div role="status" className="fixed bottom-5 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-xl">{toast} · <button type="button" className="underline" onClick={() => { setToast(''); setPanel('cart'); }}>View cart</button></div>}
     </div>
   );

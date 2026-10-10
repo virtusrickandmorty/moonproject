@@ -1,5 +1,6 @@
 /** What other modules may read from customer support (AGENTS.md: other modules only through public.ts). */
 import type { Db } from '../../platform/db/driver.ts';
+export { EMAIL as SUPPORT_EMAIL, PHONE as SUPPORT_PHONE, recordSupportMessage } from './routes.ts';
 
 export const KIND_LABELS: Record<string, string> = { inquiry: 'Inquiry', complaint: 'Complaint', suggestion: 'Suggestion', quotation: 'Quotation request' };
 
