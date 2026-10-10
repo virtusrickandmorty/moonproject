@@ -36,7 +36,7 @@ describe('clickable table rows', () => {
   it('leaves form rows, rows a screen already handles, rows switched off and rows with no link', () => {
     const form = row({}, new El('a', { href: '/x' }), new El('input'), new El('span'));
     expect(open(cell(form)[2]!.kids[0]!)).toBeNull();
-    for (const attrs of [{ class: 'border-t cursor-pointer' }, { tabindex: '0' }]) {
+    for (const attrs of [{ class: 'border-t cursor-pointer' }, { tabindex: '0' }] as Record<string, string>[]) {
       const own = row(attrs, new El('a', { href: '/x' }), new El('span'));
       expect(open(cell(own)[1]!.kids[0]!)).toBeNull();
     }
