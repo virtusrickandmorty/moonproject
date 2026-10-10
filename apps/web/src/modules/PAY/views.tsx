@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { api, type DocDetail, type Me, type Payslips as PayslipData } from '../../api.ts';
 import { Button, Notice, peso, showDate } from '../../components/ui.tsx';
+import { TickBar } from '../../components/charts.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
@@ -41,8 +42,9 @@ function RunParts({ d }: { d: DocDetail }) {
       </p>
       <PayTotal total={run.netCents}>{run.employees.length} employees</PayTotal>
       {run.employees.map((e) => (
-        <section key={e.employeeId} aria-label={e.name} className="space-y-3 rounded-lg border border-slate-200 p-3">
+        <section key={e.employeeId} aria-label={e.name} className="space-y-3 rounded-xl p-4 ring-1 ring-slate-200/70">
           <div className="flex flex-wrap justify-between gap-3"><h3 className="font-medium">{e.name}{e.final && <FinalBadge />}</h3><p className="font-semibold tabular-nums">Net pay: {peso(e.netCents)}</p></div>
+          <TickBar parts={[{ share: e.grossCents > 0 ? Math.max(0, e.netCents) / e.grossCents : 0, tone: 'bg-indigo-600' }]} ticks={120} height="h-4" stretch label={`Net pay ${e.grossCents > 0 ? Math.round((Math.max(0, e.netCents) / e.grossCents) * 100) : 0}% of gross`} />
           <p className="text-sm">Gross {peso(e.grossCents)} − deductions {peso(e.grossCents - e.netCents + (e.wtaxRefundCents ?? 0))}{(e.wtaxRefundCents ?? 0) > 0 && <> + tax refund {peso(e.wtaxRefundCents!)}</>}</p>
           <PayDetails title="Earnings and deductions">
             {e.lines.map((l) => <div key={l.lineNo} className="flex justify-between gap-3 text-sm"><span>{l.description} {qtyText(l.kind, l.qty)}</span><span className="tabular-nums">{peso(l.amountCents)}</span></div>)}
@@ -73,7 +75,7 @@ function ThirteenthParts({ d }: { d: DocDetail }) {
       <p className="text-xs text-slate-600">Recorded net pay for this run; check its releases for what is still unpaid.</p>
       <p className="text-sm">{GROUP_LABEL[t.payGroup]} · 13th month {t.year}: one twelfth of the basic pay of the recorded payroll runs, beside what they accrued</p>
       {t.employees.map((e) => (
-        <section key={e.employeeId} aria-label={e.name} className="space-y-3 rounded-lg border border-slate-200 p-3">
+        <section key={e.employeeId} aria-label={e.name} className="space-y-3 rounded-xl p-4 ring-1 ring-slate-200/70">
           <div className="flex flex-wrap justify-between gap-3"><h3 className="font-medium">{e.name}</h3><p className="font-semibold tabular-nums">To pay now: {peso(e.netCents)}</p></div>
           <p className="text-sm">Amount {peso(e.amountCents)} − tax {peso(e.wtaxCents)} = {peso(e.netCents)}</p>
           {e.reason && <p className="text-sm text-slate-600">Changed: {e.reason}</p>}

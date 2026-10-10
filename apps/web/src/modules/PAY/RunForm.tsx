@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, type DocTypeInfo, type Me, type PayGroup, type PayPeriod, type PayRunDoc, type Preview } from '../../api.ts';
 import { Link, navigate } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
+import { TickBar } from '../../components/charts.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, useLive } from '../COL/parts.tsx';
@@ -159,13 +160,14 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
         <p className="text-sm text-slate-600">Includes recorded attendance, salary or piece work, paid leave, holiday pay and premiums where applicable, plus the allowances and adjustments below. Open an employee's earnings to see the included items.</p>
         {!run && <p className="text-sm text-slate-500">{periodStart ? 'Working it out…' : 'Pick a period.'}</p>}
         {run && people.map((e) => (
-          <section key={e.employeeId} aria-label={e.name} className="space-y-3 rounded-lg border border-slate-200 p-3">
+          <section key={e.employeeId} aria-label={e.name} className="space-y-3 rounded-xl p-4 ring-1 ring-slate-200/70">
             <div className="grid items-center gap-3 sm:grid-cols-[minmax(0,2fr)_1fr_1fr_1fr]">
               <h3 className="font-medium">{e.name}{e.final && <FinalBadge />}</h3>
               <div className="text-sm sm:text-right">Gross <b className="block tabular-nums">{peso(e.grossCents)}</b></div>
               <div className="text-sm sm:text-right">Deductions <b className="block tabular-nums">{peso(e.grossCents - e.netCents + (e.wtaxRefundCents ?? 0))}</b></div>
               <div className="text-sm sm:text-right">Net pay <b className="block tabular-nums">{peso(e.netCents)}</b></div>
             </div>
+            <TickBar parts={[{ share: e.grossCents > 0 ? Math.max(0, e.netCents) / e.grossCents : 0, tone: 'bg-indigo-600' }]} ticks={120} height="h-4" stretch label={`Net pay ${e.grossCents > 0 ? Math.round((Math.max(0, e.netCents) / e.grossCents) * 100) : 0}% of gross`} />
             {(e.wtaxRefundCents ?? 0) > 0 && <p className="text-sm">Includes tax refund: {peso(e.wtaxRefundCents!)}</p>}
             <PayDetails title="Earnings included">
               {e.lines.map((l) => <div key={l.lineNo} className="flex justify-between gap-3 text-sm"><span>{l.description} {qtyText(l.kind, l.qty)}</span><span className="tabular-nums">{peso(l.amountCents)}</span></div>)}
@@ -214,7 +216,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
       <Panel title="Allowances and adjustments">
         <PayDetails title="Add allowances or adjustments" active={rows.length > 0}>
           {rows.map((r, i) => (
-            <div key={i} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-2">
+            <div key={i} className="grid gap-2 rounded-xl p-3 ring-1 ring-slate-200/70 sm:grid-cols-2">
               <Field label="Employee">
                 <select aria-label="Employee" className={inputClass} value={r.employeeId} onChange={(e) => setRow(i, { employeeId: e.target.value })}>
                   <option value="">Employee</option>{Object.entries(names).filter(([id]) => !(id in skip)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}

@@ -152,7 +152,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                 const sent = rows.slice(0, i).filter((row) => row.employeeId || row.pieces.trim()).length; // its place among the rows sent
                 const askRepeat = !r.rework && (!!r.repeatReason?.trim() || ((!!r.employeeId || !!r.pieces.trim()) && repeatAt.has(sent)));
                 return (
-                  <section key={i} aria-label={`Worker entry ${i + 1}`} className="space-y-3 rounded-lg border border-slate-200 p-3">
+                  <section key={i} aria-label={`Worker entry ${i + 1}`} className="space-y-3 rounded-xl p-4 ring-1 ring-slate-200/70">
                     <Field label="Line">
                       <select aria-label={`Row ${i + 1} line`} className={cell} value={r.lineNo} onChange={(e) => set(i, { lineNo: e.target.value, part: undefined, ...(r.wearers?.length ? { wearers: [], pieces: '' } : {}) })}>
                         <option value="" />

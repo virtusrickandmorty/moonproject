@@ -85,7 +85,7 @@ export function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWear
           <thead className="hidden text-left text-slate-500 lg:table-header-group"><tr><th>Wearer</th><th className="w-28">Size</th><th>Jersey name</th><th className="w-20">No.</th><th className="w-16">Qty</th><th className="w-44">Garment type</th><th /></tr></thead>
           <tbody className="grid gap-2 lg:table-row-group">
             {rows.map((r, j) => (
-              <tr key={j} className="grid gap-2 rounded border p-2 sm:grid-cols-2 lg:table-row lg:border-0 lg:p-0">
+              <tr key={j} className="grid gap-2 rounded-xl border border-slate-200 p-2 sm:grid-cols-2 lg:table-row lg:border-0 lg:p-0">
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Wearer</span>
                   {r.personId ? <span>{r.name}</span> : <input aria-label={`${p.n} wearer ${j + 1} name`} placeholder="One-off name" className={inputClass} value={r.name} onChange={(e) => set(j, { name: e.target.value })} />}
                 </td>
