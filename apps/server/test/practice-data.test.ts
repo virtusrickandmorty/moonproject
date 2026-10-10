@@ -32,7 +32,7 @@ describe('practice data', () => {
         expect(summary.documents['col.collection']).toBe(20);
         expect(summary.documents['pay.run']).toBe(2); // first weekly cutoff: piece-rate and daily-paid runs
         expect(summary.documents['pay.release']).toBe(2);
-        expect(db.prepare(`SELECT COUNT(*) AS n FROM emp_attendance`).get()).toEqual({ n: 8 }); // two daily-paid, Saturday off
+        expect(db.prepare(`SELECT COUNT(*) AS n FROM emp_attendance`).get()).toEqual({ n: 12 }); // three daily-paid, Saturday off
         expect(Object.keys(summary.passwords).sort()).toEqual(['accountant', 'encoder', 'owner', 'production']);
         await expect(createPracticeData(file, 1)).rejects.toThrow(/not empty/);
       } finally {
@@ -51,8 +51,8 @@ describe('practice data', () => {
     const file = join(dir, 'practice.db');
     try {
       const summary = await createPracticeData(file, 2, '2026-08-31'); // what a practice shop made on 30 September starts on
-      expect(summary.documents['pay.run']).toBe(1); // 16 to 31 August, on the first day
-      expect(summary.documents['pay.release']).toBeUndefined();
+      expect(summary.documents['pay.run']).toBe(2); // 16 to 31 August, on the first day: monthly staff and daily-paid helper
+      expect(summary.documents['pay.release']).toBe(1); // the helper's small run fits the till; the monthly staff run waits
       expect(summary.documents['cash.count']).toBe(2);
     } finally {
       await rm(file, { force: true });

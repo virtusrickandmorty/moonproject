@@ -27,6 +27,11 @@ const [PRINTING, CUTTING, SEWING, PACKING] = [2, 4, 6, 8];
 const ROUTE = [PRINTING, CUTTING, SEWING, PACKING];
 const PLAYERS = ['Practice Player A', 'Practice Player B', 'Practice Player C', 'Practice Player D', 'Practice Player E', 'Practice Player F', 'Practice Player G', 'Practice Player H'];
 const SIZES = ['S', 'M', 'L', 'XL'];
+/**
+ * Payrolls left for people to run by hand (the owner's request, Oct 2026): a run whose period ends in the last days of the
+ * history is not recorded, so the latest weekly and semi-monthly runs are there to try.
+ */
+const MANUAL_PAY_DAYS = 10;
 export const ROLES = ['owner', 'accountant', 'encoder', 'production'] as const;
 export type Role = typeof ROLES[number];
 export type Json = Record<string, any>;
@@ -219,6 +224,8 @@ export async function createPracticeData(dbPath: string, days: number, start = '
     const sewer2 = await worker('Practice Sewer Two', 'Practice sewer', { payType: 'piece', payGroup: 'WEEKLY_PIECE' });
     const printer = await worker('Practice Printer', 'Practice printer', { payType: 'daily', dailyRateCents: 64_500, payGroup: 'WEEKLY_DAILY' });
     const packer = await worker('Practice Packer', 'Practice packer', { payType: 'daily', dailyRateCents: 61_000, payGroup: 'WEEKLY_DAILY' });
+    const helper = await worker('Practice Helper', 'Practice helper', { payType: 'daily', dailyRateCents: 60_000, payGroup: 'SEMI_DAILY' });
+    const lastDay = manilaDate(new Date(START + (days - 1) * DAY_MS));
     const onStep: Record<number, string[]> = { [PRINTING]: [printer], [CUTTING]: [cutter], [SEWING]: [sewer, sewer2], [PACKING]: [packer] };
     const ongoing: { id: string; from: number; step: number; done: number }[] = []; // work starts the day after it is routed
     let reworkSent = false;
@@ -328,10 +335,21 @@ export async function createPracticeData(dbPath: string, days: number, start = '
           reworkSent = true;
         }
       }
-      if (new Date(`${date}T00:00:00Z`).getUTCDay() !== 6) {
+      const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+      if (weekday !== 6) {
         const holiday = db.prepare('SELECT 1 FROM emp_holidays WHERE holiday_date = ? AND is_active = 1').get(date); // the floor works through it
-        ok(await owner.post('/api/emp/attendance', { days: [printer, packer].map((employeeId) => ({ employeeId, date, status: holiday ? 'holiday_worked' : 'present' })) }), 'daily attendance');
+        const status = holiday ? 'holiday_worked' : 'present';
+        // Something to see on the payslips: the printer's overtime on Mondays, the packer's night work on Thursdays, and
+        // the helper's absence on Wednesdays, half day on Fridays and overtime on Tuesdays.
+        ok(await owner.post('/api/emp/attendance', { days: [
+          { employeeId: printer, date, status, ...(weekday === 1 ? { otMinutes: 120 } : {}) },
+          { employeeId: packer, date, status, ...(weekday === 4 ? { otMinutes: 60, nightMinutes: 60 } : {}) },
+          { employeeId: helper, date, status: holiday ? status : weekday === 3 ? 'absent' : weekday === 5 ? 'half_day' : 'present', ...(weekday === 2 && !holiday ? { otMinutes: 90 } : {}) },
+        ] }), 'daily attendance');
       }
+      // Cash advances, taken back an installment a payroll: one early on, one in the last week (it shows on the runs left to do).
+      if (day === 2) await record(owner, 'ca.advance', { employeeId: sewer2, cashPlaceId: till, amountCents: 100_000, installmentCents: 25_000, note: 'Practice cash advance' });
+      if (day === days - 6) await record(owner, 'ca.advance', { employeeId: printer, cashPlaceId: till, amountCents: 60_000, installmentCents: 30_000, note: 'Practice cash advance' });
 
       // Cutoffs close after the day's work. A weekly piece run is recorded on the
       // last day of its week (Saturday, or Thursday once weeks start on Friday);
@@ -345,8 +363,9 @@ export async function createPracticeData(dbPath: string, days: number, start = '
       const week = weekStartOf(date, rule);
       if (week && periodEndOf('WEEKLY_PIECE', week, rule) === date) runs.push({ payGroup: 'WEEKLY_PIECE', periodStart: week }, { payGroup: 'WEEKLY_DAILY', periodStart: week });
       const half = semiStartOf(date, rule); // the semi-monthly run closes on its period's last day (the 15th and month end, or the 10th and 25th)
-      if (half && periodEndOf('SEMI_MONTHLY', half, rule) === date) runs.push({ payGroup: 'SEMI_MONTHLY', periodStart: half });
-      for (const input of runs) {
+      if (half && periodEndOf('SEMI_MONTHLY', half, rule) === date) runs.push({ payGroup: 'SEMI_MONTHLY', periodStart: half }, { payGroup: 'SEMI_DAILY', periodStart: half });
+      const leftToDo = (Date.parse(lastDay) - Date.parse(date)) / DAY_MS < MANUAL_PAY_DAYS && days > MANUAL_PAY_DAYS;
+      for (const input of leftToDo ? [] : runs) {
         const run = await record(accountant, 'pay.run', input);
         const slips = ok(await accountant.get(`/api/pay/runs/${run.id}/payslips`), 'payroll slips');
         const people = (slips.employees as { employeeId: string; netCents: number }[]).filter((person) => person.netCents > 0); // paid ones only
