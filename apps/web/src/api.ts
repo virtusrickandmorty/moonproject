@@ -168,6 +168,16 @@ export interface DashOwnerCharts {
   months: { month: string; from: string; to: string; salesCents: number; collectionsCents: number; expensesCents: number; cashCents: number }[];
   receivables: { key: string; label: string; amountCents: number }[];
 }
+/** The home's cards (GET /api/dash/cards): each is null or missing for those who may not see what it reads. */
+export interface DashCards {
+  asOf: string;
+  kpis: { key: string; label: string; value: number; money: boolean; changePct?: number | null; note?: string; href: string }[];
+  jobs: { total: number; late: number; inProduction: number; toRoute: number; rows: { id: string; number: string; customerName: string; item: string; step: string | null; status: 'to_route' | 'in_production' | 'ready' | 'late'; dueDate: string; late: boolean; rush: boolean }[] } | null;
+  activity: { days: { date: string; pieces: number; workers: number }[]; today: number; averagePerDay: number; workersToday: number } | null;
+  calendar: { month: string; days: { date: string; due: number; late: boolean }[] } | null;
+  stages: { key: string; label: string; count: number }[] | null;
+}
+
 export interface DashOwnerHealth {
   asOf: string;
   periods: { label: string; from: string; to: string; salesCents: number; vatCents: number; collectionsCents: number; payrollCents: number }[];
@@ -964,6 +974,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     menuOrder: () => call<MenuOrder>('GET', '/api/pref/menu'),
     saveMenuOrder: (order: MenuOrder) => call<MenuOrder>('PUT', '/api/pref/menu', order),
     dashHome: () => call<DashHomeData>('GET', '/api/dash/home'),
+    dashCards: () => call<DashCards>('GET', '/api/dash/cards'),
     dashOwnerHealth: () => call<DashOwnerHealth>('GET', '/api/dash/owner-health'),
     dashOwnerCharts: () => call<DashOwnerCharts>('GET', '/api/dash/owner-charts'),
     /** `page`: only a page of them (`unread`: of the unread ones), for the home panel and the long list. */
