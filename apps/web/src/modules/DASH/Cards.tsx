@@ -19,19 +19,31 @@ const PATHS = {
   calendar: 'M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5',
   stages: 'M10.5 6a7.5 7.5 0 1 0 7.5 7.5h-7.5V6Z M13.5 10.5H21A7.5 7.5 0 0 0 13.5 3v7.5Z',
   check: 'm4.5 12.75 6 6 9-13.5',
+  bell: 'M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0',
+  chart: 'M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z',
+  trend: 'M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941',
+  tax: 'M9 14.25l6-6m4.5-3.493V21.75l-3.75-1.5-3.75 1.5-3.75-1.5-3.75 1.5V4.757c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0c1.1.128 1.907 1.077 1.907 2.185ZM9.75 9h.008v.008H9.75V9Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm4.125 4.5h.008v.008h-.008V13.5Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z',
+  alert: 'M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z',
+  draft: 'm16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10',
+  undo: 'M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 0 12h-3',
+  inbox: 'M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z',
 };
-type IconName = keyof typeof PATHS;
+export type IconName = keyof typeof PATHS;
 const KPI_ICON: Record<string, IconName> = { sales: 'sales', collections: 'money', open: 'jobs', cash: 'cash', in_production: 'floor', ready: 'jobs', pieces: 'clock' };
 
 function Icon({ name, className = 'size-5' }: { name: IconName; className?: string }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className={`shrink-0 ${className}`}><path d={PATHS[name]} /></svg>;
 }
 
-/** A card: a dark icon tile, the title, a small count, and a link to the full screen (the ⋯ of the picture). */
-function Card({ icon, title, count, note, href, dark = false, children }: { icon: IconName; title: string; count?: number; note?: string; href?: string; dark?: boolean; children: ReactNode }) {
-  return <section className={`flex min-w-0 flex-col gap-4 rounded-2xl p-5 shadow-sm ring-1 ${dark ? 'bg-[#2f2f2f] text-white ring-[#2f2f2f]' : 'bg-white ring-slate-100'}`}>
+/**
+ * A card: a dark icon tile, the title, a small count, and a link to the full screen (the ⋯ of the picture). Every card of
+ * the home uses it (the owner's request, Oct 2026); `tone="danger"` is a warning card (red ring and icon tile).
+ */
+export function Card({ icon, title, count, note, href, dark = false, tone, children }: { icon: IconName; title: string; count?: number; note?: string; href?: string; dark?: boolean; tone?: 'danger'; children: ReactNode }) {
+  const look = dark ? 'bg-[#2f2f2f] text-white ring-[#2f2f2f]' : tone === 'danger' ? 'bg-red-50 text-red-950 ring-2 ring-red-300' : 'bg-white ring-slate-100';
+  return <section className={`flex min-w-0 flex-col gap-4 rounded-2xl p-5 shadow-sm ring-1 ${look}`}>
     <header className="flex items-center gap-3">
-      <span className={`grid size-9 place-items-center rounded-lg ${dark ? 'bg-white text-[#2f2f2f]' : 'bg-[#2f2f2f] text-white'}`}><Icon name={icon} /></span>
+      <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${dark ? 'bg-white text-[#2f2f2f]' : tone === 'danger' ? 'bg-red-600 text-white' : 'bg-[#2f2f2f] text-white'}`}><Icon name={icon} /></span>
       <h2 className="text-base font-semibold">{title}</h2>
       {count !== undefined && <span className={`rounded-md px-1.5 text-xs font-medium tabular-nums ${dark ? 'bg-white/15' : 'bg-slate-100 text-slate-600'}`}>{count}</span>}
       {note && <span className={`hidden truncate text-xs sm:inline ${dark ? 'text-white/60' : 'text-slate-500'}`}>{note}</span>}
