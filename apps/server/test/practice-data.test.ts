@@ -22,13 +22,17 @@ describe('practice data', () => {
         expect(registerDifferences(db, '2000-01-01', '2099-12-31')).toEqual([]); // L6, over every day of the practice shop
         expect(payrollTotalsProblems(db)).toEqual([]); // L10
         expect(db.prepare(`SELECT COUNT(*) AS n FROM documents WHERE status <> 'posted'`).get()).toEqual({ n: 0 });
-        for (const type of ['quo.quotation', 'jo.job_order', 'jo.release',
+        for (const type of ['quo.quotation', 'jo.release',
           'jo.invoice_record', 'qs.sale', 'ap.bill', 'ap.payment', 'exp.voucher',
           'cash.transfer', 'cash.count']) expect(summary.documents[type]).toBe(5);
-        expect(summary.documents['prd.entry']).toBe(10); // sewing and packing each day: a step is completed with all its pieces
-        expect(summary.documents['col.collection']).toBe(15);
-        expect(summary.documents['pay.run']).toBe(1); // first weekly cutoff
-        expect(summary.documents['pay.release']).toBe(1);
+        // A released order a day, and an ongoing team order a day (the owner's request, Oct 2026) with its downpayment;
+        // the ongoing ones go a step at a time, four wearers a day, from the day after they are routed.
+        expect(summary.documents['jo.job_order']).toBe(10);
+        expect(summary.documents['prd.entry']).toBe(20); // 10 for the released orders (sewing and packing) and 10 ongoing
+        expect(summary.documents['col.collection']).toBe(20);
+        expect(summary.documents['pay.run']).toBe(2); // first weekly cutoff: piece-rate and daily-paid runs
+        expect(summary.documents['pay.release']).toBe(2);
+        expect(db.prepare(`SELECT COUNT(*) AS n FROM emp_attendance`).get()).toEqual({ n: 8 }); // two daily-paid, Saturday off
         expect(Object.keys(summary.passwords).sort()).toEqual(['accountant', 'encoder', 'owner', 'production']);
         await expect(createPracticeData(file, 1)).rejects.toThrow(/not empty/);
       } finally {
