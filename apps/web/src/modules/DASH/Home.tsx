@@ -144,7 +144,7 @@ const signedScale = (values: number[], bottom: number, height: number) => {
 };
 
 export function Bars({ data }: { data: DashOwnerCharts['months'] }) {
-  const fields = [{ key: 'salesCents', label: 'Sales', colour: '#4f46e5' }, { key: 'collectionsCents', label: 'Collections', colour: '#0f766e' },
+  const fields = [{ key: 'salesCents', label: 'Sales', colour: '#1f3bb3' }, { key: 'collectionsCents', label: 'Collections', colour: '#0f766e' },
     { key: 'expensesCents', label: 'Expenses', colour: '#b45309' }] as const;
   const scale = signedScale(data.flatMap((row) => fields.map((field) => row[field.key])), 190, 150);
   const zero = scale.y(0);
@@ -171,9 +171,9 @@ export function CashLine({ data }: { data: DashOwnerCharts['months'] }) {
   const points = data.map((row, index) => `${48 + index * 59},${scale.y(row.cashCents)}`).join(' ');
   return <svg viewBox="0 0 720 215" role="img" aria-label="Cash on hand at each month end" className="h-auto min-w-[620px] print:min-w-0">
     <desc>Negative cash balances appear below the labelled zero line.</desc>
-    <line x1="42" y1={zero} x2="710" y2={zero} stroke="currentColor" /><polyline points={points} fill="none" stroke="#4f46e5" strokeWidth="3" />
+    <line x1="42" y1={zero} x2="710" y2={zero} stroke="currentColor" /><polyline points={points} fill="none" stroke="#1f3bb3" strokeWidth="3" />
     {data.map((row, index) => { const x = 48 + index * 59; const y = scale.y(row.cashCents); return <g key={row.month}>
-      <circle cx={x} cy={y} r="5" fill="#4f46e5" tabIndex={0}><title>{`${row.month}: ${peso(row.cashCents)}`}</title></circle>
+      <circle cx={x} cy={y} r="5" fill="#1f3bb3" tabIndex={0}><title>{`${row.month}: ${peso(row.cashCents)}`}</title></circle>
       <text x={x} y="190" textAnchor="middle" fontSize="11">{monthLabel(row.month)}</text></g>; })}
     {scale.max > 0 && <text x="4" y="44" fontSize="11">{shortPeso(scale.max)}</text>}
     {scale.min < 0 && <text x="4" y="174" fontSize="11">{shortPeso(scale.min)}</text>}

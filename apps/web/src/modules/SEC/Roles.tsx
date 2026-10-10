@@ -61,7 +61,7 @@ export function Roles({ me }: { me: Me }) {
       {done && <Notice tone="success">{done}</Notice>}
       {action.error && <Notice>{action.error}</Notice>}
       <input type="search" aria-label="Search what they may do" placeholder="Search what they may do, e.g. purchase orders" className={`${inputClass} max-w-md`} value={query} onChange={(e) => setQuery(e.target.value)} />
-      <div className="overflow-x-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+      <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
         <PermissionGrid grid={grid} draft={draft} saved={saved} onTick={tick} query={query}
           saveFor={(r) => <Button tone="primary" disabled={action.busy || pending(r).length === 0} onClick={() => ask(r)}>{pending(r).length ? `Save (${pending(r).length})` : 'Saved'}</Button>} />
       </div>

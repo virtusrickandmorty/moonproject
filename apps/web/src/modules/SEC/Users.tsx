@@ -43,7 +43,7 @@ export function Users({ me }: { me: Me }) {
 
 export function UserTable({ users, meId, onOpen }: { users: UserRow[]; meId: string; onOpen: (kind: 'roles' | 'password' | 'active', user: UserRow) => void }) {
   return (
-    <div className="overflow-x-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+    <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
       <table className="w-full text-sm">
         <thead className="text-left text-slate-500"><tr><th className="p-2">Name</th><th className="p-2">Username</th><th className="p-2">Roles</th><th className="p-2">Status</th><th className="p-2" /></tr></thead>
         <tbody>

@@ -42,7 +42,7 @@ export function Catalog({ me }: { me: Me }) {
     {error && <Notice>{error}</Notice>}
     <div className={searchRowClass}><input aria-label="Search catalog" placeholder="Search name or code" className={`${inputClass} ${searchClass}`} value={search}
       onChange={(e) => { setSearch(e.target.value); setOffset(0); }} /></div>
-    <div className="overflow-x-auto rounded-lg bg-white p-2 shadow-sm"><table className="w-full text-sm"><thead><tr>
+    <div className="overflow-x-auto rounded-xl bg-white p-2 shadow-sm ring-1 ring-slate-200/70"><table className="w-full text-sm"><thead><tr>
       <th>Code</th><th>Name</th><th>Kind</th><th>Unit</th><th>Status</th></tr></thead><tbody>{rows.map((r) => (
         <tr key={r.id} onClick={() => void open(r.id)} className={`cursor-pointer ${r.is_active ? '' : 'text-slate-400'}`}>
           <td className="whitespace-nowrap font-medium">{r.code}</td>

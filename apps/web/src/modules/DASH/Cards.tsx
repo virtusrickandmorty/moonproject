@@ -6,7 +6,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { api, type DashCards } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { peso } from '../../components/ui.tsx';
+import { CARD_TITLE, SURFACE, peso } from '../../components/ui.tsx';
 
 /** Outline icons (Heroicons, MIT). */
 const PATHS = {
@@ -40,11 +40,12 @@ function Icon({ name, className = 'size-5' }: { name: IconName; className?: stri
  * the home uses it (the owner's request, Oct 2026); `tone="danger"` is a warning card (red ring and icon tile).
  */
 export function Card({ icon, title, count, note, href, dark = false, tone, children }: { icon: IconName; title: string; count?: number; note?: string; href?: string; dark?: boolean; tone?: 'danger'; children: ReactNode }) {
-  const look = dark ? 'bg-[#2f2f2f] text-white ring-[#2f2f2f]' : tone === 'danger' ? 'bg-red-50 text-red-950 ring-2 ring-red-300' : 'bg-white ring-slate-100';
-  return <section className={`flex min-w-0 flex-col gap-4 rounded-2xl p-5 shadow-sm ring-1 ${look}`}>
+  // Our colours (the owner's request, Oct 2026): the accent blue for icon tiles and the feature card, our red for warnings.
+  const look = dark ? 'rounded-xl bg-indigo-700 text-white shadow-sm' : tone === 'danger' ? 'rounded-xl bg-red-50 text-red-950 shadow-sm ring-2 ring-[#f95f53]/60' : SURFACE;
+  return <section className={`flex min-w-0 flex-col gap-4 p-5 ${look}`}>
     <header className="flex items-center gap-3">
-      <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${dark ? 'bg-white text-[#2f2f2f]' : tone === 'danger' ? 'bg-red-600 text-white' : 'bg-[#2f2f2f] text-white'}`}><Icon name={icon} /></span>
-      <h2 className="text-base font-semibold">{title}</h2>
+      <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${dark ? 'bg-white text-indigo-700' : tone === 'danger' ? 'bg-[#f95f53] text-white' : 'bg-indigo-600 text-white'}`}><Icon name={icon} /></span>
+      <h2 className={dark ? 'text-base font-bold text-white' : CARD_TITLE}>{title}</h2>
       {count !== undefined && <span className={`rounded-md px-1.5 text-xs font-medium tabular-nums ${dark ? 'bg-white/15' : 'bg-slate-100 text-slate-600'}`}>{count}</span>}
       {note && <span className={`hidden truncate text-xs sm:inline ${dark ? 'text-white/60' : 'text-slate-500'}`}>{note}</span>}
       {href && <Link to={href} aria-label={`Open ${title.toLowerCase()}`} className={`ml-auto rounded-md px-2 text-lg leading-none ${dark ? 'text-white/70 hover:bg-white/10' : 'text-slate-500 hover:bg-slate-100'}`}>⋯</Link>}
@@ -55,9 +56,9 @@ export function Card({ icon, title, count, note, href, dark = false, tone, child
 
 export function KpiStrip({ kpis }: { kpis: DashCards['kpis'] }) {
   if (kpis.length === 0) return null;
-  return <section aria-label="Headline figures" className="grid rounded-2xl bg-white shadow-sm ring-1 ring-slate-100 sm:grid-cols-2 lg:grid-cols-4">
+  return <section aria-label="Headline figures" className={`grid sm:grid-cols-2 lg:grid-cols-4 ${SURFACE}`}>
     {kpis.map((k, i) => <Link key={k.key} to={k.href} className={`flex items-center gap-3 p-4 hover:bg-slate-50 ${i > 0 ? 'border-t border-slate-100 sm:border-t-0 lg:border-l' : ''} ${i % 2 === 1 ? 'sm:border-l' : ''}`}>
-      <span className="grid size-10 place-items-center rounded-full bg-slate-100 text-slate-700"><Icon name={KPI_ICON[k.key] ?? 'jobs'} /></span>
+      <span className="grid size-10 place-items-center rounded-full bg-indigo-50 text-indigo-700"><Icon name={KPI_ICON[k.key] ?? 'jobs'} /></span>
       <span className="min-w-0 flex-1">
         <span className="block text-xs text-slate-500">{k.label}</span>
         <span className="flex items-baseline gap-2">
@@ -73,11 +74,11 @@ export function KpiStrip({ kpis }: { kpis: DashCards['kpis'] }) {
 
 const STATUS: Record<NonNullable<DashCards['jobs']>['rows'][number]['status'], [string, string]> = {
   to_route: ['To route', 'bg-amber-100 text-amber-800'],
-  in_production: ['In production', 'bg-sky-100 text-sky-800'],
+  in_production: ['In production', 'bg-indigo-100 text-indigo-800'],
   ready: ['Ready', 'bg-emerald-100 text-emerald-800'],
   late: ['Late', 'bg-red-100 text-red-700'],
 };
-const AVATAR = ['bg-teal-600', 'bg-indigo-600', 'bg-amber-600', 'bg-rose-600', 'bg-sky-600', 'bg-emerald-600'];
+const AVATAR = ['bg-indigo-600', 'bg-teal-600', 'bg-indigo-400', 'bg-amber-600', 'bg-sky-600', 'bg-rose-500'];
 const shortDate = (date: string) => new Intl.DateTimeFormat('en-PH', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
 
 export function JobsCard({ jobs }: { jobs: NonNullable<DashCards['jobs']> }) {
@@ -135,7 +136,7 @@ export function CalendarCard({ calendar, today }: { calendar: NonNullable<DashCa
       {calendar.days.map((d) => {
         const past = d.date < today;
         const isToday = d.date === today;
-        const look = isToday ? 'bg-indigo-500 text-white font-semibold' : d.late ? 'bg-red-500/80 text-white' : d.due > 0 ? 'bg-white/30 text-white font-medium' : past ? 'bg-white/10 text-white/60' : 'ring-1 ring-white/15 text-white/40';
+        const look = isToday ? 'bg-white text-indigo-700 font-semibold' : d.late ? 'bg-[#f95f53] text-white' : d.due > 0 ? 'bg-white/30 text-white font-medium' : past ? 'bg-white/10 text-white/60' : 'ring-1 ring-white/20 text-white/50';
         return <span key={d.date} title={`${d.date}: ${d.due} due${d.late ? ' (late)' : ''}`} className={`mx-auto grid size-8 place-items-center rounded-full ${look}`}>
           {d.due > 0 ? d.due : past ? <Icon name="check" className="size-3.5" /> : isToday ? Number(d.date.slice(8)) : ''}
         </span>;
@@ -145,8 +146,9 @@ export function CalendarCard({ calendar, today }: { calendar: NonNullable<DashCa
   </Card>;
 }
 
-const BUBBLE = ['bg-amber-100 text-amber-900', 'bg-lime-200 text-lime-900', 'bg-sky-200 text-sky-900', 'bg-rose-100 text-rose-900'];
-const DOT = ['bg-amber-500', 'bg-lime-600', 'bg-sky-600', 'bg-rose-500'];
+// Not started, in production, ready, released: the same colours as the status chips of the floor table.
+const BUBBLE = ['bg-amber-100 text-amber-900', 'bg-indigo-100 text-indigo-900', 'bg-emerald-100 text-emerald-900', 'bg-slate-200 text-slate-800'];
+const DOT = ['bg-amber-500', 'bg-indigo-600', 'bg-emerald-600', 'bg-slate-500'];
 
 export function StagesCard({ stages }: { stages: NonNullable<DashCards['stages']> }) {
   const total = stages.reduce((n, s) => n + s.count, 0);
