@@ -11,6 +11,7 @@ import { showToast } from '../components/Toasts.tsx';
 import { MENU_FOLDS_KEY, applyMenuOrder, buildMenu, docPath, isHere, labelOf, openGroups, sectionsOf, subOf, type MenuGroup, type MenuItem } from './menu.ts';
 import { SearchBox } from '../modules/NAV/Search.tsx';
 import { Breadcrumbs, CrumbName, crumbsFor } from './crumbs.tsx';
+import { followRowLink } from './rowLinks.ts';
 
 function ServerDate() {
   const [date, setDate] = useState<string | null>(); // undefined while loading, null when the server is unreachable
@@ -22,6 +23,16 @@ function ServerDate() {
   }, []);
   if (date === null) return <span className="rounded bg-red-600 px-2 py-0.5 font-medium text-white">Server date unknown: cannot reach the server</span>;
   return <span title="Every document gets this date from the server">Server date: {date ? longDate(date) : '…'}</span>;
+}
+
+/** Rows that link somewhere open on a click anywhere on them, on every ERP screen (rowLinks.ts). */
+function RowLinks() {
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => { if ((e.target as Element | null)?.closest?.('main[data-erp]')) followRowLink(e); };
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, []);
+  return null;
 }
 
 /** Only for the greeting; documents never take a date or time from the browser. */
@@ -387,6 +398,7 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
         <main data-erp className="min-w-0 flex-1 px-3 pb-10 pt-2 sm:px-4 md:px-6">
           <Breadcrumbs crumbs={crumbsFor(path, menu, crumbName)} icon={<Icon name="Overview" className="size-4" />} />
           <CrumbName.Provider value={setCrumbName}>{children}</CrumbName.Provider>
+          <RowLinks />
         </main>
       </div>
     </div>
