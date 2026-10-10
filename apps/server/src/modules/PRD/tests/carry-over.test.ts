@@ -68,12 +68,15 @@ it('keeps the production of the items an edit keeps, warns about work left out o
   const check = await encoder.post(`/api/prd/jobs/${jo}/carry-check`, { lines: next });
   expect(check.statusCode, check.body).toBe(200);
   expect(check.json().warnings).toEqual([
-    "Item 1: Ben Cruz's size from M to L after Sewing. The progress is kept: send it back for rework if it needs redoing.",
-    'Shorts is left out, but 2 pieces have gone through Sewing. They stay on record as extras.',
+    { kind: 'changed', message: "Item 1: Ben Cruz's size from M to L after Sewing. The progress is kept: send it back for rework if it needs redoing." },
+    { kind: 'extra', message: 'Shorts is left out, but 2 pieces have gone through Sewing. They stay on record as extras.' },
   ]);
 
   const jo2 = await edit(jo, next);
   expect(currentStage(env.db, jo2)).toBe('in_production');
+  // The extras confirmed on the form are kept with the edit (audit).
+  const audit = JSON.parse(env.db.prepare(`SELECT data FROM audit_log WHERE action = 'prd.carry_over' AND entity_id = ?`).pluck().get(jo2) as string);
+  expect(audit.warnings.map((x: { kind: string }) => x.kind)).toEqual(['changed', 'extra']);
   // Line 1 goes on where it was: 2 sewn (Ana and Ben), forwarded to Packing; the cap waits for its route.
   expect(await stepOf(jo2, 1, SEWING)).toMatchObject({ status: 'in_progress', pieces: 2 });
   expect((await stepOf(jo2, 1, PACKING)).forwardedWearers).toEqual([1, 2]);
