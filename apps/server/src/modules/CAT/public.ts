@@ -43,6 +43,21 @@ export function matchCatalogItem(db: Db, text: string): { id: string; name: stri
   return best ? best.item : null;
 }
 
+/**
+ * The price list as a customer may see it (the website's AI assistant, the owner's request, Oct 2026): active items with
+ * their price tiers in force on a date (from how many pieces, at how much each). Names and prices only: no cost, no garment
+ * type or other shop detail.
+ */
+export function publicPriceList(db: Db, businessDate: string): { id: string; name: string; unit: 'pc' | 'set'; kind: 'made to order' | 'ready-made' | 'service'; tiers: { fromQty: number; unitPriceCents: number }[] }[] {
+  const items = db.prepare('SELECT id, name, unit, class FROM cat_items WHERE is_active = 1 ORDER BY name').all() as { id: string; name: string; unit: 'pc' | 'set'; class: string }[];
+  const tiers = db.prepare(`SELECT min_qty AS fromQty, unit_price_cents AS unitPriceCents FROM cat_prices p
+    WHERE item_id = ? AND effective_from = (SELECT MAX(effective_from) FROM cat_prices x WHERE x.item_id = p.item_id AND x.min_qty = p.min_qty AND x.effective_from <= ?)
+    ORDER BY min_qty`);
+  const kind = (c: string) => (c === 'made_to_order_garment' ? 'made to order' : c === 'ready_made_item' ? 'ready-made' : 'service') as 'made to order' | 'ready-made' | 'service';
+  return items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, kind: kind(i.class), tiers: tiers.all(i.id, businessDate) as { fromQty: number; unitPriceCents: number }[] }))
+    .filter((i) => i.tiers.length > 0);
+}
+
 /** The newest eligible effective date wins; within that date the largest eligible tier wins. */
 export function lookupCatalogPrice(db: Db, itemId: string, qty: number, businessDate: string): CatalogPrice | null {
   if (!Number.isSafeInteger(qty) || qty < 1 || !z.iso.date().safeParse(businessDate).success) {
