@@ -106,6 +106,13 @@ export function repeatedAssignments(db: Db, assignmentIds: string[]): { id: stri
  * Piece earnings per day of one worker, paid or not (work and rework of recorded entries; corrections are left out,
  * since they fix an earlier day). PAY averages them for a piece worker's regular-holiday pay (F1).
  */
+/** Pieces recorded each work day (work and rework, net of corrections) and how many workers recorded them: the home's activity card. */
+export function piecesByDay(db: Db, from: string, to: string): { date: string; pieces: number; workers: number }[] {
+  return db.prepare(`SELECT a.work_date AS date, SUM(a.pieces) AS pieces, COUNT(DISTINCT a.employee_id) AS workers FROM prd_assignments a
+    JOIN documents d ON d.id = a.document_id WHERE d.status = 'posted' AND a.work_date BETWEEN ? AND ? GROUP BY a.work_date ORDER BY a.work_date`)
+    .all(from, to) as { date: string; pieces: number; workers: number }[];
+}
+
 export function pieceEarningsByDay(db: Db, employeeId: string, from: string, to: string): { date: string; amountCents: number }[] {
   return db
     .prepare(

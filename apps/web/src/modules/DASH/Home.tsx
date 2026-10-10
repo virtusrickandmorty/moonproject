@@ -3,6 +3,7 @@ import { api, type DashHomeData, type DashItem, type DashNotification, type Dash
 import { Link } from '../../router.tsx';
 import { Notice, Panel, peso } from '../../components/ui.tsx';
 import { nightlyLine } from '../AUD/nightly.ts';
+import { HomeCards } from './Cards.tsx';
 
 function Item({ item, action, muted = false }: { item: DashItem; action?: React.ReactNode; muted?: boolean }) {
   const title = item.href ? <Link to={item.href} className="font-medium text-indigo-700 hover:underline">{item.label}</Link> : <span className="font-medium">{item.label}</span>;
@@ -238,7 +239,8 @@ function Widgets({ widgets }: { widgets: DashWidget[] }) {
 export function HomeContent({ home, actions }: { home: DashHomeData; actions?: React.ReactNode }) {
   const work = home.widgets.filter((w) => ATTENTION_KEYS.includes(w.key) || w.tone === 'danger');
   return <div className="space-y-4">
-    <Notifications widgets={home.widgets}>{(home.role === 'owner' || home.role === 'accountant') && <NightlyLine />}</Notifications>
+    {/* The cards first (the owner's request, Oct 2026); Needs attention is the last card of their bottom row. */}
+    <HomeCards attention={<Notifications widgets={home.widgets}>{(home.role === 'owner' || home.role === 'accountant') && <NightlyLine />}</Notifications>} />
     {actions}
     {work.length > 0 && <details><summary className="cursor-pointer text-sm font-medium text-indigo-700">More role details</summary><Widgets widgets={work} /></details>}
     <Widgets widgets={home.widgets.filter((w) => !work.includes(w))} />
