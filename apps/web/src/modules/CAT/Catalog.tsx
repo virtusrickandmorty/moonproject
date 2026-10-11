@@ -7,8 +7,8 @@
  */
 import { useLiveChange } from '../../live.ts';
 import { useCallback, useEffect, useState } from 'react';
-import { api, type Me, type PieceRate, type PrdStep } from '../../api.ts';
-import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
+import { api, type Me, type PieceRate, type PrdStep, type RateTable } from '../../api.ts';
+import { Loading, Button, Dialog, Field, Notice, Panel, ReasonDialog, inputClass, peso, useAction, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
 import { cents } from '../COL/money.ts';
 import { CLASS_LABELS as classes, PAGE_SIZE, blankItem, catalogCalls, moneyCents, typeLocked, valuesOf, type Detail, type Item, type ItemValues } from './catalog.ts';
 
@@ -51,7 +51,7 @@ export function Catalog({ me }: { me: Me }) {
       {rows.length === 0 && <p className="py-3 text-sm text-slate-500">No items found.</p>}</div>
     <div className="flex gap-2"><Button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>Previous</Button>
       <Button disabled={rows.length < PAGE_SIZE} onClick={() => setOffset(offset + PAGE_SIZE)}>Next</Button></div>
-    {me.permissions.includes('rate.view') && <UnmatchedRates />}
+    {me.permissions.includes('rate.view') && <UnmatchedRates me={me} onItem={open} />}
     {selected && !editing && <Dialog wide title={`${selected.name} · ${selected.code}`} onClose={() => setSelected(null)}>
       <ItemDetail me={me} data={selected} onEdit={() => setEditing(selected)} onRefresh={async () => { await load(); await open(selected.id); }} />
     </Dialog>}
@@ -183,22 +183,48 @@ function LabourRates({ me, item }: { me: Me; item: Detail }) {
   </Panel>;
 }
 
-/** Piece rates in force for a garment type no price list item goes by (from before the price list held them): kept for the job orders that use them. */
-function UnmatchedRates() {
-  const [rows, setRows] = useState<PieceRate[] | null>(null);
+/**
+ * Piece rates in force for a garment type no price list item goes by (from before the price list held them). The owner
+ * clears them (Oct 2026): one a job order item is made as becomes a price list item (its rates then show on the item);
+ * an unused one is switched off. With none left, the section is gone.
+ */
+function UnmatchedRates({ me, onItem }: { me: Me; onItem: (id: string) => Promise<void> }) {
+  const [rows, setRows] = useState<RateTable['unmatched'] | null>(null);
   const [steps, setSteps] = useState<PrdStep[]>([]);
-  useEffect(() => { api.rates().then((t) => setRows(t.unmatched ?? []), () => setRows([])); api.prdCatalogue().then((c) => setSteps(c.steps), () => undefined); }, []);
+  const [off, setOff] = useState<string | null>(null);
+  const a = useAction();
+  const load = useCallback(() => api.rates().then((t) => setRows(t.unmatched ?? []), () => setRows([])), []);
+  useEffect(() => { void load(); api.prdCatalogue().then((c) => setSteps(c.steps), () => undefined); }, [load]);
   if (!rows || rows.length === 0) return null;
   const stepName = (code: string) => steps.find((s) => s.code === code)?.name ?? code;
-  const sorted = [...rows].sort((a, b) => a.garmentType.localeCompare(b.garmentType) || a.stepCode.localeCompare(b.stepCode) || a.complexity.localeCompare(b.complexity));
-  return <details className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70">
-    <summary className="cursor-pointer text-sm font-semibold text-slate-800">Piece rates with no price list item ({new Set(rows.map((r) => r.garmentType.toLowerCase())).size} garment types)</summary>
-    <p className="pt-2 text-sm text-slate-600">These rates are from before the price list held piece rates. Job order items made as these garment types are still paid at them. To change one, add a price list item named like the garment type (its rates then show on the item), or ask the accountant to replace it.</p>
-    <div className="overflow-x-auto pt-2"><table className="w-full text-sm"><thead><tr><th>Garment type</th><th>Step</th><th>Difficulty</th><th className="text-right">Rate</th><th>From</th></tr></thead><tbody>
-      {sorted.map((r) => <tr key={r.id}><td>{r.garmentType}</td><td>{stepName(r.stepCode)}{(r.part ?? 'whole') !== 'whole' && ` · ${PART[r.part!]}`}</td><td>{LEVEL[r.complexity] ?? r.complexity}</td>
-        <td className="text-right tabular-nums">{peso(r.rateCents)}</td><td className="whitespace-nowrap">{showDate(r.effectiveFrom)}</td></tr>)}
-    </tbody></table></div>
-  </details>;
+  const types = [...new Map(rows.map((r) => [r.garmentType.toLowerCase(), r.garmentType])).values()].sort((x, y) => x.localeCompare(y));
+  const calls = catalogCalls(me);
+  const makeItem = (garmentType: string) => a.run(async () => {
+    const item = await calls.create({ code: '', name: garmentType, class: 'made_to_order_garment', garmentType, unit: 'pc', setComponents: 1 });
+    await load();
+    await onItem(item.id);
+  });
+  return <section className="space-y-3 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70">
+    <h2 className="text-sm font-semibold text-slate-800">Piece rates with no price list item ({types.length} garment {types.length === 1 ? 'type' : 'types'})</h2>
+    <p className="text-sm text-slate-600">Left from before the price list held piece rates. <b>Make it a price list item</b> to keep a garment type that job orders are made as: its rates move onto the item. <b>Switch off</b> one nothing uses. When none is left, this section is gone.</p>
+    {a.error && <Notice>{a.error}</Notice>}
+    <ul className="divide-y divide-slate-100">
+      {types.map((g) => {
+        const mine = rows.filter((r) => r.garmentType.toLowerCase() === g.toLowerCase());
+        const used = mine[0]?.jobItems ?? 0;
+        return <li key={g} className="flex flex-wrap items-center gap-3 py-2 text-sm">
+          <span className="min-w-40 font-medium">{g}</span>
+          <span className="flex-1 text-slate-600">{mine.map((r) => `${stepName(r.stepCode)}${r.complexity !== 'standard' ? ` (${LEVEL[r.complexity] ?? r.complexity})` : ''} ${peso(r.rateCents)}`).join(' · ')}</span>
+          <span className={`rounded-full px-2 py-0.5 text-xs ${used > 0 ? 'bg-amber-50 text-amber-800' : 'bg-slate-100 text-slate-600'}`}>{used > 0 ? `${used} job order ${used === 1 ? 'item' : 'items'} made as it` : 'Not used'}</span>
+          {me.permissions.includes('cat.manage') && <Button disabled={a.busy} onClick={() => void makeItem(g)}>Make it a price list item</Button>}
+          {me.permissions.includes('rate.manage') && <Button disabled={a.busy || used > 0} title={used > 0 ? 'Job order items are made as it: make it a price list item instead' : undefined} onClick={() => setOff(g)}>Switch off</Button>}
+        </li>;
+      })}
+    </ul>
+    {off && <ReasonDialog title={`Switch off ${off}?`} confirmLabel="Switch off" danger onClose={() => setOff(null)}
+      explain={`Its piece rates stop applying to new pieces. Pieces already recorded keep the rate they were paid at, and it can be switched on again later.`}
+      onConfirm={async (reason) => { await api.switchGarmentType({ garmentType: off, on: false, reason }); setOff(null); await load(); }} />}
+  </section>;
 }
 
 function NewRate({ garmentType, itemName, parts, asOf, steps, onSaved }: { garmentType: string; itemName: string; parts: readonly ('whole' | 'upper' | 'lower')[]; asOf: string; steps: PrdStep[]; onSaved: () => Promise<unknown> }) {
