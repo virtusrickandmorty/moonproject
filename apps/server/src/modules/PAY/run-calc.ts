@@ -20,7 +20,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { attendanceBetween, employeesInGroup, holidaysBetween, payProfileAt, silOf, statutoryOffReason, type AttendanceDay, type Employee, type Holiday, type PayGroup, type PayProfile } from '../EMP/public.ts';
 import { pieceEarningsByDay, repeatedAssignments, stepById, unpaidAssignments } from '../PRD/public.ts';
 import { jobOrderRef } from '../JO/public.ts';
-import { advanceSchedule } from '../CA/public.ts';
+import { advanceSchedule, openCharges } from '../CA/public.ts';
 import { KIND_LABEL, govLoan, loanInMonth, loansOf, runsIn, type Agency, type LoanKind } from './loans.ts';
 import { hdmfMonthly, hdmfRateAt, phicDailyBasis, phicMonthly, phicRateAt, rulesAt, sssMonthly, sssRateAt, withholding, wtaxTableAt, type PayRules, type TaxFrequency } from './statutory.ts';
 import { addLine, figures, yearParts } from './year-end.ts';
@@ -39,9 +39,13 @@ export interface RunEmployee {
   grossCents: number; pieceCents: number; taxableCents: number; sssMscCents: number; sssEeCents: number; sssErCents: number; sssEcCents: number;
   phicBasisCents: number; phicEeCents: number; phicErCents: number; hdmfEeCents: number; hdmfErCents: number; eeShortCents: number;
   wtaxCents: number; loanCents: number; loans: RunLoan[]; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
+  /** Damage or loss charges taken back on this run (CA ca_charges), after the cash advance, at most 20% of the gross pay. */
+  chargeCents: number; charges: RunCharge[];
   /** Tax withheld earlier in the year and refunded on this run (the year-end adjustment's excess); net pay includes it. */
   wtaxRefundCents: number; yearEnd?: YearEnd; final?: FinalPay;
 }
+/** One damage or loss charge taken back on a run, and what is left of it after. */
+export interface RunCharge { chargeId: string; number: string; what: string; amountCents: number; leftAfterCents: number }
 /** An employee separated within the run's period: this run is their final pay. What they still owe after it. */
 export interface FinalPay { separatedOn: string; caLeftCents: number; loansLeftCents: number }
 /**
@@ -572,6 +576,26 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
     const ca = Math.max(0, Math.min(wanted, final ? left : left - endRules.minNetPayCents));
     if (ca < wanted && !final) notes.push({ code: 'CA_REDUCED', level: 'warning', message: `${e.name}: the cash-advance deduction is ${formatPeso(ca)} instead of ${formatPeso(wanted)}, so net pay stays at least ${formatPeso(endRules.minNetPayCents)}.` });
     left -= ca;
+    // Damage or loss charges (the owner's request, Oct 2026; Labor Code Art. 113-114): after the cash advance, an
+    // instalment each (all of it on a final pay), never more than 20% of the gross pay of the run nor below the minimum
+    // net pay; the rest waits for the next payroll. Oldest charge first.
+    const owing = openCharges(db, e.id, q.payDate);
+    const chargeWanted = owing.reduce((s, c) => s + (final ? c.owedCents : Math.min(c.installmentCents, c.owedCents)), 0);
+    const chargeCap = Math.floor((Math.max(0, gross) * 2_000) / 10_000);
+    let chargeLeft = Math.max(0, Math.min(chargeWanted, chargeCap, final ? left : left - endRules.minNetPayCents));
+    const charges: RunCharge[] = [];
+    for (const c of owing) {
+      const take = Math.min(chargeLeft, final ? c.owedCents : Math.min(c.installmentCents, c.owedCents));
+      if (take <= 0) continue;
+      charges.push({ chargeId: c.id, number: c.number, what: c.what, amountCents: take, leftAfterCents: c.owedCents - take });
+      chargeLeft -= take;
+    }
+    const chargeCents = charges.reduce((s, c) => s + c.amountCents, 0);
+    if (chargeCents < chargeWanted) {
+      const why = chargeCents >= chargeCap ? `at most 20% of the pay (${formatPeso(chargeCap)})` : 'what is left of the pay';
+      notes.push({ code: 'CHARGE_REDUCED', level: 'warning', message: `${e.name}: ${formatPeso(chargeCents)} of damage charges is taken back instead of ${formatPeso(chargeWanted)}, ${why}; the rest waits for the next payroll.` });
+    }
+    left -= chargeCents;
     let finalPay: FinalPay | undefined;
     if (final) {
       const caLeft = Math.max(0, plan.outstandingCents - ca);
@@ -615,7 +639,7 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
       phicBasisCents: phicDue.basisCents, phicEeCents: ee.phic, phicErCents: clampNote('PhilHealth (employer)', phicDue.er - so.phicEr),
       hdmfEeCents: ee.hdmf, hdmfErCents: clampNote('Pag-IBIG (employer)', hdmfDue.er - so.hdmfEr), eeShortCents: short,
       wtaxCents: wtax, loanCents, loans, caCents: ca, caOverrideCents: override ?? null, thirteenthCents: endRules.accrue13th ? Math.max(0, divRoundHalfAway(base13, 12)) : 0,
-      netCents: gross - ee.sss - ee.phic - ee.hdmf - wtax - loanCents - ca + refund, wtaxRefundCents: refund, ...(yearEnd ? { yearEnd } : {}), ...(finalPay ? { final: finalPay } : {}),
+      netCents: gross - ee.sss - ee.phic - ee.hdmf - wtax - loanCents - ca - chargeCents + refund, chargeCents, charges, wtaxRefundCents: refund, ...(yearEnd ? { yearEnd } : {}), ...(finalPay ? { final: finalPay } : {}),
     });
   }
   if (idle.length) notes.push({ code: 'NOTHING_TO_PAY', level: 'warning', message: `Nothing to pay this week, so not on this run: ${idle.join(', ')}.` });

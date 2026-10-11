@@ -107,6 +107,7 @@ export function deductionsOf(e: PayEmployee): [string, number][] {
   const rows: [string, number][] = [
     ['SSS employee share', e.sssEeCents], ['PhilHealth employee share', e.phicEeCents], ['Pag-IBIG employee share', e.hdmfEeCents], [e.yearEnd ? 'Withholding tax (year-end adjustment)' : 'Withholding tax', e.wtaxCents],
     ...(e.loans ?? []).map((l): [string, number] => [loanLabel(l), l.amountCents]), ['Cash advance', e.caCents],
+    ...(e.charges ?? []).map((c): [string, number] => [`Damage charge ${c.number} (${c.what})`, c.amountCents]),
   ];
   return rows.filter(([, c]) => c !== 0);
 }

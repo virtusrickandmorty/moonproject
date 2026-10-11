@@ -103,3 +103,20 @@ export function advanceSchedule(
   const planned = open.reduce((s, a) => s + a.installmentCents, 0);
   return { outstandingCents: outstanding, installmentCents: Math.min(planned, Math.max(0, outstanding)), open, settlements: settlements(db, employeeId, asOf) };
 }
+
+/** A damage or loss charge still owed by an employee (CA ca_charges): what is left (GL 1290, by the charge) and its instalment. */
+export interface OpenCharge { id: string; number: string; what: string; installmentCents: number; owedCents: number }
+
+/**
+ * An employee's recorded damage or loss charges with something still owed on a business date, oldest first: what the
+ * next payroll takes back (PAY), an instalment each, at most 20% of the pay.
+ */
+export function openCharges(db: Db, employeeId: string, asOf?: string): OpenCharge[] {
+  const account = resolveAccount(db, { role: 'OTHER_RECEIVABLES' }).id;
+  const rows = db.prepare(`SELECT c.document_id AS id, d.number, c.what, c.installment_cents AS installmentCents FROM ca_charges c JOIN documents d ON d.id = c.document_id
+      WHERE c.employee_id = @employeeId AND d.status = 'posted' AND (@asOf IS NULL OR d.business_date <= @asOf) ORDER BY d.posted_at`)
+    .all({ employeeId, asOf: asOf ?? null }) as Omit<OpenCharge, 'owedCents'>[];
+  return rows
+    .map((c) => ({ ...c, owedCents: accountBalance(db, account, { refDocId: c.id, ...(asOf ? { asOf } : {}) }) }))
+    .filter((c) => c.owedCents > 0);
+}

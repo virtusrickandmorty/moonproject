@@ -61,6 +61,7 @@ export const DOC_TITLES = [
   'Cash Advance',
   'Cash Advance Repayment',
   'Cash Advance Write-off',
+  'Damage Charge', // CA: an employee charged for damage or loss, taken back through payroll (the owner's request, Oct 2026)
   'Remittance',
   'VAT Close',
   'VAT on Uncollected Receivable',
