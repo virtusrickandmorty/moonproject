@@ -465,7 +465,11 @@ export interface PayThirteenthDoc extends PayThirteenthInput { employees: PayThi
 export interface ThirteenthYears { years: number[]; recorded: { payGroup: PayGroup; year: number; id: string; number: string }[] }
 /** A recorded payroll run, or 13th-month pay (its period is the year), with net pay still to release. */
 export interface RunToRelease { id: string; number: string; kind: 'run' | 'thirteenth'; payGroup: PayGroup; periodStart: string; periodEnd: string; dueCents: number }
-export interface ReleaseRow { employeeId: string; name: string; netCents: number; releasedBy: string | null }
+export interface ReleaseRow {
+  employeeId: string; name: string; netCents: number; releasedBy: string | null;
+  /** How the employee is paid, and their bank or GCash QR picture's version (null: none), for the release form. */
+  payoutMethod: 'cash' | 'bank' | 'gcash'; payoutAccount: string | null; payoutQrVersion: number | null;
+}
 export interface CaStatus {
   employeeId: string; name: string; active: boolean; outstandingCents: number; installmentCents: number; open: { documentId: string; number: string; amountCents: number; installmentCents: number; openCents: number }[];
   /** Repayments (CAR-) and write-offs (CAW-) still recorded, oldest first, with what was owed right after each. */
@@ -1168,6 +1172,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     runsToRelease: () => call<RunToRelease[]>('GET', '/api/pay/runs/to-release'),
     thirteenthYears: () => call<ThirteenthYears>('GET', '/api/pay/thirteenth/years'),
     releaseStatus: (runId: string) => call<ReleaseRow[]>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/release-status`),
+    releaseQrUrl: (runId: string, employeeId: string, version: number) => `/api/pay/runs/${encodeURIComponent(runId)}/payout-qr/${encodeURIComponent(employeeId)}?v=${version}`,
     govLoans: (q: { employeeId?: string; status?: 'open' | 'all' } = {}) => call<GovLoan[]>('GET', `/api/pay/loans?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][])}`),
     addGovLoan: (body: GovLoanInput) => call<GovLoan>('POST', '/api/pay/loans', body),
     updateGovLoan: (id: string, v: number, body: Partial<Omit<GovLoanInput, 'employeeId' | 'kind'>>) => call<GovLoan>('PUT', `/api/pay/loans/${encodeURIComponent(id)}`, body, version(v)),
