@@ -10,7 +10,7 @@
  * a rework row lists the wearers done on the step (those sent back first). ?line=<n> picks the item opened from the board;
  * ?rework=1 starts with a rework row.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { api, ApiError, type DocHeader, type DocTypeInfo, type Preview, type PrdJob, type Worker } from '../../api.ts';
 import { navigate } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, showDate } from '../../components/ui.tsx';
@@ -23,7 +23,14 @@ import { emptyRow, rowsToInput, type EntryRow } from './board.ts';
 type Stored = { jobOrderId: string; stepId: number; workDate?: string; overCapReason?: string; rows: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string; wearers?: number[]; part?: 'upper' | 'lower' }[] };
 const cell = `${inputClass} py-1`;
 
-export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
+/**
+ * `fixed`: opened from a step on the production board (the owner's request, Oct 2026): the job order, the step and the
+ * item are the ones clicked (no pickers for them), `top` is that step's card shown above the form, and recording or Back
+ * returns to the board's item window instead of leaving it.
+ */
+export interface FixedEntry { jobOrderId: string; stepId: number; lineNo: number; rework: boolean; top?: ReactNode; onRecorded: () => void; onBack: () => void }
+
+export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: FormMode; fixed?: FixedEntry }) {
   const [jobs, setJobs] = useState<{ id: string; label: string }[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [jo, setJo] = useState('');
@@ -55,6 +62,12 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
         if (input.workDate) setWorkDate(input.workDate);
         setRows(input.rows.map((r) => ({ lineNo: String(r.lineNo), employeeId: r.employeeId, pieces: String(r.pieces), rework: !!r.rework, rate: r.rateCents === undefined ? '' : formatPesos(r.rateCents), rateReason: r.rateReason ?? '', repeatReason: r.repeatReason ?? '', ...(r.wearers ? { wearers: r.wearers } : {}), ...(r.part ? { part: r.part } : {}) })));
       }, fail);
+      return;
+    }
+    if (fixed) {
+      setJo(fixed.jobOrderId);
+      setStepId(fixed.stepId);
+      setRows([{ ...emptyRow(String(fixed.lineNo)), rework: fixed.rework }]);
       return;
     }
     const q = new URLSearchParams(location.search);
@@ -119,6 +132,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
   const record = async (key: string) => {
     try {
       const r = original ? await api.reissue(type.key, original.id, input, confirm!.totalCents, editReason, key) : await api.post(type.key, input, confirm!.totalCents, key);
+      if (fixed) { setConfirm(null); fixed.onRecorded(); return; }
       navigate(docPath(type.key, `/${r.id}?recorded=1`));
     } catch (e) {
       if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(own(await api.preview(type.key, input)));
@@ -131,11 +145,17 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
   return (
     <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className="space-y-4">
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold">{original ? `Edit ${original.number}` : 'Record pieces'}</h1>
+        {!fixed && <h1 className="text-2xl font-semibold">{original ? `Edit ${original.number}` : 'Record pieces'}</h1>}
+        {fixed?.top}
         {original && <Notice tone="info">When you record, {original.number} is cancelled and the replacement gets a new number. Reason: {editReason}</Notice>}
         {error && <Notice>{error}</Notice>}
         {workers.length === 0 && <Notice tone="warning">No workers are on file yet. Employees come with the Employees screen (EMP).</Notice>}
-        <Panel title="Job order and step">
+        {fixed ? (
+          // Opened from a step on the board: that job order and step only; the day is all there is to pick.
+          <Field label="Day the pieces were done" hint="Today unless the sheet is late (up to 31 days back).">
+            <input type="date" aria-label="Work date" className={`${inputClass} max-w-xs`} value={workDate} max={manilaDate(new Date())} onChange={(e) => setWorkDate(e.target.value)} />
+          </Field>
+        ) : <Panel title="Job order and step">
           <select aria-label="Job order" className={inputClass} value={jo} onChange={(e) => (setJo(e.target.value), setStepId(null), setRows([emptyRow()]))}>
             <option value="">Pick the job order…</option>
             {jobs.map((j) => <option key={j.id} value={j.id}>{j.label}</option>)}
@@ -151,7 +171,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
             ))}
             {job && steps.length === 0 && <p className="text-sm text-slate-500">No step is open for pieces on {job.jobOrder.number}. Set up its route on the board.</p>}
           </div>
-        </Panel>
+        </Panel>}
         {stepId !== null && job && (
           <Panel title="Who did how many pieces">
             <div className="space-y-3">
@@ -304,7 +324,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
       </Panel>
       <div className="flex gap-2">
         <Button tone="primary" disabled={!type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
-        <Button onClick={() => history.back()}>Back</Button>
+        <Button onClick={() => (fixed ? fixed.onBack() : history.back())}>Back</Button>
       </div>
       {confirm && <RecordDialog hideTotal type={type} preview={confirm} original={original} reason={editReason} onRecord={record} onClose={() => setConfirm(null)} />}
     </form>

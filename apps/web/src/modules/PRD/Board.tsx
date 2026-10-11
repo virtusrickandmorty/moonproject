@@ -150,7 +150,7 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
           );
         })}
       </div>
-      {card && <LinePanel card={card} cat={cat} can={can} onChanged={load} onClose={() => setOpen(null)} />}
+      {card && <LinePanel card={card} cat={cat} can={can} entryType={entryType} onChanged={load} onClose={() => setOpen(null)} />}
       {query.has('record') && entryType && (
         <Dialog title="Record pieces" size="full" hideTitle onClose={() => navigate('/prd/board', { replace: true })}>
           <EntryForm type={entryType} mode={{ kind: 'new' }} />
@@ -186,8 +186,11 @@ export function PartRows({ parts, qty, done, where, compact = false }: { parts: 
   );
 }
 
-function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; cat: PrdCatalogue; can: { progress: boolean; assign: boolean }; onChanged: () => Promise<unknown>; onClose: () => void }) {
+function LinePanel({ card, cat, can, entryType, onChanged, onClose }: { card: BoardCard; cat: PrdCatalogue; can: { progress: boolean; assign: boolean }; entryType?: DocTypeInfo | undefined; onChanged: () => Promise<unknown>; onClose: () => void }) {
   const [editing, setEditing] = useState(card.steps === null);
+  // Record pieces (or rework) opened from a step (the owner's request, Oct 2026): the form opens here, for that step only,
+  // under the step's card, and comes back to the item window when recorded.
+  const [recording, setRecording] = useState<{ stepId: number; rework: boolean } | null>(null);
   const [reopen, setReopen] = useState<number | null>(null);
   const [sendBack, setSendBack] = useState<number | null>(null); // the step where the rework was found
   // Rework is sent back from any step that has received pieces, once the first step has some (they start again there).
@@ -196,18 +199,12 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
   const a = useAction();
   const name = (id: number) => cat.steps.find((s) => s.id === id)?.name ?? '?';
   const step = (id: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) => api.prdStep(card.jobOrderId, card.lineNo, id, action, reason).then(onChanged);
-  return (
-    <Dialog wide title={`${card.number} · line ${card.lineNo}: ${card.description}`} onClose={onClose}>
-      <p className="text-sm text-slate-600">{card.customerName} · {card.qty} {card.isSet ? 'sets (upper and lower)' : 'pcs'} · due {showDate(card.dueDate)}</p>
-      {editing ? (
-        <SetupForm card={card} cat={cat} onSaved={() => onChanged().then(() => setEditing(false))} onCancel={card.steps ? () => setEditing(false) : onClose} disabled={!can.progress} />
-      ) : (
-        <>
-          <ol className="space-y-2">
-            {card.steps!.map((s, i) => {
-              const closed = s.status === 'completed' || s.status === 'not_needed';
-              const flow = stepFlow(card.steps!, i, card.qty, name);
-              return (
+  const open = (stepId: number, rework: boolean) => (entryType ? setRecording({ stepId, rework }) : navigate(docPath('prd.entry', `/new?jo=${card.jobOrderId}&step=${stepId}&line=${card.lineNo}${rework ? '&rework=1' : ''}`)));
+  /** One step's card: progress, parts, what came in and went on, rework, and its buttons (the record ones only in the list). */
+  const stepCard = (s: NonNullable<BoardCard['steps']>[number], i: number, withRecord: boolean) => {
+    const closed = s.status === 'completed' || s.status === 'not_needed';
+    const flow = stepFlow(card.steps!, i, card.qty, name);
+    return (
                 <li key={s.stepId} className="space-y-2 rounded-md p-3 ring-1 ring-slate-200">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="min-w-28 font-medium">{name(s.stepId)}</span>
@@ -234,8 +231,8 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
                     </p>
                   )}
                   <div className="flex flex-wrap items-center gap-2">
-                    {can.assign && !closed && <Link to={docPath('prd.entry', `/new?jo=${card.jobOrderId}&step=${s.stepId}&line=${card.lineNo}`)} className="text-sm text-indigo-700 underline">Record pieces</Link>}
-                    {can.assign && (s.reworkOpen ?? 0) > 0 && <Link to={docPath('prd.entry', `/new?jo=${card.jobOrderId}&step=${s.stepId}&line=${card.lineNo}&rework=1`)} className="text-sm text-amber-800 underline">Record rework</Link>}
+                    {withRecord && can.assign && !closed && <Button tone="primary" onClick={() => open(s.stepId, false)}>Record pieces</Button>}
+                    {withRecord && can.assign && (s.reworkOpen ?? 0) > 0 && <Button onClick={() => open(s.stepId, true)}>Record rework</Button>}
                     <span className="flex-1" />
                     {can.progress && firstHas && s.status !== 'not_needed' && (s.pieces > 0 || s.receivedPieces > 0 || !!s.parts) && <Button onClick={() => setSendBack(s.stepId)}>Send back for rework</Button>}
                     {can.progress && s.status === 'pending' && <Button disabled={a.busy} onClick={() => a.run(() => step(s.stepId, 'not-needed'))}>Not needed</Button>}
@@ -244,8 +241,32 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
                   {/* No Complete button (the owner's decision, Oct 2026): a step completes on its own once every piece is recorded. */}
                   {flow.shortWords && <p className="text-xs text-amber-800">{flow.shortWords} It completes on its own.</p>}
                 </li>
-              );
-            })}
+    );
+  };
+  const recordingAt = recording && card.steps ? card.steps.findIndex((x) => x.stepId === recording.stepId) : -1;
+  if (recording && entryType && recordingAt >= 0) {
+    return (
+      <Dialog wide title={`${recording.rework ? 'Record rework' : 'Record pieces'} · ${name(recording.stepId)} · ${card.number} line ${card.lineNo}`} onClose={onClose}>
+        <EntryForm type={entryType} mode={{ kind: 'new' }} fixed={{
+          jobOrderId: card.jobOrderId, stepId: recording.stepId, lineNo: card.lineNo, rework: recording.rework,
+          top: <ol className="space-y-2">{stepCard(card.steps![recordingAt]!, recordingAt, false)}</ol>,
+          onRecorded: () => void onChanged().then(() => setRecording(null)),
+          onBack: () => setRecording(null),
+        }} />
+        {sendBack !== null && first && <SendBackDialog card={card} stepId={first.stepId} stepName={name(first.stepId)} foundAt={sendBack} foundName={name(sendBack)}
+          onDone={() => onChanged().then(() => setSendBack(null))} onClose={() => setSendBack(null)} />}
+      </Dialog>
+    );
+  }
+  return (
+    <Dialog wide title={`${card.number} · line ${card.lineNo}: ${card.description}`} onClose={onClose}>
+      <p className="text-sm text-slate-600">{card.customerName} · {card.qty} {card.isSet ? 'sets (upper and lower)' : 'pcs'} · due {showDate(card.dueDate)}</p>
+      {editing ? (
+        <SetupForm card={card} cat={cat} onSaved={() => onChanged().then(() => setEditing(false))} onCancel={card.steps ? () => setEditing(false) : onClose} disabled={!can.progress} />
+      ) : (
+        <>
+          <ol className="space-y-2">
+            {card.steps!.map((s, i) => stepCard(s, i, true))}
           </ol>
           {a.error && <Notice>{a.error}</Notice>}
           <div className="flex justify-between gap-2">
