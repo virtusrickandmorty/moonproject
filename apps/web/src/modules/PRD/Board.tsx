@@ -120,6 +120,7 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
                   <span className="flex items-center gap-2">
                     <span className="font-semibold text-slate-900">{c.number}</span><span className="text-xs text-slate-400">item {c.lineNo}</span>
                     <span className="flex-1" />
+                    {c.isSet && <span className="rounded px-1.5 text-[10px] font-bold uppercase tracking-wide text-indigo-700 ring-1 ring-indigo-200" title="Made as an upper and a lower part">Set</span>}
                     {c.priority === 'rush' && <span className="rounded px-1.5 text-[10px] font-bold uppercase tracking-wide text-red-600 ring-1 ring-red-200">Rush</span>}
                   </span>
                   <span className="flex items-center gap-2">
@@ -128,10 +129,11 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
                   </span>
                   <span className="block truncate text-slate-900">{c.description} <span className="text-slate-500">· {left} pcs</span></span>
                   {/* Under a step: how far it is on this step, and what is still to do there. */}
-                  {here && col.stepId && here.status !== 'not_needed' && <span className="block space-y-1">
+                  {here?.parts && col.stepId && here.status !== 'not_needed' && <PartRows parts={here.parts} qty={c.qty} done={here.status === 'completed'} where={col.title} compact />}
+                  {here && !here.parts && col.stepId && here.status !== 'not_needed' && <span className="block space-y-1">
                     <TickBar parts={[{ share: c.qty ? Math.min(1, doneHere / c.qty) : 0, tone: here.status === 'completed' ? 'bg-emerald-500' : 'bg-indigo-600' }]} ticks={40} height="h-3" stretch label={`${doneHere} of ${c.qty} done on ${col.title}`} />
                     <span className="flex justify-between text-xs"><span className="text-slate-500">{doneHere} of {c.qty} done</span>
-                      {here.status !== 'completed' && <span className="font-medium text-indigo-700">{here.parts ? `Upper ${Math.max(0, c.qty - here.parts.upper)} · Lower ${Math.max(0, c.qty - here.parts.lower)} to do` : waiting > 0 ? `${waiting} ready to do` : `${Math.max(0, c.qty - here.pieces)} still to come`}</span>}</span>
+                      {here.status !== 'completed' && <span className="font-medium text-indigo-700">{waiting > 0 ? `${waiting} ready to do` : `${Math.max(0, c.qty - here.pieces)} still to come`}</span>}</span>
                   </span>}
                   {/* Under Ready: how many may go out now, when not all of it is finished. */}
                   {!col.stepId && col.key === 'ready' && <span className="block text-xs font-medium text-emerald-700">{c.ready ? `All ${left} ready to release` : `${Math.max(0, (c.finishedPieces ?? 0) - c.releasedQty)} of ${left} ready to release`}</span>}
@@ -155,6 +157,32 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
         </Dialog>
       )}
     </div>
+  );
+}
+
+/**
+ * A set's two parts on a step (the owner's request, Oct 2026: show whether recorded pieces are the upper or the lower), each
+ * with its own label, bar and count, so a glance tells which part is behind.
+ */
+export function PartRows({ parts, qty, done, where, compact = false }: { parts: { upper: number; lower: number }; qty: number; done: boolean; where: string; compact?: boolean }) {
+  return (
+    <span className="block space-y-1.5">
+      {(['upper', 'lower'] as const).map((p) => {
+        const n = parts[p];
+        const full = n >= qty;
+        return (
+          <span key={p} className="flex items-center gap-2 text-xs">
+            <span className={`inline-flex w-[4.25rem] shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-semibold ${p === 'upper' ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-100 text-slate-700'}`}>
+              <span aria-hidden="true">{p === 'upper' ? '▲' : '▼'}</span>{p === 'upper' ? 'Upper' : 'Lower'}
+            </span>
+            <span className="min-w-0 flex-1">
+              <TickBar parts={[{ share: qty ? Math.min(1, n / qty) : 0, tone: done || full ? 'bg-emerald-500' : p === 'upper' ? 'bg-indigo-600' : 'bg-slate-500' }]} ticks={compact ? 24 : 80} height={compact ? 'h-2.5' : 'h-3'} stretch label={`${p === 'upper' ? 'Upper' : 'Lower'}: ${n} of ${qty} done on ${where}`} />
+            </span>
+            <span className={`w-14 shrink-0 text-right tabular-nums ${full ? 'font-semibold text-emerald-700' : 'text-slate-600'}`}>{n}/{qty}</span>
+          </span>
+        );
+      })}
+    </span>
   );
 }
 
@@ -184,10 +212,11 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="min-w-28 font-medium">{name(s.stepId)}</span>
                     {chip(s.status)}
-                    <span className="text-sm text-slate-600">{s.parts ? `Upper ${s.parts.upper} of ${card.qty} · Lower ${s.parts.lower} of ${card.qty}` : `${s.pieces} of ${card.qty} pcs done`}{s.reworkPieces ? ` + ${s.reworkPieces} rework` : ''}</span>
+                    <span className="text-sm text-slate-600">{s.parts ? `${Math.min(s.parts.upper, s.parts.lower)} of ${card.qty} complete sets` : `${s.pieces} of ${card.qty} pcs done`}{s.reworkPieces ? ` + ${s.reworkPieces} rework` : ''}</span>
                     {(s.reworkOpen ?? 0) > 0 && <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">{s.reworkOpen} sent back for rework</span>}
                   </div>
-                  {s.status !== 'not_needed' && (
+                  {s.parts && s.status !== 'not_needed' && <PartRows parts={s.parts} qty={card.qty} done={s.status === 'completed'} where={name(s.stepId)} />}
+                  {!s.parts && s.status !== 'not_needed' && (
                     <div role="progressbar" aria-label={`${name(s.stepId)} pieces done`} aria-valuemin={0} aria-valuemax={card.qty} aria-valuenow={s.pieces}>
                       <TickBar parts={[{ share: flow.percent / 100, tone: flow.percent === 100 ? 'bg-emerald-500' : 'bg-indigo-600' }]} ticks={140} height="h-4" stretch label={`${flow.percent}% done`} />
                     </div>
