@@ -12,25 +12,33 @@ import { Crumb } from '../../shell/crumbs.tsx';
 
 export function SupplierPage({ me, docTypes, params }: { me: Me; docTypes: DocTypeInfo[]; params?: Record<string, string> }) {
   const id = params?.id;
+  if (!id) return <NewSupplier canEdit={me.permissions.includes('pur.supplier.edit')} />;
+  return <SupplierView me={me} docTypes={docTypes} id={id} />;
+}
+
+/**
+ * One supplier's details, contacts, supplies, balance, orders and receipts: its own page, or a dialog over the supplier list
+ * (`inDialog`: no page crumb and no "All suppliers" link; the owner's request, Oct 2026: purchasing forms open in a modal).
+ */
+export function SupplierView({ me, docTypes, id, inDialog = false, onChanged }: { me: Me; docTypes: DocTypeInfo[]; id: string; inDialog?: boolean; onChanged?: () => void }) {
   const [supplier, setSupplier] = useState<SupplierRecord | null>(null);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState('');
-  const load = useCallback(() => (id ? api.supplier(id).then(setSupplier, (e: Error) => setError(e.message)) : Promise.resolve()), [id]);
+  const load = useCallback(() => api.supplier(id).then((s) => (setSupplier(s), onChanged?.()), (e: Error) => setError(e.message)), [id]);
   useEffect(() => void load(), [load]);
   const can = (p: string) => me.permissions.includes(p);
   const canEdit = can('pur.supplier.edit');
   if (error) return <Notice>{error}</Notice>;
-  if (!id) return <NewSupplier canEdit={canEdit} />;
   if (!supplier) return <p className="text-slate-500">Loading…</p>;
   const linkable = (key: string) => docTypes.some((d) => d.key === key);
 
   return (
-    <div className="max-w-4xl space-y-4">
+    <div className={`space-y-4 ${inDialog ? 'pr-8' : 'max-w-4xl'}`}>
       <div className="flex flex-wrap items-center gap-3">
-        <Crumb label={supplier.name} /><h1 className="text-2xl font-semibold">{supplier.name}</h1>
+        {!inDialog && <Crumb label={supplier.name} />}<h1 className="text-2xl font-semibold">{supplier.name}</h1>
         <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${supplier.is_active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>{supplier.is_active ? 'Active' : 'Inactive'}</span>
         <span className="flex-1" />
-        <Link to="/pur/suppliers" className="text-sm underline">All suppliers</Link>
+        {!inDialog && <Link to="/pur/suppliers" className="text-sm underline">All suppliers</Link>}
         {supplier.is_active === 1 && canEdit && <Deactivate supplier={supplier} onDone={load} />}
       </div>
       {!supplier.is_active && <Notice tone="info">This supplier is inactive. It stays on file with its history, and cannot be picked for new orders or bills.</Notice>}
@@ -48,10 +56,14 @@ function NewSupplier({ canEdit }: { canEdit: boolean }) {
   return (
     <div className="max-w-4xl space-y-4">
       <h1 className="text-2xl font-semibold">New supplier</h1>
-      {canEdit ? <SupplierFields initial={emptySupplierForm()} editable saveLabel="Add supplier" onSave={async (input) => navigate(`/pur/suppliers/${(await api.addSupplier(input)).id}`)} />
-        : <Notice>Only the accountant or an owner adds suppliers.</Notice>}
+      {canEdit ? <NewSupplierForm onAdded={(id) => navigate(`/pur/suppliers/${id}`)} /> : <Notice>Only the accountant or an owner adds suppliers.</Notice>}
     </div>
   );
+}
+
+/** The new-supplier form alone: on its page, or in a dialog over the supplier list. */
+export function NewSupplierForm({ onAdded }: { onAdded: (id: string) => void }) {
+  return <SupplierFields initial={emptySupplierForm()} editable saveLabel="Add supplier" onSave={async (input) => onAdded((await api.addSupplier(input)).id)} />;
 }
 
 /** Remounted on every new version, so the fields always show what the server holds. */
