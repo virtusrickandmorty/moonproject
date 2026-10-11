@@ -13,7 +13,7 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError, type DocHeader, type DocTypeInfo, type Preview, type PrdJob, type Worker } from '../../api.ts';
 import { navigate } from '../../router.tsx';
-import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, showDate } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { formatPesos, manilaDate, type Issue } from '@moonproject/shared';
@@ -73,6 +73,10 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
   // A step is open for pieces while not done, or while rework sent back to it is not redone yet.
   const reworkLeft = (s: NonNullable<PrdJob['lines'][number]['route']>[number]) => (s.rework?.pieces ?? 0) + (s.partRework ? s.partRework.upper.pieces + s.partRework.lower.pieces : 0);
   const openOn = (l: PrdJob['lines'][number], id: number) => l.route?.some((s) => s.id === id && ((s.status !== 'completed' && s.status !== 'not_needed') || reworkLeft(s) > 0));
+  // Rework (the owner's request, Oct 2026): only what was sent back to this step and not redone yet can be picked.
+  const stepOf = (lineNo: string) => job?.lines.find((l) => String(l.lineNo) === lineNo)?.route?.find((x) => x.id === stepId);
+  const sentTo = (lineNo: string, part: 'upper' | 'lower' | undefined) => { const s = stepOf(lineNo); return part ? s?.partRework?.[part] : s?.rework; };
+  const reworkLines = (job?.lines ?? []).filter((l) => { const s = l.route?.find((x) => x.id === stepId); return !!s && reworkLeft(s) > 0; });
   const steps = job ? [...new Map(job.lines.flatMap((l) => l.route ?? []).sort((x, y) => x.seq - y.seq).map((s) => [s.id, s])).values()].filter((s) => job.lines.some((l) => openOn(l, s.id)) || s.id === stepId) : [];
   const lines = job && stepId ? job.lines.filter((l) => openOn(l, stepId) || rows.some((r) => r.lineNo === String(l.lineNo))) : [];
   useEffect(() => {
@@ -87,7 +91,10 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
     const s = job?.lines.find((l) => String(l.lineNo) === lineNo)?.route?.find((x) => x.id === stepId);
     if (!s) return null;
     const done = part && s.partPieces ? s.partPieces[part] : s.pieces;
-    if (rework) return Math.max(done, part ? s.partRework?.[part]?.pieces ?? 0 : s.rework?.pieces ?? 0); // or the rework that reached it
+    if (rework) { // what was sent back and is waiting here; on Edit, the replaced entry's own rework pieces too
+      const redoing = (originalRows ?? []).filter((o) => String(o.lineNo) === lineNo && o.rework && o.part === part).reduce((n, o) => n + o.pieces, 0);
+      return (part ? s.partRework?.[part]?.pieces ?? 0 : s.rework?.pieces ?? 0) + redoing;
+    }
     const mine = (originalRows ?? []).filter((o) => String(o.lineNo) === lineNo && !o.rework && o.part === part).reduce((n, o) => n + o.pieces, 0);
     return Math.max(0, (part && s.partAvailable ? s.partAvailable[part] : s.availablePieces) - done + mine);
   };
@@ -95,7 +102,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
     const cap = capOf(r.lineNo, r.part, r.rework);
     const sum = rows.filter((x) => x.lineNo === r.lineNo && x.part === r.part && x.rework === r.rework).reduce((n, x) => n + (Number(x.pieces) || 0), 0);
     const what = `${r.part ? `${r.part} parts` : 'pieces'} of line ${r.lineNo}`;
-    return cap !== null && sum > cap ? [r.rework ? `Only ${cap} ${what} are done on this step, so at most ${cap} can be rework. You entered ${sum}.` : `Only ${cap} ${what} are ready on this step. You entered ${sum}.`] : [];
+    return cap !== null && sum > cap ? [r.rework ? (cap === 0 ? `No ${what} were sent back to this step for rework.` : `Only ${cap} ${what} were sent back to this step for rework. You entered ${sum}.`) : `Only ${cap} ${what} are ready on this step. You entered ${sum}.`] : [];
   });
   const errors = [...(jo ? [] : ['Pick the job order.']), ...(stepId ? [] : ['Pick the step.']), ...typed.errors, ...overReady];
   const input = { jobOrderId: jo, stepId: stepId ?? 0, workDate, rows: typed.rows, ...(overCapReason.trim() ? { overCapReason: overCapReason.trim() } : {}) };
@@ -156,7 +163,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                     <Field label="Line">
                       <select aria-label={`Row ${i + 1} line`} className={cell} value={r.lineNo} onChange={(e) => set(i, { lineNo: e.target.value, part: undefined, ...(r.wearers?.length ? { wearers: [], pieces: '' } : {}) })}>
                         <option value="" />
-                        {lines.map((l) => {
+                        {(r.rework ? lines.filter((l) => reworkLines.includes(l) || String(l.lineNo) === r.lineNo) : lines).map((l) => {
                           const s = l.route?.find((x) => x.id === stepId);
                           const words = (s?.partPieces ? `upper ${s.partPieces.upper} of ${l.qty}, lower ${s.partPieces.lower} of ${l.qty} done` : s ? `${s.pieces} of ${l.qty} done, ${Math.max(0, s.availablePieces - s.pieces)} ready` : `${l.qty} pcs`)
                             + (s && reworkLeft(s) > 0 ? `, ${reworkLeft(s)} rework` : '');
@@ -167,17 +174,45 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                     {job.lines.find((l) => String(l.lineNo) === r.lineNo)?.isSet && (
                       <div role="radiogroup" aria-label={`Row ${i + 1} part`} className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-medium">Part of the set</span>
-                        {(['upper', 'lower'] as const).map((p) => (
-                          <button key={p} type="button" role="radio" aria-checked={r.part === p} onClick={() => set(i, { part: p, ...(r.part !== p && r.wearers?.length ? { wearers: [], pieces: '' } : {}) })}
-                            className={`rounded-full px-3 py-1 text-sm ring-1 ${r.part === p ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'}`}>{p === 'upper' ? 'Upper' : 'Lower'}</button>
-                        ))}
+                        {(['upper', 'lower'] as const).map((p) => {
+                          const back = sentTo(r.lineNo, p)?.pieces ?? 0;
+                          const off = r.rework && back === 0;
+                          return (
+                            <button key={p} type="button" role="radio" aria-checked={r.part === p} disabled={off} title={off ? `No ${p} part was sent back to this step` : undefined}
+                              onClick={() => set(i, { part: p, ...(r.part !== p && r.wearers?.length ? { wearers: [], pieces: '' } : {}) })}
+                              className={`rounded-full px-3 py-1 text-sm ring-1 disabled:opacity-40 ${r.part === p ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'}`}>
+                              {p === 'upper' ? '▲ Upper' : '▼ Lower'}{r.rework && back > 0 ? ` · ${back} sent back` : ''}
+                            </button>
+                          );
+                        })}
                         {!r.part && <span className="text-xs text-amber-800">Pick the part these pieces are for.</span>}
                       </div>
                     )}
-                    <label className="flex w-fit items-center gap-2 rounded-md bg-amber-50 px-3 py-1.5 text-sm ring-1 ring-amber-200">
-                      <input aria-label={`Row ${i + 1} rework`} type="checkbox" checked={r.rework} onChange={(e) => set(i, { rework: e.target.checked, ...(r.wearers?.length ? { wearers: [], pieces: '' } : {}) })} />
-                      Record rework (pasubra)
+                    <label className={`flex w-fit items-center gap-2 rounded-md bg-amber-50 px-3 py-1.5 text-sm ring-1 ring-amber-200 ${reworkLines.length === 0 && !r.rework ? 'opacity-50' : ''}`}
+                      title={reworkLines.length === 0 && !r.rework ? 'Nothing was sent back to this step for rework' : undefined}>
+                      <input aria-label={`Row ${i + 1} rework`} type="checkbox" checked={r.rework} disabled={reworkLines.length === 0 && !r.rework}
+                        onChange={(e) => {
+                          const on = e.target.checked;
+                          const keep = !on || reworkLines.some((l) => String(l.lineNo) === r.lineNo);
+                          set(i, { rework: on, ...(keep ? {} : { lineNo: String(reworkLines[0]?.lineNo ?? ''), part: undefined }), ...(r.wearers?.length || !keep ? { wearers: [], pieces: '' } : {}) });
+                        }} />
+                      Record rework (pasubra){reworkLines.length === 0 && !r.rework ? ' · nothing sent back' : ''}
                     </label>
+                    {r.rework && r.lineNo && (() => {
+                      // Why it came back: each send-back's reason, where it was found and when.
+                      const line = job.lines.find((l) => String(l.lineNo) === r.lineNo);
+                      if (line?.isSet && !r.part) return null;
+                      const open = sentTo(r.lineNo, line?.isSet ? r.part : undefined);
+                      if (!open?.reasons?.length) return <p className="text-xs text-amber-800">Nothing of this {line?.isSet ? 'part' : 'item'} was sent back to this step for rework.</p>;
+                      return (
+                        <div className="space-y-1 rounded-md border-l-4 border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-950 ring-1 ring-amber-200">
+                          <p className="font-semibold">Sent back for rework · {open.pieces} {open.pieces === 1 ? 'piece' : 'pieces'} waiting here</p>
+                          <ul className="space-y-0.5">{open.reasons.map((x, k) => (
+                            <li key={k}>&ldquo;{x.reason}&rdquo; <span className="text-xs text-amber-800">· {x.pieces} pcs, found at {x.foundAt}, {showDate(x.at.slice(0, 10))}</span></li>
+                          ))}</ul>
+                        </div>
+                      );
+                    })()}
                     {(() => {
                       // The line's wearers: tick who this worker finished; the pieces follow the ticks. Done ones show who did them.
                       // Only the wearers forwarded from the step before are listed (not those still to come); on rework, those done
@@ -189,8 +224,8 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                       const part = line?.isSet ? r.part : undefined;
                       const sentBack = (part ? step?.partRework?.[part] : step?.rework)?.wearers ?? [];
                       const doneHere = part ? step?.partWearersDone?.[part] ?? [] : step?.doneWearers ?? [];
-                      const forwarded = r.rework ? [...sentBack, ...doneHere] : (part ? step?.partForwarded?.[part] : step?.forwardedWearers) ?? null;
-                      if (r.rework && forwarded?.length === 0) return null; // nobody done here yet: the rework pieces are typed
+                      const forwarded = r.rework ? sentBack : (part ? step?.partForwarded?.[part] : step?.forwardedWearers) ?? null;
+                      if (r.rework && forwarded?.length === 0) return null; // sent back by count, not by wearer: the rework pieces are typed
                       const done = new Set(r.rework ? [] : doneHere);
                       // On a set, each wearer's parts already finished on this step.
                       const partsDone = (n: number) => (line?.isSet ? (['upper', 'lower'] as const).filter((p) => step?.partWearersDone?.[p]?.includes(n)) : []);
@@ -209,7 +244,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                             {r.rework ? <span className="rounded bg-amber-100 px-2 py-0.5 text-sm font-medium text-amber-900">Who needs rework{part ? ` · ${part} part` : ''}</span>
                               : <span className="text-sm font-medium">Wearers finished{part ? ` · ${part} part` : ''}</span>}
                             <span className="text-xs text-slate-500">
-                              {r.rework ? `${listed.length} done on this step${sentBack.length ? `, ${sentBack.length} sent back for rework` : ''} · tick the ones this worker redid`
+                              {r.rework ? `${sentBack.length} sent back for rework · tick the ones this worker redid`
                                 : `${done.size} of ${roster.length} done on this step${part ? ` (${part} part)` : ''} · tick the ones this worker finished`}
                               {!r.rework && notYet > 0 && ` · ${notYet} not yet forwarded from the step before`}
                             </span>
@@ -245,7 +280,7 @@ export function EntryForm({ type, mode }: { type: DocTypeInfo; mode: FormMode })
                           {workers.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                         </select>
                       </Field>
-                      <Field label="Pieces" hint={[(r.wearers?.length ?? 0) > 0 ? 'From the wearers ticked' : '', (() => { const cap = r.lineNo ? capOf(r.lineNo, r.part, r.rework) : null; return cap === null ? '' : r.rework ? `${cap} done here` : `${cap} ready`; })()].filter(Boolean).join(' · ') || undefined}><input aria-label={`Row ${i + 1} pieces`} inputMode="numeric" readOnly={(r.wearers?.length ?? 0) > 0} className={`${cell} text-right tabular-nums`} value={r.pieces} onChange={(e) => set(i, { pieces: e.target.value })} /></Field>
+                      <Field label="Pieces" hint={[(r.wearers?.length ?? 0) > 0 ? 'From the wearers ticked' : '', (() => { const cap = r.lineNo ? capOf(r.lineNo, r.part, r.rework) : null; return cap === null ? '' : r.rework ? `${cap} sent back` : `${cap} ready`; })()].filter(Boolean).join(' · ') || undefined}><input aria-label={`Row ${i + 1} pieces`} inputMode="numeric" readOnly={(r.wearers?.length ?? 0) > 0} className={`${cell} text-right tabular-nums`} value={r.pieces} onChange={(e) => set(i, { pieces: e.target.value })} /></Field>
                     </div>
                     {askRepeat && (
                       <Field label="This matches a sheet already recorded. Why is it a different sheet? (at least 5 characters)" hint="If the pieces were redone, tick Rework (pasubra) instead.">
