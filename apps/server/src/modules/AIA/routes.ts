@@ -15,7 +15,7 @@ import { requestRateLimiter } from '../../engine/security/sessions.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { SUPPORT_EMAIL, SUPPORT_PHONE, recordSupportMessage } from '../SUP/public.ts';
-import { answer, systemPrompt, type ModelTurn } from './agent.ts';
+import { answer, systemPrompt, testKey, type ModelTurn } from './agent.ts';
 import { aiaSettings, readApiKey, saveAiaSettings } from './settings.ts';
 
 export const MAX_CHAT_MESSAGES = 30;
@@ -62,7 +62,7 @@ export function aiaRoutes(app: FastifyInstance, { db, clock }: AppDeps): void {
     const key = readApiKey(db);
     let reply = { text: OFFLINE, handoff: true, inputTokens: 0, outputTokens: 0 };
     if (s.isOn && key) {
-      const history: ModelTurn[] = transcript(chatId).slice(-HISTORY).map((m) => ({ role: m.role === 'customer' ? 'user' : 'assistant', content: m.text }));
+      const history: ModelTurn[] = transcript(chatId).slice(-HISTORY).map((m) => ({ role: m.role === 'customer' ? 'user' : 'model', parts: [{ text: m.text }] }));
       while (history.length && history[0]!.role !== 'user') history.shift();
       try {
         reply = await answer({ db, app, today: today(clock), ip: req.ip, apiKey: key, system: systemPrompt(db, s.knowledge, today(clock)), history });
@@ -96,6 +96,12 @@ export function aiaRoutes(app: FastifyInstance, { db, clock }: AppDeps): void {
   });
 
   app.get('/api/aia/settings', { config: { permission: 'aia.manage' } }, async () => aiaSettings(db));
+  /** The owner's "Test the key": one short question to Google AI Studio with the saved key. */
+  app.post('/api/aia/test', { config: { permission: 'aia.manage' } }, async () => {
+    const key = readApiKey(db);
+    if (!key) return { ok: false, message: 'No key is saved yet.' };
+    return testKey(key);
+  });
   app.put('/api/aia/settings', { config: { permission: 'aia.manage' } }, async (req) =>
     tx(db, () => saveAiaSettings(db, req.body, { userId: currentUser(req).userId, at: stamp(clock) })));
 

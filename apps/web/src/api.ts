@@ -984,6 +984,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     aiaSettings: () => call<AiaSettings>('GET', '/api/aia/settings'),
     /** `apiKey`: leave it out to keep the saved key; '' removes it. */
     aiaSaveSettings: (body: { isOn: boolean; greeting: string; knowledge: string; apiKey?: string; version: number }) => call<AiaSettings>('PUT', '/api/aia/settings', body),
+    /** One short question to Google AI Studio with the saved key: works, or what went wrong (never the key). */
+    aiaTest: () => call<{ ok: true; model: string; reply: string } | { ok: false; message: string }>('POST', '/api/aia/test', {}),
     aiaChats: () => call<AiaChats>('GET', '/api/aia/chats'),
     aiaChat: (id: string) => call<{ messages: AiaMessage[]; supportNumber: string | null }>('GET', `/api/aia/chats/${encodeURIComponent(id)}`),
     dashOwnerHealth: () => call<DashOwnerHealth>('GET', '/api/dash/owner-health'),

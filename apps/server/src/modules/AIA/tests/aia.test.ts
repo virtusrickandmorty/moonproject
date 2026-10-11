@@ -23,7 +23,7 @@ beforeEach(async () => {
   replies = [];
   useTransport(async (body, key) => {
     expect(key).toBe('sk-test-key');
-    seen.push(JSON.parse(JSON.stringify(body)) as Record<string, unknown>);
+    seen.push(JSON.parse(JSON.stringify(body)) as unknown as Record<string, unknown>);
     return replies.shift()!;
   });
 });
@@ -62,21 +62,24 @@ it('answers through the price list as an estimate, keeps the chat, and hands it 
   }
   await settings({ isOn: true, apiKey: 'sk-test-key' });
   replies.push(
-    { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 't1', name: 'price_estimate', input: { item: 'nba jersey set', qty: 15 } }], usage: { input_tokens: 900, output_tokens: 40 } },
-    { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Mga ₱12,000 po para sa 15 sets (estimate lang po).' }], usage: { input_tokens: 1000, output_tokens: 30 } },
+    { parts: [{ functionCall: { id: 't1', name: 'price_estimate', args: { item: 'nba jersey set', qty: 15 } }, thoughtSignature: 'sig-1' }], usage: { input: 900, output: 40 } },
+    { parts: [{ text: 'Mga ₱12,000 po para sa 15 sets (estimate lang po).' }], usage: { input: 1000, output: 30 } },
   );
   const first = (await publicPost('/api/aia/chat', { message: 'Magkano 15 NBA jersey sets?' })).json();
   expect(first).toMatchObject({ reply: 'Mga ₱12,000 po para sa 15 sets (estimate lang po).', offerPerson: false });
-  // The model got the shop's rules and the owner's words, then the estimate from the price list (tier 10+ at ₱800).
+  // The model got the shop's rules and the owner's words, then the estimate from the price list (tier 10+ at ₱800),
+  // with its own call sent back as given (Gemini needs the thought signature).
   expect(String(seen[0]!.system)).toContain('Open Monday to Saturday');
   expect(String(seen[0]!.system)).toContain('ESTIMATE');
-  expect(JSON.stringify(seen[1]!.messages)).toContain('ESTIMATE: 15 × NBA Cut Jersey Set at ₱800.00 each');
-  expect(JSON.stringify(seen[1]!.messages)).toContain('₱12,000.00');
+  expect(JSON.stringify(seen[1]!.contents)).toContain('"thoughtSignature":"sig-1"');
+  expect(JSON.stringify(seen[1]!.contents)).toContain('ESTIMATE: 15 × NBA Cut Jersey Set at ₱800.00 each');
+  expect(JSON.stringify(seen[1]!.contents)).toContain('₱12,000.00');
+  expect(JSON.stringify(seen[1]!.contents)).toContain('"functionResponse":{"id":"t1","name":"price_estimate"');
 
   // The customer asks for a person: the model offers the form.
   replies.push(
-    { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 't2', name: 'talk_to_person', input: { reason: 'custom design' } }] },
-    { stop_reason: 'end_turn', content: [{ type: 'text', text: 'Sige po, fill up lang po ang form sa baba.' }] },
+    { parts: [{ functionCall: { id: 't2', name: 'talk_to_person', args: { reason: 'custom design' } } }] },
+    { parts: [{ text: 'Sige po, fill up lang po ang form sa baba.' }] },
   );
   const second = (await publicPost('/api/aia/chat', { chatId: first.chatId, message: 'Pwede po makausap ang tao?' })).json();
   expect(second.offerPerson).toBe(true);
@@ -96,6 +99,16 @@ it('answers through the price list as an estimate, keeps the chat, and hands it 
 
   const list = (await owner.get('/api/aia/chats')).json();
   expect(list.rows[0]).toMatchObject({ messages: 4, supportNumber: sent.number, inputTokens: 1900, outputTokens: 70 });
+});
+
+it('tests the saved key for the owner, and says what went wrong without the key', async () => {
+  expect((await owner.post('/api/aia/test', {})).json()).toEqual({ ok: false, message: 'No key is saved yet.' });
+  await settings({ isOn: false, apiKey: 'sk-test-key' });
+  replies.push({ parts: [{ text: 'Hello po!' }], model: 'gemini-3.5-flash' });
+  expect((await owner.post('/api/aia/test', {})).json()).toEqual({ ok: true, model: 'gemini-3.5-flash', reply: 'Hello po!' });
+  useTransport(async (_b, key) => { throw new Error(`Google AI Studio answered 400: API key not valid (${key})`); });
+  const bad = (await owner.post('/api/aia/test', {})).json();
+  expect(bad).toEqual({ ok: false, message: 'Google AI Studio answered 400: API key not valid (***)' });
 });
 
 it('when the AI service fails, the chat still answers and offers the form', async () => {
