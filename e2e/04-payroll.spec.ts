@@ -5,32 +5,45 @@ import { serverDate, signIn } from './shop';
 const plusDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 const dayOfWeek = (date: string) => new Date(`${date}T00:00:00Z`).getUTCDay(); // 1 = Monday
 
-/** The Monday of a week that has surely ended: the week before last, so that its Saturday is well past. */
-const monday = (today: string) => {
+/**
+ * The first day of a weekly pay period that has surely ended (the week before last): a Friday from Oct 2, 2026, when the
+ * weekly payrolls became Friday to Thursday (setting pay.week_start), a Monday before that.
+ */
+const FRIDAY_WEEKS_FROM = '2026-10-02';
+const weekStart = (today: string) => {
   const back = plusDays(today, -7);
-  return plusDays(back, -((dayOfWeek(back) + 6) % 7));
+  const friday = plusDays(back, -((dayOfWeek(back) + 2) % 7));
+  return friday >= FRIDAY_WEEKS_FROM ? friday : plusDays(back, -((dayOfWeek(back) + 6) % 7));
 };
+/** The six working days of the week from its first day: every day but Sunday. */
+const workdays = (start: string) => Array.from({ length: 7 }, (_, d) => plusDays(start, d)).filter((d) => dayOfWeek(d) !== 0);
+const longDate = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
-/** Marks one day of the attendance grid, moving to the half-month it is in first. */
+/**
+ * Marks one day of the attendance sheet present (worked, on a holiday), moving to the pay period it is in first. Each day
+ * is a button named for the person and the day ("Change Erin Tailor, October 2, 2026: nothing typed").
+ */
 async function mark(page: Page, employee: string, date: string) {
-  const cell = page.getByLabel(`${employee} ${date}`, { exact: true });
-  const range = page.getByText(/^\d{4}-\d{2}-\d{2} to \d{4}-\d{2}-\d{2}$/);
-  while (!(await cell.isVisible())) {
-    const [from] = (await range.innerText()).split(' to ');
-    await page.getByRole('button', { name: date < from! ? '← Earlier' : 'Later →' }).click();
-    await expect(range).not.toHaveText(`${from} to ${(await range.innerText()).split(' to ')[1]}`);
+  const cell = page.getByRole('button', { name: new RegExp(`^Change ${employee}, ${longDate(date)}:`) });
+  for (let tries = 0; !(await cell.isVisible()) && tries < 6; tries++) {
+    const shown = await page.getByRole('button', { name: new RegExp(`^Change ${employee}, `) }).first().getAttribute('aria-label');
+    const shownDate = new Date(`${shown!.split(', ').slice(1, 3).join(', ').split(':')[0]} UTC`).toISOString().slice(0, 10);
+    await page.getByRole('button', { name: date < shownDate ? 'Earlier half-month' : 'Later half-month' }).click();
+    await page.waitForTimeout(300);
   }
-  // A holiday takes the holiday marks instead of P.
-  const marks = await cell.locator('option').allTextContents();
-  await cell.selectOption({ label: marks.includes('P') ? 'P' : 'H' });
-  await page.getByRole('button', { name: /^Save \d+ change/ }).click();
+  await cell.click();
+  const status = page.getByRole('radiogroup', { name: 'Status' });
+  const present = status.getByRole('radio', { name: 'Present', exact: true });
+  await ((await present.count()) ? present : status.getByRole('radio', { name: /^Holiday, worked|^Worked/ }).first()).click();
+  await page.getByRole('button', { name: 'Done', exact: true }).click();
+  await page.getByRole('button', { name: /^Save \d+ changes?$/ }).click();
   await expect(page.getByText(/^Saved \d+ days?\.$/)).toBeVisible();
 }
 
 test('payroll: an employee, a week of attendance, the run, its release and the payslip', async ({ page }) => {
   await signIn(page);
   const today = await serverDate(page);
-  const start = monday(today);
+  const start = weekStart(today);
 
   // The employee, hired long before that week, on daily pay in the weekly group.
   await page.getByRole('link', { name: 'Employees', exact: true }).click();
@@ -53,10 +66,10 @@ test('payroll: an employee, a week of attendance, the run, its release and the p
   await page.getByRole('button', { name: 'Save payslip email' }).click();
   await expect(page.getByText('Saved.', { exact: true })).toBeVisible();
 
-  // Attendance for Monday to Saturday.
+  // Attendance for the six working days of that week.
   await page.getByRole('link', { name: 'Attendance', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Attendance' })).toBeVisible();
-  for (let d = 0; d < 6; d++) await mark(page, 'Erin Tailor', plusDays(start, d));
+  for (const day of workdays(start)) await mark(page, 'Erin Tailor', day);
 
   // The payroll run for that week.
   await page.getByRole('link', { name: 'Payroll Runs' }).click();

@@ -388,7 +388,7 @@ export function TplDeliveryForm({ me }: { me: Me }) {
     <div className="max-w-5xl space-y-4">
       <h1 className="text-2xl font-semibold">New delivery</h1>
       {error && <Notice>{error}</Notice>}
-      {!programs ? <Loading /> : programs.length === 0 ? <p className="text-sm text-slate-500">No stock programs yet. Set one up in <Link to="/tpl" className="text-indigo-700 underline">TPL services</Link>.</p> : (
+      {!programs ? <Loading /> : programs.length === 0 ? <p role="status" className="text-sm text-slate-500">No stock programs yet. Set one up in <Link to="/tpl" className="text-indigo-700 underline">TPL services</Link>.</p> : (
         <Field label="Client">
           <select className={`${inputClass} max-w-md`} value={chosen} onChange={(e) => setChosen(e.target.value)}>
             <option value="">Pick the client</option>

@@ -19,6 +19,30 @@ async function closeDialogs(page: Page) {
   }
 }
 
+/**
+ * Production finishes the job order, as on the board: each item gets its production step, here one that is not needed
+ * (a made-up order with no workers), so the order moves to Ready for release by itself. Nothing is released before it
+ * is ready, the owner included (the owner's rule, Oct 11, 2026).
+ */
+async function markReady(page: Page, number: string) {
+  const outcome = await page.evaluate(async (no) => {
+    const me = await (await fetch('/api/auth/me')).json();
+    const post = (url: string, body: object) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken }, body: JSON.stringify(body) });
+    const jo = ((await (await fetch('/api/docs/jo.job_order?limit=50')).json()) as { id: string; number: string }[]).find((d) => d.number === no)!;
+    const step = ((await (await fetch('/api/prd/catalogue')).json()) as { steps: { id: number }[] }).steps[0]!.id;
+    const lines = ((await (await fetch(`/api/jo/orders/${jo.id}/status`)).json()) as { lines: { lineNo: number }[] }).lines;
+    for (const l of lines) {
+      for (const [url, body] of [[`/api/prd/jobs/${jo.id}/lines/${l.lineNo}/setup`, { stepIds: [step], complexity: 'standard' }], [`/api/prd/jobs/${jo.id}/lines/${l.lineNo}/steps/${step}/not-needed`, {}]] as const) {
+        const r = await post(url, body);
+        if (!r.ok) return `${url}: ${await r.text()}`;
+      }
+    }
+    const status = await (await fetch(`/api/jo/orders/${jo.id}/status`)).json();
+    return status.lines.every((l: { ready: boolean }) => l.ready) ? 'ready' : JSON.stringify(status.lines);
+  }, number);
+  expect(outcome).toBe('ready');
+}
+
 async function openJobOrder(page: Page, jo = 'JO-000001') {
   await closeDialogs(page);
   await page.getByRole('link', { name: 'Job Orders', exact: true }).click();
@@ -91,14 +115,15 @@ test('sales: a customer, a job order with a deposit, a collection, a release wit
   await openJobOrder(page);
   await expect(figure(page, 'Balance due')).toHaveText('₱0.00');
 
-  // The release: everything left is ticked; the owner releases it before it is marked ready; the invoice is to follow.
+  // The release: production has marked it ready; everything left is ticked; the invoice is to follow.
+  await markReady(page, 'JO-000001');
+  await openJobOrder(page);
   await page.getByRole('link', { name: 'Release slip', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'New release slip' })).toBeVisible();
   await expect(page.getByText(`JO-000001 · ${CUSTOMER}`)).toBeVisible();
   await expect(page.getByLabel('Pieces of line 1')).toHaveValue('4');
   await page.getByLabel('Claimed by').fill('Coach Placeholder');
   await page.getByRole('radio', { name: 'School ID' }).click();
-  await page.getByLabel("Owner's reason to release it now").fill('Needed for the regatta this weekend');
   await page.getByLabel('Invoice to follow (the booklet is not at hand)').check();
   await expect(figure(page, 'Released now')).toHaveText('₱6,000.00');
   await page.getByRole('button', { name: 'Record', exact: true }).click();
@@ -194,11 +219,12 @@ test('sales, downpayment VAT mode C: the downpayment invoice, its collection, th
   await expect(figure(page, 'Deposits held')).toHaveText('₱3,000.00');
 
   // The release with the balance invoice: the booklet shows the sale less the downpayment invoiced.
+  await markReady(page, 'JO-000002');
+  await openJobOrder(page, 'JO-000002');
   await page.getByRole('link', { name: 'Release slip', exact: true }).click();
   await expect(page.getByLabel('Pieces of line 1')).toHaveValue('4');
   await page.getByLabel('Claimed by').fill('Coach Placeholder');
   await page.getByRole('radio', { name: 'School ID' }).click();
-  await page.getByLabel("Owner's reason to release it now").fill('Needed for the regatta this weekend');
   await page.getByLabel('Invoice number (from the booklet)').fill('702');
   await expect(page.getByText('Less downpayments invoiced')).toBeVisible();
   await expect(figure(page, 'Less downpayments invoiced')).toHaveText('₱3,000.00');
