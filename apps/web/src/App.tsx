@@ -171,8 +171,8 @@ function Home({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }) {
 function PageNotFound() {
   return (
     <div className="flex min-h-[60vh] items-center justify-center py-8">
-      <div className="w-full max-w-md space-y-4 rounded-xl bg-white p-8 text-center shadow-sm ring-1 ring-slate-200/70">
-        <img src="/page-not-found.gif" alt="A seamstress sewing at her machine" width={147} height={174} className="mx-auto h-auto w-36" />
+      <div className="w-full max-w-lg space-y-4 rounded-xl bg-white p-8 text-center shadow-sm ring-1 ring-slate-200/70">
+        <img src="/page-not-found.gif" alt="A seamstress sewing at her machine" width={147} height={174} className="mx-auto h-auto w-64 [image-rendering:pixelated] sm:w-72" />
         <div className="space-y-1">
           <p className="text-xs font-semibold uppercase tracking-wider text-indigo-700">404</p>
           <h1 className="text-2xl font-bold text-[#010101]">Page not found</h1>
