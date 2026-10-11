@@ -7,7 +7,6 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type PieceRate, type PrdStep } from '../../api.ts';
-import { Link } from '../../router.tsx';
 import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
 import { cents } from '../COL/money.ts';
 import { CLASS_LABELS as classes, PAGE_SIZE, blankItem, catalogCalls, moneyCents, typeLocked, valuesOf, type Detail, type Item, type ItemValues } from './catalog.ts';
@@ -37,7 +36,6 @@ export function Catalog({ me }: { me: Me }) {
   if (!canView) return <Notice>You do not have permission to see the price list.</Notice>;
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center gap-3"><h1 className="flex-1 text-2xl font-semibold">Price list & piece rates</h1>
-      {me.permissions.includes('rate.view') && <Link to="/prd/rates" className="text-sm text-indigo-700 underline">All piece rates and their history</Link>}
       {canManage && <Button tone="primary" onClick={() => setEditing('new')}>+ New item</Button>}</div>
     {error && <Notice>{error}</Notice>}
     <div className={searchRowClass}><input aria-label="Search catalog" placeholder="Search name or code" className={`${inputClass} ${searchClass}`} value={search}
@@ -51,6 +49,7 @@ export function Catalog({ me }: { me: Me }) {
       {rows.length === 0 && <p className="py-3 text-sm text-slate-500">No items found.</p>}</div>
     <div className="flex gap-2"><Button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>Previous</Button>
       <Button disabled={rows.length < PAGE_SIZE} onClick={() => setOffset(offset + PAGE_SIZE)}>Next</Button></div>
+    {me.permissions.includes('rate.view') && <UnmatchedRates />}
     {selected && !editing && <Dialog wide title={`${selected.name} · ${selected.code}`} onClose={() => setSelected(null)}>
       <ItemDetail me={me} data={selected} onEdit={() => setEditing(selected)} onRefresh={async () => { await load(); await open(selected.id); }} />
     </Dialog>}
@@ -132,30 +131,72 @@ function ItemDetail({ me, data, onEdit, onRefresh }: { me: Me; data: Detail; onE
   </div>;
 }
 
-/** The item's labour (piece) rates in force today, per step; a set's upper and lower apart. They go by the item (standard rates). */
+const COMPLEXITIES = ['simple', 'standard', 'complex'] as const;
+const LEVEL: Record<string, string> = { simple: 'Simple', standard: 'Standard', complex: 'Complex' };
+const PART: Record<string, string> = { whole: '', upper: 'Upper part', lower: 'Lower part' };
+
+/**
+ * The item's labour (piece) rates in force today, per step and difficulty (simple, standard, complex: a job order item is
+ * set up at one of them on the board); a set's upper and lower apart; and every rate it ever had (the owner's request,
+ * Oct 2026: the price list holds all piece rates, so the separate Piece rates screen is gone).
+ */
 function LabourRates({ me, item }: { me: Me; item: Detail }) {
-  const [rates, setRates] = useState<{ asOf: string; current: PieceRate[] } | null>(null);
+  const [rates, setRates] = useState<{ asOf: string; current: PieceRate[]; history: PieceRate[] } | null>(null);
   const [steps, setSteps] = useState<PrdStep[]>([]);
   const [error, setError] = useState('');
   const set = item.unit === 'set';
   const parts = set ? (['upper', 'lower'] as const) : (['whole'] as const);
-  const load = useCallback(() => api.rates().then((t) => setRates({ asOf: t.asOf, current: t.current }), (e: Error) => setError(e.message)), []);
+  const load = useCallback(() => api.rates().then((t) => setRates({ asOf: t.asOf, current: t.current, history: t.history }), (e: Error) => setError(e.message)), []);
   useEffect(() => { void load(); api.prdCatalogue().then((c) => setSteps(c.steps), () => undefined); }, [load]);
   if (error) return <Notice>{error}</Notice>;
-  const mine = (rates?.current ?? []).filter((r) => r.garmentType.toLowerCase() === item.garment_type!.toLowerCase() && r.complexity === 'standard');
-  const keys = [...new Map(mine.map((r) => [r.stepCode, r])).values()]
-    .sort((a, b) => steps.findIndex((s) => s.code === a.stepCode) - steps.findIndex((s) => s.code === b.stepCode));
-  const rateOf = (stepCode: string, complexity: string, part: string) => mine.find((r) => r.stepCode === stepCode && r.complexity === complexity && (r.part ?? 'whole') === part);
+  const same = (r: PieceRate) => r.garmentType.toLowerCase() === item.garment_type!.toLowerCase();
+  const mine = (rates?.current ?? []).filter(same);
+  const past = (rates?.history ?? []).filter(same);
   const stepName = (code: string) => steps.find((s) => s.code === code)?.name ?? code;
+  const order = (code: string) => { const i = steps.findIndex((s) => s.code === code); return i < 0 ? 99 : i; };
+  // One row per step (and part, on a set) that has any rate; a column per difficulty.
+  const rows = [...new Map(mine.map((r) => [`${r.stepCode}|${r.part ?? 'whole'}`, { stepCode: r.stepCode, part: r.part ?? 'whole' }])).values()]
+    .sort((a, b) => order(a.stepCode) - order(b.stepCode) || a.part.localeCompare(b.part));
+  const rateOf = (stepCode: string, complexity: string, part: string) => mine.find((r) => r.stepCode === stepCode && r.complexity === complexity && (r.part ?? 'whole') === part);
   return <Panel title="Labour (piece rates)">
     {!rates ? <Loading /> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
-      <th>Step</th>{parts.map((p) => <th key={p} className="text-right">{p === 'whole' ? 'Per piece' : p === 'upper' ? 'Upper part' : 'Lower part'}</th>)}</tr></thead><tbody>
-      {keys.map((k) => <tr key={k.stepCode}><td>{stepName(k.stepCode)}</td>
-        {parts.map((p) => { const r = rateOf(k.stepCode, 'standard', p); return <td key={p} className="text-right tabular-nums">{r ? peso(r.rateCents) : <span className="text-slate-400">—</span>}</td>; })}</tr>)}
+      <th>Step</th>{COMPLEXITIES.map((c) => <th key={c} className="text-right">{LEVEL[c]}</th>)}</tr></thead><tbody>
+      {rows.map((k) => <tr key={`${k.stepCode}|${k.part}`}><td>{stepName(k.stepCode)}{k.part !== 'whole' && <span className="text-slate-500"> · {PART[k.part]}</span>}</td>
+        {COMPLEXITIES.map((c) => { const r = rateOf(k.stepCode, c, k.part); return <td key={c} className={`text-right tabular-nums ${c === 'standard' ? 'font-medium' : ''}`}>{r ? peso(r.rateCents) : <span className="text-slate-400">—</span>}</td>; })}</tr>)}
     </tbody></table>
-      {keys.length === 0 && <p className="py-2 text-sm text-slate-500">No piece rate for {item.name} yet{set ? ' (upper or lower)' : ''}. Production can still record its pieces with a typed rate.</p>}</div>}
+      {rows.length === 0 && <p className="py-2 text-sm text-slate-500">No piece rate for {item.name} yet{set ? ' (upper or lower)' : ''}. Production can still record its pieces with a typed rate.</p>}
+      <p className="pt-1 text-xs text-slate-500">A job order item is paid at the difficulty it is set up with on the production board (Standard unless changed).</p></div>}
+    {rates && past.length > 0 && <details className="rounded-md bg-slate-50 px-3 py-2 text-sm">
+      <summary className="cursor-pointer font-medium text-indigo-700">Rate history ({past.length})</summary>
+      <div className="overflow-x-auto pt-2"><table className="w-full text-sm"><thead><tr><th>From</th><th>Step</th><th>Difficulty</th><th className="text-right">Rate</th><th>Why</th></tr></thead><tbody>
+        {past.map((r) => <tr key={r.id} className={mine.some((m) => m.id === r.id) ? '' : 'text-slate-500'}>
+          <td className="whitespace-nowrap">{showDate(r.effectiveFrom)}</td>
+          <td>{stepName(r.stepCode)}{(r.part ?? 'whole') !== 'whole' && ` · ${PART[r.part!]}`}</td>
+          <td>{LEVEL[r.complexity] ?? r.complexity}</td>
+          <td className="text-right tabular-nums">{peso(r.rateCents)}</td>
+          <td>{r.reason}</td></tr>)}
+      </tbody></table><p className="pt-1 text-xs text-slate-500">Grey: replaced by a later rate. A recorded production entry keeps the rate it was paid at.</p></div>
+    </details>}
     {rates && me.permissions.includes('rate.manage') && <NewRate garmentType={item.garment_type!} itemName={item.name} parts={parts} asOf={rates.asOf} steps={steps} onSaved={load} />}
   </Panel>;
+}
+
+/** Piece rates in force for a garment type no price list item goes by (from before the price list held them): kept for the job orders that use them. */
+function UnmatchedRates() {
+  const [rows, setRows] = useState<PieceRate[] | null>(null);
+  const [steps, setSteps] = useState<PrdStep[]>([]);
+  useEffect(() => { api.rates().then((t) => setRows(t.unmatched ?? []), () => setRows([])); api.prdCatalogue().then((c) => setSteps(c.steps), () => undefined); }, []);
+  if (!rows || rows.length === 0) return null;
+  const stepName = (code: string) => steps.find((s) => s.code === code)?.name ?? code;
+  const sorted = [...rows].sort((a, b) => a.garmentType.localeCompare(b.garmentType) || a.stepCode.localeCompare(b.stepCode) || a.complexity.localeCompare(b.complexity));
+  return <details className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70">
+    <summary className="cursor-pointer text-sm font-semibold text-slate-800">Piece rates with no price list item ({new Set(rows.map((r) => r.garmentType.toLowerCase())).size} garment types)</summary>
+    <p className="pt-2 text-sm text-slate-600">These rates are from before the price list held piece rates. Job order items made as these garment types are still paid at them. To change one, add a price list item named like the garment type (its rates then show on the item), or ask the accountant to replace it.</p>
+    <div className="overflow-x-auto pt-2"><table className="w-full text-sm"><thead><tr><th>Garment type</th><th>Step</th><th>Difficulty</th><th className="text-right">Rate</th><th>From</th></tr></thead><tbody>
+      {sorted.map((r) => <tr key={r.id}><td>{r.garmentType}</td><td>{stepName(r.stepCode)}{(r.part ?? 'whole') !== 'whole' && ` · ${PART[r.part!]}`}</td><td>{LEVEL[r.complexity] ?? r.complexity}</td>
+        <td className="text-right tabular-nums">{peso(r.rateCents)}</td><td className="whitespace-nowrap">{showDate(r.effectiveFrom)}</td></tr>)}
+    </tbody></table></div>
+  </details>;
 }
 
 function NewRate({ garmentType, itemName, parts, asOf, steps, onSaved }: { garmentType: string; itemName: string; parts: readonly ('whole' | 'upper' | 'lower')[]; asOf: string; steps: PrdStep[]; onSaved: () => Promise<unknown> }) {
@@ -167,7 +208,7 @@ function NewRate({ garmentType, itemName, parts, asOf, steps, onSaved }: { garme
   const ready = rateCents !== undefined && v.rate.trim() && v.reason.trim().length >= 10;
   const save = async () => {
     const r = await api.addRate({ garmentType, stepCode: v.stepCode, complexity: v.complexity, ...(v.part !== 'whole' ? { part: v.part } : {}), rateCents: rateCents!, effectiveFrom: v.effectiveFrom, reason: v.reason.trim() });
-    setDone(`${itemName}${v.part !== 'whole' ? ` (${v.part} part)` : ''}: ${steps.find((s) => s.code === r.stepCode)?.name ?? r.stepCode} is ${peso(r.rateCents)} per piece from ${showDate(r.effectiveFrom)}.`);
+    setDone(`${itemName}${v.part !== 'whole' ? ` (${v.part} part)` : ''}: ${steps.find((s) => s.code === r.stepCode)?.name ?? r.stepCode} (${LEVEL[r.complexity] ?? r.complexity}) is ${peso(r.rateCents)} per piece from ${showDate(r.effectiveFrom)}.`);
     setV(blank);
     await onSaved();
   };
@@ -175,6 +216,7 @@ function NewRate({ garmentType, itemName, parts, asOf, steps, onSaved }: { garme
     <p className="text-sm font-medium">New piece rate for {itemName}</p>
     <div className="grid gap-3 sm:grid-cols-3">
       <Field label="Step" required><select className={inputClass} value={v.stepCode} onChange={(e) => setV({ ...v, stepCode: e.target.value })}>{steps.map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}</select></Field>
+      <Field label="Difficulty" required hint="Standard unless the job is simpler or harder than usual"><select className={inputClass} value={v.complexity} onChange={(e) => setV({ ...v, complexity: e.target.value })}>{COMPLEXITIES.map((c) => <option key={c} value={c}>{LEVEL[c]}</option>)}</select></Field>
       {parts.length > 1 && <Field label="Part" required><select className={inputClass} value={v.part} onChange={(e) => setV({ ...v, part: e.target.value as typeof v.part })}>
         <option value="upper">Upper part</option><option value="lower">Lower part</option></select></Field>}
       <Field label="Rate per piece" required><input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={v.rate} onChange={(e) => setV({ ...v, rate: e.target.value })} /></Field>
