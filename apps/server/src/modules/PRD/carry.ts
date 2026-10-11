@@ -171,11 +171,11 @@ export function carryProductionOver(db: Db, oldId: string, newId_: string): void
       if (ev) db.prepare('INSERT INTO prd_step_events (job_order_id, line_no, step_id, seq, action, reason, at, user_id) VALUES (?, ?, ?, 1, ?, ?, ?, ?)').run(newId_, n, id, ev.action, ev.reason, ev.at, ev.userId);
     }
     // Rework sent back, with its wearers as rows of the new item (one left out is not carried).
-    const reworks = db.prepare('SELECT id, step_id AS stepId, part, pieces, reason, at, user_id AS userId FROM prd_reworks WHERE job_order_id = ? AND line_no = ? ORDER BY at').all(oldId, o) as
-      { id: string; stepId: number; part: string; pieces: number; reason: string; at: string; userId: string }[];
+    const reworks = db.prepare('SELECT id, step_id AS stepId, part, pieces, reason, at, user_id AS userId, found_at_step_id AS foundAt FROM prd_reworks WHERE job_order_id = ? AND line_no = ? ORDER BY at').all(oldId, o) as
+      { id: string; stepId: number; part: string; pieces: number; reason: string; at: string; userId: string; foundAt: number | null }[];
     for (const r of reworks) {
       const id = newId();
-      db.prepare('INSERT INTO prd_reworks (id, job_order_id, line_no, step_id, part, pieces, reason, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, newId_, n, r.stepId, r.part, r.pieces, r.reason, r.at, r.userId);
+      db.prepare('INSERT INTO prd_reworks (id, job_order_id, line_no, step_id, part, pieces, reason, at, user_id, found_at_step_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, newId_, n, r.stepId, r.part, r.pieces, r.reason, r.at, r.userId, r.foundAt);
       for (const w of db.prepare('SELECT roster_row_no FROM prd_rework_wearers WHERE rework_id = ?').pluck().all(r.id) as number[]) {
         const nr = newRow.get(w);
         if (nr !== undefined) db.prepare('INSERT INTO prd_rework_wearers (rework_id, roster_row_no) VALUES (?, ?)').run(id, nr);

@@ -3,7 +3,7 @@
  * out of the step before; pieces needing rework go back to a step they went through, labelled rework there, without
  * replacing what was done, and are held back from release until the rework is recorded.
  */
-import { beforeEach, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
 import { currentStage } from '../../JO/public.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
@@ -140,4 +140,41 @@ it('completes a step on its own once its pieces and the rework that reached it a
   expect((await stepOf(jo, PACKING)).status).toBe('completed');
   expect(await cardOf(jo)).toMatchObject({ finishedPieces: 5, ready: true });
   expect(currentStage(env.db, jo)).toBe('ready');
+});
+
+describe('where it was found (the owner’s rule, Oct 2026)', () => {
+  const [PRINTING, HEATPRESS] = [2, 3];
+  /** A count-only line of 5 made through Printing, Heatpress, Sewing and Packing, printed and pressed. */
+  async function printed(): Promise<string> {
+    const lines = [{ kind: 'made_to_order', description: 'Team shirt', qty: 5, unitPriceCents: 30_000, discountCents: 0, roster: [] }];
+    const r = await encoder.post('/api/docs/jo.job_order/post', { input: { customerId: c.school, dueInDays: 10, priority: 'normal', paymentTerms: 'full', lines }, expectedTotalCents: 150_000 }, idem());
+    const jo = r.json().id as string;
+    expect((await production.post(`/api/prd/jobs/${jo}/lines/1/setup`, { stepIds: [PRINTING, HEATPRESS, SEWING, PACKING], garmentType: 'T-shirt', complexity: 'standard' })).statusCode).toBe(200);
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 5 }], PRINTING));
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 5 }], HEATPRESS));
+    return jo;
+  }
+  const open = async (jo: string) => Promise.all([PRINTING, HEATPRESS, SEWING, PACKING].map(async (id) => (await stepOf(jo, id)).rework.pieces));
+
+  it('is rework up to and including the step where it was found, then normal work', async () => {
+    const jo = await printed();
+    expect((await sendBack(jo, { pieces: 2, reason: 'Print peeled off after pressing', foundAtStepId: HEATPRESS })).statusCode).toBe(200);
+    expect(await open(jo)).toEqual([2, 0, 0, 0]);
+    const reasons = (await stepOf(jo, PRINTING)).rework as unknown as { reasons: { reason: string; foundAt: string }[] };
+    expect(reasons.reasons).toEqual([expect.objectContaining({ reason: 'Print peeled off after pressing', foundAt: 'Heatpress' })]);
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 2, rework: true }], PRINTING));
+    expect(await open(jo)).toEqual([0, 2, 0, 0]); // on to Heatpress, where it was found
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 2, rework: true }], HEATPRESS));
+    expect(await open(jo)).toEqual([0, 0, 0, 0]); // Sewing and Packing take them as normal work
+  });
+
+  it('found at Sewing (already sewn), stays rework to the end of the route', async () => {
+    const jo = await printed();
+    expect((await sendBack(jo, { pieces: 1, reason: 'Wrong print on a sewn shirt', foundAtStepId: SEWING })).statusCode).toBe(200);
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1, rework: true }], PRINTING));
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1, rework: true }], HEATPRESS));
+    expect(await open(jo)).toEqual([0, 0, 1, 0]);
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1, rework: true }], SEWING));
+    expect(await open(jo)).toEqual([0, 0, 0, 1]); // still rework at Packing, until it is ready
+  });
 });

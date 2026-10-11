@@ -12,7 +12,7 @@ const preview = { totalCents: 12000, summary: 'Sample pieces', issues: [], doc: 
 
 // Sewing: 5 pieces done, 12 came from the step before, so 7 are ready; rework is at most the 5 done.
 const job = { jobOrder: { number: 'JO-1' }, lines: [{ lineNo: 1, description: 'Sample shirt', qty: 12, route: [{ id: 1, name: 'Sew', seq: 1, status: 'in_progress', pieces: 5, availablePieces: 12,
-  rework: { pieces: 5, wearers: [], reasons: [{ reason: 'Loose stitches on the hem', foundAt: 'Packing', at: '2026-10-10T09:00:00.000+08:00', pieces: 5 }] } }] }] } as PrdJob;
+  rework: { pieces: 5, wearers: [], reasons: [{ reason: 'Loose stitches on the hem', foundAt: 'Packing', at: '2026-10-10T09:00:00.000+08:00', pieces: 5 }] } }] }] } as unknown as PrdJob;
 /** The same job with nothing sent back for rework. */
 const noRework = { ...job, lines: [{ ...job.lines[0]!, route: [{ ...job.lines[0]!.route![0]!, rework: undefined }] }] } as PrdJob;
 

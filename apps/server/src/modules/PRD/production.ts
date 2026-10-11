@@ -120,35 +120,49 @@ export type ReworkOpen = { pieces: number; wearers: number[]; redone?: number; r
 export type ReworkReason = { reason: string; foundAt: string; at: string; pieces: number };
 
 /**
- * Where the rework sent back on a line is now (the owner's rule, Oct 2026): sent-back pieces start again at the first
- * step and go through every step again, labelled rework. On each needed step, what arrived (all sent back, on the first
+ * Where the rework sent back on a line is now (the owner's rules, Oct 2026): sent-back pieces start again at the first
+ * step and are labelled rework on each needed step up to and including the step where the fault was found; after it they
+ * are normal work again (those steps never did them). Found at Sewing (already sewn), or where it was found is not known,
+ * they stay rework to the end of the route. On each step: what arrived (all those still in rework there, on the first
  * step; else what the step before redid) less the rework (pasubra) pieces recorded there since the first send-back; with
  * a wearer list, the wearers arrived and not ticked on rework there. What was done before stays as recorded.
  */
 export function reworkFlow(db: Db, jobOrderId: string, lineNo: number, route: RouteStep[], part: Part = 'whole'): Map<number, ReworkOpen> {
   const out = new Map<number, ReworkOpen>(route.map((s) => [s.id, { pieces: 0, wearers: [] }]));
-  const sent = db.prepare(`SELECT r.id, r.pieces, r.at, r.reason, s.name AS foundAt FROM prd_reworks r JOIN prd_steps s ON s.id = r.step_id
-    WHERE r.job_order_id = ? AND r.line_no = ? AND r.part = ? ORDER BY r.at`).all(jobOrderId, lineNo, part) as { id: string; pieces: number; at: string; reason: string; foundAt: string }[];
+  const sent = db.prepare(`SELECT r.id, r.pieces, r.at, r.reason, r.found_at_step_id AS foundAtId, s.name AS foundAt, s.code AS foundCode FROM prd_reworks r
+    LEFT JOIN prd_steps s ON s.id = r.found_at_step_id WHERE r.job_order_id = ? AND r.line_no = ? AND r.part = ? ORDER BY r.at`)
+    .all(jobOrderId, lineNo, part) as { id: string; pieces: number; at: string; reason: string; foundAtId: number | null; foundAt: string | null; foundCode: string | null }[];
   if (sent.length === 0) return out;
-  const reasons: ReworkReason[] = sent.map((r) => ({ reason: r.reason, foundAt: r.foundAt, at: r.at, pieces: r.pieces }));
+  const needed = route.filter((x) => x.status !== 'not_needed');
+  // The last step each send-back is rework on: where it was found, or the end of the route.
+  const lastOf = (r: (typeof sent)[number]) => {
+    const at = needed.findIndex((x) => x.id === r.foundAtId);
+    return at < 0 || r.foundCode === 'SEWING' ? needed.length - 1 : at;
+  };
+  const wearersOf = db.prepare('SELECT roster_row_no FROM prd_rework_wearers WHERE rework_id = ?').pluck();
+  const sends = sent.map((r) => ({ ...r, last: lastOf(r), wearers: wearersOf.all(r.id) as number[] }));
   const since = sent[0]!.at;
   const redoneOn = db.prepare(`SELECT COALESCE(SUM(a.pieces), 0) FROM prd_line_assignments a JOIN documents d ON d.id = a.document_id
     WHERE a.jo = ? AND a.line = ? AND a.step_id = ? AND a.part = ? AND a.kind = 'rework' AND d.status = 'posted' AND d.posted_at >= ?`).pluck();
   const tickedOn = db.prepare(`SELECT DISTINCT x.roster_row_no FROM prd_line_assignment_wearers x JOIN prd_assignments a ON a.id = x.assignment_id JOIN documents d ON d.id = a.document_id
     WHERE x.jo = ? AND x.line = ? AND a.step_id = ? AND a.part = ? AND a.kind = 'rework' AND d.status = 'posted' AND d.posted_at >= ?`).pluck();
-  const sentWearers = db.prepare(`SELECT DISTINCT w.roster_row_no FROM prd_rework_wearers w JOIN prd_reworks r ON r.id = w.rework_id
-    WHERE r.job_order_id = ? AND r.line_no = ? AND r.part = ?`).pluck().all(jobOrderId, lineNo, part) as number[];
-  let arrived = sent.reduce((n, r) => n + r.pieces, 0);
-  let arrivedWearers = sentWearers;
-  for (const s of route.filter((x) => x.status !== 'not_needed')) {
+  const still = (i: number) => sends.filter((r) => r.last >= i);
+  let arrived = still(0).reduce((n, r) => n + r.pieces, 0);
+  let arrivedWearers = [...new Set(still(0).flatMap((r) => r.wearers))];
+  needed.forEach((s, i) => {
+    const here = still(i);
     const redone = Math.min(arrived, redoneOn.get(jobOrderId, lineNo, s.id, part, since) as number);
     const ticked = new Set(tickedOn.all(jobOrderId, lineNo, s.id, part, since) as number[]);
     const waiting = arrived - redone;
     const wearers = arrivedWearers.filter((w) => !ticked.has(w)).sort((x, y) => x - y);
+    const reasons: ReworkReason[] = here.map((r) => ({ reason: r.reason, foundAt: r.foundAt ?? 'a later step', at: r.at, pieces: r.pieces }));
     out.set(s.id, { pieces: waiting, wearers, redone, ...(waiting > 0 || wearers.length > 0 ? { reasons } : {}) });
-    arrived = redone;
-    arrivedWearers = arrivedWearers.filter((w) => ticked.has(w));
-  }
+    // On to the next step: what was redone here, less the send-backs whose rework ends here.
+    const next = still(i + 1);
+    arrived = Math.min(redone, next.reduce((n, r) => n + r.pieces, 0));
+    const goOn = new Set(next.flatMap((r) => r.wearers));
+    arrivedWearers = arrivedWearers.filter((w) => ticked.has(w) && goOn.has(w));
+  });
   return out;
 }
 
@@ -355,7 +369,7 @@ export function stepAction(db: Db, jobOrderId: string, lineNo: number, stepId: n
 }
 
 /** `wearers`: the wearers sent back (their pieces are then the pieces); `part`: on a set, the upper or the lower part. */
-/** `foundAtStepId`: the step where the rework was found (kept in the audit row); the pieces still start again at the first step. */
+/** `foundAtStepId`: the step where the rework was found; the pieces start again at the first step and are rework up to it (reworkFlow). */
 export interface ReworkRequest { pieces?: number | undefined; wearers?: number[] | undefined; part?: 'upper' | 'lower' | undefined; reason: string; foundAtStepId?: number | undefined }
 
 /**
@@ -399,8 +413,9 @@ export function sendBackForRework(db: Db, jobOrderId: string, lineNo: number, re
     throw conflict('REWORK_OVER', `${step.name} of line ${lineNo} has ${done} ${of} done${open.pieces ? ` and ${open.pieces} already in rework` : ''}, so at most ${Math.max(0, done - open.pieces)} can go back for rework.`);
   }
   if (pieces > line.qty - line.releasedQty) throw conflict('RELEASED', `Only ${line.qty - line.releasedQty} pieces of line ${lineNo} are not released yet.`);
+  const foundAt = req.foundAtStepId !== undefined && route.some((s) => s.id === req.foundAtStepId) ? req.foundAtStepId : null;
   const id = newId();
-  db.prepare('INSERT INTO prd_reworks (id, job_order_id, line_no, step_id, part, pieces, reason, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, jobOrderId, lineNo, stepId, part, pieces, why, who.at, who.userId);
+  db.prepare('INSERT INTO prd_reworks (id, job_order_id, line_no, step_id, part, pieces, reason, at, user_id, found_at_step_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, jobOrderId, lineNo, stepId, part, pieces, why, who.at, who.userId, foundAt);
   for (const n of wearers) db.prepare('INSERT INTO prd_rework_wearers (rework_id, roster_row_no) VALUES (?, ?)').run(id, n);
   appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.rework', entityType: 'jo.job_order', entityId: jobOrderId, data: { id, lineNo, stepId, part, pieces, wearers, reason: why, foundAtStepId: req.foundAtStepId ?? null } });
   syncStage(db, jobOrderId, `${pieces} ${of} of line ${lineNo} sent back for rework from ${step.name}`, who);
