@@ -132,7 +132,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
         <p className={`mt-2 text-sm ${shown?.recorded ? 'text-amber-800' : 'text-slate-600'}`}>
           {!periods ? 'Loading the periods…'
             : dayNote ? dayNote
-            : shown ? `${showDate(shown.periodStart)} to ${showDate(shown.periodEnd)} · ${shown.recorded ? `already recorded as ${shown.recorded.number}: cancel it to redo it` : `${shown.employees} ${shown.employees === 1 ? 'person' : 'people'}`}`
+            : shown ? `${showDate(shown.periodStart)} to ${showDate(shown.periodEnd)} · ${shown.recorded ? `already recorded as ${shown.recorded.number}: cancel it to redo it` : `${shown.employees} ${shown.employees === 1 ? 'person' : 'people'}${shown.notEnded ? ' · not ended yet (practice shop only)' : ''}`}`
             : 'Pick the first or last day of the period. Only periods that have ended can be paid.'}
         </p>
         {bookOn && <p className="mt-2 text-sm text-slate-600">Dated {bookOn}, the period's last day, so its pay is booked in that month.</p>}
