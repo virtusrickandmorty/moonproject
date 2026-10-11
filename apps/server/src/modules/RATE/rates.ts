@@ -20,21 +20,31 @@ const RATE = `SELECT id, garment_type AS garmentType, step_code AS stepCode, com
   FROM rate_piece_rates`;
 
 /** The rate in force on a date: the latest effective_from on or before it, the latest row on a tie. Garment types match in any case. */
-export function rateAt(db: Db, garmentType: string, stepCode: string, complexity: Complexity, date: string, part: Part = 'whole'): PieceRate | undefined {
+function rateAtRaw(db: Db, garmentType: string, stepCode: string, complexity: Complexity, date: string, part: Part = 'whole'): PieceRate | undefined {
   return db
     .prepare(`${RATE} WHERE garment_type = ? AND step_code = ? AND complexity = ? AND part = ? AND effective_from <= ? ORDER BY effective_from DESC, id DESC LIMIT 1`)
     .get(garmentType.trim(), stepCode, complexity, part, date) as PieceRate | undefined;
 }
 
+/** The rate in force on a date, or none while its garment type is switched off (switchGarmentType). */
+export function rateAt(db: Db, garmentType: string, stepCode: string, complexity: Complexity, date: string, part: Part = 'whole'): PieceRate | undefined {
+  return isSwitchedOff(db, garmentType) ? undefined : rateAtRaw(db, garmentType, stepCode, complexity, date, part);
+}
+
+/** Whether a garment type's rates are switched off: its latest switch row says off. */
+export function isSwitchedOff(db: Db, garmentType: string): boolean {
+  return db.prepare('SELECT is_on FROM rate_garment_type_switches WHERE garment_type = ? ORDER BY id DESC LIMIT 1').pluck().get(garmentType.trim()) === 0;
+}
+
 /** Every rate in force on a date, one per garment type, step, complexity and part. */
 export function ratesAt(db: Db, date: string): PieceRate[] {
-  return db
+  return (db
     .prepare(
       `${RATE} r WHERE effective_from <= @date AND id = (SELECT x.id FROM rate_piece_rates x WHERE x.garment_type = r.garment_type AND x.step_code = r.step_code
          AND x.complexity = r.complexity AND x.part = r.part AND x.effective_from <= @date ORDER BY x.effective_from DESC, x.id DESC LIMIT 1)
        ORDER BY garment_type, step_code, complexity, part`,
     )
-    .all({ date }) as PieceRate[];
+    .all({ date }) as PieceRate[]).filter((r) => !isSwitchedOff(db, r.garmentType));
 }
 
 /** All rows, newest first: the history, rates that start later included. */
@@ -72,4 +82,25 @@ export function addRate(db: Db, raw: unknown, who: { userId: string; at: string;
   );
   appendAudit(db, { at: who.at, userId: who.userId, action: 'rate.add', entityType: 'rate.piece_rate', entityId: String(id), data: { ...v, part: v.part ?? 'whole', garmentType } });
   return db.prepare(`${RATE} WHERE id = ?`).get(id) as PieceRate;
+}
+
+export const switchInput = z.object({ garmentType: z.string().trim().min(1).max(60), on: z.boolean(), reason: z.string().trim().min(10).max(500) }).strict();
+
+/**
+ * Switches a garment type's piece rates off or on again (the owner's request, Oct 2026). Off is refused while a job order
+ * item is made as that garment type (its next pieces would have no rate): make it a price list item instead. Call inside
+ * a transaction.
+ */
+export function switchGarmentType(db: Db, raw: unknown, who: { userId: string; at: string }, jobItemsMadeAs: (garmentType: string) => number) {
+  const parsed = switchInput.safeParse(raw);
+  if (!parsed.success) throw badRequest('INVALID_INPUT', 'Say which garment type and why (at least 10 characters).', parsed.error.issues.map((i) => ({ field: i.path.join('.'), message: i.message })));
+  const v = parsed.data;
+  const known = db.prepare('SELECT garment_type FROM rate_piece_rates WHERE garment_type = ? LIMIT 1').pluck().get(v.garmentType) as string | undefined;
+  if (!known) throw badRequest('GARMENT_TYPE', `There is no piece rate for ${v.garmentType}.`);
+  if (isSwitchedOff(db, known) === !v.on) throw badRequest('NO_CHANGE', `${known} is already switched ${v.on ? 'on' : 'off'}.`);
+  const using = v.on ? 0 : jobItemsMadeAs(known);
+  if (using > 0) throw badRequest('IN_USE', `${using} job order ${using === 1 ? 'item is' : 'items are'} made as ${known}, so its rates stay. Make it a price list item instead.`);
+  db.prepare('INSERT INTO rate_garment_type_switches (garment_type, is_on, reason, at, user_id) VALUES (?, ?, ?, ?, ?)').run(known, v.on ? 1 : 0, v.reason, who.at, who.userId);
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'rate.switch', entityType: 'rate.garment_type', entityId: known, data: { on: v.on, reason: v.reason } });
+  return { garmentType: known, on: v.on };
 }

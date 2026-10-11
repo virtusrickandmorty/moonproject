@@ -146,3 +146,10 @@ export function productionReportRows(db: Db, from: string, to: string) {
     JOIN prd_steps s ON s.id=a.step_id WHERE d.status='posted' AND a.work_date BETWEEN ? AND ?
     ORDER BY a.work_date,d.number,a.row_no`).all(from,to) as Array<Record<string, string | number>>;
 }
+
+/** How many items of recorded job orders are made as a garment type (their latest setup): piece rates they still need (RATE). */
+export function jobItemsMadeAs(db: Db, garmentType: string): number {
+  return db.prepare(`SELECT COUNT(*) FROM prd_line_setups s JOIN documents d ON d.id = s.job_order_id
+    WHERE d.status = 'posted' AND s.garment_type = ? COLLATE NOCASE
+      AND s.seq = (SELECT MAX(x.seq) FROM prd_line_setups x WHERE x.job_order_id = s.job_order_id AND x.line_no = s.line_no)`).pluck().get(garmentType) as number;
+}

@@ -331,7 +331,7 @@ export interface PrdWearer { rowNo: number; wearerName: string; sizeMode: 'prese
 export interface PrdSetup { templateId?: number; stepIds: number[]; garmentType?: string; complexity: string }
 export interface Worker { id: string; code: string; name: string }
 export interface PieceRate { id: number; garmentType: string; stepCode: string; complexity: string; part?: 'whole' | 'upper' | 'lower'; rateCents: number; effectiveFrom: string; reason: string; createdAt: string }
-export interface RateTable { asOf: string; current: PieceRate[]; history: PieceRate[]; garmentTypes: string[]; /** Rates in force for a garment type no price list item goes by. */ unmatched: PieceRate[] }
+export interface RateTable { asOf: string; current: PieceRate[]; history: PieceRate[]; garmentTypes: string[]; /** Rates in force for a garment type no price list item goes by, with how many job order items are made as it. */ unmatched: (PieceRate & { jobItems: number })[] }
 /** Employees and time (EMP). Government IDs arrive masked without emp.view_ids; pay history is null without pay.view_rates. */
 export interface EmployeeRow { id: string; code: string; fullName: string; position: string | null; department: string | null; costCentre: string; isActive: boolean; hireDate: string; separatedOn: string | null }
 export interface Statutory { sss: boolean; phic: boolean; hdmf: boolean; wtax: boolean }
@@ -1131,6 +1131,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     prdWorkers: () => call<Worker[]>('GET', '/api/prd/workers'),
     rates: () => call<RateTable>('GET', '/api/rate/rates'),
     addRate: (body: Omit<PieceRate, 'id' | 'createdAt'>) => call<PieceRate>('POST', '/api/rate/rates', body),
+    /** Switch a garment type's piece rates off (refused while a job order item is made as it) or on again, with the reason. */
+    switchGarmentType: (body: { garmentType: string; on: boolean; reason: string }) => call<{ garmentType: string; on: boolean }>('POST', '/api/rate/garment-types/switch', body),
     employees: (q: { search?: string; status?: 'active' | 'separated' | 'all'; order?: 'newest' } = {}) =>
       call<EmployeeRow[]>('GET', `/api/emp/employees?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][])}`),
     employee: (id: string) => call<EmployeeDetail>('GET', emp(id)),
