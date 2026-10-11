@@ -1,4 +1,5 @@
 /** Server-rendered, escaped print views. No journal entries are created here. */
+import { customerPrintDetails } from '../CUS/public.ts';
 import { readFileSync } from 'node:fs';
 import { formatPeso } from '@moonproject/shared';
 import qrcode from 'qrcode-generator';
@@ -317,6 +318,12 @@ export const printMoney = money;
 export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profile, kind: PrintKind,
   printedBy: string, printedAt: string, copyNumber: number, practice = false, testPrint = false, joinBase?: string): string {
   const p = content(db, h, doc, kind, joinBase);
+  // The customer's billing address and contact numbers under their name (the owner's request, Oct 2026).
+  const customerId = (doc as { customerId?: unknown } | null)?.customerId;
+  if (p.party && typeof customerId === 'string' && kind !== 'job_ticket') { // not on the production copy
+    const c = customerPrintDetails(db, customerId);
+    if (c) p.party.lines = [...(p.party.lines ?? []), ...(c.billingAddress ? [`Billing address: ${c.billingAddress}`] : []), ...(c.phones.length ? [`Contact no.: ${c.phones.join(' / ')}`] : [])];
+  }
   const catalogueTitles: readonly string[] = ['Payment Voucher', 'Payslip', 'Cash Advance Slip', 'Inventory Count Sheet', 'Certificate of Creditable Tax Withheld at Source'];
   if (!(DOC_TITLES as readonly string[]).includes(p.title) && !catalogueTitles.includes(p.title)) throw new Error('Print title is not allowed');
   const title = p.title.toUpperCase();

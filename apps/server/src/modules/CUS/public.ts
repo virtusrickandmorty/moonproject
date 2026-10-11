@@ -95,3 +95,14 @@ export function sizingProfile(db: Db, personId: string): Record<string, unknown>
     WHERE p.id = ? AND m.status = 'active'`).get(personId) as Record<string, unknown> | undefined;
   return row ? chartResponse(row) : undefined;
 }
+
+/** What a printout shows under the customer's name (the owner's request, Oct 2026): billing address and contact numbers. */
+export function customerPrintDetails(db: Db, id: string): { billingAddress: string | null; phones: string[] } | undefined {
+  const row = db.prepare('SELECT id, billing_address, merged_into_id FROM cus_customers WHERE id = ?').get(id) as
+    | { id: string; billing_address: string | null; merged_into_id: string | null }
+    | undefined;
+  if (!row) return undefined;
+  const c = row.merged_into_id ? (db.prepare('SELECT id, billing_address FROM cus_customers WHERE id = ?').get(row.merged_into_id) as typeof row | undefined) ?? row : row;
+  const phones = db.prepare('SELECT phone FROM cus_customer_phones WHERE customer_id = ? AND is_active = 1 ORDER BY created_at').pluck().all(c.id) as string[];
+  return { billingAddress: c.billing_address?.trim() || null, phones: phones.map((p) => p.trim()).filter(Boolean) };
+}
