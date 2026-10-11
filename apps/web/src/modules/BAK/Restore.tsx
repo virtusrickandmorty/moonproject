@@ -82,8 +82,8 @@ function OpenBackup({ backup, purpose, onBack }: { backup: BackupFile; purpose: 
         )}
         {opening.error && <Notice>{opening.error}</Notice>}
         {check && (
-          <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[max-content_1fr]">
-            {factRows(check).map(([label, value]) => <div key={label} className="contents"><dt className="text-slate-500">{label}</dt><dd>{value}</dd></div>)}
+          <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[max-content_minmax(0,1fr)]">
+            {factRows(check).map(([label, value]) => <div key={label} className="contents"><dt className="text-slate-500">{label}</dt><dd className="min-w-0 [overflow-wrap:anywhere]">{value}</dd></div>)}
           </dl>
         )}
         {check?.drill === 'passed' && <Notice tone="success">Drill passed. It is recorded as the latest restore drill.</Notice>}
