@@ -2,6 +2,8 @@
  * Production board (PLAN E7, H1): every line still to release, in a column per step, with due-date and rush filters. A card
  * opens its line: the route with Complete / Not needed / Reopen, "Record pieces", "Send back for rework" and the route
  * setup. Rework sent back to a step shows there labelled rework; what was done there stays (the owner's request, Oct 2026).
+ * Laid out to be read at a glance (the owner's request, Oct 2026): headline counts that also filter, one toolbar, and
+ * cards with the customer, a progress bar on the step, and the due date in words (late in red).
  */
 import { useEffect, useState } from 'react';
 import { api, type BoardCard, type DocTypeInfo, type Me, type PrdCatalogue, type PrdJob, type StepStatus } from '../../api.ts';
@@ -10,7 +12,7 @@ import { EntryForm } from './EntryForm.tsx';
 import { Button, Dialog, Field, Notice, ReasonDialog, inputClass, useAction, searchClass, showDate } from '../../components/ui.tsx';
 import { TickBar } from '../../components/charts.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { columns, filterCards, stepFlow, useBoardRefresh, type Due } from './board.ts';
+import { boardCounts, columns, dueWords, filterCards, stepFlow, useBoardRefresh, type Due } from './board.ts';
 
 const readBoard = async () => {
   const [cards, cat, health] = await Promise.all([api.prdBoard(), api.prdCatalogue(), api.health()]);
@@ -51,57 +53,100 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
   const can = { progress: me.permissions.includes('prd.progress'), assign: !!docTypes.find((d) => d.key === 'prd.entry')?.canCreate };
   const shown = filterCards(cards, { due, rushOnly, search }, today);
   const card = open && cards.find((c) => c.jobOrderId === open.jobOrderId && c.lineNo === open.lineNo);
+  const counts = boardCounts(cards, today);
+  const filtered = due !== 'all' || rushOnly || search.trim() !== '';
+  const tile = (label: string, value: number, note: string, on: boolean, act: (() => void) | null, tone = '') => {
+    const body = <><span className="block text-xs text-slate-500">{label}</span><span className={`block text-2xl font-semibold tabular-nums ${tone}`}>{value}</span><span className="block text-xs text-slate-500">{note}</span></>;
+    return act ? <button type="button" aria-pressed={on} onClick={act} className={`rounded-xl p-3 text-left ring-1 transition hover:bg-slate-50 ${on ? 'bg-indigo-50 ring-indigo-300' : 'bg-white ring-slate-200/70'}`}>{body}</button>
+      : <div className="rounded-xl bg-white p-3 ring-1 ring-slate-200/70">{body}</div>;
+  };
+  const seg = (k: Due, label: string) => <button key={k} type="button" aria-pressed={due === k} onClick={() => setDue(k)}
+    className={`rounded-md px-3 py-1.5 text-sm font-medium ${due === k ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>{label}</button>;
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">Production board</h1>
-        <span className="flex-1" />
-        <select aria-label="Due" className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" value={due} onChange={(e) => setDue(e.target.value as Due)}>
-          <option value="all">All due dates</option>
-          <option value="week">Due within 7 days</option>
-          <option value="overdue">Overdue</option>
-        </select>
-        <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={rushOnly} onChange={(e) => setRushOnly(e.target.checked)} /> Rush only</label>
-        {can.assign && <Link to={docPath('prd.entry', '/new')} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">+ Record pieces</Link>}
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl font-semibold">Production board</h1>
+          <p role="status" className={`text-sm ${stale ? 'font-semibold text-red-800' : 'text-slate-500'}`}>{words} · Refreshes every 30 seconds</p>
+        </div>
+        {can.assign && <Link to={docPath('prd.entry', '/new')} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">+ Record pieces</Link>}
       </div>
-      <p role="status" className={`text-sm ${stale ? 'font-semibold text-red-800' : 'text-slate-500'}`}>{words} · Refreshes every 30 seconds</p>
       {error && <Notice>{error}</Notice>}
       {toRoute && <Notice tone="warning">Choose the production steps of {toRoute.number} {toRoute.lines.length === 1 ? 'line' : 'lines'} {toRoute.lines.join(', ')} first; then its job ticket can be printed.</Notice>}
       {recordedId && <Notice tone="success">Pieces recorded. <Link to={docPath('prd.entry', `/${recordedId}`)} className="underline">Open the entry</Link></Notice>}
-      <div className="flex flex-wrap items-end justify-end gap-3">
-        <div className={searchClass}><Field label="Search job number or customer"><input type="search" className={inputClass} value={search} onChange={(e) => setSearch(e.target.value)} /></Field></div>
-        <Button onClick={() => { setSearch(''); setDue('all'); setRushOnly(false); }}>Reset filters</Button>
+
+      {/* At a glance: what is on the floor; late, rush and this week also filter the board. */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" aria-label="At a glance">
+        {tile('On the floor', counts.lines, 'items in production', false, null)}
+        {tile('To route', counts.toRoute, 'need their steps', false, null, counts.toRoute ? 'text-amber-700' : '')}
+        {tile('Late', counts.late, 'past the due date', due === 'overdue', () => setDue(due === 'overdue' ? 'all' : 'overdue'), counts.late ? 'text-red-600' : '')}
+        {tile('Due this week', counts.week, 'within 7 days', due === 'week', () => setDue(due === 'week' ? 'all' : 'week'))}
+        {tile('Rush', counts.rush, 'rush job orders', rushOnly, () => setRushOnly(!rushOnly), counts.rush ? 'text-red-600' : '')}
+        {tile('Rework', counts.rework, 'pieces sent back', false, null, counts.rework ? 'text-amber-700' : '')}
       </div>
-      {shown.length === 0 && <p className="text-slate-500">{cards.length === 0 ? 'No job order is in production.' : 'No line matches these filters.'}</p>}
-      <div className="flex gap-3 overflow-x-auto pb-2">
-        {columns(cat.steps, shown).map((col) => (
-          <section key={col.key} aria-label={col.title} className="w-60 shrink-0 space-y-2 rounded-lg bg-slate-100 p-2">
-            <h2 className="flex justify-between px-1 text-sm font-semibold"><span>{col.title}</span><span className="text-slate-500">{col.cards.length}</span></h2>
+
+      <div className="flex flex-wrap items-center gap-3 rounded-xl bg-white p-2 shadow-sm ring-1 ring-slate-200/70">
+        <div className="relative min-w-56 flex-1">
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Zm9 2-4-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
+          <input type="search" aria-label="Search job number or customer" placeholder="Search job number or customer" className={`${inputClass} pl-9`} value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+        <div role="group" aria-label="Due" className="flex gap-1 rounded-lg bg-slate-100 p-1">{seg('all', 'All')}{seg('week', 'This week')}{seg('overdue', 'Overdue')}</div>
+        <button type="button" aria-pressed={rushOnly} onClick={() => setRushOnly(!rushOnly)}
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium ring-1 ${rushOnly ? 'bg-red-50 text-red-700 ring-red-200' : 'text-slate-600 ring-slate-200 hover:bg-slate-50'}`}>Rush only</button>
+        <button type="button" disabled={!filtered} onClick={() => { setSearch(''); setDue('all'); setRushOnly(false); }} className="px-2 text-sm text-indigo-700 hover:underline disabled:text-slate-400 disabled:no-underline">Reset filters</button>
+      </div>
+
+      {shown.length === 0 && <p className="rounded-xl bg-white p-6 text-center text-slate-500 ring-1 ring-slate-200/70">{cards.length === 0 ? 'No job order is in production.' : 'No item matches these filters.'}</p>}
+      <div className="flex snap-x gap-4 overflow-x-auto pb-3 pr-2">
+        {columns(cat.steps, shown).map((col) => {
+          const toDo = col.stepId ? col.cards.reduce((n, c) => { const h = c.steps?.find((s) => s.stepId === col.stepId); return n + (h ? Math.max(0, c.qty - (h.parts ? Math.min(h.parts.upper, h.parts.lower) : h.pieces)) : 0); }, 0) : null;
+          return (
+          <section key={col.key} aria-label={col.title} className="flex w-72 shrink-0 snap-start flex-col gap-3 rounded-xl bg-slate-100/80 p-3">
+            <h2 className="flex items-center gap-2 px-1">
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{col.title}</span>
+              {toDo !== null && toDo > 0 && <span className="text-xs text-slate-500">{toDo} pcs to do</span>}
+              <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold tabular-nums text-slate-700 ring-1 ring-slate-200">{col.cards.length}</span>
+            </h2>
             {col.cards.map((c) => {
               const here = c.steps?.find((s) => s.stepId === (col.stepId ?? c.currentStepId));
               const waiting = here ? Math.max(0, here.receivedPieces - here.pieces) : 0; // came from the step before, not done here yet
-              const late = today && c.dueDate < today;
+              const left = c.qty - c.releasedQty;
+              const doneHere = here ? (here.parts ? Math.min(here.parts.upper, here.parts.lower) : here.pieces) : 0;
+              const when = today ? dueWords(today, c.dueDate) : null;
+              const rework = here && col.stepId ? here.reworkOpen ?? 0 : 0;
               return (
                 <button key={`${c.jobOrderId}-${c.lineNo}`} type="button" onClick={() => setOpen({ jobOrderId: c.jobOrderId, lineNo: c.lineNo })}
-                  className={`block w-full rounded-md bg-white p-2 text-left text-sm shadow-sm ring-1 ring-slate-200 hover:ring-indigo-400 ${late ? 'border-l-4 border-red-500' : ''}`}>
-                  <span className="flex justify-between font-medium"><span>{c.number} · line {c.lineNo}</span>{c.priority === 'rush' && <span className="text-xs font-semibold text-red-700">RUSH</span>}</span>
-                  <span className="block text-slate-600">{c.customerName}</span>
-                  <span className="block">{c.description} · {c.qty - c.releasedQty} pcs</span>
-                  <span className={`block text-xs ${late ? 'text-red-700' : 'text-slate-500'}`}>Due {showDate(c.dueDate)}</span>
-                  {/* Under a step: only what is still to do there (the owner's request: no "done" count). */}
-                  {here && col.stepId && (here.reworkOpen ?? 0) > 0 && <span className="mt-1 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-900">{here.reworkOpen} rework</span>}
-                  {here && col.stepId && here.status !== 'completed' && here.status !== 'not_needed' && <span className="mt-1 block text-xs font-medium text-indigo-800">
-                    {here.parts ? `Upper ${Math.max(0, c.qty - here.parts.upper)} · Lower ${Math.max(0, c.qty - here.parts.lower)} to do` : waiting > 0 ? `${waiting} to do` : `${Math.max(0, c.qty - here.pieces)} still to come`}
+                  className={`block w-full space-y-2 rounded-xl bg-white p-3 text-left text-sm shadow-sm ring-1 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-indigo-300 ${when?.tone === 'late' ? 'ring-red-200' : 'ring-slate-200/70'}`}>
+                  <span className="flex items-center gap-2">
+                    <span className="font-semibold text-slate-900">{c.number}</span><span className="text-xs text-slate-400">item {c.lineNo}</span>
+                    <span className="flex-1" />
+                    {c.priority === 'rush' && <span className="rounded px-1.5 text-[10px] font-bold uppercase tracking-wide text-red-600 ring-1 ring-red-200">Rush</span>}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-700">{c.customerName.trim().charAt(0).toUpperCase()}</span>
+                    <span className="truncate text-slate-700">{c.customerName}</span>
+                  </span>
+                  <span className="block truncate text-slate-900">{c.description} <span className="text-slate-500">· {left} pcs</span></span>
+                  {/* Under a step: how far it is on this step, and what is still to do there. */}
+                  {here && col.stepId && here.status !== 'not_needed' && <span className="block space-y-1">
+                    <TickBar parts={[{ share: c.qty ? Math.min(1, doneHere / c.qty) : 0, tone: here.status === 'completed' ? 'bg-emerald-500' : 'bg-indigo-600' }]} ticks={40} height="h-3" stretch label={`${doneHere} of ${c.qty} done on ${col.title}`} />
+                    <span className="flex justify-between text-xs"><span className="text-slate-500">{doneHere} of {c.qty} done</span>
+                      {here.status !== 'completed' && <span className="font-medium text-indigo-700">{here.parts ? `Upper ${Math.max(0, c.qty - here.parts.upper)} · Lower ${Math.max(0, c.qty - here.parts.lower)} to do` : waiting > 0 ? `${waiting} ready to do` : `${Math.max(0, c.qty - here.pieces)} still to come`}</span>}</span>
                   </span>}
-                  {/* Under Ready for release: how many may go out now, when not all of it is finished. */}
-                  {!col.stepId && col.key === 'ready' && !c.ready && <span className="mt-1 block text-xs font-medium text-emerald-800">
-                    {Math.max(0, (c.finishedPieces ?? 0) - c.releasedQty)} of {c.qty - c.releasedQty} ready to release
-                  </span>}
+                  {/* Under Ready: how many may go out now, when not all of it is finished. */}
+                  {!col.stepId && col.key === 'ready' && <span className="block text-xs font-medium text-emerald-700">{c.ready ? `All ${left} ready to release` : `${Math.max(0, (c.finishedPieces ?? 0) - c.releasedQty)} of ${left} ready to release`}</span>}
+                  {col.key === 'setup' && <span className="block text-xs font-medium text-amber-700">Choose its production steps</span>}
+                  <span className="flex items-center gap-2 whitespace-nowrap border-t border-slate-100 pt-2 text-xs">
+                    {when && <span className={`shrink-0 rounded-md px-1.5 py-0.5 font-medium ${when.tone === 'late' ? 'bg-red-50 text-red-700' : when.tone === 'soon' ? 'bg-amber-50 text-amber-800' : 'text-slate-500'}`}>{when.text}</span>}
+                    <span className="min-w-0 flex-1 truncate text-slate-400">{showDate(c.dueDate)}</span>
+                    {rework > 0 && <span className="shrink-0 rounded-md bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-800">{rework} rework</span>}
+                  </span>
                 </button>
               );
             })}
           </section>
-        ))}
+          );
+        })}
       </div>
       {card && <LinePanel card={card} cat={cat} can={can} onChanged={load} onClose={() => setOpen(null)} />}
       {query.has('record') && entryType && (
