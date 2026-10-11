@@ -113,3 +113,6 @@ export function logCatalogPriceOverride(db: Db, input: {
 export function itemGarmentTypes(db: Db): string[] {
   return db.prepare(`SELECT DISTINCT garment_type FROM cat_items WHERE garment_type IS NOT NULL AND garment_type <> ''`).pluck().all() as string[];
 }
+
+/** Price list items created or found by an import (MIG): import-item.ts. */
+export { importPriceListItem, type ImportedItem } from './import-item.ts';
