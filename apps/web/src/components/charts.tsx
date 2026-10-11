@@ -14,10 +14,13 @@ export const HATCH: CSSProperties = { backgroundImage: 'repeating-linear-gradien
 export function TickBar({ parts, ticks = 32, height = 'h-7', label, stretch = false }: { parts: { share: number; tone: string }[]; ticks?: number; height?: string; label: string; stretch?: boolean }) {
   const ends: number[] = [];
   parts.reduce((n, p) => (ends.push(n + Math.max(0, p.share) * ticks), n + Math.max(0, p.share) * ticks), 0);
-  return <span role="img" aria-label={label} title={label} className={`flex items-end ${stretch ? 'w-full justify-between' : 'gap-[2px]'} ${height}`}>
+  // Stretched, the ticks narrow to fit the width they are given (a phone), never running past it (the owner's report, Oct 2026).
+  return <span role="img" aria-label={label} title={label} className={`flex items-end ${stretch ? 'w-full min-w-0 max-w-full justify-between gap-px overflow-hidden' : 'gap-[2px]'} ${height}`}>
     {Array.from({ length: ticks }, (_, i) => {
       const part = ends.findIndex((end) => i + 0.5 <= end);
-      return <span key={i} className={`h-full rounded-full w-[3px] shrink-0 ${part < 0 ? 'bg-slate-200' : parts[part]!.tone}`} />;
+      // On a phone a long stretched bar shows every other tick: the same share, at a width that stays even.
+      const thin = stretch && ticks > 48 && i % 2 === 1 ? 'max-sm:hidden' : '';
+      return <span key={i} className={`h-full rounded-full w-[3px] ${stretch ? 'min-w-px shrink' : 'shrink-0'} ${thin} ${part < 0 ? 'bg-slate-200' : parts[part]!.tone}`} />;
     })}
   </span>;
 }
