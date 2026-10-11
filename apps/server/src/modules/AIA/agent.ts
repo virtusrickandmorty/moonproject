@@ -5,8 +5,9 @@
  *   price_estimate  a price-list price for a quantity, as an estimate;
  *   order_status    an order's status by its number, as the public Track page shows it (no names, no amounts);
  *   talk_to_person  asks the website to offer the Support inbox form.
- * The owner's own words (hours, how to order, lead times) come from its settings. The AI service is Anthropic's Claude
- * (Messages API, the small fast model); a test replaces the transport so nothing leaves the machine.
+ * The owner's own words (hours, how to order, lead times) come from its settings. The AI service is Google AI Studio's
+ * Gemini API (the owner's choice, Oct 2026: their key is from Google AI Studio): the fast Flash model, falling back to
+ * the next model when Google is busy. A test replaces the transport so nothing leaves the machine.
  */
 import type { FastifyInstance } from 'fastify';
 import { formatPeso } from '@moonproject/shared';
@@ -14,39 +15,59 @@ import type { Db } from '../../platform/db/driver.ts';
 import { lookupCatalogPrice, matchCatalogItem, publicPriceList } from '../CAT/public.ts';
 import { companyProfile } from '../PRT/public.ts';
 
-export const MODEL = 'claude-haiku-5-5';
+/** Tried in this order: the next one when Google answers busy (503), too many (429), an error (500) or gone (404). */
+export const MODELS = ['gemini-3.5-flash', 'gemini-flash-latest', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest'] as const;
 const MAX_TOKENS = 700;
 const MAX_TOOL_ROUNDS = 4;
 
-type Block = { type: 'text'; text: string } | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> } | { type: 'tool_result'; tool_use_id: string; content: string };
-export interface ModelTurn { role: 'user' | 'assistant'; content: string | Block[] }
-export interface ModelReply { content: Block[]; stop_reason: string; usage?: { input_tokens: number; output_tokens: number } }
-export type Transport = (body: Record<string, unknown>, apiKey: string) => Promise<ModelReply>;
+/** A Gemini content part, kept as the API returned it (a function call's thought signature must go back with it). */
+export type Part = { text?: string; thought?: boolean; functionCall?: { id?: string; name: string; args?: Record<string, unknown> }; functionResponse?: { id?: string; name: string; response: { result: string } }; [k: string]: unknown };
+export interface ModelTurn { role: 'user' | 'model'; parts: Part[] }
+export interface ModelReply { parts: Part[]; usage?: { input: number; output: number }; model?: string }
+export interface ModelRequest { system: string; tools: typeof TOOLS; contents: ModelTurn[]; maxTokens: number }
+export type Transport = (req: ModelRequest, apiKey: string) => Promise<ModelReply>;
 
-/** The Messages API over HTTPS; 30 seconds at most. The key goes only in its header. */
-const anthropic: Transport = async (body, apiKey) => {
-  const r = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(30_000),
-  });
-  if (!r.ok) throw new Error(`The AI service answered ${r.status}.`);
-  return (await r.json()) as ModelReply;
+/** Gemini's generateContent over HTTPS, 25 seconds a try. The key goes only in its header, never in the address or a log. */
+const gemini: Transport = async (req, apiKey) => {
+  let last = '';
+  for (const model of MODELS) {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: 'POST',
+      headers: { 'x-goog-api-key': apiKey, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: req.system }] },
+        contents: req.contents,
+        tools: [{ functionDeclarations: req.tools }],
+        generationConfig: { maxOutputTokens: req.maxTokens },
+      }),
+      signal: AbortSignal.timeout(25_000),
+    });
+    if (r.ok) {
+      const j = (await r.json()) as { candidates?: { content?: { parts?: Part[] } }[]; usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number } };
+      const u = j.usageMetadata ?? {};
+      return { parts: j.candidates?.[0]?.content?.parts ?? [], usage: { input: u.promptTokenCount ?? 0, output: (u.candidatesTokenCount ?? 0) + (u.thoughtsTokenCount ?? 0) }, model };
+    }
+    last = `${model}: ${r.status}`;
+    if (![404, 429, 500, 503].includes(r.status)) {
+      const message = ((await r.json().catch(() => ({}))) as { error?: { message?: string } }).error?.message ?? '';
+      throw new Error(`Google AI Studio answered ${r.status}${message ? `: ${message}` : ''}`);
+    }
+  }
+  throw new Error(`Google AI Studio is busy just now (${last}).`);
 };
-let transport: Transport = anthropic;
+let transport: Transport = gemini;
 /** Tests only: answer with a stand-in instead of the AI service. */
-export function useTransport(t: Transport | null): void { transport = t ?? anthropic; }
+export function useTransport(t: Transport | null): void { transport = t ?? gemini; }
 
-const TOOLS = [
+export const TOOLS = [
   { name: 'shop_products', description: "Search the shop's products and price list (what we make or sell, prices, sizes, minimum order, lead time). Use it before talking about any product or price.",
-    input_schema: { type: 'object', properties: { query: { type: 'string', description: 'Words to look for, e.g. "jersey", "polo", "longsleeve hood". Empty lists everything.' } }, required: [] } },
+    parameters: { type: 'object', properties: { query: { type: 'string', description: 'Words to look for, e.g. "jersey", "polo", "longsleeve hood". Empty lists everything.' } } } },
   { name: 'price_estimate', description: 'Price-list estimate for a quantity of one item, e.g. 15 NBA jersey sets. Always present the result as an estimate that staff confirm.',
-    input_schema: { type: 'object', properties: { item: { type: 'string', description: 'The item as the customer said it' }, qty: { type: 'integer', minimum: 1, maximum: 100000 } }, required: ['item', 'qty'] } },
+    parameters: { type: 'object', properties: { item: { type: 'string', description: 'The item as the customer said it' }, qty: { type: 'integer', description: 'How many pieces, 1 or more' } }, required: ['item', 'qty'] } },
   { name: 'order_status', description: 'Where an order is, by its number (online order WEB-… or job order JO-…). Shows status, dates and pieces only.',
-    input_schema: { type: 'object', properties: { number: { type: 'string' } }, required: ['number'] } },
+    parameters: { type: 'object', properties: { number: { type: 'string' } }, required: ['number'] } },
   { name: 'talk_to_person', description: 'Offer the customer a form to send this chat to our staff, who answer by phone or email. Use when you cannot help, for complaints, custom quotes, payment or order changes, or when they ask for a person.',
-    input_schema: { type: 'object', properties: { reason: { type: 'string' } }, required: [] } },
+    parameters: { type: 'object', properties: { reason: { type: 'string', description: 'Why a person should answer' } } } },
 ];
 
 /** The assistant's standing instructions: the shop's name, what the owner wrote, and the rules it keeps. */
@@ -56,6 +77,7 @@ export function systemPrompt(db: Db, knowledge: string, today: string): string {
   return [
     `You are the friendly online assistant of ${shop}, a garment and uniform maker in the Philippines (sublimation jerseys, shirts, polo, team uniforms and more). Today is ${today}.`,
     'Answer customers of the website and online shop. Reply in the language they use (English, Filipino or Taglish), briefly: two to five short sentences or a short list.',
+    'Write plain text for a small chat window: no markdown, no asterisks or bold; start list lines with "- ".',
     'Rules:',
     '- Only talk about this shop: its products, prices, how to order, and an order\'s status. Politely decline anything else.',
     '- Use the tools for every product, price and order fact. Never guess a price, a lead time or a status. If a tool has nothing, say so and offer a person.',
@@ -112,27 +134,43 @@ async function runTool(name: string, input: Record<string, unknown>, ctx: ToolCo
  * offer the handoff form, and the tokens spent.
  */
 export async function answer(ctx: ToolContext & { apiKey: string; system: string; history: ModelTurn[] }): Promise<{ text: string; handoff: boolean; inputTokens: number; outputTokens: number }> {
-  const messages: ModelTurn[] = [...ctx.history];
+  const contents: ModelTurn[] = [...ctx.history];
   let handoff = false;
   let inputTokens = 0;
   let outputTokens = 0;
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
-    const reply = await transport({ model: MODEL, max_tokens: MAX_TOKENS, system: ctx.system, tools: TOOLS, messages }, ctx.apiKey);
-    inputTokens += reply.usage?.input_tokens ?? 0;
-    outputTokens += reply.usage?.output_tokens ?? 0;
-    const uses = reply.content.filter((b): b is Extract<Block, { type: 'tool_use' }> => b.type === 'tool_use');
-    if (reply.stop_reason !== 'tool_use' || uses.length === 0 || round === MAX_TOOL_ROUNDS) {
-      const text = reply.content.filter((b): b is Extract<Block, { type: 'text' }> => b.type === 'text').map((b) => b.text).join('\n').trim();
+    const reply = await transport({ system: ctx.system, tools: TOOLS, contents, maxTokens: MAX_TOKENS }, ctx.apiKey);
+    inputTokens += reply.usage?.input ?? 0;
+    outputTokens += reply.usage?.output ?? 0;
+    const calls = reply.parts.filter((p) => p.functionCall);
+    if (calls.length === 0 || round === MAX_TOOL_ROUNDS) {
+      const text = plain(reply.parts.filter((p) => typeof p.text === 'string' && !p.thought).map((p) => p.text).join(''));
       return { text: text || 'Sorry, I could not answer that. You can send this chat to our staff.', handoff: handoff || !text, inputTokens, outputTokens };
     }
-    messages.push({ role: 'assistant', content: reply.content });
-    const results: Block[] = [];
-    for (const u of uses) {
-      const r = await runTool(u.name, u.input ?? {}, ctx).catch(() => ({ text: 'That lookup failed just now.', handoff: false }));
+    contents.push({ role: 'model', parts: reply.parts }); // as returned: Gemini needs its thought signatures back
+    const results: Part[] = [];
+    for (const p of calls) {
+      const call = p.functionCall!;
+      const r = await runTool(call.name, call.args ?? {}, ctx).catch(() => ({ text: 'That lookup failed just now.', handoff: false }));
       if (r.handoff) handoff = true;
-      results.push({ type: 'tool_result', tool_use_id: u.id, content: r.text });
+      results.push({ functionResponse: { ...(call.id ? { id: call.id } : {}), name: call.name, response: { result: r.text } } });
     }
-    messages.push({ role: 'user', content: results });
+    contents.push({ role: 'user', parts: results });
   }
   return { text: 'Sorry, I could not answer that.', handoff: true, inputTokens, outputTokens };
+}
+
+/** The chat window shows plain text: markdown that slips through (bold, bullets, headings) is taken out. */
+export function plain(text: string): string {
+  return text.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1').replace(/^[ \t]*[*•][ \t]+/gm, '- ').replace(/^#{1,6}\s+/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** Owner's test of the saved key: one short question to the AI service. The error says what went wrong, never the key. */
+export async function testKey(apiKey: string): Promise<{ ok: true; model: string; reply: string } | { ok: false; message: string }> {
+  try {
+    const r = await transport({ system: 'Answer in one short sentence.', tools: TOOLS, contents: [{ role: 'user', parts: [{ text: 'Say hello to the shop owner.' }] }], maxTokens: 60 }, apiKey);
+    return { ok: true, model: r.model ?? MODELS[0], reply: r.parts.filter((p) => typeof p.text === 'string' && !p.thought).map((p) => p.text).join('').trim() };
+  } catch (e) {
+    return { ok: false, message: (e as Error).message.split(apiKey).join('***') };
+  }
 }
