@@ -80,3 +80,14 @@ describe('piece rates', () => {
     expect(parts.sort()).toEqual(['lower', 'upper']);
   });
 });
+
+it('lists the rates in force for a garment type no price list item goes by (shown on the price list)', async () => {
+  const owner = await env.as('owner');
+  const before = (await owner.get('/api/rate/rates')).json() as { unmatched: { garmentType: string }[] };
+  expect(before.unmatched.some((r) => r.garmentType === 'T-shirt')).toBe(true); // a starter rate, no item yet
+  const item = await owner.post('/api/cat/items', { name: 'School T-shirt', class: 'made_to_order_garment', garmentType: 't-shirt', unit: 'pc', setComponents: 1 });
+  expect(item.statusCode, item.body).toBe(200);
+  const after = (await owner.get('/api/rate/rates')).json() as { unmatched: { garmentType: string }[] };
+  expect(after.unmatched.some((r) => r.garmentType === 'T-shirt')).toBe(false); // matched in any case
+  expect(after.unmatched.some((r) => r.garmentType === 'Polo shirt')).toBe(true);
+});

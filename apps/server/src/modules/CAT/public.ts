@@ -108,3 +108,8 @@ export function logCatalogPriceOverride(db: Db, input: {
       overrideUnitPriceCents: input.overrideUnitPriceCents, reason: input.reason.trim() },
   });
 }
+
+/** The garment types price list items go by (piece rates are kept per garment type, RATE): to find rates no item uses. */
+export function itemGarmentTypes(db: Db): string[] {
+  return db.prepare(`SELECT DISTINCT garment_type FROM cat_items WHERE garment_type IS NOT NULL AND garment_type <> ''`).pluck().all() as string[];
+}
