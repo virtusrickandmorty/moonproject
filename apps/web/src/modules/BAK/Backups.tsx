@@ -81,8 +81,8 @@ function Status({ canRun }: { canRun: boolean }) {
         {backUp.error && <Notice>{backUp.error}</Notice>}
       </Panel>
       <Panel title="Copies">
-        <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[max-content_1fr]">
-          {rows.map(([label, value]) => <div key={label} className="contents"><dt className="text-slate-500">{label}</dt><dd>{value}</dd></div>)}
+        <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[max-content_minmax(0,1fr)]">
+          {rows.map(([label, value]) => <div key={label} className="contents"><dt className="text-slate-500">{label}</dt><dd className="min-w-0 [overflow-wrap:anywhere]">{value}</dd></div>)}
         </dl>
       </Panel>
       <Panel title="Last runs">
