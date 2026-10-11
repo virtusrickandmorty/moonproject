@@ -51,7 +51,7 @@ export function useYearReport<T>(allowed: boolean, load: (year: number) => Promi
 export function YearPicker({ today, year, setYear }: { today: string; year: number | null; setYear: (y: number) => void }) {
   if (year === null) return null;
   return (
-    <div className="flex flex-wrap items-end gap-3 print:hidden">
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden">
       <Field label="Year">
         <select className={inputClass} value={year} onChange={(e) => setYear(Number(e.target.value))}>
           {[...new Set([year, ...yearChoices(today)])].sort((a, b) => b - a).map((y) => <option key={y} value={y}>{y}</option>)}

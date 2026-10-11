@@ -107,6 +107,34 @@ export function QuickAction({ label, title, onClick, tone = 'plain', disabled }:
   return <button type="button" title={title ?? label} disabled={disabled} onClick={(e) => (e.stopPropagation(), onClick())} className={`whitespace-nowrap rounded-md px-2 py-1 text-xs font-semibold ring-1 transition-colors disabled:opacity-40 ${look}`}>{label}</button>;
 }
 
+/** The less used actions of a row (Print, Job ticket, Edit, Cancel) behind one "⋯" button, so a row stays one line. */
+export function RowMenu({ label, items }: { label: string; items: { label: string; onClick: () => void; danger?: boolean }[] }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', away); document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  if (items.length === 0) return null;
+  return (
+    <div ref={box} className="relative" onClick={(e) => e.stopPropagation()}>
+      <button type="button" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}
+        className={`flex size-7 items-center justify-center rounded-md text-lg leading-none text-slate-600 ring-1 transition-colors hover:bg-indigo-50 hover:text-indigo-700 ${open ? 'bg-indigo-50 ring-indigo-200' : 'bg-white ring-slate-300'}`}>⋯</button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-8 z-30 min-w-40 overflow-hidden rounded-lg bg-white py-1 text-left text-sm shadow-lg ring-1 ring-slate-200">
+          {items.map((i) => (
+            <button key={i.label} type="button" role="menuitem" onClick={() => { setOpen(false); i.onClick(); }}
+              className={`block w-full px-3 py-2 text-left no-underline ${i.danger ? 'text-red-700 hover:bg-red-50' : 'text-slate-700 hover:bg-indigo-50 hover:text-indigo-700'}`}>{i.label}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * `notice`: a line a screen that sent the user here wants shown (a quotation that could not open the Job Order form yet).
  * `pageSize`: numbered pages of this many rows (Newer / Older) instead of "Show older". `form` and `view` open over the
@@ -235,13 +263,25 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
       {r.status === 'posted' && type.canCancel && <QuickAction label="Cancel" title={`Cancel ${r.number}`} tone="danger" onClick={() => act({ kind: 'view', id: r.id, recorded: false, cancel: true }, `/${r.id}`)} />}
     </>
   );
+  /** The table's actions: the screen's own ones in the row, the rest in the menu. */
+  const tableActions = (r: DocHeader) => {
+    const more = [
+      ...(printVariants.includes('document') ? [{ label: 'Print', onClick: () => print(r.id, 'document') }] : []),
+      ...(printVariants.includes('job_ticket') ? [{ label: 'Print job ticket', onClick: () => print(r.id, 'job_ticket') }] : []),
+      ...(r.status === 'posted' && canEdit ? [{ label: 'Edit', onClick: () => act({ kind: 'edit', id: r.id }, `/${r.id}/edit`) }] : []),
+      ...(r.status === 'posted' && type.canCancel ? [{ label: 'Cancel…', danger: true, onClick: () => act({ kind: 'view', id: r.id, recorded: false, cancel: true }, `/${r.id}`) }] : []),
+    ];
+    return <>{rowActions?.(r)}<RowMenu label={`More actions for ${r.number}`} items={more} /></>;
+  };
   const total = counts?.[status === 'posted' || status === 'cancelled' ? status : 'all'];
   const first = pageSize ? pageNo * pageSize : 0;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <h1 className="flex-1 text-2xl font-bold text-[#010101]">{pluralLabelOf(type)}</h1>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex-1">
+          <h1 className="text-2xl font-bold text-[#010101]">{pluralLabelOf(type)}</h1>
+        </div>
         {type.canCreate && <Button tone="primary" onClick={() => openNew()}>+ New {labelOf(type)}</Button>}
       </div>
       {notice && <Notice tone="info">{notice}</Notice>}
@@ -260,11 +300,12 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
         </Panel>
       )}
       {/* The status buttons on the left; the search, its dates and the Search button on the right, in half the page. */}
-      <div className="flex flex-col-reverse gap-3 xl:flex-row xl:items-end xl:justify-between">
-        <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col-reverse gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 xl:flex-row xl:items-end xl:justify-between">
+        <div className="flex w-fit flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
           {FILTERS.map(([v, label]) => (
-            <button key={v} type="button" aria-pressed={status === v} onClick={() => setStatus(v)} className={`rounded-full px-3 py-1 text-sm ring-1 ${status === v ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300'}`}>
-              {label}{counts && ` (${counts[v || 'all']})`}
+            <button key={v} type="button" aria-pressed={status === v} onClick={() => setStatus(v)}
+              className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${status === v ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:text-slate-900'}`}>
+              {label}{counts && <>{' '}<span className="sr-only">(</span><span className={`rounded-full px-1.5 text-xs tabular-nums ${status === v ? 'bg-indigo-50 text-indigo-700' : 'bg-slate-200/70 text-slate-600'}`}>{counts[v || 'all']}</span><span className="sr-only">)</span></>}
             </button>
           ))}
         </div>
@@ -281,7 +322,7 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
         </form>
       </div>
       <ListMessage state={state} filtered={filtered} canCreate={type.canCreate} onRetry={() => void load(state.before)} onClear={clear} onNew={() => openNew()} />
-      {counts && <p className="text-sm text-slate-500">Showing {rows.length === 0 ? '0' : `${first + 1} to ${first + rows.length}`} of {total} matching records, newest first.</p>}
+      {counts && <p className="text-xs text-slate-500">Showing {rows.length === 0 ? '0' : `${first + 1} to ${first + rows.length}`} of {total} matching records, newest first.</p>}
       {/* On a phone each record is a card (number, status, date, what, amount and its quick actions); a table from a tablet up. */}
       {rows.length > 0 && (
       <ul className="space-y-3 md:hidden" aria-label={pluralLabelOf(type)}>
@@ -312,13 +353,13 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} onClick={() => navigate(rowPath(r.id))} className={`cursor-pointer border-t border-slate-100 hover:bg-indigo-50 ${r.status === 'cancelled' ? 'text-slate-400 line-through' : ''}`}>
-                <td className="whitespace-nowrap font-medium"><Link to={rowPath(r.id)} onClick={(e) => e.stopPropagation()}>{r.number}</Link></td>
+                <td className="whitespace-nowrap font-semibold"><Link to={rowPath(r.id)} onClick={(e) => e.stopPropagation()} className="text-indigo-700 no-underline hover:underline">{r.number}</Link></td>
                 <td className="whitespace-nowrap">{showDate(r.businessDate)}</td>
-                <td>{r.summary}{detail?.(r)}</td>
+                <td className="min-w-48 max-w-sm"><span className="line-clamp-2 text-slate-700" title={r.summary}>{r.summary}</span>{detail?.(r)}</td>
                 <td className="text-right tabular-nums">{peso(r.totalCents)}</td>
                 {columns.map((c) => <td key={c.head} className={c.figure ? 'whitespace-nowrap text-right tabular-nums' : ''}>{c.cell(r)}</td>)}
                 <td><StatusChip status={r.status} /></td>
-                <td><div className="flex flex-wrap justify-end gap-1">{actions(r)}</div></td>
+                <td><div className="flex items-center justify-end gap-1">{tableActions(r)}</div></td>
               </tr>
             ))}
           </tbody>

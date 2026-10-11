@@ -35,7 +35,7 @@ export function ArAging({ me }: { me: Me }) {
   const { data, error, pager, pagerFor } = usePagedReport<Aging>(path);
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   return <article className="rpt-page space-y-4"><BookTitle title="Unpaid customer balances (AR aging)" dates={data ? `As of ${data.asOf}` : ''} />
-    <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="As of"><input type="date" className={inputClass}
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden"><Field label="As of"><input type="date" className={inputClass}
       value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
       <Button tone="primary" disabled={!asOf} onClick={() => setApplied(new URLSearchParams({ asOf }).toString())}>Show</Button>
       {path && <Tools path={path} />}</div>
@@ -91,7 +91,7 @@ export function CustomerStatement({ me }: { me: Me }) {
   const { data, error } = useReport<Statement>(path);
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   return <article className="rpt-page space-y-4"><BookTitle title="Customer statement" dates={data ? `${data.customerName} · ${data.from} to ${data.to}` : ''} />
-    <div className="flex flex-wrap items-end gap-3 print:hidden">
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden">
       <Field label="Customer"><select className={inputClass} value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
         <option value="">Choose a customer</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}
       </select></Field>

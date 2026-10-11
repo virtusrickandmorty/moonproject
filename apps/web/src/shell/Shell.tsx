@@ -308,7 +308,7 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
 
   return (
     <div className="min-h-screen bg-page">
-      <header onKeyDown={(e) => { if (e.key === 'Escape') setOpen(null); }} className="sticky top-0 z-20 flex min-h-[4.5rem] flex-wrap items-center gap-x-2 gap-y-2 bg-page px-3 py-2 text-sm sm:gap-x-3 md:h-[4.5rem] md:flex-nowrap md:px-6 md:py-0 print:hidden">
+      <header onKeyDown={(e) => { if (e.key === 'Escape') setOpen(null); }} className="sticky top-0 z-20 flex min-h-[4.5rem] flex-wrap items-center gap-x-2 gap-y-2 border-b border-slate-200/60 bg-page/90 px-3 py-2 backdrop-blur text-sm sm:gap-x-3 md:h-[4.5rem] md:flex-nowrap md:px-6 md:py-0 print:hidden">
         <div className="flex shrink-0 items-center gap-2 sm:gap-3 md:w-[188px]">
           <button type="button" aria-label="Menu" aria-expanded={open === 'menu'} aria-controls="main-menu" className="rounded-md p-1.5 text-slate-700 hover:bg-white" onClick={toggleMenu}><Icon name="menu" className="size-6" /></button>
           <Link to="/" aria-label="Home"><img src="/virtus-logo.png" alt="Virtus" className="h-10 w-auto sm:h-11" /></Link>
@@ -347,17 +347,21 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
           {arranging && <ArrangeMenu menu={menu} subOrder={order?.subs ?? {}} onSave={saveOrder} onCancel={() => setArranging(false)} />}
           {!arranging && menu.map((g) => {
             const shown = folding.open.has(g.group);
-            const heading = <><Icon name={g.group} className="size-4" /><span className="flex-1">{g.group}</span></>;
+            const here = g.items.some((i) => isHere(path, i.path));
+            const heading = <>
+              <span aria-hidden="true" className={`flex size-7 shrink-0 items-center justify-center rounded-lg ring-1 transition-colors ${here ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white text-slate-600 ring-slate-200'}`}><Icon name={g.group} className="size-4" /></span>
+              <span className={`flex-1 ${here ? 'text-indigo-700' : ''}`}>{g.group}</span>
+            </>;
             return (
               <div key={g.group} className="mb-1">
                 {folding.folds ? (
                   <button type="button" aria-expanded={shown} onClick={() => fold(g.group, shown)}
-                    className="flex w-full items-center gap-2 rounded-r-full py-2.5 pl-6 pr-4 text-left text-[11px] font-bold uppercase tracking-wider text-[#404040] hover:bg-white">
+                    className="flex w-full items-center gap-2.5 rounded-r-full py-2 pl-5 pr-4 text-left text-[11px] font-bold uppercase tracking-wider text-[#404040] hover:bg-white">
                     {heading}
                     {!shown && <span aria-hidden="true" className="text-[10px] font-semibold text-slate-400">{g.items.length}</span>}
                     <Icon name="chevron" className={`size-3.5 text-slate-400 transition-transform ${shown ? 'rotate-90' : ''}`} />
                   </button>
-                ) : <p className="flex items-center gap-2 py-2.5 pl-6 pr-4 text-[11px] font-bold uppercase tracking-wider text-[#404040]">{heading}</p>}
+                ) : <p className="flex items-center gap-2.5 py-2 pl-5 pr-4 text-[11px] font-bold uppercase tracking-wider text-[#404040]">{heading}</p>}
                 {shown && sectionsOf(g.group, g.items, order?.subs?.[g.group]).map((s, k, all) => {
                   // Sub-categories (the owner's request, Oct 2026): related screens together under a heading that folds; their
                   // screens indented under it. Each starts open and closes on its own; what a person folds is remembered
@@ -378,7 +382,7 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
                       )}
                       {subOpen && s.items.map((i) => (
                         <Link key={i.path} to={i.path}
-                          className={`block rounded-r-full py-2 pr-4 transition-colors ${multi ? 'pl-16' : 'pl-12'} ${isHere(path, i.path) ? 'bg-white font-bold text-indigo-600 shadow-sm' : 'text-[#484848] hover:bg-white hover:text-indigo-600'}`}>
+                          className={`relative block rounded-r-full py-2 pr-4 transition-colors ${multi ? 'pl-16' : 'pl-12'} ${isHere(path, i.path) ? 'bg-white font-bold text-indigo-600 shadow-sm before:absolute before:inset-y-1.5 before:left-0 before:w-1 before:rounded-r-full before:bg-indigo-600' : 'text-[#484848] hover:bg-white hover:text-indigo-600'}`}>
                           {i.label}
                         </Link>
                       ))}
