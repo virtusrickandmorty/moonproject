@@ -12,6 +12,7 @@ import { addPayProfile, createEmployee, employeeRecord, listEmployees, masked, p
 import { ATTENDANCE, addHoliday, attendanceBetween, checkRange, deactivateHoliday, holidaysBetween, holidaysOf, paidDaysBetween, reactivateHoliday, saveAttendance, silOf } from './time.ts';
 import { leaveBalances } from './leave-balances.ts';
 import { linkBiometricUser, previewBiometric } from './biometric.ts';
+import { MAX_QR_BYTES, employeesWithPayoutQr, payoutQrOf, payoutQrPicture, removePayoutQr, savePayoutQr } from './payout-qr.ts';
 
 const dateQ = z.string().refine(isBusinessDate);
 
@@ -26,7 +27,8 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get('/api/emp/employees', { config: { permission: 'emp.view' } }, async (req) => {
     const q = z.object({ search: z.string().max(100).optional(), status: z.enum(['active', 'separated', 'all']).optional(), order: z.literal('newest').optional() }).strict().parse(req.query);
-    return listEmployees(db, { search: q.search?.trim() ?? '', status: q.status ?? 'active', newest: q.order === 'newest' });
+    const withQr = employeesWithPayoutQr(db);
+    return listEmployees(db, { search: q.search?.trim() ?? '', status: q.status ?? 'active', newest: q.order === 'newest' }).map((r) => ({ ...r, hasPayoutQr: withQr.has(r.id) }));
   });
 
   app.get('/api/emp/leave-balances', { config: { permission: 'emp.view' } }, async (req, reply) => {
@@ -59,8 +61,22 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
       sil: silOf(db, e.id, Number(now.slice(0, 4))),
       // Where the payslip is emailed: shown only to whoever sets up payroll (emp.pay).
       payslipEmail: can(req, 'emp.pay') ? payslipEmailOf(db, e.id) ?? null : null,
+      payoutQr: payoutQrOf(db, e.id),
     };
   });
+
+  /** The bank or GCash QR picture (the owner's request, Oct 2026): seen as the payout account is, changed with emp.manage. */
+  app.get<{ Params: { id: string } }>('/api/emp/employees/:id/payout-qr', { config: { permission: 'emp.view' } }, async (req, reply) => {
+    const q = payoutQrPicture(db, req.params.id);
+    if (!q) throw notFound('The QR code');
+    return reply.type(q.type).header('Content-Security-Policy', "sandbox; default-src 'none'; frame-ancestors 'none'").header('Cache-Control', 'private, no-store').send(q.data);
+  });
+  app.put<{ Params: { id: string } }>('/api/emp/employees/:id/payout-qr', { config: { permission: 'emp.manage' }, bodyLimit: Math.ceil((MAX_QR_BYTES * 4) / 3) + 64 * 1024 }, async (req) =>
+    ({ payoutQr: write(() => savePayoutQr(db, req.params.id, req.body, who(req))) }),
+  );
+  app.post<{ Params: { id: string } }>('/api/emp/employees/:id/payout-qr/remove', { config: { permission: 'emp.manage' } }, async (req) =>
+    ({ payoutQr: write(() => removePayoutQr(db, req.params.id, who(req))) }),
+  );
 
   app.post('/api/emp/employees', { config: { permission: 'emp.manage' } }, async (req) => write(() => createEmployee(db, req.body, who(req))));
 
