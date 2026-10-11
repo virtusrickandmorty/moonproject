@@ -7,6 +7,8 @@ import { docPath } from '../../shell/menu.ts';
 import { masterRequest } from './http.ts';
 import { withholdingLabels, type WithholdingProfile } from './withholding.ts';
 
+/** A customer's account type as the shop says it (the owner's words, Oct 2026); stored as 'person' or 'organization'. */
+const ACCOUNT_TYPE: Record<'person' | 'organization', string> = { person: 'Individual', organization: 'Organization' };
 type Customer = { id: string; code: string; kind: 'person' | 'organization'; display_name: string; registered_name: string | null;
   tin: string | null; is_vat_registered: number; billing_address: string | null; email: string | null; notes: string | null;
   withholding_profile: WithholdingProfile; is_active: number; version: number; created_at?: string; updated_at?: string };
@@ -72,12 +74,12 @@ export function Customers({ me }: { me: Me }) {
     <div className={searchRowClass}><input aria-label="Search customers" placeholder="Search name or code" className={`${inputClass} ${searchClass}`} value={search}
       onChange={(e) => { setSearch(e.target.value); setOffset(0); }} /></div>
     <Panel title="Customer list"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left text-slate-500">
-      <th className="py-2 pl-2">Code</th><th>Name</th><th>Kind</th><th>Status</th></tr></thead><tbody>{rows.map((r) => (
+      <th className="py-2 pl-2">Code</th><th>Name</th><th>Account type</th><th>Status</th></tr></thead><tbody>{rows.map((r) => (
         // The whole row opens the customer, by mouse or by keyboard (Tab to it, then Enter or Space).
         <tr key={r.id} tabIndex={0} aria-selected={selected?.id === r.id} onClick={() => void open(r.id)}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); void open(r.id); } }}
           className={`cursor-pointer border-t outline-none transition-colors hover:bg-indigo-50 focus-visible:bg-indigo-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-300 ${selected?.id === r.id ? 'bg-indigo-50 font-semibold text-indigo-800' : ''}`}>
-          <td className="py-2 pl-2">{r.code}</td><td>{r.display_name}</td><td>{r.kind}</td><td>{r.is_active ? 'Active' : 'Inactive'}</td></tr>))}</tbody></table>
+          <td className="py-2 pl-2">{r.code}</td><td>{r.display_name}</td><td>{ACCOUNT_TYPE[r.kind]}</td><td>{r.is_active ? 'Active' : 'Inactive'}</td></tr>))}</tbody></table>
       {rows.length === 0 && <p className="py-3 text-sm text-slate-500">No customers found.</p>}</div>
       <div className="flex gap-2"><Button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 25))}>Previous</Button>
         <Button disabled={rows.length < 25} onClick={() => setOffset(offset + 25)}>Next</Button></div></Panel>
@@ -125,8 +127,8 @@ export function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Cus
     } catch (e) { setRefused(refusedFields(e)); setError((e as Error).message); }
   };
   return <Dialog title={old ? `Edit ${old.display_name}` : 'New customer'} onClose={onClose}><div className="grid gap-3 sm:grid-cols-2">
-    <Field label="Kind" required error={refused.kind}><select className={inputClass} value={v.kind} onChange={(e) => set('kind', e.target.value as typeof v.kind)}>
-      <option value="organization">Organization</option><option value="person">Person</option></select></Field>
+    <Field label="Account type" required error={refused.kind}><select className={inputClass} value={v.kind} onChange={(e) => set('kind', e.target.value as typeof v.kind)}>
+      <option value="organization">{ACCOUNT_TYPE.organization}</option><option value="person">{ACCOUNT_TYPE.person}</option></select></Field>
     <Field label="Display name" required error={refused.displayName}><input className={inputClass} value={v.displayName} onChange={(e) => set('displayName', e.target.value)} /></Field>
     <Field label="Registered name" error={refused.registeredName}><input className={inputClass} value={v.registeredName} onChange={(e) => set('registeredName', e.target.value)} /></Field>
     <Field label="TIN" error={refused.tin}><input className={inputClass} value={v.tin} onChange={(e) => set('tin', e.target.value)} /></Field>
@@ -175,7 +177,7 @@ function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
   };
   // Everything typed on the customer form, a dash where it was left blank; the contact numbers have their own panel below.
   const shown: [string, string | null, boolean?][] = [
-    ['Code', data.code], ['Display name', data.display_name], ['Kind', data.kind === 'organization' ? 'Organization' : 'Person'],
+    ['Code', data.code], ['Display name', data.display_name], ['Account type', ACCOUNT_TYPE[data.kind]],
     ['Status', data.is_active ? 'Active' : 'Inactive'], ['Registered name', data.registered_name], ['TIN', data.tin],
     ['VAT registered', data.is_vat_registered ? 'Yes' : 'No'], ['Withholding profile', withholdingLabels[data.withholding_profile]], ['Email', data.email],
     ['Billing address', data.billing_address, true], ['Notes', data.notes, true],
