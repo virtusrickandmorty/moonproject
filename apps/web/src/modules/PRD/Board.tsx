@@ -5,12 +5,13 @@
  * Laid out to be read at a glance (the owner's request, Oct 2026): headline counts that also filter, one toolbar, and
  * cards with the customer, a progress bar on the step, and the due date in words (late in red).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, type BoardCard, type DocTypeInfo, type Me, type PrdCatalogue, type PrdJob, type StepStatus } from '../../api.ts';
 import { addRewrite, Link, navigate, useLocation } from '../../router.tsx';
 import { EntryForm } from './EntryForm.tsx';
 import { Loading, Button, Dialog, Field, Notice, ReasonDialog, inputClass, useAction, searchClass, showDate } from '../../components/ui.tsx';
 import { TickBar } from '../../components/charts.tsx';
+import { ScanQrButton, jobOrderFromScan, useScannerKeys } from '../../components/QrScan.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { boardCounts, columns, dueWords, filterCards, stepFlow, useBoardRefresh, type Due } from './board.ts';
 
@@ -49,11 +50,31 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
     return done && q === 'recorded=1' ? { to: `/prd/board?recorded=${encodeURIComponent(done[1]!)}`, replace: true } : null;
   }), []);
   useEffect(() => { if (recordedId) void load(); }, [recordedId, load]);
+  // A scan (camera or USB/Bluetooth scanner) is handled once the board's cards are in (onScan below); hooks stay above the loading return.
+  const [scanNote, setScanNote] = useState('');
+  const scanned = useRef<(text: string) => void>(() => undefined);
+  useScannerKeys((text) => scanned.current(text));
   if (!data) return <div className="space-y-3"><p role="status">{words}</p>{error && <Notice>{error}</Notice>}<Loading /></div>;
   const { cat, cards, today } = data;
   const can = { progress: me.permissions.includes('prd.progress'), assign: !!docTypes.find((d) => d.key === 'prd.entry')?.canCreate };
   const shown = filterCards(cards, { due, rushOnly, search }, today);
   const card = open && cards.find((c) => c.jobOrderId === open.jobOrderId && c.lineNo === open.lineNo);
+  // A job ticket's QR code, from the camera or a USB/Bluetooth scanner (the owner's request, Oct 2026): its item opens
+  // at its step's Record pieces; a job order with several items on the board is filtered to them.
+  const onScan = (text: string) => {
+    const j = jobOrderFromScan(text);
+    if (!j) return setScanNote('That code is not a job order. Scan the QR code on the job ticket or the release slip.');
+    const found = cards.filter((c) => (j.id ? c.jobOrderId === j.id : c.number === j.number));
+    if (found.length === 0) {
+      if (j.number) setSearch(j.number);
+      return setScanNote(`${j.number ?? 'That job order'} is not on the board: it is not in production, or it is all released.`);
+    }
+    setScanNote('');
+    setSearch(found[0]!.number);
+    if (found.length === 1) setOpen({ jobOrderId: found[0]!.jobOrderId, lineNo: found[0]!.lineNo, stepId: found[0]!.currentStepId ?? null });
+    else setScanNote(`${found[0]!.number} has ${found.length} items on the board: pick one.`);
+  };
+  scanned.current = onScan;
   const counts = boardCounts(cards, today);
   const filtered = due !== 'all' || rushOnly || search.trim() !== '';
   const tile = (label: string, value: number, note: string, on: boolean, act: (() => void) | null, tone = '') => {
@@ -89,14 +110,18 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
       <div className="flex flex-wrap items-center gap-3 rounded-xl bg-white p-2 shadow-sm ring-1 ring-slate-200/70">
         <div className="relative min-w-56 flex-1">
           <svg viewBox="0 0 24 24" aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"><path d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Zm9 2-4-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>
-          <input type="search" aria-label="Search job number or customer" placeholder="Search job number or customer" className={`${inputClass} pl-9`} value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input type="search" aria-label="Search job number or customer" placeholder="Job number, customer, or scan" className={`${inputClass} pl-9`} value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && /\/docs\/jo\.job_order\//i.test(search)) { e.preventDefault(); onScan(search); } }} />
         </div>
+        <ScanQrButton onScan={onScan} />
         <div role="group" aria-label="Due" className="flex gap-1 rounded-lg bg-slate-100 p-1">{seg('all', 'All')}{seg('week', 'This week')}{seg('overdue', 'Overdue')}</div>
         <button type="button" aria-pressed={rushOnly} onClick={() => setRushOnly(!rushOnly)}
           className={`rounded-lg px-3 py-1.5 text-sm font-medium ring-1 ${rushOnly ? 'bg-red-50 text-red-700 ring-red-200' : 'text-slate-600 ring-slate-200 hover:bg-slate-50'}`}>Rush only</button>
         <button type="button" disabled={!filtered} onClick={() => { setSearch(''); setDue('all'); setRushOnly(false); }} className="px-2 text-sm text-indigo-700 hover:underline disabled:text-slate-400 disabled:no-underline">Reset filters</button>
       </div>
 
+      {scanNote && <Notice tone="info">{scanNote}</Notice>}
       {shown.length === 0 && <p className="rounded-xl bg-white p-6 text-center text-slate-500 ring-1 ring-slate-200/70">{cards.length === 0 ? 'No job order is in production.' : 'No item matches these filters.'}</p>}
       <div className="flex snap-x gap-4 overflow-x-auto pb-3 pr-2">
         {columns(cat.steps, shown).map((col) => {
