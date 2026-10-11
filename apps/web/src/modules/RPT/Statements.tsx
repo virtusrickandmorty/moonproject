@@ -76,7 +76,7 @@ export function IncomeStatement({ me }: { me: Me }) {
   const show = (f: string, t: string) => { setFrom(f); setTo(t); setApplied(new URLSearchParams({ from: f, to: t, ...(compare === 'none' ? {} : { compare }) }).toString()); };
   const [revenue, costOfSales, operatingExpenses, other, incomeTax] = data?.sections ?? [];
   return <article className="rpt-page space-y-4"><BookTitle title="Income statement" dates={data ? `${data.from} to ${data.to}` : ''} />
-    <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden"><Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
       <Field label="To"><input type="date" className={inputClass} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
       <CompareField value={compare} onChange={setCompare} />
       <Button tone="primary" disabled={!from || !to || from > to} onClick={() => show(from, to)}>Show</Button>
@@ -104,7 +104,7 @@ export function BalanceSheet({ me }: { me: Me }) {
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   const [assets, liabilities, equity] = data?.sections ?? [];
   return <article className="rpt-page space-y-4"><BookTitle title="Balance sheet" dates={data ? `As of ${data.asOf}` : ''} />
-    <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="As of"><input type="date" className={inputClass} value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden"><Field label="As of"><input type="date" className={inputClass} value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
       <CompareField value={compare} onChange={setCompare} />
       <Button tone="primary" disabled={!asOf} onClick={() => setApplied(new URLSearchParams({ asOf, ...(compare === 'none' ? {} : { compare }) }).toString())}>Show</Button>
       {path && <Tools path={path} />}</div>
@@ -131,7 +131,7 @@ export function ChangesInEquity({ me }: { me: Me }) {
   const show = (f: string, t: string) => { setFrom(f); setTo(t); setApplied(new URLSearchParams({ from: f, to: t }).toString()); };
   const cells = (values: Record<string, number>) => <>{data?.columns.map((column) => <td key={column.key} className={money}>{amount(values[column.key] ?? 0)}</td>)}</>;
   return <article className="rpt-page space-y-4"><BookTitle title="Statement of changes in equity" dates={data ? `${data.from} to ${data.to}` : ''} />
-    <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden"><Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
       <Field label="To"><input type="date" className={inputClass} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
       <Button tone="primary" disabled={!from || !to || from > to} onClick={() => show(from, to)}>Show</Button>
       {today && presets(today).map(([label, start]) => <Button key={label} onClick={() => show(start, today)}>{label}</Button>)}

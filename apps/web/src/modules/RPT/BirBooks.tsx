@@ -46,7 +46,7 @@ export function BirBooks({ me }: { me: Me }) {
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   return <article className={`rpt-page bir-book ${book.startsWith('cash-') || book === 'sales' || book === 'purchases' ? 'bir-landscape' : ''} space-y-4`}>
     <BookTitle title={`BIR books — ${title}`} dates={data ? `${data.from} to ${data.to}` : ''} />
-    <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="Book"><select className={inputClass} value={book} onChange={(e) => setBook(e.target.value as Book)}>{Object.entries(BOOKS).map(([k, v]) => <option value={k} key={k}>{v[0]}</option>)}</select></Field>
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden"><Field label="Book"><select className={inputClass} value={book} onChange={(e) => setBook(e.target.value as Book)}>{Object.entries(BOOKS).map(([k, v]) => <option value={k} key={k}>{v[0]}</option>)}</select></Field>
       <Field label="From"><input className={inputClass} type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field><Field label="To"><input className={inputClass} type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
       <Button tone="primary" disabled={!from || !to || from > to} onClick={() => setQuery(new URLSearchParams({ from, to }).toString())}>Show</Button>{path && <Tools path={path} />}
       <Button disabled={!data || !printFrom || !printTo || printFrom > printTo || !sameYear || printing.busy} onClick={() => void looseLeaf()}>Print loose-leaf</Button>
