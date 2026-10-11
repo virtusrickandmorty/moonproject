@@ -28,6 +28,7 @@ export function WebsiteAssistant({ me }: { me: Me }) {
   const [open, setOpen] = useState<{ id: string; messages: AiaMessage[]; supportNumber: string | null } | null>(null);
   const [saved, setSaved] = useState('');
   const [error, setError] = useState('');
+  const [tested, setTested] = useState<{ ok: boolean; text: string } | null>(null);
   const a = useAction();
   const loadSettings = () => (canManage ? api.aiaSettings().then((x) => (setS(x), setForm({ isOn: x.isOn, greeting: x.greeting, knowledge: x.knowledge })), (e: Error) => setError(e.message)) : Promise.resolve());
   useEffect(() => { void loadSettings(); void api.aiaChats().then(setChats, (e: Error) => setError(e.message)); }, []);
@@ -54,12 +55,14 @@ export function WebsiteAssistant({ me }: { me: Me }) {
             </button>
             {form.isOn ? 'On: customers see the chat bubble' : 'Off: the website shows no chat'}
           </label>
-          <Field label="AI service key" hint={s.keySet ? 'A key is saved. Type a new one to replace it.' : 'From console.anthropic.com → API keys. You pay the AI service per chat; set a monthly limit there.'}>
+          <Field label="Google AI Studio key" hint={s.keySet ? 'A key is saved. Type a new one to replace it, then Save.' : 'From aistudio.google.com → Get API key. Google bills by use beyond its free tier; set a budget in Google Cloud billing.'}>
             <div className="flex flex-wrap gap-2">
-              <input type="password" autoComplete="off" className={`${inputClass} max-w-md`} placeholder={s.keySet ? '•••••••• saved' : 'sk-ant-…'} value={key} onChange={(e) => setKey(e.target.value)} />
+              <input type="password" autoComplete="off" className={`${inputClass} max-w-md`} placeholder={s.keySet ? '•••••••• saved' : 'Paste the key from Google AI Studio'} value={key} onChange={(e) => setKey(e.target.value)} />
+              {s.keySet && <Button disabled={a.busy} onClick={() => void a.run(async () => { setTested(null); const r = await api.aiaTest(); setTested(r.ok ? { ok: true, text: `It works (${r.model}): "${r.reply}"` } : { ok: false, text: r.message }); })}>Test the key</Button>}
               {s.keySet && <Button disabled={a.busy} onClick={() => void save({ apiKey: '' })}>Remove the key</Button>}
             </div>
           </Field>
+          {tested && <Notice tone={tested.ok ? 'success' : 'error'}>{tested.text}</Notice>}
           <Field label="Greeting" hint="The first words customers see"><input className={inputClass} maxLength={300} value={form.greeting} onChange={(e) => setForm({ ...form, greeting: e.target.value })} /></Field>
           <Field label="What it should know" hint="Hours, address, how ordering works, downpayment, lead times, sizes, delivery. Prices and order status come from the ERP itself.">
             <textarea rows={10} className={inputClass} maxLength={20000} value={form.knowledge} onChange={(e) => setForm({ ...form, knowledge: e.target.value })} placeholder={EXAMPLE} />
