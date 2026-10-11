@@ -119,6 +119,36 @@ export const advanceView: ViewParts = {
   },
 };
 
+/** One employee's payslip of a run: the printable payslips, and the release of one person at a time. */
+export function PayslipCard({ p, e }: { p: PayslipData; e: PayslipData['employees'][number] }) {
+  return (
+    <section className="break-inside-avoid space-y-2 rounded-lg bg-white p-4 text-sm ring-1 ring-slate-300">
+      <div className="flex justify-between"><h2 className="font-semibold">PAYSLIP{e.final && <FinalBadge />}</h2><span>{p.number}</span></div>
+      <p>{e.name} <span className="text-slate-500">{e.code}</span></p>
+      <p className="text-slate-600">{GROUP_LABEL[p.payGroup]} · {showDate(p.periodStart)} to {showDate(p.periodEnd)} · dated {showDate(p.payDate)}</p>
+      <table className="w-full">
+        <tbody>
+          {e.lines.map((l) => <tr key={l.lineNo}><td>{l.description}</td><td className="text-right text-slate-500">{qtyText(l.kind, l.qty)}</td><td className="text-right tabular-nums">{peso(l.amountCents)}</td></tr>)}
+          <tr className="border-t font-medium"><td colSpan={2}>Gross pay</td><td className="text-right tabular-nums">{peso(e.grossCents)}</td></tr>
+          {deductionsOf(e).map(([label, c]) => <tr key={label}><td colSpan={2}>Less {label}</td><td className="text-right tabular-nums">{peso(-c)}</td></tr>)}
+          {(e.wtaxRefundCents ?? 0) > 0 && <tr><td colSpan={2}>Add year-end tax refund</td><td className="text-right tabular-nums">{peso(e.wtaxRefundCents!)}</td></tr>}
+          <tr className="border-t text-base font-semibold"><td colSpan={2}>Net pay</td><td className="text-right tabular-nums">{peso(e.netCents)}</td></tr>
+        </tbody>
+      </table>
+      <p className="text-xs text-slate-600">
+        Cash advance still owed {peso(e.caBalanceAfterCents)} · Year to date: gross {peso(e.ytd.grossCents)}, tax {peso(e.ytd.wtaxCents)}
+        {e.eeShortCents > 0 && ` · ${peso(e.eeShortCents)} of government shares carried to the next payroll`}
+      </p>
+      {loansLeft(e).map(([label, c]) => <p key={label} className="text-xs text-slate-600">{label}: {peso(c)} left</p>)}
+      {(e.charges ?? []).map((c) => <p key={c.chargeId} className="text-xs text-slate-600">Damage charge {c.number}: {peso(c.leftAfterCents)} left</p>)}
+      <p className="text-xs text-slate-600">{thirteenthText(e)}</p>
+      {e.yearEnd && <p className="text-xs text-slate-600">{yearEndDetail(e)}</p>}
+      {e.final && <p className="text-xs font-medium text-slate-700">{finalPayText(e)}. The 13th month on separation is paid on its own (13th-month pay for this employee).</p>}
+      <p className="pt-4 text-xs">Received by: ______________________ Date: __________</p>
+    </section>
+  );
+}
+
 /** Printable payslips, two to a page. */
 export function Payslips({ params }: { me: Me; params?: Record<string, string> }) {
   const [p, setP] = useState<PayslipData | null>(null);
@@ -136,30 +166,7 @@ export function Payslips({ params }: { me: Me; params?: Record<string, string> }
       {p.status === 'cancelled' && <Notice tone="warning">{p.number} is cancelled.</Notice>}
       <div className="grid gap-4 md:grid-cols-2 print:grid-cols-2 print:gap-2">
         {p.employees.map((e) => (
-          <section key={e.employeeId} className="break-inside-avoid space-y-2 rounded-lg bg-white p-4 text-sm ring-1 ring-slate-300">
-            <div className="flex justify-between"><h2 className="font-semibold">PAYSLIP{e.final && <FinalBadge />}</h2><span>{p.number}</span></div>
-            <p>{e.name} <span className="text-slate-500">{e.code}</span></p>
-            <p className="text-slate-600">{GROUP_LABEL[p.payGroup]} · {showDate(p.periodStart)} to {showDate(p.periodEnd)} · dated {showDate(p.payDate)}</p>
-            <table className="w-full">
-              <tbody>
-                {e.lines.map((l) => <tr key={l.lineNo}><td>{l.description}</td><td className="text-right text-slate-500">{qtyText(l.kind, l.qty)}</td><td className="text-right tabular-nums">{peso(l.amountCents)}</td></tr>)}
-                <tr className="border-t font-medium"><td colSpan={2}>Gross pay</td><td className="text-right tabular-nums">{peso(e.grossCents)}</td></tr>
-                {deductionsOf(e).map(([label, c]) => <tr key={label}><td colSpan={2}>Less {label}</td><td className="text-right tabular-nums">{peso(-c)}</td></tr>)}
-                {(e.wtaxRefundCents ?? 0) > 0 && <tr><td colSpan={2}>Add year-end tax refund</td><td className="text-right tabular-nums">{peso(e.wtaxRefundCents!)}</td></tr>}
-                <tr className="border-t text-base font-semibold"><td colSpan={2}>Net pay</td><td className="text-right tabular-nums">{peso(e.netCents)}</td></tr>
-              </tbody>
-            </table>
-            <p className="text-xs text-slate-600">
-              Cash advance still owed {peso(e.caBalanceAfterCents)} · Year to date: gross {peso(e.ytd.grossCents)}, tax {peso(e.ytd.wtaxCents)}
-              {e.eeShortCents > 0 && ` · ${peso(e.eeShortCents)} of government shares carried to the next payroll`}
-            </p>
-            {loansLeft(e).map(([label, c]) => <p key={label} className="text-xs text-slate-600">{label}: {peso(c)} left</p>)}
-            {(e.charges ?? []).map((c) => <p key={c.chargeId} className="text-xs text-slate-600">Damage charge {c.number}: {peso(c.leftAfterCents)} left</p>)}
-            <p className="text-xs text-slate-600">{thirteenthText(e)}</p>
-            {e.yearEnd && <p className="text-xs text-slate-600">{yearEndDetail(e)}</p>}
-            {e.final && <p className="text-xs font-medium text-slate-700">{finalPayText(e)}. The 13th month on separation is paid on its own (13th-month pay for this employee).</p>}
-            <p className="pt-4 text-xs">Received by: ______________________ Date: __________</p>
-          </section>
+          <PayslipCard key={e.employeeId} p={p} e={e} />
         ))}
       </div>
     </div>
