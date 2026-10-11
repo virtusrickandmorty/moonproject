@@ -176,6 +176,20 @@ export async function createPracticeData(dbPath: string, days: number, start = '
     ok(await owner.post(`/api/cat/items/${item}/prices`, {
       effectiveFrom: start, minQty: 1, unitPriceCents: 10_000,
     }, { 'if-match': '1' }), 'price catalogue item');
+    // The garments the floor makes, on the price list (the owner's request, Oct 2026): each item's Labour box shows the
+    // piece rates its sewers are paid (the starter T-shirt and NBA-cut jersey rates), and a set paid by part.
+    const garment = async (name: string, garmentType: string, unit: 'pc' | 'set', priceCents: number) => {
+      const id = ok(await owner.post('/api/cat/items', { name, class: 'made_to_order_garment', garmentType, unit, setComponents: unit === 'set' ? 2 : 1 }), `create ${name}`).id as string;
+      ok(await owner.post(`/api/cat/items/${id}/prices`, { effectiveFrom: start, minQty: 1, unitPriceCents: priceCents }, { 'if-match': '1' }), `price ${name}`);
+      return id;
+    };
+    await garment('Practice uniform shirt', 'T-shirt', 'pc', 100_000);
+    await garment('Practice team jersey', 'Jersey (NBA cut)', 'pc', 45_000);
+    await garment('Practice basketball jersey set', 'Basketball jersey set', 'set', 65_000);
+    for (const [part, rateCents] of [['upper', 4_500], ['lower', 3_500]] as const) {
+      ok(await owner.post('/api/rate/rates', { garmentType: 'Basketball jersey set', stepCode: 'SEWING', complexity: 'standard', part, rateCents, effectiveFrom: start,
+        reason: `Practice sewing rate for the ${part} part of a set` }), `set ${part} sewing rate`);
+    }
     const customers: string[] = [];
     const team = new Map<string, string[]>(); // each customer's team of wearers, for the ongoing team orders
     for (let n = 1; n <= 4; n++) {
@@ -222,6 +236,8 @@ export async function createPracticeData(dbPath: string, days: number, start = '
     };
     const cutter = await worker('Practice Cutter', 'Practice cutter', { payType: 'piece', payGroup: 'WEEKLY_PIECE' });
     const sewer2 = await worker('Practice Sewer Two', 'Practice sewer', { payType: 'piece', payGroup: 'WEEKLY_PIECE' });
+    // Paid by the piece on the sets she sews, upper and lower at their own rates (the owner's request, Oct 2026).
+    const sewer3 = await worker('Practice Sewer Three', 'Practice sewer (sets)', { payType: 'piece', payGroup: 'WEEKLY_PIECE' });
     const printer = await worker('Practice Printer', 'Practice printer', { payType: 'daily', dailyRateCents: 64_500, payGroup: 'WEEKLY_DAILY' });
     const packer = await worker('Practice Packer', 'Practice packer', { payType: 'daily', dailyRateCents: 61_000, payGroup: 'WEEKLY_DAILY' });
     const helper = await worker('Practice Helper', 'Practice helper', { payType: 'daily', dailyRateCents: 60_000, payGroup: 'SEMI_DAILY' });
@@ -322,6 +338,17 @@ export async function createPracticeData(dbPath: string, days: number, start = '
           ok(await production.post(`/api/prd/jobs/${order.id}/lines/1/setup`, { templateId: 1, stepIds: ROUTE, garmentType: 'Jersey (NBA cut)', complexity: 'standard' }), 'route a team order');
           ongoing.push({ id: order.id as string, from: day + 1, step: 0, done: 0 });
         }
+      }
+      if (days >= 14 && (day === days - 14 || day === days - 4)) { // the first is paid by a recorded run; the second waits in the runs left to do
+        const sets = await record(encoder, 'jo.job_order', {
+          customerId, dueInDays: 10, priority: 'normal', paymentTerms: 'dp50',
+          lines: [{ kind: 'made_to_order', description: 'Practice basketball jersey set', qty: 6, unitPriceCents: 65_000, discountCents: 0, roster: [] }],
+        });
+        ok(await production.post(`/api/prd/jobs/${sets.id}/lines/1/setup`, { stepIds: [SEWING], garmentType: 'Basketball jersey set', complexity: 'standard' }), 'route a set order');
+        await record(production, 'prd.entry', { jobOrderId: sets.id, stepId: SEWING, rows: [
+          { lineNo: 1, employeeId: sewer3, pieces: 6, part: 'upper' },
+          { lineNo: 1, employeeId: sewer3, pieces: 4, part: 'lower' },
+        ] });
       }
       for (const o of ongoing.filter((x) => x.from <= day && x.step < ROUTE.length)) {
         const stepId = ROUTE[o.step]!;
