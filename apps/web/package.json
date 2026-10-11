@@ -10,6 +10,7 @@
     "@fontsource-variable/manrope": "5.3.0",
     "@moonproject/shared": "*",
     "age-encryption": "0.3.1",
+    "jsqr": "1.4.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },
