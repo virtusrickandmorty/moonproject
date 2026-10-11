@@ -85,7 +85,7 @@ function Stages() {
     ['/docs/:type/:id/edit', (p, t) => !(t.canPost && t.canCancel) ? NO_ACCESS : <Form key={location} type={t} me={stage.me} mode={{ kind: 'edit', id: p.id! }} />],
     ['/docs/:type/:id', (p, t) => <DocView key={p.id} type={t} id={p.id!} recorded={query === 'recorded=1'} parts={VIEWS[t.key]} />],
   ];
-  let page: ReactNode = <Notice>Page not found. <Link to="/" className="underline">Go home</Link></Notice>;
+  let page: ReactNode = <PageNotFound />;
   if (path === '/') page = <Home me={stage.me} docTypes={stage.docTypes} />;
   else if (path === '/account/password') page = <ChangePasswordScreen forced={false} onDone={(me) => signedIn(me).then(() => navigate('/'))} />;
   else {
@@ -167,6 +167,26 @@ function Home({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }) {
       </div>
       {me.permissions.includes('dash.view') ? <DashHome actions={actions} /> : actions}
       {docTypes.length === 0 && <p className="text-slate-600">Your role has no screens yet. Ask an owner.</p>}
+    </div>
+  );
+}
+
+/** An address that leads nowhere (the owner's picture, Oct 2026): a seamstress at work, and the ways back. */
+function PageNotFound() {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center py-8">
+      <div className="w-full max-w-md space-y-4 rounded-xl bg-white p-8 text-center shadow-sm ring-1 ring-slate-200/70">
+        <img src="/page-not-found.gif" alt="A seamstress sewing at her machine" width={147} height={174} className="mx-auto h-auto w-36" />
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-wider text-indigo-700">404</p>
+          <h1 className="text-2xl font-bold text-[#010101]">Page not found</h1>
+          <p className="text-sm text-slate-600">We are still sewing this one. The address may be mistyped, or the page was moved.</p>
+        </div>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Link to="/" className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">Go home</Link>
+          <button type="button" onClick={() => history.back()} className="inline-flex items-center rounded-md bg-white px-4 py-2 text-sm font-semibold text-slate-800 ring-1 ring-slate-300 hover:bg-indigo-50">Go back</button>
+        </div>
+      </div>
     </div>
   );
 }
