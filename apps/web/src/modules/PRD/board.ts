@@ -68,6 +68,27 @@ export function filterCards(cards: BoardCard[], f: { due: Due; rushOnly: boolean
   return cards.filter((c) => (!query || c.customerName.toLocaleLowerCase().includes(query) || (!!numberQuery && c.number.toLocaleLowerCase().replace(/[\s-]/g, '').includes(numberQuery))) && (!f.rushOnly || c.priority === 'rush') && (f.due === 'all' || (!!today && (f.due === 'overdue' ? c.dueDate < today : daysBetween(today, c.dueDate) <= 7))));
 }
 
+/** A card's due words (the owner's request, Oct 2026: a friendlier board): late, today, tomorrow or in N days. */
+export function dueWords(today: string, due: string): { text: string; tone: 'late' | 'soon' | 'later' } {
+  const d = Math.round(daysBetween(today, due));
+  if (d < 0) return { text: `${-d} ${d === -1 ? 'day' : 'days'} late`, tone: 'late' };
+  if (d === 0) return { text: 'Due today', tone: 'soon' };
+  if (d === 1) return { text: 'Due tomorrow', tone: 'soon' };
+  return { text: `Due in ${d} days`, tone: d <= 3 ? 'soon' : 'later' };
+}
+
+/** The board's headline counts: lines on the floor, to route, late, rush, due within 7 days, and rework waiting. */
+export function boardCounts(cards: BoardCard[], today: string): { lines: number; toRoute: number; late: number; rush: number; week: number; rework: number } {
+  return {
+    lines: cards.length,
+    toRoute: cards.filter((c) => c.steps === null).length,
+    late: cards.filter((c) => !!today && c.dueDate < today).length,
+    rush: cards.filter((c) => c.priority === 'rush').length,
+    week: cards.filter((c) => !!today && c.dueDate >= today && daysBetween(today, c.dueDate) <= 7).length,
+    rework: cards.reduce((n, c) => n + (c.steps ?? []).reduce((m, s) => m + (s.reworkOpen ?? 0), 0), 0),
+  };
+}
+
 export const REFRESH_MS = 30_000;
 export const TURN_MS = 12_000;
 export const TV_CARD_HEIGHT = 208;
