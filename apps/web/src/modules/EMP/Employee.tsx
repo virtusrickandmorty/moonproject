@@ -181,7 +181,9 @@ const asBase64 = (f: File) => new Promise<string>((ok, fail) => {
 function PayoutQrPanel({ e, qr, editable, onSaved }: { e: EmployeeRecord; qr: PayoutQr | null; editable: boolean; onSaved: () => Promise<unknown> }) {
   const [done, setDone] = useState('');
   const a = useAction();
+  const [open, setOpen] = useState(false);
   const src = qr && api.payoutQrUrl(e.id, qr.version);
+  const alt = `${e.fullName}'s ${e.payoutMethod === 'cash' ? 'bank or GCash' : PAID_BY[e.payoutMethod]} QR code`;
   const upload = async (f: File) => {
     setDone('');
     if (!QR_TYPES.includes(f.type)) throw new Error('Choose a JPEG, PNG or WebP picture of the QR code.');
@@ -201,9 +203,10 @@ function PayoutQrPanel({ e, qr, editable, onSaved }: { e: EmployeeRecord; qr: Pa
     <Panel title="Bank or GCash QR code">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
         {src ? (
-          <a href={src} target="_blank" rel="noreferrer" className="block w-48 shrink-0 self-center rounded-lg bg-white p-2 ring-1 ring-slate-200 sm:self-start" title="Open the QR code full size">
-            <img src={src} alt={`${e.fullName}'s ${PAID_BY[e.payoutMethod] === 'Cash' ? 'bank or GCash' : PAID_BY[e.payoutMethod]} QR code`} className="aspect-square w-full object-contain" />
-          </a>
+          // Opens in a window on the page (the owner's request, Oct 2026), not a new tab.
+          <button type="button" onClick={() => setOpen(true)} className="block w-48 shrink-0 cursor-zoom-in self-center rounded-lg bg-white p-2 ring-1 ring-slate-200 hover:ring-indigo-300 sm:self-start" title="Open the QR code full size">
+            <img src={src} alt={alt} className="aspect-square w-full object-contain" />
+          </button>
         ) : (
           <div className="flex aspect-square w-48 shrink-0 items-center justify-center self-center rounded-lg border-2 border-dashed border-slate-300 p-3 text-center text-sm text-slate-500 sm:self-start">No QR code yet</div>
         )}
@@ -212,7 +215,7 @@ function PayoutQrPanel({ e, qr, editable, onSaved }: { e: EmployeeRecord; qr: Pa
             {e.payoutMethod === 'cash' ? `${e.fullName} is paid in cash for now ("Paid by" in the details).` : `${e.fullName} is paid by ${PAID_BY[e.payoutMethod]}${e.payoutAccount ? ` (${e.payoutAccount})` : ''}.`}{' '}
             {qr ? 'To send the pay, scan this QR code from the bank or GCash app.' : 'Add a picture of their bank or GCash QR code, so whoever releases payroll can scan it to send the pay.'}
           </p>
-          {qr && <p className="text-xs text-slate-500">Saved {showDate(qr.savedAt.slice(0, 10))}. Click the picture to open it full size.</p>}
+          {qr && <p className="text-xs text-slate-500">Saved {showDate(qr.savedAt.slice(0, 10))}. Click the picture to make it bigger.</p>}
           {editable && (
             <div className="flex flex-wrap gap-2">
               <label className={`inline-flex cursor-pointer items-center rounded-md px-3 py-2 text-sm font-medium text-white ${a.busy ? 'bg-indigo-300' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
@@ -228,6 +231,12 @@ function PayoutQrPanel({ e, qr, editable, onSaved }: { e: EmployeeRecord; qr: Pa
           {done && !a.error && <Notice tone="success">{done}</Notice>}
         </div>
       </div>
+      {open && src && (
+        <Dialog title={`${e.fullName}: ${e.payoutMethod === 'cash' ? 'bank or GCash' : PAID_BY[e.payoutMethod]} QR code`} onClose={() => setOpen(false)}>
+          <img src={src} alt={alt} className="mx-auto aspect-square w-full max-w-md rounded-lg bg-white object-contain p-2 ring-1 ring-slate-200" />
+          {e.payoutAccount && <p className="text-center text-sm text-slate-600">{e.payoutAccount}</p>}
+        </Dialog>
+      )}
     </Panel>
   );
 }
