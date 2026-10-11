@@ -157,6 +157,26 @@ button:disabled,
 }
 .dialog-backdrop { animation: backdrop-in 180ms ease-out; }
 .dialog-backdrop[data-state='closing'] { animation: backdrop-out 180ms ease-in forwards; pointer-events: none; }
+/*
+ * The Virtus loading mark (components/ui.tsx Loading): the logo's mark alone (about 145 by 190 of the 334 by 298 file,
+ * centred, above the word), cut out of a soft grey, with a band of the accent blue sweeping across it, and a slow breath.
+ * The logo file's own transparency is the mask; it is scaled so the mark fills the box.
+ */
+.virtus-loader {
+  display: inline-block;
+  aspect-ratio: 145 / 190;
+  -webkit-mask: url('/virtus-logo.png') top center / 230% auto no-repeat;
+  mask: url('/virtus-logo.png') top center / 230% auto no-repeat;
+  background: linear-gradient(105deg, var(--color-slate-300) 0%, var(--color-slate-300) 38%, var(--color-indigo-500) 50%, var(--color-slate-300) 62%, var(--color-slate-300) 100%);
+  background-size: 300% 100%;
+  animation: virtus-sweep 1.6s ease-in-out infinite, virtus-breathe 1.6s ease-in-out infinite;
+}
+@keyframes virtus-sweep { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+@keyframes virtus-breathe { 0%, 100% { transform: scale(1); opacity: 0.85; } 50% { transform: scale(1.06); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .virtus-loader { animation: none; background: var(--color-slate-400); }
+}
+
 .dialog-panel { transform-origin: center center; animation: dialog-in 200ms cubic-bezier(0.16, 1, 0.3, 1); }
 .dialog-panel[data-state='closing'] { animation: dialog-out 180ms cubic-bezier(0.7, 0, 0.84, 0) forwards; }
 @media (prefers-reduced-motion: reduce) {

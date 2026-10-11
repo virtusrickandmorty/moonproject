@@ -90,6 +90,23 @@ export function Notice({ tone = 'error', children }: { tone?: keyof typeof notic
   return <div role={tone === 'error' ? 'alert' : 'status'} className={`rounded-md px-3 py-2 text-sm ring-1 ${noticeTones[tone]}`}>{children}</div>;
 }
 
+/**
+ * The loading sign used everywhere (the owner's request, Oct 2026): the Virtus mark with a light sweeping across it and a
+ * gentle breath (index.css `.virtus-loader`), and the words under it for screen readers and anyone in doubt. `size`:
+ * 'sm' sits in a line of text, 'md' (the default) in a panel or a list, 'lg' fills the first screen. Motion stops for
+ * people who ask their system for less (prefers-reduced-motion).
+ */
+export function Loading({ label = 'Loading…', size = 'md' }: { label?: string; size?: 'sm' | 'md' | 'lg' }) {
+  const mark = size === 'sm' ? 'w-4' : size === 'lg' ? 'w-16' : 'w-9';
+  if (size === 'sm') return <span role="status" className="inline-flex items-center gap-2 text-sm text-slate-500"><span aria-hidden="true" className={`virtus-loader ${mark}`} />{label}</span>;
+  return (
+    <div role="status" className={`flex flex-col items-center justify-center gap-3 text-slate-500 ${size === 'lg' ? 'min-h-[60vh] text-base' : 'py-8 text-sm'}`}>
+      <span aria-hidden="true" className={`virtus-loader ${mark}`} />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 export function StatusChip({ status }: { status: string }) {
   // As the home's chips (the owner's request, Oct 2026): calm, colour only where it means something.
   const [text, c] = status === 'cancelled' ? ['Cancelled', 'bg-slate-100 text-slate-500'] : ['Recorded', 'bg-emerald-50 text-emerald-700'];

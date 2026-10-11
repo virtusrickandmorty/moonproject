@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type BackupCheck, type BackupFile } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, manilaTime, useAction, usePasswordPrompt } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, manilaTime, useAction, usePasswordPrompt } from '../../components/ui.tsx';
 import { cleanKey, factRows, lostWords, restoreConfirmed, reusedSeries, reusedWords, sizeWords, sourceWords, tierWords } from './backups.ts';
 
 type Purpose = 'drill' | 'restore';
@@ -18,7 +18,7 @@ export function RestoreBackups() {
   useEffect(() => void api.bakBackups().then(setList, (e: Error) => setError(e.message)), []);
 
   if (error) return <Notice>{error}</Notice>;
-  if (!list) return <p className="text-slate-500">Loading…</p>;
+  if (!list) return <Loading />;
   if (picked) return <OpenBackup backup={picked.backup} purpose={picked.purpose} onBack={() => setPicked(null)} />;
   return (
     <Panel title="Backups">

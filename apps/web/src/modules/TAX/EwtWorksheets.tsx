@@ -6,7 +6,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { api, ewtMonthPath, taxQuarterPath, type BirForm, type BirPaymentLine, type DocTypeInfo, type EwtAtcLine, type EwtMonthWorksheet, type Me } from '../../api.ts';
-import { Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
+import { Loading, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { WorksheetChecks } from './QuarterReports.tsx';
@@ -107,7 +107,7 @@ export function EwtMonthReturn({ me, docTypes }: { me: Me; docTypes: DocTypeInfo
         </div>
       )}
       {error && <Notice>{error}</Notice>}
-      {!w && !error && month && <p className="text-slate-500">Loading…</p>}
+      {!w && !error && month && <Loading />}
       {w && (
         <Panel title={w.label}>
           <p className="text-sm">File and pay the 0619-E by <strong>{w.returnDue}</strong>.</p>
@@ -140,7 +140,7 @@ export function EwtQuarterReturn({ me, docTypes }: { me: Me; docTypes: DocTypeIn
       </p>
       <QuarterForm q={q} />
       {q.error && <Notice>{q.error}</Notice>}
-      {!w && !q.error && q.pick && <p className="text-slate-500">Loading…</p>}
+      {!w && !q.error && q.pick && <Loading />}
       {w && (
         <>
           <Panel title={quarterTitle(w.year, w.quarter, q.today)}>

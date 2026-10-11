@@ -1,7 +1,7 @@
 /** One upload: its review (accept, fix, merge, exclude), then the dry run and the commit; a committed upload shows its result. */
 import { useEffect, useState } from 'react';
 import { api, type DryRunResult, type Me, type MigCommitResult, type MigRow, type MigUpload } from '../../api.ts';
-import { Notice } from '../../components/ui.tsx';
+import { Loading, Notice } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { Commit, Committed, DryRun } from './Finish.tsx';
 import { Review, type RowDoers } from './Review.tsx';
@@ -56,7 +56,7 @@ export function ImportUpload({ me, params }: { me: Me; params?: Record<string, s
       <h1 className="text-2xl font-semibold">{upload && upload.filename !== 'cleared' ? upload.filename : 'Import'}</h1>
       {upload && <p className="text-sm text-slate-600">{uploadStatusWords(upload.status)}</p>}
       {error && <Notice>{error}</Notice>}
-      {!upload && !error && <p className="text-slate-500">Loading…</p>}
+      {!upload && !error && <Loading />}
       {rows && !done && (
         <>
           <Review uploadId={id} rows={rows} onChanged={changed} filter={filter} onFilter={setFilter} reasons={reasons} doers={doers} counts={counts} />

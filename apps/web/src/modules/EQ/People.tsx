@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type DocTypeInfo, type EqBalance, type EqDocument, type EqLedger, type EqPersonRecord, type Me } from '../../api.ts';
-import { Notice, Panel, StatusChip, inputClass, peso, searchClass, searchRowClass } from '../../components/ui.tsx';
+import { Loading, Notice, Panel, StatusChip, inputClass, peso, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { OFFICER_KIND_WORDS, OWNER_KIND_WORDS, balanceOf, filterPeople, positionWords, recordedTotal, rolesOf } from './register.ts';
@@ -27,7 +27,7 @@ export function People({ me }: { me: Me }) {
     if (seeMoney) void api.eqBalances().then(setBalances, (e: Error) => setError(e.message));
   }, [seeMoney]);
   if (error) return <Notice>{error}</Notice>;
-  if (!rows || (seeMoney && !balances)) return <p className="text-slate-500">Loading…</p>;
+  if (!rows || (seeMoney && !balances)) return <Loading />;
   const shown = filterPeople(rows, search, role, showOff);
   const owed = (f: (b: EqBalance) => number) => shown.reduce((s, p) => s + f(balanceOf(balances ?? [], p.id)), 0);
   return (
@@ -112,7 +112,7 @@ export function PersonPage({ me, docTypes, params }: { me: Me; docTypes: DocType
     if (can(me, 'eq.ofc.view')) void api.eqOfficerTransactions(id).then(setOfficer, fail);
   }, [id]);
   if (error) return <Notice>{error}</Notice>;
-  if (!person) return <p className="text-slate-500">Loading…</p>;
+  if (!person) return <Loading />;
   const mayPost = (key: string) => docTypes.some((d) => d.key === key && d.canPost);
   return (
     <div className="max-w-4xl space-y-4">
@@ -129,7 +129,7 @@ export function PersonPage({ me, docTypes, params }: { me: Me; docTypes: DocType
       </div>
       {seeMoney && (
         <Panel title="What is due">
-          {balance ? <ul className="list-disc pl-5 text-sm">{positionWords(balance, peso).map((w) => <li key={w}>{w}</li>)}</ul> : <p className="text-sm text-slate-500">Loading…</p>}
+          {balance ? <ul className="list-disc pl-5 text-sm">{positionWords(balance, peso).map((w) => <li key={w}>{w}</li>)}</ul> : <Loading />}
         </Panel>
       )}
       {owner && <Documents title="Owner money" docs={owner} type="eq.owner_money" words={OWNER_KIND_WORDS} empty="No owner money recorded." />}

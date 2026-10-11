@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, openServerPrint, type Me } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Button, Field, Notice, Panel, inputClass, peso, type PageInfo } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, peso, type PageInfo } from '../../components/ui.tsx';
 import { BookTitle, Tools, money, td, th, usePagedReport, useReport, useToday } from './Books.tsx';
 import './books.css';
 import { addressValue, PendingPeriod, ResultSummary } from './ReportParts.tsx';
@@ -40,7 +40,7 @@ export function ArAging({ me }: { me: Me }) {
       <Button tone="primary" disabled={!asOf} onClick={() => setApplied(new URLSearchParams({ asOf }).toString())}>Show</Button>
       {path && <Tools path={path} />}</div>
     <PendingPeriod applied={applied} values={{ asOf }} />
-    {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
+    {error && <Notice>{error}</Notice>}{!data && !error && <Loading />}
     {data && <><Panel title="Receivables"><ResultSummary count={data.rows.length} total={data.page?.total} summary={`Balance ${peso(data.totalCents)}.`} /><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
       {['Customer', 'Document', 'Job order', 'Due date', ...bucketNames.map(([, name]) => name), 'Total'].map((name) =>
         <th className={th} key={name}>{name}</th>)}</tr></thead><tbody>
@@ -104,7 +104,7 @@ export function CustomerStatement({ me }: { me: Me }) {
     {data && <div className="print:hidden"><Button onClick={() => void openServerPrint(me, '/api/prt/reports/statement',
       { customerId: data.customerId, from: data.from, to: data.to })}>Print statement of account</Button></div>}
     <PendingPeriod applied={applied} values={{ from, to, customerId }} />
-    {error && <Notice>{error}</Notice>}{!data && !error && applied && <p>Loading…</p>}
+    {error && <Notice>{error}</Notice>}{!data && !error && applied && <Loading />}
     {data && <><Panel title={data.customerName}><ResultSummary count={data.lines.length} summary={`Closing balance ${peso(data.closingBalanceCents)}.`} /><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
       {['Date', 'Document', 'Memo', 'Debit', 'Credit', 'Balance'].map((name) => <th className={th} key={name}>{name}</th>)}
       </tr></thead><tbody>

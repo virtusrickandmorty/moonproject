@@ -6,6 +6,7 @@ import { CategoryTiles, HeroSlider, ProductCard, ProductRail, PromoBanner, Trust
 import { SIZES, categoriesOf, type Category, type Product, percentOff } from './products.ts';
 import type { SiteControls } from './Site.tsx';
 import { useShop } from './store.tsx';
+import { Loading } from '../components/ui.tsx';
 
 type Sort = 'featured' | 'price-low' | 'price-high' | 'name';
 type Kind = 'all' | 'made' | 'ready';
@@ -136,7 +137,7 @@ export function Store({ openPanel, view }: SiteControls) {
             </div>}
 
             {shop.samples && <p className="mt-3 rounded-xl bg-amber-50 px-4 py-2.5 text-sm text-amber-900">These are sample garments. The shop's own products will appear here once they are published.</p>}
-            {!shop.ready ? <p className="mt-6 text-sm text-slate-500">Loading garments…</p> : shown.length === 0 ? (
+            {!shop.ready ? <Loading label="Loading garments…" /> : shown.length === 0 ? (
               <div className="mt-6 rounded-2xl border border-dashed border-slate-300 p-10 text-center">
                 <p className="font-semibold">No garments match these filters.</p>
                 <button type="button" onClick={() => setF(NONE)} className="mt-3 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-bold text-white">Show everything</button>

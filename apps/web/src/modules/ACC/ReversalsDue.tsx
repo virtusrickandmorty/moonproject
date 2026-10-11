@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type Me, type ReversalDue } from '../../api.ts';
-import { Button, Notice, peso } from '../../components/ui.tsx';
+import { Loading, Button, Notice, peso } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 
@@ -20,7 +20,7 @@ export function ReversalsDue({ me }: { me: Me }) {
       <h1 className="text-2xl font-semibold">Reversals due</h1>
       <p className="text-sm text-slate-600">Journal vouchers marked to reverse on the first day of the next month. Reverse opens the reversal ready to record; a voucher is reversed once.</p>
       {error && <Notice>{error}</Notice>}
-      {!rows && !error && <p className="text-slate-500">Loading…</p>}
+      {!rows && !error && <Loading />}
       {rows?.length === 0 && <Notice tone="note">No reversal is due.</Notice>}
       {rows && rows.length > 0 && (
         <table className="w-full text-sm">

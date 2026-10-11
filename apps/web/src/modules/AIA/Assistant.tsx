@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type AiaChats, type AiaMessage, type AiaSettings, type Me } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 
 const tokens = (n: number) => n.toLocaleString('en-PH');
@@ -77,7 +77,7 @@ export function WebsiteAssistant({ me }: { me: Me }) {
       )}
       <Panel title="Chats">
         {chats && <p className="text-sm text-slate-600">Last 30 days: <b>{chats.last30Days.chats}</b> chats · {tokens(chats.last30Days.inputTokens)} tokens read and {tokens(chats.last30Days.outputTokens)} written by the AI (the AI service bills by these).</p>}
-        {!chats ? <p className="text-sm text-slate-500">Loading…</p> : chats.rows.length === 0 ? <p className="text-sm text-slate-500">No chats yet.</p> : (
+        {!chats ? <Loading /> : chats.rows.length === 0 ? <p className="text-sm text-slate-500">No chats yet.</p> : (
           <table className="w-full">
             <thead><tr><th>Started</th><th>First question</th><th>Messages</th><th>Staff</th></tr></thead>
             <tbody>{chats.rows.map((c) => (

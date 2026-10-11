@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Me } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Button, Field, Notice, Panel, inputClass, peso, type PageInfo } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, peso, type PageInfo } from '../../components/ui.tsx';
 import { BookTitle, Tools, money, td, th, usePagedReport, useReport, useToday } from './Books.tsx';
 import './books.css';
 import { addressValue, PendingPeriod, ResultSummary, daysOverdue, statusWords, usePeriod } from './ReportParts.tsx';
@@ -30,7 +30,7 @@ export function Table({ headings, rows }: { headings: string[]; rows: ReactNode[
   return <><ResultSummary count={rows.filter((r) => r[0] !== 'TOTAL').length} /><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{headings.map((h) => <th className={amounts.has(h) ? `${th} text-right` : th} key={h}>{h}</th>)}</tr></thead>
     <tbody>{rows.map((cells, i) => <tr key={i} className={cells[0] === 'TOTAL' ? 'font-semibold border-t-2 border-slate-400' : ''}>{cells.map((cell, j) => <td className={amounts.has(headings[j]!) ? money : td} key={j}>{cell}</td>)}</tr>)}</tbody></table></div></>;
 }
-function Loading({ error }: { error: string }) { return error ? <Notice>{error}</Notice> : <p>Loading…</p>; }
+function Waiting({ error }: { error: string }) { return error ? <Notice>{error}</Notice> : <Loading />; }
 
 type Deposits = { rows: (Doc & { customerName: string; jobOrderNumber: string; heldCents: number })[]; totalCents: number };
 export function DepositsHeld({ me }: { me: Me }) {
@@ -39,7 +39,7 @@ export function DepositsHeld({ me }: { me: Me }) {
 function DepositsBody({ path }: { path: string | null }) {
   const { data, error } = useReport<Deposits>(path);
   return data ? <Panel title={`Total held ${peso(data.totalCents)}`}><Table headings={['Customer', 'Job order or source', 'Held']}
-    rows={data.rows.map((r) => [r.customerName, document(r), peso(r.heldCents)])} /></Panel> : path && <Loading error={error} />;
+    rows={data.rows.map((r) => [r.customerName, document(r), peso(r.heldCents)])} /></Panel> : path && <Waiting error={error} />;
 }
 
 type Crossing = { quarterEnd: string; rows: { customerName: string; jobOrderNumber: string; depositDocumentId: string;
@@ -66,7 +66,7 @@ function CrossingBody({ path }: { path: string | null }) {
       document({ id: r.depositDocumentId, number: r.depositDocumentNumber, documentType: r.depositDocumentType }), r.depositDate,
       r.quarterReceived, peso(r.amountCents), peso(r.heldAtQuarterEndCents), r.quarterApplied ?? 'Still held', statusWords(r.mode), peso(r.outputVatCents)]),
     ['TOTAL', '', '', '', '', peso(data.totals.amountCents), peso(data.totals.heldAtQuarterEndCents), '', '', peso(data.totals.outputVatCents)]]} /></Panel>
-    : path && <Loading error={error} />;
+    : path && <Waiting error={error} />;
 }
 
 type Collections = { rows: (Doc & { date: string; customerName: string; cashPlaceName: string | null;
@@ -85,7 +85,7 @@ function CollectionsBody({ path }: { path: string | null }) {
     <Panel title="By cash place"><Table headings={['Cash place', 'Tenders']}
       rows={data.byCashPlace.map((r) => [r.cashPlaceName, peso(r.tenderCents)])} /></Panel>
     <Panel title="By recorder"><Table headings={['Recorded by', 'Tenders']}
-      rows={data.byRecorder.map((r) => [r.recordedByName, peso(r.tenderCents)])} /></Panel></> : path && <Loading error={error} />;
+      rows={data.byRecorder.map((r) => [r.recordedByName, peso(r.tenderCents)])} /></Panel></> : path && <Waiting error={error} />;
 }
 
 type Sales = { rows: (Doc & { date: string; customerName: string; description: string; kind: string;
@@ -105,7 +105,7 @@ function SalesBody({ path }: { path: string | null }) {
       ['By garment type', data.byGarmentType]] as const).map(([title, rows]) => <Panel key={title} title={title}>
       <Table headings={[title.slice(3), 'Net sales']} rows={rows.map((r) => [r.label, peso(r.salesCents)])} /></Panel>)}
     <p className="text-sm text-slate-600">Garment type is unspecified where the recorded sale did not save one.</p>
-  </> : path && <Loading error={error} />;
+  </> : path && <Waiting error={error} />;
 }
 
 type Jobs = { rows: (Doc & { customerName: string; stage: string; dueDate: string; balanceDueCents: number })[];
@@ -126,5 +126,5 @@ function JobsBody({ path, asOf }: { path: string | null; asOf: string }) {
       rows={data.releasedWithBalance.map((r) => [document(r), r.customerName, peso(r.balanceDueCents)])} />{pagerFor('balanceOffset', data.balancePage, 'job orders')}</Panel>
     <Panel title="Release records awaiting invoice"><Table headings={['Release', 'Job order', 'Customer', 'Date', 'Released value']}
       rows={data.awaitingInvoice.map((r) => [document(r), r.jobOrderNumber, r.customerName, r.date, peso(r.releasedCents)])} /></Panel>
-  </> : path && <Loading error={error} />;
+  </> : path && <Waiting error={error} />;
 }

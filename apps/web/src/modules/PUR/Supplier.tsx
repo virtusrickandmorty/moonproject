@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, type ApLedger, type DocTypeInfo, type Me, type SupplierContact, type SupplierPo, type SupplierRecord, type SupplierRr, type SupplyRecord } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, StatusChip, inputClass, peso, useAction } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, Panel, StatusChip, inputClass, peso, useAction } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { EWT_WORDS, UNIT_WORDS, contactToInput, emptyContactForm, emptySupplierForm, needsSwornDeclaration, supplierToForm, supplierToInput, type ContactForm, type SupplierForm } from './purchasing.ts';
@@ -29,7 +29,7 @@ export function SupplierView({ me, docTypes, id, inDialog = false, onChanged }: 
   const can = (p: string) => me.permissions.includes(p);
   const canEdit = can('pur.supplier.edit');
   if (error) return <Notice>{error}</Notice>;
-  if (!supplier) return <p className="text-slate-500">Loading…</p>;
+  if (!supplier) return <Loading />;
   const linkable = (key: string) => docTypes.some((d) => d.key === key);
 
   return (
@@ -218,7 +218,7 @@ function Owed({ supplierId, canOpen }: { supplierId: string; canOpen: (docType: 
   const [error, setError] = useState('');
   useEffect(() => void api.apLedger(supplierId).then(setL, (e: Error) => setError(e.message)), [supplierId]);
   if (error) return <Panel title="Bills and what we owe"><Notice>{error}</Notice></Panel>;
-  if (!l) return <Panel title="Bills and what we owe"><p className="text-sm text-slate-500">Loading…</p></Panel>;
+  if (!l) return <Panel title="Bills and what we owe"><Loading /></Panel>;
   return (
     <Panel title="Bills and what we owe">
       <p className="text-sm">We owe this supplier <b className="text-lg tabular-nums">{peso(l.balanceCents)}</b> (open balance).</p>

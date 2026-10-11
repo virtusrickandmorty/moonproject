@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { BookTitle, Tools, money, td, th, useReport, useToday } from './Books.tsx';
 import './books.css';
 import { addressValue, PendingPeriod, ResultSummary } from './ReportParts.tsx';
@@ -23,7 +23,7 @@ export function CashFlow({ me }: { me: Me }) {
       <Field label="To"><input type="date" className={inputClass} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
       <Button tone="primary" disabled={!from || !to || from > to} onClick={() => setApplied(new URLSearchParams({ from, to }).toString())}>Show</Button>{path && <Tools path={path} />}</div>
     <PendingPeriod applied={applied} values={{ from, to }} />
-    {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
+    {error && <Notice>{error}</Notice>}{!data && !error && <Loading />}
     {data && <Panel title="Direct method — from the posted journals"><ResultSummary count={data.sections.reduce((n, s) => n + s.lines.length, 0)} summary={`Net change ${amount(data.netChangeCents)} · Closing cash ${amount(data.closingCashCents)}.`} /><div className="overflow-x-auto"><table className="w-full max-w-3xl text-sm"><thead><tr><th className={th}>Cash flow</th><th className={`${th} text-right`}>Amount</th></tr></thead><tbody>
       <Row label="Opening cash" cents={data.openingCashCents} strong />
       {data.sections.flatMap((section) => [<tr key={`${section.key}-head`}><td className={`${td} pt-4 font-semibold`} colSpan={2}>{section.title}</td></tr>,

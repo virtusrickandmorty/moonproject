@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { showDate } from '../../components/ui.tsx';
+import { Loading, showDate } from '../../components/ui.tsx';
 import { TickBar } from '../../components/charts.tsx';
 import { api, type BoardCard } from '../../api.ts';
 import { boardCounts, columns, dueWords, tvPages, TV_CARD_HEIGHT, TURN_MS, useBoardRefresh, type Column } from './board.ts';
@@ -63,7 +63,7 @@ export function TvBoard() {
       </div>
     </header>
     <div ref={area} className="min-h-0 flex-1">
-      {!data ? <p className="text-2xl text-slate-500">Loading…</p> : cols.length === 0 ? <p className="rounded-2xl bg-white p-10 text-center text-3xl text-slate-600">No job order is in production.</p> : <TvPage cols={pages[page % pages.length] ?? []} today={data.today} />}
+      {!data ? <Loading /> : cols.length === 0 ? <p className="rounded-2xl bg-white p-10 text-center text-3xl text-slate-600">No job order is in production.</p> : <TvPage cols={pages[page % pages.length] ?? []} today={data.today} />}
     </div>
   </main>;
 }

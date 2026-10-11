@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type ActiveEmployee, type DocTypeInfo, type OpeningStatInput, type OpeningStatus } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { Errors, useLive } from '../COL/parts.tsx';
@@ -56,7 +56,7 @@ export function OpeningStatForm({ type, mode }: { type: DocTypeInfo; mode: FormM
           </Field>
         </Panel>
         <Panel title="What each employee still owes">
-          {employees.length === 0 && <p className="text-sm text-slate-500">Loading employees…</p>}
+          {employees.length === 0 && <Loading label="Loading employees…" />}
           {employees.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

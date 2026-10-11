@@ -8,7 +8,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, taxYearPath, type DeductionSetting, type DocTypeInfo, type Me, type Preview } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, longDate, peso } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, longDate, peso } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord, useToday } from '../../generic/record.tsx';
 import { Link } from '../../router.tsx';
@@ -79,7 +79,7 @@ export function AnnualIncomeTaxReturn({ me, docTypes }: { me: Me; docTypes: DocT
       </p>
       <YearPicker today={r.today} year={r.year} setYear={r.setYear} />
       {r.error && <Notice>{r.error}</Notice>}
-      {!w && !r.error && r.year !== null && <p className="text-slate-500">Loading…</p>}
+      {!w && !r.error && r.year !== null && <Loading />}
       {w && (
         <Panel title={`${w.year}${ended ? '' : ', so far'}`}>
           <p className="text-sm">File and pay the 1702-RT by <strong>{w.returnDue}</strong>.</p>

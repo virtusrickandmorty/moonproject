@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type EmployeeDetail, type EmployeeRecord, type Me, type PayProfile } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, showDate } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, showDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { cents } from '../COL/money.ts';
 import { EmployeeLoans } from '../PAY/Loans.tsx';
@@ -26,7 +26,7 @@ export function EmployeePage({ me, params }: { me: Me; params?: Record<string, s
   const load = useCallback(() => api.employee(id).then(setD, (e: Error) => setError(e.message)), [id]);
   useEffect(() => void load(), [load]);
   if (error) return <Notice>{error}</Notice>;
-  if (!d) return <p className="text-slate-500">Loading…</p>;
+  if (!d) return <Loading />;
   const e = d.employee;
   const can = (p: string) => me.permissions.includes(p);
   return (

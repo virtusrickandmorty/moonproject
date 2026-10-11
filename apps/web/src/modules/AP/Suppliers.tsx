@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type ApBalance, type ApLedger, type DocTypeInfo } from '../../api.ts';
-import { Notice, Panel, StatusChip, peso } from '../../components/ui.tsx';
+import { Loading, Notice, Panel, StatusChip, peso } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
@@ -19,7 +19,7 @@ export function ApBalances() {
   const [error, setError] = useState('');
   useEffect(() => void api.apBalances().then(setRows, (e: Error) => setError(e.message)), []);
   if (error) return <Notice>{error}</Notice>;
-  if (!rows) return <p className="text-slate-500">Loading…</p>;
+  if (!rows) return <Loading />;
   const total = (k: 'balanceCents' | 'advancesCents' | 'netCents') => rows.reduce((s, r) => s + r[k], 0);
   return (
     <div className="max-w-3xl space-y-4">
@@ -51,7 +51,7 @@ export function ApSupplierPage({ docTypes, params }: { docTypes: DocTypeInfo[]; 
   const [error, setError] = useState('');
   useEffect(() => void api.apLedger(id).then(setL, (e: Error) => setError(e.message)), [id]);
   if (error) return <Notice>{error}</Notice>;
-  if (!l) return <p className="text-slate-500">Loading…</p>;
+  if (!l) return <Loading />;
   const may = (key: string) => docTypes.some((d) => d.key === key && d.canPost);
   const open = l.advances.filter((a) => a.status === 'posted' && a.openCents > 0);
   return (

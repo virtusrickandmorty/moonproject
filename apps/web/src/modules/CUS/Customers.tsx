@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useLiveChange } from '../../live.ts';
 import { openServerPrint, refusedFields, type Me } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, inputClass, peso, searchClass, searchRowClass } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, peso, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { masterRequest } from './http.ts';
@@ -293,7 +293,7 @@ function CustomerOrders({ me, customerId }: { me: Me; customerId: string }) {
   const owing = orders?.reduce((n, o) => n + o.balanceDueCents, 0) ?? 0;
   return <Panel title={`Orders${orders ? ` (${orders.length})` : ''}`}>
     {error && <Notice>{error}</Notice>}
-    {!orders && !error && <p className="text-sm text-slate-500">Loading…</p>}
+    {!orders && !error && <Loading />}
     {orders?.length === 0 && <p className="text-sm text-muted">No orders yet.</p>}
     {orders && orders.length > 0 && <>
       {owing > 0 && <p className="text-sm">Still owing on these orders: <b>{peso(owing)}</b></p>}

@@ -1,7 +1,7 @@
 import { type ReactNode } from 'react';
 import type { Me } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { BookTitle, Tools, td, th, money as moneyClass, usePagedReport, useToday } from './Books.tsx';
 import { PendingPeriod, ResultSummary, daysOverdue, statusWords, usePeriod } from './ReportParts.tsx';
 import './books.css';
@@ -23,7 +23,7 @@ export function Table({heads,keys,rows,money=[],totals,total}:{heads:string[];ke
   return <><ResultSummary count={rows.length} total={total} summary={summary}/><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{cols.map(c=><th className={money.includes(c.key)?`${th} text-right`:th} key={c.key}>{c.head}</th>)}</tr></thead><tbody>{rows.map((r,i)=><tr key={i}>{cols.map(c=><td className={money.includes(c.key)?moneyClass:td} key={c.key}>{cell(r,c.key,money.includes(c.key))}</td>)}</tr>)}{money.length>0&&<tr className="font-semibold border-t-2 border-slate-400">{cols.map((c,i)=><td className={money.includes(c.key)?moneyClass:td} key={c.key}>{i===0?'Total':money.includes(c.key)?peso(sum(c.key)):''}</td>)}</tr>}</tbody></table></div>{money.length>0&&total!==undefined&&total>rows.length&&<p className="text-xs text-slate-600">Totals cover this page.</p>}</>;
 }
 // Long reports (lead time, late jobs, job margin, labor cost) come a page at a time; the others answer without a `page` and show no pager.
-function Data({path,pick}:{path:string|null;pick:(d:any)=>ReactNode}){const {data,error,pager}=usePagedReport<any>(path);return data?<>{pick(data)}{pager}</>:path?(error?<Notice>{error}</Notice>:<p>Loading…</p>):null;}
+function Data({path,pick}:{path:string|null;pick:(d:any)=>ReactNode}){const {data,error,pager}=usePagedReport<any>(path);return data?<>{pick(data)}{pager}</>:path?(error?<Notice>{error}</Notice>:<Loading />):null;}
 const page=(title:string,route:string,permission:string,filter:Filter,pick:(d:any)=>ReactNode)=>({me}:{me:Me})=><Report me={me} title={title} route={route} permission={permission} filter={filter}>{path=><Data path={path} pick={pick}/>}</Report>;
 const docMoney=(heads:string[],keys:string[])=>(d:any)=><Panel title="Results"><Table heads={heads} keys={keys} rows={d.rows} totals={d.totals} total={d.page?.total} money={keys.filter(k=>k.endsWith('Cents'))}/></Panel>;
 

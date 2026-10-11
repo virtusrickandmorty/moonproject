@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type CertInfo, type JoinAddress } from '../../api.ts';
-import { Notice, Panel } from '../../components/ui.tsx';
+import { Loading, Notice, Panel } from '../../components/ui.tsx';
 import { addressKind, groupFingerprint256 } from './fingerprint.ts';
 
 export function ShopCertificate() {
@@ -20,7 +20,7 @@ export function ShopCertificate() {
 
   return <div className="max-w-3xl space-y-4">
     <h1 className="text-2xl font-semibold">Shop certificate</h1>
-    {loading && <p className="text-sm text-slate-500">Loading certificate…</p>}
+    {loading && <Loading label="Loading certificate…" />}
     {error && <Notice>{error}</Notice>}
     {!loading && !error && (ca === null ?
       <Notice tone="info">This PC is not serving the shop network yet. The Windows installer turns it on.</Notice> :
