@@ -153,8 +153,8 @@ describe('print base', () => {
       expect(html).toContain('<td class="fig">₱123.45</td>');
       expect(html.includes('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.')).toBe(legend);
       expect(html).toContain(value.registeredName);
-      expect(html).toContain('Date <b>2026-09-28</b>');
-      expect(html).toContain('Printed by Example Owner at');
+      expect(html).toContain('Date <b>September 28, 2026</b>');
+      expect(html).toContain('Printed by Example Owner on');
     }
   });
 
@@ -184,7 +184,7 @@ describe('print base', () => {
       expect(html).toContain(value.registeredName);
       expect(html).toContain(value.tin);
       expect(html).toContain(value.registeredAddress);
-      expect(html).toContain('Printed by Example Owner at');
+      expect(html).toContain('Printed by Example Owner on');
     }
     const ticket = render('jo.job_order', jo, 'job_ticket');
     expect(ticket).toContain('<h1>JOB TICKET</h1>');
