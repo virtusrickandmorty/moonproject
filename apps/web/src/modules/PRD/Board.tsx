@@ -221,7 +221,13 @@ function LinePanel({ card, cat, can, onChanged, onClose }: { card: BoardCard; ca
                       <TickBar parts={[{ share: flow.percent / 100, tone: flow.percent === 100 ? 'bg-emerald-500' : 'bg-indigo-600' }]} ticks={140} height="h-4" stretch label={`${flow.percent}% done`} />
                     </div>
                   )}
-                  {(flow.received || flow.forwarded) && (
+                  {s.parts ? (flow.receivedParts.length > 0 || flow.forwardedParts.length > 0) && (
+                    // A set: each part on its own, as they move apart.
+                    <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+                      {flow.receivedParts.map((x) => <span key={`in-${x.part}`} className="text-slate-600">← {x.pieces} {x.part} received from {x.from}</span>)}
+                      {flow.forwardedParts.map((x) => <span key={`out-${x.part}`} className="font-medium text-indigo-700">→ {x.pieces} {x.part} forwarded to {x.to}</span>)}
+                    </p>
+                  ) : (flow.received || flow.forwarded) && (
                     <p className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
                       {flow.received && <span className="text-slate-600">← {flow.received.pieces} pcs received from {flow.received.from}</span>}
                       {flow.forwarded && <span className="font-medium text-indigo-700">→ {flow.forwarded.pieces} pcs forwarded to {flow.forwarded.to}</span>}
