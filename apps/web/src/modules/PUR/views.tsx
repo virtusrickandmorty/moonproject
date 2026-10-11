@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, type PoStatus, type RrDetail } from '../../api.ts';
 import type { ViewParts } from '../../generic/DocView.tsx';
-import { Notice } from '../../components/ui.tsx';
+import { Loading, Notice } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { qtyWords } from './purchasing.ts';
@@ -20,7 +20,7 @@ function PurchaseOrderDetail({ id }: { id: string }) {
   useEffect(() => void api.purchaseOrder(id).then(setPo, (e: Error) => setError(e.message)), [id]);
   useEffect(() => void api.docTypes().then((t) => setCanReceive(Boolean(t.find((d) => d.key === 'pur.rr')?.canPost)), () => undefined), []);
   if (error) return <Notice>{error}</Notice>;
-  if (!po) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (!po) return <Loading />;
   const open = po.status === 'posted' && po.lines.some((l) => l.remainingQty > 0);
   return (
     <>
@@ -47,7 +47,7 @@ function ReceivingReportDetail({ id }: { id: string }) {
   const [error, setError] = useState('');
   useEffect(() => void api.receivingReport(id).then(setRr, (e: Error) => setError(e.message)), [id]);
   if (error) return <Notice>{error}</Notice>;
-  if (!rr) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (!rr) return <Loading />;
   return (
     <>
       <p className="text-sm">From <b>{rr.supplierName}</b>, for purchase order <Link to={docPath('pur.po', `/${rr.poId}`)} className="text-indigo-700 underline">{rr.poNumber}</Link>.</p>

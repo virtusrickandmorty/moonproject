@@ -7,7 +7,8 @@ import type { DocTypeInfo } from '../api.ts';
 
 export const MENU_GROUPS = ['Overview', 'Sales', 'Production', 'Purchases & Expenses', 'Money', 'People & Payroll', 'Accounting & Tax', 'Reports', 'Admin'] as const;
 export type MenuGroup = (typeof MENU_GROUPS)[number];
-export interface MenuItem { group: MenuGroup; label: string; path: string; permission?: string }
+/** `sub`: the sub-category within the group, when set by hand; otherwise worked out by subOf (SUBS). */
+export interface MenuItem { group: MenuGroup; label: string; path: string; permission?: string; sub?: string }
 
 const MODULES: [MenuGroup, string][] = [
   ['Sales', 'CUS CAT QUO JO COL QS COM SUP SHP'],
@@ -35,17 +36,18 @@ export const SCREENS: MenuItem[] = [
   { group: 'Overview', label: 'Calendar', path: '/cal', permission: 'cal.view' },
   { group: 'Sales', label: 'Customers', path: '/cus', permission: 'cus.view' },
   { group: 'Sales', label: 'Support inbox', path: '/sup', permission: 'sup.view' },
+  { group: 'Sales', label: 'Website assistant', path: '/aia', permission: 'aia.view' },
+  { group: 'Sales', label: 'TPL clients', path: '/tpl', permission: 'tpl.view' },
   { group: 'Sales', label: 'POS', path: '/pos', permission: 'shp.pos' },
   { group: 'Sales', label: 'Website shop', path: '/shp', permission: 'shp.view' },
   { group: 'Sales', label: 'Online orders', path: '/shp/orders', permission: 'shp.orders.view' },
-  { group: 'Sales', label: 'Price list', path: '/cat', permission: 'cat.view' },
+  { group: 'Sales', label: 'Price list & piece rates', path: '/cat', permission: 'cat.view' },
   { group: 'Purchases & Expenses', label: 'Suppliers', path: '/pur/suppliers', permission: 'pur.supplier.view' },
   { group: 'Purchases & Expenses', label: 'Supplies', path: '/pur/supplies', permission: 'pur.supply.view' },
   { group: 'Admin', label: 'Shop certificate', path: '/admin/shop-certificate' },
   { group: 'Admin', label: 'Practice shop', path: '/admin/practice' },
   { group: 'Production', label: 'Production board', path: '/prd/board', permission: 'prd.view' },
   { group: 'Production', label: 'TV board', path: '/prd/tv', permission: 'prd.tv' },
-  { group: 'Production', label: 'Piece rates', path: '/prd/rates', permission: 'rate.view' },
   { group: 'Production', label: 'Sizer sets', path: '/szr/sets', permission: 'szr.loan.view' },
   { group: 'People & Payroll', label: 'Employees', path: '/emp/employees', permission: 'emp.view' },
   { group: 'People & Payroll', label: 'Leave balances', path: '/emp/leave-balances', permission: 'emp.view' },
@@ -142,6 +144,9 @@ export function pagePermission(path: string): string | undefined {
   return under.sort((a, b) => b.path.length - a.path.length)[0]?.permission;
 }
 
+/** A report's address (a screen under Reports, or a page under one): it stays a snapshot until Refresh (live changes). */
+export const isReportPath = (path: string) => SCREENS.some((s) => s.group === 'Reports' && (path === s.path || path.startsWith(`${s.path}/`)));
+
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);
 
@@ -183,6 +188,83 @@ export function applyMenuOrder<G extends { group: MenuGroup; items: MenuItem[] }
   const sorted = <T,>(list: T[], placed: readonly string[], key: (t: T) => string) =>
     list.map((t, usual) => ({ t, at: rank(placed, key(t), usual) })).sort((a, b) => a.at - b.at).map((x) => x.t);
   return sorted(menu.map((g) => ({ ...g, items: sorted(g.items, order.items[g.group] ?? [], (i) => i.path) })), order.groups, (g) => g.group);
+}
+
+/**
+ * Sub-categories within a group (the owner's request, Oct 2026): screens and document lists that work together, in this
+ * order. An item is placed by its document type, or by its address (the longest match); one placed nowhere goes last
+ * under "More". A group with one sub-category shows no sub-headings.
+ */
+export const SUBS: Partial<Record<MenuGroup, [sub: string, keys: string[]][]>> = {
+  Sales: [
+    ['Customers & quotes', ['/cus', 'quo.quotation', '/cat', '/com', '/sup', '/aia']],
+    ['Job orders & release', ['jo.job_order', 'jo.release', 'jo.invoice_record', 'jo.dp_invoice', 'jo.opening']],
+    ['Collections', ['col.', '/col/pdcs']],
+    ['Shop & POS', ['/pos', 'qs.sale', '/shp']],
+    ['TPL services', ['/tpl', 'tpl.']],
+  ],
+  Production: [
+    ['Production', ['/prd/board', 'prd.entry', '/prd/tv']],
+    ['Sizers', ['/szr']],
+  ],
+  'Purchases & Expenses': [
+    ['Purchasing', ['/pur/suppliers', '/pur/supplies', 'pur.']],
+    ['Supplier bills & payments', ['ap.', '/ap/']],
+    ['Expenses', ['exp.']],
+    ['Inventory', ['inv.']],
+  ],
+  Money: [
+    ['Cash & bank', ['/cash/', 'cash.', '/col/checks']],
+    ['Owners & loans', ['/eq/', 'eq.', '/loan/', 'loan.']],
+    ['Fixed assets', ['/fa/', 'fa.']],
+  ],
+  'People & Payroll': [
+    ['Employees & time', ['/emp/']],
+    ['Payroll', ['pay.', '/pay/']],
+    ['Cash advances', ['/ca/', 'ca.']],
+    ['Government contributions', ['/stat', 'stat.']],
+  ],
+  'Accounting & Tax': [
+    ['Books', ['/acc/', 'acc.']],
+    ['Tax registers', ['/tax/sales', '/tax/purchases', '/tax/ewt', '/tax/2307-received', '/tax/2307-to-issue', '/tax/slsp-sales', '/tax/slsp-purchases', '/tax/sawt']],
+    ['Tax returns & payments', ['/tax/', 'tax.']],
+  ],
+  Reports: [
+    ['Financial statements & books', ['/rpt/journal', '/rpt/bir-books', '/rpt/ledger', '/rpt/trial-balance', '/rpt/income-statement', '/rpt/balance-sheet', '/rpt/changes-in-equity', '/rpt/cash-flow', '/rpt/monthly-owners-pack']],
+    ['Sales & customers', ['/rpt/ar-aging', '/rpt/customer-statement', '/rpt/deposits-held', '/rpt/deposits-crossing-quarter', '/rpt/collections-register', '/rpt/sales-by-period', '/rpt/job-order-follow-up', '/rpt/job-margin']],
+    ['Production & payroll', ['/rpt/payroll-register', '/rpt/piece-work', '/rpt/labor-cost', '/rpt/thirteenth-register', '/rpt/production-status', '/rpt/throughput', '/rpt/lead-time', '/rpt/late-jobs', '/rpt/worker-output']],
+    ['Purchases', ['/rpt/ap-aging', '/rpt/purchases', '/rpt/purchase-orders', '/rpt/received-not-billed']],
+    ['Cash & assets', ['/rpt/cash-position', '/rpt/transfers', '/rpt/cash-counts', '/rpt/assets']],
+    ['Controls', ['/rpt/late-entries', '/tax/changes-after-filing', '/rpt/cancellations', '/rpt/exceptions', '/rpt/sign-ins']],
+  ],
+  Admin: [
+    ['Users & access', ['/admin/users', '/admin/roles']],
+    ['Setup', ['/prt/', '/com/settings', '/admin/shop-certificate', '/acc/opening', '/mig', '/admin/practice']],
+    ['Safety & checks', ['/bak', '/aud/', '/admin/health']],
+  ],
+};
+const MORE = 'More';
+/** The sub-category of an item in its group: by its document type key ("jo.release") or its address, the longest match. */
+export function subOf(item: Pick<MenuItem, 'group' | 'path'>): string {
+  const doc = /^\/docs\/([^/?]+)/.exec(item.path)?.[1];
+  let best: [string, number] | null = null;
+  for (const [sub, keys] of SUBS[item.group] ?? []) {
+    for (const k of keys) {
+      const hit = k.startsWith('/') ? !doc && (item.path === k || item.path.startsWith(k.endsWith('/') ? k : `${k}/`) || item.path === k.replace(/\/$/, ''))
+        : !!doc && (doc === k || (k.endsWith('.') && doc.startsWith(k)));
+      if (hit && (!best || k.length > best[1])) best = [sub, k.length];
+    }
+  }
+  return best?.[0] ?? MORE;
+}
+/**
+ * A group's items by sub-category: in the person's own order of the sub-categories (`subOrder`, Arrange menu), then the
+ * usual SUBS order ("More" last); each keeps its order within (a person's own order too).
+ */
+export function sectionsOf(group: MenuGroup, items: MenuItem[], subOrder: readonly string[] = []): { sub: string; items: MenuItem[] }[] {
+  const usual = [...(SUBS[group] ?? []).map(([s]) => s), MORE];
+  const order = [...subOrder.filter((s) => usual.includes(s)), ...usual.filter((s) => !subOrder.includes(s))];
+  return order.map((sub) => ({ sub, items: items.filter((i) => (i.sub ?? subOf(i)) === sub) })).filter((s) => s.items.length > 0);
 }
 
 export function buildMenu(docTypes: DocTypeInfo[], permissions: ReadonlySet<string>, screens = SCREENS): { group: MenuGroup; items: MenuItem[] }[] {

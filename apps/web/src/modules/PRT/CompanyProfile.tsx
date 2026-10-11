@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type CompanyProfile } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
 
 const blank: CompanyProfile = { registeredName: '', tradeName: '', tin: '', registeredAddress: '', isVatRegistered: false, version: 0 };
 
@@ -36,7 +36,7 @@ export function CompanyProfileScreen() {
     setPassword('');
     setSaved(true);
   });
-  if (!loaded) return <p>Loading…</p>;
+  if (!loaded) return <Loading />;
   return <div className="max-w-2xl space-y-4">
     <h1 className="text-2xl font-semibold">Company print details</h1>
     <p className="text-sm text-slate-600">These details appear on every printout. Check them against the company’s registration before saving.</p>

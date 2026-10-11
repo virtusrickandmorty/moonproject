@@ -15,11 +15,23 @@ import { fixedClock, today } from '../clock.ts';
 import { openDb, type Db } from '../db/driver.ts';
 import { loadModules } from '../../modules/load.ts';
 import { runInvariants } from '../../engine/ledger/invariants.ts';
+import { periodEndOf, periodRuleOf, semiStartOf, weekStartOf } from '../../modules/PAY/run-calc.ts';
 import { SESSION_COOKIE } from '../../engine/security/sessions.ts';
 
 export const DAY_MS = 86_400_000;
 /** The made-up users' passwords are random and thrown away, so a cheap hash keeps the build quick (the cost is in each hash). */
 export const PRACTICE_SCRYPT_N = 2 ** 10;
+/** The ongoing team orders (the owner's request, Oct 2026): taken over the last days, made through these steps, not released. */
+const ONGOING_DAYS = 12;
+const [PRINTING, CUTTING, SEWING, PACKING] = [2, 4, 6, 8];
+const ROUTE = [PRINTING, CUTTING, SEWING, PACKING];
+const PLAYERS = ['Practice Player A', 'Practice Player B', 'Practice Player C', 'Practice Player D', 'Practice Player E', 'Practice Player F', 'Practice Player G', 'Practice Player H'];
+const SIZES = ['S', 'M', 'L', 'XL'];
+/**
+ * Payrolls left for people to run by hand (the owner's request, Oct 2026): a run whose period ends in the last days of the
+ * history is not recorded, so the latest weekly and semi-monthly runs are there to try.
+ */
+const MANUAL_PAY_DAYS = 10;
 export const ROLES = ['owner', 'accountant', 'encoder', 'production'] as const;
 export type Role = typeof ROLES[number];
 export type Json = Record<string, any>;
@@ -164,7 +176,22 @@ export async function createPracticeData(dbPath: string, days: number, start = '
     ok(await owner.post(`/api/cat/items/${item}/prices`, {
       effectiveFrom: start, minQty: 1, unitPriceCents: 10_000,
     }, { 'if-match': '1' }), 'price catalogue item');
+    // The garments the floor makes, on the price list (the owner's request, Oct 2026): each item's Labour box shows the
+    // piece rates its sewers are paid (the starter T-shirt and NBA-cut jersey rates), and a set paid by part.
+    const garment = async (name: string, garmentType: string, unit: 'pc' | 'set', priceCents: number) => {
+      const id = ok(await owner.post('/api/cat/items', { name, class: 'made_to_order_garment', garmentType, unit, setComponents: unit === 'set' ? 2 : 1 }), `create ${name}`).id as string;
+      ok(await owner.post(`/api/cat/items/${id}/prices`, { effectiveFrom: start, minQty: 1, unitPriceCents: priceCents }, { 'if-match': '1' }), `price ${name}`);
+      return id;
+    };
+    await garment('Practice uniform shirt', 'T-shirt', 'pc', 100_000);
+    await garment('Practice team jersey', 'Jersey (NBA cut)', 'pc', 45_000);
+    await garment('Practice basketball jersey set', 'Basketball jersey set', 'set', 65_000);
+    for (const [part, rateCents] of [['upper', 4_500], ['lower', 3_500]] as const) {
+      ok(await owner.post('/api/rate/rates', { garmentType: 'Basketball jersey set', stepCode: 'SEWING', complexity: 'standard', part, rateCents, effectiveFrom: start,
+        reason: `Practice sewing rate for the ${part} part of a set` }), `set ${part} sewing rate`);
+    }
     const customers: string[] = [];
+    const team = new Map<string, string[]>(); // each customer's team of wearers, for the ongoing team orders
     for (let n = 1; n <= 4; n++) {
       const customer = ok(await owner.post('/api/cus/customers', {
         kind: 'organization', displayName: `Practice Customer ${n}`,
@@ -180,6 +207,9 @@ export async function createPracticeData(dbPath: string, days: number, start = '
         sizeMode: 'measured', values: { chest: 36 + n, upperWaist: 30 + n },
         remarks: 'Made-up training measurements',
       }), `measure wearer ${n}`);
+      const players: string[] = [];
+      for (const name of PLAYERS) players.push(ok(await owner.post(`/api/cus/customers/${customer.id}/people`, { fullName: `${name} ${n}` }), `create player ${name} ${n}`).id as string);
+      team.set(customer.id as string, players);
     }
     const office = ok(await owner.post('/api/emp/employees', {
       fullName: 'Practice Office Employee', costCentre: 'office',
@@ -197,6 +227,24 @@ export async function createPracticeData(dbPath: string, days: number, start = '
       effectiveFrom: hired, payType: 'piece',
       payGroup: 'WEEKLY_PIECE', workweekDays: 6, isMwe: false, reason: 'Made-up practice rate',
     }), 'production pay profile');
+    // More of the floor (the owner's request, Oct 2026): piece-rate cutter and sewer, and daily-paid printer and packer
+    // paid every week in their own runs (WEEKLY_DAILY), whose days come from attendance.
+    const worker = async (fullName: string, position: string, pay: object) => {
+      const id = ok(await owner.post('/api/emp/employees', { fullName, costCentre: 'production', hireDate: hired, position }), `create ${fullName}`).id as string;
+      ok(await owner.post(`/api/emp/employees/${id}/pay`, { effectiveFrom: hired, workweekDays: 6, isMwe: false, reason: 'Made-up practice rate', ...pay }), `${fullName} pay profile`);
+      return id;
+    };
+    const cutter = await worker('Practice Cutter', 'Practice cutter', { payType: 'piece', payGroup: 'WEEKLY_PIECE' });
+    const sewer2 = await worker('Practice Sewer Two', 'Practice sewer', { payType: 'piece', payGroup: 'WEEKLY_PIECE' });
+    // Paid by the piece on the sets she sews, upper and lower at their own rates (the owner's request, Oct 2026).
+    const sewer3 = await worker('Practice Sewer Three', 'Practice sewer (sets)', { payType: 'piece', payGroup: 'WEEKLY_PIECE' });
+    const printer = await worker('Practice Printer', 'Practice printer', { payType: 'daily', dailyRateCents: 64_500, payGroup: 'WEEKLY_DAILY' });
+    const packer = await worker('Practice Packer', 'Practice packer', { payType: 'daily', dailyRateCents: 61_000, payGroup: 'WEEKLY_DAILY' });
+    const helper = await worker('Practice Helper', 'Practice helper', { payType: 'daily', dailyRateCents: 60_000, payGroup: 'SEMI_DAILY' });
+    const lastDay = manilaDate(new Date(START + (days - 1) * DAY_MS));
+    const onStep: Record<number, string[]> = { [PRINTING]: [printer], [CUTTING]: [cutter], [SEWING]: [sewer, sewer2], [PACKING]: [packer] };
+    const ongoing: { id: string; from: number; step: number; done: number }[] = []; // work starts the day after it is routed
+    let reworkSent = false;
     const categoryId = (db.prepare(`SELECT c.id FROM exp_categories c JOIN accounts a ON a.id = c.account_id WHERE a.code = '6990'`).get() as { id: number }).id;
 
     for (let day = 0; day < days; day++) {
@@ -225,8 +273,9 @@ export async function createPracticeData(dbPath: string, days: number, start = '
       ok(await production.post(`/api/prd/jobs/${jo.id}/lines/1/setup`, {
         templateId: 1, stepIds: [6, 8], garmentType: 'T-shirt', complexity: 'standard',
       }), 'set production route');
-      await record(production, 'prd.entry', {
-        jobOrderId: jo.id, stepId: 6, rows: [{ lineNo: 1, employeeId: sewer, pieces: 5 }],
+      // Every step needs all of the line's pieces before it is completed (sewing, then packing).
+      for (const stepId of [6, 8]) await record(production, 'prd.entry', {
+        jobOrderId: jo.id, stepId, rows: [{ lineNo: 1, employeeId: sewer, pieces: 5 }],
       });
       for (const step of [6, 8]) ok(await production.post(
         `/api/prd/jobs/${jo.id}/lines/1/steps/${step}/complete`, {},
@@ -269,26 +318,84 @@ export async function createPracticeData(dbPath: string, days: number, start = '
         supplierInvoiceNo: `UTIL-${serial}`, supplierInvoiceDate: date,
       });
 
-      // Cutoffs close after the day's work. A weekly piece run is recorded on
-      // Saturdays; the office run is recorded on the 15th and month end.
+      // Ongoing work (the owner's request, Oct 2026): over the last days, a team order a day with a wearer list goes
+      // Printing → Cutting → Sewing → Packing, four wearers a day, and is not released, so the board has jobs at every
+      // step, some ready, one with a jersey sent back for rework, and the newest still to route. Daily-paid staff are
+      // present every day but Saturday (their rest day).
+      if (day >= days - ONGOING_DAYS) {
+        const players = team.get(customerId)!;
+        const order = await record(encoder, 'jo.job_order', {
+          customerId, dueInDays: 14, priority: day % 3 === 0 ? 'rush' : 'normal', paymentTerms: 'dp50',
+          lines: [{ kind: 'made_to_order', description: 'Practice team jersey', qty: players.length, unitPriceCents: 45_000, discountCents: 0,
+            roster: players.map((personId, i) => ({ personId, sizeMode: 'preset', size: SIZES[i % SIZES.length], jerseyNumber: String(i + 4), qty: 1 })) }],
+        });
+        await record(encoder, 'col.collection', {
+          customerId, crNumber: String(30_000 + serial),
+          applications: [{ jobOrderId: order.id, amountCents: players.length * 22_500 }],
+          tenders: [{ cashPlaceId: till, amountCents: players.length * 22_500 }],
+        });
+        if (day < days - 1) {
+          ok(await production.post(`/api/prd/jobs/${order.id}/lines/1/setup`, { templateId: 1, stepIds: ROUTE, garmentType: 'Jersey (NBA cut)', complexity: 'standard' }), 'route a team order');
+          ongoing.push({ id: order.id as string, from: day + 1, step: 0, done: 0 });
+        }
+      }
+      if (days >= 14 && (day === days - 14 || day === days - 4)) { // the first is paid by a recorded run; the second waits in the runs left to do
+        const sets = await record(encoder, 'jo.job_order', {
+          customerId, dueInDays: 10, priority: 'normal', paymentTerms: 'dp50',
+          lines: [{ kind: 'made_to_order', description: 'Practice basketball jersey set', qty: 6, unitPriceCents: 65_000, discountCents: 0, roster: [] }],
+        });
+        ok(await production.post(`/api/prd/jobs/${sets.id}/lines/1/setup`, { stepIds: [SEWING], garmentType: 'Basketball jersey set', complexity: 'standard' }), 'route a set order');
+        await record(production, 'prd.entry', { jobOrderId: sets.id, stepId: SEWING, rows: [
+          { lineNo: 1, employeeId: sewer3, pieces: 6, part: 'upper' },
+          { lineNo: 1, employeeId: sewer3, pieces: 4, part: 'lower' },
+        ] });
+      }
+      for (const o of ongoing.filter((x) => x.from <= day && x.step < ROUTE.length)) {
+        const stepId = ROUTE[o.step]!;
+        const people = onStep[stepId]!;
+        const wearers = [o.done + 1, o.done + 2, o.done + 3, o.done + 4].filter((w) => w <= PLAYERS.length);
+        await record(production, 'prd.entry', { jobOrderId: o.id, stepId, rows: [{ lineNo: 1, employeeId: people[day % people.length]!, pieces: wearers.length, wearers }] });
+        o.done += wearers.length;
+        if (o.done >= PLAYERS.length) (o.step++, (o.done = 0));
+        if (!reworkSent && o.step === ROUTE.length) {
+          ok(await production.post(`/api/prd/jobs/${o.id}/lines/1/rework`, { wearers: [2], reason: 'Number printed off-centre on the back', foundAtStepId: PACKING }), 'send a jersey back for rework');
+          reworkSent = true;
+        }
+      }
+      const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+      if (weekday !== 6) {
+        const holiday = db.prepare('SELECT 1 FROM emp_holidays WHERE holiday_date = ? AND is_active = 1').get(date); // the floor works through it
+        const status = holiday ? 'holiday_worked' : 'present';
+        // Something to see on the payslips: the printer's overtime on Mondays, the packer's night work on Thursdays, and
+        // the helper's absence on Wednesdays, half day on Fridays and overtime on Tuesdays.
+        ok(await owner.post('/api/emp/attendance', { days: [
+          { employeeId: printer, date, status, ...(weekday === 1 ? { otMinutes: 120 } : {}) },
+          { employeeId: packer, date, status, ...(weekday === 4 ? { otMinutes: 60, nightMinutes: 60 } : {}) },
+          { employeeId: helper, date, status: holiday ? status : weekday === 3 ? 'absent' : weekday === 5 ? 'half_day' : 'present', ...(weekday === 2 && !holiday ? { otMinutes: 90 } : {}) },
+        ] }), 'daily attendance');
+      }
+      // Cash advances, taken back an installment a payroll: one early on, one in the last week (it shows on the runs left to do).
+      if (day === 2) await record(owner, 'ca.advance', { employeeId: sewer2, cashPlaceId: till, amountCents: 100_000, installmentCents: 25_000, note: 'Practice cash advance' });
+      if (day === days - 6) await record(owner, 'ca.advance', { employeeId: printer, cashPlaceId: till, amountCents: 60_000, installmentCents: 30_000, note: 'Practice cash advance' });
+
+      // Cutoffs close after the day's work. A weekly piece run is recorded on the
+      // last day of its week (Saturday, or Thursday once weeks start on Friday);
+      // the office run is recorded on the 15th and month end.
       clock.set(new Date(START + day * DAY_MS + 7 * 3_600_000).toISOString());
       accountant = await signIn(app, 'accountant', passwords.accountant);
       encoder = await signIn(app, 'encoder', passwords.encoder);
-      const weekday = new Date(START + day * DAY_MS).getUTCDay();
       const dayOfMonth = Number(date.slice(8));
-      const monthEnd = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0)).getUTCDate();
       const runs: { payGroup: string; periodStart: string }[] = [];
-      if (weekday === 6) {
-        const monday = manilaDate(new Date(START + (day - 5) * DAY_MS));
-        runs.push({ payGroup: 'WEEKLY_PIECE', periodStart: monday });
-      }
-      if (dayOfMonth === 15 || dayOfMonth === monthEnd) {
-        runs.push({ payGroup: 'SEMI_MONTHLY', periodStart: `${date.slice(0, 8)}${dayOfMonth === 15 ? '01' : '16'}` });
-      }
-      for (const input of runs) {
+      const rule = periodRuleOf(db);
+      const week = weekStartOf(date, rule);
+      if (week && periodEndOf('WEEKLY_PIECE', week, rule) === date) runs.push({ payGroup: 'WEEKLY_PIECE', periodStart: week }, { payGroup: 'WEEKLY_DAILY', periodStart: week });
+      const half = semiStartOf(date, rule); // the semi-monthly run closes on its period's last day (the 15th and month end, or the 10th and 25th)
+      if (half && periodEndOf('SEMI_MONTHLY', half, rule) === date) runs.push({ payGroup: 'SEMI_MONTHLY', periodStart: half }, { payGroup: 'SEMI_DAILY', periodStart: half });
+      const leftToDo = (Date.parse(lastDay) - Date.parse(date)) / DAY_MS < MANUAL_PAY_DAYS && days > MANUAL_PAY_DAYS;
+      for (const input of leftToDo ? [] : runs) {
         const run = await record(accountant, 'pay.run', input);
         const slips = ok(await accountant.get(`/api/pay/runs/${run.id}/payslips`), 'payroll slips');
-        const people = slips.employees as { employeeId: string; netCents: number }[];
+        const people = (slips.employees as { employeeId: string; netCents: number }[]).filter((person) => person.netCents > 0); // paid ones only
         const total = people.reduce((sum, person) => sum + person.netCents, 0);
         // Paid from the till when it holds enough; otherwise the run waits for its release, as payroll does when the cash
         // is not in yet (a practice shop started near a month end has only a day's takings in the till).

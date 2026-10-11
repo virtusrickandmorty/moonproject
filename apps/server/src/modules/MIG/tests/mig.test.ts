@@ -29,7 +29,7 @@ test('rates and missing legacy IDs require review without changing the raw row',
   expect(validateRow({ Employee_ID: 'E2', Employee_Name: 'Example Worker' }).issues.join(' ')).toContain('confirmation');
   expect(validateRow({ Customer_Name: 'Sample Buyer' }).issues.join(' ')).toContain('legacy ID');
   expect(validateRow({ Employee_Name: 'Example Worker' }).issues.join(' ')).toContain('legacy ID');
-  expect(validateRow({ Garment_Type: 'Jersey', Operation: 'Hem', Rate: 'abc' }).issues.join(' ')).toContain('Piece rate must');
+  expect(validateRow({ Garment_Type: 'Jersey', Operation: 'Hem', Rate: 'abc' }).issues.join(' ')).toContain('Rate "abc" must be a peso amount');
 });
 
 test('every importer route requires a session and owner permission', async () => {

@@ -135,7 +135,7 @@ describe('web client for payroll', () => {
     addPay(env.db, carla, acct, { payType: 'monthly', payGroup: 'SEMI_MONTHLY', monthlyRateCents: 1_500_000 });
     const api = createApi(injectFetch(env.app));
     await api.login('acct3', PASSWORD);
-    const runInput1 = runInput('SEMI_MONTHLY', '2026-11-16', [], {}, {}).input;
+    const runInput1 = runInput('SEMI_MONTHLY', '2026-11-11', [], {}, {}).input;
     const run = await api.post('pay.run', runInput1, (await api.preview('pay.run', runInput1)).totalCents, key());
     env.clock.set('2026-12-15T02:00:00Z');
     await api.login('acct3', PASSWORD); // the session ended while the clock moved on

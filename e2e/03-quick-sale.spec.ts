@@ -16,7 +16,7 @@ test('a quick sale is recorded with its collection', async ({ page }) => {
   // The sale: one repair line, paid in cash. One payment with no amount typed pays the exact total.
   await page.getByRole('link', { name: 'Quick Sales' }).click();
   await page.getByRole('button', { name: '+ New Quick Sale' }).click();
-  await page.getByLabel('Customer').fill('Test');
+  await page.getByLabel('Customer', { exact: true }).fill('Test'); // exact: the menu's sub-groups (Customers & quotes) are labelled too
   await page.getByRole('button', { name: /^Test School/ }).click();
   await page.getByLabel('What', { exact: true }).fill('Shorten sleeves');
   await page.getByLabel('Price each').fill('1,120.00');

@@ -153,8 +153,8 @@ describe('print base', () => {
       expect(html).toContain('<td class="fig">₱123.45</td>');
       expect(html.includes('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.')).toBe(legend);
       expect(html).toContain(value.registeredName);
-      expect(html).toContain('Date <b>2026-09-28</b>');
-      expect(html).toContain('Printed by Example Owner at');
+      expect(html).toContain('Date <b>September 28, 2026</b>');
+      expect(html).toContain('Printed by Example Owner on');
     }
   });
 
@@ -184,12 +184,27 @@ describe('print base', () => {
       expect(html).toContain(value.registeredName);
       expect(html).toContain(value.tin);
       expect(html).toContain(value.registeredAddress);
-      expect(html).toContain('Printed by Example Owner at');
+      expect(html).toContain('Printed by Example Owner on');
     }
     const ticket = render('jo.job_order', jo, 'job_ticket');
     expect(ticket).toContain('<h1>JOB TICKET</h1>');
     expect(ticket).not.toContain('THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.');
     expect(ticket).not.toContain('₱');
+  });
+
+  it('prints the customer billing address and contact numbers under the name, not on the production ticket', () => {
+    const at = '2026-09-28T10:00:00+08:00';
+    env.db.prepare(`INSERT INTO cus_customers (id, code, kind, display_name, billing_address, is_active, created_at, updated_at) VALUES ('cus-print', 'CUS-P1', 'organization', 'Sample Buyer', '12 Rizal St., Sample City', 1, ?, ?)`).run(at, at);
+    for (const [id, phone] of [['ph1', '0917 123 4567'], ['ph2', '(02) 8123 4567']]) env.db.prepare(`INSERT INTO cus_customer_phones (id, customer_id, phone, created_at) VALUES (?, 'cus-print', ?, ?)`).run(id, phone, at);
+    const jo = { customerId: 'cus-print', customerName: 'Sample Buyer', dueDate: '2026-10-13', priority: 'normal', totalCents: 10000, requiredDownpaymentCents: 5000, paymentTerms: 'dp50',
+      lines: [{ lineNo: 1, description: 'Sample item', qty: 1, unitPriceCents: 10000, discountCents: 0, lineTotalCents: 10000, roster: [] }] };
+    const html = renderPrint(env.db, header('jo.job_order'), jo, profile, 'document', 'Example Owner', at, 1);
+    expect(html).toContain('Billing address: 12 Rizal St., Sample City');
+    expect(html).toContain('Contact no.: 0917 123 4567 / (02) 8123 4567');
+    expect(html).toContain('Payment terms: <b>50% downpayment, balance before release</b>');
+    expect(html).toContain('Due date: <b>October 13, 2026</b>');
+    const ticket = renderPrint(env.db, header('jo.job_order'), jo, profile, 'job_ticket', 'Example Owner', at, 1);
+    expect(ticket).not.toContain('Billing address');
   });
 
   it('puts a decodable inline SVG for the job-order screen on tickets and both release-slip copies', () => {

@@ -37,6 +37,6 @@ export const purSupplierContactInput = z.object({
 
 export const purSupplyInput = z.object({
   name: z.string().trim().min(1).max(200),
-  unit: z.enum(['yard', 'meter', 'kg', 'roll', 'pc']),
+  unit: z.enum(['yard', 'meter', 'kg', 'liter', 'roll', 'pc']), // liter: the owner's request, Oct 2026
   category: z.enum(['materials', 'ready_made']),
 }).strict();

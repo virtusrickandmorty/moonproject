@@ -8,6 +8,8 @@ import type { FastifyInstance } from 'fastify';
 import { PASSWORD, cashPlaceId, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { seedCustomers } from '../../../../server/src/modules/JO/tests/cus-fixture.ts';
+import { changeStage } from '../../../../server/src/modules/JO/stages.ts';
+import { stamp } from '../../../../server/src/platform/clock.ts';
 import { ApiError, createApi, newIdempotencyKey as key, type JoStatus } from '../../api.ts';
 import { FORMS, VIEWS } from '../screens.ts';
 import {
@@ -34,8 +36,8 @@ const typedJo = (over: Partial<JoValues> = {}): JoValues => ({
       price: '1,500.00',
       listCents: 150_000,
       roster: [
-        { personId: 'p-ari', name: 'Ari Sample', sizeMode: 'preset', size: 'l', jerseyName: 'ari', jerseyNumber: '7', qty: '1' },
-        { personId: 'p-bea', name: 'Bea Example', sizeMode: 'measured', size: '', jerseyName: '', jerseyNumber: '', qty: '1' },
+        { personId: 'p-ari', name: 'Ari Sample', sizeMode: 'preset', size: 'l', jerseyName: 'ari', jerseyNumber: '7', qty: '1', garmentType: ' Jersey (women) ' },
+        { personId: 'p-bea', name: 'Bea Example', sizeMode: 'measured', size: '', jerseyName: '', jerseyNumber: '', qty: '1', garmentType: '' },
         { ...oneOff(' Coach Guest '), size: 'XL', qty: '2' },
       ],
     },
@@ -56,6 +58,15 @@ const status = (over: Partial<JoStatus> = {}, money: Partial<JoStatus['money']> 
   ...over,
 });
 
+describe('release form start', () => {
+  it('ticks what may go out now; with nothing ready yet (an owner override), everything left', () => {
+    const line = (lineNo: number, leftQty: number, ready?: boolean) => ({ lineNo, description: 'Item', qty: 4, releasedQty: 4 - leftQty, leftQty, ...(ready === undefined ? {} : { ready }) });
+    expect(allLeft([line(1, 4, true), line(2, 4, false), line(3, 0, true)])).toEqual({ 1: '4' });
+    expect(allLeft([line(1, 4, false), line(2, 2, false)])).toEqual({ 1: '4', 2: '2' });
+    expect(allLeft([line(1, 4), line(2, 1)])).toEqual({ 1: '4', 2: '1' }); // the server did not say: as before
+  });
+});
+
 describe('job order form rules', () => {
   it('turns what was typed into the input: the roster sets the pieces, sizes and jersey names upper-case, blank lines left out', () => {
     const { input, totalCents, errors } = joInput(typedJo());
@@ -68,7 +79,7 @@ describe('job order form rules', () => {
       lines: [{
         kind: 'made_to_order', description: 'Team jersey set', qty: 4, unitPriceCents: 150_000, discountCents: 0,
         roster: [
-          { personId: 'p-ari', sizeMode: 'preset', size: 'L', jerseyName: 'ARI', jerseyNumber: '7', qty: 1 },
+          { personId: 'p-ari', sizeMode: 'preset', size: 'L', jerseyName: 'ARI', jerseyNumber: '7', qty: 1, garmentType: 'Jersey (women)' },
           { personId: 'p-bea', sizeMode: 'measured', qty: 1 },
           { name: 'Coach Guest', sizeMode: 'preset', size: 'XL', qty: 2 },
         ],
@@ -82,7 +93,7 @@ describe('job order form rules', () => {
   });
 
   it('says what is missing in plain words', () => {
-    expect(joInput({ ...emptyJo(), dueInDays: '0' }).errors).toEqual(['Pick the customer.', 'Due in: type the number of days, 1 to 365.', 'Pick the payment terms.', 'Add at least one line.']);
+    expect(joInput({ ...emptyJo(), dueInDays: '0' }).errors).toEqual(['Pick the customer.', 'Pick the due date: tomorrow up to a year from today.', 'Add at least one line.']);
     const bad = typedJo({ lines: [{ ...emptyJoLine(), description: '', qty: '0', price: 'abc', roster: [] }, { ...emptyJoLine(), description: 'Shorts', roster: [oneOff(), { ...oneOff('Dee'), qty: 'x' }] }] });
     expect(joInput(bad).errors).toEqual([
       'Line 1: pick an item from the price list or say what is made.',
@@ -96,7 +107,7 @@ describe('job order form rules', () => {
   });
 
   it('fills a picked wearer with the size on file; tells a price changed from the price list', () => {
-    expect(fromWearer({ personId: 'p', wearerName: 'Bea', groupId: null, sizeMode: 'preset', size: 'M', jerseyName: 'BEA' })).toEqual({ personId: 'p', name: 'Bea', sizeMode: 'preset', size: 'M', jerseyName: 'BEA', jerseyNumber: '', qty: '1' });
+    expect(fromWearer({ personId: 'p', wearerName: 'Bea', groupId: null, sizeMode: 'preset', size: 'M', jerseyName: 'BEA' })).toEqual({ personId: 'p', name: 'Bea', sizeMode: 'preset', size: 'M', jerseyName: 'BEA', jerseyNumber: '', qty: '1', garmentType: '' });
     const line = { ...emptyJoLine(), qty: '12', price: '1,400.00', listCents: 140_000 };
     expect([lineQty(line), priceChanged(line), priceChanged({ ...line, price: '1,350' }), priceChanged({ ...line, listCents: null })]).toEqual(['12', false, true, false]);
   });
@@ -136,13 +147,13 @@ describe("the job order view's buttons", () => {
     expect(joActions(status(), all)).toEqual([
       { label: 'Take the downpayment', to: '/docs/col.collection/new?jo=jo-1&for=downpayment', primary: true },
       { label: 'Take a payment', to: '/docs/col.collection/new?jo=jo-1' },
-      { label: 'Release', to: '/docs/jo.release/new?jo=jo-1' },
+      { label: 'Release slip', to: '/docs/jo.release/new?jo=jo-1' },
     ]);
     const paid = status({ lines: [{ lineNo: 1, description: 'Jersey', qty: 4, releasedQty: 4, leftQty: 0 }], awaitingInvoice: [{ id: 'rel-1', number: 'REL-000001', businessDate: '2026-09-28', totalCents: 600_000 }] }, { balanceDueCents: 0, collectedCents: 600_000 });
     expect(joActions(paid, all)).toEqual([{ label: 'Record invoice', to: '/docs/jo.invoice_record/new?release=rel-1' }]);
     const two = { ...paid, awaitingInvoice: [...paid.awaitingInvoice, { id: 'rel-2', number: 'REL-000002', businessDate: '2026-09-28', totalCents: 1 }] };
     expect(joActions(two, all).map((a) => a.to)).toEqual(['/docs/jo.invoice_record/new?jo=jo-1']);
-    expect(joActions(status(), { collect: false, release: true, invoice: false }).map((a) => a.label)).toEqual(['Release']);
+    expect(joActions(status(), { collect: false, release: true, invoice: false }).map((a) => a.label)).toEqual(['Release slip']);
     expect(joActions(status({ jobOrder: { ...status().jobOrder, status: 'cancelled' } }), all)).toEqual([]);
   });
 
@@ -206,12 +217,13 @@ describe('web client for job orders, releases and invoice records', () => {
     // The view's buttons, then "Take the downpayment": the collection for this job order.
     let s = await api.joStatus(jo.id);
     expect(s.jobOrder).toMatchObject({ number: 'JO-000001', customerName: 'Moonlight Test School' });
-    expect(joActions(s, { collect: true, release: true, invoice: true }).map((a) => a.label)).toEqual(['Take the downpayment', 'Take a payment', 'Release']);
+    expect(joActions(s, { collect: true, release: true, invoice: true }).map((a) => a.label)).toEqual(['Take the downpayment', 'Take a payment']); // nothing is made yet: no Release slip
     const dp = collectionPreset(s, true);
     await api.post('col.collection', { customerId: dp.customer.id, crNumber: '0801', applications: [{ jobOrderId: jo.id, amountCents: dp.cents }], tenders: [{ cashPlaceId: CASH, amountCents: dp.cents }] }, dp.cents, key());
     s = await api.joStatus(jo.id);
     expect(s.money).toMatchObject({ collectedCents: 300_000, balanceDueCents: 300_000, depositsHeldCents: 300_000 });
-    expect(joActions(s, { collect: true, release: true, invoice: true }).map((a) => a.label)).toEqual(['Take a payment', 'Release']);
+    expect(joActions(s, { collect: true, release: true, invoice: true }).map((a) => a.label)).toEqual(['Take a payment']);
+    expect(joActions(s, { collect: true, release: true, invoice: true, releaseOverride: true }).map((a) => a.label)).toEqual(['Take a payment', 'Release slip']); // the owner may release it anyway
 
     // The release form: pick the job order by customer; everything left ticked.
     expect((await api.joPickOrders('moonlight')).map((x) => [x.number, x.stageLabel, x.leftPieces, x.balanceDueCents])).toEqual([['JO-000001', 'Open', 4, 300_000]]);
@@ -220,17 +232,17 @@ describe('web client for job orders, releases and invoice records', () => {
     // Not ready yet and a balance still due: the server says so plainly.
     let rp = await api.joReleasePreview(rel.release);
     expect(rp.release.issues.map((i) => i.code)).toEqual(['NOT_READY', 'CREDIT_NOTE']);
-    expect(rp.release.issues[0]!.message).toBe('JO-000001 is Open. Mark it Ready for release first, or ask the owner to release it anyway with a reason.');
+    expect(rp.release.issues[0]!.message).toBe('JO-000001 is Open. Only what is ready for release can go out.');
     expect(rp.release.issues[1]!.message).toBe('₱3,000.00 is still due on JO-000001. Write why it goes out before it is paid, and when it will be paid.');
-    rel = releaseInput({ ...rv, overrideReason: 'Needed for the tournament today', creditNote: 'Pays the rest on Friday', creditDueInDays: '7' }, s.lines);
+    // Production marks it ready (as the board does when every step is done); nothing goes out before that (Oct 11, 2026).
+    for (const [from, to] of [['open', 'in_production'], ['in_production', 'ready']] as const) changeStage(env.db, jo.id, { from, to }, { userId: ownerId, at: stamp(env.clock) });
+    rel = releaseInput({ ...rv, creditNote: 'Pays the rest on Friday', creditDueInDays: '7' }, s.lines);
     rp = await api.joReleasePreview(rel.release);
     expect(rp).toMatchObject({ release: { totalCents: 600_000, issues: [], doc: { balanceDueCents: 300_000 } }, booklet: { grossCents: 600_000, vatableSalesCents: 535_714, vatCents: 64_286 }, depositAppliedCents: 300_000 });
-    // An encoder may not release it before it is ready (the owner's); unpaid is fine, as for the accountant (6 Oct 2026).
+    // Ready, an encoder may release it too; unpaid is fine, as for the accountant (6 Oct 2026).
     const enc = createApi(injectFetch(env.app));
     await enc.login('enc1', PASSWORD);
-    expect((await enc.joReleasePreview(rel.release)).release.issues.map((i) => i.message)).toEqual([
-      'Only the owner can release a job order that is not ready yet.',
-    ]);
+    expect((await enc.joReleasePreview(rel.release)).release.issues).toEqual([]);
     const out = await api.joRelease({ release: rel.release, invoice: rel.invoice }, rp.release.totalCents, key());
     expect([out.release.number, out.invoiceRecord]).toEqual(['REL-000001', null]);
     s = await api.joStatus(jo.id);

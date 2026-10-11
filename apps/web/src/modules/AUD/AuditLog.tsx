@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type AuditLogPage, type Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { auditData, auditQuery, type AuditFilters } from './audit.ts';
 
 const empty: AuditFilters = { from: '', to: '', userId: '', action: '', entityType: '', entityId: '' };
@@ -40,7 +40,7 @@ export function AuditLog({ me }: { me: Me }) {
       </form>
     </Panel>
     {error && <Notice>{error}</Notice>}
-    {!page && !error && <p className="text-slate-500">Loading…</p>}
+    {!page && !error && <Loading />}
     {page && <Panel title={`${page.rows.length} entries`}>
       {page.rows.length === 0 ? <p>No audit entries match these filters.</p> : <div className="overflow-x-auto"><table className="w-full text-sm">
         <thead className="text-left text-slate-500"><tr>{['Seq', 'When', 'User', 'Action', 'Entity', 'Data'].map((h) => <th className="px-2 py-2" key={h}>{h}</th>)}</tr></thead>

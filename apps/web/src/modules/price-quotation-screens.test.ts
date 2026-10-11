@@ -48,9 +48,9 @@ afterEach(async () => { vi.unstubAllGlobals(); await env.app.close(); env.db.clo
 
 describe('menu and registration', () => {
   it('shows Price list under Sales only with cat.view, and the Quotations list from the document types', () => {
-    expect(menuOf(['cat.view'])).toContain('Price list /cat');
-    expect(menuOf([])).not.toContain('Price list /cat');
-    expect(menuOf(['cat.manage', 'cat.price.manage'])).not.toContain('Price list /cat'); // seeing is cat.view
+    expect(menuOf(['cat.view'])).toContain('Price list & piece rates /cat');
+    expect(menuOf([])).not.toContain('Price list & piece rates /cat');
+    expect(menuOf(['cat.manage', 'cat.price.manage'])).not.toContain('Price list & piece rates /cat'); // seeing is cat.view
     expect(menuOf([], [quoType])).toContain('Quotations /docs/quo.quotation');
   });
 
@@ -97,7 +97,7 @@ describe('Price list against the routes', () => {
     const renamed = await calls.update(tiered, { ...valuesOf(tiered), name: 'Sample polo shirt (short sleeve)' });
     expect(renamed).toMatchObject({ name: 'Sample polo shirt (short sleeve)', version: 4 });
     const editor = html(ItemEditor, { me, row: await calls.open(item.id), onClose: () => undefined, onSaved: async () => undefined });
-    expect(editor).toContain('This item has prices, so its class, garment type and unit cannot change');
+    expect(editor).toContain('This item has prices, so its kind and unit cannot change');
     expect(editor.match(/<select disabled=""/g)?.length).toBe(2); // class and unit
 
     await calls.deactivate(renamed);

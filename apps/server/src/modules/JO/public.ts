@@ -9,9 +9,10 @@ import { accountBalance } from '../../engine/ledger/queries.ts';
 import { dpAppliedByInvoice, dpHeld, invoiceCreditsAt } from '../COL/public.ts';
 import { JO_DOC_TYPES_SQL, STAGE_LABELS, currentStage, type Stage } from './stages.ts';
 
-export { abandon, currentStage, isAbandoned, productionMove, unabandon, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
+export { abandon, currentStage, isAbandoned, moveTo, onForStockCheck, onJobOrderEdited, productionMove, unabandon, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
 export { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, awaitingInvoice, invoiceAmounts, invoiceNumberUsedBy, invoiceNumbersBetween, settleLines } from './doctypes/invoice-record.ts';
-export { lineState, type LineKind } from './doctypes/release.ts';
+export { lineState, releasableQty, type LineKind } from './doctypes/release.ts';
+export { jobOrderDoc } from './doctypes/job-order.ts';
 export { dpInvoiceNumbersBetween, dpInvoiceUsedBy } from './doctypes/dp-invoice.ts';
 
 export interface JoLedgerPart { receivableCents: number; depositsHeldCents: number }
@@ -24,6 +25,19 @@ const JO_REF = `SELECT d.id, d.number, d.status, o.customer_id AS customerId, o.
 /** One job order's header, for documents that point at it (COL applications, refunds). */
 export function jobOrderRef(db: Db, id: string): JoRef | undefined {
   return db.prepare(`${JO_REF} WHERE o.document_id = ?`).get(id) as JoRef | undefined;
+}
+
+/** A job order line's wearers (its roster) as recorded, in order: production ticks who is done on each step (PRD). */
+export interface RosterWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
+export function rosterOf(db: Db, jobOrderId: string, lineNo: number): RosterWearer[] {
+  return db.prepare(`SELECT row_no AS rowNo, wearer_name AS wearerName, size_mode AS sizeMode, size, jersey_name AS jerseyName, jersey_number AS jerseyNumber, qty
+    FROM jo_roster WHERE document_id = ? AND line_no = ? ORDER BY row_no`).all(jobOrderId, lineNo) as RosterWearer[];
+}
+
+/** A line's wearers with the customer's wearer each one is (null for a one-off name): to pair them up when it is edited (PRD carry-over). */
+export function rosterPeopleOf(db: Db, jobOrderId: string, lineNo: number): (RosterWearer & { personId: string | null })[] {
+  return db.prepare(`SELECT row_no AS rowNo, person_id AS personId, wearer_name AS wearerName, size_mode AS sizeMode, size, jersey_name AS jerseyName, jersey_number AS jerseyNumber, qty
+    FROM jo_roster WHERE document_id = ? AND line_no = ? ORDER BY row_no`).all(jobOrderId, lineNo) as (RosterWearer & { personId: string | null })[];
 }
 
 /** Where an edited job order lives on now: JO-1 edited into JO-2, then into JO-3, gives JO-3. Null when the chain ends cancelled. */

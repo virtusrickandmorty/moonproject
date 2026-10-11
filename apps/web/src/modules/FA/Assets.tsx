@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type AssetPage as AssetData, type AssetRow, type AssetStatus, type DepreciationGaps, type DocTypeInfo } from '../../api.ts';
-import { Button, Notice, Panel, StatusChip, inputClass, peso, searchClass, searchRowClass } from '../../components/ui.tsx';
+import { Loading, Button, Notice, Panel, StatusChip, inputClass, peso, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { monthLabel } from '../TAX/bir.ts';
@@ -35,7 +35,7 @@ export function Assets({ docTypes }: { docTypes: DocTypeInfo[] }) {
   const load = useCallback(() => void Promise.all([api.assets(), api.depreciationGaps()]).then(([r, g]) => (setRows(r), setGaps(g), setError('')), (e: Error) => setError(e.message)), []);
   useEffect(load, [load]);
   if (error) return <Notice>{error}</Notice>;
-  if (!rows || !gaps) return <p className="text-slate-500">Loading…</p>;
+  if (!rows || !gaps) return <Loading />;
   const shown = filterAssets(rows, search, status);
   const t = onTheBooks(rows);
   return (
@@ -83,7 +83,7 @@ export function AssetPage({ docTypes, params }: { docTypes: DocTypeInfo[]; param
   const load = useCallback(() => void Promise.all([api.asset(id), api.depreciationGaps()]).then(([x, g]) => (setA(x), setGaps(g), setError('')), (e: Error) => setError(e.message)), [id]);
   useEffect(load, [load]);
   if (error) return <Notice>{error}</Notice>;
-  if (!a || !gaps) return <p className="text-slate-500">Loading…</p>;
+  if (!a || !gaps) return <Loading />;
   const months = monthRows(a);
   const done = () => (setDialog(null), load());
   return (

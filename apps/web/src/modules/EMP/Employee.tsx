@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type EmployeeDetail, type EmployeeRecord, type Me, type PayProfile } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, showDate } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, showDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { cents } from '../COL/money.ts';
 import { EmployeeLoans } from '../PAY/Loans.tsx';
@@ -13,7 +13,7 @@ import { EmployeePriorPay } from '../PAY/Prior.tsx';
 import { Crumb } from '../../shell/crumbs.tsx';
 
 const PAY_TYPE = { daily: 'Daily', piece: 'Per piece (pakyawan)', monthly: 'Monthly', mixed: 'Daily and per piece' } as const;
-const PAY_GROUP = { WEEKLY_PIECE: 'Weekly (piece rate)', SEMI_DAILY: 'Semi-monthly (daily paid)', SEMI_MONTHLY: 'Semi-monthly (monthly staff)' } as const;
+const PAY_GROUP = { WEEKLY_PIECE: 'Weekly (piece rate)', WEEKLY_DAILY: 'Weekly (daily paid)', SEMI_DAILY: 'Semi-monthly (daily paid)', SEMI_MONTHLY: 'Semi-monthly (monthly staff)' } as const;
 const SCHEMES = [['sss', 'SSS'], ['phic', 'PhilHealth'], ['hdmf', 'Pag-IBIG'], ['wtax', 'Withholding tax']] as const;
 const IDS = [['sssNo', 'SSS no.'], ['phicNo', 'PhilHealth PIN'], ['hdmfNo', 'Pag-IBIG MID'], ['tin', 'TIN']] as const;
 const TEXT = [['fullName', 'Full name'], ['position', 'Position'], ['department', 'Department'], ['payoutAccount', 'Bank or GCash account'], ['emergencyContact', 'Emergency contact']] as const;
@@ -26,7 +26,7 @@ export function EmployeePage({ me, params }: { me: Me; params?: Record<string, s
   const load = useCallback(() => api.employee(id).then(setD, (e: Error) => setError(e.message)), [id]);
   useEffect(() => void load(), [load]);
   if (error) return <Notice>{error}</Notice>;
-  if (!d) return <p className="text-slate-500">Loading…</p>;
+  if (!d) return <Loading />;
   const e = d.employee;
   const can = (p: string) => me.permissions.includes(p);
   return (

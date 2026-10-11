@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type BackupCheck, type BackupFile } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, manilaTime, useAction, usePasswordPrompt } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, manilaTime, useAction, usePasswordPrompt } from '../../components/ui.tsx';
 import { cleanKey, factRows, lostWords, restoreConfirmed, reusedSeries, reusedWords, sizeWords, sourceWords, tierWords } from './backups.ts';
 
 type Purpose = 'drill' | 'restore';
@@ -18,7 +18,7 @@ export function RestoreBackups() {
   useEffect(() => void api.bakBackups().then(setList, (e: Error) => setError(e.message)), []);
 
   if (error) return <Notice>{error}</Notice>;
-  if (!list) return <p className="text-slate-500">Loading…</p>;
+  if (!list) return <Loading />;
   if (picked) return <OpenBackup backup={picked.backup} purpose={picked.purpose} onBack={() => setPicked(null)} />;
   return (
     <Panel title="Backups">
@@ -82,8 +82,8 @@ function OpenBackup({ backup, purpose, onBack }: { backup: BackupFile; purpose: 
         )}
         {opening.error && <Notice>{opening.error}</Notice>}
         {check && (
-          <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[max-content_1fr]">
-            {factRows(check).map(([label, value]) => <div key={label} className="contents"><dt className="text-slate-500">{label}</dt><dd>{value}</dd></div>)}
+          <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[max-content_minmax(0,1fr)]">
+            {factRows(check).map(([label, value]) => <div key={label} className="contents"><dt className="text-slate-500">{label}</dt><dd className="min-w-0 [overflow-wrap:anywhere]">{value}</dd></div>)}
           </dl>
         )}
         {check?.drill === 'passed' && <Notice tone="success">Drill passed. It is recorded as the latest restore drill.</Notice>}

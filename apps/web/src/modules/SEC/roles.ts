@@ -27,6 +27,13 @@ export function groupPermissions(perms: Perm[]): PermGroup[] {
   return [...by].map(([module, permissions]) => ({ module, name: moduleName(module), permissions })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** The permissions whose words, area or key match what is typed (every word, in any order); all when nothing is typed. */
+export function searchPermissions<P extends { key: string; label: string; module: string }>(perms: P[], query: string): P[] {
+  const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return perms;
+  return perms.filter((p) => { const text = `${p.label} ${moduleName(p.module)} ${p.key}`.toLocaleLowerCase(); return words.every((w) => text.includes(w)); });
+}
+
 /** What each role has now: role -> the keys it is granted. */
 export const grantsOf = (grid: RoleGrid): Record<string, Set<string>> =>
   Object.fromEntries(grid.roles.map((r) => [r, new Set(grid.permissions.filter((p) => p.roles.includes(r)).map((p) => p.key))]));

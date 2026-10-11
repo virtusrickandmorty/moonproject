@@ -4,7 +4,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type BackupMade, type BackupStatus, type Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { RecoveryKeys } from './RecoveryKeys.tsx';
 import { RestoreBackups } from './Restore.tsx';
@@ -58,7 +58,7 @@ function Status({ canRun }: { canRun: boolean }) {
   });
 
   if (error) return <Notice>{error}</Notice>;
-  if (!status) return <p className="text-slate-500">Loading…</p>;
+  if (!status) return <Loading />;
   const s = status;
   const stale = staleWords(s, now);
   const rows: [string, string][] = [
@@ -81,8 +81,8 @@ function Status({ canRun }: { canRun: boolean }) {
         {backUp.error && <Notice>{backUp.error}</Notice>}
       </Panel>
       <Panel title="Copies">
-        <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[max-content_1fr]">
-          {rows.map(([label, value]) => <div key={label} className="contents"><dt className="text-slate-500">{label}</dt><dd>{value}</dd></div>)}
+        <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[max-content_minmax(0,1fr)]">
+          {rows.map(([label, value]) => <div key={label} className="contents"><dt className="text-slate-500">{label}</dt><dd className="min-w-0 [overflow-wrap:anywhere]">{value}</dd></div>)}
         </dl>
       </Panel>
       <Panel title="Last runs">

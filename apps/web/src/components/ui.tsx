@@ -37,7 +37,7 @@ export function useAction() {
 
 const tones = { primary: 'bg-indigo-600 text-white shadow-sm hover:bg-indigo-700', plain: 'bg-white text-slate-800 ring-1 ring-slate-300 hover:bg-indigo-50 hover:ring-indigo-200', danger: 'bg-[#f95f53] text-white shadow-sm hover:bg-red-600' };
 export function Button({ tone = 'plain', className = '', ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: keyof typeof tones }) {
-  return <button type="button" className={`rounded-md px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50 ${tones[tone]} ${className}`} {...rest} />;
+  return <button type="button" className={`inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold transition-[color,background-color,box-shadow,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50 ${tones[tone]} ${className}`} {...rest} />;
 }
 
 /** A display preference for this session only, shared by the paged report callers. */
@@ -53,8 +53,8 @@ export function Pager({ page, onOffset, what = 'rows' }: { page?: PageInfo | und
   if (!page || (what === 'loose pages' && page.total <= page.limit)) return null;
   const last = Math.min(page.offset + page.limit, page.total);
   return (
-    <div className="flex flex-wrap items-center gap-3 py-2 text-sm print:hidden">
-      {what !== 'loose pages' && <label className="flex items-center gap-2">Rows per page<select className="rounded-md border border-slate-300 bg-white px-2 py-1" value={page.limit} onChange={(e) => choosePageRows(Number(e.target.value), onOffset)}>{[25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>}
+    <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 text-sm text-slate-600 print:hidden">
+      {what !== 'loose pages' && <label className="mr-auto flex items-center gap-2">Rows per page<select className="rounded-md border border-slate-300 bg-white px-2 py-1" value={page.limit} onChange={(e) => choosePageRows(Number(e.target.value), onOffset)}>{[25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>}
       <Button disabled={page.offset === 0} onClick={() => onOffset(Math.max(0, page.offset - page.limit))}>Previous</Button>
       <span>{page.total === 0 ? `No ${what}` : `${what[0]!.toUpperCase()}${what.slice(1)} ${(page.offset + 1).toLocaleString('en-PH')} to ${last.toLocaleString('en-PH')} of ${page.total.toLocaleString('en-PH')}`}</span>
       <Button disabled={last >= page.total} onClick={() => onOffset(page.offset + page.limit)}>Next</Button>
@@ -65,40 +65,66 @@ export function Pager({ page, onOffset, what = 'rows' }: { page?: PageInfo | und
 /** A page's own search box (above its list): half the page width, on the right; the whole width on a phone. */
 export const searchClass = 'w-full md:w-1/2';
 /** The row a page's search box sits in, with any filters beside it: on the right. */
-export const searchRowClass = 'flex flex-wrap items-center justify-end gap-3';
+export const searchRowClass = 'flex flex-wrap items-center justify-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70';
 
-export const inputClass = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none transition-shadow focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100';
+export const inputClass = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-[0_1px_0_rgb(15_23_42/0.03)] outline-none transition-[border-color,box-shadow] placeholder:text-slate-400 hover:border-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500';
 
 export function Field({ label, required, error, hint, children }: { label: string; required?: boolean; error?: string; hint?: string; children: ReactNode }) {
   return (
     <label className="block space-y-1 text-sm" data-invalid={error ? '' : undefined}>
-      <span className="font-semibold text-slate-800">{label}{required && <span className="text-red-600"> *</span>}</span>
+      <span className="font-medium text-slate-700">{label}{required && <span className="text-red-600"> *</span>}</span>
       {children}
       {hint && <span className="block text-xs text-muted">{hint}</span>}
-      {error && <span className="block text-red-700">{error}</span>}
+      {error && <span className="flex items-start gap-1 text-xs font-medium text-red-700"><span aria-hidden="true">⚠</span>{error}</span>}
     </label>
   );
 }
 
-const noticeTones = { error: 'bg-red-50 text-red-800 ring-red-200', warning: 'bg-amber-50 text-amber-900 ring-amber-200', info: 'bg-sky-50 text-sky-900 ring-sky-200', success: 'bg-emerald-50 text-emerald-900 ring-emerald-200', note: 'bg-slate-50 text-slate-700 ring-slate-200' };
+const noticeTones = { error: 'border-red-400 bg-red-50 text-red-800 ring-red-200', warning: 'border-amber-400 bg-amber-50 text-amber-900 ring-amber-200', info: 'border-sky-400 bg-sky-50 text-sky-900 ring-sky-200', success: 'border-emerald-400 bg-emerald-50 text-emerald-900 ring-emerald-200', note: 'border-slate-300 bg-slate-50 text-slate-700 ring-slate-200' };
 /** An error or a success also pops up at the top right (Toasts.tsx), once per new message; warnings and notes are page guidance and stay put. */
 export function Notice({ tone = 'error', children }: { tone?: keyof typeof noticeTones; children: ReactNode }) {
   const words = textOf(children);
   useEffect(() => {
     if (tone === 'error' || tone === 'success') showToast(tone, children, { announce: false });
   }, [tone, words]); // eslint-disable-line react-hooks/exhaustive-deps
-  return <div role={tone === 'error' ? 'alert' : 'status'} className={`rounded-md px-3 py-2 text-sm ring-1 ${noticeTones[tone]}`}>{children}</div>;
+  return <div role={tone === 'error' ? 'alert' : 'status'} className={`rounded-lg border-l-4 px-3 py-2 text-sm ring-1 ${noticeTones[tone]}`}>{children}</div>;
+}
+
+/**
+ * The loading sign used everywhere (the owner's request, Oct 2026): the Virtus mark with a light sweeping across it and a
+ * gentle breath (index.css `.virtus-loader`), and the words under it for screen readers and anyone in doubt. `size`:
+ * 'sm' sits in a line of text, 'md' (the default) in a panel or a list, 'lg' fills the first screen. Motion stops for
+ * people who ask their system for less (prefers-reduced-motion).
+ */
+export function Loading({ label = 'Loading…', size = 'md' }: { label?: string; size?: 'sm' | 'md' | 'lg' }) {
+  const mark = size === 'sm' ? 'w-4' : size === 'lg' ? 'w-16' : 'w-9';
+  if (size === 'sm') return <span role="status" className="inline-flex items-center gap-2 text-sm text-slate-500"><span aria-hidden="true" className={`virtus-loader ${mark}`} />{label}</span>;
+  return (
+    <div role="status" className={`flex flex-col items-center justify-center gap-3 text-slate-500 ${size === 'lg' ? 'min-h-[60vh] text-base' : 'py-8 text-sm'}`}>
+      <span aria-hidden="true" className={`virtus-loader ${mark}`} />
+      <span>{label}</span>
+    </div>
+  );
 }
 
 export function StatusChip({ status }: { status: string }) {
-  const [text, c] = status === 'cancelled' ? ['Cancelled', 'bg-slate-200 text-slate-700'] : ['Recorded', 'bg-emerald-100 text-emerald-800'];
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${c}`}>{text}</span>;
+  // As the home's chips (the owner's request, Oct 2026): calm, colour only where it means something.
+  const [text, c] = status === 'cancelled' ? ['Cancelled', 'bg-slate-100 text-slate-500'] : ['Recorded', 'bg-emerald-50 text-emerald-700'];
+  return <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${c}`}><span aria-hidden="true" className={`size-1.5 rounded-full ${status === 'cancelled' ? 'bg-slate-400' : 'bg-emerald-500'}`} />{text}</span>;
 }
+
+/**
+ * The surface every panel and home card shares (the owner's request, Oct 2026: the screens and the home's cards look
+ * alike): white, rounded, a soft shadow and a hairline ring. Panel titles carry a short grey bar, as the home's cards carry
+ * an icon tile; colour is kept for what means something (the owner: not too colourful).
+ */
+export const SURFACE = 'rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70';
+export const CARD_TITLE = 'text-base font-bold text-[#010101]';
 
 export function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="space-y-3 rounded-lg bg-white p-5 shadow-sm">
-      <h2 className="text-base font-bold text-[#010101]">{title}</h2>
+    <section className={`space-y-3 p-5 ${SURFACE}`}>
+      <h2 className={`flex items-center gap-2 ${CARD_TITLE}`}><span aria-hidden="true" className="h-4 w-1 shrink-0 rounded-full bg-slate-300" />{title}</h2>
       {children}
     </section>
   );
@@ -137,7 +163,7 @@ export function keepDialogFocus(root: HTMLElement, opener: HTMLElement | null, c
 }
 
 /** The two standard dialog widths. */
-export const DIALOG_WIDTH = { question: 'max-w-xl', record: 'max-w-6xl' } as const;
+export const DIALOG_WIDTH = { question: 'max-w-xl', record: 'max-w-6xl', screen: 'max-w-none' } as const;
 /** How long a dialog takes to grow out of the middle of the screen, and to shrink back into it (index.css). */
 export const DIALOG_MS = 180;
 const reducedMotion = () => typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -168,11 +194,11 @@ export function useExit<T>(value: T | null | undefined, ms = DIALOG_MS): [T | nu
 /**
  * Every dialog in the ERP has one of two standard widths (DIALOG_WIDTH): a question (a confirm, a reason, a password)
  * is narrow; a table, a form or a whole record (`wide`, or `size="full"`, the same) is the record width. On a phone
- * both take the screen's width less a 16px margin. `hideTitle` when the content has its own heading. `leaving` when its parent already
+ * both take the screen's width less a 16px margin. `size="screen"`: the whole width of the screen (a job order being typed). `hideTitle` when the content has its own heading. `leaving` when its parent already
  * closed it and keeps it a moment (useExit) to shrink away. `beforeClose` may keep it open (something typed, not saved).
  */
 export function Dialog({ title, onClose, wide, size, hideTitle, leaving, beforeClose, children }: {
-  title: string; onClose: () => void; wide?: boolean; size?: 'full'; hideTitle?: boolean; leaving?: boolean; beforeClose?: () => boolean | Promise<boolean>; children: ReactNode;
+  title: string; onClose: () => void; wide?: boolean; size?: 'full' | 'screen'; hideTitle?: boolean; leaving?: boolean; beforeClose?: () => boolean | Promise<boolean>; children: ReactNode;
 }) {
   const root = useRef<HTMLDivElement>(null);
   // Capture before React mounts any autoFocus child, and keep it across rerenders.
@@ -199,7 +225,7 @@ export function Dialog({ title, onClose, wide, size, hideTitle, leaving, beforeC
     // into the middle of the screen whatever its length; the × stays in its corner while the content scrolls.
     <div data-state={state} className="dialog-backdrop fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 sm:p-8">
       <div ref={root} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} data-state={state}
-        className={`dialog-panel relative flex max-h-full w-full ${DIALOG_WIDTH[wide || size === 'full' ? 'record' : 'question']} flex-col overflow-hidden rounded-lg bg-white shadow-xl outline-none`}>
+        className={`dialog-panel relative flex max-h-full w-full ${DIALOG_WIDTH[size === 'screen' ? 'screen' : wide || size === 'full' ? 'record' : 'question']} flex-col overflow-hidden rounded-lg bg-white shadow-xl outline-none`}>
         {/* Every dialog can be closed with this, as well as with Escape. */}
         <button type="button" onClick={() => void shut.current()} aria-label="Close dialog" title="Close"
           className="absolute right-3 top-3 z-20 grid size-9 place-items-center rounded-full bg-white/90 text-2xl leading-none text-slate-500 hover:bg-slate-100 hover:text-slate-900">×</button>

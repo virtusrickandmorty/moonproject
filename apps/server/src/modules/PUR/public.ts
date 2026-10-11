@@ -72,7 +72,7 @@ export function purchaseOrderNames(db: Db, supplierId: string, supplyIds: string
 }
 
 /** The units supplies are bought and counted in (pur_supplies.unit). */
-export type SupplyUnit = 'yard' | 'meter' | 'kg' | 'roll' | 'pc';
+export type SupplyUnit = 'yard' | 'meter' | 'kg' | 'liter' | 'roll' | 'pc';
 
 /** A supply as the inventory count needs it: its unit and the last purchase cost kept on the catalogue (read-only). */
 export interface CountableSupply extends Supply { unit: SupplyUnit; lastPurchaseCostCents: number }

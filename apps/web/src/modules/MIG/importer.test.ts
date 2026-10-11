@@ -27,7 +27,7 @@ describe('what the file holds', () => {
     for (const h of headers) expect(kindOfHeader(h)).toBe(rowTypeOf(Object.fromEntries(h.map((k) => [k, '']))));
     expect([...MEASUREMENT_FIELDS]).toEqual([...measurementFields]);
     expect(['Sleeve Height', ' Upper-Waist ', 'chest', 'Waist'].map(measurementKey)).toEqual(['sleeve_length', 'upper_waist', 'chest', null]);
-    expect(KINDS.map((k) => k.kind)).toEqual(['customer', 'measurement', 'employee', 'piece_rate']);
+    expect(KINDS.map((k) => k.kind)).toEqual(['customer', 'measurement', 'employee', 'piece_rate', 'sizer_set']);
   });
 
   it('reads the first line of a spreadsheet file, quotes and the byte-order mark included', () => {
@@ -46,7 +46,7 @@ describe('what the file holds', () => {
     expect(fileProblem('customer', 'buyers.csv', ' \n')).toBe('The file is empty.');
     expect(fileProblem('customer', 'staff.csv', employees)).toBe('This file looks like employees, not customers. Pick Employees, or choose another file.');
     expect(fileProblem('piece_rate', 'x.csv', 'Foo,Bar\n1,2')).toBe(
-      'Virtus cannot tell what this file holds from its first line. Piece rates need these columns: Garment_Type, Operation, Rate.');
+      'Virtus cannot tell what this file holds from its first line. For the price list, the file needs these columns: Item, Kind, Unit, Price, then for a piece rate Operation, Part, Difficulty, Rate.');
   });
 
   it('says where an upload stands', () => {
@@ -98,7 +98,9 @@ describe('a row: status, problems and buttons', () => {
     expect(rowTitle(row({ id: '1', raw: { Registered_Name: 'Example Academy Inc.' } }))).toBe('Example Academy Inc.');
     expect(rowTitle(row({ id: '1', raw: { Customer_Name: 'Old' }, manualData: { customerName: 'New' } }))).toBe('New');
     expect(rowTitle(row({ id: '1', rowType: 'employee', raw: { Employee_Name: 'Example Worker' }, legacyId: 'E1' }))).toBe('Example Worker (E1)');
-    expect(rowTitle(row({ id: '1', rowType: 'piece_rate', raw: { Garment_Type: 'Jersey', Operation: 'Hem' } }))).toBe('Jersey, Hem');
+    expect(rowTitle(row({ id: '1', rowType: 'piece_rate', raw: { Garment_Type: 'Jersey', Operation: 'Hem' } }))).toBe('Jersey · Hem'); // an old piece-rate sheet
+    expect(rowTitle(row({ id: '2', rowType: 'piece_rate', raw: { Item: 'Jersey set', Operation: 'Sewing', Part: 'Upper' } }))).toBe('Jersey set · Sewing (Upper)');
+    expect(rowTitle(row({ id: '3', rowType: 'piece_rate', raw: { Item: 'Name patch', Price: '100.00' } }))).toBe('Name patch');
     expect(rowTitle(row({ id: '1', rowType: 'measurement', raw: { Wearer_Name: 'Example Player' }, legacyId: 'M1' }))).toBe('Example Player (M1)');
   });
 });
@@ -204,7 +206,7 @@ describe("the old sheet's tabs, as downloaded", () => {
   });
 
   it("lists the sheet's own column names when a file is not recognised", () => {
-    expect(fileProblem('customer', 'x.csv', 'Foo,Bar\n1,2')).toBe('Virtus cannot tell what this file holds from its first line. Customers need these columns: Legacy_ID, Customer_Name (also Registered_Name, TIN, Email). '
+    expect(fileProblem('customer', 'x.csv', 'Foo,Bar\n1,2')).toBe('Virtus cannot tell what this file holds from its first line. For customers, the file needs these columns: Legacy_ID, Customer_Name (also Registered_Name, TIN, Email). '
       + "The old sheet's Customers tab has: Customer ID, Name, Email Address, Contact No., Address.");
     expect(fileProblem('measurement', 'x.csv', 'Foo,Bar\n1,2')).toContain("The old sheet's Customer Sizes tab has: Size ID, Customer ID, Customer Name, Upper Size, Shoulder to Lower Length (with Sleeve Height), Lower Size, Remarks.");
     expect(fileProblem('employee', 'x.csv', 'Foo,Bar\n1,2')).toContain("The old sheet's Employees tab has: Employee ID, Name, Job Title, Salary Category, Status, Date Employed.");
@@ -234,7 +236,7 @@ describe('dry run and commit in words', () => {
   };
   it('lists what would go in and the totals to check, and notices counts that do not add up', () => {
     expect(dryRunLines(dry)).toEqual([
-      ['Customers to import', '3'], ['Measurement rows to import', '2'], ['Employees to import', '1'], ['Piece rates to import', '1'],
+      ['Customers to import', '3'], ['Measurement rows to import', '2'], ['Employees to import', '1'], ['Price list rows to import', '1'],
       ['Left out (excluded)', '1'], ['Merged into another row', '1'], ['Rows in the file', '9'],
     ]);
     expect(dryRunAddsUp(dry)).toBe(true);
@@ -243,7 +245,7 @@ describe('dry run and commit in words', () => {
     expect(cellSumWords(673)).toBe('67.3');
     expect(cellSumWords(5)).toBe('0.5');
     expect(dryRunChecks(dry).slice(0, 3)).toEqual([
-      ['Measurement cells add up to', '30,122.0'], ['Employee daily rates add up to', '₱1,211.00'], ['Piece rates add up to', '₱15.25'],
+      ['Measurement cells add up to', '30,122.0'], ['Employee daily rates add up to', '₱1,211.00'], ['Price list piece rates add up to', '₱15.25'],
     ]);
     expect(dryRunChecks(dry)[3]).toEqual(['Customers, fingerprint', 'aaaaaaaaaaaa']);
   });
@@ -263,7 +265,7 @@ describe('dry run and commit in words', () => {
     const none = { imported: 0, alreadyImported: 0 };
     const lines = commitLines({ counts: { customer: { imported: 3, alreadyImported: 1 }, group: none, wearer: { imported: 2, alreadyImported: 0 }, measurement: none, employee: none, piece_rate: none }, measurementCellTenths: 0 });
     expect(lines.slice(0, 3)).toEqual([['Customers', '3 imported, 1 already imported before'], ['Groups', '0 imported'], ['Wearers', '2 imported']]);
-    expect(lines.map(([l]) => l)).toEqual(['Customers', 'Groups', 'Wearers', 'Measurements', 'Employees', 'Piece rates']);
+    expect(lines.map(([l]) => l)).toEqual(['Customers', 'Groups', 'Wearers', 'Measurements', 'Employees', 'Price list rows']);
     expect([1, 4].map(clearedWords)).toEqual(['The raw values of 1 row were cleared from staging.', 'The raw values of 4 rows were cleared from staging.']);
   });
 });
@@ -341,7 +343,7 @@ describe('web client for the importer screens', () => {
     expect(counts.accepted + counts.excluded + counts.merged).toBe(counts.listed);
     expect(rows.find((r) => r.id === none.id)).toMatchObject({ status: 'accepted', manualData: { legacyId: 'C13' } });
     const dry = await owner.migDryRun(up.uploadId);
-    expect(dry.counts).toEqual({ customers: 3, measurements: 0, employees: 0, pieceRates: 0, excluded: 0, merged: 1, total: 4 });
+    expect(dry.counts).toEqual({ customers: 3, measurements: 0, employees: 0, pieceRates: 0, sizerSets: 0, excluded: 0, merged: 1, total: 4 });
     expect(dryRunAddsUp(dry)).toBe(true);
     expect(canCommit(dry, counts, true)).toBe(true);
 
@@ -414,5 +416,23 @@ describe('web client for the importer screens', () => {
     expect(sizesDry.counts).toMatchObject({ measurements: 1, total: 1 });
     expect(cellSumWords(sizesDry.checksums.measurement.cellTenths)).toBe('67.3'); // 15.2 + 20.1 + 32.0
     await env.app.close();
+  });
+});
+
+describe('CSV templates (the owner\'s request, Oct 2026)', () => {
+  it('each template is read as its own kind, with every column one the importer takes', async () => {
+    const { TEMPLATES, templateCsv } = await import('./importer.ts');
+    const { parseCSV, validateRow } = await import('../../../../server/src/modules/MIG/csv.ts');
+    for (const kind of ['customer', 'measurement', 'employee', 'piece_rate'] as const) {
+      const { objects } = parseCSV(templateCsv(kind));
+      expect(objects, kind).toHaveLength(TEMPLATES[kind].rows.length - 1); // the price list shows several rows of one item
+      for (const o of objects) {
+        expect(rowTypeOf(o), kind).toBe(kind);
+        expect(Object.keys(o)).toEqual(TEMPLATES[kind].rows[0]);
+        // Only the owner's confirmations the importer always asks for: nothing in the example rows is wrong.
+        expect(validateRow(o).issues.filter((i) => !/requires owner confirmation/.test(i)), kind).toEqual([]);
+      }
+    }
+    expect(templateCsv('customer')).toContain('"1 Sample Street, Manila"'); // a cell with a comma is quoted
   });
 });

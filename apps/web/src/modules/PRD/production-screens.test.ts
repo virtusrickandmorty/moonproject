@@ -23,7 +23,7 @@ describe('production screen rules', () => {
   it('columns: needs a route, the steps cards are at in canonical order, ready; empty ones left out', () => {
     const cards = [card('A', {}), card('B', { currentStepId: 4, steps: [] }), card('C', { currentStepId: 3, steps: [] }), card('D', { ready: true, steps: [] })];
     const steps = [step(1, 'Cutting'), step(2, 'Sewing'), step(3, 'QC', false), step(4, 'Packing')];
-    expect(columns(steps, cards).map((c) => [c.title, c.cards.map((x) => x.number).join('')])).toEqual([['Choose production steps', 'A'], ['QC', 'C'], ['Packing', 'B'], ['Ready', 'D']]);
+    expect(columns(steps, cards).map((c) => [c.title, c.cards.map((x) => x.number).join('')])).toEqual([['Choose production steps', 'A'], ['QC', 'C'], ['Packing', 'B'], ['Ready for release', 'D']]);
     expect(columns(steps, [])).toEqual([]);
   });
 
@@ -35,13 +35,13 @@ describe('production screen rules', () => {
     expect(n({ due: 'all', rushOnly: true })).toEqual(['soon']);
   });
 
-  it('entry rows: blank rows left out; whole pieces; a typed rate goes with its reason; rework needs a rate', () => {
+  it('entry rows: blank rows left out; whole pieces; a typed rate goes with its reason; rework takes the price list rate', () => {
     expect(rowsToInput([{ lineNo: '1', employeeId: 'e1', pieces: '12', rework: false, rate: '', rateReason: '' }, emptyRow('1'), { lineNo: '1', employeeId: 'e2', pieces: '3', rework: true, rate: '20', rateReason: ' Pasubra ' }])).toEqual({
       rows: [{ lineNo: 1, employeeId: 'e1', pieces: 12 }, { lineNo: 1, employeeId: 'e2', pieces: 3, rework: true, rateCents: 2_000, rateReason: 'Pasubra' }],
       errors: [],
     });
     expect(rowsToInput([{ lineNo: '', employeeId: '', pieces: '2.5', rework: true, rate: '', rateReason: '' }, { lineNo: '1', employeeId: 'e', pieces: '1', rework: false, rate: 'x', rateReason: '' }]).errors).toEqual([
-      'Row 1: pick the line.', 'Row 1: pick the worker.', 'Row 1: type the pieces as a whole number like 12.', 'Row 1: type the rework (pasubra) rate.',
+      'Row 1: pick the line.', 'Row 1: pick the worker.', 'Row 1: type the pieces as a whole number like 12.',
       'Row 2: type the rate like 45.00', 'Row 2: say why this rate is typed.',
     ]);
     expect(rowsToInput([emptyRow()]).errors).toEqual(['Add a worker and the pieces done.']);
@@ -49,10 +49,10 @@ describe('production screen rules', () => {
 
   it('the menu shows the board and piece rates under Production, by permission', () => {
     const labels = (perms: string[]) => buildMenu([], new Set(perms)).map((g) => `${g.group}: ${g.items.map((i) => i.label).join(', ')}`);
-    expect(labels(['prd.view', 'rate.view'])).toEqual(['Overview: Home', 'Production: Production board, Piece rates',
+    expect(labels(['prd.view', 'rate.view'])).toEqual(['Overview: Home', 'Production: Production board',
       'Accounting & Tax: Settings', 'Reports: Production status counts, Production throughput, Job order lead time, Late job orders, Worker output',
       'Admin: Shop certificate, Practice shop']);
-    expect(labels(['rate.view'])).toEqual(['Overview: Home', 'Production: Piece rates', 'Accounting & Tax: Settings', 'Admin: Shop certificate, Practice shop']);
+    expect(labels(['rate.view'])).toEqual(['Overview: Home', 'Accounting & Tax: Settings', 'Admin: Shop certificate, Practice shop']); // piece rates are on the price list now
     const entries = buildMenu([{ key: 'prd.entry', module: 'PRD', title: 'Production Entry' } as never], new Set());
     expect(entries.find((g) => g.group === 'Production')!.items.map((i) => i.label)).toEqual(['Production Entries']);
   });

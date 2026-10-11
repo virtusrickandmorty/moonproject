@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type FiledRegister, type FiledRegisterRow, type FiledReturnInput, type Me } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, inputClass, manilaTime } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, manilaTime } from '../../components/ui.tsx';
 import { useStepUpAction } from './StepUp.tsx';
 
 export function FiledReturns({ me }: { me: Me }) {
@@ -27,7 +27,7 @@ export function FiledReturns({ me }: { me: Me }) {
     <p className="text-sm text-slate-600">Record the eFPS or eBIRForms confirmation, including returns with nothing to pay or filed before payment. A row cannot be edited or deleted; void it with a reason and add a correction. This records filing only and moves no money.</p>
     {error && <Notice>{error}</Notice>}
     {action.error && <Notice>{action.error}</Notice>}
-    {!data && !error && <p>Loading…</p>}
+    {!data && !error && <Loading />}
     {data && <>
       {manage && !input && <Button onClick={() => setInput({ form: data.forms[0]!, period: '', filedOn: data.today, reference: '', note: '' })}>Record a filing</Button>}
       {manage && input && <Panel title="Record a filing">

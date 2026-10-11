@@ -61,6 +61,14 @@ export const SETTINGS = {
     label: 'Final tax the bank withholds on interest, in basis points (2000 = 20%, PLAN D5 BANK-ADJ)',
     schema: z.number().int().min(0).max(5000),
   },
+  'pay.week_start': {
+    label: 'The day the weekly payrolls (piece rate and daily paid) start: Monday (to Saturday) or Friday (to Thursday) (PLAN F2; Friday from Oct 2, 2026)',
+    schema: z.enum(['monday', 'friday']),
+  },
+  'pay.semi_monthly_cutoff': {
+    label: 'Semi-monthly pay periods: 1–15 and 16–end (calendar), or 26th–10th and 11th–25th, paid the 15th and month end (10_25; from Oct 16, 2026)',
+    schema: z.enum(['calendar', '10_25']),
+  },
   'tax.dividend_final_tax_bp': {
     label: 'Final tax Virtus withholds on cash dividends to individual stockholders, in basis points (1000 = 10%, PLAN D5 DIV)',
     schema: z.number().int().min(0).max(5000),

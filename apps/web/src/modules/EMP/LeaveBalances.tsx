@@ -24,7 +24,7 @@ export function LeaveBalances() {
         </div>
       </div>
       {error && <Notice>{error}</Notice>}
-      {data && <table className="w-full rounded-lg bg-white text-sm shadow-sm ring-1 ring-slate-200">
+      {data && <table className="w-full rounded-xl bg-white text-sm shadow-sm ring-1 ring-slate-200/70">
         <thead className="text-left text-slate-500"><tr><th className="p-2">Code</th><th>Employee</th><th>In service</th><th className="text-right">SIL earned</th><th className="text-right">Days used</th><th className="text-right">Paid in cash</th><th className="pr-2 text-right">Left</th></tr></thead>
         <tbody>{data.rows.map((r) => <tr key={r.employeeId} className="border-t border-slate-100">
           <td className="p-2"><Link className="text-indigo-700 underline" to={`/emp/employees/${r.employeeId}`}>{r.code}</Link></td><td>{r.fullName}</td>

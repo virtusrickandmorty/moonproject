@@ -22,12 +22,17 @@ describe('practice data', () => {
         expect(registerDifferences(db, '2000-01-01', '2099-12-31')).toEqual([]); // L6, over every day of the practice shop
         expect(payrollTotalsProblems(db)).toEqual([]); // L10
         expect(db.prepare(`SELECT COUNT(*) AS n FROM documents WHERE status <> 'posted'`).get()).toEqual({ n: 0 });
-        for (const type of ['quo.quotation', 'jo.job_order', 'prd.entry', 'jo.release',
+        for (const type of ['quo.quotation', 'jo.release',
           'jo.invoice_record', 'qs.sale', 'ap.bill', 'ap.payment', 'exp.voucher',
           'cash.transfer', 'cash.count']) expect(summary.documents[type]).toBe(5);
-        expect(summary.documents['col.collection']).toBe(15);
-        expect(summary.documents['pay.run']).toBe(1); // first weekly cutoff
-        expect(summary.documents['pay.release']).toBe(1);
+        // A released order a day, and an ongoing team order a day (the owner's request, Oct 2026) with its downpayment;
+        // the ongoing ones go a step at a time, four wearers a day, from the day after they are routed.
+        expect(summary.documents['jo.job_order']).toBe(10);
+        expect(summary.documents['prd.entry']).toBe(20); // 10 for the released orders (sewing and packing) and 10 ongoing
+        expect(summary.documents['col.collection']).toBe(20);
+        expect(summary.documents['pay.run']).toBe(2); // first weekly cutoff: piece-rate and daily-paid runs
+        expect(summary.documents['pay.release']).toBe(2);
+        expect(db.prepare(`SELECT COUNT(*) AS n FROM emp_attendance`).get()).toEqual({ n: 12 }); // three daily-paid, Saturday off
         expect(Object.keys(summary.passwords).sort()).toEqual(['accountant', 'encoder', 'owner', 'production']);
         await expect(createPracticeData(file, 1)).rejects.toThrow(/not empty/);
       } finally {
@@ -46,8 +51,8 @@ describe('practice data', () => {
     const file = join(dir, 'practice.db');
     try {
       const summary = await createPracticeData(file, 2, '2026-08-31'); // what a practice shop made on 30 September starts on
-      expect(summary.documents['pay.run']).toBe(1); // 16 to 31 August, on the first day
-      expect(summary.documents['pay.release']).toBeUndefined();
+      expect(summary.documents['pay.run']).toBe(2); // 16 to 31 August, on the first day: monthly staff and daily-paid helper
+      expect(summary.documents['pay.release']).toBe(1); // the helper's small run fits the till; the monthly staff run waits
       expect(summary.documents['cash.count']).toBe(2);
     } finally {
       await rm(file, { force: true });

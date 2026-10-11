@@ -7,15 +7,66 @@ import type { BoardCard, PrdStep } from '../../api.ts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { cents } from '../COL/money.ts';
 
-export type Column = { key: string; title: string; cards: BoardCard[] };
+/** `stepId`: the step a column is for, so a card shows that step's own pieces. */
+export type Column = { key: string; title: string; cards: BoardCard[]; stepId?: number };
 
-/** "Choose production steps", a column per step in canonical order, then "Ready"; only the columns that have cards, so the board stays narrow. */
+/**
+ * The steps an item shows under (the owner's request, Oct 2026): the first step not done yet, and every later step not
+ * done that already has work, pieces forwarded to it from the step before or pieces recorded on it. An item being cut
+ * whose first pieces went on to sewing shows under both. A step with rework sent back to it shows the item too, done or not.
+ */
+export function activeSteps(c: Pick<BoardCard, 'steps' | 'currentStepId'>): number[] {
+  const later = (c.steps ?? [])
+    .filter((s) => ((s.status !== 'completed' && s.status !== 'not_needed') && (s.receivedPieces > 0 || s.pieces !== 0 || s.reworkPieces > 0)) || (s.reworkOpen ?? 0) > 0)
+    .map((s) => s.stepId);
+  return [...new Set([...(c.currentStepId ? [c.currentStepId] : []), ...later])];
+}
+
+/** Something of the item may go out now: all its steps done, or pieces through every step not released yet. */
+export const readyNow = (c: Pick<BoardCard, 'ready' | 'finishedPieces' | 'releasedQty'>) => c.ready || (c.finishedPieces ?? 0) > c.releasedQty;
+
+/**
+ * "Choose production steps", a column per step in canonical order, then "Ready"; an item shows under every step it has
+ * work in (activeSteps); only the columns that have cards, so the board stays narrow.
+ */
 export function columns(steps: PrdStep[], cards: BoardCard[]): Column[] {
   return [
     { key: 'setup', title: 'Choose production steps', cards: cards.filter((c) => c.steps === null) },
-    ...steps.map((s) => ({ key: String(s.id), title: s.name, cards: cards.filter((c) => c.currentStepId === s.id) })),
-    { key: 'ready', title: 'Ready', cards: cards.filter((c) => c.ready) },
+    ...steps.map((s) => ({ key: String(s.id), title: s.name, stepId: s.id, cards: cards.filter((c) => activeSteps(c).includes(s.id)) })),
+    // Ready for release: every step done, or some pieces through every step and not released yet (they can go out first).
+    { key: 'ready', title: 'Ready for release', cards: cards.filter(readyNow) },
   ].filter((c) => c.cards.length > 0);
+}
+
+/**
+ * What a step's row on the line panel says (the owner's rule, Oct 2026): Complete only once every piece of the line is
+ * done on it; how many it received from the step before; how many it has forwarded to the next step that is needed.
+ */
+const partCounts = (parts: { upper: number; lower: number }, qty: number) =>
+  (['upper', 'lower'] as const).map((part) => ({ part, pieces: Math.min(qty, parts[part]) })).filter((x) => x.pieces > 0);
+
+export function stepFlow(steps: NonNullable<BoardCard['steps']>, i: number, qty: number, nameOf: (stepId: number) => string) {
+  const s = steps[i]!;
+  const closed = s.status === 'completed' || s.status === 'not_needed';
+  const prev = steps.slice(0, i).reverse().find((x) => x.status !== 'not_needed');
+  const next = steps.slice(i + 1).find((x) => x.status !== 'not_needed');
+  const short = Math.max(0, qty - s.pieces);
+  // A set is complete once both its parts are: say which part still needs pieces.
+  const setWords = s.parts ? `Record the rest of the parts to complete ${nameOf(s.stepId)}: upper ${s.parts.upper} of ${qty}, lower ${s.parts.lower} of ${qty}.` : '';
+  return {
+    canComplete: !closed && short === 0,
+    /** Why Complete is greyed out, for its tooltip and the line under it. */
+    shortWords: closed || short === 0 ? '' : setWords || (short === qty ? `Record all ${qty} pcs to complete ${nameOf(s.stepId)}.` : `Record the other ${short} of ${qty} pcs to complete ${nameOf(s.stepId)}.`),
+    received: prev && s.status !== 'not_needed' && s.receivedPieces > 0 ? { pieces: Math.min(qty, s.receivedPieces), from: nameOf(prev.stepId) } : null,
+    forwarded: next && s.status !== 'not_needed' && s.pieces > 0 ? { pieces: Math.min(qty, s.pieces), to: nameOf(next.stepId) } : null,
+    /**
+     * A set (the owner's request, Oct 2026): each part's pieces received from the step before and forwarded to the next, as
+     * the parts move apart (12 uppers may be through while 5 lowers are). Parts with none are left out.
+     */
+    receivedParts: s.parts && prev?.parts && s.status !== 'not_needed' ? partCounts(prev.parts, qty).map((x) => ({ ...x, from: nameOf(prev.stepId) })) : [],
+    forwardedParts: s.parts && next && s.status !== 'not_needed' ? partCounts(s.parts, qty).map((x) => ({ ...x, to: nameOf(next.stepId) })) : [],
+    percent: qty > 0 ? Math.min(100, Math.round((s.pieces / qty) * 100)) : 0,
+  };
 }
 
 export type Due = 'all' | 'week' | 'overdue';
@@ -25,6 +76,27 @@ export function filterCards(cards: BoardCard[], f: { due: Due; rushOnly: boolean
   const query = f.search?.trim().toLocaleLowerCase() ?? '';
   const numberQuery = query.replace(/[\s-]/g, '');
   return cards.filter((c) => (!query || c.customerName.toLocaleLowerCase().includes(query) || (!!numberQuery && c.number.toLocaleLowerCase().replace(/[\s-]/g, '').includes(numberQuery))) && (!f.rushOnly || c.priority === 'rush') && (f.due === 'all' || (!!today && (f.due === 'overdue' ? c.dueDate < today : daysBetween(today, c.dueDate) <= 7))));
+}
+
+/** A card's due words (the owner's request, Oct 2026: a friendlier board): late, today, tomorrow or in N days. */
+export function dueWords(today: string, due: string): { text: string; tone: 'late' | 'soon' | 'later' } {
+  const d = Math.round(daysBetween(today, due));
+  if (d < 0) return { text: `${-d} ${d === -1 ? 'day' : 'days'} late`, tone: 'late' };
+  if (d === 0) return { text: 'Due today', tone: 'soon' };
+  if (d === 1) return { text: 'Due tomorrow', tone: 'soon' };
+  return { text: `Due in ${d} days`, tone: d <= 3 ? 'soon' : 'later' };
+}
+
+/** The board's headline counts: lines on the floor, to route, late, rush, due within 7 days, and rework waiting. */
+export function boardCounts(cards: BoardCard[], today: string): { lines: number; toRoute: number; late: number; rush: number; week: number; rework: number } {
+  return {
+    lines: cards.length,
+    toRoute: cards.filter((c) => c.steps === null).length,
+    late: cards.filter((c) => !!today && c.dueDate < today).length,
+    rush: cards.filter((c) => c.priority === 'rush').length,
+    week: cards.filter((c) => !!today && c.dueDate >= today && daysBetween(today, c.dueDate) <= 7).length,
+    rework: cards.reduce((n, c) => n + (c.steps ?? []).reduce((m, s) => m + (s.reworkOpen ?? 0), 0), 0),
+  };
 }
 
 export const REFRESH_MS = 30_000;
@@ -84,12 +156,13 @@ export function useBoardRefresh<T>(read: () => Promise<T>) {
   return { data, error, updatedAt, refresh, stale: !!error || (updatedAt === null ? elapsed >= REFRESH_MS * 2 : now - updatedAt >= REFRESH_MS * 2), words: updateWords(updatedAt, updatedAt === null ? elapsed : now, error) };
 }
 
-export interface EntryRow { lineNo: string; employeeId: string; pieces: string; rework: boolean; rate: string; rateReason: string; repeatReason?: string }
+/** `wearers`: the line's wearers (roster rows) this row finished; its pieces are then theirs. `part`: on a set, the upper or the lower part. */
+export interface EntryRow { lineNo: string; employeeId: string; pieces: string; rework: boolean; rate: string; rateReason: string; repeatReason?: string; wearers?: number[]; part?: 'upper' | 'lower' }
 export const emptyRow = (lineNo = ''): EntryRow => ({ lineNo, employeeId: '', pieces: '', rework: false, rate: '', rateReason: '' });
 
 /** Typed rows -> entry rows for the server. Blank rows are left out; a typed rate goes with its reason. */
 export function rowsToInput(rows: EntryRow[]) {
-  const out: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string }[] = [];
+  const out: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string; wearers?: number[]; part?: 'upper' | 'lower' }[] = [];
   const errors: string[] = [];
   rows.forEach((r, i) => {
     if (!r.employeeId && !r.pieces.trim()) return;
@@ -100,7 +173,6 @@ export function rowsToInput(rows: EntryRow[]) {
     if (!r.employeeId) errors.push(`${at}: pick the worker.`);
     if (!Number.isInteger(pieces) || pieces <= 0) errors.push(`${at}: type the pieces as a whole number like 12.`);
     if (r.rate.trim() && rate === undefined) errors.push(`${at}: type the rate like 45.00`);
-    if (r.rework && !r.rate.trim()) errors.push(`${at}: type the rework (pasubra) rate.`);
     if (r.rate.trim() && !r.rateReason.trim()) errors.push(`${at}: say why this rate is typed.`);
     const repeat = r.rework ? '' : (r.repeatReason ?? '').trim();
     if (repeat && repeat.length < 5) errors.push(`${at}: say in at least 5 characters why this is a different sheet.`);
@@ -112,6 +184,8 @@ export function rowsToInput(rows: EntryRow[]) {
       ...(rate !== undefined ? { rateCents: rate } : {}),
       ...(r.rate.trim() && r.rateReason.trim() ? { rateReason: r.rateReason.trim() } : {}),
       ...(repeat ? { repeatReason: repeat } : {}),
+      ...(r.wearers && r.wearers.length > 0 ? { wearers: [...r.wearers].sort((a, b) => a - b) } : {}), // on rework: the wearers sent back
+      ...(r.part ? { part: r.part } : {}),
     });
   });
   if (out.length === 0 && errors.length === 0) errors.push('Add a worker and the pieces done.');

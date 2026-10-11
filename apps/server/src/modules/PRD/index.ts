@@ -3,6 +3,11 @@ import { dirname, join } from 'node:path';
 import { defineModule } from '../../engine/documents/registry.ts';
 import { entryDoc } from './doctypes/entry.ts';
 import { prdRoutes } from './routes.ts';
+import { onJobOrderEdited } from '../JO/public.ts';
+import { carryProductionOver } from './carry.ts';
+
+// An edited job order keeps its production (the owner's request, Oct 2026).
+onJobOrderEdited(carryProductionOver);
 
 export default defineModule({
   code: 'PRD',

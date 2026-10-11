@@ -119,12 +119,12 @@ export function Pos({ me }: { me: Me }) {
             <Button tone={category ? 'plain' : 'primary'} onClick={() => setCategory('')}>All</Button>
             {categories.map((c) => <Button key={c} tone={category === c ? 'primary' : 'plain'} onClick={() => setCategory(c)}>{c}</Button>)}
           </div>
-          {items.length === 0 && <p className="rounded-lg bg-white p-6 text-sm text-slate-500 shadow-sm">No ready-stock products yet. Add them in Sales › Website shop (as "Ready stock") and record their pieces.</p>}
+          {items.length === 0 && <p className="rounded-xl bg-white p-6 text-sm text-slate-500 shadow-sm ring-1 ring-slate-200/70">No ready-stock products yet. Add them in Sales › Website shop (as "Ready stock") and record their pieces.</p>}
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {shown.map((p) => {
               const left = (p.stock ?? []).reduce((n, s) => n + s.available, 0);
               return (
-                <li key={p.id}><button type="button" disabled={left === 0} onClick={() => setPicking(p)} className="flex w-full flex-col rounded-lg bg-white p-2 text-left shadow-sm ring-1 ring-slate-200 transition hover:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:ring-slate-200">
+                <li key={p.id}><button type="button" disabled={left === 0} onClick={() => setPicking(p)} className="flex w-full flex-col rounded-xl bg-white p-2 text-left shadow-sm ring-1 ring-slate-200/70 transition hover:ring-indigo-400 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:ring-slate-200">
                   <span className="grid aspect-square place-items-center overflow-hidden rounded-md bg-slate-50"><ProductPicture product={p} colour={p.colours[0]?.hex ?? '#ccc'} className={p.photoUrl ? '' : 'w-3/4'} /></span>
                   <span className="mt-2 line-clamp-2 text-sm font-semibold">{p.name}</span>
                   <span className="flex items-center justify-between text-sm"><b>{peso(p.priceCents)}</b><span className={left ? 'text-slate-500' : 'font-semibold text-red-700'}>{left ? `${left} left` : 'Sold out'}</span></span>
@@ -133,7 +133,7 @@ export function Pos({ me }: { me: Me }) {
           </ul>
         </section>
 
-        <aside className="space-y-3 self-start rounded-lg bg-white p-4 shadow-sm xl:sticky xl:top-20">
+        <aside className="space-y-3 self-start rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70 xl:sticky xl:top-20">
           <h2 className="font-bold">Sale</h2>
           {cart.length === 0 ? <p className="text-sm text-slate-500">Tap a product to add it.</p> : (
             <ul className="divide-y divide-slate-100 text-sm">{cart.map((l) => (

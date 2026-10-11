@@ -52,12 +52,29 @@ body {
   }
 }
 
-/* On a phone a wide table scrolls sideways inside itself instead of pushing the whole page out (unless a box around it already scrolls). */
-@media screen and (width < 48rem) {
-  main[data-erp] table:not(:is(.overflow-x-auto, .overflow-auto, .overflow-x-scroll) table) {
-    display: block;
-    max-width: 100%;
-    overflow-x: auto;
+/* The page area is measured, not the screen (the owner's report, Oct 2026: inputs ran into each other on an iPad): beside the
+   menu a tablet leaves the page only 500 to 780px, though the screen counts as "large". */
+main[data-erp] {
+  container: page / inline-size;
+}
+
+/* Where the page is narrow (a phone, or a tablet beside the menu) a wide table scrolls sideways inside itself instead of
+   pushing the whole page out (unless a box around it already scrolls). */
+@media screen {
+  @container page (width < 60rem) {
+    main[data-erp] table:not(:is(.overflow-x-auto, .overflow-auto, .overflow-x-scroll) table) {
+      display: block;
+      max-width: 100%;
+      overflow-x: auto;
+    }
+  }
+}
+
+/* A form with its summary column ("So far" and Record) stands the two one under the other until the page itself is wide
+   enough for both; side by side on a tablet the form's own fields were squeezed into each other. */
+@container page (width < 60rem) {
+  main[data-erp] :is([class*='lg:grid-cols-[1fr_20rem]'], [class*='lg:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)]']) {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -157,6 +174,26 @@ button:disabled,
 }
 .dialog-backdrop { animation: backdrop-in 180ms ease-out; }
 .dialog-backdrop[data-state='closing'] { animation: backdrop-out 180ms ease-in forwards; pointer-events: none; }
+/*
+ * The Virtus loading mark (components/ui.tsx Loading): the logo's mark alone (about 145 by 190 of the 334 by 298 file,
+ * centred, above the word), cut out of a soft grey, with a band of the accent blue sweeping across it, and a slow breath.
+ * The logo file's own transparency is the mask; it is scaled so the mark fills the box.
+ */
+.virtus-loader {
+  display: inline-block;
+  aspect-ratio: 145 / 190;
+  -webkit-mask: url('/virtus-logo.png') top center / 230% auto no-repeat;
+  mask: url('/virtus-logo.png') top center / 230% auto no-repeat;
+  background: linear-gradient(105deg, var(--color-slate-300) 0%, var(--color-slate-300) 38%, var(--color-indigo-500) 50%, var(--color-slate-300) 62%, var(--color-slate-300) 100%);
+  background-size: 300% 100%;
+  animation: virtus-sweep 1.6s ease-in-out infinite, virtus-breathe 1.6s ease-in-out infinite;
+}
+@keyframes virtus-sweep { from { background-position: 100% 0; } to { background-position: 0% 0; } }
+@keyframes virtus-breathe { 0%, 100% { transform: scale(1); opacity: 0.85; } 50% { transform: scale(1.06); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .virtus-loader { animation: none; background: var(--color-slate-400); }
+}
+
 .dialog-panel { transform-origin: center center; animation: dialog-in 200ms cubic-bezier(0.16, 1, 0.3, 1); }
 .dialog-panel[data-state='closing'] { animation: dialog-out 180ms cubic-bezier(0.7, 0, 0.84, 0) forwards; }
 @media (prefers-reduced-motion: reduce) {
@@ -182,8 +219,15 @@ button:disabled,
       text-transform: uppercase;
       letter-spacing: 0.025em;
       color: var(--color-muted);
+      background-color: color-mix(in oklab, var(--color-slate-50) 80%, transparent);
       border-bottom: 1px solid var(--color-slate-200);
       white-space: nowrap;
+    }
+    main[data-erp] tfoot td,
+    main[data-erp] tfoot th {
+      font-weight: 600;
+      color: var(--color-slate-900);
+      background-color: color-mix(in oklab, var(--color-slate-50) 80%, transparent);
     }
     main[data-erp] tbody td,
     main[data-erp] tbody th,
@@ -198,5 +242,46 @@ button:disabled,
     main[data-erp] tbody tr:hover {
       background-color: color-mix(in oklab, var(--color-indigo-50) 70%, transparent);
     }
+    /* A chart's bars and points take focus so their amounts can be read, but a click must not leave the browser's thick
+       black box on one (the owner saw it as a bar unlike the others): a soft blue ring for the keyboard only. */
+    main[data-erp] svg [tabindex]:focus {
+      outline: none;
+    }
+    main[data-erp] svg [tabindex]:focus-visible {
+      stroke: var(--color-indigo-300);
+      stroke-width: 3px;
+    }
+    /* A row that opens its link on a click anywhere (shell/rowLinks.ts): not a form row, not one switched off. */
+    main[data-erp] tbody tr:has(a[href]):not(:has(input, select, textarea)):not([data-row-link='off'] *) {
+      cursor: pointer;
+    }
+  }
+}
+
+/* A link in a table cell reads as a calm indigo name, underlined only under the mouse (the owner's request, Oct 2026: the
+   whole ERP a little more polished). Unlayered, so it wins over a table's own "underline". Printouts keep theirs. */
+@media screen {
+  main[data-erp] td a[href] {
+    color: var(--color-indigo-700);
+    font-weight: 500;
+    text-decoration-line: none;
+  }
+  main[data-erp] td a[href]:hover {
+    text-decoration-line: underline;
+    text-underline-offset: 2px;
+  }
+}
+
+/* A report's period under its title, as a soft pill on screen (plain on paper). */
+@media screen {
+  main[data-erp] .rpt-heading > h1 + p:not(:empty) {
+    display: inline-block;
+    margin-top: 0.125rem;
+    border-radius: 9999px;
+    background-color: var(--color-indigo-50);
+    padding: 0.125rem 0.625rem;
+    font-size: var(--text-xs);
+    font-weight: 500;
+    color: var(--color-indigo-700);
   }
 }

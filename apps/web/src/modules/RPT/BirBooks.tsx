@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, openBookPrint, type Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso, useAction, type PageInfo } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, peso, useAction, type PageInfo } from '../../components/ui.tsx';
 import { BookTitle, Tools, money, td, th, usePagedReport, useToday } from './Books.tsx';
 import './books.css';
 import { addressValue, PendingPeriod, ResultSummary } from './ReportParts.tsx';
@@ -46,14 +46,14 @@ export function BirBooks({ me }: { me: Me }) {
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   return <article className={`rpt-page bir-book ${book.startsWith('cash-') || book === 'sales' || book === 'purchases' ? 'bir-landscape' : ''} space-y-4`}>
     <BookTitle title={`BIR books — ${title}`} dates={data ? `${data.from} to ${data.to}` : ''} />
-    <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="Book"><select className={inputClass} value={book} onChange={(e) => setBook(e.target.value as Book)}>{Object.entries(BOOKS).map(([k, v]) => <option value={k} key={k}>{v[0]}</option>)}</select></Field>
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden"><Field label="Book"><select className={inputClass} value={book} onChange={(e) => setBook(e.target.value as Book)}>{Object.entries(BOOKS).map(([k, v]) => <option value={k} key={k}>{v[0]}</option>)}</select></Field>
       <Field label="From"><input className={inputClass} type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></Field><Field label="To"><input className={inputClass} type="date" value={to} onChange={(e) => setTo(e.target.value)} /></Field>
       <Button tone="primary" disabled={!from || !to || from > to} onClick={() => setQuery(new URLSearchParams({ from, to }).toString())}>Show</Button>{path && <Tools path={path} />}
       <Button disabled={!data || !printFrom || !printTo || printFrom > printTo || !sameYear || printing.busy} onClick={() => void looseLeaf()}>Print loose-leaf</Button>
       {sameYear && lastPage !== null && <span className="text-sm text-slate-600">{lastPage ? `Last page printed in ${year}: ${lastPage}` : `Nothing printed yet in ${year}`}</span>}</div>
     {printing.error && <Notice>{printing.error}</Notice>}{printed && <Notice tone="success">{printed}</Notice>}
     <PendingPeriod applied={query} values={{ from, to }} />
-    {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
+    {error && <Notice>{error}</Notice>}{!data && !error && <Loading />}
     {data && !data.pages?.length && !data.accounts?.some(a => a.pages.length) && <ResultSummary count={0} />}
     {data && cols.length > 0 && <LoosePages pages={data.pages ?? []} columns={cols} />}
     {data && cols.length === 0 && <>{(data.accounts ?? [{ code: '', name: title, pages: data.pages ?? [] }]).map((a) => <Panel key={`${a.code}-${a.name}`} title={`${a.code} ${a.name}`}><LoosePages pages={a.pages} columns={book === 'general-journal' ? ['businessDate', 'journalNumber', 'journalMemo', 'lines'] : ['businessDate', 'journalNumber', 'documentNumber', 'debitCents', 'creditCents', 'runningBalanceCents']} /></Panel>)}</>}

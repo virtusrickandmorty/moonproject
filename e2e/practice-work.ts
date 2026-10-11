@@ -45,6 +45,15 @@ async function record(who: Signed, type: string, input: object): Promise<Json> {
 
 const jobLine = (description: string, qty: number) => ({ kind: 'made_to_order', description, qty, unitPriceCents: 100_000, discountCents: 0, roster: [] });
 
+/**
+ * Production finishes a one-item job order, so it is ready for release: its step (packing) is not needed, and the order
+ * moves to Ready by itself. Nothing is released before it is ready (the owner's rule, Oct 11, 2026).
+ */
+async function finished(production: Signed, jobOrderId: string) {
+  await production.post(`/api/prd/jobs/${jobOrderId}/lines/1/setup`, { stepIds: [8], garmentType: 'T-shirt', complexity: 'standard' });
+  await production.post(`/api/prd/jobs/${jobOrderId}/lines/1/steps/8/not-needed`, {});
+}
+
 /** Open work for the owner's tour: what the "+ New" forms ask the person to pick. */
 export async function openWork(owner: Signed, production: Signed, accountant: Signed): Promise<void> {
   const places = (await owner.get('/api/cash/places')) as unknown as { id: number; name: string }[];
@@ -64,13 +73,15 @@ export async function openWork(owner: Signed, production: Signed, accountant: Si
 
   // A release with its invoice recorded and nothing collected (a 2307 for it), and one whose invoice is still to follow.
   const invoiced = await record(owner, 'jo.job_order', { customerId: c1, dueInDays: 7, priority: 'normal', paymentTerms: 'net7', lines: [jobLine('Tour aprons', 4)] });
+  await finished(production, invoiced.id);
   await owner.post('/api/jo/releases', {
-    release: { jobOrderId: invoiced.id, lines: [{ lineNo: 1, qty: 4 }], claimedBy: 'Practice Collector', idSeen: 'other_id', creditNote: 'Paid in a week', creditDueInDays: 7, overrideReason: 'Made-up rush for the tour' },
+    release: { jobOrderId: invoiced.id, lines: [{ lineNo: 1, qty: 4 }], claimedBy: 'Practice Collector', idSeen: 'other_id', creditNote: 'Paid in a week', creditDueInDays: 7 },
     invoice: { invoiceNumber: '880101' }, expectedTotalCents: 400_000,
   }, { 'idempotency-key': randomUUID() });
   const toFollow = await record(owner, 'jo.job_order', { customerId: c3 ?? c2, dueInDays: 7, priority: 'normal', paymentTerms: 'net7', lines: [jobLine('Tour scarves', 2)] });
+  await finished(production, toFollow.id);
   await owner.post('/api/jo/releases', {
-    release: { jobOrderId: toFollow.id, lines: [{ lineNo: 1, qty: 2 }], claimedBy: 'Practice Collector', idSeen: 'other_id', creditNote: 'Paid in a week', creditDueInDays: 7, overrideReason: 'Made-up rush for the tour' },
+    release: { jobOrderId: toFollow.id, lines: [{ lineNo: 1, qty: 2 }], claimedBy: 'Practice Collector', idSeen: 'other_id', creditNote: 'Paid in a week', creditDueInDays: 7 },
     invoice: null, expectedTotalCents: 200_000,
   }, { 'idempotency-key': randomUUID() });
 

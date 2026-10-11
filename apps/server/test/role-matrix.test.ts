@@ -153,8 +153,9 @@ function planDifferences(): string[] {
 }
 
 describe('default roles against the plan (C6, E13)', () => {
-  it('has exactly the five role templates of E13', () => {
-    expect([...ROLES]).toEqual(['encoder', 'accountant', 'owner', 'production', 'tv']);
+  // E13's five role templates, plus Purchasing and Human Resource (the owner's decisions, Oct 9, 2026; a PLAN change for E13 is proposed).
+  it('has the five role templates of E13, Purchasing and Human Resource', () => {
+    expect([...ROLES]).toEqual(['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing', 'hr']);
     const rows = env.db.prepare('SELECT DISTINCT role_key FROM role_permissions ORDER BY role_key').pluck().all();
     expect(rows).toEqual([...ROLES].sort());
   });
@@ -206,10 +207,12 @@ describe('default roles against the plan (C6, E13)', () => {
 
 // The public website (modules/SHP, SUP): the shop's active products and photos, how to pay (the QR), online orders — placed
 // (limited per sender and per hour), then read, paid or cancelled only with the order's secret link — tracking an order or a job
-// order by its number (status only, limited per sender), the delivery fee for an address, and the support form.
-const PUBLIC_ROUTES = ['GET /*', 'GET /api/health', 'GET /api/setup/status', 'GET /api/shp/delivery-fee', 'GET /api/shp/orders/:number', 'GET /api/shp/payment',
+// order by its number (status only, limited per sender), the delivery fee for an address, and the support form; and the
+// website's AI assistant (modules/AIA): whether it is on, one chat message at a time and the handoff to the Support inbox
+// (each limited per sender, the chat to 30 messages).
+const PUBLIC_ROUTES = ['GET /*', 'GET /api/aia/public', 'GET /api/health', 'GET /api/setup/status', 'GET /api/shp/delivery-fee', 'GET /api/shp/orders/:number', 'GET /api/shp/payment',
   'GET /api/shp/payment/qr/:version', 'GET /api/shp/photos/:photoId', 'GET /api/shp/products', 'GET /api/shp/reviews', 'GET /robots.txt', 'GET /sitemap.xml',
-  'POST /api/auth/login', 'POST /api/setup/first-owner', 'POST /api/shp/orders', 'POST /api/shp/orders/:number/cancel', 'POST /api/shp/orders/:number/payment', 'POST /api/shp/orders/:number/reviews', 'POST /api/shp/track',
+  'POST /api/aia/chat', 'POST /api/aia/handoff', 'POST /api/auth/login', 'POST /api/setup/first-owner', 'POST /api/shp/orders', 'POST /api/shp/orders/:number/cancel', 'POST /api/shp/orders/:number/payment', 'POST /api/shp/orders/:number/reviews', 'POST /api/shp/track',
   'POST /api/sup/messages'];
 
 /** 'authenticated' routes that are open to every signed-in user by design (nothing the role lacks is shown). */
@@ -285,7 +288,7 @@ describe('every route, every role (C6: a permission checked on every route)', ()
     expect(called).toBe(keyed().length * ROLES.length);
     expect(wrong).toEqual([]);
     // A change with an empty body should do nothing. These read-only checks answer 200 and write nothing of business data.
-    expect([...new Set(doneSomething)].sort()).toEqual(['POST /api/aud/nightly/run', 'POST /api/system/health/check']);
+    expect([...new Set(doneSomething)].sort()).toEqual(['POST /api/aia/test', 'POST /api/aud/nightly/run', 'POST /api/system/health/check']); // aia/test: tries the saved AI key
   });
 
   it('a role with the permission still needs the fresh password where a route says so, and 403 STEP_UP_REQUIRED is not FORBIDDEN', async () => {
@@ -394,3 +397,19 @@ describe('document routes, every document type, every role (routes marked authen
 function cashPlace(code: string): number {
   return env.db.prepare('SELECT id FROM accounts WHERE code = ?').pluck().get(code) as number;
 }
+
+describe('Purchasing (the owner\'s decision, Oct 9, 2026)', () => {
+  it('starts with the basics and what Sales holds for suppliers, purchases, supplier bills and inventory counts', () => {
+    const held = new Set(env.db.prepare(`SELECT permission_key FROM role_permissions WHERE role_key = 'purchasing' AND granted = 1`).pluck().all() as string[]);
+    for (const key of ['dash.view', 'nav.search', 'cal.view', 'cat.view', 'pur.po.create', 'pur.rr.post', 'ap.bill.post', 'ap.pay.view', 'inv.count.create']) expect(held, key).toContain(key);
+    for (const key of ['jo.view', 'col.view', 'cat.manage', 'sec.users.manage', 'pay.run.view']) expect(held, key).not.toContain(key);
+  });
+});
+
+describe("Human Resource (the owner's decision, Oct 9, 2026)", () => {
+  it('starts with the basics and what Sales holds for employees, payroll, cash advances and government contributions', () => {
+    const held = new Set(env.db.prepare(`SELECT permission_key FROM role_permissions WHERE role_key = 'hr' AND granted = 1`).pluck().all() as string[]);
+    for (const key of ['dash.view', 'nav.search', 'cal.view', 'emp.view', 'emp.attendance', 'pay.run.view', 'pay.run.post', 'ca.give', 'stat.view']) expect(held, key).toContain(key);
+    for (const key of ['jo.view', 'pur.po.view', 'cat.view', 'sec.users.manage', 'acc.coa.view']) expect(held, key).not.toContain(key);
+  });
+});

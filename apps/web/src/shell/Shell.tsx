@@ -7,10 +7,12 @@ import { startLive, stopLive, useLiveChange } from '../live.ts';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { api, type DashNotification, type DocTypeInfo, type Me, type MenuOrder } from '../api.ts';
 import { Link, navigate, useLocation } from '../router.tsx';
-import { longDate } from '../components/ui.tsx';
-import { MENU_FOLDS_KEY, applyMenuOrder, buildMenu, docPath, isHere, labelOf, openGroups, type MenuGroup, type MenuItem } from './menu.ts';
+import { Button, longDate } from '../components/ui.tsx';
+import { showToast } from '../components/Toasts.tsx';
+import { MENU_FOLDS_KEY, applyMenuOrder, buildMenu, docPath, isHere, labelOf, openGroups, sectionsOf, subOf, type MenuGroup, type MenuItem } from './menu.ts';
 import { SearchBox } from '../modules/NAV/Search.tsx';
 import { Breadcrumbs, CrumbName, crumbsFor } from './crumbs.tsx';
+import { followRowLink } from './rowLinks.ts';
 
 function ServerDate() {
   const [date, setDate] = useState<string | null>(); // undefined while loading, null when the server is unreachable
@@ -22,6 +24,16 @@ function ServerDate() {
   }, []);
   if (date === null) return <span className="rounded bg-red-600 px-2 py-0.5 font-medium text-white">Server date unknown: cannot reach the server</span>;
   return <span title="Every document gets this date from the server">Server date: {date ? longDate(date) : '…'}</span>;
+}
+
+/** Rows that link somewhere open on a click anywhere on them, on every ERP screen (rowLinks.ts). */
+function RowLinks() {
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => { if ((e.target as Element | null)?.closest?.('main[data-erp]')) followRowLink(e); };
+    document.addEventListener('click', onClick);
+    return () => document.removeEventListener('click', onClick);
+  }, []);
+  return null;
 }
 
 /** Only for the greeting; documents never take a date or time from the browser. */
@@ -64,10 +76,17 @@ function Bell({ open, onToggle }: { open: boolean; onToggle: () => void }) {
   const [unread, setUnread] = useState<DashNotification[]>([]);
   const [busy, setBusy] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
-  const load = useCallback(() => api.dashNotifications({ limit: BELL_ASK, offset: 0, unread: true }).then(setUnread, () => {}), []);
+  // A new job order to route pops up once (the owner's request, Oct 2026); those already there when the page opened do not.
+  const seen = useRef<Set<string> | null>(null);
+  const load = useCallback(() => api.dashNotifications({ limit: BELL_ASK, offset: 0, unread: true }).then((list) => {
+    const fresh = list.filter((n) => n.kind === 'jo-to-route' && seen.current && !seen.current.has(n.id));
+    seen.current = new Set([...(seen.current ?? []), ...list.map((n) => n.id)]);
+    for (const n of fresh) showToast('info', <>{n.label}. <Link to={n.href ?? '/prd/board'} className="underline">Open the production board</Link></>);
+    setUnread(list);
+  }, () => {}), []);
   useEffect(() => {
     void load();
-    const t = setInterval(load, 60_000);
+    const t = setInterval(load, 30_000);
     return () => clearInterval(t);
   }, [load, path]);
   useLiveChange(() => void load());
@@ -160,15 +179,20 @@ function storedFolds(): Record<string, boolean> {
 }
 
 type MenuList = { group: MenuGroup; items: MenuItem[] }[];
-type Dragging = { kind: 'group'; at: number } | { kind: 'item'; group: number; at: number } | null;
+type Dragging = { kind: 'group'; at: number } | { kind: 'sub'; group: number; at: number } | { kind: 'item'; group: number; sub: string; at: number } | null;
 const moved = <T,>(list: T[], from: number, to: number) => { const next = [...list]; const [x] = next.splice(from, 1); next.splice(to, 0, x!); return next; };
 
 /**
  * Arranging the side menu: drag a group or a screen to where it should go (within its group), or use the arrows, which
  * also work on a touch screen and from the keyboard. Saved to the person's account, so it follows them to any PC.
  */
-export function ArrangeMenu({ menu, onSave, onCancel }: { menu: MenuList; onSave: (order: MenuOrder) => Promise<void>; onCancel: () => void }) {
+/**
+ * Arrange menu: the groups, the sub-categories within each group (the owner's request, Oct 2026), and the screens within
+ * each sub-category, by dragging or the arrows. Saved to the person's account.
+ */
+export function ArrangeMenu({ menu, subOrder, onSave, onCancel }: { menu: MenuList; subOrder: Record<string, string[]>; onSave: (order: MenuOrder) => Promise<void>; onCancel: () => void }) {
   const [draft, setDraft] = useState(menu);
+  const [subs, setSubs] = useState<Record<string, string[]>>(() => Object.fromEntries(menu.map((g) => [g.group, sectionsOf(g.group, g.items, subOrder[g.group]).map((s) => s.sub)])));
   const [dragging, setDragging] = useState<Dragging>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -177,9 +201,15 @@ export function ArrangeMenu({ menu, onSave, onCancel }: { menu: MenuList; onSave
     try { await onSave(order); } catch (e) { setError((e as Error).message); setBusy(false); }
   };
   const moveGroup = (from: number, to: number) => { if (to >= 0 && to < draft.length) setDraft(moved(draft, from, to)); };
-  const moveItem = (g: number, from: number, to: number) => {
-    if (to < 0 || to >= draft[g]!.items.length) return;
-    setDraft(draft.map((x, i) => (i === g ? { ...x, items: moved(x.items, from, to) } : x)));
+  const moveSub = (group: string, from: number, to: number) => {
+    const list = subs[group] ?? [];
+    if (to >= 0 && to < list.length) setSubs({ ...subs, [group]: moved(list, from, to) });
+  };
+  /** Moves a screen within its sub-category: `from` and `to` count within it. */
+  const moveItem = (g: number, sub: string, from: number, to: number) => {
+    const at = draft[g]!.items.map((it, i) => [it, i] as const).filter(([it]) => subOf(it) === sub).map(([, i]) => i);
+    if (to < 0 || to >= at.length) return;
+    setDraft(draft.map((x, i) => (i === g ? { ...x, items: moved(x.items, at[from]!, at[to]!) } : x)));
   };
   const arrows = (label: string, up: () => void, down: () => void, first: boolean, last: boolean) => (
     <span className="ml-auto flex shrink-0 gap-0.5">
@@ -191,38 +221,58 @@ export function ArrangeMenu({ menu, onSave, onCancel }: { menu: MenuList; onSave
   return (
     <div className="space-y-2 pl-3" aria-label="Arrange the menu">
       <div className="sticky top-0 z-10 space-y-2 rounded-lg bg-white p-3 shadow-sm ring-1 ring-indigo-200">
-        <p className="text-xs font-semibold text-slate-700">Drag a group or a screen to where you want it, or use the arrows.</p>
+        <p className="text-xs font-semibold text-slate-700">Drag a group, a sub-category or a screen to where you want it, or use the arrows.</p>
         <div className="flex flex-wrap gap-1.5">
-          <button type="button" disabled={busy} onClick={() => void save({ groups: draft.map((g) => g.group), items: Object.fromEntries(draft.map((g) => [g.group, g.items.map((i) => i.path)])) })}
+          <button type="button" disabled={busy} onClick={() => void save({ groups: draft.map((g) => g.group), items: Object.fromEntries(draft.map((g) => [g.group, g.items.map((i) => i.path)])), subs })}
             className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">{busy ? 'Saving…' : 'Save'}</button>
           <button type="button" disabled={busy} onClick={onCancel} className="rounded-md px-3 py-1.5 text-xs font-semibold ring-1 ring-slate-300 hover:bg-slate-50">Cancel</button>
-          <button type="button" disabled={busy} onClick={() => void save({ groups: [], items: {} })} className="rounded-md px-2 py-1.5 text-xs font-semibold text-slate-500 hover:text-red-700">Reset to default</button>
+          <button type="button" disabled={busy} onClick={() => void save({ groups: [], items: {}, subs: {} })} className="rounded-md px-2 py-1.5 text-xs font-semibold text-slate-500 hover:text-red-700">Reset to default</button>
         </div>
         {error && <p role="alert" className="text-xs font-semibold text-red-700">{error}</p>}
       </div>
       <ol className="space-y-1">
-        {draft.map((g, gi) => (
-          <li key={g.group} draggable onDragStart={(e) => { e.stopPropagation(); setDragging({ kind: 'group', at: gi }); }} onDragEnd={() => setDragging(null)}
-            onDragOver={(e) => { if (dragging?.kind === 'group') e.preventDefault(); }}
-            onDrop={(e) => { e.preventDefault(); if (dragging?.kind === 'group') moveGroup(dragging.at, gi); setDragging(null); }}
-            className={`rounded-lg bg-page ${dragging?.kind === 'group' && dragging.at === gi ? 'opacity-40' : ''}`}>
-            <div className="flex items-center gap-2 py-2 pl-3 pr-1 text-[11px] font-bold uppercase tracking-wider text-[#404040]">
-              {grip}<Icon name={g.group} className="size-4" /><span className="truncate">{g.group}</span>
-              {arrows(g.group, () => moveGroup(gi, gi - 1), () => moveGroup(gi, gi + 1), gi === 0, gi === draft.length - 1)}
-            </div>
-            <ol className="pb-1">
-              {g.items.map((it, ii) => (
-                <li key={it.path} draggable onDragStart={(e) => { e.stopPropagation(); setDragging({ kind: 'item', group: gi, at: ii }); }} onDragEnd={() => setDragging(null)}
-                  onDragOver={(e) => { if (dragging?.kind === 'item' && dragging.group === gi) { e.preventDefault(); e.stopPropagation(); } }}
-                  onDrop={(e) => { if (dragging?.kind !== 'item' || dragging.group !== gi) return; e.preventDefault(); e.stopPropagation(); moveItem(gi, dragging.at, ii); setDragging(null); }}
-                  className={`flex items-center gap-2 rounded-r-full py-1.5 pl-7 pr-1 text-[#484848] hover:bg-white ${dragging?.kind === 'item' && dragging.group === gi && dragging.at === ii ? 'opacity-40' : ''}`}>
-                  {grip}<span className="min-w-0 break-words leading-tight">{it.label}</span>
-                  {arrows(it.label, () => moveItem(gi, ii, ii - 1), () => moveItem(gi, ii, ii + 1), ii === 0, ii === g.items.length - 1)}
-                </li>
-              ))}
-            </ol>
-          </li>
-        ))}
+        {draft.map((g, gi) => {
+          const sections = sectionsOf(g.group, g.items, subs[g.group]);
+          const multi = sections.length > 1;
+          return (
+            <li key={g.group} draggable onDragStart={(e) => { e.stopPropagation(); setDragging({ kind: 'group', at: gi }); }} onDragEnd={() => setDragging(null)}
+              onDragOver={(e) => { if (dragging?.kind === 'group') e.preventDefault(); }}
+              onDrop={(e) => { e.preventDefault(); if (dragging?.kind === 'group') moveGroup(dragging.at, gi); setDragging(null); }}
+              className={`rounded-lg bg-page ${dragging?.kind === 'group' && dragging.at === gi ? 'opacity-40' : ''}`}>
+              <div className="flex items-center gap-2 py-2 pl-3 pr-1 text-[11px] font-bold uppercase tracking-wider text-[#404040]">
+                {grip}<Icon name={g.group} className="size-4" /><span className="truncate">{g.group}</span>
+                {arrows(g.group, () => moveGroup(gi, gi - 1), () => moveGroup(gi, gi + 1), gi === 0, gi === draft.length - 1)}
+              </div>
+              <ol className="pb-1">
+                {sections.map((sec, si) => (
+                  <li key={sec.sub} draggable={multi}
+                    onDragStart={(e) => { e.stopPropagation(); setDragging({ kind: 'sub', group: gi, at: si }); }} onDragEnd={() => setDragging(null)}
+                    onDragOver={(e) => { if (dragging?.kind === 'sub' && dragging.group === gi) { e.preventDefault(); e.stopPropagation(); } }}
+                    onDrop={(e) => { if (dragging?.kind !== 'sub' || dragging.group !== gi) return; e.preventDefault(); e.stopPropagation(); moveSub(g.group, dragging.at, si); setDragging(null); }}
+                    className={dragging?.kind === 'sub' && dragging.group === gi && dragging.at === si ? 'opacity-40' : ''}>
+                    {multi && (
+                      <div className="flex items-center gap-2 py-1 pl-7 pr-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                        {grip}<span className="truncate">{sec.sub}</span>
+                        {arrows(sec.sub, () => moveSub(g.group, si, si - 1), () => moveSub(g.group, si, si + 1), si === 0, si === sections.length - 1)}
+                      </div>
+                    )}
+                    <ol>
+                      {sec.items.map((it, ii) => (
+                        <li key={it.path} draggable onDragStart={(e) => { e.stopPropagation(); setDragging({ kind: 'item', group: gi, sub: sec.sub, at: ii }); }} onDragEnd={() => setDragging(null)}
+                          onDragOver={(e) => { if (dragging?.kind === 'item' && dragging.group === gi && dragging.sub === sec.sub) { e.preventDefault(); e.stopPropagation(); } }}
+                          onDrop={(e) => { if (dragging?.kind !== 'item' || dragging.group !== gi || dragging.sub !== sec.sub) return; e.preventDefault(); e.stopPropagation(); moveItem(gi, sec.sub, dragging.at, ii); setDragging(null); }}
+                          className={`flex items-center gap-2 rounded-r-full py-1.5 pr-1 text-[#484848] hover:bg-white ${multi ? 'pl-11' : 'pl-7'} ${dragging?.kind === 'item' && dragging.group === gi && dragging.sub === sec.sub && dragging.at === ii ? 'opacity-40' : ''}`}>
+                          {grip}<span className="min-w-0 break-words leading-tight">{it.label}</span>
+                          {arrows(it.label, () => moveItem(gi, sec.sub, ii, ii - 1), () => moveItem(gi, sec.sub, ii, ii + 1), ii === 0, ii === sec.items.length - 1)}
+                        </li>
+                      ))}
+                    </ol>
+                  </li>
+                ))}
+              </ol>
+            </li>
+          );
+        })}
       </ol>
     </div>
   );
@@ -230,7 +280,25 @@ export function ArrangeMenu({ menu, onSave, onCancel }: { menu: MenuList; onSave
 
 const pop = 'absolute right-0 z-30 mt-2 w-60 overflow-hidden rounded-lg bg-white py-1 text-sm text-slate-800 shadow-lg ring-1 ring-slate-200 [&>*]:block [&>*]:w-full [&>*]:px-4 [&>*]:py-2 [&>*]:text-left [&>*:hover]:bg-indigo-50';
 
-export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes: DocTypeInfo[]; onSignOut: () => void; children: ReactNode }) {
+/**
+ * A report stays a snapshot (its figures do not move while it is read or printed); after a change anywhere, this bar says
+ * so and Refresh opens it again with the same filters. `reportKey` changes when the report is opened again.
+ */
+function ReportChanged({ onRefresh, reportKey }: { onRefresh: () => void; reportKey: string }) {
+  const [changed, setChanged] = useState(false);
+  useEffect(() => setChanged(false), [reportKey]);
+  useLiveChange(() => setChanged(true));
+  if (!changed) return null;
+  return (
+    <div role="status" className="mb-3 flex flex-wrap items-center gap-3 rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-900 ring-1 ring-sky-200 print:hidden">
+      <span className="flex-1">New entries were recorded since you opened this report.</span>
+      <Button tone="primary" onClick={onRefresh}>Refresh</Button>
+    </div>
+  );
+}
+
+/** `onRefreshReport`: the page on show is a report (it gets the Refresh bar after a change). */
+export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = '', children }: { me: Me; docTypes: DocTypeInfo[]; onSignOut: () => void; onRefreshReport?: (() => void) | undefined; reportKey?: string; children: ReactNode }) {
   const path = useLocation().split('?')[0]!;
   // Live changes: one stream while signed in; every screen that shows records reloads when anyone changes something.
   useEffect(() => { startLive(); return stopLive; }, []);
@@ -262,7 +330,7 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
 
   return (
     <div className="min-h-screen bg-page">
-      <header onKeyDown={(e) => { if (e.key === 'Escape') setOpen(null); }} className="sticky top-0 z-20 flex min-h-[4.5rem] flex-wrap items-center gap-x-2 gap-y-2 bg-page px-3 py-2 text-sm sm:gap-x-3 md:h-[4.5rem] md:flex-nowrap md:px-6 md:py-0 print:hidden">
+      <header onKeyDown={(e) => { if (e.key === 'Escape') setOpen(null); }} className="sticky top-0 z-20 flex min-h-[4.5rem] flex-wrap items-center gap-x-2 gap-y-2 border-b border-slate-200/60 bg-page/90 px-3 py-2 backdrop-blur text-sm sm:gap-x-3 md:h-[4.5rem] md:flex-nowrap md:px-6 md:py-0 print:hidden">
         <div className="flex shrink-0 items-center gap-2 sm:gap-3 md:w-[188px]">
           <button type="button" aria-label="Menu" aria-expanded={open === 'menu'} aria-controls="main-menu" className="rounded-md p-1.5 text-slate-700 hover:bg-white" onClick={toggleMenu}><Icon name="menu" className="size-6" /></button>
           <Link to="/" aria-label="Home"><img src="/virtus-logo.png" alt="Virtus" className="h-10 w-auto sm:h-11" /></Link>
@@ -271,7 +339,7 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
           <p className="truncate text-lg text-slate-900">{greeting()}, <span className="font-bold">{me.displayName}</span></p>
           <p className="truncate text-xs text-muted"><ServerDate /></p>
         </div>
-        <div className="flex flex-1 flex-wrap items-center justify-end gap-x-1 gap-y-2 sm:gap-x-3 md:flex-nowrap lg:flex-none">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-1 gap-y-2 sm:gap-x-3 md:flex-nowrap lg:flex-none">
           {me.permissions.includes('nav.search') && <SearchBox />}
           {creatable.length > 0 && (
             <div className="relative">
@@ -298,26 +366,51 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
       <p className="px-4 pb-2 text-xs text-muted lg:hidden print:hidden"><ServerDate /></p>
       <div className="flex">
         <Navigation open={open === 'menu'} folds={folding.folds} wide={wide} onClose={() => setOpen(null)}>
-          {arranging && <ArrangeMenu menu={menu} onSave={saveOrder} onCancel={() => setArranging(false)} />}
+          {arranging && <ArrangeMenu menu={menu} subOrder={order?.subs ?? {}} onSave={saveOrder} onCancel={() => setArranging(false)} />}
           {!arranging && menu.map((g) => {
             const shown = folding.open.has(g.group);
-            const heading = <><Icon name={g.group} className="size-4" /><span className="flex-1">{g.group}</span></>;
+            const here = g.items.some((i) => isHere(path, i.path));
+            const heading = <>
+              <span aria-hidden="true" className={`flex size-7 shrink-0 items-center justify-center rounded-lg ring-1 transition-colors ${here ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white text-slate-600 ring-slate-200'}`}><Icon name={g.group} className="size-4" /></span>
+              <span className={`flex-1 ${here ? 'text-indigo-700' : ''}`}>{g.group}</span>
+            </>;
             return (
               <div key={g.group} className="mb-1">
                 {folding.folds ? (
                   <button type="button" aria-expanded={shown} onClick={() => fold(g.group, shown)}
-                    className="flex w-full items-center gap-2 rounded-r-full py-2.5 pl-6 pr-4 text-left text-[11px] font-bold uppercase tracking-wider text-[#404040] hover:bg-white">
+                    className="flex w-full items-center gap-2.5 rounded-r-full py-2 pl-5 pr-4 text-left text-[11px] font-bold uppercase tracking-wider text-[#404040] hover:bg-white">
                     {heading}
                     {!shown && <span aria-hidden="true" className="text-[10px] font-semibold text-slate-400">{g.items.length}</span>}
                     <Icon name="chevron" className={`size-3.5 text-slate-400 transition-transform ${shown ? 'rotate-90' : ''}`} />
                   </button>
-                ) : <p className="flex items-center gap-2 py-2.5 pl-6 pr-4 text-[11px] font-bold uppercase tracking-wider text-[#404040]">{heading}</p>}
-                {shown && g.items.map((i) => (
-                  <Link key={i.path} to={i.path}
-                    className={`block rounded-r-full py-2 pl-12 pr-4 transition-colors ${isHere(path, i.path) ? 'bg-white font-bold text-indigo-600 shadow-sm' : 'text-[#484848] hover:bg-white hover:text-indigo-600'}`}>
-                    {i.label}
-                  </Link>
-                ))}
+                ) : <p className="flex items-center gap-2.5 py-2 pl-5 pr-4 text-[11px] font-bold uppercase tracking-wider text-[#404040]">{heading}</p>}
+                {shown && sectionsOf(g.group, g.items, order?.subs?.[g.group]).map((s, k, all) => {
+                  // Sub-categories (the owner's request, Oct 2026): related screens together under a heading that folds; their
+                  // screens indented under it. Each starts open and closes on its own; what a person folds is remembered
+                  // like the groups (so nothing is hidden until they fold it).
+                  const multi = all.length > 1;
+                  const key = `${g.group}/${s.sub}`;
+                  const holdsHere = s.items.some((i) => isHere(path, i.path));
+                  const subOpen = !multi || (chosen[key] ?? true);
+                  return (
+                    <div key={s.sub} role="group" aria-label={multi ? `${g.group}: ${s.sub}` : undefined} className={multi && k > 0 ? 'mt-0.5' : ''}>
+                      {multi && (
+                        <button type="button" aria-expanded={subOpen} onClick={() => fold(key, subOpen)}
+                          className={`flex w-full items-center gap-1.5 rounded-r-full py-1.5 pl-10 pr-4 text-left text-[10px] font-semibold uppercase tracking-wider hover:bg-white hover:text-indigo-700 ${holdsHere ? 'text-indigo-700' : 'text-slate-500'}`}>
+                          <Icon name="chevron" className={`size-3 shrink-0 transition-transform ${subOpen ? 'rotate-90' : ''}`} />
+                          <span className="flex-1">{s.sub}</span>
+                          {!subOpen && <span aria-hidden="true" className="text-[10px] font-semibold text-slate-400">{s.items.length}</span>}
+                        </button>
+                      )}
+                      {subOpen && s.items.map((i) => (
+                        <Link key={i.path} to={i.path}
+                          className={`relative block rounded-r-full py-2 pr-4 transition-colors ${multi ? 'pl-16' : 'pl-12'} ${isHere(path, i.path) ? 'bg-white font-bold text-indigo-600 shadow-sm before:absolute before:inset-y-1.5 before:left-0 before:w-1 before:rounded-r-full before:bg-indigo-600' : 'text-[#484848] hover:bg-white hover:text-indigo-600'}`}>
+                          {i.label}
+                        </Link>
+                      ))}
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
@@ -330,7 +423,9 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
         {/* data-erp: the page area of the signed-in ERP; index.css widens its screens (the public website keeps its own layout). */}
         <main data-erp className="min-w-0 flex-1 px-3 pb-10 pt-2 sm:px-4 md:px-6">
           <Breadcrumbs crumbs={crumbsFor(path, menu, crumbName)} icon={<Icon name="Overview" className="size-4" />} />
+          {onRefreshReport && <ReportChanged onRefresh={onRefreshReport} reportKey={reportKey} />}
           <CrumbName.Provider value={setCrumbName}>{children}</CrumbName.Provider>
+          <RowLinks />
         </main>
       </div>
     </div>

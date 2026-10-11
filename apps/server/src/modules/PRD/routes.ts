@@ -7,16 +7,26 @@ import { stamp } from '../../platform/clock.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { clockGuard } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
-import { currentStage, jobOrderRef, lineState } from '../JO/public.ts';
+import { currentStage, jobOrderRef, lineState, rosterOf } from '../JO/public.ts';
 import { garmentTypes } from '../RATE/public.ts';
 import { activeEmployees } from './emp.ts';
-import { COMPLEXITIES, availableFor, board, lineRoute, lineSetup, listSteps, listTemplates, setupLine, stepAction, stepById, type StepAction } from './production.ts';
+import { carryWarnings } from './carry.ts';
+import { COMPLEXITIES, SET_PARTS, availableFor, board, forwardedWearers, lineRoute, lineSetup, listSteps, listTemplates, reworkOpen, sendBackForRework, setupLine, stepAction, stepById, wearersDone, type StepAction } from './production.ts';
 
 const setupBody = z
-  .object({ templateId: z.number().int().positive().optional(), stepIds: z.array(z.number().int().positive()).min(1).max(20), garmentType: z.string().trim().min(1).max(60), complexity: z.enum(COMPLEXITIES) })
+  .object({ templateId: z.number().int().positive().optional(), stepIds: z.array(z.number().int().positive()).min(1).max(20), garmentType: z.string().trim().min(1).max(60).optional(), complexity: z.enum(COMPLEXITIES) })
   .strict();
 const stepBody = z.object({ name: z.string().trim().min(1).max(60).optional(), payBasis: z.enum(['piece', 'daily', 'piece_or_daily']).optional(), isActive: z.boolean().optional() }).strict();
 const ACTIONS: Record<string, StepAction> = { complete: 'complete', 'not-needed': 'not_needed', reopen: 'reopen' };
+const reworkBody = z.object({
+  pieces: z.number().int().min(1).max(10_000).optional(),
+  wearers: z.array(z.number().int().min(1).max(1000)).min(1).max(1000).optional(),
+  part: z.enum(SET_PARTS).optional(),
+  reason: z.string().max(500),
+  foundAtStepId: z.number().int().positive().optional(),
+}).strict();
+const carryWearer = z.looseObject({ personId: z.string().max(60).optional(), name: z.string().max(120).optional(), size: z.string().max(60).optional(), jerseyName: z.string().max(120).optional(), jerseyNumber: z.string().max(20).optional(), qty: z.number().int() });
+const carryBody = z.object({ lines: z.array(z.looseObject({ kind: z.string().max(30), description: z.string().max(500), qty: z.number().int(), roster: z.array(carryWearer).max(1000).optional() })).max(200) }).strict();
 type LineParams = { jo: string; line: string };
 const lineNoOf = (p: LineParams) => {
   const n = Number(p.line);
@@ -36,7 +46,7 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get('/api/prd/tv', { config: { permission: 'prd.tv' } }, async () => ({ cards: board(db), steps: listSteps(db) }));
 
-  /** One job order's production: each line's setup and route, with the pieces each step may still take (E7 rules 1–2). */
+  /** One job order's production: each line's setup and route, with the pieces each step may still take (E7 rules 1–2), its wearers and who is done. */
   app.get<{ Params: { jo: string } }>('/api/prd/jobs/:jo', { config: { permission: 'prd.view' } }, async (req) => {
     const jo = jobOrderRef(db, req.params.jo);
     if (!jo) throw notFound('The job order');
@@ -44,7 +54,22 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
       const route = lineRoute(db, jo.id, l.lineNo);
       return {
         lineNo: l.lineNo, description: l.description, qty: l.qty, releasedQty: l.releasedQty, setup: lineSetup(db, jo.id, l.lineNo) ?? null,
-        route: route?.map((s) => ({ ...s, availablePieces: availableFor(route, s.id, l.qty) })) ?? null,
+        // The line's wearers, and who is done on each step (ticked on Record pieces; the owner's request, Oct 2026).
+        roster: rosterOf(db, jo.id, l.lineNo),
+        // A set's parts: each step's pieces and wearers done per part (the owner's request, Oct 2026).
+        isSet: lineSetup(db, jo.id, l.lineNo)?.isSet ?? false,
+        // forwardedWearers: the wearers that came out of the step before (null: all of them); rework: sent back, not redone yet.
+        route: route?.map((s) => ({
+          ...s, availablePieces: availableFor(route, s.id, l.qty), doneWearers: [...wearersDone(db, jo.id, l.lineNo, s.id).keys()],
+          forwardedWearers: forwardedWearers(db, jo.id, l.lineNo, route, s.id), rework: reworkOpen(db, jo.id, l.lineNo, s.id, 'whole', route),
+          ...(s.parts ? {
+            partForwarded: { upper: forwardedWearers(db, jo.id, l.lineNo, route, s.id, 'upper'), lower: forwardedWearers(db, jo.id, l.lineNo, route, s.id, 'lower') },
+            partRework: { upper: reworkOpen(db, jo.id, l.lineNo, s.id, 'upper', route), lower: reworkOpen(db, jo.id, l.lineNo, s.id, 'lower', route) },
+            partPieces: { upper: s.parts.upper.pieces, lower: s.parts.lower.pieces },
+            partAvailable: { upper: availableFor(route, s.id, l.qty, 'upper'), lower: availableFor(route, s.id, l.qty, 'lower') },
+            partWearersDone: { upper: [...wearersDone(db, jo.id, l.lineNo, s.id, 'upper').keys()], lower: [...wearersDone(db, jo.id, l.lineNo, s.id, 'lower').keys()] },
+          } : {}),
+        })) ?? null,
       };
     });
     return { jobOrder: { id: jo.id, number: jo.number, status: jo.status, customerName: jo.customerName, dueDate: jo.dueDate, priority: jo.priority, stage: currentStage(db, jo.id) }, lines };
@@ -61,6 +86,26 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (!action) throw notFound('That action');
     const body = z.object({ reason: z.string().max(500).optional() }).strict().parse(req.body ?? {});
     return write(() => stepAction(db, req.params.jo, lineNoOf(req.params), Number(req.params.step), action, body.reason, who(req)));
+  });
+
+  /** Send pieces back for rework (the owner's rule, Oct 2026): from the first step through every step again, labelled rework. */
+  app.post<{ Params: LineParams }>('/api/prd/jobs/:jo/lines/:line/rework', { config: { permission: 'prd.progress' } }, async (req) => {
+    const body = reworkBody.parse(req.body);
+    return write(() => sendBackForRework(db, req.params.jo, lineNoOf(req.params), body, who(req)));
+  });
+
+  /**
+   * What an edit of a job order does to its production (shown on the job order form before Record): items or wearers with
+   * work left out (kept as extras), items below the pieces made, sizes or jerseys changed after work. `lines`: the form's input.
+   */
+  app.post<{ Params: { jo: string } }>('/api/prd/jobs/:jo/carry-check', { config: { permission: 'jo.post' } }, async (req) => {
+    const body = carryBody.parse(req.body);
+    if (!jobOrderRef(db, req.params.jo)) throw notFound('The job order');
+    const lines = body.lines.map((l, i) => ({
+      lineNo: i + 1, kind: l.kind, description: l.description, qty: l.roster?.length ? l.roster.reduce((n, r) => n + r.qty, 0) : l.qty,
+      roster: (l.roster ?? []).map((r, j) => ({ rowNo: j + 1, personId: r.personId ?? null, name: r.name ?? '', size: r.size ?? null, jerseyName: r.jerseyName ?? null, jerseyNumber: r.jerseyNumber ?? null, qty: r.qty })),
+    }));
+    return { warnings: carryWarnings(db, req.params.jo, lines) };
   });
 
   /** Workers who can be given pieces (active employees). */

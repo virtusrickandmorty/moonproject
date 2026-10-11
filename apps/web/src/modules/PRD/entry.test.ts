@@ -8,20 +8,26 @@ import { manilaDate } from '@moonproject/shared';
 
 afterEach(() => vi.restoreAllMocks());
 const mode = { kind: 'new' } as const;
-const job = { jobOrder: { number: 'JO-1' }, lines: [{ lineNo: 1, description: 'Sample shirt', qty: 12, route: [{ id: 1, name: 'Sew', seq: 1, status: 'pending', pieces: 0, availablePieces: 12 }] }] } as PrdJob;
 const preview = { totalCents: 12000, summary: 'Sample pieces', issues: [], doc: { rows: [{ rowNo: 1, rateCents: 4000, amountCents: 12000 }] } } as unknown as Preview;
 
-it('production preview and Record preserve normal pieces, typed rework rate, trimmed reasons and over-cap input', async () => {
+// Sewing: 5 pieces done, 12 came from the step before, so 7 are ready; rework is at most the 5 done.
+const job = { jobOrder: { number: 'JO-1' }, lines: [{ lineNo: 1, description: 'Sample shirt', qty: 12, route: [{ id: 1, name: 'Sew', seq: 1, status: 'in_progress', pieces: 5, availablePieces: 12,
+  rework: { pieces: 5, wearers: [], reasons: [{ reason: 'Loose stitches on the hem', foundAt: 'Packing', at: '2026-10-10T09:00:00.000+08:00', pieces: 5 }] } }] }] } as unknown as PrdJob;
+/** The same job with nothing sent back for rework. */
+const noRework = { ...job, lines: [{ ...job.lines[0]!, route: [{ ...job.lines[0]!.route![0]!, rework: undefined }] }] } as PrdJob;
+
+it('production preview and Record send normal pieces and rework with no typed rate (the price list rate applies)', async () => {
   const pre = vi.spyOn(api, 'preview').mockResolvedValue(preview);
   const post = vi.spyOn(api, 'post').mockResolvedValue({ id: 'prd1' } as never);
   const f = form(() => EntryForm({ type: type('prd.entry'), mode }), [[], [{ id: 'e1', name: 'Sample Tailor' }], 'jo1', job, 1,
-    [{ ...emptyRow('1'), employeeId: 'e1', pieces: '2' }, { ...emptyRow('1'), employeeId: 'e1', pieces: '3', rework: true, rate: '40', rateReason: ' Repair seams ' }], ' Extra pieces ready ']);
-  const details = f.render().filter((n) => n.props.title === 'Change rate or record rework');
-  expect(details.map((n) => n.props.active)).toEqual([false, true]);
+    [{ ...emptyRow('1'), employeeId: 'e1', pieces: '2' }, { ...emptyRow('1'), employeeId: 'e1', pieces: '3', rework: true }]]);
+  expect(f.render().some((n) => n.props.title === 'Change rate or record rework')).toBe(false);
+  expect(f.render().some((n) => String(n.props['aria-label']).endsWith(' rate'))).toBe(false); // no rate box: payroll changes rates
+  expect(f.find('aria-label', 'Row 2 rework').props.checked).toBe(true);
   change(f.find('aria-label', 'Row 1 pieces'), '4');
   f.find('children', 'Record').props.onClick();
   await Promise.resolve();
-  const expected = { jobOrderId: 'jo1', stepId: 1, workDate: manilaDate(new Date()), rows: [{ lineNo: 1, employeeId: 'e1', pieces: 4 }, { lineNo: 1, employeeId: 'e1', pieces: 3, rework: true, rateCents: 4000, rateReason: 'Repair seams' }], overCapReason: 'Extra pieces ready' };
+  const expected = { jobOrderId: 'jo1', stepId: 1, workDate: manilaDate(new Date()), rows: [{ lineNo: 1, employeeId: 'e1', pieces: 4 }, { lineNo: 1, employeeId: 'e1', pieces: 3, rework: true }] };
   expect(pre).toHaveBeenLastCalledWith('prd.entry', expected);
   await f.render().find((n) => n.props.onRecord)!.props.onRecord('key');
   expect(post).toHaveBeenLastCalledWith('prd.entry', expected, 12000, 'key');
@@ -29,25 +35,40 @@ it('production preview and Record preserve normal pieces, typed rework rate, tri
   expect(f.render().some((n) => n.type === 'table')).toBe(false);
 });
 
-it('production retains required rework rate and reason checks', () => {
-  const pre = vi.spyOn(api, 'preview');
+it('production does not go on with more pieces than are ready on the step, or more rework than is done', () => {
+  const pre = vi.spyOn(api, 'preview').mockResolvedValue(preview);
   const f = form(() => EntryForm({ type: type('prd.entry'), mode }), [[], [], 'jo1', job, 1,
-    [{ ...emptyRow('1'), employeeId: 'e1', pieces: '2', rework: true }]]);
+    [{ ...emptyRow('1'), employeeId: 'e1', pieces: '5' }, { ...emptyRow('1'), employeeId: 'e2', pieces: '3' }]]);
   f.find('children', 'Record').props.onClick();
-  expect(pre).not.toHaveBeenCalled();
-  change(f.find('aria-label', 'Row 1 rate'), '40');
+  expect(pre).not.toHaveBeenCalled(); // 8 entered, 7 ready
+  expect(renderToStaticMarkup(f.find('aria-label', 'Worker entry 1'))).toContain('7 ready');
+  change(f.find('aria-label', 'Row 2 pieces'), '2');
   f.find('children', 'Record').props.onClick();
-  expect(pre).not.toHaveBeenCalled();
+  expect(pre).toHaveBeenCalledTimes(1);
+
+  const rework = form(() => EntryForm({ type: type('prd.entry'), mode }), [[], [], 'jo1', job, 1, [{ ...emptyRow('1'), employeeId: 'e1', pieces: '6', rework: true }]]);
+  rework.find('children', 'Record').props.onClick();
+  expect(pre).toHaveBeenCalledTimes(1); // 6 rework, 5 sent back
 });
 
-it('production keeps calculated rates and pay on the correct worker when a blank row is skipped', () => {
+it('rework offers only what was sent back, with the reason (the owner request, Oct 2026)', () => {
+  vi.spyOn(api, 'preview').mockResolvedValue(preview);
+  const sent = form(() => EntryForm({ type: type('prd.entry'), mode }), [[], [], 'jo1', job, 1, [{ ...emptyRow('1'), employeeId: 'e1', pieces: '2', rework: true }]]);
+  const row = renderToStaticMarkup(sent.find('aria-label', 'Worker entry 1'));
+  expect(row).toContain('Loose stitches on the hem');
+  expect(row).toContain('found at Packing');
+  expect(row).toContain('5 sent back');
+  const none = form(() => EntryForm({ type: type('prd.entry'), mode }), [[], [], 'jo1', noRework, 1, [{ ...emptyRow('1'), employeeId: 'e1', pieces: '2' }]]);
+  expect(none.find('aria-label', 'Row 1 rework').props.disabled).toBe(true);
+  expect(renderToStaticMarkup(none.find('aria-label', 'Worker entry 1'))).toContain('nothing sent back');
+});
+
+it('production shows no rate or piece pay anywhere on the form or the Record confirmation (payroll shows them)', () => {
   const f = form(() => EntryForm({ type: type('prd.entry'), mode }), [[], [], 'jo1', job, 1,
-    [emptyRow('1'), { ...emptyRow('1'), employeeId: 'e1', pieces: '3', rate: '40', rateReason: ' Repair seams ' }]], preview);
-  expect(renderToStaticMarkup(f.find('aria-label', 'Worker entry 1'))).not.toContain('₱40.00');
-  const worker = renderToStaticMarkup(f.find('aria-label', 'Worker entry 2'));
-  expect(worker).toContain('₱40.00');
-  expect(worker).toContain('₱120.00');
-  expect(worker).toContain('A typed rate replaces the usual rate for these pieces only.');
+    [emptyRow('1'), { ...emptyRow('1'), employeeId: 'e1', pieces: '3' }]], preview);
+  const page = f.render().map((n) => renderToStaticMarkup(n)).join('');
+  expect(page).not.toContain('₱');
+  expect(page).not.toMatch(/rate per piece|piece pay/i);
 });
 
 it('production sends the typed work date and asks why a row the server takes for a repeated sheet is a different sheet', async () => {

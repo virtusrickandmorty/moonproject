@@ -8,7 +8,43 @@ const PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+
 /** The "So far" / money figures: the amount shown beside a label. */
 const figure = (page: Page, label: string) => page.locator('dt', { hasText: new RegExp(`^${label}$`) }).first().locator('xpath=following-sibling::dd[1]');
 
+/** Whatever opened over a list (a job order, a payment taken on it) is closed, as staff do before using the menu. */
+async function closeDialogs(page: Page) {
+  const close = page.getByRole('button', { name: 'Close dialog' });
+  for (let i = 0; i < 3; i++) {
+    const open = await close.count();
+    if (open === 0) return;
+    await close.last().click(); // the top one; it shrinks away before it is gone
+    await expect.poll(() => close.count()).toBeLessThan(open);
+  }
+}
+
+/**
+ * Production finishes the job order, as on the board: each item gets its production step, here one that is not needed
+ * (a made-up order with no workers), so the order moves to Ready for release by itself. Nothing is released before it
+ * is ready, the owner included (the owner's rule, Oct 11, 2026).
+ */
+async function markReady(page: Page, number: string) {
+  const outcome = await page.evaluate(async (no) => {
+    const me = await (await fetch('/api/auth/me')).json();
+    const post = (url: string, body: object) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken }, body: JSON.stringify(body) });
+    const jo = ((await (await fetch('/api/docs/jo.job_order?limit=50')).json()) as { id: string; number: string }[]).find((d) => d.number === no)!;
+    const step = ((await (await fetch('/api/prd/catalogue')).json()) as { steps: { id: number }[] }).steps[0]!.id;
+    const lines = ((await (await fetch(`/api/jo/orders/${jo.id}/status`)).json()) as { lines: { lineNo: number }[] }).lines;
+    for (const l of lines) {
+      for (const [url, body] of [[`/api/prd/jobs/${jo.id}/lines/${l.lineNo}/setup`, { stepIds: [step], complexity: 'standard' }], [`/api/prd/jobs/${jo.id}/lines/${l.lineNo}/steps/${step}/not-needed`, {}]] as const) {
+        const r = await post(url, body);
+        if (!r.ok) return `${url}: ${await r.text()}`;
+      }
+    }
+    const status = await (await fetch(`/api/jo/orders/${jo.id}/status`)).json();
+    return status.lines.every((l: { ready: boolean }) => l.ready) ? 'ready' : JSON.stringify(status.lines);
+  }, number);
+  expect(outcome).toBe('ready');
+}
+
 async function openJobOrder(page: Page, jo = 'JO-000001') {
+  await closeDialogs(page);
   await page.getByRole('link', { name: 'Job Orders', exact: true }).click();
   await page.getByRole('link', { name: jo, exact: true }).click();
   await expect(page.getByRole('heading', { name: `Job Order ${jo}` })).toBeVisible();
@@ -28,8 +64,9 @@ async function fillCollection(page: Page, amount: string, cr: string, jo = 'JO-0
   await page.getByRole('radio', { name: /GCash/ }).click();
   await page.getByLabel('CR number (from the booklet)').fill(cr);
   await page.getByRole('button', { name: 'Record', exact: true }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Record', exact: true }).click();
+  await page.getByRole('dialog', { name: /^Record this / }).getByRole('button', { name: 'Record', exact: true }).click();
   await expect(page.getByText(/^Recorded as COL-/)).toBeVisible();
+  await closeDialogs(page); // taken from the job order list, the payment opened over it
 }
 
 test('sales: a customer, a job order with a deposit, a collection, a release with an invoice record; balance due zero and nothing open in Unpaid customer balances (AR aging)', async ({ page }) => {
@@ -38,13 +75,17 @@ test('sales: a customer, a job order with a deposit, a collection, a release wit
   // The job order, with the customer added right on the form.
   await page.getByRole('link', { name: 'Job Orders', exact: true }).click();
   await page.getByRole('button', { name: '+ New Job Order' }).click();
-  await page.getByRole('button', { name: '+ New customer' }).click();
-  await page.getByLabel("New customer's name").fill(CUSTOMER);
-  await page.getByRole('button', { name: 'Add customer' }).click();
+  // The + people button beside the customer box opens the Customers screen's own form over the job order.
+  await page.getByRole('button', { name: 'New customer', exact: true }).click();
+  const customerForm = page.getByRole('dialog', { name: 'New customer' });
+  await customerForm.getByLabel(/^Display name/).fill(CUSTOMER);
+  await customerForm.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(customerForm).toBeHidden();
   await expect(page.getByText(`Added ${CUSTOMER} as a new customer.`)).toBeVisible();
-  await page.getByLabel('Line 1 description').fill('Rowing jersey');
-  await page.getByLabel('Line 1 pieces').fill('4');
-  await page.getByLabel('Line 1 price each').fill('1,500.00');
+  await page.getByLabel('Item description').fill('Rowing jersey');
+  await page.getByLabel('Item pieces').fill('4');
+  await page.getByLabel('Item price each').fill('1,500.00');
+  await page.getByRole('button', { name: '+ Add to order' }).click();
   await page.getByLabel('Payment terms').selectOption({ label: '50% downpayment' });
   await expect(figure(page, 'Downpayment asked')).toHaveText('₱3,000.00');
   await expect(figure(page, 'Balance due')).toHaveText('₱6,000.00');
@@ -74,14 +115,15 @@ test('sales: a customer, a job order with a deposit, a collection, a release wit
   await openJobOrder(page);
   await expect(figure(page, 'Balance due')).toHaveText('₱0.00');
 
-  // The release: everything left is ticked; the owner releases it before it is marked ready; the invoice is to follow.
-  await page.getByRole('link', { name: 'Release', exact: true }).click();
+  // The release: production has marked it ready; everything left is ticked; the invoice is to follow.
+  await markReady(page, 'JO-000001');
+  await openJobOrder(page);
+  await page.getByRole('link', { name: 'Release slip', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'New release slip' })).toBeVisible();
   await expect(page.getByText(`JO-000001 · ${CUSTOMER}`)).toBeVisible();
   await expect(page.getByLabel('Pieces of line 1')).toHaveValue('4');
   await page.getByLabel('Claimed by').fill('Coach Placeholder');
   await page.getByRole('radio', { name: 'School ID' }).click();
-  await page.getByLabel("Owner's reason to release it now").fill('Needed for the regatta this weekend');
   await page.getByLabel('Invoice to follow (the booklet is not at hand)').check();
   await expect(figure(page, 'Released now')).toHaveText('₱6,000.00');
   await page.getByRole('button', { name: 'Record', exact: true }).click();
@@ -106,6 +148,7 @@ test('sales: a customer, a job order with a deposit, a collection, a release wit
   await expect(page.getByRole('link', { name: 'Record invoice' })).toHaveCount(0);
 
   // Unpaid customer balances (AR aging) shows nothing open for the customer.
+  await closeDialogs(page);
   await page.getByRole('link', { name: 'Unpaid customer balances (AR aging)' }).click();
   await expect(page.getByRole('cell', { name: 'Total AR' })).toBeVisible();
   await expect(page.getByRole('cell', { name: CUSTOMER })).toHaveCount(0);
@@ -138,9 +181,10 @@ test('sales, downpayment VAT mode C: the downpayment invoice, its collection, th
   await page.getByRole('button', { name: '+ New Job Order' }).click();
   await page.getByLabel('Customer', { exact: true }).fill('Harbor');
   await page.getByRole('button', { name: /^Harbor Rowing Club/ }).click();
-  await page.getByLabel('Line 1 description').fill('Rowing jersey');
-  await page.getByLabel('Line 1 pieces').fill('4');
-  await page.getByLabel('Line 1 price each').fill('1,500.00');
+  await page.getByLabel('Item description').fill('Rowing jersey');
+  await page.getByLabel('Item pieces').fill('4');
+  await page.getByLabel('Item price each').fill('1,500.00');
+  await page.getByRole('button', { name: '+ Add to order' }).click();
   await page.getByLabel('Payment terms').selectOption({ label: '50% downpayment' });
   await expect(figure(page, 'Downpayment asked')).toHaveText('₱3,000.00');
   await page.getByRole('button', { name: 'Record', exact: true }).click();
@@ -175,11 +219,12 @@ test('sales, downpayment VAT mode C: the downpayment invoice, its collection, th
   await expect(figure(page, 'Deposits held')).toHaveText('₱3,000.00');
 
   // The release with the balance invoice: the booklet shows the sale less the downpayment invoiced.
-  await page.getByRole('link', { name: 'Release', exact: true }).click();
+  await markReady(page, 'JO-000002');
+  await openJobOrder(page, 'JO-000002');
+  await page.getByRole('link', { name: 'Release slip', exact: true }).click();
   await expect(page.getByLabel('Pieces of line 1')).toHaveValue('4');
   await page.getByLabel('Claimed by').fill('Coach Placeholder');
   await page.getByRole('radio', { name: 'School ID' }).click();
-  await page.getByLabel("Owner's reason to release it now").fill('Needed for the regatta this weekend');
   await page.getByLabel('Invoice number (from the booklet)').fill('702');
   await expect(page.getByText('Less downpayments invoiced')).toBeVisible();
   await expect(figure(page, 'Less downpayments invoiced')).toHaveText('₱3,000.00');
@@ -226,14 +271,18 @@ test('sales: a job order made from a quotation is filled from it and can be chan
   await expect(page.getByRole('heading', { name: 'New job order' })).toBeVisible();
   await expect(page.getByText(/^Filled from quotation QUO-000001/)).toBeVisible();
   await expect(page.getByText(CUSTOMER, { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Line 1 description')).toHaveValue('Rowing jersey');
-  await expect(page.getByLabel('Line 1 pieces')).toHaveValue('3');
-  await expect(page.getByLabel('Line 1 price each')).toHaveValue('1,500.00');
+  // The quoted item is in the breakdown; Edit puts it in the item form to change.
+  await expect(page.getByRole('list', { name: 'Items in this job order' })).toContainText('Rowing jersey');
+  await page.getByRole('button', { name: 'Edit item 1' }).click();
+  await expect(page.getByLabel('Item description')).toHaveValue('Rowing jersey');
+  await expect(page.getByLabel('Item pieces')).toHaveValue('3');
+  await expect(page.getByLabel('Item price each')).toHaveValue('1,500.00');
   await expect(page.getByLabel('Notes')).toHaveValue('From quotation QUO-000001. Sample notes');
 
   // Staff change what they need: the pieces and the price, and pick the terms.
-  await page.getByLabel('Line 1 pieces').fill('4');
-  await page.getByLabel('Line 1 price each').fill('1,400.00');
+  await page.getByLabel('Item pieces').fill('4');
+  await page.getByLabel('Item price each').fill('1,400.00');
+  await page.getByRole('button', { name: 'Update item' }).click();
   await page.getByLabel('Payment terms').selectOption({ label: '50% downpayment' });
   await expect(figure(page, 'Total')).toHaveText('₱5,600.00');
   await page.getByRole('button', { name: 'Record', exact: true }).click();
@@ -251,9 +300,10 @@ test('sales: a job order paid by check, then the check deposited from Checks on 
   await page.getByRole('button', { name: '+ New Job Order' }).click();
   await page.getByLabel('Customer', { exact: true }).fill('Harbor');
   await page.getByRole('button', { name: /^Harbor Rowing Club/ }).click();
-  await page.getByLabel('Line 1 description').fill('Rowing cap');
-  await page.getByLabel('Line 1 pieces').fill('5');
-  await page.getByLabel('Line 1 price each').fill('500.00');
+  await page.getByLabel('Item description').fill('Rowing cap');
+  await page.getByLabel('Item pieces').fill('5');
+  await page.getByLabel('Item price each').fill('500.00');
+  await page.getByRole('button', { name: '+ Add to order' }).click();
   await page.getByLabel('Payment terms').selectOption({ label: '50% downpayment' });
   await page.getByRole('button', { name: 'Record', exact: true }).click();
   await page.getByRole('dialog', { name: 'Record this Job Order?' }).getByRole('button', { name: 'Record', exact: true }).click();
@@ -270,13 +320,13 @@ test('sales: a job order paid by check, then the check deposited from Checks on 
   await page.getByLabel('Date on the check').fill(today);
   await page.getByLabel('CR number (from the booklet)').fill('405');
   await page.getByRole('button', { name: 'Record', exact: true }).click();
-  await page.getByRole('dialog').getByRole('button', { name: 'Record', exact: true }).click();
+  await page.getByRole('dialog', { name: /^Record this / }).getByRole('button', { name: 'Record', exact: true }).click();
   await expect(page.getByText(/^Recorded as COL-/)).toBeVisible();
   await openJobOrder(page, 'JO-000004');
   await expect(figure(page, 'Balance due')).toHaveText('₱0.00');
 
   // Checks on hand lists it, and the books agree; tick it and deposit it to the bank: one fund transfer.
-  await page.getByRole('button', { name: 'Close dialog' }).click(); // the job order opened over its list
+  await closeDialogs(page); // the job order opened over its list
   await page.getByRole('link', { name: 'Checks on hand', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Checks on hand' })).toBeVisible();
   const row = page.getByRole('row').filter({ hasText: '000777' });

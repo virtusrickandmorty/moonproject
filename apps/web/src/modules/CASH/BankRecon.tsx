@@ -7,7 +7,7 @@
 import { useEffect, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, type CashAccount, type DocTypeInfo, type Me, type ReconReport, type ReconRow } from '../../api.ts';
-import { Button, Field, Notice, Panel, ReasonDialog, inputClass, peso } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, ReasonDialog, inputClass, peso } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
 import { Errors, Figures } from '../COL/parts.tsx';
 import { adjustmentLink, byBank, figuresOf, finishBlockers, hasChanges, latestOf, monthEnd, ownMatch, readBalance, savedTicks, startCheck } from './recon.ts';
@@ -99,7 +99,7 @@ export function BankReconWork({ me, docTypes, params }: Props) {
     api.health().then((h) => setToday(h.serverTime.slice(0, 10)), (e: Error) => setError(e.message));
   }, [id]);
   if (!me.permissions.includes('cash.recon.view')) return <Notice>You cannot view bank reconciliations.</Notice>;
-  if (!report) return error ? <Notice>{error}</Notice> : <p className="text-slate-500">Loading…</p>;
+  if (!report) return error ? <Notice>{error}</Notice> : <Loading />;
 
   const open = report.status === 'open';
   const canManage = open && me.permissions.includes('cash.recon.manage');

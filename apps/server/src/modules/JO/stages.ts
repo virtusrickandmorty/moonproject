@@ -116,6 +116,16 @@ export function carryStageOver(db: Db, oldId: string, newId: string): void {
   record(db, newId, 'open', stage, `Carried over from ${old.number}`, { userId: old.cancelled_by, at: old.cancelled_at });
 }
 
+/**
+ * What else an edit carries over, inside the edit's transaction after the stage: production registers its carry-over here
+ * (PRD index), so the job order does not import production (whose code imports the job order's).
+ */
+const editListeners: ((db: Db, oldId: string, newId: string) => void)[] = [];
+export function onJobOrderEdited(fn: (db: Db, oldId: string, newId: string) => void): void {
+  if (!editListeners.includes(fn)) editListeners.push(fn);
+}
+export const jobOrderEdited = (db: Db, oldId: string, newId: string) => editListeners.forEach((fn) => fn(db, oldId, newId));
+
 export function stageHistory(db: Db, documentId: string) {
   return (
     db
@@ -126,3 +136,17 @@ export function stageHistory(db: Db, documentId: string) {
       .all(documentId) as { seq: number; fromStage: Stage; toStage: Stage; reason: string | null; at: string; byName: string; abandoned: number }[]
   ).map(({ abandoned, ...e }) => ({ ...e, ...(abandoned ? { abandoned: true } : {}) }));
 }
+
+/**
+ * Job orders made for a client's stock (TPL, the owner's request, Oct 2026) are never released to the customer: their
+ * finished pieces go into the client's stock. TPL registers the check (TPL index), so the job order does not import TPL.
+ * Returns why, or null.
+ */
+const forStockChecks: ((db: Db, jobOrderId: string) => string | null)[] = [];
+export function onForStockCheck(fn: (db: Db, jobOrderId: string) => string | null): void {
+  if (!forStockChecks.includes(fn)) forStockChecks.push(fn);
+}
+export const forStockReason = (db: Db, jobOrderId: string): string | null => {
+  for (const fn of forStockChecks) { const why = fn(db, jobOrderId); if (why) return why; }
+  return null;
+};

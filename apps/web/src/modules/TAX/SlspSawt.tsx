@@ -6,7 +6,7 @@
  */
 import { useState, type ReactNode } from 'react';
 import { api, taxQuarterPath, type Me, type SaleClass, type Sawt as SawtData, type SlspSales as SalesData, type TaxTie } from '../../api.ts';
-import { Button, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
+import { Loading, Button, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { WorksheetChecks } from './QuarterReports.tsx';
@@ -80,7 +80,7 @@ function QuarterScreen<T extends { year: number; quarter: 1 | 2 | 3 | 4 }>({ me,
       <p className="text-sm text-slate-600">{about}</p>
       <QuarterForm q={q} />
       {q.error && <Notice>{q.error}</Notice>}
-      {!d && !q.error && q.pick && <p className="text-slate-500">Loading…</p>}
+      {!d && !q.error && q.pick && <Loading />}
       {d && <Panel title={quarterTitle(d.year, d.quarter, q.today)}>{children(d, () => q.pick && q.setPick({ ...q.pick }))}</Panel>}
     </div>
   );

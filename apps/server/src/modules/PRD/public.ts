@@ -4,7 +4,62 @@ import type { Db } from '../../platform/db/driver.ts';
 
 export { COMPLEXITIES, listSteps, stepById, type Complexity, type Step } from './production.ts';
 export { board } from './production.ts';
-import { lineRoute } from './production.ts';
+import { coverage, lineDone, lineFinished, lineRoute, reworkFlow, routeDone, type Part } from './production.ts';
+import { rosterOf } from '../JO/public.ts';
+import { lineState } from '../JO/public.ts';
+
+/**
+ * Each line's production, for releasing what is ready (JO): 'done' when every step of its route is closed and no rework
+ * is open on it, 'in_production'
+ * while one is not, 'none' when the line has no route (nothing to make, or not set up yet).
+ */
+export function lineProduction(db: Db, jobOrderId: string): Map<number, 'done' | 'in_production' | 'none'> {
+  return new Map(lineState(db, jobOrderId).map((l) => {
+    const route = lineRoute(db, jobOrderId, l.lineNo);
+    return [l.lineNo, route === null ? 'none' : lineDone(db, jobOrderId, l.lineNo, route) ? 'done' : 'in_production'] as const;
+  }));
+}
+
+/**
+ * The pieces of each line that went through every step of its route (the owner's request, Oct 2026: they can go out
+ * first): all of the line once every step is done; else the pieces done on its last step that is needed (each step takes
+ * only what came out of the one before, so none passed it without the steps before); less rework sent back and not
+ * redone yet. Null: the line has no route.
+ */
+export function finishedPieces(db: Db, jobOrderId: string): Map<number, number | null> {
+  return new Map(lineState(db, jobOrderId).map((l) => {
+    return [l.lineNo, lineFinished(db, jobOrderId, l.lineNo, l.qty, lineRoute(db, jobOrderId, l.lineNo))] as const;
+  }));
+}
+
+/**
+ * The wearers of a line that went through every step (the release form marks them ready): all once every step is done,
+ * else those covered on the last needed step (both parts of a set); less any in rework. Null: not known by wearer (no
+ * route, no wearer list, or pieces recorded without ticking wearers).
+ */
+export function finishedWearers(db: Db, jobOrderId: string, lineNo: number): Set<number> | null {
+  const line = lineState(db, jobOrderId).find((l) => l.lineNo === lineNo);
+  const route = lineRoute(db, jobOrderId, lineNo);
+  const roster = rosterOf(db, jobOrderId, lineNo);
+  if (!line || !route || roster.length === 0) return null;
+  const last = [...route].reverse().find((s) => s.status !== 'not_needed');
+  const parts: Part[] = last?.parts ? ['upper', 'lower'] : ['whole'];
+  const open = new Set(parts.flatMap((p) => [...reworkFlow(db, jobOrderId, lineNo, route, p).values()].flatMap((f) => f.wearers)));
+  if (routeDone(route) || !last) return new Set(roster.map((w) => w.rowNo).filter((w) => !open.has(w)));
+  const covered: Set<number>[] = [];
+  for (const p of parts) {
+    const c = coverage(db, jobOrderId, lineNo, route, last, p, line.qty);
+    if (c.wearers === null || c.untracked > 0) return null;
+    covered.push(c.wearers);
+  }
+  return new Set(roster.map((w) => w.rowNo).filter((w) => covered.every((c) => c.has(w)) && !open.has(w)));
+}
+
+/** The made items of a job order with no production steps chosen yet (its job ticket waits for them; the owner's rule, Oct 2026). */
+export function linesAwaitingSteps(db: Db, jobOrderId: string): { lineNo: number; description: string }[] {
+  return db.prepare(`SELECT l.line_no AS lineNo, l.description FROM jo_lines l WHERE l.document_id = ? AND l.kind <> 'ready_made'
+    AND NOT EXISTS (SELECT 1 FROM prd_line_setups s WHERE s.job_order_id = l.document_id AND s.line_no = l.line_no) ORDER BY l.line_no`).all(jobOrderId) as { lineNo: number; description: string }[];
+}
 
 /** Current route names and status for a production job ticket. */
 export function jobTicketRoute(db: Db, jobOrderId: string, lineNo: number) {
@@ -51,6 +106,13 @@ export function repeatedAssignments(db: Db, assignmentIds: string[]): { id: stri
  * Piece earnings per day of one worker, paid or not (work and rework of recorded entries; corrections are left out,
  * since they fix an earlier day). PAY averages them for a piece worker's regular-holiday pay (F1).
  */
+/** Pieces recorded each work day (work and rework, net of corrections) and how many workers recorded them: the home's activity card. */
+export function piecesByDay(db: Db, from: string, to: string): { date: string; pieces: number; workers: number }[] {
+  return db.prepare(`SELECT a.work_date AS date, SUM(a.pieces) AS pieces, COUNT(DISTINCT a.employee_id) AS workers FROM prd_assignments a
+    JOIN documents d ON d.id = a.document_id WHERE d.status = 'posted' AND a.work_date BETWEEN ? AND ? GROUP BY a.work_date ORDER BY a.work_date`)
+    .all(from, to) as { date: string; pieces: number; workers: number }[];
+}
+
 export function pieceEarningsByDay(db: Db, employeeId: string, from: string, to: string): { date: string; amountCents: number }[] {
   return db
     .prepare(
@@ -83,4 +145,11 @@ export function productionReportRows(db: Db, from: string, to: string) {
     FROM prd_assignments a JOIN documents d ON d.id=a.document_id JOIN documents j ON j.id=a.job_order_id
     JOIN prd_steps s ON s.id=a.step_id WHERE d.status='posted' AND a.work_date BETWEEN ? AND ?
     ORDER BY a.work_date,d.number,a.row_no`).all(from,to) as Array<Record<string, string | number>>;
+}
+
+/** How many items of recorded job orders are made as a garment type (their latest setup): piece rates they still need (RATE). */
+export function jobItemsMadeAs(db: Db, garmentType: string): number {
+  return db.prepare(`SELECT COUNT(*) FROM prd_line_setups s JOIN documents d ON d.id = s.job_order_id
+    WHERE d.status = 'posted' AND s.garment_type = ? COLLATE NOCASE
+      AND s.seq = (SELECT MAX(x.seq) FROM prd_line_setups x WHERE x.job_order_id = s.job_order_id AND x.line_no = s.line_no)`).pluck().get(garmentType) as number;
 }

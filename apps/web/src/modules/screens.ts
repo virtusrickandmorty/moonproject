@@ -1,5 +1,7 @@
 /** Doc types with their own form or view parts; the generic screens handle every other type (PLAN H2). */
-import type { ComponentType } from 'react';
+import { ChargeForm } from './CA/ChargeForm.tsx';
+import { useEffect, type ComponentType } from 'react';
+import { navigate } from '../router.tsx';
 import type { DocTypeInfo, Me } from '../api.ts';
 import type { FormMode } from '../generic/DocForm.tsx';
 import type { ViewParts } from '../generic/DocView.tsx';
@@ -19,7 +21,6 @@ import { quickSaleView } from './QS/QuickSaleView.tsx';
 import { EntryForm } from './PRD/EntryForm.tsx';
 import { ProductionBoard } from './PRD/Board.tsx';
 import { TvBoard } from './PRD/TvBoard.tsx';
-import { PieceRates } from './RATE/Rates.tsx';
 import { Employees } from './EMP/Employees.tsx';
 import { EmployeePage } from './EMP/Employee.tsx';
 import { Attendance } from './EMP/Attendance.tsx';
@@ -137,6 +138,9 @@ import { RrForm } from './PUR/RrForm.tsx';
 import { purchaseOrderView, receivingReportView } from './PUR/views.tsx';
 import { InventoryCountForm } from './INV/InventoryCountForm.tsx';
 import { inventoryCountView } from './INV/InventoryCountView.tsx';
+import { WebsiteAssistant } from './AIA/Assistant.tsx';
+import { TplClients } from './TPL/Clients.tsx';
+import { TplDeliveryForm, TplProgramPage } from './TPL/Program.tsx';
 
 /**
  * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
@@ -147,6 +151,9 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/cal': CalendarPage,
   '/cus': Customers,
   '/sup': SupportInbox,
+  '/aia': WebsiteAssistant,
+  '/tpl': TplClients,
+  '/tpl/:id': TplProgramPage,
   '/shp': ShopProducts,
   '/shp/orders': OnlineOrders,
   '/pos': Pos,
@@ -157,7 +164,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/cash/recon/:id': BankReconWork,
   '/prd/board': ProductionBoard,
   '/prd/tv': TvBoard,
-  '/prd/rates': PieceRates,
+  '/prd/rates': PieceRatesMoved,
   '/pur/suppliers': Suppliers,
   '/pur/suppliers/new': SupplierPage,
   '/pur/suppliers/:id': SupplierPage,
@@ -283,12 +290,14 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'col.credit_memo': CreditMemoForm,
   'col.write_off': WriteOffForm,
   'qs.sale': QuickSaleForm,
+  'tpl.delivery': TplDeliveryForm,
   'quo.quotation': QuotationForm,
   'prd.entry': EntryForm,
   'pay.run': RunForm,
   'pay.release': ReleaseForm,
   'pay.thirteenth': ThirteenthForm,
   'ca.advance': AdvanceForm,
+  'ca.charge': ChargeForm,
   'ca.opening': OpeningCaForm,
   'ca.repayment': RepaymentForm,
   'ca.writeoff': WriteoffForm,
@@ -335,3 +344,9 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
 export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'quo.quotation': quotationView(() => 'jo.job_order' in FORMS), 'jo.opening': openingJobOrderView, 'jo.release': joReleaseView, 'jo.invoice_record': invoiceRecordView, 'jo.dp_invoice': dpInvoiceView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'cash.bank_adj': bankAdjustmentView, 'ap.bill': billView, 'ap.payment': paymentView, 'ap.advance': supplierAdvanceView, 'ap.advance_return': advanceReturnView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView,
   'pur.po': purchaseOrderView, 'pur.rr': receivingReportView,
   'col.cwt_only': cwtOnlyView, 'col.forfeit': forfeitView, 'col.credit_memo': creditMemoView, 'col.write_off': writeOffView };
+
+/** The old Piece rates screen (the owner's request, Oct 2026: removed; every rate is on its price list item). An old bookmark goes to the price list. */
+function PieceRatesMoved() {
+  useEffect(() => navigate('/cat', { replace: true }), []);
+  return null;
+}

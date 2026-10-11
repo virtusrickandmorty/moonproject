@@ -1,5 +1,6 @@
 /** Read-only QS contract for other modules (COL, JO, DASH, RPT). Callers check their own route permission. */
 import type { Db } from '../../platform/db/driver.ts';
+import type { DocTypeDef } from '../../engine/documents/registry.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { accountBalance } from '../../engine/ledger/queries.ts';
 
@@ -29,6 +30,11 @@ export function saleInvoiceNumbersBetween(db: Db, from: number, to: number): { n
 /** What is still owed on a quick sale: its receivable, from the journal lines that name the sale (NR-2). */
 export function saleOpenCents(db: Db, id: string): number {
   return accountBalance(db, resolveAccount(db, { role: 'AR_TRADE' }).id, { refDocId: id });
+}
+
+/** When a quick sale on terms is due (a TPL delivery's invoice); undefined for a counter sale, due at once. */
+export function saleDueDate(db: Db, id: string): string | undefined {
+  return db.prepare('SELECT due_date FROM qs_sale_terms WHERE document_id = ?').pluck().get(id) as string | undefined;
 }
 
 /** A customer's recorded quick sales with money still owed, oldest first (the collection form's open items). */
@@ -87,4 +93,12 @@ export const provideCancelQuickSale = (fn: CancelQuickSale) => { cancelImpl = fn
 export const cancelQuickSale: CancelQuickSale = (...args) => {
   if (!cancelImpl) throw new Error('The QS module is not loaded');
   return cancelImpl(...args);
+};
+
+/** The quick sale doc type, for a module that records one as its own invoice (TPL deliveries). Provided like recordQuickSale. */
+let saleDocImpl: DocTypeDef | undefined;
+export const provideSaleDoc = (d: DocTypeDef) => { saleDocImpl = d; };
+export const saleDocType = (): DocTypeDef => {
+  if (!saleDocImpl) throw new Error('The QS module is not loaded');
+  return saleDocImpl;
 };

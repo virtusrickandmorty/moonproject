@@ -22,6 +22,42 @@ export function catalogItemRef(db: Db, id: string): {
   return row && { code: row.code, name: row.name, class: row.class, unit: row.unit, isActive: row.is_active === 1 };
 }
 
+/**
+ * The price list item a job order line is made from, by its words (the owner's request, Oct 2026: production takes the
+ * garment type for piece rates, and whether it is a set, from it). Active made-to-order items only. The item named
+ * exactly wins; then one whose name's words all appear in the line; then the one sharing most words; a longer name wins
+ * a tie. Null when no word is shared.
+ */
+export function matchCatalogItem(db: Db, text: string): { id: string; name: string; garmentType: string; unit: 'pc' | 'set' } | null {
+  const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 2));
+  const said = words(text);
+  const flat = text.trim().toLowerCase();
+  const items = db.prepare(`SELECT id, name, garment_type AS garmentType, unit FROM cat_items WHERE is_active = 1 AND class = 'made_to_order_garment'`).all() as { id: string; name: string; garmentType: string; unit: 'pc' | 'set' }[];
+  let best: { item: (typeof items)[number]; score: number } | null = null;
+  for (const item of items) {
+    const own = words(item.name);
+    const shared = [...own].filter((w) => said.has(w)).length;
+    const score = item.name.trim().toLowerCase() === flat ? 3_000 : shared === own.size && shared > 0 ? 2_000 + shared : shared;
+    if (score > 0 && (!best || score > best.score || (score === best.score && item.name.length > best.item.name.length))) best = { item, score };
+  }
+  return best ? best.item : null;
+}
+
+/**
+ * The price list as a customer may see it (the website's AI assistant, the owner's request, Oct 2026): active items with
+ * their price tiers in force on a date (from how many pieces, at how much each). Names and prices only: no cost, no garment
+ * type or other shop detail.
+ */
+export function publicPriceList(db: Db, businessDate: string): { id: string; name: string; unit: 'pc' | 'set'; kind: 'made to order' | 'ready-made' | 'service'; tiers: { fromQty: number; unitPriceCents: number }[] }[] {
+  const items = db.prepare('SELECT id, name, unit, class FROM cat_items WHERE is_active = 1 ORDER BY name').all() as { id: string; name: string; unit: 'pc' | 'set'; class: string }[];
+  const tiers = db.prepare(`SELECT min_qty AS fromQty, unit_price_cents AS unitPriceCents FROM cat_prices p
+    WHERE item_id = ? AND effective_from = (SELECT MAX(effective_from) FROM cat_prices x WHERE x.item_id = p.item_id AND x.min_qty = p.min_qty AND x.effective_from <= ?)
+    ORDER BY min_qty`);
+  const kind = (c: string) => (c === 'made_to_order_garment' ? 'made to order' : c === 'ready_made_item' ? 'ready-made' : 'service') as 'made to order' | 'ready-made' | 'service';
+  return items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, kind: kind(i.class), tiers: tiers.all(i.id, businessDate) as { fromQty: number; unitPriceCents: number }[] }))
+    .filter((i) => i.tiers.length > 0);
+}
+
 /** The newest eligible effective date wins; within that date the largest eligible tier wins. */
 export function lookupCatalogPrice(db: Db, itemId: string, qty: number, businessDate: string): CatalogPrice | null {
   if (!Number.isSafeInteger(qty) || qty < 1 || !z.iso.date().safeParse(businessDate).success) {
@@ -72,3 +108,11 @@ export function logCatalogPriceOverride(db: Db, input: {
       overrideUnitPriceCents: input.overrideUnitPriceCents, reason: input.reason.trim() },
   });
 }
+
+/** The garment types price list items go by (piece rates are kept per garment type, RATE): to find rates no item uses. */
+export function itemGarmentTypes(db: Db): string[] {
+  return db.prepare(`SELECT DISTINCT garment_type FROM cat_items WHERE garment_type IS NOT NULL AND garment_type <> ''`).pluck().all() as string[];
+}
+
+/** Price list items created or found by an import (MIG): import-item.ts. */
+export { importPriceListItem, type ImportedItem } from './import-item.ts';

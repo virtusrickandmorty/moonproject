@@ -10,10 +10,7 @@ import { requireStepUp } from '../../engine/security/sessions.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { activeCustomers, createGroup, createWearer, customerRef } from '../CUS/public.ts';
-import {
-  applyEmployeeFix, applyMeasurementAssignment, duplicateKeys, isManualMeasurement, manualName, measurementField, measurementFields, measurementTenths, nameKey,
-  parseCSV, validateRow, type ManualData, type ParsedRow, type RowType,
-} from './csv.ts';
+import { applyEmployeeFix, applyMeasurementAssignment, applySizerFix, duplicateKeys, isManualMeasurement, manualName, measurementField, measurementFields, measurementTenths, nameKey, parseCSV, validateRow, type ManualData, type ParsedRow, type RowType, applyPriceListFix } from './csv.ts';
 import { fromSheetRow, sheetTabOf } from './sheet.ts';
 import { commitUpload } from './commit.ts';
 
@@ -42,7 +39,11 @@ const manualSchemas = {
     payType: z.enum(['daily', 'piece', 'monthly', 'mixed']).optional(),
     hireDate: z.string().trim().refine(isBusinessDate, 'Use a date like 2026-02-11.').optional(),
   }).strict(),
-  piece_rate: z.object({ garmentType: z.string().trim().min(1).optional(), operation: z.string().trim().min(1).optional(), rateCents: moneyCents.optional() }).strict(),
+  // The price list (the owner's request, Oct 2026); garmentType is the old name of the item.
+  piece_rate: z.object({ garmentType: z.string().trim().min(1).optional(), item: z.string().trim().min(1).max(100).optional(), kind: z.string().trim().min(1).optional(),
+    unit: z.string().trim().min(1).optional(), priceCents: moneyCents.optional(), operation: z.string().trim().min(1).optional(), part: z.string().trim().min(1).optional(),
+    complexity: z.string().trim().min(1).optional(), rateCents: moneyCents.optional() }).strict(),
+  sizer_set: z.object({ code: z.string().trim().min(1).max(100).optional(), garmentType: z.string().trim().min(1).max(100).optional(), sizesIncluded: z.string().trim().min(1).max(200).optional() }).strict(),
 };
 const bulkAssignBody = z.object({
   rowIds: z.array(z.string().min(1)).min(1).max(500), mode: z.enum(['own', 'under']),
@@ -108,9 +109,9 @@ function effective(row: MigRow, manual: ManualData = manualFor(row)): Record<str
   } else if (row.row_type === 'employee') {
     applyEmployeeFix(raw, manual);
   } else if (row.row_type === 'piece_rate') {
-    if (manual.garmentType) raw.Garment_Type = String(manual.garmentType);
-    if (manual.operation) raw.Operation = String(manual.operation);
-    if (manual.rateCents !== undefined) raw.Rate = formatPesos(Number(manual.rateCents));
+    applyPriceListFix(raw, manual);
+  } else if (row.row_type === 'sizer_set') {
+    applySizerFix(raw, manual);
   }
   return raw;
 }
@@ -425,13 +426,13 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
     const rows = db.prepare('SELECT * FROM mig_rows WHERE upload_id = ? ORDER BY row_number, id').all(uploadId) as MigRow[];
     const pending = rows.filter(r => r.status === 'needs_review').length;
     if (pending) throw new AppError('PENDING_REVIEW', `There are ${pending} rows that still need review.`, 400);
-    const counts = { customers: 0, measurements: 0, employees: 0, pieceRates: 0,
+    const counts = { customers: 0, measurements: 0, employees: 0, pieceRates: 0, sizerSets: 0,
       excluded: 0, merged: 0, total: rows.length };
     // What the bulk choices for MANUAL size rows will make; named in the answer only when there is any.
     const fromManual = { newCustomers: 0, wearers: 0 };
     const newGroups = new Set<string>();
-    const normalized: Record<'customer' | 'measurement' | 'employee' | 'piece_rate', Record<string, string>[]> = {
-      customer: [], measurement: [], employee: [], piece_rate: [],
+    const normalized: Record<'customer' | 'measurement' | 'employee' | 'piece_rate' | 'sizer_set', Record<string, string>[]> = {
+      customer: [], measurement: [], employee: [], piece_rate: [], sizer_set: [],
     };
     let measurementCellTenths = 0;
     let employeeRateCents = 0;
@@ -464,9 +465,10 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
       }
       if (row.row_type === 'piece_rate') {
         counts.pieceRates++;
-        if (row.status !== 'accepted') invalid(`Piece-rate row ${row.row_number} needs owner confirmation.`);
+        if (row.status !== 'accepted') invalid(`Price list row ${row.row_number} needs owner confirmation.`);
         if (parsed.rateCents !== null) pieceRateCents = sumExact(pieceRateCents, parsed.rateCents);
       }
+      if (row.row_type === 'sizer_set') counts.sizerSets++;
       normalized[row.row_type].push(data);
     }
     return { success: true, counts: { ...counts, ...(fromManual.newCustomers ? { newCustomers: fromManual.newCustomers } : {}),
@@ -475,6 +477,7 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
       measurement: { sha256: hash(normalized.measurement), cellTenths: measurementCellTenths },
       employee: { sha256: hash(normalized.employee), rateCents: employeeRateCents },
       pieceRate: { sha256: hash(normalized.piece_rate), rateCents: pieceRateCents },
+      sizerSet: { sha256: hash(normalized.sizer_set) },
       measurementCellSum: measurementCellTenths, employeeRateCents, pieceRateCents,
     } };
   });

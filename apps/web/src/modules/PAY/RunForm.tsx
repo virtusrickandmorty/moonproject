@@ -6,10 +6,11 @@
  * adjustment: the preview then shows each employee's refund or deficiency, and "Pay unused leave" (SIL days left, in
  * cash). An employee separated within the period gets their final pay, marked with a badge.
  */
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { api, ApiError, type DocTypeInfo, type Me, type PayGroup, type PayPeriod, type PayRunDoc, type Preview } from '../../api.ts';
 import { Link, navigate } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
+import { TickBar } from '../../components/charts.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, useLive } from '../COL/parts.tsx';
@@ -49,6 +50,14 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
   }, []);
 
   const period = periods?.find((p) => p.periodStart === periodStart);
+  const oldest = periods?.reduce((m, p) => (p.periodStart < m ? p.periodStart : m), periods[0]?.periodStart ?? '') || undefined;
+  const newest = periods?.reduce((m, p) => (p.periodEnd > m ? p.periodEnd : m), '') || undefined;
+  const pickDay = (day: string) => {
+    const hit = periods?.find((p) => p.periodStart <= day && day <= p.periodEnd) ?? null;
+    setPicked(hit);
+    setDayNote(!day || hit ? '' : `No ${GROUP_LABEL[payGroup]} period that has ended holds ${showDate(day)}.`);
+    setPeriodStart(hit && !hit.recorded ? hit.periodStart : '');
+  };
   const canYearEnd = endsInDecember(period?.periodEnd) && !!me?.permissions.includes('pay.yearend.run');
   const { input, errors } = runInput(payGroup, periodStart, rows, advances, skip, loanRows, yearEnd && canYearEnd, unusedLeave && canYearEnd);
   // PAY-1: dated the period's last day when that has passed and the user may backdate, so its pay is booked in that month.
@@ -56,6 +65,11 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
   const live = useLive(JSON.stringify([input, bookOn]), !!periodStart && errors.length === 0, () => api.preview(type.key, input, bookOn));
   const [last, setLast] = useState<PayRunDoc | null>(null); // kept while a reason is being typed
   const [names, setNames] = useState<Record<string, string>>({});
+  // The day picked on Date from or Date to, and the period holding it (a recorded one is shown, not chosen). Kept last:
+  // the form tests set the earlier ones by position.
+  const [picked, setPicked] = useState<PayPeriod | null>(null);
+  const [dayNote, setDayNote] = useState('');
+  const shown = picked ?? period ?? null;
   useEffect(() => {
     const doc = live?.doc as PayRunDoc | undefined;
     if (!doc) return;
@@ -102,17 +116,25 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
               {Object.entries(GROUP_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
           </Field>
-          <Field label="Period" required hint="Periods that have ended. A recorded one must be cancelled to redo it.">
-            <select className={inputClass} value={periodStart} onChange={(e) => setPeriodStart(e.target.value)}>
-              <option value="">{periods ? 'Pick the period' : 'Loading…'}</option>
-              {periods?.map((p) => (
-                <option key={p.periodStart} value={p.periodStart} disabled={!!p.recorded}>
-                  {showDate(p.periodStart)} to {showDate(p.periodEnd)} · {p.recorded ? `recorded as ${p.recorded.number}` : `${p.employees} ${p.employees === 1 ? 'person' : 'people'}`}
-                </option>
-              ))}
-            </select>
-          </Field>
+          {/* Date from and Date to (the owner's request, Oct 2026): picking either day takes the pay group's period that holds
+              it (weekly, or the 1st–15th and 16th–end of the month), so the pay rules keep their periods. */}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Date from" required>
+              <input type="date" aria-label="Date from" className={inputClass} value={periodStart} min={oldest} max={newest} disabled={!periods}
+                onChange={(e) => pickDay(e.target.value)} />
+            </Field>
+            <Field label="Date to" required>
+              <input type="date" aria-label="Date to" className={inputClass} value={period?.periodEnd ?? ''} min={oldest} max={newest} disabled={!periods}
+                onChange={(e) => pickDay(e.target.value)} />
+            </Field>
+          </div>
         </div>
+        <p className={`mt-2 text-sm ${shown?.recorded ? 'text-amber-800' : 'text-slate-600'}`}>
+          {!periods ? 'Loading the periods…'
+            : dayNote ? dayNote
+            : shown ? `${showDate(shown.periodStart)} to ${showDate(shown.periodEnd)} · ${shown.recorded ? `already recorded as ${shown.recorded.number}: cancel it to redo it` : `${shown.employees} ${shown.employees === 1 ? 'person' : 'people'}${shown.notEnded ? ' · not ended yet (practice shop only)' : ''}`}`
+            : 'Pick the first or last day of the period. Only periods that have ended can be paid.'}
+        </p>
         {bookOn && <p className="mt-2 text-sm text-slate-600">Dated {bookOn}, the period's last day, so its pay is booked in that month.</p>}
         {canYearEnd && (
           <label className="mt-2 flex items-start gap-2 text-sm">
@@ -138,13 +160,14 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
         <p className="text-sm text-slate-600">Includes recorded attendance, salary or piece work, paid leave, holiday pay and premiums where applicable, plus the allowances and adjustments below. Open an employee's earnings to see the included items.</p>
         {!run && <p className="text-sm text-slate-500">{periodStart ? 'Working it out…' : 'Pick a period.'}</p>}
         {run && people.map((e) => (
-          <section key={e.employeeId} aria-label={e.name} className="space-y-3 rounded-lg border border-slate-200 p-3">
+          <section key={e.employeeId} aria-label={e.name} className="space-y-3 rounded-xl p-4 ring-1 ring-slate-200/70">
             <div className="grid items-center gap-3 sm:grid-cols-[minmax(0,2fr)_1fr_1fr_1fr]">
               <h3 className="font-medium">{e.name}{e.final && <FinalBadge />}</h3>
               <div className="text-sm sm:text-right">Gross <b className="block tabular-nums">{peso(e.grossCents)}</b></div>
               <div className="text-sm sm:text-right">Deductions <b className="block tabular-nums">{peso(e.grossCents - e.netCents + (e.wtaxRefundCents ?? 0))}</b></div>
               <div className="text-sm sm:text-right">Net pay <b className="block tabular-nums">{peso(e.netCents)}</b></div>
             </div>
+            <TickBar parts={[{ share: e.grossCents > 0 ? Math.max(0, e.netCents) / e.grossCents : 0, tone: 'bg-indigo-600' }]} ticks={120} height="h-4" stretch label={`Net pay ${e.grossCents > 0 ? Math.round((Math.max(0, e.netCents) / e.grossCents) * 100) : 0}% of gross`} />
             {(e.wtaxRefundCents ?? 0) > 0 && <p className="text-sm">Includes tax refund: {peso(e.wtaxRefundCents!)}</p>}
             <PayDetails title="Earnings included">
               {e.lines.map((l) => <div key={l.lineNo} className="flex justify-between gap-3 text-sm"><span>{l.description} {qtyText(l.kind, l.qty)}</span><span className="tabular-nums">{peso(l.amountCents)}</span></div>)}
@@ -154,7 +177,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
             <PayDetails title="Deductions and changes" active={!!advances[e.employeeId]?.trim() || (e.loans ?? []).some((l) => !!loanRows[l.loanId]?.amount.trim() || !!loanRows[l.loanId]?.reason.trim())}>
               <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm [&>dd]:text-right [&>dd]:tabular-nums">
                 <dt>SSS employee share</dt><dd>{peso(e.sssEeCents)}</dd><dt>PhilHealth employee share</dt><dd>{peso(e.phicEeCents)}</dd><dt>Pag-IBIG employee share</dt><dd>{peso(e.hdmfEeCents)}</dd>
-                <dt>Tax</dt><dd>{peso(e.wtaxCents)}</dd><dt>Government loans</dt><dd>{peso(e.loanCents ?? 0)}</dd><dt>Cash advance</dt><dd>{peso(e.caCents)}</dd>
+                <dt>Tax</dt><dd>{peso(e.wtaxCents)}</dd><dt>Government loans</dt><dd>{peso(e.loanCents ?? 0)}</dd><dt>Cash advance</dt><dd>{peso(e.caCents)}</dd>{(e.charges ?? []).map((c) => <Fragment key={c.chargeId}><dt>Damage charge {c.number}</dt><dd>{peso(c.amountCents)}</dd></Fragment>)}
               </dl>
               {e.yearEnd && <p className="text-sm">Year-end tax: {yearEndText(e)}</p>}
               <Field label="Cash-advance deduction" hint="Leave blank for the planned deduction; 0 skips it for this run.">
@@ -193,7 +216,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
       <Panel title="Allowances and adjustments">
         <PayDetails title="Add allowances or adjustments" active={rows.length > 0}>
           {rows.map((r, i) => (
-            <div key={i} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-2">
+            <div key={i} className="grid gap-2 rounded-xl p-3 ring-1 ring-slate-200/70 sm:grid-cols-2">
               <Field label="Employee">
                 <select aria-label="Employee" className={inputClass} value={r.employeeId} onChange={(e) => setRow(i, { employeeId: e.target.value })}>
                   <option value="">Employee</option>{Object.entries(names).filter(([id]) => !(id in skip)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}

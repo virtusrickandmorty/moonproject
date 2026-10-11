@@ -5,7 +5,7 @@
  */
 import { Fragment, useState } from 'react';
 import { api, taxQuarterPath, type CertificatesToIssue as Certificates, type DocTypeInfo, type Me, type VatWorksheet as Worksheet } from '../../api.ts';
-import { Button, Notice, Panel } from '../../components/ui.tsx';
+import { Loading, Button, Notice, Panel } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Excel, QuarterForm, pesos, useQuarterReport } from './ReportParts.tsx';
@@ -77,7 +77,7 @@ export function CertificatesToIssue({ me }: { me: Me }) {
       <QuarterForm q={q} />
       {q.error && <Notice>{q.error}</Notice>}
       {printError && <Notice>{printError}</Notice>}
-      {!c && !q.error && q.pick && <p className="text-slate-500">Loading…</p>}
+      {!c && !q.error && q.pick && <Loading />}
       {c && (
         <Panel title={quarterTitle(c.year, c.quarter, q.today)}>
           {c.lines.length > 0 && <Button tone="primary" onClick={() => void open2307(c.year, c.quarter).catch((e: Error) => setPrintError(e.message))}>Print all for this quarter</Button>}
@@ -126,7 +126,7 @@ export function VatWorksheet({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[]
       </p>
       <QuarterForm q={q} />
       {q.error && <Notice>{q.error}</Notice>}
-      {!w && !q.error && q.pick && <p className="text-slate-500">Loading…</p>}
+      {!w && !q.error && q.pick && <Loading />}
       {w && (
         <Panel title={quarterTitle(w.year, w.quarter, q.today)}>
           <p className="text-sm">

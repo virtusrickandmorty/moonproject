@@ -141,7 +141,8 @@ async function openPreview(page: Page) {
   const open = page.getByRole('dialog');
   if (await open.count()) return { refused: false as const, dialog: open }; // a form that is its own preview dialog (depreciation)
   const button = page.locator('main').getByRole('button', { name: /^(Record|Write off|Forfeit)$/ }).first();
-  if (await button.isDisabled()) return { refused: true as const, dialog: page.getByRole('dialog') };
+  // No Record at all: a form with nothing to record yet (no TPL stock program in the practice shop) must say so in words.
+  if (!(await button.count()) || (await button.isDisabled())) return { refused: true as const, dialog: page.getByRole('dialog') };
   await button.click();
   const dialog = page.getByRole('dialog');
   await dialog.waitFor({ state: 'visible', timeout: 8_000 }).catch(() => undefined);
@@ -150,7 +151,7 @@ async function openPreview(page: Page) {
 
 /** What a form says, in words, when the books give it nothing to do yet: a refusal that names the reason, not a screen that failed. */
 // "is already closed by": a quarter the practice data closed on the 1st of the next month (VATC-), which the VAT close form opens on.
-const STATE_OF_THE_BOOKS = /cut-over date|has no VAT to close|no income tax|nothing to (adjust|provide|settle|close)|no credits to settle|is already closed by/;
+const STATE_OF_THE_BOOKS = /cut-over date|has no VAT to close|no income tax|nothing to (adjust|provide|settle|close)|no credits to settle|is already closed by|are ready on this step|No stock programs yet/;
 
 /** Opens one New form, fills it in and presses Record: what is wrong with it, nothing being the empty list. */
 async function checkNewForm(page: Page, href: string, today: string, take: () => string[]): Promise<string[]> {
@@ -172,7 +173,7 @@ async function checkNewForm(page: Page, href: string, today: string, take: () =>
   }
   if (!(await dialog.count())) {
     const said = (await page.locator('main').locator('.text-red-700, .text-red-800, [role=alert]').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
-    if (said.some((t) => /cut-over date/.test(t))) return problems; // an opening form says the cut-over date comes first
+    if (said.some((t) => STATE_OF_THE_BOOKS.test(t))) return problems; // the books' made-up state, said in words (the cut-over date first; no pieces ready on a step yet)
     return [...problems, `no preview${said.length ? `: ${said.join(' | ')}` : ''}`];
   }
   // The preview is there. What it says about the made-up figures typed in (a payment that does not match its bills) is the server's rule, not the screen's.

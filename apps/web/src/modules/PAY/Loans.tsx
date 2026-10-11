@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type ActiveEmployee, type GovLoan, type LoanKind, type Me } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, showDate } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, showDate } from '../../components/ui.tsx';
 import { cents } from '../COL/money.ts';
 import { LOAN_KIND, loanInput } from './run.ts';
 
@@ -151,7 +151,7 @@ export function GovLoans({ me }: { me: Me }) {
       <p className="text-sm text-slate-600">SSS and Pag-IBIG loans deducted from pay once a month, on the first payroll whose period ends on or after the 16th, and paid with that month's contributions.</p>
       <Panel title="Loans">
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={all} onChange={(x) => setAll(x.target.checked)} /> Show ended and stopped loans too</label>
-        {loans ? <LoanTable loans={loans} canManage={canManage} showEmployee onSaved={load} /> : <p className="text-slate-500">Loading…</p>}
+        {loans ? <LoanTable loans={loans} canManage={canManage} showEmployee onSaved={load} /> : <Loading />}
         {canManage && <NewLoan employees={employees} onSaved={load} />}
       </Panel>
     </div>
@@ -168,7 +168,7 @@ export function EmployeeLoans({ me, employeeId, active }: { me: Me; employeeId: 
   return (
     <Panel title="Government loans">
       {error && <Notice>{error}</Notice>}
-      {loans ? <LoanTable loans={loans} canManage={canManage} showEmployee={false} onSaved={load} /> : !error && <p className="text-slate-500">Loading…</p>}
+      {loans ? <LoanTable loans={loans} canManage={canManage} showEmployee={false} onSaved={load} /> : !error && <Loading />}
       {canManage && active && <NewLoan employees={[]} employeeId={employeeId} onSaved={load} />}
     </Panel>
   );

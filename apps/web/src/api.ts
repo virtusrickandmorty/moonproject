@@ -122,6 +122,8 @@ export interface DocHeader {
 }
 export interface DocListFilters { q?: string; from?: string; to?: string }
 export interface DocCounts { all: number; posted: number; cancelled: number }
+/** A job order list row: `balanceDueCents` (0 once cancelled), the item a search found its words in, and its releases waiting for their invoice. */
+export interface JoListRow extends DocHeader { balanceDueCents: number; matchedItem: string | null; awaitingInvoice: { id: string; number: string }[]; readyToRelease: boolean }
 /** Read-only display of lines the server built. Declared this way so the money-rule tripwire (tests/house-rules) stays exact. */
 export type JournalLine = { accountCode: string; accountName: string } & Record<'debitCents' | 'creditCents', number>;
 export interface Journal { id: string; number: string; businessDate: string; postingKind: 'original' | 'reversal'; memo: string; lines: JournalLine[] }
@@ -166,6 +168,22 @@ export interface DashOwnerCharts {
   months: { month: string; from: string; to: string; salesCents: number; collectionsCents: number; expensesCents: number; cashCents: number }[];
   receivables: { key: string; label: string; amountCents: number }[];
 }
+/** The home's cards (GET /api/dash/cards): each is null or missing for those who may not see what it reads. */
+export interface DashCards {
+  asOf: string;
+  kpis: { key: string; label: string; value: number; money: boolean; changePct?: number | null; note?: string; href: string }[];
+  jobs: { total: number; late: number; inProduction: number; toRoute: number; rows: { id: string; number: string; customerName: string; item: string; step: string | null; status: 'to_route' | 'in_production' | 'ready' | 'late'; dueDate: string; late: boolean; rush: boolean; progress: number }[] } | null;
+  activity: { days: { date: string; pieces: number; workers: number }[]; today: number; averagePerDay: number; workersToday: number } | null;
+  calendar: { month: string; days: { date: string; due: number; late: boolean }[] } | null;
+  stages: { key: string; label: string; count: number }[] | null;
+}
+
+/** The website's AI assistant (AIA): its settings (the key is never sent back, only whether it is set) and its chats. */
+export interface AiaSettings { isOn: boolean; greeting: string; knowledge: string; version: number; keySet: boolean }
+export interface AiaChatRow { id: string; startedAt: string; messages: number; firstQuestion: string | null; inputTokens: number; outputTokens: number; supportNumber: string | null }
+export interface AiaChats { rows: AiaChatRow[]; last30Days: { chats: number; inputTokens: number; outputTokens: number } }
+export interface AiaMessage { seq: number; role: 'customer' | 'assistant'; text: string; at: string }
+
 export interface DashOwnerHealth {
   asOf: string;
   periods: { label: string; from: string; to: string; salesCents: number; vatCents: number; collectionsCents: number; payrollCents: number }[];
@@ -224,7 +242,11 @@ export interface JoStatus {
   stage: string;
   stageLabel: string;
   money: { totalCents: number; invoicedCents: number; receivableCents: number; depositsHeldCents: number; balanceDueCents: number; collectedCents: number; requiredDownpaymentCents: number };
-  lines: { lineNo: number; description: string; qty: number; releasedQty: number; leftQty: number }[];
+  /** ready: the line may go out now (its production is done, or the whole job order is Ready). */
+  /** readyQty: pieces that may go out now (finished every step); ready: some may. */
+  /** wearers: the line's wearer list; releasedOn: the release it went out on; ready: through every step (null: not known by wearer). */
+  lines: { lineNo: number; description: string; qty: number; releasedQty: number; leftQty: number; ready?: boolean; readyQty?: number; awaitingSteps?: boolean;
+    wearers?: { rowNo: number; wearerName: string; size: string | null; jerseyNumber: string | null; qty: number; releasedOn: string | null; ready: boolean | null }[] }[];
   awaitingInvoice: { id: string; number: string; businessDate: string; totalCents: number }[];
   depositVat: JoDepositVat;
   dpInvoices: DpInvoiceRow[];
@@ -280,23 +302,42 @@ export type StepStatus = 'pending' | 'in_progress' | 'completed' | 'not_needed';
 export interface BoardCard {
   jobOrderId: string; number: string; customerName: string; dueDate: string; priority: 'normal' | 'rush'; stage: string; lineNo: number; description: string;
   qty: number; releasedQty: number; garmentType: string | null; complexity: string | null; templateId: number | null; currentStepId: number | null; ready: boolean;
-  steps: { stepId: number; status: StepStatus; pieces: number; reworkPieces: number }[] | null;
+  /** finishedPieces: went through every step (can go out first). */
+  finishedPieces?: number;
+  /** isSet: made as an upper and a lower part; a step's `pieces` are then complete sets and `parts` each part's count. */
+  isSet?: boolean;
+  /** receivedPieces: what came out of the step before (all of the line for the first step, or once the one before is closed). */
+  /** reworkOpen: pieces sent back to the step for rework, not redone yet. */
+  steps: { stepId: number; status: StepStatus; pieces: number; reworkPieces: number; receivedPieces: number; reworkOpen?: number; parts?: { upper: number; lower: number } }[] | null;
 }
 export interface NavResult { kind: 'Customer' | 'Wearer' | 'Job order' | 'Document' | 'Supplier' | 'Employee'; id: string; label: string; detail?: string; href: string }
+export interface PrdRework { pieces: number; wearers: number[]; /** Why they were sent back, where found, when. */ reasons?: { reason: string; foundAt: string; at: string; pieces: number }[] }
 export interface PrdJob {
   jobOrder: { id: string; number: string; status: 'posted' | 'cancelled'; customerName: string; dueDate: string; priority: string; stage: string };
   lines: { lineNo: number; description: string; qty: number; releasedQty: number; setup: { templateId: number | null; garmentType: string; complexity: string; stepIds: number[] } | null;
-    route: (PrdStep & { status: StepStatus; pieces: number; reworkPieces: number; availablePieces: number })[] | null }[];
+    /** The line's wearers (its roster), to tick who is done on a step. */
+    roster?: PrdWearer[];
+    /** Made as an upper and a lower part (a set on the price list). */
+    isSet?: boolean;
+    /** doneWearers: the roster rows already done on the step. */
+    /** forwardedWearers: the wearers that came out of the step before (null: all); rework: sent back to the step, not redone yet. */
+    route: (PrdStep & { status: StepStatus; pieces: number; reworkPieces: number; availablePieces: number; doneWearers?: number[];
+      forwardedWearers?: number[] | null; rework?: PrdRework; partForwarded?: { upper: number[] | null; lower: number[] | null }; partRework?: { upper: PrdRework; lower: PrdRework };
+      /** On a set: each part's pieces, what each may still take, and the wearers done per part. */
+      partPieces?: { upper: number; lower: number }; partAvailable?: { upper: number; lower: number }; partWearersDone?: { upper: number[]; lower: number[] } })[] | null }[];
 }
-export interface PrdSetup { templateId?: number; stepIds: number[]; garmentType: string; complexity: string }
+export interface PrdWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
+/** `garmentType`: left out, the server takes it (and whether the line is a set) from the price list item the line matches. */
+export interface PrdSetup { templateId?: number; stepIds: number[]; garmentType?: string; complexity: string }
 export interface Worker { id: string; code: string; name: string }
-export interface PieceRate { id: number; garmentType: string; stepCode: string; complexity: string; rateCents: number; effectiveFrom: string; reason: string; createdAt: string }
-export interface RateTable { asOf: string; current: PieceRate[]; history: PieceRate[]; garmentTypes: string[] }
+export interface PieceRate { id: number; garmentType: string; stepCode: string; complexity: string; part?: 'whole' | 'upper' | 'lower'; rateCents: number; effectiveFrom: string; reason: string; createdAt: string }
+export interface RateTable { asOf: string; current: PieceRate[]; history: PieceRate[]; garmentTypes: string[]; /** Rates in force for a garment type no price list item goes by, with how many job order items are made as it. */ unmatched: (PieceRate & { jobItems: number })[] }
 /** Employees and time (EMP). Government IDs arrive masked without emp.view_ids; pay history is null without pay.view_rates. */
 export interface EmployeeRow { id: string; code: string; fullName: string; position: string | null; department: string | null; costCentre: string; isActive: boolean; hireDate: string; separatedOn: string | null }
 export interface Statutory { sss: boolean; phic: boolean; hdmf: boolean; wtax: boolean }
 /** A person's own side-menu order: the groups, and the screens' addresses within each group. */
-export interface MenuOrder { groups: string[]; items: Record<string, string[]> }
+/** subs: the sub-categories' order within each group (optional: an older server or saved order has none). */
+export interface MenuOrder { groups: string[]; items: Record<string, string[]>; subs?: Record<string, string[]> }
 export interface EmployeeRecord extends EmployeeRow {
   separationReason: string | null; birthday: string | null; statutory: Statutory; statutoryOffReason: string | null;
   sssNo: string | null; phicNo: string | null; hdmfNo: string | null; tin: string | null;
@@ -305,7 +346,7 @@ export interface EmployeeRecord extends EmployeeRow {
 }
 export interface PayProfile {
   id: number; effectiveFrom: string; payType: 'daily' | 'piece' | 'monthly' | 'mixed'; dailyRateCents: number | null; monthlyRateCents: number | null;
-  payGroup: 'WEEKLY_PIECE' | 'SEMI_DAILY' | 'SEMI_MONTHLY'; workweekDays: 5 | 6; isMwe: boolean; reason: string; createdAt: string;
+  payGroup: 'WEEKLY_PIECE' | 'WEEKLY_DAILY' | 'SEMI_DAILY' | 'SEMI_MONTHLY'; workweekDays: 5 | 6; isMwe: boolean; reason: string; createdAt: string;
 }
 export interface EmployeeDetail {
   employee: EmployeeRecord;
@@ -326,19 +367,29 @@ export interface AttendanceDay { employeeId: string; date: string; status: Atten
 export interface Holiday { id: number; date: string; name: string; kind: 'regular' | 'special'; source: string; isActive: boolean; deactivatedReason: string | null }
 export interface AttendanceGrid {
   from: string; to: string; today: string; statuses: AttendanceStatus[]; holidays: Holiday[];
-  employees: { id: string; code: string; fullName: string; hireDate: string; separatedOn: string | null }[]; days: AttendanceDay[];
+  /** pieceRate: paid by the piece (hidden on the grid unless shown). */
+  employees: { id: string; code: string; fullName: string; hireDate: string; separatedOn: string | null; pieceRate?: boolean }[]; days: AttendanceDay[];
   /** Days recorded payroll runs paid: locked until the run is cancelled. */
   paid: PaidDays[];
 }
 export interface PaidDays { employeeId: string; from: string; to: string; number: string }
+/** The biometric report worked out for review (EMP biometric.ts): each day's action says what saving it would do. */
+export type BiometricAction = 'new' | 'changed' | 'same' | 'kept' | 'locked' | 'outside' | 'not_linked';
+export interface BiometricDay {
+  date: string; punches: string[]; status: AttendanceStatus; otMinutes: number; nightMinutes: number; nightOtMinutes: number; lateMinutes: number; undertimeMinutes: number;
+  flags: string[]; action: BiometricAction; existing: { status: AttendanceStatus; otMinutes: number; nightMinutes: number; note: string | null } | null; lockedBy?: string;
+}
+export interface BiometricPreview { from: string; to: string; people: { userId: string; name: string; department: string; employeeId: string | null; suggestedEmployeeId: string | null; days: BiometricDay[] }[] }
 export type AttendanceSave = { employeeId: string; date: string; status: AttendanceStatus; otMinutes?: number; nightMinutes?: number; nightOtMinutes?: number; note?: string };
 /** Payroll (PAY) and cash advances (CA): every figure is worked out by the server. */
-export type PayGroup = 'WEEKLY_PIECE' | 'SEMI_DAILY' | 'SEMI_MONTHLY';
+export type PayGroup = 'WEEKLY_PIECE' | 'WEEKLY_DAILY' | 'SEMI_DAILY' | 'SEMI_MONTHLY';
 export interface PayLine { lineNo: number; kind: string; description: string; qty: number; rateCents: number; multiplierBp: number; amountCents: number; jobOrderId?: string; reason?: string }
 export interface PayEmployee {
   employeeId: string; code: string; name: string; costCentre: string; payType: string; isMwe: boolean; lines: PayLine[]; grossCents: number; pieceCents: number; taxableCents: number;
   sssMscCents: number; sssEeCents: number; sssErCents: number; sssEcCents: number; phicEeCents: number; phicErCents: number; hdmfEeCents: number; hdmfErCents: number;
   eeShortCents: number; wtaxCents: number; loanCents?: number; loans?: PayLoan[]; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
+  /** Damage or loss charges taken back on this run (CA ca.charge), and what is left of each after it. */
+  chargeCents?: number; charges?: { chargeId: string; number: string; what: string; amountCents: number; leftAfterCents: number }[];
   /** Tax withheld earlier in the year and refunded on this run (year-end adjustment); net pay includes it. */
   wtaxRefundCents?: number; yearEnd?: PayYearEnd;
   /** Separated within the run's period: this run is their final pay; what they still owe after it. */
@@ -388,7 +439,7 @@ export interface PayRunInput {
 }
 export interface PayRunDoc extends PayRunInput { periodEnd: string; contributionMonth: string; employees: PayEmployee[]; grossCents: number; netCents: number }
 /** `bookOn`: the date to give the run (the period's last day, for someone who may backdate), or null for today. */
-export interface PayPeriod { periodStart: string; periodEnd: string; employees: number; recorded: { id: string; number: string } | null; bookOn: string | null }
+export interface PayPeriod { periodStart: string; periodEnd: string; employees: number; recorded: { id: string; number: string } | null; bookOn: string | null; /** Practice shop only: a period still under way. */ notEnded?: true }
 export interface Payslips {
   number: string; status: 'posted' | 'cancelled'; payDate: string; payGroup: PayGroup; periodStart: string; periodEnd: string; contributionMonth: string;
   employees: (PayEmployee & {
@@ -586,7 +637,7 @@ export interface SupplierBody {
 }
 export interface SupplierContact { id: string; supplier_id: string; name: string; role: string | null; phone: string | null; email: string | null }
 export interface ContactBody { name: string; role: string | null; phone: string | null; email: string | null }
-export type SupplyUnit = 'yard' | 'meter' | 'kg' | 'roll' | 'pc';
+export type SupplyUnit = 'yard' | 'meter' | 'kg' | 'liter' | 'roll' | 'pc';
 export interface SupplyRecord extends SupplyRow {
   unit: SupplyUnit; is_active: number; version: number; purchase_cost_cents: number; purchase_cost_source: 'bill' | 'po' | 'catalogue';
   purchase_cost_source_number: string | null; purchase_cost_source_date: string | null;
@@ -705,7 +756,7 @@ export interface LateInstalment { loanId: string; loanNumber: string; lender: st
 
 /** GET /api/szr/overview (PLAN E8): every set with who has it, the overdue ones and the last returns. */
 export interface SizerHolder { loanId: string; loanVersion: number; customerId: string; customerName: string; dateOut: string; expectedReturnDate: string; daysOverdue: number }
-export interface SizerSet { id: string; code: string; garmentType: string; sizesIncluded: string; status: 'in shop' | 'lent' | 'lost or damaged'; holder: SizerHolder | null }
+export interface SizerSet { id: string; code: string; garmentType: string; sizesIncluded: string; status: 'in shop' | 'lent' | 'lost or damaged'; version: number; holder: SizerHolder | null }
 export interface SizerReturned { loanId: string; setCode: string; garmentType: string; customerName: string; dateOut: string; expectedReturnDate: string; returnedDate: string; conditionOnReturn: string }
 export interface SizerBoard { today: string; sets: SizerSet[]; overdue: SizerSet[]; returned: SizerReturned[] }
 /** Backups (BAK). The status's `runs` are the server's bak_runs rows as stored. */
@@ -738,7 +789,7 @@ export interface OutboxRow {
 }
 export interface Outbox { rows: OutboxRow[]; counts: Record<'queued' | 'sent' | 'failed', number> }
 /** The old-data importer (PLAN E13 MIG-01), as /api/mig reports it. */
-export type MigRowType = 'customer' | 'measurement' | 'employee' | 'piece_rate' | 'unknown';
+export type MigRowType = 'customer' | 'measurement' | 'employee' | 'piece_rate' | 'sizer_set' | 'unknown';
 export type MigRowStatus = 'valid' | 'needs_review' | 'accepted' | 'merged' | 'excluded';
 export interface MigUpload { id: string; filename: string; uploadedAt: string; uploadedBy: string; status: 'staged' | 'dry_run_passed' | 'committed' }
 export interface MigUploaded { uploadId: string; totalRows: number; needsReview: number }
@@ -750,12 +801,12 @@ export interface MigRow {
 export interface DryRunResult {
   success: true;
   counts: {
-    customers: number; measurements: number; employees: number; pieceRates: number; excluded: number; merged: number; total: number;
+    customers: number; measurements: number; employees: number; pieceRates: number; sizerSets?: number; excluded: number; merged: number; total: number;
     /** What the bulk choices for MANUAL size rows will make: customers, groups, and wearers. */
     newCustomers?: number; newGroups?: number; wearers?: number;
   };
   checksums: {
-    customer: { sha256: string }; measurement: { sha256: string; cellTenths: number }; employee: { sha256: string; rateCents: number }; pieceRate: { sha256: string; rateCents: number };
+    customer: { sha256: string }; measurement: { sha256: string; cellTenths: number }; employee: { sha256: string; rateCents: number }; pieceRate: { sha256: string; rateCents: number }; sizerSet?: { sha256: string };
   };
 }
 /** A MANUAL size row's one customer with the same name, offered to accept. */
@@ -765,9 +816,9 @@ export type MigAssignBody = { rowIds: string[]; mode: 'own' } | { rowIds: string
 export interface MigAssigned { success: true; assigned: number; skipped: { rowId: string; rowNumber: number; reason: string }[] }
 export interface MigEmployeeFix { rowId: string; payType?: 'daily' | 'piece' | 'monthly'; rateCents?: number }
 export interface CustomerGroup { id: string; name: string; is_active: number }
-export type MigCommitKind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate';
+export type MigCommitKind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate' | 'sizer_set';
 /** What a commit made. `excluded` and `merged` are only in the answer to the commit itself, not in the later look-up. */
-export interface MigCommitResult { counts: Record<MigCommitKind, { imported: number; alreadyImported: number }>; measurementCellTenths: number; excluded?: number; merged?: number }
+export interface MigCommitResult { counts: Record<Exclude<MigCommitKind, 'sizer_set'>, { imported: number; alreadyImported: number }> & { sizer_set?: { imported: number; alreadyImported: number } }; measurementCellTenths: number; excluded?: number; merged?: number }
 /** What a backup holds, found by opening it with a recovery key. A restore check adds `stagedId` and the live data's audit head. */
 export interface BackupCheck {
   file: string; madeAt: string | null; tier: BackupTier | null; sidecar: 'matches' | 'missing'; toApply: string[]; audit: { seq: number } | null;
@@ -931,6 +982,29 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     menuOrder: () => call<MenuOrder>('GET', '/api/pref/menu'),
     saveMenuOrder: (order: MenuOrder) => call<MenuOrder>('PUT', '/api/pref/menu', order),
     dashHome: () => call<DashHomeData>('GET', '/api/dash/home'),
+    dashCards: () => call<DashCards>('GET', '/api/dash/cards'),
+    aiaSettings: () => call<AiaSettings>('GET', '/api/aia/settings'),
+    /** `apiKey`: leave it out to keep the saved key; '' removes it. */
+    aiaSaveSettings: (body: { isOn: boolean; greeting: string; knowledge: string; apiKey?: string; version: number }) => call<AiaSettings>('PUT', '/api/aia/settings', body),
+    /** One short question to Google AI Studio with the saved key: works, or what went wrong (never the key). */
+    aiaTest: () => call<{ ok: true; model: string; reply: string } | { ok: false; message: string }>('POST', '/api/aia/test', {}),
+    aiaChats: () => call<AiaChats>('GET', '/api/aia/chats'),
+    // TPL services: clients' stock programs, restocks, stock, deliveries with their invoice (types in modules/TPL/types.ts).
+    tplPrograms: <T>() => call<T>('GET', '/api/tpl/programs'),
+    tplProgram: <T>(id: string) => call<T>('GET', `/api/tpl/programs/${encodeURIComponent(id)}`),
+    tplCreateProgram: <T>(body: object) => call<T>('POST', '/api/tpl/programs', body),
+    tplChangeProgram: <T>(id: string, body: object) => call<T>('PUT', `/api/tpl/programs/${encodeURIComponent(id)}`, body),
+    tplAddItem: <T>(programId: string, body: object) => call<T>('POST', `/api/tpl/programs/${encodeURIComponent(programId)}/items`, body),
+    tplChangeItem: <T>(id: string, body: object) => call<T>('PUT', `/api/tpl/items/${encodeURIComponent(id)}`, body),
+    tplStockCard: <T>(itemId: string) => call<T>('GET', `/api/tpl/items/${encodeURIComponent(itemId)}/card`),
+    tplCount: <T>(itemId: string, body: { countedQty: number; reason: string }) => call<T>('POST', `/api/tpl/items/${encodeURIComponent(itemId)}/count`, body),
+    tplRestock: <T>(body: object) => call<T>('POST', '/api/tpl/restocks', body),
+    tplPutIn: <T>(body: object) => call<T>('POST', '/api/tpl/put-in', body),
+    tplDeliveryPreview: <T>(delivery: object) => call<T>('POST', '/api/tpl/deliveries/preview', { delivery }),
+    tplDeliver: <T>(delivery: object, expectedTotalCents: number, key: string) => call<T>('POST', '/api/tpl/deliveries', { delivery, expectedTotalCents }, idem(key)),
+    tplCancelDelivery: <T>(id: string, reason: string, key: string) => call<T>('POST', `/api/tpl/deliveries/${encodeURIComponent(id)}/cancel`, { reason }, idem(key)),
+    tplHome: <T>() => call<T>('GET', '/api/tpl/home'),
+    aiaChat: (id: string) => call<{ messages: AiaMessage[]; supportNumber: string | null }>('GET', `/api/aia/chats/${encodeURIComponent(id)}`),
     dashOwnerHealth: () => call<DashOwnerHealth>('GET', '/api/dash/owner-health'),
     dashOwnerCharts: () => call<DashOwnerCharts>('GET', '/api/dash/owner-charts'),
     /** `page`: only a page of them (`unread`: of the unread ones), for the home panel and the long list. */
@@ -1018,6 +1092,11 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     customerInvoices: (customerId: string) => call<CustomerInvoices>('GET', customer(customerId, 'invoices')),
     forfeitable: (customerId: string) => call<Forfeitable>('GET', customer(customerId, 'forfeitable')),
     joStatus: (id: string) => call<JoStatus>('GET', `/api/jo/orders/${encodeURIComponent(id)}/status`),
+    /** The job order list: the document list's rows with each balance due; its search also reads what was ordered. */
+    joList: (q: DocListFilters & { status?: string; before?: string; limit?: number } = {}) =>
+      call<JoListRow[]>('GET', `/api/jo/list?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`),
+    joListCounts: (q: DocListFilters = {}) =>
+      call<DocCounts>('GET', `/api/jo/list/counts?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`),
     joDpInfo: (id: string) => call<DpInfo>('GET', `/api/jo/orders/${encodeURIComponent(id)}/dp-info`),
     joPickOrders: (q: string) => call<JoPick[]>('GET', `/api/jo/pick/orders?${new URLSearchParams({ q })}`),
     joPickReleases: (q: string) => call<ReleasePick[]>('GET', `/api/jo/pick/releases?${new URLSearchParams({ q })}`),
@@ -1046,10 +1125,17 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     prdSetup: (jo: string, lineNo: number, body: PrdSetup) => call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/setup`), body),
     prdStep: (jo: string, lineNo: number, stepId: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) =>
       call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/steps/${stepId}/${action}`), reason ? { reason } : {}),
+    /** Send pieces back for rework: from the first step through every step again, labelled rework (what was done stays). */
+    prdRework: (jo: string, lineNo: number, body: { pieces?: number; wearers?: number[]; part?: 'upper' | 'lower'; reason: string; foundAtStepId?: number }) =>
+      call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/rework`), body),
+    /** What an edit of a job order does to its production: `extra`, work kept as extras (confirmed before Record); `changed`, a warning. */
+    prdCarryCheck: (jo: string, lines: unknown[]) => call<{ warnings: { kind: 'extra' | 'changed'; message: string }[] }>('POST', prdJob(jo, '/carry-check'), { lines }),
     prdWorkers: () => call<Worker[]>('GET', '/api/prd/workers'),
     rates: () => call<RateTable>('GET', '/api/rate/rates'),
     addRate: (body: Omit<PieceRate, 'id' | 'createdAt'>) => call<PieceRate>('POST', '/api/rate/rates', body),
-    employees: (q: { search?: string; status?: 'active' | 'separated' | 'all' } = {}) =>
+    /** Switch a garment type's piece rates off (refused while a job order item is made as it) or on again, with the reason. */
+    switchGarmentType: (body: { garmentType: string; on: boolean; reason: string }) => call<{ garmentType: string; on: boolean }>('POST', '/api/rate/garment-types/switch', body),
+    employees: (q: { search?: string; status?: 'active' | 'separated' | 'all'; order?: 'newest' } = {}) =>
       call<EmployeeRow[]>('GET', `/api/emp/employees?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as [string, string][])}`),
     employee: (id: string) => call<EmployeeDetail>('GET', emp(id)),
     leaveBalances: (year?: number) => call<LeaveBalances>('GET', `/api/emp/leave-balances${year ? `?year=${year}` : ''}`),
@@ -1061,10 +1147,14 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
       call<PayProfile>('POST', emp(id, '/pay'), body),
     attendance: (from: string, to: string) => call<AttendanceGrid>('GET', `/api/emp/attendance?${new URLSearchParams({ from, to })}`),
     saveAttendance: (days: AttendanceSave[]) => call<{ saved: number; unchanged: number }>('POST', '/api/emp/attendance', { days }),
+    /** The biometric's .xls report (base64) worked out for review; nothing is saved. */
+    biometricPreview: (fileName: string, data: string) => call<BiometricPreview>('POST', '/api/emp/biometric/preview', { fileName, data }),
+    biometricLink: (userId: string, employeeId: string | null, deviceName?: string) => call<unknown>('POST', '/api/emp/biometric/links', { userId, employeeId, ...(deviceName ? { deviceName } : {}) }),
     /** Without a year: the server's current year. */
     holidays: (year?: number) => call<{ year: number; holidays: Holiday[] }>('GET', `/api/emp/holidays${year ? `?year=${year}` : ''}`),
     addHoliday: (body: { date: string; name: string; kind: 'regular' | 'special'; source: string }) => call<Holiday>('POST', '/api/emp/holidays', body),
     deactivateHoliday: (id: number, reason: string) => call<Holiday>('POST', `/api/emp/holidays/${id}/deactivate`, { reason }),
+    activateHoliday: (id: number) => call<Holiday>('POST', `/api/emp/holidays/${id}/activate`, {}),
     activeEmployees: () => call<ActiveEmployee[]>('GET', '/api/emp/active'),
     payPeriods: (payGroup: PayGroup) => call<PayPeriod[]>('GET', `/api/pay/periods?payGroup=${payGroup}`),
     payslips: (runId: string) => call<Payslips>('GET', `/api/pay/runs/${encodeURIComponent(runId)}/payslips`),
@@ -1137,6 +1227,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     updateSupplier: (id: string, v: number, body: SupplierBody) => call<{ success: true; version: number }>('PUT', `/api/pur/suppliers/${encodeURIComponent(id)}`, body, version(v)),
     deactivateSupplier: (id: string, v: number) => call<{ success: true }>('POST', `/api/pur/suppliers/${encodeURIComponent(id)}/deactivate`, undefined, version(v)),
     supplierContacts: (id: string) => call<SupplierContact[]>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}/contacts`),
+    /** The supplies a supplier sells (linked on its page), with each one's last cost. */
+    supplierSupplies: (id: string) => call<SupplyRecord[]>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}/supplies`),
+    linkSupply: (supplierId: string, supplyId: string, linked: boolean) => call<unknown>('POST', `/api/pur/suppliers/${encodeURIComponent(supplierId)}/supplies`, { supplyId, linked }),
+    supplySuppliers: (id: string) => call<{ id: string; name: string }[]>('GET', `/api/pur/supplies/${encodeURIComponent(id)}/suppliers`),
     addSupplierContact: (id: string, body: ContactBody) => call<{ id: string }>('POST', `/api/pur/suppliers/${encodeURIComponent(id)}/contacts`, body),
     deactivateSupplierContact: (supplierId: string, id: string) => call<{ success: true }>('POST', `/api/pur/suppliers/${encodeURIComponent(supplierId)}/contacts/${encodeURIComponent(id)}/deactivate`),
     supplierPurchaseOrders: (id: string) => call<SupplierPo[]>('GET', `/api/pur/suppliers/${encodeURIComponent(id)}/purchase-orders`),
@@ -1223,6 +1317,13 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     loanPayments: (id: string) => call<LoanPayment[]>('GET', `/api/loan/loans/${encodeURIComponent(id)}/payments`),
     loansLate: () => call<LateInstalment[]>('GET', '/api/loan/late'),
     sizerBoard: () => call<SizerBoard>('GET', '/api/szr/overview'),
+    /** A new sizer set, in the shop (the owner's request, Oct 2026); its code is unique. */
+    sizerSetCreate: (body: { code: string; garmentType: string; sizesIncluded: string }) => call<{ id: string; version: number }>('POST', '/api/szr/sets', body),
+    /** A set's code, garment type or sizes changed, with its version (If-Match). */
+    sizerSetUpdate: (id: string, v: number, body: { code: string; garmentType: string; sizesIncluded: string }) =>
+      call<{ success: true; version: number }>('PUT', `/api/szr/sets/${encodeURIComponent(id)}`, body, version(v)),
+    /** Switch a set off (not while it is lent); it leaves the list, its history stays. */
+    sizerSetDeactivate: (id: string, v: number) => call<{ success: true }>('POST', `/api/szr/sets/${encodeURIComponent(id)}/deactivate`, {}, version(v)),
     /** Lend a set that is in the shop to a customer; the date out is the server's today. */
     sizerLend: (body: { setId: string; customerId: string; expectedReturnDate: string }) => call<{ id: string; version: number }>('POST', '/api/szr/loans', body),
     /** Take a set back, with the loan's version (If-Match); it is back in the shop, or lost or damaged. */

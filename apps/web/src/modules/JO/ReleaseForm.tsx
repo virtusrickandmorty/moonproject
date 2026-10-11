@@ -5,7 +5,7 @@
  * invoice is to follow. The balance due and "write these on the booklet" come from the server's preview.
  * A recorded release is corrected by cancelling it and releasing again, so this form has no Edit.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { api, ApiError, newIdempotencyKey, type DocTypeInfo, type JoStatus, type Me, type ReleasePreview } from '../../api.ts';
 import { navigate } from '../../router.tsx';
 import { Button, Dialog, Field, JournalTable, Notice, Panel, inputClass, peso, useAction, showDate } from '../../components/ui.tsx';
@@ -14,9 +14,11 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, Figures, useLive } from '../COL/parts.tsx';
 import { Booklet, JoPicker } from './parts.tsx';
-import { ID_SEEN, allLeft, emptyRelease, releaseInput, type ReleaseValues } from './forms.ts';
+import { ID_SEEN, allLeft, emptyRelease, readyWearers, releaseInput, type ReleaseValues } from './forms.ts';
 
 const money = `${inputClass} text-right tabular-nums`;
+/** Ticked to start with: only the lines that may go out now (the owner's request, Oct 2026: what is not ready is greyed). */
+const onlyReady = (lines: JoStatus['lines']) => Object.fromEntries(Object.entries(allLeft(lines)).filter(([n]) => lines.find((l) => l.lineNo === Number(n))?.ready !== false));
 const READY = ['ready', 'partially_released'];
 
 function ConfirmDialog(p: { preview: ReleasePreview; invoiceNumber: string | null; onRecord: (key: string) => Promise<unknown>; onClose: () => void }) {
@@ -54,7 +56,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
     api.joStatus(id).then((s) => {
       setJo({ id, label: `${s.jobOrder.number} · ${s.jobOrder.customerName}` });
       setStatus(s);
-      setV((old) => ({ ...emptyRelease(id), claimedBy: old.claimedBy, idSeen: old.idSeen, qtys: allLeft(s.lines) }));
+      setV((old) => ({ ...emptyRelease(id), claimedBy: old.claimedBy, idSeen: old.idSeen, ...readyWearers(s.lines, onlyReady(s.lines)) }));
     }, fail);
   useEffect(() => {
     const id = new URLSearchParams(location.search).get('jo');
@@ -65,7 +67,10 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
   const typed = releaseInput(v, status?.lines ?? []);
   const live = useLive(JSON.stringify(typed.release), typed.releaseErrors.length === 0, () => api.joReleasePreview(typed.release));
   const balance = live?.release.doc.balanceDueCents ?? status?.money.balanceDueCents ?? 0;
-  const ready = status ? READY.includes(status.stage) : true;
+  // Ready when every line picked may go out now (its own production is done); an older server says it by the stage.
+  const picked = (status?.lines ?? []).filter((l) => { const q = (v.qtys[l.lineNo] ?? '').trim(); return !!q && q !== '0'; });
+  const waiting = picked.filter((l) => l.ready === false);
+  const ready = status ? (status.lines.some((l) => l.ready !== undefined) ? waiting.length === 0 : READY.includes(status.stage)) : true;
 
   const openConfirm = () => {
     setTouched(true);
@@ -113,19 +118,61 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
                 {status.lines.map((l) => {
                   const typedQty = v.qtys[l.lineNo] ?? '';
                   const ticked = !!typedQty.trim() && typedQty.trim() !== '0';
+                  // The line's wearer list (the owner's request, Oct 2026): tick who goes out; the pieces follow the ticks.
+                  const mine = v.wearers[l.lineNo] ?? [];
+                  const tick = (next: number[]) => set({ wearers: { ...v.wearers, [l.lineNo]: next },
+                    qtys: { ...v.qtys, [l.lineNo]: next.length ? String((l.wearers ?? []).filter((w) => next.includes(w.rowNo)).reduce((n, w) => n + w.qty, 0)) : '' } });
+                  const free = (l.wearers ?? []).filter((w) => !w.releasedOn);
+                  const readyFree = free.filter((w) => w.ready);
+                  // Only what is ready can be ticked (the owner's request, Oct 2026); a line or wearer still being made is greyed.
+                  const closedLine = l.leftQty === 0 || l.ready === false;
                   return (
-                    <tr key={l.lineNo} className={`grid gap-2 rounded border p-3 sm:table-row sm:border-0 sm:p-0 ${l.leftQty === 0 ? 'text-slate-400' : ''}`}>
+                    <Fragment key={l.lineNo}>
+                    <tr className={`grid gap-2 rounded-xl border border-slate-200 p-3 sm:table-row sm:border-0 sm:p-0 ${l.leftQty === 0 || l.ready === false ? 'text-slate-400' : ''}`}>
                       <td className="py-1">
-                        <label className="flex items-center gap-2"><span className="sm:hidden">Release line {l.lineNo}</span><input type="checkbox" aria-label={`Release line ${l.lineNo}`} disabled={l.leftQty === 0} checked={ticked}
-                          onChange={(e) => set({ qtys: { ...v.qtys, [l.lineNo]: e.target.checked ? String(l.leftQty) : '' } })} /></label>
+                        <label className="flex items-center gap-2"><span className="sm:hidden">Release line {l.lineNo}</span><input type="checkbox" aria-label={`Release line ${l.lineNo}`} disabled={closedLine} checked={ticked}
+                          onChange={(e) => (e.target.checked ? (readyFree.length ? tick(readyFree.map((w) => w.rowNo)) : set({ qtys: { ...v.qtys, [l.lineNo]: String(Math.min(l.leftQty, l.readyQty ?? l.leftQty)) } })) : set({ qtys: { ...v.qtys, [l.lineNo]: '' }, wearers: { ...v.wearers, [l.lineNo]: [] } }))} /></label>
                       </td>
-                      <td className="py-1">{l.lineNo}. {l.description}</td>
+                      <td className="py-1">{l.lineNo}. {l.description}{l.leftQty > 0 && l.awaitingSteps && <span className="ml-2 rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-700">No production steps yet</span>}
+                        {l.leftQty > 0 && l.ready === false && !l.awaitingSteps && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-900">Still being made</span>}
+                        {l.leftQty > 0 && l.ready && l.readyQty !== undefined && l.readyQty < l.leftQty && <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900">{l.readyQty} of {l.leftQty} ready</span>}</td>
                       <td className="py-1 text-right tabular-nums"><span className="mr-2 sm:hidden">Ordered</span>{l.qty}</td>
                       <td className="py-1 text-right tabular-nums"><span className="mr-2 sm:hidden">Released</span>{l.releasedQty}</td>
                       <td className="py-1">
-                        {l.leftQty > 0 ? <Field label="Pieces now"><input aria-label={`Pieces of line ${l.lineNo}`} inputMode="numeric" className={money} value={typedQty} onChange={(e) => set({ qtys: { ...v.qtys, [l.lineNo]: e.target.value } })} /></Field> : <span className="block text-right">All out</span>}
+                        {l.leftQty > 0 ? <Field label="Pieces now" hint={mine.length ? 'From the wearers ticked' : undefined}><input aria-label={`Pieces of line ${l.lineNo}`} inputMode="numeric" readOnly={mine.length > 0} disabled={l.ready === false} className={money} value={typedQty} onChange={(e) => set({ qtys: { ...v.qtys, [l.lineNo]: e.target.value } })} /></Field> : <span className="block text-right">All out</span>}
                       </td>
                     </tr>
+                    {l.leftQty > 0 && (l.wearers?.length ?? 0) > 0 && (
+                      <tr className="block sm:table-row">
+                        <td colSpan={5} className="block pb-3 sm:table-cell">
+                          <fieldset className="space-y-2 rounded-md bg-slate-50 p-3">
+                            <legend className="sr-only">Wearers going out on line {l.lineNo}</legend>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-medium">Wearers going out</span>
+                              <span className="text-xs text-slate-500">{mine.length} ticked · {free.length} not out yet{readyFree.length < free.length && free.some((w) => w.ready !== null) ? ` · ${readyFree.length} ready` : ''}</span>
+                              <span className="flex-1" />
+                              {readyFree.length > 0 && <Button onClick={() => tick(readyFree.map((w) => w.rowNo))}>Tick all ready ({readyFree.length})</Button>}
+                              {mine.length > 0 && <Button onClick={() => tick([])}>Untick all</Button>}
+                            </div>
+                            <ul className="grid gap-1 sm:grid-cols-2 lg:grid-cols-3">
+                              {(l.wearers ?? []).map((w) => (
+                                <li key={w.rowNo}>
+                                  <label className={`flex items-center gap-2 rounded px-2 py-1 text-sm ${w.releasedOn || w.ready === false ? 'text-slate-400' : 'hover:bg-white'}`}>
+                                    <input type="checkbox" aria-label={`Release ${w.wearerName}`} disabled={!!w.releasedOn || w.ready === false || l.ready === false} checked={!!w.releasedOn || mine.includes(w.rowNo)}
+                                      onChange={(e) => tick(e.target.checked ? [...mine, w.rowNo] : mine.filter((x) => x !== w.rowNo))} />
+                                    <span className="min-w-0 flex-1 truncate">{w.wearerName}<span className="text-slate-500">{w.size ? ` · ${w.size}` : ''}{w.jerseyNumber ? ` · #${w.jerseyNumber}` : ''}{w.qty > 1 ? ` · ${w.qty} pcs` : ''}</span></span>
+                                    {w.releasedOn ? <span className="text-xs">out on {w.releasedOn}</span>
+                                      : w.ready === true ? <span className="rounded bg-emerald-100 px-1 text-xs text-emerald-800">ready</span>
+                                      : w.ready === false ? <span className="rounded bg-amber-100 px-1 text-xs text-amber-900">being made</span> : null}
+                                  </label>
+                                </li>
+                              ))}
+                            </ul>
+                          </fieldset>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -134,12 +181,10 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
         )}
         {status && !ready && (
           <Panel title="Not ready yet">
-            <Notice tone="warning">{status.jobOrder.number} is {status.stageLabel}. Mark it Ready for release first{can('jo.release_override') ? ', or release it anyway with a reason.' : ', or ask the owner to release it.'}</Notice>
-            {can('jo.release_override') && (
-              <Field label="Owner's reason to release it now" required hint="At least 10 characters">
-                <input className={inputClass} value={v.overrideReason} onChange={(e) => set({ overrideReason: e.target.value })} />
-              </Field>
-            )}
+            {/* Nothing goes out before it is ready, the owner included (the owner's rule, Oct 11, 2026). */}
+            <Notice tone="warning">{waiting.length > 0
+              ? `${waiting.map((l) => `Line ${l.lineNo}`).join(', ')} ${waiting.length === 1 ? 'is' : 'are'} still being made. Untick ${waiting.length === 1 ? 'it' : 'them'}: only what is ready for release can go out.`
+              : `${status.jobOrder.number} is ${status.stageLabel}. Only what is ready for release can go out.`}</Notice>
           </Panel>
         )}
         {status && balance > 0 && (

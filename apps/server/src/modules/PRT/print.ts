@@ -1,4 +1,5 @@
 /** Server-rendered, escaped print views. No journal entries are created here. */
+import { customerPrintDetails } from '../CUS/public.ts';
 import { readFileSync } from 'node:fs';
 import { formatPeso } from '@moonproject/shared';
 import qrcode from 'qrcode-generator';
@@ -25,7 +26,7 @@ export interface PrintHeader { id: string; number: string; business_date: string
 
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
-const cell = (value: unknown) => `<td>${escape(value)}</td>`;
+const cell = (value: unknown) => `<td>${escape(readable(value))}</td>`; // dates as people read them
 const money = (n: number) => formatPeso(n);
 /** A cell that holds an amount or a count. A column after the first whose filled cells are all figures is right-aligned. */
 const isFigure = (value: unknown) => typeof value === 'number' || /^[−-]?₱|^[−-]?\d[\d,.]*$/.test(String(value ?? '').trim());
@@ -38,7 +39,7 @@ const lineTable = (headings: string[], rows: unknown[][]) => {
     ? rows.map((r) => `<tr>${r.map((v, i) => figures.has(i) ? `<td class="fig">${escape(v)}</td>` : cell(v)).join('')}</tr>`).join('')
     : `<tr><td class="empty" colspan="${headings.length}">Nothing listed.</td></tr>`}</tbody></table>`;
 };
-const field = (name: string, value: unknown) => value ? `<p><b>${escape(name)}:</b> ${escape(value)}</p>` : '';
+const field = (name: string, value: unknown) => value ? `<p><b>${escape(name)}:</b> ${escape(shown(name, value))}</p>` : '';
 /** A titled block in the body, like "Items" on the quotation. */
 const section = (title: string, html: string) => `<section class="block"><h2 class="section">${escape(title)}</h2>${html}</section>`;
 
@@ -126,7 +127,7 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
       aside: jobOrderQr(h.id, h.number, joinBase),
       body: attachedPictures(db, h.id) +
         doc.lines.map((l: any) => `<section class="job-line"><h2 class="section">${escape(l.description)} · ${escape(l.qty)} pieces</h2>` +
-          lineTable(['Wearer', 'Size', 'Jersey name', 'Jersey no.', 'Qty'], l.roster.map((r: any) => [r.wearerName, r.size ?? (r.sizeMode === 'measured' ? 'Measured' : ''), r.jerseyName, r.jerseyNumber, r.qty])) +
+          lineTable(['Wearer', 'Size', 'Jersey name', 'Jersey no.', 'Qty', 'Garment type'], l.roster.map((r: any) => [r.wearerName, r.size ?? (r.sizeMode === 'measured' ? 'Measured' : ''), r.jerseyName, r.jerseyNumber, r.qty, r.garmentType])) +
           `<h3>Route checklist</h3><ul>${jobTicketRoute(db, h.id, l.lineNo).map((s) => `<li>☐ ${escape(s.name)} — ${escape(s.status)}</li>`).join('')}</ul></section>`).join('') +
         field('Notes', doc.notes),
     };
@@ -146,6 +147,9 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
     status: [['Job order', doc.jobOrderNumber], ['ID type seen', doc.idSeen]],
     aside: jobOrderQr(doc.jobOrderId, doc.jobOrderNumber, joinBase),
     body: section('Items released', lineTable(['Description', 'Qty'], doc.lines.map((l: any) => [l.description, l.qty]))) +
+      // Who went out, when the wearers were ticked (the owner's request, Oct 2026).
+      (doc.lines.some((l: any) => l.wearers?.length) ? section('Wearers released', lineTable(['Item', 'Wearer', 'Size', 'Jersey no.', 'Qty'],
+        doc.lines.flatMap((l: any) => (l.wearers ?? []).map((w: any) => [l.description, w.wearerName, w.size, w.jerseyNumber, w.qty])))) : '') +
       field('Credit note', doc.creditNote) + field('Credit due date', doc.creditDueDate),
     totals: [['Balance due at release', money(doc.balanceDueCents), true]],
     signatures: [['Released by', prepared], ['Received by', doc.claimedBy]],
@@ -208,7 +212,7 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
     signatures: [['Prepared by', prepared], ['Approved by']] };
   if (h.doc_type === 'pay.run') return { title: 'Payslip', subtitle: `${doc.periodStart} to ${doc.periodEnd}`, legend: false, twoUp: true,
     body: doc.employees.map((e: any) => `<section class="payslip"><div class="party slim"><span class="label">Employee</span><strong>${escape(`${e.code} · ${e.name}`)}</strong></div><div class="pay-lines">${lineTable(['Earning / deduction', 'Amount'], e.lines.map((x: any) => [x.description, money(x.amountCents)]))}</div>` +
-      totalsHtml([['Gross pay', money(e.grossCents)], ['SSS', money(e.sssEeCents)], ['PhilHealth', money(e.phicEeCents)], ['Pag-IBIG', money(e.hdmfEeCents)], ['Withholding tax', money(e.wtaxCents)], ['Cash advance', money(e.caCents)], ['Net pay', money(e.netCents), true]]) +
+      totalsHtml([['Gross pay', money(e.grossCents)], ['SSS', money(e.sssEeCents)], ['PhilHealth', money(e.phicEeCents)], ['Pag-IBIG', money(e.hdmfEeCents)], ['Withholding tax', money(e.wtaxCents)], ['Cash advance', money(e.caCents)], ...((e.charges ?? []) as { number: string; what: string; amountCents: number }[]).map((c): [string, string] => [`Damage charge ${c.number}`, money(c.amountCents)]), ['Net pay', money(e.netCents), true]]) +
       signaturesHtml([['Received by', e.name]]) + '</section>').join('') };
   if (h.doc_type === 'ca.advance') return { title: 'Cash Advance Slip', subtitle: '', legend: false, twoUp: true,
     party: { label: 'Employee', name: doc.employeeName },
@@ -233,35 +237,60 @@ function company(profile: Profile): string {
 }
 
 /** The look shared by every printout, after the shop's quotation template (teal accent, dark rule, boxed details). */
-const ACCENT = '#00968a';
-const BASE_CSS = `*{box-sizing:border-box}body{color:#2b2f33;margin:0;font-family:"Segoe UI",Roboto,Arial,sans-serif}
-  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:6mm;padding-bottom:4mm;border-bottom:1.2mm solid #2f3337}
-  .brand{display:flex;align-items:center;gap:4mm;flex:1 1 auto;min-width:0}.logo{height:20mm;width:auto}.company{display:flex;flex-direction:column;line-height:1.45;font-size:9pt;color:#444}
-  .company .trade{font-size:17pt;font-weight:800;color:#2c3e50;text-transform:uppercase;letter-spacing:.3mm;line-height:1.2;margin-bottom:1mm}
+// The ERP's own colours (the owner's request, Oct 2026: printouts match the screens): its indigo, slate greys.
+const ACCENT = '#1f3bb3';
+const INK = '#0f172a';
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+/**
+ * A date or a moment as people read it (the owner's request, Oct 2026): "2026-10-24" → "October 24, 2026";
+ * "2026-10-11T17:40:01.875+08:00" → "October 11, 2026, 5:40 PM" (the Manila time it carries). Anything else unchanged.
+ */
+export function readable(value: unknown): string {
+  const v = String(value ?? '');
+  const m = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/.exec(v);
+  if (!m || (v.length > 10 && v[10] !== 'T')) return v;
+  const day = `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}`;
+  if (!m[4]) return v.length === 10 ? day : v;
+  const h = Number(m[4]);
+  return `${day}, ${h % 12 || 12}:${m[5]} ${h < 12 ? 'AM' : 'PM'}`;
+}
+/** Every date inside a line of text made readable: "2026-09-16 to 2026-09-30" → "September 16, 2026 to September 30, 2026". */
+export const datesIn = (text: unknown): string => String(text ?? '').replace(/\b\d{4}-\d{2}-\d{2}\b(?!T)/g, (d) => readable(d));
+/** Codes kept in the records, in the words customers and staff read on paper. */
+const WORDS: Record<string, Record<string, string>> = {
+  'Payment terms': { dp50: '50% downpayment, balance before release', full: 'Full payment upfront', cod: 'Cash on delivery', net7: 'Within 7 days of the invoice', net15: 'Within 15 days of the invoice', net30: 'Within 30 days of the invoice' },
+  Priority: { normal: 'Normal', rush: 'Rush' },
+  'ID type seen': { government_id: 'Government ID', school_id: 'School ID', company_id: 'Company ID', other_id: 'Another ID', none: 'No ID' },
+};
+const shown = (label: string, value: unknown) => WORDS[label]?.[String(value)] ?? datesIn(readable(value));
+const BASE_CSS = `*{box-sizing:border-box}body{color:#1e293b;margin:0;font-family:"Segoe UI",Roboto,Arial,sans-serif}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:6mm;padding-bottom:4mm;border-bottom:1.2mm solid ${ACCENT}}
+  .brand{display:flex;align-items:center;gap:4mm;flex:1 1 auto;min-width:0}.logo{height:20mm;width:auto}.company{display:flex;flex-direction:column;line-height:1.45;font-size:9pt;color:#475569}
+  .company .trade{font-size:17pt;font-weight:800;color:${INK};text-transform:uppercase;letter-spacing:.3mm;line-height:1.2;margin-bottom:1mm}
   .titlebox{text-align:right;flex:none;max-width:60%}h1{font-size:22pt;font-weight:800;color:${ACCENT};letter-spacing:.6mm;margin:0 0 2mm}
-  .docmeta{border:1px solid #d6d6d6;padding:2mm 3mm;display:inline-grid;grid-template-columns:auto auto;gap:1mm 5mm;text-align:left;font-size:9pt}
-  .docmeta span{color:#555}.docmeta b{text-align:right;color:#222}.docmeta b.no{color:${ACCENT};font-size:11pt;white-space:nowrap}
+  .docmeta{border:1px solid #c7d0f0;border-radius:2mm;background:#f5f7fd;padding:2mm 3mm;display:inline-grid;grid-template-columns:auto auto;gap:1mm 5mm;text-align:left;font-size:9pt}
+  .docmeta span{color:#64748b}.docmeta b{text-align:right;color:${INK}}.docmeta b.no{color:${ACCENT};font-size:11pt;white-space:nowrap}
   .cancelled{font-size:16pt;font-weight:900;letter-spacing:2mm;color:#a00;border:2px solid #a00;margin:1mm 0 2mm auto;padding:.5mm 3mm;width:max-content}
   .practice{font-size:12pt;font-weight:900;letter-spacing:1mm;color:#a60;border:2px dashed #a60;margin:1mm 0 2mm auto;padding:.5mm 3mm;width:max-content}
-  .subtitle{margin:0 0 2mm;font-size:9pt;color:#555;text-transform:uppercase;letter-spacing:.4mm}
+  .subtitle{margin:0 0 2mm;font-size:9pt;color:#64748b;text-transform:uppercase;letter-spacing:.4mm}
   .legend{font-size:8.5pt;font-weight:bold;text-align:center;margin:2mm 0 0;letter-spacing:.2mm}
-  .details{display:flex;justify-content:space-between;gap:6mm;border:1px solid #e1e1e1;padding:4mm 5mm;margin:5mm 0}
-  .details .label,.party .label{display:block;font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:.3mm;color:#333;margin-bottom:1.5mm}
-  .details .name{display:block;font-size:13pt;font-weight:800;color:${ACCENT};text-transform:uppercase}.details .line{display:block;color:#555;font-size:9.5pt}
-  .details .status{text-align:right;font-size:9.5pt}.details .status p{margin:.8mm 0}.details .status b{color:#222}
-  .party.slim{border:1px solid #e1e1e1;padding:2mm 3mm;margin:2mm 0}
-  main{flex:1}main p{margin:2mm 0}h2.section{font-size:11pt;color:${ACCENT};font-weight:700;margin:4mm 0 1.5mm;padding-bottom:1mm;border-bottom:2px solid #e6e6e6}
-  table{width:100%;border-collapse:collapse;margin:2mm 0;font-size:9.5pt}th,td{border:1px solid #555;padding:1.6mm 2mm;text-align:left}
-  th{background:#f0f0f0;font-size:8pt;text-transform:uppercase;letter-spacing:.2mm;text-align:center}td.empty{text-align:center;color:#777}
+  .details{display:flex;justify-content:space-between;gap:6mm;border:1px solid #e2e8f0;border-radius:2mm;padding:4mm 5mm;margin:5mm 0}
+  .details .label,.party .label{display:block;font-size:8pt;font-weight:800;text-transform:uppercase;letter-spacing:.3mm;color:#64748b;margin-bottom:1.5mm}
+  .details .name{display:block;font-size:13pt;font-weight:800;color:${ACCENT};text-transform:uppercase}.details .line{display:block;color:#475569;font-size:9.5pt}
+  .details .status{text-align:right;font-size:9.5pt}.details .status p{margin:.8mm 0}.details .status b{color:${INK}}
+  .party.slim{border:1px solid #e2e8f0;border-radius:2mm;padding:2mm 3mm;margin:2mm 0}
+  main{flex:1}main p{margin:2mm 0}h2.section{font-size:11pt;color:${ACCENT};font-weight:700;margin:4mm 0 1.5mm;padding-bottom:1mm;border-bottom:2px solid #dde3f7}
+  table{width:100%;border-collapse:collapse;margin:2mm 0;font-size:9.5pt}th,td{border:1px solid #cbd5e1;padding:1.6mm 2mm;text-align:left}
+  th{background:#eef1fb;color:#334155;font-size:8pt;text-transform:uppercase;letter-spacing:.2mm;text-align:center}td.empty{text-align:center;color:#94a3b8}
   td.fig{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-  .totals{margin:3mm 0 0 auto;width:85mm}.tot{display:flex;justify-content:space-between;gap:4mm;margin:0;padding:1.2mm 3mm;font-size:9.5pt;border-bottom:1px solid #eee}
-  .tot.grand{position:relative;margin-top:1.5mm;padding:0 4mm 0 0;border:1px solid #333;font-size:12pt;font-weight:800;align-items:center;color:${ACCENT}}
+  .totals{margin:3mm 0 0 auto;width:85mm}.tot{display:flex;justify-content:space-between;gap:4mm;margin:0;padding:1.2mm 3mm;font-size:9.5pt;border-bottom:1px solid #e2e8f0}
+  .tot.grand{position:relative;margin-top:1.5mm;padding:0 4mm 0 0;border:1px solid ${ACCENT};border-radius:1.5mm;overflow:hidden;font-size:12pt;font-weight:800;align-items:center;color:${ACCENT}}
   .tot.grand b{background:${ACCENT};color:#fff;padding:2.2mm 4mm;flex:1;text-transform:uppercase}
-  .tot.grand::after{content:"";position:absolute;right:0;bottom:-1.2mm;width:45%;border-bottom:3px double #333}
+  .tot.grand::after{content:none}
   .signatures{display:flex;gap:10mm;margin-top:12mm;flex-wrap:wrap}.sign{width:55mm;text-align:center}
-  .sign .name{display:block;min-height:6mm;font-weight:700;font-size:11pt;border-bottom:1.5px solid #333;padding-bottom:1mm}.sign .name::before{content:"\\200b"}.sign .caption{display:block;font-size:8pt;text-transform:uppercase;letter-spacing:.3mm;margin-top:1.5mm;color:#444}
-  .terms{border-top:2px solid #e6e6e6;margin-top:8mm;padding-top:3mm;font-size:8.5pt}.terms h3{font-size:10pt;color:#2c3e50;margin:0 0 1.5mm}.terms p{white-space:pre-line;margin:0;line-height:1.5}
-  footer{display:flex;justify-content:space-between;font-size:7.5pt;color:#666;border-top:1px solid #ccc;padding-top:1.5mm;margin-top:5mm}
+  .sign .name{display:block;min-height:6mm;font-weight:700;font-size:11pt;border-bottom:1.5px solid #94a3b8;padding-bottom:1mm}.sign .name::before{content:"\\200b"}.sign .caption{display:block;font-size:8pt;text-transform:uppercase;letter-spacing:.3mm;margin-top:1.5mm;color:#64748b}
+  .terms{border-top:2px solid #dde3f7;margin-top:8mm;padding-top:3mm;font-size:8.5pt}.terms h3{font-size:10pt;color:${ACCENT};margin:0 0 1.5mm}.terms p{white-space:pre-line;margin:0;line-height:1.5}
+  footer{display:flex;justify-content:space-between;font-size:7.5pt;color:#64748b;border-top:1px solid #e2e8f0;padding-top:1.5mm;margin-top:5mm}
   h3{font-size:10pt;margin:2mm 0}ul{margin:1mm 0 2mm;columns:2}li{list-style:none;margin:1mm 0}
   .job-qr{margin:0;text-align:center}.details .job-qr{flex:none;align-self:center}.job-qr svg{display:block;width:25mm;height:25mm;shape-rendering:crispEdges}.job-qr figcaption{font-size:8pt;font-weight:bold;margin-top:1mm;white-space:nowrap}
   .test-print{position:absolute;z-index:5;top:45%;left:5%;width:90%;transform:rotate(-28deg);border:3px solid #b00;color:#b00;font-size:20pt;font-weight:900;letter-spacing:1mm;text-align:center;opacity:.32;padding:3mm;pointer-events:none}`;
@@ -277,8 +306,8 @@ export function renderReportPrint(title: ReportPrintTitle, body: string, profile
     @media screen{body{background:#ddd;padding:12mm}article{background:#fff;width:210mm;min-height:273mm;margin:auto;padding:12mm;box-shadow:0 2px 12px #777}}</style></head>` +
     `<body><article><header class="top">${company(profile)}<div class="titlebox"><h1>${escape(title.toUpperCase())}</h1></div></header>` +
     `${legend ? '<p class="legend"><strong>THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.</strong></p>' : ''}` +
-    `<div class="meta"><span>Date <b>${escape(businessDate)}</b></span><span>${ownersPack ? 'Prepared by' : 'Printed by'} <b>${escape(printedBy)}</b></span></div><main>${body}</main>` +
-    `<footer><span>${ownersPack ? 'Prepared on' : `Printed by ${escape(printedBy)} at`} ${escape(printedAt)}</span></footer></article></body></html>`;
+    `<div class="meta"><span>Date <b>${escape(readable(businessDate))}</b></span><span>${ownersPack ? 'Prepared by' : 'Printed by'} <b>${escape(printedBy)}</b></span></div><main>${body}</main>` +
+    `<footer><span>${ownersPack ? 'Prepared on' : `Printed by ${escape(printedBy)} on`} ${escape(readable(printedAt))}</span></footer></article></body></html>`;
 }
 
 export const printField = field;
@@ -289,19 +318,25 @@ export const printMoney = money;
 export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profile, kind: PrintKind,
   printedBy: string, printedAt: string, copyNumber: number, practice = false, testPrint = false, joinBase?: string): string {
   const p = content(db, h, doc, kind, joinBase);
+  // The customer's billing address and contact numbers under their name (the owner's request, Oct 2026).
+  const customerId = (doc as { customerId?: unknown } | null)?.customerId;
+  if (p.party && typeof customerId === 'string' && kind !== 'job_ticket') { // not on the production copy
+    const c = customerPrintDetails(db, customerId);
+    if (c) p.party.lines = [...(p.party.lines ?? []), ...(c.billingAddress ? [`Billing address: ${c.billingAddress}`] : []), ...(c.phones.length ? [`Contact no.: ${c.phones.join(' / ')}`] : [])];
+  }
   const catalogueTitles: readonly string[] = ['Payment Voucher', 'Payslip', 'Cash Advance Slip', 'Inventory Count Sheet', 'Certificate of Creditable Tax Withheld at Source'];
   if (!(DOC_TITLES as readonly string[]).includes(p.title) && !catalogueTitles.includes(p.title)) throw new Error('Print title is not allowed');
   const title = p.title.toUpperCase();
   const details = p.party || p.aside || p.status?.some(([, v]) => v)
     ? `<section class="details">${p.party ? `<div><span class="label">${escape(p.party.label)}</span><span class="name">${escape(p.party.name)}</span>${(p.party.lines ?? []).filter(Boolean).map((l) => `<span class="line">${escape(l)}</span>`).join('')}</div>` : '<div></div>'}${p.aside ?? ''}` +
-      `<div class="status"><span class="label">Document status</span>${(p.status ?? []).filter(([, v]) => v).map(([k, v]) => `<p>${escape(k)}: <b>${escape(v)}</b></p>`).join('')}<p>Printed: <b>${escape(printedAt.slice(0, 10))}</b></p></div></section>`
+      `<div class="status"><span class="label">Document status</span>${(p.status ?? []).filter(([, v]) => v).map(([k, v]) => `<p>${escape(k)}: <b>${escape(shown(k, v))}</b></p>`).join('')}<p>Printed: <b>${escape(readable(printedAt.slice(0, 10)))}</b></p></div></section>`
     : '';
   const one = `<article class="copy">${testPrint ? '<div class="test-print">TEST PRINT, NOT A REAL DOCUMENT</div>' : ''}` +
-    `<header class="top">${company(profile)}<div class="titlebox"><h1>${escape(title)}</h1>${h.status === 'cancelled' ? '<p class="cancelled">CANCELLED</p>' : ''}${practice ? '<p class="practice">PRACTICE ONLY · NOT A REAL DOCUMENT</p>' : ''}${p.subtitle ? `<p class="subtitle">${escape(p.subtitle)}</p>` : ''}` +
-    `<div class="docmeta"><span>Document no.</span><b class="no">${escape(h.number)}</b><span>Date</span><b>${escape(h.business_date)}</b></div></div></header>` +
+    `<header class="top">${company(profile)}<div class="titlebox"><h1>${escape(title)}</h1>${h.status === 'cancelled' ? '<p class="cancelled">CANCELLED</p>' : ''}${practice ? '<p class="practice">PRACTICE ONLY · NOT A REAL DOCUMENT</p>' : ''}${p.subtitle ? `<p class="subtitle">${escape(datesIn(p.subtitle))}</p>` : ''}` +
+    `<div class="docmeta"><span>Document no.</span><b class="no">${escape(h.number)}</b><span>Date</span><b>${escape(readable(h.business_date))}</b></div></div></header>` +
     `${p.legend ? '<p class="legend"><strong>THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.</strong></p>' : ''}${details}` +
     `<main>${p.body}${totalsHtml(p.totals)}</main>${signaturesHtml(p.signatures)}${termsHtml(p.terms)}` +
-    `<footer><span>Printed by ${escape(printedBy)} at ${escape(printedAt)}</span><span>${copyNumber > 1 ? `REPRINT no. ${copyNumber - 1}` : 'Original print'} · Copy ${copyNumber}</span></footer></article>`;
+    `<footer><span>Printed by ${escape(printedBy)} on ${escape(readable(printedAt))}</span><span>${copyNumber > 1 ? `REPRINT no. ${copyNumber - 1}` : 'Original print'} · Copy ${copyNumber}</span></footer></article>`;
   const thermal = kind === 'thermal';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escape(title)} ${escape(h.number)}</title><style>
     @page{size:${thermal ? '80mm auto' : 'A4'};margin:${thermal ? '4mm' : '12mm'}}${BASE_CSS}body{font-size:${thermal ? '9pt' : '10.5pt'}}.sheet{min-height:${thermal ? 'auto' : '273mm'}}

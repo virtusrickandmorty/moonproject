@@ -8,7 +8,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, taxYearPath, type DeductionSetting, type DocTypeInfo, type Me, type Preview } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, longDate, peso } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, longDate, peso } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord, useToday } from '../../generic/record.tsx';
 import { Link } from '../../router.tsx';
@@ -51,7 +51,7 @@ export function useYearReport<T>(allowed: boolean, load: (year: number) => Promi
 export function YearPicker({ today, year, setYear }: { today: string; year: number | null; setYear: (y: number) => void }) {
   if (year === null) return null;
   return (
-    <div className="flex flex-wrap items-end gap-3 print:hidden">
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden">
       <Field label="Year">
         <select className={inputClass} value={year} onChange={(e) => setYear(Number(e.target.value))}>
           {[...new Set([year, ...yearChoices(today)])].sort((a, b) => b - a).map((y) => <option key={y} value={y}>{y}</option>)}
@@ -79,7 +79,7 @@ export function AnnualIncomeTaxReturn({ me, docTypes }: { me: Me; docTypes: DocT
       </p>
       <YearPicker today={r.today} year={r.year} setYear={r.setYear} />
       {r.error && <Notice>{r.error}</Notice>}
-      {!w && !r.error && r.year !== null && <p className="text-slate-500">Loading…</p>}
+      {!w && !r.error && r.year !== null && <Loading />}
       {w && (
         <Panel title={`${w.year}${ended ? '' : ', so far'}`}>
           <p className="text-sm">File and pay the 1702-RT by <strong>{w.returnDue}</strong>.</p>

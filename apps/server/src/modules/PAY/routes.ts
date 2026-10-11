@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { isPractice, markPractice } from './practice.ts';
 import { z } from 'zod';
 import { badRequest, notFound, toCsv, type CsvCell } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
@@ -10,7 +11,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { PAY_GROUPS, employee, employeesInGroup } from '../EMP/public.ts';
 import { runDoc } from './doctypes/run.ts';
 import { releaseStatus } from './doctypes/release.ts';
-import { addDays, periodEndOf } from './run-calc.ts';
+import { addDays, periodEndOf, periodRuleOf } from './run-calc.ts';
 import { listLoans, registerLoan, stopLoan, updateLoan, withTotals } from './loans.ts';
 import { annualTableAt, hdmfRateAt, payRulesAt, phicRateAt, sssRateAt, wtaxTableAt } from './statutory.ts';
 import { addPrior, updatePrior } from './prior.ts';
@@ -19,6 +20,7 @@ import { SCHEDULE_1, SCHEDULE_2, alphalist, asCsv } from './alphalist.ts';
 
 export function payRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
+  if (deps.practice) markPractice(db);
 
   /**
    * Payslips of a run (F4): per employee the earning lines, deductions (each government loan with what is left of it),
@@ -96,17 +98,21 @@ export function payRoutes(app: FastifyInstance, deps: AppDeps): void {
     const { payGroup } = z.object({ payGroup: z.enum(PAY_GROUPS) }).strict().parse(req.query);
     const now = today(clock);
     const backdate = currentUser(req).permissions.has(BACKDATE_PERMISSION);
+    const rule = periodRuleOf(db);
     const starts: string[] = [];
-    for (let d = now; starts.length < 6 && d > addDays(now, -120); d = addDays(d, -1)) {
-      const end = periodEndOf(payGroup, d);
-      if (end && end <= now) starts.push(d);
+    // The practice shop also offers the period under way and the next one (PAY practice.ts); the real shop, ended ones only.
+    const from = isPractice(db) ? addDays(now, 31) : now;
+    for (let d = from; starts.length < (isPractice(db) ? 8 : 6) && d > addDays(now, -120); d = addDays(d, -1)) {
+      const end = periodEndOf(payGroup, d, rule);
+      if (end && (end <= now || (isPractice(db) && d <= addDays(now, 16)))) starts.push(d);
     }
     const recorded = db.prepare(`SELECT d.id, d.number FROM pay_runs r JOIN documents d ON d.id = r.document_id WHERE d.status = 'posted' AND r.pay_group = ? AND r.period_start = ?`);
     return starts.map((periodStart) => {
-      const periodEnd = periodEndOf(payGroup, periodStart)!;
+      const periodEnd = periodEndOf(payGroup, periodStart, rule)!;
       return {
         periodStart, periodEnd, employees: employeesInGroup(db, payGroup, periodStart, periodEnd).length,
         recorded: (recorded.get(payGroup, periodStart) as { id: string; number: string } | undefined) ?? null, bookOn: backdate && periodEnd < now ? periodEnd : null,
+        ...(periodEnd > now ? { notEnded: true } : {}),
       };
     });
   });

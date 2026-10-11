@@ -21,6 +21,8 @@ import {
 } from './forms.ts';
 import { Booklet } from './parts.tsx';
 import { DepositVatLines } from './JobOrderView.tsx';
+import { changeStage } from '../../../../server/src/modules/JO/stages.ts';
+import { currentStage } from '../../../../server/src/modules/JO/public.ts';
 
 const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: string, init: RequestInit) => {
   const res = await app.inject({ method: init.method as 'GET', url, payload: init.body as string, headers: { ...(init.headers as object), cookie: jar.cookie } });
@@ -66,8 +68,11 @@ const collect = (s: Shop, cents: number, cr: string) =>
   s.api.post('col.collection', { customerId: s.c.school, crNumber: cr, applications: [{ jobOrderId: s.jo.id, amountCents: cents }], tenders: [{ cashPlaceId: s.cash, amountCents: cents }] }, cents, key());
 
 const releaseAll = async (s: Shop, invoiceNumber: string | null) => {
+  // Production marks it ready first (as the board does); nothing goes out before that (the owner's rule, Oct 11, 2026).
+  const who = { userId: s.env.db.prepare("SELECT id FROM users LIMIT 1").pluck().get() as string, at: stamp(s.env.clock) };
+  for (const [from, to] of [['open', 'in_production'], ['in_production', 'ready']] as const) if (currentStage(s.env.db, s.jo.id) === from) changeStage(s.env.db, s.jo.id, { from, to }, who);
   const st = await s.api.joStatus(s.jo.id);
-  const rel = releaseInput({ ...emptyRelease(s.jo.id), qtys: { 1: '4' }, claimedBy: 'Coach Placeholder', idSeen: 'school_id', overrideReason: 'Needed for the tournament today',
+  const rel = releaseInput({ ...emptyRelease(s.jo.id), qtys: { 1: '4' }, claimedBy: 'Coach Placeholder', idSeen: 'school_id',
     creditNote: 'Pays the rest on Friday', creditDueInDays: '7', invoiceToFollow: invoiceNumber === null, invoiceNumber: invoiceNumber ?? '' }, st.lines);
   return { rel, preview: await s.api.joReleasePreview(rel.release) };
 };
@@ -250,7 +255,7 @@ describe('web client for the downpayment invoice (mode C)', () => {
 const formatStart = (info: Parameters<typeof dpStartCents>[0]) => (dpStartCents(info) / 100).toFixed(2);
 
 describe('a job order from a quotation', () => {
-  it('fills the customer, lines, quantities, prices and the quotation number; staff still pick the terms and may change anything', async () => {
+  it('fills the customer, lines, quantities, prices and the quotation number; terms start at 50% downpayment and staff may change anything', async () => {
     const s = await shop();
     const { csrfToken } = await s.api.me();
     const send = async (url: string, body: unknown, ifMatch?: string) =>
@@ -264,11 +269,11 @@ describe('a job order from a quotation', () => {
     const prefill = jobOrderPrefill(detail, { [item.id]: 'made_to_order_garment' })!;
     const values = valuesFromQuotation(prefill, (detail.doc as { customerName: string }).customerName);
     expect(values).toMatchObject({
-      customer: { id: s.c.school, name: 'Moonlight Test School' }, paymentTerms: '', notes: `From quotation ${detail.header.number}. Rush for the regatta`,
+      customer: { id: s.c.school, name: 'Moonlight Test School' }, paymentTerms: 'dp50', notes: `From quotation ${detail.header.number}. Rush for the regatta`,
       lines: [{ kind: 'made_to_order', description: 'Team jersey set', qty: '4', price: '1,500.00', discount: '' }],
     });
-    // The payment terms are staff's to pick: the form asks until they do.
-    expect(joInput(values).errors).toEqual(['Pick the payment terms.']);
+    // The payment terms start at 50% downpayment (the owner's request, Oct 2026); staff may change them.
+    expect(joInput(values).errors).toEqual([]);
     // Staff change a price and add a line; the rest stays as quoted.
     const changed = { ...values, paymentTerms: 'dp50' as const, lines: [{ ...values.lines[0]!, price: '1,400.00' }, { ...values.lines[0]!, description: 'Carry bag', qty: '4', price: '250.00' }] };
     const typed = joInput(changed);

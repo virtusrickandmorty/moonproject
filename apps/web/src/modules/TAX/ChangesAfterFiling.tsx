@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type ChangeAfterFiling, type Me } from '../../api.ts';
-import { Notice, manilaTime } from '../../components/ui.tsx';
+import { Loading, Notice, manilaTime } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 
@@ -24,7 +24,7 @@ export function ChangesAfterFiling({ me }: { me: Me }) {
       </div>
       <p className="text-sm text-slate-600">Documents dated in a filed period that were recorded or cancelled after its filing confirmation or payment was recorded. The filed return still shows the figures before them: tell the accountant, who may need to amend it.</p>
       {error && <Notice>{error}</Notice>}
-      {!rows && !error && <p className="text-slate-500">Loading…</p>}
+      {!rows && !error && <Loading />}
       {rows?.length === 0 && <Notice tone="note">Nothing changed after a return was filed.</Notice>}
       {rows && rows.length > 0 && (
         <table className="w-full text-sm">

@@ -14,6 +14,7 @@ import { certificatesToIssue } from '../TAX/public.ts';
 import { customerStatement } from '../RPT/receivables.ts';
 import { assetSchedule } from '../RPT/cash-assets.ts';
 import { sizingProfile } from '../CUS/public.ts';
+import { linesAwaitingSteps } from '../PRD/public.ts';
 import { bookPrintRoutes, loosePaper, testBookPrints } from './book-routes.ts';
 import { render2307, renderPrint, renderReportPrint, printField, printLineTable, printMoney, type Certificate2307, type Profile, type PrintHeader, type PrintKind } from './print.ts';
 
@@ -247,6 +248,15 @@ export function prtRoutes(app: FastifyInstance, deps: AppDeps): void {
         const h = db.prepare(`SELECT d.id, d.number, d.business_date, d.doc_type, d.status, u.display_name AS prepared_by
           FROM documents d LEFT JOIN users u ON u.id = d.posted_by WHERE d.id = ? AND d.doc_type = ?`).get(id, type) as PrintHeader | undefined;
         if (!h) throw notFound('The document');
+        // A job ticket goes to the shop floor once every made item has its production steps (the owner's rule, Oct 2026);
+        // the details say which items, so the screen can open them on the production board.
+        if (kind === 'job_ticket') {
+          const waiting = linesAwaitingSteps(db, h.id);
+          if (waiting.length > 0) {
+            throw conflict('NEEDS_STEPS', `${h.number}: choose the production steps of ${waiting.map((l) => `line ${l.lineNo} (${l.description})`).join(', ')} on the production board before printing its job ticket.`,
+              { jobOrderId: h.id, number: h.number, lines: waiting });
+          }
+        }
         if (type === 'col.collection' && settingAt(db, 'col.cr_mode', h.business_date).mode !== 'system') {
           throw conflict('BOOKLET_CR_NOT_PRINTABLE', 'Collection receipts cannot be printed in booklet mode. Use the pre-printed receipt booklet.');
         }

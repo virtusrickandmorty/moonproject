@@ -36,6 +36,19 @@ export function filterSets(rows: SizerSet[], search: string, status: SizerSet['s
   return rows.filter((s) => (status === 'all' || s.status === status) && (!q || `${s.code} ${s.garmentType} ${s.sizesIncluded} ${s.holder?.customerName ?? ''}`.toLowerCase().includes(q)));
 }
 
+export interface SetValues { code: string; garmentType: string; sizesIncluded: string }
+
+/** The sizer set form -> input (the owner's request, Oct 2026): a code, the garment it fits and the sizes in it. */
+export function setInput(v: SetValues): { input: SetValues; errors: string[] } {
+  const input = { code: v.code.trim(), garmentType: v.garmentType.trim(), sizesIncluded: v.sizesIncluded.trim() };
+  const errors = [
+    ...(input.code ? input.code.length > 100 ? ['The code takes up to 100 letters.'] : [] : ['Type the set\'s code, for example SZ-JERSEY-01.']),
+    ...(input.garmentType ? input.garmentType.length > 100 ? ['The garment type takes up to 100 letters.'] : [] : ['Type the garment it fits, for example Full Sublimation Jersey.']),
+    ...(input.sizesIncluded ? input.sizesIncluded.length > 200 ? ['The sizes take up to 200 letters.'] : [] : ['List the sizes in it, for example XS, S, M, L, XL.']),
+  ];
+  return { input, errors };
+}
+
 /** A week from the server's today: the due-back date the lend form starts with. */
 export function weekFrom(today: string): string {
   const [y, m, d] = today.split('-').map(Number) as [number, number, number];

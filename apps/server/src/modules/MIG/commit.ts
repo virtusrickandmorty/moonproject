@@ -5,14 +5,17 @@ import { appendAudit } from '../../engine/audit.ts';
 import { addCustomerPhone, createCustomer, createGroup, createWearer, createMeasurement, customerRef, normalizePhone } from '../CUS/public.ts';
 import { createEmployee, addPayProfile, type Who as EmployeeWho } from '../EMP/public.ts';
 import { addRate } from '../RATE/public.ts';
-import { applyEmployeeFix, applyMeasurementAssignment, measurementField, measurementTenths, rateFromPesos, validateRow, type ManualData } from './csv.ts';
+import { importPriceListItem } from '../CAT/public.ts';
+import { listSteps } from '../PRD/public.ts';
+import { createSizerSet } from '../SZR/public.ts';
+import { applyEmployeeFix, applyMeasurementAssignment, applySizerFix, measurementField, measurementTenths, rateFromPesos, validateRow, type ManualData, applyPriceListFix, priceListRow } from './csv.ts';
 
-type Kind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate';
+type Kind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate' | 'sizer_set';
 type Row = { id: string; upload_id: string; row_number: number; row_type: Kind; status: string;
   raw_json: string; manual_data_json: string | null; legacy_id: string | null; rate_cents: number | null; merge_into_row_id: string | null };
 type Who = EmployeeWho;
 type Counts = Record<Kind, { imported: number; alreadyImported: number }>;
-const kinds: Kind[] = ['customer', 'group', 'wearer', 'measurement', 'employee', 'piece_rate'];
+const kinds: Kind[] = ['customer', 'group', 'wearer', 'measurement', 'employee', 'piece_rate', 'sizer_set'];
 const counts = (): Counts => Object.fromEntries(kinds.map(k => [k, { imported: 0, alreadyImported: 0 }])) as Counts;
 const error = (message: string, details?: unknown): never => { throw new AppError('IMPORT_COMMIT', message, 422, details); };
 const string = (v: unknown): string => typeof v === 'string' ? v.trim() : '';
@@ -39,9 +42,9 @@ const rawFor = (row: Row): Record<string, string> => {
   } else if (row.row_type === 'employee') {
     applyEmployeeFix(raw, manual);
   } else if (row.row_type === 'piece_rate') {
-    if (manual.garmentType) raw.Garment_Type = String(manual.garmentType);
-    if (manual.operation) raw.Operation = String(manual.operation);
-    if (manual.rateCents !== undefined) raw.Rate = (Number(manual.rateCents) / 100).toFixed(2);
+    applyPriceListFix(raw, manual);
+  } else if (row.row_type === 'sizer_set') {
+    applySizerFix(raw, manual);
   }
   return raw;
 };
@@ -200,14 +203,29 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
         return e.id;
       });
     }
+    // The price list (the owner's request, Oct 2026): each row's item (found by name, or made), its price when it has
+    // none yet, and the row's piece rate on the item; rows of one item share it.
+    const steps = listSteps(db);
     for (const row of active.filter(r => r.row_type === 'piece_rate')) {
       const raw = data.get(row.id)!;
-      const garmentType = first(raw, 'Garment_Type'), stepCode = first(raw, 'Operation').toUpperCase();
-      const complexity = first(raw, 'Complexity').toLowerCase() || 'standard';
+      const p = priceListRow(raw);
+      const op = p.operation.toLowerCase();
+      const step = op ? steps.find((s) => s.code.toLowerCase() === op || s.name.toLowerCase() === op || s.name.toLowerCase().startsWith(op)) : undefined;
+      if (op && !step) throw new AppError('MIG_STEP', `Price list row ${row.row_number}: "${p.operation}" is not a production step. Use Fix to type one like Sewing.`, 409);
       const legacyId = row.legacy_id ?? (first(raw, 'Rate_ID', 'Legacy_ID') ||
-        `${garmentType.toLowerCase()}:${stepCode}:${complexity}:${first(raw, 'Effective_From')}:${row.rate_cents}`);
-      create(row, 'piece_rate', legacyId, () => String(addRate(db, { garmentType, stepCode, complexity,
-        rateCents: row.rate_cents, effectiveFrom: who.today, reason: 'Confirmed legacy piece-rate import' }, who).id));
+        `pricelist:${p.item.toLowerCase()}:${step?.code ?? 'price'}:${p.part}:${p.complexity}:${p.priceCents ?? ''}:${p.rateCents ?? ''}`);
+      create(row, 'piece_rate', legacyId, () => {
+        const it = importPriceListItem(db, { name: p.item, class: p.class, unit: p.unit, priceCents: p.priceCents }, who);
+        if (!step || p.rateCents === undefined) return it.id;
+        return String(addRate(db, { garmentType: it.garmentType ?? p.item, stepCode: step.code, complexity: p.complexity, ...(p.part !== 'whole' ? { part: p.part } : {}),
+          rateCents: p.rateCents, effectiveFrom: who.today, reason: 'Confirmed price list import' }, who).id);
+      });
+    }
+    // Sizer sets (the owner's request, Oct 2026), in the shop; a code already on file stops the import with the row named.
+    for (const row of active.filter(r => r.row_type === 'sizer_set')) {
+      const raw = data.get(row.id)!;
+      create(row, 'sizer_set', first(raw, 'Code'), () => createSizerSet(db,
+        { code: first(raw, 'Code'), garmentType: first(raw, 'Garment_Type'), sizesIncluded: first(raw, 'Sizes_Included') }, who).id);
     }
     const summary = { counts: tally, measurementCellTenths: cellTenths, measurementCellSum: cellTenths / 10,
       excluded: rows.filter(r => r.status === 'excluded').length, merged: rows.filter(r => r.status === 'merged').length };

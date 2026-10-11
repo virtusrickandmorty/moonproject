@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type DocTypeInfo, type LateInstalment, type LoanDetail, type LoanPayment, type LoanRow } from '../../api.ts';
-import { Notice, Panel, StatusChip, peso } from '../../components/ui.tsx';
+import { Loading, Notice, Panel, StatusChip, peso } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { KIND_WORDS, STATE_WORDS, forgivableNo, forgivenWords, lateCounts, leftCents, loanDocType, loanTotals, ratePercent, scheduleStates } from './register.ts';
@@ -30,7 +30,7 @@ export function Loans({ docTypes }: { docTypes: DocTypeInfo[] }) {
   const [showCancelled, setShowCancelled] = useState(false);
   useEffect(() => void Promise.all([api.loans(), api.loansLate()]).then(([r, l]) => (setRows(r), setLate(l)), (e: Error) => setError(e.message)), []);
   if (error) return <Notice>{error}</Notice>;
-  if (!rows) return <p className="text-slate-500">Loading…</p>;
+  if (!rows) return <Loading />;
   const shown = rows.filter((r) => showCancelled || r.status === 'posted');
   const t = loanTotals(rows);
   const counts = lateCounts(late);
@@ -75,7 +75,7 @@ export function LoanPage({ docTypes, params }: { docTypes: DocTypeInfo[]; params
     ([x, p, all, h]) => (setL(x), setPayments(p), setLate(all.filter((z) => z.loanId === id)), setToday(h.serverTime.slice(0, 10)), setError('')), (e: Error) => setError(e.message)), [id]);
   useEffect(load, [load]);
   if (error) return <Notice>{error}</Notice>;
-  if (!l) return <p className="text-slate-500">Loading…</p>;
+  if (!l) return <Loading />;
   const may = (key: string) => docTypes.some((d) => d.key === key && d.canPost);
   const states = scheduleStates(l.schedule, today);
   const forgiveNo = may('loan.forgiveness') ? forgivableNo(l) : undefined;

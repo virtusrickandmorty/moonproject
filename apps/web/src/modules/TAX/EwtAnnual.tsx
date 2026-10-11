@@ -5,7 +5,7 @@
  * Read-only; downloads for Excel. Opens on last year, or the year in its link.
  */
 import { api, taxYearPath, type Me } from '../../api.ts';
-import { Notice, Panel } from '../../components/ui.tsx';
+import { Loading, Notice, Panel } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { useYearReport, YearPicker } from './AnnualIncomeTax.tsx';
 import { WorksheetChecks } from './QuarterReports.tsx';
@@ -28,7 +28,7 @@ export function EwtAnnualReturnPage({ me }: { me: Me }) {
       </p>
       <YearPicker today={r.today} year={r.year} setYear={r.setYear} />
       {r.error && <Notice>{r.error}</Notice>}
-      {!w && !r.error && r.year !== null && <p className="text-slate-500">Loading…</p>}
+      {!w && !r.error && r.year !== null && <Loading />}
       {w && (
         <>
           <Panel title={`Alphalist of payees, ${w.year}`}>

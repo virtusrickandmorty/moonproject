@@ -123,4 +123,19 @@ describe('CAT catalog and pricing', () => {
       await env.app.close(); env.db.close();
     }
   });
+
+  it('gives a new item the next code for its class when none is typed', async () => {
+    const env = await createTestEnv();
+    try {
+      const owner = await env.as('owner');
+      const add = async (body: object) => (await owner.post('/api/cat/items', body)).json() as { code: string };
+      const garment = { name: 'Sample jersey', class: 'made_to_order_garment', garmentType: 'Jersey', unit: 'pc', setComponents: 1 };
+      expect((await add(garment)).code).toBe('MTO-0001');
+      expect((await add({ ...garment, name: 'Sample shorts' })).code).toBe('MTO-0002');
+      expect((await add({ ...garment, name: 'Typed code', code: 'MTO-0010' })).code).toBe('MTO-0010'); // a typed code is kept
+      expect((await add({ ...garment, name: 'Next after it' })).code).toBe('MTO-0011');
+      expect((await add({ name: 'Hemming', class: 'service', garmentType: null, unit: 'pc', setComponents: 1 })).code).toBe('SRV-0001');
+      expect((await add({ name: 'Sample cap', class: 'ready_made_item', garmentType: null, unit: 'pc', setComponents: 1 })).code).toBe('RTW-0001');
+    } finally { await env.app.close(); env.db.close(); }
+  });
 });

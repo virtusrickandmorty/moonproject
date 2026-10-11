@@ -16,6 +16,7 @@ import { manilaDate } from '@moonproject/shared';
 import { buildApp } from '../../app.ts';
 import { fixedClock, today } from '../clock.ts';
 import { openDb, type Db } from '../db/driver.ts';
+import { periodEndOf, periodRuleOf, semiStartOf } from '../../modules/PAY/run-calc.ts';
 import { loadModules } from '../../modules/load.ts';
 import { runInvariants } from '../../engine/ledger/invariants.ts';
 import {
@@ -215,7 +216,8 @@ export async function createPerfData(dbPath: string, given: Partial<PerfOptions>
         const first = sewers[int(0, sewers.length - 1)]!;
         const second = sewers[(sewers.indexOf(first) + 1) % sewers.length]!;
         const a = Math.floor(job.qty / 2);
-        await record(production, 'prd.entry', { jobOrderId: job.id, stepId: 6, rows: [
+        // Every step needs all of the line's pieces before it is completed (sewing, then packing).
+        for (const stepId of [6, 8]) await record(production, 'prd.entry', { jobOrderId: job.id, stepId, rows: [
           { lineNo: 1, employeeId: first, pieces: a }, { lineNo: 1, employeeId: second, pieces: job.qty - a }] });
         for (const step of [6, 8]) ok(await production.post(`/api/prd/jobs/${job.id}/lines/1/steps/${step}/complete`, {}), `complete step ${step}`);
         later(toRelease, day + int(0, 8), job);
@@ -268,8 +270,10 @@ export async function createPerfData(dbPath: string, given: Partial<PerfOptions>
       encoder = await login('encoder');
       const dayOfMonth = Number(date.slice(8));
       const monthEnd = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0)).getUTCDate();
-      if (dayOfMonth === 15 || dayOfMonth === monthEnd) {
-        const run = await record(accountant, 'pay.run', { payGroup: 'SEMI_MONTHLY', periodStart: `${date.slice(0, 8)}${dayOfMonth === 15 ? '01' : '16'}` });
+      const rule = periodRuleOf(db);
+      const half = semiStartOf(date, rule); // the run closes on its period's last day (the 15th and month end, or the 10th and 25th)
+      if (half && periodEndOf('SEMI_MONTHLY', half, rule) === date) {
+        const run = await record(accountant, 'pay.run', { payGroup: 'SEMI_MONTHLY', periodStart: half });
         const slips = ok(await accountant.get(`/api/pay/runs/${run.id}/payslips`), 'payroll slips');
         const people = slips.employees as { employeeId: string; netCents: number }[];
         const total = people.reduce((sum, person) => sum + person.netCents, 0);

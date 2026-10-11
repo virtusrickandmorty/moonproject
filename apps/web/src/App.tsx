@@ -5,12 +5,13 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, ApiError, type DocTypeInfo, type Me } from './api.ts';
 import { Link, LinkAccess, match, navigate, useLocation } from './router.tsx';
-import { ConfirmHost, Notice } from './components/ui.tsx';
+import { Loading, ConfirmHost, Notice } from './components/ui.tsx';
 import { ChangePasswordScreen, FirstOwnerScreen, LoginScreen } from './auth/AuthScreens.tsx';
 import { Shell } from './shell/Shell.tsx';
-import { docPath, labelOf, pagePermission } from './shell/menu.ts';
+import { docPath, isReportPath, labelOf, pagePermission } from './shell/menu.ts';
 import { DocList, openedFrom, type ListForm, type ListView } from './generic/DocList.tsx';
 import { JobOrderForm } from './modules/JO/JobOrderForm.tsx';
+import { JOB_ORDER_SEARCH, jobOrderActions, jobOrderColumns, jobOrderDetail, jobOrderOthers, jobOrderSource } from './modules/JO/list.tsx';
 import { DocForm, type FormMode } from './generic/DocForm.tsx';
 import { DocView } from './generic/DocView.tsx';
 import { FORMS, PAGES, VIEWS } from './modules/screens.ts';
@@ -38,6 +39,7 @@ export function App() {
 
 function Stages() {
   const [stage, setStage] = useState<Stage>({ kind: 'loading' });
+  const [fresh, setFresh] = useState(0); // a report's Refresh: the page is opened again (its filters are in the address)
   const location = useLocation();
   const signedIn = useCallback(async (me: Me) => setStage({ kind: 'ready', me, docTypes: me.mustChangePassword ? [] : await api.docTypes() }), []);
 
@@ -50,7 +52,7 @@ function Stages() {
     );
   }, [signedIn]);
 
-  if (stage.kind === 'loading') return <p className="p-6 text-slate-500">Loading…</p>;
+  if (stage.kind === 'loading') return <Loading size="lg" />;
   if (stage.kind === 'error') return <div className="p-6"><Notice>{stage.message}</Notice></div>;
   if (stage.kind === 'firstOwner') return <FirstOwnerScreen onSignedIn={signedIn} />;
   // Signed out, the home page, services and support make up the public website; any other address (a staff bookmark, an expired session) asks to sign in.
@@ -71,7 +73,9 @@ function Stages() {
     // Every list opens New, a document and its Edit over itself (?new, ?view=<id>, ?edit=<id>); their own addresses
     // (/docs/<type>/new, /docs/<type>/<id>, …/edit) still open the full page. Job orders: 20 a page.
     ['/docs/:type', (_, t) => <DocList key={t.key} type={t} notice={fromQuotation && t.key === 'jo.job_order' ? JOB_ORDER_LATER(fromQuotation) : undefined}
-      pageSize={t.key === 'jo.job_order' ? 20 : undefined} opened={openedFrom(query)} noEdit={VIEWS[t.key]?.noEdit} formTitled={t.key === 'jo.job_order'}
+      {...(t.key === 'pur.po' || t.key === 'jo.opening' || t.key === 'quo.quotation' ? { formSize: 'screen' as const } : {})}
+      {...(t.key === 'jo.job_order' ? { pageSize: 20, formSize: 'screen' as const, others: jobOrderOthers(stage.docTypes, (t, mode) => <Form type={t} me={stage.me} mode={mode} />), source: jobOrderSource, columns: jobOrderColumns, detail: jobOrderDetail, searchHint: JOB_ORDER_SEARCH, rowActions: jobOrderActions(stage.docTypes) } : {})}
+      opened={openedFrom(query)} noEdit={VIEWS[t.key]?.noEdit} formTitled={t.key === 'jo.job_order' || t.key === 'pur.po' || t.key === 'jo.opening'}
       form={t.canCreate || (t.canPost && t.canCancel) ? ({ mode, close, setDirty, show }: Parameters<ListForm>[0]) => (mode.kind === 'new' ? t.canCreate : t.canPost && t.canCancel)
         ? (t.key === 'jo.job_order' ? <JobOrderForm type={t} me={stage.me} mode={mode} inDialog={{ close, setDirty, show }} /> : <Form type={t} me={stage.me} mode={mode} />)
         : NO_ACCESS : undefined}
@@ -80,7 +84,7 @@ function Stages() {
     ['/docs/:type/:id/edit', (p, t) => !(t.canPost && t.canCancel) ? NO_ACCESS : <Form key={location} type={t} me={stage.me} mode={{ kind: 'edit', id: p.id! }} />],
     ['/docs/:type/:id', (p, t) => <DocView key={p.id} type={t} id={p.id!} recorded={query === 'recorded=1'} parts={VIEWS[t.key]} />],
   ];
-  let page: ReactNode = <Notice>Page not found. <Link to="/" className="underline">Go home</Link></Notice>;
+  let page: ReactNode = <PageNotFound />;
   if (path === '/') page = <Home me={stage.me} docTypes={stage.docTypes} />;
   else if (path === '/account/password') page = <ChangePasswordScreen forced={false} onDone={(me) => signedIn(me).then(() => navigate('/'))} />;
   else {
@@ -89,7 +93,7 @@ function Stages() {
       if (params) {
         // A page the user's role does not open shows that plainly, instead of a screen whose every call is refused.
         const needs = pagePermission(path);
-        page = needs && !stage.me.permissions.includes(needs) ? NO_ACCESS : <Page key={path} me={stage.me} docTypes={stage.docTypes} params={params} />;
+        page = needs && !stage.me.permissions.includes(needs) ? NO_ACCESS : <Page key={`${path}#${fresh}`} me={stage.me} docTypes={stage.docTypes} params={params} />;
         break;
       }
     }
@@ -105,7 +109,9 @@ function Stages() {
   if (path === '/prd/tv') return <><RestoredNotice me={stage.me} />{page}</>; // the TV board fills the screen, without the menu
   return (
     <LinkAccess.Provider value={(to) => mayOpen(to, stage.me, stage.docTypes)}>
-      <Shell me={stage.me} docTypes={stage.docTypes} onSignOut={signOut}><RestoredNotice me={stage.me} />{page}</Shell>
+      <Shell me={stage.me} docTypes={stage.docTypes} onSignOut={signOut} onRefreshReport={isReportPath(path) ? () => setFresh((n) => n + 1) : undefined} reportKey={`${path}#${fresh}`}>
+        <RestoredNotice me={stage.me} />{page}
+      </Shell>
     </LinkAccess.Provider>
   );
 }
@@ -149,7 +155,7 @@ function Home({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }) {
   const links = dailyActions(me, docTypes);
   const actions = links.length > 0 && <section aria-label="Daily actions">
     <h2 className="mb-2 text-lg font-semibold">Daily actions</h2>
-    <div className="flex flex-wrap gap-2">{links.map((a) => <Link key={a.href} to={a.href} className="rounded-lg bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200 hover:bg-indigo-50">{a.label}</Link>)}</div>
+    <div className="flex flex-wrap gap-2">{links.map((a) => <Link key={a.href} to={a.href} className="rounded-xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200/70 hover:bg-indigo-50">{a.label}</Link>)}</div>
     <p className="mt-2 text-sm text-slate-500">Use + New for every other document you may create.</p>
   </section>;
   return (
@@ -160,6 +166,26 @@ function Home({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }) {
       </div>
       {me.permissions.includes('dash.view') ? <DashHome actions={actions} /> : actions}
       {docTypes.length === 0 && <p className="text-slate-600">Your role has no screens yet. Ask an owner.</p>}
+    </div>
+  );
+}
+
+/** An address that leads nowhere (the owner's picture, Oct 2026): a seamstress at work, and the ways back. */
+function PageNotFound() {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center py-8">
+      <div className="w-full max-w-lg space-y-4 text-center">
+        <img src="/page-not-found.gif" alt="A seamstress sewing at her machine" width={147} height={174} className="mx-auto h-auto w-64 [image-rendering:pixelated] sm:w-72" />
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-wider text-indigo-700">404</p>
+          <h1 className="text-2xl font-bold text-[#010101]">Page not found</h1>
+          <p className="text-sm text-slate-600">We are still sewing this one. The address may be mistyped, or the page was moved.</p>
+        </div>
+        <div className="flex flex-wrap justify-center gap-2">
+          <Link to="/" className="inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">Go home</Link>
+          <button type="button" onClick={() => history.back()} className="inline-flex items-center rounded-md bg-white px-4 py-2 text-sm font-semibold text-slate-800 ring-1 ring-slate-300 hover:bg-indigo-50">Go back</button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -271,6 +271,11 @@ function setupEvents(): Event[] {
       effectiveFrom: CUTOVER, value: { regularRateBp: 2000, mcitRateBp: 200, operationsBeganYear: 2019 }, reason: 'Small corporation at 20%, MCIT 2%, operations since 2019 (accountant)',
     });
     await m.call('/api/tax/income-tax-deductions', { year: 2026, method: 'itemized', effectiveFrom: CUTOVER, reason: 'Itemized deductions for 2026 (accountant)' });
+    // This made-up shop keeps the pay periods its workings were done on (PLAN F2): 1–15 and 16–end, and Monday-to-Saturday
+    // weeks. The owner's Oct 2026 change to the 10th/25th cut-offs and Friday weeks (settings pay.semi_monthly_cutoff and
+    // pay.week_start, migrations 0017, 0018 and PAY 0007) is a dated setting a shop can keep or not; the PAY tests cover the new ones.
+    await m.call('/api/settings/pay.week_start', { effectiveFrom: '2026-10-02', value: 'monday', reason: 'The workings keep Monday-to-Saturday weeks (accountant)' });
+    await m.call('/api/settings/pay.semi_monthly_cutoff', { effectiveFrom: '2026-10-16', value: 'calendar', reason: 'The workings keep 1–15 and 16–end (accountant)' });
     // The pay before Moonproject in 2026 (January to September, the old payroll), for the year-end adjustment and the 2316.
     const before: [string, Record<string, number>][] = [
       [MANAGER, { grossCents: 39_000_000, benefitsCents: 3_000_000, sssCents: 1_575_000, phicCents: 900_000, hdmfCents: 180_000, taxableCents: 33_345_000, wtaxCents: 2_356_380 }],

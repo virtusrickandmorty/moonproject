@@ -20,7 +20,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { attendanceBetween, employeesInGroup, holidaysBetween, payProfileAt, silOf, statutoryOffReason, type AttendanceDay, type Employee, type Holiday, type PayGroup, type PayProfile } from '../EMP/public.ts';
 import { pieceEarningsByDay, repeatedAssignments, stepById, unpaidAssignments } from '../PRD/public.ts';
 import { jobOrderRef } from '../JO/public.ts';
-import { advanceSchedule } from '../CA/public.ts';
+import { advanceSchedule, openCharges } from '../CA/public.ts';
 import { KIND_LABEL, govLoan, loanInMonth, loansOf, runsIn, type Agency, type LoanKind } from './loans.ts';
 import { hdmfMonthly, hdmfRateAt, phicDailyBasis, phicMonthly, phicRateAt, rulesAt, sssMonthly, sssRateAt, withholding, wtaxTableAt, type PayRules, type TaxFrequency } from './statutory.ts';
 import { addLine, figures, yearParts } from './year-end.ts';
@@ -39,9 +39,13 @@ export interface RunEmployee {
   grossCents: number; pieceCents: number; taxableCents: number; sssMscCents: number; sssEeCents: number; sssErCents: number; sssEcCents: number;
   phicBasisCents: number; phicEeCents: number; phicErCents: number; hdmfEeCents: number; hdmfErCents: number; eeShortCents: number;
   wtaxCents: number; loanCents: number; loans: RunLoan[]; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
+  /** Damage or loss charges taken back on this run (CA ca_charges), after the cash advance, at most 20% of the gross pay. */
+  chargeCents: number; charges: RunCharge[];
   /** Tax withheld earlier in the year and refunded on this run (the year-end adjustment's excess); net pay includes it. */
   wtaxRefundCents: number; yearEnd?: YearEnd; final?: FinalPay;
 }
+/** One damage or loss charge taken back on a run, and what is left of it after. */
+export interface RunCharge { chargeId: string; number: string; what: string; amountCents: number; leftAfterCents: number }
 /** An employee separated within the run's period: this run is their final pay. What they still owe after it. */
 export interface FinalPay { separatedOn: string; caLeftCents: number; loansLeftCents: number }
 /**
@@ -63,7 +67,7 @@ export interface ManualLine { employeeId: string; kind: 'allowance' | 'adjustmen
 
 const THIRTEENTH_BASE = new Set<LineKind>(['basic', 'leave', 'salary', 'absence', 'piece']); // basic pay only (PD 851)
 const ALWAYS_TAXABLE = new Set<LineKind>(['allowance', 'adjustment']); // an MWE's SMW, holiday pay, overtime and night differential are exempt (F1)
-export const TAX_FREQUENCY: Record<PayGroup, Exclude<TaxFrequency, 'monthly'>> = { WEEKLY_PIECE: 'weekly', SEMI_DAILY: 'semi_monthly', SEMI_MONTHLY: 'semi_monthly' };
+export const TAX_FREQUENCY: Record<PayGroup, Exclude<TaxFrequency, 'monthly'>> = { WEEKLY_PIECE: 'weekly', WEEKLY_DAILY: 'weekly', SEMI_DAILY: 'semi_monthly', SEMI_MONTHLY: 'semi_monthly' };
 
 const pct = (bp: number) => `${bp / 100}%`;
 /** Monetized unused leave up to 10 days a year is a de minimis benefit (RR 11-2018): not taxable up to that. */
@@ -75,12 +79,88 @@ export const addDays = (d: string, n: number) => {
 };
 const daysBetween = (from: string, to: string) => Math.round((Date.UTC(+to.slice(0, 4), +to.slice(5, 7) - 1, +to.slice(8)) - Date.UTC(+from.slice(0, 4), +from.slice(5, 7) - 1, +from.slice(8))) / 86_400_000) + 1;
 
-/** The period a start date opens (F2): Monday to Saturday for the weekly piece group, 1–15 or 16–end otherwise; undefined if it opens none. */
-export function periodEndOf(payGroup: PayGroup, start: string): string | undefined {
-  if (payGroup === 'WEEKLY_PIECE') return new Date(`${start}T00:00:00Z`).getUTCDay() === 1 ? addDays(start, 5) : undefined;
-  const day = start.slice(8);
-  if (day === '01') return `${start.slice(0, 8)}15`;
-  if (day === '16') return addDays(`${addDays(`${start.slice(0, 8)}28`, 4).slice(0, 8)}01`, -1); // the last day of the month
+/**
+ * The pay periods' rules, from dated settings (the owner's decisions, Oct 9, 2026), by the version in force on a period's
+ * first day; `…Changes` are the days a version that changes something takes effect.
+ * - pay.week_start: the weekly piece payroll runs Monday to Saturday, or Friday to Thursday.
+ * - pay.semi_monthly_cutoff: the semi-monthly groups run 1–15 and 16–end ("calendar"), or 26th–10th and 11th–25th
+ *   ("10_25", paid on the 15th and at month end).
+ */
+export interface PeriodRule {
+  startsOn: (day: string) => 'monday' | 'friday'; changes: readonly string[];
+  semi?: (day: string) => 'calendar' | '10_25'; semiChanges?: readonly string[];
+}
+/** @deprecated the name before the semi-monthly cut-off joined it. */
+export type WeekRule = PeriodRule;
+/** Monday to Saturday and 1–15 / 16–end throughout (PLAN F2 before the changes): what a caller without the shop's settings gets. */
+export const MONDAY_WEEKS: PeriodRule = { startsOn: () => 'monday', changes: [] };
+
+function versionsOf<V extends string>(db: Db, key: string, first: V): { at: (day: string) => V; changes: string[] } {
+  const versions = new Map<string, V>();
+  for (const r of db.prepare(`SELECT effective_from AS f, value_json AS v FROM settings WHERE key = ? ORDER BY effective_from, id`).all(key) as { f: string; v: string }[]) {
+    versions.set(r.f, JSON.parse(r.v) as V); // a later row on the same date wins
+  }
+  const list = [...versions].sort(([a], [b]) => a.localeCompare(b));
+  // A change is a version whose value differs from the one before it (a repeat changes nothing).
+  const changes = list.filter(([, v], i) => i > 0 && v !== list[i - 1]![1]).map(([f]) => f);
+  return { at: (day) => list.filter(([f]) => f <= day).at(-1)?.[1] ?? first, changes };
+}
+/** The shop's period rules, from its pay.week_start and pay.semi_monthly_cutoff versions. */
+export function periodRuleOf(db: Db): PeriodRule {
+  const week = versionsOf<'monday' | 'friday'>(db, 'pay.week_start', 'monday');
+  const semi = versionsOf<'calendar' | '10_25'>(db, 'pay.semi_monthly_cutoff', 'calendar');
+  return { startsOn: week.at, changes: week.changes, semi: semi.at, semiChanges: semi.changes };
+}
+/** @deprecated periodRuleOf. */
+export const weekRuleOf = periodRuleOf;
+const weekday = (d: string) => new Date(`${d}T00:00:00Z`).getUTCDay();
+const monthEnd = (d: string) => addDays(`${addDays(`${d.slice(0, 8)}28`, 4).slice(0, 8)}01`, -1);
+const dayIn = (d: string, n: number) => `${d.slice(0, 8)}${String(n).padStart(2, '0')}`;
+
+/**
+ * The period a start date opens (F2), by the rules in force on it (PeriodRule): weekly Monday to Saturday or Friday to
+ * Thursday; semi-monthly 1–15 and 16–end, or 26th–10th and 11th–25th. The day a new rule takes effect opens a short
+ * period to that rule's next end, and a period reaching a change ends the day before it, so no day is in two periods
+ * and none is left out. Undefined if the date opens none.
+ */
+/** The groups paid every week (the week rule), the others twice a month. */
+export const isWeekly = (g: PayGroup) => g === 'WEEKLY_PIECE' || g === 'WEEKLY_DAILY';
+
+export function periodEndOf(payGroup: PayGroup, start: string, rule: PeriodRule = MONDAY_WEEKS): string | undefined {
+  const cap = (end: string, changes: readonly string[]) => { const next = changes.find((c) => c > start); return next && end >= next ? addDays(next, -1) : end; };
+  if (isWeekly(payGroup)) {
+    const friday = rule.startsOn(start) === 'friday';
+    if (weekday(start) !== (friday ? 5 : 1) && !rule.changes.includes(start)) return undefined;
+    return cap(addDays(start, ((friday ? 4 : 6) - weekday(start) + 7) % 7), rule.changes);
+  }
+  const changes = rule.semiChanges ?? [];
+  const opensAny = changes.includes(start);
+  const day = Number(start.slice(8));
+  if ((rule.semi?.(start) ?? 'calendar') === 'calendar') {
+    if (day !== 1 && day !== 16 && !opensAny) return undefined;
+    return cap(day <= 15 ? dayIn(start, 15) : monthEnd(start), changes);
+  }
+  if (day !== 26 && day !== 11 && !opensAny) return undefined;
+  return cap(day <= 10 ? dayIn(start, 10) : day <= 25 ? dayIn(start, 25) : dayIn(addDays(monthEnd(start), 1), 10), changes);
+}
+
+/** The first day of the semi-monthly period holding a day, by the rules in force (PeriodRule). */
+export function semiStartOf(day: string, rule: PeriodRule = MONDAY_WEEKS): string | undefined {
+  for (let k = 0; k < 32; k++) {
+    const start = addDays(day, -k);
+    const end = periodEndOf('SEMI_MONTHLY', start, rule);
+    if (end) return end >= day ? start : undefined;
+  }
+  return undefined;
+}
+
+/** The first day of the weekly piece period holding a day, or undefined (a Sunday under Monday-to-Saturday weeks). */
+export function weekStartOf(day: string, rule: PeriodRule = MONDAY_WEEKS): string | undefined {
+  for (let k = 0; k < 7; k++) {
+    const start = addDays(day, -k);
+    const end = periodEndOf('WEEKLY_PIECE', start, rule);
+    if (end) return end >= day ? start : undefined;
+  }
   return undefined;
 }
 
@@ -393,6 +473,7 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
   const holidays = new Map(holidaysBetween(db, q.periodStart, q.periodEnd).map((h) => [h.date, h]));
   const endRules = rulesAt(db, q.periodEnd);
   const employees: RunEmployee[] = [];
+  const idle: string[] = []; // weekly piece workers with nothing to pay this week
 
   for (const e of employeesInGroup(db, q.payGroup, q.periodStart, q.periodEnd)) {
     if (q.skipped.has(e.id)) continue;
@@ -408,6 +489,9 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
       built.lines.push(...unusedLeave(db, e.id, to, end, phic));
       built.lines.forEach((l, i) => (l.lineNo = i + 1));
     }
+    // A weekly piece worker with nothing to pay this week (no pieces, no attendance, no manual line) is left off the run
+    // (the owner's request, Oct 9, 2026), unless it is their final pay; the run names them.
+    if (q.payGroup === 'WEEKLY_PIECE' && !final && built.lines.length === 0) { idle.push(e.name); continue; }
     const gross = built.lines.reduce((s, l) => s + l.amountCents, 0);
     const piece = built.lines.filter((l) => l.kind === 'piece').reduce((s, l) => s + l.amountCents, 0);
 
@@ -492,6 +576,26 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
     const ca = Math.max(0, Math.min(wanted, final ? left : left - endRules.minNetPayCents));
     if (ca < wanted && !final) notes.push({ code: 'CA_REDUCED', level: 'warning', message: `${e.name}: the cash-advance deduction is ${formatPeso(ca)} instead of ${formatPeso(wanted)}, so net pay stays at least ${formatPeso(endRules.minNetPayCents)}.` });
     left -= ca;
+    // Damage or loss charges (the owner's request, Oct 2026; Labor Code Art. 113-114): after the cash advance, an
+    // instalment each (all of it on a final pay), never more than 20% of the gross pay of the run nor below the minimum
+    // net pay; the rest waits for the next payroll. Oldest charge first.
+    const owing = openCharges(db, e.id, q.payDate);
+    const chargeWanted = owing.reduce((s, c) => s + (final ? c.owedCents : Math.min(c.installmentCents, c.owedCents)), 0);
+    const chargeCap = Math.floor((Math.max(0, gross) * 2_000) / 10_000);
+    let chargeLeft = Math.max(0, Math.min(chargeWanted, chargeCap, final ? left : left - endRules.minNetPayCents));
+    const charges: RunCharge[] = [];
+    for (const c of owing) {
+      const take = Math.min(chargeLeft, final ? c.owedCents : Math.min(c.installmentCents, c.owedCents));
+      if (take <= 0) continue;
+      charges.push({ chargeId: c.id, number: c.number, what: c.what, amountCents: take, leftAfterCents: c.owedCents - take });
+      chargeLeft -= take;
+    }
+    const chargeCents = charges.reduce((s, c) => s + c.amountCents, 0);
+    if (chargeCents < chargeWanted) {
+      const why = chargeCents >= chargeCap ? `at most 20% of the pay (${formatPeso(chargeCap)})` : 'what is left of the pay';
+      notes.push({ code: 'CHARGE_REDUCED', level: 'warning', message: `${e.name}: ${formatPeso(chargeCents)} of damage charges is taken back instead of ${formatPeso(chargeWanted)}, ${why}; the rest waits for the next payroll.` });
+    }
+    left -= chargeCents;
     let finalPay: FinalPay | undefined;
     if (final) {
       const caLeft = Math.max(0, plan.outstandingCents - ca);
@@ -535,8 +639,9 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
       phicBasisCents: phicDue.basisCents, phicEeCents: ee.phic, phicErCents: clampNote('PhilHealth (employer)', phicDue.er - so.phicEr),
       hdmfEeCents: ee.hdmf, hdmfErCents: clampNote('Pag-IBIG (employer)', hdmfDue.er - so.hdmfEr), eeShortCents: short,
       wtaxCents: wtax, loanCents, loans, caCents: ca, caOverrideCents: override ?? null, thirteenthCents: endRules.accrue13th ? Math.max(0, divRoundHalfAway(base13, 12)) : 0,
-      netCents: gross - ee.sss - ee.phic - ee.hdmf - wtax - loanCents - ca + refund, wtaxRefundCents: refund, ...(yearEnd ? { yearEnd } : {}), ...(finalPay ? { final: finalPay } : {}),
+      netCents: gross - ee.sss - ee.phic - ee.hdmf - wtax - loanCents - ca - chargeCents + refund, chargeCents, charges, wtaxRefundCents: refund, ...(yearEnd ? { yearEnd } : {}), ...(finalPay ? { final: finalPay } : {}),
     });
   }
+  if (idle.length) notes.push({ code: 'NOTHING_TO_PAY', level: 'warning', message: `Nothing to pay this week, so not on this run: ${idle.join(', ')}.` });
   return { employees, notes };
 }

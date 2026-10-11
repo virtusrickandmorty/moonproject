@@ -11,9 +11,11 @@ import { activeChart, activeWearers, customerWearers } from './cus.ts';
 import { STAGES, STAGE_LABELS, changeStage, currentStage, isAbandoned, movesFrom, stageHistory } from './stages.ts';
 import { MODE_WORDS, depositModeOn, modeKeptIssue } from '../COL/public.ts';
 import { saleInvoicesOf, saleOpenCents } from '../QS/public.ts';
-import { jobOrderRef, jobOrdersOf, joMoney, leftPiecesAll, stagesAll } from './public.ts';
+import { jobOrderRef, jobOrdersOf, joMoney, leftPiecesAll, rosterOf, stagesAll } from './public.ts';
+import { finishedWearers, lineProduction } from '../PRD/public.ts';
 import { dpInvoiceDoc } from './doctypes/dp-invoice.ts';
-import { lineState, releaseDoc, type Release } from './doctypes/release.ts';
+import { joListRoutes } from './list.ts';
+import { lineState, releasableQty, releaseDoc, releasedWearers, type Release } from './doctypes/release.ts';
 import { awaitingInvoice, invoiceFigures, invoiceRecordDoc, invoiceRecordInput } from './doctypes/invoice-record.ts';
 
 const stageBody = z.object({ from: z.enum(STAGES), to: z.enum(STAGES), reason: z.string().max(500).optional() }).strict();
@@ -61,6 +63,7 @@ const JOB_ORDER_REFUSALS = new Set(['JOB_ORDER', 'JO_CANCELLED', 'JO_ABANDONED',
 
 export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
+  joListRoutes(app, db);
 
   /** What the JO view shows beside the document: stage, allowed moves, history, and money (all derived, NR-2). */
   /**
@@ -84,7 +87,23 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get<{ Params: { id: string } }>('/api/jo/orders/:id/status', { config: { permission: 'jo.view' } }, async (req) => {
     const stage = currentStage(db, req.params.id);
     const money = joMoney(db, req.params.id);
-    const lines = lineState(db, req.params.id).map(({ lineNo, description, qty, releasedQty }) => ({ lineNo, description, qty, releasedQty, leftQty: qty - releasedQty }));
+    // readyQty: the pieces that may go out now (finished every step, or all once the line or the job order is done); ready: some.
+    const may = releasableQty(db, req.params.id);
+    // wearers: the line's wearer list for the release form (the owner's request, Oct 2026): who already went out (on which
+    // release), and who went through every step (ready; unknown when production does not track them by wearer).
+    const out = releasedWearers(db, req.params.id);
+    // awaitingSteps: a made item with no production steps chosen yet (the release form greys it; the owner's request, Oct 2026).
+    const made = lineProduction(db, req.params.id);
+    const lines = lineState(db, req.params.id).map(({ lineNo, kind, description, qty, releasedQty }) => {
+      const readyQty = may.get(lineNo) ?? 0;
+      const roster = rosterOf(db, req.params.id, lineNo);
+      const finished = roster.length > 0 ? finishedWearers(db, req.params.id, lineNo) : null;
+      const gone = out.get(lineNo) ?? new Map<number, string>();
+      const wearers = roster.map((w) => ({ rowNo: w.rowNo, wearerName: w.wearerName, size: w.size, jerseyNumber: w.jerseyNumber, qty: w.qty,
+        releasedOn: gone.get(w.rowNo) ?? null, ready: finished ? finished.has(w.rowNo) : null }));
+      const awaitingSteps = kind !== 'ready_made' && made.get(lineNo) === 'none';
+      return { lineNo, description, qty, releasedQty, leftQty: qty - releasedQty, ready: readyQty > 0 && !awaitingSteps, readyQty: awaitingSteps ? 0 : readyQty, awaitingSteps, ...(wearers.length ? { wearers } : {}) };
+    });
     // An abandoned job order is closed; its label says why (D5 DEP-FORFEIT).
     const stageLabel = stage === 'closed' && isAbandoned(db, req.params.id) ? 'Abandoned (deposit forfeited)' : STAGE_LABELS[stage];
     const jo = jobOrderRef(db, req.params.id)!;

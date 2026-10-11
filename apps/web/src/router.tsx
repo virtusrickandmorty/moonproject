@@ -32,7 +32,9 @@ export function navigate(to: string, { replace = false } = {}): void {
 }
 
 /** Path and query, e.g. "/docs/cash.transfer/new?draft=…". */
-export const useLocation = () => useSyncExternalStore(subscribe, () => location.pathname + location.search);
+const here = () => (typeof location === 'undefined' ? '' : location.pathname + location.search);
+/** Path and query; rendered without a browser (a test), it is empty. */
+export const useLocation = () => useSyncExternalStore(subscribe, here, here);
 
 /** match('/docs/:type/:id', '/docs/cash.transfer/abc') -> { type: 'cash.transfer', id: 'abc' } */
 export function match(pattern: string, path: string): Record<string, string> | null {

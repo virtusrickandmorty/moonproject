@@ -2,6 +2,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { customerRef } from '../CUS/public.ts';
 import { receivableSourcesAt } from '../JO/public.ts';
+import { saleDueDate, saleRef } from '../QS/public.ts';
 
 type Bucket = 'current' | 'days1to30' | 'days31to60' | 'days61to90' | 'over90';
 const buckets: Bucket[] = ['current', 'days1to30', 'days31to60', 'days61to90', 'over90'];
@@ -55,6 +56,15 @@ export function arAging(db: Db, asOf: string) {
       rows.push({ customerId: invoice.customerId, customerName: invoice.customerName, documentId: invoice.id,
         documentNumber: invoice.number, documentType: 'jo.invoice_record', jobOrderNumber: order?.number ?? '',
         date: invoice.date, dueDate, buckets: amounts, totalCents: amount });
+    }
+    const sale = !order && balance.refDocId && remaining > 0 ? saleRef(db, balance.refDocId) : undefined;
+    if (sale) {
+      // A quick sale is its own invoice: it ages from its due date (on terms, a TPL delivery's), else from its date.
+      const dueDate = saleDueDate(db, sale.id) ?? sale.businessDate;
+      const amounts = empty(); amounts[ageBucket(asOf, dueDate)] = remaining;
+      rows.push({ customerId: sale.customerId, customerName: sale.customerName, documentId: sale.id, documentNumber: sale.number,
+        documentType: 'qs.sale', jobOrderNumber: '', date: sale.businessDate, dueDate, buckets: amounts, totalCents: remaining });
+      continue;
     }
     if (remaining !== 0) {
       // A receivable with no invoice record behind it (an old job order opened at the cut-over, OBJO-) ages from the

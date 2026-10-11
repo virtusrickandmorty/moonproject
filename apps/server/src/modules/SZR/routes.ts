@@ -10,6 +10,7 @@ import { stamp, today } from '../../platform/clock.ts';
 import { customerRef } from '../CUS/public.ts';
 import { sizerBoard } from './overview.ts';
 import { szrSetInput, szrLoanInput, szrReturnInput } from './schemas.ts';
+import { createSizerSet } from './sets.ts';
 
 const preconditionRequired = (msg: string) => new AppError('PRECONDITION_REQUIRED', msg, 428);
 const badRequest = (msg: string) => new AppError('BAD_REQUEST', msg, 400);
@@ -34,33 +35,8 @@ export function szrRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   app.post('/api/szr/sets', { config: { permission: 'szr.set.edit' } }, async (req) => {
-    const input = szrSetInput.parse(req.body);
-    const id = newId();
-    const now = stamp(clock);
-    const user = currentUser(req);
-
-    tx(db, () => {
-      const existing = db.prepare('SELECT id FROM szr_sets WHERE code COLLATE NOCASE = ?').get(input.code);
-      if (existing) {
-        throw new AppError('CODE_EXISTS', 'Set code already exists', 409);
-      }
-
-      db.prepare(`
-        INSERT INTO szr_sets (id, code, garment_type, sizes_included, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(id, input.code, input.garmentType, input.sizesIncluded, 'in shop', now, now);
-
-      const after = db.prepare('SELECT * FROM szr_sets WHERE id = ?').get(id);
-      appendAudit(db, {
-        at: now,
-        userId: user.userId,
-        action: 'szr.set.create',
-        entityType: 'szr_sets',
-        entityId: id,
-        data: { before: null, after },
-      });
-    });
-    return { id, version: 1 };
+    const who = { userId: currentUser(req).userId, at: stamp(clock) };
+    return tx(db, () => createSizerSet(db, req.body, who));
   });
 
   app.put('/api/szr/sets/:id', { config: { permission: 'szr.set.edit' } }, async (req) => {

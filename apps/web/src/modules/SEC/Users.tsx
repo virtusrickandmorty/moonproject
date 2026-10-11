@@ -6,9 +6,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ROLES } from '@moonproject/shared';
 import { api, type Me, type UserRow } from '../../api.ts';
-import { Button, Dialog, Field, Notice, inputClass } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, inputClass } from '../../components/ui.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
-import { ROLE_HINTS, canDeactivate, newUserInput, rolesInput, rolesWords, roleLabel } from './users.ts';
+import { ROLE_HINTS, canDeactivate, newUserInput, rolesInput, rolesWords, roleLabel, sortRoles } from './users.ts';
 
 type Dialogs = { kind: 'add' } | { kind: 'roles' | 'password' | 'active'; user: UserRow };
 
@@ -30,7 +30,7 @@ export function Users({ me }: { me: Me }) {
       </div>
       {error && <Notice>{error}</Notice>}
       {done && <Notice tone="success">{done}</Notice>}
-      {!users && !error && <p className="text-sm text-slate-500">Loading…</p>}
+      {!users && !error && <Loading />}
       {users && <UserTable users={users} meId={me.userId} onOpen={(kind, user) => { setDone(''); setOpen({ kind, user }); }} />}
       <p className="text-sm text-slate-500">Changes here ask for your password again. A deactivated user is signed out at once and keeps their history: nothing is ever deleted.</p>
       {open?.kind === 'add' && <AddUser onClose={() => setOpen(null)} onDone={(name) => finished(`Added ${name}. Give them the temporary password: they must change it the first time they sign in.`)} />}
@@ -43,7 +43,7 @@ export function Users({ me }: { me: Me }) {
 
 export function UserTable({ users, meId, onOpen }: { users: UserRow[]; meId: string; onOpen: (kind: 'roles' | 'password' | 'active', user: UserRow) => void }) {
   return (
-    <div className="overflow-x-auto rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+    <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
       <table className="w-full text-sm">
         <thead className="text-left text-slate-500"><tr><th className="p-2">Name</th><th className="p-2">Username</th><th className="p-2">Roles</th><th className="p-2">Status</th><th className="p-2" /></tr></thead>
         <tbody>
@@ -73,7 +73,7 @@ function RoleBoxes({ value, onChange }: { value: string[]; onChange: (roles: str
   return (
     <fieldset className="space-y-1">
       <legend className="text-sm font-medium">Roles</legend>
-      {ROLES.map((r) => (
+      {sortRoles([...ROLES]).map((r) => (
         <label key={r} className="flex items-start gap-2 text-sm">
           <input type="checkbox" className="mt-1" checked={value.includes(r)} onChange={(e) => onChange(e.target.checked ? [...value, r] : value.filter((x) => x !== r))} />
           <span><span className="font-medium">{roleLabel(r)}</span> <span className="text-slate-500">{ROLE_HINTS[r]}</span></span>

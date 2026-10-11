@@ -47,7 +47,7 @@ export function CashBook({ me }: { me: Me }) {
       {places.length === 0 && <Notice tone="info">No cash place balance is visible to you.</Notice>}
       <Button tone="primary" disabled={!placeId || !!rangeError || busy} onClick={show}>{busy ? 'Loading…' : 'Show cash book'}</Button>
     </Panel></div>
-    {book && <section className="space-y-4 rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200 print:shadow-none print:ring-0">
+    {book && <section className="space-y-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70 print:shadow-none print:ring-0">
       <div className="flex items-center gap-3"><div><h2 className="text-xl font-semibold">Cash book · {book.place.name}</h2><p className="text-sm text-slate-600">{book.from} to {book.to}</p></div><span className="flex-1" /><Button className="print:hidden" onClick={() => window.print()}>Print</Button></div>
       <p className="font-semibold">Opening balance <span className="tabular-nums">{peso(book.openingCents)}</span></p>
       <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="py-2">Date</th><th>Document</th><th>Details</th><th className="text-right">Money in</th><th className="text-right">Money out</th><th className="text-right">Balance</th></tr></thead><tbody>

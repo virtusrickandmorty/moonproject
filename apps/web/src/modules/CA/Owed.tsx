@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type CaOwing, type CaStatus, type DocTypeInfo, type Me } from '../../api.ts';
-import { Notice, Panel, peso, showDate } from '../../components/ui.tsx';
+import { Loading, Notice, Panel, peso, showDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
@@ -18,7 +18,7 @@ export function CaOwed() {
   const [error, setError] = useState('');
   useEffect(() => void api.caOwing().then(setRows, (e: Error) => setError(e.message)), []);
   if (error) return <Notice>{error}</Notice>;
-  if (!rows) return <p className="text-slate-500">Loading…</p>;
+  if (!rows) return <Loading />;
   return (
     <div className="max-w-2xl space-y-4">
       <h1 className="text-2xl font-semibold">Cash advances owed</h1>
@@ -45,7 +45,7 @@ export function CaEmployeePage({ me, docTypes, params }: { me: Me; docTypes: Doc
   const [error, setError] = useState('');
   useEffect(() => void api.caStatus(id).then(setS, (e: Error) => setError(e.message)), [id]);
   if (error) return <Notice>{error}</Notice>;
-  if (!s) return <p className="text-slate-500">Loading…</p>;
+  if (!s) return <Loading />;
   const may = (key: string) => docTypes.some((d) => d.key === key && d.canPost);
   return (
     <div className="max-w-3xl space-y-4">

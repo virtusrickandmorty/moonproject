@@ -6,9 +6,9 @@
  */
 import { useLiveChange } from '../live.ts';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, newIdempotencyKey, type CancelPreview, type CashPlace, type DocDetail, type DocTypeInfo, type PrintVariant } from '../api.ts';
+import { api, ApiError, newIdempotencyKey, type CancelPreview, type CashPlace, type DocDetail, type DocTypeInfo, type PrintVariant } from '../api.ts';
 import { Link, navigate } from '../router.tsx';
-import { Button, JournalTable, Notice, Panel, ReasonDialog, StatusChip, longDate, manilaTime, peso, showDate } from '../components/ui.tsx';
+import { Loading, Button, JournalTable, Notice, Panel, ReasonDialog, StatusChip, SURFACE, longDate, manilaTime, peso, showDate } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
 import { choiceLabel, fieldsOf, toValues } from './fields.ts';
 import { AttachmentsPanel } from './Attachments.tsx';
@@ -27,7 +27,15 @@ export async function printDocument(typeKey: string, id: string, variant: PrintV
     page.onload = () => page.print();
     page.document.open(); page.document.write(html); page.document.close();
     return null;
-  } catch (e) { page.close(); return (e as Error).message; }
+  } catch (e) {
+    page.close();
+    // A job ticket waits until every made item has its production steps: open them on the production board.
+    if (e instanceof ApiError && e.code === 'NEEDS_STEPS') {
+      const d = e.details as { jobOrderId: string; number: string; lines: { lineNo: number }[] };
+      navigate(`/prd/board?jo=${encodeURIComponent(d.jobOrderId)}&number=${encodeURIComponent(d.number)}&steps=${d.lines.map((l) => l.lineNo).join(',')}`);
+    }
+    return (e as Error).message;
+  }
 }
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -63,7 +71,7 @@ export function DocView({ type, id, recorded, parts = {}, inDialog, startCancel 
   }, [cancelKey, type.key, id]);
 
   if (error) return <Notice>{error}</Notice>;
-  if (!d) return <p className="text-slate-500">Loading…</p>;
+  if (!d) return <Loading />;
   const h = d.header;
   const text = toValues(fields, d.input);
   const shown = { cashPlace: (v: string) => places.find((p) => String(p.id) === v)?.name ?? v, money: (v: string) => `₱${v}`, boolean: (v: string) => (v ? 'Yes' : 'No') } as Record<string, (v: string) => string>;
@@ -90,9 +98,12 @@ export function DocView({ type, id, recorded, parts = {}, inDialog, startCancel 
         </div>
       </div>
       {printError && <Notice>{printError}</Notice>}
-      <p className="text-sm text-slate-600">
-        {type.dating === 'printed' ? 'Date printed on it' : 'Dated'} {longDate(h.businessDate)} · {type.dating === 'printed' ? 'typed' : 'recorded'} {manilaTime(h.postedAt)} · total <b className="tabular-nums text-slate-900">{peso(h.totalCents)}</b>
-      </p>
+      {/* Its key facts at a glance, as the home's tiles. */}
+      <dl className="grid gap-3 sm:grid-cols-3">
+        <div className={`px-4 py-3 ${SURFACE}`}><dt className="text-xs font-medium uppercase tracking-wide text-muted">{type.dating === 'printed' ? 'Date printed on it' : 'Dated'}</dt><dd className="mt-1 font-semibold text-slate-900">{longDate(h.businessDate)}</dd></div>
+        <div className={`px-4 py-3 ${SURFACE}`}><dt className="text-xs font-medium uppercase tracking-wide text-muted">{type.dating === 'printed' ? 'Typed' : 'Recorded'}</dt><dd className="mt-1 font-semibold text-slate-900">{manilaTime(h.postedAt)}</dd></div>
+        <div className={`px-4 py-3 ${SURFACE}`}><dt className="text-xs font-medium uppercase tracking-wide text-muted">Total</dt><dd className={`mt-1 text-xl font-bold tabular-nums ${posted ? 'text-[#010101]' : 'text-slate-400 line-through'}`}>{peso(h.totalCents)}</dd></div>
+      </dl>
       {h.replacesId && <Notice tone="info">This replaces <Link to={docPath(type.key, `/${h.replacesId}`)} className="underline">an earlier {type.title}</Link> that was edited.</Notice>}
       {!posted && (
         <Notice tone="warning">
@@ -101,8 +112,8 @@ export function DocView({ type, id, recorded, parts = {}, inDialog, startCancel 
         </Notice>
       )}
       <Panel title="What this did">
-        <p>{h.summary}</p>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+        <p className="text-slate-800">{h.summary}</p>
+        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 border-t border-slate-100 pt-3 text-sm">
           {fields.filter((f) => text[f.name] !== undefined && !UUID.test(text[f.name]!)).map((f) => [
             <dt key={`${f.name}-t`} className="text-slate-500">{f.label}</dt>,
             <dd key={f.name}>{shown[f.kind]?.(text[f.name]!) ?? (f.kind === 'choice' ? choiceLabel(f.name, text[f.name]!) : text[f.name])}</dd>,

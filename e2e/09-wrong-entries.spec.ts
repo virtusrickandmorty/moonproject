@@ -21,6 +21,7 @@ test('a wrong entry turns its own box red with what to type, and typing again cl
   await email.fill('maria@example.com');
   await expect(refused).toHaveCount(0);
   await email.blur();
-  expect(await border(email)).toBe(await border(notes));
+  // Boxes fade between colours now (the ERP's polish, Oct 2026): wait for it to settle.
+  await expect.poll(async () => border(email)).toBe(await border(notes));
   await page.getByRole('button', { name: 'Cancel', exact: true }).click();
 });

@@ -25,6 +25,7 @@
  * Recording also locks the attendance days it paid and uses up the leave it paid (EMP public.ts); both come back when the
  * run is cancelled (they count only while it stands).
  */
+import { isPractice } from '../practice.ts';
 import { z } from 'zod';
 import fc from 'fast-check';
 import { formatPeso, isBusinessDate, newId, type Issue } from '@moonproject/shared';
@@ -34,7 +35,7 @@ import { lastAuditAt } from '../../../engine/audit.ts';
 import { PAY_GROUPS, employee as employeeOf, employeesInGroup, markPaidDays, markSilPaid, paidDaysBetween, silPaidBy, type PayGroup } from '../../EMP/public.ts';
 import { advanceSchedule } from '../../CA/public.ts';
 import { clearAssignmentsPaidBy, markAssignmentPaid } from '../../PRD/public.ts';
-import { TAX_FREQUENCY, periodEndOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunLoan, type YearEnd } from '../run-calc.ts';
+import { TAX_FREQUENCY, isWeekly, periodEndOf, periodRuleOf, semiStartOf, weekStartOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunCharge, type RunLoan, type YearEnd } from '../run-calc.ts';
 import { KIND_LABEL, LOAN_ACCOUNT, govLoan, loanInMonth, type Agency } from '../loans.ts';
 import { yearEndDoneBy } from '../year-end.ts';
 
@@ -65,7 +66,7 @@ export interface Run extends RunInput {
 
 /** Warnings worked out with the run, handed from compute to validate (the same object, in the same request). */
 const notesOf = new WeakMap<Run, Issue[]>();
-const GROUP_LABEL: Record<PayGroup, string> = { WEEKLY_PIECE: 'weekly piece-rate', SEMI_DAILY: 'semi-monthly daily-paid', SEMI_MONTHLY: 'semi-monthly monthly staff' };
+const GROUP_LABEL: Record<PayGroup, string> = { WEEKLY_PIECE: 'weekly piece-rate', WEEKLY_DAILY: 'weekly daily-paid', SEMI_DAILY: 'semi-monthly daily-paid', SEMI_MONTHLY: 'semi-monthly monthly staff' };
 const employee = (id: string) => ({ type: 'employee', id });
 // Rows straight from SQLite, read field by field in load().
 type DbRow = Record<string, any>;
@@ -108,10 +109,10 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
   inputSchema: runInput,
 
   compute(input, ctx) {
-    const periodEnd = periodEndOf(input.payGroup, input.periodStart) ?? input.periodStart;
+    const periodEnd = periodEndOf(input.payGroup, input.periodStart, periodRuleOf(ctx.db)) ?? input.periodStart;
     const base = { ...input, periodEnd, contributionMonth: periodEnd.slice(0, 7), taxFrequency: TAX_FREQUENCY[input.payGroup] };
     let worked: ReturnType<typeof workOut> = { employees: [], notes: [] };
-    if (periodEndOf(input.payGroup, input.periodStart) && periodEnd <= ctx.businessDate) {
+    if (periodEndOf(input.payGroup, input.periodStart, periodRuleOf(ctx.db)) && periodEnd <= ctx.businessDate) {
       try {
         worked = workOut(ctx.db, {
           payGroup: input.payGroup, periodStart: input.periodStart, periodEnd, payDate: ctx.businessDate, manual: input.lines ?? [],
@@ -132,14 +133,19 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
   validate(doc, ctx) {
     const issues: Issue[] = [];
     const error = (field: string, code: string, message: string) => issues.push({ field, code, message, level: 'error' });
-    const periodEnd = periodEndOf(doc.payGroup, doc.periodStart);
+    const periodEnd = periodEndOf(doc.payGroup, doc.periodStart, periodRuleOf(ctx.db));
     if (!periodEnd) {
-      error('periodStart', 'PERIOD', doc.payGroup === 'WEEKLY_PIECE' ? 'A weekly payroll starts on a Monday (Monday to Saturday).' : 'A semi-monthly payroll starts on the 1st or the 16th.');
+      error('periodStart', 'PERIOD', isWeekly(doc.payGroup) ? `A weekly payroll starts on a ${periodRuleOf(ctx.db).startsOn(doc.periodStart) === 'friday' ? 'Friday (Friday to Thursday)' : 'Monday (Monday to Saturday)'}.` : (periodRuleOf(ctx.db).semi?.(doc.periodStart) === '10_25' ? 'A semi-monthly payroll starts on the 26th or the 11th (26th to 10th, 11th to 25th).' : 'A semi-monthly payroll starts on the 1st or the 16th.'));
       return issues;
     }
     if (periodEnd > ctx.businessDate) {
-      error('periodStart', 'PERIOD_OPEN', `The period ends on ${periodEnd}. A payroll is worked out and dated on or after that day, once attendance is typed.`);
-      return issues;
+      if (!isPractice(ctx.db)) {
+        error('periodStart', 'PERIOD_OPEN', `The period ends on ${periodEnd}. A payroll is worked out and dated on or after that day, once attendance is typed.`);
+        return issues;
+      }
+      // The practice shop lets a payroll be tried before its period ends; days not typed yet count as not worked.
+      issues.push({ field: 'periodStart', code: 'PRACTICE_PERIOD_OPEN', level: 'warning',
+        message: `Practice shop only: the period ends on ${periodEnd}, so days after today count as not worked. In the real shop a payroll waits for its period to end.` });
     }
     if (ctx.businessDate.slice(0, 7) > periodEnd.slice(0, 7)) {
       issues.push({
@@ -212,8 +218,8 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     const emp = db.prepare(
       `INSERT INTO pay_run_employees (id, document_id, employee_id, employee_code, employee_name, cost_centre, pay_type, is_mwe, gross_cents, piece_cents, taxable_cents,
          sss_msc_cents, sss_ee_cents, sss_er_cents, sss_ec_cents, phic_basis_cents, phic_ee_cents, phic_er_cents, hdmf_ee_cents, hdmf_er_cents, ee_short_cents,
-         wtax_cents, ca_cents, ca_override_cents, thirteenth_cents, net_cents, loan_cents, wtax_refund_cents)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         wtax_cents, ca_cents, ca_override_cents, thirteenth_cents, net_cents, loan_cents, wtax_refund_cents, charge_cents)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const yearEnd = db.prepare(
       `INSERT INTO pay_run_year_end (run_employee_id, year, taxable_cents, benefits_taxable_cents, annual_tax_cents, withheld_before_cents, deficiency_cents, withheld_cents, refund_cents)
@@ -228,12 +234,14 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     );
     const unused = db.prepare('INSERT INTO pay_run_unused_leave (run_line_id, year) VALUES (?, ?)');
     const night = db.prepare('INSERT INTO pay_run_night_diff (run_line_id) VALUES (?)');
+    const charge = db.prepare('INSERT INTO pay_run_charges (run_employee_id, charge_id, charge_number, what, amount_cents, left_after_cents) VALUES (?, ?, ?, ?, ?, ?)');
     const final = db.prepare('INSERT INTO pay_run_final (run_employee_id, separated_on, ca_left_cents, loans_left_cents) VALUES (?, ?, ?, ?)');
     for (const e of doc.employees) {
       const id = newId();
       emp.run(id, h.documentId, e.employeeId, e.code, e.name, e.costCentre, e.payType, +e.isMwe, e.grossCents, e.pieceCents, e.taxableCents, e.sssMscCents, e.sssEeCents,
         e.sssErCents, e.sssEcCents, e.phicBasisCents, e.phicEeCents, e.phicErCents, e.hdmfEeCents, e.hdmfErCents, e.eeShortCents, e.wtaxCents, e.caCents, e.caOverrideCents,
-        e.thirteenthCents, e.netCents + e.loanCents - e.wtaxRefundCents, e.loanCents, e.wtaxRefundCents); // net_cents: before loans and the refund (migrations 0003, 0004)
+        e.thirteenthCents, e.netCents + e.loanCents + e.chargeCents - e.wtaxRefundCents, e.loanCents, e.wtaxRefundCents, e.chargeCents); // net_cents: before loans, charges and the refund (migrations 0003, 0004, 0009)
+      for (const c of e.charges) charge.run(id, c.chargeId, c.number, c.what, c.amountCents, c.leftAfterCents);
       const y = e.yearEnd;
       if (y) yearEnd.run(id, y.year, y.taxableCents, y.benefitsTaxableCents, y.annualTaxCents, y.withheldBeforeCents, y.deficiencyCents, y.withheldCents, y.refundCents);
       for (const l of e.loans) loan.run(id, l.loanId, l.agency, l.kind, l.loanNo, l.dueCents, l.amountCents, l.overrideCents, l.reason ?? null, l.balanceAfterCents);
@@ -287,6 +295,8 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
         credit(LOAN_ACCOUNT[agency].role, e.loans.filter((l) => l.agency === agency).reduce((s, l) => s + l.amountCents, 0), `${LOAN_ACCOUNT[agency].tag} ${month}`);
       }
       credit('EMP_ADVANCES', e.caCents, 'Cash advance deducted');
+      // Damage or loss charges taken back (CA ca_charges): the receivable of each charge, by the charge.
+      for (const c of e.charges) lines.push({ account: { role: 'OTHER_RECEIVABLES' }, party: employee(e.employeeId), ref: { documentId: c.chargeId }, creditCents: c.amountCents, memo: `Damage charge ${c.number}: ${c.what}` });
       credit('THIRTEENTH_PAYABLE', e.thirteenthCents, '13th-month accrual');
       credit('PAYROLL_PAYABLE', e.netCents, 'Net pay');
     }
@@ -307,6 +317,7 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     const finalRow = db.prepare('SELECT * FROM pay_run_final WHERE run_employee_id = ?');
     const loanRows = db.prepare('SELECT * FROM pay_run_loans WHERE run_employee_id = ? ORDER BY rowid');
     const yearEndRow = db.prepare('SELECT * FROM pay_run_year_end WHERE run_employee_id = ?');
+    const chargeRows = db.prepare('SELECT * FROM pay_run_charges WHERE run_employee_id = ? ORDER BY rowid');
     const employees: RunEmployee[] = (db.prepare('SELECT * FROM pay_run_employees WHERE document_id = ? ORDER BY rowid').all(documentId) as DbRow[]).map((e) => ({
       employeeId: e.employee_id, code: e.employee_code, name: e.employee_name, costCentre: e.cost_centre, payType: e.pay_type, isMwe: e.is_mwe === 1,
       lines: (lineRows.all(e.id) as DbRow[]).map(
@@ -325,7 +336,9 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
           ...(l.reason ? { reason: l.reason } : {}), balanceAfterCents: l.balance_after_cents,
         }),
       ),
-      caCents: e.ca_cents, caOverrideCents: e.ca_override_cents, thirteenthCents: e.thirteenth_cents, netCents: e.net_cents - e.loan_cents + e.wtax_refund_cents,
+      caCents: e.ca_cents, caOverrideCents: e.ca_override_cents, thirteenthCents: e.thirteenth_cents, netCents: e.net_cents - e.loan_cents - e.charge_cents + e.wtax_refund_cents,
+      chargeCents: e.charge_cents,
+      charges: (chargeRows.all(e.id) as DbRow[]).map((c): RunCharge => ({ chargeId: c.charge_id, number: c.charge_number, what: c.what, amountCents: c.amount_cents, leftAfterCents: c.left_after_cents })),
       wtaxRefundCents: e.wtax_refund_cents, ...yearEndOf(yearEndRow.get(e.id) as DbRow | undefined), ...finalOf(finalRow.get(e.id) as DbRow | undefined),
     }));
     const lines = employees.flatMap((e) => e.lines.filter((l) => l.kind === 'allowance' || l.kind === 'adjustment').map((l) => ({ employeeId: e.employeeId, kind: l.kind as 'allowance' | 'adjustment', amountCents: l.amountCents, reason: l.reason! })));
@@ -403,22 +416,18 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
       .pluck()
       .all() as string[];
     const periods: { payGroup: PayGroup; periodStart: string }[] = [];
+    const rule = periodRuleOf(db);
     for (const payGroup of PAY_GROUPS) {
       for (const d of days) {
-        const monday = (() => {
-          const wd = new Date(`${d}T00:00:00Z`).getUTCDay();
-          const [y, m, day] = d.split('-').map(Number);
-          const t = new Date(Date.UTC(y!, m! - 1, day! - ((wd + 6) % 7)));
-          return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
-        })();
-        const start = payGroup === 'WEEKLY_PIECE' ? monday : `${d.slice(0, 8)}${Number(d.slice(8)) <= 15 ? '01' : '16'}`;
-        const end = periodEndOf(payGroup, start)!;
+        const start = isWeekly(payGroup) ? weekStartOf(d, rule) : semiStartOf(d, rule);
+        if (!start) continue;
+        const end = periodEndOf(payGroup, start, rule)!;
         if (end <= lastDay && employeesInGroup(db, payGroup, start, end).length && !recordedRunFor(db, payGroup, start) && !periods.some((p) => p.payGroup === payGroup && p.periodStart === start)) periods.push({ payGroup, periodStart: start });
       }
     }
     if (!periods.length) throw new Error('No period has anyone to pay');
     return fc.constantFrom(...periods).chain((p) => {
-      const people = employeesInGroup(db, p.payGroup, p.periodStart, periodEndOf(p.payGroup, p.periodStart)!).map((e) => e.id);
+      const people = employeesInGroup(db, p.payGroup, p.periodStart, periodEndOf(p.payGroup, p.periodStart, rule)!).map((e) => e.id);
       return fc
         .option(fc.record({ employeeId: fc.constantFrom(...people), amountCents: fc.integer({ min: 1, max: 2_000_00 }) }), { nil: undefined })
         .map((extra) => ({ ...p, ...(extra ? { lines: [{ ...extra, kind: 'allowance' as const, reason: 'Transport allowance (made up)' }] } : {}) }));

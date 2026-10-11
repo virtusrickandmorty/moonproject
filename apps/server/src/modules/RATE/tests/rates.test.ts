@@ -66,4 +66,62 @@ describe('piece rates', () => {
     const grants = env.db.prepare(`SELECT role_key FROM role_permissions WHERE permission_key = 'rate.override' AND granted = 1 ORDER BY role_key`).pluck().all();
     expect(grants).toEqual(['accountant', 'encoder', 'owner']); // OWN-26: encoders may override, with a reason
   });
+
+  it("keeps a set's upper and lower rates apart from a whole garment's (the owner's request, Oct 2026)", async () => {
+    for (const [part, rateCents] of [['upper', 4_500], ['lower', 3_500]] as const) {
+      expect((await add({ garmentType: 'Jersey set', part, rateCents, reason: 'Set rates for the jersey set' })).json()).toMatchObject({ garmentType: 'Jersey set', part, rateCents });
+    }
+    expect((await add({ garmentType: 'Jersey set', part: 'middle' })).statusCode).toBe(400);
+    expect(rateAt(env.db, 'Jersey set', 'SEWING', 'standard', '2026-09-28', 'upper')?.rateCents).toBe(4_500);
+    expect(rateAt(env.db, 'Jersey set', 'SEWING', 'standard', '2026-09-28', 'lower')?.rateCents).toBe(3_500);
+    expect(rateAt(env.db, 'Jersey set', 'SEWING', 'standard', '2026-09-28')).toBeUndefined(); // no whole-garment rate
+    expect(rateAt(env.db, 'T-shirt', 'SEWING', 'standard', '2026-09-28')?.part).toBe('whole'); // every earlier rate is whole
+    const parts = (await encoder.get(RATES)).json().current.filter((x: { garmentType: string }) => x.garmentType === 'Jersey set').map((x: { part: string }) => x.part);
+    expect(parts.sort()).toEqual(['lower', 'upper']);
+  });
+});
+
+it('lists the rates in force for a garment type no price list item goes by (shown on the price list)', async () => {
+  const owner = await env.as('owner');
+  const before = (await owner.get('/api/rate/rates')).json() as { unmatched: { garmentType: string }[] };
+  expect(before.unmatched.some((r) => r.garmentType === 'T-shirt')).toBe(true); // a starter rate, no item yet
+  const item = await owner.post('/api/cat/items', { name: 'School T-shirt', class: 'made_to_order_garment', garmentType: 't-shirt', unit: 'pc', setComponents: 1 });
+  expect(item.statusCode, item.body).toBe(200);
+  const after = (await owner.get('/api/rate/rates')).json() as { unmatched: { garmentType: string }[] };
+  expect(after.unmatched.some((r) => r.garmentType === 'T-shirt')).toBe(false); // matched in any case
+  expect(after.unmatched.some((r) => r.garmentType === 'Polo shirt')).toBe(true);
+});
+
+it('switches off a garment type no job order item is made as: no rate for new pieces, off the unmatched list; on again', async () => {
+  const owner = await env.as('owner');
+  const unmatched = async () => ((await owner.get('/api/rate/rates')).json() as { unmatched: { garmentType: string; jobItems: number }[] }).unmatched;
+  expect((await unmatched()).find((r) => r.garmentType === 'Blouse')).toMatchObject({ jobItems: 0 });
+  const today = (await owner.get('/api/rate/rates')).json().asOf as string;
+  expect(rateAt(env.db, 'Blouse', 'SEWING', 'standard', today)).toBeDefined();
+  expect((await owner.post('/api/rate/garment-types/switch', { garmentType: 'blouse', on: false, reason: 'short' })).statusCode).toBe(400);
+  const off = await owner.post('/api/rate/garment-types/switch', { garmentType: 'blouse', on: false, reason: 'Not made any more, no price list item' });
+  expect(off.statusCode, off.body).toBe(200);
+  expect(off.json()).toEqual({ garmentType: 'Blouse', on: false });
+  expect(rateAt(env.db, 'Blouse', 'SEWING', 'standard', today)).toBeUndefined();
+  expect((await unmatched()).some((r) => r.garmentType === 'Blouse')).toBe(false);
+  expect((await owner.post('/api/rate/garment-types/switch', { garmentType: 'Blouse', on: false, reason: 'Not made any more, again' })).json().code).toBe('NO_CHANGE');
+  expect((await owner.post('/api/rate/garment-types/switch', { garmentType: 'Blouse', on: true, reason: 'A school ordered blouses again' })).statusCode).toBe(200);
+  expect(rateAt(env.db, 'Blouse', 'SEWING', 'standard', today)).toBeDefined();
+  // The encoder may not.
+  expect((await (await env.as('encoder')).post('/api/rate/garment-types/switch', { garmentType: 'Blouse', on: false, reason: 'Not made any more' })).statusCode).toBe(403);
+});
+
+it('refuses to switch off a garment type a job order item is made as (its next pieces would have no rate)', async () => {
+  const { seedCustomers } = await import('../../JO/tests/cus-fixture.ts');
+  const { idem } = await import('../../../../test/helpers.ts');
+  const owner = await env.as('owner');
+  const c = seedCustomers(env.db, owner.userId);
+  const lines = [{ kind: 'made_to_order', description: 'School shorts', qty: 3, unitPriceCents: 20_000, discountCents: 0, roster: [] }];
+  const jo = (await owner.post('/api/docs/jo.job_order/post', { input: { customerId: c.school, dueInDays: 10, priority: 'normal', paymentTerms: 'full', lines }, expectedTotalCents: 60_000 }, idem())).json().id as string;
+  expect((await (await env.as('production')).post(`/api/prd/jobs/${jo}/lines/1/setup`, { stepIds: [6], garmentType: 'Shorts', complexity: 'standard' })).statusCode).toBe(200);
+  const unmatched = ((await owner.get('/api/rate/rates')).json() as { unmatched: { garmentType: string; jobItems: number }[] }).unmatched;
+  expect(unmatched.find((r) => r.garmentType === 'Shorts')).toMatchObject({ jobItems: 1 });
+  const refused = await owner.post('/api/rate/garment-types/switch', { garmentType: 'Shorts', on: false, reason: 'Not made any more, no item' });
+  expect(refused.json()).toMatchObject({ code: 'IN_USE' });
+  expect(refused.json().message).toContain('Make it a price list item instead');
 });

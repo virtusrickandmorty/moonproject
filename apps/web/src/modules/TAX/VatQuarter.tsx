@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { api, type DocTypeInfo, type Me, type VatSummary } from '../../api.ts';
-import { Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Loading, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { QUARTERS, closeLink, quarterOf, quarterTitle, vatBottomLine, vatLines, yearChoices, type Quarter } from './reports.ts';
 
 export function VatQuarter({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }) {
@@ -54,7 +54,7 @@ export function VatQuarter({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }
         </div>
       )}
       {error && <Notice>{error}</Notice>}
-      {!v && !error && <p className="text-slate-500">Loading…</p>}
+      {!v && !error && <Loading />}
       {v && (
         <Panel title={quarterTitle(v.year, v.quarter, today)}>
           {v.close

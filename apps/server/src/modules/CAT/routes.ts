@@ -5,8 +5,9 @@ import { appendAudit } from '../../engine/audit.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { AppError, conflict, newId, notFound } from '@moonproject/shared';
-import { discountPolicyInput, itemInput, itemUpdate, priceInput, type ItemInput } from './schemas.ts';
+import { discountPolicyInput, itemCreate, itemInput, itemUpdate, priceInput, type ItemInput } from './schemas.ts';
 import { lookupCatalogPrice } from './public.ts';
+import { nextCode } from './import-item.ts';
 
 type ItemRow = {
   id: string; code: string; name: string; class: ItemInput['class']; garment_type: string | null;
@@ -50,6 +51,8 @@ function audit(db: Db, req: FastifyRequest, at: string, action: string, entityTy
   appendAudit(db, { at, userId: currentUser(req).userId, action, entityType, entityId: id, data });
 }
 
+export { nextCode } from './import-item.ts';
+
 export function catRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
 
@@ -89,8 +92,10 @@ export function catRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   app.post('/api/cat/items', { config: { permission: 'cat.manage' } }, async (req) => {
-    const input = itemInput.parse(req.body), id = newId(), at = stamp(clock);
+    const raw = itemCreate.parse(req.body), id = newId(), at = stamp(clock);
     return db.transaction(() => {
+      // No code typed: the next one for its class, counted in the same transaction (the owner's request, Oct 2026).
+      const input = itemInput.parse({ ...raw, code: raw.code ?? nextCode(db, raw.class) });
       if (db.prepare('SELECT 1 FROM cat_items WHERE code = ? COLLATE NOCASE').get(input.code)) {
         throw conflict('CODE_EXISTS', 'This catalog code is already in use.');
       }

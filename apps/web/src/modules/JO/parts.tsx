@@ -97,7 +97,8 @@ export function Booklet({ b, depositAppliedCents }: { b: BookletShown; depositAp
 }
 
 /** Search the price list (2+ letters); picking an item fills the line and asks for its tier price. */
-export function ItemSearch({ onPick, n }: { onPick: (item: CatItem) => void; n: number }) {
+/** `label`: the box's accessible name ("Item price list item"), or the line's ("Line 2 price list item") where lines are typed in place. */
+export function ItemSearch({ onPick, n, label }: { onPick: (item: CatItem) => void; n?: number; label?: string }) {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState<CatItem[]>([]);
   useEffect(() => {
@@ -108,7 +109,7 @@ export function ItemSearch({ onPick, n }: { onPick: (item: CatItem) => void; n: 
   }, [q]);
   return (
     <div className="space-y-1">
-      <Field label="Price list item"><input aria-label={`Line ${n} price list item`} placeholder="Search the price list, e.g. jersey" className={inputClass} value={q} onChange={(e) => setQ(e.target.value)} /></Field>
+      <Field label="Price list item"><input aria-label={label ?? `Line ${n} price list item`} placeholder="Search the price list, e.g. jersey" className={inputClass} value={q} onChange={(e) => setQ(e.target.value)} /></Field>
       {rows.map((it) => (
         <button key={it.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => (onPick(it), setQ(''))}>
           {it.name} <span className="text-slate-500">{it.code}</span>

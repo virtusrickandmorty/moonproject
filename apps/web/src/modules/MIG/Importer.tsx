@@ -4,9 +4,9 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type Me, type MigUpload } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, manilaTime, useAction } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, manilaTime, useAction } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
-import { KINDS, fileNote, fileProblem, isOpen, uploadRequest, uploadStatusWords, type MigKind } from './importer.ts';
+import { KINDS, TEMPLATES, fileNote, fileProblem, isOpen, templateCsv, uploadRequest, uploadStatusWords, type MigKind } from './importer.ts';
 
 function UploadForm() {
   const [kind, setKind] = useState<MigKind | ''>('');
@@ -36,6 +36,12 @@ function UploadForm() {
             ))}
           </div>
           {wanted && <p className="text-xs text-slate-500">First line of the file: {wanted.columns}.</p>}
+          {wanted && (
+            <p className="text-xs">
+              <Button onClick={() => downloadTemplate(wanted.kind)}>Download the {wanted.label.toLowerCase()} template (.csv)</Button>
+              <span className="ml-2 text-slate-500">Its columns and one example row: delete the example, fill in your rows, and upload it here.</span>
+            </p>
+          )}
         </fieldset>
         <Field label="CSV file" required>
           <input type="file" accept=".csv,text/csv" className={inputClass} onChange={(e) => void pick(e.target.files?.[0])} />
@@ -48,6 +54,16 @@ function UploadForm() {
       </div>
     </Panel>
   );
+}
+
+/** Saves a kind's blank CSV (TEMPLATES) to the computer; opens in Excel or Google Sheets. */
+function downloadTemplate(kind: MigKind) {
+  const url = URL.createObjectURL(new Blob(['\uFEFF', templateCsv(kind)], { type: 'text/csv;charset=utf-8' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: TEMPLATES[kind].file });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function UploadsList({ uploads }: { uploads: MigUpload[] }) {
@@ -83,10 +99,10 @@ export function ImportOldData({ me }: { me: Me }) {
   return (
     <div className="max-w-4xl space-y-4">
       <h1 className="text-2xl font-semibold">Import old data</h1>
-      <p className="text-sm text-slate-600">Bring customers, measurements, employees and piece rates in from the old Google sheet. Load a copy, review every row, check the import totals, then import these approved rows.</p>
+      <p className="text-sm text-slate-600">Bring customers, measurements, employees, the price list (with its piece rates) and sizer sets in from the old Google sheet. Load a copy, review every row, check the import totals, then import these approved rows.</p>
       <UploadForm />
       {error && <Notice>{error}</Notice>}
-      {!uploads && !error && <p className="text-slate-500">Loading…</p>}
+      {!uploads && !error && <Loading />}
       {uploads && <UploadsList uploads={uploads} />}
     </div>
   );

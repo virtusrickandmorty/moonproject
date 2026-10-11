@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type PrinterTestPack } from '../../api.ts';
-import { Button, Notice, Panel } from '../../components/ui.tsx';
+import { Loading, Button, Notice, Panel } from '../../components/ui.tsx';
 
 const CHECKS_KEY = 'moonproject.printer-test-pack.checked';
 
@@ -39,7 +39,7 @@ export function PrinterTestPackScreen() {
     <div><h1 className="text-2xl font-semibold">Printer test pack</h1>
       <p className="text-sm text-slate-600">Print every sample on the shop printers before go-live. These made-up samples do not record anything or use a real document number.</p></div>
     {error && <Notice>{error}</Notice>}
-    {!pack ? !error && <p>Loading…</p> : <>
+    {!pack ? !error && <Loading /> : <>
       {pack.sampleCompany
         ? <Notice tone="warning">The samples show a made-up company. To see your own name, TIN and address on them, save them first under Admin, Company print details.</Notice>
         : <Notice tone="note">The samples show your saved company print details.</Notice>}
