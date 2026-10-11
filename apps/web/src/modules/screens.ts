@@ -1,4 +1,5 @@
 /** Doc types with their own form or view parts; the generic screens handle every other type (PLAN H2). */
+import { ChargeForm } from './CA/ChargeForm.tsx';
 import { useEffect, type ComponentType } from 'react';
 import { navigate } from '../router.tsx';
 import type { DocTypeInfo, Me } from '../api.ts';
@@ -296,6 +297,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'pay.release': ReleaseForm,
   'pay.thirteenth': ThirteenthForm,
   'ca.advance': AdvanceForm,
+  'ca.charge': ChargeForm,
   'ca.opening': OpeningCaForm,
   'ca.repayment': RepaymentForm,
   'ca.writeoff': WriteoffForm,

@@ -185,7 +185,7 @@ export function payrollReportRows(db: Db): PayrollReportRow[] {
     e.hdmf_ee_cents AS hdmfEeCents, e.hdmf_er_cents AS hdmfErCents, e.wtax_cents AS taxCents,
     e.ca_cents AS caCents, COALESCE((SELECT SUM(x.amount_cents) FROM pay_run_loans x WHERE x.run_employee_id=e.id),0) AS loanCents,
     e.thirteenth_cents AS accruedCents,
-    e.net_cents - e.loan_cents + e.wtax_refund_cents AS netCents
+    e.net_cents - e.loan_cents - e.charge_cents + e.wtax_refund_cents AS netCents
     FROM pay_run_employees e JOIN pay_runs r ON r.document_id=e.document_id JOIN documents d ON d.id=r.document_id
     WHERE d.status='posted' ORDER BY d.business_date,d.number,e.employee_name`).all() as PayrollReportRow[];
 }
@@ -255,7 +255,7 @@ export function payrollTotalsProblems(db: Db): PayrollTotalsProblem[] {
   ).all() as Omit<PayrollTotalsProblem, 'what'>[];
   const runs = db.prepare(
     `SELECT d.id AS documentId, d.number, r.gross_cents AS gross, r.net_cents AS net,
-            SUM(e.gross_cents) AS slipsGross, SUM(e.net_cents - e.loan_cents + e.wtax_refund_cents) AS slipsNet
+            SUM(e.gross_cents) AS slipsGross, SUM(e.net_cents - e.loan_cents - e.charge_cents + e.wtax_refund_cents) AS slipsNet
      FROM pay_runs r JOIN documents d ON d.id = r.document_id JOIN pay_run_employees e ON e.document_id = r.document_id
      WHERE d.status = 'posted' GROUP BY r.document_id HAVING slipsGross <> r.gross_cents OR slipsNet <> r.net_cents ORDER BY d.number`,
   ).all() as { documentId: string; number: string; gross: number; net: number; slipsGross: number; slipsNet: number }[];

@@ -6,7 +6,7 @@
  * adjustment: the preview then shows each employee's refund or deficiency, and "Pay unused leave" (SIL days left, in
  * cash). An employee separated within the period gets their final pay, marked with a badge.
  */
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { api, ApiError, type DocTypeInfo, type Me, type PayGroup, type PayPeriod, type PayRunDoc, type Preview } from '../../api.ts';
 import { Link, navigate } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
@@ -177,7 +177,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
             <PayDetails title="Deductions and changes" active={!!advances[e.employeeId]?.trim() || (e.loans ?? []).some((l) => !!loanRows[l.loanId]?.amount.trim() || !!loanRows[l.loanId]?.reason.trim())}>
               <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm [&>dd]:text-right [&>dd]:tabular-nums">
                 <dt>SSS employee share</dt><dd>{peso(e.sssEeCents)}</dd><dt>PhilHealth employee share</dt><dd>{peso(e.phicEeCents)}</dd><dt>Pag-IBIG employee share</dt><dd>{peso(e.hdmfEeCents)}</dd>
-                <dt>Tax</dt><dd>{peso(e.wtaxCents)}</dd><dt>Government loans</dt><dd>{peso(e.loanCents ?? 0)}</dd><dt>Cash advance</dt><dd>{peso(e.caCents)}</dd>
+                <dt>Tax</dt><dd>{peso(e.wtaxCents)}</dd><dt>Government loans</dt><dd>{peso(e.loanCents ?? 0)}</dd><dt>Cash advance</dt><dd>{peso(e.caCents)}</dd>{(e.charges ?? []).map((c) => <Fragment key={c.chargeId}><dt>Damage charge {c.number}</dt><dd>{peso(c.amountCents)}</dd></Fragment>)}
               </dl>
               {e.yearEnd && <p className="text-sm">Year-end tax: {yearEndText(e)}</p>}
               <Field label="Cash-advance deduction" hint="Leave blank for the planned deduction; 0 skips it for this run.">

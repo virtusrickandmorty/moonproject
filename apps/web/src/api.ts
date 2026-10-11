@@ -388,6 +388,8 @@ export interface PayEmployee {
   employeeId: string; code: string; name: string; costCentre: string; payType: string; isMwe: boolean; lines: PayLine[]; grossCents: number; pieceCents: number; taxableCents: number;
   sssMscCents: number; sssEeCents: number; sssErCents: number; sssEcCents: number; phicEeCents: number; phicErCents: number; hdmfEeCents: number; hdmfErCents: number;
   eeShortCents: number; wtaxCents: number; loanCents?: number; loans?: PayLoan[]; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
+  /** Damage or loss charges taken back on this run (CA ca.charge), and what is left of each after it. */
+  chargeCents?: number; charges?: { chargeId: string; number: string; what: string; amountCents: number; leftAfterCents: number }[];
   /** Tax withheld earlier in the year and refunded on this run (year-end adjustment); net pay includes it. */
   wtaxRefundCents?: number; yearEnd?: PayYearEnd;
   /** Separated within the run's period: this run is their final pay; what they still owe after it. */

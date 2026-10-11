@@ -154,6 +154,7 @@ export function Payslips({ params }: { me: Me; params?: Record<string, string> }
               {e.eeShortCents > 0 && ` · ${peso(e.eeShortCents)} of government shares carried to the next payroll`}
             </p>
             {loansLeft(e).map(([label, c]) => <p key={label} className="text-xs text-slate-600">{label}: {peso(c)} left</p>)}
+            {(e.charges ?? []).map((c) => <p key={c.chargeId} className="text-xs text-slate-600">Damage charge {c.number}: {peso(c.leftAfterCents)} left</p>)}
             <p className="text-xs text-slate-600">{thirteenthText(e)}</p>
             {e.yearEnd && <p className="text-xs text-slate-600">{yearEndDetail(e)}</p>}
             {e.final && <p className="text-xs font-medium text-slate-700">{finalPayText(e)}. The 13th month on separation is paid on its own (13th-month pay for this employee).</p>}

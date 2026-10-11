@@ -35,7 +35,7 @@ import { lastAuditAt } from '../../../engine/audit.ts';
 import { PAY_GROUPS, employee as employeeOf, employeesInGroup, markPaidDays, markSilPaid, paidDaysBetween, silPaidBy, type PayGroup } from '../../EMP/public.ts';
 import { advanceSchedule } from '../../CA/public.ts';
 import { clearAssignmentsPaidBy, markAssignmentPaid } from '../../PRD/public.ts';
-import { TAX_FREQUENCY, isWeekly, periodEndOf, periodRuleOf, semiStartOf, weekStartOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunLoan, type YearEnd } from '../run-calc.ts';
+import { TAX_FREQUENCY, isWeekly, periodEndOf, periodRuleOf, semiStartOf, weekStartOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunCharge, type RunLoan, type YearEnd } from '../run-calc.ts';
 import { KIND_LABEL, LOAN_ACCOUNT, govLoan, loanInMonth, type Agency } from '../loans.ts';
 import { yearEndDoneBy } from '../year-end.ts';
 
@@ -218,8 +218,8 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     const emp = db.prepare(
       `INSERT INTO pay_run_employees (id, document_id, employee_id, employee_code, employee_name, cost_centre, pay_type, is_mwe, gross_cents, piece_cents, taxable_cents,
          sss_msc_cents, sss_ee_cents, sss_er_cents, sss_ec_cents, phic_basis_cents, phic_ee_cents, phic_er_cents, hdmf_ee_cents, hdmf_er_cents, ee_short_cents,
-         wtax_cents, ca_cents, ca_override_cents, thirteenth_cents, net_cents, loan_cents, wtax_refund_cents)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         wtax_cents, ca_cents, ca_override_cents, thirteenth_cents, net_cents, loan_cents, wtax_refund_cents, charge_cents)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const yearEnd = db.prepare(
       `INSERT INTO pay_run_year_end (run_employee_id, year, taxable_cents, benefits_taxable_cents, annual_tax_cents, withheld_before_cents, deficiency_cents, withheld_cents, refund_cents)
@@ -234,12 +234,14 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     );
     const unused = db.prepare('INSERT INTO pay_run_unused_leave (run_line_id, year) VALUES (?, ?)');
     const night = db.prepare('INSERT INTO pay_run_night_diff (run_line_id) VALUES (?)');
+    const charge = db.prepare('INSERT INTO pay_run_charges (run_employee_id, charge_id, charge_number, what, amount_cents, left_after_cents) VALUES (?, ?, ?, ?, ?, ?)');
     const final = db.prepare('INSERT INTO pay_run_final (run_employee_id, separated_on, ca_left_cents, loans_left_cents) VALUES (?, ?, ?, ?)');
     for (const e of doc.employees) {
       const id = newId();
       emp.run(id, h.documentId, e.employeeId, e.code, e.name, e.costCentre, e.payType, +e.isMwe, e.grossCents, e.pieceCents, e.taxableCents, e.sssMscCents, e.sssEeCents,
         e.sssErCents, e.sssEcCents, e.phicBasisCents, e.phicEeCents, e.phicErCents, e.hdmfEeCents, e.hdmfErCents, e.eeShortCents, e.wtaxCents, e.caCents, e.caOverrideCents,
-        e.thirteenthCents, e.netCents + e.loanCents - e.wtaxRefundCents, e.loanCents, e.wtaxRefundCents); // net_cents: before loans and the refund (migrations 0003, 0004)
+        e.thirteenthCents, e.netCents + e.loanCents + e.chargeCents - e.wtaxRefundCents, e.loanCents, e.wtaxRefundCents, e.chargeCents); // net_cents: before loans, charges and the refund (migrations 0003, 0004, 0009)
+      for (const c of e.charges) charge.run(id, c.chargeId, c.number, c.what, c.amountCents, c.leftAfterCents);
       const y = e.yearEnd;
       if (y) yearEnd.run(id, y.year, y.taxableCents, y.benefitsTaxableCents, y.annualTaxCents, y.withheldBeforeCents, y.deficiencyCents, y.withheldCents, y.refundCents);
       for (const l of e.loans) loan.run(id, l.loanId, l.agency, l.kind, l.loanNo, l.dueCents, l.amountCents, l.overrideCents, l.reason ?? null, l.balanceAfterCents);
@@ -293,6 +295,8 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
         credit(LOAN_ACCOUNT[agency].role, e.loans.filter((l) => l.agency === agency).reduce((s, l) => s + l.amountCents, 0), `${LOAN_ACCOUNT[agency].tag} ${month}`);
       }
       credit('EMP_ADVANCES', e.caCents, 'Cash advance deducted');
+      // Damage or loss charges taken back (CA ca_charges): the receivable of each charge, by the charge.
+      for (const c of e.charges) lines.push({ account: { role: 'OTHER_RECEIVABLES' }, party: employee(e.employeeId), ref: { documentId: c.chargeId }, creditCents: c.amountCents, memo: `Damage charge ${c.number}: ${c.what}` });
       credit('THIRTEENTH_PAYABLE', e.thirteenthCents, '13th-month accrual');
       credit('PAYROLL_PAYABLE', e.netCents, 'Net pay');
     }
@@ -313,6 +317,7 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     const finalRow = db.prepare('SELECT * FROM pay_run_final WHERE run_employee_id = ?');
     const loanRows = db.prepare('SELECT * FROM pay_run_loans WHERE run_employee_id = ? ORDER BY rowid');
     const yearEndRow = db.prepare('SELECT * FROM pay_run_year_end WHERE run_employee_id = ?');
+    const chargeRows = db.prepare('SELECT * FROM pay_run_charges WHERE run_employee_id = ? ORDER BY rowid');
     const employees: RunEmployee[] = (db.prepare('SELECT * FROM pay_run_employees WHERE document_id = ? ORDER BY rowid').all(documentId) as DbRow[]).map((e) => ({
       employeeId: e.employee_id, code: e.employee_code, name: e.employee_name, costCentre: e.cost_centre, payType: e.pay_type, isMwe: e.is_mwe === 1,
       lines: (lineRows.all(e.id) as DbRow[]).map(
@@ -331,7 +336,9 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
           ...(l.reason ? { reason: l.reason } : {}), balanceAfterCents: l.balance_after_cents,
         }),
       ),
-      caCents: e.ca_cents, caOverrideCents: e.ca_override_cents, thirteenthCents: e.thirteenth_cents, netCents: e.net_cents - e.loan_cents + e.wtax_refund_cents,
+      caCents: e.ca_cents, caOverrideCents: e.ca_override_cents, thirteenthCents: e.thirteenth_cents, netCents: e.net_cents - e.loan_cents - e.charge_cents + e.wtax_refund_cents,
+      chargeCents: e.charge_cents,
+      charges: (chargeRows.all(e.id) as DbRow[]).map((c): RunCharge => ({ chargeId: c.charge_id, number: c.charge_number, what: c.what, amountCents: c.amount_cents, leftAfterCents: c.left_after_cents })),
       wtaxRefundCents: e.wtax_refund_cents, ...yearEndOf(yearEndRow.get(e.id) as DbRow | undefined), ...finalOf(finalRow.get(e.id) as DbRow | undefined),
     }));
     const lines = employees.flatMap((e) => e.lines.filter((l) => l.kind === 'allowance' || l.kind === 'adjustment').map((l) => ({ employeeId: e.employeeId, kind: l.kind as 'allowance' | 'adjustment', amountCents: l.amountCents, reason: l.reason! })));

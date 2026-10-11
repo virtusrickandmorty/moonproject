@@ -211,7 +211,7 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
     signatures: [['Prepared by', prepared], ['Approved by']] };
   if (h.doc_type === 'pay.run') return { title: 'Payslip', subtitle: `${doc.periodStart} to ${doc.periodEnd}`, legend: false, twoUp: true,
     body: doc.employees.map((e: any) => `<section class="payslip"><div class="party slim"><span class="label">Employee</span><strong>${escape(`${e.code} · ${e.name}`)}</strong></div><div class="pay-lines">${lineTable(['Earning / deduction', 'Amount'], e.lines.map((x: any) => [x.description, money(x.amountCents)]))}</div>` +
-      totalsHtml([['Gross pay', money(e.grossCents)], ['SSS', money(e.sssEeCents)], ['PhilHealth', money(e.phicEeCents)], ['Pag-IBIG', money(e.hdmfEeCents)], ['Withholding tax', money(e.wtaxCents)], ['Cash advance', money(e.caCents)], ['Net pay', money(e.netCents), true]]) +
+      totalsHtml([['Gross pay', money(e.grossCents)], ['SSS', money(e.sssEeCents)], ['PhilHealth', money(e.phicEeCents)], ['Pag-IBIG', money(e.hdmfEeCents)], ['Withholding tax', money(e.wtaxCents)], ['Cash advance', money(e.caCents)], ...((e.charges ?? []) as { number: string; what: string; amountCents: number }[]).map((c): [string, string] => [`Damage charge ${c.number}`, money(c.amountCents)]), ['Net pay', money(e.netCents), true]]) +
       signaturesHtml([['Received by', e.name]]) + '</section>').join('') };
   if (h.doc_type === 'ca.advance') return { title: 'Cash Advance Slip', subtitle: '', legend: false, twoUp: true,
     party: { label: 'Employee', name: doc.employeeName },

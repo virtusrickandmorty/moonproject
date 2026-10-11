@@ -34,4 +34,9 @@ export default defineModule({
   docTypes: [runDoc, releaseDoc, thirteenthDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: payRoutes,
+  dependents: [
+    // A damage or loss charge (CA) stays while a recorded payroll took some of it back: cancel those runs first.
+    (db, docType, documentId) => docType !== 'ca.charge' ? [] : db.prepare(`SELECT DISTINCT d.id, d.number FROM pay_run_charges c JOIN pay_run_employees e ON e.id = c.run_employee_id
+      JOIN documents d ON d.id = e.document_id WHERE c.charge_id = ? AND d.status = 'posted' ORDER BY d.number`).all(documentId) as { id: string; number: string }[],
+  ],
 });
