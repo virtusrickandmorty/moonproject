@@ -317,7 +317,7 @@ export function Shell({ me, docTypes, onSignOut, children }: { me: Me; docTypes:
           <p className="truncate text-lg text-slate-900">{greeting()}, <span className="font-bold">{me.displayName}</span></p>
           <p className="truncate text-xs text-muted"><ServerDate /></p>
         </div>
-        <div className="flex flex-1 flex-wrap items-center justify-end gap-x-1 gap-y-2 sm:gap-x-3 md:flex-nowrap lg:flex-none">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-1 gap-y-2 sm:gap-x-3 md:flex-nowrap lg:flex-none">
           {me.permissions.includes('nav.search') && <SearchBox />}
           {creatable.length > 0 && (
             <div className="relative">

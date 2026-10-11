@@ -52,12 +52,29 @@ body {
   }
 }
 
-/* On a phone a wide table scrolls sideways inside itself instead of pushing the whole page out (unless a box around it already scrolls). */
-@media screen and (width < 48rem) {
-  main[data-erp] table:not(:is(.overflow-x-auto, .overflow-auto, .overflow-x-scroll) table) {
-    display: block;
-    max-width: 100%;
-    overflow-x: auto;
+/* The page area is measured, not the screen (the owner's report, Oct 2026: inputs ran into each other on an iPad): beside the
+   menu a tablet leaves the page only 500 to 780px, though the screen counts as "large". */
+main[data-erp] {
+  container: page / inline-size;
+}
+
+/* Where the page is narrow (a phone, or a tablet beside the menu) a wide table scrolls sideways inside itself instead of
+   pushing the whole page out (unless a box around it already scrolls). */
+@media screen {
+  @container page (width < 60rem) {
+    main[data-erp] table:not(:is(.overflow-x-auto, .overflow-auto, .overflow-x-scroll) table) {
+      display: block;
+      max-width: 100%;
+      overflow-x: auto;
+    }
+  }
+}
+
+/* A form with its summary column ("So far" and Record) stands the two one under the other until the page itself is wide
+   enough for both; side by side on a tablet the form's own fields were squeezed into each other. */
+@container page (width < 60rem) {
+  main[data-erp] :is([class*='lg:grid-cols-[1fr_20rem]'], [class*='lg:grid-cols-[minmax(0,1fr)_minmax(22rem,28rem)]']) {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

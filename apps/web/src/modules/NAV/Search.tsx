@@ -33,7 +33,7 @@ export function SearchBox() {
   const [retry, setRetry] = useState(0);
   useEffect(() => startSearch(q.trim(), (query) => api.navSearch(query), setState), [q, retry]);
   const shown: SearchState = state.query === q.trim() ? state : { query: q.trim(), status: 'searching', results: [] };
-  return <div className="relative order-last w-full sm:order-none sm:w-72">
+  return <div className="relative order-last w-full min-w-0 sm:order-none sm:w-72">
     <input aria-label="Search everywhere" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customers, JOs, numbers…"
       className="w-full rounded-md border border-white/30 bg-white px-3 py-1.5 text-slate-900 placeholder:text-slate-500" />
     {q.trim().length >= 2 && <SearchResults state={shown} onChoose={() => setQ('')} onRetry={() => setRetry((n) => n + 1)} />}
