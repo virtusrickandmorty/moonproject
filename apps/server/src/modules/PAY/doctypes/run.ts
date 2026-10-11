@@ -25,6 +25,7 @@
  * Recording also locks the attendance days it paid and uses up the leave it paid (EMP public.ts); both come back when the
  * run is cancelled (they count only while it stands).
  */
+import { isPractice } from '../practice.ts';
 import { z } from 'zod';
 import fc from 'fast-check';
 import { formatPeso, isBusinessDate, newId, type Issue } from '@moonproject/shared';
@@ -138,8 +139,13 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
       return issues;
     }
     if (periodEnd > ctx.businessDate) {
-      error('periodStart', 'PERIOD_OPEN', `The period ends on ${periodEnd}. A payroll is worked out and dated on or after that day, once attendance is typed.`);
-      return issues;
+      if (!isPractice(ctx.db)) {
+        error('periodStart', 'PERIOD_OPEN', `The period ends on ${periodEnd}. A payroll is worked out and dated on or after that day, once attendance is typed.`);
+        return issues;
+      }
+      // The practice shop lets a payroll be tried before its period ends; days not typed yet count as not worked.
+      issues.push({ field: 'periodStart', code: 'PRACTICE_PERIOD_OPEN', level: 'warning',
+        message: `Practice shop only: the period ends on ${periodEnd}, so days after today count as not worked. In the real shop a payroll waits for its period to end.` });
     }
     if (ctx.businessDate.slice(0, 7) > periodEnd.slice(0, 7)) {
       issues.push({
