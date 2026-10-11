@@ -8,6 +8,8 @@ import type { FastifyInstance } from 'fastify';
 import { PASSWORD, cashPlaceId, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { seedCustomers } from '../../../../server/src/modules/JO/tests/cus-fixture.ts';
+import { changeStage } from '../../../../server/src/modules/JO/stages.ts';
+import { stamp } from '../../../../server/src/platform/clock.ts';
 import { ApiError, createApi, newIdempotencyKey as key, type JoStatus } from '../../api.ts';
 import { FORMS, VIEWS } from '../screens.ts';
 import {
@@ -230,17 +232,17 @@ describe('web client for job orders, releases and invoice records', () => {
     // Not ready yet and a balance still due: the server says so plainly.
     let rp = await api.joReleasePreview(rel.release);
     expect(rp.release.issues.map((i) => i.code)).toEqual(['NOT_READY', 'CREDIT_NOTE']);
-    expect(rp.release.issues[0]!.message).toBe('JO-000001 is Open. Mark it Ready for release first, or ask the owner to release it anyway with a reason.');
+    expect(rp.release.issues[0]!.message).toBe('JO-000001 is Open. Only what is ready for release can go out.');
     expect(rp.release.issues[1]!.message).toBe('₱3,000.00 is still due on JO-000001. Write why it goes out before it is paid, and when it will be paid.');
-    rel = releaseInput({ ...rv, overrideReason: 'Needed for the tournament today', creditNote: 'Pays the rest on Friday', creditDueInDays: '7' }, s.lines);
+    // Production marks it ready (as the board does when every step is done); nothing goes out before that (Oct 11, 2026).
+    for (const [from, to] of [['open', 'in_production'], ['in_production', 'ready']] as const) changeStage(env.db, jo.id, { from, to }, { userId: ownerId, at: stamp(env.clock) });
+    rel = releaseInput({ ...rv, creditNote: 'Pays the rest on Friday', creditDueInDays: '7' }, s.lines);
     rp = await api.joReleasePreview(rel.release);
     expect(rp).toMatchObject({ release: { totalCents: 600_000, issues: [], doc: { balanceDueCents: 300_000 } }, booklet: { grossCents: 600_000, vatableSalesCents: 535_714, vatCents: 64_286 }, depositAppliedCents: 300_000 });
-    // An encoder may not release it before it is ready (the owner's); unpaid is fine, as for the accountant (6 Oct 2026).
+    // Ready, an encoder may release it too; unpaid is fine, as for the accountant (6 Oct 2026).
     const enc = createApi(injectFetch(env.app));
     await enc.login('enc1', PASSWORD);
-    expect((await enc.joReleasePreview(rel.release)).release.issues.map((i) => i.message)).toEqual([
-      'Only the owner can release a job order that is not ready yet.',
-    ]);
+    expect((await enc.joReleasePreview(rel.release)).release.issues).toEqual([]);
     const out = await api.joRelease({ release: rel.release, invoice: rel.invoice }, rp.release.totalCents, key());
     expect([out.release.number, out.invoiceRecord]).toEqual(['REL-000001', null]);
     s = await api.joStatus(jo.id);

@@ -186,19 +186,18 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
     const waiting = over.filter((l) => (may.get(l.lineNo) ?? 0) === 0).map((l) => l.lineNo);
     const partly = over.filter((l) => (may.get(l.lineNo) ?? 0) > 0);
     const ready = over.length === 0;
-    if (!ready && !doc.overrideReason) {
+    // Nothing goes out before it is ready, the owner included (the owner's rule, Oct 11, 2026; it replaces PLAN A3 item 2's
+    // override with a reason). A release recorded earlier with an override reason keeps it on file.
+    if (!ready) {
       const words = [
         ...(waiting.length ? [`${waiting.length === 1 ? `Line ${waiting[0]} is` : `Lines ${waiting.join(', ')} are`} still being made.`] : []),
         ...partly.map((l) => `Line ${l.lineNo}: ${pieces(may.get(l.lineNo)!)} went through every step, so at most ${may.get(l.lineNo)} can go out now.`),
       ];
-      error('overrideReason', 'NOT_READY', !anyReady
-        ? `${jo.number} is ${STAGE_LABELS[stage]}. Mark it Ready for release first, or ask the owner to release it anyway with a reason.`
-        : `${words.join(' ')} Release only what is finished, or ask the owner to release the rest anyway with a reason.`);
-    } else if (!ready && !ctx.can('jo.release_override')) {
-      error('overrideReason', 'OVERRIDE_NOT_ALLOWED', 'Only the owner can release a job order that is not ready yet.');
-    } else if (ready && doc.overrideReason) {
-      error('overrideReason', 'NO_OVERRIDE', `What is released from ${jo.number} is ready. Leave the override reason empty.`);
+      error('lines', 'NOT_READY', !anyReady
+        ? `${jo.number} is ${STAGE_LABELS[stage]}. Only what is ready for release can go out.`
+        : `${words.join(' ')} Release only what is finished.`);
     }
+    if (doc.overrideReason) error('overrideReason', 'NO_OVERRIDE', 'Nothing is released before it is ready, so a release takes no override reason.');
 
     const due = doc.balanceDueCents;
     if (due > 0) {

@@ -213,14 +213,14 @@ describe('release gate and rules (D3, E4, N-10)', () => {
     for (const invoiceNumber of ['', '0', 'SI-12']) expect((await release({ release: releaseAll(b), invoice: { invoiceNumber } }, 5_600_000)).statusCode).toBe(400);
   });
 
-  it('checks stage, lines and quantities; only the owner may release a job that is not ready', async () => {
+  it('checks stage, lines and quantities; nothing is released before it is ready, the owner included (Oct 2026)', async () => {
     const jo = await jobOrder([{ qty: 5, unitPriceCents: 100_000 }], { ready: false });
     const codes = async (r: object, who = accountant) => ((await who.post('/api/jo/releases/preview', { release: r })).json().release.issues as { code: string }[]).map((i) => i.code);
     const one = (lines: object[], more: object = credit) => releaseAll(jo, lines as never, more);
     expect(await codes(one([{ lineNo: 1, qty: 5 }]))).toEqual(['NOT_READY']);
-    expect(await codes(one([{ lineNo: 1, qty: 5 }], { ...credit, overrideReason: 'Customer needs it for the parade today' }))).toEqual(['OVERRIDE_NOT_ALLOWED']);
+    // The owner's override with a reason is gone (the owner's rule, Oct 11, 2026): refused for everyone.
     const owner = await env.as('owner');
-    expect(await codes(one([{ lineNo: 1, qty: 5 }], { ...credit, overrideReason: 'Customer needs it for the parade today' }), owner)).toEqual([]);
+    expect(await codes(one([{ lineNo: 1, qty: 5 }], { ...credit, overrideReason: 'Customer needs it for the parade today' }), owner)).toEqual(['NOT_READY', 'NO_OVERRIDE']);
     changeStage(env.db, jo, { from: 'open', to: 'in_production' }, { userId: encoder.userId, at: stamp(env.clock) });
     changeStage(env.db, jo, { from: 'in_production', to: 'ready' }, { userId: encoder.userId, at: stamp(env.clock) });
     expect(await codes(one([{ lineNo: 1, qty: 6 }]))).toEqual(['OVER_RELEASE']);

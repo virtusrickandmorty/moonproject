@@ -21,6 +21,8 @@ import {
 } from './forms.ts';
 import { Booklet } from './parts.tsx';
 import { DepositVatLines } from './JobOrderView.tsx';
+import { changeStage } from '../../../../server/src/modules/JO/stages.ts';
+import { currentStage } from '../../../../server/src/modules/JO/public.ts';
 
 const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: string, init: RequestInit) => {
   const res = await app.inject({ method: init.method as 'GET', url, payload: init.body as string, headers: { ...(init.headers as object), cookie: jar.cookie } });
@@ -66,8 +68,11 @@ const collect = (s: Shop, cents: number, cr: string) =>
   s.api.post('col.collection', { customerId: s.c.school, crNumber: cr, applications: [{ jobOrderId: s.jo.id, amountCents: cents }], tenders: [{ cashPlaceId: s.cash, amountCents: cents }] }, cents, key());
 
 const releaseAll = async (s: Shop, invoiceNumber: string | null) => {
+  // Production marks it ready first (as the board does); nothing goes out before that (the owner's rule, Oct 11, 2026).
+  const who = { userId: s.env.db.prepare("SELECT id FROM users LIMIT 1").pluck().get() as string, at: stamp(s.env.clock) };
+  for (const [from, to] of [['open', 'in_production'], ['in_production', 'ready']] as const) if (currentStage(s.env.db, s.jo.id) === from) changeStage(s.env.db, s.jo.id, { from, to }, who);
   const st = await s.api.joStatus(s.jo.id);
-  const rel = releaseInput({ ...emptyRelease(s.jo.id), qtys: { 1: '4' }, claimedBy: 'Coach Placeholder', idSeen: 'school_id', overrideReason: 'Needed for the tournament today',
+  const rel = releaseInput({ ...emptyRelease(s.jo.id), qtys: { 1: '4' }, claimedBy: 'Coach Placeholder', idSeen: 'school_id',
     creditNote: 'Pays the rest on Friday', creditDueInDays: '7', invoiceToFollow: invoiceNumber === null, invoiceNumber: invoiceNumber ?? '' }, st.lines);
   return { rel, preview: await s.api.joReleasePreview(rel.release) };
 };

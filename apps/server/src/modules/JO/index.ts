@@ -19,7 +19,8 @@ export default defineModule({
     { key: 'jo.stage', label: 'Move job orders between stages', defaultRoles: ['encoder', 'accountant', 'owner'] },
     { key: 'jo.release', label: 'Release finished orders to the customer (release slip)', defaultRoles: ['encoder', 'accountant', 'owner'] },
     { key: 'jo.release_with_balance', label: 'Release an order that still has a balance due, with a note and due date', defaultRoles: ['accountant', 'owner'] },
-    { key: 'jo.release_override', label: 'Release an order before it is marked ready, with a reason', defaultRoles: ['owner'] },
+    // Retired Oct 11, 2026 (the owner's rule: nothing is released before it is ready); kept so the key and its history stay.
+    { key: 'jo.release_override', label: 'No longer used: nothing is released before it is ready (owner, Oct 2026)', defaultRoles: ['owner'] },
     { key: 'jo.invoice', label: 'Record the manual invoices written at release (invoice records)', defaultRoles: ['encoder', 'accountant', 'owner'] },
     { key: 'jo.invoice_cancel', label: 'Cancel or edit recorded invoice records', defaultRoles: ['accountant', 'owner'] },
   ],

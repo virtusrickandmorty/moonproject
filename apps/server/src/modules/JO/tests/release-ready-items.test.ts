@@ -1,6 +1,6 @@
 /**
  * Releasing what is ready (the owner's rule, Oct 2026): an item whose production is done goes out while the others are
- * still being made; a line still being made needs the owner's override; cancelling puts the job order back In production.
+ * still being made; a line still being made waits, for everyone (the owner's rule, Oct 11, 2026); cancelling puts the job order back In production.
  */
 import { beforeEach, expect, it } from 'vitest';
 import { createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
@@ -48,14 +48,14 @@ const ready = async (jo: string) => ((await encoder.get(`/api/jo/orders/${jo}/st
 it('releases an item whose production is done while the other is still being made, and not the other one', async () => {
   const jo = await jobOrder();
   expect(await listed(jo)).toBe(false); // nothing finished yet
-  expect((await issues(release(jo, [{ lineNo: 1, qty: 4 }])))[0]).toMatchObject({ code: 'NOT_READY', message: expect.stringMatching(/Mark it Ready for release first/) });
+  expect((await issues(release(jo, [{ lineNo: 1, qty: 4 }])))[0]).toMatchObject({ code: 'NOT_READY', message: expect.stringMatching(/Only what is ready for release can go out/) });
 
   await finish(jo, 1);
   expect(currentStage(env.db, jo)).toBe('in_production'); // line 2 is not done
   expect(await ready(jo)).toEqual([[1, true], [2, false]]);
   expect(await listed(jo)).toBe(true);
   expect((await issues(release(jo, [{ lineNo: 2, qty: 4 }])))[0]).toMatchObject({ code: 'NOT_READY',
-    message: 'Line 2 is still being made. Release only what is finished, or ask the owner to release the rest anyway with a reason.' });
+    message: 'Line 2 is still being made. Release only what is finished.' });
   expect((await issues(release(jo, [{ lineNo: 1, qty: 4 }], { overrideReason: 'Not needed for a ready item' })))[0]).toMatchObject({ code: 'NO_OVERRIDE' });
 
   const out = await accountant.post('/api/jo/releases', { release: release(jo, [{ lineNo: 1, qty: 4 }]), invoice: null, expectedTotalCents: 120_000 }, idem());
@@ -86,7 +86,7 @@ it('releases the pieces that went through every step first, while the rest of th
   expect(lines.map((l) => [l.lineNo, l.ready, l.readyQty])).toEqual([[1, true, 3], [2, false, 0]]);
   expect(await listed(jo)).toBe(true);
   expect((await issues(release(jo, [{ lineNo: 1, qty: 4 }])))[0]).toMatchObject({ code: 'NOT_READY',
-    message: 'Line 1: 3 pieces went through every step, so at most 3 can go out now. Release only what is finished, or ask the owner to release the rest anyway with a reason.' });
+    message: 'Line 1: 3 pieces went through every step, so at most 3 can go out now. Release only what is finished.' });
   const out = await accountant.post('/api/jo/releases', { release: release(jo, [{ lineNo: 1, qty: 3 }]), invoice: null, expectedTotalCents: 90_000 }, idem());
   expect(out.statusCode, out.body).toBe(200);
   expect(currentStage(env.db, jo)).toBe('partially_released');

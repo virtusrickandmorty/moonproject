@@ -181,14 +181,10 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
         )}
         {status && !ready && (
           <Panel title="Not ready yet">
+            {/* Nothing goes out before it is ready, the owner included (the owner's rule, Oct 11, 2026). */}
             <Notice tone="warning">{waiting.length > 0
-              ? `${waiting.map((l) => `Line ${l.lineNo}`).join(', ')} ${waiting.length === 1 ? 'is' : 'are'} still being made. Untick ${waiting.length === 1 ? 'it' : 'them'}${can('jo.release_override') ? ', or release anyway with a reason.' : ', or ask the owner to release it.'}`
-              : `${status.jobOrder.number} is ${status.stageLabel}. Mark it Ready for release first${can('jo.release_override') ? ', or release it anyway with a reason.' : ', or ask the owner to release it.'}`}</Notice>
-            {can('jo.release_override') && (
-              <Field label="Owner's reason to release it now" required hint="At least 10 characters">
-                <input className={inputClass} value={v.overrideReason} onChange={(e) => set({ overrideReason: e.target.value })} />
-              </Field>
-            )}
+              ? `${waiting.map((l) => `Line ${l.lineNo}`).join(', ')} ${waiting.length === 1 ? 'is' : 'are'} still being made. Untick ${waiting.length === 1 ? 'it' : 'them'}: only what is ready for release can go out.`
+              : `${status.jobOrder.number} is ${status.stageLabel}. Only what is ready for release can go out.`}</Notice>
           </Panel>
         )}
         {status && balance > 0 && (
