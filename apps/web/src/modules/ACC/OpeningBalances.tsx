@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type DocTypeInfo, type Me, type OpeningState } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, StatusChip, inputClass, longDate, manilaTime, peso } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, Panel, StatusChip, inputClass, longDate, manilaTime, peso } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath, labelOf } from '../../shell/menu.ts';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
@@ -157,7 +157,7 @@ export function OpeningBalances({ me, docTypes }: { me: Me; docTypes: DocTypeInf
         The balances Virtus had on the cut-over date, recorded against opening balance equity (3900). Close the opening once 3900 is zero, the trial balance balances and every check is tied.
       </p>
       {error && <Notice>{error}</Notice>}
-      {!s && !error && <p className="text-slate-500">Loading…</p>}
+      {!s && !error && <Loading />}
       {s && (
         <>
           <CutoverDate key={s.cutoverDate ?? ''} s={s} mayPost={mayPost} onChange={setS} />

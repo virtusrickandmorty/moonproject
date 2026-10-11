@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, taxQuarterPath, type DocTypeInfo, type IncomeTaxSettings, type Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { RecordLink, Reckoning, paymentRow } from './EwtWorksheets.tsx';
@@ -36,7 +36,7 @@ export function IncomeTaxReturn({ me, docTypes }: { me: Me; docTypes: DocTypeInf
       </p>
       <QuarterForm q={q} quarters={[1, 2, 3]} />
       {q.error && <Notice>{q.error}</Notice>}
-      {!w && !q.error && q.pick && <p className="text-slate-500">Loading…</p>}
+      {!w && !q.error && q.pick && <Loading />}
       {w && (
         <Panel title={`${quarterTitle(w.year, w.quarter, q.today)}, year to date`}>
           <p className="text-sm">

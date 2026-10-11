@@ -7,7 +7,7 @@
 import { formatPesos, parsePesos } from '@moonproject/shared';
 import { useCallback, useEffect, useState } from 'react';
 import { api, type CashPlace, type Me } from '../../api.ts';
-import { Button, Dialog, Field, Notice, inputClass, manilaTime, peso, useAction } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, inputClass, manilaTime, peso, useAction } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { ProductPicture } from '../../shop/GarmentArt.tsx';
 import { SAMPLE_PRODUCTS, SIZES, type Product, type Shape } from '../../shop/products.ts';
@@ -377,7 +377,7 @@ function Payment({ me }: { me: Me }) {
     });
     fill(saved); setQr(null); setDone('Saved. The website shows this QR from now on.');
   });
-  if (current === undefined) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (current === undefined) return <Loading />;
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_18rem]">
       <div className="space-y-3 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70">

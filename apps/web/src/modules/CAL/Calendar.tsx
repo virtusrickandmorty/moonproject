@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, type CalEvent, type CalItem, type CalKind, type DocHeader, type Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, longDate } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, longDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { KINDS, itemsOfKind, monthCells, monthRange, shiftMonth } from './calendar.ts';
 
@@ -54,7 +54,7 @@ export function CalendarPage({ me }: { me: Me }) {
         </select>
       </label>
     </div>
-    {loading && <p className="text-sm text-slate-500">Loading calendar…</p>}
+    {loading && <Loading label="Loading calendar…" />}
     {newOpen && canCreate && <EventForm me={me} initialDate={range.from} onSaved={async () => { setNewOpen(false); await refresh(); }} />}
     {selected && <EventManage id={selected} canCreate={canCreate} onClose={() => setSelected(null)} onChanged={refresh} />}
     <div className="hidden md:block">

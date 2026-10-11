@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type PrdStep, type RateTable } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso, useAction, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, peso, useAction, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
 import { cents } from '../COL/money.ts';
 
 export function PieceRates({ me }: { me: Me }) {
@@ -20,7 +20,7 @@ export function PieceRates({ me }: { me: Me }) {
   }, [load]);
 
   if (error) return <Notice>{error}</Notice>;
-  if (!table) return <p className="text-slate-500">Loading…</p>;
+  if (!table) return <Loading />;
   const stepName = (code: string) => steps.find((s) => s.code === code)?.name ?? code;
   const rows = (history ? table.history : table.current).filter((r) => r.garmentType.toLowerCase().includes(search.trim().toLowerCase()));
   return (

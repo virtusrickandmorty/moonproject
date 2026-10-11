@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, ApiError, newIdempotencyKey, type CancelPreview, type CashPlace, type DocDetail, type DocTypeInfo, type PrintVariant } from '../api.ts';
 import { Link, navigate } from '../router.tsx';
-import { Button, JournalTable, Notice, Panel, ReasonDialog, StatusChip, longDate, manilaTime, peso, showDate } from '../components/ui.tsx';
+import { Loading, Button, JournalTable, Notice, Panel, ReasonDialog, StatusChip, longDate, manilaTime, peso, showDate } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
 import { choiceLabel, fieldsOf, toValues } from './fields.ts';
 import { AttachmentsPanel } from './Attachments.tsx';
@@ -69,7 +69,7 @@ export function DocView({ type, id, recorded, parts = {}, inDialog, startCancel 
   }, [cancelKey, type.key, id]);
 
   if (error) return <Notice>{error}</Notice>;
-  if (!d) return <p className="text-slate-500">Loading…</p>;
+  if (!d) return <Loading />;
   const h = d.header;
   const text = toValues(fields, d.input);
   const shown = { cashPlace: (v: string) => places.find((p) => String(p.id) === v)?.name ?? v, money: (v: string) => `₱${v}`, boolean: (v: string) => (v ? 'Yes' : 'No') } as Record<string, (v: string) => string>;

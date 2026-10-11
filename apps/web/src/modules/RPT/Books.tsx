@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type Me } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Button, Field, Notice, PAGE_ROWS, Pager, Panel, inputClass, peso, type PageInfo } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, PAGE_ROWS, Pager, Panel, inputClass, peso, type PageInfo } from '../../components/ui.tsx';
 import './books.css';
 import { addressValue, PendingPeriod, ResultSummary, purposes } from './ReportParts.tsx';
 
@@ -83,7 +83,7 @@ export function GeneralJournal({ me }: { me: Me }) {
       <Button tone="primary" disabled={!from || !to || from > to} onClick={() => setApplied(new URLSearchParams({ from, to }).toString())}>Show</Button>
       {path && <Tools path={path} />}</div>
     <PendingPeriod applied={applied} values={{ from, to }} />
-    {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
+    {error && <Notice>{error}</Notice>}{!data && !error && <Loading />}
     {data && <Panel title={`${(data.page?.total ?? data.journals.length).toLocaleString('en-PH')} journal entries`}><ResultSummary count={data.journals.length} total={data.page?.total} summary={`Debit ${peso(data.totalDebitCents)} · Credit ${peso(data.totalCreditCents)}.`} /><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{['Date / journal', 'Source document', 'Account', 'Memo', 'Debit', 'Credit'].map((x) => <th key={x} className={th}>{x}</th>)}</tr></thead>
       {data.journals.map((j) => <tbody key={j.journalId}>{j.lines.map((l, i) => <tr key={`${j.journalId}-${l.lineNo}`}>
         <td className={td}>{i === 0 && <>{j.businessDate}<br />{j.journalNumber}{j.postingKind === 'reversal' && ' (reversal)'}</>}</td>
@@ -113,7 +113,7 @@ export function GeneralLedger({ me }: { me: Me }) {
       <Button tone="primary" disabled={!from || !to || from > to} onClick={() => setApplied(new URLSearchParams({ from, to, ...(accountId ? { accountId } : {}) }).toString())}>Show</Button>
       {path && <Tools path={path} />}</div>
     <PendingPeriod applied={applied} values={{ from, to, accountId }} />
-    {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
+    {error && <Notice>{error}</Notice>}{!data && !error && <Loading />}
     {data && data.accounts.length === 0 && <ResultSummary count={0} />}
     {data?.accounts.map((a) => <Panel key={a.id} title={`${a.code} ${a.name}`}><ResultSummary count={a.lines.length} summary={`Closing balance ${balance(a.closingBalanceCents)}.`} /><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{['Date', 'Journal', 'Source document', 'Memo', 'Debit', 'Credit', 'Balance'].map((x) => <th className={th} key={x}>{x}</th>)}</tr></thead><tbody>
       <tr><td className={td} colSpan={6}>Opening balance</td><td className={money}>{balance(a.openingBalanceCents)}</td></tr>
@@ -139,7 +139,7 @@ export function TrialBalance({ me }: { me: Me }) {
       <Button tone="primary" disabled={!asOf} onClick={() => setApplied(new URLSearchParams({ asOf, ...(compareTo ? { compareTo } : {}) }).toString())}>Show</Button>
       {path && <Tools path={path} />}</div>
     <PendingPeriod applied={applied} values={{ asOf, compareTo }} />
-    {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
+    {error && <Notice>{error}</Notice>}{!data && !error && <Loading />}
     {data && <Panel title="Account balances"><ResultSummary count={data.rows.length} summary={`Debit ${peso(data.totalDebitCents)} · Credit ${peso(data.totalCreditCents)}.`} /><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr><th className={th}>Account</th><th className={th}>Name</th><th className={th}>Debit {data.asOf}</th><th className={th}>Credit {data.asOf}</th>
       {data.compareTo && <><th className={th}>Debit {data.compareTo}</th><th className={th}>Credit {data.compareTo}</th></>}</tr></thead><tbody>
       {data.rows.map((a) => <tr key={a.accountId}><td className={td}>{a.code}</td><td className={td}>{a.name}</td><td className={money}>{a.debitCents ? peso(a.debitCents) : ''}</td><td className={money}>{a.creditCents ? peso(a.creditCents) : ''}</td>

@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type MonthEndChecklist } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
 import { STATE_CLASS, STATE_LABEL, monthChoices, monthName, noteError, signoffButton, signoffLine, summaryLine } from './month-end.ts';
@@ -38,7 +38,7 @@ export function MonthEnd({ me }: { me: Me }) {
         </Field>
       </div>
       {error && <Notice>{error}</Notice>}
-      {!data && !error && <p className="text-sm text-slate-500">Loading…</p>}
+      {!data && !error && <Loading />}
       {data && (
         <>
           <p className="text-sm text-slate-700">{monthName(data.month)}: {summaryLine(data.items)} Read from the app as of {data.asOf}.</p>

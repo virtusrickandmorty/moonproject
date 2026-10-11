@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type Me, type NightlyCheck, type NightlyNight, type NightlyRunNow } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Button, Notice, Panel } from '../../components/ui.tsx';
+import { Loading, Button, Notice, Panel } from '../../components/ui.tsx';
 import { checkResult } from './nightly.ts';
 
 function Checks({ checks }: { checks: NightlyCheck[] }) {
@@ -43,7 +43,7 @@ export function NightlyChecks({ me }: { me: Me }) {
       Running the checks by hand only reads: it changes nothing.</p>
     {error && <Notice>{error}</Notice>}
     {now && <Panel title={`Checked just now (${now.from === now.to ? now.to : `${now.from} to ${now.to}`})`}><Checks checks={now.checks} /></Panel>}
-    {!nights && !error && <p className="text-slate-500">Loading…</p>}
+    {!nights && !error && <Loading />}
     {nights?.length === 0 && <p className="text-slate-500">No nightly check has run yet. The first one runs at the next 2:00 AM.</p>}
     {nights?.map((n) => <Panel key={n.night} title={`Night of ${n.coversFrom === n.night ? n.night : `${n.coversFrom} to ${n.night}`}`}>
       <p className={`text-sm ${n.foundCount ? 'text-red-700' : 'text-green-700'}`}>{n.foundCount ? `${n.foundCount} found` : 'Everything passed'} · run {n.ranAt.slice(0, 16).replace('T', ' ')}</p>

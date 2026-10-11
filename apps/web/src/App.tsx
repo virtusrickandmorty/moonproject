@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, ApiError, type DocTypeInfo, type Me } from './api.ts';
 import { Link, LinkAccess, match, navigate, useLocation } from './router.tsx';
-import { ConfirmHost, Notice } from './components/ui.tsx';
+import { Loading, ConfirmHost, Notice } from './components/ui.tsx';
 import { ChangePasswordScreen, FirstOwnerScreen, LoginScreen } from './auth/AuthScreens.tsx';
 import { Shell } from './shell/Shell.tsx';
 import { docPath, labelOf, pagePermission } from './shell/menu.ts';
@@ -51,7 +51,7 @@ function Stages() {
     );
   }, [signedIn]);
 
-  if (stage.kind === 'loading') return <p className="p-6 text-slate-500">Loading…</p>;
+  if (stage.kind === 'loading') return <Loading size="lg" />;
   if (stage.kind === 'error') return <div className="p-6"><Notice>{stage.message}</Notice></div>;
   if (stage.kind === 'firstOwner') return <FirstOwnerScreen onSignedIn={signedIn} />;
   // Signed out, the home page, services and support make up the public website; any other address (a staff bookmark, an expired session) asks to sign in.

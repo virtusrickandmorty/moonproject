@@ -7,7 +7,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import type { Issue } from '@moonproject/shared';
 import { api, ApiError, type DocDetail, type DocHeader, type DocTypeInfo, type Preview } from '../api.ts';
 import { navigate } from '../router.tsx';
-import { Notice, ReasonDialog } from '../components/ui.tsx';
+import { Loading, Notice, ReasonDialog } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
 import { RecordDialog, type FormMode } from './DocForm.tsx';
 
@@ -57,7 +57,7 @@ export function useRecord(type: DocTypeInfo, mode: FormMode, prefill: (d: DocDet
 
   /** Shown instead of the form: loading the original, already cancelled, or the reason not given yet. */
   let gate: ReactNode = null;
-  if (editId && !original) gate = error ? <Notice>{error}</Notice> : <p className="text-slate-500">Loading…</p>;
+  if (editId && !original) gate = error ? <Notice>{error}</Notice> : <Loading />;
   else if (original && original.status !== 'posted') gate = <Notice>{original.number} is already cancelled.</Notice>;
   else if (original && !reason) {
     const explain = `A recorded document is never changed. ${original.number} will be cancelled and a new one issued with a new number. Nothing changes until you record the replacement.`;

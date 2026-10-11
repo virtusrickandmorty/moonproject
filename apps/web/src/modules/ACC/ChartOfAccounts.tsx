@@ -5,7 +5,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { api, type CoaAccount, type Me } from '../../api.ts';
-import { Button, Dialog, Field, Notice, inputClass, peso, useAction } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, inputClass, peso, useAction } from '../../components/ui.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
 import { TYPES, TYPE_WORDS, accountNotes, newAccountInput, ownSideCents, renameInput, typeWarning, visibleAccounts } from './coa.ts';
 
@@ -42,7 +42,7 @@ export function ChartOfAccounts({ me }: { me: Me }) {
       {error && <Notice>{error}</Notice>}
       {done && <Notice tone="success">{done}</Notice>}
       {activate.error && <Notice>{activate.error}</Notice>}
-      {!accounts && !error && <p className="text-sm text-slate-500">Loading…</p>}
+      {!accounts && !error && <Loading />}
       {accounts && <AccountTable accounts={visibleAccounts(accounts, showInactive)} manage={manage} onRename={(a) => { setDone(''); setOpen({ kind: 'rename', account: a }); }} onDeactivate={(a) => { setDone(''); setOpen({ kind: 'deactivate', account: a }); }} onActivate={doActivate} busy={activate.busy} />}
       <p className="text-sm text-slate-500">Accounts are never deleted. An account with a balance, or one the posting rules use, cannot be deactivated: rename it instead.</p>
       {open?.kind === 'add' && <AddAccount onClose={() => setOpen(null)} onDone={(a) => finished(`Added ${a.code} ${a.name}.${a.warning ? ` ${a.warning}` : ''}`)} />}

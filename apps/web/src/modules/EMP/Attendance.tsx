@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type AttendanceGrid, type AttendanceStatus, type Me } from '../../api.ts';
-import { askConfirm, Button, Dialog, Field, Notice, inputClass, useAction, showDate } from '../../components/ui.tsx';
+import { Loading, askConfirm, Button, Dialog, Field, Notice, inputClass, useAction, showDate } from '../../components/ui.tsx';
 import { BiometricImport } from './Biometric.tsx';
 import { STATUS_LABEL, WITH_NIGHT, cellKey, changedCells, datesBetween, halfMonthOf, paidBy, plusDays, startCells, statusesFor, weekday, type Cell } from './time.ts';
 
@@ -99,7 +99,7 @@ export function Attendance({ me }: { me: Me }) {
   useEffect(() => void (range && load(range)), [range, load]);
 
   if (error && !grid) return <Notice>{error}</Notice>;
-  if (!grid || !range) return <p className="text-slate-500">Loading…</p>;
+  if (!grid || !range) return <Loading />;
   const editable = me.permissions.includes('emp.attendance');
   const dates = datesBetween(grid.from, grid.to);
   const holiday = Object.fromEntries(grid.holidays.map((h) => [h.date, h]));

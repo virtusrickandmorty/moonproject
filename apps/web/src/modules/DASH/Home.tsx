@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type DashHomeData, type DashItem, type DashNotification, type DashOwnerCharts, type DashOwnerHealth, type DashWidget, type NightlyStatus } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Notice, peso } from '../../components/ui.tsx';
+import { Loading, Notice, peso } from '../../components/ui.tsx';
 import { nightlyLine } from '../AUD/nightly.ts';
 import { Card, HomeCards, type IconName } from './Cards.tsx';
 
@@ -64,7 +64,7 @@ function Notifications({ all = false, widgets = [], children }: { all?: boolean;
   return <Card icon="bell" title={all ? 'Notifications' : 'Needs attention'} count={rows ? rows.filter((n) => !n.read).length : undefined} href={all ? undefined : '/dash/notifications'}>
     {children}
     {error && <Notice>{error}</Notice>}
-    {rows === null && !error && <p className="text-sm text-slate-500">Loading…</p>}
+    {rows === null && !error && <Loading />}
     {rows !== null && shown?.length === 0 && <p className="text-sm text-slate-500">Nothing needs your attention.</p>}
     <ul>{shown?.map((row) => { const note = all ? rows?.find((n) => n.id === row.id) : rows?.find((n) => n.id === row.notificationId); return <Item key={row.id} item={row} muted={note?.read} action={note && !note.read &&
       <button type="button" disabled={busy === note.id} onClick={() => void markRead(note.id)} className="shrink-0 text-xs text-indigo-700 hover:underline disabled:opacity-50">Mark read</button>} />; })}</ul>
@@ -85,7 +85,7 @@ function OwnerHealth() {
   const [error, setError] = useState('');
   useEffect(() => { void api.dashOwnerHealth().then(setData, (e: Error) => setError(e.message)); }, []);
   if (error) return <Notice>{error}</Notice>;
-  if (!data) return <p className="text-sm text-slate-500">Loading how the business is doing…</p>;
+  if (!data) return <Loading label="Loading how the business is doing…" />;
   return <OwnerHealthFigures data={data} />;
 }
 
@@ -219,7 +219,7 @@ function OwnerCharts() {
   const [error, setError] = useState('');
   useEffect(() => { void api.dashOwnerCharts().then(setData, (e: Error) => setError(e.message)); }, []);
   if (error) return <Notice>{error}</Notice>;
-  if (!data) return <p className="text-sm text-slate-500">Loading the last 12 months…</p>;
+  if (!data) return <Loading label="Loading the last 12 months…" />;
   return <section className="space-y-4"><h2 className="text-xl font-semibold">Last 12 months</h2>
     <p className="text-sm text-slate-600">Negative amounts appear below ₱0, including reversals. Point at a bar or dot for its signed amount.</p>
     <Card icon="chart" title="Sales, collections and expenses" href={`/rpt/income-statement?from=${data.months[0]!.from}&to=${data.asOf}`}><div className="overflow-x-auto"><Bars data={data.months} /></div>
@@ -239,7 +239,7 @@ export function DashHome({ actions }: { actions?: React.ReactNode }) {
   useEffect(() => { void api.dashHome().then(setHome, (e: Error) => setError(e.message)); }, []);
   return <div className="space-y-4">
     {error && <Notice>{error}</Notice>}
-    {!home && !error && <p className="text-sm text-slate-500">Loading your home…</p>}
+    {!home && !error && <Loading label="Loading your home…" />}
     {home ? <HomeContent home={home} actions={actions} /> : actions}
   </div>;
 }

@@ -4,7 +4,7 @@
  */
 import { Fragment, useEffect, useState } from 'react';
 import { api, type BulkStatements, type EmailKind, type EmailSettings, type Me, type Outbox, type OutboxRow } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, manilaTime, peso, useAction, usePasswordPrompt } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, manilaTime, peso, useAction, usePasswordPrompt } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { useToday } from '../RPT/Books.tsx';
 import { KIND_WORDS, PORT_HINT, STATUS_WORDS, TEMPLATE_WORDS, documentWords, progressWords } from './com.ts';
@@ -88,7 +88,7 @@ function OutboxTab({ canResend }: { canResend: boolean }) {
   const load = () => api.comOutbox(filter || undefined, kind || undefined).then(setOutbox, (e: Error) => setError(e.message));
   useEffect(() => void load(), [filter, kind]);
   if (error) return <Notice>{error}</Notice>;
-  if (!outbox) return <p className="text-slate-500">Loading…</p>;
+  if (!outbox) return <Loading />;
   return (
     <Panel title={kind ? KIND_WORDS[kind] : 'Emails to customers and employees'}>
       <p className="text-sm text-slate-600">
@@ -143,7 +143,7 @@ function SettingsTab() {
   const fill = (s: EmailSettings) => (setSaved(s), setF({ sendingOn: s.sendingOn, host: s.host, port: String(s.port), user: s.user, senderName: s.senderName, senderAddress: s.senderAddress, appPassword: '' }));
   useEffect(() => void api.comSettings().then(fill, (e: Error) => setError(e.message)), []);
   if (error) return <Notice>{error}</Notice>;
-  if (!saved) return <p className="text-slate-500">Loading…</p>;
+  if (!saved) return <Loading />;
   const set = <K extends keyof typeof f>(key: K, value: (typeof f)[K]) => (setF({ ...f, [key]: value }), setDone(''));
   const doSave = () => save.run(async () => {
     const { appPassword, port, ...rest } = f;

@@ -4,7 +4,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type DocDetail, type Me, type Payslips as PayslipData } from '../../api.ts';
-import { Button, Notice, peso, showDate } from '../../components/ui.tsx';
+import { Loading, Button, Notice, peso, showDate } from '../../components/ui.tsx';
 import { TickBar } from '../../components/charts.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
 import { Link } from '../../router.tsx';
@@ -125,7 +125,7 @@ export function Payslips({ params }: { me: Me; params?: Record<string, string> }
   const [error, setError] = useState('');
   useEffect(() => void api.payslips(params?.id ?? '').then(setP, (e: Error) => setError(e.message)), [params?.id]);
   if (error) return <Notice>{error}</Notice>;
-  if (!p) return <p className="text-slate-500">Loading…</p>;
+  if (!p) return <Loading />;
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-3 print:hidden">

@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { api, type BoardCard, type DocTypeInfo, type Me, type PrdCatalogue, type PrdJob, type StepStatus } from '../../api.ts';
 import { addRewrite, Link, navigate, useLocation } from '../../router.tsx';
 import { EntryForm } from './EntryForm.tsx';
-import { Button, Dialog, Field, Notice, ReasonDialog, inputClass, useAction, searchClass, showDate } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, ReasonDialog, inputClass, useAction, searchClass, showDate } from '../../components/ui.tsx';
 import { TickBar } from '../../components/charts.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { boardCounts, columns, dueWords, filterCards, stepFlow, useBoardRefresh, type Due } from './board.ts';
@@ -48,7 +48,7 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
     return done && q === 'recorded=1' ? { to: `/prd/board?recorded=${encodeURIComponent(done[1]!)}`, replace: true } : null;
   }), []);
   useEffect(() => { if (recordedId) void load(); }, [recordedId, load]);
-  if (!data) return <div className="space-y-3"><p role="status">{words}</p>{error && <Notice>{error}</Notice>}<p className="text-slate-500">Loading…</p></div>;
+  if (!data) return <div className="space-y-3"><p role="status">{words}</p>{error && <Notice>{error}</Notice>}<Loading /></div>;
   const { cat, cards, today } = data;
   const can = { progress: me.permissions.includes('prd.progress'), assign: !!docTypes.find((d) => d.key === 'prd.entry')?.canCreate };
   const shown = filterCards(cards, { due, rushOnly, search }, today);
@@ -267,7 +267,7 @@ function SendBackDialog({ card, stepId, stepName, foundAt, foundName, onDone, on
           ))}
         </div>
       )}
-      {!job ? <p className="text-sm text-slate-500">Loading…</p> : byWearer ? (
+      {!job ? <Loading /> : byWearer ? (
         <fieldset className="space-y-1 rounded-md bg-slate-50 p-3">
           <legend className="text-sm font-medium">Whose pieces need rework</legend>
           <ul className="grid gap-1 sm:grid-cols-2">
