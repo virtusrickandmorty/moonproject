@@ -10,10 +10,7 @@ import { requireStepUp } from '../../engine/security/sessions.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { activeCustomers, createGroup, createWearer, customerRef } from '../CUS/public.ts';
-import {
-  applyEmployeeFix, applyMeasurementAssignment, applySizerFix, duplicateKeys, isManualMeasurement, manualName, measurementField, measurementFields, measurementTenths, nameKey,
-  parseCSV, validateRow, type ManualData, type ParsedRow, type RowType,
-} from './csv.ts';
+import { applyEmployeeFix, applyMeasurementAssignment, applySizerFix, duplicateKeys, isManualMeasurement, manualName, measurementField, measurementFields, measurementTenths, nameKey, parseCSV, validateRow, type ManualData, type ParsedRow, type RowType, applyPriceListFix } from './csv.ts';
 import { fromSheetRow, sheetTabOf } from './sheet.ts';
 import { commitUpload } from './commit.ts';
 
@@ -42,7 +39,10 @@ const manualSchemas = {
     payType: z.enum(['daily', 'piece', 'monthly', 'mixed']).optional(),
     hireDate: z.string().trim().refine(isBusinessDate, 'Use a date like 2026-02-11.').optional(),
   }).strict(),
-  piece_rate: z.object({ garmentType: z.string().trim().min(1).optional(), operation: z.string().trim().min(1).optional(), rateCents: moneyCents.optional() }).strict(),
+  // The price list (the owner's request, Oct 2026); garmentType is the old name of the item.
+  piece_rate: z.object({ garmentType: z.string().trim().min(1).optional(), item: z.string().trim().min(1).max(100).optional(), kind: z.string().trim().min(1).optional(),
+    unit: z.string().trim().min(1).optional(), priceCents: moneyCents.optional(), operation: z.string().trim().min(1).optional(), part: z.string().trim().min(1).optional(),
+    complexity: z.string().trim().min(1).optional(), rateCents: moneyCents.optional() }).strict(),
   sizer_set: z.object({ code: z.string().trim().min(1).max(100).optional(), garmentType: z.string().trim().min(1).max(100).optional(), sizesIncluded: z.string().trim().min(1).max(200).optional() }).strict(),
 };
 const bulkAssignBody = z.object({
@@ -109,9 +109,7 @@ function effective(row: MigRow, manual: ManualData = manualFor(row)): Record<str
   } else if (row.row_type === 'employee') {
     applyEmployeeFix(raw, manual);
   } else if (row.row_type === 'piece_rate') {
-    if (manual.garmentType) raw.Garment_Type = String(manual.garmentType);
-    if (manual.operation) raw.Operation = String(manual.operation);
-    if (manual.rateCents !== undefined) raw.Rate = formatPesos(Number(manual.rateCents));
+    applyPriceListFix(raw, manual);
   } else if (row.row_type === 'sizer_set') {
     applySizerFix(raw, manual);
   }
@@ -467,7 +465,7 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
       }
       if (row.row_type === 'piece_rate') {
         counts.pieceRates++;
-        if (row.status !== 'accepted') invalid(`Piece-rate row ${row.row_number} needs owner confirmation.`);
+        if (row.status !== 'accepted') invalid(`Price list row ${row.row_number} needs owner confirmation.`);
         if (parsed.rateCents !== null) pieceRateCents = sumExact(pieceRateCents, parsed.rateCents);
       }
       if (row.row_type === 'sizer_set') counts.sizerSets++;

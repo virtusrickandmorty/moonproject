@@ -140,6 +140,9 @@ export function rowTypeOf(raw: Record<string, string>): RowType {
   if (keys.includes('Measurement_ID') || keys.some(k => measurementField(k))) return 'measurement';
   if (keys.includes('Employee_ID') || keys.includes('Employee_Name') || keys.includes('Daily_Rate') || keys.includes('Pay_Type')) return 'employee';
   if (keys.includes('Customer_Name') || keys.includes('Registered_Name') || keys.includes('TIN') || keys.includes('Email')) return 'customer';
+  // The price list (the owner's request, Oct 2026): Item with its Price and/or a piece Rate; an old piece-rate sheet
+  // (Garment_Type, Operation, Rate) is read as rates of the item of that name. Kept as row type 'piece_rate' inside.
+  if (keys.includes('Item') && (keys.includes('Price') || keys.includes('Rate'))) return 'piece_rate';
   if (keys.includes('Garment_Type') && keys.includes('Operation') && keys.includes('Rate')) return 'piece_rate';
   return 'unknown';
 }
@@ -202,10 +205,10 @@ export function validateRow(raw: Record<string, string>): ParsedRow {
     issues.push('Employee rate or missing rate requires owner confirmation.');
   }
   if (rowType === 'piece_rate') {
-    if (!raw.Garment_Type || !raw.Operation) issues.push('Piece rate needs a garment type and operation.');
-    try { rateCents = rateFromPesos(raw.Rate ?? ''); }
-    catch { issues.push('Piece rate must be a non-negative peso amount exact to the centavo.'); }
-    issues.push('Piece rate seed requires owner confirmation.');
+    const p = priceListRow(raw);
+    issues.push(...p.issues);
+    rateCents = p.rateCents ?? null;
+    issues.push('Price list row requires owner confirmation.');
   }
   if (rowType === 'sizer_set') {
     if (!raw.Code?.trim()) issues.push('Sizer set is missing its code.');
@@ -231,4 +234,60 @@ export function duplicateKeys(row: ParsedRow): string[] {
     keys.push(`customer:name-tin:${row.raw.Customer_Name.trim().toLowerCase()}:${row.raw.TIN.trim().toLowerCase()}`);
   }
   return keys;
+}
+
+/**
+ * A price list row (the owner's request, Oct 2026): Item, Kind (Made to order, Ready-made or Service), Unit (Piece or Set),
+ * Price (VAT included), and optionally one piece rate of the item: Operation (the step), Part (Upper or Lower, a set's),
+ * Difficulty (Simple, Standard or Complex) and Rate. An old piece-rate sheet's Garment_Type is the Item.
+ */
+export interface PriceListRow {
+  item: string; class: 'made_to_order_garment' | 'ready_made_item' | 'service'; unit: 'pc' | 'set';
+  priceCents?: number; operation: string; part: 'whole' | 'upper' | 'lower'; complexity: 'simple' | 'standard' | 'complex'; rateCents?: number; issues: string[];
+}
+export function priceListRow(raw: Record<string, string>): PriceListRow {
+  const issues: string[] = [];
+  const item = (raw.Item ?? raw.Garment_Type ?? '').trim();
+  const kind = (raw.Kind ?? '').trim().toLowerCase().replace(/[-_]/g, ' ');
+  const cls = !kind || ['made to order', 'mto', 'made to order garment', 'garment'].includes(kind) ? 'made_to_order_garment'
+    : ['ready made', 'rtw', 'ready made item', 'ready to wear'].includes(kind) ? 'ready_made_item' : kind === 'service' ? 'service' : null;
+  const unitWord = (raw.Unit ?? '').trim().toLowerCase();
+  const unit = !unitWord || ['piece', 'pc', 'pcs', 'pieces'].includes(unitWord) ? 'pc' : ['set', 'sets'].includes(unitWord) ? 'set' : null;
+  const operation = (raw.Operation ?? '').trim();
+  const partWord = (raw.Part ?? '').trim().toLowerCase();
+  const part = !partWord || partWord === 'whole' ? 'whole' : partWord === 'upper' || partWord === 'lower' ? partWord : null;
+  const level = (raw.Difficulty ?? raw.Complexity ?? '').trim().toLowerCase() || 'standard';
+  const complexity = level === 'simple' || level === 'standard' || level === 'complex' ? level : null;
+  const money = (label: string, value: string | undefined) => {
+    if (!value?.trim()) return undefined;
+    try { return rateFromPesos(value); } catch { issues.push(`${label} "${value}" must be a peso amount like 450.00.`); return undefined; }
+  };
+  const priceCents = money('Price', raw.Price);
+  const rateCents = money('Rate', raw.Rate);
+  if (!item) issues.push('The price list row needs the item name.');
+  if (item.length > 100) issues.push('The item name takes up to 100 letters.');
+  if (!cls) issues.push(`Kind "${raw.Kind}" is not Made to order, Ready-made or Service.`);
+  if (!unit) issues.push(`Unit "${raw.Unit}" is not Piece or Set.`);
+  if (!part) issues.push(`Part "${raw.Part}" is not Upper or Lower.`);
+  if (!complexity) issues.push(`Difficulty "${raw.Difficulty ?? raw.Complexity}" is not Simple, Standard or Complex.`);
+  if (operation && raw.Rate?.trim() === undefined) issues.push('A piece rate needs the Rate as well as the Operation.');
+  if (!operation && rateCents !== undefined) issues.push('A piece rate needs the Operation (the step, like Sewing).');
+  if (operation && cls && cls !== 'made_to_order_garment') issues.push('Piece rates are for made-to-order garments; this item is not one.');
+  if (part && part !== 'whole' && unit !== 'set') issues.push('Upper and Lower parts are for an item sold as a set.');
+  if (priceCents === undefined && !(operation && rateCents !== undefined) && !issues.length) issues.push('The row has neither a price nor a piece rate.');
+  return { item, class: cls ?? 'made_to_order_garment', unit: unit ?? 'pc', ...(priceCents !== undefined ? { priceCents } : {}), operation, part: part ?? 'whole', complexity: complexity ?? 'standard', ...(rateCents !== undefined ? { rateCents } : {}), issues };
+}
+
+/** What the owner typed with Fix on a price list row, laid over the sheet's values. Shared by the review and the commit. */
+export function applyPriceListFix(raw: Record<string, string>, manual: ManualData): void {
+  if (manual.garmentType) raw.Item = String(manual.garmentType);
+  if (manual.item) raw.Item = String(manual.item);
+  if (manual.kind) raw.Kind = String(manual.kind);
+  if (manual.unit) raw.Unit = String(manual.unit);
+  if (manual.priceCents !== undefined) raw.Price = (Number(manual.priceCents) / 100).toFixed(2);
+  if (manual.operation) raw.Operation = String(manual.operation);
+  if (manual.part) raw.Part = String(manual.part);
+  if (manual.complexity) raw.Difficulty = String(manual.complexity);
+  if (manual.rateCents !== undefined) raw.Rate = (Number(manual.rateCents) / 100).toFixed(2);
+  if (raw.Garment_Type !== undefined && raw.Item === undefined) raw.Item = raw.Garment_Type;
 }
