@@ -8,6 +8,15 @@ export { attendanceBetween, holidaysBetween, type AttendanceDay, type Attendance
 // Payroll's marks (F3): the days a recorded run paid (attendance locked) and unused SIL paid in cash (used up).
 export { SIL_DAYS, markPaidDays, markSilPaid, paidDaysBetween, silOf, silPaidBy, type PaidDays } from './time.ts';
 
+export { payoutQrOf, payoutQrPicture } from './payout-qr.ts';
+
+/** How the employee is paid, for the payroll release (the owner's request, Oct 2026): cash, bank or GCash, and the account. */
+export function payoutOf(db: Db, id: string): { method: 'cash' | 'bank' | 'gcash'; account: string | null } | undefined {
+  return db.prepare('SELECT payout_method AS method, payout_account AS account FROM emp_employees WHERE id = ?').get(id) as
+    | { method: 'cash' | 'bank' | 'gcash'; account: string | null }
+    | undefined;
+}
+
 /** What other modules see of an employee: no government IDs, contact details or pay. */
 export interface Employee {
   id: string; code: string; name: string; active: boolean; costCentre: 'production' | 'office'; hireDate: string; separatedOn: string | null;

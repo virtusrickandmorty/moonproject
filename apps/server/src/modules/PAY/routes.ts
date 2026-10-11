@@ -8,7 +8,7 @@ import { tx } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { BACKDATE_PERMISSION, clockGuard } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
-import { PAY_GROUPS, employee, employeesInGroup } from '../EMP/public.ts';
+import { PAY_GROUPS, employee, employeesInGroup, payoutOf, payoutQrOf, payoutQrPicture } from '../EMP/public.ts';
 import { runDoc } from './doctypes/run.ts';
 import { releaseStatus } from './doctypes/release.ts';
 import { addDays, periodEndOf, periodRuleOf } from './run-calc.ts';
@@ -72,8 +72,22 @@ export function payRoutes(app: FastifyInstance, deps: AppDeps): void {
     write(() => stopLoan(db, req.params.id, req.headers['if-match'], req.body, who(req))),
   );
 
-  /** Who in a run still has net pay to release (the release form). */
-  app.get<{ Params: { id: string } }>('/api/pay/runs/:id/release-status', { config: { permission: 'pay.release.post' } }, async (req) => releaseStatus(db, req.params.id));
+  /**
+   * Who in a run still has net pay to release (the release form), with how each is paid and the version of their bank or
+   * GCash QR code, if any (the owner's request, Oct 2026), so whoever releases can scan it to send the pay.
+   */
+  app.get<{ Params: { id: string } }>('/api/pay/runs/:id/release-status', { config: { permission: 'pay.release.post' } }, async (req) =>
+    releaseStatus(db, req.params.id).map((s) => {
+      const p = payoutOf(db, s.employeeId);
+      return { ...s, payoutMethod: p?.method ?? 'cash', payoutAccount: p?.account ?? null, payoutQrVersion: payoutQrOf(db, s.employeeId)?.version ?? null };
+    }),
+  );
+  /** The QR picture of someone paid in that run, for whoever releases it (who may not see the employee records). */
+  app.get<{ Params: { id: string; employeeId: string } }>('/api/pay/runs/:id/payout-qr/:employeeId', { config: { permission: 'pay.release.post' } }, async (req, reply) => {
+    const q = releaseStatus(db, req.params.id).some((s) => s.employeeId === req.params.employeeId) ? payoutQrPicture(db, req.params.employeeId) : null;
+    if (!q) throw notFound('The QR code');
+    return reply.type(q.type).header('Content-Security-Policy', "sandbox; default-src 'none'; frame-ancestors 'none'").header('Cache-Control', 'private, no-store').send(q.data);
+  });
 
   /** Recorded runs and 13th-month pay with net pay not yet released, newest first (the release form's picker). */
   app.get('/api/pay/runs/to-release', { config: { permission: 'pay.release.post' } }, async () => {

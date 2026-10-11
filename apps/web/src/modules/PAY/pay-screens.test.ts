@@ -78,7 +78,8 @@ describe('web client for payroll', () => {
     const owner = createUser(env.db, 'acct1', ['accountant']);
     const ana = addEmployee(env.db, 'Ana Tahi');
     addPay(env.db, ana, owner, { payType: 'daily', payGroup: 'SEMI_DAILY', dailyRateCents: 55_000, isMwe: true });
-    const api = createApi(injectFetch(env.app));
+    const jar = { cookie: '' };
+    const api = createApi(injectFetch(env.app, jar));
     await api.login('acct1', PASSWORD);
     const cash = cashPlaceId(env.db, '1101');
 
@@ -103,8 +104,18 @@ describe('web client for payroll', () => {
     expect(slips.employees[0]).toMatchObject({ name: 'Ana Tahi', caBalanceAfterCents: 100_000, grossCents: 550_000 });
     const toRelease = await api.runsToRelease();
     expect(toRelease.map((r) => [r.number, r.dueCents])).toEqual([['PAY-000001', slips.employees[0]!.netCents]]);
+    expect((await api.releaseStatus(run.id))[0]).toMatchObject({ payoutMethod: 'cash', payoutAccount: null, payoutQrVersion: null });
+    // Her GCash QR (the owner's request, Oct 2026): the release form shows it, from the run, for whoever releases the pay.
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    await api.savePayoutQr(ana, { name: 'gcash.png', data: png });
     const status = await api.releaseStatus(run.id);
-    expect(status).toEqual([{ employeeId: ana, name: 'Ana Tahi', netCents: slips.employees[0]!.netCents, releasedBy: null }]);
+    expect(status).toEqual([{ employeeId: ana, name: 'Ana Tahi', netCents: slips.employees[0]!.netCents, releasedBy: null, payoutMethod: 'cash', payoutAccount: null, payoutQrVersion: 1 }]);
+    const pic = await env.app.inject({ url: api.releaseQrUrl(run.id, ana, 1), headers: { cookie: jar.cookie } });
+    expect([pic.statusCode, pic.headers['content-type'], pic.rawPayload.toString('base64')]).toEqual([200, 'image/png', png]);
+    const other = addEmployee(env.db, 'Not In This Run');
+    await api.savePayoutQr(other, { name: 'qr.png', data: png });
+    const outside = await env.app.inject({ url: api.releaseQrUrl(run.id, other, 1), headers: { cookie: jar.cookie } });
+    expect(outside.statusCode).toBe(404); // only the people paid in that run
     const relInput = { runId: run.id, employeeIds: [ana], tenders: [{ cashPlaceId: cash, amountCents: status[0]!.netCents }] };
     const rel = await api.post('pay.release', relInput, (await api.preview('pay.release', relInput)).totalCents, key());
     expect(rel.number).toBe('POUT-000001');

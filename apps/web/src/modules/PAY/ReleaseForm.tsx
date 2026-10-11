@@ -6,12 +6,24 @@ import { useEffect, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, ApiError, type CashPlace, type DocTypeInfo, type Preview, type ReleaseRow, type RunToRelease } from '../../api.ts';
 import { Link, navigate } from '../../router.tsx';
-import { Button, Notice, Panel, peso, showDate } from '../../components/ui.tsx';
+import { Button, Dialog, Notice, Panel, peso, showDate } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { emptyTender, sum, tendersToInput, type TenderRow } from '../COL/money.ts';
 import { Errors, TenderRows, useLive } from '../COL/parts.tsx';
 import { GROUP_LABEL } from './run.ts';
+
+/** "Paid by" on the employee record; cash has no account, so its QR is a bank or GCash one. */
+const PAID_BY = { cash: 'bank or GCash', bank: 'Bank', gcash: 'GCash' } as const;
+
+function QrIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} className="size-4">
+      <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" />
+      <path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h3v-3" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   const [runs, setRuns] = useState<RunToRelease[] | null>(null);
@@ -23,6 +35,7 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
   const [confirm, setConfirm] = useState<Preview | null>(null);
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState('');
+  const [qrOf, setQrOf] = useState<ReleaseRow | null>(null);
   const fail = (e: Error) => setError(e.message);
 
   useEffect(() => {
@@ -78,10 +91,19 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
         {rows.length > 0 && (
           <Panel title="Who is paid now?">
             {rows.map((r) => (
-              <label key={r.employeeId} className={`flex justify-between text-sm ${r.releasedBy || r.netCents <= 0 ? 'text-slate-400' : ''}`}>
-                <span><input type="checkbox" disabled={!!r.releasedBy || r.netCents <= 0} checked={picked.has(r.employeeId)} onChange={() => toggle(r.employeeId)} /> {r.name}{r.releasedBy ? ` (released by ${r.releasedBy})` : ''}</span>
+              <div key={r.employeeId} className={`flex items-center justify-between gap-2 text-sm ${r.releasedBy || r.netCents <= 0 ? 'text-slate-400' : ''}`}>
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <label><input type="checkbox" disabled={!!r.releasedBy || r.netCents <= 0} checked={picked.has(r.employeeId)} onChange={() => toggle(r.employeeId)} /> {r.name}{r.releasedBy ? ` (released by ${r.releasedBy})` : ''}</label>
+                  {/* Their bank or GCash QR code, to scan when sending the pay (the owner's request, Oct 2026). */}
+                  {r.payoutQrVersion !== null && (
+                    <button type="button" onClick={() => setQrOf(r)} aria-label={`Show ${r.name}'s ${PAID_BY[r.payoutMethod]} QR code`} title={`${PAID_BY[r.payoutMethod]} QR code`}
+                      className="rounded p-1 text-indigo-600 hover:bg-indigo-50 hover:text-indigo-800">
+                      <QrIcon />
+                    </button>
+                  )}
+                </span>
                 <span className="tabular-nums">{peso(r.netCents)}</span>
-              </label>
+              </div>
             ))}
           </Panel>
         )}
@@ -100,6 +122,15 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
         {live && <p className="text-sm">{live.summary}</p>}
         {live?.issues.map((i) => <Notice key={i.code + i.message} tone={i.level}>{i.message}</Notice>)}
       </Panel>
+      {qrOf && qrOf.payoutQrVersion !== null && (
+        <Dialog title={`${qrOf.name}: ${PAID_BY[qrOf.payoutMethod]} QR code`} onClose={() => setQrOf(null)}>
+          <img src={api.releaseQrUrl(runId, qrOf.employeeId, qrOf.payoutQrVersion)} alt={`${qrOf.name}'s ${PAID_BY[qrOf.payoutMethod]} QR code`}
+            className="mx-auto aspect-square w-full max-w-md rounded-lg bg-white object-contain p-2 ring-1 ring-slate-200" />
+          <p className="text-center text-sm text-slate-600">
+            {qrOf.payoutAccount ? `${qrOf.payoutAccount} · ` : ''}Net pay {peso(qrOf.netCents)}
+          </p>
+        </Dialog>
+      )}
       {confirm && <RecordDialog type={type} preview={confirm} reason="" onRecord={record} onClose={() => setConfirm(null)} />}
     </form>
   );
