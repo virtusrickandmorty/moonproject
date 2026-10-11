@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import type { Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { BookTitle, Tools, money, td, th, useReport, useToday } from './Books.tsx';
 import './books.css';
 import { addressValue, PendingPeriod, ResultSummary } from './ReportParts.tsx';
@@ -83,7 +83,7 @@ export function IncomeStatement({ me }: { me: Me }) {
       {today && presets(today).map(([label, start]) => <Button key={label} onClick={() => show(start, today)}>{label}</Button>)}
       {path && <Tools path={path} />}</div>
     <PendingPeriod applied={applied} values={{ from, to, compare: compare === 'none' ? '' : compare }} />
-    {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
+    {error && <Notice>{error}</Notice>}{!data && !error && <Loading />}
     {data && revenue && costOfSales && operatingExpenses && other && incomeTax && <Panel title="From the posted journals"><ResultSummary count={data.sections.reduce((n, s) => n + s.groups.reduce((m, g) => m + g.lines.length, 0), 0)} summary={`Net income ${amount(data.netIncomeCents)}.`} /><Statement headings={data.comparison ? [`${data.from} to ${data.to}`, `${data.comparison.from} to ${data.comparison.to}`] : undefined}>
       <SectionRows section={revenue} /><SectionRows section={costOfSales} />
       <tbody><Total label="Gross profit" cents={data.grossProfitCents} compared={data.grossProfit} strong /></tbody>
@@ -109,7 +109,7 @@ export function BalanceSheet({ me }: { me: Me }) {
       <Button tone="primary" disabled={!asOf} onClick={() => setApplied(new URLSearchParams({ asOf, ...(compare === 'none' ? {} : { compare }) }).toString())}>Show</Button>
       {path && <Tools path={path} />}</div>
     <PendingPeriod applied={applied} values={{ asOf, compare: compare === 'none' ? '' : compare }} />
-    {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
+    {error && <Notice>{error}</Notice>}{!data && !error && <Loading />}
     {data && !data.balanced && <Notice>Total assets differ from total liabilities and equity by {amount(data.differenceCents)}. Run the integrity check and tell the accountant.</Notice>}
     {data && assets && liabilities && equity && <Panel title="From the posted journals"><ResultSummary count={data.sections.reduce((n, s) => n + s.groups.reduce((m, g) => m + g.lines.length, 0), 0)} summary={`Assets ${amount(data.totalAssetsCents)} · Equity ${amount(data.totalEquityCents)}.`} /><Statement headings={data.comparison ? [data.asOf, data.comparison.asOf] : undefined}>
       <SectionRows section={assets} />
@@ -137,7 +137,7 @@ export function ChangesInEquity({ me }: { me: Me }) {
       {today && presets(today).map(([label, start]) => <Button key={label} onClick={() => show(start, today)}>{label}</Button>)}
       {path && <Tools path={path} />}</div>
     <PendingPeriod applied={applied} values={{ from, to }} />
-    {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
+    {error && <Notice>{error}</Notice>}{!data && !error && <Loading />}
     {data && <Panel title="From the posted journals"><ResultSummary count={data.rows.length} summary={`Closing equity ${amount(data.endingTotalCents)}.`} /><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr><th className={th}>Movement</th>
       {data.columns.map((column) => <th key={column.key} className={`${th} min-w-36 text-right`}>{column.code && `${column.code} `}{column.name}</th>)}
       <th className={`${th} min-w-32 text-right`}>Total equity</th></tr></thead><tbody>

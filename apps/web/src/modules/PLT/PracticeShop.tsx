@@ -1,7 +1,7 @@
 /** Admin › Practice shop (PLAN C8): where to practise, and the owner's "start over". */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type PracticeStatus } from '../../api.ts';
-import { Button, Notice, Panel } from '../../components/ui.tsx';
+import { Loading, Button, Notice, Panel } from '../../components/ui.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
 import { PRACTICE_URL, isLocalAddress, practiceAddress, practiceLine } from './practice.ts';
 
@@ -25,7 +25,7 @@ export function PracticeShop({ me }: { me: Me }) {
     <div className="max-w-3xl space-y-4">
       <h1 className="text-2xl font-semibold">Practice shop</h1>
       {error && <Notice>{error}</Notice>}
-      {!status && !error && <p className="text-sm text-slate-500">Loading…</p>}
+      {!status && !error && <Loading />}
       {status && (
         <Panel title="Practise without touching the real books">
           <p className="text-sm">{practiceLine(status)}</p>

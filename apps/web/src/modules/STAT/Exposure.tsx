@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type Exposure } from '../../api.ts';
-import { Button, Notice, Panel, peso } from '../../components/ui.tsx';
+import { Loading, Button, Notice, Panel, peso } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { exposureMonths } from './stat.ts';
 
@@ -14,7 +14,7 @@ export function StatExposure() {
   const [error, setError] = useState('');
   useEffect(() => void api.statExposure().then(setR, (e: Error) => setError(e.message)), []);
   if (error) return <Notice>{error}</Notice>;
-  if (!r) return <p className="text-slate-500">Loading…</p>;
+  if (!r) return <Loading />;
   const grand = r.totals.reduce((s, t) => ({ total: s.total + t.totalCents, penalty: s.penalty + t.penaltyCents }), { total: 0, penalty: 0 });
   return (
     <div className="max-w-5xl space-y-4">

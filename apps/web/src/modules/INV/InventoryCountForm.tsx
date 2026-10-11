@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { formatPesos, isBusinessDate } from '@moonproject/shared';
 import { api, ApiError, type DocHeader, type DocTypeInfo, type Me, type Preview, type SheetSupply } from '../../api.ts';
 import { navigate } from '../../router.tsx';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { EditGate, Errors, Figures, useLive } from '../COL/parts.tsx';
@@ -142,7 +142,7 @@ export function InventoryCountForm({ type, mode, me }: { type: DocTypeInfo; mode
           {isBusinessDate(date) && <a className="text-sm underline" href={countSheetCsvUrl(category, date)} download>Print the count sheet (CSV)</a>}
         </Panel>
         <Panel title="Quantities counted">
-          {!sheet && <p className="text-sm text-slate-500">Loading the supplies…</p>}
+          {!sheet && <Loading label="Loading the supplies…" />}
           {sheet?.length === 0 && <Notice tone="info">No active supply is in this category.</Notice>}
           {leftOut > 0 && <Notice tone="warning">{leftOut === 1 ? '1 supply of the recorded count is' : `${leftOut} supplies of the recorded count are`} no longer active and left out.</Notice>}
           {sheet && sheet.length > 0 && (

@@ -6,7 +6,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ROLES } from '@moonproject/shared';
 import { api, type Me, type UserRow } from '../../api.ts';
-import { Button, Dialog, Field, Notice, inputClass } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, inputClass } from '../../components/ui.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
 import { ROLE_HINTS, canDeactivate, newUserInput, rolesInput, rolesWords, roleLabel, sortRoles } from './users.ts';
 
@@ -30,7 +30,7 @@ export function Users({ me }: { me: Me }) {
       </div>
       {error && <Notice>{error}</Notice>}
       {done && <Notice tone="success">{done}</Notice>}
-      {!users && !error && <p className="text-sm text-slate-500">Loading…</p>}
+      {!users && !error && <Loading />}
       {users && <UserTable users={users} meId={me.userId} onOpen={(kind, user) => { setDone(''); setOpen({ kind, user }); }} />}
       <p className="text-sm text-slate-500">Changes here ask for your password again. A deactivated user is signed out at once and keeps their history: nothing is ever deleted.</p>
       {open?.kind === 'add' && <AddUser onClose={() => setOpen(null)} onDone={(name) => finished(`Added ${name}. Give them the temporary password: they must change it the first time they sign in.`)} />}

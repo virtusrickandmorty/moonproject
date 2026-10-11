@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type BackupSettings } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, longDate, useAction, usePasswordPrompt } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, longDate, useAction, usePasswordPrompt } from '../../components/ui.tsx';
 import { TYPED_BACK, bothTypedBack, typedBackOk } from './backups.ts';
 
 type Letter = 'a' | 'b';
@@ -47,7 +47,7 @@ export function RecoveryKeys() {
   }, [printing]);
 
   if (error) return <Notice>{error}</Notice>;
-  if (!settings) return <p className="text-slate-500">Loading…</p>;
+  if (!settings) return <Loading />;
 
   const hasKeys = settings.recipients.length === 2;
   const make = () => making.run(async () => {

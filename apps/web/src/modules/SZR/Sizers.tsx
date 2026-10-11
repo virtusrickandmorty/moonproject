@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type SizerBoard, type SizerSet } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, askConfirm, inputClass, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, Panel, askConfirm, inputClass, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { CustomerPicker, type Picked } from '../COL/parts.tsx';
 import { STATUS_WORDS, dueWords, filterSets, lendInput, returnInput, setInput, weekFrom, type ReturnValues, type SetValues } from './sizer.ts';
 
@@ -100,7 +100,7 @@ export function SizerSets({ me }: { me: Me }) {
   const load = useCallback(() => void api.sizerBoard().then((b) => (setBoard(b), setError('')), (e: Error) => setError(e.message)), []);
   useEffect(load, [load]);
   if (error) return <Notice>{error}</Notice>;
-  if (!board) return <p className="text-slate-500">Loading…</p>;
+  if (!board) return <Loading />;
   const canEdit = me.permissions.includes('szr.loan.edit');
   const canSets = me.permissions.includes('szr.set.edit');
   const garments = [...new Set(board.sets.map((s) => s.garmentType))].sort();

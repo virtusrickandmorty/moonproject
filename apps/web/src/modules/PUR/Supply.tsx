@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type SupplyRecord } from '../../api.ts';
-import { Notice, Panel, peso } from '../../components/ui.tsx';
+import { Loading, Notice, Panel, peso } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { CATEGORY_WORDS, UNIT_WORDS } from './purchasing.ts';
 import { costSource } from './Supplies.tsx';
@@ -18,7 +18,7 @@ export function SupplyView({ id, inDialog = false }: { id: string; inDialog?: bo
   useEffect(() => void api.supply(id).then(setSupply, (e: Error) => setError(e.message)), [id]);
   useEffect(() => void api.supplySuppliers(id).then(setSuppliers, () => undefined), [id]);
   if (error) return <Notice>{error}</Notice>;
-  if (!supply) return <p className="text-slate-500">Loading…</p>;
+  if (!supply) return <Loading />;
   return (
     <div className="max-w-3xl space-y-4">
       <div className="flex items-center gap-3">{!inDialog && <Crumb label={supply.name} />}<h1 className="flex-1 text-2xl font-semibold">{supply.name}</h1>{!inDialog && <Link to="/pur/supplies" className="text-sm underline">All supplies</Link>}</div>

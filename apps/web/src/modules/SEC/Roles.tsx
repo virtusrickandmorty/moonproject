@@ -5,7 +5,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { api, type Me, type RoleGrid } from '../../api.ts';
-import { Button, Dialog, Notice, inputClass } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Notice, inputClass } from '../../components/ui.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
 import { changesFor, grantsOf, groupPermissions, ownerLosses, searchPermissions } from './roles.ts';
 import { roleLabel, sortRoles } from './users.ts';
@@ -21,7 +21,7 @@ export function Roles({ me }: { me: Me }) {
   const load = () => api.roles().then((g) => { setGrid(g); setDraft(grantsOf(g)); }, (e: Error) => setError(e.message));
   useEffect(() => void load(), []);
   if (!me.permissions.includes('sec.users.manage')) return <Notice>You do not have permission to manage roles.</Notice>;
-  if (!grid) return error ? <Notice>{error}</Notice> : <p className="text-sm text-slate-500">Loading…</p>;
+  if (!grid) return error ? <Notice>{error}</Notice> : <Loading />;
 
   const saved = grantsOf(grid);
   const keys = grid.permissions.map((p) => p.key);

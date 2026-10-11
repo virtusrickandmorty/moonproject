@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type PieceRate, type PrdStep } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
 import { cents } from '../COL/money.ts';
 import { CLASS_LABELS as classes, PAGE_SIZE, blankItem, catalogCalls, moneyCents, typeLocked, valuesOf, type Detail, type Item, type ItemValues } from './catalog.ts';
 
@@ -148,7 +148,7 @@ function LabourRates({ me, item }: { me: Me; item: Detail }) {
   const rateOf = (stepCode: string, complexity: string, part: string) => mine.find((r) => r.stepCode === stepCode && r.complexity === complexity && (r.part ?? 'whole') === part);
   const stepName = (code: string) => steps.find((s) => s.code === code)?.name ?? code;
   return <Panel title="Labour (piece rates)">
-    {!rates ? <p className="text-sm text-slate-500">Loading…</p> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
+    {!rates ? <Loading /> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
       <th>Step</th>{parts.map((p) => <th key={p} className="text-right">{p === 'whole' ? 'Per piece' : p === 'upper' ? 'Upper part' : 'Lower part'}</th>)}</tr></thead><tbody>
       {keys.map((k) => <tr key={k.stepCode}><td>{stepName(k.stepCode)}</td>
         {parts.map((p) => { const r = rateOf(k.stepCode, 'standard', p); return <td key={p} className="text-right tabular-nums">{r ? peso(r.rateCents) : <span className="text-slate-400">—</span>}</td>; })}</tr>)}

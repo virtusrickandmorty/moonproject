@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type Me, type Setting } from '../../api.ts';
-import { Button, Dialog, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { useToday } from '../../generic/record.tsx';
 import { Link } from '../../router.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
@@ -30,7 +30,7 @@ export function Settings({ me }: { me: Me }) {
       </p>
       {error && <Notice>{error}</Notice>}
       {done && <Notice tone="success">{done}</Notice>}
-      {!settings && !error && <p className="text-sm text-slate-500">Loading…</p>}
+      {!settings && !error && <Loading />}
       {settings && <SettingList settings={settings} today={today} mayChange={mayChange && !!today} onChange={(s) => { setDone(''); setChanging(s); }} />}
       {own.length > 0 && (
         <Panel title="Settings on their own screen">

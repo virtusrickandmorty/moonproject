@@ -7,7 +7,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { api, type DocDetail, type EmployerNumberRow, type Me, type SchemeCheck, type StatMonth, type UploadScheme } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
@@ -57,7 +57,7 @@ export function StatMonths({ me }: { me: Me }) {
   const [error, setError] = useState('');
   useEffect(() => void api.statMonths().then(setMonths, (e: Error) => setError(e.message)), []);
   if (error) return <Notice>{error}</Notice>;
-  if (!months) return <p className="text-slate-500">Loading…</p>;
+  if (!months) return <Loading />;
   return (
     <div className="max-w-4xl space-y-4">
       <h1 className="text-2xl font-semibold">Government remittances</h1>
@@ -162,7 +162,7 @@ export function StatMonthPage({ me, params }: { me: Me; params?: Record<string, 
   const [error, setError] = useState('');
   useEffect(() => void api.statMonth(month).then(setM, (e: Error) => setError(e.message)), [month]);
   if (error) return <Notice>{error}</Notice>;
-  if (!m) return <p className="text-slate-500">Loading…</p>;
+  if (!m) return <Loading />;
   const who = (r: { name: string; code: string; idNo: string | null }) => [`${r.name} (${r.code})`, r.idNo ?? '—'];
   const t = m.tax;
   const items: [string, string, number][] = [

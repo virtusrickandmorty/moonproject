@@ -12,6 +12,7 @@ import { SHOP_CONTACT } from './products.ts';
 import { useShop } from './store.tsx';
 import { StarPicker } from './Stars.tsx';
 import { base64, prepare } from './Support.tsx';
+import { Loading } from '../components/ui.tsx';
 
 const input = 'mt-1 w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 font-normal outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100';
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -83,7 +84,7 @@ export function Checkout() {
     } finally { setBusy(false); }
   };
 
-  if (!shop.ready) return <p className="mx-auto max-w-7xl px-4 py-16 text-slate-500 sm:px-6">Loading…</p>;
+  if (!shop.ready) return <Loading />;
   if (!lines.length) return (
     <section className="mx-auto max-w-2xl px-4 py-20 text-center sm:px-6">
       <h1 className="text-3xl font-extrabold">Nothing to check out</h1>
@@ -219,7 +220,7 @@ export function OrderStatus({ number, query }: { number: string; query: string }
     try { const p = await prepare(file); urls.current.push(p.url); setProof(p); } catch (err) { setError((err as Error).message); }
   };
 
-  if (!o) return <section className="mx-auto max-w-3xl px-4 py-20 sm:px-6">{error ? <p role="alert" className="rounded-xl bg-rose-50 px-4 py-3 font-semibold text-rose-800">{error}</p> : <p className="text-slate-500">Loading your order…</p>}</section>;
+  if (!o) return <section className="mx-auto max-w-3xl px-4 py-20 sm:px-6">{error ? <p role="alert" className="rounded-xl bg-rose-50 px-4 py-3 font-semibold text-rose-800">{error}</p> : <Loading label="Loading your order…" />}</section>;
   const at = ORDER_OF.indexOf(o.status);
   const banner: Partial<Record<Status, [string, string, string]>> = {
     awaiting_payment: ['Pay to confirm your order', `Your pieces are held until ${when(o.holdUntil)}. Pay the exact amount, then send us the reference and a screenshot.`, 'bg-indigo-50 text-indigo-900'],
@@ -361,7 +362,7 @@ export function MyOrders() {
       <h1 className="text-3xl font-extrabold tracking-tight">My orders</h1>
       <p className="mt-2 text-slate-600">Orders saved on this phone or computer in the last 30 days. On another device, open the link in your order email.</p>
       <button type="button" onClick={forget} className="mt-4 rounded-full border border-slate-300 px-5 py-2 text-sm font-semibold hover:bg-slate-100">Forget these orders on this device</button>
-      {rows === null ? <p className="mt-6 text-slate-500">Loading…</p> : rows.length === 0 ? (
+      {rows === null ? <Loading /> : rows.length === 0 ? (
         <div className="mt-6 rounded-2xl border border-dashed border-slate-300 p-8 text-center"><p className="font-semibold">No orders from this browser yet.</p>
           <Link to="/" className="mt-4 inline-block rounded-full bg-slate-900 px-6 py-3 font-bold text-white hover:bg-indigo-700">Shop ready-to-wear</Link></div>
       ) : (

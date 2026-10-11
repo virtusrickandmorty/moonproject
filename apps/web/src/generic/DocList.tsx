@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, type DocCounts, type DocHeader, type DocListFilters, type DocTypeInfo, type Draft, type PrintVariant } from '../api.ts';
 import { addRewrite, Link, navigate } from '../router.tsx';
-import { askConfirm, Button, Dialog, Field, Notice, Panel, StatusChip, inputClass, manilaTime, peso, showDate, useExit } from '../components/ui.tsx';
+import { askConfirm, Button, Loading, Dialog, Field, Notice, Panel, StatusChip, inputClass, manilaTime, peso, showDate, useExit } from '../components/ui.tsx';
 import { docPath, labelOf, pluralLabelOf } from '../shell/menu.ts';
 import { printDocument } from './DocView.tsx';
 import type { FormMode } from './DocForm.tsx';
@@ -29,7 +29,7 @@ export async function documentPage(type: string, filters: DocListFilters, status
 }
 
 export function ListMessage({ state, filtered, canCreate, onRetry, onClear, onNew }: { state: ListState; filtered: boolean; canCreate: boolean; onRetry: () => void; onClear: () => void; onNew: () => void }) {
-  if (state.busy) return <Notice tone="info">Loading… Please wait for the records to arrive.</Notice>;
+  if (state.busy) return <Loading label="Loading… Please wait for the records to arrive." />;
   if (state.error) return <Notice>{state.error} Check the connection, then <Button onClick={onRetry}>Retry list</Button>.</Notice>;
   if (state.rows.length > 0) return null;
   return <Notice tone="note">{filtered ? 'No records match these filters.' : 'Nothing here yet.'} {filtered ? <Button onClick={onClear}>Clear filters</Button> : canCreate ? <Button onClick={onNew}>Create a record</Button> : 'Ask the owner if you expected a record here.'}</Notice>;

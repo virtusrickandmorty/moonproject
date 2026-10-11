@@ -1,7 +1,7 @@
 /** Admin › System health (PLAN C8): traffic lights, "Run system check" and the support file. */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type SystemHealth } from '../../api.ts';
-import { Button, Notice, Panel } from '../../components/ui.tsx';
+import { Loading, Button, Notice, Panel } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { DOT, OVERALL, fixLink } from './health.ts';
 
@@ -36,7 +36,7 @@ export function SystemHealthPage({ me }: { me: Me }) {
         </div>
       </div>
       {error && <Notice>{error}</Notice>}
-      {!health && !error && <p className="text-sm text-slate-500">Loading…</p>}
+      {!health && !error && <Loading />}
       {health && (
         <>
           <p className="flex items-center gap-2 text-base font-medium">

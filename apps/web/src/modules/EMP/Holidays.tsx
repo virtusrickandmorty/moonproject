@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Holiday, type Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, ReasonDialog, askConfirm, inputClass, useAction, showDate } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, ReasonDialog, askConfirm, inputClass, useAction, showDate } from '../../components/ui.tsx';
 import { weekday } from './time.ts';
 
 export function Holidays({ me }: { me: Me }) {
@@ -28,7 +28,7 @@ export function Holidays({ me }: { me: Me }) {
     await load(year ?? undefined);
   });
   if (error) return <Notice>{error}</Notice>;
-  if (year === null) return <p className="text-slate-500">Loading…</p>;
+  if (year === null) return <Loading />;
   return (
     <div className="max-w-3xl space-y-4">
       <div className="flex items-center gap-3">

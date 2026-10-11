@@ -4,7 +4,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type Me, type MigUpload } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, manilaTime, useAction } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, manilaTime, useAction } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
 import { KINDS, TEMPLATES, fileNote, fileProblem, isOpen, templateCsv, uploadRequest, uploadStatusWords, type MigKind } from './importer.ts';
 
@@ -102,7 +102,7 @@ export function ImportOldData({ me }: { me: Me }) {
       <p className="text-sm text-slate-600">Bring customers, measurements, employees, piece rates and sizer sets in from the old Google sheet. Load a copy, review every row, check the import totals, then import these approved rows.</p>
       <UploadForm />
       {error && <Notice>{error}</Notice>}
-      {!uploads && !error && <p className="text-slate-500">Loading…</p>}
+      {!uploads && !error && <Loading />}
       {uploads && <UploadsList uploads={uploads} />}
     </div>
   );

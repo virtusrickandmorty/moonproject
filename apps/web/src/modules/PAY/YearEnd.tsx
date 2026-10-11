@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, alphalistPath, type Data2316, type Me } from '../../api.ts';
-import { Button, Notice, Panel, peso, showDate } from '../../components/ui.tsx';
+import { Loading, Button, Notice, Panel, peso, showDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { ITEMS_2316, yearsToPick } from './year-end.ts';
@@ -47,7 +47,7 @@ export function YearEndPage({ me }: { me: Me }) {
       </div>
       {!ids && <Notice tone="info">Your role cannot view government numbers. Ask the owner to review your access in Roles and permissions.</Notice>}
       <Panel title={year ? `Employees paid in ${year}` : 'Employees'}>
-        {!rows && <p className="text-sm text-slate-500">Loading…</p>}
+        {!rows && <Loading />}
         {rows?.length === 0 && <p className="text-sm text-slate-500">Nobody was paid in {year}.</p>}
         {rows && rows.length > 0 && (
           <table className="w-full text-sm">
@@ -91,7 +91,7 @@ export function Sheet2316({ params }: { me: Me; params?: Record<string, string> 
   const [error, setError] = useState('');
   useEffect(() => void api.one2316(Number(params?.year), params?.employeeId ?? '').then(setD, (e: Error) => setError(e.message)), [params?.year, params?.employeeId]);
   if (error) return <Notice>{error}</Notice>;
-  if (!d) return <p className="text-slate-500">Loading…</p>;
+  if (!d) return <Loading />;
   return (
     <div className="max-w-3xl space-y-3">
       <div className="flex items-center gap-3 print:hidden">

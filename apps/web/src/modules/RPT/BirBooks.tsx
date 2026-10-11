@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, openBookPrint, type Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso, useAction, type PageInfo } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, peso, useAction, type PageInfo } from '../../components/ui.tsx';
 import { BookTitle, Tools, money, td, th, usePagedReport, useToday } from './Books.tsx';
 import './books.css';
 import { addressValue, PendingPeriod, ResultSummary } from './ReportParts.tsx';
@@ -53,7 +53,7 @@ export function BirBooks({ me }: { me: Me }) {
       {sameYear && lastPage !== null && <span className="text-sm text-slate-600">{lastPage ? `Last page printed in ${year}: ${lastPage}` : `Nothing printed yet in ${year}`}</span>}</div>
     {printing.error && <Notice>{printing.error}</Notice>}{printed && <Notice tone="success">{printed}</Notice>}
     <PendingPeriod applied={query} values={{ from, to }} />
-    {error && <Notice>{error}</Notice>}{!data && !error && <p>Loading…</p>}
+    {error && <Notice>{error}</Notice>}{!data && !error && <Loading />}
     {data && !data.pages?.length && !data.accounts?.some(a => a.pages.length) && <ResultSummary count={0} />}
     {data && cols.length > 0 && <LoosePages pages={data.pages ?? []} columns={cols} />}
     {data && cols.length === 0 && <>{(data.accounts ?? [{ code: '', name: title, pages: data.pages ?? [] }]).map((a) => <Panel key={`${a.code}-${a.name}`} title={`${a.code} ${a.name}`}><LoosePages pages={a.pages} columns={book === 'general-journal' ? ['businessDate', 'journalNumber', 'journalMemo', 'lines'] : ['businessDate', 'journalNumber', 'documentNumber', 'debitCents', 'creditCents', 'runningBalanceCents']} /></Panel>)}</>}

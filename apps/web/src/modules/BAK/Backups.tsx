@@ -4,7 +4,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type BackupMade, type BackupStatus, type Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
+import { Loading, Button, Field, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { RecoveryKeys } from './RecoveryKeys.tsx';
 import { RestoreBackups } from './Restore.tsx';
@@ -58,7 +58,7 @@ function Status({ canRun }: { canRun: boolean }) {
   });
 
   if (error) return <Notice>{error}</Notice>;
-  if (!status) return <p className="text-slate-500">Loading…</p>;
+  if (!status) return <Loading />;
   const s = status;
   const stale = staleWords(s, now);
   const rows: [string, string][] = [
