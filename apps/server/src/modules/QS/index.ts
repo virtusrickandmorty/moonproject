@@ -3,12 +3,14 @@ import { dirname, join } from 'node:path';
 import { defineModule } from '../../engine/documents/registry.ts';
 import { saleDoc } from './doctypes/sale.ts';
 import { qsRoutes } from './routes.ts';
-import { provideCancelQuickSale, provideRecordQuickSale } from './public.ts';
+import { provideCancelQuickSale, provideRecordQuickSale, provideSaleDoc } from './public.ts';
 import { cancelQuickSale, recordQuickSale } from './record.ts';
 
 // Other modules record a counter sale through QS's public contract (SHP: confirmed online orders, and cancelling or returning one).
 provideRecordQuickSale(recordQuickSale);
 provideCancelQuickSale(cancelQuickSale);
+// TPL records a delivery's invoice as a quick sale on terms.
+provideSaleDoc(saleDoc);
 
 export default defineModule({
   code: 'QS',

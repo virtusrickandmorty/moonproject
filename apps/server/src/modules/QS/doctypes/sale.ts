@@ -10,7 +10,7 @@
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { formatPeso, type Issue } from '@moonproject/shared';
+import { formatPeso, manilaDate, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
@@ -40,6 +40,8 @@ export const saleInput = z
     invoiceNumber: z.string().trim().regex(/^0*[1-9]\d{0,11}$/, 'Type the number printed on the invoice (digits only).'),
     lines: z.array(lineInput).min(1).max(30),
     note: text(500).optional(),
+    // On terms (TPL deliveries): paid that many days after the invoice; the server makes the due date (NR-6).
+    termsDays: z.number().int().min(1).max(365).optional(),
   })
   .strict();
 export type SaleInput = z.infer<typeof saleInput>;
@@ -49,7 +51,11 @@ export interface Sale extends Omit<SaleInput, 'lines'>, ReturnType<typeof invoic
   lines: SaleLine[];
   customerName: string;
   totalCents: number;
+  /** On terms only: the invoice date plus the terms. */
+  dueDate?: string;
 }
+
+const addDays = (date: string, days: number) => manilaDate(new Date(Date.parse(`${date}T00:00:00+08:00`) + days * 86_400_000));
 
 export const saleDoc: DocTypeDef<SaleInput, Sale> = {
   key: 'qs.sale',
@@ -65,7 +71,8 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
     const lines = input.lines.map((l, i) => ({ ...l, lineNo: i + 1, listCents: l.qty * l.unitPriceCents, amountCents: l.qty * l.unitPriceCents - l.discountCents }));
     const listCents = lines.reduce((s, l) => s + l.listCents, 0);
     const figures = invoiceAmounts(listCents <= MAX_CENTS ? lines : [], settingAt(ctx.db, 'tax.vat_rate_bp', ctx.businessDate)); // over the guard: refused in validate
-    return { ...input, ...figures, listCents, lines, customerName: customerRef(ctx.db, input.customerId)?.display_name ?? '?', totalCents: figures.grossCents };
+    return { ...input, ...figures, listCents, lines, customerName: customerRef(ctx.db, input.customerId)?.display_name ?? '?', totalCents: figures.grossCents,
+      ...(input.termsDays ? { dueDate: addDays(ctx.businessDate, input.termsDays) } : {}) };
   },
 
   validate(doc, ctx) {
@@ -101,6 +108,7 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
       `INSERT INTO qs_sale_lines (document_id, line_no, kind, description, qty, unit_price_cents, discount_cents, amount_cents, product_id, size, colour)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
+    if (doc.termsDays && doc.dueDate) db.prepare('INSERT INTO qs_sale_terms (document_id, terms_days, due_date) VALUES (?, ?, ?)').run(h.documentId, doc.termsDays, doc.dueDate);
     for (const l of doc.lines) {
       line.run(h.documentId, l.lineNo, l.kind, l.description, l.qty, l.unitPriceCents, l.discountCents, l.amountCents, l.item?.productId ?? null, l.item?.size ?? null, l.item?.colour ?? null);
     }
@@ -132,6 +140,7 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
       .get(documentId) as (Omit<Sale, 'note' | 'lines' | 'salesCents' | 'vatableSalesCents' | 'totalCents'> & { note: string | null; mto: number; rtw: number; service: number }) | undefined;
     if (!r) throw new Error(`Quick sale ${documentId} not found`);
     const { note, mto, rtw, service, ...rest } = r;
+    const terms = db.prepare('SELECT terms_days AS termsDays, due_date AS dueDate FROM qs_sale_terms WHERE document_id = ?').get(documentId) as { termsDays: number; dueDate: string } | undefined;
     const lines = db
       .prepare(
         `SELECT kind, description, qty, unit_price_cents AS unitPriceCents, discount_cents AS discountCents, line_no AS lineNo, qty * unit_price_cents AS listCents,
@@ -141,6 +150,7 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
     return {
       ...rest,
       ...(note ? { note } : {}),
+      ...(terms ?? {}),
       lines: lines.map(({ productId, size, colour, ...l }) => ({ ...l, ...(productId ? { item: { productId, size: size!, colour: colour! } } : {}) })),
       vatableSalesCents: r.grossCents - r.vatCents,
       salesCents: { made_to_order: mto, ready_made: rtw, service },
@@ -148,11 +158,12 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
     };
   },
 
-  toInput: ({ customerId, invoiceNumber, lines, note }) => ({
+  toInput: ({ customerId, invoiceNumber, lines, note, termsDays }) => ({
     customerId,
     invoiceNumber,
     lines: lines.map(({ kind, description, qty, unitPriceCents, discountCents, item }) => ({ kind, description, qty, unitPriceCents, discountCents, ...(item ? { item } : {}) })),
     ...(note ? { note } : {}),
+    ...(termsDays ? { termsDays } : {}),
   }),
 
   /**
@@ -167,7 +178,8 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
   summary(doc) {
     const what = doc.lines.length === 1 ? doc.lines[0]!.description : `${doc.lines.length} lines`;
     const discount = doc.discountCents > 0 ? `, discount ${formatPeso(doc.discountCents)} shown` : '';
-    return `This will record invoice no. ${doc.invoiceNumber} to ${doc.customerName} for ${what}: ${formatPeso(doc.grossCents)} (VATable sales ${formatPeso(doc.vatableSalesCents)}, VAT ${formatPeso(doc.vatCents)}${discount}).`;
+    const due = doc.dueDate ? `, due ${doc.dueDate}` : '';
+    return `This will record invoice no. ${doc.invoiceNumber} to ${doc.customerName} for ${what}: ${formatPeso(doc.grossCents)} (VATable sales ${formatPeso(doc.vatableSalesCents)}, VAT ${formatPeso(doc.vatCents)}${discount})${due}.`;
   },
 
   arbitrary(db) {
