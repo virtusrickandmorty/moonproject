@@ -34,7 +34,7 @@ export function columns(steps: PrdStep[], cards: BoardCard[]): Column[] {
     { key: 'setup', title: 'Choose production steps', cards: cards.filter((c) => c.steps === null) },
     ...steps.map((s) => ({ key: String(s.id), title: s.name, stepId: s.id, cards: cards.filter((c) => activeSteps(c).includes(s.id)) })),
     // Ready for release: every step done, or some pieces through every step and not released yet (they can go out first).
-    { key: 'ready', title: 'Ready', cards: cards.filter(readyNow) },
+    { key: 'ready', title: 'Ready for release', cards: cards.filter(readyNow) },
   ].filter((c) => c.cards.length > 0);
 }
 
