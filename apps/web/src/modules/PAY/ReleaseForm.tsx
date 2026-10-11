@@ -189,6 +189,7 @@ function ReleaseOne({ type, run, row, places, onReleased, onClose }: {
   const [tenders, setTenders] = useState<TenderRow[]>([{ ...emptyTender(), amount: (row.netCents / 100).toFixed(2) }]);
   const [touched, setTouched] = useState(false);
   const [key] = useState(newIdempotencyKey);
+  const [bigQr, setBigQr] = useState(false);
   const a = useAction();
   useEffect(() => {
     if (run.kind === 'run') api.payslips(run.id).then(setSlips, (e: Error) => setSlipError(e.message));
@@ -208,7 +209,9 @@ function ReleaseOne({ type, run, row, places, onReleased, onClose }: {
     onReleased(r.number, row.name);
   });
   const qrName = { cash: 'bank or GCash', bank: 'Bank', gcash: 'GCash' }[row.payoutMethod];
+  const qrSrc = row.payoutQrVersion !== null ? api.releaseQrUrl(run.id, row.employeeId, row.payoutQrVersion) : null;
   return (
+    <>
     <Dialog wide title={`Release ${row.name}'s pay`} onClose={onClose}>
       <div className="grid gap-4 md:grid-cols-2">
         <div>
@@ -219,11 +222,16 @@ function ReleaseOne({ type, run, row, places, onReleased, onClose }: {
         </div>
         <div className="space-y-3">
           <p className="text-sm">Net pay <span className="text-xl font-semibold tabular-nums">{peso(row.netCents)}</span></p>
-          {row.payoutQrVersion !== null && (
-            <figure className="flex items-center gap-3 rounded-lg p-2 ring-1 ring-slate-200">
-              <img src={api.releaseQrUrl(run.id, row.employeeId, row.payoutQrVersion)} alt={`${row.name}'s ${qrName} QR code`} className="size-36 shrink-0 rounded bg-white object-contain" />
-              <figcaption className="text-sm text-slate-600">Scan to send by {qrName}{row.payoutAccount ? `: ${row.payoutAccount}` : ''}.</figcaption>
-            </figure>
+          {qrSrc && (
+            // Opens big in a window of its own (the owner's request, Oct 2026), easier to scan from a phone.
+            <button type="button" onClick={() => setBigQr(true)} title="Open the QR code big"
+              className="flex w-full cursor-zoom-in items-center gap-3 rounded-lg p-2 text-left ring-1 ring-slate-200 hover:bg-indigo-50/50 hover:ring-indigo-300">
+              <img src={qrSrc} alt={`${row.name}'s ${qrName} QR code`} className="size-36 shrink-0 rounded bg-white object-contain" />
+              <span className="text-sm text-slate-600">
+                Scan to send by {qrName}{row.payoutAccount ? `: ${row.payoutAccount}` : ''}.
+                <span className="mt-1 block font-medium text-indigo-700">Open it big</span>
+              </span>
+            </button>
           )}
           <h3 className="text-sm font-semibold">Where did the money come from?</h3>
           <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money come from?" amountHint={formatPesos(row.netCents)} />
@@ -238,5 +246,12 @@ function ReleaseOne({ type, run, row, places, onReleased, onClose }: {
         </div>
       </div>
     </Dialog>
+    {bigQr && qrSrc && (
+      <Dialog title={`${row.name}: ${qrName} QR code`} onClose={() => setBigQr(false)}>
+        <img src={qrSrc} alt={`${row.name}'s ${qrName} QR code`} className="mx-auto aspect-square w-full max-w-md rounded-lg bg-white object-contain p-2 ring-1 ring-slate-200" />
+        <p className="text-center text-sm text-slate-600">{row.payoutAccount ? `${row.payoutAccount} · ` : ''}Net pay {peso(row.netCents)}</p>
+      </Dialog>
+    )}
+    </>
   );
 }
