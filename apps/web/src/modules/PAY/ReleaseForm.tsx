@@ -1,17 +1,20 @@
 /**
  * Payroll release form (PLAN D5 PAY-REL): pick a recorded run with net pay still to release, tick who is paid now (all by
  * default), and say where the money came from, split across cash places if needed. Each person's pay is released once.
+ * Or one at a time (the owner's request, Oct 2026): each person released on their own, from a window with their payslip,
+ * their QR code and where the money came from (split if needed), staying on the form for the next person.
  */
 import { useEffect, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
-import { api, ApiError, type CashPlace, type DocTypeInfo, type Preview, type ReleaseRow, type RunToRelease } from '../../api.ts';
+import { api, ApiError, newIdempotencyKey, type CashPlace, type DocTypeInfo, type Payslips, type Preview, type ReleaseRow, type RunToRelease } from '../../api.ts';
 import { Link, navigate } from '../../router.tsx';
-import { Button, Dialog, Notice, Panel, peso, showDate } from '../../components/ui.tsx';
+import { Button, Dialog, Loading, Notice, Panel, peso, showDate, useAction } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { emptyTender, sum, tendersToInput, type TenderRow } from '../COL/money.ts';
 import { Errors, TenderRows, useLive } from '../COL/parts.tsx';
 import { GROUP_LABEL } from './run.ts';
+import { PayslipCard } from './views.tsx';
 
 /** "Paid by" on the employee record; cash has no account, so its QR is a bank or GCash one. */
 const PAID_BY = { cash: 'bank or GCash', bank: 'Bank', gcash: 'GCash' } as const;
@@ -36,16 +39,29 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
   const [touched, setTouched] = useState(false);
   const [error, setError] = useState('');
   const [qrOf, setQrOf] = useState<ReleaseRow | null>(null);
+  const [oneByOne, setOneByOne] = useState(false);
+  const [single, setSingle] = useState<ReleaseRow | null>(null);
+  const [released, setReleased] = useState('');
   const fail = (e: Error) => setError(e.message);
 
   useEffect(() => {
     api.runsToRelease().then(setRuns, fail);
     api.cashPlaces().then(setPlaces, fail);
   }, []);
+  const loadRows = (id: string) => api.releaseStatus(id).then((r) => (setRows(r), setPicked(new Set(r.filter((x) => !x.releasedBy && x.netCents > 0).map((x) => x.employeeId)))), fail);
   useEffect(() => {
     setRows([]);
-    if (runId) api.releaseStatus(runId).then((r) => (setRows(r), setPicked(new Set(r.filter((x) => !x.releasedBy && x.netCents > 0).map((x) => x.employeeId)))), fail);
+    setReleased('');
+    if (runId) void loadRows(runId);
   }, [runId]);
+  const run = runs?.find((r) => r.id === runId);
+  /** One person released from the window: say so, and show who is left (the run leaves the list once everyone is paid). */
+  const releasedOne = (number: string, name: string) => {
+    setSingle(null);
+    setReleased(`${number} recorded: ${name}'s pay is released.`);
+    void loadRows(runId);
+    api.runsToRelease().then(setRuns, fail);
+  };
 
   const due = rows.filter((r) => picked.has(r.employeeId));
   const total = sum(due.map((r) => r.netCents));
@@ -90,7 +106,24 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
         </Panel>
         {rows.length > 0 && (
           <Panel title="Who is paid now?">
-            {rows.map((r) => (
+            <div role="radiogroup" aria-label="Release" className="mb-3 inline-flex rounded-lg bg-slate-100 p-1 text-sm">
+              {([[false, 'Together'], [true, 'One at a time']] as const).map(([one, label]) => (
+                <button key={label} type="button" role="radio" aria-checked={oneByOne === one} onClick={() => setOneByOne(one)}
+                  className={`rounded-md px-3 py-1.5 font-medium ${oneByOne === one ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>{label}</button>
+              ))}
+            </div>
+            {oneByOne && <p className="mb-2 text-xs text-slate-500">Each person is released on their own: their payslip, their QR code and where the money came from, split if needed.</p>}
+            {released && <Notice tone="success">{released}</Notice>}
+            {oneByOne && rows.map((r) => (
+              <div key={r.employeeId} className={`flex items-center justify-between gap-2 border-b border-slate-100 py-1.5 text-sm last:border-0 ${r.releasedBy || r.netCents <= 0 ? 'text-slate-400' : ''}`}>
+                <span className="min-w-0">{r.name}{r.releasedBy ? ` (released by ${r.releasedBy})` : r.netCents <= 0 ? ' (no net pay)' : ''}</span>
+                <span className="flex shrink-0 items-center gap-3">
+                  <span className="tabular-nums">{peso(r.netCents)}</span>
+                  {!r.releasedBy && r.netCents > 0 && <Button disabled={!type.canPost} onClick={() => (setReleased(''), setSingle(r))}>Release</Button>}
+                </span>
+              </div>
+            ))}
+            {!oneByOne && rows.map((r) => (
               <div key={r.employeeId} className={`flex items-center justify-between gap-2 text-sm ${r.releasedBy || r.netCents <= 0 ? 'text-slate-400' : ''}`}>
                 <span className="flex min-w-0 items-center gap-1.5">
                   <label><input type="checkbox" disabled={!!r.releasedBy || r.netCents <= 0} checked={picked.has(r.employeeId)} onChange={() => toggle(r.employeeId)} /> {r.name}{r.releasedBy ? ` (released by ${r.releasedBy})` : ''}</label>
@@ -107,21 +140,29 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
             ))}
           </Panel>
         )}
-        <Panel title="Where did the money come from?">
-          <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money come from?" amountHint={formatPesos(total)} />
-        </Panel>
-        <Errors list={errors} show={touched} />
+        {!oneByOne && <>
+          <Panel title="Where did the money come from?">
+            <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money come from?" amountHint={formatPesos(total)} />
+          </Panel>
+          <Errors list={errors} show={touched} />
+        </>}
         <div className="flex gap-2">
-          <Button tone="primary" disabled={!type.canPost} onClick={openConfirm}>Record</Button>
+          {!oneByOne && <Button tone="primary" disabled={!type.canPost} onClick={openConfirm}>Record</Button>}
           <Button onClick={() => history.back()}>Back</Button>
         </div>
       </div>
-      <Panel title="So far">
+      {oneByOne ? (
+        <Panel title="Still to release">
+          <p className="text-2xl font-semibold tabular-nums">{peso(sum(rows.filter((r) => !r.releasedBy && r.netCents > 0).map((r) => r.netCents)))}</p>
+          <p className="text-sm text-slate-600">{rows.filter((r) => !r.releasedBy && r.netCents > 0).length} of {rows.length} people</p>
+        </Panel>
+      ) : <Panel title="So far">
         <p className="text-2xl font-semibold tabular-nums">{peso(total)}</p>
         <p className="text-sm text-slate-600">{due.length} {due.length === 1 ? 'person' : 'people'}; paid out {peso(sum(pay.tenders.map((t) => t.amountCents)))}</p>
         {live && <p className="text-sm">{live.summary}</p>}
         {live?.issues.map((i) => <Notice key={i.code + i.message} tone={i.level}>{i.message}</Notice>)}
-      </Panel>
+      </Panel>}
+      {single && run && <ReleaseOne type={type} run={run} row={single} places={places} onReleased={releasedOne} onClose={() => setSingle(null)} />}
       {qrOf && qrOf.payoutQrVersion !== null && (
         <Dialog title={`${qrOf.name}: ${PAID_BY[qrOf.payoutMethod]} QR code`} onClose={() => setQrOf(null)}>
           <img src={api.releaseQrUrl(runId, qrOf.employeeId, qrOf.payoutQrVersion)} alt={`${qrOf.name}'s ${PAID_BY[qrOf.payoutMethod]} QR code`}
@@ -133,5 +174,69 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
       )}
       {confirm && <RecordDialog type={type} preview={confirm} reason="" onRecord={record} onClose={() => setConfirm(null)} />}
     </form>
+  );
+}
+
+/**
+ * Releasing one person's pay (the owner's request, Oct 2026): their payslip beside their QR code and where the money came
+ * from, split across cash places if needed (part cash, part GCash). Records a release of that one person.
+ */
+function ReleaseOne({ type, run, row, places, onReleased, onClose }: {
+  type: DocTypeInfo; run: RunToRelease; row: ReleaseRow; places: CashPlace[]; onReleased: (number: string, name: string) => void; onClose: () => void;
+}) {
+  const [slips, setSlips] = useState<Payslips | null>(null);
+  const [slipError, setSlipError] = useState('');
+  const [tenders, setTenders] = useState<TenderRow[]>([{ ...emptyTender(), amount: (row.netCents / 100).toFixed(2) }]);
+  const [touched, setTouched] = useState(false);
+  const [key] = useState(newIdempotencyKey);
+  const a = useAction();
+  useEffect(() => {
+    if (run.kind === 'run') api.payslips(run.id).then(setSlips, (e: Error) => setSlipError(e.message));
+  }, [run.id, run.kind]);
+  const slip = slips?.employees.find((e) => e.employeeId === row.employeeId);
+  const pay = tendersToInput(tenders, 'pick where the money came from');
+  const paid = sum(pay.tenders.map((t) => t.amountCents));
+  const input = { runId: run.id, employeeIds: [row.employeeId], tenders: pay.tenders };
+  const live = useLive(JSON.stringify(input), pay.errors.length === 0, () => api.preview(type.key, input));
+  const record = () => a.run(async () => {
+    setTouched(true);
+    if (pay.errors.length) return;
+    const pre = await api.preview(type.key, input);
+    const stop = pre.issues.find((i) => i.level === 'error');
+    if (stop) throw new Error(stop.message);
+    const r = await api.post(type.key, input, pre.totalCents, key);
+    onReleased(r.number, row.name);
+  });
+  const qrName = { cash: 'bank or GCash', bank: 'Bank', gcash: 'GCash' }[row.payoutMethod];
+  return (
+    <Dialog wide title={`Release ${row.name}'s pay`} onClose={onClose}>
+      <div className="grid gap-4 md:grid-cols-2">
+        <div>
+          {run.kind !== 'run' ? <p className="text-sm text-slate-600">{run.number}: 13th-month pay of {peso(row.netCents)} (no payslip for it).</p>
+            : slip && slips ? <PayslipCard p={slips} e={slip} />
+            : slipError ? <Notice tone="info">The payslip is not shown: {slipError}</Notice>
+            : <Loading />}
+        </div>
+        <div className="space-y-3">
+          <p className="text-sm">Net pay <span className="text-xl font-semibold tabular-nums">{peso(row.netCents)}</span></p>
+          {row.payoutQrVersion !== null && (
+            <figure className="flex items-center gap-3 rounded-lg p-2 ring-1 ring-slate-200">
+              <img src={api.releaseQrUrl(run.id, row.employeeId, row.payoutQrVersion)} alt={`${row.name}'s ${qrName} QR code`} className="size-36 shrink-0 rounded bg-white object-contain" />
+              <figcaption className="text-sm text-slate-600">Scan to send by {qrName}{row.payoutAccount ? `: ${row.payoutAccount}` : ''}.</figcaption>
+            </figure>
+          )}
+          <h3 className="text-sm font-semibold">Where did the money come from?</h3>
+          <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money come from?" amountHint={formatPesos(row.netCents)} />
+          <p className="text-sm text-slate-600">Paid out {peso(paid)} of {peso(row.netCents)}{paid !== row.netCents && paid > 0 ? ` (${peso(row.netCents - paid)} ${paid < row.netCents ? 'short' : 'over'})` : ''}</p>
+          <Errors list={pay.errors} show={touched} />
+          {live?.issues.filter((i) => i.level === 'error').map((i) => <Notice key={i.code + i.message} tone={i.level}>{i.message}</Notice>)}
+          {a.error && <Notice>{a.error}</Notice>}
+          <div className="flex gap-2">
+            <Button tone="primary" disabled={a.busy || !type.canPost} onClick={record}>{a.busy ? 'Recording…' : `Record ${row.name}'s release`}</Button>
+            <Button onClick={onClose}>Cancel</Button>
+          </div>
+        </div>
+      </div>
+    </Dialog>
   );
 }
