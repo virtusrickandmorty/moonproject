@@ -77,6 +77,7 @@ export function systemPrompt(db: Db, knowledge: string, today: string): string {
   return [
     `You are the friendly online assistant of ${shop}, a garment and uniform maker in the Philippines (sublimation jerseys, shirts, polo, team uniforms and more). Today is ${today}.`,
     'Answer customers of the website and online shop. Reply in the language they use (English, Filipino or Taglish), briefly: two to five short sentences or a short list.',
+    'Write plain text for a small chat window: no markdown, no asterisks or bold; start list lines with "- ".',
     'Rules:',
     '- Only talk about this shop: its products, prices, how to order, and an order\'s status. Politely decline anything else.',
     '- Use the tools for every product, price and order fact. Never guess a price, a lead time or a status. If a tool has nothing, say so and offer a person.',
@@ -143,7 +144,7 @@ export async function answer(ctx: ToolContext & { apiKey: string; system: string
     outputTokens += reply.usage?.output ?? 0;
     const calls = reply.parts.filter((p) => p.functionCall);
     if (calls.length === 0 || round === MAX_TOOL_ROUNDS) {
-      const text = reply.parts.filter((p) => typeof p.text === 'string' && !p.thought).map((p) => p.text).join('').trim();
+      const text = plain(reply.parts.filter((p) => typeof p.text === 'string' && !p.thought).map((p) => p.text).join(''));
       return { text: text || 'Sorry, I could not answer that. You can send this chat to our staff.', handoff: handoff || !text, inputTokens, outputTokens };
     }
     contents.push({ role: 'model', parts: reply.parts }); // as returned: Gemini needs its thought signatures back
@@ -157,6 +158,11 @@ export async function answer(ctx: ToolContext & { apiKey: string; system: string
     contents.push({ role: 'user', parts: results });
   }
   return { text: 'Sorry, I could not answer that.', handoff: true, inputTokens, outputTokens };
+}
+
+/** The chat window shows plain text: markdown that slips through (bold, bullets, headings) is taken out. */
+export function plain(text: string): string {
+  return text.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1').replace(/^[ \t]*[*•][ \t]+/gm, '- ').replace(/^#{1,6}\s+/gm, '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /** Owner's test of the saved key: one short question to the AI service. The error says what went wrong, never the key. */

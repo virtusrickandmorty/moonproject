@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { createTestEnv, PASSWORD, type Client, type TestEnv } from '../../../../test/helpers.ts';
 import { today } from '../../../platform/clock.ts';
-import { useTransport, type ModelReply } from '../agent.ts';
+import { plain, useTransport, type ModelReply } from '../agent.ts';
 
 let env: TestEnv;
 let owner: Client;
@@ -127,4 +127,9 @@ it('is bounded: 20 messages per sender in 10 minutes, and 30 messages (15 exchan
   const chatId = (await from(1)).json().chatId as string;
   for (let n = 2; n <= 15; n++) expect((await from(n, chatId)).statusCode).toBe(200);
   expect((await from(16, chatId)).json().code).toBe('CHAT_FULL');
+});
+
+it('turns markdown into plain text for the chat window', () => {
+  expect(plain('Ito po:\n\n* **Full Sublimation** (10 pcs)\n* Embroidery\n\n\n## Note\nAng **ESTIMATE** ay ₱13,500.00'))
+    .toBe('Ito po:\n\n- Full Sublimation (10 pcs)\n- Embroidery\n\nNote\nAng ESTIMATE ay ₱13,500.00');
 });
