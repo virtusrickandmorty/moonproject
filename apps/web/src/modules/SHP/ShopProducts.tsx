@@ -12,6 +12,7 @@ import { Link } from '../../router.tsx';
 import { ProductPicture } from '../../shop/GarmentArt.tsx';
 import { SAMPLE_PRODUCTS, SIZES, type Product, type Shape } from '../../shop/products.ts';
 import { masterRequest } from '../CUS/http.ts';
+import { ShopWork } from './ShopWork.tsx';
 
 export interface StockLine { size: string; colour: string; onHand: number; held: number; available: number }
 interface Row extends Product { categoryId: string | null; sortOrder: number; isActive: boolean; version: number; updatedAt: string; stock: StockLine[] | null }
@@ -49,7 +50,7 @@ const total = (s: StockLine[] | null, k: keyof Omit<StockLine, 'size' | 'colour'
 const tab = (on: boolean) => `rounded-md px-4 py-2 text-sm font-semibold ${on ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-indigo-50'}`;
 
 export function ShopProducts({ me }: { me: Me }) {
-  const [view, setView] = useState<'products' | 'categories' | 'payment' | 'reviews'>('products');
+  const [view, setView] = useState<'products' | 'work' | 'categories' | 'payment' | 'reviews'>('products');
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -63,11 +64,12 @@ export function ShopProducts({ me }: { me: Me }) {
         </div>
       </div>
       <div className="flex flex-wrap gap-2" role="tablist">
-        {([['products', 'Products and stock'], ['categories', 'Categories'], ['payment', 'Online payment'], ['reviews', 'Reviews']] as const)
+        {([['products', 'Products and stock'], ['work', 'Shop work'], ['categories', 'Categories'], ['payment', 'Online payment'], ['reviews', 'Reviews']] as const)
           .filter(([k]) => k !== 'payment' || me.permissions.includes('shp.orders.view')).map(([k, l]) => (
           <button key={k} type="button" role="tab" aria-selected={view === k} className={tab(view === k)} onClick={() => setView(k)}>{l}</button>))}
       </div>
       {view === 'products' && <Products me={me} />}
+      {view === 'work' && <ShopWork me={me} />}
       {view === 'categories' && <Categories me={me} />}
       {view === 'payment' && <Payment me={me} />}
       {view === 'reviews' && <Reviews me={me} />}
@@ -153,16 +155,25 @@ function Products({ me }: { me: Me }) {
   );
 }
 
-/** Pieces on hand per size × colour; staff record pieces coming in, or what a count found (which becomes on hand). */
+/**
+ * Pieces on hand per size × colour; staff record pieces coming in, or what a count found (which becomes on hand). Or send
+ * pieces to production (the owner's request, Oct 2026): a restock of new pieces, or rework of pieces on hand (taken off sale
+ * until fixed); both go on the production board and into this stock when finished (Shop work).
+ */
 function StockDialog({ me, product, onClose }: { me: Me; product: Row; onClose: () => void }) {
   type Move = { id: string; size: string; colour: string; qty: number; reason: 'stock_in' | 'count'; note: string | null; at: string; userName: string };
   const [data, setData] = useState<{ lines: StockLine[]; moves: Move[] } | null>(null);
-  const [mode, setMode] = useState<'in' | 'count'>('in');
+  const [mode, setMode] = useState<'in' | 'count' | 'make' | 'rework'>('in');
+  const [due, setDue] = useState('7');
+  const [rush, setRush] = useState(false);
+  const canWork = me.permissions.includes('shp.work');
+  const sending = mode === 'make' || mode === 'rework';
   const [typed, setTyped] = useState<Record<string, string>>({});
   const [note, setNote] = useState('');
   const [done, setDone] = useState('');
   const { busy, error, run } = useAction();
   const canStock = me.permissions.includes('shp.stock');
+  useEffect(() => { if (!canStock && canWork) setMode('make'); }, [canStock, canWork]);
   const load = useCallback(() => masterRequest<{ lines: StockLine[]; moves: Move[] }>(me, `/api/shp/products/${product.id}/stock`).then(setData), [me, product.id]);
   useEffect(() => { void run(load); }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
   const key = (l: { size: string; colour: string }) => `${l.size}|${l.colour}`;
@@ -175,7 +186,18 @@ function StockDialog({ me, product, onClose }: { me: Me; product: Row; onClose: 
       if (!/^\d+$/.test(v.trim())) throw new Error(`Type whole pieces for ${colour}, ${size}.`);
       return { size, colour, qty: Number(v) };
     });
-    if (!lines.length) throw new Error(mode === 'in' ? 'Type how many pieces came in.' : 'Type what you counted.');
+    if (!lines.length) throw new Error({ in: 'Type how many pieces came in.', count: 'Type what you counted.', make: 'Type how many pieces to make.', rework: 'Type how many pieces need rework.' }[mode]);
+    if (sending) {
+      if (!/^\d+$/.test(due.trim()) || Number(due) < 1) throw new Error('Type the days until it is due.');
+      const r = await masterRequest<{ number: string }>(me, '/api/shp/work', 'POST', {
+        kind: mode, dueInDays: Number(due), priority: rush ? 'rush' : 'normal', ...(note.trim() ? { notes: note.trim() } : {}),
+        lines: lines.filter((l) => l.qty > 0).map((l) => ({ to: { productId: product.id, size: l.size, colour: l.colour }, qty: l.qty })),
+      });
+      setTyped({}); setNote('');
+      setDone(`${r.number} is on the production board${mode === 'rework' ? '; its pieces are off sale until they are fixed' : ''}. Put the finished pieces into stock from Shop work.`);
+      await load();
+      return;
+    }
     await masterRequest(me, `/api/shp/products/${product.id}/stock`, 'POST', { mode, lines, ...(note.trim() ? { note: note.trim() } : {}) });
     setTyped({}); setNote('');
     setDone(mode === 'in' ? 'Pieces added.' : 'Count recorded.');
@@ -200,25 +222,35 @@ function StockDialog({ me, product, onClose }: { me: Me; product: Row; onClose: 
                     <td key={size} className="px-2 py-2 text-center align-top">
                       <span className={`block font-semibold tabular-nums ${c && c.available === 0 ? 'text-red-700' : ''}`}>{c?.available ?? 0}</span>
                       <span className="block text-xs text-slate-500">{c ? `${c.onHand} on hand${c.held ? ` · ${c.held} held` : ''}` : ''}</span>
-                      {canStock && <input className={`${inputClass} mt-1 w-16 text-center`} inputMode="numeric" aria-label={`${mode === 'in' ? 'Pieces in' : 'Counted'}: ${colour}, ${size}`}
-                        placeholder={mode === 'in' ? '+0' : String(c?.onHand ?? 0)} value={typed[key({ size, colour })] ?? ''} onChange={(e) => setTyped({ ...typed, [key({ size, colour })]: e.target.value })} />}
+                      {(canStock || canWork) && <input className={`${inputClass} mt-1 w-16 text-center`} inputMode="numeric" aria-label={`${{ in: 'Pieces in', count: 'Counted', make: 'Pieces to make', rework: 'Pieces for rework' }[mode]}: ${colour}, ${size}`}
+                        placeholder={mode === 'count' ? String(c?.onHand ?? 0) : mode === 'in' ? '+0' : '0'} value={typed[key({ size, colour })] ?? ''} onChange={(e) => setTyped({ ...typed, [key({ size, colour })]: e.target.value })} />}
                     </td>);
                 })}
               </tr>))}</tbody>
           </table>
         </div>
       )}
-      {canStock && (
+      {(canStock || canWork) && (
         <div className="flex flex-wrap items-end gap-3 border-t border-slate-100 pt-3">
-          <div className="flex gap-2" role="group" aria-label="What you are recording">
-            <button type="button" className={tab(mode === 'in')} onClick={() => { setMode('in'); setTyped({}); }}>Pieces came in</button>
-            <button type="button" className={tab(mode === 'count')} onClick={() => { setMode('count'); setTyped({}); }}>I counted the shelf</button>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="What you are recording">
+            {canStock && <button type="button" className={tab(mode === 'in')} onClick={() => { setMode('in'); setTyped({}); }}>Pieces came in</button>}
+            {canStock && <button type="button" className={tab(mode === 'count')} onClick={() => { setMode('count'); setTyped({}); }}>I counted the shelf</button>}
+            {canWork && <button type="button" className={tab(mode === 'make')} onClick={() => { setMode('make'); setTyped({}); }}>Restock: make more</button>}
+            {canWork && <button type="button" className={tab(mode === 'rework')} onClick={() => { setMode('rework'); setTyped({}); }}>Send for rework</button>}
           </div>
-          <label className="min-w-[14rem] flex-1 text-sm">Note (optional)<input className={inputClass} maxLength={300} value={note} onChange={(e) => setNote(e.target.value)} placeholder={mode === 'in' ? 'e.g. Batch 12 from production' : 'e.g. Monthly count'} /></label>
-          <Button tone="primary" disabled={busy} onClick={() => void save()}>{mode === 'in' ? 'Add pieces' : 'Record the count'}</Button>
+          {sending && <label className="w-28 text-sm">Due in (days)<input className={inputClass} inputMode="numeric" value={due} onChange={(e) => setDue(e.target.value)} /></label>}
+          {sending && <label className="flex items-center gap-2 pb-2 text-sm"><input type="checkbox" checked={rush} onChange={(e) => setRush(e.target.checked)} /> Rush</label>}
+          <label className="min-w-[14rem] flex-1 text-sm">{sending ? 'Note for production (optional)' : 'Note (optional)'}<input className={inputClass} maxLength={sending ? 1000 : 300} value={note} onChange={(e) => setNote(e.target.value)}
+            placeholder={{ in: 'e.g. Batch 12 from production', count: 'e.g. Monthly count', make: 'e.g. For the school opening rush', rework: 'e.g. Loose stitching on the collar' }[mode]} /></label>
+          <Button tone="primary" disabled={busy || (!canStock && !sending)} onClick={() => void save()}>{{ in: 'Add pieces', count: 'Record the count', make: 'Send to production', rework: 'Send for rework' }[mode]}</Button>
         </div>
       )}
-      {canStock && <p className="text-xs text-slate-500">{mode === 'in' ? 'Type how many pieces came in for each size and colour; leave the others empty.' : 'Type what is on the shelf for the ones you counted; the difference is recorded.'}</p>}
+      {(canStock || canWork) && <p className="text-xs text-slate-500">{{
+        in: 'Type how many pieces came in for each size and colour; leave the others empty. Pieces made in production go in from Shop work instead.',
+        count: 'Type what is on the shelf for the ones you counted; the difference is recorded.',
+        make: 'Type how many pieces to make for each size and colour. It goes on the production board; the pieces go on sale when production finishes them and they are put into stock (Shop work).',
+        rework: 'Type how many pieces need fixing. They come off sale now and go on the production board; they come back on sale when they are fixed and put into stock (Shop work).',
+      }[mode]}</p>}
       {data && data.moves.length > 0 && (
         <details className="text-sm"><summary className="cursor-pointer font-semibold">Recent stock moves</summary>
           <ul className="mt-2 space-y-1">{data.moves.map((m) => <li key={m.id} className="text-slate-600">{manilaTime(m.at)} · {m.userName} · {m.reason === 'count' ? 'Count' : 'In'} {m.qty > 0 ? `+${m.qty}` : m.qty} · {m.colour}, {m.size}{m.note ? ` · ${m.note}` : ''}</li>)}</ul>
