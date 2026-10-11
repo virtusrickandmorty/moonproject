@@ -37,6 +37,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Sales', label: 'Customers', path: '/cus', permission: 'cus.view' },
   { group: 'Sales', label: 'Support inbox', path: '/sup', permission: 'sup.view' },
   { group: 'Sales', label: 'Website assistant', path: '/aia', permission: 'aia.view' },
+  { group: 'Sales', label: 'TPL clients', path: '/tpl', permission: 'tpl.view' },
   { group: 'Sales', label: 'POS', path: '/pos', permission: 'shp.pos' },
   { group: 'Sales', label: 'Website shop', path: '/shp', permission: 'shp.view' },
   { group: 'Sales', label: 'Online orders', path: '/shp/orders', permission: 'shp.orders.view' },
@@ -197,6 +198,7 @@ export const SUBS: Partial<Record<MenuGroup, [sub: string, keys: string[]][]>> =
     ['Job orders & release', ['jo.job_order', 'jo.release', 'jo.invoice_record', 'jo.dp_invoice', 'jo.opening']],
     ['Collections', ['col.', '/col/pdcs']],
     ['Shop & POS', ['/pos', 'qs.sale', '/shp']],
+    ['TPL services', ['/tpl', 'tpl.']],
   ],
   Production: [
     ['Production', ['/prd/board', 'prd.entry', '/prd/tv']],

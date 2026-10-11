@@ -138,6 +138,8 @@ import { purchaseOrderView, receivingReportView } from './PUR/views.tsx';
 import { InventoryCountForm } from './INV/InventoryCountForm.tsx';
 import { inventoryCountView } from './INV/InventoryCountView.tsx';
 import { WebsiteAssistant } from './AIA/Assistant.tsx';
+import { TplClients } from './TPL/Clients.tsx';
+import { TplDeliveryForm, TplProgramPage } from './TPL/Program.tsx';
 
 /**
  * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
@@ -149,6 +151,8 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/cus': Customers,
   '/sup': SupportInbox,
   '/aia': WebsiteAssistant,
+  '/tpl': TplClients,
+  '/tpl/:id': TplProgramPage,
   '/shp': ShopProducts,
   '/shp/orders': OnlineOrders,
   '/pos': Pos,
@@ -285,6 +289,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'col.credit_memo': CreditMemoForm,
   'col.write_off': WriteOffForm,
   'qs.sale': QuickSaleForm,
+  'tpl.delivery': TplDeliveryForm,
   'quo.quotation': QuotationForm,
   'prd.entry': EntryForm,
   'pay.run': RunForm,

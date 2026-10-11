@@ -287,7 +287,7 @@ describe('every route, every role (C6: a permission checked on every route)', ()
     expect(called).toBe(keyed().length * ROLES.length);
     expect(wrong).toEqual([]);
     // A change with an empty body should do nothing. These read-only checks answer 200 and write nothing of business data.
-    expect([...new Set(doneSomething)].sort()).toEqual(['POST /api/aud/nightly/run', 'POST /api/system/health/check']);
+    expect([...new Set(doneSomething)].sort()).toEqual(['POST /api/aia/test', 'POST /api/aud/nightly/run', 'POST /api/system/health/check']); // aia/test: tries the saved AI key
   });
 
   it('a role with the permission still needs the fresh password where a route says so, and 403 STEP_UP_REQUIRED is not FORBIDDEN', async () => {

@@ -9,9 +9,10 @@ import { accountBalance } from '../../engine/ledger/queries.ts';
 import { dpAppliedByInvoice, dpHeld, invoiceCreditsAt } from '../COL/public.ts';
 import { JO_DOC_TYPES_SQL, STAGE_LABELS, currentStage, type Stage } from './stages.ts';
 
-export { abandon, currentStage, isAbandoned, onJobOrderEdited, productionMove, unabandon, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
+export { abandon, currentStage, isAbandoned, moveTo, onForStockCheck, onJobOrderEdited, productionMove, unabandon, STAGES, STAGE_LABELS, type Stage } from './stages.ts';
 export { INVOICE_SERIES, SALES_CLASSES, SALES_ROLE, awaitingInvoice, invoiceAmounts, invoiceNumberUsedBy, invoiceNumbersBetween, settleLines } from './doctypes/invoice-record.ts';
-export { lineState, type LineKind } from './doctypes/release.ts';
+export { lineState, releasableQty, type LineKind } from './doctypes/release.ts';
+export { jobOrderDoc } from './doctypes/job-order.ts';
 export { dpInvoiceNumbersBetween, dpInvoiceUsedBy } from './doctypes/dp-invoice.ts';
 
 export interface JoLedgerPart { receivableCents: number; depositsHeldCents: number }
