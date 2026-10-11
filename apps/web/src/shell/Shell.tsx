@@ -9,7 +9,7 @@ import { api, type DashNotification, type DocTypeInfo, type Me, type MenuOrder }
 import { Link, navigate, useLocation } from '../router.tsx';
 import { Button, longDate } from '../components/ui.tsx';
 import { showToast } from '../components/Toasts.tsx';
-import { MENU_FOLDS_KEY, applyMenuOrder, buildMenu, docPath, isHere, labelOf, openGroups, sectionsOf, subOf, type MenuGroup, type MenuItem } from './menu.ts';
+import { MENU_FOLDS_KEY, applyMenuOrder, buildMenu, docPath, isHere, labelOf, openGroups, searchMenu, sectionsOf, subOf, type MenuGroup, type MenuItem } from './menu.ts';
 import { SearchBox } from '../modules/NAV/Search.tsx';
 import { Breadcrumbs, CrumbName, crumbsFor } from './crumbs.tsx';
 import { followRowLink } from './rowLinks.ts';
@@ -156,6 +156,26 @@ export function NewMenu({ docTypes, query, onQuery, onChoose }: { docTypes: DocT
         {g.items.map((i) => <Link key={i.path} to={i.path} className="block rounded px-3 py-2 hover:bg-slate-100">{i.label}</Link>)}
       </section>)}
     </div>
+  </div>;
+}
+
+/**
+ * The sidebar's search box (the owner's request, Oct 2026): typing keeps only the screens that match, every group and
+ * sub-category open; Enter opens the best one; Escape clears it.
+ */
+function MenuSearch({ query, onQuery, found }: { query: string; onQuery: (query: string) => void; found: { items: MenuItem[] }[] }) {
+  // Enter opens the first screen whose own name matches ("release" → Release Slips), else the first one shown.
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = found.flatMap((g) => g.items);
+  const first = shown.find((i) => words.every((w) => i.label.toLowerCase().includes(w))) ?? shown[0];
+  return <div className="mb-2 pl-4">
+    <input type="search" aria-label="Search the menu" placeholder="Search the menu…" value={query} onChange={(e) => onQuery(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && query.trim() && first) { e.preventDefault(); onQuery(''); navigate(first.path); }
+        if (e.key === 'Escape' && query) { e.stopPropagation(); onQuery(''); }
+      }}
+      className="w-full rounded-md border border-slate-300 bg-white px-3 py-1.5 text-[13px] placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500" />
+    {query.trim() && found.length === 0 && <p role="status" className="px-1 pt-2 text-xs text-slate-500">No screen matches “{query.trim()}”.</p>}
   </div>;
 }
 
@@ -311,6 +331,9 @@ export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = ''
   const [arranging, setArranging] = useState(false);
   useEffect(() => { api.menuOrder().then(setOrder, () => undefined); }, []);
   const menu = useMemo(() => applyMenuOrder(allowed, order), [allowed, order]);
+  const [menuQuery, setMenuQuery] = useState('');
+  const searching = menuQuery.trim() !== '';
+  const found = useMemo(() => searchMenu(menu, menuQuery), [menu, menuQuery]);
   const saveOrder = async (next: MenuOrder) => { setOrder(await api.saveMenuOrder(next)); setArranging(false); };
   // A long menu folds: the groups the person opened, and the group of the screen on show unless they closed it.
   const [chosen, setChosen] = useState(storedFolds);
@@ -367,8 +390,9 @@ export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = ''
       <div className="flex">
         <Navigation open={open === 'menu'} folds={folding.folds} wide={wide} onClose={() => setOpen(null)}>
           {arranging && <ArrangeMenu menu={menu} subOrder={order?.subs ?? {}} onSave={saveOrder} onCancel={() => setArranging(false)} />}
-          {!arranging && menu.map((g) => {
-            const shown = folding.open.has(g.group);
+          {!arranging && <MenuSearch query={menuQuery} onQuery={setMenuQuery} found={found} />}
+          {!arranging && found.map((g) => {
+            const shown = searching || folding.open.has(g.group);
             const here = g.items.some((i) => isHere(path, i.path));
             const heading = <>
               <span aria-hidden="true" className={`flex size-7 shrink-0 items-center justify-center rounded-lg ring-1 transition-colors ${here ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white text-slate-600 ring-slate-200'}`}><Icon name={g.group} className="size-4" /></span>
@@ -376,7 +400,7 @@ export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = ''
             </>;
             return (
               <div key={g.group} className="mb-1">
-                {folding.folds ? (
+                {folding.folds && !searching ? (
                   <button type="button" aria-expanded={shown} onClick={() => fold(g.group, shown)}
                     className="flex w-full items-center gap-2.5 rounded-r-full py-2 pl-5 pr-4 text-left text-[11px] font-bold uppercase tracking-wider text-[#404040] hover:bg-white">
                     {heading}
@@ -391,10 +415,11 @@ export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = ''
                   const multi = all.length > 1;
                   const key = `${g.group}/${s.sub}`;
                   const holdsHere = s.items.some((i) => isHere(path, i.path));
-                  const subOpen = !multi || (chosen[key] ?? true);
+                  const subOpen = searching || !multi || (chosen[key] ?? true);
                   return (
                     <div key={s.sub} role="group" aria-label={multi ? `${g.group}: ${s.sub}` : undefined} className={multi && k > 0 ? 'mt-0.5' : ''}>
-                      {multi && (
+                      {multi && searching && <p className="py-1.5 pl-10 pr-4 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{s.sub}</p>}
+                      {multi && !searching && (
                         <button type="button" aria-expanded={subOpen} onClick={() => fold(key, subOpen)}
                           className={`flex w-full items-center gap-1.5 rounded-r-full py-1.5 pl-10 pr-4 text-left text-[10px] font-semibold uppercase tracking-wider hover:bg-white hover:text-indigo-700 ${holdsHere ? 'text-indigo-700' : 'text-slate-500'}`}>
                           <Icon name="chevron" className={`size-3 shrink-0 transition-transform ${subOpen ? 'rotate-90' : ''}`} />
@@ -414,7 +439,7 @@ export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = ''
               </div>
             );
           })}
-          {!arranging && (
+          {!arranging && !searching && (
             <button type="button" onClick={() => setArranging(true)} className="mt-3 flex items-center gap-2 py-2 pl-6 pr-4 text-xs font-semibold text-slate-500 hover:text-indigo-700">
               <span aria-hidden="true">⇅</span> Arrange menu
             </button>

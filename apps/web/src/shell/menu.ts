@@ -267,6 +267,17 @@ export function sectionsOf(group: MenuGroup, items: MenuItem[], subOrder: readon
   return order.map((sub) => ({ sub, items: items.filter((i) => (i.sub ?? subOf(i)) === sub) })).filter((s) => s.items.length > 0);
 }
 
+/**
+ * The sidebar search (the owner's request, Oct 2026): the screens whose name, group or sub-category hold every word typed,
+ * in menu order; groups with none left out. Nothing typed keeps the whole menu.
+ */
+export function searchMenu<G extends { group: MenuGroup; items: MenuItem[] }>(menu: G[], query: string): G[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return menu;
+  const hits = (i: MenuItem) => { const text = `${i.label} ${i.group} ${i.sub ?? subOf(i)}`.toLowerCase(); return words.every((w) => text.includes(w)); };
+  return menu.map((g) => ({ ...g, items: g.items.filter(hits) })).filter((g) => g.items.length > 0);
+}
+
 export function buildMenu(docTypes: DocTypeInfo[], permissions: ReadonlySet<string>, screens = SCREENS): { group: MenuGroup; items: MenuItem[] }[] {
   const items: MenuItem[] = [
     ...screens.filter((s) => !s.permission || permissions.has(s.permission)),
