@@ -311,7 +311,7 @@ export interface BoardCard {
   steps: { stepId: number; status: StepStatus; pieces: number; reworkPieces: number; receivedPieces: number; reworkOpen?: number; parts?: { upper: number; lower: number } }[] | null;
 }
 export interface NavResult { kind: 'Customer' | 'Wearer' | 'Job order' | 'Document' | 'Supplier' | 'Employee'; id: string; label: string; detail?: string; href: string }
-export interface PrdRework { pieces: number; wearers: number[] }
+export interface PrdRework { pieces: number; wearers: number[]; /** Why they were sent back, where found, when. */ reasons?: { reason: string; foundAt: string; at: string; pieces: number }[] }
 export interface PrdJob {
   jobOrder: { id: string; number: string; status: 'posted' | 'cancelled'; customerName: string; dueDate: string; priority: string; stage: string };
   lines: { lineNo: number; description: string; qty: number; releasedQty: number; setup: { templateId: number | null; garmentType: string; complexity: string; stepIds: number[] } | null;

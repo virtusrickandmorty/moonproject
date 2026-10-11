@@ -115,7 +115,9 @@ export function availableFor(route: RouteStep[], stepId: number, lineQty: number
 }
 
 /** `redone`: the rework pieces the step redid of those that arrived (kept apart from `pieces`, which still wait). */
-export type ReworkOpen = { pieces: number; wearers: number[]; redone?: number };
+export type ReworkOpen = { pieces: number; wearers: number[]; redone?: number; reasons?: ReworkReason[] };
+/** Why pieces were sent back (the owner's request, Oct 2026: the rework form shows it): the step it was found at, when, how many. */
+export type ReworkReason = { reason: string; foundAt: string; at: string; pieces: number };
 
 /**
  * Where the rework sent back on a line is now (the owner's rule, Oct 2026): sent-back pieces start again at the first
@@ -125,8 +127,10 @@ export type ReworkOpen = { pieces: number; wearers: number[]; redone?: number };
  */
 export function reworkFlow(db: Db, jobOrderId: string, lineNo: number, route: RouteStep[], part: Part = 'whole'): Map<number, ReworkOpen> {
   const out = new Map<number, ReworkOpen>(route.map((s) => [s.id, { pieces: 0, wearers: [] }]));
-  const sent = db.prepare('SELECT id, pieces, at FROM prd_reworks WHERE job_order_id = ? AND line_no = ? AND part = ? ORDER BY at').all(jobOrderId, lineNo, part) as { id: string; pieces: number; at: string }[];
+  const sent = db.prepare(`SELECT r.id, r.pieces, r.at, r.reason, s.name AS foundAt FROM prd_reworks r JOIN prd_steps s ON s.id = r.step_id
+    WHERE r.job_order_id = ? AND r.line_no = ? AND r.part = ? ORDER BY r.at`).all(jobOrderId, lineNo, part) as { id: string; pieces: number; at: string; reason: string; foundAt: string }[];
   if (sent.length === 0) return out;
+  const reasons: ReworkReason[] = sent.map((r) => ({ reason: r.reason, foundAt: r.foundAt, at: r.at, pieces: r.pieces }));
   const since = sent[0]!.at;
   const redoneOn = db.prepare(`SELECT COALESCE(SUM(a.pieces), 0) FROM prd_line_assignments a JOIN documents d ON d.id = a.document_id
     WHERE a.jo = ? AND a.line = ? AND a.step_id = ? AND a.part = ? AND a.kind = 'rework' AND d.status = 'posted' AND d.posted_at >= ?`).pluck();
@@ -139,7 +143,9 @@ export function reworkFlow(db: Db, jobOrderId: string, lineNo: number, route: Ro
   for (const s of route.filter((x) => x.status !== 'not_needed')) {
     const redone = Math.min(arrived, redoneOn.get(jobOrderId, lineNo, s.id, part, since) as number);
     const ticked = new Set(tickedOn.all(jobOrderId, lineNo, s.id, part, since) as number[]);
-    out.set(s.id, { pieces: arrived - redone, wearers: arrivedWearers.filter((w) => !ticked.has(w)).sort((x, y) => x - y), redone });
+    const waiting = arrived - redone;
+    const wearers = arrivedWearers.filter((w) => !ticked.has(w)).sort((x, y) => x - y);
+    out.set(s.id, { pieces: waiting, wearers, redone, ...(waiting > 0 || wearers.length > 0 ? { reasons } : {}) });
     arrived = redone;
     arrivedWearers = arrivedWearers.filter((w) => ticked.has(w));
   }

@@ -11,7 +11,10 @@ const mode = { kind: 'new' } as const;
 const preview = { totalCents: 12000, summary: 'Sample pieces', issues: [], doc: { rows: [{ rowNo: 1, rateCents: 4000, amountCents: 12000 }] } } as unknown as Preview;
 
 // Sewing: 5 pieces done, 12 came from the step before, so 7 are ready; rework is at most the 5 done.
-const job = { jobOrder: { number: 'JO-1' }, lines: [{ lineNo: 1, description: 'Sample shirt', qty: 12, route: [{ id: 1, name: 'Sew', seq: 1, status: 'in_progress', pieces: 5, availablePieces: 12 }] }] } as PrdJob;
+const job = { jobOrder: { number: 'JO-1' }, lines: [{ lineNo: 1, description: 'Sample shirt', qty: 12, route: [{ id: 1, name: 'Sew', seq: 1, status: 'in_progress', pieces: 5, availablePieces: 12,
+  rework: { pieces: 5, wearers: [], reasons: [{ reason: 'Loose stitches on the hem', foundAt: 'Packing', at: '2026-10-10T09:00:00.000+08:00', pieces: 5 }] } }] }] } as PrdJob;
+/** The same job with nothing sent back for rework. */
+const noRework = { ...job, lines: [{ ...job.lines[0]!, route: [{ ...job.lines[0]!.route![0]!, rework: undefined }] }] } as PrdJob;
 
 it('production preview and Record send normal pieces and rework with no typed rate (the price list rate applies)', async () => {
   const pre = vi.spyOn(api, 'preview').mockResolvedValue(preview);
@@ -45,7 +48,19 @@ it('production does not go on with more pieces than are ready on the step, or mo
 
   const rework = form(() => EntryForm({ type: type('prd.entry'), mode }), [[], [], 'jo1', job, 1, [{ ...emptyRow('1'), employeeId: 'e1', pieces: '6', rework: true }]]);
   rework.find('children', 'Record').props.onClick();
-  expect(pre).toHaveBeenCalledTimes(1); // 6 rework, 5 done
+  expect(pre).toHaveBeenCalledTimes(1); // 6 rework, 5 sent back
+});
+
+it('rework offers only what was sent back, with the reason (the owner request, Oct 2026)', () => {
+  vi.spyOn(api, 'preview').mockResolvedValue(preview);
+  const sent = form(() => EntryForm({ type: type('prd.entry'), mode }), [[], [], 'jo1', job, 1, [{ ...emptyRow('1'), employeeId: 'e1', pieces: '2', rework: true }]]);
+  const row = renderToStaticMarkup(sent.find('aria-label', 'Worker entry 1'));
+  expect(row).toContain('Loose stitches on the hem');
+  expect(row).toContain('found at Packing');
+  expect(row).toContain('5 sent back');
+  const none = form(() => EntryForm({ type: type('prd.entry'), mode }), [[], [], 'jo1', noRework, 1, [{ ...emptyRow('1'), employeeId: 'e1', pieces: '2' }]]);
+  expect(none.find('aria-label', 'Row 1 rework').props.disabled).toBe(true);
+  expect(renderToStaticMarkup(none.find('aria-label', 'Worker entry 1'))).toContain('nothing sent back');
 });
 
 it('production shows no rate or piece pay anywhere on the form or the Record confirmation (payroll shows them)', () => {
