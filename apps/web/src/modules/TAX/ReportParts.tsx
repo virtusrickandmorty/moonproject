@@ -41,7 +41,7 @@ export function useRangeReport<T>(allowed: boolean, initial: (today: string) => 
 export function RangeForm({ r }: { r: ReturnType<typeof useRangeReport<unknown>> }) {
   const problem = rangeError(r.from, r.to);
   return (
-    <div className="flex flex-wrap items-end gap-3 print:hidden">
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden">
       <Field label="First date" required><input type="date" className={inputClass} value={r.from} onChange={(e) => r.set({ from: e.target.value })} /></Field>
       <Field label="Last date" required><input type="date" className={inputClass} value={r.to} onChange={(e) => r.set({ to: e.target.value })} /></Field>
       <Button tone="primary" disabled={!!problem || r.busy} onClick={() => void r.show()}>{r.busy ? 'Loading…' : 'Show'}</Button>
@@ -81,7 +81,7 @@ export function QuarterForm({ q, quarters = QUARTERS }: { q: ReturnType<typeof u
   const pick = q.pick;
   if (!pick) return null;
   return (
-    <div className="flex flex-wrap items-end gap-3 print:hidden">
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden">
       <Field label="Year">
         <select className={inputClass} value={pick.year} onChange={(e) => q.setPick({ ...pick, year: Number(e.target.value) })}>
           {yearChoices(q.today).map((y) => <option key={y} value={y}>{y}</option>)}

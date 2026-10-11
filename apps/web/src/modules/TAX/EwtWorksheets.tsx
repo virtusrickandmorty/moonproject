@@ -93,7 +93,7 @@ export function EwtMonthReturn({ me, docTypes }: { me: Me; docTypes: DocTypeInfo
         The expanded withholding tax of the first or second month of a quarter, by ATC, from the tax withheld from suppliers register (EWT register). The third month has no 0619-E: its EWT goes on the 1601-EQ.
       </p>
       {month && (
-        <div className="flex flex-wrap items-end gap-3 print:hidden">
+        <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden">
           <Field label="Year">
             <select className={inputClass} value={year} onChange={(e) => pick(e.target.value, part)}>
               {[...new Set([Number(year), ...yearChoices(today)])].sort((a, b) => b - a).map((y) => <option key={y} value={y}>{y}</option>)}

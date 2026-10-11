@@ -50,7 +50,9 @@ function harness<T>(run: () => T) {
   return () => { hooks.cursor = 0; const result = run(); hooks.effects.splice(0).forEach((f) => f()); return result; };
 }
 const field = (tree: ReactNode, label: string) => nodes(nodes(tree).find((n) => n.props.label === label)!.props.children)[0]!;
-const button = (tree: ReactNode, text: string) => nodes(tree).find((n) => (Array.isArray(n.props.children) ? n.props.children.join('') : n.props.children) === text)!;
+/** The words of an element and everything in it (a count badge inside a tab included). */
+const words = (c: unknown): string => (Array.isArray(c) ? c.map(words).join('') : typeof c === 'string' || typeof c === 'number' ? String(c) : c && typeof c === 'object' && 'props' in c ? words((c as { props: { children?: unknown } }).props.children) : '');
+const button = (tree: ReactNode, text: string) => nodes(tree).find((n) => words(n.props.children) === text)!;
 const change = (n: Node, value: string) => n.props.onChange({ target: { value } });
 const submit = (tree: ReactNode) => nodes(tree).find((n) => n.type === 'form')!.props.onSubmit({ preventDefault: () => undefined });
 const flush = async () => { for (let n = 0; n < 8; n++) await Promise.resolve(); };

@@ -12,7 +12,7 @@ function Report({me,title,route,permission,filter='none',children}:{me:Me;title:
   const today=useToday(),period=usePeriod(filter,today),{from,to}=period.values,one=period.values[filter]??'',applied=period.applied;
   if(!me.permissions.includes(permission))return <Notice>Access denied.</Notice>;
   const path=filter==='none'?today?route:null:applied?`${route}?${applied}`:null;
-  return <article className="rpt-page space-y-4"><BookTitle title={title} dates={period.dates}/><div className="flex flex-wrap items-end gap-3 print:hidden">
+  return <article className="rpt-page space-y-4"><BookTitle title={title} dates={period.dates}/><div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden">
     {filter==='range'?<><Field label="From"><input type="date" className={inputClass} value={from} onChange={e=>period.change('from',e.target.value)}/></Field><Field label="To"><input type="date" className={inputClass} value={to} onChange={e=>period.change('to',e.target.value)}/></Field></>:filter!=='none'&&<Field label={filter==='asOf'?'As of':filter==='month'?'Month':'Year'}><input type={filter==='asOf'?'date':filter==='year'?'number':filter} className={inputClass} value={one} onChange={e=>period.change(filter,e.target.value)}/></Field>}
     {filter!=='none'&&<Button tone="primary" disabled={!period.valid} onClick={period.apply}>Show</Button>}{path&&<Tools path={path}/>}</div><PendingPeriod applied={applied} values={filter==='range'?{from:from!,to:to!}:filter==='none'?{}:{[filter]:one}}/>{children(path)}</article>;
 }

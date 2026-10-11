@@ -19,7 +19,7 @@ export function CashFlow({ me }: { me: Me }) {
   const path = applied ? `cash-flow?${applied}` : null; const { data, error } = useReport<Result>(path);
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   return <article className="rpt-page space-y-4"><BookTitle title="Statement of cash flows" dates={data ? `${data.from} to ${data.to}` : ''} />
-    <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden"><Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
       <Field label="To"><input type="date" className={inputClass} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
       <Button tone="primary" disabled={!from || !to || from > to} onClick={() => setApplied(new URLSearchParams({ from, to }).toString())}>Show</Button>{path && <Tools path={path} />}</div>
     <PendingPeriod applied={applied} values={{ from, to }} />

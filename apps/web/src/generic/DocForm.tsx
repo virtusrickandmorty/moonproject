@@ -153,11 +153,16 @@ export function DocForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
         {blocked && <Notice tone="warning">This document needs its own screen; the general form cannot fill it in yet.</Notice>}
         {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
         <Panel title="Details">
-          {fields.map((f) => (
-            <Field key={f.name} label={f.label} required={f.required} error={(touched ? errors[f.name] : undefined) ?? named[f.name]}>
-              <FieldInput f={f} value={values[f.name] ?? ''} set={(v) => setValues((old) => ({ ...old, [f.name]: v }))} places={places} />
-            </Field>
-          ))}
+          {/* Short fields two to a row; cash places, long text and lists take the whole row. */}
+          <div className="grid gap-4 md:grid-cols-2">
+            {fields.map((f) => (
+              <div key={f.name} className={f.kind === 'cashPlace' || f.kind === 'longText' || f.kind === 'unsupported' ? 'md:col-span-2' : ''}>
+                <Field label={f.label} required={f.required} error={(touched ? errors[f.name] : undefined) ?? named[f.name]}>
+                  <FieldInput f={f} value={values[f.name] ?? ''} set={(v) => setValues((old) => ({ ...old, [f.name]: v }))} places={places} />
+                </Field>
+              </div>
+            ))}
+          </div>
         </Panel>
       </div>
       <Panel title="So far">

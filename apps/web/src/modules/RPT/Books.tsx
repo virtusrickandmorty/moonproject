@@ -58,11 +58,11 @@ function source(line: Pick<Line, 'documentType' | 'documentNumber' | 'sourceId' 
 }
 function balance(cents: number) { return cents === 0 ? peso(0) : `${peso(Math.abs(cents))} ${cents < 0 ? 'Cr' : 'Dr'}`; }
 export function Tools({ path }: { path: string }) {
-  return <div className="flex gap-2 print:hidden"><a className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" href={`/api/rpt/${path}${path.includes('?') ? '&' : '?'}format=csv`}>Export CSV</a>
+  return <div className="flex gap-2 print:hidden"><a className="inline-flex items-center rounded-md bg-white px-4 py-2 text-sm font-semibold text-slate-800 ring-1 ring-slate-300 transition-colors hover:bg-indigo-50 hover:ring-indigo-200" href={`/api/rpt/${path}${path.includes('?') ? '&' : '?'}format=csv`}>Export CSV</a>
     <Button onClick={() => window.print()}>Print this page</Button></div>;
 }
 export function BookTitle({ title, dates }: { title: string; dates: string }) {
-  return <div className="rpt-heading"><h1 className="text-2xl font-semibold">{title}</h1><p>{dates}</p><p className="text-sm text-slate-600">{title.startsWith('BIR books') ? 'Review the formal book pages for the accountant and registered loose-leaf binder.' : purposes[title]}</p></div>;
+  return <div className="rpt-heading"><h1 className="text-2xl font-bold text-[#010101]">{title}</h1><p>{dates}</p><p className="mt-1 text-sm text-slate-600">{title.startsWith('BIR books') ? 'Review the formal book pages for the accountant and registered loose-leaf binder.' : purposes[title]}</p></div>;
 }
 export const th = 'border-b border-slate-300 px-2 py-2 text-left';
 export const td = 'border-b border-slate-100 px-2 py-2 align-top';
@@ -78,7 +78,7 @@ export function GeneralJournal({ me }: { me: Me }) {
   const { data, error, pager } = usePagedReport<JournalResult>(path);
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   return <article className="rpt-page space-y-4"><BookTitle title="General journal" dates={data ? `${data.from} to ${data.to}` : ''} />
-    <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden"><Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
       <Field label="To"><input type="date" className={inputClass} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
       <Button tone="primary" disabled={!from || !to || from > to} onClick={() => setApplied(new URLSearchParams({ from, to }).toString())}>Show</Button>
       {path && <Tools path={path} />}</div>
@@ -107,7 +107,7 @@ export function GeneralLedger({ me }: { me: Me }) {
   const { data, error, pager } = usePagedReport<LedgerResult>(path);
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   return <article className="rpt-page space-y-4"><BookTitle title="General ledger" dates={data ? `${data.from} to ${data.to}` : ''} />
-    <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden"><Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
       <Field label="To"><input type="date" className={inputClass} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
       <Field label="Account"><select className={inputClass} value={accountId} onChange={(e) => setAccountId(e.target.value)}><option value="">All accounts</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}</select></Field>
       <Button tone="primary" disabled={!from || !to || from > to} onClick={() => setApplied(new URLSearchParams({ from, to, ...(accountId ? { accountId } : {}) }).toString())}>Show</Button>
@@ -134,7 +134,7 @@ export function TrialBalance({ me }: { me: Me }) {
   const { data, error } = useReport<TbResult>(path);
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   return <article className="rpt-page space-y-4"><BookTitle title="Trial balance" dates={data ? `As of ${data.asOf}${data.compareTo ? ` compared with ${data.compareTo}` : ''}` : ''} />
-    <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="As of"><input type="date" className={inputClass} value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden"><Field label="As of"><input type="date" className={inputClass} value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
       <Field label="Compare with (optional)"><input type="date" className={inputClass} value={compareTo} onChange={(e) => setCompareTo(e.target.value)} /></Field>
       <Button tone="primary" disabled={!asOf} onClick={() => setApplied(new URLSearchParams({ asOf, ...(compareTo ? { compareTo } : {}) }).toString())}>Show</Button>
       {path && <Tools path={path} />}</div>

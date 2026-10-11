@@ -17,7 +17,7 @@ function ReportPage({ me, title, route, dated, children }: { me: Me; title: stri
   const path = dated === 'none' ? today ? route : null : applied ? `${route}?${applied}` : null;
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   return <article className="rpt-page space-y-4"><BookTitle title={title} dates={period.dates} />
-    <div className="flex flex-wrap items-end gap-3 print:hidden">
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden">
       {dated === 'asOf' && <Field label="As of"><input type="date" className={inputClass} value={asOf} onChange={(e) => period.change('asOf', e.target.value)} /></Field>}
       {dated === 'range' && <><Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => period.change('from', e.target.value)} /></Field>
         <Field label="To"><input type="date" className={inputClass} value={to} onChange={(e) => period.change('to', e.target.value)} /></Field></>}
@@ -53,7 +53,7 @@ export function DepositsCrossingQuarter({ me }: { me: Me }) {
   const path = applied ? `deposits-crossing-quarter?quarter=${applied}` : null;
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   return <article className="rpt-page space-y-4"><BookTitle title="Deposits crossing a VAT quarter" dates={applied || 'Choose a quarter'} />
-    <div className="flex flex-wrap items-end gap-3 print:hidden"><Field label="Quarter"><input className={inputClass} pattern="[0-9]{4}-Q[1-4]"
+    <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden"><Field label="Quarter"><input className={inputClass} pattern="[0-9]{4}-Q[1-4]"
       value={quarter} onChange={(e) => setQuarter(e.target.value.toUpperCase())} placeholder="2026-Q3" /></Field>
       <Button tone="primary" disabled={!/^\d{4}-Q[1-4]$/.test(quarter)} onClick={() => setApplied(quarter)}>Show</Button>
       {path && <Tools path={path} />}</div><PendingPeriod applied={applied ? new URLSearchParams({ quarter: applied }).toString() : ''} values={{ quarter }} /><CrossingBody path={path} /></article>;
