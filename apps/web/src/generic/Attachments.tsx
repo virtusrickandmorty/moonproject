@@ -4,6 +4,7 @@
  * with a reason. A removed file stays listed. Attachments never change what the document recorded, so a cancelled
  * document takes them too. The server checks each file's type and size again (engine/attachments.ts).
  */
+import { useLiveChange } from '../live.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { api, attachmentUrl, type Attachment, type DocTypeInfo } from '../api.ts';
 import { Notice, Panel, ReasonDialog, manilaTime, useAction } from '../components/ui.tsx';
@@ -24,6 +25,7 @@ export function AttachmentsPanel({ type, id }: { type: DocTypeInfo; id: string }
   const adding = useAction();
   const load = useCallback(() => api.attachments(type.key, id).then(setRows, (e: Error) => setError(e.message)), [type.key, id]);
   useEffect(() => void load(), [load]);
+  useLiveChange(() => void load(), [type.key]); // attachments are logged under their document's type
 
   const add = (input: HTMLInputElement) => {
     const files = Array.from(input.files ?? []);

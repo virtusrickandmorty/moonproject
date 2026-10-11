@@ -14,8 +14,9 @@
 7. Leave **Open the "Join this PC" page** ticked and click **Finish**. The program now runs by itself as a Windows service when the PC starts.
 8. The browser opens the page. If it does not open, go to **http://localhost:8080/**.
 9. You will see the "Join this PC" page. This shows the shop certificate code.
-10. Leave this open. Then join each device with guide 10.
-11. Create the owner account **on this shop PC**, in its own browser. Moonproject refuses to create the first owner from any other device on the network and shows "Create the owner account on the shop PC itself".
+10. On this shop PC, follow guide 10 to trust its certificate, then click **Open Moonproject**. Create the FIRST owner before joining other devices.
+11. On **Create the first owner**, fill **Your name**, **Username**, **Passphrase** and **Type the passphrase again**. Use at least 15 characters, without the username. Click **Create owner and sign in**.
+12. Join each other device using guide 10. The owner adds each staff login under **Admin** > **Users** (guide 35).
 
 ### Before putting the website shop on the internet
 1. Create the owner account in the browser **on the shop PC** and finish setup privately.
@@ -27,5 +28,7 @@
 It installs the system and runs it in the background. It keeps all your records in `C:\ProgramData\Moonproject`. Inside are the `data`, `backups`, and `logs` folders.
 
 ### Common mistakes and how to fix them
+- **Mistake:** You see "Create the owner account on the shop PC itself, not from another device. Open Moonproject in the browser on the shop PC."
+- **Fix:** Go to the shop PC itself. In its browser start at **http://localhost:8080/**, trust the shop certificate, click **Open Moonproject**, and create the first owner there. A phone or another PC is refused, even on the same network.
 - **Mistake:** You want to update or uninstall, but worry about losing data.
 - **Fix:** Updating means running a newer `Moonproject-Setup.exe`. The data is kept. Uninstalling also keeps the data safe.

@@ -6,7 +6,7 @@
 
 ### Steps for the 13th-Month Pay
 1. On the **People & Payroll** menu, click **13th-Month Pay**.
-2. Click **+ New**.
+2. Click **+ New 13th-Month Pay**.
 3. Pick the **Pay group** and the **Year**. The system will automatically work it out.
    ![The new 13th-month pay form, with the pay worked out](img/23-thirteenth-month.png)
 4. Check each employee's **To pay now** amount. Open **Calculation and deductions** to compare **One twelfth** with **Accrued** and see the tax deduction.

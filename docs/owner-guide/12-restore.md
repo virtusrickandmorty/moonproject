@@ -27,3 +27,19 @@ It keeps your backups completely safe by asking for the recovery key, and it pre
 - **Fix:** Correct the key in the box (spaces and small letters do not matter) and click **Open the backup** again. If it still does not open, try the other key. The system never saves your key, so you must get it right.
 - **Mistake:** You changed your mind about restoring a backup after clicking **Open the backup**.
 - **Fix:** Change your mind before clicking **Restore this backup**: click **Back to the list**, and nothing changes. The system allows 30 minutes between opening the backup and clicking **Restore this backup**. Once **Restore this backup** is clicked, nothing in the app takes it back, and the restore happens at the next restart.
+
+### Numbers issued again after a restore
+
+**What it is for:** Avoid mistaking an old printed copy for a new document after restoring an earlier backup.
+
+**Before you start:** Stop recording and have the owner and accountant compare the backup with the live shop. Keep the latest backups and printed or sent copies.
+
+**Steps:**
+1. Follow **Restore and drill** > **Restore** > **Open the backup** above.
+2. Before confirming, read **Series**, **Last number now**, **Last in the backup** and **Issued again**.
+3. Mark or set aside the affected printed and sent copies. Tell staff which numbers are affected.
+4. Only after the loss and reused numbers are understood, type RESTORE and use **Restore this backup**. Everyone signs out before the restart.
+
+**What the system does:** The backup restores the earlier number counters as well as the books. Numbers issued since the backup can be issued again to new documents. The current data is kept next to the restored data.
+
+**Common mistakes:** **Run drill** checks the backup without replacing the live shop. Do not choose **Restore** just to test a backup. Before confirmation, **Back to the list** leaves the live data alone; after confirmation there is no in-app undo.

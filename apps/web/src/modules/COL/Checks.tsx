@@ -4,6 +4,7 @@
  * returned. Post-dated checks: a memo list (nothing is recorded in the books) until each check's date, then one button
  * opens a collection filled in from it. The server works out every figure.
  */
+import { useLiveChange } from '../../live.ts';
 import { useEffect, useMemo, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, newIdempotencyKey, type CashPlace, type CheckAtBank, type ChecksOnHand as List, type Me, type PostDatedCheck, type Preview } from '../../api.ts';
@@ -35,6 +36,7 @@ export function ChecksOnHand({ me }: { me: Me }) {
     load();
     api.cashPlaces().then((all) => setBanks(all.filter((p) => p.kind === 'bank')), (e: Error) => setError(e.message));
   }, []);
+  useLiveChange(() => load()); // a check recorded, deposited or returned elsewhere
   const pick = useMemo(() => ticked(list?.checks ?? [], keys), [list, keys]);
   const toggle = (k: string) => setKeys((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const openDeposit = () => {
