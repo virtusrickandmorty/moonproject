@@ -35,7 +35,8 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
   const sent = typeof location === 'undefined' ? null : new URLSearchParams(location.search);
   const toRoute = sent?.get('jo') && sent.get('steps') ? { jobOrderId: sent.get('jo')!, number: sent.get('number') ?? '', lines: sent.get('steps')!.split(',').map(Number).filter((n) => n > 0) } : null;
   const [search, setSearch] = useState(toRoute?.number ?? '');
-  const [open, setOpen] = useState<{ jobOrderId: string; lineNo: number } | null>(toRoute?.lines[0] ? { jobOrderId: toRoute.jobOrderId, lineNo: toRoute.lines[0] } : null);
+  // `stepId`: the card was clicked under a step, so its Record pieces form opens directly (the owner's request, Oct 2026).
+  const [open, setOpen] = useState<{ jobOrderId: string; lineNo: number; stepId?: number | null } | null>(toRoute?.lines[0] ? { jobOrderId: toRoute.jobOrderId, lineNo: toRoute.lines[0] } : null);
   // Record pieces opens over the board (?record&jo=…&step=…, which the form reads); once recorded the board comes back
   // with the new entry (?recorded=<id>) and its counts refreshed.
   const query = new URLSearchParams(useLocation().split('?')[1] ?? '');
@@ -115,7 +116,7 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
               const when = today ? dueWords(today, c.dueDate) : null;
               const rework = here && col.stepId ? here.reworkOpen ?? 0 : 0;
               return (
-                <button key={`${c.jobOrderId}-${c.lineNo}`} type="button" onClick={() => setOpen({ jobOrderId: c.jobOrderId, lineNo: c.lineNo })}
+                <button key={`${c.jobOrderId}-${c.lineNo}`} type="button" onClick={() => setOpen({ jobOrderId: c.jobOrderId, lineNo: c.lineNo, stepId: col.stepId ?? null })}
                   className={`block w-full space-y-2 rounded-xl bg-white p-3 text-left text-sm shadow-sm ring-1 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-indigo-300 ${when?.tone === 'late' ? 'ring-red-200' : 'ring-slate-200/70'}`}>
                   <span className="flex items-center gap-2">
                     <span className="font-semibold text-slate-900">{c.number}</span><span className="text-xs text-slate-400">item {c.lineNo}</span>
@@ -150,7 +151,7 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
           );
         })}
       </div>
-      {card && <LinePanel card={card} cat={cat} can={can} entryType={entryType} onChanged={load} onClose={() => setOpen(null)} />}
+      {card && <LinePanel key={`${card.jobOrderId}-${card.lineNo}-${open?.stepId ?? ''}`} card={card} cat={cat} can={can} entryType={entryType} startStep={open?.stepId ?? null} onChanged={load} onClose={() => setOpen(null)} />}
       {query.has('record') && entryType && (
         <Dialog title="Record pieces" size="full" hideTitle onClose={() => navigate('/prd/board', { replace: true })}>
           <EntryForm type={entryType} mode={{ kind: 'new' }} />
@@ -186,11 +187,20 @@ export function PartRows({ parts, qty, done, where, compact = false }: { parts: 
   );
 }
 
-function LinePanel({ card, cat, can, entryType, onChanged, onClose }: { card: BoardCard; cat: PrdCatalogue; can: { progress: boolean; assign: boolean }; entryType?: DocTypeInfo | undefined; onChanged: () => Promise<unknown>; onClose: () => void }) {
+/** What a click on a card under a step opens: its Record pieces form, or Record rework once the step is done but work came back. */
+function recordFor(card: BoardCard, stepId: number | null, canAssign: boolean): { stepId: number; rework: boolean } | null {
+  const s = stepId === null ? undefined : card.steps?.find((x) => x.stepId === stepId);
+  if (!s || !canAssign) return null;
+  const closed = s.status === 'completed' || s.status === 'not_needed';
+  if (!closed) return { stepId: s.stepId, rework: false };
+  return (s.reworkOpen ?? 0) > 0 ? { stepId: s.stepId, rework: true } : null;
+}
+
+function LinePanel({ card, cat, can, entryType, startStep = null, onChanged, onClose }: { card: BoardCard; cat: PrdCatalogue; can: { progress: boolean; assign: boolean }; entryType?: DocTypeInfo | undefined; startStep?: number | null; onChanged: () => Promise<unknown>; onClose: () => void }) {
   const [editing, setEditing] = useState(card.steps === null);
   // Record pieces (or rework) opened from a step (the owner's request, Oct 2026): the form opens here, for that step only,
   // under the step's card, and comes back to the item window when recorded.
-  const [recording, setRecording] = useState<{ stepId: number; rework: boolean } | null>(null);
+  const [recording, setRecording] = useState<{ stepId: number; rework: boolean } | null>(() => (entryType ? recordFor(card, startStep, can.assign) : null));
   const [reopen, setReopen] = useState<number | null>(null);
   const [sendBack, setSendBack] = useState<number | null>(null); // the step where the rework was found
   // Rework is sent back from any step that has received pieces, once the first step has some (they start again there).
@@ -247,6 +257,10 @@ function LinePanel({ card, cat, can, entryType, onChanged, onClose }: { card: Bo
   if (recording && entryType && recordingAt >= 0) {
     return (
       <Dialog wide title={`${recording.rework ? 'Record rework' : 'Record pieces'} · ${name(recording.stepId)} · ${card.number} line ${card.lineNo}`} onClose={onClose}>
+        <div className="-mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+          <span>{card.customerName} · {card.qty} {card.isSet ? 'sets' : 'pcs'} · due {showDate(card.dueDate)}</span>
+          <Button onClick={() => setRecording(null)}>All steps of this item</Button>
+        </div>
         <EntryForm type={entryType} mode={{ kind: 'new' }} fixed={{
           jobOrderId: card.jobOrderId, stepId: recording.stepId, lineNo: card.lineNo, rework: recording.rework,
           top: <ol className="space-y-2">{stepCard(card.steps![recordingAt]!, recordingAt, false)}</ol>,
