@@ -41,6 +41,9 @@ export function columns(steps: PrdStep[], cards: BoardCard[]): Column[] {
  * What a step's row on the line panel says (the owner's rule, Oct 2026): Complete only once every piece of the line is
  * done on it; how many it received from the step before; how many it has forwarded to the next step that is needed.
  */
+const partCounts = (parts: { upper: number; lower: number }, qty: number) =>
+  (['upper', 'lower'] as const).map((part) => ({ part, pieces: Math.min(qty, parts[part]) })).filter((x) => x.pieces > 0);
+
 export function stepFlow(steps: NonNullable<BoardCard['steps']>, i: number, qty: number, nameOf: (stepId: number) => string) {
   const s = steps[i]!;
   const closed = s.status === 'completed' || s.status === 'not_needed';
@@ -55,6 +58,12 @@ export function stepFlow(steps: NonNullable<BoardCard['steps']>, i: number, qty:
     shortWords: closed || short === 0 ? '' : setWords || (short === qty ? `Record all ${qty} pcs to complete ${nameOf(s.stepId)}.` : `Record the other ${short} of ${qty} pcs to complete ${nameOf(s.stepId)}.`),
     received: prev && s.status !== 'not_needed' && s.receivedPieces > 0 ? { pieces: Math.min(qty, s.receivedPieces), from: nameOf(prev.stepId) } : null,
     forwarded: next && s.status !== 'not_needed' && s.pieces > 0 ? { pieces: Math.min(qty, s.pieces), to: nameOf(next.stepId) } : null,
+    /**
+     * A set (the owner's request, Oct 2026): each part's pieces received from the step before and forwarded to the next, as
+     * the parts move apart (12 uppers may be through while 5 lowers are). Parts with none are left out.
+     */
+    receivedParts: s.parts && prev?.parts && s.status !== 'not_needed' ? partCounts(prev.parts, qty).map((x) => ({ ...x, from: nameOf(prev.stepId) })) : [],
+    forwardedParts: s.parts && next && s.status !== 'not_needed' ? partCounts(s.parts, qty).map((x) => ({ ...x, to: nameOf(next.stepId) })) : [],
     percent: qty > 0 ? Math.min(100, Math.round((s.pieces / qty) * 100)) : 0,
   };
 }

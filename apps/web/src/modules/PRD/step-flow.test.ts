@@ -77,3 +77,15 @@ describe('rework sent back (the owner\'s request, Oct 2026)', () => {
     expect(rows).toEqual([{ lineNo: 1, employeeId: 'e1', pieces: 2, rework: true, rateCents: 2000, rateReason: 'Pasubra', wearers: [2] }]);
   });
 });
+
+it('a set says each part received and forwarded, as the parts move apart (the owner request, Oct 2026)', () => {
+  const name = (id: number) => ({ 1: 'Layout', 2: 'Printing', 3: 'Heatpress' })[id] ?? '?';
+  const steps = [
+    { stepId: 1, status: 'in_progress', pieces: 5, reworkPieces: 0, receivedPieces: 12, parts: { upper: 12, lower: 5 } },
+    { stepId: 2, status: 'in_progress', pieces: 0, reworkPieces: 0, receivedPieces: 5, parts: { upper: 1, lower: 0 } },
+    { stepId: 3, status: 'pending', pieces: 0, reworkPieces: 0, receivedPieces: 0, parts: { upper: 0, lower: 0 } },
+  ] as NonNullable<BoardCard['steps']>;
+  expect(stepFlow(steps, 0, 12, name)).toMatchObject({ receivedParts: [], forwardedParts: [{ part: 'upper', pieces: 12, to: 'Printing' }, { part: 'lower', pieces: 5, to: 'Printing' }] });
+  expect(stepFlow(steps, 1, 12, name)).toMatchObject({ receivedParts: [{ part: 'upper', pieces: 12, from: 'Layout' }, { part: 'lower', pieces: 5, from: 'Layout' }], forwardedParts: [{ part: 'upper', pieces: 1, to: 'Heatpress' }] });
+  expect(stepFlow(steps, 2, 12, name)).toMatchObject({ receivedParts: [{ part: 'upper', pieces: 1, from: 'Printing' }], forwardedParts: [] });
+});
