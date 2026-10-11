@@ -333,7 +333,9 @@ export interface Worker { id: string; code: string; name: string }
 export interface PieceRate { id: number; garmentType: string; stepCode: string; complexity: string; part?: 'whole' | 'upper' | 'lower'; rateCents: number; effectiveFrom: string; reason: string; createdAt: string }
 export interface RateTable { asOf: string; current: PieceRate[]; history: PieceRate[]; garmentTypes: string[]; /** Rates in force for a garment type no price list item goes by, with how many job order items are made as it. */ unmatched: (PieceRate & { jobItems: number })[] }
 /** Employees and time (EMP). Government IDs arrive masked without emp.view_ids; pay history is null without pay.view_rates. */
-export interface EmployeeRow { id: string; code: string; fullName: string; position: string | null; department: string | null; costCentre: string; isActive: boolean; hireDate: string; separatedOn: string | null }
+export interface EmployeeRow { id: string; code: string; fullName: string; position: string | null; department: string | null; costCentre: string; isActive: boolean; hireDate: string; separatedOn: string | null; hasPayoutQr?: boolean }
+/** The employee's bank or GCash QR picture in force (its bytes at payoutQrUrl). */
+export interface PayoutQr { version: number; contentType: string; savedAt: string }
 export interface Statutory { sss: boolean; phic: boolean; hdmf: boolean; wtax: boolean }
 /** A person's own side-menu order: the groups, and the screens' addresses within each group. */
 /** subs: the sub-categories' order within each group (optional: an older server or saved order has none). */
@@ -356,6 +358,7 @@ export interface EmployeeDetail {
   sil: { year: number; eligibleFrom: string; daysPerYear: number; used: number; paid: number; left: number };
   /** Where the payslip is emailed and whether the employee agreed. Only for whoever sets up payroll (emp.pay); null for others. */
   payslipEmail: { email: string | null; consent: boolean } | null;
+  payoutQr?: PayoutQr | null;
 }
 export interface LeaveBalances {
   year: number;
@@ -1142,6 +1145,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     addEmployee: (body: Record<string, unknown>) => call<EmployeeRecord>('POST', '/api/emp/employees', body),
     updateEmployee: (id: string, v: number, body: Record<string, unknown>) => call<EmployeeRecord>('PUT', emp(id), body, version(v)),
     savePayslipEmail: (id: string, v: number, body: { email: string | null; consent: boolean }) => call<{ email: string | null; consent: boolean }>('PUT', emp(id, '/payslip-email'), body, version(v)),
+    savePayoutQr: (id: string, file: { name: string; data: string }) => call<{ payoutQr: PayoutQr | null }>('PUT', emp(id, '/payout-qr'), file),
+    removePayoutQr: (id: string) => call<{ payoutQr: null }>('POST', emp(id, '/payout-qr/remove'), {}),
+    /** The QR picture's address; the version keeps the browser from showing an older one. */
+    payoutQrUrl: (id: string, version: number) => `${emp(id, '/payout-qr')}?v=${version}`,
     separateEmployee: (id: string, v: number, body: { separatedOn: string; reason: string }) => call<EmployeeRecord>('POST', emp(id, '/separate'), body, version(v)),
     addPay: (id: string, body: Omit<PayProfile, 'id' | 'createdAt' | 'dailyRateCents' | 'monthlyRateCents'> & { dailyRateCents?: number; monthlyRateCents?: number }) =>
       call<PayProfile>('POST', emp(id, '/pay'), body),

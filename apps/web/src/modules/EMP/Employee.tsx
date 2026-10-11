@@ -1,10 +1,11 @@
 /**
  * One employee (PLAN E11): the record (with date of birth, gender, contact no. and address) and its edits in a dialog (If-Match), the statutory switches, government IDs (only with
  * emp.view_ids), separation, paid leave (SIL) this year, the pay history with a new pay from a date (pay.view_rates), and
- * the employee's government loans (pay.loans.view) and pay before Virtus (pay.prior.view).
+ * the employee's government loans (pay.loans.view) and pay before Virtus (pay.prior.view), and the picture of their bank or
+ * GCash QR code to send the pay to (emp.manage changes it).
  */
 import { useCallback, useEffect, useState } from 'react';
-import { api, type EmployeeDetail, type EmployeeRecord, type Me, type PayProfile } from '../../api.ts';
+import { api, type EmployeeDetail, type EmployeeRecord, type Me, type PayProfile, type PayoutQr } from '../../api.ts';
 import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, showDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { cents } from '../COL/money.ts';
@@ -37,6 +38,7 @@ export function EmployeePage({ me, params }: { me: Me; params?: Record<string, s
       </div>
       {!e.isActive && <Notice tone="info">Separated on {showDate(e.separatedOn)}: {e.separationReason}</Notice>}
       <Record e={e} editable={e.isActive && can('emp.manage')} idsVisible={can('emp.view_ids')} onSaved={load} />
+      <PayoutQrPanel e={e} qr={d.payoutQr ?? null} editable={can('emp.manage')} onSaved={load} />
       <Panel title={`Paid leave (SIL) ${d.sil.year}`}>
         <p className="text-sm">{d.sil.eligibleFrom > `${d.sil.year}-12-31` ? `Paid leave starts after a year of service, on ${showDate(d.sil.eligibleFrom)}.` : `${d.sil.used} of ${d.sil.daysPerYear} days used${d.sil.paid ? `, ${d.sil.paid} paid in cash` : ''}; ${d.sil.left} left.`}</p>
       </Panel>
@@ -159,6 +161,74 @@ function EditEmployee({ e, idsVisible, onClose, onSaved }: { e: EmployeeRecord; 
         <Button tone="primary" disabled={a.busy} onClick={() => a.run(save)}>Save changes</Button>
       </div>
     </Dialog>
+  );
+}
+
+const QR_MAX_BYTES = 4 * 1024 * 1024;
+const QR_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const asBase64 = (f: File) => new Promise<string>((ok, fail) => {
+  const r = new FileReader();
+  r.onload = () => ok(String(r.result).split(',')[1] ?? '');
+  r.onerror = () => fail(new Error('Could not read the picture.'));
+  r.readAsDataURL(f);
+});
+
+/**
+ * The bank or GCash QR code the employee's pay is sent to (the owner's request, Oct 2026): a photo or screenshot of it,
+ * shown to whoever opens the employee so they can scan it when paying. emp.manage uploads, replaces or takes it off, even
+ * after separation (a last pay may still be owed).
+ */
+function PayoutQrPanel({ e, qr, editable, onSaved }: { e: EmployeeRecord; qr: PayoutQr | null; editable: boolean; onSaved: () => Promise<unknown> }) {
+  const [done, setDone] = useState('');
+  const a = useAction();
+  const src = qr && api.payoutQrUrl(e.id, qr.version);
+  const upload = async (f: File) => {
+    setDone('');
+    if (!QR_TYPES.includes(f.type)) throw new Error('Choose a JPEG, PNG or WebP picture of the QR code.');
+    if (f.size > QR_MAX_BYTES) throw new Error('That picture is bigger than 4 MB. Choose a smaller one, or a screenshot of the QR.');
+    await api.savePayoutQr(e.id, { name: f.name, data: await asBase64(f) });
+    setDone(qr ? 'The new QR code is saved.' : 'The QR code is saved.');
+    await onSaved();
+  };
+  const remove = async () => {
+    setDone('');
+    if (!window.confirm(`Take off ${e.fullName}'s QR code?`)) return;
+    await api.removePayoutQr(e.id);
+    setDone('The QR code is taken off.');
+    await onSaved();
+  };
+  return (
+    <Panel title="Bank or GCash QR code">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+        {src ? (
+          <a href={src} target="_blank" rel="noreferrer" className="block w-48 shrink-0 self-center rounded-lg bg-white p-2 ring-1 ring-slate-200 sm:self-start" title="Open the QR code full size">
+            <img src={src} alt={`${e.fullName}'s ${PAID_BY[e.payoutMethod] === 'Cash' ? 'bank or GCash' : PAID_BY[e.payoutMethod]} QR code`} className="aspect-square w-full object-contain" />
+          </a>
+        ) : (
+          <div className="flex aspect-square w-48 shrink-0 items-center justify-center self-center rounded-lg border-2 border-dashed border-slate-300 p-3 text-center text-sm text-slate-500 sm:self-start">No QR code yet</div>
+        )}
+        <div className="min-w-0 space-y-2 text-sm">
+          <p className="text-slate-600">
+            {e.payoutMethod === 'cash' ? `${e.fullName} is paid in cash for now ("Paid by" in the details).` : `${e.fullName} is paid by ${PAID_BY[e.payoutMethod]}${e.payoutAccount ? ` (${e.payoutAccount})` : ''}.`}{' '}
+            {qr ? 'To send the pay, scan this QR code from the bank or GCash app.' : 'Add a picture of their bank or GCash QR code, so whoever releases payroll can scan it to send the pay.'}
+          </p>
+          {qr && <p className="text-xs text-slate-500">Saved {showDate(qr.savedAt.slice(0, 10))}. Click the picture to open it full size.</p>}
+          {editable && (
+            <div className="flex flex-wrap gap-2">
+              <label className={`inline-flex cursor-pointer items-center rounded-md px-3 py-2 text-sm font-medium text-white ${a.busy ? 'bg-indigo-300' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                {qr ? 'Replace the QR picture' : 'Upload the QR picture'}
+                <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={a.busy}
+                  onChange={(x) => { const f = x.target.files?.[0]; x.target.value = ''; if (f) void a.run(() => upload(f)); }} />
+              </label>
+              {qr && <Button disabled={a.busy} onClick={() => a.run(remove)}>Take it off</Button>}
+            </div>
+          )}
+          {editable && <p className="text-xs text-slate-500">A screenshot or photo of the QR from the employee's bank or GCash app: JPEG, PNG or WebP, up to 4 MB.</p>}
+          {a.error && <Notice>{a.error}</Notice>}
+          {done && !a.error && <Notice tone="success">{done}</Notice>}
+        </div>
+      </div>
+    </Panel>
   );
 }
 
