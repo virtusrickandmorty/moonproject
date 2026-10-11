@@ -146,21 +146,28 @@ export function reworkFlow(db: Db, jobOrderId: string, lineNo: number, route: Ro
     WHERE a.jo = ? AND a.line = ? AND a.step_id = ? AND a.part = ? AND a.kind = 'rework' AND d.status = 'posted' AND d.posted_at >= ?`).pluck();
   const tickedOn = db.prepare(`SELECT DISTINCT x.roster_row_no FROM prd_line_assignment_wearers x JOIN prd_assignments a ON a.id = x.assignment_id JOIN documents d ON d.id = a.document_id
     WHERE x.jo = ? AND x.line = ? AND a.step_id = ? AND a.part = ? AND a.kind = 'rework' AND d.status = 'posted' AND d.posted_at >= ?`).pluck();
-  const still = (i: number) => sends.filter((r) => r.last >= i);
-  let arrived = still(0).reduce((n, r) => n + r.pieces, 0);
-  let arrivedWearers = [...new Set(still(0).flatMap((r) => r.wearers))];
+  // Each send-back's pieces flow apart: what a step redoes finishes first the send-backs found at that step (they stop
+  // there), then the others, oldest first, which go on to the next step.
+  let arriving = sends.map((r) => r.pieces);
+  let arrivedWearers = [...new Set(sends.flatMap((r) => r.wearers))];
   needed.forEach((s, i) => {
-    const here = still(i);
+    arriving = arriving.map((n, k) => (sends[k]!.last >= i ? n : 0));
+    const arrived = arriving.reduce((n, x) => n + x, 0);
     const redone = Math.min(arrived, redoneOn.get(jobOrderId, lineNo, s.id, part, since) as number);
     const ticked = new Set(tickedOn.all(jobOrderId, lineNo, s.id, part, since) as number[]);
     const waiting = arrived - redone;
     const wearers = arrivedWearers.filter((w) => !ticked.has(w)).sort((x, y) => x - y);
-    const reasons: ReworkReason[] = here.map((r) => ({ reason: r.reason, foundAt: r.foundAt ?? 'a later step', at: r.at, pieces: r.pieces }));
+    const reasons: ReworkReason[] = sends.filter((r, k) => r.last >= i && arriving[k]! > 0).map((r) => ({ reason: r.reason, foundAt: r.foundAt ?? 'a later step', at: r.at, pieces: r.pieces }));
     out.set(s.id, { pieces: waiting, wearers, redone, ...(waiting > 0 || wearers.length > 0 ? { reasons } : {}) });
-    // On to the next step: what was redone here, less the send-backs whose rework ends here.
-    const next = still(i + 1);
-    arrived = Math.min(redone, next.reduce((n, r) => n + r.pieces, 0));
-    const goOn = new Set(next.flatMap((r) => r.wearers));
+    let left = redone;
+    const done = arriving.map(() => 0);
+    for (const k of [...sends.keys()].sort((x, y) => +(sends[y]!.last === i) - +(sends[x]!.last === i))) {
+      const take = Math.min(left, arriving[k]!);
+      done[k] = take;
+      left -= take;
+    }
+    arriving = done; // on to the next step: what was redone here of the send-backs that go on
+    const goOn = new Set(sends.filter((r) => r.last > i).flatMap((r) => r.wearers));
     arrivedWearers = arrivedWearers.filter((w) => ticked.has(w) && goOn.has(w));
   });
   return out;

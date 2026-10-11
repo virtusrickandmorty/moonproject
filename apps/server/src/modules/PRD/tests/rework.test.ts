@@ -168,6 +168,18 @@ describe('where it was found (the owner’s rule, Oct 2026)', () => {
     expect(await open(jo)).toEqual([0, 0, 0, 0]); // Sewing and Packing take them as normal work
   });
 
+  it('two send-backs: what a step redoes first finishes the one found there; only the other goes on', async () => {
+    const jo = await printed();
+    expect((await sendBack(jo, { pieces: 1, reason: 'Damaged back part, pressed wrong', foundAtStepId: HEATPRESS })).statusCode).toBe(200);
+    expect((await sendBack(jo, { pieces: 1, reason: 'Wrong size found when sewing', foundAtStepId: SEWING })).statusCode).toBe(200);
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 2, rework: true }], PRINTING));
+    expect(await open(jo)).toEqual([0, 2, 0, 0]);
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1, rework: true }], HEATPRESS));
+    expect(await open(jo)).toEqual([0, 1, 0, 0]); // the Heatpress one stops there; the Sewing one still waits at Heatpress
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1, rework: true }], HEATPRESS));
+    expect(await open(jo)).toEqual([0, 0, 1, 0]); // only the one found at Sewing goes on
+  });
+
   it('found at Sewing (already sewn), stays rework to the end of the route', async () => {
     const jo = await printed();
     expect((await sendBack(jo, { pieces: 1, reason: 'Wrong print on a sewn shirt', foundAtStepId: SEWING })).statusCode).toBe(200);
