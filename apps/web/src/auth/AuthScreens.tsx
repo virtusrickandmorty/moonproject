@@ -60,7 +60,8 @@ export function FirstOwnerScreen({ onSignedIn }: { onSignedIn: (me: Me) => Promi
   ];
   const submit = async ({ displayName = '', username = '', password = '', repeat }: Record<string, string>) => {
     same(password, repeat);
-    await api.firstOwner({ displayName, username, password });
+    // A new shop starts with nothing in its price list: no made-up starter rates (the owner's request, Oct 2026).
+    await api.firstOwner({ displayName, username, password, freshPriceList: true });
     await onSignedIn(await api.me());
   };
   const intro = 'Nobody has set up Virtus yet. The first person becomes an Owner and adds everyone else.';

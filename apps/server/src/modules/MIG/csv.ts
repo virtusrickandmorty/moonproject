@@ -239,13 +239,13 @@ export function duplicateKeys(row: ParsedRow): string[] {
 /**
  * A price list row (the owner's request, Oct 2026): Item, Kind (Made to order, Ready-made or Service), Unit (Piece or Set),
  * Price (VAT included) and From qty (the price from that many pieces: a price break; blank is 1), and optionally one piece
- * rate of the item: Operation (the step), Part (Upper or Lower, a set's), Difficulty (Simple, Standard or Complex) and
- * Rate. An item's price breaks are its rows with a Price, one per From qty. An old piece-rate sheet's Garment_Type is the
+ * rate of the item: Operation (the step), Part (Upper or Lower, a set's) and Rate. No difficulty: each item has its own
+ * rates (an older file's Difficulty column may say Standard; anything else is flagged). An item's price breaks are its rows with a Price, one per From qty. An old piece-rate sheet's Garment_Type is the
  * Item.
  */
 export interface PriceListRow {
   item: string; class: 'made_to_order_garment' | 'ready_made_item' | 'service'; unit: 'pc' | 'set';
-  priceCents?: number; minQty: number; operation: string; part: 'whole' | 'upper' | 'lower'; complexity: 'simple' | 'standard' | 'complex'; rateCents?: number; issues: string[];
+  priceCents?: number; minQty: number; operation: string; part: 'whole' | 'upper' | 'lower'; complexity: 'standard'; rateCents?: number; issues: string[];
 }
 export function priceListRow(raw: Record<string, string>): PriceListRow {
   const issues: string[] = [];
@@ -258,8 +258,8 @@ export function priceListRow(raw: Record<string, string>): PriceListRow {
   const operation = (raw.Operation ?? '').trim();
   const partWord = (raw.Part ?? '').trim().toLowerCase();
   const part = !partWord || partWord === 'whole' ? 'whole' : partWord === 'upper' || partWord === 'lower' ? partWord : null;
+  // No difficulty (the owner's decision, Oct 2026): each item has its own rates; an older file's Standard is fine.
   const level = (raw.Difficulty ?? raw.Complexity ?? '').trim().toLowerCase() || 'standard';
-  const complexity = level === 'simple' || level === 'standard' || level === 'complex' ? level : null;
   const money = (label: string, value: string | undefined) => {
     if (!value?.trim()) return undefined;
     try { return rateFromPesos(value); } catch { issues.push(`${label} "${value}" must be a peso amount like 450.00.`); return undefined; }
@@ -275,13 +275,13 @@ export function priceListRow(raw: Record<string, string>): PriceListRow {
   if (!cls) issues.push(`Kind "${raw.Kind}" is not Made to order, Ready-made or Service.`);
   if (!unit) issues.push(`Unit "${raw.Unit}" is not Piece or Set.`);
   if (!part) issues.push(`Part "${raw.Part}" is not Upper or Lower.`);
-  if (!complexity) issues.push(`Difficulty "${raw.Difficulty ?? raw.Complexity}" is not Simple, Standard or Complex.`);
+  if (level !== 'standard') issues.push(`Difficulty "${raw.Difficulty ?? raw.Complexity}" is no longer used: each item has its own rates. Leave it blank, or make the harder version a price list item of its own.`);
   if (operation && raw.Rate?.trim() === undefined) issues.push('A piece rate needs the Rate as well as the Operation.');
   if (!operation && rateCents !== undefined) issues.push('A piece rate needs the Operation (the step, like Sewing).');
   if (operation && cls && cls !== 'made_to_order_garment') issues.push('Piece rates are for made-to-order garments; this item is not one.');
   if (part && part !== 'whole' && unit !== 'set') issues.push('Upper and Lower parts are for an item sold as a set.');
   if (priceCents === undefined && !(operation && rateCents !== undefined) && !issues.length) issues.push('The row has neither a price nor a piece rate.');
-  return { item, class: cls ?? 'made_to_order_garment', unit: unit ?? 'pc', ...(priceCents !== undefined ? { priceCents } : {}), minQty: minQty ?? 1, operation, part: part ?? 'whole', complexity: complexity ?? 'standard', ...(rateCents !== undefined ? { rateCents } : {}), issues };
+  return { item, class: cls ?? 'made_to_order_garment', unit: unit ?? 'pc', ...(priceCents !== undefined ? { priceCents } : {}), minQty: minQty ?? 1, operation, part: part ?? 'whole', complexity: 'standard', ...(rateCents !== undefined ? { rateCents } : {}), issues };
 }
 
 /** What the owner typed with Fix on a price list row, laid over the sheet's values. Shared by the review and the commit. */
@@ -293,7 +293,8 @@ export function applyPriceListFix(raw: Record<string, string>, manual: ManualDat
   if (manual.priceCents !== undefined) raw.Price = (Number(manual.priceCents) / 100).toFixed(2);
   if (manual.operation) raw.Operation = String(manual.operation);
   if (manual.part) raw.Part = String(manual.part);
-  if (manual.complexity) raw.Difficulty = String(manual.complexity);
+  // No difficulty any more (the owner's decision, Oct 2026): a row the owner fixes drops an older file's Difficulty.
+  delete raw.Difficulty; delete raw.Complexity;
   if (manual.rateCents !== undefined) raw.Rate = (Number(manual.rateCents) / 100).toFixed(2);
   if (raw.Garment_Type !== undefined && raw.Item === undefined) raw.Item = raw.Garment_Type;
 }

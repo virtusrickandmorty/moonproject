@@ -13,7 +13,7 @@ export const KINDS: { kind: MigKind; label: string; columns: string; holds: stri
   { kind: 'customer', label: 'Customers', columns: 'Legacy_ID, Customer_Name (also Registered_Name, TIN, Email)', holds: 'customers and their details' },
   { kind: 'measurement', label: 'Measurements', columns: 'Measurement_ID, Customer_ID, Customer_Name, Wearer_Name, Group_Name, then Shoulder, Chest and the other measurement columns', holds: 'the measurement sheet' },
   { kind: 'employee', label: 'Employees', columns: 'Employee_ID, Employee_Name, Daily_Rate', holds: 'employees and their daily rates' },
-  { kind: 'piece_rate', label: 'Price list', columns: 'Item, Kind, Unit, Price, From qty, then for a piece rate Operation, Part, Difficulty, Rate', holds: 'the price list, each item with its price breaks and piece rates' },
+  { kind: 'piece_rate', label: 'Price list', columns: 'Item, Kind, Unit, Price, From qty, then for a piece rate Operation, Part, Rate', holds: 'the price list, each item with its price breaks and piece rates' },
   { kind: 'sizer_set', label: 'Sizer sets', columns: 'Code, Garment_Type, Sizes_Included', holds: 'the sizer sets lent to customers' },
 ];
 
@@ -42,13 +42,13 @@ export const TEMPLATES: Record<MigKind, { file: string; rows: string[][] }> = {
   // One row per item, price break and piece rate (the owner's request, Oct 2026): an item's later rows may leave Kind and
   // Unit empty; a Price with a From qty is the price from that many pieces (blank is 1: every item needs that one).
   piece_rate: { file: 'price-list-template.csv', rows: [
-    ['Item', 'Kind', 'Unit', 'Price', 'From qty', 'Operation', 'Part', 'Difficulty', 'Rate'],
-    ['School polo shirt', 'Made to order', 'Piece', '450.00', '1', 'Sewing', '', 'Standard', '40.00'],
-    ['School polo shirt', '', '', '420.00', '12', 'Cutting', '', 'Standard', '8.00'],
-    ['School polo shirt', '', '', '390.00', '50', '', '', '', ''],
-    ['Basketball jersey set', 'Made to order', 'Set', '650.00', '1', 'Sewing', 'Upper', 'Standard', '45.00'],
-    ['Basketball jersey set', '', 'Set', '', '', 'Sewing', 'Lower', 'Standard', '35.00'],
-    ['Name patch', 'Service', 'Piece', '100.00', '', '', '', '', ''],
+    ['Item', 'Kind', 'Unit', 'Price', 'From qty', 'Operation', 'Part', 'Rate'],
+    ['School polo shirt', 'Made to order', 'Piece', '450.00', '1', 'Sewing', '', '40.00'],
+    ['School polo shirt', '', '', '420.00', '12', 'Cutting', '', '8.00'],
+    ['School polo shirt', '', '', '390.00', '50', '', '', ''],
+    ['Basketball jersey set', 'Made to order', 'Set', '650.00', '1', 'Sewing', 'Upper', '45.00'],
+    ['Basketball jersey set', '', 'Set', '', '', 'Sewing', 'Lower', '35.00'],
+    ['Name patch', 'Service', 'Piece', '100.00', '', '', '', ''],
   ] },
   sizer_set: { file: 'sizer-sets-template.csv', rows: [
     ['Code', 'Garment_Type', 'Sizes_Included'],
@@ -310,7 +310,6 @@ export const FIX_FIELDS: Record<MigKind, FixField[]> = {
     { key: 'priceCents', label: 'Price (pesos)', kind: 'peso', hint: 'Selling price per piece or set, VAT included.' },
     { key: 'operation', label: 'Operation', kind: 'text', hint: 'The production step of the piece rate, like Sewing.' },
     { key: 'part', label: 'Part', kind: 'text', hint: 'Upper or Lower, for a set.' },
-    { key: 'complexity', label: 'Difficulty', kind: 'text', hint: 'Simple, Standard or Complex.' },
     { key: 'rateCents', label: 'Piece rate (pesos)', kind: 'peso' },
   ],
   sizer_set: [

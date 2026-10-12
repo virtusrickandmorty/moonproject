@@ -970,7 +970,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** Called when the session ended or a new password is required, so the app can show the right screen. */
     onSignedOut: (fn: (e: ApiError) => void) => void (onSignedOut = fn),
     setupStatus: () => call<{ needsFirstOwner: boolean }>('GET', '/api/setup/status'),
-    firstOwner: (b: { username: string; displayName: string; password: string }) => call<{ csrfToken: string }>('POST', '/api/setup/first-owner', b).then(keep),
+    firstOwner: (b: { username: string; displayName: string; password: string; freshPriceList?: boolean }) => call<{ csrfToken: string }>('POST', '/api/setup/first-owner', b).then(keep),
     login: (username: string, password: string) => call<{ csrfToken: string }>('POST', '/api/auth/login', { username, password }).then(keep),
     me: () => call<Me>('GET', '/api/auth/me').then(keep),
     logout: () => call<unknown>('POST', '/api/auth/logout'),

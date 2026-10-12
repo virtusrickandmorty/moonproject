@@ -104,3 +104,16 @@ export function switchGarmentType(db: Db, raw: unknown, who: { userId: string; a
   appendAudit(db, { at: who.at, userId: who.userId, action: 'rate.switch', entityType: 'rate.garment_type', entityId: known, data: { on: v.on, reason: v.reason } });
   return { garmentType: known, on: v.on };
 }
+
+/**
+ * The made-up starter rates (RATE 0001: written by no one, "to be confirmed", OWN-05) switched off for a shop starting its
+ * own price list (the owner's request, Oct 2026): each of their garment types gets a switch-off row. Never deleted.
+ */
+export function switchOffStarters(db: Db, who: { userId: string; at: string }): string[] {
+  const types = db.prepare("SELECT DISTINCT garment_type FROM rate_piece_rates WHERE created_by IS NULL AND reason LIKE 'Starter rate (made up)%' ORDER BY garment_type").pluck().all() as string[];
+  const off = types.filter((t) => !isSwitchedOff(db, t));
+  const row = db.prepare('INSERT INTO rate_garment_type_switches (garment_type, is_on, reason, at, user_id) VALUES (?, 0, ?, ?, ?)');
+  for (const t of off) row.run(t, 'Made-up starter rate: the shop starts its own price list', who.at, who.userId);
+  if (off.length) appendAudit(db, { at: who.at, userId: who.userId, action: 'rate.starters_off', entityType: 'rate.garment_type', entityId: null, data: { garmentTypes: off } });
+  return off;
+}
