@@ -14,6 +14,7 @@ import { docPath } from '../../shell/menu.ts';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
 import { UPLOAD_LIST, canDownloadUploads, checkWords } from './stat.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
+import { useLiveReload } from '../../live.ts';
 
 const newRemittance = (c: SchemeCheck, month: string) => docPath('stat.remittance', `/new?scheme=${c.scheme}&month=${month}${c.dueCents > 0 ? `&amount=${(c.dueCents / 100).toFixed(2)}` : ''}`);
 
@@ -107,6 +108,7 @@ function UploadFiles({ me, m }: { me: Me; m: StatMonth }) {
   const step = useStepUpAction('saving the employer number');
   const load = () => api.statEmployerNumbers().then(setNumbers, (e: Error) => setError(e.message));
   useEffect(() => void load(), []);
+  useLiveReload(load);
   const lists = { SSS: m.sss, PHIC: m.phic, HDMF: m.hdmf };
   const download = async (scheme: UploadScheme) => {
     setBusy(scheme);

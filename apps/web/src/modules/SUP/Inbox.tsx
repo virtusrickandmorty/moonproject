@@ -4,6 +4,7 @@ import type { Me } from '../../api.ts';
 import { Button, Notice, Panel, inputClass, manilaTime, useAction } from '../../components/ui.tsx';
 import { masterRequest } from '../CUS/http.ts';
 import { useLocation } from '../../router.tsx';
+import { useLiveReload } from '../../live.ts';
 
 type Status = 'new' | 'in_progress' | 'closed';
 type Kind = 'inquiry' | 'complaint' | 'suggestion' | 'quotation';
@@ -37,6 +38,7 @@ export function SupportInbox({ me }: { me: Me }) {
 
   const load = useCallback(() => run(async () => setList(await masterRequest(me, `/api/sup/messages?status=${filter}`))), [me, filter]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void load(); }, [load]);
+  useLiveReload(load);
   useEffect(() => { if (opening) void show(opening); }, [opening]); // eslint-disable-line react-hooks/exhaustive-deps
   const show = (id: string) => run(async () => {
     const d = await masterRequest<Detail>(me, `/api/sup/messages/${encodeURIComponent(id)}`);

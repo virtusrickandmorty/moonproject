@@ -3,6 +3,7 @@ import { api, type CashAccount, type Me } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { canShowBook } from './rules.ts';
+import { useLiveReload } from '../../live.ts';
 
 const kinds: { value: CashAccount['kind']; label: string }[] = [
   { value: 'cash', label: 'Cash box' }, { value: 'checks', label: 'Checks on hand' }, { value: 'bank', label: 'Bank' }, { value: 'ewallet', label: 'E-wallet' },
@@ -23,6 +24,7 @@ export function CashAccounts({ me }: { me: Me }) {
   const action = useAction();
   const load = () => api.cashAccounts().then(setPlaces, (e: Error) => setError(e.message));
   useEffect(() => void load(), []);
+  useLiveReload(load);
 
   const startEdit = (p: CashAccount) => {
     setEditing(p);

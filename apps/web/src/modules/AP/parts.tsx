@@ -10,6 +10,7 @@ import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { EditGate, Errors, Figures, useLive } from '../COL/parts.tsx';
 import { DUPLICATE_REASON_MAX, DUPLICATE_REASON_MIN, duplicateReasonBox, ewtRates } from './payables.ts';
+import { useLiveReload } from '../../live.ts';
 
 /** The state around a form's own fields; on an edit, `load` fills the fields from the recorded document. */
 export function useMoneyForm(type: DocTypeInfo, mode: FormMode, load: (d: DocDetail) => void) {
@@ -108,6 +109,7 @@ export function DuplicateReasonBox({ value, onChange, problem }: { value: string
 export function useList<T>(load: () => Promise<T[]>): T[] {
   const [rows, setRows] = useState<T[]>([]);
   useEffect(() => void load().then(setRows, () => undefined), []);
+  useLiveReload(() => load().then(setRows));
   return rows;
 }
 

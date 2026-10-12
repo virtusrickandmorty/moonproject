@@ -5,6 +5,7 @@ import { Link } from '../../router.tsx';
 import { CATEGORY_WORDS, UNIT_WORDS } from './purchasing.ts';
 import { costSource } from './Supplies.tsx';
 import { Crumb } from '../../shell/crumbs.tsx';
+import { useLiveReload } from '../../live.ts';
 
 export function SupplyPage({ params }: { params?: Record<string, string> }) {
   return <SupplyView id={params?.id ?? ''} />;
@@ -17,6 +18,7 @@ export function SupplyView({ id, inDialog = false }: { id: string; inDialog?: bo
   const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
   useEffect(() => void api.supply(id).then(setSupply, (e: Error) => setError(e.message)), [id]);
   useEffect(() => void api.supplySuppliers(id).then(setSuppliers, () => undefined), [id]);
+  useLiveReload(() => Promise.all([api.supply(id).then(setSupply), api.supplySuppliers(id).then(setSuppliers)]));
   if (error) return <Notice>{error}</Notice>;
   if (!supply) return <Loading />;
   return (

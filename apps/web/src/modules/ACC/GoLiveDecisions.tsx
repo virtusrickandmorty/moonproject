@@ -3,6 +3,7 @@ import { api, type GoLiveDecision, type GoLiveRegister, type Me } from '../../ap
 import { Button, Field, Notice, inputClass, useAction } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { GO_LIVE_PRINT_TITLE, visibleDecisions } from './go-live.ts';
+import { useLiveReload } from '../../live.ts';
 
 const groupName = { accountant: 'Accountant', owner: 'Owner', 'co-owners': 'Co-owners' } as const;
 function Decision({ row, reload, canAnswer }: { row: GoLiveDecision; reload: (d: GoLiveRegister) => void; canAnswer: boolean }) {
@@ -28,6 +29,7 @@ function Decision({ row, reload, canAnswer }: { row: GoLiveDecision; reload: (d:
 export function GoLiveDecisions({ me }: { me: Me }) {
   const [data, setData] = useState<GoLiveRegister>(), [group, setGroup] = useState('all'), [error, setError] = useState('');
   const load = useCallback(() => api.goLiveDecisions().then(setData, (e: Error) => setError(e.message)), []); useEffect(() => void load(), [load]);
+  useLiveReload(load);
   if (!me.permissions.includes('acc.golive.view')) return <Notice>Access denied.</Notice>;
   return <div className="max-w-4xl space-y-4 print:max-w-none">
     <style>{'@media print{@page{size:A4;margin:12mm} nav,header,.print\\:hidden{display:none!important} body{font-size:10pt} details>summary{display:none}}'}</style>

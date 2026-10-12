@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { api, type LeaveBalances as LeaveBalancesData } from '../../api.ts';
 import { Button, Notice, inputClass, showDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
+import { useLiveReload } from '../../live.ts';
 
 export function LeaveBalances() {
   const [year, setYear] = useState(new Date().getFullYear());
@@ -13,6 +14,7 @@ export function LeaveBalances() {
     setError('');
     void api.leaveBalances(year).then(setData, (e: Error) => setError(e.message));
   }, [year]);
+  useLiveReload(() => api.leaveBalances(year).then(setData));
   return (
     <div className="max-w-5xl space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, type AuditLogPage, type Me } from '../../api.ts';
 import { Loading, Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { auditData, auditQuery, type AuditFilters } from './audit.ts';
+import { useLiveReload } from '../../live.ts';
 
 const empty: AuditFilters = { from: '', to: '', userId: '', action: '', entityType: '', entityId: '' };
 
@@ -21,6 +22,7 @@ export function AuditLog({ me }: { me: Me }) {
     void api.auditLog(query).then((r) => { if (active) setPage(r); }, (e: Error) => { if (active) setError(e.message); });
     return () => { active = false; };
   }, [query, me.permissions]);
+  useLiveReload(() => api.auditLog(query).then(setPage), () => me.permissions.includes('aud.log.view') && !before); // the newest page: the log grows as people work
   if (!me.permissions.includes('aud.log.view')) return <Notice>Access denied.</Notice>;
   const set = (key: keyof AuditFilters, value: string) => setDraft((d) => ({ ...d, [key]: value }));
   return <article className="space-y-4">

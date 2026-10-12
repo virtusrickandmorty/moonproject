@@ -8,6 +8,7 @@ import { api, type ActiveEmployee, type GovLoan, type LoanKind, type Me } from '
 import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, showDate } from '../../components/ui.tsx';
 import { cents } from '../COL/money.ts';
 import { LOAN_KIND, loanInput } from './run.ts';
+import { useLiveReload } from '../../live.ts';
 
 const STATUS: Record<GovLoan['status'], string> = { not_started: 'Not started', running: 'Running', ended: 'Ended', stopped: 'Stopped' };
 
@@ -143,6 +144,7 @@ export function GovLoans({ me }: { me: Me }) {
   const canManage = me.permissions.includes('pay.loans.manage');
   const load = useCallback(() => api.govLoans({ status: all ? 'all' : 'open' }).then(setLoans, (e: Error) => setError(e.message)), [all]);
   useEffect(() => void load(), [load]);
+  useLiveReload(load);
   useEffect(() => void (canManage && api.activeEmployees().then(setEmployees, () => undefined)), [canManage]);
   if (error) return <Notice>{error}</Notice>;
   return (

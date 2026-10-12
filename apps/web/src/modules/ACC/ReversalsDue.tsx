@@ -8,12 +8,14 @@ import { api, type Me, type ReversalDue } from '../../api.ts';
 import { Loading, Button, Notice, peso } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
+import { useLiveReload } from '../../live.ts';
 
 export function ReversalsDue({ me }: { me: Me }) {
   const [rows, setRows] = useState<ReversalDue[] | null>(null);
   const [error, setError] = useState('');
   const allowed = me.permissions.includes('acc.jv.create');
   useEffect(() => void (allowed && api.reversalsDue().then(setRows, (e: Error) => setError(e.message))), [allowed]);
+  useLiveReload(() => api.reversalsDue().then(setRows), () => !!allowed);
   if (!allowed) return <Notice>Access denied.</Notice>;
   return (
     <div className="max-w-4xl space-y-4">

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, type Holiday, type Me } from '../../api.ts';
 import { Loading, Button, Field, Notice, Panel, ReasonDialog, askConfirm, inputClass, useAction, showDate } from '../../components/ui.tsx';
 import { weekday } from './time.ts';
+import { useLiveReload } from '../../live.ts';
 
 export function Holidays({ me }: { me: Me }) {
   const [year, setYear] = useState<number | null>(null);
@@ -15,6 +16,7 @@ export function Holidays({ me }: { me: Me }) {
   const [error, setError] = useState('');
   const load = useCallback((y?: number) => api.holidays(y).then((r) => (setYear(r.year), setRows(r.holidays)), (e: Error) => setError(e.message)), []);
   useEffect(() => void load(), [load]);
+  useLiveReload(load);
   const manage = me.permissions.includes('emp.holidays');
   const turnOn = useAction();
   // One row per date: the holiday on it now, else the one switched off last (earlier rows are its history).

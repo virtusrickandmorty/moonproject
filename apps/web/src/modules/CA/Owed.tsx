@@ -9,6 +9,7 @@ import { Loading, Notice, Panel, peso, showDate } from '../../components/ui.tsx'
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
+import { useLiveReload } from '../../live.ts';
 
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
 const KIND = { repayment: 'Paid back', writeoff: 'Written off' } as const;
@@ -17,6 +18,7 @@ export function CaOwed() {
   const [rows, setRows] = useState<CaOwing[] | null>(null);
   const [error, setError] = useState('');
   useEffect(() => void api.caOwing().then(setRows, (e: Error) => setError(e.message)), []);
+  useLiveReload(() => api.caOwing().then(setRows));
   if (error) return <Notice>{error}</Notice>;
   if (!rows) return <Loading />;
   return (
@@ -44,6 +46,7 @@ export function CaEmployeePage({ me, docTypes, params }: { me: Me; docTypes: Doc
   const [s, setS] = useState<CaStatus | null>(null);
   const [error, setError] = useState('');
   useEffect(() => void api.caStatus(id).then(setS, (e: Error) => setError(e.message)), [id]);
+  useLiveReload(() => api.caStatus(id).then(setS));
   if (error) return <Notice>{error}</Notice>;
   if (!s) return <Loading />;
   const may = (key: string) => docTypes.some((d) => d.key === key && d.canPost);

@@ -11,6 +11,7 @@ import { Button, Dialog, Field, Loading, Notice, inputClass, peso, showDate, use
 import { Link } from '../../router.tsx';
 import { masterRequest } from '../CUS/http.ts';
 import { CustomerPicker, type Picked } from '../COL/parts.tsx';
+import { useLiveReload } from '../../live.ts';
 
 type Status = 'awaiting_decision' | 'declined' | 'in_production' | 'ready' | 'released' | 'cancelled';
 interface ReturnLine {
@@ -39,6 +40,7 @@ export function Returns({ me }: { me: Me }) {
   const { error, run } = useAction();
   const load = useCallback(() => masterRequest<Return[]>(me, `/api/alt/returns?show=${show}`).then(setRows), [me, show]);
   useEffect(() => { void run(load); }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLiveReload(load);
   const can = (p: string) => me.permissions.includes(p);
 
   return (

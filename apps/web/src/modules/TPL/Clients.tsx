@@ -8,12 +8,14 @@ import { Button, Dialog, Field, Loading, Notice, inputClass, peso, useAction } f
 import { navigate } from '../../router.tsx';
 import { CustomerPicker, type Picked } from '../COL/parts.tsx';
 import { toCents, type TplProgram, type TplProgramRow } from './types.ts';
+import { useLiveReload } from '../../live.ts';
 
 export function TplClients({ me }: { me: Me }) {
   const [rows, setRows] = useState<TplProgramRow[] | null>(null);
   const [error, setError] = useState('');
   const [adding, setAdding] = useState(false);
   useEffect(() => void api.tplPrograms<{ rows: TplProgramRow[] }>().then((r) => setRows(r.rows), (e: Error) => setError(e.message)), []);
+  useLiveReload(() => api.tplPrograms<{ rows: TplProgramRow[] }>().then((r) => setRows(r.rows)));
 
   return (
     <div className="max-w-5xl space-y-4">

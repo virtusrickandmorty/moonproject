@@ -14,6 +14,7 @@ import { adjustmentLink, byBank, figuresOf, finishBlockers, hasChanges, latestOf
 import { canShowBook } from './rules.ts';
 import { saveTicks } from './ticks.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
+import { useLiveReload } from '../../live.ts';
 
 type Props = { me: Me; docTypes: DocTypeInfo[]; params?: Record<string, string> };
 const day = (stamp: string | null) => (stamp ? stamp.slice(0, 10) : '');
@@ -35,6 +36,7 @@ export function BankRecon({ me }: Props) {
     api.cashRecons().then(setRows, (e: Error) => setError(e.message));
     api.health().then((h) => { const t = h.serverTime.slice(0, 10); setToday(t); setDate(t); }, (e: Error) => setError(e.message));
   }, []);
+  useLiveReload(() => api.cashRecons().then(setRows));
   if (!me.permissions.includes('cash.recon.view')) return <Notice>You cannot view bank reconciliations.</Notice>;
 
   const bank = banks.find((b) => String(b.id) === bankId);
@@ -98,6 +100,7 @@ export function BankReconWork({ me, docTypes, params }: Props) {
     api.cashRecon(id).then((r) => load(r), (e: Error) => setError(e.message));
     api.health().then((h) => setToday(h.serverTime.slice(0, 10)), (e: Error) => setError(e.message));
   }, [id]);
+  useLiveReload(() => api.cashRecon(id).then((r) => load(r, true))); // the lines ticked here stay ticked
   if (!me.permissions.includes('cash.recon.view')) return <Notice>You cannot view bank reconciliations.</Notice>;
   if (!report) return error ? <Notice>{error}</Notice> : <Loading />;
 

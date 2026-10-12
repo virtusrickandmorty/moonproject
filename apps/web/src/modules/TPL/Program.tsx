@@ -8,6 +8,7 @@ import { ApiError, api, newIdempotencyKey, type DocTypeInfo, type Me } from '../
 import { Button, Dialog, Field, Loading, Notice, Panel, ReasonDialog, StatusChip, inputClass, peso, showDate, useAction } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
 import { fromCents, itemLabel, toCents, type Issue, type TplCardRow, type TplDeliveryPreview, type TplItem, type TplProgram, type TplProgramPage } from './types.ts';
+import { useLiveReload } from '../../live.ts';
 
 const STAGE_WORDS: Record<string, string> = { open: 'Not started', in_production: 'In production', ready: 'Finished', partially_released: 'Partly in stock', released: 'All in stock', closed: 'Closed' };
 const pieces = (n: number) => `${n.toLocaleString('en-PH')} ${n === 1 ? 'piece' : 'pieces'}`;
@@ -22,6 +23,7 @@ export function TplProgramPage({ me, params }: { me: Me; docTypes: DocTypeInfo[]
   const [open, setOpen] = useState<null | 'deliver' | 'restock' | 'terms' | 'item' | { item: TplItem } | { count: TplItem } | { card: TplItem } | { cancel: string }>(null);
   const load = useCallback(() => api.tplProgram<TplProgramPage>(id).then((p) => (setPage(p), setError('')), (e: Error) => setError(e.message)), [id]);
   useEffect(() => void load(), [load]);
+  useLiveReload(load);
   const done = () => { setOpen(null); void load(); };
   const put = useAction();
 

@@ -9,6 +9,7 @@ import { api, type Me, type UserRow } from '../../api.ts';
 import { Loading, Button, Dialog, Field, Notice, inputClass } from '../../components/ui.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
 import { ROLE_HINTS, canDeactivate, newUserInput, rolesInput, rolesWords, roleLabel, sortRoles } from './users.ts';
+import { useLiveReload } from '../../live.ts';
 
 type Dialogs = { kind: 'add' } | { kind: 'roles' | 'password' | 'active'; user: UserRow };
 
@@ -19,6 +20,7 @@ export function Users({ me }: { me: Me }) {
   const [open, setOpen] = useState<Dialogs | null>(null);
   const load = () => api.users().then(setUsers, (e: Error) => setError(e.message));
   useEffect(() => void load(), []);
+  useLiveReload(load);
   if (!me.permissions.includes('sec.users.manage')) return <Notice>You do not have permission to manage users.</Notice>;
   const finished = (message: string) => { setOpen(null); setDone(message); void load(); };
   return (

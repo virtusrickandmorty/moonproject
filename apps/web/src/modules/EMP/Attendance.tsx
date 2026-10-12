@@ -9,11 +9,12 @@
  * Shown as an attendance sheet (the owner's request, Oct 2026, after a reference sheet, in our colours): an icon per day;
  * a click opens a small window to change it. Save sends the changed ones.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type AttendanceGrid, type AttendanceStatus, type Me } from '../../api.ts';
 import { Loading, askConfirm, Button, Dialog, Field, Notice, inputClass, useAction, showDate } from '../../components/ui.tsx';
 import { BiometricImport } from './Biometric.tsx';
 import { STATUS_LABEL, WITH_NIGHT, cellKey, changedCells, datesBetween, halfMonthOf, paidBy, plusDays, startCells, statusesFor, weekday, type Cell } from './time.ts';
+import { useLiveReload } from '../../live.ts';
 
 
 /** Outline icons (Heroicons, MIT) for the sheet. */
@@ -97,6 +98,9 @@ export function Attendance({ me }: { me: Me }) {
     api.health().then((h) => setRange(halfMonthOf(h.serverTime.slice(0, 10))), (e: Error) => setError(e.message)); // the server's Manila date
   }, []);
   useEffect(() => void (range && load(range)), [range, load]);
+  // Marks not saved yet are never reloaded away: a change elsewhere shows once they are saved or undone.
+  const holding = useRef(false);
+  useLiveReload(() => range && load(range), () => !holding.current);
 
   if (error && !grid) return <Notice>{error}</Notice>;
   if (!grid || !range) return <Loading />;
@@ -107,6 +111,7 @@ export function Attendance({ me }: { me: Me }) {
   const pending = changedCells(grid.days, cells, names);
   // Moving to another period reloads the grid: unsaved marks would be lost without a word (audit A11-001).
   const unsaved = pending.days.length > 0 || pending.errors.length > 0;
+  holding.current = unsaved;
   const shift = async (dir: 1 | -1) => {
     if (unsaved && !(await askConfirm('Moving to another half-month loses the marks you have not saved.', { title: 'Discard the unsaved marks?', yes: 'Discard them', no: 'Keep them', danger: true }))) return;
     setRange(halfMonthOf(plusDays(dir === 1 ? grid.to : grid.from, dir)));

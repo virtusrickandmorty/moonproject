@@ -14,6 +14,7 @@ import { TickBar } from '../../components/charts.tsx';
 import { ScanQrButton, jobOrderFromScan, useScannerKeys } from '../../components/QrScan.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { boardCounts, columns, dueWords, filterCards, stepFlow, useBoardRefresh, type Due } from './board.ts';
+import { useLiveReload } from '../../live.ts';
 
 const readBoard = async () => {
   const [cards, cat, health] = await Promise.all([api.prdBoard(), api.prdCatalogue(), api.health()]);
@@ -50,6 +51,7 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
     return done && q === 'recorded=1' ? { to: `/prd/board?recorded=${encodeURIComponent(done[1]!)}`, replace: true } : null;
   }), []);
   useEffect(() => { if (recordedId) void load(); }, [recordedId, load]);
+  useLiveReload(load);
   // A scan (camera or USB/Bluetooth scanner) is handled once the board's cards are in (onScan below); hooks stay above the loading return.
   const [scanNote, setScanNote] = useState('');
   const scanned = useRef<(text: string) => void>(() => undefined);

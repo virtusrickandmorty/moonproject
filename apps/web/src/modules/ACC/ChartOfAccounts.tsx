@@ -8,6 +8,7 @@ import { api, type CoaAccount, type Me } from '../../api.ts';
 import { Loading, Button, Dialog, Field, Notice, inputClass, peso, useAction } from '../../components/ui.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
 import { TYPES, TYPE_WORDS, accountNotes, newAccountInput, ownSideCents, renameInput, typeWarning, visibleAccounts } from './coa.ts';
+import { useLiveReload } from '../../live.ts';
 
 type Open = { kind: 'add' } | { kind: 'rename' | 'deactivate'; account: CoaAccount };
 
@@ -21,6 +22,7 @@ export function ChartOfAccounts({ me }: { me: Me }) {
   const view = me.permissions.includes('acc.coa.view');
   const load = () => api.coaAccounts().then(setAccounts, (e: Error) => setError(e.message));
   useEffect(() => { if (view) void load(); }, [view]);
+  useLiveReload(load, () => !!view);
   const activate = useAction();
   if (!view) return <Notice>You do not have permission to see the chart of accounts.</Notice>;
   const finished = (message: string) => { setOpen(null); setDone(message); void load(); };
