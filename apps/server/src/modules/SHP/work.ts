@@ -264,3 +264,8 @@ export function openWork(db: Db) {
       return { id, number: jo.number, dueDate: jo.dueDate, priority: jo.priority, stage: currentStage(db, id), ...workState(db, id)! };
     });
 }
+
+/** Shop work with pieces finished on the board and not in the shop's stock yet (the notifications bell). */
+export function shopWorkReady(db: Db): { id: string; number: string; kind: 'make' | 'rework' | 'change'; pieces: number }[] {
+  return openWork(db).map((w) => ({ id: w.id, number: w.number, kind: w.kind, pieces: w.lines.reduce((n, l) => n + l.ready, 0) })).filter((w) => w.pieces > 0);
+}

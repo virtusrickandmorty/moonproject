@@ -104,3 +104,11 @@ export { createWork as createShopWork } from './work.ts';
 /** The quick sale an online order was confirmed into, by the order's number (ALT: a return names the order). */
 export const saleOfOnlineOrder = (db: Db, number: string): string | undefined =>
   (db.prepare('SELECT sale_document_id FROM shp_orders WHERE number = ? COLLATE NOCASE').pluck().get(number.trim()) as string | null | undefined) ?? undefined;
+
+/** Online orders paid and confirmed, to prepare for pickup or delivery (the notifications bell). */
+export function ordersToPrepare(db: Db): { id: string; number: string; name: string; fulfilment: 'pickup' | 'delivery'; totalCents: number }[] {
+  return db.prepare("SELECT id, number, name, fulfilment, total_cents AS totalCents FROM shp_orders WHERE status = 'confirmed' ORDER BY created_ms").all() as {
+    id: string; number: string; name: string; fulfilment: 'pickup' | 'delivery'; totalCents: number;
+  }[];
+}
+export { shopWorkReady } from './work.ts';

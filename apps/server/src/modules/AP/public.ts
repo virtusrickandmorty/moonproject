@@ -6,7 +6,8 @@ import { divRoundHalfAway } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import type { EwtClass } from '../../engine/settings.ts';
 import { categoryIsPurchase, categoryPurchaseClass, type GoodsOrServices } from '../EXP/public.ts';
-import { latestPoUnitCost, receivedQty, type CountableSupply, type PurchaseCost } from '../PUR/public.ts';
+import { latestPoUnitCost, receivedQty, supplier, type CountableSupply, type PurchaseCost } from '../PUR/public.ts';
+const supplierName = (db: Db, id: string) => supplier(db, id)?.name ?? 'a supplier';
 export { supplierBalances, supplierLedger } from './ledger.ts';
 
 export function payableAgingAt(db: Db, asOf: string) {
@@ -110,3 +111,9 @@ export function latestPurchaseCost(db: Db, supply: CountableSupply, asOf: string
 }
 
 export { duplicateInvoiceIssues, normalizeInvoiceNo, type InvoiceParty } from './invoices.ts';
+
+/** Supplier bills still owed that are overdue or due by `until` (a business date), with the supplier's name (the notifications bell). */
+export function billsDue(db: Db, today: string, until: string) {
+  return payableAgingAt(db, today).filter((b) => b.balanceCents > 0 && b.dueDate <= until)
+    .map((b) => ({ ...b, supplierName: supplierName(db, b.supplierId) }));
+}
