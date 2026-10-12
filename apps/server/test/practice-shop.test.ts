@@ -84,6 +84,36 @@ describe('practice mode', () => {
     expect((await fetch(`${again}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'maria', password: PASSWORD }) })).status).toBe(200);
   }, 120_000);
 
+  it('starts over from a copy of the real shop (the owner request, Oct 2026): its records, the real shop untouched, no email', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'moon-practice-real-'));
+    const clock = fixedClock('2026-10-15T02:00:00Z');
+    const modules = await loadModules();
+    const realEnv = await createTestEnv('2026-10-15T02:00:00Z');
+    createUser(realEnv.db, 'maria', ['owner']);
+    const realOwner = await realEnv.as('owner');
+    expect((await realOwner.post('/api/cus/customers', { kind: 'organization', displayName: 'Sample Real School' })).statusCode).toBe(200);
+    shop = practiceShop({ realDb: realEnv.db, folder: join(dir, 'practice'), host: '127.0.0.1', port: 0, clock, modules, days: 2, log: { info: () => {}, error: () => {} } });
+    await shop.start();
+    expect(shop.status()).toMatchObject({ state: 'ready', source: 'made_up', days: 2 });
+
+    shop.reset('real');
+    await until(() => shop!.status().state !== 'preparing');
+    expect(shop.status()).toMatchObject({ state: 'ready', source: 'real', days: null, message: null });
+    const base = `http://127.0.0.1:${shop.status().port}`;
+    const signIn = await fetch(`${base}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'maria', password: PASSWORD }) });
+    expect(signIn.status).toBe(200);
+    const cookie = signIn.headers.get('set-cookie')!.split(';')[0]!;
+    const csrf = (await signIn.json()).csrfToken as string;
+    const names = async () => ((await (await fetch(`${base}/api/cus/customers?search=Sample`, { headers: { cookie } })).json()) as { display_name: string }[]).map((c) => c.display_name);
+    expect(await names()).toEqual(['Sample Real School']);
+    // What is recorded in practice stays there; the real shop is untouched.
+    expect((await fetch(`${base}/api/cus/customers`, { method: 'POST', headers: { cookie, 'x-csrf-token': csrf, 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'organization', displayName: 'Sample Practice Only' }) })).status).toBe(200);
+    expect(realEnv.db.prepare("SELECT COUNT(*) FROM cus_customers WHERE display_name = 'Sample Practice Only'").pluck().get()).toBe(0);
+    // No email from the practice shop, not even a test.
+    const test = await fetch(`${base}/api/com/test-email`, { method: 'POST', headers: { cookie, 'x-csrf-token': csrf, 'content-type': 'application/json' }, body: '{}' });
+    expect((await test.json()).code).toBe('PRACTICE');
+  }, 120_000);
+
   it('the real shop shows the practice shop and lets only the owner start it over, with the password again', async () => {
     let resets = 0;
     const status: PracticeStatus = { state: 'ready', port: 8443, preparedAt: '2026-10-15T10:00:00.000+08:00', days: 30, message: null };

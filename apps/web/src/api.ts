@@ -105,7 +105,7 @@ export interface SystemHealth {
   lastCheck: { at: string; reason: 'schedule' | 'button'; ok: boolean } | null;
 }
 /** The practice shop (PLAN C8), as GET /api/system/practice reports it. */
-export interface PracticeStatus { state: 'off' | 'here' | 'preparing' | 'ready' | 'failed'; port: number | null; preparedAt: string | null; days: number | null; message: string | null }
+export interface PracticeStatus { state: 'off' | 'here' | 'preparing' | 'ready' | 'failed'; port: number | null; preparedAt: string | null; days: number | null; message: string | null; source?: 'made_up' | 'real' | null }
 export interface CertInfo { fingerprint256: string; fingerprint1: string; notAfter: string; ips: string[]; dnsNames: string[] }
 /** Where a phone or another PC joins (GET /api/system/tls): `urls` is empty while the "Join this PC" page is not running. */
 export interface JoinAddress { pcName: string; addresses: { ip: string; kind: 'lan' | 'vpn' }[]; port: number | null; urls: string[] }
@@ -1034,7 +1034,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     systemCheck: () => call<SystemHealth>('POST', '/api/system/health/check'),
     practice: () => call<PracticeStatus>('GET', '/api/system/practice'),
     /** Needs a fresh password (step-up). */
-    practiceReset: () => call<PracticeStatus>('POST', '/api/system/practice/reset'),
+    practiceReset: (from: 'made_up' | 'real' = 'made_up') => call<PracticeStatus>('POST', '/api/system/practice/reset', { from }),
     docTypes: () => call<DocTypeInfo[]>('GET', '/api/doc-types'),
     attachments: (type: string, id: string) => call<Attachment[]>('GET', one(type, id, '/attachments')),
     /** Needs the doc type's create permission; works on a recorded or cancelled document. */

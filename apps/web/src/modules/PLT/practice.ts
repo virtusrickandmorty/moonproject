@@ -17,8 +17,8 @@ export function practiceLine(s: PracticeStatus): string {
   switch (s.state) {
     case 'off': return 'Practice mode is off on this PC. The Windows installer turns it on.';
     case 'here': return 'You are in the practice shop.';
-    case 'preparing': return 'The practice shop is being prepared with new made-up data. This takes a minute or two.';
+    case 'preparing': return 'The practice shop is being prepared. This takes a minute or two.';
     case 'failed': return `The practice shop is not running. ${s.message ?? ''}`.trim();
-    case 'ready': return s.days ? `The practice shop is ready, with ${s.days} days of made-up shop work.` : 'The practice shop is ready.';
+    case 'ready': return s.source === 'real' ? 'The practice shop is ready, with a copy of the real shop.' : s.days ? `The practice shop is ready, with ${s.days} days of made-up shop work.` : 'The practice shop is ready.';
   }
 }

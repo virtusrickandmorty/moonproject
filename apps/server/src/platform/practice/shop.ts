@@ -4,7 +4,10 @@
  * (data\practice), so nothing it does can reach the real database, its restore folder or its backups (app.ts refuses
  * backups in it). Everyone signs in with their real username and password: each sign-in first copies the users, roles
  * and role grants of the real shop. Its history is the last 30 days of a made-up shop (data.ts), built in a child
- * process so the real shop keeps answering; the owner starts it over from the real shop's Practice shop page.
+ * process so the real shop keeps answering; the owner starts it over from the real shop's Practice shop page, with new
+ * made-up data or (the owner's request, Oct 2026) a copy of the real shop as it is now, taken while the real shop keeps
+ * running. A copy sends no email (the practice shop never runs the mail sender, and refuses a test email), takes no
+ * backups, and has no website assistant key (that file stays beside the real database).
  */
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -16,7 +19,7 @@ import type { FastifyInstance } from 'fastify';
 import { manilaDate } from '@moonproject/shared';
 import { buildApp } from '../../app.ts';
 import type { ModuleDef } from '../../engine/documents/registry.ts';
-import { openDb, tx, type Db } from '../db/driver.ts';
+import { openDb, snapshotTo, tx, type Db } from '../db/driver.ts';
 import { stamp, type Clock } from '../clock.ts';
 import type { PracticeControl, PracticeStatus } from './routes.ts';
 
@@ -46,7 +49,7 @@ export interface PracticeShop extends PracticeControl {
   setSecureContext(tls: { key: string; cert: string }): void;
 }
 
-interface Made { preparedAt: string; days: number; start: string }
+interface Made { preparedAt: string; days: number; start: string; source?: 'made_up' | 'real' }
 
 /**
  * Copies every user, role and role grant of the real shop into the practice shop, so everyone signs in to it as
@@ -147,6 +150,14 @@ export function practiceShop(o: PracticeOptions): PracticeShop {
     });
   };
 
+  /** A copy of the real shop as it is now, into practice-new.db (SQLite's online backup: the real shop keeps working). */
+  const copyReal = async (): Promise<Made> => {
+    remove(next);
+    o.log.info('Making the practice shop: a copy of the real shop');
+    await snapshotTo(o.realDb, next);
+    return { preparedAt: stamp(o.clock), days: 0, start: manilaDate(o.clock.now()), source: 'real' };
+  };
+
   /** Puts practice-new.db in place of practice.db; the practice shop must be closed. */
   const swapIn = (m: Made) => {
     remove(file);
@@ -191,7 +202,7 @@ export function practiceShop(o: PracticeOptions): PracticeShop {
   return {
     status: () => {
       const m = made();
-      return { state, port, preparedAt: m?.preparedAt ?? null, days: m?.days ?? null, message };
+      return { state, port, preparedAt: m?.preparedAt ?? null, days: m?.source === 'real' ? null : (m?.days ?? null), source: m ? (m.source ?? 'made_up') : null, message };
     },
 
     async start() {
@@ -204,14 +215,14 @@ export function practiceShop(o: PracticeOptions): PracticeShop {
       }
     },
 
-    reset() {
+    reset(from = 'made_up') {
       if (state === 'preparing') return;
       state = 'preparing';
       message = null;
       void (async () => {
         let m: Made;
         try {
-          m = await make(); // the old practice shop keeps answering meanwhile
+          m = from === 'real' ? await copyReal() : await make(); // the old practice shop keeps answering meanwhile
         } catch (e) {
           remove(next);
           if (app) return failed(e, true);

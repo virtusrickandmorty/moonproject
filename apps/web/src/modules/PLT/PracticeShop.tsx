@@ -33,21 +33,26 @@ export function PracticeShop({ me }: { me: Me }) {
           {status.state === 'ready' && address && (
             <>
               <p className="text-sm text-slate-700">
-                Open it on any phone or PC and sign in with your usual username and password. Everything there is made up; nothing
-                you record, print or change there reaches the real shop.
+                Open it on any phone or PC and sign in with your usual username and password. {status.source === 'real' ? 'It starts as a copy of the real shop; ' : 'Everything there is made up; '}nothing
+                you record, print or change there reaches the real shop, and it sends no email.
               </p>
               <p><a href={address} target="_blank" rel="noreferrer" className="font-mono text-lg font-semibold text-indigo-700 underline">{address}</a></p>
               {local && <p className="text-sm text-slate-600">On the shop network it also opens at <a href={local} target="_blank" rel="noreferrer" className="font-mono text-indigo-700 underline">{local}</a>, even without the internet.</p>}
             </>
           )}
-          {status.preparedAt && <p className="text-sm text-slate-500">Made-up data from {status.preparedAt.slice(0, 16).replace('T', ' ')}.</p>}
+          {status.preparedAt && <p className="text-sm text-slate-500">{status.source === 'real' ? 'A copy of the real shop as it was at' : 'Made-up data from'} {status.preparedAt.slice(0, 16).replace('T', ' ')}.</p>}
           {canReset && status.state !== 'off' && status.state !== 'here' && (
             <div className="space-y-2 border-t border-slate-200 pt-3">
               <p className="text-sm text-slate-700">
-                Start over: throws away everything recorded in the practice shop and makes new made-up data for the last 30 days. The real shop is not touched.
+                Start over: throws away everything recorded in the practice shop. Either make new made-up data for the last 30 days,
+                or copy the real shop as it is now (customers, price list, employees, records), to practise on your own data. The real shop is not touched.
               </p>
-              <Button tone="danger" disabled={action.busy || status.state === 'preparing'}
-                onClick={() => action.run(async () => setStatus(await api.practiceReset()))}>Start the practice shop over</Button>
+              <div className="flex flex-wrap gap-2">
+                <Button tone="danger" disabled={action.busy || status.state === 'preparing'}
+                  onClick={() => action.run(async () => setStatus(await api.practiceReset('real')))}>Start over from a copy of the real shop</Button>
+                <Button disabled={action.busy || status.state === 'preparing'}
+                  onClick={() => action.run(async () => setStatus(await api.practiceReset('made_up')))}>Start over with made-up data</Button>
+              </div>
               {action.error && <Notice>{action.error}</Notice>}
             </div>
           )}
