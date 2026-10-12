@@ -16,7 +16,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { postDocument, type Actor, type EngineEnv } from '../../engine/documents/lifecycle.ts';
 import { customerRef } from '../CUS/public.ts';
-import { currentStage, jobOrderDoc, jobOrderRef, lineState } from '../JO/public.ts';
+import { currentStage, jobOrderDoc, jobOrderRef, lineState, rosterPeopleOf } from '../JO/public.ts';
 import { saleLines, saleRef } from '../QS/public.ts';
 import { createShopWork, saleOfOnlineOrder } from '../SHP/public.ts';
 
@@ -39,6 +39,8 @@ export const returnInput = z.object({
     problem: z.string().trim().min(3).max(500),
     oldPiece: z.enum(['kept', 'scrapped', 'parts', 'shop_rework']).optional(),
     oldPieceNote: text(300).optional(),
+    /** A job order line with wearers: whose pieces came back (its wearer rows); the pieces are then theirs. */
+    wearers: z.array(z.number().int().min(1)).min(1).max(1000).optional(),
   }).strict()).min(1).max(50),
 }).strict();
 
@@ -76,7 +78,8 @@ export function receiveReturn(db: Db, raw: unknown, who: Who) {
     if (l.source === 'other') {
       if (!l.description) throw new AppError('VALIDATION', `${n}: describe the item.`, 422);
       if (l.oldPiece === 'shop_rework') throw new AppError('VALIDATION', `${n}: only a website item can go back to the shop to be fixed and sold again.`, 422);
-      return { ...l, docId: null, sourceLineNo: null, description: l.description, item: null };
+      if (l.wearers) throw new AppError('VALIDATION', `${n}: wearers are picked from a job order line.`, 422);
+      return { ...l, docId: null, sourceLineNo: null, description: l.description, item: null, picked: [] };
     }
     if (!l.sourceNumber || !l.sourceLineNo) throw new AppError('VALIDATION', `${n}: give the ${l.source === 'job_order' ? 'job order' : 'sale or online order'} number and its line.`, 422);
     const doc = sourceDoc(db, l.source, l.sourceNumber);
@@ -90,14 +93,26 @@ export function receiveReturn(db: Db, raw: unknown, who: Who) {
         throw conflict('NOT_RELEASED', line.releasedQty ? `${n}: only ${pieces(line.releasedQty)} of ${doc.number} line ${l.sourceLineNo} went out to the customer.` : `${n}: ${doc.number} line ${l.sourceLineNo} has not gone out to the customer yet.`);
       }
       if (l.oldPiece === 'shop_rework') throw new AppError('VALIDATION', `${n}: only a website item can go back to the shop to be fixed and sold again.`, 422);
-      return { ...l, docId: doc.id, description: l.description ?? line.description, item: null };
+      // Whose pieces came back: wearers of that line, each once; the pieces are theirs.
+      const roster = rosterPeopleOf(db, doc.id, line.lineNo);
+      if (roster.length > 0 && !l.wearers) throw new AppError('VALIDATION', `${n}: ${doc.number} line ${l.sourceLineNo} lists its wearers: tick whose pieces came back.`, 422);
+      const picked = (l.wearers ?? []).map((rowNo) => {
+        const w = roster.find((r) => r.rowNo === rowNo);
+        if (!w) throw new AppError('VALIDATION', `${n}: ${doc.number} line ${l.sourceLineNo} has no wearer ${rowNo}.`, 422);
+        return w;
+      });
+      if (new Set(l.wearers ?? []).size !== picked.length) throw new AppError('VALIDATION', `${n}: a wearer is ticked twice.`, 422);
+      const theirs = picked.reduce((t, w) => t + w.qty, 0);
+      if (picked.length && l.qty !== theirs) throw new AppError('VALIDATION', `${n}: the wearers ticked have ${pieces(theirs)}; the pieces must match.`, 422);
+      return { ...l, docId: doc.id, description: l.description ?? line.description, item: null, picked };
     }
     const line = saleLines(db, doc.id).find((x) => x.lineNo === l.sourceLineNo);
     if (!line) throw new AppError('VALIDATION', `${n}: ${doc.number} has no line ${l.sourceLineNo}.`, 422);
     if (l.qty > line.qty) throw conflict('MORE_THAN_SOLD', `${n}: ${doc.number} line ${l.sourceLineNo} sold ${pieces(line.qty)}.`);
     const item = line.productId && line.size && line.colour ? { productId: line.productId, size: line.size, colour: line.colour } : null;
     if (l.oldPiece === 'shop_rework' && !item) throw new AppError('VALIDATION', `${n}: only a website item can go back to the shop to be fixed and sold again.`, 422);
-    return { ...l, docId: doc.id, description: l.description ?? line.description, item };
+    if (l.wearers) throw new AppError('VALIDATION', `${n}: wearers are picked from a job order line.`, 422);
+    return { ...l, docId: doc.id, description: l.description ?? line.description, item, picked: [] };
   });
   if (customers.size > 1) throw new AppError('VALIDATION', 'The items are from different customers. Make one return for each customer.', 422);
   const customerId = [...customers][0] ?? v.customerId;
@@ -114,6 +129,9 @@ export function receiveReturn(db: Db, raw: unknown, who: Who) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   lines.forEach((l, i) => add.run(id, i + 1, l.action, l.source, l.docId, l.sourceLineNo ?? null, l.description, l.qty, l.problem, l.oldPiece ?? null, l.oldPieceNote ?? null,
     l.item?.productId ?? null, l.item?.size ?? null, l.item?.colour ?? null));
+  const wearer = db.prepare(`INSERT INTO alt_return_wearers (return_id, line_no, roster_row_no, person_id, wearer_name, size_mode, size, jersey_name, jersey_number, qty)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  lines.forEach((l, i) => l.picked.forEach((w) => wearer.run(id, i + 1, w.rowNo, w.personId, w.wearerName, w.sizeMode, w.size, w.jerseyName, w.jerseyNumber, w.qty)));
   appendAudit(db, { at: who.at, userId: who.userId, action: 'alt.receive', entityType: 'alt_return', entityId: id, data: { number, customerId, lines: v.lines } });
   return returnOf(db, id)!;
 }
@@ -122,6 +140,7 @@ interface LineRow {
   lineNo: number; action: 'alteration' | 'replacement'; source: 'job_order' | 'sale' | 'other'; sourceDocId: string | null; sourceNumber: string | null; sourceLineNo: number | null;
   description: string; qty: number; problem: string; oldPiece: string | null; oldPieceNote: string | null; productId: string | null; size: string | null; colour: string | null; feeEachCents: number | null;
 }
+export interface ReturnWearer { rowNo: number; personId: string | null; name: string; sizeMode: 'preset' | 'measured'; size: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
 export type ReturnStatus = 'awaiting_decision' | 'declined' | 'in_production' | 'ready' | 'released' | 'cancelled';
 export const STATUS_LABEL: Record<ReturnStatus, string> = {
   awaiting_decision: 'Awaiting decision', declined: 'Declined', in_production: 'In production', ready: 'Ready to give back', released: 'Given back', cancelled: 'Job order cancelled',
@@ -138,11 +157,13 @@ export function returnOf(db: Db, id: string) {
       l.old_piece AS oldPiece, l.old_piece_note AS oldPieceNote, l.product_id AS productId, l.size, l.colour, f.fee_each_cents AS feeEachCents
     FROM alt_return_lines l LEFT JOIN documents d ON d.id = l.source_doc_id LEFT JOIN alt_decision_lines f ON f.return_id = l.return_id AND f.line_no = l.line_no
     WHERE l.return_id = ? ORDER BY l.line_no`).all(id) as LineRow[];
+  const wearers = db.prepare(`SELECT line_no AS lineNo, roster_row_no AS rowNo, person_id AS personId, wearer_name AS name, size_mode AS sizeMode, size, jersey_name AS jerseyName,
+    jersey_number AS jerseyNumber, qty FROM alt_return_wearers WHERE return_id = ? ORDER BY line_no, roster_row_no`).all(id) as (ReturnWearer & { lineNo: number })[];
   const d = db.prepare(`SELECT x.outcome, x.reason, x.job_order_id AS jobOrderId, j.number AS jobOrderNumber, x.shop_work_id AS shopWorkId, s.number AS shopWorkNumber, x.at, u.display_name AS decidedBy
     FROM alt_decisions x JOIN users u ON u.id = x.user_id LEFT JOIN documents j ON j.id = x.job_order_id LEFT JOIN documents s ON s.id = x.shop_work_id WHERE x.return_id = ?`).get(id) as
     | { outcome: 'accepted' | 'declined'; reason: string; jobOrderId: string | null; jobOrderNumber: string | null; shopWorkId: string | null; shopWorkNumber: string | null; at: string; decidedBy: string }
     | undefined;
-  return { ...r, lines, decision: d ?? null, status: statusOf(db, d), feeCents: lines.reduce((n, l) => n + (l.feeEachCents ?? 0) * l.qty, 0) };
+  return { ...r, lines: lines.map((l) => ({ ...l, wearers: wearers.filter((w) => w.lineNo === l.lineNo).map(({ lineNo: _, ...w }) => w) })), decision: d ?? null, status: statusOf(db, d), feeCents: lines.reduce((n, l) => n + (l.feeEachCents ?? 0) * l.qty, 0) };
 }
 
 function statusOf(db: Db, d: { outcome: string; jobOrderId: string | null } | undefined): ReturnStatus {
@@ -191,7 +212,13 @@ export function decide(env: EngineEnv, actor: Actor, id: string, raw: unknown, w
     lines: r.lines.map((l) => ({
       kind: 'made_to_order' as const,
       description: `${ACTION[l.action]}: ${l.description}${l.sourceNumber ? ` (${l.sourceNumber})` : ''} — ${l.problem}`.slice(0, 200),
-      qty: l.qty, unitPriceCents: fees.get(l.lineNo)!, discountCents: 0, roster: [],
+      qty: l.qty, unitPriceCents: fees.get(l.lineNo)!, discountCents: 0,
+      // Whose pieces: the wearers as they were (a measured one keeps the measurements on file; anyone else, the size).
+      roster: l.wearers.map((w) => ({
+        ...(w.personId ? { personId: w.personId } : { name: w.name }),
+        ...(w.sizeMode === 'measured' && w.personId ? { sizeMode: 'measured' as const } : { sizeMode: 'preset' as const, size: w.size ?? 'As before' }),
+        ...(w.jerseyName ? { jerseyName: w.jerseyName } : {}), ...(w.jerseyNumber ? { jerseyNumber: w.jerseyNumber } : {}), qty: w.qty,
+      })),
     })),
   };
   const total = input.lines.reduce((n, l) => n + l.qty * l.unitPriceCents, 0);
@@ -218,7 +245,8 @@ export function sourceLines(db: Db, kind: 'job_order' | 'sale', number: string) 
   if (!doc) throw notFound(kind === 'job_order' ? `Job order ${number}` : `Sale or online order ${number}`);
   const customer = customerRef(db, doc.customerId);
   const lines = kind === 'job_order'
-    ? lineState(db, doc.id).map((l) => ({ lineNo: l.lineNo, description: l.description, qty: l.releasedQty, website: false }))
-    : saleLines(db, doc.id).map((l) => ({ lineNo: l.lineNo, description: l.description, qty: l.qty, website: !!l.productId }));
+    ? lineState(db, doc.id).map((l) => ({ lineNo: l.lineNo, description: l.description, qty: l.releasedQty, website: false,
+      wearers: rosterPeopleOf(db, doc.id, l.lineNo).map((w) => ({ rowNo: w.rowNo, name: w.wearerName, size: w.sizeMode === 'measured' ? 'measured' : w.size, jerseyName: w.jerseyName, jerseyNumber: w.jerseyNumber, qty: w.qty })) }))
+    : saleLines(db, doc.id).map((l) => ({ lineNo: l.lineNo, description: l.description, qty: l.qty, website: !!l.productId, wearers: [] }));
   return { id: doc.id, number: doc.number, status: doc.status, customerId: doc.customerId, customerName: customer?.display_name ?? '', lines };
 }
