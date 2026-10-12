@@ -7,6 +7,7 @@ import { api, type DocTypeInfo, type Me, type PurStatus, type SupplierRecord } f
 import { Button, Dialog, Notice, inputClass, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { NewSupplierForm, SupplierView } from './Supplier.tsx';
 import { EWT_WORDS, filterSuppliers } from './purchasing.ts';
+import { useLiveReload } from '../../live.ts';
 
 export function Suppliers({ me, docTypes = [] }: { me: Me; docTypes?: DocTypeInfo[] }) {
   const [rows, setRows] = useState<SupplierRecord[] | null>(null);
@@ -16,6 +17,7 @@ export function Suppliers({ me, docTypes = [] }: { me: Me; docTypes?: DocTypeInf
   const [open, setOpen] = useState<string | 'new' | null>(null);
   const load = useCallback(() => api.supplierList(status).then((r) => (setRows(r), setError('')), (e: Error) => setError(e.message)), [status]);
   useEffect(() => void load(), [load]);
+  useLiveReload(load);
   const shown = rows && filterSuppliers(rows, search);
 
   return (

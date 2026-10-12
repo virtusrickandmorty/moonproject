@@ -9,6 +9,7 @@ import { Button, Dialog, Field, Notice, inputClass, manilaTime, peso, useAction 
 import { Link, useLocation } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { masterRequest } from '../CUS/http.ts';
+import { useLiveReload } from '../../live.ts';
 
 type Status = 'awaiting_payment' | 'payment_sent' | 'confirmed' | 'rejected' | 'cancelled' | 'ready' | 'completed' | 'expired' | 'returned';
 export const ORDER_STATUS: Record<Status, [string, string]> = {
@@ -38,6 +39,7 @@ export function OnlineOrders({ me }: { me: Me }) {
   const opening = new URLSearchParams(useLocation().split('?')[1] ?? '').get('open');
   const load = useCallback(() => run(async () => setList(await masterRequest(me, `/api/shp/admin/orders?status=${filter}`))), [me, filter]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void load(); }, [load]);
+  useLiveReload(load);
   const show = (id: string) => run(async () => setOpen(await masterRequest<Detail>(me, `/api/shp/admin/orders/${encodeURIComponent(id)}`)));
   useEffect(() => { if (opening) void show(opening); }, [opening]); // eslint-disable-line react-hooks/exhaustive-deps
   const changed = async () => { await load(); if (open) await show(open.id); };

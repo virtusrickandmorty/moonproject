@@ -8,11 +8,13 @@ import { api, type Exposure } from '../../api.ts';
 import { Loading, Button, Notice, Panel, peso } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { exposureMonths } from './stat.ts';
+import { useLiveReload } from '../../live.ts';
 
 export function StatExposure() {
   const [r, setR] = useState<Exposure | null>(null);
   const [error, setError] = useState('');
   useEffect(() => void api.statExposure().then(setR, (e: Error) => setError(e.message)), []);
+  useLiveReload(() => api.statExposure().then(setR));
   if (error) return <Notice>{error}</Notice>;
   if (!r) return <Loading />;
   const grand = r.totals.reduce((s, t) => ({ total: s.total + t.totalCents, penalty: s.penalty + t.penaltyCents }), { total: 0, penalty: 0 });

@@ -9,6 +9,7 @@ import { Loading, Button, Field, Notice, Panel, inputClass } from '../../compone
 import { Link } from '../../router.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
 import { STATE_CLASS, STATE_LABEL, monthChoices, monthName, noteError, signoffButton, signoffLine, summaryLine } from './month-end.ts';
+import { useLiveReload } from '../../live.ts';
 
 const Chip = ({ state }: { state: keyof typeof STATE_LABEL }) => <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATE_CLASS[state]}`}>{STATE_LABEL[state]}</span>;
 const when = (ts: string) => `${ts.slice(0, 10)} ${ts.slice(11, 16)}`;
@@ -21,6 +22,7 @@ export function MonthEnd({ me }: { me: Me }) {
   const action = useStepUpAction('signing off the month');
   const load = useCallback((m?: string) => api.monthEnd(m).then((d) => { setData(d); setMonth(d.month); setError(''); }, (e: Error) => setError(e.message)), []);
   useEffect(() => void load(), [load]);
+  useLiveReload(load);
 
   if (!me.permissions.includes('acc.monthend.view')) return <Notice>Access denied.</Notice>;
   const choices = data ? monthChoices(data.asOf) : [];

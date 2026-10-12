@@ -8,6 +8,7 @@ import { Loading, Button, Field, Notice, Panel, inputClass, manilaTime, peso, us
 import { Link } from '../../router.tsx';
 import { useToday } from '../RPT/Books.tsx';
 import { KIND_WORDS, PORT_HINT, STATUS_WORDS, TEMPLATE_WORDS, documentWords, progressWords } from './com.ts';
+import { useLiveReload } from '../../live.ts';
 
 const TABS = [
   { section: '', label: 'Outbox', permission: 'com.outbox.view', denied: 'You cannot see the customer emails.' },
@@ -87,6 +88,7 @@ function OutboxTab({ canResend }: { canResend: boolean }) {
   const resend = useAction();
   const load = () => api.comOutbox(filter || undefined, kind || undefined).then(setOutbox, (e: Error) => setError(e.message));
   useEffect(() => void load(), [filter, kind]);
+  useLiveReload(load);
   if (error) return <Notice>{error}</Notice>;
   if (!outbox) return <Loading />;
   return (

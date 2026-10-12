@@ -3,6 +3,7 @@ import { api, type CalEvent, type CalItem, type CalKind, type DocHeader, type Me
 import { Loading, Button, Field, Notice, Panel, inputClass, longDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { KINDS, itemsOfKind, monthCells, monthRange, shiftMonth } from './calendar.ts';
+import { useLiveReload } from '../../live.ts';
 
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const KIND_LABELS = Object.fromEntries(KINDS.map((k) => [k.kind, k.label])) as Record<CalKind, string>;
@@ -25,6 +26,7 @@ export function CalendarPage({ me }: { me: Me }) {
       (e: Error) => { if (live) setError(e.message); }).finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
   }, [range.from, range.to]);
+  useLiveReload(refresh);
   const shown = itemsOfKind(items, kind);
   const cells = monthCells(month.year, month.month);
   const byDate = new Map<string, CalItem[]>();

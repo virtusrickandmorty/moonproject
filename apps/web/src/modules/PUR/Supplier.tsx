@@ -9,6 +9,7 @@ import { Link, navigate } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { EWT_WORDS, UNIT_WORDS, contactToInput, emptyContactForm, emptySupplierForm, needsSwornDeclaration, supplierToForm, supplierToInput, type ContactForm, type SupplierForm } from './purchasing.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
+import { useLiveReload } from '../../live.ts';
 
 export function SupplierPage({ me, docTypes, params }: { me: Me; docTypes: DocTypeInfo[]; params?: Record<string, string> }) {
   const id = params?.id;
@@ -26,6 +27,7 @@ export function SupplierView({ me, docTypes, id, inDialog = false, onChanged }: 
   const [saved, setSaved] = useState('');
   const load = useCallback(() => api.supplier(id).then((s) => (setSupplier(s), onChanged?.()), (e: Error) => setError(e.message)), [id]);
   useEffect(() => void load(), [load]);
+  useLiveReload(load);
   const can = (p: string) => me.permissions.includes(p);
   const canEdit = can('pur.supplier.edit');
   if (error) return <Notice>{error}</Notice>;
@@ -142,6 +144,7 @@ function SuppliesSold({ supplier, editable }: { supplier: SupplierRecord; editab
   const a = useAction();
   const load = useCallback(() => api.supplierSupplies(supplier.id).then(setLinked, () => undefined), [supplier.id]);
   useEffect(() => { void load(); if (editable) api.supplyList('active').then(setAll, () => undefined); }, [load, editable]);
+  useLiveReload(load);
   const link = (supplyId: string, on: boolean) => a.run(async () => { await api.linkSupply(supplier.id, supplyId, on); setPick(''); await load(); });
   const free = all.filter((s) => !linked.some((l) => l.id === s.id));
   return (

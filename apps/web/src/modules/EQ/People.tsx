@@ -9,6 +9,7 @@ import { Loading, Notice, Panel, StatusChip, inputClass, peso, searchClass, sear
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { OFFICER_KIND_WORDS, OWNER_KIND_WORDS, balanceOf, filterPeople, positionWords, recordedTotal, rolesOf } from './register.ts';
+import { useLiveReload } from '../../live.ts';
 
 const num = 'py-1 text-right tabular-nums';
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
@@ -26,6 +27,7 @@ export function People({ me }: { me: Me }) {
     void api.eqRegister().then(setRows, (e: Error) => setError(e.message));
     if (seeMoney) void api.eqBalances().then(setBalances, (e: Error) => setError(e.message));
   }, [seeMoney]);
+  useLiveReload(() => Promise.all([api.eqRegister().then(setRows), ...(seeMoney ? [api.eqBalances().then(setBalances)] : [])]));
   if (error) return <Notice>{error}</Notice>;
   if (!rows || (seeMoney && !balances)) return <Loading />;
   const shown = filterPeople(rows, search, role, showOff);

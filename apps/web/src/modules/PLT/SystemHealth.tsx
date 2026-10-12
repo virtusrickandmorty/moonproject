@@ -4,6 +4,7 @@ import { api, type Me, type SystemHealth } from '../../api.ts';
 import { Loading, Button, Notice, Panel } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { DOT, OVERALL, fixLink } from './health.ts';
+import { useLiveReload } from '../../live.ts';
 
 const when = (at: string) => at.slice(0, 16).replace('T', ' ');
 
@@ -13,6 +14,7 @@ export function SystemHealthPage({ me }: { me: Me }) {
   const [busy, setBusy] = useState(false);
   const load = useCallback(() => api.systemHealth().then(setHealth, (e: Error) => setError(e.message)), []);
   useEffect(() => void load(), [load]);
+  useLiveReload(load);
 
   if (!me.permissions.includes('sec.health.view')) return <Notice>Access denied.</Notice>;
   const check = async () => {

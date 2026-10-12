@@ -9,6 +9,7 @@ import { Link } from '../../router.tsx';
 import { RecoveryKeys } from './RecoveryKeys.tsx';
 import { RestoreBackups } from './Restore.tsx';
 import { TIERS, madeWords, pendingRestoreWords, runWords, staleWords, tierCount, usbWords, whenWords } from './backups.ts';
+import { useLiveReload } from '../../live.ts';
 
 const TABS = [
   { section: '', label: 'Status', permission: 'bak.view', denied: 'You cannot view the backup status.' },
@@ -48,6 +49,7 @@ function Status({ canRun }: { canRun: boolean }) {
   const backUp = useAction();
   const load = () => Promise.all([api.bakStatus(), api.health()]).then(([s, h]) => (setStatus(s), setNow(h.serverTime)), (e: Error) => setError(e.message));
   useEffect(() => void load(), []);
+  useLiveReload(load);
   const runNow = () => backUp.run(async () => {
     setMade(null);
     try {

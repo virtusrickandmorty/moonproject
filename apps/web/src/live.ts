@@ -55,3 +55,15 @@ export function useLiveChange(reload: () => void, about?: readonly string[], del
     return () => { off(); clearTimeout(timer); };
   }, [kinds, delayMs]);
 }
+
+/**
+ * A screen's own load, run again a moment after any change on any computer (the owner's report, Oct 2026: some screens
+ * stayed as they were until reloaded). A failed reload is left quiet: the screen keeps what it showed. `when`: reload only
+ * while it says so (a screen with changes not saved yet waits, so nothing typed is lost).
+ */
+export function useLiveReload(load: () => unknown, when: () => boolean = () => true): void {
+  useLiveChange(() => {
+    if (!when()) return;
+    try { void Promise.resolve(load()).catch(() => undefined); } catch { /* the screen keeps what it showed */ }
+  });
+}

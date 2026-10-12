@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { api, type CashAccount, type CashBook as Book, type Me } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { bookRangeError, canShowBook } from './rules.ts';
+import { useLiveReload } from '../../live.ts';
 
 export function CashBook({ me }: { me: Me }) {
   const [places, setPlaces] = useState<CashAccount[]>([]);
@@ -23,6 +24,10 @@ export function CashBook({ me }: { me: Me }) {
     }, (e: Error) => setError(e.message));
     api.health().then((h) => { const today = h.serverTime.slice(0, 10); setFrom(`${today.slice(0, 7)}-01`); setTo(today); }, (e: Error) => setError(e.message));
   }, [me]);
+  // A book on screen shows what was recorded since, for the same place and dates.
+  const shown = useRef(false);
+  shown.current = book !== null;
+  useLiveReload(() => api.cashBook(Number(placeId), from, to).then(setBook), () => shown.current && !!placeId);
   if (!me.permissions.includes('cash.book.view')) return <Notice>You cannot view the cash book.</Notice>;
   const rangeError = bookRangeError(from, to);
   const show = async () => {

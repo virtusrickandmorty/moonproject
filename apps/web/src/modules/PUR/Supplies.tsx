@@ -7,6 +7,7 @@ import { api, type Me, type PurStatus, type SupplyRecord } from '../../api.ts';
 import { Button, Dialog, Field, Notice, inputClass, peso, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { SupplyView } from './Supply.tsx';
 import { CATEGORY_WORDS, UNIT_WORDS, emptySupplyForm, filterSupplies, supplyToForm, supplyToInput, type SupplyForm } from './purchasing.ts';
+import { useLiveReload } from '../../live.ts';
 
 export function Supplies({ me }: { me: Me }) {
   const [rows, setRows] = useState<SupplyRecord[] | null>(null);
@@ -18,6 +19,7 @@ export function Supplies({ me }: { me: Me }) {
   const canEdit = me.permissions.includes('pur.supply.edit');
   const load = useCallback(() => api.supplyList(status).then((r) => (setRows(r), setError('')), (e: Error) => setError(e.message)), [status]);
   useEffect(() => void load(), [load]);
+  useLiveReload(load);
   const shown = rows && filterSupplies(rows, search);
   const a = useAction();
 

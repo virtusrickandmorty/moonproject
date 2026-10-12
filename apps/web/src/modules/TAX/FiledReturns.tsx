@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, type FiledRegister, type FiledRegisterRow, type FiledReturnInput, type Me } from '../../api.ts';
 import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, manilaTime } from '../../components/ui.tsx';
 import { useStepUpAction } from './StepUp.tsx';
+import { useLiveReload } from '../../live.ts';
 
 export function FiledReturns({ me }: { me: Me }) {
   const [data, setData] = useState<FiledRegister | null>(null);
@@ -14,6 +15,7 @@ export function FiledReturns({ me }: { me: Me }) {
   const manage = me.permissions.includes('acc.settings.manage');
   const load = async () => { setData(await api.filedReturns()); setError(''); };
   useEffect(() => { if (allowed) void load().catch((e: Error) => setError(e.message)); }, [allowed]);
+  useLiveReload(load, () => allowed);
   if (!allowed) return <Notice>Access denied.</Notice>;
   const set = (patch: Partial<FiledReturnInput>) => input && setInput({ ...input, ...patch });
   const save = () => {

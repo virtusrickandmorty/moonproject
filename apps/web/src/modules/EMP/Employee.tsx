@@ -12,6 +12,7 @@ import { cents } from '../COL/money.ts';
 import { EmployeeLoans } from '../PAY/Loans.tsx';
 import { EmployeePriorPay } from '../PAY/Prior.tsx';
 import { Crumb } from '../../shell/crumbs.tsx';
+import { useLiveReload } from '../../live.ts';
 
 const PAY_TYPE = { daily: 'Daily', piece: 'Per piece (pakyawan)', monthly: 'Monthly', mixed: 'Daily and per piece' } as const;
 const PAY_GROUP = { WEEKLY_PIECE: 'Weekly (piece rate)', WEEKLY_DAILY: 'Weekly (daily paid)', SEMI_DAILY: 'Semi-monthly (daily paid)', SEMI_MONTHLY: 'Semi-monthly (monthly staff)' } as const;
@@ -26,6 +27,7 @@ export function EmployeePage({ me, params }: { me: Me; params?: Record<string, s
   const [separating, setSeparating] = useState(false);
   const load = useCallback(() => api.employee(id).then(setD, (e: Error) => setError(e.message)), [id]);
   useEffect(() => void load(), [load]);
+  useLiveReload(load);
   if (error) return <Notice>{error}</Notice>;
   if (!d) return <Loading />;
   const e = d.employee;

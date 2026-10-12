@@ -11,6 +11,7 @@ import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { KIND_WORDS, STATE_WORDS, forgivableNo, forgivenWords, lateCounts, leftCents, loanDocType, loanTotals, ratePercent, scheduleStates } from './register.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
+import { useLiveReload } from '../../live.ts';
 
 const num = 'py-1 text-right tabular-nums';
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
@@ -74,6 +75,7 @@ export function LoanPage({ docTypes, params }: { docTypes: DocTypeInfo[]; params
   const load = useCallback(() => void Promise.all([api.loan(id), api.loanPayments(id), api.loansLate(), api.health()]).then(
     ([x, p, all, h]) => (setL(x), setPayments(p), setLate(all.filter((z) => z.loanId === id)), setToday(h.serverTime.slice(0, 10)), setError('')), (e: Error) => setError(e.message)), [id]);
   useEffect(load, [load]);
+  useLiveReload(load);
   if (error) return <Notice>{error}</Notice>;
   if (!l) return <Loading />;
   const may = (key: string) => docTypes.some((d) => d.key === key && d.canPost);
