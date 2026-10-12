@@ -84,6 +84,10 @@ describe('alterations and replacements', () => {
     const ret = (await newReturn({ lines: [line({ action: 'replacement', source: 'sale', sourceNumber: saleNo, sourceLineNo: 1, problem: 'Seam opened on first wash', oldPiece: 'shop_rework' })] })).json();
     const d = (await owner.post(`/api/alt/returns/${ret.id}/decision`, { outcome: 'accepted', reason: 'Our sewing fault: free', fees: [{ lineNo: 1, feeEachCents: 0 }] })).json();
     expect(d).toMatchObject({ feeCents: 0, decision: { shopWorkNumber: expect.stringMatching(/^JO-/) } });
+    // Decided: the staff who receive returns are told (not the one who decided).
+    const decided = expect.objectContaining({ kind: 'alt-decided', label: `ALT-000001 was accepted, free: ${d.decision.jobOrderNumber} is on the production board`, href: `/alt?open=${ret.id}` });
+    expect((await encoder.get('/api/dash/notifications')).json()).toContainEqual(decided);
+    expect((await owner.get('/api/dash/notifications')).json()).not.toContainEqual(decided);
     const joId = d.decision.jobOrderId as string;
     expect((await owner.get(`/api/docs/jo.job_order/${joId}`)).json().doc.totalCents).toBe(0);
     // The returned piece goes to Shop work, to be fixed and put back on sale.

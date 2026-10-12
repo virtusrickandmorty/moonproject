@@ -49,6 +49,8 @@ describe('a semi-monthly employee with an SSS loan (F3 example C)', () => {
     expect(slip.employees[0].loans[0]).toMatchObject({ kind: 'SSS_SALARY', amountCents: 150_000, balanceAfterCents: 1_650_000 });
     // The release pays the net pay after the loan.
     expect((await owner.get(`/api/pay/runs/${c2.id}/release-status`)).json()[0].netCents).toBe(557_500);
+    // Recorded and not released: whoever releases payroll is told.
+    expect((await owner.get('/api/dash/notifications')).json()).toContainEqual(expect.objectContaining({ kind: 'pay-to-release', href: `/docs/pay.release/new?run=${c2.id}`, amountCents: 557_500 }));
     expect(listLoans(w.db, {}, '2026-09-30').find((l) => l.id === sss)).toMatchObject({ scheduledCents: 1_800_000, deductedCents: 150_000, leftCents: 1_650_000, status: 'running' });
 
     // Cancelled, the loan's month is open again.
