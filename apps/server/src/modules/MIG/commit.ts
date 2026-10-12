@@ -206,6 +206,7 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
     // The price list (the owner's request, Oct 2026): each row's item (found by name, or made), its price when it has
     // none yet, and the row's piece rate on the item; rows of one item share it.
     const steps = listSteps(db);
+    const priced = new Map<string, string>(); // item id -> its name, for the items this file gave a price
     for (const row of active.filter(r => r.row_type === 'piece_rate')) {
       const raw = data.get(row.id)!;
       const p = priceListRow(raw);
@@ -213,13 +214,19 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
       const step = op ? steps.find((s) => s.code.toLowerCase() === op || s.name.toLowerCase() === op || s.name.toLowerCase().startsWith(op)) : undefined;
       if (op && !step) throw new AppError('MIG_STEP', `Price list row ${row.row_number}: "${p.operation}" is not a production step. Use Fix to type one like Sewing.`, 409);
       const legacyId = row.legacy_id ?? (first(raw, 'Rate_ID', 'Legacy_ID') ||
-        `pricelist:${p.item.toLowerCase()}:${step?.code ?? 'price'}:${p.part}:${p.complexity}:${p.priceCents ?? ''}:${p.rateCents ?? ''}`);
+        `pricelist:${p.item.toLowerCase()}:${step?.code ?? 'price'}:${p.part}:${p.complexity}:${p.priceCents ?? ''}:${p.rateCents ?? ''}${p.minQty > 1 ? `:from${p.minQty}` : ''}`);
       create(row, 'piece_rate', legacyId, () => {
-        const it = importPriceListItem(db, { name: p.item, class: p.class, unit: p.unit, priceCents: p.priceCents }, who);
+        const it = importPriceListItem(db, { name: p.item, class: p.class, unit: p.unit, priceCents: p.priceCents, minQty: p.minQty }, who);
+        if (p.priceCents !== undefined) priced.set(it.id, p.item);
         if (!step || p.rateCents === undefined) return it.id;
         return String(addRate(db, { garmentType: it.garmentType ?? p.item, stepCode: step.code, complexity: p.complexity, ...(p.part !== 'whole' ? { part: p.part } : {}),
           rateCents: p.rateCents, effectiveFrom: who.today, reason: 'Confirmed price list import' }, who).id);
       });
+    }
+    // An item with price breaks always has a price from 1 piece, so a small order is never left without one.
+    const fromOne = db.prepare('SELECT 1 FROM cat_prices WHERE item_id = ? AND min_qty = 1 AND effective_from <= ? LIMIT 1');
+    for (const [itemId, name] of priced) {
+      if (!fromOne.get(itemId, who.today)) throw new AppError('MIG_PRICE_FROM_ONE', `${name} has prices only from more than 1 piece. Add its price from 1 piece (a row with From qty blank or 1).`, 409);
     }
     // Sizer sets (the owner's request, Oct 2026), in the shop; a code already on file stops the import with the row named.
     for (const row of active.filter(r => r.row_type === 'sizer_set')) {

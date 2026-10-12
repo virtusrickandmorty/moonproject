@@ -13,7 +13,7 @@ export const KINDS: { kind: MigKind; label: string; columns: string; holds: stri
   { kind: 'customer', label: 'Customers', columns: 'Legacy_ID, Customer_Name (also Registered_Name, TIN, Email)', holds: 'customers and their details' },
   { kind: 'measurement', label: 'Measurements', columns: 'Measurement_ID, Customer_ID, Customer_Name, Wearer_Name, Group_Name, then Shoulder, Chest and the other measurement columns', holds: 'the measurement sheet' },
   { kind: 'employee', label: 'Employees', columns: 'Employee_ID, Employee_Name, Daily_Rate', holds: 'employees and their daily rates' },
-  { kind: 'piece_rate', label: 'Price list', columns: 'Item, Kind, Unit, Price, then for a piece rate Operation, Part, Difficulty, Rate', holds: 'the price list, each item with its piece rates' },
+  { kind: 'piece_rate', label: 'Price list', columns: 'Item, Kind, Unit, Price, From qty, then for a piece rate Operation, Part, Difficulty, Rate', holds: 'the price list, each item with its price breaks and piece rates' },
   { kind: 'sizer_set', label: 'Sizer sets', columns: 'Code, Garment_Type, Sizes_Included', holds: 'the sizer sets lent to customers' },
 ];
 
@@ -39,14 +39,16 @@ export const TEMPLATES: Record<MigKind, { file: string; rows: string[][] }> = {
     ['Employee_ID', 'Employee_Name', 'Position', 'Cost_Centre', 'Hire_Date', 'Pay_Type', 'Daily_Rate', 'Monthly_Rate', 'Pay_Group', 'Workweek_Days', 'Is_MWE'],
     ['E-0001', 'Juan Dela Cruz', 'Sewer', 'production', '2024-02-11', 'daily', '645.00', '', 'WEEKLY_PIECE', '6', 'no'],
   ] },
-  // One row per item and piece rate (the owner's request, Oct 2026); an item's later rows may leave Kind, Unit and Price empty.
+  // One row per item, price break and piece rate (the owner's request, Oct 2026): an item's later rows may leave Kind and
+  // Unit empty; a Price with a From qty is the price from that many pieces (blank is 1: every item needs that one).
   piece_rate: { file: 'price-list-template.csv', rows: [
-    ['Item', 'Kind', 'Unit', 'Price', 'Operation', 'Part', 'Difficulty', 'Rate'],
-    ['School polo shirt', 'Made to order', 'Piece', '450.00', 'Sewing', '', 'Standard', '40.00'],
-    ['School polo shirt', '', '', '', 'Cutting', '', 'Standard', '8.00'],
-    ['Basketball jersey set', 'Made to order', 'Set', '650.00', 'Sewing', 'Upper', 'Standard', '45.00'],
-    ['Basketball jersey set', '', 'Set', '', 'Sewing', 'Lower', 'Standard', '35.00'],
-    ['Name patch', 'Service', 'Piece', '100.00', '', '', '', ''],
+    ['Item', 'Kind', 'Unit', 'Price', 'From qty', 'Operation', 'Part', 'Difficulty', 'Rate'],
+    ['School polo shirt', 'Made to order', 'Piece', '450.00', '1', 'Sewing', '', 'Standard', '40.00'],
+    ['School polo shirt', '', '', '420.00', '12', 'Cutting', '', 'Standard', '8.00'],
+    ['School polo shirt', '', '', '390.00', '50', '', '', '', ''],
+    ['Basketball jersey set', 'Made to order', 'Set', '650.00', '1', 'Sewing', 'Upper', 'Standard', '45.00'],
+    ['Basketball jersey set', '', 'Set', '', '', 'Sewing', 'Lower', 'Standard', '35.00'],
+    ['Name patch', 'Service', 'Piece', '100.00', '', '', '', '', ''],
   ] },
   sizer_set: { file: 'sizer-sets-template.csv', rows: [
     ['Code', 'Garment_Type', 'Sizes_Included'],
@@ -235,7 +237,9 @@ export function rowTitle(row: MigRow): string {
   if (row.rowType === 'piece_rate') {
     const item = text(m.item) || text(m.garmentType) || raw.Item || raw.Garment_Type || '?';
     const op = text(m.operation) || raw.Operation;
-    return op ? `${item} · ${op}${(text(m.part) || raw.Part) ? ` (${text(m.part) || raw.Part})` : ''}` : item;
+    const from = (raw['From qty'] ?? raw['From Qty'] ?? raw.From_Qty ?? '').trim();
+    const named = /^\d+$/.test(from) && Number(from) > 1 ? `${item} (from ${from} pcs)` : item;
+    return op ? `${named} · ${op}${(text(m.part) || raw.Part) ? ` (${text(m.part) || raw.Part})` : ''}` : named;
   }
   if (row.rowType === 'sizer_set') return `${text(m.code) || raw.Code || 'No code'} · ${text(m.garmentType) || raw.Garment_Type || '?'}`;
   if (row.rowType === 'measurement') {

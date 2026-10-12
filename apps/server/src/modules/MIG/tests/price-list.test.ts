@@ -64,3 +64,34 @@ test('imports the price list: items made once, one price each, and their piece r
   expect(second.json().counts.piece_rate).toEqual({ imported: 0, alreadyImported: 5 });
   expect(env.db.prepare(`SELECT COUNT(*) FROM cat_items WHERE name = 'School polo shirt'`).pluck().get()).toBe(1);
 });
+
+test('price breaks: an item gets each price from its From qty, and is never left without a price from 1 piece', async () => {
+  const env = await createTestEnv();
+  const owner = await env.as('owner');
+  expect((await owner.post('/api/auth/step-up', { password: PASSWORD })).statusCode).toBe(200);
+  expect(priceListRow({ Item: 'Polo', Price: '420', 'From qty': '12' })).toMatchObject({ priceCents: 42000, minQty: 12, issues: [] });
+  expect(priceListRow({ Item: 'Polo', Price: '450' }).minQty).toBe(1);
+  expect(priceListRow({ Item: 'Polo', Price: '420', 'From qty': 'twelve' }).issues).toContain('From qty "twelve" must be a whole number of pieces, 1 or more.');
+  expect(priceListRow({ Item: 'Polo', 'From qty': '12', Operation: 'Sewing', Rate: '5' }).issues).toContain('From qty goes with a Price: the price from that many pieces.');
+  const importFile = async (lines: string[]) => {
+    const id = (await owner.post('/api/mig/upload', { filename: 'price-list.csv', csv: ['Item,Kind,Unit,Price,From qty,Operation,Part,Difficulty,Rate', ...lines].join('\n') })).json().uploadId as string;
+    for (const r of (await owner.get(`/api/mig/uploads/${id}/review`)).json().rows as { id: string }[]) await owner.post(`/api/mig/rows/${r.id}/accept`, {});
+    await owner.post(`/api/mig/uploads/${id}/dry-run`, {});
+    return owner.post(`/api/mig/uploads/${id}/commit`, { expectedMeasurementCellTenths: 0 });
+  };
+  const ok = await importFile([
+    'School polo shirt,Made to order,Piece,450.00,1,Sewing,,Standard,40.00',
+    'School polo shirt,,,420.00,12,Cutting,,Standard,8.00',
+    'School polo shirt,,,390.00,50,,,,',
+  ]);
+  expect(ok.statusCode, ok.body).toBe(200);
+  const prices = env.db.prepare("SELECT p.min_qty, p.unit_price_cents FROM cat_prices p JOIN cat_items i ON i.id = p.item_id WHERE i.name = 'School polo shirt' ORDER BY p.min_qty").raw().all();
+  expect(prices).toEqual([[1, 45000], [12, 42000], [50, 39000]]);
+  const today = (await owner.get('/api/rate/rates')).json().asOf as string;
+  const id = env.db.prepare("SELECT id FROM cat_items WHERE name = 'School polo shirt'").pluck().get() as string;
+  expect((await owner.get(`/api/cat/items/${id}/price?qty=30&date=${today}`)).json()).toMatchObject({ minQty: 12, unitPriceCents: 42000 });
+  // Breaks only from more than 1 piece: stopped, nothing imported.
+  const bad = await importFile(['Team shorts,Made to order,Piece,300.00,10,,,,']);
+  expect(bad.json()).toMatchObject({ code: 'MIG_PRICE_FROM_ONE', message: 'Team shorts has prices only from more than 1 piece. Add its price from 1 piece (a row with From qty blank or 1).' });
+  expect(env.db.prepare("SELECT COUNT(*) FROM cat_items WHERE name = 'Team shorts'").pluck().get()).toBe(0);
+});

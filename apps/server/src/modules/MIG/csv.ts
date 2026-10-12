@@ -238,12 +238,14 @@ export function duplicateKeys(row: ParsedRow): string[] {
 
 /**
  * A price list row (the owner's request, Oct 2026): Item, Kind (Made to order, Ready-made or Service), Unit (Piece or Set),
- * Price (VAT included), and optionally one piece rate of the item: Operation (the step), Part (Upper or Lower, a set's),
- * Difficulty (Simple, Standard or Complex) and Rate. An old piece-rate sheet's Garment_Type is the Item.
+ * Price (VAT included) and From qty (the price from that many pieces: a price break; blank is 1), and optionally one piece
+ * rate of the item: Operation (the step), Part (Upper or Lower, a set's), Difficulty (Simple, Standard or Complex) and
+ * Rate. An item's price breaks are its rows with a Price, one per From qty. An old piece-rate sheet's Garment_Type is the
+ * Item.
  */
 export interface PriceListRow {
   item: string; class: 'made_to_order_garment' | 'ready_made_item' | 'service'; unit: 'pc' | 'set';
-  priceCents?: number; operation: string; part: 'whole' | 'upper' | 'lower'; complexity: 'simple' | 'standard' | 'complex'; rateCents?: number; issues: string[];
+  priceCents?: number; minQty: number; operation: string; part: 'whole' | 'upper' | 'lower'; complexity: 'simple' | 'standard' | 'complex'; rateCents?: number; issues: string[];
 }
 export function priceListRow(raw: Record<string, string>): PriceListRow {
   const issues: string[] = [];
@@ -263,8 +265,12 @@ export function priceListRow(raw: Record<string, string>): PriceListRow {
     try { return rateFromPesos(value); } catch { issues.push(`${label} "${value}" must be a peso amount like 450.00.`); return undefined; }
   };
   const priceCents = money('Price', raw.Price);
+  const fromWord = (raw['From qty'] ?? raw['From Qty'] ?? raw.From_Qty ?? raw.Min_Qty ?? '').trim().replace(/,/g, '');
+  const minQty = fromWord === '' ? 1 : /^\d+$/.test(fromWord) && Number(fromWord) >= 1 && Number(fromWord) <= 100_000 ? Number(fromWord) : null;
   const rateCents = money('Rate', raw.Rate);
   if (!item) issues.push('The price list row needs the item name.');
+  if (minQty === null) issues.push(`From qty "${fromWord}" must be a whole number of pieces, 1 or more.`);
+  else if (minQty > 1 && priceCents === undefined) issues.push('From qty goes with a Price: the price from that many pieces.');
   if (item.length > 100) issues.push('The item name takes up to 100 letters.');
   if (!cls) issues.push(`Kind "${raw.Kind}" is not Made to order, Ready-made or Service.`);
   if (!unit) issues.push(`Unit "${raw.Unit}" is not Piece or Set.`);
@@ -275,7 +281,7 @@ export function priceListRow(raw: Record<string, string>): PriceListRow {
   if (operation && cls && cls !== 'made_to_order_garment') issues.push('Piece rates are for made-to-order garments; this item is not one.');
   if (part && part !== 'whole' && unit !== 'set') issues.push('Upper and Lower parts are for an item sold as a set.');
   if (priceCents === undefined && !(operation && rateCents !== undefined) && !issues.length) issues.push('The row has neither a price nor a piece rate.');
-  return { item, class: cls ?? 'made_to_order_garment', unit: unit ?? 'pc', ...(priceCents !== undefined ? { priceCents } : {}), operation, part: part ?? 'whole', complexity: complexity ?? 'standard', ...(rateCents !== undefined ? { rateCents } : {}), issues };
+  return { item, class: cls ?? 'made_to_order_garment', unit: unit ?? 'pc', ...(priceCents !== undefined ? { priceCents } : {}), minQty: minQty ?? 1, operation, part: part ?? 'whole', complexity: complexity ?? 'standard', ...(rateCents !== undefined ? { rateCents } : {}), issues };
 }
 
 /** What the owner typed with Fix on a price list row, laid over the sheet's values. Shared by the review and the commit. */
