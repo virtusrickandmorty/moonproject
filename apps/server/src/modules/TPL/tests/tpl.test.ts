@@ -67,6 +67,9 @@ describe('restock and stock', () => {
     // A release slip is refused: its pieces are the client's stock.
     await stage(jo.id, 'open', 'in_production');
     await stage(jo.id, 'in_production', 'ready');
+    // Finished on the board: the staff are told to put the pieces into the client's stock; the notice goes once all are in.
+    const putIn = expect.objectContaining({ kind: 'tpl-put-in', label: expect.stringMatching(/: 100 finished pieces to put into Moonlight Test School's stock$/) });
+    expect((await encoder.get('/api/dash/notifications')).json()).toContainEqual(putIn);
     const release = await owner.post('/api/docs/jo.release/preview', { input: { jobOrderId: jo.id, lines: [{ lineNo: 1, qty: 10 }], claimedBy: 'Juan', idSeen: 'none' } });
     expect(release.json().issues.map((i: { code: string }) => i.code)).toContain('FOR_STOCK');
 
@@ -76,6 +79,7 @@ describe('restock and stock', () => {
     expect((await encoder.post('/api/tpl/put-in', { jobOrderId: jo.id, lines: [{ lineNo: 1, qty: 41 }] })).json().code).toBe('NOT_FINISHED');
     expect((await encoder.post('/api/tpl/put-in', { jobOrderId: jo.id, lines: [{ lineNo: 1, qty: 40 }] })).json().complete).toBe(true);
     expect(onHand(polo)).toBe(100);
+    expect((await encoder.get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'tpl-put-in' }));
     expect(env.db.prepare('SELECT to_stage FROM jo_stage_events WHERE document_id = ? ORDER BY seq DESC LIMIT 1').pluck().get(jo.id)).toBe('released');
 
     // With pieces in stock, the job order stays.

@@ -15,7 +15,7 @@ export default defineModule({
     { key: 'alt.view', label: 'See items brought back for alteration or replacement', defaultRoles: ['encoder', 'accountant', 'owner', 'production'] },
     { key: 'alt.receive', label: 'Receive items brought back for alteration or replacement', defaultRoles: ['encoder', 'accountant', 'owner'] },
     // Accepting makes the job order, so it also needs jo.post.
-    { key: 'alt.decide', label: 'Decide on a return: free, a fee, or declined (then it goes to production)', defaultRoles: ['accountant', 'owner'] },
+    { key: 'alt.decide', label: 'Open and decide returns awaiting a decision: free, a fee, or declined (then it goes to production)', defaultRoles: ['accountant', 'owner'] },
   ],
   docTypes: [],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),

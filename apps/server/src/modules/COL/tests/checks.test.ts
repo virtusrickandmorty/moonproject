@@ -143,6 +143,8 @@ describe('checks on hand and deposits', () => {
     const b = (await collect({ customerId: c.other, applications: [], tenders: [check('2002', 400_050, '2026-09-30', 'Other Bank'), { cashPlaceId: CASH, amountCents: 1_000 }] }, 401_050)).json().id;
     let list = await onHand();
     expect(list.checks.map((r) => [r.checkNumber, r.amountCents, r.days])).toEqual([['1001', 250_000, 3], ['2002', 400_050, 0]]);
+    // Both are dated today or earlier: whoever deposits checks is told.
+    expect((await accountant.get('/api/dash/notifications')).json()).toContainEqual(expect.objectContaining({ kind: 'checks-to-deposit', label: '2 checks on hand can go to the bank', amountCents: 650_050 }));
     expect(list.totalCents).toBe(650_050);
     expect(list.ledgerCents).toBe(650_050);
     expect(ledger1103()).toBe(650_050);

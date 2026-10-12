@@ -108,6 +108,8 @@ describe('online orders', () => {
     const confirmed = await encoder.post(`/api/shp/admin/orders/${id}/confirm`, { customerId: walkIn, invoiceNumber: '9002', crNumber: '9102', version: 2 });
     expect(confirmed.statusCode, confirmed.body).toBe(200);
     expect(await status(placed.number, placed.token)).toMatchObject({ status: 'confirmed', saleNumber: expect.stringMatching(/^IR-/) });
+    // Paid and confirmed: the staff are told to prepare it.
+    expect((await encoder.get('/api/dash/notifications')).json()).toContainEqual(expect.objectContaining({ kind: 'online-order-prepare', href: `/shp/orders?open=${id}` }));
     expect(await item('M', 'White')).toMatchObject({ onHand: 1, held: 0, available: 1 });
     // The usual quick sale journal, with the money in the online payment account (BDO).
     const bdo = env.db.prepare(`SELECT SUM(l.debit_cents) - SUM(l.credit_cents) FROM journal_lines l JOIN accounts a ON a.id = l.account_id WHERE a.id = ?`).pluck().get(BDO);

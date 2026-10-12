@@ -11,8 +11,12 @@ import { activeJobOrders, joMoney, joMoneyAll, releasesAwaitingInvoice } from '.
 import { pendingCertificates } from '../COL/public.ts';
 import { board } from '../PRD/public.ts';
 import { KIND_LABELS as SUPPORT_KINDS, newSupportMessages } from '../SUP/public.ts';
-import { OVERDUE_LABEL, paymentsToCheck } from '../SHP/public.ts';
-import { returnsAwaitingDecision } from '../ALT/public.ts';
+import { OVERDUE_LABEL, ordersToPrepare, paymentsToCheck, shopWorkReady } from '../SHP/public.ts';
+import { returnsAwaitingDecision, returnsDecidedSince } from '../ALT/public.ts';
+import { checksToDeposit, pdcsDue } from '../COL/public.ts';
+import { billsDue } from '../AP/public.ts';
+import { restocksReady } from '../TPL/public.ts';
+import { payToRelease } from '../PAY/public.ts';
 import { sizerBoard } from '../SZR/public.ts';
 import { hasReceived2307, paidTaxPeriods, taxDeadlines, vatSummary } from '../TAX/public.ts';
 import { monthEndChecklist } from '../ACC/public.ts';
@@ -239,6 +243,35 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
   if (can('alt.decide')) for (const r of returnsAwaitingDecision(db)) {
     push('alt-decision', r.id, `${r.number}: decide on the items ${r.customerName} brought back`, `/alt?open=${r.id}`,
       `${r.pieces} ${r.pieces === 1 ? 'piece' : 'pieces'}${r.items > 1 ? ` in ${r.items} items` : ''} · received ${r.receivedOn}`);
+  }
+  // Work waiting on someone, and work done that someone must take on (the owner's request, Oct 2026). Each notice goes by
+  // itself once it is dealt with.
+  if (can('alt.receive')) for (const r of returnsDecidedSince(db, manilaTimestamp(new Date(clock.now().getTime() - 7 * 86_400_000)), user.userId)) {
+    push('alt-decided', r.id, r.outcome === 'declined' ? `${r.number} was declined: tell ${r.customerName}` : `${r.number} was accepted${r.feeCents ? ` with a fee of ₱${(r.feeCents / 100).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : ', free'}: ${r.jobOrderNumber} is on the production board`,
+      `/alt?open=${r.id}`, `${r.customerName} · decided by ${r.decidedBy}`);
+  }
+  if (can('shp.orders.manage')) for (const o of ordersToPrepare(db)) {
+    push('online-order-prepare', o.id, `${o.number} is paid: prepare it for ${o.fulfilment === 'pickup' ? 'pickup' : 'delivery'}`, `/shp/orders?open=${o.id}`, o.name, o.totalCents);
+  }
+  if (can('shp.stock')) for (const w of shopWorkReady(db)) {
+    push('shop-work-ready', w.id, `${w.number}: ${w.pieces} finished ${w.pieces === 1 ? 'piece' : 'pieces'} to put into the shop's stock`, '/shp?tab=work', w.kind === 'make' ? 'Restock' : w.kind === 'rework' ? 'Rework' : 'Change');
+  }
+  if (can('tpl.stock')) for (const r of restocksReady(db)) {
+    push('tpl-put-in', r.jobOrderId, `${r.number}: ${r.pieces} finished ${r.pieces === 1 ? 'piece' : 'pieces'} to put into ${r.customerName}'s stock`, `/tpl/${r.programId}`);
+  }
+  if (can('pay.release.post')) for (const r of payToRelease(db)) {
+    push('pay-to-release', r.id, `${r.number}: net pay still to release to ${r.people} ${r.people === 1 ? 'person' : 'people'}`, `/docs/pay.release/new?run=${r.id}`, undefined, r.dueCents);
+  }
+  if (can('col.checks.view')) for (const p of pdcsDue(db, date)) {
+    push('pdc-due', p.id, `Post-dated check ${p.bank} ${p.checkNumber} from ${p.customerName} is dated ${p.checkDate}: collect it`, '/col/pdcs', undefined, p.amountCents);
+  }
+  if (can('col.checks.deposit')) {
+    const ready = checksToDeposit(db, date);
+    if (ready.length) push('checks-to-deposit', date, `${ready.length} ${ready.length === 1 ? 'check' : 'checks'} on hand can go to the bank`, '/col/checks',
+      ready.slice(0, 3).map((c) => `${c.customerName} ${c.checkNumber}`).join(', ') + (ready.length > 3 ? '…' : ''), ready.reduce((n, c) => n + c.amountCents, 0));
+  }
+  if (can('ap.pay.create')) for (const b of billsDue(db, date, addDays(date, 3))) {
+    push('ap-bill-due', b.id, `${b.number} to ${b.supplierName} ${b.dueDate < date ? `was due ${b.dueDate}` : `is due ${b.dueDate}`}`, `/docs/${b.docType}/${b.id}`, undefined, b.balanceCents);
   }
   if (can('stat.view')) {
     let month = prevMonthEnd(date).slice(0, 7);

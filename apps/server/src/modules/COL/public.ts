@@ -1,5 +1,7 @@
 /** COL contract for other modules (QS). Callers check their own route permission. */
 import type { Db } from '../../platform/db/driver.ts';
+import { listPdcs } from './pdc.ts';
+import { checksOnHand } from './checks.ts';
 
 export { collectionDoc, collectionInput, type CollectionInput } from './doctypes/collection.ts';
 export { creditsOn, invoiceCreditsAt } from './credits.ts';
@@ -75,3 +77,8 @@ export function collectionsBetween(db: Db, from: string, to: string) {
       cashPlaceId: number | null; cashPlaceName: string | null; tenderCents: number | null;
       recordedBy: string; recordedByName: string }[];
 }
+
+/** Post-dated checks whose date has come and that no collection has used yet (the notifications bell). */
+export const pdcsDue = (db: Db, today: string) => listPdcs(db, today).filter((p) => p.status === 'due');
+/** Checks on hand dated today or earlier: ready to deposit (the notifications bell). */
+export const checksToDeposit = (db: Db, today: string) => checksOnHand(db).filter((c) => c.checkDate <= today);

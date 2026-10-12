@@ -51,7 +51,8 @@ const total = (s: StockLine[] | null, k: keyof Omit<StockLine, 'size' | 'colour'
 const tab = (on: boolean) => `rounded-md px-4 py-2 text-sm font-semibold ${on ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-indigo-50'}`;
 
 export function ShopProducts({ me }: { me: Me }) {
-  const [view, setView] = useState<'products' | 'work' | 'categories' | 'payment' | 'reviews'>('products');
+  // ?tab=work: the notice of finished shop work opens its tab.
+  const [view, setView] = useState<'products' | 'work' | 'categories' | 'payment' | 'reviews'>(() => (new URLSearchParams(window.location.search).get('tab') === 'work' ? 'work' : 'products'));
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">

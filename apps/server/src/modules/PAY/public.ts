@@ -1,4 +1,5 @@
 /** PAY contract for other modules (STAT). Read-only; callers check their own route permission. */
+import { releaseStatus } from './doctypes/release.ts';
 import type { Db } from '../../platform/db/driver.ts';
 import { sssRateAt } from './statutory.ts';
 export { hdmfMonthly, hdmfRateAt, phicMonthly, phicRateAt, sssMonthly, sssRateAt } from './statutory.ts';
@@ -266,4 +267,14 @@ export function payrollTotalsProblems(db: Db): PayrollTotalsProblem[] {
       ...(r.slipsNet !== r.net ? [{ documentId: r.documentId, number: r.number, employeeName: null, recordedCents: r.net, addsUpCents: r.slipsNet, what: 'net' as const }] : []),
     ]),
   ];
+}
+
+/** Recorded payroll runs and 13th-month pay with net pay still to release, and to how many people (the notifications bell). */
+export function payToRelease(db: Db): { id: string; number: string; people: number; dueCents: number }[] {
+  const ids = db.prepare(`SELECT d.id, d.number FROM documents d WHERE d.status = 'posted' AND d.doc_type IN ('pay.run', 'pay.thirteenth') ORDER BY d.posted_at DESC LIMIT 50`)
+    .all() as { id: string; number: string }[];
+  return ids.map((r) => {
+    const due = releaseStatus(db, r.id).filter((s) => !s.releasedBy && s.netCents > 0);
+    return { ...r, people: due.length, dueCents: due.reduce((n, s) => n + s.netCents, 0) };
+  }).filter((r) => r.people > 0);
 }
