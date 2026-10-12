@@ -13,6 +13,7 @@ import { ProductPicture } from '../../shop/GarmentArt.tsx';
 import { SAMPLE_PRODUCTS, SIZES, type Product, type Shape } from '../../shop/products.ts';
 import { masterRequest } from '../CUS/http.ts';
 import { ShopWork } from './ShopWork.tsx';
+import { useLiveReload } from '../../live.ts';
 
 export interface StockLine { size: string; colour: string; onHand: number; held: number; available: number }
 interface Row extends Product { categoryId: string | null; sortOrder: number; isActive: boolean; version: number; updatedAt: string; stock: StockLine[] | null }
@@ -89,6 +90,7 @@ function Products({ me }: { me: Me }) {
     setRows(r); setCategories(c);
   }), [me]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void load(); }, [load]);
+  useLiveReload(load);
 
   const toggle = (p: Row) => run(async () => { await masterRequest(me, `/api/shp/products/${p.id}/${p.isActive ? 'hide' : 'show'}`, 'POST', {}, p.version); await load(); });
   /** Copies the made-up sample garments in (and their categories), so the shop starts from something it can edit. */
@@ -176,6 +178,7 @@ function StockDialog({ me, product, onClose }: { me: Me; product: Row; onClose: 
   useEffect(() => { if (!canStock && canWork) setMode('make'); }, [canStock, canWork]);
   const load = useCallback(() => masterRequest<{ lines: StockLine[]; moves: Move[] }>(me, `/api/shp/products/${product.id}/stock`).then(setData), [me, product.id]);
   useEffect(() => { void run(load); }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLiveReload(load);
   const key = (l: { size: string; colour: string }) => `${l.size}|${l.colour}`;
   const sizes = product.sizes, colours = product.colours.map((c) => c.name);
   const cell = (size: string, colour: string) => data?.lines.find((l) => l.size === size && l.colour === colour);

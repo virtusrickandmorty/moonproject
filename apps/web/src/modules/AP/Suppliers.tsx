@@ -10,6 +10,7 @@ import { Loading, Notice, Panel, StatusChip, peso } from '../../components/ui.ts
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
+import { useLiveReload } from '../../live.ts';
 
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
 const num = 'py-1 text-right tabular-nums';
@@ -18,6 +19,7 @@ export function ApBalances() {
   const [rows, setRows] = useState<ApBalance[] | null>(null);
   const [error, setError] = useState('');
   useEffect(() => void api.apBalances().then(setRows, (e: Error) => setError(e.message)), []);
+  useLiveReload(() => api.apBalances().then(setRows));
   if (error) return <Notice>{error}</Notice>;
   if (!rows) return <Loading />;
   const total = (k: 'balanceCents' | 'advancesCents' | 'netCents') => rows.reduce((s, r) => s + r[k], 0);
@@ -50,6 +52,7 @@ export function ApSupplierPage({ docTypes, params }: { docTypes: DocTypeInfo[]; 
   const [l, setL] = useState<ApLedger | null>(null);
   const [error, setError] = useState('');
   useEffect(() => void api.apLedger(id).then(setL, (e: Error) => setError(e.message)), [id]);
+  useLiveReload(() => api.apLedger(id).then(setL));
   if (error) return <Notice>{error}</Notice>;
   if (!l) return <Loading />;
   const may = (key: string) => docTypes.some((d) => d.key === key && d.canPost);

@@ -13,6 +13,7 @@ import { monthLabel } from '../TAX/bir.ts';
 import { DepreciationRun, DisposeAsset } from './Actions.tsx';
 import { STATUSES, STATUS_WORDS, canDispose, filterAssets, gapWarning, monthRows, onTheBooks } from './register.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
+import { useLiveReload } from '../../live.ts';
 
 const num = 'py-1 text-right tabular-nums';
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
@@ -34,6 +35,7 @@ export function Assets({ docTypes }: { docTypes: DocTypeInfo[] }) {
   const [running, setRunning] = useState(false);
   const load = useCallback(() => void Promise.all([api.assets(), api.depreciationGaps()]).then(([r, g]) => (setRows(r), setGaps(g), setError('')), (e: Error) => setError(e.message)), []);
   useEffect(load, [load]);
+  useLiveReload(load);
   if (error) return <Notice>{error}</Notice>;
   if (!rows || !gaps) return <Loading />;
   const shown = filterAssets(rows, search, status);

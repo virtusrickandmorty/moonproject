@@ -8,6 +8,7 @@ import { api, type Me, type SizerBoard, type SizerSet } from '../../api.ts';
 import { Loading, Button, Dialog, Field, Notice, Panel, askConfirm, inputClass, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { CustomerPicker, type Picked } from '../COL/parts.tsx';
 import { STATUS_WORDS, dueWords, filterSets, lendInput, returnInput, setInput, weekFrom, type ReturnValues, type SetValues } from './sizer.ts';
+import { useLiveReload } from '../../live.ts';
 
 const chip = (s: SizerSet['status']) => `rounded-full px-2 py-0.5 text-xs font-medium ${s === 'in shop' ? 'bg-emerald-100 text-emerald-800' : s === 'lent' ? 'bg-sky-100 text-sky-800' : 'bg-red-100 text-red-800'}`;
 
@@ -99,6 +100,7 @@ export function SizerSets({ me }: { me: Me }) {
   const [offError, setOffError] = useState('');
   const load = useCallback(() => void api.sizerBoard().then((b) => (setBoard(b), setError('')), (e: Error) => setError(e.message)), []);
   useEffect(load, [load]);
+  useLiveReload(load);
   if (error) return <Notice>{error}</Notice>;
   if (!board) return <Loading />;
   const canEdit = me.permissions.includes('szr.loan.edit');

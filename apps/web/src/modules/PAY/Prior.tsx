@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type PriorPay } from '../../api.ts';
 import { Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction } from '../../components/ui.tsx';
 import { PRIOR_FIELDS, priorAmounts, type PriorForm } from './run.ts';
+import { useLiveReload } from '../../live.ts';
 
 const SOURCE = { before: 'This shop, before Virtus', previous: 'Previous employer (from its 2316)' } as const;
 const blankAmounts = (): PriorForm => ({ gross: '', benefits: '', deMinimis: '', sss: '', phic: '', hdmf: '', otherNontax: '', taxable: '', wtax: '' });
@@ -98,6 +99,7 @@ export function EmployeePriorPay({ me, employeeId }: { me: Me; employeeId: strin
   const [error, setError] = useState('');
   const load = useCallback(() => api.priorPay({ employeeId }).then(setRows, (e: Error) => setError(e.message)), [employeeId]);
   useEffect(() => void load(), [load]);
+  useLiveReload(load);
   const canManage = me.permissions.includes('pay.prior.manage');
   return (
     <Panel title="Pay before Virtus and from previous employers">

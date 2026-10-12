@@ -146,7 +146,14 @@ export function pagePermission(path: string): string | undefined {
 }
 
 /** A report's address (a screen under Reports, or a page under one): it stays a snapshot until Refresh (live changes). */
-export const isReportPath = (path: string) => SCREENS.some((s) => s.group === 'Reports' && (path === s.path || path.startsWith(`${s.path}/`)));
+/**
+ * The tax registers and return worksheets read like reports (the owner's report, Oct 2026: they stayed as they were when
+ * something was recorded elsewhere): they keep what they show and offer Refresh, so figures being checked never move.
+ */
+const TAX_SNAPSHOTS = ['/tax/sales', '/tax/2307-received', '/tax/purchases', '/tax/ewt', '/tax/2307-to-issue', '/tax/vat', '/tax/2550q', '/tax/slsp-sales',
+  '/tax/slsp-purchases', '/tax/sawt', '/tax/0619e', '/tax/1601eq', '/tax/1702q', '/tax/1702rt', '/tax/1604e', '/tax/calendar'];
+export const isReportPath = (path: string) =>
+  TAX_SNAPSHOTS.includes(path) || SCREENS.some((s) => s.group === 'Reports' && (path === s.path || path.startsWith(`${s.path}/`)));
 
 export const docPath = (type: string, rest = '') => `/docs/${type}${rest}`;
 export const plural = (title: string) => (/[sy]$/.test(title) ? title : `${title}s`);

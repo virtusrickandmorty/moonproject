@@ -14,6 +14,7 @@ import { ProductPicture } from '../../shop/GarmentArt.tsx';
 import type { Product } from '../../shop/products.ts';
 import { masterRequest } from '../CUS/http.ts';
 import type { StockLine } from './ShopProducts.tsx';
+import { useLiveReload } from '../../live.ts';
 
 type Item = Product & { isActive: boolean; stock: StockLine[] | null };
 interface CartLine { product: Item; size: string; colour: string; qty: number }
@@ -51,6 +52,7 @@ export function Pos({ me }: { me: Me }) {
       setPlaceId(ps.find((p) => p.kind === 'cash')?.id ?? ps[0]?.id ?? null);
     });
   }, [load, walkIn]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLiveReload(load, () => canSell); // the stock shown; the sale being rung up stays
 
   const categories = useMemo(() => [...new Set(items.map((p) => p.category))], [items]);
   const shown = items.filter((p) => (!category || p.category === category) && (!search.trim() || `${p.name} ${p.category}`.toLowerCase().includes(search.trim().toLowerCase())));

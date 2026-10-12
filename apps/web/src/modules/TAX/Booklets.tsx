@@ -5,6 +5,7 @@ import { Link, navigate } from '../../router.tsx';
 import { bookletInput, documentLink, skippedNumbers, type BookletFields } from './booklets.ts';
 import { useStepUpAction } from './StepUp.tsx';
 import { Crumb } from '../../shell/crumbs.tsx';
+import { useLiveReload } from '../../live.ts';
 
 const kindName = (kind: string) => kind === 'SALES_INVOICE' ? 'Sales invoice' : 'Collection receipt';
 const status = (active: boolean) => <span className={`rounded-full px-2 py-1 text-xs font-medium ${active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>{active ? 'In use' : 'Retired'}</span>;
@@ -75,6 +76,7 @@ export function BookletPage({ me, params }: { me: Me; params?: Record<string, st
   const action = useStepUpAction();
   const load = () => api.booklet(id).then(setUsage, (e: Error) => setError(e.message));
   useEffect(() => { void load(); }, [id]);
+  useLiveReload(load);
   const change = async (reason: string) => {
     if (!usage) return;
     await action.run(async () => { await api.setBookletActive(id, usage.booklet.version, !usage.booklet.isActive, reason); setChanging(false); await load(); });

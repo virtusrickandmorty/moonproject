@@ -4,6 +4,7 @@ import { Link } from '../../router.tsx';
 import { Loading, Notice, peso } from '../../components/ui.tsx';
 import { nightlyLine } from '../AUD/nightly.ts';
 import { Card, HomeCards, type IconName } from './Cards.tsx';
+import { useLiveReload } from '../../live.ts';
 
 function Item({ item, action, muted = false }: { item: DashItem; action?: React.ReactNode; muted?: boolean }) {
   const title = item.href ? <Link to={item.href} className="font-medium text-indigo-700 hover:underline">{item.label}</Link> : <span className="font-medium">{item.label}</span>;
@@ -52,6 +53,7 @@ function Notifications({ all = false, widgets = [], children }: { all?: boolean;
     setMore(all && page.length === NOTE_PAGE);
   }, (e: Error) => setError(e.message));
   useEffect(() => { void load(0); }, []);
+  useLiveReload(() => load(0));
   const shown: AttentionItem[] | null = all ? rows : attentionItems(widgets, rows ?? []);
   async function markRead(id: string) {
     setBusy(id);

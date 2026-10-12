@@ -11,6 +11,7 @@ import { useToday } from '../../generic/record.tsx';
 import { Link } from '../../router.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
 import { BAD_DEBT_METHODS, DEPOSIT_MODES, EWT_CLASS_NAMES, checkDraft, formOf, isEditable, ownScreensFor, titleOf, valueOn, wordsOf, type Checked, type Form } from './settings.ts';
+import { useLiveReload } from '../../live.ts';
 
 export function Settings({ me }: { me: Me }) {
   const [settings, setSettings] = useState<Setting[]>();
@@ -20,6 +21,7 @@ export function Settings({ me }: { me: Me }) {
   const today = useToday();
   const load = () => api.settings().then(setSettings, (e: Error) => setError(e.message));
   useEffect(() => void load(), []);
+  useLiveReload(load);
   const mayChange = me.permissions.includes('acc.settings.manage');
   const own = ownScreensFor(me.permissions);
   return (

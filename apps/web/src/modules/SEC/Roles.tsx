@@ -3,12 +3,13 @@
  * to grant, untick to remove, then save the role's column. Saving asks for the owner's password again, and warns
  * before taking away what the owner role needs to keep the shop running.
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, type Me, type RoleGrid } from '../../api.ts';
 import { Loading, Button, Dialog, Notice, inputClass } from '../../components/ui.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
 import { changesFor, grantsOf, groupPermissions, ownerLosses, searchPermissions } from './roles.ts';
 import { roleLabel, sortRoles } from './users.ts';
+import { useLiveReload } from '../../live.ts';
 
 export function Roles({ me }: { me: Me }) {
   const [grid, setGrid] = useState<RoleGrid>();
@@ -18,8 +19,11 @@ export function Roles({ me }: { me: Me }) {
   const [warn, setWarn] = useState<{ role: string; losses: string[] } | null>(null);
   const [query, setQuery] = useState('');
   const action = useStepUpAction('changing what a role may do');
-  const load = () => api.roles().then((g) => { setGrid(g); setDraft(grantsOf(g)); }, (e: Error) => setError(e.message));
+  // Ticks not saved yet are never reloaded away (a change elsewhere shows once they are saved).
+  const dirty = useRef(false);
+  const load = () => api.roles().then((g) => { dirty.current = false; setGrid(g); setDraft(grantsOf(g)); }, (e: Error) => setError(e.message));
   useEffect(() => void load(), []);
+  useLiveReload(load, () => !dirty.current);
   if (!me.permissions.includes('sec.users.manage')) return <Notice>You do not have permission to manage roles.</Notice>;
   if (!grid) return error ? <Notice>{error}</Notice> : <Loading />;
 
@@ -27,6 +31,7 @@ export function Roles({ me }: { me: Me }) {
   const keys = grid.permissions.map((p) => p.key);
   const pending = (role: string) => changesFor(saved[role]!, draft[role]!, keys);
   const tick = (role: string, key: string, on: boolean) => {
+    dirty.current = true;
     setDone('');
     const next = new Set(draft[role]);
     if (on) next.add(key); else next.delete(key);

@@ -9,6 +9,7 @@ import type { Me } from '../../api.ts';
 import { Button, Dialog, Field, Notice, inputClass, showDate, useAction } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { masterRequest } from '../CUS/http.ts';
+import { useLiveReload } from '../../live.ts';
 
 interface Item { productId: string; name: string; size: string; colour: string }
 interface WorkLine { lineNo: number; description: string; qty: number; putIn: number; ready: number; canGiveBack: number; item: Item | null; from: Item | null; source: string | null; sourceNote: string | null }
@@ -28,6 +29,7 @@ export function ShopWork({ me }: { me: Me }) {
   const canWork = me.permissions.includes('shp.work');
   const load = useCallback(() => masterRequest<Work[]>(me, '/api/shp/work').then(setRows), [me]);
   useEffect(() => { void run(load); }, [load]); // eslint-disable-line react-hooks/exhaustive-deps
+  useLiveReload(load);
   const k = (w: Work, l: WorkLine, what: string) => `${w.id}|${l.lineNo}|${what}`;
   const send = (w: Work, what: 'put-in' | 'give-back') => run(async () => {
     setDone('');
