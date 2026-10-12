@@ -114,6 +114,11 @@ describe("the job order view's mode and buttons", () => {
     expect(joActions(invoiced, can)[0]!.to).toBe(`/docs/col.collection/new?jo=${id}&for=downpayment`);
     const cancelled = status({ dpInvoices: [{ id: 'dp-1', number: 'IR-000001', status: 'cancelled', invoiceNumber: '0701', amountCents: 300_000, vatCents: 32_143 }] });
     expect(joActions(cancelled, can)[0]!.to).toBe(`/docs/jo.dp_invoice/new?jo=${id}`);
+    // A job order made for stock (TPL, the website shop): its finished pieces go into stock; no release slip.
+    const forStock = { ...status(), stage: 'ready', stockPlace: { label: "Put into Sample Client's stock", href: '/tpl/p1' }, lines: status().lines.map((l: object) => ({ ...l, ready: true, leftQty: 1 })) };
+    const acts = joActions(forStock as never, { ...can, release: true });
+    expect(acts.map((x) => x.label)).toContain("Put into Sample Client's stock");
+    expect(acts.map((x) => x.label)).not.toContain('Release slip');
     // Not allowed to invoice, or another mode: straight to the collection.
     expect(joActions(status(), { ...can, dpInvoice: false })[0]!.to).toBe(`/docs/col.collection/new?jo=${id}&for=downpayment`);
     for (const mode of ['A', 'B'] as const) {

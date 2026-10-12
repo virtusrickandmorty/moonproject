@@ -2,6 +2,7 @@
  * The job order list's own parts (DocList): its rows come with each balance due, its search also reads what was
  * ordered (the item that matched shows under the summary), and a row with something left to pay has Make payment.
  */
+import { ScanQrButton, jobOrderFromScan } from '../../components/QrScan.tsx';
 import type { ReactNode } from 'react';
 import { api, type DocHeader, type DocTypeInfo, type JoListRow } from '../../api.ts';
 import { DocView } from '../../generic/DocView.tsx';
@@ -64,6 +65,7 @@ export function jobOrderActions(docTypes: DocTypeInfo[]) {
     return (
       <>
         {canRelease && row(r).readyToRelease && <QuickAction label="Release slip" title={`Release the ready items of ${r.number}`} onClick={() => navigate(`/docs/jo.release/new?jo=${encodeURIComponent(r.id)}`)} />}
+        {row(r).stockPlace && <QuickAction label="Put into stock" title={`${row(r).stockPlace!.label}: the finished pieces of ${r.number}`} onClick={() => navigate(row(r).stockPlace!.href)} />}
         {canCollect && row(r).balanceDueCents > 0 && <QuickAction label="Make payment" title={`Take a payment on ${r.number}`} onClick={() => navigate(`/docs/col.collection/new?jo=${encodeURIComponent(r.id)}`)} />}
         {canInvoice && <QuickAction label="Invoice" disabled={waiting.length === 0}
           title={waiting.length === 0 ? `Nothing of ${r.number} is released and waiting for its invoice yet` : `Record the invoice for ${waiting.map((x) => x.number).join(', ')}`}
@@ -71,4 +73,16 @@ export function jobOrderActions(docTypes: DocTypeInfo[]) {
       </>
     );
   };
+}
+
+/**
+ * Scan QR beside the job orders' search (the owner's request, Oct 2026), as on the production board: the job ticket's or
+ * release slip's code opens that job order over the list; a code with only its number searches for it.
+ */
+export function jobOrderScan(search: (q: string) => void) {
+  return <ScanQrButton onScan={(text) => {
+    const j = jobOrderFromScan(text);
+    if (j?.id) navigate(`/docs/jo.job_order?view=${encodeURIComponent(j.id)}`);
+    else search(j?.number ?? text.trim().slice(0, 100));
+  }} />;
 }

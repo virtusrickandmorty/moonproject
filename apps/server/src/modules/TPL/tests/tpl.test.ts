@@ -70,6 +70,11 @@ describe('restock and stock', () => {
     // Finished on the board: the staff are told to put the pieces into the client's stock; the notice goes once all are in.
     const putIn = expect.objectContaining({ kind: 'tpl-put-in', label: expect.stringMatching(/: 100 finished pieces to put into Moonlight Test School's stock$/) });
     expect((await encoder.get('/api/dash/notifications')).json()).toContainEqual(putIn);
+    // Its screens offer putting the pieces into the client's stock, never a release slip.
+    const place = { label: "Put into Moonlight Test School's stock", href: `/tpl/${programId}` };
+    expect((await encoder.get(`/api/jo/orders/${jo.id}/status`)).json().stockPlace).toEqual(place);
+    const row = ((await encoder.get('/api/jo/list?limit=50')).json() as { id: string; readyToRelease: boolean; stockPlace: unknown }[]).find((x) => x.id === jo.id)!;
+    expect([row.readyToRelease, row.stockPlace]).toEqual([false, place]);
     const release = await owner.post('/api/docs/jo.release/preview', { input: { jobOrderId: jo.id, lines: [{ lineNo: 1, qty: 10 }], claimedBy: 'Juan', idSeen: 'none' } });
     expect(release.json().issues.map((i: { code: string }) => i.code)).toContain('FOR_STOCK');
 

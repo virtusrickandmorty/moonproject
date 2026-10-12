@@ -147,9 +147,11 @@ export function RowMenu({ label, items }: { label: string; items: { label: strin
  * summary (why a search found it) and what its search reads. `others`: other document types whose New form and documents
  * open over this list (a job order's payment, invoice and release), with what shows them.
  */
-export function DocList({ type, notice, pageSize, form, view, opened, noEdit, rowActions, formTitled, formSize = 'full', source, columns = [], detail, searchHint, others }: {
+export function DocList({ type, notice, pageSize, form, view, opened, noEdit, rowActions, formTitled, formSize = 'full', source, columns = [], detail, searchHint, others, searchTools }: {
   type: DocTypeInfo; notice?: string; pageSize?: number; form?: ListForm; view?: ListView; opened?: Opened; noEdit?: boolean; rowActions?: (r: DocHeader) => ReactNode; formTitled?: boolean; formSize?: 'full' | 'screen';
   source?: ListSource; columns?: ListColumn[]; detail?: (r: DocHeader) => ReactNode; searchHint?: string;
+  /** Beside the search box (the job orders' Scan QR): given a way to search for words at once. */
+  searchTools?: (search: (q: string) => void) => ReactNode;
   others?: { types: readonly string[]; title: (typeKey: string) => string; render: (p: { typeKey: string; docId?: string; recorded: boolean; refresh: () => void }) => ReactNode };
 }) {
   const [status, setStatus] = useState('');
@@ -325,6 +327,7 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
             <div className="flex-1 sm:w-36 sm:flex-none sm:shrink-0"><Field label="From date"><input type="date" className={inputClass} value={typed.from} onChange={(e) => setTyped({ ...typed, from: e.target.value })} /></Field></div>
             <div className="flex-1 sm:w-36 sm:flex-none sm:shrink-0"><Field label="To date"><input type="date" className={inputClass} value={typed.to} min={typed.from || undefined} onChange={(e) => setTyped({ ...typed, to: e.target.value })} /></Field></div>
             <Button type="submit" tone="primary" className="shrink-0">Search</Button>
+            {searchTools?.((q) => { const next = { ...typed, q }; setTyped(next); setFilters(next); })}
             {(filtered || typed.q || typed.from || typed.to) && <Button className="whitespace-nowrap" onClick={clear}>Clear filters</Button>}
           </div>
           {pending && <p className="text-sm text-slate-500">Filters not applied yet. Press Search.</p>}

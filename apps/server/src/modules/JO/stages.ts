@@ -150,3 +150,17 @@ export const forStockReason = (db: Db, jobOrderId: string): string | null => {
   for (const fn of forStockChecks) { const why = fn(db, jobOrderId); if (why) return why; }
   return null;
 };
+
+/**
+ * Where a job order made for stock puts its finished pieces (the owner's request, Oct 2026: its screens offer that, never
+ * a release slip): the words of the button and the screen it opens. TPL and the website shop register theirs.
+ */
+export interface StockPlace { label: string; href: string }
+const stockPlaces: ((db: Db, jobOrderId: string) => StockPlace | null)[] = [];
+export function onStockPlace(fn: (db: Db, jobOrderId: string) => StockPlace | null): void {
+  if (!stockPlaces.includes(fn)) stockPlaces.push(fn);
+}
+export const stockPlaceOf = (db: Db, jobOrderId: string): StockPlace | null => {
+  for (const fn of stockPlaces) { const p = fn(db, jobOrderId); if (p) return p; }
+  return null;
+};

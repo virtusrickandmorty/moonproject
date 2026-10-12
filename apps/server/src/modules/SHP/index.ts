@@ -8,13 +8,15 @@ import { shopItemsNotice } from './public.ts';
 import { shpTrackRoutes } from './track.ts';
 import { shpReviewRoutes } from './reviews.ts';
 import { shpSeoRoutes } from './seo.ts';
-import { onForStockCheck, onJobOrderEdited } from '../JO/public.ts';
+import { onForStockCheck, onJobOrderEdited, onStockPlace } from '../JO/public.ts';
 import { carryWorkOver, shpWorkRoutes, workOf } from './work-routes.ts';
 
 // A shop work order's pieces go into the website shop's stock, never out on a release slip (the owner's request, Oct 2026).
 onForStockCheck((db, jobOrderId) => (workOf(db, jobOrderId) ? "This job order was made for the website shop's stock. Put its finished pieces into the shop's stock (Website shop · Shop work)." : null));
 // Edited, it stays shop work.
 onJobOrderEdited(carryWorkOver);
+// Its screens offer putting the finished pieces into the shop's stock instead of a release slip.
+onStockPlace((db, jobOrderId) => (workOf(db, jobOrderId) ? { label: "Put into the shop's stock", href: '/shp?tab=work' } : null));
 
 export default defineModule({
   code: 'SHP',

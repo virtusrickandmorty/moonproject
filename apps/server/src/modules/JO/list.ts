@@ -10,7 +10,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { joMoney } from './public.ts';
 import { awaitingInvoice } from './doctypes/invoice-record.ts';
 import { releasableLines } from './doctypes/release.ts';
-import { isAbandoned } from './stages.ts';
+import { isAbandoned, stockPlaceOf } from './stages.ts';
 
 export type JoListFilters = { q?: string; from?: string; to?: string };
 
@@ -68,7 +68,12 @@ export function joListRoutes(app: FastifyInstance, db: Db): void {
       // Releases waiting for their booklet invoice (the row's Invoice action); none once cancelled.
       awaitingInvoice: r.status === 'posted' ? awaitingInvoice(db, r.id as string).map((x) => ({ id: x.id, number: x.number })) : [],
       // Something may go out now (the row's Release slip action): an item whose production is done, pieces left.
-      readyToRelease: r.status === 'posted' && !isAbandoned(db, r.id as string) && releasableLines(db, r.id as string).size > 0,
+      ...(() => {
+        // Made for stock (TPL, the website shop): its finished pieces go into stock, never on a release slip.
+        const place = stockPlaceOf(db, r.id as string);
+        const ready = r.status === 'posted' && !isAbandoned(db, r.id as string) && releasableLines(db, r.id as string).size > 0;
+        return { readyToRelease: ready && !place, stockPlace: place && ready ? place : null };
+      })(),
     }));
   });
 

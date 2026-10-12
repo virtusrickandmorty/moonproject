@@ -8,7 +8,7 @@ import { clockGuard, engineEnv, postDocument, previewDocument, type Actor } from
 import { findIdempotent, requestHash, storeIdempotent } from '../../engine/idempotency.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { activeChart, activeWearers, customerWearers } from './cus.ts';
-import { STAGES, STAGE_LABELS, changeStage, currentStage, isAbandoned, movesFrom, stageHistory } from './stages.ts';
+import { STAGES, STAGE_LABELS, changeStage, currentStage, isAbandoned, movesFrom, stageHistory, stockPlaceOf } from './stages.ts';
 import { MODE_WORDS, depositModeOn, modeKeptIssue } from '../COL/public.ts';
 import { saleInvoicesOf, saleOpenCents } from '../QS/public.ts';
 import { jobOrderRef, jobOrdersOf, joMoney, leftPiecesAll, rosterOf, stagesAll } from './public.ts';
@@ -105,13 +105,16 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
       return { lineNo, description, qty, releasedQty, leftQty: qty - releasedQty, ready: readyQty > 0 && !awaitingSteps, readyQty: awaitingSteps ? 0 : readyQty, awaitingSteps, ...(wearers.length ? { wearers } : {}) };
     });
     // An abandoned job order is closed; its label says why (D5 DEP-FORFEIT).
-    const stageLabel = stage === 'closed' && isAbandoned(db, req.params.id) ? 'Abandoned (deposit forfeited)' : STAGE_LABELS[stage];
+    const stockPlace = stockPlaceOf(db, req.params.id);
+    const stageLabel = stage === 'closed' && isAbandoned(db, req.params.id) ? 'Abandoned (deposit forfeited)'
+      : stockPlace && stage === 'ready' ? 'Ready to put into stock' : stockPlace && stage === 'released' ? 'All in stock' : STAGE_LABELS[stage];
     const jo = jobOrderRef(db, req.params.id)!;
     const docType = db.prepare('SELECT doc_type FROM documents WHERE id = ?').pluck().get(jo.id) as string;
     const jobOrder = { id: jo.id, number: jo.number, docType, status: jo.status, customerId: jo.customerId, customerName: jo.customerName, dueDate: jo.dueDate };
     return {
       jobOrder, stage, stageLabel, moves: movesFrom(stage), history: stageHistory(db, req.params.id), money, lines, awaitingInvoice: awaitingInvoice(db, req.params.id),
       depositVat: depositVatOf(db, jo, today(clock)), dpInvoices: dpInvoicesOf(db, req.params.id),
+      stockPlace,
     };
   });
 

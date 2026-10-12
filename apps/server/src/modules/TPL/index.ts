@@ -7,7 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { conflict } from '@moonproject/shared';
 import { defineModule } from '../../engine/documents/registry.ts';
-import { onForStockCheck, onJobOrderEdited } from '../JO/public.ts';
+import { onForStockCheck, onJobOrderEdited, onStockPlace } from '../JO/public.ts';
+import { program } from './programs.ts';
 import { cancellingTogether, deliveryDoc } from './doctypes/delivery.ts';
 import { tplRoutes } from './routes.ts';
 import { carryRestockOver, piecesPutIn, restockOf } from './stock.ts';
@@ -16,6 +17,11 @@ import { carryRestockOver, piecesPutIn, restockOf } from './stock.ts';
 onForStockCheck((db, jobOrderId) => (restockOf(db, jobOrderId) ? 'This job order was made for the client\'s stock (TPL). Put its finished pieces into stock, then deliver them with a delivery receipt.' : null));
 // Edited, it stays for stock.
 onJobOrderEdited(carryRestockOver);
+// Its screens offer putting the finished pieces into the client's stock instead of a release slip.
+onStockPlace((db, jobOrderId) => {
+  const r = restockOf(db, jobOrderId);
+  return r ? { label: `Put into ${program(db, r.programId)?.customerName ?? 'the client'}'s stock`, href: `/tpl/${r.programId}` } : null;
+});
 
 export default defineModule({
   code: 'TPL',
