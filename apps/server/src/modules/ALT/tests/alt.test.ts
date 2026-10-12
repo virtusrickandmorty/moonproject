@@ -134,9 +134,15 @@ describe('alterations and replacements', () => {
 
     const ret = (await newReturn({ customerId: c.school, notes: 'Brought in by the coach', lines: [line({ source: 'other', description: 'Old jacket from 2024', problem: 'Zip broken' })] })).json();
     expect(ret.number).toBe('ALT-000001');
+    // The owner and the accountant are told it waits for their decision; the notice goes once it is decided.
+    const notice = expect.objectContaining({ kind: 'alt-decision', label: 'ALT-000001: decide on the items Moonlight Test School brought back', href: `/alt?open=${ret.id}` });
+    expect((await owner.get('/api/dash/notifications')).json()).toContainEqual(notice);
+    expect((await accountant.get('/api/dash/notifications')).json()).toContainEqual(notice);
+    expect((await encoder.get('/api/dash/notifications')).json()).not.toContainEqual(notice);
     const no = await owner.post(`/api/alt/returns/${ret.id}/decision`, { outcome: 'declined', reason: 'Not made by us' });
     expect(no.json()).toMatchObject({ status: 'declined', decision: { outcome: 'declined', reason: 'Not made by us', jobOrderId: null } });
     expect(env.db.prepare("SELECT COUNT(*) FROM documents WHERE doc_type = 'jo.job_order'").pluck().get()).toBe(1);
+    expect((await owner.get('/api/dash/notifications')).json()).not.toContainEqual(expect.objectContaining({ kind: 'alt-decision' }));
     expect(() => env.db.prepare('DELETE FROM alt_returns').run()).toThrow(/IMMUTABLE/);
   });
 });

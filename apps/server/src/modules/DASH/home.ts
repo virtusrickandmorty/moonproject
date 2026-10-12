@@ -12,6 +12,7 @@ import { pendingCertificates } from '../COL/public.ts';
 import { board } from '../PRD/public.ts';
 import { KIND_LABELS as SUPPORT_KINDS, newSupportMessages } from '../SUP/public.ts';
 import { OVERDUE_LABEL, paymentsToCheck } from '../SHP/public.ts';
+import { returnsAwaitingDecision } from '../ALT/public.ts';
 import { sizerBoard } from '../SZR/public.ts';
 import { hasReceived2307, paidTaxPeriods, taxDeadlines, vatSummary } from '../TAX/public.ts';
 import { monthEndChecklist } from '../ACC/public.ts';
@@ -232,6 +233,12 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
   // Online orders paid by QR and waiting for someone to find the money in the bank and confirm it.
   if (can('shp.orders.manage')) for (const o of paymentsToCheck(db, clock.now().getTime())) {
     push('online-payment', o.id, `${o.number}: ${o.overdue ? `${OVERDUE_LABEL} (online payment from ${o.name})` : `check the online payment from ${o.name}`}`, `/shp/orders?open=${o.id}`, `Sent ${o.sentAt.slice(0, 16).replace('T', ' ')}`, o.totalCents);
+  }
+  // Items brought back for alteration or replacement, waiting for the owner's or the accountant's decision (the owner's
+  // request, Oct 2026): the notice goes once it is decided.
+  if (can('alt.decide')) for (const r of returnsAwaitingDecision(db)) {
+    push('alt-decision', r.id, `${r.number}: decide on the items ${r.customerName} brought back`, `/alt?open=${r.id}`,
+      `${r.pieces} ${r.pieces === 1 ? 'piece' : 'pieces'}${r.items > 1 ? ` in ${r.items} items` : ''} · received ${r.receivedOn}`);
   }
   if (can('stat.view')) {
     let month = prevMonthEnd(date).slice(0, 7);
