@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { AppError, isBusinessDate } from '@moonproject/shared';
+import { AppError, isBusinessDate, conflict } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp, systemClock, today } from '../../platform/clock.ts';
@@ -44,6 +44,8 @@ export function comRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   app.post('/api/com/test-email', { config: { permission: 'com.settings.manage' } }, async (req: FastifyRequest) => {
+    // The practice shop never sends email (it may be a copy of the real shop, with its settings and customers).
+    if (practice) throw conflict('PRACTICE', 'The practice shop sends no email. Send the test from the real shop.');
     const user = currentUser(req);
     requireStepUp(user, clock);
     await sendTest(db, mailTransport(), { userId: user.userId, at: now() });
