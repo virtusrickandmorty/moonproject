@@ -285,3 +285,11 @@ button:disabled,
     color: var(--color-indigo-700);
   }
 }
+
+/* Printed pages are white whatever the screen behind them (the owner's report, Oct 2026: payslips printed on the grey page
+   background). Payslips print on A4, two to a page (their own named page, so other printouts keep their paper). */
+@media print {
+  html, body, main[data-erp] { background: #fff !important; }
+  .payslips { page: payslips; }
+}
+@page payslips { size: A4 portrait; margin: 12mm; }

@@ -3,7 +3,7 @@
  * payslips (F4, H4 PAYSLIP, A4 2-up, internal: no legend), which show the 13th month too.
  */
 import { useEffect, useState } from 'react';
-import { api, type DocDetail, type Me, type Payslips as PayslipData } from '../../api.ts';
+import { api, type CompanyProfile, type DocDetail, type Me, type Payslips as PayslipData } from '../../api.ts';
 import { Loading, Button, Notice, peso, showDate } from '../../components/ui.tsx';
 import { TickBar } from '../../components/charts.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
@@ -119,54 +119,116 @@ export const advanceView: ViewParts = {
   },
 };
 
-/** One employee's payslip of a run: the printable payslips, and the release of one person at a time. */
-export function PayslipCard({ p, e }: { p: PayslipData; e: PayslipData['employees'][number] }) {
+/** The company on a payslip's head (the Company Profile, when it is set and the person may read it). */
+export type PayslipCompany = Pick<CompanyProfile, 'registeredName' | 'tradeName' | 'tin' | 'registeredAddress'> | null;
+
+/**
+ * One employee's payslip of a run: the printable payslips, and the release of one person at a time. Laid out like a paper
+ * payslip (the owner's request, Oct 2026): the company and the period on top, earnings beside deductions, the net pay in a
+ * band, then balances and the signature lines. Two fit an A4 page when printed (cut on the dashed line).
+ */
+export function PayslipCard({ p, e, company = null }: { p: PayslipData; e: PayslipData['employees'][number]; company?: PayslipCompany }) {
+  const deductions = deductionsOf(e);
+  const totalDeductions = deductions.reduce((n, [, c]) => n + c, 0);
+  const refund = e.wtaxRefundCents ?? 0;
+  const cell = 'py-1 align-top';
+  const amount = `${cell} whitespace-nowrap pl-3 text-right tabular-nums`;
+  const notes = [
+    `Cash advance still owed ${peso(e.caBalanceAfterCents)}`,
+    ...loansLeft(e).map(([label, c]) => `${label}: ${peso(c)} left`),
+    ...(e.charges ?? []).map((c) => `Damage charge ${c.number}: ${peso(c.leftAfterCents)} left`),
+    ...(e.eeShortCents > 0 ? [`${peso(e.eeShortCents)} of government shares carried to the next payroll`] : []),
+  ];
   return (
-    <section className="break-inside-avoid space-y-2 rounded-lg bg-white p-4 text-sm ring-1 ring-slate-300">
-      <div className="flex justify-between"><h2 className="font-semibold">PAYSLIP{e.final && <FinalBadge />}</h2><span>{p.number}</span></div>
-      <p>{e.name} <span className="text-slate-500">{e.code}</span></p>
-      <p className="text-slate-600">{GROUP_LABEL[p.payGroup]} · {showDate(p.periodStart)} to {showDate(p.periodEnd)} · dated {showDate(p.payDate)}</p>
-      <table className="w-full">
-        <tbody>
-          {e.lines.map((l) => <tr key={l.lineNo}><td>{l.description}</td><td className="text-right text-slate-500">{qtyText(l.kind, l.qty)}</td><td className="text-right tabular-nums">{peso(l.amountCents)}</td></tr>)}
-          <tr className="border-t font-medium"><td colSpan={2}>Gross pay</td><td className="text-right tabular-nums">{peso(e.grossCents)}</td></tr>
-          {deductionsOf(e).map(([label, c]) => <tr key={label}><td colSpan={2}>Less {label}</td><td className="text-right tabular-nums">{peso(-c)}</td></tr>)}
-          {(e.wtaxRefundCents ?? 0) > 0 && <tr><td colSpan={2}>Add year-end tax refund</td><td className="text-right tabular-nums">{peso(e.wtaxRefundCents!)}</td></tr>}
-          <tr className="border-t text-base font-semibold"><td colSpan={2}>Net pay</td><td className="text-right tabular-nums">{peso(e.netCents)}</td></tr>
-        </tbody>
-      </table>
-      <p className="text-xs text-slate-600">
-        Cash advance still owed {peso(e.caBalanceAfterCents)} · Year to date: gross {peso(e.ytd.grossCents)}, tax {peso(e.ytd.wtaxCents)}
-        {e.eeShortCents > 0 && ` · ${peso(e.eeShortCents)} of government shares carried to the next payroll`}
-      </p>
-      {loansLeft(e).map(([label, c]) => <p key={label} className="text-xs text-slate-600">{label}: {peso(c)} left</p>)}
-      {(e.charges ?? []).map((c) => <p key={c.chargeId} className="text-xs text-slate-600">Damage charge {c.number}: {peso(c.leftAfterCents)} left</p>)}
-      <p className="text-xs text-slate-600">{thirteenthText(e)}</p>
-      {e.yearEnd && <p className="text-xs text-slate-600">{yearEndDetail(e)}</p>}
-      {e.final && <p className="text-xs font-medium text-slate-700">{finalPayText(e)}. The 13th month on separation is paid on its own (13th-month pay for this employee).</p>}
-      <p className="pt-4 text-xs">Received by: ______________________ Date: __________</p>
+    <section aria-label={`Payslip of ${e.name}`} className="payslip @container break-inside-avoid space-y-3 rounded-lg bg-white p-5 text-sm text-slate-900 ring-1 ring-slate-300 print:space-y-2 print:rounded-none print:p-0 print:text-[9.5pt] print:ring-0">
+      <header className="flex items-start justify-between gap-4 border-b-2 border-slate-800 pb-2">
+        <div className="min-w-0">
+          {company ? <>
+            <p className="text-base font-bold uppercase leading-tight tracking-wide">{company.tradeName || company.registeredName}</p>
+            {company.tradeName && company.registeredName && company.tradeName !== company.registeredName && <p className="text-xs text-slate-600">{company.registeredName}</p>}
+            <p className="text-xs text-slate-600">{[company.registeredAddress, company.tin && `TIN ${company.tin}`].filter(Boolean).join(' · ')}</p>
+          </> : null}
+        </div>
+        <div className="shrink-0 text-right">
+          <h2 className="text-base font-bold tracking-widest">PAYSLIP</h2>
+          <p className="text-xs text-slate-600">{p.number}{e.final && <FinalBadge />}</p>
+        </div>
+      </header>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs @lg:grid-cols-[1.3fr_0.8fr_1.6fr_1fr] print:grid-cols-[1.3fr_0.8fr_1.6fr_1fr]">
+        <div><dt className="text-slate-500">Employee</dt><dd className="font-semibold text-slate-900">{e.name}</dd></div>
+        <div><dt className="text-slate-500">Employee no.</dt><dd>{e.code}</dd></div>
+        <div><dt className="text-slate-500">Pay period</dt><dd>{showDate(p.periodStart)} – {showDate(p.periodEnd)}</dd></div>
+        <div><dt className="text-slate-500">{GROUP_LABEL[p.payGroup]}</dt><dd>Paid {showDate(p.payDate)}</dd></div>
+      </dl>
+      <div className="grid gap-4 @lg:grid-cols-2 print:grid-cols-2 print:gap-6">
+        <table className="w-full self-start text-sm print:text-[9.5pt]">
+          <thead><tr><th colSpan={3} className="border-b border-slate-300 pb-1 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Earnings</th></tr></thead>
+          <tbody>
+            {e.lines.map((l) => (
+              <tr key={l.lineNo}>
+                <td className={cell}>{l.description}</td>
+                <td className={`${cell} whitespace-nowrap pl-2 text-right text-slate-500`}>{qtyText(l.kind, l.qty)}</td>
+                <td className={amount}>{peso(l.amountCents)}</td>
+              </tr>
+            ))}
+            {refund > 0 && <tr><td className={cell} colSpan={2}>Year-end tax refund</td><td className={amount}>{peso(refund)}</td></tr>}
+          </tbody>
+          <tfoot><tr className="border-t border-slate-300 font-semibold"><td className={cell} colSpan={2}>Gross pay{refund > 0 ? ' and refund' : ''}</td><td className={amount}>{peso(e.grossCents + refund)}</td></tr></tfoot>
+        </table>
+        <table className="w-full self-start text-sm print:text-[9.5pt]">
+          <thead><tr><th colSpan={2} className="border-b border-slate-300 pb-1 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Deductions</th></tr></thead>
+          <tbody>
+            {deductions.length === 0 && <tr><td className={`${cell} text-slate-500`} colSpan={2}>None</td></tr>}
+            {deductions.map(([label, c]) => <tr key={label}><td className={cell}>{label}</td><td className={amount}>{peso(c)}</td></tr>)}
+          </tbody>
+          <tfoot><tr className="border-t border-slate-300 font-semibold"><td className={cell}>Total deductions</td><td className={amount}>{peso(totalDeductions)}</td></tr></tfoot>
+        </table>
+      </div>
+      <div className="flex items-center justify-between rounded-md bg-slate-900 px-4 py-2 text-white print:rounded-none print:border-2 print:border-slate-900 print:bg-white print:text-slate-900">
+        <span className="font-semibold uppercase tracking-wide">Net pay</span>
+        <span className="text-lg font-bold tabular-nums">{peso(e.netCents)}</span>
+      </div>
+      <div className="space-y-0.5 text-xs text-slate-600">
+        <p>{notes.join(' · ')}</p>
+        <p>Year to date: gross {peso(e.ytd.grossCents)}, tax withheld {peso(e.ytd.wtaxCents)}. {thirteenthText(e)}</p>
+        {e.yearEnd && <p>{yearEndDetail(e)}</p>}
+        {e.final && <p className="font-medium text-slate-700">{finalPayText(e)}. The 13th month on separation is paid on its own (13th-month pay for this employee).</p>}
+      </div>
+      <div className="grid grid-cols-2 gap-8 pt-6 text-xs text-slate-600 print:pt-8">
+        <p className="border-t border-slate-400 pt-1">Received by (signature over printed name)</p>
+        <p className="border-t border-slate-400 pt-1">Date received</p>
+      </div>
     </section>
   );
 }
 
-/** Printable payslips, two to a page. */
+/**
+ * Printable payslips: on screen, two across; printed, two to an A4 page (the owner's request, Oct 2026), each the width
+ * of the page with a dashed line to cut between them.
+ */
 export function Payslips({ params }: { me: Me; params?: Record<string, string> }) {
   const [p, setP] = useState<PayslipData | null>(null);
+  const [company, setCompany] = useState<PayslipCompany>(null);
   const [error, setError] = useState('');
   useEffect(() => void api.payslips(params?.id ?? '').then(setP, (e: Error) => setError(e.message)), [params?.id]);
+  // Without the Company Profile (not set, or not the person's to read) the payslips print without the company head.
+  useEffect(() => void api.companyProfile().then((c) => setCompany(c.registeredName || c.tradeName ? c : null), () => setCompany(null)), []);
   if (error) return <Notice>{error}</Notice>;
   if (!p) return <Loading />;
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-3 print:hidden">
+    <div className="space-y-3 print:space-y-0">
+      <div className="flex flex-wrap items-center gap-3 print:hidden">
         <h1 className="text-2xl font-semibold">Payslips {p.number}</h1>
         <Button tone="primary" onClick={() => window.print()}>Print</Button>
         <Link to={docPath('pay.run', `/${params?.id}`)} className="underline">Back to the run</Link>
+        <span className="text-sm text-slate-500">{p.employees.length} {p.employees.length === 1 ? 'payslip' : 'payslips'} · two to an A4 page</span>
       </div>
       {p.status === 'cancelled' && <Notice tone="warning">{p.number} is cancelled.</Notice>}
-      <div className="grid gap-4 md:grid-cols-2 print:grid-cols-2 print:gap-2">
-        {p.employees.map((e) => (
-          <PayslipCard key={e.employeeId} p={p} e={e} />
+      <div className="payslips grid gap-4 xl:grid-cols-2 print:block">
+        {p.employees.map((e, i) => (
+          <div key={e.employeeId} className={i % 2 === 0 ? 'print:border-b print:border-dashed print:border-slate-400 print:pb-[8mm] print:mb-[8mm]' : 'print:break-after-page'}>
+            <PayslipCard p={p} e={e} company={company} />
+          </div>
         ))}
       </div>
     </div>
