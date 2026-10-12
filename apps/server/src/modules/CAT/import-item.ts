@@ -23,6 +23,8 @@ export interface ImportedItem {
   unit: 'pc' | 'set';
   /** Selling price per piece or set, VAT included; left out = no price yet. */
   priceCents?: number | undefined;
+  /** The price is from this many pieces (a price break); 1 when left out. */
+  minQty?: number | undefined;
 }
 
 /**
@@ -47,13 +49,15 @@ export function importPriceListItem(db: Db, row: ImportedItem, who: { userId: st
   }
   let priced = false;
   if (row.priceCents !== undefined) {
-    const has = db.prepare('SELECT 1 FROM cat_prices WHERE item_id = ? AND effective_from <= ? LIMIT 1').get(id, who.today);
+    // A price break (the owner's request, Oct 2026): the price from that many pieces, added unless the item has that break.
+    const minQty = row.minQty ?? 1;
+    const has = db.prepare('SELECT 1 FROM cat_prices WHERE item_id = ? AND min_qty = ? AND effective_from <= ? LIMIT 1').get(id, minQty, who.today);
     if (!has) {
       const priceId = newId();
-      db.prepare(`INSERT INTO cat_prices (id, item_id, effective_from, min_qty, unit_price_cents, created_at, created_by) VALUES (?, ?, ?, 1, ?, ?, ?)`)
-        .run(priceId, id, who.today, row.priceCents, who.at, who.userId);
+      db.prepare(`INSERT INTO cat_prices (id, item_id, effective_from, min_qty, unit_price_cents, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(priceId, id, who.today, minQty, row.priceCents, who.at, who.userId);
       db.prepare('UPDATE cat_items SET version = version + 1, updated_at = ? WHERE id = ?').run(who.at, id);
-      appendAudit(db, { at: who.at, userId: who.userId, action: 'cat.price.create', entityType: 'cat_price', entityId: priceId, data: { itemId: id, effectiveFrom: who.today, minQty: 1, unitPriceCents: row.priceCents, imported: true } });
+      appendAudit(db, { at: who.at, userId: who.userId, action: 'cat.price.create', entityType: 'cat_price', entityId: priceId, data: { itemId: id, effectiveFrom: who.today, minQty, unitPriceCents: row.priceCents, imported: true } });
       priced = true;
     }
   }

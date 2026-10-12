@@ -46,7 +46,7 @@ describe('what the file holds', () => {
     expect(fileProblem('customer', 'buyers.csv', ' \n')).toBe('The file is empty.');
     expect(fileProblem('customer', 'staff.csv', employees)).toBe('This file looks like employees, not customers. Pick Employees, or choose another file.');
     expect(fileProblem('piece_rate', 'x.csv', 'Foo,Bar\n1,2')).toBe(
-      'Virtus cannot tell what this file holds from its first line. For the price list, the file needs these columns: Item, Kind, Unit, Price, then for a piece rate Operation, Part, Difficulty, Rate.');
+      'Virtus cannot tell what this file holds from its first line. For the price list, the file needs these columns: Item, Kind, Unit, Price, From qty, then for a piece rate Operation, Part, Difficulty, Rate.');
   });
 
   it('says where an upload stands', () => {
