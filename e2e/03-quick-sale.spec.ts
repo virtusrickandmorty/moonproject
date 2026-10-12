@@ -20,6 +20,7 @@ test('a quick sale is recorded with its collection', async ({ page }) => {
   await page.getByRole('button', { name: /^Test School/ }).click();
   await page.getByLabel('What', { exact: true }).fill('Shorten sleeves');
   await page.getByLabel('Price each').fill('1,120.00');
+  await page.getByRole('button', { name: '+ Add to sale' }).click(); // into the breakdown, as on the job order form
   await page.getByLabel('Invoice number (from the booklet)').fill('501');
   await page.getByRole('radio', { name: /^Cash on hand/ }).click();
   await page.getByLabel('CR number (from the booklet)').fill('301');
