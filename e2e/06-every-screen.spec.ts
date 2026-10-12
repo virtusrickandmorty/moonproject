@@ -77,15 +77,16 @@ function typedFor(label: string, kind: string, mode: string | null): string {
 /** A box that finds a customer, job order, release or supply as you type, and lists what it found as buttons under itself. */
 const isSearch = (label: string) => /^search|type 2 or more|number or customer|release number|name or code/i.test(label);
 
-/** Types into a search box until it lists something, and picks the first thing listed (under the box, or under its label). */
-async function pickFirst(input: Locator) {
+/** Types into a search box until it lists something, and picks the first thing listed (under the box, or under its label); whether it picked. */
+async function pickFirst(input: Locator): Promise<boolean> {
   for (const query of ['Practice', 'JO-', 'REL-', 'PO-', '0']) {
     await input.fill(query);
     const found = input.locator('xpath=ancestor::*[not(self::label)][1]').getByRole('button').filter({ hasNotText: /^(Change|\+|Add|✕)/ });
     await found.first().waitFor({ state: 'visible', timeout: 1_500 }).catch(() => undefined);
-    if (await found.count()) return void (await found.first().click());
+    if (await found.count()) return (await found.first().click(), true);
   }
   await input.fill('');
+  return false;
 }
 
 /**
@@ -99,8 +100,9 @@ async function fillIn(page: Page, today: string): Promise<string[]> {
   const sides: Record<string, number> = {};
   // A search box picks at most twice: one that stays empty after its pick (the price list's, which fills the item below
   // it) would otherwise take every pass and leave the boxes after it empty; twice, so a pick a later choice clears (a
-  // production entry's worker, when the step is picked after it) is made again.
-  const searched = new Map<string, number>();
+  // production entry's worker, when the step is picked after it) is made again. Only picks made count: a search that
+  // found nothing yet (a busy machine) is tried again on the next pass.
+  const picked = new Map<string, number>();
   for (let pass = 0; pass < 6; pass++) {
     for (const k of Object.keys(sides)) sides[k] = 0;
     for (const select of await main.locator('select:visible').all()) {
@@ -129,12 +131,11 @@ async function fillIn(page: Page, today: string): Promise<string[]> {
       if (wrongSide || info.value !== '' || /owed to the supplier|financed by a lender/i.test(info.label)) continue; // optional shares of a payment stay empty
       if (/^[1-9]\d*\.\d\d$/.test(info.hint)) continue; // the amount the server suggests: changing it would ask for a reason
       if (isSearch(info.hint) || isSearch(info.label)) {
-        const tries = searched.get(info.label || info.hint) ?? 0;
-        if (tries >= 2) continue;
-        searched.set(info.label || info.hint, tries + 1);
+        const made = picked.get(info.label || info.hint) ?? 0;
+        if (made >= 2) continue;
         // A pick loads what was picked and redraws the form (a release's lines appear above "Claimed by"), so the boxes
         // listed before it are stale: start the next pass on the redrawn form rather than typing into a moved box.
-        await pickFirst(input);
+        if (await pickFirst(input)) picked.set(info.label || info.hint, made + 1);
         await page.waitForLoadState('networkidle').catch(() => undefined);
         break;
       } else await input.fill(info.type === 'date' ? today : typedFor(info.label || info.hint, info.type, info.mode));
