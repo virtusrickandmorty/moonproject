@@ -6,6 +6,7 @@ import { stamp } from '../../platform/clock.ts';
 import { appendAudit } from '../audit.ts';
 import type { AppDeps } from '../../app.ts';
 import { checkPasswordPolicy, hashPassword, verifyPassword } from './passwords.ts';
+import { firstOwnerMade } from './first-owner.ts';
 import {
   checkRateLimit,
   createSession,
@@ -51,7 +52,7 @@ export function securityRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.post('/api/setup/first-owner', { config: { permission: 'public' } }, async (req, reply) => {
     if (!isLoopback(req.ip)) throw new AppError('SHOP_PC_ONLY', 'Create the owner account on the shop PC itself, not from another device. Open Moonproject in the browser on the shop PC.', 403);
-    const b = body(z.object({ username: z.string().trim().min(2).max(40), displayName: z.string().trim().min(1).max(80), password: z.string() }).strict(), req);
+    const b = body(z.object({ username: z.string().trim().min(2).max(40), displayName: z.string().trim().min(1).max(80), password: z.string(), freshPriceList: z.boolean().optional() }).strict(), req);
     checkPasswordPolicy(b.password, b.username);
     const userId = newId();
     const created = tx(db, () => {
@@ -60,7 +61,8 @@ export function securityRoutes(app: FastifyInstance, deps: AppDeps): void {
       const at = stamp(clock);
       db.prepare('INSERT INTO users (id, username, display_name, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(userId, b.username, b.displayName, hash(b.password), at, at);
       db.prepare(`INSERT INTO user_roles (user_id, role_key, active, updated_at) VALUES (?, 'owner', 1, ?)`).run(userId, at);
-      audit(userId, 'setup.first_owner', 'user', userId, { username: b.username });
+      audit(userId, 'setup.first_owner', 'user', userId, { username: b.username, freshPriceList: b.freshPriceList ?? false });
+      firstOwnerMade(db, { userId, at, freshPriceList: b.freshPriceList ?? false });
       return true;
     });
     if (!created) throw new AppError('ALREADY_SET_UP', 'The first owner already exists. Please sign in.', 409);

@@ -16,6 +16,9 @@ test('reads a price list row, and an old piece-rate row as a rate of the item of
   expect(priceListRow({ Item: 'Polo', Part: 'Upper', Operation: 'Sewing', Rate: '5' }).issues).toContain('Upper and Lower parts are for an item sold as a set.');
   expect(priceListRow({ Item: 'Polo', Kind: 'Gadget', Price: '1' }).issues).toContain('Kind "Gadget" is not Made to order, Ready-made or Service.');
   expect(priceListRow({ Item: 'Polo', Price: '' , Rate: '' }).issues).toContain('The row has neither a price nor a piece rate.');
+  // No difficulty (the owner's decision, Oct 2026): blank or Standard is fine; anything else is flagged for review.
+  expect(priceListRow({ Item: 'Polo', Price: '450', Operation: 'Sewing', Difficulty: 'Standard', Rate: '40' }).issues).toEqual([]);
+  expect(priceListRow({ Item: 'Polo', Price: '450', Operation: 'Sewing', Difficulty: 'Complex', Rate: '60' }).issues).toEqual(['Difficulty "Complex" is no longer used: each item has its own rates. Leave it blank, or make the harder version a price list item of its own.']);
 });
 
 test('imports the price list: items made once, one price each, and their piece rates on the item', async () => {

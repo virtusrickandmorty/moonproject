@@ -22,6 +22,22 @@ describe('first run and login (PLAN C6, E13)', () => {
     expect(me.json().roles).toEqual(['owner']);
   });
 
+  it('a new shop set up from the first-run screen starts with nothing in its price list; the API alone keeps the starter rates', async () => {
+    const inForce = () => (env.db.prepare(`SELECT DISTINCT garment_type FROM rate_piece_rates r WHERE created_by IS NULL
+      AND NOT EXISTS (SELECT 1 FROM rate_garment_type_switches w WHERE w.garment_type = r.garment_type AND w.is_on = 0)`).pluck().all() as string[]).length;
+    expect(inForce()).toBe(9); // the made-up starters (RATE 0001)
+    const ok = await inject('POST', '/api/setup/first-owner', { username: 'virtus', displayName: 'Owner', password: 'three blue sewing machines', freshPriceList: true });
+    expect(ok.statusCode).toBe(200);
+    expect(inForce()).toBe(0);
+    const owner = await login(env.app, 'virtus', 'three blue sewing machines');
+    expect((await owner.get('/api/rate/rates')).json()).toMatchObject({ current: [], unmatched: [] });
+    expect(env.db.prepare('SELECT COUNT(*) FROM rate_piece_rates').pluck().get()).toBe(22); // switched off, never deleted
+    // Set up through the API alone (tests, the practice shop's made-up data): the starters stay.
+    const other = await createTestEnv();
+    await other.app.inject({ method: 'POST', url: '/api/setup/first-owner', payload: { username: 'virtus', displayName: 'Owner', password: 'three blue sewing machines' } });
+    expect(other.db.prepare('SELECT COUNT(*) FROM rate_garment_type_switches').pluck().get()).toBe(0);
+  });
+
   it('creates the first owner only from the shop PC itself (I1-01)', async () => {
     const from = (remoteAddress: string) =>
       env.app.inject({ method: 'POST', url: '/api/setup/first-owner', remoteAddress, payload: { username: 'virtus', displayName: 'Owner', password: 'three blue sewing machines' } });
