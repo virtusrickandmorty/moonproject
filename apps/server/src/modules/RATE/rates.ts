@@ -5,7 +5,7 @@
  * as one piece is 'whole'.
  */
 import { z } from 'zod';
-import { badRequest, isBusinessDate } from '@moonproject/shared';
+import { GARMENT_TYPE_MAX, badRequest, isBusinessDate } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { COMPLEXITIES, listSteps, type Complexity } from '../PRD/public.ts';
@@ -55,7 +55,7 @@ export const garmentTypes = (db: Db): string[] => db.prepare('SELECT DISTINCT ga
 
 export const rateInput = z
   .object({
-    garmentType: z.string().trim().min(1).max(60),
+    garmentType: z.string().trim().min(1).max(GARMENT_TYPE_MAX),
     stepCode: z.string().trim().min(1).max(20),
     complexity: z.enum(COMPLEXITIES),
     part: z.enum(PARTS).optional(), // default whole
@@ -84,7 +84,7 @@ export function addRate(db: Db, raw: unknown, who: { userId: string; at: string;
   return db.prepare(`${RATE} WHERE id = ?`).get(id) as PieceRate;
 }
 
-export const switchInput = z.object({ garmentType: z.string().trim().min(1).max(60), on: z.boolean(), reason: z.string().trim().min(10).max(500) }).strict();
+export const switchInput = z.object({ garmentType: z.string().trim().min(1).max(GARMENT_TYPE_MAX), on: z.boolean(), reason: z.string().trim().min(10).max(500) }).strict();
 
 /**
  * Switches a garment type's piece rates off or on again (the owner's request, Oct 2026). Off is refused while a job order

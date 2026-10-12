@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { AppError, conflict, notFound } from '@moonproject/shared';
+import { AppError, GARMENT_TYPE_MAX, conflict, notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
@@ -14,7 +14,7 @@ import { carryWarnings } from './carry.ts';
 import { COMPLEXITIES, SET_PARTS, availableFor, board, forwardedWearers, lineRoute, lineSetup, listSteps, listTemplates, reworkOpen, sendBackForRework, setupLine, stepAction, stepById, wearersDone, type StepAction } from './production.ts';
 
 const setupBody = z
-  .object({ templateId: z.number().int().positive().optional(), stepIds: z.array(z.number().int().positive()).min(1).max(20), garmentType: z.string().trim().min(1).max(60).optional(), complexity: z.enum(COMPLEXITIES) })
+  .object({ templateId: z.number().int().positive().optional(), stepIds: z.array(z.number().int().positive()).min(1).max(20), garmentType: z.string().trim().min(1).max(GARMENT_TYPE_MAX).optional(), complexity: z.enum(COMPLEXITIES) })
   .strict();
 const stepBody = z.object({ name: z.string().trim().min(1).max(60).optional(), payBasis: z.enum(['piece', 'daily', 'piece_or_daily']).optional(), isActive: z.boolean().optional() }).strict();
 const ACTIONS: Record<string, StepAction> = { complete: 'complete', 'not-needed': 'not_needed', reopen: 'reopen' };

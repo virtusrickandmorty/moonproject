@@ -1,10 +1,11 @@
 import { z } from 'zod';
+import { GARMENT_TYPE_MAX } from '@moonproject/shared';
 
 const itemFields = {
   code: z.string().trim().min(1).max(40).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/),
   name: z.string().trim().min(1).max(200),
   class: z.enum(['made_to_order_garment', 'service', 'ready_made_item']),
-  garmentType: z.string().trim().min(1).max(100).nullable(),
+  garmentType: z.string().trim().min(1).max(GARMENT_TYPE_MAX).nullable(),
   unit: z.enum(['pc', 'set']),
   setComponents: z.number().int().min(1).max(100),
 };
