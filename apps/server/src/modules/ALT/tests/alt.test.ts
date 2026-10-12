@@ -80,7 +80,7 @@ describe('alterations and replacements', () => {
       payment: { crNumber: '9101', tenders: [{ cashPlaceId: cashPlaceId(env.db, '1101'), amountCents: 50_000 }] }, expectedTotalCents: 50_000 }, idem());
     expect(sold.statusCode, sold.body).toBe(200);
     const saleNo = sold.json().sale.number as string;
-    expect((await encoder.get(`/api/alt/source?kind=sale&number=${saleNo}`)).json().lines).toEqual([{ lineNo: 1, description: 'Sample classic tee (White, M)', qty: 2, website: true }]);
+    expect((await encoder.get(`/api/alt/source?kind=sale&number=${saleNo}`)).json().lines).toEqual([{ lineNo: 1, description: 'Sample classic tee (White, M)', qty: 2, website: true, wearers: [] }]);
     const ret = (await newReturn({ lines: [line({ action: 'replacement', source: 'sale', sourceNumber: saleNo, sourceLineNo: 1, problem: 'Seam opened on first wash', oldPiece: 'shop_rework' })] })).json();
     const d = (await owner.post(`/api/alt/returns/${ret.id}/decision`, { outcome: 'accepted', reason: 'Our sewing fault: free', fees: [{ lineNo: 1, feeEachCents: 0 }] })).json();
     expect(d).toMatchObject({ feeCents: 0, decision: { shopWorkNumber: expect.stringMatching(/^JO-/) } });
@@ -97,6 +97,30 @@ describe('alterations and replacements', () => {
     expect((await encoder.get('/api/alt/returns')).json()).toEqual([]);
     expect((await encoder.get('/api/alt/returns?show=all')).json()).toHaveLength(1);
     expect(runInvariants(env.db).filter((x) => !x.ok)).toEqual([]);
+  });
+
+  it("a job order line with wearers: whose pieces came back is ticked, and the alteration job order carries them", async () => {
+    const jo = (await encoder.post('/api/docs/jo.job_order/post', { input: { customerId: c.school, dueInDays: 10, priority: 'normal', paymentTerms: 'cod',
+      lines: [{ kind: 'made_to_order', description: 'Made-up team jersey', qty: 3, unitPriceCents: 50_000, discountCents: 0, roster: [
+        { name: 'Ana Wearer', sizeMode: 'preset', size: 'M', qty: 1 },
+        { name: 'Ben Wearer', sizeMode: 'preset', size: 'L', jerseyName: 'BEN', jerseyNumber: '7', qty: 2 },
+      ] }] }, expectedTotalCents: 150_000 }, idem())).json() as { id: string; number: string };
+    await stage(jo.id);
+    expect((await accountant.post('/api/jo/releases', { release: { jobOrderId: jo.id, lines: [{ lineNo: 1, qty: 3 }], claimedBy: 'Made-up claimant', idSeen: 'school_id',
+      creditNote: 'Test balance paid next week', creditDueInDays: 7 }, invoice: null, expectedTotalCents: 150_000 }, idem())).statusCode).toBe(200);
+    expect((await encoder.get(`/api/alt/source?kind=job_order&number=${jo.number}`)).json().lines[0].wearers).toEqual([
+      { rowNo: 1, name: 'Ana Wearer', size: 'M', jerseyName: null, jerseyNumber: null, qty: 1 },
+      { rowNo: 2, name: 'Ben Wearer', size: 'L', jerseyName: 'BEN', jerseyNumber: '7', qty: 2 },
+    ]);
+    const from = { source: 'job_order', sourceNumber: jo.number, sourceLineNo: 1 };
+    expect((await newReturn({ lines: [line({ ...from, qty: 2 })] })).json().message).toBe(`Line 1: ${jo.number} line 1 lists its wearers: tick whose pieces came back.`);
+    expect((await newReturn({ lines: [line({ ...from, qty: 1, wearers: [2] })] })).json().message).toBe('Line 1: the wearers ticked have 2 pieces; the pieces must match.');
+    expect((await newReturn({ lines: [line({ ...from, qty: 2, wearers: [9] })] })).json().message).toBe(`Line 1: ${jo.number} line 1 has no wearer 9.`);
+    const ret = (await newReturn({ lines: [line({ ...from, qty: 2, wearers: [2], problem: 'Number 7 printed off-centre' })] })).json();
+    expect(ret.lines[0].wearers).toEqual([{ rowNo: 2, personId: null, name: 'Ben Wearer', sizeMode: 'preset', size: 'L', jerseyName: 'BEN', jerseyNumber: '7', qty: 2 }]);
+    const d = (await owner.post(`/api/alt/returns/${ret.id}/decision`, { outcome: 'accepted', reason: 'Our printing fault: free', fees: [{ lineNo: 1, feeEachCents: 0 }] })).json();
+    const made = (await owner.get(`/api/docs/jo.job_order/${d.decision.jobOrderId}`)).json();
+    expect(made.input.lines[0].roster).toEqual([{ name: 'Ben Wearer', sizeMode: 'preset', size: 'L', jerseyName: 'BEN', jerseyNumber: '7', qty: 2 }]);
   });
 
   it('by hand needs the customer and a description; a return can be declined; what cannot be is refused', async () => {
