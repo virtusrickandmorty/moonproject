@@ -311,7 +311,7 @@ export function awaitingInvoice(db: Db, jobOrderId?: string) {
   return db
     .prepare(
       `SELECT d.id, d.number, d.business_date AS businessDate, r.job_order_id AS jobOrderId, d.total_cents AS totalCents FROM jo_releases r JOIN documents d ON d.id = r.document_id
-       WHERE d.status = 'posted' AND (@jo IS NULL OR r.job_order_id = @jo)
+       WHERE d.status = 'posted' AND (@jo IS NULL OR r.job_order_id = @jo) AND d.total_cents > 0 -- a ₱0 release (free alteration, ALT) has nothing to invoice
          AND NOT EXISTS (SELECT 1 FROM jo_invoice_records i JOIN documents x ON x.id = i.document_id WHERE i.release_id = r.document_id AND x.status = 'posted')
        ORDER BY d.number`,
     )

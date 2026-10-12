@@ -94,3 +94,13 @@ export function paymentsToCheck(db: Db, nowMs = Date.now()): { id: string; numbe
     { id: string; number: string; name: string; totalCents: number; sentAt: string }[])
     .map((o) => ({ ...o, overdue: isOverdue({ status: 'payment_sent', payment_sent_at: o.sentAt }, nowMs) }));
 }
+
+/**
+ * Shop work for other modules (ALT, the owner's request, Oct 2026): a returned website piece, replaced for the customer,
+ * goes to production to be fixed and put back into the shop's stock.
+ */
+export { createWork as createShopWork } from './work.ts';
+
+/** The quick sale an online order was confirmed into, by the order's number (ALT: a return names the order). */
+export const saleOfOnlineOrder = (db: Db, number: string): string | undefined =>
+  (db.prepare('SELECT sale_document_id FROM shp_orders WHERE number = ? COLLATE NOCASE').pluck().get(number.trim()) as string | null | undefined) ?? undefined;
