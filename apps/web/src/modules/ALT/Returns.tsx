@@ -35,7 +35,8 @@ export function Returns({ me }: { me: Me }) {
   const [rows, setRows] = useState<Return[] | null>(null);
   const [show, setShow] = useState<'open' | 'all'>('open');
   const [receiving, setReceiving] = useState(false);
-  const [opened, setOpened] = useState<string | null>(null);
+  // ?open=<id>: a notification opens that return (the owner's or the accountant's decision).
+  const [opened, setOpened] = useState<string | null>(() => new URLSearchParams(window.location.search).get('open'));
   const [done, setDone] = useState('');
   const { error, run } = useAction();
   const load = useCallback(() => masterRequest<Return[]>(me, `/api/alt/returns?show=${show}`).then(setRows), [me, show]);
