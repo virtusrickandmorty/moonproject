@@ -17,6 +17,7 @@ type Status = 'awaiting_decision' | 'declined' | 'in_production' | 'ready' | 're
 interface ReturnLine {
   lineNo: number; action: 'alteration' | 'replacement'; source: 'job_order' | 'sale' | 'other'; sourceNumber: string | null; sourceLineNo: number | null; description: string; qty: number;
   problem: string; oldPiece: string | null; oldPieceNote: string | null; feeEachCents: number | null;
+  wearers: { rowNo: number; name: string; size: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }[];
 }
 interface Return {
   id: string; number: string; customerName: string; receivedOn: string; contact: string | null; notes: string | null; receivedBy: string; status: Status; feeCents: number; lines: ReturnLine[];
@@ -69,7 +70,7 @@ export function Returns({ me }: { me: Me }) {
                   <td><button type="button" className="font-semibold text-indigo-700 hover:underline" onClick={() => setOpened(r.id)}>{r.number}</button></td>
                   <td>{r.customerName}</td>
                   <td className="whitespace-nowrap">{showDate(r.receivedOn)}</td>
-                  <td>{r.lines.map((l) => `${ACTION[l.action]}: ${l.description} ×${l.qty}`).join('; ')}</td>
+                  <td>{r.lines.map((l) => `${ACTION[l.action]}: ${l.description} ×${l.qty}${l.wearers.length ? ` (${l.wearers.map((w) => w.name).join(', ')})` : ''}`).join('; ')}</td>
                   <td><Badge s={r.status} /></td>
                   <td className="text-right tabular-nums">{r.decision?.outcome === 'accepted' ? (r.feeCents ? peso(r.feeCents) : 'Free') : '—'}</td>
                   <td>{r.decision?.jobOrderId ? <Link to={`/docs/jo.job_order/${r.decision.jobOrderId}`} onClick={(e) => e.stopPropagation()}>{r.decision.jobOrderNumber}</Link> : '—'}</td>
@@ -85,9 +86,15 @@ export function Returns({ me }: { me: Me }) {
   );
 }
 
-interface SourceLookup { id: string; number: string; status: string; customerId: string; customerName: string; lines: { lineNo: number; description: string; qty: number; website: boolean }[] }
-interface Row { action: 'alteration' | 'replacement'; source: 'job_order' | 'sale' | 'other'; number: string; lookup: SourceLookup | null; lineNo: string; description: string; qty: string; problem: string; oldPiece: string; oldPieceNote: string }
-const emptyRow = (): Row => ({ action: 'alteration', source: 'job_order', number: '', lookup: null, lineNo: '', description: '', qty: '1', problem: '', oldPiece: 'kept', oldPieceNote: '' });
+interface Wearer { rowNo: number; name: string; size: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
+interface SourceLookup { id: string; number: string; status: string; customerId: string; customerName: string; lines: { lineNo: number; description: string; qty: number; website: boolean; wearers: Wearer[] }[] }
+interface Row {
+  action: 'alteration' | 'replacement'; source: 'job_order' | 'sale' | 'other'; number: string; lookup: SourceLookup | null; lineNo: string; description: string; qty: string; problem: string;
+  oldPiece: string; oldPieceNote: string; wearers: number[];
+}
+const emptyRow = (): Row => ({ action: 'alteration', source: 'job_order', number: '', lookup: null, lineNo: '', description: '', qty: '1', problem: '', oldPiece: 'kept', oldPieceNote: '', wearers: [] });
+/** A wearer as the job order lists them: name, size and jersey. */
+const wearerText = (w: Wearer) => [w.name, w.size && (w.size === 'measured' ? 'measured' : `size ${w.size}`), (w.jerseyName || w.jerseyNumber) && `#${[w.jerseyNumber, w.jerseyName].filter(Boolean).join(' ')}`].filter(Boolean).join(' · ');
 
 function ReceiveDialog({ me, onClose, onSaved }: { me: Me; onClose: () => void; onSaved: (r: Return) => void }) {
   const [rows, setRows] = useState<Row[]>([emptyRow()]);
@@ -100,7 +107,7 @@ function ReceiveDialog({ me, onClose, onSaved }: { me: Me; onClose: () => void; 
     const r = rows[i]!;
     if (!r.number.trim()) throw new Error(`Line ${i + 1}: type the ${r.source === 'job_order' ? 'job order' : 'sale or online order'} number.`);
     const lookup = await masterRequest<SourceLookup>(me, `/api/alt/source?kind=${r.source}&number=${encodeURIComponent(r.number.trim())}`);
-    set(i, { lookup, lineNo: lookup.lines.length === 1 ? '1' : '' });
+    set(i, { lookup, lineNo: lookup.lines.length === 1 ? '1' : '', wearers: [] });
   });
   const byHand = rows.every((r) => r.source === 'other');
 
@@ -116,7 +123,9 @@ function ReceiveDialog({ me, onClose, onSaved }: { me: Me; onClose: () => void; 
       }
       if (!r.lookup) throw new Error(`${n}: find the ${r.source === 'job_order' ? 'job order' : 'sale or online order'} first.`);
       if (!r.lineNo) throw new Error(`${n}: pick which item came back.`);
-      return { ...base, sourceNumber: r.lookup.number, sourceLineNo: Number(r.lineNo) };
+      const roster = r.lookup.lines.find((l) => String(l.lineNo) === r.lineNo)?.wearers ?? [];
+      if (roster.length && !r.wearers.length) throw new Error(`${n}: tick whose pieces came back.`);
+      return { ...base, sourceNumber: r.lookup.number, sourceLineNo: Number(r.lineNo), ...(r.wearers.length ? { wearers: r.wearers } : {}) };
     });
     if (byHand && !customer) throw new Error('Pick the customer who brought the items.');
     const saved = await masterRequest<Return>(me, '/api/alt/returns', 'POST', { ...(customer ? { customerId: customer.id } : {}), ...(contact.trim() ? { contact: contact.trim() } : {}), ...(notes.trim() ? { notes: notes.trim() } : {}), lines });
@@ -153,7 +162,7 @@ function ReceiveDialog({ me, onClose, onSaved }: { me: Me; onClose: () => void; 
                 <Button disabled={busy} onClick={() => void find(i)}>Find</Button>
                 {r.lookup && (
                   <Field label={`Which item (${r.lookup.customerName})`}>
-                    <select className={inputClass} value={r.lineNo} onChange={(e) => set(i, { lineNo: e.target.value })}>
+                    <select className={inputClass} value={r.lineNo} onChange={(e) => set(i, { lineNo: e.target.value, wearers: [] })}>
                       <option value="">Pick the item…</option>
                       {r.lookup.lines.map((l) => <option key={l.lineNo} value={l.lineNo} disabled={l.qty === 0}>{l.lineNo}. {l.description} · {l.qty} {r.source === 'job_order' ? 'released' : 'sold'}</option>)}
                     </select>
@@ -161,8 +170,30 @@ function ReceiveDialog({ me, onClose, onSaved }: { me: Me; onClose: () => void; 
                 )}
               </div>
             )}
+            {picked && picked.wearers.length > 0 && (
+              // Whose pieces came back (the owner's request, Oct 2026): the pieces are theirs, and the job order carries them.
+              <fieldset className="rounded-md bg-slate-50 p-2">
+                <legend className="px-1 text-xs font-semibold text-slate-600">Whose pieces came back? ({picked.wearers.length} wearers)</legend>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  <label className="flex items-center gap-2 text-sm font-medium">
+                    <input type="checkbox" checked={r.wearers.length === picked.wearers.length}
+                      onChange={(e) => { const all = e.target.checked ? picked.wearers : []; set(i, { wearers: all.map((w) => w.rowNo), qty: String(all.reduce((t, w) => t + w.qty, 0) || 1) }); }} /> All
+                  </label>
+                  {picked.wearers.map((w) => (
+                    <label key={w.rowNo} className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={r.wearers.includes(w.rowNo)} onChange={(e) => {
+                        const next = e.target.checked ? [...r.wearers, w.rowNo].sort((a, b) => a - b) : r.wearers.filter((x) => x !== w.rowNo);
+                        set(i, { wearers: next, qty: String(picked.wearers.filter((x) => next.includes(x.rowNo)).reduce((t, x) => t + x.qty, 0) || 1) });
+                      }} />
+                      {wearerText(w)}{w.qty > 1 ? ` (${w.qty} pcs)` : ''}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
             <div className="grid gap-2 sm:grid-cols-[6rem_1fr]">
-              <Field label="Pieces"><input className={`${inputClass} text-right`} inputMode="numeric" value={r.qty} onChange={(e) => set(i, { qty: e.target.value })} /></Field>
+              <Field label="Pieces"><input className={`${inputClass} text-right`} inputMode="numeric" value={r.qty} readOnly={r.wearers.length > 0}
+                title={r.wearers.length > 0 ? 'The pieces of the wearers ticked' : undefined} onChange={(e) => set(i, { qty: e.target.value })} /></Field>
               <Field label={r.action === 'alteration' ? 'What to change' : 'What is wrong'}><input className={inputClass} maxLength={500} value={r.problem} onChange={(e) => set(i, { problem: e.target.value })}
                 placeholder={r.action === 'alteration' ? 'e.g. Shorten the sleeves by 2 inches' : 'e.g. Seam opened after the first wash'} /></Field>
             </div>
@@ -237,6 +268,7 @@ function ReturnDialog({ me, id, onClose, onChanged }: { me: Me; id: string; onCl
                   <td>
                     <p className="font-medium">{ACTION[l.action]}: {l.description}</p>
                     <p className="text-xs text-slate-600">{l.sourceNumber ? `From ${l.sourceNumber} line ${l.sourceLineNo}` : 'Described by hand'} · {l.problem}</p>
+                    {l.wearers.length > 0 && <p className="text-xs text-slate-600">Wearers: {l.wearers.map((w) => `${wearerText(w)}${w.qty > 1 ? ` (${w.qty})` : ''}`).join('; ')}</p>}
                     {l.oldPiece && <p className="text-xs text-slate-600">Returned piece: {OLD_PIECE[l.oldPiece]}{l.oldPieceNote ? ` (${l.oldPieceNote})` : ''}</p>}
                   </td>
                   <td className="text-right tabular-nums">{l.qty}</td>
