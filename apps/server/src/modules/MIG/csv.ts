@@ -1,4 +1,4 @@
-import { formatPesos, isBusinessDate, parsePesos } from '@moonproject/shared';
+import { formatPesos, isBusinessDate, parsePesos, GARMENT_TYPE_MAX } from '@moonproject/shared';
 
 export type RowType = 'customer' | 'measurement' | 'employee' | 'piece_rate' | 'sizer_set' | 'unknown';
 export interface ParsedRow {
@@ -271,7 +271,7 @@ export function priceListRow(raw: Record<string, string>): PriceListRow {
   if (!item) issues.push('The price list row needs the item name.');
   if (minQty === null) issues.push(`From qty "${fromWord}" must be a whole number of pieces, 1 or more.`);
   else if (minQty > 1 && priceCents === undefined) issues.push('From qty goes with a Price: the price from that many pieces.');
-  if (item.length > 100) issues.push('The item name takes up to 100 letters.');
+  if (item.length > GARMENT_TYPE_MAX) issues.push(`The item name takes up to ${GARMENT_TYPE_MAX} letters.`);
   if (!cls) issues.push(`Kind "${raw.Kind}" is not Made to order, Ready-made or Service.`);
   if (!unit) issues.push(`Unit "${raw.Unit}" is not Piece or Set.`);
   if (!part) issues.push(`Part "${raw.Part}" is not Upper or Lower.`);

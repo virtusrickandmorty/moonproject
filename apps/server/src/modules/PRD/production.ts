@@ -3,7 +3,7 @@
  * Routes and statuses are operational data, changed in place with an audit row (OWN-21) as new insert-only rows; a
  * step's status is read from its latest event and the pieces recorded on it.
  */
-import { AppError, conflict, newId, notFound } from '@moonproject/shared';
+import { AppError, GARMENT_TYPE_MAX, conflict, newId, notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { currentStage, jobOrderRef, jobOrdersOf, lineState, productionMove, rosterOf, stagesAll } from '../JO/public.ts';
@@ -283,7 +283,8 @@ export function setupLine(db: Db, jobOrderId: string, lineNo: number, req: Setup
   const theLine = lineOf(db, jobOrderId, lineNo);
   const before = lineSetup(db, jobOrderId, lineNo);
   const matched = matchCatalogItem(db, theLine.description);
-  const garmentType = (req.garmentType?.trim() || matched?.garmentType || theLine.description).slice(0, 60);
+  // The matched item's whole garment type, so its rates are found; only a line no item matches is cut to the limit.
+  const garmentType = (req.garmentType?.trim() || matched?.garmentType || theLine.description).slice(0, GARMENT_TYPE_MAX);
   const isSet = matched?.unit === 'set';
   if (before?.isSet && !isSet) {
     // A line made in parts keeps its parts while pieces of a part are recorded on it.
