@@ -11,6 +11,7 @@ import { Shell } from './shell/Shell.tsx';
 import { docPath, isReportPath, labelOf, pagePermission } from './shell/menu.ts';
 import { DocList, openedFrom, type ListForm, type ListView } from './generic/DocList.tsx';
 import { JobOrderForm } from './modules/JO/JobOrderForm.tsx';
+import { QuickSaleForm } from './modules/QS/QuickSaleForm.tsx';
 import { JOB_ORDER_SEARCH, jobOrderActions, jobOrderColumns, jobOrderDetail, jobOrderOthers, jobOrderSource } from './modules/JO/list.tsx';
 import { DocForm, type FormMode } from './generic/DocForm.tsx';
 import { DocView } from './generic/DocView.tsx';
@@ -73,11 +74,12 @@ function Stages() {
     // Every list opens New, a document and its Edit over itself (?new, ?view=<id>, ?edit=<id>); their own addresses
     // (/docs/<type>/new, /docs/<type>/<id>, …/edit) still open the full page. Job orders: 20 a page.
     ['/docs/:type', (_, t) => <DocList key={t.key} type={t} notice={fromQuotation && t.key === 'jo.job_order' ? JOB_ORDER_LATER(fromQuotation) : undefined}
-      {...(t.key === 'pur.po' || t.key === 'jo.opening' || t.key === 'quo.quotation' ? { formSize: 'screen' as const } : {})}
+      {...(t.key === 'pur.po' || t.key === 'jo.opening' || t.key === 'quo.quotation' || t.key === 'qs.sale' ? { formSize: 'screen' as const } : {})}
       {...(t.key === 'jo.job_order' ? { pageSize: 20, formSize: 'screen' as const, others: jobOrderOthers(stage.docTypes, (t, mode) => <Form type={t} me={stage.me} mode={mode} />), source: jobOrderSource, columns: jobOrderColumns, detail: jobOrderDetail, searchHint: JOB_ORDER_SEARCH, rowActions: jobOrderActions(stage.docTypes) } : {})}
-      opened={openedFrom(query)} noEdit={VIEWS[t.key]?.noEdit} formTitled={t.key === 'jo.job_order' || t.key === 'pur.po' || t.key === 'jo.opening'}
+      opened={openedFrom(query)} noEdit={VIEWS[t.key]?.noEdit} formTitled={t.key === 'jo.job_order' || t.key === 'pur.po' || t.key === 'jo.opening' || t.key === 'qs.sale'}
       form={t.canCreate || (t.canPost && t.canCancel) ? ({ mode, close, setDirty, show }: Parameters<ListForm>[0]) => (mode.kind === 'new' ? t.canCreate : t.canPost && t.canCancel)
-        ? (t.key === 'jo.job_order' ? <JobOrderForm type={t} me={stage.me} mode={mode} inDialog={{ close, setDirty, show }} /> : <Form type={t} me={stage.me} mode={mode} />)
+        ? (t.key === 'jo.job_order' ? <JobOrderForm type={t} me={stage.me} mode={mode} inDialog={{ close, setDirty, show }} />
+          : t.key === 'qs.sale' ? <QuickSaleForm type={t} me={stage.me} mode={mode} inDialog={{ close, setDirty, show }} /> : <Form type={t} me={stage.me} mode={mode} />)
         : NO_ACCESS : undefined}
       view={({ id, recorded, cancel, refresh }: Parameters<ListView>[0]) => <DocView key={id} type={t} id={id} recorded={recorded} parts={VIEWS[t.key]} inDialog={{ refresh }} startCancel={cancel} />} />],
     ['/docs/:type/new', (_, t) => !t.canCreate ? NO_ACCESS : <Form key={location} type={t} me={stage.me} mode={{ kind: 'new', draftId: new URLSearchParams(query).get('draft') ?? undefined }} />],

@@ -12,13 +12,13 @@ it('quick sale keeps the exact sale and payment body through preview and Record'
   change(f.find('aria-label', 'What'), ' Hem trousers ');
   change(f.find('aria-label', 'Qty'), '2');
   change(f.find('aria-label', 'Price each'), '125.00');
-  expect(f.find('title', 'Add a line discount').props.active).toBe(false);
   change(f.find('aria-label', 'Discount'), '10.00');
-  expect(f.find('title', 'Add a line discount').props.active).toBe(true);
   change(f.field('Invoice number (from the booklet)'), ' 0011 ');
   change(f.field('CR number (from the booklet)'), ' 0022 ');
   f.find('question', 'Where did the money go?').props.onChange([{ cashPlaceId: '1', amount: '', reference: ' Ref-1 ' }]);
+  // Record takes the item still in the item form with it (as on the job order form).
   await f.find('children', 'Record').props.onClick();
+  expect(f.render().find((n) => n.props['aria-label'] === 'Items in this quick sale')).toBeTruthy();
   const body = { sale: { customerId: 'c1', invoiceNumber: '0011', lines: [{ kind: 'service', description: 'Hem trousers', qty: 2, unitPriceCents: 12500, discountCents: 1000 }] },
     payment: { crNumber: '0022', tenders: [{ cashPlaceId: 1, amountCents: 24000, reference: 'Ref-1' }] } };
   expect(preview).toHaveBeenLastCalledWith(body);
