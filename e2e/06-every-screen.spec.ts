@@ -97,9 +97,10 @@ async function fillIn(page: Page, today: string): Promise<string[]> {
   const main = page.locator('main');
   const asksForId: string[] = [];
   const sides: Record<string, number> = {};
-  // A search box picks once: one that stays empty after its pick (the price list's, which adds the item below it) would
-  // otherwise take every pass and leave the boxes after it empty.
-  const searched = new Set<string>();
+  // A search box picks at most twice: one that stays empty after its pick (the price list's, which fills the item below
+  // it) would otherwise take every pass and leave the boxes after it empty; twice, so a pick a later choice clears (a
+  // production entry's worker, when the step is picked after it) is made again.
+  const searched = new Map<string, number>();
   for (let pass = 0; pass < 6; pass++) {
     for (const k of Object.keys(sides)) sides[k] = 0;
     for (const select of await main.locator('select:visible').all()) {
@@ -128,8 +129,9 @@ async function fillIn(page: Page, today: string): Promise<string[]> {
       if (wrongSide || info.value !== '' || /owed to the supplier|financed by a lender/i.test(info.label)) continue; // optional shares of a payment stay empty
       if (/^[1-9]\d*\.\d\d$/.test(info.hint)) continue; // the amount the server suggests: changing it would ask for a reason
       if (isSearch(info.hint) || isSearch(info.label)) {
-        if (searched.has(info.label || info.hint)) continue;
-        searched.add(info.label || info.hint);
+        const tries = searched.get(info.label || info.hint) ?? 0;
+        if (tries >= 2) continue;
+        searched.set(info.label || info.hint, tries + 1);
         // A pick loads what was picked and redraws the form (a release's lines appear above "Claimed by"), so the boxes
         // listed before it are stale: start the next pass on the redrawn form rather than typing into a moved box.
         await pickFirst(input);

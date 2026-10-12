@@ -33,8 +33,10 @@ test('a quick sale is recorded with its collection', async ({ page }) => {
   await dialog.getByRole('button', { name: 'Record', exact: true }).click();
 
   // The recorded sale and its collection.
-  await expect(page.getByText('Recorded', { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole('cell', { name: /^Shorten sleeves/ })).toBeVisible();
+  // In the recorded sale's own window (the list behind it has "Recorded" badges too, some hidden on this screen size).
+  const recorded = page.getByRole('dialog').last();
+  await expect(recorded.getByText('Recorded', { exact: true }).first()).toBeVisible();
+  await expect(recorded.getByRole('cell', { name: /^Shorten sleeves/ })).toBeVisible();
   await expect(page.getByText(/Paid by .* \(CR 301\), ₱1,120\.00/)).toBeVisible();
 
   // The money is in the cash box (the sale opened over its list; close it first).
