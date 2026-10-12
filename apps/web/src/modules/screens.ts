@@ -140,6 +140,7 @@ import { InventoryCountForm } from './INV/InventoryCountForm.tsx';
 import { inventoryCountView } from './INV/InventoryCountView.tsx';
 import { WebsiteAssistant } from './AIA/Assistant.tsx';
 import { TplClients } from './TPL/Clients.tsx';
+import { Returns } from './ALT/Returns.tsx';
 import { TplDeliveryForm, TplProgramPage } from './TPL/Program.tsx';
 
 /**
@@ -154,6 +155,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/aia': WebsiteAssistant,
   '/tpl': TplClients,
   '/tpl/:id': TplProgramPage,
+  '/alt': Returns,
   '/shp': ShopProducts,
   '/shp/orders': OnlineOrders,
   '/pos': Pos,

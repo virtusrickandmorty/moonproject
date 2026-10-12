@@ -102,3 +102,10 @@ export const saleDocType = (): DocTypeDef => {
   if (!saleDocImpl) throw new Error('The QS module is not loaded');
   return saleDocImpl;
 };
+
+/** The lines of a quick sale, with the website item each names (ALT: what a customer brings back). */
+export function saleLines(db: Db, id: string): { lineNo: number; description: string; qty: number; productId: string | null; size: string | null; colour: string | null }[] {
+  return db.prepare(`SELECT line_no AS lineNo, description, qty, product_id AS productId, size, colour FROM qs_sale_lines WHERE document_id = ? ORDER BY line_no`).all(id) as {
+    lineNo: number; description: string; qty: number; productId: string | null; size: string | null; colour: string | null;
+  }[];
+}

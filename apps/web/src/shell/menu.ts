@@ -37,6 +37,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Sales', label: 'Customers', path: '/cus', permission: 'cus.view' },
   { group: 'Sales', label: 'Support inbox', path: '/sup', permission: 'sup.view' },
   { group: 'Sales', label: 'Website assistant', path: '/aia', permission: 'aia.view' },
+  { group: 'Sales', label: 'Alterations & replacements', path: '/alt', permission: 'alt.view' },
   { group: 'Sales', label: 'TPL clients', path: '/tpl', permission: 'tpl.view' },
   { group: 'Sales', label: 'POS', path: '/pos', permission: 'shp.pos' },
   { group: 'Sales', label: 'Website shop', path: '/shp', permission: 'shp.view' },
@@ -198,7 +199,7 @@ export function applyMenuOrder<G extends { group: MenuGroup; items: MenuItem[] }
 export const SUBS: Partial<Record<MenuGroup, [sub: string, keys: string[]][]>> = {
   Sales: [
     ['Customers & quotes', ['/cus', 'quo.quotation', '/cat', '/com', '/sup', '/aia']],
-    ['Job orders & release', ['jo.job_order', 'jo.release', 'jo.invoice_record', 'jo.dp_invoice', 'jo.opening']],
+    ['Job orders & release', ['jo.job_order', 'jo.release', 'jo.invoice_record', 'jo.dp_invoice', 'jo.opening', '/alt']],
     ['Collections', ['col.', '/col/pdcs']],
     ['Shop & POS', ['/pos', 'qs.sale', '/shp']],
     ['TPL services', ['/tpl', 'tpl.']],
