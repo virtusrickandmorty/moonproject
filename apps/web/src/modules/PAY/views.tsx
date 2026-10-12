@@ -147,10 +147,10 @@ export function PayslipCard({ p, e, company = null }: { p: PayslipData; e: Paysl
             <p className="text-base font-bold uppercase leading-tight tracking-wide">{company.tradeName || company.registeredName}</p>
             {company.tradeName && company.registeredName && company.tradeName !== company.registeredName && <p className="text-xs text-slate-600">{company.registeredName}</p>}
             <p className="text-xs text-slate-600">{[company.registeredAddress, company.tin && `TIN ${company.tin}`].filter(Boolean).join(' · ')}</p>
-          </> : <p className="text-base font-bold uppercase tracking-wide">Payslip</p>}
+          </> : null}
         </div>
         <div className="shrink-0 text-right">
-          {company && <p className="text-base font-bold tracking-widest">PAYSLIP</p>}
+          <h2 className="text-base font-bold tracking-widest">PAYSLIP</h2>
           <p className="text-xs text-slate-600">{p.number}{e.final && <FinalBadge />}</p>
         </div>
       </header>
