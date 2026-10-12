@@ -15,6 +15,7 @@ import { emptyTender, sum, tendersToInput, type TenderRow } from '../COL/money.t
 import { Errors, TenderRows, useLive } from '../COL/parts.tsx';
 import { GROUP_LABEL } from './run.ts';
 import { PayslipCard } from './views.tsx';
+import { BILLS, COINS, addUp, breakdown, denomination } from './cash.ts';
 
 /** "Paid by" on the employee record; cash has no account, so its QR is a bank or GCash one. */
 const PAID_BY = { cash: 'bank or GCash', bank: 'Bank', gcash: 'GCash' } as const;
@@ -89,7 +90,7 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
   const toggle = (id: string) => setPicked((p) => (p.has(id) ? new Set([...p].filter((x) => x !== id)) : new Set([...p, id])));
 
   return (
-    <form onSubmit={(e) => e.preventDefault()} className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+    <form onSubmit={(e) => e.preventDefault()} className="grid gap-4 lg:grid-cols-[1fr_24rem]">
       <div className="space-y-4">
         <h1 className="text-2xl font-semibold">Release net pay</h1>
         {error && <Notice>{error}</Notice>}
@@ -151,6 +152,7 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
           <Button onClick={() => history.back()}>Back</Button>
         </div>
       </div>
+      <div className="space-y-4 self-start">
       {oneByOne ? (
         <Panel title="Still to release">
           <p className="text-2xl font-semibold tabular-nums">{peso(sum(rows.filter((r) => !r.releasedBy && r.netCents > 0).map((r) => r.netCents)))}</p>
@@ -162,6 +164,13 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
         {live && <p className="text-sm">{live.summary}</p>}
         {live?.issues.map((i) => <Notice key={i.code + i.message} tone={i.level}>{i.message}</Notice>)}
       </Panel>}
+      {rows.length > 0 && (
+        <div>
+          <CashToPrepare people={(oneByOne ? rows.filter((r) => !r.releasedBy && r.netCents > 0) : due).map((r) => ({ name: r.name, netCents: r.netCents, method: r.payoutMethod }))}
+            title={oneByOne ? 'Cash to prepare: still to release' : 'Cash to prepare'} />
+        </div>
+      )}
+      </div>
       {single && run && <ReleaseOne type={type} run={run} row={single} places={places} onReleased={releasedOne} onClose={() => setSingle(null)} />}
       {qrOf && qrOf.payoutQrVersion !== null && (
         <Dialog title={`${qrOf.name}: ${PAID_BY[qrOf.payoutMethod]} QR code`} onClose={() => setQrOf(null)}>
@@ -235,6 +244,7 @@ function ReleaseOne({ type, run, row, places, onReleased, onClose }: {
           )}
           <h3 className="text-sm font-semibold">Where did the money come from?</h3>
           <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money come from?" amountHint={formatPesos(row.netCents)} />
+          {row.payoutMethod === 'cash' && <CashToPrepare people={[{ name: row.name, netCents: row.netCents, method: 'cash' }]} title="Cash to prepare" compact />}
           <p className="text-sm text-slate-600">Paid out {peso(paid)} of {peso(row.netCents)}{paid !== row.netCents && paid > 0 ? ` (${peso(row.netCents - paid)} ${paid < row.netCents ? 'short' : 'over'})` : ''}</p>
           <Errors list={pay.errors} show={touched} />
           {live?.issues.filter((i) => i.level === 'error').map((i) => <Notice key={i.code + i.message} tone={i.level}>{i.message}</Notice>)}
@@ -254,4 +264,54 @@ function ReleaseOne({ type, run, row, places, onReleased, onClose }: {
     )}
     </>
   );
+}
+
+/**
+ * Cash to prepare (the owner's request, Oct 2026): each person's net pay counted out in bills and coins, largest first, so
+ * the envelopes can be filled and the withdrawal asked for by denomination. People paid by bank or GCash need no cash:
+ * shown apart and left out of the totals.
+ */
+function CashToPrepare({ people, title, compact = false }: { people: { name: string; netCents: number; method: 'cash' | 'bank' | 'gcash' }[]; title: string; compact?: boolean }) {
+  const cash = people.filter((p) => p.method === 'cash');
+  const others = people.filter((p) => p.method !== 'cash');
+  const each = cash.map((p) => ({ ...p, b: breakdown(p.netCents) }));
+  const total = addUp(each.map((p) => p.b));
+  const totalCents = cash.reduce((n, p) => n + p.netCents, 0);
+  const cell = 'px-1 py-1 text-right tabular-nums';
+  const count = (n: number) => (n ? n : <span className="text-slate-300">·</span>);
+  const body = (
+    <>
+      {cash.length === 0 ? <p className="text-sm text-slate-500">Nobody here is paid in cash.</p> : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs [&_td]:!px-1 [&_td]:!py-1 [&_th]:!px-1 [&_th]:!py-1">
+            <thead>
+              <tr><th className="text-left">{compact ? '' : '₱ bills'}</th>{BILLS.map((b) => <th key={b} className="text-right" title={`${denomination(b)} bills`}>{(b / 100).toLocaleString('en-PH')}</th>)}<th className="text-right">Coins</th></tr>
+            </thead>
+            <tbody>
+              {!compact && each.map((p) => (
+                <tr key={p.name}>
+                  <td className="max-w-[6.5rem] truncate" title={`${p.name}: ${peso(p.netCents)}`}>{p.name}</td>
+                  {BILLS.map((b) => <td key={b} className={cell}>{count(p.b.bills[b]!)}</td>)}
+                  <td className={`${cell} whitespace-nowrap`}>{p.b.coinCents ? (p.b.coinCents / 100).toFixed(2) : count(0)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="font-semibold">
+                <td>{compact ? 'Pieces' : 'Total'}</td>
+                {BILLS.map((b) => <td key={b} className={cell}>{count(total.bills[b]!)}</td>)}
+                <td className={`${cell} whitespace-nowrap`}>{total.coinCents ? (total.coinCents / 100).toFixed(2) : count(0)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+      {cash.length > 0 && total.coinCents > 0 && (
+        <p className="text-xs text-slate-600">Coins: {COINS.filter((c) => total.coins[c]).map((c) => `${total.coins[c]} × ${denomination(c)}`).join(', ')}</p>
+      )}
+      {!compact && cash.length > 0 && <p className="text-xs text-slate-600">{cash.length} {cash.length === 1 ? 'envelope' : 'envelopes'}, {peso(totalCents)} in cash.</p>}
+      {others.length > 0 && <p className="text-xs text-slate-500">Paid by bank or GCash, no cash: {others.map((p) => p.name).join(', ')}.</p>}
+    </>
+  );
+  return compact ? <div className="space-y-1 rounded-lg p-2 ring-1 ring-slate-200"><p className="text-sm font-semibold">{title}</p>{body}</div> : <Panel title={title}>{body}</Panel>;
 }
