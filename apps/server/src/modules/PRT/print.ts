@@ -75,6 +75,7 @@ interface Content {
   title: PrintTitle; subtitle: string; legend: boolean; twoUp: boolean;
   party?: { label: string; name: unknown; lines?: unknown[] };
   aside?: string; // shown inside the details box, between the party and the status (the job order QR)
+  headerQr?: string; // shown in the middle of the header, between the company and the title (the job order's QR)
   status?: [string, unknown][];
   body: string;
   totals?: [label: string, value: string, grand?: boolean][];
@@ -133,6 +134,8 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
     };
     return {
       title: 'Job Order', subtitle: 'Customer copy', legend: true, twoUp: false,
+      // Its QR in the middle of the header (the owner's request, Oct 2026): scanned at the shop, it opens this job order.
+      headerQr: jobOrderQr(h.id, h.number, joinBase),
       party: { label: 'Bill to', name: doc.customerName },
       status: [['Due date', doc.dueDate], ['Payment terms', doc.paymentTerms]],
       body: section('Items', lineTable(['Description', 'Qty', 'Unit price', 'Discount', 'Amount'], doc.lines.map((l: any) => [l.description, l.qty, money(l.unitPriceCents), money(l.discountCents), money(l.lineTotalCents)]))) +
@@ -292,6 +295,7 @@ const BASE_CSS = `*{box-sizing:border-box}body{color:#1e293b;margin:0;font-famil
   .terms{border-top:2px solid #dde3f7;margin-top:8mm;padding-top:3mm;font-size:8.5pt}.terms h3{font-size:10pt;color:${ACCENT};margin:0 0 1.5mm}.terms p{white-space:pre-line;margin:0;line-height:1.5}
   footer{display:flex;justify-content:space-between;font-size:7.5pt;color:#64748b;border-top:1px solid #e2e8f0;padding-top:1.5mm;margin-top:5mm}
   h3{font-size:10pt;margin:2mm 0}ul{margin:1mm 0 2mm;columns:2}li{list-style:none;margin:1mm 0}
+  .head-qr{flex:none;align-self:center}.head-qr .job-qr svg{width:24mm;height:24mm}.top:has(.head-qr) .brand,.top:has(.head-qr) .titlebox{flex:1 1 0}
   .job-qr{margin:0;text-align:center}.details .job-qr{flex:none;align-self:center}.job-qr svg{display:block;width:25mm;height:25mm;shape-rendering:crispEdges}.job-qr figcaption{font-size:8pt;font-weight:bold;margin-top:1mm;white-space:nowrap}
   .test-print{position:absolute;z-index:5;top:45%;left:5%;width:90%;transform:rotate(-28deg);border:3px solid #b00;color:#b00;font-size:20pt;font-weight:900;letter-spacing:1mm;text-align:center;opacity:.32;padding:3mm;pointer-events:none}`;
 
@@ -332,7 +336,7 @@ export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profi
       `<div class="status"><span class="label">Document status</span>${(p.status ?? []).filter(([, v]) => v).map(([k, v]) => `<p>${escape(k)}: <b>${escape(shown(k, v))}</b></p>`).join('')}<p>Printed: <b>${escape(readable(printedAt.slice(0, 10)))}</b></p></div></section>`
     : '';
   const one = `<article class="copy">${testPrint ? '<div class="test-print">TEST PRINT, NOT A REAL DOCUMENT</div>' : ''}` +
-    `<header class="top">${company(profile)}<div class="titlebox"><h1>${escape(title)}</h1>${h.status === 'cancelled' ? '<p class="cancelled">CANCELLED</p>' : ''}${practice ? '<p class="practice">PRACTICE ONLY · NOT A REAL DOCUMENT</p>' : ''}${p.subtitle ? `<p class="subtitle">${escape(datesIn(p.subtitle))}</p>` : ''}` +
+    `<header class="top">${company(profile)}${p.headerQr ? `<div class="head-qr">${p.headerQr}</div>` : ''}<div class="titlebox"><h1>${escape(title)}</h1>${h.status === 'cancelled' ? '<p class="cancelled">CANCELLED</p>' : ''}${practice ? '<p class="practice">PRACTICE ONLY · NOT A REAL DOCUMENT</p>' : ''}${p.subtitle ? `<p class="subtitle">${escape(datesIn(p.subtitle))}</p>` : ''}` +
     `<div class="docmeta"><span>Document no.</span><b class="no">${escape(h.number)}</b><span>Date</span><b>${escape(readable(h.business_date))}</b></div></div></header>` +
     `${p.legend ? '<p class="legend"><strong>THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.</strong></p>' : ''}${details}` +
     `<main>${p.body}${totalsHtml(p.totals)}</main>${signaturesHtml(p.signatures)}${termsHtml(p.terms)}` +

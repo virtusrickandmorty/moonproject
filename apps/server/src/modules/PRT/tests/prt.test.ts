@@ -221,6 +221,18 @@ describe('print base', () => {
     expect(slip.match(/<figcaption>JO-000321<\/figcaption>/g)).toHaveLength(2);
   });
 
+  it("puts the job order's QR in the middle of the customer copy's header (the owner's request, Oct 2026)", () => {
+    const jo = { customerName: 'Sample Buyer', dueDate: '2026-10-13', paymentTerms: 'dp50', totalCents: 10000, requiredDownpaymentCents: 5000,
+      lines: [{ lineNo: 1, description: 'Sample item', qty: 1, unitPriceCents: 10000, discountCents: 0, lineTotalCents: 10000, roster: [] }] };
+    const html = renderPrint(env.db, { ...header('jo.job_order'), id: 'job-order-id', number: 'JO-000321' }, jo,
+      profile, 'document', 'Example Owner', '2026-09-28T10:00:00+08:00', 1, false, false, 'http://192.168.1.20:8080/');
+    const head = html.match(/<header class="top">(.*?)<\/header>/s)![1]!;
+    expect(head.indexOf('class="head-qr"')).toBeGreaterThan(head.indexOf('class="brand"')); // after the company
+    expect(head.indexOf('class="head-qr"')).toBeLessThan(head.indexOf('class="titlebox"')); // before the title
+    expect(decodeQr(head)).toBe('http://192.168.1.20:8080/docs/jo.job_order/job-order-id');
+    expect(html.match(/<svg/g)).toHaveLength(1); // only in the header
+  });
+
   it('puts only the job-order number in the QR when there is no join address, including a practice print', () => {
     const html = renderPrint(env.db, { ...header('jo.job_order'), number: 'JO-000654' },
       { customerName: 'Practice Customer', lines: [] }, profile, 'job_ticket', 'Practice Owner',
