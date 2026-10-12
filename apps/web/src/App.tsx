@@ -12,7 +12,7 @@ import { docPath, isReportPath, labelOf, pagePermission } from './shell/menu.ts'
 import { DocList, openedFrom, type ListForm, type ListView } from './generic/DocList.tsx';
 import { JobOrderForm } from './modules/JO/JobOrderForm.tsx';
 import { QuickSaleForm } from './modules/QS/QuickSaleForm.tsx';
-import { JOB_ORDER_SEARCH, jobOrderActions, jobOrderColumns, jobOrderDetail, jobOrderOthers, jobOrderSource } from './modules/JO/list.tsx';
+import { JOB_ORDER_SEARCH, jobOrderActions, jobOrderColumns, jobOrderDetail, jobOrderOthers, jobOrderScan, jobOrderSource } from './modules/JO/list.tsx';
 import { DocForm, type FormMode } from './generic/DocForm.tsx';
 import { DocView } from './generic/DocView.tsx';
 import { FORMS, PAGES, VIEWS } from './modules/screens.ts';
@@ -75,7 +75,7 @@ function Stages() {
     // (/docs/<type>/new, /docs/<type>/<id>, …/edit) still open the full page. Job orders: 20 a page.
     ['/docs/:type', (_, t) => <DocList key={t.key} type={t} notice={fromQuotation && t.key === 'jo.job_order' ? JOB_ORDER_LATER(fromQuotation) : undefined}
       {...(t.key === 'pur.po' || t.key === 'jo.opening' || t.key === 'quo.quotation' || t.key === 'qs.sale' ? { formSize: 'screen' as const } : {})}
-      {...(t.key === 'jo.job_order' ? { pageSize: 20, formSize: 'screen' as const, others: jobOrderOthers(stage.docTypes, (t, mode) => <Form type={t} me={stage.me} mode={mode} />), source: jobOrderSource, columns: jobOrderColumns, detail: jobOrderDetail, searchHint: JOB_ORDER_SEARCH, rowActions: jobOrderActions(stage.docTypes) } : {})}
+      {...(t.key === 'jo.job_order' ? { pageSize: 20, formSize: 'screen' as const, searchTools: jobOrderScan, others: jobOrderOthers(stage.docTypes, (t, mode) => <Form type={t} me={stage.me} mode={mode} />), source: jobOrderSource, columns: jobOrderColumns, detail: jobOrderDetail, searchHint: JOB_ORDER_SEARCH, rowActions: jobOrderActions(stage.docTypes) } : {})}
       opened={openedFrom(query)} noEdit={VIEWS[t.key]?.noEdit} formTitled={t.key === 'jo.job_order' || t.key === 'pur.po' || t.key === 'jo.opening' || t.key === 'qs.sale'}
       form={t.canCreate || (t.canPost && t.canCancel) ? ({ mode, close, setDirty, show }: Parameters<ListForm>[0]) => (mode.kind === 'new' ? t.canCreate : t.canPost && t.canCancel)
         ? (t.key === 'jo.job_order' ? <JobOrderForm type={t} me={stage.me} mode={mode} inDialog={{ close, setDirty, show }} />

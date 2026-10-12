@@ -302,7 +302,11 @@ export function joActions(s: JoStatus, can: JoCan): JoAction[] {
   }
   // Release slip once an item may go out (its production is done), even while others are still being made; earlier for
   // the owner, who may release what is not ready with a reason.
-  if (can.release && s.lines.some((l) => l.leftQty > 0 && (l.ready !== false || can.releaseOverride))) out.push({ label: 'Release slip', to: `/docs/jo.release/new?jo=${id}` });
+  // Made for stock (TPL, the website shop): its finished pieces go into stock, never out on a release slip.
+  if (s.stockPlace) {
+    // Pieces finished: an item done on the board, or the whole job order Ready (as the list offers it).
+    if (s.stage === 'ready' || (s.stage !== 'released' && s.lines.some((l) => l.ready))) out.push({ label: s.stockPlace.label, to: s.stockPlace.href, primary: true });
+  } else if (can.release && s.lines.some((l) => l.leftQty > 0 && (l.ready !== false || can.releaseOverride))) out.push({ label: 'Release slip', to: `/docs/jo.release/new?jo=${id}` });
   if (can.invoice && s.awaitingInvoice.length > 0) {
     const one = s.awaitingInvoice.length === 1 ? `release=${encodeURIComponent(s.awaitingInvoice[0]!.id)}` : `jo=${id}`;
     out.push({ label: 'Record invoice', to: `/docs/jo.invoice_record/new?${one}` });

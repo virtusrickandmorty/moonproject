@@ -50,6 +50,7 @@ describe('shop work', () => {
     expect((await encoder.post(`/api/shp/work/${jo.id}/put-in`, { lines: [{ lineNo: 1, qty: 1 }] })).json().code).toBe('NOT_FINISHED');
     await finish(jo.id);
     // Finished on the board: the staff are told to put the pieces into the shop's stock; the notice goes once all are in.
+    expect((await encoder.get(`/api/jo/orders/${jo.id}/status`)).json().stockPlace).toEqual({ label: "Put into the shop's stock", href: '/shp?tab=work' });
     expect((await encoder.get('/api/dash/notifications')).json()).toContainEqual(expect.objectContaining({ kind: 'shop-work-ready', label: `${jo.number}: 10 finished pieces to put into the shop's stock`, href: '/shp?tab=work' }));
     expect((await encoder.post(`/api/shp/work/${jo.id}/put-in`, { lines: [{ lineNo: 1, qty: 6 }] })).json().complete).toBe(false);
     expect(await item(tee, 'M', 'Ink')).toMatchObject({ onHand: 6, available: 6 });

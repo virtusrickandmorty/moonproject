@@ -123,7 +123,11 @@ export interface DocHeader {
 export interface DocListFilters { q?: string; from?: string; to?: string }
 export interface DocCounts { all: number; posted: number; cancelled: number }
 /** A job order list row: `balanceDueCents` (0 once cancelled), the item a search found its words in, and its releases waiting for their invoice. */
-export interface JoListRow extends DocHeader { balanceDueCents: number; matchedItem: string | null; awaitingInvoice: { id: string; number: string }[]; readyToRelease: boolean }
+export interface JoListRow extends DocHeader {
+  balanceDueCents: number; matchedItem: string | null; awaitingInvoice: { id: string; number: string }[]; readyToRelease: boolean;
+  /** Made for stock (TPL, the website shop) with finished pieces: where they go instead of a release slip. */
+  stockPlace?: { label: string; href: string } | null;
+}
 /** Read-only display of lines the server built. Declared this way so the money-rule tripwire (tests/house-rules) stays exact. */
 export type JournalLine = { accountCode: string; accountName: string } & Record<'debitCents' | 'creditCents', number>;
 export interface Journal { id: string; number: string; businessDate: string; postingKind: 'original' | 'reversal'; memo: string; lines: JournalLine[] }
@@ -238,6 +242,8 @@ export interface Forfeitable {
 }
 /** GET /api/jo/orders/:id/status, the parts the JO view shows: all derived on the server (NR-2). */
 export interface JoStatus {
+  /** Made for stock (TPL, the website shop): where its finished pieces go, instead of a release slip. */
+  stockPlace?: { label: string; href: string } | null;
   jobOrder: { id: string; number: string; docType: string; status: 'posted' | 'cancelled'; customerId: string; customerName: string; dueDate: string };
   stage: string;
   stageLabel: string;
