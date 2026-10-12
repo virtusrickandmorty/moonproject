@@ -8,6 +8,13 @@ import { shopItemsNotice } from './public.ts';
 import { shpTrackRoutes } from './track.ts';
 import { shpReviewRoutes } from './reviews.ts';
 import { shpSeoRoutes } from './seo.ts';
+import { onForStockCheck, onJobOrderEdited } from '../JO/public.ts';
+import { carryWorkOver, shpWorkRoutes, workOf } from './work-routes.ts';
+
+// A shop work order's pieces go into the website shop's stock, never out on a release slip (the owner's request, Oct 2026).
+onForStockCheck((db, jobOrderId) => (workOf(db, jobOrderId) ? "This job order was made for the website shop's stock. Put its finished pieces into the shop's stock (Website shop · Shop work)." : null));
+// Edited, it stays shop work.
+onJobOrderEdited(carryWorkOver);
 
 export default defineModule({
   code: 'SHP',
@@ -22,6 +29,8 @@ export default defineModule({
     // The POS records a quick sale, so selling there also needs qs.create and qs.post (the server checks those on the sale).
     { key: 'shp.pos', label: 'Sell shop items at the POS counter (also needs the quick sale permissions to record the sale)', defaultRoles: ['encoder', 'owner'] },
     { key: 'shp.reviews.manage', label: "Hide and show buyers' reviews on the website", defaultRoles: ['encoder', 'owner'] },
+    // Making one records a job order on the production board, so it also needs jo.post.
+    { key: 'shp.work', label: "Send website shop items to production: restock, rework, or change pieces into a shop item", defaultRoles: ['encoder', 'owner'] },
     { key: 'shp.payment.manage', label: "Set the shop's online payment QR and the cash account it pays into", defaultRoles: ['owner'] },
   ],
   docTypes: [],
@@ -34,5 +43,6 @@ export default defineModule({
     shpTrackRoutes(app, deps);
     shpReviewRoutes(app, deps);
     shpSeoRoutes(app, deps);
+    shpWorkRoutes(app, deps);
   },
 });

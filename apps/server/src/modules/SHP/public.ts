@@ -1,7 +1,8 @@
 /**
  * What other modules may read from the website shop (AGENTS.md: other modules only through public.ts).
- * Pieces on hand of an item (product · size · colour) = stock in and counts (shp_stock_moves) − pieces on recorded quick
- * sales (QS). Available = on hand − pieces held by online orders still waiting for payment.
+ * Pieces on hand of an item (product · size · colour) = stock in and counts (shp_stock_moves) + shop work (shp_work_moves:
+ * pieces taken off sale for rework or a change, given back, and finished pieces put in) − pieces on recorded quick sales
+ * (QS). Available = on hand − pieces held by online orders still waiting for payment.
  */
 import type { Issue } from '@moonproject/shared';
 import type { NoticeTarget } from '../../engine/documents/registry.ts';
@@ -34,6 +35,8 @@ export function stockOf(db: Db, productIds: readonly string[], nowMs: number): M
   const counts = new Map<string, number>();
   const add = (productId: string, size: string, colour: string, qty: number) => counts.set(`${productId}|${key(size, colour)}`, (counts.get(`${productId}|${key(size, colour)}`) ?? 0) + qty);
   for (const m of db.prepare(`SELECT product_id AS productId, size, colour, SUM(qty) AS qty FROM shp_stock_moves
+    WHERE product_id IN (SELECT value FROM json_each(?)) GROUP BY product_id, size, colour`).all(ids) as { productId: string; size: string; colour: string; qty: number }[]) add(m.productId, m.size, m.colour, m.qty);
+  for (const m of db.prepare(`SELECT product_id AS productId, size, colour, SUM(qty) AS qty FROM shp_work_moves
     WHERE product_id IN (SELECT value FROM json_each(?)) GROUP BY product_id, size, colour`).all(ids) as { productId: string; size: string; colour: string; qty: number }[]) add(m.productId, m.size, m.colour, m.qty);
   for (const s of soldShopPieces(db, productIds)) add(s.productId, s.size, s.colour, -s.qty);
   const held = new Map<string, number>();
