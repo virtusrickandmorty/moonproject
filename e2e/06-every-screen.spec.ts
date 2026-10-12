@@ -138,7 +138,12 @@ async function fillIn(page: Page, today: string): Promise<string[]> {
         if (await pickFirst(input)) picked.set(info.label || info.hint, made + 1);
         await page.waitForLoadState('networkidle').catch(() => undefined);
         break;
-      } else await input.fill(info.type === 'date' ? today : typedFor(info.label || info.hint, info.type, info.mode));
+      } else {
+        // A box the form just redrew (a pick above it loaded, on a slow machine) may have changed under it: a fill it refuses
+        // starts the next pass on the redrawn form, as a pick does.
+        const filled = await input.fill(info.type === 'date' ? today : typedFor(info.label || info.hint, info.type, info.mode)).then(() => true, () => false);
+        if (!filled) { await page.waitForLoadState('networkidle').catch(() => undefined); break; }
+      }
     }
   }
   return asksForId;
