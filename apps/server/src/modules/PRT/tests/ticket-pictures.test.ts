@@ -31,24 +31,30 @@ async function documentWith(files: [string, Buffer][]) {
   return { id, added };
 }
 
-it('puts the attached pictures on the job ticket, inlined, without PDFs or removed pictures', async () => {
-  const design = smallPng();
-  const { id, added } = await documentWith([['front design.png', design], ['order form.pdf', Buffer.concat([Buffer.from('%PDF-1.7\n'), randomBytes(64)])], ['old mock-up.png', smallPng()]]);
+it('prints each attached picture on a page of its own after the ticket, inlined, without PDFs or removed pictures', async () => {
+  const [front, back] = [smallPng(), smallPng()];
+  const { id, added } = await documentWith([['front design.png', front], ['order form.pdf', Buffer.concat([Buffer.from('%PDF-1.7\n'), randomBytes(64)])], ['old mock-up.png', smallPng()], ['back design.png', back]]);
   await accountant.post(`/api/docs/acc.jv/${id}/attachments/${added[2]}/remove`, { reason: 'Replaced by the final design' });
 
-  const pictures = attachedPictures(env.db, id);
-  expect(pictures).toContain('<h2 class="section">Design</h2>');
-  expect(pictures).toContain(`src="data:image/png;base64,${design.toString('base64')}"`);
-  expect(pictures).toContain('front design.png');
-  expect(pictures).not.toContain('order form.pdf');
-  expect(pictures).not.toContain('old mock-up.png');
+  const pictures = attachedPictures(env.db, id, 'JO-000001');
+  expect(pictures.count).toBe(2);
+  expect(pictures.pages.match(/<section class="picture-page">/g)).toHaveLength(2);
+  expect(pictures.pages).toContain(`src="data:image/png;base64,${front.toString('base64')}"`);
+  expect(pictures.pages).toContain('<b>JO-000001</b><span>Design 1 of 2</span><span class="pic-name">front design.png</span>');
+  expect(pictures.pages).toContain('Design 2 of 2');
+  expect(pictures.pages).not.toContain('order form.pdf');
+  expect(pictures.pages).not.toContain('old mock-up.png');
 
   const ticket = renderPrint(env.db, { id, number: 'JO-000001', business_date: '2026-09-28', doc_type: 'jo.job_order', status: 'posted' },
     { customerName: 'Sample Buyer', dueDate: '2026-10-13', priority: 'normal', lines: [] }, profile, 'job_ticket', 'Example Owner', '2026-09-28T10:00:00+08:00', 1);
-  expect(ticket).toContain(pictures);
+  expect(ticket).toContain('Design: 2 pictures on the next pages, one a page.');
+  // After the ticket itself, each starting a new page.
+  expect(ticket.indexOf('<section class="picture-page">')).toBeGreaterThan(ticket.indexOf('</article>'));
+  expect(ticket).toContain(pictures.pages);
+  expect(ticket).toContain('.picture-page{break-before:page');
 });
 
-it('prints no Design section for a job order without pictures', async () => {
+it('prints no picture pages for a job order without pictures', async () => {
   const { id } = await documentWith([]);
-  expect(attachedPictures(env.db, id)).toBe('');
+  expect(attachedPictures(env.db, id)).toEqual({ pages: '', count: 0 });
 });
