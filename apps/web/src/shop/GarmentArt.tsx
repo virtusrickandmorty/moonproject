@@ -36,9 +36,12 @@ export function GarmentArt({ shape, colour, className = '' }: { shape: Shape; co
   );
 }
 
-/** The product's photo when the shop uploaded one, else its drawing in the chosen colour. */
-export function ProductPicture({ product, colour, className = '' }: { product: { name: string; shape: Shape; photoUrl?: string | null }; colour: string; className?: string }) {
+/**
+ * The product's photo when the shop uploaded one, else its drawing in the chosen colour. `fit`: the whole photo shown
+ * (the quick view, the owner's request, Oct 2026), not cropped to fill the box as on the cards.
+ */
+export function ProductPicture({ product, colour, className = '', fit = false }: { product: { name: string; shape: Shape; photoUrl?: string | null }; colour: string; className?: string; fit?: boolean }) {
   return product.photoUrl
-    ? <img src={product.photoUrl} alt={product.name} loading="lazy" className={`h-full w-full object-cover ${className}`} />
+    ? <img src={product.photoUrl} alt={product.name} loading="lazy" className={`${fit ? 'absolute inset-0 object-contain' : 'object-cover'} h-full w-full ${className}`} />
     : <GarmentArt shape={product.shape} colour={colour} className={className} />;
 }

@@ -78,7 +78,7 @@ export function QuickView({ product, onClose, onSizeGuide, onAdded }: { product:
             them all under it to pick from. */}
         <div className="space-y-3 self-start md:sticky md:top-0">
           <div className="relative mx-auto grid aspect-square max-h-[65vh] w-full place-items-center overflow-hidden rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100">
-            <ProductPicture product={{ ...product, photoUrl: photos[shown] ?? product.photoUrl }} colour={colour.hex} className={product.photoUrl ? '' : 'w-4/5'} />
+            <ProductPicture fit product={{ ...product, photoUrl: photos[shown] ?? product.photoUrl }} colour={colour.hex} className={product.photoUrl ? '' : 'w-4/5'} />
             <WishButton product={product} className="absolute right-3 top-3" />
             {photos.length > 1 && <>
               <button type="button" aria-label="Previous photo" onClick={() => setShown((shown + photos.length - 1) % photos.length)}
@@ -88,9 +88,9 @@ export function QuickView({ product, onClose, onSizeGuide, onAdded }: { product:
               <span className="absolute bottom-3 right-3 rounded-full bg-slate-900/70 px-2.5 py-0.5 text-xs font-semibold text-white">{shown + 1} / {photos.length}</span>
             </>}
           </div>
-          {photos.length > 1 && <div className="grid grid-cols-3 gap-3" role="group" aria-label="Photos">
+          {photos.length > 1 && <div className="flex justify-center gap-2" role="group" aria-label="Photos">
             {photos.map((url, i) => <button key={url} type="button" onClick={() => setShown(i)} aria-label={`Photo ${i + 1} of ${photos.length}`} aria-pressed={i === shown}
-              className={`aspect-square overflow-hidden rounded-xl bg-slate-50 ring-2 transition ${i === shown ? 'ring-indigo-600' : 'ring-slate-200 opacity-80 hover:opacity-100 hover:ring-indigo-300'}`}><img src={url} alt={`${product.name}, photo ${i + 1}`} loading="lazy" className="h-full w-full object-cover" /></button>)}
+              className={`size-16 overflow-hidden rounded-lg bg-slate-50 ring-2 transition ${i === shown ? 'ring-indigo-600' : 'ring-slate-200 opacity-70 hover:opacity-100 hover:ring-indigo-300'}`}><img src={url} alt={`${product.name}, photo ${i + 1}`} loading="lazy" className="h-full w-full object-cover" /></button>)}
           </div>}
         </div>
         <div>
