@@ -6,7 +6,7 @@ import qrcode from 'qrcode-generator';
 import { DOC_TITLES, type DocTitle } from '../../engine/documents/registry.ts';
 import type { Db } from '../../platform/db/driver.ts';
 import { attachmentsDir, readStored } from '../../engine/attachments.ts';
-import { jobTicketRoute } from '../PRD/public.ts';
+import { jobTicketRoute, lineIsSet } from '../PRD/public.ts';
 import { purchaseOrderNames } from '../PUR/public.ts';
 
 export type PrintKind = 'document' | 'job_ticket' | 'thermal';
@@ -98,7 +98,7 @@ export const TICKET_PICTURES = 20;
  */
 export function attachedPictures(db: Db, documentId: string, number = '', max = TICKET_PICTURES): { pages: string; count: number } {
   const rows = db.prepare(`SELECT file_name, content_type, sha256 FROM attachments WHERE document_id = ? AND removed_at IS NULL
-    AND content_type IN ('image/jpeg', 'image/png', 'image/webp') ORDER BY added_at, id LIMIT ?`).all(documentId, max) as { file_name: string; content_type: string; sha256: string }[];
+    AND content_type IN ('image/jpeg', 'image/png', 'image/webp') ORDER BY added_at, rowid LIMIT ?`).all(documentId, max) as { file_name: string; content_type: string; sha256: string }[];
   const dir = rows.length ? attachmentsDir(db) : '';
   const found = rows.flatMap((r) => { const data = readStored(dir, r.sha256); return data ? [{ ...r, data }] : []; });
   const pages = found.map((r, i) => `<section class="picture-page"><p class="pic-head"><b>${escape(number)}</b><span>Design ${i + 1} of ${found.length}</span><span class="pic-name">${escape(r.file_name)}</span></p>` +
@@ -131,7 +131,8 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
       // The design pictures go after the ticket, a page each (the owner's request, Oct 2026); the ticket says how many.
       ...(pictures.count ? { pages: pictures.pages } : {}),
       body: (pictures.count ? `<p class="pic-note">Design: ${pictures.count} ${pictures.count === 1 ? 'picture' : 'pictures'} on the next ${pictures.count === 1 ? 'page' : 'pages'}, one a page.</p>` : '') +
-        doc.lines.map((l: any) => `<section class="job-line"><h2 class="section">${escape(l.description)} · ${escape(l.qty)} pieces</h2>` +
+        // A set is counted in sets (the owner's request, Oct 2026).
+        doc.lines.map((l: any) => `<section class="job-line"><h2 class="section">${escape(l.description)} · ${escape(l.qty)} ${lineIsSet(db, h.id, l.lineNo, l.description) ? (l.qty === 1 ? 'set' : 'sets') : 'pieces'}</h2>` +
           lineTable(['Wearer', 'Size', 'Jersey name', 'Jersey no.', 'Qty', 'Garment type'], l.roster.map((r: any) => [r.wearerName, r.sizeMode === 'measured' ? 'Measured' : sizeLabel(r.size, r.lowerSize), r.jerseyName, r.jerseyNumber, r.qty, r.garmentType])) +
           `<h3>Route checklist</h3><ul>${jobTicketRoute(db, h.id, l.lineNo).map((s) => `<li>☐ ${escape(s.name)} — ${escape(s.status)}</li>`).join('')}</ul></section>`).join('') +
         field('Notes', doc.notes),

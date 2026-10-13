@@ -5,7 +5,7 @@
  * Save draft (no number) or Record. Also the Edit of a recorded job order (cancel and reissue, NR-4).
  */
 import { useEffect, useRef, useState } from 'react';
-import { formatPesos, manilaDate } from '@moonproject/shared';
+import { formatPesos, manilaDate, saysSet } from '@moonproject/shared';
 import { api, type CatItem, type CustomerWearers, type DocTypeInfo, type Me, type Preview } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import { cents } from '../COL/money.ts';
@@ -240,9 +240,11 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
     );
   };
   const setItemPatch = (patch: Partial<JoLineRow>) => setItem((l) => ({ ...l, ...patch }));
+  /** The description can be typed once a price list item is picked, or on an item already in the order (an edit, a quotation's). */
+  const describable = !!item.itemId || !!item.description.trim() || editing !== null;
   const pick = (it: CatItem) => {
     const qty = lineQty(latestItem.current);
-    setItemPatch({ itemId: it.id, kind: KIND_OF_CLASS[it.class], description: it.name, price: '', listCents: null, isSet: it.unit === 'set' });
+    setItemPatch({ itemId: it.id, kind: KIND_OF_CLASS[it.class], description: it.name, price: '', listCents: null, isSet: it.unit === 'set' || saysSet(it.name) });
     lookup(it.id, qty);
   };
   const setQty = (qty: string) => { setItemPatch({ qty }); lookup(latestItem.current.itemId, qty); };
@@ -325,40 +327,7 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
             </Field>
           </div>
         </Panel>
-        <div ref={itemForm} className="scroll-mt-4">
-        <Panel title={editing === null ? 'What is made: add an item' : `What is made: change item ${editing + 1}`}>
-          <div className="space-y-3">
-            <ItemSearch label="Item price list item" onPick={pick} />
-            <div role="radiogroup" aria-label="Kind of item" className="flex flex-wrap gap-2">
-              {KINDS.map(([k, label]) => (
-                <button key={k} type="button" role="radio" aria-checked={item.kind === k} onClick={() => setItemPatch({ kind: k })}
-                  className={`rounded-full px-3 py-1 text-sm ring-1 ${item.kind === k ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300'}`}>
-                  {label}
-                </button>
-              ))}
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Description"><input aria-label="Item description" placeholder="What, e.g. Team jersey set" className={inputClass} value={item.description} onChange={(e) => setItemPatch({ description: e.target.value })} /></Field>
-              <Field label="Pieces"><input aria-label="Item pieces" inputMode="numeric" className={money} value={lineQty(item)} readOnly={item.roster.length > 0}
-                title={item.roster.length > 0 ? 'Follows the wearers listed below' : undefined} onChange={(e) => setQty(e.target.value)} /></Field>
-              <Field label="Price each" hint={item.listCents !== null ? `Price list for ${lineQty(item)}: ${formatPesos(item.listCents)} each${priceChanged(item) ? ' (changed by hand)' : ''}` : undefined}>
-                <input aria-label="Item price each" inputMode="decimal" placeholder="Price each" className={money} value={item.price} onChange={(e) => setItemPatch({ price: e.target.value })} />
-              </Field>
-              <Field label="Discount (optional)"><input aria-label="Item discount" inputMode="decimal" placeholder="0.00" className={money} value={item.discount} onChange={(e) => setItemPatch({ discount: e.target.value })} /></Field>
-            </div>
-            {noPrice && <p className="text-xs text-amber-700">{noPrice}</p>}
-            <details open={item.roster.length > 0}>
-              <summary className="cursor-pointer text-sm text-indigo-700">Wearers{item.roster.length > 0 ? ` (${item.roster.length})` : ''}</summary>
-              {v.customer ? <RosterGrid line={item} n="Item" people={people} sizes={sizes} onChange={setRoster} onSetChange={(isSet) => setItemPatch({ isSet })} /> : <p className="text-sm text-slate-500">Pick the customer first.</p>}
-            </details>
-            <Errors list={itemErrors} show={itemTouched} />
-            <div className="flex flex-wrap gap-2">
-              <Button tone="primary" onClick={putItem} disabled={v.lines.length >= 50 && editing === null}>{editing === null ? '+ Add to order' : 'Update item'}</Button>
-              {(editing !== null || pending) && <Button onClick={clearItem}>{editing === null ? 'Clear' : 'Cancel the change'}</Button>}
-            </div>
-          </div>
-        </Panel>
-        </div>
+        {/* The terms right after the customer, before the items (the owner's request, Oct 2026). */}
         <Panel title="Terms">
           <div className="grid gap-3 sm:grid-cols-3">
             {/* A date to pick (the owner's request, Oct 2026); the days from today are worked out and sent. */}
@@ -381,6 +350,41 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
           </div>
           <Field label="Notes"><textarea rows={2} className={inputClass} value={v.notes} onChange={(e) => set({ notes: e.target.value })} /></Field>
         </Panel>
+        <div ref={itemForm} className="scroll-mt-4">
+        <Panel title={editing === null ? 'What is made: add an item' : `What is made: change item ${editing + 1}`}>
+          <div className="space-y-3">
+            <ItemSearch label="Item price list item" onPick={pick} />
+            <div role="radiogroup" aria-label="Kind of item" className="flex flex-wrap gap-2">
+              {KINDS.map(([k, label]) => (
+                <button key={k} type="button" role="radio" aria-checked={item.kind === k} onClick={() => setItemPatch({ kind: k })}
+                  className={`rounded-full px-3 py-1 text-sm ring-1 ${item.kind === k ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {/* Typed only after an item is picked from the price list (the owner's request, Oct 2026), or on one already in the order. */}
+              <Field label="Description" hint={describable ? undefined : 'Pick the item from the price list first.'}><input aria-label="Item description" placeholder={describable ? 'What, e.g. Team jersey set' : 'Pick from the price list first'} disabled={!describable} className={inputClass} value={item.description} onChange={(e) => setItemPatch({ description: e.target.value })} /></Field>
+              <Field label={item.isSet ? 'Sets' : 'Pieces'}><input aria-label="Item pieces" inputMode="numeric" className={money} value={lineQty(item)} readOnly={item.roster.length > 0}
+                title={item.roster.length > 0 ? 'Follows the wearers listed below' : undefined} onChange={(e) => setQty(e.target.value)} /></Field>
+              <Field label="Price each" hint={item.listCents !== null ? `Price list for ${lineQty(item)}: ${formatPesos(item.listCents)} each${priceChanged(item) ? ' (changed by hand)' : ''}` : undefined}>
+                <input aria-label="Item price each" inputMode="decimal" placeholder="Price each" className={money} value={item.price} onChange={(e) => setItemPatch({ price: e.target.value })} />
+              </Field>
+              <Field label="Discount (optional)"><input aria-label="Item discount" inputMode="decimal" placeholder="0.00" className={money} value={item.discount} onChange={(e) => setItemPatch({ discount: e.target.value })} /></Field>
+            </div>
+            {noPrice && <p className="text-xs text-amber-700">{noPrice}</p>}
+            <details open={item.roster.length > 0}>
+              <summary className="cursor-pointer text-sm text-indigo-700">Wearers{item.roster.length > 0 ? ` (${item.roster.length})` : ''}</summary>
+              {v.customer ? <RosterGrid line={item} n="Item" people={people} sizes={sizes} onChange={setRoster} onSetChange={(isSet) => setItemPatch({ isSet })} /> : <p className="text-sm text-slate-500">Pick the customer first.</p>}
+            </details>
+            <Errors list={itemErrors} show={itemTouched} />
+            <div className="flex flex-wrap gap-2">
+              <Button tone="primary" onClick={putItem} disabled={v.lines.length >= 50 && editing === null}>{editing === null ? '+ Add to order' : 'Update item'}</Button>
+              {(editing !== null || pending) && <Button onClick={clearItem}>{editing === null ? 'Clear' : 'Cancel the change'}</Button>}
+            </div>
+          </div>
+        </Panel>
+        </div>
         </div>
         {/* The breakdown on the right (under the form on a phone), in view while the form scrolls. */}
         <aside className="space-y-4 lg:sticky lg:top-0">
@@ -398,7 +402,7 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium" title={l.description}>{l.description || '(no description)'}</p>
                         <p className="text-xs text-slate-500">
-                          {lineQty(l)} pcs × {each === undefined ? '—' : peso(each)}{off ? ` less ${peso(off)}` : ''}{l.roster.length > 0 ? ` · ${l.roster.length} wearer${l.roster.length === 1 ? '' : 's'}` : ''}
+                          {lineQty(l)} {l.isSet ? 'sets' : 'pcs'} × {each === undefined ? '—' : peso(each)}{off ? ` less ${peso(off)}` : ''}{l.roster.length > 0 ? ` · ${l.roster.length} wearer${l.roster.length === 1 ? '' : 's'}` : ''}
                         </p>
                         <div className="mt-1 flex gap-3 text-xs">
                           <button type="button" className="font-medium text-indigo-700 hover:underline" aria-label={`Edit item ${i + 1}`} onClick={() => editItem(i)}>Edit</button>

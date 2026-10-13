@@ -35,6 +35,7 @@ it('keeps each wearer\'s upper and lower size, reads them back, and prints both 
   const profile = { registered_name: 'Example Garments Corp.', trade_name: 'Example Garments', tin: '000-111-222', registered_address: '1 Sample Street', is_vat_registered: 1, version: 1 };
   const ticket = renderPrint(env.db, h, d.doc, profile, 'job_ticket', 'Example Owner', '2026-09-28T10:00:00+08:00', 1);
   expect(ticket).toMatch(/<td>Ana Reyes<\/td><td>Upper M · Lower L<\/td>/);
+  expect(ticket).toContain('Team jersey set · 2 sets</h2>'); // a set is counted in sets on the job ticket
 });
 
 it('a wearer without a lower size reads as before', async () => {

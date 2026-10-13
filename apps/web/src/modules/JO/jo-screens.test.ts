@@ -31,7 +31,7 @@ const typedJo = (over: Partial<JoValues> = {}): JoValues => ({
   lines: [
     {
       ...emptyJoLine(),
-      description: 'Team jersey set',
+      description: 'Team jersey',
       qty: '99', // the roster's pieces win
       price: '1,500.00',
       listCents: 150_000,
@@ -51,7 +51,7 @@ const status = (over: Partial<JoStatus> = {}, money: Partial<JoStatus['money']> 
   stage: 'open',
   stageLabel: 'Open',
   money: { totalCents: 600_000, invoicedCents: 0, receivableCents: 0, depositsHeldCents: 0, balanceDueCents: 600_000, collectedCents: 0, requiredDownpaymentCents: 300_000, ...money },
-  lines: [{ lineNo: 1, description: 'Team jersey set', qty: 4, releasedQty: 0, leftQty: 4 }],
+  lines: [{ lineNo: 1, description: 'Team jersey', qty: 4, releasedQty: 0, leftQty: 4 }],
   awaitingInvoice: [],
   depositVat: { mode: 'A', words: 'deposit only', setting: 'A', settingWords: 'deposit only', lockedBy: null, kept: null },
   dpInvoices: [],
@@ -77,7 +77,7 @@ describe('job order form rules', () => {
       priority: 'normal',
       paymentTerms: 'dp50',
       lines: [{
-        kind: 'made_to_order', description: 'Team jersey set', qty: 4, unitPriceCents: 150_000, discountCents: 0,
+        kind: 'made_to_order', description: 'Team jersey', qty: 4, unitPriceCents: 150_000, discountCents: 0,
         roster: [
           { personId: 'p-ari', sizeMode: 'preset', size: 'L', jerseyName: 'ARI', jerseyNumber: '7', qty: 1, garmentType: 'Jersey (women)' },
           { personId: 'p-bea', sizeMode: 'measured', qty: 1 },
@@ -114,9 +114,9 @@ describe('job order form rules', () => {
 
   it("a set asks for the upper and the lower size, and sends both (the owner's request, Oct 2026)", () => {
     const roster = [{ ...oneOff('Ana'), size: 'm', lowerSize: 'l' }, { ...oneOff('Ben'), size: 'S' }];
-    const set = joInput(typedJo({ lines: [{ ...emptyJoLine(), description: 'Team jersey set', price: '500', isSet: true, roster }] }));
+    const set = joInput(typedJo({ lines: [{ ...emptyJoLine(), description: 'Team jersey', price: '500', isSet: true, roster }] }));
     expect(set.errors).toEqual(['Line 1, Ben: pick the lower size.']);
-    const fixed = joInput(typedJo({ lines: [{ ...emptyJoLine(), description: 'Team jersey set', price: '500', isSet: true, roster: [roster[0]!] }] }));
+    const fixed = joInput(typedJo({ lines: [{ ...emptyJoLine(), description: 'Team jersey', price: '500', isSet: true, roster: [roster[0]!] }] }));
     expect(fixed.input.lines[0]!.roster).toEqual([{ name: 'Ana', sizeMode: 'preset', size: 'M', lowerSize: 'L', qty: 1 }]);
     expect(joValues(fixed.input).lines[0]).toMatchObject({ isSet: true, roster: [{ size: 'M', lowerSize: 'L' }] }); // an edit opens as a set
     // Not a set: the lower size is not asked for, nor sent.
@@ -197,10 +197,10 @@ describe('web client for job orders, releases and invoice records', () => {
     const { csrfToken } = await api.me();
     const send = async (url: string, body: unknown, ifMatch?: string) =>
       (await fetchIt(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-csrf-token': csrfToken, ...(ifMatch ? { 'if-match': ifMatch } : {}) }, body: JSON.stringify(body) })).json() as Promise<{ id: string; version: number }>;
-    const item = await send('/api/cat/items', { code: 'JER-01', name: 'Team jersey set', class: 'made_to_order_garment', garmentType: 'jersey', unit: 'pc', setComponents: 1 });
+    const item = await send('/api/cat/items', { code: 'JER-01', name: 'Team jersey', class: 'made_to_order_garment', garmentType: 'jersey', unit: 'pc', setComponents: 1 });
     await send(`/api/cat/items/${item.id}/prices`, { effectiveFrom: '2026-09-28', minQty: 1, unitPriceCents: 160_000 }, '1');
     await send(`/api/cat/items/${item.id}/prices`, { effectiveFrom: '2026-09-28', minQty: 4, unitPriceCents: 150_000 }, '2');
-    expect((await api.catItems('jersey')).map((i) => [i.name, i.class])).toEqual([['Team jersey set', 'made_to_order_garment']]);
+    expect((await api.catItems('jersey')).map((i) => [i.name, i.class])).toEqual([['Team jersey', 'made_to_order_garment']]);
     expect([(await api.catPrice(item.id, 1)).unitPriceCents, (await api.catPrice(item.id, 4)).unitPriceCents]).toEqual([160_000, 150_000]);
 
     // The customer's wearers with the size on file: Bea has a preset M chart; the others have none.
@@ -211,7 +211,7 @@ describe('web client for job orders, releases and invoice records', () => {
     // The form: pull the Chess Team, a size for Ari, a one-off name; the tier price for 3 pieces.
     const team = people.wearers.filter((w) => w.groupId === c.team).map(fromWearer);
     const roster = [{ ...team[0]!, size: 'L', jerseyNumber: '7' }, team[1]!, { ...oneOff('Coach Guest'), size: 'XL', qty: '2' }];
-    const line = { ...emptyJoLine(), itemId: item.id, description: 'Team jersey set', roster, price: '1,500.00', listCents: (await api.catPrice(item.id, 4)).unitPriceCents };
+    const line = { ...emptyJoLine(), itemId: item.id, description: 'Team jersey', roster, price: '1,500.00', listCents: (await api.catPrice(item.id, 4)).unitPriceCents };
     const typed = joInput({ ...emptyJo(), customer: { id: c.school, name: 'Moonlight Test School' }, paymentTerms: 'dp50', lines: [line] });
     expect(typed.errors).toEqual([]);
     const pre = await api.preview('jo.job_order', typed.input);

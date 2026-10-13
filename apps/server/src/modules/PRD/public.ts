@@ -1,10 +1,11 @@
 /** PRD contract for other modules (RATE, PAY, DASH, RPT). Callers check their own route permission. */
-import { conflict } from '@moonproject/shared';
+import { matchCatalogItem } from '../CAT/public.ts';
+import { conflict, saysSet } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 
 export { COMPLEXITIES, listSteps, stepById, type Complexity, type Step } from './production.ts';
 export { board } from './production.ts';
-import { coverage, lineDone, lineFinished, lineRoute, reworkFlow, routeDone, type Part } from './production.ts';
+import { coverage, lineDone, lineFinished, lineRoute, lineSetup, reworkFlow, routeDone, type Part } from './production.ts';
 import { rosterOf } from '../JO/public.ts';
 import { lineState } from '../JO/public.ts';
 
@@ -62,6 +63,13 @@ export function linesAwaitingSteps(db: Db, jobOrderId: string): { lineNo: number
 }
 
 /** Current route names and status for a production job ticket. */
+/** Whether a job order line is made as a set: as production set it up, else as its price list item or description says. */
+export function lineIsSet(db: Db, jobOrderId: string, lineNo: number, description: string): boolean {
+  const setup = lineSetup(db, jobOrderId, lineNo);
+  if (setup) return setup.isSet;
+  return matchCatalogItem(db, description)?.unit === 'set' || saysSet(description);
+}
+
 export function jobTicketRoute(db: Db, jobOrderId: string, lineNo: number) {
   return lineRoute(db, jobOrderId, lineNo)?.map(({ name, status }) => ({ name, status })) ?? [];
 }

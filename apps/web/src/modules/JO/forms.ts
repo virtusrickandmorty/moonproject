@@ -3,7 +3,7 @@
  * an edit; the buttons on the job order's view; what the collection form starts with for a job order. Pure, so it is
  * tested without a browser; the server works out every figure and checks everything again.
  */
-import { formatPesos } from '@moonproject/shared';
+import { formatPesos, saysSet } from '@moonproject/shared';
 import type { BookletFigures, BookletShown, CatItem, DpInfo, JoDepositVat, JoStatus, WearerPick } from '../../api.ts';
 import type { jobOrderPrefill } from '../QUO/quotation.ts';
 import { cents } from '../COL/money.ts';
@@ -118,7 +118,7 @@ export function joValues(i: JoInput, doc?: JoDoc): JoValues {
       price: formatPesos(l.unitPriceCents),
       listCents: null,
       discount: l.discountCents ? formatPesos(l.discountCents) : '',
-      isSet: l.roster.some((r) => !!r.lowerSize),
+      isSet: l.roster.some((r) => !!r.lowerSize) || saysSet(l.description),
       roster: l.roster.map((r, j) => ({
         personId: r.personId ?? '',
         name: r.name ?? doc?.lines[n]?.roster[j]?.wearerName ?? '',
