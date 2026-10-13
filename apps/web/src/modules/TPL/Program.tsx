@@ -9,6 +9,7 @@ import { Button, Dialog, Field, Loading, Notice, Panel, ReasonDialog, StatusChip
 import { Link, navigate } from '../../router.tsx';
 import { fromCents, itemLabel, toCents, type Issue, type TplCardRow, type TplDeliveryPreview, type TplItem, type TplProgram, type TplProgramPage } from './types.ts';
 import { useLiveReload } from '../../live.ts';
+import { usePages } from '../../components/RowPages.tsx';
 
 const STAGE_WORDS: Record<string, string> = { open: 'Not started', in_production: 'In production', ready: 'Finished', partially_released: 'Partly in stock', released: 'All in stock', closed: 'Closed' };
 const pieces = (n: number) => `${n.toLocaleString('en-PH')} ${n === 1 ? 'piece' : 'pieces'}`;
@@ -20,12 +21,15 @@ export function TplProgramPage({ me, params }: { me: Me; docTypes: DocTypeInfo[]
   const can = (p: string) => me.permissions.includes(p);
   const [page, setPage] = useState<TplProgramPage | null>(null);
   const [error, setError] = useState('');
-  const [open, setOpen] = useState<null | 'deliver' | 'restock' | 'terms' | 'item' | { item: TplItem } | { count: TplItem } | { card: TplItem } | { cancel: string }>(null);
+  const [open, setOpen] = useState<null | 'deliver' | 'restock' | 'terms' | 'item' | 'items' | 'counts' | { item: TplItem } | { count: TplItem } | { card: TplItem } | { cancel: string }>(null);
   const load = useCallback(() => api.tplProgram<TplProgramPage>(id).then((p) => (setPage(p), setError('')), (e: Error) => setError(e.message)), [id]);
   useEffect(() => void load(), [load]);
   useLiveReload(load);
   const done = () => { setOpen(null); void load(); };
   const put = useAction();
+  // The stock and the deliveries, 20 a page (the owner's request, Oct 2026).
+  const itemPages = usePages(page?.items);
+  const deliveryPages = usePages(page?.deliveries);
 
   if (!page) return error ? <Notice>{error}</Notice> : <Loading />;
   const { program: p, items, restocks, deliveries, money } = page;
@@ -56,7 +60,7 @@ export function TplProgramPage({ me, params }: { me: Me; docTypes: DocTypeInfo[]
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr><th>Item</th><th className="text-right">Price a piece</th><th className="text-right">On hand</th><th className="text-right">Restock at</th><th /></tr></thead>
-              <tbody>{items.map((i) => {
+              <tbody>{itemPages.shown.map((i) => {
                 const low = i.isActive && i.onHand <= i.reorderLevel;
                 return (
                   <tr key={i.id} className={i.isActive ? '' : 'text-slate-500'} data-row-link="off">
@@ -73,9 +77,14 @@ export function TplProgramPage({ me, params }: { me: Me; docTypes: DocTypeInfo[]
                 );
               })}</tbody>
             </table>
+            {itemPages.buttons}
           </div>
         )}
-        {can('tpl.program.manage') && <div><Button onClick={() => setOpen('item')}>+ Add item</Button></div>}
+        <div className="flex flex-wrap gap-2">
+          {can('tpl.program.manage') && <Button onClick={() => setOpen('item')}>+ Add item</Button>}
+          {can('tpl.program.manage') && <Button onClick={() => setOpen('items')}>+ Add many items</Button>}
+          {can('tpl.count') && active.length > 0 && <Button onClick={() => setOpen('counts')}>Count many</Button>}
+        </div>
       </Panel>
 
       {restocks.length > 0 && (
@@ -108,7 +117,7 @@ export function TplProgramPage({ me, params }: { me: Me; docTypes: DocTypeInfo[]
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr><th>Delivery</th><th>Date</th><th>Invoice no.</th><th className="text-right">Pieces</th><th className="text-right">Amount</th><th>Due</th><th>Status</th><th /></tr></thead>
-              <tbody>{deliveries.map((d) => (
+              <tbody>{deliveryPages.shown.map((d) => (
                 <tr key={d.id} className={d.status === 'cancelled' ? 'text-slate-500' : ''}>
                   <td><Link to={`/docs/tpl.delivery/${d.id}`} className="font-medium text-indigo-700">{d.number}</Link></td>
                   <td>{showDate(d.date)}</td>
@@ -121,6 +130,7 @@ export function TplProgramPage({ me, params }: { me: Me; docTypes: DocTypeInfo[]
                 </tr>
               ))}</tbody>
             </table>
+            {deliveryPages.buttons}
           </div>
         )}
       </Panel>
@@ -128,6 +138,8 @@ export function TplProgramPage({ me, params }: { me: Me; docTypes: DocTypeInfo[]
       {open === 'terms' && <TermsDialog program={p} onClose={() => setOpen(null)} onSaved={done} />}
       {(open === 'item' || (open && typeof open === 'object' && 'item' in open)) && <ItemDialog programId={p.id} item={typeof open === 'object' && 'item' in open ? open.item : undefined} onClose={() => setOpen(null)} onSaved={done} />}
       {open && typeof open === 'object' && 'count' in open && <CountDialog item={open.count} onClose={() => setOpen(null)} onSaved={done} />}
+      {open === 'items' && <ItemsDialog programId={p.id} onClose={() => setOpen(null)} onSaved={done} />}
+      {open === 'counts' && <CountsDialog programId={p.id} items={active} onClose={() => setOpen(null)} onSaved={done} />}
       {open && typeof open === 'object' && 'card' in open && <CardDialog item={open.card} onClose={() => setOpen(null)} />}
       {open === 'restock' && <RestockDialog items={active} onClose={() => setOpen(null)} onSaved={done} programId={p.id} />}
       {open === 'deliver' && <Dialog title={`Deliver to ${p.customerName}`} wide onClose={() => setOpen(null)}><DeliveryEditor page={page} canOverride={can('tpl.override')} onRecorded={done} /></Dialog>}
@@ -224,11 +236,123 @@ function CountDialog({ item, onClose, onSaved }: { item: TplItem; onClose: () =>
   );
 }
 
+/** One row of the add-many grid, as typed. */
+type ItemRow = { description: string; size: string; price: string; reorder: string; kind: TplItem['kind'] };
+const blankRow = (): ItemRow => ({ description: '', size: '', price: '', reorder: '0', kind: 'made_to_order' });
+/**
+ * Pasted from Excel: item, size, price a piece, restock at, kind (one item a row, tab-separated; a header row is
+ * skipped). Kind is "ready" or "ready-made" for ready-made; anything else is made to order.
+ */
+export function parseItemPaste(text: string): ItemRow[] {
+  return text.split(/\r?\n/).map((l) => l.split('\t').map((c) => c.trim())).filter((c, i) => c.some(Boolean) && !(i === 0 && /^(item|description|name)$/i.test(c[0] ?? '')))
+    .map(([description = '', size = '', price = '', reorder = '', kind = '']) => ({ description, size, price: price.replace(/[₱\s]/g, ''), reorder: reorder.replace(/\D/g, '') || '0', kind: /^ready/i.test(kind) ? 'ready_made' : 'made_to_order' }));
+}
+
+/** Add many items at once (the owner's request, Oct 2026): rows typed or pasted from Excel; all or none. */
+function ItemsDialog({ programId, onClose, onSaved }: { programId: string; onClose: () => void; onSaved: () => void }) {
+  const [rows, setRows] = useState<ItemRow[]>(() => [blankRow(), blankRow(), blankRow()]);
+  const [paste, setPaste] = useState<string | null>(null);
+  const a = useAction();
+  const set = (i: number, patch: Partial<ItemRow>) => setRows(rows.map((r, k) => (k === i ? { ...r, ...patch } : r)));
+  const filled = rows.filter((r) => r.description.trim() || r.price.trim());
+  const save = () => a.run(async () => {
+    if (!filled.length) throw new Error('Type at least one item.');
+    const items = filled.map((r, i) => {
+      const priceCents = toCents(r.price);
+      if (!r.description.trim()) throw new Error(`Row ${i + 1}: type the item.`);
+      if (priceCents === undefined || !r.price.trim()) throw new Error(`Row ${i + 1}: type the price a piece like 500.00.`);
+      return { kind: r.kind, description: r.description.trim(), size: r.size.trim(), priceCents, reorderLevel: Number(r.reorder || '0') };
+    });
+    await api.tplAddItems(programId, { items });
+    onSaved();
+  });
+  return (
+    <Dialog title="Add many items" wide onClose={onClose}>
+      <div className="space-y-3">
+        <p className="text-sm text-slate-600">One item a row. Empty rows are left out. All are added together, or none if a row has a problem.</p>
+        <div className="max-h-[55vh] overflow-auto">
+          <table className="w-full text-sm">
+            <thead><tr><th>Item</th><th className="w-24">Size</th><th className="w-32 text-right">Price a piece</th><th className="w-24 text-right">Restock at</th><th className="w-36">Kind</th><th /></tr></thead>
+            <tbody>{rows.map((r, i) => (
+              <tr key={i}>
+                <td><input aria-label={`Row ${i + 1} item`} className={inputClass} maxLength={200} value={r.description} onChange={(e) => set(i, { description: e.target.value })} placeholder="e.g. School polo, white" /></td>
+                <td><input aria-label={`Row ${i + 1} size`} className={inputClass} maxLength={20} value={r.size} onChange={(e) => set(i, { size: e.target.value })} /></td>
+                <td><input aria-label={`Row ${i + 1} price`} inputMode="decimal" className={`${inputClass} text-right tabular-nums`} value={r.price} onChange={(e) => set(i, { price: e.target.value })} placeholder="0.00" /></td>
+                <td><input aria-label={`Row ${i + 1} restock at`} inputMode="numeric" className={`${inputClass} text-right`} value={r.reorder} onChange={(e) => set(i, { reorder: e.target.value.replace(/\D/g, '') })} /></td>
+                <td><select aria-label={`Row ${i + 1} kind`} className={inputClass} value={r.kind} onChange={(e) => set(i, { kind: e.target.value as TplItem['kind'] })}><option value="made_to_order">Made to order</option><option value="ready_made">Ready-made</option></select></td>
+                <td><button type="button" aria-label={`Remove row ${i + 1}`} disabled={rows.length === 1} onClick={() => setRows(rows.filter((_, k) => k !== i))} className="px-2 text-slate-500 hover:text-red-600 disabled:opacity-30">✕</button></td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => setRows([...rows, blankRow()])}>+ Add a row</Button>
+          <Button onClick={() => setPaste(paste === null ? '' : null)}>Paste from Excel</Button>
+        </div>
+        {paste !== null && (
+          <div className="space-y-2">
+            <Field label="Pasted rows" hint="Columns: item, size, price a piece, restock at, kind (ready-made or made to order)">
+              <textarea rows={4} className={inputClass} value={paste} onChange={(e) => setPaste(e.target.value)} placeholder={'School polo, white\tM\t450.00\t20\tmade to order'} />
+            </Field>
+            <Button onClick={() => { const got = parseItemPaste(paste); setRows([...rows.filter((r) => r.description.trim() || r.price.trim()), ...got]); setPaste(null); }}>Add these rows</Button>
+          </div>
+        )}
+        {a.error && <Notice>{a.error}</Notice>}
+        <div className="flex justify-end gap-2"><Button onClick={onClose}>Back</Button><Button tone="primary" disabled={a.busy || !filled.length} onClick={() => void save()}>Add {filled.length || ''} {filled.length === 1 ? 'item' : 'items'}</Button></div>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Count many items at once with one reason (the owner's request, Oct 2026): only those typed and different are recorded. */
+function CountsDialog({ programId, items, onClose, onSaved }: { programId: string; items: TplItem[]; onClose: () => void; onSaved: () => void }) {
+  const [counted, setCounted] = useState<Record<string, string>>({});
+  const [reason, setReason] = useState('');
+  const a = useAction();
+  const pages = usePages(items);
+  const lines = items.filter((i) => (counted[i.id] ?? '') !== '').map((i) => ({ itemId: i.id, countedQty: Number(counted[i.id]) }));
+  const changed = lines.filter((l) => l.countedQty !== items.find((i) => i.id === l.itemId)!.onHand);
+  const save = () => a.run(async () => {
+    if (reason.trim().length < 10) throw new Error('Say why, in at least 10 characters.');
+    await api.tplCountMany(programId, { reason: reason.trim(), lines: changed });
+    onSaved();
+  });
+  return (
+    <Dialog title="Count many items" wide onClose={onClose}>
+      <div className="space-y-3">
+        <p className="text-sm text-slate-600">Type what you counted for each item; leave an item empty to skip it. Only those that differ from the records are recorded, all with the reason below.</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr><th>Item</th><th className="text-right">On hand (records)</th><th className="w-32 text-right">Counted</th><th className="w-24 text-right">Difference</th></tr></thead>
+            <tbody>{pages.shown.map((i) => {
+              const typed = counted[i.id] ?? '';
+              const diff = typed === '' ? null : Number(typed) - i.onHand;
+              return (
+                <tr key={i.id}>
+                  <td>{itemLabel(i)}</td>
+                  <td className="text-right tabular-nums">{i.onHand.toLocaleString('en-PH')}</td>
+                  <td><input aria-label={`Counted ${itemLabel(i)}`} inputMode="numeric" className={`${inputClass} text-right`} value={typed} onChange={(e) => setCounted({ ...counted, [i.id]: e.target.value.replace(/\D/g, '') })} /></td>
+                  <td className={`text-right tabular-nums ${diff ? (diff < 0 ? 'text-red-700' : 'text-emerald-700') : 'text-slate-400'}`}>{diff === null ? '' : diff > 0 ? `+${diff}` : diff}</td>
+                </tr>
+              );
+            })}</tbody>
+          </table>
+          {pages.buttons}
+        </div>
+        <Field label="Reason" required hint="At least 10 characters, kept on each item's stock card"><input className={inputClass} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Month-end count on Oct 31" /></Field>
+        {a.error && <Notice>{a.error}</Notice>}
+        <div className="flex justify-end gap-2"><Button onClick={onClose}>Back</Button><Button tone="primary" disabled={a.busy || changed.length === 0} onClick={() => void save()}>Record {changed.length || ''} {changed.length === 1 ? 'count' : 'counts'}</Button></div>
+      </div>
+    </Dialog>
+  );
+}
+
 const MOVE_WORDS: Record<TplCardRow['kind'], string> = { in: 'Put into stock', count: 'Count', out: 'Delivered', back: 'Back (delivery cancelled)' };
 function CardDialog({ item, onClose }: { item: TplItem; onClose: () => void }) {
   const [rows, setRows] = useState<TplCardRow[] | null>(null);
   const [error, setError] = useState('');
   useEffect(() => void api.tplStockCard<{ rows: TplCardRow[] }>(item.id).then((r) => setRows(r.rows), (e: Error) => setError(e.message)), [item.id]);
+  const cardPages = usePages(rows);
   return (
     <Dialog title={`Stock card: ${itemLabel(item)}`} wide onClose={onClose}>
       {error && <Notice>{error}</Notice>}
@@ -236,7 +360,7 @@ function CardDialog({ item, onClose }: { item: TplItem; onClose: () => void }) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr><th>Date</th><th>What</th><th>Document</th><th className="text-right">Pieces</th><th className="text-right">Balance</th><th>By</th></tr></thead>
-            <tbody>{rows.map((r, i) => (
+            <tbody>{cardPages.shown.map((r, i) => (
               <tr key={i}>
                 <td className="whitespace-nowrap">{showDate(r.date)}</td>
                 <td>{MOVE_WORDS[r.kind]}{r.reason && <span className="block text-xs text-slate-500">{r.reason}</span>}</td>
@@ -247,6 +371,7 @@ function CardDialog({ item, onClose }: { item: TplItem; onClose: () => void }) {
               </tr>
             ))}</tbody>
           </table>
+          {cardPages.buttons}
         </div>
       )}
     </Dialog>

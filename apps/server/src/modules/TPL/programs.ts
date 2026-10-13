@@ -4,7 +4,7 @@
  * a program is switched off (is_active = 0).
  */
 import { z } from 'zod';
-import { conflict, newId, notFound } from '@moonproject/shared';
+import { AppError, conflict, newId, notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
@@ -134,6 +134,22 @@ export function addItem(db: Db, programId: string, raw: unknown, who: Who): Item
     .run(id, programId, v.kind, v.description, v.size, v.priceCents, v.reorderLevel, who.at, who.at);
   appendAudit(db, { at: who.at, userId: who.userId, action: 'tpl.item.create', entityType: 'tpl_item', entityId: id, data: { programId, ...v } });
   return item(db, id)!;
+}
+
+/**
+ * Many items at once (the owner's request, Oct 2026: typed in rows or pasted from Excel): all or none, in one
+ * transaction; a refused row says which. Call inside a transaction.
+ */
+export const itemsInput = z.object({ items: z.array(z.unknown()).min(1).max(200) }).strict();
+export function addItems(db: Db, programId: string, raw: unknown, who: Who): Item[] {
+  const { items } = itemsInput.parse(raw);
+  return items.map((row, i) => {
+    try { return addItem(db, programId, row, who); } catch (e) {
+      if (e instanceof z.ZodError) throw new AppError('VALIDATION', `Row ${i + 1}: ${e.issues.map((x) => `${x.path.join('.') || 'row'} ${x.message}`).join('; ')}`, 400);
+      if (e instanceof AppError) throw new AppError(e.code, `Row ${i + 1}: ${e.message}`, e.status);
+      throw e;
+    }
+  });
 }
 
 /** Price, reorder level, name, on or off; version-checked. A price change applies to deliveries from now on. */
