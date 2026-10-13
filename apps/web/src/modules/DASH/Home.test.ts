@@ -9,7 +9,7 @@ const months = (values: number[]): DashOwnerCharts['months'] => values.map((valu
   month: `2026-${String(i + 1).padStart(2, '0')}`, from: '2026-01-01', to: '2026-01-31',
   salesCents: value, collectionsCents: value, expensesCents: value, cashCents: value,
 }));
-const note = (kind: string, id = kind): DashNotification => ({ kind, id, label: kind, href: `/notes/${id}`, read: false });
+const note = (kind: string, id = kind): DashNotification => ({ kind, id, label: kind, href: `/notes/${id}`, read: false, at: '2026-10-01T09:00:00.000+08:00' });
 const work: DashWidget[] = [
   { key: 'cash', title: 'Cash position', amountCents: 10000 },
   { key: 'ready', title: 'Ready for release', items: [{ id: 'ready', label: 'JO-1', href: '/docs/jo.job_order/1' }] },

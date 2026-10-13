@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
 import { api, type DashHomeData, type DashItem, type DashNotification, type DashOwnerCharts, type DashOwnerHealth, type DashWidget, type NightlyStatus } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Loading, Notice, peso } from '../../components/ui.tsx';
+import { Loading, Notice, manilaTime, peso } from '../../components/ui.tsx';
 import { nightlyLine } from '../AUD/nightly.ts';
 import { Card, HomeCards, type IconName } from './Cards.tsx';
 import { useLiveReload } from '../../live.ts';
 
-function Item({ item, action, muted = false }: { item: DashItem; action?: React.ReactNode; muted?: boolean }) {
+function Item({ item, action, muted = false, at }: { item: DashItem; action?: React.ReactNode; muted?: boolean; at?: string }) {
   const title = item.href ? <Link to={item.href} className="font-medium text-indigo-700 hover:underline">{item.label}</Link> : <span className="font-medium">{item.label}</span>;
   return <li className={`flex flex-wrap items-start justify-between gap-x-4 border-t border-slate-100 py-2 text-sm first:border-0 ${muted ? 'opacity-60' : ''}`}>
-    <div className="min-w-0 flex-1">{title}{item.detail && <p className="text-slate-500">{item.detail}</p>}</div>
+    <div className="min-w-0 flex-1">{title}{item.detail && <p className="text-slate-500">{item.detail}</p>}{at && <p className="text-xs text-slate-400">{manilaTime(at)}</p>}</div>
     {item.amountCents !== undefined && <strong className="tabular-nums">{peso(item.amountCents)}</strong>}
     {action}
   </li>;
@@ -68,7 +68,7 @@ function Notifications({ all = false, widgets = [], children }: { all?: boolean;
     {error && <Notice>{error}</Notice>}
     {rows === null && !error && <Loading />}
     {rows !== null && shown?.length === 0 && <p className="text-sm text-slate-500">Nothing needs your attention.</p>}
-    <ul>{shown?.map((row) => { const note = all ? rows?.find((n) => n.id === row.id) : rows?.find((n) => n.id === row.notificationId); return <Item key={row.id} item={row} muted={note?.read} action={note && !note.read &&
+    <ul>{shown?.map((row) => { const note = all ? rows?.find((n) => n.id === row.id) : rows?.find((n) => n.id === row.notificationId); return <Item key={row.id} item={row} muted={note?.read} at={all ? note?.at : undefined} action={note && !note.read &&
       <button type="button" disabled={busy === note.id} onClick={() => void markRead(note.id)} className="shrink-0 text-xs text-indigo-700 hover:underline disabled:opacity-50">Mark read</button>} />; })}</ul>
     {more && <button type="button" onClick={() => void load(rows?.length ?? 0)} className="text-sm text-indigo-700 hover:underline">Show more</button>}
     {!all && <Link to="/dash/notifications" className="text-sm text-indigo-700 hover:underline">See all notifications</Link>}

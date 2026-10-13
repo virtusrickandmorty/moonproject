@@ -1,4 +1,4 @@
-import type { Db } from '../../platform/db/driver.ts';
+import { tx, type Db } from '../../platform/db/driver.ts';
 import { manilaTimestamp } from '@moonproject/shared';
 import type { Clock } from '../../platform/clock.ts';
 import { today } from '../../platform/clock.ts';
@@ -71,7 +71,7 @@ const canSee = (user: SessionUser, registry: Registry, type: string) => {
 
 export interface DashItem { id: string; label: string; href?: string; detail?: string; amountCents?: number }
 export interface DashWidget { key: string; title: string; items?: DashItem[]; amountCents?: number; href?: string; tone?: 'danger' }
-export interface DashNotification extends DashItem { kind: string; read: boolean }
+export interface DashNotification extends DashItem { kind: string; read: boolean; at: string } // at: when it first came up
 
 /** Sales and collections are ledger reads; JO collectibles use its public balance-due calculation. */
 function monthSales(db: Db, date: string) {
@@ -201,7 +201,7 @@ export function home(db: Db, clock: Clock, registry: Registry, user: SessionUser
 export function notifications(db: Db, clock: Clock, registry: Registry, user: SessionUser, where: HomeContext = {}): DashNotification[] {
   const can = (key: string) => user.permissions.has(key);
   const date = today(clock);
-  const out: Omit<DashNotification, 'read'>[] = [];
+  const out: Omit<DashNotification, 'read' | 'at'>[] = [];
   const push = (kind: string, id: string, label: string, href?: string, detail?: string, amountCents?: number) =>
     out.push({ kind, id: `${kind}:${id}`, label, ...(href ? { href } : {}), ...(detail ? { detail } : {}), ...(amountCents === undefined ? {} : { amountCents }) });
   if (roleOf(user) === 'owner' && can('aud.log.view')) {
@@ -335,5 +335,25 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
     for (const n of redLightNotices(db, clock, { practice: where.practice ?? false, host: where.host })) push('health-red', n.id, n.label, '/admin/health', n.detail);
   }
   const reads = new Set((db.prepare('SELECT notification_key FROM dash_notification_reads WHERE user_id = ?').all(user.userId) as { notification_key: string }[]).map((r) => r.notification_key));
-  return out.map((n) => ({ ...n, read: reads.has(n.id) }));
+  // Newest on top (the owner's request, Oct 2026): each notice keeps the moment it first came up; those that came up
+  // together keep the order above.
+  const seen = firstSeen(db, out.map((n) => n.id), manilaTimestamp(clock.now()));
+  return out.map((n) => ({ ...n, read: reads.has(n.id), at: seen.get(n.id)! }))
+    .sort((a, b) => b.at.localeCompare(a.at));
+}
+
+/** When each notification first came up; one never seen before is noted now. */
+function firstSeen(db: Db, keys: string[], now: string): Map<string, string> {
+  const seen = new Map<string, string>();
+  const read = db.prepare('SELECT first_seen_at AS at FROM dash_notification_seen WHERE notification_key = ?');
+  const note = db.prepare('INSERT INTO dash_notification_seen (notification_key, first_seen_at) VALUES (?, ?) ON CONFLICT(notification_key) DO NOTHING');
+  const missing: string[] = [];
+  for (const key of keys) {
+    const row = read.get(key) as { at: string } | undefined;
+    if (row) seen.set(key, row.at);
+    else missing.push(key);
+  }
+  if (missing.length) tx(db, () => { for (const key of missing) note.run(key, now); });
+  for (const key of missing) seen.set(key, (read.get(key) as { at: string }).at);
+  return seen;
 }
