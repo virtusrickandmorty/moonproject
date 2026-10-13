@@ -391,7 +391,19 @@ function SetupForm({ card, cat, onSaved, onCancel, disabled }: { card: BoardCard
   const [templateId, setTemplateId] = useState<number | undefined>(card.templateId ?? undefined);
   const [stepIds, setStepIds] = useState<number[]>(card.steps?.map((s) => s.stepId) ?? []);
   const a = useAction();
-  const toggle = (id: number) => setStepIds(stepIds.includes(id) ? stepIds.filter((x) => x !== id) : [...stepIds, id]);
+  // A step ticked on goes in at its usual place; the arrows then move it (the owner's request, Oct 2026: embroidery before
+  // or after sewing, item by item).
+  const seqOf = (id: number) => cat.steps.findIndex((s) => s.id === id);
+  const toggle = (id: number) => setStepIds(stepIds.includes(id) ? stepIds.filter((x) => x !== id) : (() => {
+    const at = stepIds.findIndex((x) => seqOf(x) > seqOf(id));
+    return at < 0 ? [...stepIds, id] : [...stepIds.slice(0, at), id, ...stepIds.slice(at)];
+  })());
+  const move = (i: number, by: -1 | 1) => setStepIds((ids) => {
+    const next = [...ids];
+    [next[i], next[i + by]] = [next[i + by]!, next[i]!];
+    return next;
+  });
+  const nameOf = (id: number) => cat.steps.find((s) => s.id === id)?.name ?? '?';
   // The garment type for piece rates (and whether the line is a set) comes from the price list item the line matches: not typed here.
   // Piece rates go by the price list item (the owner's decision, Oct 2026): no complexity is picked; the standard rate applies.
   const save = () => api.prdSetup(card.jobOrderId, card.lineNo, { ...(templateId ? { templateId } : {}), stepIds, complexity: 'standard' }).then(onSaved);
@@ -407,13 +419,29 @@ function SetupForm({ card, cat, onSaved, onCancel, disabled }: { card: BoardCard
         </div>
       </div>
       <fieldset>
-        <legend className="text-sm font-medium">Steps (always in this order)</legend>
+        <legend className="text-sm font-medium">Steps</legend>
         <div className="mt-1 grid grid-cols-2 gap-1">
           {cat.steps.filter((s) => s.isActive || stepIds.includes(s.id)).map((s) => (
             <label key={s.id} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={stepIds.includes(s.id)} onChange={() => toggle(s.id)} /> {s.name}</label>
           ))}
         </div>
       </fieldset>
+      {stepIds.length > 1 && (
+        <div>
+          <p className="text-sm font-medium">Order for this item</p>
+          <p className="text-xs text-slate-500">Move a step up or down, e.g. Embroidery before or after Sewing. A step that has started keeps its place.</p>
+          <ol className="mt-1 space-y-1">
+            {stepIds.map((id, i) => (
+              <li key={id} className="flex items-center gap-2 rounded-md bg-slate-50 px-2 py-1 text-sm">
+                <span className="w-5 text-right tabular-nums text-slate-500">{i + 1}.</span>
+                <span className="flex-1">{nameOf(id)}</span>
+                <button type="button" aria-label={`Move ${nameOf(id)} up`} disabled={i === 0} onClick={() => move(i, -1)} className="rounded px-2 py-0.5 ring-1 ring-slate-300 hover:bg-white disabled:opacity-30">↑</button>
+                <button type="button" aria-label={`Move ${nameOf(id)} down`} disabled={i === stepIds.length - 1} onClick={() => move(i, 1)} className="rounded px-2 py-0.5 ring-1 ring-slate-300 hover:bg-white disabled:opacity-30">↓</button>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
       {a.error && <Notice>{a.error}</Notice>}
       <div className="flex justify-end gap-2">
         <Button onClick={onCancel}>Back</Button>

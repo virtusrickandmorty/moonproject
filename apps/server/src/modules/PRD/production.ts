@@ -47,7 +47,8 @@ export function lineSetup(db: Db, jobOrderId: string, lineNo: number): LineSetup
     .get(jobOrderId, lineNo) as (Omit<LineSetup, 'stepIds' | 'isSet'> & { isSet: number }) | undefined;
   if (!r) return undefined;
   const stepIds = db
-    .prepare('SELECT x.step_id FROM prd_line_setup_steps x JOIN prd_steps s ON s.id = x.step_id WHERE x.job_order_id = ? AND x.line_no = ? AND x.seq = ? ORDER BY s.seq')
+    // In the item's own order (the owner's request, Oct 2026); a route set up before it has none and keeps the canonical order.
+    .prepare('SELECT x.step_id FROM prd_line_setup_steps x JOIN prd_steps s ON s.id = x.step_id WHERE x.job_order_id = ? AND x.line_no = ? AND x.seq = ? ORDER BY x.position IS NULL, x.position, s.seq')
     .pluck()
     .all(jobOrderId, lineNo, r.seq) as number[];
   return { ...r, isSet: r.isSet === 1, stepIds };
@@ -296,7 +297,10 @@ function lineOf(db: Db, jobOrderId: string, lineNo: number) {
 /** `garmentType`: none takes it from the price list item the line matches (the owner's request, Oct 2026), which also says whether it is a set. */
 export interface SetupRequest { templateId?: number | undefined; stepIds: number[]; garmentType?: string | undefined; complexity: Complexity }
 
-/** Sets a line's route, garment type and complexity. Steps keep the canonical order; a step with pieces stays on. */
+/**
+ * Sets a line's route, garment type and complexity. The steps keep the order given (the owner's request, Oct 2026: one
+ * item is embroidered before Sewing, another after); a step with pieces stays on, and keeps its place among the others.
+ */
 export function setupLine(db: Db, jobOrderId: string, lineNo: number, req: SetupRequest, who: Who): RouteStep[] {
   recordedJo(db, jobOrderId);
   const theLine = lineOf(db, jobOrderId, lineNo);
@@ -322,12 +326,21 @@ export function setupLine(db: Db, jobOrderId: string, lineNo: number, req: Setup
     const done = piecesOn(db, jobOrderId, lineNo, id);
     if (done.pieces !== 0 || done.reworkPieces !== 0) throw conflict('STEP_HAS_PIECES', `${stepById(db, id)!.name} has pieces recorded on line ${lineNo}, so it stays on the route.`);
   }
+  // A started step keeps its place: no step that stays on moves from before it to after it, or the other way.
+  const old = lineRoute(db, jobOrderId, lineNo) ?? [];
+  const started = old.filter((s) => s.pieces !== 0 || s.reworkPieces !== 0 || s.status === 'completed');
+  const was = (a: number, b: number) => old.findIndex((s) => s.id === a) < old.findIndex((s) => s.id === b);
+  const now = (a: number, b: number) => ids.indexOf(a) < ids.indexOf(b);
+  for (const b of started) for (const a of old) {
+    if (a.id === b.id || !ids.includes(a.id) || !ids.includes(b.id) || was(a.id, b.id) === now(a.id, b.id)) continue;
+    throw conflict('STEP_STARTED', `${b.name} on line ${lineNo} has started, so ${a.name} stays ${was(a.id, b.id) ? 'before' : 'after'} it.`);
+  }
   const seq = (before?.seq ?? 0) + 1;
   db.prepare('INSERT INTO prd_line_setups (job_order_id, line_no, seq, template_id, garment_type, complexity, is_set, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
     jobOrderId, lineNo, seq, req.templateId ?? null, garmentType, req.complexity, isSet ? 1 : 0, who.at, who.userId,
   );
-  const step = db.prepare('INSERT INTO prd_line_setup_steps (job_order_id, line_no, seq, step_id) VALUES (?, ?, ?, ?)');
-  for (const id of ids) step.run(jobOrderId, lineNo, seq, id);
+  const step = db.prepare('INSERT INTO prd_line_setup_steps (job_order_id, line_no, seq, step_id, position) VALUES (?, ?, ?, ?, ?)');
+  ids.forEach((id, i) => step.run(jobOrderId, lineNo, seq, id, i + 1));
   appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.setup', entityType: 'jo.job_order', entityId: jobOrderId, data: { lineNo, seq, ...req, garmentType, isSet, stepIds: ids } });
   syncStage(db, jobOrderId, `Route of line ${lineNo} changed`, who);
   return lineRoute(db, jobOrderId, lineNo)!;

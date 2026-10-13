@@ -58,7 +58,7 @@ describe('steps, templates and routes (PLAN E7)', () => {
     const cat = (await production.get('/api/prd/catalogue')).json();
     expect(cat.steps.map((s: { code: string; isActive: boolean; payBasis: string }) => [s.code, s.isActive, s.payBasis])).toEqual([
       ['LAYOUT', true, 'daily'], ['PRINTING', true, 'daily'], ['HEATPRESS', true, 'daily'], ['CUTTING', true, 'piece_or_daily'],
-      ['EMBROIDERY', true, 'daily'], ['SEWING', true, 'piece'], ['QC', false, 'daily'], ['PACKING', true, 'daily'],
+      ['EMBROIDERY', true, 'daily'], ['SEWING', true, 'piece'], ['EMBROIDERY_2', true, 'daily'], ['QC', false, 'daily'], ['PACKING', true, 'daily'],
     ]);
     const code = (id: number) => cat.steps.find((s: { id: number }) => s.id === id).code;
     expect(cat.templates.map((t: { code: string; stepIds: number[] }) => [t.code, t.stepIds.map(code).join(' ')])).toEqual([
@@ -72,9 +72,9 @@ describe('steps, templates and routes (PLAN E7)', () => {
     expect(cat.complexities).toEqual(['simple', 'standard', 'complex']);
   });
 
-  it('a line takes a template, steps are added or removed and kept in canonical order; a step with pieces stays', async () => {
+  it('a line takes a template, steps are added or removed and kept in the order given; a step with pieces stays', async () => {
     const jo = await jobOrder([20]);
-    const r = await setup(jo, 1, { templateId: 3, stepIds: [PACKING, SEWING, EMBROIDERY, CUTTING], garmentType: 'Polo shirt', complexity: 'complex' });
+    const r = await setup(jo, 1, { templateId: 3, stepIds: [CUTTING, EMBROIDERY, SEWING, PACKING], garmentType: 'Polo shirt', complexity: 'complex' });
     expect(r.statusCode, r.body).toBe(200);
     expect(r.json().map((s: { code: string }) => s.code)).toEqual(['CUTTING', 'EMBROIDERY', 'SEWING', 'PACKING']); // T3 without layout
     expect((await setup(jo, 1, { ...tShirts, stepIds: [QC, SEWING] })).json()).toMatchObject({ code: 'STEP_OFF' });
@@ -430,5 +430,48 @@ describe('property test (PLAN I1.3)', () => {
       }),
       { numRuns: 20, endOnFailure: true },
     );
+  });
+});
+
+/**
+ * Each item's own step order (the owner's request, Oct 2026): embroidered before or after Sewing, or both, with the
+ * second pass a step of its own; pieces flow in that order, and a started step keeps its place.
+ */
+describe('an item\'s own step order', () => {
+  const EMBROIDERY_2 = 9;
+  const codes = async (jo: string) => ((await production.get(`/api/prd/jobs/${jo}`)).json().lines[0].route as { code: string }[]).map((s) => s.code);
+
+  it('keeps Sewing before Embroidery when asked, and pieces flow in that order', async () => {
+    const jo = await jobOrder([10]);
+    expect((await setup(jo, 1, { ...tShirts, stepIds: [CUTTING, SEWING, EMBROIDERY, PACKING] })).statusCode).toBe(200);
+    expect(await codes(jo)).toEqual(['CUTTING', 'SEWING', 'EMBROIDERY', 'PACKING']);
+    expect((await record(rows(jo, CUTTING, [{ lineNo: 1, employeeId: w.cutter, pieces: 10 }]))).statusCode).toBe(200);
+    expect((await record(rows(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 4 }]))).statusCode).toBe(200);
+    const card = ((await production.get('/api/prd/board')).json() as { jobOrderId: string; steps: { stepId: number; receivedPieces: number }[] }[]).find((c) => c.jobOrderId === jo)!;
+    expect(card.steps.map((s) => [s.stepId, s.receivedPieces])).toEqual([[CUTTING, 10], [SEWING, 10], [EMBROIDERY, 4], [PACKING, 0]]); // Embroidery gets what was sewn
+
+    // Sewing has started: Embroidery cannot go before it now; Packing can still move after Embroidery as it is.
+    expect((await setup(jo, 1, { ...tShirts, stepIds: [CUTTING, EMBROIDERY, SEWING, PACKING] })).json()).toMatchObject({ code: 'STEP_STARTED' });
+    expect(await codes(jo)).toEqual(['CUTTING', 'SEWING', 'EMBROIDERY', 'PACKING']);
+  });
+
+  it('embroiders after Cutting, sews, then embroiders again as a second pass', async () => {
+    const jo = await jobOrder([10]);
+    expect((await setup(jo, 1, { ...tShirts, stepIds: [CUTTING, EMBROIDERY, SEWING, EMBROIDERY_2, PACKING] })).statusCode).toBe(200);
+    expect(await codes(jo)).toEqual(['CUTTING', 'EMBROIDERY', 'SEWING', 'EMBROIDERY_2', 'PACKING']);
+    for (const step of [CUTTING, EMBROIDERY, SEWING]) expect((await record(rows(jo, step, [{ lineNo: 1, employeeId: w.sewer1, pieces: 10 }]))).statusCode).toBe(200);
+    expect((await record(rows(jo, EMBROIDERY_2, [{ lineNo: 1, employeeId: w.sewer1, pieces: 6 }]))).statusCode).toBe(200);
+    const card = ((await production.get('/api/prd/board')).json() as { jobOrderId: string; steps: { stepId: number; status: string; pieces: number; receivedPieces: number }[] }[]).find((c) => c.jobOrderId === jo)!;
+    expect(card.steps.map((s) => [s.stepId, s.status, s.pieces, s.receivedPieces])).toEqual([
+      [CUTTING, 'completed', 10, 10], [EMBROIDERY, 'completed', 10, 10], [SEWING, 'completed', 10, 10], [EMBROIDERY_2, 'in_progress', 6, 10], [PACKING, 'pending', 0, 6],
+    ]);
+  });
+
+  it('a route set up before keeps the usual order', async () => {
+    const jo = await jobOrder([10]);
+    expect((await setup(jo, 1, { ...tShirts, stepIds: [CUTTING, SEWING, PACKING] })).statusCode).toBe(200);
+    env.db.prepare('DROP TRIGGER prd_line_setup_steps_no_update').run(); // an old row: no position
+    env.db.prepare('UPDATE prd_line_setup_steps SET position = NULL WHERE job_order_id = ?').run(jo);
+    expect(await codes(jo)).toEqual(['CUTTING', 'SEWING', 'PACKING']);
   });
 });
