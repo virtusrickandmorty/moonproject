@@ -32,8 +32,9 @@ function toOpeningLine(item: JoLineRow): OpeningLineRow {
 function toItem(l: OpeningLineRow): JoLineRow {
   return {
     ...emptyJoLine(), kind: l.kind, description: l.description, qty: l.qty, price: l.price, discount: l.discount,
+    isSet: (l.roster as RosterInput[]).some((r) => !!r.lowerSize),
     roster: (l.roster as RosterInput[]).map((r) => ({
-      personId: r.personId ?? '', name: r.name ?? '', sizeMode: r.sizeMode, size: r.size ?? '', jerseyName: r.jerseyName ?? '', jerseyNumber: r.jerseyNumber ?? '', qty: String(r.qty), garmentType: r.garmentType ?? '',
+      personId: r.personId ?? '', name: r.name ?? '', sizeMode: r.sizeMode, size: r.size ?? '', lowerSize: r.lowerSize ?? '', jerseyName: r.jerseyName ?? '', jerseyNumber: r.jerseyNumber ?? '', qty: String(r.qty), garmentType: r.garmentType ?? '',
     })),
   };
 }
@@ -71,7 +72,7 @@ export function OpeningJobOrderForm({ type, mode }: { type: DocTypeInfo; mode: F
       () => setNoPrice(`The price list has no price for ${qty} of this item: type the old price.`),
     );
   };
-  const pick = (it: CatItem) => { setItemPatch({ itemId: it.id, kind: KIND_OF_CLASS[it.class], description: it.name, price: '', listCents: null }); lookup(it.id, lineQty(latestItem.current)); };
+  const pick = (it: CatItem) => { setItemPatch({ itemId: it.id, kind: KIND_OF_CLASS[it.class], description: it.name, price: '', listCents: null, isSet: it.unit === 'set' }); lookup(it.id, lineQty(latestItem.current)); };
   const itemErrors = joInput({ ...emptyJo(), customer: { id: '-', name: '' }, paymentTerms: 'dp50', lines: [item] }).errors
     .filter((e) => e.startsWith('Line 1') || e === 'Add at least one line.')
     .map((e) => (e === 'Add at least one line.' ? 'Pick an item from the price list or say what is still to make or release.' : e.replace(/^Line 1/, 'This item')));
@@ -165,7 +166,7 @@ export function OpeningJobOrderForm({ type, mode }: { type: DocTypeInfo; mode: F
                 {noPrice && <p className="text-xs text-amber-700">{noPrice}</p>}
                 <details open={item.roster.length > 0}>
                   <summary className="cursor-pointer text-sm text-indigo-700">Wearers{item.roster.length > 0 ? ` (${item.roster.length})` : ''}</summary>
-                  {customer ? <RosterGrid line={item} n="Item" people={people} sizes={sizes} onChange={(roster) => setItemPatch({ roster })} /> : <p className="text-sm text-slate-500">Pick the customer first.</p>}
+                  {customer ? <RosterGrid line={item} n="Item" people={people} sizes={sizes} onChange={(roster) => setItemPatch({ roster })} onSetChange={(isSet) => setItemPatch({ isSet })} /> : <p className="text-sm text-slate-500">Pick the customer first.</p>}
                 </details>
                 <Errors list={itemErrors} show={itemTouched} />
                 <div className="flex flex-wrap gap-2">

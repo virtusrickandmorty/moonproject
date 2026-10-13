@@ -16,7 +16,7 @@ import { navigate } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, showDate } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { formatPesos, manilaDate, type Issue } from '@moonproject/shared';
+import { formatPesos, manilaDate, sizeLabel, type Issue } from '@moonproject/shared';
 import { EditGate, Errors, useLive } from '../COL/parts.tsx';
 import { emptyRow, rowsToInput, type EntryRow } from './board.ts';
 
@@ -280,7 +280,7 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
                                   <label className={`flex items-center gap-2 rounded px-2 py-1 text-sm ${isDone || otherRow ? 'text-slate-400' : 'hover:bg-white'}`}>
                                     <input type="checkbox" aria-label={`Row ${i + 1} wearer ${w.wearerName}`} disabled={isDone || !!otherRow} checked={isDone || mine.has(w.rowNo)}
                                       onChange={(e) => { const next = new Set(mine); if (e.target.checked) next.add(w.rowNo); else next.delete(w.rowNo); tick(next); }} />
-                                    <span className="min-w-0 flex-1 truncate">{w.wearerName}<span className="text-slate-500">{w.size ? ` · ${w.size}` : w.sizeMode === 'measured' ? ' · measured' : ''}{w.jerseyNumber ? ` · #${w.jerseyNumber}` : ''}{w.qty > 1 ? ` · ${w.qty} pcs` : ''}</span></span>
+                                    <span className="min-w-0 flex-1 truncate">{w.wearerName}<span className="text-slate-500">{w.size ? ` · ${part === 'lower' && w.lowerSize ? w.lowerSize : part === 'upper' ? w.size : sizeLabel(w.size, w.lowerSize)}` : w.sizeMode === 'measured' ? ' · measured' : ''}{w.jerseyNumber ? ` · #${w.jerseyNumber}` : ''}{w.qty > 1 ? ` · ${w.qty} pcs` : ''}</span></span>
                                     {line?.isSet ? partsDone(w.rowNo).map((p) => <span key={p} className="rounded bg-emerald-100 px-1 text-xs text-emerald-800">{p === 'upper' ? 'Upper' : 'Lower'} ✓</span>)
                                       : isDone && <span className="text-xs">done</span>}
                                     {r.rework && sentBack.includes(w.rowNo) && <span className="rounded bg-amber-100 px-1 text-xs text-amber-900">sent back</span>}

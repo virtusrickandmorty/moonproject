@@ -63,7 +63,11 @@ export function NewCustomerButton({ me, onAdded }: { me: Me; onAdded: (c: Picked
   );
 }
 
-export function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWearers | null; sizes: string[]; onChange: (roster: RosterEdit[]) => void }) {
+/**
+ * The wearers of an item. A set (the owner's request, Oct 2026) takes an upper and a lower size per wearer, typed or pasted
+ * from Excel as two columns; it is on when a set is picked from the price list, and can be switched by hand.
+ */
+export function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWearers | null; sizes: string[]; onChange: (roster: RosterEdit[]) => void; onSetChange?: (isSet: boolean) => void }) {
   const [paste, setPaste] = useState<string | null>(null);
   const [pasteErrors, setPasteErrors] = useState<string[]>([]);
   const rows = p.line.roster;
@@ -72,31 +76,42 @@ export function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWear
   const set = (j: number, patch: Partial<RosterEdit>) => p.onChange(rows.map((r, k) => (k === j ? { ...r, ...patch } : r)));
   const pull = (groupId: string) => p.onChange([...rows, ...wearers.filter((w) => w.groupId === groupId && !on.has(w.personId)).map(fromWearer)]);
   const addPasted = () => {
-    const out = parseRosterPaste(paste ?? '', wearers);
+    const out = parseRosterPaste(paste ?? '', wearers, p.line.isSet);
     setPasteErrors(out.errors);
     if (out.errors.length > 0) return;
-    p.onChange([...rows, ...out.rows.map((g) => ({ personId: g.personId ?? '', name: g.wearerName, sizeMode: g.sizeMode, size: g.size ?? (g.personId ? wearers.find((w) => w.personId === g.personId)?.size ?? '' : ''), jerseyName: g.jerseyName ?? '', jerseyNumber: g.jerseyNumber ?? '', qty: String(g.qty), garmentType: g.garmentType ?? '' }))]);
+    p.onChange([...rows, ...out.rows.map((g) => ({ personId: g.personId ?? '', name: g.wearerName, sizeMode: g.sizeMode, size: g.size ?? (g.personId ? wearers.find((w) => w.personId === g.personId)?.size ?? '' : ''), lowerSize: g.lowerSize ?? '', jerseyName: g.jerseyName ?? '', jerseyNumber: g.jerseyNumber ?? '', qty: String(g.qty), garmentType: g.garmentType ?? '' }))]);
     setPaste(null);
   };
+  const sizeSelect = (r: RosterEdit, j: number, which: 'size' | 'lowerSize', label: string) => (
+    <select aria-label={`${p.n} wearer ${j + 1} ${label}`} className={inputClass} value={which === 'size' && r.sizeMode === 'measured' ? MEASURED : r[which]}
+      disabled={which === 'lowerSize' && r.sizeMode === 'measured'}
+      onChange={(e) => set(j, which === 'lowerSize' ? { lowerSize: e.target.value } : e.target.value === MEASURED ? { sizeMode: 'measured', size: '', lowerSize: '' } : { sizeMode: 'preset', size: e.target.value })}>
+      <option value="" />
+      {which === 'size' && r.personId && <option value={MEASURED}>Measured</option>}
+      {[...new Set([...p.sizes, ...(r[which] ? [r[which]] : [])])].map((s) => <option key={s} value={s}>{s}</option>)}
+    </select>
+  );
   return (
     <div className="space-y-2">
+      {p.onSetChange && (
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" checked={p.line.isSet} onChange={(e) => p.onSetChange!(e.target.checked)} />
+          A set: each wearer has an upper and a lower size
+        </label>
+      )}
       {rows.length > 0 && (
         <table className="block w-full text-sm lg:table">
-          <thead className="hidden text-left text-slate-500 lg:table-header-group"><tr><th>Wearer</th><th className="w-28">Size</th><th>Jersey name</th><th className="w-20">No.</th><th className="w-16">Qty</th><th className="w-44">Garment type</th><th /></tr></thead>
+          <thead className="hidden text-left text-slate-500 lg:table-header-group"><tr><th>Wearer</th>{p.line.isSet ? <><th className="w-28">Upper size</th><th className="w-28">Lower size</th></> : <th className="w-28">Size</th>}<th>Jersey name</th><th className="w-20">No.</th><th className="w-16">Qty</th><th className="w-44">Garment type</th><th /></tr></thead>
           <tbody className="grid gap-2 lg:table-row-group">
             {rows.map((r, j) => (
               <tr key={j} className="grid gap-2 rounded-xl border border-slate-200 p-2 sm:grid-cols-2 lg:table-row lg:border-0 lg:p-0">
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Wearer</span>
                   {r.personId ? <span>{r.name}</span> : <input aria-label={`${p.n} wearer ${j + 1} name`} placeholder="One-off name" className={inputClass} value={r.name} onChange={(e) => set(j, { name: e.target.value })} />}
                 </td>
-                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Size</span>
-                  <select aria-label={`${p.n} wearer ${j + 1} size`} className={inputClass} value={r.sizeMode === 'measured' ? MEASURED : r.size}
-                    onChange={(e) => set(j, e.target.value === MEASURED ? { sizeMode: 'measured', size: '' } : { sizeMode: 'preset', size: e.target.value })}>
-                    <option value="" />
-                    {r.personId && <option value={MEASURED}>Measured</option>}
-                    {[...new Set([...p.sizes, ...(r.size ? [r.size] : [])])].map((s) => <option key={s} value={s}>{s}</option>)}
-                  </select>
+                <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">{p.line.isSet ? 'Upper size' : 'Size'}</span>
+                  {sizeSelect(r, j, 'size', p.line.isSet ? 'upper size' : 'size')}
                 </td>
+                {p.line.isSet && <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Lower size</span>{sizeSelect(r, j, 'lowerSize', 'lower size')}</td>}
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Jersey name</span><input aria-label={`${p.n} wearer ${j + 1} jersey name`} className={`${inputClass} uppercase`} value={r.jerseyName} onChange={(e) => set(j, { jerseyName: e.target.value })} /></td>
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">No.</span><input aria-label={`${p.n} wearer ${j + 1} jersey number`} className={inputClass} value={r.jerseyNumber} onChange={(e) => set(j, { jerseyNumber: e.target.value })} /></td>
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Qty</span><input aria-label={`${p.n} wearer ${j + 1} qty`} inputMode="numeric" className={money} value={r.qty} onChange={(e) => set(j, { qty: e.target.value })} /></td>
@@ -128,7 +143,7 @@ export function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWear
       </div>
       {paste !== null && (
         <div className="space-y-2">
-          <Field label="Pasted rows"><textarea aria-label={`${p.n} pasted rows`} rows={4} className={inputClass} placeholder="Name, size, jersey name, jersey number, qty, garment type (one person per row)" value={paste} onChange={(e) => setPaste(e.target.value)} /></Field>
+          <Field label="Pasted rows"><textarea aria-label={`${p.n} pasted rows`} rows={4} className={inputClass} placeholder={`Name, ${p.line.isSet ? 'upper size, lower size' : 'size'}, jersey name, jersey number, qty, garment type (one person per row)`} value={paste} onChange={(e) => setPaste(e.target.value)} /></Field>
           {pasteErrors.map((e) => <Notice key={e}>{e}</Notice>)}
           <Button onClick={addPasted}>Add these</Button>
         </div>
@@ -227,7 +242,7 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
   const setItemPatch = (patch: Partial<JoLineRow>) => setItem((l) => ({ ...l, ...patch }));
   const pick = (it: CatItem) => {
     const qty = lineQty(latestItem.current);
-    setItemPatch({ itemId: it.id, kind: KIND_OF_CLASS[it.class], description: it.name, price: '', listCents: null });
+    setItemPatch({ itemId: it.id, kind: KIND_OF_CLASS[it.class], description: it.name, price: '', listCents: null, isSet: it.unit === 'set' });
     lookup(it.id, qty);
   };
   const setQty = (qty: string) => { setItemPatch({ qty }); lookup(latestItem.current.itemId, qty); };
@@ -334,7 +349,7 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
             {noPrice && <p className="text-xs text-amber-700">{noPrice}</p>}
             <details open={item.roster.length > 0}>
               <summary className="cursor-pointer text-sm text-indigo-700">Wearers{item.roster.length > 0 ? ` (${item.roster.length})` : ''}</summary>
-              {v.customer ? <RosterGrid line={item} n="Item" people={people} sizes={sizes} onChange={setRoster} /> : <p className="text-sm text-slate-500">Pick the customer first.</p>}
+              {v.customer ? <RosterGrid line={item} n="Item" people={people} sizes={sizes} onChange={setRoster} onSetChange={(isSet) => setItemPatch({ isSet })} /> : <p className="text-sm text-slate-500">Pick the customer first.</p>}
             </details>
             <Errors list={itemErrors} show={itemTouched} />
             <div className="flex flex-wrap gap-2">

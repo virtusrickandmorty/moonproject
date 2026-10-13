@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { AppError, notFound } from '@moonproject/shared';
+import { AppError, notFound, sizeLabel } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { tx, type Db } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
@@ -99,7 +99,7 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
       const roster = rosterOf(db, req.params.id, lineNo);
       const finished = roster.length > 0 ? finishedWearers(db, req.params.id, lineNo) : null;
       const gone = out.get(lineNo) ?? new Map<number, string>();
-      const wearers = roster.map((w) => ({ rowNo: w.rowNo, wearerName: w.wearerName, size: w.size, jerseyNumber: w.jerseyNumber, qty: w.qty,
+      const wearers = roster.map((w) => ({ rowNo: w.rowNo, wearerName: w.wearerName, size: w.lowerSize ? sizeLabel(w.size, w.lowerSize) : w.size, jerseyNumber: w.jerseyNumber, qty: w.qty,
         releasedOn: gone.get(w.rowNo) ?? null, ready: finished ? finished.has(w.rowNo) : null }));
       const awaitingSteps = kind !== 'ready_made' && made.get(lineNo) === 'none';
       return { lineNo, description, qty, releasedQty, leftQty: qty - releasedQty, ready: readyQty > 0 && !awaitingSteps, readyQty: awaitingSteps ? 0 : readyQty, awaitingSteps, ...(wearers.length ? { wearers } : {}) };
