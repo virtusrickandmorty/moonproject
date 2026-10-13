@@ -164,8 +164,8 @@ export function carryProductionOver(db: Db, oldId: string, newId_: string): void
     db.prepare('INSERT INTO prd_line_setups (job_order_id, line_no, seq, template_id, garment_type, complexity, is_set, at, user_id) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)').run(
       newId_, n, setup.templateId, setup.garmentType, setup.complexity, setup.isSet ? 1 : 0, who.at, who.userId,
     );
-    for (const id of setup.stepIds) {
-      db.prepare('INSERT INTO prd_line_setup_steps (job_order_id, line_no, seq, step_id) VALUES (?, ?, 1, ?)').run(newId_, n, id);
+    for (const [i, id] of setup.stepIds.entries()) {
+      db.prepare('INSERT INTO prd_line_setup_steps (job_order_id, line_no, seq, step_id, position) VALUES (?, ?, 1, ?, ?)').run(newId_, n, id, i + 1);
       const ev = db.prepare('SELECT action, reason, at, user_id AS userId FROM prd_step_events WHERE job_order_id = ? AND line_no = ? AND step_id = ? ORDER BY seq DESC LIMIT 1').get(oldId, o, id) as
         { action: string; reason: string | null; at: string; userId: string } | undefined;
       if (ev) db.prepare('INSERT INTO prd_step_events (job_order_id, line_no, step_id, seq, action, reason, at, user_id) VALUES (?, ?, ?, 1, ?, ?, ?, ?)').run(newId_, n, id, ev.action, ev.reason, ev.at, ev.userId);
