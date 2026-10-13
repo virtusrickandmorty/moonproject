@@ -81,6 +81,7 @@ interface Content {
   totals?: [label: string, value: string, grand?: boolean][];
   terms?: unknown;
   signatures?: [caption: string, name?: unknown][];
+  pages?: string; // pages printed after the document, each starting a new page (a job ticket's pictures)
 }
 const totalsHtml = (rows: Content['totals']) => rows?.length
   ? `<div class="totals">${rows.map(([label, value, grand]) => `<p class="tot${grand ? ' grand' : ''}"><b>${escape(label)}:</b> ${escape(value)}</p>`).join('')}</div>` : '';
@@ -88,21 +89,21 @@ const signaturesHtml = (rows: Content['signatures']) => rows?.length
   ? `<div class="signatures">${rows.map(([caption, name]) => `<div class="sign"><span class="name">${escape(name ?? '')}</span><span class="caption">${escape(caption)}</span></div>`).join('')}</div>` : '';
 const termsHtml = (terms: unknown) => terms ? `<section class="terms"><h3>Terms and Conditions</h3><p>${escape(terms)}</p></section>` : '';
 
-/** How many of a job order's pictures its job ticket shows. */
-export const TICKET_PICTURES = 6;
+/** How many of a job order's pictures its job ticket prints. */
+export const TICKET_PICTURES = 20;
 /**
- * The pictures attached to a document (a job order's design), inlined so the printout fetches nothing: the first few,
- * oldest first, without removed ones or files missing from the folder. Empty when there are none.
+ * The pictures attached to a document (a job order's design), inlined so the printout fetches nothing, each on a page of
+ * its own as big as the page allows (the owner's request, Oct 2026), headed with the document number, "Design 1 of 3"
+ * and the file name: oldest first, without removed ones or files missing from the folder. Empty when there are none.
  */
-export function attachedPictures(db: Db, documentId: string, max = TICKET_PICTURES): string {
+export function attachedPictures(db: Db, documentId: string, number = '', max = TICKET_PICTURES): { pages: string; count: number } {
   const rows = db.prepare(`SELECT file_name, content_type, sha256 FROM attachments WHERE document_id = ? AND removed_at IS NULL
     AND content_type IN ('image/jpeg', 'image/png', 'image/webp') ORDER BY added_at, id LIMIT ?`).all(documentId, max) as { file_name: string; content_type: string; sha256: string }[];
   const dir = rows.length ? attachmentsDir(db) : '';
-  const figures = rows.flatMap((r) => {
-    const data = readStored(dir, r.sha256);
-    return data ? [`<figure style="margin:0;break-inside:avoid;text-align:center"><img src="data:${r.content_type};base64,${data.toString('base64')}" alt="${escape(r.file_name)}" style="max-width:100%;max-height:70mm;object-fit:contain;border:1px solid #ccc"><figcaption style="font-size:8pt;color:#555">${escape(r.file_name)}</figcaption></figure>`] : [];
-  });
-  return figures.length ? section('Design', `<div class="designs" style="display:grid;grid-template-columns:repeat(${Math.min(figures.length, 2)},1fr);gap:4mm">${figures.join('')}</div>`) : '';
+  const found = rows.flatMap((r) => { const data = readStored(dir, r.sha256); return data ? [{ ...r, data }] : []; });
+  const pages = found.map((r, i) => `<section class="picture-page"><p class="pic-head"><b>${escape(number)}</b><span>Design ${i + 1} of ${found.length}</span><span class="pic-name">${escape(r.file_name)}</span></p>` +
+    `<img src="data:${r.content_type};base64,${r.data.toString('base64')}" alt="${escape(r.file_name)}"></section>`);
+  return { pages: pages.join(''), count: pages.length };
 }
 
 function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: string): Content {
@@ -121,12 +122,15 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
     };
   }
   if (h.doc_type === 'jo.job_order') {
+    const pictures = kind === 'job_ticket' ? attachedPictures(db, h.id, h.number) : { pages: '', count: 0 };
     if (kind === 'job_ticket') return {
       title: 'Job Ticket', subtitle: 'Production copy', legend: false, twoUp: false,
       party: { label: 'Customer', name: doc.customerName },
       status: [['Due date', doc.dueDate], ['Priority', doc.priority]],
       aside: jobOrderQr(h.id, h.number, joinBase),
-      body: attachedPictures(db, h.id) +
+      // The design pictures go after the ticket, a page each (the owner's request, Oct 2026); the ticket says how many.
+      ...(pictures.count ? { pages: pictures.pages } : {}),
+      body: (pictures.count ? `<p class="pic-note">Design: ${pictures.count} ${pictures.count === 1 ? 'picture' : 'pictures'} on the next ${pictures.count === 1 ? 'page' : 'pages'}, one a page.</p>` : '') +
         doc.lines.map((l: any) => `<section class="job-line"><h2 class="section">${escape(l.description)} · ${escape(l.qty)} pieces</h2>` +
           lineTable(['Wearer', 'Size', 'Jersey name', 'Jersey no.', 'Qty', 'Garment type'], l.roster.map((r: any) => [r.wearerName, r.sizeMode === 'measured' ? 'Measured' : sizeLabel(r.size, r.lowerSize), r.jerseyName, r.jerseyNumber, r.qty, r.garmentType])) +
           `<h3>Route checklist</h3><ul>${jobTicketRoute(db, h.id, l.lineNo).map((s) => `<li>☐ ${escape(s.name)} — ${escape(s.status)}</li>`).join('')}</ul></section>`).join('') +
@@ -340,7 +344,8 @@ export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profi
     `<div class="docmeta"><span>Document no.</span><b class="no">${escape(h.number)}</b><span>Date</span><b>${escape(readable(h.business_date))}</b></div></div></header>` +
     `${p.legend ? '<p class="legend"><strong>THIS DOCUMENT IS NOT VALID FOR CLAIM OF INPUT TAX.</strong></p>' : ''}${details}` +
     `<main>${p.body}${totalsHtml(p.totals)}</main>${signaturesHtml(p.signatures)}${termsHtml(p.terms)}` +
-    `<footer><span>Printed by ${escape(printedBy)} on ${escape(readable(printedAt))}</span><span>${copyNumber > 1 ? `REPRINT no. ${copyNumber - 1}` : 'Original print'} · Copy ${copyNumber}</span></footer></article>`;
+    `<footer><span>Printed by ${escape(printedBy)} on ${escape(readable(printedAt))}</span><span>${copyNumber > 1 ? `REPRINT no. ${copyNumber - 1}` : 'Original print'} · Copy ${copyNumber}</span></footer></article>` +
+    (p.pages ?? '');
   const thermal = kind === 'thermal';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escape(title)} ${escape(h.number)}</title><style>
     @page{size:${thermal ? '80mm auto' : 'A4'};margin:${thermal ? '4mm' : '12mm'}}${BASE_CSS}body{font-size:${thermal ? '9pt' : '10.5pt'}}.sheet{min-height:${thermal ? 'auto' : '273mm'}}
@@ -358,6 +363,12 @@ export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profi
     .details{flex-direction:column;padding:2mm;gap:2mm}.details .status{text-align:left}.totals{width:100%}.tot.grand{font-size:10.5pt}.signatures{justify-content:center}footer{flex-direction:column;gap:.5mm}.sign{width:100%}table{font-size:8pt}` : ''}
     @media screen{body{background:#ddd;padding:12mm}.sheet{background:white;width:${thermal ? '80mm' : '210mm'};margin:auto;padding:${thermal ? '4mm' : '12mm'};box-shadow:0 2px 12px #777}.two-up .copy{height:125mm}}
     @media print{.sheet{page-break-after:always}}
+    .picture-page{break-before:page;page-break-before:always;display:flex;flex-direction:column;gap:3mm;height:270mm}
+    .picture-page .pic-head{display:flex;gap:6mm;align-items:baseline;margin:0;padding-bottom:1.5mm;border-bottom:.6mm solid #1e3a8a;font-size:10pt}
+    .picture-page .pic-name{margin-left:auto;color:#64748b;font-size:8.5pt}
+    .picture-page img{flex:1;min-height:0;width:100%;object-fit:contain}
+    .pic-note{margin:0 0 2mm;padding:1.5mm 2.5mm;border:1px solid #c7d2fe;border-radius:1.5mm;background:#eef2ff;font-size:9pt}
+    @media screen{.picture-page{margin-top:14mm;padding-top:8mm;border-top:2px dashed #94a3b8;height:250mm}}
   </style></head><body><div class="sheet${p.twoUp ? ' two-up' : ''}">${p.twoUp ? one + one : one}</div></body></html>`;
 }
 
