@@ -49,7 +49,7 @@ export function TvBoard() {
       <div className="mr-auto">
         <h1 className="text-5xl font-bold tracking-tight text-slate-900">Production</h1>
         <p className="text-2xl text-slate-600">{longDate}</p>
-        <p className="text-base text-slate-500">Server date: {data?.today ?? '…'} · Refreshes every 30 seconds</p>
+        <p className="text-base text-slate-500">Server date: {data?.today ?? '…'} · Live</p>
         <p role="status" className={`text-lg ${stale ? 'font-bold text-red-700' : 'text-slate-500'}`}>{words}</p>
         {error && <p className="text-lg text-red-700">{error}</p>}
       </div>
