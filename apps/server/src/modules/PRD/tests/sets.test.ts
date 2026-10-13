@@ -112,3 +112,12 @@ describe('a set on the board', () => {
     expect((await production.post(`/api/prd/jobs/${whole}/lines/1/setup`, { templateId: 1, stepIds: [SEWING, PACKING], complexity: 'standard', isSet: true })).json()).toMatchObject({ code: 'WHOLE_RECORDED' });
   });
 });
+
+it('takes a description that says SET as a set, though the price list item it matches is sold by the piece (safety net)', async () => {
+  const lines = [{ kind: 'made_to_order', description: 'Team shirt Polydex 200gsm SET', qty: 2, unitPriceCents: 90_000, discountCents: 0, roster: [] }];
+  const jo = (await encoder.post('/api/docs/jo.job_order/post', { input: { customerId: c.school, dueInDays: 10, priority: 'normal', paymentTerms: 'full', lines }, expectedTotalCents: 180_000 }, idem())).json().id as string;
+  const card = () => production.get('/api/prd/board').then((r) => (r.json() as { jobOrderId: string; isSet: boolean; matchedSet?: boolean }[]).find((x) => x.jobOrderId === jo)!);
+  expect((await card()).matchedSet).toBe(true);
+  expect((await production.post(`/api/prd/jobs/${jo}/lines/1/setup`, { templateId: 1, stepIds: [SEWING, PACKING], complexity: 'standard' })).statusCode).toBe(200);
+  expect((await card()).isSet).toBe(true);
+});

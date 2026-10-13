@@ -44,7 +44,7 @@ const setCutover = async (date = CUTOVER) => {
 const noBrokenInvariants = () => expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
 
 type Line = { qty: number; unitPriceCents: number; discountCents?: number };
-const line = (l: Line) => ({ kind: 'made_to_order', description: 'Team jersey set', discountCents: 0, roster: [], ...l });
+const line = (l: Line) => ({ kind: 'made_to_order', description: 'Team jersey', discountCents: 0, roster: [], ...l });
 const input = (over: object = {}) => ({
   customerId: c.school,
   oldNumber: 'JO 1187',

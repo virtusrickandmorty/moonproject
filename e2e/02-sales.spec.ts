@@ -9,6 +9,20 @@ const PIXEL_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+
 const figure = (page: Page, label: string) => page.locator('dt', { hasText: new RegExp(`^${label}$`) }).first().locator('xpath=following-sibling::dd[1]');
 
 /** Whatever opened over a list (a job order, a payment taken on it) is closed, as staff do before using the menu. */
+/**
+ * A job order's item is picked from the price list before its description can be typed (the owner's request, Oct 2026):
+ * the item is added to the price list once (through the Price list screen's own route), then picked on the form.
+ */
+async function pickFromPriceList(page: Page, code: string, name: string) {
+  await page.evaluate(async ({ code, name }) => {
+    const me = (await (await fetch('/api/auth/me', { credentials: 'same-origin' })).json()) as { csrfToken: string };
+    await fetch('/api/cat/items', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken },
+      body: JSON.stringify({ code, name, class: 'made_to_order_garment', garmentType: 'jersey', unit: 'pc', setComponents: 1 }) }); // already there: refused, fine
+  }, { code, name });
+  await page.getByLabel('Item price list item').fill(name);
+  await page.getByRole('button', { name: new RegExp(name) }).first().click();
+}
+
 async function closeDialogs(page: Page) {
   const close = page.getByRole('button', { name: 'Close dialog' });
   for (let i = 0; i < 3; i++) {
@@ -82,6 +96,7 @@ test('sales: a customer, a job order with a deposit, a collection, a release wit
   await customerForm.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(customerForm).toBeHidden();
   await expect(page.getByText(`Added ${CUSTOMER} as a new customer.`)).toBeVisible();
+  await pickFromPriceList(page, 'E2E-ROWJ', 'Sales test rowing jersey');
   await page.getByLabel('Item description').fill('Rowing jersey');
   await page.getByLabel('Item pieces').fill('4');
   await page.getByLabel('Item price each').fill('1,500.00');
@@ -181,6 +196,7 @@ test('sales, downpayment VAT mode C: the downpayment invoice, its collection, th
   await page.getByRole('button', { name: '+ New Job Order' }).click();
   await page.getByLabel('Customer', { exact: true }).fill('Harbor');
   await page.getByRole('button', { name: /^Harbor Rowing Club/ }).click();
+  await pickFromPriceList(page, 'E2E-ROWJ', 'Sales test rowing jersey');
   await page.getByLabel('Item description').fill('Rowing jersey');
   await page.getByLabel('Item pieces').fill('4');
   await page.getByLabel('Item price each').fill('1,500.00');
@@ -300,6 +316,7 @@ test('sales: a job order paid by check, then the check deposited from Checks on 
   await page.getByRole('button', { name: '+ New Job Order' }).click();
   await page.getByLabel('Customer', { exact: true }).fill('Harbor');
   await page.getByRole('button', { name: /^Harbor Rowing Club/ }).click();
+  await pickFromPriceList(page, 'E2E-ROWC', 'Sales test rowing cap');
   await page.getByLabel('Item description').fill('Rowing cap');
   await page.getByLabel('Item pieces').fill('5');
   await page.getByLabel('Item price each').fill('500.00');

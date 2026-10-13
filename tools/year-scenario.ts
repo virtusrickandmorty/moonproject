@@ -380,7 +380,7 @@ function monthEvents(ym: string): Event[] {
   on(3, 10, 'Academy order and downpayment', async (y) => {
     const jo = await jobOrder(y, ACADEMY, [{ qty: 150, unitPriceCents: ACADEMY_ORDER.unitPriceCents, description: 'Varsity jersey set' }], 'dp50');
     y.jo[ym] = jo;
-    await y.m.call(`/api/prd/jobs/${jo}/lines/1/setup`, { templateId: 1, stepIds: [4, 6, 8], garmentType: 'Jersey', complexity: 'standard' }, 'acc');
+    await y.m.call(`/api/prd/jobs/${jo}/lines/1/setup`, { templateId: 1, stepIds: [4, 6, 8], garmentType: 'Jersey', complexity: 'standard', isSet: false }, 'acc');
     if (mode === 'C') {
       await post(y, `${ym} DPINV`, 'jo.dp_invoice', { jobOrderId: jo, invoiceNumber: y.nextInvoice(), amountCents: ACADEMY_ORDER.downCents }, 'enc', ACADEMY_ORDER.downCents);
     }

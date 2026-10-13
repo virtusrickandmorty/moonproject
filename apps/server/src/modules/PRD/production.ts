@@ -3,7 +3,7 @@
  * Routes and statuses are operational data, changed in place with an audit row (OWN-21) as new insert-only rows; a
  * step's status is read from its latest event and the pieces recorded on it.
  */
-import { AppError, GARMENT_TYPE_MAX, conflict, newId, notFound } from '@moonproject/shared';
+import { AppError, GARMENT_TYPE_MAX, conflict, newId, notFound, saysSet } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { currentStage, jobOrderRef, jobOrdersOf, lineState, productionMove, rosterOf, stagesAll } from '../JO/public.ts';
@@ -309,7 +309,7 @@ export function setupLine(db: Db, jobOrderId: string, lineNo: number, req: Setup
   const matched = matchCatalogItem(db, theLine.description);
   // The matched item's whole garment type, so its rates are found; only a line no item matches is cut to the limit.
   const garmentType = (req.garmentType?.trim() || matched?.garmentType || theLine.description).slice(0, GARMENT_TYPE_MAX);
-  const isSet = req.isSet ?? matched?.unit === 'set';
+  const isSet = req.isSet ?? (matched?.unit === 'set' || saysSet(theLine.description));
   if (before?.isSet && !isSet) {
     // A line made in parts keeps its parts while pieces of a part are recorded on it.
     const parted = db.prepare(`SELECT 1 FROM prd_line_assignments a JOIN documents d ON d.id = a.document_id WHERE a.jo = ? AND a.line = ? AND a.part <> 'whole' AND d.status = 'posted' LIMIT 1`).get(jobOrderId, lineNo);
@@ -504,7 +504,7 @@ export function board(db: Db) {
           // receivedPieces: what came out of the step before (all of the line once that one is closed, or for the first step).
           isSet: setup?.isSet ?? false,
           // Not set up yet: whether the price list item it matches is a set, so choosing its steps starts from that.
-          ...(setup ? {} : { matchedSet: matchCatalogItem(db, l.description)?.unit === 'set' }),
+          ...(setup ? {} : { matchedSet: matchCatalogItem(db, l.description)?.unit === 'set' || saysSet(l.description) }),
           // reworkOpen: pieces sent back to the step for rework and not redone yet (shown there labelled rework).
           // A set's step has received pieces once the step before forwarded uppers or lowers (the owner's report, Oct 2026: 15
           // uppers cut did not show under Sewing, which counted complete sets only).
