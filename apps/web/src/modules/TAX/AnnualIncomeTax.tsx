@@ -6,7 +6,8 @@
  * method and, for someone who may change dated settings, a new version from today on. Read-only otherwise.
  * Also the provision and settlement form (YearEndTaxForm): pick the year and read the server's preview before recording.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useLiveTick } from '../../live.ts';
 import { api, taxYearPath, type DeductionSetting, type DocTypeInfo, type Me, type Preview } from '../../api.ts';
 import { Loading, Button, Field, Notice, Panel, inputClass, longDate, peso } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
@@ -37,14 +38,18 @@ export function useYearReport<T>(allowed: boolean, load: (year: number) => Promi
       setYear(yearFromQuery(location.search, t));
     }, (e: Error) => setError(e.message));
   }, [allowed]);
+  // Live (the owner's request, Oct 2026): a change on any computer loads the same year again, in place.
+  const tick = useLiveTick();
+  const shown = useRef<{ year: number; again: number } | null>(null);
   useEffect(() => {
     if (year === null) return;
     let current = true; // only the last answer is shown
-    setData(null);
-    setError('');
-    load(year).then((d) => current && setData(d), (e: Error) => current && setError(e.message));
+    const quiet = shown.current?.year === year && shown.current.again === again; // a live reload of what is shown
+    shown.current = { year, again };
+    if (!quiet) { setData(null); setError(''); }
+    load(year).then((d) => current && setData(d), (e: Error) => current && !quiet && setError(e.message));
     return () => void (current = false);
-  }, [year, again]);
+  }, [year, again, tick]);
   return { today, year, setYear, data, error, reload: () => setAgain((n) => n + 1) };
 }
 

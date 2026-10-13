@@ -4,7 +4,7 @@
  * show (useLiveChange), quietly, a moment later; a form being typed in is never touched. After a dropped connection
  * (Wi-Fi, a sleeping laptop) the stream comes back by itself and every screen reloads once, to catch up.
  */
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 type Listener = (types: string[]) => void;
 const listeners = new Set<Listener>();
@@ -54,6 +54,19 @@ export function useLiveChange(reload: () => void, about?: readonly string[], del
     });
     return () => { off(); clearTimeout(timer); };
   }, [kinds, delayMs]);
+}
+
+/**
+ * A report's figures load again by themselves after a change (the owner's request, Oct 2026: the whole ERP live), with
+ * the same dates and filters, once things have been quiet this long: a run of entries reloads it once, and what it shows
+ * stays on screen until the new figures arrive.
+ */
+export const REPORT_QUIET_MS = 3_000;
+/** A number that goes up a moment after each quiet change: a report's load depends on it to load again in place. */
+export function useLiveTick(delayMs = REPORT_QUIET_MS): number {
+  const [tick, setTick] = useState(0);
+  useLiveChange(() => { if (!(typeof window !== 'undefined' && window.matchMedia?.('print').matches)) setTick((n) => n + 1); }, undefined, delayMs);
+  return tick;
 }
 
 /**

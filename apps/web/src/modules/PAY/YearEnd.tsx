@@ -3,6 +3,7 @@
  * adjustment and substituted filing, with a printable 2316 data sheet each, and the 1604-C alphalist (schedule 1 and
  * schedule 2) to download for the BIR data entry. Every figure is worked out by the server (year-end.ts).
  */
+import { useLiveReload } from '../../live.ts';
 import { useEffect, useState } from 'react';
 import { api, alphalistPath, type Data2316, type Me } from '../../api.ts';
 import { Loading, Button, Notice, Panel, peso, showDate } from '../../components/ui.tsx';
@@ -90,6 +91,8 @@ export function Sheet2316({ params }: { me: Me; params?: Record<string, string> 
   const [d, setD] = useState<Data2316 | null>(null);
   const [error, setError] = useState('');
   useEffect(() => void api.one2316(Number(params?.year), params?.employeeId ?? '').then(setD, (e: Error) => setError(e.message)), [params?.year, params?.employeeId]);
+  // Live (the owner's request, Oct 2026): a change on any computer shows here too.
+  useLiveReload(() => api.one2316(Number(params?.year), params?.employeeId ?? '').then(setD));
   if (error) return <Notice>{error}</Notice>;
   if (!d) return <Loading />;
   return (

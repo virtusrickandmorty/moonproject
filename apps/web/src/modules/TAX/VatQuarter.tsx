@@ -4,7 +4,8 @@
  * the ledger, so the figures are an estimate until the quarter's VAT close is recorded; then it names the close. A quarter
  * that has ended with no close links to the VAT close form, for whoever may close.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useLiveTick } from '../../live.ts';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { api, type DocTypeInfo, type Me, type VatSummary } from '../../api.ts';
@@ -25,14 +26,18 @@ export function VatQuarter({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }
       setPick(quarterOf(t));
     }, (e: Error) => setError(e.message));
   }, [allowed]);
+  // Live (the owner's request, Oct 2026): a change on any computer loads the same quarter again, in place.
+  const tick = useLiveTick();
+  const shownPick = useRef<typeof pick>(null);
   useEffect(() => {
     if (!pick) return;
     let current = true;
-    setV(null);
-    setError('');
-    api.vatSummary(pick.year, pick.quarter).then((s) => current && setV(s), (e: Error) => current && setError(e.message));
+    const again = shownPick.current === pick;
+    shownPick.current = pick;
+    if (!again) { setV(null); setError(''); }
+    api.vatSummary(pick.year, pick.quarter).then((s) => current && setV(s), (e: Error) => current && !again && setError(e.message));
     return () => void (current = false);
-  }, [pick]);
+  }, [pick, tick]);
   if (!allowed) return <Notice>You cannot view the VAT of a quarter.</Notice>;
   const lines = v ? vatLines(v) : [];
   const close = v && docTypes.some((d) => d.key === 'tax.vat_close' && d.canCreate) ? closeLink(v, today) : null;

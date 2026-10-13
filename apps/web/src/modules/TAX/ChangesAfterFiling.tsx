@@ -3,6 +3,7 @@
  * that were recorded or cancelled after that source was recorded. The accountant decides whether the return
  * needs amending. For the accountant and the owners, with a download for Excel.
  */
+import { useLiveReload } from '../../live.ts';
 import { useEffect, useState } from 'react';
 import { api, type ChangeAfterFiling, type Me } from '../../api.ts';
 import { Loading, Notice, manilaTime } from '../../components/ui.tsx';
@@ -14,6 +15,8 @@ export function ChangesAfterFiling({ me }: { me: Me }) {
   const [error, setError] = useState('');
   const allowed = me.permissions.includes('tax.registers.view');
   useEffect(() => void (allowed && api.changesAfterFiling().then((r) => setRows(r.rows), (e: Error) => setError(e.message))), [allowed]);
+  // Live (the owner's request, Oct 2026): a change on any computer shows here too.
+  useLiveReload(() => allowed && api.changesAfterFiling().then((r) => setRows(r.rows)));
   if (!allowed) return <Notice>Access denied.</Notice>;
   return (
     <div className="max-w-5xl space-y-4">
