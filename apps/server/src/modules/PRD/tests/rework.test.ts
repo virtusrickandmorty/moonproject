@@ -190,3 +190,71 @@ describe('where it was found (the owner’s rule, Oct 2026)', () => {
     expect(await open(jo)).toEqual([0, 0, 0, 1]); // still rework at Packing, until it is ready
   });
 });
+
+/**
+ * Rework recorded on a step counts only for pieces sent back before it was recorded (the owner's report, Oct 2026: on
+ * JO-000011 a second send-back did not show at the next step, because rework recorded there for an earlier send-back
+ * was counted again).
+ */
+describe('rework recorded before a send-back does not count for it', () => {
+  const [PRINTING, HEATPRESS] = [2, 3];
+  const open = async (jo: string) => Promise.all([PRINTING, HEATPRESS, SEWING, PACKING].map(async (id) => (await stepOf(jo, id)).rework.pieces));
+
+  it('by count: the second send-back shows in full at the next step', async () => {
+    const lines = [{ kind: 'made_to_order', description: 'Team shirt', qty: 5, unitPriceCents: 30_000, discountCents: 0, roster: [] }];
+    const jo = (await encoder.post('/api/docs/jo.job_order/post', { input: { customerId: c.school, dueInDays: 10, priority: 'normal', paymentTerms: 'full', lines }, expectedTotalCents: 150_000 }, idem())).json().id as string;
+    expect((await production.post(`/api/prd/jobs/${jo}/lines/1/setup`, { stepIds: [PRINTING, HEATPRESS, SEWING, PACKING], garmentType: 'T-shirt', complexity: 'standard' })).statusCode).toBe(200);
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 5 }], PRINTING));
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 3 }], HEATPRESS));
+
+    // The first one is found at Printing; Heatpress still records it as rework.
+    expect((await sendBack(jo, { pieces: 1, reason: 'Print smudged, found at printing', foundAtStepId: PRINTING })).statusCode).toBe(200);
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1, rework: true }], PRINTING));
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1, rework: true }], HEATPRESS));
+    expect(await open(jo)).toEqual([0, 0, 0, 0]);
+
+    // A day later, 2 more are found at Heatpress and redone at Printing: both wait at Heatpress.
+    env.clock.advance(60_000);
+    expect((await sendBack(jo, { pieces: 2, reason: 'Back part damaged in the press', foundAtStepId: HEATPRESS })).statusCode).toBe(200);
+    expect(await open(jo)).toEqual([2, 0, 0, 0]);
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 2, rework: true }], PRINTING));
+    expect(await open(jo)).toEqual([0, 2, 0, 0]);
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 2, rework: true }], HEATPRESS));
+    expect(await open(jo)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('by wearer: a wearer sent back again shows at the next step, though ticked there on rework before', async () => {
+    const roster = [['Ana Reyes', 1], ['Ben Cruz', 2], ['Cy Lim', 1], ['Dee Tan', 1]].map(([name, qty]) => ({ name, sizeMode: 'preset', size: 'M', qty }));
+    const lines = [{ kind: 'made_to_order', description: 'Team shirt', qty: 5, unitPriceCents: 30_000, discountCents: 0, roster }];
+    const jo = (await encoder.post('/api/docs/jo.job_order/post', { input: { customerId: c.school, dueInDays: 10, priority: 'normal', paymentTerms: 'full', lines }, expectedTotalCents: 150_000 }, idem())).json().id as string;
+    expect((await production.post(`/api/prd/jobs/${jo}/lines/1/setup`, { stepIds: [PRINTING, HEATPRESS, PACKING], garmentType: 'T-shirt', complexity: 'standard' })).statusCode).toBe(200);
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 5, wearers: [1, 2, 3, 4] }], PRINTING));
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 3, wearers: [1, 2] }], HEATPRESS));
+
+    expect((await sendBack(jo, { wearers: [2], reason: 'Print smudged, found at printing', foundAtStepId: PRINTING })).statusCode).toBe(200);
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 2, wearers: [2], rework: true }], PRINTING));
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 2, wearers: [2], rework: true }], HEATPRESS));
+
+    env.clock.advance(60_000);
+    expect((await sendBack(jo, { wearers: [2], reason: 'Back part damaged in the press', foundAtStepId: HEATPRESS })).statusCode).toBe(200);
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 2, wearers: [2], rework: true }], PRINTING));
+    expect((await stepOf(jo, HEATPRESS)).rework).toMatchObject({ pieces: 2, wearers: [2] });
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 2, wearers: [2], rework: true }], HEATPRESS));
+    expect((await stepOf(jo, HEATPRESS)).rework).toMatchObject({ pieces: 0, wearers: [] });
+  });
+
+  it('rework recorded without ticking wearers still moves the wearers sent back on to the next step', async () => {
+    const roster = [['Ana Reyes', 1], ['Ben Cruz', 2], ['Cy Lim', 1], ['Dee Tan', 1]].map(([name, qty]) => ({ name, sizeMode: 'preset', size: 'M', qty }));
+    const lines = [{ kind: 'made_to_order', description: 'Team shirt', qty: 5, unitPriceCents: 30_000, discountCents: 0, roster }];
+    const jo = (await encoder.post('/api/docs/jo.job_order/post', { input: { customerId: c.school, dueInDays: 10, priority: 'normal', paymentTerms: 'full', lines }, expectedTotalCents: 150_000 }, idem())).json().id as string;
+    expect((await production.post(`/api/prd/jobs/${jo}/lines/1/setup`, { stepIds: [PRINTING, HEATPRESS, PACKING], garmentType: 'T-shirt', complexity: 'standard' })).statusCode).toBe(200);
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 5, wearers: [1, 2, 3, 4] }], PRINTING));
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 5, wearers: [1, 2, 3, 4] }], HEATPRESS));
+
+    expect((await sendBack(jo, { wearers: [1, 4], reason: 'Back part damaged in the press', foundAtStepId: HEATPRESS })).statusCode).toBe(200);
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1, wearers: [1], rework: true }], PRINTING));
+    await record(entry(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1, rework: true }], PRINTING)); // Dee's, not ticked
+    expect((await stepOf(jo, PRINTING)).rework).toMatchObject({ pieces: 0, wearers: [] });
+    expect((await stepOf(jo, HEATPRESS)).rework).toMatchObject({ pieces: 2, wearers: [1, 4] });
+  });
+});
