@@ -3,7 +3,7 @@
  * from the price list item it matches; a set is made as an upper and a lower part, each paid at its own rate, counted,
  * capped and ticked apart; a step is complete once both parts are done.
  */
-import { beforeEach, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import { seedEmployees } from './emp-fixture.ts';
@@ -86,4 +86,29 @@ it('makes a set as an upper and a lower part: each paid at its rate, counted, ca
 it('refuses a part on a line that is not a set', async () => {
   const jo = await jobOrder('Team shirt');
   expect(await errors(rows(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1, part: 'upper' }]))).toContain('PART_NOT_SET');
+});
+
+/** The owner's report, Oct 2026: 15 uppers cut did not show under Sewing; a set the price list calls a piece was not a set. */
+describe('a set on the board', () => {
+  type Card = { jobOrderId: string; isSet: boolean; matchedSet?: boolean; steps: { stepId: number; receivedPieces: number }[] | null };
+  const cardOf = async (jo: string) => ((await production.get('/api/prd/board')).json() as Card[]).find((x) => x.jobOrderId === jo)!;
+
+  it('shows the next step as soon as uppers (or lowers) are forwarded to it', async () => {
+    const jo = await jobOrder('Basketball jersey set');
+    await record(rows(jo, [{ lineNo: 1, employeeId: w.sewer1, pieces: 2, part: 'upper' }]));
+    expect((await cardOf(jo)).steps!.find((s) => s.stepId === PACKING)!.receivedPieces).toBe(2); // 2 uppers sewn, no lower yet
+  });
+
+  it('production says it is a set, whatever the price list item; an item with whole pieces stays whole', async () => {
+    const lines = [{ kind: 'made_to_order', description: 'Team shirt and shorts', qty: 2, unitPriceCents: 90_000, discountCents: 0, roster: [] }];
+    const jo = (await encoder.post('/api/docs/jo.job_order/post', { input: { customerId: c.school, dueInDays: 10, priority: 'normal', paymentTerms: 'full', lines }, expectedTotalCents: 180_000 }, idem())).json().id as string;
+    expect(await cardOf(jo)).toMatchObject({ steps: null, matchedSet: false }); // it matches the shirt, a piece
+    const setup = (isSet: boolean) => production.post(`/api/prd/jobs/${jo}/lines/1/setup`, { templateId: 1, stepIds: [SEWING, PACKING], complexity: 'standard', isSet });
+    expect((await setup(true)).statusCode).toBe(200);
+    expect(await cardOf(jo)).toMatchObject({ isSet: true });
+
+    const whole = await jobOrder('Team shirt');
+    await record(rows(whole, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1 }]));
+    expect((await production.post(`/api/prd/jobs/${whole}/lines/1/setup`, { templateId: 1, stepIds: [SEWING, PACKING], complexity: 'standard', isSet: true })).json()).toMatchObject({ code: 'WHOLE_RECORDED' });
+  });
 });

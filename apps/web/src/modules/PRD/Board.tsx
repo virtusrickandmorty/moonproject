@@ -91,7 +91,7 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-semibold">Production board</h1>
-          <p role="status" className={`text-sm ${stale ? 'font-semibold text-red-800' : 'text-slate-500'}`}>{words} · Refreshes every 30 seconds</p>
+          <p role="status" className={`text-sm ${stale ? 'font-semibold text-red-800' : 'text-slate-500'}`}>{words}</p>
         </div>
         {can.assign && <Link to={docPath('prd.entry', '/new')} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">+ Record pieces</Link>}
       </div>
@@ -390,6 +390,8 @@ function SendBackDialog({ card, stepId, stepName, foundAt, foundName, onDone, on
 function SetupForm({ card, cat, onSaved, onCancel, disabled }: { card: BoardCard; cat: PrdCatalogue; onSaved: () => Promise<unknown>; onCancel: () => void; disabled: boolean }) {
   const [templateId, setTemplateId] = useState<number | undefined>(card.templateId ?? undefined);
   const [stepIds, setStepIds] = useState<number[]>(card.steps?.map((s) => s.stepId) ?? []);
+  // Made as a set (the owner's request, Oct 2026): from the price list item it matches, and production can change it.
+  const [isSet, setIsSet] = useState<boolean>(card.steps ? !!card.isSet : !!card.matchedSet);
   const a = useAction();
   // A step ticked on goes in at its usual place; the arrows then move it (the owner's request, Oct 2026: embroidery before
   // or after sewing, item by item).
@@ -406,7 +408,7 @@ function SetupForm({ card, cat, onSaved, onCancel, disabled }: { card: BoardCard
   const nameOf = (id: number) => cat.steps.find((s) => s.id === id)?.name ?? '?';
   // The garment type for piece rates (and whether the line is a set) comes from the price list item the line matches: not typed here.
   // Piece rates go by the price list item (the owner's decision, Oct 2026): no complexity is picked; the standard rate applies.
-  const save = () => api.prdSetup(card.jobOrderId, card.lineNo, { ...(templateId ? { templateId } : {}), stepIds, complexity: 'standard' }).then(onSaved);
+  const save = () => api.prdSetup(card.jobOrderId, card.lineNo, { ...(templateId ? { templateId } : {}), stepIds, complexity: 'standard', isSet }).then(onSaved);
   return (
     <div className="space-y-3">
       <div>
@@ -426,6 +428,11 @@ function SetupForm({ card, cat, onSaved, onCancel, disabled }: { card: BoardCard
           ))}
         </div>
       </fieldset>
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" className="mt-0.5" checked={isSet} onChange={(e) => setIsSet(e.target.checked)} />
+        <span><span className="font-medium">Made as a set (upper and lower)</span>
+          <span className="block text-xs text-slate-500">Each step then records the uppers and the lowers apart.{card.steps ? '' : card.matchedSet ? ' Ticked because the price list item is a set.' : ''}</span></span>
+      </label>
       {stepIds.length > 1 && (
         <div>
           <p className="text-sm font-medium">Order for this item</p>
