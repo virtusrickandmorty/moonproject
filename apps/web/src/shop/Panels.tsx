@@ -74,12 +74,23 @@ export function QuickView({ product, onClose, onSizeGuide, onAdded }: { product:
   return (
     <Overlay title="Quick view" onClose={onClose}>
       <div className="grid gap-6 p-5 md:grid-cols-[0.9fr_1.1fr] md:p-7">
-        <div className="relative mx-auto grid aspect-square max-h-[75vh] w-full place-items-center self-start overflow-hidden rounded-2xl md:sticky md:top-0 bg-gradient-to-br from-slate-50 to-slate-100">
-          <ProductPicture product={{ ...product, photoUrl: photos[shown] ?? product.photoUrl }} colour={colour.hex} className={product.photoUrl ? '' : 'w-4/5'} />
-          <WishButton product={product} className="absolute right-3 top-3" />
-          {photos.length > 1 && <div className="absolute inset-x-0 bottom-3 flex justify-center gap-2">
+        {/* Every photo the product has (the owner's request, Oct 2026): the big one, arrows and a count on it, and a row of
+            them all under it to pick from. */}
+        <div className="space-y-3 self-start md:sticky md:top-0">
+          <div className="relative mx-auto grid aspect-square max-h-[65vh] w-full place-items-center overflow-hidden rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100">
+            <ProductPicture product={{ ...product, photoUrl: photos[shown] ?? product.photoUrl }} colour={colour.hex} className={product.photoUrl ? '' : 'w-4/5'} />
+            <WishButton product={product} className="absolute right-3 top-3" />
+            {photos.length > 1 && <>
+              <button type="button" aria-label="Previous photo" onClick={() => setShown((shown + photos.length - 1) % photos.length)}
+                className="absolute left-3 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-xl text-slate-800 shadow hover:bg-white">‹</button>
+              <button type="button" aria-label="Next photo" onClick={() => setShown((shown + 1) % photos.length)}
+                className="absolute right-3 top-1/2 grid size-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-xl text-slate-800 shadow hover:bg-white">›</button>
+              <span className="absolute bottom-3 right-3 rounded-full bg-slate-900/70 px-2.5 py-0.5 text-xs font-semibold text-white">{shown + 1} / {photos.length}</span>
+            </>}
+          </div>
+          {photos.length > 1 && <div className="grid grid-cols-3 gap-3" role="group" aria-label="Photos">
             {photos.map((url, i) => <button key={url} type="button" onClick={() => setShown(i)} aria-label={`Photo ${i + 1} of ${photos.length}`} aria-pressed={i === shown}
-              className={`size-14 overflow-hidden rounded-lg bg-white shadow ring-2 ${i === shown ? 'ring-indigo-600' : 'ring-white/80 hover:ring-indigo-300'}`}><img src={url} alt="" loading="lazy" className="h-full w-full object-cover" /></button>)}
+              className={`aspect-square overflow-hidden rounded-xl bg-slate-50 ring-2 transition ${i === shown ? 'ring-indigo-600' : 'ring-slate-200 opacity-80 hover:opacity-100 hover:ring-indigo-300'}`}><img src={url} alt={`${product.name}, photo ${i + 1}`} loading="lazy" className="h-full w-full object-cover" /></button>)}
           </div>}
         </div>
         <div>
