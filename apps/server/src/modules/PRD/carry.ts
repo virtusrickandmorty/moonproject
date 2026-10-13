@@ -6,10 +6,11 @@
  * entries stay as they are, so nothing is paid twice. The owner's rules: an item or wearer left out of the edit keeps its
  * work on record as extras; a wearer whose size or jersey changed after work keeps the progress, with a warning.
  */
-import { newId } from '@moonproject/shared';
+import { newId, saysSet } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { lineState, rosterPeopleOf } from '../JO/public.ts';
+import { matchCatalogItem } from '../CAT/public.ts';
 import { lineRoute, lineSetup, syncStage, type Who } from './production.ts';
 
 export interface CarryWearer { rowNo: number; personId: string | null; name: string; size: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
@@ -131,6 +132,16 @@ export function carryWarnings(db: Db, jobOrderId: string, next: CarryLine[]): Ca
 }
 
 /**
+ * An edited item now made as a set (the owner's request, Oct 2026: an item changed to a set on the job order stayed a
+ * piece on the board): its price list item is a set, its description says so, or its wearers have lower sizes; and no
+ * whole pieces were recorded on it, since those cannot be split into parts afterwards.
+ */
+function becomesSet(db: Db, line: { description: string }, lowerSizes: boolean, oldId: string, oldLine: number): boolean {
+  if (!(matchCatalogItem(db, line.description)?.unit === 'set' || saysSet(line.description) || lowerSizes)) return false;
+  return !db.prepare(`SELECT 1 FROM prd_line_assignments a JOIN documents d ON d.id = a.document_id WHERE a.jo = ? AND a.line = ? AND a.part = 'whole' AND d.status = 'posted' LIMIT 1`).get(oldId, oldLine);
+}
+
+/**
  * Runs inside the edit (relinkOnReissue of the job order): pairs the items, links them (and the items the old one was
  * carried over from) with their wearers, copies each item's route, step status and rework, and moves the job's stage on.
  */
@@ -160,9 +171,11 @@ export function carryProductionOver(db: Db, oldId: string, newId_: string): void
         if (nr !== undefined) linkWearer.run(newId_, n, e.jo, e.line, w.fromRow, nr);
       }
     }
-    // The route and step status as they stand, as the item's first rows.
+    // The route and step status as they stand, as the item's first rows; a set now if the edit made it one.
+    const lowerSizes = !!db.prepare('SELECT 1 FROM jo_roster WHERE document_id = ? AND line_no = ? AND lower_size IS NOT NULL LIMIT 1').get(newId_, n);
+    const isSet = setup.isSet || becomesSet(db, next.find((l) => l.lineNo === n)!, lowerSizes, oldId, o);
     db.prepare('INSERT INTO prd_line_setups (job_order_id, line_no, seq, template_id, garment_type, complexity, is_set, at, user_id) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)').run(
-      newId_, n, setup.templateId, setup.garmentType, setup.complexity, setup.isSet ? 1 : 0, who.at, who.userId,
+      newId_, n, setup.templateId, setup.garmentType, setup.complexity, isSet ? 1 : 0, who.at, who.userId,
     );
     for (const [i, id] of setup.stepIds.entries()) {
       db.prepare('INSERT INTO prd_line_setup_steps (job_order_id, line_no, seq, step_id, position) VALUES (?, ?, 1, ?, ?)').run(newId_, n, id, i + 1);

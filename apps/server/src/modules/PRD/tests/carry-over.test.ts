@@ -109,3 +109,21 @@ it('pairs a renamed item with the old one, but never an item swapped for another
   expect([...matchLines(old, next)]).toEqual([[3, 3], [1, 1]]);
   expect([...matchWearers(old[0]!.roster, next[0]!.roster)]).toEqual([[1, 1]]);
 });
+
+it('an item the edit makes a set is a set on the board, unless whole pieces were already recorded on it', async () => {
+  const isSet = async (jo: string) => ((await production.get('/api/prd/board')).json() as { jobOrderId: string; isSet: boolean }[]).find((x) => x.jobOrderId === jo)!.isSet;
+  const roster = [wearer('Ana Reyes'), wearer('Ben Cruz')];
+  const jo = await post([shirts(roster)]);
+  expect((await route(jo, 1)).statusCode).toBe(200);
+  expect(await isSet(jo)).toBe(false);
+  // Changed to a set on the job order (its description says so): the board follows.
+  const asSet = await edit(jo, [{ ...shirts(roster), description: 'Team shirt SET' }]);
+  expect(await isSet(asSet)).toBe(true);
+
+  // Whole pieces recorded first: they cannot be split into parts, so it stays as it was.
+  const sewn = await post([shirts(roster)]);
+  expect((await route(sewn, 1)).statusCode).toBe(200);
+  await record(sewn, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1 }]);
+  const after = await edit(sewn, [{ ...shirts(roster), description: 'Team shirt SET' }]);
+  expect(await isSet(after)).toBe(false);
+});
