@@ -198,7 +198,7 @@ export interface DashOwnerHealth {
   depositsHeldCents: number;
   taxDeadlines: { form: string; periodLabel: string; dueDate: string }[];
 }
-export interface DashNotification extends DashItem { kind: string; read: boolean }
+export interface DashNotification extends DashItem { kind: string; read: boolean; at: string } // at: when it first came up
 export type CalKind = 'event' | 'job_due' | 'release' | 'holiday' | 'tax' | 'remittance' | 'customer_birthday' | 'employee_birthday';
 export interface CalItem { id: string; date: string; kind: CalKind; title: string; href: string; time?: string | null; notes?: string | null; rush?: boolean }
 export interface CalEvent { id: string; eventId: string; seq: number; action: 'create' | 'move' | 'cancel'; title: string; date: string; time: string | null; customerId: string | null; jobOrderId: string | null; notes: string | null; reason: string | null; createdAt: string; createdBy: string }

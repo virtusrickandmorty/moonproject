@@ -7,7 +7,7 @@ import { startLive, stopLive, useLiveChange } from '../live.ts';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { api, type DashNotification, type DocTypeInfo, type Me, type MenuOrder } from '../api.ts';
 import { Link, navigate, useLocation } from '../router.tsx';
-import { Button, longDate } from '../components/ui.tsx';
+import { Button, longDate, manilaTime } from '../components/ui.tsx';
 import { showToast } from '../components/Toasts.tsx';
 import { MENU_FOLDS_KEY, applyMenuOrder, buildMenu, docPath, isHere, labelOf, openGroups, searchMenu, sectionsOf, subOf, type MenuGroup, type MenuItem } from './menu.ts';
 import { SearchBox } from '../modules/NAV/Search.tsx';
@@ -122,6 +122,7 @@ function Bell({ open, onToggle }: { open: boolean; onToggle: () => void }) {
                 <span className="min-w-0">
                   <span className="block font-semibold">{n.label}</span>
                   {n.detail && <span className="block text-xs text-muted">{n.detail}</span>}
+                  <span className="block text-xs text-muted">{manilaTime(n.at)}</span>
                 </span>
               </button>
             ))}
