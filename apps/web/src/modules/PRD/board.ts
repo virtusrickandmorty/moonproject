@@ -99,7 +99,8 @@ export function boardCounts(cards: BoardCard[], today: string): { lines: number;
   };
 }
 
-export const REFRESH_MS = 30_000;
+/** A failed board load is tried again after this long; a good one waits for the next change (live). */
+export const RETRY_MS = 10_000;
 export const TURN_MS = 12_000;
 export const TV_CARD_HEIGHT = 208;
 
@@ -116,44 +117,50 @@ export function tvPages(cols: Column[], width: number, height: number): Column[]
   return pages;
 }
 
-export function updateWords(updatedAt: number | null, now: number, error: string) {
-  if (updatedAt === null) return error || now >= REFRESH_MS * 2 ? 'Not updated yet. Trying again every 30 seconds.' : 'Waiting for the first update…';
-  const time = new Date(updatedAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' });
-  return error || now - updatedAt >= REFRESH_MS * 2 ? `Not updated since ${time}. Trying again every 30 seconds.` : `Updated ${time}`;
+/** What the board's status line says: live and when it last loaded, or since when a load has been failing. */
+export function updateWords(updatedAt: number | null, error: string) {
+  const time = updatedAt === null ? '' : new Date(updatedAt).toLocaleString('en-PH', { timeZone: 'Asia/Manila' });
+  if (error) return updatedAt === null ? 'Not updated yet. Trying again…' : `Not updated since ${time}. Trying again…`;
+  return updatedAt === null ? 'Waiting for the first update…' : `Live · updated ${time}`;
 }
 
-/** Poll without overlapping reads or accepting results after the screen has closed. */
+/**
+ * Loads the board, then again only when told (a change on any computer, through the live stream): no timed refresh
+ * (the owner's request, Oct 2026). A failed load is tried again every RETRY_MS until one works. Reads never overlap,
+ * and an answer after the screen has closed is dropped.
+ */
 export function pollBoard<T>(read: () => Promise<T>, success: (next: T) => void, failed: (e: Error) => void) {
   let active = true;
   let pending: Promise<void> | null = null;
-  const refresh = () => {
+  let retry: ReturnType<typeof setTimeout> | undefined;
+  const refresh = (): Promise<void> => {
     if (pending) return pending;
-    pending = read().then((next) => { if (active) success(next); }, (e: Error) => { if (active) failed(e); }).finally(() => { pending = null; });
+    clearTimeout(retry);
+    pending = read().then((next) => { if (active) success(next); }, (e: Error) => {
+      if (!active) return;
+      failed(e);
+      retry = setTimeout(() => void refresh(), RETRY_MS);
+    }).finally(() => { pending = null; });
     return pending;
   };
   void refresh();
-  const timer = setInterval(refresh, REFRESH_MS);
-  return { refresh, stop: () => { active = false; clearInterval(timer); } };
+  return { refresh, stop: () => { active = false; clearTimeout(retry); } };
 }
 
-/** A failed refresh keeps the last good snapshot and its timestamp. */
+/** A failed load keeps the last good board and its time; the board is stale only while loads are failing. */
 export function useBoardRefresh<T>(read: () => Promise<T>) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState('');
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
-  const [elapsed, setElapsed] = useState(0);
-  const started = useRef(Date.now());
   const polling = useRef<ReturnType<typeof pollBoard<T>> | null>(null);
   const refresh = useCallback(() => polling.current?.refresh() ?? Promise.resolve(), []);
   useEffect(() => {
     const poll = pollBoard(read, (next) => { setData(next); setUpdatedAt(Date.now()); setError(''); }, (e) => setError(e.message));
     polling.current = poll;
-    const clock = setInterval(() => setElapsed(Date.now() - started.current), 5_000);
-    return () => { poll.stop(); polling.current = null; clearInterval(clock); };
+    return () => { poll.stop(); polling.current = null; };
   }, [read]);
-  useLiveChange(() => void polling.current?.refresh()); // a change anywhere refreshes now, not at the next 30 s
-  const now = started.current + elapsed;
-  return { data, error, updatedAt, refresh, stale: !!error || (updatedAt === null ? elapsed >= REFRESH_MS * 2 : now - updatedAt >= REFRESH_MS * 2), words: updateWords(updatedAt, updatedAt === null ? elapsed : now, error) };
+  useLiveChange(() => void polling.current?.refresh()); // a change on any computer loads the board again, right away
+  return { data, error, updatedAt, refresh, stale: !!error, words: updateWords(updatedAt, error) };
 }
 
 /** `wearers`: the line's wearers (roster rows) this row finished; its pieces are then theirs. `part`: on a set, the upper or the lower part. */

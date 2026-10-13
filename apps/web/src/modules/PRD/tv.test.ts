@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BoardCard, PrdStep } from '../../api.ts';
-import { columns, filterCards, pollBoard, REFRESH_MS, tvPages, updateWords } from './board.ts';
+import { columns, filterCards, pollBoard, RETRY_MS, tvPages, updateWords } from './board.ts';
 import { initials, TvBoard, TvCard, TvPage } from './TvBoard.tsx';
 import { ProductionBoard } from './Board.tsx';
 
@@ -63,38 +63,37 @@ describe('production board search and freshness', () => {
     expect(filterCards(cards, { due: 'overdue', rushOnly: false }, '')).toEqual([]);
   });
 
-  it('keeps the last good time in a failed or stalled update message', () => {
+  it('says live with the last load, or since when loads are failing', () => {
     const at = Date.parse('2026-10-04T01:02:03+08:00');
-    expect(updateWords(null, 0, '')).toContain('Waiting');
-    expect(updateWords(null, REFRESH_MS * 2, '')).toContain('Not updated yet');
-    expect(updateWords(at, at + 30_000, '')).toMatch(/^Updated /);
-    const failed = updateWords(at, at + 30_000, 'Offline');
-    expect(failed).toMatch(/^Not updated since /);
-    expect(updateWords(at, at + 60_000, '')).toBe(failed);
-    expect(updateWords(at + 90_000, at + 90_000, '')).toMatch(/^Updated /);
+    expect(updateWords(null, '')).toContain('Waiting');
+    expect(updateWords(null, 'Offline')).toContain('Not updated yet');
+    expect(updateWords(at, '')).toMatch(/^Live · updated /);
+    expect(updateWords(at, 'Offline')).toMatch(/^Not updated since .*Trying again/);
   });
 
   it('renders search, reset and a stale warning while retaining cards', () => {
     const cards = [card(123)];
     snapshot.mockReturnValue({ data: { cards, cat: { steps: [], templates: [], garmentTypes: [], complexities: [] }, today: '2026-10-04' }, error: 'Offline', words: 'Not updated since yesterday.', stale: true, refresh: vi.fn() });
     const html = renderToStaticMarkup(createElement(ProductionBoard, { me: { permissions: [] } as never, docTypes: [] }));
-    for (const label of ['Search job number or customer', 'Reset filters', 'Not updated since yesterday.', 'JO-000123', 'Offline', 'Refreshes every 30 seconds']) expect(html).toContain(label);
+    for (const label of ['Search job number or customer', 'Reset filters', 'Not updated since yesterday.', 'JO-000123', 'Offline']) expect(html).toContain(label);
+    expect(html).not.toContain('Refreshes every 30 seconds'); // live: no timed refresh (the owner's request, Oct 2026)
   });
 
-  it('polls every 30 seconds, recovers after a failure and stops on leaving the screen', async () => {
+  it('loads once, again only when told; a failed load is retried until one works; stops on leaving the screen', async () => {
     vi.useFakeTimers();
     const read = vi.fn<() => Promise<number>>().mockResolvedValueOnce(1).mockRejectedValueOnce(new Error('Offline')).mockResolvedValue(2);
     const good = vi.fn(); const failed = vi.fn();
     const poll = pollBoard(read, good, failed);
     await vi.advanceTimersByTimeAsync(0);
     expect(good).toHaveBeenLastCalledWith(1);
-    await vi.advanceTimersByTimeAsync(REFRESH_MS);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(read).toHaveBeenCalledTimes(1); // no timed refresh
+    await poll.refresh(); // a change on another computer
     expect(failed.mock.calls[0]![0].message).toBe('Offline');
-    expect(good).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(REFRESH_MS);
+    await vi.advanceTimersByTimeAsync(RETRY_MS);
     expect(good).toHaveBeenLastCalledWith(2);
     poll.stop();
-    await vi.advanceTimersByTimeAsync(REFRESH_MS);
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
     expect(read).toHaveBeenCalledTimes(3);
   });
 
@@ -104,7 +103,7 @@ describe('production board search and freshness', () => {
     const read = vi.fn(() => new Promise<number>((resolve) => { finish = resolve; }));
     const good = vi.fn();
     const poll = pollBoard(read, good, vi.fn());
-    await vi.advanceTimersByTimeAsync(REFRESH_MS * 3);
+    void poll.refresh(); void poll.refresh(); // two changes while the first read is still out
     expect(read).toHaveBeenCalledTimes(1);
     poll.stop(); finish(1);
     await vi.advanceTimersByTimeAsync(0);

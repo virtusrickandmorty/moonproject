@@ -91,7 +91,7 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-semibold">Production board</h1>
-          <p role="status" className={`text-sm ${stale ? 'font-semibold text-red-800' : 'text-slate-500'}`}>{words} · Refreshes every 30 seconds</p>
+          <p role="status" className={`text-sm ${stale ? 'font-semibold text-red-800' : 'text-slate-500'}`}>{words}</p>
         </div>
         {can.assign && <Link to={docPath('prd.entry', '/new')} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">+ Record pieces</Link>}
       </div>
