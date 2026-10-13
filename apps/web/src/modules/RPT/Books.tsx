@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useLiveTick } from '../../live.ts';
 import { api, type Me } from '../../api.ts';
 import { Link } from '../../router.tsx';
 import { Loading, Button, Field, Notice, PAGE_ROWS, Pager, Panel, inputClass, peso, type PageInfo } from '../../components/ui.tsx';
@@ -27,13 +28,18 @@ export function useReport<T>(path: string | null) {
   const [loaded, setLoaded] = useState<{ path: string; data: T } | null>(null);
   const data = loaded?.path === path ? loaded.data : null;
   const [error, setError] = useState('');
+  // Live (the owner's request, Oct 2026): a change on any computer loads the same report again, in place.
+  const tick = useLiveTick();
+  const shownPath = useRef<string | null>(null);
   useEffect(() => {
     if (!path) return;
     let active = true;
-    setLoaded(null); setError('');
-    void api.report<T>(path).then((r) => { if (active) setLoaded({ path, data: r }); }, (e: Error) => { if (active) setError(e.message); });
+    const again = shownPath.current === path; // the same report again: keep showing it until the new figures arrive
+    shownPath.current = path;
+    if (!again) { setLoaded(null); setError(''); }
+    void api.report<T>(path).then((r) => { if (active) { setLoaded({ path, data: r }); setError(''); } }, (e: Error) => { if (active && !again) setError(e.message); });
     return () => { active = false; };
-  }, [path]);
+  }, [path, tick]);
   return { data, error };
 }
 /**

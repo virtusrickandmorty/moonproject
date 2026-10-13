@@ -2,6 +2,7 @@
  * What the generic view cannot show of a purchase order (its supplier and lines by name, and what is still to receive)
  * and of a receiving report (the order it came for and what it received).
  */
+import { useLiveReload } from '../../live.ts';
 import { useEffect, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, type PoStatus, type RrDetail } from '../../api.ts';
@@ -18,6 +19,8 @@ function PurchaseOrderDetail({ id }: { id: string }) {
   const [canReceive, setCanReceive] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => void api.purchaseOrder(id).then(setPo, (e: Error) => setError(e.message)), [id]);
+  // Live (the owner's request, Oct 2026): a change on any computer shows here too.
+  useLiveReload(() => api.purchaseOrder(id).then(setPo));
   useEffect(() => void api.docTypes().then((t) => setCanReceive(Boolean(t.find((d) => d.key === 'pur.rr')?.canPost)), () => undefined), []);
   if (error) return <Notice>{error}</Notice>;
   if (!po) return <Loading />;
@@ -46,6 +49,7 @@ function ReceivingReportDetail({ id }: { id: string }) {
   const [rr, setRr] = useState<RrDetail | null>(null);
   const [error, setError] = useState('');
   useEffect(() => void api.receivingReport(id).then(setRr, (e: Error) => setError(e.message)), [id]);
+  useLiveReload(() => api.receivingReport(id).then(setRr));
   if (error) return <Notice>{error}</Notice>;
   if (!rr) return <Loading />;
   return (

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLiveReload } from '../../live.ts';
 import { api, type Me, type NightlyCheck, type NightlyNight, type NightlyRunNow } from '../../api.ts';
 import { Link } from '../../router.tsx';
 import { Loading, Button, Notice, Panel } from '../../components/ui.tsx';
@@ -26,6 +27,8 @@ export function NightlyChecks({ me }: { me: Me }) {
     if (!me.permissions.includes('aud.integrity.view')) return;
     void api.nightlyChecks().then((r) => { setNights(r.rows); setNext(r.nextBefore); }, (e: Error) => setError(e.message));
   }, [me.permissions]);
+  // Live (the owner's request, Oct 2026): a change on any computer shows here too.
+  useLiveReload(() => me.permissions.includes('aud.integrity.view') && api.nightlyChecks().then((r) => { setNights(r.rows); setNext(r.nextBefore); }));
   if (!me.permissions.includes('aud.integrity.view')) return <Notice>Access denied.</Notice>;
   async function runNow() {
     setBusy(true); setError('');

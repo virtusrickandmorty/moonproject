@@ -3,6 +3,7 @@
  * orders on the floor beside pieces made each day this week; then the month's due dates (a dark calendar), the job orders
  * by stage (bubbles) and what needs attention. Every card is there only for those who may see it (GET /api/dash/cards).
  */
+import { useLiveReload } from '../../live.ts';
 import { useEffect, useState, type ReactNode } from 'react';
 import { api, type DashCards } from '../../api.ts';
 import { Link } from '../../router.tsx';
@@ -222,5 +223,7 @@ export function CardsLayout({ cards, attention }: { cards: DashCards | null; att
 export function HomeCards({ attention }: { attention: ReactNode }) {
   const [cards, setCards] = useState<DashCards | null>(null);
   useEffect(() => { void api.dashCards().then(setCards, () => setCards(null)); }, []);
+  // Live (the owner's request, Oct 2026): a change on any computer shows here too.
+  useLiveReload(() => api.dashCards().then(setCards));
   return <CardsLayout cards={cards} attention={attention} />;
 }

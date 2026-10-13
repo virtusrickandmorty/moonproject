@@ -2,6 +2,7 @@
  * View parts for payroll runs, 13th-month pay, releases and cash advances (PLAN H2 "What this did"), and the printable
  * payslips (F4, H4 PAYSLIP, A4 2-up, internal: no legend), which show the 13th month too.
  */
+import { useLiveReload } from '../../live.ts';
 import { useEffect, useState } from 'react';
 import { api, type CompanyProfile, type DocDetail, type Me, type Payslips as PayslipData } from '../../api.ts';
 import { Loading, Button, Notice, peso, showDate } from '../../components/ui.tsx';
@@ -20,6 +21,7 @@ export const FinalBadge = () => <span className="ml-2 rounded bg-amber-100 px-1.
 function RemittedWarning({ runId }: { runId: string }) {
   const [r, setR] = useState<Awaited<ReturnType<typeof api.runRemitted>> | null>(null);
   useEffect(() => void api.runRemitted(runId).then(setR, () => undefined), [runId]);
+  useLiveReload(() => api.runRemitted(runId).then(setR));
   if (!r?.remitted.length) return null;
   return (
     <Notice tone="warning">
@@ -211,6 +213,8 @@ export function Payslips({ params }: { me: Me; params?: Record<string, string> }
   const [company, setCompany] = useState<PayslipCompany>(null);
   const [error, setError] = useState('');
   useEffect(() => void api.payslips(params?.id ?? '').then(setP, (e: Error) => setError(e.message)), [params?.id]);
+  // Live (the owner's request, Oct 2026): a change on any computer shows here too.
+  useLiveReload(() => api.payslips(params?.id ?? '').then(setP));
   // Without the Company Profile (not set, or not the person's to read) the payslips print without the company head.
   useEffect(() => void api.companyProfile().then((c) => setCompany(c.registeredName || c.tradeName ? c : null), () => setCompany(null)), []);
   if (error) return <Notice>{error}</Notice>;

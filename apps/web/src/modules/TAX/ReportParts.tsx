@@ -1,5 +1,6 @@
 /** Parts the tax report screens share: a date range or a quarter that opens on the server's today, the register table and the Excel link. */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useLiveTick } from '../../live.ts';
 import { formatPesos } from '@moonproject/shared';
 import { api, type TaxJournalRef, type TaxRegisterRow, type TaxSupplierRow } from '../../api.ts';
 import { Button, Field, Notice, PAGE_ROWS, inputClass } from '../../components/ui.tsx';
@@ -16,16 +17,19 @@ export function useRangeReport<T>(allowed: boolean, initial: (today: string) => 
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const asked = useRef(0);
-  // `offset`: the row a long register starts at. Reports that are not paged ignore the page they are given.
-  const show = async (r: Range, offset = 0) => {
+  const shown = useRef<{ range: Range; offset: number } | null>(null); // what is on screen, to load again live
+  // `offset`: the row a long register starts at. Reports that are not paged ignore the page they are given. `quiet`: a live
+  // reload of what is shown, which keeps it on screen until the new figures arrive.
+  const show = async (r: Range, offset = 0, quiet = false) => {
     if (rangeError(r.from, r.to)) return;
     const n = ++asked.current; // only the last answer is shown
-    setBusy(true);
-    setError('');
-    setData(null);
-    await load(r.from, r.to, { limit: PAGE_ROWS, offset }).then((d) => n === asked.current && setData(d), (e: Error) => n === asked.current && setError(e.message));
-    if (n === asked.current) setBusy(false);
+    if (!quiet) { setBusy(true); setError(''); setData(null); }
+    await load(r.from, r.to, { limit: PAGE_ROWS, offset }).then((d) => { if (n === asked.current) { setData(d); shown.current = { range: r, offset }; } }, (e: Error) => n === asked.current && !quiet && setError(e.message));
+    if (n === asked.current && !quiet) setBusy(false);
   };
+  // Live (the owner's request, Oct 2026): a change on any computer loads what is shown again, same dates and page.
+  const tick = useLiveTick();
+  useEffect(() => { if (tick && shown.current) void show(shown.current.range, shown.current.offset, true); }, [tick]);
   useEffect(() => {
     if (!allowed) return;
     api.health().then((h) => {
@@ -34,7 +38,7 @@ export function useRangeReport<T>(allowed: boolean, initial: (today: string) => 
       void show(r);
     }, (e: Error) => setError(e.message));
   }, [allowed]); // once, on the server's today
-  const set = (part: Partial<Range>) => (setRange({ ...range, ...part }), setData(null));
+  const set = (part: Partial<Range>) => (setRange({ ...range, ...part }), setData(null), shown.current = null);
   return { ...range, data, error, busy, set, show: () => show(range), goto: (offset: number) => show(range, offset) };
 }
 
@@ -66,14 +70,18 @@ export function useQuarterReport<T>(allowed: boolean, initial: (today: string) =
       setPick(initial(t));
     }, (e: Error) => setError(e.message));
   }, [allowed]); // once, on the server's today
+  // Live (the owner's request, Oct 2026): a change on any computer loads the same quarter again, in place.
+  const tick = useLiveTick();
+  const shownPick = useRef<QuarterPick | null>(null);
   useEffect(() => {
     if (!pick) return;
     let current = true; // only the last answer is shown
-    setData(null);
-    setError('');
-    load(pick.year, pick.quarter).then((d) => current && setData(d), (e: Error) => current && setError(e.message));
+    const again = shownPick.current === pick;
+    shownPick.current = pick;
+    if (!again) { setData(null); setError(''); }
+    load(pick.year, pick.quarter).then((d) => current && setData(d), (e: Error) => current && !again && setError(e.message));
     return () => void (current = false);
-  }, [pick]);
+  }, [pick, tick]);
   return { today, pick, setPick, data, error };
 }
 

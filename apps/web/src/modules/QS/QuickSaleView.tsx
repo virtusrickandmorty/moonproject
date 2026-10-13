@@ -1,4 +1,5 @@
 /** The quick sale's own view parts (PLAN E6, H2): what was sold, its payments, and a cancel that cancels both. */
+import { useLiveReload } from '../../live.ts';
 import { useEffect, useState } from 'react';
 import { api, type DocDetail, type SalePayment } from '../../api.ts';
 import { Link } from '../../router.tsx';
@@ -12,6 +13,8 @@ type Line = { lineNo: number; kind: string; description: string; qty: number; un
 function SaleDetail({ d }: { d: DocDetail }) {
   const [payments, setPayments] = useState<SalePayment[]>([]);
   useEffect(() => void api.qsPayments(d.header.id).then(setPayments, () => undefined), [d.header.id, d.header.status]);
+  // Live (the owner's request, Oct 2026): a change on any computer shows here too.
+  useLiveReload(() => api.qsPayments(d.header.id).then(setPayments));
   const doc = d.doc as { lines: Line[] };
   return (
     <div className="space-y-2 text-sm">
