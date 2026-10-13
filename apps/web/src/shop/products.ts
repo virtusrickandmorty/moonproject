@@ -7,7 +7,7 @@ export type Shape = 'tee' | 'polo' | 'jersey' | 'jacket' | 'hoodie' | 'shorts';
 export type Category = string;
 export interface Colour { name: string; hex: string }
 export interface Product {
-  id: string; name: string; category: Category; shape: Shape; priceCents: number; photoUrl?: string | null;
+  id: string; name: string; category: Category; shape: Shape; priceCents: number; photoUrl?: string | null; photoUrls?: string[];
   /** On sale: the regular price before the sale, shown crossed out (priceCents is what is charged). */
   regularPriceCents?: number | null;
   /** Ready-stock items from the ERP: pieces available per size and colour (null for made-to-order; absent on the samples). */

@@ -11,6 +11,7 @@ import { Loading, Button, Dialog, Field, Notice, inputClass, manilaTime, peso, u
 import { Link } from '../../router.tsx';
 import { ProductPicture } from '../../shop/GarmentArt.tsx';
 import { SAMPLE_PRODUCTS, SIZES, type Product, type Shape } from '../../shop/products.ts';
+import { MAX_PICKED_BYTES, lighterPhoto } from './photo.ts';
 import { masterRequest } from '../CUS/http.ts';
 import { ShopWork } from './ShopWork.tsx';
 import { useLiveReload } from '../../live.ts';
@@ -40,12 +41,13 @@ function bodyOf(v: Values): { body?: unknown; problem?: string } {
   }
   const whole = (s: string) => (/^-?\d+$/.test(s.trim()) ? Number(s) : NaN);
   if (!v.name.trim() || !v.categoryId || !v.summary.trim()) return { problem: 'Name, category and short description are needed.' };
-  if (!v.sizes.length) return { problem: 'Tick at least one size.' };
+  if (!v.sizes.length || v.sizes.some((s) => !s.trim())) return { problem: 'Type every size, or take off the empty one.' };
+  if (new Set(v.sizes.map((s) => s.trim().toUpperCase())).size !== v.sizes.length) return { problem: 'Each size once.' };
   if (!v.colours.length || v.colours.some((c) => !c.name.trim())) return { problem: 'Give every colour a name.' };
   if ([whole(v.minQty), whole(v.leadDays), whole(v.sortOrder)].some(Number.isNaN)) return { problem: 'Minimum, days and order must be whole numbers.' };
   return { body: { name: v.name, categoryId: v.categoryId, shape: v.shape, priceCents, regularPriceCents, madeToOrder: v.madeToOrder, minQty: whole(v.minQty), leadDays: whole(v.leadDays),
     badge: v.badge, summary: v.summary, sortOrder: whole(v.sortOrder), features: v.features.split('\n').map((f) => f.trim()).filter(Boolean),
-    sizes: v.sizes, colours: v.colours } };
+    sizes: v.sizes.map((s) => s.trim()), colours: v.colours } };
 }
 const total = (s: StockLine[] | null, k: keyof Omit<StockLine, 'size' | 'colour'>) => (s ?? []).reduce((n, l) => n + l[k], 0);
 const tab = (on: boolean) => `rounded-md px-4 py-2 text-sm font-semibold ${on ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-700 ring-1 ring-slate-300 hover:bg-indigo-50'}`;
@@ -465,9 +467,15 @@ function Payment({ me }: { me: Me }) {
   );
 }
 
+/** Up to three photos a product (the owner's request, Oct 2026); pictures only. */
+const MAX_PHOTOS = 3;
+const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
 function ProductDialog({ me, product, categories, onClose, onSaved }: { me: Me; product: Row | null; categories: Category[]; onClose: () => void; onSaved: () => void }) {
   const [v, setV] = useState<Values>(product ? valuesOf(product) : { ...blank, categoryId: categories.find((c) => c.isActive)?.id ?? '' });
   const [current, setCurrent] = useState<Row | null>(product);
+  // Photos picked for a product not saved yet: they go up as soon as it is saved (the owner's request, Oct 2026).
+  const [pending, setPending] = useState<{ file: File; url: string }[]>([]);
   const [problem, setProblem] = useState('');
   const { busy, error, run } = useAction();
   const set = <K extends keyof Values>(k: K, value: Values[K]) => setV((x) => ({ ...x, [k]: value }));
@@ -478,22 +486,40 @@ function ProductDialog({ me, product, categories, onClose, onSaved }: { me: Me; 
     if (!body) return;
     void run(async () => {
       if (current) await masterRequest(me, `/api/shp/products/${current.id}`, 'PUT', body, current.version);
-      else await masterRequest(me, '/api/shp/products', 'POST', body);
+      else {
+        const made = await masterRequest<Row>(me, '/api/shp/products', 'POST', body);
+        for (const [i, p] of pending.entries()) await sendPhoto(made.id, p.file, i + 1);
+      }
       onSaved();
     });
   };
-  /** The photo goes up as it is (JPEG, PNG or WebP up to 4 MB); a new product is saved first so it has somewhere to go. */
-  const upload = (file: File) => run(async () => {
-    if (!current) throw new Error('Save the product first, then add its photo.');
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Use a JPEG, PNG or WebP photo.');
-    if (file.size > 4 * 1024 * 1024) throw new Error('The photo is bigger than 4 MB. Use a smaller one.');
-    const res = await fetch(`/api/shp/products/${current.id}/photo`, { method: 'POST', credentials: 'same-origin', body: file,
+  /** A photo goes up as it is (JPEG, PNG or WebP up to 4 MB), into its place (1, the main one, to 3). */
+  const sendPhoto = async (productId: string, file: File, slot: number) => {
+    const res = await fetch(`/api/shp/products/${productId}/photo?slot=${slot}`, { method: 'POST', credentials: 'same-origin', body: file,
       headers: { 'x-csrf-token': me.csrfToken, 'content-type': 'application/octet-stream' } });
     const data = await res.json().catch(() => null) as (Row & { message?: string }) | null;
     if (!res.ok) throw new Error(data?.message ?? 'The photo could not be uploaded.');
-    setCurrent(data);
+    return data!;
+  };
+  const photos = current ? current.photoUrls ?? (current.photoUrl ? [current.photoUrl] : []) : pending.map((p) => p.url);
+  /** Picked files, images only, up to the places left: up now on a saved product, kept until Save on a new one. */
+  const addPhotos = (picked: File[]) => run(async () => {
+    const room = MAX_PHOTOS - photos.length;
+    if (picked.some((f) => !PHOTO_TYPES.includes(f.type))) throw new Error('Only pictures can be added: JPEG, PNG or WebP.');
+    if (picked.some((f) => f.size > MAX_PICKED_BYTES)) throw new Error('A photo is bigger than 25 MB. Use a smaller one.');
+    if (picked.length > room) throw new Error(`A product has up to ${MAX_PHOTOS} photos: ${room === 0 ? 'take one off first' : `${room} more can be added`}.`);
+    // Made lighter first (the owner's request, Oct 2026): at most 1600 pixels on the long side, WebP at high quality.
+    const files = await Promise.all(picked.map(lighterPhoto));
+    if (files.some((f) => f.size > 4 * 1024 * 1024)) throw new Error('A photo is still bigger than 4 MB after making it lighter. Use a smaller one.');
+    if (!current) return setPending((p) => [...p, ...files.map((file) => ({ file, url: URL.createObjectURL(file) }))]);
+    let row = current;
+    for (const f of files) row = await sendPhoto(current.id, f, (row.photoUrls?.length ?? 0) + 1);
+    setCurrent(row);
   });
-  const removePhoto = () => run(async () => { if (current) setCurrent(await masterRequest<Row>(me, `/api/shp/products/${current.id}/photo/remove`, 'POST', {})); });
+  const removePhoto = (i: number) => run(async () => {
+    if (!current) return setPending((p) => p.filter((_, k) => k !== i));
+    setCurrent(await masterRequest<Row>(me, `/api/shp/products/${current.id}/photo/remove?slot=${i + 1}`, 'POST', {}));
+  });
   const choices = categories.filter((c) => c.isActive || c.id === v.categoryId);
 
   return (
@@ -501,14 +527,25 @@ function ProductDialog({ me, product, categories, onClose, onSaved }: { me: Me; 
       <div className="grid max-h-[80vh] gap-6 overflow-y-auto pr-1 sm:grid-cols-[11rem_1fr] lg:grid-cols-[16rem_1fr]">
         <div className="space-y-2">
           <div className="grid aspect-square place-items-center overflow-hidden rounded-lg bg-slate-50 ring-1 ring-slate-200">
-            <ProductPicture product={{ name: v.name, shape: v.shape, photoUrl: current?.photoUrl }} colour={v.colours[0]?.hex ?? '#ccc'} className={current?.photoUrl ? '' : 'w-4/5'} />
+            <ProductPicture product={{ name: v.name, shape: v.shape, photoUrl: photos[0] ?? null }} colour={v.colours[0]?.hex ?? '#ccc'} className={photos[0] ? '' : 'w-4/5'} />
           </div>
-          <label className={`block cursor-pointer rounded-md px-3 py-1.5 text-center text-xs font-semibold ring-1 ring-slate-300 hover:bg-indigo-50 ${current ? '' : 'pointer-events-none opacity-50'}`}>
-            {current?.photoUrl ? 'Change photo' : 'Add photo'}
-            <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={!current} onChange={(e) => { const f = e.target.files?.[0]; if (f) void upload(f); e.target.value = ''; }} />
-          </label>
-          {current?.photoUrl && <button type="button" onClick={() => void removePhoto()} className="block w-full text-xs text-slate-500 hover:text-red-600">Remove photo</button>}
-          {!current && <p className="text-xs text-slate-500">Save first to add a photo. Without one, the drawing is shown.</p>}
+          {/* Up to three photos (the owner's request, Oct 2026): the first is the main one, on the cards. */}
+          <div className="grid grid-cols-3 gap-1.5">
+            {Array.from({ length: MAX_PHOTOS }, (_, i) => photos[i]
+              ? <div key={i} className="relative aspect-square overflow-hidden rounded-md ring-1 ring-slate-200">
+                  <img src={photos[i]} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />
+                  {i === 0 && <span className="absolute left-0.5 top-0.5 rounded bg-indigo-600 px-1 text-[10px] font-bold text-white">Main</span>}
+                  <button type="button" aria-label={`Remove photo ${i + 1}`} disabled={busy} onClick={() => void removePhoto(i)} className="absolute right-0.5 top-0.5 grid size-5 place-items-center rounded-full bg-white/90 text-xs text-slate-700 shadow hover:text-red-600">✕</button>
+                </div>
+              : i === photos.length
+                ? <label key={i} className={`grid aspect-square cursor-pointer place-items-center rounded-md border border-dashed border-slate-300 text-center text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50 ${busy ? 'pointer-events-none opacity-50' : ''}`}>
+                    + Add photo
+                    <input type="file" multiple accept="image/jpeg,image/png,image/webp" aria-label="Add photos" className="sr-only"
+                      onChange={(e) => { const fs = [...(e.target.files ?? [])]; e.target.value = ''; if (fs.length) void addPhotos(fs); }} />
+                  </label>
+                : <div key={i} className="aspect-square rounded-md bg-slate-50 ring-1 ring-slate-100" />)}
+          </div>
+          <p className="text-xs text-slate-500">Up to {MAX_PHOTOS} pictures (JPEG, PNG or WebP), made lighter before they go up. The first is the main one.{photos.length === 0 ? ' Without one, the drawing is shown.' : ''}{!current && pending.length > 0 ? ' They go up when you save.' : ''}</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <div className="sm:col-span-2 lg:col-span-3"><Field label="Name" required><input className={inputClass} maxLength={100} value={v.name} onChange={(e) => set('name', e.target.value)} /></Field></div>
@@ -532,7 +569,21 @@ function ProductDialog({ me, product, categories, onClose, onSaved }: { me: Me; 
           <div className="sm:col-span-2 lg:col-span-3"><Field label="Short description" required><textarea className={inputClass} rows={2} maxLength={300} value={v.summary} onChange={(e) => set('summary', e.target.value)} /></Field></div>
           <div className="sm:col-span-2 lg:col-span-3"><Field label="Selling points" hint="One per line, up to 8."><textarea className={inputClass} rows={3} value={v.features} onChange={(e) => set('features', e.target.value)} /></Field></div>
           <fieldset className="sm:col-span-2 lg:col-span-3"><legend className="text-sm font-medium">Sizes</legend>
-            <div className="mt-1 flex flex-wrap gap-3">{SIZES.map((s) => <label key={s} className="flex items-center gap-1.5 text-sm"><input type="checkbox" checked={v.sizes.includes(s)} onChange={() => set('sizes', v.sizes.includes(s) ? v.sizes.filter((x) => x !== s) : [...v.sizes, s])} /> {s}</label>)}</div>
+            {/* Typed like the colours (the owner's request, Oct 2026): any size, e.g. 4, 6, 8 for kids or 28, 30 for pants. */}
+            {!v.madeToOrder && product && <p className="text-xs text-amber-700">Stock is kept by size: renaming a size starts its stock again from zero.</p>}
+            <div className="mt-1 flex flex-wrap gap-2">
+              {v.sizes.map((s, i) => (
+                <span key={i} className="flex items-center gap-1">
+                  <input className={`${inputClass} w-24`} maxLength={20} value={s} placeholder="Size" aria-label={`Size ${i + 1}`}
+                    onChange={(e) => set('sizes', v.sizes.map((x, k) => (k === i ? e.target.value : x)))} />
+                  <button type="button" disabled={v.sizes.length === 1} onClick={() => set('sizes', v.sizes.filter((_, k) => k !== i))} className="px-1 text-slate-500 hover:text-red-600 disabled:opacity-30" aria-label={`Remove size ${i + 1}`}>✕</button>
+                </span>
+              ))}
+            </div>
+            {v.sizes.length < 20 && <div className="mt-2 flex flex-wrap items-center gap-1.5 text-sm">
+              <button type="button" onClick={() => set('sizes', [...v.sizes, ''])} className="font-semibold text-indigo-700 hover:underline">+ Add a size</button>
+              {SIZES.filter((s) => !v.sizes.some((x) => x.trim().toUpperCase() === s)).map((s) => <button key={s} type="button" onClick={() => set('sizes', [...v.sizes.filter((x) => x.trim()), s])} className="rounded-full px-2 py-0.5 text-xs ring-1 ring-slate-300 hover:bg-indigo-50">+ {s}</button>)}
+            </div>}
           </fieldset>
           <fieldset className="space-y-2 sm:col-span-2 lg:col-span-3"><legend className="text-sm font-medium">Colours</legend>
             {!v.madeToOrder && product && <p className="text-xs text-amber-700">Stock is kept by colour name: renaming a colour starts its stock again from zero.</p>}

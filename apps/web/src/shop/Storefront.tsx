@@ -15,6 +15,13 @@ interface Filters { text: string; categories: Category[]; sizes: string[]; colou
 const NONE: Filters = { text: '', categories: [], sizes: [], colours: [], maxCents: null, kind: 'all', saved: false, sale: false };
 const toggle = <T,>(list: T[], v: T) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
+/** The sizes the shop's products come in: the usual ones in their order, then any other typed size as first seen. */
+const sizesOf = (products: readonly Product[]) => {
+  const all = [...new Set(products.flatMap((p) => p.sizes))];
+  const usual = SIZES.filter((s) => all.includes(s));
+  return [...usual, ...all.filter((s) => !(usual as string[]).includes(s))];
+};
+
 /** Every filter except the one named, so each option can show how many products it would leave. */
 function matches(p: Product, f: Filters, wishlist: string[], skip?: keyof Filters): boolean {
   const q = f.text.trim().toLowerCase();
@@ -104,7 +111,7 @@ export function Store({ openPanel, view }: SiteControls) {
                 <button key={k} type="button" className={chip(f.kind === k)} onClick={() => setF({ ...f, kind: k })}>{label}</button>)}</div>
             </fieldset>
             <fieldset><legend className="mb-2 flex w-full justify-between text-sm font-bold">Size <button type="button" onClick={() => openPanel('sizes')} className="font-semibold text-indigo-600 hover:underline">Guide</button></legend>
-              <div className="grid grid-cols-4 gap-1.5">{SIZES.map((s) => { const n = count('sizes', (p) => p.sizes.includes(s)); return (
+              <div className="grid grid-cols-4 gap-1.5">{sizesOf(products).map((s) => { const n = count('sizes', (p) => p.sizes.includes(s)); return (
                 <button key={s} type="button" disabled={!n && !f.sizes.includes(s)} onClick={() => setF({ ...f, sizes: toggle(f.sizes, s) })}
                   className={`rounded-lg border py-1.5 text-sm font-semibold disabled:opacity-30 ${f.sizes.includes(s) ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white hover:border-slate-400'}`}>{s}</button>); })}</div>
             </fieldset>
