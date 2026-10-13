@@ -145,6 +145,9 @@ async function fillIn(page: Page, today: string): Promise<string[]> {
         if (!filled) { await page.waitForLoadState('networkidle').catch(() => undefined); break; }
       }
     }
+    // What a choice loads (a job order's steps, after the job order is picked) arrives before the next pass looks: on a
+    // slow machine the passes otherwise ran out first ("Pick the step").
+    await page.waitForLoadState('networkidle').catch(() => undefined);
   }
   return asksForId;
 }

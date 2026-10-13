@@ -92,11 +92,13 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
   const reworkLines = (job?.lines ?? []).filter((l) => { const s = l.route?.find((x) => x.id === stepId); return !!s && reworkLeft(s) > 0; });
   const steps = job ? [...new Map(job.lines.flatMap((l) => l.route ?? []).sort((x, y) => x.seq - y.seq).map((s) => [s.id, s])).values()].filter((s) => job.lines.some((l) => openOn(l, s.id)) || s.id === stepId) : [];
   const lines = job && stepId ? job.lines.filter((l) => openOn(l, stepId) || rows.some((r) => r.lineNo === String(l.lineNo))) : [];
+  // Changes build on the rows as they are now, not as they were when the screen last drew: a line filled in by itself
+  // right after a step is picked no longer wipes a worker picked in the same moment (a lost pick, found by the tour).
   useEffect(() => {
-    if (lines.length > 0 && rows.every((r) => !r.lineNo)) setRows(rows.map((r) => ({ ...r, lineNo: String(lines[0]!.lineNo) })));
+    if (lines.length > 0) setRows((now) => (now.every((r) => !r.lineNo) ? now.map((r) => ({ ...r, lineNo: String(lines[0]!.lineNo) })) : now));
   }, [lines.length, stepId]);
 
-  const set = (i: number, patch: Partial<EntryRow>) => setRows(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const set = (i: number, patch: Partial<EntryRow>) => setRows((now) => now.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const typed = rowsToInput(rows);
   // Pieces ready per line and part on this step (work: came from the step before, not done yet; rework: done there).
   // On Edit, the entry being replaced still counts until Record cancels it, so its own pieces are free again.
@@ -312,7 +314,7 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
                 );
               })}
             </div>
-            <Button onClick={() => setRows([...rows, emptyRow(rows.at(-1)?.lineNo ?? '')])}>+ Another worker</Button>
+            <Button onClick={() => setRows((now) => [...now, emptyRow(now.at(-1)?.lineNo ?? '')])}>+ Another worker</Button>
           </Panel>
         )}
         <Errors list={errors} show={touched} />
