@@ -295,7 +295,8 @@ function lineOf(db: Db, jobOrderId: string, lineNo: number) {
 }
 
 /** `garmentType`: none takes it from the price list item the line matches (the owner's request, Oct 2026), which also says whether it is a set. */
-export interface SetupRequest { templateId?: number | undefined; stepIds: number[]; garmentType?: string | undefined; complexity: Complexity }
+/** `isSet`: made as an upper and a lower part, as production says (the owner's request, Oct 2026); none takes it from the price list item. */
+export interface SetupRequest { templateId?: number | undefined; stepIds: number[]; garmentType?: string | undefined; complexity: Complexity; isSet?: boolean | undefined }
 
 /**
  * Sets a line's route, garment type and complexity. The steps keep the order given (the owner's request, Oct 2026: one
@@ -308,11 +309,16 @@ export function setupLine(db: Db, jobOrderId: string, lineNo: number, req: Setup
   const matched = matchCatalogItem(db, theLine.description);
   // The matched item's whole garment type, so its rates are found; only a line no item matches is cut to the limit.
   const garmentType = (req.garmentType?.trim() || matched?.garmentType || theLine.description).slice(0, GARMENT_TYPE_MAX);
-  const isSet = matched?.unit === 'set';
+  const isSet = req.isSet ?? matched?.unit === 'set';
   if (before?.isSet && !isSet) {
     // A line made in parts keeps its parts while pieces of a part are recorded on it.
     const parted = db.prepare(`SELECT 1 FROM prd_line_assignments a JOIN documents d ON d.id = a.document_id WHERE a.jo = ? AND a.line = ? AND a.part <> 'whole' AND d.status = 'posted' LIMIT 1`).get(jobOrderId, lineNo);
     if (parted) throw conflict('PARTS_RECORDED', `Line ${lineNo} has upper and lower pieces recorded, so it stays a set.`);
+  }
+  if (before && !before.isSet && isSet) {
+    // A line made whole keeps that while whole pieces are recorded on it: they cannot be split into parts afterwards.
+    const whole = db.prepare(`SELECT 1 FROM prd_line_assignments a JOIN documents d ON d.id = a.document_id WHERE a.jo = ? AND a.line = ? AND a.part = 'whole' AND d.status = 'posted' LIMIT 1`).get(jobOrderId, lineNo);
+    if (whole) throw conflict('WHOLE_RECORDED', `Line ${lineNo} has whole pieces recorded, so it cannot become a set now.`);
   }
   const ids = [...new Set(req.stepIds)];
   if (ids.length === 0) throw new AppError('NO_STEPS', 'Pick at least one step.', 400);
@@ -497,8 +503,13 @@ export function board(db: Db) {
           finishedPieces: lineFinished(db, jo.id, l.lineNo, l.qty, route) ?? 0,
           // receivedPieces: what came out of the step before (all of the line once that one is closed, or for the first step).
           isSet: setup?.isSet ?? false,
+          // Not set up yet: whether the price list item it matches is a set, so choosing its steps starts from that.
+          ...(setup ? {} : { matchedSet: matchCatalogItem(db, l.description)?.unit === 'set' }),
           // reworkOpen: pieces sent back to the step for rework and not redone yet (shown there labelled rework).
-          steps: route?.map((s) => ({ stepId: s.id, status: s.status, pieces: s.pieces, reworkPieces: s.reworkPieces, receivedPieces: availableFor(route, s.id, l.qty),
+          // A set's step has received pieces once the step before forwarded uppers or lowers (the owner's report, Oct 2026: 15
+          // uppers cut did not show under Sewing, which counted complete sets only).
+          steps: route?.map((s) => ({ stepId: s.id, status: s.status, pieces: s.pieces, reworkPieces: s.reworkPieces,
+            receivedPieces: s.parts ? Math.max(availableFor(route, s.id, l.qty, 'upper'), availableFor(route, s.id, l.qty, 'lower')) : availableFor(route, s.id, l.qty),
             reworkOpen: stepReworkOpen(db, jo.id, l.lineNo, s, route),
             ...(s.parts ? { parts: { upper: s.parts.upper.pieces, lower: s.parts.lower.pieces } } : {}) })) ?? null,
         };

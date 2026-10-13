@@ -312,6 +312,8 @@ export interface BoardCard {
   finishedPieces?: number;
   /** isSet: made as an upper and a lower part; a step's `pieces` are then complete sets and `parts` each part's count. */
   isSet?: boolean;
+  /** matchedSet: not set up yet, and the price list item it matches is a set. */
+  matchedSet?: boolean;
   /** receivedPieces: what came out of the step before (all of the line for the first step, or once the one before is closed). */
   /** reworkOpen: pieces sent back to the step for rework, not redone yet. */
   steps: { stepId: number; status: StepStatus; pieces: number; reworkPieces: number; receivedPieces: number; reworkOpen?: number; parts?: { upper: number; lower: number } }[] | null;
@@ -334,7 +336,7 @@ export interface PrdJob {
 }
 export interface PrdWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; lowerSize?: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
 /** `garmentType`: left out, the server takes it (and whether the line is a set) from the price list item the line matches. */
-export interface PrdSetup { templateId?: number; stepIds: number[]; garmentType?: string; complexity: string }
+export interface PrdSetup { templateId?: number; stepIds: number[]; garmentType?: string; complexity: string; isSet?: boolean }
 export interface Worker { id: string; code: string; name: string }
 export interface PieceRate { id: number; garmentType: string; stepCode: string; complexity: string; part?: 'whole' | 'upper' | 'lower'; rateCents: number; effectiveFrom: string; reason: string; createdAt: string }
 export interface RateTable { asOf: string; current: PieceRate[]; history: PieceRate[]; garmentTypes: string[]; /** Rates in force for a garment type no price list item goes by, with how many job order items are made as it. */ unmatched: (PieceRate & { jobItems: number })[] }
