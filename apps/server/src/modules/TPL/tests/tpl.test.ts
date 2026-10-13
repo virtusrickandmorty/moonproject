@@ -181,3 +181,35 @@ describe('deliveries', () => {
     expect(home.restock).toEqual([{ programId, customerName: 'Moonlight Test School', item: 'School polo (M)', onHand: 15, reorderLevel: 20 }]);
   });
 });
+
+describe('many at once (the owner\'s request, Oct 2026)', () => {
+  it('adds many items together, or none when a row has a problem, naming the row', async () => {
+    const r = await owner.post(`/api/tpl/programs/${programId}/items/bulk`, { items: [
+      { kind: 'made_to_order', description: 'School polo', size: 'L', priceCents: 52_000, reorderLevel: 10 },
+      { kind: 'ready_made', description: 'School socks', priceCents: 8_000, reorderLevel: 30 },
+    ] });
+    expect(r.statusCode, r.body).toBe(200);
+    expect((r.json() as { items: { description: string; size: string }[] }).items.map((i) => `${i.description} ${i.size}`.trim())).toEqual(['School polo L', 'School socks']);
+
+    // The second row is already on the program: refused, and the first is not added either.
+    const bad = await owner.post(`/api/tpl/programs/${programId}/items/bulk`, { items: [
+      { kind: 'made_to_order', description: 'School skirt', size: 'S', priceCents: 40_000, reorderLevel: 5 },
+      { kind: 'ready_made', description: 'School cap', priceCents: 15_000, reorderLevel: 5 },
+    ] });
+    expect(bad.statusCode).toBe(409);
+    expect(bad.json().message).toMatch(/^Row 2: /);
+    expect(env.db.prepare(`SELECT COUNT(*) FROM tpl_items WHERE description = 'School skirt'`).pluck().get()).toBe(0);
+    expect((await owner.post(`/api/tpl/programs/${programId}/items/bulk`, { items: [{ kind: 'made_to_order', description: '', priceCents: 1, reorderLevel: 0 }] })).json().message).toMatch(/^Row 1: /);
+  });
+
+  it('counts many items with one reason, leaving the ones already right', async () => {
+    const r = await owner.post(`/api/tpl/programs/${programId}/count`, { reason: 'Month-end count on Oct 31', lines: [{ itemId: polo, countedQty: 12 }, { itemId: cap, countedQty: 0 }] });
+    expect(r.statusCode, r.body).toBe(200);
+    expect((r.json() as { counted: unknown[] }).counted).toHaveLength(1); // the cap was already 0
+    expect([onHand(polo), onHand(cap)]).toEqual([12, 0]);
+    expect((await owner.post(`/api/tpl/programs/${programId}/count`, { reason: 'Month-end count on Oct 31', lines: [{ itemId: polo, countedQty: 12 }] })).json()).toMatchObject({ code: 'NO_DIFFERENCE' });
+    expect((await owner.post(`/api/tpl/programs/${programId}/count`, { reason: 'short', lines: [{ itemId: polo, countedQty: 1 }] })).statusCode).toBe(400);
+    expect((await owner.post(`/api/tpl/programs/${programId}/count`, { reason: 'Month-end count on Oct 31', lines: [{ itemId: polo, countedQty: 1 }, { itemId: polo, countedQty: 2 }] })).statusCode).toBe(400);
+    expect((await encoder.post(`/api/tpl/programs/${programId}/count`, { reason: 'Month-end count on Oct 31', lines: [{ itemId: polo, countedQty: 1 }] })).statusCode).toBe(403);
+  });
+});

@@ -13,8 +13,8 @@ import { findIdempotent, requestHash, storeIdempotent } from '../../engine/idemp
 import { currentUser } from '../../engine/security/routes.ts';
 import { saleDocType, saleOpenCents } from '../QS/public.ts';
 import { cancellingTogether, deliveryDoc, invoiceOf, recordingWithInvoice, type Delivery } from './doctypes/delivery.ts';
-import { addItem, changeItem, changeProgram, createProgram, item, itemLabel, itemsOf, openBalance, program, programList } from './programs.ts';
-import { belowReorder, countItem, openRestocks, putIntoStock, restock, stockCard } from './stock.ts';
+import { addItem, addItems, changeItem, changeProgram, createProgram, item, itemLabel, itemsOf, openBalance, program, programList } from './programs.ts';
+import { belowReorder, countItem, countItems, openRestocks, putIntoStock, restock, stockCard } from './stock.ts';
 
 const actorOf = (req: FastifyRequest): Actor => ({ userId: currentUser(req).userId, permissions: currentUser(req).permissions });
 const id = z.object({ id: z.uuid() }).strict();
@@ -100,6 +100,8 @@ export function tplRoutes(app: FastifyInstance, deps: AppDeps): void {
     write(() => changeProgram(db, id.parse(req.params).id, req.body, who(req))));
   app.post<{ Params: { id: string } }>('/api/tpl/programs/:id/items', { config: { permission: 'tpl.program.manage' } }, async (req) =>
     write(() => addItem(db, id.parse(req.params).id, req.body, who(req))));
+  app.post<{ Params: { id: string } }>('/api/tpl/programs/:id/items/bulk', { config: { permission: 'tpl.program.manage' } }, async (req) =>
+    write(() => ({ items: addItems(db, id.parse(req.params).id, req.body, who(req)) })));
   app.put<{ Params: { id: string } }>('/api/tpl/items/:id', { config: { permission: 'tpl.program.manage' } }, async (req) =>
     write(() => changeItem(db, id.parse(req.params).id, req.body, who(req))));
 
@@ -107,6 +109,8 @@ export function tplRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get<{ Params: { id: string } }>('/api/tpl/items/:id/card', { config: { permission: 'tpl.view' } }, async (req) => stockCard(db, id.parse(req.params).id));
   app.post<{ Params: { id: string } }>('/api/tpl/items/:id/count', { config: { permission: 'tpl.count' } }, async (req) =>
     write(() => countItem(db, { ...(req.body as object), itemId: id.parse(req.params).id }, who(req))));
+  app.post<{ Params: { id: string } }>('/api/tpl/programs/:id/count', { config: { permission: 'tpl.count' } }, async (req) =>
+    write(() => countItems(db, id.parse(req.params).id, req.body, who(req))));
   /** What to restock: the items at or below their reorder level, with how many to make to get back above it. */
   app.get<{ Params: { id: string } }>('/api/tpl/programs/:id/restock', { config: { permission: 'tpl.view' } }, async (req) =>
     ({ items: belowReorder(db, id.parse(req.params).id) }));

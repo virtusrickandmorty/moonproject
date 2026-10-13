@@ -9,6 +9,7 @@ import { navigate } from '../../router.tsx';
 import { CustomerPicker, type Picked } from '../COL/parts.tsx';
 import { toCents, type TplProgram, type TplProgramRow } from './types.ts';
 import { useLiveReload } from '../../live.ts';
+import { usePages } from '../../components/RowPages.tsx';
 
 export function TplClients({ me }: { me: Me }) {
   const [rows, setRows] = useState<TplProgramRow[] | null>(null);
@@ -16,6 +17,7 @@ export function TplClients({ me }: { me: Me }) {
   const [adding, setAdding] = useState(false);
   useEffect(() => void api.tplPrograms<{ rows: TplProgramRow[] }>().then((r) => setRows(r.rows), (e: Error) => setError(e.message)), []);
   useLiveReload(() => api.tplPrograms<{ rows: TplProgramRow[] }>().then((r) => setRows(r.rows)));
+  const { shown, buttons } = usePages(rows); // 20 a page (the owner's request, Oct 2026)
 
   return (
     <div className="max-w-5xl space-y-4">
@@ -30,7 +32,7 @@ export function TplClients({ me }: { me: Me }) {
           <table className="w-full rounded-xl bg-white text-sm shadow-sm ring-1 ring-slate-200/70">
             <thead><tr><th>Client</th><th className="text-right">Items</th><th className="text-right">Pieces on hand</th><th className="text-right">To restock</th><th>Terms</th><th className="text-right">Owed</th><th className="text-right">Past due</th></tr></thead>
             <tbody>
-              {rows.map((r) => (
+              {shown.map((r) => (
                 <tr key={r.id} className={r.isActive ? '' : 'text-slate-500'}>
                   <td><a href={`/tpl/${r.id}`} onClick={(e) => { e.preventDefault(); navigate(`/tpl/${r.id}`); }} className="font-medium text-indigo-700">{r.customerName}</a>{!r.isActive && ' (off)'}</td>
                   <td className="text-right tabular-nums">{r.items}</td>
@@ -43,6 +45,7 @@ export function TplClients({ me }: { me: Me }) {
               ))}
             </tbody>
           </table>
+          {buttons}
         </div>
       )}
       {adding && <NewProgram onClose={() => setAdding(false)} />}

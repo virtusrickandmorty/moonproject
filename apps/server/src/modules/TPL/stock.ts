@@ -140,6 +140,28 @@ export function countItem(db: Db, raw: unknown, who: Who & { today: string }) {
   return item(db, it.id)!;
 }
 
+/**
+ * A count of many items at once (the owner's request, Oct 2026), with one reason: each item of the program counted
+ * becomes what was counted; those already right are left as they are. All or none. Call inside a transaction.
+ */
+export const countsInput = z.object({
+  reason: z.string().trim().min(10).max(500),
+  lines: z.array(z.object({ itemId: z.uuid(), countedQty: z.number().int().min(0).max(1_000_000) }).strict()).min(1).max(500),
+}).strict();
+export function countItems(db: Db, programId: string, raw: unknown, who: Who & { today: string }) {
+  const v = countsInput.parse(raw);
+  if (new Set(v.lines.map((l) => l.itemId)).size !== v.lines.length) throw new AppError('VALIDATION', 'An item is counted twice.', 400);
+  const changed = [];
+  for (const l of v.lines) {
+    const it = item(db, l.itemId);
+    if (!it || it.programId !== programId) throw notFound('An item of this program');
+    if (l.countedQty === it.onHand) continue;
+    changed.push(countItem(db, { itemId: it.id, countedQty: l.countedQty, reason: v.reason }, who));
+  }
+  if (!changed.length) throw conflict('NO_DIFFERENCE', 'Every count is the same as what is on hand: nothing to record.');
+  return { counted: changed };
+}
+
 /** Every movement of an item, newest first, with the balance after each: put in, counted, delivered, and returned by a cancel. */
 export function stockCard(db: Db, itemId: string) {
   const it = item(db, itemId);
