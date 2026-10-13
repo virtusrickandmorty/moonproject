@@ -98,12 +98,12 @@ async function fillIn(page: Page, today: string): Promise<string[]> {
   const main = page.locator('main');
   const asksForId: string[] = [];
   const sides: Record<string, number> = {};
-  // A search box picks at most twice: one that stays empty after its pick (the price list's, which fills the item below
-  // it) would otherwise take every pass and leave the boxes after it empty; twice, so a pick a later choice clears (a
-  // production entry's worker, when the step is picked after it) is made again. Only picks made count: a search that
-  // found nothing yet (a busy machine) is tried again on the next pass.
+  // A search box picks at most three times: one that stays empty after its pick (the price list's, which fills the item
+  // below it) would otherwise take every pass and leave the boxes after it empty; more than once, so a pick a later choice
+  // clears (a production entry's worker, cleared by the step and again by the line on a slow machine) is made again. Only
+  // picks made count: a search that found nothing yet (a busy machine) is tried again on the next pass.
   const picked = new Map<string, number>();
-  for (let pass = 0; pass < 6; pass++) {
+  for (let pass = 0; pass < 8; pass++) {
     for (const k of Object.keys(sides)) sides[k] = 0;
     for (const select of await main.locator('select:visible').all()) {
       if ((await select.isDisabled()) || (await select.inputValue()) !== '') continue;
@@ -132,7 +132,7 @@ async function fillIn(page: Page, today: string): Promise<string[]> {
       if (/^[1-9]\d*\.\d\d$/.test(info.hint)) continue; // the amount the server suggests: changing it would ask for a reason
       if (isSearch(info.hint) || isSearch(info.label)) {
         const made = picked.get(info.label || info.hint) ?? 0;
-        if (made >= 2) continue;
+        if (made >= 3) continue;
         // A pick loads what was picked and redraws the form (a release's lines appear above "Claimed by"), so the boxes
         // listed before it are stale: start the next pass on the redrawn form rather than typing into a moved box.
         if (await pickFirst(input)) picked.set(info.label || info.hint, made + 1);
