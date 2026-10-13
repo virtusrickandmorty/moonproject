@@ -36,8 +36,8 @@ const typedJo = (over: Partial<JoValues> = {}): JoValues => ({
       price: '1,500.00',
       listCents: 150_000,
       roster: [
-        { personId: 'p-ari', name: 'Ari Sample', sizeMode: 'preset', size: 'l', jerseyName: 'ari', jerseyNumber: '7', qty: '1', garmentType: ' Jersey (women) ' },
-        { personId: 'p-bea', name: 'Bea Example', sizeMode: 'measured', size: '', jerseyName: '', jerseyNumber: '', qty: '1', garmentType: '' },
+        { personId: 'p-ari', name: 'Ari Sample', sizeMode: 'preset', size: 'l', lowerSize: '', jerseyName: 'ari', jerseyNumber: '7', qty: '1', garmentType: ' Jersey (women) ' },
+        { personId: 'p-bea', name: 'Bea Example', sizeMode: 'measured', size: '', lowerSize: '', jerseyName: '', jerseyNumber: '', qty: '1', garmentType: '' },
         { ...oneOff(' Coach Guest '), size: 'XL', qty: '2' },
       ],
     },
@@ -107,9 +107,20 @@ describe('job order form rules', () => {
   });
 
   it('fills a picked wearer with the size on file; tells a price changed from the price list', () => {
-    expect(fromWearer({ personId: 'p', wearerName: 'Bea', groupId: null, sizeMode: 'preset', size: 'M', jerseyName: 'BEA' })).toEqual({ personId: 'p', name: 'Bea', sizeMode: 'preset', size: 'M', jerseyName: 'BEA', jerseyNumber: '', qty: '1', garmentType: '' });
+    expect(fromWearer({ personId: 'p', wearerName: 'Bea', groupId: null, sizeMode: 'preset', size: 'M', jerseyName: 'BEA' })).toEqual({ personId: 'p', name: 'Bea', sizeMode: 'preset', size: 'M', lowerSize: '', jerseyName: 'BEA', jerseyNumber: '', qty: '1', garmentType: '' });
     const line = { ...emptyJoLine(), qty: '12', price: '1,400.00', listCents: 140_000 };
     expect([lineQty(line), priceChanged(line), priceChanged({ ...line, price: '1,350' }), priceChanged({ ...line, listCents: null })]).toEqual(['12', false, true, false]);
+  });
+
+  it("a set asks for the upper and the lower size, and sends both (the owner's request, Oct 2026)", () => {
+    const roster = [{ ...oneOff('Ana'), size: 'm', lowerSize: 'l' }, { ...oneOff('Ben'), size: 'S' }];
+    const set = joInput(typedJo({ lines: [{ ...emptyJoLine(), description: 'Team jersey set', price: '500', isSet: true, roster }] }));
+    expect(set.errors).toEqual(['Line 1, Ben: pick the lower size.']);
+    const fixed = joInput(typedJo({ lines: [{ ...emptyJoLine(), description: 'Team jersey set', price: '500', isSet: true, roster: [roster[0]!] }] }));
+    expect(fixed.input.lines[0]!.roster).toEqual([{ name: 'Ana', sizeMode: 'preset', size: 'M', lowerSize: 'L', qty: 1 }]);
+    expect(joValues(fixed.input).lines[0]).toMatchObject({ isSet: true, roster: [{ size: 'M', lowerSize: 'L' }] }); // an edit opens as a set
+    // Not a set: the lower size is not asked for, nor sent.
+    expect(joInput(typedJo({ lines: [{ ...emptyJoLine(), description: 'Shirt', price: '500', roster }] })).input.lines[0]!.roster[0]).not.toHaveProperty('lowerSize');
   });
 });
 

@@ -1,7 +1,7 @@
 /** Server-rendered, escaped print views. No journal entries are created here. */
 import { customerPrintDetails } from '../CUS/public.ts';
 import { readFileSync } from 'node:fs';
-import { formatPeso } from '@moonproject/shared';
+import { formatPeso, sizeLabel } from '@moonproject/shared';
 import qrcode from 'qrcode-generator';
 import { DOC_TITLES, type DocTitle } from '../../engine/documents/registry.ts';
 import type { Db } from '../../platform/db/driver.ts';
@@ -128,7 +128,7 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
       aside: jobOrderQr(h.id, h.number, joinBase),
       body: attachedPictures(db, h.id) +
         doc.lines.map((l: any) => `<section class="job-line"><h2 class="section">${escape(l.description)} · ${escape(l.qty)} pieces</h2>` +
-          lineTable(['Wearer', 'Size', 'Jersey name', 'Jersey no.', 'Qty', 'Garment type'], l.roster.map((r: any) => [r.wearerName, r.size ?? (r.sizeMode === 'measured' ? 'Measured' : ''), r.jerseyName, r.jerseyNumber, r.qty, r.garmentType])) +
+          lineTable(['Wearer', 'Size', 'Jersey name', 'Jersey no.', 'Qty', 'Garment type'], l.roster.map((r: any) => [r.wearerName, r.sizeMode === 'measured' ? 'Measured' : sizeLabel(r.size, r.lowerSize), r.jerseyName, r.jerseyNumber, r.qty, r.garmentType])) +
           `<h3>Route checklist</h3><ul>${jobTicketRoute(db, h.id, l.lineNo).map((s) => `<li>☐ ${escape(s.name)} — ${escape(s.status)}</li>`).join('')}</ul></section>`).join('') +
         field('Notes', doc.notes),
     };

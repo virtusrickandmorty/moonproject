@@ -23,7 +23,8 @@ const rosterRow = z
     personId: z.uuid().optional(), // a wearer of this customer, or
     name: text(120).optional(), // a one-off name
     sizeMode: z.enum(['preset', 'measured']),
-    size: text(20).optional(),
+    size: text(20).optional(), // on a set, the upper size
+    lowerSize: text(20).optional(), // on a set, the lower size (the owner's request, Oct 2026)
     jerseyName: text(40).optional(),
     jerseyNumber: text(10).optional(),
     garmentType: text(60).optional(), // typed by hand, e.g. "Jersey (men)" (the owner's request, Oct 2026)
@@ -120,6 +121,7 @@ export function lineIssues(db: Db, doc: { customerId: string; customerName: stri
       if (w && seen.has(w.id)) issues.push({ field: `${f}.personId`, code: 'WEARER_TWICE', level: 'warning', message: `${where}: ${w.name} is already on this line.` });
       if (w) seen.add(w.id);
       if (r.sizeMode === 'preset' && !r.size) error(`${f}.size`, 'SIZE', `${where}: pick a size.`);
+      if (r.sizeMode === 'measured' && r.lowerSize) error(`${f}.lowerSize`, 'LOWER_SIZE', `${where}: a measured wearer has no lower size to pick.`);
       if (r.sizeMode === 'measured' && !r.chartId) error(`${f}.sizeMode`, 'NOT_MEASURED', `${where}: ${r.wearerName || 'this wearer'} has no measurements on file. Measure first or pick a size.`);
     }
   }
@@ -131,13 +133,13 @@ export function persistLines(db: Db, documentId: string, lines: readonly JoLine[
     'INSERT INTO jo_lines (document_id, line_no, kind, description, qty, unit_price_cents, discount_cents, line_total_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
   );
   const row = db.prepare(
-    `INSERT INTO jo_roster (document_id, line_no, row_no, person_id, group_id, wearer_name, size_mode, size, chart_id, chart_revision, jersey_name, jersey_number, qty, notes, garment_type)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO jo_roster (document_id, line_no, row_no, person_id, group_id, wearer_name, size_mode, size, chart_id, chart_revision, jersey_name, jersey_number, qty, notes, garment_type, lower_size)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const l of lines) {
     line.run(documentId, l.lineNo, l.kind, l.description, l.qty, l.unitPriceCents, l.discountCents, l.lineTotalCents);
     for (const r of l.roster) {
-      row.run(documentId, l.lineNo, r.rowNo, r.personId ?? null, r.groupId, r.wearerName, r.sizeMode, r.size ?? null, r.chartId, r.chartRevision, r.jerseyName ?? null, r.jerseyNumber ?? null, r.qty, r.notes ?? null, r.garmentType ?? null);
+      row.run(documentId, l.lineNo, r.rowNo, r.personId ?? null, r.groupId, r.wearerName, r.sizeMode, r.size ?? null, r.chartId, r.chartRevision, r.jerseyName ?? null, r.jerseyNumber ?? null, r.qty, r.notes ?? null, r.garmentType ?? null, r.lowerSize ?? null);
     }
   }
 }
@@ -145,7 +147,7 @@ export function persistLines(db: Db, documentId: string, lines: readonly JoLine[
 export function loadLines(db: Db, documentId: string): JoLine[] {
   const rows = db
     .prepare(
-      `SELECT line_no AS lineNo, person_id AS personId, CASE WHEN person_id IS NULL THEN wearer_name END AS name, size_mode AS sizeMode, size,
+      `SELECT line_no AS lineNo, person_id AS personId, CASE WHEN person_id IS NULL THEN wearer_name END AS name, size_mode AS sizeMode, size, lower_size AS lowerSize,
          jersey_name AS jerseyName, jersey_number AS jerseyNumber, garment_type AS garmentType, qty, notes, row_no AS rowNo, wearer_name AS wearerName, group_id AS groupId,
          chart_id AS chartId, chart_revision AS chartRevision
        FROM jo_roster WHERE document_id = ? ORDER BY line_no, row_no`,
@@ -158,7 +160,7 @@ export function loadLines(db: Db, documentId: string): JoLine[] {
     )
     .all(documentId) as Omit<JoLine, 'roster'>[];
   const roster = (lineNo: number) =>
-    rows.filter((r) => r.lineNo === lineNo).map(({ lineNo: _, ...r }) => dropNulls(r, ['personId', 'name', 'size', 'jerseyName', 'jerseyNumber', 'garmentType', 'notes']) as unknown as RosterRow);
+    rows.filter((r) => r.lineNo === lineNo).map(({ lineNo: _, ...r }) => dropNulls(r, ['personId', 'name', 'size', 'lowerSize', 'jerseyName', 'jerseyNumber', 'garmentType', 'notes']) as unknown as RosterRow);
   return lines.map((l) => ({ ...l, roster: roster(l.lineNo) }));
 }
 

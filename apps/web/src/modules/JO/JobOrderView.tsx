@@ -3,6 +3,7 @@
  * release and invoice record forms already filled for this job order; and deposits left on a cancelled or edited JO,
  * with the way to move them to the replacement (DEP-XFER) or pay them back.
  */
+import { sizeLabel } from '@moonproject/shared';
 import { useLiveChange } from '../../live.ts';
 import { useEffect, useState } from 'react';
 import { api, type DocDetail, type JoStatus } from '../../api.ts';
@@ -17,7 +18,7 @@ const action = 'rounded-md bg-white px-3 py-1 text-sm ring-1 ring-slate-300 hove
 const primary = 'rounded-md bg-indigo-600 px-3 py-1 text-sm font-medium text-white hover:bg-indigo-700';
 
 interface RecordedWearer {
-  rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size?: string; chartRevision?: number | null;
+  rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size?: string; lowerSize?: string; chartRevision?: number | null;
   qty: number; jerseyName?: string; jerseyNumber?: string; garmentType?: string; notes?: string;
 }
 interface RecordedLine {
@@ -68,7 +69,7 @@ function Garments({ d, opening }: { d: DocDetail; opening: boolean }) {
                   {l.roster.map((r) => (
                     <li key={r.rowNo} className="space-y-1 break-words rounded-md bg-slate-50 p-2">
                       <p className="font-medium">{r.wearerName}</p>
-                      <p>{r.sizeMode === 'measured' ? `Measured${r.chartRevision != null ? ` · revision ${r.chartRevision}` : ''}` : `Size: ${r.size ?? 'Not supplied'}`} · Quantity: {r.qty}</p>
+                      <p>{r.sizeMode === 'measured' ? `Measured${r.chartRevision != null ? ` · revision ${r.chartRevision}` : ''}` : `Size: ${r.size ? sizeLabel(r.size, r.lowerSize) : 'Not supplied'}`} · Quantity: {r.qty}</p>
                       {r.jerseyName && <p>Jersey name: {r.jerseyName}</p>}
                       {r.jerseyNumber && <p>Jersey number: {r.jerseyNumber}</p>}
                       {r.garmentType && <p>Garment type: {r.garmentType}</p>}

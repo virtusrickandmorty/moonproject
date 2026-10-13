@@ -57,7 +57,7 @@ async function shop(setMode?: 'B' | 'C') {
   if (setMode) setting(setMode);
   const typed = joInput({
     customer: { id: c.school, name: 'Moonlight Test School' }, contact: '', dueInDays: '15', priority: 'normal', paymentTerms: 'dp50', notes: '',
-    lines: [{ itemId: '', kind: 'made_to_order', description: 'Team jersey set', qty: '4', price: '1,500.00', listCents: null, discount: '', roster: [] }],
+    lines: [{ itemId: '', kind: 'made_to_order', description: 'Team jersey set', qty: '4', price: '1,500.00', listCents: null, discount: '', roster: [], isSet: false }],
   });
   const jo = await api.post('jo.job_order', typed.input, 600_000, key());
   return { env, api, fetchIt, c, jo, setting, cash: cashPlaceId(env.db, '1101') };

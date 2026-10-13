@@ -8,3 +8,4 @@ apps/server/src/modules/EMP/migrations/0006_emp_personal_details.sql text eol=lf
 apps/server/src/modules/PREF/migrations/*.sql text eol=lf
 apps/server/src/modules/ALT/migrations/*.sql text eol=lf
 apps/server/src/modules/DASH/migrations/0002_dash_notification_seen.sql text eol=lf
+apps/server/src/modules/JO/migrations/0009_jo_roster_lower_size.sql text eol=lf

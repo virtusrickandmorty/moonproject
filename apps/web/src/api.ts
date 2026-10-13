@@ -332,7 +332,7 @@ export interface PrdJob {
       /** On a set: each part's pieces, what each may still take, and the wearers done per part. */
       partPieces?: { upper: number; lower: number }; partAvailable?: { upper: number; lower: number }; partWearersDone?: { upper: number[]; lower: number[] } })[] | null }[];
 }
-export interface PrdWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
+export interface PrdWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; lowerSize?: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
 /** `garmentType`: left out, the server takes it (and whether the line is a set) from the price list item the line matches. */
 export interface PrdSetup { templateId?: number; stepIds: number[]; garmentType?: string; complexity: string }
 export interface Worker { id: string; code: string; name: string }

@@ -7,7 +7,7 @@
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { divRoundHalfAway, formatPeso, type Issue } from '@moonproject/shared';
+import { divRoundHalfAway, formatPeso, sizeLabel, type Issue } from '@moonproject/shared';
 import type { Db } from '../../../platform/db/driver.ts';
 import type { DocHeader, DocTypeDef } from '../../../engine/documents/registry.ts';
 import { jobOrderRef, jobOrdersOf, joMoney, rosterOf } from '../public.ts';
@@ -74,8 +74,8 @@ export function releasedWearers(db: Db, jobOrderId: string): Map<number, Map<num
   for (const r of rows) out.set(r.lineNo, (out.get(r.lineNo) ?? new Map()).set(r.rowNo, r.number));
   return out;
 }
-const asReleased = (w: { rowNo: number; wearerName: string; size: string | null; jerseyNumber: string | null; qty: number }): ReleasedWearer =>
-  ({ rowNo: w.rowNo, wearerName: w.wearerName, size: w.size, jerseyNumber: w.jerseyNumber, qty: w.qty });
+const asReleased = (w: { rowNo: number; wearerName: string; size: string | null; lowerSize?: string | null; jerseyNumber: string | null; qty: number }): ReleasedWearer =>
+  ({ rowNo: w.rowNo, wearerName: w.wearerName, size: w.lowerSize ? sizeLabel(w.size, w.lowerSize) : w.size, jerseyNumber: w.jerseyNumber, qty: w.qty });
 export interface Release extends Omit<ReleaseInput, 'lines'> {
   lines: ReleaseLine[];
   jobOrderNumber: string;

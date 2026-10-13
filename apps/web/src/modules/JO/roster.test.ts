@@ -40,3 +40,14 @@ describe('roster paste from Excel (PLAN E4)', () => {
     ]);
   });
 });
+
+describe('a set pasted from Excel (the owner\'s request, Oct 2026)', () => {
+  it('reads the upper and the lower size from the second and third columns', () => {
+    const { rows, errors } = parseRosterPaste('Name\tUpper\tLower\tJersey\tNo.\tQty\nAri Sample\tm\tl\t\t7\t2\nGuest Coach\txl\txxl\tcoach\t00\t1\n', team, true);
+    expect(errors).toEqual([]);
+    expect(rows).toEqual([
+      { personId: 'p-ari', wearerName: 'Ari Sample', sizeMode: 'preset', size: 'M', lowerSize: 'L', jerseyName: 'ARI', jerseyNumber: '7', qty: 2 },
+      { name: 'Guest Coach', wearerName: 'Guest Coach', sizeMode: 'preset', size: 'XL', lowerSize: 'XXL', jerseyName: 'COACH', jerseyNumber: '00', qty: 1 },
+    ]);
+  });
+});
