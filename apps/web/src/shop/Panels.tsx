@@ -58,6 +58,8 @@ export function QuickView({ product, onClose, onSizeGuide, onAdded }: { product:
   const firstIn = (c: string) => product.sizes.find((s) => left(s, c) > 0);
   const startColour = product.colours.find((c) => !product.stock || firstIn(c.name)) ?? product.colours[0]!;
   const [colour, setColour] = useState(startColour);
+  const photos = product.photoUrls?.length ? product.photoUrls : product.photoUrl ? [product.photoUrl] : [];
+  const [shown, setShown] = useState(0); // which photo is big (the owner's request, Oct 2026: up to three)
   const startQty = (c: string): Record<string, number> => { const s = product.madeToOrder ? undefined : (product.stock ? firstIn(c) : product.sizes[2] ?? product.sizes[0]); return s ? { [s]: 1 } : {}; };
   const [qty, setQty] = useState<Record<string, number>>(() => startQty(startColour.name));
   const total = Object.values(qty).reduce((n, q) => n + q, 0);
@@ -73,8 +75,12 @@ export function QuickView({ product, onClose, onSizeGuide, onAdded }: { product:
     <Overlay title="Quick view" onClose={onClose}>
       <div className="grid gap-6 p-5 md:grid-cols-[0.9fr_1.1fr] md:p-7">
         <div className="relative mx-auto grid aspect-square max-h-[75vh] w-full place-items-center self-start overflow-hidden rounded-2xl md:sticky md:top-0 bg-gradient-to-br from-slate-50 to-slate-100">
-          <ProductPicture product={product} colour={colour.hex} className={product.photoUrl ? '' : 'w-4/5'} />
+          <ProductPicture product={{ ...product, photoUrl: photos[shown] ?? product.photoUrl }} colour={colour.hex} className={product.photoUrl ? '' : 'w-4/5'} />
           <WishButton product={product} className="absolute right-3 top-3" />
+          {photos.length > 1 && <div className="absolute inset-x-0 bottom-3 flex justify-center gap-2">
+            {photos.map((url, i) => <button key={url} type="button" onClick={() => setShown(i)} aria-label={`Photo ${i + 1} of ${photos.length}`} aria-pressed={i === shown}
+              className={`size-14 overflow-hidden rounded-lg bg-white shadow ring-2 ${i === shown ? 'ring-indigo-600' : 'ring-white/80 hover:ring-indigo-300'}`}><img src={url} alt="" loading="lazy" className="h-full w-full object-cover" /></button>)}
+          </div>}
         </div>
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-indigo-600">{product.category}</p>

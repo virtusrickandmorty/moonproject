@@ -16,6 +16,7 @@ import { stamp } from '../../platform/clock.ts';
 import { stockOf } from './public.ts';
 
 export const SHAPES = ['tee', 'polo', 'jersey', 'jacket', 'hoodie', 'shorts'] as const;
+/** The usual sizes, offered first when a product's sizes are typed; any other size can be typed too. */
 export const SIZES = ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'] as const;
 export const MAX_PHOTO_BYTES = 4 * 1024 * 1024;
 
@@ -28,7 +29,8 @@ export const productInput = z.object({
   minQty: z.number().int().min(1).max(10_000), leadDays: z.number().int().min(0).max(365),
   badge: text(0, 30).transform((v) => v || null), summary: text(1, 300), sortOrder: z.number().int().min(-9999).max(9999),
   features: z.array(text(1, 100)).max(8),
-  sizes: z.array(z.enum(SIZES)).min(1).refine((s) => new Set(s).size === s.length, 'sizes'),
+  // Typed like the colours (the owner's request, Oct 2026): any size, in the order given, each once.
+  sizes: z.array(text(1, 20)).min(1).max(20).refine((s) => new Set(s.map((x) => x.toUpperCase())).size === s.length, 'Each size once.'),
   colours: z.array(z.object({ name: text(1, 30), hex: z.string().regex(/^#[0-9a-fA-F]{6}$/).transform((h) => h.toLowerCase()) }).strict()).min(1).max(12),
 }).strict().refine((p) => p.regularPriceCents === null || p.regularPriceCents > p.priceCents,
   { message: 'The regular price (before the sale) must be higher than the sale price.', path: ['regularPriceCents'] });
@@ -36,18 +38,25 @@ export type ProductInput = z.infer<typeof productInput>;
 
 interface Row {
   id: string; name: string; category: string; category_id: string | null; category_name: string | null; shape: string; price_cents: number; regular_price_cents: number | null; made_to_order: number; min_qty: number; lead_days: number;
-  badge: string | null; summary: string; sort_order: number; photo_id: string | null; is_active: number; version: number; updated_at: string;
+  badge: string | null; summary: string; sort_order: number; photo_id: string | null; photo2_id: string | null; photo3_id: string | null; is_active: number; version: number; updated_at: string;
 }
 
 /** A product as the website and the staff screen see it: its current version's lists, in order. */
 /** Products with the name their category has now (renaming a category renames it on every product). */
 const PRODUCTS = 'SELECT p.*, c.name AS category_name, c.sort_order AS category_order FROM shp_products p LEFT JOIN shp_categories c ON c.id = p.category_id';
+/** The most photos a product has (the owner's request, Oct 2026). */
+export const MAX_PHOTOS = 3;
+const SLOTS = ['photo_id', 'photo2_id', 'photo3_id'] as const;
+const photosOf = (r: Row) => SLOTS.map((k) => r[k]).filter((id): id is string => !!id);
+
 function shape(db: Db, r: Row) {
   const lines = <T>(table: string, cols: string) => db.prepare(`SELECT ${cols} FROM ${table} WHERE product_id = ? AND version = ? ORDER BY position`).all(r.id, r.version) as T[];
   return {
     id: r.id, name: r.name, category: r.category_name ?? r.category, categoryId: r.category_id, shape: r.shape, priceCents: r.price_cents, regularPriceCents: r.regular_price_cents, madeToOrder: r.made_to_order === 1,
     minQty: r.min_qty, leadDays: r.lead_days, badge: r.badge, summary: r.summary, sortOrder: r.sort_order,
-    photoUrl: r.photo_id ? `/api/shp/photos/${r.photo_id}` : null, isActive: r.is_active === 1, version: r.version, updatedAt: r.updated_at,
+    photoUrl: r.photo_id ? `/api/shp/photos/${r.photo_id}` : null,
+    // All its photos, the main one first (the owner's request, Oct 2026: up to three).
+    photoUrls: photosOf(r).map((id) => `/api/shp/photos/${id}`), isActive: r.is_active === 1, version: r.version, updatedAt: r.updated_at,
     features: lines<{ text: string }>('shp_product_features', 'text').map((f) => f.text),
     sizes: lines<{ size: string }>('shp_product_sizes', 'size').map((s) => s.size),
     colours: lines<{ name: string; hex: string }>('shp_product_colours', 'name, hex'),
@@ -59,8 +68,7 @@ function writeLists(db: Db, id: string, version: number, p: ProductInput): void 
   const size = db.prepare('INSERT INTO shp_product_sizes (product_id, version, position, size) VALUES (?, ?, ?, ?)');
   const feature = db.prepare('INSERT INTO shp_product_features (product_id, version, position, text) VALUES (?, ?, ?, ?)');
   p.colours.forEach((c, i) => colour.run(id, version, i, c.name, c.hex));
-  // Sizes always in the usual order, whatever order they were ticked in.
-  [...p.sizes].sort((a, b) => SIZES.indexOf(a) - SIZES.indexOf(b)).forEach((s, i) => size.run(id, version, i, s));
+  p.sizes.forEach((s, i) => size.run(id, version, i, s));
   p.features.forEach((f, i) => feature.run(id, version, i, f));
 }
 
@@ -101,7 +109,7 @@ export function shpRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   /** A shown product's current photo (a hidden product's is not found); never run as a page of this site (sandbox, nosniff). The id changes with every upload. */
   app.get<{ Params: { photoId: string } }>('/api/shp/photos/:photoId', { config: { permission: 'public' } }, async (req, reply) => {
-    const p = db.prepare(`SELECT ph.content_type, ph.data FROM shp_photos ph JOIN shp_products pr ON pr.photo_id = ph.id WHERE ph.id = ? AND pr.is_active = 1`)
+    const p = db.prepare(`SELECT ph.content_type, ph.data FROM shp_photos ph JOIN shp_products pr ON ph.id IN (pr.photo_id, pr.photo2_id, pr.photo3_id) WHERE ph.id = ? AND pr.is_active = 1`)
       .get(req.params.photoId) as { content_type: string; data: Buffer } | undefined;
     if (!p) throw notFound('The photo');
     return reply.type(p.content_type).header('Content-Security-Policy', "sandbox; default-src 'none'; frame-ancestors 'none'")
@@ -163,6 +171,14 @@ export function shpRoutes(app: FastifyInstance, deps: AppDeps): void {
     });
   }
 
+  const slotOf = (req: FastifyRequest) => {
+    const s = (req.query as { slot?: string }).slot ?? '1';
+    if (!/^[1-9]$/.test(s) || Number(s) > MAX_PHOTOS) throw new AppError('VALIDATION', `A product has up to ${MAX_PHOTOS} photos.`, 400);
+    return Number(s);
+  };
+  const savePhotos = (id: string, photos: string[], at: string) =>
+    db.prepare('UPDATE shp_products SET photo_id = ?, photo2_id = ?, photo3_id = ?, updated_at = ? WHERE id = ?').run(photos[0] ?? null, photos[1] ?? null, photos[2] ?? null, at, id);
+
   // The photo is the request body itself, like document attachments, with its own size limit.
   app.register(async (upload) => {
     upload.addHook('preParsing', async (req) => { if (Number(req.headers['content-length'] ?? 0) > MAX_PHOTO_BYTES) throw tooBig(); });
@@ -172,29 +188,35 @@ export function shpRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (size > MAX_PHOTO_BYTES) throw tooBig();
       return Buffer.concat(chunks);
     });
+    // ?slot=1|2|3: which photo it is (1, the main one, when not said); a slot after the photos there takes the next free one.
     upload.post('/api/shp/products/:id/photo', { config: { permission: 'shp.manage' } }, async (req) => {
       const data = req.body;
       const type = Buffer.isBuffer(data) ? sniffType(data) : null;
       if (!Buffer.isBuffer(data) || !data.length || !type || type === 'application/pdf') throw new AppError('FILE_TYPE', 'Only JPEG, PNG or WebP photos can be used.', 415);
+      const slot = slotOf(req);
       const at = stamp(clock);
       return tx(db, () => {
         const r = row(idOf(req));
         const photoId = newId();
         db.prepare('INSERT INTO shp_photos (id, product_id, content_type, bytes, sha256, data, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
           .run(photoId, r.id, type, data.length, sha256Hex(data), data, currentUser(req).userId, at);
-        db.prepare('UPDATE shp_products SET photo_id = ?, updated_at = ? WHERE id = ?').run(photoId, at, r.id);
-        audit(req, at, 'shp.product.photo', r.id, { name: r.name, photoId, bytes: data.length });
+        const photos = photosOf(r);
+        photos[Math.min(slot, photos.length + 1) - 1] = photoId;
+        savePhotos(r.id, photos, at);
+        audit(req, at, 'shp.product.photo', r.id, { name: r.name, photoId, slot: photos.indexOf(photoId) + 1, bytes: data.length });
         return shape(db, row(r.id));
       });
     });
   });
 
+  // Takes one photo off (?slot=, 1 when not said); those after it move up, so the main one is always the first there is.
   app.post('/api/shp/products/:id/photo/remove', { config: { permission: 'shp.manage' } }, async (req) => {
+    const slot = slotOf(req);
     const at = stamp(clock);
     return tx(db, () => {
       const r = row(idOf(req));
-      db.prepare('UPDATE shp_products SET photo_id = NULL, updated_at = ? WHERE id = ?').run(at, r.id);
-      audit(req, at, 'shp.product.photo_remove', r.id, { name: r.name });
+      savePhotos(r.id, photosOf(r).filter((_, i) => i !== slot - 1), at);
+      audit(req, at, 'shp.product.photo_remove', r.id, { name: r.name, slot });
       return shape(db, row(r.id));
     });
   });

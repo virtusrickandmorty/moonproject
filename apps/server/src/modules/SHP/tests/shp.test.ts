@@ -23,7 +23,7 @@ describe('website shop products', () => {
     const made = await owner.post('/api/shp/products', jersey());
     expect(made.statusCode, made.body).toBe(200);
     const p = made.json() as { id: string; version: number; sizes: string[]; colours: { hex: string }[] };
-    expect(p.sizes).toEqual(['S', 'M', 'XL']);
+    expect(p.sizes).toEqual(['XL', 'S', 'M']); // in the order given, like the colours
     expect(p.colours[0]!.hex).toBe('#1f3bb3');
 
     const changed = await owner.put(`/api/shp/products/${p.id}`, jersey({ name: 'Renamed jersey', sizes: ['L'], features: [] }), { 'if-match': '1' });
@@ -46,9 +46,9 @@ describe('website shop products', () => {
   it('hides and shows a product, keeping its lists', async () => {
     const owner = await env.as('owner');
     const p = (await owner.post('/api/shp/products', jersey())).json() as { id: string };
-    expect((await owner.post(`/api/shp/products/${p.id}/hide`, {}, { 'if-match': '1' })).json()).toMatchObject({ isActive: false, version: 2, sizes: ['S', 'M', 'XL'] });
+    expect((await owner.post(`/api/shp/products/${p.id}/hide`, {}, { 'if-match': '1' })).json()).toMatchObject({ isActive: false, version: 2, sizes: ['XL', 'S', 'M'] });
     expect(await publicList()).toEqual([]);
-    expect((await owner.post(`/api/shp/products/${p.id}/show`, {}, { 'if-match': '2' })).json()).toMatchObject({ isActive: true, sizes: ['S', 'M', 'XL'] });
+    expect((await owner.post(`/api/shp/products/${p.id}/show`, {}, { 'if-match': '2' })).json()).toMatchObject({ isActive: true, sizes: ['XL', 'S', 'M'] });
     expect(await publicList()).toHaveLength(1);
   });
 
@@ -88,5 +88,38 @@ describe('website shop products', () => {
     expect((await (await env.as('accountant')).post('/api/shp/products', jersey())).statusCode).toBe(403);
     expect((await (await env.as('production')).get('/api/shp/admin/products')).statusCode).toBe(403);
     expect((await env.app.inject({ method: 'GET', url: '/api/shp/admin/products' })).statusCode).toBe(401);
+  });
+});
+
+describe('up to three photos, and sizes typed like the colours (the owner\'s request, Oct 2026)', () => {
+  const up = (owner: Awaited<ReturnType<TestEnv['as']>>, id: string, slot: number) => owner.post(`/api/shp/products/${id}/photo?slot=${slot}`, PNG, { 'content-type': 'application/octet-stream' });
+  type Shown = { photoUrl: string | null; photoUrls: string[] };
+
+  it('keeps three photos, the first the main one; a removed one moves the others up; a fourth place is refused', async () => {
+    const owner = await env.as('owner');
+    const p = (await owner.post('/api/shp/products', jersey())).json() as { id: string };
+    for (const slot of [1, 2, 3]) expect((await up(owner, p.id, slot)).statusCode).toBe(200);
+    expect((await up(owner, p.id, 4)).statusCode).toBe(400);
+    const three = (await publicList())[0] as unknown as Shown;
+    expect(three.photoUrls).toHaveLength(3);
+    expect(three.photoUrl).toBe(three.photoUrls[0]);
+    for (const url of three.photoUrls) expect((await env.app.inject({ method: 'GET', url })).statusCode).toBe(200);
+
+    const after = (await owner.post(`/api/shp/products/${p.id}/photo/remove?slot=1`, {})).json() as Shown;
+    expect(after.photoUrls).toEqual(three.photoUrls.slice(1)); // the second is the main one now
+    expect(after.photoUrl).toBe(three.photoUrls[1]);
+    // Slot 3 with two there takes the next free place.
+    expect(((await up(owner, p.id, 3)).json() as Shown).photoUrls).toHaveLength(3);
+  });
+
+  it('takes any typed size, in the order given, each once; stock is kept by it', async () => {
+    const owner = await env.as('owner');
+    const p = (await owner.post('/api/shp/products', jersey({ sizes: ['4', '6', '8', 'Free size'], madeToOrder: false }))).json() as { id: string; sizes: string[] };
+    expect(p.sizes).toEqual(['4', '6', '8', 'Free size']);
+    expect((await owner.post('/api/shp/products', jersey({ sizes: ['M', 'm'] }))).statusCode).toBe(400);
+    expect((await owner.post('/api/shp/products', jersey({ sizes: ['x'.repeat(21)] }))).statusCode).toBe(400);
+    const s = await owner.post(`/api/shp/products/${p.id}/stock`, { mode: 'in', lines: [{ size: '6', colour: 'Royal', qty: 3 }] });
+    expect(s.statusCode, s.body).toBe(200);
+    expect((s.json() as { lines: { size: string; onHand: number }[] }).lines.find((l) => l.size === '6')?.onHand).toBe(3);
   });
 });
