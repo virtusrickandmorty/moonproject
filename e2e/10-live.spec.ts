@@ -28,7 +28,7 @@ test('an open report loads again by itself when something is recorded elsewhere,
   await signIn(reading);
   await signIn(adding);
   await reading.goto('/rpt/trial-balance');
-  await expect(reading.getByText('As of', { exact: false }).first()).toBeVisible();
+  await expect(reading.getByLabel('As of')).toHaveValue(/^\d{4}-\d{2}-\d{2}$/); // the server's today, once it is known
   const asOf = await reading.getByLabel('As of').inputValue();
 
   // The whole ERP is live (the owner's request, Oct 2026): the report asks for its figures again, with its dates.
