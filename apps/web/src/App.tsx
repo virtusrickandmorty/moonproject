@@ -2,6 +2,7 @@
  * Start-up: first owner if nobody exists yet, else sign in, forced password change, then the shell.
  * Everything shown comes from the server on each load; nothing is kept in browser storage (NR-11).
  */
+import { ProductionEntriesPage } from './modules/PRD/EntriesByJobOrder.tsx';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, ApiError, type DocTypeInfo, type Me } from './api.ts';
 import { Link, LinkAccess, match, navigate, useLocation } from './router.tsx';
@@ -69,11 +70,13 @@ function Stages() {
   });
   const [path = '/', query = ''] = location.split('?');
   const fromQuotation = new URLSearchParams(query).get('from-quotation');
+  // Production entries: every entry, or grouped by job order (the owner's request, Oct 2026).
+  const withEntriesView = (key: string, list: ReactNode) => (key === 'prd.entry' ? <ProductionEntriesPage me={stage.me} list={list} /> : list);
   const typeOf = (key = '') => stage.docTypes.find((d) => d.key === key);
   const routes: [string, (p: Record<string, string>, t: DocTypeInfo) => ReactNode][] = [
     // Every list opens New, a document and its Edit over itself (?new, ?view=<id>, ?edit=<id>); their own addresses
     // (/docs/<type>/new, /docs/<type>/<id>, …/edit) still open the full page. Job orders: 20 a page.
-    ['/docs/:type', (_, t) => <DocList key={t.key} type={t} notice={fromQuotation && t.key === 'jo.job_order' ? JOB_ORDER_LATER(fromQuotation) : undefined}
+    ['/docs/:type', (_, t) => withEntriesView(t.key, <DocList key={t.key} type={t} notice={fromQuotation && t.key === 'jo.job_order' ? JOB_ORDER_LATER(fromQuotation) : undefined}
       {...(t.key === 'pur.po' || t.key === 'jo.opening' || t.key === 'quo.quotation' || t.key === 'qs.sale' ? { formSize: 'screen' as const } : {})}
       {...(t.key === 'jo.job_order' ? { pageSize: 20, formSize: 'screen' as const, searchTools: jobOrderScan, others: jobOrderOthers(stage.docTypes, (t, mode) => <Form type={t} me={stage.me} mode={mode} />), source: jobOrderSource, columns: jobOrderColumns, detail: jobOrderDetail, searchHint: JOB_ORDER_SEARCH, rowActions: jobOrderActions(stage.docTypes) } : {})}
       opened={openedFrom(query)} noEdit={VIEWS[t.key]?.noEdit} formTitled={t.key === 'jo.job_order' || t.key === 'pur.po' || t.key === 'jo.opening' || t.key === 'qs.sale'}
@@ -81,7 +84,7 @@ function Stages() {
         ? (t.key === 'jo.job_order' ? <JobOrderForm type={t} me={stage.me} mode={mode} inDialog={{ close, setDirty, show }} />
           : t.key === 'qs.sale' ? <QuickSaleForm type={t} me={stage.me} mode={mode} inDialog={{ close, setDirty, show }} /> : <Form type={t} me={stage.me} mode={mode} />)
         : NO_ACCESS : undefined}
-      view={({ id, recorded, cancel, refresh }: Parameters<ListView>[0]) => <DocView key={id} type={t} id={id} recorded={recorded} parts={VIEWS[t.key]} inDialog={{ refresh }} startCancel={cancel} />} />],
+      view={({ id, recorded, cancel, refresh }: Parameters<ListView>[0]) => <DocView key={id} type={t} id={id} recorded={recorded} parts={VIEWS[t.key]} inDialog={{ refresh }} startCancel={cancel} />} />)],
     ['/docs/:type/new', (_, t) => !t.canCreate ? NO_ACCESS : <Form key={location} type={t} me={stage.me} mode={{ kind: 'new', draftId: new URLSearchParams(query).get('draft') ?? undefined }} />],
     ['/docs/:type/:id/edit', (p, t) => !(t.canPost && t.canCancel) ? NO_ACCESS : <Form key={location} type={t} me={stage.me} mode={{ kind: 'edit', id: p.id! }} />],
     ['/docs/:type/:id', (p, t) => <DocView key={p.id} type={t} id={p.id!} recorded={query === 'recorded=1'} parts={VIEWS[t.key]} />],

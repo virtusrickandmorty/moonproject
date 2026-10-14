@@ -7,7 +7,7 @@ import { AppError, conflict, notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { reissueDocument, type Actor, type EngineEnv } from '../../engine/documents/lifecycle.ts';
 import type { DocTypeDef } from '../../engine/documents/registry.ts';
-import { currentStage, jobOrderRef, lineState, rosterOf } from '../JO/public.ts';
+import { currentStage, jobOrderRef, lineState, liveReplacementOf, rosterOf, stagesAll } from '../JO/public.ts';
 import { lineDone, lineRoute, lineSetup } from './production.ts';
 
 export interface SummaryRow {
@@ -42,6 +42,35 @@ export function jobSummary(db: Db, jobOrderId: string) {
     jobOrder: { id: jo.id, number: jo.number, customerName: jo.customerName, dueDate: jo.dueDate, stage: currentStage(db, jo.id) },
     allDone: lines.length > 0 && lines.every((l) => l.done), lines,
   };
+}
+
+/**
+ * The production entries grouped by job order (the owner's request, Oct 2026): each job order with the entries recorded on
+ * it (an edited job order's under the one it lives on as now), the pieces, the workers, the last work date and its stage;
+ * newest work first. `q`: a job order number or customer name.
+ */
+export function entriesByJobOrder(db: Db, q = '') {
+  const raw = db.prepare(`SELECT e.job_order_id AS jo, COUNT(DISTINCT e.document_id) AS entries, SUM(a.pieces) AS pieces,
+      json_group_array(DISTINCT a.employee_id) AS workers, MAX(a.work_date) AS lastWorkDate
+    FROM prd_entries e JOIN documents d ON d.id = e.document_id AND d.status = 'posted' JOIN prd_assignments a ON a.document_id = e.document_id
+    GROUP BY e.job_order_id`).all() as { jo: string; entries: number; pieces: number; workers: string; lastWorkDate: string }[];
+  const stages = stagesAll(db);
+  const by = new Map<string, { id: string; number: string; customerName: string; entries: number; pieces: number; workers: Set<string>; lastWorkDate: string }>();
+  for (const r of raw) {
+    const own = jobOrderRef(db, r.jo);
+    const live = own?.status === 'posted' ? own : liveReplacementOf(db, r.jo); // itself, or the job order an edit made of it
+    if (!live) continue; // its job order was cancelled for good
+    const g = by.get(live.id) ?? { id: live.id, number: live.number, customerName: live.customerName, entries: 0, pieces: 0, workers: new Set<string>(), lastWorkDate: '' };
+    g.entries += r.entries; g.pieces += r.pieces;
+    for (const w of JSON.parse(r.workers) as string[]) g.workers.add(w);
+    if (r.lastWorkDate > g.lastWorkDate) g.lastWorkDate = r.lastWorkDate;
+    by.set(live.id, g);
+  }
+  const words = q.trim().toLowerCase();
+  return [...by.values()]
+    .filter((g) => !words || g.number.toLowerCase().includes(words) || g.customerName.toLowerCase().includes(words))
+    .sort((x, y) => y.lastWorkDate.localeCompare(x.lastWorkDate) || y.number.localeCompare(x.number))
+    .map(({ workers, ...g }) => ({ ...g, workers: workers.size, stage: stages.get(g.id) ?? 'open' }));
 }
 
 /**

@@ -67,3 +67,19 @@ it('refuses to change the worker once the entry is paid in a payroll run', async
   expect((await owner.post(`/api/prd/entries/${sewn.id}/reassign`, { rowNo: 1, employeeId: w.sewer2, reason: 'Sewn by the other sewer' })).json()).toMatchObject({ code: 'PAID' });
   expect((await summary(jo)).lines[0]!.steps.find((x) => x.stepId === SEWING)!.rows[0]).toMatchObject({ paid: true });
 });
+
+it('groups the production entries by job order, an edited one under the job order it is now, newest work first', async () => {
+  const jo = await jobOrder();
+  await record(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer1, pieces: 1, wearers: [1] }]);
+  await record(jo, SEWING, [{ lineNo: 1, employeeId: w.sewer2, pieces: 1, wearers: [2] }]);
+  type Row = { id: string; number: string; entries: number; pieces: number; workers: number; stage: string };
+  const list = async (q = '') => ((await production.get(`/api/prd/entries/by-job-order${q ? `?q=${q}` : ''}`)).json() as { rows: Row[] }).rows;
+  expect(await list()).toEqual([expect.objectContaining({ id: jo, entries: 2, pieces: 2, workers: 2 })]);
+  expect(await list('nobody-matches')).toEqual([]);
+
+  // The job order edited: its entries show under the new one.
+  const input = { customerId: c.school, dueInDays: 12, priority: 'normal', paymentTerms: 'full', lines: [{ kind: 'made_to_order', description: 'Team shirt', qty: 2, unitPriceCents: 30_000, discountCents: 0,
+    roster: [['Ana Reyes', 1], ['Ben Cruz', 1]].map(([name, qty]) => ({ name, sizeMode: 'preset', size: 'M', qty })) }] };
+  const edited = (await encoder.post(`/api/docs/jo.job_order/${jo}/reissue`, { input, expectedTotalCents: 60_000, reason: 'Due date moved by the school' }, idem())).json().id as string;
+  expect((await list()).map((r) => [r.id, r.entries])).toEqual([[edited, 2]]);
+});
