@@ -337,6 +337,7 @@ export interface PrdJob {
 export interface PrdWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; lowerSize?: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
 /** `garmentType`: left out, the server takes it (and whether the line is a set) from the price list item the line matches. */
 export interface PrdSummaryRow { assignmentId: string; entryId: string; entryNumber: string; rowNo: number; workDate: string; employeeId: string; employeeName: string; kind: 'work' | 'rework' | 'correction'; pieces: number; part: 'whole' | 'upper' | 'lower'; wearers: string[]; paid: boolean; carried: boolean }
+export interface PrdEntriesByJo { id: string; number: string; customerName: string; entries: number; pieces: number; workers: number; lastWorkDate: string; stage: string }
 export interface PrdSummary {
   jobOrder: { id: string; number: string; customerName: string; dueDate: string; stage: string };
   allDone: boolean;
@@ -1157,6 +1158,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     prdWorkers: () => call<Worker[]>('GET', '/api/prd/workers'),
     /** A job order's production summary, and moving a recorded row to another worker (the owner's request, Oct 2026). */
     prdSummary: (jo: string) => call<PrdSummary>('GET', `${prdJob(jo)}/summary`),
+    prdEntriesByJobOrder: (q = '') => call<{ rows: PrdEntriesByJo[] }>('GET', `/api/prd/entries/by-job-order${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ''}`),
     prdReassign: (entryId: string, body: { rowNo: number; employeeId: string; reason: string }) => call<unknown>('POST', `/api/prd/entries/${encodeURIComponent(entryId)}/reassign`, body),
     rates: () => call<RateTable>('GET', '/api/rate/rates'),
     addRate: (body: Omit<PieceRate, 'id' | 'createdAt'>) => call<PieceRate>('POST', '/api/rate/rates', body),

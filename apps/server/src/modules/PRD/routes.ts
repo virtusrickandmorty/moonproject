@@ -11,7 +11,7 @@ import { currentStage, jobOrderRef, lineState, rosterOf } from '../JO/public.ts'
 import { garmentTypes } from '../RATE/public.ts';
 import { activeEmployees } from './emp.ts';
 import { carryWarnings } from './carry.ts';
-import { jobSummary, reassignWorker } from './summary.ts';
+import { entriesByJobOrder, jobSummary, reassignWorker } from './summary.ts';
 import { COMPLEXITIES, SET_PARTS, availableFor, board, forwardedWearers, lineRoute, lineSetup, listSteps, listTemplates, reworkOpen, sendBackForRework, setupLine, stepAction, stepById, wearersDone, type StepAction } from './production.ts';
 
 const setupBody = z
@@ -78,6 +78,8 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   /** The job order's production summary: every step of every item, who made what, with the wearers (the owner's request, Oct 2026). */
   app.get<{ Params: { jo: string } }>('/api/prd/jobs/:jo/summary', { config: { permission: 'prd.view' } }, async (req) => jobSummary(db, req.params.jo));
+  /** The production entries grouped by job order (the owner's request, Oct 2026); ?q= a job order number or customer. */
+  app.get('/api/prd/entries/by-job-order', { config: { permission: 'prd.view' } }, async (req) => ({ rows: entriesByJobOrder(db, String((req.query as { q?: unknown }).q ?? '')) }));
   /** Moves a recorded row to another worker, while its entry is not paid: the owner and the accountant only. */
   const reassignBody = z.object({ rowNo: z.number().int().min(1), employeeId: z.string().min(1).max(64), reason: z.string().trim().min(10).max(300) }).strict();
   app.post<{ Params: { id: string } }>('/api/prd/entries/:id/reassign', { config: { permission: 'prd.reassign' } }, async (req) => {
