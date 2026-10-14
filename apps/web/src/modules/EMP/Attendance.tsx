@@ -83,9 +83,13 @@ export function Attendance({ me }: { me: Me }) {
   const [pieceCount, setPieceCount] = useState(0);
   const a = useAction();
   const [editing, setEditing] = useState<{ employeeId: string; date: string } | null>(null);
-  const load = useCallback(async (r: { from: string; to: string }) => {
-    setError('');
+  // Marks not saved yet are never reloaded away: a change elsewhere shows once they are saved or undone.
+  const holding = useRef(false);
+  const load = useCallback(async (r: { from: string; to: string }, live = false) => {
+    if (!live) setError('');
     const all = await api.attendance(r.from, r.to).catch((e: Error) => (setError(e.message), null));
+    // A live reload that was already on its way when a day was marked leaves the sheet as it is (it wiped the mark).
+    if (live && holding.current) return;
     const piece = new Set(all?.employees.filter((e) => e.pieceRate).map((e) => e.id) ?? []);
     setPieceCount(piece.size);
     const g = all && !showPiece ? { ...all, employees: all.employees.filter((e) => !piece.has(e.id)), days: all.days.filter((d) => !piece.has(d.employeeId)) } : all;
@@ -98,9 +102,7 @@ export function Attendance({ me }: { me: Me }) {
     api.health().then((h) => setRange(halfMonthOf(h.serverTime.slice(0, 10))), (e: Error) => setError(e.message)); // the server's Manila date
   }, []);
   useEffect(() => void (range && load(range)), [range, load]);
-  // Marks not saved yet are never reloaded away: a change elsewhere shows once they are saved or undone.
-  const holding = useRef(false);
-  useLiveReload(() => range && load(range), () => !holding.current);
+  useLiveReload(() => range && load(range, true), () => !holding.current);
 
   if (error && !grid) return <Notice>{error}</Notice>;
   if (!grid || !range) return <Loading />;
