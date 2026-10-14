@@ -18,6 +18,7 @@ export default defineModule({
     { key: 'prd.assign', label: 'Record and cancel workers’ pieces (production entries)', defaultRoles: ['encoder', 'accountant', 'owner', 'production'] },
     { key: 'prd.progress', label: 'Set a line’s route, and mark steps completed, not needed or reopened', defaultRoles: ['encoder', 'accountant', 'owner', 'production'] },
     { key: 'prd.steps', label: 'Rename production steps and switch them on or off', defaultRoles: ['accountant', 'owner'] },
+    { key: 'prd.reassign', label: 'Change the worker on pieces already recorded (not yet paid)', defaultRoles: ['accountant', 'owner'] },
   ],
   docTypes: [entryDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),

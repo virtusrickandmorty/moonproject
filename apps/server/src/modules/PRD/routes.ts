@@ -5,12 +5,13 @@ import type { AppDeps } from '../../app.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { clockGuard } from '../../engine/documents/lifecycle.ts';
+import { clockGuard, engineEnv } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { currentStage, jobOrderRef, lineState, rosterOf } from '../JO/public.ts';
 import { garmentTypes } from '../RATE/public.ts';
 import { activeEmployees } from './emp.ts';
 import { carryWarnings } from './carry.ts';
+import { jobSummary, reassignWorker } from './summary.ts';
 import { COMPLEXITIES, SET_PARTS, availableFor, board, forwardedWearers, lineRoute, lineSetup, listSteps, listTemplates, reworkOpen, sendBackForRework, setupLine, stepAction, stepById, wearersDone, type StepAction } from './production.ts';
 
 const setupBody = z
@@ -73,6 +74,16 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
       };
     });
     return { jobOrder: { id: jo.id, number: jo.number, status: jo.status, customerName: jo.customerName, dueDate: jo.dueDate, priority: jo.priority, stage: currentStage(db, jo.id) }, lines };
+  });
+
+  /** The job order's production summary: every step of every item, who made what, with the wearers (the owner's request, Oct 2026). */
+  app.get<{ Params: { jo: string } }>('/api/prd/jobs/:jo/summary', { config: { permission: 'prd.view' } }, async (req) => jobSummary(db, req.params.jo));
+  /** Moves a recorded row to another worker, while its entry is not paid: the owner and the accountant only. */
+  const reassignBody = z.object({ rowNo: z.number().int().min(1), employeeId: z.string().min(1).max(64), reason: z.string().trim().min(10).max(300) }).strict();
+  app.post<{ Params: { id: string } }>('/api/prd/entries/:id/reassign', { config: { permission: 'prd.reassign' } }, async (req) => {
+    const body = reassignBody.parse(req.body);
+    const user = currentUser(req);
+    return reassignWorker(engineEnv(deps), deps.registry.docType('prd.entry')!, { userId: user.userId, permissions: user.permissions }, req.params.id, body);
   });
 
   app.post<{ Params: LineParams }>('/api/prd/jobs/:jo/lines/:line/setup', { config: { permission: 'prd.progress' } }, async (req) => {

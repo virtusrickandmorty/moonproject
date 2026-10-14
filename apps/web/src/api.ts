@@ -336,6 +336,12 @@ export interface PrdJob {
 }
 export interface PrdWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; lowerSize?: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
 /** `garmentType`: left out, the server takes it (and whether the line is a set) from the price list item the line matches. */
+export interface PrdSummaryRow { assignmentId: string; entryId: string; entryNumber: string; rowNo: number; workDate: string; employeeId: string; employeeName: string; kind: 'work' | 'rework' | 'correction'; pieces: number; part: 'whole' | 'upper' | 'lower'; wearers: string[]; paid: boolean; carried: boolean }
+export interface PrdSummary {
+  jobOrder: { id: string; number: string; customerName: string; dueDate: string; stage: string };
+  allDone: boolean;
+  lines: { lineNo: number; description: string; qty: number; isSet: boolean; done: boolean; steps: { stepId: number; name: string; status: StepStatus; rows: PrdSummaryRow[] }[] }[];
+}
 export interface PrdSetup { templateId?: number; stepIds: number[]; garmentType?: string; complexity: string; isSet?: boolean }
 export interface Worker { id: string; code: string; name: string }
 export interface PieceRate { id: number; garmentType: string; stepCode: string; complexity: string; part?: 'whole' | 'upper' | 'lower'; rateCents: number; effectiveFrom: string; reason: string; createdAt: string }
@@ -1149,6 +1155,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** What an edit of a job order does to its production: `extra`, work kept as extras (confirmed before Record); `changed`, a warning. */
     prdCarryCheck: (jo: string, lines: unknown[]) => call<{ warnings: { kind: 'extra' | 'changed'; message: string }[] }>('POST', prdJob(jo, '/carry-check'), { lines }),
     prdWorkers: () => call<Worker[]>('GET', '/api/prd/workers'),
+    /** A job order's production summary, and moving a recorded row to another worker (the owner's request, Oct 2026). */
+    prdSummary: (jo: string) => call<PrdSummary>('GET', `${prdJob(jo)}/summary`),
+    prdReassign: (entryId: string, body: { rowNo: number; employeeId: string; reason: string }) => call<unknown>('POST', `/api/prd/entries/${encodeURIComponent(entryId)}/reassign`, body),
     rates: () => call<RateTable>('GET', '/api/rate/rates'),
     addRate: (body: Omit<PieceRate, 'id' | 'createdAt'>) => call<PieceRate>('POST', '/api/rate/rates', body),
     /** Switch a garment type's piece rates off (refused while a job order item is made as it) or on again, with the reason. */

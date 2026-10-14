@@ -35,7 +35,7 @@ function need(actor: Actor, perm: string): void {
   if (!actor.permissions.has(perm)) throw forbidden(perm);
 }
 
-function context(env: EngineEnv, actor: Actor, businessDate?: string): DocContext {
+function context(env: EngineEnv, actor: Actor, businessDate?: string, replacesId?: string | null): DocContext {
   return {
     db: env.db,
     businessDate: businessDate ?? today(env.clock),
@@ -43,6 +43,7 @@ function context(env: EngineEnv, actor: Actor, businessDate?: string): DocContex
     at: stamp(env.clock),
     userId: actor.userId,
     can: (p) => actor.permissions.has(p),
+    ...(replacesId ? { replacesId } : {}),
   };
 }
 
@@ -149,7 +150,7 @@ export interface PostRequest {
 function postInTx(env: EngineEnv, def: DocTypeDef, actor: Actor, req: PostRequest, replacesId: string | null): PostResult {
   const db = env.db;
   const input = parseInput(def, req.input);
-  const ctx = context(env, actor, resolveBusinessDate(def, actor, env, req.businessDate));
+  const ctx = context(env, actor, resolveBusinessDate(def, actor, env, req.businessDate), replacesId);
   const doc = def.compute(input, ctx);
   if (doc.totalCents !== req.expectedTotalCents) {
     throw conflict('TOTALS_CHANGED', 'Totals changed. Please review again before recording.', { totalCents: doc.totalCents });

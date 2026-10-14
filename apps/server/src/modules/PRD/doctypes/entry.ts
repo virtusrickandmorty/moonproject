@@ -23,7 +23,7 @@
 import { z } from 'zod';
 import fc from 'fast-check';
 import { conflict, isBusinessDate, manilaDate, newId, type Issue } from '@moonproject/shared';
-import type { DocTypeDef } from '../../../engine/documents/registry.ts';
+import type { DocContext, DocTypeDef } from '../../../engine/documents/registry.ts';
 import { jobOrderRef, jobOrdersOf, lineState, rosterOf } from '../../JO/public.ts';
 import { rateAt } from '../../RATE/public.ts';
 import { activeEmployees, employee } from '../emp.ts';
@@ -79,6 +79,16 @@ export interface Entry extends Omit<EntryInput, 'rows' | 'workDate'> {
   rows: Assignment[];
   pieces: number;
   totalCents: number;
+}
+
+/**
+ * An edit of an entry (reissue) re-records the same work: a line the replaced entry had pieces on, on the same step, may
+ * be recorded again though the step was completed since (the owner's request, Oct 2026: change the worker afterwards).
+ */
+function replacedHad(ctx: Pick<DocContext, 'db' | 'replacesId'>, lineNo: number, stepId: number): boolean {
+  if (!ctx.replacesId) return false;
+  return !!ctx.db.prepare('SELECT 1 FROM prd_assignments a JOIN prd_entries e ON e.document_id = a.document_id WHERE a.document_id = ? AND a.line_no = ? AND e.step_id = ? LIMIT 1')
+    .get(ctx.replacesId, lineNo, stepId);
 }
 
 interface Original { id: string; jobOrderId: string; lineNo: number; stepId: number; employeeId: string; pieces: number; garmentType: string; complexity: Complexity; rateCents: number; paid: boolean; corrected: number; part: Part }
@@ -174,7 +184,8 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       else if (!route) add('error', `${f}.lineNo`, 'NO_ROUTE', `${at}: line ${r.lineNo} has no route yet. Set it up on the board first.`);
       else if (!onRoute) add('error', `${f}.lineNo`, 'NOT_ON_ROUTE', `${at}: ${step.name} is not on the route of line ${r.lineNo}.`);
       else if (r.kind !== 'correction' && (onRoute.status === 'completed' || onRoute.status === 'not_needed')
-        && !(r.kind === 'rework' && reworkOpen(ctx.db, jo.id, r.lineNo, step.id, r.part).pieces > 0)) {
+        && !(r.kind === 'rework' && reworkOpen(ctx.db, jo.id, r.lineNo, step.id, r.part).pieces > 0)
+        && !(onRoute.status === 'completed' && replacedHad(ctx, r.lineNo, step.id))) {
         add('error', `${f}.lineNo`, 'STEP_CLOSED', `${at}: ${step.name} of line ${r.lineNo} is ${onRoute.status === 'completed' ? 'completed' : 'marked not needed'}. Reopen it first.`);
       }
       const who = employee(ctx.db, r.employeeId);
