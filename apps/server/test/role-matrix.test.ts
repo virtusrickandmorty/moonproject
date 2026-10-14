@@ -184,6 +184,9 @@ describe('default roles against the plan (C6, E13)', () => {
       // The grid as it was before: the encoder held none of the accountant's permissions, and one extra the owner gave.
       db.prepare(`UPDATE role_permissions SET granted = 0 WHERE role_key = 'encoder' AND permission_key IN (SELECT permission_key FROM role_permissions WHERE role_key = 'accountant' AND granted = 1)`).run();
       db.prepare(`UPDATE role_permissions SET granted = 1 WHERE role_key = 'encoder' AND permission_key = 'prt.test_pack'`).run();
+      // Kept from the encoder since 0014 ran (prd.reassign, Oct 2026): not there yet when it did, so not the accountant's then.
+      const later = OWNER_ONLY_PERMISSIONS.filter((k) => !['sec.users.manage', 'bak.view', 'bak.run', 'bak.manage', 'bak.restore', 'shp.payment.manage'].includes(k));
+      for (const k of later) db.prepare(`UPDATE role_permissions SET granted = 0 WHERE role_key = 'accountant' AND permission_key = ?`).run(k);
       expect(grid().length).toBeLessThan(now.length);
       db.exec(readFileSync(new URL('../src/platform/db/migrations/0014_encoder_access.sql', import.meta.url), 'utf8'));
       expect(grid()).toEqual([...now, 'prt.test_pack'].sort());

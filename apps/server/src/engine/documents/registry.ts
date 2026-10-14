@@ -94,6 +94,8 @@ export interface DocContext {
   at: string;
   userId: string;
   can(permission: string): boolean;
+  /** An edit (reissue): the document this one replaces, cancelled just before in the same transaction. */
+  replacesId?: string;
 }
 
 export interface DocHeader {

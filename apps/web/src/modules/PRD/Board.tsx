@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, type BoardCard, type DocTypeInfo, type Me, type PrdCatalogue, type PrdJob, type StepStatus } from '../../api.ts';
 import { addRewrite, Link, navigate, useLocation } from '../../router.tsx';
 import { EntryForm } from './EntryForm.tsx';
+import { JobSummaryDialog } from './Summary.tsx';
 import { Loading, Button, Dialog, Field, Notice, ReasonDialog, inputClass, useAction, searchClass, showDate } from '../../components/ui.tsx';
 import { TickBar } from '../../components/charts.tsx';
 import { ScanQrButton, jobOrderFromScan, useScannerKeys } from '../../components/QrScan.tsx';
@@ -58,7 +59,7 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
   useScannerKeys((text) => scanned.current(text));
   if (!data) return <div className="space-y-3"><p role="status">{words}</p>{error && <Notice>{error}</Notice>}<Loading /></div>;
   const { cat, cards, today } = data;
-  const can = { progress: me.permissions.includes('prd.progress'), assign: !!docTypes.find((d) => d.key === 'prd.entry')?.canCreate };
+  const can = { progress: me.permissions.includes('prd.progress'), assign: !!docTypes.find((d) => d.key === 'prd.entry')?.canCreate, reassign: me.permissions.includes('prd.reassign') };
   const shown = filterCards(cards, { due, rushOnly, search }, today);
   const card = open && cards.find((c) => c.jobOrderId === open.jobOrderId && c.lineNo === open.lineNo);
   // A job ticket's QR code, from the camera or a USB/Bluetooth scanner (the owner's request, Oct 2026): its item opens
@@ -223,8 +224,9 @@ function recordFor(card: BoardCard, stepId: number | null, canAssign: boolean): 
   return (s.reworkOpen ?? 0) > 0 ? { stepId: s.stepId, rework: true } : null;
 }
 
-function LinePanel({ card, cat, can, entryType, startStep = null, onChanged, onClose }: { card: BoardCard; cat: PrdCatalogue; can: { progress: boolean; assign: boolean }; entryType?: DocTypeInfo | undefined; startStep?: number | null; onChanged: () => Promise<unknown>; onClose: () => void }) {
+function LinePanel({ card, cat, can, entryType, startStep = null, onChanged, onClose }: { card: BoardCard; cat: PrdCatalogue; can: { progress: boolean; assign: boolean; reassign: boolean }; entryType?: DocTypeInfo | undefined; startStep?: number | null; onChanged: () => Promise<unknown>; onClose: () => void }) {
   const [editing, setEditing] = useState(card.steps === null);
+  const [summary, setSummary] = useState(false); // the job order's production summary (the owner's request, Oct 2026)
   // Record pieces (or rework) opened from a step (the owner's request, Oct 2026): the form opens here, for that step only,
   // under the step's card, and comes back to the item window when recorded.
   const [recording, setRecording] = useState<{ stepId: number; rework: boolean } | null>(() => (entryType ? recordFor(card, startStep, can.assign) : null));
@@ -301,7 +303,11 @@ function LinePanel({ card, cat, can, entryType, startStep = null, onChanged, onC
   }
   return (
     <Dialog wide title={`${card.number} · line ${card.lineNo}: ${card.description}`} onClose={onClose}>
-      <p className="text-sm text-slate-600">{card.customerName} · {card.qty} {card.isSet ? 'sets (upper and lower)' : 'pcs'} · due {showDate(card.dueDate)}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-slate-600">{card.customerName} · {card.qty} {card.isSet ? 'sets (upper and lower)' : 'pcs'} · due {showDate(card.dueDate)}</p>
+        <Button onClick={() => setSummary(true)}>Production summary</Button>
+      </div>
+      {summary && <JobSummaryDialog jobOrderId={card.jobOrderId} canReassign={can.reassign} onClose={() => setSummary(false)} />}
       {editing ? (
         <SetupForm card={card} cat={cat} onSaved={() => onChanged().then(() => setEditing(false))} onCancel={card.steps ? () => setEditing(false) : onClose} disabled={!can.progress} />
       ) : (
