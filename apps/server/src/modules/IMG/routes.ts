@@ -95,7 +95,7 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
     const month = today(deps.clock).slice(0, 7);
     return { ...s, month, spentPeso: spentThisMonth(db, month),
       prices: { best: pesoOf(AI_MODELS.best.mills, rate), economy: pesoOf(AI_MODELS.economy.mills, rate), vector: pesoOf(AI_MODELS.vector.mills, rate) },
-      runs: recentRuns(db, 30) };
+      runs: recentRuns(db, 30, (id, step) => { const f = step === 'vectorize' ? 'design.svg' : 'out.png'; return existsSync(join(work, id, f)) ? `/api/img/results/${id}${step === 'vectorize' ? '/design.svg' : ''}` : null; }) };
   });
   app.put('/api/img/ai', { config: { permission: 'img.ai' } }, async (req) =>
     tx(db, () => saveAiSettings(db, req.body, { userId: currentUser(req).userId, at: stamp(deps.clock) })));
@@ -115,22 +115,25 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
       logRun(db, { at: stamp(deps.clock), month, userId, step, model: model.label, ok: false, mills: 0, ms: Date.now() - started, note: e instanceof Error ? e.message : String(e) });
       throw e;
     }
-    logRun(db, { at: stamp(deps.clock), month, userId, step, model: model.label, ok: true, mills: model.mills, ms: Date.now() - started });
+    // A result was given (and charged): kept first, then logged with where it is, so it can be downloaded again.
+    const ms = Date.now() - started;
+    const svg = step === 'vectorize';
+    const got = svg ? (/<svg[\s>]/i.test(bytes.subarray(0, 4096).toString('utf8')) ? 'svg' : null) : sniffType(bytes);
+    const fine = svg ? got === 'svg' : got === 'image/png' || got === 'image/jpeg' || got === 'image/webp';
     tidy();
     const id = randomUUID();
-    const dir = join(work, id);
-    mkdirSync(dir, { recursive: true });
-    const costPeso = pesoOf(model.mills, Math.round(aiSettings(db).ratePeso * 100));
-    if (step === 'vectorize') {
-      if (!/<svg[\s>]/i.test(bytes.subarray(0, 4096).toString('utf8'))) throw new AppError('IMG_AI_FAILED', 'The vectorizer gave something other than an SVG. Try again.', 502);
-      writeFileSync(join(dir, 'design.svg'), bytes);
-      const url = `/api/img/results/${id}/design.svg`;
-      return { id, url, files: { 'design.svg': url }, costPeso, ms: Date.now() - started };
+    if (fine) {
+      mkdirSync(join(work, id), { recursive: true });
+      writeFileSync(join(work, id, svg ? 'design.svg' : 'out.png'), bytes);
     }
-    const got = sniffType(bytes);
-    if (got !== 'image/png' && got !== 'image/jpeg' && got !== 'image/webp') throw new AppError('IMG_AI_FAILED', 'The online AI gave back something that is not a picture. Try again.', 502);
-    writeFileSync(join(dir, 'out.png'), bytes);
-    return { id, url: `/api/img/results/${id}`, bytes: bytes.length, costPeso, ms: Date.now() - started };
+    logRun(db, { at: stamp(deps.clock), month, userId, step, model: model.label, ok: true, mills: model.mills, ms, ...(fine ? { resultId: id } : { note: 'The result was not a picture.' }) });
+    if (!fine) throw new AppError('IMG_AI_FAILED', svg ? 'The vectorizer gave something other than an SVG. Try again.' : 'The online AI gave back something that is not a picture. Try again.', 502);
+    const costPeso = pesoOf(model.mills, Math.round(aiSettings(db).ratePeso * 100));
+    if (svg) {
+      const url = `/api/img/results/${id}/design.svg`;
+      return { id, url, files: { 'design.svg': url }, costPeso, ms };
+    }
+    return { id, url: `/api/img/results/${id}`, bytes: bytes.length, costPeso, ms };
   };
 
   app.post('/api/img/ai/mockup', { bodyLimit: 16 * 1024 * 1024, config: { permission: 'img.ai' } }, async (req) => {

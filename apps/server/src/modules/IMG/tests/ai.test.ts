@@ -35,7 +35,7 @@ afterEach(() => {
 const run = async (query: string, who: Parameters<TestEnv['as']>[0] = 'owner') =>
   (await env.as(who)).post(`/api/img/ai/run?${query}`, smallPng(), { 'content-type': 'application/octet-stream' });
 const settings = async () => (await (await env.as('owner')).get('/api/img/ai')).json() as {
-  keySet: boolean; capPeso: number; ratePeso: number; version: number; spentPeso: number; prices: { best: number; economy: number; vector: number }; runs: { ok: boolean; peso: number; model: string }[];
+  keySet: boolean; capPeso: number; ratePeso: number; version: number; spentPeso: number; prices: { best: number; economy: number; vector: number }; runs: { ok: boolean; peso: number; model: string; url: string | null }[];
 };
 const save = async (body: object) => (await env.as('owner')).put('/api/img/ai', body);
 
@@ -88,6 +88,9 @@ it('redraws and vectorizes through the service, logs what each cost, and stops a
   const s = await settings();
   expect(s.spentPeso).toBe(9.34);
   expect(s.runs.map((x) => [x.model, x.ok, x.peso])).toEqual([['Recraft', true, 0.64], ['Nano Banana Pro', true, 8.7]]);
+  // A paid picture can be downloaded again from the list while it is kept.
+  expect(s.runs.map((x) => x.url)).toEqual([(v.json() as { url: string }).url, (r.json() as { url: string }).url]);
+  expect((await (await env.as('owner')).get(s.runs[1]!.url!)).statusCode).toBe(200);
 });
 
 it('a failed run is logged and costs nothing; Kontext is told to erase the text by name', async () => {

@@ -30,7 +30,9 @@ type SetItem = { blob: Blob; url: string; w: number; h: number };
 type JerseySet = { front?: SetItem; back?: SetItem; mockup?: SetItem };
 const GARMENTS: Record<Garment, string> = { jersey: 'Basketball jersey', tshirt: 'T-shirt', polo: 'Polo shirt', longsleeve: 'Long-sleeve shirt' };
 const toDataUri = (b: Blob) => new Promise<string>((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => no(new Error('The picture could not be read.')); r.readAsDataURL(b); });
-type AiRun = { at: string; step: string; model: string; ok: boolean; peso: number; seconds: number; note: string; who: string };
+type AiRun = { at: string; step: string; model: string; ok: boolean; peso: number; seconds: number; note: string; who: string; url: string | null };
+/** A picture made on this page: kept while the page is open, whatever tool is used next. */
+type Made = { key: number; label: string; kind: 'png' | 'svg'; blob: Blob; url: string; at: Date; costPeso?: number; fileName: string };
 type AiInfo = { keySet: boolean; capPeso: number; ratePeso: number; version: number; month: string; spentPeso: number; prices: { best: number; economy: number; vector: number }; runs: AiRun[] };
 const peso = (n: number) => `₱${n.toFixed(2)}`;
 const MAX_SIDE = 8000; // the largest side a result may have
@@ -63,6 +65,10 @@ export function ImageTools({ me }: { me: Me }) {
   const [backNumber, setBackNumber] = useState('');
   const [set, setSet] = useState<JerseySet>({});
   const [garment, setGarment] = useState<Garment>('jersey');
+  const [made, setMade] = useState<Made[]>([]);
+  const madeKey = useRef(0);
+  const keep = (label: string, kind: 'png' | 'svg', blob: Blob, url: string, fileName: string, costPeso?: number) =>
+    setMade((m) => [{ key: ++madeKey.current, label, kind, blob, url, at: new Date(), costPeso, fileName }, ...m].slice(0, 40));
   const [straighten, setStraighten] = useState(false);
   const [corners, setCorners] = useState<Corners>(START_CORNERS);
   const [clean, setClean] = useState(2);
@@ -92,7 +98,7 @@ export function ImageTools({ me }: { me: Me }) {
   const loadAi = () => { if (canAi) void fetch('/api/img/ai', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() as Promise<AiInfo> : null)).then((a) => a && setAi(a), () => undefined); };
   useEffect(loadAi, []);
 
-  const open = async (f: File | Blob, name: string) => {
+  const open = async (f: File | Blob, name: string, keepSet = false) => {
     if (!/^image\/(png|jpeg|webp)$/.test(f.type)) return setError('Pick a JPEG, PNG or WebP picture.');
     const bmp = await createImageBitmap(f);
     const c = document.createElement('canvas');
@@ -102,7 +108,8 @@ export function ImageTools({ me }: { me: Me }) {
     const [r, g, b] = c.getContext('2d')!.getImageData(0, 0, 1, 1).data; // the corner's colour: usually the background
     setColour([r!, g!, b!]);
     setFile({ blob: f, name: name.replace(/\.\w+$/, ''), url: URL.createObjectURL(f), w: bmp.width, h: bmp.height });
-    setResult(null); setError(''); setCorners(START_CORNERS); setPaint([]); setSet({});
+    setResult(null); setError(''); setCorners(START_CORNERS); setPaint([]);
+    if (!keepSet) setSet({});
   };
   useEffect(() => {
     const paste = (e: ClipboardEvent) => { const f = [...(e.clipboardData?.files ?? [])][0]; if (f) void open(f, 'pasted'); };
@@ -127,9 +134,12 @@ export function ImageTools({ me }: { me: Me }) {
   };
   const fetchBlob = async (url: string) => (await fetch(url, { credentials: 'same-origin' })).blob();
   const send = async (blob: Blob, query: string): Promise<Blob> => fetchBlob((await post<object>(blob, query)).url);
-  const shown = async (out: Blob, colours?: FlatColour[]) => {
+  const shown = async (out: Blob, colours?: FlatColour[], label?: string) => {
     const bmp = await createImageBitmap(out);
-    setResult({ kind: 'png', blob: out, url: URL.createObjectURL(out), w: bmp.width, h: bmp.height, colours }); setSplit(50);
+    const url = URL.createObjectURL(out);
+    setResult({ kind: 'png', blob: out, url, w: bmp.width, h: bmp.height, colours }); setSplit(50);
+    const what = label ?? (tool === 'flat' ? 'Flat art' : scale ? `Bigger ${scale}×` : bg === 'colour' ? 'Colour removed' : 'Background removed');
+    if (file) keep(what, 'png', out, url, `${file.name}-${what.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}.png`);
   };
 
   const attempt = async (work: () => Promise<void>) => {
@@ -174,6 +184,7 @@ export function ImageTools({ me }: { me: Me }) {
       return { name: labels[f]![1], label: labels[f]![0], blob, url: URL.createObjectURL(blob) };
     }));
     setResult({ kind: 'vector', url: files[0]!.url, w: body.info.width, h: body.info.height, info: body.info, files }); setSplit(50);
+    keep(style === 'full' ? 'Vector (full colour)' : style === 'cutter' ? 'Vector (cutter)' : 'Vector (screen print)', 'svg', files[0]!.blob, files[0]!.url, files[0]!.name);
   });
 
   /** The online AI takes pictures under 5 MB and 4096 px: sent at most 2048 px a side (JPEG for a photo, PNG for art). */
@@ -208,6 +219,7 @@ export function ImageTools({ me }: { me: Me }) {
       setBusy(sides === 'front' ? 'Redrawing with the online AI (about 25 seconds)…' : 'Redrawing the front (about 25 seconds)…');
       const front = await redraw(file.blob, sides === 'split' ? 'front' : 'whole');
       setSet({ front }); showItem(front, 'front');
+      keep(sides === 'front' ? 'AI redraw' : 'Front', 'png', front.blob, front.url, `${file.name}-${sides === 'front' ? 'redraw' : 'front'}.png`, redrawPrice);
       if (sides === 'front') return;
       let back: SetItem;
       if (sides === 'aiback') {
@@ -219,6 +231,7 @@ export function ImageTools({ me }: { me: Me }) {
         back = await redraw(sides === 'split' ? file.blob : backFile!.blob, sides === 'split' ? 'back' : 'whole');
       }
       setSet({ front, back });
+      keep('Back', 'png', back.blob, back.url, `${file.name}-back.png`, sides === 'aiback' ? ai?.prices.best : redrawPrice);
     } finally { loadAi(); }
   });
 
@@ -233,6 +246,7 @@ export function ImageTools({ me }: { me: Me }) {
       if (!res.ok || !out?.url) throw new Error(out?.message ?? 'The mockup could not be made.');
       const mockup = await item(await fetchBlob(out.url));
       setSet((x) => ({ ...x, mockup })); showItem(mockup, 'mockup');
+      keep(`Mockup (${GARMENTS[garment]})`, 'png', mockup.blob, mockup.url, `${file?.name ?? 'jersey'}-mockup.png`, ai?.prices.best);
     } finally { loadAi(); }
   });
 
@@ -246,6 +260,7 @@ export function ImageTools({ me }: { me: Me }) {
       const svg = new Blob([await blob.text()], { type: 'image/svg+xml' });
       const shapes = ((await svg.text()).match(/<path/g) ?? []).length;
       const url = URL.createObjectURL(svg);
+      keep('AI vector', 'svg', svg, url, `${file.name}-ai.svg`, body.costPeso);
       setResult({ kind: 'vector', url, w: file.w, h: file.h, costPeso: body.costPeso,
         info: { width: file.w, height: file.h, widthCm: 0, heightCm: 0, colours: [], shapes, warnings: [] },
         files: [{ name: `${file.name}-ai.svg`, label: 'SVG', blob: svg, url }] });
@@ -463,9 +478,9 @@ export function ImageTools({ me }: { me: Me }) {
                 <div className="flex flex-wrap items-center gap-3">
                   <a href={result.url} download={fileName} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Download PNG</a>
                   {tool === 'flat'
-                    ? <Button disabled={!!busy} onClick={() => { void open(result.blob, fileName).then(() => pickTool('vector')); }}>Vectorize this</Button>
+                    ? <Button disabled={!!busy} onClick={() => { void open(result.blob, fileName, true).then(() => pickTool('vector')); }}>Vectorize this</Button>
                     : <Button disabled={!!busy} onClick={() => void open(result.blob, fileName)}>Keep working on the result</Button>}
-                  {aiFlat && <Button disabled={!!busy} onClick={() => { void open(result.blob, fileName).then(() => { pickTool('clean'); setBg('keep'); setScale(4); setKind('artwork'); }); }}>Make it bigger 4×</Button>}
+                  {aiFlat && <Button disabled={!!busy} onClick={() => { void open(result.blob, fileName, true).then(() => { pickTool('clean'); setBg('keep'); setScale(4); setKind('artwork'); }); }}>Make it bigger 4×</Button>}
                   {aiFlat && aiPrice !== null && <Button disabled={!!busy} onClick={() => void runAiRedraw()}>Try again (≈ {peso(aiPrice)})</Button>}
                   {tool === 'flat' && straighten && <Button disabled={!!busy} onClick={() => setResult(null)}>Move the corners</Button>}
                   <span className="text-sm text-slate-500">{result.w} × {result.h} pixels · {result.blob.size < 1024 * 1024 ? `${Math.max(1, Math.round(result.blob.size / 1024))} KB` : `${(result.blob.size / 1024 / 1024).toFixed(1)} MB`}</span>
@@ -496,8 +511,36 @@ export function ImageTools({ me }: { me: Me }) {
           )}
         </div>
       </div>
+      {made.length > 0 && <MadeStrip made={made} onOpen={(m) => { void open(m.blob, m.fileName.replace(/\.png$/, ''), true); }} />}
       {canAi && ai && <AiSettingsCard me={me} ai={ai} onSaved={loadAi} />}
     </div>
+  );
+}
+
+/** Every picture made on this page, newest first: download it again, or open it to keep working on it. */
+function MadeStrip({ made, onOpen }: { made: Made[]; onOpen: (m: Made) => void }) {
+  return (
+    <section className="space-y-2 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70" aria-label="Pictures made here">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold">Pictures made here</h2>
+        <span className="text-xs text-slate-500">Kept while this page is open. Paid AI pictures can also be downloaded from the Online AI list below for 3 days.</span>
+      </div>
+      <div className="flex gap-3 overflow-x-auto pb-1">
+        {made.map((m) => (
+          <figure key={m.key} className="w-32 shrink-0 space-y-1 rounded-lg p-1.5 ring-1 ring-slate-200">
+            <img src={m.url} alt={m.label} className="h-32 w-full rounded object-contain" style={checker} />
+            <figcaption className="space-y-0.5 text-xs">
+              <div className="truncate font-semibold" title={m.label}>{m.label}</div>
+              <div className="text-slate-500">{m.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}{m.costPeso !== undefined ? ` · ${peso(m.costPeso)}` : ''}</div>
+              <div className="flex justify-between">
+                <a href={m.url} download={m.fileName} className="text-indigo-700 hover:underline">Download</a>
+                {m.kind === 'png' && <button type="button" className="text-indigo-700 hover:underline" onClick={() => onOpen(m)}>Open</button>}
+              </div>
+            </figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -566,7 +609,7 @@ function AiSettingsCard({ me, ai, onSaved }: { me: Me; ai: AiInfo; onSaved: () =
           <thead className="text-xs text-slate-500"><tr><th className="py-1 pr-3">When</th><th className="pr-3">Who</th><th className="pr-3">What</th><th className="pr-3">AI</th><th className="pr-3 text-right">Cost</th><th>Result</th></tr></thead>
           <tbody>{ai.runs.map((r, i) => <tr key={`${r.at}-${i}`} className="border-t border-slate-100">
             <td className="py-1 pr-3 whitespace-nowrap">{r.at.slice(0, 16).replace('T', ' ')}</td><td className="pr-3">{r.who}</td><td className="pr-3">{({ redraw: 'Redraw', back: 'Back', mockup: 'Mockup', vectorize: 'Vector' } as Record<string, string>)[r.step] ?? r.step}</td><td className="pr-3">{r.model}</td>
-            <td className="pr-3 text-right tabular-nums">{peso(r.peso)}</td><td className={r.ok ? 'text-emerald-700' : 'text-red-700'}>{r.ok ? `Done in ${r.seconds}s` : `Failed: ${r.note}`}</td>
+            <td className="pr-3 text-right tabular-nums">{peso(r.peso)}</td><td className={r.ok ? 'text-emerald-700' : 'text-red-700'}>{r.ok ? <>Done in {r.seconds}s{r.url && <> · <a href={r.url} download={`${r.step}-${r.at.slice(0, 16).replace(/\D/g, '')}.${r.step === 'vectorize' ? 'svg' : 'png'}`} className="text-indigo-700 hover:underline">Download</a></>}</> : `Failed: ${r.note}`}</td>
           </tr>)}</tbody>
         </table>
       </div>}

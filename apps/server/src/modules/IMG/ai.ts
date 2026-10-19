@@ -139,18 +139,21 @@ export function checkCap(db: Db, month: string, mills: number): void {
 }
 
 export type AiStep = 'redraw' | 'back' | 'mockup' | 'vectorize';
-export function logRun(db: Db, run: { at: string; month: string; userId: string; step: AiStep; model: string; ok: boolean; mills: number; ms: number; note?: string }): void {
+export function logRun(db: Db, run: { at: string; month: string; userId: string; step: AiStep; model: string; ok: boolean; mills: number; ms: number; note?: string; resultId?: string }): void {
   const rate = Math.round(aiSettings(db).ratePeso * 100);
-  db.prepare(`INSERT INTO img_ai_runs (id, at, month, user_id, step, model, ok, cost_mills, rate_centavos, ms, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(newId(), run.at, run.month, run.userId, run.step, run.model, run.ok ? 1 : 0, run.ok ? run.mills : 0, rate, Math.round(run.ms), (run.note ?? '').slice(0, 300));
+  db.prepare(`INSERT INTO img_ai_runs (id, at, month, user_id, step, model, ok, cost_mills, rate_centavos, ms, note, result_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(newId(), run.at, run.month, run.userId, run.step, run.model, run.ok ? 1 : 0, run.ok ? run.mills : 0, rate, Math.round(run.ms), (run.note ?? '').slice(0, 300), run.resultId ?? null);
 }
 
-export function recentRuns(db: Db, limit = 50) {
-  return db.prepare(`SELECT r.at, r.step, r.model, r.ok, r.cost_mills AS mills, r.rate_centavos AS rate, r.ms, r.note, COALESCE(u.display_name, u.username, '') AS who
+/** The latest runs; url: the picture's address while it is kept (three days), else null. */
+export function recentRuns(db: Db, limit: number, urlOf: (resultId: string, step: string) => string | null) {
+  return db.prepare(`SELECT r.at, r.step, r.model, r.ok, r.cost_mills AS mills, r.rate_centavos AS rate, r.ms, r.note, r.result_id AS resultId,
+      COALESCE(u.display_name, u.username, '') AS who
     FROM img_ai_runs r LEFT JOIN users u ON u.id = r.user_id ORDER BY r.at DESC, r.rowid DESC LIMIT ?`).all(limit)
     .map((r) => {
-      const x = r as { at: string; step: string; model: string; ok: number; mills: number; rate: number; ms: number; note: string; who: string };
-      return { at: x.at, step: x.step, model: x.model, ok: x.ok === 1, peso: pesoOf(x.mills, x.rate), seconds: Math.round(x.ms / 100) / 10, note: x.note, who: x.who };
+      const x = r as { at: string; step: string; model: string; ok: number; mills: number; rate: number; ms: number; note: string; resultId: string | null; who: string };
+      return { at: x.at, step: x.step, model: x.model, ok: x.ok === 1, peso: pesoOf(x.mills, x.rate), seconds: Math.round(x.ms / 100) / 10, note: x.note, who: x.who,
+        url: x.resultId ? urlOf(x.resultId, x.step) : null };
     });
 }
 

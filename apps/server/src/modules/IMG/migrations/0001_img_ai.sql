@@ -14,6 +14,7 @@ CREATE TABLE img_ai_settings (
 
 -- One run of an online AI step. Insert-only. cost_mills: thousandths of a US$ (0.150 = 150); 0 when it failed (Fal.ai
 -- charges only for a result). The peso rate is kept with each run, so a later change of rate leaves past costs as shown.
+-- result_id: where its picture is kept (img-work, three days), so a paid picture can be downloaded again.
 CREATE TABLE img_ai_runs (
   id             TEXT PRIMARY KEY,
   at             TEXT NOT NULL,
@@ -25,6 +26,7 @@ CREATE TABLE img_ai_runs (
   cost_mills     INTEGER NOT NULL CHECK (cost_mills >= 0),
   rate_centavos  INTEGER NOT NULL CHECK (rate_centavos > 0),
   ms             INTEGER NOT NULL CHECK (ms >= 0),
-  note           TEXT NOT NULL DEFAULT '' CHECK (length(note) <= 300)
+  note           TEXT NOT NULL DEFAULT '' CHECK (length(note) <= 300),
+  result_id      TEXT CHECK (result_id IS NULL OR length(result_id) = 36)
 ) STRICT;
 CREATE INDEX img_ai_runs_month ON img_ai_runs (month);
