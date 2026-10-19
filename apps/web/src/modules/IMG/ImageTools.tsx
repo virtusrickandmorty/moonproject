@@ -27,6 +27,13 @@ type Result =
 type Corners = [number, number][];
 type Method = 'ai-best' | 'ai-crisp' | 'ai-economy' | 'free';
 type Sides = 'front' | 'split' | 'two' | 'aiback';
+/** A crop box: left, top, right, bottom, as fractions of the picture. */
+type Rect = [number, number, number, number];
+type Crops = { front: Rect; back: Rect; backPhoto: Rect };
+const WHOLE: Rect = [0.03, 0.03, 0.97, 0.97];
+const cropsFor = (sides: Sides): Crops => (sides === 'split'
+  ? { front: [0.02, 0.03, 0.49, 0.97], back: [0.51, 0.03, 0.98, 0.97], backPhoto: WHOLE }
+  : { front: WHOLE, back: WHOLE, backPhoto: WHOLE });
 type Garment = 'jersey' | 'tshirt' | 'polo' | 'longsleeve';
 type SetItem = { blob: Blob; url: string; w: number; h: number };
 type JerseySet = { front?: SetItem; back?: SetItem; mockup?: SetItem };
@@ -62,7 +69,10 @@ export function ImageTools({ me }: { me: Me }) {
   const [shape, setShape] = useState<'tall' | 'square' | 'wide'>('tall');
   const [removeText, setRemoveText] = useState(true);
   const [sides, setSides] = useState<Sides>('front');
-  const [backFile, setBackFile] = useState<{ blob: Blob; name: string; url: string } | null>(null);
+  const [backFile, setBackFile] = useState<{ blob: Blob; name: string; url: string; w: number; h: number } | null>(null);
+  const [cropOn, setCropOn] = useState(false); // crop the front (and back) out of the photo before the AI redraws it
+  const [crops, setCrops] = useState<Crops>(cropsFor('front'));
+  const [showBack, setShowBack] = useState(false); // two photos: the back photo shown, to crop it
   const [backName, setBackName] = useState('');
   const [backNumber, setBackNumber] = useState('');
   const [set, setSet] = useState<JerseySet>({});
@@ -116,7 +126,7 @@ export function ImageTools({ me }: { me: Me }) {
     const [r, g, b] = c.getContext('2d')!.getImageData(0, 0, 1, 1).data; // the corner's colour: usually the background
     setColour([r!, g!, b!]);
     setFile({ blob: f, name: name.replace(/\.\w+$/, ''), url: URL.createObjectURL(f), w: bmp.width, h: bmp.height });
-    setResult(null); setError(''); setCorners(START_CORNERS); setPaint([]); setMarked(0); setTouchUp(false);
+    setResult(null); setError(''); setCorners(START_CORNERS); setPaint([]); setMarked(0); setTouchUp(false); setShowBack(false); setCrops(cropsFor(sides));
     if (!keepSet) setSet({});
   };
   useEffect(() => {
@@ -259,6 +269,16 @@ export function ImageTools({ me }: { me: Me }) {
    * AI redraw: the photo laid flat as print artwork by the online AI, one side or front and back: one picture showing
    * both (each side taken out), two photos, or the back made by the AI from the redrawn front. The price was on the button.
    */
+  /** The part of the picture inside a crop box, as a PNG. */
+  const cropTo = async (blob: Blob, r: Rect): Promise<Blob> => {
+    const bmp = await createImageBitmap(blob);
+    const x = Math.round(r[0] * bmp.width), y = Math.round(r[1] * bmp.height);
+    const w = Math.max(16, Math.round((r[2] - r[0]) * bmp.width)), h = Math.max(16, Math.round((r[3] - r[1]) * bmp.height));
+    const c = document.createElement('canvas'); Object.assign(c, { width: w, height: h });
+    c.getContext('2d')!.drawImage(bmp, x, y, w, h, 0, 0, w, h);
+    return new Promise((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error('The picture could not be cropped.'))), 'image/png'));
+  };
+
   const runAiRedraw = () => attempt(async () => {
     if (!file) return;
     if (sides === 'two' && !backFile) throw new Error('Choose the back photo too.');
@@ -271,7 +291,8 @@ export function ImageTools({ me }: { me: Me }) {
     };
     try {
       setBusy(sides === 'front' ? 'Redrawing with the online AI (about 25 seconds)…' : 'Redrawing the front (about 25 seconds)…');
-      const front = await redraw(photo, sides === 'split' ? 'front' : 'whole');
+      // Cropped, each side is a picture of its own: the AI no longer has to find it.
+      const front = await redraw(cropOn ? await cropTo(photo, crops.front) : photo, sides === 'split' && !cropOn ? 'front' : 'whole');
       setSet({ front }); showItem(front, 'front');
       keep(sides === 'front' ? 'AI redraw' : 'Front', 'png', front.blob, front.url, `${file.name}-${sides === 'front' ? 'redraw' : 'front'}.png`, redrawPrice);
       if (sides === 'front') return;
@@ -282,7 +303,8 @@ export function ImageTools({ me }: { me: Me }) {
         back = await item(await fetchBlob((await post<object>(await forAi(front.blob, true), q.toString(), '/api/img/ai/run')).url));
       } else {
         setBusy('Redrawing the back (about 25 seconds)…');
-        back = await redraw(sides === 'split' ? photo : backFile!.blob, sides === 'split' ? 'back' : 'whole');
+        const backPhoto = sides === 'split' ? photo : backFile!.blob;
+        back = await redraw(!cropOn ? backPhoto : await cropTo(backPhoto, sides === 'split' ? crops.back : crops.backPhoto), sides === 'split' && !cropOn ? 'back' : 'whole');
       }
       setSet({ front, back });
       keep('Back', 'png', back.blob, back.url, `${file.name}-back.png`, sides === 'aiback' ? ai?.prices.best : redrawPrice);
@@ -418,16 +440,20 @@ export function ImageTools({ me }: { me: Me }) {
           {aiFlat && <>
             <fieldset className="space-y-2">
               <legend className="text-sm font-semibold">Sides</legend>
-              {choices(['front', 'split', 'two', 'aiback'] as const, sides, (v) => { setSides(v); setResult(null); setSet({}); }, (v) => (v === 'front' ? 'Front only' : v === 'split' ? 'Front + back: one picture shows both' : v === 'two' ? 'Front + back: two photos' : 'Front + a back made by the AI'))}
+              {choices(['front', 'split', 'two', 'aiback'] as const, sides, (v) => { setSides(v); setResult(null); setSet({}); setCrops(cropsFor(v)); setShowBack(false); }, (v) => (v === 'front' ? 'Front only' : v === 'split' ? 'Front + back: one picture shows both' : v === 'two' ? 'Front + back: two photos' : 'Front + a back made by the AI'))}
               {sides === 'split' && <p className="text-xs text-slate-500">The picture shows the jersey's front and back: each side is taken out and redrawn (two runs).</p>}
               {sides === 'two' && <label className="block cursor-pointer rounded-lg border border-dashed border-slate-300 p-2 text-sm text-slate-600 hover:border-indigo-400">
                 {backFile ? <span className="flex items-center gap-2"><img src={backFile.url} alt="The back photo" className="h-12 w-12 rounded object-cover" /> Back photo: {backFile.name} <span className="text-indigo-700">(change)</span></span> : <><b className="text-indigo-700">Choose the back photo</b> (the first picture is the front)</>}
-                <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" aria-label="Choose the back photo" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setBackFile({ blob: f, name: f.name, url: URL.createObjectURL(f) }); }} />
+                <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" aria-label="Choose the back photo" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void createImageBitmap(f).then((bmp) => { setBackFile({ blob: f, name: f.name, url: URL.createObjectURL(f), w: bmp.width, h: bmp.height }); setCrops((c) => ({ ...c, backPhoto: WHOLE })); }); }} />
               </label>}
               {sides === 'aiback' && <div className="grid grid-cols-[1fr_6rem] gap-2">
                 <Field label="Name on the back (optional)"><input className={inputClass} maxLength={24} value={backName} onChange={(e) => setBackName(e.target.value)} placeholder="e.g. SON-OT" /></Field>
                 <Field label="Number"><input className={inputClass} inputMode="numeric" maxLength={3} value={backNumber} onChange={(e) => setBackNumber(e.target.value.replace(/\D/g, ''))} placeholder="10" /></Field>
               </div>}
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={cropOn} onChange={(e) => { setCropOn(e.target.checked); setCrops(cropsFor(sides)); setShowBack(false); setResult(null); }} /> Crop first: choose the part to redraw</label>
+              {cropOn && <p className="text-xs text-slate-500">{sides === 'split' ? 'Drag the Front and Back boxes over each side of the jersey; drag a corner to resize.'
+                : sides === 'two' ? 'Drag the box over the jersey on each photo: switch between the front and back photo above the picture.'
+                : 'Drag the box over the part to redraw; drag a corner to resize. Only that part goes to the AI.'}</p>}
               {sides === 'aiback' && <p className="text-xs text-slate-500">The AI continues the front's design over the back{backName || backNumber ? ', with the name and number' : '; leave the name and number empty for the design only'}. It always uses Best.</p>}
             </fieldset>
             <fieldset className="space-y-2">
@@ -516,10 +542,23 @@ export function ImageTools({ me }: { me: Me }) {
 
         <div className="min-w-0 space-y-3">
           {!file && <div className="grid h-80 place-items-center rounded-xl bg-white text-sm text-slate-500 ring-1 ring-slate-200/70">The picture shows here.</div>}
-          {file && !result && (
+          {file && !result && aiFlat && cropOn && sides === 'two' && backFile && <div className="flex gap-2" role="group" aria-label="Photo to crop">
+            {([false, true] as const).map((b) => <button key={String(b)} type="button" className={choice(showBack === b)} aria-pressed={showBack === b} onClick={() => setShowBack(b)}>{b ? 'Back photo' : 'Front photo'}</button>)}
+          </div>}
+          {file && !result && aiFlat && cropOn && sides === 'two' && showBack && backFile && (
+            <ZoomFrame key={backFile.url} w={backFile.w} h={backFile.h}>
+              {(layer, z) => <>
+                <img src={backFile.url} alt="The back photo" style={layer} className="absolute inset-0 h-full w-full object-contain" />
+                <CropBoxes layer={layer} z={z} boxes={[{ key: 'backPhoto', label: 'Back', rect: crops.backPhoto }]} onChange={(k, r) => setCrops((c) => ({ ...c, [k]: r }))} />
+              </>}
+            </ZoomFrame>
+          )}
+          {file && !result && !(aiFlat && cropOn && sides === 'two' && showBack && backFile) && (
             <ZoomFrame key={file.url} w={file.w} h={file.h}>
               {(layer, z) => <>
                 <img src={file.url} alt="The picture" onClick={pick} style={layer} className={`absolute inset-0 h-full w-full object-contain ${tool === 'clean' && bg === 'colour' ? 'cursor-crosshair' : ''}`} />
+                {aiFlat && cropOn && <CropBoxes layer={layer} z={z} onChange={(k, r) => setCrops((c) => ({ ...c, [k]: r }))}
+                  boxes={sides === 'split' ? [{ key: 'front', label: 'Front', rect: crops.front }, { key: 'back', label: 'Back', rect: crops.back }] : [{ key: 'front', label: 'Front', rect: crops.front }]} />}
                 {tool === 'flat' && straighten && <CornerHandles layer={layer} z={z} corners={corners} onChange={setCorners} />}
                 {tool === 'erase' && status?.erase && <MaskPainter key={file.url} layer={layer} w={file.w} h={file.h} brush={brush} mode={brushMode} canvasRef={maskRef} onStroke={() => setMarked((n) => n + 1)} />}
               </>}
@@ -775,6 +814,64 @@ function CornerHandles({ layer, z, corners, onChange }: { layer: React.CSSProper
             onChange(corners.map((c, k) => (k === i ? [Math.min(1, Math.max(0, c[0] + d[0])), Math.min(1, Math.max(0, c[1] + d[1]))] : c)) as Corners);
           }} />
       ))}
+    </div>
+  );
+}
+
+/**
+ * Crop boxes over the picture (in the zoom layer, so they follow zooming): drag inside a box to move it, a corner to
+ * resize it, or a corner's arrow keys (Shift: bigger steps). Outside the boxes the frame still drags to pan.
+ */
+function CropBoxes({ layer, z, boxes, onChange }: { layer: React.CSSProperties; z: number; boxes: { key: keyof Crops; label: string; rect: Rect }[]; onChange: (key: keyof Crops, r: Rect) => void }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const start = useRef<{ key: keyof Crops; part: number; px: number; py: number; rect: Rect } | null>(null); // part: a corner 0-3, or 4 the whole box
+  const MIN = 0.05;
+  const clamp = (v: number) => Math.min(1, Math.max(0, v));
+  const at = (e: React.PointerEvent) => { const r = ref.current!.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height] as const; };
+  const resized = ([l, t, r, b]: Rect, part: number, x: number, y: number): Rect => [
+    part === 0 || part === 3 ? Math.min(clamp(x), r - MIN) : l, part < 2 ? Math.min(clamp(y), b - MIN) : t,
+    part === 1 || part === 2 ? Math.max(clamp(x), l + MIN) : r, part >= 2 ? Math.max(clamp(y), t + MIN) : b];
+  const down = (key: keyof Crops, part: number, rect: Rect) => (e: React.PointerEvent) => {
+    e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId);
+    const [px, py] = at(e); start.current = { key, part, px, py, rect };
+  };
+  const move = (e: React.PointerEvent) => {
+    const s = start.current;
+    if (!s || !e.currentTarget.hasPointerCapture(e.pointerId)) return;
+    const [x, y] = at(e);
+    const [l, t, r, b] = s.rect;
+    if (s.part < 4) return onChange(s.key, resized(s.rect, s.part, x, y));
+    const dx = Math.min(1 - r, Math.max(-l, x - s.px)), dy = Math.min(1 - b, Math.max(-t, y - s.py));
+    onChange(s.key, [l + dx, t + dy, r + dx, b + dy]);
+  };
+  const up = () => { start.current = null; };
+  const CORNERS = [[0, 0], [1, 0], [1, 1], [0, 1]] as const;
+  return (
+    <div ref={ref} className="pointer-events-none absolute inset-0" style={layer}>
+      {boxes.map(({ key, label, rect }) => {
+        const [l, t, r, b] = rect;
+        return (
+          <div key={key} role="group" aria-label={`${label} crop`} className="pointer-events-auto absolute cursor-move border-2 border-indigo-600 bg-indigo-500/10"
+            style={{ left: `${l * 100}%`, top: `${t * 100}%`, width: `${(r - l) * 100}%`, height: `${(b - t) * 100}%`, touchAction: 'none' }}
+            onPointerDown={down(key, 4, rect)} onPointerMove={move} onPointerUp={up} onClick={(e) => e.stopPropagation()}>
+            <span className="pointer-events-none absolute left-1 top-1 rounded bg-indigo-600 px-1.5 py-0.5 text-xs font-semibold text-white" style={{ scale: String(1 / z), transformOrigin: 'top left' }}>{label}</span>
+            {CORNERS.map(([hx, hy], i) => (
+              <span key={i} role="slider" tabIndex={0} aria-label={`${label}: ${['top-left', 'top-right', 'bottom-right', 'bottom-left'][i]} corner`}
+                aria-valuetext={`${Math.round((hx ? r : l) * 100)}%, ${Math.round((hy ? b : t) * 100)}%`}
+                className={`absolute size-5 -translate-x-1/2 -translate-y-1/2 rounded-sm border-2 border-white bg-indigo-600 shadow ${i % 2 ? 'cursor-nesw-resize' : 'cursor-nwse-resize'}`}
+                style={{ left: `${hx * 100}%`, top: `${hy * 100}%`, scale: String(1 / z) }}
+                onPointerDown={down(key, i, rect)} onPointerMove={move} onPointerUp={up}
+                onKeyDown={(e) => {
+                  const step = e.shiftKey ? 0.02 : 0.004;
+                  const d = ({ ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] } as Record<string, [number, number]>)[e.key];
+                  if (!d) return;
+                  e.preventDefault();
+                  onChange(key, resized(rect, i, (hx ? r : l) + d[0], (hy ? b : t) + d[1]));
+                }} />
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
