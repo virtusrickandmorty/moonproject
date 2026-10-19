@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AppError, notFound } from '@moonproject/shared';
@@ -29,7 +29,7 @@ const runQuery = z.discriminatedUnion('op', [
 
 export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db } = deps;
-  const dbFile = db.name && db.name !== ':memory:' ? db.name : '';
+  const dbFile = db.name && db.name !== ':memory:' ? resolve(db.name) : ''; // full paths: the tools run in their own folders
   const work = dbFile ? join(dirname(dbFile), 'img-work') : join(tmpdir(), 'moonproject-img-work');
   const tools = () => stand ?? localTools(toolsDir(dbFile || join(process.cwd(), 'data', 'moonproject.db')));
   const tooBig = () => new AppError('FILE_TOO_BIG', 'The picture is bigger than 15 MB. Use a smaller one.', 413);
@@ -76,8 +76,8 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
       const id = randomUUID();
       const dir = join(work, id);
       mkdirSync(dir, { recursive: true });
-      const input = join(dir, `in.${EXT[type]}`);
-      const output = join(dir, 'out.png');
+      const input = resolve(dir, `in.${EXT[type]}`);
+      const output = resolve(dir, 'out.png');
       writeFileSync(input, data);
       const started = Date.now();
       const op = q.data;

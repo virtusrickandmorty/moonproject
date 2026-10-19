@@ -6,7 +6,7 @@
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { AppError } from '@moonproject/shared';
 
 export type UpscaleKind = 'artwork' | 'photo';
@@ -35,16 +35,23 @@ function run(command: string, args: string[], cwd: string): Promise<void> {
   });
 }
 
-/** The tools folder: MOONPROJECT_IMG_TOOLS, else "tools" beside the database (the practice shop's: beside the real one). */
+/**
+ * The tools folder, always a full path (a tool runs in its own folder, where a relative path no longer points at it:
+ * the shop's server opens "data/moonproject.db"): MOONPROJECT_IMG_TOOLS, else "tools" beside the database (the practice
+ * shop's: beside the real one).
+ */
 export function toolsDir(dbFile: string): string {
   const env = process.env.MOONPROJECT_IMG_TOOLS;
-  if (env) return env;
-  const beside = join(dirname(dbFile), 'tools');
-  const above = join(dirname(dirname(dbFile)), 'tools');
-  return existsSync(beside) || !existsSync(above) ? beside : above;
+  if (env) return resolve(env);
+  const db = resolve(dbFile);
+  const beside = join(dirname(db), 'tools');
+  const above = join(dirname(dirname(db)), 'tools');
+  const hasTools = (d: string) => existsSync(join(d, 'realesrgan')) || existsSync(join(d, 'rembg'));
+  return hasTools(beside) || !hasTools(above) ? beside : above;
 }
 
-export function localTools(dir: string): ImageTools {
+export function localTools(folder: string): ImageTools {
+  const dir = resolve(folder);
   const esr = join(dir, 'realesrgan', 'realesrgan-ncnn-vulkan.exe');
   const py = join(dir, 'rembg', 'env', 'Scripts', 'python.exe');
   const remover = join(dir, 'rembg', 'remove.py');

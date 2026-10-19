@@ -46,3 +46,19 @@ it('says plainly when a tool is not installed on the shop PC yet', async () => {
   expect(r.statusCode).toBe(503);
   expect(r.json()).toMatchObject({ code: 'IMG_NOT_INSTALLED' });
 });
+
+it('finds the tools by a full path, though the server opened the database by a relative one (the shop\'s does)', async () => {
+  const { toolsDir } = await import('../tools.ts');
+  const { isAbsolute } = await import('node:path');
+  const saved = process.env.MOONPROJECT_IMG_TOOLS;
+  delete process.env.MOONPROJECT_IMG_TOOLS;
+  try {
+    const dir = toolsDir('data/moonproject.db');
+    expect(isAbsolute(dir)).toBe(true);
+    expect(dir.split('\\').join('/')).toMatch(/\/data\/tools$/);
+    process.env.MOONPROJECT_IMG_TOOLS = 'some/tools';
+    expect(isAbsolute(toolsDir('data/moonproject.db'))).toBe(true);
+  } finally {
+    if (saved === undefined) delete process.env.MOONPROJECT_IMG_TOOLS; else process.env.MOONPROJECT_IMG_TOOLS = saved;
+  }
+});
