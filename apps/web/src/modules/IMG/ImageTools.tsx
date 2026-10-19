@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, type Me, type NavResult } from '../../api.ts';
 import { Button, Field, Notice, inputClass } from '../../components/ui.tsx';
 import { removeColour, toHex, type Rgb } from './colour.ts';
+import { FIT, limit, zoomAt, type View } from './zoom.ts';
 
 type Background = 'keep' | 'object' | 'design' | 'colour';
 type Status = { upscale: boolean; background: boolean; waiting: number };
@@ -143,21 +144,25 @@ export function ImageTools({ me }: { me: Me }) {
         <div className="min-w-0 space-y-3">
           {!file && <div className="grid h-80 place-items-center rounded-xl bg-white text-sm text-slate-500 ring-1 ring-slate-200/70">The picture shows here.</div>}
           {file && !result && (
-            <figure className="overflow-hidden rounded-xl ring-1 ring-slate-200" style={checker}>
-              <img src={file.url} alt="The picture" onClick={pick} className={`mx-auto max-h-[70vh] object-contain ${bg === 'colour' ? 'cursor-crosshair' : ''}`} />
-            </figure>
+            <ZoomFrame key={file.url} w={file.w} h={file.h}>
+              {(layer) => <img src={file.url} alt="The picture" onClick={pick} style={layer} className={`absolute inset-0 h-full w-full object-contain ${bg === 'colour' ? 'cursor-crosshair' : ''}`} />}
+            </ZoomFrame>
           )}
           {file && result && (
             <>
-              {/* Before and after: drag the handle across. */}
-              <figure className="relative mx-auto max-h-[70vh] max-w-full overflow-hidden rounded-xl ring-1 ring-slate-200" style={{ ...checker, aspectRatio: `${result.w} / ${result.h}`, height: 'min(70vh, 100%)' }}>
-                {/* Both in the same frame, so they line up whatever their sizes. */}
-                <img src={result.url} alt="After" className="absolute inset-0 h-full w-full object-contain" />
-                <img src={file.url} alt="Before" className="absolute inset-0 h-full w-full object-contain" style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }} />
-                <span className="pointer-events-none absolute inset-y-0 w-0.5 bg-indigo-600" style={{ left: `${split}%` }} />
-                <span className="absolute left-2 top-2 rounded bg-slate-900/70 px-2 py-0.5 text-xs text-white">Before</span>
-                <span className="absolute right-2 top-2 rounded bg-indigo-600 px-2 py-0.5 text-xs text-white">After</span>
-              </figure>
+              {/* Before and after: drag the handle across. The handle stays where it is while zooming. */}
+              <ZoomFrame key={result.url} w={result.w} h={result.h}>
+                {(layer) => <>
+                  <img src={result.url} alt="After" style={layer} className="absolute inset-0 h-full w-full object-contain" />
+                  {/* Both in the same frame, so they line up whatever their sizes. */}
+                  <div className="absolute inset-0" style={{ clipPath: `inset(0 ${100 - split}% 0 0)` }}>
+                    <img src={file.url} alt="Before" style={layer} className="absolute inset-0 h-full w-full object-contain" />
+                  </div>
+                  <span className="pointer-events-none absolute inset-y-0 w-0.5 bg-indigo-600" style={{ left: `${split}%` }} />
+                  <span className="pointer-events-none absolute left-2 top-2 rounded bg-slate-900/70 px-2 py-0.5 text-xs text-white">Before</span>
+                  <span className="pointer-events-none absolute right-2 top-2 rounded bg-indigo-600 px-2 py-0.5 text-xs text-white">After</span>
+                </>}
+              </ZoomFrame>
               <input type="range" min={0} max={100} value={split} onChange={(e) => setSplit(Number(e.target.value))} aria-label="Before and after" className="w-full" />
               <div className="flex flex-wrap items-center gap-3">
                 <a href={result.url} download={fileName} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Download PNG</a>
@@ -168,6 +173,73 @@ export function ImageTools({ me }: { me: Me }) {
             </>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The picture's frame, zoomable: scroll to zoom where the mouse points, drag to move around, double-click to zoom in or
+ * back to the whole picture. children get the style that zooms a layer; what is outside it (the before/after handle,
+ * the labels) stays put.
+ */
+function ZoomFrame({ w, h, children }: { w: number; h: number; children: (layer: React.CSSProperties) => React.ReactNode }) {
+  const frame = useRef<HTMLElement | null>(null);
+  const [view, setView] = useState<View>(FIT);
+  const drag = useRef<{ px: number; py: number; x: number; y: number } | null>(null);
+  const moved = useRef(false);
+  const [dragging, setDragging] = useState(false);
+  const size = () => ({ fw: frame.current?.clientWidth ?? 1, fh: frame.current?.clientHeight ?? 1 });
+  const at = (e: { clientX: number; clientY: number }) => { const r = frame.current!.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top] as const; };
+  const zoom = (factor: number, px?: number, py?: number) => {
+    const { fw, fh } = size();
+    setView((v) => zoomAt(v, factor, px ?? fw / 2, py ?? fh / 2, fw, fh));
+  };
+
+  // A wheel listener that may stop the page scrolling (React's is passive).
+  useEffect(() => {
+    const el = frame.current;
+    if (!el) return;
+    const wheel = (e: WheelEvent) => { e.preventDefault(); const [px, py] = at(e); zoom(Math.exp(-e.deltaY * 0.002), px, py); };
+    el.addEventListener('wheel', wheel, { passive: false });
+    return () => el.removeEventListener('wheel', wheel);
+  }, []);
+
+  const actual = () => Math.max(1, w / size().fw); // one picture pixel to one screen pixel
+  const layer: React.CSSProperties = { transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})`, transformOrigin: '0 0' };
+  const tool = 'rounded-md bg-white px-2.5 py-1 text-sm ring-1 ring-slate-300 hover:bg-indigo-50 disabled:opacity-40';
+  return (
+    <div className="space-y-2">
+      <figure ref={frame} aria-label="The picture: scroll to zoom, drag to move"
+        className={`relative mx-auto max-w-full touch-none select-none overflow-hidden rounded-xl ring-1 ring-slate-200 ${view.z > 1 ? (dragging ? 'cursor-grabbing' : 'cursor-grab') : ''}`}
+        style={{ ...checker, aspectRatio: `${w} / ${h}`, width: `min(100%, calc(70vh * ${w / h}))` }}
+        onPointerDown={(e) => {
+          if (e.button !== 0 || view.z <= 1) return;
+          const [px, py] = at(e);
+          drag.current = { px, py, x: view.x, y: view.y }; moved.current = false; setDragging(true);
+          e.currentTarget.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (!d) return;
+          const [px, py] = at(e);
+          if (Math.abs(px - d.px) + Math.abs(py - d.py) > 3) moved.current = true;
+          const { fw, fh } = size();
+          setView((v) => limit({ z: v.z, x: d.x + px - d.px, y: d.y + py - d.py }, fw, fh));
+        }}
+        onPointerUp={() => { drag.current = null; setDragging(false); }}
+        onPointerCancel={() => { drag.current = null; setDragging(false); }}
+        onClickCapture={(e) => { if (moved.current) { e.stopPropagation(); moved.current = false; } }} // a drag is not a click
+        onDoubleClick={(e) => { const [px, py] = at(e); if (view.z > 1) setView(FIT); else zoom(3, px, py); }}>
+        {children(layer)}
+      </figure>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <button type="button" className={tool} onClick={() => zoom(1 / 1.5)} disabled={view.z <= 1} aria-label="Zoom out">−</button>
+        <span className="w-14 text-center text-sm tabular-nums text-slate-600">{Math.round(view.z * 100)}%</span>
+        <button type="button" className={tool} onClick={() => zoom(1.5)} aria-label="Zoom in">+</button>
+        <button type="button" className={tool} onClick={() => setView(FIT)} disabled={view.z <= 1}>Fit</button>
+        <button type="button" className={tool} onClick={() => zoom(actual() / view.z)} title="One picture pixel to one screen pixel">Actual pixels</button>
+        <span className="text-xs text-slate-500">Scroll to zoom, drag to move</span>
       </div>
     </div>
   );
