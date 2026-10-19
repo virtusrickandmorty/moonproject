@@ -1,7 +1,8 @@
 <#
   Installs the IMG image tools on the shop PC, beside the database: <data>\tools\realesrgan and <data>\tools\rembg.
   Run once from the repository folder:  powershell -ExecutionPolicy Bypass -File tools\img\install.ps1 -Data C:\moonproject\data
-  Needs Python 3.10+ and the internet (about 1.3 GB: the upscaler, the background remover and its two models).
+  Needs Python 3.10+ and the internet (about 1.4 GB: the upscaler, the background remover and its two models, OpenCV and
+  VTracer).
   Running it again repairs or updates; nothing in the database is touched.
 #>
 param([Parameter(Mandatory = $true)][string]$Data)
@@ -28,8 +29,11 @@ if (-not (Test-Path $py)) {
   python -m venv (Join-Path $bg 'env')
 }
 & $py -m pip install --quiet --upgrade pip
-& $py -m pip install --quiet 'rembg[cli]==2.0.85' 'onnxruntime-directml==1.24.4'
-Copy-Item (Join-Path $PSScriptRoot 'remove.py') (Join-Path $bg 'remove.py') -Force
+# OpenCV (Apache-2.0) and VTracer (MIT): photo to flat art and vectorize. Installed together so pip keeps one NumPy for all.
+& $py -m pip install --quiet 'rembg[cli]==2.0.85' 'onnxruntime-directml==1.24.4' 'opencv-python-headless==4.14.0.94' 'vtracer==0.6.15'
+foreach ($script in 'remove.py', 'flatart.py', 'vectorize.py') {
+  Copy-Item (Join-Path $PSScriptRoot $script) (Join-Path $bg $script) -Force
+}
 
 # 3. Fetch both models now (about 1.15 GB), so the first use is not a long wait: a 1x1 picture through each.
 $probe = Join-Path $env:TEMP 'img-probe.png'
