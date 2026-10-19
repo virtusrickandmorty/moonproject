@@ -21,19 +21,45 @@ export const AI_MODELS = {
 } as const;
 export type Quality = 'best' | 'economy';
 
+const FLAT = 'lay the printed pattern out flat as one rectangle, remove the jersey shape, collar, armholes, seams, folds, wrinkles, shadows and lighting.';
+const CRISP = ' Keep the original artwork, colours and layout, redrawn with clean, crisp lines and sharp detail, like vector illustration.';
+
 /**
- * The instruction, tried on the owner's sample jersey: Nano Banana Pro gave the paid service's result with the first;
- * Kontext needs the text named outright to remove it.
+ * The instructions, each tried on the owner's sample jersey (Oct 2026). Redraw: Nano Banana Pro gave the paid service's
+ * result with the first; Kontext needs the text named outright to remove it. part front/back: one picture showing both
+ * sides, one side taken out. The back made by the AI: the design continued over the whole back ("leave space for a name"
+ * gave an empty white box), with the name and number when given.
  */
-export function redrawPrompt(quality: Quality, removeText: boolean): string {
+export function redrawPrompt(quality: Quality, removeText: boolean, part: 'whole' | 'front' | 'back' = 'whole'): string {
   const text = removeText
     ? quality === 'economy'
       ? ' Erase every word, letter, number and logo completely (names, numbers, brand logos) and continue the background artwork where they were.'
       : ' Remove all text, names, numbers and logos.'
     : ' Keep the names, numbers and logos as they are.';
-  return 'Recreate this sublimation jersey design as flat, front-facing print artwork that fills the whole canvas edge to edge: '
-    + 'lay the printed pattern out flat as one rectangle, remove the jersey shape, collar, armholes, seams, folds, wrinkles, shadows and lighting.'
-    + text + ' Keep the original artwork, colours and layout, redrawn with clean, crisp lines and sharp detail, like vector illustration.';
+  if (part !== 'whole') {
+    const side = part === 'front' ? 'FRONT' : 'BACK';
+    return `This picture shows the same jersey from the front and from the back. Take only the ${side} of the jersey and recreate its printed design as flat print artwork that fills the whole canvas edge to edge: ${FLAT}${text}${CRISP}`;
+  }
+  return `Recreate this sublimation jersey design as flat, front-facing print artwork that fills the whole canvas edge to edge: ${FLAT}${text}${CRISP}`;
+}
+
+export function backPrompt(name: string, number: string): string {
+  const lettering = name || number
+    ? ` Across the upper back, add${name ? ` the player name "${name}" in bold athletic block letters` : ''}${name && number ? ' and below it' : ''}${number ? ` the large number "${number}"` : ''}, in the jersey's colours with a contrasting outline.`
+    : ' Do not add any text, letters or numbers.';
+  return 'This is the flat print artwork of the FRONT of a sublimation jersey. Create the matching BACK of the same jersey as flat print artwork that fills the whole canvas edge to edge: '
+    + 'the same artwork, colours and patterns, continuing the design as if it wraps around the body, with the artwork continuous over the whole back and no empty boxes or blank areas.'
+    + lettering + ' No jersey shape, no folds, no shadows; clean, crisp lines and sharp detail, like vector illustration.';
+}
+
+export type Garment = 'jersey' | 'tshirt' | 'polo' | 'longsleeve';
+const GARMENT: Record<Garment, string> = { jersey: 'sleeveless basketball jersey', tshirt: 'crew-neck T-shirt', polo: 'polo shirt with a collar and buttons', longsleeve: 'long-sleeve shirt' };
+
+export function mockupPrompt(garment: Garment, withBack: boolean): string {
+  return `Create a clean, realistic product mockup photo of one ${GARMENT[garment]} printed all over with this artwork: `
+    + (withBack ? "the first image is the front print and the second image is the back print. Show the garment's front view on the left and its back view on the right, side by side, "
+      : "the image is the front print. Show the garment's front view, ")
+    + 'laid flat on a plain light grey background, with soft even studio lighting and realistic fabric. Keep the artwork exactly as given, fitted to the garment shape.';
 }
 
 export interface AiSettings { keySet: boolean; capPeso: number; ratePeso: number; version: number }
@@ -46,7 +72,7 @@ export function keyFile(db: Db): string {
 }
 export function readFalKey(db: Db): string | null {
   try {
-    return readFileSync(keyFile(db), 'utf8').replace(/^﻿/, '').trim() || null; // Notepad may start the file with a BOM
+    return readFileSync(keyFile(db), 'utf8').replace(/^\uFEFF/, '').trim() || null; // Notepad may start the file with a BOM
   } catch {
     return null;
   }
@@ -112,7 +138,8 @@ export function checkCap(db: Db, month: string, mills: number): void {
   }
 }
 
-export function logRun(db: Db, run: { at: string; month: string; userId: string; step: 'redraw' | 'vectorize'; model: string; ok: boolean; mills: number; ms: number; note?: string }): void {
+export type AiStep = 'redraw' | 'back' | 'mockup' | 'vectorize';
+export function logRun(db: Db, run: { at: string; month: string; userId: string; step: AiStep; model: string; ok: boolean; mills: number; ms: number; note?: string }): void {
   const rate = Math.round(aiSettings(db).ratePeso * 100);
   db.prepare(`INSERT INTO img_ai_runs (id, at, month, user_id, step, model, ok, cost_mills, rate_centavos, ms, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(newId(), run.at, run.month, run.userId, run.step, run.model, run.ok ? 1 : 0, run.ok ? run.mills : 0, rate, Math.round(run.ms), (run.note ?? '').slice(0, 300));

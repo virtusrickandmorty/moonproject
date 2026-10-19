@@ -20,10 +20,16 @@ type Status = { upscale: boolean; background: boolean; art: boolean; waiting: nu
 type FlatColour = { hex: string; paint: string | null; share: number; background: boolean };
 type VectorInfo = { width: number; height: number; widthCm: number; heightCm: number; colours: { hex: string; share: number }[]; shapes: number; warnings: string[] };
 type Result =
-  | { kind: 'png'; blob: Blob; url: string; w: number; h: number; colours?: FlatColour[] }
+  | { kind: 'png'; blob: Blob; url: string; w: number; h: number; colours?: FlatColour[]; label?: 'front' | 'back' | 'mockup' }
   | { kind: 'vector'; url: string; w: number; h: number; info: VectorInfo; files: { name: string; label: string; blob: Blob; url: string }[]; costPeso?: number };
 type Corners = [number, number][];
 type Method = 'ai-best' | 'ai-economy' | 'free';
+type Sides = 'front' | 'split' | 'two' | 'aiback';
+type Garment = 'jersey' | 'tshirt' | 'polo' | 'longsleeve';
+type SetItem = { blob: Blob; url: string; w: number; h: number };
+type JerseySet = { front?: SetItem; back?: SetItem; mockup?: SetItem };
+const GARMENTS: Record<Garment, string> = { jersey: 'Basketball jersey', tshirt: 'T-shirt', polo: 'Polo shirt', longsleeve: 'Long-sleeve shirt' };
+const toDataUri = (b: Blob) => new Promise<string>((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => no(new Error('The picture could not be read.')); r.readAsDataURL(b); });
 type AiRun = { at: string; step: string; model: string; ok: boolean; peso: number; seconds: number; note: string; who: string };
 type AiInfo = { keySet: boolean; capPeso: number; ratePeso: number; version: number; month: string; spentPeso: number; prices: { best: number; economy: number; vector: number }; runs: AiRun[] };
 const peso = (n: number) => `₱${n.toFixed(2)}`;
@@ -51,6 +57,12 @@ export function ImageTools({ me }: { me: Me }) {
   const [method, setMethod] = useState<Method>(canAi ? 'ai-best' : 'free');
   const [shape, setShape] = useState<'tall' | 'square' | 'wide'>('tall');
   const [removeText, setRemoveText] = useState(true);
+  const [sides, setSides] = useState<Sides>('front');
+  const [backFile, setBackFile] = useState<{ blob: Blob; name: string; url: string } | null>(null);
+  const [backName, setBackName] = useState('');
+  const [backNumber, setBackNumber] = useState('');
+  const [set, setSet] = useState<JerseySet>({});
+  const [garment, setGarment] = useState<Garment>('jersey');
   const [straighten, setStraighten] = useState(false);
   const [corners, setCorners] = useState<Corners>(START_CORNERS);
   const [clean, setClean] = useState(2);
@@ -90,7 +102,7 @@ export function ImageTools({ me }: { me: Me }) {
     const [r, g, b] = c.getContext('2d')!.getImageData(0, 0, 1, 1).data; // the corner's colour: usually the background
     setColour([r!, g!, b!]);
     setFile({ blob: f, name: name.replace(/\.\w+$/, ''), url: URL.createObjectURL(f), w: bmp.width, h: bmp.height });
-    setResult(null); setError(''); setCorners(START_CORNERS); setPaint([]);
+    setResult(null); setError(''); setCorners(START_CORNERS); setPaint([]); setSet({});
   };
   useEffect(() => {
     const paste = (e: ClipboardEvent) => { const f = [...(e.clipboardData?.files ?? [])][0]; if (f) void open(f, 'pasted'); };
@@ -176,15 +188,51 @@ export function ImageTools({ me }: { me: Me }) {
     return out.size > 4.5 * 1024 * 1024 ? as('image/jpeg') : out;
   };
 
-  /** AI redraw: the photo laid flat as print artwork, by the online AI; the price was on the button. */
+  const item = async (blob: Blob): Promise<SetItem> => { const bmp = await createImageBitmap(blob); return { blob, url: URL.createObjectURL(blob), w: bmp.width, h: bmp.height }; };
+  const showItem = (it: SetItem, label: 'front' | 'back' | 'mockup') => { setResult({ kind: 'png', ...it, label }); setSplit(label === 'mockup' ? 0 : 50); }; // a mockup has no 'before'
+
+  /**
+   * AI redraw: the photo laid flat as print artwork by the online AI, one side or front and back: one picture showing
+   * both (each side taken out), two photos, or the back made by the AI from the redrawn front. The price was on the button.
+   */
   const runAiRedraw = () => attempt(async () => {
     if (!file) return;
-    setResult(null);
-    setBusy(method === 'ai-best' ? 'Redrawing with the online AI (about 25 seconds)…' : 'Redrawing with the online AI (about 20 seconds)…');
-    const q = new URLSearchParams({ op: 'redraw', quality: method === 'ai-best' ? 'best' : 'economy', shape, text: removeText ? 'remove' : 'keep' });
+    if (sides === 'two' && !backFile) throw new Error('Choose the back photo too.');
+    setResult(null); setSet({});
+    const quality = method === 'ai-best' ? 'best' : 'economy';
+    const redraw = async (blob: Blob, part: 'whole' | 'front' | 'back') => {
+      const q = new URLSearchParams({ op: 'redraw', quality, shape, text: removeText ? 'remove' : 'keep', part });
+      return item(await fetchBlob((await post<object>(await forAi(blob, false), q.toString(), '/api/img/ai/run')).url));
+    };
     try {
-      const body = await post<object>(await forAi(file.blob, false), q.toString(), '/api/img/ai/run');
-      await shown(await fetchBlob(body.url));
+      setBusy(sides === 'front' ? 'Redrawing with the online AI (about 25 seconds)…' : 'Redrawing the front (about 25 seconds)…');
+      const front = await redraw(file.blob, sides === 'split' ? 'front' : 'whole');
+      setSet({ front }); showItem(front, 'front');
+      if (sides === 'front') return;
+      let back: SetItem;
+      if (sides === 'aiback') {
+        setBusy('Making the back (about 25 seconds)…');
+        const q = new URLSearchParams({ op: 'back', shape, name: backName.trim(), number: backNumber.trim() });
+        back = await item(await fetchBlob((await post<object>(await forAi(front.blob, true), q.toString(), '/api/img/ai/run')).url));
+      } else {
+        setBusy('Redrawing the back (about 25 seconds)…');
+        back = await redraw(sides === 'split' ? file.blob : backFile!.blob, sides === 'split' ? 'back' : 'whole');
+      }
+      setSet({ front, back });
+    } finally { loadAi(); }
+  });
+
+  /** A mockup: the front (and back) flat artwork on a garment, front and back views side by side. */
+  const runMockup = () => attempt(async () => {
+    if (!set.front) return;
+    setBusy('Making the mockup (about 25 seconds)…');
+    try {
+      const body = { front: await toDataUri(await forAi(set.front.blob, false)), ...(set.back ? { back: await toDataUri(await forAi(set.back.blob, false)) } : {}), garment };
+      const res = await fetch('/api/img/ai/mockup', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken }, body: JSON.stringify(body) });
+      const out = await res.json().catch(() => null) as { url?: string; message?: string } | null;
+      if (!res.ok || !out?.url) throw new Error(out?.message ?? 'The mockup could not be made.');
+      const mockup = await item(await fetchBlob(out.url));
+      setSet((x) => ({ ...x, mockup })); showItem(mockup, 'mockup');
     } finally { loadAi(); }
   });
 
@@ -211,9 +259,10 @@ export function ImageTools({ me }: { me: Me }) {
   const aiFlat = tool === 'flat' && method !== 'free';
   const aiVector = tool === 'vector' && style === 'ai';
   const ready = tool === 'clean' || aiFlat || aiVector || art;
-  const aiPrice = !ai ? null : aiFlat ? (method === 'ai-best' ? ai.prices.best : ai.prices.economy) : aiVector ? ai.prices.vector : null;
+  const redrawPrice = !ai ? 0 : method === 'ai-best' ? ai.prices.best : ai.prices.economy;
+  const aiPrice = !ai ? null : aiFlat ? (sides === 'front' ? redrawPrice : sides === 'aiback' ? redrawPrice + ai.prices.best : 2 * redrawPrice) : aiVector ? ai.prices.vector : null;
   const doIt = () => void (tool === 'clean' ? runClean() : aiFlat ? runAiRedraw() : tool === 'flat' ? runFlat() : aiVector ? runAiVector() : runVector());
-  const fileName = !file ? 'picture.png' : aiFlat ? `${file.name}-redraw.png` : tool === 'flat' ? `${file.name}-flat.png` : `${file.name}${bg !== 'keep' ? '-clear' : ''}${scale ? `-x${scale}` : ''}.png`;
+  const fileName = !file ? 'picture.png' : result?.kind === 'png' && result.label ? `${file.name}-${result.label}.png` : aiFlat ? `${file.name}-redraw.png` : tool === 'flat' ? `${file.name}-flat.png` : `${file.name}${bg !== 'keep' ? '-clear' : ''}${scale ? `-x${scale}` : ''}.png`;
   const choice = (on: boolean) => `rounded-full px-3 py-1.5 text-sm ring-1 ${on ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'} disabled:opacity-40`;
   const tab = (on: boolean) => `flex-1 rounded-md px-2 py-1.5 text-sm font-medium ${on ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:text-slate-900'}`;
   const choices = <T,>(values: readonly T[], value: T, set: (v: T) => void, label: (v: T) => string, disabled?: (v: T) => boolean) => (
@@ -290,6 +339,20 @@ export function ImageTools({ me }: { me: Me }) {
           </fieldset>}
 
           {aiFlat && <>
+            <fieldset className="space-y-2">
+              <legend className="text-sm font-semibold">Sides</legend>
+              {choices(['front', 'split', 'two', 'aiback'] as const, sides, (v) => { setSides(v); setResult(null); setSet({}); }, (v) => (v === 'front' ? 'Front only' : v === 'split' ? 'Front + back: one picture shows both' : v === 'two' ? 'Front + back: two photos' : 'Front + a back made by the AI'))}
+              {sides === 'split' && <p className="text-xs text-slate-500">The picture shows the jersey's front and back: each side is taken out and redrawn (two runs).</p>}
+              {sides === 'two' && <label className="block cursor-pointer rounded-lg border border-dashed border-slate-300 p-2 text-sm text-slate-600 hover:border-indigo-400">
+                {backFile ? <span className="flex items-center gap-2"><img src={backFile.url} alt="The back photo" className="h-12 w-12 rounded object-cover" /> Back photo: {backFile.name} <span className="text-indigo-700">(change)</span></span> : <><b className="text-indigo-700">Choose the back photo</b> (the first picture is the front)</>}
+                <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" aria-label="Choose the back photo" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) setBackFile({ blob: f, name: f.name, url: URL.createObjectURL(f) }); }} />
+              </label>}
+              {sides === 'aiback' && <div className="grid grid-cols-[1fr_6rem] gap-2">
+                <Field label="Name on the back (optional)"><input className={inputClass} maxLength={24} value={backName} onChange={(e) => setBackName(e.target.value)} placeholder="e.g. SON-OT" /></Field>
+                <Field label="Number"><input className={inputClass} inputMode="numeric" maxLength={3} value={backNumber} onChange={(e) => setBackNumber(e.target.value.replace(/\D/g, ''))} placeholder="10" /></Field>
+              </div>}
+              {sides === 'aiback' && <p className="text-xs text-slate-500">The AI continues the front's design over the back{backName || backNumber ? ', with the name and number' : '; leave the name and number empty for the design only'}. It always uses Best.</p>}
+            </fieldset>
             <fieldset className="space-y-2">
               <legend className="text-sm font-semibold">Shape of the artwork</legend>
               {choices(['tall', 'square', 'wide'] as const, shape, setShape, (v) => (v === 'tall' ? 'Tall (a jersey front)' : v === 'square' ? 'Square' : 'Wide'))}
@@ -407,6 +470,8 @@ export function ImageTools({ me }: { me: Me }) {
                   {tool === 'flat' && straighten && <Button disabled={!!busy} onClick={() => setResult(null)}>Move the corners</Button>}
                   <span className="text-sm text-slate-500">{result.w} × {result.h} pixels · {result.blob.size < 1024 * 1024 ? `${Math.max(1, Math.round(result.blob.size / 1024))} KB` : `${(result.blob.size / 1024 / 1024).toFixed(1)} MB`}</span>
                 </div>
+                {canAi && set.front && <JerseySetPanel set={set} shown={result.url} onShow={showItem} garment={garment} onGarment={setGarment}
+                  mockupPrice={ai?.prices.best ?? null} busy={!!busy} onMockup={() => void runMockup()} />}
                 {flatColours && <Palette colours={flatColours} paint={paint} onPaint={setPaint} />}
                 {flatColours && <div className="flex flex-wrap gap-2">
                   <Button tone="primary" disabled={!repainted || !!busy} onClick={() => void runFlat({ palette: flatColours.map((c) => c.hex), paint })}>Apply the colours</Button>
@@ -433,6 +498,34 @@ export function ImageTools({ me }: { me: Me }) {
       </div>
       {canAi && ai && <AiSettingsCard me={me} ai={ai} onSaved={loadAi} />}
     </div>
+  );
+}
+
+/** Front, back and mockup of one jersey: each opens in the view above, downloads, and makes a mockup from them. */
+function JerseySetPanel({ set, shown, onShow, garment, onGarment, mockupPrice, busy, onMockup }: {
+  set: JerseySet; shown: string; onShow: (it: SetItem, label: 'front' | 'back' | 'mockup') => void; garment: Garment; onGarment: (g: Garment) => void;
+  mockupPrice: number | null; busy: boolean; onMockup: () => void;
+}) {
+  const parts = (['front', 'back', 'mockup'] as const).filter((k) => set[k]);
+  return (
+    <section className="space-y-3 rounded-xl bg-white p-3 ring-1 ring-slate-200/70" aria-label="Front, back and mockup">
+      <div className="flex flex-wrap gap-3">
+        {parts.map((k) => { const it = set[k]!; return (
+          <figure key={k} className={`w-36 space-y-1 rounded-lg p-1.5 ring-1 ${shown === it.url ? 'ring-indigo-500' : 'ring-slate-200'}`}>
+            <button type="button" className="block w-full" onClick={() => onShow(it, k)} aria-label={`Show the ${k}`}><img src={it.url} alt={`The ${k}`} className="h-40 w-full rounded object-contain" style={checker} /></button>
+            <figcaption className="flex items-center justify-between text-xs"><b className="capitalize">{k}</b><a href={it.url} download={`${k}.png`} className="text-indigo-700 hover:underline">Download</a></figcaption>
+          </figure>
+        ); })}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span>Mockup on a</span>
+        <select className="rounded-md border-slate-300 py-1 text-sm" value={garment} onChange={(e) => onGarment(e.target.value as Garment)} aria-label="Garment for the mockup">
+          {(Object.keys(GARMENTS) as Garment[]).map((g) => <option key={g} value={g}>{GARMENTS[g]}</option>)}
+        </select>
+        <Button disabled={busy || mockupPrice === null} onClick={onMockup}>{`Make a mockup${mockupPrice !== null ? ` (≈ ${peso(mockupPrice)})` : ''}`}</Button>
+        <span className="text-xs text-slate-500">{set.back ? 'Front and back views side by side.' : 'The front view (redraw a back too for both views).'}</span>
+      </div>
+    </section>
   );
 }
 
@@ -472,7 +565,7 @@ function AiSettingsCard({ me, ai, onSaved }: { me: Me; ai: AiInfo; onSaved: () =
         <table className="w-full text-left text-sm">
           <thead className="text-xs text-slate-500"><tr><th className="py-1 pr-3">When</th><th className="pr-3">Who</th><th className="pr-3">What</th><th className="pr-3">AI</th><th className="pr-3 text-right">Cost</th><th>Result</th></tr></thead>
           <tbody>{ai.runs.map((r, i) => <tr key={`${r.at}-${i}`} className="border-t border-slate-100">
-            <td className="py-1 pr-3 whitespace-nowrap">{r.at.slice(0, 16).replace('T', ' ')}</td><td className="pr-3">{r.who}</td><td className="pr-3">{r.step === 'redraw' ? 'Redraw' : 'Vector'}</td><td className="pr-3">{r.model}</td>
+            <td className="py-1 pr-3 whitespace-nowrap">{r.at.slice(0, 16).replace('T', ' ')}</td><td className="pr-3">{r.who}</td><td className="pr-3">{({ redraw: 'Redraw', back: 'Back', mockup: 'Mockup', vectorize: 'Vector' } as Record<string, string>)[r.step] ?? r.step}</td><td className="pr-3">{r.model}</td>
             <td className="pr-3 text-right tabular-nums">{peso(r.peso)}</td><td className={r.ok ? 'text-emerald-700' : 'text-red-700'}>{r.ok ? `Done in ${r.seconds}s` : `Failed: ${r.note}`}</td>
           </tr>)}</tbody>
         </table>

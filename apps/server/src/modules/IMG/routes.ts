@@ -15,7 +15,7 @@ import { sniffType } from '../../engine/attachments.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
-import { AI_MODELS, aiSettings, checkCap, falService, logRun, pesoOf, readFalKey, recentRuns, redrawPrompt, saveAiSettings, spentThisMonth, type AiService } from './ai.ts';
+import { AI_MODELS, aiSettings, backPrompt, checkCap, falService, logRun, mockupPrompt, pesoOf, readFalKey, recentRuns, redrawPrompt, saveAiSettings, spentThisMonth, type AiService, type AiStep } from './ai.ts';
 import { localTools, oneAtATime, queueLength, toolsDir, type ImageTools } from './tools.ts';
 
 export const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
@@ -32,9 +32,17 @@ export function useAiServiceForTests(service: AiService | null): void { standAi 
 const MAX_AI_BYTES = 5 * 1024 * 1024;
 const ASPECT = { tall: '9:16', square: '1:1', wide: '16:9' } as const;
 const aiQuery = z.discriminatedUnion('op', [
-  z.object({ op: z.literal('redraw'), quality: z.enum(['best', 'economy']), shape: z.enum(['tall', 'square', 'wide']), text: z.enum(['remove', 'keep']) }).strict(),
+  z.object({ op: z.literal('redraw'), quality: z.enum(['best', 'economy']), shape: z.enum(['tall', 'square', 'wide']), text: z.enum(['remove', 'keep']), part: z.enum(['whole', 'front', 'back']).default('whole') }).strict(),
+  // The back, made by the AI from the front's flat artwork; a name and number to letter on it, or none.
+  z.object({ op: z.literal('back'), shape: z.enum(['tall', 'square', 'wide']), name: z.string().trim().max(24).regex(/^[\p{L}\p{N} .'&-]*$/u).default(''), number: z.string().trim().regex(/^\d{0,3}$/).default('') }).strict(),
   z.object({ op: z.literal('vector') }).strict(),
 ]);
+/** A mockup: the front's (and the back's) flat artwork on a garment; pictures as data URIs (the screen sends them small). */
+const mockupInput = z.object({
+  front: z.string().regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/),
+  back: z.string().regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/).optional(),
+  garment: z.enum(['jersey', 'tshirt', 'polo', 'longsleeve']),
+}).strict();
 
 const level = z.enum(['0', '1', '2', '3']).transform(Number);
 const flag = z.enum(['0', '1']).transform((v) => v === '1');
@@ -91,6 +99,47 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
   app.put('/api/img/ai', { config: { permission: 'img.ai' } }, async (req) =>
     tx(db, () => saveAiSettings(db, req.body, { userId: currentUser(req).userId, at: stamp(deps.clock) })));
+
+  /**
+   * One online AI run: the month's limit checked first, the run logged with its cost either way (a failed one costs
+   * nothing: Fal.ai charges only for a result), and the result kept as the other tools' are (out.png or design.svg).
+   */
+  const aiRun = async (userId: string, step: AiStep, model: (typeof AI_MODELS)[keyof typeof AI_MODELS], input: Record<string, unknown>) => {
+    const month = today(deps.clock).slice(0, 7);
+    checkCap(db, month, model.mills);
+    const started = Date.now();
+    let bytes: Buffer;
+    try {
+      bytes = await (standAi ?? falService).run(readFalKey(db) ?? '', model.endpoint, input);
+    } catch (e) {
+      logRun(db, { at: stamp(deps.clock), month, userId, step, model: model.label, ok: false, mills: 0, ms: Date.now() - started, note: e instanceof Error ? e.message : String(e) });
+      throw e;
+    }
+    logRun(db, { at: stamp(deps.clock), month, userId, step, model: model.label, ok: true, mills: model.mills, ms: Date.now() - started });
+    tidy();
+    const id = randomUUID();
+    const dir = join(work, id);
+    mkdirSync(dir, { recursive: true });
+    const costPeso = pesoOf(model.mills, Math.round(aiSettings(db).ratePeso * 100));
+    if (step === 'vectorize') {
+      if (!/<svg[\s>]/i.test(bytes.subarray(0, 4096).toString('utf8'))) throw new AppError('IMG_AI_FAILED', 'The vectorizer gave something other than an SVG. Try again.', 502);
+      writeFileSync(join(dir, 'design.svg'), bytes);
+      const url = `/api/img/results/${id}/design.svg`;
+      return { id, url, files: { 'design.svg': url }, costPeso, ms: Date.now() - started };
+    }
+    const got = sniffType(bytes);
+    if (got !== 'image/png' && got !== 'image/jpeg' && got !== 'image/webp') throw new AppError('IMG_AI_FAILED', 'The online AI gave back something that is not a picture. Try again.', 502);
+    writeFileSync(join(dir, 'out.png'), bytes);
+    return { id, url: `/api/img/results/${id}`, bytes: bytes.length, costPeso, ms: Date.now() - started };
+  };
+
+  app.post('/api/img/ai/mockup', { bodyLimit: 16 * 1024 * 1024, config: { permission: 'img.ai' } }, async (req) => {
+    const m = mockupInput.parse(req.body);
+    const images = m.back ? [m.front, m.back] : [m.front];
+    for (const uri of images) if (uri.length > MAX_AI_BYTES * 1.4) throw new AppError('FILE_TOO_BIG', "A picture is bigger than 5 MB, the online AI's limit. Use a smaller one.", 413);
+    return aiRun(currentUser(req).userId, 'mockup', AI_MODELS.best,
+      { prompt: mockupPrompt(m.garment, !!m.back), image_urls: images, aspect_ratio: m.back ? '16:9' : '3:4', output_format: 'png' });
+  });
 
   const result = async (idParam: string, name: string, reply: FastifyReply) => {
     const id = z.uuid().safeParse(idParam);
@@ -151,9 +200,9 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
     });
 
     /**
-     * The online AI (owner: img.ai): ?op=redraw&quality=best|economy&shape=tall|square|wide&text=remove|keep, or ?op=vector
-     * (Recraft). The body is the picture. The month's limit is checked first; the run is logged with its cost either way
-     * (a failed one costs nothing: Fal.ai charges only for a result).
+     * The online AI (owner: img.ai), the body the picture: ?op=redraw&quality=best|economy&shape=tall|square|wide&text=remove|keep
+     * &part=whole|front|back (front/back: one side of a picture showing both); ?op=back&shape&name&number (the back, made from
+     * the front's flat artwork); ?op=vector (Recraft).
      */
     upload.post('/api/img/ai/run', { config: { permission: 'img.ai' } }, async (req) => {
       const q = aiQuery.safeParse(req.query);
@@ -163,39 +212,16 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (!Buffer.isBuffer(data) || !type || !EXT[type]) throw new AppError('FILE_TYPE', 'Only JPEG, PNG or WebP pictures can be used.', 415);
       if (data.length > MAX_AI_BYTES) throw new AppError('FILE_TOO_BIG', "The picture is bigger than 5 MB, the online AI's limit. Use a smaller one.", 413);
       const op = q.data;
-      const model = op.op === 'redraw' ? AI_MODELS[op.quality] : AI_MODELS.vector;
-      const step = op.op === 'vector' ? 'vectorize' as const : 'redraw' as const;
-      const month = today(deps.clock).slice(0, 7);
-      checkCap(db, month, model.mills);
       const uri = `data:${type};base64,${data.toString('base64')}`;
-      const input: Record<string, unknown> = op.op === 'vector' ? { image_url: uri }
-        : op.quality === 'best' ? { prompt: redrawPrompt('best', op.text === 'remove'), image_urls: [uri], aspect_ratio: ASPECT[op.shape], output_format: 'png' }
-        : { prompt: redrawPrompt('economy', op.text === 'remove'), image_url: uri, aspect_ratio: ASPECT[op.shape], output_format: 'png' };
       const who = currentUser(req).userId;
-      const started = Date.now();
-      let bytes: Buffer;
-      try {
-        bytes = await (standAi ?? falService).run(readFalKey(db) ?? '', model.endpoint, input);
-      } catch (e) {
-        logRun(db, { at: stamp(deps.clock), month, userId: who, step, model: model.label, ok: false, mills: 0, ms: Date.now() - started, note: e instanceof Error ? e.message : String(e) });
-        throw e;
+      if (op.op === 'vector') return aiRun(who, 'vectorize', AI_MODELS.vector, { image_url: uri });
+      if (op.op === 'back') {
+        return aiRun(who, 'back', AI_MODELS.best, { prompt: backPrompt(op.name, op.number), image_urls: [uri], aspect_ratio: ASPECT[op.shape], output_format: 'png' });
       }
-      logRun(db, { at: stamp(deps.clock), month, userId: who, step, model: model.label, ok: true, mills: model.mills, ms: Date.now() - started });
-      tidy();
-      const id = randomUUID();
-      const dir = join(work, id);
-      mkdirSync(dir, { recursive: true });
-      const costPeso = pesoOf(model.mills, Math.round(aiSettings(db).ratePeso * 100));
-      if (op.op === 'vector') {
-        if (!/<svg[\s>]/i.test(bytes.subarray(0, 4096).toString('utf8'))) throw new AppError('IMG_AI_FAILED', 'The vectorizer gave something other than an SVG. Try again.', 502);
-        writeFileSync(join(dir, 'design.svg'), bytes);
-        const url = `/api/img/results/${id}/design.svg`;
-        return { id, url, files: { 'design.svg': url }, costPeso, ms: Date.now() - started };
-      }
-      const got = sniffType(bytes);
-      if (got !== 'image/png' && got !== 'image/jpeg' && got !== 'image/webp') throw new AppError('IMG_AI_FAILED', 'The online AI gave back something that is not a picture. Try again.', 502);
-      writeFileSync(join(dir, 'out.png'), bytes);
-      return { id, url: `/api/img/results/${id}`, bytes: bytes.length, costPeso, ms: Date.now() - started };
+      const prompt = redrawPrompt(op.quality, op.text === 'remove', op.part);
+      return op.quality === 'best'
+        ? aiRun(who, 'redraw', AI_MODELS.best, { prompt, image_urls: [uri], aspect_ratio: ASPECT[op.shape], output_format: 'png' })
+        : aiRun(who, 'redraw', AI_MODELS.economy, { prompt, image_url: uri, aspect_ratio: ASPECT[op.shape], output_format: 'png' });
     });
   });
 }

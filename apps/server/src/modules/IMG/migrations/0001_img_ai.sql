@@ -19,7 +19,7 @@ CREATE TABLE img_ai_runs (
   at             TEXT NOT NULL,
   month          TEXT NOT NULL CHECK (month GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]'),
   user_id        TEXT NOT NULL REFERENCES users(id),
-  step           TEXT NOT NULL CHECK (step IN ('redraw', 'vectorize')),
+  step           TEXT NOT NULL CHECK (step IN ('redraw', 'back', 'mockup', 'vectorize')),
   model          TEXT NOT NULL,
   ok             INTEGER NOT NULL CHECK (ok IN (0, 1)),
   cost_mills     INTEGER NOT NULL CHECK (cost_mills >= 0),

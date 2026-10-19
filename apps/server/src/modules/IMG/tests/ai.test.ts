@@ -101,3 +101,34 @@ it('a failed run is logged and costs nothing; Kontext is told to erase the text 
   expect(s.spentPeso).toBe(0);
   expect(s.runs[0]).toMatchObject({ ok: false, peso: 0, model: 'FLUX Kontext' });
 });
+
+it('takes one side out of a picture showing both, makes the back with a name and number, and makes a mockup', async () => {
+  await save({ capPeso: 100, ratePeso: 58, apiKey: KEY, version: 0 });
+  expect((await run('op=redraw&quality=best&shape=tall&text=remove&part=back')).statusCode).toBe(200);
+  expect(String(calls[0]!.input.prompt)).toContain('Take only the BACK of the jersey');
+
+  const back = await run(`op=back&shape=tall&name=${encodeURIComponent('SON-OT')}&number=10`);
+  expect(back.statusCode, back.body).toBe(200);
+  expect(calls[1]!.endpoint).toBe('fal-ai/nano-banana-pro/edit');
+  expect(String(calls[1]!.input.prompt)).toContain('the player name "SON-OT"');
+  expect(String(calls[1]!.input.prompt)).toContain('the large number "10"');
+  expect(String(calls[1]!.input.prompt)).toContain('no empty boxes');
+  // No name or number: the design only; a name with odd characters or a long number is refused before any cost.
+  expect((await run('op=back&shape=tall')).statusCode).toBe(200);
+  expect(String(calls[2]!.input.prompt)).toContain('Do not add any text');
+  expect((await run('op=back&shape=tall&name=%22%3Cx%3E')).statusCode).toBe(400);
+  expect((await run('op=back&shape=tall&number=1234')).statusCode).toBe(400);
+  expect(calls).toHaveLength(3);
+
+  const png = `data:image/png;base64,${smallPng().toString('base64')}`;
+  const mock = await (await env.as('owner')).post('/api/img/ai/mockup', { front: png, back: png, garment: 'polo' });
+  expect(mock.statusCode, mock.body).toBe(200);
+  expect(calls[3]!.input).toMatchObject({ aspect_ratio: '16:9' });
+  expect((calls[3]!.input.image_urls as string[])).toHaveLength(2);
+  expect(String(calls[3]!.input.prompt)).toContain('polo shirt');
+  expect((await (await env.as('encoder')).post('/api/img/ai/mockup', { front: png, garment: 'jersey' })).statusCode).toBe(403);
+
+  const s = await settings();
+  expect(s.spentPeso).toBe(34.8); // four Best runs at ₱8.70
+  expect(env.db.prepare('SELECT step FROM img_ai_runs ORDER BY rowid').pluck().all()).toEqual(['redraw', 'back', 'back', 'mockup']);
+});
