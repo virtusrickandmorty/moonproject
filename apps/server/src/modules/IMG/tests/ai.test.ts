@@ -108,15 +108,15 @@ it('a failed run is logged and costs nothing; Kontext is told to erase the text 
 
 it('Crisp redraws with GPT Image 2.5 at a size in pixels, priced at its estimate', async () => {
   await save({ capPeso: 100, ratePeso: 58, apiKey: KEY, version: 0 });
-  expect((await settings()).prices).toMatchObject({ best: 8.7, crisp: 14.5, economy: 2.32 });
+  expect((await settings()).prices).toMatchObject({ best: 8.7, crisp: 16.82, economy: 2.32 });
   const r = await run('op=redraw&quality=crisp&shape=tall&text=remove');
   expect(r.statusCode, r.body).toBe(200);
-  expect(r.json()).toMatchObject({ costPeso: 14.5 });
+  expect(r.json()).toMatchObject({ costPeso: 16.82 });
   expect(calls[0]!.endpoint).toBe('openai/gpt-image-2.5/sunburst/edit');
   expect(calls[0]!.input).toMatchObject({ image_size: { width: 1152, height: 2048 }, quality: 'high', output_format: 'png' });
   expect(calls[0]!.input).not.toHaveProperty('aspect_ratio');
   expect(String(calls[0]!.input.prompt)).toContain('Remove all text');
-  expect((await settings()).runs[0]).toMatchObject({ ok: true, peso: 14.5, model: 'GPT Image 2.5' });
+  expect((await settings()).runs[0]).toMatchObject({ ok: true, peso: 16.82, model: 'GPT Image 2.5' });
 });
 
 it('takes one side out of a picture showing both, makes the back with a name and number, and makes a mockup', async () => {

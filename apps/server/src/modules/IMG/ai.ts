@@ -16,12 +16,13 @@ import { appendAudit } from '../../engine/audit.ts';
 
 /**
  * US$ per picture, from Fal.ai's prices (Oct 2026); shown in pesos at the owner's rate. GPT Image 2.5 is billed by
- * tokens (size and quality): 25 US cents is a safe estimate for one 1152 x 2048 picture at high quality.
+ * tokens (size and quality): Fal.ai's own estimate is US$0.135 a call at the usual 1024 x 1024; ours are 1152 x 2048
+ * (2.25 times the pixels) at high quality, about US$0.29.
  */
 export const AI_MODELS = {
   best: { endpoint: 'fal-ai/nano-banana-pro/edit', mills: 150, label: 'Nano Banana Pro' },
   economy: { endpoint: 'fal-ai/flux-pro/kontext', mills: 40, label: 'FLUX Kontext' },
-  crisp: { endpoint: 'openai/gpt-image-2.5/sunburst/edit', mills: 250, label: 'GPT Image 2.5' },
+  crisp: { endpoint: 'openai/gpt-image-2.5/sunburst/edit', mills: 290, label: 'GPT Image 2.5' },
   vector: { endpoint: 'fal-ai/recraft/vectorize', mills: 11, label: 'Recraft' },
 } as const;
 export type Quality = 'best' | 'economy' | 'crisp';
