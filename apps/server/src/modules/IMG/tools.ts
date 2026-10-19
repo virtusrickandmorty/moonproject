@@ -25,13 +25,15 @@ export interface VectorInfo {
   shapes: number; files: string[]; warnings: string[];
 }
 export interface ImageTools {
-  installed(): { upscale: boolean; background: boolean; art: boolean };
+  installed(): { upscale: boolean; background: boolean; art: boolean; erase: boolean };
   upscale(input: string, output: string, scale: 2 | 4, kind: UpscaleKind): Promise<void>;
   removeBackground(input: string, output: string, cutout: Cutout): Promise<void>;
   /** Writes output (a PNG); says which colours it found. */
   flatten(input: string, output: string, options: FlatOptions): Promise<FlatInfo>;
   /** Writes design.svg, design.pdf and (colour, several inks) separations.pdf into folder. */
   vectorize(input: string, folder: string, options: VectorOptions): Promise<VectorInfo>;
+  /** Erases what the mask marks (white) and fills it from around it (LaMa); writes output (a PNG). */
+  erase(input: string, mask: string, output: string): Promise<void>;
 }
 
 /** The longest one picture may take before it is stopped (BiRefNet on the processor takes seconds, not minutes). */
@@ -76,6 +78,8 @@ export function localTools(folder: string): ImageTools {
   const remover = join(dir, 'rembg', 'remove.py');
   const flat = join(dir, 'rembg', 'flatart.py');
   const vector = join(dir, 'rembg', 'vectorize.py');
+  const eraser = join(dir, 'rembg', 'lama.py');
+  const lamaModel = join(dir, 'rembg', 'models', 'lama_fp32.onnx');
   const lib = join(dir, 'rembg', 'env', 'Lib', 'site-packages');
   /** The options go in a file beside the output (a command line mangles JSON on Windows); the last line printed is the answer. */
   const python = async <T>(script: string, input: string, output: string, optionsFile: string, options: object): Promise<T> => {
@@ -88,6 +92,7 @@ export function localTools(folder: string): ImageTools {
       upscale: existsSync(esr),
       background: existsSync(py) && existsSync(remover),
       art: existsSync(py) && existsSync(flat) && existsSync(vector) && existsSync(join(lib, 'cv2')) && existsSync(join(lib, 'vtracer')),
+      erase: existsSync(py) && existsSync(eraser) && existsSync(lamaModel) && existsSync(join(lib, 'cv2')),
     }),
     // Artwork: the model for drawn graphics (crisp edges, flat colour); photo: the general one.
     upscale: async (input, output, scale, kind) => {
@@ -96,6 +101,7 @@ export function localTools(folder: string): ImageTools {
     removeBackground: async (input, output, cutout) => { await run(py, [remover, input, output, cutout], dirname(remover)); },
     flatten: (input, output, options) => python<FlatInfo>(flat, input, output, join(dirname(output), 'flat-options.json'), options),
     vectorize: (input, folder, options) => python<VectorInfo>(vector, input, folder, join(folder, 'vector-options.json'), options),
+    erase: async (input, mask, output) => { await run(py, [eraser, input, mask, output], dirname(eraser)); },
   };
 }
 

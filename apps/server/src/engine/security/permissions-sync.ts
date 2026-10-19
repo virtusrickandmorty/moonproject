@@ -13,7 +13,7 @@ import { ROLES, type RoleKey } from '@moonproject/shared';
  * payment settings. (The shop certificate screen has no permission: it is read only, and the certificate is made on the
  * server PC.) Migration 0014_encoder_access.sql repeats this list.
  */
-export const OWNER_ONLY_PERMISSIONS: readonly string[] = ['sec.users.manage', 'bak.view', 'bak.run', 'bak.manage', 'bak.restore', 'shp.payment.manage', 'prd.reassign'];
+export const OWNER_ONLY_PERMISSIONS: readonly string[] = ['sec.users.manage', 'bak.view', 'bak.run', 'bak.manage', 'bak.restore', 'shp.payment.manage', 'prd.reassign', 'img.ai'];
 
 /**
  * What the departments added later start with (the owner's decisions, Oct 9, 2026; migrations 0015_purchasing_role.sql and
