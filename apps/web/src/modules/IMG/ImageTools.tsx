@@ -106,8 +106,8 @@ export function ImageTools({ me }: { me: Me }) {
             <legend className="text-sm font-semibold">1. Background</legend>
             <div className="flex flex-wrap gap-2">
               <button type="button" className={choice(bg === 'keep')} onClick={() => setBg('keep')}>Keep it</button>
-              <button type="button" className={choice(bg === 'object')} disabled={status?.background === false} onClick={() => setBg('object')}>Object or person</button>
-              <button type="button" className={choice(bg === 'design')} disabled={status?.background === false} onClick={() => setBg('design')}>Whole design</button>
+              <button type="button" className={choice(bg === 'object')} disabled={!status?.background} onClick={() => setBg('object')}>Object or person</button>
+              <button type="button" className={choice(bg === 'design')} disabled={!status?.background} onClick={() => setBg('design')}>Whole design</button>
               <button type="button" className={choice(bg === 'colour')} onClick={() => setBg('colour')}>Remove a colour</button>
             </div>
             <p className="text-xs text-slate-500">
@@ -127,7 +127,7 @@ export function ImageTools({ me }: { me: Me }) {
           <fieldset className="space-y-2">
             <legend className="text-sm font-semibold">2. Make it bigger</legend>
             <div className="flex flex-wrap gap-2">
-              {([0, 2, 4] as const).map((s) => <button key={s} type="button" className={choice(scale === s)} disabled={s > 0 && status?.upscale === false} onClick={() => setScale(s)}>{s ? `${s}×` : 'Same size'}</button>)}
+              {([0, 2, 4] as const).map((s) => <button key={s} type="button" className={choice(scale === s)} disabled={s > 0 && !status?.upscale} onClick={() => setScale(s)}>{s ? `${s}×` : 'Same size'}</button>)}
             </div>
             {scale > 0 && <div className="flex flex-wrap gap-2">
               <button type="button" className={choice(kind === 'artwork')} onClick={() => setKind('artwork')}>Artwork or logo</button>
