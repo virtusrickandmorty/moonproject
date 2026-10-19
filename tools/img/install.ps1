@@ -31,8 +31,17 @@ if (-not (Test-Path $py)) {
 & $py -m pip install --quiet --upgrade pip
 # OpenCV (Apache-2.0) and VTracer (MIT): photo to flat art and vectorize. Installed together so pip keeps one NumPy for all.
 & $py -m pip install --quiet 'rembg[cli]==2.0.85' 'onnxruntime-directml==1.24.4' 'opencv-python-headless==4.14.0.94' 'vtracer==0.6.15'
-foreach ($script in 'remove.py', 'flatart.py', 'vectorize.py') {
+foreach ($script in 'remove.py', 'flatart.py', 'vectorize.py', 'lama.py') {
   Copy-Item (Join-Path $PSScriptRoot $script) (Join-Path $bg $script) -Force
+}
+
+# The eraser: LaMa (Apache-2.0) as ONNX (208 MB), on the processor.
+$lama = Join-Path $bg 'models\lama_fp32.onnx'
+if (-not (Test-Path $lama)) {
+  Write-Host 'Downloading the eraser model (208 MB)...'
+  New-Item -ItemType Directory -Force (Split-Path $lama) | Out-Null
+  Invoke-WebRequest 'https://huggingface.co/Carve/LaMa-ONNX/resolve/main/lama_fp32.onnx' -OutFile "$lama.part"
+  Move-Item "$lama.part" $lama -Force
 }
 
 # 3. Fetch both models now (about 1.15 GB), so the first use is not a long wait: a 1x1 picture through each.

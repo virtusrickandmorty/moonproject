@@ -32,7 +32,11 @@ export function useAiServiceForTests(service: AiService | null): void { standAi 
 const MAX_AI_BYTES = 5 * 1024 * 1024;
 const ASPECT = { tall: '9:16', square: '1:1', wide: '16:9' } as const;
 const aiQuery = z.discriminatedUnion('op', [
-  z.object({ op: z.literal('redraw'), quality: z.enum(['best', 'economy']), shape: z.enum(['tall', 'square', 'wide']), text: z.enum(['remove', 'keep']), part: z.enum(['whole', 'front', 'back']).default('whole') }).strict(),
+  z.object({
+    op: z.literal('redraw'), quality: z.enum(['best', 'economy']), shape: z.enum(['tall', 'square', 'wide']), text: z.enum(['remove', 'keep']), part: z.enum(['whole', 'front', 'back']).default('whole'),
+    // The words on the jersey to remove, comma-separated (the owner types them): letters, digits and a few signs.
+    words: z.string().trim().max(160).regex(/^[\p{L}\p{N} .,'&#-]*$/u).default('').transform((v) => v.split(',').map((w) => w.trim()).filter(Boolean).slice(0, 8)),
+  }).strict(),
   // The back, made by the AI from the front's flat artwork; a name and number to letter on it, or none.
   z.object({ op: z.literal('back'), shape: z.enum(['tall', 'square', 'wide']), name: z.string().trim().max(24).regex(/^[\p{L}\p{N} .'&-]*$/u).default(''), number: z.string().trim().regex(/^\d{0,3}$/).default('') }).strict(),
   z.object({ op: z.literal('vector') }).strict(),
@@ -87,6 +91,36 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
   };
 
   app.get('/api/img/status', { config: { permission: 'img.use' } }, async () => ({ ...tools().installed(), waiting: queueLength() }));
+
+  /**
+   * Erase what is marked and fill it from around it (LaMa, on the shop PC, free): a name, number or logo off a photo
+   * before the online AI redraws it, or a leftover on a result. The picture and the mask (white: erase) as data URIs.
+   */
+  const eraseInput = z.object({
+    image: z.string().regex(/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/),
+    mask: z.string().regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/),
+  }).strict();
+  app.post('/api/img/erase', { bodyLimit: 48 * 1024 * 1024, config: { permission: 'img.use' } }, async (req) => {
+    const e = eraseInput.parse(req.body);
+    const t = tools();
+    if (!t.installed().erase) throw new AppError('IMG_NOT_INSTALLED', 'The eraser is not installed on the shop PC yet (tools/img/install.ps1).', 503);
+    const picture = Buffer.from(e.image.slice(e.image.indexOf(',') + 1), 'base64');
+    const mask = Buffer.from(e.mask.slice(e.mask.indexOf(',') + 1), 'base64');
+    const type = sniffType(picture);
+    if (!type || !EXT[type] || sniffType(mask) !== 'image/png') throw new AppError('FILE_TYPE', 'Only JPEG, PNG or WebP pictures can be used.', 415);
+    if (picture.length > MAX_IMAGE_BYTES) throw tooBig();
+    tidy();
+    const id = randomUUID();
+    const dir = join(work, id);
+    mkdirSync(dir, { recursive: true });
+    const input = resolve(dir, `in.${EXT[type]}`), maskFile = resolve(dir, 'mask.png'), output = resolve(dir, 'out.png');
+    writeFileSync(input, picture); writeFileSync(maskFile, mask);
+    const started = Date.now();
+    await oneAtATime(() => t.erase(input, maskFile, output));
+    rmSync(input, { force: true }); rmSync(maskFile, { force: true });
+    if (!existsSync(output)) throw new AppError('IMG_FAILED', 'The eraser made no picture. Try marking again.', 500);
+    return { id, url: `/api/img/results/${id}`, ms: Date.now() - started };
+  });
 
   /** The online AI's settings, this month's spending and prices in pesos, and the latest runs (owner: img.ai). */
   app.get('/api/img/ai', { config: { permission: 'img.ai' } }, async () => {
@@ -221,7 +255,7 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (op.op === 'back') {
         return aiRun(who, 'back', AI_MODELS.best, { prompt: backPrompt(op.name, op.number), image_urls: [uri], aspect_ratio: ASPECT[op.shape], output_format: 'png' });
       }
-      const prompt = redrawPrompt(op.quality, op.text === 'remove', op.part);
+      const prompt = redrawPrompt(op.quality, op.text === 'remove', op.part, op.words);
       return op.quality === 'best'
         ? aiRun(who, 'redraw', AI_MODELS.best, { prompt, image_urls: [uri], aspect_ratio: ASPECT[op.shape], output_format: 'png' })
         : aiRun(who, 'redraw', AI_MODELS.economy, { prompt, image_url: uri, aspect_ratio: ASPECT[op.shape], output_format: 'png' });

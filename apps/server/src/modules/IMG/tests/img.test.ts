@@ -1,5 +1,5 @@
 /** The image tools' routes (the owner's request, Oct 2026), with stand-in tools: the real ones need the shop PC's card. */
-import { copyFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { createTestEnv, type TestEnv } from '../../../../test/helpers.ts';
@@ -10,7 +10,7 @@ import type { FlatOptions, ImageTools, VectorOptions } from '../tools.ts';
 let env: TestEnv;
 const calls: string[] = [];
 let given: FlatOptions | VectorOptions | null = null;
-const stand = (installed = { upscale: true, background: true, art: true }): ImageTools => ({
+const stand = (installed = { upscale: true, background: true, art: true, erase: true }): ImageTools => ({
   installed: () => installed,
   upscale: async (input, output, scale, kind) => { calls.push(`upscale ${scale} ${kind}`); copyFileSync(input, output); },
   removeBackground: async (input, output, cutout) => { calls.push(`background ${cutout}`); copyFileSync(input, output); },
@@ -24,6 +24,7 @@ const stand = (installed = { upscale: true, background: true, art: true }): Imag
     writeFileSync(join(folder, 'design.pdf'), '%PDF-1.4');
     return { width: 4, height: 4, widthCm: options.width, heightCm: options.width, colours: [], shapes: 1, files: ['design.svg', 'design.pdf'], warnings: [] };
   },
+  erase: async (input, mask, output) => { calls.push(`erase ${readFileSync(mask).length > 0}`); copyFileSync(input, output); },
 });
 beforeEach(async () => { env = await createTestEnv(); calls.length = 0; useImageToolsForTests(stand()); });
 afterEach(() => useImageToolsForTests(null));
@@ -53,7 +54,7 @@ it('upscales or cuts out a picture and gives the result back as a PNG, for those
 });
 
 it('says plainly when a tool is not installed on the shop PC yet', async () => {
-  useImageToolsForTests(stand({ upscale: true, background: false, art: false }));
+  useImageToolsForTests(stand({ upscale: true, background: false, art: false, erase: false }));
   const r = await send('encoder', 'op=background&cutout=design', smallPng());
   expect(r.statusCode).toBe(503);
   expect(r.json()).toMatchObject({ code: 'IMG_NOT_INSTALLED' });
@@ -108,6 +109,18 @@ it('vectorizes into an SVG and a PDF, each served as itself and running nothing 
   expect(given).toMatchObject({ style: 'full', colours: 32 });
   expect((await send('encoder', 'op=vectorize&style=full&colours=40&specks=1&edges=smooth&width=60&invert=0&mirror=0', smallPng())).statusCode).toBe(400);
 
-  useImageToolsForTests(stand({ upscale: true, background: true, art: false }));
+  useImageToolsForTests(stand({ upscale: true, background: true, art: false, erase: false }));
   expect((await send('encoder', 'op=vectorize&style=colour&colours=0&specks=1&edges=smooth&width=25&invert=0&mirror=0', smallPng())).json()).toMatchObject({ code: 'IMG_NOT_INSTALLED' });
+});
+
+it('erases what is marked (a name or number before the AI, a leftover after), for those with the image tools', async () => {
+  const png = `data:image/png;base64,${smallPng().toString('base64')}`;
+  const r = await (await env.as('encoder')).post('/api/img/erase', { image: png, mask: png });
+  expect(r.statusCode, r.body).toBe(200);
+  expect(calls).toEqual(['erase true']);
+  expect((await (await env.as('encoder')).get((r.json() as { url: string }).url)).headers['content-type']).toBe('image/png');
+  expect((await (await env.as('encoder')).post('/api/img/erase', { image: 'data:text/plain;base64,aGk=', mask: png })).statusCode).toBe(400);
+  expect((await (await env.as('production')).post('/api/img/erase', { image: png, mask: png })).statusCode).toBe(403);
+  useImageToolsForTests(stand({ upscale: true, background: true, art: true, erase: false }));
+  expect((await (await env.as('encoder')).post('/api/img/erase', { image: png, mask: png })).json()).toMatchObject({ code: 'IMG_NOT_INSTALLED' });
 });

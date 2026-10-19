@@ -16,7 +16,7 @@ import { FIT, limit, zoomAt, type View } from './zoom.ts';
 
 type Tool = 'clean' | 'flat' | 'vector';
 type Background = 'keep' | 'object' | 'design' | 'colour';
-type Status = { upscale: boolean; background: boolean; art: boolean; waiting: number };
+type Status = { upscale: boolean; background: boolean; art: boolean; erase?: boolean; waiting: number };
 type FlatColour = { hex: string; paint: string | null; share: number; background: boolean };
 type VectorInfo = { width: number; height: number; widthCm: number; heightCm: number; colours: { hex: string; share: number }[]; shapes: number; warnings: string[] };
 type Result =
@@ -66,6 +66,14 @@ export function ImageTools({ me }: { me: Me }) {
   const [set, setSet] = useState<JerseySet>({});
   const [garment, setGarment] = useState<Garment>('jersey');
   const [made, setMade] = useState<Made[]>([]);
+  const [words, setWords] = useState('');
+  const [markOn, setMarkOn] = useState(false); // mark the text on the photo, erased (free) before the AI redraws it
+  const [touchUp, setTouchUp] = useState(false); // mark leftovers on a result, erased (free)
+  const [brush, setBrush] = useState(28);
+  const [brushMode, setBrushMode] = useState<BrushMode>('paint');
+  const [marked, setMarked] = useState(0); // strokes on the current mask
+  const maskRef = useRef<HTMLCanvasElement | null>(null);
+  const erasedRef = useRef<Blob | null>(null); // the photo with the marked text erased: Try again uses it too
   const madeKey = useRef(0);
   const keep = (label: string, kind: 'png' | 'svg', blob: Blob, url: string, fileName: string, costPeso?: number) =>
     setMade((m) => [{ key: ++madeKey.current, label, kind, blob, url, at: new Date(), costPeso, fileName }, ...m].slice(0, 40));
@@ -108,7 +116,7 @@ export function ImageTools({ me }: { me: Me }) {
     const [r, g, b] = c.getContext('2d')!.getImageData(0, 0, 1, 1).data; // the corner's colour: usually the background
     setColour([r!, g!, b!]);
     setFile({ blob: f, name: name.replace(/\.\w+$/, ''), url: URL.createObjectURL(f), w: bmp.width, h: bmp.height });
-    setResult(null); setError(''); setCorners(START_CORNERS); setPaint([]);
+    setResult(null); setError(''); setCorners(START_CORNERS); setPaint([]); setMarked(0); erasedRef.current = null;
     if (!keepSet) setSet({});
   };
   useEffect(() => {
@@ -199,6 +207,42 @@ export function ImageTools({ me }: { me: Me }) {
     return out.size > 4.5 * 1024 * 1024 ? as('image/jpeg') : out;
   };
 
+  /** Erases what the mask marks on blob (LaMa on the shop PC, free); the picture back, same size as sent. */
+  const eraseMarked = async (blob: Blob): Promise<Blob> => {
+    const mask = maskRef.current;
+    if (!mask || !marked) return blob;
+    const bmp = await createImageBitmap(blob);
+    const k = Math.min(1, 2048 / Math.max(bmp.width, bmp.height));
+    const W = Math.round(bmp.width * k), H = Math.round(bmp.height * k);
+    const pic = document.createElement('canvas'); Object.assign(pic, { width: W, height: H });
+    pic.getContext('2d')!.drawImage(bmp, 0, 0, W, H);
+    const m = document.createElement('canvas'); Object.assign(m, { width: W, height: H });
+    const mc = m.getContext('2d')!;
+    mc.drawImage(mask, 0, 0, W, H);
+    const px = mc.getImageData(0, 0, W, H);
+    for (let i = 0; i < px.data.length; i += 4) { const on = px.data[i + 3]! > 20 ? 255 : 0; px.data[i] = px.data[i + 1] = px.data[i + 2] = on; px.data[i + 3] = 255; }
+    mc.putImageData(px, 0, 0);
+    const png = (c: HTMLCanvasElement) => new Promise<Blob>((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error('The picture could not be prepared.'))), 'image/png'));
+    const res = await fetch('/api/img/erase', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken },
+      body: JSON.stringify({ image: await toDataUri(await png(pic)), mask: await toDataUri(await png(m)) }) });
+    const out = await res.json().catch(() => null) as { url?: string; message?: string } | null;
+    if (!res.ok || !out?.url) throw new Error(out?.message ?? 'The marked areas could not be erased.');
+    return fetchBlob(out.url);
+  };
+  const clearMarks = () => { const c = maskRef.current; if (c) c.getContext('2d')!.clearRect(0, 0, c.width, c.height); setMarked(0); };
+
+  /** Touch up: the leftovers marked on the result erased (free); the result replaced, kept in the strip. */
+  const runTouchUp = () => attempt(async () => {
+    if (!file || result?.kind !== 'png' || !marked) return;
+    setBusy('Erasing what you marked (about 10 seconds)…');
+    const label = result.label;
+    const fixed = await item(await eraseMarked(result.blob));
+    clearMarks(); setTouchUp(false);
+    if (label === 'front' || label === 'back' || label === 'mockup') setSet((x) => ({ ...x, [label]: fixed }));
+    setResult({ kind: 'png', ...fixed, label }); setSplit(50);
+    keep(`${label ? label[0]!.toUpperCase() + label.slice(1) : 'Picture'} touched up`, 'png', fixed.blob, fixed.url, `${file.name}-${label ?? 'picture'}-touched-up.png`);
+  });
+
   const item = async (blob: Blob): Promise<SetItem> => { const bmp = await createImageBitmap(blob); return { blob, url: URL.createObjectURL(blob), w: bmp.width, h: bmp.height }; };
   const showItem = (it: SetItem, label: 'front' | 'back' | 'mockup') => { setResult({ kind: 'png', ...it, label }); setSplit(label === 'mockup' ? 0 : 50); }; // a mockup has no 'before'
 
@@ -211,13 +255,20 @@ export function ImageTools({ me }: { me: Me }) {
     if (sides === 'two' && !backFile) throw new Error('Choose the back photo too.');
     setResult(null); setSet({});
     const quality = method === 'ai-best' ? 'best' : 'economy';
+    let photo = file.blob;
+    if (markOn && marked && maskRef.current) {
+      setBusy('Erasing the marked text first (free, about 10 seconds)…');
+      photo = await eraseMarked(file.blob);
+      erasedRef.current = photo;
+      keep('Text erased', 'png', photo, URL.createObjectURL(photo), `${file.name}-text-erased.png`);
+    } else if (markOn && marked && erasedRef.current) photo = erasedRef.current;
     const redraw = async (blob: Blob, part: 'whole' | 'front' | 'back') => {
-      const q = new URLSearchParams({ op: 'redraw', quality, shape, text: removeText ? 'remove' : 'keep', part });
+      const q = new URLSearchParams({ op: 'redraw', quality, shape, text: removeText ? 'remove' : 'keep', part, words: removeText ? words.trim() : '' });
       return item(await fetchBlob((await post<object>(await forAi(blob, false), q.toString(), '/api/img/ai/run')).url));
     };
     try {
       setBusy(sides === 'front' ? 'Redrawing with the online AI (about 25 seconds)…' : 'Redrawing the front (about 25 seconds)…');
-      const front = await redraw(file.blob, sides === 'split' ? 'front' : 'whole');
+      const front = await redraw(photo, sides === 'split' ? 'front' : 'whole');
       setSet({ front }); showItem(front, 'front');
       keep(sides === 'front' ? 'AI redraw' : 'Front', 'png', front.blob, front.url, `${file.name}-${sides === 'front' ? 'redraw' : 'front'}.png`, redrawPrice);
       if (sides === 'front') return;
@@ -228,7 +279,7 @@ export function ImageTools({ me }: { me: Me }) {
         back = await item(await fetchBlob((await post<object>(await forAi(front.blob, true), q.toString(), '/api/img/ai/run')).url));
       } else {
         setBusy('Redrawing the back (about 25 seconds)…');
-        back = await redraw(sides === 'split' ? file.blob : backFile!.blob, sides === 'split' ? 'back' : 'whole');
+        back = await redraw(sides === 'split' ? photo : backFile!.blob, sides === 'split' ? 'back' : 'whole');
       }
       setSet({ front, back });
       keep('Back', 'png', back.blob, back.url, `${file.name}-back.png`, sides === 'aiback' ? ai?.prices.best : redrawPrice);
@@ -372,6 +423,12 @@ export function ImageTools({ me }: { me: Me }) {
               <legend className="text-sm font-semibold">Shape of the artwork</legend>
               {choices(['tall', 'square', 'wide'] as const, shape, setShape, (v) => (v === 'tall' ? 'Tall (a jersey front)' : v === 'square' ? 'Square' : 'Wide'))}
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={removeText} onChange={(e) => setRemoveText(e.target.checked)} /> Remove names, numbers and logos</label>
+              {removeText && <>
+                <Field label="Words on the jersey to remove (optional)"><input className={inputClass} maxLength={160} value={words} onChange={(e) => setWords(e.target.value)} placeholder="e.g. SPARTANS, 23, Nike" /></Field>
+                <p className="text-xs text-slate-500">Naming them helps the AI take them off completely, with no faint shapes left.</p>
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={markOn} disabled={!status?.erase} onChange={(e) => { setMarkOn(e.target.checked); setResult(null); }} /> Mark the text on the photo first (free, most accurate)</label>
+                {markOn && <p className="text-xs text-slate-500">Paint over the team name, number and logos, including decorated lettering. They are erased on this PC before the AI sees the photo, so no trace can be left.{sides === 'two' ? ' (The marks are for the front photo.)' : ''}</p>}
+              </>}
               <p className="text-xs text-slate-500">The AI may still change small details: compare before and after, and try again if needed (each try is charged).</p>
             </fieldset>
           </>}
@@ -454,9 +511,11 @@ export function ImageTools({ me }: { me: Me }) {
               {(layer, z) => <>
                 <img src={file.url} alt="The picture" onClick={pick} style={layer} className={`absolute inset-0 h-full w-full object-contain ${tool === 'clean' && bg === 'colour' ? 'cursor-crosshair' : ''}`} />
                 {tool === 'flat' && straighten && <CornerHandles layer={layer} z={z} corners={corners} onChange={setCorners} />}
+                {aiFlat && markOn && <MaskPainter key={file.url} layer={layer} w={file.w} h={file.h} brush={brush} mode={brushMode} canvasRef={maskRef} onStroke={() => { setMarked((n) => n + 1); erasedRef.current = null; }} />}
               </>}
             </ZoomFrame>
           )}
+          {file && !result && aiFlat && markOn && <BrushBar brush={brush} onBrush={setBrush} mode={brushMode} onMode={setBrushMode} marked={marked} onClear={clearMarks} />}
           {file && result && (
             <>
               {/* Before and after: drag the handle across. The handle stays where it is while zooming. */}
@@ -470,8 +529,16 @@ export function ImageTools({ me }: { me: Me }) {
                   <span className="pointer-events-none absolute inset-y-0 w-0.5 bg-indigo-600" style={{ left: `${split}%` }} />
                   <span className="pointer-events-none absolute left-2 top-2 rounded bg-slate-900/70 px-2 py-0.5 text-xs text-white">Before</span>
                   <span className="pointer-events-none absolute right-2 top-2 rounded bg-indigo-600 px-2 py-0.5 text-xs text-white">After</span>
+                  {touchUp && result.kind === 'png' && <MaskPainter key={result.url} layer={layer} w={result.w} h={result.h} brush={brush} mode={brushMode} canvasRef={maskRef} onStroke={() => setMarked((n) => n + 1)} />}
                 </>}
               </ZoomFrame>
+              {touchUp && <>
+                <BrushBar brush={brush} onBrush={setBrush} mode={brushMode} onMode={setBrushMode} marked={marked} onClear={clearMarks} />
+                <div className="flex flex-wrap gap-2">
+                  <Button tone="primary" disabled={!marked || !!busy} onClick={() => void runTouchUp()}>Erase what I marked (free)</Button>
+                  <Button disabled={!!busy} onClick={() => { clearMarks(); setTouchUp(false); setSplit(50); }}>Cancel</Button>
+                </div>
+              </>}
               <input type="range" min={0} max={100} value={split} onChange={(e) => setSplit(Number(e.target.value))} aria-label="Before and after" className="w-full" />
 
               {result.kind === 'png' && <>
@@ -481,6 +548,7 @@ export function ImageTools({ me }: { me: Me }) {
                     ? <Button disabled={!!busy} onClick={() => { void open(result.blob, fileName, true).then(() => pickTool('vector')); }}>Vectorize this</Button>
                     : <Button disabled={!!busy} onClick={() => void open(result.blob, fileName)}>Keep working on the result</Button>}
                   {aiFlat && <Button disabled={!!busy} onClick={() => { void open(result.blob, fileName, true).then(() => { pickTool('clean'); setBg('keep'); setScale(4); setKind('artwork'); }); }}>Make it bigger 4×</Button>}
+                  {status?.erase && !touchUp && <Button disabled={!!busy} onClick={() => { clearMarks(); setTouchUp(true); setSplit(0); }}>Touch up (erase leftovers)</Button>}
                   {aiFlat && aiPrice !== null && <Button disabled={!!busy} onClick={() => void runAiRedraw()}>Try again (≈ {peso(aiPrice)})</Button>}
                   {tool === 'flat' && straighten && <Button disabled={!!busy} onClick={() => setResult(null)}>Move the corners</Button>}
                   <span className="text-sm text-slate-500">{result.w} × {result.h} pixels · {result.blob.size < 1024 * 1024 ? `${Math.max(1, Math.round(result.blob.size / 1024))} KB` : `${(result.blob.size / 1024 / 1024).toFixed(1)} MB`}</span>
@@ -513,6 +581,57 @@ export function ImageTools({ me }: { me: Me }) {
       </div>
       {made.length > 0 && <MadeStrip made={made} onOpen={(m) => { void open(m.blob, m.fileName.replace(/\.png$/, ''), true); }} />}
       {canAi && ai && <AiSettingsCard me={me} ai={ai} onSaved={loadAi} />}
+    </div>
+  );
+}
+
+type BrushMode = 'paint' | 'rub' | 'move';
+
+/**
+ * A brush over the picture: what is painted (red, half see-through) is what gets erased. The marks live on a canvas of
+ * the picture's own proportions (at most 2048 px a side), inside the zoom layer, so they follow zooming; a stroke's
+ * width is the brush's size on screen. "Move" lets the frame be dragged again.
+ */
+function MaskPainter({ layer, w, h, brush, mode, canvasRef, onStroke }: {
+  layer: React.CSSProperties; w: number; h: number; brush: number; mode: BrushMode; canvasRef: React.MutableRefObject<HTMLCanvasElement | null>; onStroke: () => void;
+}) {
+  const k = Math.min(1, 2048 / Math.max(w, h));
+  const last = useRef<[number, number] | null>(null);
+  const at = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const r = e.currentTarget.getBoundingClientRect(), c = e.currentTarget;
+    return { x: ((e.clientX - r.left) / r.width) * c.width, y: ((e.clientY - r.top) / r.height) * c.height, scale: c.width / r.width };
+  };
+  const draw = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const ctx = e.currentTarget.getContext('2d')!;
+    const p = at(e);
+    ctx.globalCompositeOperation = mode === 'rub' ? 'destination-out' : 'source-over';
+    ctx.strokeStyle = ctx.fillStyle = 'rgb(239 68 68)';
+    ctx.lineWidth = brush * p.scale; ctx.lineCap = ctx.lineJoin = 'round';
+    ctx.beginPath();
+    const [x0, y0] = last.current ?? [p.x, p.y];
+    ctx.moveTo(x0, y0); ctx.lineTo(p.x, p.y); ctx.stroke();
+    last.current = [p.x, p.y];
+  };
+  return (
+    <canvas ref={canvasRef} width={Math.round(w * k)} height={Math.round(h * k)} aria-label="Marks: paint over what to erase"
+      className={`absolute inset-0 h-full w-full opacity-50 ${mode === 'move' ? 'pointer-events-none' : 'cursor-crosshair'}`} style={{ ...layer, touchAction: 'none' }}
+      onPointerDown={(e) => { if (mode === 'move') return; e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); last.current = null; draw(e); }}
+      onPointerMove={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) draw(e); }}
+      onPointerUp={(e) => { if (e.currentTarget.hasPointerCapture(e.pointerId)) { last.current = null; onStroke(); } }}
+      onClick={(e) => e.stopPropagation()} />
+  );
+}
+
+function BrushBar({ brush, onBrush, mode, onMode, marked, onClear }: { brush: number; onBrush: (n: number) => void; mode: BrushMode; onMode: (m: BrushMode) => void; marked: number; onClear: () => void }) {
+  const tool = (on: boolean) => `rounded-md px-2.5 py-1 text-sm ring-1 ${on ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'}`;
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-white p-2 text-sm ring-1 ring-slate-200" role="group" aria-label="Brush">
+      <button type="button" className={tool(mode === 'paint')} onClick={() => onMode('paint')}>Paint</button>
+      <button type="button" className={tool(mode === 'rub')} onClick={() => onMode('rub')}>Rub out</button>
+      <button type="button" className={tool(mode === 'move')} onClick={() => onMode('move')}>Move</button>
+      <label className="flex items-center gap-2">Size <input type="range" min={6} max={120} value={brush} onChange={(e) => onBrush(Number(e.target.value))} aria-label="Brush size" /></label>
+      <button type="button" className={tool(false)} onClick={onClear} disabled={!marked}>Clear marks</button>
+      <span className="text-xs text-slate-500">{marked ? 'Marked: these areas will be erased.' : 'Paint over what to erase. Zoom in for small details.'}</span>
     </div>
   );
 }

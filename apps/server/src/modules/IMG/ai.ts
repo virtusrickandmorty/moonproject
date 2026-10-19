@@ -30,11 +30,16 @@ const CRISP = ' Keep the original artwork, colours and layout, redrawn with clea
  * sides, one side taken out. The back made by the AI: the design continued over the whole back ("leave space for a name"
  * gave an empty white box), with the name and number when given.
  */
-export function redrawPrompt(quality: Quality, removeText: boolean, part: 'whole' | 'front' | 'back' = 'whole'): string {
+export function redrawPrompt(quality: Quality, removeText: boolean, part: 'whole' | 'front' | 'back' = 'whole', words: string[] = []): string {
+  // The owner saw names and numbers left as shapes in the background's colour, and a designed team name kept as art:
+  // every version of them is named, and the words themselves when the owner typed them.
+  const named = words.length ? ` These words and numbers are on it: ${words.map((w) => `"${w}"`).join(', ')}; remove each of them completely.` : '';
   const text = removeText
-    ? quality === 'economy'
+    ? (quality === 'economy'
       ? ' Erase every word, letter, number and logo completely (names, numbers, brand logos) and continue the background artwork where they were.'
-      : ' Remove all text, names, numbers and logos.'
+      : ' Remove all text, names, numbers and logos.')
+      + named
+      + ' Decorated or stylised lettering is text too. Leave no trace of their shapes: no outlines, drop shadows, embossed, faint, ghost or same-colour versions; draw the background pattern straight through where they were.'
     : ' Keep the names, numbers and logos as they are.';
   if (part !== 'whole') {
     const side = part === 'front' ? 'FRONT' : 'BACK';

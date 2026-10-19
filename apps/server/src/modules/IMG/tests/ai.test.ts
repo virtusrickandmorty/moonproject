@@ -70,6 +70,7 @@ it('redraws and vectorizes through the service, logs what each cost, and stops a
   expect(calls[0]!.endpoint).toBe('fal-ai/nano-banana-pro/edit');
   expect(calls[0]!.input).toMatchObject({ aspect_ratio: '9:16', output_format: 'png' });
   expect(String(calls[0]!.input.prompt)).toContain('Remove all text');
+  expect(String(calls[0]!.input.prompt)).toContain('no outlines, drop shadows, embossed, faint, ghost or same-colour versions');
   expect((calls[0]!.input.image_urls as string[])[0]).toMatch(/^data:image\/png;base64,/);
   const got = await (await env.as('owner')).get((r.json() as { url: string }).url);
   expect(got.headers['content-type']).toBe('image/png');
@@ -134,4 +135,11 @@ it('takes one side out of a picture showing both, makes the back with a name and
   const s = await settings();
   expect(s.spentPeso).toBe(34.8); // four Best runs at ₱8.70
   expect(env.db.prepare('SELECT step FROM img_ai_runs ORDER BY rowid').pluck().all()).toEqual(['redraw', 'back', 'back', 'mockup']);
+});
+
+it('names the words the owner typed, so no trace of them is left', async () => {
+  await save({ capPeso: 100, ratePeso: 58, apiKey: KEY, version: 0 });
+  expect((await run(`op=redraw&quality=best&shape=tall&text=remove&words=${encodeURIComponent('SPARTANS, 23, Nike')}`)).statusCode).toBe(200);
+  expect(String(calls[0]!.input.prompt)).toContain('These words and numbers are on it: "SPARTANS", "23", "Nike"');
+  expect((await run(`op=redraw&quality=best&shape=tall&text=remove&words=${encodeURIComponent('<script>')}`)).statusCode).toBe(400);
 });
