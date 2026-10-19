@@ -121,6 +121,7 @@ import { AssetPage, Assets } from './FA/Assets.tsx';
 import { PersonPage, People } from './EQ/People.tsx';
 import { LoanPage, Loans } from './LOAN/Loans.tsx';
 import { SizerSets } from './SZR/Sizers.tsx';
+import { ImageTools } from './IMG/ImageTools.tsx';
 import { OpeningForm as OpeningAssetForm } from './FA/OpeningForm.tsx';
 import { Backups } from './BAK/Backups.tsx';
 import { Communications } from './COM/Communications.tsx';
@@ -278,6 +279,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/loan/loans': Loans,
   '/loan/loans/:id': LoanPage,
   '/szr/sets': SizerSets,
+  '/img': ImageTools,
 };
 
 /** A module's own form; `me` lets it offer what only some users may do (the remittance's date paid, for acc.backdate). */

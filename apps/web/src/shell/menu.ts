@@ -50,6 +50,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Production', label: 'Production board', path: '/prd/board', permission: 'prd.view' },
   { group: 'Production', label: 'TV board', path: '/prd/tv', permission: 'prd.tv' },
   { group: 'Production', label: 'Sizer sets', path: '/szr/sets', permission: 'szr.loan.view' },
+  { group: 'Production', label: 'Image tools', path: '/img', permission: 'img.use' },
   { group: 'People & Payroll', label: 'Employees', path: '/emp/employees', permission: 'emp.view' },
   { group: 'People & Payroll', label: 'Leave balances', path: '/emp/leave-balances', permission: 'emp.view' },
   { group: 'People & Payroll', label: 'Attendance', path: '/emp/attendance', permission: 'emp.view' },
@@ -214,6 +215,7 @@ export const SUBS: Partial<Record<MenuGroup, [sub: string, keys: string[]][]>> =
   Production: [
     ['Production', ['/prd/board', 'prd.entry', '/prd/tv']],
     ['Sizers', ['/szr']],
+    ['Design', ['/img']],
   ],
   'Purchases & Expenses': [
     ['Purchasing', ['/pur/suppliers', '/pur/supplies', 'pur.']],
