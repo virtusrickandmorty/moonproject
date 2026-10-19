@@ -154,8 +154,9 @@ def find_colours(lab: np.ndarray, k: int) -> np.ndarray:
 
 def nearest(lab: np.ndarray, centres: np.ndarray) -> np.ndarray:
     out = np.empty(len(lab), np.int32)
-    for i in range(0, len(lab), 1_000_000):  # in parts: pixels x colours distances need memory
-        part = lab[i:i + 1_000_000]
+    step = max(20_000, 12_000_000 // len(centres))  # in parts: pixels x colours distances need memory
+    for i in range(0, len(lab), step):
+        part = lab[i:i + step]
         out[i:i + len(part)] = np.argmin(((part[:, None, :] - centres[None, :, :]) ** 2).sum(axis=2), axis=1)
     return out
 
@@ -177,11 +178,11 @@ def tidy(labels: np.ndarray, k: int, specks: int, edges: bool = True) -> np.ndar
                 mask = (labels == c).astype(np.uint8)
                 unknown |= (mask > 0) & (cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8)) == 0)
         if unknown.any() and not unknown.all():
-            # Each unknown pixel takes the colour of the nearest known one.
-            known = (~unknown).astype(np.uint8)
-            _, near = cv2.distanceTransformWithLabels(known, cv2.DIST_L2, 3, labelType=cv2.DIST_LABEL_PIXEL)
+            # Each unknown pixel takes the colour of the nearest known one: the distance runs to the nearest zero, so the
+            # known pixels are the zeros, and each carries its own label (DIST_LABEL_PIXEL) back to its colour.
+            _, near = cv2.distanceTransformWithLabels(unknown.astype(np.uint8), cv2.DIST_L2, 3, labelType=cv2.DIST_LABEL_PIXEL)
             lut = np.zeros(int(near.max()) + 1, np.int32)
-            lut[near[known == 1]] = labels[known == 1]
+            lut[near[~unknown]] = labels[~unknown]
             labels = labels.copy()
             labels[unknown] = lut[near[unknown]]
     if edges and k > 1:

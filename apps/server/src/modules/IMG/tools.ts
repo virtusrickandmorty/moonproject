@@ -19,7 +19,7 @@ export interface FlatOptions {
 }
 export interface FlatInfo { width: number; height: number; colours: { hex: string; paint: string | null; share: number; background: boolean }[] }
 /** Vectorize (tools/img/vectorize.py). */
-export interface VectorOptions { style: 'colour' | 'cutter'; colours: number; specks: number; edges: 'smooth' | 'sharp'; width: number; invert: boolean; mirror: boolean }
+export interface VectorOptions { style: 'colour' | 'full' | 'cutter'; colours: number; specks: number; edges: 'smooth' | 'sharp'; width: number; invert: boolean; mirror: boolean }
 export interface VectorInfo {
   width: number; height: number; widthCm: number; heightCm: number; colours: { hex: string; share: number }[];
   shapes: number; files: string[]; warnings: string[];

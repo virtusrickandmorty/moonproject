@@ -24,7 +24,7 @@ export function useImageToolsForTests(tools: ImageTools | null): void { stand = 
 
 const level = z.enum(['0', '1', '2', '3']).transform(Number);
 const flag = z.enum(['0', '1']).transform((v) => v === '1');
-const colours = z.string().regex(/^(0|[2-9]|1[0-2])$/).transform(Number);
+const colours = z.string().regex(/^(0|[2-9]|1[0-2]|16|32|64)$/).transform(Number); // 16-64: full colour
 const hexes = z.string().regex(/^[0-9a-f]{6}(,[0-9a-f]{6}){0,11}$/).transform((v) => v.split(','));
 const runQuery = z.discriminatedUnion('op', [
   z.object({ op: z.literal('upscale'), scale: z.enum(['2', '4']), kind: z.enum(['artwork', 'photo']) }).strict(),
@@ -40,7 +40,7 @@ const runQuery = z.discriminatedUnion('op', [
     paint: z.string().regex(/^([0-9a-f]{6}|-)(,([0-9a-f]{6}|-)){0,11}$/).transform((v) => v.split(',').map((p) => (p === '-' ? null : p))).optional(),
   }).strict().refine((q) => (q.paint ? q.palette?.length === q.paint.length : true), 'A paint for each colour'),
   z.object({
-    op: z.literal('vectorize'), style: z.enum(['colour', 'cutter']), colours, specks: level, edges: z.enum(['smooth', 'sharp']),
+    op: z.literal('vectorize'), style: z.enum(['colour', 'full', 'cutter']), colours, specks: level, edges: z.enum(['smooth', 'sharp']),
     width: z.coerce.number().min(1).max(300), invert: flag, mirror: flag,
   }).strict(),
 ]);

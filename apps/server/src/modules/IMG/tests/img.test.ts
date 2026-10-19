@@ -103,6 +103,10 @@ it('vectorizes into an SVG and a PDF, each served as itself and running nothing 
   // Only the result's own files.
   expect((await (await env.as('encoder')).get(files['design.svg']!.replace('design.svg', 'in.png'))).statusCode).toBe(404);
   expect((await send('encoder', 'op=vectorize&style=cutter&colours=0&specks=1&edges=sharp&width=900&invert=0&mirror=0', smallPng())).statusCode).toBe(400);
+  // Full colour (sublimation): 16, 32 or 64 colours; not any number.
+  expect((await send('encoder', 'op=vectorize&style=full&colours=32&specks=1&edges=smooth&width=60&invert=0&mirror=0', smallPng())).statusCode).toBe(200);
+  expect(given).toMatchObject({ style: 'full', colours: 32 });
+  expect((await send('encoder', 'op=vectorize&style=full&colours=40&specks=1&edges=smooth&width=60&invert=0&mirror=0', smallPng())).statusCode).toBe(400);
 
   useImageToolsForTests(stand({ upscale: true, background: true, art: false }));
   expect((await send('encoder', 'op=vectorize&style=colour&colours=0&specks=1&edges=smooth&width=25&invert=0&mirror=0', smallPng())).json()).toMatchObject({ code: 'IMG_NOT_INSTALLED' });

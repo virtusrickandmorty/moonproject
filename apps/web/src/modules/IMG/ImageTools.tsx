@@ -2,7 +2,8 @@
  * Image tools (the owner's request, Oct 2026), on the shop PC itself (no charge per picture):
  * - Background & size: remove a picture's background (an AI cut-out, or one colour made clear), upscale it 2x or 4x.
  * - Photo to flat art: a photo of a printed design back to clean artwork (straightened, smoothed, a few exact colours).
- * - Vectorize: SVG and PDF at the printed size, films for screen printing (one page per ink), outlines for a cutter.
+ * - Vectorize: SVG and PDF at the printed size, films for screen printing (one page per ink), full colour for
+ *   sublimation (16 to 64 colours), outlines for a cutter.
  * The result shows before/after over a checkerboard, then downloads or goes on a job order.
  */
 import { useEffect, useRef, useState } from 'react';
@@ -48,8 +49,9 @@ export function ImageTools({ me }: { me: Me }) {
   const [clearBg, setClearBg] = useState(true);
   const [paint, setPaint] = useState<(string | null)[]>([]);
   // Vectorize
-  const [style, setStyle] = useState<'colour' | 'cutter'>('colour');
+  const [style, setStyle] = useState<'colour' | 'full' | 'cutter'>('colour');
   const [vColours, setVColours] = useState(0);
+  const [fullColours, setFullColours] = useState(32);
   const [vSpecks, setVSpecks] = useState(1);
   const [edges, setEdges] = useState<'smooth' | 'sharp'>('smooth');
   const [widthCm, setWidthCm] = useState('25');
@@ -139,7 +141,7 @@ export function ImageTools({ me }: { me: Me }) {
     const width = Number(widthCm);
     if (!(width >= 1 && width <= 300)) throw new Error('Type the printed width in centimetres, 1 to 300.');
     setBusy('Tracing the shapes (a few seconds)…');
-    const q = new URLSearchParams({ op: 'vectorize', style, colours: String(vColours), specks: String(vSpecks), edges, width: String(width), invert: invert ? '1' : '0', mirror: mirror ? '1' : '0' });
+    const q = new URLSearchParams({ op: 'vectorize', style, colours: String(style === 'full' ? fullColours : vColours), specks: String(vSpecks), edges, width: String(width), invert: invert ? '1' : '0', mirror: mirror ? '1' : '0' });
     const body = await post<{ info: VectorInfo; files: Record<string, string> }>(file.blob, q.toString());
     const labels: Record<string, [string, string]> = { 'design.svg': ['SVG', `${file.name}.svg`], 'design.pdf': ['PDF', `${file.name}.pdf`], 'separations.pdf': ['Films (one page per ink)', `${file.name}-films.pdf`] };
     const files = await Promise.all(Object.entries(body.files).map(async ([f, url]) => {
@@ -252,8 +254,14 @@ export function ImageTools({ me }: { me: Me }) {
             <p className="text-xs text-slate-500">Traces the picture into shapes that stay sharp at any size. Best on flat designs: run a photo through Photo to flat art first.</p>
             <fieldset className="space-y-2">
               <legend className="text-sm font-semibold">1. Style</legend>
-              {choices(['colour', 'cutter'] as const, style, setStyle, (v) => (v === 'colour' ? 'Colour' : 'One colour (cutter)'))}
-              <p className="text-xs text-slate-500">{style === 'colour' ? 'Every colour as its own shapes, with films for screen printing (one page per ink).' : 'Black outlines for a vinyl or heat-transfer cutter.'}</p>
+              {choices(['colour', 'full', 'cutter'] as const, style, setStyle, (v) => (v === 'colour' ? 'Screen print (up to 12 inks)' : v === 'full' ? 'Full colour (sublimation)' : 'One colour (cutter)'))}
+              <p className="text-xs text-slate-500">{style === 'colour' ? 'Every ink as its own shapes, with films for screen printing (one page per ink).'
+                : style === 'full' ? 'Detailed artwork in many colours, for sublimation and digital printing. A few seconds; files of a few MB.'
+                : 'Black outlines for a vinyl or heat-transfer cutter.'}</p>
+              {style === 'full' && <>
+                <div className="text-sm">Colours</div>
+                {choices([16, 32, 64] as const, fullColours as 16 | 32 | 64, setFullColours, (v) => (v === 16 ? '16 (smaller file)' : v === 32 ? '32' : '64 (most detail)'))}
+              </>}
               {style === 'colour' && <label className="flex items-center gap-2 text-sm">Colours
                 <select className={`${inputClass} w-28`} value={vColours} onChange={(e) => setVColours(Number(e.target.value))} aria-label="How many colours">
                   <option value={0}>Auto</option>
@@ -334,7 +342,8 @@ export function ImageTools({ me }: { me: Me }) {
                   <span className="text-sm text-slate-500">{result.info.widthCm} × {result.info.heightCm} cm · {result.info.shapes} shapes</span>
                 </div>
                 <div className="flex flex-wrap gap-2 text-sm">
-                  {result.info.colours.map((c, i) => <span key={c.hex} className="flex items-center gap-1.5 rounded-full bg-white px-2 py-1 ring-1 ring-slate-200"><span className="size-4 rounded-full ring-1 ring-slate-300" style={{ background: `#${c.hex}` }} />{style === 'colour' ? `Ink ${i + 1}` : 'Cut'} #{c.hex.toUpperCase()} · {c.share}%</span>)}
+                  {result.info.colours.slice(0, 12).map((c, i) => <span key={c.hex} className="flex items-center gap-1.5 rounded-full bg-white px-2 py-1 ring-1 ring-slate-200"><span className="size-4 rounded-full ring-1 ring-slate-300" style={{ background: `#${c.hex}` }} />{style === 'colour' ? `Ink ${i + 1}` : style === 'full' ? 'Colour' : 'Cut'} #{c.hex.toUpperCase()} · {c.share}%</span>)}
+                  {result.info.colours.length > 12 && <span className="px-2 py-1 text-slate-500">and {result.info.colours.length - 12} more colours</span>}
                 </div>
                 {result.files.find((f) => f.name.endsWith('.pdf')) && <AttachToJobOrder me={me} blob={result.files.find((f) => f.name.endsWith('.pdf'))!.blob} name={result.files.find((f) => f.name.endsWith('.pdf'))!.name} />}
               </>}
