@@ -4,7 +4,7 @@
  * - Photo to flat art: a photo of a printed design back to clean artwork (straightened, smoothed, a few exact colours).
  * - Vectorize: SVG and PDF at the printed size, films for screen printing (one page per ink), full colour for
  *   sublimation (16 to 64 colours), outlines for a cutter.
- * - Online AI, paid per picture (owner: img.ai): redraw a jersey photo flat (Fal.ai: Nano Banana Pro or FLUX Kontext) and
+ * - Online AI, paid per picture (owner: img.ai): redraw a jersey photo flat (Fal.ai: Nano Banana Pro, FLUX Kontext or GPT Image 2.5) and
  *   vectorize cleanly (Recraft), with the price shown first and a monthly limit.
  * The result shows before/after over a checkerboard, then downloads or goes on a job order.
  */
@@ -23,7 +23,7 @@ type Result =
   | { kind: 'png'; blob: Blob; url: string; w: number; h: number; colours?: FlatColour[]; label?: 'front' | 'back' | 'mockup' }
   | { kind: 'vector'; url: string; w: number; h: number; info: VectorInfo; files: { name: string; label: string; blob: Blob; url: string }[]; costPeso?: number };
 type Corners = [number, number][];
-type Method = 'ai-best' | 'ai-economy' | 'free';
+type Method = 'ai-best' | 'ai-crisp' | 'ai-economy' | 'free';
 type Sides = 'front' | 'split' | 'two' | 'aiback';
 type Garment = 'jersey' | 'tshirt' | 'polo' | 'longsleeve';
 type SetItem = { blob: Blob; url: string; w: number; h: number };
@@ -33,7 +33,7 @@ const toDataUri = (b: Blob) => new Promise<string>((ok, no) => { const r = new F
 type AiRun = { at: string; step: string; model: string; ok: boolean; peso: number; seconds: number; note: string; who: string; url: string | null };
 /** A picture made on this page: kept while the page is open, whatever tool is used next. */
 type Made = { key: number; label: string; kind: 'png' | 'svg'; blob: Blob; url: string; at: Date; costPeso?: number; fileName: string };
-type AiInfo = { keySet: boolean; capPeso: number; ratePeso: number; version: number; month: string; spentPeso: number; prices: { best: number; economy: number; vector: number }; runs: AiRun[] };
+type AiInfo = { keySet: boolean; capPeso: number; ratePeso: number; version: number; month: string; spentPeso: number; prices: { best: number; economy: number; crisp: number; vector: number }; runs: AiRun[] };
 const peso = (n: number) => `₱${n.toFixed(2)}`;
 const MAX_SIDE = 8000; // the largest side a result may have
 const START_CORNERS: Corners = [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9]];
@@ -254,7 +254,7 @@ export function ImageTools({ me }: { me: Me }) {
     if (!file) return;
     if (sides === 'two' && !backFile) throw new Error('Choose the back photo too.');
     setResult(null); setSet({});
-    const quality = method === 'ai-best' ? 'best' : 'economy';
+    const quality = method === 'ai-best' ? 'best' : method === 'ai-crisp' ? 'crisp' : 'economy';
     let photo = file.blob;
     if (markOn && marked && maskRef.current) {
       setBusy('Erasing the marked text first (free, about 10 seconds)…');
@@ -325,7 +325,7 @@ export function ImageTools({ me }: { me: Me }) {
   const aiFlat = tool === 'flat' && method !== 'free';
   const aiVector = tool === 'vector' && style === 'ai';
   const ready = tool === 'clean' || aiFlat || aiVector || art;
-  const redrawPrice = !ai ? 0 : method === 'ai-best' ? ai.prices.best : ai.prices.economy;
+  const redrawPrice = !ai ? 0 : method === 'ai-best' ? ai.prices.best : method === 'ai-crisp' ? ai.prices.crisp : ai.prices.economy;
   const aiPrice = !ai ? null : aiFlat ? (sides === 'front' ? redrawPrice : sides === 'aiback' ? redrawPrice + ai.prices.best : 2 * redrawPrice) : aiVector ? ai.prices.vector : null;
   const doIt = () => void (tool === 'clean' ? runClean() : aiFlat ? runAiRedraw() : tool === 'flat' ? runFlat() : aiVector ? runAiVector() : runVector());
   const fileName = !file ? 'picture.png' : result?.kind === 'png' && result.label ? `${file.name}-${result.label}.png` : aiFlat ? `${file.name}-redraw.png` : tool === 'flat' ? `${file.name}-flat.png` : `${file.name}${bg !== 'keep' ? '-clear' : ''}${scale ? `-x${scale}` : ''}.png`;
@@ -398,8 +398,9 @@ export function ImageTools({ me }: { me: Me }) {
 
           {tool === 'flat' && canAi && <fieldset className="space-y-2">
             <legend className="text-sm font-semibold">How</legend>
-            {choices(['ai-best', 'ai-economy', 'free'] as const, method, (m) => { setMethod(m); setResult(null); }, (m) => (m === 'ai-best' ? `AI redraw: Best${ai ? ` (≈ ${peso(ai.prices.best)})` : ''}` : m === 'ai-economy' ? `AI redraw: Economy${ai ? ` (≈ ${peso(ai.prices.economy)})` : ''}` : 'On this PC (free)'))}
+            {choices(['ai-best', 'ai-crisp', 'ai-economy', 'free'] as const, method, (m) => { setMethod(m); setResult(null); }, (m) => (m === 'ai-best' ? `AI redraw: Best${ai ? ` (≈ ${peso(ai.prices.best)})` : ''}` : m === 'ai-crisp' ? `AI redraw: Crisp, GPT${ai ? ` (≈ ${peso(ai.prices.crisp)})` : ''}` : m === 'ai-economy' ? `AI redraw: Economy${ai ? ` (≈ ${peso(ai.prices.economy)})` : ''}` : 'On this PC (free)'))}
             <p className="text-xs text-slate-500">{method === 'ai-best' ? 'An online AI redraws the jersey as flat print artwork with crisp detail: no jersey shape, folds or shadows. The most detail; about 25 seconds.'
+              : method === 'ai-crisp' ? "OpenAI's GPT Image 2.5: the cleanest lines and text taken off fully, but it may change the design (a band's size, a figure's pose). Check it against the photo. About 40 seconds; the price is an estimate."
               : method === 'ai-economy' ? 'The same, with a cheaper AI: softer detail on busy art. About 20 seconds.'
               : 'Free, on this PC: straighten, clean and reduce to a few colours. Best for logos, names and numbers.'}</p>
           </fieldset>}
@@ -715,7 +716,7 @@ function AiSettingsCard({ me, ai, onSaved }: { me: Me; ai: AiInfo; onSaved: () =
         <span className="text-sm text-slate-600">This month: <b>{peso(ai.spentPeso)}</b> of {peso(ai.capPeso)}</span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full ${used >= 90 ? 'bg-red-500' : 'bg-indigo-500'}`} style={{ width: `${used}%` }} /></div>
-      <p className="text-xs text-slate-500">Prices now: AI redraw Best {peso(ai.prices.best)}, Economy {peso(ai.prices.economy)}, clean vector {peso(ai.prices.vector)} a picture (Fal.ai's US$ prices at your peso rate). A run that would pass the monthly limit is refused; failed runs cost nothing.</p>
+      <p className="text-xs text-slate-500">Prices now: AI redraw Best {peso(ai.prices.best)}, Crisp (GPT, an estimate) {peso(ai.prices.crisp)}, Economy {peso(ai.prices.economy)}, clean vector {peso(ai.prices.vector)} a picture (Fal.ai's US$ prices at your peso rate). A run that would pass the monthly limit is refused; failed runs cost nothing.</p>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label={`Fal.ai key (${ai.keySet ? 'saved' : 'not set'})`}><input className={inputClass} type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={ai.keySet ? 'Paste a new key to replace it' : 'Paste the key from fal.ai'} /></Field>
         <Field label="Monthly limit (₱)"><input className={inputClass} inputMode="numeric" value={cap} onChange={(e) => setCap(e.target.value)} /></Field>

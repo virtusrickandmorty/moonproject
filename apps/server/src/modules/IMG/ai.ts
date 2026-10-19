@@ -1,7 +1,8 @@
 /**
  * The image tools' online AI (the owner's request, Oct 2026), paid per picture through Fal.ai: redraw a jersey photo as
  * flat print artwork (Best: Google Nano Banana Pro, the same model as the paid service the owner compared; Economy: FLUX
- * Kontext) and vectorize cleanly (Recraft). Owner-only (img.ai), with a monthly limit in pesos checked before each run
+ * Kontext; Crisp: OpenAI's GPT Image 2.5, the top-ranked editor, crisper but freer with the layout) and vectorize cleanly
+ * (Recraft). Owner-only (img.ai), with a monthly limit in pesos checked before each run
  * and every run logged with its cost. The Fal.ai key is write-only, as the assistant's (AIA) is: a locked file beside the
  * database, never in the database, an answer, a log line or the audit trail.
  */
@@ -13,22 +14,27 @@ import { AppError, conflict, newId } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 
-/** US$ per picture, from Fal.ai's prices (Oct 2026); shown in pesos at the owner's rate. */
+/**
+ * US$ per picture, from Fal.ai's prices (Oct 2026); shown in pesos at the owner's rate. GPT Image 2.5 is billed by
+ * tokens (size and quality): 25 US cents is a safe estimate for one 1152 x 2048 picture at high quality.
+ */
 export const AI_MODELS = {
   best: { endpoint: 'fal-ai/nano-banana-pro/edit', mills: 150, label: 'Nano Banana Pro' },
   economy: { endpoint: 'fal-ai/flux-pro/kontext', mills: 40, label: 'FLUX Kontext' },
+  crisp: { endpoint: 'openai/gpt-image-2.5/sunburst/edit', mills: 250, label: 'GPT Image 2.5' },
   vector: { endpoint: 'fal-ai/recraft/vectorize', mills: 11, label: 'Recraft' },
 } as const;
-export type Quality = 'best' | 'economy';
+export type Quality = 'best' | 'economy' | 'crisp';
 
 const FLAT = 'lay the printed pattern out flat as one rectangle, remove the jersey shape, collar, armholes, seams, folds, wrinkles, shadows and lighting.';
 const CRISP = ' Keep the original artwork, colours and layout, redrawn with clean, crisp lines and sharp detail, like vector illustration.';
 
 /**
  * The instructions, each tried on the owner's sample jersey (Oct 2026). Redraw: Nano Banana Pro gave the paid service's
- * result with the first; Kontext needs the text named outright to remove it. part front/back: one picture showing both
- * sides, one side taken out. The back made by the AI: the design continued over the whole back ("leave space for a name"
- * gave an empty white box), with the name and number when given.
+ * result with the first; Kontext needs the text named outright to remove it; GPT Image 2.5 took every letter off but
+ * redrew the art more freely (a narrower band, the fish in a new pose).
+ * Part front/back: one picture showing both sides, one side taken out. The back made by the AI: the design continued
+ * over the whole back ("leave space for a name" gave an empty white box), with the name and number when given.
  */
 export function redrawPrompt(quality: Quality, removeText: boolean, part: 'whole' | 'front' | 'back' = 'whole', words: string[] = []): string {
   // The owner saw names and numbers left as shapes in the background's colour, and a designed team name kept as art:

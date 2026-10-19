@@ -31,9 +31,11 @@ export function useAiServiceForTests(service: AiService | null): void { standAi 
 /** The online AI's limits (Fal.ai, Recraft): a picture under 5 MB and 4096 px a side; the screen sends it smaller. */
 const MAX_AI_BYTES = 5 * 1024 * 1024;
 const ASPECT = { tall: '9:16', square: '1:1', wide: '16:9' } as const;
+/** GPT Image 2.5 takes a size in pixels (sides in 16s): about the same detail as Nano Banana Pro's 2K. */
+const GPT_SIZE = { tall: { width: 1152, height: 2048 }, square: { width: 1536, height: 1536 }, wide: { width: 2048, height: 1152 } } as const;
 const aiQuery = z.discriminatedUnion('op', [
   z.object({
-    op: z.literal('redraw'), quality: z.enum(['best', 'economy']), shape: z.enum(['tall', 'square', 'wide']), text: z.enum(['remove', 'keep']), part: z.enum(['whole', 'front', 'back']).default('whole'),
+    op: z.literal('redraw'), quality: z.enum(['best', 'economy', 'crisp']), shape: z.enum(['tall', 'square', 'wide']), text: z.enum(['remove', 'keep']), part: z.enum(['whole', 'front', 'back']).default('whole'),
     // The words on the jersey to remove, comma-separated (the owner types them): letters, digits and a few signs.
     words: z.string().trim().max(160).regex(/^[\p{L}\p{N} .,'&#-]*$/u).default('').transform((v) => v.split(',').map((w) => w.trim()).filter(Boolean).slice(0, 8)),
   }).strict(),
@@ -128,7 +130,7 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
     const rate = Math.round(s.ratePeso * 100);
     const month = today(deps.clock).slice(0, 7);
     return { ...s, month, spentPeso: spentThisMonth(db, month),
-      prices: { best: pesoOf(AI_MODELS.best.mills, rate), economy: pesoOf(AI_MODELS.economy.mills, rate), vector: pesoOf(AI_MODELS.vector.mills, rate) },
+      prices: { best: pesoOf(AI_MODELS.best.mills, rate), economy: pesoOf(AI_MODELS.economy.mills, rate), crisp: pesoOf(AI_MODELS.crisp.mills, rate), vector: pesoOf(AI_MODELS.vector.mills, rate) },
       runs: recentRuns(db, 30, (id, step) => { const f = step === 'vectorize' ? 'design.svg' : 'out.png'; return existsSync(join(work, id, f)) ? `/api/img/results/${id}${step === 'vectorize' ? '/design.svg' : ''}` : null; }) };
   });
   app.put('/api/img/ai', { config: { permission: 'img.ai' } }, async (req) =>
@@ -237,7 +239,7 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
     });
 
     /**
-     * The online AI (owner: img.ai), the body the picture: ?op=redraw&quality=best|economy&shape=tall|square|wide&text=remove|keep
+     * The online AI (owner: img.ai), the body the picture: ?op=redraw&quality=best|economy|crisp&shape=tall|square|wide&text=remove|keep
      * &part=whole|front|back (front/back: one side of a picture showing both); ?op=back&shape&name&number (the back, made from
      * the front's flat artwork); ?op=vector (Recraft).
      */
@@ -256,6 +258,7 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
         return aiRun(who, 'back', AI_MODELS.best, { prompt: backPrompt(op.name, op.number), image_urls: [uri], aspect_ratio: ASPECT[op.shape], output_format: 'png' });
       }
       const prompt = redrawPrompt(op.quality, op.text === 'remove', op.part, op.words);
+      if (op.quality === 'crisp') return aiRun(who, 'redraw', AI_MODELS.crisp, { prompt, image_urls: [uri], image_size: GPT_SIZE[op.shape], quality: 'high', output_format: 'png' });
       return op.quality === 'best'
         ? aiRun(who, 'redraw', AI_MODELS.best, { prompt, image_urls: [uri], aspect_ratio: ASPECT[op.shape], output_format: 'png' })
         : aiRun(who, 'redraw', AI_MODELS.economy, { prompt, image_url: uri, aspect_ratio: ASPECT[op.shape], output_format: 'png' });
