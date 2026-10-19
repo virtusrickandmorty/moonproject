@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AppError, notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
@@ -22,10 +22,31 @@ const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', '
 let stand: ImageTools | null = null;
 export function useImageToolsForTests(tools: ImageTools | null): void { stand = tools; }
 
+const level = z.enum(['0', '1', '2', '3']).transform(Number);
+const flag = z.enum(['0', '1']).transform((v) => v === '1');
+const colours = z.string().regex(/^(0|[2-9]|1[0-2])$/).transform(Number);
+const hexes = z.string().regex(/^[0-9a-f]{6}(,[0-9a-f]{6}){0,11}$/).transform((v) => v.split(','));
 const runQuery = z.discriminatedUnion('op', [
   z.object({ op: z.literal('upscale'), scale: z.enum(['2', '4']), kind: z.enum(['artwork', 'photo']) }).strict(),
   z.object({ op: z.literal('background'), cutout: z.enum(['object', 'design']) }).strict(),
+  // Photo to flat art. corners: four x,y pairs as fractions; paint: a colour or "-" (clear) for each palette colour.
+  z.object({
+    op: z.literal('flatten'), clean: level, light: flag, colours, specks: level, clear: flag,
+    corners: z.string().regex(/^(0|1|0?\.\d+)(,(0|1|0?\.\d+)){7}$/).transform((v) => {
+      const n = v.split(',').map(Number);
+      return [0, 2, 4, 6].map((i) => [n[i]!, n[i + 1]!] as [number, number]);
+    }).optional(),
+    palette: hexes.optional(),
+    paint: z.string().regex(/^([0-9a-f]{6}|-)(,([0-9a-f]{6}|-)){0,11}$/).transform((v) => v.split(',').map((p) => (p === '-' ? null : p))).optional(),
+  }).strict().refine((q) => (q.paint ? q.palette?.length === q.paint.length : true), 'A paint for each colour'),
+  z.object({
+    op: z.literal('vectorize'), style: z.enum(['colour', 'cutter']), colours, specks: level, edges: z.enum(['smooth', 'sharp']),
+    width: z.coerce.number().min(1).max(300), invert: flag, mirror: flag,
+  }).strict(),
 ]);
+
+/** The files a result may have, and how each is served. */
+const RESULT_FILES: Record<string, string> = { 'out.png': 'image/png', 'design.svg': 'image/svg+xml', 'design.pdf': 'application/pdf', 'separations.pdf': 'application/pdf' };
 
 export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db } = deps;
@@ -45,12 +66,16 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get('/api/img/status', { config: { permission: 'img.use' } }, async () => ({ ...tools().installed(), waiting: queueLength() }));
 
-  app.get<{ Params: { id: string } }>('/api/img/results/:id', { config: { permission: 'img.use' } }, async (req, reply) => {
-    const id = z.uuid().safeParse(req.params.id);
-    const file = id.success ? join(work, id.data, 'out.png') : '';
+  const result = async (idParam: string, name: string, reply: FastifyReply) => {
+    const id = z.uuid().safeParse(idParam);
+    const file = id.success && RESULT_FILES[name] ? join(work, id.data, name) : '';
     if (!file || !existsSync(file)) throw notFound('The picture (results are kept three days)');
-    return reply.header('content-type', 'image/png').header('cache-control', 'private, no-store').header('x-content-type-options', 'nosniff').send(readFileSync(file));
-  });
+    return reply.header('content-type', RESULT_FILES[name]!).header('cache-control', 'private, no-store').header('x-content-type-options', 'nosniff')
+      // Opened by itself, a picture or file of ours runs nothing.
+      .header('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox").send(readFileSync(file));
+  };
+  app.get<{ Params: { id: string } }>('/api/img/results/:id', { config: { permission: 'img.use' } }, async (req, reply) => result(req.params.id, 'out.png', reply));
+  app.get<{ Params: { id: string; file: string } }>('/api/img/results/:id/:file', { config: { permission: 'img.use' } }, async (req, reply) => result(req.params.id, req.params.file, reply));
 
   app.register(async (upload) => {
     upload.addHook('preParsing', async (req) => { if (Number(req.headers['content-length'] ?? 0) > MAX_IMAGE_BYTES) throw tooBig(); });
@@ -69,9 +94,9 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (!Buffer.isBuffer(data) || !type || !EXT[type]) throw new AppError('FILE_TYPE', 'Only JPEG, PNG or WebP pictures can be used.', 415);
       const t = tools();
       const ready = t.installed();
-      if (q.data.op === 'upscale' ? !ready.upscale : !ready.background) {
-        throw new AppError('IMG_NOT_INSTALLED', `The ${q.data.op === 'upscale' ? 'upscaler' : 'background remover'} is not installed on the shop PC yet (tools/img/install.ps1).`, 503);
-      }
+      const op = q.data;
+      const [has, what] = op.op === 'upscale' ? [ready.upscale, 'upscaler'] : op.op === 'background' ? [ready.background, 'background remover'] : [ready.art, op.op === 'flatten' ? 'flat-art tool' : 'vectorizer'];
+      if (!has) throw new AppError('IMG_NOT_INSTALLED', `The ${what} is not installed on the shop PC yet (tools/img/install.ps1).`, 503);
       tidy();
       const id = randomUUID();
       const dir = join(work, id);
@@ -80,11 +105,23 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
       const output = resolve(dir, 'out.png');
       writeFileSync(input, data);
       const started = Date.now();
-      const op = q.data;
-      await oneAtATime(() => (op.op === 'upscale' ? t.upscale(input, output, Number(op.scale) as 2 | 4, op.kind) : t.removeBackground(input, output, op.cutout)));
+      if (op.op === 'vectorize') {
+        const { op: _, ...options } = op;
+        const info = await oneAtATime(() => t.vectorize(input, dir, options));
+        rmSync(input, { force: true });
+        const files = Object.fromEntries(Object.keys(RESULT_FILES).filter((f) => f !== 'out.png' && existsSync(join(dir, f))).map((f) => [f, `/api/img/results/${id}/${f}`]));
+        if (!files['design.svg']) throw new AppError('IMG_FAILED', 'The vectorizer made no file. Try another option.', 500);
+        return { id, url: files['design.svg'], files, info, ms: Date.now() - started };
+      }
+      const info = await oneAtATime(async () => {
+        if (op.op === 'upscale') return void await t.upscale(input, output, Number(op.scale) as 2 | 4, op.kind);
+        if (op.op === 'background') return void await t.removeBackground(input, output, op.cutout);
+        const { op: _, ...options } = op;
+        return t.flatten(input, output, options);
+      });
       if (!existsSync(output)) throw new AppError('IMG_FAILED', 'The image tool made no picture. Try another option.', 500);
       rmSync(input, { force: true });
-      return { id, url: `/api/img/results/${id}`, bytes: statSync(output).size, ms: Date.now() - started };
+      return { id, url: `/api/img/results/${id}`, bytes: statSync(output).size, ms: Date.now() - started, ...(info ? { info } : {}) };
     });
   });
 }

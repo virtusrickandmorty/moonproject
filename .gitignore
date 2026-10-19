@@ -9,3 +9,4 @@ coverage/
 ops/windows/out/
 test-results/
 playwright-report/
+__pycache__/
