@@ -7,9 +7,10 @@ Each colour is traced on its own: in the SVG and PDF a colour's shape includes t
 no hairline gaps show between neighbours); on the films each ink is exactly its own area.
 
 Options (all optional):
-  style    "colour" (the default) or "cutter": one colour, black outlines for a vinyl or heat-transfer cutter
+  style    "colour" (the default); "full": full colour for sublimation, more colours, no films;
+           or "cutter": one colour, black outlines for a vinyl or heat-transfer cutter
   colours  0 (the default): the picture's own colours when it has few (a flat-art result), else as many as there look
-           to be; or 2-12
+           to be; or 2-12 (full colour: 16, 32 (the default) or 64)
   specks   0-3: keep everything, or drop small, medium or large specks
   edges    "smooth" (the default) or "sharp": keep corners sharp (text, numbers)
   width    the printed width in centimetres (default 25)
@@ -30,6 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from flatart import find_colours, lab_to_hex, nearest, read, tidy, to_lab  # noqa: E402
 
 MAX_SIDE = 4000
+FULL_SIDE = 2400  # full colour traces at least this size (a smaller picture is enlarged)
 MAX_PATHS = 4000  # more shapes than this is a photo, not a design: say so
 PT_PER_CM = 72 / 2.54
 MARGIN_CM = 2.0  # around the design on a film page, for the registration marks and the label
@@ -142,6 +144,12 @@ def main() -> int:
         bgr = cv2.resize(bgr, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
         if alpha is not None:
             alpha = cv2.resize(alpha, (bgr.shape[1], bgr.shape[0]), interpolation=cv2.INTER_AREA)
+    if style == 'full' and max(bgr.shape[:2]) < FULL_SIDE:
+        # A small picture is enlarged smoothly first: its colour edges then trace into curves, not stair-steps.
+        up = min(3.0, FULL_SIDE / max(bgr.shape[:2]))
+        bgr = cv2.resize(bgr, None, fx=up, fy=up, interpolation=cv2.INTER_CUBIC)
+        if alpha is not None:
+            alpha = cv2.resize(alpha, (bgr.shape[1], bgr.shape[0]), interpolation=cv2.INTER_LINEAR)
     h, w = bgr.shape[:2]
     opaque = alpha >= 128 if alpha is not None else np.ones((h, w), bool)
     warnings = []
@@ -161,7 +169,7 @@ def main() -> int:
         # The picture's own colours when it has a few (a flat-art result); else found as in flat art.
         packed = (bgr[:, :, 2].astype(np.int32) << 16) | (bgr[:, :, 1].astype(np.int32) << 8) | bgr[:, :, 0]
         own, inverse = np.unique(packed[opaque], return_inverse=True)
-        k = int(o.get('colours', 0))
+        k = int(o.get('colours', 0)) or (32 if style == 'full' else 0)
         labels = np.full((h, w), -1, np.int32)
         if k == 0 and len(own) <= 16:
             labels[opaque] = inverse
@@ -177,12 +185,40 @@ def main() -> int:
         inks = [(hexes[c], labels == c) for c in order]
         # Drawn largest first; each shape covers what is drawn over it too, so neighbours meet without a gap.
         stacked = []
-        for i in range(len(order)):
-            stacked.append(np.isin(labels, order[i:]))
+        if style == 'colour':
+            for i in range(len(order)):
+                stacked.append(np.isin(labels, order[i:]))
 
-    layers = [(hex_, trace(m, specks, edges)) for (hex_, _), m in zip(inks, stacked)]
+    if style == 'full':
+        # Many colours: VTracer's own colour tracing (stacked, smaller files, no seams) on the palette picture; a
+        # cluster's colour comes back averaged, so each shape is set back to the palette colour nearest it.
+        palette = np.array([[int(x[4:6], 16), int(x[2:4], 16), int(x[0:2], 16)] for x in hexes], np.uint8)
+        flat = np.zeros((h, w, 4), np.uint8)
+        flat[labels >= 0, :3] = palette[labels[labels >= 0]]
+        flat[labels >= 0, 3] = 255
+        ok, png = cv2.imencode('.png', flat)
+        raw = vtracer.convert_raw_image_to_svg(
+            png.tobytes(), img_format='png', colormode='color', hierarchical='stacked', mode='spline',
+            filter_speckle=[1, 4, 10, 24][specks], color_precision=8, layer_difference=1,
+            corner_threshold=60 if edges == 'smooth' else 30, length_threshold=4.0, splice_threshold=45, path_precision=1)
+        rgb_palette = palette[:, ::-1].astype(np.int32)
+        layers = []
+        for d, fill, tx, ty in re.findall(r'<path d="([^"]+)" fill="#([0-9A-Fa-f]{6})" transform="translate\(([-\d.]+),([-\d.]+)\)"', raw):
+            c = np.array([int(fill[i:i + 2], 16) for i in (0, 2, 4)])
+            hex_ = hexes[int(np.argmin(((rgb_palette - c) ** 2).sum(axis=1)))]
+            if layers and layers[-1][0] == hex_:
+                layers[-1][1].append(shift(d, float(tx), float(ty)))
+            else:
+                layers.append((hex_, [shift(d, float(tx), float(ty))]))
+        if opaque.all() and inks:
+            # Under everything, the main colour across the whole picture: no hairline of paper shows between shapes.
+            layers.insert(0, (inks[0][0], [f'M0 0 L{w} 0 L{w} {h} L0 {h} Z']))
+    else:
+        layers = [(hex_, trace(m, specks, edges)) for (hex_, _), m in zip(inks, stacked)]
     paths = sum(len(p) for _, p in layers)
-    if paths > MAX_PATHS:
+    if style == 'full' and paths > 60_000:
+        warnings.append(f'{paths} shapes: a heavy file. Try fewer colours or remove larger specks if your design program is slow with it.')
+    elif style != 'full' and paths > MAX_PATHS:
         warnings.append(f'This picture traced into {paths} shapes: it looks like a photo. Vectors suit logos, text and flat designs; try Photo to flat art first.')
     height_cm = width_cm * h / w
 
@@ -201,7 +237,7 @@ def main() -> int:
     write_pdf(os.path.join(out_dir, 'design.pdf'), [(s * w, s * h, body)])
 
     files = ['design.svg', 'design.pdf']
-    if style != 'cutter' and len(inks) > 1:
+    if style == 'colour' and len(inks) > 1:
         m = MARGIN_CM * PT_PER_CM
         W, H = s * w + 2 * m, s * h + 2 * m
         def mark(x: float, y: float) -> str:
