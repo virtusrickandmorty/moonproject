@@ -111,9 +111,14 @@ test('sales: a customer, a job order with a deposit, a collection, a release wit
   // A picture of the design, attached to the job order; it opens with the session, as the picture it is.
   const attachments = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Attachments' }) });
   await expect(attachments.getByText('No files attached.')).toBeVisible();
-  await attachments.getByLabel('Add a file').setInputFiles({ name: 'jersey design.png', mimeType: 'image/png', buffer: Buffer.from(PIXEL_PNG, 'base64') });
+  // Chosen as a person does (the file picker): the window's frame must not scroll to the hidden file box, which left the
+  // whole window white (the owner's report, Oct 2026).
+  const chooser = page.waitForEvent('filechooser');
+  await attachments.getByText('Add a file', { exact: true }).click();
+  await (await chooser).setFiles({ name: 'jersey design.png', mimeType: 'image/png', buffer: Buffer.from(PIXEL_PNG, 'base64') });
   const picture = attachments.getByRole('link', { name: 'jersey design.png' });
   await expect(picture).toBeVisible();
+  expect(await page.getByRole('dialog').evaluate((d) => d.scrollTop)).toBe(0);
   await expect(attachments.getByText(/PNG picture · 1 KB · added by /)).toBeVisible();
   // Fetched by the signed-in page itself: the session cookie is Secure, and only the browser sends it on http://127.0.0.1.
   const opened = await page.evaluate(async (href) => {
