@@ -5,12 +5,16 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { createTestEnv, type TestEnv } from '../../../../test/helpers.ts';
 import { smallPng } from '../../../../test/pictures.ts';
+import { AppError } from '@moonproject/shared';
 import { useAiServiceForTests } from '../routes.ts';
 
 let env: TestEnv;
 let dir: string;
-const calls: { endpoint: string; input: Record<string, unknown> }[] = [];
+const calls: { endpoint: string; input: Record<string, unknown>; key?: string }[] = [];
 let fail: Error | null = null;
+const creditAsks: string[] = []; // the keys the credit was asked with
+let balance = 24.5; // US$; null: this key may not read it
+let canRead = (key: string) => key.includes('billing') || key === KEY;
 const KEY = 'test-key-id:test-key-secret-0123456789';
 
 beforeEach(async () => {
@@ -19,12 +23,18 @@ beforeEach(async () => {
   env = await createTestEnv();
   calls.length = 0; fail = null;
   useAiServiceForTests({
-    run: async (_key, endpoint, input) => {
-      calls.push({ endpoint, input });
+    run: async (key, endpoint, input) => {
+      calls.push({ endpoint, input, key });
       if (fail) throw fail;
       return endpoint.includes('recraft') ? Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"/>') : smallPng();
     },
+    credit: async (key) => {
+      creditAsks.push(key);
+      if (!canRead(key)) throw new AppError('IMG_AI_BILLING_KEY', 'This Fal.ai key may run the AI but not read the credit left.', 403);
+      return balance;
+    },
   });
+  creditAsks.length = 0; balance = 24.5; canRead = (key) => key.includes('billing') || key === KEY;
 });
 afterEach(() => {
   useAiServiceForTests(null);
@@ -35,7 +45,7 @@ afterEach(() => {
 const run = async (query: string, who: Parameters<TestEnv['as']>[0] = 'owner') =>
   (await env.as(who)).post(`/api/img/ai/run?${query}`, smallPng(), { 'content-type': 'application/octet-stream' });
 const settings = async () => (await (await env.as('owner')).get('/api/img/ai')).json() as {
-  keySet: boolean; capPeso: number; ratePeso: number; version: number; spentPeso: number; prices: { best: number; economy: number; vector: number }; runs: { ok: boolean; peso: number; model: string; url: string | null }[];
+  keySet: boolean; billingKeySet: boolean; credit: { usd?: number; peso?: number; problem?: string; message?: string }; capPeso: number; ratePeso: number; version: number; spentPeso: number; prices: { best: number; economy: number; vector: number }; runs: { ok: boolean; peso: number; model: string; url: string | null }[];
 };
 const save = async (body: object) => (await env.as('owner')).put('/api/img/ai', body);
 
@@ -155,4 +165,31 @@ it('names the words the owner typed, so no trace of them is left', async () => {
   expect((await run(`op=redraw&quality=best&shape=tall&text=remove&words=${encodeURIComponent('SPARTANS, 23, Nike')}`)).statusCode).toBe(200);
   expect(String(calls[0]!.input.prompt)).toContain('These words and numbers are on it: "SPARTANS", "23", "Nike"');
   expect((await run(`op=redraw&quality=best&shape=tall&text=remove&words=${encodeURIComponent('<script>')}`)).statusCode).toBe(400);
+});
+
+it('shows the Fal.ai credit left in pesos, asked again after a run; a run key that may not read it asks for a billing key', async () => {
+  expect((await settings()).credit).toMatchObject({ problem: 'no-key' });
+  await save({ capPeso: 100, ratePeso: 58, apiKey: KEY, version: 0 });
+  expect((await settings()).credit).toMatchObject({ usd: 24.5, peso: 1421 });
+  expect(creditAsks).toEqual([KEY]);
+  // Kept a minute: asked once for two looks; a run, then asked again.
+  await settings();
+  expect(creditAsks).toHaveLength(1);
+  balance = 24.35;
+  expect((await run('op=redraw&quality=best&shape=tall&text=remove')).statusCode).toBe(200);
+  expect((await settings()).credit).toMatchObject({ usd: 24.35, peso: 1412.3 });
+  expect(creditAsks).toHaveLength(2);
+
+  // A run key without billing permission: the owner is told to add a billing key, which is then used for the credit only.
+  canRead = (key) => key.includes('billing');
+  expect((await (await env.as('owner')).get('/api/img/ai?fresh=1')).json()).toMatchObject({ credit: { problem: 'needs-billing-key' } });
+  const v = (await settings()).version;
+  await save({ capPeso: 100, ratePeso: 58, billingKey: 'billing-key-id:secret', version: v });
+  const s = await settings();
+  expect(s).toMatchObject({ keySet: true, billingKeySet: true, credit: { usd: 24.35 } });
+  expect(creditAsks.at(-1)).toBe('billing-key-id:secret');
+  expect(JSON.stringify(s)).not.toContain('billing-key-id:secret');
+  calls.length = 0;
+  expect((await run('op=vector')).statusCode).toBe(200);
+  expect(calls.map((c) => c.key)).toEqual([KEY]); // the AI itself still runs with the run key
 });

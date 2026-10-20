@@ -74,23 +74,28 @@ export function mockupPrompt(garment: Garment, withBack: boolean): string {
     + 'laid flat on a plain light grey background, with soft even studio lighting and realistic fabric. Keep the artwork exactly as given, fitted to the garment shape.';
 }
 
-export interface AiSettings { keySet: boolean; capPeso: number; ratePeso: number; version: number }
+export interface AiSettings { keySet: boolean; billingKeySet: boolean; capPeso: number; ratePeso: number; version: number }
 export const DEFAULT_CAP_PESO = 500;
 export const DEFAULT_RATE_CENTAVOS = 5800;
 
-export function keyFile(db: Db): string {
+/**
+ * The keys: 'run' runs the AI; 'billing' (optional, the owner's request, Oct 2026) only reads the credit left, for when
+ * the run key may not (a Fal.ai key needs billing permission for that: the Billing or Read-only kind).
+ */
+export type KeyKind = 'run' | 'billing';
+export function keyFile(db: Db, kind: KeyKind = 'run'): string {
   const folder = process.env.MOONPROJECT_IMG_AI_DIR ?? (db.name === ':memory:' || db.name === '' ? join(tmpdir(), 'moonproject-img-ai') : dirname(db.name));
-  return join(folder, 'fal-api-key.secret');
+  return join(folder, kind === 'run' ? 'fal-api-key.secret' : 'fal-billing-key.secret');
 }
-export function readFalKey(db: Db): string | null {
+export function readFalKey(db: Db, kind: KeyKind = 'run'): string | null {
   try {
-    return readFileSync(keyFile(db), 'utf8').replace(/^\uFEFF/, '').trim() || null; // Notepad may start the file with a BOM
+    return readFileSync(keyFile(db, kind), 'utf8').replace(/^\uFEFF/, '').trim() || null; // Notepad may start the file with a BOM
   } catch {
     return null;
   }
 }
-function writeFalKey(db: Db, key: string): void {
-  const file = keyFile(db);
+function writeFalKey(db: Db, key: string, kind: KeyKind = 'run'): void {
+  const file = keyFile(db, kind);
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.${newId()}.tmp`;
   writeFileSync(tmp, key, { mode: 0o600 });
@@ -103,7 +108,7 @@ function settingsRow(db: Db) {
 }
 export function aiSettings(db: Db): AiSettings {
   const r = settingsRow(db);
-  return { keySet: existsSync(keyFile(db)) && readFalKey(db) !== null, capPeso: r?.cap ?? DEFAULT_CAP_PESO, ratePeso: (r?.rate ?? DEFAULT_RATE_CENTAVOS) / 100, version: r?.version ?? 0 };
+  return { keySet: readFalKey(db) !== null, billingKeySet: readFalKey(db, 'billing') !== null, capPeso: r?.cap ?? DEFAULT_CAP_PESO, ratePeso: (r?.rate ?? DEFAULT_RATE_CENTAVOS) / 100, version: r?.version ?? 0 };
 }
 
 export const aiSettingsInput = z.object({
@@ -111,6 +116,8 @@ export const aiSettingsInput = z.object({
   ratePeso: z.number().min(1).max(1000),
   /** Write-only: leave it out to keep the saved key; an empty string removes it. */
   apiKey: z.string().trim().max(400).optional(),
+  /** The same for the key that only reads the credit left. */
+  billingKey: z.string().trim().max(400).optional(),
   version: z.number().int().min(0),
 }).strict();
 
@@ -120,13 +127,15 @@ export function saveAiSettings(db: Db, raw: unknown, who: { userId: string; at: 
   if (v.version !== before.version) throw conflict('VERSION_CHANGED', 'Someone changed these settings meanwhile. Open them again.');
   const keyChange = v.apiKey === undefined ? null : v.apiKey === '' ? 'removed' : 'changed';
   if (keyChange) writeFalKey(db, v.apiKey ?? '');
+  const billingChange = v.billingKey === undefined ? null : v.billingKey === '' ? 'removed' : 'changed';
+  if (billingChange) writeFalKey(db, v.billingKey ?? '', 'billing');
   db.prepare(`INSERT INTO img_ai_settings (id, monthly_cap_peso, rate_centavos, version, updated_at, updated_by) VALUES (1, ?, ?, 1, ?, ?)
     ON CONFLICT(id) DO UPDATE SET monthly_cap_peso = excluded.monthly_cap_peso, rate_centavos = excluded.rate_centavos,
       version = img_ai_settings.version + 1, updated_at = excluded.updated_at, updated_by = excluded.updated_by`)
     .run(v.capPeso, Math.round(v.ratePeso * 100), who.at, who.userId);
   const after = aiSettings(db);
   appendAudit(db, { at: who.at, userId: who.userId, action: 'img.ai.settings', entityType: 'img_ai_settings', entityId: '1',
-    data: { before: { capPeso: before.capPeso, ratePeso: before.ratePeso }, after: { capPeso: after.capPeso, ratePeso: after.ratePeso }, key: keyChange } });
+    data: { before: { capPeso: before.capPeso, ratePeso: before.ratePeso }, after: { capPeso: after.capPeso, ratePeso: after.ratePeso }, key: keyChange, billingKey: billingChange } });
   return after;
 }
 
@@ -170,7 +179,11 @@ export function recentRuns(db: Db, limit: number, urlOf: (resultId: string, step
 }
 
 /** The online service: one request in, the result's bytes out. Tests use a stand-in. */
-export interface AiService { run(key: string, endpoint: string, input: Record<string, unknown>): Promise<Buffer> }
+export interface AiService {
+  run(key: string, endpoint: string, input: Record<string, unknown>): Promise<Buffer>;
+  /** The account's credit left, in US$; IMG_AI_BILLING_KEY when the key may not read it. */
+  credit(key: string): Promise<number>;
+}
 
 const QUEUE = 'https://queue.fal.run';
 const TIMEOUT_MS = 4 * 60_000;
@@ -207,4 +220,18 @@ export const falService: AiService = {
     if (!file.ok) throw fail(file.status, '');
     return Buffer.from(await file.arrayBuffer());
   },
+  async credit(key) {
+    const res = await fetch('https://api.fal.ai/v1/account/billing?expand=credits', { headers: { Authorization: `Key ${key}` }, signal: AbortSignal.timeout(10_000) });
+    if (res.status === 401 || res.status === 403) {
+      throw new AppError('IMG_AI_BILLING_KEY', 'This Fal.ai key may run the AI but not read the credit left. Add a Billing key under Online AI settings.', 403);
+    }
+    if (!res.ok) throw new AppError('IMG_AI_FAILED', `Fal.ai did not say the credit left (${res.status}).`, 502);
+    const body = await res.json() as { credits?: { current_balance?: number; currency?: string } };
+    const usd = body.credits?.current_balance;
+    if (typeof usd !== 'number' || (body.credits?.currency ?? 'USD') !== 'USD') throw new AppError('IMG_AI_FAILED', 'Fal.ai did not say the credit left in US$.', 502);
+    return usd;
+  },
 };
+
+/** The credit left as shown: in US$ and pesos when known, else why not ('no-key', 'needs-billing-key', 'failed'). */
+export type CreditInfo = { usd: number; peso: number; checkedAt: string } | { problem: 'no-key' | 'needs-billing-key' | 'failed'; message: string; checkedAt: string };

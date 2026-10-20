@@ -44,7 +44,11 @@ const toDataUri = (b: Blob) => new Promise<string>((ok, no) => { const r = new F
 type AiRun = { at: string; step: string; model: string; ok: boolean; peso: number; seconds: number; note: string; who: string; url: string | null };
 /** A picture made on this page: kept while the page is open, whatever tool is used next. */
 type Made = { key: number; label: string; kind: 'png' | 'svg'; blob: Blob; url: string; at: Date; costPeso?: number; fileName: string };
-type AiInfo = { keySet: boolean; capPeso: number; ratePeso: number; version: number; month: string; spentPeso: number; prices: { best: number; economy: number; crisp: number; vector: number }; runs: AiRun[] };
+/** The Fal.ai credit left: in US$ and pesos, or why it is not known. */
+type Credit = { usd: number; peso: number; checkedAt: string } | { problem: 'no-key' | 'needs-billing-key' | 'failed'; message: string; checkedAt: string };
+/** Below this the credit shows as running low (about twenty Best redraws). */
+const LOW_CREDIT_PESO = 200;
+type AiInfo = { keySet: boolean; billingKeySet: boolean; credit: Credit; capPeso: number; ratePeso: number; version: number; month: string; spentPeso: number; prices: { best: number; economy: number; crisp: number; vector: number }; runs: AiRun[] };
 const peso = (n: number) => `₱${n.toFixed(2)}`;
 const MAX_SIDE = 8000; // the largest side a result may have
 const START_CORNERS: Corners = [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9], [0.1, 0.9]];
@@ -115,8 +119,8 @@ export function ImageTools({ me }: { me: Me }) {
 
   useEffect(() => void fetch('/api/img/status', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() as Promise<Status> : Promise.reject(new Error())))
     .then(setStatus, () => setStatus({ upscale: false, background: false, art: false, waiting: 0 })), []);
-  const loadAi = () => { if (canAi) void fetch('/api/img/ai', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() as Promise<AiInfo> : null)).then((a) => a && setAi(a), () => undefined); };
-  useEffect(loadAi, []);
+  const loadAi = (fresh = false) => { if (canAi) void fetch(`/api/img/ai${fresh ? '?fresh=1' : ''}`, { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() as Promise<AiInfo> : null)).then((a) => a && setAi(a), () => undefined); };
+  useEffect(() => loadAi(), []);
 
   const open = async (f: File | Blob, name: string, keepSet = false) => {
     if (!/^image\/(png|jpeg|webp)$/.test(f.type)) return setError('Pick a JPEG, PNG or WebP picture.');
@@ -572,6 +576,7 @@ export function ImageTools({ me }: { me: Me }) {
             </>}
           </>}
 
+          {ai && aiPrice !== null && <CreditLine credit={ai.credit} price={aiPrice} />}
           <Button tone="primary" disabled={!file || nothing || !ready || !!busy} onClick={doIt}>{busy ? 'Working…' : tool === 'erase' ? 'Erase what I marked (free)' : aiPrice !== null ? `Do it (≈ ${peso(aiPrice)})` : 'Do it'}</Button>
           {busy && <p role="status" className="text-sm text-indigo-700">{busy}</p>}
           {error && <Notice>{error}</Notice>}
@@ -670,7 +675,7 @@ export function ImageTools({ me }: { me: Me }) {
         </div>
       </div>
       {made.length > 0 && <MadeStrip made={made} busy={!!busy} onOpen={(m) => void showMade(m)} onPsd={(m, shapes) => void madePsd(m, shapes)} />}
-      {canAi && ai && <AiSettingsCard me={me} ai={ai} onSaved={loadAi} />}
+      {canAi && ai && <AiSettingsCard me={me} ai={ai} onSaved={() => loadAi()} onRefresh={() => loadAi(true)} />}
     </div>
   );
 }
@@ -784,20 +789,33 @@ function JerseySetPanel({ set, shown, onShow, garment, onGarment, mockupPrice, b
 }
 
 /** The online AI's key (write-only), monthly limit and peso rate, this month's spending, and the latest runs (owner). */
-function AiSettingsCard({ me, ai, onSaved }: { me: Me; ai: AiInfo; onSaved: () => void }) {
+/** The Fal.ai credit left, beside a paid run's button: low or short of the price in amber or red. */
+function CreditLine({ credit, price }: { credit: Credit; price?: number }) {
+  if (!('usd' in credit)) return <p className="text-xs text-slate-500">Fal.ai credit left: not known ({credit.problem === 'needs-billing-key' ? 'add a Billing key under Online AI settings' : credit.message})</p>;
+  const short = price !== undefined && credit.peso < price;
+  const low = credit.peso < LOW_CREDIT_PESO;
+  return (
+    <p className={`text-xs ${short ? 'font-semibold text-red-700' : low ? 'font-semibold text-amber-700' : 'text-slate-600'}`}>
+      Fal.ai credit left: {peso(credit.peso)} (US${credit.usd.toFixed(2)}){short ? ': not enough for this. Top up at fal.ai (Billing).' : low ? ': running low. Top up at fal.ai (Billing).' : ''}
+    </p>
+  );
+}
+
+function AiSettingsCard({ me, ai, onSaved, onRefresh }: { me: Me; ai: AiInfo; onSaved: () => void; onRefresh: () => void }) {
   const [cap, setCap] = useState(String(ai.capPeso));
   const [rate, setRate] = useState(String(ai.ratePeso));
   const [key, setKey] = useState('');
+  const [billingKey, setBillingKey] = useState('');
   const [msg, setMsg] = useState('');
   const [err, setErr] = useState('');
   useEffect(() => { setCap(String(ai.capPeso)); setRate(String(ai.ratePeso)); }, [ai.version]);
   const save = async () => {
     setMsg(''); setErr('');
     const res = await fetch('/api/img/ai', { method: 'PUT', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken },
-      body: JSON.stringify({ capPeso: Number(cap), ratePeso: Number(rate), version: ai.version, ...(key.trim() ? { apiKey: key.trim() } : {}) }) });
+      body: JSON.stringify({ capPeso: Number(cap), ratePeso: Number(rate), version: ai.version, ...(key.trim() ? { apiKey: key.trim() } : {}), ...(billingKey.trim() ? { billingKey: billingKey.trim() } : {}) }) });
     const body = await res.json().catch(() => null) as { message?: string } | null;
     if (!res.ok) return setErr(body?.message ?? 'The settings could not be saved.');
-    setKey(''); setMsg('Saved.'); onSaved();
+    setKey(''); setBillingKey(''); setMsg('Saved.'); onSaved();
   };
   const used = ai.capPeso > 0 ? Math.min(100, (ai.spentPeso / ai.capPeso) * 100) : 100;
   return (
@@ -807,9 +825,20 @@ function AiSettingsCard({ me, ai, onSaved }: { me: Me; ai: AiInfo; onSaved: () =
         <span className="text-sm text-slate-600">This month: <b>{peso(ai.spentPeso)}</b> of {peso(ai.capPeso)}</span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className={`h-full ${used >= 90 ? 'bg-red-500' : 'bg-indigo-500'}`} style={{ width: `${used}%` }} /></div>
+      <div className="flex flex-wrap items-center gap-3 rounded-lg bg-slate-50 px-3 py-2">
+        {'usd' in ai.credit
+          ? <span className={`text-sm ${ai.credit.peso < LOW_CREDIT_PESO ? 'font-semibold text-amber-700' : 'text-slate-700'}`}>Fal.ai credit left: <b>{peso(ai.credit.peso)}</b> (US${ai.credit.usd.toFixed(2)}){ai.credit.peso < LOW_CREDIT_PESO ? ': running low' : ''}</span>
+          : <span className="text-sm text-slate-600">Fal.ai credit left: not known. {ai.credit.problem === 'needs-billing-key'
+            ? <>Your Fal.ai key may run the AI but not read the credit. At <a href="https://fal.ai/dashboard/keys" target="_blank" rel="noopener noreferrer" className="text-indigo-700 underline">fal.ai, Keys</a>: create a key of the Billing (or Read-only) kind and paste it below as the billing key.</>
+            : ai.credit.message}</span>}
+        <span className="text-xs text-slate-500">checked {ai.credit.checkedAt.slice(11, 16)}</span>
+        <button type="button" className="text-sm text-indigo-700 hover:underline" onClick={onRefresh}>Check now</button>
+        <a href="https://fal.ai/dashboard/billing" target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-700 hover:underline">Top up at fal.ai</a>
+      </div>
       <p className="text-xs text-slate-500">Prices now: AI redraw Best {peso(ai.prices.best)}, Crisp (GPT, an estimate) {peso(ai.prices.crisp)}, Economy {peso(ai.prices.economy)}, clean vector {peso(ai.prices.vector)} a picture (Fal.ai's US$ prices at your peso rate). A run that would pass the monthly limit is refused; failed runs cost nothing.</p>
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Field label={`Fal.ai key (${ai.keySet ? 'saved' : 'not set'})`}><input className={inputClass} type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} placeholder={ai.keySet ? 'Paste a new key to replace it' : 'Paste the key from fal.ai'} /></Field>
+        <Field label={`Billing key, to show the credit (${ai.billingKeySet ? 'saved' : 'optional'})`}><input className={inputClass} type="password" autoComplete="off" value={billingKey} onChange={(e) => setBillingKey(e.target.value)} placeholder={ai.billingKeySet ? 'Paste a new key to replace it' : 'Only if the credit is not known'} /></Field>
         <Field label="Monthly limit (₱)"><input className={inputClass} inputMode="numeric" value={cap} onChange={(e) => setCap(e.target.value)} /></Field>
         <Field label="Pesos per US$"><input className={inputClass} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /></Field>
       </div>
