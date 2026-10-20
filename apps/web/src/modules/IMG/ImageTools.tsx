@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, type Me, type NavResult } from '../../api.ts';
 import { Button, Field, Notice, inputClass } from '../../components/ui.tsx';
 import { removeColour, toHex, type Rgb } from './colour.ts';
-import { pictureToPsd, vectorToPsd } from './psd.ts';
+import { pictureToPsd, vectorToPsd, vectorToShapesPsd } from './psd.ts';
 import { FIT, limit, zoomAt, type View } from './zoom.ts';
 
 type Tool = 'clean' | 'erase' | 'flat' | 'vector';
@@ -336,20 +336,20 @@ export function ImageTools({ me }: { me: Me }) {
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
   };
-  const savePsd = () => attempt(async () => {
+  const savePsd = (shapes = false) => attempt(async () => {
     if (!result) return;
-    setBusy('Making the Photoshop file (a few seconds)…');
+    setBusy(shapes ? 'Making the Photoshop shapes (up to half a minute for many colours)…' : 'Making the Photoshop file (a few seconds)…');
     const svg = result.kind === 'vector' ? result.files.find((f) => f.name.endsWith('.svg')) : undefined;
     const psd = result.kind === 'png'
       ? await pictureToPsd(result.blob, result.colours && [...new Set([...result.colours].sort((a, b) => b.share - a.share).flatMap((c) => (c.paint ? [c.paint] : [])))])
-      : await vectorToPsd(await svg!.blob.text());
-    downloadPsd(psd, result.kind === 'png' ? `${fileName.replace(/\.png$/, '')}.psd` : `${svg!.name.replace(/\.svg$/, '')}-vector.psd`);
+      : await (shapes ? vectorToShapesPsd : vectorToPsd)(await svg!.blob.text());
+    downloadPsd(psd, result.kind === 'png' ? `${fileName.replace(/\.png$/, '')}.psd` : `${svg!.name.replace(/\.svg$/, '')}-${shapes ? 'shapes' : 'vector'}.psd`);
   });
   /** A picture from Pictures made here as a PSD: a picture one layer, a vector one layer per colour. */
-  const madePsd = (m: Made) => attempt(async () => {
-    setBusy('Making the Photoshop file (a few seconds)…');
-    const psd = m.kind === 'png' ? await pictureToPsd(m.blob) : await vectorToPsd(await m.blob.text());
-    downloadPsd(psd, m.kind === 'png' ? m.fileName.replace(/\.png$/, '.psd') : m.fileName.replace(/\.svg$/, '-vector.psd'));
+  const madePsd = (m: Made, shapes = false) => attempt(async () => {
+    setBusy(shapes ? 'Making the Photoshop shapes (up to half a minute for many colours)…' : 'Making the Photoshop file (a few seconds)…');
+    const psd = m.kind === 'png' ? await pictureToPsd(m.blob) : await (shapes ? vectorToShapesPsd : vectorToPsd)(await m.blob.text());
+    downloadPsd(psd, m.kind === 'png' ? m.fileName.replace(/\.png$/, '.psd') : m.fileName.replace(/\.svg$/, `-${shapes ? 'shapes' : 'vector'}.psd`));
   });
   /**
    * Open from Pictures made here: shown as the result again, with every download and next step (Download PSD, Make it
@@ -656,6 +656,7 @@ export function ImageTools({ me }: { me: Me }) {
                 <div className="flex flex-wrap items-center gap-3">
                   {result.files.map((f, i) => <a key={f.name} href={f.url} download={f.name} className={i === 0 ? 'rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700' : 'rounded-md bg-white px-4 py-2 text-sm font-semibold text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-50'}>Download {f.label}</a>)}
                   {result.files.some((f) => f.name.endsWith('.svg')) && <Button disabled={!!busy} onClick={() => void savePsd()}>Download PSD (a layer per colour)</Button>}
+                  {result.files.some((f) => f.name.endsWith('.svg')) && <Button disabled={!!busy} onClick={() => void savePsd(true)} title="Photoshop shape layers: sharp at any size, recoloured with a double-click">Download PSD (shapes)</Button>}
                   <span className="text-sm text-slate-500">{result.costPeso !== undefined ? `Clean vector by the online AI · ${result.info.shapes} shapes · cost ${peso(result.costPeso)}` : `${result.info.widthCm} × ${result.info.heightCm} cm · ${result.info.shapes} shapes`}</span>
                 </div>
                 <div className="flex flex-wrap gap-2 text-sm">
@@ -668,7 +669,7 @@ export function ImageTools({ me }: { me: Me }) {
           )}
         </div>
       </div>
-      {made.length > 0 && <MadeStrip made={made} busy={!!busy} onOpen={(m) => void showMade(m)} onPsd={(m) => void madePsd(m)} />}
+      {made.length > 0 && <MadeStrip made={made} busy={!!busy} onOpen={(m) => void showMade(m)} onPsd={(m, shapes) => void madePsd(m, shapes)} />}
       {canAi && ai && <AiSettingsCard me={me} ai={ai} onSaved={loadAi} />}
     </div>
   );
@@ -726,7 +727,7 @@ function BrushBar({ brush, onBrush, mode, onMode, marked, onClear }: { brush: nu
 }
 
 /** Every picture made on this page, newest first: download it again, or open it to keep working on it. */
-function MadeStrip({ made, busy, onOpen, onPsd }: { made: Made[]; busy: boolean; onOpen: (m: Made) => void; onPsd: (m: Made) => void }) {
+function MadeStrip({ made, busy, onOpen, onPsd }: { made: Made[]; busy: boolean; onOpen: (m: Made) => void; onPsd: (m: Made, shapes?: boolean) => void }) {
   return (
     <section className="space-y-2 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70" aria-label="Pictures made here">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -743,6 +744,7 @@ function MadeStrip({ made, busy, onOpen, onPsd }: { made: Made[]; busy: boolean;
               <div className="flex justify-between">
                 <a href={m.url} download={m.fileName} className="text-indigo-700 hover:underline" aria-label={`Download ${m.label} as ${m.kind.toUpperCase()}`}>{m.kind.toUpperCase()}</a>
                 <button type="button" className="text-indigo-700 hover:underline disabled:opacity-40" disabled={busy} onClick={() => onPsd(m)} aria-label={`Download ${m.label} as PSD`}>PSD</button>
+                {m.kind === 'svg' && <button type="button" className="text-indigo-700 hover:underline disabled:opacity-40" disabled={busy} onClick={() => onPsd(m, true)} aria-label={`Download ${m.label} as PSD shapes`} title="Photoshop shape layers, one per colour">Shapes</button>}
                 {m.kind === 'png' && <button type="button" className="text-indigo-700 hover:underline" onClick={() => onOpen(m)} aria-label={`Open ${m.label}`}>Open</button>}
               </div>
             </figcaption>
