@@ -8,12 +8,14 @@
  *   sublimation (16 to 64 colours), outlines for a cutter.
  * - Online AI, paid per picture (owner: img.ai): redraw a jersey photo flat (Fal.ai: Nano Banana Pro, FLUX Kontext or GPT Image 2.5) and
  *   vectorize cleanly (Recraft), with the price shown first and a monthly limit.
- * The result shows before/after over a checkerboard, then downloads or goes on a job order.
+ * The result shows before/after over a checkerboard, then downloads (PNG, SVG, PDF, or a Photoshop file with a layer per
+ * colour) or goes on a job order.
  */
 import { useEffect, useRef, useState } from 'react';
 import { api, type Me, type NavResult } from '../../api.ts';
 import { Button, Field, Notice, inputClass } from '../../components/ui.tsx';
 import { removeColour, toHex, type Rgb } from './colour.ts';
+import { pictureToPsd, vectorToPsd } from './psd.ts';
 import { FIT, limit, zoomAt, type View } from './zoom.ts';
 
 type Tool = 'clean' | 'erase' | 'flat' | 'vector';
@@ -326,6 +328,21 @@ export function ImageTools({ me }: { me: Me }) {
     } finally { loadAi(); }
   });
 
+  /** The result as a Photoshop file: a picture as one layer (flat art: one per colour), a vector one layer per colour. */
+  const savePsd = () => attempt(async () => {
+    if (!result) return;
+    setBusy('Making the Photoshop file (a few seconds)…');
+    const svg = result.kind === 'vector' ? result.files.find((f) => f.name.endsWith('.svg')) : undefined;
+    const psd = result.kind === 'png'
+      ? await pictureToPsd(result.blob, result.colours && [...new Set([...result.colours].sort((a, b) => b.share - a.share).flatMap((c) => (c.paint ? [c.paint] : [])))])
+      : await vectorToPsd(await svg!.blob.text());
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(psd);
+    a.download = result.kind === 'png' ? `${fileName.replace(/\.png$/, '')}.psd` : `${svg!.name.replace(/\.svg$/, '')}-vector.psd`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+  });
+
   /** AI vector (Recraft): clean shapes and gradients, an SVG. */
   const runAiVector = () => attempt(async () => {
     if (!file) return;
@@ -593,6 +610,7 @@ export function ImageTools({ me }: { me: Me }) {
               {result.kind === 'png' && <>
                 <div className="flex flex-wrap items-center gap-3">
                   <a href={result.url} download={fileName} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Download PNG</a>
+                  <Button disabled={!!busy} onClick={() => void savePsd()}>{flatColours ? 'Download PSD (a layer per colour)' : 'Download PSD'}</Button>
                   {tool === 'erase' && <Button tone="primary" disabled={!!busy} onClick={() => { void open(result.blob, fileName, true).then(() => pickTool('flat')); }}>Redraw it as flat art</Button>}
                   {tool === 'flat'
                     ? <Button disabled={!!busy} onClick={() => { void open(result.blob, fileName, true).then(() => pickTool('vector')); }}>Vectorize this</Button>
@@ -617,6 +635,7 @@ export function ImageTools({ me }: { me: Me }) {
                 {result.info.warnings.map((w) => <Notice key={w} tone="warning">{w}</Notice>)}
                 <div className="flex flex-wrap items-center gap-3">
                   {result.files.map((f, i) => <a key={f.name} href={f.url} download={f.name} className={i === 0 ? 'rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700' : 'rounded-md bg-white px-4 py-2 text-sm font-semibold text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-50'}>Download {f.label}</a>)}
+                  {result.files.some((f) => f.name.endsWith('.svg')) && <Button disabled={!!busy} onClick={() => void savePsd()}>Download PSD (a layer per colour)</Button>}
                   <span className="text-sm text-slate-500">{result.costPeso !== undefined ? `Clean vector by the online AI · ${result.info.shapes} shapes · cost ${peso(result.costPeso)}` : `${result.info.widthCm} × ${result.info.heightCm} cm · ${result.info.shapes} shapes`}</span>
                 </div>
                 <div className="flex flex-wrap gap-2 text-sm">
