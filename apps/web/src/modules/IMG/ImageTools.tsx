@@ -24,7 +24,7 @@ type Status = { upscale: boolean; background: boolean; art: boolean; erase?: boo
 type FlatColour = { hex: string; paint: string | null; share: number; background: boolean };
 type VectorInfo = { width: number; height: number; widthCm: number; heightCm: number; colours: { hex: string; share: number }[]; shapes: number; warnings: string[] };
 type Result =
-  | { kind: 'png'; blob: Blob; url: string; w: number; h: number; colours?: FlatColour[]; label?: 'front' | 'back' | 'mockup' }
+  | { kind: 'png'; blob: Blob; url: string; w: number; h: number; colours?: FlatColour[]; label?: 'front' | 'back' | 'mockup'; fileName?: string }
   | { kind: 'vector'; url: string; w: number; h: number; info: VectorInfo; files: { name: string; label: string; blob: Blob; url: string }[]; costPeso?: number };
 type Corners = [number, number][];
 type Method = 'ai-best' | 'ai-crisp' | 'ai-economy' | 'free';
@@ -329,6 +329,13 @@ export function ImageTools({ me }: { me: Me }) {
   });
 
   /** The result as a Photoshop file: a picture as one layer (flat art: one per colour), a vector one layer per colour. */
+  const downloadPsd = (psd: Blob, name: string) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(psd);
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+  };
   const savePsd = () => attempt(async () => {
     if (!result) return;
     setBusy('Making the Photoshop file (a few seconds)…');
@@ -336,11 +343,24 @@ export function ImageTools({ me }: { me: Me }) {
     const psd = result.kind === 'png'
       ? await pictureToPsd(result.blob, result.colours && [...new Set([...result.colours].sort((a, b) => b.share - a.share).flatMap((c) => (c.paint ? [c.paint] : [])))])
       : await vectorToPsd(await svg!.blob.text());
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(psd);
-    a.download = result.kind === 'png' ? `${fileName.replace(/\.png$/, '')}.psd` : `${svg!.name.replace(/\.svg$/, '')}-vector.psd`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
+    downloadPsd(psd, result.kind === 'png' ? `${fileName.replace(/\.png$/, '')}.psd` : `${svg!.name.replace(/\.svg$/, '')}-vector.psd`);
+  });
+  /** A picture from Pictures made here as a PSD: a picture one layer, a vector one layer per colour. */
+  const madePsd = (m: Made) => attempt(async () => {
+    setBusy('Making the Photoshop file (a few seconds)…');
+    const psd = m.kind === 'png' ? await pictureToPsd(m.blob) : await vectorToPsd(await m.blob.text());
+    downloadPsd(psd, m.kind === 'png' ? m.fileName.replace(/\.png$/, '.psd') : m.fileName.replace(/\.svg$/, '-vector.psd'));
+  });
+  /**
+   * Open from Pictures made here: shown as the result again, with every download and next step (Download PSD, Make it
+   * bigger, Vectorize this, Keep working on the result), the picture being worked on as Before.
+   */
+  const showMade = (m: Made) => attempt(async () => {
+    if (!file) return void open(m.blob, m.fileName.replace(/\.png$/, ''), true);
+    const bmp = await createImageBitmap(m.blob);
+    clearMarks(); setTouchUp(false);
+    setResult({ kind: 'png', blob: m.blob, url: m.url, w: bmp.width, h: bmp.height, fileName: m.fileName });
+    setSplit(m.label.startsWith('Mockup') ? 0 : 50);
   });
 
   /** AI vector (Recraft): clean shapes and gradients, an SVG. */
@@ -370,7 +390,7 @@ export function ImageTools({ me }: { me: Me }) {
   const redrawPrice = !ai ? 0 : method === 'ai-best' ? ai.prices.best : method === 'ai-crisp' ? ai.prices.crisp : ai.prices.economy;
   const aiPrice = !ai ? null : aiFlat ? (sides === 'front' ? redrawPrice : sides === 'aiback' ? redrawPrice + ai.prices.best : 2 * redrawPrice) : aiVector ? ai.prices.vector : null;
   const doIt = () => void (tool === 'clean' ? runClean() : tool === 'erase' ? runErase() : aiFlat ? runAiRedraw() : tool === 'flat' ? runFlat() : aiVector ? runAiVector() : runVector());
-  const fileName = !file ? 'picture.png' : result?.kind === 'png' && result.label ? `${file.name}-${result.label}.png` : tool === 'erase' ? `${file.name}-text-erased.png` : aiFlat ? `${file.name}-redraw.png` : tool === 'flat' ? `${file.name}-flat.png` : `${file.name}${bg !== 'keep' ? '-clear' : ''}${scale ? `-x${scale}` : ''}.png`;
+  const fileName = !file ? 'picture.png' : result?.kind === 'png' && result.fileName ? result.fileName : result?.kind === 'png' && result.label ? `${file.name}-${result.label}.png` : tool === 'erase' ? `${file.name}-text-erased.png` : aiFlat ? `${file.name}-redraw.png` : tool === 'flat' ? `${file.name}-flat.png` : `${file.name}${bg !== 'keep' ? '-clear' : ''}${scale ? `-x${scale}` : ''}.png`;
   const choice = (on: boolean) => `rounded-full px-3 py-1.5 text-sm ring-1 ${on ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'} disabled:opacity-40`;
   const tab = (on: boolean) => `flex-1 rounded-md px-2 py-1.5 text-sm font-medium ${on ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-600 hover:text-slate-900'}`;
   const choices = <T,>(values: readonly T[], value: T, set: (v: T) => void, label: (v: T) => string, disabled?: (v: T) => boolean) => (
@@ -648,7 +668,7 @@ export function ImageTools({ me }: { me: Me }) {
           )}
         </div>
       </div>
-      {made.length > 0 && <MadeStrip made={made} onOpen={(m) => { void open(m.blob, m.fileName.replace(/\.png$/, ''), true); }} />}
+      {made.length > 0 && <MadeStrip made={made} busy={!!busy} onOpen={(m) => void showMade(m)} onPsd={(m) => void madePsd(m)} />}
       {canAi && ai && <AiSettingsCard me={me} ai={ai} onSaved={loadAi} />}
     </div>
   );
@@ -706,7 +726,7 @@ function BrushBar({ brush, onBrush, mode, onMode, marked, onClear }: { brush: nu
 }
 
 /** Every picture made on this page, newest first: download it again, or open it to keep working on it. */
-function MadeStrip({ made, onOpen }: { made: Made[]; onOpen: (m: Made) => void }) {
+function MadeStrip({ made, busy, onOpen, onPsd }: { made: Made[]; busy: boolean; onOpen: (m: Made) => void; onPsd: (m: Made) => void }) {
   return (
     <section className="space-y-2 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70" aria-label="Pictures made here">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -721,8 +741,9 @@ function MadeStrip({ made, onOpen }: { made: Made[]; onOpen: (m: Made) => void }
               <div className="truncate font-semibold" title={m.label}>{m.label}</div>
               <div className="text-slate-500">{m.at.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}{m.costPeso !== undefined ? ` · ${peso(m.costPeso)}` : ''}</div>
               <div className="flex justify-between">
-                <a href={m.url} download={m.fileName} className="text-indigo-700 hover:underline">Download</a>
-                {m.kind === 'png' && <button type="button" className="text-indigo-700 hover:underline" onClick={() => onOpen(m)}>Open</button>}
+                <a href={m.url} download={m.fileName} className="text-indigo-700 hover:underline" aria-label={`Download ${m.label} as ${m.kind.toUpperCase()}`}>{m.kind.toUpperCase()}</a>
+                <button type="button" className="text-indigo-700 hover:underline disabled:opacity-40" disabled={busy} onClick={() => onPsd(m)} aria-label={`Download ${m.label} as PSD`}>PSD</button>
+                {m.kind === 'png' && <button type="button" className="text-indigo-700 hover:underline" onClick={() => onOpen(m)} aria-label={`Open ${m.label}`}>Open</button>}
               </div>
             </figcaption>
           </figure>
