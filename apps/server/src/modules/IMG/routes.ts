@@ -15,7 +15,7 @@ import { sniffType } from '../../engine/attachments.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
-import { AI_MODELS, aiSettings, backPrompt, checkCap, falService, logRun, mockupPrompt, pesoOf, readFalKey, recentRuns, redrawPrompt, saveAiSettings, spentThisMonth, type AiService, type AiStep } from './ai.ts';
+import { AI_MODELS, type CreditInfo, aiSettings, backPrompt, checkCap, falService, logRun, mockupPrompt, pesoOf, readFalKey, recentRuns, redrawPrompt, saveAiSettings, spentThisMonth, type AiService, type AiStep } from './ai.ts';
 import { localTools, oneAtATime, queueLength, toolsDir, type ImageTools } from './tools.ts';
 
 export const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
@@ -124,17 +124,46 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
     return { id, url: `/api/img/results/${id}`, ms: Date.now() - started };
   });
 
-  /** The online AI's settings, this month's spending and prices in pesos, and the latest runs (owner: img.ai). */
-  app.get('/api/img/ai', { config: { permission: 'img.ai' } }, async () => {
+  /**
+   * The Fal.ai credit left (the owner's request, Oct 2026), asked with the billing key when there is one, else the run
+   * key; kept a minute, asked again after each run and when the keys change. ?fresh=1 asks now.
+   */
+  let credit: { at: number; info: CreditInfo } | null = null;
+  const creditLeft = async (ratePeso: number, fresh: boolean): Promise<CreditInfo> => {
+    if (!fresh && credit && Date.now() - credit.at < 60_000) return credit.info;
+    const checkedAt = stamp(deps.clock);
+    const key = readFalKey(db, 'billing') ?? readFalKey(db);
+    let info: CreditInfo;
+    if (!key) info = { problem: 'no-key', message: 'No Fal.ai key is saved yet.', checkedAt };
+    else {
+      try {
+        const usd = await (standAi ?? falService).credit(key);
+        info = { usd, peso: Math.round(usd * ratePeso * 100) / 100, checkedAt };
+      } catch (e) {
+        info = e instanceof AppError && e.code === 'IMG_AI_BILLING_KEY'
+          ? { problem: 'needs-billing-key', message: e.message, checkedAt }
+          : { problem: 'failed', message: e instanceof Error ? e.message : String(e), checkedAt };
+      }
+    }
+    credit = { at: Date.now(), info };
+    return info;
+  };
+
+  /** The online AI's settings, this month's spending and prices in pesos, the credit left, and the latest runs (owner: img.ai). */
+  app.get('/api/img/ai', { config: { permission: 'img.ai' } }, async (req) => {
     const s = aiSettings(db);
     const rate = Math.round(s.ratePeso * 100);
     const month = today(deps.clock).slice(0, 7);
-    return { ...s, month, spentPeso: spentThisMonth(db, month),
+    const fresh = (req.query as { fresh?: string }).fresh === '1';
+    return { ...s, month, spentPeso: spentThisMonth(db, month), credit: await creditLeft(s.ratePeso, fresh),
       prices: { best: pesoOf(AI_MODELS.best.mills, rate), economy: pesoOf(AI_MODELS.economy.mills, rate), crisp: pesoOf(AI_MODELS.crisp.mills, rate), vector: pesoOf(AI_MODELS.vector.mills, rate) },
       runs: recentRuns(db, 30, (id, step) => { const f = step === 'vectorize' ? 'design.svg' : 'out.png'; return existsSync(join(work, id, f)) ? `/api/img/results/${id}${step === 'vectorize' ? '/design.svg' : ''}` : null; }) };
   });
-  app.put('/api/img/ai', { config: { permission: 'img.ai' } }, async (req) =>
-    tx(db, () => saveAiSettings(db, req.body, { userId: currentUser(req).userId, at: stamp(deps.clock) })));
+  app.put('/api/img/ai', { config: { permission: 'img.ai' } }, async (req) => {
+    const saved = tx(db, () => saveAiSettings(db, req.body, { userId: currentUser(req).userId, at: stamp(deps.clock) }));
+    credit = null; // a key or the rate changed: ask again
+    return saved;
+  });
 
   /**
    * One online AI run: the month's limit checked first, the run logged with its cost either way (a failed one costs
@@ -162,6 +191,7 @@ export function imgRoutes(app: FastifyInstance, deps: AppDeps): void {
       mkdirSync(join(work, id), { recursive: true });
       writeFileSync(join(work, id, svg ? 'design.svg' : 'out.png'), bytes);
     }
+    credit = null; // the run was charged: ask again
     logRun(db, { at: stamp(deps.clock), month, userId, step, model: model.label, ok: true, mills: model.mills, ms, ...(fine ? { resultId: id } : { note: 'The result was not a picture.' }) });
     if (!fine) throw new AppError('IMG_AI_FAILED', svg ? 'The vectorizer gave something other than an SVG. Try again.' : 'The online AI gave back something that is not a picture. Try again.', 502);
     const costPeso = pesoOf(model.mills, Math.round(aiSettings(db).ratePeso * 100));
