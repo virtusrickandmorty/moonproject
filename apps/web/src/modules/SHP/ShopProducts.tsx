@@ -309,7 +309,7 @@ function Seasons({ me }: { me: Me }) {
       <section className="space-y-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70" aria-label="Decorations">
         <div>
           <h2 className="text-lg font-semibold">Season decorations</h2>
-          <p className="text-sm text-slate-600">The website dresses up for the season: its own banner slide first, a line and colour in the top bar, and a few bats, snowflakes or hearts over the banner.</p>
+          <p className="text-sm text-slate-600">The website dresses up for the season: its own banner slide first, a line and colour in the top bar, and something over the banner: bats, snow, hearts, sparkles or confetti.</p>
           <p className="mt-1 text-sm">Showing now: <b>{s.eventToday ? `your event, ${s.eventToday}` : s.shownToday ? label(s.shownToday) : 'no decorations'}</b></p>
         </div>
         <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Decorations">

@@ -2,7 +2,7 @@
  * The website's seasonal look (the owner's request, Oct 2026: the shop is decorated by the season of the month). The
  * server says which season shows (Automatic by its calendar, Off, or one the owner picked: SHP seasons.ts); this file
  * gives each one its banner slide (words, colours and a drawing), the line in the top bar, and a light shower of
- * decorations over the banner (bats, snow, hearts), still for anyone who asked their device for less motion. The shop's
+ * decorations over the banner (bats, snow, hearts, summer sparkles, school confetti), still for anyone who asked their device for less motion. The shop's
  * own events (SHP season-events.ts) are built from the same pieces: a colour theme, a picture or a drawing, a shower.
  */
 import type { ReactNode } from 'react';
@@ -102,7 +102,7 @@ export const SEASONS: Record<SeasonKey, SeasonLook> = {
     bar: 'bg-sky-950 text-yellow-100', news: 'Summer league jerseys and outing shirts, made to order',
     eyebrow: 'Summer leagues and outings', title: <>Summer,<br /><span className="text-yellow-300">game on.</span></>,
     text: 'Jerseys for summer leagues, outing and reunion shirts, and dri-fit tees for the heat. Send your list for a quotation.',
-    tone: 'from-sky-900 via-cyan-800 to-amber-900', primary: ['quote', 'Get a team quote'], ghost: ['made', 'Browse made-to-order'],
+    tone: 'from-sky-900 via-cyan-800 to-amber-900', primary: ['quote', 'Get a team quote'], ghost: ['made', 'Browse made-to-order'], shower: 'stars',
     art: () => (
       <svg viewBox="0 0 400 400" className="size-full" aria-hidden="true">
         <g transform="translate(220 150)">
@@ -122,7 +122,7 @@ export const SEASONS: Record<SeasonKey, SeasonLook> = {
     bar: 'bg-slate-950 text-sky-100', news: 'Back to school: uniforms measured, sewn and packed per student',
     eyebrow: 'Back to school', title: <>Ready for<br /><span className="text-sky-300">the first day.</span></>,
     text: 'School uniforms measured, sewn and packed per student, PE shirts and org shirts. Ask about our TPL service for schools.',
-    tone: 'from-slate-950 via-sky-950 to-indigo-950', primary: ['services', 'Our school service'], ghost: ['quote', 'Get a quote'],
+    tone: 'from-slate-950 via-sky-950 to-indigo-950', primary: ['services', 'Our school service'], ghost: ['quote', 'Get a quote'], shower: 'confetti',
     art: () => (
       <svg viewBox="0 0 400 400" className="size-full" aria-hidden="true">
         <g transform="translate(200 210) rotate(-8)">
