@@ -214,7 +214,7 @@ describe('default roles against the plan (C6, E13)', () => {
 // website's AI assistant (modules/AIA): whether it is on, one chat message at a time and the handoff to the Support inbox
 // (each limited per sender, the chat to 30 messages).
 const PUBLIC_ROUTES = ['GET /*', 'GET /api/aia/public', 'GET /api/health', 'GET /api/setup/status', 'GET /api/shp/delivery-fee', 'GET /api/shp/orders/:number', 'GET /api/shp/payment',
-  'GET /api/shp/payment/qr/:version', 'GET /api/shp/photos/:photoId', 'GET /api/shp/products', 'GET /api/shp/reviews', 'GET /robots.txt', 'GET /sitemap.xml',
+  'GET /api/shp/payment/qr/:version', 'GET /api/shp/photos/:photoId', 'GET /api/shp/products', 'GET /api/shp/reviews', 'GET /api/shp/season', 'GET /robots.txt', 'GET /sitemap.xml',
   'POST /api/aia/chat', 'POST /api/aia/handoff', 'POST /api/auth/login', 'POST /api/setup/first-owner', 'POST /api/shp/orders', 'POST /api/shp/orders/:number/cancel', 'POST /api/shp/orders/:number/payment', 'POST /api/shp/orders/:number/reviews', 'POST /api/shp/track',
   'POST /api/sup/messages'];
 
