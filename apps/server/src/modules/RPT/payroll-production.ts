@@ -4,6 +4,7 @@ import { payrollEarningRows, payrollReportRows, thirteenthReportRows } from '../
 import { board, productionReportRows } from '../PRD/public.ts';
 import { employee } from '../EMP/public.ts';
 import { invoiceRecordsOf, productionOrderRows } from '../JO/public.ts';
+import { programFigures, restockPrograms } from '../TPL/public.ts';
 import { documentPath } from './sales-collections.ts';
 
 type AnyRow = Record<string, string | number | null>;
@@ -63,7 +64,14 @@ export function jobMargins(db: Db) {
   const labor=new Map((laborCost(db,'0000-01-01','9999-12-31').rows as AnyRow[]).map((r)=>[String(r.jobOrderId),Number(r.amountCents)]));
   const sales=new Map<string,number>();
   for(const i of invoiceRecordsOf(db,'all')) sales.set(i.jobOrderId,(sales.get(i.jobOrderId)??0)+i.grossCents-i.vatCents);
-  const rows=(productionOrderRows(db) as AnyRow[]).map((j)=>({ id:j.id,number:j.number,customerName:j.customerName,invoiceNetCents:sales.get(String(j.id))??0,pieceLaborCents:labor.get(String(j.id))??0,
+  // A TPL restock is a ₱0 job order billed later on its client's deliveries: margined per client below, not as a loss here.
+  const restocks=restockPrograms(db);
+  const rows=(productionOrderRows(db) as AnyRow[]).filter((j)=>!restocks.has(String(j.id))).map((j)=>({ id:j.id,number:j.number,customerName:j.customerName,invoiceNetCents:sales.get(String(j.id))??0,pieceLaborCents:labor.get(String(j.id))??0,
     marginCents:(sales.get(String(j.id))??0)-(labor.get(String(j.id))??0),documentType:'jo.job_order',documentPath:documentPath('jo.job_order',String(j.id)) }));
-  return { basis:'Invoice net less tagged piece labor; this is an operational figure, not from the general ledger.',rows };
+  const tplLabor=new Map<string,{ labor:number; restocks:number }>();
+  for(const [jo,r] of restocks){ const t=tplLabor.get(r.programId)??{ labor:0,restocks:0 }; tplLabor.set(r.programId,{ labor:t.labor+(labor.get(jo)??0),restocks:t.restocks+1 }); }
+  const tplClients=programFigures(db).filter((p)=>tplLabor.has(p.programId)||p.piecesDelivered>0).map((p)=>{ const t=tplLabor.get(p.programId)??{ labor:0,restocks:0 };
+    return { programId:p.programId,customerName:p.customerName,restocks:t.restocks,piecesIn:p.piecesIn,piecesDelivered:p.piecesDelivered,invoiceNetCents:p.goodsNetCents,pieceLaborCents:t.labor,
+      laborPerPieceCents:p.piecesIn>0?Math.round(t.labor/p.piecesIn):null,marginCents:p.goodsNetCents-t.labor }; });
+  return { basis:'Invoice net less tagged piece labor; this is an operational figure, not from the general ledger. TPL clients are margined per client: the invoices of their deliveries less the labor of their restock job orders (pieces still in stock are not sold yet).',rows,tplClients };
 }

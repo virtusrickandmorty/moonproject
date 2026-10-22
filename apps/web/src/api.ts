@@ -1029,6 +1029,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     tplDeliver: <T>(delivery: object, expectedTotalCents: number, key: string) => call<T>('POST', '/api/tpl/deliveries', { delivery, expectedTotalCents }, idem(key)),
     tplCancelDelivery: <T>(id: string, reason: string, key: string) => call<T>('POST', `/api/tpl/deliveries/${encodeURIComponent(id)}/cancel`, { reason }, idem(key)),
     tplHome: <T>() => call<T>('GET', '/api/tpl/home'),
+    tplValueSheet: <T>(date: string) => call<T>('GET', `/api/tpl/value-sheet?date=${encodeURIComponent(date)}`),
     aiaChat: (id: string) => call<{ messages: AiaMessage[]; supportNumber: string | null }>('GET', `/api/aia/chats/${encodeURIComponent(id)}`),
     dashOwnerHealth: () => call<DashOwnerHealth>('GET', '/api/dash/owner-health'),
     dashOwnerCharts: () => call<DashOwnerCharts>('GET', '/api/dash/owner-charts'),
