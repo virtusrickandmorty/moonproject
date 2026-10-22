@@ -12,14 +12,34 @@ export {
 } from './doctypes/deposit-vat.ts';
 
 /**
- * The payments a job order received (the owner's request, Oct 2026: on its printout): each recorded collection that paid
- * it, oldest first, with its CR number, the part of it that went to this job order and where the money went.
+ * The payments a job order received (the owner's request, Oct 2026: on its printout), oldest first: each recorded
+ * collection that paid it (its CR number, the part that went to this job order, where the money went), and money moved
+ * to it from another job order of the customer (a deposit transfer: JO-000016 got JO-000015's payment when that one was
+ * cancelled), with the receipts it was paid with there; money moved away from it shows as a negative amount.
  */
 export function jobOrderPayments(db: Db, jobOrderId: string): { date: string; number: string; crNumber: string; amountCents: number; paidVia: string }[] {
-  const rows = db.prepare(`SELECT d.id, d.business_date AS date, d.number, c.cr_number AS crNumber, a.amount_cents AS amountCents
+  const collections = db.prepare(`SELECT d.id, d.business_date AS date, d.number, c.cr_number AS crNumber, a.amount_cents AS amountCents
     FROM col_applications a JOIN documents d ON d.id = a.document_id JOIN col_collections c ON c.document_id = a.document_id
-    WHERE a.job_order_id = ? AND d.status = 'posted' ORDER BY d.business_date, d.number`).all(jobOrderId) as { id: string; date: string; number: string; crNumber: string; amountCents: number }[];
-  return rows.map(({ id, ...r }) => ({ ...r, paidVia: [...new Set(loadTenders(db, 'col_tenders', id).map((t) => t.cashPlaceName))].join(', ') }));
+    WHERE a.job_order_id = ? AND d.status = 'posted'`).all(jobOrderId) as { id: string; date: string; number: string; crNumber: string; amountCents: number }[];
+  const paid = collections.map(({ id, ...r }) => ({ ...r, paidVia: [...new Set(loadTenders(db, 'col_tenders', id).map((t) => t.cashPlaceName))].join(', ') }));
+  // The receipts that paid another job order (where moved money came from).
+  const receiptsOf = (jo: string) => db.prepare(`SELECT d.number, c.cr_number AS cr FROM col_applications a JOIN documents d ON d.id = a.document_id
+    JOIN col_collections c ON c.document_id = a.document_id WHERE a.job_order_id = ? AND d.status = 'posted' ORDER BY d.business_date, d.number`).all(jo) as { number: string; cr: string }[];
+  const numberOf = (id: string) => (db.prepare('SELECT number FROM documents WHERE id = ?').pluck().get(id) as string | undefined) ?? 'another job order';
+  const moved = db.prepare(`SELECT d.business_date AS date, d.number, t.from_job_order_id AS fromJo, t.to_job_order_id AS toJo, t.to_receivable_cents + t.to_deposit_cents AS cents
+    FROM col_deposit_transfers t JOIN documents d ON d.id = t.document_id
+    WHERE d.status = 'posted' AND (t.to_job_order_id = @jo OR t.from_job_order_id = @jo)`).all({ jo: jobOrderId }) as { date: string; number: string; fromJo: string | null; toJo: string; cents: number }[];
+  const transfers = moved.map((m) => {
+    const into = m.toJo === jobOrderId;
+    const there = into && m.fromJo ? receiptsOf(m.fromJo) : [];
+    return {
+      date: m.date, number: m.number,
+      crNumber: there.map((r) => r.cr).join(', '),
+      amountCents: into ? m.cents : -m.cents,
+      paidVia: into ? `Moved from ${m.fromJo ? numberOf(m.fromJo) : 'earlier payments not yet used'}${there.length ? ` (paid with ${there.map((r) => r.number).join(', ')})` : ''}` : `Moved to ${numberOf(m.toJo)}`,
+    };
+  });
+  return [...paid, ...transfers].sort((a, b) => a.date.localeCompare(b.date) || a.number.localeCompare(b.number));
 }
 
 export interface SalePayment { id: string; number: string; status: 'posted' | 'cancelled'; crNumber: string; totalCents: number; paysOnlyThis: boolean }

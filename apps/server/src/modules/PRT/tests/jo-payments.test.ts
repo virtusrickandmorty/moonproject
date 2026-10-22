@@ -52,3 +52,25 @@ it('lists each payment with its receipt, CR and how it was paid, then what was p
   expect(after).not.toContain(second.number);
   expect(after).toMatch(/Balance due[\s\S]*₱5,000\.00/);
 });
+
+it('lists money moved from another job order (a deposit transfer) with the receipts it was paid with there, and money moved away', async () => {
+  const [from, to] = [await jobOrder(500_000), await jobOrder(90_000)];
+  const paid = await pay(from, 50_000, '0201', '1101');
+  const moved = await encoder.post('/api/docs/col.deposit_transfer/post', { input: { customerId: c.school, fromJobOrderId: from, toJobOrderId: to, amountCents: 50_000 }, expectedTotalCents: 50_000 }, idem());
+  expect(moved.statusCode, moved.body).toBe(200);
+  const dxf = moved.json().number as string;
+  const number = (id: string) => env.db.prepare('SELECT number FROM documents WHERE id = ?').pluck().get(id) as string;
+
+  const html = await print(to);
+  const row = html.slice(html.indexOf(dxf) - 200, html.indexOf(dxf) + 400);
+  expect(row).toContain('0201');
+  expect(row).toContain(`Moved from ${number(from)} (paid with ${paid.number})`);
+  expect(row).toContain('500.00');
+  expect(html).not.toContain('Other credits and earlier payments');
+  expect(html).toMatch(/Balance due[\s\S]*₱400\.00/);
+
+  const there = await print(from);
+  expect(there).toContain(`Moved to ${number(to)}`);
+  expect(there).not.toContain('Other credits and earlier payments');
+  expect(there).toMatch(/Balance due[\s\S]*₱5,000\.00/);
+});
