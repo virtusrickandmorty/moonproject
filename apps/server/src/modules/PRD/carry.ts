@@ -6,7 +6,7 @@
  * entries stay as they are, so nothing is paid twice. The owner's rules: an item or wearer left out of the edit keeps its
  * work on record as extras; a wearer whose size or jersey changed after work keeps the progress, with a warning.
  */
-import { newId, saysSet } from '@moonproject/shared';
+import { GARMENT_TYPE_MAX, newId, saysSet } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { lineState, rosterPeopleOf } from '../JO/public.ts';
@@ -142,6 +142,20 @@ function becomesSet(db: Db, line: { description: string }, lowerSizes: boolean, 
 }
 
 /**
+ * The garment type (piece rates) of an item the edit renamed follows the new name (the owner's request, Oct 2026: JO-000003
+ * item 4 became "Polo and Pants" and production still paid it as "Blouse and Pants"): the price list item the new name
+ * matches, else the name itself, as when its steps are first set up. A garment type that came from the price list item
+ * the old name matched stays when the new name matches none. Pieces already recorded keep the garment type they had.
+ */
+export function garmentTypeAfter(db: Db, garmentType: string, oldDescription: string, newDescription: string): string {
+  if (norm(oldDescription) === norm(newDescription)) return garmentType;
+  const now = matchCatalogItem(db, newDescription)?.garmentType;
+  if (now) return now;
+  const wasListed = matchCatalogItem(db, oldDescription)?.garmentType === garmentType;
+  return wasListed ? garmentType : newDescription.trim().slice(0, GARMENT_TYPE_MAX);
+}
+
+/**
  * Runs inside the edit (relinkOnReissue of the job order): pairs the items, links them (and the items the old one was
  * carried over from) with their wearers, copies each item's route, step status and rework, and moves the job's stage on.
  */
@@ -175,7 +189,7 @@ export function carryProductionOver(db: Db, oldId: string, newId_: string): void
     const lowerSizes = !!db.prepare('SELECT 1 FROM jo_roster WHERE document_id = ? AND line_no = ? AND lower_size IS NOT NULL LIMIT 1').get(newId_, n);
     const isSet = setup.isSet || becomesSet(db, next.find((l) => l.lineNo === n)!, lowerSizes, oldId, o);
     db.prepare('INSERT INTO prd_line_setups (job_order_id, line_no, seq, template_id, garment_type, complexity, is_set, at, user_id) VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)').run(
-      newId_, n, setup.templateId, setup.garmentType, setup.complexity, isSet ? 1 : 0, who.at, who.userId,
+      newId_, n, setup.templateId, garmentTypeAfter(db, setup.garmentType, old.find((l) => l.lineNo === o)!.description, next.find((l) => l.lineNo === n)!.description), setup.complexity, isSet ? 1 : 0, who.at, who.userId,
     );
     for (const [i, id] of setup.stepIds.entries()) {
       db.prepare('INSERT INTO prd_line_setup_steps (job_order_id, line_no, seq, step_id, position) VALUES (?, ?, 1, ?, ?)').run(newId_, n, id, i + 1);

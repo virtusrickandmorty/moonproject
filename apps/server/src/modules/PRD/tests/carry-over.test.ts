@@ -127,3 +127,32 @@ it('an item the edit makes a set is a set on the board, unless whole pieces were
   const after = await edit(sewn, [{ ...shirts(roster), description: 'Team shirt SET' }]);
   expect(await isSet(after)).toBe(false);
 });
+
+it('the garment type of an item the edit renames follows the new name; a price list item keeps it when nothing else matches', async () => {
+  const garmentType = async (jo: string) => ((await production.get('/api/prd/board')).json() as { jobOrderId: string; garmentType: string | null }[]).find((x) => x.jobOrderId === jo)!.garmentType;
+  const roster = [wearer('Ana Reyes'), wearer('Ben Cruz')];
+  const blouse = { ...shirts(roster), description: 'Admin uniform (Blouse and Pants)' };
+  const jo = await post([blouse]);
+  // Set up from the board as people do: no garment type typed, so it is the item's name (no price list item matches).
+  expect((await production.post(`/api/prd/jobs/${jo}/lines/1/setup`, { templateId: 1, stepIds: [SEWING, PACKING], complexity: 'standard' })).statusCode).toBe(200);
+  expect(await garmentType(jo)).toBe('Admin uniform (Blouse and Pants)');
+  const polo = await edit(jo, [{ ...blouse, description: 'Admin uniform (Polo and Pants)' }]);
+  expect(await garmentType(polo)).toBe('Admin uniform (Polo and Pants)');
+  // An edit that keeps the name keeps the garment type.
+  const same = await edit(polo, [{ ...blouse, description: 'Admin uniform (Polo and Pants)', qty: 2 }]);
+  expect(await garmentType(same)).toBe('Admin uniform (Polo and Pants)');
+
+  // From a price list item: renamed to match another item, it takes that item's; renamed to match none, it keeps its own.
+  const cat = (name: string, garment: string) => env.db.prepare(`INSERT INTO cat_items (id, code, name, class, garment_type, unit, set_components, revenue_role, created_at, updated_at)
+    VALUES (?, ?, ?, 'made_to_order_garment', ?, 'pc', 1, 'SALES_MTO', '2026-10-01T00:00:00+08:00', '2026-10-01T00:00:00+08:00')`).run(`cat-${garment}`, garment, name, garment);
+  cat('Sublimated Jersey Polydex', 'Jersey (polydex)');
+  cat('Cotton Polo Shirt', 'Polo (cotton)');
+  const jersey = { ...shirts(roster), description: 'Sublimated Jersey Polydex' };
+  const j1 = await post([jersey]);
+  expect((await production.post(`/api/prd/jobs/${j1}/lines/1/setup`, { templateId: 1, stepIds: [SEWING, PACKING], complexity: 'standard' })).statusCode).toBe(200);
+  expect(await garmentType(j1)).toBe('Jersey (polydex)');
+  const j2 = await edit(j1, [{ ...jersey, description: 'Cotton Polo Shirt' }]);
+  expect(await garmentType(j2)).toBe('Polo (cotton)');
+  const j3 = await edit(j2, [{ ...jersey, description: 'Zqx kit' }]);
+  expect(await garmentType(j3)).toBe('Polo (cotton)');
+});
