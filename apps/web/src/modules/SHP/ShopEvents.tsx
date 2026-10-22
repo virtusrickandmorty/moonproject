@@ -9,7 +9,8 @@ import type { Me } from '../../api.ts';
 import { Button, Dialog, Field, Notice, inputClass, useAction } from '../../components/ui.tsx';
 import { Doodles, SEASONS, Shower, THEMES, eventLook, eventPictureUrl, type ShopEventShown } from '../../shop/seasons.tsx';
 import { masterRequest } from '../CUS/http.ts';
-import { MAX_PICKED_BYTES, lighterPhoto } from './photo.ts';
+import { fitPicture } from '../../components/pictures.ts';
+import { lighterPhoto } from './photo.ts';
 
 export type ShopEvent = ShopEventShown & { name: string; startsOn: string; endsOn: string; isActive: boolean };
 
@@ -87,9 +88,7 @@ function EventDialog({ me, event, readOnly, onClose, onSaved }: { me: Me; event:
   const pictureSrc = f.picture ?? (f.picture === undefined && event?.hasPicture ? eventPictureUrl(event) : null);
   const pick = (file: File | undefined) => void run(async () => {
     if (!file) return;
-    if (file.size > MAX_PICKED_BYTES) throw new Error('The picture is bigger than 25 MB. Use a smaller one.');
-    const light = await lighterPhoto(file);
-    if (light.size > 1_500_000) throw new Error('The picture is too big even made lighter. Use one under 1.5 MB.');
+    const light = await fitPicture(await lighterPhoto(file), 1_500_000);
     const uri = await new Promise<string>((ok, fail) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => fail(new Error('Could not read the picture.')); r.readAsDataURL(light); });
     setF((x) => ({ ...x, picture: uri, art: 'picture' }));
   });

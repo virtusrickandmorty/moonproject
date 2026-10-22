@@ -2,14 +2,18 @@
  * The Attachments panel on every document view (PLAN H2): the design mock-ups on a quotation, a job order's pictures,
  * the 2307 received, a receipt photo. Add (on a phone, straight from the camera), list with who and when, open, remove
  * with a reason. A removed file stays listed. Attachments never change what the document recorded, so a cancelled
- * document takes them too. The server checks each file's type and size again (engine/attachments.ts).
+ * document takes them too. The server checks each file's type and size again (engine/attachments.ts). A picture over
+ * 4 MB (a phone's camera photo) is made lighter before it is sent (components/pictures.ts).
  */
 import { useLiveChange } from '../live.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { api, attachmentUrl, type Attachment, type DocTypeInfo } from '../api.ts';
 import { Notice, Panel, ReasonDialog, manilaTime, useAction } from '../components/ui.tsx';
+import { fitPicture } from '../components/pictures.ts';
 
 const MAX_BYTES = 10 * 1024 * 1024;
+/** Pictures are sent at most this big: sharp enough to read a design or a receipt, quick to send over mobile data. */
+const PICTURE_BYTES = 4 * 1024 * 1024;
 const ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf';
 const KIND: Record<Attachment['contentType'], string> = { 'image/jpeg': 'JPEG picture', 'image/png': 'PNG picture', 'image/webp': 'WebP picture', 'application/pdf': 'PDF' };
 const size = (bytes: number) => (bytes < 1_000_000 ? `${Math.max(1, Math.round(bytes / 1000))} KB` : `${(bytes / 1_000_000).toFixed(1)} MB`);
@@ -32,8 +36,9 @@ export function AttachmentsPanel({ type, id }: { type: DocTypeInfo; id: string }
     input.value = ''; // the same file can be picked again after a refusal
     void adding.run(async () => {
       try {
-        for (const f of files) {
-          if (f.size > MAX_BYTES) throw new Error(`${f.name} is bigger than 10 MB. Attach a smaller picture or PDF.`);
+        for (const picked of files) {
+          const f = await fitPicture(picked, PICTURE_BYTES);
+          if (f.size > MAX_BYTES) throw new Error(`${f.name} is bigger than 10 MB. Attach a smaller PDF.`);
           await api.addAttachment(type.key, id, f);
         }
       } finally {
@@ -94,7 +99,7 @@ export function AttachmentsPanel({ type, id }: { type: DocTypeInfo; id: string }
               <input type="file" accept="image/*" capture="environment" className="sr-only" disabled={adding.busy} onChange={(e) => add(e.currentTarget)} />
             </label>
           )}
-          <span className="text-xs text-slate-500">JPEG, PNG, WebP or PDF, up to 10 MB each; {active} of 10 attached.</span>
+          <span className="text-xs text-slate-500">Pictures (big ones are made lighter) or PDFs up to 10 MB; {active} of 10 attached.</span>
         </div>
       )}
       {adding.error && <Notice>{adding.error}</Notice>}
