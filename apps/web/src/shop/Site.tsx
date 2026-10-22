@@ -1,5 +1,6 @@
 /** The public website shown before sign-in: the store, the services and the support page under one header. */
 import { useState, type FormEvent, type ReactNode } from 'react';
+import { SEASONS } from './seasons.tsx';
 import { Link, navigate, useLocation } from '../router.tsx';
 import { About } from './About.tsx';
 import { Checkout, MyOrders, OrderStatus, rememberedOrders } from './Checkout.tsx';
@@ -73,13 +74,17 @@ function Layout({ staff }: { staff: boolean }) {
   const search = (e: FormEvent) => { e.preventDefault(); navigate(`${home}?q=${encodeURIComponent(text.trim())}`); setSearching(false); };
   // The strip along the top says what the shop really offers: QR payment and its delivery fees, or quotations.
   const fees = shop.payment?.deliveryOptions ?? [];
-  const news = shop.payment && !shop.samples
-    ? ['Order and pay online', deliveryWords(fees)?.headline ?? 'Pick up at the shop', 'Team orders: free quotation with a design proof']
-    : ['Team wear, uniforms and custom prints, made to order', 'Free quotation with a design proof'];
+  const look = shop.season ? SEASONS[shop.season] : null;
+  const news = [
+    ...(look ? [look.news] : []), // the season's line first (SHP seasons)
+    ...(shop.payment && !shop.samples
+      ? ['Order and pay online', deliveryWords(fees)?.headline ?? 'Pick up at the shop', 'Team orders: free quotation with a design proof']
+      : ['Team wear, uniforms and custom prints, made to order', 'Free quotation with a design proof']),
+  ];
 
   return (
     <div className="min-h-screen bg-[#fafaf8] text-slate-900">
-      <div className="bg-slate-950 text-white">
+      <div className={look ? look.bar : 'bg-slate-950 text-white'}>
         <p className="mx-auto flex max-w-7xl items-center justify-center gap-x-6 overflow-hidden whitespace-nowrap px-4 py-2 text-xs font-semibold tracking-wide sm:px-6">
           {news.map((n, i) => <span key={n} className={i ? 'hidden md:inline' : ''}>{i > 0 && <span className="mr-6 text-white/30">•</span>}{n}</span>)}
         </p>

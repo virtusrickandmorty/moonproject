@@ -54,7 +54,7 @@ const tab = (on: boolean) => `rounded-md px-4 py-2 text-sm font-semibold ${on ? 
 
 export function ShopProducts({ me }: { me: Me }) {
   // ?tab=work: the notice of finished shop work opens its tab.
-  const [view, setView] = useState<'products' | 'work' | 'categories' | 'payment' | 'reviews'>(() => (new URLSearchParams(window.location.search).get('tab') === 'work' ? 'work' : 'products'));
+  const [view, setView] = useState<'products' | 'work' | 'categories' | 'payment' | 'reviews' | 'seasons'>(() => (new URLSearchParams(window.location.search).get('tab') === 'work' ? 'work' : 'products'));
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -68,7 +68,7 @@ export function ShopProducts({ me }: { me: Me }) {
         </div>
       </div>
       <div className="flex flex-wrap gap-2" role="tablist">
-        {([['products', 'Products and stock'], ['work', 'Shop work'], ['categories', 'Categories'], ['payment', 'Online payment'], ['reviews', 'Reviews']] as const)
+        {([['products', 'Products and stock'], ['work', 'Shop work'], ['categories', 'Categories'], ['payment', 'Online payment'], ['reviews', 'Reviews'], ['seasons', 'Decorations']] as const)
           .filter(([k]) => k !== 'payment' || me.permissions.includes('shp.orders.view')).map(([k, l]) => (
           <button key={k} type="button" role="tab" aria-selected={view === k} className={tab(view === k)} onClick={() => setView(k)}>{l}</button>))}
       </div>
@@ -77,6 +77,7 @@ export function ShopProducts({ me }: { me: Me }) {
       {view === 'categories' && <Categories me={me} />}
       {view === 'payment' && <Payment me={me} />}
       {view === 'reviews' && <Reviews me={me} />}
+      {view === 'seasons' && <Seasons me={me} />}
     </div>
   );
 }
@@ -270,6 +271,57 @@ function StockDialog({ me, product, onClose }: { me: Me; product: Row; onClose: 
 interface ReviewRow { id: string; productName: string; rating: number; title: string | null; body: string; name: string; buyer: string; orderNumber: string;
   hidden: boolean; hiddenReason: string | null; at: string; version: number }
 /** Buyers' ratings and reviews (written from their completed online orders). Staff hide one that should not show, with a reason. */
+type SeasonSettings = { mode: string; version: number; shownToday: string | null; calendarToday: string | null; seasons: { key: string; label: string; from: string; to: string }[] };
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const day = (md: string) => `${MONTHS[Number(md.slice(0, 2)) - 1]} ${Number(md.slice(3))}`;
+
+/**
+ * The website's seasonal decorations (the owner's request, Oct 2026): Automatic follows the calendar (Halloween, Christmas,
+ * Valentine's, summer, back to school), Off shows none, or one season shows now whatever the date.
+ */
+function Seasons({ me }: { me: Me }) {
+  const [s, setS] = useState<SeasonSettings | null>(null);
+  const [mode, setMode] = useState('auto');
+  const [msg, setMsg] = useState('');
+  const [err, setErr] = useState('');
+  const can = me.permissions.includes('shp.manage');
+  const load = () => void fetch('/api/shp/season/settings', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() as Promise<SeasonSettings> : null)).then((x) => { if (x) { setS(x); setMode(x.mode); } }, () => undefined);
+  useEffect(load, []);
+  if (!s) return <p className="text-sm text-slate-500">Loading…</p>;
+  const label = (k: string | null) => s.seasons.find((x) => x.key === k)?.label ?? 'none';
+  const save = async () => {
+    setMsg(''); setErr('');
+    const res = await fetch('/api/shp/season/settings', { method: 'PUT', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken }, body: JSON.stringify({ mode, version: s.version }) });
+    const body = await res.json().catch(() => null) as (SeasonSettings & { message?: string }) | null;
+    if (!res.ok || !body) return setErr(body?.message ?? 'The decorations could not be saved.');
+    setS(body); setMode(body.mode); setMsg('Saved. The website shows it on its next visit.');
+  };
+  const choices: [string, string, string][] = [
+    ['auto', 'Automatic (by the calendar)', s.calendarToday ? `Today: ${label(s.calendarToday)}` : 'Today: no season'],
+    ['off', 'Off', 'No decorations'],
+    ...s.seasons.map((x) => [x.key, x.label, `${day(x.from)} to ${day(x.to)}`] as [string, string, string]),
+  ];
+  return (
+    <section className="space-y-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70" aria-label="Decorations">
+      <div>
+        <h2 className="text-lg font-semibold">Season decorations</h2>
+        <p className="text-sm text-slate-600">The website dresses up for the season: its own banner slide first, a line and colour in the top bar, and a few bats, snowflakes or hearts over the banner.</p>
+        <p className="mt-1 text-sm">Showing now: <b>{s.shownToday ? label(s.shownToday) : 'no decorations'}</b></p>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Decorations">
+        {choices.map(([k, name, when]) => (
+          <button key={k} type="button" role="radio" aria-checked={mode === k} disabled={!can} onClick={() => setMode(k)}
+            className={`rounded-lg p-3 text-left ring-1 ${mode === k ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'} disabled:opacity-60`}>
+            <span className="block font-semibold">{name}</span><span className={`block text-xs ${mode === k ? 'text-indigo-100' : 'text-slate-500'}`}>{when}</span>
+          </button>
+        ))}
+      </div>
+      {can && <div className="flex items-center gap-3"><Button tone="primary" disabled={mode === s.mode} onClick={() => void save()}>Save</Button>{msg && <span className="text-sm text-emerald-700">{msg}</span>}</div>}
+      {err && <Notice>{err}</Notice>}
+    </section>
+  );
+}
+
 function Reviews({ me }: { me: Me }) {
   const [rows, setRows] = useState<ReviewRow[] | null>(null);
   const [hiding, setHiding] = useState<ReviewRow | null>(null);

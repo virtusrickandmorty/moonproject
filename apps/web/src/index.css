@@ -105,6 +105,28 @@ main[data-erp] {
   }
 }
 
+/* The website's seasonal decorations over the banner (shop/seasons.tsx): bats fly across, snow falls, hearts rise. */
+@keyframes season-bats {
+  from { transform: translateX(-30vw) translateY(0) rotate(-6deg); }
+  50% { transform: translateX(40vw) translateY(-2rem) rotate(6deg); }
+  to { transform: translateX(110vw) translateY(1rem) rotate(-4deg); }
+}
+@keyframes season-snow {
+  from { transform: translateY(-2rem) translateX(0); }
+  to { transform: translateY(36rem) translateX(2rem); }
+}
+@keyframes season-hearts {
+  from { transform: translateY(32rem) scale(0.8); opacity: 0; }
+  20% { opacity: 1; }
+  to { transform: translateY(-3rem) scale(1.1); opacity: 0; }
+}
+.season-bats { left: 0 !important; animation: season-bats linear infinite; }
+.season-snow { top: -2rem; animation: season-snow linear infinite; }
+.season-hearts { bottom: -2rem; animation: season-hearts ease-in infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .season-bats, .season-snow, .season-hearts { animation: none; }
+}
+
 /* The shop's hero banner (shop/Home.tsx): each slide fades up as it comes in. */
 @keyframes hero-in {
   from { opacity: 0; transform: translateY(0.75rem); }

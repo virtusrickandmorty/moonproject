@@ -4,6 +4,7 @@
  * categories, stock, payment and delivery settings); nothing here is made up.
  */
 import { formatPeso } from '@moonproject/shared';
+import { SEASONS, Shower, type SeasonKey, type SeasonLook } from './seasons.tsx';
 import { useEffect, useState, type ReactNode } from 'react';
 import { navigate } from '../router.tsx';
 import { ProductPicture } from './GarmentArt.tsx';
@@ -60,13 +61,20 @@ export function ProductCard({ p, colourHex, online, view }: { p: Product; colour
   );
 }
 
-interface Slide { eyebrow: string; title: ReactNode; text: string; actions: [string, () => void, 'primary' | 'ghost'][]; product?: Product; tone: string }
+interface Slide { eyebrow: string; title: ReactNode; text: string; actions: [string, () => void, 'primary' | 'ghost'][]; product?: Product; tone: string; art?: ReactNode; shower?: SeasonLook['shower'] }
 
 /** The banner across the top: slides that turn by themselves (paused while pointed at), with dots and arrows. */
-export function HeroSlider({ products, online, payment, toShop }: { products: readonly Product[]; online: boolean; payment: OnlinePayment | null; toShop: (kind: 'ready' | 'made' | 'all') => void }) {
+export function HeroSlider({ products, online, payment, toShop, season }: { products: readonly Product[]; online: boolean; payment: OnlinePayment | null; toShop: (kind: 'ready' | 'made' | 'all') => void; season?: SeasonKey | null }) {
   const ready = products.find((p) => !p.madeToOrder && !isSoldOut(p)) ?? products.find((p) => !p.madeToOrder);
   const made = products.find((p) => p.madeToOrder);
+  const look = season ? SEASONS[season] : null;
+  const act = (what: 'quote' | 'made' | 'services') => () => (what === 'quote' ? navigate('/support?type=quotation') : what === 'made' ? toShop('made') : navigate('/services'));
   const slides: Slide[] = [
+    // The season's slide first while it lasts (SHP seasons: the owner decorates the shop by the season of the month).
+    ...(look ? [{
+      eyebrow: look.eyebrow, title: look.title, text: look.text, tone: look.tone, art: look.art(), shower: look.shower,
+      actions: [[look.primary[1], act(look.primary[0]), 'primary'], [look.ghost[1], act(look.ghost[0]), 'ghost']],
+    } as Slide] : []),
     ...(online ? [{
       eyebrow: 'Own brand · ready to wear', title: <>Wear it today.<br /><span className="text-indigo-300">Order online.</span></>,
       text: 'Our own-brand pieces, in stock and ready. Pay online, then pick up or get it delivered.',
@@ -102,6 +110,7 @@ export function HeroSlider({ products, online, payment, toShop }: { products: re
       <div className={`relative overflow-hidden bg-gradient-to-br ${s.tone} text-white transition-colors duration-700`}>
         <div className="pointer-events-none absolute -right-24 -top-24 size-96 rounded-full bg-white/5 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-32 left-1/3 size-96 rounded-full bg-indigo-500/20 blur-3xl" />
+        {s.shower && <Shower key={`shower-${at}`} kind={s.shower} />}
         <div key={at} className="hero-slide relative mx-auto grid min-h-[30rem] max-w-7xl items-center gap-6 px-4 pb-24 pt-12 sm:px-6 md:grid-cols-[1.1fr_0.9fr] md:py-16" aria-roledescription="slide" aria-label={`${(at % slides.length) + 1} of ${slides.length}`}>
           <div>
             <p className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-white/80 ring-1 ring-white/15">{s.eyebrow}</p>
@@ -112,7 +121,8 @@ export function HeroSlider({ products, online, payment, toShop }: { products: re
                 className={kind === 'primary' ? 'rounded-full bg-white px-7 py-3.5 font-bold text-slate-900 transition hover:-translate-y-0.5 hover:bg-indigo-100' : 'rounded-full px-7 py-3.5 font-bold text-white ring-1 ring-white/30 transition hover:bg-white/10'}>{label}</button>)}
             </div>
           </div>
-          {s.product && (
+          {s.art && <div className="relative mx-auto hidden aspect-square w-full max-w-md md:block">{s.art}</div>}
+          {!s.art && s.product && (
             <div className="relative mx-auto hidden aspect-square w-full max-w-md md:block">
               <div className="absolute inset-6 rounded-full bg-white/10 ring-1 ring-white/10" />
               <div className="relative grid size-full place-items-center overflow-hidden rounded-full">

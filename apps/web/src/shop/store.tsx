@@ -4,6 +4,7 @@
  * or business data. Lines for a product, size or colour the shop no longer shows are left out.
  */
 import { createContext, useContext, useEffect, useMemo, useReducer, useState, type ReactNode } from 'react';
+import { SEASONS, type SeasonKey } from './seasons.tsx';
 import { SAMPLE_PRODUCTS, type Product } from './products.ts';
 
 export interface CartLine { productId: string; size: string; colour: string; qty: number }
@@ -94,6 +95,8 @@ interface Shop extends State {
   products: readonly Product[]; samples: boolean; ready: boolean; productById: (id: string) => Product | undefined;
   /** How to pay online, or null: online ordering closed. */
   payment: OnlinePayment | null;
+  /** The season the website is decorated for now (SHP seasons), or null. */
+  season: SeasonKey | null;
   /** A cart line that can be ordered and paid online now: a ready-stock item of the shop's own (not a sample). */
   orderable: (line: CartLine) => boolean;
   add: (lines: CartLine[]) => void; setQty: (line: CartLine, qty: number) => void; remove: (line: CartLine) => void;
@@ -107,6 +110,13 @@ export function ShopProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, undefined, load);
   const { products, samples, ready, payment } = useProducts();
   const { reviews, reload: reloadReviews } = useReviews();
+  const [season, setSeason] = useState<SeasonKey | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetch('/api/shp/season', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() as Promise<{ season: SeasonKey | null }> : { season: null }))
+      .then((s) => live && setSeason(s.season && s.season in SEASONS ? s.season : null), () => undefined);
+    return () => { live = false; };
+  }, []);
   useEffect(() => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch { /* private window: the cart lasts this visit */ } }, [state]);
   // Another tab changed the cart: follow it.
   useEffect(() => {
@@ -120,7 +130,7 @@ export function ShopProvider({ children }: { children: ReactNode }) {
     for (const r of reviews) { const x = ratings.get(r.productId) ?? { sum: 0, count: 0 }; ratings.set(r.productId, { sum: x.sum + r.rating, count: x.count + 1 }); }
     const cart = state.cart.filter((l) => { const p = byId.get(l.productId); return !!p && p.sizes.includes(l.size) && p.colours.some((c) => c.name === l.colour); });
     return {
-      cart, wishlist: state.wishlist.filter((id) => byId.has(id)), products, samples, ready, productById: (id) => byId.get(id), payment,
+      cart, wishlist: state.wishlist.filter((id) => byId.has(id)), products, samples, ready, productById: (id) => byId.get(id), payment, season,
       orderable: (l) => !samples && !!payment && !!byId.get(l.productId)?.stock,
       add: (lines) => dispatch({ type: 'add', lines }),
       setQty: (line, qty) => dispatch({ type: 'setQty', line, qty }),
@@ -132,7 +142,7 @@ export function ShopProvider({ children }: { children: ReactNode }) {
       reviews, reloadReviews,
       ratingOf: (id) => { const x = ratings.get(id); return x ? { average: x.sum / x.count, count: x.count } : { average: 0, count: 0 }; },
     };
-  }, [state, products, samples, ready, payment, reviews]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state, products, samples, ready, payment, reviews, season]); // eslint-disable-line react-hooks/exhaustive-deps
   return <ShopContext.Provider value={value}>{children}</ShopContext.Provider>;
 }
 
