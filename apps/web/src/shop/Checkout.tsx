@@ -5,6 +5,7 @@
  *                        then the order's progress while staff check the payment by hand. Only that link opens the order.
  */
 import { formatPeso } from '@moonproject/shared';
+import { track } from './insights.ts';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Link, navigate } from '../router.tsx';
 import { ProductPicture } from './GarmentArt.tsx';
@@ -40,6 +41,7 @@ function remember(number: string, token: string) {
 
 export function Checkout() {
   const shop = useShop();
+  useEffect(() => track({ kind: 'checkout' }), []); // reached the checkout (visitor counting)
   const lines = shop.cart.filter(shop.orderable);
   const items = lines.reduce((n, l) => n + l.qty * (shop.productById(l.productId)?.priceCents ?? 0), 0);
   const areas = shop.payment?.deliveryOptions ?? [];
@@ -77,6 +79,7 @@ export function Checkout() {
       const data = await res.json().catch(() => null) as { number?: string; token?: string; message?: string } | null;
       if (!res.ok) throw new Error(data?.message ?? 'Your order could not be placed. Please try again or call us.');
       remember(data!.number!, data!.token!);
+      for (const l of lines) track({ kind: 'order', productId: l.productId });
       for (const l of lines) shop.remove(l);
       navigate(`/order/${data!.number}?t=${encodeURIComponent(data!.token!)}`);
     } catch (err) {

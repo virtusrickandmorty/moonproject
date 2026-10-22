@@ -1,5 +1,6 @@
 /** The public website shown before sign-in: the store, the services and the support page under one header. */
-import { useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { browserSaysNo, countingChoice, setCountingChoice, setStaff, sourceOfVisit, track } from './insights.ts';
 import { SEASONS } from './seasons.tsx';
 import { Link, navigate, useLocation } from '../router.tsx';
 import { About } from './About.tsx';
@@ -62,7 +63,13 @@ function Layout({ staff }: { staff: boolean }) {
   const [viewing, setViewing] = useState<Product | null>(null);
   const [toast, setToast] = useState('');
   const showToast = (text: string) => { setToast(text); setTimeout(() => setToast((t) => (t === text ? '' : t)), 2500); };
-  const controls: SiteControls = { openPanel: setPanel, view: setViewing, toast: showToast };
+  // Visitor counting (shop/insights.ts): each page, and each product opened; staff looking at the website are not counted.
+  setStaff(staff);
+  useEffect(() => { track({ kind: 'page', page: path.slice(0, 80), source: sourceOfVisit() }); }, [path]);
+  const view = (p: Product | null) => { if (p) track({ kind: 'product', productId: p.id }); setViewing(p); };
+  const [choice, setChoice] = useState(countingChoice);
+  const choose = (v: 'yes' | 'no') => { setCountingChoice(v); setChoice(v); };
+  const controls: SiteControls = { openPanel: setPanel, view, toast: showToast };
   const order = ORDER_PAGE.exec(path);
   const page: ReactNode = order ? <OrderStatus key={path} number={order[1]!} query={query} />
     : path === '/checkout' ? <Checkout /> : path === '/orders' ? <MyOrders /> : path === '/track' ? <Track key={query} query={query} />
@@ -114,7 +121,8 @@ function Layout({ staff }: { staff: boolean }) {
               <svg viewBox="0 0 24 24" className="size-5" aria-hidden="true"><path d="M5 7h14l-1.2 11.2a2 2 0 0 1-2 1.8H8.2a2 2 0 0 1-2-1.8L5 7Zm3 0a4 4 0 0 1 8 0" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg>
               {shop.cartCount > 0 && <span className="absolute -right-1 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-indigo-600 px-1 text-[10px] font-bold text-white">{shop.cartCount > 99 ? '99+' : shop.cartCount}</span>}
             </button>
-            <Link to={staff ? '/' : '/sign-in'} className="ml-1 whitespace-nowrap rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">{staff ? 'Back to the ERP' : 'Staff sign in'}</Link>
+            {/* Visitors use the footer's Staff sign in (the owner's request, Oct 2026); staff keep their way back. */}
+            {staff && <Link to="/" className="ml-1 whitespace-nowrap rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700">Back to the ERP</Link>}
           </div>
         </div>
       </header>
@@ -144,7 +152,8 @@ function Layout({ staff }: { staff: boolean }) {
               <p><Link to={staff ? '/' : '/sign-in'} className="hover:text-white">{staff ? 'Back to the ERP' : 'Staff sign in'}</Link></p></div>
             <div className="space-y-2"><p className="font-bold text-white">Talk to us</p><p>{SHOP_CONTACT.email}</p><p>{SHOP_CONTACT.phone}</p><p>{SHOP_CONTACT.hours}</p></div>
           </div>
-          <p className="border-t border-white/10 py-6 text-xs">© Virtus Garments · Ready-stock prices are final and include VAT; made-to-order prices are confirmed on your quotation.</p>
+          <p className="border-t border-white/10 py-6 text-xs">© Virtus Garments · Ready-stock prices are final and include VAT; made-to-order prices are confirmed on your quotation.
+            {!staff && !browserSaysNo() && <> · Visit counting is {choice === 'no' ? 'off' : 'on'} (no names kept): <button type="button" className="underline hover:text-white" onClick={() => choose(choice === 'no' ? 'yes' : 'no')}>{choice === 'no' ? 'Count my visits' : "Don't count me"}</button></>}</p>
         </div>
       </footer>
 
@@ -152,7 +161,17 @@ function Layout({ staff }: { staff: boolean }) {
         onAdded={() => { setViewing(null); showToast(`Added ${viewing.name} to your cart`); }} />}
       {panel === 'sizes' && <SizeGuide onClose={() => setPanel(null)} />}
       {panel === 'cart' && <CartDrawer onClose={() => setPanel(null)} />}
-      {panel === 'wishlist' && <WishlistDrawer onClose={() => setPanel(null)} onOpen={(p) => { setPanel(null); setViewing(p); }} />}
+      {panel === 'wishlist' && <WishlistDrawer onClose={() => setPanel(null)} onOpen={(p) => { setPanel(null); view(p); }} />}
+      {/* The visitor counting notice, until answered (Data Privacy Act: anonymous, and the visitor may say no). */}
+      {!staff && choice === null && !browserSaysNo() && (
+        <div role="region" aria-label="Visit counting" className="fixed bottom-4 left-4 z-[55] max-w-sm rounded-2xl bg-white p-4 text-sm text-slate-700 shadow-2xl ring-1 ring-slate-900/10">
+          <p>We count visits and which garments are looked at most, to make the shop better. No names, no ads, no cookies.</p>
+          <div className="mt-3 flex gap-2">
+            <button type="button" onClick={() => choose('yes')} className="rounded-full bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-indigo-700">OK</button>
+            <button type="button" onClick={() => choose('no')} className="rounded-full px-4 py-2 font-semibold text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50">Don't count me</button>
+          </div>
+        </div>
+      )}
       <ChatBubble />
       {toast && <div role="status" className="fixed bottom-5 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-xl">{toast} · <button type="button" className="underline" onClick={() => { setToast(''); setPanel('cart'); }}>View cart</button></div>}
     </div>

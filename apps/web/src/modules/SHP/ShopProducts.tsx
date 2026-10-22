@@ -14,6 +14,7 @@ import { SAMPLE_PRODUCTS, SIZES, type Product, type Shape } from '../../shop/pro
 import { MAX_PICKED_BYTES, lighterPhoto } from './photo.ts';
 import { masterRequest } from '../CUS/http.ts';
 import { ShopWork } from './ShopWork.tsx';
+import { Visitors } from './Visitors.tsx';
 import { useLiveReload } from '../../live.ts';
 
 export interface StockLine { size: string; colour: string; onHand: number; held: number; available: number }
@@ -54,7 +55,7 @@ const tab = (on: boolean) => `rounded-md px-4 py-2 text-sm font-semibold ${on ? 
 
 export function ShopProducts({ me }: { me: Me }) {
   // ?tab=work: the notice of finished shop work opens its tab.
-  const [view, setView] = useState<'products' | 'work' | 'categories' | 'payment' | 'reviews' | 'seasons'>(() => (new URLSearchParams(window.location.search).get('tab') === 'work' ? 'work' : 'products'));
+  const [view, setView] = useState<'products' | 'work' | 'categories' | 'payment' | 'reviews' | 'seasons' | 'visitors'>(() => (new URLSearchParams(window.location.search).get('tab') === 'work' ? 'work' : 'products'));
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -68,7 +69,7 @@ export function ShopProducts({ me }: { me: Me }) {
         </div>
       </div>
       <div className="flex flex-wrap gap-2" role="tablist">
-        {([['products', 'Products and stock'], ['work', 'Shop work'], ['categories', 'Categories'], ['payment', 'Online payment'], ['reviews', 'Reviews'], ['seasons', 'Decorations']] as const)
+        {([['products', 'Products and stock'], ['work', 'Shop work'], ['categories', 'Categories'], ['payment', 'Online payment'], ['reviews', 'Reviews'], ['seasons', 'Decorations'], ['visitors', 'Visitors']] as const)
           .filter(([k]) => k !== 'payment' || me.permissions.includes('shp.orders.view')).map(([k, l]) => (
           <button key={k} type="button" role="tab" aria-selected={view === k} className={tab(view === k)} onClick={() => setView(k)}>{l}</button>))}
       </div>
@@ -78,6 +79,7 @@ export function ShopProducts({ me }: { me: Me }) {
       {view === 'payment' && <Payment me={me} />}
       {view === 'reviews' && <Reviews me={me} />}
       {view === 'seasons' && <Seasons me={me} />}
+      {view === 'visitors' && <Visitors />}
     </div>
   );
 }

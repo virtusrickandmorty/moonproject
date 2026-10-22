@@ -1,5 +1,6 @@
 /** The welcome page: a showcase store of the shop's garments, with filters and quick view (the cart lives in Site.tsx). */
 import { formatPeso } from '@moonproject/shared';
+import { track } from './insights.ts';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from '../router.tsx';
 import { CategoryTiles, HeroSlider, ProductCard, ProductRail, PromoBanner, TrustStrip, isSoldOut } from './Home.tsx';
@@ -72,6 +73,13 @@ export function Store({ openPanel, view }: SiteControls) {
     if (sort === 'name') return [...list].sort((a, b) => a.name.localeCompare(b.name));
     return list;
   }, [products, f, sort, shop.wishlist]);
+  // What shoppers search for, a moment after they stop typing, with how many garments matched (none: a gap in the shop).
+  useEffect(() => {
+    const text = f.text.trim();
+    if (text.length < 2) return;
+    const t = setTimeout(() => track({ kind: 'search', query: text.slice(0, 60), results: shown.length }), 1500);
+    return () => clearTimeout(t);
+  }, [f.text]); // eslint-disable-line react-hooks/exhaustive-deps
   const count = (skip: keyof Filters, test: (p: Product) => boolean) => products.filter((p) => matches(p, f, shop.wishlist, skip) && test(p)).length;
   const active: [string, () => void][] = [
     ...f.categories.map((c): [string, () => void] => [c, () => setF({ ...f, categories: toggle(f.categories, c) })]),
@@ -100,7 +108,7 @@ export function Store({ openPanel, view }: SiteControls) {
         <h2 className="mb-5 mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">All garments</h2>
         <div className="flex gap-2 overflow-x-auto pb-2">
           <button type="button" className={chip(!f.categories.length)} onClick={() => setF({ ...f, categories: [] })}>All</button>
-          {categories.map((c) => <button key={c} type="button" className={`${chip(f.categories.includes(c))} shrink-0`} onClick={() => setF({ ...f, categories: toggle(f.categories, c) })}>{c} <span className="opacity-60">{count('categories', (p) => p.category === c)}</span></button>)}
+          {categories.map((c) => <button key={c} type="button" className={`${chip(f.categories.includes(c))} shrink-0`} onClick={() => { if (!f.categories.includes(c)) track({ kind: 'category', category: c.slice(0, 60) }); setF({ ...f, categories: toggle(f.categories, c) }); }}>{c} <span className="opacity-60">{count('categories', (p) => p.category === c)}</span></button>)}
         </div>
 
         <div className="mt-6 grid gap-8 lg:grid-cols-[15rem_1fr]">

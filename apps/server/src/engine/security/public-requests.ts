@@ -4,6 +4,7 @@ import type { Clock } from '../../platform/clock.ts';
 import { requestRateLimiter } from './sessions.ts';
 
 export const PUBLIC_TRACK_REQUESTS = 20;
+export const PUBLIC_EVENT_REQUESTS = 60;
 const SHOP_PAGES = new Set(['/', '/shop', '/services', '/about', '/support', '/checkout', '/orders', '/track']);
 const isShopRoute = (url: string) => url.startsWith('/api/shp/') || url.startsWith('/api/sup/') || url === '/robots.txt' || url === '/sitemap.xml';
 
@@ -21,6 +22,8 @@ export function publicRequestLimits(app: FastifyInstance, clock: Clock): void {
   const all = requestRateLimiter(clock, 120, 5 * 60_000);
   const forms = requestRateLimiter(clock, 30, 5 * 60_000);
   const tracking = requestRateLimiter(clock, PUBLIC_TRACK_REQUESTS, 10 * 60_000);
+  // The website's visitor counting (SHP insights) has its own allowance, so it never uses up a shopper's.
+  const counting = requestRateLimiter(clock, PUBLIC_EVENT_REQUESTS, 5 * 60_000);
 
   app.addHook('onRoute', (route) => {
     if (route.config?.permission !== 'public' || !isShopRoute(route.url)) return;
@@ -32,6 +35,7 @@ export function publicRequestLimits(app: FastifyInstance, clock: Clock): void {
   app.addHook('onRequest', async (req) => {
     if (!isPublicShopRequest(req)) return;
     // Use the socket address supplied by Fastify. Proxy trust remains disabled.
+    if (req.routeOptions.url === '/api/shp/events') return counting(req.ip);
     all(req.ip);
     if (req.routeOptions.url === '/api/shp/track') tracking(req.ip);
     else if (req.method !== 'GET' && req.method !== 'HEAD') forms(req.ip);
