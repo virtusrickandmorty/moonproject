@@ -5,9 +5,10 @@
 import { formatPesos, parsePesos } from '@moonproject/shared';
 
 /** A check put in Checks on hand also has its number, bank and date (checkNumber, bank, checkDate). */
-export interface TenderRow { cashPlaceId: string; amount: string; reference: string; checkNumber?: string; bank?: string; checkDate?: string }
+export type ReceivedAs = 'cash' | 'bank' | 'ewallet';
+export interface TenderRow { cashPlaceId: string; amount: string; reference: string; checkNumber?: string; bank?: string; checkDate?: string; receivedAs?: ReceivedAs }
 export interface CheckDetails { number: string; bank: string; date: string }
-export interface TenderInput { cashPlaceId: number; amountCents: number; reference?: string; check?: CheckDetails }
+export interface TenderInput { cashPlaceId: number; amountCents: number; reference?: string; check?: CheckDetails; receivedAs?: ReceivedAs }
 export const emptyTender = (): TenderRow => ({ cashPlaceId: '', amount: '', reference: '' });
 
 /** Typed pesos -> centavos: blank is 0, and undefined means it cannot be read as an amount. */
@@ -36,7 +37,7 @@ export function tendersToInput(rows: TenderRow[], pick = 'pick where the money w
       const isCheck = checkPlaces.has(Number(r.cashPlaceId));
       const check = { number: r.checkNumber?.trim() ?? '', bank: r.bank?.trim() ?? '', date: r.checkDate?.trim() ?? '' };
       if (isCheck && (!check.number || !check.bank || !/^\d{4}-\d{2}-\d{2}$/.test(check.date))) errors.push(`Payment ${i + 1}: type the check number, the bank and the date on the check.`);
-      tenders.push({ cashPlaceId: Number(r.cashPlaceId), amountCents: amount, ...(r.reference.trim() ? { reference: r.reference.trim() } : {}), ...(isCheck ? { check } : {}) });
+      tenders.push({ cashPlaceId: Number(r.cashPlaceId), amountCents: amount, ...(r.reference.trim() ? { reference: r.reference.trim() } : {}), ...(isCheck ? { check } : {}), ...(r.receivedAs ? { receivedAs: r.receivedAs } : {}) });
     }
   });
   if (tenders.length === 0 && errors.length === 0) errors.push('Type the amount and pick where the money went.');
@@ -47,7 +48,11 @@ export const tendersToRows = (tenders: TenderInput[]): TenderRow[] =>
   tenders.map((t) => ({
     cashPlaceId: String(t.cashPlaceId), amount: formatPesos(t.amountCents), reference: t.reference ?? '',
     ...(t.check ? { checkNumber: t.check.number, bank: t.check.bank, checkDate: t.check.date } : {}),
+    ...(t.receivedAs ? { receivedAs: t.receivedAs } : {}),
   }));
+
+/** The petty cash fund: a cash place of kind cash named so (the server also knows the seeded 1102). */
+export const isPettyCash = (p: { kind?: string; name: string } | undefined) => !!p && p.kind === 'cash' && /petty/i.test(p.name);
 
 /** The cash places that hold customer checks (kind "checks"): their tenders carry the check. */
 export const checkPlaceIds = (places: readonly { id: number; kind?: string }[]): Set<number> => new Set(places.filter((p) => p.kind === 'checks').map((p) => p.id));

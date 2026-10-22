@@ -54,7 +54,7 @@ describe('check details on a collection', () => {
     expect(codes(bare)).toEqual(['CHECK_DETAILS']);
     expect(bare.json().message).toMatch(/^Payment 1 goes to Checks on hand.*: type the check number, the bank and the date on the check\.$/);
 
-    const gcash = await collect({ customerId: c.school, applications: [], tenders: [{ cashPlaceId: GCASH, amountCents: 500_000, check: { number: '123', bank: 'Sample Bank', date: '2026-09-28' } }] }, 500_000);
+    const gcash = await collect({ customerId: c.school, applications: [], tenders: [{ cashPlaceId: GCASH, amountCents: 500_000, reference: 'GC 1234', check: { number: '123', bank: 'Sample Bank', date: '2026-09-28' } }] }, 500_000);
     expect(codes(gcash)).toEqual(['NOT_A_CHECK_PLACE']);
 
     // Cash and GCash are unchanged: no check details asked.
@@ -357,5 +357,28 @@ describe('a check the bank returned', () => {
       }),
       { numRuns: 15 },
     );
+  });
+});
+
+describe('where the money went (the owner\'s rules, Oct 2026)', () => {
+  it('a bank or e-wallet needs its reference, the cash box none, the petty cash fund how the customer paid', async () => {
+    const PETTY = cashPlaceId(env.db, '1102');
+    const tender = (cashPlaceId: number, extra: object = {}) => ({ customerId: c.school, applications: [], tenders: [{ cashPlaceId, amountCents: 50_000, ...extra }] });
+    expect(codes(await collect(tender(GCASH), 50_000))).toEqual(['REFERENCE']);
+    expect(codes(await collect(tender(BDO), 50_000))).toEqual(['REFERENCE']);
+    const noRef = await collect(tender(BDO), 50_000);
+    expect(noRef.json().message).toMatch(/reference number of the bank transfer or deposit/);
+    expect((await collect(tender(GCASH, { reference: 'GC 778899' }), 50_000)).statusCode).toBe(200);
+    expect((await collect(tender(CASH), 50_000)).statusCode).toBe(200);
+
+    expect(codes(await collect(tender(PETTY), 50_000))).toEqual(['RECEIVED_AS']);
+    expect((await collect(tender(PETTY, { receivedAs: 'cash' }), 50_000)).statusCode).toBe(200);
+    expect(codes(await collect(tender(PETTY, { receivedAs: 'ewallet' }), 50_000))).toEqual(['REFERENCE']);
+    const paid = await collect(tender(PETTY, { receivedAs: 'bank', reference: 'BDO 4455' }), 50_000);
+    expect(paid.statusCode, paid.body).toBe(200);
+    // Kept with the collection, and carried into an edit.
+    const input = (await encoder.get(`${COL}/${paid.json().id}`)).json().input as { tenders: object[] };
+    expect(input.tenders).toEqual([{ cashPlaceId: PETTY, amountCents: 50_000, reference: 'BDO 4455', receivedAs: 'bank' }]);
+    noBrokenInvariants();
   });
 });

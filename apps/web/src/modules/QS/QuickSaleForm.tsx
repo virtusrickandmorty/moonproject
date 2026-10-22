@@ -210,7 +210,7 @@ export function QuickSaleForm({ type, mode, me, inDialog }: { type: DocTypeInfo;
             </div>
           </Panel>
           <Panel title="Payment: where did the money go?">
-            <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" amountHint={sold.totalCents > 0 ? formatPesos(sold.totalCents) : undefined} />
+            <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" amountHint={sold.totalCents > 0 ? formatPesos(sold.totalCents) : undefined} received />
             <Field label="CR number (from the booklet)" required hint={was.cr ? `CR ${was.cr} stays with the cancelled payment: write this payment on a new CR.` : undefined}>
               <input inputMode="numeric" className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
             </Field>
