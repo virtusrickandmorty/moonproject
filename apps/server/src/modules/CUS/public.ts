@@ -1,6 +1,7 @@
 /** Read-only CUS contract for other modules. Callers must enforce their own route permission. */
 import type { Db } from '../../platform/db/driver.ts';
 import { chartResponse } from './measurements.ts';
+import { measurements } from './schemas.ts';
 export { addCustomerPhone, createCustomer, createGroup, createWearer, createMeasurement } from './create.ts';
 export { normalizePhone } from './schemas.ts';
 
@@ -83,6 +84,18 @@ export function customerContact(db: Db, id: string): { id: string; code: string;
     row = db.prepare('SELECT id, code, display_name, email, email_consent, merged_into_id FROM cus_customers WHERE id = ?').get(row.merged_into_id) as typeof row;
   }
   return row && { id: row.id, code: row.code, name: row.display_name, email: row.email?.trim() || null, emailConsent: row.email_consent === 1 };
+}
+
+/**
+ * A wearer's measurements as one chart revision recorded them (the one a job order was made with: jo_roster.chart_id),
+ * for the job ticket (the owner's request, Oct 2026): each measured value with its name, in the chart's own unit.
+ */
+export function chartMeasurements(db: Db, chartId: string): { unit: 'inch' | 'cm'; values: [string, number][]; remarks: string | null } | undefined {
+  const row = db.prepare('SELECT * FROM cus_measure_charts WHERE id = ?').get(chartId) as Record<string, unknown> | undefined;
+  if (!row) return undefined;
+  const c = chartResponse(row) as { unit: 'inch' | 'cm'; values: Record<string, number | null>; remarks: string | null };
+  const name = (f: string) => f.replace(/[A-Z]/g, (x) => ` ${x.toLowerCase()}`).replace(/^./, (x) => x.toUpperCase());
+  return { unit: c.unit, values: measurements.filter((f) => c.values[f] != null).map((f) => [name(f), c.values[f]!]), remarks: c.remarks?.trim() || null };
 }
 
 /** The current wearer chart exactly as shown on the customer screen, with names for a sizing-profile print. */
