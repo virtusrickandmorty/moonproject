@@ -1,5 +1,5 @@
 /** Server-rendered, escaped print views. No journal entries are created here. */
-import { customerPrintDetails } from '../CUS/public.ts';
+import { chartMeasurements, customerPrintDetails } from '../CUS/public.ts';
 import { readFileSync } from 'node:fs';
 import { formatPeso, sizeLabel } from '@moonproject/shared';
 import qrcode from 'qrcode-generator';
@@ -106,6 +106,20 @@ export function attachedPictures(db: Db, documentId: string, number = '', max = 
   return { pages: pages.join(''), count: pages.length };
 }
 
+/**
+ * The measurements of the line's measured wearers (the owner's request, Oct 2026), as the job order recorded them (the
+ * chart revision it was made with, not a later one): the wearer, the unit, then each value, so production cuts to them.
+ */
+function measuredWearers(db: Db, roster: any[]): string {
+  const rows = roster.filter((r) => r.sizeMode === 'measured' && r.chartId).flatMap((r) => {
+    const m = chartMeasurements(db, r.chartId);
+    return m && m.values.length ? [{ r, m }] : [];
+  });
+  if (!rows.length) return '';
+  return `<h3>Measurements</h3><div class="measure">${rows.map(({ r, m }) => `<p><b>${escape(r.wearerName)}</b> <span class="unit">(${m.unit === 'inch' ? 'inches' : 'cm'})</span>: ${
+    m.values.map(([name, value]) => `${escape(name)} <b>${escape(value)}</b>`).join(' · ')}${m.remarks ? ` <i>Remarks: ${escape(m.remarks)}</i>` : ''}</p>`).join('')}</div>`;
+}
+
 function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: string): Content {
   const prepared = h.prepared_by ?? '';
   if (h.doc_type === 'quo.quotation') {
@@ -133,7 +147,8 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
       body: (pictures.count ? `<p class="pic-note">Design: ${pictures.count} ${pictures.count === 1 ? 'picture' : 'pictures'} on the next ${pictures.count === 1 ? 'page' : 'pages'}, one a page.</p>` : '') +
         // A set is counted in sets (the owner's request, Oct 2026).
         doc.lines.map((l: any) => `<section class="job-line"><h2 class="section">${escape(l.description)} · ${escape(l.qty)} ${lineIsSet(db, h.id, l.lineNo, l.description) ? (l.qty === 1 ? 'set' : 'sets') : 'pieces'}</h2>` +
-          lineTable(['Wearer', 'Size', 'Jersey name', 'Jersey no.', 'Qty', 'Garment type'], l.roster.map((r: any) => [r.wearerName, r.sizeMode === 'measured' ? 'Measured' : sizeLabel(r.size, r.lowerSize), r.jerseyName, r.jerseyNumber, r.qty, r.garmentType])) +
+          lineTable(['Wearer', 'Size', 'Jersey name', 'Jersey no.', 'Qty', 'Garment type'], l.roster.map((r: any) => [r.wearerName, r.sizeMode === 'measured' ? 'Measured (below)' : sizeLabel(r.size, r.lowerSize), r.jerseyName, r.jerseyNumber, r.qty, r.garmentType])) +
+          measuredWearers(db, l.roster) +
           `<h3>Route checklist</h3><ul>${jobTicketRoute(db, h.id, l.lineNo).map((s) => `<li>☐ ${escape(s.name)} — ${escape(s.status)}</li>`).join('')}</ul></section>`).join('') +
         field('Notes', doc.notes),
     };
@@ -368,6 +383,7 @@ export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profi
     .picture-page .pic-head{display:flex;gap:6mm;align-items:baseline;margin:0;padding-bottom:1.5mm;border-bottom:.6mm solid #1e3a8a;font-size:10pt}
     .picture-page .pic-name{margin-left:auto;color:#64748b;font-size:8.5pt}
     .picture-page img{flex:1;min-height:0;width:100%;object-fit:contain}
+    .measure p{margin:0 0 1.5mm;font-size:9.5pt;line-height:1.45}.measure .unit{color:#475569}
     .pic-note{margin:0 0 2mm;padding:1.5mm 2.5mm;border:1px solid #c7d2fe;border-radius:1.5mm;background:#eef2ff;font-size:9pt}
     @media screen{.picture-page{margin-top:14mm;padding-top:8mm;border-top:2px dashed #94a3b8;height:250mm}}
   </style></head><body><div class="sheet${p.twoUp ? ' two-up' : ''}">${p.twoUp ? one + one : one}</div></body></html>`;
