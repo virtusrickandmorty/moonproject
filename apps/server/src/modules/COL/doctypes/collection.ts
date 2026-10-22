@@ -30,7 +30,7 @@ import { signedOffIssues } from '../../ACC/public.ts';
 import { writeOffsOn } from '../credits.ts';
 import { depositModeOn, depositVatLines, depositVatRowsOf, modeKeptIssue, recordDepositVat, settleJobOrder, vatOnDeposit, vatRow, type DepositMode } from './deposit-vat.ts';
 import { MAX_CENTS, cashPlaceIssues, insertTenders, loadTenders, sumCents, takenOutBy, withNames } from '../ledger.ts';
-import { checkIssues, checkPlaceIds, collectionTenderInput, depositedChecksOf, insertTenderChecks, tenderWithCheckToInput, withChecks, type CollectionTender } from '../checks.ts';
+import { checkIssues, checkPlaceIds, collectionTenderInput, depositedChecksOf, insertReceivedAs, insertTenderChecks, moneyFormIssues, sampleMoneyForm, tenderWithCheckToInput, withChecks, type CollectionTender } from '../checks.ts';
 import { pdcUseIssues } from '../pdc.ts';
 
 /** Largest difference that may go to cash short and over instead of a deposit or an unpaid balance (D4.9). */
@@ -158,7 +158,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
     if (booklet) issues.push(booklet);
     issues.push(...signedOffIssues(ctx.db, ctx.businessDate));
     issues.push(...cashPlaceIssues(ctx.db, doc.tenders, 'Pick where the money went.'));
-    issues.push(...checkIssues(ctx.db, doc.tenders, ctx.businessDate), ...pdcUseIssues(ctx.db, doc, ctx.businessDate));
+    issues.push(...checkIssues(ctx.db, doc.tenders, ctx.businessDate), ...pdcUseIssues(ctx.db, doc, ctx.businessDate), ...moneyFormIssues(ctx.db, doc.tenders));
     if (doc.totalCents > MAX_CENTS) add('error', 'tenders', 'TOO_BIG', 'The amount is over ₱100 million. Please check the amounts.');
 
     const seen = new Set<string>();
@@ -249,6 +249,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
     ).run(h.documentId, doc.customerId, doc.customerName, doc.crNumber, doc.cwtCents, w?.atc ?? null, w?.certificate ?? null, doc.vatWithheldCents, doc.unappliedCents, doc.shortOverCents, doc.settleSmallDifference ? 1 : 0, doc.note ?? null);
     insertTenders(db, 'col_tenders', h.documentId, doc.tenders);
     insertTenderChecks(db, h.documentId, doc.tenders);
+    insertReceivedAs(db, h.documentId, doc.tenders);
     if (doc.postDatedCheckId) db.prepare('INSERT INTO col_pdc_uses (document_id, pdc_id) VALUES (?, ?)').run(h.documentId, doc.postDatedCheckId);
     const app = db.prepare(
       'INSERT INTO col_applications (document_id, line_no, job_order_id, amount_cents, to_receivable_cents, to_deposit_cents) VALUES (?, ?, ?, ?, ?, ?)',
@@ -395,6 +396,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
     const vatBp = settingAt(db, 'tax.vat_rate_bp', manilaDate(new Date()));
     const places = listCashPlaces(db).map((c) => c.id);
     const checks = checkPlaceIds(db);
+    const form = sampleMoneyForm(db);
     const byCustomer = new Map<string, { id: string; dueCents: number }[]>();
     for (const jo of jobOrdersOf(db)) {
       const dueCents = joMoney(db, jo.id).balanceDueCents;
@@ -425,7 +427,7 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
             crNumber: String(cr).padStart(6, '0'),
             applications,
             tenders: weights.map(([cashPlaceId], i) => ({
-              cashPlaceId, amountCents: amounts[i]!,
+              cashPlaceId, amountCents: amounts[i]!, ...form(cashPlaceId, `${cr}-${i}`),
               ...(checks.has(cashPlaceId) ? { check: { number: String(checkNo * 10 + i).padStart(6, '0'), bank: 'Sample Savings Bank', date: '2026-09-01' } } : {}),
             })),
             ...(cwtCents > 0

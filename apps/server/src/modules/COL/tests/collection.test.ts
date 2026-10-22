@@ -141,7 +141,7 @@ describe('collection goldens (PLAN I2)', () => {
       customerId: c.school,
       crNumber: '0103',
       applications: [{ jobOrderId: a, amountCents: 1_000_000 }, { jobOrderId: b, amountCents: 1_500_000 }],
-      tenders: [{ cashPlaceId: CASH, amountCents: 500_000 }, { cashPlaceId: BDO, amountCents: 2_000_000 }],
+      tenders: [{ cashPlaceId: CASH, amountCents: 500_000 }, { cashPlaceId: BDO, amountCents: 2_000_000, reference: 'BDO 0103' }],
     };
     const { id } = (await collect(input, 2_500_000)).json();
     expect(linesOf(id)).toEqual([
@@ -205,7 +205,7 @@ describe('collection goldens (PLAN I2)', () => {
   it('G-12: a collection put in GCash by mistake is edited to cash: mirror today, new number, linked', async () => {
     const jo = await jobOrder(1_000_000);
     invoice(jo, 1_000_000);
-    const input = { customerId: c.school, crNumber: '0105', applications: [{ jobOrderId: jo, amountCents: 1_000_000 }], tenders: [{ cashPlaceId: GCASH, amountCents: 1_000_000 }] };
+    const input = { customerId: c.school, crNumber: '0105', applications: [{ jobOrderId: jo, amountCents: 1_000_000 }], tenders: [{ cashPlaceId: GCASH, amountCents: 1_000_000, reference: 'GC 0105' }] };
     const first = (await collect(input, 1_000_000)).json();
     env.clock.advance(24 * 3600_000);
     encoder = await env.as('encoder');
@@ -436,7 +436,7 @@ describe('property tests (PLAN I1.3)', () => {
             if (refundId) cancelDocument(e, refundDoc, actor, refundId, 'Refund recorded by mistake');
             cancelDocument(e, collectionDoc, actor, p.id, 'Recorded twice by mistake');
           } else if (what === 'reissue') {
-            const tenders = [{ cashPlaceId: BDO, amountCents: expected.totalCents - expected.cwtCents - expected.vatWithheldCents }];
+            const tenders = [{ cashPlaceId: BDO, amountCents: expected.totalCents - expected.cwtCents - expected.vatWithheldCents, reference: 'BDO deposit' }];
             reissueDocument(e, collectionDoc, actor, p.id, { input: { ...input, crNumber: nextCr(), tenders }, expectedTotalCents: expected.totalCents, reason: 'Money went to BDO instead' });
           }
         }

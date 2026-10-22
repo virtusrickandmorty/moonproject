@@ -239,7 +239,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
           {open && open.unappliedCents > 0 && <p className="text-sm text-slate-600">{customer?.name} also has {formatPesos(open.unappliedCents)} of unapplied payments on file.</p>}
         </Panel>
         <Panel title="Where did the money go?">
-          <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" />
+          <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" received />
           <Field label="CR number (from the booklet)" required hint={original ? `CR ${original.input.crNumber} stays with the cancelled collection: write this payment on a new CR.` : undefined}>
             <input inputMode="numeric" className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
           </Field>

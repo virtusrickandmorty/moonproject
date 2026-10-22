@@ -333,7 +333,7 @@ export const STEPS: Step[] = [
       await releaseWithInvoice(m, 'G-06a', m.ids.jo3, 1, '0502', 1_000_000);
       await collection(m, 'G-06', {
         customerId: m.ids[SCHOOL], crNumber: '0103', applications: [{ jobOrderId: m.ids.jo3, amountCents: 1_000_000 }, { jobOrderId: m.ids.jo2, amountCents: 1_500_000 }],
-        tenders: [{ cashPlaceId: m.places['1101'], amountCents: 500_000 }, { cashPlaceId: m.places['1111'], amountCents: 2_000_000 }],
+        tenders: [{ cashPlaceId: m.places['1101'], amountCents: 500_000 }, { cashPlaceId: m.places['1111'], amountCents: 2_000_000, reference: 'BDO-0103' }],
       }, 2_500_000);
     },
   },
@@ -377,7 +377,7 @@ export const STEPS: Step[] = [
       m.ids.jo5 = await jobOrder(m, [{ qty: 1, unitPriceCents: 11_200_000 }], CITY);
       await releaseWithInvoice(m, 'G-09a', m.ids.jo5, 1, '0505', 11_200_000);
       await collection(m, 'G-09', {
-        customerId: m.ids[CITY], crNumber: '0106', applications: [{ jobOrderId: m.ids.jo5, amountCents: 11_200_000 }], tenders: [{ cashPlaceId: m.places['1111'], amountCents: 10_600_000 }],
+        customerId: m.ids[CITY], crNumber: '0106', applications: [{ jobOrderId: m.ids.jo5, amountCents: 11_200_000 }], tenders: [{ cashPlaceId: m.places['1111'], amountCents: 10_600_000, reference: 'BDO-0106' }],
         withholding: { cwtCents: 100_000, atc: 'WC158', certificate: 'received', vatWithheldCents: 500_000 },
       }, 11_200_000);
     },
@@ -418,7 +418,7 @@ export const STEPS: Step[] = [
       await m.on(this.date);
       m.ids.jo7 = await jobOrder(m, [{ qty: 1, unitPriceCents: 1_000_000 }]);
       await releaseWithInvoice(m, 'G-12a', m.ids.jo7, 1, '0507', 1_000_000);
-      m.ids.g12 = (await collection(m, 'G-12', { customerId: m.ids[SCHOOL], crNumber: '0107', applications: [{ jobOrderId: m.ids.jo7, amountCents: 1_000_000 }], tenders: [{ cashPlaceId: m.places['1121'], amountCents: 1_000_000 }] }, 1_000_000)).id;
+      m.ids.g12 = (await collection(m, 'G-12', { customerId: m.ids[SCHOOL], crNumber: '0107', applications: [{ jobOrderId: m.ids.jo7, amountCents: 1_000_000 }], tenders: [{ cashPlaceId: m.places['1121'], amountCents: 1_000_000, reference: 'GC-0107' }] }, 1_000_000)).id;
       const run = await m.post('G-24a', 'pay.run', { payGroup: 'SEMI_MONTHLY', periodStart: '2026-09-01' });
       await payOut(m, 'S-02', run.id, [CARLA]);
     },

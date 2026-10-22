@@ -266,7 +266,7 @@ describe('property test (PLAN I1.3)', () => {
               if (open.length === 0) continue;
               const s = g(() => fc.constantFrom(...open));
               const [amount, place] = g(() => fc.tuple(fc.integer({ min: 1, max: s.open }), fc.constantFrom(...places)));
-              const input = { customerId: s.customerId, crNumber: String(++number), applications: [], sales: [{ saleId: s.id, amountCents: amount }], tenders: [{ cashPlaceId: place, amountCents: amount }] };
+              const input = { customerId: s.customerId, crNumber: String(++number), applications: [], sales: [{ saleId: s.id, amountCents: amount }], tenders: [{ cashPlaceId: place, amountCents: amount, ...(place === places[1] ? { reference: `GC-${number}` } : {}) }] };
               const p = postDocument(e, collectionDoc, actor, { input, expectedTotalCents: amount });
               expect(collectionDoc.toInput(collectionDoc.load(db, p.id))).toEqual(input);
             } else {

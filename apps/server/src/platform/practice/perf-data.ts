@@ -162,10 +162,12 @@ export async function createPerfData(dbPath: string, given: Partial<PerfOptions>
     let billNo = 0; const billsToPay: { id: string; amountCents: number }[] = [];
     const post = async (who: Client, type: string, input: object, expectedTotalCents: number) => ok(await who.post(`/api/docs/${type}/post`,
       { input, expectedTotalCents }, { 'idempotency-key': randomUUID() }), `${type} post`);
-    const collect = (who: Client, customerId: string, jobOrderId: string, amountCents: number) => post(who, 'col.collection', {
-      customerId, crNumber: String(cr++), applications: [{ jobOrderId, amountCents }],
-      tenders: [{ cashPlaceId: rand() < 0.8 ? till : bank, amountCents }],
-    }, amountCents);
+    const collect = (who: Client, customerId: string, jobOrderId: string, amountCents: number) => {
+      const crNumber = String(cr++);
+      // Into the bank with its reference, as the shop's rule asks (Oct 2026).
+      const tender = rand() < 0.8 ? { cashPlaceId: till, amountCents } : { cashPlaceId: bank, amountCents, reference: `BANK-${crNumber}` };
+      return post(who, 'col.collection', { customerId, crNumber, applications: [{ jobOrderId, amountCents }], tenders: [tender] }, amountCents);
+    };
 
     for (let day = 0; day < days; day++) {
       clock.set(new Date(START + day * DAY_MS).toISOString());
