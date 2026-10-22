@@ -17,6 +17,7 @@ import { openDb } from './platform/db/driver.ts';
 import { stamp, systemClock } from './platform/clock.ts';
 import { buildApp, prepareDatabase } from './app.ts';
 import { NewerDatabaseError } from './platform/db/migrate.ts';
+import { freshStartRefusedAfterOpen, freshStartRefusedBeforeOpen } from './platform/db/fresh-start.ts';
 import { loadModules } from './modules/load.ts';
 import { bakSettings, isDue, lastOkRun, removeLeftoverCopies, runBackup } from './modules/BAK/backup.ts';
 import { applyPendingRestore, recordRestored } from './modules/BAK/restore.ts';
@@ -32,6 +33,12 @@ const dbFile = process.env.MOONPROJECT_DB ?? 'data/moonproject.db';
 mkdirSync(dirname(dbFile), { recursive: true });
 // A restore asked for from the backup page is finished here, before the database is opened.
 const restored = applyPendingRestore(dbFile, stamp(systemClock));
+// No more fresh starts (platform/db/fresh-start.ts): a missing or empty database is refused, never created anew.
+const refusedBefore = freshStartRefusedBeforeOpen(dbFile);
+if (refusedBefore) {
+  console.error(refusedBefore);
+  process.exit(1);
+}
 const db = openDb(dbFile);
 const lan = process.env.MOONPROJECT_LISTEN === 'lan';
 const modules = await loadModules();
@@ -42,6 +49,12 @@ try {
 } catch (e) {
   if (!(e instanceof NewerDatabaseError)) throw e;
   console.error(e.message);
+  db.close();
+  process.exit(1);
+}
+const refusedAfter = freshStartRefusedAfterOpen(db, dbFile);
+if (refusedAfter) {
+  console.error(refusedAfter);
   db.close();
   process.exit(1);
 }
