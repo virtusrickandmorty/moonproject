@@ -97,7 +97,7 @@ export function Store({ openPanel, view }: SiteControls) {
 
   return (
     <>
-      <HeroSlider products={products} online={online} payment={shop.payment} toShop={toShop} season={shop.season} />
+      <HeroSlider products={products} online={online} payment={shop.payment} toShop={toShop} look={shop.decor?.look} />
       <TrustStrip online={online} payment={shop.payment} />
       <PromoBanner products={products} payment={shop.payment} showSale={() => { setF({ ...NONE, sale: true }); document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }); }} />
       <CategoryTiles products={products} categories={categories} pick={(c) => { setF({ ...NONE, categories: [c] }); document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }); }} />

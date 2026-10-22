@@ -1,7 +1,6 @@
 /** The public website shown before sign-in: the store, the services and the support page under one header. */
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { browserSaysNo, countingChoice, setCountingChoice, setStaff, sourceOfVisit, track } from './insights.ts';
-import { SEASONS } from './seasons.tsx';
 import { Link, navigate, useLocation } from '../router.tsx';
 import { About } from './About.tsx';
 import { Checkout, MyOrders, OrderStatus, rememberedOrders } from './Checkout.tsx';
@@ -81,7 +80,7 @@ function Layout({ staff }: { staff: boolean }) {
   const search = (e: FormEvent) => { e.preventDefault(); navigate(`${home}?q=${encodeURIComponent(text.trim())}`); setSearching(false); };
   // The strip along the top says what the shop really offers: QR payment and its delivery fees, or quotations.
   const fees = shop.payment?.deliveryOptions ?? [];
-  const look = shop.season ? SEASONS[shop.season] : null;
+  const look = shop.decor?.look ?? null;
   const news = [
     ...(look ? [look.news] : []), // the season's line first (SHP seasons)
     ...(shop.payment && !shop.samples

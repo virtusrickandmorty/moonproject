@@ -13,6 +13,7 @@ import { ProductPicture } from '../../shop/GarmentArt.tsx';
 import { SAMPLE_PRODUCTS, SIZES, type Product, type Shape } from '../../shop/products.ts';
 import { MAX_PICKED_BYTES, lighterPhoto } from './photo.ts';
 import { masterRequest } from '../CUS/http.ts';
+import { ShopEvents, type ShopEvent } from './ShopEvents.tsx';
 import { ShopWork } from './ShopWork.tsx';
 import { Visitors } from './Visitors.tsx';
 import { useLiveReload } from '../../live.ts';
@@ -273,7 +274,7 @@ function StockDialog({ me, product, onClose }: { me: Me; product: Row; onClose: 
 interface ReviewRow { id: string; productName: string; rating: number; title: string | null; body: string; name: string; buyer: string; orderNumber: string;
   hidden: boolean; hiddenReason: string | null; at: string; version: number }
 /** Buyers' ratings and reviews (written from their completed online orders). Staff hide one that should not show, with a reason. */
-type SeasonSettings = { mode: string; version: number; shownToday: string | null; calendarToday: string | null; seasons: { key: string; label: string; from: string; to: string }[] };
+type SeasonSettings = { mode: string; version: number; shownToday: string | null; eventToday: string | null; calendarToday: string | null; seasons: { key: string; label: string; from: string; to: string }[]; events: ShopEvent[] };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const day = (md: string) => `${MONTHS[Number(md.slice(0, 2)) - 1]} ${Number(md.slice(3))}`;
 
@@ -304,23 +305,26 @@ function Seasons({ me }: { me: Me }) {
     ...s.seasons.map((x) => [x.key, x.label, `${day(x.from)} to ${day(x.to)}`] as [string, string, string]),
   ];
   return (
-    <section className="space-y-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70" aria-label="Decorations">
-      <div>
-        <h2 className="text-lg font-semibold">Season decorations</h2>
-        <p className="text-sm text-slate-600">The website dresses up for the season: its own banner slide first, a line and colour in the top bar, and a few bats, snowflakes or hearts over the banner.</p>
-        <p className="mt-1 text-sm">Showing now: <b>{s.shownToday ? label(s.shownToday) : 'no decorations'}</b></p>
-      </div>
-      <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Decorations">
-        {choices.map(([k, name, when]) => (
-          <button key={k} type="button" role="radio" aria-checked={mode === k} disabled={!can} onClick={() => setMode(k)}
-            className={`rounded-lg p-3 text-left ring-1 ${mode === k ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'} disabled:opacity-60`}>
-            <span className="block font-semibold">{name}</span><span className={`block text-xs ${mode === k ? 'text-indigo-100' : 'text-slate-500'}`}>{when}</span>
-          </button>
-        ))}
-      </div>
-      {can && <div className="flex items-center gap-3"><Button tone="primary" disabled={mode === s.mode} onClick={() => void save()}>Save</Button>{msg && <span className="text-sm text-emerald-700">{msg}</span>}</div>}
-      {err && <Notice>{err}</Notice>}
-    </section>
+    <div className="space-y-4">
+      <section className="space-y-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70" aria-label="Decorations">
+        <div>
+          <h2 className="text-lg font-semibold">Season decorations</h2>
+          <p className="text-sm text-slate-600">The website dresses up for the season: its own banner slide first, a line and colour in the top bar, and a few bats, snowflakes or hearts over the banner.</p>
+          <p className="mt-1 text-sm">Showing now: <b>{s.eventToday ? `your event, ${s.eventToday}` : s.shownToday ? label(s.shownToday) : 'no decorations'}</b></p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Decorations">
+          {choices.map(([k, name, when]) => (
+            <button key={k} type="button" role="radio" aria-checked={mode === k} disabled={!can} onClick={() => setMode(k)}
+              className={`rounded-lg p-3 text-left ring-1 ${mode === k ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'} disabled:opacity-60`}>
+              <span className="block font-semibold">{name}</span><span className={`block text-xs ${mode === k ? 'text-indigo-100' : 'text-slate-500'}`}>{when}</span>
+            </button>
+          ))}
+        </div>
+        {can && <div className="flex items-center gap-3"><Button tone="primary" disabled={mode === s.mode} onClick={() => void save()}>Save</Button>{msg && <span className="text-sm text-emerald-700">{msg}</span>}</div>}
+        {err && <Notice>{err}</Notice>}
+      </section>
+      <ShopEvents me={me} events={s.events} today={s.eventToday} onSaved={load} />
+    </div>
   );
 }
 

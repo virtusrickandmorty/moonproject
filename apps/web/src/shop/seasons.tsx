@@ -2,11 +2,14 @@
  * The website's seasonal look (the owner's request, Oct 2026: the shop is decorated by the season of the month). The
  * server says which season shows (Automatic by its calendar, Off, or one the owner picked: SHP seasons.ts); this file
  * gives each one its banner slide (words, colours and a drawing), the line in the top bar, and a light shower of
- * decorations over the banner (bats, snow, hearts), still for anyone who asked their device for less motion.
+ * decorations over the banner (bats, snow, hearts), still for anyone who asked their device for less motion. The shop's
+ * own events (SHP season-events.ts) are built from the same pieces: a colour theme, a picture or a drawing, a shower.
  */
 import type { ReactNode } from 'react';
 
 export type SeasonKey = 'halloween' | 'christmas' | 'valentines' | 'summer' | 'school';
+/** What a banner button does: a quotation request, the made-to-order or ready-to-wear garments, or the services page. */
+export type HeroAction = 'quote' | 'made' | 'ready' | 'services';
 
 export interface SeasonLook {
   /** The top bar: its colours and its first message. */
@@ -14,9 +17,9 @@ export interface SeasonLook {
   /** The banner slide shown first while the season lasts. */
   eyebrow: string; title: ReactNode; text: string; tone: string;
   /** primary: what its first button does. */
-  primary: ['quote' | 'made' | 'services', string]; ghost: ['quote' | 'made' | 'services', string];
+  primary: [HeroAction, string]; ghost: [HeroAction, string];
   art: () => ReactNode;
-  shower?: 'bats' | 'snow' | 'hearts';
+  shower?: 'bats' | 'snow' | 'hearts' | 'confetti' | 'stars';
 }
 
 const Pumpkin = ({ x, y, s }: { x: number; y: number; s: number }) => (
@@ -41,6 +44,8 @@ const Snowflake = ({ x, y, s }: { x: number; y: number; s: number }) => (
 const Heart = ({ x, y, s, fill }: { x: number; y: number; s: number; fill: string }) => (
   <path transform={`translate(${x} ${y}) scale(${s})`} fill={fill} d="M0 30C-40 4-36-26-16-28-6-29 0-20 0-14 0-20 6-29 16-28 36-26 40 4 0 30Z" />
 );
+
+const CONFETTI = ['#f472b6', '#facc15', '#38bdf8', '#a3e635', '#c084fc', '#fb923c'];
 
 export const SEASONS: Record<SeasonKey, SeasonLook> = {
   halloween: {
@@ -135,20 +140,25 @@ export const SEASONS: Record<SeasonKey, SeasonLook> = {
   },
 };
 
-/** Little shapes drifting across the banner: bats fly, snow falls, hearts rise. Placed the same way every visit. */
+/** Little shapes drifting across the banner: bats fly, snow and confetti fall, hearts rise, stars twinkle. Placed the same way every visit. */
 export function Shower({ kind }: { kind: NonNullable<SeasonLook['shower']> }) {
   const shape = (i: number) => kind === 'snow'
     ? <svg viewBox="0 0 10 10" className="size-full"><circle cx="5" cy="5" r={2 + (i % 3)} fill="white" opacity="0.6" /></svg>
+    : kind === 'confetti'
+      ? <svg viewBox="0 0 10 10" className="size-full"><rect x="2" y="3.5" width="6" height="3" rx="0.6" fill={CONFETTI[i % CONFETTI.length]} /></svg>
+    : kind === 'stars'
+      ? <svg viewBox="-12 -12 24 24" className="size-full"><path fill="#fde68a" d="M0-11 2.6-2.6 11 0 2.6 2.6 0 11-2.6 2.6-11 0-2.6-2.6Z" /></svg>
     : kind === 'hearts'
       ? <svg viewBox="-20 -30 40 62" className="size-full"><path fill="#fda4af" opacity="0.8" d="M0 30C-40 4-36-26-16-28-6-29 0-20 0-14 0-20 6-29 16-28 36-26 40 4 0 30Z" /></svg>
       : <svg viewBox="-60 -12 120 40" className="size-full"><path fill="#000" opacity="0.55" d="M0 0c-6-8-16-12-30-10 6 4 8 10 6 16-6-4-14-4-20 0 8 2 14 8 16 16 6-6 16-8 24-4l4-6 4 6c8-4 18-2 24 4 2-8 8-14 16-16-6-4-14-4-20 0-2-6 0-12 6-16-14-2-24 2-30 10Z" /></svg>;
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-      {Array.from({ length: kind === 'snow' ? 18 : 10 }, (_, i) => {
-        const size = kind === 'snow' ? 6 + (i * 7) % 9 : kind === 'bats' ? 26 + (i * 13) % 22 : 14 + (i * 11) % 16;
+      {Array.from({ length: kind === 'snow' || kind === 'confetti' ? 18 : 10 }, (_, i) => {
+        const size = kind === 'snow' ? 6 + (i * 7) % 9 : kind === 'confetti' ? 10 + (i * 7) % 8 : kind === 'bats' ? 26 + (i * 13) % 22 : 14 + (i * 11) % 16;
         return (
           <span key={i} className={`season-${kind} absolute block`}
-            style={{ left: `${(i * 37) % 100}%`, top: kind === 'bats' ? `${8 + (i * 23) % 60}%` : undefined, width: size, height: size, animationDelay: `${-(i * 1.7) % 12}s`, animationDuration: `${(kind === 'snow' ? 9 : 14) + (i * 3) % 7}s` }}>
+            style={{ left: `${(i * 37) % 100}%`, top: kind === 'bats' || kind === 'stars' ? `${8 + (i * 23) % 80}%` : undefined, width: size, height: size, animationDelay: `${-(i * 1.7) % 12}s`,
+              animationDuration: `${(kind === 'snow' || kind === 'confetti' ? 9 : kind === 'stars' ? 3 : 14) + (i * 3) % 7}s` }}>
             {shape(i)}
           </span>
         );
@@ -161,7 +171,18 @@ export function Shower({ kind }: { kind: NonNullable<SeasonLook['shower']> }) {
  * Doodles for the cards (the owner's request, Oct 2026): small hand-drawn line drawings of the season in a card's
  * corners, in the season's colour, behind everything that can be clicked. Each card gets its own pick (by `seed`).
  */
-const DOODLES: Record<SeasonKey, { colour: string; light: string; paths: string[] }> = {
+export type DoodleSet = SeasonKey | 'party';
+const DOODLES: Record<DoodleSet, { colour: string; light: string; paths: string[] }> = {
+  party: {
+    colour: 'text-fuchsia-500', light: 'text-fuchsia-100',
+    paths: [
+      'M24 6l5 12 13 1-10 8 3 13-11-7-11 7 3-13-10-8 13-1Z', // star
+      'M24 6c8 0 13 6 13 13s-6 14-13 14-13-7-13-14 5-13 13-13ZM24 33l-2 4h4ZM24 37q-4 4 0 8', // balloon
+      'M8 20h32v8H8ZM11 28h26v14H11ZM24 20v22M24 20c-4-8-12-8-10-2 1 2 6 2 10 2ZM24 20c4-8 12-8 10-2-1 2-6 2-10 2Z', // gift
+      'M8 42l8-24 16 16ZM14 24l10 10M22 14q2-6 8-6M32 18q6-2 8 2M30 6v2M40 12h2M38 26l2 2', // party popper
+      'M6 10q6 6 0 12t0 12M18 8l4 4M30 6q4 8 10 6M26 24h6M38 30l4 6M20 38q6-4 10 2', // streamers
+    ],
+  },
   halloween: {
     colour: 'text-orange-500', light: 'text-orange-200',
     paths: [
@@ -215,8 +236,8 @@ const SPOT: Record<'tl' | 'tr' | 'bl' | 'br' | 'ml' | 'mr', string> = {
 };
 export type DoodleSpot = keyof typeof SPOT;
 
-export function Doodles({ season, seed, spots, size = 'size-10', light = false }: { season: SeasonKey; seed: number; spots: DoodleSpot[]; size?: string; light?: boolean }) {
-  const d = DOODLES[season];
+export function Doodles({ set, seed, spots, size = 'size-10', light = false }: { set: DoodleSet; seed: number; spots: DoodleSpot[]; size?: string; light?: boolean }) {
+  const d = DOODLES[set];
   return (
     <>
       {spots.map((spot, i) => (
@@ -232,3 +253,48 @@ export function Doodles({ season, seed, spots, size = 'size-10', light = false }
 
 /** A small number from a text, so the same card always gets the same doodles. */
 export const seedOf = (text: string) => [...text].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 9973, 7);
+
+/** The shop's own event as the website gets it (SHP season-events.ts): what shows instead of the season while it lasts. */
+export interface ShopEventShown {
+  id: string; version: number; eyebrow: string; title: string; highlight: string; text: string; barText: string;
+  theme: keyof typeof THEMES; art: 'none' | 'picture' | SeasonKey; shower: 'none' | NonNullable<SeasonLook['shower']>;
+  doodles: 'none' | DoodleSet; button: HeroAction; buttonLabel: string; hasPicture: boolean;
+}
+
+/** The colour themes an event can take: the banner's colours, its highlighted words and the top bar. */
+export const THEMES = {
+  night: { label: 'Night blue', tone: 'from-slate-950 via-slate-900 to-indigo-950', accent: 'text-indigo-300', bar: 'bg-slate-950 text-indigo-100' },
+  purple: { label: 'Purple', tone: 'from-purple-950 via-violet-900 to-fuchsia-950', accent: 'text-fuchsia-300', bar: 'bg-purple-950 text-fuchsia-100' },
+  festive: { label: 'Red and green', tone: 'from-red-900 via-rose-900 to-emerald-950', accent: 'text-emerald-300', bar: 'bg-red-900 text-red-50' },
+  rose: { label: 'Rose pink', tone: 'from-rose-900 via-pink-800 to-rose-950', accent: 'text-pink-200', bar: 'bg-rose-900 text-rose-50' },
+  ocean: { label: 'Ocean blue', tone: 'from-sky-950 via-cyan-900 to-blue-950', accent: 'text-cyan-300', bar: 'bg-sky-950 text-cyan-50' },
+  gold: { label: 'Black and gold', tone: 'from-stone-950 via-amber-950 to-yellow-900', accent: 'text-amber-300', bar: 'bg-stone-950 text-amber-100' },
+  sunset: { label: 'Sunset orange', tone: 'from-orange-900 via-rose-900 to-purple-950', accent: 'text-orange-200', bar: 'bg-orange-900 text-orange-50' },
+  emerald: { label: 'Emerald green', tone: 'from-emerald-950 via-teal-900 to-slate-950', accent: 'text-emerald-300', bar: 'bg-emerald-950 text-emerald-50' },
+} as const;
+
+/** The event's picture on the banner; its version makes a changed picture load again. */
+export const eventPictureUrl = (e: Pick<ShopEventShown, 'id' | 'version'>) => `/api/shp/season/events/${e.id}/picture?v=${e.version}`;
+
+/** An event's banner slide and top-bar line, built like a season's. */
+export function eventLook(e: ShopEventShown): SeasonLook {
+  const theme = THEMES[e.theme] ?? THEMES.night;
+  return {
+    bar: theme.bar, news: e.barText, eyebrow: e.eyebrow, text: e.text, tone: theme.tone,
+    title: e.highlight ? <>{e.title}<br /><span className={theme.accent}>{e.highlight}</span></> : e.title,
+    primary: [e.button, e.buttonLabel],
+    ghost: e.button === 'quote' ? ['made', 'Browse made-to-order'] : ['quote', 'Get a quote'],
+    // The shop's own picture in a round frame, or a season's drawing, or none (the slide shows a garment then).
+    art: () => e.art === 'picture'
+      ? (e.hasPicture ? <div className="size-full overflow-hidden rounded-full bg-white ring-8 ring-white/15"><img src={eventPictureUrl(e)} alt="" className="size-full object-cover" /></div> : null)
+      : e.art !== 'none' && e.art in SEASONS ? SEASONS[e.art].art() : null,
+    shower: e.shower === 'none' ? undefined : e.shower,
+  };
+}
+
+/** How the website is decorated now: the banner slide and top bar, and the cards' doodles (or none). */
+export interface Decor { look: SeasonLook; doodles: DoodleSet | null }
+export function decorOf(season: SeasonKey | null, event: ShopEventShown | null): Decor | null {
+  if (event) return { look: eventLook(event), doodles: event.doodles === 'none' || !(event.doodles in DOODLES) ? null : event.doodles };
+  return season && season in SEASONS ? { look: SEASONS[season], doodles: season } : null;
+}
