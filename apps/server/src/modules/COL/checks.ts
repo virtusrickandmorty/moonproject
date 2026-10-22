@@ -29,14 +29,67 @@ export const checkDetails = z
   .strict();
 export type CheckDetails = z.infer<typeof checkDetails>;
 
-/** A collection's tender: into a checks place it carries the check (number, bank, date on the check). */
-export const collectionTenderInput = tenderInput.extend({ check: checkDetails.optional() }).strict();
-export type CollectionTenderInput = z.infer<typeof collectionTenderInput>;
-export type CollectionTender = Tender & { check?: CheckDetails };
+/** How the customer paid money put into the petty cash fund. */
+export const RECEIVED_AS = ['cash', 'bank', 'ewallet'] as const;
+export type ReceivedAs = (typeof RECEIVED_AS)[number];
 
-export const tenderWithCheckToInput = ({ cashPlaceId, amountCents, reference, check }: CollectionTender): CollectionTenderInput => ({
-  cashPlaceId, amountCents, ...(reference ? { reference } : {}), ...(check ? { check } : {}),
+/**
+ * A collection's tender: into a checks place it carries the check (number, bank, date on the check); into the petty
+ * cash fund, how the customer paid (`receivedAs`).
+ */
+export const collectionTenderInput = tenderInput.extend({ check: checkDetails.optional(), receivedAs: z.enum(RECEIVED_AS).optional() }).strict();
+export type CollectionTenderInput = z.infer<typeof collectionTenderInput>;
+export type CollectionTender = Tender & { check?: CheckDetails; receivedAs?: ReceivedAs };
+
+export const tenderWithCheckToInput = ({ cashPlaceId, amountCents, reference, check, receivedAs }: CollectionTender): CollectionTenderInput => ({
+  cashPlaceId, amountCents, ...(reference ? { reference } : {}), ...(check ? { check } : {}), ...(receivedAs ? { receivedAs } : {}),
 });
+
+/** The petty cash fund: a cash place of kind cash, the seeded 1102 or one named so. */
+const isPetty = (p: { kind: string; code: string; name: string }) => p.kind === 'cash' && (p.code === '1102' || /petty/i.test(p.name));
+
+/**
+ * The owner's rules for where the money went (Oct 2026): money into a bank or an e-wallet carries its reference number;
+ * money into the cash box needs none; money into the petty cash fund says how the customer paid, and a bank transfer or
+ * e-wallet payment there carries its reference too. (A check carries the check itself: checkIssues.)
+ */
+export function moneyFormIssues(db: Db, tenders: readonly CollectionTender[]): Issue[] {
+  const places = new Map(placesFor(db, () => false, true).map((p) => [p.id, p]));
+  const issues: Issue[] = [];
+  for (const t of tenders) {
+    const p = places.get(t.cashPlaceId);
+    if (!p) continue; // cashPlaceIssues says to pick one
+    const f = `tenders.${t.lineNo - 1}`;
+    const at = tenders.length > 1 ? `Payment ${t.lineNo}: ` : '';
+    const petty = isPetty(p);
+    if (petty && !t.receivedAs) {
+      issues.push({ field: `${f}.receivedAs`, code: 'RECEIVED_AS', level: 'error', message: `${at}Pick how the customer paid the money put into ${p.name}: cash, bank transfer or e-wallet.` });
+    }
+    const via = p.kind === 'bank' || p.kind === 'ewallet' ? p.kind : petty && t.receivedAs !== 'cash' ? t.receivedAs : undefined;
+    if (via && !t.reference) {
+      const what = via === 'bank' ? 'bank transfer or deposit' : 'e-wallet (GCash, Maya) payment';
+      issues.push({ field: `${f}.reference`, code: 'REFERENCE', level: 'error', message: `${at}Type the reference number of the ${what}.` });
+    }
+  }
+  return issues;
+}
+
+/** Sample data (arbitrary): what the rules ask of a tender into each place, a reference or how the customer paid. */
+export function sampleMoneyForm(db: Db): (cashPlaceId: number, ref: string) => { reference?: string; receivedAs?: ReceivedAs } {
+  const places = new Map(placesFor(db, () => false, true).map((p) => [p.id, p]));
+  return (cashPlaceId, ref) => {
+    const p = places.get(cashPlaceId);
+    if (!p) return {};
+    if (isPetty(p)) return { receivedAs: 'cash' };
+    return p.kind === 'bank' || p.kind === 'ewallet' ? { reference: `REF-${ref}` } : {};
+  };
+}
+
+/** How the customer paid, for the tenders into the petty cash fund. */
+export function insertReceivedAs(db: Db, documentId: string, tenders: readonly CollectionTender[]): void {
+  const ins = db.prepare('INSERT INTO col_tender_received_as (document_id, line_no, received_as) VALUES (?, ?, ?)');
+  for (const t of tenders) if (t.receivedAs) ins.run(documentId, t.lineNo, t.receivedAs);
+}
 
 /** Cash places of kind "checks" (Checks on hand, 1103, and any other the shop adds), inactive ones too. */
 export function checkPlaceIds(db: Db): Set<number> {
@@ -90,7 +143,9 @@ export function withChecks(db: Db, documentId: string, tenders: Tender[]): Colle
   const rows = db.prepare('SELECT line_no, check_number, bank, check_date FROM col_tender_checks WHERE document_id = ?').all(documentId) as
     { line_no: number; check_number: string; bank: string; check_date: string }[];
   const by = new Map(rows.map((r) => [r.line_no, { number: r.check_number, bank: r.bank, date: r.check_date }]));
-  return tenders.map((t) => (by.has(t.lineNo) ? { ...t, check: by.get(t.lineNo)! } : t));
+  const how = new Map((db.prepare('SELECT line_no, received_as FROM col_tender_received_as WHERE document_id = ?').all(documentId) as { line_no: number; received_as: ReceivedAs }[])
+    .map((r) => [r.line_no, r.received_as]));
+  return tenders.map((t) => ({ ...t, ...(by.has(t.lineNo) ? { check: by.get(t.lineNo)! } : {}), ...(how.has(t.lineNo) ? { receivedAs: how.get(t.lineNo)! } : {}) }));
 }
 
 export interface CheckRow {

@@ -456,7 +456,7 @@ describe('where staff will look for each open item (J4 step 3 results)', () => {
 describe('first day on top of the opened books, 2026-10-02 (J4 step 6)', () => {
   let cr = 600;
   const collect = async (customerId: string, jobOrderId: string, cents: number, cashPlace: string) => {
-    const input = { customerId, crNumber: String(++cr), applications: [{ jobOrderId, amountCents: cents }], tenders: [{ cashPlaceId: id(cashPlace), amountCents: cents }] };
+    const input = { customerId, crNumber: String(++cr), applications: [{ jobOrderId, amountCents: cents }], tenders: [{ cashPlaceId: id(cashPlace), amountCents: cents, ...(/^11[12]/.test(cashPlace) ? { reference: `REF-${cr}` } : {}) }] };
     const r = await encoder.post('/api/docs/col.collection/post', { input, expectedTotalCents: cents }, idem());
     expect(r.statusCode, r.body).toBe(200);
     return r.json() as Recorded;

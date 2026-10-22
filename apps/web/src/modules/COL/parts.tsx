@@ -4,7 +4,7 @@ import { api, type CashPlace, type CustomerRow, type DocHeader } from '../../api
 import { navigate } from '../../router.tsx';
 import { Button, Field, Notice, ReasonDialog, inputClass, peso } from '../../components/ui.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { emptyTender, type TenderRow } from './money.ts';
+import { emptyTender, isPettyCash, type TenderRow } from './money.ts';
 
 export interface Picked { id: string; name: string }
 
@@ -54,16 +54,21 @@ export function CustomerPicker({ value, onChange, beside }: { value: Picked | nu
   );
 }
 
-/** One row per tender: a big button per cash place (PLAN H2 "money questions"), the amount and a reference. */
-export function TenderRows(p: { rows: TenderRow[]; onChange: (rows: TenderRow[]) => void; places: CashPlace[]; question: string; amountHint?: string; max?: number }) {
+/**
+ * One row per tender: a big button per cash place (PLAN H2 "money questions"), the amount and a reference. `received`
+ * (money a customer paid, the owner's rules of Oct 2026): into a bank or e-wallet the reference number is required; into
+ * the petty cash fund, how the customer paid (cash, bank transfer or e-wallet), with the reference when not cash.
+ */
+export function TenderRows(p: { rows: TenderRow[]; onChange: (rows: TenderRow[]) => void; places: CashPlace[]; question: string; amountHint?: string; max?: number; received?: boolean }) {
   const set = (i: number, patch: Partial<TenderRow>) => p.onChange(p.rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  const HOW = { cash: 'Cash', bank: 'Bank transfer', ewallet: 'E-wallet (GCash, Maya)' } as const;
   return (
     <div className="space-y-3">
       {p.rows.map((r, i) => (
         <div key={i} className="space-y-2 rounded-md p-2 ring-1 ring-slate-200">
           <div role="radiogroup" aria-label={p.rows.length > 1 ? `${p.question} (payment ${i + 1})` : p.question} className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             {p.places.map((c) => (
-              <button key={c.id} type="button" role="radio" aria-checked={r.cashPlaceId === String(c.id)} onClick={() => set(i, { cashPlaceId: String(c.id) })}
+              <button key={c.id} type="button" role="radio" aria-checked={r.cashPlaceId === String(c.id)} onClick={() => set(i, { cashPlaceId: String(c.id), receivedAs: undefined })}
                 className={`rounded-lg p-2 text-left text-sm ring-1 ${r.cashPlaceId === String(c.id) ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'}`}>
                 {c.name}
               </button>
@@ -76,9 +81,30 @@ export function TenderRows(p: { rows: TenderRow[]; onChange: (rows: TenderRow[])
               <Field label="Date on the check"><input aria-label="Date on the check" type="date" className={inputClass} value={r.checkDate ?? ''} onChange={(e) => set(i, { checkDate: e.target.value })} /></Field>
             </div>
           )}
+          {p.received && isPettyCash(p.places.find((c) => String(c.id) === r.cashPlaceId)) && (
+            <div role="radiogroup" aria-label={p.rows.length > 1 ? `How did the customer pay? (payment ${i + 1})` : 'How did the customer pay?'} className="space-y-1">
+              <p className="text-sm font-medium">How did the customer pay? <span className="text-red-700">*</span></p>
+              <div className="flex flex-wrap gap-2">
+                {(['cash', 'bank', 'ewallet'] as const).map((k) => (
+                  <button key={k} type="button" role="radio" aria-checked={r.receivedAs === k} onClick={() => set(i, { receivedAs: k })}
+                    className={`rounded-full px-3 py-1.5 text-sm ring-1 ${r.receivedAs === k ? 'bg-indigo-600 text-white ring-indigo-600' : 'bg-white ring-slate-300 hover:bg-indigo-50'}`}>{HOW[k]}</button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="grid items-end gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_auto]">
             <Field label="Amount"><input aria-label="Amount" inputMode="decimal" placeholder={(p.rows.length === 1 && p.amountHint) || '0.00'} className={`${inputClass} max-w-40 text-right tabular-nums`} value={r.amount} onChange={(e) => set(i, { amount: e.target.value })} /></Field>
-            <Field label="Reference"><input aria-label="Reference" placeholder="GCash or bank reference, or check no. and bank" className={inputClass} value={r.reference} onChange={(e) => set(i, { reference: e.target.value })} /></Field>
+            {(() => {
+              const place = p.places.find((c) => String(c.id) === r.cashPlaceId);
+              const via = place?.kind === 'bank' || place?.kind === 'ewallet' ? place.kind : isPettyCash(place) && r.receivedAs && r.receivedAs !== 'cash' ? r.receivedAs : undefined;
+              const needed = !!p.received && !!via;
+              return (
+                <Field label={needed ? 'Reference no. (required)' : 'Reference'}>
+                  <input aria-label="Reference" aria-required={needed} className={inputClass} value={r.reference} onChange={(e) => set(i, { reference: e.target.value })}
+                    placeholder={needed ? (via === 'bank' ? 'Bank transfer or deposit reference no.' : 'GCash or Maya reference no.') : 'GCash or bank reference, or check no. and bank'} />
+                </Field>
+              );
+            })()}
             {p.rows.length > 1 && <Button onClick={() => p.onChange(p.rows.filter((_, j) => j !== i))}>Remove</Button>}
           </div>
         </div>

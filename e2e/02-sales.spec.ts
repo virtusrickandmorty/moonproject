@@ -76,6 +76,9 @@ async function fillCollection(page: Page, amount: string, cr: string, jo = 'JO-0
   await expect(page.getByLabel(new RegExp(`^Pay now on ${jo}`))).toHaveValue(amount);
   await expect(page.getByLabel('Amount', { exact: true })).toHaveValue(amount);
   await page.getByRole('radio', { name: /GCash/ }).click();
+  // Into an e-wallet the reference is required (the owner's rule, Oct 2026).
+  await expect(page.getByText('Reference no. (required)')).toBeVisible();
+  await page.getByLabel('Reference').fill(`GC-${cr}`);
   await page.getByLabel('CR number (from the booklet)').fill(cr);
   await page.getByRole('button', { name: 'Record', exact: true }).click();
   await page.getByRole('dialog', { name: /^Record this / }).getByRole('button', { name: 'Record', exact: true }).click();

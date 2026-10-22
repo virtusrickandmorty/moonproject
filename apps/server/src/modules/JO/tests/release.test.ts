@@ -116,7 +116,7 @@ describe('invoice record goldens (PLAN I2)', () => {
 
     // G-03: GCash 10,000 + cash 17,750 + CWT 250 clears the receivable; balance due 0.
     await collect(jo, 2_800_000, {
-      tenders: [{ cashPlaceId: GCASH, amountCents: 1_000_000 }, { cashPlaceId: CASH, amountCents: 1_775_000 }],
+      tenders: [{ cashPlaceId: GCASH, amountCents: 1_000_000, reference: 'GC-REF-1234' }, { cashPlaceId: CASH, amountCents: 1_775_000 }],
       withholding: { cwtCents: 25_000, atc: 'WC158', certificate: 'pending' },
     });
     expect(joMoney(env.db, jo)).toMatchObject({ receivableCents: 0, depositsHeldCents: 0, balanceDueCents: 0, collectedCents: 5_600_000 });
