@@ -10,9 +10,13 @@ it('places every screen and document list an owner sees under a named sub-catego
   const menu = buildMenu(DOC_TYPES, new Set(SCREENS.flatMap((s) => (s.permission ? [s.permission] : []))));
   const unplaced = menu.filter((g) => g.group !== 'Overview').flatMap((g) => g.items.filter((i) => subOf(i) === 'More').map((i) => `${g.group}: ${i.path}`));
   expect(unplaced).toEqual([]);
+  // Every document list belongs to a group of its own module: none falls into Overview (Delivery Receipts once did).
+  expect(menu.find((g) => g.group === 'Overview')?.items.filter((i) => i.path.startsWith('/docs/')).map((i) => i.path) ?? []).toEqual([]);
   const sales = menu.find((g) => g.group === 'Sales')!;
   expect(sectionsOf('Sales', sales.items).map((s) => s.sub)).toEqual(['Customers & quotes', 'Job orders & release', 'Collections', 'Shop & POS', 'TPL services']);
   const placed = (path: string) => { const i = menu.flatMap((g) => g.items).find((x) => x.path === path); return i && subOf(i); };
+  expect(menu.find((g) => g.group === 'Sales')!.items.some((i) => i.path === '/docs/tpl.delivery')).toBe(true);
+  expect(placed('/docs/tpl.delivery')).toBe('TPL services');
   expect([placed('/docs/jo.release'), placed('/docs/col.cwt_only'), placed('/col/checks'), placed('/tax/sales'), placed('/tax/1702q'), placed('/acc/opening')])
     .toEqual(['Job orders & release', 'Collections', 'Cash & bank', 'Tax registers', 'Tax returns & payments', 'Setup']);
 });

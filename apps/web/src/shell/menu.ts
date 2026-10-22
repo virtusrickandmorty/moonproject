@@ -11,7 +11,7 @@ export type MenuGroup = (typeof MENU_GROUPS)[number];
 export interface MenuItem { group: MenuGroup; label: string; path: string; permission?: string; sub?: string }
 
 const MODULES: [MenuGroup, string][] = [
-  ['Sales', 'CUS CAT QUO JO COL QS COM SUP SHP'],
+  ['Sales', 'CUS CAT QUO JO COL QS COM SUP SHP TPL'],
   ['Production', 'PRD RATE SZR'],
   ['Purchases & Expenses', 'PUR AP EXP INV'],
   ['Money', 'CASH EQ LOAN FA'],
