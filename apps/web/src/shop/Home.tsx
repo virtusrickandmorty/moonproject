@@ -4,7 +4,7 @@
  * categories, stock, payment and delivery settings); nothing here is made up.
  */
 import { formatPeso } from '@moonproject/shared';
-import { SEASONS, Shower, type SeasonKey, type SeasonLook } from './seasons.tsx';
+import { Doodles, SEASONS, Shower, seedOf, type SeasonKey, type SeasonLook } from './seasons.tsx';
 import { useEffect, useState, type ReactNode } from 'react';
 import { navigate } from '../router.tsx';
 import { ProductPicture } from './GarmentArt.tsx';
@@ -23,7 +23,8 @@ export function ProductCard({ p, colourHex, online, view }: { p: Product; colour
   const first = colourHex ?? p.colours[0]!.hex;
   const second = p.colours.find((c) => c.hex !== first)?.hex;
   const left = piecesLeft(p);
-  const { average, count } = useShop().ratingOf(p.id);
+  const shop = useShop();
+  const { average, count } = shop.ratingOf(p.id);
   return (
     <article className="group flex h-full flex-col">
       <div className="relative aspect-[4/5] overflow-hidden rounded-3xl bg-gradient-to-b from-slate-100 to-slate-200/70">
@@ -34,6 +35,8 @@ export function ProductCard({ p, colourHex, online, view }: { p: Product; colour
           </span>
           {!p.photoUrl && second && <span className="absolute inset-0 grid place-items-center opacity-0 transition duration-500 group-hover:opacity-100"><ProductPicture product={p} colour={second} className="w-3/4" /></span>}
         </button>
+        {/* Over the picture too (a photo fills the card), never in the way: clicks go through. */}
+        {shop.season && <Doodles season={shop.season} seed={seedOf(p.id)} spots={['bl', 'mr']} size="size-12" />}
         <div className="pointer-events-none absolute left-3 top-3 flex flex-col gap-1.5">
           {!soldOut && percentOff(p) > 0 && <span className="rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">Sale −{percentOff(p)}%</span>}
           {soldOut ? <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">Sold out</span>
@@ -155,6 +158,7 @@ const ICON: Record<string, string> = {
 };
 /** What a buyer gets from this shop, from its own settings: QR payment, the delivery fees, made in-house, tracking. */
 export function TrustStrip({ online, payment }: { online: boolean; payment: OnlinePayment | null }) {
+  const { season } = useShop();
   const delivery = deliveryWords(payment?.deliveryOptions ?? []);
   const items: [string, string, string][] = [
     ['qr', online ? 'Pay Online' : 'Pay at the shop', online ? 'Pay first, we confirm by hand, then prepare it.' : 'Cash, bank or e-wallet at the counter.'],
@@ -164,7 +168,8 @@ export function TrustStrip({ online, payment }: { online: boolean; payment: Onli
   ];
   return (
     <section id="trust" className="mx-auto max-w-7xl scroll-mt-24 px-4 pt-6 sm:px-6" aria-label="Why buy from us">
-      <ul className="grid gap-3 rounded-[2rem] bg-white p-4 ring-1 ring-slate-900/5 sm:grid-cols-2 lg:grid-cols-4 lg:p-6">
+      <ul className="relative grid gap-3 overflow-hidden rounded-[2rem] bg-white p-4 ring-1 ring-slate-900/5 sm:grid-cols-2 lg:grid-cols-4 lg:p-6">
+        {season && <Doodles season={season} seed={3} spots={['tr', 'br']} size="size-10" />}
         {items.map(([icon, title, text]) => (
           <li key={title} className="flex gap-3 rounded-2xl p-2">
             <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-slate-900 text-white"><svg viewBox="0 0 24 24" className="size-5" aria-hidden="true"><path d={ICON[icon]} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg></span>
@@ -180,6 +185,7 @@ export function TrustStrip({ online, payment }: { online: boolean; payment: Onli
  * real discount). Each half shows only when it is true; with neither, no banner.
  */
 export function PromoBanner({ products, payment, showSale }: { products: readonly Product[]; payment: OnlinePayment | null; showSale: () => void }) {
+  const { season } = useShop();
   const delivery = deliveryWords(payment?.deliveryOptions ?? []);
   const free = delivery && payment!.deliveryOptions.some((d) => d.feeCents === 0) ? delivery : null;
   const onSale = products.filter((p) => percentOff(p) > 0 && !isSoldOut(p));
@@ -190,6 +196,7 @@ export function PromoBanner({ products, payment, showSale }: { products: readonl
       <div className={`grid gap-3 ${free && onSale.length ? 'md:grid-cols-2' : ''}`}>
         {free && (
           <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-r from-emerald-600 to-teal-500 p-6 text-white sm:p-8">
+            {season && <Doodles season={season} seed={11} spots={['mr', 'br']} size="size-14" light />}
             <svg viewBox="0 0 24 24" className="pointer-events-none absolute -right-4 -top-4 size-40 text-white/10" aria-hidden="true"><path d={ICON.truck} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/80">Free shipping</p>
             <p className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">{free.headline}</p>
@@ -199,6 +206,7 @@ export function PromoBanner({ products, payment, showSale }: { products: readonl
         {onSale.length > 0 && (
           <button type="button" onClick={showSale} className="group relative overflow-hidden rounded-[2rem] bg-gradient-to-r from-rose-600 to-orange-500 p-6 text-left text-white sm:p-8">
             <span className="pointer-events-none absolute -right-2 -top-6 text-[9rem] font-black leading-none text-white/10" aria-hidden="true">%</span>
+            {season && <Doodles season={season} seed={5} spots={['mr', 'br']} size="size-14" light />}
             <span className="block text-xs font-bold uppercase tracking-[0.2em] text-white/80">Sale</span>
             <span className="mt-2 block text-3xl font-extrabold tracking-tight sm:text-4xl">Up to {most}% off</span>
             <span className="mt-2 block text-white/85">{onSale.length} item{onSale.length === 1 ? '' : 's'} on sale, while stocks last. <b className="underline-offset-4 group-hover:underline">Shop the sale →</b></span>
@@ -211,6 +219,7 @@ export function PromoBanner({ products, payment, showSale }: { products: readonl
 
 /** Big tiles, one per category, with a garment from it and how many there are. */
 export function CategoryTiles({ products, categories, pick }: { products: readonly Product[]; categories: string[]; pick: (category: string) => void }) {
+  const { season } = useShop();
   if (categories.length < 2) return null;
   return (
     <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6">
@@ -221,6 +230,7 @@ export function CategoryTiles({ products, categories, pick }: { products: readon
           const p = inIt.find((x) => x.photoUrl) ?? inIt[0];
           return (
             <li key={c}><button type="button" onClick={() => pick(c)} className={`group relative flex aspect-[4/5] w-full flex-col overflow-hidden rounded-3xl bg-slate-100 p-4 text-left ring-1 ring-slate-900/5 transition hover:bg-slate-200/70`}>
+              {season && <Doodles season={season} seed={seedOf(c)} spots={['tr', 'ml']} size="size-12" />}
               <span className="relative z-10 text-lg font-extrabold leading-tight">{c}</span>
               <span className="relative z-10 text-sm text-slate-600">{inIt.length} item{inIt.length === 1 ? '' : 's'}</span>
               {p && <span className={`absolute grid place-items-center overflow-hidden transition duration-500 group-hover:scale-105 ${p.photoUrl ? 'inset-x-3 bottom-3 top-20 rounded-2xl' : 'inset-x-0 bottom-0 top-14'}`}><ProductPicture product={p} colour={p.colours[0]!.hex} className={p.photoUrl ? '' : 'w-3/4'} /></span>}

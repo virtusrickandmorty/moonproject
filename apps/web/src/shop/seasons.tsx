@@ -156,3 +156,79 @@ export function Shower({ kind }: { kind: NonNullable<SeasonLook['shower']> }) {
     </div>
   );
 }
+
+/**
+ * Doodles for the cards (the owner's request, Oct 2026): small hand-drawn line drawings of the season in a card's
+ * corners, in the season's colour, behind everything that can be clicked. Each card gets its own pick (by `seed`).
+ */
+const DOODLES: Record<SeasonKey, { colour: string; light: string; paths: string[] }> = {
+  halloween: {
+    colour: 'text-orange-500', light: 'text-orange-200',
+    paths: [
+      'M24 13c2-4 5-6 8-6M12 24c0-7 5-11 12-11s12 4 12 11-5 14-12 14-12-7-12-14ZM24 13c-4 4-4 21 0 25M24 13c4 4 4 21 0 25', // pumpkin
+      'M4 26c6-7 12-7 14 0 2-3 4-4 6-4s4 1 6 4c2-7 8-7 14 0-5-1-8 1-9 4-2-2-5-2-7 0-1-2-3-3-4-3s-3 1-4 3c-2-2-5-2-7 0-1-3-4-5-9-4Z', // bat
+      'M4 4l28 28M4 4l34 10M4 4l10 34M10 10q8-2 14 4M10 10q-2 8 4 14M18 18q8-1 13 4M18 18q-1 8 4 13', // spider web
+      'M16 24a8 8 0 1 0 16 0a8 8 0 1 0-16 0M16 24l-8-6v12ZM32 24l8-6v12Z', // candy
+      'M24 8c7 0 12 6 12 14v18l-4-3-4 3-4-3-4 3-4-3-4 3V22c0-8 5-14 12-14ZM20 20v2M28 20v2', // ghost
+    ],
+  },
+  christmas: {
+    colour: 'text-emerald-600', light: 'text-emerald-100',
+    paths: [
+      'M24 6v36M8 15l32 18M8 33l32-18M20 10l4 4 4-4M20 38l4-4 4 4', // snowflake
+      'M10 30c4-8 10-10 14-6-6 0-8 6-14 6ZM38 30c-4-8-10-10-14-6 6 0 8 6 14 6ZM21 20a3 3 0 1 0 6 0a3 3 0 1 0-6 0', // holly
+      'M24 6l5 12 13 1-10 8 3 13-11-7-11 7 3-13-10-8 13-1Z', // star
+      'M30 44V18a8 8 0 0 0-16 0v5M30 24l-6 4M30 31l-6 4M30 38l-6 4M17 11l5 5', // candy cane
+      'M24 6l10 16h-6l8 12h-8l6 8H14l6-8h-8l8-12h-6Z', // tree
+    ],
+  },
+  valentines: {
+    colour: 'text-rose-400', light: 'text-rose-100',
+    paths: [
+      'M24 40C8 28 6 16 14 12c5-2 9 1 10 5 1-4 5-7 10-5 8 4 6 16-10 28Z', // heart
+      'M16 30C6 22 5 14 10 11c3-1 6 1 6 3 1-2 4-4 7-3 5 2 4 10-7 19ZM34 38c-7-5-8-11-4-13 2-1 4 0 4 2 1-2 3-3 5-2 3 2 2 8-5 13Z', // two hearts
+      'M8 40L40 8M32 8h8v8M8 40l4-8M8 40l8-4M18 22c-4-3-4-7-1-8 2 0 3 1 3 2 0-1 2-2 3-1 2 2 0 5-5 7Z', // arrow and heart
+    ],
+  },
+  summer: {
+    colour: 'text-amber-500', light: 'text-amber-100',
+    paths: [
+      'M24 18a6 6 0 1 0 0 12a6 6 0 1 0 0-12M24 6v6M24 36v6M6 24h6M36 24h6M11 11l4 4M33 33l4 4M37 11l-4 4M15 33l-4 4', // sun
+      'M4 22q5-6 10 0t10 0 10 0 10 0M4 32q5-6 10 0t10 0 10 0 10 0', // waves
+      'M24 44V22M24 22c-6-6-14-4-16 0M24 22c6-6 14-4 16 0M24 22c-2-8-8-10-12-10M24 22c2-8 8-10 12-10', // palm
+      'M14 20a10 10 0 0 1 20 0ZM14 20l10 24 10-24M18 26l12 7M30 26l-12 7', // ice cream
+    ],
+  },
+  school: {
+    colour: 'text-sky-500', light: 'text-sky-100',
+    paths: [
+      'M10 38l4-12 20-20 8 8-20 20ZM14 26l8 8M30 10l8 8', // pencil
+      'M6 22L42 8 30 40 22 28ZM22 28L42 8', // paper plane
+      'M8 34L34 8l6 6-26 26ZM14 28l3 3M19 23l3 3M24 18l3 3M29 13l3 3', // ruler
+      'M24 6l5 12 13 1-10 8 3 13-11-7-11 7 3-13-10-8 13-1Z', // star
+      'M8 12h14a4 4 0 0 1 4 4v24a4 4 0 0 0-4-4H8ZM40 12H26a4 4 0 0 0-4 4v24a4 4 0 0 1 4-4h14Z', // open book
+    ],
+  },
+};
+const SPOT: Record<'tl' | 'tr' | 'bl' | 'br' | 'ml' | 'mr', string> = {
+  tl: 'left-3 top-3', tr: 'right-3 top-3', bl: 'bottom-3 left-3', br: 'bottom-3 right-3', ml: 'left-2 top-1/2 -translate-y-1/2', mr: 'right-2 top-1/2 -translate-y-1/2',
+};
+export type DoodleSpot = keyof typeof SPOT;
+
+export function Doodles({ season, seed, spots, size = 'size-10', light = false }: { season: SeasonKey; seed: number; spots: DoodleSpot[]; size?: string; light?: boolean }) {
+  const d = DOODLES[season];
+  return (
+    <>
+      {spots.map((spot, i) => (
+        <svg key={spot} viewBox="0 0 48 48" aria-hidden="true"
+          className={`pointer-events-none absolute ${SPOT[spot]} ${size} ${light ? d.light : d.colour} ${light ? 'opacity-50' : 'opacity-70'}`}
+          style={{ rotate: `${((seed + i * 7) % 5) * 9 - 18}deg` }}>
+          <path d={d.paths[(seed + i * 3) % d.paths.length]} fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      ))}
+    </>
+  );
+}
+
+/** A small number from a text, so the same card always gets the same doodles. */
+export const seedOf = (text: string) => [...text].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 9973, 7);
