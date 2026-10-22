@@ -1,4 +1,4 @@
-/** A job ticket prints once every made item has its production steps (the owner's rule, Oct 2026); it says which do not. */
+/** A job ticket prints once every item, a ready-made one too, has its production steps (the owner's rule, Oct 2026); it says which do not. */
 import { beforeEach, expect, it } from 'vitest';
 import { createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
@@ -12,7 +12,7 @@ beforeEach(async () => {
   c = seedCustomers(env.db, encoder.userId);
 });
 
-it('refuses the job ticket while a made item has no production steps, naming the items; prints once they all do', async () => {
+it('refuses the job ticket while an item has no production steps, a ready-made one too, naming them; prints once they all do', async () => {
   const lines = [
     { kind: 'made_to_order', description: 'Team shirt', qty: 2, unitPriceCents: 30_000, discountCents: 0, roster: [] },
     { kind: 'ready_made', description: 'Cap', qty: 1, unitPriceCents: 20_000, discountCents: 0, roster: [] },
@@ -26,12 +26,15 @@ it('refuses the job ticket while a made item has no production steps, naming the
 
   const refused = await ticket();
   expect(refused.statusCode).toBe(409);
-  expect(refused.json()).toMatchObject({ code: 'NEEDS_STEPS', details: { jobOrderId: jo.id, number: jo.number, lines: [{ lineNo: 1, description: 'Team shirt' }, { lineNo: 3, description: 'Team shorts' }] } });
+  expect(refused.json()).toMatchObject({ code: 'NEEDS_STEPS', details: { jobOrderId: jo.id, number: jo.number, lines: [{ lineNo: 1, description: 'Team shirt' }, { lineNo: 2, description: 'Cap' }, { lineNo: 3, description: 'Team shorts' }] } });
   // The job order itself still prints (the test shop has no company profile, so printing stops there instead).
   expect((await encoder.post(`/api/prt/print/jo.job_order/${jo.id}`, { variant: 'document' })).json().code).toBe('COMPANY_PROFILE_REQUIRED');
 
   expect((await setup(1)).statusCode).toBe(200);
-  expect((await ticket()).json().details.lines).toEqual([{ lineNo: 3, description: 'Team shorts' }]);
+  expect((await ticket()).json().details.lines).toEqual([{ lineNo: 2, description: 'Cap' }, { lineNo: 3, description: 'Team shorts' }]);
   expect((await setup(3)).statusCode).toBe(200);
-  expect((await ticket()).json().code).toBe('COMPANY_PROFILE_REQUIRED'); // past the steps check: the cap needs none
+  // The ready-made cap, as the production board shows it: a name embroidered, or only packing.
+  expect((await ticket()).json().details.lines).toEqual([{ lineNo: 2, description: 'Cap' }]);
+  expect((await setup(2)).statusCode).toBe(200);
+  expect((await ticket()).json().code).toBe('COMPANY_PROFILE_REQUIRED'); // past the steps check
 });
