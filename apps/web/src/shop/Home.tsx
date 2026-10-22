@@ -4,7 +4,7 @@
  * categories, stock, payment and delivery settings); nothing here is made up.
  */
 import { formatPeso } from '@moonproject/shared';
-import { Doodles, SEASONS, Shower, seedOf, type SeasonKey, type SeasonLook } from './seasons.tsx';
+import { Doodles, SEASONS, Shower, seedOf, type DoodleSpot, type SeasonKey, type SeasonLook } from './seasons.tsx';
 import { useEffect, useState, type ReactNode } from 'react';
 import { navigate } from '../router.tsx';
 import { ProductPicture } from './GarmentArt.tsx';
@@ -242,13 +242,24 @@ export function CategoryTiles({ products, categories, pick }: { products: readon
   );
 }
 
+/** The season's doodles on a card of any tab (the owner's request, Oct 2026), only while a season shows. */
+export function SeasonDoodles(p: { seed: number; spots: DoodleSpot[]; size?: string; light?: boolean }) {
+  const { season } = useShop();
+  return season ? <Doodles season={season} {...p} /> : null;
+}
+
 /** The banner at the top of the website's other pages (services, about us, support, tracking), in the shop hero's style. */
 export function PageHero({ eyebrow, title, text, children, side }: { eyebrow: string; title: ReactNode; text: ReactNode; children?: ReactNode; side?: ReactNode }) {
+  const { season } = useShop();
+  const shower = season ? SEASONS[season].shower : undefined;
   return (
     <section className="w-full">
       <div className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white">
         <div className="pointer-events-none absolute -right-24 -top-24 size-96 rounded-full bg-white/5 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-32 left-1/3 size-96 rounded-full bg-indigo-500/20 blur-3xl" />
+        {/* The season, as on the shop's banner: bats, snow or hearts drifting, and doodles in the corners. */}
+        {shower && <Shower kind={shower} />}
+        {season && <Doodles season={season} seed={7} spots={['tr', 'br']} size="size-16" light />}
         <div className={`hero-slide relative mx-auto grid max-w-7xl items-center gap-8 px-4 py-12 sm:px-6 md:py-16 ${side ? 'md:grid-cols-[1.15fr_1fr]' : ''}`}>
           <div>
             <p className="inline-flex rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-white/80 ring-1 ring-white/15">{eyebrow}</p>

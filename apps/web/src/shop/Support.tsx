@@ -8,7 +8,7 @@ import { cartText } from './Panels.tsx';
 import { SCHOOL_TPL, SERVICES } from './Services.tsx';
 import { SHOP_CONTACT } from './products.ts';
 import { useShop } from './store.tsx';
-import { PageHero } from './Home.tsx';
+import { PageHero, SeasonDoodles } from './Home.tsx';
 
 type Kind = 'inquiry' | 'complaint' | 'suggestion' | 'quotation';
 const KINDS: { kind: Kind; label: string; hint: string; subject: string }[] = [
@@ -134,7 +134,8 @@ export function Support({ query }: { query: string }) {
       </PageHero>
 
       <section className="mx-auto grid max-w-7xl gap-6 px-4 pb-6 pt-10 sm:px-6 lg:grid-cols-[1fr_22rem]">
-        <form id="message" onSubmit={submit} className="scroll-mt-24 rounded-[2rem] bg-white p-5 ring-1 ring-slate-900/5 sm:p-8" noValidate>
+        <form id="message" onSubmit={submit} className="relative scroll-mt-24 overflow-hidden rounded-[2rem] bg-white p-5 ring-1 ring-slate-900/5 sm:p-8" noValidate>
+          <SeasonDoodles seed={17} spots={['tr']} size="size-12" />
           <fieldset>
             <legend className="text-sm font-bold">What is this about?</legend>
             <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -185,7 +186,8 @@ export function Support({ query }: { query: string }) {
         </form>
 
         <aside className="space-y-5">
-          <div className="rounded-[2rem] bg-slate-900 p-6 text-white">
+          <div className="relative overflow-hidden rounded-[2rem] bg-slate-900 p-6 text-white">
+            <SeasonDoodles seed={2} spots={['tr']} light />
             <p className="font-extrabold">Prefer to talk?</p>
             <dl className="mt-4 space-y-3 text-sm">
               <div><dt className="text-white/60">Call or text</dt><dd className="font-semibold"><a href={`tel:${SHOP_CONTACT.phone.replace(/\s/g, '')}`} className="hover:underline">{SHOP_CONTACT.phone}</a></dd></div>
@@ -193,7 +195,8 @@ export function Support({ query }: { query: string }) {
               <div><dt className="text-white/60">Hours</dt><dd className="font-semibold">{SHOP_CONTACT.hours}</dd></div>
             </dl>
           </div>
-          <div className="rounded-[2rem] bg-white p-6 ring-1 ring-slate-900/5">
+          <div className="relative overflow-hidden rounded-[2rem] bg-white p-6 ring-1 ring-slate-900/5">
+            <SeasonDoodles seed={6} spots={['tr']} />
             <p className="font-extrabold">Common questions</p>
             <div className="mt-2 divide-y divide-slate-100">
               {[['How does ordering work?', 'Send a quotation request. We reply with the price, a design proof and a delivery date. Production starts once you approve and pay the downpayment.'],
