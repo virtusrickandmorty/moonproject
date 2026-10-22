@@ -4,6 +4,7 @@
  * or business data. Lines for a product, size or colour the shop no longer shows are left out.
  */
 import { createContext, useContext, useEffect, useMemo, useReducer, useState, type ReactNode } from 'react';
+import { track } from './insights.ts';
 import { SEASONS, type SeasonKey } from './seasons.tsx';
 import { SAMPLE_PRODUCTS, type Product } from './products.ts';
 
@@ -132,11 +133,11 @@ export function ShopProvider({ children }: { children: ReactNode }) {
     return {
       cart, wishlist: state.wishlist.filter((id) => byId.has(id)), products, samples, ready, productById: (id) => byId.get(id), payment, season,
       orderable: (l) => !samples && !!payment && !!byId.get(l.productId)?.stock,
-      add: (lines) => dispatch({ type: 'add', lines }),
+      add: (lines) => { for (const l of lines) track({ kind: 'cart', productId: l.productId }); dispatch({ type: 'add', lines }); },
       setQty: (line, qty) => dispatch({ type: 'setQty', line, qty }),
       remove: (line) => dispatch({ type: 'remove', line }),
       clearCart: () => dispatch({ type: 'clearCart' }),
-      toggleWish: (productId) => dispatch({ type: 'toggleWish', productId }),
+      toggleWish: (productId) => { if (!state.wishlist.includes(productId)) track({ kind: 'wish', productId }); dispatch({ type: 'toggleWish', productId }); },
       cartCount: cart.reduce((n, l) => n + l.qty, 0),
       cartTotalCents: cart.reduce((n, l) => n + l.qty * byId.get(l.productId)!.priceCents, 0),
       reviews, reloadReviews,

@@ -3,6 +3,7 @@
  * the staff inbox (POST /api/sup/messages, no sign-in). Pictures are shrunk here first so a phone photo fits the limit.
  */
 import { formatPeso } from '@moonproject/shared';
+import { track } from './insights.ts';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { cartText } from './Panels.tsx';
 import { SCHOOL_TPL, SERVICES } from './Services.tsx';
@@ -105,6 +106,7 @@ export function Support({ query }: { query: string }) {
       const data = await res.json().catch(() => null) as { number?: string; message?: string; pictureWarning?: string } | null;
       if (!res.ok) throw new Error(data?.message ?? 'Your message could not be sent. Please try again or call us.');
       setPictureWarning(data?.pictureWarning ?? '');
+      if (kind === 'quotation') track({ kind: 'quote' });
       setSent(data!.number!);
       window.scrollTo(0, 0);
     } catch (err) {
