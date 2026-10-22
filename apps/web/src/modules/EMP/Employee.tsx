@@ -13,6 +13,7 @@ import { EmployeeLoans } from '../PAY/Loans.tsx';
 import { EmployeePriorPay } from '../PAY/Prior.tsx';
 import { Crumb } from '../../shell/crumbs.tsx';
 import { useLiveReload } from '../../live.ts';
+import { fitPicture } from '../../components/pictures.ts';
 
 const PAY_TYPE = { daily: 'Daily', piece: 'Per piece (pakyawan)', monthly: 'Monthly', mixed: 'Daily and per piece' } as const;
 const PAY_GROUP = { WEEKLY_PIECE: 'Weekly (piece rate)', WEEKLY_DAILY: 'Weekly (daily paid)', SEMI_DAILY: 'Semi-monthly (daily paid)', SEMI_MONTHLY: 'Semi-monthly (monthly staff)' } as const;
@@ -186,10 +187,11 @@ function PayoutQrPanel({ e, qr, editable, onSaved }: { e: EmployeeRecord; qr: Pa
   const [open, setOpen] = useState(false);
   const src = qr && api.payoutQrUrl(e.id, qr.version);
   const alt = `${e.fullName}'s ${e.payoutMethod === 'cash' ? 'bank or GCash' : PAID_BY[e.payoutMethod]} QR code`;
-  const upload = async (f: File) => {
+  const upload = async (picked: File) => {
+    let f = picked;
     setDone('');
+    f = await fitPicture(f, QR_MAX_BYTES); // a phone photo of the QR, made lighter
     if (!QR_TYPES.includes(f.type)) throw new Error('Choose a JPEG, PNG or WebP picture of the QR code.');
-    if (f.size > QR_MAX_BYTES) throw new Error('That picture is bigger than 4 MB. Choose a smaller one, or a screenshot of the QR.');
     await api.savePayoutQr(e.id, { name: f.name, data: await asBase64(f) });
     setDone(qr ? 'The new QR code is saved.' : 'The QR code is saved.');
     await onSaved();

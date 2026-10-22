@@ -11,12 +11,13 @@ import { Loading, Button, Dialog, Field, Notice, inputClass, manilaTime, peso, u
 import { Link } from '../../router.tsx';
 import { ProductPicture } from '../../shop/GarmentArt.tsx';
 import { SAMPLE_PRODUCTS, SIZES, type Product, type Shape } from '../../shop/products.ts';
-import { MAX_PICKED_BYTES, lighterPhoto } from './photo.ts';
+import { lighterPhoto } from './photo.ts';
 import { masterRequest } from '../CUS/http.ts';
 import { ShopEvents, type ShopEvent } from './ShopEvents.tsx';
 import { ShopWork } from './ShopWork.tsx';
 import { Visitors } from './Visitors.tsx';
 import { useLiveReload } from '../../live.ts';
+import { fitPicture } from '../../components/pictures.ts';
 
 export interface StockLine { size: string; colour: string; onHand: number; held: number; available: number }
 interface Row extends Product { categoryId: string | null; sortOrder: number; isActive: boolean; version: number; updatedAt: string; stock: StockLine[] | null }
@@ -450,9 +451,9 @@ function Payment({ me }: { me: Me }) {
     if (s) setAreas(s.deliveryOptions.map((d) => ({ name: d.name, fee: formatPesos(d.feeCents), places: d.places.join(', '), otherwise: d.otherwise })));
   };
   useEffect(() => { void run(async () => { fill(await masterRequest<Settings | null>(me, '/api/shp/admin/payment')); setPlaces(await api.cashPlaces()); }); }, [me]); // eslint-disable-line react-hooks/exhaustive-deps
-  const pick = (file: File) => run(async () => {
+  const pick = (picked: File) => run(async () => {
+    const file = await fitPicture(picked, 4 * 1024 * 1024); // a phone photo of the QR, made lighter
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Use a JPEG, PNG or WebP picture of the QR code.');
-    if (file.size > 4 * 1024 * 1024) throw new Error('The picture is bigger than 4 MB.');
     const data = await new Promise<string>((ok, fail) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] ?? ''); r.onerror = () => fail(new Error('Could not read the picture.')); r.readAsDataURL(file); });
     setQr({ name: file.name, data, url: URL.createObjectURL(file) });
   });
@@ -564,11 +565,10 @@ function ProductDialog({ me, product, categories, onClose, onSaved }: { me: Me; 
   const addPhotos = (picked: File[]) => run(async () => {
     const room = MAX_PHOTOS - photos.length;
     if (picked.some((f) => !PHOTO_TYPES.includes(f.type))) throw new Error('Only pictures can be added: JPEG, PNG or WebP.');
-    if (picked.some((f) => f.size > MAX_PICKED_BYTES)) throw new Error('A photo is bigger than 25 MB. Use a smaller one.');
     if (picked.length > room) throw new Error(`A product has up to ${MAX_PHOTOS} photos: ${room === 0 ? 'take one off first' : `${room} more can be added`}.`);
     // Made lighter first (the owner's request, Oct 2026): at most 1600 pixels on the long side, WebP at high quality.
-    const files = await Promise.all(picked.map(lighterPhoto));
-    if (files.some((f) => f.size > 4 * 1024 * 1024)) throw new Error('A photo is still bigger than 4 MB after making it lighter. Use a smaller one.');
+    // A browser that cannot write WebP keeps the photo as it was: made lighter as JPEG then, to fit the 4 MB the server takes.
+    const files = await Promise.all(picked.map(async (f) => fitPicture(await lighterPhoto(f), 4 * 1024 * 1024)));
     if (!current) return setPending((p) => [...p, ...files.map((file) => ({ file, url: URL.createObjectURL(file) }))]);
     let row = current;
     for (const f of files) row = await sendPhoto(current.id, f, (row.photoUrls?.length ?? 0) + 1);

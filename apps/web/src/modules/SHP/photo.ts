@@ -3,16 +3,13 @@
  * long side, which is sharp on the product page even on a phone's fine screen, and saved as WebP at high quality, so a
  * 5 MB phone photo comes out a few hundred KB with no detail lost to the eye. A photo already smaller stays as it is.
  */
+import { fitEdge } from '../../components/pictures.ts';
+
 export const PHOTO_EDGE = 1600;
 export const PHOTO_QUALITY = 0.86;
-/** The most a picked photo may be before it is made lighter (what goes up is still at most 4 MB). */
-export const MAX_PICKED_BYTES = 25 * 1024 * 1024;
 
 /** The size that fits within `edge` on the long side, keeping the shape; never larger than it was. */
-export function fitWithin(width: number, height: number, edge = PHOTO_EDGE): { width: number; height: number } {
-  const scale = Math.min(1, edge / Math.max(width, height));
-  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
-}
+export const fitWithin = (width: number, height: number, edge = PHOTO_EDGE) => fitEdge(width, height, edge);
 
 /** The photo made lighter, or the one picked when that is already smaller (or the browser cannot draw it). */
 export async function lighterPhoto(file: File): Promise<File> {
