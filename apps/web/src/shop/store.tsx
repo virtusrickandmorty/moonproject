@@ -75,18 +75,34 @@ function useReviews(): { reviews: Review[]; reload: () => void } {
   return { reviews, reload: () => setN((x) => x + 1) };
 }
 
-/** The shop's own products, or the samples when it has none yet or cannot be reached. */
+/** How often the website asks again for its stock and prices while a visitor has it open (the owner's request, Oct 2026). */
+export const REFRESH_MS = 3 * 60_000;
+
+/**
+ * The shop's own products, or the samples when it has none yet or cannot be reached. Asked again every few minutes
+ * while the page is on screen, and when the visitor comes back to it, so a piece that sold out shows as sold out
+ * without reloading (the order is checked against the stock again anyway). A refresh that fails keeps what is shown.
+ */
 function useProducts(): { products: readonly Product[]; samples: boolean; ready: boolean; payment: OnlinePayment | null } {
   const [got, setGot] = useState<{ products: readonly Product[]; samples: boolean } | null>(null);
   const [payment, setPayment] = useState<OnlinePayment | null>(null);
   useEffect(() => {
     let live = true;
-    fetch('/api/shp/payment', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)).then((p) => live && setPayment(p), () => undefined);
-    fetch('/api/shp/products', { credentials: 'same-origin' })
-      .then((r) => (r.ok ? (r.json() as Promise<Product[]>) : Promise.reject(new Error(String(r.status)))))
-      .then((list) => live && setGot(list.length ? { products: list, samples: false } : { products: SAMPLE_PRODUCTS, samples: true }))
-      .catch(() => live && setGot({ products: SAMPLE_PRODUCTS, samples: true }));
-    return () => { live = false; };
+    let last = 0;
+    const load = (first: boolean) => {
+      last = Date.now();
+      fetch('/api/shp/payment', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)).then((p) => live && setPayment(p), () => undefined);
+      fetch('/api/shp/products', { credentials: 'same-origin' })
+        .then((r) => (r.ok ? (r.json() as Promise<Product[]>) : Promise.reject(new Error(String(r.status)))))
+        .then((list) => live && setGot(list.length ? { products: list, samples: false } : { products: SAMPLE_PRODUCTS, samples: true }))
+        .catch(() => { if (live && first) setGot({ products: SAMPLE_PRODUCTS, samples: true }); });
+    };
+    load(true);
+    const visible = () => typeof document === 'undefined' || document.visibilityState === 'visible';
+    const timer = setInterval(() => { if (visible()) load(false); }, REFRESH_MS);
+    const back = () => { if (visible() && Date.now() - last > 60_000) load(false); };
+    document.addEventListener('visibilitychange', back);
+    return () => { live = false; clearInterval(timer); document.removeEventListener('visibilitychange', back); };
   }, []);
   return got ? { ...got, ready: true, payment } : { products: [], samples: false, ready: false, payment };
 }

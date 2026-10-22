@@ -34,13 +34,17 @@ export function Visitors() {
   const [days, setDays] = useState(30);
   const [data, setData] = useState<Insights | null>(null);
   const [error, setError] = useState('');
+  const [checked, setChecked] = useState<Date | null>(null);
+  // Asked again every minute while the tab is open (the owner's request, Oct 2026: to watch it during a promotion).
   useEffect(() => {
     let live = true;
     setData(null); setError('');
-    fetch(`/api/shp/insights?days=${days}`, { credentials: 'same-origin' })
+    const load = (first: boolean) => fetch(`/api/shp/insights?days=${days}`, { credentials: 'same-origin' })
       .then((r) => (r.ok ? r.json() as Promise<Insights> : Promise.reject(new Error('The visitor counts could not be loaded.'))))
-      .then((d) => live && setData(d), (e: Error) => live && setError(e.message));
-    return () => { live = false; };
+      .then((d) => { if (live) { setData(d); setChecked(new Date()); } }, (e: Error) => { if (live && first) setError(e.message); });
+    void load(true);
+    const timer = setInterval(() => { if (document.visibilityState === 'visible') void load(false); }, 60_000);
+    return () => { live = false; clearInterval(timer); };
   }, [days]);
   if (error) return <Notice>{error}</Notice>;
   if (!data) return <Loading />;
@@ -66,7 +70,8 @@ export function Visitors() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-600">Anonymous counts from the website ({dayLabel(data.from)} to {dayLabel(data.to)}): no names are kept, and visitors who chose "Don't count me" are not counted. Staff are never counted.</p>
+        <p className="text-sm text-slate-600">Anonymous counts from the website ({dayLabel(data.from)} to {dayLabel(data.to)}): no names are kept, and visitors who chose "Don't count me" are not counted. Staff are never counted.
+          {checked && <span className="text-slate-500"> Updated {checked.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' })}; it updates every minute.</span>}</p>
         <div className="flex gap-1 rounded-lg bg-slate-100 p-1" role="group" aria-label="Period">
           {[7, 30, 90].map((d) => <button key={d} type="button" aria-pressed={days === d} onClick={() => setDays(d)}
             className={`rounded-md px-3 py-1 text-sm font-medium ${days === d ? 'bg-white text-indigo-700 shadow-sm ring-1 ring-slate-200' : 'text-slate-600'}`}>Last {d} days</button>)}
