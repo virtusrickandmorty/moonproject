@@ -8,6 +8,8 @@ import type { Db } from '../../platform/db/driver.ts';
 import { attachmentsDir, readStored } from '../../engine/attachments.ts';
 import { jobTicketRoute, lineIsSet } from '../PRD/public.ts';
 import { purchaseOrderNames } from '../PUR/public.ts';
+import { jobOrderPayments } from '../COL/public.ts';
+import { joMoney } from '../JO/public.ts';
 
 export type PrintKind = 'document' | 'job_ticket' | 'thermal';
 export interface Profile {
@@ -106,6 +108,30 @@ export function attachedPictures(db: Db, documentId: string, number = '', max = 
   return { pages: pages.join(''), count: pages.length };
 }
 
+/**
+ * What the customer paid on a job order (the owner's request, Oct 2026), as the books stand when it is printed: each
+ * payment (date, receipt number, CR, how it was paid, amount) and, in the totals, what was paid and the balance due.
+ * Credits and money from before the system (an opening job order) show as their own line, so the figures add up.
+ */
+function jobOrderPaid(db: Db, id: string, status: string): { section: string; totals: [string, string, boolean?][] } {
+  if (status !== 'posted') return { section: '', totals: [] };
+  let money_: ReturnType<typeof joMoney>;
+  try { money_ = joMoney(db, id); } catch { return { section: '', totals: [] }; }
+  const paid = jobOrderPayments(db, id);
+  const paidCents = paid.reduce((n, p) => n + p.amountCents, 0);
+  const other = money_.collectedCents - paidCents;
+  const section_ = paid.length ? section('Payments received', lineTable(['Date', 'Receipt', 'CR no.', 'Paid via', 'Amount'],
+    paid.map((p) => [p.date, p.number, p.crNumber, p.paidVia, money(p.amountCents)]))) : '';
+  return {
+    section: section_,
+    totals: [
+      ...(paid.length ? [['Payments received', `−${money(paidCents)}`] as [string, string]] : []),
+      ...(other !== 0 ? [[other > 0 ? 'Other credits and earlier payments' : 'Refunds and other adjustments', other > 0 ? `−${money(other)}` : money(-other)] as [string, string]] : []),
+      ['Balance due', money(money_.balanceDueCents), true],
+    ],
+  };
+}
+
 function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: string): Content {
   const prepared = h.prepared_by ?? '';
   if (h.doc_type === 'quo.quotation') {
@@ -137,6 +163,7 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
           `<h3>Route checklist</h3><ul>${jobTicketRoute(db, h.id, l.lineNo).map((s) => `<li>☐ ${escape(s.name)} — ${escape(s.status)}</li>`).join('')}</ul></section>`).join('') +
         field('Notes', doc.notes),
     };
+    const payments = jobOrderPaid(db, h.id, h.status);
     return {
       title: 'Job Order', subtitle: 'Customer copy', legend: true, twoUp: false,
       // Its QR in the middle of the header (the owner's request, Oct 2026): scanned at the shop, it opens this job order.
@@ -144,8 +171,8 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
       party: { label: 'Bill to', name: doc.customerName },
       status: [['Due date', doc.dueDate], ['Payment terms', doc.paymentTerms]],
       body: section('Items', lineTable(['Description', 'Qty', 'Unit price', 'Discount', 'Amount'], doc.lines.map((l: any) => [l.description, l.qty, money(l.unitPriceCents), money(l.discountCents), money(l.lineTotalCents)]))) +
-        field('Notes', doc.notes),
-      totals: [['Required downpayment', money(doc.requiredDownpaymentCents)], ['Total', money(doc.totalCents), true]],
+        payments.section + field('Notes', doc.notes),
+      totals: [['Required downpayment', money(doc.requiredDownpaymentCents)], ['Total', money(doc.totalCents), true], ...payments.totals],
       signatures: [['Prepared by', prepared], ['Conforme (customer)']],
     };
   }

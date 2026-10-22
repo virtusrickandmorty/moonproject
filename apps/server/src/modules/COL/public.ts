@@ -2,6 +2,7 @@
 import type { Db } from '../../platform/db/driver.ts';
 import { listPdcs } from './pdc.ts';
 import { checksOnHand } from './checks.ts';
+import { loadTenders } from './ledger.ts';
 
 export { collectionDoc, collectionInput, type CollectionInput } from './doctypes/collection.ts';
 export { creditsOn, invoiceCreditsAt } from './credits.ts';
@@ -9,6 +10,17 @@ export {
   MODE_WORDS, depositModeOn, depositVatRowsOf, dpAppliedByInvoice, dpHeld, dpTakenBy, invoiceDeposits, lockedMode, modeKeptIssue, recordDepositVat,
   registerBaseOf, registerBaseSources, settleJobOrder, shareOf, vatRow, depositVatLines, type DepositMode, type DepositVatRow,
 } from './doctypes/deposit-vat.ts';
+
+/**
+ * The payments a job order received (the owner's request, Oct 2026: on its printout): each recorded collection that paid
+ * it, oldest first, with its CR number, the part of it that went to this job order and where the money went.
+ */
+export function jobOrderPayments(db: Db, jobOrderId: string): { date: string; number: string; crNumber: string; amountCents: number; paidVia: string }[] {
+  const rows = db.prepare(`SELECT d.id, d.business_date AS date, d.number, c.cr_number AS crNumber, a.amount_cents AS amountCents
+    FROM col_applications a JOIN documents d ON d.id = a.document_id JOIN col_collections c ON c.document_id = a.document_id
+    WHERE a.job_order_id = ? AND d.status = 'posted' ORDER BY d.business_date, d.number`).all(jobOrderId) as { id: string; date: string; number: string; crNumber: string; amountCents: number }[];
+  return rows.map(({ id, ...r }) => ({ ...r, paidVia: [...new Set(loadTenders(db, 'col_tenders', id).map((t) => t.cashPlaceName))].join(', ') }));
+}
 
 export interface SalePayment { id: string; number: string; status: 'posted' | 'cancelled'; crNumber: string; totalCents: number; paysOnlyThis: boolean }
 
