@@ -9,6 +9,7 @@ import { shpTrackRoutes } from './track.ts';
 import { shpReviewRoutes } from './reviews.ts';
 import { shpSeoRoutes } from './seo.ts';
 import { shpSeasonRoutes } from './seasons.ts';
+import { shpSeasonEventRoutes } from './season-events.ts';
 import { shpInsightRoutes } from './insights.ts';
 import { onForStockCheck, onJobOrderEdited, onStockPlace } from '../JO/public.ts';
 import { carryWorkOver, shpWorkRoutes, workOf } from './work-routes.ts';
@@ -49,6 +50,7 @@ export default defineModule({
     shpSeoRoutes(app, deps);
     shpWorkRoutes(app, deps);
     shpSeasonRoutes(app, deps);
+    shpSeasonEventRoutes(app, deps);
     shpInsightRoutes(app, deps);
   },
 });
