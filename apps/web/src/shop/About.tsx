@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { Link } from '../router.tsx';
 import { GarmentArt } from './GarmentArt.tsx';
 import { WorkshopFlow } from './Workshop.tsx';
-import { PageHero, SectionHead } from './Home.tsx';
+import { PageHero, SeasonDoodles, SectionHead } from './Home.tsx';
+import { seedOf } from './seasons.tsx';
 import { SHOP_CONTACT } from './products.ts';
 import { ReviewCard, Stars } from './Stars.tsx';
 import { useShop } from './store.tsx';
@@ -52,7 +53,8 @@ export function About() {
       </PageHero>
 
       <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6">
-        <div className="grid gap-10 rounded-[2rem] bg-white p-6 ring-1 ring-slate-900/5 sm:p-10 md:grid-cols-[1fr_1.4fr]">
+        <div className="relative grid gap-10 overflow-hidden rounded-[2rem] bg-white p-6 ring-1 ring-slate-900/5 sm:p-10 md:grid-cols-[1fr_1.4fr]">
+          <SeasonDoodles seed={13} spots={['br']} size="size-12" />
           <div>
             <SectionHead eyebrow="Our story" title="Made by hand, close to home" />
             <p className="mt-3 text-sm font-semibold text-slate-500">Making garments since {ABOUT.founded}</p>
@@ -65,7 +67,8 @@ export function About() {
         <SectionHead eyebrow="Our values" title="What we stand for" />
         <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {VALUES.map(([title, detail], i) => (
-            <div key={title} className="rounded-3xl bg-white p-6 ring-1 ring-slate-900/5 transition hover:-translate-y-0.5 hover:shadow-xl">
+            <div key={title} className="relative overflow-hidden rounded-3xl bg-white p-6 ring-1 ring-slate-900/5 transition hover:-translate-y-0.5 hover:shadow-xl">
+              <SeasonDoodles seed={seedOf(title)} spots={['tr']} />
               <span className="grid size-10 place-items-center rounded-2xl bg-slate-900 text-sm font-extrabold text-white">0{i + 1}</span>
               <p className="mt-3 text-lg font-bold">{title}</p><p className="mt-2 text-slate-600">{detail}</p>
             </div>))}
@@ -73,7 +76,8 @@ export function About() {
       </section>
 
       <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6">
-        <div className="rounded-[2rem] bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 p-6 text-white sm:p-10">
+        <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 p-6 text-white sm:p-10">
+          <SeasonDoodles seed={9} spots={['tr']} size="size-14" light />
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-300">The workshop</p>
           <h2 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">Inside our workshop</h2>
           <p className="mt-3 max-w-2xl text-white/70">Every job order follows the same route through the shop, and each step is tracked so we always know where your order is.</p>
@@ -84,7 +88,7 @@ export function About() {
       <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6">
         <SectionHead eyebrow="Our customers" title="Who we make for" />
         <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          {WHO.map(([title, detail]) => <div key={title} className="rounded-3xl bg-white p-6 ring-1 ring-slate-900/5"><p className="text-lg font-bold">{title}</p><p className="mt-2 text-slate-600">{detail}</p></div>)}
+          {WHO.map(([title, detail]) => <div key={title} className="relative overflow-hidden rounded-3xl bg-white p-6 ring-1 ring-slate-900/5"><SeasonDoodles seed={seedOf(title)} spots={['br']} /><p className="text-lg font-bold">{title}</p><p className="mt-2 text-slate-600">{detail}</p></div>)}
         </div>
       </section>
 

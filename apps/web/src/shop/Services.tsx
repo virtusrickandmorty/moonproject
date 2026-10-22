@@ -1,6 +1,7 @@
 /** The services page: what the shop makes and decorates, and how an order goes. Each service leads to a quotation request. */
 import { Link } from '../router.tsx';
-import { PageHero, SectionHead } from './Home.tsx';
+import { PageHero, SeasonDoodles, SectionHead } from './Home.tsx';
+import { seedOf } from './seasons.tsx';
 
 interface Service { id: string; name: string; tagline: string; detail: string; bestFor: string[]; send: string; lead: string; min: string; icon: string; tone: string }
 
@@ -85,7 +86,8 @@ export function Services() {
       <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6"><SectionHead eyebrow="What we do" title="Pick a service" /></section>
       <section className="mx-auto grid max-w-7xl gap-5 px-4 pb-6 pt-6 sm:px-6 md:grid-cols-2">
         {SERVICES.map((s) => (
-          <article key={s.id} id={s.id} className="group flex scroll-mt-24 flex-col rounded-3xl bg-white p-6 ring-1 ring-slate-900/5 transition hover:-translate-y-0.5 hover:shadow-xl sm:p-7">
+          <article key={s.id} id={s.id} className="group relative flex scroll-mt-24 flex-col overflow-hidden rounded-3xl bg-white p-6 ring-1 ring-slate-900/5 transition hover:-translate-y-0.5 hover:shadow-xl sm:p-7">
+            <SeasonDoodles seed={seedOf(s.id)} spots={['tr']} size="size-12" />
             <div className="flex items-start gap-4">
               <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-slate-900 text-white transition group-hover:bg-indigo-600">
                 <svg viewBox="0 0 24 24" className="size-6" aria-hidden="true"><path d={ICONS[s.icon]} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -105,7 +107,8 @@ export function Services() {
       </section>
 
       <section className="mx-auto max-w-7xl px-4 pt-10 sm:px-6">
-        <div className="rounded-[2rem] bg-white p-6 ring-1 ring-slate-900/5 sm:p-10">
+        <div className="relative overflow-hidden rounded-[2rem] bg-white p-6 ring-1 ring-slate-900/5 sm:p-10">
+          <SeasonDoodles seed={21} spots={['tr']} size="size-12" />
           <SectionHead eyebrow="Step by step" title="How an order works" />
           <ol className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
             {STEPS.map(([title, detail], i) => (
@@ -128,6 +131,7 @@ function SchoolTpl() {
     <section id={t.id} className="mx-auto max-w-7xl scroll-mt-24 px-4 pt-10 sm:px-6" aria-label={t.name}>
       <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-amber-300 via-amber-200 to-orange-200 p-6 ring-1 ring-amber-400/40 sm:p-10">
         <span className="pointer-events-none absolute -right-6 -top-10 text-[12rem] font-black leading-none text-white/30" aria-hidden="true">★</span>
+        <SeasonDoodles seed={4} spots={['bl']} size="size-12" />
         <div className="relative grid gap-8 lg:grid-cols-[1fr_1.1fr]">
           <div>
             <p className="inline-flex rounded-full bg-slate-900 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-amber-300">Featured · for schools</p>

@@ -3,7 +3,7 @@
  * number (POST /api/shp/track): the status, items and dates only. The link /track?n=JO-000123 fills in the number.
  */
 import { useState, type FormEvent } from 'react';
-import { PageHero } from './Home.tsx';
+import { PageHero, SeasonDoodles } from './Home.tsx';
 import { SHOP_CONTACT } from './products.ts';
 
 interface Tracked {
@@ -52,7 +52,8 @@ export function Track({ query }: { query: string }) {
       {error && <p role="alert" className="mt-5 rounded-2xl bg-rose-50 px-5 py-4 text-sm font-semibold text-rose-800">{error}</p>}
 
       {found && flow && (
-        <div className="mt-8 space-y-5 rounded-[2rem] bg-white p-6 ring-1 ring-slate-900/5 sm:p-8" aria-live="polite">
+        <div className="relative mt-8 space-y-5 overflow-hidden rounded-[2rem] bg-white p-6 ring-1 ring-slate-900/5 sm:p-8" aria-live="polite">
+          <SeasonDoodles seed={19} spots={['tr']} size="size-12" />
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-sm text-slate-500">{found.kind === 'online' ? 'Online order' : 'Job order'} {found.number}{found.asked && found.asked !== found.number ? ` (replaces ${found.asked})` : ''}</p>
