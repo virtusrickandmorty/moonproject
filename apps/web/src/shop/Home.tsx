@@ -97,11 +97,12 @@ export function HeroSlider({ products, online, payment, toShop }: { products: re
   const go = (d: number) => setAt((i) => (i + d + slides.length) % slides.length);
 
   return (
-    <section className="mx-auto max-w-7xl px-4 pt-4 sm:px-6" aria-roledescription="carousel" aria-label="Highlights" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
-      <div className={`relative overflow-hidden rounded-[2rem] bg-gradient-to-br ${s.tone} text-white transition-colors duration-700`}>
+    // Edge to edge, as every page's banner (the owner's request, Oct 2026); its text lines up with the menu above.
+    <section className="w-full" aria-roledescription="carousel" aria-label="Highlights" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
+      <div className={`relative overflow-hidden bg-gradient-to-br ${s.tone} text-white transition-colors duration-700`}>
         <div className="pointer-events-none absolute -right-24 -top-24 size-96 rounded-full bg-white/5 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-32 left-1/3 size-96 rounded-full bg-indigo-500/20 blur-3xl" />
-        <div key={at} className="hero-slide relative grid min-h-[30rem] items-center gap-6 px-6 pb-24 pt-12 sm:px-12 md:grid-cols-[1.1fr_0.9fr] md:py-16" aria-roledescription="slide" aria-label={`${(at % slides.length) + 1} of ${slides.length}`}>
+        <div key={at} className="hero-slide relative mx-auto grid min-h-[30rem] max-w-7xl items-center gap-6 px-4 pb-24 pt-12 sm:px-6 md:grid-cols-[1.1fr_0.9fr] md:py-16" aria-roledescription="slide" aria-label={`${(at % slides.length) + 1} of ${slides.length}`}>
           <div>
             <p className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-white/80 ring-1 ring-white/15">{s.eyebrow}</p>
             <h1 className="mt-5 text-5xl font-extrabold leading-[0.98] tracking-tight sm:text-7xl">{s.title}</h1>
@@ -125,7 +126,7 @@ export function HeroSlider({ products, online, payment, toShop }: { products: re
             </div>
           )}
         </div>
-        {slides.length > 1 && <div className="absolute inset-x-0 bottom-5 flex items-center justify-center gap-3 sm:justify-end sm:pr-10">
+        {slides.length > 1 && <div className="absolute inset-x-0 bottom-5 mx-auto flex max-w-7xl items-center justify-center gap-3 px-4 sm:justify-end sm:px-6">
           <button type="button" onClick={() => go(-1)} aria-label="Previous slide" className="grid size-10 place-items-center rounded-full bg-white/10 text-xl ring-1 ring-white/20 hover:bg-white/20">‹</button>
           {slides.map((_, i) => <button key={i} type="button" onClick={() => setAt(i)} aria-label={`Slide ${i + 1}`} aria-current={i === at % slides.length}
             className={`h-2 rounded-full transition-all ${i === at % slides.length ? 'w-8 bg-white' : 'w-2 bg-white/40 hover:bg-white/70'}`} />)}
@@ -224,11 +225,11 @@ export function CategoryTiles({ products, categories, pick }: { products: readon
 /** The banner at the top of the website's other pages (services, about us, support, tracking), in the shop hero's style. */
 export function PageHero({ eyebrow, title, text, children, side }: { eyebrow: string; title: ReactNode; text: ReactNode; children?: ReactNode; side?: ReactNode }) {
   return (
-    <section className="mx-auto max-w-7xl px-4 pt-4 sm:px-6">
-      <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white">
+    <section className="w-full">
+      <div className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white">
         <div className="pointer-events-none absolute -right-24 -top-24 size-96 rounded-full bg-white/5 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-32 left-1/3 size-96 rounded-full bg-indigo-500/20 blur-3xl" />
-        <div className={`hero-slide relative grid items-center gap-8 px-6 py-12 sm:px-12 md:py-16 ${side ? 'md:grid-cols-[1.15fr_1fr]' : ''}`}>
+        <div className={`hero-slide relative mx-auto grid max-w-7xl items-center gap-8 px-4 py-12 sm:px-6 md:py-16 ${side ? 'md:grid-cols-[1.15fr_1fr]' : ''}`}>
           <div>
             <p className="inline-flex rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-white/80 ring-1 ring-white/15">{eyebrow}</p>
             <h1 className="mt-5 max-w-3xl text-4xl font-extrabold leading-[1.02] tracking-tight sm:text-6xl">{title}</h1>
