@@ -33,18 +33,23 @@ describe('Home puts work first', () => {
     expect(items[1]?.notificationId).toBe('jo-ready');
   });
 
-  it.each(['owner', 'accountant', 'encoder', 'production'])('puts %s attention before daily actions and keeps full role detail', (role) => {
+  it.each(['owner', 'accountant', 'encoder', 'production'])('puts %s attention first, no card twice, short lists, role detail at the bottom', (role) => {
     const widgets = [...work, { key: 'drafts', title: 'My drafts', items: Array.from({ length: 12 }, (_, i) => ({ id: String(i), label: `Draft ${i}`, href: `/draft/${i}` })) }];
     const home: DashHomeData = { role, asOf: '2026-10-03', widgets, showCharts: role === 'owner' };
-    const markup = renderToStaticMarkup(createElement(HomeContent, { home, actions: createElement('h2', {}, 'Daily actions') }));
-    expect(markup.indexOf('Needs attention')).toBeLessThan(markup.indexOf('Daily actions'));
-    expect(markup.indexOf('Daily actions')).toBeLessThan(markup.indexOf('Cash position'));
+    const markup = renderToStaticMarkup(createElement(HomeContent, { home }));
     expect(markup).toContain('See all notifications');
-    expect(markup).toContain('More role details');
-    expect(markup).toContain('Draft 11');
+    // The owner sees cash under How the business is doing, not in a card of its own; other roles keep the card.
+    if (role === 'owner') expect(markup).not.toContain('Cash position');
+    else expect(markup.indexOf('Needs attention')).toBeLessThan(markup.indexOf('Cash position'));
+    // Role detail last, folded; its lists show 5, with the rest a click away.
+    expect(markup).toContain('More role details: Ready for release, Job orders due this week, Integrity, My drafts');
+    expect(markup).toContain('Draft 4');
+    expect(markup).not.toContain('Draft 5');
+    expect(markup).toContain('7 more');
     if (role === 'owner') {
-      expect(markup.indexOf('Daily actions')).toBeLessThan(markup.indexOf('Loading how the business is doing'));
+      expect(markup.indexOf('Needs attention')).toBeLessThan(markup.indexOf('Loading how the business is doing'));
       expect(markup.indexOf('Loading how the business is doing')).toBeLessThan(markup.indexOf('Loading the last 12 months'));
+      expect(markup.indexOf('Loading the last 12 months')).toBeLessThan(markup.indexOf('More role details'));
     } else expect(markup).not.toContain('Loading how the business is doing');
   });
 

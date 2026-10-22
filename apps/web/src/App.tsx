@@ -158,18 +158,19 @@ export function dailyActions(me: Me, docTypes: DocTypeInfo[]): { label: string; 
 
 function Home({ me, docTypes }: { me: Me; docTypes: DocTypeInfo[] }) {
   const links = dailyActions(me, docTypes);
-  const actions = links.length > 0 && <section aria-label="Daily actions">
-    <h2 className="mb-2 text-lg font-semibold">Daily actions</h2>
-    <div className="flex flex-wrap gap-2">{links.map((a) => <Link key={a.href} to={a.href} className="rounded-xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200/70 hover:bg-indigo-50">{a.label}</Link>)}</div>
-    <p className="mt-2 text-sm text-slate-500">Use + New for every other document you may create.</p>
-  </section>;
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Hello, {me.displayName}</h1>
-        {me.permissions.includes('sec.health.view') && <HealthDot />}
+      {/* The daily shortcuts sit beside the greeting (the owner's request, Oct 2026): one click, out of the cards' way. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="mr-auto flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold">Hello, {me.displayName}</h1>
+          {me.permissions.includes('sec.health.view') && <HealthDot />}
+        </div>
+        {links.length > 0 && <nav aria-label="Daily actions" className="flex flex-wrap gap-2">
+          {links.map((a) => <Link key={a.href} to={a.href} className="rounded-full bg-white px-3.5 py-1.5 text-sm font-medium text-slate-700 shadow-sm ring-1 ring-slate-200 hover:bg-indigo-50 hover:text-indigo-700">{a.label}</Link>)}
+        </nav>}
       </div>
-      {me.permissions.includes('dash.view') ? <DashHome actions={actions} /> : actions}
+      {me.permissions.includes('dash.view') && <DashHome />}
       {docTypes.length === 0 && <p className="text-slate-600">Your role has no screens yet. Ask an owner.</p>}
     </div>
   );

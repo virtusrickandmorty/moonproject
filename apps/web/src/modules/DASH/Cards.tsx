@@ -208,22 +208,31 @@ export function kpiShares(cards: DashCards): Record<string, { share: number; lab
 }
 
 /** The cards laid out; `attention` (the Needs attention list) takes the third place of the bottom row. */
-export function CardsLayout({ cards, attention }: { cards: DashCards | null; attention: ReactNode }) {
-  const bottom = [cards?.calendar && <CalendarCard key="cal" calendar={cards.calendar} today={cards.asOf} />, cards?.stages && <StagesCard key="stages" stages={cards.stages} />, <div key="attention" className="min-w-0">{attention}</div>].filter(Boolean);
+/**
+ * The home's cards: the headline figures, the floor and the week, then a grid of three columns where Needs attention
+ * runs down the right and the role's other cards (`more`: VAT, cancellations...) fill in under the calendar and the
+ * stages (the owner's request, Oct 2026: no gaps, nothing in between).
+ */
+export function CardsLayout({ cards, attention, more = [] }: { cards: DashCards | null; attention: ReactNode; more?: ReactNode[] }) {
+  const tall = more.length > 0 ? 'lg:row-span-2' : '';
+  const bottom = [cards?.calendar && <CalendarCard key="cal" calendar={cards.calendar} today={cards.asOf} />, cards?.stages && <StagesCard key="stages" stages={cards.stages} />,
+    <div key="attention" className={`min-w-0 ${tall}`}>{attention}</div>, ...more].filter(Boolean);
+  const columns = bottom.length >= 3 ? 'lg:grid-cols-3' : bottom.length === 2 ? 'lg:grid-cols-2' : '';
   return <div className="space-y-4">
     {cards && <KpiStrip kpis={cards.kpis} shares={kpiShares(cards)} />}
     {cards && (cards.jobs || cards.activity) && <div className={`grid gap-4 ${cards.jobs && cards.activity ? 'xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : ''}`}>
       {cards.jobs && <JobsCard jobs={cards.jobs} />}
       {cards.activity && <ActivityCard activity={cards.activity} />}
     </div>}
-    <div className={`grid items-start gap-4 ${bottom.length === 3 ? 'lg:grid-cols-3' : bottom.length === 2 ? 'lg:grid-cols-2' : ''}`}>{bottom}</div>
+    {/* Cards side by side end level: each fills its cell (a short card beside a tall one). */}
+    <div className={`grid items-stretch gap-4 md:grid-cols-2 ${columns} [&>div>section]:h-full [&>section]:h-full`}>{bottom}</div>
   </div>;
 }
 
-export function HomeCards({ attention }: { attention: ReactNode }) {
+export function HomeCards({ attention, more }: { attention: ReactNode; more?: ReactNode[] }) {
   const [cards, setCards] = useState<DashCards | null>(null);
   useEffect(() => { void api.dashCards().then(setCards, () => setCards(null)); }, []);
   // Live (the owner's request, Oct 2026): a change on any computer shows here too.
   useLiveReload(() => api.dashCards().then(setCards));
-  return <CardsLayout cards={cards} attention={attention} />;
+  return <CardsLayout cards={cards} attention={attention} more={more} />;
 }
