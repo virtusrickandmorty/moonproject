@@ -235,14 +235,14 @@ function OwnerCharts() {
   </section>;
 }
 
-export function DashHome({ actions }: { actions?: React.ReactNode }) {
+export function DashHome() {
   const [home, setHome] = useState<DashHomeData | null>(null);
   const [error, setError] = useState('');
   useEffect(() => { void api.dashHome().then(setHome, (e: Error) => setError(e.message)); }, []);
   return <div className="space-y-4">
     {error && <Notice>{error}</Notice>}
     {!home && !error && <Loading label="Loading your home…" />}
-    {home ? <HomeContent home={home} actions={actions} /> : actions}
+    {home && <HomeContent home={home} />}
   </div>;
 }
 
@@ -252,26 +252,48 @@ const WIDGET_ICON: Record<string, IconName> = {
   drafts: 'draft', exceptions: 'inbox', production: 'floor', due: 'calendar', ready: 'jobs', collectibles: 'money', 'overdue-collectibles': 'money',
 };
 
-function Widgets({ widgets }: { widgets: DashWidget[] }) {
-  return <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {widgets.map((widget) => <Card key={widget.key} icon={widget.tone === 'danger' ? 'alert' : WIDGET_ICON[widget.key] ?? 'jobs'} title={widget.title}
-        count={widget.items?.length || undefined} href={widget.href} tone={widget.tone}>
-        {widget.amountCents !== undefined && <p className="text-2xl font-semibold tabular-nums">{peso(widget.amountCents)}</p>}
-        {widget.items && (widget.items.length ? <ul>{widget.items.map((row) => <Item key={row.id} item={row} />)}</ul> : <p className="text-sm text-slate-500">Nothing here right now.</p>)}
-      </Card>)}
-    </div>;
+/** Where a widget's list leads when it has no page of its own. */
+const WIDGET_MORE: Record<string, string> = { cancellations: '/rpt/cancellations' };
+/** A widget's list stays short on the home (the owner's request, Oct 2026: cards of a size); the rest is a click away. */
+const SHOWN = 5;
+
+function widgetCards(widgets: DashWidget[]) {
+  return widgets.map((widget) => {
+    const more = widget.href ?? WIDGET_MORE[widget.key];
+    const left = (widget.items?.length ?? 0) - SHOWN;
+    return <Card key={widget.key} icon={widget.tone === 'danger' ? 'alert' : WIDGET_ICON[widget.key] ?? 'jobs'} title={widget.title}
+      count={widget.items?.length || undefined} href={more} tone={widget.tone}>
+      {widget.amountCents !== undefined && <p className="text-2xl font-semibold tabular-nums">{peso(widget.amountCents)}</p>}
+      {widget.items && (widget.items.length ? <ul>{widget.items.slice(0, SHOWN).map((row) => <Item key={row.id} item={row} />)}</ul> : <p className="text-sm text-slate-500">Nothing here right now.</p>)}
+      {left > 0 && (more ? <Link to={more} className="text-sm text-indigo-700 hover:underline">{left} more</Link> : <p className="text-sm text-slate-500">{left} more</p>)}
+    </Card>;
+  });
 }
 
-export function HomeContent({ home, actions }: { home: DashHomeData; actions?: React.ReactNode }) {
+function Widgets({ widgets }: { widgets: DashWidget[] }) {
+  return <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">{widgetCards(widgets)}</div>;
+}
+
+/**
+ * Figures the home already shows elsewhere (the owner's request, Oct 2026: no card twice): the owner's sales and
+ * collections this month are headline figures at the top, and the cash places are under How the business is doing.
+ */
+const SHOWN_ELSEWHERE: Record<string, string[]> = { owner: ['sales', 'collections', 'cash'] };
+
+export function HomeContent({ home }: { home: DashHomeData }) {
   const work = home.widgets.filter((w) => ATTENTION_KEYS.includes(w.key) || w.tone === 'danger');
+  const hidden = SHOWN_ELSEWHERE[home.role] ?? [];
+  const figures = home.widgets.filter((w) => !work.includes(w) && !hidden.includes(w.key));
   return <div className="space-y-4">
-    {/* The cards first (the owner's request, Oct 2026); Needs attention is the last card of their bottom row. */}
-    <HomeCards attention={<Notifications widgets={home.widgets}>{(home.role === 'owner' || home.role === 'accountant') && <NightlyLine />}</Notifications>} />
-    {actions}
-    {work.length > 0 && <details><summary className="cursor-pointer text-sm font-medium text-indigo-700">More role details</summary><Widgets widgets={work} /></details>}
-    <Widgets widgets={home.widgets.filter((w) => !work.includes(w))} />
+    {/* The cards first; Needs attention runs down the right, the role's other cards fill in beside it. */}
+    <HomeCards attention={<Notifications widgets={home.widgets}>{(home.role === 'owner' || home.role === 'accountant') && <NightlyLine />}</Notifications>}
+      more={widgetCards(figures)} />
     {home.role === 'owner' && <OwnerHealth />}
     {home.showCharts && <OwnerCharts />}
+    {work.length > 0 && <details className="rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70">
+      <summary className="cursor-pointer text-sm font-medium text-indigo-700">More role details: {work.map((w) => w.title).join(', ')}</summary>
+      <div className="mt-4"><Widgets widgets={work} /></div>
+    </details>}
   </div>;
 }
 
