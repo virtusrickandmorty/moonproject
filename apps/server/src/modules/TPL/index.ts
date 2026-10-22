@@ -10,6 +10,7 @@ import { defineModule } from '../../engine/documents/registry.ts';
 import { onForStockCheck, onJobOrderEdited, onStockPlace } from '../JO/public.ts';
 import { program } from './programs.ts';
 import { cancellingTogether, deliveryDoc } from './doctypes/delivery.ts';
+import { valuationDoc } from './doctypes/valuation.ts';
 import { tplRoutes } from './routes.ts';
 import { carryRestockOver, piecesPutIn, restockOf } from './stock.ts';
 
@@ -33,8 +34,9 @@ export default defineModule({
     { key: 'tpl.deliver', label: 'Record deliveries (their invoice also needs qs.post; cancelling one, qs.cancel)', defaultRoles: ['encoder', 'accountant', 'owner'] },
     { key: 'tpl.count', label: 'Adjust a client\'s stock after a count', defaultRoles: ['accountant', 'owner'] },
     { key: 'tpl.override', label: 'Deliver over the credit limit or with an invoice past due', defaultRoles: ['owner'] },
+    { key: 'tpl.value', label: "Value the TPL clients' stock at a month end (it adjusts the books)", defaultRoles: ['accountant', 'owner'] },
   ],
-  docTypes: [deliveryDoc],
+  docTypes: [deliveryDoc, valuationDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: tplRoutes,
   dependents: [

@@ -27,6 +27,7 @@ export const DOC_TITLES = [
   'Job Ticket',
   'Release Slip',
   'Delivery Receipt', // TPL: pieces delivered from a client's stock (the owner's request, 11 Oct 2026)
+  'TPL Stock Value', // TPL: the clients' stock valued at cost at a month end (the owner's request, 22 Oct 2026)
   'Production Entry',
   'Invoice Record',
   'Collection Receipt',

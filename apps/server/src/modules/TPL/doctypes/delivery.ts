@@ -1,7 +1,9 @@
 /**
  * Delivery receipt (DR-, TPL; the owner's request, 11 Oct 2026): pieces taken out of a client's stock when the client
- * calls. It posts no journal itself: the TPL action records its invoice in the same transaction, a quick sale on the
- * client's terms (IR-, QS-SALE journal: Dr 1201 AR / Cr 4101-4103 sales, Cr 2301 VAT), which a collection pays later.
+ * calls. The TPL action records its invoice in the same transaction, a quick sale on the client's terms (IR-, QS-SALE
+ * journal: Dr 1201 AR / Cr 4101-4103 sales, Cr 2301 VAT), which a collection pays later. The delivery's own journal moves
+ * the delivery fee's NET out of 4103 (the invoice's service line) into delivery income (Dr 4103 / Cr 4104, the owner's
+ * request, 22 Oct 2026); with no fee it posts none.
  * Pieces: the delivery's lines are what left the stock; cancelled, they are back (on hand reads recorded deliveries).
  * Price: the program's price per piece on the day, kept on the line. Never below zero stock. Over the credit limit, or
  * with an overdue TPL invoice, it needs tpl.override and a reason.
@@ -10,7 +12,9 @@ import { z } from 'zod';
 import fc from 'fast-check';
 import { conflict, formatPeso, manilaDate, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
+import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
+import { invoiceAmounts } from '../../JO/public.ts';
 import { item, itemLabel, itemsOf, openBalance, program } from '../programs.ts';
 
 export const MAX_FEE_CENTS = 10_000_000;
@@ -111,6 +115,22 @@ export const deliveryDoc: DocTypeDef<DeliveryInput, Delivery> = {
       doc.deliveredBy, doc.receivedBy ?? null, doc.tracking ?? null, doc.overrideReason ?? null, doc.note ?? null);
     const line = db.prepare(`INSERT INTO tpl_delivery_lines (document_id, line_no, item_id, description, size, kind, qty, unit_price_cents, amount_cents) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     for (const l of doc.lines) line.run(h.documentId, l.lineNo, l.itemId, l.description, l.size, l.kind, l.qty, l.unitPriceCents, l.amountCents);
+  },
+
+  journal(doc, ctx) {
+    if (doc.feeCents === 0) return null;
+    // The fee's NET exactly as its invoice splits it: the same lines through the same VAT math (invoiceAmounts).
+    const lines = [...doc.lines.map((l) => ({ kind: l.kind, listCents: l.amountCents, discountCents: 0 })), { kind: 'service' as const, listCents: doc.feeCents, discountCents: 0 }];
+    const feeNetCents = invoiceAmounts(lines, settingAt(ctx.db, 'tax.vat_rate_bp', ctx.businessDate)).salesCents.service;
+    if (feeNetCents === 0) return null;
+    const party = { type: 'customer', id: doc.customerId };
+    return {
+      memo: `Delivery fee on invoice no. ${doc.invoiceNumber}: delivery income`,
+      lines: [
+        { account: { role: 'SALES_SERVICE' }, party, debitCents: feeNetCents, memo: 'The delivery fee, out of repairs and alterations' },
+        { account: { role: 'SALES_DELIVERY' }, party, creditCents: feeNetCents, memo: 'Delivery fee' },
+      ],
+    };
   },
 
   load(db, documentId) {

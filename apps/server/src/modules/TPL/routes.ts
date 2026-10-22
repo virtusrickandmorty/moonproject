@@ -15,6 +15,7 @@ import { saleDocType, saleOpenCents } from '../QS/public.ts';
 import { cancellingTogether, deliveryDoc, invoiceOf, recordingWithInvoice, type Delivery } from './doctypes/delivery.ts';
 import { addItem, addItems, changeItem, changeProgram, createProgram, item, itemLabel, itemsOf, openBalance, program, programList } from './programs.ts';
 import { belowReorder, countItem, countItems, openRestocks, putIntoStock, restock, stockCard } from './stock.ts';
+import { valuationSheet } from './doctypes/valuation.ts';
 
 const actorOf = (req: FastifyRequest): Actor => ({ userId: currentUser(req).userId, permissions: currentUser(req).permissions });
 const id = z.object({ id: z.uuid() }).strict();
@@ -85,6 +86,11 @@ export function tplRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   // Programs and items.
   app.get('/api/tpl/programs', { config: { permission: 'tpl.view' } }, async () => ({ rows: programList(db, today(clock)) }));
+  /** The TPL stock value sheet: every item with pieces on hand on a date, with the cost per piece of its last value. */
+  app.get('/api/tpl/value-sheet', { config: { permission: 'tpl.view' } }, async (req) => {
+    const date = z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict().parse(req.query).date;
+    return { date, items: valuationSheet(db, date) };
+  });
   app.post('/api/tpl/programs', { config: { permission: 'tpl.program.manage' } }, async (req) => write(() => createProgram(db, req.body, who(req))));
   app.get<{ Params: { id: string } }>('/api/tpl/programs/:id', { config: { permission: 'tpl.view' } }, async (req) => {
     const { id: pid } = id.parse(req.params);
