@@ -25,6 +25,8 @@ const PAGE: Record<string, string> = { '/': 'Shop', '/shop': 'Shop', '/services'
 const n = (v: number) => v.toLocaleString('en-PH');
 const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : '–');
 const dayLabel = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+/** A calendar day n days from another (YYYY-MM-DD), no clock involved. */
+const plusDays = (date: string, n: number) => { const d = new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`; };
 const card = 'space-y-3 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70';
 const th = 'py-1 pr-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500';
 
@@ -46,11 +48,11 @@ export function Visitors() {
   // Visitors each day, the days with none too; over a month, each week (bars stay readable).
   const weekly = data.days > 31;
   const seen = new Map(data.byDay.map((d) => [d.day, d]));
-  const allDays = Array.from({ length: data.days }, (_, i) => new Date(Date.parse(`${data.from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10))
+  const allDays = Array.from({ length: data.days }, (_, i) => plusDays(data.from, i))
     .map((day) => seen.get(day) ?? { day, visitors: 0, pageViews: 0 });
   const buckets = weekly
     ? Object.values(allDays.reduce<Record<string, { key: string; label: string; visitors: number }>>((acc, d) => {
-      const monday = new Date(Date.parse(`${d.day}T00:00:00Z`) - (((new Date(`${d.day}T00:00:00Z`).getUTCDay() + 6) % 7) * 86_400_000)).toISOString().slice(0, 10);
+      const monday = plusDays(d.day, -((new Date(`${d.day}T00:00:00Z`).getUTCDay() + 6) % 7));
       (acc[monday] ??= { key: monday, label: dayLabel(monday), visitors: 0 }).visitors += d.visitors;
       return acc;
     }, {}))

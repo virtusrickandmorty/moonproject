@@ -50,11 +50,12 @@ export function shpInsightRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 }
 
-const addDays = (date: string, n: number) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+/** A calendar day n days from another (both YYYY-MM-DD; the day itself is a Manila date, no clock involved). */
+const plusDays = (date: string, n: number) => { const d = new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`; };
 
 /** The summary for the last `days` days up to `to` (inclusive). */
 export function insights(db: Db, to: string, days: number) {
-  const from = addDays(to, -(days - 1));
+  const from = plusDays(to, -(days - 1));
   const q = <T>(sql: string, ...more: unknown[]) => db.prepare(sql).all(from, to, ...more) as T[];
   const one = <T>(sql: string) => db.prepare(sql).get(from, to) as T;
   const range = 'day BETWEEN ? AND ?';
