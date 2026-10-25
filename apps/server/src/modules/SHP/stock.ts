@@ -11,7 +11,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
 import { stockOf } from './public.ts';
-import { valuationSheet } from './valuation.ts';
+import { valuationSheet } from './doctypes/valuation.ts';
 
 const categoryInput = z.object({ name: z.string().trim().min(1).max(40), sortOrder: z.number().int().min(-9999).max(9999) }).strict();
 /** `in`: pieces received (made or bought in); `count`: what was counted on the shelf, which becomes the pieces on hand. */

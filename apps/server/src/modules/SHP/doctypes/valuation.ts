@@ -10,11 +10,11 @@
 import { z } from 'zod';
 import fc from 'fast-check';
 import { formatPeso, type Issue } from '@moonproject/shared';
-import type { DocTypeDef } from '../../engine/documents/registry.ts';
-import { resolveAccount } from '../../engine/ledger/accounts.ts';
-import { accountBalance } from '../../engine/ledger/queries.ts';
-import type { Db } from '../../platform/db/driver.ts';
-import { soldShopPiecesUpTo } from '../QS/public.ts';
+import type { DocTypeDef } from '../../../engine/documents/registry.ts';
+import { resolveAccount } from '../../../engine/ledger/accounts.ts';
+import { accountBalance } from '../../../engine/ledger/queries.ts';
+import type { Db } from '../../../platform/db/driver.ts';
+import { soldShopPiecesUpTo } from '../../QS/public.ts';
 
 const MAX_UNIT_COST_CENTS = 10_000_000; // ₱100,000 a piece: a typo guard
 const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
