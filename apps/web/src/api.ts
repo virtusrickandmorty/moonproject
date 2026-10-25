@@ -675,6 +675,8 @@ export interface PoStatus {
   id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; expectedDate: string | null; supplierId: string; supplierName: string; lines: PoLineStatus[];
   /** One order's own page only: its receiving reports, each with the bill recorded for it. */
   deliveries?: { id: string; number: string; date: string; status: 'posted' | 'cancelled'; bill: { id: string; number: string } | null }[];
+  /** One order's own page only: what recorded supplier advances paid on it. */
+  advancedCents?: number;
 }
 export interface RrDetail {
   id: string; number: string; status: 'posted' | 'cancelled'; date: string; poId: string; poNumber: string; supplierId: string; supplierName: string;
@@ -682,7 +684,7 @@ export interface RrDetail {
   /** The recorded supplier bill for these goods, if any. */
   bill: { id: string; number: string } | null;
 }
-export interface SupplierPo { id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; expectedDate: string | null; fullyReceived: boolean }
+export interface SupplierPo { id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; expectedDate: string | null; fullyReceived: boolean; advancedCents: number }
 export interface SupplierRr { id: string; number: string; status: 'posted' | 'cancelled'; date: string; poId: string; poNumber: string }
 /** GET /api/inv/count-sheet?format=json: the active supplies of a category and the cost each is valued at on the count date. */
 export interface SheetSupply {

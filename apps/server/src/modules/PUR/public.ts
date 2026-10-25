@@ -53,11 +53,11 @@ export function receivingReport(db: Db, id: string): ReceivingReport | undefined
 }
 
 /** A purchase order (PO-) and its supplier, for a supplier advance paid on it (AP, read-only). */
-export interface PurchaseOrderRef { id: string; number: string; status: 'posted' | 'cancelled'; supplierId: string }
+export interface PurchaseOrderRef { id: string; number: string; status: 'posted' | 'cancelled'; supplierId: string; totalCents: number }
 
 export function purchaseOrder(db: Db, id: string): PurchaseOrderRef | undefined {
   return db
-    .prepare('SELECT d.id, d.number, d.status, po.supplier_id AS supplierId FROM pur_purchase_orders po JOIN documents d ON d.id = po.document_id WHERE po.document_id = ?')
+    .prepare('SELECT d.id, d.number, d.status, po.supplier_id AS supplierId, d.total_cents AS totalCents FROM pur_purchase_orders po JOIN documents d ON d.id = po.document_id WHERE po.document_id = ?')
     .get(id) as PurchaseOrderRef | undefined;
 }
 
