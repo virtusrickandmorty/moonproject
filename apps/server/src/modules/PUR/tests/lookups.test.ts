@@ -70,7 +70,7 @@ describe('PUR read-only lookups for the screens', () => {
     expect(report.lines).toEqual([{ lineNo: 1, poLineNo: 1, supplyId: cotton, supplyName: 'Cotton twill', unit: 'yard', qty: 6 }]);
 
     const orders = (await enc.get(`/api/pur/suppliers/${supplierId}/purchase-orders`)).json();
-    expect(orders).toEqual([{ id: po, number: 'PO-000001', status: 'posted', date: '2026-09-28', totalCents: 160000, expectedDate: null, fullyReceived: true }]);
+    expect(orders).toEqual([{ id: po, number: 'PO-000001', status: 'posted', date: '2026-09-28', totalCents: 160000, expectedDate: null, fullyReceived: true, advancedCents: 0 }]);
     const reports = (await enc.get(`/api/pur/suppliers/${supplierId}/receiving-reports`)).json();
     expect(reports.map((r: { number: string; status: string }) => `${r.number} ${r.status}`)).toEqual(['RR-000003 posted', 'RR-000002 cancelled', 'RR-000001 posted']);
     expect((await enc.get(`/api/pur/suppliers/${otherId}/purchase-orders`)).json()).toEqual([]);

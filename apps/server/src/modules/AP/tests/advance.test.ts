@@ -223,6 +223,24 @@ describe('refusals and the cancel order (PLAN D6)', () => {
     noBrokenInvariants();
   });
 
+  it('never pays more in advance on a purchase order than the order; an edit counts only the other advances (the owner, 26 Oct 2026)', async () => {
+    const po = (await encoder.post('/api/docs/pur.po/post', { input: { supplierId: fabric, lines: [{ supplyId: cloth, qty: 50, unitCostCents: 22_400 }] }, expectedTotalCents: 1_120_000 }, idem())).json().id as string;
+    const down = (amountCents: number): AdvanceInput => ({ supplierId: fabric, purchaseOrderId: po, amountCents, tenders: [{ cashPlaceId: BDO, amountCents }] });
+    const first = await advance(encoder, down(800_000));
+    expect(first.statusCode, first.body).toBe(200);
+    expect((await advance(encoder, down(320_001))).json()).toMatchObject({ code: 'VALIDATION', message: 'PO-000001 is ₱11,200.00 and ₱8,000.00 is already paid on it in advance: at most ₱3,200.00 more.' });
+    expect((await advance(encoder, down(320_000))).statusCode).toBe(200);
+    const full = await advance(encoder, down(100));
+    expect(codes(full)).toEqual(['PO_ADVANCED']);
+    expect(full.json().message).toBe('PO-000001 (₱11,200.00) is already paid in full in advance. Record the supplier’s bill when the goods come.');
+    expect((await encoder.get(`/api/pur/purchase-orders/${po}`)).json()).toMatchObject({ advancedCents: 1_120_000 });
+    // Editing the ₱8,000 one up to ₱8,000 again (or less) is fine: the original no longer counts once it is replaced.
+    const edited = await accountant.post(`/api/docs/ap.advance/${first.json().id}/reissue`, { input: down(700_000), expectedTotalCents: 700_000, reason: 'The supplier asked for less down' }, idem());
+    expect(edited.statusCode, edited.body).toBe(200);
+    expect((await encoder.get(`/api/pur/purchase-orders/${po}`)).json()).toMatchObject({ advancedCents: 1_020_000 });
+    noBrokenInvariants();
+  });
+
   it('a bill with applied advances is cancelled before the advance; an edited bill applies the same advance again', async () => {
     const advId = (await advance(encoder, { supplierId: tailor, amountCents: 1_000_000, tenders: [{ cashPlaceId: BDO, amountCents: 980_000 }] })).json().id as string;
     const billId = (await bill(encoder, subcontract(tailor, '0042', 1_500_000))).json().id as string;

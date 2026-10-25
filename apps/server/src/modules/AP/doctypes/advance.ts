@@ -100,6 +100,18 @@ export const advanceDoc: DocTypeDef<AdvanceInput, Advance> = {
       const po = purchaseOrder(ctx.db, doc.purchaseOrderId);
       if (po?.status !== 'posted') add('error', 'purchaseOrderId', 'PURCHASE_ORDER', 'Pick a recorded purchase order.');
       else if (po.supplierId !== doc.supplierId) add('error', 'purchaseOrderId', 'PO_SUPPLIER', `${po.number} is for another supplier.`);
+      else {
+        // All the advances on an order never add up to more than the order (the owner's report, 26 Oct 2026). On an edit the
+        // original is already cancelled, so only the others count.
+        const before = ctx.db.prepare(`SELECT COALESCE(SUM(a.amount_cents), 0) FROM ap_advances a JOIN documents d ON d.id = a.document_id
+          WHERE a.purchase_order_id = ? AND d.status = 'posted'`).pluck().get(po.id) as number;
+        const left = Math.max(0, po.totalCents - before);
+        if (doc.amountCents > left) {
+          add('error', 'amountCents', 'PO_ADVANCED', left === 0
+            ? `${po.number} (${formatPeso(po.totalCents)}) is already paid in full in advance. Record the supplier’s bill when the goods come.`
+            : `${po.number} is ${formatPeso(po.totalCents)} and ${formatPeso(before)} is already paid on it in advance: at most ${formatPeso(left)} more.`);
+        }
+      }
     }
     doc.tenders.forEach((t, i) => {
       if (!getCashPlace(ctx.db, t.cashPlaceId)?.isActive) add('error', `tenders.${i}.cashPlaceId`, 'CASH_PLACE', 'Pick an active cash place the money came from.');

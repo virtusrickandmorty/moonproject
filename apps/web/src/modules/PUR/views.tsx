@@ -34,6 +34,8 @@ function PurchaseOrderDetail({ id }: { id: string }) {
   const deliveries = (po.deliveries ?? []).filter((r) => r.status === 'posted');
   const ordered = po.lines.reduce((n, l) => n + l.orderedQty, 0), received = po.lines.reduce((n, l) => n + Math.min(l.receivedQty, l.orderedQty), 0);
   const billed = deliveries.filter((r) => r.bill).length;
+  const advanced = po.advancedCents ?? 0;
+  const mayAdvance = open && advanced < po.totalCents && may['ap.advance'];
   return (
     <>
       <p className="text-sm">Ordered from <b>{po.supplierName}</b>{po.expectedDate ? `, expected ${showDate(po.expectedDate)}` : ''}.</p>
@@ -71,8 +73,13 @@ function PurchaseOrderDetail({ id }: { id: string }) {
       )}
       <div className="flex flex-wrap gap-2">
         {open && canReceive && <Link to={`${docPath('pur.rr', '/new')}?po=${po.id}`} className={action}>Receive goods for this order</Link>}
-        {open && may['ap.advance'] && <Link to={docPath('ap.advance', `/new?supplier=${po.supplierId}&po=${po.id}`)} className={secondary}>Pay an advance on this order</Link>}
+        {mayAdvance && <Link to={docPath('ap.advance', `/new?supplier=${po.supplierId}&po=${po.id}`)} className={secondary}>Pay an advance on this order</Link>}
       </div>
+      {advanced > 0 && (
+        <p className={`text-sm ${advanced >= po.totalCents ? 'font-medium text-emerald-700' : 'text-slate-600'}`}>
+          {advanced >= po.totalCents ? `Paid in full in advance (${formatPesos(advanced)}).` : `Paid in advance: ${formatPesos(advanced)} of ${formatPesos(po.totalCents)}.`}
+        </p>
+      )}
     </>
   );
 }

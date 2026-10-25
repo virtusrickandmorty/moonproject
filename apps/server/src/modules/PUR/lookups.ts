@@ -31,6 +31,10 @@ export function poLines(db: Db, poId: string): PoLine[] {
 const billOf = (db: Db, rrId: string) => (db.prepare(`SELECT d.id, d.number FROM ap_bills b JOIN documents d ON d.id = b.document_id
   WHERE b.receiving_report_id = ? AND d.status = 'posted' ORDER BY d.number LIMIT 1`).get(rrId) as { id: string; number: string } | undefined) ?? null;
 
+/** What recorded supplier advances paid on a purchase order (AP's ap_advances, read-only): never more than the order (Oct 2026). */
+const advancedOn = (db: Db, poId: string) => db.prepare(`SELECT COALESCE(SUM(a.amount_cents), 0) FROM ap_advances a JOIN documents d ON d.id = a.document_id
+  WHERE a.purchase_order_id = ? AND d.status = 'posted'`).pluck().get(poId) as number;
+
 /** A purchase order's receiving reports, oldest first, each with the bill recorded for it (the order's steps, Oct 2026). */
 function deliveriesOf(db: Db, poId: string) {
   return (db.prepare(`SELECT d.id, d.number, d.business_date AS date, d.status FROM pur_receiving_reports r JOIN documents d ON d.id = r.document_id
@@ -55,7 +59,7 @@ export function purLookupRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/pur/purchase-orders/:id', { config: { permission: 'pur.po.view' } }, async (req) => {
     const po = db.prepare(`${PO_HEAD} WHERE d.id = ?`).get(id(req)) as PoHead | undefined;
     if (!po) throw notFound('The purchase order');
-    return { ...po, lines: poLines(db, po.id), deliveries: deliveriesOf(db, po.id) };
+    return { ...po, lines: poLines(db, po.id), deliveries: deliveriesOf(db, po.id), advancedCents: advancedOn(db, po.id) };
   });
 
   app.get('/api/pur/receiving-reports/:id', { config: { permission: 'pur.rr.view' } }, async (req) => {
@@ -82,7 +86,7 @@ export function purLookupRoutes(app: FastifyInstance, deps: AppDeps): void {
     supplierExists(id(req));
     return (db.prepare(`${PO_HEAD} WHERE po.supplier_id = ? ORDER BY d.number DESC`).all(id(req)) as PoHead[]).map((po) => {
       const { supplierId: _s, supplierName: _n, ...head } = po;
-      return { ...head, fullyReceived: poLines(db, po.id).every((l) => l.remainingQty === 0) };
+      return { ...head, fullyReceived: poLines(db, po.id).every((l) => l.remainingQty === 0), advancedCents: advancedOn(db, po.id) };
     });
   });
 
