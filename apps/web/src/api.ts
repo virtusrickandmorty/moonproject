@@ -671,10 +671,16 @@ export interface SupplyRecord extends SupplyRow {
 export interface SupplyBody { name: string; unit: SupplyUnit; category: 'materials' | 'ready_made' }
 /** A purchase order line with what posted receiving reports have received (GET /api/pur/purchase-orders/:id and /open). */
 export interface PoLineStatus { lineNo: number; supplyId: string; supplyName: string; unit: SupplyUnit; orderedQty: number; receivedQty: number; remainingQty: number; unitCostCents: number }
-export interface PoStatus { id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; expectedDate: string | null; supplierId: string; supplierName: string; lines: PoLineStatus[] }
+export interface PoStatus {
+  id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; expectedDate: string | null; supplierId: string; supplierName: string; lines: PoLineStatus[];
+  /** One order's own page only: its receiving reports, each with the bill recorded for it. */
+  deliveries?: { id: string; number: string; date: string; status: 'posted' | 'cancelled'; bill: { id: string; number: string } | null }[];
+}
 export interface RrDetail {
   id: string; number: string; status: 'posted' | 'cancelled'; date: string; poId: string; poNumber: string; supplierId: string; supplierName: string;
   lines: { lineNo: number; poLineNo: number; supplyId: string; supplyName: string; unit: SupplyUnit; qty: number }[];
+  /** The recorded supplier bill for these goods, if any. */
+  bill: { id: string; number: string } | null;
 }
 export interface SupplierPo { id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; expectedDate: string | null; fullyReceived: boolean }
 export interface SupplierRr { id: string; number: string; status: 'posted' | 'cancelled'; date: string; poId: string; poNumber: string }
@@ -703,6 +709,14 @@ export interface ApLedger {
 }
 /** GET /api/ap/suppliers: every supplier with something owed or an advance open; `netCents` = owed less the advances. */
 export interface ApBalance { supplierId: string; supplierName: string; balanceCents: number; advancesCents: number; netCents: number }
+/** GET /api/ap/overview: what waits at each step of a purchase (order → receive → bill → pay), and this month's costs NET of VAT. */
+export interface PurchasesOverview {
+  today: string; month: string; advancesCents: number;
+  toReceive: { id: string; number: string; date: string; expectedDate: string | null; supplierId: string; supplierName: string; remainingCents: number; late: boolean }[];
+  toBill: { id: string; number: string; date: string; supplierId: string; supplierName: string; poId: string; poNumber: string; receivedCents: number }[];
+  toPay: { id: string; number: string; docType: string; supplierId: string; supplierName: string; dueDate: string; balanceCents: number; overdue: boolean; dueThisWeek: boolean }[];
+  spending: { name: string; billsCents: number; vouchersCents: number }[];
+}
 /** GET /api/acc/opening, what an opening document's form needs: the cut-over date it is dated, and the close once done. */
 export type OpeningStatus = Pick<OpeningState, 'cutoverDate' | 'closed'>;
 export interface EqPerson { id: string; name: string; isStockholder: boolean; isOfficer: boolean; position: string | null }
@@ -1289,6 +1303,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     expCategories: () => call<ExpCategory[]>('GET', '/api/exp/categories'),
     apLedger: (supplierId: string) => call<ApLedger>('GET', `/api/ap/suppliers/${encodeURIComponent(supplierId)}`),
     apBalances: () => call<ApBalance[]>('GET', '/api/ap/suppliers'),
+    apOverview: () => call<PurchasesOverview>('GET', '/api/ap/overview'),
     eqPeople: () => call<EqPerson[]>('GET', '/api/eq/people'),
     /** What an officer owes the company and is owed (needs eq.ledger.view). */
     officerBalances: (personId: string) => call<{ dueFromCents: number; dueToCents: number }>('GET', `/api/eq/people/${encodeURIComponent(personId)}/ledger`),

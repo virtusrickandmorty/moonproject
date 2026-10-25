@@ -65,3 +65,9 @@ export function postedVoucherInvoices(db: Db) {
     )
     .all() as { number: string; invoiceNo: string; supplierId: string | null; payeeTin: string | null; payeeName: string }[];
 }
+
+/** What expense vouchers spent between two dates, NET of input VAT, by expense account (the purchases overview). */
+export function voucherSpending(db: Db, from: string, to: string): { accountId: number; name: string; cents: number }[] {
+  return db.prepare(`SELECT a.id AS accountId, a.name, SUM(v.expense_cents) AS cents FROM exp_vouchers v JOIN documents d ON d.id = v.document_id
+    JOIN accounts a ON a.id = v.expense_account_id WHERE d.status = 'posted' AND d.business_date BETWEEN ? AND ? GROUP BY a.id ORDER BY cents DESC`).all(from, to) as { accountId: number; name: string; cents: number }[];
+}

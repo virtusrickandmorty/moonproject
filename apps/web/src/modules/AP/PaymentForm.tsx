@@ -2,6 +2,8 @@
  * Supplier payment form (PLAN E9 SPAY-, D5 BILL-PAY): the supplier, what is paid on which of their open bills (AP by
  * supplier, read from the ledger), where the money came from (split tenders; a check is a bank tender with its number)
  * and the bank's fee. No tax withheld (EWT) here: it was withheld when each bill was recorded (D4.8). Also its Edit (NR-4).
+ * Opened from a bill ("Pay this bill", ?supplier=<id>&bill=<id>; the owner's request, 25 Oct 2026), it starts with that
+ * supplier and all that is still owed on that bill.
  */
 import { useEffect, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
@@ -16,7 +18,9 @@ import { forReplacement, openBills, paymentInput, type PaymentInput } from './pa
 export function PaymentForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   const suppliers = useList(api.suppliers);
   const places = useList<CashPlace>(api.cashPlaces);
-  const [supplierId, setSupplierId] = useState('');
+  const asked = (key: string) => (mode.kind === 'new' ? new URLSearchParams(window.location.search).get(key) ?? '' : '');
+  const [supplierId, setSupplierId] = useState(asked('supplier'));
+  const [wantedBill] = useState(asked('bill'));
   const [ledger, setLedger] = useState<ApLedger | null>(null);
   const [paidBefore, setPaidBefore] = useState<PaymentInput['bills']>([]);
   const [pay, setPay] = useState<Record<string, string>>({});
@@ -38,6 +42,11 @@ export function PaymentForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
   }, [supplierId]);
 
   const bills = ledger ? openBills(ledger, paidBefore) : [];
+  // The bill it was opened from: all that is still owed on it, once its supplier's bills are in.
+  useEffect(() => {
+    const b = bills.find((x) => x.id === wantedBill);
+    if (b) setPay((p) => (b.id in p ? p : { ...p, [b.id]: formatPesos(b.owedCents) }));
+  }, [ledger]);
   const { input, errors } = paymentInput({ supplierId, bills, pay, tenders, fee, note });
   const due = input.bills.reduce((s, b) => s + b.amountCents, 0) + (input.feeCents ?? 0);
   // An edit's preview still sees the original's payments: an amount within what was owed before it is not too much.

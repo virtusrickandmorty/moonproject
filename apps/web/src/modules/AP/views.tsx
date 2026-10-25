@@ -2,7 +2,10 @@
  * What the generic view cannot show of a supplier bill (its lines, advances applied and figures), a supplier payment
  * (bills paid, tenders), a supplier advance (EWT, tenders, where it went) and an advance return (tenders).
  */
+import { useEffect, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
+import { api } from '../../api.ts';
+import { peso, showDate } from '../../components/ui.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
 import { Figures } from '../COL/parts.tsx';
 import { Link } from '../../router.tsx';
@@ -10,7 +13,7 @@ import { docPath } from '../../shell/menu.ts';
 import { advanceFigures, billFigures } from './payables.ts';
 
 type Bill = Parameters<typeof billFigures>[0] & {
-  supplierName: string; supplierTin: string | null; lines: { lineNo: number; name: string; description?: string; amountCents: number; vatCents: number }[];
+  supplierId: string; supplierName: string; supplierTin: string | null; lines: { lineNo: number; name: string; description?: string; amountCents: number; vatCents: number }[];
   advances?: { lineNo: number; advanceId: string; advanceNumber: string; amountCents: number }[];
 };
 type Tender = { lineNo: number; cashPlaceName: string; reference?: string; amountCents: number };
@@ -19,6 +22,24 @@ type AdvanceReturn = { supplierId: string; supplierName: string; advanceId: stri
 type Payment = { bills: { lineNo: number; billNumber: string; supplierInvoiceNo: string; amountCents: number }[]; tenders: { lineNo: number; cashPlaceName: string; reference?: string; amountCents: number }[] };
 
 const money = 'py-1 text-right tabular-nums';
+
+/** What is still owed on a recorded bill, from the ledger, with "Pay this bill" (the owner's request, 25 Oct 2026). */
+function BillOwed({ billId, supplierId }: { billId: string; supplierId: string }) {
+  const [owed, setOwed] = useState<{ owedCents: number; dueDate: string } | null>(null);
+  const [mayPay, setMayPay] = useState(false);
+  useEffect(() => {
+    void api.apLedger(supplierId).then((l) => { const b = l.bills.find((x) => x.id === billId); setOwed(b ? { owedCents: b.owedCents, dueDate: b.dueDate } : null); }, () => undefined);
+    void api.docTypes().then((t) => setMayPay(!!t.find((d) => d.key === 'ap.payment')?.canPost), () => undefined);
+  }, [billId, supplierId]);
+  if (!owed) return null;
+  if (owed.owedCents <= 0) return <p className="text-sm font-medium text-emerald-700">Paid in full.</p>;
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <span className="text-sm">Still owed: <b className="tabular-nums">{peso(owed.owedCents)}</b>, due {showDate(owed.dueDate)}.</span>
+      {mayPay && <Link to={docPath('ap.payment', `/new?supplier=${supplierId}&bill=${billId}`)} className="inline-block rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">Pay this bill</Link>}
+    </div>
+  );
+}
 
 export const billView: ViewParts = {
   extra: (d) => {
@@ -40,6 +61,7 @@ export const billView: ViewParts = {
           </p>
         ))}
         <Figures items={billFigures(b)} />
+        {d.header.status === 'posted' && <BillOwed billId={d.header.id} supplierId={b.supplierId} />}
       </>
     );
   },

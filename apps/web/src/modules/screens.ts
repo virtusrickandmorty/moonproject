@@ -84,6 +84,7 @@ import { PaymentForm as SupplierPaymentForm } from './AP/PaymentForm.tsx';
 import { AdvanceForm as SupplierAdvanceForm } from './AP/AdvanceForm.tsx';
 import { AdvanceReturnForm } from './AP/AdvanceReturnForm.tsx';
 import { ApBalances, ApSupplierPage } from './AP/Suppliers.tsx';
+import { PurchasesOverviewPage } from './AP/Overview.tsx';
 import { advanceReturnView, advanceView as supplierAdvanceView, billView, paymentView } from './AP/views.tsx';
 import { VoucherForm } from './EXP/VoucherForm.tsx';
 import { DividendPaymentForm, OfficerForm, OwnerMoneyForm } from './EQ/forms.tsx';
@@ -272,6 +273,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/aud/log': AuditLog,
   '/aud/integrity': IntegrityCheck,
   '/aud/nightly': NightlyChecks,
+  '/ap/overview': PurchasesOverviewPage,
   '/ap/suppliers': ApBalances,
   '/ap/suppliers/:id': ApSupplierPage,
   '/fa/assets': Assets,
