@@ -72,7 +72,8 @@ async function collect(page: Page, button: string, amount: string, cr: string, j
 /** The collection form, already open for the job order: the amount it starts with, the GCash place, the CR number. */
 async function fillCollection(page: Page, amount: string, cr: string, jo = 'JO-000001') {
   await expect(page.getByRole('heading', { name: 'New collection' })).toBeVisible();
-  await expect(page.getByText(CUSTOMER, { exact: true })).toBeVisible();
+  // The form's own customer: the list behind it shows customers' names too (the job orders' look, Oct 2026).
+  await expect(page.getByText(CUSTOMER, { exact: true }).last()).toBeVisible();
   await expect(page.getByLabel(new RegExp(`^Pay now on ${jo}`))).toHaveValue(amount);
   await expect(page.getByLabel('Amount', { exact: true })).toHaveValue(amount);
   await page.getByRole('radio', { name: /GCash/ }).click();
@@ -294,7 +295,7 @@ test('sales: a job order made from a quotation is filled from it and can be chan
   // The form is filled from the quotation.
   await expect(page.getByRole('heading', { name: 'New job order' })).toBeVisible();
   await expect(page.getByText(/^Filled from quotation QUO-000001/)).toBeVisible();
-  await expect(page.getByText(CUSTOMER, { exact: true })).toBeVisible();
+  await expect(page.getByText(CUSTOMER, { exact: true }).last()).toBeVisible();
   // The quoted item is in the breakdown; Edit puts it in the item form to change.
   await expect(page.getByRole('list', { name: 'Items in this job order' })).toContainText('Rowing jersey');
   await page.getByRole('button', { name: 'Edit item 1' }).click();
