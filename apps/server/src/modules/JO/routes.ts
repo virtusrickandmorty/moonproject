@@ -63,7 +63,7 @@ const JOB_ORDER_REFUSALS = new Set(['JOB_ORDER', 'JO_CANCELLED', 'JO_ABANDONED',
 
 export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
-  joListRoutes(app, db);
+  joListRoutes(app, db, clock);
 
   /** What the JO view shows beside the document: stage, allowed moves, history, and money (all derived, NR-2). */
   /**
