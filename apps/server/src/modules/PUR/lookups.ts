@@ -15,7 +15,7 @@ const PO_HEAD = `SELECT d.id, d.number, d.status, d.business_date AS date, d.tot
   FROM pur_purchase_orders po JOIN documents d ON d.id = po.document_id JOIN pur_suppliers s ON s.id = po.supplier_id`;
 
 /** Every line of a purchase order with what posted receiving reports have received so far (a cancelled report receives nothing). */
-function poLines(db: Db, poId: string): PoLine[] {
+export function poLines(db: Db, poId: string): PoLine[] {
   const rows = db
     .prepare(
       `SELECT l.line_no AS lineNo, l.supply_id AS supplyId, s.name AS supplyName, s.unit, l.qty AS orderedQty, l.unit_cost_cents AS unitCostCents,
@@ -25,6 +25,17 @@ function poLines(db: Db, poId: string): PoLine[] {
     )
     .all(poId) as Omit<PoLine, 'remainingQty'>[];
   return rows.map((r) => ({ ...r, remainingQty: Math.max(0, r.orderedQty - r.receivedQty) }));
+}
+
+/** The recorded supplier bill that names a receiving report, if any (AP's ap_bills, read-only, as receivedNotBilledForReport does). */
+const billOf = (db: Db, rrId: string) => (db.prepare(`SELECT d.id, d.number FROM ap_bills b JOIN documents d ON d.id = b.document_id
+  WHERE b.receiving_report_id = ? AND d.status = 'posted' ORDER BY d.number LIMIT 1`).get(rrId) as { id: string; number: string } | undefined) ?? null;
+
+/** A purchase order's receiving reports, oldest first, each with the bill recorded for it (the order's steps, Oct 2026). */
+function deliveriesOf(db: Db, poId: string) {
+  return (db.prepare(`SELECT d.id, d.number, d.business_date AS date, d.status FROM pur_receiving_reports r JOIN documents d ON d.id = r.document_id
+    WHERE r.po_document_id = ? ORDER BY d.number`).all(poId) as { id: string; number: string; date: string; status: 'posted' | 'cancelled' }[])
+    .map((r) => ({ ...r, bill: r.status === 'posted' ? billOf(db, r.id) : null }));
 }
 
 export function purLookupRoutes(app: FastifyInstance, deps: AppDeps): void {
@@ -44,7 +55,7 @@ export function purLookupRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/pur/purchase-orders/:id', { config: { permission: 'pur.po.view' } }, async (req) => {
     const po = db.prepare(`${PO_HEAD} WHERE d.id = ?`).get(id(req)) as PoHead | undefined;
     if (!po) throw notFound('The purchase order');
-    return { ...po, lines: poLines(db, po.id) };
+    return { ...po, lines: poLines(db, po.id), deliveries: deliveriesOf(db, po.id) };
   });
 
   app.get('/api/pur/receiving-reports/:id', { config: { permission: 'pur.rr.view' } }, async (req) => {
@@ -63,7 +74,7 @@ export function purLookupRoutes(app: FastifyInstance, deps: AppDeps): void {
          WHERE r.document_id = ? ORDER BY r.line_no`,
       )
       .all(rr.id);
-    return { ...rr, lines };
+    return { ...rr, lines, bill: billOf(db, rr.id) };
   });
 
   /** A supplier's purchase orders, newest first, and whether everything on each has been received. */

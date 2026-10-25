@@ -62,6 +62,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'People & Payroll', label: 'Government remittances', path: '/stat', permission: 'stat.view' },
   { group: 'People & Payroll', label: 'Missing past government contributions', path: '/stat/exposure', permission: 'stat.view' },
   { group: 'People & Payroll', label: 'Cash advances owed', path: '/ca/employees', permission: 'ca.view' },
+  { group: 'Purchases & Expenses', label: 'Purchases overview', path: '/ap/overview', permission: 'ap.ledger.view' },
   { group: 'Purchases & Expenses', label: 'Payables by supplier', path: '/ap/suppliers', permission: 'ap.ledger.view' },
   { group: 'Accounting & Tax', label: 'Month-end checklist', path: '/acc/month-end', permission: 'acc.monthend.view' },
   { group: 'Accounting & Tax', label: 'Go-live decisions', path: '/acc/go-live-decisions', permission: 'acc.golive.view' },
@@ -218,6 +219,7 @@ export const SUBS: Partial<Record<MenuGroup, [sub: string, keys: string[]][]>> =
     ['Design', ['/img']],
   ],
   'Purchases & Expenses': [
+    ['Overview', ['/ap/overview']],
     ['Purchasing', ['/pur/suppliers', '/pur/supplies', 'pur.']],
     ['Supplier bills & payments', ['ap.', '/ap/']],
     ['Expenses', ['exp.']],

@@ -5,9 +5,12 @@
  * accountant alone may change the EWT from the supplier's usual class. The supplier's open advances (PLAN D5 SUP-ADV)
  * are applied oldest first up to what the bill owes, unless the user types what to take from each; the server leaves
  * the part an advance already withheld on out of the bill's EWT. Also the Edit of a recorded bill (NR-4).
+ * Opened from a receiving report ("Record the supplier's bill", ?rr=<id>; the owner's request, 25 Oct 2026), it starts
+ * with that delivery's supplier and its supplies at the purchase order's cost, for the user to match to the invoice.
  */
 import { useEffect, useState } from 'react';
 import { formatPesos, isBusinessDate } from '@moonproject/shared';
+import { qtyWords } from '../PUR/purchasing.ts';
 import { api, type ApLedger, type DocTypeInfo, type Me } from '../../api.ts';
 import { Button, Field, Panel, inputClass, peso } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
@@ -50,6 +53,20 @@ export function BillForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode
     setTypedAdvances(Object.fromEntries((input.advances ?? []).map((a) => [a.advanceId, formatPesos(a.amountCents)])));
     if (input.receivingReportId) setRr({ id: input.receivingReportId, number: (d.doc as { receivingReportNumber?: string } | undefined)?.receivingReportNumber ?? 'on file' });
   });
+
+  // From a delivery: its supplier, the delivery itself, and what came at the order's cost per unit.
+  useEffect(() => {
+    const wanted = mode.kind === 'new' ? new URLSearchParams(window.location.search).get('rr') : null;
+    if (!wanted) return;
+    api.receivingReport(wanted).then(async (r) => {
+      if (r.bill) f.fail(new Error(`${r.number} is already billed on ${r.bill.number}. Record another bill only for another invoice.`));
+      const po = await api.purchaseOrder(r.poId);
+      const cost = new Map(po.lines.map((l) => [l.lineNo, l.unitCostCents]));
+      setSupplierId(r.supplierId);
+      setRr({ id: r.id, number: r.number });
+      setRows(r.lines.map((l) => ({ for: `supply:${l.supplyId}`, description: `${qtyWords(l.qty, l.unit)} at ${formatPesos(cost.get(l.poLineNo) ?? 0)}`, amount: formatPesos(l.qty * (cost.get(l.poLineNo) ?? 0)) })));
+    }, f.fail);
+  }, []);
 
   useEffect(() => {
     setLedger(null);
@@ -105,7 +122,12 @@ export function BillForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode
           </Field>
           <PrintedDateField label="Date to record it on" value={printed.text} onChange={printed.setText} />
         </div>
-        {rr && <p className="text-sm text-slate-600">For receiving report {rr.number}.</p>}
+        {rr && (
+          <p className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+            For the goods on receiving report {rr.number}. The amounts below are the purchase order’s cost: change them to what the invoice says.
+            {mode.kind === 'new' && <Button onClick={() => setRr(undefined)}>Not for this delivery</Button>}
+          </p>
+        )}
       </Panel>
       <Panel title="What is it for?">
         <table className="w-full text-sm">
