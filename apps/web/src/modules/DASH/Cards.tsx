@@ -212,23 +212,23 @@ export function kpiShares(cards: DashCards): Record<string, { share: number; lab
 
 /** The cards laid out; `attention` (the Needs attention list) takes the third place of the bottom row. */
 /**
- * The home's cards: the headline figures, the floor and the week, then a grid of three columns where Needs attention
- * runs down the right and the role's other cards (`more`: VAT, cancellations...) fill in under the calendar and the
- * stages (the owner's request, Oct 2026: no gaps, nothing in between).
+ * The home's cards: Needs attention across the top (the owner's request, Oct 2026), the headline figures, the floor and
+ * the week, then the calendar, the stages and the role's other cards (`more`: VAT, cancellations...) in an even grid.
  */
 export function CardsLayout({ cards, attention, more = [] }: { cards: DashCards | null; attention: ReactNode; more?: ReactNode[] }) {
-  const tall = more.length > 0 ? 'lg:row-span-2' : '';
-  const bottom = [cards?.calendar && <CalendarCard key="cal" calendar={cards.calendar} today={cards.asOf} />, cards?.stages && <StagesCard key="stages" stages={cards.stages} />,
-    <div key="attention" className={`min-w-0 ${tall}`}>{attention}</div>, ...more].filter(Boolean);
-  const columns = bottom.length >= 3 ? 'lg:grid-cols-3' : bottom.length === 2 ? 'lg:grid-cols-2' : '';
+  const bottom = [cards?.calendar && <CalendarCard key="cal" calendar={cards.calendar} today={cards.asOf} />, cards?.stages && <StagesCard key="stages" stages={cards.stages} />, ...more].filter(Boolean);
+  // Four cards make two rows of two; three, one row of three.
+  const columns = bottom.length === 4 ? 'lg:grid-cols-2 2xl:grid-cols-4' : bottom.length >= 3 ? 'lg:grid-cols-3' : bottom.length === 2 ? 'lg:grid-cols-2' : '';
   return <div className="space-y-4">
+    {/* Needs attention first, the whole width (the owner's request, Oct 2026): what to act on before the figures. */}
+    <div className="min-w-0">{attention}</div>
     {cards && <KpiStrip kpis={cards.kpis} shares={kpiShares(cards)} />}
     {cards && (cards.jobs || cards.activity) && <div className={`grid gap-4 ${cards.jobs && cards.activity ? 'xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]' : ''}`}>
       {cards.jobs && <JobsCard jobs={cards.jobs} />}
       {cards.activity && <ActivityCard activity={cards.activity} />}
     </div>}
     {/* Cards side by side end level: each fills its cell (a short card beside a tall one). */}
-    <div className={`grid items-stretch gap-4 md:grid-cols-2 ${columns} [&>div>section]:h-full [&>section]:h-full`}>{bottom}</div>
+    {bottom.length > 0 && <div className={`grid items-stretch gap-4 md:grid-cols-2 ${columns} [&>div>section]:h-full [&>section]:h-full`}>{bottom}</div>}
   </div>;
 }
 
