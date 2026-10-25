@@ -15,6 +15,7 @@ import { ItemSearch } from '../JO/parts.tsx';
 import { NewCustomerButton } from '../JO/JobOrderForm.tsx';
 import { SalesActions } from '../JO/entry.tsx';
 import { amount, blank, blankLine, cents, isReady, toInput, valuesOfInput, type Form, type Line, type QuotationDoc } from './quotation.ts';
+import { DiscountField, discountCentsOf, discountProblem } from '../../components/discount.tsx';
 
 function MoneyField({ value, onValue, placeholder, label }: { value: number | undefined; onValue: (n: number | undefined) => void; placeholder?: string; label: string }) {
   const [text, setText] = useState(amount(value));
@@ -29,7 +30,7 @@ function MoneyField({ value, onValue, placeholder, label }: { value: number | un
 }
 
 /** Nothing picked or typed in the item form yet. */
-const empty = (l: Line) => !l.itemId && !l.description.trim() && !l.discountCents && l.overrideUnitPriceCents === undefined;
+const empty = (l: Line) => !l.itemId && !l.description.trim() && !l.discountCents && !l.discountText?.trim() && l.overrideUnitPriceCents === undefined;
 /** The item form's own slips (the server checks every line again). */
 export function itemSlips(l: Line): string[] {
   const out: string[] = [];
@@ -60,7 +61,7 @@ export function QuotationForm({ type, mode, me }: { type: DocTypeInfo; mode: For
   useEffect(() => {
     if (mode.kind === 'edit') api.get(type.key, mode.id).then((d) => {
       setOriginal(d.header);
-      setV(valuesOfInput(d.input));
+      setV(valuesOfInput(d.input, d.doc as { lines: { unitPriceCents: number }[] } | undefined));
       setCustomerName(String(d.doc?.customerName ?? 'Customer on file'));
     }, (e: Error) => setError(e.message));
     else if (mode.draftId) api.drafts(type.key).then((ds) => {
@@ -86,10 +87,27 @@ export function QuotationForm({ type, mode, me }: { type: DocTypeInfo; mode: For
   }, [type.key, input, ready]);
 
   const patch = (p: Partial<Line>) => setItem((l) => ({ ...l, ...p }));
-  const slips = itemSlips(item);
+  // The item's price for its quantity on the price list, for a discount typed as a percent (its own price when changed).
+  const [listPrice, setListPrice] = useState<number | null>(null);
+  useEffect(() => {
+    setListPrice(null);
+    if (!item.itemId || !(item.qty >= 1)) return;
+    let stale = false;
+    api.catPrice(item.itemId, item.qty).then((p) => { if (!stale) setListPrice(p.unitPriceCents); }, () => undefined);
+    return () => { stale = true; };
+  }, [item.itemId, item.qty]);
+  const unitPrice = item.overrideUnitPriceCents ?? listPrice;
+  const offMode = item.discountMode ?? 'each';
+  const itemOff = offMode === 'percent' && unitPrice === null ? undefined : discountCentsOf(offMode, item.discountText ?? '', item.qty, unitPrice ?? 0);
+  const slips = [...itemSlips(item),
+    ...(itemOff === undefined && item.discountText?.trim() ? [offMode === 'percent' && unitPrice === null ? 'Wait for the price list price, or type the price, to work out the percent.' : `For the discount, ${discountProblem(offMode)}.`] : [])];
   const pending = !empty(item);
   const clearItem = () => { setItem(blankLine()); setEditing(null); setItemTouched(false); };
-  const withItem = (f: Form): Form => ({ ...f, lines: editing === null ? [...f.lines, item] : f.lines.map((l, j) => (j === editing ? item : l)) });
+  // The item goes in with its discount worked out in centavos, as the server takes it.
+  const withItem = (f: Form): Form => {
+    const put = { ...item, discountCents: itemOff ?? 0 };
+    return { ...f, lines: editing === null ? [...f.lines, put] : f.lines.map((l, j) => (j === editing ? put : l)) };
+  };
   const putItem = () => {
     setItemTouched(true);
     if (slips.length > 0) return;
@@ -183,8 +201,11 @@ export function QuotationForm({ type, mode, me }: { type: DocTypeInfo; mode: For
                   {item.overrideUnitPriceCents !== undefined
                     ? <Field label="Why the price is changed" required><input aria-label="Item price reason" className={inputClass} value={item.overrideReason ?? ''} onChange={(e) => patch({ overrideReason: e.target.value })} /></Field>
                     : <span className="hidden sm:block" />}
-                  <Field label="Discount (optional)"><MoneyField label="Item discount" value={item.discountCents || undefined} placeholder="0.00" onValue={(n) => patch({ discountCents: n ?? 0 })} /></Field>
-                  {item.discountCents > 0 && <Field label="Discount reason"><input aria-label="Item discount reason" className={inputClass} value={item.discountReason ?? ''} onChange={(e) => patch({ discountReason: e.target.value })} /></Field>}
+                  <Field label="Discount (optional)" hint="Pesos off each piece, or a percent of this item.">
+                    <DiscountField label="Item discount" mode={offMode} text={item.discountText ?? ''} qty={item.qty} unitPriceCents={unitPrice}
+                      onChange={(discountMode, discountText) => patch({ discountMode, discountText })} />
+                  </Field>
+                  {(itemOff ?? 0) > 0 && <Field label="Discount reason"><input aria-label="Item discount reason" className={inputClass} value={item.discountReason ?? ''} onChange={(e) => patch({ discountReason: e.target.value })} /></Field>}
                 </div>
                 <Errors list={slips} show={itemTouched} />
                 <div className="flex flex-wrap gap-2">

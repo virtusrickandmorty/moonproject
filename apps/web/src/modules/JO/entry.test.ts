@@ -19,7 +19,7 @@ it('job order Record keeps the exact input, including discount and a manually ch
   // The item is in the breakdown; Edit puts it back in the item form, Update item puts the change back.
   f.find('aria-label', 'Edit item 1').props.onClick();
   expect(f.find('aria-label', 'Item price each').props.value).toBe('120.00');
-  expect(f.find('aria-label', 'Item discount').props.value).toBe('10.00');
+  expect(f.find('label', 'Item discount').props).toMatchObject({ text: '10.00', mode: 'each' }); // pesos off each piece
   change(f.find('aria-label', 'Item price each'), 'abc');
   f.find('children', 'Record').props.onClick(); // an incomplete change stops Record, which sends nothing
   expect(recorder.fail).toHaveBeenCalled();
@@ -28,7 +28,7 @@ it('job order Record keeps the exact input, including discount and a manually ch
   f.find('children', 'Update item').props.onClick();
   f.find('children', 'Record').props.onClick();
   expect(recorder.ask).toHaveBeenLastCalledWith({ customerId: 'c1', dueInDays: 15, priority: 'normal', paymentTerms: 'dp50',
-    lines: [{ kind: 'made_to_order', description: 'Jerseys', qty: 2, unitPriceCents: 12500, discountCents: 1000, roster: [] }] }, []);
+    lines: [{ kind: 'made_to_order', description: 'Jerseys', qty: 2, unitPriceCents: 12500, discountCents: 2000, roster: [] }] }, []); // ₱10 off each of 2
   expect(f.render().findIndex((n) => n.props.title === 'So far')).toBeLessThan(f.render().findIndex((n) => n.type === SalesActions));
 });
 

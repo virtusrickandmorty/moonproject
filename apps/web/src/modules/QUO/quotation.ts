@@ -7,9 +7,14 @@ import { allocate, formatPesos, parsePesos } from '@moonproject/shared';
 import type { DocDetail } from '../../api.ts';
 import { docPath } from '../../shell/menu.ts';
 import type { ItemClass } from '../CAT/catalog.ts';
+import { discountOf, type DiscountMode } from '../../components/discount.tsx';
 
+/**
+ * `discountCents` is what the server takes; `discountText` and `discountMode` are how it was typed (pesos off each piece
+ * or a percent of the item, the owner's request, Oct 2026), kept in the form and its drafts only.
+ */
 export type Line = { itemId: string; description: string; qty: number; unit: 'pc' | 'set'; discountCents: number;
-  discountReason?: string; overrideUnitPriceCents?: number; overrideReason?: string };
+  discountReason?: string; overrideUnitPriceCents?: number; overrideReason?: string; discountText?: string; discountMode?: DiscountMode };
 export type Form = { customerId: string; prospectName: string; contact: string; validForDays: number; termsText: string; notes: string;
   lines: Line[]; documentDiscountCents: number; discountReason: string };
 
@@ -46,10 +51,14 @@ export const isReady = (v: Form) => v.lines.length > 0 && v.lines.every((l) => l
   Boolean(v.customerId) !== Boolean(v.prospectName.trim()) && v.validForDays >= 1;
 
 /** A saved quotation's input (GET /api/docs/quo.quotation/:id) back into form values, to edit it. */
-export function valuesOfInput(x: Record<string, unknown>): Form {
+export function valuesOfInput(x: Record<string, unknown>, doc?: { lines: { unitPriceCents: number }[] }): Form {
   return { customerId: String(x.customerId ?? ''), prospectName: String(x.prospectName ?? ''), contact: String(x.contact ?? ''),
     validForDays: Number(x.validForDays ?? 15), termsText: String(x.termsText ?? ''), notes: String(x.notes ?? ''),
-    lines: ((x.lines ?? []) as Line[]).map((l) => ({ ...l })), documentDiscountCents: Number(x.documentDiscountCents ?? 0),
+    // Each item's discount back as it reads: pesos each, or a percent of the item at its saved price.
+    lines: ((x.lines ?? []) as Line[]).map((l, i) => {
+      const typed = discountOf(l.discountCents, l.qty, doc?.lines[i]?.unitPriceCents ?? 0);
+      return { ...l, discountText: typed.text, discountMode: typed.mode };
+    }), documentDiscountCents: Number(x.documentDiscountCents ?? 0),
     discountReason: String(x.discountReason ?? '') };
 }
 
