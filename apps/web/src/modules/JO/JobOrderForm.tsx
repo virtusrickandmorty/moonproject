@@ -9,6 +9,7 @@ import { formatPesos, manilaDate, saysSet } from '@moonproject/shared';
 import { api, type CatItem, type CustomerWearers, type DocTypeInfo, type Me, type Preview } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import { cents } from '../COL/money.ts';
+import { DiscountField } from '../../components/discount.tsx';
 import { SalesActions } from './entry.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
@@ -22,7 +23,7 @@ import { ItemSearch } from './parts.tsx';
 import { TERMS } from './opening.ts';
 import { parseRosterPaste } from './roster.ts';
 import {
-  KIND_OF_CLASS, blankLine, emptyJo, emptyJoLine, fromWearer, joInput, joValues, lineQty, oneOff, priceChanged,
+  KIND_OF_CLASS, blankLine, emptyJo, emptyJoLine, fromWearer, joInput, joValues, lineDiscountCents, lineQty, oneOff, priceChanged,
   valuesFromQuotation, type JoDoc, type JoInput, type JoLineRow, type JoValues, type RosterEdit,
 } from './forms.ts';
 
@@ -370,7 +371,10 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
               <Field label="Price each" hint={item.listCents !== null ? `Price list for ${lineQty(item)}: ${formatPesos(item.listCents)} each${priceChanged(item) ? ' (changed by hand)' : ''}` : undefined}>
                 <input aria-label="Item price each" inputMode="decimal" placeholder="Price each" className={money} value={item.price} onChange={(e) => setItemPatch({ price: e.target.value })} />
               </Field>
-              <Field label="Discount (optional)"><input aria-label="Item discount" inputMode="decimal" placeholder="0.00" className={money} value={item.discount} onChange={(e) => setItemPatch({ discount: e.target.value })} /></Field>
+              <Field label="Discount (optional)" hint="Pesos off each piece, or a percent of this item.">
+                <DiscountField mode={item.discountMode ?? 'each'} text={item.discount} qty={Number(lineQty(item)) || 0} unitPriceCents={cents(item.price) ?? 0}
+                  label="Item discount" onChange={(discountMode, discount) => setItemPatch({ discountMode, discount })} />
+              </Field>
             </div>
             {noPrice && <p className="text-xs text-amber-700">{noPrice}</p>}
             <details open={item.roster.length > 0}>
@@ -394,7 +398,7 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
               <ol className="divide-y divide-slate-100" aria-label="Items in this job order">
                 {v.lines.map((l, i) => {
                   const each = cents(l.price);
-                  const off = cents(l.discount) ?? 0;
+                  const off = lineDiscountCents(l) ?? 0;
                   const total = each === undefined ? undefined : Number(lineQty(l)) * each - off;
                   return (
                     <li key={i} className={`flex gap-3 py-2 ${editing === i ? '-mx-2 rounded-md bg-indigo-50 px-2' : ''}`}>
@@ -402,7 +406,7 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-medium" title={l.description}>{l.description || '(no description)'}</p>
                         <p className="text-xs text-slate-500">
-                          {lineQty(l)} {l.isSet ? 'sets' : 'pcs'} × {each === undefined ? '—' : peso(each)}{off ? ` less ${peso(off)}` : ''}{l.roster.length > 0 ? ` · ${l.roster.length} wearer${l.roster.length === 1 ? '' : 's'}` : ''}
+                          {lineQty(l)} {l.isSet ? 'sets' : 'pcs'} × {each === undefined ? '—' : peso(each)}{off ? ` less ${(l.discountMode ?? 'each') === 'percent' ? `${l.discount.trim().replace(/%$/, '')}%` : `${peso(cents(l.discount) ?? 0)} each`} (${peso(off)})` : ''}{l.roster.length > 0 ? ` · ${l.roster.length} wearer${l.roster.length === 1 ? '' : 's'}` : ''}
                         </p>
                         <div className="mt-1 flex gap-3 text-xs">
                           <button type="button" className="font-medium text-indigo-700 hover:underline" aria-label={`Edit item ${i + 1}`} onClick={() => editItem(i)}>Edit</button>

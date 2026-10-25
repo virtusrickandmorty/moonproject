@@ -15,7 +15,7 @@ it('the quotation item form keeps the exact input: picked item, quantity, discou
   expect(f.render().find((n) => n.type === CustomerPicker)!.props.value).toEqual({ id: 'c1', name: 'Sample School' });
   expect(f.find('children', 'Change item')).toBeDefined();
   change(f.find('aria-label', 'Item quantity'), '2');
-  f.find('label', 'Item discount').props.onValue(1000);
+  f.find('label', 'Item discount').props.onChange('each', '5.00'); // ₱5 off each of the 2: ₱10.00
   f.find('label', 'Item price each').props.onValue(12500);
   f.find('children', '+ Add to order').props.onClick(); // a changed price needs its reason first
   expect(f.render().some((n) => n.props.list?.includes('Say why the price is changed.') && n.props.show === true)).toBe(true);

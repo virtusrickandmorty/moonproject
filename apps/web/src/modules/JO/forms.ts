@@ -7,6 +7,7 @@ import { formatPesos, saysSet } from '@moonproject/shared';
 import type { BookletFigures, BookletShown, CatItem, DpInfo, JoDepositVat, JoStatus, WearerPick } from '../../api.ts';
 import type { jobOrderPrefill } from '../QUO/quotation.ts';
 import { cents } from '../COL/money.ts';
+import { discountCentsOf, discountOf, discountProblem, type DiscountMode } from '../../components/discount.tsx';
 import type { Kind } from '../QS/lines.ts';
 import type { Terms } from './opening.ts';
 
@@ -18,7 +19,8 @@ export interface RosterEdit { personId: string; name: string; sizeMode: 'preset'
  * A line; `listCents` is the price list's tier price for the quantity (null when not from the price list). `isSet`: the
  * wearers get an upper and a lower size (the owner's request, Oct 2026): on when a set is picked from the price list.
  */
-export interface JoLineRow { itemId: string; kind: Kind; description: string; qty: string; price: string; listCents: number | null; discount: string; roster: RosterEdit[]; isSet: boolean }
+/** `discount` is typed as pesos off each piece or a percent of the item (`discountMode`, pesos each when left out). */
+export interface JoLineRow { itemId: string; kind: Kind; description: string; qty: string; price: string; listCents: number | null; discount: string; discountMode?: DiscountMode; roster: RosterEdit[]; isSet: boolean }
 export interface JoValues {
   customer: { id: string; name: string } | null;
   contact: string; dueInDays: string; priority: 'normal' | 'rush'; paymentTerms: Terms | ''; notes: string; lines: JoLineRow[];
@@ -48,6 +50,14 @@ export const lineQty = (l: JoLineRow) => (l.roster.length > 0 ? String(pieceCoun
 /** The price was changed from the price list's tier price. */
 export const priceChanged = (l: JoLineRow) => l.listCents !== null && cents(l.price) !== l.listCents;
 /** A line with nothing typed in it (an item form not filled yet). */
+/** An item's discount in centavos, from what was typed (pesos each or a percent); undefined when it cannot be read. */
+export const lineDiscountCents = (l: JoLineRow): number | undefined =>
+  discountCentsOf(l.discountMode ?? 'each', l.discount, Number(lineQty(l)) || 0, cents(l.price) ?? 0);
+/** A saved item discount as the form shows it: pesos each, or a percent when it does not divide by the pieces. */
+const typedDiscount = (discountCents: number, qty: number, unitPriceCents: number) => {
+  const d = discountOf(discountCents, qty, unitPriceCents);
+  return { discount: d.text, discountMode: d.mode };
+};
 export const blankLine = (l: JoLineRow) => !l.itemId && !l.description.trim() && !l.price.trim() && !l.discount.trim() && l.roster.length === 0;
 const optional = (key: string, text: string) => (text.trim() ? { [key]: text.trim() } : {});
 
@@ -64,10 +74,12 @@ export function joInput(v: JoValues): { input: JoInput; totalCents: number; erro
     const at = `Line ${i + 1}`;
     const before = errors.length;
     const qty = lineQty(l);
-    const [price, discount] = [cents(l.price), cents(l.discount)];
+    const price = cents(l.price);
+    const discount = lineDiscountCents(l);
     if (!l.description.trim()) errors.push(`${at}: pick an item from the price list or say what is made.`);
     if (!/^[1-9]\d{0,4}$/.test(qty) || Number(qty) > 10_000) errors.push(`${at}: the quantity must be a whole number like 1 or 20.`);
-    if (price === undefined || discount === undefined || price < 0 || discount < 0) errors.push(`${at}: type amounts like 450.00`);
+    if (price === undefined || price < 0) errors.push(`${at}: type amounts like 450.00`);
+    else if (discount === undefined) errors.push(`${at}: for the discount, ${discountProblem(l.discountMode ?? 'each')}.`);
     const roster: RosterInput[] = [];
     l.roster.forEach((r, j) => {
       const who = r.name.trim() || `row ${j + 1}`;
@@ -117,7 +129,7 @@ export function joValues(i: JoInput, doc?: JoDoc): JoValues {
       qty: String(l.qty),
       price: formatPesos(l.unitPriceCents),
       listCents: null,
-      discount: l.discountCents ? formatPesos(l.discountCents) : '',
+      ...typedDiscount(l.discountCents, l.qty, l.unitPriceCents),
       isSet: l.roster.some((r) => !!r.lowerSize) || saysSet(l.description),
       roster: l.roster.map((r, j) => ({
         personId: r.personId ?? '',
@@ -149,7 +161,7 @@ export function valuesFromQuotation(p: QuotationPrefill, customerName: string): 
     contact: p.contact ?? '',
     notes: p.notes,
     lines: p.lines.map((l) => ({
-      ...emptyJoLine(), kind: l.kind, description: l.description, qty: String(l.qty), price: formatPesos(l.unitPriceCents), discount: l.discountCents ? formatPesos(l.discountCents) : '',
+      ...emptyJoLine(), kind: l.kind, description: l.description, qty: String(l.qty), price: formatPesos(l.unitPriceCents), ...typedDiscount(l.discountCents, l.qty, l.unitPriceCents),
     })),
   };
 }
