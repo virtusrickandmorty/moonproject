@@ -9,6 +9,7 @@ import { Link } from '../../router.tsx';
 import { useToday } from '../RPT/Books.tsx';
 import { KIND_WORDS, PORT_HINT, STATUS_WORDS, TEMPLATE_WORDS, documentWords, progressWords } from './com.ts';
 import { useLiveReload } from '../../live.ts';
+import { Paged } from '../../components/RowPages.tsx';
 
 const TABS = [
   { section: '', label: 'Outbox', permission: 'com.outbox.view', denied: 'You cannot see the customer emails.' },
@@ -67,14 +68,14 @@ function BulkStatementsTab() {
       {(load.error || send.error) && <Notice>{load.error || send.error}</Notice>}{done && <Notice tone="success">{done}</Notice>}
     </Panel>
     {data && <><Panel title={`Ready to email (${data.eligible.length})`}>
-      {data.eligible.length === 0 ? <p className="text-sm text-slate-500">No customers are ready.</p> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="pr-3">Send</th><th className="pr-3">Customer</th><th className="pr-3">Email</th><th className="pr-3 text-right">Balance</th><th>Last statement emailed</th></tr></thead><tbody>
-        {data.eligible.map((row) => <tr className="border-t border-slate-100" key={row.customerId}><td className="py-2 pr-3"><input aria-label={`Email ${row.customerName}`} type="checkbox" checked={selected.has(row.customerId)} onChange={() => toggle(row.customerId)} /></td><td className="pr-3">{row.customerName}</td><td className="pr-3">{row.email}</td><td className="pr-3 text-right">{peso(row.balanceCents)}</td><td>{row.lastStatementEmailedAt ? manilaTime(row.lastStatementEmailedAt) : 'Never'}</td></tr>)}
-      </tbody></table></div>}
+      {data.eligible.length === 0 ? <p className="text-sm text-slate-500">No customers are ready.</p> : <Paged rows={data.eligible}>{(page) => (<div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="pr-3">Send</th><th className="pr-3">Customer</th><th className="pr-3">Email</th><th className="pr-3 text-right">Balance</th><th>Last statement emailed</th></tr></thead><tbody>
+        {page.map((row) => <tr className="border-t border-slate-100" key={row.customerId}><td className="py-2 pr-3"><input aria-label={`Email ${row.customerName}`} type="checkbox" checked={selected.has(row.customerId)} onChange={() => toggle(row.customerId)} /></td><td className="pr-3">{row.customerName}</td><td className="pr-3">{row.email}</td><td className="pr-3 text-right">{peso(row.balanceCents)}</td><td>{row.lastStatementEmailedAt ? manilaTime(row.lastStatementEmailedAt) : 'Never'}</td></tr>)}
+      </tbody></table></div>)}</Paged>}
       <Button tone="primary" disabled={selected.size === 0 || send.busy} onClick={() => void queue()}>{send.busy ? 'Queuing…' : `Send ${selected.size} statement${selected.size === 1 ? '' : 's'}`}</Button>
     </Panel><Panel title={`Cannot email (${data.excluded.length})`}>
-      {data.excluded.length === 0 ? <p className="text-sm text-slate-500">None.</p> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="pr-3">Customer</th><th className="pr-3 text-right">Balance</th><th>Reason</th></tr></thead><tbody>
-        {data.excluded.map((row) => <tr className="border-t border-slate-100" key={row.customerId}><td className="py-2 pr-3">{row.customerName}</td><td className="pr-3 text-right">{peso(row.balanceCents)}</td><td>{row.reason}</td></tr>)}
-      </tbody></table></div>}
+      {data.excluded.length === 0 ? <p className="text-sm text-slate-500">None.</p> : <Paged rows={data.excluded}>{(page) => (<div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="pr-3">Customer</th><th className="pr-3 text-right">Balance</th><th>Reason</th></tr></thead><tbody>
+        {page.map((row) => <tr className="border-t border-slate-100" key={row.customerId}><td className="py-2 pr-3">{row.customerName}</td><td className="pr-3 text-right">{peso(row.balanceCents)}</td><td>{row.reason}</td></tr>)}
+      </tbody></table></div>)}</Paged>}
     </Panel></>}
   </div>;
 }

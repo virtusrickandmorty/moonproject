@@ -12,6 +12,7 @@ import { docPath } from '../../shell/menu.ts';
 import { WorksheetChecks } from './QuarterReports.tsx';
 import { Excel, QuarterForm, pesos, useQuarterReport } from './ReportParts.tsx';
 import { certificateWords, quarterTitle, returnQuarter } from './reports.ts';
+import { PRINT_ONLY, usePrintablePages } from '../../components/RowPages.tsx';
 
 const num = 'whitespace-nowrap py-1 pl-3 text-right tabular-nums';
 
@@ -23,6 +24,7 @@ export const saleClassWords = (c: SaleClass | null) => (c ? SALE_CLASS_WORDS[c] 
 interface Col<R> { head: string; cell: (r: R) => ReactNode; total?: number; amount?: boolean }
 
 export function ListTable<R>({ rows, cols, rowKey, empty }: { rows: R[]; cols: Col<R>[]; rowKey: (r: R, i: number) => string; empty: string }) {
+  const { onPage, buttons } = usePrintablePages(rows.length);
   if (rows.length === 0) return <p className="text-sm text-slate-500">{empty}</p>;
   const lead = cols.findIndex((c) => c.amount);
   return (
@@ -30,7 +32,7 @@ export function ListTable<R>({ rows, cols, rowKey, empty }: { rows: R[]; cols: C
       <table className="w-full text-sm">
         <thead className="text-left text-slate-500"><tr>{cols.map((c) => <th key={c.head} className={c.amount ? 'pl-3 text-right' : 'pr-3'}>{c.head}</th>)}</tr></thead>
         <tbody>
-          {rows.map((r, i) => <tr key={rowKey(r, i)} className="border-t border-slate-100 align-top">{cols.map((c) => <td key={c.head} className={c.amount ? num : 'py-1 pr-3'}>{c.cell(r)}</td>)}</tr>)}
+          {rows.map((r, i) => <tr key={rowKey(r, i)} className={`border-t border-slate-100 align-top ${onPage(i) ? '' : PRINT_ONLY}`}>{cols.map((c) => <td key={c.head} className={c.amount ? num : 'py-1 pr-3'}>{c.cell(r)}</td>)}</tr>)}
         </tbody>
         <tfoot>
           <tr className="border-t border-slate-300 font-semibold">
@@ -39,6 +41,7 @@ export function ListTable<R>({ rows, cols, rowKey, empty }: { rows: R[]; cols: C
           </tr>
         </tfoot>
       </table>
+      {buttons}
     </div>
   );
 }

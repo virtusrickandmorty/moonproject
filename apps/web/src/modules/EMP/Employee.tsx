@@ -14,6 +14,7 @@ import { EmployeePriorPay } from '../PAY/Prior.tsx';
 import { Crumb } from '../../shell/crumbs.tsx';
 import { useLiveReload } from '../../live.ts';
 import { fitPicture } from '../../components/pictures.ts';
+import { Paged, newestFirst } from '../../components/RowPages.tsx';
 
 const PAY_TYPE = { daily: 'Daily', piece: 'Per piece (pakyawan)', monthly: 'Monthly', mixed: 'Daily and per piece' } as const;
 const PAY_GROUP = { WEEKLY_PIECE: 'Weekly (piece rate)', WEEKLY_DAILY: 'Weekly (daily paid)', SEMI_DAILY: 'Semi-monthly (daily paid)', SEMI_MONTHLY: 'Semi-monthly (monthly staff)' } as const;
@@ -284,10 +285,10 @@ function Pay({ d, canSet, onSaved }: { d: EmployeeDetail; canSet: boolean; onSav
     <Panel title="Pay">
       <p className="text-sm">{d.pay ? `${PAY_TYPE[d.pay.payType]}, ${PAY_GROUP[d.pay.payGroup]}, ${d.pay.workweekDays}-day week, since ${showDate(d.pay.effectiveFrom)}.` : 'No pay is set yet.'}</p>
       {d.payHistory && d.payHistory.length > 0 && (
-        <table className="w-full text-sm">
+        <Paged rows={newestFirst(d.payHistory, (p) => `${p.effectiveFrom} ${p.createdAt}`)}>{(page) => (<table className="w-full text-sm">
           <thead className="text-left text-slate-500"><tr><th>From</th><th>Pay</th><th className="text-right">Daily</th><th className="text-right">Monthly</th><th className="pl-4">Group</th><th>Why</th></tr></thead>
           <tbody>
-            {d.payHistory.map((p) => (
+            {page.map((p) => (
               <tr key={p.id} className="border-t border-slate-100">
                 <td className="py-1">{showDate(p.effectiveFrom)}</td><td>{PAY_TYPE[p.payType]}{p.isMwe ? ' (MWE)' : ''}</td>
                 <td className="text-right tabular-nums">{p.dailyRateCents ? peso(p.dailyRateCents) : ''}</td>
@@ -296,7 +297,7 @@ function Pay({ d, canSet, onSaved }: { d: EmployeeDetail; canSet: boolean; onSav
               </tr>
             ))}
           </tbody>
-        </table>
+        </table>)}</Paged>
       )}
       {canSet && <NewPay key={d.payHistory?.length ?? 0} d={d} onSaved={onSaved} />}
     </Panel>

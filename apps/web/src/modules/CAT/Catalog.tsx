@@ -8,9 +8,10 @@
 import { useLiveChange } from '../../live.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type PieceRate, type PrdStep, type RateTable } from '../../api.ts';
-import { Loading, Button, Dialog, Field, Notice, Panel, ReasonDialog, inputClass, peso, useAction, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, PageBar, Panel, ReasonDialog, choosePageRows, inputClass, peso, useAction, useRowsPerPage, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
 import { cents } from '../COL/money.ts';
-import { CLASS_LABELS as classes, PAGE_SIZE, blankItem, catalogCalls, moneyCents, typeLocked, valuesOf, type Detail, type Item, type ItemValues } from './catalog.ts';
+import { CLASS_LABELS as classes, blankItem, catalogCalls, moneyCents, typeLocked, valuesOf, type Detail, type Item, type ItemValues } from './catalog.ts';
+import { newestFirst, Paged } from '../../components/RowPages.tsx';
 
 const unitWords = (r: Pick<Item, 'unit'>) => (r.unit === 'set' ? 'Set (upper and lower)' : 'Piece');
 
@@ -18,6 +19,7 @@ export function Catalog({ me }: { me: Me }) {
   const [rows, setRows] = useState<Item[]>([]);
   const [search, setSearch] = useState('');
   const [offset, setOffset] = useState(0);
+  const rowsPerPage = useRowsPerPage(); // the ERP's one rows-per-page choice
   const [selected, setSelected] = useState<Detail | null>(null);
   const [editing, setEditing] = useState<Detail | 'new' | null>(null);
   const [error, setError] = useState('');
@@ -26,9 +28,9 @@ export function Catalog({ me }: { me: Me }) {
   const calls = catalogCalls(me);
   const load = useCallback(async () => {
     if (!canView) return;
-    try { setRows(await calls.list(search, offset)); setError(''); }
+    try { setRows(await calls.list(search, offset, rowsPerPage)); setError(''); }
     catch (e) { setError((e as Error).message); }
-  }, [me, canView, search, offset]);
+  }, [me, canView, search, offset, rowsPerPage]);
   const open = async (id: string) => {
     try { setSelected(await calls.open(id)); setError(''); }
     catch (e) { setError((e as Error).message); }
@@ -49,8 +51,9 @@ export function Catalog({ me }: { me: Me }) {
           <td><button type="button" className="text-left text-indigo-700 hover:underline" onClick={(e) => (e.stopPropagation(), void open(r.id))}>{r.name}</button></td>
           <td>{classes[r.class]}</td><td>{unitWords(r)}</td><td>{r.is_active ? 'Active' : 'Inactive'}</td></tr>))}</tbody></table>
       {rows.length === 0 && <p className="py-3 text-sm text-slate-500">No items found.</p>}</div>
-    <div className="flex gap-2"><Button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}>Previous</Button>
-      <Button disabled={rows.length < PAGE_SIZE} onClick={() => setOffset(offset + PAGE_SIZE)}>Next</Button></div>
+    {(offset > 0 || rows.length === rowsPerPage) && <PageBar first={offset + 1} last={offset + rows.length} page={Math.floor(offset / rowsPerPage) + 1}
+      hasPrevious={offset > 0} hasNext={rows.length === rowsPerPage} onPrevious={() => setOffset(Math.max(0, offset - rowsPerPage))} onNext={() => setOffset(offset + rowsPerPage)}
+      onRows={(r) => choosePageRows(r, setOffset)} />}
     {me.permissions.includes('rate.view') && <UnmatchedRates me={me} onItem={open} />}
     {selected && !editing && <Dialog wide title={`${selected.name} · ${selected.code}`} onClose={() => setSelected(null)}>
       <ItemDetail me={me} data={selected} onEdit={() => setEditing(selected)} onRefresh={async () => { await load(); await open(selected.id); }} />
@@ -112,10 +115,10 @@ function ItemDetail({ me, data, onEdit, onRefresh }: { me: Me; data: Detail; onE
       {canManage && active && <Button onClick={onEdit}>Edit item</Button>}
       {canManage && active && <Button tone="danger" onClick={() => setConfirmOff(true)}>Deactivate</Button>}
     </div>
-    <Panel title={`Selling price per ${data.unit === 'set' ? 'set' : 'piece'}`}><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
+    <Panel title={`Selling price per ${data.unit === 'set' ? 'set' : 'piece'}`}><div className="overflow-x-auto"><Paged rows={newestFirst(data.prices, (p) => `${p.effectiveFrom} ${String(p.minQty).padStart(6, "0")}`)}>{(page) => (<table className="w-full text-sm"><thead><tr>
       <th>Effective from</th><th>Minimum quantity</th><th className="text-right">Price</th></tr></thead><tbody>
-      {data.prices.map((p) => <tr key={p.id}><td>{showDate(p.effectiveFrom)}</td><td>{p.minQty}</td>
-        <td className="text-right tabular-nums">{peso(p.unitPriceCents)}</td></tr>)}</tbody></table>
+      {page.map((p) => <tr key={p.id}><td>{showDate(p.effectiveFrom)}</td><td>{p.minQty}</td>
+        <td className="text-right tabular-nums">{peso(p.unitPriceCents)}</td></tr>)}</tbody></table>)}</Paged>
       {data.prices.length === 0 && <p className="py-2 text-sm text-slate-500">No prices yet. A quotation cannot use this item until it has one.</p>}</div>
       {me.permissions.includes('cat.price.manage') && active && <div className="space-y-2 border-t border-slate-100 pt-3"><div className="grid gap-3 sm:grid-cols-3">
         <Field label="New price from" required><input type="date" min={today || undefined} className={inputClass} value={effectiveFrom} onChange={(e) => setEffectiveFrom(e.target.value)} /></Field>
@@ -170,13 +173,13 @@ function LabourRates({ me, item }: { me: Me; item: Detail }) {
       <p className="pt-1 text-xs text-slate-500">Every job order item made as {item.name} is paid these rates. A harder or easier version is its own price list item, with its own price and rates.</p></div>}
     {rates && past.length > 0 && <details className="rounded-md bg-slate-50 px-3 py-2 text-sm">
       <summary className="cursor-pointer font-medium text-indigo-700">Rate history ({past.length})</summary>
-      <div className="overflow-x-auto pt-2"><table className="w-full text-sm"><thead><tr><th>From</th><th>Step</th><th className="text-right">Rate</th><th>Why</th></tr></thead><tbody>
-        {past.map((r) => <tr key={r.id} className={mine.some((m) => m.id === r.id) ? '' : 'text-slate-500'}>
+      <div className="overflow-x-auto pt-2"><Paged rows={newestFirst(past, (r) => r.effectiveFrom)}>{(page) => (<table className="w-full text-sm"><thead><tr><th>From</th><th>Step</th><th className="text-right">Rate</th><th>Why</th></tr></thead><tbody>
+        {page.map((r) => <tr key={r.id} className={mine.some((m) => m.id === r.id) ? '' : 'text-slate-500'}>
           <td className="whitespace-nowrap">{showDate(r.effectiveFrom)}</td>
           <td>{stepName(r.stepCode)}{(r.part ?? 'whole') !== 'whole' && ` · ${PART[r.part!]}`}{r.complexity !== 'standard' && <span className="text-slate-500"> ({LEVEL[r.complexity] ?? r.complexity}, from before: not paid)</span>}</td>
           <td className="text-right tabular-nums">{peso(r.rateCents)}</td>
           <td>{r.reason}</td></tr>)}
-      </tbody></table><p className="pt-1 text-xs text-slate-500">Grey: replaced by a later rate. A recorded production entry keeps the rate it was paid at.</p></div>
+      </tbody></table>)}</Paged><p className="pt-1 text-xs text-slate-500">Grey: replaced by a later rate. A recorded production entry keeps the rate it was paid at.</p></div>
     </details>}
     {rates && me.permissions.includes('rate.manage') && <NewRate garmentType={item.garment_type!} itemName={item.name} parts={parts} asOf={rates.asOf} steps={steps} onSaved={load} />}
   </Panel>;

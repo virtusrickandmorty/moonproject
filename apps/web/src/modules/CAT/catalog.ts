@@ -37,7 +37,7 @@ export const typeLocked = (detail: Pick<Detail, 'prices'> | null) => (detail?.pr
 
 /** What the screen sends. Changes carry the item's version as If-Match, as the routes require. */
 export const catalogCalls = (me: Me) => ({
-  list: (search: string, offset: number) => masterRequest<Item[]>(me, `/api/cat/items?${new URLSearchParams({ search, offset: String(offset), limit: String(PAGE_SIZE) })}`),
+  list: (search: string, offset: number, limit = PAGE_SIZE) => masterRequest<Item[]>(me, `/api/cat/items?${new URLSearchParams({ search, offset: String(offset), limit: String(limit) })}`),
   open: (id: string) => masterRequest<Detail>(me, `/api/cat/items/${encodeURIComponent(id)}`),
   create: (v: ItemValues) => masterRequest<Item>(me, '/api/cat/items', 'POST', itemBody(v)),
   update: (row: Item, v: ItemValues) => masterRequest<Item>(me, `/api/cat/items/${encodeURIComponent(row.id)}`, 'PUT', itemBody(v), row.version),
