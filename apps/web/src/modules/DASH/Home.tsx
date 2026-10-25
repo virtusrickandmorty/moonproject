@@ -68,7 +68,7 @@ function Notifications({ all = false, widgets = [], children }: { all?: boolean;
     {error && <Notice>{error}</Notice>}
     {rows === null && !error && <Loading />}
     {rows !== null && shown?.length === 0 && <p className="text-sm text-slate-500">Nothing needs your attention.</p>}
-    <ul>{shown?.map((row) => { const note = all ? rows?.find((n) => n.id === row.id) : rows?.find((n) => n.id === row.notificationId); return <Item key={row.id} item={row} muted={note?.read} at={all ? note?.at : undefined} action={note && !note.read &&
+    <ul className={all ? undefined : 'lg:grid lg:grid-cols-2 lg:gap-x-10 lg:[&>li:nth-child(2)]:border-0'}>{shown?.map((row) => { const note = all ? rows?.find((n) => n.id === row.id) : rows?.find((n) => n.id === row.notificationId); return <Item key={row.id} item={row} muted={note?.read} at={all ? note?.at : undefined} action={note && !note.read &&
       <button type="button" disabled={busy === note.id} onClick={() => void markRead(note.id)} className="shrink-0 text-xs text-indigo-700 hover:underline disabled:opacity-50">Mark read</button>} />; })}</ul>
     {more && <button type="button" onClick={() => void load(rows?.length ?? 0)} className="text-sm text-indigo-700 hover:underline">Show more</button>}
     {!all && <Link to="/dash/notifications" className="text-sm text-indigo-700 hover:underline">See all notifications</Link>}
@@ -285,7 +285,7 @@ export function HomeContent({ home }: { home: DashHomeData }) {
   const hidden = SHOWN_ELSEWHERE[home.role] ?? [];
   const figures = home.widgets.filter((w) => !work.includes(w) && !hidden.includes(w.key));
   return <div className="space-y-4">
-    {/* The cards first; Needs attention runs down the right, the role's other cards fill in beside it. */}
+    {/* Needs attention at the very top, then the cards; the role's other cards join the last grid. */}
     <HomeCards attention={<Notifications widgets={home.widgets}>{(home.role === 'owner' || home.role === 'accountant') && <NightlyLine />}</Notifications>}
       more={widgetCards(figures)} />
     {home.role === 'owner' && <OwnerHealth />}
