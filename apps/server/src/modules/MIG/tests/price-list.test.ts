@@ -13,7 +13,9 @@ test('reads a price list row, and an old piece-rate row as a rate of the item of
     .toMatchObject({ rowType: 'piece_rate', rateCents: 4000, issues: ['Price list row requires owner confirmation.'] });
   expect(priceListRow({ Garment_Type: 'T-shirt', Operation: 'SEWING', Rate: '12.50' })).toMatchObject({ item: 'T-shirt', class: 'made_to_order_garment', unit: 'pc', operation: 'SEWING', rateCents: 1250 });
   expect(priceListRow({ Item: 'Patch', Kind: 'Service', Price: '100', Operation: 'Sewing', Rate: '5' }).issues).toContain('Piece rates are for made-to-order garments; this item is not one.');
-  expect(priceListRow({ Item: 'Polo', Part: 'Upper', Operation: 'Sewing', Rate: '5' }).issues).toContain('Upper and Lower parts are for an item sold as a set.');
+  expect(priceListRow({ Item: 'Polo', Part: 'Upper', Operation: 'Sewing', Rate: '5' }).issues).toContain('Part is Upper but Unit is empty (Piece): Upper and Lower are the two parts of an item sold as a set. Change Unit to Set, or leave Part empty for an item sold by the piece.');
+  expect(priceListRow({ Item: 'Polo', Unit: 'Piece', Part: 'Lower', Operation: 'Sewing', Rate: '5' }).issues[0]).toMatch(/^Part is Lower but Unit is Piece: /);
+  expect(priceListRow({ Item: 'Polo', Unit: 'Set', Part: 'Lower', Operation: 'Sewing', Rate: '5' }).issues).toEqual([]);
   expect(priceListRow({ Item: 'Polo', Kind: 'Gadget', Price: '1' }).issues).toContain('Kind "Gadget" is not Made to order, Ready-made or Service.');
   expect(priceListRow({ Item: 'Polo', Price: '' , Rate: '' }).issues).toContain('The row has neither a price nor a piece rate.');
   // No difficulty (the owner's decision, Oct 2026): blank or Standard is fine; anything else is flagged for review.
@@ -112,7 +114,7 @@ test('an item\'s later rows take its Kind and Unit when left empty; From qty can
   const rows = (await owner.get(`/api/mig/uploads/${up}/review`)).json().rows as { id: string; rowNumber: number; raw: Record<string, string>; issues: string[] }[];
   const lower = rows.find((r) => r.rowNumber === 3)!;
   expect(lower.raw).toMatchObject({ Kind: 'Made to order', Unit: 'Set' });
-  expect(lower.issues).not.toContain('Upper and Lower parts are for an item sold as a set.');
+  expect(lower.issues.filter((i) => /^Part is/.test(i))).toEqual([]);
   // A price break fixed by hand: the polo's price from 12 pieces.
   const polo = rows.find((r) => r.rowNumber === 4)!;
   const fixed = await owner.post(`/api/mig/rows/${polo.id}/fix`, { manualData: { minQty: 12, priceCents: 42000 } });

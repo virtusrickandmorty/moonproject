@@ -279,7 +279,10 @@ export function priceListRow(raw: Record<string, string>): PriceListRow {
   if (operation && raw.Rate?.trim() === undefined) issues.push('A piece rate needs the Rate as well as the Operation.');
   if (!operation && rateCents !== undefined) issues.push('A piece rate needs the Operation (the step, like Sewing).');
   if (operation && cls && cls !== 'made_to_order_garment') issues.push('Piece rates are for made-to-order garments; this item is not one.');
-  if (part && part !== 'whole' && unit !== 'set') issues.push('Upper and Lower parts are for an item sold as a set.');
+  // Named with the row's own values and the way out (the owner's report, Oct 2026: "it already has an input").
+  if (part && part !== 'whole' && unit !== 'set') {
+    issues.push(`Part is ${part === 'upper' ? 'Upper' : 'Lower'} but Unit is ${(raw.Unit ?? '').trim() || 'empty (Piece)'}: Upper and Lower are the two parts of an item sold as a set. Change Unit to Set, or leave Part empty for an item sold by the piece.`);
+  }
   if (priceCents === undefined && !(operation && rateCents !== undefined) && !issues.length) issues.push('The row has neither a price nor a piece rate.');
   return { item, class: cls ?? 'made_to_order_garment', unit: unit ?? 'pc', ...(priceCents !== undefined ? { priceCents } : {}), minQty: minQty ?? 1, operation, part: part ?? 'whole', complexity: 'standard', ...(rateCents !== undefined ? { rateCents } : {}), issues };
 }
