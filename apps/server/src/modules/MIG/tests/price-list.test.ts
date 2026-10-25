@@ -101,7 +101,7 @@ test('price breaks: an item gets each price from its From qty, and is never left
 
 test('an item\'s later rows take its Kind and Unit when left empty; From qty can be fixed (the owner\'s report, Oct 2026)', async () => {
   const env = await createTestEnv();
-  const owner = await env.as('owner', PASSWORD);
+  const owner = await env.as('owner');
   // The owner's own rows: the set's Lower row left Kind and Unit empty (merged cells in the sheet).
   const up = (await owner.post('/api/mig/upload', { filename: 'price-list.csv', csv: [
     'Item,Kind,Unit,Price,From qty,Operation,Part,Rate',
