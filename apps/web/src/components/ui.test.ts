@@ -1,26 +1,36 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, expect, it, vi } from 'vitest';
-import { choosePageRows, Dialog, keepDialogFocus, PAGE_ROWS, Pager } from './ui.tsx';
+import { choosePageRows, Dialog, keepDialogFocus, PAGE_ROWS, PageBar, Pager } from './ui.tsx';
 
-afterEach(() => { choosePageRows(25, () => undefined); vi.restoreAllMocks(); });
+afterEach(() => { choosePageRows(20, () => undefined); vi.restoreAllMocks(); });
 
-it('offers 25, 50 and 100 rows even on short and empty reports, resets the selected table and keeps loose pages fixed', () => {
+it('one page bar: 20, 50 or 100 rows even on short and empty reports, where we are and of how many; loose pages keep their size', () => {
   const onOffset = vi.fn();
-  const html = (total: number) => renderToStaticMarkup(createElement(Pager, { page: { limit: 25, offset: 0, total }, onOffset }));
-  expect(PAGE_ROWS).toBe(25);
+  const html = (total: number) => renderToStaticMarkup(createElement(Pager, { page: { limit: 20, offset: 0, total }, onOffset }));
+  expect(PAGE_ROWS).toBe(20);
   for (const total of [0, 8, 120]) {
     expect(html(total)).toContain('Rows per page');
-    for (const n of [25, 50, 100]) expect(html(total)).toContain(`value="${n}"`);
+    for (const n of [20, 50, 100]) expect(html(total)).toContain(`value="${n}"`);
   }
-  expect(html(0)).toContain('No rows');
-  const middle = renderToStaticMarkup(createElement(Pager, { page: { limit: 25, offset: 25, total: 63 }, onOffset }));
-  expect(middle).toContain('Rows 26 to 50 of 63');
+  expect(html(0)).toContain('Nothing to show');
+  const middle = renderToStaticMarkup(createElement(Pager, { page: { limit: 20, offset: 20, total: 63 }, onOffset }));
+  expect(middle).toContain('21–40 of 63 · Page 2 of 4');
+  expect(middle).toContain('Previous');
+  expect(middle).toContain('Next');
   choosePageRows(50, onOffset);
   expect(PAGE_ROWS).toBe(50); expect(onOffset).toHaveBeenLastCalledWith(0);
   choosePageRows(100, onOffset); expect(PAGE_ROWS).toBe(100);
   choosePageRows(200, onOffset); expect(PAGE_ROWS).toBe(100);
+  choosePageRows(25, onOffset); expect(PAGE_ROWS).toBe(100); // no longer a choice
   expect(renderToStaticMarkup(createElement(Pager, { page: { limit: 5, offset: 0, total: 10 }, what: 'loose pages', onOffset }))).not.toContain('Rows per page');
+});
+
+it('a list read from the newest, page by page, shows where it is without a total', () => {
+  const html = renderToStaticMarkup(createElement(PageBar, { first: 41, last: 60, page: 3, hasPrevious: true, hasNext: true, onPrevious: () => undefined, onNext: () => undefined }));
+  expect(html).toContain('41–60 · Page 3');
+  expect(html).not.toContain(' of ');
+  expect(html).not.toContain('Rows per page');
 });
 
 /** Minimal event surface: focus changes really emit focusin, so nested boundaries and cleanup are exercised. */

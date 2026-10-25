@@ -9,7 +9,7 @@ import { useLiveChange } from '../live.ts';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, type DocCounts, type DocHeader, type DocListFilters, type DocTypeInfo, type Draft, type PrintVariant } from '../api.ts';
 import { addRewrite, Link, navigate } from '../router.tsx';
-import { askConfirm, Button, Loading, Dialog, Field, Notice, Panel, StatusChip, inputClass, manilaTime, peso, showDate, useExit } from '../components/ui.tsx';
+import { askConfirm, Button, Loading, Dialog, Field, Notice, PageBar, Panel, StatusChip, choosePageRows, inputClass, manilaTime, peso, showDate, useExit, useRowsPerPage } from '../components/ui.tsx';
 import { docPath, labelOf, pluralLabelOf } from '../shell/menu.ts';
 import { printDocument } from './DocView.tsx';
 import type { FormMode } from './DocForm.tsx';
@@ -178,8 +178,10 @@ export function DocList({ type, notice, pageSize, showOlder = false, form, view,
   const [shown, leaving] = useExit(wanted);
   const pushed = useRef(''); // the dialog address this list opened itself, so closing it is Back
   const fail = (e: Error) => setError(e.message);
-  const size = pageSize ?? PAGE;
   const numbered = !showOlder;
+  // Numbered pages follow the person's rows-per-page choice (20, 50 or 100), unless the screen fixed its own size.
+  const chosen = useRowsPerPage();
+  const size = pageSize ?? (numbered ? chosen : PAGE);
 
   const load = useCallback(
     async (before?: string, quiet = false) => {
@@ -383,11 +385,9 @@ export function DocList({ type, notice, pageSize, showOlder = false, form, view,
       )}
       {!numbered && more && <Button disabled={state.busy} onClick={() => void load(rows.at(-1)?.postedAt)}>Show older</Button>}
       {numbered && (pageNo > 0 || more) && (
-        <nav className="flex items-center justify-between gap-3 text-sm" aria-label="Pages">
-          <Button disabled={pageNo === 0 || state.busy} onClick={() => goTo(pageNo - 1)}>← Newer</Button>
-          <span className="text-slate-600">Page {pageNo + 1} · {first + 1}–{first + rows.length}</span>
-          <Button disabled={!more || state.busy} onClick={() => goTo(pageNo + 1)}>Older →</Button>
-        </nav>
+        <PageBar first={first + 1} last={first + rows.length} total={total} page={pageNo + 1} pages={total ? Math.ceil(total / size) : null}
+          hasPrevious={pageNo > 0} hasNext={more} busy={state.busy} onPrevious={() => goTo(pageNo - 1)} onNext={() => goTo(pageNo + 1)}
+          {...(pageSize ? {} : { onRows: (r: number) => choosePageRows(r) })} />
       )}
       {view && shown?.kind === 'view' && (
         <Dialog key={`view-${shown.id}-${shown.cancel}`} title={labelOf(type)} size="full" hideTitle leaving={leaving} onClose={closeOver}>

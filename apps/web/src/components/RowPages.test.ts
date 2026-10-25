@@ -16,6 +16,7 @@ it('draws the first 20 rows with the page buttons under them; a short list has n
   const markup = renderToStaticMarkup(draw(rows));
   expect(markup).toContain('Row 20');
   expect(markup).not.toContain('Row 21');
-  expect(markup).toContain('1 to 20 of 45 · page 1 of 3');
+  expect(markup).toContain('1–20 of 45 · Page 1 of 3');
+  expect(markup).toContain('Rows per page');
   expect(renderToStaticMarkup(draw(rows.slice(0, 5)))).not.toContain('Previous');
 });

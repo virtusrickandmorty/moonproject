@@ -7,9 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api, type EmployeeRow, type Me } from '../../api.ts';
 import { Button, Dialog, Field, Notice, inputClass, useAction, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
-
-/** Rows a page of the list shows (the owner's request, Oct 2026), the newest added first. */
-export const EMPLOYEES_PER_PAGE = 20;
+import { usePages } from '../../components/RowPages.tsx';
 
 export function Employees({ me }: { me: Me }) {
   const [rows, setRows] = useState<EmployeeRow[] | null>(null);
@@ -17,11 +15,8 @@ export function Employees({ me }: { me: Me }) {
   const [status, setStatus] = useState<'active' | 'separated' | 'all'>('active');
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState('');
-  const [page, setPage] = useState(0);
   const load = useCallback(() => api.employees({ search, status, order: 'newest' }).then(setRows, (e: Error) => setError(e.message)), [search, status]);
-  useEffect(() => setPage(0), [search, status]); // a new search starts on the first page
-  const pages = Math.max(1, Math.ceil((rows?.length ?? 0) / EMPLOYEES_PER_PAGE));
-  const shown = rows?.slice(page * EMPLOYEES_PER_PAGE, (page + 1) * EMPLOYEES_PER_PAGE) ?? [];
+  const { shown, buttons } = usePages(rows); // the ERP's page bar (the owner's request, Oct 2026)
   useEffect(() => void load(), [load]);
   useLiveChange(() => void load());
 
@@ -56,13 +51,7 @@ export function Employees({ me }: { me: Me }) {
           </tbody>
         </table>
       )}
-      {rows && rows.length > EMPLOYEES_PER_PAGE && (
-        <div className="flex flex-wrap items-center justify-end gap-3 text-sm">
-          <Button disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</Button>
-          <span>{page * EMPLOYEES_PER_PAGE + 1} to {Math.min((page + 1) * EMPLOYEES_PER_PAGE, rows.length)} of {rows.length} · page {page + 1} of {pages}</span>
-          <Button disabled={page + 1 >= pages} onClick={() => setPage(page + 1)}>Next</Button>
-        </div>
-      )}
+      {buttons}
       {rows?.length === 0 && <p className="text-sm text-slate-500">Nobody matches.</p>}
     </div>
   );
