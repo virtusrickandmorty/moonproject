@@ -42,5 +42,6 @@ test('a quick sale is recorded with its collection', async ({ page }) => {
   // The money is in the cash box (the sale opened over its list; close it first).
   await page.getByRole('button', { name: 'Close dialog' }).click();
   await page.getByRole('link', { name: 'Cash Accounts' }).click();
-  await expect(page.getByRole('row', { name: /^Cash on hand/ })).toContainText('₱1,120.00');
+  // Each cash place is a card now (Cash Accounts in the dashboard's look, Oct 2026).
+  await expect(page.getByRole('region', { name: /^Cash on hand/ })).toContainText('₱1,120.00');
 });
