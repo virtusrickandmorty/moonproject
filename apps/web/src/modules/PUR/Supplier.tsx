@@ -10,6 +10,7 @@ import { docPath } from '../../shell/menu.ts';
 import { EWT_WORDS, UNIT_WORDS, contactToInput, emptyContactForm, emptySupplierForm, needsSwornDeclaration, supplierToForm, supplierToInput, type ContactForm, type SupplierForm } from './purchasing.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
 import { useLiveReload } from '../../live.ts';
+import { Paged } from '../../components/RowPages.tsx';
 
 export function SupplierPage({ me, docTypes, params }: { me: Me; docTypes: DocTypeInfo[]; params?: Record<string, string> }) {
   const id = params?.id;
@@ -151,10 +152,10 @@ function SuppliesSold({ supplier, editable }: { supplier: SupplierRecord; editab
     <Panel title="Supplies from this supplier">
       {linked.length === 0 && <p className="text-sm text-slate-500">No supply is linked yet. Link the ones this supplier sells: they come first on its purchase orders.</p>}
       {linked.length > 0 && (
-        <table className="w-full text-sm">
+        <Paged rows={linked}>{(page) => (<table className="w-full text-sm">
           <thead className="text-left text-slate-500"><tr><th>Supply</th><th>Unit</th><th className="text-right">Last cost</th><th /></tr></thead>
           <tbody>
-            {linked.map((s) => (
+            {page.map((s) => (
               <tr key={s.id} className="border-t border-slate-100">
                 <td className="py-1"><Link to={`/pur/supplies/${s.id}`} className="text-indigo-700 underline">{s.name}</Link></td>
                 <td>{UNIT_WORDS[s.unit]}</td>
@@ -163,7 +164,7 @@ function SuppliesSold({ supplier, editable }: { supplier: SupplierRecord; editab
               </tr>
             ))}
           </tbody>
-        </table>
+        </table>)}</Paged>
       )}
       {editable && (
         <div className="flex max-w-xl gap-2 border-t border-slate-100 pt-2">

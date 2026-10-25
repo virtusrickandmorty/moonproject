@@ -10,6 +10,7 @@ import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Excel, QuarterForm, pesos, useQuarterReport } from './ReportParts.tsx';
 import { atcWords, checkTone, ewtClassWords, isWorksheetTotal, monthName, quarterTitle, returnQuarter, sortedChecks, worksheetCloseLink } from './reports.ts';
+import { PRINT_ONLY, usePrintablePages } from '../../components/RowPages.tsx';
 
 const num = 'whitespace-nowrap py-1 pl-3 text-right tabular-nums';
 
@@ -24,6 +25,7 @@ const open2307 = async (year: number, quarter: number, supplierId?: string) => {
 };
 
 export function CertificateTable({ c, onError }: { c: Certificates; onError?: (message: string) => void }) {
+  const { onPage, buttons } = usePrintablePages(c.lines.length);
   if (c.lines.length === 0) return <p className="text-sm text-slate-500">No tax was withheld from a supplier in this quarter, so there is no 2307 to issue.</p>;
   const periods = [...c.months.map(monthName), 'Quarter'];
   return (
@@ -37,8 +39,8 @@ export function CertificateTable({ c, onError }: { c: Certificates; onError?: (m
           <tr>{periods.map((p) => <Fragment key={p}><th className="pl-3 text-right">Base</th><th className="pl-3 text-right">EWT</th></Fragment>)}</tr>
         </thead>
         <tbody>
-          {c.lines.map((l) => (
-            <tr key={`${l.supplierId}:${l.atc ?? l.ewtClass}`} className="border-t border-slate-100 align-top">
+          {c.lines.map((l, i) => (
+            <tr key={`${l.supplierId}:${l.atc ?? l.ewtClass}`} className={`border-t border-slate-100 align-top ${onPage(i) ? '' : PRINT_ONLY}`}>
               <td className="py-1 pr-3">{l.supplierName || '—'}</td>
               <td className="py-1 pr-3">{l.tin ?? '—'}</td>
               <td className="py-1 pr-3">{atcWords(l)}<span className="block text-xs text-slate-500">{ewtClassWords(l.ewtClass)}</span></td>
@@ -57,6 +59,7 @@ export function CertificateTable({ c, onError }: { c: Certificates; onError?: (m
           </tr>
         </tfoot>
       </table>
+      {buttons}
     </div>
   );
 }
