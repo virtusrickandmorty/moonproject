@@ -98,3 +98,24 @@ test('price breaks: an item gets each price from its From qty, and is never left
   expect(bad.json()).toMatchObject({ code: 'MIG_PRICE_FROM_ONE', message: 'Team shorts has prices only from more than 1 piece. Add its price from 1 piece (a row with From qty blank or 1).' });
   expect(env.db.prepare("SELECT COUNT(*) FROM cat_items WHERE name = 'Team shorts'").pluck().get()).toBe(0);
 });
+
+test('an item\'s later rows take its Kind and Unit when left empty; From qty can be fixed (the owner\'s report, Oct 2026)', async () => {
+  const env = await createTestEnv();
+  const owner = await env.as('owner', PASSWORD);
+  // The owner's own rows: the set's Lower row left Kind and Unit empty (merged cells in the sheet).
+  const up = (await owner.post('/api/mig/upload', { filename: 'price-list.csv', csv: [
+    'Item,Kind,Unit,Price,From qty,Operation,Part,Rate',
+    'Basketball jersey set,Made to order,Set,650,1,Sewing,Upper,55',
+    'Basketball jersey set,,,,,Sewing,Lower,50',
+    'School polo shirt,Made to order,Piece,450,,,,',
+  ].join('\n') })).json().uploadId as string;
+  const rows = (await owner.get(`/api/mig/uploads/${up}/review`)).json().rows as { id: string; rowNumber: number; raw: Record<string, string>; issues: string[] }[];
+  const lower = rows.find((r) => r.rowNumber === 3)!;
+  expect(lower.raw).toMatchObject({ Kind: 'Made to order', Unit: 'Set' });
+  expect(lower.issues).not.toContain('Upper and Lower parts are for an item sold as a set.');
+  // A price break fixed by hand: the polo's price from 12 pieces.
+  const polo = rows.find((r) => r.rowNumber === 4)!;
+  const fixed = await owner.post(`/api/mig/rows/${polo.id}/fix`, { manualData: { minQty: 12, priceCents: 42000 } });
+  expect(fixed.statusCode, fixed.body).toBe(200);
+  expect((await owner.post(`/api/mig/rows/${lower.id}/fix`, { manualData: { minQty: 0 } })).statusCode).toBe(422);
+});

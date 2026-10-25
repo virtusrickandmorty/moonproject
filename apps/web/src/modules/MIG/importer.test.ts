@@ -135,6 +135,13 @@ describe('the counts', () => {
 describe('a fix', () => {
   const mig = (t: 'customer' | 'employee' | 'piece_rate' | 'measurement', r: Partial<MigRow> = {}) => row({ id: 'r', rowType: t, ...r });
 
+  it('a price list row starts from every value in the file, From qty too (the owner\'s report, Oct 2026)', () => {
+    const p = mig('piece_rate', { raw: { Item: 'Basketball jersey set', Kind: 'Made to order', Unit: 'Set', Price: '650', 'From qty': '', Operation: 'Sewing', Part: 'Upper', Rate: '55' }, rateCents: 5500 });
+    expect(fixStart(p)).toEqual({ item: 'Basketball jersey set', kind: 'Made to order', unit: 'Set', priceCents: '650.00', minQty: '1', operation: 'Sewing', part: 'Upper', rateCents: '55.00' });
+    expect(fixBody(p, { ...fixStart(p), minQty: '12', priceCents: '600' })).toEqual({ ok: true, manualData: { minQty: 12, priceCents: 60000 } });
+    expect(fixBody(p, { ...fixStart(p), minQty: 'twelve' })).toEqual({ ok: false, message: 'From qty: type a whole number of pieces, 1 or more.' });
+  });
+
   it('starts from what the row has and sends only what was changed, in the server\'s names', () => {
     const c = mig('customer', { raw: { Customer_Name: 'Sample Buyer', Registered_Name: 'Sample Buyer Inc.' }, legacyId: null, issues: ['Customer is missing a legacy ID.'] });
     expect(fixStart(c)).toEqual({ customerName: 'Sample Buyer', registeredName: 'Sample Buyer Inc.', legacyId: '' });

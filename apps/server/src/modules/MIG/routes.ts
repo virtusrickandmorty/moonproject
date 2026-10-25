@@ -10,7 +10,7 @@ import { requireStepUp } from '../../engine/security/sessions.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { activeCustomers, createGroup, createWearer, customerRef } from '../CUS/public.ts';
-import { applyEmployeeFix, applyMeasurementAssignment, applySizerFix, duplicateKeys, isManualMeasurement, manualName, measurementField, measurementFields, measurementTenths, nameKey, parseCSV, validateRow, type ManualData, type ParsedRow, type RowType, applyPriceListFix } from './csv.ts';
+import { applyEmployeeFix, applyMeasurementAssignment, applySizerFix, carryItemDetails, duplicateKeys, isManualMeasurement, manualName, measurementField, measurementFields, measurementTenths, nameKey, parseCSV, validateRow, type ManualData, type ParsedRow, type RowType, applyPriceListFix } from './csv.ts';
 import { fromSheetRow, sheetTabOf } from './sheet.ts';
 import { commitUpload } from './commit.ts';
 
@@ -41,7 +41,8 @@ const manualSchemas = {
   }).strict(),
   // The price list (the owner's request, Oct 2026); garmentType is the old name of the item.
   piece_rate: z.object({ garmentType: z.string().trim().min(1).optional(), item: z.string().trim().min(1).max(100).optional(), kind: z.string().trim().min(1).optional(),
-    unit: z.string().trim().min(1).optional(), priceCents: moneyCents.optional(), operation: z.string().trim().min(1).optional(), part: z.string().trim().min(1).optional(),
+    unit: z.string().trim().min(1).optional(), priceCents: moneyCents.optional(), minQty: z.number().int().min(1).max(100_000).optional(),
+    operation: z.string().trim().min(1).optional(), part: z.string().trim().min(1).optional(),
     complexity: z.string().trim().min(1).optional(), rateCents: moneyCents.optional() }).strict(),
   sizer_set: z.object({ code: z.string().trim().min(1).max(100).optional(), garmentType: z.string().trim().min(1).max(100).optional(), sizesIncluded: z.string().trim().min(1).max(200).optional() }).strict(),
 };
@@ -201,7 +202,8 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
     const at = stamp(clock);
     // A tab of the old sheet, downloaded as it is, is renamed to the importer's columns here; an importer file passes through.
     const tab = sheetTabOf(Object.keys(csv!.objects[0]!));
-    const parsedRows = csv!.objects.map((raw, i) => ({ id: newId(), rowNumber: csv!.lineNumbers[i]!, parsed: validateRow(tab ? fromSheetRow(raw, tab) : raw) }));
+    const rows = carryItemDetails(csv!.objects.map((raw) => (tab ? fromSheetRow(raw, tab) : raw)));
+    const parsedRows = rows.map((raw, i) => ({ id: newId(), rowNumber: csv!.lineNumbers[i]!, parsed: validateRow(raw) }));
     if (parsedRows.some(r => r.parsed.rowType === 'unknown')) invalid('The CSV file type is not recognised.');
     // Flag every member of each duplicate set and name the other source row in its issue.
     const byKey = new Map<string, typeof parsedRows>();

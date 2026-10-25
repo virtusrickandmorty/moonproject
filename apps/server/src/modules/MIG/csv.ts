@@ -284,6 +284,29 @@ export function priceListRow(raw: Record<string, string>): PriceListRow {
   return { item, class: cls ?? 'made_to_order_garment', unit: unit ?? 'pc', ...(priceCents !== undefined ? { priceCents } : {}), minQty: minQty ?? 1, operation, part: part ?? 'whole', complexity: 'standard', ...(rateCents !== undefined ? { rateCents } : {}), issues };
 }
 
+/**
+ * An item's later rows in a price list may leave Kind and Unit empty (the template says so, and a sheet with those cells
+ * merged saves them that way): before the rows are checked, they take the item's own, from its first row that has them
+ * (the owner's report, Oct 2026: "every field in the template has data, but the review shows one missing").
+ */
+export function carryItemDetails(rows: Record<string, string>[]): Record<string, string>[] {
+  const known = new Map<string, { Kind?: string; Unit?: string }>();
+  return rows.map((raw) => {
+    if (rowTypeOf(raw) !== 'piece_rate') return raw;
+    const key = nameKey(raw.Item ?? raw.Garment_Type ?? '');
+    if (!key) return raw;
+    const item = known.get(key) ?? {};
+    const out = { ...raw };
+    for (const col of ['Kind', 'Unit'] as const) {
+      if (out[col] === undefined) continue;
+      if (!out[col].trim() && item[col]) out[col] = item[col];
+      else if (out[col].trim() && !item[col]) item[col] = out[col].trim();
+    }
+    known.set(key, item);
+    return out;
+  });
+}
+
 /** What the owner typed with Fix on a price list row, laid over the sheet's values. Shared by the review and the commit. */
 export function applyPriceListFix(raw: Record<string, string>, manual: ManualData): void {
   if (manual.garmentType) raw.Item = String(manual.garmentType);
@@ -291,6 +314,7 @@ export function applyPriceListFix(raw: Record<string, string>, manual: ManualDat
   if (manual.kind) raw.Kind = String(manual.kind);
   if (manual.unit) raw.Unit = String(manual.unit);
   if (manual.priceCents !== undefined) raw.Price = (Number(manual.priceCents) / 100).toFixed(2);
+  if (manual.minQty !== undefined) raw[['From qty', 'From Qty', 'From_Qty', 'Min_Qty'].find((k) => raw[k] !== undefined) ?? 'From qty'] = String(manual.minQty);
   if (manual.operation) raw.Operation = String(manual.operation);
   if (manual.part) raw.Part = String(manual.part);
   // No difficulty any more (the owner's decision, Oct 2026): a row the owner fixes drops an older file's Difficulty.

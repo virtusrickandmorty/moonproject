@@ -308,6 +308,7 @@ export const FIX_FIELDS: Record<MigKind, FixField[]> = {
     { key: 'kind', label: 'Kind', kind: 'text', hint: 'Made to order, Ready-made or Service.' },
     { key: 'unit', label: 'Unit', kind: 'text', hint: 'Piece or Set.' },
     { key: 'priceCents', label: 'Price (pesos)', kind: 'peso', hint: 'Selling price per piece or set, VAT included.' },
+    { key: 'minQty', label: 'From qty', kind: 'text', hint: 'The price applies from this many pieces; 1 is the base price.' },
     { key: 'operation', label: 'Operation', kind: 'text', hint: 'The production step of the piece rate, like Sewing.' },
     { key: 'part', label: 'Part', kind: 'text', hint: 'Upper or Lower, for a set.' },
     { key: 'rateCents', label: 'Piece rate (pesos)', kind: 'peso' },
@@ -324,7 +325,7 @@ export const fixFieldsOf = (row: Pick<MigRow, 'rowType'>): FixField[] => (row.ro
 export function currentValue(row: MigRow, key: string): string {
   const raw = row.raw;
   const m = row.manualData ?? {};
-  if (m[key] !== undefined) return key === 'rateCents' ? formatPesos(Number(m[key])) : String(m[key]);
+  if (m[key] !== undefined) return key === 'rateCents' || key === 'priceCents' ? formatPesos(Number(m[key])) : String(m[key]);
   if (key === 'customerLegacyId' || key === 'groupLegacyId') return '';
   if (key === 'rateCents') return row.rateCents === null ? '' : formatPesos(row.rateCents);
   if (key === 'legacyId') return row.legacyId ?? '';
@@ -335,6 +336,18 @@ export function currentValue(row: MigRow, key: string): string {
   if (key === 'hireDate') return raw.Hire_Date ?? '';
   if (key === 'garmentType') return raw.Garment_Type ?? '';
   if (key === 'operation') return raw.Operation ?? '';
+  // A price list row: the file's own values (the owner's report, Oct 2026: the Fix form showed them empty).
+  if (row.rowType === 'piece_rate') {
+    if (key === 'item') return raw.Item ?? raw.Garment_Type ?? '';
+    if (key === 'kind') return raw.Kind ?? '';
+    if (key === 'unit') return raw.Unit ?? '';
+    if (key === 'part') return raw.Part ?? '';
+    if (key === 'minQty') return (raw['From qty'] ?? raw['From Qty'] ?? raw.From_Qty ?? raw.Min_Qty ?? '').trim() || '1';
+    if (key === 'priceCents') {
+      const price = (raw.Price ?? '').trim();
+      try { return price ? formatPesos(parsePesos(price)) : ''; } catch { return price; }
+    }
+  }
   const header = Object.keys(raw).find((h) => measurementKey(h) === key);
   return header ? (raw[header] ?? '') : '';
 }
@@ -361,6 +374,9 @@ export function fixBody(row: MigRow, edits: Record<string, string>): FixResult {
     } else if (f.kind === 'tenths') {
       if (!/^(\d+(\.\d)?|-)$/.test(text)) return { ok: false, message: `${f.label}: type a number to one decimal place such as 15.2, or - for no measurement.` };
       manualData[f.key] = text;
+    } else if (f.key === 'minQty') {
+      if (!/^\d+$/.test(text) || Number(text) < 1) return { ok: false, message: `${f.label}: type a whole number of pieces, 1 or more.` };
+      manualData[f.key] = Number(text);
     } else manualData[f.key] = f.key === 'payType' ? text.toLowerCase() : text;
   }
   if (manualData.groupLegacyId && !manualData.customerLegacyId) return { ok: false, message: 'Type the customer\'s legacy ID with the group.' };
