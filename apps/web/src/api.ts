@@ -124,10 +124,14 @@ export interface DocListFilters { q?: string; from?: string; to?: string }
 export interface DocCounts { all: number; posted: number; cancelled: number }
 /** A job order list row: `balanceDueCents` (0 once cancelled), the item a search found its words in, and its releases waiting for their invoice. */
 export interface JoListRow extends DocHeader {
+  /** Who, how many pieces, when it is due, rush or not, and how far it is (the list's own row words). */
+  customerName?: string; dueDate?: string; priority?: 'normal' | 'rush'; pieces?: number; stage?: string;
   balanceDueCents: number; matchedItem: string | null; awaitingInvoice: { id: string; number: string }[]; readyToRelease: boolean;
   /** Made for stock (TPL, the website shop) with finished pieces: where they go instead of a release slip. */
   stockPlace?: { label: string; href: string } | null;
 }
+/** The job orders at a glance (GET /api/jo/list/summary). */
+export interface JoListSummary { open: number; inProduction: number; ready: number; late: number; balanceDueCents: number }
 /** Read-only display of lines the server built. Declared this way so the money-rule tripwire (tests/house-rules) stays exact. */
 export type JournalLine = { accountCode: string; accountName: string } & Record<'debitCents' | 'creditCents', number>;
 export interface Journal { id: string; number: string; businessDate: string; postingKind: 'original' | 'reversal'; memo: string; lines: JournalLine[] }
@@ -1121,6 +1125,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     /** The job order list: the document list's rows with each balance due; its search also reads what was ordered. */
     joList: (q: DocListFilters & { status?: string; before?: string; limit?: number } = {}) =>
       call<JoListRow[]>('GET', `/api/jo/list?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`),
+    joListSummary: () => call<JoListSummary>('GET', '/api/jo/list/summary'),
     joListCounts: (q: DocListFilters = {}) =>
       call<DocCounts>('GET', `/api/jo/list/counts?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`),
     joDpInfo: (id: string) => call<DpInfo>('GET', `/api/jo/orders/${encodeURIComponent(id)}/dp-info`),

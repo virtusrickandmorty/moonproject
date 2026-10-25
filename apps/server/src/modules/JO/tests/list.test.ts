@@ -78,3 +78,22 @@ describe('job order list', () => {
     expect(searchWords('dress polos')).toEqual(['dress', 'polo']);
   });
 });
+
+describe('job order list at a glance (the owner\'s request, Oct 2026)', () => {
+  it('each row says who, how many pieces, when due, how urgent and its stage', async () => {
+    const jo = await jobOrder(['Team jersey set', 'Shorts']);
+    const row = (await list()).find((r) => r.id === jo.id) as Row & { customerName: string; pieces: number; dueDate: string; priority: string; stage: string };
+    expect(row).toMatchObject({ customerName: expect.any(String), pieces: 4, priority: 'normal', stage: 'open' });
+    expect(row.dueDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('counts the open job orders, those in production and ready, and the balance left to collect; a cancelled one counts nowhere', async () => {
+    const a = await jobOrder(['Team jersey set'], 50_000);
+    await jobOrder(['Polo shirt'], 30_000);
+    const gone = await jobOrder(['Cap'], 10_000);
+    expect((await encoder.post(`/api/docs/jo.job_order/${gone.id}/cancel`, { reason: 'Customer changed their mind' }, idem())).statusCode).toBe(200);
+    expect((await encoder.post(`/api/jo/orders/${a.id}/stage`, { from: 'open', to: 'in_production' })).statusCode).toBe(200);
+    const s = (await encoder.get('/api/jo/list/summary')).json();
+    expect(s).toEqual({ open: 2, inProduction: 1, ready: 0, late: 0, balanceDueCents: 2 * 50_000 + 2 * 30_000 });
+  });
+});

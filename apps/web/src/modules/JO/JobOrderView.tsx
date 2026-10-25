@@ -8,7 +8,8 @@ import { useLiveChange } from '../../live.ts';
 import { useEffect, useState } from 'react';
 import { api, type DocDetail, type JoStatus } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Notice, peso } from '../../components/ui.tsx';
+import { Notice, SURFACE, peso, showDate } from '../../components/ui.tsx';
+import { HATCH } from '../../components/charts.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Figures } from '../COL/parts.tsx';
@@ -110,6 +111,53 @@ export function DepositVatLines({ s }: { s: JoStatus }) {
   );
 }
 
+/** Where a job order is, as steps (the owner's request, Oct 2026: the job orders in the dashboard's look). */
+const STEPS: [string, string][] = [['open', 'Recorded'], ['in_production', 'In production'], ['ready', 'Ready'], ['released', 'Released']];
+function Stages({ stage, label }: { stage: string; label: string }) {
+  const at = stage === 'partially_released' ? 2 : stage === 'closed' ? 3 : Math.max(0, STEPS.findIndex(([k]) => k === stage));
+  return (
+    <div className={`p-4 ${SURFACE}`}>
+      <p className="mb-3 text-sm text-slate-500">Where it is: <b className="text-slate-900">{label}</b></p>
+      <ol className="grid grid-cols-4 gap-2" aria-label="Stages">
+        {STEPS.map(([key, words], i) => (
+          <li key={key} className="space-y-1.5" aria-current={i === at ? 'step' : undefined}>
+            <span className={`block h-2 rounded-full ${i < at ? 'bg-slate-700' : i === at ? '' : 'bg-slate-200'}`} style={i === at ? HATCH : undefined} />
+            <span className={`block text-xs ${i === at ? 'font-semibold text-slate-900' : i < at ? 'text-slate-600' : 'text-slate-400'}`}>{words}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/** What is paid of the job order, as a bar, and its money figures as tiles. */
+function Paid({ m }: { m: JoStatus['money'] }) {
+  const share = m.totalCents > 0 ? Math.min(1, m.collectedCents / m.totalCents) : 0;
+  const tiles: [string, number, boolean?][] = [['Collected', m.collectedCents], ['Invoiced', m.invoicedCents], ['Deposits held', m.depositsHeldCents], ['Balance due', m.balanceDueCents, true]];
+  return (
+    <div className={`space-y-3 p-4 ${SURFACE}`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="text-sm text-slate-500">Paid <b className="tabular-nums text-slate-900">{peso(m.collectedCents)}</b> of <span className="tabular-nums">{peso(m.totalCents)}</span></p>
+        <span className={`text-sm font-semibold ${m.balanceDueCents > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>{m.balanceDueCents > 0 ? `${Math.round(share * 100)}% paid` : 'Fully paid'}</span>
+      </div>
+      <div className="h-3 overflow-hidden rounded-full bg-slate-100" role="img" aria-label={`${Math.round(share * 100)}% paid`}>
+        <div className="h-full rounded-full" style={{ width: `${share * 100}%`, ...HATCH }} />
+      </div>
+      {m.requiredDownpaymentCents > 0 && m.collectedCents < m.requiredDownpaymentCents && (
+        <p className="text-xs text-amber-700">Downpayment asked: {peso(m.requiredDownpaymentCents)} ({peso(m.requiredDownpaymentCents - m.collectedCents)} still to come).</p>
+      )}
+      <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {tiles.map(([label, cents, strong]) => (
+          <div key={label} className="rounded-xl p-3 ring-1 ring-slate-100">
+            <dt className="text-xs text-slate-500">{label}</dt>
+            <dd className={`text-lg font-semibold tabular-nums ${strong && cents > 0 ? 'text-amber-700' : ''}`}>{peso(cents)}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 function JoMoney({ d, typeKey }: { d: DocDetail; typeKey: string }) {
   const { id, status, replacesId } = d.header;
   const [s, setS] = useState<JoStatus | null>(null);
@@ -136,9 +184,13 @@ function JoMoney({ d, typeKey }: { d: DocDetail; typeKey: string }) {
           {actions.map((a) => <Link key={a.label} to={a.to} className={a.primary ? primary : action}>{a.label}</Link>)}
         </div>
       )}
-      <p className="text-sm text-slate-600">{s.stageLabel}{s.awaitingInvoice.length > 0 ? ` · invoice to follow for ${s.awaitingInvoice.map((r) => r.number).join(', ')}` : ''}</p>
+      {status === 'posted' && <div className="grid gap-3 lg:grid-cols-2">
+        <Stages stage={s.stage} label={`${s.stageLabel}${s.jobOrder.dueDate ? ` · due ${showDate(s.jobOrder.dueDate)}` : ''}`} />
+        <Paid m={m} />
+      </div>}
+      {s.awaitingInvoice.length > 0 && <p className="text-sm text-slate-600">Invoice to follow for {s.awaitingInvoice.map((r) => r.number).join(', ')}.</p>}
       {status === 'posted' && <DepositVatLines s={s} />}
-      <Figures items={status === 'posted' ? [['Collected', m.collectedCents], ['Invoiced', m.invoicedCents], ['Deposits held', held], ['Balance due', m.balanceDueCents, 'font-semibold']] : [['Deposits held', held]]} />
+      {status !== 'posted' && <Figures items={[['Deposits held', held]]} />}
       {status === 'cancelled' && held > 0 && (
         <Notice tone="warning">
           {peso(held)} of deposits is still held on this cancelled job order. Move it to {d.header.replacedById ? 'the replacement or another' : 'another'} job order of the customer, or pay it back.{' '}
