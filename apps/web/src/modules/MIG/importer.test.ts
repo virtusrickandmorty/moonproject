@@ -9,7 +9,7 @@ import { createApi, type DryRunResult, type MigRow } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
 import {
   FIX_FIELDS, KINDS, MEASUREMENT_FIELDS, blockingIssues, canCommit, cellSumWords, cleanCsv, clearedWords, commitLines, commitRequest, countsAddUp, countsWords,
-  currentValue, dryRunAddsUp, dryRunChecks, dryRunLines, filterCount, filterRows, fileProblem, fixBody, fixStart, headerOf, isOpen, isSurvivor, issueWords, kindOfHeader, sheetTabOf,
+  cleanPriceRows, currentValue, dryRunAddsUp, dryRunChecks, dryRunLines, filterCount, filterRows, fileProblem, fixBody, fixStart, headerOf, isOpen, isSurvivor, issueWords, kindOfHeader, sheetTabOf,
   fileNote, measurementKey, mergeCandidates, notKeptNote, reviewDone, rowButtons, rowCounts, rowStatusWords, rowTitle, startFilter, uploadRequest, uploadStatusWords,
 } from './importer.ts';
 
@@ -132,8 +132,25 @@ describe('the counts', () => {
   });
 });
 
+describe('accept all price list rows', () => {
+  it('counts only the price list rows that wait for nothing but the owner\'s OK', () => {
+    const ok = row({ id: 'a', rowType: 'piece_rate', status: 'needs_review', issues: ['Price list row requires owner confirmation.'] });
+    const toFix = row({ id: 'b', rowType: 'piece_rate', status: 'needs_review', issues: ['Part is Upper but Unit is Piece: x', 'Price list row requires owner confirmation.'] });
+    const done = row({ id: 'c', rowType: 'piece_rate', status: 'accepted', issues: ['Price list row requires owner confirmation.'] });
+    const employee = row({ id: 'd', rowType: 'employee', status: 'needs_review', issues: ['Employee rate or missing rate requires owner confirmation.'] });
+    expect(cleanPriceRows([ok, toFix, done, employee]).map((r) => r.id)).toEqual(['a']);
+  });
+});
+
 describe('a fix', () => {
   const mig = (t: 'customer' | 'employee' | 'piece_rate' | 'measurement', r: Partial<MigRow> = {}) => row({ id: 'r', rowType: t, ...r });
+
+  it('a price list row starts from every value in the file, From qty too (the owner\'s report, Oct 2026)', () => {
+    const p = mig('piece_rate', { raw: { Item: 'Basketball jersey set', Kind: 'Made to order', Unit: 'Set', Price: '650', 'From qty': '', Operation: 'Sewing', Part: 'Upper', Rate: '55' }, rateCents: 5500 });
+    expect(fixStart(p)).toEqual({ item: 'Basketball jersey set', kind: 'Made to order', unit: 'Set', priceCents: '650.00', minQty: '1', operation: 'Sewing', part: 'Upper', rateCents: '55.00' });
+    expect(fixBody(p, { ...fixStart(p), minQty: '12', priceCents: '600' })).toEqual({ ok: true, manualData: { minQty: 12, priceCents: 60000 } });
+    expect(fixBody(p, { ...fixStart(p), minQty: 'twelve' })).toEqual({ ok: false, message: 'From qty: type a whole number of pieces, 1 or more.' });
+  });
 
   it('starts from what the row has and sends only what was changed, in the server\'s names', () => {
     const c = mig('customer', { raw: { Customer_Name: 'Sample Buyer', Registered_Name: 'Sample Buyer Inc.' }, legacyId: null, issues: ['Customer is missing a legacy ID.'] });

@@ -13,7 +13,9 @@ test('reads a price list row, and an old piece-rate row as a rate of the item of
     .toMatchObject({ rowType: 'piece_rate', rateCents: 4000, issues: ['Price list row requires owner confirmation.'] });
   expect(priceListRow({ Garment_Type: 'T-shirt', Operation: 'SEWING', Rate: '12.50' })).toMatchObject({ item: 'T-shirt', class: 'made_to_order_garment', unit: 'pc', operation: 'SEWING', rateCents: 1250 });
   expect(priceListRow({ Item: 'Patch', Kind: 'Service', Price: '100', Operation: 'Sewing', Rate: '5' }).issues).toContain('Piece rates are for made-to-order garments; this item is not one.');
-  expect(priceListRow({ Item: 'Polo', Part: 'Upper', Operation: 'Sewing', Rate: '5' }).issues).toContain('Upper and Lower parts are for an item sold as a set.');
+  expect(priceListRow({ Item: 'Polo', Part: 'Upper', Operation: 'Sewing', Rate: '5' }).issues).toContain('Part is Upper but Unit is empty (Piece): Upper and Lower are the two parts of an item sold as a set. Change Unit to Set, or leave Part empty for an item sold by the piece.');
+  expect(priceListRow({ Item: 'Polo', Unit: 'Piece', Part: 'Lower', Operation: 'Sewing', Rate: '5' }).issues[0]).toMatch(/^Part is Lower but Unit is Piece: /);
+  expect(priceListRow({ Item: 'Polo', Unit: 'Set', Part: 'Lower', Operation: 'Sewing', Rate: '5' }).issues).toEqual([]);
   expect(priceListRow({ Item: 'Polo', Kind: 'Gadget', Price: '1' }).issues).toContain('Kind "Gadget" is not Made to order, Ready-made or Service.');
   expect(priceListRow({ Item: 'Polo', Price: '' , Rate: '' }).issues).toContain('The row has neither a price nor a piece rate.');
   // No difficulty (the owner's decision, Oct 2026): blank or Standard is fine; anything else is flagged for review.
@@ -97,4 +99,42 @@ test('price breaks: an item gets each price from its From qty, and is never left
   const bad = await importFile(['Team shorts,Made to order,Piece,300.00,10,,,,']);
   expect(bad.json()).toMatchObject({ code: 'MIG_PRICE_FROM_ONE', message: 'Team shorts has prices only from more than 1 piece. Add its price from 1 piece (a row with From qty blank or 1).' });
   expect(env.db.prepare("SELECT COUNT(*) FROM cat_items WHERE name = 'Team shorts'").pluck().get()).toBe(0);
+});
+
+test('an item\'s later rows take its Kind and Unit when left empty; From qty can be fixed (the owner\'s report, Oct 2026)', async () => {
+  const env = await createTestEnv();
+  const owner = await env.as('owner');
+  // The owner's own rows: the set's Lower row left Kind and Unit empty (merged cells in the sheet).
+  const up = (await owner.post('/api/mig/upload', { filename: 'price-list.csv', csv: [
+    'Item,Kind,Unit,Price,From qty,Operation,Part,Rate',
+    'Basketball jersey set,Made to order,Set,650,1,Sewing,Upper,55',
+    'Basketball jersey set,,,,,Sewing,Lower,50',
+    'School polo shirt,Made to order,Piece,450,,,,',
+  ].join('\n') })).json().uploadId as string;
+  const rows = (await owner.get(`/api/mig/uploads/${up}/review`)).json().rows as { id: string; rowNumber: number; raw: Record<string, string>; issues: string[] }[];
+  const lower = rows.find((r) => r.rowNumber === 3)!;
+  expect(lower.raw).toMatchObject({ Kind: 'Made to order', Unit: 'Set' });
+  expect(lower.issues.filter((i) => /^Part is/.test(i))).toEqual([]);
+  // A price break fixed by hand: the polo's price from 12 pieces.
+  const polo = rows.find((r) => r.rowNumber === 4)!;
+  const fixed = await owner.post(`/api/mig/rows/${polo.id}/fix`, { manualData: { minQty: 12, priceCents: 42000 } });
+  expect(fixed.statusCode, fixed.body).toBe(200);
+  expect((await owner.post(`/api/mig/rows/${lower.id}/fix`, { manualData: { minQty: 0 } })).statusCode).toBe(422);
+});
+
+test('Accept all: every price list row with nothing wrong goes in at once; a row to fix stays (the owner\'s request, Oct 2026)', async () => {
+  const env = await createTestEnv();
+  const owner = await env.as('owner');
+  const up = (await owner.post('/api/mig/upload', { filename: 'price-list.csv', csv: [
+    'Item,Kind,Unit,Price,From qty,Operation,Part,Rate',
+    'School polo shirt,Made to order,Piece,450,1,Sewing,,40',
+    'School polo shirt,,,420,12,,,',
+    'Jersey set,Made to order,Piece,650,1,Sewing,Upper,55', // Upper on a Piece: to fix
+  ].join('\n') })).json().uploadId as string;
+  const res = await owner.post(`/api/mig/uploads/${up}/accept-price-list`, {});
+  expect(res.statusCode, res.body).toBe(200);
+  expect(res.json()).toMatchObject({ accepted: 2, left: 1 });
+  const rows = (await owner.get(`/api/mig/uploads/${up}/review`)).json().rows as { rowNumber: number; status: string }[];
+  expect(rows.map((r) => [r.rowNumber, r.status])).toEqual([[2, 'accepted'], [3, 'accepted'], [4, 'needs_review']]);
+  expect((await (await env.as('encoder')).post(`/api/mig/uploads/${up}/accept-price-list`, {})).statusCode).toBe(403);
 });

@@ -1394,6 +1394,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     migSizeSuggestions: (uploadId: string) => call<{ suggestions: MigSizeSuggestion[] }>('GET', `/api/mig/uploads/${encodeURIComponent(uploadId)}/size-suggestions`).then((r) => r.suggestions),
     migAssignSizes: (uploadId: string, body: MigAssignBody) => call<MigAssigned>('POST', `/api/mig/uploads/${encodeURIComponent(uploadId)}/assign-sizes`, body),
     /** All or nothing: if any row is refused, none is saved and the message names each one. */
+    migAcceptPriceList: (uploadId: string) => call<{ success: true; accepted: number; left: number }>('POST', `/api/mig/uploads/${encodeURIComponent(uploadId)}/accept-price-list`, {}),
     migFixEmployees: (uploadId: string, fixes: MigEmployeeFix[]) => call<{ success: true; saved: number }>('POST', `/api/mig/uploads/${encodeURIComponent(uploadId)}/fix-employees`, { fixes }),
     migMerge: (rowId: string, mergeIntoRowId: string) => call<{ success: true }>('POST', `/api/mig/rows/${encodeURIComponent(rowId)}/merge`, { mergeIntoRowId }),
     /** The reason is sent for the day the server keeps it; today the server ignores it. */
