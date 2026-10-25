@@ -15,6 +15,7 @@ import { canShowBook } from './rules.ts';
 import { saveTicks } from './ticks.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
 import { useLiveReload } from '../../live.ts';
+import { Paged, newestFirst } from '../../components/RowPages.tsx';
 
 type Props = { me: Me; docTypes: DocTypeInfo[]; params?: Record<string, string> };
 const day = (stamp: string | null) => (stamp ? stamp.slice(0, 10) : '');
@@ -69,8 +70,8 @@ export function BankRecon({ me }: Props) {
       {rows.length === 0 && <p className="text-sm text-slate-500">No bank has been reconciled yet.</p>}
       {byBank(rows).map((b) => <div key={b.bankId} className="space-y-1">
         <h3 className="font-medium">{b.bankName}</h3>
-        <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="py-1">Statement month</th><th>Status</th><th className="text-right">Statement balance</th><th>Started by</th><th>Finished by</th><th /></tr></thead><tbody>
-          {b.rows.map((r) => <tr key={r.id} className="border-t border-slate-100">
+        <Paged rows={newestFirst(b.rows, (r) => r.month)}>{(page) => (<div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="py-1">Statement month</th><th>Status</th><th className="text-right">Statement balance</th><th>Started by</th><th>Finished by</th><th /></tr></thead><tbody>
+          {page.map((r) => <tr key={r.id} className="border-t border-slate-100">
             <td className="py-1">{r.month}</td>
             <td>{r.status === 'finished' ? 'Finished' : 'Open'}</td>
             <td className="text-right tabular-nums">{peso(r.bankBalanceCents)}</td>
@@ -78,7 +79,7 @@ export function BankRecon({ me }: Props) {
             <td>{r.finishedAt ? <>{r.finishedByName ?? '?'} <span className="text-slate-500">{day(r.finishedAt)}</span></> : '—'}</td>
             <td className="text-right"><Link to={`/cash/recon/${r.id}`} className="underline">{r.status === 'open' ? 'Continue' : 'View'}</Link></td>
           </tr>)}
-        </tbody></table></div>
+        </tbody></table></div>)}</Paged>
       </div>)}
     </Panel>
   </div>;

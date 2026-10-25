@@ -18,6 +18,7 @@ import { ShopWork } from './ShopWork.tsx';
 import { Visitors } from './Visitors.tsx';
 import { useLiveReload } from '../../live.ts';
 import { fitPicture } from '../../components/pictures.ts';
+import { newestFirst, Paged } from '../../components/RowPages.tsx';
 
 export interface StockLine { size: string; colour: string; onHand: number; held: number; available: number }
 interface Row extends Product { categoryId: string | null; sortOrder: number; isActive: boolean; version: number; updatedAt: string; stock: StockLine[] | null }
@@ -129,12 +130,12 @@ function Products({ me }: { me: Me }) {
       )}
       {rows && rows.length > 0 && (
         <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
-          <table className="w-full text-sm">
+          <Paged rows={rows}>{(page) => (<table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr><th className="p-3">Product</th><th className="p-3">Category</th><th className="p-3 text-right">Price</th><th className="p-3 text-right">Pieces left</th><th className="p-3">Sizes</th><th className="p-3">On the website</th><th className="p-3" /></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rows.map((p) => {
+              {page.map((p) => {
                 const left = total(p.stock, 'available');
                 return (
                   <tr key={p.id} className={p.isActive ? '' : 'text-slate-400'}>
@@ -156,7 +157,7 @@ function Products({ me }: { me: Me }) {
                   </tr>);
               })}
             </tbody>
-          </table>
+          </table>)}</Paged>
         </div>
       )}
       {editing && <ProductDialog me={me} product={editing === 'new' ? null : editing} categories={categories} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void load(); }} />}
@@ -348,11 +349,11 @@ function Reviews({ me }: { me: Me }) {
       {error && <Notice>{error}</Notice>}
       <p className="text-sm text-slate-600">Buyers rate each item once their online order is <b>completed</b>, from their order page. The website shows the reviews below under the buyer's first name and initial{shown.length ? <> · <b>{shown.length}</b> shown, average <b>{average.toFixed(1)}</b> of 5</> : ''}.</p>
       <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
-        <table className="w-full text-sm">
+        <Paged rows={newestFirst(rows ?? [], (r) => r.at)}>{(page) => (<table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"><tr><th className="p-3">Date</th><th className="p-3">Item</th><th className="p-3">Rating</th><th className="p-3">Review</th><th className="p-3">Buyer</th><th className="p-3">On the website</th><th className="p-3" /></tr></thead>
           <tbody className="divide-y divide-slate-100">
             {rows?.length === 0 && <tr><td colSpan={7} className="p-4 text-slate-500">No reviews yet. They appear here once buyers rate their completed orders.</td></tr>}
-            {rows?.map((r) => (
+            {page.map((r) => (
               <tr key={r.id} className={r.hidden ? 'text-slate-400' : ''}>
                 <td className="whitespace-nowrap p-3">{manilaTime(r.at)}</td>
                 <td className="p-3 font-semibold">{r.productName}</td>
@@ -365,7 +366,7 @@ function Reviews({ me }: { me: Me }) {
                   : <Button onClick={() => { setHiding(r); setReason(''); }}>Hide</Button>)}</td>
               </tr>))}
           </tbody>
-        </table>
+        </table>)}</Paged>
       </div>
       {hiding && (
         <Dialog title="Hide this review" onClose={() => setHiding(null)}>

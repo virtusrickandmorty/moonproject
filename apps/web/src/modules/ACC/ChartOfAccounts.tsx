@@ -9,6 +9,7 @@ import { Loading, Button, Dialog, Field, Notice, inputClass, peso, useAction } f
 import { useStepUpAction } from '../TAX/StepUp.tsx';
 import { TYPES, TYPE_WORDS, accountNotes, newAccountInput, ownSideCents, renameInput, typeWarning, visibleAccounts } from './coa.ts';
 import { useLiveReload } from '../../live.ts';
+import { Paged } from '../../components/RowPages.tsx';
 
 type Open = { kind: 'add' } | { kind: 'rename' | 'deactivate'; account: CoaAccount };
 
@@ -59,10 +60,10 @@ export function AccountTable({ accounts, manage, onRename, onDeactivate, onActiv
 }) {
   return (
     <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
-      <table className="w-full text-sm">
+      <Paged rows={accounts}>{(page) => (<table className="w-full text-sm">
         <thead className="text-left text-slate-500"><tr><th className="p-2">Code</th><th className="p-2">Account</th><th className="p-2">Type</th><th className="p-2">Role key</th><th className="p-2 text-right">Balance</th><th className="p-2">Active</th>{manage && <th className="p-2" />}</tr></thead>
         <tbody>
-          {accounts.map((a) => (
+          {page.map((a) => (
             <tr key={a.id} className={`border-t border-slate-100 align-top ${a.isHeader ? 'bg-slate-50 font-semibold' : ''} ${a.isActive ? '' : 'text-slate-500'}`}>
               <td className="whitespace-nowrap p-2 tabular-nums">{a.code}</td>
               <td className={`p-2 ${a.isHeader ? '' : 'pl-6'}`}>
@@ -82,7 +83,7 @@ export function AccountTable({ accounts, manage, onRename, onDeactivate, onActiv
             </tr>
           ))}
         </tbody>
-      </table>
+      </table>)}</Paged>
     </div>
   );
 }

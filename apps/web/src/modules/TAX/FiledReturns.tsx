@@ -3,6 +3,7 @@ import { api, type FiledRegister, type FiledRegisterRow, type FiledReturnInput, 
 import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, manilaTime } from '../../components/ui.tsx';
 import { useStepUpAction } from './StepUp.tsx';
 import { useLiveReload } from '../../live.ts';
+import { Paged, newestFirst } from '../../components/RowPages.tsx';
 
 export function FiledReturns({ me }: { me: Me }) {
   const [data, setData] = useState<FiledRegister | null>(null);
@@ -44,14 +45,14 @@ export function FiledReturns({ me }: { me: Me }) {
           <div className="flex justify-end gap-2"><Button onClick={() => setInput(null)} disabled={action.busy}>Go back</Button><Button type="submit" tone="primary" disabled={action.busy}>Record a filing</Button></div>
         </form>
       </Panel>}
-      {data.rows.length === 0 ? <Notice tone="note">No filing confirmations recorded yet.</Notice> : <div className="overflow-x-auto"><table className="w-full text-sm">
+      {data.rows.length === 0 ? <Notice tone="note">No filing confirmations recorded yet.</Notice> : <Paged rows={newestFirst(data.rows, (r) => r.recordedAt)}>{(page) => (<div className="overflow-x-auto"><table className="w-full text-sm">
         <thead className="text-left text-slate-500"><tr><th>Form</th><th>Period</th><th>Date filed</th><th>Reference</th><th>Note</th><th>Recorded</th><th>Status</th><th /></tr></thead>
-        <tbody>{data.rows.map((r) => <tr key={r.id} className="border-t border-slate-200 align-top">
+        <tbody>{page.map((r) => <tr key={r.id} className="border-t border-slate-200 align-top">
           <td className="py-2 pr-3">{r.form}</td><td className="py-2 pr-3">{r.period}</td><td className="py-2 pr-3">{r.filedOn}</td><td className="py-2 pr-3">{r.reference}</td><td className="py-2 pr-3">{r.note}</td><td className="py-2 pr-3 whitespace-nowrap">{manilaTime(r.recordedAt)}</td>
           <td className="py-2 pr-3">{r.voidedAt ? <>Voided: {r.voidReason}<br />{manilaTime(r.voidedAt)}</> : 'Recorded'}</td>
           <td className="py-2">{manage && !r.voidedAt && <Button disabled={action.busy} onClick={() => { setVoiding(r); setReason(''); }}>Void</Button>}</td>
         </tr>)}</tbody>
-      </table></div>}
+      </table></div>)}</Paged>}
     </>}
     {voiding && <Dialog title="Void filing confirmation" onClose={() => setVoiding(null)}>
       <p>{voiding.form} for {voiding.period}, reference {voiding.reference}. The row stays visible as voided.</p>

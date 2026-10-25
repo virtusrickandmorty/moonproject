@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { api, type BackupCheck, type BackupFile } from '../../api.ts';
 import { Loading, Button, Field, Notice, Panel, inputClass, manilaTime, useAction, usePasswordPrompt } from '../../components/ui.tsx';
 import { cleanKey, factRows, lostWords, restoreConfirmed, reusedSeries, reusedWords, sizeWords, sourceWords, tierWords } from './backups.ts';
+import { Paged, newestFirst } from '../../components/RowPages.tsx';
 
 type Purpose = 'drill' | 'restore';
 
@@ -28,10 +29,10 @@ export function RestoreBackups() {
       </p>
       {list.length === 0 ? <p className="text-sm text-slate-500">No backups found in the backup folder or the off-site folder.</p> : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <Paged rows={newestFirst(list, (b) => b.at)}>{(page) => (<table className="w-full text-sm">
             <thead className="text-left text-slate-500"><tr><th className="pr-3">Made</th><th className="pr-3">Tier</th><th className="pr-3">Where</th><th className="pr-3 text-right">Size</th><th /></tr></thead>
             <tbody>
-              {list.map((b) => (
+              {page.map((b) => (
                 <tr key={`${b.source} ${b.file}`} className="border-t border-slate-100">
                   <td className="whitespace-nowrap py-2 pr-3">{manilaTime(b.at)}</td>
                   <td className="py-2 pr-3">{tierWords(b.tier)}</td>
@@ -44,7 +45,7 @@ export function RestoreBackups() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table>)}</Paged>
         </div>
       )}
     </Panel>

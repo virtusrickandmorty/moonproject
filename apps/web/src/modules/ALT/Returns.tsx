@@ -12,6 +12,7 @@ import { Link } from '../../router.tsx';
 import { masterRequest } from '../CUS/http.ts';
 import { CustomerPicker, type Picked } from '../COL/parts.tsx';
 import { useLiveReload } from '../../live.ts';
+import { Paged, newestFirst } from '../../components/RowPages.tsx';
 
 type Status = 'awaiting_decision' | 'declined' | 'in_production' | 'ready' | 'released' | 'cancelled';
 interface ReturnLine {
@@ -63,10 +64,10 @@ export function Returns({ me }: { me: Me }) {
       {done && <Notice tone="success">{done}</Notice>}
       {!rows ? <Loading /> : rows.length === 0 ? <p className="rounded-lg bg-white p-4 text-sm text-slate-500 ring-1 ring-slate-200">{show === 'open' ? 'Nothing brought back is open.' : 'Nothing has been brought back yet.'}</p> : (
         <div className="overflow-x-auto rounded-lg bg-white ring-1 ring-slate-200">
-          <table>
+          <Paged rows={newestFirst(rows, (r) => `${r.receivedOn} ${r.number}`)}>{(page) => (<table>
             <thead><tr><th>Return</th><th>Customer</th><th>Received</th><th>Items</th><th>Status</th><th className="text-right">Fee</th><th>Job order</th></tr></thead>
             <tbody>
-              {rows.map((r) => (
+              {page.map((r) => (
                 <tr key={r.id} onClick={() => setOpened(r.id)} className="cursor-pointer">
                   <td><button type="button" className="font-semibold text-indigo-700 hover:underline" onClick={() => setOpened(r.id)}>{r.number}</button></td>
                   <td>{r.customerName}</td>
@@ -78,7 +79,7 @@ export function Returns({ me }: { me: Me }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table>)}</Paged>
         </div>
       )}
       {receiving && <ReceiveDialog me={me} onClose={() => setReceiving(false)} onSaved={(r) => { setReceiving(false); setDone(`${r.number} received. It waits for the owner or the accountant to decide.`); setOpened(r.id); void load(); }} />}

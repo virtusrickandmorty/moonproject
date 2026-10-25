@@ -5,6 +5,7 @@ import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { bookRangeError, canShowBook } from './rules.ts';
 import { useLiveReload } from '../../live.ts';
+import { PRINT_ONLY, usePrintablePages } from '../../components/RowPages.tsx';
 
 export function CashBook({ me }: { me: Me }) {
   const [places, setPlaces] = useState<CashAccount[]>([]);
@@ -12,6 +13,7 @@ export function CashBook({ me }: { me: Me }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [book, setBook] = useState<Book | null>(null);
+  const { onPage, buttons } = usePrintablePages(book?.lines.length ?? 0);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -56,8 +58,9 @@ export function CashBook({ me }: { me: Me }) {
       <div className="flex items-center gap-3"><div><h2 className="text-xl font-semibold">Cash book · {book.place.name}</h2><p className="text-sm text-slate-600">{book.from} to {book.to}</p></div><span className="flex-1" /><Button className="print:hidden" onClick={() => window.print()}>Print</Button></div>
       <p className="font-semibold">Opening balance <span className="tabular-nums">{peso(book.openingCents)}</span></p>
       <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="py-2">Date</th><th>Document</th><th>Details</th><th className="text-right">Money in</th><th className="text-right">Money out</th><th className="text-right">Balance</th></tr></thead><tbody>
-        {book.lines.map((line, i) => <tr key={`${line.journalNumber}-${i}`} className="border-t border-slate-100"><td className="py-2">{line.date}</td><td>{line.documentId && line.docType ? <Link to={docPath(line.docType, `/${line.documentId}`)} className="underline print:no-underline">{line.documentNumber ?? line.journalNumber}</Link> : line.journalNumber}</td><td>{line.memo}</td><td className="text-right tabular-nums">{line.inCents ? peso(line.inCents) : '—'}</td><td className="text-right tabular-nums">{line.outCents ? peso(line.outCents) : '—'}</td><td className="text-right tabular-nums">{peso(line.balanceCents)}</td></tr>)}
+        {book.lines.map((line, i) => <tr key={`${line.journalNumber}-${i}`} className={`border-t border-slate-100 ${onPage(i) ? '' : PRINT_ONLY}`}><td className="py-2">{line.date}</td><td>{line.documentId && line.docType ? <Link to={docPath(line.docType, `/${line.documentId}`)} className="underline print:no-underline">{line.documentNumber ?? line.journalNumber}</Link> : line.journalNumber}</td><td>{line.memo}</td><td className="text-right tabular-nums">{line.inCents ? peso(line.inCents) : '—'}</td><td className="text-right tabular-nums">{line.outCents ? peso(line.outCents) : '—'}</td><td className="text-right tabular-nums">{peso(line.balanceCents)}</td></tr>)}
       </tbody></table></div>
+      {buttons}
       {book.lines.length === 0 && <p className="text-sm text-slate-500">No movements in this period.</p>}
       <p className="border-t border-slate-300 pt-2 text-right font-semibold">Closing balance <span className="tabular-nums">{peso(book.closingCents)}</span></p>
     </section>}

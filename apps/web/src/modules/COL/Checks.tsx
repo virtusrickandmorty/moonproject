@@ -14,6 +14,7 @@ import { docPath } from '../../shell/menu.ts';
 import { cents } from './money.ts';
 import { CustomerPicker, type Picked } from './parts.tsx';
 import { PDC_STATUS, checkKey, pdcActions, pdcCollectionPath, ticked } from './checks.ts';
+import { newestFirst, Paged } from '../../components/RowPages.tsx';
 
 const can = (me: Me, p: string) => me.permissions.includes(p);
 const docLink = (type: string, d: { id: string; number: string }) => <Link to={docPath(type, `/${d.id}`)} className="text-indigo-700 underline">{d.number}</Link>;
@@ -62,12 +63,12 @@ export function ChecksOnHand({ me }: { me: Me }) {
         {list && list.checks.length === 0 && <p className="text-sm text-slate-500">No customer check is on hand.</p>}
         {list && list.checks.length > 0 && (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <Paged rows={newestFirst(list.checks, (c) => c.receivedOn)}>{(page) => (<table className="w-full text-sm">
               <thead className="text-left text-slate-500">
                 <tr>{depositor && <th />}<th className="py-1">Received</th><th className="text-right">Days</th><th>Customer</th><th>Check no.</th><th>Bank</th><th>Check date</th><th className="text-right">Amount</th><th>Collection</th></tr>
               </thead>
               <tbody>
-                {list.checks.map((c) => (
+                {page.map((c) => (
                   <tr key={checkKey(c)} className="border-t border-slate-100">
                     {depositor && <td><input type="checkbox" aria-label={`Deposit check no. ${c.checkNumber}`} checked={keys.has(checkKey(c))} onChange={() => toggle(checkKey(c))} /></td>}
                     <td className="py-1">{c.receivedOn}</td>
@@ -81,7 +82,7 @@ export function ChecksOnHand({ me }: { me: Me }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table>)}</Paged>
           </div>
         )}
         {list && (
@@ -112,10 +113,10 @@ export function ChecksOnHand({ me }: { me: Me }) {
 
       {can(me, 'col.checks.return') && atBank.length > 0 && (
         <Panel title="Deposited checks (if the bank returns one)">
-          <table className="w-full text-sm">
+          <Paged rows={newestFirst(atBank, (c) => c.deposit.date)}>{(page) => (<table className="w-full text-sm">
             <thead className="text-left text-slate-500"><tr><th className="py-1">Deposited</th><th>Customer</th><th>Check no.</th><th>Bank</th><th className="text-right">Amount</th><th /></tr></thead>
             <tbody>
-              {atBank.map((c) => (
+              {page.map((c) => (
                 <tr key={checkKey(c)} className="border-t border-slate-100">
                   <td className="py-1">{docLink('cash.transfer', c.deposit)} · {showDate(c.deposit.date)}</td>
                   <td>{c.customerName}</td><td>{c.checkNumber}</td><td>{c.bank}</td>
@@ -124,7 +125,7 @@ export function ChecksOnHand({ me }: { me: Me }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table>)}</Paged>
         </Panel>
       )}
 

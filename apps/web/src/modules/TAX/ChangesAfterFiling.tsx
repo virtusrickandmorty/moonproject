@@ -9,6 +9,7 @@ import { api, type ChangeAfterFiling, type Me } from '../../api.ts';
 import { Loading, Notice, manilaTime } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
+import { Paged, newestFirst } from '../../components/RowPages.tsx';
 
 export function ChangesAfterFiling({ me }: { me: Me }) {
   const [rows, setRows] = useState<ChangeAfterFiling[] | null>(null);
@@ -30,10 +31,10 @@ export function ChangesAfterFiling({ me }: { me: Me }) {
       {!rows && !error && <Loading />}
       {rows?.length === 0 && <Notice tone="note">Nothing changed after a return was filed.</Notice>}
       {rows && rows.length > 0 && (
-        <table className="w-full text-sm">
+        <Paged rows={newestFirst(rows, (r) => r.at)}>{(page) => (<table className="w-full text-sm">
           <thead className="text-left text-slate-500"><tr><th>Date</th><th>Document</th><th>What happened</th><th>Who</th><th>When</th><th>Return</th></tr></thead>
           <tbody>
-            {rows.map((r) => (
+            {page.map((r) => (
               <tr key={`${r.documentId}:${r.what}:${r.form}:${r.period}`} className="border-t border-slate-200">
                 <td>{r.date}</td>
                 <td><Link className="underline" to={docPath(r.docType, `/${r.documentId}`)}>{r.docTitle} {r.number}</Link></td>
@@ -44,7 +45,7 @@ export function ChangesAfterFiling({ me }: { me: Me }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table>)}</Paged>
       )}
     </div>
   );

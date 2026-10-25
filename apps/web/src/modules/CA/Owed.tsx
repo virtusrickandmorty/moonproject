@@ -10,6 +10,7 @@ import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
 import { useLiveReload } from '../../live.ts';
+import { Paged } from '../../components/RowPages.tsx';
 
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
 const KIND = { repayment: 'Paid back', writeoff: 'Written off' } as const;
@@ -25,17 +26,17 @@ export function CaOwed() {
     <div className="max-w-2xl space-y-4">
       <h1 className="text-2xl font-semibold">Cash advances owed</h1>
       {rows.length === 0 ? <p className="text-slate-500">Nobody owes on cash advances.</p> : (
-        <table className="w-full text-sm">
+        <Paged rows={rows}>{(page) => (<table className="w-full text-sm">
           <thead className="text-left text-slate-500"><tr><th>Employee</th><th className="text-right">Owes</th></tr></thead>
           <tbody>
-            {rows.map((r) => (
+            {page.map((r) => (
               <tr key={r.employeeId} className="border-t border-slate-100">
                 <td className="py-1"><Link to={`/ca/employees/${r.employeeId}`} className="underline">{r.name}</Link></td>
                 <td className="text-right tabular-nums">{peso(r.owedCents)}</td>
               </tr>
             ))}
           </tbody>
-        </table>
+        </table>)}</Paged>
       )}
     </div>
   );

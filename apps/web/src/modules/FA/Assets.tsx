@@ -14,6 +14,7 @@ import { DepreciationRun, DisposeAsset } from './Actions.tsx';
 import { STATUSES, STATUS_WORDS, canDispose, filterAssets, gapWarning, monthRows, onTheBooks } from './register.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
 import { useLiveReload } from '../../live.ts';
+import { Paged } from '../../components/RowPages.tsx';
 
 const num = 'py-1 text-right tabular-nums';
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
@@ -57,10 +58,10 @@ export function Assets({ docTypes }: { docTypes: DocTypeInfo[] }) {
         </select>
       </div>
       {shown.length === 0 ? <p className="text-slate-500">{rows.length === 0 ? 'No fixed asset is recorded yet.' : 'No asset matches.'}</p> : (
-        <table className="w-full text-sm">
+        <Paged rows={shown}>{(page) => (<table className="w-full text-sm">
           <thead className="text-left text-slate-500"><tr><th>Asset</th><th>Class</th><th>Bought</th><th className="text-right">Cost</th><th className="text-right">Accumulated depreciation</th><th className="text-right">Book value</th><th>Status</th></tr></thead>
           <tbody>
-            {shown.map((a) => (
+            {page.map((a) => (
               <tr key={a.id} className={`border-t border-slate-100 ${a.status === 'cancelled' ? 'text-slate-400 line-through' : ''}`}>
                 <td className="py-1"><Link to={`/fa/assets/${a.id}`} className="underline">{a.number}</Link> {a.description}</td>
                 <td className="py-1">{a.className}</td><td className="py-1">{a.acquiredOn}</td>
@@ -69,7 +70,7 @@ export function Assets({ docTypes }: { docTypes: DocTypeInfo[] }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table>)}</Paged>
       )}
       {running && <DepreciationRun gaps={gaps} onClose={() => setRunning(false)} onDone={() => (setRunning(false), load())} />}
     </div>

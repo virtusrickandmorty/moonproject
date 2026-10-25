@@ -9,6 +9,7 @@ import { Loading, Button, Notice, peso } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { useLiveReload } from '../../live.ts';
+import { Paged, newestFirst } from '../../components/RowPages.tsx';
 
 export function ReversalsDue({ me }: { me: Me }) {
   const [rows, setRows] = useState<ReversalDue[] | null>(null);
@@ -25,10 +26,10 @@ export function ReversalsDue({ me }: { me: Me }) {
       {!rows && !error && <Loading />}
       {rows?.length === 0 && <Notice tone="note">No reversal is due.</Notice>}
       {rows && rows.length > 0 && (
-        <table className="w-full text-sm">
+        <Paged rows={newestFirst(rows, (r) => r.date)}>{(page) => (<table className="w-full text-sm">
           <thead className="text-left text-slate-500"><tr><th>Voucher</th><th>Dated</th><th>What for</th><th className="text-right">Amount</th><th>Reverse on</th><th /></tr></thead>
           <tbody>
-            {rows.map((r) => (
+            {page.map((r) => (
               <tr key={r.documentId} className="border-t border-slate-200">
                 <td><Link className="underline" to={docPath('acc.jv', `/${r.documentId}`)}>{r.number}</Link></td>
                 <td>{r.date}</td>
@@ -39,7 +40,7 @@ export function ReversalsDue({ me }: { me: Me }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table>)}</Paged>
       )}
     </div>
   );

@@ -11,6 +11,7 @@ import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
 import { useLiveReload } from '../../live.ts';
+import { Paged } from '../../components/RowPages.tsx';
 
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
 const num = 'py-1 text-right tabular-nums';
@@ -27,10 +28,10 @@ export function ApBalances() {
     <div className="max-w-3xl space-y-4">
       <h1 className="text-2xl font-semibold">Payables by supplier</h1>
       {rows.length === 0 ? <p className="text-slate-500">Nothing is owed to a supplier and no advance is open.</p> : (
-        <table className="w-full text-sm">
+        <Paged rows={rows}>{(page) => (<table className="w-full text-sm">
           <thead className="text-left text-slate-500"><tr><th>Supplier</th><th className="text-right">Owed on bills</th><th className="text-right">Advances still open</th><th className="text-right">Net</th></tr></thead>
           <tbody>
-            {rows.map((r) => (
+            {page.map((r) => (
               <tr key={r.supplierId} className="border-t border-slate-100">
                 <td className="py-1"><Link to={`/ap/suppliers/${r.supplierId}`} className="underline">{r.supplierName}</Link></td>
                 <td className={num}>{peso(r.balanceCents)}</td><td className={num}>{peso(r.advancesCents)}</td><td className={num}>{peso(r.netCents)}</td>
@@ -40,7 +41,7 @@ export function ApBalances() {
               <td className="py-1">Total</td><td className={num}>{peso(total('balanceCents'))}</td><td className={num}>{peso(total('advancesCents'))}</td><td className={num}>{peso(total('netCents'))}</td>
             </tr>
           </tbody>
-        </table>
+        </table>)}</Paged>
       )}
       <p className="text-sm text-slate-500">Net is what would be left to pay if every open advance went on that supplier’s bills; a minus means the supplier holds more of Virtus’s money than it is owed.</p>
     </div>

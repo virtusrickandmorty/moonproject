@@ -10,6 +10,7 @@ import { RecoveryKeys } from './RecoveryKeys.tsx';
 import { RestoreBackups } from './Restore.tsx';
 import { TIERS, madeWords, pendingRestoreWords, runWords, staleWords, tierCount, usbWords, whenWords } from './backups.ts';
 import { useLiveReload } from '../../live.ts';
+import { Paged, newestFirst } from '../../components/RowPages.tsx';
 
 const TABS = [
   { section: '', label: 'Status', permission: 'bak.view', denied: 'You cannot view the backup status.' },
@@ -90,10 +91,10 @@ function Status({ canRun }: { canRun: boolean }) {
       <Panel title="Last runs">
         {s.runs.length === 0 ? <p className="text-sm text-slate-500">No backup has run yet.</p> : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <Paged rows={newestFirst(s.runs, (r) => r.started_at)}>{(page) => (<table className="w-full text-sm">
               <thead className="text-left text-slate-500"><tr><th className="pr-3">When</th><th className="pr-3">Why</th><th className="pr-3">Tier</th><th>Result</th></tr></thead>
               <tbody>
-                {s.runs.map((r) => {
+                {page.map((r) => {
                   const w = runWords(r);
                   return (
                     <tr key={r.id} className="border-t border-slate-100 align-top">
@@ -105,7 +106,7 @@ function Status({ canRun }: { canRun: boolean }) {
                   );
                 })}
               </tbody>
-            </table>
+            </table>)}</Paged>
           </div>
         )}
       </Panel>

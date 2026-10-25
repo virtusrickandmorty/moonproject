@@ -1,6 +1,7 @@
 /**
  * Generic list for any doc type (PLAN H2): newest first, search and date filters, status filter with counts, the user's
- * drafts on top. By default 25 rows and "Show older"; a screen can ask for numbered pages of its own size. Its New form,
+ * drafts on top. Numbered pages of 25 (Newer / Older; the owner's request, Oct 2026: every table in pages), or a screen's
+ * own size; `showOlder` keeps the older way, 25 rows and "Show older" adding to them. Its New form,
  * its documents and their Edit open in dialogs over the list, each with its own address (?new, ?view=<id>, ?edit=<id>),
  * so Back closes them and a link still opens them; each row has its quick actions (print, edit, cancel).
  */
@@ -138,7 +139,8 @@ export function RowMenu({ label, items }: { label: string; items: { label: strin
 
 /**
  * `notice`: a line a screen that sent the user here wants shown (a quotation that could not open the Job Order form yet).
- * `pageSize`: numbered pages of this many rows (Newer / Older) instead of "Show older". `form` and `view` open over the
+ * `pageSize`: numbered pages of this many rows (Newer / Older; 25 when not given). `showOlder`: "Show older" instead,
+ * adding 25 rows at a time. `form` and `view` open over the
  * list what the address names (`opened`, from openedFrom). `noEdit`: no Edit on its rows (its view has none either).
  * `rowActions`: a screen's own quick actions for a row, before Print, Edit and Cancel (a job order's Make payment).
  * `formTitled`: the form shows no heading of its own in a dialog, so the dialog shows its title. `formSize`: "screen" for a
@@ -147,8 +149,8 @@ export function RowMenu({ label, items }: { label: string; items: { label: strin
  * summary (why a search found it) and what its search reads. `others`: other document types whose New form and documents
  * open over this list (a job order's payment, invoice and release), with what shows them.
  */
-export function DocList({ type, notice, pageSize, form, view, opened, noEdit, rowActions, formTitled, formSize = 'full', source, columns = [], detail, searchHint, others, searchTools }: {
-  type: DocTypeInfo; notice?: string; pageSize?: number; form?: ListForm; view?: ListView; opened?: Opened; noEdit?: boolean; rowActions?: (r: DocHeader) => ReactNode; formTitled?: boolean; formSize?: 'full' | 'screen';
+export function DocList({ type, notice, pageSize, showOlder = false, form, view, opened, noEdit, rowActions, formTitled, formSize = 'full', source, columns = [], detail, searchHint, others, searchTools }: {
+  type: DocTypeInfo; notice?: string; pageSize?: number; showOlder?: boolean; form?: ListForm; view?: ListView; opened?: Opened; noEdit?: boolean; rowActions?: (r: DocHeader) => ReactNode; formTitled?: boolean; formSize?: 'full' | 'screen';
   source?: ListSource; columns?: ListColumn[]; detail?: (r: DocHeader) => ReactNode; searchHint?: string;
   /** Beside the search box (the job orders' Scan QR): given a way to search for words at once. */
   searchTools?: (search: (q: string) => void) => ReactNode;
@@ -177,22 +179,23 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
   const pushed = useRef(''); // the dialog address this list opened itself, so closing it is Back
   const fail = (e: Error) => setError(e.message);
   const size = pageSize ?? PAGE;
+  const numbered = !showOlder;
 
   const load = useCallback(
     async (before?: string, quiet = false) => {
       const n = ++asked.current;
       // "Show older" adds to the rows on screen; a numbered page replaces them. A quiet reload (a live change) keeps the
       // rows on screen until the new ones arrive.
-      const adding = !pageSize && !!before;
+      const adding = !numbered && !!before;
       if (!quiet) setLoaded((s) => ({ ...(adding && s.key === key ? s : waiting(key)), busy: true, error: '', before }));
       try {
-        const page = await documentPage(type.key, filters, status, before, size, !!pageSize, source);
+        const page = await documentPage(type.key, filters, status, before, size, numbered, source);
         if (n === asked.current) setLoaded((s) => ({ ...page, key, rows: adding ? [...s.rows, ...page.rows] : page.rows, busy: false, error: '', before }));
       } catch (e) {
         if (n === asked.current) setLoaded((s) => ({ ...s, busy: false, error: (e as Error).message }));
       }
     },
-    [key, size, pageSize], // eslint-disable-line react-hooks/exhaustive-deps
+    [key, size, numbered], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const [draftRetry, setDraftRetry] = useState(0);
   const loadDrafts = () => setDraftRetry((n) => n + 1);
@@ -200,8 +203,8 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
   // Someone recorded or changed something (here or on another computer): the page on show and the drafts again, quietly.
   // After "Show older" the list holds still rather than jump back to the newest rows.
   useLiveChange(() => {
-    if (!pageSize && state.before) return;
-    void load(pageSize ? starts[pageNo] : undefined, true);
+    if (!numbered && state.before) return;
+    void load(numbered ? starts[pageNo] : undefined, true);
     loadDrafts();
   });
   const over = !!(view && form);
@@ -285,7 +288,7 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
     return <>{rowActions?.(r)}<RowMenu label={`More actions for ${r.number}`} items={more} /></>;
   };
   const total = counts?.[status === 'posted' || status === 'cancelled' ? status : 'all'];
-  const first = pageSize ? pageNo * pageSize : 0;
+  const first = numbered ? pageNo * size : 0;
 
   return (
     <div className="space-y-4">
@@ -378,8 +381,8 @@ export function DocList({ type, notice, pageSize, form, view, opened, noEdit, ro
         </table>
       </div>
       )}
-      {!pageSize && more && <Button disabled={state.busy} onClick={() => void load(rows.at(-1)?.postedAt)}>Show older</Button>}
-      {pageSize && (pageNo > 0 || more) && (
+      {!numbered && more && <Button disabled={state.busy} onClick={() => void load(rows.at(-1)?.postedAt)}>Show older</Button>}
+      {numbered && (pageNo > 0 || more) && (
         <nav className="flex items-center justify-between gap-3 text-sm" aria-label="Pages">
           <Button disabled={pageNo === 0 || state.busy} onClick={() => goTo(pageNo - 1)}>← Newer</Button>
           <span className="text-slate-600">Page {pageNo + 1} · {first + 1}–{first + rows.length}</span>

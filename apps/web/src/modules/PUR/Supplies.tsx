@@ -8,6 +8,7 @@ import { Button, Dialog, Field, Notice, inputClass, peso, useAction, searchClass
 import { SupplyView } from './Supply.tsx';
 import { CATEGORY_WORDS, UNIT_WORDS, emptySupplyForm, filterSupplies, supplyToForm, supplyToInput, type SupplyForm } from './purchasing.ts';
 import { useLiveReload } from '../../live.ts';
+import { Paged } from '../../components/RowPages.tsx';
 
 export function Supplies({ me }: { me: Me }) {
   const [rows, setRows] = useState<SupplyRecord[] | null>(null);
@@ -38,10 +39,10 @@ export function Supplies({ me }: { me: Me }) {
       </div>
       {(error || a.error) && <Notice>{error || a.error}</Notice>}
       {shown && (
-        <table className="w-full rounded-xl bg-white text-sm shadow-sm ring-1 ring-slate-200/70 [&_td]:px-2 [&_td]:py-2 [&_th]:px-2 [&_th]:py-2">
+        <Paged rows={shown}>{(page) => (<table className="w-full rounded-xl bg-white text-sm shadow-sm ring-1 ring-slate-200/70 [&_td]:px-2 [&_td]:py-2 [&_th]:px-2 [&_th]:py-2">
           <thead className="text-left text-slate-500"><tr><th>Name</th><th>Unit</th><th>Kind</th><th className="text-right">Last purchase cost</th><th>Status</th><th /></tr></thead>
           <tbody>
-            {shown.map((s) => (
+            {page.map((s) => (
               <tr key={s.id} tabIndex={0} onClick={() => setViewing(s.id)} onKeyDown={(e) => { if (e.key === 'Enter') setViewing(s.id); }}
                 className={`cursor-pointer border-t border-slate-100 ${s.is_active ? '' : 'text-slate-500'}`}>
                 <td className="font-medium text-indigo-700">{s.name}</td><td>{UNIT_WORDS[s.unit]}</td><td>{CATEGORY_WORDS[s.category]}</td>
@@ -54,7 +55,7 @@ export function Supplies({ me }: { me: Me }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table>)}</Paged>
       )}
       {shown?.length === 0 && <p className="text-sm text-slate-500">No supply matches.</p>}
       {viewing && <Dialog title="Supply" hideTitle wide onClose={() => setViewing(null)}><SupplyView id={viewing} inDialog /></Dialog>}

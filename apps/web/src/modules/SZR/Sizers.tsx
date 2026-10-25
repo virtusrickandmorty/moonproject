@@ -9,6 +9,7 @@ import { Loading, Button, Dialog, Field, Notice, Panel, askConfirm, inputClass, 
 import { CustomerPicker, type Picked } from '../COL/parts.tsx';
 import { STATUS_WORDS, dueWords, filterSets, lendInput, returnInput, setInput, weekFrom, type ReturnValues, type SetValues } from './sizer.ts';
 import { useLiveReload } from '../../live.ts';
+import { Paged } from '../../components/RowPages.tsx';
 
 const chip = (s: SizerSet['status']) => `rounded-full px-2 py-0.5 text-xs font-medium ${s === 'in shop' ? 'bg-emerald-100 text-emerald-800' : s === 'lent' ? 'bg-sky-100 text-sky-800' : 'bg-red-100 text-red-800'}`;
 
@@ -134,10 +135,10 @@ export function SizerSets({ me }: { me: Me }) {
         </select>
       </div>
       {shown.length === 0 ? <p className="text-slate-500">{board.sets.length === 0 ? 'No sizer set is on file yet.' : 'No set matches.'}</p> : (
-        <table className="w-full text-sm">
+        <Paged rows={shown}>{(page) => (<table className="w-full text-sm">
           <thead className="text-left text-slate-500"><tr><th>Set</th><th>Sizes in it</th><th>Status</th><th>Who has it</th><th /></tr></thead>
           <tbody>
-            {shown.map((s) => (
+            {page.map((s) => (
               <tr key={s.id} className={`border-t border-slate-100 ${s.holder && s.holder.daysOverdue > 0 ? 'border-l-4 border-l-red-500' : ''}`}>
                 <td className="py-1 pl-1"><b>{s.code}</b> <span className="text-slate-500">{s.garmentType}</span></td>
                 <td className="py-1">{s.sizesIncluded}</td>
@@ -152,7 +153,7 @@ export function SizerSets({ me }: { me: Me }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table>)}</Paged>
       )}
       <Panel title="Returned">
         {board.returned.length === 0 ? <p className="text-sm text-slate-500">Nothing has been returned yet.</p> : (
