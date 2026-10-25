@@ -1,8 +1,12 @@
 /** COL contract for other modules (QS). Callers check their own route permission. */
 import type { Db } from '../../platform/db/driver.ts';
+import { postDocument, type Actor, type EngineEnv } from '../../engine/documents/lifecycle.ts';
 import { listPdcs } from './pdc.ts';
 import { checksOnHand } from './checks.ts';
 import { loadTenders } from './ledger.ts';
+import { invoiceOf, memosOn } from './credits.ts';
+import { creditMemoDoc } from './doctypes/credit-memo.ts';
+import { refundDoc } from './doctypes/refund.ts';
 
 export { collectionDoc, collectionInput, type CollectionInput } from './doctypes/collection.ts';
 export { creditsOn, invoiceCreditsAt } from './credits.ts';
@@ -59,6 +63,34 @@ export function salePayments(db: Db, saleId: string): SalePayment[] {
     )
     .all(saleId) as (Omit<SalePayment, 'paysOnlyThis'> & { only: number })[];
   return rows.map(({ only, ...r }) => ({ ...r, paysOnlyThis: only === 1 }));
+}
+
+/**
+ * Sold pieces came back (SHP: an online order returned after it went out, the owner's request, 25 Oct 2026): a credit memo
+ * (a return) for what is left of the quick sale, so the sale stays on the books and the return shows as sales returns in
+ * the return's own month and quarter, and the money paid back the way it came in (the sale's own payments' cash places),
+ * up to what the memo holds for the customer. In the caller's transaction; each document checks its own permission
+ * (col.credit_memo, col.refund). Nothing is done when nothing is left to credit.
+ */
+export function returnSale(env: EngineEnv, actor: Actor, saleId: string, reason: string): { memoId: string | null; refundId: string | null } {
+  const inv = invoiceOf(env.db, saleId);
+  const left = inv ? inv.grossCents - memosOn(env.db, saleId).amountCents : 0;
+  if (!inv || left <= 0) return { memoId: null, refundId: null };
+  const memo = postDocument(env, creditMemoDoc, actor, { input: { invoiceId: saleId, kind: 'return', amountCents: left, reason }, expectedTotalCents: left });
+  let owed = creditMemoDoc.load(env.db, memo.id).creditCents;
+  const tenders: { cashPlaceId: number; amountCents: number }[] = [];
+  for (const p of salePayments(env.db, saleId).filter((c) => c.status === 'posted')) {
+    for (const t of loadTenders(env.db, 'col_tenders', p.id)) {
+      const amountCents = Math.min(owed, t.amountCents);
+      if (amountCents > 0) tenders.push({ cashPlaceId: t.cashPlaceId, amountCents });
+      owed -= amountCents;
+    }
+  }
+  const paidBack = tenders.slice(0, 5); // a refund has up to five tenders, like a collection
+  if (paidBack.length === 0) return { memoId: memo.id, refundId: null };
+  const total = paidBack.reduce((n, t) => n + t.amountCents, 0);
+  const refund = postDocument(env, refundDoc, actor, { input: { customerId: inv.customerId, tenders: paidBack, reason }, expectedTotalCents: total });
+  return { memoId: memo.id, refundId: refund.id };
 }
 
 /** CR booklet numbers collections used between two numbers, cancelled ones included (TAX's booklet usage report). */

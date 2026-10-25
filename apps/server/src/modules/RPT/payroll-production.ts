@@ -5,6 +5,7 @@ import { board, productionReportRows } from '../PRD/public.ts';
 import { employee } from '../EMP/public.ts';
 import { invoiceRecordsOf, productionOrderRows } from '../JO/public.ts';
 import { programFigures, restockPrograms } from '../TPL/public.ts';
+import { shopFigures, shopWorkJobOrders } from '../SHP/public.ts';
 import { documentPath } from './sales-collections.ts';
 
 type AnyRow = Record<string, string | number | null>;
@@ -66,12 +67,18 @@ export function jobMargins(db: Db) {
   for(const i of invoiceRecordsOf(db,'all')) sales.set(i.jobOrderId,(sales.get(i.jobOrderId)??0)+i.grossCents-i.vatCents);
   // A TPL restock is a ₱0 job order billed later on its client's deliveries: margined per client below, not as a loss here.
   const restocks=restockPrograms(db);
-  const rows=(productionOrderRows(db) as AnyRow[]).filter((j)=>!restocks.has(String(j.id))).map((j)=>({ id:j.id,number:j.number,customerName:j.customerName,invoiceNetCents:sales.get(String(j.id))??0,pieceLaborCents:labor.get(String(j.id))??0,
+  // The website shop's own work (₱0 job orders) is billed when its pieces sell: margined as one line below.
+  const shopWork=shopWorkJobOrders(db);
+  const rows=(productionOrderRows(db) as AnyRow[]).filter((j)=>!restocks.has(String(j.id))&&!shopWork.has(String(j.id))).map((j)=>({ id:j.id,number:j.number,customerName:j.customerName,invoiceNetCents:sales.get(String(j.id))??0,pieceLaborCents:labor.get(String(j.id))??0,
     marginCents:(sales.get(String(j.id))??0)-(labor.get(String(j.id))??0),documentType:'jo.job_order',documentPath:documentPath('jo.job_order',String(j.id)) }));
   const tplLabor=new Map<string,{ labor:number; restocks:number }>();
   for(const [jo,r] of restocks){ const t=tplLabor.get(r.programId)??{ labor:0,restocks:0 }; tplLabor.set(r.programId,{ labor:t.labor+(labor.get(jo)??0),restocks:t.restocks+1 }); }
   const tplClients=programFigures(db).filter((p)=>tplLabor.has(p.programId)||p.piecesDelivered>0).map((p)=>{ const t=tplLabor.get(p.programId)??{ labor:0,restocks:0 };
     return { programId:p.programId,customerName:p.customerName,restocks:t.restocks,piecesIn:p.piecesIn,piecesDelivered:p.piecesDelivered,invoiceNetCents:p.goodsNetCents,pieceLaborCents:t.labor,
       laborPerPieceCents:p.piecesIn>0?Math.round(t.labor/p.piecesIn):null,marginCents:p.goodsNetCents-t.labor }; });
-  return { basis:'Invoice net less tagged piece labor; this is an operational figure, not from the general ledger. TPL clients are margined per client: the invoices of their deliveries less the labor of their restock job orders (pieces still in stock are not sold yet).',rows,tplClients };
+  const shop=shopFigures(db);
+  const shopLabor=[...shopWork].reduce((n,jo)=>n+(labor.get(jo)??0),0);
+  if(shopWork.size>0||shop.piecesSold>0) tplClients.push({ programId:'shop',customerName:'Website shop (own brand)',restocks:shopWork.size,piecesIn:shop.piecesMade,piecesDelivered:shop.piecesSold,
+    invoiceNetCents:shop.salesNetCents,pieceLaborCents:shopLabor,laborPerPieceCents:shop.piecesMade>0?Math.round(shopLabor/shop.piecesMade):null,marginCents:shop.salesNetCents-shopLabor });
+  return { basis:'Invoice net less tagged piece labor; this is an operational figure, not from the general ledger. Work made for stock (TPL clients, the website shop) is margined per client: what its pieces sold for less the labor of its job orders (pieces still in stock are not sold yet).',rows,tplClients };
 }

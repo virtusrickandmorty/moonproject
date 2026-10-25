@@ -92,6 +92,14 @@ describe('cancel or return a confirmed online order', () => {
     expect(list.rows).toEqual([expect.objectContaining({ number: o.number, status: 'returned' })]);
     expect(list.counts).toMatchObject({ returned: 1 });
     expect((await detail(o.id)).reversal).toMatchObject({ kind: 'returned', reason: REASON });
+    // The sale stays; a credit memo (a return) and the refund to the bank the buyer paid into carry it in the books.
+    expect(env.db.prepare('SELECT status FROM documents WHERE id = ?').pluck().get(o.saleId)).toBe('posted');
+    const docs = env.db.prepare(`SELECT doc_type, status, total_cents FROM documents WHERE doc_type IN ('col.credit_memo', 'col.refund') ORDER BY doc_type`).raw().all();
+    expect(docs).toEqual([['col.credit_memo', 'posted', 25_000], ['col.refund', 'posted', 25_000]]);
+    const sum = (code: string) => env.db.prepare(`SELECT COALESCE(SUM(l.debit_cents - l.credit_cents), 0) FROM journal_lines l JOIN accounts a ON a.id = l.account_id WHERE a.code = ?`).pluck().get(code);
+    expect([sum('4191'), sum('2301'), sum('2201'), sum('1201')]).toEqual([22_321, 0, 0, 0]); // sales returns NET; the VAT and the money held back to zero
+    expect(bank()).toBe(0);
+    expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
   });
 
   it('needs a reason of 10 to 200 characters, the shop permission, and an order the shop confirmed', async () => {
