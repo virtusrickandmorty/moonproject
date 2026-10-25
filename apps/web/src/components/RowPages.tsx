@@ -3,22 +3,24 @@
  * employee list. A list that shrinks keeps its page in range.
  */
 import { useState, type ReactNode } from 'react';
-import { Button } from './ui.tsx';
+import { PageBar, choosePageRows, useRowsPerPage } from './ui.tsx';
 
 export const ROWS_PER_PAGE = 20;
 
-export function usePages<T>(rows: readonly T[] | null | undefined, per = ROWS_PER_PAGE): { shown: T[]; buttons: ReactNode } {
+/** The rows of the page on show and the ERP's page bar; `per` fixes the size, else the person's rows-per-page choice. */
+export function usePages<T>(rows: readonly T[] | null | undefined, per?: number): { shown: T[]; buttons: ReactNode } {
+  const chosen = useRowsPerPage();
+  const size = per ?? chosen;
   const [page, setPage] = useState(0);
   const count = rows?.length ?? 0;
-  const pages = Math.max(1, Math.ceil(count / per));
+  const pages = Math.max(1, Math.ceil(count / size));
   const at = Math.min(page, pages - 1);
-  const shown = rows?.slice(at * per, (at + 1) * per) ?? [];
-  const buttons = count > per ? (
-    <div className="flex flex-wrap items-center justify-end gap-3 pt-2 text-sm">
-      <Button disabled={at === 0} onClick={() => setPage(at - 1)}>Previous</Button>
-      <span>{at * per + 1} to {Math.min((at + 1) * per, count)} of {count} · page {at + 1} of {pages}</span>
-      <Button disabled={at + 1 >= pages} onClick={() => setPage(at + 1)}>Next</Button>
-    </div>
+  const shown = rows?.slice(at * size, (at + 1) * size) ?? [];
+  // Shown once there is more than the smallest page, so the rows choice can be changed back.
+  const buttons = count > (per ?? ROWS_PER_PAGE) ? (
+    <PageBar first={at * size + 1} last={Math.min((at + 1) * size, count)} total={count} page={at + 1} pages={pages}
+      hasPrevious={at > 0} hasNext={at + 1 < pages} onPrevious={() => setPage(at - 1)} onNext={() => setPage(at + 1)}
+      {...(per === undefined ? { onRows: (r: number) => { choosePageRows(r); setPage(0); } } : {})} />
   ) : null;
   return { shown, buttons };
 }

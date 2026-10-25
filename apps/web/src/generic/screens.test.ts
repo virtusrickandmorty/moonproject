@@ -23,6 +23,7 @@ vi.mock('react', async (original) => ({
     return [hooks.values[i], (next: unknown) => { hooks.values[i] = typeof next === 'function' ? next(hooks.values[i]) : next; }];
   },
   useRef: (current: unknown) => { const i = hooks.cursor++; return hooks.values[i] ??= { current }; },
+  useSyncExternalStore: (_subscribe: unknown, get: () => unknown) => get(),
   useMemo: (run: () => unknown) => run(),
   useCallback: (fn: () => unknown, deps: unknown[]) => {
     const i = hooks.cursor++; const old = hooks.values[i];
@@ -60,7 +61,7 @@ const type: DocTypeInfo = { key: 'cash.transfer', title: 'Fund Transfer', module
 const row = (n = 1): DocHeader => ({ id: `doc${n}`, number: `TRF-${n}`, businessDate: '2026-09-30', status: 'posted', totalCents: 10000, summary: 'Sample supplier', postedAt: `2026-09-${String(31 - n).padStart(2, '0')}T12:00:00+08:00`, cancelledAt: null, cancelReason: null, replacesId: null, replacedById: null });
 const preview: Preview = { totalCents: 10000, summary: 'This will move ₱100.00 from Sample bank to Sample wallet.', issues: [], journal: [{ accountCode: '1111', accountName: 'Sample bank', debitCents: 0, creditCents: 10000 }] };
 
-afterEach(() => { hooks.cleanups.splice(0).reverse().forEach((f) => f()); hooks.effects = []; vi.restoreAllMocks(); choosePageRows(25, () => undefined); });
+afterEach(() => { hooks.cleanups.splice(0).reverse().forEach((f) => f()); hooks.effects = []; vi.restoreAllMocks(); choosePageRows(20, () => undefined); });
 
 it('shows readable choices on the form and recorded view while keeping their original values', async () => {
   const wordsType = { ...type, inputJsonSchema: { properties: { paymentTerms: { enum: ['full', 'dp50'] }, priority: { enum: ['normal', 'rush'] } } } };

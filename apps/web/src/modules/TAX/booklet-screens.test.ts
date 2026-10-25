@@ -37,7 +37,7 @@ describe('booklet screens', () => {
     const list = renderToStaticMarkup(createElement(BookletTable, { rows: [sample] }));
     for (const label of ['Kind', 'ATP number', 'Serial range', 'Received', 'Status', 'Used', 'Skipped', 'Left']) expect(list).toContain(label);
     expect(list).toContain('/tax/booklets/book-1');
-    const detail = renderToStaticMarkup(createElement(BookletDetail, { usage: sample, shownUsed: 100, shownSkipped: 100 }));
+    const detail = renderToStaticMarkup(createElement(BookletDetail, { usage: sample, shownSkipped: 100 }));
     expect(detail).toContain('/docs/qs.sale/sale-1');
     expect(detail).toContain('/docs/jo.invoice_record/invoice-2');
     expect(detail).toContain('Cancelled (all copies kept)');

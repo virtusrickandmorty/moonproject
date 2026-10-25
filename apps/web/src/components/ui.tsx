@@ -40,26 +40,55 @@ export function Button({ tone = 'plain', className = '', ...rest }: ButtonHTMLAt
   return <button type="button" className={`inline-flex items-center justify-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold transition-[color,background-color,box-shadow,transform] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-offset-1 disabled:pointer-events-none disabled:opacity-50 ${tones[tone]} ${className}`} {...rest} />;
 }
 
-/** A display preference for this session only, shared by the paged report callers. */
-export let PAGE_ROWS = 25;
-export function choosePageRows(rows: number, onOffset: (offset: number) => void) {
-  if (![25, 50, 100].includes(rows)) return;
+/**
+ * Rows per page: one choice for every list and report of the ERP (the owner's request, Oct 2026: one pagination look),
+ * 20, 50 or 100, kept in this browser. Lists drawn on screen follow it at once (useRowsPerPage).
+ */
+export const ROW_CHOICES = [20, 50, 100];
+const ROWS_KEY = 'vg-rows-per-page';
+const keptRows = () => { try { const n = Number(globalThis.localStorage?.getItem(ROWS_KEY)); return ROW_CHOICES.includes(n) ? n : 20; } catch { return 20; } };
+export let PAGE_ROWS = keptRows();
+const rowWatchers = new Set<() => void>();
+export function choosePageRows(rows: number, onOffset?: (offset: number) => void) {
+  if (!ROW_CHOICES.includes(rows)) return;
   PAGE_ROWS = rows;
-  onOffset(0); // existing callers request the chosen limit again, starting with the first row
+  try { globalThis.localStorage?.setItem(ROWS_KEY, String(rows)); } catch { /* a private window: this visit only */ }
+  rowWatchers.forEach((f) => f());
+  onOffset?.(0); // a list the server pages asks again for the chosen rows, from the first
+}
+export const useRowsPerPage = () => useSyncExternalStore((f) => { rowWatchers.add(f); return () => { rowWatchers.delete(f); }; }, () => PAGE_ROWS, () => PAGE_ROWS);
+
+/**
+ * The one page bar of the ERP (the owner's request, Oct 2026), under every paged list and report:
+ *   Rows per page [20]        Previous   21–40 of 147 · Page 2 of 8   Next
+ * `total` and `pages` when known (a list read page by page from the newest may not know them). `onRows` shows the rows
+ * choice; a list with a fixed size leaves it out. Never printed.
+ */
+export function PageBar({ first, last, total, page, pages, hasPrevious, hasNext, onPrevious, onNext, onRows, busy = false }: {
+  first: number; last: number; total?: number | null; page: number; pages?: number | null; hasPrevious: boolean; hasNext: boolean;
+  onPrevious: () => void; onNext: () => void; onRows?: (rows: number) => void; busy?: boolean;
+}) {
+  const rows = useRowsPerPage();
+  const n = (v: number) => v.toLocaleString('en-PH');
+  const where = total === 0 ? 'Nothing to show'
+    : `${n(first)}–${n(last)}${total != null ? ` of ${n(total)}` : ''} · Page ${n(page)}${pages ? ` of ${n(pages)}` : ''}`;
+  return (
+    <nav aria-label="Pages" className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-100 pt-3 text-sm text-slate-600 print:hidden">
+      {onRows && <label className="mr-auto flex items-center gap-2">Rows per page<select className="rounded-md border border-slate-300 bg-white px-2 py-1" value={rows} onChange={(e) => onRows(Number(e.target.value))}>{ROW_CHOICES.map((c) => <option key={c} value={c}>{c}</option>)}</select></label>}
+      <Button disabled={!hasPrevious || busy} onClick={onPrevious}>Previous</Button>
+      <span className="tabular-nums">{where}</span>
+      <Button disabled={!hasNext || busy} onClick={onNext}>Next</Button>
+    </nav>
+  );
 }
 
-/** Page position and a 25/50/100 row choice. Loose-leaf books keep their own fixed number of print pages. */
+/** The page bar of a list the server pages by offset (reports, registers). Loose-leaf books keep their fixed print pages. */
 export function Pager({ page, onOffset, what = 'rows' }: { page?: PageInfo | undefined; onOffset: (offset: number) => void; what?: string }) {
   if (!page || (what === 'loose pages' && page.total <= page.limit)) return null;
   const last = Math.min(page.offset + page.limit, page.total);
-  return (
-    <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 pt-3 text-sm text-slate-600 print:hidden">
-      {what !== 'loose pages' && <label className="mr-auto flex items-center gap-2">Rows per page<select className="rounded-md border border-slate-300 bg-white px-2 py-1" value={page.limit} onChange={(e) => choosePageRows(Number(e.target.value), onOffset)}>{[25, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}</select></label>}
-      <Button disabled={page.offset === 0} onClick={() => onOffset(Math.max(0, page.offset - page.limit))}>Previous</Button>
-      <span>{page.total === 0 ? `No ${what}` : `${what[0]!.toUpperCase()}${what.slice(1)} ${(page.offset + 1).toLocaleString('en-PH')} to ${last.toLocaleString('en-PH')} of ${page.total.toLocaleString('en-PH')}`}</span>
-      <Button disabled={last >= page.total} onClick={() => onOffset(page.offset + page.limit)}>Next</Button>
-    </div>
-  );
+  return <PageBar first={page.offset + 1} last={last} total={page.total} page={Math.floor(page.offset / page.limit) + 1} pages={Math.max(1, Math.ceil(page.total / page.limit))}
+    hasPrevious={page.offset > 0} hasNext={last < page.total} onPrevious={() => onOffset(Math.max(0, page.offset - page.limit))} onNext={() => onOffset(page.offset + page.limit)}
+    {...(what !== 'loose pages' ? { onRows: (r: number) => choosePageRows(r, onOffset) } : {})} />;
 }
 
 /** A page's own search box (above its list): half the page width, on the right; the whole width on a phone. */

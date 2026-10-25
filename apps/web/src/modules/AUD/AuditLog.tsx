@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, type AuditLogPage, type Me } from '../../api.ts';
-import { Loading, Button, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
+import { Button, Field, inputClass, Loading, Notice, PageBar, Panel } from '../../components/ui.tsx';
 import { auditData, auditQuery, type AuditFilters } from './audit.ts';
 import { useLiveReload } from '../../live.ts';
 
@@ -10,6 +10,8 @@ export function AuditLog({ me }: { me: Me }) {
   const [draft, setDraft] = useState<AuditFilters>(empty);
   const [filters, setFilters] = useState<AuditFilters>(empty);
   const [before, setBefore] = useState<number | undefined>();
+  // The pages before this one: where each started and how many rows it had (for Previous and "41–60").
+  const [earlier, setEarlier] = useState<{ before: number | undefined; rows: number }[]>([]);
   const [page, setPage] = useState<AuditLogPage | null>(null);
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
   const [error, setError] = useState('');
@@ -28,7 +30,7 @@ export function AuditLog({ me }: { me: Me }) {
   return <article className="space-y-4">
     <h1 className="text-2xl font-semibold">Audit log</h1>
     <Panel title="Filters">
-      <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" onSubmit={(e) => { e.preventDefault(); setBefore(undefined); setFilters({ ...draft }); }}>
+      <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" onSubmit={(e) => { e.preventDefault(); setBefore(undefined); setEarlier([]); setFilters({ ...draft }); }}>
         <Field label="From"><input type="date" className={inputClass} value={draft.from} onChange={(e) => set('from', e.target.value)} /></Field>
         <Field label="To"><input type="date" className={inputClass} value={draft.to} onChange={(e) => set('to', e.target.value)} /></Field>
         <Field label="User"><select className={inputClass} value={draft.userId} onChange={(e) => set('userId', e.target.value)}>
@@ -53,7 +55,12 @@ export function AuditLog({ me }: { me: Me }) {
           <td className="px-2 py-2"><pre className="whitespace-pre-wrap break-words">{auditData(r.data)}</pre></td>
         </tr>)}</tbody>
       </table></div>}
-      {page.nextBefore !== null && <Button onClick={() => setBefore(page.nextBefore!)}>Older</Button>}
+      {(earlier.length > 0 || page.nextBefore !== null) && (() => {
+        const first = earlier.reduce((n, p) => n + p.rows, 0) + 1;
+        return <PageBar first={first} last={first + page.rows.length - 1} page={earlier.length + 1} hasPrevious={earlier.length > 0} hasNext={page.nextBefore !== null}
+          onPrevious={() => { setBefore(earlier.at(-1)!.before); setEarlier(earlier.slice(0, -1)); }}
+          onNext={() => { setEarlier([...earlier, { before, rows: page.rows.length }]); setBefore(page.nextBefore!); }} />;
+      })()}
     </Panel>}
   </article>;
 }

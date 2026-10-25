@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLiveReload } from '../../live.ts';
 import { api, type Me, type NightlyCheck, type NightlyNight, type NightlyRunNow } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { Loading, Button, Notice, Panel } from '../../components/ui.tsx';
+import { Button, Loading, Notice, PageBar, Panel } from '../../components/ui.tsx';
 import { checkResult } from './nightly.ts';
 
 function Checks({ checks }: { checks: NightlyCheck[] }) {
@@ -19,6 +19,9 @@ function Checks({ checks }: { checks: NightlyCheck[] }) {
 export function NightlyChecks({ me }: { me: Me }) {
   const [nights, setNights] = useState<NightlyNight[] | null>(null);
   const [next, setNext] = useState<string | null>(null);
+  // The pages before this one: where each started (the server's "before") and how many nights it had.
+  const [earlier, setEarlier] = useState<{ before: string | undefined; rows: number }[]>([]);
+  const [start, setStart] = useState<string | undefined>(undefined);
   const [error, setError] = useState('');
   const [now, setNow] = useState<NightlyRunNow | null>(null);
   const [busy, setBusy] = useState(false);
@@ -28,17 +31,17 @@ export function NightlyChecks({ me }: { me: Me }) {
     void api.nightlyChecks().then((r) => { setNights(r.rows); setNext(r.nextBefore); }, (e: Error) => setError(e.message));
   }, [me.permissions]);
   // Live (the owner's request, Oct 2026): a change on any computer shows here too.
-  useLiveReload(() => me.permissions.includes('aud.integrity.view') && api.nightlyChecks().then((r) => { setNights(r.rows); setNext(r.nextBefore); }));
+  useLiveReload(() => me.permissions.includes('aud.integrity.view') && !start && api.nightlyChecks().then((r) => { setNights(r.rows); setNext(r.nextBefore); }));
   if (!me.permissions.includes('aud.integrity.view')) return <Notice>Access denied.</Notice>;
   async function runNow() {
     setBusy(true); setError('');
     try { setNow(await api.nightlyRunNow()); } catch (e) { setError((e as Error).message); }
     setBusy(false);
   }
-  async function more() {
-    if (!next) return;
-    try { const r = await api.nightlyChecks(next); setNights((prior) => [...(prior ?? []), ...r.rows]); setNext(r.nextBefore); } catch (e) { setError((e as Error).message); }
+  async function show(at: string | undefined, before: { before: string | undefined; rows: number }[]) {
+    try { const r = await api.nightlyChecks(at); setNights(r.rows); setNext(r.nextBefore); setStart(at); setEarlier(before); window.scrollTo(0, 0); } catch (e) { setError((e as Error).message); }
   }
+  const first = earlier.reduce((n, p) => n + p.rows, 0) + 1;
   return <article className="space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3"><h1 className="text-2xl font-semibold">Nightly checks</h1>
       {canRun && <Button disabled={busy} onClick={() => void runNow()}>{busy ? 'Checking…' : 'Run the checks now'}</Button>}</div>
@@ -52,6 +55,7 @@ export function NightlyChecks({ me }: { me: Me }) {
       <p className={`text-sm ${n.foundCount ? 'text-red-700' : 'text-green-700'}`}>{n.foundCount ? `${n.foundCount} found` : 'Everything passed'} · run {n.ranAt.slice(0, 16).replace('T', ' ')}</p>
       <Checks checks={n.checks} />
     </Panel>)}
-    {next && <Button onClick={() => void more()}>Show older nights</Button>}
+    {nights && (earlier.length > 0 || next) && <PageBar first={first} last={first + nights.length - 1} page={earlier.length + 1} hasPrevious={earlier.length > 0} hasNext={!!next}
+      onPrevious={() => void show(earlier.at(-1)!.before, earlier.slice(0, -1))} onNext={() => void show(next!, [...earlier, { before: start, rows: nights.length }])} />}
   </article>;
 }

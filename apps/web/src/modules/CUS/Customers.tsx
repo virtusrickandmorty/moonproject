@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useLiveChange } from '../../live.ts';
 import { openServerPrint, refusedFields, type Me } from '../../api.ts';
-import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, peso, searchClass, searchRowClass } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, PageBar, Panel, choosePageRows, inputClass, peso, searchClass, searchRowClass, useRowsPerPage } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { masterRequest } from './http.ts';
@@ -43,6 +43,7 @@ export function Customers({ me }: { me: Me }) {
   const [rows, setRows] = useState<Customer[]>([]);
   const [search, setSearch] = useState('');
   const [offset, setOffset] = useState(0);
+  const rowsPerPage = useRowsPerPage();
   const [selected, setSelected] = useState<Detail | null>(null);
   const [editing, setEditing] = useState<Customer | 'new' | null>(null);
   const [error, setError] = useState('');
@@ -50,10 +51,10 @@ export function Customers({ me }: { me: Me }) {
   const canManage = me.permissions.includes('cus.manage');
   const load = useCallback(async () => {
     try {
-      setRows(await masterRequest<Customer[]>(me, `/api/cus/customers?${new URLSearchParams({ search, offset: String(offset), limit: '25' })}`));
+      setRows(await masterRequest<Customer[]>(me, `/api/cus/customers?${new URLSearchParams({ search, offset: String(offset), limit: String(rowsPerPage) })}`));
       setError('');
     } catch (e) { setError((e as Error).message); }
-  }, [me, search, offset]);
+  }, [me, search, offset, rowsPerPage]);
   const open = async (id: string) => {
     try { setSelected(await masterRequest<Detail>(me, `/api/cus/customers/${id}`)); setError(''); }
     catch (e) { setError((e as Error).message); }
@@ -81,8 +82,9 @@ export function Customers({ me }: { me: Me }) {
           className={`cursor-pointer border-t outline-none transition-colors hover:bg-indigo-50 focus-visible:bg-indigo-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-300 ${selected?.id === r.id ? 'bg-indigo-50 font-semibold text-indigo-800' : ''}`}>
           <td className="py-2 pl-2">{r.code}</td><td>{r.display_name}</td><td>{ACCOUNT_TYPE[r.kind]}</td><td>{r.is_active ? 'Active' : 'Inactive'}</td></tr>))}</tbody></table>
       {rows.length === 0 && <p className="py-3 text-sm text-slate-500">No customers found.</p>}</div>
-      <div className="flex gap-2"><Button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 25))}>Previous</Button>
-        <Button disabled={rows.length < 25} onClick={() => setOffset(offset + 25)}>Next</Button></div></Panel>
+      {(offset > 0 || rows.length === rowsPerPage) && <PageBar first={offset + 1} last={offset + rows.length} page={Math.floor(offset / rowsPerPage) + 1}
+        hasPrevious={offset > 0} hasNext={rows.length === rowsPerPage} onPrevious={() => setOffset(Math.max(0, offset - rowsPerPage))} onNext={() => setOffset(offset + rowsPerPage)}
+        onRows={(r) => choosePageRows(r, setOffset)} />}</Panel>
     {/* The customer opens over the list; Edit opens its form over that, and closing the form comes back here. */}
     {selected && <Dialog wide title={`${selected.display_name} · ${selected.code}`} onClose={() => { setSelected(null); setSaveWarnings([]); }}>
       {saveWarnings.length > 0 && <Notice tone="warning">Possible duplicate customer: {saveWarnings.map((w) => `${w.reason} matches customer ${rows.find((r) => r.id === w.id)?.code ?? w.id}`).join('; ')}. Review before creating another record.</Notice>}

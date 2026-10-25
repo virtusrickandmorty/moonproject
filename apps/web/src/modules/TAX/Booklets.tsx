@@ -6,6 +6,7 @@ import { bookletInput, documentLink, skippedNumbers, type BookletFields } from '
 import { useStepUpAction } from './StepUp.tsx';
 import { Crumb } from '../../shell/crumbs.tsx';
 import { useLiveReload } from '../../live.ts';
+import { Paged } from '../../components/RowPages.tsx';
 
 const kindName = (kind: string) => kind === 'SALES_INVOICE' ? 'Sales invoice' : 'Collection receipt';
 const status = (active: boolean) => <span className={`rounded-full px-2 py-1 text-xs font-medium ${active ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>{active ? 'In use' : 'Retired'}</span>;
@@ -39,7 +40,7 @@ export function Booklets({ me }: { me: Me }) {
   </div>;
 }
 
-export function BookletDetail({ usage, shownUsed, shownSkipped }: { usage: BookletUsage; shownUsed: number; shownSkipped: number }) {
+export function BookletDetail({ usage, shownSkipped }: { usage: BookletUsage; shownSkipped: number }) {
   const { booklet: b } = usage;
   const skipped = skippedNumbers(usage);
   return <div className="space-y-4">
@@ -52,11 +53,11 @@ export function BookletDetail({ usage, shownUsed, shownSkipped }: { usage: Bookl
       <div><dt className="text-slate-500">Skipped / left</dt><dd>{usage.skippedCount.toLocaleString()} / {usage.leftCount.toLocaleString()}</dd></div>
     </dl>{b.note && <p className="text-sm text-slate-600">Last note: {b.note}</p>}</Panel>
     <Panel title={`Used numbers (${usage.usedCount.toLocaleString()})`}>
-      <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="py-2">Booklet number</th><th>Document</th><th>Status</th></tr></thead><tbody>
-        {usage.used.slice(0, shownUsed).map((line) => <tr key={line.n} className="border-t border-slate-100"><td className="py-2 tabular-nums">{line.n.toLocaleString()}</td>
+      <Paged rows={usage.used}>{(page) => (<div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="py-2">Booklet number</th><th>Document</th><th>Status</th></tr></thead><tbody>
+        {page.map((line) => <tr key={line.n} className="border-t border-slate-100"><td className="py-2 tabular-nums">{line.n.toLocaleString()}</td>
           <td>{line.documentId && line.docType ? <Link className="text-indigo-700 underline" to={documentLink(line.docType, line.documentId)}>{line.number}</Link> : line.number}</td>
           <td>{line.status === 'cancelled' ? <span className="font-medium text-red-700">Cancelled (all copies kept)</span> : 'Recorded'}</td></tr>)}
-      </tbody></table></div>
+      </tbody></table></div>)}</Paged>
       {usage.used.length === 0 && <p className="text-sm text-slate-500">No numbers used yet.</p>}
     </Panel>
     <Panel title={`Skipped numbers (${usage.skippedCount.toLocaleString()})`}>
@@ -71,7 +72,6 @@ export function BookletPage({ me, params }: { me: Me; params?: Record<string, st
   const [usage, setUsage] = useState<BookletUsage | null>(null);
   const [error, setError] = useState('');
   const [changing, setChanging] = useState(false);
-  const [shownUsed, setShownUsed] = useState(PAGE_SIZE);
   const [shownSkipped, setShownSkipped] = useState(PAGE_SIZE);
   const action = useStepUpAction();
   const load = () => api.booklet(id).then(setUsage, (e: Error) => setError(e.message));
@@ -88,8 +88,7 @@ export function BookletPage({ me, params }: { me: Me; params?: Record<string, st
       {usage && me.permissions.includes('tax.booklets.manage') && <Button onClick={() => setChanging(true)}>{usage.booklet.isActive ? 'Retire booklet' : 'Switch back on'}</Button>}
     </div>
     {error && <Notice>{error}</Notice>}{action.error && <Notice>{action.error}</Notice>}
-    {usage && <><BookletDetail usage={usage} shownUsed={shownUsed} shownSkipped={shownSkipped} />
-      {shownUsed < usage.used.length && <Button onClick={() => setShownUsed(shownUsed + PAGE_SIZE)}>Show more used numbers</Button>}
+    {usage && <><BookletDetail usage={usage} shownSkipped={shownSkipped} />
       {shownSkipped < skippedCount && <Button onClick={() => setShownSkipped(shownSkipped + PAGE_SIZE)}>Show more skipped numbers</Button>}
     </>}
     {changing && usage && <ReasonDialog title={usage.booklet.isActive ? 'Retire booklet' : 'Switch booklet back on'}
