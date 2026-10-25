@@ -126,7 +126,7 @@ function OrderDialog({ me, order: o, onClose, onChanged }: { me: Me; order: Deta
             {waiting && <p className="mt-1 text-amber-800">Look for exactly {peso(o.totalCents)} in the bank app before confirming.</p>}
             {o.status === 'expired' && <p className="mt-1 text-slate-700">{o.lateButAvailable ? 'This order expired, but its pieces are all still available: a late payment can still be confirmed.' : 'This order expired and some pieces have sold since. If the customer paid, reject it with a reason and refund them.'}</p>}
           </div>
-          {o.reversal && <Notice tone="note">{o.reversal.kind === 'returned' ? 'Returned' : 'Cancelled'} after it was confirmed. Reason: {o.reversal.reason}. The app did not pay the customer back: any refund is done by staff outside the app.</Notice>}
+          {o.reversal && <Notice tone="note">{o.reversal.kind === 'returned' ? 'Returned' : 'Cancelled'} after it was confirmed. Reason: {o.reversal.reason}. {o.reversal.kind === 'returned' ? 'A credit memo and a refund to where the buyer paid were recorded; send the buyer the money from there.' : 'The sale and its payment were cancelled; send the buyer the money back from where they paid.'}</Notice>}
           <details className="text-sm"><summary className="cursor-pointer font-semibold">History</summary>
             <ul className="mt-1 space-y-0.5 text-slate-600">{o.events.map((e, i) => <li key={i}>{manilaTime(e.at)} · {e.userName ?? 'Customer'} · {ORDER_STATUS[e.status as Status]?.[0] ?? e.status}{e.note ? ` · ${e.note}` : ''}</li>)}</ul></details>
         </div>
@@ -166,8 +166,10 @@ function OrderDialog({ me, order: o, onClose, onChanged }: { me: Me; order: Deta
       )}
       {step === 'reverse' && (
         <div className="space-y-3 rounded-md bg-red-50 p-4">
-          <p className="text-sm">This cancels {o.saleNumber ?? 'the sale'} and its payment in the books and puts the pieces back in stock. It can only be done once for this order. The customer sees only that the order was {o.status === 'confirmed' ? 'cancelled' : 'returned'}.</p>
-          <Notice tone="info">The app does not pay the customer back. If they were already paid, refund them yourself, outside the app (bank transfer or cash).</Notice>
+          <p className="text-sm">{o.status === 'confirmed'
+            ? <>This cancels {o.saleNumber ?? 'the sale'} and its payment in the books and puts the pieces back in stock.</>
+            : <>The order went out, so {o.saleNumber ?? 'the sale'} stays: this records a credit memo for it and a refund from where the buyer paid, and puts the pieces back in stock.</>} It can only be done once for this order. The customer sees only that the order was {o.status === 'confirmed' ? 'cancelled' : 'returned'}.</p>
+          <Notice tone="info">The books take the money out of the account the buyer paid into, but the app does not send it: send the buyer their money yourself (bank transfer, GCash or cash).</Notice>
           <Field label="Why (kept with the order; the customer does not see it)" required hint="10 to 200 characters, e.g. Customer returned the pieces unworn."><textarea className={inputClass} rows={2} value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
           {reasonProblem && <p className="text-sm text-red-700">{reasonProblem}</p>}
           <div className="flex gap-2"><Button tone="danger" disabled={busy || reason.trim().length < 10 || reason.trim().length > 200} onClick={() => void reverse()}>{o.status === 'confirmed' ? 'Cancel the order' : 'Return the order'}</Button><Button onClick={() => setStep('view')}>Back</Button></div>

@@ -7,7 +7,7 @@
 import type { Issue } from '@moonproject/shared';
 import type { NoticeTarget } from '../../engine/documents/registry.ts';
 import type { Db } from '../../platform/db/driver.ts';
-import { soldShopPieces } from '../QS/public.ts';
+import { shopSaleNets, soldShopPieces } from '../QS/public.ts';
 
 export interface StockLine { size: string; colour: string; onHand: number; held: number; available: number }
 const key = (size: string, colour: string) => `${size}|${colour}`;
@@ -112,3 +112,18 @@ export function ordersToPrepare(db: Db): { id: string; number: string; name: str
   }[];
 }
 export { shopWorkReady } from './work.ts';
+
+/** The shop's own work job orders (restocks, rework, changes: ₱0, through production; the job margin report). */
+export const shopWorkJobOrders = (db: Db): Set<string> => new Set(db.prepare('SELECT job_order_id FROM shp_work').pluck().all() as string[]);
+
+/**
+ * The website shop's own figures for the job margin report (the owner's request, Oct 2026): the pieces its work put
+ * into stock, and its items sold on recorded quick sales (the POS and online orders) with their NET of VAT, each sale's
+ * shop lines at that sale's own VAT split, a delivery fee left out.
+ */
+export function shopFigures(db: Db): { piecesMade: number; piecesSold: number; salesNetCents: number } {
+  const piecesMade = db.prepare(`SELECT COALESCE(SUM(m.qty), 0) FROM shp_work_moves m JOIN documents d ON d.id = m.job_order_id
+    WHERE m.kind = 'put_in' AND d.status = 'posted'`).pluck().get() as number;
+  const sales = shopSaleNets(db);
+  return { piecesMade, piecesSold: sales.reduce((n, s) => n + s.pieces, 0), salesNetCents: sales.reduce((n, s) => n + s.netCents, 0) };
+}

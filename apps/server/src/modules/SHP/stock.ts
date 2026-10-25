@@ -11,6 +11,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
 import { stockOf } from './public.ts';
+import { valuationSheet } from './valuation.ts';
 
 const categoryInput = z.object({ name: z.string().trim().min(1).max(40), sortOrder: z.number().int().min(-9999).max(9999) }).strict();
 /** `in`: pieces received (made or bought in); `count`: what was counted on the shelf, which becomes the pieces on hand. */
@@ -42,6 +43,12 @@ export function shpStockRoutes(app: FastifyInstance, deps: AppDeps): void {
   };
   const audit = (req: FastifyRequest, at: string, action: string, type: string, id: string, data: Record<string, unknown>) =>
     appendAudit(db, { at, userId: currentUser(req).userId, action, entityType: type, entityId: id, data });
+
+  /** The shop stock value sheet: every product with pieces on hand on a date, with the cost per piece of its last value. */
+  app.get('/api/shp/value-sheet', { config: { permission: 'shp.view' } }, async (req) => {
+    const date = z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict().parse(req.query).date;
+    return { date, items: valuationSheet(db, date) };
+  });
 
   app.get('/api/shp/categories', { config: { permission: 'shp.view' } }, async () =>
     (db.prepare(`${CATEGORIES} ORDER BY c.is_active DESC, c.sort_order, c.name`).all() as CategoryRow[]).map(out));

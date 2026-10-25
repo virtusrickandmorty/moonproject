@@ -18,7 +18,8 @@ import { tx, type Db } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
 import { placesFor } from '../CASH/public.ts';
 import { enqueueOnlineOrder, plain } from '../COM/public.ts';
-import { cancelQuickSale, recordQuickSale, saleRef } from '../QS/public.ts';
+import { returnSale } from '../COL/public.ts';
+import { cancelQuickSale, recordQuickSale, saleLines, saleRef } from '../QS/public.ts';
 import { HOLD_MS, OVERDUE_LABEL, isOverdue, stockOf } from './public.ts';
 
 export const MAX_PROOF_BYTES = 4 * 1024 * 1024;
@@ -399,7 +400,7 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       }));
       // The delivery fee the buyer paid: a service line (service income and its VAT), as the shop's other services.
       const delivery = o.delivery_fee_cents > 0
-        ? [{ kind: 'service' as const, description: `Delivery (${o.delivery_option ?? 'delivery'})`, qty: 1, unitPriceCents: o.delivery_fee_cents, discountCents: 0 }] : [];
+        ? [{ kind: 'service' as const, description: `Delivery (${o.delivery_option ?? 'delivery'})`, qty: 1, unitPriceCents: o.delivery_fee_cents, discountCents: 0, deliveryFee: true as const }] : [];
       const recorded = recordQuickSale(engineEnv(deps), { userId: user.userId, permissions: user.permissions },
         { customerId: b.customerId, invoiceNumber: b.invoiceNumber, lines: [...saleLines, ...delivery], note: `Online order ${o.number} · ${o.name} · ${o.phone}` },
         { crNumber: b.crNumber, tenders: [{ cashPlaceId: o.cash_place_id ?? pay.cashPlaceId, amountCents: o.total_cents, ...(o.payment_reference ? { reference: o.payment_reference.slice(0, 40) } : {}) }] },
@@ -448,9 +449,11 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   /**
-   * A confirmed order (the buyer paid and a quick sale was recorded) is cancelled or returned: QS cancels the linked sale and
-   * its payment the usual way (its mirrored journal, the pieces back in stock), and the order is marked cancelled, or returned
-   * when it had already gone out. Once per order. Any refund to the buyer is paid by staff outside the app.
+   * A confirmed order (the buyer paid and a quick sale was recorded) is cancelled or returned, once per order.
+   * Cancelled (not yet gone out): QS cancels the linked sale and its payment the usual way (its mirrored journal, the pieces
+   * back in stock). Returned (it had gone out; the owner's request, 25 Oct 2026): the sale stays, and COL records a credit
+   * memo for it and the refund paid back to where the buyer paid, so the return is in the books in its own month; the
+   * pieces go back into the shop's stock as pieces in.
    */
   app.post('/api/shp/admin/orders/:id/reverse', { config: { permission: 'shp.orders.manage' } }, async (req) => {
     const b = reverseInput.parse(req.body);
@@ -468,10 +471,18 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       const kind = from === 'confirmed' ? 'cancelled' : 'returned';
       // The sale may already have been cancelled in Quick Sale: then there is nothing left to cancel there.
       const sale = saleRef(db, o.sale_document_id);
-      if (sale?.status === 'posted') cancelQuickSale(engineEnv(deps), { userId: user.userId, permissions: user.permissions }, o.sale_document_id, `Online order ${o.number} ${kind}: ${b.reason}`);
+      const actor = { userId: user.userId, permissions: user.permissions };
+      const why = `Online order ${o.number} ${kind}: ${b.reason}`;
+      let returned: ReturnType<typeof returnSale> | null = null;
+      if (sale?.status === 'posted' && kind === 'cancelled') cancelQuickSale(engineEnv(deps), actor, o.sale_document_id, why);
+      if (sale?.status === 'posted' && kind === 'returned') {
+        returned = returnSale(engineEnv(deps), actor, o.sale_document_id, why);
+        const back = db.prepare(`INSERT INTO shp_stock_moves (id, product_id, size, colour, qty, reason, note, user_id, at) VALUES (?, ?, ?, ?, ?, 'stock_in', ?, ?, ?)`);
+        for (const l of saleLines(db, o.sale_document_id)) if (l.productId) back.run(newId(), l.productId, l.size, l.colour, l.qty, `Returned with online order ${o.number}`, user.userId, at);
+      }
       setStatus(o, 'cancelled', at, ', reversal_kind = ?, reversal_reason = ?, reversal_by = ?, reversal_at = ?', kind, b.reason, user.userId, at);
       event(o.id, kind, at, user.userId, b.reason);
-      appendAudit(db, { at, userId: user.userId, action: `shp.order.${kind}`, entityType: 'shp.order', entityId: o.id, data: { number: o.number, sale: o.sale_number, reason: b.reason, totalCents: o.total_cents } });
+      appendAudit(db, { at, userId: user.userId, action: `shp.order.${kind}`, entityType: 'shp.order', entityId: o.id, data: { number: o.number, sale: o.sale_number, reason: b.reason, totalCents: o.total_cents, ...(returned ?? {}) } });
       return { ok: true, status: kind === 'returned' ? 'returned' : 'cancelled' };
     });
   });

@@ -2,7 +2,8 @@
  * Quick sale (PLAN E6, D5 QS-SALE): a walk-in sale of any item or service, recorded as an invoice record from the manual
  * BIR invoice (a VAT seller invoices every sale). The QS action pays it with a COL collection in the same transaction.
  *   Dr 1201 AR (G, the sale named as ref); Dr 4190 the discount shown (its NET) / Cr 4101/4102/4103 (NET at list, by
- *   line class); Cr 2301 VAT(G)                                                                             (INV-REC)
+ *   line class), a service line marked as the delivery fee to 4104 instead (its share of the service NET, by list
+ *   amount: the owner's request, Oct 2026); Cr 2301 VAT(G)                                                  (INV-REC)
  *   then the collection: Dr cash place (per tender) / Cr 1201 AR (the sale)                                 (COL-RCV)
  * The invoice math is the JO invoice record's (VAT on the whole document at the rate in force on the invoice date), and
  * both share the IR- series and the booklet: an invoice number is used once, ever, across releases and quick sales.
@@ -10,7 +11,7 @@
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { formatPeso, manilaDate, type Issue } from '@moonproject/shared';
+import { allocate, formatPeso, manilaDate, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
@@ -30,6 +31,8 @@ const lineInput = z
     discountCents: z.number().int().min(0).max(MAX_CENTS), // shown on the invoice
     // The website shop product, size and colour a ready-made line sold (the POS, online orders): its pieces come off the shop's stock.
     item: z.object({ productId: z.uuid(), size: z.string().trim().min(1).max(4), colour: z.string().trim().min(1).max(30) }).strict().optional(),
+    // A service line that is the delivery fee (an online order's, a delivery's): delivery income, 4104.
+    deliveryFee: z.literal(true).optional(),
   })
   .strict();
 
@@ -51,6 +54,8 @@ export interface Sale extends Omit<SaleInput, 'lines'>, ReturnType<typeof invoic
   lines: SaleLine[];
   customerName: string;
   totalCents: number;
+  /** The delivery fee lines' NET: part of the service sales, credited to delivery income (4104). */
+  deliveryCents: number;
   /** On terms only: the invoice date plus the terms. */
   dueDate?: string;
 }
@@ -71,7 +76,10 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
     const lines = input.lines.map((l, i) => ({ ...l, lineNo: i + 1, listCents: l.qty * l.unitPriceCents, amountCents: l.qty * l.unitPriceCents - l.discountCents }));
     const listCents = lines.reduce((s, l) => s + l.listCents, 0);
     const figures = invoiceAmounts(listCents <= MAX_CENTS ? lines : [], settingAt(ctx.db, 'tax.vat_rate_bp', ctx.businessDate)); // over the guard: refused in validate
-    return { ...input, ...figures, listCents, lines, customerName: customerRef(ctx.db, input.customerId)?.display_name ?? '?', totalCents: figures.grossCents,
+    // The service NET split between the delivery fee lines and the other services, by their list amounts.
+    const weight = (fee: boolean) => lines.filter((l) => l.kind === 'service' && !!l.deliveryFee === fee).reduce((n, l) => n + l.listCents, 0);
+    const deliveryCents = weight(true) > 0 ? allocate(figures.salesCents.service, [weight(true), weight(false)])[0]! : 0;
+    return { ...input, ...figures, listCents, lines, deliveryCents, customerName: customerRef(ctx.db, input.customerId)?.display_name ?? '?', totalCents: figures.grossCents,
       ...(input.termsDays ? { dueDate: addDays(ctx.businessDate, input.termsDays) } : {}) };
   },
 
@@ -90,6 +98,7 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
     for (const l of doc.lines) if (l.amountCents < 0) error(`lines.${l.lineNo - 1}.discountCents`, 'DISCOUNT', `Line ${l.lineNo}: the discount is more than the line amount.`);
     // A website shop item is a ready-made piece; the shop module warns when it is unknown or more than its stock (SHP notices).
     for (const l of doc.lines) if (l.item && l.kind !== 'ready_made') error(`lines.${l.lineNo - 1}.item`, 'ITEM_KIND', `Line ${l.lineNo}: a shop item is a ready-made sale.`);
+    for (const l of doc.lines) if (l.deliveryFee && l.kind !== 'service') error(`lines.${l.lineNo - 1}.deliveryFee`, 'FEE_KIND', `Line ${l.lineNo}: a delivery fee is a service line.`);
     if (doc.listCents > MAX_CENTS) error('lines', 'TOO_BIG', 'The total is over ₱100 million. Please check the quantities and prices.');
     else if (doc.grossCents <= 0) error('lines', 'NOTHING_TO_INVOICE', 'The sale comes to ₱0.00, so there is nothing to invoice.');
     return issues;
@@ -98,19 +107,19 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
   persist(db, doc, h) {
     db.prepare(
       `INSERT INTO qs_sales (document_id, customer_id, customer_name, invoice_number, vat_rate_bp, list_cents, discount_cents, gross_cents, vat_cents,
-         discount_net_cents, sales_mto_cents, sales_rtw_cents, sales_service_cents, note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         discount_net_cents, sales_mto_cents, sales_rtw_cents, sales_service_cents, sales_delivery_cents, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       h.documentId, doc.customerId, doc.customerName, doc.invoiceNumber, doc.vatRateBp, doc.listCents, doc.discountCents, doc.grossCents, doc.vatCents,
-      doc.discountNetCents, doc.salesCents.made_to_order, doc.salesCents.ready_made, doc.salesCents.service, doc.note ?? null,
+      doc.discountNetCents, doc.salesCents.made_to_order, doc.salesCents.ready_made, doc.salesCents.service, doc.deliveryCents, doc.note ?? null,
     );
     const line = db.prepare(
-      `INSERT INTO qs_sale_lines (document_id, line_no, kind, description, qty, unit_price_cents, discount_cents, amount_cents, product_id, size, colour)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO qs_sale_lines (document_id, line_no, kind, description, qty, unit_price_cents, discount_cents, amount_cents, product_id, size, colour, delivery_fee)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     if (doc.termsDays && doc.dueDate) db.prepare('INSERT INTO qs_sale_terms (document_id, terms_days, due_date) VALUES (?, ?, ?)').run(h.documentId, doc.termsDays, doc.dueDate);
     for (const l of doc.lines) {
-      line.run(h.documentId, l.lineNo, l.kind, l.description, l.qty, l.unitPriceCents, l.discountCents, l.amountCents, l.item?.productId ?? null, l.item?.size ?? null, l.item?.colour ?? null);
+      line.run(h.documentId, l.lineNo, l.kind, l.description, l.qty, l.unitPriceCents, l.discountCents, l.amountCents, l.item?.productId ?? null, l.item?.size ?? null, l.item?.colour ?? null, l.deliveryFee ? 1 : 0);
     }
   },
 
@@ -123,7 +132,8 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
       lines: [
         { account: { role: 'AR_TRADE' }, party, ...(self ? { ref: { documentId: self } } : {}), debitCents: doc.grossCents, memo: `Invoice no. ${doc.invoiceNumber}` },
         { account: { role: 'SALES_DISCOUNTS' }, party, debitCents: doc.discountNetCents, memo: 'Discount shown on the invoice' },
-        ...SALES_CLASSES.map((k) => ({ account: { role: SALES_ROLE[k] }, party, creditCents: doc.salesCents[k] })),
+        ...SALES_CLASSES.map((k) => ({ account: { role: SALES_ROLE[k] }, party, creditCents: k === 'service' ? doc.salesCents[k] - doc.deliveryCents : doc.salesCents[k] })),
+        { account: { role: 'SALES_DELIVERY' }, party, creditCents: doc.deliveryCents, memo: 'Delivery fee' },
         { account: { role: 'OUTPUT_VAT' }, party, creditCents: doc.vatCents },
       ],
     };
@@ -134,7 +144,7 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
       .prepare(
         `SELECT customer_id AS customerId, customer_name AS customerName, invoice_number AS invoiceNumber, note, vat_rate_bp AS vatRateBp, list_cents AS listCents,
            discount_cents AS discountCents, gross_cents AS grossCents, vat_cents AS vatCents, discount_net_cents AS discountNetCents,
-           sales_mto_cents AS mto, sales_rtw_cents AS rtw, sales_service_cents AS service
+           sales_mto_cents AS mto, sales_rtw_cents AS rtw, sales_service_cents AS service, sales_delivery_cents AS deliveryCents
          FROM qs_sales WHERE document_id = ?`,
       )
       .get(documentId) as (Omit<Sale, 'note' | 'lines' | 'salesCents' | 'vatableSalesCents' | 'totalCents'> & { note: string | null; mto: number; rtw: number; service: number }) | undefined;
@@ -144,14 +154,14 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
     const lines = db
       .prepare(
         `SELECT kind, description, qty, unit_price_cents AS unitPriceCents, discount_cents AS discountCents, line_no AS lineNo, qty * unit_price_cents AS listCents,
-           amount_cents AS amountCents, product_id AS productId, size, colour FROM qs_sale_lines WHERE document_id = ? ORDER BY line_no`,
+           amount_cents AS amountCents, product_id AS productId, size, colour, delivery_fee AS fee FROM qs_sale_lines WHERE document_id = ? ORDER BY line_no`,
       )
-      .all(documentId) as (Omit<SaleLine, 'item'> & { kind: LineKind; productId: string | null; size: string | null; colour: string | null })[];
+      .all(documentId) as (Omit<SaleLine, 'item' | 'deliveryFee'> & { kind: LineKind; productId: string | null; size: string | null; colour: string | null; fee: number })[];
     return {
       ...rest,
       ...(note ? { note } : {}),
       ...(terms ?? {}),
-      lines: lines.map(({ productId, size, colour, ...l }) => ({ ...l, ...(productId ? { item: { productId, size: size!, colour: colour! } } : {}) })),
+      lines: lines.map(({ productId, size, colour, fee, ...l }) => ({ ...l, ...(productId ? { item: { productId, size: size!, colour: colour! } } : {}), ...(fee ? { deliveryFee: true as const } : {}) })),
       vatableSalesCents: r.grossCents - r.vatCents,
       salesCents: { made_to_order: mto, ready_made: rtw, service },
       totalCents: r.grossCents,
@@ -161,7 +171,7 @@ export const saleDoc: DocTypeDef<SaleInput, Sale> = {
   toInput: ({ customerId, invoiceNumber, lines, note, termsDays }) => ({
     customerId,
     invoiceNumber,
-    lines: lines.map(({ kind, description, qty, unitPriceCents, discountCents, item }) => ({ kind, description, qty, unitPriceCents, discountCents, ...(item ? { item } : {}) })),
+    lines: lines.map(({ kind, description, qty, unitPriceCents, discountCents, item, deliveryFee }) => ({ kind, description, qty, unitPriceCents, discountCents, ...(item ? { item } : {}), ...(deliveryFee ? { deliveryFee } : {}) })),
     ...(note ? { note } : {}),
     ...(termsDays ? { termsDays } : {}),
   }),

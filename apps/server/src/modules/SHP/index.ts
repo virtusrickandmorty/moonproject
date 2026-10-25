@@ -11,6 +11,7 @@ import { shpSeoRoutes } from './seo.ts';
 import { shpSeasonRoutes } from './seasons.ts';
 import { shpSeasonEventRoutes } from './season-events.ts';
 import { shpInsightRoutes } from './insights.ts';
+import { valuationDoc } from './valuation.ts';
 import { onForStockCheck, onJobOrderEdited, onStockPlace } from '../JO/public.ts';
 import { carryWorkOver, shpWorkRoutes, workOf } from './work-routes.ts';
 
@@ -36,9 +37,10 @@ export default defineModule({
     { key: 'shp.reviews.manage', label: "Hide and show buyers' reviews on the website", defaultRoles: ['encoder', 'owner'] },
     // Making one records a job order on the production board, so it also needs jo.post.
     { key: 'shp.work', label: "Send website shop items to production: restock, rework, or change pieces into a shop item", defaultRoles: ['encoder', 'owner'] },
+    { key: 'shp.value', label: "Value the website shop's own stock at a month end (it adjusts the books)", defaultRoles: ['accountant', 'owner'] },
     { key: 'shp.payment.manage', label: "Set the shop's online payment QR and the cash account it pays into", defaultRoles: ['owner'] },
   ],
-  docTypes: [],
+  docTypes: [valuationDoc],
   notices: [shopItemsNotice],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes(app, deps) {

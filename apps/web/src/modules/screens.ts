@@ -144,6 +144,7 @@ import { TplClients } from './TPL/Clients.tsx';
 import { Returns } from './ALT/Returns.tsx';
 import { TplDeliveryForm, TplProgramPage } from './TPL/Program.tsx';
 import { TplValueForm } from './TPL/ValueForm.tsx';
+import { ShopValueForm } from './SHP/ValueForm.tsx';
 
 /**
  * Screens that are not a document list, form or view, by path pattern (`:name` parts arrive in `params`). Their menu
@@ -297,6 +298,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'qs.sale': QuickSaleForm,
   'tpl.delivery': TplDeliveryForm,
   'tpl.valuation': TplValueForm,
+  'shp.valuation': ShopValueForm,
   'quo.quotation': QuotationForm,
   'prd.entry': EntryForm,
   'pay.run': RunForm,

@@ -74,6 +74,23 @@ export function soldShopPieces(db: Db, productIds?: readonly string[]): { produc
     GROUP BY l.product_id, l.size, l.colour`).all({ all: productIds ? 0 : 1, ids: JSON.stringify(productIds ?? []) }) as { productId: string; size: string; colour: string; qty: number }[];
 }
 
+/** The shop's pieces sold on recorded sales dated up to a day (the shop's month-end stock value), by product. */
+export function soldShopPiecesUpTo(db: Db, date: string): { productId: string; qty: number }[] {
+  return db.prepare(`SELECT l.product_id AS productId, SUM(l.qty) AS qty FROM qs_sale_lines l JOIN documents d ON d.id = l.document_id
+    WHERE l.product_id IS NOT NULL AND d.status = 'posted' AND d.business_date <= ? GROUP BY l.product_id`).all(date) as { productId: string; qty: number }[];
+}
+
+/**
+ * The shop's items on each recorded sale (the job margin report): their pieces and their NET of VAT, at that sale's own
+ * VAT split (the sale's NET over its gross), a delivery fee left out.
+ */
+export function shopSaleNets(db: Db): { pieces: number; netCents: number }[] {
+  return (db.prepare(`SELECT s.gross_cents AS gross, s.vat_cents AS vat, SUM(l.amount_cents) AS shop, SUM(l.qty) AS pieces
+    FROM qs_sale_lines l JOIN qs_sales s ON s.document_id = l.document_id JOIN documents d ON d.id = l.document_id
+    WHERE l.product_id IS NOT NULL AND d.status = 'posted' GROUP BY l.document_id`).all() as { gross: number; vat: number; shop: number; pieces: number }[])
+    .map((r) => ({ pieces: r.pieces, netCents: r.gross > 0 ? Math.round((r.shop * (r.gross - r.vat)) / r.gross) : 0 }));
+}
+
 /**
  * Records a quick sale and its payment together, in the caller's transaction (the website shop's confirmed online orders).
  * Handed over by QS's index.ts when the modules load, so this contract does not import the doc type (COL and SHP read it).

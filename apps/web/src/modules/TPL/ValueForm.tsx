@@ -3,7 +3,9 @@
  * TPL clients at cost. Every item with pieces on hand on the date is listed with its quantity (from the stock itself);
  * the accountant types each one's cost per piece (materials and labor; the last value's cost is offered). The server's
  * preview gives the books' balance and the adjustment. Also the Edit of a recorded value (cancel + reissue, NR-4).
+ * The website shop's own stock is valued on the same form (SHP/ValueForm.tsx), with its own words and sheet.
  */
+import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { formatPesos, isBusinessDate, parsePesos } from '@moonproject/shared';
 import { api, ApiError, type DocHeader, type DocTypeInfo, type Me, type Preview } from '../../api.ts';
@@ -13,7 +15,17 @@ import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { EditGate, Errors, Figures, useLive } from '../COL/parts.tsx';
 
-interface SheetItem { itemId: string; customerName: string; description: string; size: string; qty: number; lastCostCents: number | null }
+interface SheetItem { itemId: string; customerName?: string; description: string; size?: string; qty: number; lastCostCents: number | null }
+/** What differs between the stocks valued on this form. */
+export interface StockWords {
+  sheet: (date: string) => Promise<{ items: SheetItem[] }>;
+  intro: ReactNode;
+  whose: string; // "TPL stock", "The shop's stock"
+  costHint: ReactNode;
+  loading: string;
+  none: string; // "No TPL pieces"
+}
+const itemName = (s: SheetItem) => `${s.customerName ? `${s.customerName}'s ` : ''}${s.description}${s.size ? ` (${s.size})` : ''}`;
 type Stored = { lines: { itemId: string; unitCostCents: number }[]; note?: string };
 type Figured = { valuedCents: number; ledgerCents: number; adjustmentCents: number };
 
@@ -21,7 +33,21 @@ type Figured = { valuedCents: number; ledgerCents: number; adjustmentCents: numb
 const monthEndOf = (d: string) => { const [y, m] = d.split('-').map(Number) as [number, number]; return `${d.slice(0, 7)}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`; };
 const previousMonthEnd = (d: string) => { const [y, m] = d.split('-').map(Number) as [number, number]; const e = new Date(Date.UTC(y, m - 1, 0)); return `${e.getUTCFullYear()}-${String(e.getUTCMonth() + 1).padStart(2, '0')}-${String(e.getUTCDate()).padStart(2, '0')}`; };
 
-export function TplValueForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me: Me }) {
+const TPL_WORDS: StockWords = {
+  sheet: (date) => api.tplValueSheet<{ items: SheetItem[] }>(date),
+  intro: <>The pieces you hold for TPL clients are still yours until delivered, so at a month end they go on the books at cost.
+    The quantities come from the clients' stock on that day.</>,
+  whose: 'TPL stock',
+  costHint: <>Materials plus labor for one piece. The <Link to="/rpt/job-margin" className="text-indigo-700 underline">Job margin</Link> report shows each client's labor per piece.</>,
+  loading: "Loading the clients' stock…",
+  none: 'No TPL pieces',
+};
+
+export function TplValueForm(props: { type: DocTypeInfo; mode: FormMode; me: Me }) {
+  return <StockValueForm {...props} words={TPL_WORDS} />;
+}
+
+export function StockValueForm({ type, mode, me, words }: { type: DocTypeInfo; mode: FormMode; me: Me; words: StockWords }) {
   const mayBackdate = type.dating === 'accountant_may_backdate' && me.permissions.includes('acc.backdate');
   const [today, setToday] = useState('');
   const [date, setDate] = useState('');
@@ -54,17 +80,18 @@ export function TplValueForm({ type, mode, me }: { type: DocTypeInfo; mode: Form
   useEffect(() => {
     setSheet(null);
     if (!isBusinessDate(date)) return;
-    api.tplValueSheet<{ items: SheetItem[] }>(date).then((r) => {
+    words.sheet(date).then((r) => {
       setSheet(r.items);
       // The last value's cost is offered where nothing is typed yet.
       setCosts((old) => ({ ...Object.fromEntries(r.items.filter((i) => i.lastCostCents !== null).map((i) => [i.itemId, formatPesos(i.lastCostCents!)])), ...old }));
     }, fail);
   }, [date]);
 
+  const clients = (sheet ?? []).some((s) => !!s.customerName);
   const lines = (sheet ?? []).map((s) => ({ s, cents: costs[s.itemId]?.trim() ? parsePesos(costs[s.itemId]!) : undefined }));
   const errors = [
     ...(isBusinessDate(date) ? [] : ['Pick the value date, like 2026-10-31.']),
-    ...lines.filter((l) => l.cents === undefined || l.cents === null || Number.isNaN(l.cents) || l.cents < 0).map((l) => `Type the cost per piece of ${l.s.customerName}'s ${l.s.description}${l.s.size ? ` (${l.s.size})` : ''}.`),
+    ...lines.filter((l) => l.cents === undefined || l.cents === null || Number.isNaN(l.cents) || l.cents < 0).map((l) => `Type the cost per piece of ${itemName(l.s)}.`),
   ];
   const input = { lines: lines.map((l) => ({ itemId: l.s.itemId, unitCostCents: Number(l.cents ?? 0) })), ...(note.trim() ? { note: note.trim() } : {}) };
   const valued = lines.reduce((n, l) => n + l.s.qty * Number(l.cents ?? 0), 0);
@@ -97,34 +124,29 @@ export function TplValueForm({ type, mode, me }: { type: DocTypeInfo; mode: Form
         {original && <Notice tone="info">{original.number} will be cancelled when you record its replacement. Reason: {reason}</Notice>}
         {error && <Notice>{error}</Notice>}
         <Panel title="Which month end?">
-          <p className="text-sm text-slate-600">
-            The pieces you hold for TPL clients are still yours until delivered, so at a month end they go on the books at cost.
-            The quantities come from the clients' stock on that day.
-          </p>
+          <p className="text-sm text-slate-600">{words.intro}</p>
           {mayBackdate ? (
             <Field label="Value date" required hint="The last day of the month"><input type="date" className={inputClass} value={date} disabled={!!original} onChange={(e) => setDate(e.target.value)} /></Field>
           ) : (
             <Field label="Value date"><p className="py-2 text-sm">{date || '…'}</p></Field>
           )}
-          {offMonthEnd && <Notice tone="info">TPL stock is valued at a month end and today is not one. The accountant records it dated {previousMonthEnd(today)}.</Notice>}
+          {offMonthEnd && <Notice tone="info">{words.whose} is valued at a month end and today is not one. The accountant records it dated {previousMonthEnd(today)}.</Notice>}
         </Panel>
         <Panel title="Cost per piece">
-          <p className="text-sm text-slate-600">
-            Materials plus labor for one piece. The <Link to="/rpt/job-margin" className="text-indigo-700 underline">Job margin</Link> report shows each client's labor per piece.
-          </p>
-          {!sheet && isBusinessDate(date) && <Loading label="Loading the clients' stock…" />}
-          {sheet?.length === 0 && <Notice tone="info">No TPL pieces are on hand on {date}.</Notice>}
+          <p className="text-sm text-slate-600">{words.costHint}</p>
+          {!sheet && isBusinessDate(date) && <Loading label={words.loading} />}
+          {sheet?.length === 0 && <Notice tone="info">{words.none} are on hand on {date}.</Notice>}
           {sheet && sheet.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="text-left text-slate-500"><tr><th>Client</th><th>Item</th><th className="text-right">On hand</th><th className="w-36">Cost per piece</th><th className="text-right">Value</th></tr></thead>
+                <thead className="text-left text-slate-500"><tr>{clients && <th>Client</th>}<th>Item</th><th className="text-right">On hand</th><th className="w-36">Cost per piece</th><th className="text-right">Value</th></tr></thead>
                 <tbody>
                   {lines.map(({ s, cents }) => (
                     <tr key={s.itemId} className="border-t border-slate-100">
-                      <td className="py-1">{s.customerName}</td>
-                      <td>{s.description}{s.size ? ` (${s.size})` : ''}</td>
+                      {clients && <td className="py-1">{s.customerName}</td>}
+                      <td className="py-1">{s.description}{s.size ? ` (${s.size})` : ''}</td>
                       <td className="text-right tabular-nums">{s.qty}</td>
-                      <td><input aria-label={`Cost per piece of ${s.customerName}'s ${s.description}${s.size ? ` ${s.size}` : ''}`} inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`}
+                      <td><input aria-label={`Cost per piece of ${itemName(s)}`} inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`}
                         value={costs[s.itemId] ?? ''} onChange={(e) => setCosts((c) => ({ ...c, [s.itemId]: e.target.value }))} /></td>
                       <td className="text-right tabular-nums">{cents !== undefined && cents !== null && !Number.isNaN(cents) ? peso(s.qty * cents) : '—'}</td>
                     </tr>

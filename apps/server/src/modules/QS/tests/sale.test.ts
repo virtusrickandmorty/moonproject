@@ -292,3 +292,27 @@ describe('property test (PLAN I1.3)', () => {
     );
   });
 });
+
+describe('a delivery fee is delivery income (the owner\'s request, Oct 2026)', () => {
+  it('credits the fee line\'s share of the service sales to 4104 and the other services to 4103; the sale reads back with it', async () => {
+    const fee = { kind: 'service', description: 'Delivery (Silang)', qty: 1, unitPriceCents: 15_000, discountCents: 0, deliveryFee: true };
+    const r = await record(sale({ lines: [alteration, fee] }), cash(50_000), 50_000);
+    expect(r.statusCode, r.body).toBe(200);
+    const id = r.json().sale.id as string;
+    const lines = linesOf(id) as [string, string | null, string | null, number, number][];
+    const credit = (code: string) => lines.filter((l) => l[0] === code).reduce((n, l) => n + l[4], 0);
+    // ₱500 of services, VAT inside: ₱446.43 NET, split 350:150 by list amount.
+    expect(credit('4103') + credit('4104')).toBe(44_643);
+    expect(credit('4104')).toBe(13_393);
+    expect(credit('2301')).toBe(5_357);
+    const saved = (await encoder.get(`/api/docs/qs.sale/${id}`)).json();
+    expect(saved.input.lines[1]).toMatchObject({ description: 'Delivery (Silang)', deliveryFee: true });
+    noBrokenInvariants();
+  });
+
+  it('refuses the delivery fee mark on a line that is not a service', async () => {
+    const r = await record(sale({ lines: [{ kind: 'ready_made', description: 'Shirt', qty: 1, unitPriceCents: 35_000, discountCents: 0, deliveryFee: true }] }), cash(35_000), 35_000);
+    expect(r.statusCode).toBe(422);
+    expect(JSON.stringify(r.json())).toContain('FEE_KIND');
+  });
+});
