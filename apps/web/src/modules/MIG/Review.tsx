@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import type { MigRow } from '../../api.ts';
 import { Button, Field, Notice, ReasonDialog, inputClass, useAction } from '../../components/ui.tsx';
-import { BulkEmployees, BulkSizes } from './Bulk.tsx';
+import { BulkEmployees, BulkPriceList, BulkSizes } from './Bulk.tsx';
 import {
   STATUS_FILTERS, countsAddUp, countsWords, filterCount, filterRows, fixBody, fixFieldsOf, fixStart, issueWords, mergeCandidates, notKeptNote, rowButtons, rowFields,
   rowStatusWords, rowTitle, rowTypeWords, type RowCounts, type StatusFilter,
@@ -133,6 +133,7 @@ export function Review({ uploadId, rows, filter, onFilter, reasons, doers, count
       {notKeptNote(rows) && <Notice tone="warning">{notKeptNote(rows)}</Notice>}
       {(filter === 'all' || filter === 'needs_review') && <BulkSizes uploadId={uploadId} rows={rows} onChanged={onChanged} />}
       {(filter === 'all' || filter === 'needs_review') && <BulkEmployees uploadId={uploadId} rows={rows} onChanged={onChanged} />}
+      {(filter === 'all' || filter === 'needs_review') && <BulkPriceList uploadId={uploadId} rows={rows} onChanged={onChanged} />}
       <p className="text-xs text-slate-500">Rows with nothing wrong are not listed. They go in as they are, and the import check counts them.</p>
       {shown.length === 0 ? <p className="text-sm text-slate-500">No rows here.</p> : (
         <ul className="space-y-2">{shown.map((r) => <RowCard key={r.id} row={r} all={rows} reason={reasons[r.id]} doers={doers} />)}</ul>

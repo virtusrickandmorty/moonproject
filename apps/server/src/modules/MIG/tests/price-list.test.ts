@@ -121,3 +121,20 @@ test('an item\'s later rows take its Kind and Unit when left empty; From qty can
   expect(fixed.statusCode, fixed.body).toBe(200);
   expect((await owner.post(`/api/mig/rows/${lower.id}/fix`, { manualData: { minQty: 0 } })).statusCode).toBe(422);
 });
+
+test('Accept all: every price list row with nothing wrong goes in at once; a row to fix stays (the owner\'s request, Oct 2026)', async () => {
+  const env = await createTestEnv();
+  const owner = await env.as('owner');
+  const up = (await owner.post('/api/mig/upload', { filename: 'price-list.csv', csv: [
+    'Item,Kind,Unit,Price,From qty,Operation,Part,Rate',
+    'School polo shirt,Made to order,Piece,450,1,Sewing,,40',
+    'School polo shirt,,,420,12,,,',
+    'Jersey set,Made to order,Piece,650,1,Sewing,Upper,55', // Upper on a Piece: to fix
+  ].join('\n') })).json().uploadId as string;
+  const res = await owner.post(`/api/mig/uploads/${up}/accept-price-list`, {});
+  expect(res.statusCode, res.body).toBe(200);
+  expect(res.json()).toMatchObject({ accepted: 2, left: 1 });
+  const rows = (await owner.get(`/api/mig/uploads/${up}/review`)).json().rows as { rowNumber: number; status: string }[];
+  expect(rows.map((r) => [r.rowNumber, r.status])).toEqual([[2, 'accepted'], [3, 'accepted'], [4, 'needs_review']]);
+  expect((await (await env.as('encoder')).post(`/api/mig/uploads/${up}/accept-price-list`, {})).statusCode).toBe(403);
+});

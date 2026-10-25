@@ -1,5 +1,6 @@
 /**
- * Two bulk tools on the review screen: the sheet's MANUAL size rows (typed in the old app with no customer), and the employees
+ * Bulk tools on the review screen: every price list row with nothing wrong accepted at once (the owner's request, Oct
+ * 2026), and the sheet's MANUAL size rows (typed in the old app with no customer), and the employees
  * that still need a rate or a pay type. Both only fill in what a Fix would; the rows are then accepted, and the dry run and the
  * commit run as before. The server checks everything again.
  */
@@ -7,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { api, type CustomerGroup, type CustomerRow, type MigRow, type MigSizeSuggestion } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
 import {
-  PAY_CHOICES, assignBody, assignedWords, employeeFixes, employeeStart, employeeTableRows, employeesLeftWords, groupChoice, manualSizes, sizeName, suggestionBatches,
+  PAY_CHOICES, assignBody, assignedWords, cleanPriceRows, employeeFixes, employeeStart, employeeTableRows, employeesLeftWords, groupChoice, manualSizes, sizeName, suggestionBatches,
   suggestionFor, suggestionWords, takesRate, type EmployeeEdit, type PayChoice, type SizeChoice,
 } from './importer.ts';
 
@@ -210,6 +211,32 @@ export function BulkEmployees({ uploadId, rows, onChanged }: { uploadId: string;
       {save.error && <Notice>{save.error}</Notice>}
       {saved && <Notice tone="success">{saved}</Notice>}
       {table.length > 0 && <Button tone="primary" disabled={save.busy} onClick={submit}>{save.busy ? 'Saving…' : 'Save all'}</Button>}
+    </Panel>
+  );
+}
+
+/** The price list rows that only wait for the owner's OK, accepted at once; rows with something to fix stay below. */
+export function BulkPriceList({ uploadId, rows, onChanged }: { uploadId: string; rows: MigRow[]; onChanged: () => Promise<unknown> }) {
+  const clean = cleanPriceRows(rows);
+  const fixing = rows.filter((r) => r.rowType === 'piece_rate' && r.status === 'needs_review').length - clean.length;
+  const { busy, error, run } = useAction();
+  const [done, setDone] = useState('');
+  if (clean.length === 0 && !done) return null;
+  return (
+    <Panel title="Price list rows ready to accept">
+      {clean.length > 0 && <>
+        <p className="text-sm text-slate-600">
+          {clean.length === 1 ? '1 price list row has' : `${clean.length} price list rows have`} nothing wrong: {clean.length === 1 ? 'it only waits' : 'they only wait'} for
+          your OK on the price and piece rate. Look them over below, then accept them all at once.{fixing > 0 && ` ${fixing === 1 ? '1 row needs' : `${fixing} rows need`} a fix first and stay for review.`}
+        </p>
+        <Button tone="primary" disabled={busy} onClick={() => void run(async () => {
+          const r = await api.migAcceptPriceList(uploadId);
+          setDone(`${r.accepted} ${r.accepted === 1 ? 'row' : 'rows'} accepted.${r.left > 0 ? ` ${r.left} still ${r.left === 1 ? 'needs' : 'need'} a fix.` : ''}`);
+          await onChanged();
+        })}>{busy ? 'Accepting…' : `Accept all ${clean.length}`}</Button>
+      </>}
+      {done && <Notice tone="success">{done}</Notice>}
+      {error && <Notice>{error}</Notice>}
     </Panel>
   );
 }

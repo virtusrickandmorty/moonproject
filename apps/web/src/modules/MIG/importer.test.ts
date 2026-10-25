@@ -9,7 +9,7 @@ import { createApi, type DryRunResult, type MigRow } from '../../api.ts';
 import { buildMenu } from '../../shell/menu.ts';
 import {
   FIX_FIELDS, KINDS, MEASUREMENT_FIELDS, blockingIssues, canCommit, cellSumWords, cleanCsv, clearedWords, commitLines, commitRequest, countsAddUp, countsWords,
-  currentValue, dryRunAddsUp, dryRunChecks, dryRunLines, filterCount, filterRows, fileProblem, fixBody, fixStart, headerOf, isOpen, isSurvivor, issueWords, kindOfHeader, sheetTabOf,
+  cleanPriceRows, currentValue, dryRunAddsUp, dryRunChecks, dryRunLines, filterCount, filterRows, fileProblem, fixBody, fixStart, headerOf, isOpen, isSurvivor, issueWords, kindOfHeader, sheetTabOf,
   fileNote, measurementKey, mergeCandidates, notKeptNote, reviewDone, rowButtons, rowCounts, rowStatusWords, rowTitle, startFilter, uploadRequest, uploadStatusWords,
 } from './importer.ts';
 
@@ -129,6 +129,16 @@ describe('the counts', () => {
     expect(countsWords(done)).toBe('Accepted 2 + excluded 1 + merged 1 = 4 rows listed.');
     expect(countsWords(rowCounts([rows[1]!]))).toBe('Accepted 1 + excluded 0 + merged 0 = 1 row listed.');
     expect(startFilter(done)).toBe('all');
+  });
+});
+
+describe('accept all price list rows', () => {
+  it('counts only the price list rows that wait for nothing but the owner\'s OK', () => {
+    const ok = row({ id: 'a', rowType: 'piece_rate', status: 'needs_review', issues: ['Price list row requires owner confirmation.'] });
+    const toFix = row({ id: 'b', rowType: 'piece_rate', status: 'needs_review', issues: ['Part is Upper but Unit is Piece: x', 'Price list row requires owner confirmation.'] });
+    const done = row({ id: 'c', rowType: 'piece_rate', status: 'accepted', issues: ['Price list row requires owner confirmation.'] });
+    const employee = row({ id: 'd', rowType: 'employee', status: 'needs_review', issues: ['Employee rate or missing rate requires owner confirmation.'] });
+    expect(cleanPriceRows([ok, toFix, done, employee]).map((r) => r.id)).toEqual(['a']);
   });
 });
 

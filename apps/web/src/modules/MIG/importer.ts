@@ -204,6 +204,10 @@ export function issueWords(issue: string): string {
 /** Problems that only a fix can clear: the server refuses to accept the row as it is while any is left. */
 export const blockingIssues = (issues: string[]): string[] => issues.filter((i) => !CONFIRM_ISSUE.test(i) && !DUPLICATE_ISSUE.test(i));
 
+/** Price list rows that only wait for the owner's OK: nothing to fix, no duplicate (the Accept all button). */
+export const cleanPriceRows = (rows: MigRow[]): MigRow[] =>
+  rows.filter((r) => r.rowType === 'piece_rate' && r.status === 'needs_review' && r.issues.every((i) => CONFIRM_ISSUE.test(i)));
+
 /** The other rows the server flagged as this row's duplicates, still in play and of the same kind. Merging needs one of these. */
 export function mergeCandidates(row: MigRow, rows: MigRow[]): MigRow[] {
   const ids = new Set(row.issues.map((i) => DUPLICATE_ISSUE.exec(i)?.[2]).filter((id): id is string => !!id));

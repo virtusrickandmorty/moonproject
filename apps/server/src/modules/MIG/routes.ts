@@ -420,6 +420,32 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
     });
   });
 
+  /**
+   * Accept every price list row of the upload that has nothing wrong (the owner's request, Oct 2026: "an accept all
+   * button"): the same checks as accepting one row; a row with something to fix, or a duplicate, is left for review.
+   */
+  app.post('/api/mig/uploads/:uploadId/accept-price-list', auth, async req => {
+    const user = currentUser(req);
+    const { uploadId } = validation(uploadParams, req.params);
+    validation(z.object({}).strict(), req.body ?? {});
+    const at = stamp(clock);
+    const by = { userId: user.userId, at };
+    return tx(db, () => {
+      staged(db, uploadId);
+      const waiting = db.prepare(`SELECT * FROM mig_rows WHERE upload_id = ? AND row_type = 'piece_rate' AND status = 'needs_review' ORDER BY row_number`).all(uploadId) as MigRow[];
+      let accepted = 0;
+      for (const before of waiting) {
+        let parsed: ParsedRow;
+        try { parsed = validateDecision(db, before, manualFor(before), by); } catch (cause) { if (cause instanceof AppError) continue; throw cause; }
+        db.prepare(`UPDATE mig_rows SET status = 'accepted', rate_cents = ?, legacy_id = ?, legacy_type = ?, resolved_by = ?, resolved_at = ? WHERE id = ?`)
+          .run(parsed.rateCents, parsed.legacyId, parsed.legacyId ? parsed.rowType : null, user.userId, at, before.id);
+        auditRow(db, user.userId, at, 'accept', before);
+        accepted++;
+      }
+      return { success: true, accepted, left: waiting.length - accepted };
+    });
+  });
+
   app.post('/api/mig/uploads/:uploadId/dry-run', auth, async req => {
     const user = currentUser(req);
     const { uploadId } = validation(uploadParams, req.params);
