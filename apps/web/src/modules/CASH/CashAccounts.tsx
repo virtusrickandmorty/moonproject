@@ -2,10 +2,13 @@
  * Cash accounts (the owner's request, Oct 2026: "more modern, like the dashboard"): the money by kind across the top,
  * then a card for each cash place with its balance and its share of the money shown, its cash book and its settings.
  * Adding a place and its settings open in a dialog. A balance hidden from this user shows as Hidden and counts nowhere.
+ * Under the cards, the recent transactions: the last 30 days of every cash book this user may open, newest first.
  */
 import { useEffect, useState } from 'react';
-import { api, type CashAccount, type Me } from '../../api.ts';
-import { Button, Dialog, Field, Notice, CARD_TITLE, SURFACE, inputClass, peso, useAction } from '../../components/ui.tsx';
+import { api, type CashAccount, type CashBook, type Me } from '../../api.ts';
+import { Paged } from '../../components/RowPages.tsx';
+import { docPath } from '../../shell/menu.ts';
+import { Button, Dialog, Field, Notice, CARD_TITLE, SURFACE, inputClass, peso, showDate, useAction } from '../../components/ui.tsx';
 import { TickBar } from '../../components/charts.tsx';
 import { Link } from '../../router.tsx';
 import { Icon, type IconName } from '../DASH/Cards.tsx';
@@ -88,6 +91,73 @@ function PlaceCard({ p, total, book, manage, onSettings }: { p: CashAccount; tot
   );
 }
 
+const DAYS = 30;
+type Movement = CashBook['lines'][number] & { placeName: string; placeKind: CashAccount['kind'] };
+/** A calendar day n days before another (both YYYY-MM-DD, built from their parts: no clock, house rule NR-7). */
+const daysBefore = (date: string, n: number) => {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  const t = new Date(Date.UTC(y, m - 1, d - n));
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
+};
+
+/** Money in and out of the cash places this user may open, the last 30 days, newest first (the owner's request, Oct 2026). */
+function RecentTransactions({ places }: { places: CashAccount[] }) {
+  const [rows, setRows] = useState<Movement[] | null>(null);
+  const [error, setError] = useState('');
+  const open = places.filter(canShowBook);
+  const key = open.map((p) => `${p.id}:${p.balanceCents}`).join(',');
+  useEffect(() => {
+    let stale = false;
+    void (async () => {
+      try {
+        const today = (await api.health()).serverTime.slice(0, 10); // the server's Manila date
+        const books = await Promise.all(open.map((p) => api.cashBook(p.id, daysBefore(today, DAYS - 1), today)));
+        const all = books.flatMap((b) => b.lines.map((l) => ({ ...l, placeName: b.place.name, placeKind: b.place.kind })));
+        // Newest first: by date, then by journal number (recorded later, numbered later).
+        all.sort((a, b) => b.date.localeCompare(a.date) || b.journalNumber.localeCompare(a.journalNumber));
+        if (!stale) { setRows(all); setError(''); }
+      } catch (e) { if (!stale) setError((e as Error).message); }
+    })();
+    return () => { stale = true; };
+  }, [key]); // eslint-disable-line react-hooks/exhaustive-deps -- a balance that moved reloads it
+  if (open.length === 0) return null;
+  return (
+    <section aria-label="Recent transactions" className={`flex flex-col gap-4 p-5 ${SURFACE}`}>
+      <header className="flex items-center gap-3">
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-700"><Icon name="clock" /></span>
+        <h2 className={CARD_TITLE}>Recent transactions</h2>
+        <span className="text-xs text-slate-500">Last {DAYS} days · newest first</span>
+      </header>
+      {error && <Notice>{error}</Notice>}
+      {!rows && !error && <p className="text-sm text-slate-500">Loading…</p>}
+      {rows?.length === 0 && <p className="text-sm text-slate-500">No money came in or went out in the last {DAYS} days.</p>}
+      {rows && rows.length > 0 && <Paged rows={rows}>{(page) => (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr><th className="py-2 pr-3">Date</th><th className="pr-3">Cash place</th><th className="pr-3">Document</th><th className="pr-3">Details</th><th className="pr-3 text-right">Money in</th><th className="text-right">Money out</th></tr>
+            </thead>
+            <tbody>
+              {page.map((l, i) => (
+                <tr key={`${l.journalNumber}-${l.placeName}-${i}`} className="border-t border-slate-100 align-top">
+                  <td className="whitespace-nowrap py-2 pr-3">{showDate(l.date)}</td>
+                  <td className="pr-3"><span className="inline-flex items-center gap-1.5"><Icon name={kindOf(l.placeKind).icon} className="size-4 text-slate-500" />{l.placeName}</span></td>
+                  <td className="whitespace-nowrap pr-3">{l.documentId && l.docType
+                    ? <Link to={docPath(l.docType, `/${l.documentId}`)} className="text-indigo-700 hover:underline">{l.documentNumber ?? l.journalNumber}</Link>
+                    : (l.documentNumber ?? l.journalNumber)}</td>
+                  <td className="max-w-md pr-3 text-slate-600">{/^[\d-]+$/.test(l.memo.trim()) ? `Ref. ${l.memo.trim()}` : l.memo}</td>
+                  <td className="pr-3 text-right tabular-nums font-medium text-emerald-700">{l.inCents ? peso(l.inCents) : ''}</td>
+                  <td className="text-right tabular-nums font-medium text-slate-900">{l.outCents ? peso(l.outCents) : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}</Paged>}
+    </section>
+  );
+}
+
 export function CashAccounts({ me }: { me: Me }) {
   const manage = me.permissions.includes('cash.places.manage');
   const book = me.permissions.includes('cash.book.view');
@@ -147,6 +217,7 @@ export function CashAccounts({ me }: { me: Me }) {
         {places.map((p) => <PlaceCard key={p.id} p={p} total={total} book={book} manage={manage} onSettings={() => startEdit(p)} />)}
       </div>
     )}
+    {book && places && places.length > 0 && <RecentTransactions places={places} />}
     {formOpen && <Dialog title={editing ? `Settings for ${editing.name}` : 'Add a cash place'} onClose={close}>
       <div className="space-y-3">
         {!editing && <>
