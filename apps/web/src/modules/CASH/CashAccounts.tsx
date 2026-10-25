@@ -3,9 +3,11 @@
  * then a card for each cash place with its balance and its share of the money shown, its cash book and its settings.
  * Adding a place and its settings open in a dialog. A balance hidden from this user shows as Hidden and counts nowhere.
  * Under the cards, the recent transactions: the last 30 days of every cash book this user may open, newest first.
+ * Transfer money opens a fund transfer (cash.transfer, TRF-) in a dialog over the page (the owner's request, Oct 2026).
  */
-import { useEffect, useState } from 'react';
-import { api, type CashAccount, type CashBook, type Me } from '../../api.ts';
+import { useEffect, useRef, useState } from 'react';
+import { parsePesos } from '@moonproject/shared';
+import { api, type CashAccount, type CashBook, type Me, type Preview } from '../../api.ts';
 import { Paged } from '../../components/RowPages.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Button, Dialog, Field, Notice, CARD_TITLE, SURFACE, inputClass, peso, showDate, useAction } from '../../components/ui.tsx';
@@ -55,7 +57,7 @@ function Totals({ places }: { places: CashAccount[] }) {
 }
 
 /** One cash place as a card: its kind, its balance and its share, its account number, and what can be done with it. */
-function PlaceCard({ p, total, book, manage, onSettings }: { p: CashAccount; total: number; book: boolean; manage: boolean; onSettings: () => void }) {
+function PlaceCard({ p, total, book, manage, onSettings, onTransfer }: { p: CashAccount; total: number; book: boolean; manage: boolean; onSettings: () => void; onTransfer?: () => void }) {
   const kind = kindOf(p.kind);
   const share = p.balanceCents !== null && total > 0 ? Math.max(0, p.balanceCents) / total : null;
   return (
@@ -80,10 +82,11 @@ function PlaceCard({ p, total, book, manage, onSettings }: { p: CashAccount; tot
           <span className="text-xs tabular-nums text-slate-500">{Math.round(share * 100)}% of the money shown</span>
         </div>}
       </div>
-      {(book && canShowBook(p)) || manage ? (
+      {(book && canShowBook(p)) || manage || onTransfer ? (
         <footer className="mt-auto flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
           {book && canShowBook(p) && <Link to={`/cash/book?place=${p.id}`} className="rounded-md px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-50">Cash book →</Link>}
           <span className="flex-1" />
+          {onTransfer && <Button onClick={onTransfer} title={`Move money out of ${p.name}`}>⇄ Transfer</Button>}
           {manage && <Button onClick={onSettings}>Settings</Button>}
         </footer>
       ) : null}
@@ -158,9 +161,91 @@ function RecentTransactions({ places }: { places: CashAccount[] }) {
   );
 }
 
+/** Pesos typed, to centavos; undefined when blank or not an amount. */
+const pesos = (text: string): number | undefined => { try { const c = parsePesos(text.trim()); return c > 0 ? c : undefined; } catch { return undefined; } };
+
+/**
+ * A fund transfer in a dialog: from one cash place to another, the amount sent and the amount received (a bank's fee is
+ * the difference), and a note. The server's preview says what it will record and any problem; Record posts it (TRF-).
+ */
+function TransferDialog({ places, from, onClose, onDone }: { places: CashAccount[]; from: number | null; onClose: () => void; onDone: () => void }) {
+  const [fromId, setFromId] = useState<number | null>(from);
+  const [toId, setToId] = useState<number | null>(null);
+  const [sent, setSent] = useState('');
+  const [received, setReceived] = useState('');
+  const [note, setNote] = useState('');
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const action = useAction();
+  const key = useRef(crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`);
+  const sentCents = pesos(sent);
+  const receivedCents = received.trim() ? pesos(received) : sentCents;
+  const input = fromId && toId && sentCents && receivedCents
+    ? { fromCashPlaceId: fromId, toCashPlaceId: toId, amountSentCents: sentCents, amountReceivedCents: receivedCents, ...(note.trim() ? { note: note.trim() } : {}) }
+    : null;
+  const slip = !fromId || !toId ? 'Pick where the money comes from and where it goes.'
+    : fromId === toId ? 'Pick two different places.'
+    : !sentCents ? 'Type the amount sent, like 5,000.00.'
+    : received.trim() && !receivedCents ? 'Type the amount received, like 4,985.00, or leave it blank when it is the same.'
+    : receivedCents! > sentCents ? 'The amount received cannot be more than the amount sent.' : '';
+  useEffect(() => {
+    setPreview(null);
+    if (!input || slip) return;
+    let stale = false;
+    const t = setTimeout(() => api.preview('cash.transfer', input).then((p) => { if (!stale) setPreview(p); }, () => undefined), 300);
+    return () => { stale = true; clearTimeout(t); };
+  }, [JSON.stringify(input), slip]); // eslint-disable-line react-hooks/exhaustive-deps
+  const blocked = !!preview?.issues.some((i) => i.level === 'error');
+  const record = () => action.run(async () => {
+    if (!input || slip) throw new Error(slip || 'Fill in the transfer.');
+    const p = await api.preview('cash.transfer', input);
+    await api.post('cash.transfer', input, p.totalCents, key.current); // the app's own note says it was recorded
+    onDone();
+  });
+  const fee = sentCents && receivedCents && sentCents > receivedCents ? sentCents - receivedCents : 0;
+  const pick = (label: string, value: number | null, set: (id: number) => void, not: number | null) => (
+    <Field label={label} required>
+      <select className={inputClass} value={value ?? ''} onChange={(e) => set(Number(e.target.value))}>
+        <option value="" disabled>Pick a cash place</option>
+        {places.map((p) => <option key={p.id} value={p.id} disabled={p.id === not}>{p.name}{p.balanceCents !== null ? ` · ${peso(p.balanceCents)}` : ''}</option>)}
+      </select>
+    </Field>
+  );
+  return (
+    <Dialog title="Transfer money" onClose={onClose}>
+      <div className="space-y-3">
+        <p className="text-sm text-slate-600">Money moved between the shop's own places, like a cash deposit to the bank or petty cash topped up. It is not income or expense.</p>
+        <div className="grid items-end gap-3 sm:grid-cols-[1fr_auto_1fr]">
+          {pick('From', fromId, setFromId, toId)}
+          <span className="hidden pb-2 text-lg text-slate-400 sm:block" aria-hidden="true">→</span>
+          {pick('To', toId, setToId, fromId)}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field label="Amount sent" required><input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={sent} onChange={(e) => setSent(e.target.value)} /></Field>
+          <Field label="Amount received" hint="Blank: the same as sent. Less: the difference is the bank's fee.">
+            <input inputMode="decimal" placeholder={sentCents ? (sentCents / 100).toFixed(2) : '0.00'} className={`${inputClass} text-right tabular-nums`} value={received} onChange={(e) => setReceived(e.target.value)} />
+          </Field>
+        </div>
+        <Field label="Note"><input className={inputClass} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Like: deposit slip no. 1234" /></Field>
+        {fee > 0 && <p className="text-sm text-slate-600">Bank or transfer fee: <b className="tabular-nums">{peso(fee)}</b> (recorded as a fee expense).</p>}
+        {slip && (sent || fromId || toId) ? <p className="text-sm text-amber-700">{slip}</p> : null}
+        {preview && <p className="rounded-md bg-slate-50 p-3 text-sm">{preview.summary}</p>}
+        {preview?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
+        {action.error && <Notice>{action.error}</Notice>}
+        <div className="flex justify-end gap-2">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button tone="primary" disabled={action.busy || !!slip || !preview || blocked} onClick={() => void record()}>{action.busy ? 'Recording…' : 'Record transfer'}</Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
 export function CashAccounts({ me }: { me: Me }) {
   const manage = me.permissions.includes('cash.places.manage');
   const book = me.permissions.includes('cash.book.view');
+  const transfer = me.permissions.includes('cash.trf.post');
+  const [transferring, setTransferring] = useState<{ from: number | null } | null>(null);
+  const [reloads, setReloads] = useState(0); // the recent transactions read again after a transfer
   const [places, setPlaces] = useState<CashAccount[] | null>(null);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<CashAccount | null>(null);
@@ -207,6 +292,7 @@ export function CashAccounts({ me }: { me: Me }) {
         <h1 className="text-2xl font-semibold">Cash Accounts</h1>
         <p className="text-sm text-slate-600">Where the shop's money is kept: cash boxes, banks, e-wallets and checks not yet deposited.</p>
       </div>
+      {transfer && places && places.length > 1 && <Button onClick={() => { setTransferring({ from: null }); }}>⇄ Transfer money</Button>}
       {manage && <Button tone="primary" onClick={() => { setAdding(true); setEditing(null); setName(''); setAccountNo(''); setKind('cash'); setEncoderSeesBalance(true); }}>+ Add place</Button>}
     </div>
     {error && <Notice>{error}</Notice>}
@@ -214,10 +300,13 @@ export function CashAccounts({ me }: { me: Me }) {
     {places?.length === 0 && <p className={`p-5 text-sm text-slate-500 ${SURFACE}`}>No cash places yet.</p>}
     {places && places.length > 0 && (
       <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {places.map((p) => <PlaceCard key={p.id} p={p} total={total} book={book} manage={manage} onSettings={() => startEdit(p)} />)}
+        {places.map((p) => <PlaceCard key={p.id} p={p} total={total} book={book} manage={manage} onSettings={() => startEdit(p)}
+          {...(transfer && places.length > 1 ? { onTransfer: () => { setTransferring({ from: p.id }); } } : {})} />)}
       </div>
     )}
-    {book && places && places.length > 0 && <RecentTransactions places={places} />}
+    {book && places && places.length > 0 && <RecentTransactions key={reloads} places={places} />}
+    {transferring && places && <TransferDialog places={places} from={transferring.from} onClose={() => setTransferring(null)}
+      onDone={() => { setTransferring(null); void load(); setReloads((n) => n + 1); }} />}
     {formOpen && <Dialog title={editing ? `Settings for ${editing.name}` : 'Add a cash place'} onClose={close}>
       <div className="space-y-3">
         {!editing && <>
