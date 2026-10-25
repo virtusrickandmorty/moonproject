@@ -7,6 +7,7 @@ import { api, type Me, type MigUpload } from '../../api.ts';
 import { Loading, Button, Field, Notice, Panel, inputClass, manilaTime, useAction } from '../../components/ui.tsx';
 import { Link, navigate } from '../../router.tsx';
 import { KINDS, TEMPLATES, fileNote, fileProblem, isOpen, templateCsv, uploadRequest, uploadStatusWords, type MigKind } from './importer.ts';
+import { Paged, newestFirst } from '../../components/RowPages.tsx';
 
 function UploadForm() {
   const [kind, setKind] = useState<MigKind | ''>('');
@@ -71,10 +72,10 @@ function UploadsList({ uploads }: { uploads: MigUpload[] }) {
     <Panel title="Uploads">
       {uploads.length === 0 ? <p className="text-sm text-slate-500">Nothing has been uploaded yet.</p> : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <Paged rows={newestFirst(uploads, (u) => u.uploadedAt)}>{(page) => (<table className="w-full text-sm">
             <thead className="text-left text-slate-500"><tr><th className="pr-3">File</th><th className="pr-3">Uploaded</th><th className="pr-3">Status</th><th /></tr></thead>
             <tbody>
-              {uploads.map((u) => (
+              {page.map((u) => (
                 <tr key={u.id} className="border-t border-slate-100">
                   <td className="py-1 pr-3">{u.filename}</td>
                   <td className="whitespace-nowrap py-1 pr-3">{manilaTime(u.uploadedAt)}</td>
@@ -83,7 +84,7 @@ function UploadsList({ uploads }: { uploads: MigUpload[] }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table>)}</Paged>
         </div>
       )}
     </Panel>

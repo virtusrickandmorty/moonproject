@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { api, type AiaChats, type AiaMessage, type AiaSettings, type Me } from '../../api.ts';
 import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, useAction } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
+import { Paged, newestFirst } from '../../components/RowPages.tsx';
 
 const tokens = (n: number) => n.toLocaleString('en-PH');
 /** A hint only: what the owner might write (an empty box tells the assistant nothing). */
@@ -78,9 +79,9 @@ export function WebsiteAssistant({ me }: { me: Me }) {
       <Panel title="Chats">
         {chats && <p className="text-sm text-slate-600">Last 30 days: <b>{chats.last30Days.chats}</b> chats · {tokens(chats.last30Days.inputTokens)} tokens read and {tokens(chats.last30Days.outputTokens)} written by the AI (the AI service bills by these).</p>}
         {!chats ? <Loading /> : chats.rows.length === 0 ? <p className="text-sm text-slate-500">No chats yet.</p> : (
-          <table className="w-full">
+          <Paged rows={newestFirst(chats.rows, (c) => c.startedAt)}>{(page) => (<table className="w-full">
             <thead><tr><th>Started</th><th>First question</th><th>Messages</th><th>Staff</th></tr></thead>
-            <tbody>{chats.rows.map((c) => (
+            <tbody>{page.map((c) => (
               <tr key={c.id} className="cursor-pointer" onClick={() => void api.aiaChat(c.id).then((x) => setOpen({ id: c.id, ...x }), (e: Error) => setError(e.message))}>
                 <td className="whitespace-nowrap">{c.startedAt.slice(0, 16).replace('T', ' ')}</td>
                 <td className="max-w-md truncate" title={c.firstQuestion ?? ''}>{c.firstQuestion}</td>
@@ -88,7 +89,7 @@ export function WebsiteAssistant({ me }: { me: Me }) {
                 <td>{c.supportNumber ? <Link to="/sup" className="text-indigo-700 underline">{c.supportNumber}</Link> : '—'}</td>
               </tr>
             ))}</tbody>
-          </table>
+          </table>)}</Paged>
         )}
       </Panel>
       {open && (

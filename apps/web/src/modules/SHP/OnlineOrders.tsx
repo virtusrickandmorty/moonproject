@@ -10,6 +10,7 @@ import { Link, useLocation } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { masterRequest } from '../CUS/http.ts';
 import { useLiveReload } from '../../live.ts';
+import { Paged, newestFirst } from '../../components/RowPages.tsx';
 
 type Status = 'awaiting_payment' | 'payment_sent' | 'confirmed' | 'rejected' | 'cancelled' | 'ready' | 'completed' | 'expired' | 'returned';
 export const ORDER_STATUS: Record<Status, [string, string]> = {
@@ -54,11 +55,11 @@ export function OnlineOrders({ me }: { me: Me }) {
       </div>
       {error && <Notice>{error}</Notice>}
       <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
-        <table className="w-full text-sm">
+        <Paged rows={newestFirst(list?.rows ?? [], (o) => o.createdAt)}>{(page) => (<table className="w-full text-sm">
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500"><tr><th className="p-3">Order</th><th className="p-3">Placed</th><th className="p-3">Customer</th><th className="p-3">Gets it by</th><th className="p-3">Status</th><th className="p-3">Reference</th><th className="p-3 text-right">Total</th></tr></thead>
           <tbody className="divide-y divide-slate-100">
             {list?.rows.length === 0 && <tr><td colSpan={7} className="p-4 text-slate-500">No orders here.</td></tr>}
-            {list?.rows.map((o) => (
+            {page.map((o) => (
               <tr key={o.id} tabIndex={0} onClick={() => void show(o.id)} onKeyDown={(e) => { if (e.key === 'Enter') void show(o.id); }} className="cursor-pointer outline-none hover:bg-indigo-50 focus-visible:bg-indigo-50">
                 <td className="p-3 font-semibold">{o.number}</td><td className="p-3 whitespace-nowrap">{manilaTime(o.createdAt)}</td>
                 <td className="p-3">{o.name}<span className="block text-xs text-slate-500">{o.phone}</span></td>
@@ -66,7 +67,7 @@ export function OnlineOrders({ me }: { me: Me }) {
                 <td className="p-3">{o.paymentReference ?? '—'}</td><td className="p-3 text-right tabular-nums">{peso(o.totalCents)}</td>
               </tr>))}
           </tbody>
-        </table>
+        </table>)}</Paged>
       </div>
       {open && <OrderDialog me={me} order={open} onClose={() => setOpen(null)} onChanged={changed} />}
     </div>

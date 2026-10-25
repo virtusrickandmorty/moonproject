@@ -9,6 +9,7 @@ import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, peso, useAct
 import { cents } from '../COL/money.ts';
 import { LOAN_KIND, loanInput } from './run.ts';
 import { useLiveReload } from '../../live.ts';
+import { Paged, newestFirst } from '../../components/RowPages.tsx';
 
 const STATUS: Record<GovLoan['status'], string> = { not_started: 'Not started', running: 'Running', ended: 'Ended', stopped: 'Stopped' };
 
@@ -19,12 +20,12 @@ function LoanTable({ loans, canManage, showEmployee, onSaved }: { loans: GovLoan
   if (!loans.length) return <p className="text-sm text-slate-500">No government loans.</p>;
   return (
     <>
-      <table className="w-full text-sm">
+      <Paged rows={newestFirst(loans, (l) => l.firstMonth)}>{(page) => (<table className="w-full text-sm">
         <thead className="text-left text-slate-500">
           <tr>{showEmployee && <th>Employee</th>}<th>Loan</th><th className="text-right">Monthly</th><th className="pl-3">Months</th><th className="text-right">Deducted</th><th className="text-right">Left</th><th className="pl-3">Status</th><th /></tr>
         </thead>
         <tbody>
-          {loans.map((l) => (
+          {page.map((l) => (
             <tr key={l.id} className="border-t border-slate-100 align-top">
               {showEmployee && <td className="py-1">{l.employeeName} <span className="text-slate-500">{l.employeeCode}</span></td>}
               <td className="py-1">{LOAN_KIND[l.kind]} <span className="text-slate-500">{l.loanNo}</span>{l.note && <p className="text-xs text-slate-500">{l.note}</p>}</td>
@@ -39,7 +40,7 @@ function LoanTable({ loans, canManage, showEmployee, onSaved }: { loans: GovLoan
             </tr>
           ))}
         </tbody>
-      </table>
+      </table>)}</Paged>
       {editing && <EditLoan loan={editing} onClose={() => setEditing(null)} onSaved={onSaved} />}
       {stopping && <StopLoan loan={stopping} onClose={() => setStopping(null)} onSaved={onSaved} />}
     </>

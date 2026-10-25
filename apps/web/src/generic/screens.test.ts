@@ -120,7 +120,7 @@ it('searches every page with q/from/to, shows global status counts, appends 25 o
   const list = vi.spyOn(api, 'list').mockResolvedValue(Array.from({ length: 25 }, (_, n) => row(n + 1)));
   const counts = vi.spyOn(api, 'docCounts').mockResolvedValue({ all: 40, posted: 35, cancelled: 5 });
   vi.spyOn(api, 'drafts').mockResolvedValue([]);
-  const render = harness(() => DocList({ type })); render(); await flush();
+  const render = harness(() => DocList({ type, showOlder: true })); render(); await flush();
   let tree = render();
   expect(button(tree, 'All (40)')).toBeDefined();
   change(field(tree, 'Search records'), ' Sample supplier '); tree = render();
@@ -144,7 +144,7 @@ it.each(['success', 'failure'])('ignores a stale list %s, retains older rows on 
   const old = new Promise<DocHeader[]>((yes, no) => { resolve = yes; reject = no; });
   const list = vi.spyOn(api, 'list').mockReturnValueOnce(old).mockResolvedValue(Array.from({ length: 25 }, (_, n) => row(n + 1)));
   vi.spyOn(api, 'docCounts').mockResolvedValue({ all: 30, posted: 30, cancelled: 0 }); vi.spyOn(api, 'drafts').mockResolvedValue([]);
-  const render = harness(() => DocList({ type })); render();
+  const render = harness(() => DocList({ type, showOlder: true })); render();
   change(field(render(), 'Search records'), 'new'); submit(render()); render(); await flush();
   if (outcome === 'success') resolve([]); else reject(new Error('Old failure')); await flush();
   let tree = render(); expect(nodes(tree).find((n) => n.type === ListMessage)!.props.state.rows).toHaveLength(25);

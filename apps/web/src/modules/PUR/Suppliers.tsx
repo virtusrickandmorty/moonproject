@@ -8,6 +8,7 @@ import { Button, Dialog, Notice, inputClass, searchClass, searchRowClass } from 
 import { NewSupplierForm, SupplierView } from './Supplier.tsx';
 import { EWT_WORDS, filterSuppliers } from './purchasing.ts';
 import { useLiveReload } from '../../live.ts';
+import { Paged } from '../../components/RowPages.tsx';
 
 export function Suppliers({ me, docTypes = [] }: { me: Me; docTypes?: DocTypeInfo[] }) {
   const [rows, setRows] = useState<SupplierRecord[] | null>(null);
@@ -35,10 +36,10 @@ export function Suppliers({ me, docTypes = [] }: { me: Me; docTypes?: DocTypeInf
       {error && <Notice>{error}</Notice>}
       {shown && (
         <div className="overflow-x-auto">
-          <table className="w-full rounded-xl bg-white text-sm shadow-sm ring-1 ring-slate-200/70 [&_td]:px-2 [&_td]:py-2 [&_th]:px-2 [&_th]:py-2">
+          <Paged rows={shown}>{(page) => (<table className="w-full rounded-xl bg-white text-sm shadow-sm ring-1 ring-slate-200/70 [&_td]:px-2 [&_td]:py-2 [&_th]:px-2 [&_th]:py-2">
             <thead className="text-left text-slate-500"><tr><th>Name</th><th>Registered name</th><th>TIN</th><th>VAT</th><th>Usual tax withheld (EWT)</th><th>Terms</th><th>Status</th></tr></thead>
             <tbody>
-              {shown.map((s) => (
+              {page.map((s) => (
                 <tr key={s.id} tabIndex={0} onClick={() => setOpen(s.id)} onKeyDown={(e) => { if (e.key === 'Enter') setOpen(s.id); }}
                   className={`cursor-pointer border-t border-slate-100 ${s.is_active ? '' : 'text-slate-500'}`}>
                   <td className="font-medium text-indigo-700">{s.name}</td>
@@ -48,7 +49,7 @@ export function Suppliers({ me, docTypes = [] }: { me: Me; docTypes?: DocTypeInf
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table>)}</Paged>
         </div>
       )}
       {shown?.length === 0 && <p className="text-sm text-slate-500">No supplier matches.</p>}

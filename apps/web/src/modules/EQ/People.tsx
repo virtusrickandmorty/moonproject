@@ -10,6 +10,7 @@ import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { OFFICER_KIND_WORDS, OWNER_KIND_WORDS, balanceOf, filterPeople, positionWords, recordedTotal, rolesOf } from './register.ts';
 import { useLiveReload } from '../../live.ts';
+import { Paged } from '../../components/RowPages.tsx';
 
 const num = 'py-1 text-right tabular-nums';
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
@@ -43,12 +44,12 @@ export function People({ me }: { me: Me }) {
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={showOff} onChange={(e) => setShowOff(e.target.checked)} /> Show people switched off</label>
       </div>
       {shown.length === 0 ? <p className="text-slate-500">{rows.length === 0 ? 'Nobody is in the register yet.' : 'Nobody matches.'}</p> : (
-        <table className="w-full text-sm">
+        <Paged rows={shown}>{(page) => (<table className="w-full text-sm">
           <thead className="text-left text-slate-500">
             <tr><th>Name</th><th>Role</th><th className="text-right">Shares</th>{seeMoney && <><th className="text-right">Owes the company</th><th className="text-right">Company owes them</th><th className="text-right">Left on subscription</th></>}</tr>
           </thead>
           <tbody>
-            {shown.map((p) => {
+            {page.map((p) => {
               const b = balanceOf(balances ?? [], p.id);
               return (
                 <tr key={p.id} className={`border-t border-slate-100 ${p.isActive ? '' : 'text-slate-400'}`}>
@@ -65,7 +66,7 @@ export function People({ me }: { me: Me }) {
               </tr>
             )}
           </tbody>
-        </table>
+        </table>)}</Paged>
       )}
       {!seeMoney && <p className="text-sm text-slate-500">What each person owes and is owed is shown to the accountant and owners.</p>}
     </div>

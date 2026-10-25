@@ -5,6 +5,7 @@ import { Loading, Button, Field, Notice, Panel, inputClass, peso, type PageInfo 
 import { BookTitle, Tools, money, td, th, usePagedReport, useReport, useToday } from './Books.tsx';
 import './books.css';
 import { addressValue, PendingPeriod, ResultSummary, daysOverdue, statusWords, usePeriod } from './ReportParts.tsx';
+import { PRINT_ONLY, usePrintablePages } from '../../components/RowPages.tsx';
 
 type Doc = { id: string; number: string; documentType: string };
 function document(row: Doc) {
@@ -27,8 +28,10 @@ function ReportPage({ me, title, route, dated, children }: { me: Me; title: stri
 }
 export function Table({ headings, rows }: { headings: string[]; rows: ReactNode[][] }) {
   const amounts = new Set(['Held','Amount','Held at quarter end','Output VAT declared','Tender','CWT','Tenders','Net sales','Balance','Released value']);
+  // 20 rows on screen, every row printed; the TOTAL row always shows.
+  const { onPage, buttons } = usePrintablePages(rows.length);
   return <><ResultSummary count={rows.filter((r) => r[0] !== 'TOTAL').length} /><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{headings.map((h) => <th className={amounts.has(h) ? `${th} text-right` : th} key={h}>{h}</th>)}</tr></thead>
-    <tbody>{rows.map((cells, i) => <tr key={i} className={cells[0] === 'TOTAL' ? 'font-semibold border-t-2 border-slate-400' : ''}>{cells.map((cell, j) => <td className={amounts.has(headings[j]!) ? money : td} key={j}>{cell}</td>)}</tr>)}</tbody></table></div></>;
+    <tbody>{rows.map((cells, i) => <tr key={i} className={cells[0] === 'TOTAL' ? 'font-semibold border-t-2 border-slate-400' : onPage(i) ? '' : PRINT_ONLY}>{cells.map((cell, j) => <td className={amounts.has(headings[j]!) ? money : td} key={j}>{cell}</td>)}</tr>)}</tbody></table></div>{buttons}</>;
 }
 function Waiting({ error }: { error: string }) { return error ? <Notice>{error}</Notice> : <Loading />; }
 

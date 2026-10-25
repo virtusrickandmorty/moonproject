@@ -12,6 +12,7 @@ import { docPath } from '../../shell/menu.ts';
 import { KIND_WORDS, STATE_WORDS, forgivableNo, forgivenWords, lateCounts, leftCents, loanDocType, loanTotals, ratePercent, scheduleStates } from './register.ts';
 import { Crumb } from '../../shell/crumbs.tsx';
 import { useLiveReload } from '../../live.ts';
+import { Paged, newestFirst } from '../../components/RowPages.tsx';
 
 const num = 'py-1 text-right tabular-nums';
 const link = 'rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-slate-100';
@@ -47,10 +48,10 @@ export function Loans({ docTypes }: { docTypes: DocTypeInfo[] }) {
       <p className="text-sm"><b>{t.count}</b> loan{t.count === 1 ? '' : 's'} · borrowed <b className="tabular-nums">{peso(t.principalCents)}</b> · paid <b className="tabular-nums">{peso(t.paidCents)}</b> · left <b className="tabular-nums">{peso(t.leftCents)}</b></p>
       <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={showCancelled} onChange={(e) => setShowCancelled(e.target.checked)} /> Show cancelled loans</label>
       {shown.length === 0 ? <p className="text-slate-500">No loan is recorded yet.</p> : (
-        <table className="w-full text-sm">
+        <Paged rows={newestFirst(shown, (l) => l.dateReceived)}>{(page) => (<table className="w-full text-sm">
           <thead className="text-left text-slate-500"><tr><th>Loan</th><th>Lender</th><th className="text-right">Principal</th><th className="text-right">Paid</th><th className="text-right">Left</th><th>Next due</th></tr></thead>
           <tbody>
-            {shown.map((l) => (
+            {page.map((l) => (
               <tr key={l.id} className={`border-t border-slate-100 ${counts.has(l.id) ? 'border-l-4 border-l-red-500' : ''} ${l.status === 'cancelled' ? 'text-slate-400 line-through' : ''}`}>
                 <td className="py-1 pl-1"><Link to={`/loan/loans/${l.id}`} className="underline">{l.number}</Link> {l.kind === 'equipment' && <span className="text-xs text-slate-500">equipment</span>}</td>
                 <td className="py-1">{l.lender}</td>
@@ -59,7 +60,7 @@ export function Loans({ docTypes }: { docTypes: DocTypeInfo[] }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table>)}</Paged>
       )}
     </div>
   );
