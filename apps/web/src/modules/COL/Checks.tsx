@@ -15,6 +15,7 @@ import { cents } from './money.ts';
 import { CustomerPicker, type Picked } from './parts.tsx';
 import { PDC_STATUS, checkKey, pdcActions, pdcCollectionPath, ticked } from './checks.ts';
 import { newestFirst, Paged } from '../../components/RowPages.tsx';
+import { Card, FigureStrip, PageHead, TABLE_HEAD } from '../../components/Figures.tsx';
 
 const can = (me: Me, p: string) => me.permissions.includes(p);
 const docLink = (type: string, d: { id: string; number: string }) => <Link to={docPath(type, `/${d.id}`)} className="text-indigo-700 underline">{d.number}</Link>;
@@ -56,23 +57,29 @@ export function ChecksOnHand({ me }: { me: Me }) {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-semibold">Checks on hand</h1>
+      <PageHead title="Checks on hand" sub="Customer checks received and not yet in the bank: tick them and deposit them together." />
       {error && <Notice>{error}</Notice>}
       {done && <Notice tone="success">{done}</Notice>}
-      <Panel title="Received, not yet deposited">
+      {list && <FigureStrip label="Checks at a glance" figures={[
+        { label: 'On hand', value: peso(list.totalCents), icon: 'cheque', note: `${list.checks.length} ${list.checks.length === 1 ? 'check' : 'checks'}` },
+        { label: 'Oldest on hand', value: list.checks.length ? `${Math.max(...list.checks.map((c) => c.days))} days` : '—', icon: 'clock', warn: list.checks.some((c) => c.days > 7), note: list.checks.some((c) => c.days > 7) ? 'Deposit checks within the week' : 'Since it was received' },
+        { label: 'Returned by the bank', value: String(list.checks.filter((c) => c.returned).length), icon: 'undo', warn: list.checks.some((c) => c.returned), note: 'Back on hand to collect again' },
+        ...(list.ledgerCents !== null ? [{ label: 'In the books', value: peso(list.ledgerCents), icon: 'stages' as const, warn: difference !== 0, good: difference === 0, note: difference === 0 ? 'Matches the list' : `${peso(Math.abs(difference))} ${difference > 0 ? 'more' : 'less'} than the list` }] : []),
+      ]} />}
+      <Card title="Received, not yet deposited" icon="cheque" note="Newest first">
         {list && list.checks.length === 0 && <p className="text-sm text-slate-500">No customer check is on hand.</p>}
         {list && list.checks.length > 0 && (
           <div className="overflow-x-auto">
             <Paged rows={newestFirst(list.checks, (c) => c.receivedOn)}>{(page) => (<table className="w-full text-sm">
-              <thead className="text-left text-slate-500">
-                <tr>{depositor && <th />}<th className="py-1">Received</th><th className="text-right">Days</th><th>Customer</th><th>Check no.</th><th>Bank</th><th>Check date</th><th className="text-right">Amount</th><th>Collection</th></tr>
+              <thead className={TABLE_HEAD}>
+                <tr>{depositor && <th />}<th className="py-2">Received</th><th className="text-right">Days</th><th>Customer</th><th>Check no.</th><th>Bank</th><th>Check date</th><th className="text-right">Amount</th><th>Collection</th></tr>
               </thead>
               <tbody>
                 {page.map((c) => (
                   <tr key={checkKey(c)} className="border-t border-slate-100">
                     {depositor && <td><input type="checkbox" aria-label={`Deposit check no. ${c.checkNumber}`} checked={keys.has(checkKey(c))} onChange={() => toggle(checkKey(c))} /></td>}
-                    <td className="py-1">{c.receivedOn}</td>
-                    <td className="text-right tabular-nums">{c.days}</td>
+                    <td className="whitespace-nowrap py-2">{showDate(c.receivedOn)}</td>
+                    <td className={`text-right tabular-nums ${c.days > 7 ? 'font-semibold text-red-600' : ''}`}>{c.days}</td>
                     <td>{c.customerName}</td>
                     <td>{c.checkNumber}{c.returned && <span className="block text-xs text-amber-800">Returned by the bank ({c.returned.number})</span>}</td>
                     <td>{c.bank}</td>
@@ -94,10 +101,10 @@ export function ChecksOnHand({ me }: { me: Me }) {
         {difference !== 0 && (
           <Notice tone="warning">The books hold {peso(Math.abs(difference))} {difference > 0 ? 'more' : 'less'} in Checks on hand than this list: an opening balance, or money moved in or out of Checks on hand other than by a collection or a deposit from this screen. Ask the accountant to look at the cash book.</Notice>
         )}
-      </Panel>
+      </Card>
 
       {depositor && list && list.checks.length > 0 && (
-        <Panel title="Deposit">
+        <Card title="Deposit" icon="bank">
           <div className="flex flex-wrap items-end gap-3">
             <Field label="Bank">
               <select aria-label="Deposit to bank" className={inputClass} value={bank} onChange={(e) => setBank(e.target.value)}>
@@ -108,13 +115,13 @@ export function ChecksOnHand({ me }: { me: Me }) {
             <p className="text-sm">Ticked: {pick.refs.length} · <span className="font-semibold tabular-nums">{peso(pick.totalCents)}</span></p>
             <Button tone="primary" disabled={pick.refs.length === 0 || !bank} onClick={openDeposit}>Deposit the ticked checks</Button>
           </div>
-        </Panel>
+        </Card>
       )}
 
       {can(me, 'col.checks.return') && atBank.length > 0 && (
-        <Panel title="Deposited checks (if the bank returns one)">
+        <Card title="Deposited checks (if the bank returns one)" icon="undo">
           <Paged rows={newestFirst(atBank, (c) => c.deposit.date)}>{(page) => (<table className="w-full text-sm">
-            <thead className="text-left text-slate-500"><tr><th className="py-1">Deposited</th><th>Customer</th><th>Check no.</th><th>Bank</th><th className="text-right">Amount</th><th /></tr></thead>
+            <thead className={TABLE_HEAD}><tr><th className="py-2">Deposited</th><th>Customer</th><th>Check no.</th><th>Bank</th><th className="text-right">Amount</th><th /></tr></thead>
             <tbody>
               {page.map((c) => (
                 <tr key={checkKey(c)} className="border-t border-slate-100">
@@ -126,7 +133,7 @@ export function ChecksOnHand({ me }: { me: Me }) {
               ))}
             </tbody>
           </table>)}</Paged>
-        </Panel>
+        </Card>
       )}
 
       {confirm && <DepositDialog preview={confirm} onRecord={deposit} onClose={() => setConfirm(null)} />}

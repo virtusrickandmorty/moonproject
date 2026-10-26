@@ -6,7 +6,9 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type AssetPage as AssetData, type AssetRow, type AssetStatus, type DepreciationGaps, type DocTypeInfo } from '../../api.ts';
-import { Loading, Button, Notice, Panel, StatusChip, inputClass, peso, searchClass, searchRowClass } from '../../components/ui.tsx';
+import { Loading, Button, Notice, StatusChip, inputClass, peso, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
+import { Card, FigureStrip, PageHead, TABLE_HEAD } from '../../components/Figures.tsx';
+import { TickBar } from '../../components/charts.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { monthLabel } from '../TAX/bir.ts';
@@ -42,14 +44,21 @@ export function Assets({ docTypes }: { docTypes: DocTypeInfo[] }) {
   const shown = filterAssets(rows, search, status);
   const t = onTheBooks(rows);
   return (
-    <div className="max-w-6xl space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="flex-1 text-2xl font-semibold">Fixed assets</h1>
-        {mayPost(docTypes, 'fa.depreciation') && <Button tone="primary" onClick={() => setRunning(true)}>Run depreciation</Button>}
-        {mayPost(docTypes, 'fa.buy') && <Link to={docPath('fa.buy', '/new')} className={link}>Record a purchase</Link>}
-      </div>
+    <div className="space-y-4">
+      <PageHead title="Fixed assets" sub="Equipment, vehicles and other things the shop owns, and how much of their cost is used up each month."
+        actions={<>
+          {mayPost(docTypes, 'fa.buy') && <Link to={docPath('fa.buy', '/new')} className={link}>Record a purchase</Link>}
+          {mayPost(docTypes, 'fa.depreciation') && <Button tone="primary" onClick={() => setRunning(true)}>Run depreciation</Button>}
+        </>} />
+      <FigureStrip label="Fixed assets at a glance" figures={[
+        { label: 'On the books', value: String(t.count), icon: 'stages', note: `${rows.filter((a) => a.status === 'in service').length} in service` },
+        { label: 'Cost', value: peso(t.costCents), icon: 'money' },
+        { label: 'Used up so far', value: peso(t.accumulatedCents), icon: 'trend', note: 'Accumulated depreciation',
+          side: t.costCents > 0 ? <TickBar parts={[{ share: t.accumulatedCents / t.costCents, tone: 'bg-slate-700' }]} ticks={20} height="h-5" label={`${Math.round((t.accumulatedCents / t.costCents) * 100)}% of the cost used up`} /> : undefined },
+        { label: 'Book value', value: peso(t.bookValueCents), icon: 'wallet' },
+        { label: 'Months not run', value: String(gaps.months.length), icon: 'alert', warn: gaps.months.length > 0, note: gaps.months.length ? 'Run the depreciation for them' : 'Every month is run' },
+      ]} />
       <GapWarning gaps={gaps} />
-      <p className="text-sm">On the books: <b>{t.count}</b> asset{t.count === 1 ? '' : 's'} · cost <b className="tabular-nums">{peso(t.costCents)}</b> · accumulated depreciation <b className="tabular-nums">{peso(t.accumulatedCents)}</b> · book value <b className="tabular-nums">{peso(t.bookValueCents)}</b></p>
       <div className={searchRowClass}>
         <input aria-label="Search assets" placeholder="Search number, description or class" className={`${inputClass} ${searchClass}`} value={search} onChange={(e) => setSearch(e.target.value)} />
         <select aria-label="Status" className={`${inputClass} max-w-48`} value={status} onChange={(e) => setStatus(e.target.value as AssetStatus | 'all')}>
@@ -57,21 +66,23 @@ export function Assets({ docTypes }: { docTypes: DocTypeInfo[] }) {
           {STATUSES.map((s) => <option key={s} value={s}>{STATUS_WORDS[s]}</option>)}
         </select>
       </div>
-      {shown.length === 0 ? <p className="text-slate-500">{rows.length === 0 ? 'No fixed asset is recorded yet.' : 'No asset matches.'}</p> : (
-        <Paged rows={shown}>{(page) => (<table className="w-full text-sm">
-          <thead className="text-left text-slate-500"><tr><th>Asset</th><th>Class</th><th>Bought</th><th className="text-right">Cost</th><th className="text-right">Accumulated depreciation</th><th className="text-right">Book value</th><th>Status</th></tr></thead>
+      <Card title="The register" icon="stages" note={`${shown.length} shown`}>
+      {shown.length === 0 ? <p className="text-sm text-slate-500">{rows.length === 0 ? 'No fixed asset is recorded yet.' : 'No asset matches.'}</p> : (
+        <Paged rows={shown}>{(page) => (<div className="overflow-x-auto"><table className="w-full text-sm">
+          <thead className={TABLE_HEAD}><tr><th className="py-2">Asset</th><th>Class</th><th>Bought</th><th className="text-right">Cost</th><th className="text-right">Accumulated depreciation</th><th className="text-right">Book value</th><th>Status</th></tr></thead>
           <tbody>
             {page.map((a) => (
               <tr key={a.id} className={`border-t border-slate-100 ${a.status === 'cancelled' ? 'text-slate-400 line-through' : ''}`}>
-                <td className="py-1"><Link to={`/fa/assets/${a.id}`} className="underline">{a.number}</Link> {a.description}</td>
-                <td className="py-1">{a.className}</td><td className="py-1">{a.acquiredOn}</td>
+                <td className="py-2"><Link to={`/fa/assets/${a.id}`} className="font-medium text-indigo-700 hover:underline">{a.number}</Link> {a.description}</td>
+                <td className="py-1">{a.className}</td><td className="py-1">{showDate(a.acquiredOn)}</td>
                 <td className={num}>{peso(a.costCents ?? 0)}</td><td className={num}>{peso(a.accumulatedCents ?? 0)}</td><td className={num}>{peso(a.bookValueCents ?? 0)}</td>
                 <td className="py-1"><span className={chip(a.status)}>{STATUS_WORDS[a.status]}</span></td>
               </tr>
             ))}
           </tbody>
-        </table>)}</Paged>
+        </table></div>)}</Paged>
       )}
+      </Card>
       {running && <DepreciationRun gaps={gaps} onClose={() => setRunning(false)} onDone={() => (setRunning(false), load())} />}
     </div>
   );
@@ -85,27 +96,34 @@ export function AssetPage({ docTypes, params }: { docTypes: DocTypeInfo[]; param
   const [dialog, setDialog] = useState<'run' | 'dispose' | null>(null);
   const load = useCallback(() => void Promise.all([api.asset(id), api.depreciationGaps()]).then(([x, g]) => (setA(x), setGaps(g), setError('')), (e: Error) => setError(e.message)), [id]);
   useEffect(load, [load]);
+  useLiveReload(load); // a run or a disposal recorded on another computer
   if (error) return <Notice>{error}</Notice>;
   if (!a || !gaps) return <Loading />;
   const months = monthRows(a);
   const done = () => (setDialog(null), load());
   return (
-    <div className="max-w-4xl space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <Crumb label={a.number} /><h1 className="text-2xl font-semibold">{a.number} {a.description}</h1>
-        <span className={chip(a.status)}>{STATUS_WORDS[a.status]}</span>
-        <span className="flex-1" />
-        <Link to="/fa/assets" className="text-sm underline">All fixed assets</Link>
-      </div>
+    <div className="space-y-4">
+      <Crumb label={a.number} />
+      <PageHead title={<>{a.number} {a.description} <span className={`ml-1 align-middle ${chip(a.status)}`}>{STATUS_WORDS[a.status]}</span></>}
+        sub={`${a.className} · bought ${showDate(a.acquiredOn)}${a.location ? ` · ${a.location}` : ''}`}
+        actions={<>
+          {canDispose(a) && mayPost(docTypes, 'fa.disposal') && <Button onClick={() => setDialog('dispose')}>Dispose of this asset</Button>}
+          {canDispose(a) && mayPost(docTypes, 'fa.depreciation') && <Button tone="primary" onClick={() => setDialog('run')}>Run depreciation</Button>}
+          <Link to="/fa/assets" className="self-center text-sm underline">All fixed assets</Link>
+        </>} />
+      <FigureStrip label="This asset at a glance" figures={[
+        { label: 'Cost', value: peso(a.costCents), icon: 'money' },
+        { label: 'Used up so far', value: peso(a.accumulatedCents), icon: 'trend', note: `${peso(a.monthlyChargeCents)} a month`,
+          side: a.costCents > a.residualCents ? <TickBar parts={[{ share: a.accumulatedCents / (a.costCents - a.residualCents), tone: 'bg-slate-700' }]} ticks={20} height="h-5" label={`${Math.round((a.accumulatedCents / (a.costCents - a.residualCents)) * 100)}% used up`} /> : undefined },
+        { label: 'Book value', value: peso(a.bookValueCents), icon: 'wallet', note: `Ends at ${peso(a.residualCents)}` },
+        { label: 'Life', value: `${a.lifeMonths} months`, icon: 'calendar' },
+        { label: 'Months not run', value: String(a.missingMonths.length), icon: 'alert', warn: a.missingMonths.length > 0, note: a.missingMonths.length ? 'Run the depreciation' : 'Up to date' },
+      ]} />
       {a.missingMonths.length > 0 && <Notice tone="warning">{gapWarning(a.missingMonths)}</Notice>}
-      <div className="flex flex-wrap gap-2">
-        {canDispose(a) && mayPost(docTypes, 'fa.depreciation') && <Button tone="primary" onClick={() => setDialog('run')}>Run depreciation</Button>}
-        {canDispose(a) && mayPost(docTypes, 'fa.disposal') && <Button onClick={() => setDialog('dispose')}>Dispose of this asset</Button>}
-      </div>
-      <Panel title="Details">
+      <Card title="Details" icon="draft">
         <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
           <dt className="text-slate-500">Class</dt><dd>{a.className}</dd>
-          <dt className="text-slate-500">Bought</dt><dd>{a.acquiredOn}</dd>
+          <dt className="text-slate-500">Bought</dt><dd>{showDate(a.acquiredOn)}</dd>
           <dt className="text-slate-500">Where it is</dt><dd>{a.location ?? '—'}</dd>
           <dt className="text-slate-500">Cost</dt><dd className="tabular-nums">{peso(a.costCents)}</dd>
           <dt className="text-slate-500">Value at the end of its life</dt><dd className="tabular-nums">{peso(a.residualCents)}</dd>
@@ -113,16 +131,16 @@ export function AssetPage({ docTypes, params }: { docTypes: DocTypeInfo[]; param
           <dt className="text-slate-500">Accumulated depreciation</dt><dd className="tabular-nums">{peso(a.accumulatedCents)}</dd>
           <dt className="text-slate-500">Book value</dt><dd className="font-semibold tabular-nums">{peso(a.bookValueCents)}</dd>
         </dl>
-      </Panel>
-      <Panel title="Depreciation, month by month">
+      </Card>
+      <Card title="Depreciation, month by month" icon="calendar">
         {months.length === 0 ? <p className="text-sm text-slate-500">No depreciation has been recorded for this asset yet.</p> : (
-          <table className="w-full text-sm">
-            <thead className="text-left text-slate-500"><tr><th>Month</th><th>Run</th><th className="text-right">Charged</th><th className="text-right">Accumulated after</th></tr></thead>
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead className={TABLE_HEAD}><tr><th className="py-2">Month</th><th>Run</th><th className="text-right">Charged</th><th className="text-right">Accumulated after</th></tr></thead>
             <tbody>
               {months.map((m) => m.run ? (
                 <tr key={m.month} className="border-t border-slate-100">
                   <td className="py-1">{monthLabel(m.month)}</td>
-                  <td className="py-1"><Link to={docPath('fa.depreciation', `/${m.run.documentId}`)} className="underline">{m.run.documentNumber}</Link></td>
+                  <td className="py-1"><Link to={docPath('fa.depreciation', `/${m.run.documentId}`)} className="text-indigo-700 hover:underline">{m.run.documentNumber}</Link></td>
                   <td className={num}>{peso(m.run.chargeCents)}</td><td className={num}>{peso(m.run.accumulatedCents)}</td>
                 </tr>
               ) : (
@@ -131,21 +149,21 @@ export function AssetPage({ docTypes, params }: { docTypes: DocTypeInfo[]; param
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
-      </Panel>
-      <Panel title="Documents">
-        <table className="w-full text-sm">
+      </Card>
+      <Card title="Documents" icon="draft">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
           <tbody>
             {a.documents.map((d) => (
               <tr key={d.id} className="border-t border-slate-100">
-                <td className="py-1"><Link to={docPath(d.docType, `/${d.id}`)} className="underline">{d.number}</Link></td>
-                <td className="py-1 text-slate-600">{DOC_WORDS[d.docType] ?? d.docType}</td><td className="py-1">{d.date}</td><td className="py-1">{d.status !== 'posted' && <StatusChip status={d.status} />}</td>
+                <td className="py-2"><Link to={docPath(d.docType, `/${d.id}`)} className="text-indigo-700 hover:underline">{d.number}</Link></td>
+                <td className="py-1 text-slate-600">{DOC_WORDS[d.docType] ?? d.docType}</td><td className="py-1">{showDate(d.date)}</td><td className="py-1">{d.status !== 'posted' && <StatusChip status={d.status} />}</td>
               </tr>
             ))}
           </tbody>
-        </table>
-      </Panel>
+        </table></div>
+      </Card>
       {dialog === 'run' && <DepreciationRun gaps={gaps} onClose={() => setDialog(null)} onDone={done} />}
       {dialog === 'dispose' && <DisposeAsset assetId={a.id} label={`${a.number} ${a.description}`} onClose={() => setDialog(null)} onDone={done} />}
     </div>
