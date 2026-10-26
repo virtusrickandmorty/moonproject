@@ -2,30 +2,60 @@
  * Live changes (the owner's request, Oct 2026): one stream per signed-in browser (GET /api/live) says when anything was
  * recorded or changed, by anyone on any computer, and which kinds of record. Screens that show records reload what they
  * show (useLiveChange), quietly, a moment later; a form being typed in is never touched. After a dropped connection
- * (Wi-Fi, a sleeping laptop) the stream comes back by itself and every screen reloads once, to catch up.
+ * (Wi-Fi, a sleeping laptop, the server restarting after an update) the stream comes back by itself and every screen
+ * reloads once, to catch up.
  */
 import { useEffect, useRef, useState } from 'react';
 
 type Listener = (types: string[]) => void;
 const listeners = new Set<Listener>();
 let source: EventSource | null = null;
+let wanted = false;
+let seen = false;
+let retry: ReturnType<typeof setTimeout> | undefined;
+let waitMs = 0;
 
 const tell = (types: string[]) => { for (const l of [...listeners]) l(types); };
 
-/** Opens the stream (the shell does, once signed in). Nothing happens where the browser has no EventSource (tests). */
-export function startLive(): void {
-  if (source || typeof EventSource === 'undefined') return;
-  let seen = false;
-  source = new EventSource('/api/live');
-  source.addEventListener('change', (e) => {
+/**
+ * After a stream gives up, the wait before opening a new one: 2 seconds, doubling to at most 30. A browser retries a
+ * dropped stream by itself, but not one that got an error answer: while the server restarts after an update, Cloudflare
+ * answers 502 for a few seconds, and every open screen then stayed still until reloaded (the owner's report, 26 Oct 2026).
+ */
+export const RETRY_FIRST_MS = 2_000;
+export const RETRY_MOST_MS = 30_000;
+
+function open(): void {
+  const s = new EventSource('/api/live');
+  source = s;
+  s.addEventListener('change', (e) => {
     try { tell((JSON.parse((e as MessageEvent<string>).data) as { types: string[] }).types); } catch { tell(['*']); }
   });
   // The first hello opens the stream; a later one is a reconnect: what changed meanwhile is not known, so all reload.
-  source.addEventListener('hello', () => { if (seen) tell(['*']); seen = true; });
+  s.addEventListener('hello', () => { waitMs = 0; if (seen) tell(['*']); seen = true; });
+  s.addEventListener('error', () => {
+    if (s.readyState !== EventSource.CLOSED || source !== s || !wanted) return; // still retrying by itself, or not ours any more
+    s.close();
+    source = null;
+    waitMs = waitMs ? Math.min(waitMs * 2, RETRY_MOST_MS) : RETRY_FIRST_MS;
+    retry = setTimeout(() => { retry = undefined; if (wanted && !source) open(); }, waitMs);
+  });
 }
 
-/** Closes the stream (signing out). */
+/** Opens the stream (the shell does, once signed in), and keeps it open. Nothing happens where the browser has no EventSource (tests). */
+export function startLive(): void {
+  if (wanted || typeof EventSource === 'undefined') return;
+  wanted = true;
+  seen = false;
+  waitMs = 0;
+  open();
+}
+
+/** Closes the stream (signing out), and stops opening it again. */
 export function stopLive(): void {
+  wanted = false;
+  clearTimeout(retry);
+  retry = undefined;
   source?.close();
   source = null;
 }
