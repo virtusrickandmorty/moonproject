@@ -28,6 +28,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Money', label: 'Bank reconciliation', path: '/cash/recon', permission: 'cash.recon.view' },
   { group: 'Money', label: 'Checks on hand', path: '/col/checks', permission: 'col.checks.view' },
   { group: 'Sales', label: 'Post-dated checks', path: '/col/pdcs', permission: 'col.checks.view' },
+  { group: 'Sales', label: 'Deposits not on a job order', path: '/col/deposits', permission: 'col.view' },
   { group: 'Money', label: 'Owners and officers', path: '/eq/people', permission: 'eq.people.view' },
   { group: 'Money', label: 'Loans', path: '/loan/loans', permission: 'loan.loans.view' },
   { group: 'Money', label: 'Fixed assets', path: '/fa/assets', permission: 'fa.assets.view' },
@@ -209,7 +210,7 @@ export const SUBS: Partial<Record<MenuGroup, [sub: string, keys: string[]][]>> =
   Sales: [
     ['Customers & quotes', ['/cus', 'quo.quotation', '/cat', '/com', '/sup', '/aia']],
     ['Job orders & release', ['jo.job_order', 'jo.release', 'jo.invoice_record', 'jo.dp_invoice', 'jo.opening', '/alt']],
-    ['Collections', ['col.', '/col/pdcs']],
+    ['Collections', ['col.', '/col/pdcs', '/col/deposits']],
     ['Shop & POS', ['/pos', 'qs.sale', '/shp', 'shp.']], // shp.: the shop's month-end stock value (the owner's request, 26 Oct 2026)
     ['TPL services', ['/tpl', 'tpl.']],
   ],

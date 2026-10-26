@@ -13,7 +13,7 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { CustomerPicker, Errors, useLive, type Picked } from './parts.tsx';
-import { creditMemoInput, cwtOnlyInput, emptyCreditMemo, emptyCwtOnly, emptyForfeit, emptyWriteOff, forfeitInput, writeOffInput } from './credits.ts';
+import { creditMemoInput, cwtOnlyInput, emptyCreditMemo, emptyCwtOnly, emptyForfeit, emptyWriteOff, forfeitInput, writeOffInput, NOT_ON_A_JOB_ORDER } from './credits.ts';
 
 type Invoice = CustomerInvoices['invoices'][number];
 const invoiceLabel = (i: Invoice) => `Invoice no. ${i.invoiceNumber} · ${i.number}${i.jobOrderNumber ? ` · ${i.jobOrderNumber}` : ' · quick sale'} · ${showDate(i.businessDate)}`;
@@ -198,28 +198,40 @@ export function ForfeitForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
   const [held, setHeld] = useState<Forfeitable | null>(null);
   const [v, setV] = useState(emptyForfeit);
   const r = useRecord(type, mode, (d) => {
-    const s = d.input as { jobOrderId: string; amountCents: number; reason: string };
+    const s = d.input as { jobOrderId?: string; customerId?: string; amountCents: number; reason: string };
     setCustomer(customerOf(d));
-    setV({ jobOrderId: s.jobOrderId, amount: formatPesos(s.amountCents), reason: s.reason });
+    setV({ jobOrderId: s.jobOrderId ?? NOT_ON_A_JOB_ORDER, amount: formatPesos(s.amountCents), reason: s.reason });
   });
+  // ?customer=<id>: from Deposits not on a job order, the customer and that choice filled in (26 Oct 2026).
+  useEffect(() => {
+    const id = mode.kind === 'new' ? new URLSearchParams(window.location.search).get('customer') : null;
+    if (id) api.customer(id).then((c) => { setCustomer({ id: c.id, name: c.display_name }); setV((x) => ({ ...x, jobOrderId: NOT_ON_A_JOB_ORDER })); }, () => undefined);
+  }, []);
   useEffect(() => {
     setHeld(null);
     if (customer) api.forfeitable(customer.id).then(setHeld, r.fail);
   }, [customer?.id]);
-  const { input, errors } = forfeitInput(v);
+  const { input, errors } = forfeitInput(v, customer?.id ?? '');
   const live = useLive(JSON.stringify(input), errors.length === 0, () => r.preview(input));
   const chosen = held?.jobOrders.find((jo) => jo.id === v.jobOrderId);
+  const u = held?.unapplied;
+  const keepAll = v.jobOrderId === NOT_ON_A_JOB_ORDER ? u?.maturedCents ?? 0 : chosen?.depositsHeldCents ?? 0;
   if (r.gate) return r.gate;
   return (
     <Shell type={type} title={r.title('Keep an abandoned order’s deposit')} top={r.top} live={live} errors={errors} touched={r.touched} action="Forfeit" danger onRecord={() => r.ask(input, errors)} dialog={r.dialog}>
-      <Notice tone="info">Only when the customer abandoned the order and the terms say the deposit is not refunded. The job order is marked abandoned: nothing more is released or invoiced on it.</Notice>
+      <Notice tone="info">Only when the customer abandoned the order and the terms say the deposit is not refunded. The job order is marked abandoned: nothing more is released or invoiced on it. A deposit not on a job order (a layout fee, say) can be kept once it is {u?.days ?? 30} days old.</Notice>
       <Panel title="Customer">
         <CustomerPicker value={customer} onChange={(c) => (setCustomer(c), setV({ ...v, jobOrderId: '' }))} />
       </Panel>
       {customer && (
         <Panel title="Which job order?">
-          {held && held.jobOrders.length === 0 && <p className="text-sm text-slate-500">No deposit is held for {customer.name}.</p>}
+          {held && held.jobOrders.length === 0 && (u?.heldCents ?? 0) === 0 && <p className="text-sm text-slate-500">No deposit is held for {customer.name}.</p>}
           <div role="radiogroup" aria-label="Which job order?" className="space-y-2">
+            {u && u.heldCents > 0 && (
+              <Choice picked={v.jobOrderId === NOT_ON_A_JOB_ORDER} onPick={() => setV({ ...v, jobOrderId: NOT_ON_A_JOB_ORDER })} disabled={u.maturedCents === 0 && v.jobOrderId !== NOT_ON_A_JOB_ORDER}
+                label="Deposit not on a job order" right={`${formatPesos(u.heldCents)} held · ${formatPesos(u.maturedCents)} can be kept`}
+                note={u.maturedCents < u.heldCents && u.nextMatures ? `${u.maturedCents ? 'The rest' : 'It'} can be kept from ${showDate(u.nextMatures)} (${u.days} days after it was paid). Until then it is their credit for a job order.` : null} />
+            )}
             {held?.jobOrders.map((jo) => (
               <Choice key={jo.id} picked={v.jobOrderId === jo.id} onPick={() => setV({ ...v, jobOrderId: jo.id })} disabled={!!jo.blocked && jo.id !== v.jobOrderId}
                 label={`${jo.number} · ${jo.status === 'cancelled' ? 'Cancelled' : jo.stageLabel}`} right={`${formatPesos(jo.depositsHeldCents)} held`} note={jo.blocked} />
@@ -227,10 +239,10 @@ export function ForfeitForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
           </div>
         </Panel>
       )}
-      <Field label="Amount kept" required hint={chosen ? `All of it is ${peso(chosen.depositsHeldCents)}` : undefined}>
+      <Field label="Amount kept" required hint={keepAll ? `All that can be kept is ${peso(keepAll)}` : undefined}>
         <input inputMode="decimal" placeholder="0.00" className={`${inputClass} max-w-48 text-right`} value={v.amount} onChange={(e) => setV({ ...v, amount: e.target.value })} />
       </Field>
-      {chosen && <Button onClick={() => setV({ ...v, amount: formatPesos(chosen.depositsHeldCents) })}>All of it</Button>}
+      {keepAll > 0 && <Button onClick={() => setV({ ...v, amount: formatPesos(keepAll) })}>All of it</Button>}
       <Field label="Why is it kept? (at least 10 characters)" required>
         <textarea rows={2} className={inputClass} value={v.reason} onChange={(e) => setV({ ...v, reason: e.target.value })} />
       </Field>
@@ -281,6 +293,6 @@ export const forfeitView: ViewParts = {
   noEdit: true,
   extra: (d) => {
     const x = d.doc as { customerName: string; jobOrderNumber: string; incomeCents: number; vatCents: number; vatable: boolean; reason: string };
-    return <><Rows rows={[['Customer', x.customerName], ['Job order', `${x.jobOrderNumber} (abandoned)`], ['Other income', x.incomeCents], ['Output VAT', x.vatable ? x.vatCents : 'None'], ['Reason', x.reason]]} /><details className="text-sm text-slate-600"><summary className="cursor-pointer">Policy note</summary>Go-live decision ACC-15 covers VAT on forfeited deposits.</details></>;
+    return <><Rows rows={[['Customer', x.customerName], ['Job order', x.jobOrderNumber ? `${x.jobOrderNumber} (abandoned)` : 'None: a deposit not on a job order'], ['Other income', x.incomeCents], ['Output VAT', x.vatable ? x.vatCents : 'None'], ['Reason', x.reason]]} /><details className="text-sm text-slate-600"><summary className="cursor-pointer">Policy note</summary>Go-live decision ACC-15 covers VAT on forfeited deposits.</details></>;
   },
 };

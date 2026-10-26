@@ -4,7 +4,8 @@ import type { AppDeps } from '../../app.ts';
 import { customerRef } from '../CUS/public.ts';
 import { STAGE_LABELS, awaitingInvoice, currentStage, isAbandoned, jobOrdersOf, joMoney, liveReplacementOf } from '../JO/public.ts';
 import { openSalesOf } from '../QS/public.ts';
-import { depositsHeld } from './ledger.ts';
+import { DEPOSIT_MATURES_DAYS, addDays, customersWithUnappliedDeposits, depositsHeld, unappliedDeposits } from './ledger.ts';
+import { today } from '../../platform/clock.ts';
 import { invoicesOf, memosOn, owedCents, writeOffsOn } from './credits.ts';
 import { checkRoutes } from './check-routes.ts';
 
@@ -72,8 +73,23 @@ export function colRoutes(app: FastifyInstance, deps: AppDeps): void {
         : awaitingInvoice(db, jo.id).length > 0 ? 'A release still waits for its invoice.' : null;
       return { ...jo, stageLabel: abandoned ? 'Abandoned' : STAGE_LABELS[stage], blocked };
     });
-    return { customerId: c.id, customerName: c.display_name, jobOrders };
+    // Deposits not on a job order (26 Oct 2026): kept once DEPOSIT_MATURES_DAYS old.
+    const u = unappliedDeposits(db, c.id, today(deps.clock));
+    return { customerId: c.id, customerName: c.display_name, jobOrders, unapplied: { ...u, days: DEPOSIT_MATURES_DAYS } };
   });
+
+  /**
+   * Deposits not on a job order (the owner's request, 26 Oct 2026): every customer with money paid before any job order
+   * (a layout fee deposit, and other deposits), when it was paid and when it matures, oldest first. It is credited to a
+   * job order with a deposit transfer, or forfeited once DEPOSIT_MATURES_DAYS old.
+   */
+  app.get('/api/col/unapplied-deposits', { config: { permission: 'col.view' } }, async () => ({
+    days: DEPOSIT_MATURES_DAYS,
+    rows: customersWithUnappliedDeposits(db, today(deps.clock)).map((u) => {
+      const c = customerRef(db, u.customerId);
+      return { ...u, customerName: c?.display_name ?? '?', customerCode: c?.code ?? '', maturesOn: u.firstPaid ? addDays(u.firstPaid, DEPOSIT_MATURES_DAYS) : null };
+    }),
+  }));
 
   /**
    * For the deposit transfer form (D5 DEP-XFER, D6): money held (per JO, with where an edited JO lives on now, and

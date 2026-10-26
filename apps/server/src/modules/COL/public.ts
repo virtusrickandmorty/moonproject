@@ -146,3 +146,6 @@ export function collectionsBetween(db: Db, from: string, to: string) {
 export const pdcsDue = (db: Db, today: string) => listPdcs(db, today).filter((p) => p.status === 'due');
 /** Checks on hand dated today or earlier: ready to deposit (the notifications bell). */
 export const checksToDeposit = (db: Db, today: string) => checksOnHand(db).filter((c) => c.checkDate <= today);
+
+/** Deposits not on a job order, per customer, and how many days until they may be forfeited (the bell, DASH). */
+export { DEPOSIT_MATURES_DAYS, customersWithUnappliedDeposits } from './ledger.ts';

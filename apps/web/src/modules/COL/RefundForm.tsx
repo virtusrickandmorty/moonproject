@@ -55,7 +55,7 @@ export function RefundForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }
     ? [
         ...held.jobOrders.map((jo) => ({ key: jo.id, label: `Deposit for ${jo.number}${jo.status === 'cancelled' ? ' (cancelled job order)' : ''}`, cents: plus(jo.id, jo.depositsHeldCents) })),
         ...(back && back.key !== UNAPPLIED && !held.jobOrders.some((jo) => jo.id === back.key) ? [{ key: back.key, label: `Deposit for ${original!.jobOrderNumber}`, cents: back.cents }] : []),
-        { key: UNAPPLIED, label: 'Unapplied payments', cents: plus(UNAPPLIED, held.unappliedCents) },
+        { key: UNAPPLIED, label: 'Deposit not on a job order', cents: plus(UNAPPLIED, held.unappliedCents) },
       ].filter((c) => c.cents > 0)
     : [];
 

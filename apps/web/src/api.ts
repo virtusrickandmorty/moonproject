@@ -243,7 +243,11 @@ export interface CustomerInvoices {
 export interface Forfeitable {
   customerId: string; customerName: string;
   jobOrders: { id: string; number: string; status: 'posted' | 'cancelled'; depositsHeldCents: number; stageLabel: string; blocked: string | null }[];
+  /** Deposits not on a job order (26 Oct 2026): held, matured (kept once `days` old), and when the next part matures. */
+  unapplied: { heldCents: number; maturedCents: number; firstPaid: string | null; nextMatures: string | null; days: number };
 }
+/** GET /api/col/unapplied-deposits: customers with deposits not on a job order, oldest payment first. */
+export interface UnappliedDepositRow { customerId: string; customerName: string; customerCode: string; heldCents: number; maturedCents: number; firstPaid: string | null; maturesOn: string | null; nextMatures: string | null }
 /** GET /api/jo/orders/:id/status, the parts the JO view shows: all derived on the server (NR-2). */
 export interface JoStatus {
   /** Made for stock (TPL, the website shop): where its finished pieces go, instead of a release slip. */
@@ -1149,6 +1153,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     transferable: (customerId: string) => call<Transferable>('GET', customer(customerId, 'transferable')),
     customerInvoices: (customerId: string) => call<CustomerInvoices>('GET', customer(customerId, 'invoices')),
     forfeitable: (customerId: string) => call<Forfeitable>('GET', customer(customerId, 'forfeitable')),
+    unappliedDeposits: () => call<{ days: number; rows: UnappliedDepositRow[] }>('GET', '/api/col/unapplied-deposits'),
     joStatus: (id: string) => call<JoStatus>('GET', `/api/jo/orders/${encodeURIComponent(id)}/status`),
     /** The job order list: the document list's rows with each balance due; its search also reads what was ordered. */
     joList: (q: DocListFilters & { status?: string; before?: string; limit?: number } = {}) =>

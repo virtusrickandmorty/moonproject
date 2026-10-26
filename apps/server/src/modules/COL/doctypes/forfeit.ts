@@ -12,6 +12,10 @@
  * new deposit is taken; with no release waiting for its invoice (refused otherwise), nothing more is invoiced either. A
  * cancelled job order's deposit can be forfeited too (D6). One recorded forfeit per job order. Cancel mirrors and puts
  * the job order back on the stage it was abandoned from.
+ * Without a job order (the owner's request, 26 Oct 2026): a customer's deposits not on a job order (a layout fee deposit
+ * paid before ordering, and other deposits) may be kept once they are DEPOSIT_MATURES_DAYS (30) days old and the customer
+ * did not order: oldest money first, only what is matured. Dr 2201 (customer, no reference) / Cr 7103 (and 2301 when
+ * VATable), as above; no job order is marked.
  */
 import { z } from 'zod';
 import fc from 'fast-check';
@@ -20,19 +24,26 @@ import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { abandon, awaitingInvoice, currentStage, isAbandoned, jobOrderRef, jobOrdersOf, joLedger, unabandon } from '../../JO/public.ts';
 import { depositVatLines, depositVatRowsOf, dpHeld, recordDepositVat, shareOf, vatLeaving, vatRow } from './deposit-vat.ts';
-import { MAX_CENTS, depositsHeld } from '../ledger.ts';
+import { DEPOSIT_MATURES_DAYS, MAX_CENTS, depositsHeld, unappliedDeposits } from '../ledger.ts';
+import { customerRef } from '../../CUS/public.ts';
 
 export const forfeitInput = z
   .object({
-    jobOrderId: z.uuid(),
+    jobOrderId: z.uuid().optional(), // the abandoned job order whose deposit is kept, or ...
+    customerId: z.uuid().optional(), // ... the customer whose deposits not on a job order are kept (matured ones only)
     amountCents: z.number().int().positive().max(MAX_CENTS), // all of the deposit, or the part the terms keep
     reason: z.string().trim().min(10).max(500),
   })
-  .strict();
+  .strict()
+  .refine((f) => !!f.jobOrderId !== !!f.customerId, { message: 'Name the job order, or the customer for deposits not on a job order.', path: ['jobOrderId'] });
 export type ForfeitInput = z.infer<typeof forfeitInput>;
 
 export interface Forfeit extends ForfeitInput {
-  jobOrderNumber: string;
+  /** Null for deposits not on a job order. */
+  jobOrderNumber: string | null;
+  /** Deposits not on a job order: the part matured (30 days or more), and when the rest matures. */
+  maturedCents?: number;
+  nextMatures?: string | null;
   customerId: string;
   customerName: string;
   heldCents: number;
@@ -62,9 +73,20 @@ export const forfeitDoc: DocTypeDef<ForfeitInput, Forfeit> = {
   inputSchema: forfeitInput,
 
   compute(input, ctx) {
-    const jo = jobOrderRef(ctx.db, input.jobOrderId);
     const vatable = settingAt(ctx.db, 'col.forfeit_vatable', ctx.businessDate);
     const vatRateBp = vatable ? settingAt(ctx.db, 'tax.vat_rate_bp', ctx.businessDate) : 0;
+    if (!input.jobOrderId) {
+      // Deposits not on a job order: money only (no downpayment VAT: that is a job order's).
+      const c = customerRef(ctx.db, input.customerId ?? '');
+      const u = unappliedDeposits(ctx.db, input.customerId ?? '', ctx.businessDate);
+      const vatCents = vatable ? vatFromGross(input.amountCents, vatRateBp).vatCents : 0;
+      return {
+        ...input, jobOrderNumber: null, customerId: input.customerId ?? '', customerName: c?.display_name ?? '?', heldCents: u.heldCents,
+        maturedCents: u.maturedCents, nextMatures: u.nextMatures, vatable, vatRateBp, vatCents, incomeCents: input.amountCents - vatCents,
+        depositVatCents: 0, depositBaseCents: 0, dpForfeitedCents: 0, dpVatCents: 0, totalCents: input.amountCents,
+      };
+    }
+    const jo = jobOrderRef(ctx.db, input.jobOrderId);
     const money = jo ? depositsHeld(ctx.db, jo.customerId, jo.id) : 0;
     const dp = jo ? dpHeld(ctx.db, jo.id) : { grossCents: 0, vatCents: 0, netCents: 0 };
     // Money held first, then downpayments already invoiced (mode C).
@@ -94,6 +116,26 @@ export const forfeitDoc: DocTypeDef<ForfeitInput, Forfeit> = {
   },
 
   validate(doc, ctx) {
+    if (!doc.jobOrderId) {
+      const issues: Issue[] = [];
+      const add = (level: Issue['level'], field: string, code: string, message: string) => issues.push({ field, code, level, message });
+      if (!customerRef(ctx.db, doc.customerId)) return [{ field: 'customerId', code: 'CUSTOMER', level: 'error', message: 'Pick the customer.' }];
+      const matured = doc.maturedCents ?? 0;
+      if (doc.amountCents > doc.heldCents) {
+        add('error', 'amountCents', 'OVER_HELD', doc.heldCents > 0 ? `Only ${formatPeso(doc.heldCents)} is held for ${doc.customerName} outside a job order.` : `No deposit is held for ${doc.customerName} outside a job order.`);
+      } else if (doc.amountCents > matured) {
+        const when = doc.nextMatures ? ` The next part can be kept from ${doc.nextMatures}.` : '';
+        add('error', 'amountCents', 'NOT_MATURE', matured > 0
+          ? `Only ${formatPeso(matured)} of ${doc.customerName}'s deposit is ${DEPOSIT_MATURES_DAYS} days old or more.${when}`
+          : `${doc.customerName}'s deposit is not ${DEPOSIT_MATURES_DAYS} days old yet.${when} Until then it is their credit for a job order.`);
+      } else if (doc.amountCents < doc.heldCents) {
+        add('warning', 'amountCents', 'PART_KEPT', `${formatPeso(doc.heldCents - doc.amountCents)} stays held for ${doc.customerName}: their credit for a job order, or to refund.`);
+      }
+      add('warning', 'amountCents', 'ACC_15', doc.vatable
+        ? `The accountant set forfeited deposits as VATable (ACC-15): ${formatPeso(doc.vatCents)} goes to output VAT. A sales invoice may be needed for it.`
+        : 'Kept as other income with no VAT, the default until the accountant decides (ACC-15). The accountant should confirm this one.');
+      return issues;
+    }
     const jo = jobOrderRef(ctx.db, doc.jobOrderId);
     if (!jo) return [{ field: 'jobOrderId', code: 'JOB_ORDER', level: 'error', message: 'Pick the job order the customer abandoned.' }];
     const issues: Issue[] = [];
@@ -121,11 +163,11 @@ export const forfeitDoc: DocTypeDef<ForfeitInput, Forfeit> = {
 
   persist(db, doc, h) {
     const who = db.prepare('SELECT posted_by AS userId, posted_at AS at FROM documents WHERE id = ?').get(h.documentId) as { userId: string; at: string };
-    const marked = abandon(db, doc.jobOrderId, `Abandoned: deposit forfeited on ${h.number}`, who);
+    const marked = doc.jobOrderId ? abandon(db, doc.jobOrderId, `Abandoned: deposit forfeited on ${h.number}`, who) : false;
     db.prepare(
       'INSERT INTO col_forfeits (document_id, customer_id, customer_name, job_order_id, vatable, vat_rate_bp, vat_cents, marked_abandoned, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-    ).run(h.documentId, doc.customerId, doc.customerName, doc.jobOrderId, doc.vatable ? 1 : 0, doc.vatRateBp, doc.vatCents, marked ? 1 : 0, doc.reason);
-    if (doc.depositVatCents || doc.depositBaseCents || doc.dpForfeitedCents) {
+    ).run(h.documentId, doc.customerId, doc.customerName, doc.jobOrderId ?? null, doc.vatable ? 1 : 0, doc.vatRateBp, doc.vatCents, marked ? 1 : 0, doc.reason);
+    if (doc.jobOrderId && (doc.depositVatCents || doc.depositBaseCents || doc.dpForfeitedCents)) {
       recordDepositVat(db, h.documentId, 'original', [vatRow({
         jobOrderId: doc.jobOrderId, customerId: doc.customerId, mode: doc.dpForfeitedCents ? 'C' : 'B', depositCents: -(doc.amountCents - doc.dpForfeitedCents),
         depositVatCents: -doc.depositVatCents, depositBaseCents: -doc.depositBaseCents, dpInvoicedCents: -doc.dpForfeitedCents, dpVatCents: -doc.dpVatCents,
@@ -138,34 +180,44 @@ export const forfeitDoc: DocTypeDef<ForfeitInput, Forfeit> = {
 
   journal(doc) {
     const party = { type: 'customer', id: doc.customerId };
+    if (!doc.jobOrderId) {
+      return {
+        memo: `Deposit not on a job order forfeited: ${doc.customerName} did not order within ${DEPOSIT_MATURES_DAYS} days`,
+        lines: [
+          { account: { role: 'CUSTOMER_DEPOSITS' }, party, debitCents: doc.amountCents, memo: 'Deposit not on a job order' },
+          { account: { role: 'OTHER_INCOME' }, creditCents: doc.incomeCents, memo: `Forfeited deposit, ${doc.customerName}` },
+          { account: { role: 'OUTPUT_VAT' }, party, creditCents: doc.vatCents, memo: `VAT on the forfeited deposit (ACC-15)` },
+        ],
+      };
+    }
     return {
       memo: `Deposit of ${doc.jobOrderNumber} forfeited: ${doc.customerName} abandoned the order`,
       lines: [
         { account: { role: 'CUSTOMER_DEPOSITS' }, party, ref: { documentId: doc.jobOrderId }, debitCents: doc.amountCents - doc.dpVatCents, memo: `Deposit for ${doc.jobOrderNumber}` },
         { account: { role: 'OTHER_INCOME' }, creditCents: doc.incomeCents, memo: `Forfeited deposit, ${doc.jobOrderNumber}` },
         { account: { role: 'OUTPUT_VAT' }, party, creditCents: doc.vatCents, memo: `VAT on the forfeited deposit (ACC-15)` },
-        ...depositVatLines(doc.customerId, doc.jobOrderId, doc.jobOrderNumber, -doc.depositVatCents),
+        ...depositVatLines(doc.customerId, doc.jobOrderId, doc.jobOrderNumber ?? '', -doc.depositVatCents),
       ],
     };
   },
 
   afterCancel(db, documentId, h) {
-    const r = db.prepare('SELECT job_order_id, marked_abandoned FROM col_forfeits WHERE document_id = ?').get(documentId) as { job_order_id: string; marked_abandoned: number };
-    if (r.marked_abandoned) unabandon(db, r.job_order_id, `${h.number} cancelled`, h);
+    const r = db.prepare('SELECT job_order_id, marked_abandoned FROM col_forfeits WHERE document_id = ?').get(documentId) as { job_order_id: string | null; marked_abandoned: number };
+    if (r.marked_abandoned && r.job_order_id) unabandon(db, r.job_order_id, `${h.number} cancelled`, h);
     return null;
   },
 
   load(db, documentId) {
     const r = db
       .prepare('SELECT f.*, d.total_cents FROM col_forfeits f JOIN documents d ON d.id = f.document_id WHERE f.document_id = ?')
-      .get(documentId) as { job_order_id: string; customer_id: string; customer_name: string; vatable: number; vat_rate_bp: number; vat_cents: number; reason: string; total_cents: number } | undefined;
+      .get(documentId) as { job_order_id: string | null; customer_id: string; customer_name: string; vatable: number; vat_rate_bp: number; vat_cents: number; reason: string; total_cents: number } | undefined;
     if (!r) throw new Error(`Forfeit ${documentId} not found`);
     const vat = depositVatRowsOf(db, documentId)[0];
     return {
-      jobOrderId: r.job_order_id,
+      ...(r.job_order_id ? { jobOrderId: r.job_order_id } : {}),
       amountCents: r.total_cents,
       reason: r.reason,
-      jobOrderNumber: jobOrderRef(db, r.job_order_id)?.number ?? '?',
+      jobOrderNumber: r.job_order_id ? (jobOrderRef(db, r.job_order_id)?.number ?? '?') : null,
       customerId: r.customer_id,
       customerName: r.customer_name,
       heldCents: 0, // as it was when recorded is not kept
@@ -181,10 +233,11 @@ export const forfeitDoc: DocTypeDef<ForfeitInput, Forfeit> = {
     };
   },
 
-  toInput: ({ jobOrderId, amountCents, reason }) => ({ jobOrderId, amountCents, reason }),
+  toInput: ({ jobOrderId, customerId, amountCents, reason }) => (jobOrderId ? { jobOrderId, amountCents, reason } : { customerId, amountCents, reason }),
 
   summary(doc) {
     const vat = doc.vatable ? ` (other income ${formatPeso(doc.incomeCents)}, output VAT ${formatPeso(doc.vatCents)})` : ' as other income, no VAT';
+    if (!doc.jobOrderNumber) return `This will keep ${formatPeso(doc.amountCents)} of ${doc.customerName}'s deposit not on a job order${vat}: they did not order within ${DEPOSIT_MATURES_DAYS} days.`;
     return `This will keep ${formatPeso(doc.amountCents)} of ${doc.customerName}'s deposit for ${doc.jobOrderNumber}${vat}, and mark ${doc.jobOrderNumber} abandoned: nothing more is released or invoiced on it.`;
   },
 

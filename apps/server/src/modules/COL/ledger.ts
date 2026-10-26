@@ -91,3 +91,65 @@ export function takenOutBy(db: Db, customerId: string, jobOrderId: string | null
     )
     .all({ c: customerId, jo: jobOrderId }) as { id: string; number: string }[];
 }
+
+/**
+ * Deposits not on a job order (the owner's rule, 26 Oct 2026): money a customer paid before any job order (a layout fee
+ * deposit, and other deposits) is their credit, for a job order if they order; once it is this many days old and they
+ * did not, it may be forfeited as other income (col.forfeit without a job order).
+ */
+export const DEPOSIT_MATURES_DAYS = 30;
+
+/** A date `days` after `date` (YYYY-MM-DD, no clock: NR-7). */
+export function addDays(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  const t = new Date(Date.UTC(y, m - 1, d + days));
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
+}
+
+export interface UnappliedDeposits {
+  heldCents: number;
+  /** Paid at least DEPOSIT_MATURES_DAYS ago and still held, oldest money used first. */
+  maturedCents: number;
+  /** When the oldest money still held was paid, and when the next part that is not matured yet matures. */
+  firstPaid: string | null;
+  nextMatures: string | null;
+}
+
+/**
+ * A customer's deposits not on a job order as of `today`: what is held, and how much of it is matured. Oldest money goes
+ * first: what was moved, refunded or forfeited out of it is taken from the oldest payments. A cancelled document counts
+ * neither way (its journal and its mirror are both left out).
+ */
+export function unappliedDeposits(db: Db, customerId: string, today: string): UnappliedDeposits {
+  const account = resolveAccount(db, { role: 'CUSTOMER_DEPOSITS' }).id;
+  const lines = db.prepare(`SELECT j.business_date AS date, l.credit_cents AS inCents, l.debit_cents AS outCents FROM journal_lines l
+      JOIN journals j ON j.id = l.journal_id LEFT JOIN documents d ON d.id = j.source_id
+      WHERE l.account_id = ? AND l.party_type = 'customer' AND l.party_id = ? AND l.ref_doc_id IS NULL AND j.sealed = 1
+        AND (d.id IS NULL OR d.status = 'posted') ORDER BY j.business_date, j.id`).all(account, customerId) as { date: string; inCents: number; outCents: number }[];
+  let out = lines.reduce((n, l) => n + l.outCents, 0);
+  const lots: { date: string; cents: number }[] = [];
+  for (const l of lines) {
+    if (l.inCents <= 0) continue;
+    const used = Math.min(out, l.inCents);
+    out -= used;
+    if (l.inCents - used > 0) lots.push({ date: l.date, cents: l.inCents - used });
+  }
+  const cutoff = addDays(today, -DEPOSIT_MATURES_DAYS);
+  const young = lots.find((l) => l.date > cutoff);
+  return {
+    heldCents: lots.reduce((n, l) => n + l.cents, 0),
+    maturedCents: lots.filter((l) => l.date <= cutoff).reduce((n, l) => n + l.cents, 0),
+    firstPaid: lots[0]?.date ?? null,
+    nextMatures: young ? addDays(young.date, DEPOSIT_MATURES_DAYS) : null,
+  };
+}
+
+/** Every customer with deposits not on a job order, as of `today`, oldest payment first. */
+export function customersWithUnappliedDeposits(db: Db, today: string): (UnappliedDeposits & { customerId: string })[] {
+  const account = resolveAccount(db, { role: 'CUSTOMER_DEPOSITS' }).id;
+  const ids = db.prepare(`SELECT l.party_id FROM journal_lines l JOIN journals j ON j.id = l.journal_id
+      WHERE l.account_id = ? AND l.party_type = 'customer' AND l.ref_doc_id IS NULL AND j.sealed = 1
+      GROUP BY l.party_id HAVING SUM(l.credit_cents - l.debit_cents) <> 0`).pluck().all(account) as string[];
+  return ids.map((customerId) => ({ customerId, ...unappliedDeposits(db, customerId, today) }))
+    .filter((c) => c.heldCents > 0).sort((a, b) => (a.firstPaid ?? '').localeCompare(b.firstPaid ?? ''));
+}

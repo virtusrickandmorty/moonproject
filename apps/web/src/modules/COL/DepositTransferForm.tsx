@@ -47,6 +47,11 @@ export function DepositTransferForm({ type, mode }: { type: DocTypeInfo; mode: F
       return;
     }
     const q = new URLSearchParams(location.search);
+    const fromCustomer = q.get('customer'); // Deposits not on a job order: "Credit to a job order" (26 Oct 2026)
+    if (fromCustomer) {
+      api.customer(fromCustomer).then((c) => { setCustomer({ id: c.id, name: c.display_name }); setFrom(UNAPPLIED); }, fail);
+      return;
+    }
     const jo = q.get('from');
     if (!jo) return;
     api.get('jo.job_order', jo).then((d) => {
