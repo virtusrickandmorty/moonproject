@@ -6,6 +6,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { AppError, conflict, newId, notFound } from '@moonproject/shared';
 import { contactInput, customerUpdate, groupInput, mergeInput, normalizePhone, personUpdate, phoneInput, sizeInput } from './schemas.ts';
+import { duplicateGroups, mergePreview, whyNotMerge } from './merge.ts';
 import { chartResponse } from './measurements.ts';
 import { auditChanges, customerFields, personalCustomerFields, validateParent, validateGroup,
   createCustomer, createGroup, createWearer, createMeasurement } from './create.ts';
@@ -100,6 +101,7 @@ export function cusRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
   app.get('/api/cus/customers/:id', { config: { permission: 'cus.view' } }, async (req) => ({
     ...get(db, 'cus_customers', id(req)),
+    mergedInto: (db.prepare('SELECT t.id, t.code, t.display_name FROM cus_customers s JOIN cus_customers t ON t.id = s.merged_into_id WHERE s.id = ?').get(id(req)) as { id: string; code: string; display_name: string } | undefined) ?? null,
     contacts: db.prepare('SELECT * FROM cus_customer_contacts WHERE customer_id = ? AND is_active = 1').all(id(req)),
     phones: db.prepare('SELECT * FROM cus_customer_phones WHERE customer_id = ? AND is_active = 1').all(id(req)),
     groups: db.prepare('SELECT * FROM cus_groups WHERE customer_id = ? ORDER BY name').all(id(req)),
@@ -260,6 +262,17 @@ export function cusRoutes(app: FastifyInstance, deps: AppDeps): void {
     }).immediate();
   });
 
+  /** What merging this customer into another would move, and what stops it now (the owner's request, 26 Oct 2026). */
+  app.get('/api/cus/customers/:id/merge-preview', { config: { permission: 'cus.merge' } }, async (req) => {
+    const into = (req.query as { into?: unknown }).into;
+    if (typeof into !== 'string' || !into) throw new AppError('VALIDATION', 'Pick the customer to keep.', 400);
+    const preview = mergePreview(db, id(req), into);
+    if (!preview) throw notFound('The customer');
+    return preview;
+  });
+  /** Active customers that look like the same one, for the owner to merge. */
+  app.get('/api/cus/duplicates', { config: { permission: 'cus.merge' } }, async () => duplicateGroups(db));
+
   app.post('/api/cus/customers/:id/merge', { config: { permission: 'cus.merge' } }, async (req) => {
     const sourceId = id(req), body = mergeInput.parse(req.body), at = timestamp();
     return db.transaction(() => {
@@ -269,6 +282,9 @@ export function cusRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (typeof targetVersion !== 'string' || !/^\d+$/.test(targetVersion)) throw new AppError('VERSION_REQUIRED', 'Reload the destination customer before merging.', 428);
       if (Number(targetVersion) !== target.version) throw conflict('VERSION_CHANGED', 'The destination customer changed. Reload it before merging.');
       if (sourceId === target.id) throw conflict('SAME_CUSTOMER', 'Choose a different customer to merge into.');
+      // Nothing open may be left behind on the duplicate: its documents stay with it (merge.ts).
+      const blockers = whyNotMerge(db, sourceId);
+      if (blockers.length) throw conflict('MERGE_BLOCKED', `${source.code} cannot be merged yet. ${blockers.join(' ')}`, blockers);
       validateParent(db, sourceId, target.id as string);
       const collisions = db.prepare(`SELECT count(*) AS n FROM cus_groups s JOIN cus_groups t
         ON t.customer_id = ? AND s.customer_id = ? AND t.is_active = 1 AND s.is_active = 1 AND t.name = s.name COLLATE NOCASE`).get(target.id, sourceId) as { n: number };

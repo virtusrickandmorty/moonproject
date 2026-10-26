@@ -119,3 +119,13 @@ export function customerPrintDetails(db: Db, id: string): { billingAddress: stri
   const phones = db.prepare('SELECT phone FROM cus_customer_phones WHERE customer_id = ? AND is_active = 1 ORDER BY created_at').pluck().all(c.id) as string[];
   return { billingAddress: c.billing_address?.trim() || null, phones: phones.map((p) => p.trim()).filter(Boolean) };
 }
+
+/**
+ * What stops a duplicate customer being merged into another (the owner's request, 26 Oct 2026): each module that keeps
+ * open work for a customer says so in plain words (JO: job orders not yet released). Money in the books is checked by
+ * CUS itself (merge.ts).
+ */
+type MergeCheck = (db: Db, customerId: string) => string[];
+const mergeChecks: MergeCheck[] = [];
+export const onMergeCheck = (check: MergeCheck): void => void mergeChecks.push(check);
+export const mergeBlockers = (db: Db, customerId: string): string[] => mergeChecks.flatMap((check) => check(db, customerId));
