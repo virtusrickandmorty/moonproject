@@ -9,11 +9,12 @@ import type { Registry } from '../documents/registry.ts';
 import { ROLES, type RoleKey } from '@moonproject/shared';
 
 /**
- * What stays the owner's even though an accountant may hold it: users and roles, backups and restores, and the shop's
- * payment settings. (The shop certificate screen has no permission: it is read only, and the certificate is made on the
+ * What stays the owner's even though an accountant may hold it: users and roles, backups and restores, the shop's
+ * payment settings, and approving purchase requests and ordering without one (the owner's decision, 26 Oct 2026: the
+ * owner or the accountant approves what staff ask to buy). (The shop certificate screen has no permission: it is read only, and the certificate is made on the
  * server PC.) Migration 0014_encoder_access.sql repeats this list.
  */
-export const OWNER_ONLY_PERMISSIONS: readonly string[] = ['sec.users.manage', 'bak.view', 'bak.run', 'bak.manage', 'bak.restore', 'shp.payment.manage', 'prd.reassign', 'img.ai'];
+export const OWNER_ONLY_PERMISSIONS: readonly string[] = ['sec.users.manage', 'bak.view', 'bak.run', 'bak.manage', 'bak.restore', 'shp.payment.manage', 'prd.reassign', 'img.ai', 'pur.request.approve', 'pur.po.without_request'];
 
 /**
  * What the departments added later start with (the owner's decisions, Oct 9, 2026; migrations 0015_purchasing_role.sql and

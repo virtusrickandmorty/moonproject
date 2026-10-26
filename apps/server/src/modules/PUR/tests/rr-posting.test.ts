@@ -3,14 +3,14 @@
  * (Posting coverage check, docs/review/posting-coverage.md.)
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { grantRole, createTestEnv, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 
 let env: TestEnv;
 let encoder: Client, accountant: Client;
 
 beforeEach(async () => {
-  env = await createTestEnv();
+  env = await createTestEnv(); grantRole(env, 'encoder', 'pur.po.without_request'); // orders here are not about purchase requests
   encoder = await env.as('encoder');
   accountant = await env.as('accountant');
 });

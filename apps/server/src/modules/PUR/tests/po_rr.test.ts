@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createTestEnv, idem, type TestEnv } from '../../../../test/helpers.ts';
+import { grantRole, createTestEnv, idem, type TestEnv } from '../../../../test/helpers.ts';
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import fc from 'fast-check';
 import { purchaseOrderDoc, type PurchaseOrderInput } from '../doctypes/purchaseOrder.ts';
@@ -9,7 +9,7 @@ import { stamp } from '../../../platform/clock.ts';
 describe('PUR PO and RR', () => {
   let env: TestEnv;
   beforeEach(async () => {
-    env = await createTestEnv();
+    env = await createTestEnv(); grantRole(env, 'encoder', 'pur.po.without_request'); // orders here are not about purchase requests
   });
 
   afterEach(async () => {

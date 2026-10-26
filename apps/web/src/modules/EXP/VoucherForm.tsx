@@ -5,10 +5,12 @@
  * paid out. Also the Edit of a recorded voucher (NR-4).
  * The money can come from up to four cash places, each with its amount and a reference; one cash place typed without an
  * amount pays whatever the server says is paid out (the receipt less the EWT).
+ * Opened from an approved purchase request ("Record as an expense", ?request=<id>; the owner's request, 26 Oct 2026), it
+ * starts with the request's purpose, its estimated total and its supplier, and pays that request. A request is optional here.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, type CashPlace, type DocTypeInfo, type Me } from '../../api.ts';
-import { Field, Panel, inputClass } from '../../components/ui.tsx';
+import { Button, Field, Panel, inputClass } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { PrintedDateField, usePrintedDate } from '../../generic/PrintedDate.tsx';
 import { formatPesos } from '@moonproject/shared';
@@ -27,6 +29,17 @@ export function VoucherForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
   // Any change to the receipt makes the server's last payout figure stale until the next live preview.
   const set = (patch: Partial<VoucherValues>) => (setV({ ...v, ...patch }), setCashCents(undefined));
   const [cashCents, setCashCents] = useState<number>();
+  const [requestNumber, setRequestNumber] = useState('');
+  useEffect(() => {
+    const wanted = mode.kind === 'new' ? new URLSearchParams(window.location.search).get('request') : null;
+    if (!wanted) return;
+    api.purRequest(wanted).then((r) => {
+      setRequestNumber(r.number);
+      setV((old) => ({ ...old, requestId: r.id, description: r.purpose.slice(0, 200), amount: formatPesos(r.totalCents),
+        ...(r.supplierId ? { payee: 'supplier' as const, supplierId: r.supplierId } : {}) }));
+    }, f.fail);
+  }, []);
+  useEffect(() => { if (v.requestId && !requestNumber) api.purRequest(v.requestId).then((r) => setRequestNumber(r.number), () => undefined); }, [v.requestId]);
   const typed = voucherInput(v, cashCents);
   const printed = usePrintedDate(f.original);
   const { input } = typed;
@@ -36,6 +49,12 @@ export function VoucherForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
   return (
     <MoneyForm type={type} f={f} title="New expense voucher" input={input} errors={errors} figures={voucherFigures} mayGoAhead={me.permissions.includes(MAY_GO_AHEAD)} adjust={(p, n) => forReplacement(p, n)} businessDate={printed.businessDate}
       onLive={(p) => setCashCents((p.doc as { cashCents: number }).cashCents)}>
+      {v.requestId && (
+        <p className="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+          Pays the approved purchase request {requestNumber || '…'}. Type what the receipt says.
+          <Button onClick={() => set({ requestId: '' })}>Not for this request</Button>
+        </p>
+      )}
       <Panel title="What was it for?">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Expense" required>

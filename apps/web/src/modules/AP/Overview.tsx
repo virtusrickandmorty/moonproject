@@ -1,6 +1,6 @@
 /**
  * Purchases and expenses at a glance (the owner's request, 25 Oct 2026), in the dashboard's look. A purchase goes
- * Order → Receive → Bill → Pay; each step shows what waits at it with the button for the next step, so a purchase is
+ * Request (approved by the owner or the accountant, 26 Oct 2026) → Order → Receive → Bill → Pay; each step shows what waits at it with the button for the next step, so a purchase is
  * never left half done: orders still to receive, goods received with no bill yet, bills to pay (overdue first). A thing
  * paid on the spot is an expense voucher instead. Below: what this month cost, on bills and on expense vouchers.
  */
@@ -69,6 +69,7 @@ export function PurchasesOverviewPage() {
   const weekCents = o.toPay.filter((b) => b.dueThisWeek).reduce((n, b) => n + b.balanceCents, 0);
   const spentBills = o.spending.reduce((n, s) => n + s.billsCents, 0), spentVouchers = o.spending.reduce((n, s) => n + s.vouchersCents, 0);
   const late = o.toReceive.filter((r) => r.late).length;
+  const waiting = o.requests.filter((r) => r.state === 'waiting'), approved = o.requests.filter((r) => r.state === 'approved');
   const top = Math.max(1, ...o.spending.map((s) => s.billsCents + s.vouchersCents));
   const monthName = new Date(`${o.month}-01T00:00:00+08:00`).toLocaleString('en-PH', { month: 'long', year: 'numeric', timeZone: 'Asia/Manila' });
 
@@ -85,9 +86,10 @@ export function PurchasesOverviewPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">Purchases &amp; expenses</h1>
-          <p className="text-sm text-slate-500">A purchase goes order → receive → bill → pay. Something paid on the spot is an expense voucher.</p>
+          <p className="text-sm text-slate-500">A purchase goes request → approve → order → receive → bill → pay. Something paid on the spot is an expense voucher.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {may('pur.request') && <Link to={docPath('pur.request', '/new')} className={primary}>New purchase request</Link>}
           {may('pur.po') && <Link to={docPath('pur.po', '/new')} className={primary}>New purchase order</Link>}
           {may('exp.voucher') && <Link to={docPath('exp.voucher', '/new')} className={primary}>New expense</Link>}
           {may('ap.bill') && <Link to={docPath('ap.bill', '/new')} className={button}>Record a bill</Link>}
@@ -108,8 +110,18 @@ export function PurchasesOverviewPage() {
         ))}
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Step n={1} title="Receive what was ordered" icon="inbox" waiting={String(o.toReceive.length)} warn={late > 0}
+      <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-4">
+        <Step n={1} title="Approve and order the requests" icon="check" waiting={String(waiting.length)} warn={false}
+          note={waiting.length ? `Waiting for approval${approved.length ? `; ${approved.length} approved, to order or pay` : ''}` : approved.length ? `${approved.length} approved, to order or pay` : 'Nothing waiting'}
+          more={<More count={o.requests.length} to={docPath('pur.request', '')} words="All purchase requests" />}>
+          {o.requests.slice(0, SHOWN).map((r) => (
+            <Row key={r.id} to={docPath('pur.request', `/${r.id}`)} number={r.number} who={r.requestedByName} amount={r.totalCents}
+              when={`${r.state === 'waiting' ? 'Waiting' : 'Approved'} · ${r.purpose.slice(0, 50)}`}
+              action={r.state === 'waiting' ? <Link to={docPath('pur.request', `/${r.id}`)} className={button}>Open</Link>
+                : may('pur.po') ? <Link to={docPath('pur.po', `/new?request=${r.id}`)} className={button}>Order</Link> : undefined} />
+          ))}
+        </Step>
+        <Step n={2} title="Receive what was ordered" icon="inbox" waiting={String(o.toReceive.length)} warn={late > 0}
           note={o.toReceive.length === 0 ? 'Every order is received in full' : late ? `${late} past the expected date` : 'Orders not all received yet'}
           more={<More count={o.toReceive.length} to={docPath('pur.po', '')} words="All purchase orders" />}>
           {o.toReceive.slice(0, SHOWN).map((r) => (
@@ -118,7 +130,7 @@ export function PurchasesOverviewPage() {
               action={may('pur.rr') ? <Link to={`${docPath('pur.rr', '/new')}?po=${r.id}`} className={button}>Receive</Link> : undefined} />
           ))}
         </Step>
-        <Step n={2} title="Record the supplier’s bill" icon="draft" waiting={String(o.toBill.length)}
+        <Step n={3} title="Record the supplier’s bill" icon="draft" waiting={String(o.toBill.length)}
           note={o.toBill.length === 0 ? 'Every delivery has its bill' : 'Deliveries received with no bill yet'}
           more={<More count={o.toBill.length} to={docPath('pur.rr', '')} words="All receiving reports" />}>
           {o.toBill.slice(0, SHOWN).map((r) => (
@@ -126,7 +138,7 @@ export function PurchasesOverviewPage() {
               action={may('ap.bill') ? <Link to={docPath('ap.bill', `/new?rr=${r.id}`)} className={button}>Record bill</Link> : undefined} />
           ))}
         </Step>
-        <Step n={3} title="Pay the bills" icon="cash" waiting={peso(owed)} warn={overdue.length > 0}
+        <Step n={4} title="Pay the bills" icon="cash" waiting={peso(owed)} warn={overdue.length > 0}
           note={o.toPay.length === 0 ? 'Every bill is paid' : 'Soonest due first'}
           more={<More count={o.toPay.length} to="/ap/suppliers" words="Payables by supplier" />}>
           {o.toPay.slice(0, SHOWN).map((b) => (

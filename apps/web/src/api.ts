@@ -711,9 +711,20 @@ export interface ApLedger {
 }
 /** GET /api/ap/suppliers: every supplier with something owed or an advance open; `netCents` = owed less the advances. */
 export interface ApBalance { supplierId: string; supplierName: string; balanceCents: number; advancesCents: number; netCents: number }
+/** A purchase request (PRQ-) and where it stands: waiting for a decision, approved, rejected, used by an order or a voucher, or cancelled. */
+export interface PurchaseRequestStatus {
+  id: string; number: string; date: string; status: 'posted' | 'cancelled'; state: 'waiting' | 'approved' | 'rejected' | 'used' | 'cancelled'; totalCents: number;
+  purpose: string; neededBy: string | null; supplierId: string | null; supplierName: string | null; note: string | null; requestedBy: string; requestedByName: string;
+  decision: { decision: 'approved' | 'rejected'; note: string | null; userName: string; at: string } | null;
+  usedBy: { id: string; number: string; docType: 'pur.po' | 'exp.voucher' } | null;
+  lines: { lineNo: number; supplyId: string | null; supplyName: string | null; unit: SupplyUnit | null; description: string; qty: number; unitCostCents: number }[];
+  /** GET one only: whether this user may approve or reject it now. */
+  mayDecide?: boolean;
+}
 /** GET /api/ap/overview: what waits at each step of a purchase (order → receive → bill → pay), and this month's costs NET of VAT. */
 export interface PurchasesOverview {
   today: string; month: string; advancesCents: number;
+  requests: { id: string; number: string; date: string; state: 'waiting' | 'approved'; purpose: string; requestedByName: string; totalCents: number; neededBy: string | null }[];
   toReceive: { id: string; number: string; date: string; expectedDate: string | null; supplierId: string; supplierName: string; remainingCents: number; late: boolean }[];
   toBill: { id: string; number: string; date: string; supplierId: string; supplierName: string; poId: string; poNumber: string; receivedCents: number }[];
   toPay: { id: string; number: string; docType: string; supplierId: string; supplierName: string; dueDate: string; balanceCents: number; overdue: boolean; dueThisWeek: boolean }[];
@@ -1306,6 +1317,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     apLedger: (supplierId: string) => call<ApLedger>('GET', `/api/ap/suppliers/${encodeURIComponent(supplierId)}`),
     apBalances: () => call<ApBalance[]>('GET', '/api/ap/suppliers'),
     apOverview: () => call<PurchasesOverview>('GET', '/api/ap/overview'),
+    purRequest: (id: string) => call<PurchaseRequestStatus>('GET', `/api/pur/requests/${encodeURIComponent(id)}`),
+    purRequests: (state: 'waiting' | 'approved') => call<PurchaseRequestStatus[]>('GET', `/api/pur/requests?state=${state}`),
+    purDecide: (id: string, decision: 'approved' | 'rejected', note?: string) => call<PurchaseRequestStatus>('POST', `/api/pur/requests/${encodeURIComponent(id)}/decide`, { decision, ...(note ? { note } : {}) }),
     eqPeople: () => call<EqPerson[]>('GET', '/api/eq/people'),
     /** What an officer owes the company and is owed (needs eq.ledger.view). */
     officerBalances: (personId: string) => call<{ dueFromCents: number; dueToCents: number }>('GET', `/api/eq/people/${encodeURIComponent(personId)}/ledger`),

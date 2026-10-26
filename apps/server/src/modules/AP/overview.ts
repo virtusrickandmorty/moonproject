@@ -1,7 +1,9 @@
 /**
  * The purchases and expenses overview (the owner's request, 25 Oct 2026): where each purchase is on its way from order
- * to payment, and what this month cost. A purchase goes Order (PO-) → Receive (RR-) → Bill (BILL-) → Pay (SPAY-); a
- * thing paid on the spot is an expense voucher (EXP-) instead. For each step: what is waiting at it.
+ * to payment, and what this month cost. A purchase goes Request (PRQ-, approved by the owner or the accountant, 26 Oct
+ * 2026) → Order (PO-) → Receive (RR-) → Bill (BILL-) → Pay (SPAY-); a thing paid on the spot is an expense voucher
+ * (EXP-) instead. For each step: what is waiting at it.
+ *   requests: waiting for a decision, and approved but not ordered or paid yet (PUR);
  *   toReceive: ordered, not all received yet (PUR);      toBill: received, no recorded bill names the delivery yet (PUR);
  *   toPay: bills with something still owed, from the ledger (AP aging), soonest due first.
  * spending: this month's costs NET of input VAT by account, on bills (by their invoice's recording date) and on expense
@@ -9,7 +11,7 @@
  */
 import type { Db } from '../../platform/db/driver.ts';
 import { voucherSpending } from '../EXP/public.ts';
-import { deliveriesToBill, ordersToReceive, supplier } from '../PUR/public.ts';
+import { deliveriesToBill, ordersToReceive, requestsIn, supplier } from '../PUR/public.ts';
 import { supplierBalances } from './ledger.ts';
 import { payableAgingAt } from './public.ts';
 
@@ -39,6 +41,9 @@ export function purchasesOverview(db: Db, today: string) {
   add(voucherSpending(db, from, to), 'vouchersCents');
   return {
     today, month: today.slice(0, 7),
+    requests: (['waiting', 'approved'] as const).flatMap((state) => requestsIn(db, state).map((r) => ({
+      id: r.id, number: r.number, date: r.date, state, purpose: r.purpose, requestedByName: r.requestedByName, totalCents: r.totalCents, neededBy: r.neededBy,
+    }))),
     toReceive: ordersToReceive(db).map((o) => ({ ...o, late: !!o.expectedDate && o.expectedDate < today })),
     toBill: deliveriesToBill(db),
     toPay,

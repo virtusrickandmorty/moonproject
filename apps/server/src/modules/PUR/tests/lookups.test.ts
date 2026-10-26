@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createTestEnv, idem, type TestEnv } from '../../../../test/helpers.ts';
+import { grantRole, createTestEnv, idem, type TestEnv } from '../../../../test/helpers.ts';
 
 describe('PUR read-only lookups for the screens', () => {
   let env: TestEnv;
   beforeEach(async () => {
-    env = await createTestEnv();
+    env = await createTestEnv(); grantRole(env, 'encoder', 'pur.po.without_request'); // orders here are not about purchase requests
   });
   afterEach(async () => {
     env.db.close();
