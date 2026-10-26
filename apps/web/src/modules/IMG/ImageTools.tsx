@@ -11,6 +11,7 @@
  * The result shows before/after over a checkerboard, then downloads (PNG, SVG, PDF, or a Photoshop file with a layer per
  * colour) or goes on a job order.
  */
+import { PICTURE_ACCEPT, pictureType } from '../../components/pictures.ts';
 import { useEffect, useRef, useState } from 'react';
 import { api, type Me, type NavResult } from '../../api.ts';
 import { Button, Field, Notice, inputClass } from '../../components/ui.tsx';
@@ -123,7 +124,7 @@ export function ImageTools({ me }: { me: Me }) {
   useEffect(() => loadAi(), []);
 
   const open = async (f: File | Blob, name: string, keepSet = false) => {
-    if (!/^image\/(png|jpeg|webp)$/.test(f.type)) return setError('Pick a JPEG, PNG or WebP picture.');
+    if (!/^image\/(png|jpeg|webp)$/.test(f.type) && !(f instanceof File && pictureType(f))) return setError('Pick a JPEG, PNG or WebP picture.');
     const bmp = await createImageBitmap(f);
     const c = document.createElement('canvas');
     Object.assign(c, { width: bmp.width, height: bmp.height });
@@ -419,7 +420,7 @@ export function ImageTools({ me }: { me: Me }) {
             onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) void open(f, f.name); }}>
             <b className="text-indigo-700">Choose a picture</b>, drop it here, or paste it (Ctrl+V)
             <span className="block text-xs text-slate-500">JPEG, PNG or WebP, up to 15 MB</span>
-            <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" aria-label="Choose a picture" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void open(f, f.name); }} />
+            <input type="file" accept={PICTURE_ACCEPT} className="sr-only" aria-label="Choose a picture" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void open(f, f.name); }} />
           </label>
 
           <div className="flex gap-1 rounded-lg bg-slate-100 p-1" role="group" aria-label="Tool">
@@ -485,7 +486,7 @@ export function ImageTools({ me }: { me: Me }) {
               {sides === 'split' && <p className="text-xs text-slate-500">The picture shows the jersey's front and back: each side is taken out and redrawn (two runs).</p>}
               {sides === 'two' && <label className="block cursor-pointer rounded-lg border border-dashed border-slate-300 p-2 text-sm text-slate-600 hover:border-indigo-400">
                 {backFile ? <span className="flex items-center gap-2"><img src={backFile.url} alt="The back photo" className="h-12 w-12 rounded object-cover" /> Back photo: {backFile.name} <span className="text-indigo-700">(change)</span></span> : <><b className="text-indigo-700">Choose the back photo</b> (the first picture is the front)</>}
-                <input type="file" accept="image/png,image/jpeg,image/webp" className="sr-only" aria-label="Choose the back photo" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void createImageBitmap(f).then((bmp) => { setBackFile({ blob: f, name: f.name, url: URL.createObjectURL(f), w: bmp.width, h: bmp.height }); setCrops((c) => ({ ...c, backPhoto: WHOLE })); }); }} />
+                <input type="file" accept={PICTURE_ACCEPT} className="sr-only" aria-label="Choose the back photo" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void createImageBitmap(f).then((bmp) => { setBackFile({ blob: f, name: f.name, url: URL.createObjectURL(f), w: bmp.width, h: bmp.height }); setCrops((c) => ({ ...c, backPhoto: WHOLE })); }); }} />
               </label>}
               {sides === 'aiback' && <div className="grid grid-cols-[1fr_6rem] gap-2">
                 <Field label="Name on the back (optional)"><input className={inputClass} maxLength={24} value={backName} onChange={(e) => setBackName(e.target.value)} placeholder="e.g. SON-OT" /></Field>

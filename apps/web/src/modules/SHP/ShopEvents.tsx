@@ -9,7 +9,7 @@ import type { Me } from '../../api.ts';
 import { Button, Dialog, Field, Notice, inputClass, useAction } from '../../components/ui.tsx';
 import { Doodles, SEASONS, Shower, THEMES, eventLook, eventPictureUrl, type ShopEventShown } from '../../shop/seasons.tsx';
 import { masterRequest } from '../CUS/http.ts';
-import { fitPicture } from '../../components/pictures.ts';
+import { PICTURE_ACCEPT, fitPicture } from '../../components/pictures.ts';
 import { lighterPhoto } from './photo.ts';
 
 export type ShopEvent = ShopEventShown & { name: string; startsOn: string; endsOn: string; isActive: boolean };
@@ -129,7 +129,7 @@ function EventDialog({ me, event, readOnly, onClose, onSaved }: { me: Me; event:
           {f.art === 'picture' && !readOnly && (
             <Field label="Our picture" required hint="JPEG, PNG or WebP; shown in a circle. A square picture fits best.">
               <div className="flex flex-wrap items-center gap-2">
-                <input type="file" accept="image/jpeg,image/png,image/webp" className="text-sm" onChange={(e) => pick(e.target.files?.[0])} />
+                <input type="file" accept={PICTURE_ACCEPT} className="text-sm" onChange={(e) => pick(e.target.files?.[0])} />
                 {hasPicture && <Button onClick={() => setF((x) => ({ ...x, picture: null, art: 'none' }))}>Take the picture away</Button>}
               </div>
             </Field>)}
