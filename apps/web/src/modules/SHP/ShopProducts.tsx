@@ -17,7 +17,7 @@ import { ShopEvents, type ShopEvent } from './ShopEvents.tsx';
 import { ShopWork } from './ShopWork.tsx';
 import { Visitors } from './Visitors.tsx';
 import { useLiveReload } from '../../live.ts';
-import { fitPicture } from '../../components/pictures.ts';
+import { PICTURE_ACCEPT, fitPicture, pictureType } from '../../components/pictures.ts';
 import { newestFirst, Paged } from '../../components/RowPages.tsx';
 
 export interface StockLine { size: string; colour: string; onHand: number; held: number; available: number }
@@ -512,7 +512,7 @@ function Payment({ me }: { me: Me }) {
         </div>
         {canSet && <div className="flex flex-wrap items-center gap-3">
           <label className="cursor-pointer rounded-md bg-white px-4 py-2 text-sm font-semibold ring-1 ring-slate-300 hover:bg-indigo-50">{current || qr ? 'Change QR picture' : 'Upload the QR picture'}
-            <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick(f); e.target.value = ''; }} /></label>
+            <input type="file" accept={PICTURE_ACCEPT} className="sr-only" onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick(f); e.target.value = ''; }} /></label>
           <Button tone="primary" disabled={busy || !v.bankName.trim() || !v.accountName.trim() || (!current && !qr)} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</Button>
         </div>}
         {!canSet && <p className="text-sm text-slate-500">Only an owner can change how customers pay.</p>}
@@ -529,7 +529,6 @@ function Payment({ me }: { me: Me }) {
 
 /** Up to three photos a product (the owner's request, Oct 2026); pictures only. */
 const MAX_PHOTOS = 3;
-const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
 function ProductDialog({ me, product, categories, onClose, onSaved }: { me: Me; product: Row | null; categories: Category[]; onClose: () => void; onSaved: () => void }) {
   const [v, setV] = useState<Values>(product ? valuesOf(product) : { ...blank, categoryId: categories.find((c) => c.isActive)?.id ?? '' });
@@ -565,7 +564,7 @@ function ProductDialog({ me, product, categories, onClose, onSaved }: { me: Me; 
   /** Picked files, images only, up to the places left: up now on a saved product, kept until Save on a new one. */
   const addPhotos = (picked: File[]) => run(async () => {
     const room = MAX_PHOTOS - photos.length;
-    if (picked.some((f) => !PHOTO_TYPES.includes(f.type))) throw new Error('Only pictures can be added: JPEG, PNG or WebP.');
+    if (picked.some((f) => !pictureType(f))) throw new Error('Only pictures can be added: JPEG, PNG or WebP.');
     if (picked.length > room) throw new Error(`A product has up to ${MAX_PHOTOS} photos: ${room === 0 ? 'take one off first' : `${room} more can be added`}.`);
     // Made lighter first (the owner's request, Oct 2026): at most 1600 pixels on the long side, WebP at high quality.
     // A browser that cannot write WebP keeps the photo as it was: made lighter as JPEG then, to fit the 4 MB the server takes.
@@ -599,7 +598,7 @@ function ProductDialog({ me, product, categories, onClose, onSaved }: { me: Me; 
               : i === photos.length
                 ? <label key={i} className={`grid aspect-square cursor-pointer place-items-center rounded-md border border-dashed border-slate-300 text-center text-[11px] font-semibold text-indigo-700 hover:bg-indigo-50 ${busy ? 'pointer-events-none opacity-50' : ''}`}>
                     + Add photo
-                    <input type="file" multiple accept="image/jpeg,image/png,image/webp" aria-label="Add photos" className="sr-only"
+                    <input type="file" multiple accept={PICTURE_ACCEPT} aria-label="Add photos" className="sr-only"
                       onChange={(e) => { const fs = [...(e.target.files ?? [])]; e.target.value = ''; if (fs.length) void addPhotos(fs); }} />
                   </label>
                 : <div key={i} className="aspect-square rounded-md bg-slate-50 ring-1 ring-slate-100" />)}

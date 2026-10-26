@@ -9,12 +9,12 @@ import { useLiveChange } from '../live.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { api, attachmentUrl, type Attachment, type DocTypeInfo } from '../api.ts';
 import { Notice, Panel, ReasonDialog, manilaTime, useAction } from '../components/ui.tsx';
-import { fitPicture } from '../components/pictures.ts';
+import { PICTURE_ACCEPT, fitPicture } from '../components/pictures.ts';
 
 const MAX_BYTES = 10 * 1024 * 1024;
 /** Pictures are sent at most this big: sharp enough to read a design or a receipt, quick to send over mobile data. */
 const PICTURE_BYTES = 4 * 1024 * 1024;
-const ACCEPT = 'image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf';
+const ACCEPT = `${PICTURE_ACCEPT},application/pdf,.pdf`;
 const KIND: Record<Attachment['contentType'], string> = { 'image/jpeg': 'JPEG picture', 'image/png': 'PNG picture', 'image/webp': 'WebP picture', 'application/pdf': 'PDF' };
 const size = (bytes: number) => (bytes < 1_000_000 ? `${Math.max(1, Math.round(bytes / 1000))} KB` : `${(bytes / 1_000_000).toFixed(1)} MB`);
 const pick = 'cursor-pointer rounded-md bg-white px-3 py-2 text-sm font-medium ring-1 ring-slate-300 hover:bg-indigo-50 focus-within:ring-2 focus-within:ring-indigo-500';

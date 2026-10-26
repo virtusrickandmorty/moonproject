@@ -13,7 +13,7 @@ import { EmployeeLoans } from '../PAY/Loans.tsx';
 import { EmployeePriorPay } from '../PAY/Prior.tsx';
 import { Crumb } from '../../shell/crumbs.tsx';
 import { useLiveReload } from '../../live.ts';
-import { fitPicture } from '../../components/pictures.ts';
+import { PICTURE_ACCEPT, fitPicture } from '../../components/pictures.ts';
 import { Paged, newestFirst } from '../../components/RowPages.tsx';
 
 const PAY_TYPE = { daily: 'Daily', piece: 'Per piece (pakyawan)', monthly: 'Monthly', mixed: 'Daily and per piece' } as const;
@@ -225,7 +225,7 @@ function PayoutQrPanel({ e, qr, editable, onSaved }: { e: EmployeeRecord; qr: Pa
             <div className="flex flex-wrap gap-2">
               <label className={`inline-flex cursor-pointer items-center rounded-md px-3 py-2 text-sm font-medium text-white ${a.busy ? 'bg-indigo-300' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
                 {qr ? 'Replace the QR picture' : 'Upload the QR picture'}
-                <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={a.busy}
+                <input type="file" accept={PICTURE_ACCEPT} className="sr-only" disabled={a.busy}
                   onChange={(x) => { const f = x.target.files?.[0]; x.target.value = ''; if (f) void a.run(() => upload(f)); }} />
               </label>
               {qr && <Button disabled={a.busy} onClick={() => a.run(remove)}>Take it off</Button>}

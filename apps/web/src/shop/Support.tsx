@@ -4,6 +4,7 @@
  */
 import { formatPeso } from '@moonproject/shared';
 import { track } from './insights.ts';
+import { PICTURE_ACCEPT, endsCleanly, pictureType } from '../components/pictures.ts';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { cartText } from './Panels.tsx';
 import { SCHOOL_TPL, SERVICES } from './Services.tsx';
@@ -25,10 +26,11 @@ interface Picture { name: string; blob: Blob; url: string }
 
 /** A picture the server will take: JPEG, PNG or WebP, at most 2000 px on a side and under 4 MB (re-saved as JPEG when not). */
 export async function prepare(file: File): Promise<Picture> {
-  const fits = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type) && file.size <= 1.5 * 1024 * 1024;
+  const kind = pictureType(file);
+  const fits = !!kind && file.size <= 1.5 * 1024 * 1024 && (kind !== 'image/jpeg' || await endsCleanly(file));
   let bitmap: ImageBitmap | null = null;
   try { bitmap = await createImageBitmap(file); } catch { throw new Error(`${file.name} is not a picture we can open. Send a JPEG, PNG or WebP.`); }
-  if (fits && Math.max(bitmap.width, bitmap.height) <= MAX_SIDE) { bitmap.close(); return { name: file.name, blob: file, url: URL.createObjectURL(file) }; }
+  if (fits && Math.max(bitmap.width, bitmap.height) <= MAX_SIDE) { bitmap.close(); const blob = file.type === kind ? file : new Blob([file], { type: kind! }); return { name: file.name, blob, url: URL.createObjectURL(blob) }; }
   const scale = Math.min(1, MAX_SIDE / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');
   canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
@@ -167,7 +169,7 @@ export function Support({ query }: { query: string }) {
               className={`mt-2 flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-4 py-7 text-center transition ${dragging ? 'border-indigo-500 bg-indigo-50' : 'border-slate-300 hover:border-slate-400'} ${pictures.length >= MAX_FILES ? 'pointer-events-none opacity-50' : ''}`}>
               <svg viewBox="0 0 24 24" className="size-8 text-slate-400" aria-hidden="true"><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3M12 4v12M7 9l5-5 5 5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
               <span className="mt-2 text-sm font-bold">Add pictures</span><span className="text-xs text-slate-500">Drop them here or tap to choose · JPEG, PNG or WebP</span>
-              <input type="file" accept="image/jpeg,image/png,image/webp,image/*" multiple className="sr-only" disabled={pictures.length >= MAX_FILES}
+              <input type="file" accept={`${PICTURE_ACCEPT},image/*`} multiple className="sr-only" disabled={pictures.length >= MAX_FILES}
                 onChange={(e) => { if (e.target.files) void add(e.target.files); e.target.value = ''; }} />
             </label>
             {pictures.length > 0 && <ul className="mt-3 grid grid-cols-3 gap-3 sm:grid-cols-5">{pictures.map((p, i) => (
