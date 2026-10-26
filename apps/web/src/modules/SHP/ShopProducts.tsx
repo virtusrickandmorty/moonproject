@@ -5,7 +5,7 @@
  * inventory, so stock here never posts a journal; the sale of a piece does (POS, online orders: a quick sale).
  */
 import { formatPesos, parsePesos } from '@moonproject/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type CashPlace, type Me } from '../../api.ts';
 import { Loading, Button, Dialog, Field, Notice, inputClass, manilaTime, peso, useAction } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
@@ -100,6 +100,12 @@ function Products({ me }: { me: Me }) {
   }), [me]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { void load(); }, [load]);
   useLiveReload(load);
+  // ?product=<id>: the search bar opens that product (the owner's request, 26 Oct 2026), once the list is in.
+  const wanted = useRef(new URLSearchParams(window.location.search).get('product'));
+  useEffect(() => {
+    const p = wanted.current && rows?.find((r) => r.id === wanted.current);
+    if (p) { wanted.current = null; if (canManage) setEditing(p); else if (p.stock) setStocking(p); }
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = (p: Row) => run(async () => { await masterRequest(me, `/api/shp/products/${p.id}/${p.isActive ? 'hide' : 'show'}`, 'POST', {}, p.version); await load(); });
   /** Copies the made-up sample garments in (and their categories), so the shop starts from something it can edit. */

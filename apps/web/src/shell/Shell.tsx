@@ -346,7 +346,7 @@ export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = ''
           <p className="truncate text-xs text-muted"><ServerDate /></p>
         </div>
         <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-1 gap-y-2 sm:gap-x-3 md:flex-nowrap lg:flex-none">
-          {me.permissions.includes('nav.search') && <SearchBox />}
+          {me.permissions.includes('nav.search') && <SearchBox menu={allowed} creatable={creatable} />}
           {creatable.length > 0 && (
             <div className="relative">
               <button type="button" aria-expanded={open === 'new'} aria-controls="new-menu" className="whitespace-nowrap rounded-md bg-indigo-600 px-3 py-2 font-semibold text-white shadow-sm hover:bg-indigo-700 sm:px-4" onClick={() => { setNewQuery(''); toggle('new'); }}>+ New</button>

@@ -151,3 +151,8 @@ export function deliveriesToBill(db: Db): { id: string; number: string; date: st
 }
 
 export { requestStatus, requestsIn, type RequestStatus } from './requests.ts';
+
+/** Supplies by name, for the search bar (the owner's request, 26 Oct 2026: one search for everything). */
+export function searchSupplies(db: Db, query: string, limit = 10): { id: string; name: string; unit: string }[] {
+  return db.prepare(`SELECT id, name, unit FROM pur_supplies WHERE is_active = 1 AND name LIKE '%' || replace(replace(@q, '%', ''), '_', '') || '%' COLLATE NOCASE ORDER BY name LIMIT @limit`).all({ q: query, limit }) as { id: string; name: string; unit: string }[];
+}
