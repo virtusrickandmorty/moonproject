@@ -32,3 +32,14 @@ export function withholdingRows(manual: WithholdingRows | null, profile: Withhol
   const w = suggestedWithholding(profile, grossCents, vatBp);
   return w ? { amount: formatPesos(w.cwtCents), atc: w.atc, certificate: 'pending', vat: w.vatWithheldCents ? formatPesos(w.vatWithheldCents) : '' } : emptyWithholding();
 }
+
+/**
+ * The money the customer hands over for what they pay on: the amount paid on less the tax they withhold (the owner's
+ * request, 26 Oct 2026: a 1% or 2% withholding customer pays ₱11,100 on an ₱11,200 balance).
+ */
+export const cashToReceive = (paidOnCents: number, cwtCents: number, vatWithheldCents: number): number => Math.max(0, paidOnCents - cwtCents - vatWithheldCents);
+
+/** The rates offered on the collection form, in the order shown. */
+export const WITHHOLDING_CHOICES: [WithholdingProfile, string][] = [
+  ['none', 'No'], ['twa_goods', '1% goods'], ['twa_services', '2% services'], ['government', 'Government: 1% + 5% VAT'], ['platform', '0.5% platform'],
+];

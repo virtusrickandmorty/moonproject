@@ -2,6 +2,9 @@
  * Collection form (PLAN E5, H2): the customer, what they pay on (job orders and quick sales still owed, oldest due first),
  * where the money went (split tenders), tax withheld (2307, with VAT withheld by government buyers) and the CR booklet number. The server computes every split;
  * this screen suggests the customer's withholding, then sends the encoder's figures. Also the Edit of a recorded collection (cancel + reissue, NR-4).
+ * Tax withheld (the owner's request, 26 Oct 2026): the rate is picked with one tap (the customer's own by default), and once
+ * what is paid on is set ("Pay the full balance" or typed), the money received fills in as that less the tax withheld,
+ * until the encoder types the money received themselves.
  * A check put in Checks on hand carries its number, bank and date; `?pdc=<id>` fills the form from a post-dated check
  * that is due (ACC-23): its customer, the check in Checks on hand, and its amount on its job orders, oldest due first.
  */
@@ -18,7 +21,7 @@ import { cents, checkPlaceIds, emptyTender, oldestFirst, sum, tendersToInput, te
 import { CustomerPicker, EditGate, Errors, Figures, TenderRows, useLive, type Picked } from './parts.tsx';
 import { collectionPreset } from '../JO/forms.ts';
 import type { WithholdingProfile } from '../CUS/withholding.ts';
-import { emptyWithholding, paymentGross, withholdingRows, type WithholdingRows } from './withholding.ts';
+import { WITHHOLDING_CHOICES, cashToReceive, emptyWithholding, paymentGross, withholdingRows, type WithholdingRows } from './withholding.ts';
 
 /** Something the customer can pay on; `due` already counts back what the collection being edited paid on it. */
 interface Item { key: string; label: string; date: string; due: number; ref: { jobOrderId: string } | { saleId: string } }
@@ -62,6 +65,8 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
   const [manualCwt, setCwt] = useState<WithholdingRows | null>(null);
   const [certificate, setCertificate] = useState('pending');
   const [profile, setProfile] = useState<{ customerId: string; value: WithholdingProfile; vatBp: number } | null>(null);
+  const [rate, setRate] = useState<WithholdingProfile | null>(null); // a rate picked on the form; null: the customer's own
+  const [autoCash, setAutoCash] = useState<string | null>(null); // the money received this form last filled in
   const [typed, setTyped] = useState<Record<string, string> | null>(null); // null = apply oldest first
   const [settle, setSettle] = useState(false);
   const [note, setNote] = useState('');
@@ -136,7 +141,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     if (!preset || !open || !items.some((i) => i.key === preset.key)) return;
     const amount = preset.cents > 0 ? formatPesos(preset.cents) : '';
     setTyped(Object.fromEntries(items.map((i) => [i.key, i.key === preset.key ? amount : ''])));
-    setTenders([{ ...emptyTender(), amount }]);
+    setTenders([emptyTender()]); // filled in below: the amount less any tax withheld
     setPreset(null);
   }, [preset, open, items]);
   // The check's amount goes to the job orders it is for, oldest due first; anything left is kept as a deposit.
@@ -151,12 +156,25 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
   }, [pdc?.id, open, items]);
   const pay = tendersToInput(tenders, undefined, checkPlaceIds(places));
   const mine = profile?.customerId === customer?.id ? profile : null;
+  const chosen: WithholdingProfile = mine ? rate ?? mine.value : 'none';
   const cashCents = sum(pay.tenders.map((t) => t.amountCents));
   const selectedCents = typed ? sum(items.map((i) => Math.max(0, cents(typed[i.key] ?? '') ?? 0))) : 0;
-  const grossCents = selectedCents || (mine ? paymentGross(mine.value, cashCents, mine.vatBp) : cashCents);
-  const cwt = { ...withholdingRows(manualCwt, mine?.value ?? 'none', grossCents, mine?.vatBp ?? 0), certificate };
+  const grossCents = selectedCents || (mine ? paymentGross(chosen, cashCents, mine.vatBp) : cashCents);
+  const cwt = { ...withholdingRows(manualCwt, chosen, grossCents, mine?.vatBp ?? 0), certificate };
   const cwtCents = cents(cwt.amount);
   const vatWithheldCents = cents(cwt.vat);
+  // What is paid on is set: the money the customer hands over is that less the tax withheld.
+  const toReceive = typed && selectedCents > 0 && cwtCents !== undefined && vatWithheldCents !== undefined ? cashToReceive(selectedCents, cwtCents, vatWithheldCents) : null;
+  const typedCash = tenders.length === 1 && tenders[0]!.amount.trim() ? cents(tenders[0]!.amount) : undefined; // as typed, before its cash place is picked
+  useEffect(() => {
+    if (toReceive === null || original || pdc || tenders.length !== 1) return;
+    const now = tenders[0]!.amount.trim();
+    if (now !== '' && now !== autoCash) return; // typed by hand: theirs stays
+    const want = toReceive > 0 ? formatPesos(toReceive) : '';
+    if (now === want) return;
+    setTenders([{ ...tenders[0]!, amount: want }]);
+    setAutoCash(want);
+  }, [toReceive, tenders, autoCash]);
   const received = sum(pay.tenders.map((t) => t.amountCents)) + (cwtCents ?? 0) + (vatWithheldCents ?? 0);
   const auto = oldestFirst(received, items.map((i) => i.due));
   const amountOf = (i: Item, n: number) => (typed ? cents(typed[i.key] ?? '') : auto[n]);
@@ -212,7 +230,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
         {original && <Notice tone="info">When you record, {original.header.number} is cancelled and the replacement gets a new number. Reason: {reason}</Notice>}
         {error && <Notice>{error}</Notice>}
         <Panel title="Who paid">
-          <CustomerPicker value={customer} onChange={(c) => { setCustomer(c); setTyped(null); setCwt(null); setCertificate('pending'); }} />
+          <CustomerPicker value={customer} onChange={(c) => { setCustomer(c); setTyped(null); setCwt(null); setRate(null); setCertificate('pending'); }} />
         </Panel>
         <Panel title="What is it for?">
           {!customer && <p className="text-sm text-slate-500">Pick the customer to see what they can pay on.</p>}
@@ -235,7 +253,36 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
               </tbody>
             </table>
           )}
-          {typed && items.length > 0 && <Button onClick={() => setTyped(null)}>Apply oldest first</Button>}
+          {items.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => setTyped(Object.fromEntries(items.map((i) => [i.key, formatPesos(i.due)])))}>Pay the full balance</Button>
+              {typed && <Button onClick={() => setTyped(null)}>Apply oldest first</Button>}
+            </div>
+          )}
+          {customer && mine && (
+            <div className="space-y-2 border-t border-slate-100 pt-3">
+              <p className="text-sm font-medium text-slate-700">Did the customer withhold tax?</p>
+              <div role="radiogroup" aria-label="Tax withheld by the customer" className="flex flex-wrap gap-2">
+                {WITHHOLDING_CHOICES.map(([p, words]) => {
+                  const picked = !manualCwt && chosen === p;
+                  return (
+                    <button key={p} type="button" role="radio" aria-checked={picked} onClick={() => { setRate(p); setCwt(null); }}
+                      className={`rounded-full px-3 py-1.5 text-sm ring-1 ${picked ? 'bg-indigo-600 font-medium text-white ring-indigo-600' : 'bg-white text-slate-700 ring-slate-300 hover:bg-indigo-50'}`}>
+                      {words}{p === mine.value && p !== 'none' ? ' (their usual)' : ''}
+                    </button>
+                  );
+                })}
+              </div>
+              {manualCwt && <p className="text-xs text-slate-500">The tax withheld is typed by hand below. Pick a rate to work it out again.</p>}
+              {toReceive !== null && (cwtCents || vatWithheldCents) ? (
+                <p className="rounded-lg bg-indigo-50 p-3 text-sm text-indigo-900">
+                  Paying on {formatPesos(selectedCents)} less {formatPesos(cwtCents ?? 0)} tax withheld{vatWithheldCents ? ` and ${formatPesos(vatWithheldCents)} VAT withheld` : ''}:
+                  the customer pays <b className="tabular-nums">{formatPesos(toReceive)}</b>.
+                  {typedCash !== undefined && typedCash !== toReceive && <span className="block text-xs">The money received below says {formatPesos(typedCash)}: the difference is kept as their deposit, or applied short.</span>}
+                </p>
+              ) : null}
+            </div>
+          )}
           {open && open.unappliedCents > 0 && <p className="text-sm text-slate-600">{customer?.name} also has {formatPesos(open.unappliedCents)} of deposits not on a job order: <Link to="/col/deposits" className="text-indigo-700 underline">see deposits</Link>.</p>}
         </Panel>
         <Panel title="Where did the money go?">
@@ -246,7 +293,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
           <PrintedDateField label="Date on the CR" value={printed.text} onChange={printed.setText} />
         </Panel>
         <Exception title="Customer withheld tax (2307)" active={!!cwt.amount.trim() && Number(cwt.amount.replaceAll(',', '')) !== 0 || !!cwt.vat.trim() && Number(cwt.vat.replaceAll(',', '')) !== 0 || !!cwt.atc || certificate !== 'pending'}>
-          {mine && mine.value !== 'none' && grossCents > 0 && manualCwt === null && <p className="text-sm text-slate-600">Filled in from the customer's withholding profile; change it to match the 2307</p>}
+          {mine && chosen !== 'none' && grossCents > 0 && manualCwt === null && <p className="text-sm text-slate-600">Worked out at {WITHHOLDING_CHOICES.find(([p]) => p === chosen)?.[1]} of the amount less VAT; change it to match the 2307</p>}
           <div className="grid gap-3 sm:grid-cols-4">
             <Field label="Amount withheld" hint="As written on the 2307">
               <input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={cwt.amount} onChange={(e) => setCwt({ ...cwt, amount: e.target.value })} />

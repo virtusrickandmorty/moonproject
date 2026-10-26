@@ -4,7 +4,7 @@ import { cashPlaceId, createTestEnv, idem } from '../../../../server/test/helper
 import { runInvariants } from '../../../../server/src/engine/ledger/invariants.ts';
 import { withholdingLabels, type WithholdingProfile } from '../CUS/withholding.ts';
 import { cents } from './money.ts';
-import { emptyWithholding, paymentGross, suggestedWithholding, withholdingRows } from './withholding.ts';
+import { WITHHOLDING_CHOICES, cashToReceive, emptyWithholding, paymentGross, suggestedWithholding, withholdingRows } from './withholding.ts';
 
 const profiles = Object.keys(withholdingLabels) as WithholdingProfile[];
 
@@ -100,5 +100,23 @@ describe('customer withholding suggestions', () => {
   it('G-09: government buyer pays 106,000 on 112,000, with 1,000 CWT and 5,000 VAT withheld', () => {
     expect(withholdingRows(null, 'government', 11_200_000, 1200)).toEqual({ amount: '1,000.00', atc: 'WC158', certificate: 'pending', vat: '5,000.00' });
     expect(paymentGross('government', 10_600_000, 1200)).toBe(11_200_000);
+  });
+});
+
+describe('the money a withholding customer hands over (the owner\'s request, 26 Oct 2026)', () => {
+  it('is what is paid on less the tax withheld, worked out on the amount less VAT', () => {
+    const at = (profile: WithholdingProfile) => {
+      const w = withholdingRows(null, profile, 1_120_000, 1200);
+      return cashToReceive(1_120_000, cents(w.amount)!, cents(w.vat || '0')!);
+    };
+    expect(at('none')).toBe(1_120_000);
+    expect(at('twa_goods')).toBe(1_110_000); // 1% of 10,000.00: pays 11,100.00 on 11,200.00
+    expect(at('twa_services')).toBe(1_100_000); // 2%: pays 11,000.00
+    expect(at('government')).toBe(1_060_000); // 1% and 5% VAT withheld: pays 10,600.00
+    expect(at('platform')).toBe(1_115_000); // 0.5%
+    // Paying it back through the oldest-first path lands on the same amount paid on.
+    expect(paymentGross('twa_services', 1_100_000, 1200)).toBe(1_120_000);
+    expect(cashToReceive(100, 200, 0)).toBe(0);
+    expect(WITHHOLDING_CHOICES.map(([p]) => p).sort()).toEqual(Object.keys(withholdingLabels).sort());
   });
 });
