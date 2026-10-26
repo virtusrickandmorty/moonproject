@@ -9,6 +9,7 @@ import { CollectionForm } from './COL/CollectionForm.tsx';
 import { DepositTransferForm } from './COL/DepositTransferForm.tsx';
 import { RefundForm } from './COL/RefundForm.tsx';
 import { ChecksOnHand, PostDatedChecks } from './COL/Checks.tsx';
+import { UnappliedDeposits } from './COL/Deposits.tsx';
 import { CreditMemoForm, CwtOnlyForm, ForfeitForm, WriteOffForm, creditMemoView, cwtOnlyView, forfeitView, writeOffView } from './COL/CreditForms.tsx';
 import { dpInvoiceView, invoiceRecordView, jobOrderView, openingJobOrderView, releaseView as joReleaseView } from './JO/JobOrderView.tsx';
 import { JobOrderForm } from './JO/JobOrderForm.tsx';
@@ -199,6 +200,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/tax/booklets/:id': BookletPage,
   '/col/checks': ChecksOnHand,
   '/col/pdcs': PostDatedChecks,
+  '/col/deposits': UnappliedDeposits,
   '/rpt/journal': GeneralJournal,
   '/rpt/bir-books': BirBooks,
   '/rpt/ledger': GeneralLedger,

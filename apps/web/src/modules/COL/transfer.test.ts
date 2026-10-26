@@ -33,7 +33,7 @@ describe('deposit transfer choices', () => {
     expect(sources(t).map((s) => [s.key, s.label, s.cents, s.replacementId])).toEqual([
       ['jo1', 'Deposit for JO-000001 (edited into JO-000002)', 2_000_000, 'jo2'],
       ['jo3', 'Deposit for JO-000003', 100_000, null],
-      [UNAPPLIED, 'Unapplied payments', 5_000, null],
+      [UNAPPLIED, 'Deposit not on a job order', 5_000, null],
     ]);
     expect(targets(t, 'jo3').map((j) => j.id)).toEqual(['jo2']);
     expect(targets(t, UNAPPLIED).map((j) => [j.label, j.dueCents])).toEqual([['JO-000002, due 2026-10-13', 4_500_000], ['JO-000003, due 2026-10-20', 900_000]]);

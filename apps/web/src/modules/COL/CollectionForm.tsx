@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, ApiError, type CashPlace, type DocHeader, type DocTypeInfo, type OpenItems, type PostDatedCheck, type Preview } from '../../api.ts';
-import { navigate } from '../../router.tsx';
+import { Link, navigate } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, showDate } from '../../components/ui.tsx';
 import { SalesActions, Exception } from '../JO/entry.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
@@ -216,7 +216,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
         </Panel>
         <Panel title="What is it for?">
           {!customer && <p className="text-sm text-slate-500">Pick the customer to see what they can pay on.</p>}
-          {customer && open && items.length === 0 && <p className="text-sm text-slate-500">Nothing is owed. Money received is kept as {customer.name}'s deposit.</p>}
+          {customer && open && items.length === 0 && <p className="text-sm text-slate-500">Nothing is owed. Money received is kept as {customer.name}'s deposit (a layout fee, say): their credit for a job order when they order, or forfeited as income if they do not within 30 days.</p>}
           {items.length > 0 && (
             <table className="block w-full text-sm sm:table">
               <thead className="hidden text-left text-slate-500 sm:table-header-group"><tr><th>Job order or invoice</th><th className="text-right">Left to pay</th><th className="w-40 text-right">Pay now</th></tr></thead>
@@ -236,7 +236,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
             </table>
           )}
           {typed && items.length > 0 && <Button onClick={() => setTyped(null)}>Apply oldest first</Button>}
-          {open && open.unappliedCents > 0 && <p className="text-sm text-slate-600">{customer?.name} also has {formatPesos(open.unappliedCents)} of unapplied payments on file.</p>}
+          {open && open.unappliedCents > 0 && <p className="text-sm text-slate-600">{customer?.name} also has {formatPesos(open.unappliedCents)} of deposits not on a job order: <Link to="/col/deposits" className="text-indigo-700 underline">see deposits</Link>.</p>}
         </Panel>
         <Panel title="Where did the money go?">
           <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" received />

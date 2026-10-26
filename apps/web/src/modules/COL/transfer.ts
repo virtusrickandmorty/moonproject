@@ -17,7 +17,7 @@ export function sources(t: Transferable, back?: Moved): Source[] {
   return [
     ...t.held.map((jo) => ({ key: jo.id, label: `Deposit for ${jo.number}${why(jo)}`, cents: plus(jo.id, jo.depositsHeldCents), replacementId: jo.replacement?.id ?? null })),
     ...(back && back.fromKey !== UNAPPLIED && !t.held.some((jo) => jo.id === back.fromKey) ? [{ key: back.fromKey, label: back.fromLabel, cents: back.cents, replacementId: null }] : []),
-    { key: UNAPPLIED, label: 'Unapplied payments', cents: plus(UNAPPLIED, t.unappliedCents), replacementId: null },
+    { key: UNAPPLIED, label: 'Deposit not on a job order', cents: plus(UNAPPLIED, t.unappliedCents), replacementId: null },
   ].filter((s) => s.cents > 0);
 }
 

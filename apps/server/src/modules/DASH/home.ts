@@ -13,7 +13,8 @@ import { board } from '../PRD/public.ts';
 import { KIND_LABELS as SUPPORT_KINDS, newSupportMessages } from '../SUP/public.ts';
 import { OVERDUE_LABEL, ordersToPrepare, paymentsToCheck, shopWorkReady } from '../SHP/public.ts';
 import { returnsAwaitingDecision, returnsDecidedSince } from '../ALT/public.ts';
-import { checksToDeposit, pdcsDue } from '../COL/public.ts';
+import { DEPOSIT_MATURES_DAYS, checksToDeposit, customersWithUnappliedDeposits, pdcsDue } from '../COL/public.ts';
+import { customerRef } from '../CUS/public.ts';
 import { billsDue } from '../AP/public.ts';
 import { requestsIn } from '../PUR/public.ts';
 import { restocksReady } from '../TPL/public.ts';
@@ -278,6 +279,11 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
   }
   if (can('pur.po.create') || can('exp.voucher.create')) for (const r of requestsIn(db, 'approved')) if (r.requestedBy === user.userId) {
     push('pur-request-approved', r.id, `${r.number} is approved: order or pay it`, `/docs/pur.request/${r.id}`, r.purpose, r.totalCents);
+  }
+  // A deposit not on a job order (a layout fee deposit, say) once it is 30 days old: credit it to a job order or forfeit it (26 Oct 2026).
+  if (can('col.forfeit')) for (const u of customersWithUnappliedDeposits(db, date)) if (u.maturedCents > 0) {
+    push('deposit-matured', u.customerId, `${customerRef(db, u.customerId)?.display_name ?? 'A customer'}'s deposit is ${DEPOSIT_MATURES_DAYS} days old with no job order`, '/col/deposits',
+      'Credit it to a job order, or forfeit it', u.maturedCents);
   }
   if (can('ap.pay.create')) for (const b of billsDue(db, date, addDays(date, 3))) {
     push('ap-bill-due', b.id, `${b.number} to ${b.supplierName} ${b.dueDate < date ? `was due ${b.dueDate}` : `is due ${b.dueDate}`}`, `/docs/${b.docType}/${b.id}`, undefined, b.balanceCents);

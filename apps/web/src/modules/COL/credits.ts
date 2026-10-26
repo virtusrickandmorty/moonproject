@@ -32,11 +32,15 @@ export function cwtOnlyInput(v: CwtOnlyValues) {
 
 export interface ForfeitValues { jobOrderId: string; amount: string; reason: string }
 export const emptyForfeit = (): ForfeitValues => ({ jobOrderId: '', amount: '', reason: '' });
+/** The forfeit form's choice for the customer's deposits not on a job order (26 Oct 2026), in place of a job order's id. */
+export const NOT_ON_A_JOB_ORDER = 'unapplied';
 
-export function forfeitInput(v: ForfeitValues) {
+export function forfeitInput(v: ForfeitValues, customerId = '') {
   const { amount, errors: amountErrors } = amountOf(v.amount, '5,000.00');
-  const errors = [...(v.jobOrderId ? [] : ['Pick the job order the customer abandoned.']), ...amountErrors, ...reasonError(v.reason, 'the deposit is kept')];
-  return { input: { jobOrderId: v.jobOrderId, amountCents: amount, reason: v.reason.trim() }, errors };
+  const unapplied = v.jobOrderId === NOT_ON_A_JOB_ORDER;
+  const errors = [...(v.jobOrderId ? [] : ['Pick the job order the customer abandoned, or their deposit not on a job order.']), ...amountErrors, ...reasonError(v.reason, 'the deposit is kept')];
+  const which = unapplied ? { customerId } : { jobOrderId: v.jobOrderId };
+  return { input: { ...which, amountCents: amount, reason: v.reason.trim() }, errors };
 }
 
 export interface CreditMemoValues { invoiceId: string; kind: '' | 'return' | 'allowance'; amount: string; formNumber: string; reason: string }

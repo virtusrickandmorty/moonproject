@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildMenu } from '../../shell/menu.ts';
 import { FORMS, VIEWS } from '../screens.ts';
-import { creditMemoInput, cwtOnlyInput, emptyCreditMemo, emptyCwtOnly, emptyForfeit, emptyWriteOff, forfeitInput, writeOffInput } from './credits.ts';
+import { creditMemoInput, cwtOnlyInput, emptyCreditMemo, emptyCwtOnly, emptyForfeit, emptyWriteOff, forfeitInput, NOT_ON_A_JOB_ORDER, writeOffInput } from './credits.ts';
 
 describe('credit form rules', () => {
   it('2307 received: amount, ATC and the quarter typed as 2026-Q3', () => {
@@ -14,11 +14,14 @@ describe('credit form rules', () => {
     ]);
   });
 
+  it('forfeit: a deposit not on a job order names the customer instead', () => {
+    expect(forfeitInput({ jobOrderId: NOT_ON_A_JOB_ORDER, amount: '1,210', reason: 'Layout fee, did not order in 30 days' }, 'c1').input).toEqual({ customerId: 'c1', amountCents: 121_000, reason: 'Layout fee, did not order in 30 days' });
+  });
   it('forfeit: job order, amount and a reason', () => {
     expect(forfeitInput({ jobOrderId: 'j1', amount: '28,000', reason: ' Customer never came back ' })).toEqual({
       input: { jobOrderId: 'j1', amountCents: 2_800_000, reason: 'Customer never came back' }, errors: [],
     });
-    expect(forfeitInput(emptyForfeit()).errors).toEqual(['Pick the job order the customer abandoned.', 'Type the amount like 5,000.00', 'Say why the deposit is kept (at least 10 characters).']);
+    expect(forfeitInput(emptyForfeit()).errors).toEqual(['Pick the job order the customer abandoned, or their deposit not on a job order.', 'Type the amount like 5,000.00', 'Say why the deposit is kept (at least 10 characters).']);
   });
 
   it('credit memo: kind, amount, an optional form number in digits, and a reason', () => {
