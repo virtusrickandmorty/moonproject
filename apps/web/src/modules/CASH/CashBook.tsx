@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { api, type CashAccount, type CashBook as Book, type Me } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Field, Notice, inputClass, peso, showDate } from '../../components/ui.tsx';
+import { Card, FigureStrip, MONEY_IN, PageHead, TABLE_HEAD } from '../../components/Figures.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { bookRangeError, canShowBook } from './rules.ts';
@@ -41,10 +42,12 @@ export function CashBook({ me }: { me: Me }) {
     catch (e) { setError((e as Error).message); }
     finally { setBusy(false); }
   };
+  const moneyIn = book?.lines.reduce((n, l) => n + l.inCents, 0) ?? 0;
+  const moneyOut = book?.lines.reduce((n, l) => n + l.outCents, 0) ?? 0;
   return <div className="space-y-4">
-    <h1 className="text-2xl font-semibold">Cash book</h1>
+    <PageHead title="Cash book" sub="Every peso in and out of one cash place, with its running balance." />
     {error && <Notice>{error}</Notice>}
-    <div className="print:hidden"><Panel title="Choose a cash place and dates">
+    <div className="print:hidden"><Card title="Choose a cash place and dates" icon="calendar">
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="Cash place" required><select className={inputClass} value={placeId} onChange={(e) => { setPlaceId(e.target.value); setBook(null); }}><option value="">Pick one</option>{places.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></Field>
         <Field label="From" required><input type="date" className={inputClass} value={from} onChange={(e) => { setFrom(e.target.value); setBook(null); }} /></Field>
@@ -52,17 +55,22 @@ export function CashBook({ me }: { me: Me }) {
       </div>
       {rangeError && from && to && <Notice>{rangeError}</Notice>}
       {places.length === 0 && <Notice tone="info">No cash place balance is visible to you.</Notice>}
-      <Button tone="primary" disabled={!placeId || !!rangeError || busy} onClick={show}>{busy ? 'Loading…' : 'Show cash book'}</Button>
-    </Panel></div>
-    {book && <section className="space-y-4 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70 print:shadow-none print:ring-0">
-      <div className="flex items-center gap-3"><div><h2 className="text-xl font-semibold">Cash book · {book.place.name}</h2><p className="text-sm text-slate-600">{book.from} to {book.to}</p></div><span className="flex-1" /><Button className="print:hidden" onClick={() => window.print()}>Print</Button></div>
-      <p className="font-semibold">Opening balance <span className="tabular-nums">{peso(book.openingCents)}</span></p>
-      <div className="overflow-x-auto"><table className="w-full text-sm"><thead className="text-left text-slate-500"><tr><th className="py-2">Date</th><th>Document</th><th>Details</th><th className="text-right">Money in</th><th className="text-right">Money out</th><th className="text-right">Balance</th></tr></thead><tbody>
-        {book.lines.map((line, i) => <tr key={`${line.journalNumber}-${i}`} className={`border-t border-slate-100 ${onPage(i) ? '' : PRINT_ONLY}`}><td className="py-2">{line.date}</td><td>{line.documentId && line.docType ? <Link to={docPath(line.docType, `/${line.documentId}`)} className="underline print:no-underline">{line.documentNumber ?? line.journalNumber}</Link> : line.journalNumber}</td><td>{line.memo}</td><td className="text-right tabular-nums">{line.inCents ? peso(line.inCents) : '—'}</td><td className="text-right tabular-nums">{line.outCents ? peso(line.outCents) : '—'}</td><td className="text-right tabular-nums">{peso(line.balanceCents)}</td></tr>)}
+      <div><Button tone="primary" disabled={!placeId || !!rangeError || busy} onClick={show}>{busy ? 'Loading…' : 'Show cash book'}</Button></div>
+    </Card></div>
+    {book && <div className="print:hidden"><FigureStrip label="The period at a glance" figures={[
+      { label: `Opening, ${showDate(book.from)}`, value: peso(book.openingCents), icon: 'wallet' },
+      { label: 'Money in', value: <span className={MONEY_IN}>{peso(moneyIn)}</span>, icon: 'trend', note: `${book.lines.filter((l) => l.inCents).length} in` },
+      { label: 'Money out', value: peso(moneyOut), icon: 'cash', note: `${book.lines.filter((l) => l.outCents).length} out` },
+      { label: `Closing, ${showDate(book.to)}`, value: peso(book.closingCents), icon: 'money', warn: book.closingCents < 0, note: book.closingCents < 0 ? 'Below zero: check the entries' : undefined },
+    ]} /></div>}
+    {book && <Card title={`Cash book · ${book.place.name}`} icon="clock" note={`${showDate(book.from)} to ${showDate(book.to)}`} actions={<Button onClick={() => window.print()}>Print</Button>}>
+      <p className="text-sm font-semibold">Opening balance <span className="tabular-nums">{peso(book.openingCents)}</span></p>
+      <div className="overflow-x-auto"><table className="w-full text-sm"><thead className={TABLE_HEAD}><tr><th className="py-2 pr-3">Date</th><th className="pr-3">Document</th><th className="pr-3">Details</th><th className="pr-3 text-right">Money in</th><th className="pr-3 text-right">Money out</th><th className="text-right">Balance</th></tr></thead><tbody>
+        {book.lines.map((line, i) => <tr key={`${line.journalNumber}-${i}`} className={`border-t border-slate-100 align-top ${onPage(i) ? '' : PRINT_ONLY}`}><td className="whitespace-nowrap py-2 pr-3">{showDate(line.date)}</td><td className="whitespace-nowrap pr-3">{line.documentId && line.docType ? <Link to={docPath(line.docType, `/${line.documentId}`)} className="text-indigo-700 hover:underline print:no-underline">{line.documentNumber ?? line.journalNumber}</Link> : line.journalNumber}</td><td className="max-w-md pr-3 text-slate-600">{line.memo}</td><td className={`pr-3 text-right font-medium tabular-nums ${MONEY_IN}`}>{line.inCents ? peso(line.inCents) : ''}</td><td className="pr-3 text-right font-medium tabular-nums">{line.outCents ? peso(line.outCents) : ''}</td><td className="text-right tabular-nums">{peso(line.balanceCents)}</td></tr>)}
       </tbody></table></div>
       {buttons}
       {book.lines.length === 0 && <p className="text-sm text-slate-500">No movements in this period.</p>}
-      <p className="border-t border-slate-300 pt-2 text-right font-semibold">Closing balance <span className="tabular-nums">{peso(book.closingCents)}</span></p>
-    </section>}
+      <p className="border-t border-slate-200 pt-2 text-right text-sm font-semibold">Closing balance <span className="tabular-nums">{peso(book.closingCents)}</span></p>
+    </Card>}
   </div>;
 }

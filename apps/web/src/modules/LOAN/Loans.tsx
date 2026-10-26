@@ -6,7 +6,9 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type DocTypeInfo, type LateInstalment, type LoanDetail, type LoanPayment, type LoanRow } from '../../api.ts';
-import { Loading, Notice, Panel, StatusChip, peso } from '../../components/ui.tsx';
+import { Loading, Notice, StatusChip, peso, showDate } from '../../components/ui.tsx';
+import { Card, FigureStrip, PageHead, TABLE_HEAD } from '../../components/Figures.tsx';
+import { TickBar } from '../../components/charts.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { KIND_WORDS, STATE_WORDS, forgivableNo, forgivenWords, lateCounts, leftCents, loanDocType, loanTotals, ratePercent, scheduleStates } from './register.ts';
@@ -22,7 +24,7 @@ const lateChip = <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs fo
 function LateNotice({ late }: { late: LateInstalment[] }) {
   if (late.length === 0) return null;
   const total = late.reduce((s, l) => s + l.principalCents + l.interestCents, 0);
-  return <Notice tone="warning">{late.length} instalment{late.length === 1 ? ' is' : 's are'} late, {peso(total)} in all. The oldest was due {late[0]!.dueDate} ({late[0]!.daysLate} day{late[0]!.daysLate === 1 ? '' : 's'} ago).</Notice>;
+  return <Notice tone="warning">{late.length} instalment{late.length === 1 ? ' is' : 's are'} late, {peso(total)} in all. The oldest was due {showDate(late[0]!.dueDate)} ({late[0]!.daysLate} day{late[0]!.daysLate === 1 ? '' : 's'} ago).</Notice>;
 }
 
 export function Loans({ docTypes }: { docTypes: DocTypeInfo[] }) {
@@ -39,30 +41,39 @@ export function Loans({ docTypes }: { docTypes: DocTypeInfo[] }) {
   const counts = lateCounts(late);
   const may = (key: string) => docTypes.some((d) => d.key === key && d.canPost);
   return (
-    <div className="max-w-5xl space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="flex-1 text-2xl font-semibold">Loans</h1>
-        {may('loan.loan') && <Link to={docPath('loan.loan', '/new')} className={link}>Record a loan</Link>}
-        {may('loan.payment') && <Link to={docPath('loan.payment', '/new')} className={link}>Record a payment</Link>}
-      </div>
+    <div className="space-y-4">
+      <PageHead title="Loans" sub="Money the shop borrowed: what is paid, what is left and what falls due next."
+        actions={<>
+          {may('loan.loan') && <Link to={docPath('loan.loan', '/new')} className={link}>Record a loan</Link>}
+          {may('loan.payment') && <Link to={docPath('loan.payment', '/new')} className={link}>Record a payment</Link>}
+        </>} />
+      <FigureStrip label="Loans at a glance" figures={[
+        { label: 'Loans', value: String(t.count), icon: 'bank', note: 'Recorded and not cancelled' },
+        { label: 'Borrowed', value: peso(t.principalCents), icon: 'money' },
+        { label: 'Paid', value: peso(t.paidCents), icon: 'check', good: t.principalCents > 0 && t.leftCents === 0,
+          side: t.principalCents > 0 ? <TickBar parts={[{ share: t.paidCents / t.principalCents, tone: 'bg-slate-700' }]} ticks={20} height="h-5" label={`${Math.round((t.paidCents / t.principalCents) * 100)}% paid`} /> : undefined,
+          note: t.principalCents > 0 ? `${Math.round((t.paidCents / t.principalCents) * 100)}% of the principal` : undefined },
+        { label: 'Left to pay', value: peso(t.leftCents), icon: 'wallet' },
+        { label: 'Late', value: peso(late.reduce((s, l) => s + l.principalCents + l.interestCents, 0)), icon: 'alert', warn: late.length > 0, note: late.length ? `${late.length} instalment${late.length === 1 ? '' : 's'} past due` : 'Nothing past due' },
+      ]} />
       <LateNotice late={late} />
-      <p className="text-sm"><b>{t.count}</b> loan{t.count === 1 ? '' : 's'} · borrowed <b className="tabular-nums">{peso(t.principalCents)}</b> · paid <b className="tabular-nums">{peso(t.paidCents)}</b> · left <b className="tabular-nums">{peso(t.leftCents)}</b></p>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={showCancelled} onChange={(e) => setShowCancelled(e.target.checked)} /> Show cancelled loans</label>
-      {shown.length === 0 ? <p className="text-slate-500">No loan is recorded yet.</p> : (
-        <Paged rows={newestFirst(shown, (l) => l.dateReceived)}>{(page) => (<table className="w-full text-sm">
-          <thead className="text-left text-slate-500"><tr><th>Loan</th><th>Lender</th><th className="text-right">Principal</th><th className="text-right">Paid</th><th className="text-right">Left</th><th>Next due</th></tr></thead>
+      <Card title="Every loan" icon="bank" note="Newest first" actions={<label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={showCancelled} onChange={(e) => setShowCancelled(e.target.checked)} /> Show cancelled loans</label>}>
+      {shown.length === 0 ? <p className="text-sm text-slate-500">No loan is recorded yet.</p> : (
+        <Paged rows={newestFirst(shown, (l) => l.dateReceived)}>{(page) => (<div className="overflow-x-auto"><table className="w-full text-sm">
+          <thead className={TABLE_HEAD}><tr><th className="py-2">Loan</th><th>Lender</th><th className="text-right">Principal</th><th className="text-right">Paid</th><th className="text-right">Left</th><th>Next due</th></tr></thead>
           <tbody>
             {page.map((l) => (
               <tr key={l.id} className={`border-t border-slate-100 ${counts.has(l.id) ? 'border-l-4 border-l-red-500' : ''} ${l.status === 'cancelled' ? 'text-slate-400 line-through' : ''}`}>
-                <td className="py-1 pl-1"><Link to={`/loan/loans/${l.id}`} className="underline">{l.number}</Link> {l.kind === 'equipment' && <span className="text-xs text-slate-500">equipment</span>}</td>
+                <td className="py-2 pl-1"><Link to={`/loan/loans/${l.id}`} className="font-medium text-indigo-700 hover:underline">{l.number}</Link> {l.kind === 'equipment' && <span className="text-xs text-slate-500">equipment</span>}</td>
                 <td className="py-1">{l.lender}</td>
                 <td className={num}>{peso(l.principalCents)}</td><td className={num}>{peso(l.principalPaidCents ?? 0)}</td><td className={num}>{peso(leftCents(l))}</td>
-                <td className="py-1">{l.nextDue ? <>{l.nextDue.dueDate} · {peso(l.nextDue.principalCents + l.nextDue.interestCents)}</> : l.status === 'cancelled' ? '' : l.balanceCents > 0 ? '—' : 'Paid off'} {counts.has(l.id) && lateChip}</td>
+                <td className="py-1">{l.nextDue ? <>{showDate(l.nextDue.dueDate)} · {peso(l.nextDue.principalCents + l.nextDue.interestCents)}</> : l.status === 'cancelled' ? '' : l.balanceCents > 0 ? '—' : 'Paid off'} {counts.has(l.id) && lateChip}</td>
               </tr>
             ))}
           </tbody>
-        </table>)}</Paged>
+        </table></div>)}</Paged>
       )}
+      </Card>
     </div>
   );
 }
@@ -85,38 +96,44 @@ export function LoanPage({ docTypes, params }: { docTypes: DocTypeInfo[]; params
   const forgiveNo = may('loan.forgiveness') ? forgivableNo(l) : undefined;
   const forgiveLink = (no: number) => <Link to={docPath('loan.forgiveness', `/new?loan=${l.id}&instalment=${no}`)} className={small}>Forgive the rest</Link>;
   return (
-    <div className="max-w-4xl space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <Crumb label={l.lender} /><h1 className="text-2xl font-semibold">{l.lender}</h1>
-        <Link to={docPath(loanDocType(l.number), `/${l.id}`)} className="underline">{l.number}</Link>
-        {l.status !== 'posted' && <StatusChip status={l.status} />}
-        <span className="flex-1" />
-        <Link to="/loan/loans" className="text-sm underline">All loans</Link>
-      </div>
-      <p className="text-sm">{KIND_WORDS[l.kind]}{l.dateReceived && ` received ${l.dateReceived}`}{l.rateBp !== undefined && ` · ${ratePercent(l.rateBp)} a year`}{l.termMonths !== undefined && ` · ${l.termMonths} months`}{l.reference ? ` · ref. ${l.reference}` : ''}</p>
-      <p>Principal <b className="tabular-nums">{peso(l.principalCents)}</b> · paid <b className="tabular-nums">{peso(l.principalPaidCents ?? 0)}</b>{l.principalForgivenCents ? <> · forgiven <b className="tabular-nums">{peso(l.principalForgivenCents)}</b></> : null} · left <b className="tabular-nums">{peso(leftCents(l))}</b>{l.interestPaidCents ? <> · interest paid <b className="tabular-nums">{peso(l.interestPaidCents)}</b></> : null}</p>
-      {l.status === 'posted' && l.nextDue && may('loan.payment') && <div><Link to={docPath('loan.payment', `/new?loan=${l.id}`)} className={link}>Record the next payment</Link></div>}
+    <div className="space-y-4">
+      <Crumb label={l.lender} />
+      <PageHead title={<>{l.lender} <Link to={docPath(loanDocType(l.number), `/${l.id}`)} className="ml-1 align-middle text-base font-medium text-indigo-700 underline">{l.number}</Link> {l.status !== 'posted' && <StatusChip status={l.status} />}</>}
+        sub={`${KIND_WORDS[l.kind]}${l.dateReceived ? ` received ${showDate(l.dateReceived)}` : ''}${l.rateBp !== undefined ? ` · ${ratePercent(l.rateBp)} a year` : ''}${l.termMonths !== undefined ? ` · ${l.termMonths} months` : ''}${l.reference ? ` · ref. ${l.reference}` : ''}`}
+        actions={<>
+          {l.status === 'posted' && l.nextDue && may('loan.payment') && <Link to={docPath('loan.payment', `/new?loan=${l.id}`)} className={link}>Record the next payment</Link>}
+          <Link to="/loan/loans" className="self-center text-sm underline">All loans</Link>
+        </>} />
+      <FigureStrip label="This loan at a glance" figures={[
+        { label: 'Principal', value: peso(l.principalCents), icon: 'money' },
+        { label: 'Paid', value: peso(l.principalPaidCents ?? 0), icon: 'check', good: leftCents(l) === 0 && l.status === 'posted',
+          side: l.principalCents > 0 ? <TickBar parts={[{ share: (l.principalPaidCents ?? 0) / l.principalCents, tone: 'bg-slate-700' }, { share: (l.principalForgivenCents ?? 0) / l.principalCents, tone: 'bg-slate-400' }]} ticks={20} height="h-5" label={`${Math.round(((l.principalPaidCents ?? 0) / l.principalCents) * 100)}% paid`} /> : undefined,
+          note: l.principalForgivenCents ? `${peso(l.principalForgivenCents)} forgiven` : l.interestPaidCents ? `Interest paid ${peso(l.interestPaidCents)}` : undefined },
+        { label: 'Left to pay', value: peso(leftCents(l)), icon: 'wallet' },
+        { label: 'Next due', value: l.nextDue ? peso(l.nextDue.principalCents + l.nextDue.interestCents) : leftCents(l) > 0 ? '—' : 'Paid off', icon: 'calendar', good: !l.nextDue && leftCents(l) === 0, note: l.nextDue ? showDate(l.nextDue.dueDate) : undefined },
+        { label: 'Late', value: String(late.length), icon: 'alert', warn: late.length > 0, note: late.length ? `${peso(late.reduce((s, z) => s + z.principalCents + z.interestCents, 0))} past due` : 'Nothing past due' },
+      ]} />
       {late.length > 0 && (
-        <Panel title="Late">
+        <Card title="Late" icon="alert">
           <LateNotice late={late} />
-          <table className="w-full text-sm">
-            <thead className="text-left text-slate-500"><tr><th>Instalment</th><th>Was due</th><th className="text-right">Days late</th><th className="text-right">Principal</th><th className="text-right">Interest</th><th /></tr></thead>
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead className={TABLE_HEAD}><tr><th className="py-2">Instalment</th><th>Was due</th><th className="text-right">Days late</th><th className="text-right">Principal</th><th className="text-right">Interest</th><th /></tr></thead>
             <tbody>
               {late.map((z) => (
-                <tr key={z.instalmentNo} className="border-t border-slate-100"><td className="py-1">{z.instalmentNo} of {l.instalments}</td><td className="py-1">{z.dueDate}</td><td className={num}>{z.daysLate}</td><td className={num}>{peso(z.principalCents)}</td><td className={num}>{peso(z.interestCents)}</td>
+                <tr key={z.instalmentNo} className="border-t border-slate-100"><td className="py-1">{z.instalmentNo} of {l.instalments}</td><td className="py-1">{showDate(z.dueDate)}</td><td className={num}>{z.daysLate}</td><td className={num}>{peso(z.principalCents)}</td><td className={num}>{peso(z.interestCents)}</td>
                   <td className="py-1 pl-2 text-right">{z.instalmentNo === forgiveNo && forgiveLink(z.instalmentNo)}</td></tr>
               ))}
             </tbody>
-          </table>
-        </Panel>
+          </table></div>
+        </Card>
       )}
-      <Panel title="Schedule">
-        <table className="w-full text-sm">
-          <thead className="text-left text-slate-500"><tr><th>No.</th><th>Due</th><th className="text-right">Principal</th><th className="text-right">Interest</th><th className="text-right">Instalment</th><th>State</th></tr></thead>
+      <Card title="Schedule" icon="calendar">
+        <div className="overflow-x-auto"><table className="w-full text-sm">
+          <thead className={TABLE_HEAD}><tr><th className="py-2">No.</th><th>Due</th><th className="text-right">Principal</th><th className="text-right">Interest</th><th className="text-right">Instalment</th><th>State</th></tr></thead>
           <tbody>
             {states.map((r) => (
               <tr key={r.instalmentNo} className={`border-t border-slate-100 ${r.state === 'late' ? 'bg-red-50' : ''}`}>
-                <td className="py-1">{r.instalmentNo}</td><td className="py-1">{r.dueDate}</td>
+                <td className="py-1">{r.instalmentNo}</td><td className="py-1">{showDate(r.dueDate)}</td>
                 <td className={num}>{peso(r.principalCents)}</td><td className={num}>{peso(r.interestCents)}</td><td className={num}>{peso(r.principalCents + r.interestCents)}</td>
                 <td className="py-1">{r.state === 'paid' ? `Paid (${r.paidBy})` : r.state === 'forgiven' ? <>{(r.paidPrincipalCents ?? 0) + (r.paidInterestCents ?? 0) > 0 ? 'Part paid, ' : ''}{forgivenWords(r)} ({r.forgivenBy})</>
                   : r.state === 'late' ? <span className="font-medium text-red-800">{STATE_WORDS.late}</span> : STATE_WORDS[r.state]}
@@ -125,24 +142,24 @@ export function LoanPage({ docTypes, params }: { docTypes: DocTypeInfo[]; params
               </tr>
             ))}
           </tbody>
-        </table>
-      </Panel>
-      <Panel title="Payments">
+        </table></div>
+      </Card>
+      <Card title="Payments" icon="cash">
         {payments.length === 0 ? <p className="text-sm text-slate-500">No payment recorded yet.</p> : (
-          <table className="w-full text-sm">
-            <thead className="text-left text-slate-500"><tr><th>Payment</th><th>Date</th><th>Instalment</th><th className="text-right">Principal</th><th className="text-right">Interest</th><th className="text-right">Total</th></tr></thead>
+          <div className="overflow-x-auto"><table className="w-full text-sm">
+            <thead className={TABLE_HEAD}><tr><th className="py-2">Payment</th><th>Date</th><th>Instalment</th><th className="text-right">Principal</th><th className="text-right">Interest</th><th className="text-right">Total</th></tr></thead>
             <tbody>
               {payments.map((p) => (
                 <tr key={p.id} className={`border-t border-slate-100 ${p.status === 'cancelled' ? 'text-slate-400 line-through' : ''}`}>
-                  <td className="py-1"><Link to={docPath('loan.payment', `/${p.id}`)} className="underline">{p.number}</Link> {p.status !== 'posted' && <StatusChip status={p.status} />}</td>
-                  <td className="py-1">{p.date}</td><td className="py-1">{p.instalmentNo}{p.note ? <span className="block text-xs text-slate-500">{p.note}</span> : null}</td>
+                  <td className="py-1"><Link to={docPath('loan.payment', `/${p.id}`)} className="text-indigo-700 hover:underline">{p.number}</Link> {p.status !== 'posted' && <StatusChip status={p.status} />}</td>
+                  <td className="py-1">{showDate(p.date)}</td><td className="py-1">{p.instalmentNo}{p.note ? <span className="block text-xs text-slate-500">{p.note}</span> : null}</td>
                   <td className={num}>{peso(p.principalCents)}</td><td className={num}>{peso(p.interestCents)}</td><td className={num}>{peso(p.totalCents)}</td>
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
-      </Panel>
+      </Card>
     </div>
   );
 }
