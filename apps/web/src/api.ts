@@ -682,6 +682,8 @@ export interface PoStatus {
   id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; expectedDate: string | null; supplierId: string; supplierName: string; lines: PoLineStatus[];
   /** One order's own page only: its receiving reports, each with the bill recorded for it. */
   deliveries?: { id: string; number: string; date: string; status: 'posted' | 'cancelled'; bill: { id: string; number: string } | null }[];
+  /** One order's own page only: the purchase request it was made from. */
+  request?: { id: string; number: string } | null;
   /** One order's own page only: what recorded supplier advances paid on it. */
   advancedCents?: number;
 }
@@ -718,6 +720,22 @@ export interface ApLedger {
 }
 /** GET /api/ap/suppliers: every supplier with something owed or an advance open; `netCents` = owed less the advances. */
 export interface ApBalance { supplierId: string; supplierName: string; balanceCents: number; advancesCents: number; netCents: number }
+/** The purchasing lists' rows (GET /api/pur/list/<kind>, 26 Oct 2026): the document list's rows with what each row shows. */
+export interface PurRequestListRow extends DocHeader {
+  state: PurchaseRequestStatus['state']; purpose: string; requestedByName: string; neededBy: string | null; supplierName: string | null; lineCount: number;
+  usedBy: PurchaseRequestStatus['usedBy']; late: boolean;
+}
+export interface PoListRow extends DocHeader {
+  supplierName: string; expectedDate: string | null; requestId: string | null; requestNumber: string | null;
+  orderedQty: number; receivedQty: number; toReceiveCents: number; deliveries: number; billed: number; late: boolean;
+}
+export interface RrListRow extends DocHeader { supplierName: string; poId: string; poNumber: string; lines: number; qty: number; valueCents: number; bill: { id: string; number: string } | null }
+type CountCents = { count: number; cents: number };
+export interface PurListSummary {
+  request: { waiting: CountCents; approved: CountCents; rejected: CountCents; used: CountCents };
+  po: { open: number; toReceiveCents: number; late: number; toBill: number; monthCents: number };
+  rr: { month: number; monthCents: number; toBill: number; toBillCents: number; ordersWaiting: number };
+}
 /** A purchase request (PRQ-) and where it stands: waiting for a decision, approved, rejected, used by an order or a voucher, or cancelled. */
 export interface PurchaseRequestStatus {
   id: string; number: string; date: string; status: 'posted' | 'cancelled'; state: 'waiting' | 'approved' | 'rejected' | 'used' | 'cancelled'; totalCents: number;
@@ -1327,6 +1345,11 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     apOverview: () => call<PurchasesOverview>('GET', '/api/ap/overview'),
     purRequest: (id: string) => call<PurchaseRequestStatus>('GET', `/api/pur/requests/${encodeURIComponent(id)}`),
     purRequests: (state: 'waiting' | 'approved') => call<PurchaseRequestStatus[]>('GET', `/api/pur/requests?state=${state}`),
+    purList: <K extends keyof PurListSummary>(kind: K, q: DocListFilters & { status?: string; before?: string; limit?: number } = {}) =>
+      call<(K extends 'request' ? PurRequestListRow : K extends 'po' ? PoListRow : RrListRow)[]>('GET', `/api/pur/list/${kind}?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`),
+    purListCounts: (kind: keyof PurListSummary, q: DocListFilters = {}) =>
+      call<DocCounts>('GET', `/api/pur/list/${kind}/counts?${new URLSearchParams(Object.entries(q).filter(([, v]) => v).map(([k, v]) => [k, String(v)]))}`),
+    purListSummary: <K extends keyof PurListSummary>(kind: K) => call<PurListSummary[K]>('GET', `/api/pur/list/${kind}/summary`),
     purDecide: (id: string, decision: 'approved' | 'rejected', note?: string) => call<PurchaseRequestStatus>('POST', `/api/pur/requests/${encodeURIComponent(id)}/decide`, { decision, ...(note ? { note } : {}) }),
     eqPeople: () => call<EqPerson[]>('GET', '/api/eq/people'),
     /** What an officer owes the company and is owed (needs eq.ledger.view). */

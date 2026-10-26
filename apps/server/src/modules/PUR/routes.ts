@@ -10,6 +10,7 @@ import { tx } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { purLookupRoutes } from './lookups.ts';
 import { purRequestRoutes } from './request-routes.ts';
+import { purListRoutes } from './list.ts';
 import { latestPurchaseCost } from '../AP/public.ts';
 import { countableSupply } from './public.ts';
 
@@ -33,6 +34,7 @@ export function purRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
   purLookupRoutes(app, deps);
   purRequestRoutes(app, deps);
+  purListRoutes(app, deps);
 
   app.get('/api/pur/suppliers', { config: { permission: 'pur.supplier.view' } }, async (req) => {
     return db.prepare(`SELECT * FROM pur_suppliers ${statusWhere(listStatus(req.query))} ORDER BY name`).all();
