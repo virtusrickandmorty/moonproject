@@ -19,7 +19,7 @@ describe('search engines', () => {
   it('get a sitemap of the public pages, and a made-up host never reaches it', async () => {
     const res = await get('/sitemap.xml');
     expect(res.headers['content-type']).toMatch(/^application\/xml/);
-    for (const path of ['/', '/services', '/about', '/support']) expect(res.body).toContain(`<loc>http://shop.example.ph${path}</loc>`);
+    for (const path of ['/', '/services', '/about', '/support', '/terms']) expect(res.body).toContain(`<loc>http://shop.example.ph${path}</loc>`);
     expect(res.body).not.toContain('/order/');
     expect((await get('/sitemap.xml', 'evil.example/<script>')).body).toContain('<loc>http://localhost/</loc>');
   });

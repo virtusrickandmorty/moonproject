@@ -8,7 +8,7 @@ import type { AppDeps } from '../../app.ts';
 
 /** The website's pages worth listing, with how often each changes. */
 export const SITE_PAGES: [string, 'daily' | 'weekly' | 'monthly', string][] = [
-  ['/', 'daily', '1.0'], ['/services', 'monthly', '0.8'], ['/about', 'weekly', '0.6'], ['/support', 'monthly', '0.5'],
+  ['/', 'daily', '1.0'], ['/services', 'monthly', '0.8'], ['/about', 'weekly', '0.6'], ['/support', 'monthly', '0.5'], ['/terms', 'monthly', '0.3'],
 ];
 
 /** https://shop.example:8443, from the request; a host that is not a plain host name (and port) falls back to localhost. */

@@ -5,7 +5,7 @@ import { requestRateLimiter } from './sessions.ts';
 
 export const PUBLIC_TRACK_REQUESTS = 20;
 export const PUBLIC_EVENT_REQUESTS = 60;
-const SHOP_PAGES = new Set(['/', '/shop', '/services', '/about', '/support', '/checkout', '/orders', '/track']);
+const SHOP_PAGES = new Set(['/', '/shop', '/services', '/about', '/support', '/checkout', '/orders', '/track', '/terms']);
 const isShopRoute = (url: string) => url.startsWith('/api/shp/') || url.startsWith('/api/sup/') || url === '/robots.txt' || url === '/sitemap.xml';
 
 function isPublicShopRequest(req: FastifyRequest): boolean {
