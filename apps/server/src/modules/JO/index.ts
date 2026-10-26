@@ -7,6 +7,12 @@ import { invoiceRecordDoc } from './doctypes/invoice-record.ts';
 import { openingJobOrderDoc } from './doctypes/opening.ts';
 import { dpInvoiceDoc } from './doctypes/dp-invoice.ts';
 import { joRoutes } from './routes.ts';
+import { onMergeCheck } from '../CUS/public.ts';
+import { activeJobOrders } from './public.ts';
+
+// A duplicate customer is merged only once its job orders are all released (CUS merge.ts): their documents stay with it.
+onMergeCheck((db, customerId) => activeJobOrders(db).filter((j) => j.customerId === customerId && j.stage !== 'released')
+  .map((j) => `${j.number} is not fully released yet: finish or cancel it first.`));
 
 export default defineModule({
   code: 'JO',

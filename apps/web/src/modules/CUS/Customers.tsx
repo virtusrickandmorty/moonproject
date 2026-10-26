@@ -6,16 +6,17 @@ import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { masterRequest } from './http.ts';
 import { withholdingLabels, type WithholdingProfile } from './withholding.ts';
+import { MergeDialog, PossibleDuplicates } from './Merge.tsx';
 
 /** A customer's account type as the shop says it (the owner's words, Oct 2026); stored as 'person' or 'organization'. */
 const ACCOUNT_TYPE: Record<'person' | 'organization', string> = { person: 'Individual', organization: 'Organization' };
 type Customer = { id: string; code: string; kind: 'person' | 'organization'; display_name: string; registered_name: string | null;
   tin: string | null; is_vat_registered: number; billing_address: string | null; email: string | null; notes: string | null;
-  withholding_profile: WithholdingProfile; is_active: number; version: number; created_at?: string; updated_at?: string };
+  withholding_profile: WithholdingProfile; is_active: number; version: number; created_at?: string; updated_at?: string; merged_into_id?: string | null };
 type Group = { id: string; name: string; is_active: number; version: number };
 type Person = { id: string; full_name: string; group_id: string | null; is_active: number; version: number };
 type Phone = { id: string; phone: string; label: string | null; version: number };
-type Detail = Customer & { groups: Group[]; people: Person[]; phones: Phone[] };
+type Detail = Customer & { groups: Group[]; people: Person[]; phones: Phone[]; mergedInto?: { id: string; code: string; display_name: string } | null };
 type DuplicateWarning = { id: string; reason: string };
 type Size = { id: string; label: string; category: 'adult' | 'kids'; is_active: number };
 type Chart = { id: string; revision_no: number; status: string; size_mode: 'preset' | 'measured'; upper_size: string | null;
@@ -68,10 +69,14 @@ export function Customers({ me }: { me: Me }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const refreshed = async () => { await load(); if (selected) await open(selected.id); };
+  const canMerge = me.permissions.includes('cus.merge');
+  const [mergedCount, setMergedCount] = useState(0);
+  const merged = async (keptId: string) => { setMergedCount((n) => n + 1); await load(); await open(keptId); };
   return <div className="max-w-5xl space-y-4">
     <div className="flex items-center gap-3"><h1 className="flex-1 text-2xl font-semibold">Customers</h1>
       {canManage && <Button tone="primary" onClick={() => { setSaveWarnings([]); setEditing('new'); }}>+ New customer</Button>}</div>
     {error && <Notice>{error}</Notice>}
+    {canMerge && <PossibleDuplicates me={me} refreshKey={mergedCount} onMerged={(kept) => void merged(kept)} />}
     <div className={searchRowClass}><input aria-label="Search customers" placeholder="Search name or code" className={`${inputClass} ${searchClass}`} value={search}
       onChange={(e) => { setSearch(e.target.value); setOffset(0); }} /></div>
     <Panel title="Customer list"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left text-slate-500">
@@ -80,7 +85,7 @@ export function Customers({ me }: { me: Me }) {
         <tr key={r.id} tabIndex={0} aria-selected={selected?.id === r.id} onClick={() => void open(r.id)}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); void open(r.id); } }}
           className={`cursor-pointer border-t outline-none transition-colors hover:bg-indigo-50 focus-visible:bg-indigo-50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-300 ${selected?.id === r.id ? 'bg-indigo-50 font-semibold text-indigo-800' : ''}`}>
-          <td className="py-2 pl-2">{r.code}</td><td>{r.display_name}</td><td>{ACCOUNT_TYPE[r.kind]}</td><td>{r.is_active ? 'Active' : 'Inactive'}</td></tr>))}</tbody></table>
+          <td className="py-2 pl-2">{r.code}</td><td>{r.display_name}</td><td>{ACCOUNT_TYPE[r.kind]}</td><td>{r.is_active ? 'Active' : r.merged_into_id ? 'Merged' : 'Inactive'}</td></tr>))}</tbody></table>
       {rows.length === 0 && <p className="py-3 text-sm text-slate-500">No customers found.</p>}</div>
       {(offset > 0 || rows.length === rowsPerPage) && <PageBar first={offset + 1} last={offset + rows.length} page={Math.floor(offset / rowsPerPage) + 1}
         hasPrevious={offset > 0} hasNext={rows.length === rowsPerPage} onPrevious={() => setOffset(Math.max(0, offset - rowsPerPage))} onNext={() => setOffset(offset + rowsPerPage)}
@@ -88,7 +93,7 @@ export function Customers({ me }: { me: Me }) {
     {/* The customer opens over the list; Edit opens its form over that, and closing the form comes back here. */}
     {selected && <Dialog wide title={`${selected.display_name} · ${selected.code}`} onClose={() => { setSelected(null); setSaveWarnings([]); }}>
       {saveWarnings.length > 0 && <Notice tone="warning">Possible duplicate customer: {saveWarnings.map((w) => `${w.reason} matches customer ${rows.find((r) => r.id === w.id)?.code ?? w.id}`).join('; ')}. Review before creating another record.</Notice>}
-      <CustomerDetail me={me} data={selected} canManage={canManage} onRefresh={refreshed}
+      <CustomerDetail me={me} data={selected} canManage={canManage} onRefresh={refreshed} onOpen={(id) => void open(id)} onMerged={(kept) => void merged(kept)}
         onEdit={() => { setSaveWarnings([]); setEditing(selected); }} onClose={() => { setSelected(null); setSaveWarnings([]); }} />
     </Dialog>}
     {editing && <CustomerEditor me={me} row={editing} onClose={() => setEditing(null)} onSaved={async (id, warnings) => {
@@ -148,9 +153,10 @@ export function CustomerEditor({ me, row, onClose, onSaved }: { me: Me; row: Cus
     <Button onClick={onClose}>Cancel</Button></div></Dialog>;
 }
 
-function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
-  me: Me; data: Detail; canManage: boolean; onRefresh: () => Promise<void>; onEdit: () => void; onClose: () => void;
+function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose, onOpen, onMerged }: {
+  me: Me; data: Detail; canManage: boolean; onRefresh: () => Promise<void>; onEdit: () => void; onClose: () => void; onOpen?: (id: string) => void; onMerged?: (keptId: string) => void;
 }) {
+  const [merging, setMerging] = useState(false);
   const [newGroup, setNewGroup] = useState('');
   const [editGroup, setEditGroup] = useState<Group | null>(null);
   const [groupName, setGroupName] = useState('');
@@ -185,7 +191,9 @@ function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
     ['Billing address', data.billing_address, true], ['Notes', data.notes, true],
     ['Added', data.created_at?.slice(0, 16).replace('T', ' ') ?? null], ['Last changed', data.updated_at?.slice(0, 16).replace('T', ' ') ?? null],
   ];
-  return <div className="space-y-4"><Panel title="Details">
+  return <div className="space-y-4">
+    {data.mergedInto && <Notice tone="info">This customer was merged into <button type="button" className="font-semibold underline" onClick={() => onOpen?.(data.mergedInto!.id)}>{data.mergedInto.code} {data.mergedInto.display_name}</button>. Its past documents stay here; new work goes to {data.mergedInto.code}.</Notice>}
+    <Panel title="Details">
     <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
       {shown.map(([name, value, wide]) => <div key={name} className={wide ? 'sm:col-span-2' : ''}>
         <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">{name}</dt>
@@ -194,8 +202,11 @@ function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose }: {
         </dd>
       </div>)}
     </dl>
-    <div className="flex gap-2">{canManage && data.is_active === 1 && <Button onClick={onEdit}>Edit customer</Button>}<Button onClick={onClose}>Close</Button></div>
+    <div className="flex flex-wrap gap-2">{canManage && data.is_active === 1 && <Button onClick={onEdit}>Edit customer</Button>}
+      {me.permissions.includes('cus.merge') && data.is_active === 1 && onMerged && <Button onClick={() => setMerging(true)}>Merge into another customer</Button>}
+      <Button onClick={onClose}>Close</Button></div>
   </Panel>
+    {merging && <MergeDialog me={me} fromId={data.id} onClose={() => setMerging(false)} onMerged={(kept) => { setMerging(false); onMerged?.(kept); }} />}
     {me.permissions.includes('jo.view') && <CustomerOrders me={me} customerId={data.id} />}
     {error && <Notice>{error}</Notice>}
     <Panel title="Contact numbers">

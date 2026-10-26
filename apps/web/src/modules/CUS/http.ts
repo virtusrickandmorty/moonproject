@@ -1,13 +1,14 @@
 import { ApiError, type Me } from '../../api.ts';
 
 /** Master-data screens use the session token already held in memory by the shell. */
-export async function masterRequest<T>(me: Me, path: string, method: 'GET' | 'POST' | 'PUT' = 'GET', body?: unknown, version?: number): Promise<T> {
+export async function masterRequest<T>(me: Me, path: string, method: 'GET' | 'POST' | 'PUT' = 'GET', body?: unknown, version?: number, extra: Record<string, string> = {}): Promise<T> {
   const response = await fetch(path, {
     method, credentials: 'same-origin',
     headers: {
       ...(method === 'GET' ? {} : { 'x-csrf-token': me.csrfToken }),
       ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       ...(version === undefined ? {} : { 'if-match': String(version) }),
+      ...extra,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
