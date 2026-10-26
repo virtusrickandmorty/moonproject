@@ -210,7 +210,7 @@ export const SUBS: Partial<Record<MenuGroup, [sub: string, keys: string[]][]>> =
     ['Customers & quotes', ['/cus', 'quo.quotation', '/cat', '/com', '/sup', '/aia']],
     ['Job orders & release', ['jo.job_order', 'jo.release', 'jo.invoice_record', 'jo.dp_invoice', 'jo.opening', '/alt']],
     ['Collections', ['col.', '/col/pdcs']],
-    ['Shop & POS', ['/pos', 'qs.sale', '/shp']],
+    ['Shop & POS', ['/pos', 'qs.sale', '/shp', 'shp.']], // shp.: the shop's month-end stock value (the owner's request, 26 Oct 2026)
     ['TPL services', ['/tpl', 'tpl.']],
   ],
   Production: [
