@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api } from '../../api.ts';
+import { useLiveReload } from '../../live.ts';
 import { peso, showDate } from '../../components/ui.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
 import { Figures } from '../COL/parts.tsx';
@@ -27,10 +28,12 @@ const money = 'py-1 text-right tabular-nums';
 function BillOwed({ billId, supplierId }: { billId: string; supplierId: string }) {
   const [owed, setOwed] = useState<{ owedCents: number; dueDate: string } | null>(null);
   const [mayPay, setMayPay] = useState(false);
+  const load = () => api.apLedger(supplierId).then((l) => { const b = l.bills.find((x) => x.id === billId); setOwed(b ? { owedCents: b.owedCents, dueDate: b.dueDate } : null); }, () => undefined);
   useEffect(() => {
-    void api.apLedger(supplierId).then((l) => { const b = l.bills.find((x) => x.id === billId); setOwed(b ? { owedCents: b.owedCents, dueDate: b.dueDate } : null); }, () => undefined);
+    void load();
     void api.docTypes().then((t) => setMayPay(!!t.find((d) => d.key === 'ap.payment')?.canPost), () => undefined);
   }, [billId, supplierId]);
+  useLiveReload(load); // a payment recorded on another computer
   if (!owed) return null;
   if (owed.owedCents <= 0) return <p className="text-sm font-medium text-emerald-700">Paid in full.</p>;
   return (

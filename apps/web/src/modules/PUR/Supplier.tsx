@@ -221,6 +221,7 @@ function Owed({ supplierId, canOpen }: { supplierId: string; canOpen: (docType: 
   const [l, setL] = useState<ApLedger | null>(null);
   const [error, setError] = useState('');
   useEffect(() => void api.apLedger(supplierId).then(setL, (e: Error) => setError(e.message)), [supplierId]);
+  useLiveReload(() => api.apLedger(supplierId).then(setL)); // Live (the owner's check, 26 Oct 2026): a change on any computer shows here too.
   if (error) return <Panel title="Bills and what we owe"><Notice>{error}</Notice></Panel>;
   if (!l) return <Panel title="Bills and what we owe"><Loading /></Panel>;
   return (
@@ -239,6 +240,7 @@ function Owed({ supplierId, canOpen }: { supplierId: string; canOpen: (docType: 
 function Orders({ supplierId }: { supplierId: string }) {
   const [rows, setRows] = useState<SupplierPo[] | null>(null);
   useEffect(() => void api.supplierPurchaseOrders(supplierId).then(setRows, () => setRows([])), [supplierId]);
+  useLiveReload(() => api.supplierPurchaseOrders(supplierId).then(setRows));
   return (
     <Panel title="Purchase orders">
       {rows && rows.length === 0 && <p className="text-sm text-slate-500">No purchase orders yet.</p>}
@@ -255,6 +257,7 @@ function Orders({ supplierId }: { supplierId: string }) {
 function Receipts({ supplierId }: { supplierId: string }) {
   const [rows, setRows] = useState<SupplierRr[] | null>(null);
   useEffect(() => void api.supplierReceivingReports(supplierId).then(setRows, () => setRows([])), [supplierId]);
+  useLiveReload(() => api.supplierReceivingReports(supplierId).then(setRows));
   return (
     <Panel title="Receiving reports">
       {rows && rows.length === 0 && <p className="text-sm text-slate-500">Nothing received yet.</p>}

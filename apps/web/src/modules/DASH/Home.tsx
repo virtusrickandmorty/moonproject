@@ -4,7 +4,7 @@ import { Link } from '../../router.tsx';
 import { Loading, Notice, manilaTime, peso } from '../../components/ui.tsx';
 import { nightlyLine } from '../AUD/nightly.ts';
 import { Card, HomeCards, type IconName } from './Cards.tsx';
-import { useLiveReload } from '../../live.ts';
+import { REPORT_QUIET_MS, useLiveChange, useLiveReload } from '../../live.ts';
 
 function Item({ item, action, muted = false, at }: { item: DashItem; action?: React.ReactNode; muted?: boolean; at?: string }) {
   const title = item.href ? <Link to={item.href} className="font-medium text-indigo-700 hover:underline">{item.label}</Link> : <span className="font-medium">{item.label}</span>;
@@ -86,6 +86,7 @@ function OwnerHealth() {
   const [data, setData] = useState<DashOwnerHealth | null>(null);
   const [error, setError] = useState('');
   useEffect(() => { void api.dashOwnerHealth().then(setData, (e: Error) => setError(e.message)); }, []);
+  useLiveChange(() => void api.dashOwnerHealth().then(setData, () => undefined), undefined, REPORT_QUIET_MS); // Live (the owner's check, 26 Oct 2026): a change on any computer shows here too.
   if (error) return <Notice>{error}</Notice>;
   if (!data) return <Loading label="Loading how the business is doing…" />;
   return <OwnerHealthFigures data={data} />;
@@ -132,6 +133,7 @@ export function OwnerHealthFigures({ data }: { data: DashOwnerHealth }) {
 function NightlyLine() {
   const [status, setStatus] = useState<NightlyStatus | null>(null);
   useEffect(() => { void api.nightlyStatus().then(setStatus, () => setStatus(null)); }, []);
+  useLiveReload(() => api.nightlyStatus().then(setStatus));
   const line = status && nightlyLine(status);
   if (!line) return null;
   return <Link to="/aud/nightly" role="status" className="block rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-800 ring-1 ring-red-200 hover:bg-red-100">{line} See Nightly checks.</Link>;
@@ -220,6 +222,7 @@ function OwnerCharts() {
   const [data, setData] = useState<DashOwnerCharts | null>(null);
   const [error, setError] = useState('');
   useEffect(() => { void api.dashOwnerCharts().then(setData, (e: Error) => setError(e.message)); }, []);
+  useLiveChange(() => void api.dashOwnerCharts().then(setData, () => undefined), undefined, REPORT_QUIET_MS);
   if (error) return <Notice>{error}</Notice>;
   if (!data) return <Loading label="Loading the last 12 months…" />;
   return <section className="space-y-4"><h2 className="text-xl font-semibold">Last 12 months</h2>
@@ -239,6 +242,7 @@ export function DashHome() {
   const [home, setHome] = useState<DashHomeData | null>(null);
   const [error, setError] = useState('');
   useEffect(() => { void api.dashHome().then(setHome, (e: Error) => setError(e.message)); }, []);
+  useLiveReload(() => api.dashHome().then(setHome)); // Live (the owner's check, 26 Oct 2026): a change on any computer shows here too.
   return <div className="space-y-4">
     {error && <Notice>{error}</Notice>}
     {!home && !error && <Loading label="Loading your home…" />}

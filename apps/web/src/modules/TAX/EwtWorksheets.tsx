@@ -6,6 +6,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { api, ewtMonthPath, taxQuarterPath, type BirForm, type BirPaymentLine, type DocTypeInfo, type EwtAtcLine, type EwtMonthWorksheet, type Me } from '../../api.ts';
+import { useLiveReload } from '../../live.ts';
 import { Loading, Field, Notice, Panel, inputClass } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
@@ -83,6 +84,7 @@ export function EwtMonthReturn({ me, docTypes }: { me: Me; docTypes: DocTypeInfo
     api.ewtMonthWorksheet(month).then((d) => current && setW(d), (e: Error) => current && setError(e.message));
     return () => void (current = false);
   }, [month]);
+  useLiveReload(() => month && api.ewtMonthWorksheet(month).then(setW)); // Live (the owner's check, 26 Oct 2026): a change on any computer shows here too.
   if (!allowed) return <Notice>You cannot view the 0619-E worksheet.</Notice>;
   const [year, part] = [month.slice(0, 4), String(Number(month.slice(5, 7)))];
   const pick = (y: string, m: string) => setMonth(`${y}-${m.padStart(2, '0')}`);
