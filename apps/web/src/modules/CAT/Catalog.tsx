@@ -37,6 +37,8 @@ export function Catalog({ me }: { me: Me }) {
   };
   useEffect(() => { void load(); }, [load]);
   useLiveChange(() => void load()); // an item added or changed on another computer shows here
+  // ?item=<id>: the search bar opens that item (the owner's request, 26 Oct 2026).
+  useEffect(() => { const item = new URLSearchParams(window.location.search).get('item'); if (item && canView) void open(item); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   if (!canView) return <Notice>You do not have permission to see the price list.</Notice>;
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center gap-3"><h1 className="flex-1 text-2xl font-semibold">Price list & piece rates</h1>

@@ -127,3 +127,12 @@ export function shopFigures(db: Db): { piecesMade: number; piecesSold: number; s
   const sales = shopSaleNets(db);
   return { piecesMade, piecesSold: sales.reduce((n, s) => n + s.pieces, 0), salesNetCents: sales.reduce((n, s) => n + s.netCents, 0) };
 }
+
+/** The website shop's products by name, and its online orders by number, buyer, email or phone, for the search bar. */
+export function searchShopProducts(db: Db, query: string, limit = 10): { id: string; name: string }[] {
+  return db.prepare(`SELECT id, name FROM shp_products WHERE name LIKE '%' || replace(replace(@q, '%', ''), '_', '') || '%' COLLATE NOCASE ORDER BY name LIMIT @limit`).all({ q: query, limit }) as { id: string; name: string }[];
+}
+export function searchOnlineOrders(db: Db, query: string, limit = 10): { id: string; number: string; name: string; status: string }[] {
+  return db.prepare(`SELECT id, number, name, status FROM shp_orders WHERE number LIKE '%' || replace(replace(@q, '%', ''), '_', '') || '%' COLLATE NOCASE OR name LIKE '%' || replace(replace(@q, '%', ''), '_', '') || '%' COLLATE NOCASE
+    OR email LIKE '%' || replace(replace(@q, '%', ''), '_', '') || '%' COLLATE NOCASE OR replace(phone, ' ', '') LIKE '%' || replace(@q, ' ', '') || '%' ORDER BY created_at DESC LIMIT @limit`).all({ q: query, limit }) as { id: string; number: string; name: string; status: string }[];
+}

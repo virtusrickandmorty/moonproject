@@ -116,3 +116,9 @@ export function itemGarmentTypes(db: Db): string[] {
 
 /** Price list items created or found by an import (MIG): import-item.ts. */
 export { importPriceListItem, type ImportedItem } from './import-item.ts';
+
+/** Price list items by name or code, for the search bar. */
+export function searchCatalogItems(db: Db, query: string, limit = 10): { id: string; code: string; name: string }[] {
+  return db.prepare(`SELECT id, code, name FROM cat_items WHERE is_active = 1 AND (name LIKE '%' || replace(replace(@q, '%', ''), '_', '') || '%' COLLATE NOCASE OR code LIKE '%' || replace(replace(@q, '%', ''), '_', '') || '%' COLLATE NOCASE)
+    ORDER BY name LIMIT @limit`).all({ q: query, limit }) as { id: string; code: string; name: string }[];
+}
