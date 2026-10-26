@@ -17,6 +17,18 @@ let waitMs = 0;
 
 const tell = (types: string[]) => { for (const l of [...listeners]) l(types); };
 
+/** The build of the app this page runs (its main script's name), and whether the server now serves another. */
+const ownBuild = () => (typeof document === 'undefined' ? null : /assets\/index-[\w-]+\.js/.exec(document.querySelector<HTMLScriptElement>('script[src*="/assets/index-"]')?.src ?? '')?.[0] ?? null);
+let updated = false;
+const updateListeners = new Set<() => void>();
+export const isAppUpdated = () => updated;
+/** True once the server serves a newer app than this page runs (an update while the page stayed open). */
+export function useAppUpdated(): boolean {
+  const [on, setOn] = useState(updated);
+  useEffect(() => { const l = () => setOn(true); updateListeners.add(l); return () => void updateListeners.delete(l); }, []);
+  return on;
+}
+
 /**
  * After a stream gives up, the wait before opening a new one: 2 seconds, doubling to at most 30. A browser retries a
  * dropped stream by itself, but not one that got an error answer: while the server restarts after an update, Cloudflare
@@ -32,7 +44,14 @@ function open(): void {
     try { tell((JSON.parse((e as MessageEvent<string>).data) as { types: string[] }).types); } catch { tell(['*']); }
   });
   // The first hello opens the stream; a later one is a reconnect: what changed meanwhile is not known, so all reload.
-  s.addEventListener('hello', () => { waitMs = 0; if (seen) tell(['*']); seen = true; });
+  s.addEventListener('hello', (e) => {
+    waitMs = 0; if (seen) tell(['*']); seen = true;
+    try {
+      const build = (JSON.parse((e as MessageEvent<string>).data) as { build?: string | null }).build;
+      const mine = ownBuild();
+      if (build && mine && build !== mine && !updated) { updated = true; for (const l of [...updateListeners]) l(); }
+    } catch { /* an old server says no build */ }
+  });
   s.addEventListener('error', () => {
     if (s.readyState !== EventSource.CLOSED || source !== s || !wanted) return; // still retrying by itself, or not ours any more
     s.close();

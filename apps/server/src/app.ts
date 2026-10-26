@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 /**
  * Builds the Fastify app. Every route must declare config.permission:
  * 'public', 'authenticated' (the handler checks a doc-type permission), or an exact permission key.
@@ -67,6 +68,10 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const ENGINE_MIGRATIONS = join(here, 'platform/db/migrations');
 /** The web app's build output (`vite build` in apps/web). */
 export const WEB_DIST = join(here, '../../web/dist');
+/** The served web app's main script (assets/index-<hash>.js), read from its index.html: null when it is not built. */
+function webBuild(root: string): string | null {
+  try { return /assets\/index-[\w-]+\.js/.exec(readFileSync(join(root, 'index.html'), 'utf8'))?.[0] ?? null; } catch { return null; }
+}
 
 export interface BuildOptions {
   db: Db;
@@ -203,7 +208,7 @@ export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppD
   documentRoutes(app, deps);
   draftRoutes(app, deps);
   attachmentRoutes(app, deps);
-  liveRoutes(app, deps.db);
+  liveRoutes(app, deps.db, () => webBuild(opts.webRoot ?? WEB_DIST));
   practiceRoutes(app, deps, opts.practiceShop);
   healthRoutes(app, deps, opts.practiceShop ? { practiceShop: opts.practiceShop } : {});
   for (const m of registry.modules) m.routes?.(app, deps);

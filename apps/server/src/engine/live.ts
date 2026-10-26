@@ -13,7 +13,12 @@ const QUIET_MS = 25_000; // a comment line keeps a quiet connection open through
 
 interface Stream { send: (event: string) => void; end: () => void }
 
-export function liveRoutes(app: FastifyInstance, db: Db): void {
+/**
+ * `build`: the web app the server serves (its main script's name, which changes with every update). The hello carries
+ * it, so a screen left open since before an update knows to reload (the owner's report, 26 Oct 2026: a phone kept the
+ * old app, and its photos were still refused after the fix).
+ */
+export function liveRoutes(app: FastifyInstance, db: Db, build: () => string | null = () => null): void {
   const streams = new Set<Stream>();
   const newest = () => db.prepare('SELECT COALESCE(MAX(seq), 0) FROM audit_log').pluck().get() as number;
   let last = newest();
@@ -42,7 +47,7 @@ export function liveRoutes(app: FastifyInstance, db: Db): void {
   app.get('/api/live', { config: { permission: 'authenticated' } }, (req, reply) => {
     reply.hijack();
     reply.raw.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
-    reply.raw.write(`retry: 3000\nevent: hello\ndata: ${JSON.stringify({ seq: newest() })}\n\n`);
+    reply.raw.write(`retry: 3000\nevent: hello\ndata: ${JSON.stringify({ seq: newest(), build: build() })}\n\n`);
     const stream: Stream = { send: (event) => void reply.raw.write(event), end: () => reply.raw.end() };
     streams.add(stream);
     if (!watcher) watcher = setInterval(tick, LIVE_MS);

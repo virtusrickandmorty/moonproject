@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { AppError, conflict, formatPeso, newId, notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { sha256Hex, sniffType } from '../../engine/attachments.ts';
+import { pictureFile, sha256Hex } from '../../engine/attachments.ts';
 import { engineEnv } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { PUBLIC_RATE_MESSAGE } from '../../engine/security/sessions.ts';
@@ -95,9 +95,10 @@ const ORDER = `SELECT o.*, d.number AS sale_number FROM shp_orders o LEFT JOIN d
 
 /** The picture as sent, checked by its first bytes: JPEG, PNG or WebP only. */
 function picture(f: { name: string; data: string }, what: string) {
-  const data = Buffer.from(f.data, 'base64');
-  const type = sniffType(data);
-  if (!data.length || !type || type === 'application/pdf') throw new AppError('FILE_TYPE', `The ${what} must be a JPEG, PNG or WebP picture.`, 415);
+  const raw = Buffer.from(f.data, 'base64');
+  const picture = raw.length ? pictureFile(raw, `The ${what}`) : null;
+  if (!picture || 'problem' in picture) throw new AppError('FILE_TYPE', picture && 'problem' in picture && /pixels/.test(picture.problem) ? picture.problem : `The ${what} must be a JPEG, PNG or WebP picture.`, 415);
+  const { type, data } = picture; // a phone photo's extra picture or video after its end is not kept
   if (data.length > MAX_PROOF_BYTES) throw new AppError('FILE_TOO_BIG', `The ${what} is bigger than 4 MB. Send a smaller picture.`, 413);
   return { type, data, sha256: sha256Hex(data) };
 }

@@ -4,7 +4,7 @@
  * little longer each time, and every screen reloads once it is back. Signing out stops it for good.
  */
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { RETRY_FIRST_MS, RETRY_MOST_MS, onLiveChange, startLive, stopLive } from './live.ts';
+import { RETRY_FIRST_MS, RETRY_MOST_MS, isAppUpdated, onLiveChange, startLive, stopLive } from './live.ts';
 
 class FakeSource {
   static CONNECTING = 0; static OPEN = 1; static CLOSED = 2;
@@ -73,4 +73,15 @@ it('signing out closes the stream and stops opening new ones', () => {
   expect(FakeSource.made).toHaveLength(2);
   stopLive();
   expect(FakeSource.made[1]!.closed).toBe(true);
+});
+
+it('knows when the server serves a newer app than this page runs (a phone left open over an update)', () => {
+  vi.stubGlobal('document', { querySelector: () => ({ src: 'https://www.example.test/assets/index-OLDBUILD.js' }) });
+  startLive();
+  FakeSource.made[0]!.emit('hello', JSON.stringify({ seq: 1, build: 'assets/index-OLDBUILD.js' }));
+  expect(isAppUpdated()).toBe(false);
+  FakeSource.made[0]!.refused();
+  vi.advanceTimersByTime(RETRY_FIRST_MS);
+  FakeSource.made[1]!.emit('hello', JSON.stringify({ seq: 9, build: 'assets/index-NEWBUILD.js' }));
+  expect(isAppUpdated()).toBe(true);
 });

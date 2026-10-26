@@ -3,7 +3,7 @@
  * (H1) and the breadcrumb trail. Laid out like Star Admin 2: a grey top bar with a greeting, and a grey sidebar whose
  * current item is a white pill.
  */
-import { startLive, stopLive, useLiveChange } from '../live.ts';
+import { startLive, stopLive, useAppUpdated, useLiveChange } from '../live.ts';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { api, type DashNotification, type DocTypeInfo, type Me, type MenuOrder } from '../api.ts';
 import { Link, navigate, useLocation } from '../router.tsx';
@@ -430,6 +430,7 @@ export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = ''
         </Navigation>
         {/* data-erp: the page area of the signed-in ERP; index.css widens its screens (the public website keeps its own layout). */}
         <main data-erp className="min-w-0 flex-1 px-3 pb-10 pt-2 sm:px-4 md:px-6">
+          <UpdatedBanner />
           <Breadcrumbs crumbs={crumbsFor(path, menu, crumbName)} icon={<Icon name="Overview" className="size-4" />} />
           <CrumbName.Provider value={setCrumbName}>{children}</CrumbName.Provider>
           <RowLinks />
@@ -437,4 +438,13 @@ export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = ''
       </div>
     </div>
   );
+}
+
+/** The app was updated while this page stayed open (a phone left on all day): reload to get the new one (26 Oct 2026). */
+function UpdatedBanner() {
+  if (!useAppUpdated()) return null;
+  return <div role="status" className="mb-3 flex flex-wrap items-center gap-3 rounded-xl bg-indigo-50 px-4 py-3 text-sm text-indigo-900 ring-1 ring-indigo-200 print:hidden">
+    <span className="flex-1">The app was updated. Reload to use the new version (save what you are typing first).</span>
+    <button type="button" className="rounded-md bg-indigo-600 px-3 py-1.5 font-medium text-white hover:bg-indigo-700" onClick={() => window.location.reload()}>Reload</button>
+  </div>;
 }
