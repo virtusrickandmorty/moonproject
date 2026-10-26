@@ -1,7 +1,8 @@
 /** Server-rendered, escaped print views. No journal entries are created here. */
-import { chartMeasurements, customerPrintDetails } from '../CUS/public.ts';
+import { chartMeasurements, customerPrintDetails, customerTaxInfo } from '../CUS/public.ts';
 import { readFileSync } from 'node:fs';
-import { formatPeso, sizeLabel } from '@moonproject/shared';
+import { applyRate, formatPeso, sizeLabel, vatFromGross } from '@moonproject/shared';
+import { settingAt } from '../../engine/settings.ts';
 import qrcode from 'qrcode-generator';
 import { DOC_TITLES, type DocTitle } from '../../engine/documents/registry.ts';
 import type { Db } from '../../platform/db/driver.ts';
@@ -113,7 +114,7 @@ export function attachedPictures(db: Db, documentId: string, number = '', max = 
  * payment (date, receipt number, CR, how it was paid, amount) and, in the totals, what was paid and the balance due.
  * Credits and money from before the system (an opening job order) show as their own line, so the figures add up.
  */
-function jobOrderPaid(db: Db, id: string, status: string): { section: string; totals: [string, string, boolean?][] } {
+function jobOrderPaid(db: Db, id: string, status: string, taxes?: JobOrderTaxes | null): { section: string; totals: [string, string, boolean?][] } {
   if (status !== 'posted') return { section: '', totals: [] };
   let money_: ReturnType<typeof joMoney>;
   try { money_ = joMoney(db, id); } catch { return { section: '', totals: [] }; }
@@ -127,7 +128,43 @@ function jobOrderPaid(db: Db, id: string, status: string): { section: string; to
     totals: [
       ...(paid.length ? [['Payments received', `−${money(paidCents)}`] as [string, string]] : []),
       ...(other !== 0 ? [[other > 0 ? 'Other credits and earlier payments' : 'Refunds and other adjustments', other > 0 ? `−${money(other)}` : money(-other)] as [string, string]] : []),
-      ['Balance due', money(money_.balanceDueCents), true],
+      // A withholding customer pays what is left less the tax they withhold on it (it comes back as a 2307).
+      taxes && money_.balanceDueCents > 0
+        ? ['Balance due, less tax withheld', money(money_.balanceDueCents - taxes.withheldOn(money_.balanceDueCents)), true]
+        : ['Balance due', money(money_.balanceDueCents), true],
+    ],
+  };
+}
+
+/**
+ * The taxes on a job order for a VAT-registered customer who withholds tax (the owner's request, 26 Oct 2026, laid out
+ * like the shop's sales invoice): Total Sales (VAT inclusive), Less: VAT, Amount net of VAT, Less: withholding tax (and
+ * the VAT a government buyer withholds), Total amount due. The rates are the collection's (D4.6): 1% goods (WC158),
+ * 2% services (WC160), 0.5% for a platform, a government buyer 1% and 5% VAT; each on the amount net of VAT, rounded once.
+ * Null for any other customer, or while no VAT is charged.
+ */
+interface JobOrderTaxes { rows: [string, string, boolean?][]; withheldOn: (grossCents: number) => number }
+const WITHHOLDING: Record<string, { cwtBp: number; vatBp: number; words: string }> = {
+  twa_goods: { cwtBp: 100, vatBp: 0, words: '1%' }, twa_services: { cwtBp: 200, vatBp: 0, words: '2%' },
+  government: { cwtBp: 100, vatBp: 500, words: '1%' }, platform: { cwtBp: 50, vatBp: 0, words: '0.5%' },
+};
+function jobOrderTaxes(db: Db, customerId: string, totalCents: number, date: string): JobOrderTaxes | null {
+  const c = customerId ? customerTaxInfo(db, customerId) : undefined;
+  const rate = c?.isVatRegistered ? WITHHOLDING[c.withholdingProfile] : undefined;
+  const vatBp = settingAt(db, 'tax.vat_rate_bp', date) as number;
+  if (!rate || !(vatBp > 0) || totalCents <= 0) return null;
+  const withheldOn = (grossCents: number) => { const net = vatFromGross(grossCents, vatBp).netCents; return applyRate(net, rate.cwtBp) + applyRate(net, rate.vatBp); };
+  const { netCents, vatCents } = vatFromGross(totalCents, vatBp);
+  const cwt = applyRate(netCents, rate.cwtBp), vatWithheld = applyRate(netCents, rate.vatBp);
+  return {
+    withheldOn,
+    rows: [
+      ['Total Sales (VAT inclusive)', money(totalCents)],
+      ['Less: VAT', money(vatCents)],
+      ['Amount net of VAT', money(netCents)],
+      [`Less: withholding tax (${rate.words})`, money(cwt)],
+      ...(vatWithheld ? [['Less: VAT withheld (5%)', money(vatWithheld)] as [string, string]] : []),
+      ['Total amount due', money(totalCents - cwt - vatWithheld), true],
     ],
   };
 }
@@ -178,7 +215,8 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
           `<h3>Route checklist</h3><ul>${jobTicketRoute(db, h.id, l.lineNo).map((s) => `<li>☐ ${escape(s.name)} — ${escape(s.status)}</li>`).join('')}</ul></section>`).join('') +
         field('Notes', doc.notes),
     };
-    const payments = jobOrderPaid(db, h.id, h.status);
+    const taxes = jobOrderTaxes(db, doc.customerId, doc.totalCents, h.business_date);
+    const payments = jobOrderPaid(db, h.id, h.status, taxes);
     return {
       title: 'Job Order', subtitle: 'Customer copy', legend: true, twoUp: false,
       // Its QR in the middle of the header (the owner's request, Oct 2026): scanned at the shop, it opens this job order.
@@ -187,7 +225,7 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
       status: [['Due date', doc.dueDate], ['Payment terms', doc.paymentTerms]],
       body: section('Items', lineTable(['Description', 'Qty', 'Unit price', 'Discount', 'Amount'], doc.lines.map((l: any) => [l.description, l.qty, money(l.unitPriceCents), money(l.discountCents), money(l.lineTotalCents)]))) +
         payments.section + field('Notes', doc.notes),
-      totals: [['Required downpayment', money(doc.requiredDownpaymentCents)], ['Total', money(doc.totalCents), true], ...payments.totals],
+      totals: [['Required downpayment', money(doc.requiredDownpaymentCents)], ...(taxes ? taxes.rows : [['Total', money(doc.totalCents), true] as [string, string, boolean]]), ...payments.totals],
       signatures: [['Prepared by', prepared], ['Conforme (customer)']],
     };
   }
