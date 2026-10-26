@@ -75,6 +75,16 @@ describe('attachments', () => {
     expect(verifyAuditChain(env.db)).toBeNull();
   });
 
+  it('takes a JPEG named .jfif or .jpe like a .jpg (the owner\'s request, 26 Oct 2026)', async () => {
+    const id = await jv();
+    const jfif = await add(accountant, id, JPEG(), 'downloaded photo.jfif');
+    expect(jfif.statusCode, jfif.body).toBe(200);
+    expect(jfif.json()).toMatchObject({ fileName: 'downloaded photo.jfif', contentType: 'image/jpeg' });
+    const jpe = await add(accountant, await jv(), JPEG(), 'scan.JPE');
+    expect(jpe.statusCode, jpe.body).toBe(200);
+    expect(jpe.json()).toMatchObject({ contentType: 'image/jpeg' });
+  });
+
   it('stores the same file once, however many documents have it; the same document refuses it twice', async () => {
     const [one, two] = [await jv(), await jv('Accrued power bill')];
     const data = PDF();

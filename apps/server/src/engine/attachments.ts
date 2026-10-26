@@ -31,7 +31,7 @@ export const MAX_PER_DOCUMENT = 10;
 const MAX_IMAGES: Record<string, number> = { 'quo.quotation': 5 };
 
 export type AttachmentType = 'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf';
-const EXTENSIONS: Record<string, AttachmentType> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf' };
+const EXTENSIONS: Record<string, AttachmentType> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', jpe: 'image/jpeg', jfif: 'image/jpeg', png: 'image/png', webp: 'image/webp', pdf: 'application/pdf' }; // .jfif and .jpe are JPEG names too (the owner's request, 26 Oct 2026)
 
 /** The type from the contents; pictures must have dimensions and their format's complete ending. */
 export function sniffType(b: Uint8Array): AttachmentType | null {
