@@ -9,14 +9,16 @@ export const MAX_TENDERS = 4;
 export interface VoucherValues {
   categoryId: string; description: string; payee: 'supplier' | 'other'; supplierId: string; payeeName: string; payeeVatRegistered: boolean; payeeTin: string;
   amount: string; receiptNo: string; receiptDate: string; ewtClass: string; tenders: TenderRow[];
+  /** The approved purchase request it pays, if any (Oct 2026). */
+  requestId: string;
 }
 export interface VoucherInput {
   categoryId: number; tenders: TenderInput[]; amountCents: number; description: string; supplierId?: string; payeeName?: string; payeeVatRegistered?: boolean; payeeTin?: string;
-  supplierInvoiceNo?: string; supplierInvoiceDate?: string; ewtClass?: string;
+  supplierInvoiceNo?: string; supplierInvoiceDate?: string; ewtClass?: string; requestId?: string;
 }
 
 export const emptyVoucher = (): VoucherValues => ({
-  categoryId: '', description: '', payee: 'other', supplierId: '', payeeName: '', payeeVatRegistered: false, payeeTin: '', amount: '', receiptNo: '', receiptDate: '', ewtClass: '', tenders: [emptyTender()],
+  categoryId: '', description: '', payee: 'other', supplierId: '', payeeName: '', payeeVatRegistered: false, payeeTin: '', amount: '', receiptNo: '', receiptDate: '', ewtClass: '', tenders: [emptyTender()], requestId: '',
 });
 
 const TIN = /^\d{3}-\d{3}-\d{3}-\d{3}(\d{2})?$/;
@@ -48,6 +50,7 @@ export function voucherInput(v: VoucherValues, cashCents?: number): { input: Vou
     ...(v.receiptNo.trim() ? { supplierInvoiceNo: v.receiptNo.trim() } : {}),
     ...(v.receiptDate ? { supplierInvoiceDate: v.receiptDate } : {}),
     ...(v.ewtClass ? { ewtClass: v.ewtClass } : {}),
+    ...(v.requestId ? { requestId: v.requestId } : {}),
   };
   return { input, errors };
 }
@@ -55,5 +58,5 @@ export function voucherInput(v: VoucherValues, cashCents?: number): { input: Vou
 export const voucherValues = (i: VoucherInput): VoucherValues => ({
   categoryId: String(i.categoryId), description: i.description, payee: i.supplierId ? 'supplier' : 'other', supplierId: i.supplierId ?? '', payeeName: i.payeeName ?? '',
   payeeVatRegistered: i.payeeVatRegistered === true, payeeTin: i.payeeTin ?? '', amount: formatPesos(i.amountCents), receiptNo: i.supplierInvoiceNo ?? '',
-  receiptDate: i.supplierInvoiceDate ?? '', ewtClass: i.ewtClass ?? '', tenders: tendersToRows(i.tenders),
+  receiptDate: i.supplierInvoiceDate ?? '', ewtClass: i.ewtClass ?? '', tenders: tendersToRows(i.tenders), requestId: i.requestId ?? '',
 });

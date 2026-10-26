@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { createTestEnv, idem, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
+import { grantRole, createTestEnv, idem, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 
 describe('PUR Suppliers and Supplies', () => {
   let env: TestEnv;
 
   beforeEach(async () => {
-    env = await createTestEnv(); encoderOwnDefaults(env);
+    env = await createTestEnv(); encoderOwnDefaults(env); grantRole(env, 'encoder', 'pur.po.without_request'); // orders here are not about purchase requests
   });
 
   afterEach(async () => {

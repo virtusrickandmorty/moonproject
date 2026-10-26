@@ -3,7 +3,7 @@
  * each step showing what waits at it, and this month's costs NET of VAT on bills and expense vouchers.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { cashPlaceId, createTestEnv, encoderOwnDefaults, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { grantRole, cashPlaceId, createTestEnv, encoderOwnDefaults, idem, type Client, type TestEnv } from '../../../../test/helpers.ts';
 import type { PurchasesOverview } from '../overview.ts';
 
 let env: TestEnv;
@@ -11,7 +11,7 @@ let encoder: Client;
 let fabric: string, cloth: string;
 
 beforeEach(async () => {
-  env = await createTestEnv(); encoderOwnDefaults(env); // 28 September 2026
+  env = await createTestEnv(); encoderOwnDefaults(env); grantRole(env, 'encoder', 'pur.po.without_request'); // orders here are not about purchase requests (28 September 2026)
   encoder = await env.as('encoder');
   const accountant = await env.as('accountant');
   fabric = (await accountant.post('/api/pur/suppliers', { name: 'Sample Fabric Trading', registeredName: 'Sample Fabric Trading Inc.', tin: '111-222-333-000', isVatRegistered: true, paymentTermsDays: 30 })).json().id;

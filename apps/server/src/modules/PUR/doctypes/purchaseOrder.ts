@@ -2,6 +2,10 @@ import { z } from 'zod';
 import fc from 'fast-check';
 import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
+import { requestStatus } from '../requests.ts';
+
+/** Who may make a purchase order without an approved purchase request (the owner's decision, 26 Oct 2026: the owner and the accountant). */
+export const WITHOUT_REQUEST = 'pur.po.without_request';
 
 const MAX_CENTS = 100_000_000_00;
 const MAX_QTY = 1_000_000;
@@ -28,6 +32,7 @@ export const purchaseOrderInput = z
     supplierId: z.string().trim().min(1),
     expectedDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD').refine(isValidDate, 'Must be a real date').optional(),
     lines: z.array(poLineInput).max(200),
+    requestId: z.string().trim().min(1).max(80).optional(), // the approved purchase request (PRQ-) it orders
   })
   .strict();
 export type PurchaseOrderInput = z.infer<typeof purchaseOrderInput>;
@@ -79,6 +84,22 @@ export const purchaseOrderDoc: DocTypeDef<PurchaseOrderInput, PurchaseOrder> = {
       issues.push({ field: 'expectedDate', code: 'PAST_DATE', level: 'error', message: 'Expected date cannot be in the past.' });
     }
 
+    // The approved request it orders (the owner's request, 26 Oct 2026): required unless the user may order without one.
+    if (doc.requestId) {
+      const r = requestStatus(ctx.db, doc.requestId);
+      const add = (level: Issue['level'], code: string, message: string) => issues.push({ field: 'requestId', code, level, message });
+      if (!r || r.status !== 'posted') add('error', 'REQUEST', 'Pick a recorded purchase request.');
+      else if (r.state === 'waiting') add('error', 'REQUEST_WAITING', `${r.number} is still waiting for the owner or the accountant to approve it.`);
+      else if (r.state === 'rejected') add('error', 'REQUEST_REJECTED', `${r.number} was not approved${r.decision?.note ? `: ${r.decision.note}` : ''}.`);
+      else if (r.state === 'used') add('error', 'REQUEST_USED', `${r.number} is already used on ${r.usedBy!.number}.`);
+      else {
+        if (r.supplierId && r.supplierId !== doc.supplierId) add('warning', 'REQUEST_SUPPLIER', `${r.number} asked for ${r.supplierName}. Check that this supplier is right.`);
+        if (doc.totalCents > r.totalCents) add('warning', 'REQUEST_MORE', `This order (${formatPeso(doc.totalCents)}) is more than ${r.number} was approved for (${formatPeso(r.totalCents)}).`);
+      }
+    } else if (!ctx.can(WITHOUT_REQUEST)) {
+      issues.push({ field: 'requestId', code: 'NEED_REQUEST', level: 'error', message: 'Make the purchase order from an approved purchase request. The owner or the accountant approves the request first.' });
+    }
+
     if (doc.totalCents > MAX_CENTS) {
         issues.push({ field: 'lines', code: 'TOTAL_TOO_LARGE', level: 'error', message: 'Total amount exceeds safe limits.' });
     }
@@ -105,8 +126,8 @@ export const purchaseOrderDoc: DocTypeDef<PurchaseOrderInput, PurchaseOrder> = {
 
   persist(db, doc, h) {
     db.prepare(
-      `INSERT INTO pur_purchase_orders (document_id, supplier_id, expected_date) VALUES (?, ?, ?)`
-    ).run(h.documentId, doc.supplierId, doc.expectedDate ?? null);
+      `INSERT INTO pur_purchase_orders (document_id, supplier_id, expected_date, request_id) VALUES (?, ?, ?, ?)`
+    ).run(h.documentId, doc.supplierId, doc.expectedDate ?? null, doc.requestId ?? null);
 
     const insertLine = db.prepare(
       `INSERT INTO pur_po_lines (document_id, line_no, supply_id, qty, unit_cost_cents) VALUES (?, ?, ?, ?, ?)`
@@ -138,6 +159,7 @@ export const purchaseOrderDoc: DocTypeDef<PurchaseOrderInput, PurchaseOrder> = {
     return {
       supplierId: header.supplier_id,
       ...(header.expected_date ? { expectedDate: header.expected_date } : {}),
+      ...(header.request_id ? { requestId: header.request_id } : {}),
       totalCents: total,
       lines
     };
@@ -147,6 +169,7 @@ export const purchaseOrderDoc: DocTypeDef<PurchaseOrderInput, PurchaseOrder> = {
     return {
       supplierId: doc.supplierId,
       ...(doc.expectedDate ? { expectedDate: doc.expectedDate } : {}),
+      ...(doc.requestId ? { requestId: doc.requestId } : {}),
       lines: doc.lines.map(l => ({ supplyId: l.supplyId, qty: l.qty, unitCostCents: l.unitCostCents }))
     };
   },

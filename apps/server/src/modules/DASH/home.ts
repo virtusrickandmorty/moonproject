@@ -15,6 +15,7 @@ import { OVERDUE_LABEL, ordersToPrepare, paymentsToCheck, shopWorkReady } from '
 import { returnsAwaitingDecision, returnsDecidedSince } from '../ALT/public.ts';
 import { checksToDeposit, pdcsDue } from '../COL/public.ts';
 import { billsDue } from '../AP/public.ts';
+import { requestsIn } from '../PUR/public.ts';
 import { restocksReady } from '../TPL/public.ts';
 import { payToRelease } from '../PAY/public.ts';
 import { sizerBoard } from '../SZR/public.ts';
@@ -269,6 +270,14 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
     const ready = checksToDeposit(db, date);
     if (ready.length) push('checks-to-deposit', date, `${ready.length} ${ready.length === 1 ? 'check' : 'checks'} on hand can go to the bank`, '/col/checks',
       ready.slice(0, 3).map((c) => `${c.customerName} ${c.checkNumber}`).join(', ') + (ready.length > 3 ? '…' : ''), ready.reduce((n, c) => n + c.amountCents, 0));
+  }
+  // Purchase requests (the owner's request, 26 Oct 2026): the approvers see those waiting (not their own, unless the owner);
+  // whoever asked sees theirs once approved, to order or pay.
+  if (can('pur.request.approve')) for (const r of requestsIn(db, 'waiting')) if (r.requestedBy !== user.userId || user.roles.includes('owner')) {
+    push('pur-request-waiting', r.id, `${r.number} from ${r.requestedByName} waits for your approval`, `/docs/pur.request/${r.id}`, r.purpose, r.totalCents);
+  }
+  if (can('pur.po.create') || can('exp.voucher.create')) for (const r of requestsIn(db, 'approved')) if (r.requestedBy === user.userId) {
+    push('pur-request-approved', r.id, `${r.number} is approved: order or pay it`, `/docs/pur.request/${r.id}`, r.purpose, r.totalCents);
   }
   if (can('ap.pay.create')) for (const b of billsDue(db, date, addDays(date, 3))) {
     push('ap-bill-due', b.id, `${b.number} to ${b.supplierName} ${b.dueDate < date ? `was due ${b.dueDate}` : `is due ${b.dueDate}`}`, `/docs/${b.docType}/${b.id}`, undefined, b.balanceCents);

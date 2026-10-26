@@ -51,6 +51,15 @@ export function encoderOwnDefaults(env: Pick<TestEnv, 'db' | 'deps'>): void {
   for (const p of env.deps.registry.permissions()) set.run(p.defaultRoles.includes('encoder') ? 1 : 0, p.key);
 }
 
+/**
+ * Gives a role permissions an owner may tick on the Roles screen, for tests about something else: e.g. an encoder who
+ * orders without a purchase request (pur.po.without_request, the owner's and the accountant's by default since 26 Oct 2026).
+ */
+export function grantRole(env: Pick<TestEnv, 'db'>, role: RoleKey, ...keys: string[]): void {
+  const set = env.db.prepare(`UPDATE role_permissions SET granted = 1 WHERE role_key = ? AND permission_key = ?`);
+  for (const k of keys) if (set.run(role, k).changes !== 1) throw new Error(`No permission ${k} for ${role}`);
+}
+
 export function createUser(db: Db, username: string, roles: RoleKey[], mustChange = false): string {
   const id = newId();
   const at = '2026-09-28T10:00:00.000+08:00';

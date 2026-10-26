@@ -149,3 +149,5 @@ export function deliveriesToBill(db: Db): { id: string; number: string; date: st
     WHERE d.status = 'posted' AND NOT EXISTS (SELECT 1 FROM ap_bills b JOIN documents bd ON bd.id = b.document_id WHERE b.receiving_report_id = d.id AND bd.status = 'posted')
     ORDER BY d.business_date, d.number`).all() as { id: string; number: string; date: string; supplierId: string; supplierName: string; poId: string; poNumber: string; receivedCents: number }[];
 }
+
+export { requestStatus, requestsIn, type RequestStatus } from './requests.ts';

@@ -26,6 +26,7 @@ export const DOC_TITLES = [
   'Job Order',
   'Job Ticket',
   'Release Slip',
+  'Purchase Request', // PUR: asked for and approved before it is ordered or paid (the owner's request, 26 Oct 2026)
   'Delivery Receipt', // TPL: pieces delivered from a client's stock (the owner's request, 11 Oct 2026)
   'TPL Stock Value', // TPL: the clients' stock valued at cost at a month end (the owner's request, 22 Oct 2026)
   'Shop Stock Value', // SHP: the website shop's own stock valued at cost at a month end (the owner's request, 25 Oct 2026)

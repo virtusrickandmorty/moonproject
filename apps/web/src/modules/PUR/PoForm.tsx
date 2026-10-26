@@ -4,9 +4,11 @@
  * the right, where each line can be changed (Edit fills the item form again) or removed. The supplier's own supplies
  * (linked on its page) come first in the supply list, and a supply picked fills its last cost. The server works out every
  * total. Also the Edit of a recorded order (cancel and reissue, NR-4).
+ * An approved purchase request (the owner's request, 26 Oct 2026) is picked first, or comes with ?request=<id>: its
+ * supplier and its supplies on file fill in. Staff without pur.po.without_request order only from one (the server says so).
  */
 import { useEffect, useState } from 'react';
-import { api, type DocTypeInfo, type Me, type SupplyRecord } from '../../api.ts';
+import { api, type DocTypeInfo, type Me, type PurchaseRequestStatus, type SupplyRecord } from '../../api.ts';
 import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { formatPesos } from '@moonproject/shared';
@@ -14,10 +16,10 @@ import { SupplierSelect, useList } from '../AP/parts.tsx';
 import { PurFrame, usePurForm } from './PurForm.tsx';
 import { UNIT_WORDS, emptyPoRow, poRowTotal, poRows, poToInput, qtyWords, type PoRow } from './purchasing.ts';
 
-type Stored = { supplierId: string; expectedDate?: string; lines: { supplyId: string; qty: number; unitCostCents: number }[] };
+type Stored = { supplierId: string; expectedDate?: string; requestId?: string; lines: { supplyId: string; qty: number; unitCostCents: number }[] };
 const blank = (r: PoRow) => !r.supplyId && !r.qty.trim() && !r.unitCost.trim();
 
-export function PoForm({ type, mode }: { type: DocTypeInfo; mode: FormMode; me: Me }) {
+export function PoForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me: Me }) {
   const suppliers = useList(api.suppliers);
   const supplies = useList(() => api.supplyList('active'));
   const [supplierId, setSupplierId] = useState('');
@@ -27,18 +29,43 @@ export function PoForm({ type, mode }: { type: DocTypeInfo; mode: FormMode; me: 
   const [editing, setEditing] = useState<number | null>(null); // the breakdown line the item form is changing
   const [itemTouched, setItemTouched] = useState(false);
   const [linked, setLinked] = useState<SupplyRecord[]>([]);
+  const [requests, setRequests] = useState<PurchaseRequestStatus[]>([]);
+  const [requestId, setRequestId] = useState('');
+  const [described, setDescribed] = useState<string[]>([]); // request lines with no supply on file: to pick by hand
+  const mayDirect = me.permissions.includes('pur.po.without_request');
   const form = usePurForm(type, mode, (d) => {
     const input = d.input as Stored;
+    setRequestId(input.requestId ?? '');
     setSupplierId(input.supplierId);
     setExpected(input.expectedDate ?? '');
     setRows(poRows(input.lines));
   });
   useEffect(() => { setLinked([]); if (supplierId) api.supplierSupplies(supplierId).then(setLinked, () => undefined); }, [supplierId]);
+  // Approved requests not used yet; one asked for in the address is picked and fills the order.
+  useEffect(() => {
+    api.purRequests('approved').then((list) => {
+      setRequests(list);
+      const wanted = mode.kind === 'new' ? new URLSearchParams(window.location.search).get('request') : null;
+      const r = wanted ? list.find((x) => x.id === wanted) : undefined;
+      if (r) takeRequest(r);
+      else if (wanted) form.setError('That purchase request is not approved, or it is already ordered or paid.');
+    }, () => undefined);
+  }, []);
+  const takeRequest = (r: PurchaseRequestStatus | undefined) => {
+    setRequestId(r?.id ?? '');
+    if (!r) return setDescribed([]);
+    if (r.supplierId) setSupplierId(r.supplierId);
+    setRows(r.lines.filter((l) => l.supplyId).map((l) => ({ supplyId: l.supplyId!, qty: String(l.qty), unitCost: formatPesos(l.unitCostCents) })));
+    setDescribed(r.lines.filter((l) => !l.supplyId).map((l) => `${l.description} (${l.qty})`));
+  };
+  const picked = requests.find((r) => r.id === requestId);
 
   // What Record sends: the breakdown, with the item in the form added (or applied) when one is typed there.
   const pending = !blank(item);
   const all = pending ? (editing === null ? [...rows, item] : rows.map((r, i) => (i === editing ? item : r))) : rows;
-  const { input, errors } = poToInput(supplierId, expected, all);
+  const typed = poToInput(supplierId, expected, all);
+  const input = { ...typed.input, ...(requestId ? { requestId } : {}) };
+  const { errors } = typed;
   const itemErrors = poToInput('-', '', [item]).errors.map((e) => e.replace(/^Line 1: /, ''));
   const supplyOf = (id: string) => supplies.find((s) => s.id === id) ?? linked.find((s) => s.id === id);
   const others = supplies.filter((s) => !linked.some((l) => l.id === s.id));
@@ -95,6 +122,18 @@ export function PoForm({ type, mode }: { type: DocTypeInfo; mode: FormMode; me: 
 
   return (
     <PurFrame type={type} form={form} title="New purchase order" input={input} errors={errors} showTotal wide side={breakdown}>
+      <Panel title="Which approved request?">
+        <Field label="Purchase request" hint={mayDirect ? 'Optional for you: you may order without one.' : 'Required: the owner or the accountant approves the request first.'}>
+          <select aria-label="Purchase request" className={inputClass} value={requestId} onChange={(e) => takeRequest(requests.find((r) => r.id === e.target.value))}>
+            <option value="">{mayDirect ? 'None: order directly' : 'Pick an approved request'}</option>
+            {requests.map((r) => <option key={r.id} value={r.id}>{r.number} · {r.purpose.slice(0, 60)} · about {peso(r.totalCents)}</option>)}
+            {requestId && !picked && <option value={requestId}>The request on this order</option>}
+          </select>
+        </Field>
+        {!mayDirect && requests.length === 0 && !requestId && <Notice tone="info">No approved request is waiting to be ordered. Record a purchase request first; the owner or the accountant approves it.</Notice>}
+        {picked && <p className="text-sm text-slate-600">For: {picked.purpose}. Asked by {picked.requestedByName}, approved for about {peso(picked.totalCents)}.</p>}
+        {described.length > 0 && <Notice tone="warning">These were asked for without a supply on file: {described.join(', ')}. Add each as a supply below (add it under Supplies first if it is new).</Notice>}
+      </Panel>
       <Panel title="Who are we ordering from?">
         <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(10rem,1fr)]">
           <SupplierSelect suppliers={suppliers} value={supplierId} onChange={setSupplierId} />
