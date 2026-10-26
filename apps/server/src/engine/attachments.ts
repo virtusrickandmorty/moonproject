@@ -136,6 +136,71 @@ export function sniffType(b: Uint8Array): AttachmentType | null {
   return null;
 }
 
+/**
+ * Where the first complete JPEG picture in `b` ends (just after its end marker), or -1. Phone cameras often add more
+ * after it: a motion photo's video, an HDR "gain map" picture (Android Ultra HDR, iPhone), the maker's data (the owner's
+ * report, 26 Oct 2026: photos taken with the phone's camera were refused). With `size`, the first frame's width and height.
+ */
+function jpegEnd(b: Uint8Array): { end: number; width: number; height: number } | null {
+  if (!(b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff)) return null;
+  const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  let i = 2, width = 0, height = 0, scan = false;
+  while (i < b.length) {
+    if (b[i++] !== 0xff) return null;
+    while (b[i] === 0xff) i++;
+    const marker = b[i++];
+    if (marker === 0xd9) return width && scan ? { end: i, width, height } : null;
+    if (marker === undefined || marker === 0x00 || marker === 0xd8) return null;
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+    if (i + 2 > b.length) return null;
+    const size = view.getUint16(i);
+    if (size < 2 || i + size > b.length) return null;
+    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker) && !width) {
+      if (size < 8) return null;
+      height = view.getUint16(i + 3); width = view.getUint16(i + 5);
+    }
+    i += size;
+    if (marker === 0xda) {
+      if (!width) return null;
+      scan = true;
+      while (i < b.length) {
+        if (b[i] !== 0xff) { i++; continue; }
+        const next = b[i + 1];
+        if (next === 0x00 || (next !== undefined && next >= 0xd0 && next <= 0xd7)) { i += 2; continue; }
+        if (next === 0xff) { i++; continue; }
+        break;
+      }
+    }
+  }
+  return null;
+}
+
+/** A picture (not a PDF) as it is kept, from a Buffer: checkFile's picture as a Buffer, or why it is refused. */
+export function pictureFile(raw: Buffer, name?: string): { type: Exclude<AttachmentType, 'application/pdf'>; data: Buffer } | { problem: string } {
+  const c = checkFile(raw, name);
+  if ('problem' in c) return c;
+  if (c.type === 'application/pdf') return { problem: `${name ?? 'This file'} is a PDF: send a JPEG, PNG or WebP picture.` };
+  return { type: c.type, data: c.data === raw ? raw : Buffer.from(c.data) };
+}
+
+/**
+ * A file as it is kept: its type from its contents, and the bytes to store. A JPEG with more after its picture is kept as
+ * that picture alone (still a complete JPEG, checked as strictly as any other); anything else must pass sniffType as it is.
+ * Refused: the reason, in plain words, for the person who picked it.
+ */
+export function checkFile(b: Uint8Array, name = 'This file'): { type: AttachmentType; data: Uint8Array } | { problem: string } {
+  const jpeg = jpegEnd(b);
+  if (jpeg) {
+    const data = jpeg.end < b.length ? b.subarray(0, jpeg.end) : b;
+    if (sniffType(data) === 'image/jpeg') return { type: 'image/jpeg', data };
+    if (jpeg.width > 6000 || jpeg.height > 6000 || jpeg.width * jpeg.height > 24_000_000) {
+      return { problem: `${name} is ${jpeg.width} × ${jpeg.height} pixels: the most is 6000 on a side. Reload the page and pick it again: the app makes photos smaller by itself.` };
+    }
+  }
+  const type = sniffType(b);
+  return type ? { type, data: b } : { problem: `${TYPE_WORDS}. ${name} is not one of them.` };
+}
+
 export const sha256Hex = (b: Uint8Array) => createHash('sha256').update(b).digest('hex');
 
 /** The attachments folder beside a database file. */
@@ -252,12 +317,17 @@ export function attachmentRoutes(app: FastifyInstance, deps: AppDeps): void {
 
     upload.post<{ Params: { type: string; id: string } }>('/api/docs/:type/:id/attachments', auth, async (req) => {
       const { d, doc, user } = documentFor(req, 'create');
-      const data = req.body;
-      if (!Buffer.isBuffer(data) || data.length === 0) throw new AppError('EMPTY_FILE', 'The file is empty. Pick the file again.', 400);
+      const sent = req.body;
+      if (!Buffer.isBuffer(sent) || sent.length === 0) throw new AppError('EMPTY_FILE', 'The file is empty. Pick the file again.', 400);
       const fileName = cleanName(req.headers['x-file-name']);
       const byName = EXTENSIONS[fileName.split('.').pop()!.toLowerCase()];
-      const type = sniffType(data);
-      if (!byName || !type) throw new AppError('FILE_TYPE', `${TYPE_WORDS}. ${fileName} is not one of them.`, 415);
+      const checked = checkFile(sent, fileName);
+      if (!byName || 'problem' in checked) {
+        // Why, for whoever looks into it later: the name, the size and the reason; never the contents.
+        req.log.warn({ fileName, bytes: sent.length, reason: byName ? (checked as { problem: string }).problem : 'unknown file ending' }, 'attachment refused');
+        throw new AppError('FILE_TYPE', 'problem' in checked ? checked.problem : `${TYPE_WORDS}. ${fileName} is not one of them.`, 415);
+      }
+      const { type, data } = checked; // a phone photo's extra picture or video after its end is not kept
       const sha256 = sha256Hex(data);
       clockGuard({ db, clock });
       const at = stamp(clock);

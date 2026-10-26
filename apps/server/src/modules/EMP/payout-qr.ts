@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { AppError, notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { sha256Hex, sniffType } from '../../engine/attachments.ts';
+import { pictureFile, sha256Hex } from '../../engine/attachments.ts';
 import type { Who } from './employees.ts';
 
 /** A phone's photo of a QR is small; 4 MB, as the online shop's pictures. */
@@ -55,9 +55,10 @@ function save(db: Db, employeeId: string, picture: { type: string; data: Buffer 
 /** A new QR picture: JPEG, PNG or WebP by its first bytes, at most 4 MB. */
 export function savePayoutQr(db: Db, employeeId: string, raw: unknown, who: Who): PayoutQr | null {
   const f = payoutQrInput.parse(raw);
-  const data = Buffer.from(f.data, 'base64');
-  const type = sniffType(data);
-  if (!data.length || !type || type === 'application/pdf') throw new AppError('FILE_TYPE', 'The QR code must be a JPEG, PNG or WebP picture.', 415);
+  const sent = Buffer.from(f.data, 'base64');
+  const picture = sent.length ? pictureFile(sent, 'The QR code picture') : null;
+  if (!picture || 'problem' in picture) throw new AppError('FILE_TYPE', picture && 'problem' in picture && /pixels/.test(picture.problem) ? picture.problem : 'The QR code must be a JPEG, PNG or WebP picture.', 415);
+  const { type, data } = picture; // a phone photo's extra picture or video after its end is not kept
   if (data.length > MAX_QR_BYTES) throw new AppError('FILE_TOO_BIG', 'The QR code picture is bigger than 4 MB. Send a smaller picture.', 413);
   return save(db, employeeId, { type, data }, who);
 }

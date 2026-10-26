@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { AppError, conflict, newId, notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { sha256Hex, sniffType } from '../../engine/attachments.ts';
+import { pictureFile, sha256Hex } from '../../engine/attachments.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { tx, type Db } from '../../platform/db/driver.ts';
 import { stamp } from '../../platform/clock.ts';
@@ -190,9 +190,9 @@ export function shpRoutes(app: FastifyInstance, deps: AppDeps): void {
     });
     // ?slot=1|2|3: which photo it is (1, the main one, when not said); a slot after the photos there takes the next free one.
     upload.post('/api/shp/products/:id/photo', { config: { permission: 'shp.manage' } }, async (req) => {
-      const data = req.body;
-      const type = Buffer.isBuffer(data) ? sniffType(data) : null;
-      if (!Buffer.isBuffer(data) || !data.length || !type || type === 'application/pdf') throw new AppError('FILE_TYPE', 'Only JPEG, PNG or WebP photos can be used.', 415);
+      const picture = Buffer.isBuffer(req.body) && req.body.length ? pictureFile(req.body) : null;
+      if (!picture || 'problem' in picture) throw new AppError('FILE_TYPE', 'Only JPEG, PNG or WebP photos can be used.', 415);
+      const { type, data } = picture; // a phone photo's extra picture or video after its end is not kept
       const slot = slotOf(req);
       const at = stamp(clock);
       return tx(db, () => {

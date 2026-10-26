@@ -85,6 +85,29 @@ describe('attachments', () => {
     expect(jpe.json()).toMatchObject({ contentType: 'image/jpeg' });
   });
 
+  it('takes a phone camera photo with more after its picture, keeping the picture alone (the owner\'s report, 26 Oct 2026)', async () => {
+    const id = await jv();
+    // Android Ultra HDR and iPhone HDR photos carry a second picture after the first; motion photos carry a video.
+    const photo = JPEG(); // each sample differs: one is kept to compare with
+    const hdr = Buffer.concat([photo, JPEG()]);
+    const motion = Buffer.concat([photo, Buffer.from('\x00\x00\x00\x18ftypmp42 a short video after the picture')]);
+    for (const [name, data] of [['PXL_20261026_HDR.jpg', hdr], ['PXL_20261026.MP.jpg', motion]] as const) {
+      const res = await add(accountant, id, data, name);
+      expect(res.statusCode, res.body).toBe(200);
+      expect(res.json()).toMatchObject({ contentType: 'image/jpeg', bytes: photo.length });
+      expect(readFileSync(join(attachmentsDir(env.db), res.json().sha256)).equals(photo)).toBe(true);
+      await accountant.post(`${base(id)}/${res.json().id}/remove`, { reason: 'Only the picture is kept: a test' });
+    }
+    // Still refused: something that only starts like a JPEG, and a photo larger than the server takes, saying so.
+    expect((await add(accountant, id, Buffer.concat([JPEG().subarray(0, 40), Buffer.from('not the rest of a picture')]), 'broken.jpg')).statusCode).toBe(415);
+    const big = JPEG();
+    const sof = big.findIndex((v, i) => v === 0xff && big[i + 1]! >= 0xc0 && big[i + 1]! <= 0xc2);
+    big.writeUInt16BE(6120, sof + 5); big.writeUInt16BE(8160, sof + 7); // height, width: a 50-megapixel phone photo
+    const refused = await add(accountant, id, big, 'IMG_8160.jpg');
+    expect(refused.statusCode).toBe(415);
+    expect(refused.json().message).toBe('IMG_8160.jpg is 8160 × 6120 pixels: the most is 6000 on a side. Reload the page and pick it again: the app makes photos smaller by itself.');
+  });
+
   it('stores the same file once, however many documents have it; the same document refuses it twice', async () => {
     const [one, two] = [await jv(), await jv('Accrued power bill')];
     const data = PDF();

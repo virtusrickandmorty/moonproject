@@ -9,7 +9,7 @@ import { z } from 'zod';
 import { AppError, conflict, newId, notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { sha256Hex, sniffType } from '../../engine/attachments.ts';
+import { pictureFile, sha256Hex } from '../../engine/attachments.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { PUBLIC_RATE_MESSAGE } from '../../engine/security/sessions.ts';
 import { tx } from '../../platform/db/driver.ts';
@@ -89,10 +89,11 @@ export function supRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (!EMAIL.test(b.email)) throw new AppError('EMAIL_REQUIRED', 'Please give a valid email address so we can answer you.', 400);
     if (!PHONE.test(b.phone)) throw new AppError('PHONE_REQUIRED', 'Please give your mobile number, like 0917 123 4567.', 400);
     const files = b.files.map((f) => {
-      const data = Buffer.from(f.data, 'base64');
-      const type = sniffType(data);
+      const raw = Buffer.from(f.data, 'base64');
       const name = cleanName(f.name);
-      if (!data.length || !type || type === 'application/pdf') throw new AppError('FILE_TYPE', `Only complete JPEG, PNG or WebP pictures up to 6000 pixels per side and 24 million pixels can be sent. ${name} is not one of them.`, 415);
+      const picture = raw.length ? pictureFile(raw, name) : null;
+      if (!picture || 'problem' in picture) throw new AppError('FILE_TYPE', picture && 'problem' in picture && /pixels/.test(picture.problem) ? picture.problem : `Only complete JPEG, PNG or WebP pictures up to 6000 pixels per side and 24 million pixels can be sent. ${name} is not one of them.`, 415);
+      const { type, data } = picture; // a phone photo's extra picture or video after its end is not kept
       if (data.length > MAX_FILE_BYTES) throw new AppError('FILE_TOO_BIG', `${name} is bigger than 4 MB. Send a smaller picture.`, 413);
       return { name, type, data, sha256: sha256Hex(data) };
     });
