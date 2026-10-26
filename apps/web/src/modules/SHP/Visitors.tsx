@@ -21,7 +21,7 @@ interface Insights {
   hours: { hour: number; visits: number }[];
 }
 
-const PAGE: Record<string, string> = { '/': 'Shop', '/shop': 'Shop', '/services': 'Services', '/about': 'About us', '/support': 'Support', '/track': 'Track order', '/checkout': 'Checkout', '/orders': 'My orders' };
+const PAGE: Record<string, string> = { '/': 'Shop', '/shop': 'Shop', '/services': 'Services', '/about': 'About us', '/support': 'Support', '/track': 'Track order', '/checkout': 'Checkout', '/orders': 'My orders', '/terms': 'Terms' };
 const n = (v: number) => v.toLocaleString('en-PH');
 const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : '–');
 const dayLabel = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: 'UTC' });

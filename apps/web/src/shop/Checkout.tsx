@@ -129,6 +129,7 @@ export function Checkout() {
           <input type="checkbox" checked={v.consent} onChange={(e) => set('consent', e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-indigo-600" />
           <span>I agree that Virtus Garments keeps my name, contact details, address and payment proof to process this order, as the Data Privacy Act of 2012 allows.</span>
         </label>
+        <p className="mt-3 text-xs text-slate-500">By placing the order you agree to our <Link to="/terms" className="font-semibold text-indigo-700 underline">terms and conditions</Link>, including the 24-hour payment hold and our returns and exchanges.</p>
         {error && <p role="alert" className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">{error}</p>}
         <button type="submit" disabled={busy} className="mt-6 w-full rounded-full bg-indigo-600 px-6 py-3.5 font-bold text-white hover:bg-indigo-700 disabled:cursor-wait disabled:bg-slate-400 sm:w-auto">{busy ? 'Placing your order…' : `Place order · ${formatPeso(total)}`}</button>
       </form>

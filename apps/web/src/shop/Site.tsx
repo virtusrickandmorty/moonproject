@@ -10,12 +10,13 @@ import { SCHOOL_TPL, SERVICES, Services } from './Services.tsx';
 import { BRAND, breadcrumbLd, productListLd, servicesLd, storeLd, useSeo, useSeoReset, type Seo } from './seo.ts';
 import { Store } from './Storefront.tsx';
 import { Support } from './Support.tsx';
+import { Terms } from './Terms.tsx';
 import { ChatBubble } from './Assistant.tsx';
 import { SHOP_CONTACT, deliveryWords, type Product } from './products.ts';
 import { ShopProvider, useShop } from './store.tsx';
 
 /** The addresses this site answers before sign-in; every other one asks staff to sign in. */
-export const SITE_PATHS = ['/', '/shop', '/services', '/about', '/support', '/checkout', '/orders', '/track'];
+export const SITE_PATHS = ['/', '/shop', '/services', '/about', '/support', '/checkout', '/orders', '/track', '/terms'];
 /** A customer's order page: /order/WEB-000123 (opened with its secret link). */
 const ORDER_PAGE = /^\/order\/([A-Z]+-\d{1,9})$/;
 /** Whether the website answers this address: for everyone, or (staff) beside the ERP, whose home page is `/`. */
@@ -41,6 +42,11 @@ function seoFor(path: string, shop: ReturnType<typeof useShop>): Seo {
     path, title: `Customer Support and Quotation Requests | ${BRAND}`,
     description: 'Ask a question, send feedback or request a quotation for team jerseys, uniforms and custom prints, with pictures of your design. A person at the shop reads every message.',
     jsonLd: [storeLd(), breadcrumbLd([home, ['Customer support', path]])],
+  };
+  if (path === '/terms') return {
+    path, title: `Terms and Conditions | ${BRAND}`,
+    description: 'How ordering, payment, downpayments, claiming, returns, exchanges and refunds work at Virtus Garments, for made-to-order and ready-stock garments.',
+    jsonLd: [storeLd(), breadcrumbLd([home, ['Terms and conditions', path]])],
   };
   if (path === '/track') return { path, index: false, title: `Track Your Order | ${BRAND}`, description: 'See where your online order or job order is, by its number.' };
   if (path !== '/' && path !== '/shop') return { path, index: false, title: `Your Order | ${BRAND}`, description: `Your order at ${BRAND}.` };
@@ -72,7 +78,7 @@ function Layout({ staff }: { staff: boolean }) {
   const order = ORDER_PAGE.exec(path);
   const page: ReactNode = order ? <OrderStatus key={path} number={order[1]!} query={query} />
     : path === '/checkout' ? <Checkout /> : path === '/orders' ? <MyOrders /> : path === '/track' ? <Track key={query} query={query} />
-    : path === '/services' ? <Services /> : path === '/about' ? <About /> : path === '/support' ? <Support key={query} query={query} /> : <Store {...controls} />;
+    : path === '/services' ? <Services /> : path === '/about' ? <About /> : path === '/terms' ? <Terms /> : path === '/support' ? <Support key={query} query={query} /> : <Store {...controls} />;
   const icon = 'relative grid size-10 place-items-center rounded-full hover:bg-slate-100';
   const home = staff ? '/shop' : '/';
   const [searching, setSearching] = useState(false);
@@ -148,10 +154,11 @@ function Layout({ staff }: { staff: boolean }) {
               <p><Link to="/services" className="hover:text-white">Services</Link></p>
               <p><Link to="/about" className="hover:text-white">About us</Link></p>
               <p><Link to="/support" className="hover:text-white">Customer support</Link></p>
+              <p><Link to="/terms" className="hover:text-white">Terms and conditions</Link></p>
               <p><Link to={staff ? '/' : '/sign-in'} className="hover:text-white">{staff ? 'Back to the ERP' : 'Staff sign in'}</Link></p></div>
             <div className="space-y-2"><p className="font-bold text-white">Talk to us</p><p>{SHOP_CONTACT.email}</p><p>{SHOP_CONTACT.phone}</p><p>{SHOP_CONTACT.hours}</p></div>
           </div>
-          <p className="border-t border-white/10 py-6 text-xs">© Virtus Garments · Ready-stock prices are final and include VAT; made-to-order prices are confirmed on your quotation.
+          <p className="border-t border-white/10 py-6 text-xs">© Virtus Garments · Ready-stock prices are final and include VAT; made-to-order prices are confirmed on your quotation · <Link to="/terms" className="underline hover:text-white">Terms and conditions</Link>
             {!staff && !browserSaysNo() && <> · Visit counting is {choice === 'no' ? 'off' : 'on'} (no names kept): <button type="button" className="underline hover:text-white" onClick={() => choose(choice === 'no' ? 'yes' : 'no')}>{choice === 'no' ? 'Count my visits' : "Don't count me"}</button></>}</p>
         </div>
       </footer>
