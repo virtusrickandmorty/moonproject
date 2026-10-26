@@ -14,9 +14,10 @@ export function Exception({ title, active, children }: { title: string; active: 
 }
 
 /** One action area, after review on larger screens and always at the foot of a phone. */
-export function SalesActions({ total, label = 'Total', children }: { total?: number; label?: string; children: ReactNode }) {
+/** `label` null: no total line (a receiving report moves no money); the buttons stay on the right. */
+export function SalesActions({ total, label = 'Total', children }: { total?: number; label?: string | null; children: ReactNode }) {
   return <div className="fixed inset-x-0 bottom-0 z-10 flex flex-wrap items-center gap-2 border-t bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-sm sm:static sm:rounded-lg sm:border sm:p-3">
-    <p className="mr-auto text-sm font-semibold tabular-nums">{label}: {total === undefined ? '—' : peso(total)}</p>
+    {label === null ? <span className="mr-auto" /> : <p className="mr-auto text-sm font-semibold tabular-nums">{label}: {total === undefined ? '—' : peso(total)}</p>}
     {children}
   </div>;
 }

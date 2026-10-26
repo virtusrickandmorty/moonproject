@@ -59,7 +59,9 @@ export function purLookupRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/pur/purchase-orders/:id', { config: { permission: 'pur.po.view' } }, async (req) => {
     const po = db.prepare(`${PO_HEAD} WHERE d.id = ?`).get(id(req)) as PoHead | undefined;
     if (!po) throw notFound('The purchase order');
-    return { ...po, lines: poLines(db, po.id), deliveries: deliveriesOf(db, po.id), advancedCents: advancedOn(db, po.id) };
+    // The purchase request it was made from, if any (its page links back to it, 26 Oct 2026).
+    const request = (db.prepare(`SELECT d.id, d.number FROM pur_purchase_orders po JOIN documents d ON d.id = po.request_id WHERE po.document_id = ?`).get(po.id) as { id: string; number: string } | undefined) ?? null;
+    return { ...po, lines: poLines(db, po.id), deliveries: deliveriesOf(db, po.id), advancedCents: advancedOn(db, po.id), request };
   });
 
   app.get('/api/pur/receiving-reports/:id', { config: { permission: 'pur.rr.view' } }, async (req) => {

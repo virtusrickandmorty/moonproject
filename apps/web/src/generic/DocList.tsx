@@ -147,12 +147,13 @@ export function RowMenu({ label, items }: { label: string; items: { label: strin
  * form that needs the whole width (a job order with its breakdown beside it).
  * `summary` and `summaryHead`: a module's own words for a row in place of its summary, under its own heading; `head`:
  * what a module shows above the list (the job orders' figures).
+ * `amountHead`: the Amount column's own name (a request's Estimate), or null for none (a receiving report moves no money).
  * `source`, `columns`, `detail` and `searchHint`: a module's own rows, its columns after Amount, a line under a row's
  * summary (why a search found it) and what its search reads. `others`: other document types whose New form and documents
  * open over this list (a job order's payment, invoice and release), with what shows them.
  */
-export function DocList({ type, notice, pageSize, showOlder = false, form, view, opened, noEdit, rowActions, formTitled, formSize = 'full', source, columns = [], detail, searchHint, others, searchTools, summary, summaryHead = 'What', head }: {
-  summary?: (r: DocHeader) => ReactNode; summaryHead?: string; head?: ReactNode;
+export function DocList({ type, notice, pageSize, showOlder = false, form, view, opened, noEdit, rowActions, formTitled, formSize = 'full', source, columns = [], detail, searchHint, others, searchTools, summary, summaryHead = 'What', head, amountHead = 'Amount' }: {
+  summary?: (r: DocHeader) => ReactNode; summaryHead?: string; head?: ReactNode; amountHead?: string | null;
   type: DocTypeInfo; notice?: string; pageSize?: number; showOlder?: boolean; form?: ListForm; view?: ListView; opened?: Opened; noEdit?: boolean; rowActions?: (r: DocHeader) => ReactNode; formTitled?: boolean; formSize?: 'full' | 'screen';
   source?: ListSource; columns?: ListColumn[]; detail?: (r: DocHeader) => ReactNode; searchHint?: string;
   /** Beside the search box (the job orders' Scan QR): given a way to search for words at once. */
@@ -357,7 +358,7 @@ export function DocList({ type, notice, pageSize, showOlder = false, form, view,
             {summary ? summary(r) : <p className={`line-clamp-3 text-sm ${r.status === 'cancelled' ? 'line-through' : 'text-slate-700'}`}>{r.summary}</p>}
             {detail?.(r)}
             <p className="flex flex-wrap gap-x-4 text-sm">
-              <span>Amount <b className="tabular-nums">{peso(r.totalCents)}</b></span>
+              {amountHead !== null && <span>{amountHead} <b className="tabular-nums">{peso(r.totalCents)}</b></span>}
               {columns.map((c) => <span key={c.head}>{c.head} <span className="tabular-nums">{c.cell(r)}</span></span>)}
             </p>
             <div className="flex flex-wrap gap-1.5">{actions(r)}</div>
@@ -369,7 +370,7 @@ export function DocList({ type, notice, pageSize, showOlder = false, form, view,
       <div className="hidden overflow-x-auto rounded-xl bg-white p-2 shadow-sm ring-1 ring-slate-200/70 md:block">
         <table className="w-full text-sm [&_td]:px-4 [&_td]:py-3 [&_th]:px-4 [&_th]:py-3">
           <thead className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-muted">
-            <tr><th>Number</th><th>Date</th><th>{summaryHead}</th><th className="text-right">Amount</th>{columns.map((c) => <th key={c.head} className={c.figure ? 'text-right' : ''}>{c.head}</th>)}<th>Status</th><th className="text-right">Actions</th></tr>
+            <tr><th>Number</th><th>Date</th><th>{summaryHead}</th>{amountHead !== null && <th className="text-right">{amountHead}</th>}{columns.map((c) => <th key={c.head} className={c.figure ? 'text-right' : ''}>{c.head}</th>)}<th>Status</th><th className="text-right">Actions</th></tr>
           </thead>
           <tbody>
             {rows.map((r) => (
@@ -377,7 +378,7 @@ export function DocList({ type, notice, pageSize, showOlder = false, form, view,
                 <td className="whitespace-nowrap font-semibold"><Link to={rowPath(r.id)} onClick={(e) => e.stopPropagation()} className="text-indigo-700 no-underline hover:underline">{r.number}</Link></td>
                 <td className="whitespace-nowrap">{showDate(r.businessDate)}</td>
                 <td className="min-w-48 max-w-sm">{summary ? summary(r) : <span className="line-clamp-2 text-slate-700" title={r.summary}>{r.summary}</span>}{detail?.(r)}</td>
-                <td className="text-right tabular-nums">{peso(r.totalCents)}</td>
+                {amountHead !== null && <td className="text-right tabular-nums">{peso(r.totalCents)}</td>}
                 {columns.map((c) => <td key={c.head} className={c.figure ? 'whitespace-nowrap text-right tabular-nums' : ''}>{c.cell(r)}</td>)}
                 <td><StatusChip status={r.status} /></td>
                 <td><div className="flex items-center justify-end gap-1">{tableActions(r)}</div></td>

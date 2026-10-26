@@ -17,7 +17,8 @@ import { Crumb } from '../shell/crumbs.tsx';
 /** A module's own view parts: more detail under "What this did", and its own cancel (e.g. a quick sale and its payment). */
 /** `noEdit` hides Edit where a cancel and a new document is the way to correct (a payroll's figures depend on the state it was worked out on). */
 /** `cancelNote` is shown in the cancel dialog (a payroll whose month was already remitted, D6). */
-export interface ViewParts { extra?: (d: DocDetail) => ReactNode; cancel?: (id: string, reason: string, key: string) => Promise<unknown>; noEdit?: boolean; cancelNote?: (d: DocDetail) => ReactNode }
+/** `totalLabel`: the Total tile's own name (a request's estimate); `noTotal`: no Total tile (a receiving report moves no money). */
+export interface ViewParts { extra?: (d: DocDetail) => ReactNode; cancel?: (id: string, reason: string, key: string) => Promise<unknown>; noEdit?: boolean; cancelNote?: (d: DocDetail) => ReactNode; totalLabel?: string; noTotal?: boolean }
 /** Opens a document's printout in a new window and prints it; the problem in words, or null. Also used by a list row's Print. */
 export async function printDocument(typeKey: string, id: string, variant: PrintVariant = 'document'): Promise<string | null> {
   const page = window.open('', '_blank');
@@ -99,10 +100,10 @@ export function DocView({ type, id, recorded, parts = {}, inDialog, startCancel 
       </div>
       {printError && <Notice>{printError}</Notice>}
       {/* Its key facts at a glance, as the home's tiles. */}
-      <dl className="grid gap-3 sm:grid-cols-3">
+      <dl className={`grid gap-3 ${parts.noTotal ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
         <div className={`px-4 py-3 ${SURFACE}`}><dt className="text-xs font-medium uppercase tracking-wide text-muted">{type.dating === 'printed' ? 'Date printed on it' : 'Dated'}</dt><dd className="mt-1 font-semibold text-slate-900">{longDate(h.businessDate)}</dd></div>
         <div className={`px-4 py-3 ${SURFACE}`}><dt className="text-xs font-medium uppercase tracking-wide text-muted">{type.dating === 'printed' ? 'Typed' : 'Recorded'}</dt><dd className="mt-1 font-semibold text-slate-900">{manilaTime(h.postedAt)}</dd></div>
-        <div className={`px-4 py-3 ${SURFACE}`}><dt className="text-xs font-medium uppercase tracking-wide text-muted">Total</dt><dd className={`mt-1 text-xl font-bold tabular-nums ${posted ? 'text-[#010101]' : 'text-slate-400 line-through'}`}>{peso(h.totalCents)}</dd></div>
+        {!parts.noTotal && <div className={`px-4 py-3 ${SURFACE}`}><dt className="text-xs font-medium uppercase tracking-wide text-muted">{parts.totalLabel ?? 'Total'}</dt><dd className={`mt-1 text-xl font-bold tabular-nums ${posted ? 'text-[#010101]' : 'text-slate-400 line-through'}`}>{peso(h.totalCents)}</dd></div>}
       </dl>
       {h.replacesId && <Notice tone="info">This replaces <Link to={docPath(type.key, `/${h.replacesId}`)} className="underline">an earlier {type.title}</Link> that was edited.</Notice>}
       {!posted && (

@@ -6,15 +6,17 @@
  * total. Also the Edit of a recorded order (cancel and reissue, NR-4).
  * An approved purchase request (the owner's request, 26 Oct 2026) is picked first, or comes with ?request=<id>: its
  * supplier and its supplies on file fill in. Staff without pur.po.without_request order only from one (the server says so).
+ * The approved requests show as cards with what each is for, who asked, by when and about how much (26 Oct 2026).
  */
 import { useEffect, useState } from 'react';
 import { api, type DocTypeInfo, type Me, type PurchaseRequestStatus, type SupplyRecord } from '../../api.ts';
-import { Button, Field, Notice, Panel, inputClass, peso } from '../../components/ui.tsx';
+import { Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { formatPesos } from '@moonproject/shared';
 import { SupplierSelect, useList } from '../AP/parts.tsx';
 import { PurFrame, usePurForm } from './PurForm.tsx';
 import { UNIT_WORDS, emptyPoRow, poRowTotal, poRows, poToInput, qtyWords, type PoRow } from './purchasing.ts';
+import { PickCard } from './parts.tsx';
 
 type Stored = { supplierId: string; expectedDate?: string; requestId?: string; lines: { supplyId: string; qty: number; unitCostCents: number }[] };
 const blank = (r: PoRow) => !r.supplyId && !r.qty.trim() && !r.unitCost.trim();
@@ -123,15 +125,18 @@ export function PoForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; 
   return (
     <PurFrame type={type} form={form} title="New purchase order" input={input} errors={errors} showTotal wide side={breakdown}>
       <Panel title="Which approved request?">
-        <Field label="Purchase request" hint={mayDirect ? 'Optional for you: you may order without one.' : 'Required: the owner or the accountant approves the request first.'}>
-          <select aria-label="Purchase request" className={inputClass} value={requestId} onChange={(e) => takeRequest(requests.find((r) => r.id === e.target.value))}>
-            <option value="">{mayDirect ? 'None: order directly' : 'Pick an approved request'}</option>
-            {requests.map((r) => <option key={r.id} value={r.id}>{r.number} · {r.purpose.slice(0, 60)} · about {peso(r.totalCents)}</option>)}
-            {requestId && !picked && <option value={requestId}>The request on this order</option>}
-          </select>
-        </Field>
+        <p className="text-xs text-slate-500">{mayDirect ? 'Optional for you: you may order without one.' : 'Required: the owner or the accountant approves the request first.'}</p>
+        <div role="radiogroup" aria-label="Purchase request" className="space-y-2">
+          {requests.map((r) => (
+            <PickCard key={r.id} picked={requestId === r.id} onPick={() => takeRequest(r)} title={r.number}
+              lines={[r.purpose, `Asked by ${r.requestedByName}${r.neededBy ? ` · needed by ${showDate(r.neededBy)}` : ''}${r.supplierName ? ` · from ${r.supplierName}` : ''}`,
+                `${r.lines.length} ${r.lines.length === 1 ? 'thing' : 'things'}: ${r.lines.slice(0, 3).map((l) => l.description).join(', ')}${r.lines.length > 3 ? ', …' : ''}`]}
+              right={`about ${peso(r.totalCents)}`} rightNote="approved" />
+          ))}
+          {requestId && !picked && <PickCard picked onPick={() => undefined} title="The request on this order" lines={['It stays with this order when you record the change.']} />}
+          {mayDirect && <PickCard picked={!requestId} onPick={() => takeRequest(undefined)} title="None: order directly" lines={['For a purchase nobody needs to approve first.']} />}
+        </div>
         {!mayDirect && requests.length === 0 && !requestId && <Notice tone="info">No approved request is waiting to be ordered. Record a purchase request first; the owner or the accountant approves it.</Notice>}
-        {picked && <p className="text-sm text-slate-600">For: {picked.purpose}. Asked by {picked.requestedByName}, approved for about {peso(picked.totalCents)}.</p>}
         {described.length > 0 && <Notice tone="warning">These were asked for without a supply on file: {described.join(', ')}. Add each as a supply below (add it under Supplies first if it is new).</Notice>}
       </Panel>
       <Panel title="Who are we ordering from?">

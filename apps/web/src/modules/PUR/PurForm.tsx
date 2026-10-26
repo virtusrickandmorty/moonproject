@@ -76,7 +76,7 @@ export function PurFrame(p: { type: DocTypeInfo; form: ReturnType<typeof usePurF
       </Panel>
       {p.wide && <>
         <Errors list={errors} show={touched} />
-        <SalesActions total={live?.totalCents} label="Total">
+        <SalesActions total={live?.totalCents} label={p.showTotal ? 'Total' : null}>
           <Button tone="primary" disabled={!type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
           {closeDialog ? <Button onClick={closeDialog}>Close</Button> : <Button onClick={() => history.back()}>Back</Button>}
         </SalesActions>
