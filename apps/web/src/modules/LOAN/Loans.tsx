@@ -31,6 +31,7 @@ export function Loans({ docTypes }: { docTypes: DocTypeInfo[] }) {
   const [error, setError] = useState('');
   const [showCancelled, setShowCancelled] = useState(false);
   useEffect(() => void Promise.all([api.loans(), api.loansLate()]).then(([r, l]) => (setRows(r), setLate(l)), (e: Error) => setError(e.message)), []);
+  useLiveReload(() => Promise.all([api.loans(), api.loansLate()]).then(([r, l]) => (setRows(r), setLate(l)))); // Live (the owner's check, 26 Oct 2026): a change on any computer shows here too.
   if (error) return <Notice>{error}</Notice>;
   if (!rows) return <Loading />;
   const shown = rows.filter((r) => showCancelled || r.status === 'posted');

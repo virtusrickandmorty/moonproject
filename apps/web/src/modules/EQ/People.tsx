@@ -105,15 +105,17 @@ export function PersonPage({ me, docTypes, params }: { me: Me; docTypes: DocType
   const [error, setError] = useState('');
   const seeMoney = can(me, 'eq.ledger.view');
   const fail = (e: Error) => setError(e.message);
-  useEffect(() => {
-    void api.eqRegister().then((all) => { const p = all.find((x) => x.id === id); return p ? setPerson(p) : setError('That person is not in the register.'); }, fail);
+  const load = (onFail: (e: Error) => void) => {
+    void api.eqRegister().then((all) => { const p = all.find((x) => x.id === id); return p ? setPerson(p) : setError('That person is not in the register.'); }, onFail);
     if (seeMoney) {
-      void api.eqLedger(id).then(setLedger, fail);
-      void api.eqBalances().then((all) => setBalance(balanceOf(all, id)), fail);
+      void api.eqLedger(id).then(setLedger, onFail);
+      void api.eqBalances().then((all) => setBalance(balanceOf(all, id)), onFail);
     }
-    if (can(me, 'eq.own.view')) void api.eqOwnerMoney(id).then(setOwner, fail);
-    if (can(me, 'eq.ofc.view')) void api.eqOfficerTransactions(id).then(setOfficer, fail);
-  }, [id]);
+    if (can(me, 'eq.own.view')) void api.eqOwnerMoney(id).then(setOwner, onFail);
+    if (can(me, 'eq.ofc.view')) void api.eqOfficerTransactions(id).then(setOfficer, onFail);
+  };
+  useEffect(() => load(fail), [id]);
+  useLiveReload(() => load(() => undefined)); // Live (the owner's check, 26 Oct 2026): a change on any computer shows here too.
   if (error) return <Notice>{error}</Notice>;
   if (!person) return <Loading />;
   const mayPost = (key: string) => docTypes.some((d) => d.key === key && d.canPost);

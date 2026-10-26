@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { api, type DocTypeInfo, type Me, type OpeningState } from '../../api.ts';
+import { useLiveReload } from '../../live.ts';
 import { Loading, Button, Dialog, Field, Notice, Panel, StatusChip, inputClass, longDate, manilaTime, peso } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath, labelOf } from '../../shell/menu.ts';
@@ -149,6 +150,7 @@ export function OpeningBalances({ me, docTypes }: { me: Me; docTypes: DocTypeInf
   const [s, setS] = useState<OpeningState | null>(null);
   const [error, setError] = useState('');
   useEffect(() => void (allowed && api.opening().then(setS, (e: Error) => setError(e.message))), [allowed]);
+  useLiveReload(() => allowed && api.opening().then(setS)); // Live (the owner's check, 26 Oct 2026): a change on any computer shows here too.
   if (!allowed) return <Notice>You cannot view the opening balances.</Notice>;
   return (
     <div className="max-w-4xl space-y-4">

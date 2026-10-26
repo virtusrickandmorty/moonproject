@@ -57,6 +57,7 @@ export function StatMonths({ me }: { me: Me }) {
   const [months, setMonths] = useState<{ month: string; check: SchemeCheck[] }[] | null>(null);
   const [error, setError] = useState('');
   useEffect(() => void api.statMonths().then(setMonths, (e: Error) => setError(e.message)), []);
+  useLiveReload(() => api.statMonths().then(setMonths)); // Live (the owner's check, 26 Oct 2026): a change on any computer shows here too.
   if (error) return <Notice>{error}</Notice>;
   if (!months) return <Loading />;
   return (

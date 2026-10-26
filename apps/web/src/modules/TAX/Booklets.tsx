@@ -30,6 +30,7 @@ export function Booklets({ me }: { me: Me }) {
   const [rows, setRows] = useState<BookletUsage[]>([]);
   const [error, setError] = useState('');
   useEffect(() => { void api.booklets().then(setRows, (e: Error) => setError(e.message)); }, []);
+  useLiveReload(() => api.booklets().then(setRows)); // Live (the owner's check, 26 Oct 2026): a change on any computer shows here too.
   return <div className="space-y-4">
     <div className="flex flex-wrap items-center gap-3"><h1 className="text-2xl font-semibold">Booklet register</h1><span className="flex-1" />
       {me.permissions.includes('tax.booklets.manage') && <Link to="/tax/booklets/new" className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white">Register booklet</Link>}

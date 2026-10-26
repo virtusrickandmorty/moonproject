@@ -28,6 +28,7 @@ export function YearEndPage({ me }: { me: Me }) {
     setRows(null);
     api.all2316(year).then(setRows, (e: Error) => setError(e.message));
   }, [year]);
+  useLiveReload(() => year && api.all2316(year).then(setRows)); // Live (the owner's check, 26 Oct 2026): a change on any computer shows here too.
   const ids = me.permissions.includes('emp.view_ids');
   return (
     <div className="max-w-6xl space-y-4">
