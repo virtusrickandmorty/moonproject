@@ -183,7 +183,7 @@ function LabourRates({ me, item }: { me: Me; item: Detail }) {
           <td>{r.reason}</td></tr>)}
       </tbody></table>)}</Paged><p className="pt-1 text-xs text-slate-500">Grey: replaced by a later rate. A recorded production entry keeps the rate it was paid at.</p></div>
     </details>}
-    {rates && me.permissions.includes('rate.manage') && <NewRate garmentType={item.garment_type!} itemName={item.name} parts={parts} asOf={rates.asOf} steps={steps} onSaved={load} />}
+    {rates && me.permissions.includes('rate.manage') && <NewRate garmentType={item.garment_type!} itemName={item.name} parts={parts} asOf={rates.asOf} steps={steps} current={rates.current} onSaved={load} />}
   </Panel>;
 }
 
@@ -231,31 +231,75 @@ function UnmatchedRates({ me, onItem }: { me: Me; onItem: (id: string) => Promis
   </section>;
 }
 
-function NewRate({ garmentType, itemName, parts, asOf, steps, onSaved }: { garmentType: string; itemName: string; parts: readonly ('whole' | 'upper' | 'lower')[]; asOf: string; steps: PrdStep[]; onSaved: () => Promise<unknown> }) {
+function NewRate({ garmentType, itemName, parts, asOf, steps, current, onSaved }: { garmentType: string; itemName: string; parts: readonly ('whole' | 'upper' | 'lower')[]; asOf: string; steps: PrdStep[]; current: PieceRate[]; onSaved: () => Promise<unknown> }) {
   const blank = { stepCode: 'SEWING', part: parts[0]!, rate: '', effectiveFrom: asOf, reason: '' };
   const [v, setV] = useState(blank);
   const [done, setDone] = useState('');
+  // The other items now paid the same rate on this step and part (the owner's request, Oct 27, 2026): one save changes
+  // them all. Each item keeps its own rates, so any of them can differ again later.
+  const [alsoOthers, setAlsoOthers] = useState(false);
+  const [left, setLeft] = useState<Set<string>>(new Set()); // garment types unticked
+  const [find, setFind] = useState('');
   const a = useAction();
   const rateCents = cents(v.rate);
   const ready = rateCents !== undefined && v.rate.trim() && v.reason.trim().length >= 10;
+  const key = (g: string) => g.toLowerCase();
+  const onStep = (r: PieceRate) => r.complexity === 'standard' && r.stepCode === v.stepCode && (r.part ?? 'whole') === v.part;
+  const now = current.find((r) => onStep(r) && key(r.garmentType) === key(garmentType));
+  const others = now ? current.filter((r) => onStep(r) && r.rateCents === now.rateCents && key(r.garmentType) !== key(garmentType)).map((r) => r.garmentType).sort((x, y) => x.localeCompare(y)) : [];
+  const words = find.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = others.filter((g) => words.every((w) => g.toLowerCase().includes(w)));
+  const picked = alsoOthers ? others.filter((g) => !left.has(key(g))) : [];
+  const tick = (g: string, on: boolean) => setLeft((s) => { const n = new Set(s); if (on) n.delete(key(g)); else n.add(key(g)); return n; });
+  const pick = (patch: Partial<typeof v>) => { setV({ ...v, ...patch }); setAlsoOthers(false); setLeft(new Set()); setFind(''); };
   const save = async () => {
-    const r = await api.addRate({ garmentType, stepCode: v.stepCode, complexity: 'standard', ...(v.part !== 'whole' ? { part: v.part } : {}), rateCents: rateCents!, effectiveFrom: v.effectiveFrom, reason: v.reason.trim() });
-    setDone(`${itemName}${v.part !== 'whole' ? ` (${v.part} part)` : ''}: ${steps.find((s) => s.code === r.stepCode)?.name ?? r.stepCode} is ${peso(r.rateCents)} per piece from ${showDate(r.effectiveFrom)}.`);
-    setV(blank);
+    const body = { stepCode: v.stepCode, complexity: 'standard', ...(v.part !== 'whole' ? { part: v.part } : {}), rateCents: rateCents!, effectiveFrom: v.effectiveFrom, reason: v.reason.trim() };
+    const step = steps.find((s) => s.code === v.stepCode)?.name ?? v.stepCode;
+    const part = v.part !== 'whole' ? ` (${v.part} part)` : '';
+    if (picked.length > 0) {
+      const r = await api.addRates({ ...body, garmentTypes: [garmentType, ...picked] });
+      setDone(`${r.count} items${part}: ${step} is ${peso(rateCents!)} per piece from ${showDate(v.effectiveFrom)}.`);
+    } else {
+      const r = await api.addRate({ ...body, garmentType });
+      setDone(`${itemName}${part}: ${step} is ${peso(r.rateCents)} per piece from ${showDate(r.effectiveFrom)}.`);
+    }
+    setV(blank); setAlsoOthers(false); setLeft(new Set()); setFind('');
     await onSaved();
   };
   return <div className="space-y-2 border-t border-slate-100 pt-3">
     <p className="text-sm font-medium">New piece rate for {itemName}</p>
     <div className="grid gap-3 sm:grid-cols-3">
-      <Field label="Step" required><select className={inputClass} value={v.stepCode} onChange={(e) => setV({ ...v, stepCode: e.target.value })}>{steps.map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}</select></Field>
-      {parts.length > 1 && <Field label="Part" required><select className={inputClass} value={v.part} onChange={(e) => setV({ ...v, part: e.target.value as typeof v.part })}>
+      <Field label="Step" required hint={now ? `Now ${peso(now.rateCents)} per piece` : 'No rate yet'}><select className={inputClass} value={v.stepCode} onChange={(e) => pick({ stepCode: e.target.value })}>{steps.map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}</select></Field>
+      {parts.length > 1 && <Field label="Part" required><select className={inputClass} value={v.part} onChange={(e) => pick({ part: e.target.value as typeof v.part })}>
         <option value="upper">Upper part</option><option value="lower">Lower part</option></select></Field>}
       <Field label="Rate per piece" required><input inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={v.rate} onChange={(e) => setV({ ...v, rate: e.target.value })} /></Field>
       <Field label="From (today or later)" required><input type="date" min={asOf} className={inputClass} value={v.effectiveFrom} onChange={(e) => setV({ ...v, effectiveFrom: e.target.value })} /></Field>
       <Field label="Why (at least 10 characters)" required hint="Kept in the rate history: who changed a rate, when and why (e.g. owner raised the sewing rate)."><input className={inputClass} value={v.reason} onChange={(e) => setV({ ...v, reason: e.target.value })} /></Field>
     </div>
+    {now && others.length > 0 && (
+      <div className="space-y-2 rounded-lg bg-slate-50 p-3">
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-0.5 size-4 accent-indigo-600" checked={alsoOthers} onChange={(e) => setAlsoOthers(e.target.checked)} />
+          <span><b>Also change the {others.length} other {others.length === 1 ? 'item' : 'items'}</b> now paid {peso(now.rateCents)} for {steps.find((s) => s.code === v.stepCode)?.name ?? v.stepCode}{v.part !== 'whole' ? ` (${v.part} part)` : ''}: one save for all of them.</span>
+        </label>
+        {alsoOthers && <>
+          <div className="flex flex-wrap items-center gap-2">
+            <input type="search" aria-label="Find among the other items" placeholder="Find: kids, NBA, hexagon…" className={`${inputClass} max-w-xs`} value={find} onChange={(e) => setFind(e.target.value)} />
+            <Button onClick={() => setLeft((s) => { const n = new Set(s); for (const g of shown) n.delete(key(g)); return n; })}>Tick {words.length ? 'these' : 'all'}</Button>
+            <Button onClick={() => setLeft((s) => { const n = new Set(s); for (const g of shown) n.add(key(g)); return n; })}>Untick {words.length ? 'these' : 'all'}</Button>
+            <span className="text-xs text-slate-500">{picked.length} of {others.length} ticked</span>
+          </div>
+          <ul className="max-h-64 space-y-1 overflow-y-auto rounded-md bg-white p-2 ring-1 ring-slate-200">
+            {shown.map((g) => (
+              <li key={g}><label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-0.5 size-4 shrink-0 accent-indigo-600" checked={!left.has(key(g))} onChange={(e) => tick(g, e.target.checked)} /><span>{g}</span></label></li>
+            ))}
+            {shown.length === 0 && <li className="text-sm text-slate-500">No other item matches “{find}”.</li>}
+          </ul>
+        </>}
+      </div>
+    )}
     {a.error && <Notice>{a.error}</Notice>}
     {done && <Notice tone="success">{done}</Notice>}
-    <Button tone="primary" disabled={!ready || a.busy} onClick={() => a.run(save)}>Save rate</Button>
+    <Button tone="primary" disabled={!ready || a.busy} onClick={() => a.run(save)}>{picked.length > 0 ? `Save rate for ${picked.length + 1} items` : 'Save rate'}</Button>
   </div>;
 }

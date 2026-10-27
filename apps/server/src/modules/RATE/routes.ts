@@ -6,7 +6,7 @@ import { tx } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
 import { clockGuard } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
-import { addRate, garmentTypes, rateHistory, ratesAt, switchGarmentType } from './rates.ts';
+import { addRate, addRates, garmentTypes, rateHistory, ratesAt, switchGarmentType } from './rates.ts';
 import { jobItemsMadeAs } from '../PRD/public.ts';
 import { itemGarmentTypes } from '../CAT/public.ts';
 
@@ -30,6 +30,16 @@ export function rateRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post('/api/rate/garment-types/switch', { config: { permission: 'rate.manage' } }, async (req) => {
     const who = { userId: currentUser(req).userId, at: stamp(clock) };
     return tx(db, () => { clockGuard({ db, clock }); return switchGarmentType(db, req.body, who, (g) => jobItemsMadeAs(db, g)); });
+  });
+
+  /** The same new rate for many items at once (the owner's request, Oct 27, 2026): all saved, or none. */
+  app.post('/api/rate/rates/bulk', { config: { permission: 'rate.manage' } }, async (req) => {
+    const who = { userId: currentUser(req).userId, at: stamp(clock), today: today(clock) };
+    return tx(db, () => {
+      clockGuard({ db, clock });
+      const rates = addRates(db, req.body, who);
+      return { count: rates.length, rates };
+    });
   });
 
   app.post('/api/rate/rates', { config: { permission: 'rate.manage' } }, async (req) => {

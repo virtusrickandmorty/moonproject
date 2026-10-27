@@ -1222,6 +1222,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     prdReassign: (entryId: string, body: { rowNo: number; employeeId: string; reason: string }) => call<unknown>('POST', `/api/prd/entries/${encodeURIComponent(entryId)}/reassign`, body),
     rates: () => call<RateTable>('GET', '/api/rate/rates'),
     addRate: (body: Omit<PieceRate, 'id' | 'createdAt'>) => call<PieceRate>('POST', '/api/rate/rates', body),
+    /** The same new rate for many items (garment types) at once: all saved, or none (the owner's request, Oct 27, 2026). */
+    addRates: (body: Omit<PieceRate, 'id' | 'createdAt' | 'garmentType'> & { garmentTypes: string[] }) => call<{ count: number; rates: PieceRate[] }>('POST', '/api/rate/rates/bulk', body),
     /** Switch a garment type's piece rates off (refused while a job order item is made as it) or on again, with the reason. */
     switchGarmentType: (body: { garmentType: string; on: boolean; reason: string }) => call<{ garmentType: string; on: boolean }>('POST', '/api/rate/garment-types/switch', body),
     employees: (q: { search?: string; status?: 'active' | 'separated' | 'all'; order?: 'newest' } = {}) =>
