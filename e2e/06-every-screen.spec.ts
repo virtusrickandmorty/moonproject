@@ -103,17 +103,21 @@ async function fillIn(page: Page, today: string): Promise<string[]> {
   // clears (a production entry's worker, cleared by the step and again by the line on a slow machine) is made again. Only
   // picks made count: a search that found nothing yet (a busy machine) is tried again on the next pass.
   const picked = new Map<string, number>();
-  for (let pass = 0; pass < 8; pass++) {
+  // At least 8 passes, and more (up to 16) while the last one still filled something: on a slow machine what a choice
+  // loads can arrive late, so the boxes it brings (a production entry's worker and set part, after its steps) appeared
+  // only in the last of 8 passes and stayed empty (Oct 27, 2026).
+  for (let pass = 0; pass < 16; pass++) {
+    let filled = false;
     for (const k of Object.keys(sides)) sides[k] = 0;
     for (const select of await main.locator('select:visible').all()) {
       if ((await select.isDisabled()) || (await select.inputValue()) !== '') continue;
       const values = await select.locator('option').evaluateAll((os) => (os as HTMLOptionElement[]).filter((o) => !o.disabled && o.value !== '').map((o) => o.value));
-      if (values[0] !== undefined) await select.selectOption(values[0]);
+      if (values[0] !== undefined) { await select.selectOption(values[0]); filled = true; }
     }
     for (const group of await main.getByRole('radiogroup').all()) {
       if (await group.locator('[aria-checked=true]').count()) continue;
       const first = group.locator('[role=radio]:not([disabled])').first();
-      if (await first.count()) await first.click({ timeout: 3_000 }).catch(() => undefined);
+      if (await first.count()) filled = (await first.click({ timeout: 3_000 }).then(() => true, () => false)) || filled;
     }
     for (const input of await main.locator('input:visible, textarea:visible').all()) {
       if (!(await input.isVisible().catch(() => false))) continue; // a pick just replaced this box
@@ -135,19 +139,21 @@ async function fillIn(page: Page, today: string): Promise<string[]> {
         if (made >= 3) continue;
         // A pick loads what was picked and redraws the form (a release's lines appear above "Claimed by"), so the boxes
         // listed before it are stale: start the next pass on the redrawn form rather than typing into a moved box.
-        if (await pickFirst(input)) picked.set(info.label || info.hint, made + 1);
+        if (await pickFirst(input)) { picked.set(info.label || info.hint, made + 1); filled = true; }
         await page.waitForLoadState('networkidle').catch(() => undefined);
         break;
       } else {
         // A box the form just redrew (a pick above it loaded, on a slow machine) may have changed under it: a fill it refuses
         // starts the next pass on the redrawn form, as a pick does.
-        const filled = await input.fill(info.type === 'date' ? today : typedFor(info.label || info.hint, info.type, info.mode)).then(() => true, () => false);
-        if (!filled) { await page.waitForLoadState('networkidle').catch(() => undefined); break; }
+        const typed = await input.fill(info.type === 'date' ? today : typedFor(info.label || info.hint, info.type, info.mode)).then(() => true, () => false);
+        if (!typed) { await page.waitForLoadState('networkidle').catch(() => undefined); break; }
+        filled = true;
       }
     }
     // What a choice loads (a job order's steps, after the job order is picked) arrives before the next pass looks: on a
     // slow machine the passes otherwise ran out first ("Pick the step").
     await page.waitForLoadState('networkidle').catch(() => undefined);
+    if (pass >= 7 && !filled) break;
   }
   return asksForId;
 }

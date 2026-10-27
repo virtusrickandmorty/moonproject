@@ -18,7 +18,7 @@ jobs:
   e2e:
     needs: test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15 # the four role tours take 8 to 11 minutes on a busy runner (Oct 27, 2026)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
