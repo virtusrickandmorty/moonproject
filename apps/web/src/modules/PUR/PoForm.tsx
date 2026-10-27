@@ -15,7 +15,7 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import { formatPesos } from '@moonproject/shared';
 import { SupplierSelect, useList } from '../AP/parts.tsx';
 import { PurFrame, usePurForm } from './PurForm.tsx';
-import { UNIT_WORDS, emptyPoRow, poRowTotal, poRows, poToInput, qtyWords, type PoRow } from './purchasing.ts';
+import { UNIT_WORDS, emptyPoRow, poRowTotal, poRows, poToInput, qtyOf, qtyWords, type PoRow } from './purchasing.ts';
 import { PickCard } from './parts.tsx';
 
 type Stored = { supplierId: string; expectedDate?: string; requestId?: string; lines: { supplyId: string; qty: number; unitCostCents: number }[] };
@@ -99,13 +99,13 @@ export function PoForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; 
         {rows.map((r, i) => {
           const s = supplyOf(r.supplyId);
           const total = poRowTotal(r);
-          const qty = Number(r.qty);
+          const qty = qtyOf(r.qty);
           return (
             <li key={i} className={`flex gap-3 py-2 text-sm ${editing === i ? '-mx-2 rounded-md bg-indigo-50 px-2' : ''}`}>
               <span className="text-slate-400">{i + 1}.</span>
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{s?.name ?? 'Supply'}</p>
-                <p className="text-slate-600">{s && Number.isInteger(qty) && qty > 0 ? qtyWords(qty, s.unit) : r.qty} × {r.unitCost ? `₱${r.unitCost}` : '₱0.00'}</p>
+                <p className="text-slate-600">{s && qty !== undefined ? qtyWords(qty, s.unit) : r.qty} × {r.unitCost ? `₱${r.unitCost}` : '₱0.00'}</p>
               </div>
               <div className="text-right">
                 <p className="tabular-nums font-medium">{total === undefined ? '—' : peso(total)}</p>
@@ -162,8 +162,8 @@ export function PoForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; 
               </optgroup>
             </select>
           </Field>
-          <Field label="Quantity" required hint={supplyOf(item.supplyId) ? UNIT_WORDS[supplyOf(item.supplyId)!.unit] : undefined}>
-            <input aria-label="Quantity" inputMode="numeric" placeholder="0" className={`${inputClass} text-right tabular-nums`} value={item.qty} onChange={(e) => setItem({ ...item, qty: e.target.value })} />
+          <Field label="Quantity" required hint={supplyOf(item.supplyId) ? `${UNIT_WORDS[supplyOf(item.supplyId)!.unit]}s; decimals allowed, like 12.5` : 'Decimals allowed, like 12.5'}>
+            <input aria-label="Quantity" inputMode="decimal" placeholder="0" className={`${inputClass} text-right tabular-nums`} value={item.qty} onChange={(e) => setItem({ ...item, qty: e.target.value })} />
           </Field>
           <Field label="Cost of one unit" hint="The last cost fills in; change it if the price is new.">
             <input aria-label="Cost of one unit" inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={item.unitCost} onChange={(e) => setItem({ ...item, unitCost: e.target.value })} />

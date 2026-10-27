@@ -3,7 +3,7 @@
  * filter and what is still to receive. Pure, so they are tested without a browser. The server works out every total and
  * checks everything again (dates, active suppliers and supplies, over-receiving).
  */
-import { formatPesos, isBusinessDate } from '@moonproject/shared';
+import { divRoundHalfAway, formatPesos, isBusinessDate } from '@moonproject/shared';
 import type { ContactBody, PoLineStatus, PoStatus, SupplierBody, SupplierRecord, SupplyBody, SupplyRecord, SupplyUnit } from '../../api.ts';
 import { cents } from '../COL/money.ts';
 
@@ -74,25 +74,32 @@ export const supplyToInput = (f: SupplyForm): { input: SupplyBody; errors: strin
   input: { name: f.name.trim(), unit: f.unit, category: f.category }, errors: f.name.trim() ? [] : ['Type the supply’s name.'],
 });
 
-/** A purchase order line as typed: the supply picked by name, whole units, and the cost of one unit in pesos. */
+/** A purchase order line as typed: the supply picked by name, the quantity (up to 2 decimals), and the cost of one unit in pesos. */
 export interface PoRow { supplyId: string; qty: string; unitCost: string }
 export const emptyPoRow = (): PoRow => ({ supplyId: '', qty: '', unitCost: '' });
 const blank = (r: PoRow) => !r.supplyId && !r.qty.trim() && !r.unitCost.trim();
 
 /** A row's total in centavos; undefined while the quantity or cost cannot be read. */
 export function poRowTotal(r: PoRow): number | undefined {
-  const qty = wholeQty(r.qty);
+  const qty = qtyOf(r.qty);
   const unit = cents(r.unitCost);
-  return qty === undefined || unit === undefined ? undefined : qty * unit;
+  return qty === undefined || unit === undefined ? undefined : qtyCents(qty, unit);
 }
 
-/** Whole units above zero, or undefined. */
-export function wholeQty(text: string): number | undefined {
-  const t = text.trim();
-  if (!/^\d{1,7}$/.test(t)) return undefined;
+/**
+ * A typed quantity above zero with at most two decimal places (12, 12.5, 12.75; the owner's request, Oct 27, 2026), or
+ * undefined. Commas between thousands are fine.
+ */
+export function qtyOf(text: string): number | undefined {
+  const t = text.trim().replaceAll(',', '');
+  if (!/^\d{1,7}(\.\d{1,2})?$/.test(t)) return undefined;
   const n = Number(t);
   return n > 0 && n <= MAX_QTY ? n : undefined;
 }
+/** A quantity rounded to hundredths, so sums of quantities with decimals do not drift (7.25 + 5.25 = 12.5). */
+export const round2 = (n: number) => Math.round(n * 100) / 100;
+/** What a quantity costs at a unit cost, rounded once to the centavo, as the server does. */
+export const qtyCents = (qty: number, unitCostCents: number) => divRoundHalfAway(Math.round(qty * 100) * unitCostCents, 100);
 
 export function poToInput(supplierId: string, expectedDate: string, rows: PoRow[]): {
   input: { supplierId: string; expectedDate?: string; lines: { supplyId: string; qty: number; unitCostCents: number }[] }; errors: string[];
@@ -104,10 +111,10 @@ export function poToInput(supplierId: string, expectedDate: string, rows: PoRow[
   rows.forEach((r, i) => {
     if (blank(r)) return;
     const n = `Line ${i + 1}:`;
-    const qty = wholeQty(r.qty);
+    const qty = qtyOf(r.qty);
     const unit = cents(r.unitCost);
     if (!r.supplyId) errors.push(`${n} pick the supply.`);
-    if (qty === undefined) errors.push(`${n} type the quantity as a whole number, like 12.`);
+    if (qty === undefined) errors.push(`${n} type the quantity, like 12 or 12.5.`);
     if (unit === undefined) errors.push(`${n} type the cost of one unit like 150.00 (or leave it empty for zero).`);
     if (r.supplyId && qty !== undefined && unit !== undefined) lines.push({ supplyId: r.supplyId, qty, unitCostCents: unit });
   });
@@ -128,9 +135,9 @@ export interface RrRow { poLineNo: number; supplyName: string; unit: SupplyUnit;
  */
 export function rrRows(po: Pick<PoStatus, 'lines'>, previous: Record<number, number> = {}): RrRow[] {
   return po.lines.map((l: PoLineStatus) => {
-    const received = Math.max(0, l.receivedQty - (previous[l.lineNo] ?? 0));
+    const received = round2(Math.max(0, l.receivedQty - (previous[l.lineNo] ?? 0)));
     return {
-      poLineNo: l.lineNo, supplyName: l.supplyName, unit: l.unit, ordered: l.orderedQty, received, remaining: Math.max(0, l.orderedQty - received),
+      poLineNo: l.lineNo, supplyName: l.supplyName, unit: l.unit, ordered: l.orderedQty, received, remaining: round2(Math.max(0, l.orderedQty - received)),
       qty: previous[l.lineNo] ? String(previous[l.lineNo]) : '',
     };
   });
@@ -141,8 +148,8 @@ export const receiveAllLeft = (rows: RrRow[]): RrRow[] => rows.map((r) => ({ ...
 
 /** How much more than ordered a typed quantity would make the line's total received (0 when within the order). */
 export function overReceived(r: RrRow): number {
-  const qty = wholeQty(r.qty);
-  return qty === undefined ? 0 : Math.max(0, r.received + qty - r.ordered);
+  const qty = qtyOf(r.qty);
+  return qty === undefined ? 0 : round2(Math.max(0, r.received + qty - r.ordered));
 }
 
 export function rrToInput(poDocumentId: string, rows: RrRow[]): { input: { poDocumentId: string; lines: { poLineNo: number; qty: number }[] }; errors: string[] } {
@@ -151,8 +158,8 @@ export function rrToInput(poDocumentId: string, rows: RrRow[]): { input: { poDoc
   if (!poDocumentId) errors.push('Pick the purchase order the goods came for.');
   rows.forEach((r) => {
     if (!r.qty.trim()) return;
-    const qty = wholeQty(r.qty);
-    if (qty === undefined) errors.push(`${r.supplyName}: type the quantity received as a whole number, like 5.`);
+    const qty = qtyOf(r.qty);
+    if (qty === undefined) errors.push(`${r.supplyName}: type the quantity received, like 5 or 5.25.`);
     else lines.push({ poLineNo: r.poLineNo, qty });
   });
   if (poDocumentId && lines.length === 0 && errors.length === 0) errors.push('Type the quantity received on at least one line.');
@@ -160,5 +167,5 @@ export function rrToInput(poDocumentId: string, rows: RrRow[]): { input: { poDoc
 }
 
 const UNIT_NOUNS: Record<SupplyUnit, [one: string, many: string]> = { yard: ['yard', 'yards'], meter: ['meter', 'meters'], kg: ['kg', 'kg'], liter: ['liter', 'liters'], roll: ['roll', 'rolls'], pc: ['piece', 'pieces'] };
-/** "1 yard", "12 yards": a quantity with its unit. */
-export const qtyWords = (qty: number, unit: SupplyUnit) => `${qty} ${UNIT_NOUNS[unit][qty === 1 ? 0 : 1]}`;
+/** "1 yard", "12.5 yards": a quantity with its unit. */
+export const qtyWords = (qty: number, unit: SupplyUnit) => `${round2(qty).toLocaleString('en-PH', { maximumFractionDigits: 2 })} ${UNIT_NOUNS[unit][qty === 1 ? 0 : 1]}`;

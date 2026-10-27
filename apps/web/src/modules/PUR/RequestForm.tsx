@@ -14,13 +14,13 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import { cents } from '../COL/money.ts';
 import { SupplierSelect, useList } from '../AP/parts.tsx';
 import { PurFrame, usePurForm } from './PurForm.tsx';
-import { UNIT_WORDS } from './purchasing.ts';
+import { UNIT_WORDS, qtyCents, qtyOf } from './purchasing.ts';
 import { Journey } from './parts.tsx';
 
 interface Row { supplyId: string; description: string; qty: string; unitCost: string }
 type Stored = { purpose: string; neededBy?: string; supplierId?: string; note?: string; lines: { supplyId?: string; description: string; qty: number; unitCostCents: number }[] };
 const emptyRow = (): Row => ({ supplyId: '', description: '', qty: '', unitCost: '' });
-const lineTotal = (r: Row) => { const q = Number(r.qty), c = cents(r.unitCost || '0'); return Number.isInteger(q) && q > 0 && c !== undefined && c >= 0 ? q * c : undefined; };
+const lineTotal = (r: Row) => { const q = qtyOf(r.qty), c = cents(r.unitCost || '0'); return q !== undefined && c !== undefined && c >= 0 ? qtyCents(q, c) : undefined; };
 
 export function RequestForm({ type, mode }: { type: DocTypeInfo; mode: FormMode; me: Me }) {
   const suppliers = useList(api.suppliers);
@@ -50,14 +50,14 @@ export function RequestForm({ type, mode }: { type: DocTypeInfo; mode: FormMode;
   if (neededBy && !isBusinessDate(neededBy)) errors.push('Pick a real date it is needed by, or leave it empty.');
   const lines = rows.flatMap((r, i) => {
     if (!r.supplyId && !r.description.trim() && !r.qty.trim() && !r.unitCost.trim()) return [];
-    const qty = Number(r.qty), cost = cents(r.unitCost || '0');
+    const qty = qtyOf(r.qty), cost = cents(r.unitCost || '0');
     if (r.description.trim().length < 2) errors.push(`Line ${i + 1}: say what it is.`);
-    if (!Number.isInteger(qty) || qty <= 0) errors.push(`Line ${i + 1}: type a whole quantity, like 10.`);
+    if (qty === undefined) errors.push(`Line ${i + 1}: type the quantity, like 10 or 2.5.`);
     if (cost === undefined || cost < 0) errors.push(`Line ${i + 1}: type the estimated cost of one, like 150.00.`);
-    return [{ ...(r.supplyId ? { supplyId: r.supplyId } : {}), description: r.description.trim(), qty, unitCostCents: cost ?? 0 }];
+    return [{ ...(r.supplyId ? { supplyId: r.supplyId } : {}), description: r.description.trim(), qty: qty ?? 0, unitCostCents: cost ?? 0 }];
   });
   if (lines.length === 0) errors.push('Add what is needed.');
-  const total = lines.reduce((n, l) => n + (Number.isInteger(l.qty) ? l.qty * l.unitCostCents : 0), 0);
+  const total = lines.reduce((n, l) => n + (l.qty > 0 ? qtyCents(l.qty, l.unitCostCents) : 0), 0);
   const input = {
     purpose: purpose.trim(), ...(neededBy ? { neededBy } : {}), ...(supplierId ? { supplierId } : {}), ...(note.trim() ? { note: note.trim() } : {}), lines,
   };
@@ -127,7 +127,7 @@ export function RequestForm({ type, mode }: { type: DocTypeInfo; mode: FormMode;
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
                   <Field label="Quantity">
-                    <input aria-label={`Line ${i + 1}: quantity`} inputMode="numeric" placeholder="0" className={`${inputClass} text-right tabular-nums`} value={r.qty} onChange={(e) => set(i, { qty: e.target.value })} />
+                    <input aria-label={`Line ${i + 1}: quantity`} inputMode="decimal" placeholder="0" className={`${inputClass} text-right tabular-nums`} value={r.qty} onChange={(e) => set(i, { qty: e.target.value })} />
                   </Field>
                   <Field label="Estimated cost of one">
                     <input aria-label={`Line ${i + 1}: estimated cost of one`} inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={r.unitCost} onChange={(e) => set(i, { unitCost: e.target.value })} />

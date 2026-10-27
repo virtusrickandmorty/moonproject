@@ -3,17 +3,17 @@ import fc from 'fast-check';
 import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { requestStatus } from '../requests.ts';
+import { fromHundredths, lineCents, qtySchema, toHundredths } from '../qty.ts';
 
 /** Who may make a purchase order without an approved purchase request (the owner's decision, 26 Oct 2026: the owner and the accountant). */
 export const WITHOUT_REQUEST = 'pur.po.without_request';
 
 const MAX_CENTS = 100_000_000_00;
-const MAX_QTY = 1_000_000;
 
 export const poLineInput = z
   .object({
     supplyId: z.string().trim().min(1),
-    qty: z.number().int().positive().max(MAX_QTY),
+    qty: qtySchema, // up to 2 decimal places (12.5 yards, Oct 27, 2026)
     unitCostCents: z.number().int().nonnegative().max(MAX_CENTS),
   })
   .strict()
@@ -59,7 +59,7 @@ export const purchaseOrderDoc: DocTypeDef<PurchaseOrderInput, PurchaseOrder> = {
   compute(input, ctx) {
     let total = 0;
     const computedLines = input.lines.map((line, idx) => {
-      const lineTotal = line.qty * line.unitCostCents;
+      const lineTotal = lineCents(toHundredths(line.qty), line.unitCostCents);
       total += lineTotal;
       return {
         ...line,
@@ -130,10 +130,10 @@ export const purchaseOrderDoc: DocTypeDef<PurchaseOrderInput, PurchaseOrder> = {
     ).run(h.documentId, doc.supplierId, doc.expectedDate ?? null, doc.requestId ?? null);
 
     const insertLine = db.prepare(
-      `INSERT INTO pur_po_lines (document_id, line_no, supply_id, qty, unit_cost_cents) VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO pur_po_lines (document_id, line_no, supply_id, qty_hundredths, unit_cost_cents) VALUES (?, ?, ?, ?, ?)`
     );
     for (const line of doc.lines) {
-      insertLine.run(h.documentId, line.lineNo, line.supplyId, line.qty, line.unitCostCents);
+      insertLine.run(h.documentId, line.lineNo, line.supplyId, toHundredths(line.qty), line.unitCostCents);
     }
   },
 
@@ -145,12 +145,12 @@ export const purchaseOrderDoc: DocTypeDef<PurchaseOrderInput, PurchaseOrder> = {
 
     let total = 0;
     const lines = dbLines.map(l => {
-      const lineTotal = l.qty * l.unit_cost_cents;
+      const lineTotal = lineCents(l.qty_hundredths, l.unit_cost_cents);
       total += lineTotal;
       return {
         lineNo: l.line_no,
         supplyId: l.supply_id,
-        qty: l.qty,
+        qty: fromHundredths(l.qty_hundredths),
         unitCostCents: l.unit_cost_cents,
         lineTotalCents: lineTotal
       };

@@ -7,6 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import { notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import type { Db } from '../../platform/db/driver.ts';
+import { fromHundredths } from './qty.ts';
 
 export interface PoLine { lineNo: number; supplyId: string; supplyName: string; unit: string; orderedQty: number; receivedQty: number; remainingQty: number; unitCostCents: number }
 interface PoHead { id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; expectedDate: string | null; supplierId: string; supplierName: string }
@@ -18,13 +19,14 @@ const PO_HEAD = `SELECT d.id, d.number, d.status, d.business_date AS date, d.tot
 export function poLines(db: Db, poId: string): PoLine[] {
   const rows = db
     .prepare(
-      `SELECT l.line_no AS lineNo, l.supply_id AS supplyId, s.name AS supplyName, s.unit, l.qty AS orderedQty, l.unit_cost_cents AS unitCostCents,
-         COALESCE((SELECT SUM(r.qty) FROM pur_rr_lines r JOIN documents rd ON rd.id = r.document_id
+      `SELECT l.line_no AS lineNo, l.supply_id AS supplyId, s.name AS supplyName, s.unit, l.qty_hundredths AS orderedQty, l.unit_cost_cents AS unitCostCents,
+         COALESCE((SELECT SUM(r.qty_hundredths) FROM pur_rr_lines r JOIN documents rd ON rd.id = r.document_id
                    WHERE r.po_document_id = l.document_id AND r.po_line_no = l.line_no AND rd.status = 'posted'), 0) AS receivedQty
        FROM pur_po_lines l JOIN pur_supplies s ON s.id = l.supply_id WHERE l.document_id = ? ORDER BY l.line_no`,
     )
     .all(poId) as Omit<PoLine, 'remainingQty'>[];
-  return rows.map((r) => ({ ...r, remainingQty: Math.max(0, r.orderedQty - r.receivedQty) }));
+  // Added up in hundredths of a unit (exact), then shown as plain quantities (12.5 yards).
+  return rows.map((r) => ({ ...r, orderedQty: fromHundredths(r.orderedQty), receivedQty: fromHundredths(r.receivedQty), remainingQty: fromHundredths(Math.max(0, r.orderedQty - r.receivedQty)) }));
 }
 
 /** The recorded supplier bill that names a receiving report, if any (AP's ap_bills, read-only, as receivedNotBilledForReport does). */
@@ -75,7 +77,7 @@ export function purLookupRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (!rr) throw notFound('The receiving report');
     const lines = db
       .prepare(
-        `SELECT r.line_no AS lineNo, r.po_line_no AS poLineNo, p.supply_id AS supplyId, s.name AS supplyName, s.unit, r.qty
+        `SELECT r.line_no AS lineNo, r.po_line_no AS poLineNo, p.supply_id AS supplyId, s.name AS supplyName, s.unit, r.qty_hundredths / 100.0 AS qty
          FROM pur_rr_lines r JOIN pur_po_lines p ON p.document_id = r.po_document_id AND p.line_no = r.po_line_no JOIN pur_supplies s ON s.id = p.supply_id
          WHERE r.document_id = ? ORDER BY r.line_no`,
       )

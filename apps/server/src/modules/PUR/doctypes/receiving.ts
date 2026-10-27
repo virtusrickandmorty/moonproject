@@ -2,13 +2,13 @@ import { z } from 'zod';
 import fc from 'fast-check';
 import { type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
+import { fromHundredths, qtySchema, toHundredths } from '../qty.ts';
 
-const MAX_QTY = 1_000_000;
 
 export const rrLineInput = z
   .object({
     poLineNo: z.number().int().positive(),
-    qty: z.number().int().positive().max(MAX_QTY),
+    qty: qtySchema, // up to 2 decimal places (Oct 27, 2026)
   })
   .strict();
 export type RRLineInput = z.infer<typeof rrLineInput>;
@@ -65,11 +65,11 @@ export const receivingReportDoc: DocTypeDef<ReceivingReportInput, ReceivingRepor
       return issues;
     }
 
-    const poLineStmt = ctx.db.prepare('SELECT qty FROM pur_po_lines WHERE document_id = ? AND line_no = ?');
+    const poLineStmt = ctx.db.prepare('SELECT qty_hundredths AS qty FROM pur_po_lines WHERE document_id = ? AND line_no = ?');
 
     // Check total received qty (past RRs) for warning
     const pastReceivedStmt = ctx.db.prepare(`
-      SELECT SUM(rrl.qty) as sumQty
+      SELECT SUM(rrl.qty_hundredths) as sumQty
       FROM pur_rr_lines rrl
       JOIN documents d ON d.id = rrl.document_id
       WHERE rrl.po_document_id = ? AND rrl.po_line_no = ? AND d.status = 'posted'
@@ -90,9 +90,10 @@ export const receivingReportDoc: DocTypeDef<ReceivingReportInput, ReceivingRepor
         issues.push({ field: `lines.${i}.poLineNo`, code: 'INVALID_PO_LINE', level: 'error', message: 'PO line not found in this purchase order.' });
       } else {
         const pastRecv = pastReceivedStmt.get(doc.poDocumentId, line.poLineNo) as { sumQty: number | null };
-        const sumQty = (pastRecv?.sumQty || 0) + line.qty;
+        // In hundredths of a unit, so 12.5 + 0.25 adds up exactly.
+        const sumQty = (pastRecv?.sumQty || 0) + toHundredths(line.qty);
         if (sumQty > poLine.qty) {
-            issues.push({ field: `lines.${i}.qty`, code: 'OVER_RECEIVE', level: 'warning', message: `Total received (${sumQty}) exceeds PO line quantity (${poLine.qty}).` });
+            issues.push({ field: `lines.${i}.qty`, code: 'OVER_RECEIVE', level: 'warning', message: `Total received (${fromHundredths(sumQty)}) exceeds PO line quantity (${fromHundredths(poLine.qty)}).` });
         }
       }
     }
@@ -105,10 +106,10 @@ export const receivingReportDoc: DocTypeDef<ReceivingReportInput, ReceivingRepor
     ).run(h.documentId, doc.poDocumentId);
 
     const insertLine = db.prepare(
-      `INSERT INTO pur_rr_lines (document_id, line_no, po_document_id, po_line_no, qty) VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO pur_rr_lines (document_id, line_no, po_document_id, po_line_no, qty_hundredths) VALUES (?, ?, ?, ?, ?)`
     );
     for (const line of doc.lines) {
-      insertLine.run(h.documentId, line.lineNo, doc.poDocumentId, line.poLineNo, line.qty);
+      insertLine.run(h.documentId, line.lineNo, doc.poDocumentId, line.poLineNo, toHundredths(line.qty));
     }
   },
 
@@ -122,7 +123,7 @@ export const receivingReportDoc: DocTypeDef<ReceivingReportInput, ReceivingRepor
       return {
         lineNo: l.line_no,
         poLineNo: l.po_line_no,
-        qty: l.qty,
+        qty: fromHundredths(l.qty_hundredths),
       };
     });
 

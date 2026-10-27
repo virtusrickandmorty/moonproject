@@ -11,14 +11,14 @@ import fc from 'fast-check';
 import { formatPeso, isBusinessDate, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { requestUsedBy } from '../requests.ts';
+import { lineCents, qtySchema, toHundredths } from '../qty.ts';
 
 const MAX_CENTS = 100_000_000_00;
-const MAX_QTY = 1_000_000;
 
 export const requestLineInput = z.object({
   supplyId: z.string().trim().min(1).max(80).optional(), // a supply on file, or left out for something described only
   description: z.string().trim().min(2).max(200),
-  qty: z.number().int().positive().max(MAX_QTY),
+  qty: qtySchema, // up to 2 decimal places (Oct 27, 2026)
   unitCostCents: z.number().int().nonnegative().max(MAX_CENTS), // an estimate
 }).strict();
 
@@ -47,7 +47,7 @@ export const purchaseRequestDoc: DocTypeDef<RequestInput, PurchaseRequest> = {
   inputSchema: requestInput,
 
   compute(input, ctx) {
-    const lines = input.lines.map((l, i) => ({ ...l, lineNo: i + 1, lineTotalCents: l.qty * l.unitCostCents }));
+    const lines = input.lines.map((l, i) => ({ ...l, lineNo: i + 1, lineTotalCents: lineCents(toHundredths(l.qty), l.unitCostCents) }));
     const supplierName = input.supplierId ? ((ctx.db.prepare('SELECT name FROM pur_suppliers WHERE id = ?').pluck().get(input.supplierId) as string | undefined) ?? '?') : null;
     return { ...input, lines, supplierName, totalCents: lines.reduce((n, l) => n + l.lineTotalCents, 0) };
   },
@@ -71,8 +71,8 @@ export const purchaseRequestDoc: DocTypeDef<RequestInput, PurchaseRequest> = {
   persist(db, doc, h) {
     db.prepare('INSERT INTO pur_requests (document_id, purpose, needed_by, supplier_id, note) VALUES (?, ?, ?, ?, ?)')
       .run(h.documentId, doc.purpose, doc.neededBy ?? null, doc.supplierId ?? null, doc.note ?? null);
-    const line = db.prepare('INSERT INTO pur_request_lines (document_id, line_no, supply_id, description, qty, unit_cost_cents) VALUES (?, ?, ?, ?, ?, ?)');
-    for (const l of doc.lines) line.run(h.documentId, l.lineNo, l.supplyId ?? null, l.description, l.qty, l.unitCostCents);
+    const line = db.prepare('INSERT INTO pur_request_lines (document_id, line_no, supply_id, description, qty_hundredths, unit_cost_cents) VALUES (?, ?, ?, ?, ?, ?)');
+    for (const l of doc.lines) line.run(h.documentId, l.lineNo, l.supplyId ?? null, l.description, toHundredths(l.qty), l.unitCostCents);
   },
 
   load(db, documentId) {
@@ -80,9 +80,9 @@ export const purchaseRequestDoc: DocTypeDef<RequestInput, PurchaseRequest> = {
       FROM pur_requests r LEFT JOIN pur_suppliers s ON s.id = r.supplier_id WHERE r.document_id = ?`).get(documentId) as
       { purpose: string; neededBy: string | null; supplierId: string | null; supplierName: string | null; note: string | null } | undefined;
     if (!r) throw new Error(`Purchase request ${documentId} not found`);
-    const lines = (db.prepare('SELECT line_no AS lineNo, supply_id AS supplyId, description, qty, unit_cost_cents AS unitCostCents FROM pur_request_lines WHERE document_id = ? ORDER BY line_no')
+    const lines = (db.prepare('SELECT line_no AS lineNo, supply_id AS supplyId, description, qty_hundredths / 100.0 AS qty, unit_cost_cents AS unitCostCents FROM pur_request_lines WHERE document_id = ? ORDER BY line_no')
       .all(documentId) as { lineNo: number; supplyId: string | null; description: string; qty: number; unitCostCents: number }[])
-      .map(({ supplyId, ...l }) => ({ ...l, ...(supplyId ? { supplyId } : {}), lineTotalCents: l.qty * l.unitCostCents }));
+      .map(({ supplyId, ...l }) => ({ ...l, ...(supplyId ? { supplyId } : {}), lineTotalCents: lineCents(toHundredths(l.qty), l.unitCostCents) }));
     return {
       purpose: r.purpose, ...(r.neededBy ? { neededBy: r.neededBy } : {}), ...(r.supplierId ? { supplierId: r.supplierId } : {}), ...(r.note ? { note: r.note } : {}),
       supplierName: r.supplierName, lines, totalCents: lines.reduce((n, l) => n + l.lineTotalCents, 0),
