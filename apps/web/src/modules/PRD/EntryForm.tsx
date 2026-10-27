@@ -11,7 +11,7 @@
  * ?rework=1 starts with a rework row.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import { api, ApiError, type DocHeader, type DocTypeInfo, type Preview, type PrdJob, type Worker } from '../../api.ts';
+import { api, ApiError, type BoardCard, type DocHeader, type DocTypeInfo, type Preview, type PrdJob, type Worker } from '../../api.ts';
 import { navigate } from '../../router.tsx';
 import { Button, Field, Notice, Panel, inputClass, showDate } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
@@ -50,7 +50,10 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
 
   useEffect(() => {
     api.prdWorkers().then(setWorkers, fail);
-    api.prdBoard().then((cards) => setJobs([...new Map(cards.map((c) => [c.jobOrderId, { id: c.jobOrderId, label: `${c.number} · ${c.customerName} · due ${c.dueDate}` }])).values()]), fail);
+    // Only job orders with a step still open for pieces (or rework sent back to one): a finished one, waiting to be
+    // released, has nothing to record (the owner's tour picked one and could not go on, Oct 27, 2026).
+    const open = (c: BoardCard) => (c.steps ?? []).some((st) => (st.status !== 'completed' && st.status !== 'not_needed') || (st.reworkOpen ?? 0) > 0);
+    api.prdBoard().then((cards) => setJobs([...new Map(cards.filter(open).map((c) => [c.jobOrderId, { id: c.jobOrderId, label: `${c.number} · ${c.customerName} · due ${c.dueDate}` }])).values()]), fail);
     if (mode.kind === 'edit') {
       api.get(type.key, mode.id).then((d) => {
         const input = d.input as Stored;
