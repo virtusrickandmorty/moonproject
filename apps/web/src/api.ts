@@ -1156,7 +1156,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     customer: (id: string) => call<CustomerRow>('GET', `/api/cus/customers/${encodeURIComponent(id)}`),
     /** The active groups of a customer, for a picker. */
     customerGroups: (id: string) => call<{ groups: CustomerGroup[] }>('GET', `/api/cus/customers/${encodeURIComponent(id)}`).then((r) => r.groups.filter((g) => g.is_active === 1)),
-    customers: (search: string) => call<CustomerRow[]>('GET', `/api/cus/customers?${new URLSearchParams({ search, limit: '10' })}`),
+    /** Customers whose name or code has the words, every match up to `limit` (the pickers scroll through them all). */
+    customers: (search: string, limit = 200) => call<CustomerRow[]>('GET', `/api/cus/customers?${new URLSearchParams({ search, limit: String(limit) })}`),
     openItems: (customerId: string) => call<OpenItems>('GET', customer(customerId, 'open-items')),
     checksOnHand: () => call<ChecksOnHand>('GET', '/api/col/checks'),
     checksAtBank: () => call<CheckAtBank[]>('GET', '/api/col/checks/at-bank'),

@@ -3,6 +3,7 @@ import { api, type AuditLogPage, type Me } from '../../api.ts';
 import { Button, Field, inputClass, Loading, Notice, PageBar, Panel } from '../../components/ui.tsx';
 import { auditData, auditQuery, type AuditFilters } from './audit.ts';
 import { useLiveReload } from '../../live.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 const empty: AuditFilters = { from: '', to: '', userId: '', action: '', entityType: '', entityId: '' };
 
@@ -33,9 +34,7 @@ export function AuditLog({ me }: { me: Me }) {
       <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" onSubmit={(e) => { e.preventDefault(); setBefore(undefined); setEarlier([]); setFilters({ ...draft }); }}>
         <Field label="From"><input type="date" className={inputClass} value={draft.from} onChange={(e) => set('from', e.target.value)} /></Field>
         <Field label="To"><input type="date" className={inputClass} value={draft.to} onChange={(e) => set('to', e.target.value)} /></Field>
-        <Field label="User"><select className={inputClass} value={draft.userId} onChange={(e) => set('userId', e.target.value)}>
-          <option value="">All users</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select></Field>
+        <Field label="User"><SearchSelect aria-label="User" value={draft.userId} onChange={(id) => set('userId', id)} emptyLabel="All users" choices={users.map((u) => ({ value: u.id, label: u.name }))} /></Field>
         <Field label="Action"><input className={inputClass} value={draft.action} onChange={(e) => set('action', e.target.value)} placeholder="All actions" /></Field>
         <Field label="Entity type"><input className={inputClass} value={draft.entityType} onChange={(e) => set('entityType', e.target.value)} placeholder="All types" /></Field>
         <Field label="Entity ID"><input className={inputClass} value={draft.entityId} onChange={(e) => set('entityId', e.target.value)} placeholder="All records" /></Field>

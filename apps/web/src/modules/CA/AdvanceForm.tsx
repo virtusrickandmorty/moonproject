@@ -10,6 +10,7 @@ import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { cents } from '../COL/money.ts';
 import { EditGate, Errors, useLive } from '../COL/parts.tsx';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 type Stored = { employeeId: string; cashPlaceId: number; amountCents: number; installmentCents: number; note?: string };
 const text = (c: number) => (c / 100).toFixed(2);
@@ -71,10 +72,7 @@ export function AdvanceForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
       <h1 className="text-2xl font-semibold">{original ? `Edit ${original.number}` : 'New cash advance'}</h1>
       {error && <Notice>{error}</Notice>}
       <Panel title="Who gets it?">
-        <select aria-label="Employee" className={inputClass} value={v.employeeId} onChange={(e) => setV({ ...v, employeeId: e.target.value })}>
-          <option value="">Pick the employee</option>
-          {people.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
-        </select>
+        <SearchSelect aria-label="Employee" value={v.employeeId} onChange={(id) => setV({ ...v, employeeId: id })} placeholder="Pick the employee" choices={people.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))} />
         {owed && <p className="text-sm text-slate-600">Owes {peso(owed.outstandingCents)} now{owed.installmentCents ? `, ${peso(owed.installmentCents)} deducted each payroll` : ''}.</p>}
       </Panel>
       <Panel title="Where did the money come from?">

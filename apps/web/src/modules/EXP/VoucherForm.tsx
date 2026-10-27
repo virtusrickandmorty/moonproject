@@ -18,6 +18,7 @@ import { TenderRows } from '../COL/parts.tsx';
 import { MoneyForm, SupplierSelect, useEwtRates, useList, useMoneyForm } from '../AP/parts.tsx';
 import { MAY_GO_AHEAD, ewtChoices, forReplacement, voucherFigures } from '../AP/payables.ts';
 import { MAX_TENDERS, emptyVoucher, voucherInput, voucherValues, type VoucherInput, type VoucherValues } from './voucher.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 export function VoucherForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me: Me }) {
   const categories = useList(api.expCategories);
@@ -58,10 +59,7 @@ export function VoucherForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
       <Panel title="What was it for?">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Expense" required>
-            <select className={inputClass} value={v.categoryId} onChange={(e) => set({ categoryId: e.target.value })}>
-              <option value="">Pick one</option>
-              {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <SearchSelect aria-label="Expense" value={v.categoryId} onChange={(id) => set({ categoryId: id })} placeholder="Pick one" choices={categories.map((c) => ({ value: String(c.id), label: c.name }))} />
           </Field>
           <Field label="Description" required><input className={inputClass} value={v.description} onChange={(e) => set({ description: e.target.value })} /></Field>
         </div>

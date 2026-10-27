@@ -10,6 +10,7 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { Errors, useLive } from '../COL/parts.tsx';
 import { emptyOpening, openingInput, openingValues, type Direction, type OpeningValues } from './opening.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 const DIRECTIONS: [Direction, string][] = [
   ['owes_shop', 'The officer owed the company'],
@@ -46,10 +47,7 @@ export function OpeningForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
         {opening?.closed && <Notice>The opening was closed on {opening.closed.closedAt.slice(0, 10)}. Correct balances with a journal voucher.</Notice>}
         {cutover && !opening?.closed && <Notice tone="info">Dated the cut-over date, {cutover}. Settled afterwards like any officer money.</Notice>}
         <Panel title="Which officer?">
-          <select aria-label="Officer" className={inputClass} value={v.personId} onChange={(e) => set({ personId: e.target.value })}>
-            <option value="">Pick from the register</option>
-            {people.map((p) => <option key={p.id} value={p.id}>{p.name}{p.position ? ` (${p.position})` : ''}</option>)}
-          </select>
+          <SearchSelect aria-label="Officer" value={v.personId} onChange={(id) => set({ personId: id })} placeholder="Pick from the register" choices={people.map((p) => ({ value: p.id, label: `${p.name}${p.position ? ` (${p.position})` : ''}` }))} />
           {owed && <p className="text-sm text-slate-600">Already owes the company {peso(owed.dueFromCents)} · the company already owes them {peso(owed.dueToCents)}</p>}
         </Panel>
         <Panel title="Which way?">

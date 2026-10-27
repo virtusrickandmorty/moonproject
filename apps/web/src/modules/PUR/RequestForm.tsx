@@ -16,6 +16,7 @@ import { SupplierSelect, useList } from '../AP/parts.tsx';
 import { PurFrame, usePurForm } from './PurForm.tsx';
 import { UNIT_WORDS, qtyCents, qtyOf } from './purchasing.ts';
 import { Journey } from './parts.tsx';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 interface Row { supplyId: string; description: string; qty: string; unitCost: string }
 type Stored = { purpose: string; neededBy?: string; supplierId?: string; note?: string; lines: { supplyId?: string; description: string; qty: number; unitCostCents: number }[] };
@@ -116,10 +117,8 @@ export function RequestForm({ type, mode }: { type: DocTypeInfo; mode: FormMode;
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field label="Supply on file" hint={s ? `Counted by the ${UNIT_WORDS[s.unit].toLowerCase()}` : 'Or leave it as None and describe it'}>
-                    <select aria-label={`Line ${i + 1}: supply on file`} className={inputClass} value={r.supplyId} onChange={(e) => pickSupply(i, e.target.value)}>
-                      <option value="">None: describe it</option>
-                      {supplies.map((x) => <option key={x.id} value={x.id}>{x.name} ({UNIT_WORDS[x.unit].toLowerCase()})</option>)}
-                    </select>
+                    <SearchSelect aria-label={`Line ${i + 1}: supply on file`} value={r.supplyId} onChange={(id) => pickSupply(i, id)} emptyLabel="None: describe it"
+                      choices={supplies.map((x) => ({ value: x.id, label: `${x.name} (${UNIT_WORDS[x.unit].toLowerCase()})` }))} />
                   </Field>
                   <Field label="What it is">
                     <input aria-label={`Line ${i + 1}: what it is`} className={inputClass} value={r.description} maxLength={200} onChange={(e) => set(i, { description: e.target.value })} />

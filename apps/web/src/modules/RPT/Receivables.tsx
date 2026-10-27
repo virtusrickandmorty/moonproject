@@ -5,6 +5,7 @@ import { Loading, Button, Field, Notice, Panel, inputClass, peso, type PageInfo 
 import { BookTitle, Tools, money, td, th, usePagedReport, useReport, useToday } from './Books.tsx';
 import './books.css';
 import { addressValue, PendingPeriod, ResultSummary } from './ReportParts.tsx';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 type Buckets = { current: number; days1to30: number; days31to60: number; days61to90: number; over90: number };
 type Aging = { asOf: string; rows: { customerId: string | null; customerName: string; documentId: string | null;
@@ -92,9 +93,7 @@ export function CustomerStatement({ me }: { me: Me }) {
   if (!me.permissions.includes('rpt.books.view')) return <Notice>Access denied.</Notice>;
   return <article className="rpt-page space-y-4"><BookTitle title="Customer statement" dates={data ? `${data.customerName} · ${data.from} to ${data.to}` : ''} />
     <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden">
-      <Field label="Customer"><select className={inputClass} value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-        <option value="">Choose a customer</option>{customers.map((customer) => <option key={customer.id} value={customer.id}>{customer.name}</option>)}
-      </select></Field>
+      <Field label="Customer"><SearchSelect aria-label="Customer" value={customerId} onChange={setCustomerId} placeholder="Choose a customer" choices={customers.map((customer) => ({ value: customer.id, label: customer.name }))} /></Field>
       <Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
       <Field label="To"><input type="date" className={inputClass} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
       <Button tone="primary" disabled={!customerId || !from || !to || from > to}

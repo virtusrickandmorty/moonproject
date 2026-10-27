@@ -11,6 +11,7 @@ import { EWT_WORDS, UNIT_WORDS, contactToInput, emptyContactForm, emptySupplierF
 import { Crumb } from '../../shell/crumbs.tsx';
 import { useLiveReload } from '../../live.ts';
 import { Paged } from '../../components/RowPages.tsx';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 export function SupplierPage({ me, docTypes, params }: { me: Me; docTypes: DocTypeInfo[]; params?: Record<string, string> }) {
   const id = params?.id;
@@ -168,10 +169,7 @@ function SuppliesSold({ supplier, editable }: { supplier: SupplierRecord; editab
       )}
       {editable && (
         <div className="flex max-w-xl gap-2 border-t border-slate-100 pt-2">
-          <select aria-label="Supply to link" className={inputClass} value={pick} onChange={(e) => setPick(e.target.value)}>
-            <option value="">Pick a supply to link…</option>
-            {free.map((s) => <option key={s.id} value={s.id}>{s.name} ({UNIT_WORDS[s.unit].toLowerCase()})</option>)}
-          </select>
+          <SearchSelect aria-label="Supply to link" value={pick} onChange={setPick} placeholder="Pick a supply to link…" choices={free.map((s) => ({ value: s.id, label: `${s.name} (${UNIT_WORDS[s.unit].toLowerCase()})` }))} />
           <Button disabled={!pick || a.busy} onClick={() => void link(pick, true)}>Link supply</Button>
         </div>
       )}

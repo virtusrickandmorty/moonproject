@@ -16,6 +16,7 @@ import { Button, Field, Panel, inputClass, peso } from '../../components/ui.tsx'
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { PrintedDateField, usePrintedDate } from '../../generic/PrintedDate.tsx';
 import { MoneyForm, SupplierSelect, useEwtRates, useList, useMoneyForm } from './parts.tsx';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 import {
   billAdvancesInput, billFigures, billLinesToInput, billLinesToRows, emptyBillLine, ewtChoices, forReplacement, MAY_GO_AHEAD, openAdvances, type BillLineInput, type BillLineRow,
 } from './payables.ts';
@@ -136,12 +137,9 @@ export function BillForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode
             {rows.map((r, i) => (
               <tr key={i} className="border-t border-slate-100">
                 <td className="py-1 pr-2">
-                  <select aria-label={`Line ${i + 1}: for`} className={inputClass} value={r.for} onChange={(e) => set(i, { for: e.target.value })}>
-                    <option value="">Pick one</option>
-                    <optgroup label="Supplies">{supplies.map((s) => <option key={s.id} value={`supply:${s.id}`}>{s.name}</option>)}</optgroup>
-                    <optgroup label="Expenses">{categories.map((c) => <option key={c.id} value={`category:${c.id}`}>{c.name}</option>)}</optgroup>
-                    <optgroup label="Other purchases"><option value="subcontract">Subcontracted production</option><option value="freight_in">Freight-in</option></optgroup>
-                  </select>
+                  <SearchSelect aria-label={`Line ${i + 1}: for`} value={r.for} onChange={(f) => set(i, { for: f })} placeholder="Pick one"
+                    choices={[...supplies.map((s) => ({ value: `supply:${s.id}`, label: s.name, group: 'Supplies' })), ...categories.map((c) => ({ value: `category:${c.id}`, label: c.name, group: 'Expenses' })),
+                      { value: 'subcontract', label: 'Subcontracted production', group: 'Other purchases' }, { value: 'freight_in', label: 'Freight-in', group: 'Other purchases' }]} />
                 </td>
                 <td className="py-1 pr-2"><input aria-label={`Line ${i + 1}: description`} className={inputClass} value={r.description} onChange={(e) => set(i, { description: e.target.value })} /></td>
                 <td className="py-1"><input aria-label={`Line ${i + 1}: amount`} inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right tabular-nums`} value={r.amount} onChange={(e) => set(i, { amount: e.target.value })} /></td>

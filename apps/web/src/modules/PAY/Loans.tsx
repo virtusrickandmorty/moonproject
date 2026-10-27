@@ -10,6 +10,7 @@ import { cents } from '../COL/money.ts';
 import { LOAN_KIND, loanInput } from './run.ts';
 import { useLiveReload } from '../../live.ts';
 import { Paged, newestFirst } from '../../components/RowPages.tsx';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 const STATUS: Record<GovLoan['status'], string> = { not_started: 'Not started', running: 'Running', ended: 'Ended', stopped: 'Stopped' };
 
@@ -69,7 +70,7 @@ function NewLoan({ employees, employeeId, onSaved }: { employees: ActiveEmployee
       <div className="grid gap-3 sm:grid-cols-3">
         {!employeeId && (
           <Field label="Employee" required>
-            <select className={inputClass} value={v.employeeId} onChange={set('employeeId')}><option value="">Pick the employee</option>{employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</select>
+            <SearchSelect aria-label="Employee" value={v.employeeId} onChange={(id) => set('employeeId')({ target: { value: id } })} placeholder="Pick the employee" choices={employees.map((e) => ({ value: e.id, label: e.name }))} />
           </Field>
         )}
         <Field label="Loan" required>

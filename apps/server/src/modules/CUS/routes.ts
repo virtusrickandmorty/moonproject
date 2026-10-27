@@ -37,8 +37,9 @@ function params(q: unknown): { limit: number; offset: number; search: string } {
   const v = q as Record<string, unknown>;
   const limit = v?.limit === undefined ? 25 : Number(v.limit);
   const offset = v?.offset === undefined ? 0 : Number(v.offset);
-  if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(offset) || offset < 0) {
-    throw new AppError('INVALID_PAGE', 'Choose a page size from 1 to 100.', 400);
+  // Up to 200: a search picker lists every match and scrolls (the owner's request, Oct 27, 2026).
+  if (!Number.isInteger(limit) || limit < 1 || limit > 200 || !Number.isInteger(offset) || offset < 0) {
+    throw new AppError('INVALID_PAGE', 'Choose a page size from 1 to 200.', 400);
   }
   return { limit, offset, search: String(v?.search ?? '').trim().slice(0, 200) };
 }

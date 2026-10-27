@@ -13,6 +13,7 @@ import { useRecord } from '../../generic/record.tsx';
 import { Errors, useLive } from '../COL/parts.tsx';
 import { cents } from '../COL/money.ts';
 import { buyInput, buyValues, emptyBuy, unassigned, type BuyValues } from './buy.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 type Worked = { costCents: number; inputVatCents: number; life: number };
 const PARTS: [keyof BuyValues, string][] = [['paid', 'Paid now'], ['onAccount', 'Owed to the supplier (on account)'], ['financed', 'Financed by a lender']];
@@ -57,10 +58,7 @@ export function BuyForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
         </Panel>
         <Panel title="From whom?">
           <Field label="Supplier" required hint={sup ? (sup.is_vat_registered && sup.tin ? `VAT-registered, TIN ${sup.tin}: input VAT is claimed with the invoice number and date.` : 'No input VAT is claimed from this supplier: the full amount is the cost.') : undefined}>
-            <select className={inputClass} value={v.supplierId} onChange={(e) => set({ supplierId: e.target.value })}>
-              <option value="">Pick the supplier</option>
-              {suppliers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
+            <SearchSelect aria-label="Supplier" value={v.supplierId} onChange={(id) => set({ supplierId: id })} placeholder="Pick the supplier" choices={suppliers.map((s) => ({ value: s.id, label: s.name }))} />
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Supplier's invoice no."><input className={inputClass} value={v.invoiceNo} onChange={(e) => set({ invoiceNo: e.target.value })} /></Field>

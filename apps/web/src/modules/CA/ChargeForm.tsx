@@ -11,6 +11,7 @@ import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { cents } from '../COL/money.ts';
 import { EditGate, Errors, useLive } from '../COL/parts.tsx';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 type Stored = { employeeId: string; what: string; jobOrderId?: string; amountCents: number; installmentCents: number; explanation: string; note?: string };
 const text = (c: number) => (c / 100).toFixed(2);
@@ -74,16 +75,10 @@ export function ChargeForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }
       <Panel title="Who is charged, and for what?">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Employee" required>
-            <select aria-label="Employee" className={inputClass} value={v.employeeId} onChange={(e) => setV({ ...v, employeeId: e.target.value })}>
-              <option value="">Pick the employee</option>
-              {people.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
-            </select>
+            <SearchSelect aria-label="Employee" value={v.employeeId} onChange={(id) => setV({ ...v, employeeId: id })} placeholder="Pick the employee" choices={people.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))} />
           </Field>
           <Field label="Job order" hint="The job it happened on, if any">
-            <select aria-label="Job order" className={inputClass} value={v.jobOrderId} onChange={(e) => setV({ ...v, jobOrderId: e.target.value })}>
-              <option value="">None</option>
-              {jobs.map((j) => <option key={j.id} value={j.id}>{j.number}</option>)}
-            </select>
+            <SearchSelect aria-label="Job order" value={v.jobOrderId} onChange={(id) => setV({ ...v, jobOrderId: id })} emptyLabel="None" choices={jobs.map((j) => ({ value: j.id, label: j.number }))} />
           </Field>
         </div>
         <Field label="What was damaged or lost" required><input className={inputClass} maxLength={200} value={v.what} onChange={(e) => setV({ ...v, what: e.target.value })} placeholder="e.g. 3 yards of jersey cloth cut on the wrong side" /></Field>

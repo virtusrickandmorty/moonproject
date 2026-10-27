@@ -31,11 +31,13 @@ export function JoPicker({ value, onChange }: { value: { id: string; label: stri
   return (
     <div className="space-y-1">
       <Field label="Job order"><input aria-label="Job order" className={inputClass} placeholder="Job order number or customer" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
-      {rows.map((jo) => (
-        <button key={jo.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => onChange(jo)}>
-          {jo.number} · {jo.customerName} <span className="text-slate-500">· {jo.stageLabel} · {jo.leftPieces} pieces left · due {showDate(jo.dueDate)}</span>
-        </button>
-      ))}
+      {rows.length > 0 && <div className="max-h-72 overflow-y-auto overscroll-contain rounded-md ring-1 ring-slate-200">
+        {rows.map((jo) => (
+          <button key={jo.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => onChange(jo)}>
+            {jo.number} · {jo.customerName} <span className="text-slate-500">· {jo.stageLabel} · {jo.leftPieces} pieces left · due {showDate(jo.dueDate)}</span>
+          </button>
+        ))}
+      </div>}
       {rows.length === 0 && <p className="text-sm text-slate-500">{q.trim() ? 'No job order matches.' : 'No job order has pieces left to release.'}</p>}
     </div>
   );
@@ -57,12 +59,14 @@ export function ReleasePicker({ value, onChange, preset = '' }: { value: Release
   return (
     <div className="space-y-1">
       <Field label="Release number"><input aria-label="Release number" className={inputClass} placeholder="Release number, e.g. REL-000012" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
-      {rows.map((r) => (
-        <button key={r.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => onChange(r)}>
-          {r.number} · {r.jobOrderNumber} · {r.customerName} · {peso(r.totalCents)}
-          <span className="text-slate-500">{r.status === 'cancelled' ? ' · cancelled' : r.invoice ? ` · has invoice no. ${r.invoice.invoiceNumber}` : ' · waiting for its invoice'}</span>
-        </button>
-      ))}
+      {rows.length > 0 && <div className="max-h-72 overflow-y-auto overscroll-contain rounded-md ring-1 ring-slate-200">
+        {rows.map((r) => (
+          <button key={r.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => onChange(r)}>
+            {r.number} · {r.jobOrderNumber} · {r.customerName} · {peso(r.totalCents)}
+            <span className="text-slate-500">{r.status === 'cancelled' ? ' · cancelled' : r.invoice ? ` · has invoice no. ${r.invoice.invoiceNumber}` : ' · waiting for its invoice'}</span>
+          </button>
+        ))}
+      </div>}
       {rows.length === 0 && <p className="text-sm text-slate-500">{q.trim() ? 'No release matches.' : 'No release is waiting for its invoice.'}</p>}
     </div>
   );

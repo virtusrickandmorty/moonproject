@@ -114,6 +114,17 @@ async function fillIn(page: Page, today: string): Promise<string[]> {
       const values = await select.locator('option').evaluateAll((os) => (os as HTMLOptionElement[]).filter((o) => !o.disabled && o.value !== '').map((o) => o.value));
       if (values[0] !== undefined) { await select.selectOption(values[0]); filled = true; }
     }
+    // A long list's searchable drop-down (components/SearchSelect.tsx, Oct 27, 2026): opened, its first real choice picked.
+    // A filled one leaves the empty ones, so the next is looked up afresh each time; one that cannot be filled is passed over.
+    for (let skip = 0, guard = 0; guard < 30; guard++) {
+      const box = main.locator('[data-search-select][data-value=""]:visible').nth(skip);
+      if (!(await box.count())) break;
+      const button = box.getByRole('combobox');
+      if (await button.isDisabled()) { skip++; continue; }
+      await button.click();
+      const first = box.locator('[role=option][data-value]:not([data-value=""]):not([aria-disabled=true])').first();
+      if (await first.count()) { await first.click(); filled = true; } else { await page.keyboard.press('Escape'); skip++; }
+    }
     for (const group of await main.getByRole('radiogroup').all()) {
       if (await group.locator('[aria-checked=true]').count()) continue;
       const first = group.locator('[role=radio]:not([disabled])').first();

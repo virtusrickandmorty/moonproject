@@ -19,6 +19,7 @@ import { docPath } from '../../shell/menu.ts';
 import { formatPesos, manilaDate, sizeLabel, type Issue } from '@moonproject/shared';
 import { EditGate, Errors, useLive } from '../COL/parts.tsx';
 import { emptyRow, rowsToInput, type EntryRow } from './board.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 type Stored = { jobOrderId: string; stepId: number; workDate?: string; overCapReason?: string; rows: { lineNo: number; employeeId: string; pieces: number; rework?: true; rateCents?: number; rateReason?: string; repeatReason?: string; wearers?: number[]; part?: 'upper' | 'lower' }[] };
 const cell = `${inputClass} py-1`;
@@ -158,11 +159,8 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
             <input type="date" aria-label="Work date" className={`${inputClass} max-w-xs`} value={workDate} max={manilaDate(new Date())} onChange={(e) => setWorkDate(e.target.value)} />
           </Field>
         ) : <Panel title="Job order and step">
-          <select aria-label="Job order" className={inputClass} value={jo} onChange={(e) => (setJo(e.target.value), setStepId(null), setRows([emptyRow()]))}>
-            <option value="">Pick the job order…</option>
-            {jobs.map((j) => <option key={j.id} value={j.id}>{j.label}</option>)}
-            {jo && !jobs.some((j) => j.id === jo) && job && <option value={jo}>{job.jobOrder.number} · {job.jobOrder.customerName}</option>}
-          </select>
+          <SearchSelect aria-label="Job order" value={jo} onChange={(id) => (setJo(id), setStepId(null), setRows([emptyRow()]))} placeholder="Pick the job order…"
+            choices={[...jobs.map((j) => ({ value: j.id, label: j.label })), ...(jo && !jobs.some((j) => j.id === jo) && job ? [{ value: jo, label: `${job.jobOrder.number} · ${job.jobOrder.customerName}` }] : [])]} />
           <Field label="Day the pieces were done" hint="Today unless the sheet is late (up to 31 days back).">
             <input type="date" aria-label="Work date" className={inputClass} value={workDate} max={manilaDate(new Date())} onChange={(e) => setWorkDate(e.target.value)} />
           </Field>
@@ -297,10 +295,7 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
                     })()}
                     <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(6rem,1fr)]">
                       <Field label="Worker">
-                        <select aria-label={`Row ${i + 1} worker`} className={cell} value={r.employeeId} onChange={(e) => set(i, { employeeId: e.target.value })}>
-                          <option value="" />
-                          {workers.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                        </select>
+                        <SearchSelect aria-label={`Row ${i + 1} worker`} value={r.employeeId} onChange={(id) => set(i, { employeeId: id })} placeholder="Pick the worker" choices={workers.map((w) => ({ value: w.id, label: w.name }))} />
                       </Field>
                       <Field label="Pieces" hint={[(r.wearers?.length ?? 0) > 0 ? 'From the wearers ticked' : '', (() => { const cap = r.lineNo ? capOf(r.lineNo, r.part, r.rework) : null; return cap === null ? '' : r.rework ? `${cap} sent back` : `${cap} ready`; })()].filter(Boolean).join(' · ') || undefined}><input aria-label={`Row ${i + 1} pieces`} inputMode="numeric" readOnly={(r.wearers?.length ?? 0) > 0} className={`${cell} text-right tabular-nums`} value={r.pieces} onChange={(e) => set(i, { pieces: e.target.value })} /></Field>
                     </div>

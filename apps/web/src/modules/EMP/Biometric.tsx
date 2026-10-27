@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { api, type AttendanceSave, type BiometricAction, type BiometricDay, type BiometricPreview, type EmployeeRow } from '../../api.ts';
 import { Button, Dialog, Field, Notice, inputClass, showDate, useAction } from '../../components/ui.tsx';
 import { STATUS_LABEL } from './time.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 const ACTION: Record<BiometricAction, [string, string]> = {
   new: ['New', 'bg-emerald-100 text-emerald-800'],
@@ -92,10 +93,7 @@ export function BiometricImport({ onClose, onSaved }: { onClose: () => void; onS
                 <span className="font-semibold">{p.name || '(no name)'}</span>
                 <span className="text-xs text-slate-500">User ID {p.userId} · {p.department}</span>
                 <span className="flex-1" />
-                <select aria-label={`Employee for biometric user ${p.userId}`} className={`${inputClass} max-w-64`} value={chosen[p.userId] ?? ''} onChange={(e) => setChosen({ ...chosen, [p.userId]: e.target.value })}>
-                  <option value="">Not linked</option>
-                  {employees.map((e) => <option key={e.id} value={e.id}>{e.fullName} ({e.code})</option>)}
-                </select>
+                <SearchSelect aria-label={`Employee for biometric user ${p.userId}`} className="max-w-64" value={chosen[p.userId] ?? ''} onChange={(id) => setChosen({ ...chosen, [p.userId]: id })} emptyLabel="Not linked" choices={employees.map((e) => ({ value: e.id, label: `${e.fullName} (${e.code})` }))} />
                 {(chosen[p.userId] ?? '') !== (p.employeeId ?? '') && <Button disabled={a.busy} onClick={() => void link(p.userId, p.name)}>{chosen[p.userId] ? 'Link' : 'Unlink'}</Button>}
                 {!p.employeeId && p.suggestedEmployeeId && chosen[p.userId] === p.suggestedEmployeeId && <span className="text-xs text-amber-800">Suggested by name: press Link</span>}
               </div>

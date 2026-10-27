@@ -12,6 +12,7 @@ import { useRecord, useToday } from '../../generic/record.tsx';
 import { Link } from '../../router.tsx';
 import { Errors, useLive } from '../COL/parts.tsx';
 import { emptyOpeningRow, equityLineWords, openingDate, openingInput, openingRows, openingSides, type OpeningLineInput, type OpeningRow } from './opening.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 type OpeningDoc = { equityDebitCents: number; equityCreditCents: number; totalCents: number };
 
@@ -53,20 +54,14 @@ export function OpeningForm({ type, mode }: { type: DocTypeInfo; mode: FormMode;
             return (
               <div key={i} className="space-y-2 rounded-md p-2 ring-1 ring-slate-200">
                 <div className="grid gap-2 sm:grid-cols-[1fr_9rem_9rem_auto]">
-                  <select aria-label={`Line ${i + 1} account`} className={inputClass} value={row.accountId} onChange={(e) => set(i, { accountId: e.target.value, stockholderId: '' })}>
-                    <option value="">Pick an account</option>
-                    {accounts.map((x) => <option key={x.id} value={x.id}>{x.code} {x.name}{x.isCashPlace ? ' (cash place)' : ''}</option>)}
-                  </select>
+                  <SearchSelect aria-label={`Line ${i + 1} account`} value={row.accountId} onChange={(id) => set(i, { accountId: id, stockholderId: '' })} placeholder="Pick an account" choices={accounts.map((x) => ({ value: String(x.id), label: `${x.code} ${x.name}${x.isCashPlace ? ' (cash place)' : ''}` }))} />
                   <input aria-label={`Line ${i + 1} debit`} inputMode="decimal" placeholder="Debit" className={`${inputClass} text-right tabular-nums`} value={row.debit} onChange={(e) => set(i, { debit: e.target.value })} />
                   <input aria-label={`Line ${i + 1} credit`} inputMode="decimal" placeholder="Credit" className={`${inputClass} text-right tabular-nums`} value={row.credit} onChange={(e) => set(i, { credit: e.target.value })} />
                   <Button disabled={rows.length <= 1} onClick={() => setRows(rows.filter((_, j) => j !== i))} title="Remove this line">✕</Button>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {a?.needsStockholder && (
-                    <select aria-label={`Line ${i + 1} stockholder`} className={inputClass} value={row.stockholderId} onChange={(e) => set(i, { stockholderId: e.target.value })}>
-                      <option value="">Pick the stockholder</option>
-                      {stockholders.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
+                    <SearchSelect aria-label={`Line ${i + 1} stockholder`} value={row.stockholderId} onChange={(id) => set(i, { stockholderId: id })} placeholder="Pick the stockholder" choices={stockholders.map((p) => ({ value: p.id, label: p.name }))} />
                   )}
                   <input aria-label={`Line ${i + 1} memo`} placeholder="Line memo (optional), e.g. per bank statement of 30 June" className={`${inputClass} ${a?.needsStockholder ? '' : 'sm:col-span-2'}`} value={row.memo} onChange={(e) => set(i, { memo: e.target.value })} />
                 </div>

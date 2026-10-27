@@ -12,6 +12,7 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord, useToday } from '../../generic/record.tsx';
 import { CustomerPicker, Errors, useLive } from '../COL/parts.tsx';
 import { PARTY_WORDS, balanceWords, emptyRow, entryDate, jvInput, postable, rowsFromInput, totals, type JvLineInput, type JvRow } from './jv.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 type Option = { id: string; label: string };
 const TYPE_WORDS: Record<Account['type'], string> = { asset: 'Assets', liability: 'Liabilities', equity: 'Equity', revenue: 'Revenue', expense: 'Expenses' };
@@ -94,14 +95,8 @@ export function JvForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; 
             return (
               <div key={i} className="space-y-2 rounded-md p-2 ring-1 ring-slate-200">
                 <div className="grid gap-2 sm:grid-cols-[1fr_9rem_9rem_auto]">
-                  <select aria-label={`Line ${i + 1} account`} className={inputClass} value={row.accountId} onChange={(e) => set(i, { accountId: e.target.value, party: '', partyName: '' })}>
-                    <option value="">Pick an account</option>
-                    {Object.entries(TYPE_WORDS).map(([t, words]) => (
-                      <optgroup key={t} label={words}>
-                        {usable.filter((x) => x.type === t).map((x) => <option key={x.id} value={x.id}>{x.code} {x.name}{x.isReserved ? ' (reserved)' : ''}</option>)}
-                      </optgroup>
-                    ))}
-                  </select>
+                  <SearchSelect aria-label={`Line ${i + 1} account`} value={row.accountId} onChange={(id) => set(i, { accountId: id, party: '', partyName: '' })} placeholder="Pick an account"
+                    choices={Object.entries(TYPE_WORDS).flatMap(([t, words]) => usable.filter((x) => x.type === t).map((x) => ({ value: String(x.id), label: `${x.code} ${x.name}${x.isReserved ? ' (reserved)' : ''}`, group: words })))} />
                   <input aria-label={`Line ${i + 1} debit`} inputMode="decimal" placeholder="Debit" className={`${inputClass} text-right tabular-nums`} value={row.debit} onChange={(e) => set(i, { debit: e.target.value })} />
                   <input aria-label={`Line ${i + 1} credit`} inputMode="decimal" placeholder="Credit" className={`${inputClass} text-right tabular-nums`} value={row.credit} onChange={(e) => set(i, { credit: e.target.value })} />
                   <Button disabled={rows.length <= 2} onClick={() => setRows(rows.filter((_, j) => j !== i))} title="Remove this line">✕</Button>
