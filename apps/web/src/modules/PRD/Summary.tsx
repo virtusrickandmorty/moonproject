@@ -9,6 +9,7 @@ import { Link } from '../../router.tsx';
 import { Button, Dialog, Field, Loading, Notice, inputClass, showDate, useAction } from '../../components/ui.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { useLiveReload } from '../../live.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 const STATUS_WORDS: Record<string, string> = { completed: 'Done', in_progress: 'In progress', pending: 'Not started', not_needed: 'Not needed' };
 const PART_WORDS: Record<string, string> = { upper: 'Upper', lower: 'Lower', whole: '' };
@@ -84,10 +85,7 @@ function ChangeWorker({ entryId, rowNo, from, onClose, onDone }: { entryId: stri
     <Dialog title={`Change the worker: ${from}`} onClose={onClose}>
       <div className="space-y-3">
         <Field label="Made by" required>
-          <select className={inputClass} value={to} onChange={(e) => setTo(e.target.value)}>
-            <option value="">Pick the worker who made these pieces</option>
-            {workers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-          </select>
+          <SearchSelect aria-label="Worker who made these pieces" value={to} onChange={setTo} placeholder="Pick the worker who made these pieces" choices={workers.map((x) => ({ value: x.id, label: x.name }))} />
         </Field>
         <Field label="Reason" required hint="At least 10 characters, kept with the change"><input className={inputClass} maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Recorded under the wrong sewer" /></Field>
         {a.error && <Notice>{a.error}</Notice>}

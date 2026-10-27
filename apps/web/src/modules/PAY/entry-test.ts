@@ -2,6 +2,7 @@
 import { vi } from 'vitest';
 import { isValidElement, type ReactElement, type ReactNode } from 'react';
 import type { DocTypeInfo, Preview } from '../../api.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, live: null as Preview | null }));
 vi.mock('react', async (original) => ({
@@ -44,4 +45,5 @@ export function form(run: () => ReactNode, initial: unknown[] = [], live: Previe
     },
   };
 }
-export const change = (node: Node, value: string) => node.props.onChange({ target: { value } });
+/** Types into a box or picks in a drop-down; a SearchSelect (a long list, Oct 27, 2026) takes the value itself. */
+export const change = (node: Node, value: string) => (node.type === SearchSelect ? node.props.onChange(value) : node.props.onChange({ target: { value } }));

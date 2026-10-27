@@ -11,6 +11,7 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { Errors, useLive } from '../COL/parts.tsx';
 import { emptyRepayment, emptyWriteoff, repaymentInput, writeoffInput } from './settle.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 const asked = () => new URLSearchParams(location.search).get('employee') ?? '';
 
@@ -27,10 +28,7 @@ function Who({ question, employeeId, onPick, onStatus }: { question: string; emp
   const people = owing.some((o) => o.employeeId === employeeId) || !employeeId ? owing : [...owing, { employeeId, name: status?.name ?? '…', owedCents: status?.outstandingCents ?? 0 }];
   return (
     <Panel title={question}>
-      <select aria-label="Employee" className={inputClass} value={employeeId} onChange={(e) => onPick(e.target.value)}>
-        <option value="">Pick the employee</option>
-        {people.map((p) => <option key={p.employeeId} value={p.employeeId}>{p.name} · owes {peso(p.owedCents)}</option>)}
-      </select>
+      <SearchSelect aria-label="Employee" value={employeeId} onChange={onPick} placeholder="Pick the employee" choices={people.map((p) => ({ value: p.employeeId, label: `${p.name} · owes ${peso(p.owedCents)}` }))} />
       {owing.length === 0 && !employeeId && <p className="text-sm text-slate-500">Nobody owes on cash advances.</p>}
       {status && <p className="text-sm text-slate-600">{status.name}{status.active ? '' : ' (separated)'} owes {peso(status.outstandingCents)} now{status.installmentCents ? `, ${peso(status.installmentCents)} deducted each payroll` : ''}.</p>}
     </Panel>
@@ -108,10 +106,7 @@ export function WriteoffForm({ type, mode }: { type: DocTypeInfo; mode: FormMode
           <input inputMode="decimal" placeholder="All that is owed" className={`${inputClass} text-right`} value={v.amount} onChange={(e) => setV({ ...v, amount: e.target.value })} />
         </Field>
         <Field label="Charge to" required hint="Usually 6990 Miscellaneous, or salaries when it is treated as pay.">
-          <select aria-label="Expense account" className={inputClass} value={v.accountId} onChange={(e) => setV({ ...v, accountId: e.target.value })}>
-            <option value="">Pick the expense account</option>
-            {accounts.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
-          </select>
+          <SearchSelect aria-label="Expense account" value={v.accountId} onChange={(id) => setV({ ...v, accountId: id })} placeholder="Pick the expense account" choices={accounts.map((a) => ({ value: String(a.id), label: `${a.code} ${a.name}` }))} />
         </Field>
       </div>
       <Field label="Why is it written off? (at least 10 characters)" required>

@@ -61,6 +61,9 @@ function depositVatOf(db: Db, jo: { id: string; number: string }, date: string) 
 /** The refusals of the downpayment invoice that do not depend on what is typed: the job order is cancelled, abandoned or not in mode C (the server's own words). */
 const JOB_ORDER_REFUSALS = new Set(['JOB_ORDER', 'JO_CANCELLED', 'JO_ABANDONED', 'DEPOSIT_VAT_MODE']);
 
+/** How many job orders or releases a picker lists at most: every match, in a list that scrolls. */
+const PICK_LIMIT = 200;
+
 export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
   joListRoutes(app, db, clock);
@@ -149,7 +152,8 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
    */
   app.get('/api/jo/pick/orders', { config: { permission: 'jo.view' } }, async (req) => {
     const q = searchOf(req);
-    // Stages and pieces left are read for all orders at once; a balance is worked out only for the 20 that are shown.
+    // Stages and pieces left are read for all orders at once; a balance is worked out only for those shown (up to 200,
+    // a list that scrolls: the owner's request, Oct 27, 2026).
     const stages = stagesAll(db);
     const left = leftPiecesAll(db);
     const rows: { id: string; number: string; customerName: string; dueDate: string; stageLabel: string; leftPieces: number; balanceDueCents: number }[] = [];
@@ -158,7 +162,7 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
       const leftPieces = left.get(jo.id) ?? 0;
       if (!q && leftPieces <= 0) continue;
       rows.push({ id: jo.id, number: jo.number, customerName: jo.customerName, dueDate: jo.dueDate, stageLabel: STAGE_LABELS[stages.get(jo.id) ?? 'open'], leftPieces, balanceDueCents: joMoney(db, jo.id).balanceDueCents });
-      if (rows.length === 20) break;
+      if (rows.length === PICK_LIMIT) break;
     }
     return rows;
   });
@@ -167,8 +171,8 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/jo/pick/releases', { config: { permission: 'jo.view' } }, async (req) => {
     const q = searchOf(req);
     const rows = q
-      ? (db.prepare(`${RELEASES} WHERE lower(d.number) LIKE @q OR lower(j.number) LIKE @q OR lower(o.customer_name) LIKE @q ORDER BY d.number DESC LIMIT 20`).all({ q: `%${q}%` }) as ReleaseRow[])
-      : (db.prepare(`${RELEASES} WHERE d.status = 'posted' AND inv.id IS NULL ORDER BY d.number LIMIT 20`).all() as ReleaseRow[]);
+      ? (db.prepare(`${RELEASES} WHERE lower(d.number) LIKE @q OR lower(j.number) LIKE @q OR lower(o.customer_name) LIKE @q ORDER BY d.number DESC LIMIT ${PICK_LIMIT}`).all({ q: `%${q}%` }) as ReleaseRow[])
+      : (db.prepare(`${RELEASES} WHERE d.status = 'posted' AND inv.id IS NULL ORDER BY d.number LIMIT ${PICK_LIMIT}`).all() as ReleaseRow[]);
     return rows.map(releasePick);
   });
 

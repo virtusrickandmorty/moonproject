@@ -17,6 +17,7 @@ import { SupplierSelect, useList } from '../AP/parts.tsx';
 import { PurFrame, usePurForm } from './PurForm.tsx';
 import { UNIT_WORDS, emptyPoRow, poRowTotal, poRows, poToInput, qtyOf, qtyWords, type PoRow } from './purchasing.ts';
 import { PickCard } from './parts.tsx';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 type Stored = { supplierId: string; expectedDate?: string; requestId?: string; lines: { supplyId: string; qty: number; unitCostCents: number }[] };
 const blank = (r: PoRow) => !r.supplyId && !r.qty.trim() && !r.unitCost.trim();
@@ -150,17 +151,9 @@ export function PoForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; 
       <Panel title={editing === null ? 'What are we ordering: add a supply' : `What are we ordering: change line ${editing + 1}`}>
         <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(6rem,1fr)_minmax(8rem,1fr)]">
           <Field label="Supply" required>
-            <select aria-label="Supply" className={inputClass} value={item.supplyId} onChange={(e) => pickSupply(e.target.value)}>
-              <option value="">Pick the supply</option>
-              {linked.length > 0 && (
-                <optgroup label="From this supplier">
-                  {linked.map((s) => <option key={s.id} value={s.id}>{s.name} ({UNIT_WORDS[s.unit].toLowerCase()})</option>)}
-                </optgroup>
-              )}
-              <optgroup label={linked.length > 0 ? 'Other supplies' : 'Supplies'}>
-                {others.map((s) => <option key={s.id} value={s.id}>{s.name} ({UNIT_WORDS[s.unit].toLowerCase()})</option>)}
-              </optgroup>
-            </select>
+            <SearchSelect aria-label="Supply" value={item.supplyId} onChange={pickSupply} placeholder="Pick the supply"
+              choices={[...linked.map((s) => ({ value: s.id, label: `${s.name} (${UNIT_WORDS[s.unit].toLowerCase()})`, group: 'From this supplier' })),
+                ...others.map((s) => ({ value: s.id, label: `${s.name} (${UNIT_WORDS[s.unit].toLowerCase()})`, ...(linked.length > 0 ? { group: 'Other supplies' } : {}) }))]} />
           </Field>
           <Field label="Quantity" required hint={supplyOf(item.supplyId) ? `${UNIT_WORDS[supplyOf(item.supplyId)!.unit]}s; decimals allowed, like 12.5` : 'Decimals allowed, like 12.5'}>
             <input aria-label="Quantity" inputMode="decimal" placeholder="0" className={`${inputClass} text-right tabular-nums`} value={item.qty} onChange={(e) => setItem({ ...item, qty: e.target.value })} />

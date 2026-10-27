@@ -4,6 +4,7 @@ import { Loading, Button, Field, Notice, Panel, inputClass, longDate } from '../
 import { Link } from '../../router.tsx';
 import { KINDS, itemsOfKind, monthCells, monthRange, shiftMonth } from './calendar.ts';
 import { useLiveReload } from '../../live.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 const KIND_LABELS = Object.fromEntries(KINDS.map((k) => [k.kind, k.label])) as Record<CalKind, string>;
@@ -106,7 +107,7 @@ function EventForm({ me, initialDate, onSaved }: { me: Me; initialDate: string; 
     <Field label="Time (optional)"><input type="time" className={inputClass} value={time} onChange={(e) => setTime(e.target.value)} /></Field>
     {me.permissions.includes('cus.view') && <div className="space-y-2"><Field label="Find customer (optional)"><input className={inputClass} value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} placeholder="Name or code" /></Field>
       <select aria-label="Customer" className={inputClass} value={customerId} onChange={(e) => setCustomerId(e.target.value)}><option value="">No customer</option>{customers.map((c) => <option key={c.id} value={c.id}>{c.display_name}</option>)}</select></div>}
-    {me.permissions.includes('jo.view') && <Field label="Job order (optional)"><select className={inputClass} value={jobOrderId} onChange={(e) => setJobOrderId(e.target.value)}><option value="">No job order</option>{orders.map((o) => <option key={o.id} value={o.id}>{o.number} · {o.summary}</option>)}</select></Field>}
+    {me.permissions.includes('jo.view') && <Field label="Job order (optional)"><SearchSelect aria-label="Job order" value={jobOrderId} onChange={setJobOrderId} emptyLabel="No job order" choices={orders.map((o) => ({ value: o.id, label: `${o.number} · ${o.summary}` }))} /></Field>}
     <div className="md:col-span-2"><Field label="Notes (optional)"><textarea className={inputClass} maxLength={2000} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field></div>
     <div className="md:col-span-2"><Button type="submit" tone="primary" disabled={busy || !title.trim()}>Save event</Button></div>
   </form></Panel>;

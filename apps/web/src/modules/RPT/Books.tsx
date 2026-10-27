@@ -5,6 +5,7 @@ import { Link } from '../../router.tsx';
 import { Loading, Button, Field, Notice, PAGE_ROWS, Pager, Panel, inputClass, peso, type PageInfo } from '../../components/ui.tsx';
 import './books.css';
 import { addressValue, PendingPeriod, ResultSummary, purposes } from './ReportParts.tsx';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 type Account = { id: number; code: string; name: string; normalSide: 'debit' | 'credit' };
 type Line = { journalId: string; journalNumber: string; businessDate: string; sourceType: string; sourceId: string;
@@ -115,7 +116,7 @@ export function GeneralLedger({ me }: { me: Me }) {
   return <article className="rpt-page space-y-4"><BookTitle title="General ledger" dates={data ? `${data.from} to ${data.to}` : ''} />
     <div className="flex flex-wrap items-end gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200/70 print:hidden"><Field label="From"><input type="date" className={inputClass} value={from} onChange={(e) => setFrom(e.target.value)} /></Field>
       <Field label="To"><input type="date" className={inputClass} value={to} onChange={(e) => setTo(e.target.value)} /></Field>
-      <Field label="Account"><select className={inputClass} value={accountId} onChange={(e) => setAccountId(e.target.value)}><option value="">All accounts</option>{accounts.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}</select></Field>
+      <Field label="Account"><SearchSelect aria-label="Account" value={accountId} onChange={setAccountId} emptyLabel="All accounts" choices={accounts.map((a) => ({ value: String(a.id), label: `${a.code} ${a.name}` }))} /></Field>
       <Button tone="primary" disabled={!from || !to || from > to} onClick={() => setApplied(new URLSearchParams({ from, to, ...(accountId ? { accountId } : {}) }).toString())}>Show</Button>
       {path && <Tools path={path} />}</div>
     <PendingPeriod applied={applied} values={{ from, to, accountId }} />

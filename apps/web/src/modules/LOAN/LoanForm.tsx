@@ -13,6 +13,7 @@ import { useRecord } from '../../generic/record.tsx';
 import { Errors, useLive } from '../COL/parts.tsx';
 import { cents } from '../COL/money.ts';
 import { METHOD_WORDS, emptyLoan, emptyRowText, feeAccounts, loanInput, loanValues, scheduledPrincipal, type LoanValues, type Method, type RowText } from './loan.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 type ScheduleRow = { instalmentNo: number; dueDate: string; principalCents: number; interestCents: number };
 const SHOWN = 12;
@@ -88,10 +89,7 @@ export function LoanForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode
           </div>
           {mayPickFeeAccount && (cents(v.fee) ?? 0) > 0 && (
             <Field label="Put the fees on">
-              <select className={inputClass} value={v.feeAccountId} onChange={(e) => set({ feeAccountId: e.target.value })}>
-                <option value="">Interest and financing charges (usual)</option>
-                {accounts.map((a) => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
-              </select>
+              <SearchSelect aria-label="Account for interest and charges" value={v.feeAccountId} onChange={(id) => set({ feeAccountId: id })} emptyLabel="Interest and financing charges (usual)" choices={accounts.map((a) => ({ value: String(a.id), label: `${a.code} ${a.name}` }))} />
             </Field>
           )}
         </Panel>

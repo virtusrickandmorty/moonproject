@@ -10,6 +10,7 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import { useRecord } from '../../generic/record.tsx';
 import { Errors, useLive } from '../COL/parts.tsx';
 import { emptyOpening, openingInput, openingValues, type OpeningValues } from './opening.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 export function OpeningForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   const [v, setV] = useState<OpeningValues>(emptyOpening);
@@ -41,10 +42,7 @@ export function OpeningForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
         {opening?.closed && <Notice>The opening was closed on {opening.closed.closedAt.slice(0, 10)}. Correct balances with a journal voucher.</Notice>}
         {cutover && !opening?.closed && <Notice tone="info">Dated the cut-over date, {showDate(cutover)}. The first payroll after it deducts the instalment below, like any cash advance.</Notice>}
         <Panel title="Who still owed it?">
-          <select aria-label="Employee" className={inputClass} value={v.employeeId} onChange={(e) => set({ employeeId: e.target.value })}>
-            <option value="">Pick the employee</option>
-            {people.map((p) => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
-          </select>
+          <SearchSelect aria-label="Employee" value={v.employeeId} onChange={(id) => set({ employeeId: id })} placeholder="Pick the employee" choices={people.map((p) => ({ value: p.id, label: `${p.name} (${p.code})` }))} />
           {owed && owed.outstandingCents > 0 && <p className="text-sm text-slate-600">Already owes {peso(owed.outstandingCents)} on cash advances recorded here.</p>}
         </Panel>
         <div className="grid gap-3 sm:grid-cols-2">

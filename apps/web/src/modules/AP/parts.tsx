@@ -11,6 +11,7 @@ import { docPath } from '../../shell/menu.ts';
 import { EditGate, Errors, Figures, useLive } from '../COL/parts.tsx';
 import { DUPLICATE_REASON_MAX, DUPLICATE_REASON_MIN, duplicateReasonBox, ewtRates } from './payables.ts';
 import { useLiveReload } from '../../live.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 /** The state around a form's own fields; on an edit, `load` fills the fields from the recorded document. */
 export function useMoneyForm(type: DocTypeInfo, mode: FormMode, load: (d: DocDetail) => void) {
@@ -125,10 +126,7 @@ export function SupplierSelect({ suppliers, value, onChange, label = 'Supplier' 
   const s = suppliers.find((x) => x.id === value);
   return (
     <div className="space-y-1">
-      <select aria-label={label} className={inputClass} value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">Pick the supplier</option>
-        {suppliers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-      </select>
+      <SearchSelect aria-label={label} value={value} onChange={onChange} placeholder="Pick the supplier" choices={suppliers.map((x) => ({ value: x.id, label: x.name }))} />
       {s && (
         <p className="text-sm text-slate-600">
           {s.is_vat_registered ? 'VAT-registered' : 'Not VAT-registered'} · {s.tin ? `TIN ${s.tin}` : 'no TIN on file'}

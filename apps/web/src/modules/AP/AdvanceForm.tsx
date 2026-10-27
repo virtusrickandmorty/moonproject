@@ -15,6 +15,7 @@ import { emptyTender, tendersToRows } from '../COL/money.ts';
 import { TenderRows } from '../COL/parts.tsx';
 import { MoneyForm, SupplierSelect, useEwtRates, useList, useMoneyForm } from './parts.tsx';
 import { advanceFigures, advanceInput, ewtChoices, type AdvanceInput } from './payables.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 const asked = (key: string) => new URLSearchParams(location.search).get(key) ?? '';
 
@@ -58,14 +59,9 @@ export function AdvanceForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
       <Panel title="Who is paid in advance">
         <SupplierSelect suppliers={suppliers} value={supplierId} onChange={setSupplierId} />
         <Field label="Purchase order (if it is a downpayment on one)">
-          <select aria-label="Purchase order" className={inputClass} value={purchaseOrderId} onChange={(e) => setPurchaseOrderId(e.target.value)}>
-            <option value="">None</option>
-            {orders.map((o) => (
-              <option key={o.id} value={o.id} disabled={leftOn(o) === 0 && o.id !== purchaseOrderId}>
-                {o.number} · {formatPesos(o.totalCents)}{o.advancedCents > 0 ? (leftOn(o) === 0 ? ' · paid in full in advance' : ` · ${formatPesos(o.advancedCents)} paid in advance`) : ''}
-              </option>
-            ))}
-          </select>
+          <SearchSelect aria-label="Purchase order" value={purchaseOrderId} onChange={setPurchaseOrderId} emptyLabel="None"
+            choices={orders.map((o) => ({ value: o.id, disabled: leftOn(o) === 0 && o.id !== purchaseOrderId,
+              label: `${o.number} · ${formatPesos(o.totalCents)}${o.advancedCents > 0 ? (leftOn(o) === 0 ? ' · paid in full in advance' : ` · ${formatPesos(o.advancedCents)} paid in advance`) : ''}` }))} />
         </Field>
         {picked && <p className="text-sm text-slate-600">{leftOn(picked) === 0
           ? `${picked.number} is already paid in full in advance.`

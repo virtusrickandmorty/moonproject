@@ -12,16 +12,14 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import { MoneyForm, PlacePicker, useList, useMoneyForm } from '../AP/parts.tsx';
 import { forReplacement } from '../AP/payables.ts';
 import { OFFICER_KINDS, classificationsFor, dividendPaymentInput, emptyEq, eqValues, officerInput, ownerMoneyInput, personLabel, type EqValues } from './eq.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 /** The person a form was opened for, from a person's page (?person=<id>); the pick list still decides if it is valid. */
 const askedPerson = () => new URLSearchParams(location.search).get('person') ?? '';
 
 function PersonSelect({ people, v, set }: { people: EqPerson[]; v: EqValues; set: (p: Partial<EqValues>) => void }) {
   return (
-    <select aria-label="Person" className={inputClass} value={v.personId} onChange={(e) => set({ personId: e.target.value })}>
-      <option value="">Pick from the register</option>
-      {people.map((p) => <option key={p.id} value={p.id}>{personLabel(p)}</option>)}
-    </select>
+    <SearchSelect aria-label="Person" value={v.personId} onChange={(id) => set({ personId: id })} placeholder="Pick from the register" choices={people.map((p) => ({ value: p.id, label: personLabel(p) }))} />
   );
 }
 
