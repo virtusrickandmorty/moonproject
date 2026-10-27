@@ -84,6 +84,23 @@ export function addRate(db: Db, raw: unknown, who: { userId: string; at: string;
   return db.prepare(`${RATE} WHERE id = ?`).get(id) as PieceRate;
 }
 
+export const bulkRateInput = rateInput.omit({ garmentType: true }).extend({
+  garmentTypes: z.array(z.string().trim().min(1).max(GARMENT_TYPE_MAX)).min(1).max(2000),
+}).strict();
+
+/**
+ * One new rate for many garment types at once (the owner's request, Oct 27, 2026): the same step, part and rate from the
+ * same date, with one reason, for every item picked (those that had the same rate, say). Each is a new row, exactly as
+ * addRate makes it, so each item keeps its own history and can differ again later. All or none: call inside a transaction.
+ */
+export function addRates(db: Db, raw: unknown, who: { userId: string; at: string; today: string }): PieceRate[] {
+  const parsed = bulkRateInput.safeParse(raw);
+  if (!parsed.success) throw badRequest('INVALID_INPUT', 'Some fields are missing or not allowed.', parsed.error.issues.map((i) => ({ field: i.path.join('.'), message: i.message })));
+  const { garmentTypes, ...rest } = parsed.data;
+  const once = [...new Map(garmentTypes.map((g) => [g.toLowerCase(), g])).values()]; // each garment type once, in any case
+  return once.map((garmentType) => addRate(db, { ...rest, garmentType }, who));
+}
+
 export const switchInput = z.object({ garmentType: z.string().trim().min(1).max(GARMENT_TYPE_MAX), on: z.boolean(), reason: z.string().trim().min(10).max(500) }).strict();
 
 /**
