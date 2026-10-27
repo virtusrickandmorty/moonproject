@@ -12,7 +12,7 @@ import { api, type DocTypeInfo, type Me, type PoStatus } from '../../api.ts';
 import { Button, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
 import { PurFrame, usePurForm } from './PurForm.tsx';
-import { overReceived, qtyWords, receiveAllLeft, rrRows, rrToInput, type RrRow } from './purchasing.ts';
+import { overReceived, qtyCents, qtyOf, qtyWords, receiveAllLeft, rrRows, rrToInput, type RrRow } from './purchasing.ts';
 import { Badge, PickCard, Progress } from './parts.tsx';
 
 type Stored = { poDocumentId: string; lines: { poLineNo: number; qty: number }[] };
@@ -56,8 +56,8 @@ export function RrForm({ type, mode }: { type: DocTypeInfo; mode: FormMode; me: 
   const { input, errors } = rrToInput(poId, rows);
   const set = (i: number, qty: string) => setRows(rows.map((r, j) => (j === i ? { ...r, qty } : r)));
   const costOf = (poLineNo: number) => po?.lines.find((l) => l.lineNo === poLineNo)?.unitCostCents ?? 0;
-  const now = rows.map((r) => ({ r, qty: Number(r.qty) })).filter(({ qty }) => Number.isInteger(qty) && qty > 0);
-  const worth = now.reduce((n, { r, qty }) => n + qty * costOf(r.poLineNo), 0);
+  const now = rows.flatMap((r) => { const qty = qtyOf(r.qty); return qty === undefined ? [] : [{ r, qty }]; });
+  const worth = now.reduce((n, { r, qty }) => n + qtyCents(qty, costOf(r.poLineNo)), 0);
   const date = today();
   const words = find.trim().toLowerCase();
   const shown = open.filter((p) => !words || `${p.number} ${p.supplierName} ${p.lines.map((l) => l.supplyName).join(' ')}`.toLowerCase().includes(words));
@@ -71,7 +71,7 @@ export function RrForm({ type, mode }: { type: DocTypeInfo; mode: FormMode; me: 
         {now.map(({ r, qty }) => (
           <li key={r.poLineNo} className="flex justify-between gap-3 py-1.5 text-sm">
             <span className="min-w-0">{r.supplyName} <span className="text-slate-500">× {qtyWords(qty, r.unit)}</span></span>
-            <span className="shrink-0 tabular-nums">{peso(qty * costOf(r.poLineNo))}</span>
+            <span className="shrink-0 tabular-nums">{peso(qtyCents(qty, costOf(r.poLineNo)))}</span>
           </li>
         ))}
       </ol>
@@ -129,7 +129,7 @@ export function RrForm({ type, mode }: { type: DocTypeInfo; mode: FormMode; me: 
                     <Progress done={r.received} of={r.ordered} words={`${qtyWords(r.ordered, r.unit)} ordered · ${r.received} in before · ${done ? 'all received' : `${qtyWords(r.remaining, r.unit)} to come`}`} />
                   </div>
                   <div>
-                    <input aria-label={`${r.supplyName}: receiving now`} inputMode="numeric" placeholder="0" className={`${inputClass} text-right tabular-nums`} value={r.qty} onChange={(e) => set(i, e.target.value)} />
+                    <input aria-label={`${r.supplyName}: receiving now`} inputMode="decimal" placeholder="0" className={`${inputClass} text-right tabular-nums`} value={r.qty} onChange={(e) => set(i, e.target.value)} />
                     {over > 0 && <span className="block text-right text-xs text-amber-700">{qtyWords(over, r.unit)} more than ordered</span>}
                   </div>
                 </li>

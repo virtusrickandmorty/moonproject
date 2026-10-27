@@ -1,6 +1,7 @@
 /** What other modules may read from PUR (read-only): suppliers, supplies and receiving reports. */
 import type { Db } from '../../platform/db/driver.ts';
 import { poLines } from './lookups.ts';
+import { lineCents, lineCentsSql, toHundredths } from './qty.ts';
 import type { EwtClass } from '../../engine/settings.ts';
 
 export interface Supplier {
@@ -108,11 +109,11 @@ export function latestPoUnitCost(db: Db, supplyId: string, asOf: string): Purcha
     .get(supplyId, asOf) as PurchaseCost | undefined;
 }
 
-/** How much of a supply one receiving report received, in the purchase order's units (read-only). */
-export const receivedQty = (db: Db, receivingReportId: string, supplyId: string): number =>
+/** How much of a supply one receiving report received, in hundredths of the purchase order's unit (12.5 yards → 1250; read-only). */
+export const receivedHundredths = (db: Db, receivingReportId: string, supplyId: string): number =>
   db
     .prepare(
-      `SELECT COALESCE(SUM(r.qty), 0) FROM pur_rr_lines r JOIN pur_po_lines p ON p.document_id = r.po_document_id AND p.line_no = r.po_line_no
+      `SELECT COALESCE(SUM(r.qty_hundredths), 0) FROM pur_rr_lines r JOIN pur_po_lines p ON p.document_id = r.po_document_id AND p.line_no = r.po_line_no
        WHERE r.document_id = ? AND p.supply_id = ?`,
     )
     .pluck()
@@ -135,14 +136,14 @@ export function ordersToReceive(db: Db): { id: string; number: string; date: str
     ORDER BY COALESCE(po.expected_date, d.business_date), d.number`).all() as { id: string; number: string; date: string; expectedDate: string | null; supplierId: string; supplierName: string }[];
   return heads.flatMap((h) => {
     const lines = poLines(db, h.id);
-    return lines.some((l) => l.remainingQty > 0) ? [{ ...h, remainingCents: lines.reduce((n, l) => n + l.remainingQty * l.unitCostCents, 0) }] : [];
+    return lines.some((l) => l.remainingQty > 0) ? [{ ...h, remainingCents: lines.reduce((n, l) => n + lineCents(toHundredths(l.remainingQty), l.unitCostCents), 0) }] : [];
   });
 }
 
 /** Goods received that no recorded supplier bill names yet (the purchases overview), oldest first, at the order's cost. */
 export function deliveriesToBill(db: Db): { id: string; number: string; date: string; supplierId: string; supplierName: string; poId: string; poNumber: string; receivedCents: number }[] {
   return db.prepare(`SELECT d.id, d.number, d.business_date AS date, p.supplier_id AS supplierId, s.name AS supplierName, pd.id AS poId, pd.number AS poNumber,
-      (SELECT COALESCE(SUM(rl.qty * pl.unit_cost_cents), 0) FROM pur_rr_lines rl JOIN pur_po_lines pl ON pl.document_id = rl.po_document_id AND pl.line_no = rl.po_line_no
+      (SELECT COALESCE(SUM(${lineCentsSql('rl.qty_hundredths', 'pl.unit_cost_cents')}), 0) FROM pur_rr_lines rl JOIN pur_po_lines pl ON pl.document_id = rl.po_document_id AND pl.line_no = rl.po_line_no
         WHERE rl.document_id = d.id) AS receivedCents
     FROM pur_receiving_reports r JOIN documents d ON d.id = r.document_id JOIN pur_purchase_orders p ON p.document_id = r.po_document_id
     JOIN documents pd ON pd.id = p.document_id JOIN pur_suppliers s ON s.id = p.supplier_id

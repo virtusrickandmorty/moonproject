@@ -6,7 +6,7 @@ import { divRoundHalfAway } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import type { EwtClass } from '../../engine/settings.ts';
 import { categoryIsPurchase, categoryPurchaseClass, type GoodsOrServices } from '../EXP/public.ts';
-import { latestPoUnitCost, receivedQty, supplier, type CountableSupply, type PurchaseCost } from '../PUR/public.ts';
+import { latestPoUnitCost, receivedHundredths, supplier, type CountableSupply, type PurchaseCost } from '../PUR/public.ts';
 const supplierName = (db: Db, id: string) => supplier(db, id)?.name ?? 'a supplier';
 export { supplierBalances, supplierLedger } from './ledger.ts';
 
@@ -89,8 +89,8 @@ export function latestBillUnitCost(db: Db, supplyId: string, asOf: string): Purc
     )
     .all(supplyId, asOf) as { documentId: string; number: string; date: string; rrId: string; costCents: number }[];
   for (const b of bills) {
-    const qty = receivedQty(db, b.rrId, supplyId);
-    if (qty > 0) return { unitCostCents: divRoundHalfAway(b.costCents, qty), documentId: b.documentId, number: b.number, date: b.date };
+    const hundredths = receivedHundredths(db, b.rrId, supplyId); // 12.5 yards → 1250
+    if (hundredths > 0) return { unitCostCents: divRoundHalfAway(b.costCents * 100, hundredths), documentId: b.documentId, number: b.number, date: b.date };
   }
   return undefined;
 }

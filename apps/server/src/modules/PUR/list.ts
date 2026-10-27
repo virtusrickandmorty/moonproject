@@ -13,6 +13,7 @@ import type { AppDeps } from '../../app.ts';
 import type { Db } from '../../platform/db/driver.ts';
 import { today } from '../../platform/clock.ts';
 import { poLines } from './lookups.ts';
+import { fromHundredths, lineCents, lineCentsSql, toHundredths } from './qty.ts';
 import { requestStatus, type RequestState } from './requests.ts';
 
 type Filters = { q?: string; from?: string; to?: string };
@@ -66,9 +67,10 @@ export function poProgress(db: Db, poId: string) {
   const lines = poLines(db, poId);
   const deliveries = db.prepare(`SELECT d.id FROM pur_receiving_reports r JOIN documents d ON d.id = r.document_id WHERE r.po_document_id = ? AND d.status = 'posted'`).pluck().all(poId) as string[];
   return {
-    orderedQty: lines.reduce((n, l) => n + l.orderedQty, 0),
-    receivedQty: lines.reduce((n, l) => n + Math.min(l.receivedQty, l.orderedQty), 0),
-    toReceiveCents: lines.reduce((n, l) => n + l.remainingQty * l.unitCostCents, 0),
+    // Added up in hundredths of a unit (quantities may have decimals, Oct 27, 2026), shown as plain quantities.
+    orderedQty: fromHundredths(lines.reduce((n, l) => n + toHundredths(l.orderedQty), 0)),
+    receivedQty: fromHundredths(lines.reduce((n, l) => n + toHundredths(Math.min(l.receivedQty, l.orderedQty)), 0)),
+    toReceiveCents: lines.reduce((n, l) => n + lineCents(toHundredths(l.remainingQty), l.unitCostCents), 0),
     deliveries: deliveries.length,
     billed: deliveries.filter((id) => billOf(db, id)).length,
   };
@@ -76,7 +78,7 @@ export function poProgress(db: Db, poId: string) {
 
 /** What a receiving report brought: its lines' pieces and their worth at the order's costs. */
 function rrGoods(db: Db, rrId: string) {
-  return db.prepare(`SELECT COUNT(*) AS lines, COALESCE(SUM(l.qty), 0) AS qty, COALESCE(SUM(l.qty * p.unit_cost_cents), 0) AS valueCents
+  return db.prepare(`SELECT COUNT(*) AS lines, COALESCE(SUM(l.qty_hundredths), 0) / 100.0 AS qty, COALESCE(SUM(${lineCentsSql('l.qty_hundredths', 'p.unit_cost_cents')}), 0) AS valueCents
     FROM pur_rr_lines l JOIN pur_po_lines p ON p.document_id = l.po_document_id AND p.line_no = l.po_line_no WHERE l.document_id = ?`).get(rrId) as { lines: number; qty: number; valueCents: number };
 }
 

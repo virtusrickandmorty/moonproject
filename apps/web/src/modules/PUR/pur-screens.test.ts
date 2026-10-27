@@ -7,7 +7,7 @@ import { createApi, newIdempotencyKey, type PoStatus, type SupplierRecord, type 
 import { buildMenu } from '../../shell/menu.ts';
 import {
   contactToInput, emptyContactForm, emptyPoRow, emptySupplierForm, filterSupplies, filterSuppliers, overReceived, poRowTotal, poToInput, qtyWords, receiveAllLeft, rrRows,
-  rrToInput, supplierToForm, supplierToInput, supplyToInput, wholeQty,
+  rrToInput, supplierToForm, supplierToInput, supplyToInput, qtyOf,
 } from './purchasing.ts';
 import { costSource } from './Supplies.tsx';
 
@@ -63,17 +63,18 @@ describe('supplier form rules', () => {
 });
 
 describe('purchase order rules', () => {
-  it('whole quantities only; lines are read to centavos; blank lines are skipped', () => {
-    expect(['12', ' 7 ', '0', '1.5', '', '-2', '1000001'].map(wholeQty)).toEqual([12, 7, undefined, undefined, undefined, undefined, undefined]);
+  it('quantities with up to 2 decimals; lines are read to centavos; blank lines are skipped', () => {
+    expect(['12', ' 7 ', '0', '1.5', '12.75', '1,250.5', '1.005', '', '-2', '1000001'].map(qtyOf)).toEqual([12, 7, undefined, 1.5, 12.75, 1250.5, undefined, undefined, undefined, undefined]);
     expect(poRowTotal({ supplyId: 'a', qty: '12', unitCost: '150.50' })).toBe(180_600);
+    expect(poRowTotal({ supplyId: 'a', qty: '12.5', unitCost: '150.33' })).toBe(187_913); // 1,879.125 rounds once to 1,879.13
     expect(poRowTotal({ supplyId: 'a', qty: 'x', unitCost: '150' })).toBeUndefined();
     const rows = [{ supplyId: 'a', qty: '12', unitCost: '150.50' }, emptyPoRow(), { supplyId: 'b', qty: '3', unitCost: '' }];
     expect(poToInput('s1', '2026-10-15', rows)).toEqual({
       errors: [], input: { supplierId: 's1', expectedDate: '2026-10-15', lines: [{ supplyId: 'a', qty: 12, unitCostCents: 15_050 }, { supplyId: 'b', qty: 3, unitCostCents: 0 }] },
     });
     expect(poToInput('s1', '', [emptyPoRow()]).errors).toEqual(['Add at least one supply to the order.']);
-    expect(poToInput('', '2026-13-01', [{ supplyId: '', qty: '1.5', unitCost: '1,2x' }]).errors).toEqual([
-      'Pick the supplier.', 'Pick a real expected date, or leave it empty.', 'Line 1: pick the supply.', 'Line 1: type the quantity as a whole number, like 12.',
+    expect(poToInput('', '2026-13-01', [{ supplyId: '', qty: '1.555', unitCost: '1,2x' }]).errors).toEqual([
+      'Pick the supplier.', 'Pick a real expected date, or leave it empty.', 'Line 1: pick the supply.', 'Line 1: type the quantity, like 12 or 12.5.',
       'Line 1: type the cost of one unit like 150.00 (or leave it empty for zero).',
     ]);
     expect('expectedDate' in poToInput('s1', '  ', [{ supplyId: 'a', qty: '1', unitCost: '1' }]).input).toBe(false);
@@ -107,7 +108,8 @@ describe('receiving rules', () => {
     const typed = [{ ...rows[0]!, qty: '5' }, { ...rows[1]! }];
     expect(rrToInput('p1', typed)).toEqual({ errors: [], input: { poDocumentId: 'p1', lines: [{ poLineNo: 1, qty: 5 }] } });
     expect(typed.map(overReceived)).toEqual([1, 0]);
-    expect(rrToInput('p1', [{ ...rows[0]!, qty: '2.5' }]).errors).toEqual(['Cotton twill: type the quantity received as a whole number, like 5.']);
+    expect(rrToInput('p1', [{ ...rows[0]!, qty: '2.5' }]).input.lines).toEqual([{ poLineNo: rows[0]!.poLineNo, qty: 2.5 }]);
+    expect(rrToInput('p1', [{ ...rows[0]!, qty: '2.555' }]).errors).toEqual(['Cotton twill: type the quantity received, like 5 or 5.25.']);
     expect(rrToInput('', typed).errors).toEqual(['Pick the purchase order the goods came for.']);
   });
 });

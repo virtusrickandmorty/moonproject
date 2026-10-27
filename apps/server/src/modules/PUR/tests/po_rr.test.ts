@@ -206,9 +206,9 @@ describe('PUR PO and RR', () => {
     expect(rr.statusCode).toBe(200);
     for (const [table, column, id] of [
       ['pur_purchase_orders', 'supplier_id', po.json().id],
-      ['pur_po_lines', 'qty', po.json().id],
+      ['pur_po_lines', 'qty_hundredths', po.json().id],
       ['pur_receiving_reports', 'po_document_id', rr.json().id],
-      ['pur_rr_lines', 'qty', rr.json().id],
+      ['pur_rr_lines', 'qty_hundredths', rr.json().id],
     ]) {
       expect(() => env.db.prepare(`UPDATE ${table} SET ${column} = ${column} WHERE document_id = ?`).run(id), table).toThrow(/IMMUTABLE/);
     }

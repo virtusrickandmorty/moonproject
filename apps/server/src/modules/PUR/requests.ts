@@ -37,7 +37,7 @@ function shape(db: Db, r: HeadRow, withLines: boolean): RequestStatus {
   const usedBy = r.status === 'posted' ? requestUsedBy(db, r.id) : null;
   const state: RequestState = r.status === 'cancelled' ? 'cancelled' : usedBy ? 'used' : r.decision ?? 'waiting';
   const { decision, decisionNote, decisionUser, decisionAt, ...head } = r;
-  const lines = withLines ? db.prepare(`SELECT l.line_no AS lineNo, l.supply_id AS supplyId, s.name AS supplyName, s.unit, l.description, l.qty, l.unit_cost_cents AS unitCostCents
+  const lines = withLines ? db.prepare(`SELECT l.line_no AS lineNo, l.supply_id AS supplyId, s.name AS supplyName, s.unit, l.description, l.qty_hundredths / 100.0 AS qty, l.unit_cost_cents AS unitCostCents
     FROM pur_request_lines l LEFT JOIN pur_supplies s ON s.id = l.supply_id WHERE l.document_id = ? ORDER BY l.line_no`).all(r.id) as RequestLine[] : [];
   return { ...head, state, decision: decision ? { decision, note: decisionNote, userName: decisionUser ?? '?', at: decisionAt! } : null, usedBy, lines };
 }
