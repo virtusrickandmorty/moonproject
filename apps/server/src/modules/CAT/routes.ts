@@ -79,7 +79,8 @@ export function catRoutes(app: FastifyInstance, deps: AppDeps): void {
     const q = req.query as { search?: string; limit?: string; offset?: string; active?: string };
     const limit = q.limit === undefined ? 25 : Number(q.limit);
     const offset = q.offset === undefined ? 0 : Number(q.offset);
-    if (!Number.isInteger(limit) || limit < 1 || limit > 100 || !Number.isInteger(offset) || offset < 0 ||
+    // Up to 200: the price list search on sales lines lists every match and scrolls (the owner's request, Oct 28, 2026).
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200 || !Number.isInteger(offset) || offset < 0 ||
       (q.active !== undefined && q.active !== '0' && q.active !== '1')) {
       throw new AppError('INVALID_PAGE', 'Choose a valid catalog page and filter.', 400);
     }

@@ -93,7 +93,7 @@ function OrderDialog({ me, order: o, onClose, onChanged }: { me: Me; order: Deta
   }, [me]);
   useEffect(() => {
     if (search.trim().length < 2) return setFound([]);
-    const t = setTimeout(() => void masterRequest<{ id: string; display_name: string }[]>(me, `/api/cus/customers?search=${encodeURIComponent(search.trim())}&limit=8`).then(setFound, () => undefined), 250);
+    const t = setTimeout(() => void masterRequest<{ id: string; display_name: string }[]>(me, `/api/cus/customers?search=${encodeURIComponent(search.trim())}&limit=200`).then(setFound, () => undefined), 250);
     return () => clearTimeout(t);
   }, [me, search]);
   const act = (fn: () => Promise<unknown>) => run(async () => { await fn(); setStep('view'); await onChanged(); });
@@ -156,7 +156,7 @@ function OrderDialog({ me, order: o, onClose, onChanged }: { me: Me; order: Deta
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="Customer" required hint={customer ? `Recording to ${customer.name}` : 'Walk-in, or search a customer'}>
               <input className={inputClass} value={search} placeholder={customer?.name ?? 'Search a customer'} onChange={(e) => setSearch(e.target.value)} />
-              {found.length > 0 && <ul className="mt-1 max-h-40 overflow-y-auto rounded-md bg-white ring-1 ring-slate-200">{found.map((c) => <li key={c.id}><button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-indigo-50" onClick={() => { setCustomer({ id: c.id, name: c.display_name }); setSearch(''); setFound([]); }}>{c.display_name}</button></li>)}</ul>}
+              {found.length > 0 && <ul className="mt-1 max-h-64 overflow-y-auto overscroll-contain rounded-md bg-white ring-1 ring-slate-200">{found.map((c) => <li key={c.id}><button type="button" className="block w-full px-3 py-1.5 text-left hover:bg-indigo-50" onClick={() => { setCustomer({ id: c.id, name: c.display_name }); setSearch(''); setFound([]); }}>{c.display_name}</button></li>)}</ul>}
             </Field>
             <Field label="Invoice no." required><input className={inputClass} inputMode="numeric" value={invoiceNumber} onChange={(e) => setInvoice(e.target.value)} /></Field>
             <Field label="CR no." required><input className={inputClass} inputMode="numeric" value={crNumber} onChange={(e) => setCr(e.target.value)} /></Field>

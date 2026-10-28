@@ -22,6 +22,7 @@ import { masterRequest } from '../CUS/http.ts';
 import { ItemSearch } from './parts.tsx';
 import { TERMS } from './opening.ts';
 import { parseRosterPaste } from './roster.ts';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 import {
   KIND_OF_CLASS, blankLine, emptyJo, emptyJoLine, fromWearer, joInput, joValues, lineDiscountCents, lineQty, oneOff, priceChanged,
   valuesFromQuotation, type JoDoc, type JoInput, type JoLineRow, type JoValues, type RosterEdit,
@@ -84,13 +85,10 @@ export function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWear
     setPaste(null);
   };
   const sizeSelect = (r: RosterEdit, j: number, which: 'size' | 'lowerSize', label: string) => (
-    <select aria-label={`${p.n} wearer ${j + 1} ${label}`} className={inputClass} value={which === 'size' && r.sizeMode === 'measured' ? MEASURED : r[which]}
+    <SearchSelect aria-label={`${p.n} wearer ${j + 1} ${label}`} value={which === 'size' && r.sizeMode === 'measured' ? MEASURED : r[which]} placeholder="Size" emptyLabel="No size"
       disabled={which === 'lowerSize' && r.sizeMode === 'measured'}
-      onChange={(e) => set(j, which === 'lowerSize' ? { lowerSize: e.target.value } : e.target.value === MEASURED ? { sizeMode: 'measured', size: '', lowerSize: '' } : { sizeMode: 'preset', size: e.target.value })}>
-      <option value="" />
-      {which === 'size' && r.personId && <option value={MEASURED}>Measured</option>}
-      {[...new Set([...p.sizes, ...(r[which] ? [r[which]] : [])])].map((s) => <option key={s} value={s}>{s}</option>)}
-    </select>
+      onChange={(v) => set(j, which === 'lowerSize' ? { lowerSize: v } : v === MEASURED ? { sizeMode: 'measured', size: '', lowerSize: '' } : { sizeMode: 'preset', size: v })}
+      choices={[...(which === 'size' && r.personId ? [{ value: MEASURED, label: 'Measured' }] : []), ...[...new Set([...p.sizes, ...(r[which] ? [r[which]] : [])])].map((s) => ({ value: s, label: s }))]} />
   );
   return (
     <div className="space-y-2">
@@ -125,19 +123,14 @@ export function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWear
       )}
       <div className="flex flex-wrap gap-2">
         {(p.people?.groups.length ?? 0) > 0 && (
-          <select aria-label={`${p.n} pull a group`} className={`${inputClass} w-auto`} value="" onChange={(e) => e.target.value && pull(e.target.value)}>
-            <option value="">Pull a whole group…</option>
-            {p.people!.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-          </select>
+          <SearchSelect aria-label={`${p.n} pull a group`} className="w-60" value="" onChange={(id) => id && pull(id)} placeholder="Pull a whole group…"
+            choices={p.people!.groups.map((g) => ({ value: g.id, label: g.name }))} />
         )}
         {wearers.some((w) => !on.has(w.personId)) && (
-          <select aria-label={`${p.n} add a wearer`} className={`${inputClass} w-auto`} value="" onChange={(e) => {
-            const w = wearers.find((x) => x.personId === e.target.value);
+          <SearchSelect aria-label={`${p.n} add a wearer`} className="w-60" value="" placeholder="Add a wearer…" onChange={(id) => {
+            const w = wearers.find((x) => x.personId === id);
             if (w) p.onChange([...rows, fromWearer(w)]);
-          }}>
-            <option value="">Add a wearer…</option>
-            {wearers.filter((w) => !on.has(w.personId)).map((w) => <option key={w.personId} value={w.personId}>{w.wearerName}{w.sizeMode === 'measured' ? ' (measured)' : w.size ? ` (${w.size})` : ''}</option>)}
-          </select>
+          }} choices={wearers.filter((w) => !on.has(w.personId)).map((w) => ({ value: w.personId, label: `${w.wearerName}${w.sizeMode === 'measured' ? ' (measured)' : w.size ? ` (${w.size})` : ''}` }))} />
         )}
         <Button onClick={() => p.onChange([...rows, oneOff()])}>+ One-off name</Button>
         <Button onClick={() => setPaste(paste === null ? '' : null)}>Paste from Excel</Button>
