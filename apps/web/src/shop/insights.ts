@@ -3,6 +3,8 @@
  * in this browser (not a cookie), what the visitor does on the website, nothing that names them. Not counted: a visitor
  * who chose "Don't count me", a browser that asks sites not to track it, and staff looking at the website.
  */
+import { forgetInterests, remember } from './interests.ts';
+
 type Kind = 'page' | 'product' | 'cart' | 'wish' | 'search' | 'category' | 'checkout' | 'order' | 'quote';
 export interface ShopEvent { kind: Kind; page?: string; productId?: string; query?: string; results?: number; category?: string; source?: string }
 
@@ -24,7 +26,7 @@ const sessionStore = () => (typeof window === 'undefined' ? undefined : window.s
 export const setStaff = (on: boolean) => { staff = on; };
 /** The visitor's answer to the notice: null while they have not answered. */
 export const countingChoice = (): 'yes' | 'no' | null => { const v = read(local(), CHOICE); return v === 'yes' || v === 'no' ? v : null; };
-export const setCountingChoice = (v: 'yes' | 'no') => { write(local(), CHOICE, v); if (v === 'no') queue = []; };
+export const setCountingChoice = (v: 'yes' | 'no') => { write(local(), CHOICE, v); if (v === 'no') { queue = []; forgetInterests(); } };
 /** A browser asking sites not to track it (Do Not Track, Global Privacy Control). */
 export const browserSaysNo = () => typeof navigator !== 'undefined' && (navigator.doNotTrack === '1' || (navigator as Navigator & { globalPrivacyControl?: boolean }).globalPrivacyControl === true);
 const counting = () => !staff && countingChoice() !== 'no' && !browserSaysNo();
@@ -40,6 +42,7 @@ function flush(useBeacon = false) {
 /** Counts one thing a visitor did; sent in small batches, and when the page closes. */
 export function track(e: ShopEvent): void {
   if (!counting()) return;
+  remember(e); // this visitor's own suggestions, kept in this browser only
   queue.push(e);
   if (queue.length >= 20) flush();
   else timer ??= setTimeout(() => flush(), 15_000);

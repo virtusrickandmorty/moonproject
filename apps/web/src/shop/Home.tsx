@@ -5,15 +5,15 @@
  */
 import { formatPeso } from '@moonproject/shared';
 import { Doodles, Shower, seedOf, type DoodleSpot, type HeroAction, type SeasonLook } from './seasons.tsx';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { navigate } from '../router.tsx';
 import { ProductPicture } from './GarmentArt.tsx';
 import { WishButton } from './Panels.tsx';
 import { Stars } from './Stars.tsx';
-import { deliveryWords, percentOff, type Product } from './products.ts';
+import { deliveryWords, isSoldOut, percentOff, type Product } from './products.ts';
 import { useShop, type OnlinePayment } from './store.tsx';
 
-export const isSoldOut = (p: Product) => !!p.stock && p.stock.every((s) => s.available === 0);
+export { isSoldOut };
 const piecesLeft = (p: Product) => (p.stock ?? []).reduce((n, s) => n + s.available, 0);
 
 /** The product card: picture (a second colour or a closer look on hover), badge, wish, quick add, price and colours. */
@@ -286,19 +286,21 @@ export function SectionHead({ eyebrow, title, children }: { eyebrow: string; tit
 }
 
 /** A row of featured garments that scrolls sideways: the shop's badged ones first ("Best seller", "New"). */
-export function ProductRail({ title, eyebrow, products, online, view }: { title: string; eyebrow: string; products: Product[]; online: boolean; view: (p: Product) => void }) {
+export function ProductRail({ title, eyebrow, note, products, online, view }: { title: string; eyebrow: string; note?: string; products: Product[]; online: boolean; view: (p: Product) => void }) {
+  const rail = useId(); // more than one row on a page
   if (!products.length) return null;
-  const scroll = (d: number) => document.getElementById('rail')?.scrollBy({ left: d * 320, behavior: 'smooth' });
+  const scroll = (d: number) => document.getElementById(rail)?.scrollBy({ left: d * 320, behavior: 'smooth' });
   return (
     <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6">
       <div className="flex items-end justify-between gap-4">
-        <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">{eyebrow}</p><h2 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">{title}</h2></div>
+        <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">{eyebrow}</p><h2 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">{title}</h2>
+          {note && <p className="mt-1 text-sm text-slate-500">{note}</p>}</div>
         <div className="hidden gap-2 sm:flex">
           <button type="button" onClick={() => scroll(-1)} aria-label="Scroll back" className="grid size-11 place-items-center rounded-full ring-1 ring-slate-300 hover:bg-slate-900 hover:text-white">‹</button>
           <button type="button" onClick={() => scroll(1)} aria-label="Scroll on" className="grid size-11 place-items-center rounded-full ring-1 ring-slate-300 hover:bg-slate-900 hover:text-white">›</button>
         </div>
       </div>
-      <ul id="rail" className="-mx-4 mt-6 flex snap-x gap-4 overflow-x-auto px-4 pb-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
+      <ul id={rail} className="-mx-4 mt-6 flex snap-x gap-4 overflow-x-auto px-4 pb-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
         {products.map((p) => <li key={p.id} className="w-[70%] shrink-0 snap-start sm:w-[45%] md:w-[31%] lg:w-[23%]"><ProductCard p={p} online={online} view={view} /></li>)}
       </ul>
     </section>

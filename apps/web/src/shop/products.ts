@@ -79,6 +79,8 @@ export const SHOP_CONTACT = {
 };
 
 /** Percent off of a product on sale (rounded down, so it never says more than it is); 0 when not on sale. */
+/** A ready-stock item with no piece left in any size or colour. */
+export const isSoldOut = (p: Product) => !!p.stock && p.stock.every((s) => s.available === 0);
 export const percentOff = (p: Pick<Product, 'priceCents' | 'regularPriceCents'>) =>
   p.regularPriceCents && p.regularPriceCents > p.priceCents ? Math.floor((1 - p.priceCents / p.regularPriceCents) * 100) : 0;
 
