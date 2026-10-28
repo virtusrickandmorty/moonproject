@@ -327,7 +327,7 @@ describe('EXP migration 0003: vouchers recorded before tenders', () => {
 
     // Migrate: the same database, the real EXP migrations.
     prepareDatabase(db, clock, modules);
-    expect(db.prepare("SELECT id FROM schema_migrations WHERE id LIKE 'EXP/%' ORDER BY id").pluck().all()).toEqual(['EXP/0001_exp.sql', 'EXP/0002_exp_purchase_class.sql', 'EXP/0003_exp_category_is_purchase.sql', 'EXP/0004_exp_voucher_tenders.sql', 'EXP/0005_exp_duplicate_reason.sql', 'EXP/0006_exp_voucher_request.sql']);
+    expect(db.prepare("SELECT id FROM schema_migrations WHERE id LIKE 'EXP/%' ORDER BY id").pluck().all()).toEqual(['EXP/0001_exp.sql', 'EXP/0002_exp_purchase_class.sql', 'EXP/0003_exp_category_is_purchase.sql', 'EXP/0004_exp_voucher_tenders.sql', 'EXP/0005_exp_duplicate_reason.sql', 'EXP/0006_exp_voucher_request.sql', 'EXP/0007_exp_materials_category.sql']);
 
     // No journal (and no document) changed by a single value.
     expect(snapshot(db)).toEqual(posted);

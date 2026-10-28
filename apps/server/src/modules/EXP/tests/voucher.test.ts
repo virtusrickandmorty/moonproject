@@ -118,6 +118,14 @@ describe('Expense voucher goldens (PLAN I2)', () => {
     expect(journalOf(res.json().id)).toEqual([['6140', null, null, 20_000, 0], ['1102', null, null, 0, 20_000]]);
     noBrokenInvariants();
   });
+
+  it('materials bought on the spot go to cost of sales, 5101, as goods (the owner\'s request, Oct 2026)', async () => {
+    const res = await post(encoder, { categoryId: cat('5101'), cashPlaceId: PETTY, amountCents: 35_000, description: 'Thread and needles', payeeName: 'Sewing supply store' });
+    expect(res.json().summary).toBe('This will record ₱350.00 for Purchases – materials and supplies paid to Sewing supply store from Petty cash fund.');
+    expect(journalOf(res.json().id)).toEqual([['5101', null, null, 35_000, 0], ['1102', null, null, 0, 35_000]]);
+    expect(env.db.prepare('SELECT purchase_class FROM exp_categories WHERE id = ?').pluck().get(cat('5101'))).toBe('goods');
+    noBrokenInvariants();
+  });
 });
 
 describe('VAT and EWT rules (PLAN D4)', () => {
@@ -181,7 +189,7 @@ describe('VAT and EWT rules (PLAN D4)', () => {
 
   it('lists the fixed categories, with Rent carrying EWT 5%', async () => {
     const list = (await encoder.get('/api/exp/categories')).json() as { code: string; defaultEwtClass: string | null }[];
-    expect(list).toHaveLength(20);
+    expect(list).toHaveLength(21);
     expect(list.find((c) => c.code === '6110')!.defaultEwtClass).toBe('rent_5');
     expect(list.some((c) => ['6101', '6210', '6270', '6280'].includes(c.code))).toBe(false);
     expect((await (await env.as('tv')).get('/api/exp/categories')).statusCode).toBe(403);
