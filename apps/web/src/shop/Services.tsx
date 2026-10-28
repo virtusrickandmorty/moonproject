@@ -86,13 +86,13 @@ export function Services() {
       <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6"><SectionHead eyebrow="What we do" title="Pick a service" /></section>
       <section className="mx-auto grid max-w-7xl gap-5 px-4 pb-6 pt-6 sm:px-6 md:grid-cols-2">
         {SERVICES.map((s) => (
-          <article key={s.id} id={s.id} className="group relative flex scroll-mt-24 flex-col overflow-hidden rounded-3xl bg-white ring-1 ring-slate-900/5 transition hover:-translate-y-0.5 hover:shadow-xl">
-            {/* A picture of the service at work (made with the online AI, Oct 28, 2026: the owner's request), under a fade
-                into the card so the icon and title sit on it cleanly. */}
-            <div className="relative aspect-[16/7] overflow-hidden bg-slate-100">
+          <article key={s.id} id={s.id} className="group relative isolate flex scroll-mt-24 flex-col overflow-hidden rounded-3xl bg-white ring-1 ring-slate-900/5 transition hover:-translate-y-0.5 hover:shadow-xl">
+            {/* A picture of the service at work (made with the online AI, Oct 28, 2026: the owner's request), fading into
+                the card so the icon and title sit on it cleanly. The fade is a mask on the picture itself, not a white layer
+                over it: a layer could slip a fraction of a pixel while the picture zooms on hover and show a dark line. */}
+            <div className="relative aspect-[16/7] overflow-hidden [-webkit-mask-image:linear-gradient(to_bottom,#000_55%,transparent)] [mask-image:linear-gradient(to_bottom,#000_55%,transparent)]">
               <img src={`/services/${s.id}.webp`} alt="" loading="lazy" decoding="async" width={1376} height={768}
-                className="size-full object-cover transition duration-500 group-hover:scale-105" />
-              <span className="absolute inset-0 bg-gradient-to-t from-white via-white/10 to-transparent" aria-hidden="true" />
+                className="size-full transform-gpu object-cover transition-transform duration-500 [backface-visibility:hidden] group-hover:scale-105" />
               <SeasonDoodles seed={seedOf(s.id)} spots={['tr']} size="size-12" />
             </div>
             <div className="relative -mt-8 flex flex-1 flex-col px-6 pb-6 sm:px-7 sm:pb-7">
