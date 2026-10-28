@@ -21,7 +21,7 @@ export function TplProgramPage({ me, params }: { me: Me; docTypes: DocTypeInfo[]
   const can = (p: string) => me.permissions.includes(p);
   const [page, setPage] = useState<TplProgramPage | null>(null);
   const [error, setError] = useState('');
-  const [open, setOpen] = useState<null | 'deliver' | 'restock' | 'terms' | 'item' | 'items' | 'counts' | { item: TplItem } | { count: TplItem } | { card: TplItem } | { cancel: string }>(null);
+  const [open, setOpen] = useState<null | 'deliver' | 'restock' | 'terms' | 'item' | 'items' | 'edit-items' | 'counts' | { item: TplItem } | { count: TplItem } | { card: TplItem } | { cancel: string }>(null);
   const load = useCallback(() => api.tplProgram<TplProgramPage>(id).then((p) => (setPage(p), setError('')), (e: Error) => setError(e.message)), [id]);
   useEffect(() => void load(), [load]);
   useLiveReload(load);
@@ -83,6 +83,7 @@ export function TplProgramPage({ me, params }: { me: Me; docTypes: DocTypeInfo[]
         <div className="flex flex-wrap gap-2">
           {can('tpl.program.manage') && <Button onClick={() => setOpen('item')}>+ Add item</Button>}
           {can('tpl.program.manage') && <Button onClick={() => setOpen('items')}>+ Add many items</Button>}
+          {can('tpl.program.manage') && items.length > 1 && <Button onClick={() => setOpen('edit-items')}>Change many items</Button>}
           {can('tpl.count') && active.length > 0 && <Button onClick={() => setOpen('counts')}>Count many</Button>}
         </div>
       </Panel>
@@ -139,6 +140,7 @@ export function TplProgramPage({ me, params }: { me: Me; docTypes: DocTypeInfo[]
       {(open === 'item' || (open && typeof open === 'object' && 'item' in open)) && <ItemDialog programId={p.id} item={typeof open === 'object' && 'item' in open ? open.item : undefined} onClose={() => setOpen(null)} onSaved={done} />}
       {open && typeof open === 'object' && 'count' in open && <CountDialog item={open.count} onClose={() => setOpen(null)} onSaved={done} />}
       {open === 'items' && <ItemsDialog programId={p.id} onClose={() => setOpen(null)} onSaved={done} />}
+      {open === 'edit-items' && <EditItemsDialog programId={p.id} items={items} onClose={() => setOpen(null)} onSaved={done} />}
       {open === 'counts' && <CountsDialog programId={p.id} items={active} onClose={() => setOpen(null)} onSaved={done} />}
       {open && typeof open === 'object' && 'card' in open && <CardDialog item={open.card} onClose={() => setOpen(null)} />}
       {open === 'restock' && <RestockDialog items={active} onClose={() => setOpen(null)} onSaved={done} programId={p.id} />}
@@ -299,6 +301,101 @@ function ItemsDialog({ programId, onClose, onSaved }: { programId: string; onClo
         )}
         {a.error && <Notice>{a.error}</Notice>}
         <div className="flex justify-end gap-2"><Button onClick={onClose}>Back</Button><Button tone="primary" disabled={a.busy || !filled.length} onClick={() => void save()}>Add {filled.length || ''} {filled.length === 1 ? 'item' : 'items'}</Button></div>
+      </div>
+    </Dialog>
+  );
+}
+
+/** One item's row in the change-many grid, as typed. */
+export type EditRow = ItemRow & { on: boolean };
+export const editRowOf = (i: TplItem): EditRow => ({ description: i.description, size: i.size, price: fromCents(i.priceCents), reorder: String(i.reorderLevel), kind: i.kind, on: i.isActive });
+
+/** The rows to save: only the items changed, each with the version it was read at. Throws naming the item when one is not right. */
+export function changedItems(items: TplItem[], rows: Record<string, EditRow>) {
+  return items.flatMap((i) => {
+    const r = rows[i.id];
+    if (!r) return [];
+    const priceCents = toCents(r.price);
+    if (!r.description.trim()) throw new Error(`${itemLabel(i)}: type the item.`);
+    if (priceCents === undefined || !r.price.trim()) throw new Error(`${itemLabel(i)}: type the price a piece like 500.00.`);
+    const v = { kind: r.kind, description: r.description.trim(), size: r.size.trim(), priceCents, reorderLevel: Number(r.reorder || '0'), isActive: r.on };
+    const same = v.kind === i.kind && v.description === i.description && v.size === i.size && v.priceCents === i.priceCents && v.reorderLevel === i.reorderLevel && v.isActive === i.isActive;
+    return same ? [] : [{ id: i.id, ...v, version: i.version }];
+  });
+}
+
+/**
+ * Change many items at once (the owner's request, Oct 28, 2026): every item in one grid to change in place, and a bar
+ * that sets the same price, restock level, kind or in use for the ticked ones. Only the items changed are saved, all
+ * together or none if one has a problem.
+ */
+function EditItemsDialog({ programId, items, onClose, onSaved }: { programId: string; items: TplItem[]; onClose: () => void; onSaved: () => void }) {
+  const [rows, setRows] = useState<Record<string, EditRow>>(() => Object.fromEntries(items.map((i) => [i.id, editRowOf(i)])));
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
+  const [find, setFind] = useState('');
+  const [all, setAll] = useState({ price: '', reorder: '', kind: '', on: '' });
+  const a = useAction();
+  const set = (id: string, patch: Partial<EditRow>) => setRows((rs) => ({ ...rs, [id]: { ...rs[id]!, ...patch } }));
+  const words = find.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = items.filter((i) => words.every((w) => itemLabel(i).toLowerCase().includes(w)));
+  let changes: ReturnType<typeof changedItems> = [];
+  let problem = '';
+  try { changes = changedItems(items, rows); } catch (e) { problem = (e as Error).message; }
+  const tick = (ids: string[], on: boolean) => setTicked((s) => { const n = new Set(s); for (const id of ids) { if (on) n.add(id); else n.delete(id); } return n; });
+  const apply = () => setRows((rs) => {
+    const n = { ...rs };
+    for (const id of ticked) n[id] = { ...n[id]!, ...(all.price.trim() ? { price: all.price.trim() } : {}), ...(all.reorder ? { reorder: all.reorder } : {}),
+      ...(all.kind ? { kind: all.kind as TplItem['kind'] } : {}), ...(all.on ? { on: all.on === 'on' } : {}) };
+    return n;
+  });
+  const save = () => a.run(async () => {
+    if (problem) throw new Error(problem);
+    await api.tplChangeItems(programId, { items: changes });
+    onSaved();
+  });
+  return (
+    <Dialog title="Change many items" wide onClose={onClose}>
+      <div className="space-y-3">
+        <p className="text-sm text-slate-600">Change any item in place, or tick items and set the same value for all of them below. Only the items you change are saved, all together or none if one has a problem. A new price applies to deliveries from now on.</p>
+        <input type="search" aria-label="Find an item" placeholder="Find: polo, M, cap…" className={`${inputClass} max-w-xs`} value={find} onChange={(e) => setFind(e.target.value)} />
+        <div className="max-h-[50vh] overflow-auto">
+          <table className="w-full text-sm">
+            <thead><tr>
+              <th className="w-8"><input type="checkbox" aria-label="Tick every item shown" checked={shown.length > 0 && shown.every((i) => ticked.has(i.id))} onChange={(e) => tick(shown.map((i) => i.id), e.target.checked)} /></th>
+              <th>Item</th><th className="w-20">Size</th><th className="w-32 text-right">Price a piece</th><th className="w-24 text-right">Restock at</th><th className="w-44">Kind</th><th className="w-16">In use</th>
+            </tr></thead>
+            <tbody>{shown.map((i) => {
+              const r = rows[i.id]!;
+              const label = itemLabel(i);
+              const changed = changes.some((c) => c.id === i.id);
+              return (
+                <tr key={i.id} className={changed ? 'bg-amber-50' : ''}>
+                  <td><input type="checkbox" aria-label={`Tick ${label}`} checked={ticked.has(i.id)} onChange={(e) => tick([i.id], e.target.checked)} /></td>
+                  <td><input aria-label={`${label} item`} className={inputClass} maxLength={200} value={r.description} onChange={(e) => set(i.id, { description: e.target.value })} /></td>
+                  <td><input aria-label={`${label} size`} className={inputClass} maxLength={20} value={r.size} onChange={(e) => set(i.id, { size: e.target.value })} /></td>
+                  <td><input aria-label={`${label} price`} inputMode="decimal" className={`${inputClass} text-right tabular-nums`} value={r.price} onChange={(e) => set(i.id, { price: e.target.value })} /></td>
+                  <td><input aria-label={`${label} restock at`} inputMode="numeric" className={`${inputClass} text-right`} value={r.reorder} onChange={(e) => set(i.id, { reorder: e.target.value.replace(/\D/g, '') })} /></td>
+                  <td><select aria-label={`${label} kind`} className={inputClass} value={r.kind} onChange={(e) => set(i.id, { kind: e.target.value as TplItem['kind'] })}><option value="made_to_order">Made to order</option><option value="ready_made">Ready-made</option></select></td>
+                  <td className="text-center"><input type="checkbox" aria-label={`${label} in use`} checked={r.on} onChange={(e) => set(i.id, { on: e.target.checked })} title={i.onHand !== 0 ? `${i.onHand} on hand: deliver or count them out before switching it off` : undefined} /></td>
+                </tr>
+              );
+            })}
+            {shown.length === 0 && <tr><td colSpan={7} className="text-slate-500">No item matches “{find}”.</td></tr>}</tbody>
+          </table>
+        </div>
+        <div className="space-y-2 rounded-lg bg-slate-50 p-3">
+          <p className="text-sm font-medium">For the {ticked.size} ticked {ticked.size === 1 ? 'item' : 'items'}: set</p>
+          <div className="flex flex-wrap items-end gap-2">
+            <Field label="Price a piece"><input aria-label="Price for the ticked" inputMode="decimal" className={`${inputClass} w-32 text-right tabular-nums`} value={all.price} onChange={(e) => setAll({ ...all, price: e.target.value })} placeholder="keep" /></Field>
+            <Field label="Restock at"><input aria-label="Restock at for the ticked" inputMode="numeric" className={`${inputClass} w-24 text-right`} value={all.reorder} onChange={(e) => setAll({ ...all, reorder: e.target.value.replace(/\D/g, '') })} placeholder="keep" /></Field>
+            <Field label="Kind"><select aria-label="Kind for the ticked" className={`${inputClass} w-40`} value={all.kind} onChange={(e) => setAll({ ...all, kind: e.target.value })}><option value="">Keep</option><option value="made_to_order">Made to order</option><option value="ready_made">Ready-made</option></select></Field>
+            <Field label="In use"><select aria-label="In use for the ticked" className={`${inputClass} w-28`} value={all.on} onChange={(e) => setAll({ ...all, on: e.target.value })}><option value="">Keep</option><option value="on">In use</option><option value="off">Off</option></select></Field>
+            <Button disabled={ticked.size === 0 || !(all.price.trim() || all.reorder || all.kind || all.on)} onClick={apply}>Set for the ticked</Button>
+          </div>
+        </div>
+        {(a.error || problem) && <Notice>{a.error || problem}</Notice>}
+        <div className="flex justify-end gap-2"><Button onClick={onClose}>Back</Button>
+          <Button tone="primary" disabled={a.busy || changes.length === 0 || !!problem} onClick={() => void save()}>{changes.length ? `Save ${changes.length} ${changes.length === 1 ? 'change' : 'changes'}` : 'Nothing changed yet'}</Button></div>
       </div>
     </Dialog>
   );

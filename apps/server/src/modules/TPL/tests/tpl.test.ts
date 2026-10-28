@@ -202,6 +202,32 @@ describe('many at once (the owner\'s request, Oct 2026)', () => {
     expect((await owner.post(`/api/tpl/programs/${programId}/items/bulk`, { items: [{ kind: 'made_to_order', description: '', priceCents: 1, reorderLevel: 0 }] })).json().message).toMatch(/^Row 1: /);
   });
 
+  it("changes many items together (the owner's request, Oct 28, 2026), or none when a row has a problem, naming the row", async () => {
+    const read = async () => ((await owner.get(`/api/tpl/programs/${programId}`)).json().items as { id: string; description: string; size: string; kind: string; priceCents: number; reorderLevel: number; isActive: boolean; version: number }[]);
+    const row = (i: { id: string; description: string; size: string; kind: string; priceCents: number; reorderLevel: number; isActive: boolean; version: number }, patch: object = {}) =>
+      ({ id: i.id, kind: i.kind, description: i.description, size: i.size, priceCents: i.priceCents, reorderLevel: i.reorderLevel, isActive: i.isActive, version: i.version, ...patch });
+    const before = await read();
+    const r = await owner.put(`/api/tpl/programs/${programId}/items/bulk`, { items: [
+      row(before.find((i) => i.id === polo)!, { priceCents: 55_000, reorderLevel: 25 }), row(before.find((i) => i.id === cap)!, { priceCents: 16_000, kind: 'made_to_order' })] });
+    expect(r.statusCode, r.body).toBe(200);
+    const after = await read();
+    expect(after.find((i) => i.id === polo)).toMatchObject({ priceCents: 55_000, reorderLevel: 25, version: 2 });
+    expect(after.find((i) => i.id === cap)).toMatchObject({ priceCents: 16_000, kind: 'made_to_order', version: 2 });
+    expect(env.db.prepare(`SELECT COUNT(*) FROM audit_log WHERE action = 'tpl.item.change'`).pluck().get()).toBe(2);
+
+    // Row 2 read at an old version: refused, and row 1 is not changed either.
+    const stale = await owner.put(`/api/tpl/programs/${programId}/items/bulk`, { items: [row(after.find((i) => i.id === polo)!, { priceCents: 60_000 }), row(after.find((i) => i.id === cap)!, { version: 1 })] });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().message).toMatch(/^Row 2: Someone changed this item/);
+    expect((await read()).find((i) => i.id === polo)!.priceCents).toBe(55_000);
+
+    // An item of another program, the same item twice, and someone without the permission: refused.
+    const other = (await owner.post('/api/tpl/programs', { customerId: c.other, termsDays: 30, creditLimitCents: 0 })).json().id as string;
+    expect((await owner.put(`/api/tpl/programs/${other}/items/bulk`, { items: [row(after.find((i) => i.id === polo)!)] })).statusCode).toBe(404);
+    expect((await owner.put(`/api/tpl/programs/${programId}/items/bulk`, { items: [row(after.find((i) => i.id === polo)!), row(after.find((i) => i.id === polo)!)] })).statusCode).toBe(400);
+    expect((await encoder.put(`/api/tpl/programs/${programId}/items/bulk`, { items: [row(after.find((i) => i.id === polo)!)] })).statusCode).toBe(403);
+  });
+
   it('counts many items with one reason, leaving the ones already right', async () => {
     const r = await owner.post(`/api/tpl/programs/${programId}/count`, { reason: 'Month-end count on Oct 31', lines: [{ itemId: polo, countedQty: 12 }, { itemId: cap, countedQty: 0 }] });
     expect(r.statusCode, r.body).toBe(200);

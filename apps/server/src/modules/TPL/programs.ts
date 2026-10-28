@@ -143,13 +143,34 @@ export function addItem(db: Db, programId: string, raw: unknown, who: Who): Item
 export const itemsInput = z.object({ items: z.array(z.unknown()).min(1).max(200) }).strict();
 export function addItems(db: Db, programId: string, raw: unknown, who: Who): Item[] {
   const { items } = itemsInput.parse(raw);
-  return items.map((row, i) => {
-    try { return addItem(db, programId, row, who); } catch (e) {
-      if (e instanceof z.ZodError) throw new AppError('VALIDATION', `Row ${i + 1}: ${e.issues.map((x) => `${x.path.join('.') || 'row'} ${x.message}`).join('; ')}`, 400);
-      if (e instanceof AppError) throw new AppError(e.code, `Row ${i + 1}: ${e.message}`, e.status);
-      throw e;
-    }
-  });
+  return items.map((row, i) => asRow(i, () => addItem(db, programId, row, who)));
+}
+
+/** Says which row was refused, in a many-row save. */
+function asRow<T>(i: number, fn: () => T): T {
+  try { return fn(); } catch (e) {
+    if (e instanceof z.ZodError) throw new AppError('VALIDATION', `Row ${i + 1}: ${e.issues.map((x) => `${x.path.join('.') || 'row'} ${x.message}`).join('; ')}`, 400);
+    if (e instanceof AppError) throw new AppError(e.code, `Row ${i + 1}: ${e.message}`, e.status);
+    throw e;
+  }
+}
+
+/**
+ * Change many items of one program at once (the owner's request, Oct 28, 2026): each row is an item's new price, reorder
+ * level, name, size, kind and on or off, with the version it was read at; all or none, each with the same rules and its
+ * own audit row as one change. Call inside a transaction.
+ */
+// Each row is read as one change would read it (strict, its own row number in an error): here only that it is an object.
+export const itemChangesInput = z.object({ items: z.array(z.record(z.string(), z.unknown())).min(1).max(500) }).strict();
+export function changeItems(db: Db, programId: string, raw: unknown, who: Who): Item[] {
+  const { items } = itemChangesInput.parse(raw);
+  if (!program(db, programId)) throw notFound('The stock program');
+  if (new Set(items.map((r) => r.id)).size !== items.length) throw new AppError('VALIDATION', 'An item is in the list twice.', 400);
+  return items.map(({ id: rawId, ...change }, i) => asRow(i, () => {
+    const id = z.string().min(1).parse(rawId);
+    if (item(db, id)?.programId !== programId) throw notFound('The item');
+    return changeItem(db, id, change, who);
+  }));
 }
 
 /** Price, reorder level, name, on or off; version-checked. A price change applies to deliveries from now on. */
