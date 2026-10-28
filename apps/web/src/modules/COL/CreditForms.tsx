@@ -46,7 +46,7 @@ function InvoicePicker(p: {
       {p.customer && (
         <Panel title="Which invoice?">
           {list && list.invoices.length === 0 && <p className="text-sm text-slate-500">{p.customer.name} has no recorded invoices.</p>}
-          <div role="radiogroup" aria-label="Which invoice?" className="space-y-2">
+          <div role="radiogroup" aria-label="Which invoice?" className="max-h-96 space-y-2 overflow-y-auto overscroll-contain pr-1">
             {list?.invoices.map((i) => {
               const d = p.describe(i);
               return <Choice key={i.id} picked={p.invoiceId === i.id} onPick={() => p.onPick(i)} label={invoiceLabel(i)} {...d} />;

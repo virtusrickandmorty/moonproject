@@ -32,7 +32,7 @@ export function MergeDialog({ me, fromId, intoId, onClose, onMerged }: { me: Me;
 
   useEffect(() => {
     if (into || search.trim().length < 2) return setFound([]);
-    const t = setTimeout(() => void masterRequest<Found[]>(me, `/api/cus/customers?${new URLSearchParams({ search: search.trim(), limit: '8' })}`)
+    const t = setTimeout(() => void masterRequest<Found[]>(me, `/api/cus/customers?${new URLSearchParams({ search: search.trim(), limit: '200' })}`)
       .then((rows) => setFound(rows.filter((r) => r.is_active === 1 && r.id !== from)), () => setFound([])), 250);
     return () => clearTimeout(t);
   }, [search, into, from]);
@@ -64,7 +64,7 @@ export function MergeDialog({ me, fromId, intoId, onClose, onMerged }: { me: Me;
             <Field label="Search the customer to keep" hint="Type 2 or more letters of the name or code">
               <input className={inputClass} value={search} autoFocus onChange={(e) => setSearch(e.target.value)} />
             </Field>
-            <ul className="divide-y divide-slate-100 text-sm">
+            <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto overscroll-contain text-sm">
               {found.map((c) => <li key={c.id}><button type="button" className="w-full py-2 text-left hover:bg-indigo-50" onClick={() => setInto(c.id)}><b>{c.code}</b> {c.display_name}</button></li>)}
             </ul>
           </Panel>
