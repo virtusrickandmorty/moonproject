@@ -77,7 +77,7 @@ describe('purchases register', () => {
   beforeEach(() => setUp());
   it('an expense category says goods or services (TAX-1): office supplies are goods, rent is a service, on a voucher and on a bill line', async () => {
     const kinds = env.db.prepare(`SELECT a.code, c.purchase_class FROM exp_categories c JOIN accounts a ON a.id = c.account_id WHERE c.purchase_class = 'goods' ORDER BY a.code`).raw().all();
-    expect(kinds).toEqual([['6104', 'goods'], ['6141', 'goods'], ['6160', 'goods']]);
+    expect(kinds).toEqual([['5101', 'goods'], ['6104', 'goods'], ['6141', 'goods'], ['6160', 'goods']]);
     await voucher({ supplierId: fabric, categoryId: cat('6160'), amountCents: 112_000, description: 'Bond paper', supplierInvoiceNo: 'OR-9', supplierInvoiceDate: '2026-09-28' });
     await voucher({ supplierId: lessor, categoryId: cat('6110'), amountCents: 4_000_000, description: 'September rent', supplierInvoiceNo: 'OR-10', supplierInvoiceDate: '2026-09-28' });
     await bill(printer, 'SI-0050', '2026-09-27', [{ categoryId: cat('6160'), amountCents: 224_000 }, { categoryId: cat('6180'), amountCents: 336_000 }]);

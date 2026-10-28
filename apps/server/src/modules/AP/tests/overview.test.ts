@@ -43,8 +43,9 @@ describe('the purchases and expenses overview', () => {
     expect(o.toBill).toEqual([]);
     expect(o.toPay).toEqual([expect.objectContaining({ id: bill.json().id, supplierName: 'Sample Fabric Trading', dueDate: '2026-10-28', balanceCents: 672_000, overdue: false, dueThisWeek: false })]);
 
-    // Paid on the spot: an expense voucher, next to the bill's cost NET of its VAT.
-    const [catId, catName] = env.db.prepare(`SELECT c.id, a.name FROM exp_categories c JOIN accounts a ON a.id = c.account_id WHERE c.default_ewt_class IS NULL AND c.is_active = 1 ORDER BY c.sort_order LIMIT 1`).raw().get() as [number, string];
+    // Paid on the spot: an expense voucher, next to the bill's cost NET of its VAT (an operating expense, so a row of its
+    // own: a voucher for materials would join the bill's materials row).
+    const [catId, catName] = env.db.prepare(`SELECT c.id, a.name FROM exp_categories c JOIN accounts a ON a.id = c.account_id WHERE c.default_ewt_class IS NULL AND c.is_active = 1 AND a.code LIKE '6%' ORDER BY c.sort_order LIMIT 1`).raw().get() as [number, string];
     const v = await encoder.post('/api/docs/exp.voucher/post', { input: { categoryId: catId, amountCents: 50_000, description: 'Sample spend', payeeName: 'Sample Store', tenders: [{ cashPlaceId: cashPlaceId(env.db, '1101'), amountCents: 50_000 }] }, expectedTotalCents: 50_000 }, idem());
     expect(v.statusCode, v.body).toBe(200);
     expect((await overview()).spending).toEqual([
