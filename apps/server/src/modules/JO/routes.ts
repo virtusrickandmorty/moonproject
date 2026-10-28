@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { AppError, notFound, sizeLabel } from '@moonproject/shared';
+import { AppError, notFound, searchRecords, sizeLabel } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { tx, type Db } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
@@ -147,8 +147,9 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   /**
-   * Job orders to pick on the release form (read-only): by number or customer name; with nothing typed, the ones with
-   * pieces left to release, oldest due first.
+   * Job orders to pick on the release form (read-only): every typed word, in any order, in the number, customer, contact
+   * or the items on it, the one numbered as typed first (the owner's request, Oct 28, 2026); with nothing typed, the ones
+   * with pieces left to release. Most urgent (due first) after that.
    */
   app.get('/api/jo/pick/orders', { config: { permission: 'jo.view' } }, async (req) => {
     const q = searchOf(req);
@@ -157,8 +158,10 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
     const stages = stagesAll(db);
     const left = leftPiecesAll(db);
     const rows: { id: string; number: string; customerName: string; dueDate: string; stageLabel: string; leftPieces: number; balanceDueCents: number }[] = [];
-    for (const jo of jobOrdersOf(db)) {
-      if (q && !jo.number.toLowerCase().includes(q) && !jo.customerName.toLowerCase().includes(q)) continue;
+    const items = new Map((db.prepare(`SELECT o.document_id AS id, coalesce(o.contact, '') || ' ' || coalesce((SELECT group_concat(l.description, ' ') FROM jo_lines l
+      WHERE l.document_id = o.document_id), '') AS text FROM jo_orders o`).all() as { id: string; text: string }[]).map((r) => [r.id, r.text]));
+    const orders = searchRecords(jobOrdersOf(db), q, (jo) => `${jo.number} ${jo.customerName} ${items.get(jo.id) ?? ''}`, (jo) => [jo.number]);
+    for (const jo of orders) {
       const leftPieces = left.get(jo.id) ?? 0;
       if (!q && leftPieces <= 0) continue;
       rows.push({ id: jo.id, number: jo.number, customerName: jo.customerName, dueDate: jo.dueDate, stageLabel: STAGE_LABELS[stages.get(jo.id) ?? 'open'], leftPieces, balanceDueCents: joMoney(db, jo.id).balanceDueCents });
@@ -167,11 +170,16 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
     return rows;
   });
 
-  /** Releases to pick on the invoice record form (read-only): by release, job order or customer; with nothing typed, the ones waiting for their invoice. */
+  /**
+   * Releases to pick on the invoice record form (read-only): every typed word, in any order, in the release or job order
+   * number, customer or invoice number, the one numbered as typed first (the owner's request, Oct 28, 2026); with nothing
+   * typed, the ones waiting for their invoice.
+   */
   app.get('/api/jo/pick/releases', { config: { permission: 'jo.view' } }, async (req) => {
     const q = searchOf(req);
     const rows = q
-      ? (db.prepare(`${RELEASES} WHERE lower(d.number) LIKE @q OR lower(j.number) LIKE @q OR lower(o.customer_name) LIKE @q ORDER BY d.number DESC LIMIT ${PICK_LIMIT}`).all({ q: `%${q}%` }) as ReleaseRow[])
+      ? searchRecords(db.prepare(`${RELEASES} ORDER BY d.number DESC`).all() as ReleaseRow[], q,
+        (r) => `${r.number} ${r.jobOrderNumber} ${r.customerName} ${r.invoiceNumber ?? ''} ${r.invoiceRecordNumber ?? ''}`, (r) => [r.number, r.jobOrderNumber]).slice(0, PICK_LIMIT)
       : (db.prepare(`${RELEASES} WHERE d.status = 'posted' AND inv.id IS NULL ORDER BY d.number LIMIT ${PICK_LIMIT}`).all() as ReleaseRow[]);
     return rows.map(releasePick);
   });

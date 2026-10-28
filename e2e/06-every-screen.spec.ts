@@ -75,7 +75,8 @@ function typedFor(label: string, kind: string, mode: string | null): string {
 }
 
 /** A box that finds a customer, job order, release or supply as you type, and lists what it found as buttons under itself. */
-const isSearch = (label: string) => /^search|type 2 or more|number or customer|release number|name or code/i.test(label);
+// The hints say what can be typed (word-by-word search, Oct 28, 2026): "Name, code, phone, TIN or contact person", "Job order number, customer or item".
+const isSearch = (label: string) => /^search|type 2 or more|number or customer|release number|name or code|name, code|number, customer or item/i.test(label);
 
 /** Types into a search box until it lists something, and picks the first thing listed (under the box, or under its label); whether it picked. */
 async function pickFirst(input: Locator): Promise<boolean> {

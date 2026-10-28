@@ -61,7 +61,7 @@ export function MergeDialog({ me, fromId, intoId, onClose, onMerged }: { me: Me;
         {error && <Notice>{error}</Notice>}
         {!into && (
           <Panel title="Which customer to keep?">
-            <Field label="Search the customer to keep" hint="Type 2 or more letters of the name or code">
+            <Field label="Search the customer to keep" hint="Name, code, phone, TIN or contact person: 2 or more letters">
               <input className={inputClass} value={search} autoFocus onChange={(e) => setSearch(e.target.value)} />
             </Field>
             <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto overscroll-contain text-sm">

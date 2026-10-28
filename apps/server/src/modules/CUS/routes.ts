@@ -4,7 +4,7 @@ import type { AppDeps } from '../../app.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { stamp, today } from '../../platform/clock.ts';
-import { AppError, conflict, newId, notFound } from '@moonproject/shared';
+import { AppError, conflict, newId, notFound, searchRecords } from '@moonproject/shared';
 import { contactInput, customerUpdate, groupInput, mergeInput, normalizePhone, personUpdate, phoneInput, sizeInput } from './schemas.ts';
 import { duplicateGroups, mergePreview, whyNotMerge } from './merge.ts';
 import { chartResponse } from './measurements.ts';
@@ -94,7 +94,14 @@ export function cusRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get('/api/cus/customers', { config: { permission: 'cus.view' } }, async (req) => {
     const { limit, offset, search } = params(req.query);
-    return db.prepare(`SELECT * FROM cus_customers WHERE display_name LIKE ? OR code LIKE ? ORDER BY display_name, id LIMIT ? OFFSET ?`).all(`%${search}%`, `%${search}%`, limit, offset);
+    if (!search) return db.prepare('SELECT * FROM cus_customers ORDER BY display_name, id LIMIT ? OFFSET ?').all(limit, offset);
+    // Every typed word, in any order, in the name, code, registered name, TIN, email, phones or contact persons; the
+    // customer numbered as typed first (the owner's request, Oct 28, 2026).
+    const rows = db.prepare(`SELECT c.*, c.display_name || ' ' || c.code || ' ' || coalesce(c.registered_name, '') || ' ' || coalesce(c.tin, '') || ' ' || coalesce(c.email, '')
+        || ' ' || coalesce((SELECT group_concat(p.phone, ' ') FROM cus_customer_phones p WHERE p.customer_id = c.id AND p.is_active = 1), '')
+        || ' ' || coalesce((SELECT group_concat(k.name || ' ' || coalesce(k.phone, ''), ' ') FROM cus_customer_contacts k WHERE k.customer_id = c.id AND k.is_active = 1), '') AS search_text
+      FROM cus_customers c ORDER BY c.display_name, c.id`).all() as (Row & { search_text: string; code: string })[];
+    return searchRecords(rows, search, (r) => r.search_text, (r) => [r.code]).slice(offset, offset + limit).map(({ search_text: _, ...r }) => r);
   });
   app.post('/api/cus/customers', { config: { permission: 'cus.manage' } }, async (req) => {
     const created = createCustomer(db, req.body, { userId: currentUser(req).userId, at: timestamp(), today: today(clock) });
