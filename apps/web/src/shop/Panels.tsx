@@ -5,6 +5,7 @@ import { ProductPicture } from './GarmentArt.tsx';
 import { navigate } from '../router.tsx';
 import { SIZE_CHART, type Product, percentOff } from './products.ts';
 import { useShop, type CartLine } from './store.tsx';
+import { alike } from './interests.ts';
 import { ReviewCard, Stars } from './Stars.tsx';
 
 /** Open overlays, newest last: Escape closes only the top one. */
@@ -49,8 +50,9 @@ export function WishButton({ product, className = '' }: { product: Product; clas
 }
 
 /** Product details with a quantity per size, so a team can order its whole size run in one go. */
-export function QuickView({ product, onClose, onSizeGuide, onAdded }: { product: Product; onClose: () => void; onSizeGuide: () => void; onAdded: () => void }) {
-  const { add, reviews, ratingOf } = useShop();
+export function QuickView({ product, onView, onClose, onSizeGuide, onAdded }: { product: Product; onView: (p: Product) => void; onClose: () => void; onSizeGuide: () => void; onAdded: () => void }) {
+  const { add, reviews, ratingOf, products } = useShop();
+  const others = alike(product, products);
   const mine = reviews.filter((r) => r.productId === product.id);
   const rating = ratingOf(product.id);
   // A ready-stock item from the shop knows its pieces left per size and colour: those cap what can go in the cart.
@@ -134,6 +136,19 @@ export function QuickView({ product, onClose, onSizeGuide, onAdded }: { product:
         <section id="reviews" className="border-t border-slate-100 bg-slate-50 p-5 md:p-7" aria-label="Reviews">
           <h4 className="flex items-center gap-3 text-lg font-bold">What buyers say <Stars rating={rating.average} /> <span className="text-sm font-semibold text-slate-500">{rating.average.toFixed(1)} of 5 · {rating.count}</span></h4>
           <ul className="mt-4 grid gap-3 sm:grid-cols-2">{mine.slice(0, 6).map((r) => <li key={r.id}><ReviewCard r={r} /></li>)}</ul>
+        </section>
+      )}
+      {others.length > 0 && (
+        <section className="border-t border-slate-100 p-5 md:p-7" aria-labelledby="alike">
+          <h4 id="alike" className="text-lg font-bold">You may also like</h4>
+          <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">{others.map((p) => (
+            <li key={p.id}><button type="button" onClick={() => onView(p)} className="group block w-full text-left">
+              <span className="grid aspect-square place-items-center overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-slate-100">
+                <ProductPicture product={p} colour={p.colours[0]!.hex} className={`transition duration-300 group-hover:scale-105 ${p.photoUrl ? '' : 'w-3/4'}`} /></span>
+              <span className={`mt-2 inline-block rounded-full px-2 py-0.5 text-[11px] font-bold ${p.madeToOrder ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'}`}>{p.madeToOrder ? 'Made to order' : 'Ready stock'}</span>
+              <span className="mt-1 block text-sm font-semibold leading-snug group-hover:text-indigo-700">{p.name}</span>
+              <span className="block text-sm text-slate-600">{p.madeToOrder ? 'from ' : ''}{formatPeso(p.priceCents)}</span>
+            </button></li>))}</ul>
         </section>
       )}
     </Overlay>

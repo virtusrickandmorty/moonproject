@@ -7,6 +7,7 @@ import { CategoryTiles, HeroSlider, ProductCard, ProductRail, PromoBanner, Trust
 import { SIZES, categoriesOf, type Category, type Product, percentOff } from './products.ts';
 import type { SiteControls } from './Site.tsx';
 import { useShop } from './store.tsx';
+import { useInterests } from './interests.ts';
 import { Loading } from '../components/ui.tsx';
 
 type Sort = 'featured' | 'price-low' | 'price-high' | 'name';
@@ -64,6 +65,7 @@ export function Store({ openPanel, view }: SiteControls) {
   const [f, setF] = useState<Filters>(NONE);
   const [sort, setSort] = useState<Sort>('featured');
   const [showFilters, setShowFilters] = useState(false);
+  const { recent, picked } = useInterests(shop.products);
   // How many of each part are showing, kept for the filters and sort they were opened under: a new one starts both parts over.
   const [more, setMore] = useState<{ under: string; upTo: Record<string, number> }>({ under: '', upTo: {} });
   const under = JSON.stringify([f, sort]);
@@ -119,7 +121,10 @@ export function Store({ openPanel, view }: SiteControls) {
       <TrustStrip online={online} payment={shop.payment} />
       <PromoBanner products={products} payment={shop.payment} showSale={() => { setF({ ...NONE, sale: true }); document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }); }} />
       <CategoryTiles products={products} categories={categories} pick={(c) => { setF({ ...NONE, categories: [c] }); document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }); }} />
-      <ProductRail eyebrow="Featured" title={online ? 'Picked for you' : 'Popular garments'} products={products.filter((p) => p.badge && !isSoldOut(p)).sort((a, b) => Number(a.madeToOrder) - Number(b.madeToOrder)).slice(0, 8)} online={online} view={view} />
+      {/* What this visitor looked at decides the rows (kept in their browser only); a first visit sees the popular ones. */}
+      {picked.length ? <ProductRail eyebrow="For you" title="Picked for you" note="From what you looked at and searched for here." products={picked} online={online} view={view} />
+        : <ProductRail eyebrow="Featured" title="Popular garments" products={products.filter((p) => p.badge && !isSoldOut(p)).sort((a, b) => Number(a.madeToOrder) - Number(b.madeToOrder)).slice(0, 8)} online={online} view={view} />}
+      <ProductRail eyebrow="Your visit" title="Recently viewed" products={recent} online={online} view={view} />
 
       <section id="shop" className="mx-auto max-w-7xl scroll-mt-24 px-4 pb-16 pt-16 sm:px-6">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">The shop</p>
