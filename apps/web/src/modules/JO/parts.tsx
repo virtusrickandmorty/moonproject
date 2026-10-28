@@ -16,7 +16,7 @@ function usePick<T>(q: string, searching: boolean, run: (q: string) => Promise<T
   return rows;
 }
 
-/** Search job orders by number or customer; with nothing typed, the ones with pieces left to release. */
+/** Search job orders by number, customer or item, word by word; with nothing typed, the ones with pieces left to release. */
 export function JoPicker({ value, onChange }: { value: { id: string; label: string } | null; onChange: (jo: JoPick | null) => void }) {
   const [q, setQ] = useState('');
   const rows = usePick(q, !value, api.joPickOrders);
@@ -30,7 +30,7 @@ export function JoPicker({ value, onChange }: { value: { id: string; label: stri
   }
   return (
     <div className="space-y-1">
-      <Field label="Job order"><input aria-label="Job order" className={inputClass} placeholder="Job order number or customer" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
+      <Field label="Job order"><input aria-label="Job order" className={inputClass} placeholder="Job order number, customer or item, e.g. 12 or jersey" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
       {rows.length > 0 && <div className="max-h-72 overflow-y-auto overscroll-contain rounded-md ring-1 ring-slate-200">
         {rows.map((jo) => (
           <button key={jo.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => onChange(jo)}>
@@ -43,7 +43,7 @@ export function JoPicker({ value, onChange }: { value: { id: string; label: stri
   );
 }
 
-/** Search releases by their number (or the job order or customer); with nothing typed, the ones still waiting for their invoice. */
+/** Search releases by their number, the job order, customer or invoice number, word by word; with nothing typed, the ones still waiting for their invoice. */
 export function ReleasePicker({ value, onChange, preset = '' }: { value: ReleasePick | null; onChange: (r: ReleasePick | null) => void; preset?: string }) {
   const [q, setQ] = useState(preset);
   useEffect(() => setQ(preset), [preset]);
@@ -58,7 +58,7 @@ export function ReleasePicker({ value, onChange, preset = '' }: { value: Release
   }
   return (
     <div className="space-y-1">
-      <Field label="Release number"><input aria-label="Release number" className={inputClass} placeholder="Release number, e.g. REL-000012" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
+      <Field label="Release number"><input aria-label="Release number" className={inputClass} placeholder="Release, job order, customer or invoice number, e.g. 12" value={q} onChange={(e) => setQ(e.target.value)} /></Field>
       {rows.length > 0 && <div className="max-h-72 overflow-y-auto overscroll-contain rounded-md ring-1 ring-slate-200">
         {rows.map((r) => (
           <button key={r.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => onChange(r)}>

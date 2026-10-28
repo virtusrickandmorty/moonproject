@@ -9,7 +9,7 @@ import { emptyTender, isPettyCash, type TenderRow } from './money.ts';
 export interface Picked { id: string; name: string }
 
 /**
- * Search customers by name or code (2+ letters); active ones only. One line: the box (its matches drop down under it)
+ * Search customers word by word in the name, code, phone, TIN or contact person (2+ letters); active ones only. One line: the box (its matches drop down under it)
  * or the picked name, with `beside` next to it (the job order's New customer button).
  */
 export function CustomerPicker({ value, onChange, beside }: { value: Picked | null; onChange: (c: Picked | null) => void; beside?: ReactNode }) {
@@ -36,7 +36,7 @@ export function CustomerPicker({ value, onChange, beside }: { value: Picked | nu
       <span className="block text-sm text-slate-700">Customer</span>
       <div className="flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
-          <input aria-label="Customer" className={inputClass} placeholder="Type 2 or more letters of the name or code" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input aria-label="Customer" className={inputClass} placeholder="Name, code, phone, TIN or contact person" value={q} onChange={(e) => setQ(e.target.value)} />
           {(rows.length > 0 || none) && (
             <div className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-md bg-white p-1 shadow-lg ring-1 ring-slate-200">
               {rows.map((c) => (
