@@ -7,6 +7,7 @@ import { docPath } from '../../shell/menu.ts';
 import { masterRequest } from './http.ts';
 import { withholdingLabels, type WithholdingProfile } from './withholding.ts';
 import { MergeDialog, PossibleDuplicates } from './Merge.tsx';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 /** A customer's account type as the shop says it (the owner's words, Oct 2026); stored as 'person' or 'organization'. */
 const ACCOUNT_TYPE: Record<'person' | 'organization', string> = { person: 'Individual', organization: 'Organization' };
@@ -235,8 +236,8 @@ function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose, onOpe
     <Panel title="Wearers"><div className="grid gap-2 sm:grid-cols-2">{data.people.map((p) => <button key={p.id} className="rounded-md border p-2 text-left hover:bg-indigo-50"
       onClick={() => { setPerson(p); setPersonName(p.full_name); setPersonGroup(p.group_id ?? ''); }}>{p.full_name}{p.group_id ? ` · ${data.groups.find((g) => g.id === p.group_id)?.name ?? 'Group'}` : ''}{!p.is_active && ' (inactive)'}</button>)}</div>
       {canManage && data.is_active === 1 && <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]"><input aria-label="Wearer name" placeholder="Wearer name" className={inputClass}
-        value={newPerson} onChange={(e) => setNewPerson(e.target.value)} /><select aria-label="Group" className={inputClass} value={groupId} onChange={(e) => setGroupId(e.target.value)}>
-        <option value="">No group</option>{data.groups.filter((g) => g.is_active).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+        value={newPerson} onChange={(e) => setNewPerson(e.target.value)} /><SearchSelect aria-label="Group" value={groupId} onChange={setGroupId} emptyLabel="No group"
+        choices={data.groups.filter((g) => g.is_active).map((g) => ({ value: g.id, label: g.name }))} />
         <Button disabled={!newPerson.trim()} onClick={() => void action(`/api/cus/customers/${data.id}/people`, { fullName: newPerson.trim(), groupId: groupId || null }).then((ok) => { if (ok) setNewPerson(''); })}>Add wearer</Button></div>}
     </Panel>
     {/* A wearer opens in its own window (the owner's request, Oct 2026): their name and group, and their measurements. */}
@@ -244,8 +245,8 @@ function CustomerDetail({ me, data, canManage, onRefresh, onEdit, onClose, onOpe
     {error && <Notice>{error}</Notice>}
     {canManage && person.is_active === 1 && <Panel title="Name and group"><div className="grid gap-2 sm:grid-cols-2">
       <Field label="Name"><input className={inputClass} value={personName} onChange={(e) => setPersonName(e.target.value)} /></Field>
-      <Field label="Group"><select className={inputClass} value={personGroup} onChange={(e) => setPersonGroup(e.target.value)}>
-        <option value="">No group</option>{data.groups.filter((g) => g.is_active).map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select></Field>
+      <Field label="Group"><SearchSelect aria-label="Group" value={personGroup} onChange={setPersonGroup} emptyLabel="No group"
+        choices={data.groups.filter((g) => g.is_active).map((g) => ({ value: g.id, label: g.name }))} /></Field>
       </div><Button disabled={!personName.trim()} onClick={() => void update(`/api/cus/people/${person.id}`,
         { fullName: personName.trim(), groupId: personGroup || null }, person.version).then((ok) => { if (ok) setPerson(null); })}>Save wearer</Button></Panel>}
     {me.permissions.includes('cus.measure.view') && <Measurements key={person.id} me={me} person={person} canEdit={me.permissions.includes('cus.measure') && person.is_active === 1} onClose={() => setPerson(null)} />}
@@ -284,8 +285,8 @@ function Measurements({ me, person, canEdit, onClose }: { me: Me; person: Person
       {c.reason && <p>Reason: {c.reason}</p>}</div>)}
     {canEdit && <div className="space-y-3"><h3 className="font-medium">New revision</h3><div className="grid gap-2 sm:grid-cols-3">
       <Field label="Entry type"><select className={inputClass} value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}><option value="preset">Size preset</option><option value="measured">Measurements</option></select></Field>
-      <Field label="Upper size"><select className={inputClass} value={upper} onChange={(e) => setUpper(e.target.value)}><option value="">None</option>{sizes.filter((s) => s.is_active).map((s) => <option key={s.id} value={s.id}>{s.label} ({s.category})</option>)}</select></Field>
-      <Field label="Lower size"><select className={inputClass} value={lower} onChange={(e) => setLower(e.target.value)}><option value="">None</option>{sizes.filter((s) => s.is_active).map((s) => <option key={s.id} value={s.id}>{s.label} ({s.category})</option>)}</select></Field></div>
+      <Field label="Upper size"><SearchSelect aria-label="Upper size" value={upper} onChange={setUpper} emptyLabel="None" choices={sizes.filter((s) => s.is_active).map((s) => ({ value: s.id, label: `${s.label} (${s.category})` }))} /></Field>
+      <Field label="Lower size"><SearchSelect aria-label="Lower size" value={lower} onChange={setLower} emptyLabel="None" choices={sizes.filter((s) => s.is_active).map((s) => ({ value: s.id, label: `${s.label} (${s.category})` }))} /></Field></div>
       {mode === 'measured' && <><Field label="Unit"><select className={inputClass} value={unit} onChange={(e) => setUnit(e.target.value as typeof unit)}><option value="inch">Inches</option><option value="cm">Centimetres</option></select></Field>
         <div className="grid gap-3 sm:grid-cols-3">{measures.map((m) => <Field key={m} label={label(m)} hint={charts[0]?.values[m] != null ? `Previous: ${charts[0].values[m]} ${charts[0].unit}` : undefined}>
           <input type="number" min="0" step="any" inputMode="decimal" className={`${inputClass} text-lg`} value={values[m] ?? ''} onChange={(e) => setValues({ ...values, [m]: e.target.value })} /></Field>)}</div></>}

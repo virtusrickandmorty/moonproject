@@ -361,7 +361,9 @@ test('sales: a job order paid by check, then the check deposited from Checks on 
   await expect(figure(page, 'Total of the list')).toHaveText('₱2,500.00');
   await expect(figure(page, 'Checks on hand in the books')).toHaveText('₱2,500.00');
   await page.getByLabel('Deposit check no. 000777').check();
-  await page.getByLabel('Deposit to bank').selectOption({ index: 1 });
+  // A searchable drop-down (components/SearchSelect.tsx): opened, its first bank picked.
+  await page.getByRole('combobox', { name: 'Deposit to bank' }).click();
+  await page.getByRole('option').first().click();
   await page.getByRole('button', { name: 'Deposit the ticked checks' }).click();
   const dialog = page.getByRole('dialog', { name: 'Record this deposit?' });
   await expect(dialog.getByText(/^This will move ₱2,500\.00 from Checks on hand/)).toBeVisible();

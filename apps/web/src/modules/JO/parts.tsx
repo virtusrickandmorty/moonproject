@@ -114,11 +114,14 @@ export function ItemSearch({ onPick, n, label }: { onPick: (item: CatItem) => vo
   return (
     <div className="space-y-1">
       <Field label="Price list item"><input aria-label={label ?? `Line ${n} price list item`} placeholder="Search the price list, e.g. jersey" className={inputClass} value={q} onChange={(e) => setQ(e.target.value)} /></Field>
-      {rows.map((it) => (
-        <button key={it.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => (onPick(it), setQ(''))}>
-          {it.name} <span className="text-slate-500">{it.code}</span>
-        </button>
-      ))}
+      {rows.length > 0 && <div className="max-h-72 overflow-y-auto overscroll-contain rounded-md ring-1 ring-slate-200">
+        {rows.map((it) => (
+          <button key={it.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => (onPick(it), setQ(''))}>
+            {it.name} <span className="text-slate-500">{it.code}</span>
+          </button>
+        ))}
+      </div>}
+      {rows.length > 0 && <p className="text-[11px] text-slate-500">{rows.length.toLocaleString('en-PH')} {rows.length === 1 ? 'match' : 'matches'}</p>}
     </div>
   );
 }

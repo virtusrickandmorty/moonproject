@@ -16,6 +16,7 @@ import { CustomerPicker, type Picked } from './parts.tsx';
 import { PDC_STATUS, checkKey, pdcActions, pdcCollectionPath, ticked } from './checks.ts';
 import { newestFirst, Paged } from '../../components/RowPages.tsx';
 import { Card, FigureStrip, PageHead, TABLE_HEAD } from '../../components/Figures.tsx';
+import { SearchSelect } from '../../components/SearchSelect.tsx';
 
 const can = (me: Me, p: string) => me.permissions.includes(p);
 const docLink = (type: string, d: { id: string; number: string }) => <Link to={docPath(type, `/${d.id}`)} className="text-indigo-700 underline">{d.number}</Link>;
@@ -107,10 +108,7 @@ export function ChecksOnHand({ me }: { me: Me }) {
         <Card title="Deposit" icon="bank">
           <div className="flex flex-wrap items-end gap-3">
             <Field label="Bank">
-              <select aria-label="Deposit to bank" className={inputClass} value={bank} onChange={(e) => setBank(e.target.value)}>
-                <option value="">Pick the bank</option>
-                {banks.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
+              <SearchSelect aria-label="Deposit to bank" className="w-64" value={bank} onChange={setBank} placeholder="Pick the bank" choices={banks.map((b) => ({ value: String(b.id), label: b.name }))} />
             </Field>
             <p className="text-sm">Ticked: {pick.refs.length} · <span className="font-semibold tabular-nums">{peso(pick.totalCents)}</span></p>
             <Button tone="primary" disabled={pick.refs.length === 0 || !bank} onClick={openDeposit}>Deposit the ticked checks</Button>

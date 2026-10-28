@@ -1194,7 +1194,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
       call<{ release: PostResult; invoiceRecord: PostResult | null }>('POST', '/api/jo/releases', { ...b, expectedTotalCents }, idem(key)),
     customerWithholding: (id: string) => call<{ withholding_profile: import('./modules/CUS/withholding.ts').WithholdingProfile }>('GET', `/api/cus/customers/${encodeURIComponent(id)}`),
     addCustomer: (b: { kind: 'person' | 'organization'; displayName: string }) => call<CustomerRow & { duplicateWarnings: { id: string; reason: string }[] }>('POST', '/api/cus/customers', b),
-    catItems: (search: string) => call<CatItem[]>('GET', `/api/cat/items?${new URLSearchParams({ search, active: '1', limit: '10' })}`),
+    /** Active price list items whose name or code has the text, every match up to `limit` (the search scrolls through them all). */
+    catItems: (search: string, limit = 200) => call<CatItem[]>('GET', `/api/cat/items?${new URLSearchParams({ search, active: '1', limit: String(limit) })}`),
     catPrice: (itemId: string, qty: number) => call<CatPrice>('GET', `/api/cat/items/${encodeURIComponent(itemId)}/price?${new URLSearchParams({ qty: String(qty) })}`),
     cusSizes: () => call<{ id: string; label: string; is_active: number }[]>('GET', '/api/cus/sizes'),
     qsPreview: (b: QsBody) => call<QsPreview>('POST', '/api/qs/sales/preview', b),
