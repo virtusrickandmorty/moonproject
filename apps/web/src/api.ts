@@ -1078,6 +1078,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     tplCount: <T>(itemId: string, body: { countedQty: number; reason: string }) => call<T>('POST', `/api/tpl/items/${encodeURIComponent(itemId)}/count`, body),
     /** Many at once, all or none (the owner's request, Oct 2026). */
     tplAddItems: <T>(programId: string, body: { items: object[] }) => call<T>('POST', `/api/tpl/programs/${encodeURIComponent(programId)}/items/bulk`, body),
+    /** Change many items of a program at once: all or none (the owner's request, Oct 28, 2026). */
+    tplChangeItems: <T>(programId: string, body: { items: object[] }) => call<T>('PUT', `/api/tpl/programs/${encodeURIComponent(programId)}/items/bulk`, body),
     tplCountMany: <T>(programId: string, body: { reason: string; lines: { itemId: string; countedQty: number }[] }) => call<T>('POST', `/api/tpl/programs/${encodeURIComponent(programId)}/count`, body),
     tplRestock: <T>(body: object) => call<T>('POST', '/api/tpl/restocks', body),
     tplPutIn: <T>(body: object) => call<T>('POST', '/api/tpl/put-in', body),

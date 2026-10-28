@@ -13,7 +13,7 @@ import { findIdempotent, requestHash, storeIdempotent } from '../../engine/idemp
 import { currentUser } from '../../engine/security/routes.ts';
 import { saleDocType, saleOpenCents } from '../QS/public.ts';
 import { cancellingTogether, deliveryDoc, invoiceOf, recordingWithInvoice, type Delivery } from './doctypes/delivery.ts';
-import { addItem, addItems, changeItem, changeProgram, createProgram, item, itemLabel, itemsOf, openBalance, program, programList } from './programs.ts';
+import { addItem, addItems, changeItem, changeItems, changeProgram, createProgram, item, itemLabel, itemsOf, openBalance, program, programList } from './programs.ts';
 import { belowReorder, countItem, countItems, openRestocks, putIntoStock, restock, stockCard } from './stock.ts';
 import { valuationSheet } from './doctypes/valuation.ts';
 
@@ -108,6 +108,8 @@ export function tplRoutes(app: FastifyInstance, deps: AppDeps): void {
     write(() => addItem(db, id.parse(req.params).id, req.body, who(req))));
   app.post<{ Params: { id: string } }>('/api/tpl/programs/:id/items/bulk', { config: { permission: 'tpl.program.manage' } }, async (req) =>
     write(() => ({ items: addItems(db, id.parse(req.params).id, req.body, who(req)) })));
+  app.put<{ Params: { id: string } }>('/api/tpl/programs/:id/items/bulk', { config: { permission: 'tpl.program.manage' } }, async (req) =>
+    write(() => ({ items: changeItems(db, id.parse(req.params).id, req.body, who(req)) })));
   app.put<{ Params: { id: string } }>('/api/tpl/items/:id', { config: { permission: 'tpl.program.manage' } }, async (req) =>
     write(() => changeItem(db, id.parse(req.params).id, req.body, who(req))));
 
