@@ -50,7 +50,9 @@ export function ProductCard({ p, colourHex, online, view }: { p: Product; colour
         </button>
       </div>
       <div className="flex flex-1 flex-col px-1 pt-3">
-        <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">{p.category}</p>
+        {/* Which kind it is, on every card: ready stock to buy now, or made to order for a quote. */}
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+          <span className={`rounded-full px-2 py-0.5 normal-case tracking-normal ${p.madeToOrder ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'}`}>{p.madeToOrder ? 'Made to order' : 'Ready stock'}</span>{p.category}</p>
         <h3 className="mt-1 font-semibold leading-snug"><button type="button" onClick={() => view(p)} className="text-left hover:text-indigo-700">{p.name}</button></h3>
         {count > 0 && <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500"><Stars rating={average} className="size-3.5" />{average.toFixed(1)} ({count})</p>}
         <div className="mt-auto flex items-center justify-between gap-2 pt-2">

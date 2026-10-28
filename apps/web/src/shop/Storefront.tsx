@@ -43,6 +43,20 @@ const stockWords = (p: Product) => {
   return left === 0 ? 'Sold out' : left <= 5 ? `Only ${left} left` : 'In stock';
 };
 
+/** The grid in two parts, never mixed: ready stock first (its sold-out pieces last), then made to order. */
+const groupsOf = (shown: readonly Product[], online: boolean) => {
+  const ready = shown.filter((p) => !p.madeToOrder);
+  return [
+    { id: 'ready', title: 'Ready stock', dot: 'bg-emerald-500', items: [...ready.filter((p) => !isSoldOut(p)), ...ready.filter(isSoldOut)],
+      text: online ? 'On the shelf now: order and pay online, or buy at the shop.' : 'On the shelf now, ready to wear.' },
+    { id: 'made', title: 'Made to order', dot: 'bg-amber-500', items: shown.filter((p) => p.madeToOrder),
+      text: 'Made for you, with your design or team name. Each has a minimum order and lead time; ask us for a quote.' },
+  ].filter((g) => g.items.length);
+};
+
+/** How many garments a part of the grid shows at first, and how many more each "Show more" adds. */
+const PAGE = 12;
+
 const chip = (on: boolean) => `rounded-full border px-3 py-1.5 text-sm font-semibold transition ${on ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-400'}`;
 
 export function Store({ openPanel, view }: SiteControls) {
@@ -50,6 +64,10 @@ export function Store({ openPanel, view }: SiteControls) {
   const [f, setF] = useState<Filters>(NONE);
   const [sort, setSort] = useState<Sort>('featured');
   const [showFilters, setShowFilters] = useState(false);
+  // How many of each part are showing, kept for the filters and sort they were opened under: a new one starts both parts over.
+  const [more, setMore] = useState<{ under: string; upTo: Record<string, number> }>({ under: '', upTo: {} });
+  const under = JSON.stringify([f, sort]);
+  const upTo = more.under === under ? more.upTo : {};
   const { products } = shop;
   // The header's search sends shoppers here with ?q=…: search for it and bring the results into view.
   const q = new URLSearchParams(useLocation().split('?')[1] ?? '').get('q');
@@ -101,7 +119,7 @@ export function Store({ openPanel, view }: SiteControls) {
       <TrustStrip online={online} payment={shop.payment} />
       <PromoBanner products={products} payment={shop.payment} showSale={() => { setF({ ...NONE, sale: true }); document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }); }} />
       <CategoryTiles products={products} categories={categories} pick={(c) => { setF({ ...NONE, categories: [c] }); document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }); }} />
-      <ProductRail eyebrow="Featured" title={online ? 'Picked for you' : 'Popular garments'} products={products.filter((p) => p.badge && !isSoldOut(p)).slice(0, 8)} online={online} view={view} />
+      <ProductRail eyebrow="Featured" title={online ? 'Picked for you' : 'Popular garments'} products={products.filter((p) => p.badge && !isSoldOut(p)).sort((a, b) => Number(a.madeToOrder) - Number(b.madeToOrder)).slice(0, 8)} online={online} view={view} />
 
       <section id="shop" className="mx-auto max-w-7xl scroll-mt-24 px-4 pb-16 pt-16 sm:px-6">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">The shop</p>
@@ -115,7 +133,7 @@ export function Store({ openPanel, view }: SiteControls) {
           <aside className={`${showFilters ? 'block' : 'hidden'} space-y-6 lg:block`} aria-label="Filters">
             <input type="search" value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} placeholder="Search garments…" aria-label="Search garments" className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-indigo-500" />
             <fieldset><legend className="mb-2 text-sm font-bold">Type</legend>
-              <div className="flex flex-wrap gap-2">{([['all', 'All'], ['made', 'Made to order'], ['ready', 'Ready stock']] as [Kind, string][]).map(([k, label]) =>
+              <div className="flex flex-wrap gap-2">{([['all', 'All'], ['ready', 'Ready stock'], ['made', 'Made to order']] as [Kind, string][]).map(([k, label]) =>
                 <button key={k} type="button" className={chip(f.kind === k)} onClick={() => setF({ ...f, kind: k })}>{label}</button>)}</div>
             </fieldset>
             <fieldset><legend className="mb-2 flex w-full justify-between text-sm font-bold">Size <button type="button" onClick={() => openPanel('sizes')} className="font-semibold text-indigo-600 hover:underline">Guide</button></legend>
@@ -158,9 +176,21 @@ export function Store({ openPanel, view }: SiteControls) {
                 <button type="button" onClick={() => setF(NONE)} className="mt-3 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-bold text-white">Show everything</button>
               </div>
             ) : (
-              <ul className="mt-5 grid grid-cols-2 gap-x-4 gap-y-8 sm:gap-x-5 xl:grid-cols-3">{shown.map((p) => (
-                <li key={p.id}><ProductCard p={p} online={online} view={view} colourHex={(f.colours.length ? p.colours.find((c) => f.colours.includes(c.name)) : undefined)?.hex} />
-                  <p className="mt-1 px-1 text-xs text-slate-500">{p.madeToOrder ? `Min. ${p.minQty} pcs · ${p.leadDays} days` : stockWords(p)}</p></li>))}</ul>
+              <div className="mt-5 space-y-12">{groupsOf(shown, online).map((g) => (
+                <section key={g.id} aria-labelledby={`kind-${g.id}`}>
+                  <div className="border-b border-slate-200 pb-3">
+                    <h3 id={`kind-${g.id}`} className="flex items-center gap-2 text-xl font-extrabold"><span className={`size-2.5 rounded-full ${g.dot}`} aria-hidden />{g.title} <span className="text-base font-semibold text-slate-400">{g.items.length}</span></h3>
+                    <p className="mt-1 text-sm text-slate-600">{g.text}</p>
+                  </div>
+                  <ul className="mt-5 grid grid-cols-2 gap-x-4 gap-y-8 sm:gap-x-5 xl:grid-cols-3">{g.items.slice(0, upTo[g.id] ?? PAGE).map((p) => (
+                    <li key={p.id}><ProductCard p={p} online={online} view={view} colourHex={(f.colours.length ? p.colours.find((c) => f.colours.includes(c.name)) : undefined)?.hex} />
+                      <p className="mt-1 px-1 text-xs text-slate-500">{p.madeToOrder ? `Min. ${p.minQty} pcs · ${p.leadDays} days` : stockWords(p)}</p></li>))}</ul>
+                  {g.items.length > (upTo[g.id] ?? PAGE) && <div className="mt-8 text-center">
+                    <p className="text-sm text-slate-500">Showing {upTo[g.id] ?? PAGE} of {g.items.length}</p>
+                    <button type="button" onClick={() => setMore({ under, upTo: { ...upTo, [g.id]: (upTo[g.id] ?? PAGE) + PAGE } })} className="mt-2 rounded-full border border-slate-300 bg-white px-6 py-2.5 text-sm font-bold hover:border-slate-900">
+                      Show {Math.min(PAGE, g.items.length - (upTo[g.id] ?? PAGE))} more {g.title.toLowerCase()}</button>
+                  </div>}
+                </section>))}</div>
             )}
           </div>
         </div>
