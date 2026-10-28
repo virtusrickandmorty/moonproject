@@ -4,7 +4,7 @@
  * customers pay online (the owner: the QR and the cash account the money goes into). Pieces only: the books keep periodic
  * inventory, so stock here never posts a journal; the sale of a piece does (POS, online orders: a quick sale).
  */
-import { formatPesos, parsePesos } from '@moonproject/shared';
+import { formatPesos, matchesWords, parsePesos, searchWords } from '@moonproject/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type CashPlace, type Me } from '../../api.ts';
 import { Loading, Button, Dialog, Field, Notice, inputClass, manilaTime, peso, useAction } from '../../components/ui.tsx';
@@ -27,6 +27,18 @@ interface Values {
   name: string; categoryId: string; shape: Shape; price: string; regularPrice: string; madeToOrder: boolean; minQty: string; leadDays: string; badge: string;
   summary: string; sortOrder: string; features: string; sizes: string[]; colours: { name: string; hex: string }[];
 }
+/** The product list's filters (the owner's request, Oct 2026: ready stock apart from made to order, as on the website). */
+type Show = 'all' | 'ready' | 'made' | 'soldOut' | 'hidden';
+const SHOWS: [Show, string, (p: Row) => boolean][] = [
+  ['all', 'All', () => true],
+  ['ready', 'Ready stock', (p) => !p.madeToOrder],
+  ['made', 'Made to order', (p) => p.madeToOrder],
+  ['soldOut', 'Sold out', (p) => !!p.stock && total(p.stock, 'available') === 0],
+  ['hidden', 'Hidden', (p) => !p.isActive],
+];
+/** A product matches a search on every typed word, in any order: its name, category, badge or kind. */
+const findText = (p: Row) => `${p.name} ${p.category} ${p.badge ?? ''} ${p.madeToOrder ? 'made to order' : 'ready stock'}`;
+
 const SHAPES: [Shape, string][] = [['tee', 'T-shirt'], ['polo', 'Polo'], ['jersey', 'Jersey'], ['jacket', 'Jacket'], ['hoodie', 'Hoodie'], ['shorts', 'Shorts']];
 const blank: Values = { name: '', categoryId: '', shape: 'tee', price: '', regularPrice: '', madeToOrder: false, minQty: '1', leadDays: '2', badge: '', summary: '', sortOrder: '0',
   features: '', sizes: ['S', 'M', 'L', 'XL'], colours: [{ name: 'White', hex: '#f8fafc' }] };
@@ -92,6 +104,8 @@ function Products({ me }: { me: Me }) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [editing, setEditing] = useState<Row | 'new' | null>(null);
   const [stocking, setStocking] = useState<Row | null>(null);
+  const [show, setShow] = useState<Show>('all');
+  const [find, setFind] = useState('');
   const { busy, error, run } = useAction();
   const canManage = me.permissions.includes('shp.manage');
   const load = useCallback(() => run(async () => {
@@ -119,6 +133,9 @@ function Products({ me }: { me: Me }) {
     await load();
   });
   const shown = rows?.filter((r) => r.isActive).length ?? 0;
+  const words = searchWords(find);
+  const found = (rows ?? []).filter((p) => matchesWords(findText(p), words));
+  const listed = found.filter(SHOWS.find(([s]) => s === show)![2]);
 
   return (
     <div className="space-y-4">
@@ -135,8 +152,18 @@ function Products({ me }: { me: Me }) {
         </div>
       )}
       {rows && rows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="w-full sm:w-80"><input type="search" className={inputClass} value={find} onChange={(e) => setFind(e.target.value)} placeholder="Search name, category or badge" aria-label="Search products" /></div>
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Show">
+            {SHOWS.map(([s, label, test]) => <Button key={s} tone={show === s ? 'primary' : 'plain'} onClick={() => setShow(s)}>{label} ({found.filter(test).length})</Button>)}
+          </div>
+        </div>
+      )}
+      {rows && rows.length > 0 && listed.length === 0 && <p className="rounded-xl bg-white p-6 text-sm text-slate-600 shadow-sm ring-1 ring-slate-200/70">No product matches. <button type="button" className="font-semibold text-indigo-700 hover:underline" onClick={() => { setFind(''); setShow('all'); }}>Show them all</button></p>}
+      {listed.length > 0 && (
         <div className="overflow-x-auto rounded-xl bg-white shadow-sm ring-1 ring-slate-200/70">
-          <Paged rows={rows}>{(page) => (<table className="w-full text-sm">
+          {/* A new search or filter starts at the first page. */}
+          <Paged key={`${show} ${find}`} rows={listed}>{(page) => (<table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr><th className="p-3">Product</th><th className="p-3">Category</th><th className="p-3 text-right">Price</th><th className="p-3 text-right">Pieces left</th><th className="p-3">Sizes</th><th className="p-3">On the website</th><th className="p-3" /></tr>
             </thead>
