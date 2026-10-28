@@ -160,12 +160,14 @@ function asRow<T>(i: number, fn: () => T): T {
  * level, name, size, kind and on or off, with the version it was read at; all or none, each with the same rules and its
  * own audit row as one change. Call inside a transaction.
  */
-export const itemChangesInput = z.object({ items: z.array(z.object({ id: z.string().min(1) }).passthrough()).min(1).max(500) }).strict();
+// Each row is read as one change would read it (strict, its own row number in an error): here only that it is an object.
+export const itemChangesInput = z.object({ items: z.array(z.record(z.string(), z.unknown())).min(1).max(500) }).strict();
 export function changeItems(db: Db, programId: string, raw: unknown, who: Who): Item[] {
   const { items } = itemChangesInput.parse(raw);
   if (!program(db, programId)) throw notFound('The stock program');
   if (new Set(items.map((r) => r.id)).size !== items.length) throw new AppError('VALIDATION', 'An item is in the list twice.', 400);
-  return items.map(({ id, ...change }, i) => asRow(i, () => {
+  return items.map(({ id: rawId, ...change }, i) => asRow(i, () => {
+    const id = z.string().min(1).parse(rawId);
     if (item(db, id)?.programId !== programId) throw notFound('The item');
     return changeItem(db, id, change, who);
   }));
