@@ -15,8 +15,9 @@
  * Sets (the owner's request, Oct 2026): on a line made as a set, each row is for its upper or its lower part, paid at that
  * part's rate and counted, capped and ticked per part.
  * Wearers (the owner's request, Oct 2026): on a line with a wearer list, a work row may name the wearers it finished; its
- * pieces are then their quantities, and a wearer is done once per step (until that entry is cancelled). A step takes the
- * wearers forwarded from the step before (passing that needs the over-cap reason).
+ * pieces are then the pieces they have left, and a wearer is done once per step (until that entry is cancelled). A row
+ * with one wearer ticked may be for part of their pieces (3 of 8 done); they are done once all are recorded. A step takes
+ * the wearers forwarded from the step before (passing that needs the over-cap reason).
  * Rework sent back (the owner's request, Oct 2026): rework rows may name the wearers sent back to the step, and may go on
  * a completed step while rework sent back to it is open.
  */
@@ -27,7 +28,7 @@ import type { DocContext, DocTypeDef } from '../../../engine/documents/registry.
 import { jobOrderRef, jobOrdersOf, lineState, rosterOf } from '../../JO/public.ts';
 import { rateAt } from '../../RATE/public.ts';
 import { activeEmployees, employee } from '../emp.ts';
-import { SET_PARTS, autoComplete, availableFor, forwardedWearers, lineRoute, lineSetup, reworkOpen, stepById, syncStage, wearersDone, type Complexity, type Part } from '../production.ts';
+import { SET_PARTS, autoComplete, availableFor, forwardedWearers, lineRoute, lineSetup, reworkOpen, stepById, syncStage, wearerPieces, wearersDone, type Complexity, type Part } from '../production.ts';
 
 const MAX_PIECES = 10_000;
 const MAX_RATE_CENTS = 1_000_000; // ₱10,000 per piece: a typo guard
@@ -226,6 +227,7 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
         if (r.kind === 'correction') add('error', `${f}.wearers`, 'WEARERS_KIND', `${at}: wearers are ticked on work and rework only, not on a correction.`);
         const roster = new Map(rosterOf(ctx.db, jo.id, line.lineNo).map((w) => [w.rowNo, w]));
         const done = wearersDone(ctx.db, jo.id, line.lineNo, step.id, r.part);
+        const each = wearerPieces(ctx.db, jo.id, line.lineNo, step.id, r.part);
         // Rework is for a wearer done on this step, or sent back to it; a wearer still to come is not listed.
         const sentBack = new Set(r.kind === 'rework' ? [...reworkOpen(ctx.db, jo.id, line.lineNo, step.id, r.part).wearers, ...done.keys()] : []);
         const forwarded = r.kind === 'work' && route && onRoute ? forwardedWearers(ctx.db, jo.id, line.lineNo, route, step.id, r.part) : null;
@@ -242,10 +244,19 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
             add('error', 'overCapReason', 'WEARER_NOT_FORWARDED', `${at}: ${w.wearerName}${r.part !== 'whole' ? ` (${r.part} part)` : ''} has not come out of the step before ${step.name} yet. Give a reason to record it anyway.`);
           }
           mine.add(n);
-          pieces += w.qty;
+          pieces += r.kind === 'work' && !done.has(n) ? each.get(n)?.left ?? w.qty : w.qty;
         }
         ticked.set(key, mine);
-        if (r.kind !== 'correction' && pieces !== r.pieces) add('error', `${f}.pieces`, 'WEARERS_PIECES', `${at}: the wearers ticked are ${plural(pieces)}, so the row is ${pieces}, not ${r.pieces}.`);
+        // One wearer ticked: part of their pieces left may be recorded (the owner's request, Oct 2026).
+        const one = r.kind === 'work' && r.wearers.length === 1 ? roster.get(r.wearers[0]!) : undefined;
+        if (r.kind === 'work' && r.wearers.some((n) => done.has(n))) {
+          // WEARER_DONE says it; the pieces are not checked against a wearer already done.
+        } else if (one) {
+          const had = each.get(one.rowNo);
+          if (r.pieces > pieces) add('error', `${f}.pieces`, 'WEARER_PIECES_LEFT', `${at}: ${one.wearerName} has ${had ? `${pieces} of their ${one.qty} pieces left on ${step.name} (${had.pieces} recorded on ${had.numbers.join(', ')})` : plural(pieces)}, so the row is at most ${pieces}.`);
+        } else if (r.kind !== 'correction' && pieces !== r.pieces) {
+          add('error', `${f}.pieces`, 'WEARERS_PIECES', `${at}: the wearers ticked ${r.kind === 'work' ? 'have' : 'are'} ${plural(pieces)}${r.kind === 'work' ? ' left' : ''}, so the row is ${pieces}, not ${r.pieces}.${r.kind === 'work' ? " To record part of a wearer's pieces, tick that wearer on a row of their own." : ''}`);
+        }
       }
     }
     // Rework (the owner's rule, Oct 2026): at most the pieces done on the step, since only those can be redone.
@@ -288,7 +299,13 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       ins.run(id, h.documentId, r.rowNo, doc.jobOrderId, r.lineNo, doc.stepId, r.employeeId, r.employeeName, doc.workDate, r.kind, r.pieces, r.garmentType, r.complexity,
         r.rateCents, r.rateSource, r.rateSource === 'typed' ? r.rateReason! : null, r.amountCents, r.correctionOf ?? null, r.part);
       if (r.repeatReason) db.prepare('INSERT INTO prd_assignment_repeats (assignment_id, reason) VALUES (?, ?)').run(id, r.repeatReason);
-      for (const n of r.wearers ?? []) db.prepare('INSERT INTO prd_assignment_wearers (assignment_id, roster_row_no) VALUES (?, ?)').run(id, n);
+      // Work: each wearer's pieces (one wearer, the row's; else what each had left). Rework: all theirs (no pieces).
+      const left = r.kind === 'work' && r.wearers ? wearerPieces(db, doc.jobOrderId, r.lineNo, doc.stepId, r.part) : null;
+      const qty = new Map(left ? rosterOf(db, doc.jobOrderId, r.lineNo).map((w) => [w.rowNo, w.qty]) : []);
+      for (const n of r.wearers ?? []) {
+        const pieces = !left ? null : r.wearers!.length === 1 ? r.pieces : left.get(n)?.left ?? qty.get(n) ?? null;
+        db.prepare('INSERT INTO prd_assignment_wearers (assignment_id, roster_row_no, pieces) VALUES (?, ?, ?)').run(id, n, pieces);
+      }
     }
     const who = db.prepare('SELECT posted_by AS userId, posted_at AS at FROM documents WHERE id = ?').get(h.documentId) as { userId: string; at: string };
     // A step whose pieces (and rework) are all recorded completes on its own (the owner's rule, Oct 2026).

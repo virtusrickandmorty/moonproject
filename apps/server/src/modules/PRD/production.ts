@@ -69,13 +69,32 @@ export function piecesOn(db: Db, jobOrderId: string, lineNo: number, stepId: num
 }
 
 /**
- * The wearers already done on one step of a JO line, by recorded entries (roster row → the entry that ticked it): the
- * owner's request, Oct 2026. A cancelled entry's wearers are free again.
+ * The wearers already done on one step of a JO line, by recorded entries (roster row → the entry that ticked their last
+ * pieces): the owner's request, Oct 2026. A cancelled entry's wearers are free again.
  */
 export function wearersDone(db: Db, jobOrderId: string, lineNo: number, stepId: number, part: Part = 'whole'): Map<number, string> {
-  const rows = db.prepare(`SELECT w.roster_row_no AS rowNo, d.number FROM prd_line_assignment_wearers w JOIN prd_assignments a ON a.id = w.assignment_id
-    JOIN documents d ON d.id = a.document_id WHERE w.jo = ? AND w.line = ? AND a.step_id = ? AND a.part = ? AND d.status = 'posted'`).all(jobOrderId, lineNo, stepId, part) as { rowNo: number; number: string }[];
-  return new Map(rows.map((r) => [r.rowNo, r.number]));
+  return new Map([...wearerPieces(db, jobOrderId, lineNo, stepId, part)].filter(([, w]) => w.left === 0).map(([n, w]) => [n, w.numbers.at(-1)!]));
+}
+
+/**
+ * The pieces recorded per wearer on one step of a JO line (roster row → pieces, pieces left, the entries that ticked them).
+ * A row with one wearer ticked may be for part of their pieces (the owner's request, Oct 2026: 3 of a wearer's 8 done).
+ */
+export function wearerPieces(db: Db, jobOrderId: string, lineNo: number, stepId: number, part: Part = 'whole'): Map<number, { pieces: number; left: number; numbers: string[] }> {
+  const qty = new Map(rosterOf(db, jobOrderId, lineNo).map((w) => [w.rowNo, w.qty]));
+  const rows = db.prepare(`SELECT w.roster_row_no AS rowNo, w.pieces, d.number FROM prd_line_assignment_wearers w JOIN prd_assignments a ON a.id = w.assignment_id
+    JOIN documents d ON d.id = a.document_id WHERE w.jo = ? AND w.line = ? AND a.step_id = ? AND a.part = ? AND d.status = 'posted' ORDER BY d.posted_at, d.number`)
+    .all(jobOrderId, lineNo, stepId, part) as { rowNo: number; pieces: number | null; number: string }[];
+  const out = new Map<number, { pieces: number; left: number; numbers: string[] }>();
+  for (const r of rows) {
+    const of = qty.get(r.rowNo) ?? 0;
+    const w = out.get(r.rowNo) ?? { pieces: 0, left: of, numbers: [] };
+    w.pieces = Math.min(of, w.pieces + (r.pieces ?? of)); // no pieces: all of theirs (rows before parts, and rework)
+    w.left = of - w.pieces;
+    if (!w.numbers.includes(r.number)) w.numbers.push(r.number);
+    out.set(r.rowNo, w);
+  }
+  return out;
 }
 
 /**
@@ -226,27 +245,29 @@ export function lineFinished(db: Db, jobOrderId: string, lineNo: number, qty: nu
     if (c.wearers === null) return Math.max(0, c.pieces - [...reworkFlow(db, jobOrderId, lineNo, route, part).values()].reduce((n, f) => n + f.pieces, 0));
     const open = new Set([...reworkFlow(db, jobOrderId, lineNo, route, part).values()].flatMap((f) => f.wearers));
     const roster = new Map(rosterOf(db, jobOrderId, lineNo).map((w) => [w.rowNo, w.qty]));
-    return Math.min(qty, [...c.wearers].filter((w) => !open.has(w)).reduce((n, w) => n + (roster.get(w) ?? 0), 0) + c.untracked);
+    return Math.min(qty, [...c.wearers].filter((w) => !open.has(w)).reduce((n, w) => n + (roster.get(w) ?? 0), 0) + c.untracked + c.partly);
   }));
 }
 
 /**
  * What one step has covered of a line (part): the pieces done there plus the rework pieces that reached it after being sent
  * back before it had them (the owner's rule, Oct 2026: they go through every step again). With a wearer list, by wearer:
- * those ticked on work or rework there, plus pieces recorded without ticks (`untracked`); else by count. At most the line.
+ * those with all their pieces ticked on work or rework there, plus the pieces of wearers part done (`partly`) and pieces
+ * recorded without ticks (`untracked`); else by count. At most the line.
  */
-export function coverage(db: Db, jobOrderId: string, lineNo: number, route: RouteStep[], step: RouteStep, part: Part, qty: number): { pieces: number; wearers: Set<number> | null; untracked: number } {
+export function coverage(db: Db, jobOrderId: string, lineNo: number, route: RouteStep[], step: RouteStep, part: Part, qty: number): { pieces: number; wearers: Set<number> | null; untracked: number; partly: number } {
   const done = part !== 'whole' && step.parts ? step.parts[part].pieces : step.pieces;
   const roster = new Map(rosterOf(db, jobOrderId, lineNo).map((w) => [w.rowNo, w.qty]));
   if (roster.size === 0) {
     const redone = reworkFlow(db, jobOrderId, lineNo, route, part).get(step.id)?.redone ?? 0;
-    return { pieces: Math.min(qty, done + redone), wearers: null, untracked: 0 };
+    return { pieces: Math.min(qty, done + redone), wearers: null, untracked: 0, partly: 0 };
   }
-  const ticked = new Set(db.prepare(`SELECT DISTINCT x.roster_row_no FROM prd_line_assignment_wearers x JOIN prd_assignments a ON a.id = x.assignment_id JOIN documents d ON d.id = a.document_id
-    WHERE x.jo = ? AND x.line = ? AND a.step_id = ? AND a.part = ? AND a.kind IN ('work', 'rework') AND d.status = 'posted'`).pluck().all(jobOrderId, lineNo, step.id, part) as number[]);
-  const workTicked = [...wearersDone(db, jobOrderId, lineNo, step.id, part).keys()].reduce((n, w) => n + (roster.get(w) ?? 0), 0);
-  const untracked = Math.max(0, done - workTicked);
-  return { pieces: Math.min(qty, [...ticked].reduce((n, w) => n + (roster.get(w) ?? 0), 0) + untracked), wearers: ticked, untracked };
+  const each = [...wearerPieces(db, jobOrderId, lineNo, step.id, part)];
+  const ticked = new Set(each.filter(([, w]) => w.left === 0).map(([n]) => n));
+  const workTicked = [...ticked].reduce((n, w) => n + (roster.get(w) ?? 0), 0);
+  const partly = each.filter(([, w]) => w.left > 0).reduce((n, [, w]) => n + w.pieces, 0);
+  const untracked = Math.max(0, done - workTicked - partly);
+  return { pieces: Math.min(qty, workTicked + partly + untracked), wearers: ticked, untracked, partly };
 }
 
 /** A step's pieces covered for Complete: both parts of a set (the fewer). */
@@ -255,17 +276,18 @@ export const stepCovered = (db: Db, jobOrderId: string, lineNo: number, route: R
 
 /**
  * The wearers forwarded to a step (the owner's request, Oct 2026: a step's wearer list shows only those): the wearers done
- * on the step before that is needed, less any sent back for rework to it or an earlier step. Null: every wearer (the first
- * step, the step before is completed, or pieces were recorded there without ticking wearers, so who is unknown).
+ * (or part done) on the step before that is needed, less any sent back for rework to it or an earlier step. Null: every
+ * wearer (the first step, the step before is completed, or pieces were recorded there without ticking wearers, so who is
+ * unknown).
  */
 export function forwardedWearers(db: Db, jobOrderId: string, lineNo: number, route: RouteStep[], stepId: number, part: Part = 'whole'): number[] | null {
   const i = route.findIndex((s) => s.id === stepId);
   const prev = route.slice(0, Math.max(0, i)).reverse().find((s) => s.status !== 'not_needed');
   if (!prev || prev.status === 'completed') return null;
-  const roster = new Map(rosterOf(db, jobOrderId, lineNo).map((w) => [w.rowNo, w.qty]));
-  const done = [...wearersDone(db, jobOrderId, lineNo, prev.id, part).keys()];
+  const each = wearerPieces(db, jobOrderId, lineNo, prev.id, part);
+  const done = [...each.keys()];
   const prevPieces = part !== 'whole' && prev.parts ? prev.parts[part].pieces : prev.pieces;
-  if (done.reduce((n, w) => n + (roster.get(w) ?? 0), 0) < prevPieces) return null;
+  if ([...each.values()].reduce((n, w) => n + w.pieces, 0) < prevPieces) return null;
   const flow = reworkFlow(db, jobOrderId, lineNo, route, part);
   const back = new Set(route.slice(0, i).flatMap((s) => flow.get(s.id)?.wearers ?? []));
   return done.filter((w) => !back.has(w)).sort((a, b) => a - b);

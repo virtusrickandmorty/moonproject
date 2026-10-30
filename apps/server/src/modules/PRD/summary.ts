@@ -24,14 +24,19 @@ export function jobSummary(db: Db, jobOrderId: string) {
       a.pay_run_line_id IS NOT NULL AS paid, a.job_order_id <> a.jo AS carried
     FROM prd_line_assignments a JOIN documents d ON d.id = a.document_id
     WHERE a.jo = ? AND a.line = ? AND d.status = 'posted' ORDER BY a.work_date, d.number, a.row_no`);
-  const wearersOf = db.prepare('SELECT roster_row_no FROM prd_line_assignment_wearers WHERE assignment_id = ? AND jo = ? AND line = ? ORDER BY roster_row_no').pluck();
+  const wearersOf = db.prepare('SELECT roster_row_no AS n, pieces FROM prd_line_assignment_wearers WHERE assignment_id = ? AND jo = ? AND line = ? ORDER BY roster_row_no');
   const lines = lineState(db, jobOrderId).map((l) => {
     const route = lineRoute(db, jobOrderId, l.lineNo);
     const roster = rosterOf(db, jobOrderId, l.lineNo);
+    const qtyOf = new Map(roster.map((w) => [w.rowNo, w.qty]));
     const nameOf = new Map(roster.map((w) => [w.rowNo, [w.wearerName, w.size && (w.lowerSize ? `${w.size}/${w.lowerSize}` : w.size), w.jerseyNumber && `#${w.jerseyNumber}`].filter(Boolean).join(' · ')]));
     const rows = (rowsOf.all(jobOrderId, l.lineNo) as (Omit<SummaryRow, 'wearers' | 'paid' | 'carried'> & { stepId: number; paid: number; carried: number })[])
       .map(({ paid, carried, ...r }) => ({ ...r, paid: paid === 1, carried: carried === 1,
-        wearers: (wearersOf.all(r.assignmentId, jobOrderId, l.lineNo) as number[]).map((n) => nameOf.get(n) ?? `Row ${n}`) }));
+        // Part of a wearer's pieces (the owner's request, Oct 2026): "Ana · M · 3 of 8".
+        wearers: (wearersOf.all(r.assignmentId, jobOrderId, l.lineNo) as { n: number; pieces: number | null }[]).map(({ n, pieces }) => {
+          const qty = qtyOf.get(n) ?? 0;
+          return `${nameOf.get(n) ?? `Row ${n}`}${pieces !== null && pieces < qty ? ` · ${pieces} of ${qty}` : ''}`;
+        }) }));
     return {
       lineNo: l.lineNo, description: l.description, qty: l.qty, isSet: lineSetup(db, jobOrderId, l.lineNo)?.isSet ?? false,
       done: lineDone(db, jobOrderId, l.lineNo, route),

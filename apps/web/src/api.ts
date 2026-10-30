@@ -338,12 +338,13 @@ export interface PrdJob {
     roster?: PrdWearer[];
     /** Made as an upper and a lower part (a set on the price list). */
     isSet?: boolean;
-    /** doneWearers: the roster rows already done on the step. */
+    /** doneWearers: the roster rows already done on the step; partlyDone: those with some of their pieces done (row → pieces). */
     /** forwardedWearers: the wearers that came out of the step before (null: all); rework: sent back to the step, not redone yet. */
-    route: (PrdStep & { status: StepStatus; pieces: number; reworkPieces: number; availablePieces: number; doneWearers?: number[];
+    route: (PrdStep & { status: StepStatus; pieces: number; reworkPieces: number; availablePieces: number; doneWearers?: number[]; partlyDone?: Record<number, number>;
       forwardedWearers?: number[] | null; rework?: PrdRework; partForwarded?: { upper: number[] | null; lower: number[] | null }; partRework?: { upper: PrdRework; lower: PrdRework };
       /** On a set: each part's pieces, what each may still take, and the wearers done per part. */
-      partPieces?: { upper: number; lower: number }; partAvailable?: { upper: number; lower: number }; partWearersDone?: { upper: number[]; lower: number[] } })[] | null }[];
+      partPieces?: { upper: number; lower: number }; partAvailable?: { upper: number; lower: number }; partWearersDone?: { upper: number[]; lower: number[] };
+      partPartlyDone?: { upper: Record<number, number>; lower: Record<number, number> } })[] | null }[];
 }
 export interface PrdWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; lowerSize?: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
 /** `garmentType`: left out, the server takes it (and whether the line is a set) from the price list item the line matches. */
