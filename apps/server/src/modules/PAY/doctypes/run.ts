@@ -1,11 +1,13 @@
 /**
  * Payroll Run (PAY-, PLAN D5 PAY-RUN, E11, F3): the accrual for one pay group and period. The server works out every
  * line (run-calc.ts); staff pick the group and period and may add manual lines, change a cash-advance deduction, change
- * or skip a government loan deduction (with a note), or leave someone out, with a reason.
+ * or skip a government loan deduction (with a note), add other deductions (what for, and where they go), or leave
+ * someone out, with a reason.
  *   Dr 5201 piece labor (per job order) / 5202 other production pay / 6101 office pay      (gross, by cost centre)
  *   Dr 5203 / 6102 employer shares ; Dr 5204 / 6103 13th-month accrual (ACC-18)
  *   Cr 2401 SSS (EE + ER + EC) ; 2402 PhilHealth ; 2403 Pag-IBIG ; 2310 withholding tax ;
  *   Cr 2404 SSS loans / 2405 Pag-IBIG loans (tagged "SSS loan 2026-10") ; 1210 cash advances ;
+ *   Cr 7103 other income / 1290 other receivables (other deductions, by where each goes) ;
  *   Cr 2111 13th month ; 2110 net pay                                                          (each per employee)
  * Dated the day recorded, or earlier by someone who may backdate (acc.backdate): the run form dates it the period's last
  * day when that has passed, so a Sep 16–30 run recorded on Oct 1 books September's wages, shares and 13th month in
@@ -35,7 +37,7 @@ import { lastAuditAt } from '../../../engine/audit.ts';
 import { PAY_GROUPS, employee as employeeOf, employeesInGroup, markPaidDays, markSilPaid, paidDaysBetween, silPaidBy, type PayGroup } from '../../EMP/public.ts';
 import { advanceSchedule } from '../../CA/public.ts';
 import { clearAssignmentsPaidBy, markAssignmentPaid } from '../../PRD/public.ts';
-import { TAX_FREQUENCY, isWeekly, periodEndOf, periodRuleOf, semiStartOf, weekStartOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunCharge, type RunLoan, type YearEnd } from '../run-calc.ts';
+import { TAX_FREQUENCY, isWeekly, periodEndOf, periodRuleOf, semiStartOf, weekStartOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunCharge, type RunDeduction, type RunLoan, type YearEnd } from '../run-calc.ts';
 import { KIND_LABEL, LOAN_ACCOUNT, govLoan, loanInMonth, type Agency } from '../loans.ts';
 import { yearEndDoneBy } from '../year-end.ts';
 
@@ -53,6 +55,12 @@ export const runInput = z
     skip: z.array(z.object({ employeeId: z.uuid(), reason }).strict()).max(200).optional(),
     // This run's government loan deduction, typed instead of the plan (0 skips the month), with a note.
     loans: z.array(z.object({ loanId: z.uuid(), amountCents: z.number().int().min(0).max(MAX_CENTS), reason }).strict()).max(200).optional(),
+    // Other deductions (the owner's request, Oct 2026): what for, how much, and where it goes (other income, or money
+    // owed to the shop paid back); taken last, as far as the pay allows.
+    deductions: z
+      .array(z.object({ employeeId: z.uuid(), goesTo: z.enum(['other_income', 'owed_to_shop']), amountCents: z.number().int().min(1).max(MAX_CENTS), reason }).strict())
+      .max(200)
+      .optional(),
     yearEnd: z.boolean().optional(), // the year-end tax adjustment of everyone in the run (a period ending in December)
     unusedLeave: z.boolean().optional(), // pay everyone's unused SIL of the year in cash (a period ending in December)
   })
@@ -118,6 +126,7 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
           payGroup: input.payGroup, periodStart: input.periodStart, periodEnd, payDate: ctx.businessDate, manual: input.lines ?? [],
           caOverrides: new Map((input.advances ?? []).map((a) => [a.employeeId, a.amountCents])), skipped: new Set((input.skip ?? []).map((s) => s.employeeId)),
           loanOverrides: new Map((input.loans ?? []).map((l) => [l.loanId, { amountCents: l.amountCents, reason: l.reason }])), yearEnd: input.yearEnd === true,
+          deductions: input.deductions ?? [],
           unusedLeave: input.unusedLeave === true,
         });
       } catch (e) {
@@ -182,6 +191,7 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     const inGroup = new Set(employeesInGroup(ctx.db, doc.payGroup, doc.periodStart, periodEnd).map((e) => e.id));
     const inRun = new Set(doc.employees.map((e) => e.employeeId));
     (doc.lines ?? []).forEach((l, i) => !inRun.has(l.employeeId) && error(`lines.${i}.employeeId`, 'NOT_IN_RUN', `Line ${i + 1}: that employee is not paid in this run.`));
+    (doc.deductions ?? []).forEach((d, i) => !inRun.has(d.employeeId) && error(`deductions.${i}.employeeId`, 'NOT_IN_RUN', `Deduction ${i + 1}: that employee is not paid in this run.`));
     (doc.skip ?? []).forEach((s, i) => !inGroup.has(s.employeeId) && error(`skip.${i}.employeeId`, 'NOT_IN_RUN', `Left out ${i + 1}: that employee is not in this pay group.`));
     const seenAdv = new Set<string>();
     (doc.advances ?? []).forEach((a, i) => {
@@ -218,8 +228,8 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     const emp = db.prepare(
       `INSERT INTO pay_run_employees (id, document_id, employee_id, employee_code, employee_name, cost_centre, pay_type, is_mwe, gross_cents, piece_cents, taxable_cents,
          sss_msc_cents, sss_ee_cents, sss_er_cents, sss_ec_cents, phic_basis_cents, phic_ee_cents, phic_er_cents, hdmf_ee_cents, hdmf_er_cents, ee_short_cents,
-         wtax_cents, ca_cents, ca_override_cents, thirteenth_cents, net_cents, loan_cents, wtax_refund_cents, charge_cents)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         wtax_cents, ca_cents, ca_override_cents, thirteenth_cents, net_cents, loan_cents, wtax_refund_cents, charge_cents, deduction_cents)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
     const yearEnd = db.prepare(
       `INSERT INTO pay_run_year_end (run_employee_id, year, taxable_cents, benefits_taxable_cents, annual_tax_cents, withheld_before_cents, deficiency_cents, withheld_cents, refund_cents)
@@ -235,13 +245,15 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     const unused = db.prepare('INSERT INTO pay_run_unused_leave (run_line_id, year) VALUES (?, ?)');
     const night = db.prepare('INSERT INTO pay_run_night_diff (run_line_id) VALUES (?)');
     const charge = db.prepare('INSERT INTO pay_run_charges (run_employee_id, charge_id, charge_number, what, amount_cents, left_after_cents) VALUES (?, ?, ?, ?, ?, ?)');
+    const deduction = db.prepare('INSERT INTO pay_run_deductions (run_employee_id, line_no, goes_to, reason, wanted_cents, amount_cents) VALUES (?, ?, ?, ?, ?, ?)');
     const final = db.prepare('INSERT INTO pay_run_final (run_employee_id, separated_on, ca_left_cents, loans_left_cents) VALUES (?, ?, ?, ?)');
     for (const e of doc.employees) {
       const id = newId();
       emp.run(id, h.documentId, e.employeeId, e.code, e.name, e.costCentre, e.payType, +e.isMwe, e.grossCents, e.pieceCents, e.taxableCents, e.sssMscCents, e.sssEeCents,
         e.sssErCents, e.sssEcCents, e.phicBasisCents, e.phicEeCents, e.phicErCents, e.hdmfEeCents, e.hdmfErCents, e.eeShortCents, e.wtaxCents, e.caCents, e.caOverrideCents,
-        e.thirteenthCents, e.netCents + e.loanCents + e.chargeCents - e.wtaxRefundCents, e.loanCents, e.wtaxRefundCents, e.chargeCents); // net_cents: before loans, charges and the refund (migrations 0003, 0004, 0009)
+        e.thirteenthCents, e.netCents + e.loanCents + e.chargeCents + e.deductionCents - e.wtaxRefundCents, e.loanCents, e.wtaxRefundCents, e.chargeCents, e.deductionCents); // net_cents: before loans, charges, other deductions and the refund (migrations 0003, 0004, 0009, 0010)
       for (const c of e.charges) charge.run(id, c.chargeId, c.number, c.what, c.amountCents, c.leftAfterCents);
+      for (const d of e.deductions) deduction.run(id, d.lineNo, d.goesTo, d.reason, d.wantedCents, d.amountCents);
       const y = e.yearEnd;
       if (y) yearEnd.run(id, y.year, y.taxableCents, y.benefitsTaxableCents, y.annualTaxCents, y.withheldBeforeCents, y.deficiencyCents, y.withheldCents, y.refundCents);
       for (const l of e.loans) loan.run(id, l.loanId, l.agency, l.kind, l.loanNo, l.dueCents, l.amountCents, l.overrideCents, l.reason ?? null, l.balanceAfterCents);
@@ -297,6 +309,10 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
       credit('EMP_ADVANCES', e.caCents, 'Cash advance deducted');
       // Damage or loss charges taken back (CA ca_charges): the receivable of each charge, by the charge.
       for (const c of e.charges) lines.push({ account: { role: 'OTHER_RECEIVABLES' }, party: employee(e.employeeId), ref: { documentId: c.chargeId }, creditCents: c.amountCents, memo: `Damage charge ${c.number}: ${c.what}` });
+      // Other deductions: to other income (no party on it) or the employee's other receivable, by what each is for.
+      for (const d of e.deductions) {
+        if (d.amountCents > 0) lines.push({ account: { role: d.goesTo === 'other_income' ? 'OTHER_INCOME' : 'OTHER_RECEIVABLES' }, ...(d.goesTo === 'owed_to_shop' ? { party: employee(e.employeeId) } : {}), creditCents: d.amountCents, memo: `Deducted from ${e.name}: ${d.reason}` });
+      }
       credit('THIRTEENTH_PAYABLE', e.thirteenthCents, '13th-month accrual');
       credit('PAYROLL_PAYABLE', e.netCents, 'Net pay');
     }
@@ -318,6 +334,7 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     const loanRows = db.prepare('SELECT * FROM pay_run_loans WHERE run_employee_id = ? ORDER BY rowid');
     const yearEndRow = db.prepare('SELECT * FROM pay_run_year_end WHERE run_employee_id = ?');
     const chargeRows = db.prepare('SELECT * FROM pay_run_charges WHERE run_employee_id = ? ORDER BY rowid');
+    const deductionRows = db.prepare('SELECT * FROM pay_run_deductions WHERE run_employee_id = ? ORDER BY line_no');
     const employees: RunEmployee[] = (db.prepare('SELECT * FROM pay_run_employees WHERE document_id = ? ORDER BY rowid').all(documentId) as DbRow[]).map((e) => ({
       employeeId: e.employee_id, code: e.employee_code, name: e.employee_name, costCentre: e.cost_centre, payType: e.pay_type, isMwe: e.is_mwe === 1,
       lines: (lineRows.all(e.id) as DbRow[]).map(
@@ -336,8 +353,9 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
           ...(l.reason ? { reason: l.reason } : {}), balanceAfterCents: l.balance_after_cents,
         }),
       ),
-      caCents: e.ca_cents, caOverrideCents: e.ca_override_cents, thirteenthCents: e.thirteenth_cents, netCents: e.net_cents - e.loan_cents - e.charge_cents + e.wtax_refund_cents,
-      chargeCents: e.charge_cents,
+      caCents: e.ca_cents, caOverrideCents: e.ca_override_cents, thirteenthCents: e.thirteenth_cents, netCents: e.net_cents - e.loan_cents - e.charge_cents - e.deduction_cents + e.wtax_refund_cents,
+      chargeCents: e.charge_cents, deductionCents: e.deduction_cents,
+      deductions: (deductionRows.all(e.id) as DbRow[]).map((d): RunDeduction => ({ lineNo: d.line_no, goesTo: d.goes_to, reason: d.reason, wantedCents: d.wanted_cents, amountCents: d.amount_cents })),
       charges: (chargeRows.all(e.id) as DbRow[]).map((c): RunCharge => ({ chargeId: c.charge_id, number: c.charge_number, what: c.what, amountCents: c.amount_cents, leftAfterCents: c.left_after_cents })),
       wtaxRefundCents: e.wtax_refund_cents, ...yearEndOf(yearEndRow.get(e.id) as DbRow | undefined), ...finalOf(finalRow.get(e.id) as DbRow | undefined),
     }));
@@ -345,17 +363,20 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     const advances = employees.filter((e) => e.caOverrideCents !== null).map((e) => ({ employeeId: e.employeeId, amountCents: e.caOverrideCents! }));
     const skip = db.prepare('SELECT employee_id AS employeeId, reason FROM pay_run_skips WHERE document_id = ? ORDER BY rowid').all(documentId) as { employeeId: string; reason: string }[];
     const loans = employees.flatMap((e) => e.loans.filter((l) => l.overrideCents !== null).map((l) => ({ loanId: l.loanId, amountCents: l.overrideCents!, reason: l.reason! })));
+    const deductions = employees.flatMap((e) => e.deductions.map((d) => ({ employeeId: e.employeeId, goesTo: d.goesTo, amountCents: d.wantedCents, reason: d.reason })));
     return {
       payGroup: r.pay_group, periodStart: r.period_start, ...(lines.length ? { lines } : {}), ...(advances.length ? { advances } : {}), ...(skip.length ? { skip } : {}), ...(loans.length ? { loans } : {}),
+      ...(deductions.length ? { deductions } : {}),
       ...(r.year_end === 1 ? { yearEnd: true } : {}), ...(r.unused_leave === 1 ? { unusedLeave: true } : {}),
       periodEnd: r.period_end, contributionMonth: r.contribution_month, taxFrequency: r.tax_frequency, employees, grossCents: r.gross_cents, netCents: r.net_cents, totalCents: r.gross_cents,
     };
   },
 
   toInput(doc) {
-    const { payGroup, periodStart, lines, advances, skip, loans, yearEnd, unusedLeave } = doc;
+    const { payGroup, periodStart, lines, advances, skip, loans, deductions, yearEnd, unusedLeave } = doc;
     return {
       payGroup, periodStart, ...(lines?.length ? { lines } : {}), ...(advances?.length ? { advances } : {}), ...(skip?.length ? { skip } : {}), ...(loans?.length ? { loans } : {}),
+      ...(deductions?.length ? { deductions } : {}),
       ...(yearEnd ? { yearEnd } : {}), ...(unusedLeave ? { unusedLeave } : {}),
     };
   },

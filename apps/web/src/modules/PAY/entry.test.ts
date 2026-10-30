@@ -29,7 +29,7 @@ it('payroll preview and Record keep exact inputs, overrides, reasons, year-end f
     '2026-12-21', [{ employeeId: 'e1', kind: 'allowance', amount: '250', reason: ' Rice allowance ' }], { e1: '0' }, { e2: ' On leave ' },
     { l1: { amount: '0', reason: ' Already paid ' } }, true, true, null, false, '', run, { e1: 'Sample Tailor' }], preview);
   expect(f.find('title', 'Deductions and changes').props.active).toBe(true);
-  expect(f.find('title', 'Add allowances or adjustments').props.active).toBe(true);
+  expect(f.find('title', 'Add allowances, adjustments or deductions').props.active).toBe(true);
   change(f.find('aria-label', 'Amount'), '275.50');
   f.find('children', 'Record').props.onClick();
   await Promise.resolve();

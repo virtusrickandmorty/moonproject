@@ -43,6 +43,14 @@ describe('payroll screen rules', () => {
       'Type the cash-advance deduction like 500.00, or leave it blank for the plan.', 'Say why each person is left out (5 characters or more).', 'Pick the period.',
     ]);
     expect(runInput('WEEKLY_PIECE', '2026-09-21', [], {}, { e3: 'On leave all week' }).input.skip).toEqual([{ employeeId: 'e3', reason: 'On leave all week' }]);
+    // Other deductions: above zero, with what for; other income unless it is money owed to the shop.
+    const others = [{ employeeId: 'e1', kind: 'deduction' as const, amount: '350', reason: ' Two company polo shirts ' }, { employeeId: 'e2', kind: 'deduction' as const, amount: '200', reason: 'Phone bill paid for him', goesTo: 'owed_to_shop' as const }];
+    expect(runInput('SEMI_DAILY', '2026-09-16', others, {}, {}).input.deductions).toEqual([
+      { employeeId: 'e1', goesTo: 'other_income', amountCents: 35_000, reason: 'Two company polo shirts' }, { employeeId: 'e2', goesTo: 'owed_to_shop', amountCents: 20_000, reason: 'Phone bill paid for him' },
+    ]);
+    expect(runInput('SEMI_DAILY', '2026-09-16', [{ employeeId: 'e1', kind: 'deduction', amount: '-5', reason: 'Canteen' }], {}, {}).errors).toEqual(['Line 1: type the deduction, like 250.00.']);
+    expect(deductionsOf({ sssEeCents: 0, phicEeCents: 0, hdmfEeCents: 0, wtaxCents: 0, caCents: 0, deductions: [{ lineNo: 1, goesTo: 'other_income', reason: 'Two company polo shirts', wantedCents: 35_000, amountCents: 35_000 }] } as PayEmployee))
+      .toEqual([['Deduction: Two company polo shirts', 35_000]]);
   });
 
   it('payslip rows and quantities', () => {

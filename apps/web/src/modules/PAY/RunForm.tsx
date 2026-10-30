@@ -14,7 +14,7 @@ import { TickBar } from '../../components/charts.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, useLive } from '../COL/parts.tsx';
-import { GROUP_LABEL, emptyManual, endsInDecember, finalPayText, loanLabel, qtyText, runInput, yearEndText, type LoanRow, type ManualRow } from './run.ts';
+import { GOES_TO, GROUP_LABEL, emptyManual, endsInDecember, finalPayText, loanLabel, qtyText, runInput, yearEndText, type LoanRow, type ManualRow } from './run.ts';
 import { FinalBadge } from './views.tsx';
 import { PayDetails, PayTotal } from './entry.tsx';
 
@@ -178,6 +178,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
               <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-sm [&>dd]:text-right [&>dd]:tabular-nums">
                 <dt>SSS employee share</dt><dd>{peso(e.sssEeCents)}</dd><dt>PhilHealth employee share</dt><dd>{peso(e.phicEeCents)}</dd><dt>Pag-IBIG employee share</dt><dd>{peso(e.hdmfEeCents)}</dd>
                 <dt>Tax</dt><dd>{peso(e.wtaxCents)}</dd><dt>Government loans</dt><dd>{peso(e.loanCents ?? 0)}</dd><dt>Cash advance</dt><dd>{peso(e.caCents)}</dd>{(e.charges ?? []).map((c) => <Fragment key={c.chargeId}><dt>Damage charge {c.number}</dt><dd>{peso(c.amountCents)}</dd></Fragment>)}
+                {(e.deductions ?? []).map((d) => <Fragment key={d.lineNo}><dt>Deduction: {d.reason}</dt><dd>{peso(d.amountCents)}{d.amountCents < d.wantedCents ? ` of ${peso(d.wantedCents)}` : ''}</dd></Fragment>)}
               </dl>
               {e.yearEnd && <p className="text-sm">Year-end tax: {yearEndText(e)}</p>}
               <Field label="Cash-advance deduction" hint="Leave blank for the planned deduction; 0 skips it for this run.">
@@ -213,8 +214,8 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
         </Panel>
       )}
 
-      <Panel title="Allowances and adjustments">
-        <PayDetails title="Add allowances or adjustments" active={rows.length > 0}>
+      <Panel title="Allowances, adjustments and deductions">
+        <PayDetails title="Add allowances, adjustments or deductions" active={rows.length > 0}>
           {rows.map((r, i) => (
             <div key={i} className="grid gap-2 rounded-xl p-3 ring-1 ring-slate-200/70 sm:grid-cols-2">
               <Field label="Employee">
@@ -223,8 +224,15 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
                 </select>
               </Field>
               <Field label="Kind">
-                <select aria-label="Kind" className={inputClass} value={r.kind} onChange={(e) => setRow(i, { kind: e.target.value as ManualRow['kind'] })}><option value="allowance">Allowance</option><option value="adjustment">Adjustment</option></select>
+                <select aria-label="Kind" className={inputClass} value={r.kind} onChange={(e) => setRow(i, { kind: e.target.value as ManualRow['kind'] })}><option value="allowance">Allowance</option><option value="adjustment">Adjustment</option><option value="deduction">Deduction</option></select>
               </Field>
+              {r.kind === 'deduction' && (
+                <Field label="Goes to" hint="Taken off net pay after tax, contributions, loans and the cash advance. Keep the employee's written OK for it.">
+                  <select aria-label="Goes to" className={inputClass} value={r.goesTo ?? 'other_income'} onChange={(e) => setRow(i, { goesTo: e.target.value as NonNullable<ManualRow['goesTo']> })}>
+                    {Object.entries(GOES_TO).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                  </select>
+                </Field>
+              )}
               <Field label="Amount">
                 <input aria-label="Amount" inputMode="decimal" placeholder="0.00" className={`${inputClass} text-right`} value={r.amount} onChange={(e) => setRow(i, { amount: e.target.value })} />
               </Field>
@@ -239,6 +247,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
       </Panel>
       <Panel title="Review pay">
         <p className="text-sm">Allowances and adjustments included: <b className="tabular-nums">{peso((run?.employees ?? []).flatMap((e) => e.lines).filter((l) => l.kind === 'allowance' || l.kind === 'adjustment').reduce((sum, l) => sum + l.amountCents, 0))}</b></p>
+        {(run?.employees ?? []).some((e) => (e.deductionCents ?? 0) > 0) && <p className="text-sm">Other deductions taken: <b className="tabular-nums">{peso((run?.employees ?? []).reduce((sum, e) => sum + (e.deductionCents ?? 0), 0))}</b></p>}
         <p className="text-sm">Gross pay: {run ? peso(run.grossCents) : '—'} · Net pay: {run ? peso(run.netCents) : '—'}{!live && run && ' (previous calculation; updating…)'}</p>
       </Panel>
 
