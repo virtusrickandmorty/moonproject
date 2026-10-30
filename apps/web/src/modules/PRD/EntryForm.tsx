@@ -8,7 +8,7 @@
  * (LIKELY_REPEAT, B2-F3), the row asks why it is a different sheet.
  * Wearers (the owner's request, Oct 2026): a step lists the wearers forwarded from the step before (and those done there);
  * a rework row lists the wearers done on the step (those sent back first). ?line=<n> picks the item opened from the board;
- * ?rework=1 starts with a rework row.
+ * ?rework=1 starts with a rework row. With one wearer ticked, the pieces may be fewer than they have left (3 of their 8).
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { api, ApiError, type BoardCard, type DocHeader, type DocTypeInfo, type Preview, type PrdJob, type Worker } from '../../api.ts';
@@ -117,16 +117,40 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
     const mine = (originalRows ?? []).filter((o) => String(o.lineNo) === lineNo && !o.rework && o.part === part).reduce((n, o) => n + o.pieces, 0);
     return Math.max(0, (part && s.partAvailable ? s.partAvailable[part] : s.availablePieces) - done + mine);
   };
+  // Wearers part done on this step (row → pieces done; the owner's request, Oct 2026: 3 of a wearer's 8). On Edit, the
+  // replaced entry's own pieces are free again.
+  const partlyOf = (r: EntryRow): Record<number, number> => {
+    const line = job?.lines.find((l) => String(l.lineNo) === r.lineNo);
+    const s = line?.route?.find((x) => x.id === stepId);
+    if (!s || r.rework) return {};
+    const out = { ...((r.part ? s.partPartlyDone?.[r.part] : s.partlyDone) ?? {}) };
+    const done = new Set(r.part ? s.partWearersDone?.[r.part] : s.doneWearers);
+    const qty = new Map((line?.roster ?? []).map((w) => [w.rowNo, w.qty]));
+    for (const o of (originalRows ?? []).filter((x) => String(x.lineNo) === r.lineNo && !x.rework && x.part === r.part)) {
+      for (const n of o.wearers ?? []) {
+        const had = (done.has(n) ? qty.get(n) ?? 0 : out[n] ?? 0) - (o.wearers!.length === 1 ? o.pieces : Infinity);
+        if (had > 0) out[n] = had; else delete out[n];
+      }
+    }
+    return out;
+  };
+  // A work row with one wearer ticked: that wearer and the pieces they have left (the row may take fewer).
+  const soloOf = (r: EntryRow) => {
+    const w = !r.rework && r.wearers?.length === 1 ? job?.lines.find((l) => String(l.lineNo) === r.lineNo)?.roster?.find((x) => x.rowNo === r.wearers![0]) : undefined;
+    return w ? { name: w.wearerName, left: w.qty - (partlyOf(r)[w.rowNo] ?? 0) } : null;
+  };
   const overReady = [...new Map(rows.filter((r) => r.lineNo && Number(r.pieces) > 0).map((r) => [`${r.lineNo}|${r.part ?? ''}|${r.rework}`, r])).values()].flatMap((r) => {
     const cap = capOf(r.lineNo, r.part, r.rework);
     const sum = rows.filter((x) => x.lineNo === r.lineNo && x.part === r.part && x.rework === r.rework).reduce((n, x) => n + (Number(x.pieces) || 0), 0);
     const what = `${r.part ? `${r.part} parts` : 'pieces'} of line ${r.lineNo}`;
     return cap !== null && sum > cap ? [r.rework ? (cap === 0 ? `No ${what} were sent back to this step for rework.` : `Only ${cap} ${what} were sent back to this step for rework. You entered ${sum}.`) : `Only ${cap} ${what} are ready on this step. You entered ${sum}.`] : [];
   });
-  const errors = [...(jo ? [] : ['Pick the job order.']), ...(stepId ? [] : ['Pick the step.']), ...typed.errors, ...overReady];
+  const overWearer = rows.flatMap((r, i) => { const w = soloOf(r); return w && Number(r.pieces) > w.left ? [`Row ${i + 1}: ${w.name} has ${w.left} ${w.left === 1 ? 'piece' : 'pieces'} left on this step.`] : []; });
+  const errors = [...(jo ? [] : ['Pick the job order.']), ...(stepId ? [] : ['Pick the step.']), ...typed.errors, ...overReady, ...overWearer];
   const input = { jobOrderId: jo, stepId: stepId ?? 0, workDate, rows: typed.rows, ...(overCapReason.trim() ? { overCapReason: overCapReason.trim() } : {}) };
   // On Edit the entry being replaced is still recorded until Record cancels it: a row matching only that entry is no repeat.
-  const own = (p: Preview): Preview => (original ? { ...p, issues: p.issues.filter((i) => !(i.code === 'LIKELY_REPEAT' && i.message.includes(`: ${original.number} already has`)) && !(i.code === 'WEARER_DONE' && i.message.includes(`(${original.number})`))) } : p);
+  const own = (p: Preview): Preview => (original ? { ...p, issues: p.issues.filter((i) => !(i.code === 'LIKELY_REPEAT' && i.message.includes(`: ${original.number} already has`)) && !(i.code === 'WEARER_DONE' && i.message.includes(`(${original.number})`))
+    && !(i.code === 'WEARER_PIECES_LEFT' && i.message.includes(original.number))) } : p);
   const preview = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input));
   const live = preview && own(preview);
   const repeatAt = new Set([...refusedRepeat, ...(live?.issues ?? []).filter((i) => i.code === 'LIKELY_REPEAT').map((i) => Number(i.field?.split('.')[1]))]);
@@ -255,7 +279,8 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
                       if (original) for (const o of (originalRows ?? []).filter((x) => String(x.lineNo) === r.lineNo)) for (const n of o.wearers ?? []) done.delete(n); // the entry being edited frees its own
                       const elsewhere = new Map(rows.flatMap((x, j) => (j !== i && x.lineNo === r.lineNo && x.rework === r.rework && x.part === r.part ? (x.wearers ?? []).map((n) => [n, j + 1] as const) : [])));
                       const mine = new Set(r.wearers ?? []);
-                      const tick = (next: Set<number>) => set(i, { wearers: [...next].sort((a, b) => a - b), pieces: String(roster.filter((w) => next.has(w.rowNo)).reduce((s, w) => s + w.qty, 0) || '') });
+                      const partly = partlyOf(r);
+                      const tick = (next: Set<number>) => set(i, { wearers: [...next].sort((a, b) => a - b), pieces: String(roster.filter((w) => next.has(w.rowNo)).reduce((s, w) => s + w.qty - (partly[w.rowNo] ?? 0), 0) || '') });
                       const listed = (forwarded === null ? roster : roster.filter((w) => forwarded.includes(w.rowNo) || done.has(w.rowNo) || mine.has(w.rowNo)))
                         .sort((a, b) => (r.rework ? +!sentBack.includes(a.rowNo) - +!sentBack.includes(b.rowNo) : 0));
                       const notYet = roster.length - listed.length;
@@ -268,7 +293,7 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
                               : <span className="text-sm font-medium">Wearers finished{part ? ` · ${part} part` : ''}</span>}
                             <span className="text-xs text-slate-500">
                               {r.rework ? `${sentBack.length} sent back for rework · tick the ones this worker redid`
-                                : `${done.size} of ${roster.length} done on this step${part ? ` (${part} part)` : ''} · tick the ones this worker finished`}
+                                : `${done.size} of ${roster.length} done on this step${part ? ` (${part} part)` : ''}${Object.keys(partly).length > 0 ? `, ${Object.keys(partly).length} part done` : ''} · tick the ones this worker finished`}
                               {!r.rework && notYet > 0 && ` · ${notYet} not yet forwarded from the step before`}
                             </span>
                             <span className="flex-1" />
@@ -286,6 +311,7 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
                                     <span className="min-w-0 flex-1 truncate">{w.wearerName}<span className="text-slate-500">{w.size ? ` · ${part === 'lower' && w.lowerSize ? w.lowerSize : part === 'upper' ? w.size : sizeLabel(w.size, w.lowerSize)}` : w.sizeMode === 'measured' ? ' · measured' : ''}{w.jerseyNumber ? ` · #${w.jerseyNumber}` : ''}{w.qty > 1 ? ` · ${w.qty} pcs` : ''}</span></span>
                                     {line?.isSet ? partsDone(w.rowNo).map((p) => <span key={p} className="rounded bg-emerald-100 px-1 text-xs text-emerald-800">{p === 'upper' ? 'Upper' : 'Lower'} ✓</span>)
                                       : isDone && <span className="text-xs">done</span>}
+                                    {!isDone && partly[w.rowNo] && <span className="rounded bg-sky-100 px-1 text-xs text-sky-900">{partly[w.rowNo]} of {w.qty} done</span>}
                                     {r.rework && sentBack.includes(w.rowNo) && <span className="rounded bg-amber-100 px-1 text-xs text-amber-900">sent back</span>}
                                     {otherRow && <span className="text-xs">row {otherRow}</span>}
                                   </label>
@@ -300,7 +326,18 @@ export function EntryForm({ type, mode, fixed }: { type: DocTypeInfo; mode: Form
                       <Field label="Worker">
                         <SearchSelect aria-label={`Row ${i + 1} worker`} value={r.employeeId} onChange={(id) => set(i, { employeeId: id })} placeholder="Pick the worker" choices={workers.map((w) => ({ value: w.id, label: w.name }))} />
                       </Field>
-                      <Field label="Pieces" hint={[(r.wearers?.length ?? 0) > 0 ? 'From the wearers ticked' : '', (() => { const cap = r.lineNo ? capOf(r.lineNo, r.part, r.rework) : null; return cap === null ? '' : r.rework ? `${cap} sent back` : `${cap} ready`; })()].filter(Boolean).join(' · ') || undefined}><input aria-label={`Row ${i + 1} pieces`} inputMode="numeric" readOnly={(r.wearers?.length ?? 0) > 0} className={`${cell} text-right tabular-nums`} value={r.pieces} onChange={(e) => set(i, { pieces: e.target.value })} /></Field>
+                      {(() => {
+                        // One wearer ticked with more than one piece left: type how many of theirs this worker did.
+                        const solo = soloOf(r);
+                        const typable = (r.wearers?.length ?? 0) === 0 || (!!solo && solo.left > 1);
+                        const from = solo && solo.left > 1 ? `Up to ${solo.left} left for ${solo.name}` : (r.wearers?.length ?? 0) > 0 ? 'From the wearers ticked' : '';
+                        const cap = r.lineNo ? capOf(r.lineNo, r.part, r.rework) : null;
+                        return (
+                          <Field label="Pieces" hint={[from, cap === null ? '' : r.rework ? `${cap} sent back` : `${cap} ready`].filter(Boolean).join(' · ') || undefined}>
+                            <input aria-label={`Row ${i + 1} pieces`} inputMode="numeric" readOnly={!typable} className={`${cell} text-right tabular-nums`} value={r.pieces} onChange={(e) => set(i, { pieces: e.target.value })} />
+                          </Field>
+                        );
+                      })()}
                     </div>
                     {askRepeat && (
                       <Field label="This matches a sheet already recorded. Why is it a different sheet? (at least 5 characters)" hint="If the pieces were redone, tick Rework (pasubra) instead.">

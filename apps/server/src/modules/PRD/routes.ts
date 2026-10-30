@@ -12,7 +12,7 @@ import { garmentTypes } from '../RATE/public.ts';
 import { activeEmployees } from './emp.ts';
 import { carryWarnings } from './carry.ts';
 import { entriesByJobOrder, jobSummary, reassignWorker } from './summary.ts';
-import { COMPLEXITIES, SET_PARTS, availableFor, board, forwardedWearers, lineRoute, lineSetup, listSteps, listTemplates, reworkOpen, sendBackForRework, setupLine, stepAction, stepById, wearersDone, type StepAction } from './production.ts';
+import { COMPLEXITIES, SET_PARTS, availableFor, board, forwardedWearers, lineRoute, lineSetup, listSteps, listTemplates, reworkOpen, sendBackForRework, setupLine, stepAction, stepById, wearerPieces, wearersDone, type StepAction } from './production.ts';
 
 const setupBody = z
   .object({ templateId: z.number().int().positive().optional(), stepIds: z.array(z.number().int().positive()).min(1).max(20), garmentType: z.string().trim().min(1).max(GARMENT_TYPE_MAX).optional(), complexity: z.enum(COMPLEXITIES), isSet: z.boolean().optional() })
@@ -47,6 +47,9 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get('/api/prd/tv', { config: { permission: 'prd.tv' } }, async () => ({ cards: board(db), steps: listSteps(db) }));
 
+  const partly = (jo: string, lineNo: number, stepId: number, part: 'whole' | 'upper' | 'lower') =>
+    Object.fromEntries([...wearerPieces(db, jo, lineNo, stepId, part)].filter(([, w]) => w.left > 0).map(([n, w]) => [n, w.pieces]));
+
   /** One job order's production: each line's setup and route, with the pieces each step may still take (E7 rules 1–2), its wearers and who is done. */
   app.get<{ Params: { jo: string } }>('/api/prd/jobs/:jo', { config: { permission: 'prd.view' } }, async (req) => {
     const jo = jobOrderRef(db, req.params.jo);
@@ -60,8 +63,10 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
         // A set's parts: each step's pieces and wearers done per part (the owner's request, Oct 2026).
         isSet: lineSetup(db, jo.id, l.lineNo)?.isSet ?? false,
         // forwardedWearers: the wearers that came out of the step before (null: all of them); rework: sent back, not redone yet.
+        // partlyDone: the wearers with some of their pieces done on the step (roster row → pieces).
         route: route?.map((s) => ({
           ...s, availablePieces: availableFor(route, s.id, l.qty), doneWearers: [...wearersDone(db, jo.id, l.lineNo, s.id).keys()],
+          partlyDone: partly(jo.id, l.lineNo, s.id, 'whole'),
           forwardedWearers: forwardedWearers(db, jo.id, l.lineNo, route, s.id), rework: reworkOpen(db, jo.id, l.lineNo, s.id, 'whole', route),
           ...(s.parts ? {
             partForwarded: { upper: forwardedWearers(db, jo.id, l.lineNo, route, s.id, 'upper'), lower: forwardedWearers(db, jo.id, l.lineNo, route, s.id, 'lower') },
@@ -69,6 +74,7 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
             partPieces: { upper: s.parts.upper.pieces, lower: s.parts.lower.pieces },
             partAvailable: { upper: availableFor(route, s.id, l.qty, 'upper'), lower: availableFor(route, s.id, l.qty, 'lower') },
             partWearersDone: { upper: [...wearersDone(db, jo.id, l.lineNo, s.id, 'upper').keys()], lower: [...wearersDone(db, jo.id, l.lineNo, s.id, 'lower').keys()] },
+            partPartlyDone: { upper: partly(jo.id, l.lineNo, s.id, 'upper'), lower: partly(jo.id, l.lineNo, s.id, 'lower') },
           } : {}),
         })) ?? null,
       };
