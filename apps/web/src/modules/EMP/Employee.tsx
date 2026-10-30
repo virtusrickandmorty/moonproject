@@ -306,14 +306,14 @@ function Pay({ d, canSet, onSaved }: { d: EmployeeDetail; canSet: boolean; onSav
 
 function NewPay({ d, onSaved }: { d: EmployeeDetail; onSaved: () => Promise<unknown> }) {
   const first = !d.payHistory?.length;
-  const blank = { effectiveFrom: first ? d.employee.hireDate : '', payType: 'daily' as PayProfile['payType'], daily: '', monthly: '', payGroup: 'SEMI_DAILY' as PayProfile['payGroup'], workweekDays: '6', isMwe: false, reason: '' };
+  const blank = { effectiveFrom: first ? d.employee.hireDate : '', payType: 'daily' as PayProfile['payType'], daily: '', monthly: '', payGroup: 'WEEKLY_DAILY' as PayProfile['payGroup'], workweekDays: '6', isMwe: false, reason: '' };
   const [v, setV] = useState(blank);
   const a = useAction();
   const needsDaily = v.payType === 'daily' || v.payType === 'mixed';
   const daily = cents(v.daily);
   const monthly = cents(v.monthly);
   const ready = /^\d{4}-\d{2}-\d{2}$/.test(v.effectiveFrom) && v.reason.trim().length >= 10 && (!needsDaily || (daily ?? 0) > 0) && (v.payType !== 'monthly' || (monthly ?? 0) > 0);
-  const pick = (payType: PayProfile['payType']) => setV({ ...v, payType, payGroup: payType === 'monthly' ? 'SEMI_MONTHLY' : payType === 'daily' ? 'SEMI_DAILY' : 'WEEKLY_PIECE' });
+  const pick = (payType: PayProfile['payType']) => setV({ ...v, payType, payGroup: payType === 'monthly' ? 'SEMI_MONTHLY' : payType === 'daily' ? 'WEEKLY_DAILY' : 'WEEKLY_PIECE' });
   const save = async () => {
     await api.addPay(d.employee.id, {
       effectiveFrom: v.effectiveFrom, payType: v.payType, payGroup: v.payGroup, workweekDays: Number(v.workweekDays) as 5 | 6, isMwe: v.isMwe, reason: v.reason.trim(),
@@ -325,7 +325,7 @@ function NewPay({ d, onSaved }: { d: EmployeeDetail; onSaved: () => Promise<unkn
   return (
     <div className="space-y-3 border-t border-slate-100 pt-3">
       <h3 className="text-sm font-semibold">{first ? 'Set the pay' : 'Change the pay'}</h3>
-      <p className="text-sm text-slate-600">{first ? 'The first pay can start on the hire date.' : 'A change starts today or later. Payrolls already worked out keep the pay they used.'}</p>
+      <p className="text-sm text-slate-600">{first ? 'The first pay can start on the hire date.' : 'A change starts today or later. Payrolls already worked out keep the pay they used. A move to another pay group alone (the same rate) can start the day after the last paid day.'}</p>
       <div className="grid gap-3 sm:grid-cols-3">
         <Field label="From" required><input type="date" className={inputClass} value={v.effectiveFrom} onChange={(x) => setV({ ...v, effectiveFrom: x.target.value })} /></Field>
         <Field label="Pay type" required>
