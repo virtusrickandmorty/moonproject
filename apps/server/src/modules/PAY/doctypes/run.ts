@@ -37,7 +37,7 @@ import { lastAuditAt } from '../../../engine/audit.ts';
 import { PAY_GROUPS, employee as employeeOf, employeesInGroup, markPaidDays, markSilPaid, paidDaysBetween, silPaidBy, type PayGroup } from '../../EMP/public.ts';
 import { advanceSchedule } from '../../CA/public.ts';
 import { clearAssignmentsPaidBy, markAssignmentPaid } from '../../PRD/public.ts';
-import { TAX_FREQUENCY, isWeekly, periodEndOf, periodRuleOf, semiStartOf, weekStartOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunCharge, type RunDeduction, type RunLoan, type YearEnd } from '../run-calc.ts';
+import { TAX_FREQUENCY, isWeekly, payFrom, periodEndOf, periodRuleOf, semiStartOf, weekStartOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunCharge, type RunDeduction, type RunLoan, type YearEnd } from '../run-calc.ts';
 import { KIND_LABEL, LOAN_ACCOUNT, govLoan, loanInMonth, type Agency } from '../loans.ts';
 import { yearEndDoneBy } from '../year-end.ts';
 
@@ -83,10 +83,13 @@ type DbRow = Record<string, any>;
 const finalOf = (f: DbRow | undefined): { final?: FinalPay } =>
   f ? { final: { separatedOn: f.separated_on, caLeftCents: f.ca_left_cents, loansLeftCents: f.loans_left_cents } } : {};
 
-/** The days of an employee a run pays: from the hire date or the period's start, to the last day or the period's end. */
+/**
+ * The days of an employee a run pays: from the hire date or the period's start (or, after a change of pay group, the day
+ * after the old group's last paid day: payFrom), to the last day or the period's end.
+ */
 function servedIn(db: Parameters<typeof employeesInGroup>[0], employeeId: string, from: string, to: string) {
   const e = employeeOf(db, employeeId)!;
-  return { from: e.hireDate > from ? e.hireDate : from, to: e.separatedOn && e.separatedOn < to ? e.separatedOn : to };
+  return { from: payFrom(db, employeeId, e.hireDate, from, to), to: e.separatedOn && e.separatedOn < to ? e.separatedOn : to };
 }
 
 /** A stored year-end adjustment row as the run employee's `yearEnd`. */

@@ -17,7 +17,7 @@
  */
 import { divRoundHalfAway, formatPeso, type Issue } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
-import { attendanceBetween, employeesInGroup, holidaysBetween, payProfileAt, silOf, statutoryOffReason, type AttendanceDay, type Employee, type Holiday, type PayGroup, type PayProfile } from '../EMP/public.ts';
+import { attendanceBetween, employeesInGroup, holidaysBetween, paidDaysBetween, payProfileAt, silOf, statutoryOffReason, type AttendanceDay, type Employee, type Holiday, type PayGroup, type PayProfile } from '../EMP/public.ts';
 import { pieceEarningsByDay, repeatedAssignments, stepById, unpaidAssignments } from '../PRD/public.ts';
 import { jobOrderRef } from '../JO/public.ts';
 import { advanceSchedule, openCharges } from '../CA/public.ts';
@@ -473,6 +473,17 @@ export interface RunRequest {
 export const takesLoans = (periodEnd: string) => periodEnd.slice(8) >= '16';
 
 /** Works out the whole run. Employees skipped on purpose are left out; their piece work stays unpaid. */
+/**
+ * The first day a run pays an employee: the hire date or the period's start, or, just after a change of pay group, the
+ * day after the old group's last paid day, when a recorded run that began before this period paid into it (the owner's
+ * request, Oct 2026: daily-paid staff moved from the 26th–10th / 11th–25th periods to the Friday-to-Thursday weeks).
+ */
+export function payFrom(db: Db, employeeId: string, hireDate: string, start: string, end: string): string {
+  let from = hireDate > start ? hireDate : start;
+  for (const p of paidDaysBetween(db, from, end, employeeId)) if (p.from < start && p.to >= from) from = addDays(p.to, 1);
+  return from;
+}
+
 export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; notes: Issue[] } {
   const notes: Issue[] = [];
   const month = q.periodEnd.slice(0, 7);
@@ -486,7 +497,7 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
 
   for (const e of employeesInGroup(db, q.payGroup, q.periodStart, q.periodEnd)) {
     if (q.skipped.has(e.id)) continue;
-    const from = e.hireDate > q.periodStart ? e.hireDate : q.periodStart;
+    const from = payFrom(db, e.id, e.hireDate, q.periodStart, q.periodEnd);
     const to = e.separatedOn && e.separatedOn < q.periodEnd ? e.separatedOn : q.periodEnd;
     const end = payProfileAt(db, e.id, to)!; // employeesInGroup found it
     const built = earnings(db, e, { start: q.periodStart, end: q.periodEnd }, from, to, end, holidays, q.manual.filter((m) => m.employeeId === e.id), phic);

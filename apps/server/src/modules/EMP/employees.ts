@@ -283,6 +283,20 @@ export const payProfileInput = z
  * payroll already worked out keeps the pay it used. Daily and mixed pay need a daily rate, monthly pay a monthly rate
  * (and the semi-monthly group); piece pay has neither (its rates are in the piece-rate table).
  */
+/**
+ * A move to another pay group alone (the same pay type, rates, workweek and MWE status) may start in the past, from
+ * the day after the last day a recorded payroll paid the employee, so the new group's first payroll picks up the days
+ * the old group's did not pay (the owner's request, Oct 2026: daily-paid staff moved to the weekly cut-off).
+ */
+function groupMoveAfterPaid(db: Db, employeeId: string, v: z.infer<typeof payProfileInput>): boolean {
+  const now = payProfileAt(db, employeeId, v.effectiveFrom);
+  if (!now || now.payGroup === v.payGroup || now.payType !== v.payType || (now.dailyRateCents ?? undefined) !== v.dailyRateCents) return false;
+  if ((now.monthlyRateCents ?? undefined) !== v.monthlyRateCents || now.workweekDays !== v.workweekDays || now.isMwe !== v.isMwe) return false;
+  const later = db.prepare('SELECT 1 FROM emp_pay_profiles WHERE employee_id = ? AND effective_from > ?').get(employeeId, v.effectiveFrom);
+  const paid = db.prepare(`SELECT MAX(p.to_date) AS last FROM emp_paid_days p JOIN documents d ON d.id = p.document_id WHERE d.status = 'posted' AND p.employee_id = ?`).get(employeeId) as { last: string | null };
+  return !later && (paid.last === null || v.effectiveFrom > paid.last);
+}
+
 export function addPayProfile(db: Db, employeeId: string, raw: unknown, who: Who): PayProfile {
   const v = payProfileInput.parse(raw);
   const e = mustGet(db, employeeId);
@@ -293,7 +307,9 @@ export function addPayProfile(db: Db, employeeId: string, raw: unknown, who: Who
   if ((v.payType === 'monthly') !== (v.payGroup === 'SEMI_MONTHLY')) throw badRequest('PAY_GROUP', 'Monthly pay goes with the semi-monthly (monthly staff) group, and only monthly pay does.');
   const first = !db.prepare('SELECT 1 FROM emp_pay_profiles WHERE employee_id = ?').get(employeeId);
   if (v.effectiveFrom < e.hireDate) throw badRequest('BAD_DATE', `Pay cannot start before the hire date (${e.hireDate}).`);
-  if (!first && v.effectiveFrom < who.today) throw badRequest('PAY_BACKDATED', 'A pay change starts today or later, never earlier, so payrolls already worked out keep their pay. Put a past difference on the next payroll as an adjustment.');
+  if (!first && v.effectiveFrom < who.today && !groupMoveAfterPaid(db, employeeId, v)) {
+    throw badRequest('PAY_BACKDATED', 'A pay change starts today or later, never earlier, so payrolls already worked out keep their pay. Put a past difference on the next payroll as an adjustment.');
+  }
   const id = Number(
     db
       .prepare(
