@@ -3,7 +3,7 @@
  * deductions a payslip lists. Pure, so they are tested without a browser; the server works everything out again.
  */
 import { formatPeso as peso } from '@moonproject/shared';
-import type { LoanKind, PayEmployee, PayGroup, PayLoan, PayRunInput, PayThirteenthInput, Payslips, PriorAmounts } from '../../api.ts';
+import type { LoanKind, PayDeductionGoesTo, PayEmployee, PayGroup, PayLoan, PayRunInput, PayThirteenthInput, Payslips, PriorAmounts } from '../../api.ts';
 import { cents } from '../COL/money.ts';
 
 export const GROUP_LABEL: Record<PayGroup, string> = { WEEKLY_PIECE: 'Weekly (piece rate)', WEEKLY_DAILY: 'Weekly (daily paid)', SEMI_DAILY: 'Semi-monthly (daily paid)', SEMI_MONTHLY: 'Semi-monthly (monthly staff)' };
@@ -12,8 +12,10 @@ export const LOAN_KIND: Record<LoanKind, string> = { SSS_SALARY: 'SSS salary loa
 /** A loan deduction typed on the run: blank amount = the plan; 0 skips the month. A note is needed either way. */
 export interface LoanRow { amount: string; reason: string }
 
-export interface ManualRow { employeeId: string; kind: 'allowance' | 'adjustment'; amount: string; reason: string }
+/** A manual row: an allowance or adjustment (pay), or an other deduction (taken off net pay; `goesTo` says where). */
+export interface ManualRow { employeeId: string; kind: 'allowance' | 'adjustment' | 'deduction'; amount: string; reason: string; goesTo?: PayDeductionGoesTo }
 export const emptyManual = (): ManualRow => ({ employeeId: '', kind: 'allowance', amount: '', reason: '' });
+export const GOES_TO: Record<PayDeductionGoesTo, string> = { other_income: 'Other income (a uniform, the canteen)', owed_to_shop: 'Money owed to the shop, paid back' };
 
 /** The form's rows and typed values -> run input, with plain errors. Blank manual rows and blank deductions are left out. */
 export function runInput(
@@ -28,10 +30,18 @@ export function runInput(
 ): { input: PayRunInput; errors: string[] } {
   const errors: string[] = [];
   const lines: NonNullable<PayRunInput['lines']> = [];
+  const others: NonNullable<PayRunInput['deductions']> = [];
   rows.forEach((r, i) => {
     if (!r.employeeId && !r.amount.trim() && !r.reason.trim()) return;
     const at = `Line ${i + 1}`;
     const amount = cents(r.amount);
+    if (r.kind === 'deduction') {
+      if (!r.employeeId) errors.push(`${at}: pick the employee.`);
+      if (amount === undefined || amount <= 0) errors.push(`${at}: type the deduction, like 250.00.`);
+      if (r.reason.trim().length < 5) errors.push(`${at}: say what it is for (5 characters or more).`);
+      if (r.employeeId && amount && amount > 0 && r.reason.trim().length >= 5) others.push({ employeeId: r.employeeId, goesTo: r.goesTo ?? 'other_income', amountCents: amount, reason: r.reason.trim() });
+      return;
+    }
     if (!r.employeeId) errors.push(`${at}: pick the employee.`);
     if (amount === undefined || amount === 0) errors.push(`${at}: type the amount, like 250.00${r.kind === 'adjustment' ? ' (with a minus sign to take pay away)' : ''}.`);
     else if (r.kind === 'allowance' && amount < 0) errors.push(`${at}: an allowance is more than zero; use an adjustment to take pay away.`);
@@ -59,6 +69,7 @@ export function runInput(
   return {
     input: {
       payGroup, periodStart, ...(lines.length ? { lines } : {}), ...(deductions.length ? { advances: deductions } : {}), ...(left.length ? { skip: left } : {}), ...(loans.length ? { loans } : {}),
+      ...(others.length ? { deductions: others } : {}),
       ...(yearEnd ? { yearEnd } : {}), ...(unusedLeave ? { unusedLeave } : {}),
     },
     errors,
@@ -102,12 +113,13 @@ export function finalPayText(e: Pick<PayEmployee, 'final'>): string {
 /** A loan's name on a payslip: "SSS salary loan 0301-555-01". */
 export const loanLabel = (l: Pick<PayLoan, 'kind' | 'loanNo'>) => `${LOAN_KIND[l.kind]} ${l.loanNo}`;
 
-/** The deductions a payslip shows (non-zero only), in the F3 order: shares, tax, government loans, cash advance. */
+/** The deductions a payslip shows (non-zero only), in the F3 order: shares, tax, government loans, cash advance, charges, other deductions. */
 export function deductionsOf(e: PayEmployee): [string, number][] {
   const rows: [string, number][] = [
     ['SSS employee share', e.sssEeCents], ['PhilHealth employee share', e.phicEeCents], ['Pag-IBIG employee share', e.hdmfEeCents], [e.yearEnd ? 'Withholding tax (year-end adjustment)' : 'Withholding tax', e.wtaxCents],
     ...(e.loans ?? []).map((l): [string, number] => [loanLabel(l), l.amountCents]), ['Cash advance', e.caCents],
     ...(e.charges ?? []).map((c): [string, number] => [`Damage charge ${c.number} (${c.what})`, c.amountCents]),
+    ...(e.deductions ?? []).map((d): [string, number] => [`Deduction: ${d.reason}`, d.amountCents]),
   ];
   return rows.filter(([, c]) => c !== 0);
 }

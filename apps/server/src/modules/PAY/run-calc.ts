@@ -41,9 +41,16 @@ export interface RunEmployee {
   wtaxCents: number; loanCents: number; loans: RunLoan[]; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
   /** Damage or loss charges taken back on this run (CA ca_charges), after the cash advance, at most 20% of the gross pay. */
   chargeCents: number; charges: RunCharge[];
+  /** Other deductions typed on the run (a uniform, the canteen), after the charges, as far as the pay allows. */
+  deductionCents: number; deductions: RunDeduction[];
   /** Tax withheld earlier in the year and refunded on this run (the year-end adjustment's excess); net pay includes it. */
   wtaxRefundCents: number; yearEnd?: YearEnd; final?: FinalPay;
 }
+/** Where an other deduction goes: other income (a uniform, the canteen) or money owed to the shop, paid back. */
+export type DeductionGoesTo = 'other_income' | 'owed_to_shop';
+/** One other deduction typed on a run: what was asked, and what the pay allowed. */
+export interface RunDeduction { lineNo: number; goesTo: DeductionGoesTo; reason: string; wantedCents: number; amountCents: number }
+export interface OtherDeduction { employeeId: string; goesTo: DeductionGoesTo; amountCents: number; reason: string }
 /** One damage or loss charge taken back on a run, and what is left of it after. */
 export interface RunCharge { chargeId: string; number: string; what: string; amountCents: number; leftAfterCents: number }
 /** An employee separated within the run's period: this run is their final pay. What they still owe after it. */
@@ -450,6 +457,8 @@ function monthSoFar(db: Db, employeeId: string, month: string) {
 export interface RunRequest {
   payGroup: PayGroup; periodStart: string; periodEnd: string; payDate: string; manual: ManualLine[]; caOverrides: Map<string, number>; skipped: Set<string>;
   loanOverrides?: Map<string, LoanOverride>;
+  /** Other deductions typed on the run, in the order typed. */
+  deductions?: OtherDeduction[];
   /** The year-end tax adjustment of every employee in the run, instead of the period's table (a period ending in December). */
   yearEnd?: boolean;
   /** Pay every employee's unused SIL days of the year in cash (a period ending in December). */
@@ -596,6 +605,15 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
       notes.push({ code: 'CHARGE_REDUCED', level: 'warning', message: `${e.name}: ${formatPeso(chargeCents)} of damage charges is taken back instead of ${formatPeso(chargeWanted)}, ${why}; the rest waits for the next payroll.` });
     }
     left -= chargeCents;
+    // Other deductions (the owner's request, Oct 2026): last, each as far as the pay allows (down to the minimum net
+    // pay; all of it on a final pay). What the pay cannot cover is not taken: type it again on the next run.
+    const deductions: RunDeduction[] = (q.deductions ?? []).filter((d) => d.employeeId === e.id).map((d, i) => {
+      const amount = Math.max(0, Math.min(d.amountCents, final ? left : left - endRules.minNetPayCents));
+      left -= amount;
+      if (amount < d.amountCents) notes.push({ code: 'DEDUCTION_REDUCED', level: 'warning', message: `${e.name}: ${formatPeso(amount)} of the ${formatPeso(d.amountCents)} deduction for "${d.reason}" is taken, so net pay stays at least ${formatPeso(final ? 0 : endRules.minNetPayCents)}. Type the rest on the next payroll.` });
+      return { lineNo: i + 1, goesTo: d.goesTo, reason: d.reason, wantedCents: d.amountCents, amountCents: amount };
+    });
+    const deductionCents = deductions.reduce((s, d) => s + d.amountCents, 0);
     let finalPay: FinalPay | undefined;
     if (final) {
       const caLeft = Math.max(0, plan.outstandingCents - ca);
@@ -639,7 +657,7 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
       phicBasisCents: phicDue.basisCents, phicEeCents: ee.phic, phicErCents: clampNote('PhilHealth (employer)', phicDue.er - so.phicEr),
       hdmfEeCents: ee.hdmf, hdmfErCents: clampNote('Pag-IBIG (employer)', hdmfDue.er - so.hdmfEr), eeShortCents: short,
       wtaxCents: wtax, loanCents, loans, caCents: ca, caOverrideCents: override ?? null, thirteenthCents: endRules.accrue13th ? Math.max(0, divRoundHalfAway(base13, 12)) : 0,
-      netCents: gross - ee.sss - ee.phic - ee.hdmf - wtax - loanCents - ca - chargeCents + refund, chargeCents, charges, wtaxRefundCents: refund, ...(yearEnd ? { yearEnd } : {}), ...(finalPay ? { final: finalPay } : {}),
+      netCents: gross - ee.sss - ee.phic - ee.hdmf - wtax - loanCents - ca - chargeCents - deductionCents + refund, chargeCents, charges, deductionCents, deductions, wtaxRefundCents: refund, ...(yearEnd ? { yearEnd } : {}), ...(finalPay ? { final: finalPay } : {}),
     });
   }
   if (idle.length) notes.push({ code: 'NOTHING_TO_PAY', level: 'warning', message: `Nothing to pay this week, so not on this run: ${idle.join(', ')}.` });

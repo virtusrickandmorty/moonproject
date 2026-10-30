@@ -420,6 +420,8 @@ export interface PayEmployee {
   eeShortCents: number; wtaxCents: number; loanCents?: number; loans?: PayLoan[]; caCents: number; caOverrideCents: number | null; thirteenthCents: number; netCents: number;
   /** Damage or loss charges taken back on this run (CA ca.charge), and what is left of each after it. */
   chargeCents?: number; charges?: { chargeId: string; number: string; what: string; amountCents: number; leftAfterCents: number }[];
+  /** Other deductions typed on the run: what was asked (wanted) and what the pay allowed (amount). */
+  deductionCents?: number; deductions?: { lineNo: number; goesTo: PayDeductionGoesTo; reason: string; wantedCents: number; amountCents: number }[];
   /** Tax withheld earlier in the year and refunded on this run (year-end adjustment); net pay includes it. */
   wtaxRefundCents?: number; yearEnd?: PayYearEnd;
   /** Separated within the run's period: this run is their final pay; what they still owe after it. */
@@ -466,7 +468,10 @@ export interface ManualPayLine { employeeId: string; kind: 'allowance' | 'adjust
 export interface PayRunInput {
   payGroup: PayGroup; periodStart: string; lines?: ManualPayLine[]; advances?: { employeeId: string; amountCents: number }[]; skip?: { employeeId: string; reason: string }[];
   loans?: { loanId: string; amountCents: number; reason: string }[]; yearEnd?: boolean; unusedLeave?: boolean;
+  deductions?: { employeeId: string; goesTo: PayDeductionGoesTo; amountCents: number; reason: string }[];
 }
+/** Where an other deduction goes: other income (a uniform, the canteen) or money owed to the shop, paid back. */
+export type PayDeductionGoesTo = 'other_income' | 'owed_to_shop';
 export interface PayRunDoc extends PayRunInput { periodEnd: string; contributionMonth: string; employees: PayEmployee[]; grossCents: number; netCents: number }
 /** `bookOn`: the date to give the run (the period's last day, for someone who may backdate), or null for today. */
 export interface PayPeriod { periodStart: string; periodEnd: string; employees: number; recorded: { id: string; number: string } | null; bookOn: string | null; /** Practice shop only: a period still under way. */ notEnded?: true }
