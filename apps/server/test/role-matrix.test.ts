@@ -153,9 +153,10 @@ function planDifferences(): string[] {
 }
 
 describe('default roles against the plan (C6, E13)', () => {
-  // E13's five role templates, plus Purchasing and Human Resource (the owner's decisions, Oct 9, 2026; a PLAN change for E13 is proposed).
-  it('has the five role templates of E13, Purchasing and Human Resource', () => {
-    expect([...ROLES]).toEqual(['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing', 'hr']);
+  // E13's five role templates, plus Purchasing and Human Resource (the owner's decisions, Oct 9, 2026; a PLAN change for E13 is
+  // proposed), and Production worker (the owner's request, Nov 2026: a worker's own floor app sign-in).
+  it('has the five role templates of E13, Purchasing, Human Resource and Production worker', () => {
+    expect([...ROLES]).toEqual(['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing', 'hr', 'worker']);
     const rows = env.db.prepare('SELECT DISTINCT role_key FROM role_permissions ORDER BY role_key').pluck().all();
     expect(rows).toEqual([...ROLES].sort());
   });

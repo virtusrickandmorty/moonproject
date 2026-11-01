@@ -6,8 +6,8 @@
 export type PermissionKey = string;
 
 // Shown as departments (the owner's decision, Oct 9, 2026): Sales, Accounting, Administrator, Production, Live view, Purchasing,
-// Human Resource.
-export const ROLES = ['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing', 'hr'] as const;
+// Human Resource; and Production worker (the owner's request, Nov 2026): a worker's own sign-in for the floor app.
+export const ROLES = ['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing', 'hr', 'worker'] as const;
 export type RoleKey = (typeof ROLES)[number];
 
 export interface PermissionDef {

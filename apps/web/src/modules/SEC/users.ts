@@ -2,7 +2,7 @@
 import { ROLES } from '@moonproject/shared';
 
 /** The roles as departments (the owner's decision, Oct 9, 2026); the keys stay as they were. */
-export const ROLE_LABELS: Record<string, string> = { owner: 'Administrator', accountant: 'Accounting', encoder: 'Sales', production: 'Production', purchasing: 'Purchasing', hr: 'Human Resource', tv: 'Live view' };
+export const ROLE_LABELS: Record<string, string> = { owner: 'Administrator', accountant: 'Accounting', encoder: 'Sales', production: 'Production', purchasing: 'Purchasing', hr: 'Human Resource', tv: 'Live view', worker: 'Production worker' };
 export const roleLabel = (role: string) => ROLE_LABELS[role] ?? role;
 /** What each role is for, shown beside the tick boxes. */
 export const ROLE_HINTS: Record<string, string> = {
@@ -13,9 +13,10 @@ export const ROLE_HINTS: Record<string, string> = {
   purchasing: 'Suppliers, purchase orders, receiving, supplier bills and stock counts.',
   hr: 'Employees, attendance, payroll, cash advances and government contributions.',
   tv: 'Read-only production board for the shop TV.',
+  worker: "A worker's own sign-in for the floor app: records their own pieces and shows their own earnings.",
 };
 /** Departments in the order the screens show them. */
-export const ROLE_ORDER: readonly string[] = ['owner', 'accountant', 'encoder', 'production', 'purchasing', 'hr', 'tv'];
+export const ROLE_ORDER: readonly string[] = ['owner', 'accountant', 'encoder', 'production', 'purchasing', 'hr', 'worker', 'tv'];
 /** Role keys in the screens' order (any the screen does not know yet go last, as the server lists them). */
 export const sortRoles = (roles: string[]) => [...ROLE_ORDER.filter((r) => roles.includes(r)), ...ROLES.filter((r) => roles.includes(r) && !ROLE_ORDER.includes(r))];
 export const rolesWords = (roles: string[]) => (roles.length ? sortRoles(roles).map(roleLabel).join(', ') : 'No role');
