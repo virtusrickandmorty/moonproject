@@ -8,3 +8,9 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 );
+
+// The installed app (PWA): a service worker that keeps the app's own files only (public/sw.js). Not under a test browser,
+// which should load every file from the server it is testing.
+if ('serviceWorker' in navigator && !navigator.webdriver) {
+  window.addEventListener('load', () => void navigator.serviceWorker.register('/sw.js').catch(() => undefined));
+}
