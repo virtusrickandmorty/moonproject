@@ -338,7 +338,7 @@ export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = ''
     <div className="min-h-screen bg-page print:min-h-0 print:bg-white">
       <header onKeyDown={(e) => { if (e.key === 'Escape') setOpen(null); }} className="sticky top-0 z-20 flex min-h-[4.5rem] flex-wrap items-center gap-x-2 gap-y-2 border-b border-slate-200/60 bg-page/90 px-3 py-2 backdrop-blur text-sm sm:gap-x-3 md:h-[4.5rem] md:flex-nowrap md:px-6 md:py-0 print:hidden">
         <div className="flex shrink-0 items-center gap-2 sm:gap-3 md:w-[188px]">
-          <button type="button" aria-label="Menu" aria-expanded={open === 'menu'} aria-controls="main-menu" className="rounded-md p-1.5 text-slate-700 hover:bg-white" onClick={toggleMenu}><Icon name="menu" className="size-6" /></button>
+          <button type="button" aria-label="Menu" aria-expanded={open === 'menu'} aria-controls="main-menu" className="rounded-md p-1.5 text-slate-700 hover:bg-white max-md:hidden" onClick={toggleMenu}><Icon name="menu" className="size-6" /></button>
           <Link to="/" aria-label="Home"><img src="/virtus-logo.png" alt="Virtus" className="h-10 w-auto sm:h-11" /></Link>
         </div>
         <div className="hidden min-w-0 flex-1 lg:block">
@@ -429,14 +429,82 @@ export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = ''
           )}
         </Navigation>
         {/* data-erp: the page area of the signed-in ERP; index.css widens its screens (the public website keeps its own layout). */}
-        <main data-erp className="min-w-0 flex-1 px-3 pb-10 pt-2 sm:px-4 md:px-6">
+        <main data-erp className="min-w-0 flex-1 px-3 pb-[calc(6rem+env(safe-area-inset-bottom))] pt-2 sm:px-4 md:px-6 md:pb-10">
           <UpdatedBanner />
           <Breadcrumbs crumbs={crumbsFor(path, menu, crumbName)} icon={<Icon name="Overview" className="size-4" />} />
           <CrumbName.Provider value={setCrumbName}>{children}</CrumbName.Provider>
           <RowLinks />
         </main>
       </div>
+      <PhoneTabs menu={menu} subs={order?.subs} path={path} me={me} onSignOut={onSignOut} />
     </div>
+  );
+}
+
+/** The sections a phone's bottom tabs offer first, in this order; the rest go under More. */
+const PHONE_TABS: MenuGroup[] = ['Sales', 'Production', 'Money', 'People & Payroll', 'Purchases & Expenses', 'Accounting & Tax', 'Reports', 'Admin'];
+
+/**
+ * The phone's frame (the owner's decision, Nov 1, 2026: a new look on phones only; the computer stays as it is): a bottom
+ * tab bar in place of the menu button and drawer. Home, the person's first three sections (of what their role opens), and
+ * More; a section opens a panel from the bottom with its screens, More the other sections and the account. Hidden from
+ * tablet width up (md), where the side menu stays.
+ */
+function PhoneTabs({ menu, subs, path, me, onSignOut }: { menu: MenuList; subs?: Record<string, string[]>; path: string; me: Me; onSignOut: () => void }) {
+  const [sheet, setSheet] = useState<MenuGroup | 'More' | null>(null);
+  useEffect(() => setSheet(null), [path]);
+  const have = PHONE_TABS.filter((g) => menu.some((m) => m.group === g && m.items.length));
+  const tabs = have.slice(0, 3);
+  // Home is its own tab; the rest of Overview (notifications, calendar) and every other section go under More.
+  const more = menu.map((m) => (m.group === 'Overview' ? { ...m, items: m.items.filter((i) => i.path !== '/') } : m)).filter((m) => m.items.length && !tabs.includes(m.group));
+  const groupOf = (g: MenuGroup) => menu.find((m) => m.group === g);
+  const here = (g: MenuGroup) => !!groupOf(g)?.items.some((i) => isHere(path, i.path));
+  const tab = (key: string, label: string, icon: ReactNode, active: boolean, onClick: () => void) => (
+    <button key={key} type="button" onClick={onClick} aria-current={active ? 'page' : undefined}
+      className={`flex flex-col items-center gap-1 py-1.5 text-[11px] ${active ? 'font-extrabold text-indigo-600' : 'font-bold text-slate-500'}`}>{icon}{label}</button>
+  );
+  const shown = sheet === 'More' ? more : sheet ? [groupOf(sheet)!].filter(Boolean) : [];
+  return (
+    <>
+      <nav aria-label="Phone menu" className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-slate-200 bg-white px-1.5 pt-1.5 md:hidden print:hidden" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+        {tab('home', 'Home', <Icon name="Overview" className="size-6" />, path === '/', () => navigate('/'))}
+        {tabs.map((g) => tab(g, g === 'People & Payroll' ? 'People' : g === 'Purchases & Expenses' ? 'Purchases' : g === 'Accounting & Tax' ? 'Accounting' : g, <Icon name={g} className="size-6" />, here(g) || sheet === g, () => setSheet(sheet === g ? null : g)))}
+        {tabs.length < 3 && Array.from({ length: 3 - tabs.length }, (_, i) => <span key={`gap${i}`} />)}
+        {tab('more', 'More', <Icon name="menu" className="size-6" />, sheet === 'More' || more.some((m) => m.items.some((i) => isHere(path, i.path))), () => setSheet(sheet === 'More' ? null : 'More'))}
+      </nav>
+      {sheet && (
+        <div className="fixed inset-0 z-40 flex flex-col justify-end bg-slate-900/50 md:hidden print:hidden" onClick={() => setSheet(null)}>
+          <section role="dialog" aria-label={sheet} onClick={(e) => e.stopPropagation()}
+            className="max-h-[80dvh] overflow-y-auto rounded-t-3xl bg-white px-4 pt-3" style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}>
+            <span aria-hidden="true" className="mx-auto mb-2 block h-1.5 w-11 rounded-full bg-slate-300" />
+            <div className="mb-1 flex items-center justify-between px-1">
+              <h2 className="text-xl font-extrabold">{sheet === 'More' ? 'More' : sheet}</h2>
+              <button type="button" aria-label="Close" onClick={() => setSheet(null)} className="grid size-11 place-items-center rounded-full bg-slate-100 text-lg">✕</button>
+            </div>
+            {shown.map((g) => (
+              <div key={g.group} className="py-1">
+                {sheet === 'More' && <p className="flex items-center gap-2 px-1 pb-1 pt-3 text-xs font-bold uppercase tracking-wider text-slate-500"><Icon name={g.group} className="size-4" />{g.group}</p>}
+                {sectionsOf(g.group, g.items, subs?.[g.group]).map((s, k, all) => (
+                  <div key={s.sub}>
+                    {all.length > 1 && sheet !== 'More' && <p className="px-1 pb-1 pt-3 text-xs font-bold uppercase tracking-wider text-slate-500">{s.sub}</p>}
+                    {s.items.map((i) => (
+                      <Link key={i.path} to={i.path} className={`flex min-h-12 items-center rounded-xl px-3 text-[15px] ${isHere(path, i.path) ? 'bg-indigo-50 font-extrabold text-indigo-700' : 'font-semibold text-slate-800 active:bg-slate-100'}`}>{i.label}</Link>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ))}
+            {sheet === 'More' && (
+              <div className="mt-2 border-t border-slate-100 pt-2">
+                <p className="px-1 pb-1 pt-2 text-xs font-bold uppercase tracking-wider text-slate-500">{me.displayName}</p>
+                <Link to="/account/password" className="flex min-h-12 items-center rounded-xl px-3 text-[15px] font-semibold text-slate-800">Change password</Link>
+                <button type="button" onClick={onSignOut} className="flex min-h-12 w-full items-center rounded-xl px-3 text-left text-[15px] font-semibold text-red-700">Sign out</button>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+    </>
   );
 }
 
