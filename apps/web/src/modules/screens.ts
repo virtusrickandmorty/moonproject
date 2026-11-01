@@ -124,6 +124,8 @@ import { PersonPage, People } from './EQ/People.tsx';
 import { LoanPage, Loans } from './LOAN/Loans.tsx';
 import { SizerSets } from './SZR/Sizers.tsx';
 import { Costing } from './EST/Costing.tsx';
+import { EstimateForm } from './EST/EstimateForm.tsx';
+import { estimateView } from './EST/EstimateView.tsx';
 import { ImageTools } from './IMG/ImageTools.tsx';
 import { OpeningForm as OpeningAssetForm } from './FA/OpeningForm.tsx';
 import { Backups } from './BAK/Backups.tsx';
@@ -308,6 +310,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'tpl.valuation': TplValueForm,
   'shp.valuation': ShopValueForm,
   'quo.quotation': QuotationForm,
+  'est.estimate': EstimateForm,
   'prd.entry': EntryForm,
   'pay.run': RunForm,
   'pay.release': ReleaseForm,
@@ -358,7 +361,7 @@ export const FORMS: Record<string, ComponentType<{ type: DocTypeInfo; mode: Form
   'tax.it_settlement': YearEndTaxForm,
 };
 
-export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'quo.quotation': quotationView(() => 'jo.job_order' in FORMS), 'jo.opening': openingJobOrderView, 'jo.release': joReleaseView, 'jo.invoice_record': invoiceRecordView, 'jo.dp_invoice': dpInvoiceView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'cash.bank_adj': bankAdjustmentView, 'ap.bill': billView, 'ap.payment': paymentView, 'ap.advance': supplierAdvanceView, 'ap.advance_return': advanceReturnView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView,
+export const VIEWS: Record<string, ViewParts> = { 'jo.job_order': jobOrderView, 'quo.quotation': quotationView(() => 'jo.job_order' in FORMS), 'est.estimate': estimateView, 'jo.opening': openingJobOrderView, 'jo.release': joReleaseView, 'jo.invoice_record': invoiceRecordView, 'jo.dp_invoice': dpInvoiceView, 'qs.sale': quickSaleView, 'pay.run': runView, 'pay.release': releaseView, 'pay.thirteenth': thirteenthView, 'ca.advance': advanceView, 'stat.remittance': remittanceView, 'cash.count': cashCountView, 'cash.bank_adj': bankAdjustmentView, 'ap.bill': billView, 'ap.payment': paymentView, 'ap.advance': supplierAdvanceView, 'ap.advance_return': advanceReturnView, 'loan.loan': loanView, 'loan.opening': loanView, 'inv.count': inventoryCountView,
   'pur.po': purchaseOrderView, 'pur.rr': receivingReportView, 'pur.request': purchaseRequestView,
   'col.cwt_only': cwtOnlyView, 'col.forfeit': forfeitView, 'col.credit_memo': creditMemoView, 'col.write_off': writeOffView };
 

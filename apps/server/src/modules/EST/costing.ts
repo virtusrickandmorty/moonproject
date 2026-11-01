@@ -234,6 +234,16 @@ export function saveSheet(db: Db, raw: unknown, who: Who): Costing {
 /** The garment type an item is made as, by its name (CAT matchCatalogItem), to start a new sheet with. */
 export const garmentTypeGuess = (db: Db, itemName: string): string | null => matchCatalogItem(db, itemName)?.garmentType ?? null;
 
+/**
+ * A piece of an order of `qty` from a sheet: the cost (the setup spread over this order's pieces, plus any extra), the
+ * margin of the tier the quantity falls in, and the price that asks.
+ */
+export function costAt(c: Costing, qty: number, extraCents = 0): { fromQty: number; marginBp: number; costCents: number; priceCents: number } {
+  const tier = [...c.rules.tiers].reverse().find((t) => t.fromQty <= qty) ?? c.rules.tiers[0]!;
+  const costCents = c.directCents + c.overheadCents + Math.ceil(c.setupCents / qty) + extraCents;
+  return { fromQty: tier.fromQty, marginBp: tier.marginBp, costCents, priceCents: priceFor(costCents, tier.marginBp, c.rules) };
+}
+
 /** What someone without est.cost.view sees: the item and the suggested prices, no costs, margins or commission. */
 export function pricesOnly(c: Costing) {
   return { itemId: c.itemId, itemName: c.itemName, unit: c.unit, savedAt: c.savedAt, tiers: c.tiers.map((t) => ({ fromQty: t.fromQty, priceCents: t.priceCents, catalogCents: t.catalogCents })) };

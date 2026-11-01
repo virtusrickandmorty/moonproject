@@ -23,6 +23,7 @@ export const DOC_TITLES = [
   'Expense Voucher',
   'Journal Voucher',
   'Quotation',
+  'Cost Estimate', // EST: what an order costs and the prices to quote, from the cost sheets (the owner's request, Nov 2026)
   'Job Order',
   'Job Ticket',
   'Release Slip',
