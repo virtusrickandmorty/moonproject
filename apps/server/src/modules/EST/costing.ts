@@ -43,7 +43,11 @@ export const rulesInput = z.object({
 /** New costing rules, in force from now. Call inside a transaction. */
 export function setRules(db: Db, raw: unknown, who: Who): Rules {
   const parsed = rulesInput.safeParse(raw);
-  if (!parsed.success) throw invalid(parsed.error, 'Fill in the overhead, commission, rounding, the margin of each tier and a reason (10 characters or more).');
+  if (!parsed.success) {
+    const NAMES: Record<string, string> = { overheadBp: 'the overhead (0 to 100%)', commissionBp: 'the commission (0 to 50%)', roundToCents: 'the rounding', tiers: 'the tiers (pieces from 1, margin up to 90%)', reason: 'the reason (10 characters or more)' };
+    const boxes = [...new Set(parsed.error.issues.map((i) => NAMES[String(i.path[0])] ?? String(i.path[0])))];
+    throw invalid(parsed.error, `Check ${boxes.join(', ')}.`);
+  }
   const v = parsed.data;
   const tiers = [...v.tiers].sort((a, b) => a.fromQty - b.fromQty);
   if (tiers[0]!.fromQty !== 1) throw badRequest('TIERS', 'The first tier starts at 1 piece.');
