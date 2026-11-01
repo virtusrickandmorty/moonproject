@@ -332,24 +332,37 @@ export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = ''
   useEffect(() => { if (!document.title.startsWith('PRACTICE')) document.title = 'Virtus'; }, []);
   const toggle = (w: typeof open) => setOpen(open === w ? null : w);
   const creatable = docTypes.filter((d) => d.canCreate);
+  // A phone opens the search box on its own row, with the cursor in it; a page change closes it.
+  const [phoneSearch, setPhoneSearch] = useState(false);
+  const searchRow = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (phoneSearch) searchRow.current?.querySelector('input')?.focus(); }, [phoneSearch]);
+  useEffect(() => setPhoneSearch(false), [path]);
   const toggleMenu = () => (window.matchMedia('(min-width: 768px)').matches ? setWide(!wide) : toggle('menu'));
 
   return (
     <div className="min-h-screen bg-page print:min-h-0 print:bg-white">
-      <header onKeyDown={(e) => { if (e.key === 'Escape') setOpen(null); }} className="sticky top-0 z-20 flex min-h-[4.5rem] flex-wrap items-center gap-x-2 gap-y-2 border-b border-slate-200/60 bg-page/90 px-3 py-2 backdrop-blur text-sm sm:gap-x-3 md:h-[4.5rem] md:flex-nowrap md:px-6 md:py-0 print:hidden">
+      <header onKeyDown={(e) => { if (e.key === 'Escape') setOpen(null); }} className="sticky top-0 z-20 flex flex-wrap items-center gap-x-2 gap-y-2 border-b border-slate-200/60 bg-page/90 px-3 py-2 backdrop-blur text-sm max-md:min-h-14 max-md:pt-[max(0.5rem,env(safe-area-inset-top))] sm:gap-x-3 md:h-[4.5rem] md:min-h-[4.5rem] md:flex-nowrap md:px-6 md:py-0 print:hidden">
         <div className="flex shrink-0 items-center gap-2 sm:gap-3 md:w-[188px]">
           <button type="button" aria-label="Menu" aria-expanded={open === 'menu'} aria-controls="main-menu" className="rounded-md p-1.5 text-slate-700 hover:bg-white max-md:hidden" onClick={toggleMenu}><Icon name="menu" className="size-6" /></button>
-          <Link to="/" aria-label="Home"><img src="/virtus-logo.png" alt="Virtus" className="h-10 w-auto sm:h-11" /></Link>
+          <Link to="/" aria-label="Home"><img src="/virtus-logo.png" alt="Virtus" className="h-9 w-auto sm:h-11" /></Link>
         </div>
         <div className="hidden min-w-0 flex-1 lg:block">
           <p className="truncate text-lg text-slate-900">{greeting()}, <span className="font-bold">{me.displayName}</span></p>
           <p className="truncate text-xs text-muted"><ServerDate /></p>
         </div>
-        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-1 gap-y-2 sm:gap-x-3 md:flex-nowrap lg:flex-none">
-          {me.permissions.includes('nav.search') && <SearchBox menu={allowed} creatable={creatable} />}
+        {/* On a phone its buttons join the header's one row (contents), and an open search box takes a full row under it. */}
+        <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-x-1 gap-y-2 max-md:contents sm:gap-x-3 md:flex-nowrap lg:flex-none">
+          <span aria-hidden="true" className="flex-1 md:hidden" />
+          {me.permissions.includes('nav.search') && (
+            <button type="button" aria-label="Search" aria-expanded={phoneSearch} onClick={() => setPhoneSearch(!phoneSearch)}
+              className="grid size-10 place-items-center rounded-full text-slate-700 hover:bg-white md:hidden">
+              <svg viewBox="0 0 24 24" aria-hidden="true" className="size-6" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M20 20l-4-4" /></svg>
+            </button>
+          )}
+          {me.permissions.includes('nav.search') && <div ref={searchRow} className={`${phoneSearch ? 'max-md:order-last max-md:basis-full' : 'max-md:hidden'} md:contents`}><SearchBox menu={allowed} creatable={creatable} /></div>}
           {creatable.length > 0 && (
             <div className="relative">
-              <button type="button" aria-expanded={open === 'new'} aria-controls="new-menu" className="whitespace-nowrap rounded-md bg-indigo-600 px-3 py-2 font-semibold text-white shadow-sm hover:bg-indigo-700 sm:px-4" onClick={() => { setNewQuery(''); toggle('new'); }}>+ New</button>
+              <button type="button" aria-expanded={open === 'new'} aria-controls="new-menu" className="whitespace-nowrap rounded-md bg-indigo-600 px-3 py-2 font-semibold text-white shadow-sm hover:bg-indigo-700 max-md:grid max-md:size-10 max-md:place-items-center max-md:rounded-full max-md:p-0 max-md:text-xl sm:px-4" onClick={() => { setNewQuery(''); toggle('new'); }}><span className="max-md:sr-only">+ New</span><span aria-hidden="true" className="md:hidden">+</span></button>
               {open === 'new' && <NewMenu docTypes={docTypes} query={newQuery} onQuery={setNewQuery} onChoose={() => setOpen(null)} />}
             </div>
           )}
@@ -369,7 +382,7 @@ export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = ''
           </div>
         </div>
       </header>
-      <p className="px-4 pb-2 text-xs text-muted lg:hidden print:hidden"><ServerDate /></p>
+      <p className="px-4 pb-2 text-xs text-muted max-md:hidden lg:hidden print:hidden"><ServerDate /></p>
       <div className="flex">
         <Navigation open={open === 'menu'} folds={folding.folds} wide={wide} onClose={() => setOpen(null)}>
           {arranging && <ArrangeMenu menu={menu} subOrder={order?.subs ?? {}} onSave={saveOrder} onCancel={() => setArranging(false)} />}
