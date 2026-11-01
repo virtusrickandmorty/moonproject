@@ -389,6 +389,24 @@ export interface EstCosting {
 /** What someone without est.cost.view gets: the suggested prices only. */
 export interface EstPrices { itemId: string; itemName: string; unit: 'pc' | 'set'; savedAt: string | null; tiers: { fromQty: number; priceCents: number; catalogCents: number | null }[] }
 export type EstSheets = { costs: true; sheets: EstCosting[]; rules: EstRules } | { costs: false; sheets: EstPrices[] };
+
+/** Order links (OLK): a private link a customer fills in, a team list or a group order, before the job order is made. */
+export type OlkKind = 'team' | 'group';
+export type OlkGender = 'female' | 'male';
+export interface OlkItem { lineNo: number; itemId?: string; name: string; sizing: 'size' | 'measure'; fields: string[] }
+export interface OlkPerson {
+  row: number; name?: string; backName?: string; number?: string; gender: OlkGender; measureAtShop: boolean;
+  pieces: { lineNo: number; qty: number; size?: string }[]; measures: Record<string, number>; itemMeasures: { lineNo: number; field: string; value: number }[];
+}
+export interface OlkAnswer { id: string; name: string; gender: OlkGender; mobile: string; email: string; address: string; createdAt: string; updatedAt: string; changes: number; people: OlkPerson[] }
+export interface OlkLinkRow { id: string; kind: OlkKind; title: string; closesOn: string; open: boolean; closedEarly: boolean; answers: number; people: number; createdAt: string }
+export interface OlkLinkDetail {
+  id: string; token: string; kind: OlkKind; title: string; closesOn: string; open: boolean; closedEarly: boolean; payOwn: boolean; version: number;
+  customer: { id: string; name: string } | null; items: OlkItem[]; responses: (OlkAnswer & { checks: string[] })[];
+  totals: { lineNo: number; name: string; sizes: { size: string; qty: number }[]; qty: number }[]; guide: { key: string; label: string }[];
+}
+export interface OlkGuide { key: string; label: string; how: string }
+export interface OlkLinkInput { kind: OlkKind; title: string; customerId?: string; closesOn: string; payOwn: boolean; items: { itemId: string; sizing: 'size' | 'measure'; fields: string[] }[] }
 export interface EstItem { code: string; name: string; class: string; unit: 'pc' | 'set'; isActive: boolean }
 
 /** A Production worker sign-in for the floor app, and the employee it is linked to now. */
@@ -1281,6 +1299,12 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     estSave: (body: EstSheetInput) => call<EstCosting>('POST', '/api/est/sheets', body),
     estSetRules: (body: Omit<EstRules, 'id' | 'createdAt' | 'starter'>) => call<EstRules>('POST', '/api/est/rules', body),
     estPickers: (q = '') => call<{ items: { id: string; code: string; name: string }[]; supplies: { id: string; name: string; unit: string }[]; garmentTypes: string[] }>('GET', `/api/est/pickers?${new URLSearchParams({ q })}`),
+    olkLinks: () => call<OlkLinkRow[]>('GET', '/api/olk/links'),
+    olkLink: (id: string) => call<OlkLinkDetail>('GET', `/api/olk/links/${encodeURIComponent(id)}`),
+    olkCreate: (body: OlkLinkInput) => call<OlkLinkDetail & { token: string }>('POST', '/api/olk/links', body),
+    olkClose: (id: string) => call<OlkLinkDetail>('POST', `/api/olk/links/${encodeURIComponent(id)}/close`, {}),
+    olkClosesOn: (id: string, closesOn: string) => call<OlkLinkDetail>('POST', `/api/olk/links/${encodeURIComponent(id)}/closes-on`, { closesOn }),
+    olkPickers: (q = '') => call<{ items: { id: string; code: string; name: string }[]; customers: { id: string; name: string }[]; guide: OlkGuide[]; presets: Record<'top' | 'bottom', string[]> }>('GET', `/api/olk/pickers?${new URLSearchParams({ q })}`),
     rates: () => call<RateTable>('GET', '/api/rate/rates'),
     addRate: (body: Omit<PieceRate, 'id' | 'createdAt'>) => call<PieceRate>('POST', '/api/rate/rates', body),
     /** The same new rate for many items (garment types) at once: all saved, or none (the owner's request, Oct 27, 2026). */

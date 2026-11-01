@@ -11,7 +11,7 @@ export type MenuGroup = (typeof MENU_GROUPS)[number];
 export interface MenuItem { group: MenuGroup; label: string; path: string; permission?: string; sub?: string }
 
 const MODULES: [MenuGroup, string][] = [
-  ['Sales', 'CUS CAT EST QUO JO COL QS COM SUP SHP TPL'],
+  ['Sales', 'CUS CAT EST OLK QUO JO COL QS COM SUP SHP TPL'],
   ['Production', 'PRD RATE SZR'],
   ['Purchases & Expenses', 'PUR AP EXP INV'],
   ['Money', 'CASH EQ LOAN FA'],
@@ -45,6 +45,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Sales', label: 'Online orders', path: '/shp/orders', permission: 'shp.orders.view' },
   { group: 'Sales', label: 'Price list & piece rates', path: '/cat', permission: 'cat.view' },
   { group: 'Sales', label: 'Costing', path: '/est', permission: 'est.view' },
+  { group: 'Sales', label: 'Order links', path: '/olk', permission: 'olk.view' },
   { group: 'Purchases & Expenses', label: 'Suppliers', path: '/pur/suppliers', permission: 'pur.supplier.view' },
   { group: 'Purchases & Expenses', label: 'Supplies', path: '/pur/supplies', permission: 'pur.supply.view' },
   { group: 'Admin', label: 'Shop certificate', path: '/admin/shop-certificate' },
@@ -209,7 +210,7 @@ export function applyMenuOrder<G extends { group: MenuGroup; items: MenuItem[] }
  */
 export const SUBS: Partial<Record<MenuGroup, [sub: string, keys: string[]][]>> = {
   Sales: [
-    ['Customers & quotes', ['/cus', 'quo.quotation', 'est.estimate', '/cat', '/est', '/com', '/sup', '/aia']],
+    ['Customers & quotes', ['/cus', 'quo.quotation', 'est.estimate', '/cat', '/est', '/olk', '/com', '/sup', '/aia']],
     ['Job orders & release', ['jo.job_order', 'jo.release', 'jo.invoice_record', 'jo.dp_invoice', 'jo.opening', '/alt']],
     ['Collections', ['col.', '/col/pdcs', '/col/deposits']],
     ['Shop & POS', ['/pos', 'qs.sale', '/shp', 'shp.']], // shp.: the shop's month-end stock value (the owner's request, 26 Oct 2026)

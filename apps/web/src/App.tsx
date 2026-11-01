@@ -21,6 +21,7 @@ import { FORMS, PAGES, VIEWS } from './modules/screens.ts';
 import { JOB_ORDER_LATER } from './modules/QUO/quotation.ts';
 import { DashHome } from './modules/DASH/Home.tsx';
 import { FloorApp } from './modules/PRD/floor/FloorApp.tsx';
+import { OrderLinkPage } from './modules/OLK/OrderLinkPage.tsx';
 import { PracticeBanner } from './modules/PLT/PracticeBanner.tsx';
 import { HealthDot } from './modules/PLT/HealthDot.tsx';
 import { RestoredNotice } from './modules/BAK/RestoredNotice.tsx';
@@ -57,6 +58,9 @@ function Stages() {
     );
   }, [signedIn]);
 
+  // An order link (the owner's request, Nov 2026): the customer's own page, the same signed in or not.
+  const orderLink = /^\/l\/([\w-]{20,64})$/.exec(location.split('?')[0]!);
+  if (orderLink) return <OrderLinkPage token={orderLink[1]!} query={location.split('?')[1] ?? ''} />;
   if (stage.kind === 'loading') return <Loading size="lg" />;
   if (stage.kind === 'error') return <div className="p-6"><Notice>{stage.message}</Notice></div>;
   if (stage.kind === 'firstOwner') return <FirstOwnerScreen onSignedIn={signedIn} />;
