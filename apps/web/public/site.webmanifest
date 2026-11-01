@@ -1,12 +1,20 @@
 {
+  "id": "/",
   "name": "Virtus Garments",
   "short_name": "Virtus",
+  "description": "Virtus Garments: the shop's website, and the staff's job orders, production and payroll.",
   "start_url": "/",
-  "display": "browser",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
   "background_color": "#ffffff",
   "theme_color": "#0f172a",
   "icons": [
-    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ],
+  "shortcuts": [
+    { "name": "Production board", "url": "/prd/board", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Job orders", "url": "/docs/jo.job_order", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
   ]
 }
