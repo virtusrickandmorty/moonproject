@@ -221,7 +221,9 @@ const PUBLIC_ROUTES = ['GET /*', 'GET /api/aia/public', 'GET /api/health', 'GET 
 
 /** 'authenticated' routes that are open to every signed-in user by design (nothing the role lacks is shown). */
 const OPEN_TO_SIGNED_IN = ['GET /api/pref/menu', 'PUT /api/pref/menu', 'GET /api/system/tls', 'GET /api/system/practice', 'GET /api/settings', 'POST /api/auth/logout', 'GET /api/auth/me', 'POST /api/auth/change-password', 'POST /api/auth/step-up',
-  'GET /api/live']; // the live change stream says only which kinds of record changed, never their data
+  'GET /api/live', // the live change stream says only which kinds of record changed, never their data
+  // Phone notifications (PUSH): each person turns them on for their own phone; a push says only what their bell shows.
+  'GET /api/push/key', 'POST /api/push/subscribe', 'POST /api/push/unsubscribe', 'POST /api/push/test'];
 
 /** 'authenticated' routes that check a document type's permission inside; called through every doc type below. */
 const DOC_TYPE_ROUTES = [
