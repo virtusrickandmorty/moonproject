@@ -4,10 +4,11 @@
  * left, who is done), Record pieces (a sheet that slides up), Saved, and My earnings. The server keeps every rule of
  * Record pieces; this only records the signed-in worker's own pieces, today.
  */
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { api, ApiError, type FloorJob, type FloorToday, type FloorWeek, type Me } from '../../../api.ts';
 import { navigate, useLocation } from '../../../router.tsx';
 import { peso } from '../../../components/ui.tsx';
+import { jobOrderFromScan, liveCameraAllowed, readQrPhoto, useQrCamera } from '../../../components/QrScan.tsx';
 
 const dayName = (d: string, o: Intl.DateTimeFormatOptions) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', ...o });
 const short = (d: string) => dayName(d, { month: 'short', day: 'numeric' });
@@ -17,7 +18,8 @@ export function FloorApp({ me }: { me: Me }) {
   const location = useLocation();
   const [path, query = ''] = location.split('?');
   const q = new URLSearchParams(query);
-  const job = /^\/floor\/job\/([^/]+)$/.exec(path!)?.[1];
+  const job = /^\/floor\/job\/([^/]+)$/.exec(path!)?.[1] ?? /^\/docs\/jo\.job_order\/([0-9a-f-]{36})$/i.exec(path!)?.[1];
+  if (path === '/floor/scan') return <ScanScreen />;
   const tab: Tab = path === '/floor/earnings' ? 'earnings' : 'today';
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-page text-[#0f172a]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
@@ -32,7 +34,6 @@ export function FloorApp({ me }: { me: Me }) {
 
 type Tab = 'today' | 'earnings';
 function TabBar({ tab }: { tab: Tab }) {
-  const [finding, setFinding] = useState(false);
   const item = (t: Tab, label: string, icon: ReactNode) => (
     <button type="button" aria-current={tab === t ? 'page' : undefined} onClick={() => navigate(t === 'today' ? '/floor' : '/floor/earnings')}
       className={`flex flex-col items-center gap-1 py-1.5 text-xs ${tab === t ? 'font-extrabold text-indigo-600' : 'font-bold text-slate-500'}`}>{icon}{label}</button>
@@ -41,12 +42,11 @@ function TabBar({ tab }: { tab: Tab }) {
     <>
       <nav aria-label="Floor app" className="fixed inset-x-0 bottom-0 mx-auto grid max-w-md grid-cols-3 items-end border-t border-slate-200 bg-white px-3 pt-2" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
         {item('today', 'Today', <Icon d="M3 11l9-7 9 7M5 10v10h14V10" />)}
-        <button type="button" onClick={() => setFinding(true)} className="flex flex-col items-center gap-1 text-xs font-bold">
-          <span className="-mt-8 grid size-15 place-items-center rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"><Icon d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 12h8" size={28} /></span>Find job
+        <button type="button" onClick={() => navigate('/floor/scan')} className="flex flex-col items-center gap-1 text-xs font-bold">
+          <span className="-mt-8 grid size-15 place-items-center rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"><Icon d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 12h8" size={28} /></span>Scan
         </button>
         {item('earnings', 'Earnings', <Icon d="M3 6h18v13H3zM3 10h18M7 15h3" />)}
       </nav>
-      {finding && <FindJob onClose={() => setFinding(false)} />}
     </>
   );
 }
@@ -71,18 +71,62 @@ function Sheet({ title, onClose, children }: { title: string; onClose: () => voi
   );
 }
 
-function FindJob({ onClose }: { onClose: () => void }) {
+/**
+ * Scan the job ticket (the mock-up's screen 2): the live camera where the phone allows it (https), else a photo of the
+ * code; a job order number can be typed too. A ticket's QR names its job order (QrScan.tsx jobOrderFromScan).
+ */
+function ScanScreen() {
+  const video = useRef<HTMLVideoElement>(null);
+  const photo = useRef<HTMLInputElement>(null);
+  const live = liveCameraAllowed();
   const [number, setNumber] = useState('');
-  const open = () => number.trim() && navigate(`/floor/job/${encodeURIComponent(number.trim())}`);
+  const [said, setSaid] = useState('');
+  const open = (text: string) => {
+    const j = jobOrderFromScan(text);
+    if (!j) return setSaid('That code is not a job ticket. Scan the QR code on the printed job ticket.');
+    navigate(`/floor/job/${encodeURIComponent(j.id ?? j.number!)}`, { replace: true });
+  };
   return (
-    <Sheet title="Find a job order" onClose={onClose}>
-      <label htmlFor="floor-jo" className="block text-sm font-bold">Job order number, from the ticket</label>
-      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); open(); }}>
-        <input id="floor-jo" autoFocus inputMode="numeric" placeholder="231" value={number} onChange={(e) => setNumber(e.target.value)}
-          className="h-13 min-w-0 flex-1 rounded-xl border border-slate-300 px-4 text-lg font-semibold" />
-        <button type="submit" className="h-13 rounded-xl bg-indigo-600 px-6 font-extrabold text-white disabled:opacity-50" disabled={!number.trim()}>Open</button>
+    <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-[#0b0f1a] text-white" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+      <div className="flex items-center justify-between px-5 pt-4">
+        <button type="button" aria-label="Close" onClick={() => navigate('/floor')} className="grid size-11 place-items-center rounded-full bg-white/15"><Icon d="M6 6l12 12M18 6L6 18" size={22} /></button>
+        <span className="text-[17px] font-extrabold">Scan the job ticket</span>
+        <span className="size-11" />
+      </div>
+      <div className="flex flex-1 flex-col items-center justify-center gap-6 px-8">
+        {live ? <LiveScan video={video} onScan={open} /> : (
+          <button type="button" onClick={() => photo.current?.click()} className="grid size-64 place-items-center rounded-3xl border-2 border-dashed border-white/50 text-center text-lg font-bold">
+            <span><Icon d="M4 8h3l2-3h6l2 3h3v11H4zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" size={40} /><br />Take a photo of the QR code</span>
+          </button>
+        )}
+        <p className="text-center text-base text-indigo-100">{live ? 'Point the camera at the QR code on the printed job ticket. It opens by itself.' : 'Your phone takes a photo of the code, and the job opens.'}</p>
+        {said && <p role="alert" className="rounded-xl bg-white/10 px-4 py-3 text-center font-semibold">{said}</p>}
+        <input ref={photo} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
+          const file = e.target.files?.[0]; e.target.value = '';
+          if (file) void readQrPhoto(file).then((t) => (t && t !== 'unreadable' ? open(t) : setSaid('No QR code was found in the photo. Hold the ticket flat and closer, then try again.')));
+        }} />
+      </div>
+      <form className="space-y-2.5 rounded-t-3xl bg-white px-5 pt-5 text-[#0f172a]" style={{ paddingBottom: 'max(1.75rem, env(safe-area-inset-bottom))' }}
+        onSubmit={(e) => { e.preventDefault(); if (number.trim()) navigate(`/floor/job/${encodeURIComponent(number.trim())}`, { replace: true }); }}>
+        <label htmlFor="floor-jo" className="block text-sm font-bold">No ticket? Type the job order number</label>
+        <div className="flex gap-2">
+          <input id="floor-jo" inputMode="numeric" placeholder="231" value={number} onChange={(e) => setNumber(e.target.value)}
+            className="h-13 min-w-0 flex-1 rounded-xl border border-slate-300 px-4 text-lg font-semibold" />
+          <button type="submit" disabled={!number.trim()} className="h-13 rounded-xl bg-indigo-600 px-6 font-extrabold text-white disabled:opacity-50">Open</button>
+        </div>
       </form>
-    </Sheet>
+    </div>
+  );
+}
+
+function LiveScan({ video, onScan }: { video: RefObject<HTMLVideoElement | null>; onScan: (text: string) => void }) {
+  const error = useQrCamera(video, onScan);
+  if (error) return <p role="alert" className="rounded-xl bg-white/10 p-4 text-center font-semibold">{error}</p>;
+  return (
+    <div className="relative size-72 overflow-hidden rounded-3xl bg-black">
+      <video ref={video} playsInline muted className="size-full object-cover" />
+      <span aria-hidden="true" className="pointer-events-none absolute inset-6 rounded-2xl border-4 border-white/90 shadow-[0_0_0_999px_rgba(11,15,26,0.45)]" />
+    </div>
   );
 }
 

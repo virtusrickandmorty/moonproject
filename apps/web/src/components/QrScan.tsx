@@ -5,7 +5,7 @@
  * - a USB or Bluetooth QR scanner: it types the code like a keyboard and presses Enter (useScannerKeys).
  * The code is read in the browser (BarcodeDetector where there is one, else jsQR); nothing is sent anywhere.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 import jsQR from 'jsqr';
 import { Button, Dialog, Notice } from './ui.tsx';
 
@@ -27,7 +27,7 @@ async function readCanvas(canvas: HTMLCanvasElement, detector: Detector | null):
 }
 
 /** Live camera where the browser allows it (a secure page: https or localhost). */
-const liveCameraAllowed = () => typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia && (globalThis.isSecureContext ?? false);
+export const liveCameraAllowed = () => typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia && (globalThis.isSecureContext ?? false);
 
 /** A "Scan QR" button: opens the camera, and calls onScan with what the code says. */
 export function ScanQrButton({ onScan, label = 'Scan QR' }: { onScan: (text: string) => void; label?: string }) {
@@ -38,13 +38,8 @@ export function ScanQrButton({ onScan, label = 'Scan QR' }: { onScan: (text: str
   const fromPhoto = async (file: File | undefined) => {
     setError('');
     if (!file) return;
-    const bitmap = await createImageBitmap(file).catch(() => null);
-    if (!bitmap) return setError('That photo could not be opened. Try again.');
-    const canvas = document.createElement('canvas');
-    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
-    canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
-    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    const text = await readCanvas(canvas, nativeDetector());
+    const text = await readQrPhoto(file);
+    if (text === 'unreadable') return setError('That photo could not be opened. Try again.');
     if (text) onScan(text); else setError('No QR code was found in the photo. Hold the job ticket flat and closer, then try again.');
   };
   return (
@@ -63,9 +58,25 @@ export function ScanQrButton({ onScan, label = 'Scan QR' }: { onScan: (text: str
   );
 }
 
-function CameraDialog({ onScan, onClose, onPhoto }: { onScan: (text: string) => void; onClose: () => void; onPhoto: () => void }) {
-  const video = useRef<HTMLVideoElement>(null);
+/** Reads a QR code from a photo of it (the phone's own camera), or null. */
+export async function readQrPhoto(file: File): Promise<string | null | 'unreadable'> {
+  const bitmap = await createImageBitmap(file).catch(() => null);
+  if (!bitmap) return 'unreadable';
+  const canvas = document.createElement('canvas');
+  const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+  canvas.width = Math.round(bitmap.width * scale); canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  return readCanvas(canvas, nativeDetector());
+}
+
+/**
+ * The live camera into a <video>, read for a QR code five times a second until one is found (onScan, once); the camera
+ * stops when the screen closes. The words of a camera that could not open come back for the screen to show.
+ */
+export function useQrCamera(video: RefObject<HTMLVideoElement | null>, onScan: (text: string) => void): string {
   const [error, setError] = useState('');
+  const handler = useRef(onScan);
+  handler.current = onScan;
   useEffect(() => {
     let stream: MediaStream | null = null;
     let stop = false;
@@ -78,7 +89,7 @@ function CameraDialog({ onScan, onClose, onPhoto }: { onScan: (text: string) => 
         canvas.width = v.videoWidth; canvas.height = v.videoHeight;
         canvas.getContext('2d', { willReadFrequently: true })!.drawImage(v, 0, 0);
         const text = await readCanvas(canvas, detector);
-        if (text && !stop) { stop = true; onScan(text); return; }
+        if (text && !stop) { stop = true; handler.current(text); return; }
       }
       setTimeout(() => void tick(), 200);
     };
@@ -89,7 +100,13 @@ function CameraDialog({ onScan, onClose, onPhoto }: { onScan: (text: string) => 
       void tick();
     }, () => setError('The camera could not be opened. Allow the camera for this page, or take a photo of the code instead.'));
     return () => { stop = true; stream?.getTracks().forEach((t) => t.stop()); };
-  }, []);
+  }, [video]);
+  return error;
+}
+
+function CameraDialog({ onScan, onClose, onPhoto }: { onScan: (text: string) => void; onClose: () => void; onPhoto: () => void }) {
+  const video = useRef<HTMLVideoElement>(null);
+  const error = useQrCamera(video, onScan);
   return (
     <Dialog title="Scan the job ticket's QR code" onClose={onClose}>
       <div className="space-y-3">
