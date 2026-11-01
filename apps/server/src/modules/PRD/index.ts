@@ -18,6 +18,9 @@ export default defineModule({
     { key: 'prd.assign', label: 'Record and cancel workers’ pieces (production entries)', defaultRoles: ['encoder', 'accountant', 'owner', 'production'] },
     { key: 'prd.progress', label: 'Set a line’s route, and mark steps completed, not needed or reopened', defaultRoles: ['encoder', 'accountant', 'owner', 'production'] },
     { key: 'prd.steps', label: 'Rename production steps and switch them on or off', defaultRoles: ['accountant', 'owner'] },
+    // The floor app (the owner's request, Nov 2026): a worker's own sign-in records only their own pieces, today, and sees
+    // only their own earnings; whose they are comes from the sign-in's link to the employee (EMP floor-users).
+    { key: 'prd.floor', label: 'Use the floor app: record my own pieces and see my own earnings', defaultRoles: ['worker'] },
     { key: 'prd.reassign', label: 'Change the worker on pieces already recorded (not yet paid)', defaultRoles: ['accountant', 'owner'] },
   ],
   docTypes: [entryDoc],

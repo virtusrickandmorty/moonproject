@@ -5,7 +5,7 @@
  * GCash QR code to send the pay to (emp.manage changes it).
  */
 import { useCallback, useEffect, useState } from 'react';
-import { api, type EmployeeDetail, type EmployeeRecord, type Me, type PayProfile, type PayoutQr } from '../../api.ts';
+import { api, type EmployeeDetail, type EmployeeRecord, type FloorAccount, type FloorUser, type Me, type PayProfile, type PayoutQr } from '../../api.ts';
 import { Loading, Button, Dialog, Field, Notice, Panel, inputClass, peso, useAction, showDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { cents } from '../COL/money.ts';
@@ -47,6 +47,7 @@ export function EmployeePage({ me, params }: { me: Me; params?: Record<string, s
         <p className="text-sm">{d.sil.eligibleFrom > `${d.sil.year}-12-31` ? `Paid leave starts after a year of service, on ${showDate(d.sil.eligibleFrom)}.` : `${d.sil.used} of ${d.sil.daysPerYear} days used${d.sil.paid ? `, ${d.sil.paid} paid in cash` : ''}; ${d.sil.left} left.`}</p>
       </Panel>
       {can('emp.pay') && d.payslipEmail && <PayslipEmail e={e} current={d.payslipEmail} onSaved={load} />}
+      {can('emp.manage') && d.floorUser !== undefined && <FloorSignIn e={e} current={d.floorUser} onSaved={load} />}
       <Pay d={d} canSet={e.isActive && can('emp.pay') && can('pay.view_rates')} onSaved={load} />
       {can('ca.view') && <Link to={`/ca/employees/${e.id}`} className="underline">Cash advances (what {e.fullName} owes)</Link>}
       {can('pay.loans.view') && <EmployeeLoans me={me} employeeId={e.id} active={e.isActive} />}
@@ -242,6 +243,48 @@ function PayoutQrPanel({ e, qr, editable, onSaved }: { e: EmployeeRecord; qr: Pa
           {e.payoutAccount && <p className="text-center text-sm text-slate-600">{e.payoutAccount}</p>}
         </Dialog>
       )}
+    </Panel>
+  );
+}
+
+/**
+ * The worker's own sign-in for the floor app on the phone (the owner's request, Nov 2026): one of the accounts with the
+ * Production worker role (made under Admin › Users). Linked, the phone records this worker's own pieces and shows their
+ * own earnings. Changed with emp.manage; audited.
+ */
+function FloorSignIn({ e, current, onSaved }: { e: EmployeeRecord; current: FloorUser | null; onSaved: () => Promise<unknown> }) {
+  const [accounts, setAccounts] = useState<FloorAccount[] | null>(null);
+  const [pick, setPick] = useState(current?.userId ?? '');
+  const [done, setDone] = useState('');
+  const a = useAction();
+  useEffect(() => { void api.floorAccounts().then(setAccounts, () => setAccounts([])); }, [current?.userId]);
+  useEffect(() => setPick(current?.userId ?? ''), [current?.userId]);
+  const save = async (userId: string | null) => {
+    await api.setFloorUser(e.id, userId);
+    setDone(userId ? 'Linked. They can now sign in on the floor app.' : 'Unlinked.');
+    await onSaved();
+  };
+  const free = (accounts ?? []).filter((x) => !x.employeeId || x.employeeId === e.id);
+  return (
+    <Panel title="Floor app sign-in">
+      <p className="text-sm text-slate-600">
+        {current ? `${e.fullName} signs in on the phone as ${current.username}. The floor app records their own pieces and shows their own earnings.`
+          : `Link ${e.fullName} to a sign-in with the Production worker role, so they can record their own pieces on the phone. Make the sign-in first under Admin › Users.`}
+      </p>
+      {accounts && free.length === 0 && !current && <Notice tone="info">No free sign-in has the Production worker role yet. Add one under Admin › Users, then come back.</Notice>}
+      {(free.length > 0 || current) && (
+        <div className="flex max-w-lg flex-wrap items-end gap-3">
+          <div className="min-w-0 grow"><Field label="Sign-in">
+            <select className={inputClass} value={pick} onChange={(x) => (setPick(x.target.value), setDone(''))}>
+              <option value="">None</option>
+              {free.map((x) => <option key={x.id} value={x.id}>{x.displayName} ({x.username})</option>)}
+            </select>
+          </Field></div>
+          <Button tone="primary" disabled={a.busy || pick === (current?.userId ?? '')} onClick={() => a.run(() => save(pick || null))}>{pick ? 'Link' : 'Unlink'}</Button>
+        </div>
+      )}
+      {a.error && <Notice>{a.error}</Notice>}
+      {done && !a.error && <Notice tone="success">{done}</Notice>}
     </Panel>
   );
 }

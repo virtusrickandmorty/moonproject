@@ -12,6 +12,7 @@ import { addPayProfile, createEmployee, employeeRecord, listEmployees, masked, p
 import { ATTENDANCE, addHoliday, attendanceBetween, checkRange, deactivateHoliday, holidaysBetween, holidaysOf, paidDaysBetween, reactivateHoliday, saveAttendance, silOf } from './time.ts';
 import { leaveBalances } from './leave-balances.ts';
 import { linkBiometricUser, previewBiometric } from './biometric.ts';
+import { floorAccounts, floorUserOf, setFloorUser } from './floor-users.ts';
 import { MAX_QR_BYTES, employeesWithPayoutQr, payoutQrOf, payoutQrPicture, removePayoutQr, savePayoutQr } from './payout-qr.ts';
 
 const dateQ = z.string().refine(isBusinessDate);
@@ -62,8 +63,18 @@ export function empRoutes(app: FastifyInstance, deps: AppDeps): void {
       // Where the payslip is emailed: shown only to whoever sets up payroll (emp.pay).
       payslipEmail: can(req, 'emp.pay') ? payslipEmailOf(db, e.id) ?? null : null,
       payoutQr: payoutQrOf(db, e.id),
+      // The worker's own sign-in for the floor app: shown to whoever links it (emp.manage).
+      floorUser: can(req, 'emp.manage') ? floorUserOf(db, e.id) : undefined,
     };
   });
+
+  /** The Production worker accounts an employee can be linked to, each with the employee it is linked to now. */
+  app.get('/api/emp/floor-accounts', { config: { permission: 'emp.manage' } }, async () => floorAccounts(db));
+
+  /** Links an employee to their floor app sign-in, or unlinks it (userId null). Audited. */
+  app.put<{ Params: { id: string } }>('/api/emp/employees/:id/floor-user', { config: { permission: 'emp.manage' } }, async (req) =>
+    write(() => ({ floorUser: setFloorUser(db, req.params.id, req.body, who(req)) })),
+  );
 
   /** The bank or GCash QR picture (the owner's request, Oct 2026): seen as the payout account is, changed with emp.manage. */
   app.get<{ Params: { id: string } }>('/api/emp/employees/:id/payout-qr', { config: { permission: 'emp.view' } }, async (req, reply) => {

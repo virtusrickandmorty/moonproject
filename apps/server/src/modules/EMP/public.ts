@@ -9,6 +9,8 @@ export { attendanceBetween, holidaysBetween, type AttendanceDay, type Attendance
 export { SIL_DAYS, markPaidDays, markSilPaid, paidDaysBetween, silOf, silPaidBy, type PaidDays } from './time.ts';
 
 export { payoutQrOf, payoutQrPicture } from './payout-qr.ts';
+// The floor app (PRD): the employee a signed-in Production worker is.
+export { employeeOfUser } from './floor-users.ts';
 
 /** How the employee is paid, for the payroll release (the owner's request, Oct 2026): cash, bank or GCash, and the account. */
 export function payoutOf(db: Db, id: string): { method: 'cash' | 'bank' | 'gcash'; account: string | null } | undefined {

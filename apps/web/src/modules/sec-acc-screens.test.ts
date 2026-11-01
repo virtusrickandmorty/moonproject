@@ -285,7 +285,7 @@ describe('the screens against the real server', () => {
     const web = createApi(injectFetch(env.app));
     await web.login('owner1', PASSWORD);
     const g = await web.roles();
-    expect(g.roles).toEqual(['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing', 'hr']);
+    expect(g.roles).toEqual(['encoder', 'accountant', 'owner', 'production', 'tv', 'purchasing', 'hr', 'worker']);
     expect(g.permissions.find((p) => p.key === 'sec.users.manage')).toMatchObject({ module: 'SEC', label: 'Manage users, roles and passwords', roles: ['owner'] });
     expect(groupPermissions(g.permissions).length).toBeGreaterThan(10);
     await expect(web.setRolePermission('encoder', 'acc.coa.view', true)).rejects.toMatchObject({ code: 'STEP_UP_REQUIRED' });

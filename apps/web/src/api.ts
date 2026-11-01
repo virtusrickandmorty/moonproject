@@ -377,6 +377,9 @@ export interface EstPrices { itemId: string; itemName: string; unit: 'pc' | 'set
 export type EstSheets = { costs: true; sheets: EstCosting[]; rules: EstRules } | { costs: false; sheets: EstPrices[] };
 export interface EstItem { code: string; name: string; class: string; unit: 'pc' | 'set'; isActive: boolean }
 
+/** A Production worker sign-in for the floor app, and the employee it is linked to now. */
+export interface FloorUser { userId: string; username: string; displayName: string }
+export interface FloorAccount { id: string; username: string; displayName: string; employeeId: string | null; employeeName: string | null }
 /** Employees and time (EMP). Government IDs arrive masked without emp.view_ids; pay history is null without pay.view_rates. */
 export interface EmployeeRow { id: string; code: string; fullName: string; position: string | null; department: string | null; costCentre: string; isActive: boolean; hireDate: string; separatedOn: string | null; hasPayoutQr?: boolean }
 /** The employee's bank or GCash QR picture in force (its bytes at payoutQrUrl). */
@@ -403,6 +406,8 @@ export interface EmployeeDetail {
   sil: { year: number; eligibleFrom: string; daysPerYear: number; used: number; paid: number; left: number };
   /** Where the payslip is emailed and whether the employee agreed. Only for whoever sets up payroll (emp.pay); null for others. */
   payslipEmail: { email: string | null; consent: boolean } | null;
+  /** The worker's own floor app sign-in (with emp.manage only; undefined otherwise). */
+  floorUser?: FloorUser | null;
   payoutQr?: PayoutQr | null;
 }
 export interface LeaveBalances {
@@ -1266,6 +1271,8 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     leaveBalances: (year?: number) => call<LeaveBalances>('GET', `/api/emp/leave-balances${year ? `?year=${year}` : ''}`),
     addEmployee: (body: Record<string, unknown>) => call<EmployeeRecord>('POST', '/api/emp/employees', body),
     updateEmployee: (id: string, v: number, body: Record<string, unknown>) => call<EmployeeRecord>('PUT', emp(id), body, version(v)),
+    floorAccounts: () => call<FloorAccount[]>('GET', '/api/emp/floor-accounts'),
+    setFloorUser: (id: string, userId: string | null) => call<{ floorUser: FloorUser | null }>('PUT', emp(id, '/floor-user'), { userId }),
     savePayslipEmail: (id: string, v: number, body: { email: string | null; consent: boolean }) => call<{ email: string | null; consent: boolean }>('PUT', emp(id, '/payslip-email'), body, version(v)),
     savePayoutQr: (id: string, file: { name: string; data: string }) => call<{ payoutQr: PayoutQr | null }>('PUT', emp(id, '/payout-qr'), file),
     removePayoutQr: (id: string) => call<{ payoutQr: null }>('POST', emp(id, '/payout-qr/remove'), {}),
