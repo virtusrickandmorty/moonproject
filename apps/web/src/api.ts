@@ -346,6 +346,20 @@ export interface PrdJob {
       partPieces?: { upper: number; lower: number }; partAvailable?: { upper: number; lower: number }; partWearersDone?: { upper: number[]; lower: number[] };
       partPartlyDone?: { upper: Record<number, number>; lower: Record<number, number> } })[] | null }[];
 }
+/** The floor app (PRD floor.ts, the owner's request, Nov 2026): a production worker's own week, work and jobs. */
+export interface FloorWeek { from: string; to: string; days: { date: string; pieces: number; amountCents: number }[]; jobs: { jobOrderNumber: string; stepName: string; rateCents: number; pieces: number; amountCents: number }[]; pieces: number; amountCents: number; paid: boolean }
+export interface FloorToday {
+  employee: { name: string; code: string }; today: string; week: FloorWeek;
+  work: { jobOrderId: string; jobOrderNumber: string; customerName: string; dueDate: string; lineNo: number; description: string; stepId: number; stepName: string; qty: number; done: number; left: number }[];
+  pastWeeks: { from: string; to: string; pieces: number; amountCents: number; paid: boolean }[];
+}
+export interface FloorJob {
+  jobOrder: { id: string; number: string; customerName: string; dueDate: string; status: string };
+  lines: { lineNo: number; description: string; qty: number; isSet: boolean; garmentType: string; roster: PrdWearer[];
+    steps: { id: number; name: string; status: StepStatus; pieces: number; available: number; payBasis: string; rates: { part: 'whole' | 'upper' | 'lower'; rateCents: number | null }[] }[];
+    route: PrdJob['lines'][number]['route'] }[];
+}
+export interface FloorRecord { jobOrderId: string; lineNo: number; stepId: number; pieces: number; wearers?: number[]; part?: 'upper' | 'lower'; again?: true }
 export interface PrdWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; lowerSize?: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
 /** `garmentType`: left out, the server takes it (and whether the line is a set) from the price list item the line matches. */
 export interface PrdSummaryRow { assignmentId: string; entryId: string; entryNumber: string; rowNo: number; workDate: string; employeeId: string; employeeName: string; kind: 'work' | 'rework' | 'correction'; pieces: number; part: 'whole' | 'upper' | 'lower'; wearers: string[]; paid: boolean; carried: boolean }
@@ -1240,6 +1254,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     prdTv: () => call<{ cards: BoardCard[]; steps: PrdStep[] }>('GET', '/api/prd/tv'),
     navSearch: (q: string) => call<NavResult[]>('GET', `/api/nav/search?${new URLSearchParams({ q })}`),
     prdJob: (id: string) => call<PrdJob>('GET', prdJob(id)),
+    floorToday: () => call<FloorToday>('GET', '/api/prd/floor/today'),
+    floorJob: (ref: string) => call<FloorJob>('GET', `/api/prd/floor/jobs/${encodeURIComponent(ref)}`),
+    floorRecord: (body: FloorRecord) => call<{ number: string; pieces: number; amountCents: number }>('POST', '/api/prd/floor/record', body),
     prdSetup: (jo: string, lineNo: number, body: PrdSetup) => call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/setup`), body),
     prdStep: (jo: string, lineNo: number, stepId: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) =>
       call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/steps/${stepId}/${action}`), reason ? { reason } : {}),
