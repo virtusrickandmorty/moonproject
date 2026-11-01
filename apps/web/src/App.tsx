@@ -20,6 +20,7 @@ import { DocView } from './generic/DocView.tsx';
 import { FORMS, PAGES, VIEWS } from './modules/screens.ts';
 import { JOB_ORDER_LATER } from './modules/QUO/quotation.ts';
 import { DashHome } from './modules/DASH/Home.tsx';
+import { FloorApp } from './modules/PRD/floor/FloorApp.tsx';
 import { PracticeBanner } from './modules/PLT/PracticeBanner.tsx';
 import { HealthDot } from './modules/PLT/HealthDot.tsx';
 import { RestoredNotice } from './modules/BAK/RestoredNotice.tsx';
@@ -71,6 +72,12 @@ function Stages() {
     setStage({ kind: 'login', message: 'You are signed out.' });
   });
   const [path = '/', query = ''] = location.split('?');
+  // The floor app (the owner's request, Nov 2026): full screen, without the menu. A production worker's own sign-in (the
+  // floor app without the production board) always opens it.
+  const floorOnly = stage.me.permissions.includes('prd.floor') && !stage.me.permissions.includes('prd.view');
+  if (stage.me.permissions.includes('prd.floor') && (floorOnly || path === '/floor' || path.startsWith('/floor/'))) {
+    return <><RestoredNotice me={stage.me} /><FloorApp me={stage.me} /></>;
+  }
   const fromQuotation = new URLSearchParams(query).get('from-quotation');
   // Production entries: every entry, or grouped by job order (the owner's request, Oct 2026).
   const withEntriesView = (key: string, list: ReactNode) => (key === 'prd.entry' ? <ProductionEntriesPage me={stage.me} list={list} /> : list);

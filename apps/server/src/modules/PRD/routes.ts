@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { AppError, GARMENT_TYPE_MAX, conflict, notFound } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { tx } from '../../platform/db/driver.ts';
-import { stamp } from '../../platform/clock.ts';
+import { stamp, today } from '../../platform/clock.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { clockGuard, engineEnv } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
@@ -12,6 +12,7 @@ import { garmentTypes } from '../RATE/public.ts';
 import { activeEmployees } from './emp.ts';
 import { carryWarnings } from './carry.ts';
 import { entriesByJobOrder, jobSummary, reassignWorker } from './summary.ts';
+import { floorJob, floorRecord, floorToday } from './floor.ts';
 import { COMPLEXITIES, SET_PARTS, availableFor, board, forwardedWearers, lineRoute, lineSetup, listSteps, listTemplates, reworkOpen, sendBackForRework, setupLine, stepAction, stepById, wearerPieces, wearersDone, type StepAction } from './production.ts';
 
 const setupBody = z
@@ -51,8 +52,23 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
     Object.fromEntries([...wearerPieces(db, jo, lineNo, stepId, part)].filter(([, w]) => w.left > 0).map(([n, w]) => [n, w.pieces]));
 
   /** One job order's production: each line's setup and route, with the pieces each step may still take (E7 rules 1–2), its wearers and who is done. */
-  app.get<{ Params: { jo: string } }>('/api/prd/jobs/:jo', { config: { permission: 'prd.view' } }, async (req) => {
-    const jo = jobOrderRef(db, req.params.jo);
+  app.get<{ Params: { jo: string } }>('/api/prd/jobs/:jo', { config: { permission: 'prd.view' } }, async (req) => jobDetail(req.params.jo));
+
+  // The floor app (the owner's request, Nov 2026): a production worker's own screens (floor.ts).
+  app.get('/api/prd/floor/today', { config: { permission: 'prd.floor' } }, async (req) => floorToday(db, currentUser(req).userId, today(clock)));
+  app.get<{ Params: { jo: string } }>('/api/prd/floor/jobs/:jo', { config: { permission: 'prd.floor' } }, async (req) => {
+    const job = floorJob(db, currentUser(req).userId, req.params.jo, today(clock));
+    const detail = jobDetail(job.jobOrder.id);
+    return { ...job, lines: job.lines.map((l) => ({ ...l, roster: detail.lines.find((d) => d.lineNo === l.lineNo)?.roster ?? [],
+      route: detail.lines.find((d) => d.lineNo === l.lineNo)?.route ?? null })) };
+  });
+  app.post('/api/prd/floor/record', { config: { permission: 'prd.floor' } }, async (req) => {
+    const u = currentUser(req);
+    return floorRecord(engineEnv(deps), { userId: u.userId, permissions: u.permissions }, req.body);
+  });
+
+  function jobDetail(ref: string) {
+    const jo = jobOrderRef(db, ref);
     if (!jo) throw notFound('The job order');
     const lines = lineState(db, jo.id).map((l) => {
       const route = lineRoute(db, jo.id, l.lineNo);
@@ -80,7 +96,7 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
       };
     });
     return { jobOrder: { id: jo.id, number: jo.number, status: jo.status, customerName: jo.customerName, dueDate: jo.dueDate, priority: jo.priority, stage: currentStage(db, jo.id) }, lines };
-  });
+  }
 
   /** The job order's production summary: every step of every item, who made what, with the wearers (the owner's request, Oct 2026). */
   app.get<{ Params: { jo: string } }>('/api/prd/jobs/:jo/summary', { config: { permission: 'prd.view' } }, async (req) => jobSummary(db, req.params.jo));
