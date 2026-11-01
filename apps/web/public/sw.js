@@ -33,3 +33,26 @@ self.addEventListener('fetch', (event) => {
     return answer;
   })());
 });
+
+// Phone notifications (the owner's request, Nov 2026): a push shows what came up in the person's bell; tapping it opens
+// that page in the app (an open window if there is one).
+self.addEventListener('push', (event) => {
+  let d = {};
+  try { d = event.data ? event.data.json() : {}; } catch { d = { title: event.data ? event.data.text() : '' }; }
+  event.waitUntil(self.registration.showNotification(d.title || 'Virtus', {
+    body: d.body || '', icon: '/icon-192.png', badge: '/icon-192.png', tag: d.tag, data: { href: d.href || '/dash/notifications' },
+  }));
+});
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = new URL((event.notification.data && event.notification.data.href) || '/', self.location.origin).href;
+  event.waitUntil((async () => {
+    const open = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of open) {
+      if (new URL(c.url).origin !== self.location.origin) continue;
+      try { await c.navigate(url); } catch { /* an old window: focus it as it is */ }
+      return c.focus();
+    }
+    return self.clients.openWindow(url);
+  })());
+});

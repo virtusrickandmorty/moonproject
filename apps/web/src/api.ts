@@ -1082,6 +1082,11 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     login: (username: string, password: string) => call<{ csrfToken: string }>('POST', '/api/auth/login', { username, password }).then(keep),
     me: () => call<Me>('GET', '/api/auth/me').then(keep),
     logout: () => call<unknown>('POST', '/api/auth/logout'),
+    /** Phone notifications (PUSH): the shop's public key, and turning them on or off for this phone. */
+    pushKey: () => call<{ publicKey: string; phones: number }>('GET', '/api/push/key'),
+    pushSubscribe: (body: { endpoint: string; keys: { p256dh: string; auth: string }; device: string }) => call<{ on: boolean; phones: number }>('POST', '/api/push/subscribe', body),
+    pushUnsubscribe: (endpoint: string) => call<{ on: boolean; phones: number }>('POST', '/api/push/unsubscribe', { endpoint }),
+    pushTest: () => call<{ sent: number; phones: number }>('POST', '/api/push/test', {}),
     changePassword: (currentPassword: string, newPassword: string) => call<unknown>('POST', '/api/auth/change-password', { currentPassword, newPassword }),
     /** The password again, for changes that need a fresh one (good for 5 minutes). */
     stepUp: (password: string) => call<{ ok: true }>('POST', '/api/auth/step-up', { password }),

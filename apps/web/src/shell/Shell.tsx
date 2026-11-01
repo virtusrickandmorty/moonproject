@@ -11,6 +11,7 @@ import { Button, longDate, manilaTime } from '../components/ui.tsx';
 import { showToast } from '../components/Toasts.tsx';
 import { MENU_FOLDS_KEY, applyMenuOrder, buildMenu, docPath, isHere, labelOf, openGroups, searchMenu, sectionsOf, subOf, type MenuGroup, type MenuItem } from './menu.ts';
 import { SearchBox } from '../modules/NAV/Search.tsx';
+import { PushToggle } from '../components/PushToggle.tsx';
 import { Breadcrumbs, CrumbName, crumbsFor } from './crumbs.tsx';
 import { followRowLink } from './rowLinks.ts';
 
@@ -375,6 +376,7 @@ export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = ''
             {open === 'user' && (
               <div className={pop}>
                 <p className="border-b border-slate-100 font-semibold sm:hidden">{me.displayName}</p>
+                <div className="!cursor-default !bg-white"><p className="pb-1 text-xs font-semibold text-slate-500">Notifications on this computer</p><PushToggle where="computer" /></div>
                 <Link to="/account/password">Change password</Link>
                 <button type="button" onClick={onSignOut}>Sign out</button>
               </div>
@@ -509,6 +511,8 @@ function PhoneTabs({ menu, subs, path, me, onSignOut }: { menu: MenuList; subs?:
             ))}
             {sheet === 'More' && (
               <div className="mt-2 border-t border-slate-100 pt-2">
+                <p className="px-1 pb-1 pt-2 text-xs font-bold uppercase tracking-wider text-slate-500">Notifications on this phone</p>
+                <PushToggle className="px-3 pb-2" />
                 <p className="px-1 pb-1 pt-2 text-xs font-bold uppercase tracking-wider text-slate-500">{me.displayName}</p>
                 <Link to="/account/password" className="flex min-h-12 items-center rounded-xl px-3 text-[15px] font-semibold text-slate-800">Change password</Link>
                 <button type="button" onClick={onSignOut} className="flex min-h-12 w-full items-center rounded-xl px-3 text-left text-[15px] font-semibold text-red-700">Sign out</button>
