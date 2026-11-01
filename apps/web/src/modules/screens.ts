@@ -123,6 +123,7 @@ import { AssetPage, Assets } from './FA/Assets.tsx';
 import { PersonPage, People } from './EQ/People.tsx';
 import { LoanPage, Loans } from './LOAN/Loans.tsx';
 import { SizerSets } from './SZR/Sizers.tsx';
+import { Costing } from './EST/Costing.tsx';
 import { ImageTools } from './IMG/ImageTools.tsx';
 import { OpeningForm as OpeningAssetForm } from './FA/OpeningForm.tsx';
 import { Backups } from './BAK/Backups.tsx';
@@ -287,6 +288,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/loan/loans': Loans,
   '/loan/loans/:id': LoanPage,
   '/szr/sets': SizerSets,
+  '/est': Costing,
   '/img': ImageTools,
 };
 
