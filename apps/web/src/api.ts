@@ -359,6 +359,24 @@ export interface PrdSetup { templateId?: number; stepIds: number[]; garmentType?
 export interface Worker { id: string; code: string; name: string }
 export interface PieceRate { id: number; garmentType: string; stepCode: string; complexity: string; part?: 'whole' | 'upper' | 'lower'; rateCents: number; effectiveFrom: string; reason: string; createdAt: string }
 export interface RateTable { asOf: string; current: PieceRate[]; history: PieceRate[]; garmentTypes: string[]; /** Rates in force for a garment type no price list item goes by, with how many job order items are made as it. */ unmatched: (PieceRate & { jobItems: number })[] }
+/** Costing (EST, the owner's request, Nov 2026): cost sheets per price list item and the costing rules. */
+export interface EstRules { id: number; overheadBp: number; commissionBp: number; roundToCents: number; tiers: { fromQty: number; marginBp: number }[]; reason: string; createdAt: string; starter: boolean }
+export interface EstLineInput { kind: 'materials' | 'sublimation'; supplyId?: string; description: string; qtyMilli: number; typedCostCents?: number }
+export interface EstSheetInput { itemId: string; garmentType: string; complexity: 'simple' | 'standard' | 'complex'; isSet: boolean; setupCents: number; lines: EstLineInput[]; reason: string }
+export interface EstTier { fromQty: number; marginBp: number; costCents: number; priceCents: number; commissionCents: number; profitCents: number; catalogCents: number | null }
+export interface EstCosting {
+  itemId: string; itemName: string; unit: 'pc' | 'set'; garmentType: string; complexity: EstSheetInput['complexity']; isSet: boolean; setupCents: number;
+  versionId: number | null; reason: string | null; savedAt: string | null;
+  lines: (EstLineInput & { lineNo: number; unit: string; unitCostCents: number; savedCostCents: number; costSource: string; costCents: number })[];
+  labour: { stepCode: string; stepName: string; part: string; complexity: string; rateCents: number }[];
+  materialsCents: number; sublimationCents: number; labourCents: number; directCents: number; overheadCents: number;
+  tiers: EstTier[]; rules: EstRules; suggestions: { code: string; level: 'info' | 'warning'; message: string; priceCents?: number; fromQty?: number }[];
+}
+/** What someone without est.cost.view gets: the suggested prices only. */
+export interface EstPrices { itemId: string; itemName: string; unit: 'pc' | 'set'; savedAt: string | null; tiers: { fromQty: number; priceCents: number; catalogCents: number | null }[] }
+export type EstSheets = { costs: true; sheets: EstCosting[]; rules: EstRules } | { costs: false; sheets: EstPrices[] };
+export interface EstItem { code: string; name: string; class: string; unit: 'pc' | 'set'; isActive: boolean }
+
 /** Employees and time (EMP). Government IDs arrive masked without emp.view_ids; pay history is null without pay.view_rates. */
 export interface EmployeeRow { id: string; code: string; fullName: string; position: string | null; department: string | null; costCentre: string; isActive: boolean; hireDate: string; separatedOn: string | null; hasPayoutQr?: boolean }
 /** The employee's bank or GCash QR picture in force (its bytes at payoutQrUrl). */
@@ -1230,6 +1248,12 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     prdSummary: (jo: string) => call<PrdSummary>('GET', `${prdJob(jo)}/summary`),
     prdEntriesByJobOrder: (q = '') => call<{ rows: PrdEntriesByJo[] }>('GET', `/api/prd/entries/by-job-order${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ''}`),
     prdReassign: (entryId: string, body: { rowNo: number; employeeId: string; reason: string }) => call<unknown>('POST', `/api/prd/entries/${encodeURIComponent(entryId)}/reassign`, body),
+    estSheets: () => call<EstSheets>('GET', '/api/est/sheets'),
+    estSheet: (itemId: string) => call<{ item: EstItem; sheet: EstCosting | EstPrices | null; garmentTypeGuess?: string | null }>('GET', `/api/est/sheets/${encodeURIComponent(itemId)}`),
+    estPreview: (body: Omit<EstSheetInput, 'reason'>) => call<EstCosting>('POST', '/api/est/sheets/preview', body),
+    estSave: (body: EstSheetInput) => call<EstCosting>('POST', '/api/est/sheets', body),
+    estSetRules: (body: Omit<EstRules, 'id' | 'createdAt' | 'starter'>) => call<EstRules>('POST', '/api/est/rules', body),
+    estPickers: (q = '') => call<{ items: { id: string; code: string; name: string }[]; supplies: { id: string; name: string; unit: string }[]; garmentTypes: string[] }>('GET', `/api/est/pickers?${new URLSearchParams({ q })}`),
     rates: () => call<RateTable>('GET', '/api/rate/rates'),
     addRate: (body: Omit<PieceRate, 'id' | 'createdAt'>) => call<PieceRate>('POST', '/api/rate/rates', body),
     /** The same new rate for many items (garment types) at once: all saved, or none (the owner's request, Oct 27, 2026). */
