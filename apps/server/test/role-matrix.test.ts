@@ -214,10 +214,10 @@ describe('default roles against the plan (C6, E13)', () => {
 // order by its number (status only, limited per sender), the delivery fee for an address, and the support form; and the
 // website's AI assistant (modules/AIA): whether it is on, one chat message at a time and the handoff to the Support inbox
 // (each limited per sender, the chat to 30 messages).
-const PUBLIC_ROUTES = ['GET /*', 'GET /api/aia/public', 'GET /api/health', 'GET /api/setup/status', 'GET /api/shp/delivery-fee', 'GET /api/shp/orders/:number', 'GET /api/shp/payment',
+const PUBLIC_ROUTES = ['GET /*', 'GET /api/aia/public', 'GET /api/health', 'GET /api/olk/l/:token', 'GET /api/olk/l/:token/answers/:key', 'GET /api/setup/status', 'GET /api/shp/delivery-fee', 'GET /api/shp/orders/:number', 'GET /api/shp/payment',
   'GET /api/shp/payment/qr/:version', 'GET /api/shp/photos/:photoId', 'GET /api/shp/products', 'GET /api/shp/reviews', 'GET /api/shp/season', 'GET /api/shp/season/events/:id/picture', 'GET /robots.txt', 'GET /sitemap.xml',
-  'POST /api/aia/chat', 'POST /api/aia/handoff', 'POST /api/auth/login', 'POST /api/setup/first-owner', 'POST /api/shp/events', 'POST /api/shp/orders', 'POST /api/shp/orders/:number/cancel', 'POST /api/shp/orders/:number/payment', 'POST /api/shp/orders/:number/reviews', 'POST /api/shp/track',
-  'POST /api/sup/messages'];
+  'POST /api/aia/chat', 'POST /api/aia/handoff', 'POST /api/auth/login', 'POST /api/olk/l/:token/answers', 'POST /api/setup/first-owner', 'POST /api/shp/events', 'POST /api/shp/orders', 'POST /api/shp/orders/:number/cancel', 'POST /api/shp/orders/:number/payment', 'POST /api/shp/orders/:number/reviews', 'POST /api/shp/track',
+  'POST /api/sup/messages', 'PUT /api/olk/l/:token/answers/:key'];
 
 /** 'authenticated' routes that are open to every signed-in user by design (nothing the role lacks is shown). */
 const OPEN_TO_SIGNED_IN = ['GET /api/pref/menu', 'PUT /api/pref/menu', 'GET /api/system/tls', 'GET /api/system/practice', 'GET /api/settings', 'POST /api/auth/logout', 'GET /api/auth/me', 'POST /api/auth/change-password', 'POST /api/auth/step-up',
