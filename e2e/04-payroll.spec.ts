@@ -29,6 +29,9 @@ async function mark(page: Page, employee: string, date: string) {
     const shown = await page.getByRole('button', { name: new RegExp(`^Change ${employee}, `) }).first().getAttribute('aria-label');
     const shownDate = new Date(`${shown!.split(', ').slice(1, 3).join(', ').split(':')[0]} UTC`).toISOString().slice(0, 10);
     await page.getByRole('button', { name: date < shownDate ? 'Earlier half-month' : 'Later half-month' }).click();
+    // On a holiday the sheet opens with that day's holiday marks typed, not saved (Nov 1, say): they are not this test's.
+    const discard = page.getByRole('dialog', { name: 'Discard the unsaved marks?' });
+    if (await discard.waitFor({ timeout: 1_000 }).then(() => true, () => false)) await discard.getByRole('button', { name: 'Discard them' }).click();
     await page.waitForTimeout(300);
   }
   await cell.click();
