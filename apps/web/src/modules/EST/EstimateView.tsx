@@ -1,8 +1,38 @@
-/** A recorded cost estimate: each line's cost, suggested and asked price and profit, then the order's totals. */
+/** A recorded cost estimate: each line's cost, suggested and asked price and profit, the order's totals, and Make a quotation. */
+import { useEffect, useState } from 'react';
+import { api, type DocDetail } from '../../api.ts';
 import type { ViewParts } from '../../generic/DocView.tsx';
-import { peso } from '../../components/ui.tsx';
+import { Button, Notice, peso, useAction } from '../../components/ui.tsx';
+import { navigate } from '../../router.tsx';
+import { docPath } from '../../shell/menu.ts';
 import { Figures } from '../COL/parts.tsx';
-import type { EstimateDoc } from './estimate.ts';
+import { quotationFrom, type EstimateDoc } from './estimate.ts';
+
+const QUO = 'quo.quotation';
+
+/**
+ * Opens a quotation draft filled from a recorded estimate: its customer or prospect, its items and quantities, and its
+ * prices (a price that differs from the price list's goes in as a changed price, the estimate named as the reason).
+ * Nothing is recorded here: the quotation form opens for a last look before it is recorded.
+ */
+function MakeQuotation({ detail }: { detail: DocDetail }) {
+  const [canCreate, setCanCreate] = useState<boolean | null>(null);
+  const a = useAction();
+  useEffect(() => { void api.docTypes().then((t) => setCanCreate(t.find((x) => x.key === QUO)?.canCreate ?? false), () => setCanCreate(false)); }, []);
+  const doc = detail.doc as EstimateDoc | undefined;
+  if (!doc || detail.header.status !== 'posted') return null;
+  const make = () => a.run(async () => {
+    const draft = await api.createDraft(QUO, { values: quotationFrom(doc, detail.header.number) as unknown as Record<string, string> });
+    navigate(`${docPath(QUO, '/new')}?draft=${draft.id}`);
+  });
+  return (
+    <div className="space-y-2">
+      {canCreate === false && <Notice tone="info">Your role cannot prepare quotations.</Notice>}
+      {a.error && <Notice>{a.error}</Notice>}
+      <Button tone="primary" disabled={!canCreate || a.busy} onClick={make}>Make a quotation</Button>
+    </div>
+  );
+}
 
 export const estimateView: ViewParts = {
   extra: (detail) => {
@@ -35,6 +65,7 @@ export const estimateView: ViewParts = {
           <p className="text-sm text-slate-600">Margin {doc.marginBp / 100}%</p>
         </div>
         {doc.notes && <p><b>Notes:</b> {doc.notes}</p>}
+        <MakeQuotation detail={detail} />
       </div>
     );
   },
