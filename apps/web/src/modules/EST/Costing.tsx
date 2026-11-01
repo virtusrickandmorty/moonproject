@@ -71,16 +71,41 @@ function RulesSummary({ rules, onEdit }: { rules: EstRules; onEdit?: () => void 
   );
 }
 
+/** "12.5%", " 10 " → basis points; "1,000" → 1000. Null for anything that is not such a number. */
+export const percentBp = (t: string): number | null => {
+  const m = /^(\d{1,3})(?:\.(\d{1,2}))?$/.exec(t.replace(/[%\s]/g, ''));
+  return m ? Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0')) : null;
+};
+export const wholeNumber = (t: string): number | null => (/^\d{1,6}$/.test(t.replace(/[,\s]/g, '')) ? Number(t.replace(/[,\s]/g, '')) : null);
+
+/** The rules as the server takes them, or each box that is not right yet, in words. */
+export function rulesOf(v: { overhead: string; commission: string; roundTo: string; tiers: { fromQty: string; margin: string }[]; reason: string }) {
+  const problems: string[] = [];
+  const overheadBp = percentBp(v.overhead);
+  const commissionBp = percentBp(v.commission);
+  if (overheadBp === null || overheadBp > 10_000) problems.push('Overhead: type a percent from 0 to 100, like 10.');
+  if (commissionBp === null || commissionBp > 5_000) problems.push('Commission: type a percent from 0 to 50, like 5.');
+  const tiers = v.tiers.filter((t) => t.fromQty.trim() || t.margin.trim()).map((t, i) => {
+    const fromQty = wholeNumber(t.fromQty);
+    const marginBp = percentBp(t.margin);
+    if (fromQty === null || fromQty < 1) problems.push(`Tier ${i + 1}: type the pieces it starts from, like 12.`);
+    if (marginBp === null || marginBp > 9_000) problems.push(`Tier ${i + 1}: type the margin as a percent up to 90, like 35.`);
+    return { fromQty: fromQty ?? 0, marginBp: marginBp ?? 0 };
+  });
+  if (tiers.length === 0) problems.push('Add at least one tier.');
+  else if (!tiers.some((t) => t.fromQty === 1)) problems.push('One tier starts at 1 piece.');
+  if (new Set(tiers.map((t) => t.fromQty)).size !== tiers.length) problems.push('Each tier starts at a different number of pieces.');
+  if (tiers.some((t) => t.marginBp + (commissionBp ?? 0) >= 9_500)) problems.push('A margin and the commission together must stay under 95%.');
+  if (v.reason.trim().length < 10) problems.push('Reason: say why the rules change (10 characters or more).');
+  return problems.length ? { problems } : { problems, rules: { overheadBp: overheadBp!, commissionBp: commissionBp!, roundToCents: Number(v.roundTo), tiers, reason: v.reason.trim() } };
+}
+
 function RulesForm({ rules, onSaved }: { rules: EstRules; onSaved: () => void }) {
   const [v, setV] = useState({ overhead: String(rules.overheadBp / 100), commission: String(rules.commissionBp / 100), roundTo: String(rules.roundToCents),
     tiers: rules.tiers.map((t) => ({ fromQty: String(t.fromQty), margin: String(t.marginBp / 100) })), reason: '' });
   const a = useAction();
-  const bp = (s: string) => Math.round(Number(s) * 100);
-  const save = () => a.run(async () => {
-    await api.estSetRules({ overheadBp: bp(v.overhead), commissionBp: bp(v.commission), roundToCents: Number(v.roundTo), reason: v.reason.trim(),
-      tiers: v.tiers.filter((t) => t.fromQty.trim()).map((t) => ({ fromQty: Number(t.fromQty), marginBp: bp(t.margin) })) });
-    onSaved();
-  });
+  const checked = rulesOf(v);
+  const save = () => a.run(async () => { await api.estSetRules(checked.rules!); onSaved(); });
   const setTier = (i: number, t: Partial<(typeof v.tiers)[number]>) => setV({ ...v, tiers: v.tiers.map((x, j) => (j === i ? { ...x, ...t } : x)) });
   return (
     <div className="space-y-3">
@@ -100,8 +125,9 @@ function RulesForm({ rules, onSaved }: { rules: EstRules; onSaved: () => void })
       ))}
       <Button onClick={() => setV({ ...v, tiers: [...v.tiers, { fromQty: '', margin: '' }] })}>Add a tier</Button>
       <Field label="Reason" required hint="10 characters or more"><input className={inputClass} value={v.reason} onChange={(e) => setV({ ...v, reason: e.target.value })} /></Field>
+      {checked.problems.length > 0 && <Notice tone="warning">{checked.problems.join(' ')}</Notice>}
       {a.error && <Notice>{a.error}</Notice>}
-      <Button tone="primary" disabled={a.busy || v.reason.trim().length < 10} onClick={save}>Save the rules</Button>
+      <Button tone="primary" disabled={a.busy || checked.problems.length > 0} onClick={save}>Save the rules</Button>
     </div>
   );
 }
