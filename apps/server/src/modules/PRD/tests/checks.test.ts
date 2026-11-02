@@ -136,7 +136,7 @@ it('on a set, takes the wearers and how many of each for the upper or the lower 
   const lower = await record({ part: 'lower', pieces: 1, wearers: [{ rowNo: 1, pieces: 1 }] });
   expect(lower.statusCode, lower.body).toBe(200);
   const sewing = (await sewer.get(`/api/prd/floor/jobs/${set}`)).json().lines[0].steps.find((s: { id: number }) => s.id === SEWING);
-  expect(sewing.partWaitingWearers).toEqual({ upper: { 1: 1 }, lower: { 1: 1 } });
+  expect(sewing).toMatchObject({ partWaiting: { upper: 1, lower: 1 }, partWaitingWearers: { upper: { 1: 1 }, lower: { 1: 1 } } });
 
   for (const scan of [upper, lower]) expect((await production.post(`/api/prd/checks/${scan.json().id}/approve`, {})).statusCode).toBe(200);
   const route = (await sewer.get(`/api/prd/floor/jobs/${set}`)).json().lines[0].route.find((s: { id: number }) => s.id === SEWING);

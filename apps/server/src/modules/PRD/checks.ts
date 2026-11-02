@@ -46,9 +46,10 @@ export function setWorkerSteps(db: Db, employeeId: string, raw: unknown, who: Wh
   return after;
 }
 
-/** Pieces scanned on a step of a line and still waiting for the check (all workers). */
-export function waitingPieces(db: Db, jobOrderId: string, lineNo: number, stepId: number): number {
-  return db.prepare("SELECT COALESCE(SUM(pieces), 0) FROM prd_floor_claims WHERE job_order_id = ? AND line_no = ? AND step_id = ? AND status = 'waiting'").pluck().get(jobOrderId, lineNo, stepId) as number;
+/** Pieces scanned on a step of a line and still waiting for the check (all workers); on a set, of one part when given. */
+export function waitingPieces(db: Db, jobOrderId: string, lineNo: number, stepId: number, part?: 'upper' | 'lower'): number {
+  return db.prepare(`SELECT COALESCE(SUM(pieces), 0) FROM prd_floor_claims WHERE job_order_id = ? AND line_no = ? AND step_id = ? AND status = 'waiting'${part ? ' AND part = ?' : ''}`)
+    .pluck().get(jobOrderId, lineNo, stepId, ...(part ? [part] : [])) as number;
 }
 
 /** Each wearer's pieces on scans still waiting for the check, on one step of a line (roster row → pieces; all workers). */
