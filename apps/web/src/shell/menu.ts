@@ -52,6 +52,8 @@ export const SCREENS: MenuItem[] = [
   { group: 'Admin', label: 'Practice shop', path: '/admin/practice' },
   { group: 'Production', label: 'Production board', path: '/prd/board', permission: 'prd.view' },
   { group: 'Production', label: 'Check scanned work', path: '/prd/checks', permission: 'prd.verify' },
+  // The floor app, for a sign-in that is both a production worker and on the office screens (a production head).
+  { group: 'Production', label: 'My floor app', path: '/floor', permission: 'prd.floor' },
   { group: 'Production', label: 'TV board', path: '/prd/tv', permission: 'prd.tv' },
   { group: 'Production', label: 'Sizer sets', path: '/szr/sets', permission: 'szr.loan.view' },
   { group: 'Production', label: 'Image tools', path: '/img', permission: 'img.use' },
@@ -218,7 +220,7 @@ export const SUBS: Partial<Record<MenuGroup, [sub: string, keys: string[]][]>> =
     ['TPL services', ['/tpl', 'tpl.']],
   ],
   Production: [
-    ['Production', ['/prd/board', '/prd/checks', 'prd.entry', '/prd/tv']],
+    ['Production', ['/prd/board', '/prd/checks', '/floor', 'prd.entry', '/prd/tv']],
     ['Sizers', ['/szr']],
     ['Design', ['/img']],
   ],

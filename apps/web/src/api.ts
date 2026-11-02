@@ -366,7 +366,8 @@ export interface FloorScan {
   checkedPieces: number | null; reason: string | null; checkedAt: string | null; entryNumber: string | null;
 }
 /** The production head's list: waiting (with what it pays and anything that stops it) and the last ones checked. */
-export interface PrdChecks { waiting: (FloorScan & { amountCents: number; problems: string[] })[]; checked: (FloorScan & { checkedBy: string | null })[] }
+/** yours: the checker's own pieces (another head or the owner checks them). */
+export interface PrdChecks { waiting: (FloorScan & { amountCents: number; problems: string[]; yours: boolean })[]; checked: (FloorScan & { checkedBy: string | null })[] }
 /** The open job orders with pieces left on the steps the worker does. ready: came out of the step before; waiting: scanned, not checked. */
 export interface FloorOpen {
   steps: { id: number; name: string }[];
