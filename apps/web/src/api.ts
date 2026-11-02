@@ -367,6 +367,12 @@ export interface FloorScan {
 }
 /** The production head's list: waiting (with what it pays and anything that stops it) and the last ones checked. */
 /** yours: the checker's own pieces (another head or the owner checks them). */
+/** GET /api/pay/my-payslips: the floor worker's own payslips, newest first. */
+export interface OwnPayslip {
+  runId: string; number: string; payDate: string; periodStart: string; periodEnd: string;
+  earnings: { description: string; amountCents: number }[]; grossCents: number;
+  deductions: { what: string; amountCents: number }[]; refundCents: number; netCents: number; released: boolean;
+}
 export interface PrdChecks { waiting: (FloorScan & { amountCents: number; problems: string[]; yours: boolean })[]; checked: (FloorScan & { checkedBy: string | null })[] }
 /** The open job orders with pieces left on the steps the worker does. ready: came out of the step before; waiting: scanned, not checked. */
 export interface FloorOpen {
@@ -1318,6 +1324,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     floorJob: (ref: string) => call<FloorJob>('GET', `/api/prd/floor/jobs/${encodeURIComponent(ref)}`),
     floorRecord: (body: FloorRecord) => call<{ id: string; pieces: number; amountCents: number; waiting: true }>('POST', '/api/prd/floor/record', body),
     floorOpen: () => call<FloorOpen>('GET', '/api/prd/floor/open'),
+    myPayslips: () => call<{ payslips: OwnPayslip[] }>('GET', '/api/pay/my-payslips'),
     prdChecks: () => call<PrdChecks>('GET', '/api/prd/checks'),
     prdChecksCount: () => call<{ waiting: number }>('GET', '/api/prd/checks/count'),
     prdApproveScan: (id: string, pieces?: number) => call<{ number: string; pieces: number; amountCents: number }>('POST', `/api/prd/checks/${encodeURIComponent(id)}/approve`, pieces ? { pieces } : {}),

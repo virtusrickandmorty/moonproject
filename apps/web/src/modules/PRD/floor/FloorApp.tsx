@@ -6,7 +6,7 @@
  * signed-in worker's own pieces, today, and they count once the production head approves them (the owner's request, Nov 2026).
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { api, ApiError, type FloorJob, type FloorScan, type FloorWeek, type Me } from '../../../api.ts';
+import { api, ApiError, type FloorJob, type FloorScan, type FloorWeek, type Me, type OwnPayslip } from '../../../api.ts';
 import { navigate, useLocation } from '../../../router.tsx';
 import { startLive, stopLive, useLiveReload } from '../../../live.ts';
 import { peso } from '../../../components/ui.tsx';
@@ -29,7 +29,7 @@ export function FloorApp({ me }: { me: Me }) {
     <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-page text-[#0f172a]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       {job ? <JobScreen jobRef={decodeURIComponent(job)} lineNo={Number(q.get('line')) || undefined} stepId={Number(q.get('step')) || undefined} />
         : <>
-          <main className="flex-1 px-5 pb-28 pt-6">{tab === 'today' ? <TodayScreen me={me} /> : tab === 'jobs' ? <OpenJobsScreen /> : <EarningsScreen />}</main>
+          <main className="flex-1 px-5 pb-28 pt-6">{tab === 'today' ? <TodayScreen me={me} /> : tab === 'jobs' ? <OpenJobsScreen /> : <EarningsScreen me={me} />}</main>
           <TabBar tab={tab} />
         </>}
     </div>
@@ -486,7 +486,7 @@ function SavedScreen({ saved, jobOrderNumber, onMore }: { saved: { pieces: numbe
   );
 }
 
-function EarningsScreen() {
+function EarningsScreen({ me }: { me: Me }) {
   const { data, error } = useData(api.floorToday, []);
   if (error) return <Problem text={error} />;
   if (!data) return <Waiting />;
@@ -504,7 +504,8 @@ function EarningsScreen() {
           ))}
         </ul>
       )}
-      <p className="text-[13px] leading-relaxed text-slate-500">Paid with the weekly payroll after {dayName(data.week.to, { weekday: 'long' })}. SSS, PhilHealth, Pag-IBIG and any cash advance come off then; your payslip shows each.</p>
+      <p className="text-[13px] leading-relaxed text-slate-500">Paid with the weekly payroll after {dayName(data.week.to, { weekday: 'long' })}. SSS, PhilHealth, Pag-IBIG and any cash advance come off then; your payslip below shows each.</p>
+      {me.permissions.includes('pay.own.view') && <Payslips />}
       <h2 className="text-base font-extrabold">Past weeks</h2>
       <ul className="divide-y divide-slate-100 rounded-2xl bg-white">
         {data.pastWeeks.map((w) => (
@@ -514,6 +515,60 @@ function EarningsScreen() {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/** The worker's payslips (the owner's request, Nov 2026): net pay of each recorded payroll, tap for the breakdown. */
+function Payslips() {
+  const { data, error } = useData(api.myPayslips, []);
+  const [open, setOpen] = useState<string | null>(null);
+  if (error) return <Problem text={error} />;
+  if (!data) return <Waiting />;
+  return (
+    <>
+      <h2 className="text-base font-extrabold">My payslips</h2>
+      {data.payslips.length === 0 ? <p className="rounded-2xl bg-white p-5 text-[15px] text-slate-600">No payslip yet. It shows here once the office records the payroll.</p> : (
+        <ul className="space-y-2">
+          {data.payslips.map((p) => (
+            <li key={p.runId} className="rounded-2xl bg-white">
+              <button type="button" aria-expanded={open === p.runId} onClick={() => setOpen(open === p.runId ? null : p.runId)} className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left">
+                <span>
+                  <span className="block text-sm font-bold">{short(p.periodStart)} – {short(p.periodEnd)}</span>
+                  <span className={`text-xs font-bold ${p.released ? 'text-emerald-800' : 'text-amber-800'}`}>{p.released ? 'Paid' : 'Not paid yet'}</span>
+                </span>
+                <span className="text-right">
+                  <span className="block text-xl font-extrabold tabular-nums">{peso(p.netCents)}</span>
+                  <span className="text-xs font-semibold text-slate-500">net pay {open === p.runId ? '▴' : '▾'}</span>
+                </span>
+              </button>
+              {open === p.runId && <PayslipBreakdown slip={p} />}
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+function PayslipBreakdown({ slip }: { slip: OwnPayslip }) {
+  const row = (what: string, cents: number, tone = '') => (
+    <p key={what} className={`flex items-baseline justify-between gap-3 py-1 text-sm ${tone}`}><span>{what}</span><span className="shrink-0 tabular-nums">{peso(cents)}</span></p>
+  );
+  const taken = slip.deductions.reduce((n, d) => n + d.amountCents, 0);
+  return (
+    <div className="border-t border-slate-100 px-4 pb-4 pt-2">
+      <p className="pt-1 text-xs font-extrabold uppercase tracking-wide text-slate-500">Earned</p>
+      {slip.earnings.map((e, i) => <div key={i}>{row(e.description, e.amountCents)}</div>)}
+      {row('Gross pay', slip.grossCents, 'border-t border-slate-100 font-bold')}
+      {slip.deductions.length > 0 && <>
+        <p className="pt-2 text-xs font-extrabold uppercase tracking-wide text-slate-500">Taken off</p>
+        {slip.deductions.map((d, i) => <div key={i}>{row(d.what, -d.amountCents, 'text-rose-700')}</div>)}
+        {row('Total taken off', -taken, 'border-t border-slate-100 font-bold text-rose-700')}
+      </>}
+      {slip.refundCents > 0 && row('Tax refund', slip.refundCents, 'text-emerald-800')}
+      {row('Net pay', slip.netCents, 'border-t border-slate-200 pt-2 text-base font-extrabold')}
+      <p className="pt-1 text-xs text-slate-500">{slip.number} · pay date {short(slip.payDate)}</p>
     </div>
   );
 }
