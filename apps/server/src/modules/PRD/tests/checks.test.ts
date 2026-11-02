@@ -13,6 +13,7 @@ let production: Client, owner: Client, sewer: Client;
 let w: ReturnType<typeof seedEmployees>;
 let jo: string;
 let plainJob: () => Promise<string>;
+let school: string; // an active test customer
 const CUTTING = 4, SEWING = 6, PACKING = 8;
 const entries = () => env.db.prepare("SELECT COUNT(*) FROM documents WHERE doc_type = 'prd.entry'").pluck().get() as number;
 
@@ -22,6 +23,7 @@ beforeEach(async () => {
   const encoder = await env.as('encoder');
   [production, owner] = [await env.as('production'), await env.as('owner')];
   const c = seedCustomers(env.db, encoder.userId);
+  school = c.school;
   w = seedEmployees(env.db);
   const roster = [['Ana Reyes', 3], ['Ben Cruz', 2], ['Cy Lim', 3]].map(([name, qty]) => ({ name, sizeMode: 'preset', size: 'M', qty }));
   const lines = [{ kind: 'made_to_order', description: 'Team shirt', qty: 8, unitPriceCents: 30_000, discountCents: 0, roster }];
@@ -110,6 +112,36 @@ it('takes the wearers and how many of each, and records a row for each wearer on
   // Ana's 3 and Ben's 2 are done on sewing; Cy is not.
   const route = (await sewer.get(`/api/prd/floor/jobs/${jo}`)).json().lines[0].route.find((s: { id: number }) => s.id === SEWING);
   expect(route.doneWearers).toEqual([1, 2]);
+});
+
+it('on a set, takes the wearers and how many of each for the upper or the lower part', async () => {
+  const accountant = await env.as('accountant');
+  for (const [part, rateCents] of [['upper', 4_500], ['lower', 3_000]] as const) {
+    expect((await accountant.post('/api/rate/rates', { garmentType: 'Jersey set', stepCode: 'SEWING', complexity: 'standard', part, rateCents, effectiveFrom: '2026-09-28', reason: 'Set rates for the jersey set' })).statusCode).toBe(200);
+  }
+  const encoder = await env.as('encoder');
+  const roster = ['Ana Reyes', 'Ben Cruz'].map((name) => ({ name, sizeMode: 'preset', size: 'M', qty: 1 }));
+  const lines = [{ kind: 'made_to_order', description: 'Jersey set', qty: 2, unitPriceCents: 90_000, discountCents: 0, roster }];
+  const r = await encoder.post('/api/docs/jo.job_order/post', { input: { customerId: school, dueInDays: 10, priority: 'normal', paymentTerms: 'full', lines }, expectedTotalCents: 180_000 }, idem());
+  expect(r.statusCode, r.body).toBe(200);
+  const set = r.json().id as string;
+  expect((await production.post(`/api/prd/jobs/${set}/lines/1/setup`, { templateId: 1, stepIds: [SEWING, PACKING], garmentType: 'Jersey set', complexity: 'standard', isSet: true })).statusCode).toBe(200);
+  const record = (body: object) => sewer.post('/api/prd/floor/record', { jobOrderId: set, lineNo: 1, stepId: SEWING, ...body });
+
+  expect((await record({ part: 'upper', pieces: 1 })).json()).toMatchObject({ code: 'WEARERS_NEEDED' });
+  const upper = await record({ part: 'upper', pieces: 1, wearers: [{ rowNo: 1, pieces: 1 }] });
+  expect(upper.statusCode, upper.body).toBe(200);
+  expect(upper.json()).toMatchObject({ amountCents: 4_500 });
+  // Ana's lower part is still free; her upper is waiting for the check.
+  expect((await record({ part: 'upper', pieces: 1, wearers: [{ rowNo: 1, pieces: 1 }] })).json()).toMatchObject({ code: 'WEARER_WAITING' });
+  const lower = await record({ part: 'lower', pieces: 1, wearers: [{ rowNo: 1, pieces: 1 }] });
+  expect(lower.statusCode, lower.body).toBe(200);
+  const sewing = (await sewer.get(`/api/prd/floor/jobs/${set}`)).json().lines[0].steps.find((s: { id: number }) => s.id === SEWING);
+  expect(sewing).toMatchObject({ partWaiting: { upper: 1, lower: 1 }, partWaitingWearers: { upper: { 1: 1 }, lower: { 1: 1 } } });
+
+  for (const scan of [upper, lower]) expect((await production.post(`/api/prd/checks/${scan.json().id}/approve`, {})).statusCode).toBe(200);
+  const route = (await sewer.get(`/api/prd/floor/jobs/${set}`)).json().lines[0].route.find((s: { id: number }) => s.id === SEWING);
+  expect(route.partWearersDone).toEqual({ upper: [1], lower: [1] });
 });
 
 it('keeps a scan waiting until the production head approves it, dated the day of the scan, with the pieces counted', async () => {

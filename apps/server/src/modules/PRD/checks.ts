@@ -2,8 +2,9 @@
  * Open jobs and checked scans on the floor app (the owner's request, Nov 2026):
  * - The steps a worker does are ticked on their employee page; the floor app lists every open job order with pieces left
  *   on those steps, so a worker sees what is waiting at their station.
- * - On an item with a wearer list, the worker picks the wearers and how many of each they did; each wearer is a row of
- *   their own on the Production Entry (a row with one wearer may be part of their pieces).
+ * - On an item with a wearer list, the worker picks the wearers and how many of each they did (on a set, for the upper or
+ *   the lower part); each wearer is a row of their own on the Production Entry (a row with one wearer may be part of their
+ *   pieces).
  * - What a worker scans and records waits for the production head's check (prd.verify). Approved, it is recorded as a
  *   Production Entry dated the day of the scan, with every rule of Record pieces; only then does it count on the job and
  *   in the worker's pay. Rejected, nothing is recorded and the worker sees why.
@@ -45,9 +46,10 @@ export function setWorkerSteps(db: Db, employeeId: string, raw: unknown, who: Wh
   return after;
 }
 
-/** Pieces scanned on a step of a line and still waiting for the check (all workers). */
-export function waitingPieces(db: Db, jobOrderId: string, lineNo: number, stepId: number): number {
-  return db.prepare("SELECT COALESCE(SUM(pieces), 0) FROM prd_floor_claims WHERE job_order_id = ? AND line_no = ? AND step_id = ? AND status = 'waiting'").pluck().get(jobOrderId, lineNo, stepId) as number;
+/** Pieces scanned on a step of a line and still waiting for the check (all workers); on a set, of one part when given. */
+export function waitingPieces(db: Db, jobOrderId: string, lineNo: number, stepId: number, part?: 'upper' | 'lower'): number {
+  return db.prepare(`SELECT COALESCE(SUM(pieces), 0) FROM prd_floor_claims WHERE job_order_id = ? AND line_no = ? AND step_id = ? AND status = 'waiting'${part ? ' AND part = ?' : ''}`)
+    .pluck().get(jobOrderId, lineNo, stepId, ...(part ? [part] : [])) as number;
 }
 
 /** Each wearer's pieces on scans still waiting for the check, on one step of a line (roster row → pieces; all workers). */
@@ -134,8 +136,8 @@ export function scanPieces(env: EngineEnv, worker: { id: string }, actor: Actor,
   const wearers = v.wearers ?? [];
   const roster = rosterOf(db, v.jobOrderId, v.lineNo);
   const name = (n: number) => { const r = roster.find((x) => x.rowNo === n); return r ? r.jerseyName ?? r.wearerName : `wearer ${n}`; };
-  // An item with a wearer list: who the pieces were for, and how many of each (a set's parts are counted as before).
-  if (!v.part && roster.length > 0 && wearers.length === 0) throw new AppError('WEARERS_NEEDED', 'Pick who the pieces were for, and how many for each.', 422);
+  // An item with a wearer list: who the pieces were for, and how many of each (a set: of the part scanned).
+  if (roster.length > 0 && wearers.length === 0) throw new AppError('WEARERS_NEEDED', 'Pick who the pieces were for, and how many for each.', 422);
   if (new Set(wearers.map((w) => w.rowNo)).size < wearers.length) throw new AppError('WEARER_TWICE', 'A wearer is picked twice. Pick each one once.', 422);
   if (wearers.length && wearers.reduce((n, w) => n + w.pieces, 0) !== v.pieces) throw new AppError('WEARERS_PIECES', "The pieces are not the sum of the wearers' counts. Reload and try again.", 422);
   // Pieces on someone's scan still waiting for the check are not free to scan again.

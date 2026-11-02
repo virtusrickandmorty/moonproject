@@ -119,6 +119,7 @@ export function floorJob(db: Db, userId: string, ref: string, today: string) {
         id: s.id, name: s.name, status: s.status, pieces: s.pieces, available: availableFor(route, s.id, l.qty), payBasis: s.payBasis,
         waiting: waitingPieces(db, jo.id, l.lineNo, s.id), // scanned, not checked yet
         waitingWearers: Object.fromEntries(waitingByWearer(db, jo.id, l.lineNo, s.id)), // the same per wearer (roster row → pieces)
+        ...(setup.isSet ? { partWaiting: { upper: waitingPieces(db, jo.id, l.lineNo, s.id, 'upper'), lower: waitingPieces(db, jo.id, l.lineNo, s.id, 'lower') }, partWaitingWearers: { upper: Object.fromEntries(waitingByWearer(db, jo.id, l.lineNo, s.id, 'upper')), lower: Object.fromEntries(waitingByWearer(db, jo.id, l.lineNo, s.id, 'lower')) } } : {}),
         rates: parts.map((part) => ({ part, rateCents: s.payBasis === 'daily' ? null : rateAt(db, setup.garmentType, s.code, setup.complexity, today, part)?.rateCents ?? null })),
       })),
     }];

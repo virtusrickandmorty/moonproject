@@ -270,10 +270,22 @@ function JobScreen({ jobRef, lineNo, stepId }: { jobRef: string; lineNo?: number
   const open = l.steps.filter((s) => s.status !== 'completed' && s.status !== 'not_needed');
   const s = l.steps.find((x) => x.id === step) ?? open.find((x) => x.payBasis !== 'daily') ?? open[0] ?? l.steps[0]!;
   const route = l.route?.find((r) => r.id === s.id);
-  const left = Math.max(0, l.qty - s.pieces - s.waiting); // scanned by others and not checked yet: not free
+  // A set: the top and the shorts are counted apart (the owner's request, Nov 2026), each with its pieces done, left and rate.
+  const parts = l.isSet && route?.partPieces ? (['upper', 'lower'] as const).map((p) => {
+    const done = route.partPieces![p];
+    const waiting = s.partWaiting?.[p] ?? 0;
+    return { part: p, name: p === 'upper' ? 'Top' : 'Shorts', done, waiting, left: Math.max(0, l.qty - done - waiting), rate: s.rates.find((r) => r.part === p)?.rateCents ?? null };
+  }) : null;
+  // Scanned by others and not checked yet: not free.
+  const left = parts ? parts.reduce((n, p) => n + p.left, 0) : Math.max(0, l.qty - s.pieces - s.waiting);
   const rate = s.rates[0]?.rateCents ?? null;
-  const status = (rowNo: number, qty: number) => route?.doneWearers?.includes(rowNo) ? { label: 'Done', tone: 'bg-emerald-50 text-emerald-800' }
-    : route?.partlyDone?.[rowNo] ? { label: `${route.partlyDone[rowNo]} of ${qty}`, tone: 'bg-amber-50 text-amber-800' } : { label: 'Not yet', tone: 'bg-slate-100 text-slate-700' };
+  const status = (rowNo: number, qty: number, part?: 'upper' | 'lower') => {
+    const done = part ? route?.partWearersDone?.[part] : route?.doneWearers;
+    const partly = part ? route?.partPartlyDone?.[part] : route?.partlyDone;
+    const name = part ? `${part === 'upper' ? 'Top' : 'Shorts'} ` : '';
+    return done?.includes(rowNo) ? { label: part ? `${name}done` : 'Done', tone: 'bg-emerald-50 text-emerald-800' }
+      : partly?.[rowNo] ? { label: `${name}${partly[rowNo]} of ${qty}`, tone: 'bg-amber-50 text-amber-800' } : { label: part ? `${name}not yet` : 'Not yet', tone: 'bg-slate-100 text-slate-700' };
+  };
   return (
     <div className="flex min-h-dvh flex-col">
       <div className="flex items-center gap-2 px-3 pt-4">{back}<span className="text-[17px] font-extrabold">{data.jobOrder.number}</span></div>
@@ -293,21 +305,35 @@ function JobScreen({ jobRef, lineNo, stepId }: { jobRef: string; lineNo?: number
             className={`rounded-full px-3 py-1.5 text-xs font-bold ${x.id === s.id ? 'bg-indigo-600 text-white' : x.status === 'completed' ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-200/70 text-slate-700'}`}>
             {x.status === 'completed' ? '✓ ' : ''}{x.name}</button>)}
         </div>
+        {parts ? parts.map((p) => (
+          <div key={p.part} className="rounded-2xl bg-white p-3">
+            <p className="text-sm font-extrabold">{p.name}</p>
+            <div className="mt-1 grid grid-cols-3 gap-2">
+              {[[p.done, 'done'], [p.left, 'left'], [p.rate === null ? '—' : peso(p.rate), s.payBasis === 'daily' ? 'daily pay' : 'per piece']].map(([v, k]) => (
+                <div key={String(k)}><p className="text-xl font-extrabold tabular-nums">{v}</p><p className="text-xs font-semibold text-slate-500">{k}</p></div>
+              ))}
+            </div>
+            {p.waiting > 0 && <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">{p.waiting} more scanned, waiting for the production head's check.</p>}
+          </div>
+        )) : <>
         <div className="grid grid-cols-3 gap-2">
           {[[s.pieces, 'done'], [left, 'left'], [rate === null ? '—' : peso(rate), s.payBasis === 'daily' ? 'daily pay' : 'per piece']].map(([v, k]) => (
             <div key={String(k)} className="rounded-2xl bg-white p-3"><p className="text-xl font-extrabold tabular-nums">{v}</p><p className="text-xs font-semibold text-slate-500">{k}</p></div>
           ))}
         </div>
         {s.waiting > 0 && <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">{s.waiting} more scanned, waiting for the production head's check.</p>}
+        </>}
         {l.roster.length > 0 && (
           <>
             <h2 className="text-base font-extrabold">Who it is for</h2>
             <ul className="divide-y divide-slate-100 rounded-2xl bg-white">
-              {l.roster.map((w) => { const st = status(w.rowNo, w.qty); return (
+              {l.roster.map((w) => { const sts = parts ? parts.map((p) => status(w.rowNo, w.qty, p.part)) : [status(w.rowNo, w.qty)]; return (
                 <li key={w.rowNo} className="flex items-center justify-between gap-3 px-4 py-3">
                   <span><span className="block text-[15px] font-bold">{[w.jerseyName ?? w.wearerName, w.jerseyNumber].filter(Boolean).join(' ')}</span>
                     <span className="text-xs font-semibold text-slate-500">{w.jerseyName ? `${w.wearerName} · ` : ''}{w.size ? `Size ${w.size} · ` : ''}{w.qty} pc{w.qty === 1 ? '' : 's'}</span></span>
-                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${st.tone}`}>{st.label}</span>
+                  <span className="flex shrink-0 flex-col items-end gap-1">
+                    {sts.map((st) => <span key={st.label} className={`rounded-full px-2.5 py-1 text-xs font-bold ${st.tone}`}>{st.label}</span>)}
+                  </span>
                 </li>
               ); })}
             </ul>
@@ -327,20 +353,25 @@ function JobScreen({ jobRef, lineNo, stepId }: { jobRef: string; lineNo?: number
 }
 
 type Line = FloorJob['lines'][number];
-function RecordSheet({ job, line, step, left, onClose, onSaved }: { job: FloorJob; line: Line; step: Line['steps'][number]; left: number; onClose: () => void; onSaved: (r: { pieces: number; amountCents: number }) => void }) {
-  const [pieces, setPieces] = useState(Math.min(left, 10));
+function RecordSheet({ job, line, step, left: lineLeft, onClose, onSaved }: { job: FloorJob; line: Line; step: Line['steps'][number]; left: number; onClose: () => void; onSaved: (r: { pieces: number; amountCents: number }) => void }) {
+  const [pieces, setPieces] = useState(Math.min(lineLeft, 10));
   const [part, setPart] = useState<'upper' | 'lower'>('upper');
   const [counts, setCounts] = useState<Record<number, number>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [askAgain, setAskAgain] = useState('');
   const route = line.route?.find((r) => r.id === step.id);
-  // An item with a wearer list (not a set): the worker picks who the pieces were for and how many of each (the owner's
-  // request, Nov 2026); the pieces are their sum. Otherwise one count, as before.
-  const byWearer = !line.isSet && line.roster.length > 0;
-  const forwarded = route?.forwardedWearers ?? null; // null: all came out of the step before
+  // An item with a wearer list: the worker picks who the pieces were for and how many of each (the owner's request,
+  // Nov 2026; on a set, of the part picked); the pieces are their sum. Otherwise one count, as before.
+  const byWearer = line.roster.length > 0;
+  const forwarded = (line.isSet ? route?.partForwarded?.[part] : route?.forwardedWearers) ?? null; // null: all came out of the step before
+  const done = (line.isSet ? route?.partWearersDone?.[part] : route?.doneWearers) ?? [];
+  const partly = (line.isSet ? route?.partPartlyDone?.[part] : route?.partlyDone) ?? {};
+  const waitingOf = (line.isSet ? step.partWaitingWearers?.[part] : step.waitingWearers) ?? {};
   // What a wearer still has free here: not recorded yet, and not on a scan waiting for the check.
-  const free = (rowNo: number, qty: number) => route?.doneWearers?.includes(rowNo) ? 0 : Math.max(0, qty - (route?.partlyDone?.[rowNo] ?? 0) - (step.waitingWearers[rowNo] ?? 0));
+  const free = (rowNo: number, qty: number) => done.includes(rowNo) ? 0 : Math.max(0, qty - (partly[rowNo] ?? 0) - (waitingOf[rowNo] ?? 0));
+  // On a set, what is left of the part picked (not done, not waiting for the check).
+  const left = line.isSet && route?.partPieces ? Math.max(0, line.qty - route.partPieces[part] - Object.values(waitingOf).reduce((n, c) => n + c, 0)) : lineLeft;
   const ready = (rowNo: number) => forwarded === null || forwarded.includes(rowNo);
   const total = byWearer ? Object.values(counts).reduce((n, c) => n + c, 0) : pieces;
   const count = (rowNo: number, n: number, max: number) => setCounts((c) => {
@@ -367,7 +398,7 @@ function RecordSheet({ job, line, step, left, onClose, onSaved }: { job: FloorJo
       <p className="-mt-2 text-[13px] font-semibold text-slate-500">Today · {left} left on this item</p>
       {line.isSet && (
         <div className="grid grid-cols-2 gap-2" role="group" aria-label="Part">
-          {(['upper', 'lower'] as const).map((p) => <button key={p} type="button" aria-pressed={part === p} onClick={() => setPart(p)}
+          {(['upper', 'lower'] as const).map((p) => <button key={p} type="button" aria-pressed={part === p} onClick={() => (setPart(p), setCounts({}))}
             className={`h-11 rounded-xl text-[15px] font-bold ${part === p ? 'bg-slate-900 text-white' : 'border border-slate-300'}`}>{p === 'upper' ? 'Upper (top)' : 'Lower (shorts)'}</button>)}
         </div>
       )}
@@ -394,8 +425,8 @@ function RecordSheet({ job, line, step, left, onClose, onSaved }: { job: FloorJo
               const name = [w.jerseyName ?? w.wearerName, w.jerseyNumber].filter(Boolean).join(' ');
               const max = ready(w.rowNo) ? free(w.rowNo, w.qty) : 0;
               const n = counts[w.rowNo] ?? 0;
-              const waiting = step.waitingWearers[w.rowNo] ?? 0;
-              const note = route?.doneWearers?.includes(w.rowNo) ? 'Done' : !ready(w.rowNo) ? 'Not ready yet'
+              const waiting = waitingOf[w.rowNo] ?? 0;
+              const note = done.includes(w.rowNo) ? 'Done' : !ready(w.rowNo) ? 'Not ready yet'
                 : max === 0 && waiting > 0 ? 'Waiting for the check' : max === w.qty ? `${w.qty} pc${w.qty === 1 ? '' : 's'}` : `${max} of ${w.qty} left`;
               return (
                 <li key={w.rowNo} className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 ${n ? 'border-indigo-600 bg-indigo-50' : 'border-slate-200'} ${max === 0 ? 'opacity-60' : ''}`}>
