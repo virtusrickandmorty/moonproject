@@ -12,6 +12,7 @@ let env: TestEnv;
 let encoder: Client, production: Client, owner: Client, sewer: Client;
 let w: ReturnType<typeof seedEmployees>;
 let jo: string;
+let plainJob: () => Promise<string>;
 const SEWING = 6;
 
 beforeEach(async () => {
@@ -27,6 +28,14 @@ beforeEach(async () => {
   expect(r.statusCode, r.body).toBe(200);
   jo = r.json().id;
   expect((await production.post(`/api/prd/jobs/${jo}/lines/1/setup`, { templateId: 1, stepIds: [SEWING, 8], garmentType: 'T-shirt', complexity: 'standard' })).statusCode).toBe(200);
+  // A job order of 8 plain shirts, no wearer list: the pieces are counted as one number.
+  plainJob = async () => {
+    const plain = [{ kind: 'made_to_order', description: 'Plain shirt', qty: 8, unitPriceCents: 30_000, discountCents: 0, roster: [] }];
+    const p = await encoder.post('/api/docs/jo.job_order/post', { input: { customerId: c.school, dueInDays: 10, priority: 'normal', paymentTerms: 'full', lines: plain }, expectedTotalCents: 240_000 }, idem());
+    expect(p.statusCode, p.body).toBe(200);
+    expect((await production.post(`/api/prd/jobs/${p.json().id}/lines/1/setup`, { templateId: 1, stepIds: [SEWING, 8], garmentType: 'T-shirt', complexity: 'standard' })).statusCode).toBe(200);
+    return p.json().id as string;
+  };
   // The sewer's own sign-in, linked to her employee record.
   const user = createUser(env.db, 'sewer.one', ['worker']);
   expect((await owner.put(`/api/emp/employees/${w.sewer1}/floor-user`, { userId: user })).statusCode).toBe(200);
@@ -42,7 +51,7 @@ it('records her own pieces today at the table rate, and shows them on her week a
   expect(sewing).toMatchObject({ name: 'Sewing', pieces: 0, available: 8, rates: [{ part: 'whole', rateCents: 4_000 }] });
   expect(job.lines[0].roster.map((r: { wearerName: string }) => r.wearerName)).toEqual(['Ana Reyes', 'Ben Cruz', 'Cy Lim']);
 
-  const r = await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 3, wearers: [1] });
+  const r = await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 3, wearers: [{ rowNo: 1, pieces: 3 }] });
   expect(r.statusCode, r.body).toBe(200);
   expect(r.json()).toMatchObject({ pieces: 3, amountCents: 12_000, waiting: true });
   expect((await production.post(`/api/prd/checks/${r.json().id}/approve`, {})).statusCode).toBe(200);
@@ -57,6 +66,7 @@ it('records her own pieces today at the table rate, and shows them on her week a
 });
 
 it('asks before a second batch of the same pieces today, and keeps every Record pieces rule', async () => {
+  jo = await plainJob(); // no wearer list: one count
   await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 2 });
   const again = await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 2 });
   expect(again.json()).toMatchObject({ code: 'ALREADY_TODAY', message: 'You already recorded 2 pieces here today. Is this another batch?' });

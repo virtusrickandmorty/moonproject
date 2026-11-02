@@ -359,7 +359,9 @@ export interface FloorToday {
 export interface FloorScan {
   id: string; at: string; workDate: string; status: 'waiting' | 'approved' | 'rejected'; employeeId: string; employeeName: string;
   jobOrderId: string; jobOrderNumber: string; customerName: string; jobOrderCancelled: boolean; lineNo: number; description: string; stepId: number; stepName: string;
-  part: 'upper' | 'lower' | null; pieces: number; again: boolean; wearers: { rowNo: number; name: string; qty: number }[];
+  part: 'upper' | 'lower' | null; pieces: number; again: boolean;
+  /** The wearers and how many of each (pieces null: a scan from before the counts). */
+  wearers: { rowNo: number; name: string; qty: number; pieces: number | null }[];
   /** checkedPieces: what the head counted, when not what was scanned. */
   checkedPieces: number | null; reason: string | null; checkedAt: string | null; entryNumber: string | null;
 }
@@ -373,12 +375,13 @@ export interface FloorOpen {
 export interface FloorJob {
   jobOrder: { id: string; number: string; customerName: string; dueDate: string; status: string };
   lines: { lineNo: number; description: string; qty: number; isSet: boolean; garmentType: string; roster: PrdWearer[];
-    steps: { id: number; name: string; status: StepStatus; pieces: number; available: number; payBasis: string; waiting: number; rates: { part: 'whole' | 'upper' | 'lower'; rateCents: number | null }[] }[];
+    /** waitingWearers: each wearer's pieces on scans waiting for the check (roster row → pieces). */
+    steps: { id: number; name: string; status: StepStatus; pieces: number; available: number; payBasis: string; waiting: number; waitingWearers: Record<number, number>; rates: { part: 'whole' | 'upper' | 'lower'; rateCents: number | null }[] }[];
     route: PrdJob['lines'][number]['route'] }[];
   /** The worker's own steps (the lines show only these), and how many lines are set up for production. */
   mySteps: string[]; setUp: number;
 }
-export interface FloorRecord { jobOrderId: string; lineNo: number; stepId: number; pieces: number; wearers?: number[]; part?: 'upper' | 'lower'; again?: true }
+export interface FloorRecord { jobOrderId: string; lineNo: number; stepId: number; pieces: number; wearers?: { rowNo: number; pieces: number }[]; part?: 'upper' | 'lower'; again?: true }
 export interface PrdWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; lowerSize?: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }
 /** `garmentType`: left out, the server takes it (and whether the line is a set) from the price list item the line matches. */
 export interface PrdSummaryRow { assignmentId: string; entryId: string; entryNumber: string; rowNo: number; workDate: string; employeeId: string; employeeName: string; kind: 'work' | 'rework' | 'correction'; pieces: number; part: 'whole' | 'upper' | 'lower'; wearers: string[]; paid: boolean; carried: boolean }

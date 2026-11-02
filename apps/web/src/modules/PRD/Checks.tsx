@@ -79,6 +79,8 @@ function ScanCard({ scan: w, disabled, onDone }: { scan: Waiting; disabled: bool
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const counted = Number(pieces);
+  // Several wearers each with a count: approved as scanned or rejected, never a new total.
+  const byWearer = w.wearers.length > 1 && w.wearers.every((x) => x.pieces !== null);
   const valid = Number.isInteger(counted) && counted >= 1;
   const act = async (fn: () => Promise<string>) => {
     setBusy(true); setError('');
@@ -98,7 +100,7 @@ function ScanCard({ scan: w, disabled, onDone }: { scan: Waiting; disabled: bool
       <p className="text-sm">
         <Link to={`/docs/jo.job_order/${w.jobOrderId}`} className="font-semibold text-indigo-700 hover:underline">{w.jobOrderNumber}</Link> · {w.customerName}
         <span className="block text-slate-700">{w.stepName}{w.part ? ` (${w.part === 'upper' ? 'upper' : 'lower'})` : ''} · Item {w.lineNo}: {w.description}</span>
-        {w.wearers.length > 0 && <span className="block text-xs text-slate-500">For {w.wearers.map((x) => x.name).join(', ')}</span>}
+        {w.wearers.length > 0 && <span className="block text-xs text-slate-500">For {w.wearers.map((x) => (x.pieces === null ? x.name : `${x.name} ${x.pieces}`)).join(', ')}</span>}
         {w.again && <span className="block text-xs text-amber-800">The worker said this is another batch of the same count today.</span>}
       </p>
       {w.jobOrderCancelled && <Notice>The job order was edited after this scan. Reject it and ask the worker to scan the new job ticket.</Notice>}
@@ -116,9 +118,9 @@ function ScanCard({ scan: w, disabled, onDone }: { scan: Waiting; disabled: bool
         </div>
       ) : (
         <div className="flex flex-wrap items-end justify-between gap-2">
-          <label className="text-sm font-semibold">Pieces counted
+          {byWearer ? <p className="text-sm text-slate-600">Counted per wearer: approve as scanned, or reject.</p> : <label className="text-sm font-semibold">Pieces counted
             <input type="number" min={1} inputMode="numeric" aria-label={`Pieces counted for ${w.employeeName}`} className={`${inputClass.replace('w-full', 'w-28')} mt-1 block`} value={pieces} onChange={(e) => setPieces(e.target.value)} />
-          </label>
+          </label>}
           <div className="flex gap-2">
             <Button disabled={off} onClick={() => setRejecting(true)}>Reject…</Button>
             <Button tone="primary" disabled={off || !valid || w.jobOrderCancelled}
