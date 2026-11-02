@@ -106,6 +106,10 @@ const recorder = (a: Actor): Actor => ({ userId: a.userId, permissions: new Set(
 export function scanPieces(env: EngineEnv, worker: { id: string }, actor: Actor, raw: unknown, today: string, at: string) {
   const v = floorScanInput.parse(raw);
   const { db } = env;
+  // Only the steps ticked on the worker's employee page are theirs to record.
+  if (!workerSteps(db, worker.id).includes(v.stepId)) {
+    throw new AppError('NOT_YOUR_STEP', `${stepById(db, v.stepId)?.name ?? 'That step'} is not one of your steps. If you do it now, ask the office to tick it on your employee page.`, 403);
+  }
   const wearers = v.wearers ?? [];
   const preview = previewDocument(env, entryDoc, recorder(actor), entryOf({ ...v, part: v.part ?? null, employeeId: worker.id, workDate: today, again: !!v.again, wearers }));
   const errors = preview.issues.filter((i) => i.level === 'error');

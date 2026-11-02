@@ -30,10 +30,12 @@ beforeEach(async () => {
   const user = createUser(env.db, 'sewer.one', ['worker']);
   expect((await owner.put(`/api/emp/employees/${w.sewer1}/floor-user`, { userId: user })).statusCode).toBe(200);
   sewer = await login(env.app, 'sewer.one', PASSWORD);
+  expect((await production.put(`/api/prd/worker-steps/${w.sewer1}`, { stepIds: [SEWING] })).statusCode).toBe(200); // she sews
 });
 
 it('lists the open job orders with pieces left on the steps the worker does', async () => {
-  expect((await sewer.get('/api/prd/floor/open')).json()).toEqual({ steps: [], jobs: [] }); // no steps ticked yet
+  await production.put(`/api/prd/worker-steps/${w.sewer1}`, { stepIds: [] });
+  expect((await sewer.get('/api/prd/floor/open')).json()).toEqual({ steps: [], jobs: [] }); // no steps ticked
   const set = await production.put(`/api/prd/worker-steps/${w.sewer1}`, { stepIds: [SEWING, CUTTING] });
   expect(set.json()).toEqual({ stepIds: [CUTTING, SEWING] });
   expect((await production.get(`/api/prd/worker-steps/${w.sewer1}`)).json()).toEqual({ stepIds: [CUTTING, SEWING] });
@@ -49,6 +51,25 @@ it('lists the open job orders with pieces left on the steps the worker does', as
   expect((await sewer.get('/api/prd/floor/open')).json().jobs).toEqual([]);
   // Workers neither see nor change anyone's steps.
   expect((await sewer.put(`/api/prd/worker-steps/${w.sewer1}`, { stepIds: [SEWING] })).statusCode).toBe(403);
+});
+
+it('shows a worker only their own steps on a job, and records nothing on any other', async () => {
+  const job = (await sewer.get(`/api/prd/floor/jobs/${jo}`)).json();
+  expect(job).toMatchObject({ mySteps: ['Sewing'], setUp: 1 });
+  expect(job.lines[0].steps.map((s: { name: string }) => s.name)).toEqual(['Sewing']); // not Packing
+
+  const packing = await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: PACKING, pieces: 2 });
+  expect(packing.statusCode).toBe(403);
+  expect(packing.json()).toMatchObject({ code: 'NOT_YOUR_STEP' });
+  expect(env.db.prepare('SELECT COUNT(*) FROM prd_floor_claims').pluck().get()).toBe(0);
+
+  // A cutter sees no line of this job (it has no cutting); with no steps ticked, nothing at all.
+  await production.put(`/api/prd/worker-steps/${w.sewer1}`, { stepIds: [CUTTING] });
+  expect((await sewer.get(`/api/prd/floor/jobs/${jo}`)).json()).toMatchObject({ lines: [], mySteps: ['Cutting'], setUp: 1 });
+  await production.put(`/api/prd/worker-steps/${w.sewer1}`, { stepIds: [] });
+  expect((await sewer.get(`/api/prd/floor/jobs/${jo}`)).json()).toMatchObject({ lines: [], mySteps: [], setUp: 1 });
+  expect((await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 2 })).json()).toMatchObject({ code: 'NOT_YOUR_STEP' });
+  expect((await sewer.get('/api/prd/floor/today')).json().work).toEqual([]);
 });
 
 it('keeps a scan waiting until the production head approves it, dated the day of the scan, with the pieces counted', async () => {
