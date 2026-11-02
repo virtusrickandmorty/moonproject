@@ -136,3 +136,13 @@ export function searchOnlineOrders(db: Db, query: string, limit = 10): { id: str
   return db.prepare(`SELECT id, number, name, status FROM shp_orders WHERE number LIKE '%' || replace(replace(@q, '%', ''), '_', '') || '%' COLLATE NOCASE OR name LIKE '%' || replace(replace(@q, '%', ''), '_', '') || '%' COLLATE NOCASE
     OR email LIKE '%' || replace(replace(@q, '%', ''), '_', '') || '%' COLLATE NOCASE OR replace(phone, ' ', '') LIKE '%' || replace(@q, ' ', '') || '%' ORDER BY created_at DESC LIMIT @limit`).all({ q: query, limit }) as { id: string; number: string; name: string; status: string }[];
 }
+
+/**
+ * How to pay the shop, as the website shows it (no cash account): the latest payment settings and their QR code's address.
+ * Null while the owner has not set it up. Order links show it to members paying their own share (the owner's request, Nov 2026).
+ */
+export function shopPayHow(db: Db): { bankName: string; accountName: string; accountHint: string | null; instructions: string | null; qrUrl: string } | null {
+  const p = db.prepare('SELECT version, bank_name AS bankName, account_name AS accountName, account_hint AS accountHint, instructions FROM shp_payment_settings ORDER BY version DESC LIMIT 1').get() as
+    { version: number; bankName: string; accountName: string; accountHint: string | null; instructions: string | null } | undefined;
+  return p ? { bankName: p.bankName, accountName: p.accountName, accountHint: p.accountHint, instructions: p.instructions, qrUrl: `/api/shp/payment/qr/${p.version}` } : null;
+}

@@ -94,8 +94,11 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     if (mode.kind === 'new' && jo) {
       api.joStatus(jo).then((s) => {
         const p = collectionPreset(s, q.get('for') === 'downpayment');
+        const paid = Number(q.get('amount')); // a payment already checked, e.g. from an order link
         setCustomer(p.customer);
-        setPreset({ key: p.key, cents: p.cents });
+        setPreset({ key: p.key, cents: Number.isSafeInteger(paid) && paid > 0 ? paid : p.cents });
+        const note = q.get('note');
+        if (note) setNote(note.slice(0, 500));
       }, fail);
     }
     if (mode.kind !== 'edit') return;
