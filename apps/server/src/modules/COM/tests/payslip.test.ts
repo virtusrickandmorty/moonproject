@@ -318,7 +318,9 @@ describe('payslips hold pay figures', () => {
 
     const everyFigure = [...figuresOf(run.id, ana), ...figuresOf(run.id, ben)];
     expect(everyFigure.length).toBeGreaterThan(8);
-    const mustHaveNone = (label: string, text: string) => {
+    // Ids are left out first: a random one holds a figure's digits now and then ("audit has 7200" in an entity id, Nov 2, 2026).
+    const mustHaveNone = (label: string, raw: string) => {
+      const text = raw.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '<id>');
       expect(text, label).not.toMatch(/₱|PHP|\bnet pay\b:?\s*\d/i);
       for (const f of everyFigure) expect(text.includes(f), `${label} has ${f}`).toBe(false);
     };
