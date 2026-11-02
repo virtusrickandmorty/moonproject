@@ -13,6 +13,7 @@ let production: Client, owner: Client, sewer: Client;
 let w: ReturnType<typeof seedEmployees>;
 let jo: string;
 let plainJob: () => Promise<string>;
+let school: string; // an active test customer
 const CUTTING = 4, SEWING = 6, PACKING = 8;
 const entries = () => env.db.prepare("SELECT COUNT(*) FROM documents WHERE doc_type = 'prd.entry'").pluck().get() as number;
 
@@ -22,6 +23,7 @@ beforeEach(async () => {
   const encoder = await env.as('encoder');
   [production, owner] = [await env.as('production'), await env.as('owner')];
   const c = seedCustomers(env.db, encoder.userId);
+  school = c.school;
   w = seedEmployees(env.db);
   const roster = [['Ana Reyes', 3], ['Ben Cruz', 2], ['Cy Lim', 3]].map(([name, qty]) => ({ name, sizeMode: 'preset', size: 'M', qty }));
   const lines = [{ kind: 'made_to_order', description: 'Team shirt', qty: 8, unitPriceCents: 30_000, discountCents: 0, roster }];
@@ -120,8 +122,7 @@ it('on a set, takes the wearers and how many of each for the upper or the lower 
   const encoder = await env.as('encoder');
   const roster = ['Ana Reyes', 'Ben Cruz'].map((name) => ({ name, sizeMode: 'preset', size: 'M', qty: 1 }));
   const lines = [{ kind: 'made_to_order', description: 'Jersey set', qty: 2, unitPriceCents: 90_000, discountCents: 0, roster }];
-  const customerId = env.db.prepare('SELECT id FROM cus_customers LIMIT 1').pluck().get();
-  const r = await encoder.post('/api/docs/jo.job_order/post', { input: { customerId, dueInDays: 10, priority: 'normal', paymentTerms: 'full', lines }, expectedTotalCents: 180_000 }, idem());
+  const r = await encoder.post('/api/docs/jo.job_order/post', { input: { customerId: school, dueInDays: 10, priority: 'normal', paymentTerms: 'full', lines }, expectedTotalCents: 180_000 }, idem());
   expect(r.statusCode, r.body).toBe(200);
   const set = r.json().id as string;
   expect((await production.post(`/api/prd/jobs/${set}/lines/1/setup`, { templateId: 1, stepIds: [SEWING, PACKING], garmentType: 'Jersey set', complexity: 'standard', isSet: true })).statusCode).toBe(200);
