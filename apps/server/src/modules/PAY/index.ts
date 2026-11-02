@@ -12,6 +12,8 @@ export default defineModule({
   name: 'Payroll',
   permissions: [
     { key: 'pay.run.view', label: 'View payroll runs and payslips', defaultRoles: ['accountant', 'owner'] },
+    // A production worker's own payslips on the floor app (the owner's request, Nov 2026): theirs only (own.ts).
+    { key: 'pay.own.view', label: 'See my own payslips on the floor app: net pay and its breakdown', defaultRoles: ['worker'] },
     { key: 'pay.run.create', label: 'Work out payroll runs (preview)', defaultRoles: ['accountant', 'owner'] },
     { key: 'pay.run.post', label: 'Record payroll runs', defaultRoles: ['accountant', 'owner'] },
     { key: 'pay.run.cancel', label: 'Cancel recorded payroll runs', defaultRoles: ['accountant', 'owner'] },
