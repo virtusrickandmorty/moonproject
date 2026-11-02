@@ -152,6 +152,48 @@ main[data-erp] {
 }
 
 /*
+ * The website's motion (the owner's request, Nov 2026; shop/motion.tsx), phones and computers alike:
+ * - Fade in on scroll: a block marked data-reveal waits below, faded, until it is seen (data-shown).
+ * - Hover and tap: buttons and pill links press in when tapped or clicked (cards lift on hover in Home.tsx). In the
+ *   components layer, so a button's own Tailwind classes still win.
+ * - The moving banner: the glows drift, the garment floats and sways, a photo slowly zooms. Done with the translate,
+ *   rotate and scale properties, so the elements' own transforms are left alone.
+ * Printouts and devices set to reduce motion show everything, still.
+ */
+[data-reveal] {
+  transition: opacity 700ms cubic-bezier(0.16, 1, 0.3, 1), translate 700ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+[data-reveal]:not([data-shown]) {
+  opacity: 0;
+  translate: 0 1.5rem;
+}
+@layer components {
+  .site :is(button, a[class*='rounded']):not(:disabled):active {
+    scale: 0.97;
+  }
+}
+@keyframes hero-drift { from { translate: 0 0; } to { translate: 4rem 2.5rem; } }
+@keyframes hero-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -0.9rem; } }
+@keyframes hero-sway { 0%, 100% { rotate: -2.5deg; } 50% { rotate: 2.5deg; } }
+@keyframes hero-zoom { from { scale: 1; } to { scale: 1.1; } }
+.hero-drift { animation: hero-drift 14s ease-in-out infinite alternate; }
+.hero-drift-back { animation: hero-drift 18s ease-in-out -6s infinite alternate-reverse; }
+.hero-float { animation: hero-float 6s ease-in-out infinite; }
+.hero-float-late { animation: hero-float 6s ease-in-out -3s infinite; }
+.hero-sway { animation: hero-sway 5s ease-in-out infinite; }
+.hero-zoom { animation: hero-zoom 12s ease-in-out infinite alternate; }
+@media (prefers-reduced-motion: reduce) {
+  [data-reveal] { transition: none; }
+  [data-reveal]:not([data-shown]) { opacity: 1; translate: none; }
+  .hero-drift, .hero-drift-back, .hero-float, .hero-float-late, .hero-sway, .hero-zoom { animation: none; }
+}
+@media print {
+  [data-reveal]:not([data-shown]) { opacity: 1; translate: none; }
+  .hero-drift, .hero-drift-back, .hero-float, .hero-float-late, .hero-sway, .hero-zoom { animation: none; }
+}
+
+/*
  * Rules for every screen at once, instead of a class on each of hundreds of buttons and boxes:
  * - Tailwind 4 leaves buttons with the plain arrow. Everything that does something when clicked shows the hand.
  * - A box that cannot be used now is greyed out, and the mouse shows it cannot be used.

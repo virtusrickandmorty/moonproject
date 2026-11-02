@@ -1,5 +1,6 @@
 /** The public website shown before sign-in: the store, the services and the support page under one header. */
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useReveal } from './motion.tsx';
 import { browserSaysNo, countingChoice, setCountingChoice, setStaff, sourceOfVisit, track } from './insights.ts';
 import { Link, navigate, useLocation } from '../router.tsx';
 import { About } from './About.tsx';
@@ -65,6 +66,9 @@ function Layout({ staff }: { staff: boolean }) {
   useSeoReset();
   useSeo(seoFor(path, shop));
   const [panel, setPanel] = useState<Panel>(null);
+  // Sections and cards fade in as they scroll into view (the owner's request, Nov 2026).
+  const main = useRef<HTMLElement>(null);
+  useReveal(main);
   const [viewing, setViewing] = useState<Product | null>(null);
   const [toast, setToast] = useState('');
   const showToast = (text: string) => { setToast(text); setTimeout(() => setToast((t) => (t === text ? '' : t)), 2500); };
@@ -95,7 +99,7 @@ function Layout({ staff }: { staff: boolean }) {
   ];
 
   return (
-    <div className="min-h-screen bg-[#fafaf8] text-slate-900">
+    <div className="site min-h-screen bg-[#fafaf8] text-slate-900">
       <div className={look ? look.bar : 'bg-slate-950 text-white'}>
         <p className="mx-auto flex max-w-7xl items-center justify-center gap-x-6 overflow-hidden whitespace-nowrap px-4 py-2 text-xs font-semibold tracking-wide sm:px-6">
           {news.map((n, i) => <span key={n} className={i ? 'hidden md:inline' : ''}>{i > 0 && <span className="mr-6 text-white/30">•</span>}{n}</span>)}
@@ -132,7 +136,7 @@ function Layout({ staff }: { staff: boolean }) {
         </div>
       </header>
 
-      <main>{page}</main>
+      <main ref={main}>{page}</main>
 
       <footer className="mt-16 bg-slate-950 text-slate-400">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
