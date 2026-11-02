@@ -352,11 +352,28 @@ export interface FloorToday {
   employee: { name: string; code: string }; today: string; week: FloorWeek;
   work: { jobOrderId: string; jobOrderNumber: string; customerName: string; dueDate: string; lineNo: number; description: string; stepId: number; stepName: string; qty: number; done: number; left: number }[];
   pastWeeks: { from: string; to: string; pieces: number; amountCents: number; paid: boolean }[];
+  /** Their scans waiting for the production head's check, and those checked this past week. */
+  scans: FloorScan[];
+}
+/** A scan on the floor app (PRD checks.ts): waiting for the production head's check, then approved (a Production Entry) or rejected. */
+export interface FloorScan {
+  id: string; at: string; workDate: string; status: 'waiting' | 'approved' | 'rejected'; employeeId: string; employeeName: string;
+  jobOrderId: string; jobOrderNumber: string; customerName: string; jobOrderCancelled: boolean; lineNo: number; description: string; stepId: number; stepName: string;
+  part: 'upper' | 'lower' | null; pieces: number; again: boolean; wearers: { rowNo: number; name: string; qty: number }[];
+  /** checkedPieces: what the head counted, when not what was scanned. */
+  checkedPieces: number | null; reason: string | null; checkedAt: string | null; entryNumber: string | null;
+}
+/** The production head's list: waiting (with what it pays and anything that stops it) and the last ones checked. */
+export interface PrdChecks { waiting: (FloorScan & { amountCents: number; problems: string[] })[]; checked: (FloorScan & { checkedBy: string | null })[] }
+/** The open job orders with pieces left on the steps the worker does. ready: came out of the step before; waiting: scanned, not checked. */
+export interface FloorOpen {
+  steps: { id: number; name: string }[];
+  jobs: { jobOrderId: string; jobOrderNumber: string; customerName: string; dueDate: string; rush: boolean; lineNo: number; description: string; qty: number; stepId: number; stepName: string; done: number; left: number; ready: number; waiting: number }[];
 }
 export interface FloorJob {
   jobOrder: { id: string; number: string; customerName: string; dueDate: string; status: string };
   lines: { lineNo: number; description: string; qty: number; isSet: boolean; garmentType: string; roster: PrdWearer[];
-    steps: { id: number; name: string; status: StepStatus; pieces: number; available: number; payBasis: string; rates: { part: 'whole' | 'upper' | 'lower'; rateCents: number | null }[] }[];
+    steps: { id: number; name: string; status: StepStatus; pieces: number; available: number; payBasis: string; waiting: number; rates: { part: 'whole' | 'upper' | 'lower'; rateCents: number | null }[] }[];
     route: PrdJob['lines'][number]['route'] }[];
 }
 export interface FloorRecord { jobOrderId: string; lineNo: number; stepId: number; pieces: number; wearers?: number[]; part?: 'upper' | 'lower'; again?: true }
@@ -1292,7 +1309,14 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     prdJob: (id: string) => call<PrdJob>('GET', prdJob(id)),
     floorToday: () => call<FloorToday>('GET', '/api/prd/floor/today'),
     floorJob: (ref: string) => call<FloorJob>('GET', `/api/prd/floor/jobs/${encodeURIComponent(ref)}`),
-    floorRecord: (body: FloorRecord) => call<{ number: string; pieces: number; amountCents: number }>('POST', '/api/prd/floor/record', body),
+    floorRecord: (body: FloorRecord) => call<{ id: string; pieces: number; amountCents: number; waiting: true }>('POST', '/api/prd/floor/record', body),
+    floorOpen: () => call<FloorOpen>('GET', '/api/prd/floor/open'),
+    prdChecks: () => call<PrdChecks>('GET', '/api/prd/checks'),
+    prdChecksCount: () => call<{ waiting: number }>('GET', '/api/prd/checks/count'),
+    prdApproveScan: (id: string, pieces?: number) => call<{ number: string; pieces: number; amountCents: number }>('POST', `/api/prd/checks/${encodeURIComponent(id)}/approve`, pieces ? { pieces } : {}),
+    prdRejectScan: (id: string, reason: string) => call<unknown>('POST', `/api/prd/checks/${encodeURIComponent(id)}/reject`, { reason }),
+    workerSteps: (employeeId: string) => call<{ stepIds: number[] }>('GET', `/api/prd/worker-steps/${encodeURIComponent(employeeId)}`),
+    setWorkerSteps: (employeeId: string, stepIds: number[]) => call<{ stepIds: number[] }>('PUT', `/api/prd/worker-steps/${encodeURIComponent(employeeId)}`, { stepIds }),
     prdSetup: (jo: string, lineNo: number, body: PrdSetup) => call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/setup`), body),
     prdStep: (jo: string, lineNo: number, stepId: number, action: 'complete' | 'not-needed' | 'reopen', reason?: string) =>
       call<unknown>('POST', prdJob(jo, `/lines/${lineNo}/steps/${stepId}/${action}`), reason ? { reason } : {}),

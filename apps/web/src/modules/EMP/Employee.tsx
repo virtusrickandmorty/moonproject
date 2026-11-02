@@ -15,6 +15,7 @@ import { Crumb } from '../../shell/crumbs.tsx';
 import { useLiveReload } from '../../live.ts';
 import { PICTURE_ACCEPT, fitPicture } from '../../components/pictures.ts';
 import { Paged, newestFirst } from '../../components/RowPages.tsx';
+import { WorkerSteps } from '../PRD/WorkerSteps.tsx';
 
 const PAY_TYPE = { daily: 'Daily', piece: 'Per piece (pakyawan)', monthly: 'Monthly', mixed: 'Daily and per piece' } as const;
 const PAY_GROUP = { WEEKLY_PIECE: 'Weekly (piece rate)', WEEKLY_DAILY: 'Weekly (daily paid)', SEMI_DAILY: 'Semi-monthly (daily paid)', SEMI_MONTHLY: 'Semi-monthly (monthly staff)' } as const;
@@ -48,6 +49,7 @@ export function EmployeePage({ me, params }: { me: Me; params?: Record<string, s
       </Panel>
       {can('emp.pay') && d.payslipEmail && <PayslipEmail e={e} current={d.payslipEmail} onSaved={load} />}
       {can('emp.manage') && d.floorUser !== undefined && <FloorSignIn e={e} current={d.floorUser} onSaved={load} />}
+      {e.isActive && can('prd.view') && <WorkerSteps employeeId={e.id} name={e.fullName} editable={can('prd.assign')} />}
       <Pay d={d} canSet={e.isActive && can('emp.pay') && can('pay.view_rates')} onSaved={load} />
       {can('ca.view') && <Link to={`/ca/employees/${e.id}`} className="underline">Cash advances (what {e.fullName} owes)</Link>}
       {can('pay.loans.view') && <EmployeeLoans me={me} employeeId={e.id} active={e.isActive} />}

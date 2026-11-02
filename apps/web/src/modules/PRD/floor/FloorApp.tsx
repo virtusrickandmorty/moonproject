@@ -1,12 +1,14 @@
 /**
  * The floor app (the owner's request, Nov 2026; the approved mock-up "Virtus Floor App"): a production worker's own
- * phone screens, full screen without the office menu. Today (the week so far and their work), a job (its steps, what is
- * left, who is done), Record pieces (a sheet that slides up), Saved, and My earnings. The server keeps every rule of
- * Record pieces; this only records the signed-in worker's own pieces, today.
+ * phone screens, full screen without the office menu. Today (the week so far, their work and their scans), Jobs (the
+ * open job orders with pieces left on the steps they do), a job (its steps, what is left, who is done), Record pieces (a
+ * sheet that slides up), Sent, and My earnings. The server keeps every rule of Record pieces; this only records the
+ * signed-in worker's own pieces, today, and they count once the production head approves them (the owner's request, Nov 2026).
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { api, ApiError, type FloorJob, type FloorToday, type FloorWeek, type Me } from '../../../api.ts';
+import { api, ApiError, type FloorJob, type FloorScan, type FloorWeek, type Me } from '../../../api.ts';
 import { navigate, useLocation } from '../../../router.tsx';
+import { startLive, stopLive, useLiveReload } from '../../../live.ts';
 import { peso } from '../../../components/ui.tsx';
 import { jobOrderFromScan, liveCameraAllowed, readQrPhoto, useQrCamera } from '../../../components/QrScan.tsx';
 
@@ -18,30 +20,34 @@ export function FloorApp({ me }: { me: Me }) {
   const location = useLocation();
   const [path, query = ''] = location.split('?');
   const q = new URLSearchParams(query);
+  // Live (the office's shell does this for its screens): an approved or rejected scan shows by itself.
+  useEffect(() => { startLive(); return stopLive; }, []);
   const job = /^\/floor\/job\/([^/]+)$/.exec(path!)?.[1] ?? /^\/docs\/jo\.job_order\/([0-9a-f-]{36})$/i.exec(path!)?.[1];
   if (path === '/floor/scan') return <ScanScreen />;
-  const tab: Tab = path === '/floor/earnings' ? 'earnings' : 'today';
+  const tab: Tab = path === '/floor/earnings' ? 'earnings' : path === '/floor/jobs' ? 'jobs' : 'today';
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col bg-page text-[#0f172a]" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
       {job ? <JobScreen jobRef={decodeURIComponent(job)} lineNo={Number(q.get('line')) || undefined} stepId={Number(q.get('step')) || undefined} />
         : <>
-          <main className="flex-1 px-5 pb-28 pt-6">{tab === 'today' ? <TodayScreen me={me} /> : <EarningsScreen />}</main>
+          <main className="flex-1 px-5 pb-28 pt-6">{tab === 'today' ? <TodayScreen me={me} /> : tab === 'jobs' ? <OpenJobsScreen /> : <EarningsScreen />}</main>
           <TabBar tab={tab} />
         </>}
     </div>
   );
 }
 
-type Tab = 'today' | 'earnings';
+type Tab = 'today' | 'jobs' | 'earnings';
+const TAB_PATHS: Record<Tab, string> = { today: '/floor', jobs: '/floor/jobs', earnings: '/floor/earnings' };
 function TabBar({ tab }: { tab: Tab }) {
   const item = (t: Tab, label: string, icon: ReactNode) => (
-    <button type="button" aria-current={tab === t ? 'page' : undefined} onClick={() => navigate(t === 'today' ? '/floor' : '/floor/earnings')}
+    <button type="button" aria-current={tab === t ? 'page' : undefined} onClick={() => navigate(TAB_PATHS[t])}
       className={`flex flex-col items-center gap-1 py-1.5 text-xs ${tab === t ? 'font-extrabold text-indigo-600' : 'font-bold text-slate-500'}`}>{icon}{label}</button>
   );
   return (
     <>
-      <nav aria-label="Floor app" className="fixed inset-x-0 bottom-0 mx-auto grid max-w-md grid-cols-3 items-end border-t border-slate-200 bg-white px-3 pt-2" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
+      <nav aria-label="Floor app" className="fixed inset-x-0 bottom-0 mx-auto grid max-w-md grid-cols-4 items-end border-t border-slate-200 bg-white px-3 pt-2" style={{ paddingBottom: 'max(1.25rem, env(safe-area-inset-bottom))' }}>
         {item('today', 'Today', <Icon d="M3 11l9-7 9 7M5 10v10h14V10" />)}
+        {item('jobs', 'Jobs', <Icon d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />)}
         <button type="button" onClick={() => navigate('/floor/scan')} className="flex flex-col items-center gap-1 text-xs font-bold">
           <span className="-mt-8 grid size-15 place-items-center rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-600/30"><Icon d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 12h8" size={28} /></span>Scan
         </button>
@@ -142,7 +148,8 @@ const Problem = ({ text }: { text: string }) => <p role="alert" className="round
 const Waiting = () => <p className="p-6 text-center font-semibold text-slate-500">Loading…</p>;
 
 function TodayScreen({ me }: { me: Me }) {
-  const { data, error } = useData(api.floorToday, []);
+  const { data, error, reload } = useData(api.floorToday, []);
+  useLiveReload(reload);
   if (error) return <Problem text={error} />;
   if (!data) return <Waiting />;
   const initials = data.employee.name.split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
@@ -161,8 +168,9 @@ function TodayScreen({ me }: { me: Me }) {
         <span className="text-4xl font-extrabold tracking-tight tabular-nums">{peso(data.week.amountCents)}</span>
         <span className="flex justify-between text-sm font-semibold text-indigo-50"><span>{data.week.pieces} pieces</span><span>See my earnings ›</span></span>
       </button>
+      {data.scans.length > 0 && <Scans scans={data.scans} />}
       <h2 className="text-lg font-extrabold">My work</h2>
-      {data.work.length === 0 && <p className="rounded-2xl bg-white p-5 text-[15px] text-slate-600">Nothing yet. Press <b>Find job</b> below and type the job order number on the ticket.</p>}
+      {data.work.length === 0 && <p className="rounded-2xl bg-white p-5 text-[15px] text-slate-600">Nothing yet. Open <b>Jobs</b> below for the work on your steps, or press <b>Scan</b> and scan the job ticket.</p>}
       <ul className="space-y-2.5">
         {data.work.map((w) => (
           <li key={`${w.jobOrderId}-${w.lineNo}-${w.stepId}`}>
@@ -180,13 +188,74 @@ function TodayScreen({ me }: { me: Me }) {
   );
 }
 
+const SCAN_TONES: Record<FloorScan['status'], string> = { waiting: 'bg-amber-50 text-amber-800', approved: 'bg-emerald-50 text-emerald-800', rejected: 'bg-red-50 text-red-800' };
+/** Their scans: waiting for the production head's check, approved (counted) or rejected (with the reason). */
+function Scans({ scans }: { scans: FloorScan[] }) {
+  const waiting = scans.filter((s) => s.status === 'waiting').reduce((n, s) => n + s.pieces, 0);
+  return (
+    <section className="space-y-2.5">
+      <h2 className="text-lg font-extrabold">My scans {waiting > 0 && <span className="text-sm font-bold text-amber-800">· {waiting} pcs waiting for check</span>}</h2>
+      <ul className="divide-y divide-slate-100 rounded-2xl bg-white">
+        {scans.map((s) => (
+          <li key={s.id} className="space-y-1 px-4 py-3">
+            <span className="flex items-center justify-between gap-3">
+              <span className="text-[15px] font-bold">{s.jobOrderNumber} · {s.stepName}{s.part ? ` (${s.part})` : ''}</span>
+              <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-bold ${SCAN_TONES[s.status]}`}>
+                {s.status === 'waiting' ? 'Waiting for check' : s.status === 'approved' ? 'Approved' : 'Rejected'}</span>
+            </span>
+            <span className="block text-[13px] font-semibold text-slate-500">
+              {s.status === 'approved' && s.checkedPieces ? `${s.checkedPieces} of your ${s.pieces} counted` : `${s.pieces} pc${s.pieces === 1 ? '' : 's'}`} · {s.description} · {short(s.workDate)}</span>
+            {s.status === 'rejected' && s.reason && <span className="block text-[13px] font-semibold text-red-800">Why: {s.reason}</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** The open job orders with pieces left on the steps the worker does (ticked on their employee page), rush first. */
+function OpenJobsScreen() {
+  const { data, error, reload } = useData(api.floorOpen, []);
+  useLiveReload(reload);
+  if (error) return <Problem text={error} />;
+  if (!data) return <Waiting />;
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-2xl font-extrabold tracking-tight">Open jobs</h1>
+        {data.steps.length > 0 && <p className="text-sm font-semibold text-slate-500">On my steps: {data.steps.map((s) => s.name).join(', ')}</p>}
+      </div>
+      {data.steps.length === 0 ? <p className="rounded-2xl bg-white p-5 text-[15px] text-slate-600">Your steps are not set yet. Ask the office to tick the steps you do (Sewing, Cutting…) on your employee page.</p>
+        : data.jobs.length === 0 ? <p className="rounded-2xl bg-white p-5 text-[15px] text-slate-600">No open job has pieces left on your steps right now.</p> : (
+          <ul className="space-y-2.5">
+            {data.jobs.map((j) => (
+              <li key={`${j.jobOrderId}-${j.lineNo}-${j.stepId}`}>
+                <button type="button" onClick={() => navigate(`/floor/job/${encodeURIComponent(j.jobOrderNumber)}?line=${j.lineNo}&step=${j.stepId}`)} className="flex w-full flex-col gap-2.5 rounded-2xl bg-white p-4 text-left shadow-sm">
+                  <span className="flex items-center justify-between gap-2"><span className="text-[13px] font-bold text-indigo-600">{j.jobOrderNumber} · {j.stepName}</span>
+                    <span className="flex gap-1.5">{j.rush && <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-bold text-red-800">Rush</span>}
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700">Due {short(j.dueDate)}</span></span></span>
+                  <span className="text-base font-bold">{j.description} <span className="font-semibold text-slate-500">· {j.customerName}</span></span>
+                  <span className="h-2 overflow-hidden rounded-full bg-indigo-50"><span className="block h-full rounded-full bg-indigo-600" style={{ width: `${Math.round((j.done / j.qty) * 100)}%` }} /></span>
+                  <span className="text-[13px] font-semibold text-slate-500">{j.done} of {j.qty} done · {j.left} left
+                    {j.ready < j.left && <> · <span className={j.ready ? '' : 'text-amber-800'}>{j.ready ? `${j.ready} ready for you` : 'not ready yet'}</span></>}
+                    {j.waiting > 0 && <> · {j.waiting} waiting for check</>}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+    </div>
+  );
+}
+
 function JobScreen({ jobRef, lineNo, stepId }: { jobRef: string; lineNo?: number; stepId?: number }) {
   const { data, error, reload } = useData(() => api.floorJob(jobRef), [jobRef]);
   const [line, setLine] = useState<number | undefined>(lineNo);
   const [step, setStep] = useState<number | undefined>(stepId);
   const [recording, setRecording] = useState(false);
   const [saved, setSaved] = useState<{ pieces: number; amountCents: number; step: string } | null>(null);
-  const back = <button type="button" aria-label="Back to Today" onClick={() => navigate('/floor')} className="grid size-11 place-items-center rounded-full"><Icon d="M15 5l-7 7 7 7" /></button>;
+  useLiveReload(reload, () => !recording && !saved);
+  const back = <button type="button" aria-label="Back" onClick={() => (history.length > 1 ? history.back() : navigate('/floor'))} className="grid size-11 place-items-center rounded-full"><Icon d="M15 5l-7 7 7 7" /></button>;
   if (error) return <div className="space-y-4 p-5">{back}<Problem text={error} /></div>;
   if (!data) return <Waiting />;
   if (saved) return <SavedScreen saved={saved} jobOrderNumber={data.jobOrder.number} onMore={() => (setSaved(null), reload())} />;
@@ -195,7 +264,7 @@ function JobScreen({ jobRef, lineNo, stepId }: { jobRef: string; lineNo?: number
   const open = l.steps.filter((s) => s.status !== 'completed' && s.status !== 'not_needed');
   const s = l.steps.find((x) => x.id === step) ?? open.find((x) => x.payBasis !== 'daily') ?? open[0] ?? l.steps[0]!;
   const route = l.route?.find((r) => r.id === s.id);
-  const left = Math.max(0, l.qty - s.pieces);
+  const left = Math.max(0, l.qty - s.pieces - s.waiting); // scanned by others and not checked yet: not free
   const rate = s.rates[0]?.rateCents ?? null;
   const status = (rowNo: number, qty: number) => route?.doneWearers?.includes(rowNo) ? { label: 'Done', tone: 'bg-emerald-50 text-emerald-800' }
     : route?.partlyDone?.[rowNo] ? { label: `${route.partlyDone[rowNo]} of ${qty}`, tone: 'bg-amber-50 text-amber-800' } : { label: 'Not yet', tone: 'bg-slate-100 text-slate-700' };
@@ -223,6 +292,7 @@ function JobScreen({ jobRef, lineNo, stepId }: { jobRef: string; lineNo?: number
             <div key={String(k)} className="rounded-2xl bg-white p-3"><p className="text-xl font-extrabold tabular-nums">{v}</p><p className="text-xs font-semibold text-slate-500">{k}</p></div>
           ))}
         </div>
+        {s.waiting > 0 && <p className="rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">{s.waiting} more scanned, waiting for the production head's check.</p>}
         {l.roster.length > 0 && (
           <>
             <h2 className="text-base font-extrabold">Who it is for</h2>
@@ -334,10 +404,10 @@ function SavedScreen({ saved, jobOrderNumber, onMore }: { saved: { pieces: numbe
     <div className="flex min-h-dvh flex-col bg-white px-6" style={{ paddingBottom: 'max(1.75rem, env(safe-area-inset-bottom))' }}>
       <div className="flex flex-1 flex-col items-center justify-center gap-4 text-center">
         <span className="grid size-24 place-items-center rounded-full bg-emerald-50 text-emerald-700"><Icon d="M5 12.5l4.5 4.5L19 7.5" size={52} /></span>
-        <h1 className="text-[26px] font-extrabold tracking-tight">{saved.pieces} piece{saved.pieces === 1 ? '' : 's'} saved</h1>
-        <p className="text-base text-slate-600">{saved.step} on {jobOrderNumber}.</p>
-        {saved.amountCents > 0 && <p className="w-full rounded-2xl bg-page p-4"><span className="block text-[13px] font-semibold text-slate-500">Added to this week</span><span className="text-3xl font-extrabold text-emerald-800">+ {peso(saved.amountCents)}</span></p>}
-        <p className="text-[13px] font-semibold text-slate-500">Typed the wrong number? Tell your line leader to change it.</p>
+        <h1 className="text-[26px] font-extrabold tracking-tight">{saved.pieces} piece{saved.pieces === 1 ? '' : 's'} sent for checking</h1>
+        <p className="text-base text-slate-600">{saved.step} on {jobOrderNumber}. The production head checks them; then they count.</p>
+        {saved.amountCents > 0 && <p className="w-full rounded-2xl bg-page p-4"><span className="block text-[13px] font-semibold text-slate-500">Added to this week once approved</span><span className="text-3xl font-extrabold text-emerald-800">+ {peso(saved.amountCents)}</span></p>}
+        <p className="text-[13px] font-semibold text-slate-500">Typed the wrong number? Tell the production head before they check it.</p>
       </div>
       <div className="space-y-2.5">
         <button type="button" onClick={onMore} className="h-14 w-full rounded-2xl bg-indigo-600 text-[17px] font-extrabold text-white">Record more on this job</button>

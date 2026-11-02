@@ -21,6 +21,7 @@ import { QuickSaleForm } from './QS/QuickSaleForm.tsx';
 import { quickSaleView } from './QS/QuickSaleView.tsx';
 import { EntryForm } from './PRD/EntryForm.tsx';
 import { ProductionBoard } from './PRD/Board.tsx';
+import { CheckScannedWork } from './PRD/Checks.tsx';
 import { TvBoard } from './PRD/TvBoard.tsx';
 import { Employees } from './EMP/Employees.tsx';
 import { EmployeePage } from './EMP/Employee.tsx';
@@ -176,6 +177,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/cash/recon': BankRecon,
   '/cash/recon/:id': BankReconWork,
   '/prd/board': ProductionBoard,
+  '/prd/checks': CheckScannedWork,
   '/prd/tv': TvBoard,
   '/prd/rates': PieceRatesMoved,
   '/pur/suppliers': Suppliers,
