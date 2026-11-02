@@ -375,8 +375,9 @@ export interface FloorOpen {
 export interface FloorJob {
   jobOrder: { id: string; number: string; customerName: string; dueDate: string; status: string };
   lines: { lineNo: number; description: string; qty: number; isSet: boolean; garmentType: string; roster: PrdWearer[];
-    /** waitingWearers: each wearer's pieces on scans waiting for the check (roster row → pieces). */
-    steps: { id: number; name: string; status: StepStatus; pieces: number; available: number; payBasis: string; waiting: number; waitingWearers: Record<number, number>; rates: { part: 'whole' | 'upper' | 'lower'; rateCents: number | null }[] }[];
+    /** waitingWearers: each wearer's pieces on scans waiting for the check (roster row → pieces); on a set, per part too. */
+    steps: { id: number; name: string; status: StepStatus; pieces: number; available: number; payBasis: string; waiting: number; waitingWearers: Record<number, number>;
+      partWaitingWearers?: { upper: Record<number, number>; lower: Record<number, number> }; rates: { part: 'whole' | 'upper' | 'lower'; rateCents: number | null }[] }[];
     route: PrdJob['lines'][number]['route'] }[];
   /** The worker's own steps (the lines show only these), and how many lines are set up for production. */
   mySteps: string[]; setUp: number;

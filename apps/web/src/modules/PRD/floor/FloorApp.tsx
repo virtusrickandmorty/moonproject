@@ -327,20 +327,25 @@ function JobScreen({ jobRef, lineNo, stepId }: { jobRef: string; lineNo?: number
 }
 
 type Line = FloorJob['lines'][number];
-function RecordSheet({ job, line, step, left, onClose, onSaved }: { job: FloorJob; line: Line; step: Line['steps'][number]; left: number; onClose: () => void; onSaved: (r: { pieces: number; amountCents: number }) => void }) {
-  const [pieces, setPieces] = useState(Math.min(left, 10));
+function RecordSheet({ job, line, step, left: lineLeft, onClose, onSaved }: { job: FloorJob; line: Line; step: Line['steps'][number]; left: number; onClose: () => void; onSaved: (r: { pieces: number; amountCents: number }) => void }) {
+  const [pieces, setPieces] = useState(Math.min(lineLeft, 10));
   const [part, setPart] = useState<'upper' | 'lower'>('upper');
   const [counts, setCounts] = useState<Record<number, number>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [askAgain, setAskAgain] = useState('');
   const route = line.route?.find((r) => r.id === step.id);
-  // An item with a wearer list (not a set): the worker picks who the pieces were for and how many of each (the owner's
-  // request, Nov 2026); the pieces are their sum. Otherwise one count, as before.
-  const byWearer = !line.isSet && line.roster.length > 0;
-  const forwarded = route?.forwardedWearers ?? null; // null: all came out of the step before
+  // An item with a wearer list: the worker picks who the pieces were for and how many of each (the owner's request,
+  // Nov 2026; on a set, of the part picked); the pieces are their sum. Otherwise one count, as before.
+  const byWearer = line.roster.length > 0;
+  const forwarded = (line.isSet ? route?.partForwarded?.[part] : route?.forwardedWearers) ?? null; // null: all came out of the step before
+  const done = (line.isSet ? route?.partWearersDone?.[part] : route?.doneWearers) ?? [];
+  const partly = (line.isSet ? route?.partPartlyDone?.[part] : route?.partlyDone) ?? {};
+  const waitingOf = (line.isSet ? step.partWaitingWearers?.[part] : step.waitingWearers) ?? {};
   // What a wearer still has free here: not recorded yet, and not on a scan waiting for the check.
-  const free = (rowNo: number, qty: number) => route?.doneWearers?.includes(rowNo) ? 0 : Math.max(0, qty - (route?.partlyDone?.[rowNo] ?? 0) - (step.waitingWearers[rowNo] ?? 0));
+  const free = (rowNo: number, qty: number) => done.includes(rowNo) ? 0 : Math.max(0, qty - (partly[rowNo] ?? 0) - (waitingOf[rowNo] ?? 0));
+  // On a set, what is left of the part picked (not done, not waiting for the check).
+  const left = line.isSet && route?.partPieces ? Math.max(0, line.qty - route.partPieces[part] - Object.values(waitingOf).reduce((n, c) => n + c, 0)) : lineLeft;
   const ready = (rowNo: number) => forwarded === null || forwarded.includes(rowNo);
   const total = byWearer ? Object.values(counts).reduce((n, c) => n + c, 0) : pieces;
   const count = (rowNo: number, n: number, max: number) => setCounts((c) => {
@@ -367,7 +372,7 @@ function RecordSheet({ job, line, step, left, onClose, onSaved }: { job: FloorJo
       <p className="-mt-2 text-[13px] font-semibold text-slate-500">Today · {left} left on this item</p>
       {line.isSet && (
         <div className="grid grid-cols-2 gap-2" role="group" aria-label="Part">
-          {(['upper', 'lower'] as const).map((p) => <button key={p} type="button" aria-pressed={part === p} onClick={() => setPart(p)}
+          {(['upper', 'lower'] as const).map((p) => <button key={p} type="button" aria-pressed={part === p} onClick={() => (setPart(p), setCounts({}))}
             className={`h-11 rounded-xl text-[15px] font-bold ${part === p ? 'bg-slate-900 text-white' : 'border border-slate-300'}`}>{p === 'upper' ? 'Upper (top)' : 'Lower (shorts)'}</button>)}
         </div>
       )}
@@ -394,8 +399,8 @@ function RecordSheet({ job, line, step, left, onClose, onSaved }: { job: FloorJo
               const name = [w.jerseyName ?? w.wearerName, w.jerseyNumber].filter(Boolean).join(' ');
               const max = ready(w.rowNo) ? free(w.rowNo, w.qty) : 0;
               const n = counts[w.rowNo] ?? 0;
-              const waiting = step.waitingWearers[w.rowNo] ?? 0;
-              const note = route?.doneWearers?.includes(w.rowNo) ? 'Done' : !ready(w.rowNo) ? 'Not ready yet'
+              const waiting = waitingOf[w.rowNo] ?? 0;
+              const note = done.includes(w.rowNo) ? 'Done' : !ready(w.rowNo) ? 'Not ready yet'
                 : max === 0 && waiting > 0 ? 'Waiting for the check' : max === w.qty ? `${w.qty} pc${w.qty === 1 ? '' : 's'}` : `${max} of ${w.qty} left`;
               return (
                 <li key={w.rowNo} className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 ${n ? 'border-indigo-600 bg-indigo-50' : 'border-slate-200'} ${max === 0 ? 'opacity-60' : ''}`}>
