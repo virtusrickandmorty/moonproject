@@ -325,3 +325,41 @@ button:disabled,
   .payslips { page: payslips; }
 }
 @page payslips { size: A4 portrait; margin: 12mm; }
+
+/* Dark screens (theme.ts, dark-css.ts): a border with no colour of its own is a soft grey, not the light text colour it
+   would take, and a dark picture marked data-dark="invert" (the logo) is turned light. Screens only. */
+@media screen {
+  @layer base {
+    :where(:root[data-theme='dark']) :where(*, ::after, ::before) {
+      border-color: var(--color-slate-300);
+    }
+  }
+  :root[data-theme='dark'] [data-dark='invert'] {
+    filter: invert(1) hue-rotate(180deg);
+  }
+  /* The charts draw with fixed colours (DASH/Home.tsx, RPT/CashFlow.tsx): each grey turned over as the screens' greys are. */
+  :root[data-theme='dark'] svg [fill='#f8fafc'] { fill: var(--color-slate-50); }
+  :root[data-theme='dark'] svg [stroke='#f8fafc'] { stroke: var(--color-slate-50); }
+  :root[data-theme='dark'] svg [fill='#eef2f6'] { fill: var(--color-slate-100); }
+  :root[data-theme='dark'] svg [stroke='#eef2f6'] { stroke: var(--color-slate-100); }
+  :root[data-theme='dark'] svg [fill='#e2e8f0'] { fill: var(--color-slate-200); }
+  :root[data-theme='dark'] svg [stroke='#e2e8f0'] { stroke: var(--color-slate-200); }
+  :root[data-theme='dark'] svg [fill='#cbd5e1'] { fill: var(--color-slate-300); }
+  :root[data-theme='dark'] svg [stroke='#cbd5e1'] { stroke: var(--color-slate-300); }
+  :root[data-theme='dark'] svg [fill='#b6c0cd'] { fill: var(--color-slate-300); }
+  :root[data-theme='dark'] svg [stroke='#b6c0cd'] { stroke: var(--color-slate-300); }
+  :root[data-theme='dark'] svg [fill='#94a3b8'] { fill: var(--color-slate-400); }
+  :root[data-theme='dark'] svg [stroke='#94a3b8'] { stroke: var(--color-slate-400); }
+  :root[data-theme='dark'] svg [fill='#64748b'] { fill: var(--color-slate-500); }
+  :root[data-theme='dark'] svg [stroke='#64748b'] { stroke: var(--color-slate-500); }
+  :root[data-theme='dark'] svg [fill='#475569'] { fill: var(--color-slate-600); }
+  :root[data-theme='dark'] svg [stroke='#475569'] { stroke: var(--color-slate-600); }
+  :root[data-theme='dark'] svg [fill='#0f172a'] { fill: var(--color-slate-900); }
+  :root[data-theme='dark'] svg [stroke='#0f172a'] { stroke: var(--color-slate-900); }
+  :root[data-theme='dark'] svg [fill='#ffffff'] { fill: var(--dk-card); }
+  :root[data-theme='dark'] svg [stroke='#ffffff'] { stroke: var(--dk-card); }
+  :root[data-theme='dark'] svg [fill='#eef1fb'] { fill: var(--color-indigo-100); }
+  :root[data-theme='dark'] svg [stroke='#eef1fb'] { stroke: var(--color-indigo-100); }
+  :root[data-theme='dark'] svg [fill='#8c9ee2'] { fill: var(--color-indigo-300); }
+  :root[data-theme='dark'] svg [stroke='#8c9ee2'] { stroke: var(--color-indigo-300); }
+}

@@ -27,7 +27,7 @@ function AuthForm(p: { title: string; intro?: string; boxes: Box[]; submitLabel:
   if (!p.page) return form;
   return (
     <main className="flex min-h-screen flex-col items-center justify-center px-4 py-10">
-      <img src="/virtus-logo.png" alt="Virtus" className="mb-8 h-28 w-auto" />
+      <img src="/virtus-logo.png" alt="Virtus" data-dark="invert" className="mb-8 h-28 w-auto" />
       {form}
       <PrivacyNotice />
       <p className="mt-6 text-center text-xs tracking-wide text-slate-400">VIRTUS GARMENTS, INC.</p>
