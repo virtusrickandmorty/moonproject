@@ -3,7 +3,8 @@
  * to one employee (EMP floor-users), and everything here is that employee's own:
  * - Today: this pay week's earnings (Friday to Thursday, or Monday to Saturday: setting pay.week_start) and their work:
  *   the job order lines and steps they worked in the last three weeks with pieces still left on the step.
- * - A job: its lines, each step with its pieces and what is left, and the wearers done on each step.
+ * - A job: its lines, each of the worker's own steps (ticked on their employee page) with its pieces and what is left,
+ *   and the wearers done on each step. Other steps are not theirs to see or record.
  * - Record: their own pieces on one step of one line, today. Checked at once against every rule of Record pieces (caps,
  *   wearers, sets, a sheet typed twice), then kept waiting for the production head's check (checks.ts); approved, they are
  *   a Production Entry (prd.entry) like any other. The worker's role does not hold prd.assign (recording anyone's pieces).
@@ -16,8 +17,8 @@ import type { EngineEnv } from '../../engine/documents/lifecycle.ts';
 import { employeeOfUser } from '../EMP/public.ts';
 import { jobOrderRef, lineState, liveReplacementOf } from '../JO/public.ts';
 import { rateAt } from '../RATE/public.ts';
-import { openJobsFor, scanPieces, scansOf, waitingPieces } from './checks.ts';
-import { SET_PARTS, availableFor, lineRoute, lineSetup, type Part } from './production.ts';
+import { openJobsFor, scanPieces, scansOf, waitingPieces, workerSteps } from './checks.ts';
+import { SET_PARTS, availableFor, lineRoute, lineSetup, listSteps, type Part } from './production.ts';
 
 /** YYYY-MM-DD plus some days, as calendar arithmetic on the date alone (no clock, no time zone). */
 const addDays = (d: string, n: number) => {
@@ -75,7 +76,8 @@ export function floorToday(db: Db, userId: string, today: string) {
   const worked = db.prepare(`SELECT a.job_order_id AS jobOrderId, a.line_no AS lineNo, a.step_id AS stepId, MAX(a.work_date) AS last
     FROM prd_assignments a ${POSTED} WHERE a.employee_id = ? AND a.work_date >= ? GROUP BY a.job_order_id, a.line_no, a.step_id ORDER BY last DESC LIMIT 30`)
     .all(me.id, addDays(today, -21)) as { jobOrderId: string; lineNo: number; stepId: number }[];
-  const work = worked.flatMap((w) => {
+  const mine = workerSteps(db, me.id);
+  const work = worked.filter((w) => mine.includes(w.stepId)).flatMap((w) => {
     const jo = jobOrderRef(db, w.jobOrderId);
     const line = lineState(db, w.jobOrderId).find((l) => l.lineNo === w.lineNo);
     const route = lineRoute(db, w.jobOrderId, w.lineNo);
@@ -96,7 +98,7 @@ export function floorToday(db: Db, userId: string, today: string) {
 
 /** A job order as the worker sees it: each line's steps with pieces and what is left, the wearers, and their rate. */
 export function floorJob(db: Db, userId: string, ref: string, today: string) {
-  floorWorker(db, userId);
+  const mine = workerSteps(db, floorWorker(db, userId).id);
   // A ticket's QR or a typed number: "231", "JO-000231" or the id; an edited job order opens its replacement.
   const t = ref.trim().toUpperCase();
   const number = /^\d{1,6}$/.test(t) ? `JO-${t.padStart(6, '0')}` : t;
@@ -108,17 +110,22 @@ export function floorJob(db: Db, userId: string, ref: string, today: string) {
     const route = lineRoute(db, jo.id, l.lineNo);
     const setup = lineSetup(db, jo.id, l.lineNo);
     if (!route || !setup) return []; // not set up for production yet
+    const own = route.filter((s) => mine.includes(s.id));
+    if (own.length === 0) return [];
     const parts: Part[] = setup.isSet ? [...SET_PARTS] : ['whole'];
     return [{
       lineNo: l.lineNo, description: l.description, qty: l.qty, isSet: setup.isSet, garmentType: setup.garmentType,
-      steps: route.map((s) => ({
+      steps: own.map((s) => ({
         id: s.id, name: s.name, status: s.status, pieces: s.pieces, available: availableFor(route, s.id, l.qty), payBasis: s.payBasis,
         waiting: waitingPieces(db, jo.id, l.lineNo, s.id), // scanned, not checked yet
         rates: parts.map((part) => ({ part, rateCents: s.payBasis === 'daily' ? null : rateAt(db, setup.garmentType, s.code, setup.complexity, today, part)?.rateCents ?? null })),
       })),
     }];
   });
-  return { jobOrder: { id: jo.id, number: jo.number, customerName: jo.customerName, dueDate: jo.dueDate, status: jo.status }, lines };
+  // Why nothing shows, when nothing does: no steps ticked, the job not set up yet, or none of its steps theirs.
+  const setUp = lineState(db, jo.id).filter((l) => lineRoute(db, jo.id, l.lineNo)).length;
+  return { jobOrder: { id: jo.id, number: jo.number, customerName: jo.customerName, dueDate: jo.dueDate, status: jo.status }, lines,
+    mySteps: listSteps(db).filter((s) => mine.includes(s.id)).map((s) => s.name), setUp };
 }
 
 /** The open job orders with pieces left on the steps the worker does. */

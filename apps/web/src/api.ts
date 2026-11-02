@@ -375,6 +375,8 @@ export interface FloorJob {
   lines: { lineNo: number; description: string; qty: number; isSet: boolean; garmentType: string; roster: PrdWearer[];
     steps: { id: number; name: string; status: StepStatus; pieces: number; available: number; payBasis: string; waiting: number; rates: { part: 'whole' | 'upper' | 'lower'; rateCents: number | null }[] }[];
     route: PrdJob['lines'][number]['route'] }[];
+  /** The worker's own steps (the lines show only these), and how many lines are set up for production. */
+  mySteps: string[]; setUp: number;
 }
 export interface FloorRecord { jobOrderId: string; lineNo: number; stepId: number; pieces: number; wearers?: number[]; part?: 'upper' | 'lower'; again?: true }
 export interface PrdWearer { rowNo: number; wearerName: string; sizeMode: 'preset' | 'measured'; size: string | null; lowerSize?: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }

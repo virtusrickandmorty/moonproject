@@ -1,7 +1,7 @@
 /**
  * The floor app (the owner's request, Nov 2026; the approved mock-up "Virtus Floor App"): a production worker's own
  * phone screens, full screen without the office menu. Today (the week so far, their work and their scans), Jobs (the
- * open job orders with pieces left on the steps they do), a job (its steps, what is left, who is done), Record pieces (a
+ * open job orders with pieces left on the steps they do), a job (their own steps on it, what is left, who is done), Record pieces (a
  * sheet that slides up), Sent, and My earnings. The server keeps every rule of Record pieces; this only records the
  * signed-in worker's own pieces, today, and they count once the production head approves them (the owner's request, Nov 2026).
  */
@@ -260,7 +260,13 @@ function JobScreen({ jobRef, lineNo, stepId }: { jobRef: string; lineNo?: number
   if (!data) return <Waiting />;
   if (saved) return <SavedScreen saved={saved} jobOrderNumber={data.jobOrder.number} onMore={() => (setSaved(null), reload())} />;
   const l = data.lines.find((x) => x.lineNo === line) ?? data.lines[0];
-  if (!l) return <div className="space-y-4 p-5">{back}<Problem text={`${data.jobOrder.number} is not set up for production yet. Ask your line leader.`} /></div>;
+  if (!l) {
+    // Only the worker's own steps show: say why there is nothing here for them.
+    const why = data.mySteps.length === 0 ? 'Your steps are not set yet. Ask the office to tick the steps you do (Sewing, Cutting…) on your employee page.'
+      : data.setUp === 0 ? `${data.jobOrder.number} is not set up for production yet. Ask your line leader.`
+      : `${data.jobOrder.number} has no work on your steps (${data.mySteps.join(', ')}). Ask your line leader.`;
+    return <div className="space-y-4 p-5">{back}<Problem text={why} /></div>;
+  }
   const open = l.steps.filter((s) => s.status !== 'completed' && s.status !== 'not_needed');
   const s = l.steps.find((x) => x.id === step) ?? open.find((x) => x.payBasis !== 'daily') ?? open[0] ?? l.steps[0]!;
   const route = l.route?.find((r) => r.id === s.id);

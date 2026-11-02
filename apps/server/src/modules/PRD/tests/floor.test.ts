@@ -31,6 +31,7 @@ beforeEach(async () => {
   const user = createUser(env.db, 'sewer.one', ['worker']);
   expect((await owner.put(`/api/emp/employees/${w.sewer1}/floor-user`, { userId: user })).statusCode).toBe(200);
   sewer = await login(env.app, 'sewer.one', PASSWORD);
+  expect((await production.put(`/api/prd/worker-steps/${w.sewer1}`, { stepIds: [SEWING] })).statusCode).toBe(200); // she sews
 });
 
 it('records her own pieces today at the table rate, and shows them on her week and her work', async () => {
