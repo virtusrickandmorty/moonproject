@@ -6,6 +6,7 @@ import { clockGuard } from '../../engine/documents/lifecycle.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { searchCatalogItems } from '../CAT/public.ts';
 import { searchCustomers } from '../CUS/public.ts';
+import { prepareJobOrder } from './job-orders.ts';
 import { MEASURES, MEASURE_PRESETS, changeAnswer, closeLink, createLink, linkDetail, listLinks, myAnswer, publicLink, setClosingDate, submitAnswer } from './links.ts';
 
 const noStore = (reply: FastifyReply) => reply.header('Cache-Control', 'no-store');
@@ -21,6 +22,9 @@ export function olkRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post('/api/olk/links', { config: { permission: 'olk.manage' } }, async (req) => write(() => createLink(db, req.body, who(req))));
   app.post<{ Params: { id: string } }>('/api/olk/links/:id/close', { config: { permission: 'olk.manage' } }, async (req) => write(() => closeLink(db, req.params.id, who(req))));
   app.post<{ Params: { id: string } }>('/api/olk/links/:id/closes-on', { config: { permission: 'olk.manage' } }, async (req) => write(() => setClosingDate(db, req.params.id, req.body, who(req))));
+  /** Starts a job order from answers (one for the team or group, or a member's own): the customer and lines for the form. */
+  app.post<{ Params: { id: string } }>('/api/olk/links/:id/job-order', { config: { permission: 'olk.manage' } }, async (req) =>
+    write(() => prepareJobOrder(db, req.params.id, req.body, { ...who(req), permissions: currentUser(req).permissions })));
   /** The new-link form's pickers: price list items and customers, and the measuring guide with the usual sets. */
   app.get('/api/olk/pickers', { config: { permission: 'olk.manage' } }, async (req) => {
     const q = String((req.query as { q?: unknown }).q ?? '').trim().slice(0, 100);

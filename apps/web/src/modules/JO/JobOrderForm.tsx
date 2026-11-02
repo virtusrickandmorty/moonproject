@@ -106,6 +106,7 @@ export function RosterGrid(p: { line: JoLineRow; n: string; people: CustomerWear
               <tr key={j} className="grid gap-2 rounded-xl border border-slate-200 p-2 sm:grid-cols-2 lg:table-row lg:border-0 lg:p-0">
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">Wearer</span>
                   {r.personId ? <span>{r.name}</span> : <input aria-label={`${p.n} wearer ${j + 1} name`} placeholder="One-off name" className={inputClass} value={r.name} onChange={(e) => set(j, { name: e.target.value })} />}
+                  {r.notes && <span className="block text-xs text-amber-800">{r.notes}</span>}
                 </td>
                 <td className="py-1 pr-1"><span className="block text-xs text-slate-600 lg:hidden">{p.line.isSet ? 'Upper size' : 'Size'}</span>
                   {sizeSelect(r, j, 'size', p.line.isSet ? 'upper size' : 'size')}

@@ -13,8 +13,11 @@ import type { Terms } from './opening.ts';
 
 /* ---------- Job order ---------- */
 
-/** One wearer on a line: a wearer of the customer (personId) or a one-off name typed in. On a set, `size` is the upper size. */
-export interface RosterEdit { personId: string; name: string; sizeMode: 'preset' | 'measured'; size: string; lowerSize: string; jerseyName: string; jerseyNumber: string; qty: string; garmentType: string }
+/**
+ * One wearer on a line: a wearer of the customer (personId) or a one-off name typed in. On a set, `size` is the upper size.
+ * `notes`: the row's note for production, kept as it came (from an order link, or a recorded job order being edited).
+ */
+export interface RosterEdit { personId: string; name: string; sizeMode: 'preset' | 'measured'; size: string; lowerSize: string; jerseyName: string; jerseyNumber: string; qty: string; garmentType: string; notes?: string }
 /**
  * A line; `listCents` is the price list's tier price for the quantity (null when not from the price list). `isSet`: the
  * wearers get an upper and a lower size (the owner's request, Oct 2026): on when a set is picked from the price list.
@@ -25,7 +28,7 @@ export interface JoValues {
   customer: { id: string; name: string } | null;
   contact: string; dueInDays: string; priority: 'normal' | 'rush'; paymentTerms: Terms | ''; notes: string; lines: JoLineRow[];
 }
-export interface RosterInput { personId?: string; name?: string; sizeMode: 'preset' | 'measured'; size?: string; lowerSize?: string; jerseyName?: string; jerseyNumber?: string; qty: number; garmentType?: string }
+export interface RosterInput { personId?: string; name?: string; sizeMode: 'preset' | 'measured'; size?: string; lowerSize?: string; jerseyName?: string; jerseyNumber?: string; qty: number; garmentType?: string; notes?: string }
 export interface JoLineInput { kind: Kind; description: string; qty: number; unitPriceCents: number; discountCents: number; roster: RosterInput[] }
 export interface JoInput { customerId: string; contact?: string; dueInDays: number; priority: 'normal' | 'rush'; paymentTerms: Terms; notes?: string; lines: JoLineInput[] }
 /** What GET /api/docs/jo.job_order/:id keeps beside the input: the names shown for listed wearers. */
@@ -96,6 +99,7 @@ export function joInput(v: JoValues): { input: JoInput; totalCents: number; erro
         ...optional('jerseyNumber', r.jerseyNumber),
         qty: Number(r.qty),
         ...optional('garmentType', r.garmentType),
+        ...optional('notes', r.notes ?? ''),
       });
     });
     if (errors.length === before) lines.push({ kind: l.kind, description: l.description.trim(), qty: Number(qty), unitPriceCents: price!, discountCents: discount!, roster });
@@ -141,6 +145,7 @@ export function joValues(i: JoInput, doc?: JoDoc): JoValues {
         jerseyNumber: r.jerseyNumber ?? '',
         qty: String(r.qty),
         garmentType: r.garmentType ?? '',
+        ...(r.notes ? { notes: r.notes } : {}),
       })),
     })),
   };

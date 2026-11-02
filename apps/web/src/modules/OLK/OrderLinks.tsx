@@ -5,8 +5,11 @@
  * check, and close it or give it a new closing date. Making the job orders from it is the next step.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { manilaDate } from '@moonproject/shared';
-import { api, type Me, type OlkGuide, type OlkLinkDetail, type OlkLinkInput, type OlkLinkRow } from '../../api.ts';
+import { formatPesos, manilaDate } from '@moonproject/shared';
+import { api, type Me, type OlkGuide, type OlkJobOrder, type OlkLinkDetail, type OlkLinkInput, type OlkLinkRow } from '../../api.ts';
+import { navigate } from '../../router.tsx';
+import { docPath } from '../../shell/menu.ts';
+import { emptyJo, emptyJoLine, oneOff, type JoValues } from '../JO/forms.ts';
 import { Button, Dialog, Field, Loading, Notice, Panel, inputClass, manilaTime, showDate, useAction } from '../../components/ui.tsx';
 
 /** The address customers open: the website's, so the link works from anywhere (not the shop's own network address). */
@@ -17,6 +20,20 @@ const inDays = (day: string, n: number) => {
   return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
 };
 const KIND = { team: 'Team list', group: 'Group order' } as const;
+const JO = 'jo.job_order';
+
+/** The job order form's values from a job order started from answers: price list prices, wearers, sizes and notes. */
+export function joValuesFrom(p: OlkJobOrder): JoValues {
+  return {
+    ...emptyJo(), customer: p.customer, contact: p.contact, notes: p.notes,
+    lines: p.lines.map((l) => ({
+      ...emptyJoLine(), itemId: l.itemId, kind: l.kind, description: l.description, isSet: l.isSet, qty: String(l.qty),
+      price: l.listCents === null ? '' : formatPesos(l.listCents), listCents: l.listCents,
+      roster: l.roster.map((r) => ({ ...oneOff(r.name), personId: r.personId ?? '', sizeMode: r.sizeMode, size: r.size ?? '', lowerSize: r.lowerSize ?? '',
+        jerseyName: r.jerseyName ?? '', jerseyNumber: r.jerseyNumber ?? '', qty: String(r.qty), ...(r.notes ? { notes: r.notes } : {}) })),
+    })),
+  };
+}
 
 export function OrderLinks({ me }: { me: Me }) {
   const [rows, setRows] = useState<OlkLinkRow[] | null>(null);
@@ -74,15 +91,14 @@ function NewLink({ onMade }: { onMade: (d: OlkLinkDetail) => void }) {
   const [items, setItems] = useState<ItemDraft[]>([]);
   const [guide, setGuide] = useState<OlkGuide[]>([]);
   const [presets, setPresets] = useState<Record<'top' | 'bottom', string[]>>({ top: [], bottom: [] });
-  const [q, setQ] = useState(''); const [found, setFound] = useState<{ items: { id: string; code: string; name: string }[]; customers: { id: string; name: string }[] }>({ items: [], customers: [] });
-  const [cq, setCq] = useState('');
+  const [q, setQ] = useState(''); const [found, setFound] = useState<{ id: string; code: string; name: string }[]>([]);
   const { busy, error, run } = useAction();
 
   useEffect(() => void api.olkPickers().then((p) => (setGuide(p.guide), setPresets(p.presets)), () => undefined), []);
   useEffect(() => {
-    const t = setTimeout(() => void (q.trim() || cq.trim() ? api.olkPickers(q.trim() || cq.trim()).then((p) => setFound({ items: q.trim() ? p.items : [], customers: cq.trim() ? p.customers : [] }), () => undefined) : setFound({ items: [], customers: [] })), 250);
+    const t = setTimeout(() => void (q.trim() ? api.olkPickers(q.trim()).then((p) => setFound(p.items), () => undefined) : setFound([])), 250);
     return () => clearTimeout(t);
-  }, [q, cq]);
+  }, [q]);
 
   const setItem = (i: number, c: Partial<ItemDraft>) => setItems(items.map((it, j) => (j === i ? { ...it, ...c } : it)));
   const body = (): OlkLinkInput => ({ kind, title: title.trim(), closesOn, payOwn: kind === 'group' && payOwn, ...(customer ? { customerId: customer.id } : {}),
@@ -103,10 +119,7 @@ function NewLink({ onMade }: { onMade: (d: OlkLinkDetail) => void }) {
         <Field label="Open until" required><input type="date" className={inputClass} value={closesOn} min={today} onChange={(e) => setClosesOn(e.target.value)} /></Field>
       </div>
       <Field label="Customer (optional)" hint="Leave empty when they are new: their details from the link are used.">
-        {customer ? <div className="flex items-center gap-2"><span className="font-medium">{customer.name}</span><button type="button" className="text-xs text-indigo-700 underline" onClick={() => setCustomer(null)}>Change</button></div> : <>
-          <input className={inputClass} value={cq} onChange={(e) => setCq(e.target.value)} placeholder="Search customers" />
-          {found.customers.length > 0 && <ul className="mt-1 max-h-40 overflow-auto rounded-md ring-1 ring-slate-200">{found.customers.map((c) => <li key={c.id}><button type="button" className="w-full px-3 py-1.5 text-left hover:bg-indigo-50" onClick={() => { setCustomer(c); setCq(''); }}>{c.name}</button></li>)}</ul>}
-        </>}
+        <CustomerSearch value={customer} onChange={setCustomer} />
       </Field>
       {kind === 'group' && (
         <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-0.5" checked={payOwn} onChange={(e) => setPayOwn(e.target.checked)} />
@@ -145,7 +158,7 @@ function NewLink({ onMade }: { onMade: (d: OlkLinkDetail) => void }) {
         ))}
         {items.length < 20 && <>
           <input className={inputClass} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Add an item from the price list: search by name or code" />
-          {found.items.length > 0 && <ul className="max-h-48 overflow-auto rounded-md ring-1 ring-slate-200">{found.items.map((c) => (
+          {found.length > 0 && <ul className="max-h-48 overflow-auto rounded-md ring-1 ring-slate-200">{found.map((c) => (
             <li key={c.id}><button type="button" className="w-full px-3 py-1.5 text-left hover:bg-indigo-50" onClick={() => { setItems([...items, { itemId: c.id, name: c.name, sizing: 'size', fields: [] }]); setQ(''); }}>{c.name} <span className="text-xs text-slate-500">{c.code}</span></button></li>
           ))}</ul>}
         </>}
@@ -156,13 +169,35 @@ function NewLink({ onMade }: { onMade: (d: OlkLinkDetail) => void }) {
   );
 }
 
+function CustomerSearch({ value, onChange }: { value: { id: string; name: string } | null; onChange: (c: { id: string; name: string } | null) => void }) {
+  const [q, setQ] = useState('');
+  const [found, setFound] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    const t = setTimeout(() => void (q.trim() ? api.olkPickers(q.trim()).then((p) => setFound(p.customers), () => undefined) : setFound([])), 250);
+    return () => clearTimeout(t);
+  }, [q]);
+  if (value) return <div className="flex items-center gap-2"><span className="font-medium">{value.name}</span><button type="button" className="text-xs text-indigo-700 underline" onClick={() => onChange(null)}>Change</button></div>;
+  return <>
+    <input className={inputClass} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customers" aria-label="Search customers" />
+    {found.length > 0 && <ul className="mt-1 max-h-40 overflow-auto rounded-md ring-1 ring-slate-200">{found.map((c) => <li key={c.id}><button type="button" className="w-full px-3 py-1.5 text-left hover:bg-indigo-50" onClick={() => { onChange(c); setQ(''); }}>{c.name}</button></li>)}</ul>}
+  </>;
+}
+
 function LinkDetail({ id, manage }: { id: string; manage: boolean }) {
   const [d, setD] = useState<OlkLinkDetail | null>(null);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [newDate, setNewDate] = useState('');
   const [shown, setShown] = useState<string | null>(null);
+  const [ticked, setTicked] = useState<string[] | null>(null); // one job order for these answers (group)
+  const [groupCustomer, setGroupCustomer] = useState<{ id: string; name: string } | null>(null);
   const act = useAction();
+  /** Starts the job order and opens the job order form on it, to check and record. */
+  const start = (responseIds: string[], together: boolean, customerId?: string) => void act.run(async () => {
+    const p = await api.olkJobOrder(id, { responseIds, together, ...(customerId ? { customerId } : {}) });
+    const draft = await api.createDraft(JO, { form: joValuesFrom(p) });
+    navigate(`${docPath(JO, '/new')}?draft=${draft.id}`);
+  });
   useEffect(() => void api.olkLink(id).then(setD, (e: Error) => setError(e.message)), [id]);
   if (error) return <Notice>{error}</Notice>;
   if (!d) return <Loading />;
@@ -203,6 +238,24 @@ function LinkDetail({ id, manage }: { id: string; manage: boolean }) {
         </table>
       </Panel>
 
+      {manage && d.kind === 'group' && d.responses.length > 0 && (ticked === null
+        ? <div className="flex flex-wrap items-center gap-2">
+            <Button tone="primary" onClick={() => { const fresh = d.responses.filter((r) => r.made.length === 0).map((r) => r.id); setTicked(fresh.length ? fresh : d.responses.map((r) => r.id)); setGroupCustomer(d.customer); }}>One job order for the group</Button>
+            <span className="text-sm text-slate-600">or a member's own job order from their answer below.</span>
+          </div>
+        : <div className="space-y-3 rounded-lg bg-indigo-50/60 p-3 ring-1 ring-indigo-200">
+            <p className="text-sm font-medium">One job order for the ticked answers</p>
+            <Field label="Customer" hint="The group's customer: the job order is billed to them."><CustomerSearch value={groupCustomer} onChange={setGroupCustomer} /></Field>
+            <ul className="grid gap-1 text-sm sm:grid-cols-2">{d.responses.map((r) => (
+              <li key={r.id}><label className="flex items-center gap-2"><input type="checkbox" checked={ticked.includes(r.id)} onChange={(e) => setTicked(e.target.checked ? [...ticked, r.id] : ticked.filter((x) => x !== r.id))} />
+                {r.name}{r.made.length > 0 && <span className="text-xs text-slate-500">(job order started before)</span>}</label></li>
+            ))}</ul>
+            <div className="flex gap-2">
+              <Button tone="primary" disabled={act.busy || ticked.length === 0 || !groupCustomer} onClick={() => start(ticked, true, groupCustomer?.id)}>{act.busy ? 'Starting…' : `Start the job order (${ticked.length})`}</Button>
+              <Button onClick={() => setTicked(null)}>Cancel</Button>
+            </div>
+          </div>)}
+
       <Panel title={`Answers (${d.responses.length})`}>
         {d.responses.length === 0 ? <p className="text-sm text-slate-600">Nobody has filled it in yet.</p> : (
           <ul className="divide-y divide-slate-100">
@@ -213,6 +266,9 @@ function LinkDetail({ id, manage }: { id: string; manage: boolean }) {
                   <span className="text-xs text-slate-500">{manilaTime(r.updatedAt)}{r.changes ? ` · changed ${r.changes}×` : ''}</span>
                 </button>
                 {r.checks.map((c) => <p key={c} className="text-sm text-amber-700">⚠ {c}</p>)}
+                {r.made.map((m) => <p key={m.at} className="text-xs text-emerald-700">Job order started {manilaTime(m.at)} by {m.by} for {m.customer}{m.together && d.kind === 'group' ? ', with the group' : ''}</p>)}
+                {manage && <div className="mt-1"><Button disabled={act.busy} onClick={() => start([r.id], d.kind === 'team')}>
+                  {d.kind === 'team' ? (r.made.length ? 'Make the job order again' : 'Make the job order') : (r.made.length ? 'Own job order again' : 'Own job order')}</Button></div>}
                 {shown === r.id && (
                   <div className="mt-2 space-y-2 text-sm">
                     <p className="text-slate-600">{r.gender === 'female' ? 'Female' : 'Male'} · {r.mobile} · {r.email}<br />{r.address}</p>
