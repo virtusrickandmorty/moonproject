@@ -12,7 +12,8 @@ import { garmentTypes } from '../RATE/public.ts';
 import { activeEmployees } from './emp.ts';
 import { carryWarnings } from './carry.ts';
 import { entriesByJobOrder, jobSummary, reassignWorker } from './summary.ts';
-import { floorJob, floorRecord, floorToday } from './floor.ts';
+import { floorJob, floorOpen, floorRecord, floorToday } from './floor.ts';
+import { approveScan, floorChecks, rejectScan, setWorkerSteps, waitingCount, workerSteps } from './checks.ts';
 import { COMPLEXITIES, SET_PARTS, availableFor, board, forwardedWearers, lineRoute, lineSetup, listSteps, listTemplates, reworkOpen, sendBackForRework, setupLine, stepAction, stepById, wearerPieces, wearersDone, type StepAction } from './production.ts';
 
 const setupBody = z
@@ -64,8 +65,25 @@ export function prdRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
   app.post('/api/prd/floor/record', { config: { permission: 'prd.floor' } }, async (req) => {
     const u = currentUser(req);
-    return floorRecord(engineEnv(deps), { userId: u.userId, permissions: u.permissions }, req.body);
+    return write(() => floorRecord(engineEnv(deps), { userId: u.userId, permissions: u.permissions }, req.body, today(clock), stamp(clock)));
   });
+  app.get('/api/prd/floor/open', { config: { permission: 'prd.floor' } }, async (req) => floorOpen(db, currentUser(req).userId));
+
+  // The production head's check of what workers scanned (checks.ts, the owner's request, Nov 2026).
+  app.get('/api/prd/checks', { config: { permission: 'prd.verify' } }, async (req) => {
+    const u = currentUser(req);
+    return floorChecks(engineEnv(deps), { userId: u.userId, permissions: u.permissions });
+  });
+  app.get('/api/prd/checks/count', { config: { permission: 'prd.verify' } }, async () => ({ waiting: waitingCount(db) }));
+  app.post<{ Params: { id: string } }>('/api/prd/checks/:id/approve', { config: { permission: 'prd.verify' } }, async (req) => {
+    const u = currentUser(req);
+    return write(() => approveScan(engineEnv(deps), { userId: u.userId, permissions: u.permissions }, req.params.id, req.body, stamp(clock)));
+  });
+  app.post<{ Params: { id: string } }>('/api/prd/checks/:id/reject', { config: { permission: 'prd.verify' } }, async (req) => write(() => rejectScan(db, who(req), req.params.id, req.body)));
+
+  /** The steps a worker does (ticked on their employee page): their open jobs on the floor app come from these. */
+  app.get<{ Params: { id: string } }>('/api/prd/worker-steps/:id', { config: { permission: 'prd.view' } }, async (req) => ({ stepIds: workerSteps(db, req.params.id) }));
+  app.put<{ Params: { id: string } }>('/api/prd/worker-steps/:id', { config: { permission: 'prd.assign' } }, async (req) => ({ stepIds: write(() => setWorkerSteps(db, req.params.id, req.body, who(req))) }));
 
   function jobDetail(ref: string) {
     const jo = jobOrderRef(db, ref);

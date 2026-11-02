@@ -51,6 +51,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Admin', label: 'Shop certificate', path: '/admin/shop-certificate' },
   { group: 'Admin', label: 'Practice shop', path: '/admin/practice' },
   { group: 'Production', label: 'Production board', path: '/prd/board', permission: 'prd.view' },
+  { group: 'Production', label: 'Check scanned work', path: '/prd/checks', permission: 'prd.verify' },
   { group: 'Production', label: 'TV board', path: '/prd/tv', permission: 'prd.tv' },
   { group: 'Production', label: 'Sizer sets', path: '/szr/sets', permission: 'szr.loan.view' },
   { group: 'Production', label: 'Image tools', path: '/img', permission: 'img.use' },
@@ -217,7 +218,7 @@ export const SUBS: Partial<Record<MenuGroup, [sub: string, keys: string[]][]>> =
     ['TPL services', ['/tpl', 'tpl.']],
   ],
   Production: [
-    ['Production', ['/prd/board', 'prd.entry', '/prd/tv']],
+    ['Production', ['/prd/board', '/prd/checks', 'prd.entry', '/prd/tv']],
     ['Sizers', ['/szr']],
     ['Design', ['/img']],
   ],

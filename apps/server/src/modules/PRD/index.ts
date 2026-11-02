@@ -21,6 +21,9 @@ export default defineModule({
     // The floor app (the owner's request, Nov 2026): a worker's own sign-in records only their own pieces, today, and sees
     // only their own earnings; whose they are comes from the sign-in's link to the employee (EMP floor-users).
     { key: 'prd.floor', label: 'Use the floor app: record my own pieces and see my own earnings', defaultRoles: ['worker'] },
+    // Pieces scanned on the floor app wait for the production head's check (the owner's request, Nov 2026). The owner
+    // gives it to the production head's role (plan C6 keeps the Production role to view and assign keys).
+    { key: 'prd.verify', label: 'Check the pieces workers scan on the floor app: approve or reject them', defaultRoles: ['owner'] },
     { key: 'prd.reassign', label: 'Change the worker on pieces already recorded (not yet paid)', defaultRoles: ['accountant', 'owner'] },
   ],
   docTypes: [entryDoc],

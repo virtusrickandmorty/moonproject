@@ -10,6 +10,7 @@ import { api, type BoardCard, type DocTypeInfo, type Me, type PrdCatalogue, type
 import { addRewrite, Link, navigate, useLocation } from '../../router.tsx';
 import { EntryForm } from './EntryForm.tsx';
 import { JobSummaryDialog } from './Summary.tsx';
+import { ScansWaitingNote } from './Checks.tsx';
 import { Loading, Button, Dialog, Field, Notice, ReasonDialog, inputClass, useAction, searchClass, showDate } from '../../components/ui.tsx';
 import { TickBar } from '../../components/charts.tsx';
 import { ScanQrButton, jobOrderFromScan, useScannerKeys } from '../../components/QrScan.tsx';
@@ -97,6 +98,7 @@ export function ProductionBoard({ me, docTypes }: { me: Me; docTypes: DocTypeInf
         {can.assign && <Link to={docPath('prd.entry', '/new')} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700">+ Record pieces</Link>}
       </div>
       {error && <Notice>{error}</Notice>}
+      {me.permissions.includes('prd.verify') && <ScansWaitingNote />}
       {toRoute && <Notice tone="warning">Choose the production steps of {toRoute.number} {toRoute.lines.length === 1 ? 'line' : 'lines'} {toRoute.lines.join(', ')} first; then its job ticket can be printed.</Notice>}
       {recordedId && <Notice tone="success">Pieces recorded. <Link to={docPath('prd.entry', `/${recordedId}`)} className="underline">Open the entry</Link></Notice>}
 

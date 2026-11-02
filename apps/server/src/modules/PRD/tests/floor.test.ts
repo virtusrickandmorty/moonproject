@@ -1,9 +1,10 @@
 /**
  * The floor app (the owner's request, Nov 2026): a production worker's own sign-in records their own pieces, today, and
- * sees their own week. Every rule of Record pieces still applies.
+ * sees their own week. Every rule of Record pieces still applies, and the pieces count once the production head approves
+ * them (checks.test.ts).
  */
 import { beforeEach, expect, it } from 'vitest';
-import { createTestEnv, createUser, idem, login, PASSWORD, type Client, type TestEnv } from '../../../../test/helpers.ts';
+import { createTestEnv, createUser, grantRole, idem, login, PASSWORD, type Client, type TestEnv } from '../../../../test/helpers.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import { seedEmployees } from './emp-fixture.ts';
 
@@ -15,6 +16,7 @@ const SEWING = 6;
 
 beforeEach(async () => {
   env = await createTestEnv();
+  grantRole(env, 'production', 'prd.verify'); // the owner ticks it for the production head's role
   [encoder, production, owner] = [await env.as('encoder'), await env.as('production'), await env.as('owner')];
   const c = seedCustomers(env.db, encoder.userId);
   w = seedEmployees(env.db);
@@ -41,7 +43,8 @@ it('records her own pieces today at the table rate, and shows them on her week a
 
   const r = await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 3, wearers: [1] });
   expect(r.statusCode, r.body).toBe(200);
-  expect(r.json()).toMatchObject({ pieces: 3, amountCents: 12_000 });
+  expect(r.json()).toMatchObject({ pieces: 3, amountCents: 12_000, waiting: true });
+  expect((await production.post(`/api/prd/checks/${r.json().id}/approve`, {})).statusCode).toBe(200);
   const entry = (await owner.get(`/api/docs/prd.entry/${env.db.prepare("SELECT id FROM documents WHERE doc_type = 'prd.entry'").pluck().get()}`)).json();
   expect(entry.doc.rows).toEqual([expect.objectContaining({ employeeId: w.sewer1, pieces: 3, wearers: [1], rateCents: 4_000 })]);
   expect(entry.doc.workDate).toBe('2026-09-28'); // today

@@ -4,20 +4,19 @@
  * - Today: this pay week's earnings (Friday to Thursday, or Monday to Saturday: setting pay.week_start) and their work:
  *   the job order lines and steps they worked in the last three weeks with pieces still left on the step.
  * - A job: its lines, each step with its pieces and what is left, and the wearers done on each step.
- * - Record: their own pieces on one step of one line, dated today, through a Production Entry (prd.entry) like any
- *   other, so every rule of Record pieces applies (caps, wearers, sets, a sheet typed twice). The worker's role does not
- *   hold prd.assign (recording anyone's pieces); this one route records only theirs, today.
+ * - Record: their own pieces on one step of one line, today. Checked at once against every rule of Record pieces (caps,
+ *   wearers, sets, a sheet typed twice), then kept waiting for the production head's check (checks.ts); approved, they are
+ *   a Production Entry (prd.entry) like any other. The worker's role does not hold prd.assign (recording anyone's pieces).
+ * - Open jobs: every open job order with pieces left on the steps the worker does (checks.ts).
  * - Earnings: the week by day and by job, and the past weeks, paid or not.
  */
-import { z } from 'zod';
 import { AppError, notFound } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import type { EngineEnv } from '../../engine/documents/lifecycle.ts';
-import { postDocument, previewDocument } from '../../engine/documents/lifecycle.ts';
 import { employeeOfUser } from '../EMP/public.ts';
 import { jobOrderRef, lineState, liveReplacementOf } from '../JO/public.ts';
 import { rateAt } from '../RATE/public.ts';
-import { entryDoc } from './doctypes/entry.ts';
+import { openJobsFor, scanPieces, scansOf, waitingPieces } from './checks.ts';
 import { SET_PARTS, availableFor, lineRoute, lineSetup, type Part } from './production.ts';
 
 /** YYYY-MM-DD plus some days, as calendar arithmetic on the date alone (no clock, no time zone). */
@@ -89,6 +88,8 @@ export function floorToday(db: Db, userId: string, today: string) {
   });
   return {
     employee: { name: me.name, code: me.code }, today, week: weekOf(db, me.id, week), work,
+    // Their scans waiting for the production head's check, and those checked this past week.
+    scans: scansOf(db, me.id, `${addDays(today, -7)}T00:00:00`),
     pastWeeks: [1, 2].map((n) => weekOf(db, me.id, payWeekOf(db, addDays(week.from, -7 * n)))).map(({ from, to, pieces, amountCents, paid }) => ({ from, to, pieces, amountCents, paid })),
   };
 }
@@ -112,6 +113,7 @@ export function floorJob(db: Db, userId: string, ref: string, today: string) {
       lineNo: l.lineNo, description: l.description, qty: l.qty, isSet: setup.isSet, garmentType: setup.garmentType,
       steps: route.map((s) => ({
         id: s.id, name: s.name, status: s.status, pieces: s.pieces, available: availableFor(route, s.id, l.qty), payBasis: s.payBasis,
+        waiting: waitingPieces(db, jo.id, l.lineNo, s.id), // scanned, not checked yet
         rates: parts.map((part) => ({ part, rateCents: s.payBasis === 'daily' ? null : rateAt(db, setup.garmentType, s.code, setup.complexity, today, part)?.rateCents ?? null })),
       })),
     }];
@@ -119,37 +121,12 @@ export function floorJob(db: Db, userId: string, ref: string, today: string) {
   return { jobOrder: { id: jo.id, number: jo.number, customerName: jo.customerName, dueDate: jo.dueDate, status: jo.status }, lines };
 }
 
-export const floorRecordInput = z.object({
-  jobOrderId: z.uuid(),
-  lineNo: z.number().int().min(1).max(50),
-  stepId: z.number().int().positive(),
-  pieces: z.number().int().min(1).max(10_000),
-  wearers: z.array(z.number().int().min(1).max(1000)).min(1).max(1000).optional(),
-  part: z.enum(SET_PARTS).optional(),
-  // The same pieces on the same line and step already recorded today: a second batch, confirmed by the worker.
-  again: z.literal(true).optional(),
-}).strict();
+/** The open job orders with pieces left on the steps the worker does. */
+export function floorOpen(db: Db, userId: string) {
+  return openJobsFor(db, floorWorker(db, userId).id);
+}
 
-/**
- * Records the worker's own pieces, today, as a Production Entry. The entry's own rules decide (caps, wearers, a sheet
- * typed twice); its errors come back in words. The worker's role holds prd.floor, not prd.assign: the entry is recorded
- * with prd.assign for this one document, whose only row is the signed-in worker's, dated today.
- */
-export function floorRecord(env: EngineEnv, user: { userId: string; permissions: ReadonlySet<string> }, raw: unknown) {
-  const v = floorRecordInput.parse(raw);
-  const me = floorWorker(env.db, user.userId);
-  const input = {
-    jobOrderId: v.jobOrderId, stepId: v.stepId,
-    rows: [{ lineNo: v.lineNo, employeeId: me.id, pieces: v.pieces, ...(v.wearers ? { wearers: v.wearers } : {}), ...(v.part ? { part: v.part } : {}),
-      ...(v.again ? { repeatReason: 'Another batch, recorded on the floor app' } : {}) }],
-  };
-  const actor = { userId: user.userId, permissions: new Set([...user.permissions, 'prd.assign', 'prd.view']) };
-  const preview = previewDocument(env, entryDoc, actor, input);
-  const errors = preview.issues.filter((i) => i.level === 'error');
-  if (errors.length) {
-    const repeat = errors.find((i) => i.code === 'LIKELY_REPEAT');
-    throw new AppError(repeat ? 'ALREADY_TODAY' : errors[0]!.code, repeat ? `You already recorded ${v.pieces} pieces here today. Is this another batch?` : errors.map((i) => i.message).join(' '), 422);
-  }
-  const posted = postDocument(env, entryDoc, actor, { input, expectedTotalCents: preview.totalCents });
-  return { number: posted.number, pieces: v.pieces, amountCents: posted.totalCents };
+/** Records the worker's own pieces, today: a scan waiting for the production head's check (checks.ts). */
+export function floorRecord(env: EngineEnv, user: { userId: string; permissions: ReadonlySet<string> }, raw: unknown, today: string, at: string) {
+  return scanPieces(env, floorWorker(env.db, user.userId), user, raw, today, at);
 }
