@@ -2,6 +2,8 @@
  * Open jobs and checked scans on the floor app (the owner's request, Nov 2026):
  * - The steps a worker does are ticked on their employee page; the floor app lists every open job order with pieces left
  *   on those steps, so a worker sees what is waiting at their station.
+ * - On an item with a wearer list, the worker picks the wearers and how many of each they did; each wearer is a row of
+ *   their own on the Production Entry (a row with one wearer may be part of their pieces).
  * - What a worker scans and records waits for the production head's check (prd.verify). Approved, it is recorded as a
  *   Production Entry dated the day of the scan, with every rule of Record pieces; only then does it count on the job and
  *   in the worker's pay. Rejected, nothing is recorded and the worker sees why.
@@ -15,7 +17,7 @@ import { appendAudit } from '../../engine/audit.ts';
 import { activeJobOrders, jobOrderRef, lineState, rosterOf } from '../JO/public.ts';
 import { employee } from './emp.ts';
 import { entryDoc, type EntryInput } from './doctypes/entry.ts';
-import { availableFor, lineRoute, listSteps, stepById, type Who } from './production.ts';
+import { availableFor, lineRoute, listSteps, stepById, wearerPieces, type Who } from './production.ts';
 
 type Actor = { userId: string; permissions: ReadonlySet<string> };
 
@@ -48,6 +50,18 @@ export function waitingPieces(db: Db, jobOrderId: string, lineNo: number, stepId
   return db.prepare("SELECT COALESCE(SUM(pieces), 0) FROM prd_floor_claims WHERE job_order_id = ? AND line_no = ? AND step_id = ? AND status = 'waiting'").pluck().get(jobOrderId, lineNo, stepId) as number;
 }
 
+/** Each wearer's pieces on scans still waiting for the check, on one step of a line (roster row → pieces; all workers). */
+export function waitingByWearer(db: Db, jobOrderId: string, lineNo: number, stepId: number, part: 'upper' | 'lower' | null = null): Map<number, number> {
+  const qty = new Map(rosterOf(db, jobOrderId, lineNo).map((w) => [w.rowNo, w.qty]));
+  const rows = db.prepare(`SELECT w.roster_row_no AS rowNo, w.pieces, c.pieces AS claimPieces, (SELECT COUNT(*) FROM prd_floor_claim_wearers x WHERE x.claim_id = c.id) AS n
+    FROM prd_floor_claim_wearers w JOIN prd_floor_claims c ON c.id = w.claim_id
+    WHERE c.status = 'waiting' AND c.job_order_id = ? AND c.line_no = ? AND c.step_id = ? AND c.part IS ?`).all(jobOrderId, lineNo, stepId, part) as { rowNo: number; pieces: number | null; claimPieces: number; n: number }[];
+  const out = new Map<number, number>();
+  // A scan from before the counts: one wearer, the scan's pieces; several, all of theirs.
+  for (const r of rows) out.set(r.rowNo, (out.get(r.rowNo) ?? 0) + (r.pieces ?? (r.n === 1 ? r.claimPieces : qty.get(r.rowNo) ?? 0)));
+  return out;
+}
+
 /** The open job orders with pieces left on the worker's steps, rush first, then the earliest due. */
 export function openJobsFor(db: Db, employeeId: string) {
   const mine = workerSteps(db, employeeId);
@@ -73,7 +87,8 @@ export const floorScanInput = z.object({
   lineNo: z.number().int().min(1).max(50),
   stepId: z.number().int().positive(),
   pieces: z.number().int().min(1).max(10_000),
-  wearers: z.array(z.number().int().min(1).max(1000)).min(1).max(1000).optional(),
+  // The wearers the pieces were for and how many of each (their sum is the pieces).
+  wearers: z.array(z.object({ rowNo: z.number().int().min(1).max(1000), pieces: z.number().int().min(1).max(10_000) }).strict()).min(1).max(1000).optional(),
   part: z.enum(['upper', 'lower']).optional(),
   // The same pieces on the same line and step already scanned today: a second batch, confirmed by the worker.
   again: z.literal(true).optional(),
@@ -85,14 +100,20 @@ interface Claim {
 }
 const CLAIM = `SELECT id, employee_id AS employeeId, job_order_id AS jobOrderId, line_no AS lineNo, step_id AS stepId, part, pieces, again, work_date AS workDate, at,
   user_id AS userId, status, checked_pieces AS checkedPieces, reason, entry_id AS entryId, checked_at AS checkedAt, checked_by AS checkedBy FROM prd_floor_claims`;
-const wearersOf = (db: Db, id: string) => db.prepare('SELECT roster_row_no FROM prd_floor_claim_wearers WHERE claim_id = ? ORDER BY roster_row_no').pluck().all(id) as number[];
+type ScanWearer = { rowNo: number; pieces: number | null };
+const wearersOf = (db: Db, id: string) => db.prepare('SELECT roster_row_no AS rowNo, pieces FROM prd_floor_claim_wearers WHERE claim_id = ? ORDER BY roster_row_no').all(id) as ScanWearer[];
 
-/** The Production Entry a scan records: the worker's one row, dated the day of the scan. */
-function entryOf(c: Pick<Claim, 'employeeId' | 'jobOrderId' | 'lineNo' | 'stepId' | 'part' | 'workDate'> & { pieces: number; again: boolean; wearers: number[] }): EntryInput {
+/**
+ * The Production Entry a scan records, dated the day of the scan: a row for each wearer with their count, or (no wearers,
+ * or a scan from before the counts) the worker's one row.
+ */
+function entryOf(c: Pick<Claim, 'employeeId' | 'jobOrderId' | 'lineNo' | 'stepId' | 'part' | 'workDate'> & { pieces: number; again: boolean; wearers: ScanWearer[] }): EntryInput {
+  const row = { lineNo: c.lineNo, employeeId: c.employeeId, ...(c.part ? { part: c.part } : {}) };
+  const counted = c.wearers.length > 0 && c.wearers.every((w) => w.pieces !== null);
   return {
     jobOrderId: c.jobOrderId, stepId: c.stepId, workDate: c.workDate,
-    rows: [{ lineNo: c.lineNo, employeeId: c.employeeId, pieces: c.pieces, ...(c.wearers.length ? { wearers: c.wearers } : {}), ...(c.part ? { part: c.part } : {}),
-      ...(c.again ? { repeatReason: 'Another batch, scanned on the floor app' } : {}) }],
+    rows: counted ? c.wearers.map((w) => ({ ...row, pieces: w.pieces!, wearers: [w.rowNo] }))
+      : [{ ...row, pieces: c.pieces, ...(c.wearers.length ? { wearers: c.wearers.map((w) => w.rowNo) } : {}), ...(c.again ? { repeatReason: 'Another batch, scanned on the floor app' } : {}) }],
   };
 }
 
@@ -111,23 +132,36 @@ export function scanPieces(env: EngineEnv, worker: { id: string }, actor: Actor,
     throw new AppError('NOT_YOUR_STEP', `${stepById(db, v.stepId)?.name ?? 'That step'} is not one of your steps. If you do it now, ask the office to tick it on your employee page.`, 403);
   }
   const wearers = v.wearers ?? [];
+  const roster = rosterOf(db, v.jobOrderId, v.lineNo);
+  const name = (n: number) => { const r = roster.find((x) => x.rowNo === n); return r ? r.jerseyName ?? r.wearerName : `wearer ${n}`; };
+  // An item with a wearer list: who the pieces were for, and how many of each (a set's parts are counted as before).
+  if (!v.part && roster.length > 0 && wearers.length === 0) throw new AppError('WEARERS_NEEDED', 'Pick who the pieces were for, and how many for each.', 422);
+  if (new Set(wearers.map((w) => w.rowNo)).size < wearers.length) throw new AppError('WEARER_TWICE', 'A wearer is picked twice. Pick each one once.', 422);
+  if (wearers.length && wearers.reduce((n, w) => n + w.pieces, 0) !== v.pieces) throw new AppError('WEARERS_PIECES', "The pieces are not the sum of the wearers' counts. Reload and try again.", 422);
+  // Pieces on someone's scan still waiting for the check are not free to scan again.
+  if (wearers.length) {
+    const recorded = wearerPieces(db, v.jobOrderId, v.lineNo, v.stepId, v.part ?? 'whole');
+    const waiting = waitingByWearer(db, v.jobOrderId, v.lineNo, v.stepId, v.part ?? null);
+    const free = (n: number) => (recorded.get(n)?.left ?? roster.find((r) => r.rowNo === n)?.qty ?? 0) - (waiting.get(n) ?? 0);
+    const over = wearers.filter((w) => waiting.has(w.rowNo) && w.pieces > free(w.rowNo));
+    if (over.length) {
+      const who = over.map((w) => name(w.rowNo)).join(', ');
+      throw new AppError('WEARER_WAITING', `${who}: some of their pieces are on a scan still waiting for the check. Count only the ones not scanned yet.`, 422);
+    }
+  }
   const preview = previewDocument(env, entryDoc, recorder(actor), entryOf({ ...v, part: v.part ?? null, employeeId: worker.id, workDate: today, again: !!v.again, wearers }));
   const errors = preview.issues.filter((i) => i.level === 'error');
-  const repeat = errors.some((i) => i.code === 'LIKELY_REPEAT') || (!v.again && !!db.prepare(`SELECT 1 FROM prd_floor_claims WHERE status = 'waiting' AND employee_id = ? AND job_order_id = ?
+  // Wearers counted say which garments the pieces are for: such a scan is never the same sheet twice.
+  const repeat = errors.some((i) => i.code === 'LIKELY_REPEAT') || (!v.again && !wearers.length && !!db.prepare(`SELECT 1 FROM prd_floor_claims WHERE status = 'waiting' AND employee_id = ? AND job_order_id = ?
       AND line_no = ? AND step_id = ? AND part IS ? AND work_date = ? AND pieces = ?`).get(worker.id, v.jobOrderId, v.lineNo, v.stepId, v.part ?? null, today, v.pieces));
   if (repeat) throw new AppError('ALREADY_TODAY', `You already recorded ${v.pieces} pieces here today. Is this another batch?`, 422);
   if (errors.length) throw new AppError(errors[0]!.code, errors.map((i) => i.message).join(' '), 422);
-  // A wearer on someone's scan still waiting for the check is not free to scan again.
-  const taken = wearers.length ? db.prepare(`SELECT w.roster_row_no FROM prd_floor_claim_wearers w JOIN prd_floor_claims c ON c.id = w.claim_id
-      WHERE c.status = 'waiting' AND c.job_order_id = ? AND c.line_no = ? AND c.step_id = ? AND c.part IS ?`).pluck().all(v.jobOrderId, v.lineNo, v.stepId, v.part ?? null) as number[] : [];
-  const busy = rosterOf(db, v.jobOrderId, v.lineNo).filter((r) => wearers.includes(r.rowNo) && taken.includes(r.rowNo));
-  if (busy.length) throw new AppError('WEARER_WAITING', `${busy.map((r) => r.jerseyName ?? r.wearerName).join(', ')} ${busy.length === 1 ? 'is' : 'are'} already on a scan waiting for the check.`, 422);
 
   const id = newId();
   db.prepare(`INSERT INTO prd_floor_claims (id, employee_id, job_order_id, line_no, step_id, part, pieces, again, work_date, at, user_id, status)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'waiting')`).run(id, worker.id, v.jobOrderId, v.lineNo, v.stepId, v.part ?? null, v.pieces, v.again ? 1 : 0, today, at, actor.userId);
-  const insW = db.prepare('INSERT INTO prd_floor_claim_wearers (claim_id, roster_row_no) VALUES (?, ?)');
-  for (const n of wearers) insW.run(id, n);
+  const insW = db.prepare('INSERT INTO prd_floor_claim_wearers (claim_id, roster_row_no, pieces) VALUES (?, ?, ?)');
+  for (const w of wearers) insW.run(id, w.rowNo, w.pieces);
   appendAudit(db, { at, userId: actor.userId, action: 'prd.floor_scan', entityType: 'prd.floor_claim', entityId: id, data: { ...v, employeeId: worker.id, workDate: today } });
   return { id, pieces: v.pieces, amountCents: preview.totalCents, waiting: true as const };
 }
@@ -141,7 +175,9 @@ function describe(db: Db, c: Claim) {
     id: c.id, at: c.at, workDate: c.workDate, status: c.status, employeeId: c.employeeId, employeeName: employee(db, c.employeeId)?.name ?? '?',
     jobOrderId: c.jobOrderId, jobOrderNumber: jo?.number ?? '?', customerName: jo?.customerName ?? '', jobOrderCancelled: jo?.status === 'cancelled',
     lineNo: c.lineNo, description: lineState(db, c.jobOrderId).find((l) => l.lineNo === c.lineNo)?.description ?? '', stepId: c.stepId, stepName: stepById(db, c.stepId)?.name ?? '?',
-    part: c.part, pieces: c.pieces, again: c.again === 1, wearers: roster.filter((r) => wearers.includes(r.rowNo)).map((r) => ({ rowNo: r.rowNo, name: r.jerseyName ?? r.wearerName, qty: r.qty })),
+    part: c.part, pieces: c.pieces, again: c.again === 1,
+    // pieces: the wearer's count (null: a scan from before the counts).
+    wearers: wearers.flatMap((w) => roster.filter((r) => r.rowNo === w.rowNo).map((r) => ({ rowNo: r.rowNo, name: r.jerseyName ?? r.wearerName, qty: r.qty, pieces: w.pieces }))),
     checkedPieces: c.checkedPieces, reason: c.reason, checkedAt: c.checkedAt,
     entryNumber: c.entryId ? (db.prepare('SELECT number FROM documents WHERE id = ?').pluck().get(c.entryId) as string) : null,
   };
@@ -191,7 +227,12 @@ export function approveScan(env: EngineEnv, actor: Actor, id: string, raw: unkno
     throw new AppError('JO_CHANGED', 'The job order was edited after this scan. Reject it, and ask the worker to scan the new job ticket.', 422);
   }
   const pieces = body.pieces ?? c.pieces;
-  const input = entryOf({ ...c, pieces, again: c.again === 1, wearers: wearersOf(db, c.id) });
+  const wearers = wearersOf(db, c.id);
+  // Several wearers counted: the head approves the counts as scanned, or rejects them; one wearer: their count may change.
+  if (pieces !== c.pieces && wearers.length > 1 && wearers.every((w) => w.pieces !== null)) {
+    throw new AppError('BY_WEARER', 'This scan has a count for each wearer. Approve it as scanned, or reject it and ask the worker to scan again.', 422);
+  }
+  const input = entryOf({ ...c, pieces, again: c.again === 1, wearers: wearers.length === 1 && wearers[0]!.pieces !== null ? [{ ...wearers[0]!, pieces }] : wearers });
   const preview = previewDocument(env, entryDoc, recorder(actor), input);
   const errors = preview.issues.filter((i) => i.level === 'error');
   if (errors.length) throw new AppError(errors[0]!.code, errors.map((i) => i.message).join(' '), 422);

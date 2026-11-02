@@ -12,6 +12,7 @@ let env: TestEnv;
 let production: Client, owner: Client, sewer: Client;
 let w: ReturnType<typeof seedEmployees>;
 let jo: string;
+let plainJob: () => Promise<string>;
 const CUTTING = 4, SEWING = 6, PACKING = 8;
 const entries = () => env.db.prepare("SELECT COUNT(*) FROM documents WHERE doc_type = 'prd.entry'").pluck().get() as number;
 
@@ -27,6 +28,14 @@ beforeEach(async () => {
   const r = await encoder.post('/api/docs/jo.job_order/post', { input: { customerId: c.school, dueInDays: 10, priority: 'normal', paymentTerms: 'full', lines }, expectedTotalCents: 240_000 }, idem());
   jo = r.json().id;
   expect((await production.post(`/api/prd/jobs/${jo}/lines/1/setup`, { templateId: 1, stepIds: [SEWING, PACKING], garmentType: 'T-shirt', complexity: 'standard' })).statusCode).toBe(200);
+  // A job order of 8 plain shirts, no wearer list: the pieces are counted as one number.
+  plainJob = async () => {
+    const plain = [{ kind: 'made_to_order', description: 'Plain shirt', qty: 8, unitPriceCents: 30_000, discountCents: 0, roster: [] }];
+    const p = await encoder.post('/api/docs/jo.job_order/post', { input: { customerId: c.school, dueInDays: 10, priority: 'normal', paymentTerms: 'full', lines: plain }, expectedTotalCents: 240_000 }, idem());
+    expect(p.statusCode, p.body).toBe(200);
+    expect((await production.post(`/api/prd/jobs/${p.json().id}/lines/1/setup`, { templateId: 1, stepIds: [SEWING, 8], garmentType: 'T-shirt', complexity: 'standard' })).statusCode).toBe(200);
+    return p.json().id as string;
+  };
   const user = createUser(env.db, 'sewer.one', ['worker']);
   expect((await owner.put(`/api/emp/employees/${w.sewer1}/floor-user`, { userId: user })).statusCode).toBe(200);
   sewer = await login(env.app, 'sewer.one', PASSWORD);
@@ -72,8 +81,39 @@ it('shows a worker only their own steps on a job, and records nothing on any oth
   expect((await sewer.get('/api/prd/floor/today')).json().work).toEqual([]);
 });
 
+it('takes the wearers and how many of each, and records a row for each wearer once approved', async () => {
+  const record = (body: object) => sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, ...body });
+  // An item with a wearer list: who the pieces were for, and how many of each.
+  expect((await record({ pieces: 2 })).json()).toMatchObject({ code: 'WEARERS_NEEDED' });
+  expect((await record({ pieces: 5, wearers: [{ rowNo: 1, pieces: 2 }, { rowNo: 2, pieces: 2 }] })).json()).toMatchObject({ code: 'WEARERS_PIECES' });
+  expect((await record({ pieces: 4, wearers: [{ rowNo: 2, pieces: 3 }, { rowNo: 3, pieces: 1 }] })).statusCode).toBe(422); // Ben has 2
+
+  const first = await record({ pieces: 4, wearers: [{ rowNo: 1, pieces: 2 }, { rowNo: 2, pieces: 2 }] });
+  expect(first.statusCode, first.body).toBe(200);
+  expect(first.json()).toMatchObject({ pieces: 4, amountCents: 16_000 });
+  // Ana's last piece is still free; a second one is not (two of hers wait for the check).
+  expect((await record({ pieces: 2, wearers: [{ rowNo: 1, pieces: 2 }] })).json()).toMatchObject({ code: 'WEARER_WAITING' });
+  const second = await record({ pieces: 1, wearers: [{ rowNo: 1, pieces: 1 }] });
+  expect(second.statusCode, second.body).toBe(200);
+  const sewing = (await sewer.get(`/api/prd/floor/jobs/${jo}`)).json().lines[0].steps.find((s: { id: number }) => s.id === SEWING);
+  expect(sewing).toMatchObject({ waiting: 5, waitingWearers: { 1: 3, 2: 2 } });
+
+  // Counts per wearer are approved as scanned (or rejected); each wearer is a row of the entry.
+  expect((await production.post(`/api/prd/checks/${first.json().id}/approve`, { pieces: 3 })).json()).toMatchObject({ code: 'BY_WEARER' });
+  expect((await production.get('/api/prd/checks')).json().waiting.find((x: { id: string }) => x.id === first.json().id).wearers).toEqual([
+    { rowNo: 1, name: 'Ana Reyes', qty: 3, pieces: 2 }, { rowNo: 2, name: 'Ben Cruz', qty: 2, pieces: 2 }]);
+  const ok = await production.post(`/api/prd/checks/${first.json().id}/approve`, {});
+  expect(ok.statusCode, ok.body).toBe(200);
+  const entry = (await owner.get(`/api/docs/prd.entry/${env.db.prepare("SELECT id FROM documents WHERE doc_type = 'prd.entry'").pluck().get()}`)).json();
+  expect(entry.doc.rows).toEqual([expect.objectContaining({ employeeId: w.sewer1, pieces: 2, wearers: [1] }), expect.objectContaining({ employeeId: w.sewer1, pieces: 2, wearers: [2] })]);
+  expect((await production.post(`/api/prd/checks/${second.json().id}/approve`, {})).statusCode).toBe(200);
+  // Ana's 3 and Ben's 2 are done on sewing; Cy is not.
+  const route = (await sewer.get(`/api/prd/floor/jobs/${jo}`)).json().lines[0].route.find((s: { id: number }) => s.id === SEWING);
+  expect(route.doneWearers).toEqual([1, 2]);
+});
+
 it('keeps a scan waiting until the production head approves it, dated the day of the scan, with the pieces counted', async () => {
-  const scan = await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 3, wearers: [1] });
+  const scan = await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 3, wearers: [{ rowNo: 1, pieces: 3 }] });
   expect(scan.statusCode, scan.body).toBe(200);
   expect(scan.json()).toMatchObject({ pieces: 3, amountCents: 12_000, waiting: true });
   expect(entries()).toBe(0);
@@ -81,11 +121,11 @@ it('keeps a scan waiting until the production head approves it, dated the day of
   // Nothing counts yet: not on the job, not in her week. She sees it waiting; the job shows it apart.
   let today = (await sewer.get('/api/prd/floor/today')).json();
   expect(today.week.pieces).toBe(0);
-  expect(today.scans).toEqual([expect.objectContaining({ status: 'waiting', pieces: 3, stepName: 'Sewing', wearers: [{ rowNo: 1, name: 'Ana Reyes', qty: 3 }] })]);
+  expect(today.scans).toEqual([expect.objectContaining({ status: 'waiting', pieces: 3, stepName: 'Sewing', wearers: [{ rowNo: 1, name: 'Ana Reyes', qty: 3, pieces: 3 }] })]);
   const sewing = (await sewer.get(`/api/prd/floor/jobs/${jo}`)).json().lines[0].steps.find((s: { id: number }) => s.id === SEWING);
-  expect(sewing).toMatchObject({ pieces: 0, waiting: 3 });
-  // The same wearer cannot go on a second scan while the first waits; and she cannot check her own.
-  expect((await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 3, wearers: [1], again: true })).json()).toMatchObject({ code: 'WEARER_WAITING' });
+  expect(sewing).toMatchObject({ pieces: 0, waiting: 3, waitingWearers: { 1: 3 } });
+  // Her pieces cannot go on a second scan while the first waits; and she cannot check her own.
+  expect((await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 1, wearers: [{ rowNo: 1, pieces: 1 }] })).json()).toMatchObject({ code: 'WEARER_WAITING' });
   expect((await sewer.get('/api/prd/checks')).statusCode).toBe(403);
 
   const list = (await production.get('/api/prd/checks')).json();
@@ -107,17 +147,18 @@ it('keeps a scan waiting until the production head approves it, dated the day of
 });
 
 it('records nothing for a rejected scan, and tells the worker why', async () => {
-  const scan = (await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 5 })).json();
+  const scan = (await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 5, wearers: [{ rowNo: 1, pieces: 3 }, { rowNo: 2, pieces: 2 }] })).json();
   expect((await production.post(`/api/prd/checks/${scan.id}/reject`, { reason: '' })).statusCode).toBe(400);
-  expect((await production.post(`/api/prd/checks/${scan.id}/reject`, { reason: 'Only 3 were sewn; scan again' })).statusCode).toBe(200);
+  expect((await production.post(`/api/prd/checks/${scan.id}/reject`, { reason: 'Only 2 of Ana were sewn; scan again' })).statusCode).toBe(200);
   expect(entries()).toBe(0);
-  expect((await sewer.get('/api/prd/floor/today')).json().scans).toEqual([expect.objectContaining({ status: 'rejected', reason: 'Only 3 were sewn; scan again' })]);
+  expect((await sewer.get('/api/prd/floor/today')).json().scans).toEqual([expect.objectContaining({ status: 'rejected', reason: 'Only 2 of Ana were sewn; scan again' })]);
   expect((await production.post(`/api/prd/checks/${scan.id}/approve`, {})).statusCode).toBe(409);
   // Free to scan the right count now.
-  expect((await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 3 })).statusCode).toBe(200);
+  expect((await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 4, wearers: [{ rowNo: 1, pieces: 2 }, { rowNo: 2, pieces: 2 }] })).statusCode).toBe(200);
 });
 
 it('says what stops an approval, and leaves the scan waiting', async () => {
+  jo = await plainJob(); // no wearer list: one count
   const a = (await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 6 })).json();
   const b = (await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 5 })).json();
   expect((await production.post(`/api/prd/checks/${a.id}/approve`, {})).statusCode).toBe(200);

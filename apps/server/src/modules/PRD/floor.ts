@@ -17,7 +17,7 @@ import type { EngineEnv } from '../../engine/documents/lifecycle.ts';
 import { employeeOfUser } from '../EMP/public.ts';
 import { jobOrderRef, lineState, liveReplacementOf } from '../JO/public.ts';
 import { rateAt } from '../RATE/public.ts';
-import { openJobsFor, scanPieces, scansOf, waitingPieces, workerSteps } from './checks.ts';
+import { openJobsFor, scanPieces, scansOf, waitingByWearer, waitingPieces, workerSteps } from './checks.ts';
 import { SET_PARTS, availableFor, lineRoute, lineSetup, listSteps, type Part } from './production.ts';
 
 /** YYYY-MM-DD plus some days, as calendar arithmetic on the date alone (no clock, no time zone). */
@@ -118,6 +118,7 @@ export function floorJob(db: Db, userId: string, ref: string, today: string) {
       steps: own.map((s) => ({
         id: s.id, name: s.name, status: s.status, pieces: s.pieces, available: availableFor(route, s.id, l.qty), payBasis: s.payBasis,
         waiting: waitingPieces(db, jo.id, l.lineNo, s.id), // scanned, not checked yet
+        waitingWearers: Object.fromEntries(waitingByWearer(db, jo.id, l.lineNo, s.id)), // the same per wearer (roster row → pieces)
         rates: parts.map((part) => ({ part, rateCents: s.payBasis === 'daily' ? null : rateAt(db, setup.garmentType, s.code, setup.complexity, today, part)?.rateCents ?? null })),
       })),
     }];

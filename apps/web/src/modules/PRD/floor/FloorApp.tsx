@@ -2,7 +2,7 @@
  * The floor app (the owner's request, Nov 2026; the approved mock-up "Virtus Floor App"): a production worker's own
  * phone screens, full screen without the office menu. Today (the week so far, their work and their scans), Jobs (the
  * open job orders with pieces left on the steps they do), a job (their own steps on it, what is left, who is done), Record pieces (a
- * sheet that slides up), Sent, and My earnings. The server keeps every rule of Record pieces; this only records the
+ * sheet that slides up; on an item with a wearer list, who the pieces were for and how many of each), Sent, and My earnings. The server keeps every rule of Record pieces; this only records the
  * signed-in worker's own pieces, today, and they count once the production head approves them (the owner's request, Nov 2026).
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
@@ -330,26 +330,32 @@ type Line = FloorJob['lines'][number];
 function RecordSheet({ job, line, step, left, onClose, onSaved }: { job: FloorJob; line: Line; step: Line['steps'][number]; left: number; onClose: () => void; onSaved: (r: { pieces: number; amountCents: number }) => void }) {
   const [pieces, setPieces] = useState(Math.min(left, 10));
   const [part, setPart] = useState<'upper' | 'lower'>('upper');
-  const [ticked, setTicked] = useState<number[]>([]);
+  const [counts, setCounts] = useState<Record<number, number>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [askAgain, setAskAgain] = useState('');
   const route = line.route?.find((r) => r.id === step.id);
-  const wearerLeft = (rowNo: number, qty: number) => qty - (route?.partlyDone?.[rowNo] ?? 0);
-  const open = line.isSet ? [] : line.roster.filter((w) => !route?.doneWearers?.includes(w.rowNo));
+  // An item with a wearer list (not a set): the worker picks who the pieces were for and how many of each (the owner's
+  // request, Nov 2026); the pieces are their sum. Otherwise one count, as before.
+  const byWearer = !line.isSet && line.roster.length > 0;
+  const forwarded = route?.forwardedWearers ?? null; // null: all came out of the step before
+  // What a wearer still has free here: not recorded yet, and not on a scan waiting for the check.
+  const free = (rowNo: number, qty: number) => route?.doneWearers?.includes(rowNo) ? 0 : Math.max(0, qty - (route?.partlyDone?.[rowNo] ?? 0) - (step.waitingWearers[rowNo] ?? 0));
+  const ready = (rowNo: number) => forwarded === null || forwarded.includes(rowNo);
+  const total = byWearer ? Object.values(counts).reduce((n, c) => n + c, 0) : pieces;
+  const count = (rowNo: number, n: number, max: number) => setCounts((c) => {
+    const next = { ...c, [rowNo]: Math.max(0, Math.min(max, n)) };
+    if (!next[rowNo]) delete next[rowNo];
+    return next;
+  });
+  const takeAll = () => setCounts(Object.fromEntries(line.roster.filter((w) => ready(w.rowNo) && free(w.rowNo, w.qty) > 0).map((w) => [w.rowNo, free(w.rowNo, w.qty)])));
   const rate = step.rates.find((r) => r.part === (line.isSet ? part : 'whole'))?.rateCents ?? null;
   const set = (n: number) => setPieces(Math.max(1, Math.min(left, n)));
-  const tick = (rowNo: number) => {
-    const next = ticked.includes(rowNo) ? ticked.filter((r) => r !== rowNo) : [...ticked, rowNo];
-    setTicked(next);
-    // Several wearers: their pieces left; one: up to theirs (the rules of Record pieces).
-    const sum = next.reduce((n, r) => n + wearerLeft(r, line.roster.find((w) => w.rowNo === r)!.qty), 0);
-    if (next.length > 1 || (next.length === 1 && pieces > sum)) setPieces(sum);
-  };
   const save = async (again?: true) => {
     setBusy(true); setError(''); setAskAgain('');
     try {
-      const r = await api.floorRecord({ jobOrderId: job.jobOrder.id, lineNo: line.lineNo, stepId: step.id, pieces, ...(ticked.length ? { wearers: ticked } : {}), ...(line.isSet ? { part } : {}), ...(again ? { again } : {}) });
+      const wearers = Object.entries(counts).map(([rowNo, n]) => ({ rowNo: Number(rowNo), pieces: n }));
+      const r = await api.floorRecord({ jobOrderId: job.jobOrder.id, lineNo: line.lineNo, stepId: step.id, pieces: total, ...(byWearer ? { wearers } : {}), ...(line.isSet ? { part } : {}), ...(again ? { again } : {}) });
       onSaved(r);
     } catch (e) {
       if (e instanceof ApiError && e.code === 'ALREADY_TODAY') setAskAgain(e.message); else setError((e as Error).message);
@@ -365,6 +371,7 @@ function RecordSheet({ job, line, step, left, onClose, onSaved }: { job: FloorJo
             className={`h-11 rounded-xl text-[15px] font-bold ${part === p ? 'bg-slate-900 text-white' : 'border border-slate-300'}`}>{p === 'upper' ? 'Upper (top)' : 'Lower (shorts)'}</button>)}
         </div>
       )}
+      {!byWearer && <>
       <div className="flex items-center justify-between rounded-2xl bg-page p-2.5">
         <button type="button" aria-label="One piece less" onClick={() => set(pieces - 1)} className="size-16 rounded-2xl bg-white text-3xl font-bold shadow-sm">−</button>
         <span className="text-center"><span className="block text-5xl font-extrabold tabular-nums" aria-live="polite">{pieces}</span><span className="text-[13px] font-bold text-slate-500">pieces</span></span>
@@ -373,20 +380,41 @@ function RecordSheet({ job, line, step, left, onClose, onSaved }: { job: FloorJo
       <div className="grid grid-cols-3 gap-2">
         {[...new Set([5, 10, left].filter((n) => n <= left))].map((n) => <button key={n} type="button" onClick={() => set(n)} className="h-11 rounded-xl border border-slate-300 text-[15px] font-bold">{n === left ? `All ${n}` : n}</button>)}
       </div>
-      {open.length > 0 && (
-        <div className="max-h-48 space-y-2 overflow-y-auto">
-          <p className="text-sm font-extrabold">Who were they for? <span className="font-semibold text-slate-500">Optional</span></p>
-          {open.map((w) => { const on = ticked.includes(w.rowNo); const wl = wearerLeft(w.rowNo, w.qty); return (
-            <button key={w.rowNo} type="button" aria-pressed={on} onClick={() => tick(w.rowNo)}
-              className={`flex min-h-12 w-full items-center gap-3 rounded-xl border px-3 py-2 text-left ${on ? 'border-indigo-600 bg-indigo-50' : 'border-slate-200'}`}>
-              <span className={`grid size-6 place-items-center rounded-md border-2 text-sm font-extrabold text-white ${on ? 'border-indigo-600 bg-indigo-600' : 'border-slate-400'}`}>{on ? '✓' : ''}</span>
-              <span className="flex-1 text-[15px] font-bold">{[w.jerseyName ?? w.wearerName, w.jerseyNumber].filter(Boolean).join(' ')}</span>
-              <span className="text-xs font-semibold text-slate-500">{w.size ? `${w.size} · ` : ''}{wl === w.qty ? `${w.qty} pc${w.qty === 1 ? '' : 's'}` : `${wl} of ${w.qty} left`}</span>
-            </button>
-          ); })}
+      </>}
+      {byWearer && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-extrabold">Who were they for, and how many?</p>
+            <button type="button" onClick={takeAll} className="shrink-0 rounded-full border border-slate-300 px-3 py-1.5 text-xs font-bold">All left</button>
+          </div>
+          <p className="text-xs font-semibold text-slate-500">Tap a name for all their pieces, or use − and +.</p>
+          <ul className="max-h-[42vh] space-y-2 overflow-y-auto">
+            {/* Those with pieces to do first; done or not ready yet below. */}
+            {[...line.roster].sort((x, y) => Number(!(ready(x.rowNo) && free(x.rowNo, x.qty))) - Number(!(ready(y.rowNo) && free(y.rowNo, y.qty)))).map((w) => {
+              const name = [w.jerseyName ?? w.wearerName, w.jerseyNumber].filter(Boolean).join(' ');
+              const max = ready(w.rowNo) ? free(w.rowNo, w.qty) : 0;
+              const n = counts[w.rowNo] ?? 0;
+              const waiting = step.waitingWearers[w.rowNo] ?? 0;
+              const note = route?.doneWearers?.includes(w.rowNo) ? 'Done' : !ready(w.rowNo) ? 'Not ready yet'
+                : max === 0 && waiting > 0 ? 'Waiting for the check' : max === w.qty ? `${w.qty} pc${w.qty === 1 ? '' : 's'}` : `${max} of ${w.qty} left`;
+              return (
+                <li key={w.rowNo} className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 ${n ? 'border-indigo-600 bg-indigo-50' : 'border-slate-200'} ${max === 0 ? 'opacity-60' : ''}`}>
+                  <button type="button" disabled={max === 0} onClick={() => count(w.rowNo, n === max ? 0 : max, max)} className="min-h-11 min-w-0 flex-1 text-left">
+                    <span className="block truncate text-[15px] font-bold">{name}</span>
+                    <span className="text-xs font-semibold text-slate-500">{w.size ? `${w.size} · ` : ''}{note}</span>
+                  </button>
+                  {max > 0 && <>
+                    <button type="button" aria-label={`One less for ${name}`} disabled={n === 0} onClick={() => count(w.rowNo, n - 1, max)} className="size-11 rounded-xl bg-white text-2xl font-bold shadow-sm disabled:opacity-40">−</button>
+                    <span className="w-7 text-center text-xl font-extrabold tabular-nums" aria-label={`${n} for ${name}`}>{n}</span>
+                    <button type="button" aria-label={`One more for ${name}`} disabled={n >= max} onClick={() => count(w.rowNo, n + 1, max)} className="size-11 rounded-xl bg-indigo-600 text-2xl font-bold text-white disabled:opacity-40">+</button>
+                  </>}
+                </li>
+              );
+            })}
+          </ul>
         </div>
       )}
-      {rate !== null && <p className="flex items-baseline justify-between border-t border-slate-100 pt-3"><span className="text-sm font-semibold text-slate-500">{pieces} × {peso(rate)}</span><span className="text-xl font-extrabold text-emerald-800">{peso(pieces * rate)} for you</span></p>}
+      {rate !== null && <p className="flex items-baseline justify-between border-t border-slate-100 pt-3"><span className="text-sm font-semibold text-slate-500">{total} × {peso(rate)}</span><span className="text-xl font-extrabold text-emerald-800">{peso(total * rate)} for you</span></p>}
       {error && <Problem text={error} />}
       {askAgain ? (
         <div className="space-y-2 rounded-2xl bg-amber-50 p-4">
@@ -397,8 +425,8 @@ function RecordSheet({ job, line, step, left, onClose, onSaved }: { job: FloorJo
           </div>
         </div>
       ) : (
-        <button type="button" disabled={busy || left === 0} onClick={() => void save()} className="h-14 w-full rounded-2xl bg-indigo-600 text-[17px] font-extrabold text-white disabled:opacity-60">
-          {busy ? 'Saving…' : `Save ${pieces} piece${pieces === 1 ? '' : 's'}`}</button>
+        <button type="button" disabled={busy || left === 0 || total === 0} onClick={() => void save()} className="h-14 w-full rounded-2xl bg-indigo-600 text-[17px] font-extrabold text-white disabled:opacity-60">
+          {busy ? 'Saving…' : total === 0 ? 'Pick who they were for' : `Save ${total} piece${total === 1 ? '' : 's'}`}</button>
       )}
     </Sheet>
   );
