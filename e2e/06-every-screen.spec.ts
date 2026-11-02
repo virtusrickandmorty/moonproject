@@ -5,7 +5,7 @@
  * reaches its preview. A role sees no menu item for a screen whose data it may not read.
  * The roles tour side by side, after 06-every-screen.setup.ts has put open work in, added the TV user and turned backups on.
  */
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Request } from '@playwright/test';
 import { SCREENS } from '../apps/web/src/shell/menu';
 import { ROLES, practicePasswords, signInAs } from './practice-users';
 
@@ -26,6 +26,36 @@ function watch(page: Page) {
       return lines;
     },
   };
+}
+
+/** The app's requests still waiting for their answer and when each was asked, per page (the always-open /api/live stream aside). */
+const pending = new WeakMap<Page, Map<Request, number>>();
+function track(page: Page) {
+  const open = new Map<Request, number>();
+  pending.set(page, open);
+  page.on('request', (r) => { if (new URL(r.url()).pathname !== '/api/live') open.set(r, Date.now()); });
+  page.on('requestfinished', (r) => open.delete(r));
+  page.on('requestfailed', (r) => open.delete(r));
+  // A new page: what the last one still waited for is cut off, and its end is not always reported (every wait ran its full
+  // 15 s, and the long tours their 10 minutes, when it was kept).
+  page.on('framenavigated', (f) => { if (f === page.mainFrame()) open.clear(); });
+}
+
+/**
+ * Waits until no request of the app has been waiting for 200 ms (at most 15 s). Playwright's "networkidle" is reached once,
+ * when the page loads, and does not wait for what a choice asks for afterwards: a job order's steps, 1.4 s on a busy
+ * machine, arrived 50 ms after the form's last pass and the production entry had no step (Nov 1 and 2, 2026). A request
+ * waiting more than 10 s is taken as lost (its end not reported), not as one to wait for on every pass.
+ */
+async function settled(page: Page) {
+  const open = pending.get(page);
+  if (!open) return page.waitForLoadState('networkidle').catch(() => undefined);
+  for (let quiet = 0, waited = 0; quiet < 200 && waited < 15_000; waited += 50) {
+    await page.waitForTimeout(50);
+    const now = Date.now();
+    const waiting = [...open.values()].some((at) => now - at < 10_000);
+    quiet = waiting ? 0 : quiet + 50;
+  }
 }
 
 /** What is wrong with the screen that is open now: nothing is the empty list. */
@@ -152,19 +182,19 @@ async function fillIn(page: Page, today: string): Promise<string[]> {
         // A pick loads what was picked and redraws the form (a release's lines appear above "Claimed by"), so the boxes
         // listed before it are stale: start the next pass on the redrawn form rather than typing into a moved box.
         if (await pickFirst(input)) { picked.set(info.label || info.hint, made + 1); filled = true; }
-        await page.waitForLoadState('networkidle').catch(() => undefined);
+        await settled(page);
         break;
       } else {
         // A box the form just redrew (a pick above it loaded, on a slow machine) may have changed under it: a fill it refuses
         // starts the next pass on the redrawn form, as a pick does.
         const typed = await input.fill(info.type === 'date' ? today : typedFor(info.label || info.hint, info.type, info.mode)).then(() => true, () => false);
-        if (!typed) { await page.waitForLoadState('networkidle').catch(() => undefined); break; }
+        if (!typed) { await settled(page); break; }
         filled = true;
       }
     }
     // What a choice loads (a job order's steps, after the job order is picked) arrives before the next pass looks: on a
     // slow machine the passes otherwise ran out first ("Pick the step").
-    await page.waitForLoadState('networkidle').catch(() => undefined);
+    await settled(page);
     if (pass >= 7 && !filled) break;
   }
   return asksForId;
@@ -218,6 +248,7 @@ for (const who of ROLES) {
   test(`${who.role}: every menu item opens, every New form reaches its preview`, async ({ page }) => {
     test.setTimeout(600_000);
     const seen = watch(page);
+    track(page);
     await signInAs(page, who, practicePasswords()[who.role]!);
     seen.take(); // the 401 the sign-in page gets before anyone has signed in is not a screen's fault
     const report: string[] = [];
