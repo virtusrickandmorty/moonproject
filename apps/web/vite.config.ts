@@ -5,9 +5,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { darkTheme } from './src/dark-css.ts';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // The dark screens' colours, added to Tailwind's sheet (src/dark-css.ts).
+  css: { postcss: { plugins: [darkTheme()] } },
   // Object form keeps the browser's Host header, so the server's Origin check sees one origin.
   server: { proxy: { '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false } } },
 });

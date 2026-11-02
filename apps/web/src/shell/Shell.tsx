@@ -12,6 +12,7 @@ import { showToast } from '../components/Toasts.tsx';
 import { MENU_FOLDS_KEY, applyMenuOrder, buildMenu, docPath, isHere, labelOf, openGroups, searchMenu, sectionsOf, subOf, type MenuGroup, type MenuItem } from './menu.ts';
 import { SearchBox } from '../modules/NAV/Search.tsx';
 import { PushToggle } from '../components/PushToggle.tsx';
+import { ThemePicker } from '../components/ThemePicker.tsx';
 import { Breadcrumbs, CrumbName, crumbsFor } from './crumbs.tsx';
 import { followRowLink } from './rowLinks.ts';
 
@@ -345,7 +346,7 @@ export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = ''
       <header onKeyDown={(e) => { if (e.key === 'Escape') setOpen(null); }} className="sticky top-0 z-20 flex flex-wrap items-center gap-x-2 gap-y-2 border-b border-slate-200/60 bg-page/90 px-3 py-2 backdrop-blur text-sm max-md:min-h-14 max-md:pt-[max(0.5rem,env(safe-area-inset-top))] sm:gap-x-3 md:h-[4.5rem] md:min-h-[4.5rem] md:flex-nowrap md:px-6 md:py-0 print:hidden">
         <div className="flex shrink-0 items-center gap-2 sm:gap-3 md:w-[188px]">
           <button type="button" aria-label="Menu" aria-expanded={open === 'menu'} aria-controls="main-menu" className="rounded-md p-1.5 text-slate-700 hover:bg-white max-md:hidden" onClick={toggleMenu}><Icon name="menu" className="size-6" /></button>
-          <Link to="/" aria-label="Home"><img src="/virtus-logo.png" alt="Virtus" className="h-9 w-auto sm:h-11" /></Link>
+          <Link to="/" aria-label="Home"><img src="/virtus-logo.png" alt="Virtus" data-dark="invert" className="h-9 w-auto sm:h-11" /></Link>
         </div>
         <div className="hidden min-w-0 flex-1 lg:block">
           <p className="truncate text-lg text-slate-900">{greeting()}, <span className="font-bold">{me.displayName}</span></p>
@@ -377,6 +378,7 @@ export function Shell({ me, docTypes, onSignOut, onRefreshReport, reportKey = ''
               <div className={pop}>
                 <p className="border-b border-slate-100 font-semibold sm:hidden">{me.displayName}</p>
                 <div className="!cursor-default !bg-white"><p className="pb-1 text-xs font-semibold text-slate-500">Notifications on this computer</p><PushToggle where="computer" /></div>
+                <div className="!cursor-default !bg-white"><p className="pb-1 text-xs font-semibold text-slate-500">Screen colours</p><ThemePicker /></div>
                 <Link to="/account/password">Change password</Link>
                 <button type="button" onClick={onSignOut}>Sign out</button>
               </div>
@@ -513,6 +515,8 @@ function PhoneTabs({ menu, subs, path, me, onSignOut }: { menu: MenuList; subs?:
               <div className="mt-2 border-t border-slate-100 pt-2">
                 <p className="px-1 pb-1 pt-2 text-xs font-bold uppercase tracking-wider text-slate-500">Notifications on this phone</p>
                 <PushToggle className="px-3 pb-2" />
+                <p className="px-1 pb-1 pt-2 text-xs font-bold uppercase tracking-wider text-slate-500">Screen colours</p>
+                <ThemePicker className="px-3 pb-2" />
                 <p className="px-1 pb-1 pt-2 text-xs font-bold uppercase tracking-wider text-slate-500">{me.displayName}</p>
                 <Link to="/account/password" className="flex min-h-12 items-center rounded-xl px-3 text-[15px] font-semibold text-slate-800">Change password</Link>
                 <button type="button" onClick={onSignOut} className="flex min-h-12 w-full items-center rounded-xl px-3 text-left text-[15px] font-semibold text-red-700">Sign out</button>

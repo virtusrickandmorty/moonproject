@@ -27,6 +27,7 @@ import { HealthDot } from './modules/PLT/HealthDot.tsx';
 import { RestoredNotice } from './modules/BAK/RestoredNotice.tsx';
 import { Site, isSitePath } from './shop/Site.tsx';
 import { Toaster } from './components/Toasts.tsx';
+import { useErpTheme } from './theme.ts';
 import { manilaDate } from '@moonproject/shared';
 
 type Stage = { kind: 'loading' } | { kind: 'error'; message: string } | { kind: 'firstOwner' } | { kind: 'login'; message?: string } | { kind: 'ready'; me: Me; docTypes: DocTypeInfo[] };
@@ -60,6 +61,9 @@ function Stages() {
 
   // An order link (the owner's request, Nov 2026): the customer's own page, the same signed in or not.
   const orderLink = /^\/l\/([\w-]{20,64})$/.exec(location.split('?')[0]!);
+  // Light or dark as the device or the person's menu says, on the ERP's screens only: never the website or an order link.
+  const site = stage.kind === 'login' ? isSitePath(location.split('?')[0]!) : stage.kind === 'ready' && !stage.me.mustChangePassword && isSitePath(location.split('?')[0]!, true);
+  useErpTheme(!orderLink && !site);
   if (orderLink) return <OrderLinkPage token={orderLink[1]!} query={location.split('?')[1] ?? ''} />;
   if (stage.kind === 'loading') return <Loading size="lg" />;
   if (stage.kind === 'error') return <div className="p-6"><Notice>{stage.message}</Notice></div>;
