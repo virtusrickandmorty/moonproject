@@ -12,6 +12,7 @@ import { WishButton } from './Panels.tsx';
 import { Stars } from './Stars.tsx';
 import { deliveryWords, isSoldOut, percentOff, type Product } from './products.ts';
 import { useShop, type OnlinePayment } from './store.tsx';
+import { CountUp } from './motion.tsx';
 
 export { isSoldOut };
 const piecesLeft = (p: Product) => (p.stock ?? []).reduce((n, s) => n + s.available, 0);
@@ -26,8 +27,8 @@ export function ProductCard({ p, colourHex, online, view }: { p: Product; colour
   const shop = useShop();
   const { average, count } = shop.ratingOf(p.id);
   return (
-    <article className="group flex h-full flex-col">
-      <div className="relative aspect-[4/5] overflow-hidden rounded-3xl bg-gradient-to-b from-slate-100 to-slate-200/70">
+    <article className="group flex h-full flex-col transition duration-300 hover:-translate-y-1">
+      <div className="relative aspect-[4/5] overflow-hidden rounded-3xl bg-gradient-to-b from-slate-100 to-slate-200/70 transition-shadow duration-300 group-hover:shadow-xl group-hover:shadow-slate-900/10">
         <button type="button" onClick={() => view(p)} className="absolute inset-0 grid place-items-center" aria-label={`View ${p.name}`}>
           {/* A photo zooms in; a drawing turns to the next colour, as a second view. */}
           <span className={`absolute inset-0 grid place-items-center transition duration-500 ${p.photoUrl ? 'group-hover:scale-105' : second ? 'group-hover:opacity-0' : 'group-hover:scale-105'}`}>
@@ -112,8 +113,8 @@ export function HeroSlider({ products, online, payment, toShop, look }: { produc
     // Edge to edge, as every page's banner (the owner's request, Oct 2026); its text lines up with the menu above.
     <section className="w-full" aria-roledescription="carousel" aria-label="Highlights" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
       <div className={`relative overflow-hidden bg-gradient-to-br ${s.tone} text-white transition-colors duration-700`}>
-        <div className="pointer-events-none absolute -right-24 -top-24 size-96 rounded-full bg-white/5 blur-2xl" />
-        <div className="pointer-events-none absolute -bottom-32 left-1/3 size-96 rounded-full bg-indigo-500/20 blur-3xl" />
+        <div className="hero-drift pointer-events-none absolute -right-24 -top-24 size-96 rounded-full bg-white/5 blur-2xl" />
+        <div className="hero-drift-back pointer-events-none absolute -bottom-32 left-1/3 size-96 rounded-full bg-indigo-500/20 blur-3xl" />
         {s.shower && <Shower key={`shower-${at}`} kind={s.shower} />}
         <div key={at} className="hero-slide relative mx-auto grid min-h-[30rem] max-w-7xl items-center gap-6 px-4 pb-24 pt-12 sm:px-6 md:grid-cols-[1.1fr_0.9fr] md:py-16" aria-roledescription="slide" aria-label={`${(at % slides.length) + 1} of ${slides.length}`}>
           <div>
@@ -125,14 +126,14 @@ export function HeroSlider({ products, online, payment, toShop, look }: { produc
                 className={kind === 'primary' ? 'rounded-full bg-white px-7 py-3.5 font-bold text-slate-900 transition hover:-translate-y-0.5 hover:bg-indigo-100' : 'rounded-full px-7 py-3.5 font-bold text-white ring-1 ring-white/30 transition hover:bg-white/10'}>{label}</button>)}
             </div>
           </div>
-          {s.art && <div className="relative mx-auto hidden aspect-square w-full max-w-md md:block">{s.art}</div>}
+          {s.art && <div className="hero-float relative mx-auto hidden aspect-square w-full max-w-md md:block">{s.art}</div>}
           {!s.art && s.product && (
             <div className="relative mx-auto hidden aspect-square w-full max-w-md md:block">
               <div className="absolute inset-6 rounded-full bg-white/10 ring-1 ring-white/10" />
-              <div className="relative grid size-full place-items-center overflow-hidden rounded-full">
-                <ProductPicture product={s.product} colour={s.product.colours[0]!.hex} className={s.product.photoUrl ? 'rounded-full' : 'w-3/4 drop-shadow-2xl'} />
+              <div className="hero-float relative grid size-full place-items-center overflow-hidden rounded-full">
+                <span className={`grid size-full place-items-center ${s.product.photoUrl ? 'hero-zoom' : 'hero-sway'}`}><ProductPicture product={s.product} colour={s.product.colours[0]!.hex} className={s.product.photoUrl ? 'rounded-full' : 'w-3/4 drop-shadow-2xl'} /></span>
               </div>
-              <div className="absolute bottom-6 left-0 rounded-2xl bg-white/95 px-4 py-3 text-slate-900 shadow-xl">
+              <div className="hero-float-late absolute bottom-6 left-0 rounded-2xl bg-white/95 px-4 py-3 text-slate-900 shadow-xl">
                 <p className="text-xs font-semibold text-slate-500">{s.product.category}</p>
                 <p className="font-bold">{s.product.name}</p>
                 <p className="text-sm font-semibold text-indigo-700">{s.product.madeToOrder ? 'From ' : ''}{formatPeso(s.product.priceCents)}</p>
@@ -209,7 +210,7 @@ export function PromoBanner({ products, payment, showSale }: { products: readonl
             <span className="pointer-events-none absolute -right-2 -top-6 text-[9rem] font-black leading-none text-white/10" aria-hidden="true">%</span>
             {doodles && <Doodles set={doodles} seed={5} spots={['mr', 'br']} size="size-14" light />}
             <span className="block text-xs font-bold uppercase tracking-[0.2em] text-white/80">Sale</span>
-            <span className="mt-2 block text-3xl font-extrabold tracking-tight sm:text-4xl">Up to {most}% off</span>
+            <span className="mt-2 block text-3xl font-extrabold tracking-tight sm:text-4xl">Up to <CountUp value={most} />% off</span>
             <span className="mt-2 block text-white/85">{onSale.length} item{onSale.length === 1 ? '' : 's'} on sale, while stocks last. <b className="underline-offset-4 group-hover:underline">Shop the sale →</b></span>
           </button>
         )}
@@ -230,10 +231,10 @@ export function CategoryTiles({ products, categories, pick }: { products: readon
           const inIt = products.filter((p) => p.category === c);
           const p = inIt.find((x) => x.photoUrl) ?? inIt[0];
           return (
-            <li key={c}><button type="button" onClick={() => pick(c)} className={`group relative flex aspect-[4/5] w-full flex-col overflow-hidden rounded-3xl bg-slate-100 p-4 text-left ring-1 ring-slate-900/5 transition hover:bg-slate-200/70`}>
+            <li key={c}><button type="button" onClick={() => pick(c)} className={`group relative flex aspect-[4/5] w-full flex-col overflow-hidden rounded-3xl bg-slate-100 p-4 text-left ring-1 ring-slate-900/5 transition duration-300 hover:-translate-y-1 hover:bg-slate-200/70 hover:shadow-xl hover:shadow-slate-900/10`}>
               {doodles && <Doodles set={doodles} seed={seedOf(c)} spots={['tr', 'ml']} size="size-12" />}
               <span className="relative z-10 text-lg font-extrabold leading-tight">{c}</span>
-              <span className="relative z-10 text-sm text-slate-600">{inIt.length} item{inIt.length === 1 ? '' : 's'}</span>
+              <span className="relative z-10 text-sm text-slate-600"><CountUp value={inIt.length} ms={800} /> item{inIt.length === 1 ? '' : 's'}</span>
               {p && <span className={`absolute grid place-items-center overflow-hidden transition duration-500 group-hover:scale-105 ${p.photoUrl ? 'inset-x-3 bottom-3 top-20 rounded-2xl' : 'inset-x-0 bottom-0 top-14'}`}><ProductPicture product={p} colour={p.colours[0]!.hex} className={p.photoUrl ? '' : 'w-3/4'} /></span>}
               <span className="absolute bottom-3 right-3 z-10 grid size-9 place-items-center rounded-full bg-white text-lg shadow transition group-hover:bg-slate-900 group-hover:text-white" aria-hidden="true">→</span>
             </button></li>);
@@ -256,8 +257,8 @@ export function PageHero({ eyebrow, title, text, children, side }: { eyebrow: st
   return (
     <section className="w-full">
       <div className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white">
-        <div className="pointer-events-none absolute -right-24 -top-24 size-96 rounded-full bg-white/5 blur-2xl" />
-        <div className="pointer-events-none absolute -bottom-32 left-1/3 size-96 rounded-full bg-indigo-500/20 blur-3xl" />
+        <div className="hero-drift pointer-events-none absolute -right-24 -top-24 size-96 rounded-full bg-white/5 blur-2xl" />
+        <div className="hero-drift-back pointer-events-none absolute -bottom-32 left-1/3 size-96 rounded-full bg-indigo-500/20 blur-3xl" />
         {/* The season, as on the shop's banner: bats, snow or hearts drifting, and doodles in the corners. */}
         {shower && <Shower kind={shower} />}
         {decor?.doodles && <Doodles set={decor.doodles} seed={7} spots={['tr', 'br']} size="size-16" light />}
@@ -268,7 +269,7 @@ export function PageHero({ eyebrow, title, text, children, side }: { eyebrow: st
             <p className="mt-5 max-w-2xl text-lg text-white/70">{text}</p>
             {children}
           </div>
-          {side}
+          {side && <div className="hero-float">{side}</div>}
         </div>
       </div>
     </section>

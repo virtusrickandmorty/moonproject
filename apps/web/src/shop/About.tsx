@@ -8,6 +8,7 @@ import { seedOf } from './seasons.tsx';
 import { SHOP_CONTACT } from './products.ts';
 import { ReviewCard, Stars } from './Stars.tsx';
 import { useShop } from './store.tsx';
+import { CountUp } from './motion.tsx';
 
 /**
  * The shop's own facts. Placeholders: the owner fills these in (in square brackets until then) before the site is
@@ -41,10 +42,10 @@ export function About() {
         text="Virtus Garments is a made-to-order garment shop. Teams, schools and companies come to us for clothing that is made for them, not pulled off a rack."
         side={
           <div className="mx-auto grid w-full max-w-sm grid-cols-2 gap-4" aria-hidden="true">
-            <div className="grid aspect-square place-items-center rounded-3xl bg-white/10 ring-1 ring-white/10"><GarmentArt shape="jersey" colour="#3b5bdb" className="w-3/4" /></div>
-            <div className="mt-10 grid aspect-square place-items-center rounded-3xl bg-white/10 ring-1 ring-white/10"><GarmentArt shape="polo" colour="#f1f5f9" className="w-3/4" /></div>
-            <div className="-mt-10 grid aspect-square place-items-center rounded-3xl bg-white/10 ring-1 ring-white/10"><GarmentArt shape="jacket" colour="#94a3b8" className="w-3/4" /></div>
-            <div className="grid aspect-square place-items-center rounded-3xl bg-white/10 ring-1 ring-white/10"><GarmentArt shape="tee" colour="#1e293b" className="w-3/4" /></div>
+            <div className="grid aspect-square place-items-center rounded-3xl bg-white/10 ring-1 ring-white/10"><GarmentArt shape="jersey" colour="#3b5bdb" className="hero-sway w-3/4" /></div>
+            <div className="mt-10 grid aspect-square place-items-center rounded-3xl bg-white/10 ring-1 ring-white/10"><GarmentArt shape="polo" colour="#f1f5f9" className="hero-sway w-3/4 [animation-delay:-1.3s]" /></div>
+            <div className="-mt-10 grid aspect-square place-items-center rounded-3xl bg-white/10 ring-1 ring-white/10"><GarmentArt shape="jacket" colour="#94a3b8" className="hero-sway w-3/4 [animation-delay:-2.6s]" /></div>
+            <div className="grid aspect-square place-items-center rounded-3xl bg-white/10 ring-1 ring-white/10"><GarmentArt shape="tee" colour="#1e293b" className="hero-sway w-3/4 [animation-delay:-3.9s]" /></div>
           </div>}>
         <div className="mt-8 flex flex-wrap gap-3">
           <Link to="/services" className="rounded-full bg-white px-7 py-3.5 font-bold text-slate-900 transition hover:-translate-y-0.5 hover:bg-indigo-100">See what we do</Link>
@@ -62,6 +63,8 @@ export function About() {
           <div className="space-y-4 text-lg leading-relaxed text-slate-700">{ABOUT.story.map((p) => <p key={p}>{p}</p>)}</div>
         </div>
       </section>
+
+      <Figures />
 
       <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6">
         <SectionHead eyebrow="Our values" title="What we stand for" />
@@ -119,6 +122,35 @@ export function About() {
   );
 }
 
+/**
+ * The shop in figures (the owner's request, Nov 2026: numbers that count up): only real ones, from the shop's own data.
+ * The garments count leaves out the sample garments shown before the shop publishes its own; a figure of nought is left out.
+ */
+function Figures() {
+  const { products, samples, reviews } = useShop();
+  const year = Number(new Intl.DateTimeFormat('en-PH', { timeZone: 'Asia/Manila', year: 'numeric' }).format(new Date()));
+  const average = reviews.length ? reviews.reduce((n, r) => n + r.rating, 0) / reviews.length : 0;
+  const figures: [number, number, string][] = [
+    [year - Number(ABOUT.founded), 0, 'years making garments'],
+    [samples ? 0 : products.length, 0, 'garments in our shop'],
+    [reviews.length, 0, reviews.length === 1 ? 'buyer review' : 'buyer reviews'],
+    [average, 1, 'average stars from buyers'],
+  ];
+  const shown = figures.filter(([n]) => n > 0);
+  if (shown.length < 2) return null;
+  return (
+    <section className="mx-auto max-w-7xl px-4 pt-6 sm:px-6" aria-label="The shop in figures">
+      <ul className={`grid grid-cols-2 gap-3 ${shown.length > 2 ? 'lg:grid-cols-4' : ''}`}>
+        {shown.map(([n, decimals, label]) => (
+          <li key={label} className="rounded-3xl bg-white p-6 text-center ring-1 ring-slate-900/5">
+            <p className="text-4xl font-extrabold tracking-tight text-indigo-700 sm:text-5xl"><CountUp value={n} decimals={decimals} /></p>
+            <p className="mt-1 text-sm font-semibold text-slate-500">{label}</p>
+          </li>))}
+      </ul>
+    </section>
+  );
+}
+
 /** Every review the website shows, newest first: the average, how the stars spread, and the reviews themselves (with the item). */
 function Reviews() {
   const { reviews, ready } = useShop();
@@ -137,9 +169,9 @@ function Reviews() {
       ) : (
         <div className="mt-8 grid gap-6 lg:grid-cols-[18rem_1fr]">
           <aside className="self-start rounded-[2rem] bg-white p-6 ring-1 ring-slate-900/5">
-            <p className="text-5xl font-extrabold">{average.toFixed(1)}</p>
+            <p className="text-5xl font-extrabold"><CountUp value={average} decimals={1} /></p>
             <Stars rating={average} className="size-5" />
-            <p className="mt-1 text-sm text-slate-500">From {reviews.length} verified buyer{reviews.length === 1 ? '' : 's'}</p>
+            <p className="mt-1 text-sm text-slate-500">From <CountUp value={reviews.length} ms={800} /> verified buyer{reviews.length === 1 ? '' : 's'}</p>
             <ul className="mt-5 space-y-1.5">{[5, 4, 3, 2, 1].map((n) => {
               const count = reviews.filter((r) => r.rating === n).length;
               return <li key={n}><button type="button" disabled={!count} onClick={() => { setStars(stars === n ? 0 : n); setShowing(9); }} aria-pressed={stars === n}
