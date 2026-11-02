@@ -8,6 +8,8 @@
  * - What a worker scans and records waits for the production head's check (prd.verify). Approved, it is recorded as a
  *   Production Entry dated the day of the scan, with every rule of Record pieces; only then does it count on the job and
  *   in the worker's pay. Rejected, nothing is recorded and the worker sees why.
+ * - A production head who also records on the floor app never checks their own scans: another head or the owner does
+ *   (the owner's choice, Nov 2026).
  */
 import { z } from 'zod';
 import { AppError, conflict, newId, notFound } from '@moonproject/shared';
@@ -16,6 +18,7 @@ import type { EngineEnv } from '../../engine/documents/lifecycle.ts';
 import { postDocument, previewDocument } from '../../engine/documents/lifecycle.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { activeJobOrders, jobOrderRef, lineState, rosterOf } from '../JO/public.ts';
+import { employeeOfUser } from '../EMP/public.ts';
 import { employee } from './emp.ts';
 import { entryDoc, type EntryInput } from './doctypes/entry.ts';
 import { availableFor, lineRoute, listSteps, stepById, wearerPieces, type Who } from './production.ts';
@@ -199,7 +202,7 @@ export function floorChecks(env: EngineEnv, actor: Actor) {
   const waiting = (db.prepare(`${CLAIM} WHERE status = 'waiting' ORDER BY at, id`).all() as Claim[]).map((c) => {
     const preview = previewDocument(env, entryDoc, recorder(actor), entryOf({ ...c, again: c.again === 1, wearers: wearersOf(db, c.id) }));
     const problems = preview.issues.filter((i) => i.level === 'error').map((i) => i.message);
-    return { ...describe(db, c), amountCents: preview.totalCents, problems };
+    return { ...describe(db, c), amountCents: preview.totalCents, problems, yours: ownScan(db, actor.userId, c) };
   });
   const checked = (db.prepare(`${CLAIM} WHERE status <> 'waiting' ORDER BY checked_at DESC, id LIMIT 40`).all() as Claim[]).map((c) => ({
     ...describe(db, c), checkedBy: c.checkedBy ? (db.prepare('SELECT display_name FROM users WHERE id = ?').pluck().get(c.checkedBy) as string) : null,
@@ -210,10 +213,14 @@ export function floorChecks(env: EngineEnv, actor: Actor) {
 /** How many scans wait for the check (the production board's note). */
 export const waitingCount = (db: Db) => db.prepare("SELECT COUNT(*) FROM prd_floor_claims WHERE status = 'waiting'").pluck().get() as number;
 
-function waitingClaim(db: Db, id: string): Claim {
+/** Whether the scan is the checker's own pieces (their sign-in is linked to the scan's worker). */
+const ownScan = (db: Db, userId: string, c: Claim) => employeeOfUser(db, userId)?.id === c.employeeId;
+
+function waitingClaim(db: Db, id: string, userId: string): Claim {
   const c = db.prepare(`${CLAIM} WHERE id = ?`).get(id) as Claim | undefined;
   if (!c) throw notFound('That scan');
   if (c.status !== 'waiting') throw conflict('ALREADY_CHECKED', `This scan was already ${c.status}. Reload the list.`);
+  if (ownScan(db, userId, c)) throw new AppError('OWN_SCAN', 'These are your own pieces: another production head or the owner checks them.', 403);
   return c;
 }
 
@@ -224,7 +231,7 @@ export const rejectBody = z.object({ reason: z.string().trim().min(3).max(300) }
 export function approveScan(env: EngineEnv, actor: Actor, id: string, raw: unknown, at: string) {
   const body = approveBody.parse(raw ?? {});
   const { db } = env;
-  const c = waitingClaim(db, id);
+  const c = waitingClaim(db, id, actor.userId);
   if (jobOrderRef(db, c.jobOrderId)?.status === 'cancelled') {
     throw new AppError('JO_CHANGED', 'The job order was edited after this scan. Reject it, and ask the worker to scan the new job ticket.', 422);
   }
@@ -248,7 +255,7 @@ export function approveScan(env: EngineEnv, actor: Actor, id: string, raw: unkno
 /** Rejects a scan: nothing is recorded; the worker sees the reason. */
 export function rejectScan(db: Db, who: Who, id: string, raw: unknown) {
   const { reason } = rejectBody.parse(raw);
-  waitingClaim(db, id);
+  waitingClaim(db, id, who.userId);
   db.prepare("UPDATE prd_floor_claims SET status = 'rejected', reason = ?, checked_at = ?, checked_by = ? WHERE id = ?").run(reason, who.at, who.userId, id);
   appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.floor_scan_reject', entityType: 'prd.floor_claim', entityId: id, data: { reason } });
   return { rejected: true };

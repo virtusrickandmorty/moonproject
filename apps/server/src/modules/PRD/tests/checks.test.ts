@@ -144,6 +144,25 @@ it('on a set, takes the wearers and how many of each for the upper or the lower 
   expect(route.partWearersDone).toEqual({ upper: [1], lower: [1] });
 });
 
+it('never lets a production head check their own scans: another head or the owner does', async () => {
+  // A head who also sews: the production role and the worker's, linked to an employee.
+  const user = createUser(env.db, 'head.sewer', ['production', 'worker']);
+  expect((await owner.put(`/api/emp/employees/${w.sewer2}/floor-user`, { userId: user })).statusCode).toBe(200);
+  expect((await production.put(`/api/prd/worker-steps/${w.sewer2}`, { stepIds: [SEWING] })).statusCode).toBe(200);
+  const head = await login(env.app, 'head.sewer', PASSWORD);
+  const scan = (await head.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 2, wearers: [{ rowNo: 2, pieces: 2 }] })).json();
+  const theirs = (await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 3, wearers: [{ rowNo: 1, pieces: 3 }] })).json();
+
+  const list = (await head.get('/api/prd/checks')).json();
+  expect(list.waiting.find((x: { id: string }) => x.id === scan.id)).toMatchObject({ yours: true });
+  expect(list.waiting.find((x: { id: string }) => x.id === theirs.id)).toMatchObject({ yours: false });
+  expect((await head.post(`/api/prd/checks/${scan.id}/approve`, {})).json()).toMatchObject({ code: 'OWN_SCAN' });
+  expect((await head.post(`/api/prd/checks/${scan.id}/reject`, { reason: 'Mine, scan again' })).json()).toMatchObject({ code: 'OWN_SCAN' });
+  // The head checks the sewer's; the other head (or the owner) checks the head's.
+  expect((await head.post(`/api/prd/checks/${theirs.id}/approve`, {})).statusCode).toBe(200);
+  expect((await production.post(`/api/prd/checks/${scan.id}/approve`, {})).statusCode).toBe(200);
+});
+
 it('keeps a scan waiting until the production head approves it, dated the day of the scan, with the pieces counted', async () => {
   const scan = await sewer.post('/api/prd/floor/record', { jobOrderId: jo, lineNo: 1, stepId: SEWING, pieces: 3, wearers: [{ rowNo: 1, pieces: 3 }] });
   expect(scan.statusCode, scan.body).toBe(200);

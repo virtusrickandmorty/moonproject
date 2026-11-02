@@ -160,8 +160,12 @@ function TodayScreen({ me }: { me: Me }) {
           <p className="text-sm font-semibold text-slate-500">{dayName(data.today, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
           <h1 className="text-2xl font-extrabold tracking-tight">Hi, {data.employee.name.split(/\s+/)[0]}</h1>
         </div>
+        <div className="flex items-center gap-2">
+        {/* Also on the office screens (a production head): back to them. */}
+        {me.permissions.includes('prd.view') && <button type="button" onClick={() => navigate('/')} className="h-11 rounded-full border border-slate-300 px-4 text-sm font-bold">Office</button>}
         <button type="button" aria-label={`Signed in as ${me.displayName}. Sign out`} onClick={() => void api.logout().finally(() => location.assign('/sign-in'))}
           className="grid size-11 place-items-center rounded-full bg-indigo-600 text-[15px] font-extrabold text-white">{initials}</button>
+        </div>
       </header>
       <button type="button" onClick={() => navigate('/floor/earnings')} className="flex w-full flex-col gap-2 rounded-2xl bg-indigo-600 p-5 text-left text-white">
         <span className="text-[13px] font-semibold text-indigo-100">This week · {weekWords(data.week)}</span>

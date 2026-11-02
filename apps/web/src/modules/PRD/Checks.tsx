@@ -20,7 +20,7 @@ export function CheckScannedWork({ me: _me }: { me: Me }) {
   const load = useCallback(() => api.prdChecks().then((d) => (setData(d), setError('')), (e: Error) => setError(e.message)), []);
   useEffect(() => void load(), [load]);
   useLiveReload(load, () => !busy);
-  const clean = data?.waiting.filter((w) => w.problems.length === 0 && !w.jobOrderCancelled) ?? [];
+  const clean = data?.waiting.filter((w) => w.problems.length === 0 && !w.jobOrderCancelled && !w.yours) ?? [];
   const approveAll = async () => {
     setBusy(true); setSaid(''); setError('');
     let ok = 0;
@@ -39,7 +39,8 @@ export function CheckScannedWork({ me: _me }: { me: Me }) {
       {!data ? <Loading /> : data.waiting.length === 0 ? <p className={`${SURFACE} p-5 text-sm text-slate-600`}>Nothing waiting. New scans show here by themselves.</p> : (
         <>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-base font-bold">{data.waiting.length} waiting for your check</h2>
+            <h2 className="text-base font-bold">{data.waiting.filter((w) => !w.yours).length} waiting for your check
+              {data.waiting.some((w) => w.yours) && <span className="font-normal text-slate-500"> · {data.waiting.filter((w) => w.yours).length} of your own, for someone else to check</span>}</h2>
             {clean.length > 1 && <Button tone="primary" disabled={busy} onClick={() => void approveAll()}>Approve all {clean.length} as scanned</Button>}
           </div>
           <ul className="grid gap-3 lg:grid-cols-2">
@@ -103,10 +104,11 @@ function ScanCard({ scan: w, disabled, onDone }: { scan: Waiting; disabled: bool
         {w.wearers.length > 0 && <span className="block text-xs text-slate-500">For {w.wearers.map((x) => (x.pieces === null ? x.name : `${x.name} ${x.pieces}`)).join(', ')}</span>}
         {w.again && <span className="block text-xs text-amber-800">The worker said this is another batch of the same count today.</span>}
       </p>
+      {w.yours && <Notice tone="info">These are your own pieces: another production head or the owner checks them.</Notice>}
       {w.jobOrderCancelled && <Notice>The job order was edited after this scan. Reject it and ask the worker to scan the new job ticket.</Notice>}
       {w.problems.map((p) => <Notice key={p}>{p}</Notice>)}
       {error && <Notice>{error}</Notice>}
-      {rejecting ? (
+      {w.yours ? null : rejecting ? (
         <div className="space-y-2">
           <label className="block text-sm font-semibold" htmlFor={`reject-${w.id}`}>Why? The worker sees this.</label>
           <input id={`reject-${w.id}`} autoFocus className={inputClass} value={reason} placeholder="Only 8 were sewn; scan again" onChange={(e) => setReason(e.target.value)} />
