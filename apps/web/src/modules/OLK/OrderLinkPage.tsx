@@ -4,12 +4,25 @@
  * member gives their own details and pieces. Measurements follow the shop's measuring guide; an item that needs the same
  * measurement reuses the person's value, which may be changed for that item alone. Sent answers can be changed with their
  * own link until the link closes. Only that key is kept in this browser, never the answer itself (NR-11).
+ * A group link where each member pays their own share shows the prices, the member's share, and the shop's QR code to pay
+ * it and send the reference and a screenshot; the page then shows whether the shop received it.
  */
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
-import type { OlkAnswer, OlkGender, OlkGuide, OlkItem, OlkKind, OlkPerson } from '../../api.ts';
+import { formatPeso } from '@moonproject/shared';
+import type { OlkAnswer, OlkGender, OlkGuide, OlkItem, OlkKind, OlkPayHow, OlkPayment, OlkPerson, OlkShare } from '../../api.ts';
 import { SHOP_CONTACT } from '../../shop/products.ts';
+import { base64, prepare } from '../../shop/Support.tsx';
 
-interface LinkPage { kind: OlkKind; title: string; closesOn: string; open: boolean; payOwn: boolean; items: OlkItem[]; sizes: { label: string; category: 'adult' | 'kids' }[]; guide: OlkGuide[] }
+interface LinkPage {
+  kind: OlkKind; title: string; closesOn: string; open: boolean; payOwn: boolean; items: OlkItem[]; sizes: { label: string; category: 'adult' | 'kids' }[]; guide: OlkGuide[];
+  prices?: { lineNo: number; tiers: { fromQty: number; unitPriceCents: number }[] }[]; pay?: OlkPayHow | null; // each pays their own share
+}
+type Mine = OlkAnswer & { share?: OlkShare; payments?: OlkPayment[] };
+/** The price each for this many: the largest tier reached; null when the item has no price on the list. */
+export function priceFor(tiers: { fromQty: number; unitPriceCents: number }[] | undefined, qty: number): number | null {
+  const t = (tiers ?? []).filter((x) => x.fromQty <= Math.max(1, qty)).at(-1);
+  return t ? t.unitPriceCents : null;
+}
 interface PersonForm {
   row: number; name: string; backName: string; number: string; gender: OlkGender | ''; measureAtShop: boolean;
   pieces: Record<number, { qty: string; size: string }>; measures: Record<string, string>; own: Record<string, string>; // own: `${lineNo}:${field}` for one item
@@ -115,7 +128,8 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
   const [key, setKey] = useState(() => new URLSearchParams(query).get('k') ?? readKey(token));
   const [details, setDetails] = useState<Details>({ name: '', gender: '', mobile: '', email: '', address: '' });
   const [people, setPeople] = useState<PersonForm[]>([]);
-  const [sent, setSent] = useState<OlkAnswer | null>(null); // just sent or changed: the thank-you
+  const [sent, setSent] = useState<Mine | null>(null); // the answer sent: its summary (and payment) instead of the form
+  const [fresh, setFresh] = useState(false); // sent or changed just now
   const [editing, setEditing] = useState(false); // filled from an answer sent before
   const [problem, setProblem] = useState('');
   const [busy, setBusy] = useState(false);
@@ -126,11 +140,12 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
     (async () => {
       const l = await send<LinkPage>('GET', base);
       setLink(l);
-      const own = key ? await send<OlkAnswer>('GET', `${base}/answers/${encodeURIComponent(key)}`).catch(() => null) : null;
+      const own = key ? await send<Mine>('GET', `${base}/answers/${encodeURIComponent(key)}`).catch(() => null) : null;
       if (own) {
         setDetails({ name: own.name, gender: own.gender, mobile: own.mobile, email: own.email, address: own.address });
         setPeople(own.people.map((p) => personFrom(p, l.items)));
         setEditing(true);
+        setSent(own);
         keepKey(token, key);
       } else {
         if (key) setKey('');
@@ -149,10 +164,10 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
     setProblem(''); setBusy(true);
     try {
       const saved = editing && key
-        ? await send<OlkAnswer>('PUT', `${base}/answers/${encodeURIComponent(key)}`, a.body)
-        : await send<OlkAnswer & { key: string }>('POST', `${base}/answers`, a.body);
+        ? await send<Mine>('PUT', `${base}/answers/${encodeURIComponent(key)}`, a.body)
+        : await send<Mine & { key: string }>('POST', `${base}/answers`, a.body);
       if ('key' in saved && typeof saved.key === 'string') { setKey(saved.key); keepKey(token, saved.key); }
-      setSent(saved); setEditing(true);
+      setSent(saved); setFresh(true); setEditing(true);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) { setProblem((err as Error).message); }
     finally { setBusy(false); }
@@ -166,12 +181,16 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
   if (sent) return (
     <Frame title={link.title}>
       <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-slate-900/5" aria-live="polite">
-        <p className="text-2xl font-extrabold text-emerald-700">Thank you, {sent.name.split(' ')[0]}!</p>
-        <p className="text-slate-700">{sent.changes ? 'Your changes are saved.' : 'We have your order details.'} The shop will check them and get in touch at {sent.mobile} or {sent.email}.</p>
+        {fresh ? <>
+          <p className="text-2xl font-extrabold text-emerald-700">Thank you, {sent.name.split(' ')[0]}!</p>
+          <p className="text-slate-700">{sent.changes ? 'Your changes are saved.' : 'We have your order details.'} The shop will check them and get in touch at {sent.mobile} or {sent.email}.</p>
+        </> : <p className="text-xl font-extrabold">Your order details, {sent.name.split(' ')[0]}</p>}
         <Summary link={link} answer={sent} />
         {link.open && personal && <KeepLink url={personal} closesOn={link.closesOn} />}
-        {link.open && <button type="button" className="w-full rounded-full bg-slate-100 py-3 font-semibold text-slate-800 hover:bg-slate-200" onClick={() => setSent(null)}>Change my answer</button>}
+        {link.open && <button type="button" className="w-full rounded-full bg-slate-100 py-3 font-semibold text-slate-800 hover:bg-slate-200" onClick={() => { setSent(null); setFresh(false); }}>Change my answer</button>}
+        {!link.open && <p className="text-sm text-slate-600">This link closed on {day(link.closesOn)}. To change anything, call or text the shop at {SHOP_CONTACT.phone}.</p>}
       </section>
+      {link.payOwn && sent.share && <PayCard pay={link.pay ?? null} share={sent.share} payments={sent.payments ?? []} url={`${base}/answers/${encodeURIComponent(key)}/payment`} onSent={setSent} />}
     </Frame>
   );
 
@@ -215,11 +234,12 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
             onClick={() => setPeople((ps) => [...ps, blankPerson(Math.max(0, ...ps.map((x) => x.row)) + 1, link.items, ps.at(-1)?.gender ?? '')])}>+ Add a player</button>
         )}
 
+        {link.payOwn && <ShareSoFar link={link} person={people[0]} />}
         {problem && <p role="alert" className="rounded-2xl bg-rose-50 px-5 py-4 font-semibold text-rose-800">{problem}</p>}
         <button type="submit" disabled={busy} className="w-full rounded-full bg-slate-900 py-4 text-lg font-bold text-white hover:bg-indigo-700 disabled:cursor-wait disabled:bg-slate-400">
           {busy ? 'Sending…' : editing ? 'Save my changes' : 'Send my order details'}
         </button>
-        <p className="text-center text-sm text-slate-500">No payment is taken on this page. The shop reviews your details first.</p>
+        <p className="text-center text-sm text-slate-500">{link.payOwn ? 'You pay your share after sending your details.' : 'No payment is taken on this page. The shop reviews your details first.'}</p>
       </form>
     </Frame>
   );
@@ -278,6 +298,7 @@ function Pieces({ link, person, gender, onChange }: { link: LinkPage; person: Pe
             <div className="min-w-0 flex-1 basis-40">
               <p className="font-semibold">{it.name}</p>
               <p className="text-xs text-slate-500">{it.sizing === 'size' ? `Standard size${cut ? `, ${cut} cut` : ''}` : 'Made to your measurements'}</p>
+              {link.prices && ((each) => <p className="text-sm font-semibold text-slate-700">{each === null ? 'Price from the shop' : `${formatPeso(each)} each`}</p>)(priceFor(link.prices.find((x) => x.lineNo === it.lineNo)?.tiers, Number(pc.qty) || 1))}
             </div>
             <label className="w-20"><span className="text-xs text-slate-500">How many</span>
               <input className={box} inputMode="numeric" value={pc.qty} onChange={(e) => set({ qty: e.target.value.replace(/\D/g, '').slice(0, 3) })} aria-label={`How many ${it.name}`} /></label>
@@ -397,5 +418,99 @@ function KeepLink({ url, closesOn }: { url: string; closesOn: string }) {
           onClick={() => void navigator.clipboard?.writeText(url).then(() => setCopied(true), () => undefined)}>{copied ? 'Copied' : 'Copy'}</button>
       </div>
     </div>
+  );
+}
+
+/** The member's share as they fill in the form (the server works it out again when they send it). */
+function ShareSoFar({ link, person }: { link: LinkPage; person: PersonForm | undefined }) {
+  if (!person) return null;
+  const lines = link.items.map((it) => ({ qty: Number(person.pieces[it.lineNo]?.qty) || 0, each: priceFor(link.prices?.find((x) => x.lineNo === it.lineNo)?.tiers, Number(person.pieces[it.lineNo]?.qty) || 1) })).filter((l) => l.qty > 0);
+  if (!lines.length) return null;
+  const known = lines.every((l) => l.each !== null);
+  return (
+    <div className="flex items-baseline justify-between gap-3 rounded-2xl bg-white p-5 ring-1 ring-slate-900/5">
+      <span className="font-semibold">Your share</span>
+      <span className="text-2xl font-extrabold tabular-nums">{known ? formatPeso(lines.reduce((s, l) => s + l.qty * l.each!, 0)) : 'The shop will tell you'}</span>
+    </div>
+  );
+}
+
+const PAY_STATUS: Record<OlkPayment['status'], [string, string]> = {
+  sent: ['Being checked by the shop', 'bg-amber-50 text-amber-900'],
+  accepted: ['Received', 'bg-emerald-50 text-emerald-800'],
+  not_received: ['Not found by the shop', 'bg-rose-50 text-rose-800'],
+};
+
+/** "1,500.00", "₱1500" → centavos; null when it is not an amount. */
+export function centsOf(text: string): number | null {
+  const m = /^(\d{1,9})(?:\.(\d{1,2}))?$/.exec(text.replace(/[₱,\s]/g, ''));
+  return m ? Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0')) : null;
+}
+
+/** The member's share, their payments so far, and the shop's QR code to pay the rest and send the reference and screenshot. */
+function PayCard({ pay, share, payments, url, onSent }: { pay: OlkPayHow | null; share: OlkShare; payments: OlkPayment[]; url: string; onSent: (a: Mine) => void }) {
+  const counted = payments.filter((p) => p.status !== 'not_received').reduce((s, p) => s + p.amountCents, 0);
+  const left = share.totalCents === null ? null : Math.max(0, share.totalCents - counted);
+  const waiting = payments.some((p) => p.status === 'sent');
+  const [amount, setAmount] = useState(left ? (left / 100).toFixed(2) : '');
+  const [reference, setReference] = useState('');
+  const [proof, setProof] = useState<{ name: string; blob: Blob; url: string } | null>(null);
+  const [problem, setProblem] = useState('');
+  const [busy, setBusy] = useState(false);
+  const pick = async (f: File) => { setProblem(''); try { setProof(await prepare(f)); } catch (e) { setProblem((e as Error).message); } };
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const cents = centsOf(amount);
+    if (cents === null || cents < 100) return setProblem('Type the amount you paid, like 1500.00.');
+    if (reference.trim().length < 4) return setProblem('Type the reference number from your payment receipt.');
+    if (!proof) return setProblem('Add the screenshot of your payment.');
+    setBusy(true); setProblem('');
+    try {
+      onSent(await send<Mine>('POST', url, { amountCents: cents, reference: reference.trim(), proof: { name: proof.name, data: await base64(proof.blob) } }));
+      setReference(''); setProof(null);
+    } catch (err) { setProblem((err as Error).message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <section className="space-y-4 rounded-3xl bg-white p-6 ring-1 ring-slate-900/5">
+      <h2 className="text-lg font-bold">Your payment</h2>
+      <ul className="space-y-1 text-sm">
+        {share.lines.map((l) => <li key={l.lineNo} className="flex justify-between gap-3"><span>{l.qty} × {l.name}</span><span className="tabular-nums">{l.unitCents === null ? 'price from the shop' : formatPeso(l.qty * l.unitCents)}</span></li>)}
+        <li className="flex justify-between gap-3 border-t border-slate-100 pt-2 text-base font-bold"><span>Your share</span><span className="tabular-nums">{share.totalCents === null ? 'The shop will tell you' : formatPeso(share.totalCents)}</span></li>
+      </ul>
+      {payments.length > 0 && (
+        <ul className="space-y-2">{payments.map((p) => (
+          <li key={p.sentAt} className={`rounded-2xl px-4 py-3 text-sm ${PAY_STATUS[p.status][1]}`}>
+            <b>{formatPeso(p.amountCents)}</b> · ref. {p.reference} · {PAY_STATUS[p.status][0]}{p.reason ? `: ${p.reason}` : ''}
+          </li>
+        ))}</ul>
+      )}
+      {share.totalCents === null ? <p className="text-sm text-slate-600">The shop will message you the price and how to pay.</p>
+        : waiting ? <p className="text-sm text-slate-600">The shop checks payments within a day. This page shows when it is received.</p>
+        : left === 0 ? <p className="font-semibold text-emerald-700">Your share is paid in full. Thank you!</p>
+        : !pay ? <p className="text-sm text-slate-600">The shop will message you how to pay {formatPeso(left!)}.</p>
+        : (
+          <div className="grid gap-5 sm:grid-cols-[14rem_1fr]">
+            <div className="text-center">
+              <img src={pay.qrUrl} alt={`QR code to pay ${pay.accountName}`} className="mx-auto w-full max-w-[14rem] rounded-xl ring-1 ring-slate-200" />
+              <p className="mt-2 text-sm font-bold">{pay.accountName}</p>
+              <p className="text-xs text-slate-500">{pay.bankName}{pay.accountHint ? ` · ${pay.accountHint}` : ''}</p>
+            </div>
+            <form onSubmit={(e) => void submit(e)} className="space-y-3" noValidate>
+              <p className="text-sm text-slate-600">Left to pay <b className="text-lg text-slate-900">{formatPeso(left!)}</b></p>
+              {pay.instructions && <p className="text-xs text-slate-500">{pay.instructions}</p>}
+              <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-700"><li>Scan the QR with your bank or e-wallet app.</li><li>Pay your share (or part of it).</li><li>Type the amount and reference number, and add a screenshot.</li></ol>
+              <Label text="Amount you paid (₱)"><input className={box} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></Label>
+              <Label text="Reference number"><input className={box} maxLength={60} value={reference} onChange={(e) => setReference(e.target.value)} placeholder="From your payment receipt" /></Label>
+              <label className="flex cursor-pointer flex-col items-center rounded-2xl border-2 border-dashed border-slate-300 px-4 py-5 text-center hover:border-slate-400">
+                {proof ? <img src={proof.url} alt="Your payment screenshot" className="max-h-48 rounded-lg" /> : <><span className="text-sm font-bold">Add the screenshot</span><span className="text-xs text-slate-500">JPEG, PNG or WebP</span></>}
+                <input type="file" accept="image/*" className="sr-only" aria-label="Screenshot of your payment" onChange={(e) => { const f = e.target.files?.[0]; if (f) void pick(f); e.target.value = ''; }} />
+              </label>
+              {problem && <p role="alert" className="rounded-2xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-800">{problem}</p>}
+              <button type="submit" disabled={busy} className="w-full rounded-full bg-indigo-600 py-3.5 font-bold text-white hover:bg-indigo-700 disabled:cursor-wait disabled:bg-slate-400">{busy ? 'Sending…' : 'I have paid: send my payment'}</button>
+            </form>
+          </div>
+        )}
+    </section>
   );
 }

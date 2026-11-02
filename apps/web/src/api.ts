@@ -399,10 +399,15 @@ export interface OlkPerson {
   pieces: { lineNo: number; qty: number; size?: string }[]; measures: Record<string, number>; itemMeasures: { lineNo: number; field: string; value: number }[];
 }
 export interface OlkAnswer { id: string; name: string; gender: OlkGender; mobile: string; email: string; address: string; createdAt: string; updatedAt: string; changes: number; people: OlkPerson[] }
+/** A member's share when each pays their own: their pieces at the price for their quantity (total null: an item has no price). */
+export interface OlkShare { totalCents: number | null; lines: { lineNo: number; name: string; qty: number; unitCents: number | null }[] }
+export interface OlkPayment { id?: string; amountCents: number; reference: string; sentAt: string; status: 'sent' | 'accepted' | 'not_received'; reason?: string; decidedAt?: string; jobOrderId?: string }
+/** The shop's account and QR code to pay to (the website shop's payment settings). */
+export interface OlkPayHow { bankName: string; accountName: string; accountHint: string | null; instructions: string | null; qrUrl: string }
 export interface OlkLinkRow { id: string; kind: OlkKind; title: string; closesOn: string; open: boolean; closedEarly: boolean; answers: number; people: number; createdAt: string }
 export interface OlkLinkDetail {
   id: string; token: string; kind: OlkKind; title: string; closesOn: string; open: boolean; closedEarly: boolean; payOwn: boolean; version: number;
-  customer: { id: string; name: string } | null; items: OlkItem[]; responses: (OlkAnswer & { checks: string[]; made: OlkMade[] })[];
+  customer: { id: string; name: string } | null; items: OlkItem[]; responses: (OlkAnswer & { checks: string[]; made: OlkMade[]; share?: OlkShare; payments: OlkPayment[] })[];
   totals: { lineNo: number; name: string; sizes: { size: string; qty: number }[]; qty: number }[]; guide: { key: string; label: string }[];
 }
 export interface OlkGuide { key: string; label: string; how: string }
@@ -1313,6 +1318,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     olkClose: (id: string) => call<OlkLinkDetail>('POST', `/api/olk/links/${encodeURIComponent(id)}/close`, {}),
     olkClosesOn: (id: string, closesOn: string) => call<OlkLinkDetail>('POST', `/api/olk/links/${encodeURIComponent(id)}/closes-on`, { closesOn }),
     olkJobOrder: (id: string, body: { responseIds: string[]; together: boolean; customerId?: string }) => call<OlkJobOrder>('POST', `/api/olk/links/${encodeURIComponent(id)}/job-order`, body),
+    olkPayJobOrders: (paymentId: string) => call<{ id: string; number: string; customerName: string; totalCents: number; dueDate: string }[]>('GET', `/api/olk/payments/${encodeURIComponent(paymentId)}/job-orders`),
+    olkPayAccept: (paymentId: string, jobOrderId: string) => call<{ jobOrderId: string; jobOrderNumber: string; amountCents: number; note: string }>('POST', `/api/olk/payments/${encodeURIComponent(paymentId)}/accept`, { jobOrderId }),
+    olkPayNotReceived: (paymentId: string, reason: string) => call<{ ok: true }>('POST', `/api/olk/payments/${encodeURIComponent(paymentId)}/not-received`, { reason }),
     olkPickers: (q = '') => call<{ items: { id: string; code: string; name: string }[]; customers: { id: string; name: string }[]; guide: OlkGuide[]; presets: Record<'top' | 'bottom', string[]> }>('GET', `/api/olk/pickers?${new URLSearchParams({ q })}`),
     rates: () => call<RateTable>('GET', '/api/rate/rates'),
     addRate: (body: Omit<PieceRate, 'id' | 'createdAt'>) => call<PieceRate>('POST', '/api/rate/rates', body),

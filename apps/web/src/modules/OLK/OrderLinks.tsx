@@ -6,11 +6,11 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { formatPesos, manilaDate } from '@moonproject/shared';
-import { api, type Me, type OlkGuide, type OlkJobOrder, type OlkLinkDetail, type OlkLinkInput, type OlkLinkRow } from '../../api.ts';
+import { api, type Me, type OlkGuide, type OlkJobOrder, type OlkLinkDetail, type OlkLinkInput, type OlkLinkRow, type OlkPayment, type OlkShare } from '../../api.ts';
 import { navigate } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { emptyJo, emptyJoLine, oneOff, type JoValues } from '../JO/forms.ts';
-import { Button, Dialog, Field, Loading, Notice, Panel, inputClass, manilaTime, showDate, useAction } from '../../components/ui.tsx';
+import { Button, Dialog, Field, Loading, Notice, Panel, ReasonDialog, inputClass, manilaTime, peso, showDate, useAction } from '../../components/ui.tsx';
 
 /** The address customers open: the website's, so the link works from anywhere (not the shop's own network address). */
 export const linkUrl = (token: string) => `${/(^|\.)virtusgarments\.com$/.test(location.hostname) ? location.origin : 'https://www.virtusgarments.com'}/l/${token}`;
@@ -198,7 +198,8 @@ function LinkDetail({ id, manage }: { id: string; manage: boolean }) {
     const draft = await api.createDraft(JO, { form: joValuesFrom(p) });
     navigate(`${docPath(JO, '/new')}?draft=${draft.id}`);
   });
-  useEffect(() => void api.olkLink(id).then(setD, (e: Error) => setError(e.message)), [id]);
+  const reload = () => void api.olkLink(id).then(setD, (e: Error) => setError(e.message));
+  useEffect(reload, [id]);
   if (error) return <Notice>{error}</Notice>;
   if (!d) return <Loading />;
   const url = linkUrl(d.token);
@@ -267,6 +268,7 @@ function LinkDetail({ id, manage }: { id: string; manage: boolean }) {
                 </button>
                 {r.checks.map((c) => <p key={c} className="text-sm text-amber-700">⚠ {c}</p>)}
                 {r.made.map((m) => <p key={m.at} className="text-xs text-emerald-700">Job order started {manilaTime(m.at)} by {m.by} for {m.customer}{m.together && d.kind === 'group' ? ', with the group' : ''}</p>)}
+                {(r.share || r.payments.length > 0) && <Payments share={r.share} payments={r.payments} manage={manage} onChanged={reload} />}
                 {manage && <div className="mt-1"><Button disabled={act.busy} onClick={() => start([r.id], d.kind === 'team')}>
                   {d.kind === 'team' ? (r.made.length ? 'Make the job order again' : 'Make the job order') : (r.made.length ? 'Own job order again' : 'Own job order')}</Button></div>}
                 {shown === r.id && (
@@ -295,6 +297,64 @@ function LinkDetail({ id, manage }: { id: string; manage: boolean }) {
           </ul>
         )}
       </Panel>
+    </div>
+  );
+}
+
+const PAID: Record<OlkPayment['status'], string> = { sent: 'To check', accepted: 'Received', not_received: 'Not received' };
+
+/**
+ * A member's share and payments (each pays their own share). A payment to check: its picture, then Received (pick the
+ * member's recorded job order; the collection form opens filled in, to record) or Not received (the member sees why).
+ */
+function Payments({ share, payments, manage, onChanged }: { share?: OlkShare; payments: OlkPayment[]; manage: boolean; onChanged: () => void }) {
+  const [picture, setPicture] = useState<string | null>(null);
+  const [taking, setTaking] = useState<OlkPayment | null>(null);
+  const [refusing, setRefusing] = useState<OlkPayment | null>(null);
+  const paid = payments.filter((p) => p.status === 'accepted').reduce((s, p) => s + p.amountCents, 0);
+  return (
+    <div className="mt-1 space-y-1 rounded-lg bg-slate-50 p-2 text-sm">
+      {share && <p>Share <b>{share.totalCents === null ? 'not priced (an item has no price on the list)' : peso(share.totalCents)}</b>{paid > 0 && <> · received {peso(paid)}</>}</p>}
+      {payments.map((p) => (
+        <div key={p.id} className="flex flex-wrap items-center gap-2">
+          <span className={p.status === 'sent' ? 'font-semibold text-amber-800' : p.status === 'accepted' ? 'text-emerald-700' : 'text-slate-500 line-through'}>{peso(p.amountCents)} · ref. {p.reference}</span>
+          <span className="text-xs text-slate-500">{manilaTime(p.sentAt)} · {PAID[p.status]}{p.reason ? `: ${p.reason}` : ''}</span>
+          <button type="button" className="text-xs text-indigo-700 underline" onClick={() => setPicture(p.id!)}>Picture</button>
+          {manage && p.status === 'sent' && <>
+            <Button className="!px-2 !py-1 text-xs" tone="primary" onClick={() => setTaking(p)}>Received</Button>
+            <Button className="!px-2 !py-1 text-xs" onClick={() => setRefusing(p)}>Not received</Button>
+          </>}
+        </div>
+      ))}
+      {picture && <Dialog title="Picture of the payment" onClose={() => setPicture(null)}><img src={`/api/olk/payments/${encodeURIComponent(picture)}/picture`} alt="The payment the member sent" className="mx-auto max-h-[70vh] rounded-lg" /></Dialog>}
+      {taking && <Dialog title="Payment received" onClose={() => setTaking(null)}><TakePayment payment={taking} /></Dialog>}
+      {refusing && <ReasonDialog title="Payment not received" explain="The member sees this reason on their page and can send the payment again." confirmLabel="Not received"
+        onConfirm={async (reason) => { await api.olkPayNotReceived(refusing.id!, reason); setRefusing(null); onChanged(); }} onClose={() => setRefusing(null)} />}
+    </div>
+  );
+}
+
+/** Picks the member's recorded job order and opens the collection form for it, with the amount and the reference. */
+function TakePayment({ payment }: { payment: OlkPayment }) {
+  const [orders, setOrders] = useState<{ id: string; number: string; customerName: string; totalCents: number; dueDate: string }[] | null>(null);
+  const act = useAction();
+  useEffect(() => void act.run(async () => setOrders(await api.olkPayJobOrders(payment.id!))), [payment.id]);
+  const take = (jobOrderId: string) => void act.run(async () => {
+    const r = await api.olkPayAccept(payment.id!, jobOrderId);
+    navigate(`${docPath('col.collection', '/new')}?${new URLSearchParams({ jo: r.jobOrderId, amount: String(r.amountCents), note: r.note })}`);
+  });
+  return (
+    <div className="space-y-3">
+      <p className="text-sm">{peso(payment.amountCents)}, reference {payment.reference}. Check that it is in the shop's account, then pick the job order it pays for.</p>
+      {orders === null ? <Loading /> : orders.length === 0
+        ? <Notice tone="warning">No recorded job order for this member yet. Make their job order first (Own job order), record it, then come back to this payment.</Notice>
+        : <ul className="divide-y divide-slate-100">{orders.map((o) => (
+            <li key={o.id} className="flex items-center justify-between gap-3 py-2">
+              <span><b>{o.number}</b> · {o.customerName} · {peso(o.totalCents)} · due {showDate(o.dueDate)}</span>
+              <Button tone="primary" disabled={act.busy} onClick={() => take(o.id)}>Collect on this</Button>
+            </li>
+          ))}</ul>}
+      {act.error && <Notice>{act.error}</Notice>}
     </div>
   );
 }
