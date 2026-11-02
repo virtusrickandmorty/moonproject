@@ -92,11 +92,11 @@ export function createLink(db: Db, raw: unknown, who: Who) {
   return linkDetail(db, id, who.today);
 }
 
-type LinkRow = { id: string; token: string; kind: 'team' | 'group'; title: string; customer_id: string | null; closes_on: string; pay_own: number; closed_at: string | null; created_at: string; version: number };
-const linkRow = (db: Db, id: string) => db.prepare('SELECT * FROM olk_links WHERE id = ?').get(id) as LinkRow | undefined;
+export type LinkRow = { id: string; token: string; kind: 'team' | 'group'; title: string; customer_id: string | null; closes_on: string; pay_own: number; closed_at: string | null; created_at: string; version: number };
+export const linkRow = (db: Db, id: string) => db.prepare('SELECT * FROM olk_links WHERE id = ?').get(id) as LinkRow | undefined;
 const isOpen = (l: LinkRow, today: string) => !l.closed_at && l.closes_on >= today;
 
-function itemsOf(db: Db, linkId: string) {
+export function itemsOf(db: Db, linkId: string) {
   const items = db.prepare('SELECT line_no AS lineNo, item_id AS itemId, item_name AS name, sizing FROM olk_link_items WHERE link_id = ? ORDER BY line_no').all(linkId) as
     { lineNo: number; itemId: string; name: string; sizing: 'size' | 'measure' }[];
   const fields = db.prepare('SELECT field FROM olk_item_fields WHERE link_id = ? AND line_no = ?').pluck();
@@ -117,6 +117,7 @@ export function linkDetail(db: Db, id: string, today: string) {
   const l = linkRow(db, id);
   if (!l) throw notFound('That order link');
   const items = itemsOf(db, id);
+  const made = madeOf(db, id);
   const responses = (db.prepare('SELECT id FROM olk_responses WHERE link_id = ? ORDER BY created_at').pluck().all(id) as string[]).map((r) => answerOf(db, r));
   const totals = items.map((it) => {
     const bySize = new Map<string, number>();
@@ -129,9 +130,19 @@ export function linkDetail(db: Db, id: string, today: string) {
   return {
     id: l.id, token: l.token, kind: l.kind, title: l.title, closesOn: l.closes_on, open: isOpen(l, today), closedEarly: !!l.closed_at, payOwn: l.pay_own === 1,
     customer: l.customer_id ? { id: l.customer_id, name: customerRef(db, l.customer_id)?.display_name ?? '?' } : null, version: l.version,
-    items, responses: responses.map((r) => ({ ...r, checks: checksOf(r, l.kind) })), totals,
+    items, responses: responses.map((r) => ({ ...r, checks: checksOf(r, l.kind), made: made.get(r.id) ?? [] })), totals,
     guide: MEASURES.map(([key, label]) => ({ key, label })),
   };
+}
+
+/** When job orders were started from each answer of a link. */
+export function madeOf(db: Db, linkId: string): Map<string, { at: string; together: boolean; customer: string; by: string }[]> {
+  const rows = db.prepare(`SELECT m.response_id, m.made_at, m.together, c.display_name AS customer, u.display_name AS by_name
+    FROM olk_made m JOIN olk_responses r ON r.id = m.response_id JOIN cus_customers c ON c.id = m.customer_id JOIN users u ON u.id = m.made_by
+    WHERE r.link_id = ? ORDER BY m.made_at`).all(linkId) as { response_id: string; made_at: string; together: number; customer: string; by_name: string }[];
+  const out = new Map<string, { at: string; together: boolean; customer: string; by: string }[]>();
+  for (const r of rows) out.set(r.response_id, [...(out.get(r.response_id) ?? []), { at: r.made_at, together: r.together === 1, customer: r.customer, by: r.by_name }]);
+  return out;
 }
 
 /** What staff should look at in an answer: a number used twice, a person to measure at the shop. */

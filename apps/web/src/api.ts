@@ -402,10 +402,18 @@ export interface OlkAnswer { id: string; name: string; gender: OlkGender; mobile
 export interface OlkLinkRow { id: string; kind: OlkKind; title: string; closesOn: string; open: boolean; closedEarly: boolean; answers: number; people: number; createdAt: string }
 export interface OlkLinkDetail {
   id: string; token: string; kind: OlkKind; title: string; closesOn: string; open: boolean; closedEarly: boolean; payOwn: boolean; version: number;
-  customer: { id: string; name: string } | null; items: OlkItem[]; responses: (OlkAnswer & { checks: string[] })[];
+  customer: { id: string; name: string } | null; items: OlkItem[]; responses: (OlkAnswer & { checks: string[]; made: OlkMade[] })[];
   totals: { lineNo: number; name: string; sizes: { size: string; qty: number }[]; qty: number }[]; guide: { key: string; label: string }[];
 }
 export interface OlkGuide { key: string; label: string; how: string }
+/** A job order started from an answer: when, for which customer, with the other answers or alone. */
+export interface OlkMade { at: string; together: boolean; customer: string; by: string }
+/** What a job order started from answers holds, for the job order form. */
+export interface OlkJobOrder {
+  customer: { id: string; name: string }; contact: string; notes: string;
+  lines: { itemId: string; kind: 'made_to_order' | 'service' | 'ready_made'; description: string; isSet: boolean; qty: number; listCents: number | null;
+    roster: { personId?: string; name: string; sizeMode: 'preset' | 'measured'; size?: string; lowerSize?: string; jerseyName?: string; jerseyNumber?: string; qty: number; notes?: string }[] }[];
+}
 export interface OlkLinkInput { kind: OlkKind; title: string; customerId?: string; closesOn: string; payOwn: boolean; items: { itemId: string; sizing: 'size' | 'measure'; fields: string[] }[] }
 export interface EstItem { code: string; name: string; class: string; unit: 'pc' | 'set'; isActive: boolean }
 
@@ -1304,6 +1312,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     olkCreate: (body: OlkLinkInput) => call<OlkLinkDetail & { token: string }>('POST', '/api/olk/links', body),
     olkClose: (id: string) => call<OlkLinkDetail>('POST', `/api/olk/links/${encodeURIComponent(id)}/close`, {}),
     olkClosesOn: (id: string, closesOn: string) => call<OlkLinkDetail>('POST', `/api/olk/links/${encodeURIComponent(id)}/closes-on`, { closesOn }),
+    olkJobOrder: (id: string, body: { responseIds: string[]; together: boolean; customerId?: string }) => call<OlkJobOrder>('POST', `/api/olk/links/${encodeURIComponent(id)}/job-order`, body),
     olkPickers: (q = '') => call<{ items: { id: string; code: string; name: string }[]; customers: { id: string; name: string }[]; guide: OlkGuide[]; presets: Record<'top' | 'bottom', string[]> }>('GET', `/api/olk/pickers?${new URLSearchParams({ q })}`),
     rates: () => call<RateTable>('GET', '/api/rate/rates'),
     addRate: (body: Omit<PieceRate, 'id' | 'createdAt'>) => call<PieceRate>('POST', '/api/rate/rates', body),
