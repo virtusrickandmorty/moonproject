@@ -19,6 +19,7 @@ import { billsDue } from '../AP/public.ts';
 import { requestsIn } from '../PUR/public.ts';
 import { restocksReady } from '../TPL/public.ts';
 import { payToRelease } from '../PAY/public.ts';
+import { birthdaysComing } from '../EMP/public.ts';
 import { sizerBoard } from '../SZR/public.ts';
 import { hasReceived2307, paidTaxPeriods, taxDeadlines, vatSummary } from '../TAX/public.ts';
 import { monthEndChecklist } from '../ACC/public.ts';
@@ -215,6 +216,16 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
     for (const a of guarded) {
       const named = a.action === 'acc.setting.add' || a.action === 'bak.restore' ? `${a.entityId} · ` : ''; // a setting's key, a backup's file
       push('step-up-action', String(a.seq), `${a.userName ?? 'The system'} ${GUARDED[a.action]}`, '/aud/log', `${named}${a.at}`);
+    }
+  }
+  // Employees' birthdays, from each employee record (the owner's request, Nov 2026): three days ahead, then on the day.
+  if (can('emp.birthdays')) for (const b of birthdaysComing(db, date, 3)) {
+    const turns = b.turns > 0 && b.turns < 120 ? `Turns ${b.turns}` : undefined;
+    if (b.date === date) push('emp-birthday', `${b.id}:${b.date}`, `Today is ${b.name}'s birthday`, `/emp/employees/${b.id}`, turns);
+    else {
+      const when = day(b.date).toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' });
+      push('emp-birthday-soon', `${b.id}:${b.date}`, `${b.name}'s birthday is ${b.date === addDays(date, 1) ? 'tomorrow' : `on ${when}`}`, `/emp/employees/${b.id}`,
+        [when, turns].filter(Boolean).join(' · '));
     }
   }
   if (can('jo.view') && can('jo.invoice')) for (const release of releasesAwaitingInvoice(db, date)) {

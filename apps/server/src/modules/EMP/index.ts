@@ -15,6 +15,8 @@ export default defineModule({
     { key: 'pay.view_rates', label: 'See salaries, daily rates and payroll amounts', defaultRoles: ['accountant', 'owner'] },
     { key: 'emp.attendance', label: 'Type attendance (the day grid)', defaultRoles: ['encoder', 'accountant', 'owner'] },
     { key: 'emp.holidays', label: 'Add holidays and switch them off', defaultRoles: ['accountant', 'owner'] },
+    // The owner's request (Nov 2026): a notice three days before each employee's birthday, and on the day (DASH).
+    { key: 'emp.birthdays', label: "Be told about employees' birthdays in the bell (three days before, and on the day)", defaultRoles: ['owner'] },
   ],
   docTypes: [],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),

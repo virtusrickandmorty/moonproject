@@ -54,6 +54,26 @@ export function employeeBirthdays(db: Db): { id: string; name: string; birthday:
 }
 
 /**
+ * Active employees whose birthday falls from `from` to `days` days after it (the owner's bell, Nov 2026): the date it
+ * falls on and the age they turn. A 29 February birthday falls on 28 February in the other years.
+ */
+export function birthdaysComing(db: Db, from: string, days: number): { id: string; name: string; date: string; turns: number }[] {
+  const at = (date: string) => Date.parse(`${date}T00:00:00Z`);
+  const last = at(from) + days * 86_400_000;
+  const leap = (year: number) => (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const out: { id: string; name: string; date: string; turns: number }[] = [];
+  for (const person of employeeBirthdays(db)) {
+    const born = Number(person.birthday.slice(0, 4));
+    for (const year of [Number(from.slice(0, 4)), Number(from.slice(0, 4)) + 1]) {
+      const mmdd = person.birthday.slice(5) === '02-29' && !leap(year) ? '02-28' : person.birthday.slice(5);
+      const date = `${year}-${mmdd}`;
+      if (at(date) >= at(from) && at(date) <= last) out.push({ id: person.id, name: person.name, date, turns: year - born });
+    }
+  }
+  return out.sort((a, b) => a.date.localeCompare(b.date) || a.name.localeCompare(b.name));
+}
+
+/**
  * Who a payroll run covers (F2, F3): employees in service on some day of the period whose pay on its last day (or their
  * last day, if they left during it) is in the pay group. A worker who left keeps being listed for the period they worked.
  */
