@@ -16,7 +16,7 @@ import { Registry, type ModuleDef } from './engine/documents/registry.ts';
 import { engineModule } from './engine/security/module.ts';
 import { syncPermissions } from './engine/security/permissions-sync.ts';
 import { PRACTICE_SESSION_COOKIE, SESSION_COOKIE, loadSession, type SessionUser } from './engine/security/sessions.ts';
-import { securityRoutes } from './engine/security/routes.ts';
+import { isLoopback, securityRoutes } from './engine/security/routes.ts';
 import { publicRequestLimits } from './engine/security/public-requests.ts';
 import { networkOf, tlsRoutes } from './engine/security/tls/routes.ts';
 import { documentRoutes } from './engine/documents/routes.ts';
@@ -121,7 +121,10 @@ function originHost(origin: string): string | null {
 export function buildApp(opts: BuildOptions): { app: FastifyInstance; deps: AppDeps } {
   const registry = prepareDatabase(opts.db, opts.clock, opts.modules);
   const scryptN = opts.config?.scryptN ?? DEFAULT_SCRYPT_N;
-  const base = { logger: opts.logger ?? false, bodyLimit: 1024 * 1024 };
+  // The website reaches the server through Cloudflare's connector on the shop PC itself, so every visitor arrives from the
+  // shop PC's own address. Believe the forwarded visitor address only from there (never from another device), so sign-in
+  // and shop limits count each visitor on their own and "shop PC only" stays the shop PC.
+  const base = { logger: opts.logger ?? false, bodyLimit: 1024 * 1024, trustProxy: isLoopback };
   const app = (opts.https ? Fastify({ ...base, https: opts.https }) : Fastify(base)) as unknown as FastifyInstance;
   const deps: AppDeps = {
     db: opts.db,

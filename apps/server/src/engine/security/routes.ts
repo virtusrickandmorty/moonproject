@@ -31,7 +31,7 @@ export function currentUser(req: FastifyRequest): SessionUser {
   return req.user;
 }
 
-/** True when the request comes from the shop PC itself (no proxy is trusted, so this is the socket's address). */
+/** True when the request comes from the shop PC itself. Also the proxy trust (app.ts): only the shop PC's own connector may forward an address. */
 export function isLoopback(ip: string): boolean {
   return ip === '::1' || ip.startsWith('127.') || ip.startsWith('::ffff:127.');
 }

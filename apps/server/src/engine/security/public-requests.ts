@@ -34,7 +34,7 @@ export function publicRequestLimits(app: FastifyInstance, clock: Clock): void {
 
   app.addHook('onRequest', async (req) => {
     if (!isPublicShopRequest(req)) return;
-    // Use the socket address supplied by Fastify. Proxy trust remains disabled.
+    // The visitor's address: forwarded by the shop PC's own Cloudflare connector, else the socket's (app.ts trustProxy).
     if (req.routeOptions.url === '/api/shp/events') return counting(req.ip);
     all(req.ip);
     if (req.routeOptions.url === '/api/shp/track') tracking(req.ip);

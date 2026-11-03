@@ -52,6 +52,27 @@ describe('first run and login (PLAN C6, E13)', () => {
     expect((await from('::1')).statusCode).toBe(200);
   });
 
+  it("counts each website visitor on their own through the shop PC's Cloudflare connector, and believes no other device", async () => {
+    // Cloudflare's connector runs on the shop PC: the socket is the shop PC's, the visitor is in X-Forwarded-For.
+    const via = (visitor: string, remoteAddress = '127.0.0.1') => ({ remoteAddress, headers: { 'x-forwarded-for': visitor } });
+    const owner = (o: object) => env.app.inject({ method: 'POST', url: '/api/setup/first-owner', ...o, payload: { username: 'virtus', displayName: 'Owner', password: 'three blue sewing machines' } });
+    // "Shop PC only" stays the shop PC: not an internet visitor, not one who claims to be the shop PC (Cloudflare adds
+    // the real address last), not a device on the shop's network that sends the header itself.
+    for (const o of [via('203.0.113.7'), via('127.0.0.1, 203.0.113.7'), via('127.0.0.1', '192.168.1.20')]) {
+      expect((await owner(o)).json().code).toBe('SHOP_PC_ONLY');
+    }
+    expect((await owner({ remoteAddress: '127.0.0.1' })).statusCode).toBe(200);
+
+    // A stranger's 20 wrong passwords lock out that stranger only, never the staff signing in elsewhere or at the shop PC.
+    createUser(env.db, 'enc', ['encoder']);
+    const signIn = (username: string, password: string, o: object) => env.app.inject({ method: 'POST', url: '/api/auth/login', ...o, payload: { username, password } });
+    for (let i = 0; i < 20; i++) expect((await signIn(`guess${i}`, 'wrong wrong wrong', via('203.0.113.7'))).statusCode).toBe(401);
+    expect((await signIn('enc', PASSWORD, via('203.0.113.7'))).statusCode).toBe(429);
+    expect((await signIn('enc', PASSWORD, via('198.51.100.4'))).statusCode).toBe(200);
+    expect((await signIn('enc', PASSWORD, { remoteAddress: '127.0.0.1' })).statusCode).toBe(200);
+    expect(env.db.prepare('SELECT DISTINCT ip FROM login_attempts ORDER BY ip').pluck().all()).toEqual(['127.0.0.1', '198.51.100.4', '203.0.113.7']);
+  });
+
   it('locks out after 5 wrong passwords, and audits it (N-07)', async () => {
     createUser(env.db, 'enc', ['encoder']);
     for (let i = 0; i < 5; i++) expect((await inject('POST', '/api/auth/login', { username: 'enc', password: 'wrong wrong wrong' })).statusCode).toBe(401);
