@@ -13,6 +13,7 @@ import { Store } from './Storefront.tsx';
 import { Support } from './Support.tsx';
 import { Terms } from './Terms.tsx';
 import { ChatBubble } from './Assistant.tsx';
+import { MoreSheet, PhoneTabBar, PhoneTopBar } from './Phone.tsx';
 import { SHOP_CONTACT, deliveryWords, type Product } from './products.ts';
 import { ShopProvider, useShop } from './store.tsx';
 
@@ -22,7 +23,7 @@ export const SITE_PATHS = ['/', '/shop', '/services', '/about', '/support', '/ch
 const ORDER_PAGE = /^\/order\/([A-Z]+-\d{1,9})$/;
 /** Whether the website answers this address: for everyone, or (staff) beside the ERP, whose home page is `/`. */
 export const isSitePath = (path: string, staff = false) => (SITE_PATHS.includes(path) && !(staff && path === '/')) || ORDER_PAGE.test(path);
-export type Panel = 'cart' | 'wishlist' | 'sizes' | null;
+export type Panel = 'cart' | 'wishlist' | 'sizes' | 'more' | null;
 export interface SiteControls { openPanel: (p: Panel) => void; view: (p: Product) => void; toast: (text: string) => void }
 
 /** What search engines read about the page at this address. */
@@ -99,13 +100,15 @@ function Layout({ staff }: { staff: boolean }) {
   ];
 
   return (
-    <div className="site min-h-screen bg-[#fafaf8] text-slate-900">
+    // On a phone the website looks like a shopping app (Phone.tsx): its own top bar, and a tab bar along the bottom.
+    <div className="site min-h-screen bg-[#fafaf8] text-slate-900 max-md:pb-[calc(3.9rem+env(safe-area-inset-bottom))]">
       <div className={look ? look.bar : 'bg-slate-950 text-white'}>
         <p className="mx-auto flex max-w-7xl items-center justify-center gap-x-6 overflow-hidden whitespace-nowrap px-4 py-2 text-xs font-semibold tracking-wide sm:px-6">
           {news.map((n, i) => <span key={n} className={i ? 'hidden md:inline' : ''}>{i > 0 && <span className="mr-6 text-white/30">•</span>}{n}</span>)}
         </p>
       </div>
-      <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/90 backdrop-blur-md">
+      <PhoneTopBar home={home} text={text} setText={setText} search={search} openPanel={setPanel} staff={staff} />
+      <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/90 backdrop-blur-md max-md:hidden">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 px-4 py-3 sm:flex-nowrap sm:gap-6 sm:px-6">
           <Link to="/" className="flex shrink-0 items-center" aria-label="Virtus Garments home"><img src="/virtus-logo.png" alt="Virtus" className="h-9 w-auto" /></Link>
           {/* On a phone the links get a row of their own under the logo. */}
@@ -138,7 +141,7 @@ function Layout({ staff }: { staff: boolean }) {
 
       <main ref={main}>{page}</main>
 
-      <footer className="mt-16 bg-slate-950 text-slate-400">
+      <footer className="mt-10 bg-slate-950 text-slate-400 md:mt-16">
         <div className="mx-auto max-w-7xl px-4 sm:px-6">
           <div className="grid gap-4 border-b border-white/10 py-12 md:grid-cols-[1.4fr_1fr] md:items-center">
             <div><p className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">Outfitting a team?</p>
@@ -172,9 +175,11 @@ function Layout({ staff }: { staff: boolean }) {
       {panel === 'sizes' && <SizeGuide onClose={() => setPanel(null)} />}
       {panel === 'cart' && <CartDrawer onClose={() => setPanel(null)} />}
       {panel === 'wishlist' && <WishlistDrawer onClose={() => setPanel(null)} onOpen={(p) => { setPanel(null); view(p); }} />}
+      {panel === 'more' && <MoreSheet onClose={() => setPanel(null)} openPanel={setPanel} staff={staff} counting={choice} setCounting={choose} />}
+      <PhoneTabBar path={path} home={home} openMore={() => setPanel('more')} />
       {/* The visitor counting notice, until answered (Data Privacy Act: anonymous, and the visitor may say no). */}
       {!staff && choice === null && !browserSaysNo() && (
-        <div role="region" aria-label="Visit counting" className="fixed bottom-4 left-4 z-[55] max-w-sm rounded-2xl bg-white p-4 text-sm text-slate-700 shadow-2xl ring-1 ring-slate-900/10">
+        <div role="region" aria-label="Visit counting" className="fixed bottom-4 left-4 z-[55] max-w-sm rounded-2xl max-md:inset-x-3 max-md:bottom-[calc(4.6rem+env(safe-area-inset-bottom))] max-md:max-w-none bg-white p-4 text-sm text-slate-700 shadow-2xl ring-1 ring-slate-900/10">
           <p>We count visits and which garments are looked at most, to make the shop better and to show you garments you may like. No names, no ads, no cookies.</p>
           <div className="mt-3 flex gap-2">
             <button type="button" onClick={() => choose('yes')} className="rounded-full bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-indigo-700">OK</button>
@@ -183,7 +188,8 @@ function Layout({ staff }: { staff: boolean }) {
         </div>
       )}
       <ChatBubble />
-      {toast && <div role="status" className="fixed bottom-5 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-xl">{toast} · <button type="button" className="underline" onClick={() => { setToast(''); setPanel('cart'); }}>View cart</button></div>}
+      {/* On a phone it stays out of the way of an open sheet's buttons (the cart's checkout). */}
+      {toast && <div role="status" className={`${panel ? 'max-md:hidden' : ''} fixed bottom-5 left-1/2 z-[60] -translate-x-1/2 rounded-full max-md:bottom-[calc(4.8rem+env(safe-area-inset-bottom))] max-md:w-max max-md:max-w-[calc(100vw-1.5rem)] max-md:text-center bg-slate-900 px-5 py-3 text-sm font-semibold text-white shadow-xl`}>{toast} · <button type="button" className="underline" onClick={() => { setToast(''); setPanel('cart'); }}>View cart</button></div>}
     </div>
   );
 }
