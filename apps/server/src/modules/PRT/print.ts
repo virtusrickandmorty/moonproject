@@ -403,6 +403,14 @@ export const printField = field;
 export const printLineTable = lineTable;
 export const printMoney = money;
 
+/**
+ * Two copies share an A4 sheet only when a copy fits its half (the owner's request, Nov 2026: a release slip with many
+ * wearers lost its bottom). Run as the printout opens, before it prints: if any copy is taller than its half, the
+ * sheet becomes one copy per page in the same small print, so nothing is cut off. Measured at the print half's height, 136mm.
+ */
+export const FIT_TWO_UP = `<script>(function(){var s=document.querySelector('.sheet.two-up');if(!s)return;var half=136*96/25.4;
+  if([].some.call(s.querySelectorAll('.copy'),function(c){return c.scrollHeight>half+1})){s.classList.add('each-page')}})()</script>`;
+
 /** `practice`: printed in the practice shop (PLAN C8), so every copy says it is not a real document. */
 export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profile, kind: PrintKind,
   printedBy: string, printedAt: string, copyNumber: number, practice = false, testPrint = false, joinBase?: string): string {
@@ -440,6 +448,7 @@ export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profi
     .two-up .totals{width:55%;margin-top:1.5mm}.two-up .tot{padding:.6mm 2mm;font-size:8.5pt}.two-up .tot.grand{font-size:10pt;margin-top:1mm;padding:0 3mm 0 0}.two-up .tot.grand b{padding:1.2mm 3mm}
     .two-up .signatures{margin-top:4mm;gap:8mm}.two-up .sign .name{min-height:4mm;font-size:9pt}.two-up .sign .caption{font-size:7pt;margin-top:.6mm}.two-up footer{margin-top:2mm;padding-top:1mm;font-size:6.5pt}.two-up main p{margin:1mm 0}
     .two-up .payslip{display:grid;grid-template-columns:1fr 1fr;column-gap:5mm;align-items:start}.two-up .payslip .party{grid-column:1/-1;margin:1mm 0}.two-up .payslip .totals{width:100%;margin-top:1mm}.two-up .payslip .signatures{grid-column:1/-1;margin-top:3mm}
+    .two-up.each-page{display:block}.two-up.each-page .copy{height:auto;overflow:visible}.two-up.each-page .copy:first-child{border-bottom:0}.each-page .copy+.copy{break-before:page;page-break-before:always}
     ${thermal ? `.top{flex-direction:column;align-items:center;text-align:center}.brand{flex-direction:column}.logo{height:14mm}.company .trade{font-size:12pt}.titlebox{text-align:center;min-width:0}h1{font-size:14pt}.docmeta{font-size:8pt}
     .details{flex-direction:column;padding:2mm;gap:2mm}.details .status{text-align:left}.totals{width:100%}.tot.grand{font-size:10.5pt}.signatures{justify-content:center}footer{flex-direction:column;gap:.5mm}.sign{width:100%}table{font-size:8pt}` : ''}
     @media screen{body{background:#ddd;padding:12mm}.sheet{background:white;width:${thermal ? '80mm' : '210mm'};margin:auto;padding:${thermal ? '4mm' : '12mm'};box-shadow:0 2px 12px #777}.two-up .copy{height:125mm}}
@@ -450,8 +459,8 @@ export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profi
     .picture-page img{flex:1;min-height:0;width:100%;object-fit:contain}
     .measure p{margin:0 0 1.5mm;font-size:9.5pt;line-height:1.45}.measure .unit{color:#475569}
     .pic-note{margin:0 0 2mm;padding:1.5mm 2.5mm;border:1px solid #c7d2fe;border-radius:1.5mm;background:#eef2ff;font-size:9pt}
-    @media screen{.picture-page{margin-top:14mm;padding-top:8mm;border-top:2px dashed #94a3b8;height:250mm}}
-  </style></head><body><div class="sheet${p.twoUp ? ' two-up' : ''}">${p.twoUp ? one + one : one}</div></body></html>`;
+    @media screen{.picture-page{margin-top:14mm;padding-top:8mm;border-top:2px dashed #94a3b8;height:250mm}.each-page .copy+.copy{margin-top:14mm;padding-top:8mm;border-top:2px dashed #94a3b8}}
+  </style></head><body><div class="sheet${p.twoUp ? ' two-up' : ''}">${p.twoUp ? one + one : one}</div>${p.twoUp ? FIT_TWO_UP : ''}</body></html>`;
 }
 
 /** One BIR Form 2307-style A4 page per supplier; figures are passed straight from TAX's 2307-to-issue report. */
