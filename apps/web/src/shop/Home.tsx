@@ -18,7 +18,7 @@ export { isSoldOut };
 const piecesLeft = (p: Product) => (p.stock ?? []).reduce((n, s) => n + s.available, 0);
 
 /** The product card: picture (a second colour or a closer look on hover), badge, wish, quick add, price and colours. */
-export function ProductCard({ p, colourHex, online, view }: { p: Product; colourHex?: string; online: boolean; view: (p: Product) => void }) {
+export function ProductCard({ p, colourHex, online, view, note }: { p: Product; colourHex?: string; online: boolean; view: (p: Product) => void; /** Under the name on a phone (the grid's stock or minimum). */ note?: string }) {
   const soldOut = isSoldOut(p);
   const buy = online && !p.madeToOrder && !!p.stock;
   const first = colourHex ?? p.colours[0]!.hex;
@@ -27,8 +27,8 @@ export function ProductCard({ p, colourHex, online, view }: { p: Product; colour
   const shop = useShop();
   const { average, count } = shop.ratingOf(p.id);
   return (
-    <article className="group flex h-full flex-col transition duration-300 hover:-translate-y-1">
-      <div className="relative aspect-[4/5] overflow-hidden rounded-3xl bg-gradient-to-b from-slate-100 to-slate-200/70 transition-shadow duration-300 group-hover:shadow-xl group-hover:shadow-slate-900/10">
+    <article className="group flex h-full flex-col transition duration-300 hover:-translate-y-1 max-md:overflow-hidden max-md:rounded-2xl max-md:bg-white max-md:shadow-sm max-md:ring-1 max-md:ring-slate-900/5 max-md:hover:translate-y-0">
+      <div className="relative aspect-[4/5] overflow-hidden rounded-3xl max-md:aspect-square max-md:rounded-none bg-gradient-to-b from-slate-100 to-slate-200/70 transition-shadow duration-300 group-hover:shadow-xl group-hover:shadow-slate-900/10">
         <button type="button" onClick={() => view(p)} className="absolute inset-0 grid place-items-center" aria-label={`View ${p.name}`}>
           {/* A photo zooms in; a drawing turns to the next colour, as a second view. */}
           <span className={`absolute inset-0 grid place-items-center transition duration-500 ${p.photoUrl ? 'group-hover:scale-105' : second ? 'group-hover:opacity-0' : 'group-hover:scale-105'}`}>
@@ -38,29 +38,30 @@ export function ProductCard({ p, colourHex, online, view }: { p: Product; colour
         </button>
         {/* Over the picture too (a photo fills the card), never in the way: clicks go through. */}
         {shop.decor?.doodles && <Doodles set={shop.decor.doodles} seed={seedOf(p.id)} spots={['bl', 'mr']} size="size-12" />}
-        <div className="pointer-events-none absolute left-3 top-3 flex flex-col gap-1.5">
+        <div className="pointer-events-none absolute left-3 top-3 flex flex-col gap-1.5 max-md:left-2 max-md:top-2 max-md:items-start max-md:gap-1 max-md:[&>span]:px-2 max-md:[&>span]:py-0.5 max-md:[&>span]:text-[10px]">
           {!soldOut && percentOff(p) > 0 && <span className="rounded-full bg-rose-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">Sale −{percentOff(p)}%</span>}
           {soldOut ? <span className="rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">Sold out</span>
             : p.badge && <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-slate-900 shadow-sm">{p.badge}</span>}
           {buy && !soldOut && left > 0 && left <= 5 && <span className="rounded-full bg-amber-400 px-2.5 py-1 text-[11px] font-bold text-slate-900">Only {left} left</span>}
         </div>
-        <WishButton product={p} className="absolute right-3 top-3" />
+        <WishButton product={p} className="absolute right-3 top-3 max-md:right-2 max-md:top-2 max-md:size-8" />
         <button type="button" disabled={buy && soldOut} onClick={() => view(p)}
-          className={`absolute inset-x-3 bottom-3 rounded-full py-2.5 text-sm font-bold shadow-lg transition duration-300 disabled:cursor-not-allowed disabled:bg-white/80 disabled:text-slate-400 sm:translate-y-3 sm:opacity-0 sm:group-hover:translate-y-0 sm:group-hover:opacity-100 sm:focus:translate-y-0 sm:focus:opacity-100 ${buy ? 'bg-slate-900 text-white hover:bg-indigo-600' : 'bg-white text-slate-900 hover:bg-slate-900 hover:text-white'}`}>
+          className={`absolute inset-x-3 bottom-3 max-md:hidden rounded-full py-2.5 text-sm font-bold shadow-lg transition duration-300 disabled:cursor-not-allowed disabled:bg-white/80 disabled:text-slate-400 sm:translate-y-3 sm:opacity-0 sm:group-hover:translate-y-0 sm:group-hover:opacity-100 sm:focus:translate-y-0 sm:focus:opacity-100 ${buy ? 'bg-slate-900 text-white hover:bg-indigo-600' : 'bg-white text-slate-900 hover:bg-slate-900 hover:text-white'}`}>
           {soldOut && buy ? 'Sold out' : buy ? '+ Quick add' : 'Get a quote'}
         </button>
       </div>
-      <div className="flex flex-1 flex-col px-1 pt-3">
+      <div className="flex flex-1 flex-col px-1 pt-3 max-md:px-2.5 max-md:pb-2.5 max-md:pt-2">
         {/* Which kind it is, on every card: ready stock to buy now, or made to order for a quote. */}
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
           <span className={`rounded-full px-2 py-0.5 normal-case tracking-normal ${p.madeToOrder ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800'}`}>{p.madeToOrder ? 'Made to order' : 'Ready stock'}</span>{p.category}</p>
-        <h3 className="mt-1 font-semibold leading-snug"><button type="button" onClick={() => view(p)} className="text-left hover:text-indigo-700">{p.name}</button></h3>
+        <h3 className="mt-1 font-semibold leading-snug max-md:line-clamp-2 max-md:text-sm"><button type="button" onClick={() => view(p)} className="text-left hover:text-indigo-700">{p.name}</button></h3>
+        {note && <p className="mt-0.5 text-[11px] text-slate-500 md:hidden">{note}</p>}
         {count > 0 && <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500"><Stars rating={average} className="size-3.5" />{average.toFixed(1)} ({count})</p>}
         <div className="mt-auto flex items-center justify-between gap-2 pt-2">
-          <p className="font-bold">{p.madeToOrder && <span className="text-xs font-semibold text-slate-500">From </span>}
+          <p className="font-bold max-md:text-indigo-700">{p.madeToOrder && <span className="text-xs font-semibold text-slate-500">From </span>}
             <span className={percentOff(p) ? 'text-rose-600' : ''}>{formatPeso(p.priceCents)}</span>
             {percentOff(p) > 0 && <s className="ml-1.5 text-xs font-medium text-slate-400">{formatPeso(p.regularPriceCents!)}</s>}</p>
-          <div className="flex -space-x-1">{p.colours.slice(0, 5).map((c) => <span key={c.name} className="size-4 rounded-full ring-2 ring-white" style={{ background: c.hex, boxShadow: 'inset 0 0 0 1px rgb(0 0 0 / .12)' }} title={c.name} />)}</div>
+          <div className="flex shrink-0 -space-x-1">{p.colours.slice(0, 5).map((c) => <span key={c.name} className="size-4 rounded-full ring-2 ring-white" style={{ background: c.hex, boxShadow: 'inset 0 0 0 1px rgb(0 0 0 / .12)' }} title={c.name} />)}</div>
         </div>
       </div>
     </article>
@@ -108,22 +109,26 @@ export function HeroSlider({ products, online, payment, toShop, look }: { produc
   }, [paused, slides.length]);
   const s = slides[at % slides.length]!;
   const go = (d: number) => setAt((i) => (i + d + slides.length) % slides.length);
+  // A phone turns the slides with a sideways swipe.
+  const [touchX, setTouchX] = useState<number | null>(null);
+  const swiped = (x: number) => { if (touchX !== null && Math.abs(x - touchX) > 40) go(x < touchX ? 1 : -1); setTouchX(null); };
 
   return (
     // Edge to edge, as every page's banner (the owner's request, Oct 2026); its text lines up with the menu above.
-    <section className="w-full" aria-roledescription="carousel" aria-label="Highlights" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}>
-      <div className={`relative overflow-hidden bg-gradient-to-br ${s.tone} text-white transition-colors duration-700`}>
+    <section className="w-full max-md:px-3 max-md:pt-3" aria-roledescription="carousel" aria-label="Highlights" onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}
+      onTouchStart={(e) => { setPaused(true); setTouchX(e.touches[0]!.clientX); }} onTouchEnd={(e) => { setPaused(false); swiped(e.changedTouches[0]!.clientX); }}>
+      <div className={`relative overflow-hidden bg-gradient-to-br ${s.tone} text-white transition-colors duration-700 max-md:rounded-3xl`}>
         <div className="hero-drift pointer-events-none absolute -right-24 -top-24 size-96 rounded-full bg-white/5 blur-2xl" />
         <div className="hero-drift-back pointer-events-none absolute -bottom-32 left-1/3 size-96 rounded-full bg-indigo-500/20 blur-3xl" />
         {s.shower && <Shower key={`shower-${at}`} kind={s.shower} />}
-        <div key={at} className="hero-slide relative mx-auto grid min-h-[30rem] max-w-7xl items-center gap-6 px-4 pb-24 pt-12 sm:px-6 md:grid-cols-[1.1fr_0.9fr] md:py-16" aria-roledescription="slide" aria-label={`${(at % slides.length) + 1} of ${slides.length}`}>
+        <div key={at} className="hero-slide relative mx-auto grid min-h-[17rem] max-w-7xl items-center gap-6 px-5 pb-12 pt-6 md:min-h-[30rem] md:grid-cols-[1.1fr_0.9fr] md:px-6 md:py-16" aria-roledescription="slide" aria-label={`${(at % slides.length) + 1} of ${slides.length}`}>
           <div>
             <p className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-white/80 ring-1 ring-white/15">{s.eyebrow}</p>
-            <h1 className="mt-5 text-5xl font-extrabold leading-[0.98] tracking-tight sm:text-7xl">{s.title}</h1>
-            <p className="mt-5 max-w-lg text-lg text-white/70">{s.text}</p>
-            <div className="mt-8 flex flex-wrap gap-3">
+            <h1 className="mt-3 text-[2.1rem] font-extrabold leading-[0.98] tracking-tight md:mt-5 md:text-7xl">{s.title}</h1>
+            <p className="mt-3 max-w-lg text-sm text-white/70 md:mt-5 md:text-lg">{s.text}</p>
+            <div className="mt-5 flex flex-wrap gap-2 md:mt-8 md:gap-3">
               {s.actions.map(([label, act, kind]) => <button key={label} type="button" onClick={act}
-                className={kind === 'primary' ? 'rounded-full bg-white px-7 py-3.5 font-bold text-slate-900 transition hover:-translate-y-0.5 hover:bg-indigo-100' : 'rounded-full px-7 py-3.5 font-bold text-white ring-1 ring-white/30 transition hover:bg-white/10'}>{label}</button>)}
+                className={`rounded-full px-5 py-2.5 text-sm font-bold transition md:px-7 md:py-3.5 md:text-base ${kind === 'primary' ? 'bg-white text-slate-900 hover:-translate-y-0.5 hover:bg-indigo-100' : 'text-white ring-1 ring-white/30 hover:bg-white/10'}`}>{label}</button>)}
             </div>
           </div>
           {s.art && <div className="hero-float relative mx-auto hidden aspect-square w-full max-w-md md:block">{s.art}</div>}
@@ -141,11 +146,11 @@ export function HeroSlider({ products, online, payment, toShop, look }: { produc
             </div>
           )}
         </div>
-        {slides.length > 1 && <div className="absolute inset-x-0 bottom-5 mx-auto flex max-w-7xl items-center justify-center gap-3 px-4 sm:justify-end sm:px-6">
-          <button type="button" onClick={() => go(-1)} aria-label="Previous slide" className="grid size-10 place-items-center rounded-full bg-white/10 text-xl ring-1 ring-white/20 hover:bg-white/20">‹</button>
+        {slides.length > 1 && <div className="absolute inset-x-0 bottom-3 mx-auto flex max-w-7xl items-center justify-center gap-3 px-4 md:bottom-5 md:justify-end md:px-6">
+          <button type="button" onClick={() => go(-1)} aria-label="Previous slide" className="grid size-10 place-items-center max-md:hidden rounded-full bg-white/10 text-xl ring-1 ring-white/20 hover:bg-white/20">‹</button>
           {slides.map((_, i) => <button key={i} type="button" onClick={() => setAt(i)} aria-label={`Slide ${i + 1}`} aria-current={i === at % slides.length}
             className={`h-2 rounded-full transition-all ${i === at % slides.length ? 'w-8 bg-white' : 'w-2 bg-white/40 hover:bg-white/70'}`} />)}
-          <button type="button" onClick={() => go(1)} aria-label="Next slide" className="grid size-10 place-items-center rounded-full bg-white/10 text-xl ring-1 ring-white/20 hover:bg-white/20">›</button>
+          <button type="button" onClick={() => go(1)} aria-label="Next slide" className="grid size-10 place-items-center max-md:hidden rounded-full bg-white/10 text-xl ring-1 ring-white/20 hover:bg-white/20">›</button>
         </div>}
       </div>
     </section>
@@ -169,13 +174,14 @@ export function TrustStrip({ online, payment }: { online: boolean; payment: Onli
     ['pin', 'Track every order', 'Online orders and job orders, step by step.'],
   ];
   return (
-    <section id="trust" className="mx-auto max-w-7xl scroll-mt-24 px-4 pt-6 sm:px-6" aria-label="Why buy from us">
-      <ul className="relative grid gap-3 overflow-hidden rounded-[2rem] bg-white p-4 ring-1 ring-slate-900/5 sm:grid-cols-2 lg:grid-cols-4 lg:p-6">
-        {doodles && <Doodles set={doodles} seed={3} spots={['tr', 'br']} size="size-10" />}
+    <section id="trust" className="mx-auto max-w-7xl scroll-mt-24 px-3 pt-4 md:px-6 md:pt-6" aria-label="Why buy from us">
+      <ul className="relative flex gap-1 overflow-x-auto rounded-2xl bg-white p-2 ring-1 ring-slate-900/5 [scrollbar-width:none] md:grid md:grid-cols-2 md:gap-3 md:overflow-hidden md:rounded-[2rem] md:p-4 lg:grid-cols-4 lg:p-6">
+        {/* Not on a phone, where the row scrolls sideways and a doodle would sit on the words. */}
+        {doodles && <span className="contents max-md:hidden"><Doodles set={doodles} seed={3} spots={['tr', 'br']} size="size-10" /></span>}
         {items.map(([icon, title, text]) => (
-          <li key={title} className="flex gap-3 rounded-2xl p-2">
+          <li key={title} className="flex w-[15.5rem] shrink-0 gap-3 rounded-2xl p-2 md:w-auto">
             <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-slate-900 text-white"><svg viewBox="0 0 24 24" className="size-5" aria-hidden="true"><path d={ICON[icon]} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg></span>
-            <div><p className="font-bold">{title}</p><p className="text-sm text-slate-500">{text}</p></div>
+            <div><p className="font-bold max-md:text-sm">{title}</p><p className="text-sm text-slate-500 max-md:text-xs">{text}</p></div>
           </li>))}
       </ul>
     </section>
@@ -194,23 +200,23 @@ export function PromoBanner({ products, payment, showSale }: { products: readonl
   const most = Math.max(0, ...onSale.map(percentOff));
   if (!free && !onSale.length) return null;
   return (
-    <section className="mx-auto max-w-7xl px-4 pt-6 sm:px-6" aria-label="Offers">
+    <section className="mx-auto max-w-7xl px-3 pt-4 md:px-6 md:pt-6" aria-label="Offers">
       <div className={`grid gap-3 ${free && onSale.length ? 'md:grid-cols-2' : ''}`}>
         {free && (
-          <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-r from-emerald-600 to-teal-500 p-6 text-white sm:p-8">
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-500 p-5 text-white md:rounded-[2rem] md:p-8">
             {doodles && <Doodles set={doodles} seed={11} spots={['mr', 'br']} size="size-14" light />}
             <svg viewBox="0 0 24 24" className="pointer-events-none absolute -right-4 -top-4 size-40 text-white/10" aria-hidden="true"><path d={ICON.truck} fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-white/80">Free shipping</p>
-            <p className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">{free.headline}</p>
+            <p className="mt-2 text-2xl font-extrabold tracking-tight md:text-4xl">{free.headline}</p>
             <p className="mt-2 text-white/85">On every online order. {free.detail}.</p>
           </div>
         )}
         {onSale.length > 0 && (
-          <button type="button" onClick={showSale} className="group relative overflow-hidden rounded-[2rem] bg-gradient-to-r from-rose-600 to-orange-500 p-6 text-left text-white sm:p-8">
+          <button type="button" onClick={showSale} className="group relative overflow-hidden rounded-2xl bg-gradient-to-r from-rose-600 to-orange-500 p-5 text-left text-white md:rounded-[2rem] md:p-8">
             <span className="pointer-events-none absolute -right-2 -top-6 text-[9rem] font-black leading-none text-white/10" aria-hidden="true">%</span>
             {doodles && <Doodles set={doodles} seed={5} spots={['mr', 'br']} size="size-14" light />}
             <span className="block text-xs font-bold uppercase tracking-[0.2em] text-white/80">Sale</span>
-            <span className="mt-2 block text-3xl font-extrabold tracking-tight sm:text-4xl">Up to <CountUp value={most} />% off</span>
+            <span className="mt-2 block text-2xl font-extrabold tracking-tight md:text-4xl">Up to <CountUp value={most} />% off</span>
             <span className="mt-2 block text-white/85">{onSale.length} item{onSale.length === 1 ? '' : 's'} on sale, while stocks last. <b className="underline-offset-4 group-hover:underline">Shop the sale →</b></span>
           </button>
         )}
@@ -224,19 +230,19 @@ export function CategoryTiles({ products, categories, pick }: { products: readon
   const doodles = useShop().decor?.doodles;
   if (categories.length < 2) return null;
   return (
-    <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6">
-      <div className="flex items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Categories</p><h2 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">Shop by category</h2></div></div>
-      <ul className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3 lg:grid-cols-5">
+    <section className="mx-auto max-w-7xl px-3 pt-8 md:px-6 md:pt-16">
+      <div className="flex items-end justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Categories</p><h2 className="mt-1 text-xl font-extrabold tracking-tight md:mt-2 md:text-4xl">Shop by category</h2></div></div>
+      <ul className="-mx-3 mt-3 flex gap-2 overflow-x-auto px-3 pb-1 [scrollbar-width:none] md:mx-0 md:mt-6 md:grid md:grid-cols-3 md:gap-4 md:overflow-visible md:px-0 md:pb-0 lg:grid-cols-5">
         {categories.map((c) => {
           const inIt = products.filter((p) => p.category === c);
           const p = inIt.find((x) => x.photoUrl) ?? inIt[0];
           return (
-            <li key={c}><button type="button" onClick={() => pick(c)} className={`group relative flex aspect-[4/5] w-full flex-col overflow-hidden rounded-3xl bg-slate-100 p-4 text-left ring-1 ring-slate-900/5 transition duration-300 hover:-translate-y-1 hover:bg-slate-200/70 hover:shadow-xl hover:shadow-slate-900/10`}>
+            <li key={c} className="w-[36%] shrink-0 md:w-auto"><button type="button" onClick={() => pick(c)} className={`group relative flex aspect-[4/5] w-full max-md:rounded-2xl max-md:p-3 flex-col overflow-hidden rounded-3xl bg-slate-100 p-4 text-left ring-1 ring-slate-900/5 transition duration-300 hover:-translate-y-1 hover:bg-slate-200/70 hover:shadow-xl hover:shadow-slate-900/10`}>
               {doodles && <Doodles set={doodles} seed={seedOf(c)} spots={['tr', 'ml']} size="size-12" />}
-              <span className="relative z-10 text-lg font-extrabold leading-tight">{c}</span>
+              <span className="relative z-10 text-lg font-extrabold leading-tight max-md:text-sm">{c}</span>
               <span className="relative z-10 text-sm text-slate-600"><CountUp value={inIt.length} ms={800} /> item{inIt.length === 1 ? '' : 's'}</span>
               {p && <span className={`absolute grid place-items-center overflow-hidden transition duration-500 group-hover:scale-105 ${p.photoUrl ? 'inset-x-3 bottom-3 top-20 rounded-2xl' : 'inset-x-0 bottom-0 top-14'}`}><ProductPicture product={p} colour={p.colours[0]!.hex} className={p.photoUrl ? '' : 'w-3/4'} /></span>}
-              <span className="absolute bottom-3 right-3 z-10 grid size-9 place-items-center rounded-full bg-white text-lg shadow transition group-hover:bg-slate-900 group-hover:text-white" aria-hidden="true">→</span>
+              <span className="absolute bottom-3 right-3 z-10 grid size-9 place-items-center rounded-full bg-white text-lg shadow max-md:hidden transition group-hover:bg-slate-900 group-hover:text-white" aria-hidden="true">→</span>
             </button></li>);
         })}
       </ul>
@@ -255,18 +261,18 @@ export function PageHero({ eyebrow, title, text, children, side }: { eyebrow: st
   const { decor } = useShop();
   const shower = decor?.look.shower;
   return (
-    <section className="w-full">
-      <div className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white">
+    <section className="w-full max-md:px-3 max-md:pt-3">
+      <div className="relative overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white max-md:rounded-3xl">
         <div className="hero-drift pointer-events-none absolute -right-24 -top-24 size-96 rounded-full bg-white/5 blur-2xl" />
         <div className="hero-drift-back pointer-events-none absolute -bottom-32 left-1/3 size-96 rounded-full bg-indigo-500/20 blur-3xl" />
         {/* The season, as on the shop's banner: bats, snow or hearts drifting, and doodles in the corners. */}
         {shower && <Shower kind={shower} />}
         {decor?.doodles && <Doodles set={decor.doodles} seed={7} spots={['tr', 'br']} size="size-16" light />}
-        <div className={`hero-slide relative mx-auto grid max-w-7xl items-center gap-8 px-4 py-12 sm:px-6 md:py-16 ${side ? 'md:grid-cols-[1.15fr_1fr]' : ''}`}>
+        <div className={`hero-slide relative mx-auto grid max-w-7xl items-center gap-6 px-5 py-7 md:gap-8 md:px-6 md:py-16 ${side ? 'md:grid-cols-[1.15fr_1fr]' : ''}`}>
           <div>
             <p className="inline-flex rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-white/80 ring-1 ring-white/15">{eyebrow}</p>
-            <h1 className="mt-5 max-w-3xl text-4xl font-extrabold leading-[1.02] tracking-tight sm:text-6xl">{title}</h1>
-            <p className="mt-5 max-w-2xl text-lg text-white/70">{text}</p>
+            <h1 className="mt-3 max-w-3xl text-3xl font-extrabold leading-[1.02] tracking-tight md:mt-5 md:text-6xl">{title}</h1>
+            <p className="mt-3 max-w-2xl text-base text-white/70 md:mt-5 md:text-lg">{text}</p>
             {children}
           </div>
           {side && <div className="hero-float">{side}</div>}
@@ -280,7 +286,7 @@ export function PageHero({ eyebrow, title, text, children, side }: { eyebrow: st
 export function SectionHead({ eyebrow, title, children }: { eyebrow: string; title: ReactNode; children?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
-      <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">{eyebrow}</p><h2 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">{title}</h2></div>
+      <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">{eyebrow}</p><h2 className="mt-2 text-2xl font-extrabold tracking-tight md:text-4xl">{title}</h2></div>
       {children}
     </div>
   );
@@ -292,17 +298,17 @@ export function ProductRail({ title, eyebrow, note, products, online, view }: { 
   if (!products.length) return null;
   const scroll = (d: number) => document.getElementById(rail)?.scrollBy({ left: d * 320, behavior: 'smooth' });
   return (
-    <section className="mx-auto max-w-7xl px-4 pt-16 sm:px-6">
+    <section className="mx-auto max-w-7xl px-3 pt-8 md:px-6 md:pt-16">
       <div className="flex items-end justify-between gap-4">
-        <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">{eyebrow}</p><h2 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">{title}</h2>
+        <div><p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">{eyebrow}</p><h2 className="mt-1 text-xl font-extrabold tracking-tight md:mt-2 md:text-4xl">{title}</h2>
           {note && <p className="mt-1 text-sm text-slate-500">{note}</p>}</div>
         <div className="hidden gap-2 sm:flex">
           <button type="button" onClick={() => scroll(-1)} aria-label="Scroll back" className="grid size-11 place-items-center rounded-full ring-1 ring-slate-300 hover:bg-slate-900 hover:text-white">‹</button>
           <button type="button" onClick={() => scroll(1)} aria-label="Scroll on" className="grid size-11 place-items-center rounded-full ring-1 ring-slate-300 hover:bg-slate-900 hover:text-white">›</button>
         </div>
       </div>
-      <ul id={rail} className="-mx-4 mt-6 flex snap-x gap-4 overflow-x-auto px-4 pb-4 [scrollbar-width:none] sm:mx-0 sm:px-0">
-        {products.map((p) => <li key={p.id} className="w-[70%] shrink-0 snap-start sm:w-[45%] md:w-[31%] lg:w-[23%]"><ProductCard p={p} online={online} view={view} /></li>)}
+      <ul id={rail} className="-mx-3 mt-3 flex snap-x gap-2 overflow-x-auto px-3 pb-2 [scrollbar-width:none] md:mx-0 md:mt-6 md:gap-4 md:px-0 md:pb-4">
+        {products.map((p) => <li key={p.id} className="w-[43%] shrink-0 snap-start md:w-[31%] lg:w-[23%]"><ProductCard p={p} online={online} view={view} /></li>)}
       </ul>
     </section>
   );

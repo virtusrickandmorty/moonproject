@@ -8,6 +8,7 @@ import { SIZES, categoriesOf, type Category, type Product, percentOff } from './
 import type { SiteControls } from './Site.tsx';
 import { useShop } from './store.tsx';
 import { useInterests } from './interests.ts';
+import { PhoneShortcuts } from './Phone.tsx';
 import { Loading } from '../components/ui.tsx';
 
 type Sort = 'featured' | 'price-low' | 'price-high' | 'name';
@@ -114,28 +115,35 @@ export function Store({ openPanel, view }: SiteControls) {
   // Online ordering is open once the shop has set how customers pay (Website shop › Online payment) and shows its own products.
   const online = !!shop.payment && !shop.samples;
   const toShop = (kind: Kind) => { setF({ ...NONE, kind }); document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }); };
+  const showSale = () => { setF({ ...NONE, sale: true }); document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }); };
 
   return (
     <>
       <HeroSlider products={products} online={online} payment={shop.payment} toShop={toShop} look={shop.decor?.look} />
+      <PhoneShortcuts products={products} toShop={toShop} showSale={showSale} openPanel={openPanel} />
       <TrustStrip online={online} payment={shop.payment} />
-      <PromoBanner products={products} payment={shop.payment} showSale={() => { setF({ ...NONE, sale: true }); document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }); }} />
+      <PromoBanner products={products} payment={shop.payment} showSale={showSale} />
       <CategoryTiles products={products} categories={categories} pick={(c) => { setF({ ...NONE, categories: [c] }); document.getElementById('shop')?.scrollIntoView({ behavior: 'smooth' }); }} />
       {/* What this visitor looked at decides the rows (kept in their browser only); a first visit sees the popular ones. */}
       {picked.length ? <ProductRail eyebrow="For you" title="Picked for you" note="From what you looked at and searched for here." products={picked} online={online} view={view} />
         : <ProductRail eyebrow="Featured" title="Popular garments" products={products.filter((p) => p.badge && !isSoldOut(p)).sort((a, b) => Number(a.madeToOrder) - Number(b.madeToOrder)).slice(0, 8)} online={online} view={view} />}
       <ProductRail eyebrow="Your visit" title="Recently viewed" products={recent} online={online} view={view} />
 
-      <section id="shop" className="mx-auto max-w-7xl scroll-mt-24 px-4 pb-16 pt-16 sm:px-6">
+      <section id="shop" className="mx-auto max-w-7xl scroll-mt-16 px-3 pb-10 pt-8 md:scroll-mt-24 md:px-6 md:pb-16 md:pt-16">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">The shop</p>
-        <h2 className="mb-5 mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">All garments</h2>
-        <div className="flex gap-2 overflow-x-auto pb-2">
+        <h2 className="mb-3 mt-1 text-xl font-extrabold tracking-tight md:mb-5 md:mt-2 md:text-4xl">All garments</h2>
+        {/* On a phone the categories stay along the top while the garments scroll, as a shopping app's. */}
+        <div className="flex gap-2 overflow-x-auto pb-2 max-md:sticky max-md:top-[3.25rem] max-md:z-30 max-md:-mx-3 max-md:bg-[#fafaf8]/95 max-md:px-3 max-md:pt-2 max-md:backdrop-blur-md [scrollbar-width:none]">
           <button type="button" className={chip(!f.categories.length)} onClick={() => setF({ ...f, categories: [] })}>All</button>
           {categories.map((c) => <button key={c} type="button" className={`${chip(f.categories.includes(c))} shrink-0`} onClick={() => { if (!f.categories.includes(c)) track({ kind: 'category', category: c.slice(0, 60) }); setF({ ...f, categories: toggle(f.categories, c) }); }}>{c} <span className="opacity-60">{count('categories', (p) => p.category === c)}</span></button>)}
         </div>
 
-        <div className="mt-6 grid gap-8 lg:grid-cols-[15rem_1fr]">
-          <aside className={`${showFilters ? 'block' : 'hidden'} space-y-6 lg:block`} aria-label="Filters">
+        <div className="mt-3 grid gap-8 md:mt-6 lg:grid-cols-[15rem_1fr]">
+          {/* On a phone the filters slide up from the bottom, over the garments. */}
+          {showFilters && <div className="fixed inset-0 z-50 bg-slate-900/45 md:hidden" onClick={() => setShowFilters(false)} aria-hidden="true" />}
+          <aside className={`${showFilters ? 'block' : 'hidden'} space-y-6 lg:block max-md:fixed max-md:inset-x-0 max-md:bottom-0 max-md:z-50 max-md:max-h-[85vh] max-md:overflow-y-auto max-md:rounded-t-3xl max-md:bg-white max-md:px-5 max-md:pt-4 max-md:shadow-2xl`} aria-label="Filters">
+            <div className="flex items-center justify-between md:hidden"><p className="text-lg font-bold">Filters</p>
+              <button type="button" onClick={() => setShowFilters(false)} className="grid size-9 place-items-center rounded-full text-xl text-slate-500 active:bg-slate-100" aria-label="Close the filters">×</button></div>
             <input type="search" value={f.text} onChange={(e) => setF({ ...f, text: e.target.value })} placeholder="Search garments…" aria-label="Search garments" className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm outline-none focus:border-indigo-500" />
             <fieldset><legend className="mb-2 text-sm font-bold">Type</legend>
               <div className="flex flex-wrap gap-2">{([['all', 'All'], ['ready', 'Ready stock'], ['made', 'Made to order']] as [Kind, string][]).map(([k, label]) =>
@@ -157,13 +165,18 @@ export function Store({ openPanel, view }: SiteControls) {
               <p className="text-sm text-slate-600">{f.maxCents === null ? 'Any price' : `Up to ${formatPeso(f.maxCents)}`}</p>
             </fieldset>
             <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={f.saved} onChange={(e) => setF({ ...f, saved: e.target.checked })} className="size-4 accent-indigo-600" /> Saved to wishlist only</label>
+            <div className="sticky bottom-0 -mx-5 flex gap-2 border-t border-slate-100 bg-white px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:hidden">
+              <button type="button" onClick={() => setF({ ...NONE, text: f.text })} className="rounded-full px-5 py-3 text-sm font-bold text-slate-700 ring-1 ring-slate-300">Clear all</button>
+              <button type="button" onClick={() => setShowFilters(false)} className="flex-1 rounded-full bg-slate-900 py-3 text-sm font-bold text-white">Show {shown.length} garment{shown.length === 1 ? '' : 's'}</button>
+            </div>
           </aside>
 
           <div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-slate-600" aria-live="polite">{shop.ready ? <><b className="text-slate-900">{shown.length}</b> of {products.length} garments</> : 'Loading…'}</p>
               <div className="flex items-center gap-2">
-                <button type="button" onClick={() => setShowFilters(!showFilters)} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold lg:hidden" aria-expanded={showFilters}>Filters{active.length ? ` (${active.length})` : ''}</button>
+                <button type="button" onClick={() => setShowFilters(!showFilters)} className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold lg:hidden" aria-expanded={showFilters}>
+                  <svg viewBox="0 0 24 24" className="-ml-1 mr-1 inline size-4 md:hidden" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg>Filters{active.length ? ` (${active.length})` : ''}</button>
                 <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Sort by" className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold">
                   <option value="featured">Featured</option><option value="price-low">Price: low to high</option><option value="price-high">Price: high to low</option><option value="name">Name</option>
                 </select>
@@ -181,15 +194,15 @@ export function Store({ openPanel, view }: SiteControls) {
                 <button type="button" onClick={() => setF(NONE)} className="mt-3 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-bold text-white">Show everything</button>
               </div>
             ) : (
-              <div className="mt-5 space-y-12">{groupsOf(shown, online).map((g) => (
+              <div className="mt-4 space-y-8 md:mt-5 md:space-y-12">{groupsOf(shown, online).map((g) => (
                 <section key={g.id} aria-labelledby={`kind-${g.id}`}>
                   <div className="border-b border-slate-200 pb-3">
-                    <h3 id={`kind-${g.id}`} className="flex items-center gap-2 text-xl font-extrabold"><span className={`size-2.5 rounded-full ${g.dot}`} aria-hidden />{g.title} <span className="text-base font-semibold text-slate-400">{g.items.length}</span></h3>
+                    <h3 id={`kind-${g.id}`} className="flex items-center gap-2 text-lg font-extrabold md:text-xl"><span className={`size-2.5 rounded-full ${g.dot}`} aria-hidden />{g.title} <span className="text-base font-semibold text-slate-400">{g.items.length}</span></h3>
                     <p className="mt-1 text-sm text-slate-600">{g.text}</p>
                   </div>
-                  <ul className="mt-5 grid grid-cols-2 gap-x-4 gap-y-8 sm:gap-x-5 xl:grid-cols-3">{g.items.slice(0, upTo[g.id] ?? PAGE).map((p) => (
-                    <li key={p.id}><ProductCard p={p} online={online} view={view} colourHex={(f.colours.length ? p.colours.find((c) => f.colours.includes(c.name)) : undefined)?.hex} />
-                      <p className="mt-1 px-1 text-xs text-slate-500">{p.madeToOrder ? `Min. ${p.minQty} pcs · ${p.leadDays} days` : stockWords(p)}</p></li>))}</ul>
+                  <ul className="mt-3 grid grid-cols-2 gap-2 md:mt-5 md:gap-x-5 md:gap-y-8 xl:grid-cols-3">{g.items.slice(0, upTo[g.id] ?? PAGE).map((p) => { const note = p.madeToOrder ? `Min. ${p.minQty} pcs · ${p.leadDays} days` : stockWords(p); return (
+                    <li key={p.id}><ProductCard p={p} online={online} view={view} note={note} colourHex={(f.colours.length ? p.colours.find((c) => f.colours.includes(c.name)) : undefined)?.hex} />
+                      <p className="mt-1 px-1 text-xs text-slate-500 max-md:hidden">{note}</p></li>); })}</ul>
                   {g.items.length > (upTo[g.id] ?? PAGE) && <div className="mt-8 text-center">
                     <p className="text-sm text-slate-500">Showing {upTo[g.id] ?? PAGE} of {g.items.length}</p>
                     <button type="button" onClick={() => setMore({ under, upTo: { ...upTo, [g.id]: (upTo[g.id] ?? PAGE) + PAGE } })} className="mt-2 rounded-full border border-slate-300 bg-white px-6 py-2.5 text-sm font-bold hover:border-slate-900">
@@ -201,14 +214,14 @@ export function Store({ openPanel, view }: SiteControls) {
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-7xl gap-4 px-4 pb-16 sm:px-6 md:grid-cols-2">
-        <Link to="/services" className="group rounded-3xl bg-slate-900 p-8 text-white transition hover:bg-indigo-800">
+      <section className="mx-auto grid max-w-7xl gap-3 px-3 pb-10 md:grid-cols-2 md:gap-4 md:px-6 md:pb-16">
+        <Link to="/services" className="group rounded-3xl bg-slate-900 p-6 text-white transition hover:bg-indigo-800 md:p-8">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-300">Our services</p>
           <h2 className="mt-3 text-2xl font-extrabold">Embroidery, sublimation, cut and sew, printing</h2>
           <p className="mt-2 text-white/70">See everything we make and decorate for teams, schools and companies.</p>
           <span className="mt-5 inline-block font-bold">See the services <span className="inline-block transition group-hover:translate-x-1">→</span></span>
         </Link>
-        <Link to="/support" className="group rounded-3xl bg-white p-8 shadow-sm ring-1 ring-slate-900/5 transition hover:ring-indigo-300">
+        <Link to="/support" className="group rounded-3xl bg-white p-6 shadow-sm md:p-8 ring-1 ring-slate-900/5 transition hover:ring-indigo-300">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-600">Customer support</p>
           <h2 className="mt-3 text-2xl font-extrabold">Questions, feedback or a quotation?</h2>
           <p className="mt-2 text-slate-600">Send us a message with your design pictures and we will get back to you.</p>

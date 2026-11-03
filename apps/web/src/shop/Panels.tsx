@@ -11,8 +11,12 @@ import { ReviewCard, Stars } from './Stars.tsx';
 /** Open overlays, newest last: Escape closes only the top one. */
 const open: string[] = [];
 
-/** A modal (centred) or a drawer (from the right). Escape or the backdrop closes it; focus returns where it was. */
-function Overlay({ title, onClose, side, children }: { title: string; onClose: () => void; side?: boolean; children: ReactNode }) {
+/**
+ * A modal (centred) or a drawer (from the right). Escape or the backdrop closes it; focus returns where it was. On a
+ * phone (the shopping-app look, Nov 2026) the modal slides up from the bottom, or fills the screen (`full`), and
+ * `phoneBar` stays along the bottom while the rest scrolls.
+ */
+export function Overlay({ title, onClose, side, full, phoneBar, children }: { title: string; onClose: () => void; side?: boolean; full?: boolean; phoneBar?: ReactNode; children: ReactNode }) {
   const id = useId();
   const panel = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
@@ -28,14 +32,16 @@ function Overlay({ title, onClose, side, children }: { title: string; onClose: (
     return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = overflow; open.splice(open.indexOf(id), 1); before?.focus(); };
   }, [id]);
   return (
-    <div className={`fixed inset-0 z-50 flex bg-slate-900/45 backdrop-blur-[2px] ${side ? 'justify-end' : 'items-center justify-center p-3 sm:p-6'}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className={`fixed inset-0 z-50 flex bg-slate-900/45 backdrop-blur-[2px] ${side ? 'justify-end' : 'items-end justify-center md:items-center md:p-6'}`} onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={id}
-        className={`flex flex-col bg-white shadow-2xl outline-none ${side ? 'h-full w-full max-w-md' : 'max-h-[94vh] w-full rounded-2xl'}`}>
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+        className={`flex flex-col bg-white shadow-2xl outline-none ${side ? 'h-full w-full max-w-md' : full ? 'h-full w-full md:h-auto md:max-h-[94vh] md:rounded-2xl' : 'max-h-[90vh] w-full rounded-t-3xl md:max-h-[94vh] md:rounded-2xl'}`}>
+        {!side && !full && <span className="mx-auto mt-2 block h-1 w-10 rounded-full bg-slate-200 md:hidden" aria-hidden="true" />}
+        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3 md:py-4">
           <h2 id={id} className="text-lg font-bold text-slate-900">{title}</h2>
           <button type="button" onClick={onClose} className="grid size-9 place-items-center rounded-full text-xl text-slate-500 hover:bg-slate-100" aria-label="Close">×</button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+        {phoneBar && <div className="shrink-0 border-t border-slate-100 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_16px_rgb(15_23_42/0.06)] md:hidden">{phoneBar}</div>}
       </div>
     </div>
   );
@@ -73,9 +79,16 @@ export function QuickView({ product, onView, onClose, onSizeGuide, onAdded }: { 
     add(Object.entries(qty).filter(([, n]) => n > 0).map(([size, n]): CartLine => ({ productId: product.id, size, colour: colour.name, qty: n })));
     onAdded();
   };
+  const addButton = (place: string) => (
+    <button type="button" disabled={total === 0} onClick={addAll}
+      className={`w-full rounded-full bg-slate-900 px-6 font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300 ${place}`}>
+      {total ? `Add ${total} to cart · ${formatPeso(total * product.priceCents)}` : 'Pick sizes to add'}
+    </button>
+  );
   return (
-    <Overlay title="Quick view" onClose={onClose}>
-      <div className="grid gap-6 p-5 md:grid-cols-[0.9fr_1.1fr] md:p-7">
+    <Overlay title="Quick view" onClose={onClose} full
+      phoneBar={<div className="flex items-center gap-2 px-3 py-2.5"><WishButton product={product} className="shrink-0 ring-slate-200" />{addButton('py-3')}</div>}>
+      <div className="grid gap-6 p-4 md:grid-cols-[0.9fr_1.1fr] md:p-7">
         {/* Every photo the product has (the owner's request, Oct 2026): the big one, arrows and a count on it, and a row of
             them all under it to pick from. */}
         <div className="space-y-3 self-start md:sticky md:top-0">
@@ -126,20 +139,17 @@ export function QuickView({ product, onView, onClose, onSizeGuide, onAdded }: { 
             {product.madeToOrder ? `Made to order · minimum ${product.minQty} pieces · about ${product.leadDays} days` : soldOut ? `${colour.name} is sold out for now.` : product.stock ? 'Ready stock · order and pay online, or buy at the shop' : `Ready stock · ready in about ${product.leadDays} days`}
             {short && ` · add ${product.minQty - total} more to reach the minimum`}
           </p>
-          <button type="button" disabled={total === 0} onClick={addAll}
-            className="mt-4 w-full rounded-full bg-slate-900 px-6 py-3.5 font-bold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">
-            {total ? `Add ${total} to cart · ${formatPeso(total * product.priceCents)}` : 'Pick sizes to add'}
-          </button>
+          {addButton('mt-4 py-3.5 max-md:hidden')}
         </div>
       </div>
       {mine.length > 0 && (
-        <section id="reviews" className="border-t border-slate-100 bg-slate-50 p-5 md:p-7" aria-label="Reviews">
+        <section id="reviews" className="border-t border-slate-100 bg-slate-50 p-4 md:p-7" aria-label="Reviews">
           <h4 className="flex items-center gap-3 text-lg font-bold">What buyers say <Stars rating={rating.average} /> <span className="text-sm font-semibold text-slate-500">{rating.average.toFixed(1)} of 5 · {rating.count}</span></h4>
           <ul className="mt-4 grid gap-3 sm:grid-cols-2">{mine.slice(0, 6).map((r) => <li key={r.id}><ReviewCard r={r} /></li>)}</ul>
         </section>
       )}
       {others.length > 0 && (
-        <section className="border-t border-slate-100 p-5 md:p-7" aria-labelledby="alike">
+        <section className="border-t border-slate-100 p-4 md:p-7" aria-labelledby="alike">
           <h4 id="alike" className="text-lg font-bold">You may also like</h4>
           <ul className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">{others.map((p) => (
             <li key={p.id}><button type="button" onClick={() => onView(p)} className="group block w-full text-left">
@@ -190,8 +200,23 @@ export function CartDrawer({ onClose }: { onClose: () => void }) {
   const online = cart.filter(orderable), quoted = cart.filter((l) => !orderable(l));
   const sum = (lines: typeof cart) => lines.reduce((n, l) => n + l.qty * (productById(l.productId)?.priceCents ?? 0), 0);
   const leftOf = (l: (typeof cart)[number]) => productById(l.productId)?.stock?.find((s) => s.size === l.size && s.colour === l.colour)?.available;
+  const checkout = (
+    <div className="space-y-4 p-5 max-md:space-y-3 max-md:px-4 max-md:py-3">
+      {online.length > 0 && <div>
+        <div className="flex justify-between text-lg font-bold"><span>Order online</span><span className="tabular-nums">{formatPeso(sum(online))}</span></div>
+        <p className="mt-1 text-xs text-slate-500">Pay online first; we confirm your payment, then prepare your order.</p>
+        <button type="button" disabled={online.some((l) => (leftOf(l) ?? 0) < l.qty)} onClick={() => { onClose(); navigate('/checkout'); }}
+          className="mt-3 w-full rounded-full bg-indigo-600 px-6 py-3.5 font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">Check out and pay online</button>
+      </div>}
+      {quoted.length > 0 && <div>
+        <div className="flex justify-between font-bold"><span>For a quotation</span><span className="tabular-nums">{formatPeso(sum(quoted))}</span></div>
+        <p className="mt-1 text-xs text-slate-500">Starting prices. Your quotation confirms the price for your design and quantity.</p>
+        <button type="button" onClick={() => { onClose(); navigate('/support?type=quotation&from=cart'); }} className="mt-3 w-full rounded-full bg-slate-900 px-6 py-3 font-bold text-white hover:bg-slate-700">Request a quotation</button>
+      </div>}
+    </div>
+  );
   return (
-    <Overlay title={`Your cart (${cart.length})`} side onClose={onClose}>
+    <Overlay title={`Your cart (${cart.length})`} side onClose={onClose} phoneBar={cart.length > 0 && checkout}>
       {cart.length === 0 ? <p className="p-8 text-center text-slate-500">Your cart is empty. Open a product and pick sizes to start a list.</p> : (
         <div className="flex h-full flex-col">
           <ul className="flex-1 divide-y divide-slate-100 px-5">{cart.map((l) => { const p = productById(l.productId)!; const hex = p.colours.find((c) => c.name === l.colour)?.hex ?? '#ccc'; const left = leftOf(l); return (
@@ -212,19 +237,10 @@ export function CartDrawer({ onClose }: { onClose: () => void }) {
               </div>
               <p className="font-semibold tabular-nums">{formatPeso(l.qty * p.priceCents)}</p>
             </li>); })}</ul>
-          <div className="space-y-4 border-t border-slate-100 p-5">
-            {online.length > 0 && <div>
-              <div className="flex justify-between text-lg font-bold"><span>Order online</span><span className="tabular-nums">{formatPeso(sum(online))}</span></div>
-              <p className="mt-1 text-xs text-slate-500">Pay online first; we confirm your payment, then prepare your order.</p>
-              <button type="button" disabled={online.some((l) => (leftOf(l) ?? 0) < l.qty)} onClick={() => { onClose(); navigate('/checkout'); }}
-                className="mt-3 w-full rounded-full bg-indigo-600 px-6 py-3.5 font-bold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">Check out and pay online</button>
-            </div>}
-            {quoted.length > 0 && <div>
-              <div className="flex justify-between font-bold"><span>For a quotation</span><span className="tabular-nums">{formatPeso(sum(quoted))}</span></div>
-              <p className="mt-1 text-xs text-slate-500">Starting prices. Your quotation confirms the price for your design and quantity.</p>
-              <button type="button" onClick={() => { onClose(); navigate('/support?type=quotation&from=cart'); }} className="mt-3 w-full rounded-full bg-slate-900 px-6 py-3 font-bold text-white hover:bg-slate-700">Request a quotation</button>
-            </div>}
-            <button type="button" onClick={clearCart} className="w-full py-1 text-sm text-slate-500 hover:text-rose-600">Empty the cart</button>
+          {/* On a computer the totals sit under the lines; on a phone they are in the bar along the bottom. */}
+          <div className="border-t border-slate-100">
+            <div className="max-md:hidden">{checkout}</div>
+            <div className="px-5 pb-5 max-md:py-3"><button type="button" onClick={clearCart} className="w-full py-1 text-sm text-slate-500 hover:text-rose-600">Empty the cart</button></div>
           </div>
         </div>)}
     </Overlay>
