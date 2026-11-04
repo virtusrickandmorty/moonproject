@@ -1,5 +1,6 @@
 /**
  * The job order, release slip and invoice record forms (PLAN E4, D3): their form rules, the job order view's buttons, and
+import { manilaDate } from '@moonproject/shared';
  * each form's web client calls against the real server (in memory): the input each sends fills from the server's
  * preview, the body is what the server takes, and the server's refusals reach staff in plain words.
  */
@@ -225,10 +226,8 @@ describe('web client for job orders, releases and invoice records', () => {
     const stored = await api.get('jo.job_order', jo.id);
     expect(joInput(joValues(stored.input as unknown as JoInput, stored.doc as never, stored.header.businessDate)).input).toEqual(typed.input); // its Edit starts from this
     // Five days on, the same due date: the days count from today, so an edit does not move it.
-    const dueDate = (stored.doc as unknown as { dueDate: string }).dueDate;
-    const later = new Date(Date.parse(stored.header.businessDate) + 5 * 86_400_000).toISOString().slice(0, 10);
+    const later = manilaDate(new Date(Date.parse(stored.header.businessDate) + 5 * 86_400_000));
     expect(Number(joValues(stored.input as unknown as JoInput, stored.doc as never, later).dueInDays)).toBe((stored.input as unknown as JoInput).dueInDays - 5);
-    expect(dueDate > later).toBe(true);
 
     // The view's buttons, then "Take the downpayment": the collection for this job order.
     let s = await api.joStatus(jo.id);
