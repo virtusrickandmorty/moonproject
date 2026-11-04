@@ -4,7 +4,7 @@ import { AppError, forbidden } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { stamp, today } from '../../platform/clock.ts';
-import { clockGuard, postDocument } from '../../engine/documents/lifecycle.ts';
+import { clockGuard, engineEnv, postDocument } from '../../engine/documents/lifecycle.ts';
 import { findIdempotent, requestHash, storeIdempotent } from '../../engine/idempotency.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { cashBook, createPlace, place, placesFor, seesBalance, updatePlaceSettings } from './places.ts';
@@ -83,7 +83,7 @@ export function cashRoutes(app: FastifyInstance, deps: AppDeps): void {
     const body = adjustBody.parse(req.body);
     seeRecon(req);
     return idempotent(req, reply, () => {
-      const posted = postDocument({ db, clock }, bankAdjustmentDoc, { userId: u.userId, permissions: u.permissions }, { input: body.input, expectedTotalCents: body.expectedTotalCents, ...(body.businessDate ? { businessDate: body.businessDate } : {}) });
+      const posted = postDocument(engineEnv(deps), bankAdjustmentDoc, { userId: u.userId, permissions: u.permissions }, { input: body.input, expectedTotalCents: body.expectedTotalCents, ...(body.businessDate ? { businessDate: body.businessDate } : {}) });
       const matchNo = recon.matchAdjustment(db, req.params.id, posted.id, body.statementLineIds, who(req));
       return { ...posted, matchNo };
     });

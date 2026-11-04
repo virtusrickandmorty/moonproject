@@ -138,6 +138,20 @@ describe('Bank reconciliation (E10)', () => {
     expect((await accountant.post(`/api/cash/recons/${id}/reopen`, { reason: 'The bank sent a corrected statement' })).json().code).toBe('LATER_MONTH');
   });
 
+  it('counts a line cleared by an earlier statement but dated after this month, so the month can still finish', async () => {
+    await trf(CASH, BDO, 100_000);
+    const id = (await accountant.post('/api/cash/recons', { bankId: BDO, month: '2026-09', endingBalanceCents: 85_000 })).json().id;
+    const rep = (await accountant.post(`/api/cash/recons/${id}/lines`, { lines: [{ date: '2026-09-28', description: 'Deposit', amountCents: 100_000 }, { date: '2026-09-30', description: 'Checkbook', amountCents: -15_000 }] })).json();
+    await accountant.post(`/api/cash/recons/${id}/match`, { statementLineIds: [stmt(rep, 'Deposit')], journalLineIds: [book(rep, 'TRF-000001')] });
+    env.clock.advance(38 * 24 * 3600_000); // 2026-11-05: September is reconciled in November
+    accountant = await env.as('accountant');
+    const c = await accountant.post(`/api/cash/recons/${id}/adjust`, { statementLineIds: [stmt(rep, 'Checkbook')], input: { ...charge150(), description: 'Checkbook' }, expectedTotalCents: 15_000 }, idem());
+    expect(c.json().businessDate).toBe('2026-11-05');
+    expect((await accountant.post(`/api/cash/recons/${id}/finish`)).json()).toMatchObject({ status: 'finished', differenceCents: 0 });
+    const oct = await accountant.post('/api/cash/recons', { bankId: BDO, month: '2026-10', endingBalanceCents: 85_000 });
+    expect(oct.json()).toMatchObject({ bookBalanceCents: 100_000, recordedAfterMonthCents: -15_000, adjustedBookCents: 85_000, differenceCents: 0 });
+  });
+
   it('CASH-1: the accountant dates a charge seen in October on its statement day in September; others may not backdate', async () => {
     await trf(CASH, BDO, 100_000);
     const id = (await accountant.post('/api/cash/recons', { bankId: BDO, month: '2026-09', endingBalanceCents: 85_000 })).json().id;

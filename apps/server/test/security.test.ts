@@ -161,6 +161,18 @@ describe('users and roles (owner, step-up)', () => {
     expect((await enc.get('/api/auth/me')).statusCode).toBe(401);
   });
 
+  it('never leaves the shop without someone who can manage users', async () => {
+    const owner = await env.as('owner');
+    await owner.post('/api/auth/step-up', { password: PASSWORD });
+    const revoke = await owner.post('/api/roles/owner/permissions', { permissionKey: 'sec.users.manage', granted: false });
+    expect([revoke.statusCode, revoke.json().code]).toEqual([409, 'LAST_USER_MANAGER']);
+    const managers = env.db.prepare(`SELECT user_id FROM user_roles WHERE role_key = 'owner' AND active = 1`).pluck().all() as string[];
+    const codes = [];
+    for (const id of managers) codes.push((await owner.post(`/api/users/${id}/roles`, { roles: [] })).statusCode);
+    expect(codes.at(-1)).toBe(409);
+    expect((await owner.get('/api/roles')).statusCode).toBe(200);
+  });
+
   it('owner can change the permission grid; the change applies immediately', async () => {
     const owner = await env.as('owner');
     const enc = await env.as('encoder');

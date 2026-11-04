@@ -24,7 +24,7 @@ export function liveRoutes(app: FastifyInstance, db: Db, build: () => string | n
   let last = newest();
   let watcher: ReturnType<typeof setInterval> | null = null;
   let quiet = 0;
-  const tick = () => {
+  const watch = () => {
     if (streams.size === 0) return;
     const now = newest();
     if (now > last) {
@@ -37,6 +37,10 @@ export function liveRoutes(app: FastifyInstance, db: Db, build: () => string | n
       quiet = 0;
       for (const s of streams) s.send(': still here\n\n');
     }
+  };
+  // On a timer, so nothing above catches a throw: a failed read for a screen refresh must not stop the server.
+  const tick = () => {
+    try { watch(); } catch (e) { app.log.warn(e, 'Live changes: the check for new changes failed; trying again shortly'); }
   };
   const stop = () => {
     if (watcher) clearInterval(watcher);

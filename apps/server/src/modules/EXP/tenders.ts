@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Issue } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { getCashPlace } from '../../engine/ledger/accounts.ts';
+import { isChecksPlace } from '../CASH/public.ts';
 
 export const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
 export const MAX_TENDERS = 4;
@@ -26,9 +27,12 @@ export function withNames(db: Db, tenders: readonly TenderInput[]): Tender[] {
 
 /** Each tender's cash place must be an active one (the rule the single cash place had, now per tender). */
 export function cashPlaceIssues(db: Db, tenders: readonly Tender[]): Issue[] {
-  return tenders
-    .filter((t) => !getCashPlace(db, t.cashPlaceId)?.isActive)
-    .map((t) => ({ field: `tenders.${t.lineNo - 1}.cashPlaceId`, code: 'CASH_PLACE', level: 'error' as const, message: 'Pick where the money came from.' }));
+  return tenders.flatMap((t) => {
+    const p = getCashPlace(db, t.cashPlaceId);
+    const field = `tenders.${t.lineNo - 1}.cashPlaceId`;
+    if (!p?.isActive) return [{ field, code: 'CASH_PLACE', level: 'error' as const, message: 'Pick where the money came from.' }];
+    return isChecksPlace(db, p.id) ? [{ field, code: 'CHECKS_PLACE', level: 'error' as const, message: `Customer checks are not paid out from ${p.name}: deposit them from the Checks screen first.` }] : [];
+  });
 }
 
 export function insertTenders(db: Db, documentId: string, tenders: readonly Tender[]): void {

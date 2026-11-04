@@ -11,6 +11,7 @@ import fc from 'fast-check';
 import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { getCashPlace, listCashPlaces } from '../../../engine/ledger/accounts.ts';
+import { place } from '../places.ts';
 
 const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
 
@@ -57,6 +58,11 @@ export const transferDoc: DocTypeDef<TransferInput, Transfer> = {
     const to = getCashPlace(ctx.db, doc.toCashPlaceId);
     if (!from?.isActive) issues.push({ field: 'fromCashPlaceId', code: 'CASH_PLACE', level: 'error', message: 'Pick where the money came from.' });
     if (!to?.isActive) issues.push({ field: 'toCashPlaceId', code: 'CASH_PLACE', level: 'error', message: 'Pick where the money went.' });
+    // A plain transfer would move the money and leave the check on the list, to be deposited a second time.
+    for (const [field, id] of [['fromCashPlaceId', doc.fromCashPlaceId], ['toCashPlaceId', doc.toCashPlaceId]] as const) {
+      const p = place(ctx.db, id);
+      if (p?.kind === 'checks' && !ctx.checkFlow) issues.push({ field, code: 'CHECKS_PLACE', level: 'error', message: `${p.name} holds customer checks: deposit them, or record a returned one, from the Checks screen.` });
+    }
     if (doc.fromCashPlaceId === doc.toCashPlaceId) {
       issues.push({ field: 'toCashPlaceId', code: 'SAME_PLACE', level: 'error', message: 'Money must go to a different place.' });
     }
@@ -116,7 +122,7 @@ export const transferDoc: DocTypeDef<TransferInput, Transfer> = {
   },
 
   arbitrary(db) {
-    const ids = listCashPlaces(db).map((c) => c.id);
+    const ids = listCashPlaces(db).filter((c) => place(db, c.id)?.kind !== 'checks').map((c) => c.id);
     return fc
       .tuple(fc.constantFrom(...ids), fc.constantFrom(...ids), fc.integer({ min: 1, max: 5_000_000_00 }), fc.integer({ min: 0, max: 50_000 }))
       .filter(([a, b, sent, fee]) => a !== b && fee < sent)

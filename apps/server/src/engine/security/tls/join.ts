@@ -49,7 +49,8 @@ h2{font-size:1.1rem;margin-top:1.5rem}li{margin:.3rem 0}</style></head><body>
 /** The plain-HTTP handler: the join page, the CA download, and a redirect to HTTPS for everything else. */
 export function joinHandler(o: { caPem: () => string; httpsPort: number; fallbackHost: () => string }) {
   return (req: IncomingMessage, res: ServerResponse) => {
-    const path = new URL(req.url ?? '/', 'http://join.invalid').pathname;
+    // A request line like `GET //` is no address at all: a throw here would stop the whole server, so it just redirects.
+    const path = URL.parse(req.url ?? '/', 'http://join.invalid')?.pathname ?? '';
     const host = requestHost(req.headers.host) ?? o.fallbackHost();
     const httpsUrl = `https://${host}${o.httpsPort === 443 ? '' : `:${o.httpsPort}`}`;
     const common = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };

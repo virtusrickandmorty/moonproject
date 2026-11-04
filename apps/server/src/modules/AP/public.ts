@@ -21,7 +21,7 @@ export function purchasesForReport(db: Db, from: string, to: string) {
   return db.prepare(`SELECT d.id,d.number,d.business_date AS date,b.supplier_id AS supplierId,a.name AS category,
     SUM(l.debit_cents-l.credit_cents) AS amountCents FROM ap_bills b JOIN documents d ON d.id=b.document_id
     JOIN journals j ON j.source_id=d.id AND j.posting_kind='original' JOIN journal_lines l ON l.journal_id=j.id JOIN accounts a ON a.id=l.account_id
-    WHERE d.status='posted' AND d.business_date BETWEEN ? AND ? AND l.debit_cents>0 GROUP BY d.id,a.id ORDER BY d.business_date,d.number,a.code`).all(from,to) as
+    WHERE d.status='posted' AND d.doc_type='ap.bill' AND COALESCE(a.role_key,'')<>'AP' AND d.business_date BETWEEN ? AND ? AND l.debit_cents>0 GROUP BY d.id,a.id ORDER BY d.business_date,d.number,a.code`).all(from,to) as
     {id:string;number:string;date:string;supplierId:string;category:string;amountCents:number}[];
 }
 

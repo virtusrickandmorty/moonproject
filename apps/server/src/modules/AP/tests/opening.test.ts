@@ -237,6 +237,7 @@ describe('refusals', () => {
     expect(bill.json()).toMatchObject({ code: 'VALIDATION', message: 'Invoice no. SI-2211 of this supplier is already on OBAP-000001.' });
     const b = await encoder.post('/api/docs/ap.bill/post', { input: { supplierId: equipment, supplierInvoiceNo: 'SI-2212', supplierInvoiceDate: '2026-09-27', lines: [{ purchase: 'freight_in', amountCents: 100 }] }, expectedTotalCents: 100 }, idem());
     expect(await errors(obap({ supplierInvoiceNo: 'SI-2212' }))).toEqual(['DUPLICATE_INVOICE']);
+    expect(await errors(obap({ supplierInvoiceNo: 'si 2212' }))).toEqual(['DUPLICATE_INVOICE']); // the same invoice, typed differently
     const other = await newSupplier({ name: 'Sample Thread Supply', tin: '555-666-777-000' });
     expect(await errors(obap({ supplierId: other }))).toEqual([]);
     await cancel(accountant, 'ap.bill', b.json().id);

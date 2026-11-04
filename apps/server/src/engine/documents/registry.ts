@@ -98,6 +98,8 @@ export interface DocContext {
   at: string;
   userId: string;
   can(permission: string): boolean;
+  /** Posted by the Checks screen (EngineEnv.checkFlow). */
+  checkFlow?: boolean;
   /** An edit (reissue): the document this one replaces, cancelled just before in the same transaction. */
   replacesId?: string;
 }
@@ -152,6 +154,8 @@ export interface DocTypeDef<Input = any, Doc extends { totalCents: number } = an
   externalNumber?(doc: Doc): string | null;
   /** Reads a posted document back from the module's tables. */
   load(db: Db, documentId: string): Doc;
+  /** What this viewer may see of a stored document, on its screen and printout. Default: all of it. */
+  forViewer?(db: Db, doc: Doc, can: (permission: string) => boolean): Doc;
   /** Turns a stored document back into form input (to prefill "Edit" = reissue). */
   toInput(doc: Doc): Input;
   /** Posted, not-cancelled documents that depend on this one (cancel is blocked while any exist). */

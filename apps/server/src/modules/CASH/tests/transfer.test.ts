@@ -50,7 +50,27 @@ describe('Fund Transfer golden (PLAN I2 G-17)', () => {
   });
 });
 
+describe('customer checks', () => {
+  it('moves them only through the Checks screen: a plain transfer would leave the check on the list', async () => {
+    const CHECKS = cashPlaceId(env.db, '1103');
+    for (const input of [{ fromCashPlaceId: CHECKS, toCashPlaceId: BDO }, { fromCashPlaceId: BDO, toCashPlaceId: CHECKS }]) {
+      const r = await post(encoder, { ...input, amountSentCents: 1_000, amountReceivedCents: 1_000 }, 1_000);
+      expect(r.statusCode).toBe(422);
+      expect(r.json().details.map((i: { code: string }) => i.code)).toContain('CHECKS_PLACE');
+    }
+  });
+});
+
 describe('cancel and edit (NR-4, PLAN G-12 pattern)', () => {
+  it('says which account to turn back on when a cancel meets an inactive one', async () => {
+    const id = (await post(encoder, { fromCashPlaceId: BDO, toCashPlaceId: CBC, amountSentCents: 1_000, amountReceivedCents: 1_000 }, 1_000)).json().id;
+    await post(encoder, { fromCashPlaceId: CBC, toCashPlaceId: BDO, amountSentCents: 1_000, amountReceivedCents: 1_000 }, 1_000); // emptied, so it may be turned off
+    env.db.prepare('UPDATE accounts SET is_active = 0 WHERE id = ?').run(CBC);
+    const r = await encoder.post(`/api/docs/cash.transfer/${id}/cancel`, { reason: 'Recorded by mistake' }, idem());
+    expect(r.statusCode).toBe(409);
+    expect(r.json()).toMatchObject({ code: 'ACCOUNT_INACTIVE', message: expect.stringContaining('is inactive. Turn it back on first') });
+  });
+
   it('cancel posts a mirror dated today and nets to zero', async () => {
     const { id } = (await post(encoder, { fromCashPlaceId: BDO, toCashPlaceId: CBC, amountSentCents: 1_000_000, amountReceivedCents: 997_500 }, 1_000_000)).json();
     env.clock.advance(24 * 3600_000);

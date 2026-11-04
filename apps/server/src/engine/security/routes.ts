@@ -156,6 +156,12 @@ export function securityRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   // ---------- Users and roles (owner) ----------
   const perm = { config: { permission: 'sec.users.manage' } };
+  /** In the change's transaction: one active user must still manage users, or nobody could ever reach these screens again. */
+  const keepUserManager = () => {
+    const left = db.prepare(`SELECT 1 FROM users u JOIN user_roles r ON r.user_id = u.id AND r.active = 1
+      JOIN role_permissions p ON p.role_key = r.role_key AND p.granted = 1 AND p.permission_key = 'sec.users.manage' WHERE u.is_active = 1 LIMIT 1`).get();
+    if (!left) throw new AppError('LAST_USER_MANAGER', 'This would leave nobody able to manage users. Give someone else that access first.', 409);
+  };
 
   app.get('/api/users', perm, async () =>
     (db.prepare(`SELECT u.id, u.username, u.display_name, u.is_active, u.must_change_password,
@@ -202,6 +208,7 @@ export function securityRoutes(app: FastifyInstance, deps: AppDeps): void {
     return tx(db, () => {
       if (!db.prepare('SELECT 1 FROM users WHERE id = ?').get(req.params.id)) throw notFound('The user');
       setRoles(req.params.id, b.roles, stamp(clock));
+      keepUserManager();
       audit(u.userId, 'user.roles', 'user', req.params.id, { roles: b.roles });
       return { ok: true };
     });
@@ -256,6 +263,7 @@ export function securityRoutes(app: FastifyInstance, deps: AppDeps): void {
         `INSERT INTO role_permissions (role_key, permission_key, granted, updated_at) VALUES (?, ?, ?, ?)
          ON CONFLICT (role_key, permission_key) DO UPDATE SET granted = excluded.granted, updated_at = excluded.updated_at`,
       ).run(role, b.permissionKey, b.granted ? 1 : 0, stamp(clock));
+      keepUserManager();
       audit(u.userId, 'role.permission', 'role', role, { permissionKey: b.permissionKey, granted: b.granted });
       return { ok: true };
     });

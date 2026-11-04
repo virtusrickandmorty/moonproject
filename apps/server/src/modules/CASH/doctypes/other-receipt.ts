@@ -50,7 +50,9 @@ export const otherReceiptDoc: DocTypeDef<OtherReceiptInput, OtherReceipt> = {
 
   validate(doc, ctx) {
     const issues: Issue[] = [];
-    if (!place(ctx.db, doc.cashPlaceId)?.isActive) issues.push({ field: 'cashPlaceId', code: 'CASH_PLACE', level: 'error', message: 'Pick where the money went.' });
+    const p = place(ctx.db, doc.cashPlaceId);
+    if (!p?.isActive) issues.push({ field: 'cashPlaceId', code: 'CASH_PLACE', level: 'error', message: 'Pick where the money went.' });
+    else if (p.kind === 'checks') issues.push({ field: 'cashPlaceId', code: 'CHECKS_PLACE', level: 'error', message: `${p.name} holds customer checks recorded on a collection. Pick another place.` });
     return issues;
   },
 
@@ -90,7 +92,7 @@ export const otherReceiptDoc: DocTypeDef<OtherReceiptInput, OtherReceipt> = {
   },
 
   arbitrary(db) {
-    const places = listPlaces(db, false).map((p) => p.id);
+    const places = listPlaces(db, false).filter((p) => p.kind !== 'checks').map((p) => p.id);
     return fc
       .record({
         cashPlaceId: fc.constantFrom(...places),

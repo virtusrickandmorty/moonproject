@@ -10,6 +10,7 @@ import { grantRole, balances, cashPlaceId, createTestEnv, idem, type Client, typ
 import { runInvariants } from '../../../engine/ledger/invariants.ts';
 import { cancelDocument, postDocument } from '../../../engine/documents/lifecycle.ts';
 import { advanceDoc, type AdvanceInput } from '../doctypes/advance.ts';
+import { purchasesForReport } from '../public.ts';
 import { advanceReturnDoc, type AdvanceReturnInput } from '../doctypes/advance-return.ts';
 import { billDoc, type BillInput } from '../doctypes/bill.ts';
 import { paymentDoc } from '../doctypes/payment.ts';
@@ -83,6 +84,8 @@ describe('goods advance with no EWT, applied to one bill (PLAN D5 SUP-ADV)', () 
 
     const ap = (await encoder.get(`/api/ap/suppliers/${fabric}`)).json();
     expect(ap).toMatchObject({ balanceCents: 620_000, advancesCents: 0 });
+    // The Purchases report shows what was bought: the advance applied to the bill is a payment, not a purchase.
+    expect(purchasesForReport(env.db, '2026-01-01', '2026-12-31').reduce((n, r) => n + r.amountCents, 0)).toBe(1_120_000);
     expect(ap.bills).toMatchObject([{ number: 'BILL-000001', payableCents: 1_120_000, advanceCents: 500_000, paidCents: 0, owedCents: 620_000, advances: [{ advanceNumber: 'SADV-000001', amountCents: 500_000 }] }]);
     expect(ap.advances).toMatchObject([{ number: 'SADV-000001', purchaseOrderNumber: 'PO-000001', amountCents: 500_000, appliedCents: 500_000, returnedCents: 0, openCents: 0, bills: [{ billNumber: 'BILL-000001', amountCents: 500_000 }] }]);
 

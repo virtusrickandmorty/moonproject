@@ -14,6 +14,7 @@ import { formatPeso, isBusinessDate, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { Db } from '../../../platform/db/driver.ts';
 import { assertOpeningOpen, OPENING_PERMISSIONS, openingIssues } from '../../ACC/public.ts';
+import { duplicateInvoiceIssues } from '../invoices.ts';
 import { activeSupplierIds, supplier } from '../../PUR/public.ts';
 import { paymentsOnBill } from '../ledger.ts';
 import { MAX_CENTS } from './bill.ts';
@@ -56,15 +57,12 @@ export const openingBillDoc: DocTypeDef<OpeningBillInput, OpeningBill> = {
     const issues: Issue[] = [];
     const err = (field: string, code: string, message: string) => issues.push({ field, code, level: 'error', message });
     issues.push(...openingIssues(ctx.db, ctx.businessDate));
-    if (!supplier(ctx.db, doc.supplierId)?.isActive) err('supplierId', 'SUPPLIER', 'Pick an active supplier.');
+    const sup = supplier(ctx.db, doc.supplierId);
+    if (!sup?.isActive) err('supplierId', 'SUPPLIER', 'Pick an active supplier.');
     if (doc.supplierInvoiceDate > ctx.businessDate) err('supplierInvoiceDate', 'INVOICE_DATE', `The invoice date cannot be after the cut-over date, ${ctx.businessDate}.`);
     if (doc.dueDate < doc.supplierInvoiceDate) err('dueDate', 'DUE_DATE', 'The due date cannot be before the invoice date.');
     // The same check as a bill's: one supplier invoice is on one recorded bill, opening or not.
-    const dup = ctx.db
-      .prepare(`SELECT d.number FROM ap_bills b JOIN documents d ON d.id = b.document_id WHERE b.supplier_id = ? AND b.supplier_invoice_no = ? AND d.status = 'posted'`)
-      .pluck()
-      .get(doc.supplierId, doc.supplierInvoiceNo) as string | undefined;
-    if (dup) err('supplierInvoiceNo', 'DUPLICATE_INVOICE', `Invoice no. ${doc.supplierInvoiceNo} of this supplier is already on ${dup}.`);
+    issues.push(...duplicateInvoiceIssues(ctx.db, () => false, { supplierId: doc.supplierId, tin: sup?.tin || null, payeeName: sup?.name ?? '' }, doc.supplierInvoiceNo, undefined));
     return issues;
   },
 

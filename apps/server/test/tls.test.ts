@@ -128,6 +128,12 @@ describe('the "Join this PC" page (plain HTTP)', () => {
   const start = () => listen(createHttp(joinHandler({ caPem: () => ca.certPem, httpsPort: 8443, fallbackHost: () => '192.168.1.20' })));
   const get = (port: number, path: string, init: RequestInit = {}) => fetch(`http://127.0.0.1:${port}${path}`, { redirect: 'manual', ...init });
 
+  it('answers a request that is no address at all, and keeps running', async () => {
+    const port = await start();
+    expect((await get(port, '//')).status).toBe(301);
+    expect((await get(port, '/')).status).toBe(200);
+  });
+
   it('shows the CA code and the steps, offers the CA download, and redirects everything else to HTTPS', async () => {
     const port = await start();
     const page = await get(port, '/');

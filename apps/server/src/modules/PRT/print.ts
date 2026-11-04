@@ -292,7 +292,7 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
   if (h.doc_type === 'cash.count') return { title: 'Cash Count', subtitle: 'Cash count sheet', legend: false, twoUp: false,
     party: { label: 'Cash account', name: doc.placeName },
     body: section('Count', lineTable(['Denomination', 'Quantity', 'Amount'], doc.lines.map((x: any) => [money(x.denominationCents), x.qty, money(x.amountCents)]))),
-    totals: [['Ledger', money(doc.ledgerCents)], ['Difference', money(doc.differenceCents)], ['Counted', money(doc.countedCents), true]],
+    totals: [...(doc.ledgerHidden ? [] : [['Ledger', money(doc.ledgerCents)], ['Difference', money(doc.differenceCents)]] as [string, string][]), ['Counted', money(doc.countedCents), true]],
     signatures: [['Counted by', prepared], ['Checked by']] };
   if (h.doc_type === 'acc.jv') return { title: 'Journal Voucher', subtitle: '', legend: false, twoUp: false,
     body: field('Memo', doc.memo) + section('Entries', lineTable(['Account', 'Party', 'Debit', 'Credit', 'Memo'], doc.lines.map((x: any) => [`${x.accountCode} ${x.accountName}`, x.party ? `${x.party.type}: ${x.party.id}` : '', x.debitCents ? money(x.debitCents) : '', x.creditCents ? money(x.creditCents) : '', x.memo]))),

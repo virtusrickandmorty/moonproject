@@ -128,6 +128,10 @@ export function reverseJournalOf(db: Db, sourceType: string, sourceId: string, c
     .prepare(`SELECT id, number FROM journals WHERE source_type = ? AND source_id = ? AND posting_kind = 'original'`)
     .get(sourceType, sourceId) as { id: string; number: string } | undefined;
   if (!j) return null;
+  const inactive = db
+    .prepare('SELECT code, name FROM accounts WHERE is_active = 0 AND id IN (SELECT account_id FROM journal_lines WHERE journal_id = ?)')
+    .get(j.id) as { code: string; name: string } | undefined;
+  if (inactive) throw new AppError('ACCOUNT_INACTIVE', `${inactive.code} ${inactive.name} is inactive. Turn it back on first, then try again.`, 409);
   const stored = db
     .prepare('SELECT account_id, party_type, party_id, ref_doc_id, debit_cents, credit_cents, memo FROM journal_lines WHERE journal_id = ? ORDER BY line_no')
     .all(j.id) as { account_id: number; party_type: string | null; party_id: string | null; ref_doc_id: string | null; debit_cents: number; credit_cents: number; memo: string | null }[];

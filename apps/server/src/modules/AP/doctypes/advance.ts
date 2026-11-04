@@ -18,6 +18,7 @@ import fc from 'fast-check';
 import { applyRate, formatPeso, vatFromGross, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { getCashPlace, listCashPlaces } from '../../../engine/ledger/accounts.ts';
+import { isChecksPlace } from '../../CASH/public.ts';
 import { EWT_CLASSES, settingAt, type EwtClass } from '../../../engine/settings.ts';
 import type { Db } from '../../../platform/db/driver.ts';
 import { TWA_ONLY, appliedEwtClass } from '../../EXP/public.ts';
@@ -114,7 +115,9 @@ export const advanceDoc: DocTypeDef<AdvanceInput, Advance> = {
       }
     }
     doc.tenders.forEach((t, i) => {
-      if (!getCashPlace(ctx.db, t.cashPlaceId)?.isActive) add('error', `tenders.${i}.cashPlaceId`, 'CASH_PLACE', 'Pick an active cash place the money came from.');
+      const p = getCashPlace(ctx.db, t.cashPlaceId);
+      if (!p?.isActive) add('error', `tenders.${i}.cashPlaceId`, 'CASH_PLACE', 'Pick an active cash place the money came from.');
+      else if (isChecksPlace(ctx.db, p.id)) add('error', `tenders.${i}.cashPlaceId`, 'CHECKS_PLACE', `Customer checks are not paid out from ${p.name}: deposit them from the Checks screen first.`);
     });
     const paid = sum(doc.tenders);
     if (paid !== doc.cashCents) {
@@ -201,7 +204,7 @@ export const advanceDoc: DocTypeDef<AdvanceInput, Advance> = {
    * places. The EWT is worked out at the newest rates on file (the tests have no rate dated after today).
    */
   arbitrary(db) {
-    const places = listCashPlaces(db).map((c) => c.id);
+    const places = listCashPlaces(db).map((c) => c.id).filter((id) => !isChecksPlace(db, id));
     return fc
       .record({
         supplierId: fc.constantFrom(...activeSupplierIds(db)),

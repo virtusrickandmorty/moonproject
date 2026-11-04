@@ -248,7 +248,8 @@ export function reconReport(db: Db, id: string) {
   });
   const outstanding = bookLines.filter((l) => l.state === 'outstanding');
   const bookBalanceCents = accountBalance(db, r.accountId, { asOf: end });
-  const recordedAfterMonthCents = sum(bookLines.filter((l) => l.state === 'cleared' && l.date > end));
+  // Dated after M yet cleared up to M, by this statement or an earlier one: in the bank's balance, not yet in the book's.
+  const recordedAfterMonthCents = sum(rows.filter((l) => l.date > end && l.clearedMonth !== null && l.clearedMonth <= r.month));
   const adjustedBookCents = bookBalanceCents - sum(outstanding) + recordedAfterMonthCents;
   const unmatched = statementLines.filter((l) => !l.voided && l.matchNo === null);
   return {
