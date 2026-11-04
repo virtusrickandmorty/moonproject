@@ -1,11 +1,11 @@
 /**
  * The job order, release slip and invoice record forms (PLAN E4, D3): their form rules, the job order view's buttons, and
-import { manilaDate } from '@moonproject/shared';
  * each form's web client calls against the real server (in memory): the input each sends fills from the server's
  * preview, the body is what the server takes, and the server's refusals reach staff in plain words.
  */
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { manilaDate } from '@moonproject/shared';
 import { PASSWORD, cashPlaceId, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { seedCustomers } from '../../../../server/src/modules/JO/tests/cus-fixture.ts';
