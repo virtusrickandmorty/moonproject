@@ -82,7 +82,7 @@ export const SHOP_CONTACT = {
 /** A ready-stock item with no piece left in any size or colour. */
 export const isSoldOut = (p: Product) => !!p.stock && p.stock.every((s) => s.available === 0);
 export const percentOff = (p: Pick<Product, 'priceCents' | 'regularPriceCents'>) =>
-  p.regularPriceCents && p.regularPriceCents > p.priceCents ? Math.floor((1 - p.priceCents / p.regularPriceCents) * 100) : 0;
+  p.regularPriceCents && p.regularPriceCents > p.priceCents ? Math.floor(((p.regularPriceCents - p.priceCents) * 100) / p.regularPriceCents) : 0;
 
 /**
  * What the shop says about delivering, from its delivery areas: the free ones by name ("Free delivery within Metro

@@ -44,7 +44,7 @@ const orderInput = z.object({
   note: z.string().trim().max(500).optional(),
   consent: z.literal(true),
   website: z.string().max(0).optional(), // left empty by people; a robot filling every field gives itself away
-  lines: z.array(z.object({ productId: z.string().min(1).max(64), size: z.string().min(1).max(4), colour: z.string().trim().min(1).max(30), qty: z.number().int().min(1).max(100) }).strict()).min(1).max(20),
+  lines: z.array(z.object({ productId: z.string().min(1).max(64), size: z.string().min(1).max(20), colour: z.string().trim().min(1).max(30), qty: z.number().int().min(1).max(100) }).strict()).min(1).max(20),
 }).strict();
 const paymentInput = z.object({
   token: z.string().min(10).max(100),
@@ -117,15 +117,18 @@ function paymentSettings(db: Db, version?: number) {
 }
 
 /** A place name as typed or listed, for comparing: lower case, no accents ("Parañaque" = "paranaque"), single spaces. */
-const placeKey = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\b(city of|city)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+const plainPlace = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const placeKey = (s: string) => plainPlace(s).replace(/\b(city of|city)\b/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim();
+/** A province keeps the word "city" in what it is compared with, so Quezon province is not the listed Quezon City. */
+const provinceKey = (s: string) => plainPlace(s).replace(/[^a-z0-9]+/g, ' ').trim();
 /**
  * The delivery area for an address: the first area listing its city or municipality, else its province, else the area that
  * takes every other address. Null: the shop does not deliver there.
  */
 export function areaFor(options: { name: string; feeCents: number; places: string[]; otherwise: boolean }[], city: string, province: string) {
-  const c = placeKey(city), p = placeKey(province);
-  const lists = (o: { places: string[] }, key: string) => key !== '' && o.places.some((x) => placeKey(x) === key);
-  return options.find((o) => lists(o, c)) ?? options.find((o) => lists(o, p)) ?? options.find((o) => o.otherwise) ?? null;
+  const c = placeKey(city), p = provinceKey(province);
+  const lists = (o: { places: string[] }, key: string, keyOf: (s: string) => string) => key !== '' && o.places.some((x) => keyOf(x) === key);
+  return options.find((o) => lists(o, c, placeKey)) ?? options.find((o) => lists(o, p, provinceKey)) ?? options.find((o) => o.otherwise) ?? null;
 }
 /** What the website shows about paying (and delivering), never the cash account. */
 const publicPayment = (p: NonNullable<ReturnType<typeof paymentSettings>>) => ({
@@ -342,7 +345,7 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get<{ Querystring: { status?: string } }>('/api/shp/admin/orders', { config: { permission: 'shp.orders.view' } }, async (req) => {
     const now = nowMs();
-    const rows = (db.prepare(`${ORDER} ORDER BY o.created_ms DESC LIMIT 300`).all() as OrderRow[]).map((o) => ({
+    const rows = (db.prepare(`${ORDER} ORDER BY o.created_ms DESC`).all() as OrderRow[]).map((o) => ({
       id: o.id, number: o.number, status: statusOf(o, now), name: o.name, phone: o.phone, fulfilment: o.fulfilment, totalCents: o.total_cents,
       createdAt: o.created_at, paymentReference: o.payment_reference, saleNumber: o.sale_number ?? null,
       // A payment sent and not decided for 72 hours: still held and still waiting for staff, shown so it is not forgotten.
@@ -351,7 +354,8 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
     const counts: Record<string, number> = {};
     for (const r of rows) counts[r.status] = (counts[r.status] ?? 0) + 1;
     const wanted = req.query.status && req.query.status !== 'all' ? req.query.status : null;
-    return { rows: wanted ? rows.filter((r) => r.status === wanted) : rows, counts };
+    // The newest 300 shown, picked after the status filter, so an old order still waiting is not lost among newer ones.
+    return { rows: (wanted ? rows.filter((r) => r.status === wanted) : rows).slice(0, 300), counts };
   });
 
   app.get('/api/shp/admin/orders/:id', { config: { permission: 'shp.orders.view' } }, async (req) => {

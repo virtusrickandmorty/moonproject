@@ -30,7 +30,7 @@ const lineInput = z
     unitPriceCents: z.number().int().min(0).max(MAX_CENTS), // VAT-inclusive
     discountCents: z.number().int().min(0).max(MAX_CENTS), // shown on the invoice
     // The website shop product, size and colour a ready-made line sold (the POS, online orders): its pieces come off the shop's stock.
-    item: z.object({ productId: z.uuid(), size: z.string().trim().min(1).max(4), colour: z.string().trim().min(1).max(30) }).strict().optional(),
+    item: z.object({ productId: z.uuid(), size: z.string().trim().min(1).max(20), colour: z.string().trim().min(1).max(30) }).strict().optional(),
     // A service line that is the delivery fee (an online order's, a delivery's): delivery income, 4104.
     deliveryFee: z.literal(true).optional(),
   })

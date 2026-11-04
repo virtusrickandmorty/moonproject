@@ -18,12 +18,18 @@ function isPublicShopRequest(req: FastifyRequest): boolean {
   return SHOP_PAGES.has(path) || /^\/order\/([A-Z]+-\d{1,9})$/.test(path);
 }
 
+const isLinkRequest = (req: FastifyRequest) => req.routeOptions.config.permission === 'public' && (req.routeOptions.url ?? '').startsWith('/api/olk/');
+
 export function publicRequestLimits(app: FastifyInstance, clock: Clock): void {
   const all = requestRateLimiter(clock, 120, 5 * 60_000);
   const forms = requestRateLimiter(clock, 30, 5 * 60_000);
   const tracking = requestRateLimiter(clock, PUBLIC_TRACK_REQUESTS, 10 * 60_000);
   // The website's visitor counting (SHP insights) has its own allowance, so it never uses up a shopper's.
   const counting = requestRateLimiter(clock, PUBLIC_EVENT_REQUESTS, 5 * 60_000);
+
+  // Order links: a whole team may answer from one school or office network, so more room than a shopper has.
+  const links = requestRateLimiter(clock, 600, 5 * 60_000);
+  const linkForms = requestRateLimiter(clock, 120, 5 * 60_000);
 
   app.addHook('onRoute', (route) => {
     if (route.config?.permission !== 'public' || !isShopRoute(route.url)) return;
@@ -33,6 +39,11 @@ export function publicRequestLimits(app: FastifyInstance, clock: Clock): void {
   });
 
   app.addHook('onRequest', async (req) => {
+    if (isLinkRequest(req)) {
+      links(req.ip);
+      if (req.method !== 'GET' && req.method !== 'HEAD') linkForms(req.ip);
+      return;
+    }
     if (!isPublicShopRequest(req)) return;
     // The visitor's address: forwarded by the shop PC's own Cloudflare connector, else the socket's (app.ts trustProxy).
     if (req.routeOptions.url === '/api/shp/events') return counting(req.ip);

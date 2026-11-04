@@ -16,12 +16,13 @@ import { appendAudit } from '../../engine/audit.ts';
 import { postDocument, type Actor, type EngineEnv } from '../../engine/documents/lifecycle.ts';
 import { createCustomer } from '../CUS/public.ts';
 import { currentStage, isAbandoned, jobOrderDoc, jobOrderRef, lineState, moveTo, releasableQty } from '../JO/public.ts';
+import { pairedLines } from '../PRD/public.ts';
 import { stockOf } from './public.ts';
 
 export interface Who { userId: string; at: string; today: string }
 const text = (max: number) => z.string().trim().min(1).max(max);
 const pieces = (n: number) => `${n} ${n === 1 ? 'piece' : 'pieces'}`;
-const item = z.object({ productId: z.uuid(), size: z.string().min(1).max(4), colour: z.string().trim().min(1).max(30) }).strict();
+const item = z.object({ productId: z.uuid(), size: z.string().min(1).max(20), colour: z.string().trim().min(1).max(30) }).strict();
 
 export const workInput = z.object({
   kind: z.enum(['make', 'rework', 'change']),
@@ -172,6 +173,7 @@ export function workState(db: Db, jobOrderId: string) {
         from: mk?.fromProductId ? { productId: mk.fromProductId, name: names.get(mk.fromProductId) ?? '', size: mk.fromSize!, colour: mk.fromColour! } : null,
         ready: mk ? Math.max(0, Math.min(finished.get(l.lineNo) ?? 0, l.qty - mv.putIn, mk.fromProductId ? outOfSale - mv.putIn : Infinity)) : 0,
         canGiveBack: Math.max(0, outOfSale - mv.putIn),
+        givenBack: mv.givenBack,
       };
     }),
   };
@@ -205,11 +207,14 @@ export function putIntoShopStock(db: Db, jobOrderId: string, raw: unknown, who: 
     add.run(newId(), jo.id, l.lineNo, s.item.productId, s.item.size, s.item.colour, l.qty, who.at, who.userId);
   }
   const after = workState(db, jo.id)!;
-  const complete = after.lines.every((l) => !l.item || l.putIn >= l.qty);
+  const complete = workDone(after);
   if (complete && currentStage(db, jo.id) !== 'released') moveTo(db, jo.id, 'released', "All pieces put into the website shop's stock", who);
   appendAudit(db, { at: who.at, userId: who.userId, action: 'shp.work.put_in', entityType: 'jo.job_order', entityId: jo.id, data: { number: jo.number, lines: v.lines, complete } });
   return { ...after, complete };
 }
+
+/** Every piece is in stock or back on sale. */
+const workDone = (state: NonNullable<ReturnType<typeof workState>>) => state.lines.every((l) => !l.item || l.putIn + l.givenBack >= l.qty);
 
 /** Pieces taken off sale that will not be worked on after all go back on sale (as they were). Call inside a transaction. */
 export function giveBack(db: Db, jobOrderId: string, raw: unknown, who: Who) {
@@ -220,6 +225,7 @@ export function giveBack(db: Db, jobOrderId: string, raw: unknown, who: Who) {
   if (!state) throw conflict('NOT_SHOP_WORK', `${jo.number} was not made for the website shop's stock.`);
   const byLine = new Map(state.lines.map((l) => [l.lineNo, l]));
   const add = db.prepare(`INSERT INTO shp_work_moves (id, job_order_id, line_no, product_id, size, colour, kind, qty, at, user_id) VALUES (?, ?, ?, ?, ?, ?, 'given_back', ?, ?, ?)`);
+  if (new Set(v.lines.map((l) => l.lineNo)).size !== v.lines.length) throw new AppError('LINE_TWICE', 'A line is listed twice. Put all its pieces on one row.', 400);
   for (const l of v.lines) {
     const s = byLine.get(l.lineNo);
     if (!s?.from) throw new AppError('VALIDATION', `Line ${l.lineNo} of ${jo.number} took no pieces off sale.`, 422);
@@ -227,7 +233,11 @@ export function giveBack(db: Db, jobOrderId: string, raw: unknown, who: Who) {
     add.run(newId(), jo.id, l.lineNo, s.from.productId, s.from.size, s.from.colour, l.qty, who.at, who.userId);
   }
   appendAudit(db, { at: who.at, userId: who.userId, action: 'shp.work.give_back', entityType: 'jo.job_order', entityId: jo.id, data: { number: jo.number, lines: v.lines } });
-  return workState(db, jo.id)!;
+  // The rest went back on sale after the others were put in: nothing is left to do on the board.
+  const after = workState(db, jo.id)!;
+  const stage = currentStage(db, jo.id);
+  if (workDone(after) && after.lines.some((l) => l.putIn > 0) && stage !== 'released' && stage !== 'cancelled') moveTo(db, jo.id, 'released', 'The last pieces went back on sale', who);
+  return after;
 }
 
 /**
@@ -240,25 +250,30 @@ export function carryWorkOver(db: Db, oldId: string, newJoId: string): void {
   const state = workState(db, oldId)!;
   if (state.lines.some((l) => l.putIn > 0)) throw conflict('IN_STOCK', "Some of its pieces are already in the website shop's stock, so it cannot be edited. Make a new work order for more pieces.");
   db.prepare('INSERT INTO shp_work (job_order_id, kind, at, user_id) VALUES (?, ?, ?, ?)').run(newJoId, w.kind, w.at, w.userId);
-  const kept = new Set(lineState(db, newJoId).map((l) => l.lineNo));
+  const newOf = new Map([...pairedLines(db, oldId, newJoId)].map(([next, was]) => [was, next])); // each mark stays with its own item
   const mark = db.prepare(`INSERT INTO shp_work_lines (job_order_id, line_no, product_id, size, colour, source, from_product_id, from_size, from_colour, source_note)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   const move = db.prepare(`INSERT INTO shp_work_moves (id, job_order_id, line_no, product_id, size, colour, kind, qty, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   for (const l of workLines(db, oldId)) {
     const s = state.lines.find((x) => x.lineNo === l.lineNo)!;
     if (s.canGiveBack > 0) move.run(newId(), oldId, l.lineNo, l.fromProductId, l.fromSize, l.fromColour, 'given_back', s.canGiveBack, w.at, w.userId);
-    if (!kept.has(l.lineNo)) continue;
-    mark.run(newJoId, l.lineNo, l.productId, l.size, l.colour, l.source, l.fromProductId, l.fromSize, l.fromColour, l.sourceNote);
-    if (s.canGiveBack > 0) move.run(newId(), newJoId, l.lineNo, l.fromProductId, l.fromSize, l.fromColour, 'taken_off', -s.canGiveBack, w.at, w.userId);
+    const line = newOf.get(l.lineNo);
+    if (line === undefined) continue;
+    mark.run(newJoId, line, l.productId, l.size, l.colour, l.source, l.fromProductId, l.fromSize, l.fromColour, l.sourceNote);
+    if (s.canGiveBack > 0) move.run(newId(), newJoId, line, l.fromProductId, l.fromSize, l.fromColour, 'taken_off', -s.canGiveBack, w.at, w.userId);
   }
 }
 
-/** Shop work orders still open (not every piece in stock, not cancelled or abandoned), newest first, with their state. */
+/** Shop work orders still open (not every piece in stock, not abandoned), newest first, with their state; a cancelled one while pieces wait to go back on sale. */
 export function openWork(db: Db) {
   const ids = db.prepare(`SELECT w.job_order_id FROM shp_work w JOIN documents d ON d.id = w.job_order_id
-    WHERE d.status = 'posted' ORDER BY d.posted_at DESC LIMIT 200`).pluck().all() as string[];
+    ORDER BY d.posted_at DESC`).pluck().all() as string[];
   return ids
-    .filter((id) => currentStage(db, id) !== 'released' && !isAbandoned(db, id))
+    .filter((id) => {
+      const stage = currentStage(db, id);
+      return stage === 'cancelled' ? workState(db, id)!.lines.some((l) => l.canGiveBack > 0) : stage !== 'released' && !isAbandoned(db, id);
+    })
+    .slice(0, 200)
     .map((id) => {
       const jo = jobOrderRef(db, id)!;
       return { id, number: jo.number, dueDate: jo.dueDate, priority: jo.priority, stage: currentStage(db, id), ...workState(db, id)! };

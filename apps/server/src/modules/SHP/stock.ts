@@ -18,7 +18,7 @@ const categoryInput = z.object({ name: z.string().trim().min(1).max(40), sortOrd
 const stockInput = z.object({
   mode: z.enum(['in', 'count']),
   note: z.string().trim().max(300).optional(),
-  lines: z.array(z.object({ size: z.string().min(1).max(4), colour: z.string().trim().min(1).max(30), qty: z.number().int().min(0).max(100_000) }).strict()).min(1).max(200),
+  lines: z.array(z.object({ size: z.string().min(1).max(20), colour: z.string().trim().min(1).max(30), qty: z.number().int().min(0).max(100_000) }).strict()).min(1).max(200),
 }).strict();
 
 interface CategoryRow { id: string; name: string; sort_order: number; is_active: number; version: number; products: number }
@@ -116,6 +116,7 @@ export function shpStockRoutes(app: FastifyInstance, deps: AppDeps): void {
       const now = stockOf(db, [p.id], clock.now().getTime()).get(p.id) ?? [];
       const insert = db.prepare('INSERT INTO shp_stock_moves (id, product_id, size, colour, qty, reason, note, user_id, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
       const moved: { size: string; colour: string; qty: number }[] = [];
+      if (new Set(b.lines.map((l) => `${l.size}|${l.colour}`)).size !== b.lines.length) throw new AppError('ITEM_TWICE', 'A size and colour is listed twice. Put them on one row.', 400);
       for (const l of b.lines) {
         const line = now.find((s) => s.size === l.size && s.colour === l.colour);
         if (!line) throw new AppError('ITEM', `${p.name} does not come in ${l.colour}, size ${l.size}.`, 400);
