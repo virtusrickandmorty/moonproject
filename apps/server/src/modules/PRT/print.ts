@@ -404,14 +404,12 @@ export const printLineTable = lineTable;
 export const printMoney = money;
 
 /**
+ * `practice`: printed in the practice shop (PLAN C8), so every copy says it is not a real document.
  * Two copies share an A4 sheet only when a copy fits its half (the owner's request, Nov 2026: a release slip with many
- * wearers lost its bottom). Run as the printout opens, before it prints: if any copy is taller than its half, the
- * sheet becomes one copy per page in the same small print, so nothing is cut off. Measured at the print half's height, 136mm.
+ * wearers lost its bottom). A copy is at least half a sheet tall and never cut off: when it is taller, the second copy
+ * no longer fits under it and `break-inside:avoid` starts it on a page of its own, in the same small print. The
+ * stylesheet does this alone, so it also holds where no script runs (the emailed payslip, the printer test pack).
  */
-export const FIT_TWO_UP = `<script>(function(){var s=document.querySelector('.sheet.two-up');if(!s)return;var half=136*96/25.4;
-  if([].some.call(s.querySelectorAll('.copy'),function(c){return c.scrollHeight>half+1})){s.classList.add('each-page')}})()</script>`;
-
-/** `practice`: printed in the practice shop (PLAN C8), so every copy says it is not a real document. */
 export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profile, kind: PrintKind,
   printedBy: string, printedAt: string, copyNumber: number, practice = false, testPrint = false, joinBase?: string): string {
   const p = content(db, h, doc, kind, joinBase);
@@ -438,8 +436,8 @@ export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profi
   const thermal = kind === 'thermal';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${escape(title)} ${escape(h.number)}</title><style>
     @page{size:${thermal ? '80mm auto' : 'A4'};margin:${thermal ? '4mm' : '12mm'}}${BASE_CSS}body{font-size:${thermal ? '9pt' : '10.5pt'}}.sheet{min-height:${thermal ? 'auto' : '273mm'}}
-    .sheet.two-up{display:grid;grid-template-rows:1fr 1fr;gap:0}.copy{position:relative;padding:3mm 1mm;display:flex;flex-direction:column;break-inside:avoid}
-    .two-up .copy{height:136mm;overflow:hidden;font-size:9pt}.two-up .copy:first-child{border-bottom:1px dashed #777}
+    .copy{position:relative;padding:3mm 1mm;display:flex;flex-direction:column;break-inside:avoid}
+    .two-up .copy{min-height:136mm;font-size:9pt}.two-up .copy:first-child{border-bottom:1px dashed #777}
     .two-up .top{padding-bottom:1.5mm;border-bottom-width:.8mm;gap:4mm}.two-up .logo{height:11mm}.two-up .company{font-size:7.5pt;line-height:1.3}.two-up .company .trade{font-size:12pt;margin:0}
     .two-up h1{font-size:15pt;margin:0 0 1mm}.two-up .docmeta{font-size:8pt;padding:1mm 2mm;gap:.3mm 4mm}.two-up .docmeta b.no{font-size:9.5pt}.two-up .subtitle{margin:0 0 1mm;font-size:8pt}
     .two-up .legend{font-size:7.5pt;margin-top:1mm}.two-up .details{margin:2mm 0;padding:1.8mm 3mm;font-size:8.5pt}.two-up .details .name{font-size:10.5pt}.two-up .details .label,.two-up .party .label{font-size:7pt;margin-bottom:.6mm}
@@ -447,11 +445,10 @@ export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profi
     .two-up h2.section{font-size:9pt;margin:1.5mm 0 .8mm;padding-bottom:.5mm}.two-up table{font-size:8pt;margin:1mm 0}.two-up th,.two-up td{padding:.8mm 1.5mm}.two-up th{font-size:7pt}
     .two-up .totals{width:55%;margin-top:1.5mm}.two-up .tot{padding:.6mm 2mm;font-size:8.5pt}.two-up .tot.grand{font-size:10pt;margin-top:1mm;padding:0 3mm 0 0}.two-up .tot.grand b{padding:1.2mm 3mm}
     .two-up .signatures{margin-top:4mm;gap:8mm}.two-up .sign .name{min-height:4mm;font-size:9pt}.two-up .sign .caption{font-size:7pt;margin-top:.6mm}.two-up footer{margin-top:2mm;padding-top:1mm;font-size:6.5pt}.two-up main p{margin:1mm 0}
-    .two-up .payslip{display:grid;grid-template-columns:1fr 1fr;column-gap:5mm;align-items:start}.two-up .payslip .party{grid-column:1/-1;margin:1mm 0}.two-up .payslip .totals{width:100%;margin-top:1mm}.two-up .payslip .signatures{grid-column:1/-1;margin-top:3mm}
-    .two-up.each-page{display:block}.two-up.each-page .copy{height:auto;overflow:visible}.two-up.each-page .copy:first-child{border-bottom:0}.each-page .copy+.copy{break-before:page;page-break-before:always}
+    .two-up .payslip{display:grid;grid-template-columns:1fr 1fr;column-gap:5mm;align-items:start;break-inside:avoid}.two-up .payslip .party{grid-column:1/-1;margin:1mm 0}.two-up .payslip .totals{width:100%;margin-top:1mm}.two-up .payslip .signatures{grid-column:1/-1;margin-top:3mm}
     ${thermal ? `.top{flex-direction:column;align-items:center;text-align:center}.brand{flex-direction:column}.logo{height:14mm}.company .trade{font-size:12pt}.titlebox{text-align:center;min-width:0}h1{font-size:14pt}.docmeta{font-size:8pt}
     .details{flex-direction:column;padding:2mm;gap:2mm}.details .status{text-align:left}.totals{width:100%}.tot.grand{font-size:10.5pt}.signatures{justify-content:center}footer{flex-direction:column;gap:.5mm}.sign{width:100%}table{font-size:8pt}` : ''}
-    @media screen{body{background:#ddd;padding:12mm}.sheet{background:white;width:${thermal ? '80mm' : '210mm'};margin:auto;padding:${thermal ? '4mm' : '12mm'};box-shadow:0 2px 12px #777}.two-up .copy{height:125mm}}
+    @media screen{body{background:#ddd;padding:12mm}.sheet{background:white;width:${thermal ? '80mm' : '210mm'};margin:auto;padding:${thermal ? '4mm' : '12mm'};box-shadow:0 2px 12px #777}.two-up .copy{min-height:125mm}}
     @media print{.sheet{page-break-after:always}}
     .picture-page{break-before:page;page-break-before:always;display:flex;flex-direction:column;gap:3mm;height:270mm}
     .picture-page .pic-head{display:flex;gap:6mm;align-items:baseline;margin:0;padding-bottom:1.5mm;border-bottom:.6mm solid #1e3a8a;font-size:10pt}
@@ -459,8 +456,8 @@ export function renderPrint(db: Db, h: PrintHeader, doc: unknown, profile: Profi
     .picture-page img{flex:1;min-height:0;width:100%;object-fit:contain}
     .measure p{margin:0 0 1.5mm;font-size:9.5pt;line-height:1.45}.measure .unit{color:#475569}
     .pic-note{margin:0 0 2mm;padding:1.5mm 2.5mm;border:1px solid #c7d2fe;border-radius:1.5mm;background:#eef2ff;font-size:9pt}
-    @media screen{.picture-page{margin-top:14mm;padding-top:8mm;border-top:2px dashed #94a3b8;height:250mm}.each-page .copy+.copy{margin-top:14mm;padding-top:8mm;border-top:2px dashed #94a3b8}}
-  </style></head><body><div class="sheet${p.twoUp ? ' two-up' : ''}">${p.twoUp ? one + one : one}</div>${p.twoUp ? FIT_TWO_UP : ''}</body></html>`;
+    @media screen{.picture-page{margin-top:14mm;padding-top:8mm;border-top:2px dashed #94a3b8;height:250mm}}
+  </style></head><body><div class="sheet${p.twoUp ? ' two-up' : ''}">${p.twoUp ? one + one : one}</div></body></html>`;
 }
 
 /** One BIR Form 2307-style A4 page per supplier; figures are passed straight from TAX's 2307-to-issue report. */

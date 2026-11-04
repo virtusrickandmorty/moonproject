@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { formatPeso } from '@moonproject/shared';
 import jsQR from 'jsqr';
 import { cashPlaceId, createTestEnv, idem, PASSWORD, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
-import { FIT_TWO_UP, renderPrint, renderReportPrint, printLineTable, printMoney, type PrintHeader, type Profile } from '../print.ts';
+import { renderPrint, renderReportPrint, printLineTable, printMoney, type PrintHeader, type Profile } from '../print.ts';
 
 let env: TestEnv;
 let owner: Client;
@@ -297,8 +297,11 @@ describe('print base', () => {
       expect(html).not.toContain('<Owner>');
       expect(html).toContain('REPRINT no. 1');
       expect(html.includes('sheet two-up')).toBe(twoUp);
-      // Two copies to a sheet check, as the printout opens, that each fits its half (one copy per page when not).
-      expect(html.includes(FIT_TWO_UP)).toBe(twoUp);
+      // A copy is never cut off: one too tall for its half moves to a page of its own by the stylesheet alone.
+      expect(html.match(/\.two-up \.copy\{[^}]*\}/g)).toEqual(['.two-up .copy{min-height:136mm;font-size:9pt}', '.two-up .copy{min-height:125mm}']);
+      expect(html).not.toContain('<script');
+      // The printer test pack's "Print all A4" lifts each sheet out by this ending (combineA4).
+      expect(html.endsWith('</div></body></html>')).toBe(true);
     }
   });
 

@@ -56,6 +56,13 @@ export interface FiledRegisterRow extends Omit<FiledReturnInput, 'note'> {
   id: number; recordedAt: string; recordedBy: string; voidedAt: string | null; voidedBy: string | null; voidReason: string | null;
 }
 export interface FiledRegister { rows: FiledRegisterRow[]; forms: string[]; today: string }
+/**
+ * Prints a window just filled with document.write, once its pictures are in. Not by `onload`: document.open() erases a
+ * handler set before it, and a short page has finished loading before close() returns, so the handler would never run.
+ */
+export function printWhenReady(page: Pick<Window, 'document' | 'print'>): void {
+  void Promise.all(Array.from(page.document.images, (img) => img.decode().catch(() => undefined))).then(() => page.print());
+}
 export async function openServerPrint(me: Me, path: string, body: unknown): Promise<void> {
   const preview = window.open('', '_blank');
   const response = await fetch(path, { method: 'POST', credentials: 'same-origin',
@@ -85,7 +92,7 @@ export async function openBookPrint(me: Me, book: string, from: string, to: stri
   if (!response.ok || !data?.html) { preview?.close(); throw new Error(data?.message ?? 'Could not prepare this printout.'); }
   if (!preview) throw new Error('Allow pop-ups for this site, then try Print loose-leaf again. The pages were numbered.');
   preview.document.open(); preview.document.write(data.html); preview.document.close();
-  preview.onload = () => preview.print();
+  printWhenReady(preview);
   return data;
 }
 export interface AuditLogRow { seq: number; at: string; userId: string | null; userName: string | null; action: string; entityType: string; entityId: string | null; data: Record<string, unknown> }

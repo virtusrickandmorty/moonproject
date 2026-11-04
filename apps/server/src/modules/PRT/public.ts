@@ -1,6 +1,6 @@
 /** Read-only PRT contract for other modules. */
 import type { Db } from '../../platform/db/driver.ts';
-import { FIT_TWO_UP, renderPrint, type PrintHeader, type Profile } from './print.ts';
+import { renderPrint, type PrintHeader, type Profile } from './print.ts';
 export { renderReportPrint, printField, printLineTable, printMoney, type Profile } from './print.ts';
 
 /** The company print profile (registered name, TIN, address), or undefined until an owner has filled it in. */
@@ -23,6 +23,5 @@ export function renderEmployeePayslip(db: Db, run: { id: string; doc: { employee
   const h = db.prepare(`SELECT id, number, business_date, doc_type, status FROM documents WHERE id = ? AND doc_type = 'pay.run'`).get(run.id) as PrintHeader | undefined;
   const employees = run.doc.employees.filter((e) => e.employeeId === employeeId);
   if (!profile || !h || employees.length === 0) return undefined;
-  // An emailed file carries no script (mail filters distrust one), so it keeps the two copies on one sheet.
-  return renderPrint(db, h, { ...run.doc, employees }, profile, 'document', madeBy, madeAt, 1).replace(FIT_TWO_UP, '');
+  return renderPrint(db, h, { ...run.doc, employees }, profile, 'document', madeBy, madeAt, 1);
 }

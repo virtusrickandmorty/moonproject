@@ -183,8 +183,7 @@ describe('queued when a payroll release is recorded', () => {
     expect(html).toContain('PAYSLIP');
     expect(html).toContain('Ana Tahi');
     expect(html).not.toContain('Ben Uy');
-    // The printed one fits itself to the sheet as it opens; the emailed file carries no script.
-    expect(printed).toContain('<script>');
+    // Mail filters distrust a script in an attachment; the stylesheet alone keeps a long payslip whole.
     expect(html).not.toContain('<script');
     // The figures are here, and only here.
     const net = runDoc.load(w.db, run.id).employees.find((e) => e.employeeId === ana)!.netCents;
