@@ -13,7 +13,9 @@ export function assertCents(v: unknown, what = 'amount'): asserts v is Cents {
 
 /** Parses "1,234.56", "₱1,234.5" or "-20" into centavos. Rejects more than 2 decimals. */
 export function parsePesos(text: string): Cents {
-  const s = text.replace(/[₱,\s]/g, '');
+  const typed = text.replace(/[₱\s]/g, '');
+  if (typed.includes(',') && !/^-?\d{1,3}(,\d{3})+(\.\d*)?$/.test(typed)) throw new Error(`"${text}" is not a peso amount`); // 1500,50 is a slip for 1500.50
+  const s = typed.replace(/,/g, '');
   const m = /^(-)?(\d+)(?:\.(\d{1,2}))?$/.exec(s);
   if (!m) throw new Error(`"${text}" is not a peso amount`);
   const cents = Number(m[2]) * 100 + Number((m[3] ?? '').padEnd(2, '0'));

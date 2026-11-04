@@ -77,7 +77,7 @@ export function SearchSelect({ value, onChange, choices, placeholder = 'Pick…'
               return [
                 head && <li key={`g-${head}`} role="presentation" className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{head}</li>,
                 <li key={`${c.value}-${i}`} role="option" aria-selected={c.value === value} aria-disabled={c.disabled || undefined} data-index={i} data-value={c.value}
-                  onMouseEnter={() => setActive(i)} onPointerDown={(e) => { e.preventDefault(); choose(c); }}
+                  onMouseEnter={() => setActive(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(c)}
                   className={`cursor-pointer rounded px-2 py-1.5 text-sm ${c.disabled ? 'cursor-not-allowed text-slate-400' : i === active ? 'bg-indigo-50 text-indigo-900' : c.value === value ? 'font-medium' : ''}`}>
                   {c.label}
                 </li>,

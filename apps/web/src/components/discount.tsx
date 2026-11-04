@@ -13,6 +13,7 @@ export type DiscountMode = 'each' | 'percent';
  * item's amount, rounded to the centavo. 0 when nothing is typed; undefined when the text is not a discount.
  */
 export function discountCentsOf(mode: DiscountMode, text: string, qty: number, unitPriceCents: number): number | undefined {
+  if (mode === 'each' && text.trim().endsWith('%')) return undefined; // 10% typed with ₱ each on: never ₱10.00
   const t = text.trim().replace(/%$/, '').trim();
   if (!t) return 0;
   if (mode === 'percent') {
@@ -21,7 +22,7 @@ export function discountCentsOf(mode: DiscountMode, text: string, qty: number, u
   }
   let each: number;
   try { each = parsePesos(t); } catch { return undefined; }
-  return each < 0 ? undefined : each * qty;
+  return each < 0 ? undefined : Math.round(each * qty); // the pieces may be typed as 1.5 while the form is being filled in
 }
 
 /** What a saved item discount reads as in the form: pesos each when it divides evenly by the pieces, else a percent. */
@@ -61,7 +62,7 @@ export function DiscountField({ mode, text, qty, unitPriceCents, onChange, label
       </div>
       {text.trim() && <p className="text-xs text-slate-500">
         {off === undefined ? (unitPriceCents === null && mode === 'percent' ? 'Worked out once the price is known.' : `Not a discount: ${discountProblem(mode)}.`)
-          : `${formatPesos(off)} off this item in all${mode === 'each' ? ` (${qty} × ${formatPesos(qty ? off / qty : 0)})` : ''}.`}
+          : `${formatPesos(off)} off this item in all${mode === 'each' ? ` (${qty} × ${formatPesos(qty ? Math.round(off / qty) : 0)})` : ''}.`}
       </p>}
     </div>
   );

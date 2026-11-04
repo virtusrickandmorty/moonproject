@@ -232,7 +232,10 @@ export function redLightNotices(db: Db, clock: Clock, o: { practice: boolean; ho
 }
 
 /** A path in an error message may hold a Windows user's name: the support file carries none. */
-const noPaths = (s: string) => s.replace(/[A-Za-z]:\\[^\s'"]*/g, '<path>').replace(/(?:\/[\w.@-]+){2,}\/?/g, '<path>');
+const noPaths = (s: string) => s
+  .replace(/(['"])(?:[A-Za-z]:\\|\\\\).*?\1/g, '<path>') // quoted: to its closing quote, spaces and all
+  .replace(/(?:[A-Za-z]:\\|\\\\)[^\n'"]*/g, '<path>') // not quoted: to the end of the line, as a folder's name may have spaces
+  .replace(/(?:\/[\w.@-]+){2,}\/?/g, '<path>');
 
 /**
  * The support file (PLAN C8 "one-click support file, no personal data"): the version, the PC, the lights, the last

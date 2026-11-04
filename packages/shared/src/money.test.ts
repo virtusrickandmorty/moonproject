@@ -43,6 +43,9 @@ describe('money', () => {
     expect(parsePesos('₱1,234.5')).toBe(123_450);
     expect(parsePesos('-20')).toBe(-2000);
     expect(() => parsePesos('1.234')).toThrow();
+    expect(parsePesos('1,500,000.50')).toBe(150_000_050);
+    expect(() => parsePesos('1500,50')).toThrow(); // a comma typed for the decimal point, not ₱150,050.00
+    expect(() => parsePesos('1,25')).toThrow();
     expect(formatPeso(123_456_789)).toBe('₱1,234,567.89');
     expect(formatPeso(-5)).toBe('-₱0.05');
   });

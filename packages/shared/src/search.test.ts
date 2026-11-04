@@ -5,6 +5,8 @@ describe('word-by-word search', () => {
   it('finds every word in any order, ignoring case', () => {
     expect(matchesWords('St. Mary Academy CUS-000012', searchWords('academy MARY'))).toBe(true);
     expect(matchesWords('St. Mary Academy CUS-000012', searchWords('mary college'))).toBe(false);
+    expect(matchesWords('St. Mary Academy JO-000021', searchWords('631'))).toBe(false); // a short number is that number
+    expect(matchesWords('Contact 09171234567', searchWords('+639171234567'))).toBe(true); // a whole phone number loses its +63
     expect(matchesWords('anything', searchWords('   '))).toBe(true);
   });
 

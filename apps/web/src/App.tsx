@@ -2,6 +2,7 @@
  * Start-up: first owner if nobody exists yet, else sign in, forced password change, then the shell.
  * Everything shown comes from the server on each load; nothing is kept in browser storage (NR-11).
  */
+import { leavePush } from './components/PushToggle.tsx';
 import { ProductionEntriesPage } from './modules/PRD/EntriesByJobOrder.tsx';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, ApiError, type DocTypeInfo, type Me } from './api.ts';
@@ -75,7 +76,7 @@ function Stages() {
   if (stage.me.mustChangePassword) return <ChangePasswordScreen forced onDone={signedIn} />;
   if (isSitePath(location.split('?')[0]!, true)) return <Site staff />;
 
-  const signOut = () => void api.logout().catch(() => undefined).then(() => {
+  const signOut = () => void leavePush().catch(() => undefined).then(() => api.logout()).catch(() => undefined).then(() => {
     navigate('/sign-in');
     setStage({ kind: 'login', message: 'You are signed out.' });
   });
