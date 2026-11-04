@@ -56,7 +56,7 @@ export const writeoffDoc: DocTypeDef<WriteoffInput, Writeoff> = {
     if (doc.accountName === '?') issues.push({ field: 'accountId', code: 'ACCOUNT', level: 'error', message: 'Pick the operating expense account to charge.' });
     issues.push({
       field: 'amountCents', code: 'TAXABLE', level: 'warning',
-      message: `A forgiven cash advance is taxable compensation: ${formatPeso(doc.amountCents)} counts in ${doc.employeeName}'s taxable pay for ${ctx.businessDate.slice(0, 4)} (the year-end tax on compensation and Form 2316).`,
+      message: `A forgiven cash advance is taxable compensation: ${formatPeso(doc.amountCents)} is taxable pay of ${doc.employeeName} for ${ctx.businessDate.slice(0, 4)}. The year-end tax and Form 2316 do not add it by themselves: add it there by hand.`,
     });
     return issues;
   },

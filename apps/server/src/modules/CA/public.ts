@@ -14,17 +14,24 @@ export const caBalance = (db: Db, employeeId: string, asOf?: string): number =>
  * deductions covered).
  */
 export function owedFrom(db: Db, employeeId: string, asOf: string): number {
-  const account = resolveAccount(db, { role: 'EMP_ADVANCES' }).id;
-  const later = db
+  return lowestFrom(db, resolveAccount(db, { role: 'EMP_ADVANCES' }).id, `l.party_type = 'employee' AND l.party_id = ?`, employeeId, asOf);
+}
+
+/**
+ * The lowest balance from a date on, of the lines that stand: a cancelled document and its mirror cancel out whatever
+ * their dates, so a payroll cancelled in October and redone on its September date still finds what it took back.
+ */
+function lowestFrom(db: Db, accountId: number, lines: string, key: string, asOf: string): number {
+  const days = db
     .prepare(
-      `SELECT SUM(l.debit_cents - l.credit_cents) FROM journal_lines l JOIN journals j ON j.id = l.journal_id
-       WHERE l.account_id = ? AND j.sealed = 1 AND l.party_type = 'employee' AND l.party_id = ? AND j.business_date > ? GROUP BY j.business_date ORDER BY j.business_date`,
+      `SELECT j.business_date AS day, SUM(l.debit_cents - l.credit_cents) AS net FROM journal_lines l JOIN journals j ON j.id = l.journal_id
+       WHERE l.account_id = ? AND j.sealed = 1 AND ${lines} AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.id = j.source_id AND d.status = 'cancelled')
+       GROUP BY j.business_date ORDER BY j.business_date`,
     )
-    .pluck()
-    .all(account, employeeId, asOf) as number[];
-  let balance = caBalance(db, employeeId, asOf);
+    .all(accountId, key) as { day: string; net: number }[];
+  let balance = days.filter((d) => d.day <= asOf).reduce((s, d) => s + d.net, 0);
   let lowest = balance;
-  for (const net of later) lowest = Math.min(lowest, (balance += net));
+  for (const d of days.filter((x) => x.day > asOf)) lowest = Math.min(lowest, (balance += d.net));
   return lowest;
 }
 
@@ -117,6 +124,7 @@ export function openCharges(db: Db, employeeId: string, asOf?: string): OpenChar
       WHERE c.employee_id = @employeeId AND d.status = 'posted' AND (@asOf IS NULL OR d.business_date <= @asOf) ORDER BY d.posted_at`)
     .all({ employeeId, asOf: asOf ?? null }) as Omit<OpenCharge, 'owedCents'>[];
   return rows
-    .map((c) => ({ ...c, owedCents: accountBalance(db, account, { refDocId: c.id, ...(asOf ? { asOf } : {}) }) }))
+    // As with an advance (owedFrom): what a payroll recorded out of order took already is not taken twice.
+    .map((c) => ({ ...c, owedCents: asOf ? lowestFrom(db, account, 'l.ref_doc_id = ?', c.id, asOf) : accountBalance(db, account, { refDocId: c.id }) }))
     .filter((c) => c.owedCents > 0);
 }

@@ -219,7 +219,7 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     if (new Set((doc.skip ?? []).map((s) => s.employeeId)).size !== (doc.skip ?? []).length) error('skip', 'DUPLICATE', 'Someone is left out twice.');
     if (doc.employees.length === 0 && !taken) error('payGroup', 'NOBODY', 'Nobody in this pay group was in service in the period, or everyone is left out.');
     for (const e of doc.employees) {
-      if (e.netCents < 0) error('lines', 'NEGATIVE_PAY', `${e.name}: the pay for the period is ${formatPeso(e.grossCents)}, less than nothing. Leave ${e.name} out this time, or add pay.`);
+      if (e.netCents < 0 || e.netCents + e.loanCents + e.chargeCents + e.deductionCents - e.wtaxRefundCents < 0) error('lines', 'NEGATIVE_PAY', `${e.name}: the pay for the period is ${formatPeso(e.grossCents)}, less than nothing. Leave ${e.name} out this time, or add pay.`);
     }
     return [...issues, ...(notesOf.get(doc) ?? [])];
   },
