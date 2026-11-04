@@ -99,6 +99,7 @@ export function SizerSets({ me }: { me: Me }) {
   const [status, setStatus] = useState<SizerSet['status'] | 'all'>('all');
   const [dialog, setDialog] = useState<{ kind: 'lend' | 'back'; set: SizerSet } | { kind: 'set'; set: SizerSet | null } | null>(null);
   const [offError, setOffError] = useState('');
+  const [recovering, setRecovering] = useState<SizerSet | null>(null);
   const load = useCallback(() => void api.sizerBoard().then((b) => (setBoard(b), setError('')), (e: Error) => setError(e.message)), []);
   useEffect(load, [load]);
   useLiveReload(load);
@@ -106,7 +107,6 @@ export function SizerSets({ me }: { me: Me }) {
   if (!board) return <Loading />;
   const canEdit = me.permissions.includes('szr.loan.edit');
   const canSets = me.permissions.includes('szr.set.edit');
-  const [recovering, setRecovering] = useState<SizerSet | null>(null);
   const garments = [...new Set(board.sets.map((s) => s.garmentType))].sort();
   const switchOff = async (s: SizerSet) => {
     if (!(await askConfirm(`${s.code} leaves the list; its loans stay on record.`, { title: `Switch ${s.code} off?`, yes: 'Switch it off', danger: true }))) return;
