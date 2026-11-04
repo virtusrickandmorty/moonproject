@@ -12,7 +12,7 @@ import type { ViewParts } from '../../generic/DocView.tsx';
 import { Loading, Notice, showDate } from '../../components/ui.tsx';
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { qtyWords } from './purchasing.ts';
+import { qtyCents, qtyWords } from './purchasing.ts';
 import { Badge, Facts, Journey, Progress, type Step } from './parts.tsx';
 
 const num = 'py-2 text-right tabular-nums';
@@ -72,7 +72,7 @@ function PurchaseOrderDetail({ id }: { id: string }) {
                 <td className="py-2 font-medium">{l.supplyName}</td>
                 <td className={num}>{qtyWords(l.orderedQty, l.unit)}</td>
                 <td className={num}>{formatPesos(l.unitCostCents)}</td>
-                <td className={num}>{formatPesos(l.orderedQty * l.unitCostCents)}</td>
+                <td className={num}>{formatPesos(qtyCents(l.orderedQty, l.unitCostCents))}</td>
                 <td className="py-2 pl-4">{posted && <Progress done={l.receivedQty} of={l.orderedQty} words={l.remainingQty === 0 ? 'All received' : l.receivedQty === 0 ? 'Nothing yet' : `${l.receivedQty} in, ${qtyWords(l.remainingQty, l.unit)} to come`} />}</td>
               </tr>
             ))}
@@ -121,7 +121,7 @@ function ReceivingReportDetail({ id }: { id: string }) {
   if (error) return <Notice>{error}</Notice>;
   if (!rr) return <Loading />;
   const lineOf = (poLineNo: number) => po?.lines.find((l) => l.lineNo === poLineNo);
-  const worth = rr.lines.reduce((n, l) => n + l.qty * (lineOf(l.poLineNo)?.unitCostCents ?? 0), 0);
+  const worth = rr.lines.reduce((n, l) => n + qtyCents(l.qty, lineOf(l.poLineNo)?.unitCostCents ?? 0), 0);
   const left = po ? po.lines.reduce((n, l) => n + l.remainingQty, 0) : 0;
   const posted = rr.status === 'posted';
   const steps: Step[] = [
@@ -149,7 +149,7 @@ function ReceivingReportDetail({ id }: { id: string }) {
                   <td className="py-2 font-medium">{l.supplyName}</td>
                   <td className={num}>{qtyWords(l.qty, l.unit)}</td>
                   <td className={num}>{o ? formatPesos(o.unitCostCents) : ''}</td>
-                  <td className={num}>{o ? formatPesos(l.qty * o.unitCostCents) : ''}</td>
+                  <td className={num}>{o ? formatPesos(qtyCents(l.qty, o.unitCostCents)) : ''}</td>
                   <td className="py-2 pl-4">{o && <Progress done={o.receivedQty} of={o.orderedQty} words={o.remainingQty === 0 ? `All ${o.orderedQty} received` : `${o.receivedQty} of ${o.orderedQty} received`} />}</td>
                 </tr>
               );

@@ -35,7 +35,9 @@ export interface TplHome {
 export const itemLabel = (i: { description: string; size: string }) => (i.size ? `${i.description} (${i.size})` : i.description);
 /** Pesos typed as "1,500.50" → centavos; undefined when it is not a number. */
 export function toCents(text: string): number | undefined {
-  const t = text.replaceAll(',', '').trim();
+  const typed = text.trim();
+  if (typed.includes(',') && !/^\d{1,3}(,\d{3})+(\.\d*)?$/.test(typed)) return undefined; // 150,50 is a slip for 150.50
+  const t = typed.replaceAll(',', '');
   if (t === '') return 0;
   if (!/^\d+(\.\d{1,2})?$/.test(t)) return undefined;
   return Math.round(Number(t) * 100);

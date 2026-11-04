@@ -28,6 +28,7 @@ import { allocate, formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { Db } from '../../../platform/db/driver.ts';
 import { getCashPlace, listCashPlaces } from '../../../engine/ledger/accounts.ts';
+import { isChecksPlace } from '../../CASH/public.ts';
 import { employee } from '../../EMP/public.ts';
 import { SCHEME, SCHEMES, carriedInto, dueOf, isMonth, payableByPart, statMonths, wtaxPosition, type Scheme } from '../ledger.ts';
 
@@ -137,6 +138,7 @@ export const remittanceDoc: DocTypeDef<RemittanceInput, Remittance> = {
     const issues: Issue[] = [];
     const add = (level: Issue['level'], field: string, code: string, message: string) => issues.push({ field, code, level, message });
     if (!getCashPlace(ctx.db, doc.cashPlaceId)?.isActive) add('error', 'cashPlaceId', 'CASH_PLACE', 'Pick where the money came from.');
+    else if (isChecksPlace(ctx.db, doc.cashPlaceId)) add('error', 'cashPlaceId', 'CHECKS_PLACE', `Customer checks are not paid out from ${getCashPlace(ctx.db, doc.cashPlaceId)!.name}: deposit them from the Checks screen first.`);
     if (doc.month > ctx.businessDate.slice(0, 7)) add('error', 'month', 'MONTH', `${doc.month} has not started yet.`);
     const what = `${doc.label} for ${doc.month}`;
     const { taxCents, refundCents } = refundsOf(doc);
@@ -242,7 +244,7 @@ export const remittanceDoc: DocTypeDef<RemittanceInput, Remittance> = {
       SCHEMES.map((scheme) => ({ scheme, month, payable: dueOf(db, scheme, month) })).filter((x) => x.payable > 0),
     );
     if (!due.length) throw new Error('Nothing to remit');
-    const places = listCashPlaces(db).map((c) => c.id);
+    const places = listCashPlaces(db).map((c) => c.id).filter((id) => !isChecksPlace(db, id));
     return fc
       .record({
         d: fc.constantFrom(...due), cashPlaceId: fc.constantFrom(...places), part: fc.boolean(), prn: fc.integer({ min: 100_000, max: 999_999 }),

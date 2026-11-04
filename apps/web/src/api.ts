@@ -72,16 +72,26 @@ const LOST_ANSWER_MS = 30 * 60_000;
 export const lostAnswers = (() => {
   const STORE = 'moonproject.lost-answers';
   type Lost = Record<string, { key: string; at: number }>;
+  /** A fingerprint of the save (cyrb53): what was typed never goes into browser storage (NR-11). */
+  const mark = (attempt: string) => {
+    let a = 0xdeadbeef, b = 0x41c6ce57;
+    for (let i = 0; i < attempt.length; i++) {
+      const c = attempt.charCodeAt(i);
+      a = Math.imul(a ^ c, 2654435761);
+      b = Math.imul(b ^ c, 1597334677);
+    }
+    return `${(a >>> 0).toString(36)}-${(b >>> 0).toString(36)}-${attempt.length}`;
+  };
   const read = (): Lost => { try { return JSON.parse(sessionStorage.getItem(STORE) ?? '{}') as Lost; } catch { return memory; } };
   const write = (all: Lost) => { memory = all; try { sessionStorage.setItem(STORE, JSON.stringify(all)); } catch { /* the memory copy serves */ } };
   let memory: Lost = {};
   return {
     keyFor(attempt: string, fresh: string): string {
-      const lost = read()[attempt];
+      const lost = read()[mark(attempt)];
       return lost && Date.now() - lost.at < LOST_ANSWER_MS ? lost.key : fresh;
     },
-    remember(attempt: string, key: string) { write({ ...read(), [attempt]: { key, at: Date.now() } }); },
-    forget(attempt: string) { const all = read(); if (all[attempt]) { delete all[attempt]; write(all); } },
+    remember(attempt: string, key: string) { write({ ...read(), [mark(attempt)]: { key, at: Date.now() } }); },
+    forget(attempt: string) { const all = read(), id = mark(attempt); if (all[id]) { delete all[id]; write(all); } },
   };
 })();
 

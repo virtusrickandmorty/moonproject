@@ -225,6 +225,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
 
   if (original && !reason) return <EditGate original={original.header} typeKey={type.key} onReason={setReason} />;
   const difference = received - applied;
+  useEffect(() => { if (settle && (difference === 0 || Math.abs(difference) > 100)) setSettle(false); }, [settle, difference]); // its box is gone: nothing left to untick it
   return (
     <form onSubmit={(e) => e.preventDefault()} onKeyDown={(e) => e.key === 'Enter' && (e.ctrlKey || e.metaKey) && openConfirm()} className="space-y-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:pb-0">
       <div className="space-y-4">

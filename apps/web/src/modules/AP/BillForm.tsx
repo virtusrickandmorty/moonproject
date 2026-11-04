@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from 'react';
 import { formatPesos, isBusinessDate } from '@moonproject/shared';
-import { qtyWords } from '../PUR/purchasing.ts';
+import { qtyCents, qtyWords } from '../PUR/purchasing.ts';
 import { api, type ApLedger, type DocTypeInfo, type Me } from '../../api.ts';
 import { Button, Field, Panel, inputClass, peso } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
@@ -65,7 +65,7 @@ export function BillForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode
       const cost = new Map(po.lines.map((l) => [l.lineNo, l.unitCostCents]));
       setSupplierId(r.supplierId);
       setRr({ id: r.id, number: r.number });
-      setRows(r.lines.map((l) => ({ for: `supply:${l.supplyId}`, description: `${qtyWords(l.qty, l.unit)} at ${formatPesos(cost.get(l.poLineNo) ?? 0)}`, amount: formatPesos(l.qty * (cost.get(l.poLineNo) ?? 0)) })));
+      setRows(r.lines.map((l) => ({ for: `supply:${l.supplyId}`, description: `${qtyWords(l.qty, l.unit)} at ${formatPesos(cost.get(l.poLineNo) ?? 0)}`, amount: formatPesos(qtyCents(l.qty, cost.get(l.poLineNo) ?? 0)) })));
     }, f.fail);
   }, []);
 

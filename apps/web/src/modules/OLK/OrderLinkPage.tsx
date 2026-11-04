@@ -140,7 +140,7 @@ export function OrderLinkPage({ token, query }: { token: string; query: string }
     (async () => {
       const l = await send<LinkPage>('GET', base);
       setLink(l);
-      const own = key ? await send<Mine>('GET', `${base}/answers/${encodeURIComponent(key)}`).catch(() => null) : null;
+      const own = key ? await send<Mine>('GET', `${base}/answers/${encodeURIComponent(key)}`).catch((e: Error & { status?: number }) => { if (e.status === 404) return null; throw e; }) : null;
       if (own) {
         setDetails({ name: own.name, gender: own.gender, mobile: own.mobile, email: own.email, address: own.address });
         setPeople(own.people.map((p) => personFrom(p, l.items)));
@@ -443,7 +443,9 @@ const PAY_STATUS: Record<OlkPayment['status'], [string, string]> = {
 
 /** "1,500.00", "₱1500" → centavos; null when it is not an amount. */
 export function centsOf(text: string): number | null {
-  const m = /^(\d{1,9})(?:\.(\d{1,2}))?$/.exec(text.replace(/[₱,\s]/g, ''));
+  const typed = text.replace(/[₱\s]/g, '');
+  if (typed.includes(',') && !/^\d{1,3}(,\d{3})+(\.\d*)?$/.test(typed)) return null; // 1500,50 is a slip for 1500.50
+  const m = /^(\d{1,9})(?:\.(\d{1,2}))?$/.exec(typed.replace(/,/g, ''));
   return m ? Number(m[1]) * 100 + Number((m[2] ?? '').padEnd(2, '0')) : null;
 }
 

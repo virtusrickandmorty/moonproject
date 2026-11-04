@@ -223,7 +223,12 @@ describe('web client for job orders, releases and invoice records', () => {
     const jo = await api.post('jo.job_order', typed.input, pre.totalCents, key());
     expect(jo.number).toBe('JO-000001');
     const stored = await api.get('jo.job_order', jo.id);
-    expect(joInput(joValues(stored.input as unknown as JoInput, stored.doc as never)).input).toEqual(typed.input); // its Edit starts from this
+    expect(joInput(joValues(stored.input as unknown as JoInput, stored.doc as never, stored.header.businessDate)).input).toEqual(typed.input); // its Edit starts from this
+    // Five days on, the same due date: the days count from today, so an edit does not move it.
+    const dueDate = (stored.doc as unknown as { dueDate: string }).dueDate;
+    const later = new Date(Date.parse(stored.header.businessDate) + 5 * 86_400_000).toISOString().slice(0, 10);
+    expect(Number(joValues(stored.input as unknown as JoInput, stored.doc as never, later).dueInDays)).toBe((stored.input as unknown as JoInput).dueInDays - 5);
+    expect(dueDate > later).toBe(true);
 
     // The view's buttons, then "Take the downpayment": the collection for this job order.
     let s = await api.joStatus(jo.id);

@@ -5,7 +5,7 @@
  * Laid out like the job order form (the owner's request, Oct 2026): the form on the left (customer, an item added from the
  * price list or typed, the payment, the invoice), the breakdown on the right with Record, in view while the form scrolls.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, ApiError, newIdempotencyKey, type CashPlace, type CatItem, type DocHeader, type DocTypeInfo, type Me, type QsBody, type QsPreview } from '../../api.ts';
 import { navigate } from '../../router.tsx';
@@ -102,9 +102,17 @@ export function QuickSaleForm({ type, mode, me, inDialog }: { type: DocTypeInfo;
   // The item form: Add to sale puts it in the breakdown (or Update item replaces the one picked there). The price list's
   // tier price for its quantity fills the price unless one was typed.
   const setItemPatch = (patch: Partial<LineRow>) => setItem((l) => ({ ...l, ...patch }));
+  const listPrice = useRef(''); // the price the list filled in: a typed one stays
+  const priceAsked = useRef(0);
   const priceFor = (itemId: string, qty: string) => {
     if (!itemId || !/^[1-9]\d*$/.test(qty)) return;
-    api.catPrice(itemId, Number(qty)).then((p) => setItem((l) => (l.price.trim() ? l : { ...l, price: formatPesos(p.unitPriceCents) })), () => undefined);
+    const mine = ++priceAsked.current;
+    api.catPrice(itemId, Number(qty)).then((p) => {
+      if (mine !== priceAsked.current) return; // another item or quantity was asked since
+      const price = formatPesos(p.unitPriceCents);
+      setItem((l) => (l.price.trim() && l.price !== listPrice.current ? l : { ...l, price }));
+      listPrice.current = price;
+    }, () => undefined);
   };
   const [picked, setPicked] = useState('');
   const pick = (it: CatItem) => { setPicked(it.id); setItemPatch({ kind: KIND_OF_CLASS[it.class], description: it.name, price: '' }); priceFor(it.id, item.qty); };

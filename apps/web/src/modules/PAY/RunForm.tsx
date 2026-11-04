@@ -112,7 +112,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
       <Panel title="Which payroll?">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Pay group" required>
-            <select className={inputClass} value={payGroup} onChange={(e) => (chosenByUser.current = true, setPayGroup(e.target.value as PayGroup), setAdvances({}), setSkip({}), setRows([]), setLoanRows({}))}>
+            <select className={inputClass} value={payGroup} onChange={(e) => (chosenByUser.current = true, setPayGroup(e.target.value as PayGroup), setPicked(null), setDayNote(''), setAdvances({}), setSkip({}), setRows([]), setLoanRows({}))}>
               {Object.entries(GROUP_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
           </Field>

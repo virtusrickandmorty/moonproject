@@ -65,7 +65,7 @@ export function SearchSelect({ value, onChange, choices, placeholder = 'Pick…'
       </button>
       {open && (
         // Inside a <label> (Field), a click would also be passed to the button and open the list again: kept here.
-        <div className="absolute inset-x-0 top-full z-40 mt-1 min-w-[16rem] rounded-md bg-white p-1 shadow-lg ring-1 ring-slate-200"
+        <div className="absolute inset-x-0 top-full z-50 mt-1 min-w-[16rem] rounded-md bg-white p-1 shadow-lg ring-1 ring-slate-200"
           onClick={(e) => { if (!(e.target instanceof HTMLInputElement)) e.preventDefault(); }}>
           <input autoFocus type="search" aria-label={`Find in ${aria['aria-label'] ?? 'the list'}`} placeholder="Type to find…" value={text}
             onChange={(e) => { setText(e.target.value); setActive(0); }} onKeyDown={keys}

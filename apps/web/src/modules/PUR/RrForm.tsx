@@ -95,7 +95,7 @@ export function RrForm({ type, mode }: { type: DocTypeInfo; mode: FormMode; me: 
               {shown.map((p) => {
                 const ordered = p.lines.reduce((n, l) => n + l.orderedQty, 0), received = p.lines.reduce((n, l) => n + Math.min(l.receivedQty, l.orderedQty), 0);
                 const late = !!p.expectedDate && p.expectedDate < date;
-                const toCome = p.lines.reduce((n, l) => n + l.remainingQty * l.unitCostCents, 0);
+                const toCome = p.lines.reduce((n, l) => n + qtyCents(l.remainingQty, l.unitCostCents), 0);
                 return (
                   <PickCard key={p.id} picked={poId === p.id} onPick={() => setPoId(p.id)} title={`${p.number} · ${p.supplierName}`}
                     badge={late ? <Badge tone="bg-red-100 text-red-700">Late</Badge> : received > 0 ? <Badge tone="bg-indigo-100 text-indigo-700">Part received</Badge> : undefined}
