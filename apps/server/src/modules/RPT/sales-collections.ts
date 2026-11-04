@@ -42,8 +42,8 @@ export function depositsCrossingQuarter(db: Db, year: number, quarter: number) {
   const accountId = resolveAccount(db, { role: 'CUSTOMER_DEPOSITS' }).id;
   const sources = db.prepare(`SELECT DISTINCT d.id, d.number, d.doc_type AS type, d.business_date AS date
     FROM journal_lines l JOIN journals j ON j.id = l.journal_id JOIN documents d ON d.id = j.source_id
-    WHERE l.account_id = ? AND j.sealed = 1 AND j.source_type = 'document' AND j.posting_kind = 'original'
-      AND d.status = 'posted' ORDER BY d.business_date, d.posted_at, d.number`).all(accountId) as
+    WHERE l.account_id = @account AND j.sealed = 1 AND j.source_type = 'document' AND j.posting_kind = 'original'
+      AND (d.status = 'posted' OR (d.business_date <= @end AND substr(d.cancelled_at, 1, 10) > @end)) ORDER BY d.business_date, d.posted_at, d.number`).all({ account: accountId, end: quarterEnd }) as
     { id: string; number: string; type: string; date: string }[];
   type Lot = { customerId: string; jobOrderId: string; mode: 'A' | 'B' | 'C'; received: typeof sources[number];
     amountCents: number; heldCents: number; heldAtQuarterEndCents: number | null; outputVatCents: number; appliedDate: string | null };

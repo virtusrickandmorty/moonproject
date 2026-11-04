@@ -40,8 +40,8 @@ export function birthdaysBetween(from: string, to: string, birthday: string): st
   const mmdd = birthday.slice(5);
   const dates: string[] = [];
   for (let year = Number(from.slice(0, 4)); year <= Number(to.slice(0, 4)); year++) {
-    const date = `${year}-${mmdd}`;
-    if (isBusinessDate(date) && date >= from && date <= to) dates.push(date);
+    const date = isBusinessDate(`${year}-${mmdd}`) ? `${year}-${mmdd}` : `${year}-02-28`; // Feb 29 in other years
+    if (date >= from && date <= to) dates.push(date);
   }
   return dates;
 }

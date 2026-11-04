@@ -15,7 +15,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { stamp, type Clock } from '../../platform/clock.ts';
 import type { Registry } from '../../engine/documents/registry.ts';
 import { userPermissions, type SessionUser } from '../../engine/security/sessions.ts';
-import { notifications } from '../DASH/public.ts';
+import { notifications, type HomeContext } from '../DASH/public.ts';
 
 /** The VAPID keys: made once and kept beside the database (like the email App Password). */
 export function vapidKeys(db: Db): { publicKey: string; privateKey: string } {
@@ -41,7 +41,7 @@ export const phonesOf = (db: Db, userId: string) =>
   db.prepare('SELECT COUNT(*) FROM push_subscriptions WHERE user_id = ? AND is_active = 1').pluck().get(userId) as number;
 
 /** Turns notifications on for one phone of the signed-in person; what is in their bell now counts as already pushed. */
-export function subscribe(db: Db, clock: Clock, registry: Registry, user: SessionUser, raw: unknown) {
+export function subscribe(db: Db, clock: Clock, registry: Registry, user: SessionUser, raw: unknown, where: HomeContext = {}) {
   const v = subscriptionInput.safeParse(raw);
   if (!v.success) throw badRequest('INVALID_INPUT', 'This phone did not give a push address the server can use.');
   const at = stamp(clock);
@@ -54,7 +54,7 @@ export function subscribe(db: Db, clock: Clock, registry: Registry, user: Sessio
       .run(newId(), user.userId, v.data.endpoint, v.data.keys.p256dh, v.data.keys.auth, v.data.device, at, at);
   }
   const sent = db.prepare('INSERT OR IGNORE INTO push_sent (user_id, notification_key, sent_at) VALUES (?, ?, ?)');
-  for (const n of notifications(db, clock, registry, user)) sent.run(user.userId, n.id, at);
+  for (const n of notifications(db, clock, registry, user, where)) sent.run(user.userId, n.id, at);
   return { on: true, phones: phonesOf(db, user.userId) };
 }
 
@@ -99,7 +99,7 @@ const MAX_EACH = 4; // a burst of more becomes one "N new notifications"
  * One pass: for each person with a phone turned on, the notifications in their bell not yet pushed (and not read) go
  * to each of their phones, up to four one by one, more as one summary. Returns how many pushes went.
  */
-export async function pushNew(db: Db, clock: Clock, registry: Registry, send: Sender, log: (m: string) => void = () => {}): Promise<number> {
+export async function pushNew(db: Db, clock: Clock, registry: Registry, send: Sender, log: (m: string) => void = () => {}, where: HomeContext = {}): Promise<number> {
   const users = db.prepare('SELECT DISTINCT user_id FROM push_subscriptions WHERE is_active = 1 ORDER BY user_id').pluck().all() as string[];
   const sentBefore = db.prepare('SELECT 1 FROM push_sent WHERE user_id = ? AND notification_key = ?').pluck();
   const mark = db.prepare('INSERT OR IGNORE INTO push_sent (user_id, notification_key, sent_at) VALUES (?, ?, ?)');
@@ -111,12 +111,15 @@ export async function pushNew(db: Db, clock: Clock, registry: Registry, send: Se
     if (!u?.active) continue;
     const { roles, permissions } = userPermissions(db, userId);
     const user: SessionUser = { sessionId: 'push', userId, username: u.username, displayName: u.displayName, csrfToken: '', mustChangePassword: false, permissions, roles, stepUpAt: null };
-    const fresh = notifications(db, clock, registry, user).filter((n) => !n.read && !sentBefore.get(userId, n.id));
+    const fresh = notifications(db, clock, registry, user, where).filter((n) => !n.read && !sentBefore.get(userId, n.id));
     if (fresh.length === 0) continue;
     const payloads = fresh.length > MAX_EACH
       ? [{ title: `${fresh.length} new notifications`, body: fresh.slice(0, 3).map((n) => n.label).join(' · '), href: '/dash/notifications', tag: 'many' }]
       : fresh.map((n) => ({ title: n.label, body: n.detail ?? '', href: n.href ?? '/dash/notifications', tag: n.id }));
-    for (const phone of phonesOfUser(db, userId)) for (const p of payloads) if (await deliver(db, clock, send, phone, p, log)) count++;
+    const phones = phonesOfUser(db, userId);
+    let reached = false;
+    for (const phone of phones) for (const p of payloads) if (await deliver(db, clock, send, phone, p, log)) { count++; reached = true; }
+    if (phones.length > 0 && !reached) continue; // the internet was down: the next minute tries again, nothing is lost
     const at = stamp(clock);
     for (const n of fresh) mark.run(userId, n.id, at);
   }

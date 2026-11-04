@@ -107,7 +107,7 @@ export function bakRoutes(app: FastifyInstance, deps: AppDeps): void {
       tx(db, () => {
         db.prepare('INSERT INTO bak_restore_checks (id, at, user_id, purpose, file, result, error, facts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
           .run(id, at, user.userId, input.purpose, input.file, result, error, facts === null ? null : JSON.stringify(facts));
-        appendAudit(db, { at, userId: user.userId, action: `bak.${input.purpose}`, entityType: 'bak.backup', entityId: input.file, data: { source: input.source, result, error } });
+        appendAudit(db, { at, userId: user.userId, action: 'bak.check', entityType: 'bak.backup', entityId: input.file, data: { purpose: input.purpose, source: input.source, result, error } });
       });
     try {
       const facts = await openBackup(join(folder, input.file), input.key, staged, migrations(), (copy) =>

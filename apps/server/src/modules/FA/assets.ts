@@ -51,10 +51,17 @@ export function assetsInService(db: Db): Asset[] {
   return (db.prepare(`${ASSET_SELECT} WHERE d.status = 'posted' ORDER BY a.acquired_on, d.number`).all() as Asset[]).filter((a) => !a.disposal);
 }
 
-/** Accumulated depreciation of one asset, from the ledger (15x1 is a credit balance; returned positive). */
-export function accumulatedCents(db: Db, a: Asset): number {
+/** The assets held on a date: bought by then, and not yet sold or retired then (one disposed of later still counts). */
+export function assetsHeldOn(db: Db, date: string): Asset[] {
+  return (db.prepare(`${ASSET_SELECT} WHERE d.status = 'posted' ORDER BY a.acquired_on, d.number`).all() as Asset[])
+    .filter((a) => a.acquiredOn <= date && (!a.disposal || (db.prepare(`SELECT dd.business_date FROM fa_all_disposals x JOIN documents dd ON dd.id = x.document_id
+      WHERE x.asset_id = ? AND dd.status = 'posted'`).pluck().get(a.id) as string) > date));
+}
+
+/** Accumulated depreciation of one asset, from the ledger (15x1 is a credit balance; returned positive), to a date if given. */
+export function accumulatedCents(db: Db, a: Asset, asOf?: string): number {
   const cls = assetClass(db, a.classCode)!;
-  return -accountBalance(db, resolveAccount(db, { role: cls.accumRole }).id, { party: assetParty(a.id) });
+  return -accountBalance(db, resolveAccount(db, { role: cls.accumRole }).id, { party: assetParty(a.id), ...(asOf ? { asOf } : {}) });
 }
 
 /** Months from the acquisition month to `month` (YYYY-MM), both counted: bought in September, September is month 1. */

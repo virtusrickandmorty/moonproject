@@ -28,7 +28,9 @@ function description(section: CashFlowSectionKey, rows: FlowRow[], cashCents: nu
     return cashCents >= 0 ? ['ownerMoneyIn', 'Owners’ money in'] : ['ownerMoneyOut', 'Owners’ money out'];
   }
   if (cashCents >= 0 && codes.some((c) => /^12|^22|^4/.test(c))) return ['customerCollections', 'Collections from customers'];
-  if (codes.some((c) => /^(14|23|24|8)|^6195/.test(c))) return cashCents >= 0 ? ['taxRefunds', 'Tax refunds'] : ['government', 'Government remittances and taxes'];
+  // Tax lines riding on a purchase or an expense (input VAT, EWT) leave it a payment to the supplier.
+  const spending = codes.some((c) => /^(21|5|6)/.test(c) && c !== '6195');
+  if (!spending && codes.some((c) => /^(14|23|24|8)|^6195/.test(c))) return cashCents >= 0 ? ['taxRefunds', 'Tax refunds'] : ['government', 'Government remittances and taxes'];
   if (codes.some((c) => /^(211|52)|^610[123]/.test(c))) return cashCents >= 0 ? ['payrollRefunds', 'Payroll refunds'] : ['payroll', 'Payroll paid'];
   if (cashCents < 0 && codes.some((c) => /^(21|5|6)/.test(c))) return ['suppliersExpenses', 'Payments to suppliers and for expenses'];
   return cashCents >= 0 ? ['otherOperatingReceipts', 'Other operating receipts'] : ['otherOperatingPayments', 'Other operating payments'];

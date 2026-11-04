@@ -346,7 +346,7 @@ export function readable(value: unknown): string {
 export const datesIn = (text: unknown): string => String(text ?? '').replace(/\b\d{4}-\d{2}-\d{2}\b(?!T)/g, (d) => readable(d));
 /** Codes kept in the records, in the words customers and staff read on paper. */
 const WORDS: Record<string, Record<string, string>> = {
-  'Payment terms': { dp50: '50% downpayment, balance before release', full: 'Full payment upfront', cod: 'Cash on delivery', net7: 'Within 7 days of the invoice', net15: 'Within 15 days of the invoice', net30: 'Within 30 days of the invoice' },
+  'Payment terms': { dp50: '50% downpayment, balance before release', full: 'Full payment upfront', cod: 'Cash on delivery', net7: 'Within 7 days of billing', net15: 'Within 15 days of billing', net30: 'Within 30 days of billing' },
   Priority: { normal: 'Normal', rush: 'Rush' },
   'ID type seen': { government_id: 'Government ID', school_id: 'School ID', company_id: 'Company ID', other_id: 'Another ID', none: 'No ID' },
 };

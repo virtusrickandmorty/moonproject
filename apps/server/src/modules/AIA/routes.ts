@@ -47,17 +47,17 @@ export function aiaRoutes(app: FastifyInstance, { db, clock }: AppDeps): void {
     const at = stamp(clock);
     const now = clock.now().getTime();
     // The chat and the customer's words are kept first, so a failed answer still leaves them for the handoff.
-    const { chatId, seq } = tx(db, () => {
+    const { chatId } = tx(db, () => {
       let id = b.chatId;
       if (id && !db.prepare('SELECT 1 FROM aia_chats WHERE id = ?').get(id)) throw notFound('The chat');
       if (!id) {
         id = newId();
         db.prepare('INSERT INTO aia_chats (id, started_at, started_ms, ip) VALUES (?, ?, ?, ?)').run(id, at, now, req.ip);
       }
-      const n = (db.prepare('SELECT COUNT(*) AS n FROM aia_messages WHERE chat_id = ?').get(id) as { n: number }).n;
-      if (n >= MAX_CHAT_MESSAGES) throw new AppError('CHAT_FULL', 'This chat is long enough. Please send it to our staff with the form below.', 429);
-      db.prepare('INSERT INTO aia_messages (chat_id, seq, role, text, at, at_ms) VALUES (?, ?, ?, ?, ?, ?)').run(id, n + 1, 'customer', b.message, at, now);
-      return { chatId: id, seq: n + 2 };
+      const n = (db.prepare('SELECT COUNT(*) AS n, COALESCE(MAX(seq), 0) AS last FROM aia_messages WHERE chat_id = ?').get(id) as { n: number; last: number });
+      if (n.n >= MAX_CHAT_MESSAGES) throw new AppError('CHAT_FULL', 'This chat is long enough. Please send it to our staff with the form below.', 429);
+      db.prepare('INSERT INTO aia_messages (chat_id, seq, role, text, at, at_ms) VALUES (?, ?, ?, ?, ?, ?)').run(id, n.last + 1, 'customer', b.message, at, now);
+      return { chatId: id };
     });
     const key = readApiKey(db);
     let reply = { text: OFFLINE, handoff: true, inputTokens: 0, outputTokens: 0 };
@@ -71,6 +71,8 @@ export function aiaRoutes(app: FastifyInstance, { db, clock }: AppDeps): void {
       }
     }
     const done = stamp(clock);
+    // Numbered now, not before the wait: a second message sent meanwhile has taken the next number.
+    const seq = (db.prepare('SELECT COALESCE(MAX(seq), 0) + 1 FROM aia_messages WHERE chat_id = ?').pluck().get(chatId) as number);
     db.prepare('INSERT INTO aia_messages (chat_id, seq, role, text, at, at_ms, input_tokens, output_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .run(chatId, seq, 'assistant', reply.text, done, clock.now().getTime(), reply.inputTokens, reply.outputTokens);
     return { chatId, reply: reply.text, offerPerson: reply.handoff };
