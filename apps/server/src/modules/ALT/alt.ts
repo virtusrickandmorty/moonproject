@@ -16,7 +16,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { postDocument, type Actor, type EngineEnv } from '../../engine/documents/lifecycle.ts';
 import { customerRef } from '../CUS/public.ts';
-import { currentStage, jobOrderDoc, jobOrderRef, lineState, rosterPeopleOf } from '../JO/public.ts';
+import { currentStage, jobOrderDoc, jobOrderRef, lineState, liveReplacementOf, rosterPeopleOf } from '../JO/public.ts';
 import { saleLines, saleRef } from '../QS/public.ts';
 import { createShopWork, saleOfOnlineOrder } from '../SHP/public.ts';
 
@@ -169,9 +169,12 @@ export function returnOf(db: Db, id: string) {
 function statusOf(db: Db, d: { outcome: string; jobOrderId: string | null } | undefined): ReturnStatus {
   if (!d) return 'awaiting_decision';
   if (d.outcome === 'declined' || !d.jobOrderId) return 'declined';
-  if (jobOrderRef(db, d.jobOrderId)?.status !== 'posted') return 'cancelled';
-  const stage = currentStage(db, d.jobOrderId);
-  return stage === 'ready' ? 'ready' : stage === 'released' || stage === 'partially_released' ? 'released' : 'in_production';
+  // An edited job order lives on in its replacement.
+  const jo = jobOrderRef(db, d.jobOrderId);
+  const live = jo?.status === 'posted' ? jo : liveReplacementOf(db, d.jobOrderId);
+  if (!live) return 'cancelled';
+  const stage = currentStage(db, live.id);
+  return stage === 'ready' ? 'ready' : stage === 'released' || stage === 'closed' ? 'released' : 'in_production'; // part out: still open
 }
 
 /** Returns, newest first: all, or those still open (awaiting a decision, or in production and not yet given back). */

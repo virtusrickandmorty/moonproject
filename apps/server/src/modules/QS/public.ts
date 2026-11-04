@@ -77,7 +77,7 @@ export function soldShopPieces(db: Db, productIds?: readonly string[]): { produc
 /** The shop's pieces sold on recorded sales dated up to a day (the shop's month-end stock value), by product. */
 export function soldShopPiecesUpTo(db: Db, date: string): { productId: string; qty: number }[] {
   return db.prepare(`SELECT l.product_id AS productId, SUM(l.qty) AS qty FROM qs_sale_lines l JOIN documents d ON d.id = l.document_id
-    WHERE l.product_id IS NOT NULL AND d.status = 'posted' AND d.business_date <= ? GROUP BY l.product_id`).all(date) as { productId: string; qty: number }[];
+    WHERE l.product_id IS NOT NULL AND d.business_date <= @date AND (d.status = 'posted' OR substr(d.cancelled_at, 1, 10) > @date) GROUP BY l.product_id`).all({ date }) as { productId: string; qty: number }[];
 }
 
 /**

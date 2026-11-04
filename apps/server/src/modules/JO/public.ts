@@ -278,7 +278,10 @@ export function invoiceSaleLines(db: Db) {
       jobOrderId: string; lineNo: number; description: string; kind: string; qty: number; grossCents: number }[];
 }
 
-/** Releases with no invoice record, including the owning order for follow-up. */
+/** The job order a release went out on. */
+export const jobOrderOfRelease = (db: Db, releaseId: string) => db.prepare('SELECT job_order_id FROM jo_releases WHERE document_id = ?').pluck().get(releaseId) as string | undefined;
+
+/** Releases with no invoice record, including the owning order for follow-up. A free one has nothing to invoice. */
 export function releasesAwaitingInvoice(db: Db, asOf: string) {
   return db.prepare(`SELECT r.document_id AS id, d.number, d.business_date AS date,
     r.job_order_id AS jobOrderId, j.number AS jobOrderNumber, o.customer_id AS customerId,
@@ -289,7 +292,7 @@ export function releasesAwaitingInvoice(db: Db, asOf: string) {
     WHERE d.business_date <= ? AND d.status = 'posted'
       AND NOT EXISTS (SELECT 1 FROM jo_invoice_records i JOIN documents x ON x.id = i.document_id
         WHERE i.release_id = d.id AND x.status = 'posted')
-    GROUP BY r.document_id ORDER BY d.business_date, d.number`).all(asOf) as {
+    GROUP BY r.document_id HAVING releasedCents > 0 ORDER BY d.business_date, d.number`).all(asOf) as {
       id: string; number: string; date: string; jobOrderId: string; jobOrderNumber: string;
       customerId: string; customerName: string; releasedCents: number }[];
 }

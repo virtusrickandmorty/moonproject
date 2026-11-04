@@ -40,7 +40,8 @@ export function retainedEarningsAt(db: Db, date: string): RetainedEarnings {
   const retainedCents = creditNet(db, `a.role_key IN ('RETAINED_EARNINGS', 'CURRENT_YEAR_EARNINGS')`, null, date);
   const currentYearCents = creditNet(db, income, yearStart, date);
   const earlierYearsCents = creditNet(db, income, null, `${Number(date.slice(0, 4)) - 1}-12-31`);
-  const declaredCents = 0 - creditNet(db, `a.role_key = 'DIVIDENDS_DECLARED'`, null, date);
+  // Every dividend still recorded, later-dated ones too: a backdated declaration cannot spend what a later one already took.
+  const declaredCents = 0 - creditNet(db, `a.role_key = 'DIVIDENDS_DECLARED'`, null, '9999-12-31');
   return { date, retainedCents, currentYearCents, earlierYearsCents, declaredCents, availableCents: retainedCents + currentYearCents + earlierYearsCents - declaredCents };
 }
 

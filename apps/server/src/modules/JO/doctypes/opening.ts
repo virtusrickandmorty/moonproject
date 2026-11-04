@@ -20,7 +20,7 @@ import type { DocHeader, DocTypeDef } from '../../../engine/documents/registry.t
 import { assertOpeningOpen, OPENING_PERMISSIONS, openingIssues } from '../../ACC/public.ts';
 import { entriesOf } from '../../PRD/public.ts';
 import { customer } from '../cus.ts';
-import { carryStageOver, moveTo } from '../stages.ts';
+import { carryStageOver, jobOrderEdited, moveTo } from '../stages.ts';
 import {
   MAX_CENTS, PAYMENT_TERMS, computeLines, dropNulls, jobOrderDoc, lineInput, lineIssues, linesToInput, linesTotal, loadLines, persistLines, type JoLine,
 } from './job-order.ts';
@@ -193,6 +193,7 @@ export const openingJobOrderDoc: DocTypeDef<OpeningJobOrderInput, OpeningJobOrde
     const deps = openingJobOrderDoc.dependents!(db, oldId);
     if (deps.length > 0) throw conflict('HAS_DEPENDENTS', `Cancel these first: ${deps.map((x) => x.number).join(', ')}.`, deps);
     carryStageOver(db, oldId, newId);
+    jobOrderEdited(db, oldId, newId); // like a job order taken today: its route and steps go on
   },
 
   /** Runs in the cancel transaction: throwing rolls the cancel back, so a closed opening keeps its documents. */

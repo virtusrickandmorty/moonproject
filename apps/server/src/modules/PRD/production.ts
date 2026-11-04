@@ -61,8 +61,10 @@ export function lineSetup(db: Db, jobOrderId: string, lineNo: number): LineSetup
 export function piecesOn(db: Db, jobOrderId: string, lineNo: number, stepId: number, part?: Part): { pieces: number; reworkPieces: number } {
   return db
     .prepare(
-      `SELECT COALESCE(SUM(CASE WHEN a.kind <> 'rework' THEN a.pieces END), 0) AS pieces, COALESCE(SUM(CASE WHEN a.kind = 'rework' THEN a.pieces END), 0) AS reworkPieces
+      `SELECT COALESCE(SUM(CASE WHEN a.kind <> 'rework' AND o.id IS NULL THEN a.pieces END), 0) AS pieces,
+         COALESCE(SUM(CASE WHEN a.kind = 'rework' OR o.id IS NOT NULL THEN a.pieces END), 0) AS reworkPieces
        FROM prd_line_assignments a JOIN documents d ON d.id = a.document_id
+         LEFT JOIN prd_assignments o ON o.id = a.correction_of_id AND o.kind = 'rework' -- a correction of rework comes off the rework
        WHERE a.jo = ? AND a.line = ? AND a.step_id = ? AND d.status = 'posted' AND (? IS NULL OR a.part = ?)`,
     )
     .get(jobOrderId, lineNo, stepId, part ?? null, part ?? null) as { pieces: number; reworkPieces: number };
@@ -120,6 +122,8 @@ export function lineRoute(db: Db, jobOrderId: string, lineNo: number): RouteStep
 }
 
 const closed = (s: { status: StepStatus }) => s.status === 'completed' || s.status === 'not_needed';
+/** Any work on a step: on a set `pieces` is the fewer of the two parts, so uppers alone show only in `parts`. */
+const hasPieces = (s: RouteStep) => s.pieces !== 0 || s.reworkPieces !== 0 || (s.parts !== undefined && s.parts !== null && (s.parts.upper.pieces !== 0 || s.parts.lower.pieces !== 0));
 export const routeDone = (route: RouteStep[]) => route.length > 0 && route.every(closed);
 
 /**
@@ -356,7 +360,7 @@ export function setupLine(db: Db, jobOrderId: string, lineNo: number, req: Setup
   }
   // A started step keeps its place: no step that stays on moves from before it to after it, or the other way.
   const old = lineRoute(db, jobOrderId, lineNo) ?? [];
-  const started = old.filter((s) => s.pieces !== 0 || s.reworkPieces !== 0 || s.status === 'completed');
+  const started = old.filter((s) => hasPieces(s) || s.status === 'completed');
   const was = (a: number, b: number) => old.findIndex((s) => s.id === a) < old.findIndex((s) => s.id === b);
   const now = (a: number, b: number) => ids.indexOf(a) < ids.indexOf(b);
   for (const b of started) for (const a of old) {
@@ -392,6 +396,20 @@ export function autoComplete(db: Db, jobOrderId: string, lineNo: number, stepId:
   return true;
 }
 
+/** Opens a completed step again when cancelled pieces leave it short of the line (nothing of the line released yet). */
+export function reopenShort(db: Db, jobOrderId: string, lineNo: number, stepId: number, reason: string, who: Who): void {
+  const line = lineState(db, jobOrderId).find((l) => l.lineNo === lineNo);
+  const route = lineRoute(db, jobOrderId, lineNo);
+  const step = route?.find((s) => s.id === stepId);
+  if (!line || !route || step?.status !== 'completed' || line.releasedQty > 0) return;
+  if (stepCovered(db, jobOrderId, lineNo, route, step, line.qty) >= line.qty) return;
+  const seq = ((db.prepare('SELECT MAX(seq) FROM prd_step_events WHERE job_order_id = ? AND line_no = ? AND step_id = ?').pluck().get(jobOrderId, lineNo, stepId) as number | null) ?? 0) + 1;
+  db.prepare('INSERT INTO prd_step_events (job_order_id, line_no, step_id, seq, action, reason, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+    jobOrderId, lineNo, stepId, seq, 'reopen', reason, who.at, who.userId,
+  );
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.step', entityType: 'jo.job_order', entityId: jobOrderId, data: { lineNo, stepId, seq, action: 'reopen', reason } });
+}
+
 export type StepAction = 'complete' | 'not_needed' | 'reopen';
 const DONE_WORDS: Record<StepAction, string> = { complete: 'completed', not_needed: 'marked not needed', reopen: 'reopened' };
 
@@ -415,7 +433,7 @@ export function stepAction(db: Db, jobOrderId: string, lineNo: number, stepId: n
     // Steps complete on their own once every piece is recorded (autoComplete), so Complete on a completed step changes nothing.
     if (action === 'complete' && step.status === 'completed') return route;
     if (step.status === (action === 'complete' ? 'completed' : 'not_needed')) throw conflict('ALREADY', `${step.name} on line ${lineNo} is already ${DONE_WORDS[action]}.`);
-    if (action === 'not_needed' && (step.pieces !== 0 || step.reworkPieces !== 0)) {
+    if (action === 'not_needed' && hasPieces(step)) {
       throw conflict('HAS_PIECES', `${step.name} has pieces recorded on line ${lineNo}. Mark it Completed instead, or cancel those entries first.`);
     }
     // The owner's rule (Oct 2026): a step is completed only once all of the line's pieces are recorded on it (rework apart).

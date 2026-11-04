@@ -100,6 +100,12 @@ export function setPersonActive(db: Db, id: string, ifMatch: unknown, active: bo
     if (b.dueFromCents !== 0 || b.dueToCents !== 0) {
       throw conflict('HAS_BALANCE', `${p.name} still owes ${formatPeso(b.dueFromCents)} and is owed ${formatPeso(b.dueToCents)}. Settle both first.`);
     }
+    const stockholder = { party: { type: 'stockholder', id } };
+    const dividends = -accountBalance(db, resolveAccount(db, { role: 'DIVIDENDS_PAYABLE' }).id, stockholder);
+    const subscription = accountBalance(db, resolveAccount(db, { role: 'SUBSCRIPTIONS_RECEIVABLE' }).id, stockholder);
+    if (dividends !== 0 || subscription !== 0) {
+      throw conflict('HAS_BALANCE', `${p.name} is owed ${formatPeso(dividends)} in dividends and owes ${formatPeso(subscription)} on a subscription. Settle both first.`);
+    }
   }
   db.prepare('UPDATE eq_people SET is_active = ?, version = version + 1, updated_at = ? WHERE id = ?').run(+active, who.at, id);
   appendAudit(db, { at: who.at, userId: who.userId, action: active ? 'eq.person.activate' : 'eq.person.deactivate', entityType: 'eq.person', entityId: id, data: {} });

@@ -80,7 +80,7 @@ export function customerContact(db: Db, id: string): { id: string; code: string;
   let row = db.prepare('SELECT id, code, display_name, email, email_consent, merged_into_id FROM cus_customers WHERE id = ?').get(id) as
     | { id: string; code: string; display_name: string; email: string | null; email_consent: number; merged_into_id: string | null }
     | undefined;
-  if (row?.merged_into_id) {
+  for (let hops = 0; row?.merged_into_id && hops < 50; hops++) { // merged, and merged again: the record that lives
     row = db.prepare('SELECT id, code, display_name, email, email_consent, merged_into_id FROM cus_customers WHERE id = ?').get(row.merged_into_id) as typeof row;
   }
   return row && { id: row.id, code: row.code, name: row.display_name, email: row.email?.trim() || null, emailConsent: row.email_consent === 1 };
@@ -115,7 +115,10 @@ export function customerPrintDetails(db: Db, id: string): { billingAddress: stri
     | { id: string; billing_address: string | null; merged_into_id: string | null }
     | undefined;
   if (!row) return undefined;
-  const c = row.merged_into_id ? (db.prepare('SELECT id, billing_address FROM cus_customers WHERE id = ?').get(row.merged_into_id) as typeof row | undefined) ?? row : row;
+  let c = row;
+  for (let hops = 0; c.merged_into_id && hops < 50; hops++) { // merged, and merged again: the record that lives
+    c = (db.prepare('SELECT id, billing_address, merged_into_id FROM cus_customers WHERE id = ?').get(c.merged_into_id) as typeof row | undefined) ?? { ...c, merged_into_id: null };
+  }
   const phones = db.prepare('SELECT phone FROM cus_customer_phones WHERE customer_id = ? AND is_active = 1 ORDER BY created_at').pluck().all(c.id) as string[];
   return { billingAddress: c.billing_address?.trim() || null, phones: phones.map((p) => p.trim()).filter(Boolean) };
 }

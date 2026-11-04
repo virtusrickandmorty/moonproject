@@ -50,11 +50,12 @@ export function Checkout() {
   const [quote, setQuote] = useState<{ delivers: true; area: string; feeCents: number } | { delivers: false } | null>(null);
   useEffect(() => {
     if (v.fulfilment !== 'delivery' || !v.city.trim() || !v.province.trim()) return setQuote(null);
+    let current = true;
     const t = setTimeout(() => {
       fetch(`/api/shp/delivery-fee?${new URLSearchParams({ city: v.city.trim(), province: v.province.trim() })}`, { credentials: 'same-origin' })
-        .then((r) => r.json()).then(setQuote, () => setQuote(null));
+        .then((r) => (r.ok ? r.json() : null)).then((q) => { if (current) setQuote(q); }, () => { if (current) setQuote(null); });
     }, 300);
-    return () => clearTimeout(t);
+    return () => { current = false; clearTimeout(t); };
   }, [v.fulfilment, v.city, v.province]);
   const fee = v.fulfilment === 'delivery' && quote?.delivers ? quote.feeCents : 0;
   const total = items + fee;

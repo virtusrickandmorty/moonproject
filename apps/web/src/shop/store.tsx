@@ -91,7 +91,7 @@ function useProducts(): { products: readonly Product[]; samples: boolean; ready:
     let last = 0;
     const load = (first: boolean) => {
       last = Date.now();
-      fetch('/api/shp/payment', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : null)).then((p) => live && setPayment(p), () => undefined);
+      fetch('/api/shp/payment', { credentials: 'same-origin' }).then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status))))).then((p) => live && setPayment(p), () => undefined);
       fetch('/api/shp/products', { credentials: 'same-origin' })
         .then((r) => (r.ok ? (r.json() as Promise<Product[]>) : Promise.reject(new Error(String(r.status)))))
         .then((list) => live && setGot(list.length ? { products: list, samples: false } : { products: SAMPLE_PRODUCTS, samples: true }))

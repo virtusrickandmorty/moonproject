@@ -50,11 +50,14 @@ export function matchCatalogItem(db: Db, text: string): { id: string; name: stri
  */
 export function publicPriceList(db: Db, businessDate: string): { id: string; name: string; unit: 'pc' | 'set'; kind: 'made to order' | 'ready-made' | 'service'; tiers: { fromQty: number; unitPriceCents: number }[] }[] {
   const items = db.prepare('SELECT id, name, unit, class FROM cat_items WHERE is_active = 1 ORDER BY name').all() as { id: string; name: string; unit: 'pc' | 'set'; class: string }[];
-  const tiers = db.prepare(`SELECT min_qty AS fromQty, unit_price_cents AS unitPriceCents FROM cat_prices p
-    WHERE item_id = ? AND effective_from = (SELECT MAX(effective_from) FROM cat_prices x WHERE x.item_id = p.item_id AND x.min_qty = p.min_qty AND x.effective_from <= ?)
-    ORDER BY min_qty`);
+  const breaks = db.prepare('SELECT DISTINCT min_qty FROM cat_prices WHERE item_id = ? AND effective_from <= ? ORDER BY min_qty').pluck();
+  // Each break as the sale will price it (the newest date wins across tiers), so a customer is never told a price sales will not honour.
+  const tiers = (id: string) => (breaks.all(id, businessDate) as number[])
+    .map((fromQty) => ({ fromQty, unitPriceCents: lookupCatalogPrice(db, id, fromQty, businessDate)?.unitPriceCents }))
+    .filter((t): t is { fromQty: number; unitPriceCents: number } => t.unitPriceCents !== undefined)
+    .filter((t, i, all) => i === 0 || all[i - 1]!.unitPriceCents !== t.unitPriceCents);
   const kind = (c: string) => (c === 'made_to_order_garment' ? 'made to order' : c === 'ready_made_item' ? 'ready-made' : 'service') as 'made to order' | 'ready-made' | 'service';
-  return items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, kind: kind(i.class), tiers: tiers.all(i.id, businessDate) as { fromQty: number; unitPriceCents: number }[] }))
+  return items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, kind: kind(i.class), tiers: tiers(i.id) }))
     .filter((i) => i.tiers.length > 0);
 }
 

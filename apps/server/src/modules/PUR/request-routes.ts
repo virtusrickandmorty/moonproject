@@ -29,7 +29,7 @@ export function purRequestRoutes(app: FastifyInstance, deps: AppDeps): void {
     const r = requestStatus(db, id.parse(req.params).id);
     if (!r) throw notFound('The purchase request');
     const user = currentUser(req);
-    const mayDecide = r.state === 'waiting' && user.permissions.has('pur.request.approve') && (r.requestedBy !== user.userId || user.roles.includes('owner'));
+    const mayDecide = r.state === 'waiting' && user.permissions.has('pur.request.approve') && (r.requestedBy !== user.userId || user.permissions.has('pur.request.approve_own'));
     return { ...r, mayDecide };
   });
 
@@ -42,7 +42,7 @@ export function purRequestRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (!r) throw notFound('The purchase request');
       if (r.status !== 'posted') throw conflict('REQUEST_CANCELLED', `${r.number} is cancelled.`);
       if (r.decision) throw conflict('ALREADY_DECIDED', `${r.number} was already ${r.decision.decision} by ${r.decision.userName}.`);
-      if (r.requestedBy === user.userId && !user.roles.includes('owner')) {
+      if (r.requestedBy === user.userId && !user.permissions.has('pur.request.approve_own')) {
         throw conflict('OWN_REQUEST', `${r.number} is your own request: the owner or another approver decides on it.`);
       }
       if (b.decision === 'rejected' && !b.note) throw new AppError('VALIDATION', 'Say why it is not approved, for the person who asked.', 422, [{ field: 'note', code: 'NOTE', level: 'error', message: 'Say why it is not approved.' }]);

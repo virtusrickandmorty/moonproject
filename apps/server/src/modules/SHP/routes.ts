@@ -145,6 +145,10 @@ export function shpRoutes(app: FastifyInstance, deps: AppDeps): void {
       matchingVersion(req, r);
       const version = r.version + 1;
       const c = category(p.categoryId);
+      // Stock is kept by the size and colour's name, so renaming or dropping one with pieces would lose them from view.
+      const lost = r.made_to_order ? undefined : (stockOf(db, [r.id], clock.now().getTime()).get(r.id) ?? [])
+        .find((s) => s.onHand !== 0 && !(p.sizes.includes(s.size) && p.colours.some((x) => x.name === s.colour)));
+      if (lost) throw conflict('VARIANT_HAS_STOCK', `${lost.colour}, size ${lost.size} has ${lost.onHand} on hand. Keep it for now, or count it to zero first.`);
       db.prepare(`UPDATE shp_products SET name = ?, category = ?, category_id = ?, shape = ?, price_cents = ?, regular_price_cents = ?, made_to_order = ?, min_qty = ?, lead_days = ?, badge = ?,
         summary = ?, sort_order = ?, version = ?, updated_at = ? WHERE id = ?`)
         .run(p.name, c.name, c.id, p.shape, p.priceCents, p.regularPriceCents, p.madeToOrder ? 1 : 0, p.minQty, p.leadDays, p.badge, p.summary, p.sortOrder, version, at, r.id);

@@ -80,6 +80,10 @@ export function addRate(db: Db, raw: unknown, who: { userId: string; at: string;
       .prepare('INSERT INTO rate_piece_rates (garment_type, step_code, complexity, part, rate_cents, effective_from, reason, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(garmentType, v.stepCode, v.complexity, v.part ?? 'whole', v.rateCents, v.effectiveFrom, v.reason, who.at, who.userId).lastInsertRowid,
   );
+  // Saving a rate means using it: a garment type switched off (the made-up starters) comes back on, or the rate would be ignored.
+  if (isSwitchedOff(db, garmentType)) {
+    db.prepare('INSERT INTO rate_garment_type_switches (garment_type, is_on, reason, at, user_id) VALUES (?, 1, ?, ?, ?)').run(garmentType, 'A rate was saved for it', who.at, who.userId);
+  }
   appendAudit(db, { at: who.at, userId: who.userId, action: 'rate.add', entityType: 'rate.piece_rate', entityId: String(id), data: { ...v, part: v.part ?? 'whole', garmentType } });
   return db.prepare(`${RATE} WHERE id = ?`).get(id) as PieceRate;
 }

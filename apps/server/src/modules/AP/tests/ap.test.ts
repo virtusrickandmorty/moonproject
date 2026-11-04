@@ -213,6 +213,8 @@ describe('AP rules (PLAN E9, D4)', () => {
     const po = await encoder.post('/api/docs/pur.po/post', { input: { supplierId: fabric, lines: [{ supplyId: cloth, qty: 50, unitCostCents: 22_400 }] }, expectedTotalCents: 1_120_000 }, idem());
     const rr = (await encoder.post('/api/docs/pur.rr/post', { input: { poDocumentId: po.json().id, lines: [{ poLineNo: 1, qty: 50 }] }, expectedTotalCents: 0 }, idem())).json();
     expect((await bill(encoder, g15({ receivingReportId: rr.id }))).json().warnings).toEqual([]);
+    // The report stands under its bill: cancelled first, the goods could be billed twice.
+    expect((await env.as('accountant').then((a) => a.post(`/api/docs/pur.rr/${rr.id}/cancel`, { reason: 'wrong qty recorded' }, idem()))).statusCode).toBe(409);
     const again = await bill(encoder, g15({ supplierInvoiceNo: 'SI-7789', receivingReportId: rr.id }));
     expect(again.json().warnings.map((w: { message: string }) => w.message)).toEqual([`${rr.number} is already on BILL-000001. Check that this is another invoice for it.`]);
     const other = await newSupplier({ name: 'Sample Thread Supply', tin: '555-666-777-000' });

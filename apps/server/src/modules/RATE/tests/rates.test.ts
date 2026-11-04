@@ -1,5 +1,6 @@
 /** Piece-rate table (PLAN E7 RATE): starter rates, effective-dated versions with history, lookup, permissions. */
 import { beforeEach, describe, expect, it } from 'vitest';
+import { isSwitchedOff } from '../rates.ts';
 import { createTestEnv, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
 import { rateAt } from '../rates.ts';
 
@@ -90,6 +91,15 @@ it('lists the rates in force for a garment type no price list item goes by (show
   const after = (await owner.get('/api/rate/rates')).json() as { unmatched: { garmentType: string }[] };
   expect(after.unmatched.some((r) => r.garmentType === 'T-shirt')).toBe(false); // matched in any case
   expect(after.unmatched.some((r) => r.garmentType === 'Polo shirt')).toBe(true);
+});
+
+it('saving a rate for a switched-off garment type brings it back on, or the rate would be ignored', async () => {
+  const owner = await env.as('owner');
+  const r = await owner.post('/api/rate/garment-types/switch', { garmentType: 'Polo shirt', on: false, reason: 'Not made any more, no price' });
+  expect(r.statusCode, r.body).toBe(200);
+  expect(isSwitchedOff(env.db, 'Polo shirt')).toBe(true);
+  expect((await add({})).statusCode).toBe(200);
+  expect(isSwitchedOff(env.db, 'Polo shirt')).toBe(false);
 });
 
 it('switches off a garment type no job order item is made as: no rate for new pieces, off the unmatched list; on again', async () => {

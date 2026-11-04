@@ -78,7 +78,8 @@ describe('shop work', () => {
     await finish(jo.id);
     // Only the 2 still off sale can come back fixed.
     expect((await encoder.get(`/api/shp/work/${jo.id}`)).json().lines[0]).toMatchObject({ ready: 2, canGiveBack: 2 });
-    expect((await encoder.post(`/api/shp/work/${jo.id}/put-in`, { lines: [{ lineNo: 1, qty: 2 }] })).json().complete).toBe(false);
+    // 1 back on sale and 2 fixed: all 3 are accounted for, so the work is complete.
+    expect((await encoder.post(`/api/shp/work/${jo.id}/put-in`, { lines: [{ lineNo: 1, qty: 2 }] })).json().complete).toBe(true);
     expect(await item(tee, 'M', 'White')).toMatchObject({ onHand: 5 });
     // Rework needs the pieces on hand.
     expect((await encoder.post('/api/shp/work', { kind: 'rework', dueInDays: 3, priority: 'normal', lines: [{ to: { productId: tee, size: 'S', colour: 'White' }, qty: 5 }] })).json().code).toBe('NOT_IN_STOCK');

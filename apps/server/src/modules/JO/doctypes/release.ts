@@ -13,7 +13,7 @@ import type { DocHeader, DocTypeDef } from '../../../engine/documents/registry.t
 import { jobOrderRef, jobOrdersOf, joMoney, rosterOf } from '../public.ts';
 import { STAGE_LABELS, currentStage, forStockReason, isAbandoned, moveTo } from '../stages.ts';
 import { addDays } from './job-order.ts';
-import { finishedPieces, lineProduction } from '../../PRD/public.ts';
+import { finishedPieces, finishedWearers, lineProduction } from '../../PRD/public.ts';
 
 /**
  * The lines that may go out now (the owner's rule, Oct 2026: release what is ready, even while other items are still
@@ -165,11 +165,13 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
         // Each wearer goes out once; the pieces are theirs.
         const roster = new Map(rosterOf(ctx.db, jo.id, l.lineNo).map((w) => [w.rowNo, w]));
         const out = releasedWearers(ctx.db, jo.id).get(l.lineNo) ?? new Map<number, string>();
+        const finished = doc.overrideReason ? null : finishedWearers(ctx.db, jo.id, l.lineNo); // the owner may release early, with a reason
         let qty = 0;
         for (const n of new Set(picked)) {
           const w = roster.get(n);
           if (!w) { error(`lines.${i}.wearers`, 'WEARER', `Line ${l.lineNo} has no wearer ${n}.`); continue; }
           if (out.has(n)) error(`lines.${i}.wearers`, 'WEARER_RELEASED', `Line ${l.lineNo}: ${w.wearerName} already went out on ${out.get(n)}.`);
+          else if (finished && !finished.has(n)) error(`lines.${i}.wearers`, 'WEARER_NOT_READY', `Line ${l.lineNo}: ${w.wearerName} is not finished yet.`);
           qty += w.qty;
         }
         if (picked.length !== new Set(picked).size) error(`lines.${i}.wearers`, 'WEARER_TWICE', `Line ${l.lineNo}: a wearer is ticked twice.`);
@@ -227,7 +229,10 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
   afterCancel(db, documentId, h) {
     const jo = joOf(db, documentId);
     // Nothing out any more: back to Ready, or to In production while an item is still being made.
-    const making = [...lineProduction(db, jo).values()].includes('in_production');
+    const made = lineProduction(db, jo);
+    // An item with no steps yet counts as still to make only on a job order the board follows, not one moved along by hand.
+    const tracked = [...made.values()].some((m) => m !== 'none');
+    const making = lineState(db, jo).some((l) => made.get(l.lineNo) === 'in_production' || (tracked && made.get(l.lineNo) === 'none' && l.kind !== 'ready_made'));
     moveTo(db, jo, lineState(db, jo).some((l) => l.releasedQty > 0) ? 'partially_released' : making ? 'in_production' : 'ready', `${h.number} cancelled`, h);
     return null;
   },
