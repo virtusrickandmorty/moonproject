@@ -286,6 +286,8 @@ export function JobOrderForm({ type, mode, me, inDialog }: { type: DocTypeInfo; 
     const next = { ...v, lines: editing === null ? [...v.lines, item] : v.lines.map((l, j) => (j === editing ? item : l)) };
     setV(next);
     clearItem();
+    // An edit: what the change does to production is checked again for the new lines, so Record is pressed after that.
+    if (editOf) return setSaved('The item is in the order. Check the items, then press Record.');
     const all = joInput(next);
     r.ask(all.input, [...all.errors, ...carryErrors]);
   };

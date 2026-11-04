@@ -15,7 +15,27 @@ let seen = false;
 let retry: ReturnType<typeof setTimeout> | undefined;
 let waitMs = 0;
 
-const tell = (types: string[]) => { for (const l of [...listeners]) l(types); };
+/** No one has touched this tab for this long (the server signs out at 60 minutes): it stops asking the server anything. */
+const AWAY_MS = 55 * 60_000;
+let lastInput = Date.now();
+let unattended = false;
+let missed = false;
+/** A screen left on by design (the TV board, the floor tablet): it keeps reloading with nobody at it. */
+export const setUnattended = (on: boolean) => { unattended = on; };
+/** Nobody is at this screen. Background reloads stop, so the idle sign-out works; the first touch brings everything up to date. */
+export const userAway = () => !unattended && Date.now() - lastInput > AWAY_MS;
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  const back = () => { lastInput = Date.now(); if (missed) { missed = false; tell(['*']); } };
+  for (const e of ['pointerdown', 'keydown', 'wheel', 'touchstart']) window.addEventListener(e, back, { passive: true, capture: true });
+}
+
+const hear = (types: string[]) => {
+  if (userAway()) { missed = true; return; }
+  for (const l of [...listeners]) l(types);
+};
+/** What the tab holding the stream passes on to the others (see share). */
+let channel: BroadcastChannel | null = null;
+const tell = (types: string[]) => { channel?.postMessage({ types }); hear(types); };
 
 /** The build of the app this page runs (its main script's name), and whether the server now serves another. */
 const ownBuild = () => (typeof document === 'undefined' ? null : /assets\/index-[\w-]+\.js/.exec(document.querySelector<HTMLScriptElement>('script[src*="/assets/index-"]')?.src ?? '')?.[0] ?? null);
@@ -49,6 +69,7 @@ function open(): void {
     try {
       const build = (JSON.parse((e as MessageEvent<string>).data) as { build?: string | null }).build;
       const mine = ownBuild();
+      channel?.postMessage({ build });
       if (build && mine && build !== mine && !updated) { updated = true; for (const l of [...updateListeners]) l(); }
     } catch { /* an old server says no build */ }
   });
@@ -67,8 +88,36 @@ export function startLive(): void {
   wanted = true;
   seen = false;
   waitMs = 0;
-  open();
+  if (!share()) open();
 }
+
+/**
+ * One stream for every tab of this browser: a browser allows six connections to a site, and each stream holds one for as
+ * long as the tab is open, so a seventh tab would never load. The tab holding the lock keeps the stream and passes what it
+ * hears to the others; when it closes, the next one takes over and every screen catches up. False where the browser has
+ * neither (then each tab keeps its own).
+ */
+function share(): boolean {
+  if (typeof window === 'undefined' || typeof BroadcastChannel === 'undefined' || !navigator.locks) return false;
+  const stop = new AbortController();
+  const here = new BroadcastChannel('moonproject-live');
+  channel = here;
+  here.onmessage = (e: MessageEvent<{ types?: string[]; build?: string | null }>) => {
+    if (e.data.types) hear(e.data.types);
+    const mine = ownBuild();
+    if (e.data.build && mine && e.data.build !== mine && !updated) { updated = true; for (const l of [...updateListeners]) l(); }
+  };
+  void navigator.locks.request('moonproject-live', { signal: stop.signal }, () => new Promise<void>((release) => {
+    seen = sharedBefore; // taking over from a tab that closed: what changed meanwhile is not known
+    open();
+    leave = () => { release(); };
+  })).catch(() => undefined);
+  sharedBefore = true;
+  leave = () => stop.abort();
+  return true;
+}
+let sharedBefore = false;
+let leave: (() => void) | null = null;
 
 /** Closes the stream (signing out), and stops opening it again. */
 export function stopLive(): void {
@@ -77,6 +126,11 @@ export function stopLive(): void {
   retry = undefined;
   source?.close();
   source = null;
+  leave?.();
+  leave = null;
+  channel?.close();
+  channel = null;
+  sharedBefore = false;
 }
 
 /** Hears every change; returns the way to stop hearing. */

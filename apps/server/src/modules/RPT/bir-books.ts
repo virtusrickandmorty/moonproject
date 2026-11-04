@@ -6,7 +6,7 @@ import type { AppDeps } from '../../app.ts';
 import { pageAsked, paged, pagedLedger } from '../../platform/paging.ts';
 import { customerRef, customerTaxInfo } from '../CUS/public.ts';
 import { supplier, supplierTaxInfo } from '../PUR/public.ts';
-import { purchasesRegister, salesRegister } from '../TAX/public.ts';
+import { purchasesRegister, revenueWithoutVat, salesRegister } from '../TAX/public.ts';
 import { billTaxFacts } from '../AP/public.ts';
 import { generalJournal, generalJournalCsv, generalLedger } from './books.ts';
 
@@ -103,7 +103,11 @@ export function salesBook(db: Db, from: string, to: string) {
   const rows = salesRegister(db, from, to).rows.filter((r) => SALES_BOOK_TYPES.has(r.docType ?? '')).map((r) => ({
     journalId: r.journalId, date: r.date, invoiceNumber: r.formNumber, documentNumber: r.documentNumber ?? r.journalNumber,
     customer: r.customerName, tin: r.tin, posting: r.posting, vatableCents: r.netCents, zeroRatedCents: 0, exemptCents: 0, vatCents: r.vatCents, totalCents: r.totalCents,
-  }));
+  })).concat(revenueWithoutVat(db, from, to).filter((r) => r.sale && SALES_BOOK_TYPES.has(r.docType ?? '')).map((r) => ({
+    // A sale not classed yet shows in the total only, until the accountant says which it is (the SLSP's "to class").
+    journalId: r.journalId, date: r.date, invoiceNumber: null as unknown as string, documentNumber: r.documentNumber ?? r.journalNumber, customer: r.customerName, tin: r.tin, posting: r.posting,
+    vatableCents: 0, zeroRatedCents: r.saleClass === 'zero_rated' ? r.amountCents : 0, exemptCents: r.saleClass === 'exempt' ? r.amountCents : 0, vatCents: 0, totalCents: r.amountCents,
+  }))).sort((a, b) => a.date.localeCompare(b.date) || String(a.documentNumber).localeCompare(String(b.documentNumber)));
   const amounts = (r: typeof rows[number]) => ({ vatableCents: r.vatableCents, zeroRatedCents: r.zeroRatedCents, exemptCents: r.exemptCents, vatCents: r.vatCents, totalCents: r.totalCents });
   return { book: 'sales', from, to, pages: paginate(rows, amounts), totals: rows.reduce((a, r) => add(a, amounts(r)), {} as Amounts) };
 }

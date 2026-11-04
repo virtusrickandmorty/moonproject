@@ -125,6 +125,17 @@ export function pendingCertificates(db: Db, onOrBefore: string): { id: string; n
 }
 
 /** Recorded collections and tenders, including cancellations, for dated read-only registers. */
+/** Whether a recorded collection's note names this text (an order link payment's reference). */
+export const collectionNotes = (db: Db, text: string): boolean =>
+  !!db.prepare(`SELECT 1 FROM col_collections c JOIN documents d ON d.id = c.document_id WHERE d.status = 'posted' AND instr(c.note, ?) > 0 LIMIT 1`).get(text);
+
+/** Credit memos of sales returns as sale lines, so sales reports net them (the sales-by-period report). */
+export function creditMemoSaleLines(db: Db) {
+  return db.prepare(`SELECT document_id AS id, customer_id AS customerId, customer_name AS customerName, 1 AS lineNo,
+    CASE kind WHEN 'return' THEN 'Sales return' ELSE 'Sales allowance' END AS description, 'other' AS kind, 0 AS qty, 1 AS grossCents FROM col_credit_memos`).all() as
+    { id: string; customerId: string; customerName: string; lineNo: number; description: string; kind: string; qty: number; grossCents: number }[];
+}
+
 export function collectionsBetween(db: Db, from: string, to: string) {
   return db.prepare(`SELECT d.id, d.number, d.business_date AS date, d.status, d.total_cents AS totalCents,
     c.customer_id AS customerId, c.customer_name AS customerName, c.cr_number AS crNumber,

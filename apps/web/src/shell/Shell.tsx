@@ -3,7 +3,7 @@
  * (H1) and the breadcrumb trail. Laid out like Star Admin 2: a grey top bar with a greeting, and a grey sidebar whose
  * current item is a white pill.
  */
-import { startLive, stopLive, useAppUpdated, useLiveChange } from '../live.ts';
+import { startLive, stopLive, useAppUpdated, useLiveChange, userAway } from '../live.ts';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { api, type DashNotification, type DocTypeInfo, type Me, type MenuOrder } from '../api.ts';
 import { Link, navigate, useLocation } from '../router.tsx';
@@ -21,7 +21,7 @@ function ServerDate() {
   useEffect(() => {
     const load = () => api.health().then((h) => setDate(h.serverTime.slice(0, 10)), () => setDate(null));
     void load();
-    const t = setInterval(load, 60_000);
+    const t = setInterval(() => { if (!userAway()) void load(); }, 60_000); // nobody at the screen: let the idle sign-out work
     return () => clearInterval(t);
   }, []);
   if (date === null) return <span className="rounded bg-red-600 px-2 py-0.5 font-medium text-white">Server date unknown: cannot reach the server</span>;

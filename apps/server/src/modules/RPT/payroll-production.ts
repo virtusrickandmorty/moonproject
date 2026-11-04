@@ -25,7 +25,7 @@ export function payrollRegister(db: Db, month: string, runId?: string) {
     employeeSharesCents: Number(r.sssEeCents)+Number(r.phicEeCents)+Number(r.hdmfEeCents),
     employerSharesCents: Number(r.sssErCents)+Number(r.sssEcCents)+Number(r.phicErCents)+Number(r.hdmfErCents),
     documentType: 'pay.run', documentPath: documentPath('pay.run', String(r.documentId)) }));
-  const money = ['grossCents','employeeSharesCents','employerSharesCents','taxCents','loanCents','caCents','netCents'];
+  const money = ['grossCents','employeeSharesCents','employerSharesCents','taxCents','loanCents','caCents','chargeCents','otherDeductionCents','taxRefundCents','netCents'];
   return { month, runId: runId ?? null, rows, totals: Object.fromEntries(money.map((k) => [k, sum(rows,k)])) };
 }
 

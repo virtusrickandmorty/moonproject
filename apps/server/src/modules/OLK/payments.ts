@@ -11,6 +11,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { pictureFile, sha256Hex } from '../../engine/attachments.ts';
 import { lookupCatalogPrice, publicPriceList } from '../CAT/public.ts';
+import { collectionNotes } from '../COL/public.ts';
 import { jobOrdersOf } from '../JO/public.ts';
 import { shopPayHow } from '../SHP/public.ts';
 import { answerOf, itemsOf, type LinkRow, type Who } from './links.ts';
@@ -48,11 +49,14 @@ export function shareOf(db: Db, l: LinkRow, a: ReturnType<typeof answerOf>, toda
   return { lines, totalCents: priced ? lines.reduce((s, x) => s + x.qty * x.unitCents!, 0) : null };
 }
 
+/** What the prefilled collection's note says, and how a recorded collection is known for its payment. */
+const referenceNote = (reference: string) => `reference ${reference}.`;
+
 /** The payments of an answer, oldest first (without the picture). */
 export function paymentsOf(db: Db, responseId: string) {
   return (db.prepare('SELECT id, amount_cents, reference, sent_at, status, reason, decided_at, job_order_id FROM olk_payments WHERE response_id = ? ORDER BY sent_at').all(responseId) as
     { id: string; amount_cents: number; reference: string; sent_at: string; status: 'sent' | 'accepted' | 'not_received'; reason: string | null; decided_at: string | null; job_order_id: string | null }[])
-    .map((p) => ({ id: p.id, amountCents: p.amount_cents, reference: p.reference, sentAt: p.sent_at, status: p.status, ...(p.reason ? { reason: p.reason } : {}),
+    .map((p) => ({ id: p.id, amountCents: p.amount_cents, reference: p.reference, sentAt: p.sent_at, status: p.status, recorded: p.status === 'accepted' && collectionNotes(db, referenceNote(p.reference)), ...(p.reason ? { reason: p.reason } : {}),
       ...(p.decided_at ? { decidedAt: p.decided_at } : {}), ...(p.job_order_id ? { jobOrderId: p.job_order_id } : {}) }));
 }
 
@@ -60,7 +64,8 @@ export function paymentsOf(db: Db, responseId: string) {
 export function memberPay(db: Db, token: string, a: ReturnType<typeof answerOf>, today: string) {
   const l = linkByToken(db, token);
   if (!l?.pay_own) return {};
-  return { share: shareOf(db, l, a, today), payments: paymentsOf(db, a.id).map(({ id: _, jobOrderId: _j, ...p }) => p) };
+  // Accepted and not yet recorded as a collection: to the member it is still being checked, not received.
+  return { share: shareOf(db, l, a, today), payments: paymentsOf(db, a.id).map(({ id: _, jobOrderId: _j, recorded, ...p }) => (p.status === 'accepted' && !recorded ? { ...p, status: 'sent' as const } : p)) };
 }
 
 /** What the link page adds for a pay-own link: the prices and how to pay the shop. */
@@ -123,12 +128,14 @@ export function jobOrdersFor(db: Db, id: string) {
 export function acceptPayment(db: Db, id: string, raw: unknown, who: Who) {
   const v = acceptInput.parse(raw);
   const p = paymentRow(db, id);
-  if (p.status !== 'sent') throw conflict('DECIDED', 'This payment was already checked.');
+  // Accepted but its collection never recorded (the form was closed): it can be taken up again, nothing is lost.
+  const again = p.status === 'accepted' && !collectionNotes(db, referenceNote(p.reference));
+  if (p.status !== 'sent' && !again) throw conflict('DECIDED', 'This payment was already checked.');
   const jo = jobOrdersFor(db, id).find((j) => j.id === v.jobOrderId);
   if (!jo) throw conflict('JOB_ORDER', "Pick a recorded job order of this member's.");
   db.prepare("UPDATE olk_payments SET status = 'accepted', decided_at = ?, decided_by = ?, job_order_id = ?, version = version + 1 WHERE id = ?").run(who.at, who.userId, jo.id, id);
   appendAudit(db, { at: who.at, userId: who.userId, action: 'olk.payment.accept', entityType: 'olk.payment', entityId: id, data: { jobOrderId: jo.id } });
-  return { jobOrderId: jo.id, jobOrderNumber: jo.number, amountCents: p.amount_cents, note: `Paid through the order link by ${p.name}, reference ${p.reference}.` };
+  return { jobOrderId: jo.id, jobOrderNumber: jo.number, amountCents: p.amount_cents, note: `Paid through the order link by ${p.name}, ${referenceNote(p.reference)}` };
 }
 
 /** Staff did not find the payment: the member sees why and can send it again. */

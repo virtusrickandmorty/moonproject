@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { api, ApiError, type FloorJob, type FloorScan, type FloorWeek, type Me, type OwnPayslip } from '../../../api.ts';
 import { navigate, useLocation } from '../../../router.tsx';
-import { startLive, stopLive, useLiveReload } from '../../../live.ts';
+import { setUnattended, startLive, stopLive, useLiveReload } from '../../../live.ts';
 import { peso } from '../../../components/ui.tsx';
 import { jobOrderFromScan, liveCameraAllowed, readQrPhoto, useQrCamera } from '../../../components/QrScan.tsx';
 
@@ -21,7 +21,7 @@ export function FloorApp({ me }: { me: Me }) {
   const [path, query = ''] = location.split('?');
   const q = new URLSearchParams(query);
   // Live (the office's shell does this for its screens): an approved or rejected scan shows by itself.
-  useEffect(() => { startLive(); return stopLive; }, []);
+  useEffect(() => { setUnattended(true); startLive(); return () => { setUnattended(false); stopLive(); }; }, []);
   const job = /^\/floor\/job\/([^/]+)$/.exec(path!)?.[1] ?? /^\/docs\/jo\.job_order\/([0-9a-f-]{36})$/i.exec(path!)?.[1];
   if (path === '/floor/scan') return <ScanScreen />;
   const tab: Tab = path === '/floor/earnings' ? 'earnings' : path === '/floor/jobs' ? 'jobs' : 'today';

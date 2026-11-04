@@ -40,6 +40,7 @@ export const stopInput = z.object({ fromMonth: month, reason: z.string().trim().
 export interface GovLoan {
   id: string; employeeId: string; employeeName: string; employeeCode: string; kind: LoanKind; agency: Agency; loanNo: string; amortizationCents: number;
   firstMonth: string; lastMonth: string; stoppedFrom: string | null; stopReason: string | null; note: string | null; version: number; createdAt: string; updatedAt: string;
+  scheduledOffsetCents: number; // what the months handled before an amortization change were scheduled at, over the current amortization
 }
 /** A loan with what recorded payroll runs deducted and what is left. */
 export interface LoanRow extends GovLoan {
@@ -49,7 +50,7 @@ export interface LoanRow extends GovLoan {
 
 const LOAN = `SELECT l.id, l.employee_id AS employeeId, e.full_name AS employeeName, e.code AS employeeCode, l.kind, l.agency, l.loan_no AS loanNo,
   l.amortization_cents AS amortizationCents, l.first_month AS firstMonth, l.last_month AS lastMonth, l.stopped_from AS stoppedFrom, l.stop_reason AS stopReason,
-  l.note, l.version, l.created_at AS createdAt, l.updated_at AS updatedAt FROM pay_gov_loans l JOIN emp_employees e ON e.id = l.employee_id`;
+  l.note, l.version, l.created_at AS createdAt, l.updated_at AS updatedAt, l.scheduled_offset_cents AS scheduledOffsetCents FROM pay_gov_loans l JOIN emp_employees e ON e.id = l.employee_id`;
 
 export const govLoan = (db: Db, id: string): GovLoan | undefined => db.prepare(`${LOAN} WHERE l.id = ?`).get(id) as GovLoan | undefined;
 /** An employee's loans, oldest first. */
@@ -66,7 +67,18 @@ function deducted(db: Db, loanId: string): { cents: number; lastMonth: string | 
     .get(loanId) as { cents: number; lastMonth: string | null; firstMonth: string | null };
 }
 
-export const scheduledOf = (l: Pick<GovLoan, 'amortizationCents' | 'firstMonth' | 'lastMonth'>) => l.amortizationCents * monthsBetween(l.firstMonth, l.lastMonth);
+export const scheduledOf = (l: Pick<GovLoan, 'amortizationCents' | 'firstMonth' | 'lastMonth'> & { scheduledOffsetCents?: number }) =>
+  l.amortizationCents * monthsBetween(l.firstMonth, l.lastMonth) + (l.scheduledOffsetCents ?? 0);
+
+/**
+ * What a loan's own recorded runs fell short of its schedule (a month skipped or part paid), less what was typed after
+ * its last month. Only months the ERP handled count: a loan also has months from before the ERP, paid outside it, so what
+ * is short is never worked out from the whole schedule, and payroll never deducts it unasked: a person types it.
+ */
+export function shortCents(db: Db, l: GovLoan): number {
+  const months = db.prepare(`SELECT r.contribution_month AS month, SUM(x.amount_cents) AS cents ${POSTED_DEDUCTIONS} GROUP BY r.contribution_month`).all(l.id) as { month: string; cents: number }[];
+  return Math.max(0, months.reduce((s, m) => s + (m.month <= l.lastMonth ? Math.max(0, l.amortizationCents - m.cents) : -m.cents), 0));
+}
 /** Whether the loan is deducted in a month: between its first and last month, and not stopped before it. */
 export function runsIn(l: Pick<GovLoan, 'firstMonth' | 'lastMonth' | 'stoppedFrom'>, m: string): 'running' | 'not_started' | 'ended' | 'stopped' {
   if (l.stoppedFrom && m >= l.stoppedFrom) return 'stopped';
@@ -152,8 +164,11 @@ export function updateLoan(db: Db, id: string, ifMatch: unknown, raw: unknown, w
   if (d.firstMonth && first > d.firstMonth) throw conflict('DEDUCTED', `Payroll deducted this loan in ${d.firstMonth}, so the first month cannot be later.`);
   if (d.lastMonth && last < d.lastMonth) throw conflict('DEDUCTED', `Payroll deducted this loan in ${d.lastMonth}, so the last month cannot be earlier.`);
   if (v.loanNo) checkNumber(db, before.agency, v.loanNo, id);
-  db.prepare('UPDATE pay_gov_loans SET loan_no = ?, amortization_cents = ?, first_month = ?, last_month = ?, note = ?, version = version + 1, updated_at = ? WHERE id = ?').run(
-    v.loanNo ?? before.loanNo, v.amortizationCents ?? before.amortizationCents, first, last, v.note !== undefined ? v.note : before.note, who.at, id,
+  // Months already handled stay as they were scheduled: only the months to come follow the new amortization.
+  const handled = db.prepare(`SELECT COUNT(DISTINCT r.contribution_month) ${POSTED_DEDUCTIONS}`).pluck().get(id) as number;
+  const offset = before.scheduledOffsetCents + (before.amortizationCents - (v.amortizationCents ?? before.amortizationCents)) * handled;
+  db.prepare('UPDATE pay_gov_loans SET loan_no = ?, amortization_cents = ?, first_month = ?, last_month = ?, note = ?, scheduled_offset_cents = ?, version = version + 1, updated_at = ? WHERE id = ?').run(
+    v.loanNo ?? before.loanNo, v.amortizationCents ?? before.amortizationCents, first, last, v.note !== undefined ? v.note : before.note, offset, who.at, id,
   );
   appendAudit(db, {
     at: who.at, userId: who.userId, action: 'pay.gov_loan.update', entityType: 'pay.gov_loan', entityId: id,

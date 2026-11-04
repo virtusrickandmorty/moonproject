@@ -38,7 +38,7 @@ import { PAY_GROUPS, employee as employeeOf, employeesInGroup, markPaidDays, mar
 import { advanceSchedule } from '../../CA/public.ts';
 import { clearAssignmentsPaidBy, markAssignmentPaid } from '../../PRD/public.ts';
 import { TAX_FREQUENCY, isWeekly, payFrom, periodEndOf, periodRuleOf, semiStartOf, weekStartOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunCharge, type RunDeduction, type RunLoan, type YearEnd } from '../run-calc.ts';
-import { KIND_LABEL, LOAN_ACCOUNT, govLoan, loanInMonth, type Agency } from '../loans.ts';
+import { KIND_LABEL, LOAN_ACCOUNT, govLoan, loanInMonth, shortCents, type Agency } from '../loans.ts';
 import { yearEndDoneBy } from '../year-end.ts';
 
 const MAX_CENTS = 1_000_000_00;
@@ -123,7 +123,7 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     const periodEnd = periodEndOf(input.payGroup, input.periodStart, periodRuleOf(ctx.db)) ?? input.periodStart;
     const base = { ...input, periodEnd, contributionMonth: periodEnd.slice(0, 7), taxFrequency: TAX_FREQUENCY[input.payGroup] };
     let worked: ReturnType<typeof workOut> = { employees: [], notes: [] };
-    if (periodEndOf(input.payGroup, input.periodStart, periodRuleOf(ctx.db)) && periodEnd <= ctx.businessDate) {
+    if (periodEndOf(input.payGroup, input.periodStart, periodRuleOf(ctx.db)) && (periodEnd <= ctx.businessDate || isPractice(ctx.db))) {
       try {
         worked = workOut(ctx.db, {
           payGroup: input.payGroup, periodStart: input.periodStart, periodEnd, payDate: ctx.businessDate, manual: input.lines ?? [],
@@ -211,6 +211,8 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
       if (o.amountCents === 0) return;
       const at = loanInMonth(ctx.db, loan, doc.contributionMonth);
       const what = `${KIND_LABEL[loan.kind]} ${loan.loanNo} of ${loan.employeeName}`;
+      const short = at.state === 'ended' ? shortCents(ctx.db, loan) : 0; // ended short: what was skipped may still be taken
+      if (short > 0) { if (at.takenBy) error(`loans.${i}.amountCents`, 'LOAN_TAKEN', `${at.takenBy} already deducted ${what} for ${doc.contributionMonth}; a loan is deducted once a month.`); else if (o.amountCents > short) error(`loans.${i}.amountCents`, 'LOAN_OVER', `${formatPeso(short)} is short on ${what}; the deduction cannot be more.`); return; }
       if (at.state === 'ended' || at.state === 'stopped' || at.leftCents === 0) error(`loans.${i}.amountCents`, 'NO_MONTHS_LEFT', `${what} has nothing left to deduct in ${doc.contributionMonth}${at.state === 'stopped' ? ` (stopped from ${loan.stoppedFrom})` : at.state === 'ended' ? ` (its last month was ${loan.lastMonth})` : ''}.`);
       else if (at.state === 'not_started') error(`loans.${i}.amountCents`, 'LOAN_NOT_STARTED', `${what} is deducted from ${loan.firstMonth}.`);
       else if (at.takenBy) error(`loans.${i}.amountCents`, 'LOAN_TAKEN', `${at.takenBy} already deducted ${what} for ${doc.contributionMonth}; a loan is deducted once a month.`);

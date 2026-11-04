@@ -9,7 +9,7 @@
  */
 import { z } from 'zod';
 import fc from 'fast-check';
-import { formatPeso, isBusinessDate, vatFromGross, type Issue } from '@moonproject/shared';
+import { formatPeso, isBusinessDate, manilaDate, vatFromGross, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { getCashPlace, listCashPlaces } from '../../../engine/ledger/accounts.ts';
 import { settingAt } from '../../../engine/settings.ts';
@@ -17,6 +17,7 @@ import type { Db } from '../../../platform/db/driver.ts';
 import { assetClass, assetParty, listClasses } from '../assets.ts';
 import { activeSupplierIds, supplier } from '../pur.ts';
 import { loansFinancingAsset } from '../../LOAN/public.ts';
+import { paymentsOnBill, recordAssetPayable } from '../../AP/public.ts';
 
 const MAX_CENTS = 100_000_000_00; // ₱100 million: a typo guard, not a business limit
 const part = z.number().int().positive().max(MAX_CENTS).optional();
@@ -116,6 +117,12 @@ export const buyDoc: DocTypeDef<BuyInput, Buy> = {
       doc.supplierInvoiceNo ?? null, doc.supplierInvoiceDate ?? null, doc.amountCents, doc.vatRateBp, doc.inputVatCents, doc.cashPlaceId ?? null,
       doc.paidCents ?? 0, doc.onAccountCents ?? 0, doc.financedCents ?? 0, doc.lender ?? null,
     );
+    if (doc.onAccountCents) {
+      const invoiceDate = doc.supplierInvoiceDate ?? h.businessDate;
+      const days = supplier(db, doc.supplierId)?.paymentTermsDays ?? 0;
+      const due = new Date(Date.parse(invoiceDate) + days * 86_400_000);
+      recordAssetPayable(db, { documentId: h.documentId, supplierId: doc.supplierId, invoiceNo: doc.supplierInvoiceNo ?? h.number, invoiceDate, dueDate: manilaDate(due), owedCents: doc.onAccountCents });
+    }
   },
 
   journal(doc, _ctx, header) {
@@ -152,6 +159,8 @@ export const buyDoc: DocTypeDef<BuyInput, Buy> = {
 
   /** Its depreciation runs and its disposal (a retirement or a sale) are cancelled first, so the asset's accounts come back to zero. */
   dependents(db, documentId) {
+    const paid = paymentsOnBill(db, documentId); // what was owed on it was paid: that goes first
+    if (paid.length > 0) return paid;
     const own = db
       .prepare(
         `SELECT d.id, d.number FROM fa_depreciation_lines l JOIN documents d ON d.id = l.document_id WHERE l.asset_id = @id AND d.status = 'posted'

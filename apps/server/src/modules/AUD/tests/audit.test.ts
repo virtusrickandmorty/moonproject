@@ -46,7 +46,7 @@ describe('AUD audit log and integrity', () => {
     expect(csv.headers['content-disposition']).toContain('attachment');
     expect(csv.body).toContain(`"${selected[0].seq}"`);
     expect(csv.body).toContain('CSV-2');
-    expect(csv.body).not.toContain('CSV-1');
+    expect(csv.body).toContain('CSV-1'); // the whole selection, not the page on screen
     const after = (env.db.prepare('SELECT COUNT(*) FROM audit_log').pluck().get() as number);
     expect(after).toBe(before + 1);
     const exported = env.db.prepare("SELECT action, data, user_id FROM audit_log WHERE action = 'audit.export' ORDER BY seq DESC LIMIT 1").get() as { action: string; data: string; user_id: string };

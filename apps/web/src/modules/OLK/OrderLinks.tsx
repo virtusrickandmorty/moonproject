@@ -302,6 +302,7 @@ function LinkDetail({ id, manage }: { id: string; manage: boolean }) {
 }
 
 const PAID: Record<OlkPayment['status'], string> = { sent: 'To check', accepted: 'Received', not_received: 'Not received' };
+const paidWords = (p: OlkPayment) => (p.status === 'accepted' && !p.recorded ? 'Accepted: collection not recorded yet' : PAID[p.status]);
 
 /**
  * A member's share and payments (each pays their own share). A payment to check: its picture, then Received (pick the
@@ -311,15 +312,16 @@ function Payments({ share, payments, manage, onChanged }: { share?: OlkShare; pa
   const [picture, setPicture] = useState<string | null>(null);
   const [taking, setTaking] = useState<OlkPayment | null>(null);
   const [refusing, setRefusing] = useState<OlkPayment | null>(null);
-  const paid = payments.filter((p) => p.status === 'accepted').reduce((s, p) => s + p.amountCents, 0);
+  const paid = payments.filter((p) => p.status === 'accepted' && p.recorded).reduce((s, p) => s + p.amountCents, 0);
   return (
     <div className="mt-1 space-y-1 rounded-lg bg-slate-50 p-2 text-sm">
       {share && <p>Share <b>{share.totalCents === null ? 'not priced (an item has no price on the list)' : peso(share.totalCents)}</b>{paid > 0 && <> · received {peso(paid)}</>}</p>}
       {payments.map((p) => (
         <div key={p.id} className="flex flex-wrap items-center gap-2">
           <span className={p.status === 'sent' ? 'font-semibold text-amber-800' : p.status === 'accepted' ? 'text-emerald-700' : 'text-slate-500 line-through'}>{peso(p.amountCents)} · ref. {p.reference}</span>
-          <span className="text-xs text-slate-500">{manilaTime(p.sentAt)} · {PAID[p.status]}{p.reason ? `: ${p.reason}` : ''}</span>
+          <span className="text-xs text-slate-500">{manilaTime(p.sentAt)} · {paidWords(p)}{p.reason ? `: ${p.reason}` : ''}</span>
           <button type="button" className="text-xs text-indigo-700 underline" onClick={() => setPicture(p.id!)}>Picture</button>
+          {manage && p.status === 'accepted' && !p.recorded && <Button className="!px-2 !py-1 text-xs" tone="primary" onClick={() => setTaking(p)}>Record the collection</Button>}
           {manage && p.status === 'sent' && <>
             <Button className="!px-2 !py-1 text-xs" tone="primary" onClick={() => setTaking(p)}>Received</Button>
             <Button className="!px-2 !py-1 text-xs" onClick={() => setRefusing(p)}>Not received</Button>

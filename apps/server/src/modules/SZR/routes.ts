@@ -92,6 +92,26 @@ export function szrRoutes(app: FastifyInstance, deps: AppDeps): void {
     return { success: true, version: newVersion };
   });
 
+  /** A set marked lost or damaged was found or repaired (or marked by mistake): it is back in the shop, with the reason. */
+  app.post('/api/szr/sets/:id/recover', { config: { permission: 'szr.set.edit' } }, async (req) => {
+    const { id } = z.object({ id: z.string() }).parse(req.params);
+    const { reason } = z.object({ reason: z.string().trim().min(5).max(300) }).strict().parse(req.body);
+    const versionMatch = req.headers['if-match'];
+    if (!versionMatch || !/^[1-9]\d*$/.test(versionMatch.replace(/"/g, ''))) throw preconditionRequired('Missing or invalid If-Match header');
+    const expectedVersion = parseInt(versionMatch.replace(/"/g, ''), 10);
+    const now = stamp(clock);
+    const user = currentUser(req);
+    tx(db, () => {
+      const before = db.prepare('SELECT * FROM szr_sets WHERE id = ?').get(id) as any;
+      if (!before) throw notFound('Set not found');
+      if (before.status !== 'lost or damaged') throw new AppError('SET_NOT_LOST', 'Only a set marked lost or damaged can come back.', 409);
+      if (before.version !== expectedVersion) throw new AppError('VERSION_CHANGED', 'Set was modified by someone else', 409);
+      db.prepare("UPDATE szr_sets SET status = 'in shop', version = version + 1, updated_at = ? WHERE id = ?").run(now, id);
+      appendAudit(db, { at: now, userId: user.userId, action: 'szr.set.recover', entityType: 'szr_sets', entityId: id, data: { reason, code: before.code } });
+    });
+    return { success: true };
+  });
+
   app.post('/api/szr/sets/:id/deactivate', { config: { permission: 'szr.set.edit' } }, async (req) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const versionMatch = req.headers['if-match'];

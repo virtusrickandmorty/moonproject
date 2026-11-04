@@ -111,6 +111,18 @@ export function latestPurchaseCost(db: Db, supply: CountableSupply, asOf: string
 }
 
 export { duplicateInvoiceIssues, normalizeInvoiceNo, type InvoiceParty } from './invoices.ts';
+export { paymentsOnBill } from './ledger.ts';
+
+/**
+ * What is owed on a fixed asset bought on account (FA-), so it is paid and aged like any bill. The asset's own document
+ * carries the VAT and the cost, so the row holds only what is owed, as an opening bill does. In the asset's transaction.
+ */
+export function recordAssetPayable(db: Db, a: { documentId: string; supplierId: string; invoiceNo: string; invoiceDate: string; dueDate: string; owedCents: number }): void {
+  db.prepare(
+    `INSERT INTO ap_bills (document_id, supplier_id, supplier_invoice_no, supplier_invoice_date, due_date, receiving_report_id, vat_registered, vat_rate_bp,
+       gross_cents, input_vat_cents, ewt_class, ewt_rate_bp, ewt_base_cents, ewt_cents, payable_cents, note) VALUES (?, ?, ?, ?, ?, NULL, 0, 0, ?, 0, NULL, 0, 0, 0, ?, NULL)`,
+  ).run(a.documentId, a.supplierId, a.invoiceNo, a.invoiceDate, a.dueDate, a.owedCents, a.owedCents);
+}
 
 /** Supplier bills still owed that are overdue or due by `until` (a business date), with the supplier's name (the notifications bell). */
 export function billsDue(db: Db, today: string, until: string) {
