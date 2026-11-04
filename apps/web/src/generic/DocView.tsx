@@ -6,7 +6,7 @@
  */
 import { useLiveChange } from '../live.ts';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { api, ApiError, newIdempotencyKey, type CancelPreview, type CashPlace, type DocDetail, type DocTypeInfo, type PrintVariant } from '../api.ts';
+import { api, ApiError, newIdempotencyKey, printWhenReady, type CancelPreview, type CashPlace, type DocDetail, type DocTypeInfo, type PrintVariant } from '../api.ts';
 import { Link, navigate } from '../router.tsx';
 import { Loading, Button, JournalTable, Notice, Panel, ReasonDialog, StatusChip, SURFACE, longDate, manilaTime, peso, showDate } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
@@ -25,8 +25,8 @@ export async function printDocument(typeKey: string, id: string, variant: PrintV
   if (!page) return 'Allow a new window to print this document.';
   try {
     const { html } = await api.printDocument(typeKey, id, variant);
-    page.onload = () => page.print();
     page.document.open(); page.document.write(html); page.document.close();
+    printWhenReady(page);
     return null;
   } catch (e) {
     page.close();

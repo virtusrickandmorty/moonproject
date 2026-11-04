@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, type PrinterTestPack } from '../../api.ts';
+import { api, printWhenReady, type PrinterTestPack } from '../../api.ts';
 import { Loading, Button, Notice, Panel } from '../../components/ui.tsx';
 
 const CHECKS_KEY = 'moonproject.printer-test-pack.checked';
@@ -9,7 +9,7 @@ export function openTestPrint(html: string): void {
   if (!page) throw new Error('Allow a new window to print this test page.');
   page.document.write(html);
   page.document.close();
-  page.onload = () => page.print();
+  printWhenReady(page);
 }
 
 /** Keep the first print's stylesheet and put every A4 sheet in one print job, in catalogue order. */
@@ -19,6 +19,11 @@ export function combineA4(prints: PrinterTestPack['prints']): string {
   const style = pages[0]!.html.match(/<style>[\s\S]*?<\/style>/)?.[0] ?? '';
   const sheets = pages.map((p) => p.html.match(/<div class="sheet[^>]*">[\s\S]*<\/div><\/body>/)?.[0]?.replace(/<\/body>$/, '') ?? '').join('');
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Printer test pack · A4</title>${style}</head><body>${sheets}</body></html>`;
+}
+
+/** The A4 samples "Print all A4" cannot join: each has its own stylesheet and no sheet to lift out, so it prints alone. */
+export function printedAlone(prints: PrinterTestPack['prints']): PrinterTestPack['prints'] {
+  return prints.filter((p) => p.paper.startsWith('A4') && !p.html.includes('<div class="sheet'));
 }
 
 export function PrinterTestPackScreen() {
@@ -44,6 +49,7 @@ export function PrinterTestPackScreen() {
         ? <Notice tone="warning">The samples show a made-up company. To see your own name, TIN and address on them, save them first under Admin, Company print details.</Notice>
         : <Notice tone="note">The samples show your saved company print details.</Notice>}
       <Button tone="primary" onClick={() => print(combineA4(pack.prints))}>Print all A4</Button>
+      {printedAlone(pack.prints).length > 0 && <p className="text-sm text-slate-600">Print all A4 leaves out {printedAlone(pack.prints).map((p) => p.label).join(', ')}. Print each of these with its own Print button.</p>}
       <Panel title="Print checklist"><div className="divide-y divide-slate-200">
         {pack.prints.map((item) => <div key={item.id} className="flex flex-wrap items-center gap-3 py-3">
           <div className="min-w-60 flex-1"><strong>{item.label}</strong><div className="text-sm text-slate-500">{item.paper}</div></div>
