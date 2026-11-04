@@ -180,7 +180,7 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
     const rows = q
       ? searchRecords(db.prepare(`${RELEASES} ORDER BY d.number DESC`).all() as ReleaseRow[], q,
         (r) => `${r.number} ${r.jobOrderNumber} ${r.customerName} ${r.invoiceNumber ?? ''} ${r.invoiceRecordNumber ?? ''}`, (r) => [r.number, r.jobOrderNumber]).slice(0, PICK_LIMIT)
-      : (db.prepare(`${RELEASES} WHERE d.status = 'posted' AND inv.id IS NULL ORDER BY d.number LIMIT ${PICK_LIMIT}`).all() as ReleaseRow[]);
+      : (db.prepare(`${RELEASES} WHERE d.status = 'posted' AND d.total_cents > 0 AND inv.id IS NULL ORDER BY d.number LIMIT ${PICK_LIMIT}`).all() as ReleaseRow[]);
     return rows.map(releasePick);
   });
 

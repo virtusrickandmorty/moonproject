@@ -28,7 +28,7 @@ import type { DocContext, DocTypeDef } from '../../../engine/documents/registry.
 import { jobOrderRef, jobOrdersOf, lineState, rosterOf } from '../../JO/public.ts';
 import { rateAt } from '../../RATE/public.ts';
 import { activeEmployees, employee } from '../emp.ts';
-import { SET_PARTS, autoComplete, availableFor, forwardedWearers, lineRoute, lineSetup, reworkOpen, stepById, syncStage, wearerPieces, wearersDone, type Complexity, type Part } from '../production.ts';
+import { SET_PARTS, autoComplete, availableFor, reopenShort, forwardedWearers, lineRoute, lineSetup, reworkOpen, stepById, syncStage, wearerPieces, wearersDone, type Complexity, type Part } from '../production.ts';
 
 const MAX_PIECES = 10_000;
 const MAX_RATE_CENTS = 1_000_000; // ₱10,000 per piece: a typo guard
@@ -193,7 +193,9 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       if (!who?.active && r.kind !== 'correction') add('error', `${f}.employeeId`, 'EMPLOYEE', `${at}: pick an active worker.`);
       if (r.kind === 'correction') {
         const was = original(ctx.db, r.correctionOf!);
-        if (!was || was.jobOrderId !== jo.id || was.lineNo !== r.lineNo || was.stepId !== step.id || was.employeeId !== r.employeeId) {
+        // The row counts on this line itself, or carried over from before the job order was edited.
+        const here = was && ctx.db.prepare('SELECT 1 FROM prd_line_assignments WHERE id = ? AND jo = ? AND line = ?').get(was.id, jo.id, r.lineNo);
+        if (!was || !here || was.stepId !== step.id || was.employeeId !== r.employeeId) {
           add('error', `${f}.correctionOf`, 'CORRECTION', `${at}: a correction must be for the same job order, line, step and worker as the row it corrects.`);
         } else if (!was.paid) {
           add('error', `${f}.correctionOf`, 'NOT_PAID', `${at}: that row is not paid yet. Cancel its entry instead of correcting it.`);
@@ -374,6 +376,16 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       })),
       ...(doc.overCapReason ? { overCapReason: doc.overCapReason } : {}),
     };
+  },
+
+  /** Its pieces are gone: a step they completed opens again, and the job order is not Ready any more. */
+  afterCancel(db, documentId, h) {
+    const who = { userId: h.userId, at: h.at };
+    const on = db.prepare(`SELECT DISTINCT a.jo, a.line, a.step_id AS stepId FROM prd_line_assignments a JOIN documents d ON d.id = a.jo WHERE a.document_id = ? AND d.status = 'posted'`)
+      .all(documentId) as { jo: string; line: number; stepId: number }[];
+    for (const r of on) reopenShort(db, r.jo, r.line, r.stepId, `${h.number} cancelled`, who);
+    for (const jo of new Set(on.map((r) => r.jo))) syncStage(db, jo, `${h.number} cancelled`, who);
+    return null;
   },
 
   /** Rows paid by a payroll run stay: they are corrected with negative pieces in the next run instead (D6). */

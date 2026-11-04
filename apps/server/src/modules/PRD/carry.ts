@@ -9,7 +9,7 @@
 import { GARMENT_TYPE_MAX, newId, saysSet } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { lineState, rosterPeopleOf } from '../JO/public.ts';
+import { currentStage, lineState, rosterPeopleOf } from '../JO/public.ts';
 import { matchCatalogItem } from '../CAT/public.ts';
 import { lineRoute, lineSetup, syncStage, type Who } from './production.ts';
 
@@ -33,6 +33,9 @@ export function carryLinesOf(db: Db, jobOrderId: string): CarryLine[] {
  * in common, or no wearers on either and the same pieces. Items keep their order in the form, so this follows an edit that
  * changes, adds or leaves out items; an item swapped for another is left out (its work kept as extras), never carried on.
  */
+/** The items of an edited job order paired with the old ones (new line → old line), for what else follows a line (TPL). */
+export const pairedLines = (db: Db, oldId: string, newId_: string) => matchLines(carryLinesOf(db, oldId), carryLinesOf(db, newId_));
+
 export function matchLines(old: CarryLine[], next: CarryLine[]): Map<number, number> {
   const pairs: [number, number][] = [];
   let from = 0;
@@ -195,7 +198,9 @@ export function carryProductionOver(db: Db, oldId: string, newId_: string): void
       db.prepare('INSERT INTO prd_line_setup_steps (job_order_id, line_no, seq, step_id, position) VALUES (?, ?, 1, ?, ?)').run(newId_, n, id, i + 1);
       const ev = db.prepare('SELECT action, reason, at, user_id AS userId FROM prd_step_events WHERE job_order_id = ? AND line_no = ? AND step_id = ? ORDER BY seq DESC LIMIT 1').get(oldId, o, id) as
         { action: string; reason: string | null; at: string; userId: string } | undefined;
-      if (ev) db.prepare('INSERT INTO prd_step_events (job_order_id, line_no, step_id, seq, action, reason, at, user_id) VALUES (?, ?, ?, 1, ?, ?, ?, ?)').run(newId_, n, id, ev.action, ev.reason, ev.at, ev.userId);
+      // Raised pieces are not made yet: the step stays open for them.
+      const raised = next.find((l) => l.lineNo === n)!.qty > old.find((l) => l.lineNo === o)!.qty;
+      if (ev && !(ev.action === 'complete' && raised)) db.prepare('INSERT INTO prd_step_events (job_order_id, line_no, step_id, seq, action, reason, at, user_id) VALUES (?, ?, ?, 1, ?, ?, ?, ?)').run(newId_, n, id, ev.action, ev.reason, ev.at, ev.userId);
     }
     // Rework sent back, with its wearers as rows of the new item (one left out is not carried).
     const reworks = db.prepare('SELECT id, step_id AS stepId, part, pieces, reason, at, user_id AS userId, found_at_step_id AS foundAt FROM prd_reworks WHERE job_order_id = ? AND line_no = ? ORDER BY at').all(oldId, o) as
@@ -210,8 +215,8 @@ export function carryProductionOver(db: Db, oldId: string, newId_: string): void
     }
     carried.push({ lineNo: n, fromLineNo: o });
   }
-  if (carried.length === 0 && kept.length === 0) return;
-  appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.carry_over', entityType: 'jo.job_order', entityId: newId_, data: { from: oldId, lines: carried, warnings: kept } });
-  if (carried.length === 0) return;
+  if (carried.length > 0 || kept.length > 0) appendAudit(db, { at: who.at, userId: who.userId, action: 'prd.carry_over', entityType: 'jo.job_order', entityId: newId_, data: { from: oldId, lines: carried, warnings: kept } });
+  // Also with nothing carried: on a job order the board followed, a Ready stage copied onto items nobody made must not stand.
+  if (carried.length === 0 && !(currentStage(db, newId_) === 'ready' && old.some((l) => lineSetup(db, oldId, l.lineNo)))) return;
   syncStage(db, newId_, `Production carried over from ${by.number}`, who);
 }

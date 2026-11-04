@@ -73,6 +73,14 @@ export const valuationDoc: DocTypeDef<ValuationInput, Valuation> = {
   cancelOn: 'document_date',
   inputSchema: valuationInput,
 
+  /** Each value states stock as of its date, so a later one stands on it: only the latest is cancelled (PLAN D6). */
+  dependents(db, documentId) {
+    return db
+      .prepare(`SELECT d.id, d.number FROM tpl_valuations v JOIN documents d ON d.id = v.document_id JOIN tpl_valuations me ON me.document_id = ?
+        WHERE d.status = 'posted' AND v.value_date > me.value_date ORDER BY v.value_date, d.number`)
+      .all(documentId) as { id: string; number: string }[];
+  },
+
   compute(input, ctx) {
     const valueDate = ctx.businessDate;
     const sheet = new Map(valuationSheet(ctx.db, valueDate).map((s) => [s.itemId, s]));

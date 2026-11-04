@@ -8,6 +8,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { postDocument, type Actor, type EngineEnv } from '../../engine/documents/lifecycle.ts';
 import { currentStage, jobOrderDoc, jobOrderRef, lineState, moveTo, releasableQty } from '../JO/public.ts';
+import { pairedLines } from '../PRD/public.ts';
 import { item, itemLabel, itemsOf, program, type Who } from './programs.ts';
 
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -69,10 +70,12 @@ export function carryRestockOver(db: Db, oldId: string, newId: string): void {
   if (!mark) return;
   if (piecesPutIn(db, oldId) > 0) throw conflict('IN_STOCK', 'Some of its pieces are already in the client\'s stock, so it cannot be edited. Make a new restock for more pieces, or correct the stock with a count.');
   db.prepare('INSERT INTO tpl_restocks (job_order_id, program_id, at, user_id) VALUES (?, ?, ?, ?)').run(newId, mark.programId, mark.at, mark.userId);
-  const lines = new Set(lineState(db, newId).map((l) => l.lineNo));
+  const items = new Map((db.prepare('SELECT line_no AS lineNo, item_id AS itemId FROM tpl_restock_lines WHERE job_order_id = ?').all(oldId) as { lineNo: number; itemId: string }[]).map((r) => [r.lineNo, r.itemId]));
   const copy = db.prepare('INSERT INTO tpl_restock_lines (job_order_id, line_no, item_id) VALUES (?, ?, ?)');
-  for (const r of db.prepare('SELECT line_no AS lineNo, item_id AS itemId FROM tpl_restock_lines WHERE job_order_id = ?').all(oldId) as { lineNo: number; itemId: string }[]) {
-    if (lines.has(r.lineNo)) copy.run(newId, r.lineNo, r.itemId);
+  // Each kept line keeps its own client item, whatever number the edit gave it.
+  for (const [line, was] of pairedLines(db, oldId, newId)) {
+    const item = items.get(was);
+    if (item) copy.run(newId, line, item);
   }
 }
 
