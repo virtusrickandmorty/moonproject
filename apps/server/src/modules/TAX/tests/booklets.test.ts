@@ -86,6 +86,14 @@ describe('booklet number check (L7)', () => {
     expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
   });
 
+  it('keeps checking when the last booklet is retired: a number outside the register is not waved through', async () => {
+    await stepUp(accountant);
+    const b = (await register(invoices)).json();
+    await register(receipts);
+    expect((await accountant.post(`/api/tax/booklets/${b.id}/retire`, { note: 'Booklet lost in the flood' }, { 'if-match': '1' })).statusCode).toBe(200);
+    expect(codes(await quickSale('0900', '0702'))).toContain('BOOKLET_UNKNOWN');
+  });
+
   it('a retired booklet refuses its numbers until it is switched back on (If-Match, with a reason)', async () => {
     await stepUp(accountant);
     const b = (await register(invoices)).json();

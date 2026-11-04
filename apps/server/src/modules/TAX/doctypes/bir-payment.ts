@@ -167,6 +167,14 @@ export const birPaymentDoc: DocTypeDef<BirPaymentInput, BirPayment> = {
   dating: 'accountant_may_backdate',
   inputSchema: birPaymentInput,
 
+  /** The year's settlement (ITS-) already applied a 1702Q payment against its tax: that goes first. */
+  dependents(db, documentId) {
+    const period = db.prepare('SELECT period FROM tax_income_tax_payments WHERE document_id = ?').pluck().get(documentId) as string | undefined;
+    const year = period && Number(period.slice(0, 4));
+    if (!year) return [];
+    return db.prepare(`SELECT d.id, d.number FROM tax_income_tax_settlements s JOIN documents d ON d.id = s.document_id WHERE s.year = ? AND d.status = 'posted'`).all(year) as { id: string; number: string }[];
+  },
+
   compute(input, ctx) {
     const p = periodFor(input.form, input.period);
     return {

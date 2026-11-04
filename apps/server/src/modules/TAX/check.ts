@@ -33,6 +33,6 @@ export function bookletIssue(db: Db, kind: BookletKind, typed: string, field: st
   if (b) {
     return { field, code: 'BOOKLET_RETIRED', level: 'error', message: `${words.number(typed)} is in booklet ATP ${b.atpNo} (${b.serialFrom} to ${b.serialTo}), which is retired. Use the booklet in use now, or ask the accountant.` };
   }
-  if (!db.prepare('SELECT 1 FROM tax_booklets WHERE kind = ? AND is_active = 1').get(kind)) return null;
+  if (!db.prepare('SELECT 1 FROM tax_booklets WHERE kind = ?').get(kind)) return null;
   return { field, code: 'BOOKLET_UNKNOWN', level: 'error', message: `${words.number(typed)} is not in any registered ${words.paper} booklet. Check the number, or ask the accountant to register the booklet (ATP number and range).` };
 }

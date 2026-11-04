@@ -101,10 +101,11 @@ export function payRoutes(app: FastifyInstance, deps: AppDeps): void {
            SELECT d.id, d.number, d.posted_at, 'run' AS kind, r.pay_group AS payGroup, r.period_start AS periodStart, r.period_end AS periodEnd FROM pay_runs r JOIN documents d ON d.id = r.document_id WHERE d.status = 'posted'
            UNION ALL
            SELECT d.id, d.number, d.posted_at, 'thirteenth', t.pay_group, t.year || '-01-01', t.year || '-12-31' FROM pay_thirteenths t JOIN documents d ON d.id = t.document_id WHERE d.status = 'posted'
-         ) ORDER BY posted_at DESC, number DESC LIMIT 50`,
+         ) ORDER BY posted_at DESC, number DESC`,
       )
       .all() as { id: string; number: string; kind: 'run' | 'thirteenth'; payGroup: string; periodStart: string; periodEnd: string }[];
-    return runs.map((r) => ({ ...r, dueCents: releaseStatus(db, r.id).filter((s) => !s.releasedBy).reduce((s, x) => s + x.netCents, 0) })).filter((r) => r.dueCents > 0);
+    // The newest 50 with pay still due: picked after the check, so an old run with one person left unpaid stays on the list.
+    return runs.map((r) => ({ ...r, dueCents: releaseStatus(db, r.id).filter((s) => !s.releasedBy).reduce((s, x) => s + x.netCents, 0) })).filter((r) => r.dueCents > 0).slice(0, 50);
   });
 
   /**

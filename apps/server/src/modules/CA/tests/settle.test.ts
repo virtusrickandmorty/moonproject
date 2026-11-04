@@ -19,7 +19,7 @@ import { codes, fails, journal, partyBalance, world } from '../../PAY/tests/worl
 import { advanceDoc } from '../doctypes/advance.ts';
 import { repaymentDoc } from '../doctypes/repayment.ts';
 import { writeoffDoc } from '../doctypes/writeoff.ts';
-import { advanceSchedule, caBalance } from '../public.ts';
+import { advanceSchedule, caBalance, owedFrom } from '../public.ts';
 
 /** L10: the CA register (advances − payroll deductions − repayments − write-offs still recorded) per employee = GL 1210. */
 function l10(db: Db): string[] {
@@ -37,6 +37,19 @@ const clean = (db: Db) => {
 const reversalDate = (db: Db, id: string) => db.prepare(`SELECT business_date FROM journals WHERE source_id = ? AND posting_kind = 'reversal'`).pluck().get(id);
 const accountId = (db: Db, code: string) => db.prepare('SELECT id FROM accounts WHERE code = ?').pluck().get(code) as number;
 const daily = { payType: 'daily', payGroup: 'SEMI_DAILY', dailyRateCents: 55_000, isMwe: true } as const;
+
+describe('what is owed on an earlier date', () => {
+  it('counts a repayment cancelled later as never made, so a redo on the old date still finds the advance', async () => {
+    const w = await world('2026-09-14');
+    const ana = w.person('Ana Tahi', daily);
+    w.record(advanceDoc, { employeeId: ana, cashPlaceId: cashPlaceId(w.db, '1101'), amountCents: 50_000, installmentCents: 50_000 });
+    const r = w.record(repaymentDoc, { employeeId: ana, cashPlaceId: cashPlaceId(w.db, '1101'), amountCents: 50_000 });
+    expect(owedFrom(w.db, ana, '2026-09-14')).toBe(0);
+    w.at('2026-10-05');
+    w.cancel(repaymentDoc, r.id);
+    expect(owedFrom(w.db, ana, '2026-09-14')).toBe(50_000);
+  });
+});
 
 describe('repayment goldens (D5 CA-REPAY)', () => {
   it('part: ₱500 of a ₱2,000 advance paid back by bank transfer; cancelled the next day', async () => {
@@ -106,7 +119,7 @@ describe('write-off golden (D5 CA-WO)', () => {
     const input = { employeeId: ana, accountId: accountId(w.db, '6990'), reason: 'Left the shop; cannot be collected' }; // no amount: all that is owed
     const pre = w.preview(writeoffDoc, input);
     expect([pre.totalCents, codes(pre.issues), codes(pre.issues, 'warning')]).toEqual([100_000, [], ['TAXABLE']]);
-    expect(pre.issues[0]!.message).toBe("A forgiven cash advance is taxable compensation: ₱1,000.00 counts in Ana Tahi's taxable pay for 2026 (the year-end tax on compensation and Form 2316).");
+    expect(pre.issues[0]!.message).toBe("A forgiven cash advance is taxable compensation: ₱1,000.00 is taxable pay of Ana Tahi for 2026. The year-end tax and Form 2316 do not add it by themselves: add it there by hand.");
     expect(pre.summary).toBe('This will write off ₱1,000.00 that Ana Tahi owes on cash advances, charged to 6990 Miscellaneous. Reason: Left the shop; cannot be collected');
     const wo = w.record(writeoffDoc, input);
     expect(wo.number).toBe('CAW-000001');

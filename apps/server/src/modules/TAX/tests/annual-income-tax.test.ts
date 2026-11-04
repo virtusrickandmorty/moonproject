@@ -166,6 +166,8 @@ describe('1702-RT, provision and settlement (D5 IT-PROV, IT-SETTLE)', () => {
     expect((await accountant.get(`/api/docs/tax.it_settlement/${st.id}`)).json().doc).toMatchObject({ year: 2026, payableCents: 4_800_000, liabilityCents: 16_300_000, prepaidCents: 15_600_000, cwtCents: 700_000, roundingCents: 0, provision: { number: 'ITP-000001' } });
     // The registers do not list the settlement: 1410's register for 2026 still shows the 2307s.
     expect((await accountant.get('/api/tax/registers/withholding-received?from=2026-01-01&to=2027-12-31')).json().totals.cwtCents).toBe(700_000);
+    // A 1702Q the settlement applied stands until the settlement is cancelled.
+    expect((await accountant.post(`/api/docs/tax.bir_payment/${q1.id}/cancel`, { reason: 'Paid to the wrong period' }, idem())).statusCode).toBe(409);
     // Once settled, the year's 1702Qs are paid with the 1702.
     expect(codes((await preview('tax.bir_payment', { form: '1702Q', period: '2026-Q3', cashPlaceId: BDO, amountCents: 100, reference: 'eFPS 0002' })).issues)).toEqual(['SETTLED']);
 
