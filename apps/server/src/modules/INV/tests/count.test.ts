@@ -102,6 +102,13 @@ describe('Inventory count golden (PLAN I2 G-22)', () => {
     noBrokenInvariants();
   });
 
+  it('counts a supply in liters, in decimals like the other measured units', async () => {
+    const ink = await newSupply('Sublimation ink', 'liter', 'materials', 80_000); // ₱800.00 a liter
+    const r = await count(owner, { category: 'materials', lines: [{ supplyId: ink, qty: 2_500 }] }, 200_000); // 2.5 liters
+    expect(r.statusCode, r.body).toBe(200);
+    expect((await owner.get(`/api/docs/inv.count/${r.json().id}`)).json().doc.lines[0]).toMatchObject({ unit: 'liter', qty: 2_500 });
+  });
+
   it('ready-made merchandise posts to 1302: 12 polo shirts at ₱350.00, Dr 1302 4,200.00 / Cr 5109', async () => {
     const r = await count(owner, { category: 'ready_made', lines: [{ supplyId: polo, qty: 12 }] }, 420_000);
     expect(r.json()).toMatchObject({ number: 'INVC-000001', summary: 'This will record ready-made merchandise counted at ₱4,200.00 on 2026-09-30 against ₱0.00 in the books: ₱4,200.00 more, posted to inventory change.' });

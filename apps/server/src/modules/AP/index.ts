@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { defineModule } from '../../engine/documents/registry.ts';
+import { apOverPurchasing } from './purchasing-dependents.ts';
 import { advanceDoc } from './doctypes/advance.ts';
 import { advanceReturnDoc } from './doctypes/advance-return.ts';
 import { EWT_PERMISSION, billDoc } from './doctypes/bill.ts';
@@ -11,6 +12,7 @@ import { apRoutes } from './routes.ts';
 export default defineModule({
   code: 'AP',
   name: 'Payables',
+  dependents: [apOverPurchasing],
   permissions: [
     { key: 'ap.bill.view', label: 'View supplier bills', defaultRoles: ['encoder', 'accountant', 'owner'] },
     { key: 'ap.bill.create', label: 'Prepare supplier bills', defaultRoles: ['encoder', 'accountant', 'owner'] },

@@ -172,7 +172,7 @@ export function purRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.get('/api/pur/suppliers/:id/supplies', { config: { permission: 'pur.supplier.view' } }, async (req) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const rows = db.prepare(`SELECT s.* FROM pur_supplier_supplies l JOIN pur_supplies s ON s.id = l.supply_id
-      WHERE l.supplier_id = ? AND l.is_active = 1 ORDER BY s.name`).all(id) as { id: string }[];
+      WHERE l.supplier_id = ? AND l.is_active = 1 AND s.is_active = 1 ORDER BY s.name`).all(id) as { id: string }[];
     return rows.map((s) => ({ ...s, ...costFields(latestPurchaseCost(db, countableSupply(db, s.id)!, today(clock))) }));
   });
 
@@ -323,6 +323,10 @@ export function purRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (!before) throw notFound('Supply not found');
       if (!before.is_active) throw badRequest('Cannot edit deactivated supply');
       if (before.version !== expectedVersion) throw conflict('Supply was modified by someone else');
+      // Orders, deliveries and counts read the unit from here: changing it would turn 50 yards into 50 rolls.
+      if (input.unit !== before.unit && db.prepare('SELECT 1 FROM pur_po_lines WHERE supply_id = ? LIMIT 1').get(id)) {
+        throw conflict('This supply was already ordered in that unit. Deactivate it and add a new one to change the unit.');
+      }
 
       const result = db.prepare(`
         UPDATE pur_supplies SET name = ?, unit = ?, category = ?, version = version + 1, updated_at = ? WHERE id = ? AND version = ?

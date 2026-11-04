@@ -20,7 +20,7 @@ export const requestLineInput = z.object({
   description: z.string().trim().min(2).max(200),
   qty: qtySchema, // up to 2 decimal places (Oct 27, 2026)
   unitCostCents: z.number().int().nonnegative().max(MAX_CENTS), // an estimate
-}).strict();
+}).strict().refine((l) => l.qty * l.unitCostCents <= MAX_CENTS, 'Line total must be safe');
 
 export const requestInput = z.object({
   purpose: z.string().trim().min(5).max(300),

@@ -289,10 +289,10 @@ export function releasesAwaitingInvoice(db: Db, asOf: string) {
     FROM jo_releases r JOIN documents d ON d.id = r.document_id
     JOIN documents j ON j.id = r.job_order_id JOIN jo_orders o ON o.document_id = j.id
     LEFT JOIN jo_release_lines l ON l.document_id = d.id
-    WHERE d.business_date <= ? AND d.status = 'posted' AND d.total_cents > 0
+    WHERE d.business_date <= ? AND d.status = 'posted'
       AND NOT EXISTS (SELECT 1 FROM jo_invoice_records i JOIN documents x ON x.id = i.document_id
         WHERE i.release_id = d.id AND x.status = 'posted')
-    GROUP BY r.document_id ORDER BY d.business_date, d.number`).all(asOf) as {
+    GROUP BY r.document_id HAVING releasedCents > 0 ORDER BY d.business_date, d.number`).all(asOf) as {
       id: string; number: string; date: string; jobOrderId: string; jobOrderNumber: string;
       customerId: string; customerName: string; releasedCents: number }[];
 }

@@ -19,6 +19,7 @@ export default defineModule({
     { key: 'pur.request.cancel', label: 'Cancel or edit recorded purchase requests', defaultRoles: ['encoder', 'accountant', 'owner'] },
     // The owner's decision (26 Oct 2026): the owner or the accountant approves; encoders and Purchasing do not get these with the accountant's access.
     { key: 'pur.request.approve', label: 'Approve or reject purchase requests', defaultRoles: ['accountant', 'owner'] },
+    { key: 'pur.request.approve_own', label: 'Approve or reject their own purchase requests', defaultRoles: ['owner'] },
     { key: 'pur.po.without_request', label: 'Make a purchase order without an approved purchase request', defaultRoles: ['accountant', 'owner'] },
     { key: 'pur.po.view', label: 'View purchase orders', defaultRoles: ['encoder', 'accountant', 'owner'] },
     { key: 'pur.po.create', label: 'Create purchase orders', defaultRoles: ['encoder', 'accountant', 'owner'] },

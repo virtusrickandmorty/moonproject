@@ -122,9 +122,8 @@ export const receivedHundredths = (db: Db, receivingReportId: string, supplyId: 
 export function purchaseOrdersForReport(db: Db) {
   return db.prepare(`SELECT d.id,d.number,d.business_date AS date,d.status,p.supplier_id AS supplierId,d.total_cents AS totalCents FROM pur_purchase_orders p JOIN documents d ON d.id=p.document_id ORDER BY d.business_date DESC,d.number`).all() as {id:string;number:string;date:string;status:string;supplierId:string;totalCents:number}[];
 }
-export function receivedNotBilledForReport(db: Db) {
-  return db.prepare(`SELECT d.id,d.number,d.business_date AS date,p.supplier_id AS supplierId,pd.number AS poNumber,d.total_cents AS totalCents FROM pur_receiving_reports r JOIN documents d ON d.id=r.document_id JOIN pur_purchase_orders p ON p.document_id=r.po_document_id JOIN documents pd ON pd.id=p.document_id LEFT JOIN ap_bills b ON b.receiving_report_id=d.id LEFT JOIN documents bd ON bd.id=b.document_id AND bd.status='posted' WHERE d.status='posted' AND bd.id IS NULL ORDER BY d.business_date,d.number`).all() as {id:string;number:string;date:string;supplierId:string;poNumber:string;totalCents:number}[];
-}
+/** The same deliveries the purchases overview lists, at the cost received. */
+export const receivedNotBilledForReport = (db: Db) => deliveriesToBill(db).map(({ id, number, date, supplierId, poNumber, receivedCents }) => ({ id, number, date, supplierId, poNumber, totalCents: receivedCents }));
 
 /**
  * Posted purchase orders with something still to receive (the purchases overview, the owner's request, 25 Oct 2026),

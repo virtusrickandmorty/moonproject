@@ -14,7 +14,7 @@ export const CATEGORY_LABEL: Record<Category, string> = { materials: 'materials 
 export const INVENTORY_ROLE: Record<Category, string> = { materials: 'INV_MATERIALS', ready_made: 'INV_MERCH' };
 
 /** Fabric and anything weighed is counted in milli-units (1 yard = 1000), pieces and rolls whole (PLAN C5). */
-export const MILLI_UNITS: ReadonlySet<SupplyUnit> = new Set(['yard', 'meter', 'kg']);
+export const MILLI_UNITS: ReadonlySet<SupplyUnit> = new Set(['yard', 'meter', 'kg', 'liter']);
 export const qtyScale = (unit: SupplyUnit) => (MILLI_UNITS.has(unit) ? 1000 : 1);
 
 /** Quantity × cost per unit, rounded to the centavo per line. */
