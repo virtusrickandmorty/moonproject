@@ -63,6 +63,38 @@ export interface FiledRegister { rows: FiledRegisterRow[]; forms: string[]; toda
 export function printWhenReady(page: Pick<Window, 'document' | 'print'>): void {
   void Promise.all(Array.from(page.document.images, (img) => img.decode().catch(() => undefined))).then(() => page.print());
 }
+/**
+ * Saves whose answer never came (the connection dropped): the server may have recorded them. Trying the very same save
+ * again within half an hour reuses its Idempotency-Key, so the server returns what it recorded instead of recording it
+ * twice. Kept for the browser tab, through a reload.
+ */
+const LOST_ANSWER_MS = 30 * 60_000;
+export const lostAnswers = (() => {
+  const STORE = 'moonproject.lost-answers';
+  type Lost = Record<string, { key: string; at: number }>;
+  /** A fingerprint of the save (cyrb53): what was typed never goes into browser storage (NR-11). */
+  const mark = (attempt: string) => {
+    let a = 0xdeadbeef, b = 0x41c6ce57;
+    for (let i = 0; i < attempt.length; i++) {
+      const c = attempt.charCodeAt(i);
+      a = Math.imul(a ^ c, 2654435761);
+      b = Math.imul(b ^ c, 1597334677);
+    }
+    return `${(a >>> 0).toString(36)}-${(b >>> 0).toString(36)}-${attempt.length}`;
+  };
+  const read = (): Lost => { try { return JSON.parse(sessionStorage.getItem(STORE) ?? '{}') as Lost; } catch { return memory; } };
+  const write = (all: Lost) => { memory = all; try { sessionStorage.setItem(STORE, JSON.stringify(all)); } catch { /* the memory copy serves */ } };
+  let memory: Lost = {};
+  return {
+    keyFor(attempt: string, fresh: string): string {
+      const lost = read()[mark(attempt)];
+      return lost && Date.now() - lost.at < LOST_ANSWER_MS ? lost.key : fresh;
+    },
+    remember(attempt: string, key: string) { write({ ...read(), [mark(attempt)]: { key, at: Date.now() } }); },
+    forget(attempt: string) { const all = read(), id = mark(attempt); if (all[id]) { delete all[id]; write(all); } },
+  };
+})();
+
 export async function openServerPrint(me: Me, path: string, body: unknown): Promise<void> {
   const preview = window.open('', '_blank');
   const response = await fetch(path, { method: 'POST', credentials: 'same-origin',
@@ -1120,12 +1152,19 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     if (method !== 'GET') headers['x-csrf-token'] = csrf;
     const raw = typeof Blob !== 'undefined' && body instanceof Blob;
     if (body !== undefined) headers['content-type'] = raw ? 'application/octet-stream' : 'application/json';
+    const sent = body === undefined || raw ? undefined : JSON.stringify(body);
+    // The same save tried again after its answer was lost goes with the same key, so the server gives back what it recorded.
+    const attempt = headers['idempotency-key'] ? `${method} ${path} ${sent ?? ''}` : null;
+    if (attempt) headers['idempotency-key'] = lostAnswers.keyFor(attempt, headers['idempotency-key']!);
     let res: Response;
     try {
-      res = await fetchImpl(path, { method, headers, body: body === undefined ? undefined : raw ? body : JSON.stringify(body), credentials: 'same-origin' });
+      res = await fetchImpl(path, { method, headers, body: raw ? body : sent, credentials: 'same-origin' });
     } catch {
-      throw new ApiError('OFFLINE', 'Cannot reach the server. Check the connection and try again. Nothing was recorded.', 0);
+      if (!attempt) throw new ApiError('OFFLINE', 'Cannot reach the server. Check the connection and try again.', 0);
+      lostAnswers.remember(attempt, headers['idempotency-key']!);
+      throw new ApiError('OFFLINE', 'The connection dropped, so this may or may not have gone through. Press the button again when you are back online: it will not record twice.', 0);
     }
+    if (attempt) lostAnswers.forget(attempt);
     const data = (await res.json().catch(() => null)) as { code?: string; message?: string; details?: unknown } | null;
     if (res.ok) return data as T;
     const e = new ApiError(data?.code ?? `HTTP_${res.status}`, data?.message ?? 'Something went wrong. Please try again.', res.status, data?.details);

@@ -38,7 +38,7 @@ export function CustomerPicker({ value, onChange, beside }: { value: Picked | nu
         <div className="relative min-w-0 flex-1">
           <input aria-label="Customer" className={inputClass} placeholder="Name, code, phone, TIN or contact person" value={q} onChange={(e) => setQ(e.target.value)} />
           {(rows.length > 0 || none) && (
-            <div className="absolute inset-x-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-md bg-white p-1 shadow-lg ring-1 ring-slate-200">
+            <div className="absolute inset-x-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-md bg-white p-1 shadow-lg ring-1 ring-slate-200">
               {rows.map((c) => (
                 <button key={c.id} type="button" className="block w-full rounded px-2 py-1 text-left text-sm hover:bg-indigo-50" onClick={() => onChange({ id: c.id, name: c.display_name })}>
                   {c.display_name} <span className="text-slate-500">{c.code}</span>

@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { manilaDate } from '@moonproject/shared';
 import { PASSWORD, cashPlaceId, createTestEnv, createUser } from '../../../../server/test/helpers.ts';
 import { SESSION_COOKIE } from '../../../../server/src/engine/security/sessions.ts';
 import { seedCustomers } from '../../../../server/src/modules/JO/tests/cus-fixture.ts';
@@ -223,7 +224,10 @@ describe('web client for job orders, releases and invoice records', () => {
     const jo = await api.post('jo.job_order', typed.input, pre.totalCents, key());
     expect(jo.number).toBe('JO-000001');
     const stored = await api.get('jo.job_order', jo.id);
-    expect(joInput(joValues(stored.input as unknown as JoInput, stored.doc as never)).input).toEqual(typed.input); // its Edit starts from this
+    expect(joInput(joValues(stored.input as unknown as JoInput, stored.doc as never, stored.header.businessDate)).input).toEqual(typed.input); // its Edit starts from this
+    // Five days on, the same due date: the days count from today, so an edit does not move it.
+    const later = manilaDate(new Date(Date.parse(stored.header.businessDate) + 5 * 86_400_000));
+    expect(Number(joValues(stored.input as unknown as JoInput, stored.doc as never, later).dueInDays)).toBe((stored.input as unknown as JoInput).dueInDays - 5);
 
     // The view's buttons, then "Take the downpayment": the collection for this job order.
     let s = await api.joStatus(jo.id);

@@ -65,7 +65,7 @@ export function SearchSelect({ value, onChange, choices, placeholder = 'Pick…'
       </button>
       {open && (
         // Inside a <label> (Field), a click would also be passed to the button and open the list again: kept here.
-        <div className="absolute inset-x-0 top-full z-40 mt-1 min-w-[16rem] rounded-md bg-white p-1 shadow-lg ring-1 ring-slate-200"
+        <div className="absolute inset-x-0 top-full z-50 mt-1 min-w-[16rem] rounded-md bg-white p-1 shadow-lg ring-1 ring-slate-200"
           onClick={(e) => { if (!(e.target instanceof HTMLInputElement)) e.preventDefault(); }}>
           <input autoFocus type="search" aria-label={`Find in ${aria['aria-label'] ?? 'the list'}`} placeholder="Type to find…" value={text}
             onChange={(e) => { setText(e.target.value); setActive(0); }} onKeyDown={keys}
@@ -77,7 +77,7 @@ export function SearchSelect({ value, onChange, choices, placeholder = 'Pick…'
               return [
                 head && <li key={`g-${head}`} role="presentation" className="px-2 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{head}</li>,
                 <li key={`${c.value}-${i}`} role="option" aria-selected={c.value === value} aria-disabled={c.disabled || undefined} data-index={i} data-value={c.value}
-                  onMouseEnter={() => setActive(i)} onPointerDown={(e) => { e.preventDefault(); choose(c); }}
+                  onMouseEnter={() => setActive(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(c)}
                   className={`cursor-pointer rounded px-2 py-1.5 text-sm ${c.disabled ? 'cursor-not-allowed text-slate-400' : i === active ? 'bg-indigo-50 text-indigo-900' : c.value === value ? 'font-medium' : ''}`}>
                   {c.label}
                 </li>,

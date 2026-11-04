@@ -12,7 +12,7 @@ import { Button, Field, Loading, Notice, inputClass, showDate } from '../../comp
 import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { useLiveReload } from '../../live.ts';
-import { qtyWords } from './purchasing.ts';
+import { qtyCents, qtyWords } from './purchasing.ts';
 import { Facts, Journey, RequestBadge, type Step } from './parts.tsx';
 
 const action = 'inline-block rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700';
@@ -69,7 +69,7 @@ function RequestDetail({ id }: { id: string }) {
                   {!l.supplyId && <span className="block text-xs font-normal text-slate-500">Not on file: add it as a supply before it is ordered</span>}</td>
                 <td className={num}>{l.unit ? qtyWords(l.qty, l.unit) : l.qty}</td>
                 <td className={num}>{formatPesos(l.unitCostCents)}</td>
-                <td className={num}>{formatPesos(l.qty * l.unitCostCents)}</td>
+                <td className={num}>{formatPesos(qtyCents(l.qty, l.unitCostCents))}</td>
               </tr>
             ))}
           </tbody>

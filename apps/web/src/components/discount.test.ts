@@ -8,6 +8,8 @@ it('works out the item discount: pesos each times the pieces, or a percent of th
   expect(discountCentsOf('percent', '10', 30, 50_000)).toBe(150_000); // 10% of ₱15,000
   expect(discountCentsOf('percent', '12.5%', 3, 33_333)).toBe(12_500); // 12.5% of ₱999.99, rounded
   expect(discountCentsOf('each', '', 30, 50_000)).toBe(0);
+  expect(discountCentsOf('each', '10%', 100, 45_000)).toBeUndefined(); // never ₱10.00 each by mistake
+  expect(discountCentsOf('each', '0.25', 1.5, 45_000)).toBe(38); // pieces typed as 1.5: whole centavos, so the form does not break
   expect(discountCentsOf('percent', '101', 1, 100)).toBeUndefined();
   expect(discountCentsOf('each', 'abc', 1, 100)).toBeUndefined();
 });

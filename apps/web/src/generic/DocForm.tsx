@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { api, ApiError, newIdempotencyKey, refusedFields, type CashPlace, type DocHeader, type DocTypeInfo, type Preview } from '../api.ts';
 import { navigate } from '../router.tsx';
-import { Button, Dialog, Field, GoBack, JournalTable, Notice, Panel, ReasonDialog, inputClass, peso, useAction } from '../components/ui.tsx';
+import { Loading, Button, Dialog, Field, GoBack, JournalTable, Notice, Panel, ReasonDialog, inputClass, peso, useAction } from '../components/ui.tsx';
 import { docPath } from '../shell/menu.ts';
 import { choiceLabel, fieldsOf, toInput, toValues, type FieldSpec, type Values } from './fields.ts';
 
@@ -139,6 +139,7 @@ export function DocForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
     all[all.indexOf(el) + 1]?.focus();
   };
 
+  if (mode.kind === 'edit' && !original) return notice ? <Notice>{notice.text}</Notice> : <Loading />;
   if (mode.kind === 'edit' && original && !reason) {
     if (original.status !== 'posted') return <Notice>{original.number} is already cancelled.</Notice>;
     const explain = `A recorded document is never changed. ${original.number} will be cancelled and a new one issued with a new number. Nothing changes until you record the replacement.`;
@@ -157,7 +158,7 @@ export function DocForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
           <div className="grid gap-4 md:grid-cols-2">
             {fields.map((f) => (
               <div key={f.name} className={f.kind === 'cashPlace' || f.kind === 'longText' || f.kind === 'unsupported' ? 'md:col-span-2' : ''}>
-                <Field label={f.label} required={f.required} error={(touched ? errors[f.name] : undefined) ?? named[f.name]}>
+                <Field group={f.kind === 'cashPlace'} label={f.label} required={f.required} error={(touched ? errors[f.name] : undefined) ?? named[f.name]}>
                   <FieldInput f={f} value={values[f.name] ?? ''} set={(v) => setValues((old) => ({ ...old, [f.name]: v }))} places={places} />
                 </Field>
               </div>
@@ -170,7 +171,7 @@ export function DocForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
         {live && <p className="text-sm">{live.summary}</p>}
         {live?.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
       </Panel>
-      <div className="fixed inset-x-0 bottom-0 z-10 flex flex-wrap items-center gap-2 border-t border-slate-200 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-lg sm:static sm:border-0 sm:p-0 sm:shadow-none">
+      <div className="fixed inset-x-0 bottom-0 z-40 flex min-h-[4.75rem] flex-wrap sm:min-h-0 items-center gap-2 border-t border-slate-200 bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-lg sm:static sm:border-0 sm:p-0 sm:shadow-none">
         <span className="mr-auto text-sm font-semibold tabular-nums">{live ? `Total: ${peso(live.totalCents)}` : 'Check the required fields'}</span>
         <Button tone="primary" disabled={blocked || !type.canPost} onClick={openConfirm} title="Ctrl+Enter">Record</Button>
         {mode.kind === 'new' && <Button onClick={saveDraft}>Save draft</Button>}

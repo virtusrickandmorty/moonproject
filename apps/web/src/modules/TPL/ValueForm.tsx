@@ -88,7 +88,8 @@ export function StockValueForm({ type, mode, me, words }: { type: DocTypeInfo; m
   }, [date]);
 
   const clients = (sheet ?? []).some((s) => !!s.customerName);
-  const lines = (sheet ?? []).map((s) => ({ s, cents: costs[s.itemId]?.trim() ? parsePesos(costs[s.itemId]!) : undefined }));
+  const costOf = (text: string | undefined) => { try { return text?.trim() ? parsePesos(text) : undefined; } catch { return undefined; } }; // "120." on the way to 120.50
+  const lines = (sheet ?? []).map((s) => ({ s, cents: costOf(costs[s.itemId]) }));
   const errors = [
     ...(isBusinessDate(date) ? [] : ['Pick the value date, like 2026-10-31.']),
     ...lines.filter((l) => l.cents === undefined || l.cents === null || Number.isNaN(l.cents) || l.cents < 0).map((l) => `Type the cost per piece of ${itemName(l.s)}.`),

@@ -3,7 +3,7 @@
  * an edit; the buttons on the job order's view; what the collection form starts with for a job order. Pure, so it is
  * tested without a browser; the server works out every figure and checks everything again.
  */
-import { formatPesos, saysSet } from '@moonproject/shared';
+import { formatPesos, manilaDate, saysSet } from '@moonproject/shared';
 import type { BookletFigures, BookletShown, CatItem, DpInfo, JoDepositVat, JoStatus, WearerPick } from '../../api.ts';
 import type { jobOrderPrefill } from '../QUO/quotation.ts';
 import { cents } from '../COL/money.ts';
@@ -32,7 +32,7 @@ export interface RosterInput { personId?: string; name?: string; sizeMode: 'pres
 export interface JoLineInput { kind: Kind; description: string; qty: number; unitPriceCents: number; discountCents: number; roster: RosterInput[] }
 export interface JoInput { customerId: string; contact?: string; dueInDays: number; priority: 'normal' | 'rush'; paymentTerms: Terms; notes?: string; lines: JoLineInput[] }
 /** What GET /api/docs/jo.job_order/:id keeps beside the input: the names shown for listed wearers. */
-export interface JoDoc { customerName: string; lines: { roster: { wearerName: string }[] }[] }
+export interface JoDoc { customerName: string; dueDate?: string; lines: { roster: { wearerName: string }[] }[] }
 
 export const emptyJoLine = (): JoLineRow => ({ itemId: '', kind: 'made_to_order', description: '', qty: '1', price: '', listCents: null, discount: '', roster: [], isSet: false });
 // 50% downpayment unless picked otherwise (the owner's request, Oct 2026).
@@ -117,12 +117,15 @@ export function joInput(v: JoValues): { input: JoInput; totalCents: number; erro
   return { input, totalCents: lines.reduce((s, l) => s + l.qty * l.unitPriceCents - l.discountCents, 0), errors };
 }
 
+/** The days from today to a due date (at least 1, what the form takes), so an edit keeps the date: the input counts from its first day. */
+const daysLeft = (dueDate: string, today: string) => Math.max(1, Math.round((Date.parse(dueDate) - Date.parse(today)) / 86_400_000));
+
 /** A recorded job order's input (and the names kept beside it) -> typed values, for its Edit. */
-export function joValues(i: JoInput, doc?: JoDoc): JoValues {
+export function joValues(i: JoInput, doc?: JoDoc, today = manilaDate(new Date())): JoValues {
   return {
     customer: { id: i.customerId, name: doc?.customerName ?? 'Customer on file' },
     contact: i.contact ?? '',
-    dueInDays: String(i.dueInDays),
+    dueInDays: String(doc?.dueDate ? daysLeft(doc.dueDate, today) : i.dueInDays),
     priority: i.priority,
     paymentTerms: i.paymentTerms,
     notes: i.notes ?? '',

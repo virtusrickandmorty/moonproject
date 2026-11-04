@@ -2,6 +2,8 @@
  * Start-up: first owner if nobody exists yet, else sign in, forced password change, then the shell.
  * Everything shown comes from the server on each load; nothing is kept in browser storage (NR-11).
  */
+import { leavePush } from './components/PushToggle.tsx';
+import { ScreenGuard } from './components/ScreenGuard.tsx';
 import { ProductionEntriesPage } from './modules/PRD/EntriesByJobOrder.tsx';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { api, ApiError, type DocTypeInfo, type Me } from './api.ts';
@@ -75,7 +77,7 @@ function Stages() {
   if (stage.me.mustChangePassword) return <ChangePasswordScreen forced onDone={signedIn} />;
   if (isSitePath(location.split('?')[0]!, true)) return <Site staff />;
 
-  const signOut = () => void api.logout().catch(() => undefined).then(() => {
+  const signOut = () => void leavePush().catch(() => undefined).then(() => api.logout()).catch(() => undefined).then(() => {
     navigate('/sign-in');
     setStage({ kind: 'login', message: 'You are signed out.' });
   });
@@ -100,7 +102,7 @@ function Stages() {
       opened={openedFrom(query)} noEdit={VIEWS[t.key]?.noEdit} formTitled={t.key === 'jo.job_order' || t.key === 'pur.po' || t.key === 'pur.request' || t.key === 'pur.rr' || t.key === 'jo.opening' || t.key === 'qs.sale'}
       form={t.canCreate || (t.canPost && t.canCancel) ? ({ mode, close, setDirty, show }: Parameters<ListForm>[0]) => (mode.kind === 'new' ? t.canCreate : t.canPost && t.canCancel)
         ? (t.key === 'jo.job_order' ? <JobOrderForm type={t} me={stage.me} mode={mode} inDialog={{ close, setDirty, show }} />
-          : t.key === 'qs.sale' ? <QuickSaleForm type={t} me={stage.me} mode={mode} inDialog={{ close, setDirty, show }} /> : <Form type={t} me={stage.me} mode={mode} />)
+          : t.key === 'qs.sale' ? (mode.kind === 'edit' ? <EditReady type={t} id={mode.id}><QuickSaleForm type={t} me={stage.me} mode={mode} inDialog={{ close, setDirty, show }} /></EditReady> : <QuickSaleForm type={t} me={stage.me} mode={mode} inDialog={{ close, setDirty, show }} />) : <Form type={t} me={stage.me} mode={mode} />)
         : NO_ACCESS : undefined}
       view={({ id, recorded, cancel, refresh }: Parameters<ListView>[0]) => <DocView key={id} type={t} id={id} recorded={recorded} parts={VIEWS[t.key]} inDialog={{ refresh }} startCancel={cancel} />} />)],
     ['/docs/:type/new', (_, t) => !t.canCreate ? NO_ACCESS : <Form key={location} type={t} me={stage.me} mode={{ kind: 'new', draftId: new URLSearchParams(query).get('draft') ?? undefined }} />],
@@ -133,7 +135,7 @@ function Stages() {
   return (
     <LinkAccess.Provider value={(to) => mayOpen(to, stage.me, stage.docTypes)}>
       <Shell me={stage.me} docTypes={stage.docTypes} onSignOut={signOut} onRefreshReport={isReportPath(path) ? () => setFresh((n) => n + 1) : undefined} reportKey={`${path}#${fresh}`}>
-        <RestoredNotice me={stage.me} />{page}
+        <RestoredNotice me={stage.me} /><ScreenGuard key={path}>{page}</ScreenGuard>
       </Shell>
     </LinkAccess.Provider>
   );
@@ -160,7 +162,20 @@ const NO_ACCESS = <Notice>You do not have access to this page. Ask the owner if 
 /** A module's own form when it has one (FORMS), else the generic form. */
 function Form({ type, mode, me }: { type: DocTypeInfo; mode: FormMode; me: Me }) {
   const Custom = FORMS[type.key];
-  return Custom ? <Custom type={type} mode={mode} me={me} /> : <DocForm type={type} mode={mode} />;
+  const form = Custom ? <Custom type={type} mode={mode} me={me} /> : <DocForm type={type} mode={mode} />;
+  return mode.kind === 'edit' ? <EditReady type={type} id={mode.id}>{form}</EditReady> : form;
+}
+
+/** An edit opens only once its document has loaded: a form with nothing to replace would record a new document beside it. */
+function EditReady({ type, id, children }: { type: DocTypeInfo; id: string; children: ReactNode }) {
+  const [state, setState] = useState<{ ready: boolean; error: string }>({ ready: false, error: '' });
+  useEffect(() => {
+    let current = true;
+    api.get(type.key, id).then(() => { if (current) setState({ ready: true, error: '' }); }, (e: Error) => { if (current) setState({ ready: false, error: e.message }); });
+    return () => { current = false; };
+  }, [type.key, id]);
+  if (state.error) return <Notice>{state.error}</Notice>;
+  return state.ready ? <>{children}</> : <Loading />;
 }
 
 export function dailyActions(me: Me, docTypes: DocTypeInfo[]): { label: string; href: string }[] {

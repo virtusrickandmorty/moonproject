@@ -10,6 +10,7 @@ import fc from 'fast-check';
 import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { getCashPlace, listCashPlaces, resolveAccount } from '../../../engine/ledger/accounts.ts';
+import { isChecksPlace } from '../../CASH/public.ts';
 import { accountBalance } from '../../../engine/ledger/queries.ts';
 import type { Db } from '../../../platform/db/driver.ts';
 
@@ -100,6 +101,7 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
       if (-accountBalance(ctx.db, payable, { party: { type: 'employee', id } }) < s.netCents) error(`employeeIds.${i}`, 'PAYABLE', `${s.name} is owed less than ${formatPeso(s.netCents)} in salaries payable.`);
     });
     doc.tenders.forEach((t, i) => !getCashPlace(ctx.db, t.cashPlaceId)?.isActive && error(`tenders.${i}.cashPlaceId`, 'CASH_PLACE', 'Pick where the money came from.'));
+    doc.tenders.forEach((t, i) => isChecksPlace(ctx.db, t.cashPlaceId) && error(`tenders.${i}.cashPlaceId`, 'CHECKS_PLACE', `Customer checks are not paid out from ${getCashPlace(ctx.db, t.cashPlaceId)!.name}: deposit them from the Checks screen first.`));
     const paid = doc.tenders.reduce((s, t) => s + t.amountCents, 0);
     if (paid !== doc.totalCents) error('tenders', 'TENDERS', `The money paid out (${formatPeso(paid)}) must equal the net pay released (${formatPeso(doc.totalCents)}).`);
     return issues;
@@ -168,7 +170,7 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
       .map((runId) => ({ runId, due: releaseStatus(db, runId).filter((s) => !s.releasedBy && s.netCents > 0) }))
       .filter((r) => r.due.length > 0);
     if (!open.length) throw new Error('Nothing to release');
-    const places = listCashPlaces(db).map((c) => c.id);
+    const places = listCashPlaces(db).map((c) => c.id).filter((id) => !isChecksPlace(db, id));
     return fc
       .record({ run: fc.constantFrom(...open), cashPlaceId: fc.constantFrom(...places) })
       .chain(({ run, cashPlaceId }) =>

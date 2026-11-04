@@ -6,6 +6,7 @@
  * one (cancel + reissue on the cut-over date, NR-4).
  */
 import { useEffect, useState } from 'react';
+import { parsePesos } from '@moonproject/shared';
 import { api, type ActiveEmployee, type DocTypeInfo, type OpeningStatInput, type OpeningStatus } from '../../api.ts';
 import { Loading, Button, Field, Notice, Panel, inputClass, peso, showDate } from '../../components/ui.tsx';
 import type { FormMode } from '../../generic/DocForm.tsx';
@@ -39,7 +40,8 @@ export function OpeningStatForm({ type, mode }: { type: DocTypeInfo; mode: FormM
   const record = () => r.ask(input, errors, cutover);
 
   const set = (employeeId: string, patch: Partial<OpeningStatRow>) => setRows((old) => ({ ...old, [employeeId]: { ...(old[employeeId] ?? emptyRow()), ...patch } }));
-  const rowTotal = (row: OpeningStatRow | undefined) => (row ? Object.values(row).reduce((s, v) => s + (Number(v.replace(/,/g, '')) || 0), 0) : 0);
+  const centsOf = (v: string) => { try { return parsePesos(v); } catch { return 0; } };
+  const rowTotal = (row: OpeningStatRow | undefined) => (row ? Object.values(row).reduce((s, v) => s + (v.trim() ? centsOf(v) : 0), 0) : 0);
 
   if (r.gate) return r.gate;
   return (
@@ -75,7 +77,7 @@ export function OpeningStatForm({ type, mode }: { type: DocTypeInfo; mode: FormM
                         <td><input aria-label={`${e.name} withholding tax`} inputMode="decimal" placeholder="0.00" className={money} value={row?.wtax ?? ''} onChange={(ev) => set(e.id, { wtax: ev.target.value })} /></td>
                         <td><input aria-label={`${e.name} SSS loan`} inputMode="decimal" placeholder="0.00" className={money} value={row?.sssLoan ?? ''} onChange={(ev) => set(e.id, { sssLoan: ev.target.value })} /></td>
                         <td><input aria-label={`${e.name} Pag-IBIG loan`} inputMode="decimal" placeholder="0.00" className={money} value={row?.hdmfLoan ?? ''} onChange={(ev) => set(e.id, { hdmfLoan: ev.target.value })} /></td>
-                        <td className="text-right tabular-nums">{rowTotal(row) > 0 ? peso(rowTotal(row) * 100) : '—'}</td>
+                        <td className="text-right tabular-nums">{rowTotal(row) > 0 ? peso(rowTotal(row)) : '—'}</td>
                       </tr>
                     );
                   })}

@@ -10,6 +10,7 @@ import fc from 'fast-check';
 import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { getCashPlace, listCashPlaces, resolveAccount } from '../../../engine/ledger/accounts.ts';
+import { isChecksPlace } from '../../CASH/public.ts';
 import { activeEmployees, employee } from '../../EMP/public.ts';
 import { caBalance } from '../public.ts';
 
@@ -49,6 +50,7 @@ export const advanceDoc: DocTypeDef<AdvanceInput, Advance> = {
     const issues: Issue[] = [];
     if (!employee(ctx.db, doc.employeeId)?.active) issues.push({ field: 'employeeId', code: 'EMPLOYEE', level: 'error', message: 'Pick an active employee.' });
     if (!getCashPlace(ctx.db, doc.cashPlaceId)?.isActive) issues.push({ field: 'cashPlaceId', code: 'CASH_PLACE', level: 'error', message: 'Pick where the money came from.' });
+    else if (isChecksPlace(ctx.db, doc.cashPlaceId)) issues.push({ field: 'cashPlaceId', code: 'CHECKS_PLACE', level: 'error', message: `Customer checks are not paid out from ${getCashPlace(ctx.db, doc.cashPlaceId)!.name}: deposit them from the Checks screen first.` });
     if (doc.installmentCents > doc.amountCents) issues.push({ field: 'installmentCents', code: 'INSTALLMENT', level: 'error', message: 'The deduction per payroll cannot be more than the advance.' });
     const owed = caBalance(ctx.db, doc.employeeId);
     if (owed > 0) issues.push({ field: 'employeeId', code: 'OWES', level: 'warning', message: `${doc.employeeName} still owes ${formatPeso(owed)} on earlier advances.` });
@@ -112,7 +114,7 @@ export const advanceDoc: DocTypeDef<AdvanceInput, Advance> = {
 
   arbitrary(db) {
     const people = activeEmployees(db).map((e) => e.id);
-    const places = listCashPlaces(db).map((c) => c.id);
+    const places = listCashPlaces(db).map((c) => c.id).filter((id) => !isChecksPlace(db, id));
     return fc
       .record({ employeeId: fc.constantFrom(...people), cashPlaceId: fc.constantFrom(...places), amountCents: fc.integer({ min: 100_00, max: 10_000_00 }), part: fc.integer({ min: 1, max: 4 }) })
       .map(({ part, ...r }) => ({ ...r, installmentCents: Math.ceil(r.amountCents / part) }));

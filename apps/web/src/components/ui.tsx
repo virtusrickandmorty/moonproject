@@ -98,14 +98,16 @@ export const searchRowClass = 'flex flex-wrap items-center justify-end gap-3 rou
 
 export const inputClass = 'w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-[0_1px_0_rgb(15_23_42/0.03)] outline-none transition-[border-color,box-shadow] placeholder:text-slate-400 hover:border-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500';
 
-export function Field({ label, required, error, hint, children }: { label: string; required?: boolean; error?: string; hint?: string; children: ReactNode }) {
+/** `group`: its input is a set of buttons. A label would press the first of them when its words are clicked. */
+export function Field({ label, required, error, hint, group, children }: { label: string; required?: boolean; error?: string; hint?: string; group?: boolean; children: ReactNode }) {
+  const Box = group ? 'div' : 'label';
   return (
-    <label className="block space-y-1 text-sm" data-invalid={error ? '' : undefined}>
+    <Box className="block space-y-1 text-sm" data-invalid={error ? '' : undefined}>
       <span className="font-medium text-slate-700">{label}{required && <span className="text-red-600"> *</span>}</span>
       {children}
       {hint && <span className="block text-xs text-muted">{hint}</span>}
       {error && <span className="flex items-start gap-1 text-xs font-medium text-red-700"><span aria-hidden="true">⚠</span>{error}</span>}
-    </label>
+    </Box>
   );
 }
 

@@ -13,6 +13,7 @@ import fc from 'fast-check';
 import { formatPeso, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { getCashPlace, listCashPlaces } from '../../../engine/ledger/accounts.ts';
+import { isChecksPlace } from '../../CASH/public.ts';
 import type { Db } from '../../../platform/db/driver.ts';
 import { KINDS, loan, loanBalance, paidOnInstalment, remainingOf, schedule, type LoanKind } from '../loans.ts';
 
@@ -87,6 +88,7 @@ export const paymentDoc: DocTypeDef<PaymentInput, LoanPayment> = {
       return [{ field: 'loanId', code: 'LOAN_CANCELLED', level: 'error', message: `${l.number} was cancelled${by}. Record payments only on a loan that stands.` }];
     }
     if (!getCashPlace(ctx.db, doc.cashPlaceId)?.isActive) err('cashPlaceId', 'CASH_PLACE', 'Pick where the money came from.');
+    else if (isChecksPlace(ctx.db, doc.cashPlaceId)) err('cashPlaceId', 'CHECKS_PLACE', `Customer checks are not paid out from ${getCashPlace(ctx.db, doc.cashPlaceId)!.name}: deposit them from the Checks screen first.`);
     const rows = schedule(ctx.db, l.id);
     const row = rows.find((r) => r.instalmentNo === doc.instalmentNo);
     const next = rows.find((r) => !r.paidBy);
@@ -167,7 +169,7 @@ export const paymentDoc: DocTypeDef<PaymentInput, LoanPayment> = {
       .record({
         loanId: fc.constantFrom(...(loans.length > 0 ? loans : ['no-loan-yet'])),
         instalmentNo: fc.integer({ min: 1, max: 4 }),
-        cashPlaceId: fc.constantFrom(...listCashPlaces(db).map((c) => c.id)),
+        cashPlaceId: fc.constantFrom(...listCashPlaces(db).map((c) => c.id).filter((id) => !isChecksPlace(db, id))),
         split: fc.option(fc.record({ principalCents: fc.integer({ min: 0, max: 100_000_00 }), interestCents: fc.integer({ min: 0, max: 50_000_00 }) }), { nil: undefined }),
       })
       .map(({ split, ...r }): PaymentInput => (split ? { ...r, ...split, note: 'The bank applied it differently' } : r));

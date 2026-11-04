@@ -20,7 +20,7 @@ const choice = (on: boolean) => `flex w-full justify-between rounded-lg p-3 text
 export function DepositTransferForm({ type, mode }: { type: DocTypeInfo; mode: FormMode }) {
   const [customer, setCustomer] = useState<Picked | null>(null);
   const [held, setHeld] = useState<Transferable | null>(null);
-  const [original, setOriginal] = useState<{ header: DocHeader; moved: Moved }>();
+  const [original, setOriginal] = useState<{ header: DocHeader; moved: Moved; customerId: string }>();
   const [editReason, setEditReason] = useState('');
   const [from, setFrom] = useState(''); // a JO id, or UNAPPLIED
   const [to, setTo] = useState('');
@@ -37,7 +37,7 @@ export function DepositTransferForm({ type, mode }: { type: DocTypeInfo; mode: F
         const input = d.input as Stored;
         const doc = d.doc as { customerName: string; fromJobOrderNumber: string | null; toJobOrderNumber: string };
         const fromKey = input.fromJobOrderId ?? UNAPPLIED;
-        setOriginal({ header: d.header, moved: { fromKey, fromLabel: `Deposit for ${doc.fromJobOrderNumber}`, toId: input.toJobOrderId, toLabel: doc.toJobOrderNumber, cents: input.amountCents } });
+        setOriginal({ header: d.header, customerId: input.customerId, moved: { fromKey, fromLabel: `Deposit for ${doc.fromJobOrderNumber}`, toId: input.toJobOrderId, toLabel: doc.toJobOrderNumber, cents: input.amountCents } });
         setCustomer({ id: input.customerId, name: doc.customerName });
         setFrom(fromKey);
         setTo(input.toJobOrderId);
@@ -66,7 +66,7 @@ export function DepositTransferForm({ type, mode }: { type: DocTypeInfo; mode: F
     if (customer) api.transferable(customer.id).then(setHeld, fail);
   }, [customer?.id]);
 
-  const back = original && held?.customerId === customer?.id ? original.moved : undefined;
+  const back = original && held?.customerId === original.customerId ? original.moved : undefined;
   const froms = held ? sources(held, back) : [];
   const source = froms.find((s) => s.key === from);
   const tos = held && from ? targets(held, from, back) : [];

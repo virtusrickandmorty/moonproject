@@ -13,7 +13,7 @@ export function searchWords(query: string): string[][] {
     if (digits.length >= 3 && /^[\d\-().+/]+$/.test(word)) {
       ways.add(digits);
       if (digits.startsWith('0')) ways.add(digits.slice(1));
-      if (digits.startsWith('63')) ways.add(digits.slice(2));
+      if (digits.startsWith('63') && digits.length >= 11) ways.add(digits.slice(2)); // a whole phone number, +63 917 123 4567
     }
     return [...ways];
   });

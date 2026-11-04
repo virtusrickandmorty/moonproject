@@ -4,7 +4,7 @@
  * Or one at a time (the owner's request, Oct 2026): each person released on their own, from a window with their payslip,
  * their QR code and where the money came from (split if needed), staying on the form for the next person.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, ApiError, newIdempotencyKey, type CashPlace, type DocTypeInfo, type Payslips, type Preview, type ReleaseRow, type RunToRelease } from '../../api.ts';
 import { Link, navigate } from '../../router.tsx';
@@ -49,10 +49,12 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
     api.runsToRelease().then(setRuns, fail);
     api.cashPlaces().then(setPlaces, fail);
   }, []);
-  const loadRows = (id: string) => api.releaseStatus(id).then((r) => (setRows(r), setPicked(new Set(r.filter((x) => !x.releasedBy && x.netCents > 0).map((x) => x.employeeId)))), fail);
+  const wanted = useRef('');
+  const loadRows = (id: string) => api.releaseStatus(id).then((r) => wanted.current === id && (setRows(r), setPicked(new Set(r.filter((x) => !x.releasedBy && x.netCents > 0).map((x) => x.employeeId)))), fail);
   useEffect(() => {
     setRows([]);
     setReleased('');
+    wanted.current = runId;
     if (runId) void loadRows(runId);
   }, [runId]);
   const run = runs?.find((r) => r.id === runId);

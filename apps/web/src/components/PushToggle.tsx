@@ -21,6 +21,12 @@ async function currentSubscription(): Promise<PushSubscription | null> {
   return reg ? reg.pushManager.getSubscription() : null;
 }
 
+/** On sign-out: the next person on this device must not get this person's notices. They turn it on again after signing in. */
+export async function leavePush(): Promise<void> {
+  const sub = await currentSubscription();
+  if (sub) { await api.pushUnsubscribe(sub.endpoint); await sub.unsubscribe(); }
+}
+
 export function PushToggle({ className = '', where = 'phone' }: { className?: string; where?: 'phone' | 'computer' }) {
   const [state, setState] = useState<State>('checking');
   const [busy, setBusy] = useState(false);

@@ -57,7 +57,10 @@ export function migrate(db: Db, sources: MigrationSource[], appliedAt: string): 
       const checksum = createHash('sha256').update(sql).digest('hex');
       const prev = applied.get(id);
       if (prev) {
-        if (prev !== checksum) throw new Error(`Migration ${id} was changed after it ran. Add a new migration instead.`);
+        // Line endings differ by checkout (git's autocrlf): the same migration, not a changed one.
+        const lf = sql.replace(/\r\n/g, '\n');
+        const same = [checksum, ...[lf, lf.replace(/\n/g, '\r\n')].map((text) => createHash('sha256').update(text).digest('hex'))].includes(prev);
+        if (!same) throw new Error(`Migration ${id} was changed after it ran. Add a new migration instead.`);
         continue;
       }
       // A migration that rebuilds a table other tables point to (SQLite's documented way to change a CHECK: copy, drop,

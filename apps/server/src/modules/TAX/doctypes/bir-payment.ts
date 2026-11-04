@@ -30,6 +30,7 @@ import type { Db } from '../../../platform/db/driver.ts';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import type { DraftLine } from '../../../engine/ledger/post.ts';
 import { getCashPlace, listCashPlaces } from '../../../engine/ledger/accounts.ts';
+import { isChecksPlace } from '../../CASH/public.ts';
 import { cutoverDate } from '../../ACC/public.ts';
 import { returnDue, vatReturnDue } from '../calendar.ts';
 import { incomeTaxPosition } from '../income-tax.ts';
@@ -187,6 +188,7 @@ export const birPaymentDoc: DocTypeDef<BirPaymentInput, BirPayment> = {
     const issues: Issue[] = [];
     const add = (level: Issue['level'], field: string, code: string, message: string) => issues.push({ field, code, level, message });
     if (!getCashPlace(ctx.db, doc.cashPlaceId)?.isActive) add('error', 'cashPlaceId', 'CASH_PLACE', 'Pick where the money came from.');
+    else if (isChecksPlace(ctx.db, doc.cashPlaceId)) add('error', 'cashPlaceId', 'CHECKS_PLACE', `Customer checks are not paid out from ${getCashPlace(ctx.db, doc.cashPlaceId)!.name}: deposit them from the Checks screen first.`);
     const p = periodFor(doc.form, doc.period);
     if (!p) {
       add('error', 'period', 'PERIOD', doc.form === '0619-E' ? 'A 0619-E pays one month: pick a month like 2026-07.'
@@ -404,7 +406,7 @@ export const birPaymentDoc: DocTypeDef<BirPaymentInput, BirPayment> = {
   arbitrary(db) {
     const due = periodsDue(db);
     if (!due.length) throw new Error('Nothing to pay the BIR');
-    const places = listCashPlaces(db).map((c) => c.id);
+    const places = listCashPlaces(db).map((c) => c.id).filter((id) => !isChecksPlace(db, id));
     return fc
       .record({
         d: fc.constantFrom(...due), cashPlaceId: fc.constantFrom(...places), part: fc.boolean(), ref: fc.integer({ min: 100_000, max: 999_999 }),

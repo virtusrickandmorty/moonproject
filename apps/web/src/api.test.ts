@@ -14,6 +14,33 @@ const injectFetch = (app: FastifyInstance, jar = { cookie: '' }) => async (url: 
   return new Response(res.body || null, { status: res.statusCode });
 };
 
+describe('a save whose answer was lost', () => {
+  it('is not recorded twice when it is tried again, even with a new key from the form', async () => {
+    const env = await createTestEnv(); encoderOwnDefaults(env);
+    const real = injectFetch(env.app);
+    let drop = false;
+    const api = createApi(async (url, init) => {
+      const r = await real(url, init); // the server has done it...
+      if (drop) { drop = false; throw new TypeError('Failed to fetch'); } // ...and the answer never arrives
+      return r;
+    });
+    await api.firstOwner({ username: 'owner1', displayName: 'Test Owner', password: 'moon garden paper lamp' });
+    const place = async (name: string) => (await api.cashPlaces()).find((p) => p.name.endsWith(name))!.id;
+    const input = { fromCashPlaceId: await place('BDO'), toCashPlaceId: await place('China Bank'), amountSentCents: 100_000, amountReceivedCents: 100_000 };
+    const count = () => env.db.prepare(`SELECT COUNT(*) FROM documents WHERE doc_type = 'cash.transfer'`).pluck().get();
+
+    drop = true;
+    await expect(api.post('cash.transfer', input, 100_000, key())).rejects.toMatchObject({ code: 'OFFLINE', message: expect.stringContaining('may or may not have gone through') });
+    expect(count()).toBe(1);
+    const again = await api.post('cash.transfer', input, 100_000, key());
+    expect(again.number).toBe('TRF-000001');
+    expect(count()).toBe(1);
+
+    await api.post('cash.transfer', input, 100_000, key()); // answered, so the next one is a new transfer
+    expect(count()).toBe(2);
+  });
+});
+
 describe('web client with the Fund Transfer', () => {
   it('first owner; record after confirm; retried click; view; edit = cancel and reissue; cancel; drafts; sign out', async () => {
     const env = await createTestEnv(); encoderOwnDefaults(env);

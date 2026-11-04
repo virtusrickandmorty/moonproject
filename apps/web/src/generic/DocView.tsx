@@ -51,7 +51,7 @@ export function DocView({ type, id, recorded, parts = {}, inDialog, startCancel 
   const [cancelKey, setCancelKey] = useState<string | null>(() => (startCancel ? newIdempotencyKey() : null)); // one Idempotency-Key per cancel dialog
   const [cancelPreview, setCancelPreview] = useState<CancelPreview | null>(null);
 
-  const load = useCallback(() => api.get(type.key, id).then(setD, (e: Error) => setError(e.message)), [type.key, id]);
+  const load = useCallback(() => api.get(type.key, id).then((doc) => { setD(doc); setError(''); }, (e: Error) => setError(e.message)), [type.key, id]);
   useEffect(() => void load(), [load]);
   useLiveChange(() => void load()); // a cancel, an edit or a payment on another computer shows here too
   useEffect(() => void (fields.some((f) => f.kind === 'cashPlace') && api.cashPlaces().then(setPlaces, () => undefined)), [fields]);
@@ -71,8 +71,7 @@ export function DocView({ type, id, recorded, parts = {}, inDialog, startCancel 
     return () => { active = false; };
   }, [cancelKey, type.key, id]);
 
-  if (error) return <Notice>{error}</Notice>;
-  if (!d) return <Loading />;
+  if (!d) return error ? <Notice>{error}</Notice> : <Loading />; // once shown it stays: a reload that fails does not take it away
   const h = d.header;
   const text = toValues(fields, d.input);
   const shown = { cashPlace: (v: string) => places.find((p) => String(p.id) === v)?.name ?? v, money: (v: string) => `₱${v}`, boolean: (v: string) => (v ? 'Yes' : 'No') } as Record<string, (v: string) => string>;

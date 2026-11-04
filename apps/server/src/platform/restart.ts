@@ -31,7 +31,8 @@ export function idleRestarter(app: FastifyInstance, exit: (reason: string) => vo
     running.delete(req);
     if (reason !== null && running.size === 0) setImmediate(fire);
   };
-  app.addHook('onRequest', async (req) => void running.add(req));
+  // Not the live stream every open screen keeps: it never ends, and the restart would wait its whole minute for it.
+  app.addHook('onRequest', async (req) => { if (!req.url.startsWith('/api/live')) running.add(req); });
   app.addHook('onResponse', finished);
   app.addHook('onRequestAbort', finished);
   return {
