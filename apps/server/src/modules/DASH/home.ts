@@ -29,7 +29,7 @@ import { redLightNotices, type Host } from '../../platform/health/health.ts';
 
 /** What the owner is told about for 14 days: actions that need a fresh password, in words (the audit log has the rest). */
 const GUARDED: Record<string, string> = {
-  'bak.restore': 'restored a backup',
+  'bak.restored': 'restored a backup',
   'user.create': 'added a user',
   'user.roles': "changed a user's roles",
   'user.reset_password': "reset a user's password",
@@ -214,7 +214,7 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
       WHERE a.at >= ? AND a.action IN (SELECT value FROM json_each(?))
       ORDER BY a.at DESC, a.seq DESC`).all(since, JSON.stringify(Object.keys(GUARDED))) as { seq: number; at: string; action: string; entityId: string | null; userName: string | null }[];
     for (const a of guarded) {
-      const named = a.action === 'acc.setting.add' || a.action === 'bak.restore' ? `${a.entityId} · ` : ''; // a setting's key, a backup's file
+      const named = a.action === 'acc.setting.add' || a.action === 'bak.restored' ? `${a.entityId} · ` : ''; // a setting's key, a backup's file
       push('step-up-action', String(a.seq), `${a.userName ?? 'The system'} ${GUARDED[a.action]}`, '/aud/log', `${named}${a.at}`);
     }
   }
@@ -285,7 +285,7 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
   }
   // Purchase requests (the owner's request, 26 Oct 2026): the approvers see those waiting (not their own, unless the owner);
   // whoever asked sees theirs once approved, to order or pay.
-  if (can('pur.request.approve')) for (const r of requestsIn(db, 'waiting')) if (r.requestedBy !== user.userId || user.roles.includes('owner')) {
+  if (can('pur.request.approve')) for (const r of requestsIn(db, 'waiting')) if (r.requestedBy !== user.userId || can('pur.request.approve_own')) {
     push('pur-request-waiting', r.id, `${r.number} from ${r.requestedByName} waits for your approval`, `/docs/pur.request/${r.id}`, r.purpose, r.totalCents);
   }
   if (can('pur.po.create') || can('exp.voucher.create')) for (const r of requestsIn(db, 'approved')) if (r.requestedBy === user.userId) {

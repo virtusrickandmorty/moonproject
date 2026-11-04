@@ -58,7 +58,7 @@ const statementRows = (sections: StatementSection[]) => sections.flatMap((sectio
   [section.title, '', ''],
   ...section.groups.flatMap((group) => [
     ...group.lines.map((line) => [line.code ? `${line.code} ${line.name}` : line.name, printMoney(line.amountCents), printMoney(line.compareAmountCents ?? 0)]),
-    [`Total ${group.name}`, printMoney(group.totalCents), printMoney(group.compareAmountCents ?? 0)],
+    ...(group.name ? [[`Total ${group.name}`, printMoney(group.totalCents), printMoney(group.compareAmountCents ?? 0)]] : []),
   ]),
   [`Total ${section.title.toLowerCase()}`, printMoney(section.totalCents), printMoney(section.compareAmountCents ?? 0)],
 ]);

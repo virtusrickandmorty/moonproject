@@ -98,6 +98,9 @@ function testReports(profile: Profile) {
   ];
 }
 
+/** A journal memo as a customer may read it: prints never say "invoice" (AGENTS.md). */
+const forCustomer = (memo: string | null) => (memo ?? '').replace(/\binvoice\b/gi, 'billing');
+
 export function prtRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock, registry, practice } = deps;
   bookPrintRoutes(app, deps);
@@ -156,11 +159,11 @@ export function prtRoutes(app: FastifyInstance, deps: AppDeps): void {
     const data = customerStatement(db, input.customerId, input.from, input.to);
     if (!data) throw notFound('That customer');
     const rows = [['', 'Opening balance', '', '', '', printMoney(data.openingBalanceCents)],
-      ...data.lines.map((line) => [line.businessDate, line.documentNumber ?? line.journalNumber, line.memo,
+      ...data.lines.map((line) => [line.businessDate, line.documentNumber ?? line.journalNumber, forCustomer(line.memo),
         printMoney(line.debitCents), printMoney(line.creditCents), printMoney(line.runningBalanceCents)]),
       ['', 'Closing balance', '', '', '', printMoney(data.closingBalanceCents)]];
     const deposits = [['', 'Opening deposits held', '', '', '', printMoney(data.openingDepositsHeldCents)],
-      ...data.depositLines.map((line) => [line.businessDate, line.documentNumber ?? line.journalNumber, line.memo,
+      ...data.depositLines.map((line) => [line.businessDate, line.documentNumber ?? line.journalNumber, forCustomer(line.memo),
         printMoney(line.creditCents), printMoney(line.debitCents), printMoney(line.runningHeldCents)]),
       ['', 'Deposits held', '', '', '', printMoney(data.depositsHeldCents)]];
     return report('Statement of Account', printField('Customer', data.customerName) + printField('Period', `${data.from} to ${data.to}`) +

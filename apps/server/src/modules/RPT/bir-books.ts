@@ -79,7 +79,10 @@ export function cashJournal(db: Db, from: string, to: string, kind: 'receipts' |
       salesIncomeCents: sum(others.filter((l) => l.accountType === 'revenue'), (l) => signed(l, side)), payablesCents: amount('AP'),
       expensesCents: sum(others.filter((l) => l.accountType === 'expense'), (l) => signed(l, side)), inputVatCents: amount('INPUT_VAT'),
       ewtCents: amount('EWT_PAYABLE'), salariesPayableCents: amount('PAYROLL_PAYABLE'),
-      sundry: others.filter((l) => !known(l)).map((l) => ({ account: `${l.accountCode} ${l.accountName}`, amountCents: signed(l, side) })).filter((x) => x.amountCents !== 0) };
+      sundry: [...others.filter((l) => !known(l)).reduce((by, l) => {
+        const account = `${l.accountCode} ${l.accountName}`;
+        return by.set(account, (by.get(account) ?? 0) + signed(l, side));
+      }, new Map<string, number>())].map(([account, amountCents]) => ({ account, amountCents })).filter((x) => x.amountCents !== 0) };
   });
   const totals = rows.reduce((a, r) => add(a, cashAmounts(r)), {} as Amounts);
   return { book: kind, from, to, pages: paginate(rows, cashAmounts), totals };

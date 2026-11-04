@@ -93,7 +93,7 @@ export function exceptions(db: Db, asOf: string): { asOf: string; rows: Exceptio
       kind: 'Draft older than 3 days',
       detail: draft.updatedAt,
       amountCents: null,
-      documentPath: `/docs/${draft.docType}/drafts/${draft.id}`,
+      documentPath: `/docs/${draft.docType}/new?draft=${draft.id}`,
     });
   }
   const spend = monthlyMiscException(db, asOf.slice(0, 7));

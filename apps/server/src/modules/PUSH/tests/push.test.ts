@@ -27,6 +27,15 @@ const jobOrder = async (dueInDays: number) => {
   return r.json() as { id: string; number: string };
 };
 
+it('tries again when the internet was down: a notice nobody received is not marked sent', async () => {
+  await owner.post('/api/push/subscribe', phone(1));
+  const jo = await jobOrder(2);
+  const down: Sender = async () => { throw Object.assign(new Error('Service unavailable'), { statusCode: 503 }); };
+  expect(await pushNew(env.db, env.clock, env.deps.registry, down)).toBe(0);
+  await run();
+  expect(sent.filter((s) => s.title === `${jo.number} is due soon`)).toHaveLength(1);
+});
+
 it('pushes what comes up in the bell after a phone is turned on, once, to every phone of that person', async () => {
   await jobOrder(20); // already in the bell when notifications are turned on: not pushed
   const key = (await owner.get('/api/push/key')).json();

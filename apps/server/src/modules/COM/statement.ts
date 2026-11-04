@@ -10,7 +10,7 @@ import { plain } from './text.ts';
 const escape = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
 const WORDS: Record<string, string> = {
-  'jo.invoice_record': 'Sale', 'jo.dp_invoice': 'Downpayment billed', 'jo.opening': 'Brought forward', 'col.collection': 'Payment received',
+  'jo.invoice_record': 'Sale', 'qs.sale': 'Sale', 'fa.disposal': 'Sale', 'jo.dp_invoice': 'Downpayment billed', 'jo.opening': 'Brought forward', 'col.collection': 'Payment received',
   'col.credit_memo': 'Credit', 'col.write_off': 'Written off', 'col.refund': 'Refund', 'col.deposit_transfer': 'Deposit moved', 'col.cwt_only': 'Tax withheld',
 };
 
