@@ -96,6 +96,7 @@ function OrderDialog({ me, order: o, onClose, onChanged }: { me: Me; order: Deta
     const t = setTimeout(() => void masterRequest<{ id: string; display_name: string }[]>(me, `/api/cus/customers?search=${encodeURIComponent(search.trim())}&limit=200`).then(setFound, () => undefined), 250);
     return () => clearTimeout(t);
   }, [me, search]);
+  const [why, setWhy] = useState('');
   const act = (fn: () => Promise<unknown>) => run(async () => { await fn(); setStep('view'); await onChanged(); });
   const confirm = () => act(() => masterRequest(me, `/api/shp/admin/orders/${o.id}/confirm`, 'POST', { customerId: customer!.id, invoiceNumber: invoiceNumber.trim(), crNumber: crNumber.trim(), version: o.version }));
   const reject = () => act(() => masterRequest(me, `/api/shp/admin/orders/${o.id}/reject`, 'POST', { reason: reason.trim(), version: o.version }));
@@ -128,7 +129,7 @@ function OrderDialog({ me, order: o, onClose, onChanged }: { me: Me; order: Deta
           </div>
           {o.reversal && <Notice tone="note">{o.reversal.kind === 'returned' ? 'Returned' : 'Cancelled'} after it was confirmed. Reason: {o.reversal.reason}. {o.reversal.kind === 'returned' ? 'A credit memo and a refund to where the buyer paid were recorded; send the buyer the money from there.' : 'The sale and its payment were cancelled; send the buyer the money back from where they paid.'}</Notice>}
           <details className="text-sm"><summary className="cursor-pointer font-semibold">History</summary>
-            <ul className="mt-1 space-y-0.5 text-slate-600">{o.events.map((e, i) => <li key={i}>{manilaTime(e.at)} · {e.userName ?? 'Customer'} · {ORDER_STATUS[e.status as Status]?.[0] ?? e.status}{e.note ? ` · ${e.note}` : ''}</li>)}</ul></details>
+            <ul className="mt-1 space-y-0.5 text-slate-600">{o.events.map((e, i) => <li key={i}>{manilaTime(e.at)} · {e.userName ?? 'Customer'} · {e.status === 'staff_note' ? 'Staff note' : ORDER_STATUS[e.status as Status]?.[0] ?? e.status}{e.note ? ` · ${e.note}` : ''}</li>)}</ul></details>
         </div>
         <div className="space-y-2">
           <p className="text-sm font-semibold">Proof of payment</p>
@@ -148,6 +149,14 @@ function OrderDialog({ me, order: o, onClose, onChanged }: { me: Me; order: Deta
             {(o.status === 'confirmed' || o.status === 'ready' || o.status === 'completed') && o.saleId && <Button tone="danger" disabled={busy} onClick={() => { setReason(''); setStep('reverse'); }}>Cancel or return</Button>}
           </>}
           <Button className="ml-auto" onClick={onClose}>Close</Button>
+        </div>
+      )}
+      {step === 'view' && canManage && o.status === 'ready' && o.fulfilment === 'pickup' && (
+        <div className="space-y-2 border-t border-slate-100 pt-3">
+          <Field label="Why is it not collected yet?" hint="For staff only: the customer never sees this. It shows in the month-end reminder.">
+            <textarea className={inputClass} rows={2} maxLength={500} value={why} onChange={(e) => setWhy(e.target.value)} />
+          </Field>
+          <Button disabled={busy || why.trim().length < 5} onClick={() => void act(() => masterRequest(me, `/api/shp/admin/orders/${o.id}/note`, 'POST', { note: why.trim() }).then(() => setWhy('')))}>Save the note</Button>
         </div>
       )}
       {step === 'confirm' && (

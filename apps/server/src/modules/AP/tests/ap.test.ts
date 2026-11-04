@@ -213,6 +213,9 @@ describe('AP rules (PLAN E9, D4)', () => {
     const po = await encoder.post('/api/docs/pur.po/post', { input: { supplierId: fabric, lines: [{ supplyId: cloth, qty: 50, unitCostCents: 22_400 }] }, expectedTotalCents: 1_120_000 }, idem());
     const rr = (await encoder.post('/api/docs/pur.rr/post', { input: { poDocumentId: po.json().id, lines: [{ poLineNo: 1, qty: 50 }] }, expectedTotalCents: 0 }, idem())).json();
     expect((await bill(encoder, g15({ receivingReportId: rr.id }))).json().warnings).toEqual([]);
+    // A date far in the past is most likely a slip: it is warned about, and the person decides.
+    const old = (await encoder.post('/api/docs/ap.bill/preview', { input: g15({ supplierInvoiceNo: 'SI-OLD', supplierInvoiceDate: '2006-09-20' }), businessDate: '2006-09-28' })).json();
+    expect(old.issues).toContainEqual(expect.objectContaining({ code: 'OLD_DATE', level: 'warning' }));
     // The report stands under its bill: cancelled first, the goods could be billed twice.
     expect((await env.as('accountant').then((a) => a.post(`/api/docs/pur.rr/${rr.id}/cancel`, { reason: 'wrong qty recorded' }, idem()))).statusCode).toBe(409);
     const again = await bill(encoder, g15({ supplierInvoiceNo: 'SI-7789', receivingReportId: rr.id }));

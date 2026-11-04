@@ -1,5 +1,6 @@
 /** Admin › Practice shop (PLAN C8): where to practise, and the owner's "start over". */
 import { useCallback, useEffect, useState } from 'react';
+import { userAway } from '../../live.ts';
 import { api, type Me, type PracticeStatus } from '../../api.ts';
 import { Loading, Button, Notice, Panel } from '../../components/ui.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
@@ -13,7 +14,7 @@ export function PracticeShop({ me }: { me: Me }) {
   useEffect(() => void load(), [load]);
   useEffect(() => {
     if (status?.state !== 'preparing') return;
-    const t = setInterval(() => void load(), 5_000);
+    const t = setInterval(() => { if (!userAway()) void load(); }, 5_000);
     return () => clearInterval(t);
   }, [status?.state, load]);
 

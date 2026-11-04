@@ -172,10 +172,10 @@ describe('count rules', () => {
     expect(r.json().journal).toBeNull();
     expect((await count(accountant, september, 4_200_000, '2026-09-15')).json().code).toBe('VALIDATION');
     expect((await preview(accountant, september, '2026-10-31')).json().code).toBe('BAD_DATE'); // never the future
-    expect((await preview(accountant, september, '2025-12-31')).json().issues).toEqual([]); // a year end
+    expect((await preview(accountant, september, '2025-12-31')).json().issues.map((i: { code: string }) => i.code)).toEqual(['OLD_DATE']); // a year end: allowed, with a word about the date
   });
 
-  it('one posted count per category and date; a count equal to the books is refused', async () => {
+  it('one posted count per category and date; a count equal to the books is recorded, posting nothing, and the month shows done', async () => {
     expect((await count(owner, september, 4_200_000)).statusCode).toBe(200);
     const twice = await count(owner, { ...september, lines: [{ supplyId: twill, qty: 1_000 }] }, 12_000);
     expect(twice.statusCode).toBe(422);
@@ -184,9 +184,9 @@ describe('count rules', () => {
 
     await openMaterials();
     const same = await count(accountant, { category: 'materials', lines: [{ supplyId: twill, qty: 250_000 }] }, 3_000_000, '2026-08-31'); // 250 yards = ₱30,000.00
-    expect(same.statusCode).toBe(422);
-    expect(same.json()).toMatchObject({ code: 'VALIDATION', message: 'The count matches the books (₱30,000.00), so there is nothing to adjust.' });
-    expect(codes(same)).toEqual(['NO_DIFFERENCE']);
+    expect(same.statusCode, same.body).toBe(200);
+    expect(same.json().warnings).toMatchObject([{ code: 'NO_DIFFERENCE', message: 'The count matches the books (₱30,000.00): it is recorded with nothing to adjust.' }]);
+    expect(journalOf(same.json().id)).toEqual([]);
   });
 
   it('warns when a later count of the category is recorded', async () => {

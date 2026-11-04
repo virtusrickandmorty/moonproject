@@ -28,6 +28,28 @@ async function carlaWithLoan(amortizationCents = 150_000, lastMonth = '2027-08')
   return { w, carla, sss };
 }
 
+describe('changing a loan and ending it short', () => {
+  it('a new amortization moves only the months to come, and a loan that ended short says so and takes a typed deduction', async () => {
+    const { w, sss } = await carlaWithLoan(100_000, '2026-11');
+    w.at('2026-09-30');
+    w.record(runDoc, { payGroup: 'SEMI_MONTHLY', periodStart: '2026-09-16' }); // September: ₱1,000 taken
+    const left = () => listLoans(w.db, { status: 'all' }, '2026-09-30').find((l) => l.id === sss)!;
+    expect(left()).toMatchObject({ scheduledCents: 300_000, leftCents: 200_000 });
+    tx(w.db, () => updateLoan(w.db, sss, '1', { amortizationCents: 50_000 }, w.who()));
+    expect(left()).toMatchObject({ scheduledCents: 200_000, deductedCents: 100_000, leftCents: 100_000 }); // 2 months at ₱500, not nothing
+
+    w.at('2026-10-31');
+    w.record(runDoc, { payGroup: 'SEMI_MONTHLY', periodStart: '2026-10-16', loans: [{ loanId: sss, amountCents: 0, reason: 'Skipped at the request of the employee' }] });
+    w.at('2026-11-30');
+    w.record(runDoc, { payGroup: 'SEMI_MONTHLY', periodStart: '2026-11-16' });
+    w.at('2026-12-31');
+    const preview = w.preview(runDoc, { payGroup: 'SEMI_MONTHLY', periodStart: '2026-12-16' });
+    expect(preview.issues.find((i) => i.code === 'LOAN_ENDED_SHORT')?.message).toContain('₱500.00 not deducted');
+    expect(codes(w.preview(runDoc, { payGroup: 'SEMI_MONTHLY', periodStart: '2026-12-16', loans: [{ loanId: sss, amountCents: 60_000, reason: 'More than is short, typed on purpose' }] }).issues)).toContain('LOAN_OVER');
+    expect(w.record(runDoc, { payGroup: 'SEMI_MONTHLY', periodStart: '2026-12-16', loans: [{ loanId: sss, amountCents: 50_000, reason: 'The skipped October month, collected now' }] }).id).toBeTruthy();
+  });
+});
+
 describe('a semi-monthly employee with an SSS loan (F3 example C)', () => {
   it('cutoff 1 takes no loan; cutoff 2 (ends on the 30th) credits 2404 with the month tag and pays that much less; the payslip shows what is left', async () => {
     const { w, carla, sss } = await carlaWithLoan();

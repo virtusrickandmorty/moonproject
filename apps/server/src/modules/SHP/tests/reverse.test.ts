@@ -82,6 +82,20 @@ describe('cancel or return a confirmed online order', () => {
     expect(runInvariants(env.db).filter((r) => !r.ok)).toEqual([]);
   });
 
+  it('an order nobody collected stays as it is; the month-end review asks about it, and the note stays with staff', async () => {
+    const o = await confirmedOrder(1);
+    await encoder.post(`/api/shp/admin/orders/${o.id}/move`, { to: 'ready', version: 3 });
+    const bell = async (who: Client) => ((await who.get('/api/dash/notifications')).json() as { kind: string; label: string; detail?: string }[]).filter((n) => n.kind === 'order-not-collected');
+    expect(await bell(encoder)).toEqual([]); // mid-month: nothing
+    expect((await encoder.post(`/api/shp/admin/orders/${o.id}/note`, { note: 'Asked to hold it until pay day' })).statusCode).toBe(200);
+    env.clock.set('2026-09-30T02:00:00Z'); // the month's last day
+    encoder = await env.as('encoder'); // a new day: sign in again
+    expect(await bell(encoder)).toMatchObject([{ label: `${o.number} is still not collected: review it and say why`, detail: expect.stringContaining('Asked to hold it until pay day') }]);
+    expect((await detail(o.id)).status).toBe('ready');
+    expect(JSON.stringify((await buyerPage(o.number, o.token)).events)).not.toContain('staff_note');
+    expect(JSON.stringify(await buyerPage(o.number, o.token))).not.toContain('Asked to hold it');
+  });
+
   it('is a return once the order went out, and the buyer page and staff list say so', async () => {
     const o = await confirmedOrder(1);
     await encoder.post(`/api/shp/admin/orders/${o.id}/move`, { to: 'ready', version: 3 });

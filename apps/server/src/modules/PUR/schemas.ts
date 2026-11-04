@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isBusinessDate } from '@moonproject/shared';
 
 export const purSupplierInput = z.object({
   name: z.string().trim().min(1).max(200),
@@ -6,7 +7,7 @@ export const purSupplierInput = z.object({
   tin: z.string().trim().regex(/^(\d{3}-\d{3}-\d{3}-\d{3}(\d{2})?)?$/).nullable().optional(),
   isVatRegistered: z.boolean(),
   ewtClass: z.enum(['none', 'rent_5', 'contractor_2', 'prof_ind_5', 'prof_ind_10', 'prof_firm_10', 'prof_firm_15', 'goods_1', 'services_2']).nullable().optional(),
-  swornDeclarationUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(), // Using simple regex as requested
+  swornDeclarationUntil: z.string().refine(isBusinessDate, 'Use a real date, YYYY-MM-DD.').nullable().optional(),
   paymentTermsDays: z.number().int().min(0).nullable().optional(),
   legacyId: z.string().trim().nullable().optional(),
 }).strict();

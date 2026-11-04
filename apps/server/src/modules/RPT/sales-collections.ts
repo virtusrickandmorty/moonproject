@@ -3,7 +3,7 @@ import type { Db } from '../../platform/db/driver.ts';
 import { resolveAccount } from '../../engine/ledger/accounts.ts';
 import { customerRef } from '../CUS/public.ts';
 import { jobOrderRef, jobOrderStatusRows, invoiceSaleLines, releasesAwaitingInvoice } from '../JO/public.ts';
-import { collectionsBetween, depositVatRowsOf } from '../COL/public.ts';
+import { collectionsBetween, creditMemoSaleLines, depositVatRowsOf } from '../COL/public.ts';
 import { quickSaleLines } from '../QS/public.ts';
 
 export const documentPath = (type: string, id: string) => `/docs/${encodeURIComponent(type)}/${encodeURIComponent(id)}`;
@@ -120,11 +120,11 @@ export function salesByPeriod(db: Db, from: string, to: string) {
     FROM journal_lines l JOIN journals j ON j.id = l.journal_id
     JOIN documents d ON d.id = j.source_id JOIN accounts a ON a.id = l.account_id
     WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ?
-      AND d.doc_type IN ('jo.invoice_record', 'qs.sale')
-      AND a.role_key IN ('SALES_MTO', 'SALES_RTW', 'SALES_SERVICE', 'SALES_DISCOUNTS')
+      AND d.doc_type IN ('jo.invoice_record', 'qs.sale', 'col.credit_memo')
+      AND a.role_key IN ('SALES_MTO', 'SALES_RTW', 'SALES_SERVICE', 'SALES_DISCOUNTS', 'SALES_RETURNS')
     GROUP BY j.source_id, j.business_date ORDER BY j.business_date, d.number`).all(from, to) as {
       id: string; date: string; number: string; documentType: string; salesCents: number }[];
-  const allLines = [...invoiceSaleLines(db), ...quickSaleLines(db)];
+  const allLines = [...invoiceSaleLines(db), ...quickSaleLines(db), ...creditMemoSaleLines(db)];
   const bySource = new Map<string, SaleLine[]>();
   for (const line of allLines) bySource.set(line.id, [...(bySource.get(line.id) ?? []), line]);
   const rows = sources.flatMap((source) => allocate(source.salesCents, bySource.get(source.id) ?? [{

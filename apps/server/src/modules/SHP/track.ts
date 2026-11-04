@@ -44,7 +44,7 @@ export function shpTrackRoutes(app: FastifyInstance, deps: AppDeps): void {
       const shown = {
         kind: 'online', number: o.number, status, statusLabel: ONLINE_WORDS[status], placedAt: o.createdAt,
         pieces: rows.reduce((n, l) => n + l.qty, 0),
-        events: db.prepare('SELECT status, at FROM shp_order_events WHERE order_id = ? ORDER BY at, rowid').all(o.id),
+        events: db.prepare("SELECT status, at FROM shp_order_events WHERE order_id = ? AND status <> 'staff_note' ORDER BY at, rowid").all(o.id),
       };
       if (!b.token || !knows(o.tokenHash, b.token)) return shown;
       return {

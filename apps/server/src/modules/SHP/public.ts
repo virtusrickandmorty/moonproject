@@ -111,6 +111,12 @@ export function ordersToPrepare(db: Db): { id: string; number: string; name: str
     id: string; number: string; name: string; fulfilment: 'pickup' | 'delivery'; totalCents: number;
   }[];
 }
+/** Orders ready at the shop and not collected yet, oldest first, with the last note on why (the month-end reminder, the owner's rule, Nov 2026). */
+export function ordersNotCollected(db: Db): { id: string; number: string; name: string; totalCents: number; note: string | null }[] {
+  return db.prepare(`SELECT o.id, o.number, o.name, o.total_cents AS totalCents,
+      (SELECT e.note FROM shp_order_events e WHERE e.order_id = o.id AND e.status = 'staff_note' ORDER BY e.at DESC, e.rowid DESC LIMIT 1) AS note
+    FROM shp_orders o WHERE o.status = 'ready' AND o.fulfilment = 'pickup' ORDER BY o.created_ms`).all() as { id: string; number: string; name: string; totalCents: number; note: string | null }[];
+}
 export { shopWorkReady } from './work.ts';
 
 /** The shop's own work job orders (restocks, rework, changes: ₱0, through production; the job margin report). */

@@ -13,6 +13,9 @@ import type { Db } from '../../../platform/db/driver.ts';
 import type { DocContext, DocTypeDef } from '../../../engine/documents/registry.ts';
 import { getAccount } from '../../../engine/ledger/accounts.ts';
 import { customerRef } from '../../CUS/public.ts';
+import { employee } from '../../EMP/public.ts';
+import { person } from '../../EQ/public.ts';
+import { supplier } from '../../PUR/public.ts';
 import { firstOfNextMonth, reversibleJv, standingReversalOf, storedJvLines } from './jv-reversals.ts';
 
 const MAX_CENTS = 100_000_000_00; // ₱100 million per line: a typo guard, not a business limit
@@ -62,6 +65,15 @@ const sum = (lines: readonly JvLine[], side: 'debitCents' | 'creditCents') => li
 /** The Manila date of the action: ctx.at carries +08:00. */
 const actionDate = (ctx: DocContext) => ctx.at.slice(0, 10);
 
+/** A party a line names is on file: a supplier, employee or officer by their record; a loan or an asset by its document. A free party is typed. */
+function partyOnFile(db: Db, p: { type: string; id: string }): boolean {
+  if (p.type === 'supplier') return !!supplier(db, p.id);
+  if (p.type === 'employee') return !!employee(db, p.id);
+  if (p.type === 'officer' || p.type === 'stockholder') return !!person(db, p.id);
+  if (p.type === 'loan' || p.type === 'asset') return !!db.prepare('SELECT 1 FROM documents WHERE id = ?').get(p.id);
+  return true;
+}
+
 export const jvDoc: DocTypeDef<JvInput, Jv> = {
   key: 'acc.jv',
   module: 'ACC',
@@ -110,6 +122,8 @@ export const jvDoc: DocTypeDef<JvInput, Jv> = {
         add('error', `${f}.party`, 'PARTY_NOT_ALLOWED', `Line ${l.lineNo}: ${a.name} does not take a ${l.party.type}. Remove it.`);
       } else if (l.party?.type === 'customer' && !customerRef(ctx.db, l.party.id)) {
         add('error', `${f}.party`, 'CUSTOMER', `Line ${l.lineNo}: pick a customer from the list.`);
+      } else if (l.party && !partyOnFile(ctx.db, l.party)) {
+        add('warning', `${f}.party`, 'PARTY', `Line ${l.lineNo}: this ${l.party.type} is not on file. Check it: a balance on a party nobody has can never be cleared.`);
       }
     }
     if (doc.debitsCents !== doc.creditsCents) {

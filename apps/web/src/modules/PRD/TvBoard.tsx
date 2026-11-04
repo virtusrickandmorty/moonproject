@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loading, showDate } from '../../components/ui.tsx';
 import { TickBar } from '../../components/charts.tsx';
 import { api, type BoardCard } from '../../api.ts';
+import { setUnattended } from '../../live.ts';
 import { boardCounts, columns, dueWords, tvPages, TV_CARD_HEIGHT, TURN_MS, useBoardRefresh, type Column } from './board.ts';
 
 export const initials = (name: string) => name.trim().split(/\s+/).filter(Boolean).map((part) => part[0]!.toLocaleUpperCase()).slice(0, 3).join('');
@@ -30,6 +31,7 @@ export function TvBoard() {
     measure();
     return () => { observer.disconnect(); window.removeEventListener('resize', measure); };
   }, []);
+  useEffect(() => { setUnattended(true); return () => setUnattended(false); }, []); // a TV is left on with nobody at it
   const cols = useMemo(() => columns(data?.steps ?? [], data?.cards ?? []), [data]);
   const pages = useMemo(() => tvPages(cols, size.width, size.height), [cols, size]);
   useEffect(() => {

@@ -11,7 +11,7 @@ import { activeJobOrders, joMoney, joMoneyAll, releasesAwaitingInvoice } from '.
 import { pendingCertificates } from '../COL/public.ts';
 import { board } from '../PRD/public.ts';
 import { KIND_LABELS as SUPPORT_KINDS, newSupportMessages } from '../SUP/public.ts';
-import { OVERDUE_LABEL, ordersToPrepare, paymentsToCheck, shopWorkReady } from '../SHP/public.ts';
+import { OVERDUE_LABEL, ordersNotCollected, ordersToPrepare, paymentsToCheck, shopWorkReady } from '../SHP/public.ts';
 import { returnsAwaitingDecision, returnsDecidedSince } from '../ALT/public.ts';
 import { DEPOSIT_MATURES_DAYS, checksToDeposit, customersWithUnappliedDeposits, pdcsDue } from '../COL/public.ts';
 import { customerRef } from '../CUS/public.ts';
@@ -201,6 +201,15 @@ export function home(db: Db, clock: Clock, registry: Registry, user: SessionUser
   return { role, asOf: date, widgets, showCharts: role === 'owner' && can('rpt.books.view') };
 }
 
+/** The month under review on a date: its last day, and the first 7 days of the next month. Null on the days between. */
+export function monthEndReviewOf(date: string): string | null {
+  const [y, m, d] = date.split('-').map(Number) as [number, number, number];
+  if (d === new Date(Date.UTC(y, m, 0)).getUTCDate()) return date.slice(0, 7);
+  if (d > 7) return null;
+  const last = new Date(Date.UTC(y, m - 1, 0));
+  return `${last.getUTCFullYear()}-${String(last.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
 export function notifications(db: Db, clock: Clock, registry: Registry, user: SessionUser, where: HomeContext = {}): DashNotification[] {
   const can = (key: string) => user.permissions.has(key);
   const date = today(clock);
@@ -265,6 +274,12 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
   }
   if (can('shp.orders.manage')) for (const o of ordersToPrepare(db)) {
     push('online-order-prepare', o.id, `${o.number} is paid: prepare it for ${o.fulfilment === 'pickup' ? 'pickup' : 'delivery'}`, `/shp/orders?open=${o.id}`, o.name, o.totalCents);
+  }
+  // Every month end (the owner's rule, Nov 2026): orders still not collected come up for review, once a month, and stay
+  // for the first week of the next month so a closed day does not miss them. The order itself stays as it is.
+  const reviewMonth = monthEndReviewOf(date);
+  if (reviewMonth && can('shp.orders.manage')) for (const o of ordersNotCollected(db)) {
+    push('order-not-collected', `${o.id}:${reviewMonth}`, `${o.number} is still not collected: review it and say why`, `/shp/orders?open=${o.id}`, o.note ? `${o.name} · Last note: ${o.note}` : o.name, o.totalCents);
   }
   if (can('shp.stock')) for (const w of shopWorkReady(db)) {
     push('shop-work-ready', w.id, `${w.number}: ${w.pieces} finished ${w.pieces === 1 ? 'piece' : 'pieces'} to put into the shop's stock`, '/shp?tab=work', w.kind === 'make' ? 'Restock' : w.kind === 'rework' ? 'Rework' : 'Change');

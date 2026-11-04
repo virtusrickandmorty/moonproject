@@ -65,6 +65,12 @@ it('a member paying their own share sees the price, pays with the QR code, and s
 
   const ok = await owner.post(`/api/olk/payments/${pay.id}/accept`, { jobOrderId: jo.json().id });
   expect(ok.json()).toEqual({ jobOrderId: jo.json().id, jobOrderNumber: jo.json().number, amountCents: 215_000, note: 'Paid through the order link by Made-up Ana, reference GC 1234 5678.' });
+  // Accepted, but the collection form was closed: the member still sees it being checked, and staff can take it up again.
+  expect((await pub('GET', `/api/olk/l/${link.token}/answers/${sent.key}`)).body.payments).toMatchObject([{ status: 'sent' }]);
+  expect((await owner.post(`/api/olk/payments/${pay.id}/accept`, { jobOrderId: jo.json().id })).statusCode).toBe(200);
+  // Once a collection names its reference it counts as received, and is decided.
+  env.db.prepare(`INSERT INTO documents (id, doc_type, module, series_key, number, business_date, status, total_cents, summary, posted_at, posted_by) VALUES ('col-sample', 'col.collection', 'COL', 'COL', 'COL-SAMPLE', '2026-09-28', 'posted', 215000, 'x', '2026-09-28T10:00:00+08:00', ?)`).run(owner.userId);
+  env.db.prepare(`INSERT INTO col_collections (document_id, customer_id, customer_name, cr_number, cwt_cents, vat_withheld_cents, unapplied_cents, short_over_cents, settle_small_difference, note) VALUES ('col-sample', ?, 'x', 'CR-SAMPLE', 0, 0, 0, 0, 0, ?)`).run(p.customer.id, ok.json().note);
   expect((await owner.post(`/api/olk/payments/${pay.id}/accept`, { jobOrderId: jo.json().id })).json().code).toBe('DECIDED');
   expect((await pub('GET', `/api/olk/l/${link.token}/answers/${sent.key}`)).body.payments).toMatchObject([{ status: 'accepted' }]);
 });

@@ -173,6 +173,9 @@ export interface PayrollReportRow {
   taxCents: number;
   caCents: number;
   loanCents: number;
+  chargeCents: number;
+  otherDeductionCents: number;
+  taxRefundCents: number;
   accruedCents: number;
   netCents: number;
 }
@@ -185,6 +188,7 @@ export function payrollReportRows(db: Db): PayrollReportRow[] {
     e.sss_ec_cents AS sssEcCents, e.phic_ee_cents AS phicEeCents, e.phic_er_cents AS phicErCents,
     e.hdmf_ee_cents AS hdmfEeCents, e.hdmf_er_cents AS hdmfErCents, e.wtax_cents AS taxCents,
     e.ca_cents AS caCents, COALESCE((SELECT SUM(x.amount_cents) FROM pay_run_loans x WHERE x.run_employee_id=e.id),0) AS loanCents,
+    e.charge_cents AS chargeCents, e.deduction_cents AS otherDeductionCents, e.wtax_refund_cents AS taxRefundCents,
     e.thirteenth_cents AS accruedCents,
     e.net_cents - e.loan_cents - e.charge_cents - e.deduction_cents + e.wtax_refund_cents AS netCents
     FROM pay_run_employees e JOIN pay_runs r ON r.document_id=e.document_id JOIN documents d ON d.id=r.document_id

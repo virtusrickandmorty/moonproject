@@ -206,6 +206,11 @@ export const billDoc: DocTypeDef<BillInput, Bill> = {
     if (doc.ewtClass && TWA_ONLY.has(doc.ewtClass) && !settingAt(ctx.db, 'tax.top_withholding_agent', ctx.businessDate)) {
       add('error', 'ewtClass', 'NOT_TWA', 'Virtus is not a Top Withholding Agent, so goods and services from regular suppliers have no EWT.');
     }
+    // The lower professional rates stand on a sworn declaration: one that ran out is warned about, and the accountant decides.
+    const sworn = supplier(ctx.db, doc.supplierId)?.swornDeclarationUntil;
+    if (sworn && sworn < ctx.businessDate && (doc.appliedEwtClass === 'prof_ind_5' || doc.appliedEwtClass === 'prof_firm_10')) {
+      add('warning', 'ewtClass', 'SWORN_DECLARATION', `This supplier's sworn declaration ran out on ${sworn}. Without a new one the higher EWT rate applies: check before recording.`);
+    }
     if (doc.appliedEwtClass && !doc.supplierTin) add('error', 'ewtClass', 'TIN_REQUIRED', 'Withholding tax needs the supplier’s TIN on file (for the 2307).');
     if (doc.vatRegistered && !doc.supplierTin) add('warning', 'supplierId', 'NO_INPUT_VAT', 'No input VAT: the supplier has no TIN on file. The full amount goes to the costs.');
     if (doc.appliedEwtClass !== usual) {

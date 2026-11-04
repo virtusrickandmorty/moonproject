@@ -42,7 +42,7 @@ export const usesOfAdvance = (db: Db, advanceId: string) =>
 
 /** A recorded bill: a BILL- (ap.bill), or an OBAP- (ap.opening) open on the cut-over date, whose figures are what was still owed then. */
 export interface BillRow {
-  id: string; docType: 'ap.bill' | 'ap.opening'; number: string; status: string; date: string; supplierId: string; supplierInvoiceNo: string; supplierInvoiceDate: string; dueDate: string;
+  id: string; docType: 'ap.bill' | 'ap.opening' | 'fa.buy'; number: string; status: string; date: string; supplierId: string; supplierInvoiceNo: string; supplierInvoiceDate: string; dueDate: string;
   grossCents: number; ewtCents: number; payableCents: number;
 }
 const BILLS = `SELECT d.id, d.doc_type AS docType, d.number, d.status, d.business_date AS date, b.supplier_id AS supplierId, b.supplier_invoice_no AS supplierInvoiceNo,

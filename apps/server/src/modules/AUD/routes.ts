@@ -44,6 +44,8 @@ export function auditFilters(q: Record<string, unknown>): Filters {
   };
 }
 
+const EXPORT_MOST = 500_000;
+
 export function auditPage(db: Db, f: Filters) {
   const clauses: string[] = [];
   const values: (string | number)[] = [];
@@ -78,7 +80,8 @@ export function audRoutes(app: FastifyInstance, { db, clock, registry, practice 
     // Like every write, the export's audit row needs a clock that has not gone backwards.
     const result = tx(db, () => {
       clockGuard({ db, clock });
-      const page = auditPage(db, filters);
+      // Everything the filters select, from the newest: not the page on screen (an external audit works from this file).
+      const page = auditPage(db, { ...filters, before: undefined, limit: EXPORT_MOST });
       appendAudit(db, { at: stamp(clock), userId: currentUser(req).userId, action: 'audit.export', entityType: 'audit_log',
         data: { filters } });
       return page;

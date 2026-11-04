@@ -470,7 +470,7 @@ export interface OlkPerson {
 export interface OlkAnswer { id: string; name: string; gender: OlkGender; mobile: string; email: string; address: string; createdAt: string; updatedAt: string; changes: number; people: OlkPerson[] }
 /** A member's share when each pays their own: their pieces at the price for their quantity (total null: an item has no price). */
 export interface OlkShare { totalCents: number | null; lines: { lineNo: number; name: string; qty: number; unitCents: number | null }[] }
-export interface OlkPayment { id?: string; amountCents: number; reference: string; sentAt: string; status: 'sent' | 'accepted' | 'not_received'; reason?: string; decidedAt?: string; jobOrderId?: string }
+export interface OlkPayment { id?: string; amountCents: number; reference: string; sentAt: string; status: 'sent' | 'accepted' | 'not_received'; recorded?: boolean; reason?: string; decidedAt?: string; jobOrderId?: string }
 /** The shop's account and QR code to pay to (the website shop's payment settings). */
 export interface OlkPayHow { bankName: string; accountName: string; accountHint: string | null; instructions: string | null; qrUrl: string }
 export interface OlkLinkRow { id: string; kind: OlkKind; title: string; closesOn: string; open: boolean; closedEarly: boolean; answers: number; people: number; createdAt: string }
@@ -1616,6 +1616,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     sizerSetUpdate: (id: string, v: number, body: { code: string; garmentType: string; sizesIncluded: string }) =>
       call<{ success: true; version: number }>('PUT', `/api/szr/sets/${encodeURIComponent(id)}`, body, version(v)),
     /** Switch a set off (not while it is lent); it leaves the list, its history stays. */
+    sizerSetRecover: (id: string, v: number, reason: string) => call<{ success: true }>('POST', `/api/szr/sets/${encodeURIComponent(id)}/recover`, { reason }, version(v)),
     sizerSetDeactivate: (id: string, v: number) => call<{ success: true }>('POST', `/api/szr/sets/${encodeURIComponent(id)}/deactivate`, {}, version(v)),
     /** Lend a set that is in the shop to a customer; the date out is the server's today. */
     sizerLend: (body: { setId: string; customerId: string; expectedReturnDate: string }) => call<{ id: string; version: number }>('POST', '/api/szr/loans', body),

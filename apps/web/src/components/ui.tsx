@@ -173,7 +173,10 @@ export function keepDialogFocus(root: HTMLElement, opener: HTMLElement | null, c
   if (!root.contains(doc.activeElement)) focus();
   const keydown = (e: KeyboardEvent) => {
     if (!top()) return;
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+    if (e.key === 'Escape') {
+      if (root.querySelector?.('[aria-expanded="true"]')) return; // a list or menu is open in the dialog: Escape closes that first
+      e.preventDefault(); e.stopPropagation(); close();
+    }
     if (e.key !== 'Tab') return;
     const all = controls();
     const first = all[0]; const last = all.at(-1);

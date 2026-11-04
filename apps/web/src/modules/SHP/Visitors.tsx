@@ -5,6 +5,7 @@
  * their devices and the busiest hours. The charts use the dashboard's TrackChart; every figure is also in a table.
  */
 import { useEffect, useState } from 'react';
+import { userAway } from '../../live.ts';
 import { Loading, Notice } from '../../components/ui.tsx';
 import { TrackChart, niceTop } from '../../components/charts.tsx';
 
@@ -43,7 +44,7 @@ export function Visitors() {
       .then((r) => (r.ok ? r.json() as Promise<Insights> : Promise.reject(new Error('The visitor counts could not be loaded.'))))
       .then((d) => { if (live) { setData(d); setChecked(new Date()); } }, (e: Error) => { if (live && first) setError(e.message); });
     void load(true);
-    const timer = setInterval(() => { if (document.visibilityState === 'visible') void load(false); }, 60_000);
+    const timer = setInterval(() => { if (document.visibilityState === 'visible' && !userAway()) void load(false); }, 60_000);
     return () => { live = false; clearInterval(timer); };
   }, [days]);
   if (error) return <Notice>{error}</Notice>;

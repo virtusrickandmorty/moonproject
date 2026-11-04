@@ -6,14 +6,15 @@ import type { EwtClass } from '../../engine/settings.ts';
 
 export interface Supplier {
   id: string; name: string; tin: string | null; isVatRegistered: boolean; ewtClass: EwtClass | null; paymentTermsDays: number | null; isActive: boolean;
+  swornDeclarationUntil: string | null;
 }
 
 export function supplier(db: Db, id: string): Supplier | undefined {
-  const r = db.prepare('SELECT id, name, tin, is_vat_registered, ewt_class, payment_terms_days, is_active FROM pur_suppliers WHERE id = ?').get(id) as
-    | { id: string; name: string; tin: string | null; is_vat_registered: number; ewt_class: EwtClass | null; payment_terms_days: number | null; is_active: number }
+  const r = db.prepare('SELECT id, name, tin, is_vat_registered, ewt_class, payment_terms_days, is_active, sworn_declaration_until FROM pur_suppliers WHERE id = ?').get(id) as
+    | { id: string; name: string; tin: string | null; is_vat_registered: number; ewt_class: EwtClass | null; payment_terms_days: number | null; is_active: number; sworn_declaration_until: string | null }
     | undefined;
   return r && {
-    id: r.id, name: r.name, tin: r.tin, isVatRegistered: r.is_vat_registered === 1, ewtClass: r.ewt_class, paymentTermsDays: r.payment_terms_days, isActive: r.is_active === 1,
+    id: r.id, name: r.name, tin: r.tin, isVatRegistered: r.is_vat_registered === 1, ewtClass: r.ewt_class, paymentTermsDays: r.payment_terms_days, isActive: r.is_active === 1, swornDeclarationUntil: r.sworn_declaration_until,
   };
 }
 

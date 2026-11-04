@@ -36,6 +36,16 @@ describe('SZR Sizer Tracker', () => {
     expect(sets[0].code).toBe('SET-A');
   });
 
+  it('brings a set marked lost or damaged back to the shop, with a reason', async () => {
+    const api = await env.as('encoder');
+    const id = (await api.post('/api/szr/sets', { code: 'SET-L', garmentType: 'T-Shirt', sizesIncluded: 'S, M' })).json().id as string;
+    expect((await api.post(`/api/szr/sets/${id}/recover`, { reason: 'Found it again' }, { 'if-match': '1' })).json().code).toBe('SET_NOT_LOST');
+    env.db.prepare(`UPDATE szr_sets SET status = 'lost or damaged', version = 2 WHERE id = ?`).run(id);
+    expect((await api.post(`/api/szr/sets/${id}/recover`, { reason: 'x' }, { 'if-match': '2' })).statusCode).toBe(400);
+    expect((await api.post(`/api/szr/sets/${id}/recover`, { reason: 'Found behind the rack' }, { 'if-match': '2' })).statusCode).toBe(200);
+    expect(env.db.prepare('SELECT status FROM szr_sets WHERE id = ?').pluck().get(id)).toBe('in shop');
+  });
+
   it('can edit a set with version check', async () => {
     const api = await env.as('encoder');
 

@@ -95,6 +95,15 @@ function printedDate(env: EngineEnv, requested: unknown): string {
 
 const errorsOf = (issues: Issue[]) => issues.filter((i) => i.level === 'error');
 
+const OLD_DATE_DAYS = 180;
+/** A date far in the past is most likely a typing slip (2006 for 2026): it is warned about, and the person decides (the owner's rule, Nov 2026). */
+function oldDateNotice(env: EngineEnv, businessDate: string): Issue[] {
+  const days = (Date.parse(today(env.clock)) - Date.parse(businessDate)) / 86_400_000;
+  return days > OLD_DATE_DAYS
+    ? [{ field: 'businessDate', code: 'OLD_DATE', level: 'warning', message: `This is dated ${businessDate}, more than six months ago. Check the date and the year before recording.` }]
+    : [];
+}
+
 /** The modules' notices on this record or cancel, always as warnings: a notice never blocks. */
 function noticesOf(env: EngineEnv, target: NoticeTarget): Issue[] {
   return (env.notices ?? []).flatMap((n) => n(env.db, target)).map((i) => ({ ...i, level: 'warning' as const }));
@@ -114,7 +123,7 @@ export function previewDocument(env: EngineEnv, def: DocTypeDef, actor: Actor, r
   const input = parseInput(def, rawInput);
   const ctx = context(env, actor, resolveBusinessDate(def, actor, env, businessDate));
   const doc = def.compute(input, ctx);
-  const issues = [...def.validate(doc, ctx), ...noticesOf(env, { docType: def.key, action: 'post', businessDate: ctx.businessDate, posts: !!def.journal, doc })];
+  const issues = [...def.validate(doc, ctx), ...noticesOf(env, { docType: def.key, action: 'post', businessDate: ctx.businessDate, posts: !!def.journal, doc }), ...oldDateNotice(env, ctx.businessDate)];
   let journal: PreviewResult['journal'] = null;
   if (errorsOf(issues).length === 0 && def.journal) {
     const draft = def.journal(doc, ctx);
@@ -161,7 +170,7 @@ function postInTx(env: EngineEnv, def: DocTypeDef, actor: Actor, req: PostReques
   const issues = def.validate(doc, ctx);
   if (errorsOf(issues).length > 0) throw new AppError('VALIDATION', errorsOf(issues)[0]!.message, 422, issues);
   // Before anything is written, as in the preview: a return's own payment does not warn about itself.
-  const notices = noticesOf(env, { docType: def.key, action: 'post', businessDate: ctx.businessDate, posts: !!def.journal, doc });
+  const notices = [...noticesOf(env, { docType: def.key, action: 'post', businessDate: ctx.businessDate, posts: !!def.journal, doc }), ...oldDateNotice(env, ctx.businessDate)];
 
   ensureSeries(db, def.numbering.series);
   const number = allocateNumber(db, def.numbering.series.key);

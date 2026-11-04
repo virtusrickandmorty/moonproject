@@ -61,6 +61,7 @@ const confirmInput = z.object({
 const rejectInput = z.object({ reason: z.string().trim().min(10).max(500), version: z.number().int().min(1) }).strict();
 /** Staff cancel or return an order that was confirmed: the reason is kept with the order; the buyer sees only the new status. */
 const reverseInput = z.object({ reason: z.string().trim().min(10).max(200), version: z.number().int().min(1) }).strict();
+const staffNoteInput = z.object({ note: z.string().trim().min(5).max(500) }).strict();
 const moveInput = z.object({ to: z.enum(['ready', 'completed']), note: z.string().trim().max(500).optional(), version: z.number().int().min(1) }).strict();
 const settingsInput = z.object({
   bankName: z.string().trim().min(1).max(60), accountName: z.string().trim().min(1).max(100), accountHint: z.string().trim().max(40).optional(),
@@ -175,7 +176,7 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       holdUntil: new Date(o.hold_until_ms).toISOString(), paymentReference: o.payment_reference, saleNumber: o.sale_number ?? null, lines: lines(o.id),
       // Staff's reason for cancelling or returning a confirmed order stays with the shop: the buyer sees the status only.
       events: db.prepare(`SELECT status, CASE WHEN status IN ('cancelled', 'returned') AND user_id IS NOT NULL THEN NULL ELSE note END AS note, at
-        FROM shp_order_events WHERE order_id = ? ORDER BY at, rowid`).all(o.id),
+        FROM shp_order_events WHERE order_id = ? AND status <> 'staff_note' ORDER BY at, rowid`).all(o.id),
       payment: pay ? publicPayment(pay) : null,
       // The items the buyer has rated (a completed order's items can each be rated once).
       reviewed: db.prepare('SELECT product_id FROM shp_reviews WHERE order_id = ?').pluck().all(o.id) as string[],
@@ -432,6 +433,19 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       event(o.id, 'rejected', at, user.userId, b.reason);
       tell(o, 'rejected', at, { reason: b.reason, userId: user.userId });
       appendAudit(db, { at, userId: user.userId, action: 'shp.order.rejected', entityType: 'shp.order', entityId: o.id, data: { number: o.number, reason: b.reason } });
+      return { ok: true };
+    });
+  });
+
+  /** Why an order is still waiting, for the month-end review. For staff only: the buyer's pages never show it. */
+  app.post('/api/shp/admin/orders/:id/note', { config: { permission: 'shp.orders.manage' } }, async (req) => {
+    const b = staffNoteInput.parse(req.body);
+    const user = currentUser(req);
+    const at = stamp(clock);
+    return tx(db, () => {
+      const o = staffOrder((req.params as { id: string }).id);
+      event(o.id, 'staff_note', at, user.userId, b.note);
+      appendAudit(db, { at, userId: user.userId, action: 'shp.order.note', entityType: 'shp.order', entityId: o.id, data: { number: o.number } });
       return { ok: true };
     });
   });

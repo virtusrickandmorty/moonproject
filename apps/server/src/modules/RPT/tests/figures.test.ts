@@ -113,7 +113,7 @@ describe('RPT report figures', () => {
     expect(journal.debit).toBe(journal.credit);
     expect(journal.credit).toBe(payroll.totals.netCents + payroll.totals.employeeSharesCents + payroll.totals.employerSharesCents + payroll.totals.taxCents + payroll.totals.loanCents + payroll.totals.caCents + payroll.rows[0].accruedCents);
     const payrollCsv = (await owner.get(`/api/rpt/payroll-register?month=${month}&format=csv`)).body;
-    const payrollHeadings: Record<string, string> = { grossCents: 'Gross PHP', employeeSharesCents: 'Employee shares PHP', employerSharesCents: 'Employer shares PHP', taxCents: 'Tax PHP', loanCents: 'Loans PHP', caCents: 'CA PHP', netCents: 'Net PHP' };
+    const payrollHeadings: Record<string, string> = { grossCents: 'Gross PHP', employeeSharesCents: 'Employee shares PHP', employerSharesCents: 'Employer shares PHP', taxCents: 'Tax PHP', loanCents: 'Loans PHP', caCents: 'CA PHP', chargeCents: 'Charges PHP', otherDeductionCents: 'Other deductions PHP', taxRefundCents: 'Tax refund PHP', netCents: 'Net PHP' };
     for (const [key, total] of Object.entries(payroll.totals)) expect(csvTotal(payrollCsv, payrollHeadings[key]!)).toBe(total);
 
     for (const [book, side] of [['cash-receipts', 'debit_cents'], ['cash-disbursements', 'credit_cents']] as const) {

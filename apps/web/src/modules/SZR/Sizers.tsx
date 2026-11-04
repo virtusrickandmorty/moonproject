@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type SizerBoard, type SizerSet } from '../../api.ts';
-import { Loading, Button, Dialog, Field, Notice, Panel, askConfirm, inputClass, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
+import { Loading, Button, Dialog, Field, Notice, Panel, ReasonDialog, askConfirm, inputClass, useAction, searchClass, searchRowClass } from '../../components/ui.tsx';
 import { CustomerPicker, type Picked } from '../COL/parts.tsx';
 import { STATUS_WORDS, dueWords, filterSets, lendInput, returnInput, setInput, weekFrom, type ReturnValues, type SetValues } from './sizer.ts';
 import { useLiveReload } from '../../live.ts';
@@ -99,6 +99,7 @@ export function SizerSets({ me }: { me: Me }) {
   const [status, setStatus] = useState<SizerSet['status'] | 'all'>('all');
   const [dialog, setDialog] = useState<{ kind: 'lend' | 'back'; set: SizerSet } | { kind: 'set'; set: SizerSet | null } | null>(null);
   const [offError, setOffError] = useState('');
+  const [recovering, setRecovering] = useState<SizerSet | null>(null);
   const load = useCallback(() => void api.sizerBoard().then((b) => (setBoard(b), setError('')), (e: Error) => setError(e.message)), []);
   useEffect(load, [load]);
   useLiveReload(load);
@@ -147,6 +148,7 @@ export function SizerSets({ me }: { me: Me }) {
                 <td className="py-1 text-right">
                   {canEdit && s.status === 'in shop' && <Button onClick={() => setDialog({ kind: 'lend', set: s })}>Lend</Button>}
                   {canEdit && s.status === 'lent' && s.holder && <Button onClick={() => setDialog({ kind: 'back', set: s })}>Take back</Button>}
+                  {canSets && s.status === 'lost or damaged' && <Button onClick={() => setRecovering(s)}>Back in the shop</Button>}
                   {canSets && <button type="button" className="ml-2 text-xs text-indigo-700 hover:underline" onClick={() => setDialog({ kind: 'set', set: s })}>Change</button>}
                   {canSets && s.status !== 'lent' && <button type="button" className="ml-2 text-xs text-red-700 hover:underline" onClick={() => void switchOff(s)}>Switch off</button>}
                 </td>
@@ -172,6 +174,8 @@ export function SizerSets({ me }: { me: Me }) {
         )}
       </Panel>
       {dialog?.kind === 'set' && <SetForm set={dialog.set} garments={garments} onClose={() => setDialog(null)} onDone={done} />}
+      {recovering && <ReasonDialog title={`Bring ${recovering.code} back`} explain="Say why it can be lent again: it was found, repaired or marked by mistake." confirmLabel="Back in the shop"
+        onConfirm={async (reason) => { await api.sizerSetRecover(recovering.id, recovering.version, reason); setRecovering(null); load(); }} onClose={() => setRecovering(null)} />}
       {dialog?.kind === 'lend' && <Lend set={dialog.set} today={board.today} onClose={() => setDialog(null)} onDone={done} />}
       {dialog?.kind === 'back' && <TakeBack set={dialog.set} onClose={() => setDialog(null)} onDone={done} />}
     </div>

@@ -114,7 +114,7 @@ export const countDoc: DocTypeDef<CountInput, InvCount> = {
     if (same) error('businessDate', 'ALREADY_COUNTED', `The ${CATEGORY_LABEL[doc.category]} count of ${doc.countDate} is already recorded on ${same.number}. To correct it, edit ${same.number}.`);
     if (issues.length > 0) return issues;
     if (doc.adjustmentCents === 0) {
-      error('lines', 'NO_DIFFERENCE', `The count matches the books (${formatPeso(doc.ledgerCents)}), so there is nothing to adjust.`);
+      issues.push({ field: 'lines', code: 'NO_DIFFERENCE', level: 'warning', message: `The count matches the books (${formatPeso(doc.ledgerCents)}): it is recorded with nothing to adjust.` });
       return issues;
     }
     const later = counts.filter((c) => c.countDate > doc.countDate);

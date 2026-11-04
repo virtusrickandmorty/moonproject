@@ -83,6 +83,11 @@ describe('purchases and the straight line', () => {
     expect(chairs.warnings.map((w: { code: string }) => w.code)).toEqual(['LIFE_DIFFERENT']);
     expect(journalOf(chairs.id)).toEqual([['1530', 'asset', chairs.id, 100_000, 0], ['2101', 'supplier', plainSupplier, 0, 100_000]]);
     expect(env.db.prepare(`SELECT ref_doc_id FROM journal_lines WHERE party_id = ? AND ref_doc_id IS NOT NULL`).pluck().get(plainSupplier)).toBe(chairs.id);
+    // What is owed on it is paid and aged like any bill, and the asset stands while a payment is on it.
+    const pay = await acc.post('/api/docs/ap.payment/post', { input: { supplierId: plainSupplier, bills: [{ billId: chairs.id, amountCents: 40_000 }], tenders: [{ cashPlaceId: BDO, amountCents: 40_000 }] }, expectedTotalCents: 40_000 }, idem());
+    expect(pay.statusCode, pay.body).toBe(200);
+    expect((await cancel('buy', chairs.id)).statusCode).toBe(409);
+    expect((await acc.post(`/api/docs/ap.payment/${pay.json().id}/cancel`, { reason: 'Recorded by mistake, redo' }, idem())).statusCode).toBe(200);
     expect(journalOf((await run('2026-09')).json().id)).toEqual([['6210', null, null, 33_333, 0], ['1531', 'asset', chairs.id, 0, 33_333]]);
     await goTo('2026-11-20T02:00:00Z'); // October was not run: November catches it up
     expect((await run('2026-11')).json().totalCents).toBe(66_667);

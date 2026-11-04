@@ -21,7 +21,7 @@ import { attendanceBetween, employeesInGroup, holidaysBetween, paidDaysBetween, 
 import { pieceEarningsByDay, repeatedAssignments, stepById, unpaidAssignments } from '../PRD/public.ts';
 import { jobOrderRef } from '../JO/public.ts';
 import { advanceSchedule, openCharges } from '../CA/public.ts';
-import { KIND_LABEL, govLoan, loanInMonth, loansOf, runsIn, type Agency, type LoanKind } from './loans.ts';
+import { KIND_LABEL, govLoan, loanInMonth, loansOf, runsIn, shortCents, type Agency, type LoanKind } from './loans.ts';
 import { hdmfMonthly, hdmfRateAt, phicDailyBasis, phicMonthly, phicRateAt, rulesAt, sssMonthly, sssRateAt, withholding, wtaxTableAt, type PayRules, type TaxFrequency } from './statutory.ts';
 import { addLine, figures, yearParts } from './year-end.ts';
 
@@ -576,6 +576,8 @@ export function workOut(db: Db, q: RunRequest): { employees: RunEmployee[]; note
       const o = typed.get(l.id);
       const at = loanInMonth(db, l, month);
       const planned = at.state === 'running' && !at.handled && takesLoans(q.periodEnd) ? Math.min(l.amortizationCents, at.leftCents) : 0;
+      const short = at.state === 'ended' && !at.handled && takesLoans(q.periodEnd) ? shortCents(db, l) : 0;
+      if (short > 0 && !o) notes.push({ code: 'LOAN_ENDED_SHORT', level: 'warning', message: `${e.name}: ${KIND_LABEL[l.kind]} ${l.loanNo} ended in ${l.lastMonth} with ${formatPeso(short)} not deducted. If it is still owed, type the deduction on this payroll.` });
       if (!o && planned === 0) continue;
       const due = o ? o.amountCents : planned;
       const amount = take(Math.min(due, at.leftCents));
