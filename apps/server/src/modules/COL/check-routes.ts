@@ -61,7 +61,7 @@ export function checkRoutes(app: FastifyInstance, deps: AppDeps): void {
     const actor = actorOf(req);
     const { input } = depositTransferInput(db, body);
     const trf = registry.docType('cash.transfer')!;
-    const r = previewDocument(env, trf, actor, input);
+    const r = previewDocument({ ...env, checkFlow: true }, trf, actor, input);
     return { totalCents: r.totalCents, summary: r.summary, issues: r.issues, journal: actor.permissions.has('acc.journal.view') ? r.journal : null, doc: r.doc };
   });
 

@@ -22,6 +22,8 @@ export interface EngineEnv {
   notices?: readonly NoticeFn[];
   /** The modules' dependents of other modules' documents (Registry.dependents()), asked on cancel and edit. */
   dependents?: readonly DependentsFn[];
+  /** Posted by the Checks screen, the one way customer checks move (it keeps the checks list and the ledger together). */
+  checkFlow?: boolean;
 }
 
 /** The engine's view of the app: the database, the clock, and every module's notices and cross-module dependents. */
@@ -44,6 +46,7 @@ function context(env: EngineEnv, actor: Actor, businessDate?: string, replacesId
     userId: actor.userId,
     can: (p) => actor.permissions.has(p),
     ...(replacesId ? { replacesId } : {}),
+    ...(env.checkFlow ? { checkFlow: true } : {}),
   };
 }
 

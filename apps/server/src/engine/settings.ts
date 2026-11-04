@@ -4,10 +4,10 @@
  * posted document used never changes, and "what was the VAT rate on 3 March" always has one answer.
  */
 import { z } from 'zod';
-import { AppError, badRequest, conflict } from '@moonproject/shared';
+import { AppError, badRequest, conflict, isBusinessDate } from '@moonproject/shared';
 import type { Db } from '../platform/db/driver.ts';
 
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD.');
+const isoDate = z.string().refine(isBusinessDate, 'Use a real date, YYYY-MM-DD.');
 
 /** The accountant's sign-off needed before the ERP prints its own collection receipts (ACC-03). */
 const crSignOff = z

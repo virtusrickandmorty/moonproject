@@ -3,6 +3,10 @@ export { placesFor } from './places.ts';
 export { bankReconChecks, cashCountChecks, type PlaceCheck } from './month-end.ts';
 
 import type { Db } from '../../platform/db/driver.ts';
+import { place } from './places.ts';
+
+/** A place of customer checks: they leave it only through the Checks screen, never as money paid out. */
+export const isChecksPlace = (db: Db, id: number) => place(db, id)?.kind === 'checks';
 
 export interface CashReportRow { id: number; name: string; balanceCents: number }
 export interface TransferReportRow {

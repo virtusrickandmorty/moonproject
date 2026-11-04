@@ -12,6 +12,7 @@ import fc from 'fast-check';
 import { allocate, applyRate, formatPeso, isBusinessDate, vatFromGross, type Issue } from '@moonproject/shared';
 import type { DocTypeDef } from '../../../engine/documents/registry.ts';
 import { listCashPlaces } from '../../../engine/ledger/accounts.ts';
+import { isChecksPlace } from '../../CASH/public.ts';
 import type { DraftLine } from '../../../engine/ledger/post.ts';
 import { EWT_CLASSES, settingAt, type EwtClass } from '../../../engine/settings.ts';
 import type { Db } from '../../../platform/db/driver.ts';
@@ -242,7 +243,7 @@ export const voucherDoc: DocTypeDef<VoucherInput, Voucher> = {
     return fc
       .record({
         categoryId: fc.constantFrom(...listCategories(db).map((c) => c.id)),
-        places: fc.array(fc.tuple(fc.constantFrom(...listCashPlaces(db).map((c) => c.id)), fc.integer({ min: 1, max: 5 }), fc.boolean()), { minLength: 1, maxLength: MAX_TENDERS }),
+        places: fc.array(fc.tuple(fc.constantFrom(...listCashPlaces(db).map((c) => c.id).filter((id) => !isChecksPlace(db, id))), fc.integer({ min: 1, max: 5 }), fc.boolean()), { minLength: 1, maxLength: MAX_TENDERS }),
         amountCents: fc.integer({ min: 1, max: 5_000_000_00 }),
         payeeVatRegistered: fc.boolean(),
         payeeTin: fc.constantFrom('111-222-333-000', '444-555-666-00000', '777-888-999-001'),

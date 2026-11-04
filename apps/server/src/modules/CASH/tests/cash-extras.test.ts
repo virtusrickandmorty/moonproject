@@ -79,6 +79,14 @@ describe('Cash count against a ledger that moved (A1-003)', () => {
 });
 
 describe('Cash count golden (PLAN I2 G-18)', () => {
+  it('keeps a hidden box ledger figure off its document for those who may not see it', async () => {
+    await receive(encoder, oneReceipt(CASH, 1_250_000), 1_250_000);
+    const id = (await count(encoder, { cashPlaceId: CASH, lines: lines12450 }, 1_245_000)).json().id;
+    env.db.prepare('UPDATE cash_place_settings SET encoder_sees_balance = 0 WHERE account_id = ?').run(CASH);
+    expect((await encoder.get(`/api/docs/cash.count/${id}`)).json().doc).toMatchObject({ countedCents: 1_245_000, ledgerCents: 0, differenceCents: 0, ledgerHidden: true });
+    expect((await accountant.get(`/api/docs/cash.count/${id}`)).json().doc).toMatchObject({ ledgerCents: 1_250_000, differenceCents: -5_000 });
+  });
+
   it('ledger ₱12,500.00, counted ₱12,450.00: Dr 6280 50.00 / Cr 1101 50.00', async () => {
     await receive(encoder, oneReceipt(CASH, 1_250_000), 1_250_000);
     const pre = await encoder.post('/api/docs/cash.count/preview', { input: { cashPlaceId: CASH, lines: lines12450 } });

@@ -243,7 +243,7 @@ export function depositTransferInput(db: Db, body: DepositBody) {
 /** Records the deposit: the fund transfer and which checks it carried, in the caller's transaction. */
 export function depositChecks(env: EngineEnv, registry: Registry, actor: Actor, body: DepositBody, expectedTotalCents: number, at: string) {
   const { checks, input } = depositTransferInput(env.db, body);
-  const transfer = postDocument(env, docType(registry, 'cash.transfer'), actor, { input, expectedTotalCents });
+  const transfer = postDocument({ ...env, checkFlow: true }, docType(registry, 'cash.transfer'), actor, { input, expectedTotalCents });
   const ins = env.db.prepare('INSERT INTO col_check_deposits (transfer_id, document_id, line_no) VALUES (?, ?, ?)');
   for (const r of checks) ins.run(transfer.id, r.collectionId, r.lineNo);
   appendAudit(env.db, {
@@ -320,7 +320,7 @@ export function returnCheck(env: EngineEnv, registry: Registry, actor: Actor, bo
     throw conflict('OTHER_MONEY', `${r.collectionNumber} also took other money or a 2307. Record the return without cancelling it, then edit ${r.collectionNumber} without this check.`);
   }
   const what = `Check no. ${label(r)} of ${r.customerName} returned by the bank`;
-  const back = postDocument(env, trf, actor, {
+  const back = postDocument({ ...env, checkFlow: true }, trf, actor, {
     input: { fromCashPlaceId: bankId, toCashPlaceId: r.cashPlaceId, amountSentCents: r.amountCents, amountReceivedCents: r.amountCents, note: `${what}: ${body.reason}`.slice(0, 500) },
     expectedTotalCents: r.amountCents,
   });

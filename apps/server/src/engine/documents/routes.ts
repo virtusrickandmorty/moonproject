@@ -127,7 +127,8 @@ export function documentRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (!u.permissions.has(d.permissions.view)) throw forbidden(d.permissions.view);
     const h = db.prepare('SELECT * FROM documents WHERE id = ? AND doc_type = ?').get(req.params.id, d.key) as Record<string, unknown> | undefined;
     if (!h) throw notFound('The document');
-    const doc = d.load(db, req.params.id);
+    const stored = d.load(db, req.params.id);
+    const doc = d.forViewer ? d.forViewer(db, stored, (p: string) => u.permissions.has(p)) : stored;
     return {
       header: docHeaderOut(h),
       doc,

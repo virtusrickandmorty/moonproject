@@ -40,6 +40,7 @@ export interface Count extends CountInput {
   totalCents: number;
   /** The box's ledger version now (null for someone who may not see its balance). */
   ledgerVersionNow: string | null;
+  ledgerHidden?: boolean; // this viewer may not see the box's balance (forViewer)
 }
 
 /** A fingerprint of the newest journal line on a cash box: it changes whenever money moves in or out, and tells no amount. */
@@ -113,6 +114,12 @@ export const countDoc: DocTypeDef<CountInput, Count> = {
       cashPlaceId: r.cash_account_id, lines, ...(r.note ? { note: r.note } : {}), placeName: place(db, r.cash_account_id)?.name ?? '?',
       countedCents: r.counted_cents, ledgerCents: r.ledger_cents, differenceCents: r.difference_cents, totalCents: r.counted_cents, ledgerVersionNow: null,
     };
+  },
+
+  /** As compute and summary do: someone who may not see this box's balance gets neither it nor the difference from it. */
+  forViewer(db, doc, can) {
+    const p = place(db, doc.cashPlaceId);
+    return p && seesBalance(p, can) ? doc : { ...doc, ledgerCents: 0, differenceCents: 0, ledgerHidden: true };
   },
 
   toInput: ({ cashPlaceId, lines, note }) => ({ cashPlaceId, lines: lines.map(({ denominationCents, qty }) => ({ denominationCents, qty })), ...(note ? { note } : {}) }),

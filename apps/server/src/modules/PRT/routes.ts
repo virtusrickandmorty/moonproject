@@ -262,7 +262,8 @@ export function prtRoutes(app: FastifyInstance, deps: AppDeps): void {
         }
         const profile = db.prepare('SELECT * FROM prt_company_profile WHERE id = 1').get() as Profile | undefined;
         if (!profile) throw conflict('COMPANY_PROFILE_REQUIRED', 'An owner must complete the company profile before printing.');
-        const loaded: any = def.load(db, id);
+        const stored: any = def.load(db, id);
+        const loaded: any = def.forViewer ? def.forViewer(db, stored, (p: string) => user.permissions.has(p)) : stored;
         const doc = type === 'pay.run' && input.employeeId
           ? { ...loaded, employees: loaded.employees.filter((e: any) => e.employeeId === input.employeeId) }
           : loaded;
