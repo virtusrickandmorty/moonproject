@@ -1,7 +1,16 @@
 /** Screen-only disclosures and totals; opening a section never changes its values. */
 import { useState, type ReactNode } from 'react';
 import { peso } from '../../components/ui.tsx';
-import type { PayThirteenthEmployee } from '../../api.ts';
+import type { PayLine, PayThirteenthEmployee } from '../../api.ts';
+import { qtyText, wearersText } from './run.ts';
+
+/** One line of a worker's earnings; a piece line also says the item and the wearers it was for (the owner's request, Nov 2026). */
+export function EarningLine({ line }: { line: PayLine }) {
+  return <div className="text-sm">
+    <div className="flex justify-between gap-3"><span>{line.description} {qtyText(line.kind, line.qty)}</span><span className="tabular-nums">{peso(line.amountCents)}</span></div>
+    {line.work && <p className="text-xs text-slate-600">{line.work.item}{line.work.wearers.length > 0 && <> · {wearersText(line.work.wearers)}</>}</p>}
+  </div>;
+}
 
 export function PayDetails({ title, active = false, children }: { title: string; active?: boolean; children: ReactNode }) {
   const [expanded, setExpanded] = useState(false);

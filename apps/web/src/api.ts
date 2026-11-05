@@ -550,7 +550,8 @@ export interface BiometricPreview { from: string; to: string; people: { userId: 
 export type AttendanceSave = { employeeId: string; date: string; status: AttendanceStatus; otMinutes?: number; nightMinutes?: number; nightOtMinutes?: number; note?: string };
 /** Payroll (PAY) and cash advances (CA): every figure is worked out by the server. */
 export type PayGroup = 'WEEKLY_PIECE' | 'WEEKLY_DAILY' | 'SEMI_DAILY' | 'SEMI_MONTHLY';
-export interface PayLine { lineNo: number; kind: string; description: string; qty: number; rateCents: number; multiplierBp: number; amountCents: number; jobOrderId?: string; reason?: string }
+export interface PayLine { lineNo: number; kind: string; description: string; qty: number; rateCents: number; multiplierBp: number; amountCents: number; jobOrderId?: string; reason?: string; work?: PayPieceWork | null }
+export interface PayPieceWork { item: string; wearers: { name: string; size: string | null; pieces: number }[] }
 export interface PayEmployee {
   employeeId: string; code: string; name: string; costCentre: string; payType: string; isMwe: boolean; lines: PayLine[]; grossCents: number; pieceCents: number; taxableCents: number;
   sssMscCents: number; sssEeCents: number; sssErCents: number; sssEcCents: number; phicEeCents: number; phicErCents: number; hdmfEeCents: number; hdmfErCents: number;

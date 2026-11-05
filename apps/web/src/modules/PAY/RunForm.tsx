@@ -14,9 +14,9 @@ import { TickBar } from '../../components/charts.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, useLive } from '../COL/parts.tsx';
-import { GOES_TO, GROUP_LABEL, emptyManual, endsInDecember, finalPayText, loanLabel, qtyText, runInput, yearEndText, type LoanRow, type ManualRow } from './run.ts';
+import { GOES_TO, GROUP_LABEL, emptyManual, endsInDecember, finalPayText, loanLabel, runInput, yearEndText, type LoanRow, type ManualRow } from './run.ts';
 import { FinalBadge } from './views.tsx';
-import { PayDetails, PayTotal } from './entry.tsx';
+import { EarningLine, PayDetails, PayTotal } from './entry.tsx';
 
 /** The period the run opens on: the newest one not yet recorded that has people in it, else the newest not yet recorded. */
 const firstToPay = (periods: PayPeriod[]) => periods.find((x) => !x.recorded && x.employees > 0) ?? periods.find((x) => !x.recorded);
@@ -170,7 +170,7 @@ export function RunForm({ type, mode, me }: { type: DocTypeInfo; mode: FormMode;
             <TickBar parts={[{ share: e.grossCents > 0 ? Math.max(0, e.netCents) / e.grossCents : 0, tone: 'bg-indigo-600' }]} ticks={120} height="h-4" stretch label={`Net pay ${e.grossCents > 0 ? Math.round((Math.max(0, e.netCents) / e.grossCents) * 100) : 0}% of gross`} />
             {(e.wtaxRefundCents ?? 0) > 0 && <p className="text-sm">Includes tax refund: {peso(e.wtaxRefundCents!)}</p>}
             <PayDetails title="Earnings included">
-              {e.lines.map((l) => <div key={l.lineNo} className="flex justify-between gap-3 text-sm"><span>{l.description} {qtyText(l.kind, l.qty)}</span><span className="tabular-nums">{peso(l.amountCents)}</span></div>)}
+              {e.lines.map((l) => <EarningLine key={l.lineNo} line={l} />)}
               {e.lines.length === 0 && <p className="text-sm">No earnings in this period.</p>}
               <p className="text-xs text-slate-600">Company shares: SSS {peso(e.sssErCents + e.sssEcCents)}, PhilHealth {peso(e.phicErCents)}, Pag-IBIG {peso(e.hdmfErCents)} · 13th month {peso(e.thirteenthCents)}</p>
             </PayDetails>
