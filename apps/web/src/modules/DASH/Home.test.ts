@@ -67,12 +67,12 @@ describe('Home puts work first', () => {
 describe('the details a graph shows when pointed at', () => {
   const [october, november] = months([10000, 20000]).map((m, i) => ({ ...m, month: `2026-1${i}`, from: `2026-1${i}-01`, to: i ? '2026-11-05' : '2026-10-31' }));
 
-  it('breaks a month down, and says why its expenses are low', () => {
-    const row = { ...november!, salesCents: 50000, expensesCents: -27000, costOfSalesCents: -30000, operatingCents: 3000, biggestExpenses: [{ name: 'Made-up rent', amountCents: 3000 }], cancelledExpenses: [{ number: 'EXP-1', amountCents: 30000 }] };
+  it('breaks a month down, and names what it left out as cancelled', () => {
+    const row = { ...november!, salesCents: 50000, expensesCents: 3000, costOfSalesCents: 0, operatingCents: 3000, biggestExpenses: [{ name: 'Made-up rent', amountCents: 3000 }], cancelledExpenses: [{ number: 'EXP-1', amountCents: 30000 }] };
     const tip = monthTip(row);
     expect(tip.title).toBe('November 2026 so far');
-    expect(tip.rows?.map((r) => [r.label, r.value])).toEqual([['Sales', peso(50000)], ['Collections', peso(20000)], ['Expenses', peso(-27000)], ['Cost of sales', peso(-30000)], ['Operating expenses', peso(3000)], ['Sales less expenses', peso(77000)]]);
-    expect(tip.notes).toEqual([`Biggest expenses: Made-up rent ${peso(3000)}.`, `Takes off EXP-1 ${peso(30000)}: recorded in an earlier month, cancelled in this one.`]);
+    expect(tip.rows?.map((r) => [r.label, r.value])).toEqual([['Sales', peso(50000)], ['Collections', peso(20000)], ['Expenses', peso(3000)], ['Operating expenses', peso(3000)], ['Sales less expenses', peso(47000)]]);
+    expect(tip.notes).toEqual([`Biggest expenses: Made-up rent ${peso(3000)}.`, `Leaves out cancelled EXP-1 ${peso(30000)}, so this month can differ from the Income statement.`]);
     expect(monthTip(october!).title).toBe('October 2026');
     expect(monthTip(october!).notes).toEqual([]);
   });

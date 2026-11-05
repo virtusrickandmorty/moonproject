@@ -216,7 +216,7 @@ export interface DashOwnerCharts {
     month: string; from: string; to: string; salesCents: number; collectionsCents: number; expensesCents: number; cashCents: number;
     costOfSalesCents: number; operatingCents: number; incomeTaxCents: number;
     biggestExpenses: { name: string; amountCents: number }[];
-    /** Expenses of an earlier month cancelled in this one: the books show the minus here. */
+    /** Cancelled expenses left out of this month's figures, though the income statement holds them. */
     cancelledExpenses: { number: string; amountCents: number }[];
     cashPlaces: { name: string; balanceCents: number }[];
   }[];

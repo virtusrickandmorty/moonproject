@@ -117,8 +117,8 @@ function CashMovement({ cash }: { cash: OverviewData['cash'] }) {
 }
 
 function Review({ items }: { items: OverviewData['review'] }) {
-  return <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">{items.map((i) => <li key={i.key}>
-    <Link to={i.href} className="flex items-center gap-3 rounded-xl p-3 text-sm ring-1 ring-slate-100 hover:bg-slate-50">
+  return <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">{items.map((i) => <li key={i.key}>
+    <Link to={i.href} className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm ring-1 ring-slate-100 hover:bg-slate-50">
       <span className={`grid size-7 shrink-0 place-items-center rounded-full ${i.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}><Icon name={i.ok ? 'check' : 'alert'} className="size-4" /></span>
       <span className="min-w-0 flex-1"><span className="block font-medium text-slate-800">{i.label}</span>
         <span className="block text-xs text-slate-500">{i.ok ? 'All clear' : [i.count !== null ? `${i.count} to review` : i.amountCents === null ? 'Does not tie' : '', i.amountCents !== null ? peso(i.amountCents) : ''].filter(Boolean).join(' · ')}</span></span>
@@ -142,31 +142,33 @@ export function OverviewFigures({ data, me, docTypes }: { data: OverviewData; me
     <p className="text-xs text-slate-500">Days to collect: what customers owe over sales per day. Months of cash: closing cash over what operations paid out in an average month.
       {data.cancelledExpenses.length > 0 && <> This month's expenses take off {cancelNote(data.cancelledExpenses)}, recorded in an earlier month and cancelled in this one.</>}</p>
     <Card icon="chart" title="Profit and loss" href={`/rpt/income-statement?from=${data.from}&to=${data.to}`}><ProfitTable data={data} compared={compared} /></Card>
-    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-      <Card icon="trend" title="Net income by month"><div className="overflow-x-auto"><ProfitBars data={data.trend} month={data.month} /></div></Card>
-      <Card icon="cash" title="Cash movement" href={`/rpt/cash-flow?from=${data.from}&to=${data.to}`}><CashMovement cash={data.cash} /></Card>
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <Card grow icon="trend" title="Net income by month"><div className="overflow-x-auto"><ProfitBars data={data.trend} month={data.month} /></div></Card>
+      <Card grow icon="cash" title="Cash movement" href={`/rpt/cash-flow?from=${data.from}&to=${data.to}`}><CashMovement cash={data.cash} /></Card>
     </div>
-    <div className="grid items-start gap-4 lg:grid-cols-2">
-      <Card icon="wallet" title="Where the money went" href="/rpt/overhead"><ExpenseBars data={data.expenses} previous={compared} /></Card>
-      <Card icon="sales" title="Top customers by sales" href={`/rpt/sales-by-period?from=${data.from}&to=${data.to}`}>
+    <div className="grid gap-4 lg:grid-cols-3">
+      <Card grow icon="money" title="Collect first" note={`${peso(data.collect.overdueCents)} overdue`} href={`/rpt/ar-aging?${asOf}`}>
+        {data.collect.rows.length === 0 ? <p className="text-sm text-slate-500">No customer owes anything.</p> : <ul className="divide-y divide-slate-100 text-sm">{data.collect.rows.map((c) => <li key={c.customerName} className="flex items-baseline justify-between gap-3 py-2">
+          <span className="min-w-0"><span className="block truncate font-medium">{c.customerName}</span><span className={`text-xs ${c.overdueCents > 0 ? 'font-medium text-red-700' : 'text-slate-500'}`}>{c.overdueCents > 0 ? `${peso(c.overdueCents)} overdue, ${c.daysOverdue} days` : 'Not yet due'}</span></span>
+          <span className="shrink-0 tabular-nums">{peso(c.owedCents)}</span></li>)}</ul>}
+        <p className="mt-auto text-xs text-slate-500">{data.collect.customers} {data.collect.customers === 1 ? 'customer owes' : 'customers owe'} {peso(data.collect.totalCents)} in all.</p>
+      </Card>
+      <Card grow icon="draft" title="Bills to pay" note={`${peso(data.bills.overdueCents)} overdue`} href={`/rpt/ap-aging?${asOf}`}>
+        {data.bills.rows.length === 0 ? <p className="text-sm text-slate-500">No supplier bill is unpaid.</p> : <ul className="divide-y divide-slate-100 text-sm">{data.bills.rows.map((b) => <li key={b.number} className="flex items-baseline justify-between gap-3 py-2">
+          <span className="min-w-0"><Link to={b.documentPath} className="block truncate font-medium text-indigo-700 hover:underline">{b.supplierName}</Link><span className={`text-xs ${b.late ? 'font-medium text-red-700' : 'text-slate-500'}`}>{b.number} · {b.late ? 'was due' : 'due'} {showDate(b.dueDate)}</span></span>
+          <span className="shrink-0 tabular-nums">{peso(b.balanceCents)}</span></li>)}</ul>}
+        <p className="mt-auto text-xs text-slate-500">{data.bills.bills} unpaid {data.bills.bills === 1 ? 'bill' : 'bills'}, {peso(data.bills.totalCents)} in all.</p>
+      </Card>
+      <Card grow icon="sales" title="Top customers by sales" href={`/rpt/sales-by-period?from=${data.from}&to=${data.to}`}>
         {data.customers.rows.length === 0 ? <p className="text-sm text-slate-500">No sales recorded in this month.</p> : <ul className="divide-y divide-slate-100 text-sm">{data.customers.rows.map((c) => <li key={c.customerName} className="flex items-baseline justify-between gap-3 py-2">
           <span className="min-w-0"><span className="block truncate font-medium">{c.customerName}</span><span className="text-xs text-slate-500">{percent(c.shareBp)} of sales</span></span>
           <span className="shrink-0 tabular-nums">{peso(c.salesCents)}</span></li>)}</ul>}
       </Card>
-      <Card icon="money" title="Collect first" note={`${peso(data.collect.overdueCents)} overdue`} href={`/rpt/ar-aging?${asOf}`}>
-        {data.collect.rows.length === 0 ? <p className="text-sm text-slate-500">No customer owes anything.</p> : <ul className="divide-y divide-slate-100 text-sm">{data.collect.rows.map((c) => <li key={c.customerName} className="flex items-baseline justify-between gap-3 py-2">
-          <span className="min-w-0"><span className="block truncate font-medium">{c.customerName}</span><span className={`text-xs ${c.overdueCents > 0 ? 'font-medium text-red-700' : 'text-slate-500'}`}>{c.overdueCents > 0 ? `${peso(c.overdueCents)} overdue, ${c.daysOverdue} days` : 'Not yet due'}</span></span>
-          <span className="shrink-0 tabular-nums">{peso(c.owedCents)}</span></li>)}</ul>}
-        <p className="text-xs text-slate-500">{data.collect.customers} {data.collect.customers === 1 ? 'customer owes' : 'customers owe'} {peso(data.collect.totalCents)} in all.</p>
-      </Card>
-      <Card icon="draft" title="Bills to pay" note={`${peso(data.bills.overdueCents)} overdue`} href={`/rpt/ap-aging?${asOf}`}>
-        {data.bills.rows.length === 0 ? <p className="text-sm text-slate-500">No supplier bill is unpaid.</p> : <ul className="divide-y divide-slate-100 text-sm">{data.bills.rows.map((b) => <li key={b.number} className="flex items-baseline justify-between gap-3 py-2">
-          <span className="min-w-0"><Link to={b.documentPath} className="block truncate font-medium text-indigo-700 hover:underline">{b.supplierName}</Link><span className={`text-xs ${b.late ? 'font-medium text-red-700' : 'text-slate-500'}`}>{b.number} · {b.late ? 'was due' : 'due'} {showDate(b.dueDate)}</span></span>
-          <span className="shrink-0 tabular-nums">{peso(b.balanceCents)}</span></li>)}</ul>}
-        <p className="text-xs text-slate-500">{data.bills.bills} unpaid {data.bills.bills === 1 ? 'bill' : 'bills'}, {peso(data.bills.totalCents)} in all.</p>
-      </Card>
     </div>
-    <Card icon="check" title="Before closing the month"><Review items={data.review} /></Card>
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Card grow icon="wallet" title="Where the money went" href="/rpt/overhead"><ExpenseBars data={data.expenses} previous={compared} /></Card>
+      <Card grow icon="check" title="Before closing the month"><Review items={data.review} /></Card>
+    </div>
     <details className="rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200/70 print:hidden">
       <summary className="cursor-pointer font-bold text-slate-900">All reports ({reports.length})</summary>
       <div className="mt-4 grid items-start gap-6 md:grid-cols-2 xl:grid-cols-3">{sectionsOf('Reports', reports).map((s) => <section key={s.sub} aria-label={s.sub}>

@@ -1,6 +1,7 @@
-/** What the graphs show on hover: where a month's expenses went, why they can fall below zero, cash by place. Made-up figures. */
+/** What the graphs show on hover: where a month's expenses went, what is left out as cancelled, cash by place. Made-up figures. */
 import { beforeEach, describe, expect, it } from 'vitest';
 import { cashPlaceId, createTestEnv, idem, type Client, type TestEnv, encoderOwnDefaults } from '../../../../test/helpers.ts';
+import { incomeStatement } from '../../RPT/public.ts';
 import { ownerCharts } from '../charts.ts';
 
 let env: TestEnv, accountant: Client;
@@ -30,16 +31,28 @@ describe('the details of a month on the graph', () => {
     expect(m.biggestExpenses.map((e) => e.amountCents)).toEqual([300_000, 100_000, 50_000]);
   });
 
-  it('names an expense of an earlier month cancelled in this one, the reason this month goes below zero', async () => {
+  it('leaves an expense cancelled in a later month out of both months, and names it in both', async () => {
     const old = await spend({ 5101: 500_000 });
     await nextMonth('2026-10-02T02:00:00Z');
     await spend({ 6230: 1_000 });
     await cancel(old.id);
-    const m = month('2026-10-05', '2026-10');
-    expect(m.expensesCents).toBe(-499_000);
-    expect(m.cancelledExpenses).toEqual([{ number: old.number, amountCents: 500_000 }]);
-    expect(m.biggestExpenses.map((e) => e.amountCents)).toEqual([1_000]); // the minus is not a biggest expense
-    expect(month('2026-10-05', '2026-09').cancelledExpenses).toEqual([]);
+    const [september, october] = [month('2026-10-05', '2026-09'), month('2026-10-05', '2026-10')];
+    expect(october).toMatchObject({ expensesCents: 1_000, costOfSalesCents: 0, operatingCents: 1_000 });
+    expect(september).toMatchObject({ expensesCents: 0, costOfSalesCents: 0, biggestExpenses: [] });
+    for (const m of [september, october]) expect(m.cancelledExpenses).toEqual([{ number: old.number, amountCents: 500_000 }]);
+    expect(october.biggestExpenses.map((e) => e.amountCents)).toEqual([1_000]);
+  });
+
+  it('agrees with the income statement across the months', async () => {
+    const old = await spend({ 5101: 500_000 });
+    await spend({ 6230: 2_000 });
+    await nextMonth('2026-10-02T02:00:00Z');
+    await spend({ 6230: 1_000 });
+    await cancel(old.id);
+    const charts = ownerCharts(env.db, '2026-10-05').months;
+    const statement = incomeStatement(env.db, charts[0]!.from, '2026-10-05');
+    const books = statement.sections.filter((s) => ['costOfSales', 'operatingExpenses', 'incomeTax'].includes(s.key)).reduce((n, s) => n + s.totalCents, 0);
+    expect(charts.reduce((n, m) => n + m.expensesCents, 0)).toBe(books);
   });
 
   it('says nothing of an expense cancelled in its own month: it nets out there', async () => {

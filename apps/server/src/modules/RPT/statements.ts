@@ -164,6 +164,38 @@ export function incomeStatement(db: Db, from: string, to: string) {
   return { from, to, sections, grossProfitCents, incomeBeforeTaxCents, netIncomeCents: incomeBeforeTaxCents - incomeTax };
 }
 
+/** A journal that stood: sealed, not a reversal, and not reversed. A cancelled entry and its reversal are both left out. */
+export const STOOD = `j.sealed = 1 AND j.reverses_journal_id IS NULL
+  AND NOT EXISTS (SELECT 1 FROM journals r WHERE r.reverses_journal_id = j.id AND r.sealed = 1)`;
+const IS_EXPENSE = `substr(a.code, 1, 1) IN ('5', '6', '8')`;
+
+/**
+ * A period's expenses by account as they really stood, with cancelled entries left out wherever they fall. The income
+ * statement keeps both the entry and its reversal, each on its own date; across the months the two agree.
+ */
+export function expensesThatStood(db: Db, from: string, to: string): { code: string; name: string; amountCents: number }[] {
+  return db.prepare(`SELECT a.code, a.name, SUM(l.debit_cents - l.credit_cents) AS amountCents
+    FROM journal_lines l JOIN journals j ON j.id = l.journal_id JOIN accounts a ON a.id = l.account_id
+    WHERE ${STOOD} AND j.business_date BETWEEN ? AND ? AND ${IS_EXPENSE}
+    GROUP BY a.id HAVING amountCents <> 0 ORDER BY a.code`).all(from, to) as { code: string; name: string; amountCents: number }[];
+}
+
+/**
+ * The expenses a period's income statement holds that expensesThatStood leaves out: those cancelled in it but recorded
+ * before it, and those recorded in it but cancelled after it. One cancelled inside the period nets out there.
+ */
+export function expensesLeftOut(db: Db, from: string, to: string): { number: string; amountCents: number }[] {
+  const later = db.prepare(`SELECT COALESCE(d.number, j.number) AS number, SUM(l.debit_cents - l.credit_cents) AS amountCents
+    FROM journals j
+    JOIN journals r ON r.reverses_journal_id = j.id AND r.sealed = 1
+    JOIN journal_lines l ON l.journal_id = j.id
+    JOIN accounts a ON a.id = l.account_id
+    LEFT JOIN documents d ON j.source_type = 'document' AND d.id = j.source_id
+    WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ? AND r.business_date > ? AND ${IS_EXPENSE}
+    GROUP BY j.id HAVING amountCents <> 0 ORDER BY j.business_date, j.number`).all(from, to, to) as { number: string; amountCents: number }[];
+  return [...expensesCancelledFromEarlier(db, from, to), ...later];
+}
+
 /**
  * The expenses cancelled in a period that were recorded before it. The books date a cancel the day it is made, so the old
  * expense stays in its own month and this period shows the minus: the reason a month's expenses can look low, or below zero.
@@ -175,7 +207,7 @@ export function expensesCancelledFromEarlier(db: Db, from: string, to: string): 
     JOIN journal_lines l ON l.journal_id = j.id
     JOIN accounts a ON a.id = l.account_id
     LEFT JOIN documents d ON j.source_type = 'document' AND d.id = j.source_id
-    WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ? AND o.business_date < ? AND substr(a.code, 1, 1) IN ('5', '6', '8')
+    WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ? AND o.business_date < ? AND ${IS_EXPENSE}
     GROUP BY j.id HAVING amountCents <> 0 ORDER BY j.business_date, j.number`).all(from, to, from) as { number: string; amountCents: number }[];
 }
 

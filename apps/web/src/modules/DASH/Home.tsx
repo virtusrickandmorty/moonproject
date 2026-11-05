@@ -148,14 +148,14 @@ function OwnerCharts() {
   if (error) return <Notice>{error}</Notice>;
   if (!data) return <Loading label="Loading the last 12 months…" />;
   return <section className="space-y-4"><h2 className="text-xl font-semibold">Last 12 months</h2>
-    <p className="text-sm text-slate-600">Negative amounts appear below ₱0, including reversals. Point at a month or a bar for its details; on a phone, tap it.</p>
+    <p className="text-sm text-slate-600">Cancelled expenses are left out, so a month can differ from the Income statement. Point at a month or a bar for its details; on a phone, tap it.</p>
     <Card icon="chart" title="Sales, collections and expenses" href={`/rpt/income-statement?from=${data.months[0]!.from}&to=${data.asOf}`}><div className="overflow-x-auto"><Bars data={data.months} /></div>
       <p className="flex flex-wrap gap-3 text-sm"><span>See the report:</span>
         <Link to={`/rpt/income-statement?from=${data.months[0]!.from}&to=${data.asOf}`} className="text-indigo-700 hover:underline">Income statement</Link>
         <Link to={`/rpt/collections-register?from=${data.months[0]!.from}&to=${data.asOf}`} className="text-indigo-700 hover:underline">Collections register</Link></p></Card>
-    <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-      <Card icon="cash" title="Cash on hand at month end" href={`/rpt/cash-position?asOf=${data.asOf}`}><div className="overflow-x-auto"><CashLine data={data.months} /></div></Card>
-      <Card icon="money" title="Receivables by age today" href={`/rpt/ar-aging?asOf=${data.asOf}`}><div className="overflow-x-auto"><AgingBars data={data.receivables} /></div></Card>
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <Card icon="cash" title="Cash on hand at month end" grow href={`/rpt/cash-position?asOf=${data.asOf}`}><div className="overflow-x-auto"><CashLine data={data.months} /></div></Card>
+      <Card icon="money" title="Receivables by age today" grow href={`/rpt/ar-aging?asOf=${data.asOf}`}><div className="overflow-x-auto"><AgingBars data={data.receivables} /></div></Card>
     </div>
   </section>;
 }

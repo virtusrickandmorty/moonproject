@@ -25,7 +25,7 @@ const running = (row: Month) => Number(row.to.slice(8)) < new Date(Date.UTC(Numb
 const FIELDS = [{ key: 'salesCents', label: 'Sales', colour: '#1f3bb3', light: '#8c9ee2' }, { key: 'collectionsCents', label: 'Collections', colour: '#64748b', light: '#b6c0cd' },
   { key: 'expensesCents', label: 'Expenses', colour: '#cbd5e1', light: '#eef2f6' }] as const;
 
-/** A month's details: its three figures, where the expenses went, and why they may look low. */
+/** A month's details: its three figures, where the expenses went, and what was left out as cancelled. */
 export function monthTip(row: Month): Tip {
   const parts: TipRow[] = ([['Cost of sales', row.costOfSalesCents], ['Operating expenses', row.operatingCents], ['Income tax', row.incomeTaxCents]] as const)
     .filter(([, cents]) => cents !== 0).map(([label, cents]) => ({ label, value: peso(cents), sub: true }));
@@ -41,7 +41,7 @@ export function monthTip(row: Month): Tip {
     ],
     notes: [
       ...(row.biggestExpenses.length ? [`Biggest expenses: ${row.biggestExpenses.map((e) => `${e.name} ${peso(e.amountCents)}`).join(', ')}.`] : []),
-      ...(shown ? [`Takes off ${shown}${left > 0 ? ` and ${left} more` : ''}: recorded in an earlier month, cancelled in this one.`] : []),
+      ...(shown ? [`Leaves out cancelled ${shown}${left > 0 ? ` and ${left} more` : ''}, so this month can differ from the Income statement.`] : []),
     ],
   };
 }
