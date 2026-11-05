@@ -1,7 +1,8 @@
 /**
  * Production Entry (PE-, PLAN E7 assignments, C4, D6): the pieces workers did on one step of one job order, one row per
  * worker per line, with the piece rate taken as a snapshot. It posts no journal: payroll pays the rows later (F3).
- * - Rate: from the rate table (garment type × step × complexity on the work date), or typed with a reason (an override
+ * - Rate: set on the line (an alteration, the owner's request, Nov 2026), else from the rate table (garment type × step ×
+ *   complexity on the work date), or typed with a reason (an override
  *   needs rate.override, OWN-26), or none (progress only, ₱0). Rework (pasubra) is paid the same table rate unless a rate
  *   is typed (the owner's decision, Oct 2026: rates are changed in payroll, not on Record pieces; it was OWN-25).
  * - Caps (E7 rules 1–2): the pieces of a step never pass the line quantity; passing what came out of the previous step
@@ -28,7 +29,7 @@ import type { DocContext, DocTypeDef } from '../../../engine/documents/registry.
 import { jobOrderRef, jobOrdersOf, lineState, rosterOf } from '../../JO/public.ts';
 import { rateAt } from '../../RATE/public.ts';
 import { activeEmployees, employee } from '../emp.ts';
-import { SET_PARTS, autoComplete, availableFor, reopenShort, forwardedWearers, lineRoute, lineSetup, reworkOpen, stepById, syncStage, wearerPieces, wearersDone, type Complexity, type Part } from '../production.ts';
+import { SET_PARTS, autoComplete, availableFor, lineRate, reopenShort, forwardedWearers, lineRoute, lineSetup, reworkOpen, stepById, syncStage, wearerPieces, wearersDone, type Complexity, type Part } from '../production.ts';
 
 const MAX_PIECES = 10_000;
 const MAX_RATE_CENTS = 1_000_000; // ₱10,000 per piece: a typo guard
@@ -141,8 +142,10 @@ export const entryDoc: DocTypeDef<EntryInput, Entry> = {
       const kind = r.correctionOf ? 'correction' : r.rework ? 'rework' : 'work';
       const part: Part = was?.part ?? r.part ?? 'whole';
       const table = kind !== 'correction' && step ? rateAt(ctx.db, garmentType, step.code, complexity, isBusinessDate(workDate) ? workDate : ctx.businessDate, part) : undefined;
+      // A rate set on the line (an alteration) comes before the garment's rate; it is recorded as a table rate, a set one.
+      const set = kind !== 'correction' && step ? lineRate(ctx.db, input.jobOrderId, r.lineNo, step.code) : undefined;
       const [rateCents, rateSource]: [number, RateSource] =
-        r.rateCents !== undefined ? [r.rateCents, 'typed'] : was ? [was.rateCents, 'original'] : table ? [table.rateCents, 'table'] : [0, 'none'];
+        r.rateCents !== undefined ? [r.rateCents, 'typed'] : was ? [was.rateCents, 'original'] : set ? [set.rateCents, 'table'] : table ? [table.rateCents, 'table'] : [0, 'none'];
       return { ...r, rowNo: i + 1, employeeName: employee(ctx.db, r.employeeId)?.name ?? '?', kind, garmentType, complexity, rateCents, rateSource, amountCents: r.pieces * rateCents, part };
     });
     return {

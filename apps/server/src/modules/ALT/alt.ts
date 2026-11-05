@@ -19,10 +19,14 @@ import { customerRef } from '../CUS/public.ts';
 import { currentStage, jobOrderDoc, jobOrderRef, lineState, liveReplacementOf, rosterPeopleOf } from '../JO/public.ts';
 import { saleLines, saleRef } from '../QS/public.ts';
 import { createShopWork, saleOfOnlineOrder } from '../SHP/public.ts';
+import { lineRate, setLineRate } from '../PRD/public.ts';
 
 export interface Who { userId: string; at: string; today: string }
 const text = (max: number) => z.string().trim().min(1).max(max);
 const MAX_FEE = 10_000_000; // ₱100,000 a piece
+const MAX_RATE = 1_000_000; // ₱10,000 a piece: a typo guard, as on the rate table
+/** The step an alteration's rate is for. Only sewing: the piece is altered, not made again. */
+const SEWING = 'SEWING';
 
 export const returnInput = z.object({
   customerId: z.uuid().optional(), // needed when every line is described by hand; else the source's customer
@@ -49,8 +53,11 @@ export const decisionInput = z.object({
   reason: z.string().trim().min(5).max(500),
   dueInDays: z.number().int().min(1).max(365).optional(),
   priority: z.enum(['normal', 'rush']).optional(),
-  fees: z.array(z.object({ lineNo: z.number().int().min(1), feeEachCents: z.number().int().min(0).max(MAX_FEE) }).strict()).max(50).optional(),
+  fees: z.array(z.object({ lineNo: z.number().int().min(1), feeEachCents: z.number().int().min(0).max(MAX_FEE),
+    sewingRateCents: z.number().int().min(0).max(MAX_RATE).optional() }).strict()).max(50).optional(), // an alteration's sewing pay per piece
 }).strict();
+
+export const sewingRateInput = z.object({ lineNo: z.number().int().min(1), rateCents: z.number().int().min(0).max(MAX_RATE), reason: z.string().trim().min(5).max(300) }).strict();
 
 const ACTION = { alteration: 'Alteration', replacement: 'Replacement' } as const;
 const pieces = (n: number) => `${n} ${n === 1 ? 'piece' : 'pieces'}`;
@@ -163,7 +170,9 @@ export function returnOf(db: Db, id: string) {
     FROM alt_decisions x JOIN users u ON u.id = x.user_id LEFT JOIN documents j ON j.id = x.job_order_id LEFT JOIN documents s ON s.id = x.shop_work_id WHERE x.return_id = ?`).get(id) as
     | { outcome: 'accepted' | 'declined'; reason: string; jobOrderId: string | null; jobOrderNumber: string | null; shopWorkId: string | null; shopWorkNumber: string | null; at: string; decidedBy: string }
     | undefined;
-  return { ...r, lines: lines.map((l) => ({ ...l, wearers: wearers.filter((w) => w.lineNo === l.lineNo).map(({ lineNo: _, ...w }) => w) })), decision: d ?? null, status: statusOf(db, d), feeCents: lines.reduce((n, l) => n + (l.feeEachCents ?? 0) * l.qty, 0) };
+  const live = d?.outcome === 'accepted' ? liveJobOrderOf(db, d.jobOrderId) : null;
+  return { ...r, lines: lines.map((l, i) => ({ ...l, sewingRateCents: live && l.action === 'alteration' ? lineRate(db, live.id, i + 1, SEWING)?.rateCents ?? null : null,
+    wearers: wearers.filter((w) => w.lineNo === l.lineNo).map(({ lineNo: _, ...w }) => w) })), decision: d ?? null, status: statusOf(db, d), feeCents: lines.reduce((n, l) => n + (l.feeEachCents ?? 0) * l.qty, 0) };
 }
 
 function statusOf(db: Db, d: { outcome: string; jobOrderId: string | null } | undefined): ReturnStatus {
@@ -204,6 +213,12 @@ export function decide(env: EngineEnv, actor: Actor, id: string, raw: unknown, w
   for (const k of fees.keys()) if (!r.lines.some((l) => l.lineNo === k)) throw new AppError('VALIDATION', `${r.number} has no line ${k}.`, 422);
   const missing = r.lines.filter((l) => !fees.has(l.lineNo));
   if (missing.length) throw new AppError('VALIDATION', `Set the fee for line ${missing.map((l) => l.lineNo).join(', ')} (₱0 when it is free).`, 422);
+  // An alteration is only altered, so its sewing is paid what is set here; a replacement is made again, at the garment's rate.
+  const rates = new Map((v.fees ?? []).flatMap((f) => (f.sewingRateCents === undefined ? [] : [[f.lineNo, f.sewingRateCents] as const])));
+  const noRate = r.lines.filter((l) => l.action === 'alteration' && !rates.has(l.lineNo));
+  if (noRate.length) throw new AppError('VALIDATION', `Set the sewing rate per piece for alteration line ${noRate.map((l) => l.lineNo).join(', ')}.`, 422);
+  const wrongRate = r.lines.find((l) => l.action === 'replacement' && rates.has(l.lineNo));
+  if (wrongRate) throw new AppError('VALIDATION', `Line ${wrongRate.lineNo} is a replacement: it is made again and paid the garment's usual rate.`, 422);
 
   const input = {
     customerId: r.customerId,
@@ -238,7 +253,38 @@ export function decide(env: EngineEnv, actor: Actor, id: string, raw: unknown, w
     .run(id, v.reason, jo.id, shopWork?.id ?? null, who.at, who.userId);
   const fee = db.prepare('INSERT INTO alt_decision_lines (return_id, line_no, fee_each_cents) VALUES (?, ?, ?)');
   for (const [lineNo, cents] of fees) fee.run(id, lineNo, cents);
+  // The job order's lines are the return's, in order.
+  r.lines.forEach((l, i) => {
+    const rateCents = rates.get(l.lineNo);
+    if (rateCents !== undefined) setLineRate(db, { jobOrderId: jo.id, lineNo: i + 1, stepCode: SEWING, rateCents, reason: `Alteration rate set on ${r.number}` }, who);
+  });
   appendAudit(db, { at: who.at, userId: who.userId, action: 'alt.accept', entityType: 'alt_return', entityId: id, data: { number: r.number, reason: v.reason, fees: v.fees, jobOrder: jo.number, shopWork: shopWork?.number ?? null } });
+  return returnOf(db, id)!;
+}
+
+/** The job order of an accepted return as it stands now: an edited one lives on in its replacement. */
+function liveJobOrderOf(db: Db, jobOrderId: string | null) {
+  if (!jobOrderId) return null;
+  const jo = jobOrderRef(db, jobOrderId);
+  return jo?.status === 'posted' ? jo : liveReplacementOf(db, jobOrderId);
+}
+
+/**
+ * Changes an alteration's sewing rate after it was accepted (it was mistyped, or the return was accepted before rates were
+ * set here). For pieces recorded from now on: an entry already recorded keeps its rate until it is cancelled and recorded again.
+ */
+export function setSewingRate(db: Db, id: string, raw: unknown, who: Who) {
+  const v = sewingRateInput.parse(raw);
+  const r = returnOf(db, id);
+  if (!r) throw notFound('The return');
+  const index = r.lines.findIndex((l) => l.lineNo === v.lineNo);
+  const line = r.lines[index];
+  if (!line) throw notFound('That line');
+  if (line.action !== 'alteration') throw conflict('NOT_AN_ALTERATION', `Line ${v.lineNo} is a replacement: it is paid the garment's usual rate.`);
+  const jo = liveJobOrderOf(db, r.decision?.jobOrderId ?? null);
+  if (!jo) throw conflict('NO_JOB_ORDER', `${r.number} has no job order standing.`);
+  setLineRate(db, { jobOrderId: jo.id, lineNo: index + 1, stepCode: SEWING, rateCents: v.rateCents, reason: v.reason }, who);
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'alt.sewing_rate', entityType: 'alt_return', entityId: id, data: { number: r.number, lineNo: v.lineNo, rateCents: v.rateCents, reason: v.reason } });
   return returnOf(db, id)!;
 }
 

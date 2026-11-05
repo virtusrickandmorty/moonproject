@@ -4,7 +4,7 @@
  * line by line, free or a fee per piece, or declines; accepted, a job order for the customer goes on the production board,
  * and the items go back on its release slip (with its invoice record when there is a fee).
  */
-import { parsePesos } from '@moonproject/shared';
+import { formatPesos, parsePesos } from '@moonproject/shared';
 import { useCallback, useEffect, useState } from 'react';
 import type { Me } from '../../api.ts';
 import { Button, Dialog, Field, Loading, Notice, inputClass, peso, showDate, useAction } from '../../components/ui.tsx';
@@ -17,7 +17,7 @@ import { Paged, newestFirst } from '../../components/RowPages.tsx';
 type Status = 'awaiting_decision' | 'declined' | 'in_production' | 'ready' | 'released' | 'cancelled';
 interface ReturnLine {
   lineNo: number; action: 'alteration' | 'replacement'; source: 'job_order' | 'sale' | 'other'; sourceNumber: string | null; sourceLineNo: number | null; description: string; qty: number;
-  problem: string; oldPiece: string | null; oldPieceNote: string | null; feeEachCents: number | null;
+  problem: string; oldPiece: string | null; oldPieceNote: string | null; feeEachCents: number | null; sewingRateCents: number | null;
   wearers: { rowNo: number; name: string; size: string | null; jerseyName: string | null; jerseyNumber: string | null; qty: number }[];
 }
 interface Return {
@@ -227,9 +227,33 @@ function ReceiveDialog({ me, onClose, onSaved }: { me: Me; onClose: () => void; 
   );
 }
 
+/** An accepted alteration's sewing rate, changed for the pieces recorded from now on. */
+function SewingRateDialog({ me, id, line, onDone, onClose }: { me: Me; id: string; line: ReturnLine; onDone: (r: Return) => void; onClose: () => void }) {
+  const [rate, setRate] = useState(line.sewingRateCents === null ? '' : formatPesos(line.sewingRateCents));
+  const [why, setWhy] = useState('');
+  const { busy, error, run } = useAction();
+  const save = () => run(async () => {
+    let rateCents: number;
+    try { rateCents = parsePesos(rate.trim()); } catch { throw new Error('Type the rate in pesos, like 50 or 50.00.'); }
+    if (why.trim().length < 5) throw new Error('Say why the rate changes.');
+    onDone(await masterRequest<Return>(me, `/api/alt/returns/${id}/sewing-rate`, 'POST', { lineNo: line.lineNo, rateCents, reason: why.trim() }));
+  });
+  return (
+    <Dialog title={`Sewing rate, line ${line.lineNo}`} onClose={onClose}>
+      {error && <Notice>{error}</Notice>}
+      <p className="text-sm text-slate-600">For pieces recorded from now on. An entry already recorded keeps its rate: cancel it and record it again to use this one.</p>
+      <Field label="Sewing rate per piece"><input className={inputClass} inputMode="decimal" value={rate} onChange={(e) => setRate(e.target.value)} /></Field>
+      <Field label="Why"><input className={inputClass} maxLength={300} value={why} onChange={(e) => setWhy(e.target.value)} /></Field>
+      <div className="flex justify-end gap-2"><Button onClick={onClose}>Go back</Button><Button tone="primary" disabled={busy} onClick={() => void save()}>Save the rate</Button></div>
+    </Dialog>
+  );
+}
+
 function ReturnDialog({ me, id, onClose, onChanged }: { me: Me; id: string; onClose: () => void; onChanged: (message: string) => void }) {
   const [r, setR] = useState<Return | null>(null);
   const [fees, setFees] = useState<Record<number, string>>({});
+  const [sewing, setSewing] = useState<Record<number, string>>({}); // an alteration's sewing rate per piece
+  const [changing, setChanging] = useState<ReturnLine | null>(null);
   const [reason, setReason] = useState('');
   const [due, setDue] = useState('7');
   const [rush, setRush] = useState(false);
@@ -239,13 +263,16 @@ function ReturnDialog({ me, id, onClose, onChanged }: { me: Me; id: string; onCl
   const canDecide = me.permissions.includes('alt.decide') && r?.status === 'awaiting_decision';
   const typedFees = r?.lines.map((l) => { try { return parsePesos((fees[l.lineNo] ?? '').trim() || '0'); } catch { return NaN; } }) ?? [];
   const total = r?.lines.reduce((n, l, i) => n + (Number.isNaN(typedFees[i]!) ? 0 : typedFees[i]! * l.qty), 0) ?? 0;
+  const sewingOf = (l: ReturnLine) => { try { const t = (sewing[l.lineNo] ?? '').trim(); return t ? parsePesos(t) : null; } catch { return null; } };
+  const mayChangeRate = me.permissions.includes('alt.decide') && r?.decision?.outcome === 'accepted';
 
   const decide = (outcome: 'accepted' | 'declined') => run(async () => {
     if (reason.trim().length < 5) throw new Error(outcome === 'declined' ? 'Say why it is declined.' : 'Say why: free (our fault, warranty) or why there is a fee.');
     if (outcome === 'accepted' && typedFees.some(Number.isNaN)) throw new Error('Type each fee in pesos, like 150 or 150.00 (0 when free).');
+    if (outcome === 'accepted' && r!.lines.some((l) => l.action === 'alteration' && (sewingOf(l) ?? -1) < 0)) throw new Error('Type the sewing rate per piece for each alteration, like 50 or 50.00.');
     if (outcome === 'accepted' && (!/^\d+$/.test(due.trim()) || Number(due) < 1)) throw new Error('Type the days until it is due.');
     const body = outcome === 'declined' ? { outcome, reason: reason.trim() }
-      : { outcome, reason: reason.trim(), dueInDays: Number(due), priority: rush ? 'rush' : 'normal', fees: r!.lines.map((l, i) => ({ lineNo: l.lineNo, feeEachCents: typedFees[i]! })) };
+      : { outcome, reason: reason.trim(), dueInDays: Number(due), priority: rush ? 'rush' : 'normal', fees: r!.lines.map((l, i) => ({ lineNo: l.lineNo, feeEachCents: typedFees[i]!, ...(l.action === 'alteration' ? { sewingRateCents: sewingOf(l)! } : {}) })) };
     const after = await masterRequest<Return>(me, `/api/alt/returns/${id}/decision`, 'POST', body);
     setR(after);
     onChanged(outcome === 'declined' ? `${after.number} declined.` : `${after.number} accepted: ${after.decision?.jobOrderNumber} is on the production board${after.feeCents ? ` (fee ${peso(after.feeCents)})` : ' (free)'}.`);
@@ -254,6 +281,7 @@ function ReturnDialog({ me, id, onClose, onChanged }: { me: Me; id: string; onCl
   return (
     <Dialog wide title={r ? `${r.number} · ${r.customerName}` : 'Return'} onClose={onClose}>
       {error && <Notice>{error}</Notice>}
+      {changing && <SewingRateDialog me={me} id={id} line={changing} onDone={(after) => { setR(after); setChanging(null); }} onClose={() => setChanging(null)} />}
       {!r ? <Loading /> : <>
         <div className="flex flex-wrap items-center gap-3 text-sm text-slate-600">
           <Badge s={r.status} />
@@ -262,7 +290,7 @@ function ReturnDialog({ me, id, onClose, onChanged }: { me: Me; id: string; onCl
         {r.notes && <p className="text-sm text-slate-600">{r.notes}</p>}
         <div className="overflow-x-auto">
           <table>
-            <thead><tr><th>#</th><th>Item</th><th className="text-right">Pieces</th><th>{canDecide ? 'Fee per piece' : 'Fee'}</th></tr></thead>
+            <thead><tr><th>#</th><th>Item</th><th className="text-right">Pieces</th><th>{canDecide ? 'Fee per piece' : 'Fee'}</th>{(canDecide || mayChangeRate) && <th>Sewing rate per piece</th>}</tr></thead>
             <tbody>
               {r.lines.map((l) => (
                 <tr key={l.lineNo} className="align-top">
@@ -279,6 +307,12 @@ function ReturnDialog({ me, id, onClose, onChanged }: { me: Me; id: string; onCl
                       value={fees[l.lineNo] ?? ''} onChange={(e) => setFees({ ...fees, [l.lineNo]: e.target.value })} />
                       : l.feeEachCents === null ? '—' : l.feeEachCents === 0 ? 'Free' : `${peso(l.feeEachCents)} each`}
                   </td>
+                  {(canDecide || mayChangeRate) && <td>
+                    {l.action === 'replacement' ? <span className="text-xs text-slate-600">The garment's usual rate</span>
+                      : canDecide ? <input className={`${inputClass} w-28 text-right`} inputMode="decimal" aria-label={`Sewing rate per piece, line ${l.lineNo}`} placeholder="0.00"
+                        value={sewing[l.lineNo] ?? ''} onChange={(e) => setSewing({ ...sewing, [l.lineNo]: e.target.value })} />
+                      : <span className="flex items-center gap-2">{l.sewingRateCents === null ? 'Not set' : peso(l.sewingRateCents)}<Button className="!px-2 !py-1 text-xs" onClick={() => setChanging(l)}>Change</Button></span>}
+                  </td>}
                 </tr>
               ))}
             </tbody>
@@ -294,7 +328,7 @@ function ReturnDialog({ me, id, onClose, onChanged }: { me: Me; id: string; onCl
         {canDecide && (
           <div className="space-y-2 border-t border-slate-100 pt-3">
             <h3 className="text-sm font-semibold">Decision</h3>
-            <p className="text-xs text-slate-500">Type a fee per piece for each line (leave it empty or 0 when it is free), and why. Accepting puts it on the production board as a job order for {r.customerName}.</p>
+            <p className="text-xs text-slate-500">Type a fee per piece for each line (leave it empty or 0 when it is free), the sewing rate for each alteration, and why. Accepting puts it on the production board as a job order for {r.customerName}.</p>
             <div className="grid gap-2 sm:grid-cols-[1fr_7rem_auto] sm:items-end">
               <Field label="Reason"><input className={inputClass} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Our sewing fault: free / Customer's change of size: ₱150 a piece" /></Field>
               <Field label="Due in (days)"><input className={inputClass} inputMode="numeric" value={due} onChange={(e) => setDue(e.target.value)} /></Field>

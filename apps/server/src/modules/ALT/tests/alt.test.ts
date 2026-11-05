@@ -59,7 +59,7 @@ describe('alterations and replacements', () => {
     expect(ret.lines[0]).toMatchObject({ description: 'Made-up school polo', sourceNumber: jo.number, qty: 2 });
 
     // Only the owner or the accountant decides.
-    const fee = { outcome: 'accepted', reason: 'Customer asked for shorter sleeves', dueInDays: 5, fees: [{ lineNo: 1, feeEachCents: 15_000 }] };
+    const fee = { outcome: 'accepted', reason: 'Customer asked for shorter sleeves', dueInDays: 5, fees: [{ lineNo: 1, feeEachCents: 15_000, sewingRateCents: 5_000 }] };
     expect((await encoder.post(`/api/alt/returns/${ret.id}/decision`, fee)).statusCode).toBe(403);
     expect((await accountant.post(`/api/alt/returns/${ret.id}/decision`, { ...fee, fees: [] })).json().message).toBe('Set the fee for line 1 (₱0 when it is free).');
     const d = await accountant.post(`/api/alt/returns/${ret.id}/decision`, fee);
@@ -122,7 +122,7 @@ describe('alterations and replacements', () => {
     expect((await newReturn({ lines: [line({ ...from, qty: 2, wearers: [9] })] })).json().message).toBe(`Line 1: ${jo.number} line 1 has no wearer 9.`);
     const ret = (await newReturn({ lines: [line({ ...from, qty: 2, wearers: [2], problem: 'Number 7 printed off-centre' })] })).json();
     expect(ret.lines[0].wearers).toEqual([{ rowNo: 2, personId: null, name: 'Ben Wearer', sizeMode: 'preset', size: 'L', jerseyName: 'BEN', jerseyNumber: '7', qty: 2 }]);
-    const d = (await owner.post(`/api/alt/returns/${ret.id}/decision`, { outcome: 'accepted', reason: 'Our printing fault: free', fees: [{ lineNo: 1, feeEachCents: 0 }] })).json();
+    const d = (await owner.post(`/api/alt/returns/${ret.id}/decision`, { outcome: 'accepted', reason: 'Our printing fault: free', fees: [{ lineNo: 1, feeEachCents: 0, sewingRateCents: 5_000 }] })).json();
     const made = (await owner.get(`/api/docs/jo.job_order/${d.decision.jobOrderId}`)).json();
     expect(made.input.lines[0].roster).toEqual([{ name: 'Ben Wearer', sizeMode: 'preset', size: 'L', jerseyName: 'BEN', jerseyNumber: '7', qty: 2 }]);
   });

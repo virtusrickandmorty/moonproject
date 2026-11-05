@@ -175,6 +175,9 @@ export function carryProductionOver(db: Db, oldId: string, newId_: string): void
   const earlierWearers = db.prepare('SELECT from_row_no AS fromRow, row_no AS row FROM prd_carry_over_wearers WHERE job_order_id = ? AND line_no = ? AND from_job_order_id = ? AND from_line_no = ?');
   const carried: { lineNo: number; fromLineNo: number }[] = [];
   for (const [n, o] of pairs) {
+    // A rate set on the line goes with it, whether or not production has started.
+    db.prepare(`INSERT INTO prd_line_rates (job_order_id, line_no, step_code, rate_cents, reason, at, user_id)
+      SELECT ?, ?, step_code, rate_cents, reason, at, user_id FROM prd_line_rates WHERE job_order_id = ? AND line_no = ? ORDER BY id`).run(newId_, n, oldId, o);
     const setup = lineSetup(db, oldId, o);
     if (!setup) continue; // not routed yet: nothing to carry
     const wearers = matchWearers(old.find((l) => l.lineNo === o)!.roster, next.find((l) => l.lineNo === n)!.roster);

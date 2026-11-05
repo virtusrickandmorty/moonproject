@@ -19,6 +19,7 @@ import { docPath } from '../../shell/menu.ts';
 import { PrintedDateField, usePrintedDate } from '../../generic/PrintedDate.tsx';
 import { cents, checkPlaceIds, emptyTender, oldestFirst, sum, tendersToInput, tendersToRows, type TenderInput, type TenderRow } from './money.ts';
 import { CustomerPicker, EditGate, Errors, Figures, TenderRows, useLive, type Picked } from './parts.tsx';
+import { withoutOriginal } from '../../generic/record.tsx';
 import { collectionPreset } from '../JO/forms.ts';
 import type { WithholdingProfile } from '../CUS/withholding.ts';
 import { WITHHOLDING_CHOICES, cashToReceive, emptyWithholding, paymentGross, withholdingRows, type WithholdingRows } from './withholding.ts';
@@ -106,6 +107,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
       const input = d.input as Stored;
       const doc = d.doc as StoredDoc;
       setOriginal({ header: d.header, input, doc });
+      setCr(input.crNumber);
       setCustomer({ id: input.customerId, name: doc.customerName });
       setTenders(tendersToRows(input.tenders));
       const w = input.withholding;
@@ -209,18 +211,20 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
     ...(pdc ? { postDatedCheckId: pdc.id } : original?.input.postDatedCheckId ? { postDatedCheckId: original.input.postDatedCheckId } : {}), // an edit keeps its post-dated check
   };
   const day = printed.businessDate;
-  const live = useLive(JSON.stringify([input, day]), errors.length === 0, () => api.preview(type.key, input, day));
+  // An edit is previewed while the original stands, so its own CR would read as taken: the reissue checks again.
+  const preview = () => api.preview(type.key, input, day).then((p) => (original ? { ...p, issues: withoutOriginal(p.issues, original.header.number) } : p));
+  const live = useLive(JSON.stringify([input, day]), errors.length === 0, preview);
 
   const openConfirm = () => {
     setTouched(true);
-    if (errors.length === 0) api.preview(type.key, input, day).then(setConfirm, fail);
+    return errors.length === 0 ? preview().then(setConfirm, fail) : undefined;
   };
   const record = async (key: string) => {
     try {
       const r = original ? await api.reissue(type.key, original.header.id, input, confirm!.totalCents, reason, key, day) : await api.post(type.key, input, confirm!.totalCents, key, day);
       navigate(docPath(type.key, `/${r.id}?recorded=1`));
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.preview(type.key, input, day));
+      if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await preview());
       throw e;
     }
   };
@@ -291,7 +295,7 @@ export function CollectionForm({ type, mode }: { type: DocTypeInfo; mode: FormMo
         </Panel>
         <Panel title="Where did the money go?">
           <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money go?" received />
-          <Field label="CR number (from the booklet)" required hint={original ? `CR ${original.input.crNumber} stays with the cancelled collection: write this payment on a new CR.` : undefined}>
+          <Field label="CR number (from the booklet)" required hint={original ? `This collection's CR is ${original.input.crNumber}. Keep it when it is the same paper receipt.` : undefined}>
             <input inputMode="numeric" className={`${inputClass} max-w-40`} value={crNumber} onChange={(e) => setCr(e.target.value)} />
           </Field>
           <PrintedDateField label="Date on the CR" value={printed.text} onChange={printed.setText} />

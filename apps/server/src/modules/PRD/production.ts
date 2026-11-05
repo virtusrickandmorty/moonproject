@@ -396,6 +396,18 @@ export function autoComplete(db: Db, jobOrderId: string, lineNo: number, stepId:
   return true;
 }
 
+/** The rate set for one job order line and step, if any: it comes before the rate table (an alteration, not the garment's full rate). */
+export function lineRate(db: Db, jobOrderId: string, lineNo: number, stepCode: string): { rateCents: number; reason: string } | undefined {
+  return db.prepare('SELECT rate_cents AS rateCents, reason FROM prd_line_rates WHERE job_order_id = ? AND line_no = ? AND step_code = ? ORDER BY id DESC LIMIT 1')
+    .get(jobOrderId, lineNo, stepCode) as { rateCents: number; reason: string } | undefined;
+}
+
+/** Sets a line's rate for a step, for the pieces recorded from now on. Call inside a transaction. */
+export function setLineRate(db: Db, r: { jobOrderId: string; lineNo: number; stepCode: string; rateCents: number; reason: string }, who: Who): void {
+  db.prepare('INSERT INTO prd_line_rates (job_order_id, line_no, step_code, rate_cents, reason, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(r.jobOrderId, r.lineNo, r.stepCode, r.rateCents, r.reason, who.at, who.userId);
+}
+
 /** Opens a completed step again when cancelled pieces leave it short of the line (nothing of the line released yet). */
 export function reopenShort(db: Db, jobOrderId: string, lineNo: number, stepId: number, reason: string, who: Who): void {
   const line = lineState(db, jobOrderId).find((l) => l.lineNo === lineNo);
