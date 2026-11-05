@@ -377,7 +377,10 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
     };
   },
 
-  /** The item and wearers of each piece line, for the screens (load stays light: other modules read every run through it). */
+  /**
+   * The item and wearers of each piece line, for the screens: on a preview and on a recorded run. Not in compute, whose result
+   * must equal what load gives back, and not in load, which other modules call for every run.
+   */
   forViewer(db, doc) {
     return { ...doc, employees: doc.employees.map((e) => ({ ...e, lines: e.lines.map((l) => (l.assignmentId ? { ...l, work: pieceWork(db, l.assignmentId) } : l)) })) };
   },
