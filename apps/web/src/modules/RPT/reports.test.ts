@@ -11,6 +11,7 @@ import { IncomeStatement, BalanceSheet, ChangesInEquity } from './Statements.tsx
 import { CashFlow } from './CashFlow.tsx';
 import { BirBooks } from './BirBooks.tsx';
 import { MonthlyOwnersPack } from './MonthlyOwnersPack.tsx';
+import { OverviewFigures, ReportsOverview, lastWholeMonth, type OverviewData } from './Overview.tsx';
 import { PendingPeriod, ResultSummary, daysOverdue, periodLabel, statusWords } from './ReportParts.tsx';
 
 const fixture = vi.hoisted(() => ({ data: null as any, paths: [] as (string | null)[], applied: '', loaded: null as any }));
@@ -26,6 +27,49 @@ vi.mock('react', async (original) => {
 });
 const me = { permissions: ['rpt.books.view','rpt.signins.view','prd.view','pay.run.view'] } as Me;
 const render = (component: ComponentType<{ me: Me }>) => renderToStaticMarkup(createElement(component, { me }));
+const pl = (salesCents: number, netIncomeCents: number) => ({ salesCents, costOfSalesCents: 0, grossProfitCents: salesCents, operatingCents: 0, otherCents: 0, incomeBeforeTaxCents: netIncomeCents, incomeTaxCents: 0, netIncomeCents });
+const ratios = { netIncomeCents: -5000, netMarginBp: null, grossMarginBp: 6000, collectionRateBp: 8000, daysToCollect: 12 };
+const overview: OverviewData = { month: '2026-10', from: '2026-10-01', to: '2026-10-31', running: false, previousMonth: '2026-09', previousFrom: '2026-09-01', previousTo: '2026-09-30',
+  now: ratios, previous: { ...ratios, daysToCollect: null }, cashMonths: 0.5, averagePaidCents: 20000,
+  profit: { month: pl(10000, -5000), previous: pl(8000, 1000), yearToDate: pl(18000, -4000) }, cancelledExpenses: [{ number: 'EXP-1', amountCents: 3000 }],
+  cash: { openingCents: 100, netChangeCents: 50, closingCents: 150, sections: [{ key: 'operating', title: 'Operating activities', totalCents: 50, lines: [{ key: 'customerCollections', name: 'Collections from customers', amountCents: 50 }] }] },
+  trend: [{ ...pl(10000, -5000), month: '2026-10', from: '2026-10-01', to: '2026-10-31', cancelledExpenses: [] }],
+  expenses: { totalCents: 4000, rows: [{ code: '6110', name: 'Made-up rent', amountCents: 4000, previousCents: 1000 }] },
+  collect: { totalCents: 9000, overdueCents: 7000, customers: 1, rows: [{ customerName: 'Made-up customer', owedCents: 9000, overdueCents: 7000, daysOverdue: 33 }] },
+  bills: { totalCents: 500, overdueCents: 0, bills: 1, rows: [{ number: 'BILL-1', supplierName: 'Made-up supplier', dueDate: '2026-11-20', balanceCents: 500, late: false, documentPath: '/docs/ap.bill/1' }] },
+  customers: { totalCents: 10000, rows: [{ customerName: 'Made-up customer', salesCents: 10000, shareBp: 10000 }] },
+  review: [{ key: 'exceptions', label: 'Exceptions', count: 2, amountCents: null, ok: false, href: '/rpt/exceptions' }, { key: 'cash', label: 'Cash flow ties to the balance sheet', count: null, amountCents: null, ok: true, href: '/rpt/cash-flow' }] };
+describe('Reports overview', () => {
+  const show = (permissions: string[]) => renderToStaticMarkup(createElement(OverviewFigures, { data: overview, me: { permissions } as Me, docTypes: [] }));
+  it('reads the month as a manager does: ratios, profit and loss, cash, who to collect from, what to review', () => {
+    const markup = show(['rpt.books.view']);
+    for (const words of ['Gross margin', '60.0%', 'Days to collect', '12 days', 'Months of cash', 'Profit and loss', 'Year to date', 'Cash movement', 'Collect first', '33 days', 'Bills to pay', 'Top customers by sales', 'Before closing the month', '2 to review', 'All clear']) expect(markup).toContain(words);
+    expect(markup).toContain('EXP-1');
+    expect(markup).not.toContain('NaN');
+  });
+  it('reads the graphs out, so their details need no mouse', () => {
+    const markup = show(['rpt.books.view']);
+    expect(markup).toContain('aria-label="Net income by month"');
+    expect(markup).toContain('aria-label="October 2026. Sales:');
+    expect(markup).toContain('aria-label="Made-up rent. This month:');
+  });
+  it('links only the reports this person may open, and not itself', () => {
+    const markup = show(['rpt.books.view']);
+    expect(markup).toContain('href="/rpt/income-statement"');
+    expect(markup).not.toContain('href="/rpt/payroll-register"');
+    expect(markup).not.toContain('href="/rpt/overview"');
+    expect(show(['rpt.books.view', 'pay.run.view'])).toContain('href="/rpt/payroll-register"');
+  });
+  it('asks the server for the month in the address', () => {
+    vi.stubGlobal('location', { search: '?month=2026-09' });
+    renderToStaticMarkup(createElement(ReportsOverview, { me, docTypes: [] }));
+    expect(fixture.paths).toEqual(['overview?month=2026-09']);
+  });
+  it('opens on the last whole month', () => {
+    expect(lastWholeMonth('2026-11-05')).toBe('2026-10');
+    expect(lastWholeMonth('2026-01-15')).toBe('2025-12');
+  });
+});
 beforeEach(() => { fixture.data = null; fixture.paths = []; fixture.applied = ''; fixture.loaded = null; vi.stubGlobal('location', { search: '' }); });
 afterEach(() => vi.unstubAllGlobals());
 

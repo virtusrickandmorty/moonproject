@@ -14,6 +14,7 @@ import { divRoundHalfAway } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { rulesNow } from '../EST/public.ts';
 import { piecesReleasedBetween } from '../JO/public.ts';
+import { STOOD } from './statements.ts';
 
 const MONTHS_SHOWN = 6;
 const AVERAGE_OVER = 3;
@@ -22,8 +23,6 @@ const FAR_APART_BP = 1_000;
 
 const IS_DIRECT = `a.code LIKE '5%' AND COALESCE(a.role_key, '') <> 'DEPR_PRODUCTION'`;
 const IS_OVERHEAD = `(a.code LIKE '6%' OR a.role_key = 'DEPR_PRODUCTION')`;
-const STOOD = `j.sealed = 1 AND j.reverses_journal_id IS NULL
-  AND NOT EXISTS (SELECT 1 FROM journals r WHERE r.reverses_journal_id = j.id AND r.sealed = 1)`;
 
 /** "2026-11" and the months before it, oldest first. */
 function monthsTo(month: string, count: number): string[] {

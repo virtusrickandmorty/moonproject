@@ -36,8 +36,9 @@ async function mark(page: Page, employee: string, date: string) {
   }
   await cell.click();
   const status = page.getByRole('radiogroup', { name: 'Status' });
+  await expect(status).toBeVisible(); // count() does not wait for the window to open
   const present = status.getByRole('radio', { name: 'Present', exact: true });
-  await ((await present.count()) ? present : status.getByRole('radio', { name: /^Holiday, worked|^Worked/ }).first()).click();
+  await ((await present.count()) ? present : status.getByRole('radio', { name: 'Holiday worked', exact: true })).click();
   await page.getByRole('button', { name: 'Done', exact: true }).click();
   await page.getByRole('button', { name: /^Save \d+ changes?$/ }).click();
   await expect(page.getByText(/^Saved \d+ days?\.$/)).toBeVisible();

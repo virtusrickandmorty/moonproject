@@ -7,8 +7,8 @@ import { useLiveReload } from '../../live.ts';
 import { useEffect, useState, type ReactNode } from 'react';
 import { api, type DashCards } from '../../api.ts';
 import { Link } from '../../router.tsx';
-import { CARD_TITLE, SURFACE, peso } from '../../components/ui.tsx';
-import { TickBar, TrackChart, niceTop } from '../../components/charts.tsx';
+import { CARD_TITLE, SURFACE, peso, showDate } from '../../components/ui.tsx';
+import { TickBar, TrackChart, niceTop, type Tip } from '../../components/charts.tsx';
 
 /** Outline icons (Heroicons, MIT). */
 const PATHS = {
@@ -118,6 +118,12 @@ export function JobsCard({ jobs }: { jobs: NonNullable<DashCards['jobs']> }) {
 
 const weekday = (date: string) => new Intl.DateTimeFormat('en-PH', { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
 
+/** A day of pieces, as the week's graph shows it when pointed at. */
+export const dayTip = (d: NonNullable<DashCards['activity']>['days'][number]): Tip => ({ title: showDate(d.date), rows: [
+  { label: 'Pieces', value: d.pieces.toLocaleString('en-PH'), strong: true }, { label: 'Workers', value: d.workers.toLocaleString('en-PH') },
+  ...(d.workers ? [{ label: 'Pieces per worker', value: (Math.round((d.pieces / d.workers) * 10) / 10).toLocaleString('en-PH') }] : []),
+] });
+
 export function ActivityCard({ activity }: { activity: NonNullable<DashCards['activity']> }) {
   const top = niceTop(Math.max(0, ...activity.days.map((d) => d.pieces)));
   const best = activity.days.reduce((b, d) => (d.pieces > b.pieces ? d : b), activity.days[0]!);
@@ -127,7 +133,7 @@ export function ActivityCard({ activity }: { activity: NonNullable<DashCards['ac
   return <Card icon="clock" title="Pieces made this week" href="/rpt/production-status" grow>
     <div className="grid grid-cols-3 gap-2">{stat(activity.today, 'Pieces today')}{stat(activity.averagePerDay, 'Average a work day')}{stat(activity.workersToday, 'Workers today')}</div>
     <TrackChart height="h-56 xl:h-auto xl:min-h-56 xl:flex-1" label={`Pieces made each day: ${activity.days.map((d) => `${weekday(d.date)} ${d.pieces}`).join(', ')}`} top={top}
-      bars={activity.days.map((d) => ({ key: d.date, label: weekday(d.date), value: d.pieces, title: `${d.date}: ${d.pieces} pieces by ${d.workers} workers`, best: d.pieces > 0 && d === best }))} />
+      bars={activity.days.map((d) => ({ key: d.date, label: weekday(d.date), value: d.pieces, title: `${d.date}: ${d.pieces} pieces by ${d.workers} workers`, best: d.pieces > 0 && d === best, tip: dayTip(d) }))} />
   </Card>;
 }
 
@@ -176,7 +182,8 @@ export function StagesCard({ stages }: { stages: NonNullable<DashCards['stages']
       <ul className="flex flex-wrap gap-3 text-xs text-slate-600">{parts.map((p) => <li key={p.key} className="flex items-center gap-1.5"><span className={`size-2 rounded-full ${p.tone}`} />{p.label}</li>)}</ul>
     </div>
     <TickBar parts={parts.slice(0, 2).map((p) => ({ share: share(p.count), tone: p.tone }))} ticks={72} height="h-10" stretch
-      label={parts.map((p) => `${p.label} ${p.count}`).join(', ')} />
+      label={parts.map((p) => `${p.label} ${p.count}`).join(', ')}
+      tip={{ title: 'Open job orders', rows: [...parts.map((p) => ({ label: p.label, value: `${p.count} · ${Math.round(share(p.count) * 100)}%` })), { label: 'Open', value: String(open), strong: true }] }} />
     <ul className="grid grid-cols-2 gap-2 text-sm">
       {[...parts, { key: 'released', label: 'Released this month', count: released, tone: 'bg-white ring-1 ring-slate-300' }].map((p) => <li key={p.key} className="rounded-xl p-2.5 ring-1 ring-slate-100">
         <span className="flex items-center gap-1.5 text-xs text-slate-500"><span className={`size-2 rounded-full ${p.tone}`} />{p.label}</span>
