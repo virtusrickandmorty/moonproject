@@ -1,15 +1,41 @@
 /** Screen-only disclosures and totals; opening a section never changes its values. */
 import { useState, type ReactNode } from 'react';
-import { peso } from '../../components/ui.tsx';
-import type { PayLine, PayThirteenthEmployee } from '../../api.ts';
-import { qtyText, wearersText } from './run.ts';
+import { peso, showDate } from '../../components/ui.tsx';
+import type { PayLine, PayPieceWork, PayThirteenthEmployee } from '../../api.ts';
+import { earningRows, qtyText } from './run.ts';
 
-/** One line of a worker's earnings; a piece line also says the item and the wearers it was for (the owner's request, Nov 2026). */
-export function EarningLine({ line }: { line: PayLine }) {
-  return <div className="text-sm">
-    <div className="flex justify-between gap-3"><span>{line.description} {qtyText(line.kind, line.qty)}</span><span className="tabular-nums">{peso(line.amountCents)}</span></div>
-    {line.work && <p className="text-xs text-slate-600">{line.work.item}{line.work.wearers.length > 0 && <> · {wearersText(line.work.wearers)}</>}</p>}
+const piecesText = (n: number) => `${n} ${Math.abs(n) === 1 ? 'pc' : 'pcs'}`;
+
+/** The wearers of a piece line, closed until asked for: a line can have many. Each says their pieces, the rate and what that pays. */
+function WearerList({ wearers, rateCents }: { wearers: PayPieceWork['wearers']; rateCents: number }) {
+  return <details className="mt-1">
+    <summary className="cursor-pointer text-xs text-indigo-700">{wearers.length} {wearers.length === 1 ? 'wearer' : 'wearers'}</summary>
+    <table className="mt-1 w-full text-xs text-slate-600"><tbody>
+      {wearers.map((w, i) => <tr key={i}>
+        <td className="py-0.5 pr-2">{w.name}{w.size && <span className="text-slate-500"> ({w.size})</span>}</td>
+        <td className="whitespace-nowrap py-0.5 pr-2 text-right tabular-nums">{piecesText(w.pieces)} × {peso(rateCents)}</td>
+        <td className="whitespace-nowrap py-0.5 text-right tabular-nums">{peso(w.pieces * rateCents)}</td>
+      </tr>)}
+    </tbody></table>
+  </details>;
+}
+
+function PieceRow({ line, work }: { line: PayLine; work: PayPieceWork }) {
+  return <div className="border-t border-slate-100 py-1.5 first:border-t-0">
+    <div className="flex justify-between gap-3"><span className="min-w-0">{work.item}</span><span className="tabular-nums">{peso(line.amountCents)}</span></div>
+    <p className="text-xs text-slate-600">{work.step}{work.rowKind !== 'work' && ` (${work.rowKind})`} · {showDate(work.workDate)} · <span className="tabular-nums">{piecesText(line.qty)} × {peso(line.rateCents)}</span></p>
+    {work.wearers.length > 0 && <WearerList wearers={work.wearers} rateCents={line.rateCents} />}
   </div>;
+}
+
+/** A worker's earnings; piece work sits under its job order, a row per item (the owner's request, Nov 2026). */
+export function Earnings({ lines }: { lines: PayLine[] }) {
+  return <>{earningRows(lines).map((row) => 'line' in row
+    ? <div key={row.line.lineNo} className="flex justify-between gap-3 text-sm"><span>{row.line.description} {qtyText(row.line.kind, row.line.qty)}</span><span className="tabular-nums">{peso(row.line.amountCents)}</span></div>
+    : <section key={row.jobOrder} aria-label={row.jobOrder} className="rounded-lg px-3 py-2 text-sm ring-1 ring-slate-200/70">
+        <div className="flex justify-between gap-3 border-b border-slate-200 pb-1 font-medium"><span>{row.jobOrder}</span><span className="tabular-nums">{peso(row.totalCents)}</span></div>
+        {row.lines.map((l) => <PieceRow key={l.lineNo} line={l} work={l.work!} />)}
+      </section>)}</>;
 }
 
 export function PayDetails({ title, active = false, children }: { title: string; active?: boolean; children: ReactNode }) {

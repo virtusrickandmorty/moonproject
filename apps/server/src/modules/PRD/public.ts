@@ -5,8 +5,8 @@ import type { Db } from '../../platform/db/driver.ts';
 
 export { COMPLEXITIES, listSteps, stepById, type Complexity, type Step } from './production.ts';
 export { board } from './production.ts';
-import { coverage, lineDone, lineFinished, lineRoute, lineSetup, reworkFlow, routeDone, type Part } from './production.ts';
-import { rosterOf } from '../JO/public.ts';
+import { coverage, lineDone, lineFinished, lineRoute, lineSetup, reworkFlow, routeDone, stepById, type Part } from './production.ts';
+import { jobOrderRef, rosterOf } from '../JO/public.ts';
 import { lineState } from '../JO/public.ts';
 
 /**
@@ -88,11 +88,15 @@ export function entriesOf(db: Db, jobOrderId: string): { id: string; number: str
     .all(jobOrderId) as { id: string; number: string }[];
 }
 
-/** What a piece row was for: the job order item (and part of a set) and the wearers ticked on it. */
-export interface PieceWork { item: string; wearers: { name: string; size: string | null; pieces: number }[] }
+/** What a piece row was for: its job order, item (and part of a set), step and day, and the wearers ticked on it. */
+export interface PieceWork {
+  jobOrder: string; item: string; step: string; workDate: string; rowKind: 'work' | 'rework' | 'correction';
+  wearers: { name: string; size: string | null; pieces: number }[];
+}
 /** For payroll's earnings (the owner's request, Nov 2026). A row with no wearers ticked, a correction for one, gives the item alone. */
 export function pieceWork(db: Db, assignmentId: string): PieceWork | null {
-  const a = db.prepare('SELECT job_order_id AS jobOrderId, line_no AS lineNo, part FROM prd_assignments WHERE id = ?').get(assignmentId) as { jobOrderId: string; lineNo: number; part: Part | 'whole' } | undefined;
+  const a = db.prepare('SELECT job_order_id AS jobOrderId, line_no AS lineNo, part, step_id AS stepId, work_date AS workDate, kind AS rowKind FROM prd_assignments WHERE id = ?').get(assignmentId) as
+    { jobOrderId: string; lineNo: number; part: Part | 'whole'; stepId: number; workDate: string; rowKind: PieceWork['rowKind'] } | undefined;
   const line = a && lineState(db, a.jobOrderId).find((l) => l.lineNo === a.lineNo);
   if (!a || !line) return null;
   const ticked = db.prepare('SELECT roster_row_no AS rowNo, pieces FROM prd_assignment_wearers WHERE assignment_id = ? ORDER BY roster_row_no').all(assignmentId) as { rowNo: number; pieces: number | null }[];
@@ -100,6 +104,7 @@ export function pieceWork(db: Db, assignmentId: string): PieceWork | null {
   const sizeOf = (w: { size: string | null; lowerSize: string | null }) =>
     (a.part === 'upper' ? w.size : a.part === 'lower' ? w.lowerSize : [w.size, w.lowerSize].filter(Boolean).join(' / ')) || null;
   return {
+    jobOrder: jobOrderRef(db, a.jobOrderId)?.number ?? 'JO', step: stepById(db, a.stepId)?.name ?? 'Step', workDate: a.workDate, rowKind: a.rowKind,
     item: a.part === 'whole' ? line.description : `${line.description} (${a.part})`,
     wearers: ticked.flatMap((t) => {
       const w = roster.get(t.rowNo);

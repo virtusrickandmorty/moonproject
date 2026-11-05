@@ -3,7 +3,7 @@
  * deductions a payslip lists. Pure, so they are tested without a browser; the server works everything out again.
  */
 import { formatPeso as peso } from '@moonproject/shared';
-import type { LoanKind, PayDeductionGoesTo, PayEmployee, PayGroup, PayLoan, PayRunInput, PayThirteenthInput, Payslips, PriorAmounts } from '../../api.ts';
+import type { LoanKind, PayDeductionGoesTo, PayEmployee, PayGroup, PayLine, PayLoan, PayRunInput, PayThirteenthInput, Payslips, PriorAmounts } from '../../api.ts';
 import { cents } from '../COL/money.ts';
 
 export const GROUP_LABEL: Record<PayGroup, string> = { WEEKLY_PIECE: 'Weekly (piece rate)', WEEKLY_DAILY: 'Weekly (daily paid)', SEMI_DAILY: 'Semi-monthly (daily paid)', SEMI_MONTHLY: 'Semi-monthly (monthly staff)' };
@@ -150,9 +150,23 @@ export function qtyText(kind: string, qty: number): string {
   return kind === 'piece' ? `${qty} pcs` : '';
 }
 
-/** The wearers of a piece line, "Ana Reyes (M), Ben Cruz (L) × 2": the size when there is one, the pieces when more than one. */
-export function wearersText(wearers: { name: string; size: string | null; pieces: number }[]): string {
-  return wearers.map((w) => `${w.name}${w.size ? ` (${w.size})` : ''}${w.pieces > 1 ? ` × ${w.pieces}` : ''}`).join(', ');
+/** A worker's earnings as shown: other lines one by one, piece lines gathered under their job order where its first one stood. */
+export type EarningRow = { line: PayLine } | { jobOrder: string; totalCents: number; lines: PayLine[] };
+export function earningRows(lines: PayLine[]): EarningRow[] {
+  const rows: EarningRow[] = [];
+  const groups = new Map<string, { jobOrder: string; totalCents: number; lines: PayLine[] }>();
+  for (const line of lines) {
+    if (!line.work) { rows.push({ line }); continue; }
+    let group = groups.get(line.work.jobOrder);
+    if (!group) {
+      group = { jobOrder: line.work.jobOrder, totalCents: 0, lines: [] };
+      groups.set(line.work.jobOrder, group);
+      rows.push(group);
+    }
+    group.lines.push(line);
+    group.totalCents += line.amountCents;
+  }
+  return rows;
 }
 
 /** A changed 13th-month amount as typed: the amount and why. */

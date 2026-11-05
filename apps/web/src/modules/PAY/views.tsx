@@ -12,7 +12,7 @@ import { Link } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { GROUP_LABEL, deductionsOf, finalPayText, loansLeft, qtyText, thirteenthText, yearEndDetail, yearEndText } from './run.ts';
 import type { PayRunDoc, PayThirteenthDoc } from '../../api.ts';
-import { EarningLine, PayDetails, PayTotal, ThirteenthCalculation } from './entry.tsx';
+import { Earnings, PayDetails, PayTotal, ThirteenthCalculation } from './entry.tsx';
 
 /** The "Final pay" badge of an employee separated within the run's period. */
 export const FinalBadge = () => <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-900">Final pay</span>;
@@ -49,7 +49,7 @@ function RunParts({ d }: { d: DocDetail }) {
           <TickBar parts={[{ share: e.grossCents > 0 ? Math.max(0, e.netCents) / e.grossCents : 0, tone: 'bg-indigo-600' }]} ticks={120} height="h-4" stretch label={`Net pay ${e.grossCents > 0 ? Math.round((Math.max(0, e.netCents) / e.grossCents) * 100) : 0}% of gross`} />
           <p className="text-sm">Gross {peso(e.grossCents)} − deductions {peso(e.grossCents - e.netCents + (e.wtaxRefundCents ?? 0))}{(e.wtaxRefundCents ?? 0) > 0 && <> + tax refund {peso(e.wtaxRefundCents!)}</>}</p>
           <PayDetails title="Earnings and deductions">
-            {e.lines.map((l) => <EarningLine key={l.lineNo} line={l} />)}
+            <Earnings lines={e.lines} />
             {deductionsOf(e).map(([label, amount]) => <div key={label} className="flex justify-between gap-3 text-sm"><span>Less {label}</span><span className="tabular-nums">{peso(amount)}</span></div>)}
             {e.yearEnd && <p className="text-sm">Year-end tax: {yearEndText(e)}</p>}
           </PayDetails>
