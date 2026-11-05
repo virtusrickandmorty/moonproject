@@ -410,7 +410,7 @@ export interface FloorScan {
 export interface OwnPayslip {
   runId: string; number: string; payDate: string; periodStart: string; periodEnd: string;
   earnings: PayLine[]; grossCents: number;
-  deductions: { what: string; amountCents: number }[]; refundCents: number; netCents: number; released: boolean;
+  deductions: { what: string; amountCents: number }[]; refundCents: number; netCents: number; released: boolean; paidCents: number;
 }
 export interface PrdChecks { waiting: (FloorScan & { amountCents: number; problems: string[]; yours: boolean })[]; checked: (FloorScan & { checkedBy: string | null })[] }
 /** The open job orders with pieces left on the steps the worker does. ready: came out of the step before; waiting: scanned, not checked. */
@@ -639,7 +639,7 @@ export interface ThirteenthYears { years: number[]; recorded: { payGroup: PayGro
 /** A recorded payroll run, or 13th-month pay (its period is the year), with net pay still to release. */
 export interface RunToRelease { id: string; number: string; kind: 'run' | 'thirteenth'; payGroup: PayGroup; periodStart: string; periodEnd: string; dueCents: number }
 export interface ReleaseRow {
-  employeeId: string; name: string; netCents: number; releasedBy: string | null;
+  employeeId: string; name: string; netCents: number; paidCents: number; leftCents: number; releasedBy: string | null;
   /** How the employee is paid, and their bank or GCash QR picture's version (null: none), for the release form. */
   payoutMethod: 'cash' | 'bank' | 'gcash'; payoutAccount: string | null; payoutQrVersion: number | null;
 }

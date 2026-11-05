@@ -122,7 +122,7 @@ describe('web client for payroll', () => {
     const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
     await api.savePayoutQr(ana, { name: 'gcash.png', data: png });
     const status = await api.releaseStatus(run.id);
-    expect(status).toEqual([{ employeeId: ana, name: 'Ana Tahi', netCents: slips.employees[0]!.netCents, releasedBy: null, payoutMethod: 'cash', payoutAccount: null, payoutQrVersion: 1 }]);
+    expect(status).toEqual([{ employeeId: ana, name: 'Ana Tahi', netCents: slips.employees[0]!.netCents, paidCents: 0, leftCents: slips.employees[0]!.netCents, releasedBy: null, payoutMethod: 'cash', payoutAccount: null, payoutQrVersion: 1 }]);
     const pic = await env.app.inject({ url: api.releaseQrUrl(run.id, ana, 1), headers: { cookie: jar.cookie } });
     expect([pic.statusCode, pic.headers['content-type'], pic.rawPayload.toString('base64')]).toEqual([200, 'image/png', png]);
     const other = addEmployee(env.db, 'Not In This Run');

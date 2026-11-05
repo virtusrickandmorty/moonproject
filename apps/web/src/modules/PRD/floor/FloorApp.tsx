@@ -527,7 +527,7 @@ function Payslips() {
               <button type="button" aria-expanded={open === p.runId} onClick={() => setOpen(open === p.runId ? null : p.runId)} className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left">
                 <span>
                   <span className="block text-sm font-bold">{short(p.periodStart)} – {short(p.periodEnd)}</span>
-                  <span className={`text-xs font-bold ${p.released ? 'text-emerald-800' : 'text-amber-800'}`}>{p.released ? 'Paid' : 'Not paid yet'}</span>
+                  <span className={`text-xs font-bold ${p.released ? 'text-emerald-800' : 'text-amber-800'}`}>{p.released ? 'Paid' : p.paidCents > 0 ? `${peso(p.paidCents)} paid, ${peso(p.netCents - p.paidCents)} left` : 'Not paid yet'}</span>
                 </span>
                 <span className="text-right">
                   <span className="block text-xl font-extrabold tabular-nums">{peso(p.netCents)}</span>

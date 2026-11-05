@@ -17,7 +17,7 @@ export interface OwnPayslip {
   earnings: { lineNo: number; kind: string; description: string; qty: number; rateCents: number; multiplierBp: number; amountCents: number; work?: PieceWork | null }[]; grossCents: number;
   /** Each deduction, in the payslip's order; a tax refund comes back as `refundCents`. */
   deductions: { what: string; amountCents: number }[]; refundCents: number;
-  netCents: number; released: boolean;
+  netCents: number; released: boolean; paidCents: number;
 }
 
 /** The payslips of the signed-in account's employee, newest first. */
@@ -31,6 +31,7 @@ export function ownPayslips(db: Db, userId: string, limit = 8): OwnPayslip[] {
     const run = runDoc.load(db, r.id);
     const e = run.employees.find((x) => x.employeeId === me.id);
     if (!e) return [];
+    const status = releaseStatus(db, r.id).find((s) => s.employeeId === me.id);
     const deductions = [
       { what: 'SSS', amountCents: e.sssEeCents }, { what: 'PhilHealth', amountCents: e.phicEeCents }, { what: 'Pag-IBIG', amountCents: e.hdmfEeCents },
       { what: 'Withholding tax', amountCents: e.wtaxCents }, { what: 'Cash advance', amountCents: e.caCents },
@@ -45,7 +46,7 @@ export function ownPayslips(db: Db, userId: string, limit = 8): OwnPayslip[] {
         ...(l.assignmentId ? { work: pieceWork(db, l.assignmentId) } : {}),
       })), grossCents: e.grossCents,
       deductions, refundCents: e.wtaxRefundCents ?? 0, netCents: e.netCents,
-      released: !!releaseStatus(db, r.id).find((s) => s.employeeId === me.id)?.releasedBy,
+      released: !!status?.releasedBy, paidCents: status?.paidCents ?? 0,
     }];
   });
 }

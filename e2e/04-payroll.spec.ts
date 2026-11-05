@@ -89,11 +89,24 @@ test('payroll: an employee, a week of attendance, the run, its release and the p
   await expect(page.getByText(/^Recorded as PAY-\d+\.$/)).toBeVisible();
   await expect(page.getByRole('region', { name: 'Erin Tailor', exact: true })).toContainText(net);
 
-  // Its release: the net pay, paid from the cash box.
+  // Its release: part of the net pay first, one at a time, from the cash box; the rest stays owed.
   await page.getByRole('link', { name: 'Release net pay' }).click();
   await expect(page.getByLabel(/Erin Tailor/)).toBeChecked();
+  await page.getByRole('radio', { name: 'One at a time' }).click();
+  await page.getByRole('button', { name: 'Release', exact: true }).click();
+  const one = page.getByRole('dialog', { name: "Release Erin Tailor's pay" });
+  await one.getByLabel('Amount to release now').fill('100.00');
+  await one.getByRole('radio', { name: /^Cash on hand/ }).click();
+  await expect(one.getByText(/stays owed to Erin Tailor/)).toBeVisible();
+  await one.getByRole('button', { name: "Record Erin Tailor's release" }).click();
+  await expect(page.getByText(/^POUT-\d+ recorded: ₱100\.00 of Erin Tailor's pay is released/).first()).toBeVisible();
+
+  // Then what is left, together.
+  await page.getByRole('radio', { name: 'Together' }).click();
+  await expect(page.getByLabel(/Erin Tailor/)).toBeChecked();
+  await expect(page.getByLabel(/Erin Tailor/)).toBeEnabled();
   await page.getByRole('radio', { name: /^Cash on hand/ }).click();
-  await page.getByLabel('Amount').fill(net.replace('₱', ''));
+  await page.getByLabel('Amount').fill((Number(net.replace(/[₱,]/g, '')) - 100).toFixed(2));
   await page.getByRole('button', { name: 'Record', exact: true }).click();
   await page.getByRole('dialog', { name: 'Record this Payroll Release?' }).getByRole('button', { name: 'Record', exact: true }).click();
   await expect(page.getByText(/^Recorded as POUT-\d+\.$/)).toBeVisible();

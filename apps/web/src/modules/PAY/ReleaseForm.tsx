@@ -1,17 +1,18 @@
 /**
  * Payroll release form (PLAN D5 PAY-REL): pick a recorded run with net pay still to release, tick who is paid now (all by
- * default), and say where the money came from, split across cash places if needed. Each person's pay is released once.
+ * default), and say where the money came from, split across cash places if needed. Together pays what each person has left.
  * Or one at a time (the owner's request, Oct 2026): each person released on their own, from a window with their payslip,
- * their QR code and where the money came from (split if needed), staying on the form for the next person.
+ * their QR code and where the money came from (split if needed), staying on the form for the next person. There, part of
+ * their pay may be released and the rest later (the owner's request, Nov 2026).
  */
 import { useEffect, useRef, useState } from 'react';
 import { formatPesos } from '@moonproject/shared';
 import { api, ApiError, newIdempotencyKey, type CashPlace, type DocTypeInfo, type Payslips, type Preview, type ReleaseRow, type RunToRelease } from '../../api.ts';
 import { Link, navigate } from '../../router.tsx';
-import { Button, Dialog, Loading, Notice, Panel, peso, showDate, useAction } from '../../components/ui.tsx';
+import { Button, Dialog, Field, Loading, Notice, Panel, inputClass, peso, showDate, useAction } from '../../components/ui.tsx';
 import { RecordDialog, type FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
-import { emptyTender, sum, tendersToInput, type TenderRow } from '../COL/money.ts';
+import { cents, emptyTender, sum, tendersToInput, type TenderRow } from '../COL/money.ts';
 import { Errors, TenderRows, useLive } from '../COL/parts.tsx';
 import { GROUP_LABEL } from './run.ts';
 import { PayslipCard } from './views.tsx';
@@ -19,6 +20,10 @@ import { BILLS, COINS, addUp, breakdown, denomination } from './cash.ts';
 
 /** "Paid by" on the employee record; cash has no account, so its QR is a bank or GCash one. */
 const PAID_BY = { cash: 'bank or GCash', bank: 'Bank', gcash: 'GCash' } as const;
+
+/** What a person shows on the form: what is left to release, or their net pay when nothing is. */
+const shownCents = (r: ReleaseRow) => (r.leftCents > 0 ? r.leftCents : r.netCents);
+const partPaid = (r: ReleaseRow) => (r.paidCents > 0 && r.leftCents > 0 ? ` (${peso(r.paidCents)} of ${peso(r.netCents)} paid)` : '');
 
 function QrIcon() {
   return (
@@ -50,7 +55,7 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
     api.cashPlaces().then(setPlaces, fail);
   }, []);
   const wanted = useRef('');
-  const loadRows = (id: string) => api.releaseStatus(id).then((r) => wanted.current === id && (setRows(r), setPicked(new Set(r.filter((x) => !x.releasedBy && x.netCents > 0).map((x) => x.employeeId)))), fail);
+  const loadRows = (id: string) => api.releaseStatus(id).then((r) => wanted.current === id && (setRows(r), setPicked(new Set(r.filter((x) => x.leftCents > 0).map((x) => x.employeeId)))), fail);
   useEffect(() => {
     setRows([]);
     setReleased('');
@@ -59,15 +64,15 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
   }, [runId]);
   const run = runs?.find((r) => r.id === runId);
   /** One person released from the window: say so, and show who is left (the run leaves the list once everyone is paid). */
-  const releasedOne = (number: string, name: string) => {
+  const releasedOne = (number: string, words: string) => {
     setSingle(null);
-    setReleased(`${number} recorded: ${name}'s pay is released.`);
+    setReleased(`${number} recorded: ${words}`);
     void loadRows(runId);
     api.runsToRelease().then(setRuns, fail);
   };
 
   const due = rows.filter((r) => picked.has(r.employeeId));
-  const total = sum(due.map((r) => r.netCents));
+  const total = sum(due.map((r) => r.leftCents));
   const pay = tendersToInput(tenders, 'pick where the money came from');
   const errors = [...(runId ? [] : ['Pick the payroll run.']), ...(due.length ? [] : ['Tick who is paid now.']), ...pay.errors];
   const input = { runId, employeeIds: due.map((r) => r.employeeId), tenders: pay.tenders };
@@ -115,21 +120,21 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
                   className={`rounded-md px-3 py-1.5 font-medium ${oneByOne === one ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-900'}`}>{label}</button>
               ))}
             </div>
-            {oneByOne && <p className="mb-2 text-xs text-slate-500">Each person is released on their own: their payslip, their QR code and where the money came from, split if needed.</p>}
+            {oneByOne && <p className="mb-2 text-xs text-slate-500">Each person is released on their own: their payslip, their QR code and where the money came from, split if needed. You can release part of their pay and the rest later.</p>}
             {released && <Notice tone="success">{released}</Notice>}
             {oneByOne && rows.map((r) => (
-              <div key={r.employeeId} className={`flex items-center justify-between gap-2 border-b border-slate-100 py-1.5 text-sm last:border-0 ${r.releasedBy || r.netCents <= 0 ? 'text-slate-400' : ''}`}>
-                <span className="min-w-0">{r.name}{r.releasedBy ? ` (released by ${r.releasedBy})` : r.netCents <= 0 ? ' (no net pay)' : ''}</span>
+              <div key={r.employeeId} className={`flex items-center justify-between gap-2 border-b border-slate-100 py-1.5 text-sm last:border-0 ${r.leftCents > 0 ? '' : 'text-slate-400'}`}>
+                <span className="min-w-0">{r.name}{r.releasedBy ? ` (released by ${r.releasedBy})` : r.netCents <= 0 ? ' (no net pay)' : partPaid(r)}</span>
                 <span className="flex shrink-0 items-center gap-3">
-                  <span className="tabular-nums">{peso(r.netCents)}</span>
-                  {!r.releasedBy && r.netCents > 0 && <Button disabled={!type.canPost} onClick={() => (setReleased(''), setSingle(r))}>Release</Button>}
+                  <span className="tabular-nums">{peso(shownCents(r))}</span>
+                  {r.leftCents > 0 && <Button disabled={!type.canPost} onClick={() => (setReleased(''), setSingle(r))}>Release</Button>}
                 </span>
               </div>
             ))}
             {!oneByOne && rows.map((r) => (
-              <div key={r.employeeId} className={`flex items-center justify-between gap-2 text-sm ${r.releasedBy || r.netCents <= 0 ? 'text-slate-400' : ''}`}>
+              <div key={r.employeeId} className={`flex items-center justify-between gap-2 text-sm ${r.leftCents > 0 ? '' : 'text-slate-400'}`}>
                 <span className="flex min-w-0 items-center gap-1.5">
-                  <label><input type="checkbox" disabled={!!r.releasedBy || r.netCents <= 0} checked={picked.has(r.employeeId)} onChange={() => toggle(r.employeeId)} /> {r.name}{r.releasedBy ? ` (released by ${r.releasedBy})` : ''}</label>
+                  <label><input type="checkbox" disabled={r.leftCents <= 0} checked={picked.has(r.employeeId)} onChange={() => toggle(r.employeeId)} /> {r.name}{r.releasedBy ? ` (released by ${r.releasedBy})` : partPaid(r)}</label>
                   {/* Their bank or GCash QR code, to scan when sending the pay (the owner's request, Oct 2026). */}
                   {r.payoutQrVersion !== null && (
                     <button type="button" onClick={() => setQrOf(r)} aria-label={`Show ${r.name}'s ${PAID_BY[r.payoutMethod]} QR code`} title={`${PAID_BY[r.payoutMethod]} QR code`}
@@ -138,7 +143,7 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
                     </button>
                   )}
                 </span>
-                <span className="tabular-nums">{peso(r.netCents)}</span>
+                <span className="tabular-nums">{peso(shownCents(r))}</span>
               </div>
             ))}
           </Panel>
@@ -157,8 +162,8 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
       <div className="space-y-4 self-start">
       {oneByOne ? (
         <Panel title="Still to release">
-          <p className="text-2xl font-semibold tabular-nums">{peso(sum(rows.filter((r) => !r.releasedBy && r.netCents > 0).map((r) => r.netCents)))}</p>
-          <p className="text-sm text-slate-600">{rows.filter((r) => !r.releasedBy && r.netCents > 0).length} of {rows.length} people</p>
+          <p className="text-2xl font-semibold tabular-nums">{peso(sum(rows.map((r) => r.leftCents)))}</p>
+          <p className="text-sm text-slate-600">{rows.filter((r) => r.leftCents > 0).length} of {rows.length} people</p>
         </Panel>
       ) : <Panel title="So far">
         <p className="text-2xl font-semibold tabular-nums">{peso(total)}</p>
@@ -168,7 +173,7 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
       </Panel>}
       {rows.length > 0 && (
         <div>
-          <CashToPrepare people={(oneByOne ? rows.filter((r) => !r.releasedBy && r.netCents > 0) : due).map((r) => ({ name: r.name, netCents: r.netCents, method: r.payoutMethod }))}
+          <CashToPrepare people={(oneByOne ? rows.filter((r) => r.leftCents > 0) : due).map((r) => ({ name: r.name, netCents: r.leftCents, method: r.payoutMethod }))}
             title={oneByOne ? 'Cash to prepare: still to release' : 'Cash to prepare'} />
         </div>
       )}
@@ -193,11 +198,12 @@ export function ReleaseForm({ type, mode }: { type: DocTypeInfo; mode: FormMode 
  * from, split across cash places if needed (part cash, part GCash). Records a release of that one person.
  */
 function ReleaseOne({ type, run, row, places, onReleased, onClose }: {
-  type: DocTypeInfo; run: RunToRelease; row: ReleaseRow; places: CashPlace[]; onReleased: (number: string, name: string) => void; onClose: () => void;
+  type: DocTypeInfo; run: RunToRelease; row: ReleaseRow; places: CashPlace[]; onReleased: (number: string, words: string) => void; onClose: () => void;
 }) {
   const [slips, setSlips] = useState<Payslips | null>(null);
   const [slipError, setSlipError] = useState('');
-  const [tenders, setTenders] = useState<TenderRow[]>([{ ...emptyTender(), amount: (row.netCents / 100).toFixed(2) }]);
+  const [amount, setAmount] = useState((row.leftCents / 100).toFixed(2));
+  const [tenders, setTenders] = useState<TenderRow[]>([{ ...emptyTender(), amount: (row.leftCents / 100).toFixed(2) }]);
   const [touched, setTouched] = useState(false);
   const [key] = useState(newIdempotencyKey);
   const [bigQr, setBigQr] = useState(false);
@@ -208,16 +214,25 @@ function ReleaseOne({ type, run, row, places, onReleased, onClose }: {
   const slip = slips?.employees.find((e) => e.employeeId === row.employeeId);
   const pay = tendersToInput(tenders, 'pick where the money came from');
   const paid = sum(pay.tenders.map((t) => t.amountCents));
-  const input = { runId: run.id, employeeIds: [row.employeeId], tenders: pay.tenders };
-  const live = useLive(JSON.stringify(input), pay.errors.length === 0, () => api.preview(type.key, input));
+  const typed = cents(amount);
+  const amountError = typed === undefined || typed <= 0 ? 'Type the amount to release now, like 1,000.00.' : typed > row.leftCents ? `Only ${peso(row.leftCents)} is left to release.` : '';
+  const nowCents = amountError ? 0 : typed!;
+  const errors = [...(amountError ? [amountError] : []), ...pay.errors];
+  const input = { runId: run.id, employeeIds: [row.employeeId], tenders: pay.tenders, ...(nowCents > 0 && nowCents !== row.leftCents ? { amounts: [{ employeeId: row.employeeId, amountCents: nowCents }] } : {}) };
+  const live = useLive(JSON.stringify(input), errors.length === 0, () => api.preview(type.key, input));
+  /** With one place to pay from, its amount follows; when split, the places are typed by hand. */
+  const changeAmount = (text: string) => {
+    setAmount(text);
+    setTenders((t) => (t.length === 1 ? [{ ...t[0]!, amount: text }] : t));
+  };
   const record = () => a.run(async () => {
     setTouched(true);
-    if (pay.errors.length) return;
+    if (errors.length) return;
     const pre = await api.preview(type.key, input);
     const stop = pre.issues.find((i) => i.level === 'error');
     if (stop) throw new Error(stop.message);
     const r = await api.post(type.key, input, pre.totalCents, key);
-    onReleased(r.number, row.name);
+    onReleased(r.number, nowCents < row.leftCents ? `${peso(nowCents)} of ${row.name}'s pay is released, ${peso(row.leftCents - nowCents)} still to release.` : `${row.name}'s pay is released.`);
   });
   const qrName = { cash: 'bank or GCash', bank: 'Bank', gcash: 'GCash' }[row.payoutMethod];
   const qrSrc = row.payoutQrVersion !== null ? api.releaseQrUrl(run.id, row.employeeId, row.payoutQrVersion) : null;
@@ -233,6 +248,10 @@ function ReleaseOne({ type, run, row, places, onReleased, onClose }: {
         </div>
         <div className="space-y-3">
           <p className="text-sm">Net pay <span className="text-xl font-semibold tabular-nums">{peso(row.netCents)}</span></p>
+          {row.paidCents > 0 && <p className="text-sm text-slate-600">Already released {peso(row.paidCents)}, {peso(row.leftCents)} left</p>}
+          <Field label="Amount to release now" hint="Less than the full amount: the rest stays owed and can be released later.">
+            <input aria-label="Amount to release now" inputMode="decimal" className={inputClass + ' text-right'} value={amount} onChange={(e) => changeAmount(e.target.value)} />
+          </Field>
           {qrSrc && (
             // Opens big in a window of its own (the owner's request, Oct 2026), easier to scan from a phone.
             <button type="button" onClick={() => setBigQr(true)} title="Open the QR code big"
@@ -245,10 +264,11 @@ function ReleaseOne({ type, run, row, places, onReleased, onClose }: {
             </button>
           )}
           <h3 className="text-sm font-semibold">Where did the money come from?</h3>
-          <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money come from?" amountHint={formatPesos(row.netCents)} />
-          {row.payoutMethod === 'cash' && <CashToPrepare people={[{ name: row.name, netCents: row.netCents, method: 'cash' }]} title="Cash to prepare" compact />}
-          <p className="text-sm text-slate-600">Paid out {peso(paid)} of {peso(row.netCents)}{paid !== row.netCents && paid > 0 ? ` (${peso(row.netCents - paid)} ${paid < row.netCents ? 'short' : 'over'})` : ''}</p>
-          <Errors list={pay.errors} show={touched} />
+          <TenderRows rows={tenders} onChange={setTenders} places={places} question="Where did the money come from?" amountHint={formatPesos(nowCents)} />
+          {row.payoutMethod === 'cash' && <CashToPrepare people={[{ name: row.name, netCents: nowCents, method: 'cash' }]} title="Cash to prepare" compact />}
+          <p className="text-sm text-slate-600">Paid out {peso(paid)} of {peso(nowCents)}{paid !== nowCents && paid > 0 ? ` (${peso(Math.abs(nowCents - paid))} ${paid < nowCents ? 'short' : 'over'})` : ''}</p>
+          {nowCents > 0 && nowCents < row.leftCents && <Notice tone="note">{peso(row.leftCents - nowCents)} stays owed to {row.name}.</Notice>}
+          <Errors list={errors} show={touched} />
           {live?.issues.filter((i) => i.level === 'error').map((i) => <Notice key={i.code + i.message} tone={i.level}>{i.message}</Notice>)}
           {a.error && <Notice>{a.error}</Notice>}
           <div className="flex gap-2">
