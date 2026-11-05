@@ -105,7 +105,7 @@ export function payRoutes(app: FastifyInstance, deps: AppDeps): void {
       )
       .all() as { id: string; number: string; kind: 'run' | 'thirteenth'; payGroup: string; periodStart: string; periodEnd: string }[];
     // The newest 50 with pay still due: picked after the check, so an old run with one person left unpaid stays on the list.
-    return runs.map((r) => ({ ...r, dueCents: releaseStatus(db, r.id).filter((s) => !s.releasedBy).reduce((s, x) => s + x.netCents, 0) })).filter((r) => r.dueCents > 0).slice(0, 50);
+    return runs.map((r) => ({ ...r, dueCents: releaseStatus(db, r.id).reduce((s, x) => s + x.leftCents, 0) })).filter((r) => r.dueCents > 0).slice(0, 50);
   });
 
   /**

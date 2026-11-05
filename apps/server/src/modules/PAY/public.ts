@@ -232,8 +232,11 @@ export function payrollReleasesAfter(db: Db, after: number, limit: number): { it
        WHERE d.rowid > ? AND d.doc_type = 'pay.release' ORDER BY d.rowid LIMIT ?`,
     )
     .all(after, limit) as (PayrollRelease & { cursor: number; status: string })[];
-  const who = db.prepare('SELECT employee_id FROM pay_release_lines WHERE document_id = ? ORDER BY rowid').pluck();
-  const items = raw.filter((r) => r.status === 'posted').map(({ cursor: _c, status: _s, ...rel }) => ({ ...rel, employeeIds: who.all(rel.id) as string[] }));
+  // Paid part by part, a worker gets the payslip with their first release, not with each one.
+  const who = db.prepare(`SELECT l.employee_id FROM pay_release_lines l WHERE l.document_id = @id AND NOT EXISTS (
+      SELECT 1 FROM pay_release_lines e JOIN pay_releases x ON x.document_id = e.document_id JOIN documents d ON d.id = e.document_id
+      WHERE x.run_id = @runId AND e.employee_id = l.employee_id AND d.status = 'posted' AND d.rowid < @before) ORDER BY l.rowid`).pluck();
+  const items = raw.filter((r) => r.status === 'posted').map(({ cursor, status: _s, ...rel }) => ({ ...rel, employeeIds: who.all({ id: rel.id, runId: rel.runId, before: cursor }) as string[] }));
   return { items, next: raw.length < limit ? payrollScanEdge(db) : raw[raw.length - 1]!.cursor };
 }
 
@@ -278,7 +281,7 @@ export function payToRelease(db: Db): { id: string; number: string; people: numb
   const ids = db.prepare(`SELECT d.id, d.number FROM documents d WHERE d.status = 'posted' AND d.doc_type IN ('pay.run', 'pay.thirteenth') ORDER BY d.posted_at DESC LIMIT 50`)
     .all() as { id: string; number: string }[];
   return ids.map((r) => {
-    const due = releaseStatus(db, r.id).filter((s) => !s.releasedBy && s.netCents > 0);
-    return { ...r, people: due.length, dueCents: due.reduce((n, s) => n + s.netCents, 0) };
+    const due = releaseStatus(db, r.id).filter((s) => s.leftCents > 0);
+    return { ...r, people: due.length, dueCents: due.reduce((n, s) => n + s.leftCents, 0) };
   }).filter((r) => r.people > 0);
 }
