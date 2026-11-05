@@ -18,7 +18,7 @@
 import { divRoundHalfAway, formatPeso, type Issue } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { attendanceBetween, employeesInGroup, holidaysBetween, paidDaysBetween, payProfileAt, silOf, statutoryOffReason, type AttendanceDay, type Employee, type Holiday, type PayGroup, type PayProfile } from '../EMP/public.ts';
-import { pieceEarningsByDay, repeatedAssignments, stepById, unpaidAssignments } from '../PRD/public.ts';
+import { pieceEarningsByDay, pieceWork, repeatedAssignments, stepById, unpaidAssignments, type PieceWork } from '../PRD/public.ts';
 import { jobOrderRef } from '../JO/public.ts';
 import { advanceSchedule, openCharges } from '../CA/public.ts';
 import { KIND_LABEL, govLoan, loanInMonth, loansOf, runsIn, shortCents, type Agency, type LoanKind } from './loans.ts';
@@ -33,6 +33,7 @@ export type LineKind = 'basic' | 'leave' | 'holiday' | 'rest_day' | 'ot' | 'nigh
 export interface RunLine {
   lineNo: number; kind: LineKind; description: string; qty: number; rateCents: number; multiplierBp: number; amountCents: number;
   taxable: boolean; thirteenthBase: boolean; assignmentId?: string; jobOrderId?: string; reason?: string; leaveYear?: number;
+  work?: PieceWork | null; // a piece line's item and wearers, for the screens; read from production, not stored on the run
 }
 export interface RunEmployee {
   employeeId: string; code: string; name: string; costCentre: 'production' | 'office'; payType: PayProfile['payType']; isMwe: boolean; lines: RunLine[];
@@ -429,7 +430,7 @@ function earnings(
     const what = a.kind === 'rework' ? 'rework' : a.kind === 'correction' ? 'correction' : 'pcs';
     lines.push({
       lineNo: 0, kind: 'piece', description: `${jo} ${stepById(db, a.stepId)?.name ?? 'step'} ${a.workDate}, ${a.pieces} ${what}`, qty: a.pieces, rateCents: a.rateCents,
-      multiplierBp: 10_000, amountCents: a.amountCents, taxable: !end.isMwe, thirteenthBase: true, assignmentId: a.id, jobOrderId: a.jobOrderId,
+      multiplierBp: 10_000, amountCents: a.amountCents, taxable: !end.isMwe, thirteenthBase: true, assignmentId: a.id, jobOrderId: a.jobOrderId, work: pieceWork(db, a.id),
     });
   }
   if (heldBack) note('PIECE_NOT_PAID', `${e.name} has ${formatPeso(heldBack)} of piece work but is not paid per piece, so it stays unpaid. Change the pay to "daily and per piece" to pay it.`);

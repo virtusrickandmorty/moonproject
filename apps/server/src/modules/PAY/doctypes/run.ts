@@ -36,7 +36,7 @@ import type { DraftLine } from '../../../engine/ledger/post.ts';
 import { lastAuditAt } from '../../../engine/audit.ts';
 import { PAY_GROUPS, employee as employeeOf, employeesInGroup, markPaidDays, markSilPaid, paidDaysBetween, silPaidBy, type PayGroup } from '../../EMP/public.ts';
 import { advanceSchedule } from '../../CA/public.ts';
-import { clearAssignmentsPaidBy, markAssignmentPaid } from '../../PRD/public.ts';
+import { clearAssignmentsPaidBy, markAssignmentPaid, pieceWork } from '../../PRD/public.ts';
 import { TAX_FREQUENCY, isWeekly, payFrom, periodEndOf, periodRuleOf, semiStartOf, weekStartOf, workOut, type FinalPay, type RunEmployee, type RunLine, type RunCharge, type RunDeduction, type RunLoan, type YearEnd } from '../run-calc.ts';
 import { KIND_LABEL, LOAN_ACCOUNT, govLoan, loanInMonth, shortCents, type Agency } from '../loans.ts';
 import { yearEndDoneBy } from '../year-end.ts';
@@ -375,6 +375,11 @@ export const runDoc: DocTypeDef<RunInput, Run> = {
       ...(r.year_end === 1 ? { yearEnd: true } : {}), ...(r.unused_leave === 1 ? { unusedLeave: true } : {}),
       periodEnd: r.period_end, contributionMonth: r.contribution_month, taxFrequency: r.tax_frequency, employees, grossCents: r.gross_cents, netCents: r.net_cents, totalCents: r.gross_cents,
     };
+  },
+
+  /** The item and wearers of each piece line, for the screens (load stays light: other modules read every run through it). */
+  forViewer(db, doc) {
+    return { ...doc, employees: doc.employees.map((e) => ({ ...e, lines: e.lines.map((l) => (l.assignmentId ? { ...l, work: pieceWork(db, l.assignmentId) } : l)) })) };
   },
 
   toInput(doc) {

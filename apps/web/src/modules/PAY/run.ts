@@ -150,6 +150,11 @@ export function qtyText(kind: string, qty: number): string {
   return kind === 'piece' ? `${qty} pcs` : '';
 }
 
+/** The wearers of a piece line, "Ana Reyes (M), Ben Cruz (L) × 2": the size when there is one, the pieces when more than one. */
+export function wearersText(wearers: { name: string; size: string | null; pieces: number }[]): string {
+  return wearers.map((w) => `${w.name}${w.size ? ` (${w.size})` : ''}${w.pieces > 1 ? ` × ${w.pieces}` : ''}`).join(', ');
+}
+
 /** A changed 13th-month amount as typed: the amount and why. */
 export interface ChangedAmount { amount: string; reason: string }
 
