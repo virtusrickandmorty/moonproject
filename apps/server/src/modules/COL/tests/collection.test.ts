@@ -212,13 +212,9 @@ describe('collection goldens (PLAN I2)', () => {
     const edit = (crNumber: string) =>
       encoder.post(`${COL}/${first.id}/reissue`, { input: { ...input, crNumber, tenders: [{ cashPlaceId: CASH, amountCents: 1_000_000 }] }, expectedTotalCents: 1_000_000, reason: 'Paid in cash, not GCash' }, idem());
 
-    // A CR number is used once, ever: the edit is written on a new CR (D6, "CR booklet number marked cancelled").
-    const sameCr = await edit('105');
-    expect(sameCr.statusCode).toBe(422);
-    expect(sameCr.json().message).toBe('CR 105 is already used on COL-000001 (cancelled). Each CR number is used once: write this payment on a new CR and keep all copies of a spoiled one.');
-    expect((await encoder.get(`${COL}/${first.id}`)).json().header.status).toBe('posted');
-
-    const second = await edit('0106');
+    // The edit stays on its own paper CR (the owner's rule, Nov 2026), with no warning.
+    const second = await edit('0105');
+    expect(second.json().warnings ?? []).not.toContainEqual(expect.objectContaining({ code: 'CR_REUSED' }));
     expect(second.json()).toMatchObject({ number: 'COL-000002', businessDate: '2026-09-29' });
     expect(linesOf(first.id)).toEqual([['1121', null, null, 1_000_000, 0], ['1201', c.school, jo, 0, 1_000_000]]);
     expect(linesOf(first.id, 'reversal')).toEqual([['1121', null, null, 0, 1_000_000], ['1201', c.school, jo, 1_000_000, 0]]);
@@ -283,6 +279,16 @@ describe('collection rules (PLAN E5, D4)', () => {
   const pay = (jo: string, cents: number, crNumber = '0201', extra: Partial<CollectionInput> = {}) =>
     ({ customerId: c.school, crNumber, applications: [{ jobOrderId: jo, amountCents: cents }], tenders: [{ cashPlaceId: CASH, amountCents: cents }], ...extra });
   const issues = async (input: object) => ((await encoder.post(`${COL}/preview`, { input })).json().issues as { code: string }[]).map((i) => i.code);
+
+  it('a CR number from a cancelled collection can be used again, with a word about the paper', async () => {
+    const jo = await jobOrder(1_000_000);
+    const first = await collect(pay(jo, 100_000, '0401'), 100_000);
+    expect((await accountant.post(`${COL}/${first.json().id}/cancel`, { reason: 'Recorded on the wrong customer' }, idem())).statusCode).toBe(200);
+    expect(await issues(pay(jo, 100_000, '401'))).toEqual(['CR_REUSED']);
+    const again = await collect(pay(jo, 100_000, '401'), 100_000);
+    expect(again.statusCode, again.body).toBe(200);
+    expect(await issues(pay(jo, 100_000, '401'))).toEqual(['CR_USED']); // and now it stands again
+  });
 
   it('a CR number cannot repeat, even written without its leading zeros', async () => {
     const jo = await jobOrder(1_000_000);

@@ -39,6 +39,7 @@ export function finishedPieces(db: Db, jobOrderId: string): Map<number, number |
  * route, no wearer list, or pieces recorded without ticking wearers).
  */
 export { pairedLines } from './carry.ts';
+export { lineRate, setLineRate } from './production.ts';
 
 export function finishedWearers(db: Db, jobOrderId: string, lineNo: number): Set<number> | null {
   const line = lineState(db, jobOrderId).find((l) => l.lineNo === lineNo);

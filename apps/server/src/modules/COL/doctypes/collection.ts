@@ -90,8 +90,8 @@ export interface Collection extends Omit<CollectionInput, 'applications' | 'sale
 
 function crUsedBy(db: Db, crNumber: string) {
   return db
-    .prepare(`SELECT d.number, d.status FROM col_collections c JOIN documents d ON d.id = c.document_id WHERE CAST(c.cr_number AS INTEGER) = CAST(? AS INTEGER)`)
-    .get(crNumber) as { number: string; status: string } | undefined;
+    .prepare(`SELECT d.id, d.number, d.status FROM col_collections c JOIN documents d ON d.id = c.document_id WHERE CAST(c.cr_number AS INTEGER) = CAST(? AS INTEGER) ORDER BY d.posted_at DESC`)
+    .all(crNumber) as { id: string; number: string; status: string }[];
 }
 
 export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
@@ -149,11 +149,13 @@ export const collectionDoc: DocTypeDef<CollectionInput, Collection> = {
     const add = (level: Issue['level'], field: string, code: string, message: string) => issues.push({ field, code, level, message });
     const c = customerRef(ctx.db, doc.customerId);
     if (c?.is_active !== 1) add('error', 'customerId', 'CUSTOMER', c ? `${c.display_name} is inactive. Pick an active customer.` : 'Pick a customer.');
+    // One standing collection per CR. A cancelled one frees its number (the owner's rule, Nov 2026): an edit keeps its own
+    // CR without a word, and anything else is told, because a spoiled paper CR stays spoiled.
     const used = crUsedBy(ctx.db, doc.crNumber);
-    if (used) {
-      const how = used.status === 'cancelled' ? ' (cancelled)' : '';
-      add('error', 'crNumber', 'CR_USED', `CR ${doc.crNumber} is already used on ${used.number}${how}. Each CR number is used once: write this payment on a new CR and keep all copies of a spoiled one.`);
-    }
+    const standing = used.find((u) => u.status === 'posted');
+    const cancelled = used.find((u) => u.status === 'cancelled' && u.id !== ctx.replacesId);
+    if (standing) add('error', 'crNumber', 'CR_USED', `CR ${doc.crNumber} is already used on ${standing.number}. Each CR number is used once: write this payment on a new CR.`);
+    else if (cancelled && !used.some((u) => u.id === ctx.replacesId)) add('warning', 'crNumber', 'CR_REUSED', `CR ${doc.crNumber} was on ${cancelled.number}, which is cancelled. Use it again only if this is the same paper receipt: a spoiled CR is kept with all its copies.`);
     const booklet = bookletIssue(ctx.db, 'CR', doc.crNumber, 'crNumber');
     if (booklet) issues.push(booklet);
     issues.push(...signedOffIssues(ctx.db, ctx.businessDate));
