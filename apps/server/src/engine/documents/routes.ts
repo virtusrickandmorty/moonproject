@@ -144,7 +144,8 @@ export function documentRoutes(app: FastifyInstance, deps: AppDeps): void {
     const b = parse(previewBody, req.body);
     const actor = actorOf(req);
     const r = previewDocument(env, d, actor, b.input, b.businessDate);
-    return { ...r, journal: actor.permissions.has('acc.journal.view') ? r.journal : undefined };
+    const doc = d.forViewer ? d.forViewer(db, r.doc, (p: string) => actor.permissions.has(p)) : r.doc;
+    return { ...r, doc, journal: actor.permissions.has('acc.journal.view') ? r.journal : undefined };
   });
 
   app.post<{ Params: { type: string } }>('/api/docs/:type/post', auth, async (req, reply) => {

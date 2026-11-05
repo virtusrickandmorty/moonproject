@@ -25,9 +25,10 @@ async function shop() {
   return w;
 }
 const input = { payGroup: 'WEEKLY_PIECE', periodStart: '2026-09-21' } as const;
+const made = { step: 'Sewing', workDate: '2026-09-22', rowKind: 'work' };
 const expected = [
-  { item: 'Made-up team shirt', wearers: [{ name: 'Ana Reyes', size: 'M', pieces: 1 }, { name: 'Ben Cruz', size: 'L', pieces: 2 }] },
-  { item: 'Made-up cap', wearers: [] },
+  { ...made, item: 'Made-up team shirt', wearers: [{ name: 'Ana Reyes', size: 'M', pieces: 1 }, { name: 'Ben Cruz', size: 'L', pieces: 2 }] },
+  { ...made, item: 'Made-up cap', wearers: [] },
 ];
 type Lines = { employees: { lines: { kind: string; work?: unknown; description: string }[] }[] };
 const works = (doc: Lines) => doc.employees[0]!.lines.filter((l) => l.kind === 'piece').map((l) => l.work);
@@ -35,11 +36,11 @@ const works = (doc: Lines) => doc.employees[0]!.lines.filter((l) => l.kind === '
 describe('the earnings of a payroll', () => {
   it('name the item and the wearers on a piece line, before recording and once recorded', async () => {
     const w = await shop();
-    expect(works(w.preview(runDoc, input).doc as unknown as Lines)).toEqual(expected);
-    const run = w.record(runDoc, input);
     const owner = await w.env.as('owner');
+    expect(works((await owner.post('/api/docs/pay.run/preview', { input })).json().doc as Lines)).toMatchObject(expected);
+    const run = w.record(runDoc, input);
     const stored = (await owner.get(`/api/docs/pay.run/${run.id}`)).json();
-    expect(works((stored.doc ?? stored) as Lines)).toEqual(expected);
+    expect(works((stored.doc ?? stored) as Lines)).toMatchObject(expected);
   });
 
   it('leave what is stored on the run as it was', async () => {
@@ -49,5 +50,6 @@ describe('the earnings of a payroll', () => {
     expect(lines).toHaveLength(2);
     for (const d of lines) expect(d).toMatch(/^JO-\d+ \S+ 2026-09-22, \d+ pcs$/);
     expect(runDoc.load(w.db, run.id).employees[0]!.lines.some((l) => 'work' in l)).toBe(false);
+    expect((w.preview(runDoc, input).doc as unknown as Lines).employees.flatMap((e) => e.lines).some((l) => 'work' in l)).toBe(false); // what is computed equals what is stored
   });
 });
