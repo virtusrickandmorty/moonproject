@@ -1,5 +1,6 @@
 /** A piece line of a payroll says what it was for: the job order item and the wearers ticked (the owner's request, Nov 2026). Made-up people only. */
 import { describe, expect, it } from 'vitest';
+import { createUser, login, PASSWORD } from '../../../../test/helpers.ts';
 import { tx } from '../../../platform/db/driver.ts';
 import { seedCustomers } from '../../JO/tests/cus-fixture.ts';
 import { jobOrderDoc } from '../../JO/doctypes/job-order.ts';
@@ -22,7 +23,7 @@ async function shop() {
   const over = 'Cut earlier by the old shop (made up)';
   w.record(entryDoc, { jobOrderId: jo, stepId: SEWING, overCapReason: over, rows: [{ lineNo: 1, employeeId: worker, pieces: 3, wearers: [1, 2] }, { lineNo: 2, employeeId: worker, pieces: 4 }] });
   w.at('2026-09-26');
-  return w;
+  return { ...w, worker };
 }
 const input = { payGroup: 'WEEKLY_PIECE', periodStart: '2026-09-21' } as const;
 const made = { step: 'Sewing', workDate: '2026-09-22', rowKind: 'work' };
@@ -41,6 +42,16 @@ describe('the earnings of a payroll', () => {
     const run = w.record(runDoc, input);
     const stored = (await owner.get(`/api/docs/pay.run/${run.id}`)).json();
     expect(works((stored.doc ?? stored) as Lines)).toMatchObject(expected);
+  });
+
+  it('show the worker the same breakdown on their own payslip', async () => {
+    const w = await shop();
+    w.record(runDoc, input);
+    const owner = await w.env.as('owner');
+    expect((await owner.put(`/api/emp/employees/${w.worker}/floor-user`, { userId: createUser(w.db, 'eli.floor', ['worker']) })).statusCode).toBe(200);
+    const app = await login(w.env.app, 'eli.floor', PASSWORD);
+    const slip = (await app.get('/api/pay/my-payslips')).json().payslips[0] as { earnings: { kind: string; work?: unknown }[] };
+    expect(slip.earnings.filter((l) => l.kind === 'piece').map((l) => l.work)).toMatchObject(expected);
   });
 
   it('leave what is stored on the run as it was', async () => {

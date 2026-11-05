@@ -25,7 +25,7 @@ it("shows a worker their own net pay and its breakdown, paid or not, and nobody 
   const mine = (await anaApp.get('/api/pay/my-payslips')).json().payslips;
   expect(mine).toHaveLength(1);
   expect(mine[0]).toMatchObject({ runId: run.id, periodStart: '2026-09-16', periodEnd: '2026-09-30', grossCents: slip.grossCents, netCents: slip.netCents, released: false });
-  expect(mine[0].earnings).toEqual(slip.lines.map((l) => ({ description: l.description, amountCents: l.amountCents })));
+  expect(mine[0].earnings).toMatchObject(slip.lines.map((l) => ({ lineNo: l.lineNo, kind: l.kind, description: l.description, qty: l.qty, rateCents: l.rateCents, amountCents: l.amountCents })));
   expect(mine[0].deductions).toContainEqual({ what: 'Two company polo shirts', amountCents: 35_000 });
   // Gross less every deduction is the net pay.
   expect(mine[0].grossCents - mine[0].deductions.reduce((n: number, d: { amountCents: number }) => n + d.amountCents, 0) + mine[0].refundCents).toBe(mine[0].netCents);

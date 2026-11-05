@@ -6,13 +6,15 @@
 import { AppError } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { employeeOfUser } from '../EMP/public.ts';
+import { pieceWork, type PieceWork } from '../PRD/public.ts';
 import { runDoc } from './doctypes/run.ts';
 import { releaseStatus } from './doctypes/release.ts';
 import { KIND_LABEL } from './loans.ts';
 
 export interface OwnPayslip {
   runId: string; number: string; payDate: string; periodStart: string; periodEnd: string;
-  earnings: { description: string; amountCents: number }[]; grossCents: number;
+  /** Each line as the payroll screens show it; a piece line says its item, step, day and wearers. */
+  earnings: { lineNo: number; kind: string; description: string; qty: number; rateCents: number; multiplierBp: number; amountCents: number; work?: PieceWork | null }[]; grossCents: number;
   /** Each deduction, in the payslip's order; a tax refund comes back as `refundCents`. */
   deductions: { what: string; amountCents: number }[]; refundCents: number;
   netCents: number; released: boolean;
@@ -38,7 +40,10 @@ export function ownPayslips(db: Db, userId: string, limit = 8): OwnPayslip[] {
     ].filter((d) => d.amountCents > 0);
     return [{
       runId: r.id, number: r.number, payDate: r.payDate, periodStart: run.periodStart, periodEnd: run.periodEnd,
-      earnings: e.lines.map((l) => ({ description: l.description, amountCents: l.amountCents })), grossCents: e.grossCents,
+      earnings: e.lines.map((l) => ({
+        lineNo: l.lineNo, kind: l.kind, description: l.description, qty: l.qty, rateCents: l.rateCents, multiplierBp: l.multiplierBp, amountCents: l.amountCents,
+        ...(l.assignmentId ? { work: pieceWork(db, l.assignmentId) } : {}),
+      })), grossCents: e.grossCents,
       deductions, refundCents: e.wtaxRefundCents ?? 0, netCents: e.netCents,
       released: !!releaseStatus(db, r.id).find((s) => s.employeeId === me.id)?.releasedBy,
     }];

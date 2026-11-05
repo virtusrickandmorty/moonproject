@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { api, ApiError, type FloorJob, type FloorScan, type FloorWeek, type Me, type OwnPayslip } from '../../../api.ts';
 import { navigate, useLocation } from '../../../router.tsx';
+import { Earnings } from '../../PAY/entry.tsx';
 import { setUnattended, startLive, stopLive, useLiveReload } from '../../../live.ts';
 import { peso } from '../../../components/ui.tsx';
 import { jobOrderFromScan, liveCameraAllowed, readQrPhoto, useQrCamera } from '../../../components/QrScan.tsx';
@@ -494,16 +495,7 @@ function EarningsScreen({ me }: { me: Me }) {
     <div className="space-y-4">
       <h1 className="text-2xl font-extrabold tracking-tight">My earnings</h1>
       <WeekCard week={data.week} today={data.today} />
-      {data.week.jobs.length > 0 && (
-        <ul className="divide-y divide-slate-100 rounded-2xl bg-white">
-          {data.week.jobs.map((j) => (
-            <li key={`${j.jobOrderNumber}-${j.stepName}-${j.rateCents}`} className="flex items-center justify-between px-4 py-3.5">
-              <span><span className="block text-[15px] font-bold">{j.jobOrderNumber} · {j.stepName}</span><span className="text-xs font-semibold text-slate-500">{j.pieces} pcs × {peso(j.rateCents)}</span></span>
-              <span className="font-extrabold tabular-nums">{peso(j.amountCents)}</span>
-            </li>
-          ))}
-        </ul>
-      )}
+      {data.week.lines.length > 0 && <div className="space-y-2 rounded-2xl bg-white p-3"><Earnings lines={data.week.lines} /></div>}
       <p className="text-[13px] leading-relaxed text-slate-500">Paid with the weekly payroll after {dayName(data.week.to, { weekday: 'long' })}. SSS, PhilHealth, Pag-IBIG and any cash advance come off then; your payslip below shows each.</p>
       {me.permissions.includes('pay.own.view') && <Payslips />}
       <h2 className="text-base font-extrabold">Past weeks</h2>
@@ -559,7 +551,7 @@ function PayslipBreakdown({ slip }: { slip: OwnPayslip }) {
   return (
     <div className="border-t border-slate-100 px-4 pb-4 pt-2">
       <p className="pt-1 text-xs font-extrabold uppercase tracking-wide text-slate-500">Earned</p>
-      {slip.earnings.map((e, i) => <div key={i}>{row(e.description, e.amountCents)}</div>)}
+      <div className="space-y-2 py-1"><Earnings lines={slip.earnings} /></div>
       {row('Gross pay', slip.grossCents, 'border-t border-slate-100 font-bold')}
       {slip.deductions.length > 0 && <>
         <p className="pt-2 text-xs font-extrabold uppercase tracking-wide text-slate-500">Taken off</p>

@@ -61,6 +61,7 @@ it('records her own pieces today at the table rate, and shows them on her week a
 
   const today = (await sewer.get('/api/prd/floor/today')).json();
   expect(today.week).toMatchObject({ pieces: 3, amountCents: 12_000, paid: false });
+  expect(today.week.lines).toMatchObject([{ kind: 'piece', qty: 3, rateCents: 4_000, amountCents: 12_000, work: { item: 'Team shirt', step: 'Sewing', workDate: '2026-09-28', rowKind: 'work' } }]);
   expect(today.week.days.find((d: { date: string }) => d.date === '2026-09-28')).toMatchObject({ pieces: 3, amountCents: 12_000 });
   expect(today.work).toEqual([expect.objectContaining({ jobOrderId: jo, stepName: 'Sewing', done: 3, left: 5 })]);
 });
