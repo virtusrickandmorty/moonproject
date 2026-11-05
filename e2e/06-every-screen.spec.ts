@@ -244,6 +244,22 @@ async function checkNewForm(page: Page, href: string, today: string, take: () =>
   return [...problems, ...take()];
 }
 
+test('the graphs show their details when pointed at', async ({ page }) => {
+  await signInAs(page, ROLES[0]!, practicePasswords().owner!);
+  await page.goto('/rpt/overview');
+  const tip = page.getByTestId('chart-tip');
+  await page.getByRole('group', { name: 'Net income by month' }).getByRole('img').last().hover();
+  await expect(tip).toContainText('Net margin');
+  await page.mouse.move(0, 0);
+  await expect(tip).toHaveCount(0);
+  await page.goto('/');
+  // The newest month of the cash graph stands in view beside the other card, with no scrolling sideways.
+  await page.getByRole('group', { name: 'Cash on hand at each month end' }).getByRole('img').last().hover();
+  await expect(tip).toContainText('Total');
+  await page.getByRole('group', { name: /^Pieces made each day/ }).getByRole('img').last().hover();
+  await expect(tip).toContainText('Pieces');
+});
+
 for (const who of ROLES) {
   test(`${who.role}: every menu item opens, every New form reaches its preview`, async ({ page }) => {
     test.setTimeout(600_000);

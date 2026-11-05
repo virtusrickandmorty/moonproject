@@ -3,11 +3,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { DashHomeData, DashNotification, DashOwnerCharts, DashOwnerHealth, DashWidget } from '../../api.ts';
 import { peso } from '../../components/ui.tsx';
-import { AgingBars, Bars, CashLine, HomeContent, OwnerHealthFigures, attentionItems } from './Home.tsx';
+import { HomeContent, OwnerHealthFigures, attentionItems } from './Home.tsx';
+import { AgingBars, Bars, CashLine, agingTip, cashTip, monthTip } from './MoneyCharts.tsx';
 
 const months = (values: number[]): DashOwnerCharts['months'] => values.map((value, i) => ({
   month: `2026-${String(i + 1).padStart(2, '0')}`, from: '2026-01-01', to: '2026-01-31',
   salesCents: value, collectionsCents: value, expensesCents: value, cashCents: value,
+  costOfSalesCents: value, operatingCents: 0, incomeTaxCents: 0, biggestExpenses: [], cancelledExpenses: [], cashPlaces: [],
 }));
 const note = (kind: string, id = kind): DashNotification => ({ kind, id, label: kind, href: `/notes/${id}`, read: false, at: '2026-10-01T09:00:00.000+08:00' });
 const work: DashWidget[] = [
@@ -62,6 +64,39 @@ describe('Home puts work first', () => {
   });
 });
 
+describe('the details a graph shows when pointed at', () => {
+  const [october, november] = months([10000, 20000]).map((m, i) => ({ ...m, month: `2026-1${i}`, from: `2026-1${i}-01`, to: i ? '2026-11-05' : '2026-10-31' }));
+
+  it('breaks a month down, and says why its expenses are low', () => {
+    const row = { ...november!, salesCents: 50000, expensesCents: -27000, costOfSalesCents: -30000, operatingCents: 3000, biggestExpenses: [{ name: 'Made-up rent', amountCents: 3000 }], cancelledExpenses: [{ number: 'EXP-1', amountCents: 30000 }] };
+    const tip = monthTip(row);
+    expect(tip.title).toBe('November 2026 so far');
+    expect(tip.rows?.map((r) => [r.label, r.value])).toEqual([['Sales', peso(50000)], ['Collections', peso(20000)], ['Expenses', peso(-27000)], ['Cost of sales', peso(-30000)], ['Operating expenses', peso(3000)], ['Sales less expenses', peso(77000)]]);
+    expect(tip.notes).toEqual([`Biggest expenses: Made-up rent ${peso(3000)}.`, `Takes off EXP-1 ${peso(30000)}: recorded in an earlier month, cancelled in this one.`]);
+    expect(monthTip(october!).title).toBe('October 2026');
+    expect(monthTip(october!).notes).toEqual([]);
+  });
+
+  it('shows cash by place and the change from the month before', () => {
+    const tip = cashTip({ ...november!, cashPlaces: [{ name: 'Made-up till', balanceCents: 20000 }] }, october);
+    expect(tip.rows?.map((r) => r.value)).toEqual([peso(20000), peso(20000), peso(10000)]);
+    expect(cashTip(october!).rows?.map((r) => r.label)).toEqual(['Total']);
+  });
+
+  it('shows who owes the most at an age, and its share of the whole', () => {
+    const tip = agingTip({ key: 'days1to30', label: '1–30', amountCents: 2500, customers: 2, biggest: [{ name: 'Made-up customer', amountCents: 2000 }] }, 10000);
+    expect(tip.title).toBe('1–30 days overdue');
+    expect(tip.rows?.map((r) => r.value)).toEqual([peso(2500), '25%', '2', peso(2000)]);
+  });
+
+  it('reads every month out, so the details need no mouse', () => {
+    const markup = renderToStaticMarkup(createElement(Bars, { data: months([10000]) }));
+    expect(markup).toContain(`aria-label="January 2026. Sales: ${peso(10000)}`);
+    expect(markup).toContain('tabindex="0"');
+    expect(markup).not.toContain('<title>');
+  });
+});
+
 describe('signed owner charts', () => {
   it.each([[10000, -10000], [-10000, -5000], [0, 0], [10000, 5000]])('keeps bars and cash inside the plot for %j', (...values) => {
     const data = months(values);
@@ -83,7 +118,7 @@ describe('signed owner charts', () => {
   });
 
   it('draws a negative receivable below zero and labels its signed amount', () => {
-    const markup = renderToStaticMarkup(createElement(AgingBars, { data: [{ key: 'current', label: 'Current', amountCents: 10000 }, { key: 'old', label: 'Over 90', amountCents: -5000 }] }));
+    const markup = renderToStaticMarkup(createElement(AgingBars, { data: [{ key: 'current', label: 'Current', amountCents: 10000, customers: 1, biggest: [] }, { key: 'old', label: 'Over 90', amountCents: -5000, customers: 1, biggest: [] }] }));
     const zero = Number(/<line[^>]* y1="([^"]+)"/.exec(markup)![1]);
     const negative = [...markup.matchAll(/<rect[^>]* y="([^"]+)" width="42" height="([^"]+)"/g)][1]!;
     expect(Number(negative[1])).toBe(zero);

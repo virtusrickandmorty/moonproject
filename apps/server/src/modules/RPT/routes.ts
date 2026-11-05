@@ -13,6 +13,7 @@ import { cashPosition, transfers, cashCounts, assetSchedule } from './cash-asset
 import { lateEntries, cancellations, exceptions, signIns } from './control.ts';
 import { cashFlowStatement } from './cash-flow.ts';
 import { overheadReport } from './overhead.ts';
+import { reportsOverview } from './overview.ts';
 import { pageAsked, paged, pagedLedger } from '../../platform/paging.ts';
 import { monthlyOwnersPack, monthlyOwnersPackBody } from './monthly-pack.ts';
 import { companyProfile, renderReportPrint } from '../PRT/public.ts';
@@ -287,6 +288,12 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
     rows.push(['Change', 'Net change in cash', csvPesos(result.netChangeCents)], ['Closing', 'Closing cash', csvPesos(result.closingCashCents)],
       ['Check', 'Cash accounts on balance sheet', csvPesos(result.balanceSheetCashCents)], ['Check', 'Difference', csvPesos(result.checkDifferenceCents)]);
     return sendCsv(reply, `cash-flow-${from}-${to}`, rows);
+  });
+  app.get('/api/rpt/overview', { config: { permission: 'rpt.books.view' } }, async (req) => {
+    const { month } = req.query as Record<string, unknown>;
+    const now = today(clock);
+    if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || month > now.slice(0, 7)) throw new AppError('BAD_MONTH', 'Pick this month or an earlier one, in YYYY-MM format.', 400);
+    return reportsOverview(db, month, now);
   });
   app.get('/api/rpt/overhead', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;

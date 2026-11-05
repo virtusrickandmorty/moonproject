@@ -165,6 +165,21 @@ export function incomeStatement(db: Db, from: string, to: string) {
 }
 
 /**
+ * The expenses cancelled in a period that were recorded before it. The books date a cancel the day it is made, so the old
+ * expense stays in its own month and this period shows the minus: the reason a month's expenses can look low, or below zero.
+ */
+export function expensesCancelledFromEarlier(db: Db, from: string, to: string): { number: string; amountCents: number }[] {
+  return db.prepare(`SELECT COALESCE(d.number, j.number) AS number, SUM(l.credit_cents - l.debit_cents) AS amountCents
+    FROM journals j
+    JOIN journals o ON o.id = j.reverses_journal_id
+    JOIN journal_lines l ON l.journal_id = j.id
+    JOIN accounts a ON a.id = l.account_id
+    LEFT JOIN documents d ON j.source_type = 'document' AND d.id = j.source_id
+    WHERE j.sealed = 1 AND j.business_date BETWEEN ? AND ? AND o.business_date < ? AND substr(a.code, 1, 1) IN ('5', '6', '8')
+    GROUP BY j.id HAVING amountCents <> 0 ORDER BY j.business_date, j.number`).all(from, to, from) as { number: string; amountCents: number }[];
+}
+
+/**
  * Assets, liabilities and equity as of a date; accounts with a zero balance are left out (so 3900 opening balance equity
  * shows only while it is not zero). Equity adds the current-year earnings (1 January of the asOf year to asOf) on 3290
  * and the earlier years' earnings (every income and expense before that 1 January) under retained earnings; 3210

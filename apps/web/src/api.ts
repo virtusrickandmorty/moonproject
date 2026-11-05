@@ -212,8 +212,15 @@ export interface DashWidget { key: string; title: string; items?: DashItem[]; am
 export interface DashHomeData { role: string; asOf: string; widgets: DashWidget[]; showCharts: boolean }
 export interface DashOwnerCharts {
   asOf: string;
-  months: { month: string; from: string; to: string; salesCents: number; collectionsCents: number; expensesCents: number; cashCents: number }[];
-  receivables: { key: string; label: string; amountCents: number }[];
+  months: {
+    month: string; from: string; to: string; salesCents: number; collectionsCents: number; expensesCents: number; cashCents: number;
+    costOfSalesCents: number; operatingCents: number; incomeTaxCents: number;
+    biggestExpenses: { name: string; amountCents: number }[];
+    /** Expenses of an earlier month cancelled in this one: the books show the minus here. */
+    cancelledExpenses: { number: string; amountCents: number }[];
+    cashPlaces: { name: string; balanceCents: number }[];
+  }[];
+  receivables: { key: string; label: string; amountCents: number; customers: number; biggest: { name: string; amountCents: number }[] }[];
 }
 /** The home's cards (GET /api/dash/cards): each is null or missing for those who may not see what it reads. */
 export interface DashCards {

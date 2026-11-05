@@ -26,6 +26,9 @@ it('places every screen and document list an owner sees under a named sub-catego
 it("puts a group's sub-categories in the person's own order, then the usual one", () => {
   const menu = buildMenu(DOC_TYPES, new Set(SCREENS.flatMap((s) => (s.permission ? [s.permission] : []))));
   const sales = menu.find((g) => g.group === 'Sales')!;
+  // The Reports overview came after people arranged their menus: it still leads Reports, ahead of an order saved without it.
+  const reports = buildMenu([], new Set(['rpt.books.view'])).find((g) => g.group === 'Reports')!;
+  expect(sectionsOf('Reports', reports.items, ['Controls', 'Purchases']).map((s) => s.sub).slice(0, 3)).toEqual(['Overview', 'Controls', 'Purchases']);
   expect(sectionsOf('Sales', sales.items, ['Collections', 'Gone sub-category']).map((s) => s.sub)).toEqual(['Collections', 'Customers & quotes', 'Job orders & release', 'Shop & POS', 'TPL services']);
 });
 

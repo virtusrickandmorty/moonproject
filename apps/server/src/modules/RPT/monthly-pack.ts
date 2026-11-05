@@ -8,12 +8,12 @@ import type { StatementSection } from './statements.ts';
 
 const day = 86_400_000;
 const PAY_GROUPS: Record<string, string> = { WEEKLY_PIECE: 'Weekly piece-rate', WEEKLY_DAILY: 'Weekly daily-paid', SEMI_DAILY: 'Semi-monthly daily-paid', SEMI_MONTHLY: 'Semi-monthly monthly staff' };
-const previousMonth = (month: string) => {
+export const previousMonth = (month: string) => {
   const [year, number] = month.split('-').map(Number);
   const date = new Date(Date.UTC(year!, number! - 2, 1));
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
 };
-const monthEnd = (month: string) => {
+export const monthEnd = (month: string) => {
   const [year, number] = month.split('-').map(Number);
   return `${month}-${new Date(Date.UTC(year!, number!, 0)).getUTCDate()}`;
 };
