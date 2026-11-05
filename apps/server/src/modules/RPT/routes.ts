@@ -12,6 +12,7 @@ import { apAging, purchases, purchaseOrders, receivedNotBilled } from './supplie
 import { cashPosition, transfers, cashCounts, assetSchedule } from './cash-assets.ts';
 import { lateEntries, cancellations, exceptions, signIns } from './control.ts';
 import { cashFlowStatement } from './cash-flow.ts';
+import { overheadReport } from './overhead.ts';
 import { pageAsked, paged, pagedLedger } from '../../platform/paging.ts';
 import { monthlyOwnersPack, monthlyOwnersPackBody } from './monthly-pack.ts';
 import { companyProfile, renderReportPrint } from '../PRT/public.ts';
@@ -286,6 +287,18 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
     rows.push(['Change', 'Net change in cash', csvPesos(result.netChangeCents)], ['Closing', 'Closing cash', csvPesos(result.closingCashCents)],
       ['Check', 'Cash accounts on balance sheet', csvPesos(result.balanceSheetCashCents)], ['Check', 'Difference', csvPesos(result.checkDifferenceCents)]);
     return sendCsv(reply, `cash-flow-${from}-${to}`, rows);
+  });
+  app.get('/api/rpt/overhead', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
+    const q = req.query as Record<string, unknown>;
+    if (typeof q.month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(q.month)) throw new AppError('BAD_MONTH', 'Pick a month in YYYY-MM format.', 400);
+    const r = overheadReport(db, q.month, today(clock));
+    if (q.format !== 'csv') return r;
+    const percent = (bp: number | null) => (bp === null ? '' : `${(bp / 100).toFixed(1)}%`);
+    return sendCsv(reply, `overhead-${q.month}`, [
+      ['Month', 'Direct cost PHP', 'Overhead PHP', 'Overhead % of direct cost', 'Sales PHP', 'Overhead % of sales', 'Pieces released', 'Overhead per piece PHP'],
+      ...r.rows.map((m) => [m.month, csvPesos(m.directCents), csvPesos(m.overheadCents), percent(m.overheadRateBp), csvPesos(m.salesCents), percent(m.salesRateBp), m.pieces,
+        m.overheadPerPieceCents === null ? '' : csvPesos(m.overheadPerPieceCents)]),
+    ]);
   });
   const simple = (url: string, name: string, get: (q: Record<string, unknown>) => Record<string, unknown>) =>
     app.get(url, { config: { permission: 'rpt.books.view' } }, async (req, reply) => {

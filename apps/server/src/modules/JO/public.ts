@@ -77,6 +77,10 @@ export function activeJobOrders(db: Db): (JoRef & { stage: 'open' | 'in_producti
     ORDER BY o.due_date, d.number`).all() as (JoRef & { stage: 'open' | 'in_production' | 'ready' | 'partially_released' | 'released' })[];
 }
 
+/** Pieces of job orders released in a date range, by recorded release slips (the overhead report). */
+export const piecesReleasedBetween = (db: Db, from: string, to: string): number => db.prepare(`SELECT COALESCE(SUM(l.qty), 0) FROM jo_release_lines l
+  JOIN documents d ON d.id = l.document_id WHERE d.status = 'posted' AND d.business_date BETWEEN ? AND ?`).pluck().get(from, to) as number;
+
 /** Recorded release slips in a date range, for the calendar. */
 export function releasesBetween(db: Db, from: string, to: string): { id: string; number: string; date: string; jobOrderId: string }[] {
   return db.prepare(`SELECT d.id, d.number, d.business_date AS date, r.job_order_id AS jobOrderId
