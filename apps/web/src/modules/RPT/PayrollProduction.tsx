@@ -30,6 +30,25 @@ function Data({path,pick}:{path:string|null;pick:(d:any)=>ReactNode}){const {dat
 const page=(title:string,route:string,permission:string,filter:Filter,pick:(d:any)=>ReactNode)=>({me}:{me:Me})=><Report me={me} title={title} route={route} permission={permission} filter={filter}>{path=><Data path={path} pick={pick}/>}</Report>;
 const docMoney=(heads:string[],keys:string[])=>(d:any)=><Panel title="Results"><Table heads={heads} keys={keys} rows={d.rows} totals={d.totals} total={d.page?.total} money={keys.filter(k=>k.endsWith('Cents'))}/></Panel>;
 
+const percent=(bp:number|null)=>bp===null?'—':`${(bp/100).toFixed(1)}%`;
+/** Overhead month by month, next to the percent Costing assumes (the owner's request, Nov 2026). */
+export const OverheadReport=page('Overhead','overhead','rpt.books.view','month',d=>{
+  const a=d.average,c=d.costing,monthsWord=a.months.length===1?'month':'months';
+  return <>
+    <Panel title="Overhead rate"><div className="space-y-1 text-sm">
+      <p>Average of the last {a.months.length} complete {monthsWord}: <strong className="tabular-nums">{percent(a.rateBp)}</strong> of direct cost{a.rateBp!==null&&<> ({peso(a.overheadCents)} overhead on {peso(a.directCents)} direct cost)</>}.</p>
+      <p>Costing uses: <strong className="tabular-nums">{percent(c.rateBp)}</strong>.</p>
+    </div></Panel>
+    {c.farApart==='above'&&<Notice tone="warning">Real overhead is {(c.gapBp/100).toFixed(1)} points above what Costing uses, so prices worked out there may be too low.</Notice>}
+    {c.farApart==='below'&&<Notice tone="warning">Real overhead is {(-c.gapBp/100).toFixed(1)} points below what Costing uses, so prices worked out there may be higher than they need to be.</Notice>}
+    {a.months.length<a.wanted&&<Notice tone="note">Only {a.months.length} complete {monthsWord} so far. Wait for {a.wanted} before changing Costing: one month can mislead.</Notice>}
+    <Notice tone="note">This is only as good as the books: every month needs all its payroll, and an inventory count so materials are what was used, not only what was bought.</Notice>
+    <Panel title="Month by month"><Table heads={['Month','Direct cost','Overhead','Overhead % of direct cost','Sales','Overhead % of sales','Pieces released','Overhead per piece']} keys={['label','directCents','overheadCents','rate','salesCents','salesRate','pieces','perPiece']} money={['directCents','overheadCents','salesCents']}
+      rows={d.rows.map((m:any)=>({...m,label:m.finished?m.month:`${m.month} (not finished)`,rate:percent(m.overheadRateBp),salesRate:percent(m.salesRateBp),perPiece:m.overheadPerPieceCents===null?'—':peso(m.overheadPerPieceCents)}))}/></Panel>
+    <Panel title={`Overhead of ${d.month} by account`}><Table heads={['Account','Name','Amount']} keys={['code','name','amountCents']} money={['amountCents']} rows={d.accounts}/></Panel>
+  </>;
+});
+
 export const PayrollRegister=page('Payroll register','payroll-register','pay.run.view','month',docMoney(['Run','Employee','Gross pay','Employee share','Company share','Tax','Loans','Cash advance','Charges','Other deductions','Tax refund','Net pay'],['document','employeeName','grossCents','employeeSharesCents','employerSharesCents','taxCents','loanCents','caCents','chargeCents','otherDeductionCents','taxRefundCents','netCents']));
 export const PieceWork=page('Piece-work summary','piece-work','pay.run.view','range',d=><><Panel title="Per employee"><Table heads={['Employee','Pieces','Pay']} keys={['employeeName','qty','amountCents']} rows={d.byEmployee} money={['amountCents']}/></Panel><Panel title="Per job order"><p className="mb-3 text-sm text-slate-600">Job-order numbers are unavailable in this report.</p><Table heads={['Pieces','Pay']} keys={['qty','amountCents']} rows={d.byJobOrder} money={['amountCents']}/></Panel></>);
 export const LaborCost=page('Labor cost per job order','labor-cost','pay.run.view','range',d=><><p className="text-sm text-slate-600">Job-order numbers are unavailable in this report.</p>{docMoney(['Pieces','Piece labor'],['qty','amountCents'])(d)}</>);

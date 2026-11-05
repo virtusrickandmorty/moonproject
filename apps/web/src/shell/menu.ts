@@ -100,6 +100,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Reports', label: 'Statement of changes in equity', path: '/rpt/changes-in-equity', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Cash flow statement', path: '/rpt/cash-flow', permission: 'rpt.books.view' },
   { group: 'Reports', label: "Monthly owners' pack", path: '/rpt/monthly-owners-pack', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'Overhead', path: '/rpt/overhead', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Unpaid customer balances (AR aging)', path: '/rpt/ar-aging', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'Customer statement', path: '/rpt/customer-statement', permission: 'rpt.books.view' },
   { group: 'Admin', label: 'Users', path: '/admin/users', permission: 'sec.users.manage' },
@@ -248,7 +249,7 @@ export const SUBS: Partial<Record<MenuGroup, [sub: string, keys: string[]][]>> =
     ['Tax returns & payments', ['/tax/', 'tax.']],
   ],
   Reports: [
-    ['Financial statements & books', ['/rpt/journal', '/rpt/bir-books', '/rpt/ledger', '/rpt/trial-balance', '/rpt/income-statement', '/rpt/balance-sheet', '/rpt/changes-in-equity', '/rpt/cash-flow', '/rpt/monthly-owners-pack']],
+    ['Financial statements & books', ['/rpt/journal', '/rpt/bir-books', '/rpt/ledger', '/rpt/trial-balance', '/rpt/income-statement', '/rpt/balance-sheet', '/rpt/changes-in-equity', '/rpt/cash-flow', '/rpt/monthly-owners-pack', '/rpt/overhead']],
     ['Sales & customers', ['/rpt/ar-aging', '/rpt/customer-statement', '/rpt/deposits-held', '/rpt/deposits-crossing-quarter', '/rpt/collections-register', '/rpt/sales-by-period', '/rpt/job-order-follow-up', '/rpt/job-margin']],
     ['Production & payroll', ['/rpt/payroll-register', '/rpt/piece-work', '/rpt/labor-cost', '/rpt/thirteenth-register', '/rpt/production-status', '/rpt/throughput', '/rpt/lead-time', '/rpt/late-jobs', '/rpt/worker-output']],
     ['Purchases', ['/rpt/ap-aging', '/rpt/purchases', '/rpt/purchase-orders', '/rpt/received-not-billed']],
