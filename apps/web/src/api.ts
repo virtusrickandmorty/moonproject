@@ -386,7 +386,7 @@ export interface PrdJob {
       partPartlyDone?: { upper: Record<number, number>; lower: Record<number, number> } })[] | null }[];
 }
 /** The floor app (PRD floor.ts, the owner's request, Nov 2026): a production worker's own week, work and jobs. */
-export interface FloorWeek { from: string; to: string; days: { date: string; pieces: number; amountCents: number }[]; jobs: { jobOrderNumber: string; stepName: string; rateCents: number; pieces: number; amountCents: number }[]; pieces: number; amountCents: number; paid: boolean }
+export interface FloorWeek { from: string; to: string; days: { date: string; pieces: number; amountCents: number }[]; lines: PayLine[]; pieces: number; amountCents: number; paid: boolean }
 export interface FloorToday {
   employee: { name: string; code: string }; today: string; week: FloorWeek;
   work: { jobOrderId: string; jobOrderNumber: string; customerName: string; dueDate: string; lineNo: number; description: string; stepId: number; stepName: string; qty: number; done: number; left: number }[];
@@ -409,7 +409,7 @@ export interface FloorScan {
 /** GET /api/pay/my-payslips: the floor worker's own payslips, newest first. */
 export interface OwnPayslip {
   runId: string; number: string; payDate: string; periodStart: string; periodEnd: string;
-  earnings: { description: string; amountCents: number }[]; grossCents: number;
+  earnings: PayLine[]; grossCents: number;
   deductions: { what: string; amountCents: number }[]; refundCents: number; netCents: number; released: boolean;
 }
 export interface PrdChecks { waiting: (FloorScan & { amountCents: number; problems: string[]; yours: boolean })[]; checked: (FloorScan & { checkedBy: string | null })[] }

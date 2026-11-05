@@ -19,6 +19,7 @@ import { jobOrderRef, lineState, liveReplacementOf } from '../JO/public.ts';
 import { rateAt } from '../RATE/public.ts';
 import { openJobsFor, scanPieces, scansOf, waitingByWearer, waitingPieces, workerSteps } from './checks.ts';
 import { SET_PARTS, availableFor, lineRoute, lineSetup, listSteps, type Part } from './production.ts';
+import { pieceWork } from './public.ts';
 
 /** YYYY-MM-DD plus some days, as calendar arithmetic on the date alone (no clock, no time zone). */
 const addDays = (d: string, n: number) => {
@@ -43,7 +44,7 @@ export function payWeekOf(db: Db, day: string): { from: string; to: string } {
 
 const POSTED = "JOIN documents d ON d.id = a.document_id AND d.status = 'posted'";
 
-/** One week of the worker's pieces: by day, by job and step, and the total; paid when every row of it is in a payroll. */
+/** One week of the worker's pieces: by day and the total; paid when every row of it is in a payroll. */
 function weekOf(db: Db, employeeId: string, week: { from: string; to: string }) {
   const rows = db.prepare(`SELECT a.work_date AS date, a.job_order_id AS jobOrderId, s.name AS stepName, a.rate_cents AS rateCents, SUM(a.pieces) AS pieces, SUM(a.amount_cents) AS amountCents,
       SUM(a.pay_run_line_id IS NULL) AS unpaid
@@ -54,18 +55,18 @@ function weekOf(db: Db, employeeId: string, week: { from: string; to: string }) 
     const of = rows.filter((r) => r.date === date);
     return { date, pieces: of.reduce((s, r) => s + r.pieces, 0), amountCents: of.reduce((s, r) => s + r.amountCents, 0) };
   });
-  const jobs = new Map<string, { jobOrderNumber: string; stepName: string; rateCents: number; pieces: number; amountCents: number }>();
-  for (const r of rows) {
-    const key = `${r.jobOrderId}|${r.stepName}|${r.rateCents}`;
-    const j = jobs.get(key) ?? { jobOrderNumber: jobOrderRef(db, r.jobOrderId)?.number ?? '?', stepName: r.stepName, rateCents: r.rateCents, pieces: 0, amountCents: 0 };
-    j.pieces += r.pieces; j.amountCents += r.amountCents;
-    jobs.set(key, j);
-  }
   return {
-    ...week, days, jobs: [...jobs.values()],
+    ...week, days,
     pieces: rows.reduce((s, r) => s + r.pieces, 0), amountCents: rows.reduce((s, r) => s + r.amountCents, 0),
     paid: rows.length > 0 && rows.every((r) => r.unpaid === 0),
   };
+}
+
+/** The week's piece rows, the same breakdown as a payroll's earnings: each with its item, step, day, rate and wearers. */
+function weekLines(db: Db, employeeId: string, week: { from: string; to: string }) {
+  const rows = db.prepare(`SELECT a.id, a.pieces, a.rate_cents AS rateCents, a.amount_cents AS amountCents FROM prd_assignments a ${POSTED}
+    WHERE a.employee_id = ? AND a.work_date BETWEEN ? AND ? ORDER BY a.work_date, a.row_no`).all(employeeId, week.from, week.to) as { id: string; pieces: number; rateCents: number; amountCents: number }[];
+  return rows.map((r, i) => ({ lineNo: i + 1, kind: 'piece', description: '', qty: r.pieces, rateCents: r.rateCents, multiplierBp: 10_000, amountCents: r.amountCents, work: pieceWork(db, r.id) }));
 }
 
 /** Today's screen: the week so far, the work with pieces left, and the two weeks before. */
@@ -89,7 +90,7 @@ export function floorToday(db: Db, userId: string, today: string) {
       stepId: step.id, stepName: step.name, qty: line.qty, done: step.pieces, left }];
   });
   return {
-    employee: { name: me.name, code: me.code }, today, week: weekOf(db, me.id, week), work,
+    employee: { name: me.name, code: me.code }, today, week: { ...weekOf(db, me.id, week), lines: weekLines(db, me.id, week), jobs: [] }, work, // jobs: a phone still on the page before Nov 2026 reads it until it reloads
     // Their scans waiting for the production head's check, and those checked this past week.
     scans: scansOf(db, me.id, `${addDays(today, -7)}T00:00:00`),
     pastWeeks: [1, 2].map((n) => weekOf(db, me.id, payWeekOf(db, addDays(week.from, -7 * n)))).map(({ from, to, pieces, amountCents, paid }) => ({ from, to, pieces, amountCents, paid })),
