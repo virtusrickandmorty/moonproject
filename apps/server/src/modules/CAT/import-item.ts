@@ -5,6 +5,7 @@
 import { newId } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
+import { currentGarmentType } from './public.ts';
 
 /** The prefix of an item code by class, and the next free code: the highest number used with that prefix, plus one. */
 export const CODE_PREFIX: Record<'made_to_order_garment' | 'service' | 'ready_made_item', string> = { made_to_order_garment: 'MTO', service: 'SRV', ready_made_item: 'RTW' };
@@ -28,15 +29,16 @@ export interface ImportedItem {
 }
 
 /**
- * The price list item an import row names: the active item of that name (any case), or a new one (its code the next of
- * its class; a made-to-order garment goes by its name for its piece rates). A price is added from today when the item
+ * The price list item an import row names: the active item of that name (any case), then the one that had it before a
+ * rename (a sheet from before it must not bring the old name back as a second item on the same rates), or a new one (its
+ * code the next of its class; a made-to-order garment goes by its name for its piece rates). A price is added from today when the item
  * has none in force yet; an existing price is never changed by an import. Call inside the import's transaction.
  */
 export function importPriceListItem(db: Db, row: ImportedItem, who: { userId: string; at: string; today: string }): { id: string; garmentType: string | null; created: boolean; priced: boolean } {
   const name = row.name.trim();
-  const found = db.prepare(`SELECT id, garment_type AS garmentType FROM cat_items WHERE name = ? COLLATE NOCASE AND is_active = 1 ORDER BY created_at LIMIT 1`).get(name) as
-    | { id: string; garmentType: string | null }
-    | undefined;
+  type Found = { id: string; garmentType: string | null } | undefined;
+  const found = (db.prepare(`SELECT id, garment_type AS garmentType FROM cat_items WHERE name = ? COLLATE NOCASE AND is_active = 1 ORDER BY created_at LIMIT 1`).get(name)
+    ?? db.prepare(`SELECT id, garment_type AS garmentType FROM cat_items WHERE garment_type = ? COLLATE NOCASE AND is_active = 1 ORDER BY created_at LIMIT 1`).get(currentGarmentType(db, name))) as Found;
   let id = found?.id;
   let garmentType = found?.garmentType ?? null;
   if (!id) {

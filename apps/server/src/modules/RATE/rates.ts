@@ -9,6 +9,7 @@ import { GARMENT_TYPE_MAX, badRequest, isBusinessDate } from '@moonproject/share
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { COMPLEXITIES, listSteps, type Complexity } from '../PRD/public.ts';
+import { currentGarmentType, movedGarmentTypes } from '../CAT/public.ts';
 
 export const MAX_RATE_CENTS = 1_000_000; // ₱10,000 per piece: a typo guard
 
@@ -26,9 +27,10 @@ function rateAtRaw(db: Db, garmentType: string, stepCode: string, complexity: Co
     .get(garmentType.trim(), stepCode, complexity, part, date) as PieceRate | undefined;
 }
 
-/** The rate in force on a date, or none while its garment type is switched off (switchGarmentType). */
+/** The rate in force on a date, or none while its garment type is switched off (switchGarmentType). A renamed type reads its new name. */
 export function rateAt(db: Db, garmentType: string, stepCode: string, complexity: Complexity, date: string, part: Part = 'whole'): PieceRate | undefined {
-  return isSwitchedOff(db, garmentType) ? undefined : rateAtRaw(db, garmentType, stepCode, complexity, date, part);
+  const now = currentGarmentType(db, garmentType);
+  return isSwitchedOff(db, now) ? undefined : rateAtRaw(db, now, stepCode, complexity, date, part);
 }
 
 /** Whether a garment type's rates are switched off: its latest switch row says off. */
@@ -36,22 +38,44 @@ export function isSwitchedOff(db: Db, garmentType: string): boolean {
   return db.prepare('SELECT is_on FROM rate_garment_type_switches WHERE garment_type = ? ORDER BY id DESC LIMIT 1').pluck().get(garmentType.trim()) === 0;
 }
 
-/** Every rate in force on a date, one per garment type, step, complexity and part. */
+/** Whether a garment type has any rate row. */
+export const hasRates = (db: Db, garmentType: string): boolean => db.prepare('SELECT 1 FROM rate_piece_rates WHERE garment_type = ? LIMIT 1').get(garmentType.trim()) !== undefined;
+
+/**
+ * A garment type's rates carried to another name, history included, each as it was: an item renamed or given rates of its own
+ * keeps what it was paid and from when. The rows are copies, since a rate is never changed; the switch goes with them. Call
+ * inside a transaction.
+ */
+export function carryRates(db: Db, from: string, to: string, who: { userId: string; at: string }): number {
+  const carried = db.prepare(`INSERT INTO rate_piece_rates (garment_type, step_code, complexity, part, rate_cents, effective_from, reason, created_at, created_by)
+    SELECT ?, step_code, complexity, part, rate_cents, effective_from, reason, created_at, created_by FROM rate_piece_rates WHERE garment_type = ? ORDER BY id`).run(to, from).changes;
+  if (carried > 0 && isSwitchedOff(db, from) !== isSwitchedOff(db, to)) {
+    db.prepare('INSERT INTO rate_garment_type_switches (garment_type, is_on, reason, at, user_id) VALUES (?, ?, ?, ?, ?)').run(to, isSwitchedOff(db, from) ? 0 : 1, 'As its rates were before they moved here', who.at, who.userId);
+  }
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'rate.carry', entityType: 'rate.garment_type', entityId: to, data: { from, to, rows: carried } });
+  return carried;
+}
+
+/** Every rate in force on a date, one per garment type, step, complexity and part; a renamed type under its new name only. */
 export function ratesAt(db: Db, date: string): PieceRate[] {
+  const moved = movedGarmentTypes(db);
   return (db
     .prepare(
       `${RATE} r WHERE effective_from <= @date AND id = (SELECT x.id FROM rate_piece_rates x WHERE x.garment_type = r.garment_type AND x.step_code = r.step_code
          AND x.complexity = r.complexity AND x.part = r.part AND x.effective_from <= @date ORDER BY x.effective_from DESC, x.id DESC LIMIT 1)
        ORDER BY garment_type, step_code, complexity, part`,
     )
-    .all({ date }) as PieceRate[]).filter((r) => !isSwitchedOff(db, r.garmentType));
+    .all({ date }) as PieceRate[]).filter((r) => !isSwitchedOff(db, r.garmentType) && !moved.has(r.garmentType.toLowerCase()));
 }
 
 /** All rows, newest first: the history, rates that start later included. */
 export const rateHistory = (db: Db): PieceRate[] => db.prepare(`${RATE} ORDER BY effective_from DESC, id DESC`).all() as PieceRate[];
 
 /** Garment types that have a rate, for the pickers. */
-export const garmentTypes = (db: Db): string[] => db.prepare('SELECT DISTINCT garment_type FROM rate_piece_rates ORDER BY garment_type').pluck().all() as string[];
+export function garmentTypes(db: Db): string[] {
+  const moved = movedGarmentTypes(db);
+  return (db.prepare('SELECT DISTINCT garment_type FROM rate_piece_rates ORDER BY garment_type').pluck().all() as string[]).filter((g) => !moved.has(g.toLowerCase()));
+}
 
 export const rateInput = z
   .object({
@@ -73,8 +97,9 @@ export function addRate(db: Db, raw: unknown, who: { userId: string; at: string;
   if (!isBusinessDate(v.effectiveFrom)) throw badRequest('BAD_DATE', 'Enter the date the rate takes effect (YYYY-MM-DD).');
   if (v.effectiveFrom < who.today) throw badRequest('RATE_BACKDATED', 'A rate can change from today or a later date, never an earlier one, so recorded pieces keep the rate they took.');
   if (!listSteps(db).some((s) => s.code === v.stepCode)) throw badRequest('STEP', 'Pick the operation (step) from the list.');
-  const known = db.prepare('SELECT garment_type FROM rate_piece_rates WHERE garment_type = ? LIMIT 1').pluck().get(v.garmentType) as string | undefined;
-  const garmentType = known ?? v.garmentType; // "polo shirt" joins the existing "Polo shirt"
+  const named = currentGarmentType(db, v.garmentType); // a renamed type's rate goes under its new name
+  const known = db.prepare('SELECT garment_type FROM rate_piece_rates WHERE garment_type = ? LIMIT 1').pluck().get(named) as string | undefined;
+  const garmentType = known ?? named; // "polo shirt" joins the existing "Polo shirt"
   const id = Number(
     db
       .prepare('INSERT INTO rate_piece_rates (garment_type, step_code, complexity, part, rate_cents, effective_from, reason, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')

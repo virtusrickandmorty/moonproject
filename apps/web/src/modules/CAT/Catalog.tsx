@@ -9,6 +9,7 @@ import { useLiveChange } from '../../live.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Me, type PieceRate, type PrdStep, type RateTable } from '../../api.ts';
 import { Loading, Button, Dialog, Field, Notice, PageBar, Panel, ReasonDialog, choosePageRows, inputClass, peso, useAction, useRowsPerPage, searchClass, searchRowClass, showDate } from '../../components/ui.tsx';
+import { GARMENT_TYPE_MAX } from '@moonproject/shared';
 import { cents } from '../COL/money.ts';
 import { CLASS_LABELS as classes, blankItem, catalogCalls, moneyCents, typeLocked, valuesOf, type Detail, type Item, type ItemValues } from './catalog.ts';
 import { newestFirst, Paged } from '../../components/RowPages.tsx';
@@ -73,7 +74,7 @@ export function ItemEditor({ me, row, onClose, onSaved }: { me: Me; row: Detail 
   const save = useAction();
   const submit = () => save.run(async () => {
     const calls = catalogCalls(me);
-    // A new garment's piece rates go by its name; an edit keeps what its rates were set under (a rename keeps its rates).
+    // A garment's piece rates go by its name. On a rename the server moves them to the new name, history and all.
     const values = { ...v, code: old ? v.code : '', garmentType: old?.garment_type ?? v.name };
     const saved = old ? await calls.update(old, values) : await calls.create(values);
     await onSaved(saved.id);
@@ -129,7 +130,7 @@ function ItemDetail({ me, data, onEdit, onRefresh }: { me: Me; data: Detail; onE
         {price.error && <Notice>{price.error}</Notice>}<Button tone="primary" disabled={price.busy || !effectiveFrom || !Number.isInteger(minQty) || minQty < 1 || moneyCents(amount) === null}
           onClick={() => void savePrice()}>Save price</Button></div>}
     </Panel>
-    {data.class === 'made_to_order_garment' && data.garment_type && me.permissions.includes('rate.view') && <LabourRates me={me} item={data} />}
+    {data.class === 'made_to_order_garment' && data.garment_type && me.permissions.includes('rate.view') && <LabourRates me={me} item={data} onRefresh={onRefresh} />}
     {confirmOff && <Dialog title={`Deactivate ${data.name}?`} onClose={() => setConfirmOff(false)}>
       <p className="text-sm text-slate-700">It stays in the price list and on old quotations, but new quotations cannot use it. An item cannot be turned back on, so add a new item if you need it again.</p>
       {off.error && <Notice>{off.error}</Notice>}
@@ -146,7 +147,10 @@ const PART: Record<string, string> = { whole: '', upper: 'Upper part', lower: 'L
  * (the owner's request, Oct 2026: the price list holds all piece rates, so the separate Piece rates screen is gone). No
  * difficulty (the owner's decision, Oct 2026): each item has its own rates, so a harder version is an item of its own.
  */
-function LabourRates({ me, item }: { me: Me; item: Detail }) {
+function LabourRates({ me, item, onRefresh }: { me: Me; item: Detail; onRefresh: () => Promise<void> }) {
+  const own = useAction();
+  const oldName = item.garment_type!.toLowerCase() !== item.name.slice(0, GARMENT_TYPE_MAX).trim().toLowerCase();
+  const others = (item.sharedWith ?? []).map((o) => `${o.code} ${o.name}`).join(', ');
   const [rates, setRates] = useState<{ asOf: string; current: PieceRate[]; history: PieceRate[] } | null>(null);
   const [steps, setSteps] = useState<PrdStep[]>([]);
   const [error, setError] = useState('');
@@ -166,6 +170,11 @@ function LabourRates({ me, item }: { me: Me; item: Detail }) {
     .sort((a, b) => order(a.stepCode) - order(b.stepCode) || a.part.localeCompare(b.part));
   const rateOf = (stepCode: string, part: string) => paid.find((r) => r.stepCode === stepCode && (r.part ?? 'whole') === part);
   return <Panel title="Labour (piece rates)">
+    {(oldName || others) && <div role="status" className="space-y-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-amber-200">
+      {others ? <p><b>These rates are shared with {others}.</b> Changing one changes the other.</p> : <p>These rates are still kept under the old name “{item.garment_type}”.</p>}
+      {own.error && <Notice>{own.error}</Notice>}
+      {oldName && item.is_active === 1 && me.permissions.includes('cat.manage') && <Button disabled={own.busy} onClick={() => void own.run(async () => { await catalogCalls(me).ownRates(item); await onRefresh(); })}>Give {item.code} its own rates</Button>}
+    </div>}
     {!rates ? <Loading /> : <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
       <th>Step</th><th className="text-right">Rate per piece</th></tr></thead><tbody>
       {rows.map((k) => <tr key={`${k.stepCode}|${k.part}`}><td>{stepName(k.stepCode)}{k.part !== 'whole' && <span className="text-slate-500"> · {PART[k.part]}</span>}</td>

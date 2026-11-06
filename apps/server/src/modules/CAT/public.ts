@@ -11,6 +11,30 @@ export interface CatalogPrice {
   unitPriceCents: number;
 }
 
+/**
+ * The name a garment type goes by now: follows where a renamed item took it (cat_garment_type_moves). What is recorded names
+ * the type it had then, so a job order line or cost sheet on the old name reads the rates of the new one.
+ */
+export function currentGarmentType(db: Db, garmentType: string): string {
+  const next = db.prepare('SELECT to_type FROM cat_garment_type_moves WHERE from_type = ? ORDER BY id DESC LIMIT 1').pluck();
+  const seen = new Set<string>();
+  let name = garmentType.trim();
+  while (!seen.has(name.toLowerCase())) {
+    seen.add(name.toLowerCase());
+    const to = next.get(name) as string | undefined;
+    if (to === undefined) break;
+    name = to;
+  }
+  return name;
+}
+
+/** The garment types no longer in use under their own name, in lower case: their rates live on under the new name. */
+export function movedGarmentTypes(db: Db): Set<string> {
+  const rows = db.prepare(`SELECT from_type AS fromType, to_type AS toType FROM cat_garment_type_moves m
+    WHERE id = (SELECT MAX(x.id) FROM cat_garment_type_moves x WHERE x.from_type = m.from_type)`).all() as { fromType: string; toType: string }[];
+  return new Set(rows.filter((r) => r.fromType.toLowerCase() !== r.toType.toLowerCase()).map((r) => r.fromType.toLowerCase()));
+}
+
 /** Stable item metadata for another module's read-only validation. */
 export function catalogItemRef(db: Db, id: string): {
   code: string; name: string; class: 'made_to_order_garment' | 'service' | 'ready_made_item';
@@ -25,19 +49,21 @@ export function catalogItemRef(db: Db, id: string): {
 /**
  * The price list item a job order line is made from, by its words (the owner's request, Oct 2026: production takes the
  * garment type for piece rates, and whether it is a set, from it). Active made-to-order items only. The item named
- * exactly wins; then one whose name's words all appear in the line; then the one sharing most words; a longer name wins
- * a tie. Null when no word is shared.
+ * exactly wins; then the item a line's words name by an old name (its garment type, or where that went); then one whose
+ * name's words all appear in the line; then the one sharing most words; a longer name wins a tie. A number counts as a word:
+ * "2 Pockets" and "3 Pockets" are different items. Null when no word is shared.
  */
 export function matchCatalogItem(db: Db, text: string): { id: string; name: string; garmentType: string; unit: 'pc' | 'set' } | null {
-  const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 2));
+  const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 2 || /\d/.test(w)));
   const said = words(text);
   const flat = text.trim().toLowerCase();
   const items = db.prepare(`SELECT id, name, garment_type AS garmentType, unit FROM cat_items WHERE is_active = 1 AND class = 'made_to_order_garment'`).all() as { id: string; name: string; garmentType: string; unit: 'pc' | 'set' }[];
+  const oldName = currentGarmentType(db, text).toLowerCase();
   let best: { item: (typeof items)[number]; score: number } | null = null;
   for (const item of items) {
     const own = words(item.name);
     const shared = [...own].filter((w) => said.has(w)).length;
-    const score = item.name.trim().toLowerCase() === flat ? 3_000 : shared === own.size && shared > 0 ? 2_000 + shared : shared;
+    const score = item.name.trim().toLowerCase() === flat ? 3_000 : item.garmentType.trim().toLowerCase() === oldName ? 2_900 : shared === own.size && shared > 0 ? 2_000 + shared : shared;
     if (score > 0 && (!best || score > best.score || (score === best.score && item.name.length > best.item.name.length))) best = { item, score };
   }
   return best ? best.item : null;

@@ -17,7 +17,7 @@ async function pickFromPriceList(page: Page, code: string, name: string) {
   await page.evaluate(async ({ code, name }) => {
     const me = (await (await fetch('/api/auth/me', { credentials: 'same-origin' })).json()) as { csrfToken: string };
     await fetch('/api/cat/items', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken },
-      body: JSON.stringify({ code, name, class: 'made_to_order_garment', garmentType: 'jersey', unit: 'pc', setComponents: 1 }) }); // already there: refused, fine
+      body: JSON.stringify({ code, name, class: 'made_to_order_garment', garmentType: name, unit: 'pc', setComponents: 1 }) }); // already there: refused, fine
   }, { code, name });
   await page.getByLabel('Item price list item').fill(name);
   await page.getByRole('button', { name: new RegExp(name) }).first().click();
@@ -280,7 +280,7 @@ test('sales: a job order made from a quotation is filled from it and can be chan
       const res = await fetch(url, { method, credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-csrf-token': me.csrfToken, ...headers }, ...(body ? { body: JSON.stringify(body) } : {}) });
       return { ok: res.ok, json: (await res.json()) as unknown };
     }, { method, url, body, headers }) as Promise<{ ok: boolean; json: T }>;
-  const item = (await call<{ id: string }>('POST', '/api/cat/items', { code: 'ROW-01', name: 'Rowing jersey', class: 'made_to_order_garment', garmentType: 'jersey', unit: 'pc', setComponents: 1 })).json;
+  const item = (await call<{ id: string }>('POST', '/api/cat/items', { code: 'ROW-01', name: 'Rowing jersey', class: 'made_to_order_garment', garmentType: 'Rowing jersey', unit: 'pc', setComponents: 1 })).json;
   expect((await call('POST', `/api/cat/items/${item.id}/prices`, { effectiveFrom: await serverDate(page), minQty: 1, unitPriceCents: 150_000 }, { 'if-match': '1' })).ok).toBe(true);
   const customers = (await call<{ id: string }[]>('GET', '/api/cus/customers?search=Harbor&limit=10')).json;
   const input = { customerId: customers[0]!.id, validForDays: 15, notes: 'Sample notes', lines: [{ itemId: item.id, description: 'Rowing jersey', qty: 3, unit: 'pc', discountCents: 0 }], documentDiscountCents: 0 };
