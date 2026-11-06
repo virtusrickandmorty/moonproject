@@ -193,9 +193,18 @@ export interface ReleaseValues {
   wearers: Record<number, number[]>;
   claimedBy: string; idSeen: IdSeen | ''; creditNote: string; creditDueInDays: string; overrideReason: string;
   invoiceNumber: string; invoiceToFollow: boolean; invoiceNote: string;
+  /** Sent out with nobody claiming it yet: the slip leaves the receiver blank, to sign by hand. */
+  forDelivery: boolean;
 }
+/**
+ * No invoice for a release with nothing to charge: known at once when the whole job order is ₱0 (a free alteration), and from
+ * the preview for the ₱0 lines of a job order that has others. The preview waits for the release to be filled in.
+ */
+export const nothingToCharge = (jobOrderCents: number | undefined, previewCents: number | undefined) => jobOrderCents === 0 || previewCents === 0;
+/** What a release for delivery keeps as who claimed it, until someone signs the slip. */
+export const FOR_DELIVERY = 'For delivery';
 export const emptyRelease = (jobOrderId = ''): ReleaseValues => ({
-  jobOrderId, qtys: {}, wearers: {}, claimedBy: '', idSeen: '', creditNote: '', creditDueInDays: '', overrideReason: '', invoiceNumber: '', invoiceToFollow: false, invoiceNote: '',
+  jobOrderId, qtys: {}, wearers: {}, claimedBy: '', idSeen: '', creditNote: '', creditDueInDays: '', overrideReason: '', invoiceNumber: '', invoiceToFollow: false, invoiceNote: '', forDelivery: false,
 });
 /** Everything left on each line, ticked. */
 /**
@@ -224,7 +233,7 @@ export function readyWearers(lines: JoStatus['lines'], qtys: Record<number, stri
   return { wearers, qtys: out };
 }
 
-export interface ReleaseInput { jobOrderId: string; lines: { lineNo: number; qty: number; wearers?: number[] }[]; claimedBy: string; idSeen: IdSeen; creditNote?: string; creditDueInDays?: number; overrideReason?: string }
+export interface ReleaseInput { jobOrderId: string; lines: { lineNo: number; qty: number; wearers?: number[] }[]; claimedBy: string; idSeen: IdSeen; forDelivery?: true; creditNote?: string; creditDueInDays?: number; overrideReason?: string }
 
 /**
  * Typed values -> the release, its invoice (null = invoice to follow), and what to fix first (`releaseErrors`: the release
@@ -242,8 +251,8 @@ export function releaseInput(v: ReleaseValues, left: JoStatus['lines']): { relea
     else lines.push({ lineNo: l.lineNo, qty: Number(typed), ...((v.wearers?.[l.lineNo]?.length ?? 0) > 0 ? { wearers: [...v.wearers[l.lineNo]!].sort((a, b) => a - b) } : {}) });
   }
   if (v.jobOrderId && lines.length === 0 && errors.length === 0) errors.push('Tick the lines and pieces going out.');
-  if (!v.claimedBy.trim()) errors.push('Type who claimed it.');
-  if (!v.idSeen) errors.push('Pick the ID seen.');
+  if (!v.forDelivery && !v.claimedBy.trim()) errors.push('Type who claimed it, or tick "For delivery".');
+  if (!v.forDelivery && !v.idSeen) errors.push('Pick the ID seen.');
   const days = v.creditDueInDays.trim();
   if (days && (!/^\d{1,3}$/.test(days) || Number(days) < 1 || Number(days) > 365)) errors.push('Pay within: type the number of days, 1 to 365.');
   const releaseErrors = [...errors];
@@ -251,8 +260,9 @@ export function releaseInput(v: ReleaseValues, left: JoStatus['lines']): { relea
   const release: ReleaseInput = {
     jobOrderId: v.jobOrderId,
     lines,
-    claimedBy: v.claimedBy.trim(),
-    idSeen: (v.idSeen || 'none') as IdSeen,
+    claimedBy: v.forDelivery ? FOR_DELIVERY : v.claimedBy.trim(),
+    idSeen: v.forDelivery ? 'none' : (v.idSeen || 'none') as IdSeen,
+    ...(v.forDelivery ? { forDelivery: true as const } : {}),
     ...optional('creditNote', v.creditNote),
     ...(days && Number(days) >= 1 ? { creditDueInDays: Number(days) } : {}),
     ...optional('overrideReason', v.overrideReason),
