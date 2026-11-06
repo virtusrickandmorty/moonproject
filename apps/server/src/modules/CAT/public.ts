@@ -144,7 +144,7 @@ export function itemGarmentTypes(db: Db): string[] {
 }
 
 /** Price list items created or found by an import (MIG): import-item.ts. */
-export { importPriceListItem, type ImportedItem } from './import-item.ts';
+export { findPriceListItem, importPriceListItem, latestPrice, type ImportedItem } from './import-item.ts';
 
 /** Price list items by name or code, for the search bar. */
 export function searchCatalogItems(db: Db, query: string, limit = 10): { id: string; code: string; name: string }[] {

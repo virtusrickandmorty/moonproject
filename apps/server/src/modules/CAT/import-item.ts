@@ -2,7 +2,7 @@
  * Price list items from another module's import (MIG, the owner's request, Oct 2026: Import old data brings in the price
  * list, its piece rates on each item). The item codes are counted here, for the item routes and the import alike.
  */
-import { newId } from '@moonproject/shared';
+import { manilaDate, newId } from '@moonproject/shared';
 import type { Db } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
 import { currentGarmentType } from './public.ts';
@@ -29,16 +29,34 @@ export interface ImportedItem {
 }
 
 /**
- * The price list item an import row names: the active item of that name (any case), then the one that had it before a
- * rename (a sheet from before it must not bring the old name back as a second item on the same rates), or a new one (its
- * code the next of its class; a made-to-order garment goes by its name for its piece rates). A price is added from today when the item
- * has none in force yet; an existing price is never changed by an import. Call inside the import's transaction.
+ * The active item an import row names: by that name (any case), then the one that had it before a rename (a sheet from before
+ * it must not bring the old name back as a second item on the same rates).
+ */
+export function findPriceListItem(db: Db, name: string): { id: string; garmentType: string | null } | undefined {
+  return (db.prepare(`SELECT id, garment_type AS garmentType FROM cat_items WHERE name = ? COLLATE NOCASE AND is_active = 1 ORDER BY created_at LIMIT 1`).get(name.trim())
+    ?? db.prepare(`SELECT id, garment_type AS garmentType FROM cat_items WHERE garment_type = ? COLLATE NOCASE AND is_active = 1 ORDER BY created_at LIMIT 1`).get(currentGarmentType(db, name))) as { id: string; garmentType: string | null } | undefined;
+}
+
+/** An item's newest price for a tier, one set to start later included: what a new price replaces. */
+export const latestPrice = (db: Db, itemId: string, minQty: number): number | undefined =>
+  db.prepare('SELECT unit_price_cents FROM cat_prices WHERE item_id = ? AND min_qty = ? ORDER BY effective_from DESC LIMIT 1').pluck().get(itemId, minQty) as number | undefined;
+
+/** The first date from today with no price for the tier: a date holds one price, so a second change the same day starts the next. */
+function freePriceDate(db: Db, itemId: string, minQty: number, today: string): string {
+  const taken = db.prepare('SELECT 1 FROM cat_prices WHERE item_id = ? AND min_qty = ? AND effective_from = ?');
+  let date = today;
+  while (taken.get(itemId, minQty, date)) date = manilaDate(new Date(Date.parse(`${date}T00:00:00+08:00`) + 86_400_000));
+  return date;
+}
+
+/**
+ * The price list item an import row names (findPriceListItem), or a new one (its code the next of its class; a made-to-order
+ * garment goes by its name for its piece rates). A row's price becomes the item's price from today when it differs from what
+ * the item has (the owner's request, Nov 2026: uploading again updates the item). Call inside the import's transaction.
  */
 export function importPriceListItem(db: Db, row: ImportedItem, who: { userId: string; at: string; today: string }): { id: string; garmentType: string | null; created: boolean; priced: boolean } {
   const name = row.name.trim();
-  type Found = { id: string; garmentType: string | null } | undefined;
-  const found = (db.prepare(`SELECT id, garment_type AS garmentType FROM cat_items WHERE name = ? COLLATE NOCASE AND is_active = 1 ORDER BY created_at LIMIT 1`).get(name)
-    ?? db.prepare(`SELECT id, garment_type AS garmentType FROM cat_items WHERE garment_type = ? COLLATE NOCASE AND is_active = 1 ORDER BY created_at LIMIT 1`).get(currentGarmentType(db, name))) as Found;
+  const found = findPriceListItem(db, name);
   let id = found?.id;
   let garmentType = found?.garmentType ?? null;
   if (!id) {
@@ -51,15 +69,15 @@ export function importPriceListItem(db: Db, row: ImportedItem, who: { userId: st
   }
   let priced = false;
   if (row.priceCents !== undefined) {
-    // A price break (the owner's request, Oct 2026): the price from that many pieces, added unless the item has that break.
+    // A price break (the owner's request, Oct 2026): the price from that many pieces.
     const minQty = row.minQty ?? 1;
-    const has = db.prepare('SELECT 1 FROM cat_prices WHERE item_id = ? AND min_qty = ? AND effective_from <= ? LIMIT 1').get(id, minQty, who.today);
-    if (!has) {
+    if (latestPrice(db, id, minQty) !== row.priceCents) {
       const priceId = newId();
+      const effectiveFrom = freePriceDate(db, id, minQty, who.today);
       db.prepare(`INSERT INTO cat_prices (id, item_id, effective_from, min_qty, unit_price_cents, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)`)
-        .run(priceId, id, who.today, minQty, row.priceCents, who.at, who.userId);
+        .run(priceId, id, effectiveFrom, minQty, row.priceCents, who.at, who.userId);
       db.prepare('UPDATE cat_items SET version = version + 1, updated_at = ? WHERE id = ?').run(who.at, id);
-      appendAudit(db, { at: who.at, userId: who.userId, action: 'cat.price.create', entityType: 'cat_price', entityId: priceId, data: { itemId: id, effectiveFrom: who.today, minQty, unitPriceCents: row.priceCents, imported: true } });
+      appendAudit(db, { at: who.at, userId: who.userId, action: 'cat.price.create', entityType: 'cat_price', entityId: priceId, data: { itemId: id, effectiveFrom, minQty, unitPriceCents: row.priceCents, imported: true } });
       priced = true;
     }
   }

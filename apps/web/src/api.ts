@@ -1030,8 +1030,13 @@ export interface MigRow {
   id: string; rowNumber: number; rowType: MigRowType; status: MigRowStatus; raw: Record<string, string>; issues: string[];
   manualData: Record<string, string | number> | null; legacyId: string | null; rateCents: number | null; mergeIntoRowId: string | null;
 }
+/** One figure a price list upload will change; `fromCents` null: there is none yet. */
+export interface PlannedChange { item: string; what: string; row: number; fromCents: number | null; toCents: number }
 export interface DryRunResult {
   success: true;
+  /** What the price list rows will change on the items they name. */
+  priceList?: { newItems: string[]; rates: PlannedChange[]; prices: PlannedChange[]; unchanged: number;
+    zeroKept: { item: string; what: string; row: number; keptCents: number }[]; clashes: { item: string; what: string; rows: number[]; usedRow: number }[] };
   counts: {
     customers: number; measurements: number; employees: number; pieceRates: number; sizerSets?: number; excluded: number; merged: number; total: number;
     /** What the bulk choices for MANUAL size rows will make: customers, groups, and wearers. */

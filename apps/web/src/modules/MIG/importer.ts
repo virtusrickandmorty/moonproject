@@ -406,6 +406,16 @@ export function dryRunLines(r: DryRunResult): [label: string, value: string][] {
     ...(c.wearers ? [['Wearers made from sizes without a customer', String(c.wearers)] as [string, string]] : []),
   ];
 }
+/** The rates a price list upload brings down: a sheet older than a change made on the screen takes it back. */
+export const ratesGoingDown = (r: DryRunResult) => (r.priceList?.rates ?? []).filter((c) => c.fromCents !== null && c.toCents < c.fromCents);
+/** What a price list upload will do, in a line. */
+export function priceListWords(r: DryRunResult): string {
+  const p = r.priceList;
+  if (!p) return '';
+  const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  return [count(p.rates.length, 'rate changes', 'rates change'), count(p.prices.length, 'price changes', 'prices change'), count(p.newItems.length, 'new item', 'new items'), count(p.unchanged, 'row has no change', 'rows have no change')].join(', ');
+}
+
 /** Every row of the file is counted once: imported by kind, excluded or merged. */
 export const dryRunAddsUp = (r: DryRunResult): boolean => {
   const c = r.counts;
@@ -439,6 +449,7 @@ export function commitLines(r: MigCommitResult): [label: string, value: string][
   const sizers = r.counts.sizer_set && (r.counts.sizer_set.imported || r.counts.sizer_set.alreadyImported) ? [['sizer_set', 'Sizer sets'] as [keyof MigCommitResult['counts'], string]] : [];
   return [...COMMIT_KINDS, ...sizers].map(([k, label]) => {
     const { imported, alreadyImported } = r.counts[k]!;
+    if (k === 'piece_rate') return [label, alreadyImported ? `${imported} added or updated, ${alreadyImported} with no change` : `${imported} added or updated`];
     return [label, alreadyImported ? `${imported} imported, ${alreadyImported} already imported before` : `${imported} imported`];
   });
 }

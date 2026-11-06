@@ -13,6 +13,7 @@ import { activeCustomers, createGroup, createWearer, customerRef } from '../CUS/
 import { applyEmployeeFix, applyMeasurementAssignment, applySizerFix, carryItemDetails, duplicateKeys, isManualMeasurement, manualName, measurementField, measurementFields, measurementTenths, nameKey, parseCSV, validateRow, type ManualData, type ParsedRow, type RowType, applyPriceListFix } from './csv.ts';
 import { fromSheetRow, sheetTabOf } from './sheet.ts';
 import { commitUpload } from './commit.ts';
+import { planPriceList } from './price-plan.ts';
 
 const auth = { config: { permission: 'mig.run' } };
 const commitAuth = { config: { permission: 'mig.commit' } };
@@ -499,7 +500,10 @@ export function migRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (row.row_type === 'sizer_set') counts.sizerSets++;
       normalized[row.row_type].push(data);
     }
-    return { success: true, counts: { ...counts, ...(fromManual.newCustomers ? { newCustomers: fromManual.newCustomers } : {}),
+    // What the price list rows will change, compared with what the items have now, for the owner to see before importing.
+    const priceRows = rows.filter((r) => r.row_type === 'piece_rate' && r.status !== 'excluded' && r.status !== 'merged');
+    const priceList = priceRows.length ? planPriceList(db, priceRows.map((r) => ({ id: r.id, rowNumber: r.row_number, raw: effective(r) })), today(clock)).plan : undefined;
+    return { success: true, ...(priceList ? { priceList } : {}), counts: { ...counts, ...(fromManual.newCustomers ? { newCustomers: fromManual.newCustomers } : {}),
       ...(newGroups.size ? { newGroups: newGroups.size } : {}), ...(fromManual.wearers ? { wearers: fromManual.wearers } : {}) }, checksums: {
       customer: { sha256: hash(normalized.customer) },
       measurement: { sha256: hash(normalized.measurement), cellTenths: measurementCellTenths },
