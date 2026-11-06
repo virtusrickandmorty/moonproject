@@ -537,7 +537,7 @@ export interface LeaveBalances {
   totals: { earned: number; used: number; paid: number; left: number };
 }
 export type AttendanceStatus = 'present' | 'half_day' | 'absent' | 'rest_day' | 'leave' | 'unpaid_leave' | 'holiday_off' | 'holiday_worked' | 'rest_day_worked';
-export interface AttendanceDay { employeeId: string; date: string; status: AttendanceStatus; otMinutes: number; nightMinutes: number; nightOtMinutes: number; note: string | null }
+export interface AttendanceDay { employeeId: string; date: string; status: AttendanceStatus; otMinutes: number; nightMinutes: number; nightOtMinutes: number; timeIn?: string; timeOut?: string; note: string | null }
 export interface Holiday { id: number; date: string; name: string; kind: 'regular' | 'special'; source: string; isActive: boolean; deactivatedReason: string | null }
 export interface AttendanceGrid {
   from: string; to: string; today: string; statuses: AttendanceStatus[]; holidays: Holiday[];
@@ -550,11 +550,11 @@ export interface PaidDays { employeeId: string; from: string; to: string; number
 /** The biometric report worked out for review (EMP biometric.ts): each day's action says what saving it would do. */
 export type BiometricAction = 'new' | 'changed' | 'same' | 'kept' | 'locked' | 'outside' | 'not_linked';
 export interface BiometricDay {
-  date: string; punches: string[]; status: AttendanceStatus; otMinutes: number; nightMinutes: number; nightOtMinutes: number; lateMinutes: number; undertimeMinutes: number;
+  date: string; punches: string[]; status: AttendanceStatus; otMinutes: number; nightMinutes: number; nightOtMinutes: number; lateMinutes: number; undertimeMinutes: number; timeIn?: string; timeOut?: string;
   flags: string[]; action: BiometricAction; existing: { status: AttendanceStatus; otMinutes: number; nightMinutes: number; note: string | null } | null; lockedBy?: string;
 }
 export interface BiometricPreview { from: string; to: string; people: { userId: string; name: string; department: string; employeeId: string | null; suggestedEmployeeId: string | null; days: BiometricDay[] }[] }
-export type AttendanceSave = { employeeId: string; date: string; status: AttendanceStatus; otMinutes?: number; nightMinutes?: number; nightOtMinutes?: number; note?: string };
+export type AttendanceSave = { employeeId: string; date: string; status: AttendanceStatus; timeIn?: string; timeOut?: string; otMinutes?: number; nightMinutes?: number; nightOtMinutes?: number; note?: string };
 /** Payroll (PAY) and cash advances (CA): every figure is worked out by the server. */
 export type PayGroup = 'WEEKLY_PIECE' | 'WEEKLY_DAILY' | 'SEMI_DAILY' | 'SEMI_MONTHLY';
 export interface PayLine { lineNo: number; kind: string; description: string; qty: number; rateCents: number; multiplierBp: number; amountCents: number; jobOrderId?: string; reason?: string; work?: PayPieceWork | null }

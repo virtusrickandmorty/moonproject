@@ -87,19 +87,21 @@ export function deactivateHoliday(db: Db, id: number, raw: unknown, who: Who): H
 }
 
 /** `nightOtMinutes`: of the night minutes, those that were also overtime (migration 0005), at most `otMinutes` and `nightMinutes`. */
-export interface AttendanceDay { employeeId: string; date: string; status: AttendanceStatus; otMinutes: number; nightMinutes: number; nightOtMinutes: number; note: string | null }
+/** `timeIn`, `timeOut`: HH:MM, recorded and shown only; payroll never reads them. A time out earlier than the time in is the next day. */
+export interface AttendanceDay { employeeId: string; date: string; status: AttendanceStatus; otMinutes: number; nightMinutes: number; nightOtMinutes: number; timeIn?: string; timeOut?: string; note: string | null }
 /** The latest row of every employee-day. */
-const LATEST = `SELECT a.employee_id, a.work_date, a.status, a.ot_minutes, a.night_minutes, a.night_ot_minutes, a.note FROM emp_attendance a
+const LATEST = `SELECT a.employee_id, a.work_date, a.status, a.ot_minutes, a.night_minutes, a.night_ot_minutes, a.time_in, a.time_out, a.note FROM emp_attendance a
   WHERE a.seq = (SELECT MAX(x.seq) FROM emp_attendance x WHERE x.employee_id = a.employee_id AND x.work_date = a.work_date)`;
 
 /** Attendance from one date to another (both included), for one employee or all. */
 export function attendanceBetween(db: Db, from: string, to: string, employeeId?: string): AttendanceDay[] {
-  return db
+  const rows = db
     .prepare(
-      `SELECT employee_id AS employeeId, work_date AS date, status, ot_minutes AS otMinutes, night_minutes AS nightMinutes, night_ot_minutes AS nightOtMinutes, note FROM (${LATEST})
+      `SELECT employee_id AS employeeId, work_date AS date, status, ot_minutes AS otMinutes, night_minutes AS nightMinutes, night_ot_minutes AS nightOtMinutes, time_in AS timeIn, time_out AS timeOut, note FROM (${LATEST})
        WHERE work_date BETWEEN @from AND @to AND (@e IS NULL OR employee_id = @e) ORDER BY employee_id, work_date`,
     )
-    .all({ from, to, e: employeeId ?? null }) as AttendanceDay[];
+    .all({ from, to, e: employeeId ?? null }) as (Omit<AttendanceDay, 'timeIn' | 'timeOut'> & { timeIn: string | null; timeOut: string | null })[];
+  return rows.map(({ timeIn, timeOut, ...d }) => ({ ...d, ...(timeIn ? { timeIn } : {}), ...(timeOut ? { timeOut } : {}) }));
 }
 
 /** Days of employees paid by recorded payroll runs: attendance on them is locked until the run is cancelled (F3). */
@@ -160,7 +162,8 @@ export function markSilPaid(db: Db, v: { documentId: string; employeeId: string;
   db.prepare('INSERT INTO emp_sil_paid (document_id, employee_id, year, days) VALUES (?, ?, ?, ?)').run(v.documentId, v.employeeId, v.year, v.days);
 }
 
-const day = z.object({ employeeId: z.uuid(), date, status: z.enum(ATTENDANCE), otMinutes: z.number().int().min(0).max(960).optional(),
+const clockTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Type a time like 08:30 or 17:45.');
+const day = z.object({ employeeId: z.uuid(), date, status: z.enum(ATTENDANCE), timeIn: clockTime.optional(), timeOut: clockTime.optional(), otMinutes: z.number().int().min(0).max(960).optional(),
   nightMinutes: z.number().int().min(0).max(MAX_NIGHT_MINUTES).optional(), nightOtMinutes: z.number().int().min(0).max(MAX_NIGHT_MINUTES).optional(), note: z.string().trim().max(200).optional() }).strict();
 export const attendanceInput = z.object({ days: z.array(day).min(1).max(1000) }).strict();
 
@@ -172,7 +175,7 @@ const LABEL: Record<AttendanceStatus, string> = {
 /**
  * Saves grid cells. Every cell is checked first and nothing is saved if one is wrong: the day must be within the
  * employee's service and not in the future; holidays take the holiday statuses; overtime and night minutes go only with a worked day;
- * night overtime minutes are at most the day's overtime minutes and its night minutes;
+ * night overtime minutes are at most the day's overtime minutes and its night minutes; a time in or out goes only with a worked day;
  * SIL needs a year of service and at most 5 days a year (days paid in cash count); a day a recorded payroll paid is
  * locked until that payroll is cancelled. Unchanged cells are skipped. Call inside a transaction.
  */
@@ -180,7 +183,7 @@ export function saveAttendance(db: Db, raw: unknown, who: Who): { saved: number;
   const { days } = attendanceInput.parse(raw);
   const issues: Issue[] = [];
   const seen = new Set<string>();
-  const current = db.prepare(`SELECT status, ot_minutes AS otMinutes, night_minutes AS nightMinutes, night_ot_minutes AS nightOtMinutes, note FROM (${LATEST}) WHERE employee_id = ? AND work_date = ?`);
+  const current = db.prepare(`SELECT status, ot_minutes AS otMinutes, night_minutes AS nightMinutes, night_ot_minutes AS nightOtMinutes, time_in AS timeIn, time_out AS timeOut, note FROM (${LATEST}) WHERE employee_id = ? AND work_date = ?`);
   const silTaken = new Map<string, number>(); // employee|year -> SIL days after this save
   const changed: (z.infer<typeof day> & { otMinutes: number; nightMinutes: number; nightOtMinutes: number; seq: number })[] = [];
   days.forEach((d, i) => {
@@ -203,8 +206,9 @@ export function saveAttendance(db: Db, raw: unknown, who: Who): { saved: number;
     if (night > 0 && !WITH_NIGHT.has(d.status)) add('NIGHT', `${at}: night hours go only with a worked day.`, `${f}.nightMinutes`);
     const nightOt = d.nightOtMinutes ?? 0;
     if (nightOt > Math.min(ot, night)) add('NIGHT_OT', `${at}: night overtime is at most the overtime and the night hours of the day.`, `${f}.nightOtMinutes`);
-    const was = current.get(d.employeeId, d.date) as { status: AttendanceStatus; otMinutes: number; nightMinutes: number; nightOtMinutes: number; note: string | null } | undefined;
-    if (was && was.status === d.status && was.otMinutes === ot && was.nightMinutes === night && was.nightOtMinutes === nightOt && (was.note ?? undefined) === d.note) return;
+    if ((d.timeIn || d.timeOut) && !WITH_NIGHT.has(d.status)) add('TIMES', `${at}: a time in or out goes only with a worked day.`, `${f}.timeIn`);
+    const was = current.get(d.employeeId, d.date) as { status: AttendanceStatus; otMinutes: number; nightMinutes: number; nightOtMinutes: number; timeIn: string | null; timeOut: string | null; note: string | null } | undefined;
+    if (was && was.status === d.status && was.otMinutes === ot && was.nightMinutes === night && was.nightOtMinutes === nightOt && (was.timeIn ?? undefined) === d.timeIn && (was.timeOut ?? undefined) === d.timeOut && (was.note ?? undefined) === d.note) return;
     const run = paidBy(db, d.employeeId, d.date);
     if (run) return add('PAID', `${at} is paid by ${run}. Cancel ${run} first to change it.`);
     if (d.status === 'leave' || was?.status === 'leave') {
@@ -220,12 +224,12 @@ export function saveAttendance(db: Db, raw: unknown, who: Who): { saved: number;
     changed.push({ ...d, otMinutes: ot, nightMinutes: night, nightOtMinutes: nightOt, seq });
   });
   if (issues.length) throw new AppError('VALIDATION', issues[0]!.message, 422, issues);
-  const ins = db.prepare('INSERT INTO emp_attendance (employee_id, work_date, seq, status, ot_minutes, night_minutes, night_ot_minutes, note, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-  for (const d of changed) ins.run(d.employeeId, d.date, d.seq, d.status, d.otMinutes, d.nightMinutes, d.nightOtMinutes, d.note ?? null, who.at, who.userId);
+  const ins = db.prepare('INSERT INTO emp_attendance (employee_id, work_date, seq, status, ot_minutes, night_minutes, night_ot_minutes, time_in, time_out, note, at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  for (const d of changed) ins.run(d.employeeId, d.date, d.seq, d.status, d.otMinutes, d.nightMinutes, d.nightOtMinutes, d.timeIn ?? null, d.timeOut ?? null, d.note ?? null, who.at, who.userId);
   if (changed.length) {
     appendAudit(db, {
       at: who.at, userId: who.userId, action: 'emp.attendance.save', entityType: 'emp.attendance', entityId: null,
-      data: { days: changed.map(({ employeeId, date: d, status, otMinutes, nightMinutes, nightOtMinutes }) => ({ employeeId, date: d, status, otMinutes, ...(nightMinutes ? { nightMinutes } : {}), ...(nightOtMinutes ? { nightOtMinutes } : {}) })) },
+      data: { days: changed.map(({ employeeId, date: d, status, otMinutes, nightMinutes, nightOtMinutes, timeIn, timeOut }) => ({ employeeId, date: d, status, otMinutes, ...(timeIn ? { timeIn } : {}), ...(timeOut ? { timeOut } : {}), ...(nightMinutes ? { nightMinutes } : {}), ...(nightOtMinutes ? { nightOtMinutes } : {}) })) },
     });
   }
   return { saved: changed.length, unchanged: days.length - changed.length };

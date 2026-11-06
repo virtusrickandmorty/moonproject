@@ -133,14 +133,14 @@ describe('the review against attendance, and links', () => {
 
     expect((await acct.post('/api/emp/biometric/links', { userId: '7', employeeId: ana.id, deviceName: 'ana' })).statusCode).toBe(200);
     const typed = await acct.post('/api/emp/attendance', { days: [
-      { employeeId: ana.id, date: '2026-07-01', status: 'present' }, // the same as the biometric
+      { employeeId: ana.id, date: '2026-07-01', status: 'present' }, // the same as the biometric but for its times, which it takes
       { employeeId: ana.id, date: '2026-07-03', status: 'unpaid_leave', note: 'Sick, typed by hand' }, // kept unless ticked
     ] });
     expect(typed.statusCode, typed.body).toBe(200);
     p = await preview();
     expect(p.people[0]!.employeeId).toBe(ana.id);
     expect(p.people[0]!.days.map((d) => [d.date, d.status, d.action])).toEqual([
-      ['2026-07-01', 'present', 'same'], ['2026-07-02', 'present', 'new'], ['2026-07-03', 'present', 'kept'], ['2026-07-04', 'rest_day_worked', 'new'],
+      ['2026-07-01', 'present', 'changed'], ['2026-07-02', 'present', 'new'], ['2026-07-03', 'present', 'kept'], ['2026-07-04', 'rest_day_worked', 'new'],
     ]);
     // Saved from the review (the screen sends the days kept, with the biometric note); a later import sees them as its own.
     const saved = await acct.post('/api/emp/attendance', { days: [{ employeeId: ana.id, date: '2026-07-02', status: 'absent', note: 'From biometric: july.xls' }] });

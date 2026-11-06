@@ -76,7 +76,12 @@ export function parseReport(grid: string[][]): Report {
 const minutes = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
 const overlap = (a: number, b: number, c: number, d: number) => Math.max(0, Math.min(b, d) - Math.max(a, c));
 
-export interface DayResult { status: AttendanceStatus; otMinutes: number; nightMinutes: number; nightOtMinutes: number; lateMinutes: number; undertimeMinutes: number; flags: string[] }
+export interface DayResult { status: AttendanceStatus; otMinutes: number; nightMinutes: number; nightOtMinutes: number; lateMinutes: number; undertimeMinutes: number; timeIn?: string; timeOut?: string; flags: string[] }
+
+/** A punch as attendance keeps it, HH:MM; nothing for one that is no time of day. */
+const isClock = (punch: string | undefined): punch is string => !!punch && /^([01]\d|2[0-3]):[0-5]\d$/.test(punch);
+const asIn = (punch: string | undefined) => (isClock(punch) ? { timeIn: punch } : {});
+const asOut = (punch: string | undefined) => (isClock(punch) ? { timeOut: punch } : {});
 
 /** One day from its punches (the first is the time in, the last the time out), by BIOMETRIC_RULES. */
 export function dayFromPunches(punches: string[], date: string, holiday: { name: string } | undefined): DayResult {
@@ -89,7 +94,7 @@ export function dayFromPunches(punches: string[], date: string, holiday: { name:
   if (times.length === 1) {
     const t = minutes(times[0]!);
     const missing = t < 13 * 60 ? `no time out (in at ${times[0]})` : `no time in (out at ${times[0]})`;
-    return { status, ...none, flags: [`Only one punch: ${missing}. Check why.`] };
+    return { status, ...none, ...(t < 13 * 60 ? asIn(times[0]) : asOut(times[0])), flags: [`Only one punch: ${missing}. Check why.`] };
   }
   const [inAt, outAt] = [minutes(times[0]!), minutes(times.at(-1)!)];
   const early = overlap(inAt, outAt, 0, r.earlyNightUntil); // real night work before 6:00 am
@@ -101,7 +106,7 @@ export function dayFromPunches(punches: string[], date: string, holiday: { name:
   if (early > 0) flags.push(`Worked before 6:00 am from ${times[0]}: counted as overtime and night work.`);
   const lateMinutes = holiday || rest ? 0 : Math.max(0, inAt - r.shiftStart);
   const undertimeMinutes = holiday || rest ? 0 : Math.max(0, r.shiftEnd - outAt);
-  return { status, otMinutes: ot, nightMinutes: night, nightOtMinutes: Math.min(night, ot), lateMinutes, undertimeMinutes, flags };
+  return { status, otMinutes: ot, nightMinutes: night, nightOtMinutes: Math.min(night, ot), lateMinutes, undertimeMinutes, ...asIn(times[0]), ...asOut(times.at(-1)), flags };
 }
 
 /** The employee each biometric user is linked to now (latest row; null when unlinked). */
@@ -159,10 +164,13 @@ export function previewBiometric(db: Db, file: Buffer, employees: Emp[]): { from
           const had = employeeId ? now.get(`${employeeId}|${date}`) : undefined;
           const existing = had ? { status: had.status, otMinutes: had.otMinutes, nightMinutes: had.nightMinutes, note: had.note } : null;
           const lockedBy = employeeId ? paid.find((x) => x.employeeId === employeeId && x.from <= date && date <= x.to)?.number : undefined;
-          const same = !!had && had.status === worked.status && had.otMinutes === worked.otMinutes && had.nightMinutes === worked.nightMinutes && had.nightOtMinutes === worked.nightOtMinutes;
+          // A day that agrees in everything but has no times yet takes them, whoever typed it: pay does not change.
+          const samePay = !!had && had.status === worked.status && had.otMinutes === worked.otMinutes && had.nightMinutes === worked.nightMinutes && had.nightOtMinutes === worked.nightOtMinutes;
+          const same = samePay && had!.timeIn === worked.timeIn && had!.timeOut === worked.timeOut;
+          const fills = samePay && !had!.timeIn && !had!.timeOut;
           const outside = !!emp && (date < emp.hireDate || (!!emp.separatedOn && date > emp.separatedOn));
           const action: DayAction = !employeeId ? 'not_linked' : outside ? 'outside' : lockedBy ? 'locked' : same ? 'same' : !had ? 'new'
-            : had.note?.startsWith(BIOMETRIC_NOTE) ? 'changed' : 'kept';
+            : had.note?.startsWith(BIOMETRIC_NOTE) || fills ? 'changed' : 'kept';
           return { date, punches, ...worked, action, existing, ...(lockedBy ? { lockedBy } : {}) };
         }),
       };

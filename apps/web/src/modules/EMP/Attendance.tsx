@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type AttendanceGrid, type AttendanceStatus, type Me } from '../../api.ts';
 import { Loading, askConfirm, Button, Dialog, Field, Notice, inputClass, useAction, showDate } from '../../components/ui.tsx';
 import { BiometricImport } from './Biometric.tsx';
-import { STATUS_LABEL, WITH_NIGHT, cellKey, changedCells, datesBetween, halfMonthOf, paidBy, plusDays, startCells, statusesFor, weekday, type Cell } from './time.ts';
+import { STATUS_LABEL, WITH_NIGHT, cellKey, changedCells, datesBetween, halfMonthOf, nextDayOut, paidBy, plusDays, startCells, statusesFor, weekday, type Cell } from './time.ts';
 import { useLiveReload } from '../../live.ts';
 
 
@@ -58,9 +58,13 @@ function DayEditor({ who, date, holiday, cell, onChange, onClose }: { who: strin
         className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm ring-1 ${cell.status === s ? 'bg-indigo-50 font-medium ring-indigo-300' : 'bg-white ring-slate-200 hover:bg-slate-50'}`}>
         <StatusIcon status={s} />{STATUS_LABEL[s]}
       </button>)}
-      <button type="button" role="radio" aria-checked={cell.status === ''} onClick={() => onChange({ status: '', ot: '', night: '', nightOt: '' })}
+      <button type="button" role="radio" aria-checked={cell.status === ''} onClick={() => onChange({ status: '', ot: '', night: '', nightOt: '', timeIn: '', timeOut: '' })}
         className={`rounded-lg px-3 py-2 text-left text-sm ring-1 ${cell.status === '' ? 'bg-indigo-50 font-medium ring-indigo-300' : 'bg-white text-slate-500 ring-slate-200 hover:bg-slate-50'}`}>Nothing typed</button>
     </div>
+    {cell.status && WITH_NIGHT.has(cell.status) && <div className="grid gap-3 sm:grid-cols-2">
+      <Field label="Time in" hint="Optional. For the record, not for pay"><input type="time" className={inputClass} value={cell.timeIn ?? ''} onChange={(e) => onChange({ timeIn: e.target.value })} /></Field>
+      <Field label="Time out" hint={nextDayOut(cell) ? 'Earlier than the time in: the next day' : 'Optional. For the record, not for pay'}><input type="time" className={inputClass} value={cell.timeOut ?? ''} onChange={(e) => onChange({ timeOut: e.target.value })} /></Field>
+    </div>}
     {cell.status && (WORKED.includes(cell.status) || WITH_NIGHT.has(cell.status)) && <div className="grid gap-3 sm:grid-cols-3">
       {WORKED.includes(cell.status) && <Field label="Overtime" hint="Hours, like 1.5 or 1:30"><input className={inputClass} value={cell.ot} onChange={(e) => onChange({ ot: e.target.value })} /></Field>}
       {WITH_NIGHT.has(cell.status) && <Field label="Night" hint="Worked 10 PM to 6 AM"><input className={inputClass} value={cell.night} onChange={(e) => onChange({ night: e.target.value })} /></Field>}
@@ -199,12 +203,13 @@ export function Attendance({ me }: { me: Me }) {
                   const changed = pending.days.some((x) => x.employeeId === e.id && x.date === d);
                   const face = <span className="flex flex-col items-center gap-0.5">
                     {c.status ? <StatusIcon status={c.status} /> : <span className="size-1.5 rounded-full bg-slate-200" />}
+                    {(c.timeIn || c.timeOut) && <span className="text-center text-[10px] leading-tight text-slate-600 tabular-nums"><span className="block">{c.timeIn || '—'}</span><span className="block">{c.timeOut || '—'}{nextDayOut(c) ? '+1' : ''}</span></span>}
                     {(c.ot || c.night) && <span className="flex items-center gap-1 text-[10px] leading-none">
                       {c.ot && <span className="font-semibold text-indigo-700">+{c.ot}h</span>}
                       {c.night && <span className="flex items-center text-slate-500"><Glyph d={ICON.moon} className="size-3" />{c.night}</span>}
                     </span>}
                   </span>;
-                  const words = `${e.fullName}, ${showDate(d)}: ${c.status ? STATUS_LABEL[c.status] : 'nothing typed'}${c.ot ? `, ${c.ot} h overtime` : ''}${c.night ? `, ${c.night} h night` : ''}${c.nightOt ? `, ${c.nightOt} h night OT` : ''}`;
+                  const words = `${e.fullName}, ${showDate(d)}: ${c.status ? STATUS_LABEL[c.status] : 'nothing typed'}${c.timeIn ? `, in ${c.timeIn}` : ''}${c.timeOut ? `, out ${c.timeOut}${nextDayOut(c) ? ' the next day' : ''}` : ''}${c.ot ? `, ${c.ot} h overtime` : ''}${c.night ? `, ${c.night} h night` : ''}${c.nightOt ? `, ${c.nightOt} h night OT` : ''}`;
                   if (run) return <td key={d} title={`${words}. Paid by ${run}`} aria-label={`${words}. Paid by ${run}`} className={`relative !px-1 !py-2 text-center opacity-70 ${tint}`}>
                     {face}<Glyph d={ICON.lock} className="absolute right-0.5 top-0.5 size-3 text-slate-400" />
                   </td>;

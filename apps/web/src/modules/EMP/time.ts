@@ -53,11 +53,17 @@ export function otMinutes(text: string): number | undefined {
 }
 export const otText = (minutes: number) => (minutes ? (minutes % 60 ? `${Math.floor(minutes / 60)}:${pad(minutes % 60)}` : String(minutes / 60)) : '');
 
-/** `nightOt`: of the night hours, those that were also overtime (paid 10% of the overtime rate), at most `ot` and `night`. */
-export interface Cell { status: AttendanceStatus | ''; ot: string; night: string; nightOt: string }
+/**
+ * `nightOt`: of the night hours, those that were also overtime (paid 10% of the overtime rate), at most `ot` and `night`.
+ * `timeIn`, `timeOut`: HH:MM, recorded and shown only; pay comes from the status and the hours.
+ */
+export interface Cell { status: AttendanceStatus | ''; ot: string; night: string; nightOt: string; timeIn?: string; timeOut?: string }
+/** The time out falls on the next day: earlier than the time in, as when work runs past midnight. */
+export const nextDayOut = (c: Pick<Cell, 'timeIn' | 'timeOut'>) => !!c.timeIn && !!c.timeOut && c.timeOut < c.timeIn;
+const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
 export const cellKey = (employeeId: string, date: string) => `${employeeId}|${date}`;
 export function cellsOf(days: AttendanceDay[]): Record<string, Cell> {
-  return Object.fromEntries(days.map((d) => [cellKey(d.employeeId, d.date), { status: d.status, ot: otText(d.otMinutes), night: otText(d.nightMinutes), nightOt: otText(d.nightOtMinutes) }]));
+  return Object.fromEntries(days.map((d) => [cellKey(d.employeeId, d.date), { status: d.status, ot: otText(d.otMinutes), night: otText(d.nightMinutes), nightOt: otText(d.nightOtMinutes), ...(d.timeIn ? { timeIn: d.timeIn } : {}), ...(d.timeOut ? { timeOut: d.timeOut } : {}) }]));
 }
 
 /**
@@ -87,7 +93,12 @@ export function changedCells(saved: AttendanceDay[], cells: Record<string, Cell>
   const errors: string[] = [];
   for (const [key, c] of Object.entries(cells)) {
     const before = was[key];
-    if ((before?.status ?? '') === c.status && (before?.ot ?? '') === c.ot.trim() && (before?.night ?? '') === c.night.trim() && (before?.nightOt ?? '') === c.nightOt.trim()) continue;
+    // Times go only with a worked day: a day changed to Absent, say, drops them.
+    const timed = !!c.status && WITH_NIGHT.has(c.status);
+    const timeIn = timed ? c.timeIn?.trim() ?? '' : '';
+    const timeOut = timed ? c.timeOut?.trim() ?? '' : '';
+    if ((before?.status ?? '') === c.status && (before?.ot ?? '') === c.ot.trim() && (before?.night ?? '') === c.night.trim() && (before?.nightOt ?? '') === c.nightOt.trim()
+      && (before?.timeIn ?? '') === timeIn && (before?.timeOut ?? '') === timeOut) continue;
     const [employeeId, date] = key.split('|') as [string, string];
     const at = `${names[employeeId] ?? 'Someone'} on ${date}`;
     if (!c.status) {
@@ -105,7 +116,8 @@ export function changedCells(saved: AttendanceDay[], cells: Record<string, Cell>
     else if (night > MAX_NIGHT_MINUTES) errors.push(`${at}: night hours are at most 8 (10 PM to 6 AM).`);
     else if (nightOt === undefined) errors.push(`${at}: type night overtime in hours, like 1.5 or 1:30.`);
     else if (nightOt > Math.min(ot, night)) errors.push(`${at}: night overtime is at most the overtime and the night hours of the day.`);
-    else days.push({ employeeId, date, status: c.status, ...(ot ? { otMinutes: ot } : {}), ...(night ? { nightMinutes: night } : {}), ...(nightOt ? { nightOtMinutes: nightOt } : {}) });
+    else if ((timeIn && !CLOCK.test(timeIn)) || (timeOut && !CLOCK.test(timeOut))) errors.push(`${at}: type a time like 08:30 or 17:45.`);
+    else days.push({ employeeId, date, status: c.status, ...(timeIn ? { timeIn } : {}), ...(timeOut ? { timeOut } : {}), ...(ot ? { otMinutes: ot } : {}), ...(night ? { nightMinutes: night } : {}), ...(nightOt ? { nightOtMinutes: nightOt } : {}) });
   }
   days.sort((a, b) => a.date.localeCompare(b.date) || a.employeeId.localeCompare(b.employeeId));
   return { days, errors };
