@@ -14,14 +14,14 @@ import type { FormMode } from '../../generic/DocForm.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Errors, Figures, useLive } from '../COL/parts.tsx';
 import { Booklet, JoPicker } from './parts.tsx';
-import { ID_SEEN, allLeft, emptyRelease, readyWearers, releaseInput, type ReleaseValues } from './forms.ts';
+import { nothingToCharge, ID_SEEN, allLeft, emptyRelease, readyWearers, releaseInput, type ReleaseValues } from './forms.ts';
 
 const money = `${inputClass} text-right tabular-nums`;
 /** Ticked to start with: only the lines that may go out now (the owner's request, Oct 2026: what is not ready is greyed). */
 const onlyReady = (lines: JoStatus['lines']) => Object.fromEntries(Object.entries(allLeft(lines)).filter(([n]) => lines.find((l) => l.lineNo === Number(n))?.ready !== false));
 const READY = ['ready', 'partially_released'];
 
-function ConfirmDialog(p: { preview: ReleasePreview; invoiceNumber: string | null; onRecord: (key: string) => Promise<unknown>; onClose: () => void }) {
+function ConfirmDialog(p: { preview: ReleasePreview; invoiceNumber: string | null; free: boolean; onRecord: (key: string) => Promise<unknown>; onClose: () => void }) {
   const key = useMemo(newIdempotencyKey, [p.preview]); // same key when a click is retried, a new one after a new preview
   const a = useAction();
   const r = p.preview.release;
@@ -29,7 +29,7 @@ function ConfirmDialog(p: { preview: ReleasePreview; invoiceNumber: string | nul
   return (
     <Dialog title="Record this release?" onClose={p.onClose}>
       <p>{r.summary}</p>
-      {p.invoiceNumber ? <Booklet b={p.preview.booklet} depositAppliedCents={p.preview.depositAppliedCents} /> : <Notice tone="warning">Invoice to follow: the release waits on the exceptions list until its invoice is recorded.</Notice>}
+      {p.free ? <Notice tone="info">Nothing to charge, so no invoice is needed.</Notice> : p.invoiceNumber ? <Booklet b={p.preview.booklet} depositAppliedCents={p.preview.depositAppliedCents} /> : <Notice tone="warning">Invoice to follow: the release waits on the exceptions list until its invoice is recorded.</Notice>}
       {p.invoiceNumber && <p className="text-sm">Invoice no. <b>{p.invoiceNumber}</b> is recorded with it.</p>}
       {r.issues.map((i) => <Notice key={i.code + i.field} tone={i.level}>{i.message}</Notice>)}
       {r.journal && r.journal.length > 0 && <Panel title="Behind the scenes"><JournalTable lines={r.journal} /></Panel>}
@@ -72,13 +72,18 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
   const waiting = picked.filter((l) => l.ready === false);
   const ready = status ? (status.lines.some((l) => l.ready !== undefined) ? waiting.length === 0 : READY.includes(status.stage)) : true;
 
+  // Nothing to charge (a free alteration, say): nothing to invoice, so no invoice number is asked for. The server asks for none either.
+  const free = nothingToCharge(status?.money.totalCents, typed.releaseErrors.length === 0 ? live?.release.totalCents : undefined);
+  const errors = free ? typed.releaseErrors : typed.errors;
   const openConfirm = () => {
     setTouched(true);
-    if (typed.errors.length === 0) api.joReleasePreview(typed.release).then(setConfirm, fail);
+    if (typed.releaseErrors.length > 0) return;
+    // The fresh preview decides: what is shown may be a moment behind what was just typed.
+    api.joReleasePreview(typed.release).then((p) => { if (p.release.totalCents === 0 || typed.errors.length === 0) setConfirm(p); }, fail);
   };
   const record = async (key: string) => {
     try {
-      const r = await api.joRelease({ release: typed.release, invoice: typed.invoice }, confirm!.release.totalCents, key);
+      const r = await api.joRelease({ release: typed.release, invoice: confirm!.release.totalCents === 0 ? null : typed.invoice }, confirm!.release.totalCents, key);
       navigate(docPath(type.key, `/${r.release.id}?recorded=1`));
     } catch (e) {
       if (e instanceof ApiError && e.code === 'TOTALS_CHANGED') setConfirm(await api.joReleasePreview(typed.release));
@@ -97,6 +102,11 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
           {status && <p className="text-sm text-slate-600">{status.stageLabel} · due {showDate(status.jobOrder.dueDate)} · balance due <b className="tabular-nums text-slate-900">{peso(status.money.balanceDueCents)}</b></p>}
         </Panel>
         <Panel title="Who claimed it">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={v.forDelivery} onChange={(e) => set({ forDelivery: e.target.checked })} />
+            For delivery (we don't know yet who will receive it)
+          </label>
+          {v.forDelivery ? <p className="text-sm text-slate-600">The slip prints with the receiver left blank, for whoever receives it to sign and date.</p> : <>
           <Field label="Claimed by" required>
             <input className={inputClass} value={v.claimedBy} onChange={(e) => set({ claimedBy: e.target.value })} />
           </Field>
@@ -109,6 +119,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
             ))}
           </div>
           <p className="text-xs text-slate-500">Only the kind of ID is kept, never its number.</p>
+          </>}
         </Panel>
         {status && (
           <Panel title="What goes out">
@@ -204,7 +215,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
             )}
           </Panel>
         )}
-        <Panel title="Invoice">
+        {free ? <Panel title="Invoice"><p className="text-sm text-slate-600">Nothing to charge on this release, so no invoice is needed.</p></Panel> : <Panel title="Invoice">
           <Field label="Invoice number (from the booklet)" required={!v.invoiceToFollow} hint="VAT sellers write an invoice for every sale.">
             <input inputMode="numeric" disabled={v.invoiceToFollow} className={`${inputClass} max-w-40`} value={v.invoiceNumber} onChange={(e) => set({ invoiceNumber: e.target.value })} />
           </Field>
@@ -212,8 +223,8 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
             <input type="checkbox" checked={v.invoiceToFollow} onChange={(e) => set({ invoiceToFollow: e.target.checked })} />
             Invoice to follow (the booklet is not at hand)
           </label>
-        </Panel>
-        <Errors list={typed.errors} show={touched} />
+        </Panel>}
+        <Errors list={errors} show={touched} />
         <Panel title="So far">
           <Figures items={[['Released now', live?.release.totalCents ?? 0, 'text-lg font-semibold'], ['Balance due', balance, 'font-semibold']]} />
           {live && <Booklet b={live.booklet} depositAppliedCents={live.depositAppliedCents} />}
@@ -225,7 +236,7 @@ export function ReleaseForm({ type, mode, me }: { type: DocTypeInfo; mode: FormM
           <Button onClick={() => history.back()}>Back</Button>
         </SalesActions>
       </div>
-      {confirm && <ConfirmDialog preview={confirm} invoiceNumber={typed.invoice?.invoiceNumber ?? null} onRecord={record} onClose={() => setConfirm(null)} />}
+      {confirm && <ConfirmDialog preview={confirm} free={confirm.release.totalCents === 0} invoiceNumber={typed.invoice?.invoiceNumber ?? null} onRecord={record} onClose={() => setConfirm(null)} />}
     </form>
   );
 }

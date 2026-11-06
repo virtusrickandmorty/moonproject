@@ -143,7 +143,7 @@ describe('release slip and invoice record form rules', () => {
   });
 
   it('says what is wrong in plain words', () => {
-    expect(releaseInput(emptyRelease(), left).errors).toEqual(['Pick the job order.', 'Type who claimed it.', 'Pick the ID seen.', 'Type the invoice number from the booklet (digits only), or tick "Invoice to follow".']);
+    expect(releaseInput(emptyRelease(), left).errors).toEqual(['Pick the job order.', 'Type who claimed it, or tick "For delivery".', 'Pick the ID seen.', 'Type the invoice number from the booklet (digits only), or tick "Invoice to follow".']);
     const over = releaseInput({ ...emptyRelease('jo-1'), qtys: { 1: '7', 2: '1' }, claimedBy: 'A', idSeen: 'none', creditDueInDays: '400', invoiceToFollow: true }, left);
     expect(over.errors).toEqual(['Line 1: only 6 of 10 pieces are left to release.', 'Line 2 is already fully released.', 'Pay within: type the number of days, 1 to 365.']);
     expect(releaseInput({ ...emptyRelease('jo-1'), claimedBy: 'A', idSeen: 'none', invoiceToFollow: true }, left).errors).toEqual(['Tick the lines and pieces going out.']);

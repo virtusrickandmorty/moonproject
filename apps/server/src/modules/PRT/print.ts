@@ -232,7 +232,7 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
   if (h.doc_type === 'jo.release') return {
     title: 'Release Slip', subtitle: '', legend: true, twoUp: true,
     party: { label: 'Customer', name: doc.customerName },
-    status: [['Job order', doc.jobOrderNumber], ['ID type seen', doc.idSeen]],
+    status: [['Job order', doc.jobOrderNumber], doc.forDelivery ? ['Release', 'For delivery'] : ['ID type seen', doc.idSeen]],
     aside: jobOrderQr(doc.jobOrderId, doc.jobOrderNumber, joinBase),
     body: section('Items released', lineTable(['Description', 'Qty'], doc.lines.map((l: any) => [l.description, l.qty]))) +
       // Who went out, when the wearers were ticked (the owner's request, Oct 2026).
@@ -240,7 +240,8 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
         doc.lines.flatMap((l: any) => (l.wearers ?? []).map((w: any) => [l.description, w.wearerName, w.size, w.jerseyNumber, w.qty])))) : '') +
       field('Credit note', doc.creditNote) + field('Credit due date', doc.creditDueDate),
     totals: [['Balance due at release', money(doc.balanceDueCents), true]],
-    signatures: [['Released by', prepared], ['Received by', doc.claimedBy]],
+    // For delivery, nobody is known yet: whoever receives it signs the slip by hand (the owner's request, Nov 2026).
+    signatures: doc.forDelivery ? [['Released by', prepared], ['Received by (name and signature)'], ['Date received']] : [['Released by', prepared], ['Received by', doc.claimedBy]],
   };
   if (h.doc_type === 'pur.po') {
     const names = purchaseOrderNames(db, doc.supplierId, doc.lines.map((l: any) => l.supplyId));

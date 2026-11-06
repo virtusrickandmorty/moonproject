@@ -62,12 +62,13 @@ export function readyMessage(company: string, p: { customerName: string; number:
   };
 }
 
-export function claimedMessage(company: string, p: { customerName: string; jobOrderNumber: string; releaseNumber: string; date: string; claimedBy: string; balanceDueCents: number; lines: { description: string; qty: number }[] }): Message {
+export function claimedMessage(company: string, p: { customerName: string; jobOrderNumber: string; releaseNumber: string; date: string; claimedBy: string; forDelivery?: boolean; balanceDueCents: number; lines: { description: string; qty: number }[] }): Message {
   return {
-    subject: `${company}: your order ${p.jobOrderNumber} has been picked up`,
+    subject: `${company}: your order ${p.jobOrderNumber} ${p.forDelivery ? 'is out for delivery' : 'has been picked up'}`,
     body: wrap(company, [
       hello(p.customerName),
-      `This is to confirm that on ${p.date} ${plain(p.claimedBy)} picked up the following from job order ${p.jobOrderNumber} (release slip ${p.releaseNumber}):\n${items(p.lines)}`,
+      p.forDelivery ? `This is to confirm that on ${p.date} the following from job order ${p.jobOrderNumber} (release slip ${p.releaseNumber}) went out for delivery:\n${items(p.lines)}`
+        : `This is to confirm that on ${p.date} ${plain(p.claimedBy)} picked up the following from job order ${p.jobOrderNumber} (release slip ${p.releaseNumber}):\n${items(p.lines)}`,
       p.balanceDueCents > 0 ? `The balance still due is ${formatPeso(p.balanceDueCents)}.` : 'Nothing more is due on this release.',
       'If you did not expect this, please tell us right away.',
       sign(company),
