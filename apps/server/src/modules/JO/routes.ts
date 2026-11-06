@@ -14,6 +14,7 @@ import { saleInvoicesOf, saleOpenCents } from '../QS/public.ts';
 import { jobOrderRef, jobOrdersOf, joMoney, leftPiecesAll, rosterOf, stagesAll } from './public.ts';
 import { finishedWearers, lineProduction } from '../PRD/public.ts';
 import { dpInvoiceDoc } from './doctypes/dp-invoice.ts';
+import { recordReceived } from './received.ts';
 import { joListRoutes } from './list.ts';
 import { lineState, releasableQty, releaseDoc, releasedWearers, type Release } from './doctypes/release.ts';
 import { awaitingInvoice, invoiceFigures, invoiceRecordDoc, invoiceRecordInput } from './doctypes/invoice-record.ts';
@@ -226,6 +227,15 @@ export function joRoutes(app: FastifyInstance, deps: AppDeps): void {
       return res;
     });
     return reply.code(out.status).send(out.body);
+  });
+
+  /** Who received a release sent out for delivery, from the signed slip; typed again to put it right. */
+  app.post<{ Params: { id: string } }>('/api/jo/releases/:id/received', { config: { permission: 'jo.release' } }, async (req) => {
+    const who = { userId: currentUser(req).userId, at: stamp(clock), today: today(clock) };
+    return tx(db, () => {
+      clockGuard({ db, clock });
+      return recordReceived(db, req.params.id, req.body, who);
+    });
   });
 
   app.post<{ Params: { id: string } }>('/api/jo/orders/:id/stage', { config: { permission: 'jo.stage' } }, async (req) => {

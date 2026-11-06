@@ -241,7 +241,8 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
       field('Credit note', doc.creditNote) + field('Credit due date', doc.creditDueDate),
     totals: [['Balance due at release', money(doc.balanceDueCents), true]],
     // For delivery, nobody is known yet: whoever receives it signs the slip by hand (the owner's request, Nov 2026).
-    signatures: doc.forDelivery ? [['Released by', prepared], ['Received by (name and signature)'], ['Date received']] : [['Released by', prepared], ['Received by', doc.claimedBy]],
+    signatures: !doc.forDelivery ? [['Released by', prepared], ['Received by', doc.claimedBy]]
+      : [['Released by', prepared], doc.receivedBy ? ['Received by', doc.receivedBy] : ['Received by (name and signature)'], doc.receivedOn ? ['Date received', datesIn(doc.receivedOn)] : ['Date received']],
   };
   // The delivery receipt (the owner's request, Nov 2026): what went out, in two copies, to sign. The pieces only: the money is on
   // the booklet. Who received it prints once it is known; until then the lines stay blank to fill by hand.
