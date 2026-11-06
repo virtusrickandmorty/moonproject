@@ -3,6 +3,7 @@
  * release and invoice record forms already filled for this job order; and deposits left on a cancelled or edited JO,
  * with the way to move them to the replacement (DEP-XFER) or pay them back.
  */
+import { ReleaseReceived } from './ReleaseReceived.tsx';
 import { sizeLabel } from '@moonproject/shared';
 import { useLiveChange } from '../../live.ts';
 import { useEffect, useState } from 'react';
@@ -221,7 +222,7 @@ function ToJobOrder({ d }: { d: DocDetail }) {
   return <Link to={docPath('jo.job_order', `/${doc.jobOrderId}`)} className={action}>Open {doc.jobOrderNumber}</Link>;
 }
 /** A recorded release is corrected by cancelling it and releasing again (its pieces and invoice depend on it). */
-export const releaseView: ViewParts = { noEdit: true, extra: (d) => <ToJobOrder d={d} /> };
+export const releaseView: ViewParts = { noEdit: true, extra: (d) => <><ToJobOrder d={d} /><ReleaseReceived d={d} /></> };
 export const invoiceRecordView: ViewParts = { extra: (d) => <ToJobOrder d={d} /> };
 
 /** After a downpayment invoice (mode C) comes its collection: the way on to the payment form for the same job order. */

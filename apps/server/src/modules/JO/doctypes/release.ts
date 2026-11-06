@@ -14,6 +14,7 @@ import { jobOrderRef, jobOrdersOf, joMoney, rosterOf } from '../public.ts';
 import { STAGE_LABELS, currentStage, forStockReason, isAbandoned, moveTo } from '../stages.ts';
 import { addDays } from './job-order.ts';
 import { finishedPieces, finishedWearers, lineProduction } from '../../PRD/public.ts';
+import { latestReceived } from '../received.ts';
 
 /**
  * The lines that may go out now (the owner's rule, Oct 2026: release what is ready, even while other items are still
@@ -78,6 +79,8 @@ export function releasedWearers(db: Db, jobOrderId: string): Map<number, Map<num
 const asReleased = (w: { rowNo: number; wearerName: string; size: string | null; lowerSize?: string | null; jerseyNumber: string | null; qty: number }): ReleasedWearer =>
   ({ rowNo: w.rowNo, wearerName: w.wearerName, size: w.lowerSize ? sizeLabel(w.size, w.lowerSize) : w.size, jerseyNumber: w.jerseyNumber, qty: w.qty });
 export interface Release extends Omit<ReleaseInput, 'lines'> {
+  /** Typed afterwards from the signed slip, on a release for delivery (received.ts). */
+  receivedBy?: string; receivedOn?: string;
   lines: ReleaseLine[];
   jobOrderNumber: string;
   customerId: string;
@@ -276,6 +279,7 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
       claimedBy: r.claimedBy,
       idSeen: r.idSeen,
       ...(r.forDeliveryFlag === 1 ? { forDelivery: true as const } : {}),
+      ...latestReceived(db, documentId), // who received it, once typed from the signed slip
       ...optional,
       lines,
       jobOrderNumber: jo.number,
