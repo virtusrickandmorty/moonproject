@@ -62,7 +62,7 @@ export function scanOnce(db: Db, at: string, log: (message: string) => void = ()
     }));
     run('release', (a, l) => newReleasesAfter(db, a, l), 'claimed', 'claimed', (rel) => ({
       document: { id: rel.id, number: rel.number }, dedupeKey: `claimed:${rel.id}`,
-      build: (company, customerName) => claimedMessage(company, { customerName, jobOrderNumber: rel.jobOrderNumber, releaseNumber: rel.number, date: rel.date, claimedBy: rel.claimedBy, balanceDueCents: rel.balanceDueCents, lines: rel.lines }),
+      build: (company, customerName) => claimedMessage(company, { customerName, jobOrderNumber: rel.jobOrderNumber, releaseNumber: rel.number, date: rel.date, claimedBy: rel.claimedBy, forDelivery: rel.forDelivery === 1, balanceDueCents: rel.balanceDueCents, lines: rel.lines }),
     }));
 
     scanPayslips(cursor('payroll_release'), (next) => advance('payroll_release', next));

@@ -366,11 +366,11 @@ export function readyJobOrdersAfter(db: Db, after: number, limit: number): ScanR
   return finishScan(db, 'jo_stage_events', raw, limit, items);
 }
 
-export interface NewRelease { id: string; number: string; date: string; jobOrderNumber: string; customerId: string; claimedBy: string; balanceDueCents: number; lines: { description: string; qty: number }[] }
+export interface NewRelease { id: string; number: string; date: string; jobOrderNumber: string; customerId: string; claimedBy: string; forDelivery: number; balanceDueCents: number; lines: { description: string; qty: number }[] }
 /** Release slips recorded after `after` (a documents row id) that are still live and are not an edit of an earlier one. */
 export function newReleasesAfter(db: Db, after: number, limit: number): ScanResult<NewRelease> {
   const raw = db.prepare(`SELECT d.rowid AS cursor, d.id, d.number, d.status, d.replaces_id AS replacesId, d.business_date AS date, j.number AS jobOrderNumber,
-      o.customer_id AS customerId, r.claimed_by AS claimedBy, r.balance_due_cents AS balanceDueCents
+      o.customer_id AS customerId, r.claimed_by AS claimedBy, r.for_delivery AS forDelivery, r.balance_due_cents AS balanceDueCents
     FROM documents d JOIN jo_releases r ON r.document_id = d.id JOIN jo_orders o ON o.document_id = r.job_order_id JOIN documents j ON j.id = r.job_order_id
     WHERE d.rowid > ? AND d.doc_type = 'jo.release' ORDER BY d.rowid LIMIT ?`)
     .all(after, limit) as (NewRelease & { cursor: number; status: string; replacesId: string | null })[];

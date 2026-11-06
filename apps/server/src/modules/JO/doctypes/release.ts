@@ -54,6 +54,7 @@ export const releaseInput = z
     lines: z.array(z.object({ lineNo: z.number().int().min(1).max(50), qty: z.number().int().min(1).max(10_000), wearers: z.array(z.number().int().min(1).max(1000)).min(1).max(1000).optional() }).strict()).min(1).max(50),
     claimedBy: text(120),
     idSeen: z.enum(ID_SEEN), // the type only; no ID number is stored
+    forDelivery: z.literal(true).optional(), // sent out, nobody has claimed it yet: the slip leaves the receiver blank to sign (the owner's request, Nov 2026)
     creditNote: text(500).optional(), // needed when a balance is still due (E4 rule 3)
     creditDueInDays: z.number().int().min(1).max(365).optional(), // the server turns this into the credit due date (NR-6)
     overrideReason: z.string().trim().min(10).max(500).optional(), // owner: release before the job is ready (E4 rule 2)
@@ -213,9 +214,9 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
 
   persist(db, doc, h) {
     db.prepare(
-      `INSERT INTO jo_releases (document_id, job_order_id, claimed_by, id_seen, balance_due_cents, credit_note, credit_due_date, override_reason)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(h.documentId, doc.jobOrderId, doc.claimedBy, doc.idSeen, doc.balanceDueCents, doc.creditNote ?? null, doc.creditDueDate ?? null, doc.overrideReason ?? null);
+      `INSERT INTO jo_releases (document_id, job_order_id, claimed_by, id_seen, balance_due_cents, credit_note, credit_due_date, override_reason, for_delivery)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(h.documentId, doc.jobOrderId, doc.claimedBy, doc.idSeen, doc.balanceDueCents, doc.creditNote ?? null, doc.creditDueDate ?? null, doc.overrideReason ?? null, doc.forDelivery ? 1 : 0);
     const line = db.prepare('INSERT INTO jo_release_lines (document_id, line_no, qty, list_cents, discount_cents, amount_cents) VALUES (?, ?, ?, ?, ?, ?)');
     const wearer = db.prepare('INSERT INTO jo_release_wearers (document_id, line_no, roster_row_no) VALUES (?, ?, ?)');
     for (const l of doc.lines) {
@@ -249,7 +250,7 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
       .prepare(
         `SELECT r.job_order_id AS jobOrderId, r.claimed_by AS claimedBy, r.id_seen AS idSeen, r.balance_due_cents AS balanceDueCents, r.credit_note AS creditNote,
            r.credit_due_date AS creditDueDate, CAST(julianday(r.credit_due_date) - julianday(d.business_date) AS INTEGER) AS creditDueInDays,
-           r.override_reason AS overrideReason, d.total_cents AS totalCents
+           r.override_reason AS overrideReason, r.for_delivery AS forDeliveryFlag, d.total_cents AS totalCents
          FROM jo_releases r JOIN documents d ON d.id = r.document_id WHERE r.document_id = ?`,
       )
       .get(documentId) as (Omit<Release, 'lines' | 'jobOrderNumber' | 'customerId' | 'customerName'> & Record<string, unknown>) | undefined;
@@ -274,6 +275,7 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
       jobOrderId: r.jobOrderId,
       claimedBy: r.claimedBy,
       idSeen: r.idSeen,
+      ...(r.forDeliveryFlag === 1 ? { forDelivery: true as const } : {}),
       ...optional,
       lines,
       jobOrderNumber: jo.number,
@@ -285,12 +287,13 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
   },
 
   toInput(doc) {
-    const { jobOrderId, claimedBy, idSeen, creditNote, creditDueInDays, overrideReason } = doc;
+    const { jobOrderId, claimedBy, idSeen, forDelivery, creditNote, creditDueInDays, overrideReason } = doc;
     return {
       jobOrderId,
       lines: doc.lines.map(({ lineNo, qty, wearers }) => ({ lineNo, qty, ...(wearers?.length ? { wearers: wearers.map((w) => w.rowNo) } : {}) })),
       claimedBy,
       idSeen,
+      ...(forDelivery ? { forDelivery } : {}),
       ...(creditNote ? { creditNote } : {}),
       ...(creditDueInDays ? { creditDueInDays } : {}),
       ...(overrideReason ? { overrideReason } : {}),
@@ -300,7 +303,8 @@ export const releaseDoc: DocTypeDef<ReleaseInput, Release> = {
   summary(doc) {
     const n = doc.lines.reduce((s, l) => s + l.qty, 0);
     const credit = doc.balanceDueCents > 0 ? ` ${formatPeso(doc.balanceDueCents)} is still due${doc.creditDueDate ? `, to be paid by ${doc.creditDueDate}` : ''}.` : '';
-    return `This will release ${pieces(n)} of ${doc.jobOrderNumber} (${formatPeso(doc.totalCents)}) to ${doc.claimedBy}, ${ID_WORDS[doc.idSeen]} seen.${credit}`;
+    const who = doc.forDelivery ? 'for delivery' : `to ${doc.claimedBy}, ${ID_WORDS[doc.idSeen]} seen`;
+    return `This will release ${pieces(n)} of ${doc.jobOrderNumber} (${formatPeso(doc.totalCents)}) ${who}.${credit}`;
   },
 
   arbitrary(db) {
