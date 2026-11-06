@@ -30,6 +30,7 @@ const weekday = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en
 export function daysToSave(preview: BiometricPreview, ticked: Set<string>, fileName: string): AttendanceSave[] {
   return preview.people.flatMap((p) => (p.employeeId ? p.days.filter((d) => ticked.has(key(p.userId, d.date)) && !NEVER.includes(d.action)).map((d): AttendanceSave => ({
     employeeId: p.employeeId!, date: d.date, status: d.status,
+    ...(d.timeIn ? { timeIn: d.timeIn } : {}), ...(d.timeOut ? { timeOut: d.timeOut } : {}),
     ...(d.otMinutes ? { otMinutes: d.otMinutes } : {}), ...(d.nightMinutes ? { nightMinutes: d.nightMinutes } : {}), ...(d.nightOtMinutes ? { nightOtMinutes: d.nightOtMinutes } : {}),
     note: `From biometric: ${fileName}`.slice(0, 200),
   })) : []));
