@@ -57,6 +57,7 @@ describe('the printed delivery receipt', () => {
     expect((await received(d.id, { receivedBy: 'Ana Halimbawa', receivedOn: today })).statusCode).toBe(200);
     const html = await print(d.id);
     expect(html).toContain('Ana Halimbawa');
+    expect(html).not.toContain(`>${today}<`); // the date in words, like the rest of the printout
     expect(html).not.toContain('Received by (name and signature)');
   });
 });

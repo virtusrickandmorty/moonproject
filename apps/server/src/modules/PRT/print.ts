@@ -251,7 +251,7 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
     status: [['Booklet no.', doc.invoiceNumber], ...(doc.tracking ? [['Tracking no.', doc.tracking] as [string, unknown]] : [])],
     body: section('Items delivered', lineTable(['Description', 'Size', 'Qty'], doc.lines.map((l: any) => [l.description, l.size, l.qty]))) + field('Note', doc.note),
     totals: [['Total pieces', doc.lines.reduce((n: number, l: any) => n + l.qty, 0), true]],
-    signatures: [['Prepared by', prepared], ['Delivered by', doc.deliveredBy], doc.receivedBy ? ['Received by', doc.receivedBy] : ['Received by (name and signature)'], ['Date received', doc.receivedOn]],
+    signatures: [['Delivered by', doc.deliveredBy], doc.receivedBy ? ['Received by', doc.receivedBy] : ['Received by (name and signature)'], doc.receivedOn ? ['Date received', datesIn(doc.receivedOn)] : ['Date received']],
   };
   if (h.doc_type === 'pur.po') {
     const names = purchaseOrderNames(db, doc.supplierId, doc.lines.map((l: any) => l.supplyId));
