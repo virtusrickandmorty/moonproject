@@ -44,6 +44,7 @@ const PRINTABLE: ReadonlyMap<string, readonly PrintKind[]> = new Map([
   ['pay.run', ['document']],
   ['ca.advance', ['document']],
   ['inv.count', ['document']],
+  ['tpl.delivery', ['document']],
 ]);
 const out = (r: Profile) => ({ registeredName: r.registered_name, tradeName: r.trade_name, tin: r.tin,
   registeredAddress: r.registered_address, isVatRegistered: !!r.is_vat_registered, version: r.version });

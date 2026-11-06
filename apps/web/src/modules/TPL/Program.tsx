@@ -6,8 +6,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, api, newIdempotencyKey, type DocTypeInfo, type Me } from '../../api.ts';
 import { Button, Dialog, Field, Loading, Notice, Panel, ReasonDialog, StatusChip, inputClass, peso, showDate, useAction } from '../../components/ui.tsx';
+import { printDocument } from '../../generic/DocView.tsx';
 import { Link, navigate } from '../../router.tsx';
-import { fromCents, itemLabel, toCents, type Issue, type TplCardRow, type TplDeliveryPreview, type TplItem, type TplProgram, type TplProgramPage } from './types.ts';
+import { fromCents, itemLabel, toCents, type Issue, type TplCardRow, type TplDeliveryPreview, type TplDeliveryRow, type TplItem, type TplProgram, type TplProgramPage } from './types.ts';
 import { useLiveReload } from '../../live.ts';
 import { usePages } from '../../components/RowPages.tsx';
 
@@ -21,7 +22,7 @@ export function TplProgramPage({ me, params }: { me: Me; docTypes: DocTypeInfo[]
   const can = (p: string) => me.permissions.includes(p);
   const [page, setPage] = useState<TplProgramPage | null>(null);
   const [error, setError] = useState('');
-  const [open, setOpen] = useState<null | 'deliver' | 'restock' | 'terms' | 'item' | 'items' | 'edit-items' | 'counts' | { item: TplItem } | { count: TplItem } | { card: TplItem } | { cancel: string }>(null);
+  const [open, setOpen] = useState<null | 'deliver' | 'restock' | 'terms' | 'item' | 'items' | 'edit-items' | 'counts' | { item: TplItem } | { count: TplItem } | { card: TplItem } | { cancel: string } | { received: TplDeliveryRow }>(null);
   const load = useCallback(() => api.tplProgram<TplProgramPage>(id).then((p) => (setPage(p), setError('')), (e: Error) => setError(e.message)), [id]);
   useEffect(() => void load(), [load]);
   useLiveReload(load);
@@ -117,7 +118,7 @@ export function TplProgramPage({ me, params }: { me: Me; docTypes: DocTypeInfo[]
         {deliveries.length === 0 ? <p className="text-sm text-slate-500">No deliveries yet.</p> : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr><th>Delivery</th><th>Date</th><th>Invoice no.</th><th className="text-right">Pieces</th><th className="text-right">Amount</th><th>Due</th><th>Status</th><th /></tr></thead>
+              <thead><tr><th>Delivery</th><th>Date</th><th>Invoice no.</th><th className="text-right">Pieces</th><th className="text-right">Amount</th><th>Due</th><th>Received by</th><th>Status</th><th /></tr></thead>
               <tbody>{deliveryPages.shown.map((d) => (
                 <tr key={d.id} className={d.status === 'cancelled' ? 'text-slate-500' : ''}>
                   <td><Link to={`/docs/tpl.delivery/${d.id}`} className="font-medium text-indigo-700">{d.number}</Link></td>
@@ -126,8 +127,11 @@ export function TplProgramPage({ me, params }: { me: Me; docTypes: DocTypeInfo[]
                   <td className="text-right tabular-nums">{d.pieces}</td>
                   <td className="text-right tabular-nums">{peso(d.totalCents)}</td>
                   <td>{showDate(d.dueDate)}</td>
+                  <td>{d.receivedBy ? <span>{d.receivedBy}{d.receivedOn && <span className="block text-xs text-slate-500">{showDate(d.receivedOn)}</span>}</span> : d.status === 'posted' ? <span className="text-slate-500">Not yet</span> : ''}
+                    {d.status === 'posted' && can('tpl.deliver') && <button type="button" className="block text-xs text-indigo-700 hover:underline" onClick={() => setOpen({ received: d })}>{d.receivedBy ? 'Change' : 'Record who received'}</button>}</td>
                   <td><StatusChip status={d.status} /></td>
-                  <td className="text-right">{d.status === 'posted' && can('qs.cancel') && <button type="button" className="px-2 text-red-700 hover:underline" onClick={() => setOpen({ cancel: d.id })}>Cancel</button>}</td>
+                  <td className="whitespace-nowrap text-right"><button type="button" className="px-2 text-indigo-700 hover:underline" onClick={() => void printDocument('tpl.delivery', d.id).then((e) => setError(e ?? ''))}>Print</button>
+                    {d.status === 'posted' && can('qs.cancel') && <button type="button" className="px-2 text-red-700 hover:underline" onClick={() => setOpen({ cancel: d.id })}>Cancel</button>}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -145,6 +149,7 @@ export function TplProgramPage({ me, params }: { me: Me; docTypes: DocTypeInfo[]
       {open && typeof open === 'object' && 'card' in open && <CardDialog item={open.card} onClose={() => setOpen(null)} />}
       {open === 'restock' && <RestockDialog items={active} onClose={() => setOpen(null)} onSaved={done} programId={p.id} />}
       {open === 'deliver' && <Dialog title={`Deliver to ${p.customerName}`} wide onClose={() => setOpen(null)}><DeliveryEditor page={page} canOverride={can('tpl.override')} onRecorded={done} /></Dialog>}
+      {open && typeof open === 'object' && 'received' in open && <ReceivedDialog delivery={open.received} onClose={() => setOpen(null)} onSaved={done} />}
       {open && typeof open === 'object' && 'cancel' in open && (
         <ReasonDialog title="Cancel this delivery" danger confirmLabel="Cancel delivery and invoice" onClose={() => setOpen(null)}
           explain="The delivery and its invoice are cancelled together (both kept, marked cancelled), and its pieces are back in stock. Refused while a payment stands on the invoice: cancel that collection first."
@@ -519,6 +524,25 @@ function RestockDialog({ programId, items, onClose, onSaved }: { programId: stri
   );
 }
 
+/** Who received a delivery, from the signed receipt; typed again to put it right. */
+function ReceivedDialog({ delivery, onClose, onSaved }: { delivery: TplDeliveryRow; onClose: () => void; onSaved: () => void }) {
+  const [today, setToday] = useState('');
+  const [name, setName] = useState(delivery.receivedBy ?? '');
+  const [date, setDate] = useState(delivery.receivedOn ?? '');
+  const a = useAction();
+  useEffect(() => { void api.health().then((h) => { const now = h.serverTime.slice(0, 10); setToday(now); setDate((d) => d || now); }, () => undefined); }, []);
+  const save = () => a.run(async () => { await api.tplDeliveryReceived(delivery.id, { receivedBy: name.trim(), receivedOn: date }); onSaved(); });
+  return <Dialog title={`Who received ${delivery.number}`} onClose={onClose}>
+    <p className="text-sm text-slate-600">From the signed delivery receipt.</p>
+    <div className="grid gap-3 sm:grid-cols-2">
+      <Field label="Received by" required><input className={inputClass} maxLength={120} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <Field label="Date received" required><input type="date" className={inputClass} min={delivery.date} max={today || undefined} value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+    </div>
+    {a.error && <Notice>{a.error}</Notice>}
+    <div className="flex justify-end gap-2"><Button onClick={onClose}>Go back</Button><Button tone="primary" disabled={a.busy || !name.trim() || !date} onClick={() => void save()}>Save</Button></div>
+  </Dialog>;
+}
+
 /** The delivery: pieces per item from stock, the fee and the booklet invoice; checked, then recorded with its invoice. */
 export function DeliveryEditor({ page, canOverride, onRecorded }: { page: TplProgramPage; canOverride: boolean; onRecorded: (r: { delivery: { id: string; number: string } }) => void }) {
   const items = page.items.filter((i) => i.isActive && i.onHand > 0);
@@ -573,8 +597,8 @@ export function DeliveryEditor({ page, canOverride, onRecorded }: { page: TplPro
         <Field label="Invoice no. (from the booklet)" required><input inputMode="numeric" className={inputClass} value={f.invoiceNumber} onChange={(e) => edit({ invoiceNumber: e.target.value.replace(/\D/g, '') })} /></Field>
         <Field label="Delivery fee" hint="Empty = none"><input inputMode="decimal" className={`${inputClass} text-right tabular-nums`} value={f.fee} onChange={(e) => edit({ fee: e.target.value })} placeholder="0.00" /></Field>
         <Field label="Delivered by" required hint="Our rider, or the courier"><input className={inputClass} maxLength={120} value={f.deliveredBy} onChange={(e) => edit({ deliveredBy: e.target.value })} /></Field>
-        <Field label="Received by"><input className={inputClass} maxLength={120} value={f.receivedBy} onChange={(e) => edit({ receivedBy: e.target.value })} /></Field>
-        <Field label="Tracking no."><input className={inputClass} maxLength={60} value={f.tracking} onChange={(e) => edit({ tracking: e.target.value })} /></Field>
+        <Field label="Received by" hint="Leave blank if not known yet: record it later from the signed receipt"><input className={inputClass} maxLength={120} value={f.receivedBy} onChange={(e) => edit({ receivedBy: e.target.value })} /></Field>
+        <Field label="Tracking no." hint="Only for a courier: the number they give you. Blank for our own rider"><input className={inputClass} maxLength={60} value={f.tracking} onChange={(e) => edit({ tracking: e.target.value })} /></Field>
         <Field label="Note"><input className={inputClass} maxLength={500} value={f.note} onChange={(e) => edit({ note: e.target.value })} /></Field>
       </div>
       {hold && (
