@@ -8,6 +8,7 @@ import { AppError, conflict, newId, notFound } from '@moonproject/shared';
 import { discountPolicyInput, itemCreate, itemInput, itemUpdate, priceInput, type ItemInput } from './schemas.ts';
 import { lookupCatalogPrice } from './public.ts';
 import { nextCode } from './import-item.ts';
+import { followName, giveOwnRates, goingBy, reclaim, refuseShared } from './own-rates.ts';
 
 type ItemRow = {
   id: string; code: string; name: string; class: ItemInput['class']; garment_type: string | null;
@@ -100,11 +101,13 @@ export function catRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (db.prepare('SELECT 1 FROM cat_items WHERE code = ? COLLATE NOCASE').get(input.code)) {
         throw conflict('CODE_EXISTS', 'This catalog code is already in use.');
       }
+      if (input.garmentType) refuseShared(db, input.garmentType, id);
       db.prepare(`INSERT INTO cat_items (id, code, name, class, garment_type, unit, set_components,
         revenue_role, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         id, input.code, input.name, input.class, input.garmentType, input.unit,
         input.setComponents, revenueRole[input.class], at, at,
       );
+      if (input.garmentType) reclaim(db, input.garmentType, id, { userId: currentUser(req).userId, at });
       audit(db, req, at, 'cat.item.create', 'cat_item', id, { code: input.code, name: input.name });
       return item(db, id);
     }).immediate();
@@ -112,7 +115,7 @@ export function catRoutes(app: FastifyInstance, deps: AppDeps): void {
 
   app.get('/api/cat/items/:id', { config: { permission: 'cat.view' } }, async (req) => {
     const row = item(db, rowId(req));
-    return { ...row, prices: priceList(db, row.id) };
+    return { ...row, prices: priceList(db, row.id), sharedWith: row.garment_type ? goingBy(db, row.garment_type, row.id) : [] };
   });
 
   app.put('/api/cat/items/:id', { config: { permission: 'cat.manage' } }, async (req) => {
@@ -121,8 +124,9 @@ export function catRoutes(app: FastifyInstance, deps: AppDeps): void {
     return db.transaction(() => {
       const before = item(db, id); active(before); matchingVersion(req, before);
       const next = itemInput.parse({ ...toInput(before), ...input });
+      const renamed = before.garment_type !== null && next.garmentType !== null && next.name !== before.name;
       const hasPrices = !!db.prepare('SELECT 1 FROM cat_prices WHERE item_id = ? LIMIT 1').get(id);
-      if (hasPrices && (next.class !== before.class || next.garmentType !== before.garment_type ||
+      if (hasPrices && (next.class !== before.class || (!renamed && next.garmentType !== before.garment_type) ||
         next.unit !== before.unit || next.setComponents !== before.set_components)) {
         throw conflict('ITEM_IN_USE', 'Deactivate this item and create a new one to change its type or unit.');
       }
@@ -130,12 +134,23 @@ export function catRoutes(app: FastifyInstance, deps: AppDeps): void {
         db.prepare('SELECT 1 FROM cat_items WHERE code = ? COLLATE NOCASE').get(next.code)) {
         throw conflict('CODE_EXISTS', 'This catalog code is already in use.');
       }
+      if (renamed) next.garmentType = followName(db, before, next.name, { userId: currentUser(req).userId, at });
       db.prepare(`UPDATE cat_items SET code = ?, name = ?, class = ?, garment_type = ?, unit = ?,
         set_components = ?, revenue_role = ?, version = version + 1, updated_at = ? WHERE id = ?`).run(
         next.code, next.name, next.class, next.garmentType, next.unit, next.setComponents,
         revenueRole[next.class], at, id,
       );
       audit(db, req, at, 'cat.item.update', 'cat_item', id, { before: toInput(before), after: next });
+      return item(db, id);
+    }).immediate();
+  });
+
+  /** An item renamed before its rates followed the name, or sharing them with another: it goes by its own name from now on. */
+  app.post('/api/cat/items/:id/own-rates', { config: { permission: 'cat.manage' } }, async (req) => {
+    const id = rowId(req), at = stamp(clock);
+    return db.transaction(() => {
+      const before = item(db, id); active(before); matchingVersion(req, before);
+      giveOwnRates(db, before, { userId: currentUser(req).userId, at });
       return item(db, id);
     }).immediate();
   });

@@ -10,7 +10,8 @@ export type ItemClass = 'made_to_order_garment' | 'service' | 'ready_made_item';
 export type Item = { id: string; code: string; name: string; class: ItemClass; garment_type: string | null; unit: 'pc' | 'set';
   set_components: number; is_active: number; version: number };
 export type Price = { id: string; effectiveFrom: string; minQty: number; unitPriceCents: number; createdAt: string };
-export type Detail = Item & { prices: Price[] };
+/** `sharedWith`: the other active items paid the same piece rates. */
+export type Detail = Item & { prices: Price[]; sharedWith: { code: string; name: string }[] };
 export interface ItemValues { code: string; name: string; class: ItemClass; garmentType: string; unit: 'pc' | 'set'; setComponents: number }
 
 export const CLASS_LABELS: Record<ItemClass, string> = { made_to_order_garment: 'Made-to-order garment', service: 'Service', ready_made_item: 'Ready-made item' };
@@ -41,6 +42,7 @@ export const catalogCalls = (me: Me) => ({
   open: (id: string) => masterRequest<Detail>(me, `/api/cat/items/${encodeURIComponent(id)}`),
   create: (v: ItemValues) => masterRequest<Item>(me, '/api/cat/items', 'POST', itemBody(v)),
   update: (row: Item, v: ItemValues) => masterRequest<Item>(me, `/api/cat/items/${encodeURIComponent(row.id)}`, 'PUT', itemBody(v), row.version),
+  ownRates: (row: Item) => masterRequest<Item>(me, `/api/cat/items/${encodeURIComponent(row.id)}/own-rates`, 'POST', undefined, row.version),
   deactivate: (row: Item) => masterRequest<Item>(me, `/api/cat/items/${encodeURIComponent(row.id)}/deactivate`, 'POST', undefined, row.version),
   addPrice: (row: Item, price: { effectiveFrom: string; minQty: number; unitPriceCents: number }) =>
     masterRequest<unknown>(me, `/api/cat/items/${encodeURIComponent(row.id)}/prices`, 'POST', price, row.version),
