@@ -8,6 +8,7 @@ import { addRate } from '../RATE/public.ts';
 import { importPriceListItem } from '../CAT/public.ts';
 import { listSteps } from '../PRD/public.ts';
 import { createSizerSet } from '../SZR/public.ts';
+import { planPriceList, stepNamed } from './price-plan.ts';
 import { applyEmployeeFix, applyMeasurementAssignment, applySizerFix, measurementField, measurementTenths, rateFromPesos, validateRow, type ManualData, applyPriceListFix, priceListRow } from './csv.ts';
 
 type Kind = 'customer' | 'group' | 'wearer' | 'measurement' | 'employee' | 'piece_rate' | 'sizer_set';
@@ -203,25 +204,31 @@ export function commitUpload(db: Db, uploadId: string, expectedCellTenths: numbe
         return e.id;
       });
     }
-    // The price list (the owner's request, Oct 2026): each row's item (found by name, or made), its price when it has
-    // none yet, and the row's piece rate on the item; rows of one item share it.
+    // The price list (the owner's request, Oct 2026): each row's item (found by name, or made), and the row's price and piece
+    // rate on it. A sheet uploaded again updates what differs (Nov 2026): the plan says which rows change what, as the check did.
+    // The legacy map only records a row: it never stops one, or a rate changed since would stay changed.
     const steps = listSteps(db);
     const priced = new Map<string, string>(); // item id -> its name, for the items this file gave a price
-    for (const row of active.filter(r => r.row_type === 'piece_rate')) {
+    const priceRows = active.filter(r => r.row_type === 'piece_rate');
+    const { byRow } = planPriceList(db, priceRows.map(r => ({ id: r.id, rowNumber: r.row_number, raw: data.get(r.id)! })), who.today);
+    for (const row of priceRows) {
       const raw = data.get(row.id)!;
       const p = priceListRow(raw);
-      const op = p.operation.toLowerCase();
-      const step = op ? steps.find((s) => s.code.toLowerCase() === op || s.name.toLowerCase() === op || s.name.toLowerCase().startsWith(op)) : undefined;
-      if (op && !step) throw new AppError('MIG_STEP', `Price list row ${row.row_number}: "${p.operation}" is not a production step. Use Fix to type one like Sewing.`, 409);
+      const step = stepNamed(steps, p.operation);
+      if (p.operation && !step) throw new AppError('MIG_STEP', `Price list row ${row.row_number}: "${p.operation}" is not a production step. Use Fix to type one like Sewing.`, 409);
       const legacyId = row.legacy_id ?? (first(raw, 'Rate_ID', 'Legacy_ID') ||
         `pricelist:${p.item.toLowerCase()}:${step?.code ?? 'price'}:${p.part}:${p.complexity}:${p.priceCents ?? ''}:${p.rateCents ?? ''}${p.minQty > 1 ? `:from${p.minQty}` : ''}`);
-      create(row, 'piece_rate', legacyId, () => {
-        const it = importPriceListItem(db, { name: p.item, class: p.class, unit: p.unit, priceCents: p.priceCents, minQty: p.minQty }, who);
-        if (p.priceCents !== undefined) priced.set(it.id, p.item);
-        if (!step || p.rateCents === undefined) return it.id;
-        return String(addRate(db, { garmentType: it.garmentType ?? p.item, stepCode: step.code, complexity: p.complexity, ...(p.part !== 'whole' ? { part: p.part } : {}),
-          rateCents: p.rateCents, effectiveFrom: who.today, reason: 'Confirmed price list import' }, who).id);
-      });
+      const plan = byRow.get(row.id)!;
+      try {
+        const it = importPriceListItem(db, { name: p.item, class: p.class, unit: p.unit, ...(plan.price ? { priceCents: p.priceCents } : {}), minQty: p.minQty }, who);
+        if (plan.price) priced.set(it.id, p.item);
+        const rate = plan.rate ? addRate(db, { garmentType: it.garmentType ?? p.item, stepCode: step!.code, complexity: p.complexity, ...(p.part !== 'whole' ? { part: p.part } : {}),
+          rateCents: p.rateCents!, effectiveFrom: who.today, reason: 'Confirmed price list import' }, who) : undefined;
+        if (!mapped(db, 'piece_rate', legacyId)) putMap(db, 'piece_rate', legacyId, rate ? String(rate.id) : it.id, uploadId);
+        tally.piece_rate[plan.rate || plan.price || plan.newItem ? 'imported' : 'alreadyImported']++;
+      } catch (cause) {
+        error(`Row ${row.row_number} (piece_rate): ${cause instanceof Error ? cause.message : String(cause)}`, { rowId: row.id, rowNumber: row.row_number, kind: 'piece_rate' });
+      }
     }
     // An item with price breaks always has a price from 1 piece, so a small order is never left without one.
     const fromOne = db.prepare('SELECT 1 FROM cat_prices WHERE item_id = ? AND min_qty = 1 AND effective_from <= ? LIMIT 1');

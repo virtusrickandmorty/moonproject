@@ -1,9 +1,9 @@
 /** After the review: the dry run and its checks, the commit (with the password again), and clearing the staged values. */
 import { useState } from 'react';
-import { api, type DryRunResult, type MigCommitResult } from '../../api.ts';
-import { Button, Dialog, Notice, Panel, useAction } from '../../components/ui.tsx';
+import { api, type DryRunResult, type MigCommitResult, type PlannedChange } from '../../api.ts';
+import { Button, Dialog, Notice, Panel, peso, useAction } from '../../components/ui.tsx';
 import { useStepUpAction } from '../TAX/StepUp.tsx';
-import { canCommit, cellSumWords, clearedWords, commitLines, commitRequest, dryRunAddsUp, dryRunChecks, dryRunLines, reviewDone, type RowCounts } from './importer.ts';
+import { canCommit, cellSumWords, clearedWords, commitLines, commitRequest, dryRunAddsUp, dryRunChecks, dryRunLines, priceListWords, ratesGoingDown, reviewDone, type RowCounts } from './importer.ts';
 
 function Lines({ lines }: { lines: [string, string][] }) {
   return (
@@ -11,6 +11,38 @@ function Lines({ lines }: { lines: [string, string][] }) {
       {lines.map(([label, value]) => <div key={label} className="contents"><dt className="text-slate-500">{label}</dt><dd className="tabular-nums">{value}</dd></div>)}
     </dl>
   );
+}
+
+function Changes({ title, rows }: { title: string; rows: PlannedChange[] }) {
+  if (rows.length === 0) return null;
+  const right = { textAlign: 'right' } as const;
+  return <details className="rounded-md bg-slate-50 px-3 py-2 text-sm" open={rows.length <= 30}>
+    <summary className="cursor-pointer font-medium text-indigo-700">{title} ({rows.length})</summary>
+    <div className="mt-2 max-h-96 overflow-auto"><table className="w-full min-w-[560px] text-sm">
+      <thead><tr><th className="text-left">Row</th><th className="text-left">Item</th><th className="text-left">What</th><th style={right}>Now</th><th style={right}>Sheet</th></tr></thead>
+      <tbody>{rows.map((c) => <tr key={`${c.row}-${c.what}`} className="border-t border-slate-200">
+        <td className="py-1 tabular-nums">{c.row}</td><td className="py-1">{c.item}</td><td className="py-1">{c.what}</td>
+        <td className="py-1 text-right tabular-nums">{c.fromCents === null ? 'None yet' : peso(c.fromCents)}</td>
+        <td className={`py-1 text-right tabular-nums ${c.fromCents !== null && c.toCents < c.fromCents ? 'font-semibold text-red-700' : ''}`}>{peso(c.toCents)}</td></tr>)}</tbody>
+    </table></div>
+  </details>;
+}
+
+/** What a price list upload will change, before anything is imported. */
+export function PriceChanges({ dry }: { dry: DryRunResult }) {
+  const p = dry.priceList;
+  if (!p) return null;
+  const down = ratesGoingDown(dry);
+  return <div className="space-y-2">
+    <h3 className="text-sm font-medium">What this price list will change</h3>
+    <p className="text-sm text-slate-600">{priceListWords(dry)}. New rates and prices start today; nothing recorded changes.</p>
+    {down.length > 0 && <Notice tone="warning">{down.length} {down.length === 1 ? 'rate goes' : 'rates go'} down. A sheet older than a change made on the screen takes that change back. To keep a rate, exclude its row in the review.</Notice>}
+    {p.clashes.length > 0 && <Notice tone="warning">{p.clashes.length} {p.clashes.length === 1 ? 'thing is' : 'things are'} said twice in this sheet with different figures; the last row is used: {p.clashes.slice(0, 5).map((c) => `${c.item}, ${c.what} (rows ${c.rows.join(', ')})`).join('; ')}{p.clashes.length > 5 ? ` and ${p.clashes.length - 5} more` : ''}. If two Upper rows of a set are its Upper and Lower, correct the Part in the sheet.</Notice>}
+    {p.zeroKept.length > 0 && <p className="text-sm text-slate-600">{p.zeroKept.length} {p.zeroKept.length === 1 ? 'rate of ₱0.00 in the sheet is' : 'rates of ₱0.00 in the sheet are'} ignored, so no step stops being paid.</p>}
+    {p.newItems.length > 0 && <p className="text-sm text-slate-600">New items: {p.newItems.slice(0, 8).join(', ')}{p.newItems.length > 8 ? ` and ${p.newItems.length - 8} more` : ''}. Check that none is a misspelled name.</p>}
+    <Changes title="Rates" rows={p.rates} />
+    <Changes title="Prices" rows={p.prices} />
+  </div>;
 }
 
 export function DryRun({ uploadId, counts, dry, onDry }: { uploadId: string; counts: RowCounts; dry: DryRunResult | null; onDry: (r: DryRunResult) => void }) {
@@ -28,6 +60,7 @@ export function DryRun({ uploadId, counts, dry, onDry }: { uploadId: string; cou
           {dryRunAddsUp(dry) ? <Notice tone="success">Every row of the file is counted once.</Notice> : <Notice>The counts do not add up. Do not import; tell the person who looks after Virtus.</Notice>}
           <h3 className="text-sm font-medium">Totals to check against the old sheet</h3>
           <Lines lines={dryRunChecks(dry)} />
+          <PriceChanges dry={dry} />
         </div>
       )}
     </Panel>
@@ -41,7 +74,7 @@ export function Commit({ uploadId, counts, dry, mayCommit, onCommitted }: { uplo
   const commit = () => (setAsking(false), void action.run(async () => onCommitted(await api.migCommit(uploadId, commitRequest(dry).expectedMeasurementCellTenths))));
   return (
     <Panel title="Import these approved rows">
-      <p className="text-sm text-slate-600">Creates the customers, wearers, measurements, employees, price list items (with their prices and piece rates) and sizer sets in one step. Nothing is deleted, and a row already imported from an earlier file is not created twice.</p>
+      <p className="text-sm text-slate-600">Creates the customers, wearers, measurements, employees, price list items (with their prices and piece rates) and sizer sets in one step, and updates the rates and prices of items already on the list. Nothing is deleted, and a row already imported from an earlier file is not created twice.</p>
       {!mayCommit && <Notice tone="warning">Only an owner can import the approved rows.</Notice>}
       <Button tone="primary" disabled={!canCommit(dry, counts, mayCommit) || action.busy} onClick={() => setAsking(true)}>{action.busy ? 'Importing…' : 'Import these approved rows'}</Button>
       {action.error && <Notice>{action.error}</Notice>}
