@@ -1030,6 +1030,11 @@ export interface MigRow {
   id: string; rowNumber: number; rowType: MigRowType; status: MigRowStatus; raw: Record<string, string>; issues: string[];
   manualData: Record<string, string | number> | null; legacyId: string | null; rateCents: number | null; mergeIntoRowId: string | null;
 }
+/** One payroll of an employee's history; `kind` thirteenth is their 13th-month pay. */
+export interface PayHistoryRow {
+  id: string; kind: 'run' | 'thirteenth'; number: string; payDate: string; periodStart: string; periodEnd: string;
+  grossCents: number; netCents: number; paidCents: number; leftCents: number; releases: { id: string; number: string; date: string; amountCents: number }[];
+}
 /** One figure a price list upload will change; `fromCents` null: there is none yet. */
 export interface PlannedChange { item: string; what: string; row: number; fromCents: number | null; toCents: number }
 export interface DryRunResult {
@@ -1444,6 +1449,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     separateEmployee: (id: string, v: number, body: { separatedOn: string; reason: string }) => call<EmployeeRecord>('POST', emp(id, '/separate'), body, version(v)),
     addPay: (id: string, body: Omit<PayProfile, 'id' | 'createdAt' | 'dailyRateCents' | 'monthlyRateCents'> & { dailyRateCents?: number; monthlyRateCents?: number }) =>
       call<PayProfile>('POST', emp(id, '/pay'), body),
+    payHistory: (employeeId: string) => call<{ rows: PayHistoryRow[] }>('GET', `/api/pay/employees/${encodeURIComponent(employeeId)}/history`).then((r) => r.rows),
     attendance: (from: string, to: string) => call<AttendanceGrid>('GET', `/api/emp/attendance?${new URLSearchParams({ from, to })}`),
     saveAttendance: (days: AttendanceSave[]) => call<{ saved: number; unchanged: number }>('POST', '/api/emp/attendance', { days }),
     /** The biometric's .xls report (base64) worked out for review; nothing is saved. */

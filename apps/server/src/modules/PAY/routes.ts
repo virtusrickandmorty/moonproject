@@ -16,6 +16,7 @@ import { listLoans, registerLoan, stopLoan, updateLoan, withTotals } from './loa
 import { annualTableAt, hdmfRateAt, payRulesAt, phicRateAt, sssRateAt, wtaxTableAt } from './statutory.ts';
 import { addPrior, updatePrior } from './prior.ts';
 import { ownPayslips } from './own.ts';
+import { payHistory } from './history.ts';
 import { data2316, employeesPaidIn, priorRows } from './year-end.ts';
 import { SCHEDULE_1, SCHEDULE_2, alphalist, asCsv } from './alphalist.ts';
 
@@ -59,6 +60,9 @@ export function payRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
 
   /** The signed-in worker's own payslips for the floor app (own.ts): net pay and its breakdown, theirs only. */
+  /** One employee's payrolls for their page; their 13th-month pay only for those who may see it. */
+  app.get<{ Params: { id: string } }>('/api/pay/employees/:id/history', { config: { permission: 'pay.run.view' } }, async (req) =>
+    ({ rows: payHistory(db, req.params.id, currentUser(req).permissions.has('pay.thirteenth.view')) }));
   app.get('/api/pay/my-payslips', { config: { permission: 'pay.own.view' } }, async (req) => ({ payslips: ownPayslips(db, currentUser(req).userId) }));
 
   /** Government loans (loans.ts): the register with what payroll deducted and what is left; `status=all` includes ended and stopped ones. */

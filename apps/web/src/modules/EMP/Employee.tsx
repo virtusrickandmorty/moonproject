@@ -1,7 +1,7 @@
 /**
  * One employee (PLAN E11): the record (with date of birth, gender, contact no. and address) and its edits in a dialog (If-Match), the statutory switches, government IDs (only with
- * emp.view_ids), separation, paid leave (SIL) this year, the pay history with a new pay from a date (pay.view_rates), and
- * the employee's government loans (pay.loans.view) and pay before Virtus (pay.prior.view), and the picture of their bank or
+ * emp.view_ids), separation, paid leave (SIL) this year, the pay history with a new pay from a date (pay.view_rates), the
+ * payrolls they were on (pay.run.view), and the employee's government loans (pay.loans.view) and pay before Virtus (pay.prior.view), and the picture of their bank or
  * GCash QR code to send the pay to (emp.manage changes it).
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -11,6 +11,7 @@ import { Link } from '../../router.tsx';
 import { cents } from '../COL/money.ts';
 import { EmployeeLoans } from '../PAY/Loans.tsx';
 import { EmployeePriorPay } from '../PAY/Prior.tsx';
+import { EmployeePayHistory } from '../PAY/History.tsx';
 import { Crumb } from '../../shell/crumbs.tsx';
 import { useLiveReload } from '../../live.ts';
 import { PICTURE_ACCEPT, fitPicture } from '../../components/pictures.ts';
@@ -51,6 +52,7 @@ export function EmployeePage({ me, params }: { me: Me; params?: Record<string, s
       {can('emp.manage') && d.floorUser !== undefined && <FloorSignIn e={e} current={d.floorUser} onSaved={load} />}
       {e.isActive && can('prd.view') && <WorkerSteps employeeId={e.id} name={e.fullName} editable={can('prd.assign')} />}
       <Pay d={d} canSet={e.isActive && can('emp.pay') && can('pay.view_rates')} onSaved={load} />
+      {can('pay.run.view') && <EmployeePayHistory me={me} employeeId={e.id} />}
       {can('ca.view') && <Link to={`/ca/employees/${e.id}`} className="underline">Cash advances (what {e.fullName} owes)</Link>}
       {can('pay.loans.view') && <EmployeeLoans me={me} employeeId={e.id} active={e.isActive} />}
       {can('pay.prior.view') && <EmployeePriorPay me={me} employeeId={e.id} />}
