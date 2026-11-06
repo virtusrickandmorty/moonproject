@@ -15,6 +15,8 @@ export interface TplRestock {
 export interface TplDeliveryRow {
   id: string; number: string; status: 'posted' | 'cancelled'; date: string; totalCents: number; invoiceNumber: string; dueDate: string;
   deliveredBy: string; pieces: number; invoiceId: string | null;
+  /** Who received it and when, once known. */
+  receivedBy?: string | null; receivedOn?: string | null;
 }
 export interface TplProgramPage {
   program: TplProgram; items: TplItem[]; restocks: TplRestock[]; deliveries: TplDeliveryRow[];

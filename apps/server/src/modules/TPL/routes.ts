@@ -13,6 +13,7 @@ import { findIdempotent, requestHash, storeIdempotent } from '../../engine/idemp
 import { currentUser } from '../../engine/security/routes.ts';
 import { saleDocType, saleOpenCents } from '../QS/public.ts';
 import { cancellingTogether, deliveryDoc, invoiceOf, recordingWithInvoice, type Delivery } from './doctypes/delivery.ts';
+import { recordReceived } from './received.ts';
 import { addItem, addItems, changeItem, changeItems, changeProgram, createProgram, item, itemLabel, itemsOf, openBalance, program, programList } from './programs.ts';
 import { belowReorder, countItem, countItems, openRestocks, putIntoStock, restock, stockCard } from './stock.ts';
 import { valuationSheet } from './doctypes/valuation.ts';
@@ -96,7 +97,7 @@ export function tplRoutes(app: FastifyInstance, deps: AppDeps): void {
     const { id: pid } = id.parse(req.params);
     const p = program(db, pid);
     if (!p) throw notFound('The stock program');
-    const deliveries = db.prepare(`SELECT d.id, d.number, d.status, d.business_date AS date, d.total_cents AS totalCents, t.invoice_number AS invoiceNumber, t.due_date AS dueDate,
+    const deliveries = db.prepare(`SELECT d.id, d.number, d.status, d.business_date AS date, d.total_cents AS totalCents, t.invoice_number AS invoiceNumber, COALESCE((SELECT r.received_by FROM tpl_delivery_received r WHERE r.document_id = t.document_id ORDER BY r.id DESC LIMIT 1), t.received_by) AS receivedBy, (SELECT r.received_on FROM tpl_delivery_received r WHERE r.document_id = t.document_id ORDER BY r.id DESC LIMIT 1) AS receivedOn, t.due_date AS dueDate,
         t.delivered_by AS deliveredBy, (SELECT SUM(qty) FROM tpl_delivery_lines l WHERE l.document_id = d.id) AS pieces, x.sale_id AS invoiceId
         FROM tpl_deliveries t JOIN documents d ON d.id = t.document_id LEFT JOIN tpl_delivery_invoices x ON x.document_id = t.document_id
         WHERE t.program_id = ? ORDER BY d.number DESC LIMIT 50`).all(pid);
@@ -140,6 +141,9 @@ export function tplRoutes(app: FastifyInstance, deps: AppDeps): void {
     const body = deliveryBody.parse(req.body);
     return idempotent(req, reply, (actor) => recordDelivery(env, actor, body.delivery, body.expectedTotalCents));
   });
+  /** Who received a delivery, typed once the signed receipt comes back; typed again to put it right. */
+  app.post<{ Params: { id: string } }>('/api/tpl/deliveries/:id/received', { config: { permission: 'tpl.deliver' } }, async (req) =>
+    write(() => recordReceived(db, id.parse(req.params).id, req.body, who(req))));
   app.post<{ Params: { id: string } }>('/api/tpl/deliveries/:id/cancel', { config: { permission: 'qs.cancel' } }, async (req, reply) => {
     const { reason } = z.object({ reason: z.string() }).strict().parse(req.body);
     const did = id.parse(req.params).id;

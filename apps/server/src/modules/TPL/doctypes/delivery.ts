@@ -16,6 +16,7 @@ import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
 import { invoiceAmounts } from '../../JO/public.ts';
 import { item, itemLabel, itemsOf, openBalance, program } from '../programs.ts';
+import { latestReceived } from '../received.ts';
 
 export const MAX_FEE_CENTS = 10_000_000;
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -38,6 +39,8 @@ export type DeliveryInput = z.infer<typeof deliveryInput>;
 
 export interface DeliveryLine { lineNo: number; itemId: string; description: string; size: string; kind: 'made_to_order' | 'ready_made'; qty: number; unitPriceCents: number; amountCents: number }
 export interface Delivery extends Omit<DeliveryInput, 'lines'> {
+  /** The date it was received, typed afterwards (received.ts) with the name in `receivedBy`. */
+  receivedOn?: string;
   lines: DeliveryLine[];
   customerId: string;
   customerName: string;
@@ -141,7 +144,7 @@ export const deliveryDoc: DocTypeDef<DeliveryInput, Delivery> = {
     const lines = db.prepare(`SELECT line_no AS lineNo, item_id AS itemId, description, size, kind, qty, unit_price_cents AS unitPriceCents, amount_cents AS amountCents
         FROM tpl_delivery_lines WHERE document_id = ? ORDER BY line_no`).all(documentId) as DeliveryLine[];
     const kept = Object.fromEntries(Object.entries(r).filter(([, v]) => v !== null)) as Omit<Delivery, 'lines' | 'totalCents'>;
-    return { ...kept, lines, totalCents: kept.goodsCents + kept.feeCents };
+    return { ...kept, ...latestReceived(db, documentId), lines, totalCents: kept.goodsCents + kept.feeCents }; // who received it, once typed
   },
 
   toInput: ({ programId, invoiceNumber, lines, feeCents, deliveredBy, receivedBy, tracking, overrideReason, note }) => ({

@@ -244,6 +244,16 @@ function content(db: Db, h: PrintHeader, doc: any, kind: PrintKind, joinBase?: s
     signatures: !doc.forDelivery ? [['Released by', prepared], ['Received by', doc.claimedBy]]
       : [['Released by', prepared], doc.receivedBy ? ['Received by', doc.receivedBy] : ['Received by (name and signature)'], doc.receivedOn ? ['Date received', datesIn(doc.receivedOn)] : ['Date received']],
   };
+  // The delivery receipt (the owner's request, Nov 2026): what went out, in two copies, to sign. The pieces only: the money is on
+  // the booklet. Who received it prints once it is known; until then the lines stay blank to fill by hand.
+  if (h.doc_type === 'tpl.delivery') return {
+    title: 'Delivery Receipt', subtitle: '', legend: true, twoUp: true,
+    party: { label: 'Deliver to', name: doc.customerName },
+    status: [['Booklet no.', doc.invoiceNumber], ...(doc.tracking ? [['Tracking no.', doc.tracking] as [string, unknown]] : [])],
+    body: section('Items delivered', lineTable(['Description', 'Size', 'Qty'], doc.lines.map((l: any) => [l.description, l.size, l.qty]))) + field('Note', doc.note),
+    totals: [['Total pieces', doc.lines.reduce((n: number, l: any) => n + l.qty, 0), true]],
+    signatures: [['Delivered by', doc.deliveredBy], doc.receivedBy ? ['Received by', doc.receivedBy] : ['Received by (name and signature)'], doc.receivedOn ? ['Date received', datesIn(doc.receivedOn)] : ['Date received']],
+  };
   if (h.doc_type === 'pur.po') {
     const names = purchaseOrderNames(db, doc.supplierId, doc.lines.map((l: any) => l.supplyId));
     return {

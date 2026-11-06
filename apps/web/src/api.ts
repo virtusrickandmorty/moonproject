@@ -1262,6 +1262,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     tplDeliveryPreview: <T>(delivery: object) => call<T>('POST', '/api/tpl/deliveries/preview', { delivery }),
     tplDeliver: <T>(delivery: object, expectedTotalCents: number, key: string) => call<T>('POST', '/api/tpl/deliveries', { delivery, expectedTotalCents }, idem(key)),
     joReleaseReceived: (id: string, body: { receivedBy: string; receivedOn: string }) => call<{ receivedBy: string; receivedOn: string }>('POST', `/api/jo/releases/${encodeURIComponent(id)}/received`, body),
+    tplDeliveryReceived: (id: string, body: { receivedBy: string; receivedOn: string }) => call<{ receivedBy: string; receivedOn: string }>('POST', `/api/tpl/deliveries/${encodeURIComponent(id)}/received`, body),
     tplCancelDelivery: <T>(id: string, reason: string, key: string) => call<T>('POST', `/api/tpl/deliveries/${encodeURIComponent(id)}/cancel`, { reason }, idem(key)),
     tplHome: <T>() => call<T>('GET', '/api/tpl/home'),
     tplValueSheet: <T>(date: string) => call<T>('GET', `/api/tpl/value-sheet?date=${encodeURIComponent(date)}`),
