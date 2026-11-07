@@ -177,20 +177,22 @@ main[data-erp] {
 @keyframes hero-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -0.9rem; } }
 @keyframes hero-sway { 0%, 100% { rotate: -2.5deg; } 50% { rotate: 2.5deg; } }
 @keyframes hero-zoom { from { scale: 1; } to { scale: 1.1; } }
+@keyframes hero-spin { to { rotate: 360deg; } }
 .hero-drift { animation: hero-drift 14s ease-in-out infinite alternate; }
 .hero-drift-back { animation: hero-drift 18s ease-in-out -6s infinite alternate-reverse; }
 .hero-float { animation: hero-float 6s ease-in-out infinite; }
 .hero-float-late { animation: hero-float 6s ease-in-out -3s infinite; }
 .hero-sway { animation: hero-sway 5s ease-in-out infinite; }
 .hero-zoom { animation: hero-zoom 12s ease-in-out infinite alternate; }
+.hero-spin { animation: hero-spin 60s linear infinite; }
 @media (prefers-reduced-motion: reduce) {
   [data-reveal] { transition: none; }
   [data-reveal]:not([data-shown]) { opacity: 1; translate: none; }
-  .hero-drift, .hero-drift-back, .hero-float, .hero-float-late, .hero-sway, .hero-zoom { animation: none; }
+  .hero-drift, .hero-drift-back, .hero-float, .hero-float-late, .hero-sway, .hero-zoom, .hero-spin { animation: none; }
 }
 @media print {
   [data-reveal]:not([data-shown]) { opacity: 1; translate: none; }
-  .hero-drift, .hero-drift-back, .hero-float, .hero-float-late, .hero-sway, .hero-zoom { animation: none; }
+  .hero-drift, .hero-drift-back, .hero-float, .hero-float-late, .hero-sway, .hero-zoom, .hero-spin { animation: none; }
 }
 
 /*

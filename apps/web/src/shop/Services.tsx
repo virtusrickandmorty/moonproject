@@ -1,6 +1,7 @@
 /** The services page: what the shop makes and decorates, and how an order goes. Each service leads to a quotation request. */
 import { Link } from '../router.tsx';
 import { PageHero, SeasonDoodles, SectionHead } from './Home.tsx';
+import { useStepTour } from './motion.tsx';
 import { seedOf } from './seasons.tsx';
 
 interface Service { id: string; name: string; tagline: string; detail: string; bestFor: string[]; send: string; lead: string; min: string; icon: string; tone: string }
@@ -133,13 +134,39 @@ export function Services() {
   );
 }
 
+/**
+ * The steps of the school service as a journey (the owner's request, Nov 2026): a package travels down the line and each step lights
+ * up as it gets there, from sizing to delivery, on a loop. A device set to reduce motion shows the steps still, with no package.
+ */
+export function SchoolSteps({ steps }: { steps: [string, string][] }) {
+  const { box, step, markerTop, hold } = useStepTour<HTMLOListElement>(steps.length);
+  return (
+    <ol ref={box} {...hold} className="relative space-y-3 self-center pl-11">
+      <span className="absolute bottom-6 left-[0.9rem] top-6 w-1 rounded-full bg-slate-900/15" aria-hidden="true" />
+      {step !== null && <>
+        <span className="absolute left-[0.9rem] top-6 w-1 rounded-full bg-slate-900 transition-[height] duration-700 ease-out" style={{ height: Math.max(0, markerTop - 24) }} aria-hidden="true" />
+        <span data-testid="tour-package" className="absolute left-0 grid size-8 -translate-y-1/2 place-items-center rounded-full bg-slate-900 text-amber-300 shadow-md transition-[top] duration-700 ease-out" style={{ top: markerTop }} aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="size-5"><path d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9" /></svg>
+        </span>
+      </>}
+      {steps.map(([title, text], i) => {
+        const here = step === i;
+        return <li key={title} data-step="" className={`relative flex gap-4 rounded-2xl p-4 shadow-sm backdrop-blur transition duration-500 ${here ? 'scale-[1.02] bg-white ring-2 ring-slate-900 shadow-md' : 'bg-white/80 ring-2 ring-transparent'}`}>
+          <span className={`relative grid size-8 shrink-0 place-items-center rounded-full text-sm font-bold transition-colors duration-500 ${here ? 'bg-amber-400 text-slate-900' : 'bg-slate-900 text-white'}`}>{i + 1}</span>
+          <div><p className="font-bold text-slate-900">{title}</p><p className="text-sm text-slate-700">{text}</p></div>
+        </li>;
+      })}
+    </ol>
+  );
+}
+
 /** The highlighted service: TPL for schools, its steps from sizing to delivery, and a quotation request for it. */
 function SchoolTpl() {
   const t = SCHOOL_TPL;
   return (
     <section id={t.id} className="mx-auto max-w-7xl scroll-mt-24 px-4 pt-10 sm:px-6" aria-label={t.name}>
       <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-amber-300 via-amber-200 to-orange-200 p-6 ring-1 ring-amber-400/40 sm:p-10">
-        <span className="pointer-events-none absolute -right-6 -top-10 text-[12rem] font-black leading-none text-white/30" aria-hidden="true">★</span>
+        <span className="hero-spin pointer-events-none absolute -right-6 -top-10 text-[12rem] font-black leading-none text-white/30" aria-hidden="true">★</span>
         <SeasonDoodles seed={4} spots={['bl']} size="size-12" />
         <div className="relative grid gap-8 lg:grid-cols-[1fr_1.1fr]">
           <div>
@@ -155,14 +182,7 @@ function SchoolTpl() {
             </dl>
             <Link to={`/support?type=quotation&service=${t.id}`} className="mt-6 inline-block rounded-full bg-slate-900 px-6 py-3 font-bold text-white hover:bg-indigo-700">Talk to us about your school →</Link>
           </div>
-          <ol className="relative space-y-3 self-center">
-            <span className="absolute bottom-6 left-[1.4rem] top-6 w-0.5 bg-slate-900/20" aria-hidden="true" />
-            {t.steps.map(([title, text], i) => (
-              <li key={title} className="relative flex gap-4 rounded-2xl bg-white/80 p-4 shadow-sm backdrop-blur">
-                <span className="relative grid size-8 shrink-0 place-items-center rounded-full bg-slate-900 text-sm font-bold text-white">{i + 1}</span>
-                <div><p className="font-bold text-slate-900">{title}</p><p className="text-sm text-slate-700">{text}</p></div>
-              </li>))}
-          </ol>
+          <SchoolSteps steps={t.steps} />
         </div>
       </div>
     </section>
