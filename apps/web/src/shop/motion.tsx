@@ -3,10 +3,11 @@
  * - Fade in on scroll: sections, cards and tiles fade and slide up as they come into view (useReveal, on the site's
  *   main area once, so every page and every card added later gets it), cards of a row one after another.
  * - Counting numbers: a figure counts up from zero the first time it is seen (CountUp).
+ * - A tour of steps: a list lights its steps up one after another, on a loop, while it is on screen (useStepTour).
  * Hover and tap motion and the moving banner are CSS (index.css, "The website's motion"). A device set to reduce
  * motion gets none of it: everything shows at once, still.
  */
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 
 const stillWanted = () => typeof matchMedia === 'undefined' || matchMedia('(prefers-reduced-motion: reduce)').matches || typeof IntersectionObserver === 'undefined';
 
@@ -58,6 +59,46 @@ export function useReveal(main: RefObject<HTMLElement | null>): void {
     changes.observe(root, { childList: true, subtree: true });
     return () => { changes.disconnect(); seen.disconnect(); removeEventListener('scroll', onScroll); cancelAnimationFrame(frame); cancelAnimationFrame(passing); };
   }, [main]);
+}
+
+const TOUR_STEP_MS = 2600;
+/** The step after this one, back to the first after the last. */
+export const nextStep = (step: number | null, count: number) => (step === null ? 0 : (step + 1) % count);
+
+/**
+ * Lights a list's steps up one after another, on a loop: only while it is on screen, and held while someone points at it to read.
+ * `step` stays null on a device set to reduce motion, so nothing moves. `markerTop`: how far down the list the step is, in pixels,
+ * for what travels beside it; the step is the element marked data-step.
+ */
+export function useStepTour<T extends HTMLElement>(count: number) {
+  const box = useRef<T>(null);
+  const held = useRef(false);
+  const [step, setStep] = useState<number | null>(null);
+  const [markerTop, setMarkerTop] = useState(0);
+  useEffect(() => {
+    const el = box.current;
+    if (!el || stillWanted()) return;
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const stop = () => { clearInterval(timer); timer = undefined; };
+    const watch = new IntersectionObserver(([e]) => {
+      stop();
+      if (!e?.isIntersecting) return;
+      setStep((s) => s ?? 0);
+      timer = setInterval(() => { if (!held.current) setStep((s) => nextStep(s, count)); }, TOUR_STEP_MS);
+    }, { threshold: 0.25 });
+    watch.observe(el);
+    return () => { stop(); watch.disconnect(); };
+  }, [count]);
+  useLayoutEffect(() => {
+    const place = () => {
+      const li = step === null ? null : box.current?.querySelectorAll<HTMLElement>('[data-step]')[step];
+      if (li) setMarkerTop(li.offsetTop + li.offsetHeight / 2);
+    };
+    place();
+    addEventListener('resize', place);
+    return () => removeEventListener('resize', place);
+  }, [step]);
+  return { box, step, markerTop, hold: { onPointerEnter: () => { held.current = true; }, onPointerLeave: () => { held.current = false; } } };
 }
 
 const easeOut = (t: number) => 1 - (1 - t) ** 3;
