@@ -4,6 +4,7 @@ import { Link } from '../../router.tsx';
 import { Loading, Notice, manilaTime, peso } from '../../components/ui.tsx';
 import { nightlyLine } from '../AUD/nightly.ts';
 import { Card, HomeCards, type IconName } from './Cards.tsx';
+import { TodayList } from './Today.tsx';
 import { AgingBars, Bars, CashLine } from './MoneyCharts.tsx';
 import { REPORT_QUIET_MS, useLiveChange, useLiveReload } from '../../live.ts';
 
@@ -211,7 +212,8 @@ export function HomeContent({ home }: { home: DashHomeData }) {
   const hidden = SHOWN_ELSEWHERE[home.role] ?? [];
   const figures = home.widgets.filter((w) => !work.includes(w) && !hidden.includes(w.key));
   return <div className="space-y-4">
-    {/* Needs attention at the very top, then the cards; the role's other cards join the last grid. */}
+    {/* Today's list first (the owner's request, Nov 2026), then what needs attention, then the cards. */}
+    <TodayList />
     <HomeCards attention={<Notifications widgets={home.widgets}>{(home.role === 'owner' || home.role === 'accountant') && <NightlyLine />}</Notifications>}
       more={widgetCards(figures)} />
     {home.role === 'owner' && <OwnerHealth />}

@@ -134,6 +134,13 @@ export function proofAnswersBetween(db: Db, from: string, to: string) {
   return { sent, approved: by('approved'), changes: by('changes') };
 }
 
+/** Designs the customer sent back for a change, with no newer design sent yet: work for staff (DASH, Today). */
+export function proofsToRedo(db: Db) {
+  return (db.prepare(`SELECT p.job_order_no AS jobOrderNumber, p.job_order_id AS jobOrderId, p.version FROM prf_proofs p JOIN prf_answers a ON a.proof_id = p.id
+    WHERE a.answer = 'changes' AND p.version = (SELECT MAX(version) FROM prf_proofs q WHERE q.job_order_no = p.job_order_no)`).all() as { jobOrderNumber: string; jobOrderId: string; version: number }[])
+    .flatMap((p) => { const jo = liveJobOrder(db, p.jobOrderNumber); return jo ? [{ ...p, jobOrderNumber: jo.number, jobOrderId: jo.id }] : []; });
+}
+
 /** Answers given since a time, newest first: the staff bell (DASH) shows each for a week. */
 export function answersSince(db: Db, since: string) {
   return db.prepare(`SELECT p.id, p.job_order_no AS jobOrderNumber, p.job_order_id AS jobOrderId, p.version, a.answer, a.name, a.comment, a.at

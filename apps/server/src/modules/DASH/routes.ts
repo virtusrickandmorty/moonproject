@@ -10,6 +10,7 @@ import { home, notifications } from './home.ts';
 import { ownerHealth } from './health.ts';
 import { ownerCharts } from './charts.ts';
 import { homeCards } from './cards.ts';
+import { todayList } from './today.ts';
 
 const view = { config: { permission: 'dash.view' } };
 const readInput = z.object({ id: z.string().min(1).max(200) }).strict();
@@ -19,6 +20,8 @@ export function dashRoutes(app: FastifyInstance, { db, clock, registry, practice
   app.get('/api/dash/home', view, async (req) => home(db, clock, registry, currentUser(req), where));
   /** The home's cards, each only for those who may see what it reads (the owner's request, Oct 2026). */
   app.get('/api/dash/cards', view, async (req) => homeCards(db, today(clock), currentUser(req)));
+  /** Today: what is waiting on this person, counted (the owner's request, Nov 2026). */
+  app.get('/api/dash/today', view, async (req) => todayList(db, clock, currentUser(req)));
   app.get('/api/dash/owner-health', { config: { permission: 'dash.home.owner' } }, async () => ownerHealth(db, today(clock)));
   app.get('/api/dash/owner-charts', { config: { permission: 'rpt.books.view' } }, async () => ownerCharts(db, today(clock)));
   // A page of them when asked (?limit&offset, and ?unread=1 for only the unread ones): the whole list can be thousands of lines.
