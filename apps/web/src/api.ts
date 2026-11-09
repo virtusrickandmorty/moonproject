@@ -1264,6 +1264,9 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     joReleaseReceived: (id: string, body: { receivedBy: string; receivedOn: string }) => call<{ receivedBy: string; receivedOn: string }>('POST', `/api/jo/releases/${encodeURIComponent(id)}/received`, body),
     tplDeliveryReceived: (id: string, body: { receivedBy: string; receivedOn: string }) => call<{ receivedBy: string; receivedOn: string }>('POST', `/api/tpl/deliveries/${encodeURIComponent(id)}/received`, body),
     tplCancelDelivery: <T>(id: string, reason: string, key: string) => call<T>('POST', `/api/tpl/deliveries/${encodeURIComponent(id)}/cancel`, { reason }, idem(key)),
+    // Design proofs (PRF): what was sent on a job order, and a new design for it.
+    prfProofs: (jobOrderId: string) => call<{ proofs: import('./modules/PRF/ProofPanel.tsx').StaffProof[] }>('GET', `/api/prf/job-orders/${encodeURIComponent(jobOrderId)}`),
+    prfSend: (jobOrderId: string, body: { note?: string; files: { name: string; data: string }[] }) => call<{ id: string; version: number; token: string }>('POST', `/api/prf/job-orders/${encodeURIComponent(jobOrderId)}`, body),
     tplHome: <T>() => call<T>('GET', '/api/tpl/home'),
     tplValueSheet: <T>(date: string) => call<T>('GET', `/api/tpl/value-sheet?date=${encodeURIComponent(date)}`),
     shpValueSheet: (date: string) => call<{ items: { itemId: string; description: string; qty: number; lastCostCents: number | null }[] }>('GET', `/api/shp/value-sheet?date=${encodeURIComponent(date)}`),

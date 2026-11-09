@@ -26,6 +26,7 @@ import { monthEndChecklist } from '../ACC/public.ts';
 import { remittanceChecks, remittanceDueDate } from '../STAT/public.ts';
 import { nightlyStatus } from '../AUD/public.ts';
 import { redLightNotices, type Host } from '../../platform/health/health.ts';
+import { answersSince, proofsWaiting } from '../PRF/public.ts';
 
 /** What the owner is told about for 14 days: actions that need a fresh password, in words (the audit log has the rest). */
 const GUARDED: Record<string, string> = {
@@ -265,6 +266,16 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
   if (can('alt.decide')) for (const r of returnsAwaitingDecision(db)) {
     push('alt-decision', r.id, `${r.number}: decide on the items ${r.customerName} brought back`, `/alt?open=${r.id}`,
       `${r.pieces} ${r.pieces === 1 ? 'piece' : 'pieces'}${r.items > 1 ? ` in ${r.items} items` : ''} · received ${r.receivedOn}`);
+  }
+  // Design proofs (the owner's request, Nov 2026): a customer's answer, for a week; and a design sent two days ago with no
+  // answer yet, to follow up (it goes once answered or replaced by a newer design).
+  if (can('prf.view')) for (const a of answersSince(db, manilaTimestamp(new Date(clock.now().getTime() - 7 * 86_400_000)))) {
+    push(a.answer === 'approved' ? 'proof-approved' : 'proof-changes', a.id,
+      a.answer === 'approved' ? `${a.jobOrderNumber}: ${a.name} approved the design (version ${a.version})` : `${a.jobOrderNumber}: ${a.name} asked for a change to the design`,
+      `/docs/jo.job_order/${a.jobOrderId}`, a.comment ? `“${a.comment.slice(0, 140)}”` : undefined);
+  }
+  if (can('prf.manage')) for (const p of proofsWaiting(db, manilaTimestamp(new Date(clock.now().getTime() - 2 * 86_400_000)))) {
+    push('proof-waiting', p.id, `${p.jobOrderNumber}: no answer yet on the design (version ${p.version})`, `/docs/jo.job_order/${p.jobOrderId}`, `Sent ${p.sentAt.slice(0, 16).replace('T', ' ')} · follow up with the customer`);
   }
   // Work waiting on someone, and work done that someone must take on (the owner's request, Oct 2026). Each notice goes by
   // itself once it is dealt with.
