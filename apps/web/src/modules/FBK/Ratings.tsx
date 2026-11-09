@@ -18,13 +18,14 @@ const message = (number: string, url: string) => `Hi! Thank you for your order $
 
 /** On a job order's page: its rating, or (once released) the link to ask for one. */
 export function RatingPanel({ d }: { d: DocDetail }) {
-  const [perms, setPerms] = useState<string[]>([]);
+  const [permsState, setPerms] = useState<string[]>([]);
+  const perms = permsState ?? []; // a page test may give the panel no state of its own
   const [r, setR] = useState<FbkJobOrder | null>(null);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const id = d.header.id;
   const load = () => api.fbkJobOrder(id).then(setR, (e: Error) => setError(e.message));
-  useEffect(() => { void api.me().then((me) => setPerms(me.permissions), () => setPerms([])); }, []);
+  useEffect(() => { void api.me().then((me) => setPerms(me?.permissions ?? []), () => setPerms([])); }, []);
   useEffect(() => { if (perms.includes('fbk.view')) void load(); }, [id, perms.join()]); // eslint-disable-line react-hooks/exhaustive-deps
   useLiveReload(() => (perms.includes('fbk.view') ? load() : Promise.resolve()));
   if (!perms.includes('fbk.view') || !r || (!r.rating && !r.token && r.stage !== 'released')) return null;

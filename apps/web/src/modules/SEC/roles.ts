@@ -6,7 +6,7 @@ type Perm = RoleGrid['permissions'][number];
 /** Plain names for the module codes the permissions table groups by. */
 export const MODULE_NAMES: Record<string, string> = {
   ACC: 'Accounting & journals', AP: 'Payables', AUD: 'Audit & integrity', BAK: 'Backup & restore', CA: 'Cash advances', CAL: 'Calendar', CASH: 'Cash & banks',
-  CAT: 'Catalog & pricing', EST: 'Costing & estimates', OLK: 'Order links', COL: 'Collections & receivables', CUS: 'Customers & measurements', DASH: 'Homes and notifications', EMP: 'Employees & time', EQ: 'Owners & officers',
+  CAT: 'Catalog & pricing', EST: 'Costing & estimates', OLK: 'Order links', FBK: 'Customer ratings', COL: 'Collections & receivables', CUS: 'Customers & measurements', DASH: 'Homes and notifications', EMP: 'Employees & time', EQ: 'Owners & officers',
   EXP: 'Expenses', FA: 'Fixed assets', INV: 'Inventory', JO: 'Job orders & release', LOAN: 'Loans', MIG: 'Migration & opening', PAY: 'Payroll', PRD: 'Production',
   PRT: 'Printing & company profile', PUR: 'Suppliers & purchasing', QS: 'Quick sale', QUO: 'Quotations', RATE: 'Piece-rate table', RPT: 'Books & statements',
   SHP: 'Website shop, POS and online orders', SUP: 'Customer support inbox', STAT: 'Government remittances', SZR: 'Sizer tracker', IMG: 'Image tools', TAX: 'Tax compliance', SEC: 'Users & security', PLT: 'Platform', NAV: 'Navigation', COM: 'Communications',
