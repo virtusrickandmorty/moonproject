@@ -545,8 +545,12 @@ function DeliveryReceived({ d }: { d: DocDetail }) {
   </Panel>;
 }
 
-/** A delivery's own page: who received it, and a Cancel that takes the delivery and its invoice together, as on the program page. */
+/**
+ * A delivery's own page: who received it, and a Cancel that takes the delivery and its invoice together, as on the program page.
+ * No Edit: a delivery and its invoice are corrected by cancelling both and delivering again.
+ */
 export const tplDeliveryView: ViewParts = {
+  noEdit: true,
   extra: (d) => <DeliveryReceived d={d} />,
   cancel: (id, reason, key) => api.tplCancelDelivery(id, reason, key),
 };
