@@ -1,7 +1,7 @@
 /** The quick sale's own view parts (PLAN E6, H2): what was sold, its payments, and a cancel that cancels both. */
 import { useLiveReload } from '../../live.ts';
 import { useEffect, useState } from 'react';
-import { api, type DocDetail, type SalePayment } from '../../api.ts';
+import { api, ApiError, newIdempotencyKey, type DocDetail, type SalePayment } from '../../api.ts';
 import { Link } from '../../router.tsx';
 import { peso } from '../../components/ui.tsx';
 import type { ViewParts } from '../../generic/DocView.tsx';
@@ -43,5 +43,14 @@ function SaleDetail({ d }: { d: DocDetail }) {
 
 export const quickSaleView: ViewParts = {
   extra: (d) => <SaleDetail d={d} />,
-  cancel: (id, reason, key) => api.qsCancel(id, reason, key),
+  /** A TPL delivery's invoice is cancelled through its delivery, which takes both (the cancel dialog said so first). */
+  async cancel(id, reason, key) {
+    try {
+      return await api.qsCancel(id, reason, key);
+    } catch (e) {
+      const delivery = e instanceof ApiError && e.code === 'TPL_INVOICE' ? (e.details as { id: string }[] | undefined)?.[0] : undefined;
+      if (!delivery) throw e;
+      return api.tplCancelDelivery(delivery.id, reason, newIdempotencyKey());
+    }
+  },
 };
