@@ -10,7 +10,7 @@ import { currentUser } from '../../engine/security/routes.ts';
 import { publicRating, rate, ratingForJobOrder, ratingsBetween, requestFor } from './ratings.ts';
 
 const noStore = (reply: FastifyReply) => reply.header('Cache-Control', 'no-store');
-const period = z.object({ from: z.string().refine(isBusinessDate), to: z.string().refine(isBusinessDate) }).partial();
+const period = z.object({ from: z.string().refine(isBusinessDate), to: z.string().refine(isBusinessDate) }).partial().strict();
 
 export function fbkRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { db, clock } = deps;
