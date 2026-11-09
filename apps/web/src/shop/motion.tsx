@@ -68,13 +68,15 @@ export const nextStep = (step: number | null, count: number) => (step === null ?
 /**
  * Lights a list's steps up one after another, on a loop: only while it is on screen, and held while someone points at it to read.
  * `step` stays null on a device set to reduce motion, so nothing moves. `markerTop`: how far down the list the step is, in pixels,
- * for what travels beside it; the step is the element marked data-step.
+ * for what travels beside it; the step is the element marked data-step. `at`: the middle of the step's dot (its element marked
+ * data-dot, or the step itself), from the list's top left, for what travels from dot to dot.
  */
 export function useStepTour<T extends HTMLElement>(count: number) {
   const box = useRef<T>(null);
   const held = useRef(false);
   const [step, setStep] = useState<number | null>(null);
   const [markerTop, setMarkerTop] = useState(0);
+  const [at, setAt] = useState({ x: 0, y: 0 });
   useEffect(() => {
     const el = box.current;
     if (!el || stillWanted()) return;
@@ -91,14 +93,18 @@ export function useStepTour<T extends HTMLElement>(count: number) {
   }, [count]);
   useLayoutEffect(() => {
     const place = () => {
-      const li = step === null ? null : box.current?.querySelectorAll<HTMLElement>('[data-step]')[step];
-      if (li) setMarkerTop(li.offsetTop + li.offsetHeight / 2);
+      const list = box.current;
+      const li = step === null ? null : list?.querySelectorAll<HTMLElement>('[data-step]')[step];
+      if (!list || !li) return;
+      setMarkerTop(li.offsetTop + li.offsetHeight / 2);
+      const b = list.getBoundingClientRect(), d = (li.querySelector<HTMLElement>('[data-dot]') ?? li).getBoundingClientRect();
+      setAt({ x: d.left - b.left + d.width / 2, y: d.top - b.top + d.height / 2 });
     };
     place();
     addEventListener('resize', place);
     return () => removeEventListener('resize', place);
   }, [step]);
-  return { box, step, markerTop, hold: { onPointerEnter: () => { held.current = true; }, onPointerLeave: () => { held.current = false; } } };
+  return { box, step, markerTop, at, hold: { onPointerEnter: () => { held.current = true; }, onPointerLeave: () => { held.current = false; } } };
 }
 
 const easeOut = (t: number) => 1 - (1 - t) ** 3;

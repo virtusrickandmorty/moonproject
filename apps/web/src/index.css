@@ -178,6 +178,44 @@ main[data-erp] {
 @keyframes hero-sway { 0%, 100% { rotate: -2.5deg; } 50% { rotate: 2.5deg; } }
 @keyframes hero-zoom { from { scale: 1; } to { scale: 1.1; } }
 @keyframes hero-spin { to { rotate: 360deg; } }
+/* The workshop's steps at work (About us, WorkshopFlow): only the step the tour is on moves; a still device never lights one. */
+@keyframes ws-run { to { stroke-dashoffset: var(--dash, -14); } }
+@keyframes ws-draw { from { stroke-dashoffset: 1; } 55%, 100% { stroke-dashoffset: 0; } }
+@keyframes ws-pen { 0%, 100% { translate: 0 0; } 25% { translate: -4px 4px; } 50% { translate: 2px -1px; } 75% { translate: -2px 3px; } }
+@keyframes ws-snip { 0%, 100% { translate: 0 0; rotate: 0deg; } 50% { translate: -12px 2px; rotate: -8deg; } }
+@keyframes ws-drip { from { translate: 0 -3px; opacity: 1; } to { translate: 0 8px; opacity: 0; } }
+@keyframes ws-needle { to { translate: 0 5px; } }
+@keyframes ws-turn { to { rotate: 360deg; } }
+@keyframes ws-pulse { 0%, 100% { scale: 1; } 50% { scale: 1.14; } }
+@keyframes ws-hoop { 0%, 100% { rotate: -3deg; } 50% { rotate: 3deg; } }
+@keyframes ws-scan { 0%, 100% { translate: 0 0; } 25% { translate: -16px -10px; } 50% { translate: -26px 2px; } 75% { translate: -10px 8px; } }
+@keyframes ws-drive { 0%, 100% { translate: 0 0; } 50% { translate: 7px -1px; } }
+@keyframes ws-bob { 0%, 100% { translate: 0 0; } 50% { translate: 0 -3px; } }
+@keyframes ws-speed { 0%, 100% { opacity: 0; translate: 4px 0; } 50% { opacity: 1; translate: 0 0; } }
+@keyframes ws-glow { 0%, 100% { opacity: 0.6; scale: 0.9; } 50% { opacity: 1; scale: 1.25; } }
+@keyframes ws-sheen { from { translate: -110% 0; } to { translate: 260% 0; } }
+.ws-step svg * { transform-box: fill-box; transform-origin: center; }
+.ws-speed { opacity: 0; }
+.ws-glow { animation: ws-glow 1.6s ease-in-out infinite; }
+.ws-sheen { animation: ws-sheen 1.1s ease-out both; }
+[data-active] .ws-run { animation: ws-run 1.4s linear infinite; }
+[data-active] .ws-run.ws-fast { animation-duration: 0.6s; }
+[data-active] .ws-draw { stroke-dasharray: 1; animation: ws-draw 2.6s ease-out both; }
+[data-active] .ws-draw.ws-late { animation-delay: 0.9s; }
+[data-active] .ws-pen { animation: ws-pen 1.2s ease-in-out infinite; }
+[data-active] .ws-snip { animation: ws-snip 1.3s ease-in-out infinite; }
+[data-active] .ws-drip { animation: ws-drip 0.9s ease-in infinite; }
+[data-active] .ws-needle { animation: ws-needle 0.18s ease-in-out infinite alternate; }
+[data-active] .ws-wheel { animation: ws-turn 0.8s linear infinite; }
+[data-active] .ws-run.ws-pulse { animation: ws-run 1.4s linear infinite, ws-pulse 1.3s ease-in-out infinite; }
+[data-active] .ws-hoop { animation: ws-hoop 2.6s ease-in-out infinite; }
+[data-active] .ws-scan { animation: ws-scan 2s ease-in-out infinite; }
+[data-active] .ws-drive { animation: ws-drive 0.7s ease-in-out infinite; }
+[data-active] .ws-bob { animation: ws-bob 1.4s ease-in-out infinite; }
+[data-active] .ws-speed { animation: ws-speed 0.7s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .ws-step *, .ws-glow, .ws-sheen { animation: none !important; }
+}
 .hero-drift { animation: hero-drift 14s ease-in-out infinite alternate; }
 .hero-drift-back { animation: hero-drift 18s ease-in-out -6s infinite alternate-reverse; }
 .hero-float { animation: hero-float 6s ease-in-out infinite; }
