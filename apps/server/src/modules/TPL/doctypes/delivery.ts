@@ -11,7 +11,7 @@
 import { z } from 'zod';
 import fc from 'fast-check';
 import { conflict, formatPeso, manilaDate, type Issue } from '@moonproject/shared';
-import type { DocTypeDef } from '../../../engine/documents/registry.ts';
+import type { DocTypeDef, NoticeTarget } from '../../../engine/documents/registry.ts';
 import { settingAt } from '../../../engine/settings.ts';
 import { customerRef } from '../../CUS/public.ts';
 import { invoiceAmounts } from '../../JO/public.ts';
@@ -152,8 +152,16 @@ export const deliveryDoc: DocTypeDef<DeliveryInput, Delivery> = {
     ...(receivedBy ? { receivedBy } : {}), ...(tracking ? { tracking } : {}), ...(overrideReason ? { overrideReason } : {}), ...(note ? { note } : {}),
   }),
 
-  /** Its invoice, while it stands: the TPL cancel takes both together (cancelDelivery). */
-  dependents: (db, documentId) => invoiceStanding(db, documentId),
+  /**
+   * Its invoice, while it stands: the TPL cancel takes both together (cancelDelivery). Cancelled alone, it says so in words
+   * that lead there, not "cancel the invoice first", which the invoice answers the other way round (the owner's report, Nov 2026).
+   */
+  dependents(db, documentId) {
+    const invoice = invoiceStanding(db, documentId)[0];
+    if (!invoice) return [];
+    const number = db.prepare('SELECT number FROM documents WHERE id = ?').pluck().get(documentId) as string;
+    throw conflict('TPL_TOGETHER', `${number} and its invoice ${invoice.number} are cancelled together: use Cancel on ${number}'s own page or on TPL clients.`, [invoice]);
+  },
 
   summary(doc) {
     const n = doc.lines.reduce((s, l) => s + l.qty, 0);
@@ -183,6 +191,24 @@ export const deliveryDoc: DocTypeDef<DeliveryInput, Delivery> = {
 export const cancellingTogether = new Set<string>();
 /** On while recordDelivery writes a delivery and then its invoice. */
 export const recordingWithInvoice = { on: false };
+
+/** The delivery a TPL invoice belongs to, while the delivery stands. */
+export const deliveryOfInvoice = (db: import('../../../platform/db/driver.ts').Db, saleId: string) =>
+  db.prepare(`SELECT d.id, d.number FROM tpl_delivery_invoices x JOIN documents d ON d.id = x.document_id WHERE x.sale_id = ? AND d.status = 'posted'`).get(saleId) as { id: string; number: string } | undefined;
+
+/** What the cancel dialog says before a delivery or its invoice is cancelled: the other goes with it. */
+export function togetherNotice(db: import('../../../platform/db/driver.ts').Db, t: NoticeTarget): Issue[] {
+  if (t.action !== 'cancel' || !t.documentId) return [];
+  if (t.docType === 'tpl.delivery') {
+    const invoice = invoiceStanding(db, t.documentId)[0];
+    return invoice ? [{ level: 'warning', code: 'TPL_TOGETHER', message: `Its invoice ${invoice.number} is cancelled with it, and its pieces go back into the client's stock.` }] : [];
+  }
+  if (t.docType !== 'qs.sale') return [];
+  const delivery = deliveryOfInvoice(db, t.documentId);
+  if (!delivery) return [];
+  const number = db.prepare('SELECT number FROM documents WHERE id = ?').pluck().get(t.documentId) as string;
+  return [{ level: 'warning', code: 'TPL_TOGETHER', message: `${number} is the invoice of delivery ${delivery.number}: cancelling it cancels ${delivery.number} too, and the delivered pieces go back into the client's stock.` }];
+}
 
 /** The invoice a delivery carries. */
 export const invoiceOf = (db: import('../../../platform/db/driver.ts').Db, documentId: string) =>

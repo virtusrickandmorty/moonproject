@@ -157,10 +157,18 @@ describe('deliveries', () => {
   it('cancel takes the delivery and its invoice together and the pieces come back; the invoice alone cannot be cancelled', async () => {
     await stocked();
     const { delivery, invoice } = (await deliver(encoder, { invoiceNumber: '0601', lines: [{ itemId: polo, qty: 30 }] }, 1_500_000)).json();
-    const alone = await accountant.post(`/api/qs/sales/${invoice.id}/cancel`, { reason: 'Wrong invoice number used' }, idem());
-    expect(alone.json().code).toBe('HAS_DEPENDENTS');
-    const generic = await accountant.post(`/api/docs/tpl.delivery/${delivery.id}/cancel`, { reason: 'Wrong invoice number used' }, idem());
-    expect(generic.json().code).toBe('HAS_DEPENDENTS');
+    // Alone, each points to the delivery's cancel, never to the other (the owner's report, Nov 2026: each said to cancel the other first).
+    const alone = (await accountant.post(`/api/qs/sales/${invoice.id}/cancel`, { reason: 'Wrong invoice number used' }, idem())).json();
+    expect(alone).toMatchObject({ code: 'TPL_INVOICE', message: `${invoice.number} is the invoice of delivery ${delivery.number}: cancel ${delivery.number}, and this invoice is cancelled with it.`, details: [{ id: delivery.id, number: delivery.number }] });
+    const generic = (await accountant.post(`/api/docs/tpl.delivery/${delivery.id}/cancel`, { reason: 'Wrong invoice number used' }, idem())).json();
+    expect(generic).toMatchObject({ code: 'TPL_TOGETHER', message: `${delivery.number} and its invoice ${invoice.number} are cancelled together: use Cancel on ${delivery.number}'s own page or on TPL clients.` });
+    expect(generic.message).not.toMatch(/Cancel these first/);
+    expect((await accountant.post(`/api/docs/qs.sale/${invoice.id}/cancel`, { reason: 'Wrong invoice number used' }, idem())).json().code).toBe('TPL_INVOICE');
+    // The cancel dialog says beforehand what goes with what.
+    expect((await accountant.get(`/api/docs/tpl.delivery/${delivery.id}/cancel-preview`)).json().issues.map((i: { message: string }) => i.message))
+      .toContain(`Its invoice ${invoice.number} is cancelled with it, and its pieces go back into the client's stock.`);
+    expect((await accountant.get(`/api/docs/qs.sale/${invoice.id}/cancel-preview`)).json().issues.map((i: { message: string }) => i.message))
+      .toContain(`${invoice.number} is the invoice of delivery ${delivery.number}: cancelling it cancels ${delivery.number} too, and the delivered pieces go back into the client's stock.`);
     expect((await encoder.post(`/api/tpl/deliveries/${delivery.id}/cancel`, { reason: 'Wrong invoice number used' }, idem())).statusCode).toBe(403);
 
     const res = await accountant.post(`/api/tpl/deliveries/${delivery.id}/cancel`, { reason: 'Wrong invoice number used' }, idem());

@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError, api, newIdempotencyKey, type DocTypeInfo, type Me } from '../../api.ts';
 import { Button, Dialog, Field, Loading, Notice, Panel, ReasonDialog, StatusChip, inputClass, peso, showDate, useAction } from '../../components/ui.tsx';
-import { printDocument } from '../../generic/DocView.tsx';
+import { printDocument, type ViewParts } from '../../generic/DocView.tsx';
 import { Link, navigate } from '../../router.tsx';
 import { fromCents, itemLabel, toCents, type Issue, type TplCardRow, type TplDeliveryPreview, type TplDeliveryRow, type TplItem, type TplProgram, type TplProgramPage } from './types.ts';
 import { useLiveReload } from '../../live.ts';
@@ -523,6 +523,11 @@ function RestockDialog({ programId, items, onClose, onSaved }: { programId: stri
     </Dialog>
   );
 }
+
+/** A delivery's own page: its Cancel takes the delivery and its invoice together, as on the program page. */
+export const tplDeliveryView: ViewParts = {
+  cancel: (id, reason, key) => api.tplCancelDelivery(id, reason, key),
+};
 
 /** Who received a delivery, from the signed receipt; typed again to put it right. */
 function ReceivedDialog({ delivery, onClose, onSaved }: { delivery: TplDeliveryRow; onClose: () => void; onSaved: () => void }) {

@@ -9,7 +9,7 @@ import { conflict } from '@moonproject/shared';
 import { defineModule } from '../../engine/documents/registry.ts';
 import { onForStockCheck, onJobOrderEdited, onStockPlace } from '../JO/public.ts';
 import { program } from './programs.ts';
-import { cancellingTogether, deliveryDoc } from './doctypes/delivery.ts';
+import { cancellingTogether, deliveryDoc, deliveryOfInvoice, togetherNotice } from './doctypes/delivery.ts';
 import { valuationDoc } from './doctypes/valuation.ts';
 import { tplRoutes } from './routes.ts';
 import { carryRestockOver, piecesPutIn, restockOf } from './stock.ts';
@@ -39,16 +39,23 @@ export default defineModule({
   docTypes: [deliveryDoc, valuationDoc],
   migrationsDir: join(dirname(fileURLToPath(import.meta.url)), 'migrations'),
   routes: tplRoutes,
+  notices: [togetherNotice],
   dependents: [
     (db, docType, documentId, reissuing) => {
       // A restock job order with pieces in stock stays: its pieces are the client's stock now.
       if (docType === 'jo.job_order' && restockOf(db, documentId) && piecesPutIn(db, documentId) > 0) {
         throw conflict('IN_STOCK', `Some of its pieces are already in the client's stock, so it cannot be ${reissuing ? 'edited' : 'cancelled'}. Correct the stock with a count instead.`);
       }
-      // A delivery's invoice goes with the delivery (cancel the delivery, which takes both).
+      // A delivery's invoice goes with the delivery (cancel the delivery, which takes both). The screens answer TPL_INVOICE
+      // by cancelling the delivery, after the cancel dialog said so (togetherNotice).
       if (docType === 'qs.sale') {
-        const r = db.prepare(`SELECT d.id, d.number FROM tpl_delivery_invoices x JOIN documents d ON d.id = x.document_id WHERE x.sale_id = ? AND d.status = 'posted'`).get(documentId) as { id: string; number: string } | undefined;
-        if (r && !cancellingTogether.has(r.id)) return [r];
+        const r = deliveryOfInvoice(db, documentId);
+        if (r && !cancellingTogether.has(r.id)) {
+          const number = db.prepare('SELECT number FROM documents WHERE id = ?').pluck().get(documentId) as string;
+          throw conflict('TPL_INVOICE', reissuing
+            ? `${number} is the invoice of delivery ${r.number}, so it cannot be edited on its own. Cancel ${r.number} (its invoice goes with it) and record the delivery again.`
+            : `${number} is the invoice of delivery ${r.number}: cancel ${r.number}, and this invoice is cancelled with it.`, [r]);
+        }
       }
       return [];
     },
