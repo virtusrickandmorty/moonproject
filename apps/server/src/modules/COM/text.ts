@@ -22,8 +22,8 @@ export function assertAllowedWording(m: { subject: string; body: string; attachm
 /** Text typed by staff (a name, an item), safe to put in a message. */
 export const plain = (text: string): string => FORBIDDEN_WORDS.reduce((t, rule) => t.replace(new RegExp(rule.source, 'gi'), '…'), text).replace(/\s+/g, ' ').trim();
 
-export type Template = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement' | 'payslip' | 'online_order';
-export const TEMPLATES: readonly Template[] = ['job_order_created', 'job_order_ready', 'claimed', 'statement', 'payslip', 'online_order'];
+export type Template = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement' | 'payslip' | 'online_order' | 'payment_due';
+export const TEMPLATES: readonly Template[] = ['job_order_created', 'job_order_ready', 'claimed', 'statement', 'payslip', 'online_order', 'payment_due'];
 /** A customer email goes to a customer; a payslip email goes to an employee. The outbox screen filters by this. */
 export type Kind = 'customer' | 'payslip';
 export const kindOf = (template: Template): Kind => (template === 'payslip' ? 'payslip' : 'customer');
@@ -44,6 +44,33 @@ export function createdMessage(company: string, p: { customerName: string; numbe
       `What we will make for you:\n${items(p.lines)}`,
       `Promised date: ${p.dueDate}\nTotal: ${formatPeso(p.totalCents)}${p.requiredDownpaymentCents > 0 ? `\nDownpayment asked: ${formatPeso(p.requiredDownpaymentCents)}` : ''}`,
       'If anything here looks wrong, please reply to this email or tell the shop.',
+      sign(company),
+    ]),
+  };
+}
+
+/** How to pay: the shop's account and QR code, as saved for the website shop (SHP), when they are. */
+export interface PayHow { bankName: string; accountName: string; accountHint: string | null; instructions: string | null; qrUrl: string }
+const longDay = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString('en-PH', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+
+/**
+ * A payment reminder (the owner's request, Nov 2026): a few days before an amount falls due. `what` names it as the customer
+ * knows it: their job order, or a delivery, with the booklet number when there is one.
+ */
+export function paymentDueMessage(company: string, p: { customerName: string; what: string; amountCents: number; dueDate: string; daysLeft: number; pay: PayHow | null }): Message {
+  const when = p.daysLeft <= 0 ? 'today' : p.daysLeft === 1 ? 'tomorrow' : `on ${longDay(p.dueDate)}`;
+  const how = p.pay
+    ? [`You can pay by bank transfer or GCash to:\n  ${plain(p.pay.bankName)}\n  ${plain(p.pay.accountName)}${p.pay.accountHint ? `\n  ${plain(p.pay.accountHint)}` : ''}`,
+       `Or scan our QR code: ${p.pay.qrUrl}`, ...(p.pay.instructions ? [plain(p.pay.instructions)] : []),
+       'After paying, please reply with the reference number so we can record it.']
+    : ['You can pay at the shop, or reply to this email to ask how to pay by bank transfer or GCash.'];
+  return {
+    subject: `${company}: a reminder, ${formatPeso(p.amountCents)} is due ${p.daysLeft <= 0 ? 'today' : p.daysLeft === 1 ? 'tomorrow' : longDay(p.dueDate)}`,
+    body: wrap(company, [
+      hello(p.customerName),
+      `This is a friendly reminder that ${formatPeso(p.amountCents)} for ${p.what} is due ${when}.`,
+      ...how,
+      'If you have already paid, thank you, and please ignore this reminder.',
       sign(company),
     ]),
   };

@@ -101,6 +101,12 @@ export function paymentsToCheck(db: Db, nowMs = Date.now()): { id: string; numbe
  */
 export { createWork as createShopWork } from './work.ts';
 
+/** How customers pay, as last saved (the account and the QR code's version), for reminders (COM); null until it is saved. */
+export function paymentDetails(db: Db): { version: number; bankName: string; accountName: string; accountHint: string | null; instructions: string | null } | null {
+  return (db.prepare(`SELECT version, bank_name AS bankName, account_name AS accountName, account_hint AS accountHint, instructions
+    FROM shp_payment_settings ORDER BY version DESC LIMIT 1`).get() as { version: number; bankName: string; accountName: string; accountHint: string | null; instructions: string | null } | undefined) ?? null;
+}
+
 /** The quick sale an online order was confirmed into, by the order's number (ALT: a return names the order). */
 export const saleOfOnlineOrder = (db: Db, number: string): string | undefined =>
   (db.prepare('SELECT sale_document_id FROM shp_orders WHERE number = ? COLLATE NOCASE').pluck().get(number.trim()) as string | null | undefined) ?? undefined;

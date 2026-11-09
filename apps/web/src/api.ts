@@ -1006,7 +1006,7 @@ export interface BackupStatus {
 export interface BackupMade { file: string; tier: BackupTier; bytes: number; offsite: boolean; offsiteError: string | null }
 export interface BackupFile { source: BackupSource; file: string; at: string; tier: BackupTier; bytes: number }
 /** Customer emails (COM). The App Password is write-only: the server says only whether one is saved. */
-export type EmailTemplate = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement' | 'payslip';
+export type EmailTemplate = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement' | 'payslip' | 'online_order' | 'payment_due';
 export type BulkStatementRow = { customerId: string; customerName: string; balanceCents: number; email: string | null;
   reason?: string; lastStatementEmailedAt: string | null };
 export type BulkStatements = { date: string; eligible: BulkStatementRow[]; excluded: BulkStatementRow[] };
