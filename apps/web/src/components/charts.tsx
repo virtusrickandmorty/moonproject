@@ -103,15 +103,16 @@ export function TrackChart({ bars, top, label, height = 'h-44' }: { bars: { key:
     <div className="flex flex-col justify-between pb-5 text-right text-[10px] tabular-nums text-slate-400">
       {[top, top / 2, 0].map((n) => <span key={n}>{n.toLocaleString('en-PH')}</span>)}
     </div>
-    <div className="relative flex flex-1 items-stretch gap-2">
+    <div className="relative flex min-w-0 flex-1 items-stretch gap-2">
       <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-1.5 bottom-5 flex flex-col justify-between">
         {[0, 1, 2].map((n) => <span key={n} className="border-t border-dashed border-slate-100" />)}
       </div>
-      {bars.map((b) => <div key={b.key} className="relative flex flex-1 flex-col items-center gap-1">
+      {/* min-w-0: many bars share a narrow card without pushing out of it; a label may run over its unlabelled neighbours. */}
+      {bars.map((b) => <div key={b.key} className="relative flex min-w-0 flex-1 flex-col items-center gap-1">
         <div {...mark(b.key, b.tip ?? { title: b.title })} className={`relative w-full flex-1 overflow-hidden rounded-xl bg-slate-50 outline-none ${active === b.key ? 'ring-2 ring-indigo-300' : ''}`}>
           <div className={`absolute inset-x-0 bottom-0 rounded-xl ${b.best ? '' : 'bg-slate-200'}`} style={{ height: `${Math.min(100, (b.value / top) * 100)}%`, ...(b.best ? HATCH : {}) }} />
         </div>
-        <span className={`text-[11px] ${b.best ? 'font-semibold text-slate-900' : 'text-slate-500'}`}>{b.label}</span>
+        <span className={`relative z-10 whitespace-nowrap text-[11px] ${b.best ? 'font-semibold text-slate-900' : 'text-slate-500'}`}>{b.label}</span>
       </div>)}
     </div>
   </div>;
