@@ -145,7 +145,7 @@ export const TERMS: TermsSection[] = [
     points: [
       'We keep your name, contact details, address, sizes and payment proofs to process your quotations and orders, as the Data Privacy Act of 2012 (Republic Act 10173) allows.',
       'We do not sell your information or use it for ads. We share it only with couriers and payment providers when needed for your order, or when the law requires it.',
-      'This website counts visits without names, ads or cookies, and you can turn the counting off at the bottom of any page.',
+      'This website counts visits without names, ads or cookies, and you can turn the counting off at the bottom of any page. With each visit we keep only the city it comes from, as your internet connection shows it, never your address or IP address.',
       'While counting is on, your browser remembers the garments you looked at, to show you ones you may like. This stays on your device, is not sent to us, and is cleared when you turn counting off.',
       'To see, correct or remove your information, contact us at the email below.',
     ],
