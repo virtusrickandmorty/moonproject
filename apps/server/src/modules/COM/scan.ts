@@ -10,11 +10,12 @@ import { invoiceRecordRef, newJobOrdersAfter, newReleasesAfter, readyJobOrdersAf
 import { saleRef } from '../QS/public.ts';
 import { arAging } from '../RPT/public.ts';
 import { paymentDetails } from '../SHP/public.ts';
+import { jobOrdersToRate, requestFor } from '../FBK/public.ts';
 import { payrollRunDoc, payrollReleasesAfter } from '../PAY/public.ts';
 import { renderEmployeePayslip } from '../PRT/public.ts';
 import { enqueue, type EnqueueRequest, type NotQueued } from './outbox.ts';
 import { CURSORS, comSettings, setCursors } from './settings.ts';
-import { claimedMessage, createdMessage, paymentDueMessage, payslipMessage, readyMessage } from './text.ts';
+import { claimedMessage, createdMessage, paymentDueMessage, payslipMessage, ratingMessage, readyMessage } from './text.ts';
 
 const BATCH = 100;
 /** A calendar day n days from another (YYYY-MM-DD). */
@@ -27,11 +28,11 @@ const remindedOn = new WeakMap<Db, string>();
 /** The website, where the shop's QR code is shown (SHP). */
 const SITE = 'https://www.virtusgarments.com';
 
-export interface ScanCounts { created: number; ready: number; claimed: number; payslips: number; due: number; skipped: Record<NotQueued, number> }
+export interface ScanCounts { created: number; ready: number; claimed: number; payslips: number; due: number; ratings: number; skipped: Record<NotQueued, number> }
 
 /** One pass over the three streams. Does nothing while sending is off (turning it on starts the scan from now). */
 export function scanOnce(db: Db, at: string, log: (message: string) => void = () => {}): ScanCounts {
-  const counts: ScanCounts = { created: 0, ready: 0, claimed: 0, payslips: 0, due: 0, skipped: { sending_off: 0, no_customer: 0, no_employee: 0, no_consent: 0, no_email: 0, no_profile: 0, already_queued: 0 } };
+  const counts: ScanCounts = { created: 0, ready: 0, claimed: 0, payslips: 0, due: 0, ratings: 0, skipped: { sending_off: 0, no_customer: 0, no_employee: 0, no_consent: 0, no_email: 0, no_profile: 0, already_queued: 0 } };
   if (!comSettings(db).sendingOn) return counts;
   return tx(db, () => {
     const have = db.prepare('SELECT COUNT(*) FROM com_cursors').pluck().get() as number;
@@ -109,7 +110,25 @@ export function scanOnce(db: Db, at: string, log: (message: string) => void = ()
           appendAudit(db, { at, userId: null, action: 'com.not_queued', entityType: 'com.outbox', entityId: row.documentId, data: { template: 'payment_due', reason: (e as Error).message } });
         }
       }
+      askRatings(day);
       remindedOn.set(db, day);
+    }
+
+    /** Rating requests (FBK): each job order fully released since two weeks ago, the day after, once. */
+    function askRatings(day: string) {
+      for (const jo of jobOrdersToRate(db, day)) {
+        try {
+          const queued = enqueue(db, {
+            template: 'rating_request', customerId: jo.customerId, at, document: { id: jo.id, number: jo.number }, dedupeKey: `rate:${jo.number}`,
+            build: (company, customerName) => ratingMessage(company, { customerName, number: jo.number, url: `${SITE}/r/${requestFor(db, jo.id, { userId: null, at }).token}` }),
+          });
+          if (queued.ok) counts.ratings++;
+          else if (queued.reason === 'no_profile') return log('Emails are waiting: the company profile is not filled in yet.');
+          else counts.skipped[queued.reason]++;
+        } catch (e) {
+          appendAudit(db, { at, userId: null, action: 'com.not_queued', entityType: 'com.outbox', entityId: jo.id, data: { template: 'rating_request', reason: (e as Error).message } });
+        }
+      }
     }
 
     /** One payslip email per employee a payroll release paid, for those who agreed and have an address (dedupe: release and employee). */

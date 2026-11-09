@@ -1267,6 +1267,10 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     // Design proofs (PRF): what was sent on a job order, and a new design for it.
     prfProofs: (jobOrderId: string) => call<{ proofs: import('./modules/PRF/ProofPanel.tsx').StaffProof[] }>('GET', `/api/prf/job-orders/${encodeURIComponent(jobOrderId)}`),
     prfSend: (jobOrderId: string, body: { note?: string; files: { name: string; data: string }[] }) => call<{ id: string; version: number; token: string }>('POST', `/api/prf/job-orders/${encodeURIComponent(jobOrderId)}`, body),
+    // Customer ratings (FBK).
+    fbkJobOrder: (jobOrderId: string) => call<import('./modules/FBK/Ratings.tsx').FbkJobOrder>('GET', `/api/fbk/job-orders/${encodeURIComponent(jobOrderId)}`),
+    fbkLink: (jobOrderId: string) => call<import('./modules/FBK/Ratings.tsx').FbkJobOrder>('POST', `/api/fbk/job-orders/${encodeURIComponent(jobOrderId)}/link`, {}),
+    fbkRatings: (from: string, to: string) => call<import('./modules/FBK/Ratings.tsx').FbkList>('GET', `/api/fbk/ratings?from=${from}&to=${to}`),
     tplHome: <T>() => call<T>('GET', '/api/tpl/home'),
     tplValueSheet: <T>(date: string) => call<T>('GET', `/api/tpl/value-sheet?date=${encodeURIComponent(date)}`),
     shpValueSheet: (date: string) => call<{ items: { itemId: string; description: string; qty: number; lastCostCents: number | null }[] }>('GET', `/api/shp/value-sheet?date=${encodeURIComponent(date)}`),

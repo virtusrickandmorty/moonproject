@@ -18,8 +18,8 @@ function isPublicShopRequest(req: FastifyRequest): boolean {
   return SHOP_PAGES.has(path) || /^\/order\/([A-Z]+-\d{1,9})$/.test(path);
 }
 
-// Order links (OLK) and design proof links (PRF): a customer's private link, with the same allowance.
-const isLinkRequest = (req: FastifyRequest) => req.routeOptions.config.permission === 'public' && /^\/api\/(olk|prf)\//.test(req.routeOptions.url ?? '');
+// Order links (OLK), design proof links (PRF) and rating links (FBK): a customer's private link, with the same allowance.
+const isLinkRequest = (req: FastifyRequest) => req.routeOptions.config.permission === 'public' && /^\/api\/(olk|prf|fbk)\//.test(req.routeOptions.url ?? '');
 
 export function publicRequestLimits(app: FastifyInstance, clock: Clock): void {
   const all = requestRateLimiter(clock, 120, 5 * 60_000);

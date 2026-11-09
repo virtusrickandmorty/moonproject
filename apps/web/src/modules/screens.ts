@@ -127,6 +127,7 @@ import { LoanPage, Loans } from './LOAN/Loans.tsx';
 import { SizerSets } from './SZR/Sizers.tsx';
 import { Costing } from './EST/Costing.tsx';
 import { OrderLinks } from './OLK/OrderLinks.tsx';
+import { RatingsScreen } from './FBK/Ratings.tsx';
 import { EstimateForm } from './EST/EstimateForm.tsx';
 import { estimateView } from './EST/EstimateView.tsx';
 import { ImageTools } from './IMG/ImageTools.tsx';
@@ -298,6 +299,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/szr/sets': SizerSets,
   '/est': Costing,
   '/olk': OrderLinks,
+  '/fbk': RatingsScreen,
   '/img': ImageTools,
 };
 
