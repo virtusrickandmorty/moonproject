@@ -2,7 +2,8 @@
  * Website visitor insights (the owner's request, Oct 2026: "track what the customers do for future marketing and what
  * items they look into most"). First party and anonymous: the website sends what a visitor does (pages, products
  * opened, added to the cart or the wishlist, searches, categories, checkout, orders, quote requests) under a random id
- * it keeps in the visitor's browser; no name, no address, no cookie, no IP kept. A visitor can say "Don't count me" on
+ * it keeps in the visitor's browser; no name, no address, no cookie, no IP kept. The city a visit comes from (Nov 2026) is
+ * Cloudflare's guess from the internet connection (cityOf), kept as the city only. A visitor can say "Don't count me" on
  * the website, and a browser asking not to be tracked is not counted. Staff see the summary (shp.view).
  */
 import type { FastifyInstance } from 'fastify';
@@ -25,6 +26,16 @@ const event = z.object({
 }).strict();
 const batch = z.object({ visitor: id, session: id, events: z.array(event).min(1).max(25) }).strict();
 
+/**
+ * The city a visit comes from: the header Cloudflare adds when its "Add visitor location headers" setting is on. Only a
+ * city's name is taken (letters, spaces, dots, dashes, apostrophes); anything else, or no header, is "not known".
+ */
+export function cityOf(header: unknown): string | null {
+  let v = typeof header === 'string' ? header.trim() : '';
+  if (v.includes('%')) try { v = decodeURIComponent(v); } catch { return null; }
+  return /^[\p{L}][\p{L}\p{M} .'-]{0,59}$/u.test(v) ? v : null;
+}
+
 /** The kind of device, from the browser's own description: nothing more of it is kept. */
 const deviceOf = (ua: string) => (/ipad|tablet/i.test(ua) ? 'tablet' : /mobi|android|iphone/i.test(ua) ? 'phone' : 'computer');
 
@@ -34,12 +45,12 @@ export function shpInsightRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post('/api/shp/events', { config: { permission: 'public' }, bodyLimit: 8 * 1024 }, async (req, reply) => {
     const b = batch.parse(req.body);
     const at = stamp(clock), day = today(clock), hour = Number(at.slice(11, 13));
-    const device = deviceOf(String(req.headers['user-agent'] ?? ''));
-    const ins = db.prepare(`INSERT INTO shp_events (at, day, hour, visitor, session, kind, page, product_id, query, results, category, source, device)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const device = deviceOf(String(req.headers['user-agent'] ?? '')), city = cityOf(req.headers['cf-ipcity']);
+    const ins = db.prepare(`INSERT INTO shp_events (at, day, hour, visitor, session, kind, page, product_id, query, results, category, source, device, city)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
     db.transaction(() => {
       for (const e of b.events) ins.run(at, day, hour, b.visitor, b.session, e.kind, e.page ?? null, e.productId ?? null,
-        e.query?.toLowerCase() ?? null, e.results ?? null, e.category ?? null, e.source ?? null, device);
+        e.query?.toLowerCase() ?? null, e.results ?? null, e.category ?? null, e.source ?? null, device, city);
     })();
     return reply.code(204).send();
   });
@@ -85,5 +96,10 @@ export function insights(db: Db, to: string, days: number) {
     `SELECT device, COUNT(DISTINCT visitor) AS visitors FROM shp_events WHERE ${range} GROUP BY device ORDER BY visitors DESC`);
   const hours = q<{ hour: number; visits: number }>(
     `SELECT hour, COUNT(DISTINCT session) AS visits FROM shp_events WHERE ${range} GROUP BY hour ORDER BY hour`);
-  return { from, to, days, ...totals, pageViews: totals.pageViews ?? 0, funnel, byDay, products, searches, categories, pages, sources, devices, hours };
+  // A visitor seen in two cities counts in each; "not known" is those never placed in one (before Nov 2026, or no header).
+  const cities = q<{ city: string; visitors: number }>(
+    `SELECT city, COUNT(DISTINCT visitor) AS visitors FROM shp_events WHERE ${range} AND city IS NOT NULL GROUP BY city ORDER BY visitors DESC, city LIMIT 15`);
+  const { cityUnknown } = one<{ cityUnknown: number }>(
+    `SELECT COUNT(*) AS cityUnknown FROM (SELECT visitor FROM shp_events WHERE ${range} GROUP BY visitor HAVING MAX(city) IS NULL)`);
+  return { from, to, days, ...totals, pageViews: totals.pageViews ?? 0, funnel, byDay, products, searches, categories, pages, sources, devices, hours, cities, cityUnknown };
 }

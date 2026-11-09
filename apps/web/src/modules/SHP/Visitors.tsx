@@ -2,7 +2,7 @@
  * Website shop > Visitors (the owner's request, Oct 2026: what customers do on the website, for marketing, and which
  * items they look at most). Anonymous counts from SHP insights: visitors and visits, the way from a product to an order,
  * visitors each day, the products looked at most, what was searched (and found nothing), where visitors came from,
- * their devices and the busiest hours. The charts use the dashboard's TrackChart; every figure is also in a table.
+ * their devices, the cities they visit from (Nov 2026) and the busiest hours. The charts use the dashboard's TrackChart; every figure is also in a table.
  */
 import { useEffect, useState } from 'react';
 import { userAway } from '../../live.ts';
@@ -20,6 +20,8 @@ interface Insights {
   sources: { source: string; visits: number }[];
   devices: { device: string; visitors: number }[];
   hours: { hour: number; visits: number }[];
+  cities: { city: string; visitors: number }[];
+  cityUnknown: number;
 }
 
 const PAGE: Record<string, string> = { '/': 'Shop', '/shop': 'Shop', '/services': 'Services', '/about': 'About us', '/support': 'Support', '/track': 'Track order', '/checkout': 'Checkout', '/orders': 'My orders', '/terms': 'Terms' };
@@ -152,12 +154,20 @@ export function Visitors() {
             bars={Array.from({ length: 24 }, (_, h) => { const v = data.hours.find((x) => x.hour === h)?.visits ?? 0; return { key: String(h), label: h % 6 === 0 ? `${h}:00` : '', value: v, title: `${h}:00–${h}:59: ${n(v)} visits`, best: v === hourTop && hourTop > 0 }; })} />
           <p className="text-xs text-slate-500">A good time to post on social media.</p>
         </section>
-        {/* Devices and pages beside the hours, one above the other. */}
+        {/* Devices, cities and pages beside the hours, one above the other. */}
         <div className="space-y-4">
           <section className={card} aria-label="Devices">
             <h2 className="font-semibold">Devices</h2>
             <table className="w-full text-sm"><tbody>{data.devices.map((d) => <tr key={d.device} className="border-t border-slate-100 first:border-0"><td className="py-1.5 capitalize">{d.device}</td>
               <td className="text-right tabular-nums">{n(d.visitors)} · {pct(d.visitors, data.visitors)}</td></tr>)}</tbody></table>
+          </section>
+          <section className={card} aria-label="Cities">
+            <h2 className="font-semibold">Cities</h2>
+            {data.cities.length === 0 ? <p className="text-sm text-slate-500">No city known yet.</p> :
+              <table className="w-full text-sm"><tbody>{data.cities.map((c) => <tr key={c.city} className="border-t border-slate-100 first:border-0"><td className="py-1.5">{c.city}</td>
+                <td className="text-right tabular-nums">{n(c.visitors)} · {pct(c.visitors, data.visitors)}</td></tr>)}</tbody></table>}
+            {data.cityUnknown > 0 && <p className="text-xs text-slate-500">City not known: {n(data.cityUnknown)} {data.cityUnknown === 1 ? 'visitor' : 'visitors'}.</p>}
+            <p className="text-xs text-slate-500">A guess from the visitor's internet connection, not their address: on mobile data many show as a Metro Manila city wherever they are.</p>
           </section>
           <section className={card} aria-label="Pages and categories">
             <h2 className="font-semibold">Pages and categories</h2>

@@ -5,8 +5,8 @@ import { createTestEnv, type TestEnv } from '../../../../test/helpers.ts';
 let env: TestEnv;
 beforeEach(async () => { env = await createTestEnv('2026-10-20T02:00:00Z'); });
 
-const send = (body: object, ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Mobile', ip = '10.30.0.1') => env.app.inject({ method: 'POST', url: '/api/shp/events',
-  remoteAddress: ip, headers: { 'content-type': 'application/json', 'user-agent': ua }, payload: JSON.stringify(body) });
+const send = (body: object, ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) Mobile', ip = '10.30.0.1', more: Record<string, string> = {}) => env.app.inject({ method: 'POST', url: '/api/shp/events',
+  remoteAddress: ip, headers: { 'content-type': 'application/json', 'user-agent': ua, ...more }, payload: JSON.stringify(body) });
 
 it('takes anonymous events from anyone and gives staff the visitors, the products looked at most, searches and where visitors come from', async () => {
   const a = { visitor: 'visitora1b2c3', session: 'sessiona1' }, b = { visitor: 'visitorb1b2c3', session: 'sessionb1' };
@@ -28,6 +28,18 @@ it('takes anonymous events from anyone and gives staff the visitors, the product
   expect(cols.some((c) => /ip|address|agent|name|email/.test(c))).toBe(false);
   // Staff only.
   expect((await env.app.inject({ method: 'GET', url: '/api/shp/insights' })).statusCode).toBe(401);
+});
+
+it('keeps the city a visit comes from, as Cloudflare reads it, and never the address', async () => {
+  const page = (visitor: string) => ({ visitor, session: `s${visitor}`, events: [{ kind: 'page', page: '/' }] });
+  for (const [visitor, city] of [['visitora00001', 'Dasmari%C3%B1as'], ['visitorb00001', 'Silang'], ['visitorc00001', 'Silang'], ['visitord00001', '<script>'], ['visitore00001', '']] as const) {
+    expect((await send(page(visitor), undefined, undefined, city ? { 'cf-ipcity': city } : {})).statusCode).toBe(204);
+  }
+  const s = (await (await env.as('owner')).get('/api/shp/insights?days=7')).json();
+  expect(s.cities).toEqual([{ city: 'Silang', visitors: 2 }, { city: 'Dasmariñas', visitors: 1 }]);
+  expect(s.cityUnknown).toBe(2);
+  const cols = (env.db.prepare('PRAGMA table_info(shp_events)').all() as { name: string }[]).map((c) => c.name);
+  expect(cols.some((c) => /^ip|_ip|address|barangay/.test(c))).toBe(false);
 });
 
 it('refuses what is not an event, and limits each address on its own allowance', async () => {

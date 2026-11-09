@@ -180,7 +180,7 @@ function Layout({ staff }: { staff: boolean }) {
       {/* The visitor counting notice, until answered (Data Privacy Act: anonymous, and the visitor may say no). */}
       {!staff && choice === null && !browserSaysNo() && (
         <div role="region" aria-label="Visit counting" className="fixed bottom-4 left-4 z-[55] max-w-sm rounded-2xl max-md:inset-x-3 max-md:bottom-[calc(4.6rem+env(safe-area-inset-bottom))] max-md:max-w-none bg-white p-4 text-sm text-slate-700 shadow-2xl ring-1 ring-slate-900/10">
-          <p>We count visits and which garments are looked at most, to make the shop better and to show you garments you may like. No names, no ads, no cookies.</p>
+          <p>We count visits, the city they come from and which garments are looked at most, to make the shop better and to show you garments you may like. No names, no addresses, no ads, no cookies.</p>
           <div className="mt-3 flex gap-2">
             <button type="button" onClick={() => choose('yes')} className="rounded-full bg-slate-900 px-4 py-2 font-semibold text-white hover:bg-indigo-700">OK</button>
             <button type="button" onClick={() => choose('no')} className="rounded-full px-4 py-2 font-semibold text-slate-700 ring-1 ring-slate-300 hover:bg-slate-50">Don't count me</button>
