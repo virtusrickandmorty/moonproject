@@ -6,20 +6,32 @@
 import type { Db } from '../../platform/db/driver.ts';
 import { tx } from '../../platform/db/driver.ts';
 import { appendAudit } from '../../engine/audit.ts';
-import { newJobOrdersAfter, newReleasesAfter, readyJobOrdersAfter, type ScanResult } from '../JO/public.ts';
+import { invoiceRecordRef, newJobOrdersAfter, newReleasesAfter, readyJobOrdersAfter, type ScanResult } from '../JO/public.ts';
+import { saleRef } from '../QS/public.ts';
+import { arAging } from '../RPT/public.ts';
+import { paymentDetails } from '../SHP/public.ts';
 import { payrollRunDoc, payrollReleasesAfter } from '../PAY/public.ts';
 import { renderEmployeePayslip } from '../PRT/public.ts';
 import { enqueue, type EnqueueRequest, type NotQueued } from './outbox.ts';
 import { CURSORS, comSettings, setCursors } from './settings.ts';
-import { claimedMessage, createdMessage, payslipMessage, readyMessage } from './text.ts';
+import { claimedMessage, createdMessage, paymentDueMessage, payslipMessage, readyMessage } from './text.ts';
 
 const BATCH = 100;
+/** A calendar day n days from another (YYYY-MM-DD). */
+const plusDays = (date: string, n: number) => { const d = new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`; };
+/** A payment reminder goes this many days before the amount is due (the owner's request, Nov 2026), from 8 AM. */
+export const REMIND_DAYS_BEFORE = 3;
+const REMIND_FROM_HOUR = 8;
+/** The day the reminders were last looked for, per database: once a day is enough (the scan runs every minute). */
+const remindedOn = new WeakMap<Db, string>();
+/** The website, where the shop's QR code is shown (SHP). */
+const SITE = 'https://www.virtusgarments.com';
 
-export interface ScanCounts { created: number; ready: number; claimed: number; payslips: number; skipped: Record<NotQueued, number> }
+export interface ScanCounts { created: number; ready: number; claimed: number; payslips: number; due: number; skipped: Record<NotQueued, number> }
 
 /** One pass over the three streams. Does nothing while sending is off (turning it on starts the scan from now). */
 export function scanOnce(db: Db, at: string, log: (message: string) => void = () => {}): ScanCounts {
-  const counts: ScanCounts = { created: 0, ready: 0, claimed: 0, payslips: 0, skipped: { sending_off: 0, no_customer: 0, no_employee: 0, no_consent: 0, no_email: 0, no_profile: 0, already_queued: 0 } };
+  const counts: ScanCounts = { created: 0, ready: 0, claimed: 0, payslips: 0, due: 0, skipped: { sending_off: 0, no_customer: 0, no_employee: 0, no_consent: 0, no_email: 0, no_profile: 0, already_queued: 0 } };
   if (!comSettings(db).sendingOn) return counts;
   return tx(db, () => {
     const have = db.prepare('SELECT COUNT(*) FROM com_cursors').pluck().get() as number;
@@ -66,7 +78,39 @@ export function scanOnce(db: Db, at: string, log: (message: string) => void = ()
     }));
 
     scanPayslips(cursor('payroll_release'), (next) => advance('payroll_release', next));
+    scanDueSoon();
     return counts;
+
+    /**
+     * Payment reminders: each amount still owed that falls due within the next few days (or today), once per amount and due
+     * date, to customers who agreed to emails. Looked for once a day, from 8 AM.
+     */
+    function scanDueSoon() {
+      const day = at.slice(0, 10);
+      if (Number(at.slice(11, 13)) < REMIND_FROM_HOUR || remindedOn.get(db) === day) return;
+      const last = plusDays(day, REMIND_DAYS_BEFORE);
+      const pay = paymentDetails(db);
+      const payHow = pay ? { bankName: pay.bankName, accountName: pay.accountName, accountHint: pay.accountHint, instructions: pay.instructions, qrUrl: `${SITE}/api/shp/payment/qr/${pay.version}` } : null;
+      for (const row of arAging(db, day).rows) {
+        if (!row.customerId || !row.documentId || row.totalCents <= 0 || !row.dueDate || row.dueDate < day || row.dueDate > last) continue;
+        const what = row.documentType === 'jo.invoice_record' ? (() => { const r = invoiceRecordRef(db, row.documentId!); return r ? `your order ${r.jobOrderNumber} (booklet no. ${r.invoiceNumber})` : `your order ${row.jobOrderNumber}`; })()
+          : row.documentType === 'qs.sale' ? (() => { const s = saleRef(db, row.documentId!); return s ? `booklet no. ${s.invoiceNumber}` : row.documentNumber; })()
+          : `your order ${row.documentNumber}`;
+        const daysLeft = Math.round((Date.parse(`${row.dueDate}T00:00:00Z`) - Date.parse(`${day}T00:00:00Z`)) / 86_400_000);
+        try {
+          const queued = enqueue(db, {
+            template: 'payment_due', customerId: row.customerId, at, document: { id: row.documentId, number: row.documentNumber }, dedupeKey: `due:${row.documentId}:${row.dueDate}`,
+            build: (company, customerName) => paymentDueMessage(company, { customerName, what, amountCents: row.totalCents, dueDate: row.dueDate, daysLeft, pay: payHow }),
+          });
+          if (queued.ok) counts.due++;
+          else if (queued.reason === 'no_profile') return log('Emails are waiting: the company profile is not filled in yet.');
+          else counts.skipped[queued.reason]++;
+        } catch (e) {
+          appendAudit(db, { at, userId: null, action: 'com.not_queued', entityType: 'com.outbox', entityId: row.documentId, data: { template: 'payment_due', reason: (e as Error).message } });
+        }
+      }
+      remindedOn.set(db, day);
+    }
 
     /** One payslip email per employee a payroll release paid, for those who agreed and have an address (dedupe: release and employee). */
     function scanPayslips(after: number, advanceTo: (next: number) => void) {

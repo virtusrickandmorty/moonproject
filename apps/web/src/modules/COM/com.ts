@@ -3,7 +3,7 @@ import type { EmailKind, EmailTemplate, OutboxRow } from '../../api.ts';
 import { manilaTime } from '../../components/ui.tsx';
 
 export const TEMPLATE_WORDS: Record<EmailTemplate, string> = {
-  job_order_created: 'Order received', job_order_ready: 'Ready for pick-up', claimed: 'Picked up', statement: 'Statement of account', payslip: 'Payslip',
+  job_order_created: 'Order received', job_order_ready: 'Ready for pick-up', claimed: 'Picked up', statement: 'Statement of account', payslip: 'Payslip', online_order: 'Online order', payment_due: 'Payment reminder',
 };
 export const KIND_WORDS: Record<EmailKind, string> = { customer: 'Customer emails', payslip: 'Payslip emails' };
 export const STATUS_WORDS: Record<OutboxRow['status'], string> = { queued: 'Waiting to be sent', sent: 'Sent', failed: 'Failed' };
