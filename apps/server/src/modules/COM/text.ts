@@ -22,8 +22,8 @@ export function assertAllowedWording(m: { subject: string; body: string; attachm
 /** Text typed by staff (a name, an item), safe to put in a message. */
 export const plain = (text: string): string => FORBIDDEN_WORDS.reduce((t, rule) => t.replace(new RegExp(rule.source, 'gi'), '…'), text).replace(/\s+/g, ' ').trim();
 
-export type Template = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement' | 'payslip' | 'online_order' | 'payment_due';
-export const TEMPLATES: readonly Template[] = ['job_order_created', 'job_order_ready', 'claimed', 'statement', 'payslip', 'online_order', 'payment_due'];
+export type Template = 'job_order_created' | 'job_order_ready' | 'claimed' | 'statement' | 'payslip' | 'online_order' | 'payment_due' | 'rating_request';
+export const TEMPLATES: readonly Template[] = ['job_order_created', 'job_order_ready', 'claimed', 'statement', 'payslip', 'online_order', 'payment_due', 'rating_request'];
 /** A customer email goes to a customer; a payslip email goes to an employee. The outbox screen filters by this. */
 export type Kind = 'customer' | 'payslip';
 export const kindOf = (template: Template): Kind => (template === 'payslip' ? 'payslip' : 'customer');
@@ -71,6 +71,20 @@ export function paymentDueMessage(company: string, p: { customerName: string; wh
       `This is a friendly reminder that ${formatPeso(p.amountCents)} for ${p.what} is due ${when}.`,
       ...how,
       'If you have already paid, thank you, and please ignore this reminder.',
+      sign(company),
+    ]),
+  };
+}
+
+/** Asking for a rating (the owner's request, Nov 2026): the day after a job order is fully released, with its private link. */
+export function ratingMessage(company: string, p: { customerName: string; number: string; url: string }): Message {
+  return {
+    subject: `${company}: how did we do on your order ${p.number}?`,
+    body: wrap(company, [
+      hello(p.customerName),
+      `Thank you for ordering from ${company}. We hope you like how order ${p.number} turned out.`,
+      `Would you rate it from 1 to 5 stars? It takes a few seconds: ${p.url}`,
+      'Your answer helps us do better. If anything was not right, tell us there and we will call you.',
       sign(company),
     ]),
   };

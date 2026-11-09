@@ -26,6 +26,7 @@ import { monthEndChecklist } from '../ACC/public.ts';
 import { remittanceChecks, remittanceDueDate } from '../STAT/public.ts';
 import { nightlyStatus } from '../AUD/public.ts';
 import { redLightNotices, type Host } from '../../platform/health/health.ts';
+import { lowRatingsSince } from '../FBK/public.ts';
 
 /** What the owner is told about for 14 days: actions that need a fresh password, in words (the audit log has the rest). */
 const GUARDED: Record<string, string> = {
@@ -265,6 +266,11 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
   if (can('alt.decide')) for (const r of returnsAwaitingDecision(db)) {
     push('alt-decision', r.id, `${r.number}: decide on the items ${r.customerName} brought back`, `/alt?open=${r.id}`,
       `${r.pieces} ${r.pieces === 1 ? 'piece' : 'pieces'}${r.items > 1 ? ` in ${r.items} items` : ''} · received ${r.receivedOn}`);
+  }
+  // A customer's rating of 3 stars or less (the owner's request, Nov 2026), for a week: someone calls them.
+  if (can('fbk.view')) for (const r of lowRatingsSince(db, manilaTimestamp(new Date(clock.now().getTime() - 7 * 86_400_000)))) {
+    push('rating-low', r.id, `${r.jobOrderNumber}: ${r.name || 'the customer'} rated it ${r.stars} ${r.stars === 1 ? 'star' : 'stars'}: call them`,
+      `/docs/jo.job_order/${r.jobOrderId}`, r.comment ? `“${r.comment.slice(0, 140)}”` : undefined);
   }
   // Work waiting on someone, and work done that someone must take on (the owner's request, Oct 2026). Each notice goes by
   // itself once it is dealt with.
