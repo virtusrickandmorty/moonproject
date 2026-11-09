@@ -4,7 +4,7 @@
  * button per restock. A delivery is checked first (what it delivers and the invoice it records), then recorded.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { ApiError, api, newIdempotencyKey, type DocTypeInfo, type Me } from '../../api.ts';
+import { ApiError, api, newIdempotencyKey, type DocDetail, type DocTypeInfo, type Me } from '../../api.ts';
 import { Button, Dialog, Field, Loading, Notice, Panel, ReasonDialog, StatusChip, inputClass, peso, showDate, useAction } from '../../components/ui.tsx';
 import { printDocument, type ViewParts } from '../../generic/DocView.tsx';
 import { Link, navigate } from '../../router.tsx';
@@ -524,19 +524,45 @@ function RestockDialog({ programId, items, onClose, onSaved }: { programId: stri
   );
 }
 
-/** A delivery's own page: its Cancel takes the delivery and its invoice together, as on the program page. */
+type Received = { receivedBy: string; receivedOn: string };
+const receivedOf = (doc: DocDetail['doc']): Received | null =>
+  typeof doc?.receivedBy === 'string' ? { receivedBy: doc.receivedBy, receivedOn: typeof doc.receivedOn === 'string' ? doc.receivedOn : '' } : null;
+
+/** Who received it, on the delivery's own page too (the owner's request, Nov 2026: looked for it there), as on the program page. */
+function DeliveryReceived({ d }: { d: DocDetail }) {
+  const [now, setNow] = useState(() => receivedOf(d.doc));
+  const [may, setMay] = useState(false);
+  const [open, setOpen] = useState(false);
+  const { id, number, status, businessDate } = d.header;
+  useEffect(() => { setNow(receivedOf(d.doc)); }, [d.doc]);
+  useEffect(() => { void api.me().then((me) => setMay(me.permissions.includes('tpl.deliver')), () => setMay(false)); }, []);
+  return <Panel title="Who received it">
+    {now ? <p className="text-sm">Received by <b>{now.receivedBy}</b>{now.receivedOn && <> on {showDate(now.receivedOn)}</>}.</p>
+      : <p className="text-sm text-slate-600">{status === 'posted' ? 'Not recorded yet: type it from the signed delivery receipt.' : 'Not recorded.'}</p>}
+    {status === 'posted' && may && <div><Button onClick={() => setOpen(true)}>{now ? 'Change who received it' : 'Record who received it'}</Button></div>}
+    {open && <ReceivedDialog delivery={{ id, number, date: businessDate, receivedBy: now?.receivedBy ?? null, receivedOn: now?.receivedOn || null }}
+      onClose={() => setOpen(false)} onSaved={(r) => { setNow(r); setOpen(false); }} />}
+  </Panel>;
+}
+
+/**
+ * A delivery's own page: who received it, and a Cancel that takes the delivery and its invoice together, as on the program page.
+ * No Edit: a delivery and its invoice are corrected by cancelling both and delivering again.
+ */
 export const tplDeliveryView: ViewParts = {
+  noEdit: true,
+  extra: (d) => <DeliveryReceived d={d} />,
   cancel: (id, reason, key) => api.tplCancelDelivery(id, reason, key),
 };
 
 /** Who received a delivery, from the signed receipt; typed again to put it right. */
-function ReceivedDialog({ delivery, onClose, onSaved }: { delivery: TplDeliveryRow; onClose: () => void; onSaved: () => void }) {
+function ReceivedDialog({ delivery, onClose, onSaved }: { delivery: Pick<TplDeliveryRow, 'id' | 'number' | 'date' | 'receivedBy' | 'receivedOn'>; onClose: () => void; onSaved: (r: Received) => void }) {
   const [today, setToday] = useState('');
   const [name, setName] = useState(delivery.receivedBy ?? '');
   const [date, setDate] = useState(delivery.receivedOn ?? '');
   const a = useAction();
   useEffect(() => { void api.health().then((h) => { const now = h.serverTime.slice(0, 10); setToday(now); setDate((d) => d || now); }, () => undefined); }, []);
-  const save = () => a.run(async () => { await api.tplDeliveryReceived(delivery.id, { receivedBy: name.trim(), receivedOn: date }); onSaved(); });
+  const save = () => a.run(async () => { onSaved(await api.tplDeliveryReceived(delivery.id, { receivedBy: name.trim(), receivedOn: date })); });
   return <Dialog title={`Who received ${delivery.number}`} onClose={onClose}>
     <p className="text-sm text-slate-600">From the signed delivery receipt.</p>
     <div className="grid gap-3 sm:grid-cols-2">
