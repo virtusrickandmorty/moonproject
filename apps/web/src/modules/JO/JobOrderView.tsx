@@ -15,6 +15,7 @@ import type { ViewParts } from '../../generic/DocView.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { Figures } from '../COL/parts.tsx';
 import { dpInvoicedCents, joActions, modeText, type JoCan } from './forms.ts';
+import { ProofPanel } from '../PRF/ProofPanel.tsx';
 import { RatingPanel } from '../FBK/Ratings.tsx';
 
 const action = 'rounded-md bg-white px-3 py-1 text-sm ring-1 ring-slate-300 hover:bg-indigo-50';
@@ -212,7 +213,7 @@ function JoMoney({ d, typeKey }: { d: DocDetail; typeKey: string }) {
   );
 }
 
-export const jobOrderView: ViewParts = { extra: (d) => <><JoMoney d={d} typeKey="jo.job_order" /><RatingPanel d={d} /><Garments d={d} opening={false} /></> };
+export const jobOrderView: ViewParts = { extra: (d) => <><JoMoney d={d} typeKey="jo.job_order" /><ProofPanel d={d} /><RatingPanel d={d} /><Garments d={d} opening={false} /></> };
 /** An opening job order (OBJO-, PLAN D8 step 2): the same money and recorded line detail on its view. */
 export const openingJobOrderView: ViewParts = { extra: (d) => <><JoMoney d={d} typeKey="jo.opening" /><Garments d={d} opening /></> };
 
