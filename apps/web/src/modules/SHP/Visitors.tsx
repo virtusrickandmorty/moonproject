@@ -30,7 +30,8 @@ const pct = (part: number, whole: number) => (whole > 0 ? `${Math.round((part / 
 const dayLabel = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 /** A calendar day n days from another (YYYY-MM-DD), no clock involved. */
 const plusDays = (date: string, n: number) => { const d = new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`; };
-const card = 'space-y-3 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70';
+// min-w-0: a card in a grid takes its column's width, never its chart's or table's (the owner's request, Nov 2026: the cards lined up).
+const card = 'min-w-0 space-y-3 rounded-xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70';
 const th = 'py-1 pr-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500';
 
 export function Visitors() {
@@ -132,52 +133,50 @@ export function Visitors() {
         <section className={card} aria-label="What they searched for">
           <h2 className="font-semibold">What they searched for</h2>
           {data.searches.length === 0 ? <p className="text-sm text-slate-500">No searches yet.</p> : <>
-            <table className="w-full text-sm"><thead><tr><th className={th}>Words</th><th className={`${th} text-right`}>Times</th><th className={th}>Found</th></tr></thead>
+            <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr><th className={th}>Words</th><th className={`${th} text-right`}>Times</th><th className={th}>Found</th></tr></thead>
               <tbody>{data.searches.map((s) => <tr key={s.query} className="border-t border-slate-100"><td className="py-1.5 pr-3">{s.query}</td><td className="pr-3 text-right tabular-nums">{n(s.times)}</td>
-                <td>{s.noResults > 0 ? <span className="font-semibold text-amber-700">Nothing matched{s.noResults < s.times ? ` (${s.noResults} times)` : ''}</span> : <span className="text-slate-500">Yes</span>}</td></tr>)}</tbody></table>
+                <td>{s.noResults > 0 ? <span className="font-semibold text-amber-700">Nothing matched{s.noResults < s.times ? ` (${s.noResults} times)` : ''}</span> : <span className="text-slate-500">Yes</span>}</td></tr>)}</tbody></table></div>
             <p className="text-xs text-slate-500">"Nothing matched": shoppers want it and the shop does not show it yet, a product idea.</p>
           </>}
         </section>
         <section className={card} aria-label="Where visitors came from">
           <h2 className="font-semibold">Where visitors came from</h2>
           {data.sources.length === 0 ? <p className="text-sm text-slate-500">No visits yet.</p> :
-            <table className="w-full text-sm"><thead><tr><th className={th}>From</th><th className={`${th} text-right`}>Visits</th></tr></thead>
-              <tbody>{data.sources.map((s) => <tr key={s.source} className="border-t border-slate-100"><td className="py-1.5 pr-3">{s.source === 'direct' ? 'Typed the address or a saved link' : s.source}</td><td className="text-right tabular-nums">{n(s.visits)}</td></tr>)}</tbody></table>}
+            <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr><th className={th}>From</th><th className={`${th} text-right`}>Visits</th></tr></thead>
+              <tbody>{data.sources.map((s) => <tr key={s.source} className="border-t border-slate-100"><td className="py-1.5 pr-3">{s.source === 'direct' ? 'Typed the address or a saved link' : s.source}</td><td className="text-right tabular-nums">{n(s.visits)}</td></tr>)}</tbody></table></div>}
           <p className="text-xs text-slate-500">Tip: share links with <code>?utm_source=facebook</code> (or tiktok, a school's name…) at the end to see which posts bring visitors.</p>
         </section>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <section className={`${card} lg:col-span-2`} aria-label="Busiest hours">
+      <section className={card} aria-label="Busiest hours">
           <h2 className="font-semibold">Busiest hours</h2>
           <TrackChart height="h-36" top={niceTop(hourTop)} label={`Visits by hour: ${data.hours.map((h) => `${h.hour}:00 ${h.visits}`).join(', ')}`}
             bars={Array.from({ length: 24 }, (_, h) => { const v = data.hours.find((x) => x.hour === h)?.visits ?? 0; return { key: String(h), label: h % 6 === 0 ? `${h}:00` : '', value: v, title: `${h}:00–${h}:59: ${n(v)} visits`, best: v === hourTop && hourTop > 0 }; })} />
           <p className="text-xs text-slate-500">A good time to post on social media.</p>
         </section>
-        {/* Devices, cities and pages beside the hours, one above the other. */}
-        <div className="space-y-4">
+        {/* Devices, cities, and pages and categories side by side under the hours, their cards the same height. */}
+        <div className="grid gap-4 lg:grid-cols-3">
           <section className={card} aria-label="Devices">
             <h2 className="font-semibold">Devices</h2>
-            <table className="w-full text-sm"><tbody>{data.devices.map((d) => <tr key={d.device} className="border-t border-slate-100 first:border-0"><td className="py-1.5 capitalize">{d.device}</td>
-              <td className="text-right tabular-nums">{n(d.visitors)} · {pct(d.visitors, data.visitors)}</td></tr>)}</tbody></table>
+            <div className="overflow-x-auto"><table className="w-full text-sm"><tbody>{data.devices.map((d) => <tr key={d.device} className="border-t border-slate-100 first:border-0"><td className="py-1.5 capitalize">{d.device}</td>
+              <td className="text-right tabular-nums">{n(d.visitors)} · {pct(d.visitors, data.visitors)}</td></tr>)}</tbody></table></div>
           </section>
           <section className={card} aria-label="Cities">
             <h2 className="font-semibold">Cities</h2>
             {data.cities.length === 0 ? <p className="text-sm text-slate-500">No city known yet.</p> :
-              <table className="w-full text-sm"><tbody>{data.cities.map((c) => <tr key={c.city} className="border-t border-slate-100 first:border-0"><td className="py-1.5">{c.city}</td>
-                <td className="text-right tabular-nums">{n(c.visitors)} · {pct(c.visitors, data.visitors)}</td></tr>)}</tbody></table>}
+              <div className="overflow-x-auto"><table className="w-full text-sm"><tbody>{data.cities.map((c) => <tr key={c.city} className="border-t border-slate-100 first:border-0"><td className="py-1.5">{c.city}</td>
+                <td className="text-right tabular-nums">{n(c.visitors)} · {pct(c.visitors, data.visitors)}</td></tr>)}</tbody></table></div>}
             {data.cityUnknown > 0 && <p className="text-xs text-slate-500">City not known: {n(data.cityUnknown)} {data.cityUnknown === 1 ? 'visitor' : 'visitors'}.</p>}
             <p className="text-xs text-slate-500">A guess from the visitor's internet connection, not their address: on mobile data many show as a Metro Manila city wherever they are.</p>
           </section>
           <section className={card} aria-label="Pages and categories">
             <h2 className="font-semibold">Pages and categories</h2>
-            <table className="w-full text-sm"><tbody>
+            <div className="overflow-x-auto"><table className="w-full text-sm"><tbody>
               {data.pages.map((p) => <tr key={p.page} className="border-t border-slate-100 first:border-0"><td className="py-1.5">{PAGE[p.page] ?? p.page}</td><td className="text-right tabular-nums">{n(p.views)} views</td></tr>)}
               {data.categories.map((c) => <tr key={c.category} className="border-t border-slate-100"><td className="py-1.5">Category: {c.category}</td><td className="text-right tabular-nums">{n(c.times)} picks</td></tr>)}
-            </tbody></table>
+            </tbody></table></div>
           </section>
         </div>
-      </div>
     </div>
   );
 }
