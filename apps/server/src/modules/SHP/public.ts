@@ -100,6 +100,7 @@ export function paymentsToCheck(db: Db, nowMs = Date.now()): { id: string; numbe
  * goes to production to be fixed and put back into the shop's stock.
  */
 export { createWork as createShopWork } from './work.ts';
+export { insights } from './insights.ts';
 
 /** How customers pay, as last saved (the account and the QR code's version), for reminders (COM); null until it is saved. */
 export function paymentDetails(db: Db): { version: number; bankName: string; accountName: string; accountHint: string | null; instructions: string | null } | null {

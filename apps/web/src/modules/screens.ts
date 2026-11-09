@@ -62,6 +62,7 @@ import { MonthlyOwnersPack } from './RPT/MonthlyOwnersPack.tsx';
 import { ArAging, CustomerStatement } from './RPT/Receivables.tsx';
 import { DepositsCrossingQuarter, DepositsHeld, CollectionsRegister, SalesByPeriod, JobOrderFollowUp } from './RPT/SalesCollections.tsx';
 import { ReportsOverview } from './RPT/Overview.tsx';
+import { WeekSummary } from './RPT/Week.tsx';
 import { OverheadReport, PayrollRegister, PieceWork, LaborCost, ThirteenthRegister, ProductionStatus, Throughput, WorkerOutput, LeadTime, LateJobs, JobMargin } from './RPT/PayrollProduction.tsx';
 import { ApAging, Purchases, PurchaseOrders, ReceivedNotBilled, CashPosition, Transfers, CashCounts, Assets as AssetSchedule, LateEntries, Cancellations, Exceptions, SignIns } from './RPT/Operations.tsx';
 import { CashAccounts } from './CASH/CashAccounts.tsx';
@@ -210,6 +211,7 @@ export const PAGES: Record<string, ComponentType<{ me: Me; docTypes: DocTypeInfo
   '/col/pdcs': PostDatedChecks,
   '/col/deposits': UnappliedDeposits,
   '/rpt/overview': ReportsOverview,
+  '/rpt/week': WeekSummary,
   '/rpt/journal': GeneralJournal,
   '/rpt/bir-books': BirBooks,
   '/rpt/ledger': GeneralLedger,

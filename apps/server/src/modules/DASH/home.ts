@@ -28,6 +28,7 @@ import { nightlyStatus } from '../AUD/public.ts';
 import { redLightNotices, type Host } from '../../platform/health/health.ts';
 import { answersSince, proofsWaiting } from '../PRF/public.ts';
 import { lowRatingsSince } from '../FBK/public.ts';
+import { lastWeek } from '../RPT/public.ts';
 
 /** What the owner is told about for 14 days: actions that need a fresh password, in words (the audit log has the rest). */
 const GUARDED: Record<string, string> = {
@@ -277,6 +278,12 @@ export function notifications(db: Db, clock: Clock, registry: Registry, user: Se
   }
   if (can('prf.manage')) for (const p of proofsWaiting(db, manilaTimestamp(new Date(clock.now().getTime() - 2 * 86_400_000)))) {
     push('proof-waiting', p.id, `${p.jobOrderNumber}: no answer yet on the design (version ${p.version})`, `/docs/jo.job_order/${p.jobOrderId}`, `Sent ${p.sentAt.slice(0, 16).replace('T', ' ')} · follow up with the customer`);
+  }
+  // The week's summary (the owner's request, Nov 2026): from Monday, last week on one page; read once, it goes.
+  if (can('rpt.books.view')) {
+    const week = lastWeek(date);
+    const words = (d: string) => day(d).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    push('week-summary', week.from, `Last week's summary is ready (${words(week.from)} to ${words(week.to)})`, '/rpt/week', 'Sales, collections, orders, ratings and website visitors');
   }
   // A customer's rating of 3 stars or less (the owner's request, Nov 2026), for a week: someone calls them.
   if (can('fbk.view')) for (const r of lowRatingsSince(db, manilaTimestamp(new Date(clock.now().getTime() - 7 * 86_400_000)))) {

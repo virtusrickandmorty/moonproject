@@ -127,6 +127,13 @@ export function answerProof(db: Db, token: string, raw: unknown, at: string) {
   return publicProof(db, token);
 }
 
+/** How many designs were sent, approved and sent back for a change in a period (the week's summary, RPT). */
+export function proofAnswersBetween(db: Db, from: string, to: string) {
+  const sent = db.prepare('SELECT COUNT(*) FROM prf_proofs WHERE substr(created_at, 1, 10) BETWEEN ? AND ?').pluck().get(from, to) as number;
+  const by = (answer: string) => db.prepare('SELECT COUNT(*) FROM prf_answers WHERE answer = ? AND substr(at, 1, 10) BETWEEN ? AND ?').pluck().get(answer, from, to) as number;
+  return { sent, approved: by('approved'), changes: by('changes') };
+}
+
 /** Answers given since a time, newest first: the staff bell (DASH) shows each for a week. */
 export function answersSince(db: Db, since: string) {
   return db.prepare(`SELECT p.id, p.job_order_no AS jobOrderNumber, p.job_order_id AS jobOrderId, p.version, a.answer, a.name, a.comment, a.at

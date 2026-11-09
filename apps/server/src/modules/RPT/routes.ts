@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { AppError, csvPesos, toCsv, type CsvCell } from '@moonproject/shared';
+import { AppError, csvPesos, isBusinessDate, toCsv, type CsvCell } from '@moonproject/shared';
 import type { AppDeps } from '../../app.ts';
 import { comparativeTrialBalance, generalJournal, generalJournalCsv, generalLedger, ledgerAccounts } from './books.ts';
 import { balanceSheet, changesInEquity, compareSections, comparisonDates, incomeStatement, type Comparison, type StatementSection } from './statements.ts';
@@ -14,6 +14,7 @@ import { lateEntries, cancellations, exceptions, signIns } from './control.ts';
 import { cashFlowStatement } from './cash-flow.ts';
 import { overheadReport } from './overhead.ts';
 import { reportsOverview } from './overview.ts';
+import { lastWeek, mondayOf, plusDays, weekSummary } from './week.ts';
 import { pageAsked, paged, pagedLedger } from '../../platform/paging.ts';
 import { monthlyOwnersPack, monthlyOwnersPackBody } from './monthly-pack.ts';
 import { companyProfile, renderReportPrint } from '../PRT/public.ts';
@@ -294,6 +295,14 @@ export function rptRoutes(app: FastifyInstance, deps: AppDeps): void {
     const now = today(clock);
     if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month) || month > now.slice(0, 7)) throw new AppError('BAD_MONTH', 'Pick this month or an earlier one, in YYYY-MM format.', 400);
     return reportsOverview(db, month, now);
+  });
+  /** The week's summary: last week by default, or the week (Monday to Sunday) a day is in. */
+  app.get('/api/rpt/week', { config: { permission: 'rpt.books.view' } }, async (req) => {
+    const { day } = req.query as Record<string, unknown>;
+    const now = today(clock);
+    if (day !== undefined && (typeof day !== 'string' || !isBusinessDate(day) || day > now)) throw new AppError('BAD_DATE', 'Pick a day up to today, in YYYY-MM-DD format.', 400);
+    const week = typeof day === 'string' ? { from: mondayOf(day), to: plusDays(mondayOf(day), 6) } : lastWeek(now);
+    return weekSummary(db, week.from, week.to, now);
   });
   app.get('/api/rpt/overhead', { config: { permission: 'rpt.books.view' } }, async (req, reply) => {
     const q = req.query as Record<string, unknown>;

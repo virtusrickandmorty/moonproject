@@ -1,2 +1,2 @@
 /** What other modules may use from design proofs (AGENTS.md: other modules only through public.ts). */
-export { answersSince, proofsWaiting } from './proofs.ts';
+export { answersSince, proofAnswersBetween, proofsWaiting } from './proofs.ts';
