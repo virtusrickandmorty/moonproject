@@ -85,12 +85,13 @@ function SendDialog({ jobOrderId, onClose, onSent }: { jobOrderId: string; onClo
 
 export function ProofPanel({ d }: { d: DocDetail }) {
   const [proofs, setProofs] = useState<StaffProof[] | null>(null);
-  const [perms, setPerms] = useState<string[]>([]);
+  const [permsState, setPerms] = useState<string[]>([]);
+  const perms = permsState ?? []; // a page test may give the panel no state of its own
   const [open, setOpen] = useState(false);
   const [error, setError] = useState('');
   const { id, status } = d.header;
   const load = () => api.prfProofs(id).then((r) => setProofs(r.proofs), (e: Error) => setError(e.message));
-  useEffect(() => { void api.me().then((me) => setPerms(me.permissions), () => setPerms([])); }, []);
+  useEffect(() => { void api.me().then((me) => setPerms(me?.permissions ?? []), () => setPerms([])); }, []);
   useEffect(() => { if (perms.includes('prf.view')) void load(); }, [id, perms.join()]); // eslint-disable-line react-hooks/exhaustive-deps
   useLiveReload(() => (perms.includes('prf.view') ? load() : Promise.resolve()));
   if (!perms.includes('prf.view')) return null;
