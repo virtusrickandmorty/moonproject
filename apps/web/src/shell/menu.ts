@@ -93,6 +93,7 @@ export const SCREENS: MenuItem[] = [
   { group: 'Accounting & Tax', label: 'Filed returns', path: '/tax/filed-returns', permission: 'tax.registers.view' },
   { group: 'Accounting & Tax', label: 'Booklets', path: '/tax/booklets', permission: 'tax.booklets.view' },
   { group: 'Reports', label: 'Reports overview', path: '/rpt/overview', permission: 'rpt.books.view' },
+  { group: 'Reports', label: 'Week summary', path: '/rpt/week', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'General journal', path: '/rpt/journal', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'BIR books', path: '/rpt/bir-books', permission: 'rpt.books.view' },
   { group: 'Reports', label: 'General ledger', path: '/rpt/ledger', permission: 'rpt.books.view' },
@@ -251,7 +252,7 @@ export const SUBS: Partial<Record<MenuGroup, [sub: string, keys: string[]][]>> =
     ['Tax returns & payments', ['/tax/', 'tax.']],
   ],
   Reports: [
-    ['Overview', ['/rpt/overview']],
+    ['Overview', ['/rpt/overview', '/rpt/week']],
     ['Financial statements & books', ['/rpt/journal', '/rpt/bir-books', '/rpt/ledger', '/rpt/trial-balance', '/rpt/income-statement', '/rpt/balance-sheet', '/rpt/changes-in-equity', '/rpt/cash-flow', '/rpt/monthly-owners-pack', '/rpt/overhead']],
     ['Sales & customers', ['/rpt/ar-aging', '/rpt/customer-statement', '/rpt/deposits-held', '/rpt/deposits-crossing-quarter', '/rpt/collections-register', '/rpt/sales-by-period', '/rpt/job-order-follow-up', '/rpt/job-margin']],
     ['Production & payroll', ['/rpt/payroll-register', '/rpt/piece-work', '/rpt/labor-cost', '/rpt/thirteenth-register', '/rpt/production-status', '/rpt/throughput', '/rpt/lead-time', '/rpt/late-jobs', '/rpt/worker-output']],
