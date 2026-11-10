@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { formatPesos, manilaDate } from '@moonproject/shared';
 import { api, type Me, type OlkGuide, type OlkJobOrder, type OlkLinkDetail, type OlkLinkInput, type OlkLinkRow, type OlkPayment, type OlkShare } from '../../api.ts';
-import { navigate } from '../../router.tsx';
+import { navigate, useLocation } from '../../router.tsx';
 import { docPath } from '../../shell/menu.ts';
 import { emptyJo, emptyJoLine, oneOff, type JoValues } from '../JO/forms.ts';
 import { Button, Dialog, Field, Loading, Notice, Panel, ReasonDialog, inputClass, manilaTime, peso, showDate, useAction } from '../../components/ui.tsx';
@@ -39,7 +39,7 @@ export function OrderLinks({ me }: { me: Me }) {
   const [rows, setRows] = useState<OlkLinkRow[] | null>(null);
   const [error, setError] = useState('');
   const [making, setMaking] = useState(false);
-  const [open, setOpen] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(new URLSearchParams(useLocation().split('?')[1] ?? '').get('open')); // from the bell's custom fit alert
   const load = useCallback(() => void api.olkLinks().then((r) => (setRows(r), setError('')), (e: Error) => setError(e.message)), []);
   useEffect(load, [load]);
   const manage = me.permissions.includes('olk.manage');
@@ -79,7 +79,7 @@ export function OrderLinks({ me }: { me: Me }) {
   );
 }
 
-interface ItemDraft { itemId: string; name: string; sizing: 'size' | 'measure'; fields: string[] }
+interface ItemDraft { itemId: string; name: string; sizing: 'size' | 'measure'; customFit: boolean; fields: string[] }
 
 function NewLink({ onMade }: { onMade: (d: OlkLinkDetail) => void }) {
   const today = manilaDate(new Date());
@@ -102,7 +102,10 @@ function NewLink({ onMade }: { onMade: (d: OlkLinkDetail) => void }) {
 
   const setItem = (i: number, c: Partial<ItemDraft>) => setItems(items.map((it, j) => (j === i ? { ...it, ...c } : it)));
   const body = (): OlkLinkInput => ({ kind, title: title.trim(), closesOn, payOwn: kind === 'group' && payOwn, ...(customer ? { customerId: customer.id } : {}),
-    items: items.map((it) => ({ itemId: it.itemId, sizing: it.sizing, fields: it.sizing === 'measure' ? it.fields : [] })) });
+    items: items.map((it) => {
+      const customFit = it.sizing === 'size' && it.customFit;
+      return { itemId: it.itemId, sizing: it.sizing, customFit, fields: it.sizing === 'measure' || customFit ? it.fields : [] };
+    }) });
   return (
     <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); void run(async () => onMade(await api.olkCreate(body()))); }}>
       <fieldset className="grid gap-2 sm:grid-cols-2">
@@ -137,10 +140,14 @@ function NewLink({ onMade }: { onMade: (d: OlkLinkDetail) => void }) {
               </select>
               <button type="button" className="text-xs text-rose-700 underline" onClick={() => setItems(items.filter((_, j) => j !== i))}>Remove</button>
             </div>
-            {it.sizing === 'measure' && (
+            {it.sizing === 'size' && (
+              <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-0.5" checked={it.customFit} onChange={(e) => setItem(i, { customFit: e.target.checked })} />
+                <span><b>Allow custom fit.</b> <span className="text-slate-600">A person may pick "Custom fit" instead of a size and give their own measurements (or be measured at the shop). You get an alert in the bell.</span></span></label>
+            )}
+            {(it.sizing === 'measure' || it.customFit) && (
               <div className="space-y-1">
                 <div className="flex flex-wrap gap-2 text-xs">
-                  <span className="text-slate-500">Measurements it needs:</span>
+                  <span className="text-slate-500">{it.sizing === 'measure' ? 'Measurements it needs:' : 'Measurements a custom fit needs:'}</span>
                   <button type="button" className="text-indigo-700 underline" onClick={() => setItem(i, { fields: [...new Set([...it.fields, ...presets.top])] })}>+ top set</button>
                   <button type="button" className="text-indigo-700 underline" onClick={() => setItem(i, { fields: [...new Set([...it.fields, ...presets.bottom])] })}>+ pants set</button>
                   {it.fields.length > 0 && <button type="button" className="text-slate-600 underline" onClick={() => setItem(i, { fields: [] })}>clear</button>}
@@ -159,7 +166,7 @@ function NewLink({ onMade }: { onMade: (d: OlkLinkDetail) => void }) {
         {items.length < 20 && <>
           <input className={inputClass} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Add an item from the price list: search by name or code" />
           {found.length > 0 && <ul className="max-h-48 overflow-auto rounded-md ring-1 ring-slate-200">{found.map((c) => (
-            <li key={c.id}><button type="button" className="w-full px-3 py-1.5 text-left hover:bg-indigo-50" onClick={() => { setItems([...items, { itemId: c.id, name: c.name, sizing: 'size', fields: [] }]); setQ(''); }}>{c.name} <span className="text-xs text-slate-500">{c.code}</span></button></li>
+            <li key={c.id}><button type="button" className="w-full px-3 py-1.5 text-left hover:bg-indigo-50" onClick={() => { setItems([...items, { itemId: c.id, name: c.name, sizing: 'size', customFit: false, fields: [] }]); setQ(''); }}>{c.name} <span className="text-xs text-slate-500">{c.code}</span></button></li>
           ))}</ul>}
         </>}
       </div>
@@ -263,7 +270,7 @@ function LinkDetail({ id, manage }: { id: string; manage: boolean }) {
             {d.responses.map((r) => (
               <li key={r.id} className="py-2">
                 <button type="button" className="flex w-full flex-wrap items-baseline justify-between gap-2 text-left" aria-expanded={shown === r.id} onClick={() => setShown(shown === r.id ? null : r.id)}>
-                  <span><b className="text-indigo-700">{r.name}</b> <span className="text-sm text-slate-500">{d.kind === 'team' ? `${r.people.length} players` : r.people[0]?.pieces.map((pc) => `${pc.qty} × ${item(pc.lineNo)?.name}${pc.size ? ` (${pc.size})` : ''}`).join(', ')}</span></span>
+                  <span><b className="text-indigo-700">{r.name}</b> <span className="text-sm text-slate-500">{d.kind === 'team' ? `${r.people.length} players` : r.people[0]?.pieces.map((pc) => `${pc.qty} × ${item(pc.lineNo)?.name}${pc.size ? ` (${pc.size})` : pc.customFit ? ' (custom fit)' : ''}`).join(', ')}</span></span>
                   <span className="text-xs text-slate-500">{manilaTime(r.updatedAt)}{r.changes ? ` · changed ${r.changes}×` : ''}</span>
                 </button>
                 {r.checks.map((c) => <p key={c} className="text-sm text-amber-700">⚠ {c}</p>)}
@@ -281,7 +288,7 @@ function LinkDetail({ id, manage }: { id: string; manage: boolean }) {
                           <tr key={p.row} className="border-t border-slate-100 align-top">
                             {d.kind === 'team' && <><td className="py-1">{p.number}</td><td className="font-medium">{p.backName}</td><td>{p.name}</td></>}
                             <td className="py-1">{p.gender === 'female' ? 'F' : 'M'}</td>
-                            <td>{p.pieces.map((pc) => <div key={pc.lineNo}>{pc.qty} × {item(pc.lineNo)?.name}{pc.size ? ` (${pc.size})` : ''}</div>)}</td>
+                            <td>{p.pieces.map((pc) => <div key={pc.lineNo}>{pc.qty} × {item(pc.lineNo)?.name}{pc.size ? ` (${pc.size})` : pc.customFit ? <b className="text-indigo-700"> (custom fit)</b> : ''}</div>)}</td>
                             <td>{p.measureAtShop ? <span className="text-amber-700">Measure at the shop</span> : <>
                               {Object.entries(p.measures).map(([f, v]) => <span key={f} className="mr-2 inline-block">{label(f)} {v}</span>)}
                               {p.itemMeasures.map((m) => <div key={`${m.lineNo}${m.field}`} className="text-indigo-700">{item(m.lineNo)?.name}: {label(m.field)} {m.value}</div>)}
