@@ -162,8 +162,12 @@ export function checkCap(db: Db, month: string, mills: number): void {
 export type AiStep = 'redraw' | 'back' | 'mockup' | 'vectorize';
 export function logRun(db: Db, run: { at: string; month: string; userId: string; step: AiStep; model: string; ok: boolean; mills: number; ms: number; note?: string; resultId?: string }): void {
   const rate = Math.round(aiSettings(db).ratePeso * 100);
+  const id = newId();
   db.prepare(`INSERT INTO img_ai_runs (id, at, month, user_id, step, model, ok, cost_mills, rate_centavos, ms, note, result_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-    .run(newId(), run.at, run.month, run.userId, run.step, run.model, run.ok ? 1 : 0, run.ok ? run.mills : 0, rate, Math.round(run.ms), (run.note ?? '').slice(0, 300), run.resultId ?? null);
+    .run(id, run.at, run.month, run.userId, run.step, run.model, run.ok ? 1 : 0, run.ok ? run.mills : 0, rate, Math.round(run.ms), (run.note ?? '').slice(0, 300), run.resultId ?? null);
+  // Each picture made costs money: who made which, and what it cost.
+  appendAudit(db, { at: run.at, userId: run.userId, action: 'img.ai.run', entityType: 'img.ai_run', entityId: id,
+    data: { step: run.step, model: run.model, ok: run.ok, costCents: run.ok ? Math.round((run.mills * rate) / 1000) : 0 } });
 }
 
 /** The latest runs; url: the picture's address while it is kept (three days), else null. */

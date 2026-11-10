@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { auditData, auditQuery, type AuditFilters } from './audit.ts';
 
-const empty: AuditFilters = { from: '', to: '', userId: '', action: '', entityType: '', entityId: '' };
+const empty: AuditFilters = { from: '', to: '', userId: '', action: '', entityType: '', entityId: '', number: '' };
 
 describe('audit screen helpers', () => {
   it('uses identical filters for paging and CSV', () => {

@@ -34,6 +34,7 @@ export function requestFor(db: Db, jobOrderId: string, who: { userId: string | n
   const row: RequestRow = { id: newId(), job_order_id: jo.id, job_order_no: jo.number, customer_id: jo.customerId, token: randomBytes(24).toString('base64url'), created_at: who.at };
   db.prepare('INSERT INTO fbk_requests (id, job_order_id, job_order_no, customer_id, token, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)')
     .run(row.id, row.job_order_id, row.job_order_no, row.customer_id, row.token, row.created_at, who.userId);
+  appendAudit(db, { at: who.at, userId: who.userId, action: 'fbk.link', entityType: 'document', entityId: jo.id, data: { number: jo.number } });
   return row;
 }
 

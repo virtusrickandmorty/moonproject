@@ -7,6 +7,7 @@ import { loadModules } from '../src/modules/load.ts';
 import { hashPassword } from '../src/engine/security/passwords.ts';
 import { PRACTICE_SESSION_COOKIE, SESSION_COOKIE } from '../src/engine/security/sessions.ts';
 import { newId, type RoleKey } from '@moonproject/shared';
+import { watchAudit } from './audit-watch.ts';
 
 export const TEST_SCRYPT_N = 2 ** 10;
 export const PASSWORD = 'correct horse battery staple';
@@ -25,6 +26,7 @@ export async function createTestEnv(at = '2026-09-28T02:00:00Z', extra: Pick<Bui
   const clock = fixedClock(at);
   const { app, deps } = buildApp({ db, clock, modules: await loadModules(), config: { scryptN: TEST_SCRYPT_N }, ...extra });
   await app.ready();
+  watchAudit(app, db); // every change made from a screen is in the audit log (audit-watch.ts)
   const env: TestEnv = {
     app,
     deps,

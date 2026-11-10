@@ -9,8 +9,10 @@ import { clockGuard } from '../../engine/documents/lifecycle.ts';
 import { INVARIANT_NAMES, runInvariants } from '../../engine/ledger/invariants.ts';
 import { currentUser } from '../../engine/security/routes.ts';
 import { addDays, lastNight, nightlyRuns, nightlyStatus, runChecks } from './nightly.ts';
+import type { Registry } from '../../engine/documents/registry.ts';
+import { ACTIONS, detailsLine, nameBook, readable, whenWords } from './readable.ts';
 
-type Filters = { from?: string; to?: string; userId?: string; action?: string; entityType?: string; entityId?: string; before?: number; limit: number };
+type Filters = { from?: string; to?: string; userId?: string; action?: string; entityType?: string; entityId?: string; number?: string; before?: number; limit: number };
 type RawRow = { seq: number; at: string; user_id: string | null; user_name: string | null; action: string; entity_type: string; entity_id: string | null; data: string };
 
 function date(value: unknown): string {
@@ -38,7 +40,7 @@ export function auditFilters(q: Record<string, unknown>): Filters {
   if (q.format !== undefined && q.format !== 'csv') throw new AppError('BAD_FORMAT', 'Choose CSV format.', 400);
   return {
     from, to, userId: optionalText(q.userId), action: optionalText(q.action),
-    entityType: optionalText(q.entityType), entityId: optionalText(q.entityId),
+    entityType: optionalText(q.entityType), entityId: optionalText(q.entityId), number: optionalText(q.number)?.trim().toUpperCase() || undefined,
     before: q.before === undefined ? undefined : positiveInteger(q.before, 'page'),
     limit: q.limit === undefined ? 50 : Math.min(positiveInteger(q.limit, 'limit'), 200),
   };
@@ -46,7 +48,7 @@ export function auditFilters(q: Record<string, unknown>): Filters {
 
 const EXPORT_MOST = 500_000;
 
-export function auditPage(db: Db, f: Filters) {
+export function auditPage(db: Db, f: Filters, registry?: Registry) {
   const clauses: string[] = [];
   const values: (string | number)[] = [];
   if (f.from) { clauses.push('substr(a.at, 1, 10) >= ?'); values.push(f.from); }
@@ -55,15 +57,21 @@ export function auditPage(db: Db, f: Filters) {
     const value = f[key];
     if (value) { clauses.push(`a.${column} = ?`); values.push(value); }
   }
+  // A document's number (JO-000036): the document itself, and whatever names it in its data (a print, a design sent).
+  if (f.number) { clauses.push(`(json_extract(a.data, '$.number') = ? OR a.entity_id IN (SELECT id FROM documents WHERE number = ?))`); values.push(f.number, f.number); }
   if (f.before) { clauses.push('a.seq < ?'); values.push(f.before); }
   const rows = db.prepare(`SELECT a.seq, a.at, a.user_id, u.display_name AS user_name, a.action, a.entity_type, a.entity_id, a.data
     FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
     ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''} ORDER BY a.seq DESC LIMIT ?`).all(...values, f.limit + 1) as RawRow[];
-  const page = rows.slice(0, f.limit).map((r) => ({
-    seq: r.seq, at: r.at, userId: r.user_id, userName: r.user_name,
-    action: r.action, entityType: r.entity_type, entityId: r.entity_id,
-    data: JSON.parse(r.data) as Record<string, unknown>,
-  }));
+  const names = registry ? nameBook(db, registry) : null;
+  const moduleNames = new Map(registry?.modules.map((m) => [m.code, m.name]) ?? []);
+  const page = rows.slice(0, f.limit).map((r) => {
+    const e = { seq: r.seq, at: r.at, userId: r.user_id, userName: r.user_name,
+      action: r.action, entityType: r.entity_type, entityId: r.entity_id,
+      data: JSON.parse(r.data) as Record<string, unknown> };
+    // In plain words too (the owner's request, Nov 2026); the codes and data stay for an auditor.
+    return registry && names ? { ...e, when: whenWords(e.at), ...readable(registry, names, e, moduleNames) } : e;
+  });
   return { rows: page, nextBefore: rows.length > f.limit ? page.at(-1)!.seq : null };
 }
 
@@ -73,21 +81,35 @@ export function audRoutes(app: FastifyInstance, { db, clock, registry, practice 
   app.get('/api/aud/users', { config: { permission: 'aud.log.view' } }, async () =>
     db.prepare('SELECT id, display_name AS name FROM users ORDER BY display_name, id').all() as { id: string; name: string }[]);
 
+  /** The filters' choices: the actions and kinds of record in the log, in words. */
+  app.get('/api/aud/choices', { config: { permission: 'aud.log.view' } }, async () => {
+    const moduleNames = new Map(registry.modules.map((m) => [m.code, m.name]));
+    const names = nameBook(db, registry);
+    const actions = (db.prepare('SELECT DISTINCT action FROM audit_log').pluck().all() as string[])
+      .map((a) => ({ value: a, label: readable(registry, names, { action: a, entityType: '', entityId: null, data: {} }, moduleNames).what }))
+      .sort((x, y) => x.label.localeCompare(y.label));
+    return { actions, known: Object.keys(ACTIONS).length };
+  });
+
   app.get('/api/aud/log', { config: { permission: 'aud.log.view' } }, async (req: FastifyRequest, reply) => {
     const q = req.query as Record<string, unknown>;
     const filters = auditFilters(q);
-    if (q.format !== 'csv') return auditPage(db, filters);
+    if (q.format !== 'csv') return auditPage(db, filters, registry);
     // Like every write, the export's audit row needs a clock that has not gone backwards.
     const result = tx(db, () => {
       clockGuard({ db, clock });
       // Everything the filters select, from the newest: not the page on screen (an external audit works from this file).
-      const page = auditPage(db, { ...filters, before: undefined, limit: EXPORT_MOST });
+      const page = auditPage(db, { ...filters, before: undefined, limit: EXPORT_MOST }, registry);
       appendAudit(db, { at: stamp(clock), userId: currentUser(req).userId, action: 'audit.export', entityType: 'audit_log',
         data: { filters } });
       return page;
     });
-    const rows: CsvCell[][] = [['Sequence', 'When', 'User', 'Action', 'Entity type', 'Entity ID', 'Data']];
-    for (const r of result.rows) rows.push([r.seq, r.at, r.userName ?? '', r.action, r.entityType, r.entityId ?? '', JSON.stringify(r.data)]);
+    // The words first, then the codes and raw data an auditor works from.
+    const rows: CsvCell[][] = [['Sequence', 'When', 'Who', 'What happened', 'Record', 'Details', 'Time stamp', 'Action', 'Entity type', 'Entity ID', 'Data']];
+    for (const r of result.rows) {
+      const w = r as typeof r & { when: string; what: string; record: { label: string } | null; details: Parameters<typeof detailsLine>[0] };
+      rows.push([r.seq, w.when, r.userName ?? 'System or customer', w.what, w.record?.label ?? '', detailsLine(w.details), r.at, r.action, r.entityType, r.entityId ?? '', JSON.stringify(r.data)]);
+    }
     reply.header('Content-Disposition', 'attachment; filename="audit-log.csv"');
     reply.type('text/csv; charset=utf-8');
     return toCsv(rows);

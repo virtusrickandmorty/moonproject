@@ -280,6 +280,8 @@ export function submitAnswer(db: Db, token: string, raw: unknown, ctx: { at: str
   db.prepare('INSERT INTO olk_responses (id, link_id, edit_hash, name, gender, mobile, email, address, ip, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .run(id, l.id, hash(key), v.name, v.gender, v.mobile, v.email.toLowerCase(), v.address, ctx.ip, ctx.at, ctx.at);
   saveVersion(db, id, 1, v);
+  // The customer's answer: who and how many, never their contact details (those stay in the answer itself).
+  appendAudit(db, { at: ctx.at, userId: null, action: 'olk.answer.sent', entityType: 'olk.link', entityId: l.id, data: { title: l.title, answer: id, people: v.people.length } });
   return { key, ...answerOf(db, id) };
 }
 
@@ -305,6 +307,7 @@ export function changeAnswer(db: Db, token: string, key: string, raw: unknown, c
   saveVersion(db, id, version, v);
   db.prepare('UPDATE olk_responses SET name = ?, gender = ?, mobile = ?, email = ?, address = ?, version = ?, updated_at = ? WHERE id = ?')
     .run(v.name, v.gender, v.mobile, v.email.toLowerCase(), v.address, version, ctx.at, id);
+  appendAudit(db, { at: ctx.at, userId: null, action: 'olk.answer.changed', entityType: 'olk.link', entityId: l.id, data: { title: l.title, answer: id, people: v.people.length, version } });
   return answerOf(db, id);
 }
 
