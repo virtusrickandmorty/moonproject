@@ -208,7 +208,9 @@ describe('the employees tab', () => {
     expect(profile('E-004')).toMatchObject({ pay_type: 'piece', hire_date: '2025-01-15', position: 'Board Member' });
     expect(profile('E-005')).toBeUndefined();
     // What the plan does not keep is not in the employee record at all.
-    const columns = Object.values(env.db.prepare("SELECT * FROM emp_employees WHERE full_name = 'Example Cutter'").get() as Record<string, unknown>).join('|');
+    // Its ids are random, and one can hold "0917" or "1990" by chance: those are left out.
+    const columns = Object.values(env.db.prepare("SELECT * FROM emp_employees WHERE full_name = 'Example Cutter'").get() as Record<string, unknown>)
+      .filter((v) => !(typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(v))).join('|');
     expect(columns).not.toMatch(/1990|Sample Rd|0917/);
   });
 
