@@ -127,7 +127,12 @@ export async function openBookPrint(me: Me, book: string, from: string, to: stri
   printWhenReady(preview);
   return data;
 }
-export interface AuditLogRow { seq: number; at: string; userId: string | null; userName: string | null; action: string; entityType: string; entityId: string | null; data: Record<string, unknown> }
+export interface AuditDetail { label: string; value?: string; before?: string; after?: string }
+/** An audit entry: its codes and raw data, and the same in plain words (when, what happened, which record, the details). */
+export interface AuditLogRow {
+  seq: number; at: string; userId: string | null; userName: string | null; action: string; entityType: string; entityId: string | null; data: Record<string, unknown>;
+  when?: string; what?: string; record?: { label: string; href: string | null } | null; details?: AuditDetail[];
+}
 export interface AuditLogPage { rows: AuditLogRow[]; nextBefore: number | null }
 export interface IntegrityReport { audit: { ok: boolean; brokenAt: number | null; count: number; newestAt: string | null; message: string }; checks: { id: string; name: string; ok: boolean; problems: string[]; message: string }[] }
 export interface NightlyCheck { key: string; label: string; reportPath: string; passed: boolean; foundCount: number; findings: { detail: string; path: string | null }[] }
@@ -1302,6 +1307,7 @@ export function createApi(fetchImpl: Fetch = (url, init) => fetch(url, init)) {
     report: <T>(path: string) => call<T>('GET', `/api/rpt/${path}`),
     auditLog: (query: string) => call<AuditLogPage>('GET', `/api/aud/log?${query}`),
     auditUsers: () => call<{ id: string; name: string }[]>('GET', '/api/aud/users'),
+    auditChoices: () => call<{ actions: { value: string; label: string }[] }>('GET', '/api/aud/choices'),
     nightlyChecks: (before?: string) => call<{ rows: NightlyNight[]; nextBefore: string | null }>('GET', `/api/aud/nightly${before ? `?before=${before}` : ''}`),
     nightlyStatus: () => call<NightlyStatus>('GET', '/api/aud/nightly/status'),
     nightlyRunNow: () => call<NightlyRunNow>('POST', '/api/aud/nightly/run', {}),

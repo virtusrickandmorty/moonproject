@@ -338,6 +338,7 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (statusOf(o, nowMs()) !== 'awaiting_payment') throw conflict('CANNOT_CANCEL', 'Only an order still waiting for payment can be cancelled here. Please call or message the shop.');
       setStatus(o, 'cancelled', at);
       event(o.id, 'cancelled', at, null, 'Cancelled by the customer');
+      appendAudit(db, { at, userId: null, action: 'shp.order.cancelled_by_customer', entityType: 'shp.order', entityId: o.id, data: { number: o.number, totalCents: o.total_cents } });
       return forCustomer(customersOrder(req.params.number, b.token));
     });
   });
@@ -462,6 +463,7 @@ export function shpOrderRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (!allowed) throw conflict('BAD_MOVE', `${o.number} is ${from.replace('_', ' ')}: it cannot be marked ${b.to}.`);
       setStatus(o, b.to, at);
       event(o.id, b.to, at, user.userId, b.note ?? null);
+      appendAudit(db, { at, userId: user.userId, action: 'shp.order.moved', entityType: 'shp.order', entityId: o.id, data: { number: o.number, from, to: b.to, ...(b.note ? { note: b.note } : {}) } });
       if (b.to === 'ready') tell(o, 'ready', at, { userId: user.userId });
       return { ok: true };
     });

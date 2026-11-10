@@ -70,6 +70,8 @@ export function bakRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post('/api/bak/run', { config: { permission: 'bak.run' } }, async (req: FastifyRequest) => {
     const r = await runBackup(db, { reason: 'manual', userId: currentUser(req).userId, stamp: now });
     if (!r.ok) throw new AppError(r.code, r.error, r.code === 'NO_RECOVERY_KEYS' ? 409 : 500);
+    appendAudit(db, { at: now(), userId: currentUser(req).userId, action: 'bak.run', entityType: 'bak_run', entityId: null,
+      data: { file: r.result.file, tier: r.result.tier, bytes: r.result.bytes, offsite: r.result.offsite } });
     return r.result;
   });
 
@@ -179,7 +181,10 @@ export function bakRoutes(app: FastifyInstance, deps: AppDeps): void {
         .run(newId(), at, user.userId, drive, usbDir, status, copied, error);
     try {
       const r = copyToUsb(bakSettings(db).backupDir, usbDir, drive, at);
-      log('ok', r.copied, null);
+      tx(db, () => {
+        log('ok', r.copied, null);
+        appendAudit(db, { at, userId: user.userId, action: 'bak.usb', entityType: 'bak_usb', entityId: null, data: { drive, copied: r.copied } });
+      });
       return { drive, ...r };
     } catch (e) {
       log('failed', 0, (e as Error).message);
